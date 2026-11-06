@@ -11,6 +11,12 @@ No ComfyUI, no key. First `node tools/layered_test.js` (the reader on files buil
   mask is switched off, saved as PSD by the band writer (on tiles) and by the canvas writers (`bands` off), opened
   again: the pixels raw, the masks byte for byte, the switch kept, the note; the worker's layers equal the main
   thread's PsdWriter's and the band writer's; an ORA of it bakes the enabled mask and leaves the switched-off one;
+- D0 (docs/PLAN_WASM_BUILD.md §7): every PSD of the gate and the Photoshop-written blend-mode fixture read by the
+  pool's reader (psd_read) and by the window's (`InpaintEditor.psdOnPool = false`), the same layers and masks byte for
+  byte in this backend's pixels, the merged picture of a flat file; the fallback when the job is refused; a truncated
+  file refused through the pool, one too large on the window before any job; an open that is over (a stopped read, a
+  later open, a closed tab) stops its job at a band, lands nothing and counts no lost worker; a worker lost after
+  bands came is not read again on the window;
 - a PSD dropped on an open document adds its layers (the bottom one included) where the file has them;
 - a file named .png that is a PSD is still read as one (the first bytes decide); the layers reach the local store
   (`syncLayers`), so autosave keeps them.
@@ -262,6 +268,147 @@ for (let i = 0; i < w.mask.length; i++) {
 if (worst > 2) throw new Error(`ORA: the enabled mask is not baked in (${worst} levels off)`);
 return { worst, gone };
 """),
+    ("the_pool_and_the_window_read_a_psd_alike", """
+// D0 (docs/PLAN_WASM_BUILD.md §7): a PSD is read by a pool worker (psd_read, readPsdStream) and its layers written band by
+// band; the window's reader (InpaintEditor.psdOnPool = false) is the twin. Every file of this gate through both: the same
+// fields, groups, notes and loss flag, every layer's and mask's bytes as this backend holds them, the merged picture of a
+// flat file as pixels; the pool route ran (not its fallback); with the job refused ("fail") the window's reader takes
+// over with the same answer; a truncated file and one too large are refused through the pool, the second at its header
+const E = ednow(window.__l.src).constructor;
+const d = await run("new_document");
+window.__l.more.push(d.id);
+const ed = ednow(d.id);
+const fileOf = async (path) => new File([(await window.scumble.file.read(path)).data], path.split("/").pop());
+const proto = Object.getPrototypeOf(ed);
+let pooled = [];
+ed.readPsdOnPool = async function (...a) {
+    try { const r = await proto.readPsdOnPool.apply(this, a); pooled.push(r ? "pool" : "fallback"); return r; }
+    catch (err) { pooled.push("threw"); throw err; }
+};
+const pixelsOf = (p) => (p ? Array.from(p.readRect(0, 0, p.width, p.height).data) : null);
+const sum = (a) => { let h = 2166136261; for (const v of a) { h ^= v; h = Math.imul(h, 16777619) >>> 0; } return h; };
+const docOf = async (doc) => {
+    const out = { width: doc.width, height: doc.height, groups: doc.groups, notes: doc.notes, lossy: doc.lossy, layers: [] };
+    for (const L of doc.layers) {
+        const px = pixelsOf(L.px), m = pixelsOf(L.maskPx);
+        out.layers.push({ name: L.name, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, group: L.group, clip: !!L.clip, maskOff: !!L.maskOff,
+            pw: L.px.width, ph: L.px.height, px: px.length + ":" + sum(px), mask: m ? m.length + ":" + sum(m) : null, mw: L.maskPx ? L.maskPx.width : 0,
+            kind: L.px.constructor.name + (L.maskPx ? "/" + L.maskPx.constructor.name : "") });
+        for (const p of [L.px, L.maskPx]) if (p) p.release();
+    }
+    // the merged picture of a flat file (the one case it is shown, so the one the pool reads it in): the pool's as pixels,
+    // the window's as RGBA put into this backend's pixels as loadLayered does
+    if (doc.compositePx && doc.layers.length) throw new Error("the pool read the merged picture beside " + doc.layers.length + " layers");
+    const flat = doc.layers.length ? null : doc.compositePx || (doc.composite ? ed.pixels.Layer.fromImageData(new ImageData(doc.composite, doc.width, doc.height)) : null);
+    if (flat) { const c = pixelsOf(flat); out.composite = c.length + ":" + sum(c); flat.release(); }
+    return out;
+};
+const names = { roundtrip: %(PSD)s, loose: %(LOOSE_PSD)s, masks_bands: %(MASK_BANDS)s, masks_canvas: %(MASK_CANVAS)s, flat: %(FLAT_PSD)s, deep: %(DEEP_PSD)s, photoshop: %(PS_PSD)s };
+const was = E.psdOnPool, res = {};
+try {
+    for (const [label, path] of Object.entries(names)) {
+        const f = await fileOf(path);
+        E.psdOnPool = false; pooled = [];
+        const win = await docOf(await ed.readLayered(f, "psd"));
+        if (pooled.length) throw new Error(label + ": psdOnPool = false still went to the pool");
+        delete E.psdOnPool;
+        const pool = await docOf(await ed.readLayered(f, "psd"));
+        if (pooled.join() !== "pool") throw new Error(label + ": the pool route did not run (" + pooled.join() + ")");
+        const a = JSON.stringify(win), b = JSON.stringify(pool);
+        if (a !== b) throw new Error(label + ": the pool's layers differ from the window's: " + b.slice(0, 400) + " / " + a.slice(0, 400));
+        res[label] = win.layers.length + (win.composite ? " + merged" : "") + (win.layers.some((l) => l.mask) ? " masked" : "");
+    }
+    if (!/merged/.test(res.flat) || !/masked/.test(res.deep) || !/masked/.test(res.loose)) throw new Error("the files do not hold what the step needs: " + JSON.stringify(res));
+    // a flat file opened (loadLayered): its base is the merged picture the pool sent, as the window's reader makes it
+    E.psdOnPool = false;
+    const flatWin = await ed.readLayered(await fileOf(names.flat), "psd");
+    delete E.psdOnPool;
+    const wantFlat = ed.pixels.Layer.fromImageData(new ImageData(flatWin.composite, flatWin.width, flatWin.height));
+    const wantBytes = pixelsOf(wantFlat);
+    wantFlat.release();
+    pooled = [];
+    await run("load_image", { doc: d.id, path: names.flat });
+    const opened = ednow(d.id);
+    if (pooled.join() !== "pool" || opened.layers.length || opened.width !== 300 || opened.height !== 600) throw new Error("the flat file: " + pooled.join() + ", " + opened.layers.length + " layers, " + opened.width + " x " + opened.height);
+    const got = pixelsOf(opened.basePx);
+    if (got.length !== wantBytes.length || got.some((x, i) => x !== wantBytes[i])) throw new Error("the flat file's base is not its merged picture as the window reads it");
+    if (opened !== ed) throw new Error("load_image made a new editor for the tab");
+    // the fallback: a job no worker knows, then the window's reader, the same answer
+    const f = await fileOf(names.deep);
+    E.psdOnPool = "fail"; pooled = [];
+    const fb = await docOf(await ed.readLayered(f, "psd"));
+    if (pooled.join() !== "fallback") throw new Error("the refused job did not fall back: " + pooled.join());
+    E.psdOnPool = false;
+    const w2 = await docOf(await ed.readLayered(f, "psd"));
+    if (JSON.stringify(fb) !== JSON.stringify(w2)) throw new Error("the fallback's answer differs");
+    delete E.psdOnPool;
+    // refusals through the pool, no fallback: a truncated file; one of 20000 x 20000 at its header (nothing decoded)
+    const whole = new Uint8Array((await window.scumble.file.read(names.roundtrip)).data);
+    // the reader's refusal comes back as the job's answer (its worker stays); the size one is made on this thread from
+    // the header's bytes, before any job
+    const pool = E.parts.pool(), stats = () => pool.stats();
+    const lost = () => stats().lost;
+    let lost0 = lost();
+    pooled = [];
+    let msg = "";
+    try { await ed.readLayered(new File([whole.slice(0, Math.floor(whole.length / 3))], "cut.psd"), "psd"); } catch (err) { msg = String(err.message || err); }
+    if (!/ends early/.test(msg) || pooled.join() !== "threw" || lost() !== lost0) throw new Error("a truncated file: " + (msg || "no error") + " (" + pooled.join() + ", workers lost " + (lost() - lost0) + ")");
+    const big = new Uint8Array(26 + 12);
+    const v = new DataView(big.buffer);
+    big.set([0x38, 0x42, 0x50, 0x53]); v.setUint16(4, 1); v.setUint16(12, 3); v.setUint32(14, 20000); v.setUint32(18, 20000); v.setUint16(22, 8); v.setUint16(24, 3);
+    pooled = []; msg = ""; lost0 = lost();
+    const run0 = stats().run;
+    try { await ed.readLayered(new File([big], "big.psd"), "psd"); } catch (err) { msg = String(err.message || err); }
+    if (!/larger than a layered file can be opened at/.test(msg) || pooled.join() !== "threw" || lost() !== lost0 || stats().run !== run0) throw new Error("a file too large: " + (msg || "no error") + " (" + pooled.join() + ", workers lost " + (lost() - lost0) + ", jobs " + (stats().run - run0) + ")");
+    res.refused = msg;
+    // an open that is over stops its job at its first band: a CancelledError, the worker counted as stopped, not lost
+    const hook = ed.readPsdOnPool;
+    let calls = 0, s0 = stats(), stop = null;
+    try { await ed.readPsdOnPool(await fileOf(names.loose), () => calls++ >= 1); } catch (err) { stop = err; }
+    const moved = (s) => ({ stopped: stats().stopped - s.stopped, lost: stats().lost - s.lost, jobs: stats().run - s.run, calls });
+    if (!stop || !stop.cancelled || JSON.stringify(moved(s0)) !== JSON.stringify({ stopped: 1, lost: 0, jobs: 1, calls: 2 })) throw new Error("a stopped read: " + (stop ? stop.message : "no error") + " " + JSON.stringify(moved(s0)));
+    // a later open (or a closed tab) while load_image's read runs: the first one stops at a band, lands nothing, says nothing
+    const shape = () => JSON.stringify([ed.width, ed.height, ed.layers.length, ed.base, ed.statusKind === "error"]);
+    const shape0 = shape();
+    for (const how of ["a later open", "a closed tab"]) {
+        let n = 0;
+        s0 = stats();
+        ed.readPsdOnPool = function (file, later) { return hook.call(this, file, () => { if (n++ === 1) { if (how === "a later open") this._openToken++; else this._destroyed = true; } return later(); }); };
+        try { await ed.loadFile(await fileOf(names.loose)); } finally { ed._destroyed = false; ed.readPsdOnPool = hook; }
+        const m = moved(s0);
+        if (shape() !== shape0 || m.stopped !== 1 || m.lost !== 0 || /cancelled/i.test(ed.status)) throw new Error(how + ": " + shape() + " after " + shape0 + ", " + JSON.stringify(m) + ", status " + ed.status);
+    }
+    // an open that is over before its job: no job at all
+    s0 = stats(); stop = null; calls = 0;
+    try { await ed.readPsdOnPool(await fileOf(names.loose), () => (calls++, true)); } catch (err) { stop = err; }
+    if (!stop || !stop.cancelled || JSON.stringify(moved(s0)) !== JSON.stringify({ stopped: 0, lost: 0, jobs: 0, calls: 1 })) throw new Error("an open over before its job: " + (stop ? stop.message : "no error") + " " + JSON.stringify(moved(s0)));
+    // a band this thread cannot write: its error, no second read here, the worker stopped (not lost)
+    const LayerCls = ed.pixels.Layer, ownEmpty = Object.prototype.hasOwnProperty.call(LayerCls, "empty"), empty0 = LayerCls.empty;
+    LayerCls.empty = function (...a) { const p = empty0.apply(this, a); p.writeRect = () => { throw new Error("the gate refused the write"); }; return p; };
+    s0 = stats(); pooled = []; msg = "";
+    try { await ed.readLayered(await fileOf(names.loose), "psd"); } catch (err) { msg = String(err.message || err); } finally { if (ownEmpty) LayerCls.empty = empty0; else delete LayerCls.empty; }
+    const mw = moved(s0);
+    if (msg !== "the gate refused the write" || pooled.join() !== "threw" || mw.stopped !== 1 || mw.lost !== 0) throw new Error("a band not written: " + (msg || "no error") + " (" + pooled.join() + ") " + JSON.stringify(mw));
+    // a worker that answers without a document: its error, not a TypeError
+    pool.run = async () => ({ ok: true });
+    pooled = []; msg = "";
+    try { await ed.readLayered(await fileOf(names.loose), "psd"); } catch (err) { msg = String(err.message || err); } finally { delete pool.run; }
+    if (!/failed in its worker: no answer/.test(msg) || pooled.join() !== "threw") throw new Error("an answer without a document: " + (msg || "no error") + " (" + pooled.join() + ")");
+    // a worker lost after bands came: not read again on this thread, the error says where it failed
+    let k = 0;
+    pooled = []; msg = "";
+    ed.readPsdOnPool = function (file, later) {
+        return hook.call(this, file, () => { if (k++ === 1) { const s = pool.workers.find((x) => x.job && x.job.op === "psd_read"); if (s) pool._lost(s, new Error("the gate stopped it")); } return later(); });
+    };
+    try { await ed.readLayered(await fileOf(names.loose), "psd"); } catch (err) { msg = String(err.message || err); } finally { ed.readPsdOnPool = hook; }
+    if (!/failed in its worker: pool worker gone: the gate stopped it/.test(msg) || pooled.join() !== "threw") throw new Error("a worker lost mid-read: " + (msg || "no error") + " (" + pooled.join() + ")");
+    res.stopped = "first band, later open, closed tab, lost worker";
+} finally {
+    if (was === undefined) delete E.psdOnPool; else E.psdOnPool = was;
+    delete ed.readPsdOnPool;
+}
+return { tiles: !!ed.tileMode, ...res };
+"""),
     ("a_psd_dropped_on_a_document_adds_its_layers", """
 const ed = ednow(window.__l.src);
 host.shell.activate(ed);
@@ -322,7 +469,9 @@ async def run_all(c):
         print("FAIL")
         return False
     subs = {"PSD": J("roundtrip.psd"), "ORA": J("roundtrip.ora"), "LOOSE_PSD": J("loose.psd"), "LOOSE_ORA": J("loose.ora"), "BROKEN": J("broken.psd"),
-            "MASK_BANDS": J("masks_bands.psd"), "MASK_CANVAS": J("masks_canvas.psd"), "MASK_ORA": J("masks.ora")}
+            "MASK_BANDS": J("masks_bands.psd"), "MASK_CANVAS": J("masks_canvas.psd"), "MASK_ORA": J("masks.ora"),
+            "FLAT_PSD": J("flat.psd"), "DEEP_PSD": J("deep.psd"),
+            "PS_PSD": json.dumps(os.path.join(ROOT, "tools", "fixtures", "blendmodes", "blendmodes.psd").replace("\\", "/"))}
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
     for name, body in STEPS:
         if name == "a_broken_file_says_why_and_keeps_the_tab":

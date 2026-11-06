@@ -1,0 +1,10 @@
+lint rc=0 38s 
+types rc=0 5s 
+layered rc=0 3s PASS
+export rc=0 10s PASS
+document rc=0 37s PASS
+pxjobs rc=1 1s 
+blendmodes rc=0 11s PASS
+groups rc=0 3s PASS
+pixels rc=0 12s PASS
+SOME FAILED

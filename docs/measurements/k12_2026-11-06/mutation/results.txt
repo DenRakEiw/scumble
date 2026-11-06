@@ -1,0 +1,24 @@
+== K12 mutation round 2026-11-06 09:53 on C:/Users/SCHOEN~1/AppData/Local/Temp/claude/F--canvas/543d44fb-4d2d-4818-8804-974916d10a44/scratchpad/k12/tree
+orig (the untouched copy): px_test PASS, relight gate PASS
+KILLED   supersede without the cancel (inpaint_canvas.js): red: the relight gate (['[FAIL] nk (point): three nudges, only the last key lands: {"landed":[false,false,true],"key":true}', '[FAIL] nk (point): the two superseded marches were cancelled in the pool: {"cancelled":0}']); 47 s; expected killed
+KILLED   no supersede before a new full march (inpaint_canvas.js): red: the relight gate (['[FAIL] nk (point): three nudges, only the last key lands: {"landed":[false,false,true],"key":true}', '[FAIL] nk (point): the two superseded marches were cancelled in the pool: {"cancelled":0}']); 47 s; expected killed
+KILLED   no supersede when the channel holds the key (inpaint_canvas.js): red: the relight gate (['[FAIL] nk: there, back and there again: two full marches posted, one lands, the channel holds A: {"posted":1,"landed":1,"diff":0}']); 47 s; expected killed
+KILLED   a superseded march frees its key again at its end (inpaint_canvas.js): red: the relight gate (['SOME FAILED']); 561 s; expected killed
+KILLED   quick marches superseded too (inpaint_canvas.js): red: the relight gate (['SOME FAILED']); 120 s; expected killed
+KILLED   a cancelled march warns (inpaint_canvas.js): red: the relight gate (['[FAIL] nk: no warning for a cancelled march: ["relight_shadow channel 0 failed: CancelledError: pool jobs of relight:Lmw4r7c7g1:0:256x192:4 cancelled","relight_']); 46 s; expected killed
+KILLED   the route ignored (always stripes) (inpaint_canvas.js): red: the relight gate (['[FAIL] nk: on the route relightStripes 0 the march is one job of all rows, the same bytes as one call: {"jobs":[[0,32],[96,32],[64,32],[128,32],[32,32],[160,32]']); 46 s; expected killed
+KILLED   one group for every march of a channel (inpaint_canvas.js): red: the relight gate (['[FAIL] nk (point): each nudge\'s quick march landed (a superseded full march takes no quick one with it): {"quickLanded":0}', '[FAIL] nk (sun): each nudge\'s quick march landed (a superseded full march takes no quick one with it): {"quickLanded":0}']); 46 s; expected killed
+KILLED   marchOnPool: no cancel when a stripe fails (inpaint_relight.js): red: px_test (2 failing; first: FAIL a failed stripe rejects its march with the stripe's error and cancels the rest of its group  stripe failed on purpose; 8 of 8 sent, 0 cancelled); 66 s; expected killed
+KILLED   marchOnPool: the rows not checked (inpaint_relight.js): red: px_test (2 failing; first: FAIL a stripe's reply with other rows than it was sent rejects the march); 66 s; expected killed
+KILLED   marchOnPool: stripes without a SharedArrayBuffer (inpaint_relight.js): red: px_test (2 failing; first: FAIL marchOnPool without a SharedArrayBuffer (the node's page) and on the route 0: one job a light, rows 0..h, the reply's own buffer  8 / 1 jobs); 66 s; expected killed
+KILLED   stripePlan: stripes under the minimum (inpaint_relight.js): red: px_test (2 failing; first: FAIL stripePlan covers every row once and in order, in stripes of 32 rows or more, never more than asked  h 33, 2 asked: a stripe under 32 rows [[0,16); 66 s; expected killed
+KILLED   stripePlan: a stripe a row short (inpaint_relight.js): red: px_test (6 failing; first: FAIL stripePlan covers every row once and in order, in stripes of 32 rows or more, never more than asked  h 64, 2 asked: a stripe under 32 rows [[0,32); 68 s; expected killed
+KILLED   _slot: the key ignored (px.js): red: px_test (2 failing; first: FAIL a new key copies the new map and never answers from the old one; a key on another size copies again); 65 s; expected killed
+KILLED   _slot: the size ignored (px.js): red: px_test (2 failing; first: FAIL a new key copies the new map and never answers from the old one; a key on another size copies again); 65 s; expected killed
+KILLED   shadowMarch: the key never used (px.js): red: px_test (2 failing; first: FAIL the Rust sun's stripes with a key copy the depth map once (8 stripes), again none, without a key once a stripe  2.66 / 2.66 / 2.66 MB, the map 0.); 65 s; expected killed
+restored copy: px_test PASS
+mutants: 16 killed, 0 survived of 16
+note: two mutants were killed by a hung or lost page rather than by an assertion: "a superseded march frees its key
+again at its end" (561 s, CDP session error: the freed key of the newer march makes it re-ask, the re-asked march
+supersedes it, and so on: a livelock) and "quick marches superseded too" (the page went away, CDP 257). Both show why
+the guards are there; every other kill names its failing check.

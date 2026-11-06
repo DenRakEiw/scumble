@@ -1,0 +1,46 @@
+[09:17:13] commit 0ca7d5b (dirty: 1 files); px ABI ABI = 21; rounds: 1 2 3
+[09:17:13] px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+lock: taken after 0 s
+[09:17:13] lock: taken (K12 measuring 23544 2026-11-06T09:17:13)
+others: busy, waiting: 43264 bash.exe: "C:\Program Files\Git\bin\bash.exe" -c "source /c/Users/schoeneberg/.claude/shell-snapshots/snapshot-bash-1793926667945-f61rz4.sh 2>/dev/nul; 10324 bash.exe: "C:\Program Files\Git\bin\..\usr\bin\bash.exe" -c "source /c/Users/schoeneberg/.claude/shell-snapshots/snapshot-bash-1793926667945-f61rz4.sh; 47296 bash.exe: "C:\Program Files\Git\usr\bin\bash.exe" tools/run_gates.sh lr5-a --offline --tiles on loras commands recipes generate lint types; 13896 bash.exe: "C:\Program Files\Git\usr\bin\bash.exe" tools/run_gates.sh lr5-a --offline --tiles on loras commands recipes generate lint types
+[09:19:16] others: 0 busy; the idle key instance on 9571 is there (2 main process); waited 122 s
+[09:19:16] perf-relight r1 (try 1)
+[09:19:18] gpu: 3625 MiB, 6 %; comfy 8188: 000
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 69s 
+ALL PASS
+[09:20:44] rc=0
+[09:20:46] gpu: 3601 MiB, 6 %; comfy 8188: 000
+lock: released
+lock: taken after 0 s
+[09:20:46] lock: taken (K12 measuring 45508 2026-11-06T09:20:46)
+[09:20:46] others: 0 busy; the idle key instance on 9571 is there (2 main process)
+[09:20:47] perf-relight r2 (try 1)
+[09:20:49] gpu: 3591 MiB, 6 %; comfy 8188: 000
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=2 72s 
+SOME FAILED
+[09:22:16] rc=1
+[09:22:18] gpu: 4030 MiB, 4 %; comfy 8188: 000
+lock: released
+[09:22:18] perf r2 NOT COUNTED (the window behind): kept in notcounted/ as r2_try1
+lock: taken after 0 s
+[09:22:19] lock: taken (K12 measuring 18644 2026-11-06T09:22:19)
+[09:22:19] others: 0 busy; the idle key instance on 9571 is there (2 main process)
+[09:22:19] perf-relight r2 (try 2)
+[09:22:21] gpu: 4055 MiB, 6 %; comfy 8188: 000
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 66s 
+ALL PASS
+[09:23:43] rc=0
+[09:23:46] gpu: 4711 MiB, 8 %; comfy 8188: 000
+lock: released
+lock: taken after 0 s
+[09:23:46] lock: taken (K12 measuring 15728 2026-11-06T09:23:46)
+others: busy, waiting: 44652 bash.exe: "C:\Program Files\Git\bin\bash.exe" -c "source /c/Users/schoeneberg/.claude/shell-snapshots/snapshot-bash-1793926667945-f61rz4.sh 2>/dev/nul; 45956 bash.exe: "C:\Program Files\Git\bin\..\usr\bin\bash.exe" -c "source /c/Users/schoeneberg/.claude/shell-snapshots/snapshot-bash-1793926667945-f61rz4.sh; 22048 bash.exe: "C:\Program Files\Git\usr\bin\bash.exe" tools/run_gates.sh lr5-c --offline --tiles on loras commands recipes generate commands_doc help lint; 12976 bash.exe: "C:\Program Files\Git\usr\bin\bash.exe" tools/run_gates.sh lr5-c --offline --tiles on loras commands recipes generate commands_doc help lint
+[09:25:18] others: 0 busy; the idle key instance on 9571 is there (2 main process); waited 92 s
+[09:25:18] perf-relight r3 (try 1)
+[09:25:20] gpu: 3898 MiB, 6 %; comfy 8188: 000
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 75s 
+ALL PASS
+[09:26:51] rc=0
+[09:26:53] gpu: 4119 MiB, 5 %; comfy 8188: 000
+lock: released
+[09:26:53] done

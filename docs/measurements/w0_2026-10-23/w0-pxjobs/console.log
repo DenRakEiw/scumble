@@ -1,0 +1,2 @@
+WARN Inpaint Canvas: selection encode failed Error: the selection is too large to be saved without the worker pool
+    at scumble://app/editor/inpaint_canvas.js:24254:76

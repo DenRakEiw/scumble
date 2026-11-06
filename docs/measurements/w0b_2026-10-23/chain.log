@@ -1,0 +1,289 @@
+[13:00:03] == round 1
+[13:00:03] gates: perf, perf relight, exportperf (depth limit; fill limit), edges
+perf:15000x10000 rc=0 51s 
+ALL PASS
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 72s 
+ALL PASS
+exportperf:15000x10000,--limit=depth:0.2:0.6:0.05:0.05 rc=0 20s 
+ALL PASS
+exportperf:15000x10000,--fill-limit rc=0 47s 
+ALL PASS
+edges rc=0 16s PASS
+ALL PASS
+[13:04:50] tiffperf noise
+tiffperf:15000x10000,--variant,noise,--out,/f/canvas/dist/w0b_tiff_files rc=0 25s PASS
+ALL PASS
+[13:05:32] tiffperf own
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/w0b_tiff_files rc=0 9s PASS
+ALL PASS
+[13:05:57] tiffperf lzw
+tiffperf:15000x10000,--variant,lzw,--out,/f/canvas/dist/w0b_tiff_files rc=0 19s PASS
+ALL PASS
+[13:06:32] tiffperf packbits
+tiffperf:15000x10000,--variant,packbits,--out,/f/canvas/dist/w0b_tiff_files rc=0 10s PASS
+ALL PASS
+[13:06:58] tiffperf zlib1
+tiffperf:15000x10000,--variant,zlib1,--out,/f/canvas/dist/w0b_tiff_files rc=0 17s PASS
+ALL PASS
+[13:07:31] tiffperf raw
+tiffperf:15000x10000,--variant,raw,--out,/f/canvas/dist/w0b_tiff_files rc=0 6s PASS
+ALL PASS
+[13:07:53] native: the default rows
+[13:08:28] rc=0
+closed
+[13:08:33] native: filter_wand
+[13:08:55] rc=0
+closed
+[13:09:00] native: K0a's rows (real saves but the PSD's, which ends the renderer; the layered and TIFF opens)
+[13:10:05] rc=0
+closed
+[13:10:10] px_jobs 15k (three rounds inside)
+[13:14:06] rc=0
+closed
+[13:14:11] selection: the two 15k range cases
+[13:14:29] rc=0
+closed
+[13:14:33] w0_bench: W0's rows
+[13:14:58] rc=0
+closed
+[13:15:03] w0_bench: K0a's rows
+[13:15:46] rc=0
+closed
+[13:15:51] w0_bench freqsep_4000
+[13:16:07] rc=0
+closed
+[13:16:11] w0_bench stitch_align_2048
+[13:16:46] rc=0
+closed
+[13:16:50] w0_bench stitch_align_4096
+[13:17:24] rc=0
+closed
+[13:17:29] w0_bench match_fallback_16k
+[13:17:39] rc=0
+closed
+[13:17:44] w0_bench grow_fallback_15k
+[13:18:03] rc=0
+closed
+[13:18:08] brush_perf blur
+[13:19:08] rc=0
+closed
+[13:19:13] brush_perf sharpen
+[13:19:51] rc=0
+closed
+[13:19:56] brush_perf tone
+[13:20:21] rc=0
+closed
+[13:20:26] brush_perf sponge
+[13:20:51] rc=0
+closed
+[13:20:56] brush_perf smudge
+[13:21:15] rc=0
+closed
+[13:21:20] brush_perf clone
+[13:21:42] rc=0
+closed
+[13:21:47] brush_perf heal
+[13:22:15] rc=0
+closed
+[13:22:19] liquify_perf rust
+[13:22:38] rc=0
+closed
+[13:22:43] liquify_perf js
+[13:23:01] rc=0
+closed
+[13:23:06] == round 2
+[13:23:06] gates: perf, perf relight, exportperf (depth limit; fill limit), edges
+perf:15000x10000 rc=0 51s 
+ALL PASS
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 64s 
+ALL PASS
+exportperf:15000x10000,--limit=depth:0.2:0.6:0.05:0.05 rc=0 21s 
+ALL PASS
+exportperf:15000x10000,--fill-limit rc=0 46s 
+ALL PASS
+edges rc=0 16s PASS
+ALL PASS
+[13:27:46] tiffperf noise
+tiffperf:15000x10000,--variant,noise,--out,/f/canvas/dist/w0b_tiff_files rc=0 18s PASS
+ALL PASS
+[13:28:20] tiffperf own
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/w0b_tiff_files rc=0 9s PASS
+ALL PASS
+[13:28:45] tiffperf lzw
+tiffperf:15000x10000,--variant,lzw,--out,/f/canvas/dist/w0b_tiff_files rc=0 15s PASS
+ALL PASS
+[13:29:16] tiffperf packbits
+tiffperf:15000x10000,--variant,packbits,--out,/f/canvas/dist/w0b_tiff_files rc=0 7s PASS
+ALL PASS
+[13:29:40] tiffperf zlib1
+tiffperf:15000x10000,--variant,zlib1,--out,/f/canvas/dist/w0b_tiff_files rc=0 6s PASS
+ALL PASS
+[13:30:01] tiffperf raw
+tiffperf:15000x10000,--variant,raw,--out,/f/canvas/dist/w0b_tiff_files rc=0 5s PASS
+ALL PASS
+[13:30:22] native: the default rows
+[13:30:58] rc=0
+closed
+[13:31:03] native: filter_wand
+[13:31:24] rc=0
+closed
+[13:31:29] native: K0a's rows (real saves but the PSD's, which ends the renderer; the layered and TIFF opens)
+[13:32:34] rc=0
+closed
+[13:32:39] px_jobs 15k (three rounds inside)
+[13:36:21] rc=0
+closed
+[13:36:26] selection: the two 15k range cases
+[13:36:43] rc=0
+closed
+[13:36:48] w0_bench: W0's rows
+[13:37:12] rc=0
+closed
+[13:37:17] w0_bench: K0a's rows
+[13:38:00] rc=0
+closed
+[13:38:05] w0_bench freqsep_4000
+[13:38:21] rc=0
+closed
+[13:38:26] w0_bench stitch_align_2048
+[13:38:47] rc=0
+closed
+[13:38:51] w0_bench stitch_align_4096
+[13:39:25] rc=0
+closed
+[13:39:29] w0_bench match_fallback_16k
+[13:39:40] rc=0
+closed
+[13:39:44] w0_bench grow_fallback_15k
+[13:40:04] rc=0
+closed
+[13:40:09] brush_perf blur
+[13:40:46] rc=0
+closed
+[13:40:51] brush_perf sharpen
+[13:41:29] rc=0
+closed
+[13:41:34] brush_perf tone
+[13:41:59] rc=0
+closed
+[13:42:03] brush_perf sponge
+[13:42:31] rc=0
+closed
+[13:42:36] brush_perf smudge
+[13:42:57] rc=0
+closed
+[13:43:02] brush_perf clone
+[13:43:28] rc=0
+closed
+[13:43:33] brush_perf heal
+[13:44:03] rc=0
+closed
+[13:44:08] liquify_perf rust
+[13:44:28] rc=0
+closed
+[13:44:33] liquify_perf js
+[13:44:52] rc=0
+closed
+[13:44:57] == round 3
+[13:44:57] gates: perf, perf relight, exportperf (depth limit; fill limit), edges
+perf:15000x10000 rc=0 55s 
+ALL PASS
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 71s 
+ALL PASS
+exportperf:15000x10000,--limit=depth:0.2:0.6:0.05:0.05 rc=0 23s 
+ALL PASS
+exportperf:15000x10000,--fill-limit rc=0 55s 
+ALL PASS
+edges rc=0 18s PASS
+ALL PASS
+[13:50:00] tiffperf noise
+tiffperf:15000x10000,--variant,noise,--out,/f/canvas/dist/w0b_tiff_files rc=0 21s PASS
+ALL PASS
+[13:50:38] tiffperf own
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/w0b_tiff_files rc=0 12s PASS
+ALL PASS
+[13:51:05] tiffperf lzw
+tiffperf:15000x10000,--variant,lzw,--out,/f/canvas/dist/w0b_tiff_files rc=0 16s PASS
+ALL PASS
+[13:51:38] tiffperf packbits
+tiffperf:15000x10000,--variant,packbits,--out,/f/canvas/dist/w0b_tiff_files rc=0 10s PASS
+ALL PASS
+[13:52:03] tiffperf zlib1
+tiffperf:15000x10000,--variant,zlib1,--out,/f/canvas/dist/w0b_tiff_files rc=0 7s PASS
+ALL PASS
+[13:52:26] tiffperf raw
+tiffperf:15000x10000,--variant,raw,--out,/f/canvas/dist/w0b_tiff_files rc=0 6s PASS
+ALL PASS
+[13:52:48] native: the default rows
+[13:53:28] rc=0
+closed
+[13:53:33] native: filter_wand
+[13:53:55] rc=0
+closed
+[13:54:00] native: K0a's rows (real saves but the PSD's, which ends the renderer; the layered and TIFF opens)
+[13:55:12] rc=0
+closed
+[13:55:17] px_jobs 15k (three rounds inside)
+[13:59:36] rc=0
+closed
+[13:59:41] selection: the two 15k range cases
+[13:59:59] rc=0
+closed
+[14:00:04] w0_bench: W0's rows
+[14:00:30] rc=0
+closed
+[14:00:35] w0_bench: K0a's rows
+[14:01:22] rc=0
+closed
+[14:01:27] w0_bench freqsep_4000
+[14:01:44] rc=0
+closed
+[14:01:49] w0_bench stitch_align_2048
+[14:02:10] rc=0
+closed
+[14:02:15] w0_bench stitch_align_4096
+[14:03:13] rc=0
+closed
+[14:03:17] w0_bench match_fallback_16k
+[14:03:28] rc=0
+closed
+[14:03:33] w0_bench grow_fallback_15k
+[14:03:54] rc=0
+closed
+[14:03:59] brush_perf blur
+[14:04:38] rc=0
+closed
+[14:04:43] brush_perf sharpen
+[14:05:25] rc=0
+closed
+[14:05:30] brush_perf tone
+[14:05:56] rc=0
+closed
+[14:06:01] brush_perf sponge
+[14:06:29] rc=0
+closed
+[14:06:34] brush_perf smudge
+[14:06:56] rc=0
+closed
+[14:07:01] brush_perf clone
+[14:07:26] rc=0
+closed
+[14:07:31] brush_perf heal
+[14:08:01] rc=0
+closed
+[14:08:06] liquify_perf rust
+[14:08:26] rc=0
+closed
+[14:08:31] liquify_perf js
+[14:08:51] rc=0
+closed
+[14:08:56] == once: docperf, mem, huge, the Node bench
+docperf:15000x10000 rc=0 35s PASS
+ALL PASS
+mem:15000x10000,--rounds,3 rc=0 56s 
+ALL PASS
+huge:30000x20000 rc=0 246s PASS
+ALL PASS
+[14:15:23] px_test PX_BENCH=large
+[14:21:34] rc=0
+[14:21:35] done

@@ -1,0 +1,2 @@
+relight rc=1 31s FAIL
+SOME FAILED

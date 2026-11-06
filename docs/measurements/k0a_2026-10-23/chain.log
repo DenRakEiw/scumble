@@ -1,0 +1,38 @@
+[10:22:43] gates lint types (no app)
+lint rc=0 39s 
+types rc=0 5s 
+ALL PASS
+[10:23:31] gates tiff export layered pxjobs (tiles, offline)
+tiff rc=0 14s PASS
+export rc=0 173s PASS
+layered rc=0 1s PASS
+pxjobs rc=0 31s PASS
+ALL PASS
+[10:27:26] done
+[10:27:48] tiffperf 15k, variant noise (a fresh instance; the files shared in tiff_files)
+tiffperf:15000x10000,--variant,noise,--out,/f/canvas/dist/gates/k0a_2026-10-23/tiff_files rc=0 31s PASS
+ALL PASS
+[10:28:35] tiffperf 15k, variant own (a fresh instance; the files shared in tiff_files)
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/gates/k0a_2026-10-23/tiff_files rc=0 10s PASS
+ALL PASS
+[10:29:01] tiffperf 15k, variant lzw (a fresh instance; the files shared in tiff_files)
+tiffperf:15000x10000,--variant,lzw,--out,/f/canvas/dist/gates/k0a_2026-10-23/tiff_files rc=0 20s PASS
+ALL PASS
+[10:29:38] tiffperf 15k, variant packbits (a fresh instance; the files shared in tiff_files)
+tiffperf:15000x10000,--variant,packbits,--out,/f/canvas/dist/gates/k0a_2026-10-23/tiff_files rc=0 11s PASS
+ALL PASS
+[10:30:04] tiffperf 15k, variant zlib1 (a fresh instance; the files shared in tiff_files)
+tiffperf:15000x10000,--variant,zlib1,--out,/f/canvas/dist/gates/k0a_2026-10-23/tiff_files rc=0 21s PASS
+ALL PASS
+[10:30:42] tiffperf 15k, variant raw (a fresh instance; the files shared in tiff_files)
+tiffperf:15000x10000,--variant,raw,--out,/f/canvas/dist/gates/k0a_2026-10-23/tiff_files rc=0 8s PASS
+ALL PASS
+[10:31:05] done
+[10:31:05] native_test 15k (export rows, real saves, layered and TIFF opens)
+[10:31:40] native rc=1
+closed
+[10:31:45] done
+[10:31:45] w0_bench K0a rows
+[10:32:33] w0_bench rc=0
+closed
+[10:32:37] done

@@ -1,0 +1,133 @@
+K5 of docs/PLAN_WASM_BUILD.md (§4.3; §7 "The order after Stop 1" #3): after the build, and the selCombine A/B.
+2026-11-06 06:33-06:43, branch wasm-kernels at 4bfdd74 plus the uncommitted K5 diff in its final state (ABI 21; after
+the review fixes and the mutation round, the gates green on both backends), 15000 x 10000, --offline (--no-comfy),
+tiles, every tool on a fresh instance with its own profile, three rounds (r1-r3) of ../k5_chain.sh with
+PXJOBS_EXTRA="--ab selCombine=js:rust" (px_jobs' "js" column the twin kernels_js.js selCombine, its "rust" column
+sel_combine, every other kernel on Rust in both arms; the app's default is the "rust" column). The rows: ../summarize.py,
+its output summary_rows.txt. The machine: K5's lock held 06:27:29-06:43:33 (the before r4 run first, ../before), the
+card at 2.7-4.0 GB used, ComfyUI not running, nothing else of this session running; every px_jobs run counted on its
+first try (focused, visible, PASS: the route ran on every wand and range row and on no other).
+
+**The route (§1.1):** Rust on every row the route touches. wand_band rust 1,320 / twin 1,657 (beyond the spread 162);
+range_depth_snap 2,435 / 2,503 (beyond the spread 57); inside the spread, Rust by its kernel row (the window's
+TileMaskPixels.combine): wand_object 91 / 90 (combine 1.0 / 2.3), wand_add 1,623 / 1,844 (162 / 405), range_depth
+829 / 846 (166 / 330), range_luma 2,072 / 2,025 (156 / 273). grow, shrink and invert are not touched by the route
+(their combine ran 0 times in both arms). The wand rows (RGBA tiles, kind 4, and the box job's off-grid tiles through
+read) and the range rows (alpha bands, kind 1, packed) agree, so no entry by kind: **no selCombine entry in
+DEFAULT_ROUTES** (Rust stays the default).
+
+**Before -> after** (median (min-max); before: ../before/summary.txt, px_jobs r1, r3, r4; the app's default arm):
+- native_test: wand_whole_picture wall 1,088 -> 901 (901-927), longest block 329 -> 94 (93-96); wand_whole_add
+  1,118 -> 811 (800-835), block 425 -> 104 (103-104); wand_one_disc 77 -> 63, block 32 -> 32; invert 230 -> 226
+  (untouched by K5: K11), grow_16 589 -> 570, shrink_16 330 -> 364 (untouched). On the window the combine's functions
+  went from combineRows 193 + read 55 + combine 38 (wand_whole_picture) to sel_combine 17 + _in 12 + _out 7 + combine 1
+  (allocTileBytes 62 -> 56 and tileExtent 16 -> 17 stay: inferred to be the row's other tiles and masks, as are
+  regionCanvas and fill, which K5 does not touch).
+- selection_test: range depth 1,746 -> 1,205 (978-1,222) ms, the window's combine 1,367 -> 236 (200-244); range luma
+  2,711 -> 1,734 (1,639-1,740), combine 1,149 -> 137 (130-137), its read 830 -> 329 (the picture through the held
+  stack in stack_into jobs, not K5's; the drop inferred to be the machine state).
+- the perf gate (blocked [wall]): wand band 1,007 [7,124] -> 294 [5,980]; object 164 [242] -> 153 [238]; masked layer
+  201 [294] -> 185 [286]; invert 264 [260] -> 250 [247]; grow 78 [682] -> 74 [621]; shrink 66 [390] -> 48 [360].
+- px_jobs: wand_band 1,984 -> 1,320 (1,318-1,402); wand_add 2,057 -> 1,623; wand_object 124 -> 91; range_depth
+  1,230 -> 829; range_depth_snap 2,736 -> 2,435; range_luma 2,565 -> 2,072; invert 200 -> 221, grow 335 -> 342,
+  shrink 337 -> 362 (untouched, inside their spreads).
+
+**Stop 3's rows** (what select by range and the wand cost now, medians of the after-runs):
+- range depth 1,205 ms = the window's combine 236 + read 0 + the rest 969: the 40 range_select jobs (8.4 s summed over
+  the workers; `combined` 1,178 of the marks is waiting for them plus the combine), the edges and the done step 27.
+- range luma 1,734 ms = combine 137 (sel_combine 98 calls: most of its 2,360 tiles are full coverage, the fill) + read
+  329 + the rest 1,268: the 10 range_select jobs (2.5 s summed) and the stack_into jobs' picture (kernel 0.42-0.53 s
+  summed).
+- range_depth_snap (px_jobs) 2,435: read 1,172 (the snap's picture) + combine 136 + the jobs.
+- the wand across the picture: native wall 901, window block 94; px_jobs wand_band 1,320 = the worker's flood job
+  (flood about 670 + shape about 177, kernel 835-922) + the window's combine 137 + the rest (mips, the box job's
+  read); perf wand band blocked 294 of a 5,980 wall; wand_add 1,623 (combine 162).
+So the combine is no longer most of range's time (20 % of depth, 8 % of luma): what is left is the workers' range jobs
+(K21-K23) and, for the wand, the flood job's shape and cut (K9). Stop 3 re-ranks #9-#16 from these rows; K5 changes no
+order.
+
+== after
+
+native_test, 3 runs: wall | longest block | window self time of the combine's functions
+  grow_16              wall 570 (554-587) | blk 73 (71-73)
+     tileExtent 18 (18-19); writable 3 (2-3); _out 0 (0-1)
+  shrink_16            wall 364 (359-372) | blk 24 (24-25)
+     tileExtent 13 (11-16); writable 5 (4-6); _in 0 (0-1); _out 1 (0-1)
+  invert               wall 226 (222-230) | blk 226 (222-230)
+     tileExtent 33 (32-43); tileEmpty 9 (5-18); writable 16 (15-18); allocTileBytes 1 (1-1); _in 0 (0-2); _out 1 (1-1)
+  wand_whole_picture   wall 901 (901-927) | blk 94 (93-96)
+     px.js selCombine 1 (1-3); sel_combine (wasm) 17 (10-19); combine 1 (1-2); tileExtent 17 (14-20); allocTileBytes 56 (54-60); _in 12 (11-12); _out 7 (3-9)
+  wand_whole_add       wall 811 (800-835) | blk 104 (103-104)
+     view 0 (0-1); px.js selCombine 0 (0-1); sel_combine (wasm) 22 (15-23); combine 1 (0-2); tileExtent 18 (18-22); writable 16 (15-21); allocTileBytes 40 (39-43); _in 16 (10-17); _out 15 (13-19)
+  wand_one_disc        wall 63 (61-64) | blk 32 (31-34)
+     _in 0 (0-1); _out 2 (1-2)
+
+selection_test 15k range cases: selectRange ms | the window's combine (marks' combineMs) | readMs
+  range depth ms 1,205 (978-1,222) | combine 236 (200-244) | read 0 (0-0)
+  range luma  ms 1,734 (1,639-1,740) | combine 137 (130-137) | read 329 (329-516)
+
+perf gate (blocked [wall], ms)
+  grow +16                         74 (70-78) [621 (586-661)]
+  shrink -16                       48 (48-56) [360 (349-366)]
+  invert                           250 (247-250) [247 (244-247)]
+  magic wand (whole-image band)    294 (261-311) [5,980 (5,908-6,021)]
+  magic wand (an object)           153 (144-158) [238 (212-250)]
+  magic wand, a masked layer       185 (183-191) [286 (274-291)]
+
+px_jobs (tools/ab_median.py over json/pxjobs_r*.jsonl)
+
+== 15000x10000  (3 runs kept: pxjobs_r1.jsonl:1, pxjobs_r2.jsonl:1, pxjobs_r3.jsonl:1; key wall; kernel row px_jobs.py's kernel parts, both arms; split the selCombine route: sel_combine + copyIn)
+  grow
+    js   per run 420.4 399.4 355.3              | median    399.4 | spread     65.1
+    rust per run 341.5 339.7 351.7              | median    341.5 | spread     12.0
+    round 0 (cold) js 526.5 / rust 351.7; kernel row js 0.0 / rust 0.0 (combine)
+    split (explains, does not decide; sel_combine): js jobs 0.0 + copyIn 12.3, window 0.0 + copyIn 0.3 | rust jobs 0.0 + copyIn 12.3, window 0.0 + copyIn 0.3
+    verdict: not touched by the route (the window's combine ran 0 times in both arms; selCombine cannot change it)
+  shrink
+    js   per run 353.6 372.8 363.1              | median    363.1 | spread     19.3
+    rust per run 365.2 361.5 362.0              | median    362.0 | spread      3.7
+    round 0 (cold) js 363.1 / rust 362.0; kernel row js 0.0 / rust 0.0 (combine)
+    split (explains, does not decide; sel_combine): js jobs 0.0 + copyIn 4.9, window 0.0 + copyIn 0.3 | rust jobs 0.0 + copyIn 5.8, window 0.0 + copyIn 0.3
+    verdict: not touched by the route (the window's combine ran 0 times in both arms; selCombine cannot change it)
+  wand_band
+    js   per run 1656.5 1794.8 1633.2           | median   1656.5 | spread    161.6
+    rust per run 1401.9 1317.5 1319.7           | median   1319.7 | spread     84.3
+    round 0 (cold) js 1794.8 / rust 1315.5; kernel row js 387.7 / rust 137.2 (combine)
+    split (explains, does not decide; sel_combine): js jobs 0.0 + copyIn 96.6, window 0.0 + copyIn 0.3 | rust jobs 0.0 + copyIn 97.6, window 39.0 + copyIn 27.5
+    verdict: rust (its median lower by 336.9, beyond the spread 161.6)
+  wand_object
+    js   per run 89.9 87.1 94.6                 | median     89.9 | spread      7.5
+    rust per run 91.4 113.6 90.9                | median     91.4 | spread     22.7
+    round 0 (cold) js 99.5 / rust 91.4; kernel row js 2.3 / rust 1.0 (combine)
+    split (explains, does not decide; sel_combine): js jobs 0.0 + copyIn 0.9, window 0.0 + copyIn 0.2 | rust jobs 0.0 + copyIn 0.9, window 0.2 + copyIn 0.3
+    verdict: rust (inside the spread 22.7; the kernel row faster (1.0 against 2.3))
+  wand_add
+    js   per run 1940.3 1645.3 1843.8           | median   1843.8 | spread    295.0
+    rust per run 1602.0 1658.2 1623.2           | median   1623.2 | spread     56.2
+    round 0 (cold) js 1566.6 / rust 1658.2; kernel row js 405.0 / rust 162.2 (combine)
+    split (explains, does not decide; sel_combine): js jobs 0.0 + copyIn 98.9, window 0.0 + copyIn 0.4 | rust jobs 0.0 + copyIn 100.6, window 48.5 + copyIn 26.3
+    verdict: rust (inside the spread 295.0; the kernel row faster (162.2 against 405.0))
+  invert
+    js   per run 244.2 214.5 208.1              | median    214.5 | spread     36.1
+    rust per run 207.8 220.6 243.7              | median    220.6 | spread     35.9
+    round 0 (cold) js 214.5 / rust 227.0; kernel row js 0.0 / rust 0.0 (combine)
+    split (explains, does not decide; sel_combine): js jobs -, window 0.0 + copyIn 0.3 | rust jobs -, window 0.0 + copyIn 0.3
+    verdict: not touched by the route (the window's combine ran 0 times in both arms; selCombine cannot change it)
+  range_depth
+    js   per run 871.6 828.6 846.3              | median    846.3 | spread     43.0
+    rust per run 841.8 808.6 828.7              | median    828.7 | spread     33.2
+    round 0 (cold) js 991.9 / rust 828.7; kernel row js 330.4 / rust 165.6 (combine)
+    split (explains, does not decide; sel_combine): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 2.9 | rust jobs 0.0 + copyIn 0.0, window 28.6 + copyIn 6.2
+    verdict: rust (inside the spread 43.0; the kernel row faster (165.6 against 330.4))
+  range_depth_snap
+    js   per run 2502.7 2497.0 2510.6           | median   2502.7 | spread     13.6
+    rust per run 2434.5 2432.4 2489.4           | median   2434.5 | spread     57.0
+    round 0 (cold) js 2497.0 / rust 2494.7; kernel row js 319.5 / rust 135.6 (combine)
+    split (explains, does not decide; sel_combine): js jobs 0.0 + copyIn 0.0, window 0.0 + copyIn 3.2 | rust jobs 0.0 + copyIn 0.0, window 31.2 + copyIn 6.8
+    verdict: rust (its median lower by 68.2, beyond the spread 57.0)
+  range_luma
+    js   per run 2011.6 2025.2 2070.1           | median   2025.2 | spread     58.5
+    rust per run 1999.6 2107.7 2071.6           | median   2071.6 | spread    108.0
+    round 0 (cold) js 2150.8 / rust 2118.3; kernel row js 273.3 / rust 155.6 (combine)
+    split (explains, does not decide; sel_combine): js jobs 0.0 + copyIn 213.8, window 0.0 + copyIn 3.1 | rust jobs 0.0 + copyIn 217.8, window 18.5 + copyIn 5.7
+    verdict: rust (inside the spread 108.0; the kernel row faster (155.6 against 273.3))

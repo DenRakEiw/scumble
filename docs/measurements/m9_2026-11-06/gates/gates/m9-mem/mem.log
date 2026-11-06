@@ -1,0 +1,37 @@
+== 15000x10000 (150 MP), 3 rounds
+round phase    rend MB  GPU MB  canvas n canvas MB comp MB pool MB undo MB pan ms  levels ms upload ms 
+-------------------------------------------------------------------------------------------------------
+0     start    83.9     194     0        0.0       0.0     0.0     0.0     -       -         0.05      
+-- round 1: building ...
+1     built    3620     917     79       144       16.8    34.0    0.0     4.50    9.70      0.04      
+1     closed   3963     955     80       144       0.0     34.0    0.0     -       -         0.04      
+1     gc       3031     497     2        12.4      0.0     34.0    0.0     -       -         0.04      
+-- round 2: building ...
+2     built    6184     1104    83       175       16.8    34.0    0.0     4.55    8.80      0.03      
+2     closed   4209     1123    84       175       0.0     34.0    0.0     -       -         0.04      
+2     gc       3297     597     3        16.4      0.0     34.0    0.0     -       -         0.04      
+-- round 3: building ...
+3     built    3865     1073    87       205       16.8    34.0    0.0     4.79    8.77      0.04      
+3     closed   4212     1110    88       206       0.0     34.0    0.0     -       -         0.03      
+3     gc       3280     652     4        20.4      0.0     34.0    0.0     -       -         0.04      
+3     free     3280     641     4        12.0      0.0     0.0     0.0     -       -         0.04      
+
+what is still live at the end
+  editors 1, canvases made 1137, collected 1133, live 4 (12.0 MB), zeroed 0
+    1024 x 1024  4.0 MB   makeCanvas inpaint_filters.js:25:24
+    1024 x 1024  4.0 MB   makeCanvas inpaint_filters.js:25:24
+    1024 x 1024  4.0 MB   makeCanvas inpaint_filters.js:25:24
+    1 x 1  0.0 MB   context inpaint_filters_gl.js:675:33
+  listeners still on window / document, by the line that added them
+  live canvases by the line that made them
+       3     12.0 MB  makeCanvas inpaint_filters.js:25:24
+       1      0.0 MB  context inpaint_filters_gl.js:675:33
+  layers 0.0 MB, pyramid 0.0 MB, scratch 0.0 MB, undo 0.0 MB (+0.0 MB held), objects 0.0 MB
+  compositor 0 textures 0.0 MB, pool 0.0 MB (+0.0 MB in scopes, 0 foreign)
+  blink images 1 live 0.0 MB of 0.0 MB
+
+targets (docs/PHASE6_PLAN.md §0)
+  GPU process back within 300 MB of the baseline: +447 MB  FAIL
+  pan in the last round against the first: 4.50 -> 4.79 ms (+6 %)  PASS
+  levels tick in the last round against the first: 9.70 -> 8.77 ms (-10 %)  PASS
+  canvas upload in the last round against the first: 0.04 -> 0.04 ms (+0 %)  PASS

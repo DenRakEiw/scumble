@@ -196,8 +196,29 @@ function zip(entries) {   // [{ name, data, deflate }]
 }
 
 /**
+ * D0's files of more than one band of 256 rows (the app twin in tools/layered_test.py, and the twin here): a flat
+ * file with alpha (the merged picture is all there is), and a 16-bit ZIP-with-prediction layer over an RLE one, partly
+ * outside the picture, with a mask offset from it at 16 bit, and a clipped layer.
+ */
+function bandFixtures() {
+    const noise = rng(9), n8 = () => noise() & 255, n16 = () => noise() & 0xffff;
+    const FW = 300, FH = 600;
+    const flat = psd({ width: FW, height: FH, channels: 4, merged: [fill(FW * FH, (i) => (i * 7) & 255), fill(FW * FH, n8), fill(FW * FH, (i) => (i >> 9) & 255), fill(FW * FH, (i) => (i % 5 ? n8() : 255))] });
+    const DW = 280, DH = 500, LW = 300, LH = 520;
+    const deep = psd({ width: DW, height: DH, depth: 16, layers: [
+        { name: "Under", top: 0, left: 0, w: DW, h: DH, comp: 1, ch: { 0: fill(DW * DH, n16), 1: fill(DW * DH, (i) => i * 3), 2: fill(DW * DH, () => 40000), "-1": fill(DW * DH, () => 65535) } },
+        { name: "Deep masked", top: -10, left: -15, w: LW, h: LH, comp: 3, blend: "scrn", opacity: 200,
+            ch: { 0: fill(LW * LH, n16), 1: fill(LW * LH, (i) => (i * 131) & 0xffff), 2: fill(LW * LH, n16), "-1": fill(LW * LH, (i) => (i % 3 ? n16() : 65535)), "-2": fill(200 * 400, (i) => (i * 37) & 0xffff) },
+            mask: { top: 40, left: 0, w: 200, h: 400, def: 255 } },
+        { name: "Clipped", top: 100, left: 50, w: 60, h: 300, clipping: 1, ch: { 0: fill(60 * 300, n16), 1: fill(60 * 300, n16), 2: fill(60 * 300, n16), "-1": fill(60 * 300, n16) } },
+    ] });
+    return { "flat.psd": flat, "deep.psd": deep };
+}
+
+/**
  * `--write-fixtures <dir>`: two files for the app gate (tools/layered_test.py): `loose.psd`, 40 x 30, whose bottom layer
- * does not cover the picture (so the base is transparent), a mask and a hidden group; `loose.ora`, the same shape.
+ * does not cover the picture (so the base is transparent), a mask and a hidden group; `loose.ora`, the same shape;
+ * `flat.psd` and `deep.psd` (bandFixtures).
  */
 function writeFixtures(dir) {
     const solid = (w, h, r, g, b) => ({ 0: fill(w * h, () => r), 1: fill(w * h, () => g), 2: fill(w * h, () => b), "-1": fill(w * h, () => 255) });
@@ -209,6 +230,7 @@ function writeFixtures(dir) {
         { name: "Masked", top: 0, left: 20, w: 20, h: 30, ch: { ...solid(20, 30, 0, 0, 255), "-2": fill(10 * 30, () => 255) }, mask: { top: 0, left: 20, w: 10, h: 30, def: 0 } },
     ] });
     fs.writeFileSync(path.join(dir, "loose.psd"), file);
+    for (const [name, bytes] of Object.entries(bandFixtures())) fs.writeFileSync(path.join(dir, name), bytes);
     const png = (w, h, rgb) => {   // a tiny truecolour + alpha PNG
         const raw = Buffer.alloc((w * 4 + 1) * h);
         for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = y * (w * 4 + 1) + 1 + x * 4; raw[o] = rgb[0]; raw[o + 1] = rgb[1]; raw[o + 2] = rgb[2]; raw[o + 3] = 255; }
@@ -533,11 +555,154 @@ async function writerChecks(readPsd) {
     }
 }
 
+// ---- D0: the worker's reader beside readPsd ---------------------------------------------------
+// docs/PLAN_WASM_BUILD.md §7 D0: the pool job psd_read runs readPsdStream, which hands every layer's pixels out as RGBA
+// bands as soon as its channels are read (and its mask as the white-with-alpha bands the editor's Mask takes), and
+// reads the merged picture only when no layer has pixels. Every readPsd call of this file runs it too, in bands of 3
+// rows and of 256, and the two answers must be the same: every layer's bytes, its mask's bytes against the window's
+// mask loop (a copy of inpaint_canvas.js readLayered's at bbff117, below), its fields, the groups, notes and loss
+// flag, the merged picture where it is read; a file readPsd refuses, refused with the same message.
+
+/** The window's mask loop (inpaint_canvas.js readLayered, bbff117): a mask's bytes as the RGBA Mask.fromImageData takes. */
+function windowMaskRgba(v) {
+    const d = new Uint8ClampedArray(v.length * 4);
+    for (let i = 0, o = 0; i < v.length; i++, o += 4) { d[o] = 255; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = v[i]; }
+    return d;
+}
+
+/**
+ * readPsdStream's answer with its bands put together: `{ doc, header, got }`, `got` index -> { w, h, rgba, mask, rows,
+ * maskRows } (the RGBA of each kind, and the rows each band began at, in order). `hash`: keep a SHA-256 per kind instead
+ * of the bytes (the 15k file).
+ */
+async function streamed(readPsdStream, bytes, opts, rowsPerBand, hash = false) {
+    const got = new Map();
+    let header = null, headers = 0;
+    const doc = await readPsdStream(bytes, {
+        ...opts,
+        rowsPerBand,
+        onHeader: (h) => { header = h; headers++; },
+        onRows: (index, kind, rgba, w, h, y0, rows) => {
+            let e = got.get(index);
+            if (!e) got.set(index, (e = { w, h, rgba: null, mask: null, rows: [], maskRows: [], sha: {}, order: [] }));
+            if (e.w !== w || e.h !== h) throw new Error(`stream index ${index}: ${w} x ${h} after ${e.w} x ${e.h}`);
+            if (!(rgba instanceof Uint8ClampedArray) || rgba.length !== rows * w * 4) throw new Error(`stream index ${index}: a band of ${rgba && rgba.length} bytes for ${rows} rows of ${w}`);
+            e.order.push(kind);
+            (kind === "mask" ? e.maskRows : e.rows).push([y0, rows]);
+            if (hash) { (e.sha[kind] = e.sha[kind] || crypto.createHash("sha256")).update(rgba); return; }
+            const key = kind === "mask" ? "mask" : "rgba";
+            if (!e[key]) e[key] = new Uint8ClampedArray(w * h * 4);
+            e[key].set(rgba, y0 * w * 4);
+        },
+    });
+    return { doc, header, headers, got };
+}
+
+/** The rows of bands [[y0, rows], ...] cover 0..h once, in order, each at most `per` rows. */
+const bandsCover = (bands, h, per) => bands.length > 0 && bands.every(([y0, n], i) => y0 === (i ? bands[i - 1][0] + bands[i - 1][1] : 0) && n > 0 && n <= per) && bands[bands.length - 1][0] + bands[bands.length - 1][1] === h;
+const LAYER_KEYS = ["name", "x", "y", "w", "h", "opacity", "visible", "blend", "group", "clip"];
+
+/** The differences between readPsd's answer `win` and the stream's `s` (empty when they are the same). */
+function twinDiffs(win, s, per, hash = false) {
+    const out = [];
+    const { doc, got } = s;
+    const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
+    if (s.headers !== 1 || !s.header || s.header.width !== win.width || s.header.height !== win.height) out.push(`header ${short(s.header)} (${s.headers} calls)`);
+    if (doc.width !== win.width || doc.height !== win.height) out.push(`size ${doc.width} x ${doc.height}`);
+    if (doc.layers.length !== win.layers.length) out.push(`${doc.layers.length} layers, readPsd ${win.layers.length}`);
+    const used = new Set();
+    win.layers.forEach((W, i) => {
+        const S = doc.layers[i];
+        if (!S) return;
+        for (const k of LAYER_KEYS) if (S[k] !== W[k]) out.push(`layer ${i} ${k}: ${short(S[k])} / ${short(W[k])}`);
+        if ("rgba" in S) out.push(`layer ${i} carries rgba`);
+        const e = got.get(S.index);
+        used.add(S.index);
+        if (!e) { out.push(`layer ${i}: no bands for index ${S.index}`); return; }
+        if (e.w !== W.w || e.h !== W.h) out.push(`layer ${i}: bands of ${e.w} x ${e.h}`);
+        if (!bandsCover(e.rows, W.h, per)) out.push(`layer ${i}: rgba bands ${short(e.rows)}`);
+        if (hash ? e.sha.rgba?.digest("hex") !== sha(W.rgba) : !equalBytes(e.rgba, W.rgba)) out.push(`layer ${i} (${W.name}): rgba differs${hash ? "" : " (" + firstDiff(e.rgba || [], W.rgba) + ")"}`);
+        if (W.mask) {
+            if (!S.mask || S.mask.defaultColor !== W.mask.defaultColor || S.mask.disabled !== W.mask.disabled || "data" in S.mask) out.push(`layer ${i}: mask ${short(S.mask)} / ${short({ defaultColor: W.mask.defaultColor, disabled: W.mask.disabled })}`);
+            if (!bandsCover(e.maskRows, W.h, per)) out.push(`layer ${i}: mask bands ${short(e.maskRows)}`);
+            const want = windowMaskRgba(W.mask.data);
+            if (hash ? e.sha.mask?.digest("hex") !== sha(want) : !equalBytes(e.mask, want)) out.push(`layer ${i}: mask bytes differ${hash ? "" : " (" + firstDiff(e.mask || [], want) + ")"}`);
+            const firstMask = e.order.indexOf("mask");
+            if (firstMask >= 0 && e.order.slice(firstMask).some((k) => k !== "mask")) out.push(`layer ${i}: rgba bands after its mask bands`);
+        } else if (S.mask || e.maskRows.length) out.push(`layer ${i}: a mask the file has not (${short(S.mask)}, ${e.maskRows.length} bands)`);
+    });
+    if (JSON.stringify(doc.groups) !== JSON.stringify(win.groups)) out.push(`groups ${short(doc.groups)} / ${short(win.groups)}`);
+    if (JSON.stringify(doc.notes) !== JSON.stringify(win.notes)) out.push(`notes ${short(doc.notes)} / ${short(win.notes)}`);
+    if (doc.lossy !== win.lossy) out.push(`lossy ${doc.lossy} / ${win.lossy}`);
+    // the merged picture: read only when no layer has pixels (the one case the editor shows it)
+    if (win.layers.length) {
+        if (doc.composite != null) out.push(`a merged picture read beside ${win.layers.length} layers (index ${doc.composite})`);
+    } else if ((win.composite == null) !== (doc.composite == null)) out.push(`merged picture ${doc.composite} / ${win.composite ? "read" : "none"}`);
+    else if (win.composite) {
+        const e = got.get(doc.composite);
+        used.add(doc.composite);
+        if (!e || e.w !== win.width || e.h !== win.height || e.maskRows.length || !bandsCover(e.rows, win.height, per)) out.push(`merged picture bands ${short(e && e.rows)}`);
+        else if (hash ? e.sha.rgba?.digest("hex") !== sha(win.composite) : !equalBytes(e.rgba, win.composite)) out.push(`merged picture differs${hash ? "" : " (" + firstDiff(e.rgba, win.composite) + ")"}`);
+    }
+    const stray = [...got.keys()].filter((k) => !used.has(k));
+    if (stray.length) out.push(`bands for indices nobody names: ${stray.join(", ")}`);
+    return out;
+}
+
+const TWIN = { files: 0, refusals: 0, fails: [] };
+
+/** readPsd, with readPsdStream run beside it on the same bytes (bands of 3 rows and of 256) and the answers compared. */
+function twinned(mod) {
+    return async (input, opts) => {
+        let win = null, werr = null;
+        try { win = await mod.readPsd(input, opts); } catch (err) { werr = err; }
+        for (const per of [3, 256]) {
+            let s = null, serr = null;
+            try { s = await streamed(mod.readPsdStream, input, opts || {}, per); } catch (err) { serr = err; }
+            if (werr || serr) {
+                const a = werr && String(werr.message || werr), b = serr && String(serr.message || serr);
+                if (a !== b) TWIN.fails.push(`case ${TWIN.files + 1} (bands of ${per}): readPsd ${a ? "throws " + a : "reads it"}, the stream ${b ? "throws " + b : "reads it"}`);
+                continue;
+            }
+            const d = twinDiffs(win, s, per);
+            if (d.length) TWIN.fails.push(`case ${TWIN.files + 1} (bands of ${per}, ${win.layers.length} layers): ${d.slice(0, 4).join("; ")}`);
+        }
+        TWIN.files++;
+        if (werr) { TWIN.refusals++; throw werr; }
+        return win;
+    };
+}
+
+/** `--twin-file PATH`: one PSD (the G2 15k file) through both readers, compared by SHA-256; the timings beside. */
+async function twinFile(file) {
+    const mod = await editorModule("inpaint_layered.js");
+    const bytes = new Uint8Array(fs.readFileSync(file));
+    console.log(`${file}: ${(bytes.length / 1048576).toFixed(1)} MB`);
+    let t = performance.now();
+    const win = await mod.readPsd(bytes, { inflate });
+    const winMs = performance.now() - t;
+    t = performance.now();
+    const spent = {};
+    const s = await streamed(mod.readPsdStream, bytes, { inflate, spent }, 256, true);
+    const streamMs = performance.now() - t;
+    const d = twinDiffs(win, s, 256, true);
+    console.log(`readPsd ${winMs.toFixed(0)} ms (${win.layers.length} layers ${win.layers.map((l) => `${l.name} ${l.w}x${l.h}${l.mask ? " masked" : ""}`).join(", ")}, merged picture ${win.composite ? "read" : "none"}); readPsdStream ${streamMs.toFixed(0)} ms ${short(spent)}`);
+    check(`the worker's reader equals readPsd on ${path.basename(file)}: every layer's bytes and mask by SHA-256, the fields, groups, notes`, d.length === 0, d.slice(0, 6).join("; "));
+}
+
 (async () => {
     const at = process.argv.indexOf("--write-fixtures");
     if (at > 0) { writeFixtures(process.argv[at + 1]); return; }
+    const tf = process.argv.indexOf("--twin-file");
+    if (tf > 0) {
+        await twinFile(process.argv[tf + 1]);
+        const bad = results.filter((x) => !x).length;
+        console.log(bad ? "FAIL" : "PASS");
+        process.exit(bad ? 1 : 0);
+    }
     const mod = await editorModule("inpaint_layered.js");
-    const { readPsd, readOra, isPsd, isOra, LAYERED_EXT } = mod;
+    const { readOra, isPsd, isOra, LAYERED_EXT } = mod;
+    const readPsd = twinned(mod);   // every PSD read below goes through readPsdStream too (D0)
     const { BLENDS } = await editorModule("blend_modes.js");
 
     console.log("\n--- PSD: channels, compression, depth ---");
@@ -807,6 +972,25 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
 
     console.log("\n--- PSD writers: layer masks (PsdWriter, PsdBandWriter) ---");
     await writerChecks(readPsd);
+
+    console.log("\n--- D0: the worker's reader (readPsdStream) beside readPsd ---");
+    for (const [name, bytes] of Object.entries(bandFixtures())) {
+        const d = await readPsd(bytes, { inflate });
+        check(`${name} reads (${d.layers.length} layers, ${d.width} x ${d.height}), through both readers`, name === "deep.psd" ? d.layers.length === 3 && d.layers[1].mask && d.layers[2].clip : !d.layers.length && !!d.composite);
+    }
+    {
+        // the cases the mutation round of D0 asked for: a record with a rectangle but no colour channel (left out as
+        // empty, never sent); an empty layer over a merged picture (no "no layer has pixels" note: the merged picture is
+        // the stream's index 0); a grayscale flat file
+        const W = 4, H = 3, plane = (v) => fill(W * H, (i) => (v + i * 17) & 255);
+        const alphaOnly = await readPsd(psd({ width: W, height: H, layers: [{ name: "alpha only", top: 0, left: 0, w: W, h: H, ch: { "-1": plane(9) } }, { name: "real", top: 0, left: 0, w: W, h: H, ch: { 0: plane(1), 1: plane(2), 2: plane(3) } }] }));
+        check("a record with a rectangle and no colour channel is left out as empty", alphaOnly.layers.length === 1 && alphaOnly.layers[0].name === "real", short(alphaOnly.layers.map((l) => l.name)));
+        const emptyOver = await readPsd(psd({ width: W, height: H, layers: [{ name: "nothing", top: 0, left: 0, w: 0, h: 0, ch: {} }], merged: [plane(4), plane(5), plane(6)] }));
+        check("an empty layer over a merged picture: the picture, no loss", !emptyOver.layers.length && !!emptyOver.composite && !emptyOver.lossy && !emptyOver.notes.length, short(emptyOver.notes));
+        const grayFlat = await readPsd(psd({ width: W, height: H, mode: 1, merged: [plane(7)] }));
+        check("a grayscale flat file: gray replicated, opaque", !!grayFlat.composite && grayFlat.composite[4] === plane(7)[1] && grayFlat.composite[5] === plane(7)[1] && grayFlat.composite[6] === plane(7)[1] && grayFlat.composite[7] === 255, short(Array.from(grayFlat.composite || []).slice(0, 8)));
+    }
+    check(`readPsdStream answers as readPsd on all ${TWIN.files} PSDs read above (${TWIN.refusals} of them refused), in bands of 3 rows and of 256`, TWIN.files >= 40 && TWIN.refusals >= 5 && TWIN.fails.length === 0, TWIN.fails.length ? TWIN.fails.slice(0, 4).join(" | ") : `${TWIN.files} files`);
 
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

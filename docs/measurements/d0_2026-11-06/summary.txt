@@ -1,0 +1,113 @@
+D0 (docs/PLAN_WASM_BUILD.md §7 "The order after Stop 1" #2, the user's yes of 2026-10-24): readPsd's window loops into a
+pool job as plain JS. 2026-11-06, on bbff117 plus the D0 diff (committed with this folder, in the commit that adds it),
+offline instances (--no-comfy), each on a fresh profile, tiles on unless named.
+
+What changed
+  renderer/editor/inpaint_layered.js  readPsd's body is decodePsd(input, inflate, stream); readPsd = decodePsd(.., null),
+                                      byte for byte the old path (the merged picture's decode moved into mergedPlanes).
+                                      New readPsdStream: the same parse, but each layer's pixels and mask go out as RGBA
+                                      bands (onRows) right after its channels are read and its planes are dropped (a
+                                      record without pixels drops its planes too); the merged picture only when no layer
+                                      has pixels (and the header has an area); onHeader before any channel.
+  renderer/editor/inpaint_worker.js   job psd_read: reads the blob itself (the window never holds the bytes), posts the
+                                      bands (transferred), answers { doc } or { failed } (the reader's own refusal, shown
+                                      without a second read on the window), drops the file's array at its end.
+  renderer/editor/inpaint_canvas.js   readLayered sends a PSD to the pool (psdOnPool); readPsdOnPool checks the size from
+                                      the header's 26 bytes before the job, writes every band into Layer / Mask pixels as
+                                      it arrives (the status line counts the layer and its rows), falls back to the
+                                      window's reader only when the job could not run before its first band, stops the
+                                      job at its next band when the open is over (a later open; loadFile's `later` reads
+                                      _destroyed too, so a closed tab's open is over); loadLayered releases what an open
+                                      that is over made; loadLayered / addImageLayers take compositePx.
+  renderer/editor/inpaint_pool.js     a stop the caller asked for (onProgress throws, a cancel mid-stream) counts as
+                                      `stopped`, not `lost`: only failures switch the pool off.
+  tools/layered_test.js / .py         the twins and the gate step (below); tools/native_test.py brings the window to the front.
+
+The review (a review workflow on the first build: 19 findings, 9 correctness, 10 plan) and what came of it
+  Fixed: the size refusal on the window before the job (no worker lost, no read of a file too large); the pool's
+  `stopped` count; an open that is over stops its job and releases its layers, masks, merged picture and base; a closed
+  tab's open is over; no fallback after a band came (a worker lost mid-read, most likely out of memory at 15k); an ok
+  answer without a document is an error, not a TypeError; a record without pixels drops its planes in the stream; the
+  file's array freed in the worker; a header of no area reads no merged picture; the blendmodes and groups gates and
+  the Photoshop-written fixture through the twins; the same-state A/B (below); lint re-run on the final files; the docs.
+  Left as is (noted in the plan's D0 section): no backpressure on the bands and two tabs may now read 15k PSDs at once
+  (each near the old single open's peak, inferred); no busy flag for an open (a tab without a base closes without
+  asking anyway, shell.js:272); peak memory and a 15k masked layer not measured; the remaining block (docs/BUGS.md).
+  Not done as asked: the commit id in this file (the session makes one commit; `git log -- docs/measurements/d0_2026-11-06`).
+
+The 15k open (native_test.py 15000x10000 add_the_paint_layer export_psd save_psd open_psd: the PSD, the base and a
+full-size paint layer of about 925 MB, saved for real through host.saveExport and opened from that file into a new
+tab; three counted runs each, medians [min-max]; a run with the window behind is NOT COUNTED and tried again)
+
+  The same-state A/B on the final build (after/, d0_ab.py: pool and window routes alternating on fresh instances,
+  04:26-04:34; InpaintEditor.psdOnPool = false set over CDP for the window's runs, each row's route checked):
+                         pool (after/pool)          window (after/window)
+  open_psd wall          10,971 [10,736-12,882]     16,582 [15,422-17,858]
+  longest block           1,847 [1,805-1,920]       10,970 [9,698-12,141]
+  mark parsed             5,397 (the worker)        10,065 (the window: unpackRows 7,181, interleave 2,200)
+  mark stored             2,427                      2,636
+  main thread idle        7,882                      3,801
+  worker psd_read         5,381: read 294, channels 3,101, interleave 2,023, bands 80
+  Pairs 2-4 are counted. Pair 1 is in after/pair1_excluded: its window run's open overlapped a Node test of this
+  session (tools/layered_test.js, about 3 s of CPU); its pool run went with it to keep the pairs.
+  The machine state: the card held 5.1-7.0 GB (nvidia-smi before each run, chain.log; ComfyUI was not running), against
+  3.3 GB at before/ and 4.1-4.4 GB at after_try1/; the window route is 2.6 s slower here than at before/, so the two
+  routes are compared in this run, and before/ only beside it.
+
+  Baseline (before/, d0_chain.py on bbff117, 02:40-02:43, the window's reader as it was):
+  open_psd wall          14,015 [13,945-14,030]
+  longest block           8,968 [8,900-9,017]
+  mark parsed             8,140 (unpackRows 5,739 + interleave 2,066 self), layers 789
+
+  The first try (after_try1/, the first build before the review, 02:59-03:02, after a lock wait of 240 s):
+  open_psd wall 9,464 [8,828-9,712], longest block 975 [827-1,078], psd_read 5,023.
+
+  Before -> after: the window's block 8,968 -> 1,847 ms in this machine state (10,970 for the old route in the same
+  state: -83 %); the wall -34 % against the old route in the same state (16,582 -> 10,971). The reader's time moved into
+  the worker (psd_read 5.4 s, where the window's parse took 10.1 s: the merged picture is no longer decoded beside the
+  layers, and nothing else waits on the worker); the window keeps the band writes (rgbaMs 972, 80 bands of about 12 ms).
+
+Where the remaining block is (after/longtasks.py, one fresh instance, load_image of the kept 15k PSD into the first
+  document, after/longtasks_first_open.json; after_try1/ has the first build's): one long task of 549 ms right after
+  'stored' (the compositor's shader link of a profile's first document, G6) and a 1.71 s heartbeat gap before 'start'
+  (load_image's window.scumble.file.read of the 925 MB file into the renderer, before readLayered runs). Between start
+  and stored no long task at all, as in the first build. In native_test's row the compositor is linked already, so its
+  1.8 s block (1.0 s at after_try1/, in a lighter machine state) is the file read. Ctrl+O sends the file the same way
+  (electron/main/main.js openImage): docs/BUGS.md "Ctrl+O sends the whole file to the window in one message".
+
+The twins (byte identity of the two readers)
+  Node (tools/layered_test.js): every PSD the test reads (45 files: RLE / raw / ZIP / ZIP with prediction, 8 and 16 bit,
+    gray, every mask case, groups, clipping, adjustment and empty layers, flat files, 6 refusals) through readPsd and
+    readPsdStream in bands of 3 and of 256 rows: the same layers byte for byte, the masks against a frozen copy of the
+    window's mask loop, fields, groups, notes, loss flag, the same error text: 122 of 122, PASS (twin/layered_test_node.txt).
+  Node on one file (--twin-file, by SHA-256): the 15k PSD PASS (twin/node_twin_15k_final.txt; readPsd 8.8 s,
+    readPsdStream 4.8 s; node_twin_15k.txt is the first build's), the Photoshop-written blend-mode fixture
+    tools/fixtures/blendmodes/blendmodes.psd (31 layers) PASS (twin/node_twin_blendmodes.txt).
+  App (the layered gate's step the_pool_and_the_window_read_a_psd_alike): seven PSDs (the gate's six and the Photoshop
+    fixture) through the pool and with InpaintEditor.psdOnPool = false, the same pixels in this backend; a flat file's
+    base after load_image; the fallback with the job refused; a truncated file refused through the pool (no worker
+    lost); one of 20000 x 20000 refused on the window before any job; a read stopped at its first band, an open over
+    before its job, a later open and a closed tab during load_image (nothing lands, no cancel line, stopped not lost);
+    a worker lost after a band (no second read); a band this thread cannot write; an ok answer without a document:
+    PASS on tiles and canvas (gates/gates/d0-final2-on, d0-final2-off).
+  App on the 15k file (twin15k.py, one fresh instance per backend): pool and window equal, the layers' hashes the same on
+    tiles and canvas (twin/twin15k_tiles_final.json, twin15k_canvas_final.json; pool 4.7 / 5.1 s, window 10.8 / 13.0 s).
+
+Gates (gates/gates/, SCUMBLE_GATES there, profiles moved out to the session's scratch folder)
+  d0-final-on (tiles): lint types layered export document pxjobs blendmodes groups pixels clip, ALL PASS.
+  d0-final-off (canvas): lint types layered export document blendmodes groups pixels PASS; pxjobs refuses the canvas
+    backend by design ("phase R measures the tile engine: start the app with tiles on"), so it runs on tiles only.
+  d0-final2-on / d0-final2-off: layered again after the gate step's last cases, PASS on both.
+  The renderer files are the ones these gates ran; after them only tools/layered_test.py (the step's cases), the docs
+  and this folder changed; lint and types once more before the commit (d0-lint). d0-layered-*, d0-tiles*, d0-canvas
+  are the first build's runs.
+
+Mutation round (mutation/, on copies in the session's scratch folder; untouched and restored copies PASS)
+  module (the reader, node tools/layered_test.js): 20 of 21 red; zero_area_merged survives on purpose (module_round.txt).
+  wiring (the job, the window, the pool; the layered gate on a fresh instance of an app copy per mutant): 22 of 22 red,
+    four of them after the first pass let them through and the step got its cases (wiring_round.txt).
+  Not mutated on purpose (memory or speed only, byte-equivalent): dropping a layer's planes after its bands, and a
+  record's without pixels; the band height; freeing the file's array in the worker; the release of an open that is over.
+
+Lock waits: 240 s before after_try1/ (02:55-02:59); 180 s during a first A/B attempt (04:22-04:25) that wrote no rows
+  (a relative --json path; d0_ab.py takes an absolute one since) and was discarded; none before the counted runs.

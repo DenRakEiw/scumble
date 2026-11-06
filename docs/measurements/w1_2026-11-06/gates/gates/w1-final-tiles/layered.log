@@ -1,0 +1,10 @@
+[ok] node: {"checks": 122}
+[ok] setup_a_document_with_layers: {"layers": ["Offset opaque", "Multiply half", "Hidden äöü"]}
+[ok] a_psd_opens_with_its_layers: {"layers": ["Offset opaque", "Multiply half", "Hidden äöü"], "status": "Opened roundtrip.psd: 160 × 100, 3 layers over \"Background\" as the base."}
+[ok] an_ora_opens_with_its_layers: {"layers": ["Offset opaque", "Multiply half", "Hidden äöü"], "status": "Opened roundtrip.ora: 160 × 100, 3 layers over \"Background\" as the base."}
+[ok] a_file_without_a_covering_bottom_opens_over_a_transparent_base: {"psd": ["Corner", "Hidden inside", "Masked"], "ora": ["Corner@3,2 10x8 normal 100", "Right@25,4 6x7 screen 50"], "status": "Opened loose.ora: 40 × 30, 2 layers."}
+[ok] layer_masks_survive_a_psd_round_trip: {"tiles": true, "banded": true, "hidden": 1616, "soft": 1664, "status": "Opened masks_canvas.psd: 120 × 80, 2 layers over \"Background\" as the base. 2 layer masks kept as masks (1 switched off)."}
+[ok] an_ora_bakes_the_enabled_mask_and_leaves_the_switched_off_one: {"worst": 0, "gone": 1616}
+[FAIL] the_pool_and_the_window_read_a_psd_alike: JS exception: Error: a closed tab: [300,600,0,{"ref":{"filename":"flat_4f370132e1b8.png","subfolder":"inpaint_canvas","type":"input"},"px":{"_c":null,"_ctx":null,"_drawing":0,"_w":300,"_h":600,"_tiles":{},"_version":217,"_mirror":null,"_mirrorDirty":null,"_thumb":null,"_regions":{},"_primed":null}},false] after [300,600,0,{"ref":{"filename":"flat_4f370132e1b8.png","subfolder":"inpaint_canvas","type":"input"},"px":{"_c":null,"_ctx":null,"_drawing":0,"_w":300,"_h":600,"_tiles":{},"_version":217,"_mirror":null,"_mirrorDirty":null,"_thumb":null,"_regions":null}},false], {"stopped":1,"lost":0,"jobs":2,"calls":2}, status Reading the layers of loose.psd ...
+    at <anonymous>:120:106
+FAIL

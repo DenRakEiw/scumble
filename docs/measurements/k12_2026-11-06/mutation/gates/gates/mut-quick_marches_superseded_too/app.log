@@ -1,0 +1,3 @@
+
+[26216:1106/100732.565:ERROR:net\socket\tcp_socket_win.cc:530] bind() returned an error: Normalerweise darf jede Socketadresse (Protokoll, Netzwerkadresse oder Anschluss) nur jeweils einmal verwendet werden. (0x2740)
+[26216:1106/100732.566:ERROR:content\browser\devtools\devtools_http_handler.cc:311] Cannot start http server for devtools.

@@ -3024,7 +3024,13 @@ if (refCount < 2 * Math.PI * 400 * 400 * 0.95) throw new Error("the reference re
 const spy = { rounds: null };
 const oFlood = ed.floodRegion.bind(ed);
 ed.floodRegion = async (x, y, o) => { const r = await oFlood(x, y, o); spy.rounds = r.rounds; spy.box = [r.x, r.y, r.w, r.h]; return r; };
+// K5 (docs/PLAN_WASM_BUILD.md §3.4): on tiles with the selCombine route on Rust the wand's combine runs sel_combine
+const EC = ed.constructor;
+const rustSel = ed.tileMode && EC.kernels !== "js" && (EC.routes || {}).selCombine !== "js";
+EC.pxCalls(true);
 await ed.wandSelect(1000, 1400, "replace");
+out.selCombine = EC.pxCalls(true).sel_combine || 0;
+if (rustSel && !(out.selCombine > 0)) throw new Error("the wand's combine ran no sel_combine on tiles with the route on rust");
 ed.floodRegion = oFlood;
 out.rounds = spy.rounds; out.box = spy.box;
 if (!(spy.rounds >= 2)) throw new Error("the box should have been widened across the bridge, rounds " + spy.rounds);

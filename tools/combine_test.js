@@ -388,6 +388,175 @@ console.log("  [ok] combineRows updates pixels and clears zero alpha");
     console.log("  [ok] Canvas and Tiles backends are 100% byte-equal across all combine modes!");
 }
 
+// 12. K5 (docs/PLAN_WASM_BUILD.md §4.3): TileMaskPixels.combine through px/kernels.js selCombine on both routes (the
+// Rust kernel and its twin) against a plain per-pixel model, over every source and view kind: a long-row bytes source
+// (views of kind 1, packed by px.js), a small one across tile edges (read), tiles of each kind at the origin (views of
+// kinds 0 / 1 / 2 / 4) and off the grid (read), rects (kind 2, the fill) and partial ones (read); on an empty mask and a
+// soft one; red and white. The extents the combine caches equal a fresh scan, and bounds() the model's.
+{
+    const fs = require("node:fs");
+    const { fileURLToPath } = require("node:url");
+    const PX_DIR = path.join(ROOT, "renderer", "editor", "px");
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (u, ...rest) => {   // kernels.js fetches ./px.wasm; Node's fetch reads no file: URL
+        const s = String(u && u.href ? u.href : u);
+        return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+    };
+    let K;
+    try {
+        K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        assert.ok(await K.kernelsReady(), "kernels.js did not load px.wasm");
+    } finally { globalThis.fetch = realFetch; }
+
+    const W = 601, H = 501;
+    let seed = 0xc0b1e;
+    const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const soft = () => (rnd() < 0.4 ? 0 : (rnd() < 0.2 ? 255 : 1 + Math.floor(rnd() * 254)));
+    // the sources and their alpha at (x, y) for the model
+    const whole = Uint8Array.from({ length: W * H }, soft);
+    const small = Uint8Array.from({ length: 150 * 150 }, soft);
+    const tileAlpha = () => Uint8Array.from({ length: 65536 }, soft).buffer;
+    const tileRGBA = () => { const d = new Uint8Array(262144); for (let i = 0; i < 65536; i++) { d[i * 4] = 9; d[i * 4 + 1] = 99; d[i * 4 + 2] = 199; d[i * 4 + 3] = soft(); } return d.buffer; };
+    const mixed = [
+        { tx: 0, ty: 0, alpha: tileAlpha() }, { tx: 1, ty: 0, data: tileRGBA() }, { tx: 2, ty: 0, full: true },
+        { tx: 0, ty: 1, empty: true }, { tx: 2, ty: 1, alpha: tileAlpha() },   // (1, 1) missing
+    ];
+    const tileAt = (tiles, at) => (x, y) => {
+        const tx = Math.floor((x - at[0]) / 256), ty = Math.floor((y - at[1]) / 256);
+        const t = tiles.find((q) => q.tx === tx && q.ty === ty);
+        if (!t || t.empty) return 0;
+        const i = (y - at[1] - ty * 256) * 256 + (x - at[0] - tx * 256);
+        if (t.full) return 255;
+        if (t.alpha) return new Uint8Array(t.alpha)[i];
+        return new Uint8Array(t.data)[i * 4 + 3];
+    };
+    const inRect = (r) => (x, y) => (x >= r[0] && x < r[2] && y >= r[1] && y < r[3] ? 255 : 0);
+    const sources = [
+        ["bytes, the whole image", () => bytesSource(whole, 0, 0, W, H), (x, y) => whole[y * W + x]],
+        ["bytes across tile edges", () => bytesSource(small, 230, 210, 150, 150), (x, y) => (x >= 230 && x < 380 && y >= 210 && y < 360 ? small[(y - 210) * 150 + x - 230] : 0)],
+        ["tiles of every kind", () => tilesSource(mixed, [0, 0], [0, 0, W, H]), tileAt(mixed, [0, 0])],
+        ["tiles off the grid", () => tilesSource(mixed, [100, 37], [100, 37, W, H]), tileAt(mixed, [100, 37])],
+        ["a rect over the image", () => rectSource([0, 0, W, H]), inRect([0, 0, W, H])],
+        ["a partial rect", () => rectSource([50, 60, 400, 300]), inRect([50, 60, 400, 300])],
+    ];
+    const starts = [
+        ["an empty mask", () => {}],
+        ["a soft mask", (mk) => { mk.fill([50, 50, 550, 450], "#ff0000"); mk.combine(bytesSource(whole, 0, 0, W, H), "intersect"); }],
+    ];
+    const plainExtent = (t) => {
+        let x0 = 256, y0 = -1, x1 = -1, y1 = -1;
+        for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+            if (!t.data[(y * 256 + x) * 4 + 3]) continue;
+            if (y0 < 0) y0 = y;
+            y1 = y; if (x < x0) x0 = x; if (x > x1) x1 = x;
+        }
+        return y0 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+    };
+    const calls = {};
+    let checked = 0;
+    for (const route of ["js", "rust"]) {
+        K.setKernels("rust");
+        K.setRoute("selCombine", route);
+        K.pxCalls(true);
+        for (const [startName, start] of starts) for (const [srcName, make, alphaAt] of sources) for (const color of [[255, 0, 0], [255, 255, 255]]) for (const mode of SEL_MODES) {
+            const what = `${route}: ${mode} of ${srcName} on ${startName} in ${color}`;
+            const mk = new TileMaskPixels(W, H);
+            start(mk);
+            const before = mk.readRect(0, 0, W, H).data.slice();
+            const src = make();
+            mk.combine(src, mode, color);
+            const after = mk.readRect(0, 0, W, H).data;
+            // the model: the tiles the source's box (clamped to the image) overlaps are combined pixel by pixel
+            // (combineAlpha; a covered pixel takes the colour); the others replace and intersect drop, add and subtract keep
+            const cb = [Math.max(0, Math.min(W, src.box[0])), Math.max(0, Math.min(H, src.box[1])), Math.max(0, Math.min(W, src.box[2])), Math.max(0, Math.min(H, src.box[3]))];
+            const visited = (x, y) => cb[0] < cb[2] && cb[1] < cb[3] && (x >> 8) >= (cb[0] >> 8) && (x >> 8) <= ((cb[2] - 1) >> 8) && (y >> 8) >= (cb[1] >> 8) && (y >> 8) <= ((cb[3] - 1) >> 8);
+            let bx0 = W, by0 = H, bx1 = -1, by1 = -1;
+            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                const o = (y * W + x) * 4;
+                let want, a;
+                if (visited(x, y)) {
+                    a = combineAlpha(before[o + 3], alphaAt(x, y), mode);
+                    want = a ? [color[0], color[1], color[2], a] : [0, 0, 0, 0];
+                } else if (mode === "replace" || mode === "intersect") {
+                    a = 0;
+                    want = [0, 0, 0, 0];
+                } else {
+                    a = before[o + 3];
+                    want = [before[o], before[o + 1], before[o + 2], a];
+                }
+                for (let c = 0; c < 4; c++) if (after[o + c] !== want[c]) assert.fail(`${what}: (${x}, ${y}) channel ${c} is ${after[o + c]}, the model has ${want[c]}`);
+                if (a) { if (x < bx0) bx0 = x; if (y < by0) by0 = y; if (x > bx1) bx1 = x; if (y > by1) by1 = y; }
+            }
+            assert.deepEqual(mk.bounds(), bx1 < 0 ? null : [bx0, by0, bx1 + 1, by1 + 1], `${what}: bounds`);
+            for (const key of mk.tileKeys()) {
+                const t = mk.tileAt(key & 0xFFFF, key >>> 16);
+                const ext = plainExtent(t);
+                assert.ok(ext, `${what}: tile ${key} kept with nothing in it`);
+                if (t.extVersion === t.version) assert.deepEqual(t.ext, ext, `${what}: tile ${key}'s cached extent`);
+            }
+            checked++;
+        }
+        calls[route] = K.pxCalls(true).sel_combine || 0;
+    }
+    // the colour as a tile's bytes stored it before K5 (a Uint8ClampedArray: 127.5 -> 128, 300 -> 255, -1 -> 0), on the
+    // kernel's path (a bytes source), on the fill's (a rect over the image) and in invert, on both routes
+    const colours = [[127.5, 0, 0], [255, 300, 0], [-1, 0, 0], [0.4, 254.6, 1e9]];
+    for (const route of ["js", "rust"]) {
+        K.setKernels("rust");
+        K.setRoute("selCombine", route);
+        const ways = [["bytes", (mk, c) => mk.combine(bytesSource(whole, 0, 0, W, H), "replace", c)],
+            ["a rect", (mk, c) => mk.combine(rectSource([0, 0, W, H]), "add", c)], ["invert", (mk, c) => mk.invert(c)]];
+        for (const [how, apply] of ways) for (const colour of colours) {
+            const want = Array.from(Uint8ClampedArray.of(colour[0], colour[1], colour[2]));
+            const mk = new TileMaskPixels(W, H);
+            apply(mk, colour);
+            const d = mk.readRect(0, 0, W, H).data;
+            let covered = 0;
+            for (let p = 0; p < W * H; p++) {
+                if (!d[p * 4 + 3]) continue;
+                covered++;
+                for (let c = 0; c < 3; c++) if (d[p * 4 + c] !== want[c]) assert.fail(`${route}: ${how} in ${JSON.stringify(colour)}: (${p % W}, ${Math.floor(p / W)}) channel ${c} is ${d[p * 4 + c]}, a clamped tile has ${want[c]}`);
+            }
+            assert.ok(covered > 1000, `${route}: ${how} in ${JSON.stringify(colour)} covered ${covered} pixels`);
+        }
+    }
+    console.log("  [ok] K5: a fractional or out-of-range colour lands clamped and rounded per channel (combine on both paths, invert)");
+    // a view is whole pixels or none: a fractional origin or region start leaves the region to `read`, as bytesSource
+    assert.equal(tilesSource(mixed, [0.5, 0]).view(0, 0, 16, 16), null, "tilesSource.view at a fractional origin");
+    assert.equal(tilesSource(mixed, [0, 0]).view(0, 0.5, 16, 16), null, "tilesSource.view of a fractional region");
+    assert.equal(bytesSource(small, 230.5, 210, 150, 150).view(256, 256, 16, 16), null, "bytesSource.view at a fractional origin");
+    assert.equal(tilesSource(mixed, [0, 0]).view(0, 0, 16, 16).kind, 1, "tilesSource.view of an alpha tile");
+    // inside one source tile the view starts at the region's pixel of that tile (the combine itself asks tile-aligned
+    // regions only, so this is checked here)
+    assert.equal(tilesSource(mixed, [0, 0]).view(16, 32, 8, 8).off, 32 * 256 + 16, "tilesSource.view's offset");
+    assert.equal(tilesSource(mixed, [100, 37]).view(100 + 256 + 5, 37 + 7, 8, 8).off, 7 * 256 + 5, "tilesSource.view's offset off the grid");
+    assert.equal(tilesSource(mixed, [0, 0]).view(250, 0, 8, 8), null, "tilesSource.view across two source tiles");
+    console.log("  [ok] K5: views refuse a fractional origin or region and one across two source tiles (read takes them); their offsets");
+    // the extent cache (K5): every tile the combine writes carries its extent (kernel path and fill path, new tiles), so
+    // bounds() scans none of them
+    for (const route of ["js", "rust"]) {
+        K.setKernels("rust");
+        K.setRoute("selCombine", route);
+        for (const [how, make] of [["bytes", () => bytesSource(whole, 0, 0, W, H)], ["tiles", () => tilesSource(mixed, [0, 0], [0, 0, W, H])], ["a rect", () => rectSource([0, 0, W, H])]]) {
+            const mk = new TileMaskPixels(W, H);
+            mk.combine(make(), "add");
+            let n = 0;
+            for (const key of mk.tileKeys()) {
+                const t = mk.tileAt(key & 0xFFFF, key >>> 16);
+                assert.equal(t.extVersion, t.version, `${route}: add of ${how}: tile ${key} has no fresh extent`);
+                n++;
+            }
+            assert.ok(n > 0, `${route}: add of ${how} kept no tile`);
+        }
+    }
+    console.log("  [ok] K5: each tile the combine writes keeps a fresh extent (both routes, the kernel and the fill)");
+    K.setRoute("selCombine", null);
+    K.setKernels("js");
+    assert.equal(calls.js, 0, "the selCombine route js called sel_combine");
+    assert.ok(calls.rust > 0, "the selCombine route rust never called sel_combine");
+    console.log(`  [ok] K5: TileMaskPixels.combine on the routes js and rust equals the per-pixel model (${checked} combines; sel_combine ${calls.rust} calls on rust, 0 on js), cached extents and bounds exact`);
+}
+
     console.log("ALL TESTS PASSED!");
 }
 

@@ -1,0 +1,29 @@
+D0 module round, after the review fixes (2026-11-06; node tools/layered_test.js on a copy of renderer/editor).
+20 of 21 red. The survivor zero_area_merged is left on purpose: the Node twin cannot see it (a merged picture of no
+area has no bytes either way) and only a header of width or height 0 reaches it (the window's path fails at its
+ImageData, the pool's with the guard reads no merged picture; no writer makes such a file; the review called it cosmetic). Not mutated on purpose
+(memory only, byte-equivalent): the planes dropped after a layer's bands, and for a record without pixels.
+
+untouched copy: PASS
+stream_gray                red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 8 (bands of 3, 1 layers): layer 0 (gray): rgba differs (first difference at byte 5: 0 / 11 (96 / 
+stream_alpha_default       red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 7 (bands of 3, 1 layers): layer 0 (deep): rgba differs (first difference at byte 3: 0 / 255 (96 /
+band_start                 red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 1 (bands of 3, 1 layers): layer 0 (raw): rgba differs (first difference at byte 0: 66 / 0 (96 / 9
+last_band                  red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 1 (bands of 3, 1 layers): layer 0: rgba bands [[0,3]]; layer 0 (raw): rgba differs (first differe
+mask_white                 red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 11 (bands of 3, 1 layers): layer 0: mask bytes differ (first difference at byte 0: 0 / 255 (144 /
+mask_skip                  red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 11 (bands of 3, 1 layers): layer 0: mask bands []; layer 0: mask bytes differ (lengths 0 / 144) |
+mask_row_offset            red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 11 (bands of 3, 1 layers): layer 0: mask bytes differ (first difference at byte 79: 11 / 233 (144
+mask_meta_disabled         red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 13 (bands of 3, 1 layers): layer 0: mask {"defaultColor":0,"disabled":false} / {"defaultColor":0,
+composite_beside_layers    red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 1 (bands of 3, 1 layers): a merged picture read beside 1 layers (index 1); bands for indices nobo
+composite_never            red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 31 (bands of 3, 0 layers): merged picture null / read | case 31 (bands of 256, 0 layers): merged 
+composite_pos              red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 31 (bands of 3, 0 layers): merged picture null / read | case 31 (bands of 256, 0 layers): merged 
+record_adjustment          red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 9 (bands of 3, 6 layers): bands for indices nobody names: 5 | case 9 (bands of 256, 6 layers): ba
+record_empty               red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 43 (bands of 3, 1 layers): 2 layers, readPsd 1; layer 0 name: alpha only / real; layer 0 (real): 
+header_hook                red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 1 (bands of 3, 1 layers): header null (0 calls) | case 1 (bands of 256, 1 layers): header null (0
+index_assign               red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 9 (bands of 3, 6 layers): layer 1: bands of 8 x 8; layer 1: rgba bands [[0,3],[3,3],[6,2]]; layer
+rgba_kept                  red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 1 (bands of 3, 1 layers): layer 0 carries rgba | case 1 (bands of 256, 1 layers): layer 0 carries
+has_composite              red  [FAIL] readPsdStream answers as readPsd on all 45 PSDs read above (6 of them refused), in bands of 3 rows and of 256: case 44 (bands of 3, 0 layers): notes ["no layer has pixels"] / []; lossy true / false | case 44 (band
+merged_alpha               red  [FAIL] a merged picture with transparency keeps it
+merged_raw                 red  [FAIL] a raw merged picture too
+zero_area_merged           SURVIVED  PASS
+merged_window              red  [FAIL] a grayscale flat file: gray replicated, opaque: [7,0,0,255,24,0,0,255]
+restored copy: PASS

@@ -1,0 +1,26 @@
+[08:57:44] gate pxjobs (w0-pxjobs)
+pxjobs rc=0 36s PASS
+ALL PASS
+[08:58:37] gate perf:15000x10000 (w0-perf)
+perf:15000x10000 rc=0 61s 
+ALL PASS
+[08:59:54] gate perf:15000x10000,--filter=relight,--map=4096x2731 (w0-relight)
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 52s 
+ALL PASS
+[09:01:02] gate exportperf:15000x10000,--limit=depth:0.2:0.6:0.05:0.05 (w0-limit)
+exportperf:15000x10000,--limit=depth:0.2:0.6:0.05:0.05 rc=0 22s 
+ALL PASS
+[09:01:40] gate tiffperf:15000x10000 (w0-tiff)
+tiffperf:15000x10000 rc=0 30s PASS
+ALL PASS
+[09:02:27] gate selection (w0-sel)
+selection rc=0 15s PASS
+ALL PASS
+[09:02:57] gate edges (w0-edges)
+edges rc=0 18s PASS
+ALL PASS
+[09:03:32] native_test 15000x10000
+[09:04:11] w0_bench
+[09:04:38] liquify_perf
+[09:05:10] px_test PX_BENCH=large (relight kernels, Node)
+[09:11:55] done

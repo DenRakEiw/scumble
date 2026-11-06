@@ -1,0 +1,24 @@
+-- 15000x10000 (150.0 MP), 3 rounds ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  mips_direct      kernel js    312.1  rust    198.1  (1.57x) | worker job js    312.1  rust    198.1  (1.57x) | wall js    493.3  rust    381.8  (1.29x)  tiles 2360 in 19 jobs
+                   parts js/rust: kernel 312.1/198.1
+                   px calls js: window none; jobs none | rust: window none; jobs clamp_extend 98, mip_chain 2458
+  mips_whole       kernel js    814.1  rust    534.0  (1.52x) | worker job js    814.1  rust    534.0  (1.52x) | wall js    537.6  rust    502.5  (1.07x)  tiles 2301 in 18 jobs, built on the main thread js 0 / rust 0
+                   parts js/rust: kernel 814.1/534.0
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs clamp_extend 39, mip_chain 2340
+  band             kernel js    138.4  rust     26.5  (5.22x) | worker job js    138.4  rust     26.5  (5.22x) | wall js    140.3  rust     27.3  (5.15x)  tiles 59 in 1 jobs
+                   parts js/rust: kernel 138.4/26.5
+                   px calls js: window none; jobs none | rust: window none; jobs composite_tile 59
+  wand_band        kernel js   1703.4  rust    915.2  (1.86x) | worker job js   2548.0  rust    960.8  (2.65x) | wall js   4568.7  rust   2016.8  (2.27x)  152.8 MP in 2 jobs
+                   parts js/rust: flood 674.8/707.5  read 722.9/18.0  clip 0.0/0.0  bounds 233.7/0.0  shape 794.9/207.7
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 68.6/38.3  read 21.2/18.0  flood 16.1/10.4  clip 0.0/0.0  bounds 5.5/-  shape 16.5/0.7 | box job js/rust: 150.00/150.00 MP, ran js/rust: total 2479.3/904.6  read 701.7/0.0  flood 659.0/697.2  clip 0.0/0.0  bounds 227.6/-  shape 778.3/207.2
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs flood_shape 2
+  wand_object      kernel js     16.9  rust      5.6  (3.02x) | worker job js     42.1  rust     27.9  (1.51x) | wall js    130.9  rust    114.4  (1.14x)  3.1 MP in 2 jobs
+                   parts js/rust: flood 1.8/4.0  read 30.9/22.3  clip 0.0/0.0  bounds 8.9/0.0  shape 6.2/1.6
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 29.8/25.3  read 22.2/22.3  flood 0.1/2.2  clip 0.0/0.0  bounds 8.4/-  shape 4.8/0.7 | box job js/rust: 0.30/0.59 MP, ran js/rust: total 12.2/2.7  read 8.6/0.0  flood 1.7/1.8  clip 0.0/0.0  bounds 0.5/-  shape 1.5/0.8
+                   px calls js: window none; jobs none | rust: window mip_chain 9; jobs flood_shape 2
+  instances renewed over the rows: {release 0, idle 0, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 10 threads read: 0
+
+PASS

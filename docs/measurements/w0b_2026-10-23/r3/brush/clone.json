@@ -1,0 +1,1008 @@
+{
+ "size": "15000x10000",
+ "tiles": true,
+ "kernels": "rust",
+ "kernelsInUse": "rust",
+ "dpr": 1.5,
+ "canvas": [
+  1820,
+  1198
+ ],
+ "visible": "visible",
+ "focused": true,
+ "params": {
+  "W": 15000,
+  "H": 10000,
+  "TOOLS": [
+   "clone"
+  ],
+  "SIZES": null,
+  "SAMPLES": [
+   "image",
+   "layer"
+  ],
+  "FX_SAMPLES": [
+   "layer"
+  ],
+  "KERNELS": "rust",
+  "VIEWS": [
+   "fit",
+   "1:1"
+  ],
+  "MOVES": 30,
+  "MOVE_CSS": 12,
+  "MODE": "sync",
+  "GAP": 4,
+  "PEN": 0,
+  "COALESCED": 1,
+  "HARDNESS": 0.5,
+  "SELECT": false,
+  "BASE_ROW": true,
+  "KEEP": false
+ },
+ "built": {
+  "reused": false,
+  "ms": 6562
+ },
+ "rows": [
+  {
+   "tool": "clone",
+   "sample": "image",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": true,
+   "press": 37.1,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1180,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 129.1,
+    "sum": 207,
+    "over50": 1
+   },
+   "firstMove": 4.6,
+   "move": {
+    "med": 4.8,
+    "worst": 5.3,
+    "n": 5
+   },
+   "dab": {
+    "med": 3.5,
+    "worst": 3.9,
+    "n": 5
+   },
+   "frame": {
+    "med": 1.2,
+    "worst": 1.4,
+    "n": 5
+   },
+   "otherFrames": 0,
+   "up": 19.3,
+   "release": {
+    "max": 19.9,
+    "sum": 55,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 18,
+    "mip_chain": 41
+   },
+   "jobs": {},
+   "changed": 16317,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1180,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1183,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "image",
+   "size": 50,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 14.2,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1183,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 22.7,
+    "sum": 317,
+    "over50": 0
+   },
+   "firstMove": 2.9,
+   "move": {
+    "med": 2.7,
+    "worst": 4.2,
+    "n": 29
+   },
+   "dab": {
+    "med": 1.8,
+    "worst": 2.7,
+    "n": 29
+   },
+   "frame": {
+    "med": 0.9,
+    "worst": 2.3,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 21.8,
+   "release": {
+    "max": 22.4,
+    "sum": 48,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 51,
+    "mip_chain": 71
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 4,
+     "kernel": 0.7,
+     "pxCalls": {
+      "mip_chain": 4
+     }
+    }
+   },
+   "changed": 12700,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1183,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1188,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "image",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 8.3,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1188,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 17.7,
+    "sum": 469,
+    "over50": 0
+   },
+   "firstMove": 5.7,
+   "move": {
+    "med": 4.6,
+    "worst": 5.6,
+    "n": 29
+   },
+   "dab": {
+    "med": 3.5,
+    "worst": 4.7,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.2,
+    "worst": 1.5,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 34.5,
+   "release": {
+    "max": 35.3,
+    "sum": 64,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 71,
+    "mip_chain": 157
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 24,
+     "kernel": 3.4,
+     "pxCalls": {
+      "mip_chain": 24
+     }
+    }
+   },
+   "changed": 16319,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1188,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1198,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "image",
+   "size": 400,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 10.3,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1198,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 19.9,
+    "sum": 486,
+    "over50": 0
+   },
+   "firstMove": 8.3,
+   "move": {
+    "med": 7.5,
+    "worst": 9.5,
+    "n": 29
+   },
+   "dab": {
+    "med": 6.2,
+    "worst": 7.9,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.4,
+    "worst": 1.8,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 30.8,
+   "release": {
+    "max": 31.4,
+    "sum": 59,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 73,
+    "mip_chain": 200
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 26,
+     "kernel": 3.5,
+     "pxCalls": {
+      "mip_chain": 26
+     }
+    }
+   },
+   "changed": 16330,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1198,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1208,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "image",
+   "size": 50,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 39.4,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1208,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 46.7,
+    "sum": 368,
+    "over50": 0
+   },
+   "firstMove": 4.7,
+   "move": {
+    "med": 2,
+    "worst": 2.8,
+    "n": 29
+   },
+   "dab": {
+    "med": 0.5,
+    "worst": 0.9,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.4,
+    "worst": 2.2,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 19.9,
+   "release": {
+    "max": 20.4,
+    "sum": 57,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 35,
+    "mip_chain": 3
+   },
+   "jobs": {},
+   "changed": 12709,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1208,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1209,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "image",
+   "size": 200,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 39.6,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1209,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 45.4,
+    "sum": 415,
+    "over50": 0
+   },
+   "firstMove": 2.3,
+   "move": {
+    "med": 2.6,
+    "worst": 3.7,
+    "n": 29
+   },
+   "dab": {
+    "med": 1,
+    "worst": 1.6,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.6,
+    "worst": 2.5,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 20.9,
+   "release": {
+    "max": 21.2,
+    "sum": 50,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 39,
+    "mip_chain": 10
+   },
+   "jobs": {},
+   "changed": 16318,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1209,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1211,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "image",
+   "size": 400,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 45.6,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1211,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 52.2,
+    "sum": 491,
+    "over50": 1
+   },
+   "firstMove": 4.4,
+   "move": {
+    "med": 4.3,
+    "worst": 5.2,
+    "n": 29
+   },
+   "dab": {
+    "med": 2.5,
+    "worst": 3.6,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.8,
+    "worst": 2.1,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 21.1,
+   "release": {
+    "max": 21.6,
+    "sum": 66,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 39,
+    "mip_chain": 16
+   },
+   "jobs": {},
+   "changed": 16321,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1211,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1213,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "layer",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": true,
+   "press": 36.9,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1213,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 44.4,
+    "sum": 107,
+    "over50": 0
+   },
+   "firstMove": 3.4,
+   "move": {
+    "med": 4,
+    "worst": 5.7,
+    "n": 5
+   },
+   "dab": {
+    "med": 3,
+    "worst": 3.9,
+    "n": 5
+   },
+   "frame": {
+    "med": 1,
+    "worst": 1.8,
+    "n": 5
+   },
+   "otherFrames": 0,
+   "up": 9.5,
+   "release": {
+    "max": 18.7,
+    "sum": 43,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 18,
+    "mip_chain": 42
+   },
+   "jobs": {},
+   "changed": 16332,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1213,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1216,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "layer",
+   "size": 50,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 9.1,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1216,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 18.6,
+    "sum": 390,
+    "over50": 0
+   },
+   "firstMove": 3.1,
+   "move": {
+    "med": 2.5,
+    "worst": 3,
+    "n": 29
+   },
+   "dab": {
+    "med": 1.4,
+    "worst": 1.9,
+    "n": 29
+   },
+   "frame": {
+    "med": 1,
+    "worst": 1.3,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 18.4,
+   "release": {
+    "max": 19,
+    "sum": 50,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 51,
+    "mip_chain": 71
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 4,
+     "kernel": 0.7,
+     "pxCalls": {
+      "mip_chain": 4
+     }
+    }
+   },
+   "changed": 12696,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1216,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1221,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "layer",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 8.9,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1221,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 19.4,
+    "sum": 459,
+    "over50": 0
+   },
+   "firstMove": 3.1,
+   "move": {
+    "med": 4.4,
+    "worst": 5.2,
+    "n": 29
+   },
+   "dab": {
+    "med": 3.2,
+    "worst": 3.8,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.2,
+    "worst": 1.4,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 33,
+   "release": {
+    "max": 33.5,
+    "sum": 73,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 71,
+    "mip_chain": 150
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 24,
+     "kernel": 3.8,
+     "pxCalls": {
+      "mip_chain": 24
+     }
+    }
+   },
+   "changed": 16326,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1221,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1231,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "layer",
+   "size": 400,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 12.4,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1231,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 21.9,
+    "sum": 477,
+    "over50": 0
+   },
+   "firstMove": 7.4,
+   "move": {
+    "med": 8.3,
+    "worst": 10,
+    "n": 29
+   },
+   "dab": {
+    "med": 7.1,
+    "worst": 8.1,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.5,
+    "worst": 2.1,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 27.6,
+   "release": {
+    "max": 28.2,
+    "sum": 55,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 73,
+    "mip_chain": 200
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 26,
+     "kernel": 2.9,
+     "pxCalls": {
+      "mip_chain": 26
+     }
+    }
+   },
+   "changed": 16326,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1231,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1242,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "layer",
+   "size": 50,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 41.3,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1242,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 45.8,
+    "sum": 324,
+    "over50": 0
+   },
+   "firstMove": 1.7,
+   "move": {
+    "med": 2.2,
+    "worst": 3.3,
+    "n": 29
+   },
+   "dab": {
+    "med": 0.5,
+    "worst": 1.2,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.7,
+    "worst": 2.5,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 20.2,
+   "release": {
+    "max": 20.7,
+    "sum": 63,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 39,
+    "mip_chain": 6
+   },
+   "jobs": {},
+   "changed": 12565,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1242,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1244,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "layer",
+   "size": 200,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 40.3,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1244,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 44.4,
+    "sum": 380,
+    "over50": 0
+   },
+   "firstMove": 2,
+   "move": {
+    "med": 2.4,
+    "worst": 4,
+    "n": 29
+   },
+   "dab": {
+    "med": 0.9,
+    "worst": 1.6,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.6,
+    "worst": 2.5,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 14.5,
+   "release": {
+    "max": 18.4,
+    "sum": 49,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 39,
+    "mip_chain": 14
+   },
+   "jobs": {},
+   "changed": 16327,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1244,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1246,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "clone",
+   "sample": "layer",
+   "size": 400,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 39.5,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1246,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 47.5,
+    "sum": 498,
+    "over50": 0
+   },
+   "firstMove": 4.1,
+   "move": {
+    "med": 4.2,
+    "worst": 5.4,
+    "n": 29
+   },
+   "dab": {
+    "med": 2.4,
+    "worst": 3.2,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.6,
+    "worst": 2.5,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 21.7,
+   "release": {
+    "max": 22.3,
+    "sum": 63,
+    "over50": 0
+   },
+   "step": "Clone",
+   "pxCalls": {
+    "composite_tile": 43,
+    "mip_chain": 18
+   },
+   "jobs": {},
+   "changed": 16299,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1246,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1249,
+     "flatMB": 0
+    }
+   ]
+  }
+ ],
+ "table": [
+  "tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)",
+  "clone (cold) | Clone | image | 200 | fit | 156.5 | 37.1 | 4.6 | 4.8 | 5.3 | 1.2 | 129.1 | 207 | 19.3 | 19.9 | 0 | 0 | 16317 | composite_tile 18, mip_chain 41",
+  "clone | Clone | image | 50 | fit | 156.5 | 14.2 | 2.9 | 2.7 | 4.2 | 0.9 | 22.7 | 317 | 21.8 | 22.4 | 0 | 0 | 12700 | composite_tile 51, mip_chain 71",
+  "clone | Clone | image | 200 | fit | 156.5 | 8.3 | 5.7 | 4.6 | 5.6 | 1.2 | 17.7 | 469 | 34.5 | 35.3 | 0 | 0 | 16319 | composite_tile 71, mip_chain 157",
+  "clone | Clone | image | 400 | fit | 156.5 | 10.3 | 8.3 | 7.5 | 9.5 | 1.4 | 19.9 | 486 | 30.8 | 31.4 | 0 | 0 | 16330 | composite_tile 73, mip_chain 200",
+  "clone | Clone | image | 50 | 1:1 | 18 | 39.4 | 4.7 | 2 | 2.8 | 1.4 | 46.7 | 368 | 19.9 | 20.4 | 0 | 0 | 12709 | composite_tile 35, mip_chain 3",
+  "clone | Clone | image | 200 | 1:1 | 18 | 39.6 | 2.3 | 2.6 | 3.7 | 1.6 | 45.4 | 415 | 20.9 | 21.2 | 0 | 0 | 16318 | composite_tile 39, mip_chain 10",
+  "clone | Clone | image | 400 | 1:1 | 18 | 45.6 | 4.4 | 4.3 | 5.2 | 1.8 | 52.2 | 491 | 21.1 | 21.6 | 0 | 0 | 16321 | composite_tile 39, mip_chain 16",
+  "clone (cold) | Clone | layer | 200 | fit | 156.5 | 36.9 | 3.4 | 4 | 5.7 | 1 | 44.4 | 107 | 9.5 | 18.7 | 0 | 0 | 16332 | composite_tile 18, mip_chain 42",
+  "clone | Clone | layer | 50 | fit | 156.5 | 9.1 | 3.1 | 2.5 | 3 | 1 | 18.6 | 390 | 18.4 | 19 | 0 | 0 | 12696 | composite_tile 51, mip_chain 71",
+  "clone | Clone | layer | 200 | fit | 156.5 | 8.9 | 3.1 | 4.4 | 5.2 | 1.2 | 19.4 | 459 | 33 | 33.5 | 0 | 0 | 16326 | composite_tile 71, mip_chain 150",
+  "clone | Clone | layer | 400 | fit | 156.5 | 12.4 | 7.4 | 8.3 | 10 | 1.5 | 21.9 | 477 | 27.6 | 28.2 | 0 | 0 | 16326 | composite_tile 73, mip_chain 200",
+  "clone | Clone | layer | 50 | 1:1 | 18 | 41.3 | 1.7 | 2.2 | 3.3 | 1.7 | 45.8 | 324 | 20.2 | 20.7 | 0 | 0 | 12565 | composite_tile 39, mip_chain 6",
+  "clone | Clone | layer | 200 | 1:1 | 18 | 40.3 | 2 | 2.4 | 4 | 1.6 | 44.4 | 380 | 14.5 | 18.4 | 0 | 0 | 16327 | composite_tile 39, mip_chain 14",
+  "clone | Clone | layer | 400 | 1:1 | 18 | 39.5 | 4.1 | 4.2 | 5.4 | 1.6 | 47.5 | 498 | 21.7 | 22.3 | 0 | 0 | 16299 | composite_tile 43, mip_chain 18"
+ ]
+}

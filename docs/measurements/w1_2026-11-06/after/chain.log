@@ -1,0 +1,66 @@
+lock: taken after 0 s
+[07:47:00] lock: taken (W1 measuring 10120 2026-11-06T07:47:00)
+[07:47:01] commit 59ff16f; px ABI ABI = 21; parts: node native tiff files; rounds: 1 2 3
+[07:47:01] px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+[07:47:03] gpu: 8572 MiB, 50 %; comfy 8188: 000
+[07:47:03] node px_bench png
+[07:47:04] rc=0
+[07:47:04] electron-as-node px_bench png
+[07:47:06] rc=0
+[07:47:06] == round 1
+[07:47:06] native r1 (try 1)
+[07:47:08] gpu: 8575 MiB, 43 %; comfy 8188: 000
+[07:47:32] rc=0
+closed
+[07:47:37] sha256 native r1 n1.png 246538165 39f0a5fa96364b8bb316e284e05af5a2c702aed78bbb2b14063d83b524e18f33
+[07:47:38] tiffperf own r1 (try 1)
+[07:47:40] gpu: 8596 MiB, 56 %; comfy 8188: 000
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/w1_files/tiff_r1 rc=0 10s PASS
+ALL PASS
+[07:48:05] rc=0
+[07:48:05] w0_bench files_15k r1 (try 1)
+[07:48:07] gpu: 8591 MiB, 51 %; comfy 8188: 000
+[07:48:24] rc=0
+closed
+[07:48:29] sha256 files r1 photo_15k.png 184507848 3cb4f984679ef5eda32eff7ec0812838f28f4740f7304cf51771ca947c7ecea6
+[07:48:29] == round 2
+[07:48:29] native r2 (try 1)
+[07:48:31] gpu: 8587 MiB, 48 %; comfy 8188: 000
+[07:48:56] rc=0
+closed
+[07:49:01] sha256 native r2 n1.png 246538165 4e6af96b9622646a0877f547be3436f98b1414fe4aa58d44f8c2dbc9ea71e6c8
+[07:49:01] tiffperf own r2 (try 1)
+[07:49:03] gpu: 8820 MiB, 37 %; comfy 8188: 000
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/w1_files/tiff_r2 rc=0 9s PASS
+ALL PASS
+[07:49:28] rc=0
+[07:49:28] w0_bench files_15k r2 (try 1)
+[07:49:30] gpu: 8621 MiB, 48 %; comfy 8188: 000
+[07:49:46] rc=0
+closed
+[07:49:52] sha256 files r2 photo_15k.png 184507848 3cb4f984679ef5eda32eff7ec0812838f28f4740f7304cf51771ca947c7ecea6
+[07:49:52] == round 3
+[07:49:52] native r3 (try 1)
+[07:49:54] gpu: 8611 MiB, 56 %; comfy 8188: 000
+[07:50:19] rc=0
+closed
+[07:50:24] sha256 native r3 n1.png 246538165 26725f9b615c1cb8300a0aeb23c68eac97a95205297b0d83c53349f828fa3b82
+[07:50:24] native r3 NOT COUNTED (the window behind): kept in notcounted/ as native_r3_try1
+[07:50:24] native r3 (try 2)
+[07:50:27] gpu: 8619 MiB, 52 %; comfy 8188: 000
+[07:50:51] rc=0
+closed
+[07:50:56] sha256 native r3 n1.png 246538165 94f6b2f85f5cad3c20c9144392882151fa1613d89d5e6a8d956f2a9587a6a681
+[07:50:56] tiffperf own r3 (try 1)
+[07:50:58] gpu: 8608 MiB, 40 %; comfy 8188: 000
+tiffperf:15000x10000,--variant,own,--out,/f/canvas/dist/w1_files/tiff_r3 rc=0 9s PASS
+ALL PASS
+[07:51:24] rc=0
+[07:51:24] w0_bench files_15k r3 (try 1)
+[07:51:26] gpu: 8724 MiB, 51 %; comfy 8188: 000
+[07:51:43] rc=0
+closed
+[07:51:48] sha256 files r3 photo_15k.png 184507848 3cb4f984679ef5eda32eff7ec0812838f28f4740f7304cf51771ca947c7ecea6
+[07:51:51] gpu: 8571 MiB, 43 %; comfy 8188: 000
+[07:51:51] done
+lock: released

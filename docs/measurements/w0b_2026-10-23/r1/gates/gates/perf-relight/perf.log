@@ -1,0 +1,117 @@
+== 15000x10000 (150.0 MP) ...
+
+                                       15000x10000
+--------------------------------------------------
+opacity slider tick                24.7 ms  [34.8]
+colour match tick                  22.0 ms  [24.0]
+filter slider tick                 12.1 ms  [22.9]
+pan (60 frames)                      4.0 ms  [7.0]
+wheel zoom (10)                      3.9 ms  [8.4]
+fit view                             0.0 ms  [0.1]
+redraw, nothing changed              0.0 ms  [0.1]
+pan at 1:1 (30 frames)              3.9 ms  [11.7]
+pan at 1:1, GPU stack                0.2 ms  [0.5]
+pan at fit, GPU stack                0.3 ms  [6.6]
+first frame fit -> 1:1, GPU          1.9 ms  [1.9]
+frame after a whole change, fit       68.0 ms  [68.0]
+  mips settled [longest block]       15.9 ms  [15.5]
+  chains built here [asked]        16.0 ms  [82.0]
+  chains landed [handed]           82.0 ms  [82.0]
+frame after a whole change, 1:1       61.7 ms  [61.7]
+  mips settled [longest block]       16.4 ms  [16.0]
+  chains built here [asked]        16.0 ms  [82.0]
+  chains landed [handed]           82.0 ms  [82.0]
+192 px picture after a whole change, the old way     421.9 ms  [421.9]
+  chains built here [taken from the worker]      2360.0 ms  [0.0]
+  chains it left on the tiles, MB       221.0 ms  [0.0]
+192 px picture after a whole change, settled      22.3 ms  [143.8]
+  chains built here [taken from the worker]     98.0 ms  [3702.0]
+  chains it left on the tiles, MB        32.7 ms  [0.0]
+frame after a whole touch, fit       37.7 ms  [37.7]
+  (the level of fit, whole-change rows)         3.0 ms  [1.0]
+redraw with ants                    0.5 ms  [27.1]
+brush dab + frame                    1.0 ms  [5.2]
+stroke commit (undo copy)          25.0 ms  [93.6]
+undo step                           36.7 ms  [0.0]
+selection change                    25.0 ms  [0.0]
+getValue (autosave)                 0.1 ms  [54.4]
+selection bounds scan                2.5 ms  [3.3]
+full composite                  326.4 ms  [2023.3]
+
+operations, blocked [wall]  
+--------------------------------------------------
+grow +16                              82 ms  [543]
+shrink -16                            53 ms  [344]
+invert                               278 ms  [277]
+  its landings: re-runs [longest block until settled]            0  [16 ms]
+feather 8                             42 ms  [418]
+magic wand (whole-image band)        680 ms  [2899]
+magic wand (an object)               133 ms  [195]
+bucket fill                          101 ms  [178]
+fill selection (100 px)                36 ms  [36]
+undo of that fill                      34 ms  [34]
+clear selected pixels (100 px)           37 ms  [34]
+stroke across the picture (40 dabs)         158 ms  [158]
+its commit, band by band               77 ms  [69]
+PNG of the composite                391 ms  [1578]
+the same without the worker         718 ms  [7646]
+film point add (look under it)         146 ms  [145]
+  the same, stack without filter/match           59 ms  [59]
+sample.mean_color, 1000 px sel.           74 ms  [74]
+  the same, stack without filter/match           17 ms  [14]
+bucket in a 1000 px selection         160 ms  [244]
+screenshot 1024 (MCP)                  58 ms  [44]
+  mirrors made MB                        0 MB  [0]
+prompt context, no selection          111 ms  [53]
+  mirrors made MB                        0 MB  [0]
+prompt context, 1000 px selection         110 ms  [110]
+  mirrors made MB                        0 MB  [0]
+object map input (1024 from levels)           71 ms  [71]
+  mirrors made MB                        0 MB  [0]
+  the same the old way (a flatten)       1490 ms  [1488]
+  mirrors made MB                     1733 MB  [0]
+cutout input (1024 from levels)           29 ms  [29]
+  the same the old way (toCanvas)         598 ms  [598]
+magic wand, a masked layer           194 ms  [326]
+  mirrors made MB [_masked]              0 MB  [0]
+eyedropper, Sample: the masked layer            16 ms  [7]
+  mirrors made MB [_masked]              0 MB  [0]
+magic wand, Sample: the masked layer          53 ms  [101]
+  mirrors made MB [_masked]              0 MB  [0]
+
+C6 (c2), tiles only         
+--------------------------------------------------
+pan at fit, masked filter layer         3.8 ms  [4.5]
+  mirrors made MB                             0 MB
+peek at fit, first frame           34.9 ms  [34.9]
+  mirrors made MB                             0 MB
+peek at 1:1, first frame           22.3 ms  [22.3]
+  mirrors made MB                             0 MB
+move drag at fit: first [worst of 5]         0.2 ms  [0.1]
+  mirrors made MB                             0 MB
+matched masked layer, fit: first [settled]        14.5 ms  [0.2]
+  mirrors made MB [_masked]                   0 MB
+the same at 1:1: first [settled]     115.0 ms  [117.0]
+  mirrors made MB [_masked]                   0 MB
+pan at 1:1 over it                  3.7 ms  [10.4]
+  mirrors made MB [_masked]                   0 MB
+eyedropper over it                 23.3 ms  [23.2]
+  mirrors made MB [_masked]                   0 MB
+magic wand over it               218.7 ms  [333.0]
+  mirrors made MB [_masked]                   0 MB
+
+relight, blocked [landed]   
+--------------------------------------------------
+one light moved: landed              72 ms  [3803]
+  marches [slowest landed]            1  [3783 ms]
+three lights moved                   48 ms  [4261]
+  marches [slowest landed]            3  [4252 ms]
+a drag step's quick map                16 ms  [43]
+  marches [slowest landed]              1  [43 ms]
+pan at 1:1 during a march           5.1 ms  [82.5]
+  frames [shadows landed]           162  [4842 ms]
+  block [chains built here]             91 ms  [0]
+the first march after start           - ms  [5106]
+  marches [slowest landed]            3  [5092 ms]
+
+15000x10000                 view 1820x1198, filter relight, undo 4.5 MB, compositor 94.8 MB in 82 atlas pages (18874 slots) + 0 MB of source textures; tile display: 2 mirrors 1144.4 MB, 15 region canvases 197.1 MB, pyramids 0 MB

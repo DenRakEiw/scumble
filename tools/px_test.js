@@ -9,7 +9,11 @@
 // distances, repeated halving, float source-over, PNG unfiltering, zlib inflate). Then every
 // Rust kernel of both builds against its JS twin, byte for byte (the EDT as f32 bits), and the
 // module's memory: alloc / free, a view that goes stale when memory grows and the fresh one that
-// replaces it, pointers above 2 GB, the arena's take / reset.
+// replaces it, pointers above 2 GB, the arena's take / reset. Also the twin harness (`twinCheck`, with
+// a self-test), px.js' call counters (`pxCalls`) and the split's clocks and laps, kernels.js' routes, its
+// recovery from a trap or an out-of-memory and its instance's lifecycle (docs/PLAN_WASM_K1.md), and with
+// `PX_BENCH=1` (or `large`) the timed rows: medians over rotating rounds and a cold first call on a fresh
+// compile (docs/PLAN_WASM_BUILD.md §3.4).
 "use strict";
 
 const fs = require("node:fs");
@@ -157,6 +161,172 @@ function firstDiff(a, b) {
     return a.length !== b.length ? `length ${a.length} vs ${b.length}` : "";
 }
 
+// ---- the twin harness (docs/PLAN_WASM_BUILD.md §3.4) --------------------------------------------
+//
+// `twinCheck` runs one kernel's cases on the Rust builds and on its JS twin and compares every output: integers byte
+// for byte, floats bit for bit through u32 / u64 views (so -0 against 0 and one NaN against another count). Each case
+// runs twice per build, with its inputs as given and with each typed-array input copied to an odd offset (an odd
+// byteOffset for bytes; a wider array cannot start inside an element, so one element in, an odd element offset).
+// A difference the caller allows is a named rule, counted and printed; any other is a failure.
+
+const f64Scratch = new Float64Array(1), u64Scratch = new BigUint64Array(f64Scratch.buffer);
+const numBits = (x) => { f64Scratch[0] = x; return u64Scratch[0]; };
+const isFloatArray = (v) => v instanceof Float32Array || v instanceof Float64Array;
+/** The words a float array is made of (u32 / u64 over the same bytes); an integer array as it is. */
+const bitsOf = (v) => (v instanceof Float32Array ? new Uint32Array(v.buffer, v.byteOffset, v.length)
+    : v instanceof Float64Array ? new BigUint64Array(v.buffer, v.byteOffset, v.length) : v);
+
+/** A copy of the typed array `v`, at offset 0 or (`odd`) one element in, which for bytes is an odd byteOffset. */
+function copyView(v, odd) {
+    if (!odd) return v.slice();
+    const E = v.BYTES_PER_ELEMENT, out = new v.constructor(new ArrayBuffer(v.byteLength + 2 * E), E, v.length);
+    out.set(v);
+    return out;
+}
+
+/**
+ * The first difference between a build's output `got` and the twin's `want` that no rule allows ("" for none), the
+ * allowed ones added to `counts` by rule name. Outputs: typed arrays, numbers, plain arrays and objects of them, null.
+ */
+function twinDiff(got, want, rules, counts, at = "out") {
+    if (ArrayBuffer.isView(want) || ArrayBuffer.isView(got)) {
+        if (!ArrayBuffer.isView(want) || !ArrayBuffer.isView(got)) return `${at}: a typed array against ${ArrayBuffer.isView(got) ? String(want) : String(got)}`;
+        if (isFloatArray(got) !== isFloatArray(want) || got.BYTES_PER_ELEMENT !== want.BYTES_PER_ELEMENT) return `${at}: ${got.constructor.name} against the twin's ${want.constructor.name}`;
+        if (got.length !== want.length) return `${at}: length ${got.length}, the twin's ${want.length}`;
+        const gb = bitsOf(got), wb = bitsOf(want);
+        for (let i = 0; i < gb.length; i++) {
+            if (gb[i] === wb[i]) continue;
+            const rule = rules.find((r) => r.allow(got[i], want[i]));
+            if (!rule) return `${at}[${i}] is ${got[i]}${isFloatArray(got) ? ` (0x${gb[i].toString(16)})` : ""}, the twin has ${want[i]}${isFloatArray(want) ? ` (0x${wb[i].toString(16)})` : ""}`;
+            counts[rule.name]++;
+        }
+        return "";
+    }
+    if (typeof want === "number" && typeof got === "number") {
+        if (numBits(got) === numBits(want)) return "";
+        const rule = rules.find((r) => r.allow(got, want));
+        if (!rule) return `${at} is ${got}, the twin has ${want}`;
+        counts[rule.name]++;
+        return "";
+    }
+    if (Array.isArray(want) && Array.isArray(got)) {
+        if (got.length !== want.length) return `${at}: length ${got.length}, the twin's ${want.length}`;
+        for (let i = 0; i < want.length; i++) { const d = twinDiff(got[i], want[i], rules, counts, `${at}[${i}]`); if (d) return d; }
+        return "";
+    }
+    if (want && got && typeof want === "object" && typeof got === "object") {
+        const keys = Object.keys(want);
+        if (keys.length !== Object.keys(got).length || !keys.every((k) => k in got)) return `${at}: keys ${Object.keys(got)}, the twin's ${keys}`;
+        for (const k of keys) { const d = twinDiff(got[k], want[k], rules, counts, `${at}.${k}`); if (d) return d; }
+        return "";
+    }
+    return Object.is(got, want) ? "" : `${at} is ${String(got)}, the twin has ${String(want)}`;
+}
+
+/** Whether the output holds a float array anywhere (the check line then says "bit for bit"). */
+const holdsFloats = (v) => isFloatArray(v) || (v && typeof v === "object" && !ArrayBuffer.isView(v) && Object.values(v).some(holdsFloats));
+
+/**
+ * One kernel on every build of `builds` against its twin, without reporting: `{ builds: [{ label, ok, detail, counts }],
+ * twinOffset, floats }`. `cases`: `[{ tag, args }]`, random, edge and fuzz inputs alike; every typed array in `args` is
+ * copied before each run (a kernel may write its input in place), and the ones `shift` names (true: all; false: none; or
+ * a list of argument indexes) also go at an odd offset. `call(k, args)` runs the kernel on `k` (a `Px` or the twin
+ * module). `rules`: `[{ name, allow(got, want) }]` per differing value. `twinOffset`: "" or how the twin itself differed
+ * at the odd offset (its word paths are tested here too).
+ */
+function twinRun({ builds, twin, call, cases, rules = [], shift = true }) {
+    const shifts = (i) => (shift === true || (Array.isArray(shift) && shift.includes(i)));
+    const argsFor = (args, odd) => args.map((v, i) => (ArrayBuffer.isView(v) && !(v instanceof DataView) ? copyView(v, odd && shifts(i)) : v));
+    const tryCall = (k, args) => { try { return { out: call(k, args) }; } catch (e) { return { threw: String((e && e.message) || e) }; } };
+    const anyShift = shift === true || (Array.isArray(shift) && shift.length > 0);
+    const res = builds.map(([label]) => ({ label, ok: true, detail: "", counts: Object.fromEntries(rules.map((r) => [r.name, 0])) }));
+    let twinOffset = "", floats = false;
+    for (const c of cases) {
+        const want = tryCall(twin, argsFor(c.args, false));
+        if (want.threw) { for (const r of res) if (r.ok) { r.ok = false; r.detail = `${c.tag}: the twin threw ${want.threw}`; } continue; }
+        floats = floats || holdsFloats(want.out);
+        if (anyShift && !twinOffset) {
+            const w2 = tryCall(twin, argsFor(c.args, true));
+            const d = w2.threw ? `threw ${w2.threw}` : twinDiff(w2.out, want.out, [], {});
+            if (d) twinOffset = `${c.tag}: ${d}`;
+        }
+        builds.forEach(([, px], b) => {
+            const r = res[b];
+            if (!r.ok) return;
+            for (const odd of anyShift ? [false, true] : [false]) {
+                const got = tryCall(px, argsFor(c.args, odd));
+                const d = got.threw ? `threw ${got.threw}` : twinDiff(got.out, want.out, rules, r.counts);
+                if (d) { r.ok = false; r.detail = `${c.tag}${odd ? " at an odd offset" : ""}: ${d}`; return; }
+            }
+        });
+    }
+    return { builds: res, twinOffset, floats };
+}
+
+const twinOffsetChecked = new Set();   // kernel names whose twin was checked at an odd offset (once per run of this file)
+
+/**
+ * `twinRun` reported: one check line per build ("<label> <title> (N cases ...)"), the allowed differences per rule
+ * printed under it, and once per kernel a line that the twin gives the same at an odd offset. `name` is the kernel's
+ * export; `title` defaults to "<name> equals its twin bit for bit" (floats) or "byte for byte". `builds` is usually
+ * `[["rust simd", simdPx], ["rust scalar", scalarPx]]`; a case list called per build passes its one.
+ */
+function twinCheck({ name, title = null, builds, twin, call, cases, rules = [], shift = true }) {
+    const run = twinRun({ builds, twin, call, cases, rules, shift });
+    const anyShift = shift === true || (Array.isArray(shift) && shift.length > 0);
+    const what = title || `${name} equals its twin ${run.floats ? "bit for bit" : "byte for byte"}`;
+    for (const r of run.builds) {
+        check(`${r.label} ${what} (${cases.length} cases${anyShift ? ", each also at an odd offset" : ""})`, r.ok, r.detail);
+        if (rules.length) console.log(`       ${r.label} ${name} allowed differences: ${rules.map((x) => `${x.name} ${r.counts[x.name]}`).join(", ")}`);
+    }
+    if (anyShift && !twinOffsetChecked.has(name)) {
+        twinOffsetChecked.add(name);
+        check(`js ${name} gives the same at an odd offset`, !run.twinOffset, run.twinOffset);
+    }
+    return run;
+}
+
+/** The harness on kernels made to differ: each kind of difference is found, an allowed one counted, nothing else. */
+function twinSelfTest() {
+    const half = (a) => { const o = new Float32Array(a.length); for (let i = 0; i < a.length; i++) o[i] = a[i] * 0.5; return o; };
+    const twin = {
+        half,
+        bytes: (a) => Uint8Array.from(a, (v) => v ^ 0x5a),
+        bump: (a) => { for (let i = 0; i < a.length; i++) a[i]++; return a; },   // writes its input in place
+        pair: (a) => ({ sum: a.reduce((s, v) => s + v, 0), first: [a[0], a[1]] }),
+    };
+    const twinsOf = (over) => ({ ...twin, ...over });
+    const f = Float32Array.from({ length: 37 }, (_, i) => (i % 5 ? i * 0.37 - 4 : 0));
+    const b = Uint8Array.from({ length: 41 }, (_, i) => (i * 37) & 255);
+    const floatCases = [{ tag: "37 floats", args: [f] }], byteCases = [{ tag: "41 bytes", args: [b] }];
+    const run = (builds, kernel, cases, rules = [], shift = true) => twinRun({ builds, twin, call: (k, [a]) => k[kernel](a), cases, rules, shift });
+    const same = run([["a", twin], ["b", twinsOf({})]], "half", floatCases);
+    check("twin harness: identical builds pass, the run sees floats", same.builds.every((r) => r.ok) && same.floats && !same.twinOffset);
+    const negZero = run([["neg", twinsOf({ half: (a) => { const o = half(a); o[o.indexOf(0)] = -0; return o; } })]], "half", floatCases);
+    check("twin harness: -0 against 0 is a difference (bits, not ===)", !negZero.builds[0].ok && /0x80000000/.test(negZero.builds[0].detail), negZero.builds[0].detail);
+    const withNaN = (bits) => twinsOf({ half: (a) => { const o = half(a); new Uint32Array(o.buffer)[3] = bits; return o; } });
+    const nan = twinRun({ builds: [["nan", withNaN(0x7fc00001)]], twin: withNaN(0x7fc00000), call: (k, [a]) => k.half(a), cases: floatCases });
+    check("twin harness: two NaNs with other payloads differ", !nan.builds[0].ok && /7fc00001/.test(nan.builds[0].detail), nan.builds[0].detail);
+    const off1 = run([["off1", twinsOf({ bytes: (a) => { const o = twin.bytes(a); o[7] ^= 1; return o; } })]], "bytes", byteCases);
+    check("twin harness: one byte off is a failure without a rule", !off1.builds[0].ok && /out\[7\]/.test(off1.builds[0].detail), off1.builds[0].detail);
+    const level = { name: "one level", allow: (got, want) => Math.abs(got - want) <= 1 };
+    const allowed = run([["lvl", twinsOf({ bytes: (a) => { const o = twin.bytes(a); o[7] ^= 1; o[9] ^= 1; return o; } })]], "bytes", byteCases, [level]);
+    check("twin harness: an allowed difference passes and is counted per run (2 values x 2 offsets)", allowed.builds[0].ok && allowed.builds[0].counts["one level"] === 4, JSON.stringify(allowed.builds[0].counts));
+    // a kernel that reads its input from the start of the buffer, ignoring byteOffset: right as given, wrong when shifted
+    const blind = run([["blind", twinsOf({ bytes: (a) => twin.bytes(new Uint8Array(a.buffer, 0, a.length)) })]], "bytes", byteCases);
+    check("twin harness: a kernel blind to byteOffset fails at the odd offset only", !blind.builds[0].ok && /at an odd offset/.test(blind.builds[0].detail), blind.builds[0].detail);
+    const noShift = run([["blind", twinsOf({ bytes: (a) => twin.bytes(new Uint8Array(a.buffer, 0, a.length)) })]], "bytes", byteCases, [], false);
+    check("twin harness: shift false runs the inputs as given only", noShift.builds[0].ok);
+    const blindTwin = twinRun({ builds: [["b", twin]], twin: twinsOf({ bytes: (a) => twin.bytes(new Uint8Array(a.buffer, 0, a.length)) }), call: (k, [a]) => k.bytes(a), cases: byteCases });
+    check("twin harness: a twin blind to byteOffset is reported as the twin's", !!blindTwin.twinOffset, blindTwin.twinOffset);
+    const inPlace = run([["b", twinsOf({})]], "bump", byteCases);
+    check("twin harness: inputs are copied for every run (a kernel that writes its input in place)", inPlace.builds[0].ok && b[0] === 0 && b[1] === 37, inPlace.builds[0].detail);
+    const pair = run([["p", twinsOf({ pair: (a) => ({ sum: a.reduce((s, v) => s + v, 0), first: [a[0], a[2]] }) })]], "pair", byteCases);
+    check("twin harness: numbers and arrays inside an object are compared too", !pair.builds[0].ok && /out\.first\[1\]/.test(pair.builds[0].detail), pair.builds[0].detail);
+    const threw = run([["t", twinsOf({ half: () => { throw new Error("no room"); } })]], "half", floatCases);
+    check("twin harness: a build that throws fails with its message", !threw.builds[0].ok && /no room/.test(threw.builds[0].detail), threw.builds[0].detail);
+}
+
 // ---- kernels -----------------------------------------------------------------------------------
 
 async function mipCases(ref, label, js) {
@@ -281,14 +451,17 @@ async function maskCases(px, label, js) {
         for (let i = 0; i < w * h; i += 5) if (rnd() < 0.15) data[i] = Math.round(rnd() * 255) / 255;
         return data;
     };
-    const same = (a, b) => { for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return `value ${i} is ${a[i]}, the twin has ${b[i]}`; return a.length === b.length ? "" : "lengths differ"; };
-    let ok = true, detail = "";
-    for (const [w, h] of [[1, 1], [7, 3], [3, 97], [64, 64], [131, 77], [300, 211]]) {
-        const m = mask(w, h, w * 131 + h);
-        for (const r of [1, 2, 5, 40, 500]) { const d = same(px.dilateMask(m, w, h, r), js.dilateMask(m, w, h, r)); if (d) { ok = false; detail = `dilate ${w}x${h} by ${r}: ${d}`; } }
-        for (const radii of [[1, 1, 1], [0, 1, 2], [3, 3, 4], [17, 18, 18], [200, 200, 201], [0, 0, 0]]) { const d = same(px.boxBlurs(m, w, h, radii), js.boxBlurs(m, w, h, radii)); if (d) { ok = false; detail = `box blurs ${w}x${h} ${radii}: ${d}`; } }
-    }
-    check(`${label} dilate_mask and box_blurs equal their twins bit for bit`, ok, detail);
+    const masks = [[1, 1], [7, 3], [3, 97], [64, 64], [131, 77], [300, 211]].map(([w, h]) => [mask(w, h, w * 131 + h), w, h]);
+    twinCheck({
+        name: "dilate_mask", title: "dilate_mask equals its twin bit for bit", builds: [[label, px]], twin: js,
+        call: (k, [m, w, h, r]) => k.dilateMask(m, w, h, r),
+        cases: masks.flatMap(([m, w, h]) => [1, 2, 5, 40, 500].map((r) => ({ tag: `dilate ${w}x${h} by ${r}`, args: [m, w, h, r] }))),
+    });
+    twinCheck({
+        name: "box_blurs", title: "box_blurs equals its twin bit for bit", builds: [[label, px]], twin: js,
+        call: (k, [m, w, h, radii]) => k.boxBlurs(m, w, h, radii),
+        cases: masks.flatMap(([m, w, h]) => [[1, 1, 1], [0, 1, 2], [3, 3, 4], [17, 18, 18], [200, 200, 201], [0, 0, 0]].map((radii) => ({ tag: `box blurs ${w}x${h} ${radii}`, args: [m, w, h, radii] }))),
+    });
     const big = mask(1492, 1492, 9);
     const t0 = performance.now(); px.dilateMask(big, 1492, 1492, 47);
     const t1 = performance.now(); js.dilateMask(big, 1492, 1492, 47);
@@ -311,37 +484,20 @@ async function edgeCases(px, label, js) {
         }
         return data;
     };
-    const same = (a, b) => {
-        if (a.length !== b.length) return `lengths differ: ${a.length} vs ${b.length}`;
-        for (let i = 0; i < a.length; i++) {
-            if (a[i] !== b[i]) return `value ${i} is ${a[i]}, the twin has ${b[i]}`;
-        }
-        return "";
-    };
-    let ok = true, detail = "";
-    // Test various geometries: tiny, 1D strips, primes, non-multiples of 8, power of 2
-    for (const [w, h] of [[1, 1], [2, 2], [3, 1], [1, 3], [7, 3], [3, 97], [64, 64], [131, 77], [256, 256], [300, 211]]) {
-        const m = genMap(w, h, w * 131 + h);
-        const d = same(px.rangeMax(m, w, h), js.rangeMax(m, w, h));
-        if (d) { ok = false; detail = `range_max ${w}x${h}: ${d}`; break; }
-    }
-    // Test constant / flat map
-    if (ok) {
-        const flat = new Uint16Array(64 * 64);
-        flat.fill(32768);
-        const res = px.rangeMax(flat, 64, 64);
-        let nonZero = 0;
-        for (let i = 0; i < res.length; i++) if (res[i] !== 0) nonZero++;
-        if (nonZero > 0) { ok = false; detail = `flat map has non-zero range values (${nonZero})`; }
-    }
-    // Test sharp step edge
-    if (ok) {
-        const step = new Uint16Array(64 * 64);
-        for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) step[y * 64 + x] = x < 32 ? 10000 : 50000;
-        const d = same(px.rangeMax(step, 64, 64), js.rangeMax(step, 64, 64));
-        if (d) { ok = false; detail = `step edge: ${d}`; }
-    }
-    check(`${label} range_max equals its twin bit for bit`, ok, detail);
+    // various geometries (tiny, 1D strips, primes, non-multiples of 8, a power of 2) and a sharp step edge
+    const cases = [[1, 1], [2, 2], [3, 1], [1, 3], [7, 3], [3, 97], [64, 64], [131, 77], [256, 256], [300, 211]]
+        .map(([w, h]) => ({ tag: `range_max ${w}x${h}`, args: [genMap(w, h, w * 131 + h), w, h] }));
+    const step = new Uint16Array(64 * 64);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) step[y * 64 + x] = x < 32 ? 10000 : 50000;
+    cases.push({ tag: "step edge", args: [step, 64, 64] });
+    twinCheck({ name: "range_max", title: "range_max equals its twin bit for bit", builds: [[label, px]], twin: js, call: (k, [m, w, h]) => k.rangeMax(m, w, h), cases });
+    // a constant map has no range anywhere
+    const flat = new Uint16Array(64 * 64);
+    flat.fill(32768);
+    const res = px.rangeMax(flat, 64, 64);
+    let nonZero = 0;
+    for (let i = 0; i < res.length; i++) if (res[i] !== 0) nonZero++;
+    check(`${label} range_max of a flat map is 0 everywhere`, nonZero === 0, nonZero ? `${nonZero} non-zero range values` : "");
 
     // Benchmark on a 2048 x 2048 map (4 MP)
     const big = genMap(2048, 2048, 42);
@@ -468,14 +624,59 @@ function smoothDepth(w, h) {
     return d;
 }
 
+// ---- PX_BENCH rows (docs/PLAN_WASM_BUILD.md §3.4) -----------------------------------------------
+// Rows explain, they never decide (the plan's §1.1: Node runs slower than Electron's V8). Every row: each variant
+// warmed up, then rounds in an order that rotates by one each round, the median per variant; and a cold first call on
+// a fresh compile of px.wasm, because V8 has no on-stack replacement for wasm: a long first call stays in whatever code
+// it started in (the baseline tier), which is what the app's first call after a worker starts gets.
+
+const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
+
+/** `fns`: `[[name, fn], ...]`; `warm` calls of each, then `rounds` rounds in a rotating order. The median ms per name. */
+function benchMedians(fns, { warm = 2, rounds = 5 } = {}) {
+    for (let k = 0; k < warm; k++) for (const [, fn] of fns) fn();
+    const t = Object.fromEntries(fns.map(([n]) => [n, []]));
+    for (let r = 0; r < rounds; r++) {
+        for (let j = 0; j < fns.length; j++) {
+            const [n, fn] = fns[(j + r) % fns.length];
+            const t0 = performance.now(); fn(); t[n].push(performance.now() - t0);
+        }
+    }
+    return Object.fromEntries(Object.entries(t).map(([n, a]) => [n, median(a)]));
+}
+
+let coldSerial = 0;
+/**
+ * px.wasm's bytes with a custom section of its own appended (ignored by the module; it makes the bytes new, so V8
+ * compiles them afresh instead of reusing a module it compiled from the same bytes before).
+ */
+function freshWasm(bytes) {
+    const name = Buffer.from("px_test_cold"), payload = Buffer.from(String(++coldSerial).padStart(8, "0"));
+    const body = Buffer.concat([Buffer.from([name.length]), name, payload]);
+    return Buffer.concat([bytes, Buffer.from([0, body.length]), body]);   // section id 0; both lengths below 128, one LEB byte each
+}
+
+/** A cold first call: px.wasm compiled afresh through `loadPx` (as kernels.js loads it), then `use(px)` once. `{ compile, first }` in ms. */
+async function coldCall(loadPx, bytes, use) {
+    const t0 = performance.now();
+    const px = await loadPx(freshWasm(bytes));
+    const t1 = performance.now();
+    use(px);
+    const t2 = performance.now();
+    return { compile: t1 - t0, first: t2 - t1 };
+}
+
+const coldText = (c) => `cold first call ${c.first.toFixed(1)} ms (compile ${c.compile.toFixed(1)} ms)`;
+
 /**
  * The relight kernels as the app runs them (docs/PERFORMANCE.md section 15.2): kernels.js, which loads px.wasm as a
  * pool worker does, against the JS twin and the SIMD build called directly, on a smooth depth map with
  * ensureRelightMaps' parameters (depth_scale 50, diffusion 30; the drag's quarter map with 1 tap and 16 steps). Each
- * call warmed up twice, then five rounds in a rotating order, medians. Always checks the routing: point and spot (a
- * spot goes as kind 0) run the twin, sun (kind 1) the Rust build, byte for byte. The times only with `PX_BENCH=1`
- * (1024 x 1024 and the quick 1024 x 682) or `PX_BENCH=large` (also 2048 x 1365 and 4096 x 2731, the map of a 3:2
- * picture with a long side of 4096 or more, WORK_MAX); without it the check runs once on a 512 x 341 map.
+ * call warmed up twice, then five rounds in a rotating order, medians (`benchMedians`), and the SIMD build's cold first
+ * call (`coldCall`). Always checks the routing: point and spot (a spot goes as kind 0) run the twin, sun (kind 1) the
+ * Rust build, byte for byte. The times only with `PX_BENCH=1` (1024 x 1024 and the quick 1024 x 682) or
+ * `PX_BENCH=large` (also 2048 x 1365 and 4096 x 2731, the map of a 3:2 picture with a long side of 4096 or more,
+ * WORK_MAX); without it the check runs once on a 512 x 341 map.
  */
 async function relightBench(js, simd) {
     const realFetch = globalThis.fetch;
@@ -494,18 +695,8 @@ async function relightBench(js, simd) {
     let rustCalls = 0;
     const march = routed.shadowMarch;
     routed.shadowMarch = function (...a) { rustCalls++; return march.apply(this, a); };
-    const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
-    const time = (fns) => {
-        for (let k = 0; k < 2; k++) for (const [, fn] of fns) fn();
-        const t = Object.fromEntries(fns.map(([n]) => [n, []]));
-        for (let r = 0; r < 5; r++) {
-            for (let j = 0; j < fns.length; j++) {
-                const [n, fn] = fns[(j + r) % fns.length];
-                const t0 = performance.now(); fn(); t[n].push(performance.now() - t0);
-            }
-        }
-        return Object.fromEntries(Object.entries(t).map(([n, a]) => [n, median(a)]));
-    };
+    const { loadPx } = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const wasmBytes = fs.readFileSync(path.join(PX_DIR, "px.wasm"));
     const bench = !!process.env.PX_BENCH;
     const sizes = bench ? [[1024, 1024, false], [1024, 682, true]] : [[512, 341, false]];
     if (process.env.PX_BENCH === "large") sizes.push([2048, 1365, false], [4096, 2731, false]);
@@ -515,8 +706,9 @@ async function relightBench(js, simd) {
         const long = Math.max(w, h), scale = 0.5 * long, radius = 0.3 * 0.05 * long, bias = 0.005 * scale;
         const taps = quick ? 1 : 4, steps = quick ? 16 : 32, tag = `${w} x ${h}${quick ? " quick" : ""}`;
         if (bench && !quick) {
-            const m = time([["routed", () => K.heightNormals(depth, w, h, scale, 2.0)], ["twin", () => js.heightNormals(depth, w, h, scale, 2.0)]]);
-            console.log(`       ${tag}: height_normals routed (rust) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms`);
+            const cold = await coldCall(loadPx, wasmBytes, (p) => p.heightNormals(depth, w, h, scale, 2.0));
+            const m = benchMedians([["routed", () => K.heightNormals(depth, w, h, scale, 2.0)], ["twin", () => js.heightNormals(depth, w, h, scale, 2.0)]]);
+            console.log(`       ${tag}: height_normals routed (rust) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms; simd ${coldText(cold)}`);
         }
         for (const [name, fx, fy, dist] of [["point", 0.30, 0.35, -30], ["spot", 0.65, 0.12, -60], ["sun", 0.15, 0.20, -30]]) {
             const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type: name, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
@@ -533,14 +725,730 @@ async function relightBench(js, simd) {
                 ok = false; detail += `${detail ? "; " : ""}${tag} ${name}: ran ${ran}${ran === want ? ", other bytes" : ""}`;
             }
             if (!bench) continue;
-            const m = time(Object.entries(run));
-            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd ${m.simd.toFixed(1)} ms (twin / simd ${(m.twin / m.simd).toFixed(2)})`);
+            const cold = await coldCall(loadPx, wasmBytes, (p) => p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h));
+            const m = benchMedians(Object.entries(run));
+            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd ${m.simd.toFixed(1)} ms (twin / simd ${(m.twin / m.simd).toFixed(2)}); simd ${coldText(cold)}`);
         }
     }
     routed.shadowMarch = march;
     K.setKernels("js");   // kernels.js stays loaded for the process: the later cases (jobCases) compare against the editor's JS
     check("shadow_march as routed: kind 0 (a point; ensureRelightMaps sends a spot as kind 0) runs the twin, kind 1 (a sun) the Rust build (byte for byte)", ok, detail);
     check("kernels.js back on the JS kernels for the later cases", K.kernelsInUse() === "js");
+}
+
+/**
+ * K12 (docs/PLAN_WASM_BUILD.md §4.5): relight's march in stripes. S stripes into one shared `out` give the bytes of one
+ * call, for the twin (point and spot go as kind 0) and the Rust sun on both builds and through kernels.js as a worker
+ * routes it, at 512 x 341 and 1024 x 682 with taps 1 / 3 / 4 / 16 and steps 1 / 16 / 32 / 64, a light on a pixel, below
+ * the surface and off the map, the sun straight up and grazing. The Rust sun's stripes copy the depth map once (the
+ * one-slot resident copy, keyed), a new key or another size copies it again and never answers from the old copy.
+ * `stripePlan`. And `marchOnPool` on a real WorkerPool whose workers answer as inpaint_worker.js does (from the twin): the
+ * same bytes, no transfer and the rows back; a depth map that is not on a SharedArrayBuffer (the node's page) or the
+ * route 0 go as one job; a failed stripe or a reply with other rows rejects the march and cancels the rest of its group;
+ * a group cancelled from outside (a superseded march) rejects with a CancelledError, sends none of its queued stripes
+ * and leaves another march's group alone.
+ */
+async function relightStripeCases(js, simd, scalar) {
+    const RL = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);   // loaded by relightBench already
+    const { lightToMap, defaultLight, stripePlan, marchOnPool } = RL;
+    if (typeof stripePlan !== "function" || typeof marchOnPool !== "function") {
+        check("inpaint_relight.js exports stripePlan and marchOnPool (K12)", false);
+        return;
+    }
+    let ok = true, detail = "";
+    for (const h of [1, 7, 31, 32, 33, 63, 64, 65, 100, 341, 682, 2731]) {
+        for (const n of [0, 1, 2, 3, 7, 24, 32, 1000]) {
+            const plan = stripePlan(h, n);
+            let at = 0, bad = "";
+            for (const [r0, rows] of plan) {
+                if (r0 !== at || !(rows >= 1)) bad = bad || "a gap or an empty stripe";
+                if (plan.length > 1 && rows < 32) bad = bad || "a stripe under 32 rows";
+                at = r0 + rows;
+            }
+            if (at !== h) bad = bad || `covers ${at} of ${h} rows`;
+            if (plan.length > Math.max(1, n)) bad = bad || `${plan.length} stripes for ${n}`;
+            if (h >= 64 && n >= 2 && plan.length < 2) bad = bad || "not split";
+            if (bad) { ok = false; detail = `h ${h}, ${n} asked: ${bad} ${JSON.stringify(plan).slice(0, 120)}`; break; }
+        }
+        if (!ok) break;
+    }
+    check("stripePlan covers every row once and in order, in stripes of 32 rows or more, never more than asked", ok, detail);
+
+    // S stripes into one shared out against one call of the same kernel
+    const striped = (impl, depth, w, h, a, S, key) => {
+        const out = new Uint8Array(new SharedArrayBuffer(w * h));
+        for (const [r0, rows] of stripePlan(h, S)) impl.shadowMarch(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, r0, rows, out, key);
+        return out;
+    };
+    const one = (impl, depth, w, h, a) => impl.shadowMarch(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, 0, h);
+    ok = true; detail = "";
+    let cases = 0;
+    K.setKernels("rust");   // a worker's mode: the sun on Rust (relightBench left the twins in force)
+    for (const [w, h, combos, counts] of [
+        [512, 341, [[1, 16], [3, 1], [4, 32], [16, 64], [4, 64], [1, 1]], [2, 7, 10]],
+        [1024, 682, [[1, 16], [4, 32]], [5, 21]],
+    ]) {
+        const sab = new Uint16Array(new SharedArrayBuffer(w * h * 2));
+        sab.set(smoothDepth(w, h));
+        const map = { data: sab, w, h }, long = Math.max(w, h), scale = 0.5 * long;
+        const lights = [];
+        for (const [type, fx, fy, dist] of [["point", 0.30, 0.35, -30], ["spot", 0.65, 0.12, -60], ["sun", 0.15, 0.20, -30]]) {
+            const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
+            lights.push([type, [lm.mx, lm.my, lm.mz, type === "sun" ? 1 : 0]]);
+        }
+        lights.push(["a point on a pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.6, 0]]);
+        lights.push(["a point below the surface", [w * 0.5, h * 0.5, scale * 0.05, 0]]);
+        lights.push(["a point off the map", [-0.4 * w, 1.3 * h, scale * 0.8, 0]]);
+        lights.push(["the sun straight up", [0, 0, 1, 1]]);
+        lights.push(["the sun grazing", [1, 0.25, 0.02, 1]]);
+        for (const [taps, steps] of combos) {
+            for (const [name, light] of lights) {
+                const a = { scale, light, radius: 0.3 * 0.05 * long, taps, steps, bias: 0.005 * scale };
+                const impls = light[3] === 1 ? [["rust simd", simd, "k:sun"], ["rust scalar", scalar, "k:sun"], ["kernels.js (a worker's route)", K, "k:sun"]] : [["twin", js, null]];
+                for (const [iname, impl, key] of impls) {
+                    const want = one(iname.startsWith("kernels") ? simd : impl, sab, w, h, a);
+                    for (const S of counts) {
+                        cases++;
+                        const got = striped(impl, sab, w, h, a, S, key ? `${key}:${w}x${h}` : null);
+                        if (!eqBytes(got, want)) { ok = false; detail += `${detail ? "; " : ""}${w} x ${h} ${name} ${iname} taps ${taps} steps ${steps} in ${S}`; }
+                    }
+                }
+            }
+        }
+    }
+    K.setKernels("js");
+    check(`shadow_march in stripes into one shared out equals one call: the twin (point, spot) and the Rust sun on both builds and through kernels.js (${cases} cases)`, ok, detail);
+
+    // the one-slot resident depth copy, on an instance of its own: a key copies the map once over all stripes
+    {
+        const w = 512, h = 341, n = w * h;
+        const fresh = new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);
+        const d1 = smoothDepth(w, h), d2 = d1.map((v, i) => (i % 7 === 0 ? 65535 - v : v)), small = smoothDepth(256, 170);
+        const a = { scale: 256, light: [0.3, -0.2, 0.9, 1], radius: 7.7, taps: 4, steps: 32, bias: 1.28 };
+        const mb = (f) => { P.pxTimed(true); P.pxCalls(true); try { f(); return P.pxLaps().copyInMB; } finally { P.pxTimed(false); } };
+        const depthMB = (n * 2) / 1048576;
+        let r1, r2, r3, r4;
+        const keyed = mb(() => { r1 = striped(fresh, d1, w, h, a, 8, "map:1"); });
+        const again = mb(() => { r2 = striped(fresh, d1, w, h, a, 8, "map:1"); });
+        const plain = mb(() => { r3 = striped(fresh, d1, w, h, a, 8, null); });
+        const next = mb(() => { r4 = striped(fresh, d2, w, h, a, 8, "map:2"); });
+        const want1 = one(simd, d1, w, h, a), want2 = one(simd, d2, w, h, a);
+        const r5 = striped(fresh, small, 256, 170, a, 4, "map:2");   // the same key on another size: copied again
+        const want5 = one(simd, small, 256, 170, a);
+        check("the Rust sun's stripes with a key copy the depth map once (8 stripes), again none, without a key once a stripe",
+            keyed < 1.5 * depthMB && again < 0.01 && plain > 7.5 * depthMB, `${keyed.toFixed(2)} / ${again.toFixed(2)} / ${plain.toFixed(2)} MB, the map ${depthMB.toFixed(2)} MB`);
+        check("a new key copies the new map and never answers from the old one; a key on another size copies again",
+            eqBytes(r1, want1) && eqBytes(r2, want1) && eqBytes(r3, want1) && eqBytes(r4, want2) && !eqBytes(want1, want2) && next > 0.9 * depthMB && eqBytes(r5, want5));
+    }
+
+    // marchOnPool on a real WorkerPool: workers that answer relight_shadow as inpaint_worker.js does, a tick later
+    const { WorkerPool, CancelledError } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_pool.js")).href);
+    const sent = [];
+    const answer = (msg, w, fail) => {
+        try {
+            const { depth, w: mw, h: mh, scale, light, radius, taps, steps, bias, row0, rows, out } = msg;
+            if (fail && fail(msg)) throw new Error("stripe failed on purpose");
+            if (out) {
+                js.shadowMarch(depth, mw, mh, scale, light, radius, taps, steps, bias, row0, rows, out);
+                const back = msg.tag === "badrows" && row0 > 0 ? rows + 1 : Math.min(rows, mh - row0);
+                return { id: msg.id, ok: true, row0, rows: back };
+            }
+            const vis = js.shadowMarch(depth, mw, mh, scale, light, radius, taps, steps, bias, row0, rows);
+            return { id: msg.id, ok: true, vis: vis.buffer, row0, rows };
+        } catch (err) { return { id: msg.id, ok: false, error: String((err && err.message) || err) }; }
+    };
+    const poolOf = (size, fail = null) => new WorkerPool({
+        size,
+        create: () => {
+            const wk = { onmessage: null, onerror: null, terminate() {} };
+            wk.postMessage = (msg, transfer) => {
+                sent.push({ msg, transfer: transfer || [] });
+                setTimeout(() => wk.onmessage({ data: answer(msg, wk, fail) }), 1);
+            };
+            return wk;
+        },
+    });
+    const w = 160, h = 330, plain16 = smoothDepth(w, h), shared16 = new Uint16Array(new SharedArrayBuffer(w * h * 2));
+    shared16.set(plain16);
+    const args = (depth, tag) => ({ depth, w, h, scale: 80, light: [40, 30, 50, 0], radius: 2.4, taps: 4, steps: 32, bias: 0.4, key: null, tag });
+    const want = js.shadowMarch(plain16, w, h, 80, [40, 30, 50, 0], 2.4, 4, 32, 0.4, 0, h);
+    const of = (tag) => sent.filter((s) => s.msg.tag === tag);
+    {
+        const pool = poolOf(3);
+        const got = await marchOnPool(pool, args(shared16, "s"), { priority: 1, group: "g:s", stripes: 8 });
+        const s = of("s"), plan = stripePlan(h, 8);
+        check("marchOnPool on a SharedArrayBuffer: the stripes of stripePlan, one shared out, no transfer, the bytes of one call",
+            eqBytes(got, want) && s.length === plan.length && plan.length > 1 && s.every((x, i) => x.msg.out && x.msg.out.buffer === s[0].msg.out.buffer
+                && x.msg.out.buffer instanceof SharedArrayBuffer && x.transfer.length === 0 && x.msg.row0 === plan[i][0] && x.msg.rows === plan[i][1]) && got.buffer === s[0].msg.out.buffer,
+            `${s.length} jobs for ${plan.length} stripes`);
+        const one1 = await marchOnPool(pool, args(plain16, "plain"), { priority: 1, group: "g:p", stripes: 8 });
+        const one0 = await marchOnPool(pool, args(shared16, "zero"), { priority: 1, group: "g:z", stripes: 0 });
+        const p = of("plain"), z = of("zero");
+        check("marchOnPool without a SharedArrayBuffer (the node's page) and on the route 0: one job a light, rows 0..h, the reply's own buffer",
+            eqBytes(one1, want) && eqBytes(one0, want) && p.length === 1 && z.length === 1 && !p[0].msg.out && !z[0].msg.out
+                && p[0].msg.row0 === 0 && p[0].msg.rows === h, `${p.length} / ${z.length} jobs`);
+        pool.terminate();
+    }
+    {
+        const plan = stripePlan(h, 8);
+        const pool = poolOf(2, (msg) => msg.tag === "fail" && msg.row0 === plan[1][0]);
+        const c0 = pool.stats().cancelled;
+        let err = null;
+        try { await marchOnPool(pool, args(shared16, "fail"), { priority: 1, group: "g:f", stripes: 8 }); } catch (e) { err = e; }
+        await new Promise((r) => setTimeout(r, 20));
+        check("a failed stripe rejects its march with the stripe's error and cancels the rest of its group",
+            !!err && !err.cancelled && /on purpose/.test(err.message) && pool.stats().cancelled > c0 && of("fail").length < plan.length && pool.pending === 0,
+            `${err && err.message}; ${of("fail").length} of ${plan.length} sent, ${pool.stats().cancelled - c0} cancelled`);
+        let bad = null;
+        try { await marchOnPool(pool, args(shared16, "badrows"), { priority: 1, group: "g:b", stripes: 4 }); } catch (e) { bad = e; }
+        check("a stripe's reply with other rows than it was sent rejects the march", !!bad && /rows/.test(bad.message), bad && bad.message);
+        pool.terminate();
+    }
+    {
+        const pool = poolOf(2);
+        const A = marchOnPool(pool, args(shared16, "A"), { priority: 1, group: "g:A", stripes: 4 });
+        const B = marchOnPool(pool, args(shared16, "B"), { priority: 1, group: "g:B", stripes: 4 });
+        const sentA = of("A").length;   // the pool's two workers took A's first two stripes at once
+        const n = pool.cancel("g:A");   // superseded: what ensureRelightMaps does for a newer full march of the channel
+        let errA = null;
+        try { await A; } catch (e) { errA = e; }
+        const gotB = await B;
+        check("a cancelled march rejects with a CancelledError, sends none of its queued stripes, and another group's march lands whole",
+            errA instanceof CancelledError && errA.cancelled === true && of("A").length === sentA && sentA < 4 && n === 4 && eqBytes(gotB, want) && of("B").length === 4,
+            `${errA && errA.name}; A sent ${of("A").length} (${sentA} before the cancel), ${n} cancelled, B ${of("B").length}`);
+        pool.terminate();
+    }
+}
+
+/**
+ * The call counters of px.js (docs/PLAN_WASM_BUILD.md §3.4): a kernel call counts under its export name and nothing
+ * else does, the counts go on across a new instance of the same module (kernels.js `releaseIfLarge`, here made to
+ * happen for real), the instance's own exports (`px.raw`) are not counted, and a reset clears them.
+ */
+async function counterCases(simd) {
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);   // loaded by relightBench already
+    check("kernels.js re-exports px.js' pxCalls (one set of counters per thread)", K.pxCalls === P.pxCalls);
+    const m = new Float32Array(64 * 64).fill(0.5), u = new Uint16Array(64 * 64);
+    P.pxCalls(true);
+    simd.dilateMask(m, 64, 64, 2);
+    simd.dilateMask(m, 64, 64, 2);
+    simd.rangeMax(u, 64, 64);
+    let c = P.pxCalls();
+    check("pxCalls counts each kernel call by its export name, and not the allocator, version or size helpers",
+        c.dilate_mask === 2 && c.range_max === 1 && Object.keys(c).length === 2, JSON.stringify(c));
+    const fresh = new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);   // what releaseIfLarge makes
+    fresh.dilateMask(m, 64, 64, 2);
+    const ps = fresh.alloc(64 * 64 * 2), po = fresh.alloc(64 * 64 * 2);
+    fresh.raw.range_max(ps, 64, 64, po);   // the instance's own export: not counted
+    c = P.pxCalls();
+    check("the counts go on across a new instance of the same module; px.raw calls are not counted",
+        c.dilate_mask === 3 && c.range_max === 1 && fresh.raw === fresh.instance.exports && fresh.exports !== fresh.raw, JSON.stringify(c));
+    const was = P.pxCalls(true), after = P.pxCalls();
+    check("pxCalls(true) returns the counts and clears them", was.dilate_mask === 3 && Object.keys(after).length === 0, `${JSON.stringify(was)} then ${JSON.stringify(after)}`);
+    // kernels.js for real: its instance grown past RELEASE_BYTES (256 MB), released after the next call, the count goes on
+    K.setKernels("rust");
+    const before = K.rustPx();
+    if (!before) {
+        check("kernels.js has its Rust instance for the release check", false);
+    } else {
+        K.dilateMask(m, 64, 64, 2);
+        before.alloc(300 * 1048576);   // grows the memory without a kernel call
+        K.dilateMask(m, 64, 64, 2);    // releaseIfLarge after this call replaces the instance
+        const now = K.rustPx();
+        K.dilateMask(m, 64, 64, 2);
+        c = K.pxCalls(true);
+        check("kernels.js releaseIfLarge replaces a grown instance and the count goes on (3 calls over two instances)",
+            !!now && now !== before && now.byteLength < 256 * 1048576 && c.dilate_mask === 3 && Object.keys(c).length === 1,
+            `${JSON.stringify(c)}, ${now === before ? "the same instance" : "a new instance"} of ${now ? now.byteLength : 0} bytes`);
+    }
+    K.setKernels("js");   // as relightBench left it: the later cases compare against the editor's JS
+}
+
+// ---- K1: the split, the routes, a poisoned instance, the instance's lifecycle (docs/PLAN_WASM_K1.md S6) ---------------
+// Each case function leaves kernels.js as it found it (`kernelsBack`): the twins in force, as relightBench left them for
+// the later cases, no route overridden and the clocks off.
+
+const LAP_KEYS = ["copyIn", "copyInMB", "copyInSharedMB", "copyOut", "copyOutMB", "alloc", "grewMB"];
+const lapsZero = (l) => LAP_KEYS.every((k) => l[k] === 0);
+/** What a flood job's `use` makes of the shape: a copy (the view is valid only inside the call), the count, the bounds. */
+const shapeOf = (view, n, bounds) => ({ bytes: new Uint8Array(view), n, bounds });
+const sameShape = (a, b) => !!a && !!b && eqBytes(a.bytes, b.bytes) && a.n === b.n && JSON.stringify(a.bounds) === JSON.stringify(b.bounds);
+/** A source pointer below 0 sends mip_half out of bounds: a trap, as a corrupted instance would give. */
+const trapIn = (px) => px.exports.mip_half(-16, 256, 256, 0);
+
+function kernelsBack(K) {
+    K.setKernels("js");
+    for (const name of Object.keys(K.routeOverrides())) K.setRoute(name, null);
+    K.pxTimed(false);
+}
+
+/**
+ * The split's clocks and laps (px.js, docs/PLAN_WASM_K1.md §1.1), on a px.js of its own (imported under a query, so its
+ * counters start empty whatever ran before): `ms` only while `pxTimed()` is on; `first` lists an export whose every
+ * call on the thread fell since the reset, with that first call's milliseconds (null when it was not timed); `ever` and
+ * `firstMs` go on across later calls, a new instance and a reset; a 64 x 64 dilateMask copies 16 KB in and 16 KB out;
+ * `pxCalls(true)` clears the milliseconds and the laps; an alloc memory cannot grow for throws `PxOutOfMemory`. With
+ * `PX_BENCH`, what the counted wrapper costs per call with the clocks off and on.
+ */
+async function splitCases(simd, js) {
+    const MB = 1048576, kb16 = 16384 / MB;
+    const main = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    check("kernels.js re-exports px.js' pxTimed, pxLaps, pxLapAdd and PxOutOfMemory and kernels_js.js' floodScan (one split per thread)",
+        K.pxTimed === main.pxTimed && K.pxLaps === main.pxLaps && K.pxLapAdd === main.pxLapAdd && K.PxOutOfMemory === main.PxOutOfMemory
+        && K.floodScan === js.floodScan);
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href + "?split");
+    const fresh = () => new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);
+    const show = (l) => JSON.stringify(l);
+    const m = new Float32Array(64 * 64).fill(0.5);
+    const big = Float32Array.from({ length: 256 * 256 }, (_, i) => ((i * 37) % 101) / 100);
+    const a = fresh();
+    let l = P.pxLaps();
+    check("a px.js of its own starts with the clocks off and an empty split",
+        P.pxTimed() === false && !Object.keys(l.ms).length && !Object.keys(l.first).length && lapsZero(l), show(l));
+    a.dilateMask(m, 64, 64, 2);
+    l = P.pxLaps();
+    check("untimed, the thread's first call of an export is listed in first with null, and books no ms and no laps",
+        l.first.dilate_mask === null && Object.keys(l.first).length === 1 && !Object.keys(l.ms).length && lapsZero(l), show(l));
+    P.pxCalls(true);
+    a.dilateMask(m, 64, 64, 2);
+    l = P.pxLaps();
+    check("after the next reset that export is no longer first (ever goes on) and its count starts again",
+        !("dilate_mask" in l.first) && P.pxCalls().dilate_mask === 1, show(l));
+
+    // a timed first call: its milliseconds stay first's across later calls and a new instance, until a reset
+    P.pxTimed(true);
+    P.pxCalls(true);
+    a.boxBlurs(big, 256, 256, [3, 0, 0]);
+    const l1 = P.pxLaps();
+    a.boxBlurs(big, 256, 256, [3, 0, 0]);
+    const l2 = P.pxLaps();
+    const b = fresh();
+    b.boxBlurs(big, 256, 256, [3, 0, 0]);
+    const l3 = P.pxLaps();
+    P.pxCalls(true);
+    b.boxBlurs(big, 256, 256, [3, 0, 0]);
+    const l4 = P.pxLaps(), f1 = l1.first.box_blurs;
+    check("timed, the first call's milliseconds are first's and stay so across a later call and a new instance (firstMs, ever); ms sums the calls; after a reset the export is no longer first",
+        typeof f1 === "number" && f1 > 0 && l1.ms.box_blurs === f1 && l2.first.box_blurs === f1 && l2.ms.box_blurs > f1
+        && l3.first.box_blurs === f1 && l3.ms.box_blurs > l2.ms.box_blurs && !("box_blurs" in l4.first) && l4.ms.box_blurs > 0,
+        `first ${f1}, ms ${l1.ms.box_blurs} / ${l2.ms.box_blurs} / ${l3.ms.box_blurs}, then first ${show(l4.first)}`);
+
+    // the copies of a Px method, plain and from a SharedArrayBuffer
+    P.pxCalls(true);
+    const plain = a.dilateMask(m, 64, 64, 2);
+    l = P.pxLaps();
+    const sm = new Float32Array(new SharedArrayBuffer(m.byteLength));
+    sm.set(m);
+    P.pxCalls(true);
+    const viaShared = a.dilateMask(sm, 64, 64, 2);
+    const ls = P.pxLaps();
+    check("timed, a 64 x 64 dilateMask books 16 KB copied in and 16 KB out with their milliseconds and the kernel's; from a SharedArrayBuffer the copy in counts as shared too",
+        l.copyInMB === kb16 && l.copyOutMB === kb16 && l.copyInSharedMB === 0 && l.copyIn > 0 && l.copyOut > 0 && l.ms.dilate_mask > 0
+        && ls.copyInMB === kb16 && ls.copyInSharedMB === kb16 && ls.copyOutMB === kb16 && eqBytes(viaShared, plain), `${show(l)}; shared ${show(ls)}`);
+    P.pxCalls(true);
+    const b0 = a.byteLength, ptr = a.alloc(16 * MB);
+    l = P.pxLaps();
+    check("timed, an alloc that grows memory books its milliseconds and the MB memory grew in it",
+        l.alloc > 0 && l.grewMB > 0 && l.grewMB * MB === a.byteLength - b0, `${show(l)}, ${b0} -> ${a.byteLength} bytes`);
+    a.free(ptr, 16 * MB);
+    P.pxCalls(true);
+    P.pxLapAdd("copyIn", 1.5, 2 * MB, true);
+    P.pxLapAdd("copyOut", 0.25, MB);
+    l = P.pxLaps();
+    let refused = false;
+    try { P.pxLapAdd("copy", 1); } catch { refused = true; }
+    check("pxLapAdd books a direct user's copies (one read from shared memory as shared too) and refuses any other key",
+        l.copyIn === 1.5 && l.copyInMB === 2 && l.copyInSharedMB === 2 && l.copyOut === 0.25 && l.copyOutMB === 1 && refused, show(l));
+    a.dilateMask(m, 64, 64, 2);
+    P.pxCalls(true);
+    l = P.pxLaps();
+    check("pxCalls(true) clears the milliseconds and every lap", !Object.keys(l.ms).length && lapsZero(l), show(l));
+    P.pxTimed(false);
+    a.dilateMask(m, 64, 64, 2);
+    l = P.pxLaps();
+    check("with the clocks off again a call books its count and nothing else",
+        P.pxTimed() === false && P.pxCalls().dilate_mask === 1 && !Object.keys(l.ms).length && lapsZero(l), show(l));
+    let oom = null;
+    try { a.alloc(4000 * MB); } catch (e) { oom = e; }   // px_alloc takes an i32: 4 GiB and more would wrap
+    check("an alloc memory cannot grow for throws PxOutOfMemory (an Error, its size on it, the old message) and marks nothing",
+        oom instanceof P.PxOutOfMemory && oom instanceof Error && oom.name === "PxOutOfMemory" && oom.bytes === 4000 * MB
+        && oom.message === `px: out of memory allocating ${4000 * MB} bytes` && a.trapped === null, String(oom));
+
+    if (process.env.PX_BENCH) {
+        // the counted wrapper against the instance's own export, on a call that does next to nothing (adler32 of 0 bytes)
+        const N = 200000, ps = a.alloc(8);
+        const loop = (f) => () => { for (let i = 0; i < N; i++) f(ps, 0, 1); };
+        const t = benchMedians([
+            ["raw", loop(a.raw.adler32)],
+            ["untimed", loop(a.exports.adler32)],
+            ["timed", () => { P.pxTimed(true); try { loop(a.exports.adler32)(); } finally { P.pxTimed(false); } }],
+        ]);
+        const ns = (k) => (t[k] * 1e6) / N;
+        console.log(`       the counted wrapper per kernel call (adler32 of 0 bytes, ${N} calls a round): clocks off +${(ns("untimed") - ns("raw")).toFixed(1)} ns, on +${(ns("timed") - ns("raw")).toFixed(1)} ns over the raw export's ${ns("raw").toFixed(1)} ns (K0b: 6-16 ns, clocks off)`);
+        a.free(ps, 8);
+    }
+    P.pxTimed(false);
+    P.pxCalls(true);
+}
+
+/**
+ * The routes of kernels.js (docs/PLAN_WASM_K1.md §1.3): names and values are checked, `rustPx(name, size)` follows a
+ * route, the global mode beats every route, a worker's `adoptRoutes` replaces the overrides wholesale. Then the flood
+ * route's two sides, which must give the same bytes: the twin `floodShape` (on `floodScan`, the loop floodMask ran)
+ * against both Rust builds, `floodScan` against `flood`, and the routed callers (kernels.js `floodShape`,
+ * inpaint_raster.js `floodMask`) on each side of a route, `use` called once.
+ */
+async function routeCases(js, simd, scalar, raster) {
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    K.setKernels("rust");
+    const p = K.rustPx(), base = K.kernelRoutes();   // the defaults: a measured flood or mips default may be among them
+    try {
+        const throws = (fn, re) => { try { fn(); return false; } catch (e) { return re.test(String(e && e.message)); } };
+        check("setRoute refuses an unknown name (a prototype member too) and a value of the wrong kind",
+            throws(() => K.setRoute("nope", "js"), /^px: unknown route nope$/) && throws(() => K.setRoute("toString", "js"), /unknown route toString/)
+            && throws(() => K.setRoute("mips", 5), /^px: route mips takes/) && throws(() => K.setRoute("flood", -1), /route flood takes/)
+            && throws(() => K.setRoute("flood", NaN), /route flood takes/) && throws(() => K.setRoute("keepMB", "js"), /route keepMB takes/)
+            && Object.keys(K.routeOverrides()).length === 0, JSON.stringify(K.routeOverrides()));
+        K.setRoute("flood", 1000);
+        const at = [K.rustPx("flood", 999), K.rustPx("flood", 1000), K.rustPx("flood", 5000), K.rustPx()];
+        K.setRoute("flood", "js");
+        const toJs = [K.rustPx("flood", 1e9), K.rustPx()];
+        K.setRoute("flood", Infinity);
+        const inf = K.rustPx("flood", 1e9);
+        K.setRoute("flood", "rust");
+        const toRust = K.rustPx("flood", 0);
+        K.setRoute("flood", null);
+        check("rustPx(\"flood\", n): null below a number of pixels, Rust at it and above, null for \"js\" and Infinity, Rust for \"rust\" and when there is no flood route; null removes the override; a call without a name ignores the routes",
+            !!p && at[0] === null && at[1] === p && at[2] === p && at[3] === p && toJs[0] === null && toJs[1] === p && inf === null && toRust === p
+            && ("flood" in base || K.rustPx("flood", 0) === p) && K.route("flood") === base.flood && !("flood" in K.routeOverrides()));
+        K.setRoute("mips", "rust");
+        K.setRoute("flood", "rust");
+        K.setKernels("js");
+        const off = [K.rustPx("mips"), K.rustPx("flood", 1e9), K.rustPx()];
+        K.setKernels("rust");
+        check("setKernels(\"js\") beats a \"rust\" route (the global mode stays the override)", off.every((v) => v === null) && K.rustPx("mips") === p);
+        K.adoptRoutes({ flood: 5, keepMB: Infinity, bogus: 1, releaseMB: "js", toString: "js", mips: 3 });
+        const adopted = K.routeOverrides();
+        K.adoptRoutes(null);
+        const none = K.routeOverrides();
+        let quiet = true;
+        try { K.adoptRoutes({ get flood() { throw new Error("a getter"); } }); K.adoptRoutes("flood=js"); } catch { quiet = false; }
+        check("adoptRoutes replaces the overrides wholesale with the valid entries (unknown names and bad values dropped) and never throws",
+            Object.keys(adopted).sort().join(" ") === "flood keepMB" && adopted.flood === 5 && adopted.keepMB === Infinity
+            && !Object.keys(none).length && quiet && !Object.keys(K.routeOverrides()).length, Object.keys(adopted).join(" "));
+        K.setRoute("flood", 77);
+        K.setRoute("keepMB", 64);
+        const kr = K.kernelRoutes(), ov = K.routeOverrides();
+        K.setRoute("flood", null);
+        K.setRoute("keepMB", null);
+        check("kernelRoutes() is the defaults with the overrides over them (releaseMB and keepMB always among them), routeOverrides() the overrides alone",
+            JSON.stringify(kr) === JSON.stringify({ ...base, flood: 77, keepMB: 64 }) && typeof base.releaseMB === "number" && typeof base.keepMB === "number"
+            && Object.keys(ov).length === 2 && ov.flood === 77 && ov.keepMB === 64 && K.route("releaseMB") === base.releaseMB && K.route("keepMB") === base.keepMB
+            && K.route("mips") === base.mips, JSON.stringify(kr));
+
+        // the flood's two sides: jobCases' sizes and seeds, corner seeds, each selection kind at each tolerance either way
+        const selOf = (w, h, seed, kind) => {
+            if (kind === "none") return null;
+            const d = new Uint8Array(w * h * 4);
+            if (kind === "empty") return d;   // all transparent: the region is empty
+            const f = blobs(w, h, seed, 4);
+            for (let i = 0; i < w * h; i++) d[i * 4 + 3] = f[i] ? [128, 200, 255][i % 3] : [0, 90, 127][i % 3];
+            return d;
+        };
+        const cases = [];
+        for (const [w, h, seed] of [[1, 1, 1], [97, 61, 2], [256, 256, 3], [640, 480, 5]]) {
+            const data = regions(w, h, seed), r = rng(seed + 9);
+            [[0, 0], [w - 1, h - 1], [r() * w | 0, r() * h | 0]].forEach(([sx, sy], s) => {
+                for (let k = 0; k < 6; k++) {
+                    const tol = [0, 32, 255][k % 3], contiguous = k < 3, kind = ["none", "partial", "empty"][(k + s) % 3];
+                    cases.push({ tag: `${w}x${h} seed ${sx},${sy} tol ${tol} ${contiguous ? "contiguous" : "anywhere"} sel ${kind}`,
+                        args: [data, w, h, sx, sy, tol, contiguous, selOf(w, h, seed + k, kind)] });
+                }
+            });
+        }
+        twinCheck({
+            name: "flood_shape", builds: [["rust simd", simd], ["rust scalar", scalar]], twin: js, cases,
+            title: "flood_shape equals its twin floodShape byte for byte, with the count and the bounds (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds)",
+            call: (k, [d, w, h, sx, sy, tol, contiguous, sel]) => k.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf),
+        });
+        let ok = true, detail = "", n = 0;
+        for (const c of cases) {
+            const [d, w, h, sx, sy, tol, contiguous, sel] = c.args;
+            if (sel) continue;
+            for (const t of [tol, 400, -5]) {
+                n++;
+                const x = js.floodScan(d, w, h, sx, sy, t, contiguous), y = js.flood(d, w, h, sx, sy, t, contiguous);
+                if (!eqBytes(x, y)) { ok = false; detail = `${c.tag} at tol ${t}: ${firstDiff(x, y)}`; }
+            }
+        }
+        check(`js floodScan (floodMask's loop) equals js flood (${n} cases, also at tol 400 and -5: unclamped against clamped)`, ok, detail);
+
+        // the routed callers on each side of a route: the same result, and the side the route names ran
+        const some = cases.filter((_, i) => i % 5 === 0);
+        ok = true; detail = ""; n = 0;
+        for (const c of some) {
+            const [d, w, h, sx, sy, tol, contiguous, sel] = c.args;
+            const want = js.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf);
+            for (const [rt, rust] of [["rust", 1], ["js", 0], [w * h, 1], [w * h + 1, 0]]) {
+                K.setRoute("flood", rt);
+                K.pxCalls(true);
+                let uses = 0;
+                const got = K.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, (v, cnt, bounds) => { uses++; return shapeOf(v, cnt, bounds); });
+                const ran = K.pxCalls().flood_shape || 0;
+                n++;
+                if (!sameShape(got, want) || uses !== 1 || ran !== rust) {
+                    ok = false; detail = `${c.tag} route ${rt}: ${ran ? "rust" : "the twin"} ran, use called ${uses}x${sameShape(got, want) ? "" : ", another shape"}`;
+                }
+            }
+        }
+        K.setRoute("flood", null);
+        check(`kernels.js floodShape under the flood route: "rust" and a size at or below the picture's run Rust, "js" and a size above it the twin; the same shape, use called once (${n} runs)`, ok, detail);
+        ok = true; detail = ""; n = 0;
+        for (const c of some) {
+            const [d, w, h, sx, sy, tol, contiguous] = c.args;
+            const want = js.floodScan(d, w, h, sx, sy, tol, contiguous);
+            for (const [rt, rust] of [["rust", 1], ["js", 0], [w * h, 1], [w * h + 1, 0]]) {
+                K.setRoute("flood", rt);
+                K.pxCalls(true);
+                const got = raster.floodMask(d, w, h, sx, sy, tol, contiguous);
+                const ran = K.pxCalls().flood || 0;
+                n++;
+                if (!eqBytes(got, want) || ran !== rust) { ok = false; detail = `${c.tag} route ${rt}: ${ran ? "rust" : "floodScan"} ran ${firstDiff(got, want)}`; }
+            }
+        }
+        K.setRoute("flood", null);
+        check(`inpaint_raster.js floodMask under the flood route: the Rust flood at or above the route's size and for "rust", floodScan below it and for "js"; the same mask (${n} runs)`, ok, detail);
+    } finally { kernelsBack(K); }
+}
+
+/**
+ * A poisoned instance (docs/PLAN_WASM_K1.md §0.3): a trap in an export marks its instance, a wasm stack overflow
+ * (RangeError) too and no other error; the callers (kernels.js' wrappers, inpaint_raster.js floodMask and
+ * growMaskBounds) answer a trap or an out-of-memory with the twin from the inputs as they were, the instance is
+ * replaced (synchronously, or in the background where that throws) and the next call runs Rust again; a plain error is
+ * the caller's; `_reset` keeps a result already written, in place too; floodShape's `use` runs once whatever fails; a
+ * recovery warns once per cause and kernel.
+ */
+async function trapCases(js, simd, raster) {
+    const MB = 1048576;
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    const m = Float32Array.from({ length: 64 * 64 }, (_, i) => (i % 7) / 7), want = js.dilateMask(m, 64, 64, 2);
+    const warned = [], realWarn = console.warn;
+    console.warn = (...a) => { warned.push(a.map(String).join(" ")); };   // recovered() warns; kept to be counted below
+    const RealInstance = WebAssembly.Instance;
+    K.setKernels("rust");
+    K.setRoute("flood", "rust");   // the floods below run Rust whatever a measured flood default says
+    try {
+        // a trap through an export
+        let p = K.rustPx(), i0 = K.pxInstances(), err = null;
+        try { trapIn(p); } catch (e) { err = e; }
+        const next = K.rustPx();
+        let i1 = K.pxInstances();
+        check("a trap in an export (mip_half below address 0) throws a RuntimeError and marks its instance; the next rustPx() is a new one (trap +1, made sync)",
+            err instanceof WebAssembly.RuntimeError && p.trapped === err && !!next && next !== p && next.trapped === null
+            && i1.trap === i0.trap + 1 && i1.sync === i0.sync + 1 && i1.serial === i0.serial + 1, `${err}; ${JSON.stringify(i1)}`);
+        const inst = new WebAssembly.Instance(simd.module, {});
+        const failing = (e) => new P.Px({ exports: { ...inst.exports, dilate_mask: () => { throw e; } } }, simd.module);
+        const overflow = new RangeError("Maximum call stack size exceeded"), other = new TypeError("not from wasm");
+        const pr = failing(overflow), pt = failing(other);
+        let er = null, et = null;
+        try { pr.dilateMask(m, 64, 64, 2); } catch (e) { er = e; }
+        try { pt.dilateMask(m, 64, 64, 2); } catch (e) { et = e; }
+        check("a RangeError from an export (a wasm stack overflow) marks its instance as a trap does; another error marks nothing",
+            er === overflow && pr.trapped === overflow && et === other && pt.trapped === null);
+
+        // a wrapper whose Rust call traps, twice over (the second warns no more)
+        let ok = true, detail = "";
+        for (let round = 0; round < 2; round++) {
+            p = K.rustPx(); i0 = K.pxInstances();
+            K.pxCalls(true);
+            p.dilateMask = function () { return trapIn(this); };   // the method traps in its export, as a real one would
+            const got = K.dilateMask(m, 64, 64, 2), after = K.rustPx();
+            i1 = K.pxInstances();
+            const again = K.dilateMask(m, 64, 64, 2), c = K.pxCalls();
+            if (!(eqBytes(got, want) && p.trapped instanceof WebAssembly.RuntimeError && after !== p && i1.trap === i0.trap + 1
+                && eqBytes(again, want) && c.dilate_mask === 1 && c.mip_half === 1)) { ok = false; detail = `round ${round}: ${JSON.stringify(c)}, ${JSON.stringify(i1)}`; }
+        }
+        check("a wrapper whose Rust call traps answers with the twin's bytes, the instance is replaced (trap +1) and the next call runs Rust", ok, detail);
+        const fw = 97, fh = 61, fdata = regions(fw, fh, 2);
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.flood = function () { return trapIn(this); };
+        const mask = raster.floodMask(fdata, fw, fh, 10, 10, 32, true);
+        const floodOk = eqBytes(mask, js.floodScan(fdata, fw, fh, 10, 10, 32, true)) && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
+        const sel = new Uint8Array(fw * fh * 4), blob = blobs(fw, fh, 4, 4);
+        for (let i = 0; i < fw * fh; i++) { sel[i * 4] = 255; sel[i * 4 + 3] = blob[i] ? 255 : 0; }
+        const ref = sel.slice();
+        raster.growMask(ref, fw, fh, 3);
+        const refBounds = raster.maskBounds(ref, fw, fh);
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.growMask = function () { return trapIn(this); };   // traps before it writes the selection, as Px.growMask would
+        const grown = sel.slice(), gb = raster.growMaskBounds(grown, fw, fh, 3);
+        check("inpaint_raster.js after a trap: floodMask gives floodScan's mask, growMaskBounds the JS growMask's selection and bounds (the selection grown once); each replaces the instance",
+            floodOk && eqBytes(grown, ref) && JSON.stringify(gb) === JSON.stringify(refBounds) && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1,
+            `flood ${floodOk}, bounds ${gb} vs ${refBounds} ${firstDiff(grown, ref)}`);
+
+        // a plain error, and out of memory
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.dilateMask = function () { throw new Error("plain"); };
+        let plain = null;
+        try { K.dilateMask(m, 64, 64, 2); } catch (e) { plain = e; }
+        delete p.dilateMask;
+        i1 = K.pxInstances();
+        check("a plain Error from the Rust method is rethrown and the instance kept",
+            !!plain && plain.message === "plain" && K.rustPx() === p && p.trapped === null && i1.serial === i0.serial, String(plain));
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.dilateMask = function () { this.alloc(4000 * MB); };   // memory cannot grow that far: PxOutOfMemory
+        const viaOom = K.dilateMask(m, 64, 64, 2);
+        i1 = K.pxInstances();
+        check("out of memory in the Rust method: the twin's bytes, the instance replaced (oom +1), nothing marked trapped",
+            eqBytes(viaOom, want) && K.rustPx() !== p && i1.oom === i0.oom + 1 && i1.trap === i0.trap && p.trapped === null, JSON.stringify(i1));
+
+        // _reset after the last export call
+        const fresh = () => new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);
+        const q1 = fresh(), q2 = fresh();
+        q1.trapped = new WebAssembly.RuntimeError("marked by hand");
+        q1.job.reset = () => { throw new WebAssembly.RuntimeError("the reset"); };
+        q2.job.reset = () => { throw new Error("the reset"); };
+        let r1 = null, e1 = null, e2 = null;
+        try { r1 = q1.dilateMask(m, 64, 64, 2); } catch (e) { e1 = e; }
+        try { q2.dilateMask(m, 64, 64, 2); } catch (e) { e2 = e; }
+        check("_reset: once the instance is trapped a failing reset is swallowed and the result returned; on a sound instance a plain error from it is rethrown",
+            !e1 && !!r1 && eqBytes(r1, want) && !!e2 && e2.message === "the reset" && q2.trapped === null, `${e1}; ${e2}`);
+        const params = matchParams(1), src = pixelRow(4096, 11);   // k = 1: matching twice is not matching once
+        const once = js.matchPixels(src.slice(), params), twice = js.matchPixels(once.slice(), params);
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.job.reset = function () { trapIn(p); };   // a trap in the reset (its px_free) marks the instance after the result is written
+        const inPlace = src.slice(), matched = K.matchPixels(inPlace, params);
+        const marked = p.trapped instanceof WebAssembly.RuntimeError, nextM = K.rustPx();
+        i1 = K.pxInstances();
+        check("a trap in the reset after an in-place kernel wrote its result: the result stands, applied once (no twin over it), and the next rustPx() replaces the instance",
+            !eqBytes(once, twice) && eqBytes(inPlace, once) && eqBytes(matched, once) && marked && nextM !== p && i1.trap === i0.trap + 1,
+            `${firstDiff(inPlace, once)}; ${JSON.stringify(i1)}`);
+        p = K.rustPx(); i0 = K.pxInstances();
+        K.pxCalls(true);
+        p.job.reset = () => { throw new P.PxOutOfMemory(1); };
+        const viaReset = K.dilateMask(m, 64, 64, 2), calls = K.pxCalls().dilate_mask, oomMarked = p.trapped instanceof P.PxOutOfMemory;
+        const nextO = K.rustPx();
+        i1 = K.pxInstances();
+        check("out of memory in the reset of a sound instance: the result stands (Rust ran), the instance is marked with it and the next rustPx() replaces it, counted oom",
+            eqBytes(viaReset, want) && calls === 1 && oomMarked && nextO !== p && i1.oom === i0.oom + 1 && i1.trap === i0.trap, JSON.stringify(i1));
+
+        // no synchronous instance: the successor loads in the background
+        p = K.rustPx(); i0 = K.pxInstances();
+        let grownOut = null, gone = false, pending = false, mid = null, midRust = -1;
+        try {
+            WebAssembly.Instance = function () { throw new Error("no synchronous instance here"); };
+            p.alloc(300 * MB);
+            grownOut = K.dilateMask(m, 64, 64, 2);   // Rust; releaseIfLarge then drops the grown instance
+            gone = K.rustPx() === null;
+            pending = K.pxInstances().pending;
+            K.pxCalls(true);
+            mid = K.dilateMask(m, 64, 64, 2);        // the twin meanwhile
+            midRust = K.pxCalls().dilate_mask || 0;
+        } finally { WebAssembly.Instance = RealInstance; }
+        await K.pxSettled();
+        i1 = K.pxInstances();
+        K.pxCalls(true);
+        const settled = K.dilateMask(m, 64, 64, 2);
+        check("where a synchronous instance throws, the successor loads in the background: the twin runs meanwhile (rustPx() null), and after pxSettled() a new instance (async +1) runs Rust",
+            eqBytes(grownOut, want) && gone && pending && eqBytes(mid, want) && midRust === 0 && !i1.pending && i1.async === i0.async + 1
+            && i1.release === i0.release + 1 && i1.sync === i0.sync && !!K.rustPx() && K.rustPx() !== p && eqBytes(settled, want) && K.pxCalls().dilate_mask === 1,
+            JSON.stringify(i1));
+
+        // floodShape's use runs once
+        const fargs = [fdata, fw, fh, 10, 10, 32, true, null, 0x123456];
+        const wantShape = js.floodShape(...fargs, shapeOf);
+        let uses = 0;
+        const counted = (v, cnt, bounds) => { uses++; return shapeOf(v, cnt, bounds); };
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.floodShape = function () { return trapIn(this); };
+        const viaTwin = K.floodShape(...fargs, counted);
+        const before = sameShape(viaTwin, wantShape) && uses === 1 && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
+        p = K.rustPx(); i0 = K.pxInstances(); uses = 0;
+        p.floodShape = function (...a) { const r = P.Px.prototype.floodShape.apply(this, a); trapIn(this); return r; };
+        let ea = null;
+        try { K.floodShape(...fargs, counted); } catch (e) { ea = e; }
+        const after = ea instanceof WebAssembly.RuntimeError && uses === 1 && !!p.trapped && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
+        const thrown = [];
+        for (const rt of ["rust", "js"]) {
+            K.setRoute("flood", rt);
+            p = K.rustPx(); uses = 0;
+            let eu = null;
+            try { K.floodShape(...fargs, () => { uses++; throw new WebAssembly.RuntimeError("thrown by use"); }); } catch (e) { eu = e; }
+            thrown.push(!!eu && eu.message === "thrown by use" && uses === 1 && K.rustPx() === p && p.trapped === null);
+        }
+        check("floodShape runs use once: a trap before it gives the twin's shape; a trap after it, and a RuntimeError thrown by use (Rust and twin side), are rethrown",
+            before && after && thrown.every(Boolean), `trap before ${before}, trap after ${after}, use throws ${thrown}`);
+
+        const causes = warned.map((w) => (/kernel (\S+) failed \((\w+)/.exec(w) || []).slice(1).join(" ")).sort();
+        check("a recovery warns once per cause and kernel", causes.join(", ") === "dilate_mask oom, dilate_mask trap, flood trap, flood_shape trap, grow_mask trap",
+            causes.join(", ") || "no warning");
+    } finally {
+        WebAssembly.Instance = RealInstance;
+        console.warn = realWarn;
+        kernelsBack(K);
+    }
+}
+
+/**
+ * The instance's lifecycle in kernels.js (docs/PLAN_WASM_K1.md S3): `pxInstances`, the `releaseMB` route, `dropPx`
+ * and what `pxSplit` reports was renewed, and the idle trim above `keepMB` (IDLE_MS is 2 s, so about 6 s of waits):
+ * it fires once the thread has been idle that long, never while a job holds the instance, and after the job ends.
+ */
+async function lifecycleCases(js) {
+    const MB = 1048576;
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+    const m = Float32Array.from({ length: 64 * 64 }, (_, i) => (i % 7) / 7), want = js.dilateMask(m, 64, 64, 2);
+    K.setKernels("rust");
+    try {
+        const keys = Object.keys(K.pxInstances()).sort().join(" ");
+        check("pxInstances() says the instance's serial, bytes, pending load and holds, its replacements by cause and how they were made",
+            keys === "async bytes holds idle oom pending release serial sync trap", keys);
+        K.setRoute("releaseMB", 4);
+        let p = K.rustPx(), i0 = K.pxInstances();
+        p.alloc(8 * MB);
+        const out = K.dilateMask(m, 64, 64, 2);
+        let i1 = K.pxInstances();
+        K.setRoute("releaseMB", null);
+        check("the releaseMB route: a releasing call on an instance grown past it replaces the instance (release +1, made sync), its result kept",
+            eqBytes(out, want) && K.rustPx() !== p && i1.release === i0.release + 1 && i1.sync === i0.sync + 1 && i1.bytes < 8 * MB, JSON.stringify(i1));
+        const s0 = K.pxSplit(), back = JSON.parse(JSON.stringify(s0));   // as px_jobs.py hands the window's snapshot back
+        p = K.dropPx("idle");
+        const s1 = K.pxSplit(s0), s2 = K.pxSplit(back);
+        check("dropPx renews now; pxSplit(snapshot) reports bytes0 and the renewals since by cause, from a snapshot that went through JSON too",
+            !!p && p === K.rustPx() && s1.inst === s0.inst + 1 && s1.bytes0 === s0.bytes && s1.renewed.idle === 1 && s1.renewed.release === 0
+            && s1.renewed.trap === 0 && s1.renewed.oom === 0 && "renews" in s0 && !("renews" in s1) && JSON.stringify(s2.renewed) === JSON.stringify(s1.renewed),
+            JSON.stringify(s1.renewed));
+
+        K.setRoute("keepMB", 1);   // a fresh instance is about 1.06 MB: "small" below means below 8 MB
+        p = K.rustPx(); i0 = K.pxInstances();
+        p.alloc(8 * MB);
+        K.dilateMask(m, 64, 64, 2);   // a releasing call arms the trim
+        const early = K.pxInstances().idle;
+        await sleep(2100);
+        i1 = K.pxInstances();
+        check("the idle trim: an instance above keepMB is replaced 2 s after a releasing call (idle +1), not at once",
+            early === i0.idle && i1.idle === i0.idle + 1 && K.rustPx() !== p && i1.bytes < 8 * MB, JSON.stringify(i1));
+        p = K.rustPx();
+        p.alloc(8 * MB);
+        K.dilateMask(m, 64, 64, 2);   // armed again
+        K.pxJobStart();               // a job holds the instance: the countdown is cancelled
+        i0 = K.pxInstances();
+        await sleep(2100);
+        const held = K.pxInstances(), kept = K.rustPx() === p;
+        K.pxJobEnd();                 // nothing holds it now: the countdown starts again
+        await sleep(2100);
+        i1 = K.pxInstances();
+        check("a job holds the instance: no trim while it runs (holds 1), the trim 2 s after it ends",
+            i0.holds === 1 && held.idle === i0.idle && kept && i1.holds === 0 && i1.idle === i0.idle + 1 && K.rustPx() !== p,
+            `held ${JSON.stringify(held)}, then ${JSON.stringify(i1)}`);
+    } finally { kernelsBack(K); }
 }
 
 /** The whole-job kernels (grow_mask, flood_shape) against the editor's JS for the same jobs. */
@@ -1946,6 +2854,90 @@ async function pngPartCases(px, label) {
     check(`${label} pngPart of noise inflates back`, !!nout && nout.length === np.raw);
 }
 
+// W1 (docs/PLAN_WASM_BUILD.md §7): the writer's filter choice. The SIMD build adds the five filters' costs 16 bytes at a
+// time and keeps the Paeth row it computed; the scalar build is the old per-byte loop. Both against the JS twin byte
+// for byte (each case also at an odd offset), the twin against the plain reference here, and the filtered rows back to
+// the input. The cases: every row width from 1 to 40 px (so every count of bytes after the last 16-byte group, and the
+// rows too narrow for the lanes), the widths around 64, 256, 1024 and 4096 px, with and without the row above; random
+// pixels, tiny value ranges (ties of the row sums and inside Paeth), bytes around 128 (the cost of 0x80), rows made so
+// each filter wins, flat rows (every sum 0: None), a row equal to the one above, and rows whose true Up sum is the
+// largest possible (128 a byte) over more than 255 groups, which a lane sum that overflowed its u16 would pick.
+// The writer takes 8-bit RGBA only (4 bytes a pixel), so no other pixel size or depth is asked.
+function pngFilterCases(js, simdPx, scalarPx) {
+    const W = [...Array.from({ length: 40 }, (_, i) => i + 1), 63, 64, 65, 67, 127, 128, 129, 255, 256, 257, 700, 1023, 1024, 1025, 4096, 4097, 4100];
+    const fill = (n, seed, pick) => { const r = rng(seed), d = new Uint8Array(n); for (let i = 0; i < n; i++) d[i] = pick(r); return d; };
+    const kinds = {
+        random: (w, rows, s) => randomRGBA(w, rows, s),
+        tiny: (w, rows, s) => fill(w * rows * 4, s, (r) => (r() * 3) | 0),
+        two: (w, rows, s) => fill(w * rows * 4, s, (r) => (r() < 0.5 ? 0 : 255)),
+        mid: (w, rows, s) => fill(w * rows * 4, s, (r) => 126 + ((r() * 5) | 0)),
+        flat: (w, rows) => new Uint8Array(w * rows * 4),
+    };
+    // rows that filter T reduces to residuals of -1, 0, 1: the lines' filter bytes all T, unfiltered against `prev`
+    const forced = (T) => (w, rows, s, prev) => {
+        const n = w * 4, f = new Uint8Array(rows * (n + 1)), r = rng(s);
+        for (let y = 0; y < rows; y++) { f[y * (n + 1)] = T; for (let i = 0; i < n; i++) f[y * (n + 1) + 1 + i] = (((r() * 3) | 0) - 1) & 255; }
+        return unfilter(f, w, rows, prev);
+    };
+    for (let T = 1; T <= 4; T++) kinds[`forced${T}`] = forced(T);
+    const cases = [];
+    let seed = 1000;
+    for (const w of W) for (const [kind, make] of Object.entries(kinds)) for (const withPrev of [false, true]) {
+        const rows = w > 1000 ? 2 : 3, s = seed++;
+        const prev = withPrev ? (kind === "flat" ? new Uint8Array(w * 4) : kind === "tiny" ? kinds.tiny(w, 1, s + 7) : randomRGBA(w, 1, s + 7)) : null;
+        cases.push({ tag: `${kind} ${w} px x ${rows}${withPrev ? " with the row above" : ""}`, args: [make(w, rows, s, prev), w, rows, prev] });
+    }
+    for (const w of [21, 64, 333]) {
+        const src = randomRGBA(w, 2, seed++), prev = src.slice(0, w * 4);
+        src.copyWithin(w * 4, 0, w * 4);   // both rows equal to the one above the first
+        cases.push({ tag: `rows equal to the one above ${w} px`, args: [src, w, 2, prev] });
+    }
+    for (const w of [4097, 8193, 1029]) {
+        // x - b = 128 at every byte: Up's true sum is 128 a byte, the largest; every other filter is random
+        const n = w * 4, src = randomRGBA(w, 2, seed++), prev = new Uint8Array(n);
+        for (let i = 0; i < n; i++) { prev[i] = (src[i] - 128) & 255; src[n + i] = (src[i] + 128) & 255; }
+        cases.push({ tag: `Up at 128 a byte over ${Math.floor((n - 4) / 16)} groups ${w} px`, args: [src, w, 2, prev] });
+    }
+    // what the cases exercise, counted with the reference's sums in the rows of 5 px or more (the ones that reach the
+    // SIMD build's lanes; narrower rows take the scalar loop in both builds): each filter's wins, ties of the smallest
+    // sum, and the Paeth predictor's ties where the order picks a different byte (a over c, b over c). A tie of a with
+    // b never does: pa = pb with a != b puts c midway, so pc = 0 < pa and c is picked; it is counted only with a = b
+    const wins = [0, 0, 0, 0, 0], tieWins = [0, 0, 0, 0, 0], ptie = { ab: 0, ac: 0, bc: 0 };
+    let refOk = true, refDetail = "", backOk = true, backDetail = "";
+    for (const c of cases) {
+        const [src, w, rows, prev] = c.args, n = w * 4;
+        for (let y = 0; y < (w >= 5 ? rows : 0); y++) {
+            const sums = [0, 0, 0, 0, 0];
+            for (let i = 0; i < n; i++) {
+                const x = src[y * n + i], a = i >= 4 ? src[y * n + i - 4] : 0;
+                const b = y ? src[(y - 1) * n + i] : prev ? prev[i] : 0;
+                const cc = i >= 4 ? (y ? src[(y - 1) * n + i - 4] : prev ? prev[i - 4] : 0) : 0;
+                const pa = Math.abs(b - cc), pb = Math.abs(a - cc), pc = Math.abs(a + b - 2 * cc);
+                if (pa === pb && pa <= pc) ptie.ab++;
+                if (pa === pc && pa < pb && a !== cc) ptie.ac++;
+                if (pb === pc && pa > pb && b !== cc) ptie.bc++;
+                [x, x - a, x - b, x - ((a + b) >> 1), x - paeth(a, b, cc)].forEach((v, t) => { v &= 255; sums[t] += v < 128 ? v : 256 - v; });
+            }
+            const min = Math.min(...sums), best = sums.indexOf(min);
+            wins[best]++;
+            if (sums.filter((v) => v === min).length > 1) tieWins[best]++;
+        }
+        const got = js.pngFilterRows(src, w, rows, prev), want = reference.pngFilterRows(src, w, rows, prev);
+        if (refOk && !eqBytes(got, want)) { refOk = false; refDetail = `${c.tag}: ${firstDiff(got, want)}`; }
+        if (backOk && !eqBytes(unfilter(simdPx.pngFilterRows(src, w, rows, prev), w, rows, prev), src)) { backOk = false; backDetail = c.tag; }
+    }
+    check(`js pngFilterRows equals the reference (${cases.length} cases)`, refOk, refDetail);
+    twinCheck({
+        name: "png_filter_rows", builds: [["rust simd", simdPx], ["rust scalar", scalarPx]], twin: js,
+        call: (k, [src, w, rows, prev]) => k.pngFilterRows(src, w, rows, prev), cases,
+    });
+    check(`rust simd png_filter_rows unfilters back to the input (${cases.length} cases)`, backOk, backDetail);
+    console.log(`       png_filter_rows cases, rows of 5 px or more: won by None ${wins[0]}, Sub ${wins[1]}, Up ${wins[2]}, Average ${wins[3]}, Paeth ${wins[4]}; won on a tied sum ${tieWins.join(" / ")}; Paeth ties a=b ${ptie.ab} (a = b), a=c ${ptie.ac}, b=c ${ptie.bc}`);
+    check(`png_filter_rows cases, rows of 5 px or more: every filter wins rows, ties of the sums are won by None, Sub, Up and Average, the Paeth predictor ties a over c and b over c`,
+        wins.every((v) => v > 0) && tieWins.slice(0, 4).every((v) => v > 0) && ptie.ac > 0 && ptie.bc > 0,
+        `wins ${wins}, tied ${tieWins}, paeth ${JSON.stringify(ptie)}`);
+}
+
 // E4: a PSD's channel rows. The twin and the Rust kernel give the bytes of inpaint_export.js `packBits`, row by row.
 async function psdCases(ref, label, js) {
     const ex = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_export.js")).href);
@@ -2274,6 +3266,212 @@ async function resampleCases(px, label, R) {
     console.log(`       2048 x 2048 turned 3 degrees, bicubic: ${label} ${tr.toFixed(0)} ms (${(tr * 1e6 / 2048 / 2048).toFixed(1)} ns/px), twin ${tj.toFixed(0)} ms (${(tj * 1e6 / 2048 / 2048).toFixed(1)} ns/px)`);
 }
 
+// ---- K5: the selection's combine (docs/PLAN_WASM_BUILD.md §4.3) --------------------------------------------------------
+
+/**
+ * sel_combine (crates/px/src/sel.rs, px.js `selCombine`) on both builds against its twin (kernels_js.js `selCombine`),
+ * and the twin against the editor's own `combineRows` with a plain extent scan (what inpaint_tiles.js `tileExtent`
+ * computes): every mode x the source kinds 0 / 1 / 2 / 4 x the parts of a tile inside the image (256, 152, 16, 1, 255,
+ * 152 x 16, 0) x a tile that is new, empty, random or holds pixels only beyond that part; sources at an offset with a
+ * tile's stride and with a long row's (packed by px.js); refused arguments; `alphaAny`; the `selCombine` route of
+ * kernels.js (`K`, loaded by relightBench): the same bytes either way, Rust's calls counted, `write` called at most once.
+ */
+async function selCases(js, simd, scalar, raster, K) {
+    const S = 256, N = S * S * 4;
+    let seed = 0x5e1c0;
+    const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const byte = (zeros) => (rnd() < zeros ? 0 : 1 + Math.floor(rnd() * 255));
+    // the tile states: a new one (null), all transparent, random (a third of the pixels transparent, some of those with a
+    // colour left in them), and pixels only beyond the part combined (x >= bw or y >= bh)
+    const tileOf = (state, bw, bh) => {
+        if (state === "new") return null;
+        const t = new Uint8Array(N);
+        if (state === "zero") return t;
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+            const o = (y * S + x) * 4;
+            if (state === "beyond" && x < bw && y < bh) continue;
+            if (state === "beyond" && rnd() < 0.97) continue;
+            t[o] = byte(0); t[o + 1] = byte(0); t[o + 2] = byte(0); t[o + 3] = byte(0.33);
+        }
+        return t;
+    };
+    // a source region of bw x bh at `off` pixels with `stride` pixels a row (40 % zeros, some 255s); kinds 0 and 2: null
+    const sourceOf = (kind, bw, bh, off, stride) => {
+        if (kind === 0 || kind === 2) return null;
+        const bpp = kind === 4 ? 4 : 1, n = (off + Math.max(0, bh - 1) * stride + bw) * bpp + 7;
+        const s = new Uint8Array(n);
+        for (let i = 0; i < n; i++) s[i] = rnd() < 0.1 ? 255 : byte(0.4);
+        return s;
+    };
+    const parts = [[256, 256], [152, 256], [256, 16], [1, 1], [255, 255], [152, 16], [0, 256]];
+    const cases = [];
+    for (const mode of [0, 1, 2, 3]) for (const kind of [0, 1, 2, 4]) for (const [bw, bh] of parts) for (const state of ["new", "zero", "random", "beyond"]) {
+        const long = cases.length % 3 === 0;   // a band's alpha: rows of 700 pixels, px.js packs them
+        const stride = long ? 700 : (cases.length % 3 === 1 ? 256 : Math.max(1, bw));
+        const off = long ? 3 * 700 + 11 : (stride === 256 ? 256 * 5 + 7 : 0);
+        const rgb = cases.length % 2 ? 0xff0000 : (cases.length * 2654435761) >>> 8;
+        cases.push({ tag: `mode ${mode} kind ${kind} ${bw}x${bh} ${state} stride ${stride}`,
+            args: [tileOf(state, bw, bh), sourceOf(kind, bw, bh, off, stride), off, stride, kind, bw, bh, mode, rgb] });
+    }
+    // one call: { ext, bytes } with the bytes only for a tile that holds something (an empty one is dropped by the editor)
+    const call = (k, [dst, src, off, stride, kind, bw, bh, mode, rgb]) => {
+        if (typeof k.alloc === "function") {   // a Px: `dst` read, the result into what `write` gives
+            const out = new Uint8Array(N);
+            let writes = 0;
+            const ext = k.selCombine(dst, S, src, off, stride, kind, bw, bh, mode, rgb, () => { writes++; return out; });
+            if (writes !== (ext ? 1 : 0)) throw new Error(`write called ${writes} times for an extent ${JSON.stringify(ext)}`);
+            return { ext, bytes: ext ? out : null };
+        }
+        const t = dst ? new Uint8Array(dst) : new Uint8Array(N);   // the twin works in place, on a new tile's zeros
+        const ext = k.selCombine(t, S, src, off, stride, kind, bw, bh, mode, rgb);
+        return { ext, bytes: ext ? t : null };
+    };
+    // the reference: the editor's combineRows over the part, then the extent of the whole tile by a plain scan
+    const reference = {
+        selCombine(t, size, src, off, stride, kind, bw, bh, mode, rgb) {
+            const a = new Uint8Array(bw * bh), bpp = kind === 4 ? 4 : 1;
+            for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+                a[y * bw + x] = kind === 0 ? 0 : kind === 2 ? 255 : src[(off + y * stride + x) * bpp + (kind === 4 ? 3 : 0)];
+            }
+            raster.combineRows(t, 0, size * 4, a, 0, bw, bw, bh, raster.SEL_MODES[mode], [(rgb >>> 16) & 255, (rgb >>> 8) & 255, rgb & 255]);
+            let x0 = size, y0 = -1, x1 = -1, y1 = -1;
+            for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+                if (!t[(y * size + x) * 4 + 3]) continue;
+                if (y0 < 0) y0 = y;
+                y1 = y;
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+            }
+            return y0 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+        },
+    };
+    // the twin on a tile one byte off its word alignment: its bytes path (taken on big-endian too), copied back
+    const jsOdd = {
+        selCombine(t, ...rest) {
+            const v = new Uint8Array(t.length + 1).subarray(1);
+            v.set(t);
+            const ext = js.selCombine(v, ...rest);
+            t.set(v);
+            return ext;
+        },
+    };
+    twinCheck({ name: "sel_combine", title: "selCombine's twin equals combineRows and a plain extent scan", builds: [["js", js], ["js on an unaligned tile (its bytes path)", jsOdd]], twin: reference, call, cases, shift: false });
+    twinCheck({ name: "sel_combine", builds: [["rust simd", simd], ["rust scalar", scalar]], twin: js, call, cases, shift: [0, 1] });
+
+    // a new tile (mode + 8 in Rust) is a transparent one: the same bytes and extent
+    let same = true, detail = "";
+    for (const c of cases) {
+        const [dst, ...rest] = c.args;
+        if (dst !== null) continue;
+        for (const px of [simd, scalar]) {
+            const a = call(px, [null, ...rest]), b = call(px, [new Uint8Array(N), ...rest]);
+            if (JSON.stringify(a.ext) !== JSON.stringify(b.ext) || (a.bytes && !eqBytes(a.bytes, b.bytes))) { same = false; detail = c.tag; break; }
+        }
+        if (!same) break;
+    }
+    check("sel_combine on a new tile gives what it gives on a transparent one (both builds)", same, detail);
+
+    // refused arguments: the twin throws, px.js throws on sel_combine's REFUSED, neither writes
+    const refusals = [
+        ["mode 4", [new Uint8Array(N), null, 0, 0, 2, 4, 4, 4, 0]],
+        ["kind 3", [new Uint8Array(N), new Uint8Array(64), 0, 4, 3, 4, 4, 0, 0]],
+        ["a stride below bw", [new Uint8Array(N), new Uint8Array(4096), 0, 8, 1, 16, 4, 0, 0]],
+        ["a source too short", [new Uint8Array(N), new Uint8Array(100), 0, 256, 1, 16, 4, 0, 0]],
+        ["bw above the tile", [new Uint8Array(N), null, 0, 0, 2, 257, 4, 0, 0]],
+        // a view shorter than its region over a longer buffer: px.js must not read on past the view's end
+        ["a source view shorter than its region (a longer buffer)", [new Uint8Array(N), new Uint8Array(new ArrayBuffer(4096), 0, 100), 0, 256, 1, 16, 4, 0, 0]],
+        ["a tile view shorter than the tile (a longer buffer)", [new Uint8Array(new ArrayBuffer(N + 64), 0, N - 4), null, 0, 0, 2, 4, 4, 1, 0]],
+    ];
+    for (const [what, args] of refusals) {
+        let threw = 0;
+        for (const k of [js, simd, scalar]) { try { call(k, args); } catch { threw++; } }
+        check(`selCombine refuses ${what} on the twin and both builds`, threw === 3, `${threw} of 3 threw`);
+    }
+    // no pixel combined (bw or bh 0) with a source kind that has a buffer but none given: all three keep the tile and
+    // answer its extent
+    {
+        const t = tileOf("random", 0, 0), got = [];
+        for (const k of [js, simd, scalar]) {
+            for (const [bw, bh] of [[0, 4], [4, 0]]) {
+                try { got.push(JSON.stringify(call(k, [t, null, 0, 0, 1, bw, bh, 1, 0xff0000]).ext)); } catch (err) { got.push("threw " + err.message); }
+            }
+        }
+        check("selCombine with no pixel to combine and no source buffer answers the kept tile's extent on all three", got.every((g) => g === got[0] && !g.startsWith("threw")), got.join(" | "));
+    }
+
+    // alphaAny against a plain scan
+    let anyOk = true, anyDetail = "";
+    for (const c of cases) {
+        const [, src, off, stride, kind, bw, bh] = c.args;
+        let want = false;
+        if (bw > 0 && bh > 0) {
+            if (kind === 2) want = true;
+            else if (kind === 1 || kind === 4) {
+                const bpp = kind === 4 ? 4 : 1;
+                for (let y = 0; y < bh && !want; y++) for (let x = 0; x < bw; x++) if (src[(off + y * stride + x) * bpp + bpp - 1]) { want = true; break; }
+            }
+        }
+        if (js.alphaAny(src, off, stride, kind, bw, bh) !== want) { anyOk = false; anyDetail = c.tag; break; }
+    }
+    check(`alphaAny says whether a source region covers anything (${cases.length} cases)`, anyOk, anyDetail);
+
+    // the route of kernels.js: js and rust give the same, Rust's calls are counted, a twin's never
+    if (!K || !K.rustPx || !Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, "selCombine")) {
+        check("kernels.js has the selCombine route", false);
+        return;
+    }
+    K.setKernels("rust");
+    const routed = (r) => {
+        K.setRoute("selCombine", r);
+        K.pxCalls(true);
+        const out = [];
+        for (const c of cases) {
+            const [dst, src, off, stride, kind, bw, bh, mode, rgb] = c.args;
+            if (!dst && mode >= 2) continue;   // the editor skips a missing tile under subtract and intersect
+            const target = dst ? new Uint8Array(dst) : new Uint8Array(N);
+            let writes = 0;
+            const ext = K.selCombine(dst ? new Uint8Array(dst) : null, () => { writes++; return target; }, src, off, stride, kind, bw, bh, mode, rgb, S);
+            out.push({ ext, writes, bytes: ext ? target : null, fresh: !dst, covers: js.alphaAny(src, off, stride, kind, bw, bh) });
+        }
+        return { out, calls: K.pxCalls(true).sel_combine || 0 };
+    };
+    const viaJs = routed("js"), viaRust = routed("rust");
+    let routeOk = viaJs.out.length === viaRust.out.length, routeDetail = "";
+    for (let i = 0; routeOk && i < viaJs.out.length; i++) {
+        const a = viaJs.out[i], b = viaRust.out[i];
+        if (JSON.stringify(a.ext) !== JSON.stringify(b.ext) || (a.bytes && !eqBytes(a.bytes, b.bytes)) || a.writes > 1 || b.writes > 1 || b.writes !== (b.ext ? 1 : 0)) {
+            routeOk = false;
+            routeDetail = `case ${i}: js ${JSON.stringify(a.ext)} (${a.writes} writes), rust ${JSON.stringify(b.ext)} (${b.writes} writes)`;
+        }
+    }
+    check(`kernels.js selCombine gives the same on the routes js and rust, write at most once (${viaJs.out.length} tiles)`, routeOk, routeDetail);
+    // TileMaskPixels.combine's promise ("allocates for add only where the source is non-zero"): the twins' route makes a
+    // missing tile only when the source covers something (alphaAny), the Rust route only when the result holds a pixel
+    const lazy = viaJs.out.filter((o) => o.fresh && !o.covers);
+    check(`the selCombine route js makes no missing tile from a source that covers nothing (${lazy.length} such tiles)`,
+        lazy.length > 0 && lazy.every((o) => o.writes === 0), `${lazy.filter((o) => o.writes).length} written`);
+    check("the selCombine route rust calls sel_combine for every tile, js never",
+        viaJs.calls === 0 && viaRust.calls === viaRust.out.length, `js ${viaJs.calls}, rust ${viaRust.calls} of ${viaRust.out.length}`);
+    K.setRoute("selCombine", null);
+    K.setKernels("js");
+
+    if (process.env.PX_BENCH) {
+        // one tile, replace from RGBA (the wand's case) and add from alpha (the range's): the twin in place, Rust with
+        // its copies in and out; explains only (docs/PLAN_WASM_BUILD.md §1.1 rule 5)
+        const tile = tileOf("random", S, S), rgbaSrc = sourceOf(4, S, S, 0, S), alphaSrc = sourceOf(1, S, S, 0, S);
+        for (const [what, src, kind, mode] of [["replace from RGBA", rgbaSrc, 4, 0], ["add from alpha", alphaSrc, 1, 1]]) {
+            const t = new Uint8Array(N), out = new Uint8Array(N);
+            const rows = [
+                ["twin", () => { t.set(tile); js.selCombine(t, S, src, 0, S, kind, S, S, mode, 0xff0000); }],
+                ["simd", () => simd.selCombine(tile, S, src, 0, S, kind, S, S, mode, 0xff0000, () => out)],
+                ["scalar", () => scalar.selCombine(tile, S, src, 0, S, kind, S, S, mode, 0xff0000, () => out)],
+            ];
+            const med = benchMedians(rows, { rounds: 200 });
+            console.log(`       sel_combine one 256² tile, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(3)}`).join(", ")} ms (median of 200)`);
+        }
+    }
+}
+
 async function main() {
     const { BLENDS } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "blend_modes.js")).href);
     for (const b of BLENDS) if (b.op >= 5) BLEND_NAMES[b.op - 5] = b.id;
@@ -2293,6 +3491,7 @@ async function main() {
         },
     };
     const label = "reference (distanceTransform / floodMask for the EDT and the flood)";
+    twinSelfTest();
     await mipCases(ref, label, js);
     await edtCases(ref, label, js, raster);
     await floodCases(ref, label, js, raster);
@@ -2308,6 +3507,14 @@ async function main() {
     await blendGlslCases();
     await tierCCases(js, simdPx, scalarPx, ref);
     await relightBench(js, simdPx);   // before memoryCases grows simdPx past 2 GB
+    await relightStripeCases(js, simdPx, scalarPx);
+    await counterCases(simdPx);
+    await splitCases(simdPx, js);
+    await routeCases(js, simdPx, scalarPx, raster);
+    await trapCases(js, simdPx, raster);
+    await lifecycleCases(js);
+    await selCases(js, simdPx, scalarPx, raster, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href));
+    pngFilterCases(js, simdPx, scalarPx);
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));

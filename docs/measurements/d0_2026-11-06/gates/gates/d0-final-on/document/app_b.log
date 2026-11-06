@@ -1,0 +1,13 @@
+
+
+DevTools listening on ws://127.0.0.1:9572/devtools/browser/dffb3e27-a97f-4cec-9eff-5aeaa19132af
+Error occurred in handler for 'documents:write': Error: no space left on the drive (a test fault)
+    at failure (F:\canvas\electron\main\docfile.js:394:45)
+    at write (F:\canvas\electron\main\docfile.js:449:89)
+    at Object.writeDocument (F:\canvas\electron\main\docfile.js:481:31)
+    at async F:\canvas\electron\main\documents.js:206:23
+    at async Documents.run (F:\canvas\electron\main\documents.js:153:20)
+    at async F:\canvas\electron\main\main.js:1113:19
+    at async Session.<anonymous> (node:electron/js2c/browser_init:2:123634) {
+  code: 'ENOSPC'
+}

@@ -29,6 +29,28 @@ combos with the refusal and the download link, issue #4's mechanism), or a match
 the manual telling the user to put the files at those names. Not fixed by item 50 (`docs/PLAN_LORAS.md` §2.2: the
 relight recipes take no LoRA rows in 0.1.52).
 
+### With the lights tool on a relight layer, a whole change below costs the next frame about 380 ms at 15k (found 2026-11-06, measured, K12)
+
+While a relight layer is active with the lights tool, every draw runs `drawLightsOverlay` -> `ownLightPos` ->
+`belowStats` (`renderer/editor/inpaint_canvas.js:23297`, `:23232`, `:15607` at `bc3c37e`); after a whole change of a
+layer below, that reads the whole picture at 256 px on the window: 2,344-2,376 exact mip chains, about 380 ms of the
+next frame at 15000 x 10000 (`perf_test.py` row `whole_1to1_lights`, 383 before K12 and 380 after it,
+`docs/measurements/k12_2026-11-06/after/summary.txt`). There since relight shipped in 0.1.47, not a regression. A fix
+changes where the light's stats come from (say the behaviour first); the user places it (`docs/PLAN_WASM_BUILD.md` §7
+"Stop 5").
+
+### Ctrl+O sends the whole file to the window in one message (found 2026-11-06, read and measured once, D0)
+
+`electron/main/main.js` `openImage` (`:833-842` at `bbff117`) reads the chosen file whole (`fsp.readFile`) and sends
+it in one `file:opened` IPC message; `renderer/shell.js` (`:2943-2946`) makes a `File` of it and opens that. For a
+15k PSD of 925 MB that is the one block D0 leaves in the open: 1.0-1.8 s of the window in native_test's row (the 1.71 s gap before
+`layered_open` `start` in `docs/measurements/d0_2026-11-06/after/longtasks_first_open.json` is the same transfer
+through `load_image`'s `window.scumble.file.read`). To be measured before code: the block of a Ctrl+O open apart from
+the reader; the ceiling of a main -> window message (G2 found about 512 MiB a message for window -> main, while 925 MB
+came through main -> window here; a PSD v1 of 30k x 30k is larger still); whether a drop from Explorer (a disk-backed
+`File`) pays any read. A fix would hand the window a path and let the worker read the file in pieces. The user places
+it at a later Stop of `docs/PLAN_WASM_BUILD.md`.
+
 ### The helper downloader sends the Hugging Face token to every URL and checks only the size (found 2026-10-24, read, item 49's plan)
 
 `electron/main/onnx/models.js` `_file` (`:297-299` at `ec1142b`) puts `authorization: Bearer <token>` on every

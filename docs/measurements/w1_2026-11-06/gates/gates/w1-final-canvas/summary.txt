@@ -1,0 +1,6 @@
+export rc=0 11s PASS
+layered rc=0 3s PASS
+pixels rc=0 11s PASS
+document rc=0 38s PASS
+tiff rc=0 11s PASS
+ALL PASS

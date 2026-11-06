@@ -1,0 +1,25 @@
+backend: tiles
+[ok] analyticFull: coverage 0 = clipped layers hidden (58494 px, max 1)
+[ok] analyticFull: coverage 255 = clip off (15612 px, max 2)
+[ok] analyticFull: partial coverage differs from both (11950 of 12294 px)
+[ok] analyticPng: coverage 0 = clipped layers hidden (58494 px, max 0)
+[ok] analyticPng: coverage 255 = clip off (15612 px, max 0)
+[ok] analyticPng: partial coverage differs from both (11950 of 12294 px)
+[ok] png vs full flatten: {'max': 2, 'n': 8113}
+[ok] box vs full flatten: {'max': 2, 'n': 8113, 'how': 'program'}
+[ok] region vs full flatten: {'max': 0, 'n': 0}
+[ok] boxStack vs full flatten: {'max': 2, 'n': 8114}
+[ok] boxPlain vs full flatten: {'max': 2, 'n': 8114, 'how': 'stack'}
+[ok] clip over a hidden base shows nothing: {'max': 0, 'n': 0}
+[ok] clip over a filter layer is no clip: {'max': 0, 'n': 0}, base None
+[ok] view: GPU vs Canvas 2D at 1:1 max 2 (0 px over 2), compositor used True, clip visible True
+[ok] base at 60 %: view GPU vs Canvas 2D max 2, export vs flatten {'max': 3, 'n': 15679}
+[ok] an empty base: GPU vs Canvas 2D max 0
+[ok] base off the view: GPU vs Canvas 2D max 0 (view [282, 194, 398, 271], the base at 30..270 x 20..200)
+[ok] undo: {'refusedBottom': True, 'r1': True, 'off': True, 'steps': 0, 'back': True}
+[ok] getValue keeps clip: ['afterFx', 'clipLL', 'clipM', 'clipN', 'fxClip', 'orphan']
+[ok] PSD written ['clipLL', 'clipM', 'clipN', 'orphan'], read back ['clipLL', 'clipM', 'clipN', 'orphan']
+[ok] merge two clipped layers (coverage 0 / 255): {'max': 0, 'n': 0, 'all': {'max': 33, 'n': 15817}, 'stillClipped': True, 'at': [[43, 90, [111, 104, 105, 255], [102, 97, 110, 255]], [44, 90, [123, 112, 96, 255], [113, 99, 99, 255]], [45, 90, [127, 114, 96, 255], [115, 101, 98, 255]], [46, 90, [126, 116, 95, 255], [116, 102, 96, 255]]]}
+[ok] merge a clipped layer into its base (coverage 0 / 255): {'max': 0, 'n': 0, 'all': {'max': 54, 'n': 33367}, 'alphaMax': 0, 'baseClip': False, 'gone': True}
+[ok] Case 11 clipped filter with limit at 3 probes: [{'name': 'baseAlpha_0', 'diff': 0, 'ok': True}, {'name': 'baseAlpha_1', 'diff': 0, 'ok': True}, {'name': 'limit_out', 'diff': 0, 'ok': True}]
+PASS

@@ -1,0 +1,2 @@
+pxjobs rc=0 152s PASS
+ALL PASS

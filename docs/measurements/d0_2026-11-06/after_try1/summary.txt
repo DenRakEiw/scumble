@@ -1,0 +1,43 @@
+(The first try, on the first build before the review; the folder was after/ when these lines were written. The counted after runs are ../after/.)
+D0 after (docs/PLAN_WASM_BUILD.md §7 #2), 2026-11-06, bbff117 plus the D0 diff (uncommitted at the run): readPsd's loops in the
+pool job psd_read (inpaint_layered.js readPsdStream), the layers written band by band on the window. The same chain as
+before/ (d0_chain.py, three fresh offline instances, tiles on, profile on; the open of the real 925 MB PSD from its file).
+after-r2 and after-r3 ran with the window behind (NOT COUNTED) and were tried again. Medians [min-max]:
+
+== docs/measurements/d0_2026-11-06/after: 3 counted runs (after-r1.json, after-r2-try2.json, after-r3-try2.json); NOT COUNTED: after-r2.json, after-r3.json
+   open_psd wall           9,464  [8,828-9,712]
+   open_psd longest block  975  [827-1,078]
+   loadImageMs             9,323  [8,684-9,567]
+   mark parsed             5,035  [4,551-5,259]
+   mark layers             0  [0-0]
+   mark stored             2,328  [1,918-2,558]
+   mark base               28  [27-30]
+   mark added              30  [27-33]
+   mark total              7,645  [6,522-7,657]
+   mark extra rgbaMs       860  [814-887]
+   mark extra maskMs       0  [0-0]
+   mark extra inflateMs    0  [0-0]
+   mark extra route        ['pool']
+   main thread idle        7,534  [6,589-7,944]
+   main thread gc          78  [61-82]
+   main thread program     1,031  [837-1,364]
+   window fn canvasRoundTrip 561  [511-595]
+   window fn _putBlock      273  [246-284]
+   window fn readPsdOnPool  0  [0-1]
+   window fn writeRect      2  [1-4]
+   worker psd_read: jobs 1, kernel 5,023, read 246, inflate 0, inflates 0, channels 2,963, interleave 1,841, mask 0, deliver 3, bands 80
+   worker png_part: jobs 79, kernel 12,491, compose 0, rows 350, prev 2, copyIn 44, filter 4,166, adler 176, deflate 6,806, copyOut 48, chunk 849
+   worker mips: jobs 37, tiles 4,645, kernel 897
+
+Before -> after (medians): open_psd wall 14,015 -> 9,464 ms; longest block 8,968 -> 975 ms; mark parsed (the reader) 8,140 ->
+5,035 ms, now in the worker (psd_read kernel 5,023: read 246, channels 2,963 = the unpacks, interleave 1,841) with the
+window idle (main thread idle 3,115 -> 7,534); the window's share is the band writes (rgbaMs 860, 80 bands of ~11 ms).
+The merged picture is no longer decoded beside the layers (a third of the old parse). Not D0's: the PNG store (stored
+1.9-2.6 s, on the pool) and the 925 MB file read of load_image before readLayered (loadImageMs - total).
+
+Where the remaining block is (longtasks.py, one fresh instance, load_image of the kept 15k PSD into the first document,
+longtasks_first_open.json): one long task, 563 ms right after 'stored' (setBasePixels of the first document: the
+compositor's shader link, G6's once-per-profile cost), and a 1.66 s heartbeat gap before 'start' (load_image's
+window.scumble.file.read of the 925 MB file into the renderer, before readLayered runs). Between start and stored no
+long task at all. In native_test's row the compositor is already linked (open_the_file ran first, #0's second open),
+so its 0.8-1.1 s block is the file read (inferred from this probe, not timed apart in the row).

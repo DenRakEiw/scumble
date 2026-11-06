@@ -1,0 +1,20 @@
+
+
+DevTools listening on ws://127.0.0.1:9572/devtools/browser/73b23a15-5c37-4465-8419-a5ae16a05572
+Error occurred in handler for 'documents:open': Error: made by a newer Scumble (9.9.9) in a form this version cannot read; update Scumble to open it
+    at checkHeader (F:\canvas\electron\main\docfile.js:270:43)
+    at Object.openDocument (F:\canvas\electron\main\docfile.js:684:23)
+    at async F:\canvas\electron\main\documents.js:223:23
+    at async Documents.run (F:\canvas\electron\main\documents.js:153:20)
+    at async F:\canvas\electron\main\main.js:1119:23
+    at async Session.<anonymous> (node:electron/js2c/browser_init:2:123634)
+Error occurred in handler for 'documents:write': Error: the save was cancelled
+    at failure (F:\canvas\electron\main\docfile.js:394:45)
+    at check (F:\canvas\electron\main\docfile.js:447:63)
+    at Object.writeDocument (F:\canvas\electron\main\docfile.js:475:25)
+    at async F:\canvas\electron\main\documents.js:206:23
+    at async Documents.run (F:\canvas\electron\main\documents.js:153:20)
+    at async F:\canvas\electron\main\main.js:1113:19
+    at async Session.<anonymous> (node:electron/js2c/browser_init:2:123634) {
+  code: 'ABORT_ERR'
+}

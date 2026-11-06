@@ -1,0 +1,94 @@
+[16:02:17] M0: the versions and V8's wasm flags (no app)
+[16:02:17] k1-m1-r1: px_jobs.py --only mips_direct,mips_whole,band,wand_band,wand_object 15000x10000
+[16:03:09] rc=0
+closed
+[16:03:15] k1-m1s-r1: px_jobs.py --only mips_direct,mips_whole,band,wand_band,wand_object --split 15000x10000
+[16:04:08] rc=0
+closed
+[16:04:13] k1-m2-r1: px_jobs.py --ab mips=js:rust --only mips_direct,mips_whole --split 15000x10000
+[16:04:42] rc=2
+closed
+[16:04:47] k1-m3-r1: px_jobs.py --ab flood=js:rust --only wand_object,wand_band,wand_add --split 15000x10000
+[16:05:36] rc=0
+closed
+[16:05:41] k1-m4-r1: px_jobs.py --ab flood=js:rust --only flood_ladder --split 15000x10000
+[16:06:22] rc=0
+closed
+[16:06:27] k1-m5-r1: pxprobe:--cold,--rotation,1
+pxprobe:--cold,--rotation,1 rc=0 1s PASS
+ALL PASS
+[16:06:44] k1-m1-r2: px_jobs.py --only mips_direct,mips_whole,band,wand_band,wand_object 15000x10000
+[16:07:36] rc=0
+closed
+[16:07:41] k1-m1s-r2: px_jobs.py --only mips_direct,mips_whole,band,wand_band,wand_object --split 15000x10000
+[16:08:35] rc=2
+closed
+[16:08:40] k1-m2-r2: px_jobs.py --ab mips=js:rust --only mips_direct,mips_whole --split 15000x10000
+[16:09:11] rc=2
+closed
+[16:09:16] k1-m3-r2: px_jobs.py --ab flood=js:rust --only wand_object,wand_band,wand_add --split 15000x10000
+[16:10:04] rc=0
+closed
+[16:10:09] k1-m4-r2: px_jobs.py --ab flood=js:rust --only flood_ladder --split 15000x10000
+[16:10:56] rc=2
+closed
+[16:11:01] k1-m5-r2: pxprobe:--cold,--rotation,2
+pxprobe:--cold,--rotation,2 rc=0 1s PASS
+ALL PASS
+[16:11:18] k1-m1-r3: px_jobs.py --only mips_direct,mips_whole,band,wand_band,wand_object 15000x10000
+[16:12:17] rc=2
+closed
+[16:12:22] k1-m1s-r3: px_jobs.py --only mips_direct,mips_whole,band,wand_band,wand_object --split 15000x10000
+[16:13:20] rc=0
+closed
+[16:13:25] k1-m2-r3: px_jobs.py --ab mips=js:rust --only mips_direct,mips_whole --split 15000x10000
+[16:13:55] rc=0
+closed
+[16:14:00] k1-m3-r3: px_jobs.py --ab flood=js:rust --only wand_object,wand_band,wand_add --split 15000x10000
+[16:14:46] rc=0
+closed
+[16:14:51] k1-m4-r3: px_jobs.py --ab flood=js:rust --only flood_ladder --split 15000x10000
+[16:15:30] rc=0
+closed
+[16:15:35] k1-m5-r3: pxprobe:--cold,--rotation,3
+pxprobe:--cold,--rotation,3 rc=0 1s PASS
+ALL PASS
+[16:15:52] k1-m7a: pxprobe:--regrow
+pxprobe:--regrow rc=0 5s PASS
+ALL PASS
+[16:16:14] k1-m7b-16: pxprobe:--retention,15000x10000,--keep-mb,16
+pxprobe:--retention,15000x10000,--keep-mb,16 rc=0 11s PASS
+ALL PASS
+[16:16:40] k1-m7b-32: pxprobe:--retention,15000x10000,--keep-mb,32
+pxprobe:--retention,15000x10000,--keep-mb,32 rc=0 11s PASS
+ALL PASS
+[16:17:07] k1-m7b-64: pxprobe:--retention,15000x10000,--keep-mb,64
+pxprobe:--retention,15000x10000,--keep-mb,64 rc=0 12s PASS
+ALL PASS
+[16:17:35] k1-m7b-128: pxprobe:--retention,15000x10000,--keep-mb,128
+pxprobe:--retention,15000x10000,--keep-mb,128 rc=0 10s PASS
+ALL PASS
+[16:18:01] k1-m7b-256: pxprobe:--retention,15000x10000,--keep-mb,256
+pxprobe:--retention,15000x10000,--keep-mb,256 rc=0 11s PASS
+ALL PASS
+[16:18:28] M8: the window's release (the pxjobs gate's check run)
+[16:18:28] k1-m8: pxjobs
+pxjobs rc=0 152s PASS
+ALL PASS
+[16:21:16] done
+[16:21:37] k1-m1-r3 (again, try 1): px_jobs.py --only mips_direct,mips_whole,band,wand_band,wand_object 15000x10000
+[16:22:35] rc=0
+closed
+[16:22:40] k1-m1s-r2 (again, try 1): px_jobs.py --only mips_direct,mips_whole,band,wand_band,wand_object --split 15000x10000
+[16:23:30] rc=0
+closed
+[16:23:35] k1-m2-r1 (again, try 1): px_jobs.py --ab mips=js:rust --only mips_direct,mips_whole --split 15000x10000
+[16:24:01] rc=0
+closed
+[16:24:06] k1-m2-r2 (again, try 1): px_jobs.py --ab mips=js:rust --only mips_direct,mips_whole --split 15000x10000
+[16:24:35] rc=0
+closed
+[16:24:40] k1-m4-r2 (again, try 1): px_jobs.py --ab flood=js:rust --only flood_ladder --split 15000x10000
+[16:25:18] rc=0
+closed
+[16:25:23] rerun done

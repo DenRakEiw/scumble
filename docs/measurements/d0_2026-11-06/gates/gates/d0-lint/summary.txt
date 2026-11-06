@@ -1,0 +1,3 @@
+lint rc=0 42s 
+types rc=0 4s 
+ALL PASS

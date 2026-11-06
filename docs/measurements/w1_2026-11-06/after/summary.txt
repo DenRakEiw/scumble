@@ -1,0 +1,72 @@
+W1 after, 2026-11-06, on 59ff16f plus W1's png.rs (ABI 21 unchanged; px.wasm 1000640eba8b5574, px_scalar.wasm
+ade55404e282dd7d, the scalar build byte-identical to the one before); 15000 x 10000, offline, tiles, every run a fresh
+instance, the window in front (each native, tiff and files row says so; before/'s tiffperf rows carry no focus field,
+so their focus is unchecked: the W1 lap is wasm in workers, which a window behind throttles less than the JS open);
+three counted runs per row (native r3's first try ran with the window behind: NOT COUNTED, in notcounted/, run again). The machine's busy lock taken for the batch
+with a token of its own (../w1_lock.py) and released at its end. The card held 8.6-8.8 GB at 37-56 % use all through
+(another process's training run, as in the baseline's 8.0-8.5 GB at 37-56 %; ComfyUI on 8188 did not answer).
+The chain: ../w1_chain.sh, the same rows as before/.
+
+Medians [min-max] of the three runs (python ../summarize.py before after); png_part laps are summed over the pool's
+workers.
+
+row                                                          before                      after                       after / before (medians)
+build_the_file encodeMs                                      2,353 [2,267-2,369]         1,776 [1,733-1,800]         0.75x
+export_png wall                                              1,899 [1,884-1,915]         1,375 [1,314-1,432]         0.72x
+export_png longest block                                     82 [81-103]                 79 [75-126]                 0.96x
+export_png encoded                                           1,898 [1,883-1,914]         1,374 [1,314-1,432]         0.72x
+export_png png_part filter (summed)                          4,313 [4,142-4,338]         332 [324-350]               0.08x
+export_png png_part deflate (summed)                         7,003 [6,816-7,039]         7,019 [6,450-7,089]         1.00x
+export_png png_part adler (summed)                           194 [181-202]               184 [178-186]               0.94x
+export_png png_part compose (summed)                         1,608 [1,356-1,793]         1,630 [1,478-1,692]         1.01x
+export_png png_part kernel (summed)                          13,885 [13,755-14,254]      10,058 [9,565-10,170]       0.72x
+export_ora wall                                              5,075 [5,020-5,187]         3,522 [3,514-3,660]         0.69x
+export_ora longest block                                     44 [42-47]                  45 [40-46]                  1.02x
+export_ora encoded                                           5,074 [5,019-5,186]         3,522 [3,514-3,660]         0.69x
+export_ora png_part filter (summed)                          13,162 [13,118-13,710]      1,014 [994-1,021]           0.08x
+export_ora png_part deflate (summed)                         15,490 [15,280-15,492]      15,451 [15,222-16,180]      1.00x
+export_ora png_part adler (summed)                           553 [547-580]               568 [555-572]               1.03x
+export_ora png_part compose (summed)                         1,308 [1,269-1,396]         1,249 [1,224-1,309]         0.96x
+export_ora png_part kernel (summed)                          33,152 [32,962-33,882]      21,293 [20,817-21,972]      0.64x
+save_png wall                                                2,565 [2,496-2,664]         2,075 [2,059-2,130]         0.81x
+save_png longest block                                       106 [98-113]                107 [106-108]               1.01x
+save_png encoded                                             1,827 [1,801-1,861]         1,300 [1,266-1,338]         0.71x
+save_png saved                                               737 [695-802]               791 [758-808]               1.07x
+save_png png_part filter (summed)                            4,286 [4,249-4,485]         334 [327-348]               0.08x
+save_png png_part deflate (summed)                           6,856 [6,820-7,121]         6,828 [6,747-7,137]         1.00x
+save_png png_part adler (summed)                             177 [177-192]               192 [184-196]               1.08x
+save_png png_part compose (summed)                           1,294 [1,219-1,372]         1,386 [1,329-1,437]         1.07x
+save_png png_part kernel (summed)                            13,438 [13,309-13,998]      9,678 [9,423-9,965]         0.72x
+tiff own open                                                5,232 [4,611-5,535]         4,309 [4,289-4,677]         0.82x
+tiff own open: stored                                        2,128 [1,734-2,157]         1,329 [1,270-1,507]         0.62x
+tiff own store png_part filter (summed)                      5,701 [4,734-6,347]         760 [534-764]               0.13x
+tiff own store png_part deflate (summed)                     5,176 [4,305-5,789]         4,784 [4,512-5,614]         0.92x
+tiff own export                                              1,864 [1,722-1,980]         1,950 [1,876-2,215]         1.05x
+photo png export wall                                        2,032 [1,941-2,321]         1,422 [1,336-1,682]         0.70x
+photo png export encoded                                     1,461 [1,366-1,744]         836 [807-1,093]             0.57x
+photo png png_part filter (summed)                           4,841 [3,957-5,925]         658 [538-777]               0.14x
+photo png png_part deflate (summed)                          5,122 [5,053-6,187]         4,465 [4,390-6,170]         0.87x
+photo png png_part adler (summed)                            162 [150-182]               151 [144-194]               0.93x
+photo png png_part kernel (summed)                           11,074 [10,163-13,300]      6,266 [6,032-8,260]         0.57x
+photo tiff export wall                                       1,511 [1,354-1,613]         1,377 [1,346-1,702]         0.91x
+px_bench node: JS / scalar / SIMD ms (4,096 x 256 band)      37.0 / 22.9 / 19.8          37.2 / 22.7 / 1.45        
+px_bench electron: JS / scalar / SIMD ms (4,096 x 256 band)  36.0 / 28.1 / 18.7          38.3 / 28.0 / 1.43
+
+Identity: files_15k's photo_15k.png is 184,507,848 bytes, sha256 3cb4f984679ef5eda32eff7ec0812838f28f4740f7304cf51771ca947c7ecea6
+in all three after-runs, the file of all three before-runs: the 15k export is byte-identical to the old writer's.
+(native save_png's n1.png differs from run to run of one build, as before/ says: not an identity check.)
+
+What W1 moved:
+- The filter lap is about 13x faster in the pool: export_png 4,313 -> 332 ms summed, export_ora 13,162 -> 1,014, save_png
+  4,286 -> 334, the TIFF open's store 5,701 -> 760, the photo's PNG 4,841 -> 658. deflate, adler and compose are
+  untouched (inside their spreads).
+- The whole operations (wall, beyond the spreads): export_png 1,899 -> 1,375 ms, export_ora 5,075 -> 3,522, save_png
+  2,565 -> 2,075 (encoded 1,827 -> 1,300; the disk write 737 -> 791 untouched), the photo's PNG export 2,032 -> 1,422,
+  the TIFF open 5,232 -> 4,309 (its store 2,128 -> 1,329), build_the_file's encode 2,353 -> 1,776.
+- The window: export_png's longest block 82 -> 79, export_ora's 44 -> 45, save_png's 106 -> 107: W1 is worker work, the
+  window's blocks are unchanged.
+- Untouched: the TIFF export 1,864 -> 1,950 and the photo's TIFF export 1,511 -> 1,377 (no PNG filter in them; inside the
+  spreads). Node's px_bench png band (explains only): SIMD 19.8 -> 1.45 ms, scalar 22.9 -> 22.7.
+
+The route: none applies. png_part always runs Rust (no route in px/kernels.js chooses its filter), and the JS twin
+was already the slowest arm (px_bench 37 ms against the scalar build's 23); §1.1's rule keeps Rust, nothing is routed.

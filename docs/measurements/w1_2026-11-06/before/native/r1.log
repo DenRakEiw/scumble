@@ -1,0 +1,93 @@
+probes in
+the save rows write into F:\canvas\dist\w1_files\native_r1 (kept)
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1301, "encodeMs": 2353, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 3366 ms, longest block 551 ms
+   {"loadFileMs": 3286, "tiles": 2360, "compositorBefore": "not made", "compositorAfter": "made"}
+   main thread ms: idle 2400 | browser natives 512 | px kernels 3 | other JS 340 | GC 60 | (program) 231
+     natives: getProgramParameter 484, getContext 6, walk 4, getShaderParameter 4, setTimeout 4, f 3, postMessage 1, arrayBuffer 1
+     px kernels by function (self time): wasm-function[15] [wasm] 2, _out [px.js:254] 1
+     JS by file: inpaint_tiles.js 303, inpaint_pool.js 7, inpaint_arena.js 6, inpaint_compositor.js 6, inpaint_canvas.js 5, host.js 4, inpaint_resample.js 2, inpaint_upload.js 2
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1330] 177, normalizeBlock [inpaint_tiles.js:540] 108, writeRect [inpaint_tiles.js:1406] 6, w.onmessage [inpaint_pool.js:132] 5, allocTileBytes [inpaint_arena.js:110] 5
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   3     483.3 ms        0.0 MB
+     gl getShaderParameter                    6       5.0 ms        0.0 MB
+     gl texSubImage2D                      2360       2.7 ms        1.0 MB
+     blob arrayBuffer (until settled)         8       2.2 ms        0.0 MB
+     worker postMessage (moved)             164       2.1 ms        0.0 MB
+     blob arrayBuffer                         8       0.6 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.3 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 2343.2, "parse": 0.6, "read": 51.6, "write": 2286.6, "wait": 1233, "copy": 52, "unfilter": 1029.9, "deliver": 8.4, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 518.4, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+
+== add_the_paint_layer: wall 700 ms, longest block 606 ms
+   {"tiles": 2301, "genMs": 55, "writeMs": 519, "addMs": 126}
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      4829       6.5 ms       10.0 MB
+     2d putImageData                       2286       1.7 ms        1.1 MB
+     worker postMessage (moved)              90       1.4 ms        0.0 MB
+     2d drawImage >= 1 MP                    14       0.5 ms      117.2 MB
+     2d drawImage < 1 MP                     20       0.2 ms       11.2 MB
+   worker mips: 18 jobs, {"kernel": 519.9, "gen": 0}  px: mip_chain 2340, clamp_extend 39
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2340, clamp_extend 39
+
+== export_png: wall 1884 ms, longest block 82 ms
+   {"MB": 235.1}
+   main thread ms: idle 1741 | browser natives 111 | px kernels 0 | other JS 39 | GC 16 | (program) 95
+     natives: getProgramParameter 45, Blob 30, getError 6, getContext 5, getShaderParameter 4, beat 3, __n1_postMessage 3, drawImage 3
+     px kernels by function (self time): -
+     JS by file: inpaint_tiles.js 15, inpaint_canvas.js 10, inpaint_filters_gl.js 3, inpaint_compositor.js 2, filters.js 1, inpaint_bands.js 1, inpaint_modal.js 1, inpaint_png.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): put [inpaint_tiles.js:1139] 6, regionCanvas [inpaint_tiles.js:2174] 5
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   2      44.8 ms        0.0 MB
+     gl getError                             12       6.2 ms        0.0 MB
+     worker postMessage (moved)              79       4.6 ms        0.0 MB
+     gl getShaderParameter                    4       3.5 ms        0.0 MB
+     2d drawImage < 1 MP                     27       2.3 ms        1.8 MB
+     2d putImageData                          2       0.3 ms        1.2 MB
+   worker png_part: 79 jobs, {"kernel": 13884.9, "compose": 1355.7, "rows": 1355.7, "prev": 10.7, "copyIn": 38.9, "filter": 4338.3, "adler": 201.5, "deflate": 7002.6, "copyOut": 45.3, "chunk": 889.1, "gen": 0}  px: composite_tile 156, adler32 79, deflate_part 79, png_filter_rows 79
+   px calls, window: -
+   px calls, workers: composite_tile 156, adler32 79, deflate_part 79, png_filter_rows 79
+   marks export: ready 0.1, encoded 1883.2, saved 0.1 | total 1883.4 ms  {"fmt": "png", "MB": 235.11711597442627}
+
+== export_ora: wall 5020 ms, longest block 42 ms
+   {"MB": 511.6}
+   main thread ms: idle 4741 | browser natives 95 | px kernels 0 | other JS 27 | GC 18 | (program) 266
+     natives: Blob 70, walk 5, messageBytes 5, toBlob 4, beat 3, __n1_postMessage 2, row 2, setTimeout 1
+     px kernels by function (self time): -
+     JS by file: inpaint_canvas.js 8, inpaint_pool.js 8, inpaint_bands.js 4, inpaint_tiles.js 3, inpaint_png.js 2, host.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): setStatus [inpaint_canvas.js:3482] 5
+   boundaries (calls, ms inside the call, MB):
+     worker postMessage (moved)             243       8.9 ms        0.0 MB
+     canvas toBlob                            1       4.0 ms        0.2 MB
+     2d drawImage < 1 MP                      2       0.0 ms        1.1 MB
+   worker crc: 6 jobs, {"read": 258.3, "crc": 1034.6, "kernel": 1292.8, "bytes": 536404270, "gen": 0}
+   worker png_part: 237 jobs, {"kernel": 33151.5, "compose": 1269.2, "rows": 2110.5, "prev": 17.9, "copyIn": 110.9, "filter": 13118.1, "adler": 547.1, "deflate": 15491.8, "copyOut": 93, "chunk": 1651.3, "gen": 0}  px: adler32 237, deflate_part 237, png_filter_rows 237, composite_tile 156
+   px calls, window: -
+   px calls, workers: adler32 237, deflate_part 237, png_filter_rows 237, composite_tile 156
+   marks export: ready 0.0, encoded 5019.4, saved 0.0 | total 5019.4 ms  {"fmt": "ora", "MB": 511.5555953979492}
+
+== save_png: wall 2565 ms, longest block 106 ms
+   {"MB": 235.1, "file": "F:\\canvas\\dist\\w1_files\\native_r1\\n1.png"}
+   main thread ms: idle 2026 | browser natives 93 | px kernels 0 | other JS 337 | GC 16 | (program) 203
+     natives: Blob 35, invoke 18, (anonymous) 17, getError 5, __n1_postMessage 5, setTimeout 4, slice 4, beat 2
+     px kernels by function (self time): -
+     JS by file: host.js 246, sandbox_bundle 75, inpaint_pool.js 5, inpaint_canvas.js 3, inpaint_tiles.js 3, inpaint_bands.js 3, inpaint_filters_gl.js 1, common.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): saveExport [host.js:4322] 246, invoke [sandbox_bundle:2] 75
+   boundaries (calls, ms inside the call, MB):
+     blob arrayBuffer (until settled)         4     105.8 ms        0.0 MB
+     gl getError                             12       6.4 ms        0.0 MB
+     worker postMessage (moved)              79       4.0 ms        0.0 MB
+     2d drawImage < 1 MP                     27       1.0 ms        1.8 MB
+     blob arrayBuffer                         4       0.5 ms      235.1 MB
+   worker png_part: 79 jobs, {"kernel": 13308.9, "compose": 1219.3, "rows": 1219.3, "prev": 10.1, "copyIn": 42.8, "filter": 4249.2, "adler": 176.9, "deflate": 6819.9, "copyOut": 46.7, "chunk": 742, "gen": 0}  px: composite_tile 156, adler32 79, deflate_part 79, png_filter_rows 79
+   px calls, window: -
+   px calls, workers: composite_tile 156, adler32 79, deflate_part 79, png_filter_rows 79
+   marks export: ready 0.0, encoded 1827.3, saved 736.9 | total 2564.2 ms  {"fmt": "png", "MB": 235.11711597442627}
+   marks save: pieces 723.8, written 12.8 | total 736.6 ms  {"MB": 235.11711597442627, "pieces": 4}
+[ok] close: {"closed": 2, "arena": {"slots": 4661, "chunks": 19, "allocated": 7021, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 1275068416, "freeSlots": 203}}
+
+RESULT measured

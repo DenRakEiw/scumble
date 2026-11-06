@@ -1,0 +1,52 @@
+probes in
+the save rows write into F:\canvas\dist\gates\k0a_2026-10-23\native_files_ora (deleted at the end)
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1486, "encodeMs": 2503, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 3725 ms, longest block 715 ms
+   {"loadFileMs": 3623, "tiles": 2360}
+   main thread ms: idle 2490 | browser natives 678 | px kernels 3 | other JS 378 | GC 66 | (program) 290
+     natives: getProgramParameter 634, getImageData 15, getContext 7, getShaderParameter 7, postMessage 3, slice 2, beat 2, f 2
+     JS by file: inpaint_tiles.js 346, inpaint_arena.js 13, inpaint_canvas.js 8, inpaint_pool.js 3, inpaint_compositor.js 3, inpaint_resample.js 1, host.js 1, comfyrefs.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1330] 188, normalizeBlock [inpaint_tiles.js:540] 128, words [inpaint_tiles.js:529] 20, allocTileBytes [inpaint_arena.js:110] 12
+   boundaries (calls, ms inside the call, MB):
+     2d getImageData                          1      14.5 ms        0.3 MB
+     gl texSubImage2D                      2360       3.4 ms        1.0 MB
+     worker postMessage (moved)             164       2.3 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       2.0 ms        0.0 MB
+     blob arrayBuffer                         8       0.8 ms        0.0 MB
+     2d drawImage < 1 MP                      5       0.2 ms       18.5 MB
+   worker png_read: 1 jobs, {"kernel": 2493.8, "parse": 1.4, "read": 64.4, "write": 2426, "wait": 1315, "copy": 66.9, "unfilter": 1079.5, "deliver": 10.1}
+   worker mips: 19 jobs, {"kernel": 680.8}
+
+== add_the_paint_layer: wall 1292 ms, longest block 1164 ms
+   {"tiles": 2301}
+   boundaries (calls, ms inside the call, MB):
+     2d getImageData                        160     951.2 ms      572.2 MB
+     gl texSubImage2D                      5069       8.4 ms       10.0 MB
+     2d putImageData                       2286       2.2 ms        1.1 MB
+     worker postMessage (moved)              90       1.7 ms        0.0 MB
+     2d drawImage < 1 MP                     34       0.8 ms       63.0 MB
+   worker mips: 18 jobs, {"kernel": 634.6}
+
+== save_ora: wall 7500 ms, longest block 1201 ms
+   {"MB": 511.6, "file": "F:\\canvas\\dist\\gates\\k0a_2026-10-23\\native_files_ora\\n1.ora"}
+   main thread ms: idle 5593 | browser natives 277 | px kernels 0 | other JS 1178 | GC 26 | (program) 542
+     natives: Blob 83, invoke 53, getProgramParameter 50, (anonymous) 21, setTimeout 18, beat 14, getContext 6, walk 6
+     JS by file: host.js 650, sandbox_bundle 475, inpaint_tiles.js 13, inpaint_canvas.js 13, inpaint_pool.js 10, inpaint_bands.js 4, inpaint_filters_gl.js 4, inpaint_status.js 3
+     JS by function (self time; a typed-array copy counts for the function that makes it): saveExport [host.js:4315] 648, invoke [sandbox_bundle:2] 475, setStatus [inpaint_canvas.js:3472] 7, w.onmessage [inpaint_pool.js:128] 6, regionCanvas [inpaint_tiles.js:2174] 6
+   boundaries (calls, ms inside the call, MB):
+     blob arrayBuffer (until settled)         1     109.2 ms        0.0 MB
+     worker postMessage (moved)             243       8.7 ms        0.0 MB
+     gl getError                             12       7.4 ms        0.0 MB
+     canvas toBlob                            1       4.5 ms        0.2 MB
+     2d drawImage < 1 MP                     29       2.2 ms        2.9 MB
+     2d putImageData                          2       0.3 ms        1.2 MB
+     blob arrayBuffer                         1       0.1 ms      511.6 MB
+   worker crc: 6 jobs, {"read": 262.8, "crc": 1060.2, "kernel": 1323, "bytes": 536404270}
+   worker png_part: 237 jobs, {"kernel": 36580.3, "compose": 1510.2, "rows": 2370.4, "prev": 19.7, "copyIn": 116.7, "filter": 14724.5, "adler": 599.5, "deflate": 16785.2, "copyOut": 141.7, "chunk": 1810.2}
+   marks export: ready 0.1, encoded 5540.7, saved 1957.9 | total 7498.7 ms  {"fmt": "ora", "MB": 511.5555953979492}
+   marks save: bytes 109.3, written 1848.5 | total 1957.8 ms  {"MB": 511.5555953979492}
+[ok] close: {"closed": 2, "arena": {"slots": 4661, "chunks": 19, "allocated": 7021, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 1275068416, "freeSlots": 203}}
+deleted 1 file(s) the save rows wrote
+
+RESULT measured

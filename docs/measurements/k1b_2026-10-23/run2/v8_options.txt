@@ -1,0 +1,35 @@
+  --turbo-stats-wasm (print TurboFan statistics of wasm compilations)
+  --turboshaft-wasm-load-elimination (enable Turboshaft's WasmLoadElimination)
+  --wasm-in-js-inlining-body (inline Wasm code into JS functions via Turboshaft. This requires inlining the wrapper, see --wasm-in-js-inlining-wrapper. For controlling the inlining in the old Turbofan pipeline, see --turbo-inline-js-wasm-calls.)
+  --wasm-in-js-inlining-wrapper (inline JS-to-Wasm wrappers via Turboshaft/Turbolev.)
+  --wasm-in-js-inlining-opt (enable optimizations for Wasm-in-JS inlining in Turboshaft (experimental))
+  --wasm-native-module-cache (enable the native module cache)
+        type: bool  default: --wasm-native-module-cache
+  --wasm-tier-up (enable tier up to the optimizing compiler (requires --liftoff to have an effect))
+        type: bool  default: --wasm-tier-up
+  --wasm-dynamic-tiering (enable dynamic tier up to the optimizing compiler)
+        type: bool  default: --wasm-dynamic-tiering
+  --wasm-sync-tier-up (run Wasm tier up jobs synchronously)
+        type: bool  default: --no-wasm-sync-tier-up
+  --wasm-tiering-budget (budget for dynamic tiering (rough approximation of bytes executed)
+        type: int  default: --wasm-tiering-budget=13000000
+  --wasm-wrapper-tiering-budget (budget for wrapper tierup (number of calls until tier-up))
+        type: int  default: --wasm-wrapper-tiering-budget=1000
+  --wasm-caching-threshold (the amount of wasm top tier code that triggers the next caching event)
+  --wasm-caching-hard-threshold (the amount of wasm top tier code that triggers caching immediately, ignoring the --wasm-caching-timeout-ms)
+  --wasm-tier-up-filter (only tier-up function with this index)
+        type: int  default: --wasm-tier-up-filter=-1
+  --wasm-eager-tier-up-function (eagerly tier-up function with this index)
+        type: int  default: --wasm-eager-tier-up-function=-1
+  --enable-testing-opcode-in-wasm (enables a testing opcode in wasm that is only implemented in TurboFan)
+  --wasm-tier-mask-for-testing (bitmask of declared(!) function indices to compile with TurboFan instead of Liftoff)
+        type: int  default: --wasm-tier-mask-for-testing=0
+  --wasm-debug-mask-for-testing (bitmask of declared(!) function indices to compile for debugging, only applies if the tier is Liftoff)
+  --wasm-assert-types (Enable additional type assertions in generated code (e.g. turbofan) (experimental))
+  --wasm-deopts-per-function-limit (limit of wasm deopts for a single function after which no further deopt points are emitted in Turbofan)
+  --wasm-opt (enable optimization when compiling Wasm functions with Turbofan)
+  --wasm-random-rescheduling (enable Turbofan's random rescheduling phase for wasm functions (experimental))
+  --wasm-lazy-compilation (enable lazy compilation for all wasm modules)
+        type: bool  default: --wasm-lazy-compilation
+  --trace-wasm-lazy-compilation (trace lazy compilation of wasm functions)
+        type: bool  default: --no-trace-wasm-lazy-compilation

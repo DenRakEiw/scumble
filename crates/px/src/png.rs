@@ -104,7 +104,7 @@ pub fn filter_rows(rgba: &[u8], w: usize, rows: usize, prev: Option<&[u8]>, out:
     }
     for (y, (row, o)) in rgba[..stride * rows].chunks_exact(stride).zip(out.chunks_exact_mut(stride + 1)).enumerate() {
         let up = if y == 0 { prev.map(|p| &p[..stride]) } else { Some(&rgba[(y - 1) * stride..y * stride]) };
-        filter_row(row, up, o);
+        row_filter(row, up, o);
     }
     rows * (stride + 1)
 }
@@ -203,5 +203,187 @@ pub fn lines_to_rgba(lines: &[u8], rows: usize, w: usize, channels: usize, out: 
                 d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = 255;
             }
         }
+    }
+}
+
+// ---- writing: the filter choice in lanes (W1, docs/PLAN_WASM_BUILD.md §7) -------------------------------------------
+//
+// The same choice and the same bytes as `filter_row`. All five filters read only the raw rows (the byte to the left, the
+// one above, the one above left), so the SIMD build takes 16 bytes at a time: the five filtered groups, their costs
+// (|signed byte| is `i8x16_abs` read as unsigned, 0x80 giving 128) added in u16 lanes for at most BLOCK groups and then
+// in u32 lanes, exact integers, so the sums and the choice are the scalar loop's. The Paeth group it computed for its
+// sum goes straight into `out` (Paeth wins about three rows in four of a photograph, K0c's `png_filter_types`); a row
+// whose choice is another filter is written again with that filter alone, one or two lane ops per 16 bytes, so no row
+// is kept elsewhere and nothing is allocated. The first pixel (no left neighbour) and the bytes after the last whole
+// group go through the scalar code, a row narrower than the first pixel and one group through `filter_row` itself.
+// The scalar build is `filter_row`, unchanged: tools/px_test.js holds the two builds and the JS twin to the same bytes.
+
+#[cfg(not(target_feature = "simd128"))]
+#[inline(always)]
+fn row_filter(row: &[u8], up: Option<&[u8]>, out: &mut [u8]) {
+    filter_row(row, up, out)
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+fn row_filter(row: &[u8], up: Option<&[u8]>, out: &mut [u8]) {
+    if row.len() < lanes::MIN {
+        return filter_row(row, up, out);
+    }
+    match up {
+        Some(u) => lanes::filter_row::<true>(row, &u[..row.len()], out),
+        None => lanes::filter_row::<false>(row, &[], out),
+    }
+}
+
+#[cfg(target_feature = "simd128")]
+mod lanes {
+    use super::{cost, filtered};
+    use core::arch::wasm32::*;
+
+    /// The narrowest row in lanes: the first pixel and one group of 16 bytes.
+    pub const MIN: usize = 4 + 16;
+    /// Groups added in u16 lanes before they go into u32 ones: a group adds at most 2 x 128 to a lane, 255 x 256 < 65536.
+    const BLOCK: usize = 255;
+
+    /// `row` (at least MIN bytes) filtered into `out` (the type byte, then the row); `up` is the row above, as long as
+    /// `row`, when `UP`, else empty (zeros above).
+    pub fn filter_row<const UP: bool>(row: &[u8], up: &[u8], out: &mut [u8]) {
+        let n = row.len();
+        let (head, rest) = out.split_at_mut(1);
+        let o = &mut rest[..n];
+        let above = |i: usize| if UP { up[i] } else { 0 };
+        let above_left = |i: usize| if UP { up[i - 4] } else { 0 };
+        let mut tot = [0u32; 5];
+        // the first pixel: nothing to its left (a = c = 0)
+        for i in 0..4 {
+            let (x, b) = (row[i], above(i));
+            for t in 0..5u8 {
+                tot[t as usize] += cost(filtered(t, x, 0, b, 0));
+            }
+            o[i] = filtered(4, x, 0, b, 0);
+        }
+        let end = 4 + (n - 4) / 16 * 16;
+        // every load and store in there is inside `row`, `up` and `o`: 4 <= i and i + 16 <= end <= n
+        unsafe { sums::<UP>(row.as_ptr(), up.as_ptr(), o.as_mut_ptr(), end, &mut tot) };
+        // the bytes after the last whole group
+        for i in end..n {
+            let (x, a, b, c) = (row[i], row[i - 4], above(i), above_left(i));
+            for t in 0..5u8 {
+                tot[t as usize] += cost(filtered(t, x, a, b, c));
+            }
+            o[i] = filtered(4, x, a, b, c);
+        }
+        let mut best = 0u8;
+        for t in 1..5u8 {
+            if tot[t as usize] < tot[best as usize] {
+                best = t;
+            }
+        }
+        head[0] = best;
+        match best {
+            4 => return,   // already written
+            0 => {
+                o.copy_from_slice(row);
+                return;
+            }
+            _ => {}
+        }
+        for i in 0..4 {
+            o[i] = filtered(best, row[i], 0, above(i), 0);
+        }
+        unsafe {
+            match best {
+                1 => write::<UP, 1>(row.as_ptr(), up.as_ptr(), o.as_mut_ptr(), end),
+                2 => write::<UP, 2>(row.as_ptr(), up.as_ptr(), o.as_mut_ptr(), end),
+                _ => write::<UP, 3>(row.as_ptr(), up.as_ptr(), o.as_mut_ptr(), end),
+            }
+        }
+        for i in end..n {
+            o[i] = filtered(best, row[i], row[i - 4], above(i), above_left(i));
+        }
+    }
+
+    /// The costs of bytes 4..end under the five filters added to `tot`, and the Paeth bytes written to `o`.
+    #[inline(always)]
+    unsafe fn sums<const UP: bool>(r: *const u8, u: *const u8, o: *mut u8, end: usize, tot: &mut [u32; 5]) {
+        let zero = u8x16_splat(0);
+        let mut acc = [u32x4_splat(0); 5];
+        let mut i = 4;
+        while i < end {
+            let stop = end.min(i + BLOCK * 16);
+            let mut s = [u16x8_splat(0); 5];
+            while i < stop {
+                let x = v128_load(r.add(i) as *const v128);
+                let a = v128_load(r.add(i - 4) as *const v128);
+                let (b, c) = if UP { (v128_load(u.add(i) as *const v128), v128_load(u.add(i - 4) as *const v128)) } else { (zero, zero) };
+                let f4 = i8x16_sub(x, paeth(a, b, c));
+                v128_store(o.add(i) as *mut v128, f4);
+                s[0] = i16x8_add(s[0], cost16(x));
+                s[1] = i16x8_add(s[1], cost16(i8x16_sub(x, a)));
+                s[2] = i16x8_add(s[2], cost16(i8x16_sub(x, b)));
+                s[3] = i16x8_add(s[3], cost16(i8x16_sub(x, avg(a, b))));
+                s[4] = i16x8_add(s[4], cost16(f4));
+                i += 16;
+            }
+            for k in 0..5 {
+                acc[k] = i32x4_add(acc[k], u32x4_extadd_pairwise_u16x8(s[k]));
+            }
+        }
+        for k in 0..5 {
+            let v = acc[k];
+            tot[k] += u32x4_extract_lane::<0>(v) + u32x4_extract_lane::<1>(v) + u32x4_extract_lane::<2>(v) + u32x4_extract_lane::<3>(v);
+        }
+    }
+
+    /// Bytes 4..end filtered with `T` (1 Sub, 2 Up, 3 Average) into `o`.
+    #[inline(always)]
+    unsafe fn write<const UP: bool, const T: u8>(r: *const u8, u: *const u8, o: *mut u8, end: usize) {
+        let mut i = 4;
+        while i < end {
+            let x = v128_load(r.add(i) as *const v128);
+            let a = v128_load(r.add(i - 4) as *const v128);
+            let b = if UP { v128_load(u.add(i) as *const v128) } else { u8x16_splat(0) };
+            let p = match T {
+                1 => a,
+                2 => b,
+                _ => avg(a, b),
+            };
+            v128_store(o.add(i) as *mut v128, i8x16_sub(x, p));
+            i += 16;
+        }
+    }
+
+    /// The 16 costs of a group, |signed byte|, added in pairs into eight u16 lanes.
+    #[inline(always)]
+    unsafe fn cost16(v: v128) -> v128 {
+        u16x8_extadd_pairwise_u8x16(i8x16_abs(v))
+    }
+
+    /// floor((a + b) / 2) per byte: the average rounded up, less the bit it rounded.
+    #[inline(always)]
+    unsafe fn avg(a: v128, b: v128) -> v128 {
+        i8x16_sub(u8x16_avgr(a, b), v128_and(v128_xor(a, b), u8x16_splat(1)))
+    }
+
+    /// The Paeth predictor per byte in the standard's order (a, then b, then c), its distances in i16 lanes.
+    #[inline(always)]
+    unsafe fn paeth(a: v128, b: v128, c: v128) -> v128 {
+        let (ma0, mb0) = choose(u16x8_extend_low_u8x16(a), u16x8_extend_low_u8x16(b), u16x8_extend_low_u8x16(c));
+        let (ma1, mb1) = choose(u16x8_extend_high_u8x16(a), u16x8_extend_high_u8x16(b), u16x8_extend_high_u8x16(c));
+        let ma = i8x16_narrow_i16x8(ma0, ma1);
+        let mb = i8x16_narrow_i16x8(mb0, mb1);
+        v128_bitselect(a, v128_bitselect(b, c, mb), ma)
+    }
+
+    /// Eight bytes widened: all ones where the predictor is a, and where it is b when it is not a.
+    #[inline(always)]
+    unsafe fn choose(a: v128, b: v128, c: v128) -> (v128, v128) {
+        let bc = i16x8_sub(b, c);
+        let ac = i16x8_sub(a, c);
+        let pa = i16x8_abs(bc);
+        let pb = i16x8_abs(ac);
+        let pc = i16x8_abs(i16x8_add(bc, ac));
+        (v128_and(i16x8_le(pa, pb), i16x8_le(pa, pc)), i16x8_le(pb, pc))
     }
 }

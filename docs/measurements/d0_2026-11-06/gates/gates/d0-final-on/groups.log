@@ -1,0 +1,2 @@
+{"tiles": true, "full": {"asHidden": {"max": 0, "n": 0}, "differs": {"max": 162, "n": 48334}}, "png": {"asHidden": {"max": 0, "n": 0}, "differs": {"max": 162, "n": 48334}}, "box": {"asHidden": {"max": 0, "n": 0}, "differs": {"max": 162, "n": 48334}}, "region": {"asHidden": {"max": 0, "n": 0}, "differs": {"max": 162, "n": 48334}}, "stackBox": {"asHidden": {"max": 0, "n": 0}, "differs": {"max": 162, "n": 48334}}, "view": {"asHidden": {"max": 0, "n": 0}, "differs": {"max": 162, "n": 48335}}, "gpuVsCpu": {"used": true, "max": 1}, "psdBands": true, "psdCanvas": false}
+PASS

@@ -1,0 +1,11 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+blur (cold) | Blur | layer | 200 | fit | 156.5 | 51.7 | 46.3 | 39.7 | 43.7 | 1.5 | 164.2 | 397 | 7 | 15.7 | 0 | 0 | 12203 | mip_chain 32, smudge_dab 86
+blur | Blur | layer | 50 | fit | 156.5 | 4.5 | 11.6 | 11 | 12.4 | 1 | 51 | 709 | 5.7 | 15.6 | 0 | 0 | 9283 | mip_chain 56, smudge_dab 1562
+blur | Blur | layer | 200 | fit | 156.5 | 15.4 | 39.3 | 41.4 | 47.7 | 1.5 | 81.3 | 1610 | 4.8 | 15.5 | 0 | 0 | 12203 | mip_chain 144, smudge_dab 422
+blur | Blur | layer | 400 | fit | 156.5 | 32.1 | 100.9 | 79.3 | 102.1 | 1.6 | 134.8 | 2804 | 4.1 | 15.6 | 0 | 0 | 12177 | mip_chain 186, smudge_dab 242
+blur | Blur | layer | 1000 | fit | 156.5 | 150 | 266 | 242.2 | 272.3 | 4.6 | 420.3 | 7846 | 8.8 | 16.1 | 0 | 0 | 12166 | mip_chain 494, smudge_dab 122
+blur | Blur | layer | 50 | 1:1 | 18 | 33.1 | 6 | 2.7 | 7.1 | 1.2 | 42 | 360 | 11.9 | 19 | 0 | 0 | 9301 | smudge_dab 182
+blur | Blur | layer | 200 | 1:1 | 18 | 42.3 | 6.7 | 7.2 | 9.5 | 1.5 | 52.7 | 511 | 12.3 | 18.6 | 0 | 0 | 12193 | smudge_dab 62
+blur | Blur | layer | 400 | 1:1 | 18 | 62.9 | 20.7 | 20.5 | 24.4 | 1.7 | 85.5 | 974 | 13.2 | 18 | 0 | 0 | 12185 | mip_chain 12, smudge_dab 62
+blur | Blur | layer | 1000 | 1:1 | 18 | 172 | 124 | 131.4 | 242 | 10.9 | 299 | 4582 | 25.8 | 26.2 | 0 | 0 | 12172 | mip_chain 73, smudge_dab 62
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": false, "params": {"W": 15000, "H": 10000, "TOOLS": ["blur"], "SIZES": [50, 200, 400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 6151}}

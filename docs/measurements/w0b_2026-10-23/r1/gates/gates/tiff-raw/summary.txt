@@ -1,0 +1,2 @@
+tiffperf:15000x10000,--variant,raw,--out,/f/canvas/dist/w0b_tiff_files rc=0 6s PASS
+ALL PASS
