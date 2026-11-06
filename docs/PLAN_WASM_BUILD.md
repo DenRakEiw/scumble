@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0, D0 and K5 done 2026-11-06 (§7; K5 took ABI 21); Stop 3, W1, K12 and Stop 5 done the same day (§7; Stop 5 keeps K13 / K14, decides the threads spike at K14 and adds K12b before G6); next K12b.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0, D0 and K5 done 2026-11-06 (§7; K5 took ABI 21); Stop 3, W1, K12, Stop 5 and K12b done the same day (§7; Stop 5 keeps K13 / K14 and adds K12b; the user's answers: the threads spike decided after K14, G6 ends as a note, K12b into 0.1.52); next K4.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -1492,6 +1492,21 @@ drops it now; K24, K3, K10a-c, K15-K18, K20a-c, K28, K29, K30, *Stop 6*, K31, K1
    (the user's word says to merge once K12 and Stop 5 are committed)? Recommended: a second merge. Without an answer
    only K12 is merged, and the 0.1.52 notes name the wait and the +7 ms.
 
+#### The user's answers (2026-11-06)
+
+Asked in chat after this stop, every recommendation but the first taken:
+1. **The threads spike: decided after K14** (the user's pick "Nach K14 entscheiden", not the recommended drop). It stays
+   the optional K-L4 right after K14, decided there on K14's kernels and K12b's 8-stripes row (K12b (c): one light a
+   tie, three lights 3-4 % faster, a sun 3-7 % slower; about 2-4 ms of a worker's time a stripe, inferred).
+2. **G6 ends as #0 M9's note** ("Nur Notiz"): the 0.4 s shader link block once per profile with a cold GPU cache stays
+   as it is; no G6 session. After K12b the order goes on with K4.
+3. **K12b goes into 0.1.52** ("Ja, in 0.1.52"): a second merge of `wasm-kernels` into `corridorkey` after K12b's
+   commit, so the 0.1.52 notes need not name the NORMAL wait or the drag step's +7 ms.
+
+The order from here: K4, K26, K27; K21, K11, K22, K23, K25, K9, K36, K37; K2, *Stop 2*, K6, K7, K8, *Stop 4*; K32, K33,
+K34; K13 (#25), K14 (#26), the threads spike decided right after it; K24, K3, K10a-c, K15-K18, K20a-c, K28, K29, K30,
+*Stop 6*, K31, K19, K35, K38, K39, K40, K41.
+
 Next: K12b.
 
 ### K12b (2026-11-06): the marches' feed
@@ -1572,4 +1587,4 @@ Stop 5's scope 3. (a)-(c), on `2ea002b` (K12's code); normal tier, the same byte
     the NORMAL wait, which it cuts 14x for one job and about 7x for the last of eight stripe-sized ones; no march row is
     worse beyond its spread, and it adds no work on the window (§1.1 rule 3).
 
-Next: G6.
+Next: K4 (G6 ended as #0 M9's note, the user's answer to Stop 5).
