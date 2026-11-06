@@ -19,7 +19,10 @@
 // read does not stop the run, a node it lacks does) and follows a redirect on its own origin only; a fill recipe's mask;
 // Generate new uploads nothing; an upscaler partner node; a test base takes only a test key; the Cancel's flags (asked,
 // done, ended, not confirmed) and their words through providers/index.js; the progress throttle on a clock set back; a
-// context without cloudApi stays on the legacy API.
+// context without cloudApi stays on the legacy API. LoRA rows (item 50, LR5): the chain in the submitted graph (both
+// branches of a switch graph, before a patch, the text route's own graph), the list's spelling, a name the list lacks sent
+// and named by a failure, loras false, a declared model per route, an unread node list, six rows refused, the answer's
+// loras through providers/index.js; loraList over the v1 asset list and the node list.
 "use strict";
 
 const fs = require("node:fs");
@@ -506,6 +509,181 @@ async function main() {
         check("a real key with a test base: refused before any request", /only a test key/.test(e || "") && g.calls.length === 0, e);
     }
 
+    // 16. LoRA rows on a Comfy Cloud graph (item 50, docs/PLAN_LORAS.md LR5): spliced in main after the node list's read
+    // and before checkModelFiles, into the copy that is submitted (the recipe's graph untouched); the switch graphs both
+    // branches, a patch graph before the patch; a separator-only difference in the list's spelling, a name the list lacks
+    // sent as typed and named by a failure; the answer's loras and its note; loras false leaves both graphs alone; a
+    // declared model honoured on the edit graph while the text graph (without that node) takes the generic rule; an
+    // unread node list splices by the class-name table; more than five usable rows throw before any upload
+    {
+        const BS = String.fromCharCode(92);
+        const of = (id) => list.find((r) => r.id === id).providers.comfycloud;
+        const qv = of("cloud_qwen_image_edit_2509"), zv = of("cloud_z_image_turbo"), iv = of("cloud_ideogram_4"), k9 = of("cloud_flux2_klein_9b");
+        const SEP = "Wan22_FunReward/style.safetensors", QL = "qwen-80s_fantasy_movie.safetensors";
+        const classesOf = (...gs) => [...new Set(gs.flatMap((g) => Object.values(g).map((n) => n.class_type)))];
+        const infoOf = (classes, names) => ({
+            ...Object.fromEntries(classes.map((c) => [c, {}])),
+            LoraLoaderModelOnly: { input: { required: { model: ["MODEL"], lora_name: [names, {}], strength_model: ["FLOAT", { default: 1, min: -100, max: 100 }] } }, output: ["MODEL"] },
+        });
+        const rows3 = [{ name: QL, strength: 0.8, on: true }, { name: "Wan22_FunReward" + BS + "style.safetensors", strength: 1, on: true }, { name: "off.safetensors", strength: 1, on: false }];
+        const editReq = (v, rows, declared = v.loras, extra = {}) => ({
+            provider: "comfycloud", model: v.model, kind: "edit", options: v.options, prompt: "a red door", negative: "", seed: 7,
+            image: png("CROP"), mask: png("MASK"), width: 1024, height: 768, references: [], params: {}, original: 0, loras: rows ? { rows, declared } : null, ...extra,
+        });
+        const textReq = (v, rows, declared = v.text && v.text.loras) => ({
+            provider: "comfycloud", model: v.text.model, kind: "text", options: v.text.options || v.options, prompt: "a lighthouse", negative: "", seed: 9,
+            width: 1024, height: 1024, references: [], params: {}, loras: rows ? { rows, declared } : null,
+        });
+        const outOf = (v) => (wf) => [{ node_id: String(v.save || saveIdOf(wf)), name: "lora.png" }];
+        const chain = (wf) => Object.keys(wf).filter((id) => /^scumble_lora_/.test(id)).sort();
+
+        // the switch graph of Qwen Image Edit 2509 (433:37 read by its LoRA 433:89 and by the switch's on_false)
+        cloud._clearNodeList();
+        const qf = fakeComfyV2({ info: infoOf(classesOf(qv.options.graph), [QL, SEP, "other.safetensors"]), outputs: (wf) => [{ node_id: "469", name: "lora.png" }] });
+        const qo = await cloud.edit(editReq(qv, rows3), ctxOf(qf));
+        const qw = (qf.jobs[0] || {}).workflow || {};
+        const l1 = (qw.scumble_lora_1 || {}).inputs || {}, l2 = (qw.scumble_lora_2 || {}).inputs || {};
+        check("Cloud LoRAs: the switch graph's chain after 433:37, the two switched-on rows in order with their strengths, the switched-off one nowhere",
+            chain(qw).join(",") === "scumble_lora_1,scumble_lora_2" && qw.scumble_lora_1.class_type === "LoraLoaderModelOnly" && JSON.stringify(l1.model) === JSON.stringify(["433:37", 0]) && l1.lora_name === QL && l1.strength_model === 0.8
+            && JSON.stringify(l2.model) === JSON.stringify(["scumble_lora_1", 0]) && l2.strength_model === 1 && !JSON.stringify(qw).includes("off.safetensors"),
+            short({ chain: chain(qw), l1, l2 }));
+        check("Cloud LoRAs: both branches re-pointed to the chain's end (the template's own LoRA 433:89 and the switch's on_false)",
+            JSON.stringify(qw["433:89"].inputs.model) === JSON.stringify(["scumble_lora_2", 0]) && JSON.stringify(qw["433:440"].inputs.on_false) === JSON.stringify(["scumble_lora_2", 0]),
+            short({ lora: qw["433:89"].inputs.model, sw: qw["433:440"].inputs.on_false }));
+        check("Cloud LoRAs: a name differing only in its separators goes out in the node list's spelling (the fix reached the chain)", l2.lora_name === SEP, l2.lora_name);
+        check("Cloud LoRAs: the recipe's own graph untouched", !Object.keys(qv.options.graph).some((id) => /^scumble_lora_/.test(id)) && JSON.stringify(qv.options.graph["433:89"].inputs.model) === JSON.stringify(["433:37", 0]), "");
+        check("Cloud LoRAs: the answer's loras (in the list's spelling) and the note the status line shows",
+            JSON.stringify(qo.loras) === JSON.stringify([{ name: QL, strength: 0.8 }, { name: SEP, strength: 1 }]) && (qo.notes || []).includes("LoRAs: qwen-80s_fantasy_movie 0.8, style 1.0."),
+            short({ loras: qo.loras, notes: qo.notes }));
+
+        // a patch graph (Z-Image Turbo's ModelSamplingAuraFlow 57:11): the chain before the patch, on Generate new
+        cloud._clearNodeList();
+        const zf = fakeComfyV2({ info: infoOf(classesOf(zv.options.graph), [QL]), outputs: outOf(zv.options) });
+        const zo = await cloud.generate(textReq(zv, [{ name: QL, strength: 0.5, on: true }]), ctxOf(zf));
+        const zw = (zf.jobs[0] || {}).workflow || {};
+        check("Cloud LoRAs: Generate new on a patch graph, the chain between the loader 57:28 and the patch 57:11, nothing uploaded",
+            JSON.stringify((zw.scumble_lora_1 || { inputs: {} }).inputs.model) === JSON.stringify(["57:28", 0]) && JSON.stringify(zw["57:11"].inputs.model) === JSON.stringify(["scumble_lora_1", 0]) && zf.uploads.length === 0 && zo.loras.length === 1,
+            short({ l: zw.scumble_lora_1, patch: zw["57:11"] && zw["57:11"].inputs }));
+
+        // a name the node list lacks goes out as typed (the account's own imports are not in it) and a failed job names it
+        cloud._clearNodeList();
+        const mf = fakeComfyV2({ info: infoOf(classesOf(qv.options.graph), [QL]), statuses: ["failed"], error: { code: "execution_error", message: "Value not in list: lora_name: 'my_import.safetensors'" } });
+        const me = await thrown(() => cloud.edit(editReq(qv, [{ name: "my_import.safetensors", strength: 1, on: true }]), ctxOf(mf)));
+        const mw = (mf.jobs[0] || {}).workflow || {};
+        check("Cloud LoRAs: a name the node list lacks is not refused: it goes out as typed",
+            posts(mf).length === 1 && (mw.scumble_lora_1 || { inputs: {} }).inputs.lora_name === "my_import.safetensors", short(mw.scumble_lora_1));
+        check("Cloud LoRAs: the failed run's note names it among the files the node list lacked",
+            /my_import\.safetensors \(LoraLoaderModelOnly lora_name\)/.test(me || "") && /Comfy Cloud's node list does not name the model file/.test(me || ""), me);
+        // the node list lacks the chain's class: the run stops before any upload, by name
+        cloud._clearNodeList();
+        const nf = fakeComfyV2({ classes: classesOf(zv.options.graph) });
+        const ne = await thrown(() => cloud.generate(textReq(zv, [{ name: QL, strength: 1, on: true }]), ctxOf(nf)));
+        check("Cloud LoRAs: a node list without LoraLoaderModelOnly (Z-Image Turbo's graph has none) stops the run by name, nothing submitted",
+            !classesOf(zv.options.graph).includes("LoraLoaderModelOnly") && /^Comfy Cloud has no LoraLoaderModelOnly node/.test(ne || "") && posts(nf).length === 0, ne);
+
+        // loras false (cloud_ideogram_4, two model loaders): the graph alone, the note says why
+        cloud._clearNodeList();
+        const idf = fakeComfyV2({ info: infoOf(classesOf(iv.options.graph), [QL]), outputs: outOf(iv.options) });
+        const io = await cloud.generate(textReq(iv, [{ name: QL, strength: 1, on: true }]), ctxOf(idf));
+        const iw = (idf.jobs[0] || {}).workflow || {};
+        check("Cloud LoRAs: loras false (cloud_ideogram_4) leaves the graph alone, the answer's loras empty, the note says why",
+            iv.loras === false && chain(iw).length === 0 && io.loras.length === 0 && (io.notes || []).includes("The LoRAs stayed out: the recipe takes no LoRAs."),
+            short({ decl: iv.loras, chain: chain(iw), notes: io.notes }));
+        // declared false on both routes of a recipe with an edit and a text graph
+        cloud._clearNodeList();
+        const kf = fakeComfyV2({ info: infoOf(classesOf(k9.options.graph, k9.text.options.graph), [QL]), outputs: (wf) => [{ node_id: "9", name: "k.png" }] });
+        await cloud.edit(editReq(k9, [{ name: QL, strength: 1, on: true }], false), ctxOf(kf));
+        await cloud.generate(textReq(k9, [{ name: QL, strength: 1, on: true }], false), ctxOf(kf));
+        check("Cloud LoRAs: loras false leaves both graphs of cloud_flux2_klein_9b alone", kf.jobs.length === 2 && kf.jobs.every((j) => chain(j.workflow).length === 0), short(kf.jobs.map((j) => chain(j.workflow))));
+        // and without a declaration: the edit graph's and the text graph's chain after 75:70
+        cloud._clearNodeList();
+        const kg = fakeComfyV2({ info: infoOf(classesOf(k9.options.graph, k9.text.options.graph), [QL]), outputs: (wf) => [{ node_id: "9", name: "k.png" }] });
+        await cloud.edit(editReq(k9, [{ name: QL, strength: 0.7, on: true }]), ctxOf(kg));
+        const ko = await cloud.generate(textReq(k9, [{ name: QL, strength: 0.7, on: true }]), ctxOf(kg));
+        check("Cloud LoRAs: Generate new on cloud_flux2_klein_9b's own text graph holds the chain too (75:70 -> 75:63), its answer names it",
+            kg.jobs.length === 2 && kg.jobs.every((j) => JSON.stringify(j.workflow.scumble_lora_1.inputs.model) === JSON.stringify(["75:70", 0]) && JSON.stringify(j.workflow["75:63"].inputs.model) === JSON.stringify(["scumble_lora_1", 0]))
+            && JSON.stringify(ko.loras) === JSON.stringify([{ name: QL, strength: 0.7 }]) && (ko.notes || []).includes("LoRAs: qwen-80s_fantasy_movie 0.7."),
+            short({ jobs: kg.jobs.map((j) => chain(j.workflow)), notes: ko.notes }));
+
+        // a declared model the edit graph has and the text graph lacks: honoured on the edit graph, the generic rule on
+        // the text graph (normalize drops it there with a warning)
+        const raw = JSON.parse(fs.readFileSync(path.join(ROOT, "recipes", "cloud_flux2_klein_9b.json"), "utf8"));
+        const rv = raw.providers.comfycloud;
+        rv.options.graph["75:200"] = { class_type: "LoraLoaderModelOnly", inputs: { model: ["75:70", 0], lora_name: "template_lora.safetensors", strength_model: 1 } };
+        rv.options.graph["75:63"].inputs.model = ["75:200", 0];
+        rv.loras = { model: "75:200" };
+        const warned = [];
+        const ow = console.warn;
+        console.warn = (...a) => warned.push(a.join(" "));
+        let dv;
+        try { dv = recipes._normalize(raw).providers.comfycloud; } finally { console.warn = ow; }
+        cloud._clearNodeList();
+        const df = fakeComfyV2({ info: infoOf(classesOf(dv.options.graph, dv.text.options.graph), [QL, "template_lora.safetensors"]), outputs: (wf) => [{ node_id: "9", name: "k.png" }] });
+        await cloud.edit(editReq(dv, [{ name: QL, strength: 1, on: true }]), ctxOf(df));
+        await cloud.generate(textReq(dv, [{ name: QL, strength: 1, on: true }]), ctxOf(df));
+        const [dw, dt] = df.jobs.map((j) => j.workflow);
+        check("Cloud LoRAs: a declared model (75:200, a LoRA the edit graph holds) honoured there: the chain after it, its own LoRA kept before",
+            dv.loras && dv.loras.model === "75:200" && dw && JSON.stringify(dw.scumble_lora_1.inputs.model) === JSON.stringify(["75:200", 0]) && JSON.stringify(dw["75:63"].inputs.model) === JSON.stringify(["scumble_lora_1", 0]) && JSON.stringify(dw["75:200"].inputs.model) === JSON.stringify(["75:70", 0]),
+            short({ decl: dv.loras, l: dw && dw.scumble_lora_1 }));
+        check("Cloud LoRAs: the text graph lacks 75:200: its declaration left out with a warning, the generic rule splices after 75:70",
+            dv.text.loras === undefined && warned.some((w) => /\(text\): loras/.test(w)) && dt && JSON.stringify(dt.scumble_lora_1.inputs.model) === JSON.stringify(["75:70", 0]) && JSON.stringify(dt["75:63"].inputs.model) === JSON.stringify(["scumble_lora_1", 0]),
+            short({ text: dv.text.loras, warned, l: dt && dt.scumble_lora_1 }));
+
+        // the node list unread: the run goes, the chain by the class-name table, the names as typed
+        cloud._clearNodeList();
+        const uf = fakeComfyV2({ infoFails: true, outputs: (wf) => [{ node_id: "469", name: "lora.png" }] });
+        const uo = await cloud.edit(editReq(qv, rows3), ctxOf(uf));
+        const uw = (uf.jobs[0] || {}).workflow || {};
+        check("Cloud LoRAs: an unread node list splices by the class-name table, the names as typed (no list to spell them by)",
+            chain(uw).length === 2 && JSON.stringify(uw.scumble_lora_1.inputs.model) === JSON.stringify(["433:37", 0]) && uw.scumble_lora_2.inputs.lora_name === "Wan22_FunReward" + BS + "style.safetensors" && /^unread: /.test(uo.info.nodeList || ""),
+            short({ chain: chain(uw), name: uw.scumble_lora_2 && uw.scumble_lora_2.inputs.lora_name, nodeList: uo.info.nodeList }));
+
+        // six usable rows: refused before any upload (the renderer refuses them first; this is the backstop)
+        cloud._clearNodeList();
+        const sf = fakeComfyV2({ info: infoOf(classesOf(qv.options.graph), [QL]) });
+        const six = Array.from({ length: 6 }, (_, i) => ({ name: `l${i}.safetensors`, strength: 1, on: true }));
+        const se = await thrown(() => cloud.edit(editReq(qv, six), ctxOf(sf)));
+        check("Cloud LoRAs: six usable rows throw before any upload or submit", /^At most 5 LoRAs per recipe; the rows name 6\.$/.test(se || "") && sf.uploads.length === 0 && posts(sf).length === 0, se);
+        // no rows: the request is the same request
+        const same = cloud._withLoras(editReq(qv, null), null);
+        check("Cloud LoRAs: a request without rows goes as it is", same.req.options === qv.options && same.applied.length === 0 && same.notes.length === 0, "");
+    }
+
+    // 17. the LoRA files a Comfy Cloud key may name (loraList, the picker's source on a Comfy Cloud recipe): the account's
+    // own imports (GET /api/assets include_public=false), then the catalog (the same route's public LoRA assets, paged by
+    // offset), then the node list's combo where the assets lack a name; include_tags in its comma form, X-API-Key; kept a
+    // minute, `fresh` reads again; a failed asset read leaves the combo; a real key never goes to a test base
+    {
+        const catalog = Array.from({ length: 501 }, (_, i) => `cat_${String(i).padStart(3, "0")}.safetensors`);
+        const f = fakeComfyV2({ info: { LoraLoaderModelOnly: { input: { required: { lora_name: [["cat_000.safetensors", "combo_only.safetensors"], {}] } }, output: ["MODEL"] } }, loraAssets: { own: ["mine.safetensors"], shared: [...catalog, "a.zip"] } });
+        cloud._clearNodeList();
+        cloud._clearLoraList();
+        const got = await cloud.loraList(ctxOf(f));
+        const reads = f.calls.filter((c) => c.path === "/api/assets");
+        check("loraList: the account's own imports apart, the catalog paged (501 names over two pages) without a .zip, the combo's extra name added",
+            JSON.stringify(got.own) === JSON.stringify(["mine.safetensors"]) && got.shared.length === 502 && got.shared.includes("combo_only.safetensors") && !got.shared.includes("a.zip") && !got.shared.includes("mine.safetensors") && got.assets && got.nodeList && got.error === null,
+            short({ own: got.own, shared: got.shared.length, assets: got.assets, nodeList: got.nodeList, error: got.error }));
+        check("loraList: include_tags=models,loras in its comma form, include_public=false for the account's own, X-API-Key and no bearer",
+            reads.length === 3 && reads.every((c) => new URL(c.url).searchParams.get("include_tags") === "models,loras" && c.apiKey === KEY && !c.auth) && new URL(reads[0].url).searchParams.get("include_public") === "false",
+            short(reads.map((c) => new URL(c.url).search)));
+        await cloud.loraList(ctxOf(f));
+        const kept = f.calls.filter((c) => c.path === "/api/assets").length;
+        await cloud.loraList(ctxOf(f), { fresh: true });
+        check("loraList: kept a minute (no second read), `fresh` reads again", kept === 3 && f.calls.filter((c) => c.path === "/api/assets").length === 6, String(kept));
+        cloud._clearLoraList();
+        cloud._clearNodeList();
+        const g = fakeComfyV2({ info: { LoraLoaderModelOnly:{ input: { required: { lora_name: [["combo_only.safetensors"], {}] } } } }, loraAssets: { fails: 500 } });
+        const gg = await cloud.loraList(ctxOf(g));
+        check("loraList: a failed asset read leaves the node list's combo, with its words", !gg.assets && gg.nodeList && JSON.stringify(gg.shared) === JSON.stringify(["combo_only.safetensors"]) && /^Comfy Cloud model list: /.test(gg.error || ""), short(gg));
+        cloud._clearLoraList();
+        const h = fakeComfyV2({ origin: MOCK, loraAssets: { own: [], shared: ["x.safetensors"] }, classes: [] });
+        const he = await thrown(() => cloud.loraList(ctxOf(h, { base: MOCK })));
+        const ht = await cloud.loraList(ctxOf(h, { key: TEST_KEY, base: MOCK }));
+        check("loraList: a real key with a test base refused before any request; a test key reads the mock", /only a test key/.test(he || "") && ht.shared.includes("x.safetensors") && h.calls.every((c) => c.origin === MOCK && c.apiKey === TEST_KEY), short({ he, calls: h.calls.length }));
+        cloud._clearLoraList();
+        cloud._clearNodeList();
+    }
+
     // 15. through providers/index.js, the app's path: the settings give the v2 default and the test base; the live
     // frames reach hooks.progress with the run's id, a share within 250 ms of the last one waits and is replaced, and a
     // status sends the share that waited first; a Cancel's words say where the job stood (asked to stop, not sent yet,
@@ -576,6 +754,34 @@ async function main() {
             } };
             const r = await viaIndex(wrap, { ...partnerReq(), runId });
             check("a Cancel after the last upload, before the submit: nothing submitted, the words say nothing runs", /^Cancelled after \d+\.\d s, before the job went to Comfy Cloud: nothing runs or is charged\.$/.test(r.err || "") && ups === 4 && posts(f).length === 0 && f.cancels.length === 0, short({ err: r.err, ups }));
+        }
+        // a Comfy Cloud graph's LoRA rows through index.edit (item 50, LR5): the rows checked as IPC input, the chain in the
+        // submitted graph, the answer's loras and the note beside the run's other notes
+        {
+            const qv = list.find((x) => x.id === "cloud_qwen_image_edit_2509").providers.comfycloud;
+            const classes = [...new Set(Object.values(qv.options.graph).map((n) => n.class_type))];
+            const info = { ...Object.fromEntries(classes.map((c) => [c, {}])), LoraLoaderModelOnly: { input: { required: { model: ["MODEL"], lora_name: [["style.safetensors"], {}] } }, output: ["MODEL"] } };
+            cloud._clearNodeList();
+            const f = fakeComfyV2({ origin: MOCK, info, outputs: () => [{ node_id: "469", name: "lora.png" }] });
+            const req = {
+                provider: "comfycloud", model: qv.model, kind: "edit", options: qv.options, prompt: "x", negative: "", seed: 3, image: png("CROP"), mask: png("MASK"),
+                width: 512, height: 512, references: [], params: {}, original: 0, runId: "idx-loras",
+                loras: { rows: [{ name: "style.safetensors", strength: 0.6, on: true }, { name: 5, strength: 1, on: true }, { name: "nan.safetensors", strength: "x", on: true }], declared: { model: 7, family: "qwen_image" } },
+            };
+            const r = await viaIndex(f, req);
+            const wf = (f.jobs[0] || {}).workflow || {};
+            check("index.edit: a Cloud graph's LoRA rows (the malformed ones dropped) spliced, the answer's loras and its note",
+                !r.err && wf.scumble_lora_1 && wf.scumble_lora_1.inputs.lora_name === "style.safetensors" && !wf.scumble_lora_2
+                && JSON.stringify(r.out.loras) === JSON.stringify([{ name: "style.safetensors", strength: 0.6 }]) && (r.out.notes || []).includes("LoRAs: style 0.6."),
+                short({ err: r.err, loras: r.out && r.out.loras, notes: r.out && r.out.notes }));
+            const lr = index._lorasOfRequest;
+            check("index.edit: the rows as IPC input, at most 20 kept, the declaration false or { model, family } strings",
+                lr(null) === null && lr({ rows: [] }) === null && lr({ rows: Array.from({ length: 30 }, (_, i) => ({ name: `l${i}`, strength: 1, on: true })) }).rows.length === 20
+                && lr({ rows: [{ name: "a", strength: 1 }], declared: false }).declared === false && JSON.stringify(lr({ rows: [{ name: "a", strength: 1, on: false }], declared: { model: "75:1", family: 3 } })) === JSON.stringify({ rows: [{ name: "a", strength: 1, on: false }], declared: { model: "75:1" } }),
+                "");
+            const plain = await viaIndex(fakeComfyV2({ origin: MOCK, outputs: saveOutput }), { ...partnerReq(), runId: "idx-noloras" });
+            check("index.edit: a run without rows answers loras []", !plain.err && Array.isArray(plain.out.loras) && plain.out.loras.length === 0, short(plain.err));
+            cloud._clearNodeList();
         }
     }
 

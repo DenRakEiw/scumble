@@ -2702,10 +2702,77 @@ return r;
 ]
 
 
+# item 50 (docs/PLAN_LORAS.md LR5): LoRA rows on a Comfy Cloud recipe through the commands, against the loopback Comfy
+# Cloud of tools/fake_cloud_http.py (the gate's profile gets the mock and a test key; a profile holding a Comfy Cloud key
+# skips): list_recipes `loras` / `loras_reason` for the Cloud recipes, set_generation on cloud_z_image_turbo, and
+# generate_new's loras_sent with the chain the mock got (before the graph's ModelSamplingAuraFlow patch)
+CLOUD_LORAS = r"""
+const host = (await import('./editor/host.js')).host;
+const lr = (await c("list_recipes")).recipes;
+const by = (id) => lr.find((x) => x.id === id) || {};
+const cloudIds = lr.filter((x) => x.mode === "cloud").map((x) => x.id);
+const none = cloudIds.filter((id) => by(id).loras !== true);
+if (cloudIds.length < 10 || JSON.stringify(none) !== JSON.stringify(["cloud_ideogram_4"]) || !/^.+ takes no LoRA rows: its graph has 2 model loaders \(98:154, 98:23\), so the recipe declares none\.$/.test(by("cloud_ideogram_4").loras_reason || "") || by("cloud_z_image_turbo").loras_reason !== null)
+    throw new Error("list_recipes loras on Comfy Cloud: " + JSON.stringify({ cloudIds, none, reason: by("cloud_ideogram_4").loras_reason }));
+const saved = { recipe: host.recipe, loras: host.loras };
+const storeBefore = (await window.scumble.settings.get()).recipeLoras || {};
+let d = null;
+const out = { cloud: cloudIds.length };
+try {
+    host.setRecipe(host.shell.resolveRecipe(host.shell.recipes().find((r) => r.id === "cloud_z_image_turbo"), "comfycloud"));
+    d = await c("new_document");
+    const sg = await c("set_generation", { doc: d.id, loras: [{ name: "zt_style.safetensors", strength: 0.5 }, { name: "my_import.safetensors", strength: 1, on: false }] });
+    if ((sg.loras || []).length !== 2) throw new Error("set_generation: " + JSON.stringify(sg));
+    const gn = await c("generate_new", { doc: d.id, prompt: "a quiet harbour", width: 256, height: 192, timeout: 60 });
+    if (gn.mode !== "api" || JSON.stringify(gn.loras_sent) !== JSON.stringify([{ name: "zt_style.safetensors", strength: 0.5 }])) throw new Error("generate_new's loras_sent: " + JSON.stringify(gn).slice(0, 500));
+    out.loras_sent = gn.loras_sent;
+    out.notes = gn.notes;
+} finally {
+    host.loras = saved.loras;
+    await window.scumble.settings.set({ recipeLoras: storeBefore });
+    host.setRecipe(saved.recipe);
+    if (d) { try { await c("close_document", { doc: d.id, force: true }); } catch (_) { /* gone */ } }
+    await c("activate_document", { doc: window.__testDoc });
+}
+return out;
+"""
+
+
+async def cloud_loras(c):
+    from fake_cloud_http import FakeCloud, setup_js, CLOUD_RESTORE, png_b64
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "recipes", "cloud_z_image_turbo.json"), encoding="utf-8") as f:
+        v = json.load(f)["providers"]["comfycloud"]
+    info = {cls: {} for cls in set(v["options"]["needs"]) | {n["class_type"] for n in v["options"]["graph"].values()}}
+    info["LoraLoaderModelOnly"] = {"input": {"required": {"model": ["MODEL"], "lora_name": [["zt_style.safetensors"], {}]}}, "output": ["MODEL"]}
+    opts = {"info": info, "loraAssets": {"own": ["my_import.safetensors"], "shared": ["zt_style.safetensors"]}, "outputs": [{"node_id": str(v["options"]["save"]), "name": "z.png"}], "picture": png_b64()}
+    with FakeCloud(opts) as fc:
+        # a test key of its own: main keeps the node list per key, and the loras gate may have run before in this instance
+        keyed = await c.eval("(async () => { %s })()" % setup_js(fc.base, "test-commands-gate-0123456789"), timeout=60)
+        if not keyed or keyed.get("skipped"):
+            return {"skipped": (keyed or {}).get("skipped")}
+        try:
+            res = await c.eval("(async () => { const raw = window.__cmds; const c = (n, a) => raw.commands.run(n, a); %s })()" % CLOUD_LORAS, timeout=240)
+        finally:
+            await c.eval("(async () => { %s })()" % CLOUD_RESTORE, timeout=60)
+        s = fc.state()
+    wf = s["jobs"][0] if len(s["jobs"]) == 1 else {}
+    l1 = (wf.get("scumble_lora_1") or {}).get("inputs", {})
+    if not (l1.get("model") == ["57:28", 0] and l1.get("lora_name") == "zt_style.safetensors" and l1.get("strength_model") == 0.5
+            and wf.get("57:11", {}).get("inputs", {}).get("model") == ["scumble_lora_1", 0] and "scumble_lora_2" not in wf):
+        raise Exception("the graph the mock got: %s" % json.dumps({k: wf.get(k) for k in ("scumble_lora_1", "scumble_lora_2", "57:11")})[:600])
+    return {**res, "mock_chain": l1.get("lora_name")}
+
+
 async def run(c):
     ok = True
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); return 1; })()")
     for name, body in STEPS:
+        if name == "close":
+            try:
+                print(f"[ok] loras_on_comfy_cloud: {json.dumps(await cloud_loras(c))[:300]}")
+            except Exception as err:  # noqa: BLE001
+                ok = False
+                print(f"[FAIL] loras_on_comfy_cloud: {err}")
         js = "(async () => { const raw = window.__cmds; const c = (n, a) => raw.commands.run(n, a); %s })()" % body
         try:
             res = await c.eval(js, timeout=300)

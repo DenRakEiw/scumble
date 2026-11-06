@@ -379,14 +379,27 @@ and `/view_metadata`, and `host.loraHeader` stands in for the IPC. Its steps: th
 strengths and the separators in the server's spelling, the recipe's graph untouched; a missing file refused after one
 re-read and before `ensureOnServer`, six rows refused, an unread list refusing nothing, `loras: false`; the via line in
 the landed result's history entry; the LoRAs section (after Settings, hidden with its reason under an API recipe, an
-upscaler, the pass, `loras: false`, two loaders and a Comfy Cloud recipe; **+** to five, **×**, the picker's search,
+upscaler, the pass, `loras: false`, two loaders and `cloud_ideogram_4`; **+** to five, **×**, the picker's search,
 groups, keys and pointer, the strength's clamp, the tick, the rows per recipe across documents, `copySavedLoras`); the
 hint lines (grey, amber with the run still queued, the chips, one read per server and name, the family split and *Show
-all*); MOSS-Image Edit's readiness against a v0.42 node list and the rows after its edit LoRA. Also:
-`settings_migration_test.js` (the `recipeLoras` store), `metadata` (the PNG chunk's `loras`), `commands`
-(`loras_commands`: `set_generation` `loras`, `status.loras`, `list_recipes` `loras`, `list_loras`, `loras_sent`),
-`skins` step 15 (the section and the picker in every skin), `mcp` and `assistant` (`list_loras` read-only). Normal
-tier on tiles (no pixel path changed); the live runs are LR9's (`docs/measurements/lr9_2026-11-06/`).
+all*); MOSS-Image Edit's readiness against a v0.42 node list and the rows after its edit LoRA; and Comfy Cloud (LR5,
+`cloud_generate_new_sends_the_chain_to_comfy_cloud`) against `tools/fake_comfy_v2.js` served on a loopback port by
+`tools/fake_comfy_v2_http.js` (`tools/fake_cloud_http.py`: the gate's profile gets the mock as
+`settings.comfycloud.base` and a test key, put back afterwards; **a profile that holds a Comfy Cloud key skips the
+step**, so a gate run against an instance with the user's key never replaces it): Comfy Cloud's lists through main (the
+account's own imports, the catalog, the node list's combo), the picker's *Your imports* group and a typed name,
+`set_generation` keeping a name the lists lack, `status` / `list_loras` source `comfycloud`, Generate new on
+`cloud_flux2_klein_9b` with the chain in the text graph the mock got and the note in the answer, the test key on every
+call (bearer on v2, X-API-Key on v1). Also: `settings_migration_test.js` (the `recipeLoras` store), `metadata` (the PNG
+chunk's `loras`), `commands` (`loras_commands`: `set_generation` `loras`, `status.loras`, `list_recipes` `loras`,
+`list_loras`, `loras_sent`; `loras_on_comfy_cloud`: `list_recipes` `loras` for every Comfy Cloud recipe and
+`generate_new`'s `loras_sent` on `cloud_z_image_turbo` against the same mock, with its own test key), `skins` step 15
+(the section and the picker in every skin), `mcp` and `assistant` (`list_loras` read-only). The splice in main in plain
+Node: `comfycloud_v2_test.js` §16-17 (v2: the switch and patch graphs, the list's spelling, a name the list lacks sent
+and named by a failure, `loras: false`, a declared model per route, an unread node list, six rows, `loraList`) and §15
+(through `providers/index.js`), `cloudgraph_test.js` §11 (the legacy API). Normal tier on tiles (no pixel path
+changed); the live runs are LR9's (`docs/measurements/lr9_2026-11-06/`); a paid Comfy Cloud run with a LoRA is LR5's,
+on the user's word.
 
 Ideogram 4.5 (`recipes/ideogram_4_5.json`, `electron/main/providers/replicate.js`, `util.js` `ideogramMask`,
 `docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com and

@@ -40,6 +40,7 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
+const path = require("node:path");
 const { readError, sleep, num, closestAspect } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
@@ -375,6 +376,97 @@ function missingNote(missing) {
     return ` Comfy Cloud's node list does not name the model file${one ? "" : "s"} ${missing.join(", ")}; unless ${one ? "it is" : "they are"} among your own models on Comfy Cloud, the recipe needs a file Comfy Cloud has.`;
 }
 
+// ---- LoRA rows (item 50, docs/PLAN_LORAS.md §3.5, LR5) ------------------------------------------------------------
+// A Comfy Cloud graph's LoRA rows are spliced here, in main: the switched-on rows a request carries (`req.loras`,
+// { rows, declared }: the variant's declaration for the route that runs) go into a copy of `options.graph` through the
+// renderer's own module (renderer/editor/loras.js, an ES module main requires: require(esm), checked from an asar as
+// well), after the node list's read and before checkModelFiles, so the chain's lora_name values are model files of the
+// graph like any other (a separator-only difference goes in the list's spelling, a name the list lacks is named in a
+// failure's note, never a refusal: the account's own imports are not in the node list). buildDetached copies the graph
+// it is given and never splices.
+
+let lorasMod = null;
+function lorasModule() {
+    if (!lorasMod) lorasMod = require(path.join(__dirname, "..", "..", "..", "renderer", "editor", "loras.js"));
+    return lorasMod;
+}
+
+/**
+ * The request with its LoRA rows in the graph's copy: `{ req, applied: [{ name, strength }], notes }` (`notes` the
+ * status line's "LoRAs: ..." or why the rows stayed out). `info` the node list (null: the class-name table). A request
+ * without rows, or without a graph, is the same request. More than five usable rows throw (the renderer refuses them
+ * before the crop; this is the backstop).
+ */
+function withLoras(req, info) {
+    const l = req && req.loras;
+    if (!l || !Array.isArray(l.rows) || !l.rows.length || !req.options || !req.options.graph) return { req, applied: [], notes: [] };
+    const m = lorasModule();
+    const graph = JSON.parse(JSON.stringify(req.options.graph));
+    const got = m.spliceLoras(graph, { loras: l.declared, save: req.options.save }, l.rows, info || null);
+    const notes = [];
+    if (got.note) notes.push(got.note);
+    if (!got.applied.length) return { req, applied: [], notes };
+    notes.push(`LoRAs: ${m.loraWords(got.applied)}.`);
+    // the chain's class joins the classes the node list must hold
+    const added = Object.keys(graph).filter((id) => !Object.prototype.hasOwnProperty.call(req.options.graph, id)).map((id) => graph[id].class_type);
+    const needs = Array.isArray(req.options.needs) ? [...new Set([...req.options.needs, ...added])] : req.options.needs;
+    return { req: { ...req, options: { ...req.options, graph, needs } }, applied: got.applied, notes };
+}
+
+/**
+ * The LoRA files a Comfy Cloud key may name (the LoRAs section's picker on a Comfy Cloud recipe): `own`, the account's
+ * own imports (GET /api/assets with include_public=false, the documented account route; Creator plan or higher), and
+ * `shared`, Comfy Cloud's catalog (the same route's public LoRA assets, then the node list's LoraLoaderModelOnly combo,
+ * which the asset list holds already: read 2026-11-06, 777 assets against 652 names), each a loader's value
+ * (`loader_path`). `assets` / `nodeList` say which reads answered, `error` the first failure's words. Kept a minute per
+ * key (`fresh` reads again: the picker's open).
+ */
+const LORA_TTL_MS = 60 * 1000;
+const loraCache = new Map();   // key -> { at, value }
+
+async function assetNames(ctx, base, own) {
+    const names = [];
+    for (let offset = 0, pages = 0; pages < 20; pages++, offset += 500) {
+        const r = await keyedGet(ctx, `${base}/api/assets?include_tags=models,loras${own ? "&include_public=false" : ""}&limit=500&offset=${offset}`, "Comfy Cloud model list");
+        if (!r.ok) throw new Error(`Comfy Cloud model list: ${await readError(r)}`);
+        const j = await r.json();
+        const list = j && Array.isArray(j.assets) ? j.assets : [];
+        for (const a of list) {
+            const n = a && (a.loader_path || (a.user_metadata && a.user_metadata.filename) || a.name);
+            if (typeof n === "string" && MODEL_EXT.test(n)) names.push(n);
+        }
+        if (!list.length || !j.has_more) break;
+    }
+    return [...new Set(names)];
+}
+
+async function loraList(ctx, { fresh = false } = {}) {
+    const sdk = require("./comfysdk");
+    const test = sdk.testBase(ctx.base);
+    // a real key never goes to a test address, a test key only there (the client's own rule)
+    sdk.checkKey("Comfy Cloud", "settings.comfycloud.base", !!test, ctx.key);
+    const hit = loraCache.get(ctx.key);
+    if (!fresh && hit && Date.now() - hit.at < LORA_TTL_MS) return hit.value;
+    const base = test || BASE;
+    const value = { own: [], shared: [], assets: false, nodeList: false, error: null };
+    const say = (err) => sdk.scrub((err && err.message) || err, ctx.key).slice(0, 300);
+    try {
+        value.own = await assetNames(ctx, base, true);
+        const mine = new Set(value.own);
+        value.shared = (await assetNames(ctx, base, false)).filter((n) => !mine.has(n));
+        value.assets = true;
+    } catch (err) { value.error = say(err); value.own = []; value.shared = []; }
+    try {
+        const entry = await cloudInfo(ctx, base);
+        const combo = choicesOf(entry.info, "LoraLoaderModelOnly", "lora_name") || [];
+        const have = new Set([...value.own, ...value.shared]);
+        for (const n of combo) if (!have.has(n)) value.shared.push(n);
+        value.nodeList = true;
+    } catch (err) { if (!value.error) value.error = say(err); }
+    loraCache.set(ctx.key, { at: Date.now(), value });
+    return value;
+}
+
 /** The pictures of a cloud-form graph: the crop as picture 0, then the Original and the references; the mask on its own. */
 function graphLayout(req) {
     const o = req.options || {};
@@ -571,6 +663,10 @@ module.exports = {
     _clearNodeList: () => infoCache.clear(),
     // the node definitions for reading a UI workflow exported from Comfy Cloud (recipes.importFile, item 35 V5c)
     async objectInfo(ctx) { return (await cloudInfo(ctx)).info; },
+    // the LoRA files the key may name: the account's own imports and Comfy Cloud's catalog (item 50, LR5)
+    loraList,
+    _withLoras: withLoras,   // for tests
+    _clearLoraList: () => loraCache.clear(),
 };
 
 /** The Comfy API v2 when the context names it (contextFor's default), else the legacy API. */
@@ -585,11 +681,15 @@ async function run(req, ctx, waitMs) {
         if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
         const headers = { "X-API-Key": ctx.key, "Content-Type": "application/json" };
         let files = { fixes: new Map(), missing: [] };
+        let loras = { applied: [], notes: [] };
         if (detached) {
             // what the graph refuses by itself, before any call; then every node it needs, before any upload (§2.4: a
             // missing one stops the run by name); the model files it names only explain a failure (V6 step 3)
             if (req.kind !== "text") detachedFits(req);
             const { info, classes: have } = await cloudInfo(ctx);
+            // the LoRA rows into the graph's copy (item 50), so the checks below see the chain
+            loras = withLoras(req, info);
+            req = loras.req;
             const needs = Array.isArray(req.options.needs) ? req.options.needs : Object.values(req.options.graph).map((n) => n && n.class_type);
             const missing = [...new Set(needs.filter((c) => c && !have.has(c)))];
             if (missing.length) throw new Error(`Comfy Cloud has no ${missing.join(", ")} node${missing.length === 1 ? "" : "s"}, so this recipe cannot run there.`);
@@ -643,7 +743,7 @@ async function run(req, ctx, waitMs) {
             throw new Error("Comfy Cloud: the job finished without an image (" + JSON.stringify(rest).slice(0, 300) + ")");
         }
         const got = await download(ctx, file);
-        return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id } };
+        return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id }, loras: loras.applied, notes: loras.notes };
 }
 
 // ---- the Comfy API v2 through the SDK (docs/PLAN_COMFY_SDK.md 3.3, 3.6, 10) ------------------------------------------
@@ -748,6 +848,7 @@ async function runV2(req, ctx, waitMs) {
     const client = sdk.cloudClient(ctx);
     const info = { node, model: req.model };
     let files = { fixes: new Map(), missing: [] };
+    let loras = { applied: [], notes: [] };
     if (detached) {
         // v2 has no node list: the v1 read stays, advisory. One that fails or names nothing skips the check (v2's own
         // invalid_workflow then names a missing node); one that names nodes still stops a run whose node it lacks.
@@ -757,6 +858,10 @@ async function runV2(req, ctx, waitMs) {
             info.nodeList = `unread: ${say(err)}`.slice(0, 200);
             if (typeof ctx.log === "function") ctx.log(`the node list could not be read (${say(err)}); the run goes without its check`);
         }
+        // the LoRA rows into the graph's copy (item 50), so the checks below see the chain; an unread or empty node list
+        // splices by the class-name table
+        loras = withLoras(req, entry && entry.classes.size ? entry.info : null);
+        req = loras.req;
         if (entry && entry.classes.size) {
             const needs = Array.isArray(req.options.needs) ? req.options.needs : Object.values(req.options.graph).map((n) => n && n.class_type);
             const missing = [...new Set(needs.filter((c) => c && !entry.classes.has(c)))];
@@ -841,6 +946,8 @@ async function runV2(req, ctx, waitMs) {
         // the picture is in: a Cancel from here on drops a finished, charged job (providers/index.js words it so)
         ctx.jobDone = true;
         got.info = info;   // the events' summary joins it below
+        got.loras = loras.applied;   // what the chain loaded, in the node list's spelling (item 50)
+        got.notes = loras.notes;
         return got;
     } catch (err) {
         if (!stopped()) {

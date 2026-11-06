@@ -1192,6 +1192,8 @@ function installIpc() {
     // where each picture of a request of this shape goes and what the model calls it (docs/PLAN_REFS.md C3)
     ipcMain.handle("provider:layout", (_e, shape) => providers.layout(shape));
     ipcMain.handle("provider:balance", (_e, id) => providers.balance(id));
+    // the LoRA files the Comfy Cloud key may name (item 50): the account's own imports and Comfy Cloud's catalog
+    ipcMain.handle("provider:cloudLoras", (_e, opts) => providers.cloudLoras({ fresh: !!(opts && opts.fresh) }));
     // vision language models on the provider keys (prompt upsampling)
     ipcMain.handle("llm:list", () => llm.list());
     ipcMain.handle("llm:ask", (_e, req) => llm.ask(req));

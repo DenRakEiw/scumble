@@ -256,6 +256,7 @@ async function edit(request, hooks = {}) {
         refName: validRefName(request.refName) ? request.refName : REF_NAME_DEFAULT,   // IPC input is never trusted
         refsMax: +request.refsMax > 0 ? Math.floor(+request.refsMax) : null,   // a text run's cap from the variant (26f)
         boxes: Array.isArray(request.boxes) ? request.boxes : [],              // box geometry in fractions of the frame (item 28)
+        loras: lorasOfRequest(request.loras),                                  // a Comfy Cloud graph's LoRA rows (item 50)
     };
     const t0 = Date.now();
     const runId = request.runId ? String(request.runId).slice(0, 80) : "";
@@ -265,7 +266,7 @@ async function edit(request, hooks = {}) {
     const ctx = contextFor(id, p, key, ac.signal);
     if (runId && hooks && typeof hooks.progress === "function") ctx.progress = progressSender(runId, hooks.progress);
     // the request's shape for the log: never the key, never the pixels
-    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : relight ? "relight" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, boxes: req.boxes.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
+    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : relight ? "relight" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, boxes: req.boxes.length, loras: req.loras ? req.loras.rows.length : 0, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
     let out, named, lay, notes = [], sentBoxes = 0;
     try {
         if (req.original && !req.references.length) throw new Error("The request marks an Original picture but carries no reference picture: nothing was sent.");
@@ -331,7 +332,46 @@ async function edit(request, hooks = {}) {
     if (Array.isArray(out.notes)) for (const n of out.notes) if (n) notes.push(String(n));
     log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes } });
     const bytes = toBuffer(out.bytes);
-    return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, negative: req.negative == null ? null : req.negative, refs: named.refs, notes, boxes: sentBoxes };
+    // the LoRAs a Comfy Cloud graph's chain loaded (item 50): the via line and loras_sent name them
+    const loras = Array.isArray(out.loras) ? out.loras.map((x) => ({ name: String(x.name), strength: +x.strength })) : [];
+    return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, negative: req.negative == null ? null : req.negative, refs: named.refs, notes, boxes: sentBoxes, loras };
+}
+
+/**
+ * A request's LoRA rows as main takes them (IPC input is never trusted): `{ rows: [{ name, strength, on }], declared }`
+ * with at most 20 rows of a string name, a finite strength and a boolean `on` (the splice refuses more than five usable
+ * ones itself), `declared` false or `{ model?, family? }` (the variant's declaration for the route that runs), else
+ * left out; null when there is nothing to splice.
+ */
+function lorasOfRequest(l) {
+    if (!l || typeof l !== "object" || !Array.isArray(l.rows)) return null;
+    const rows = l.rows.slice(0, 20).filter((x) => x && typeof x === "object" && typeof x.name === "string" && x.name.length <= 512
+        && typeof x.strength === "number" && Number.isFinite(x.strength) && (x.on === undefined || typeof x.on === "boolean"))
+        .map((x) => ({ name: x.name, strength: x.strength, on: x.on !== false }));
+    if (!rows.length) return null;
+    const d = l.declared;
+    const declared = d === false ? false : d && typeof d === "object"
+        ? Object.fromEntries(["model", "family"].filter((k) => typeof d[k] === "string" && d[k]).map((k) => [k, d[k].slice(0, 200)])) : undefined;
+    return { rows, declared };
+}
+
+/**
+ * The LoRA files the stored Comfy Cloud key may name (the LoRAs section's picker on a Comfy Cloud recipe, item 50):
+ * `{ key, stale, own, shared, assets, nodeList, error }` (comfycloud.loraList); without a key nothing is asked.
+ */
+async function cloudLoras(opts = {}) {
+    const p = PROVIDERS.comfycloud;
+    const name = keyNameOf("comfycloud", p);
+    const key = keys.get(name);
+    const none = { key: false, stale: !!keys.describe(name).stale, own: [], shared: [], assets: false, nodeList: false, error: null };
+    if (!key) return none;
+    try {
+        return { ...none, key: true, ...(await p.loraList(contextFor("comfycloud", p, key, null), { fresh: !!(opts && opts.fresh) })) };
+    } catch (err) {
+        const words = String((err && err.message) || err).split(key).join("[key]").slice(0, 300);
+        log.record({ level: "warn", source: "comfycloud", message: `Comfy Cloud: the LoRA list could not be read: ${words}` });
+        return { ...none, key: true, error: words };
+    }
 }
 
 /**
@@ -512,4 +552,4 @@ function ackCloudJob(jobId) {
     return true;
 }
 
-module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, relightProviders, recoverCloudJobs, ackCloudJob, PROVIDERS, _progressSender: progressSender };
+module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, relightProviders, recoverCloudJobs, ackCloudJob, cloudLoras, PROVIDERS, _progressSender: progressSender, _lorasOfRequest: lorasOfRequest };

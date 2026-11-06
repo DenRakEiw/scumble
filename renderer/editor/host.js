@@ -45,7 +45,7 @@ import { frameOf, selectionBox, smallBox, smallBoxes, smallNote, SMALL_PX } from
 import { promptPayload } from "./boxes_model.js";
 import * as realism from "./realism.js";
 import * as comfyprompt from "./comfyprompt.js";
-import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, spliceLoras, missingLoras, loraWords, loraFolder, familyOf, loraTriggers, loraMeta } from "./loras.js";
+import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, spliceLoras, missingLoras, normalizeName, loraWords, loraFolder, familyOf, loraTriggers, loraMeta } from "./loras.js";
 import * as genpresets from "./genpresets.js";
 import * as loraPanel from "./lora_panel.js";
 import * as dialogs from "../dialogs.js";
@@ -1585,12 +1585,90 @@ export const host = {
     },
 
     /**
-     * The graph a recipe's LoRA rows go into, with what modelSource reads of the recipe: a ComfyUI recipe's own graph,
-     * or null (an API recipe, an upscaler, the Realism Pass, relight; Comfy Cloud graphs are spliced in main, LR5).
+     * The graph a recipe's LoRA rows go into, with what modelSource reads of the recipe: a ComfyUI recipe's own graph;
+     * a Comfy Cloud graph recipe (resolved to its variant) its edit graph with the variant's declaration and `cloud`
+     * (main splices those, comfycloud.js withLoras, and reads them with the class-name table here: the local server's
+     * node list is not Comfy Cloud's); or null (an API recipe, an upscaler, the Realism Pass, relight).
      */
     loraGraph(r) {
-        if (!r || r.kind === "provider" || !r.prompt || r.task === "upscale" || r.task === "pass" || r.task === "relight") return null;
+        if (!r || r.task === "upscale" || r.task === "pass" || r.task === "relight") return null;
+        if (r.kind === "provider") {
+            return this.recipeMode(r) === "cloud" ? { graph: r.options.graph, decl: { loras: r.loras, save: r.options.save }, cloud: true } : null;
+        }
+        if (!r.prompt) return null;
         return { graph: r.prompt, decl: r };
+    },
+
+    /** Where a recipe's LoRA rows go: "comfy" (your ComfyUI), "cloud" (Comfy Cloud) or null (none). */
+    loraSource(r = this.recipe) {
+        const g = this.loraGraph(r);
+        return g ? (g.cloud ? "cloud" : "comfy") : null;
+    },
+
+    _cloudLoras: null,      // main's last answer of provider:cloudLoras ({ key, own, shared, assets, nodeList, error }) and `at`
+    _cloudLorasRead: null,  // the read in flight
+
+    /**
+     * The LoRA files the selected recipe's rows may name: Comfy Cloud's lists for a Comfy Cloud recipe (the account's
+     * own imports first, then the catalog; [] until read: cloudLoraNames starts a read), else your ComfyUI's.
+     */
+    loraNamesFor(r = this.recipe) {
+        if (this.loraSource(r) !== "cloud") return this.loraNames();
+        const c = this._cloudLoras;
+        return c ? [...(c.own || []), ...(c.shared || [])] : [];
+    },
+
+    /**
+     * Comfy Cloud's LoRA lists (main reads them with the stored key: GET /api/assets, the account's own and the
+     * catalog, then the node list's combo), `fresh` read again (the picker's open), else a minute's copy; the LoRAs
+     * sections are drawn again when an answer comes. Never refuses: a failed read leaves the last lists.
+     */
+    async readCloudLoras({ fresh = false } = {}) {
+        if (this._cloudLorasRead && !fresh) return this._cloudLorasRead;
+        const read = (async () => {
+            // an answer of any kind, so the section's first look never asks again in a loop
+            const none = (error) => ({ key: false, stale: false, own: [], shared: [], assets: false, nodeList: false, error, at: Date.now() });
+            try {
+                const got = window.scumble && window.scumble.providers && window.scumble.providers.cloudLoras ? await window.scumble.providers.cloudLoras({ fresh }) : null;
+                this._cloudLoras = got && typeof got === "object" ? { ...got, at: Date.now() } : this._cloudLoras || none("no answer");
+            } catch (err) {
+                console.warn("Comfy Cloud LoRAs", err);
+                this._cloudLoras = this._cloudLoras || none(String((err && err.message) || err).slice(0, 200));
+            }
+            return this._cloudLoras;
+        })();
+        this._cloudLorasRead = read;
+        try { return await read; } finally {
+            if (this._cloudLorasRead === read) this._cloudLorasRead = null;
+            loraPanel.renderAll(this);
+        }
+    },
+
+    /** loraNames' and refreshLoraNames' rule for the recipe's own source (Comfy Cloud's lists for a Comfy Cloud recipe). */
+    async refreshLoraNamesFor(r = this.recipe) {
+        if (this.loraSource(r) !== "cloud") return this.refreshLoraNames();
+        await this.readCloudLoras({ fresh: true });
+        return this.loraNamesFor(r);
+    },
+
+    /**
+     * The LoRA rows a Comfy Cloud run of `r` sends (runProvider, runGenerate; main splices them): null when its graph
+     * takes none or no row is switched on, else the usable rows, a name that differs from Comfy Cloud's lists only in its
+     * separators in their spelling. Refuses more than MAX_LORAS rows before anything is made; a name the lists lack is
+     * never refused (the account's own imports may be missing from them; Comfy's own check answers a wrong one).
+     */
+    cloudLoraRows(r) {
+        const g = this.loraGraph(r);
+        if (!g || !g.cloud) return null;
+        const use = usableRows(this.loraRows(r));
+        if (!use.length) return null;
+        if (use.length > MAX_LORAS) throw refusal(`At most ${MAX_LORAS} LoRAs per recipe: ${r.name || r.id}'s rows switch on ${use.length}. Switch rows off in the LoRAs section, then try again.`, "warn");
+        const names = this.loraNamesFor(r);
+        return use.map((row) => {
+            if (names.includes(row.name)) return row;
+            const same = names.find((x) => normalizeName(x) === normalizeName(row.name));
+            return same ? { ...row, name: same } : row;
+        });
     },
 
     /**
@@ -1604,16 +1682,19 @@ export const host = {
         if (r.task === "upscale") return { takes: false, reason: `${label} is an upscaler: it loads no model a LoRA could change.` };
         if (r.task === "pass") return { takes: false, reason: `${label} loads no model a LoRA could change.` };
         if (r.task === "relight") return { takes: false, reason: `${label} is a relight recipe: it takes no LoRA rows.` };
-        if (r.kind === "provider") {
-            // a Comfy Cloud graph recipe's rows are spliced in main (docs/PLAN_LORAS.md LR5); until then it takes none
-            return this.recipeMode(r) === "cloud" ? { takes: false, reason: `${label} runs on Comfy Cloud, and Scumble does not send LoRA rows there yet.` }
-                : { takes: false, reason: `${label} runs through an API provider: LoRAs go only to your ComfyUI and Comfy Cloud.` };
-        }
+        // a Comfy Cloud graph recipe's rows are spliced in main (comfycloud.js withLoras); an API route takes none
+        if (r.kind === "provider" && this.recipeMode(r) !== "cloud") return { takes: false, reason: `${label} runs through an API provider: LoRAs go only to your ComfyUI and Comfy Cloud.` };
         const g = this.loraGraph(r);
         if (!g) return { takes: false, reason: `${label} has no graph a LoRA could go into.` };
-        const src = modelSource(g.graph, g.decl, this.objectInfo);
+        const info = g.cloud ? null : this.objectInfo;
+        const src = modelSource(g.graph, g.decl, info);
         if ("many" in src) return { takes: false, reason: `${label}'s graph has ${src.many.length} model loaders (${src.many.join(", ")}) and the recipe names none of them, so it takes no LoRA rows.` };
-        if ("none" in src) return { takes: false, reason: `${label} takes no LoRA rows: ${src.none}.` };
+        if ("none" in src) {
+            // a recipe that declares none because its graph has two loaders (cloud_ideogram_4) says which
+            const why = g.decl && g.decl.loras === false ? modelSource(g.graph, { ...g.decl, loras: undefined }, info) : null;
+            if (why && "many" in why) return { takes: false, reason: `${label} takes no LoRA rows: its graph has ${why.many.length} model loaders (${why.many.join(", ")}), so the recipe declares none.` };
+            return { takes: false, reason: `${label} takes no LoRA rows: ${src.none}.` };
+        }
         return { takes: true };
     },
 
@@ -1626,7 +1707,7 @@ export const host = {
         if (!g) return [];
         const rows = this.loraRows(r);
         if (!usableRows(rows).length) return [];
-        try { return spliceLoras(JSON.parse(JSON.stringify(g.graph)), g.decl, rows, this.objectInfo).applied; } catch (_) { return []; }
+        try { return spliceLoras(JSON.parse(JSON.stringify(g.graph)), g.decl, rows, g.cloud ? null : this.objectInfo).applied; } catch (_) { return []; }
     },
 
     /**
@@ -1638,7 +1719,7 @@ export const host = {
      */
     async loraPlan(editor, r) {
         const g = this.loraGraph(r);
-        if (!g) return null;
+        if (!g || g.cloud) return null;
         const use = usableRows(this.loraRows(r));
         if (!use.length) return null;
         if (use.length > MAX_LORAS) throw refusal(`At most ${MAX_LORAS} LoRAs per recipe: ${r.name || r.id}'s rows switch on ${use.length}. Switch rows off in the LoRAs section, then try again.`, "warn");
@@ -2248,10 +2329,12 @@ export const host = {
         const noWords = promptMissing(r, snap.prompt);
         if (noWords) throw refusal(noWords);
         this.refPrompt(editor, snap, "edit");
+        // a Comfy Cloud graph's LoRA rows (item 50): main splices them; more than five refuse before anything is made
+        const cloudLoras = this.cloudLoraRows(r);
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
         editor.lastSentBoxes = 0;
-        editor.lastLoras = [];   // an API run loads none (a Comfy Cloud graph's come back with main's answer, LR5)
+        editor.lastLoras = [];   // an API run loads none; a Comfy Cloud graph's come back with main's answer
         const token = { provider: r.provider, label, started: Date.now(), editor, runId: runIdOf() };
         editor.providerPending = token;
         this._providerRuns.add(token);
@@ -2309,10 +2392,13 @@ export const host = {
                 params: shape.params, original: shape.original, refName: shape.refName, boxes,
                 // the preset the crop was widened to (stitch.js planFrame), which FLUX 3 sends as its aspect_ratio
                 cropAspect: info.aspect || null,
+                // the variant's declaration holds for its edit graph (recipes.js normalize)
+                ...(cloudLoras ? { loras: { rows: cloudLoras, declared: r.loras } } : {}),
             };
             res = await providerEdit(request, token);
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
             editor.lastRunNotes = [...preNotes, ...(res.notes || [])];
+            editor.lastLoras = Array.isArray(res.loras) ? res.loras : [];
         } catch (err) {
             this.endRun(editor, token);
             throw err;
@@ -2330,7 +2416,7 @@ export const host = {
             const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
             editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
             const cutout = info.keepAlpha ? fin.cutout : false;
-            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), via: viaLine(r, label, res.seconds), ...sentTexts(snap) }]);
+            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider, seed: answeredSeed(res), via: viaLine(r, label, res.seconds, res.loras), ...sentTexts(snap) }]);
             // addResults writes its own line, so the cut-out note, the names the references went as and what the route
             // left out go on afterwards
             if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`, editor.statusKind || (cutout ? "info" : "warn"));
@@ -2343,7 +2429,7 @@ export const host = {
             editor.lastSentBoxes = sentBoxes;
             if (sentBoxes) editor.setStatus(`${editor.status} Sent with ${sentBoxes} box${sentBoxes === 1 ? "" : "es"}.`, editor.statusKind || "info");
             if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`, notesKind(editor, editor.lastRunNotes));
-            return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout, prompt: editor.lastSentPrompt, refs: res.refs || [], pairs: named.pairs, notes: editor.lastRunNotes, info: res.info || null, boxes: sentBoxes };
+            return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout, prompt: editor.lastSentPrompt, refs: res.refs || [], pairs: named.pairs, notes: editor.lastRunNotes, info: res.info || null, boxes: sentBoxes, loras: editor.lastLoras };
         } finally {
             this.endRun(editor, token);
         }
@@ -2748,6 +2834,9 @@ export const host = {
         }
         const refIds = takes ? snap.refIds : [];
         const tr = t.refs || {};
+        // a Comfy Cloud graph's LoRA rows (item 50) go with the text route's own declaration (recipes.js text.loras)
+        const cloudLoras = this.cloudLoraRows(r);
+        editor.lastLoras = [];
         const token = { provider: r.provider, label, started: Date.now(), editor, runId: runIdOf() };
         editor.providerPending = token;
         this._providerRuns.add(token);
@@ -2795,8 +2884,10 @@ export const host = {
                 fields: r.fields || null, options,
                 params: genParams,
                 boxes,
+                ...(cloudLoras ? { loras: { rows: cloudLoras, declared: t.loras } } : {}),
             };
             res = await providerEdit(request, token);
+            editor.lastLoras = Array.isArray(res.loras) ? res.loras : [];
         } catch (err) {
             this.endRun(editor, token);
             throw err;
@@ -2836,6 +2927,7 @@ export const host = {
         return {
             provider: r.provider, model: request.model, seconds: res.seconds, width: c.width, height: c.height, transparent: !!gotAlpha,
             prompt: res.prompt != null ? res.prompt : named.prompt, note: notes.join(" "), notes, info: res.info || null, boxes: sentBoxes,
+            loras: editor.lastLoras,
             references: refIds.map((id, i) => {
                 const got = (res.refs || []).find((x) => x.ref === i);
                 return { label: "img" + labels.get(id), id, sentAs: got ? got.name : null };

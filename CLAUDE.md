@@ -250,8 +250,10 @@ code.
   Qwen 2.1 turbo LoRA's missing hint fixed, `e4b8a77`; `docs/measurements/lr9_2026-11-06/`) and LR10 (the docs: the
   manual's chapter *LoRAs on your ComfyUI*, README, RECIPES.md "LoRA rows", the CHANGELOG lines, the gate `loras`
   listed; the closing comments for #10 / #11 drafted for the release) done 2026-11-06 ("LR8 as built" .. "LR10 as
-  built"); open there: LR5 (Comfy Cloud) waits for the user's Comfy key, then the release block with CorridorKey; the
-  user's ComfyUI is at v0.44.0 since 2026-11-06.
+  built") and LR5 (Comfy Cloud, with the user's key typed into a test instance: the read-only probe found the account
+  route `GET /api/assets`, `docs/measurements/lr5_2026-11-06/probe.md`; the splice in main, the picker on Comfy Cloud's
+  lists with a typed name; "LR5 as built"); open there: LR5's two paid live runs on the user's word, then the release
+  block with CorridorKey; the user's ComfyUI is at v0.44.0 since 2026-11-06.
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
@@ -758,10 +760,15 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `7267855` (the record of the ComfyUI update and the two LoRA downloads), LR9 `b67774b` (the live runs on the user's
   ComfyUI; the turbo LoRA's hint fixed in `e4b8a77`), LR10 (the manual's chapter *LoRAs on your ComfyUI*, README,
   RECIPES.md "LoRA rows", the CHANGELOG lines, `loras` in the gate lists; the closing comments for #10 and #11 drafted
-  in the session's report, for the user to post at the release). **Open:** LR5 (Comfy Cloud: the probe of the
-  account's LoRA listing, then the splice in main) waits for the user's Comfy key; until it lands a Comfy Cloud recipe
-  hides the section ("... Scumble does not send LoRA rows there yet"), and the manual, README, CHANGELOG and the
-  closing comments say LoRAs are for the user's own ComfyUI. Then the release block with CorridorKey (0.1.52).
+  in the session's report, for the user to post at the release), LR5 (Comfy Cloud: the probe with the user's key
+  typed into a test instance, read-only, found the documented account route `GET /api/assets` (v1, X-API-Key, the
+  comma form of `include_tags`; 777 catalog LoRAs, the account's own 0, so whether an import shows there is
+  unconfirmed: an import is the user's call); the picker lists *Your imports* and Comfy Cloud's catalog and takes a
+  typed name; `comfycloud.js` `withLoras` splices in `run` / `runV2` before `checkModelFiles` through `loras.js`,
+  never refusing a name; `docs/measurements/lr5_2026-11-06/probe.md`). **Open:** LR5's two paid live runs on the
+  user's word (`cloud_qwen_image_edit_2509` with one catalog LoRA, `cloud_moss_image_edit`, a few cents); the drafted
+  closing comments for #10 / #11 still say LoRAs on Comfy Cloud come later (the manual, README and CHANGELOG say they
+  work now). Then the release block with CorridorKey (0.1.52).
 - 51: **GPT-Image-2.6 Sunburst and Flare** (OpenAI, released 2026-11-04; the user, 2026-11-06: "schaue welcher api
   anbieter es schon hat und integriere es"): two recipes beside 2.5's on the hosts that list it (OpenAI direct, fal,
   Replicate, WaveSpeed, OpenRouter, ToAPIs; not yet Comfy Cloud, Comfy Router, Oxen, Magnific), a *Complexity* row

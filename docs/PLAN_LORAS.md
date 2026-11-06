@@ -1087,6 +1087,103 @@ same 21 warnings), types: ALL PASS. No other backend (no pixel path), no mutatio
 6. **`mcp_test.py`'s hint lists** gained `list_loras` (read-only) and `set_generation` (neither): the row named the gate,
    not the lists.
 
+### LR5 as built (2026-11-06)
+
+**The probe** (`docs/measurements/lr5_2026-11-06/probe.md`; read-only GETs inside the main process of a dev instance on
+port 9571 with the user's key typed in by the user, a temporary probe module loaded through an environment variable and
+removed before the commit; the answers scrubbed of the key): `GET /api/v2/assets` answers **405** with the bearer (the
+v2 contract has upload, from-hash, by-hash and read by id, no list; X-API-Key gets a 401 there); the v1 node list has
+3,871 classes and `LoraLoaderModelOnly` / `LoraLoader` a **652-name** combo in the older form, no `moss_*`; Comfy Cloud
+has no `/api/object_info/<class>` (404); **the documented account route `GET /api/assets`** (`openapi-cloud.yaml`, v1,
+X-API-Key) with `include_tags=models,loras` (the comma form: a repeated `include_tags` is a 400) lists **777 LoRA
+assets** (two pages of 500 by `offset`, all `is_immutable`, `loader_path` the loader's value, a superset of the combo:
+the `moss_*` and Qwen Image 2.1 LoRAs are there), and with `include_public=false` the account's own: **0** (no imported
+model of any kind; 2,707 own assets are outputs). **Decided: found** (§0): the picker lists the account's own imports
+first ("Your imports"), then Comfy Cloud's catalog. Not confirmed: that an import shows under `include_public=false`
+(the account has none; an import, Creator plan or higher, is the user's call and was not made), so the picker also
+takes **a typed name, sent as written**, beside the lists.
+
+**Built:** `electron/main/providers/comfycloud.js`: `withLoras(req, info)` (the request's rows into a copy of
+`options.graph` through `renderer/editor/loras.js`, required as an ES module, lazily; the chain's classes added to
+`needs`; `{ req, applied, notes }` with "LoRAs: ..." or the splice's "The LoRAs stayed out: ..."), called in `run`
+after `cloudInfo` and in `runV2` after the node list's read (an unread or empty one: `null`, the class-name table), both
+**before** the `needs` check and `checkModelFiles`; both answers carry `loras` and `notes`; `buildDetached` untouched.
+`loraList(ctx, { fresh })`: `GET /api/assets?include_tags=models,loras[&include_public=false]&limit=500&offset=n` (at most
+20 pages, model-file names only, so the catalog's one `.zip` stays out), then the combo where the assets lack a name;
+`{ own, shared, assets, nodeList, error }`, a minute per key, `checkKey` first (a real key never to a test base).
+`electron/main/providers/index.js`: `lorasOfRequest` (the rows as IPC input: at most 20, a string name, a finite
+strength, a boolean `on`; the declaration `false` or `{ model, family }` strings), `req.loras`, the logged row count, the
+answer's `loras`; `cloudLoras({ fresh })` with the stored key (none: `{ key: false }`). `electron/main/main.js` the IPC
+`provider:cloudLoras`, `electron/preload.js` `providers.cloudLoras`. `renderer/shell.js` `resolveRecipe` carries the
+variant's `loras`. `renderer/editor/host.js`: `loraGraph` gives a Comfy Cloud recipe its edit graph with `{ loras,
+save }` and `cloud: true` (read with the class-name table: the local server's node list is not Comfy Cloud's);
+`loraTakes` takes Comfy Cloud recipes, and a `loras: false` recipe with two loaders says so ("... takes no LoRA rows: its
+graph has 2 model loaders (98:154, 98:23), so the recipe declares none."); `loraSource`, `loraNamesFor`,
+`readCloudLoras` (any answer kept, so the section never asks in a loop), `refreshLoraNamesFor`, `cloudLoraRows` (the
+usable rows, more than five refused before the crop, a separator-only difference in the lists' spelling, nothing
+refused on a name); `runProvider` sends `loras: { rows, declared: r.loras }`, `runGenerate` `{ rows, declared:
+t.loras }` (the text route's own); `editor.lastLoras` from main's answer, `viaLine(r, label, res.seconds, res.loras)`,
+`runGenerate`'s answer `loras`; `loraPlan` skips a Cloud graph; `lorasNow` covers it (the PNG chunk).
+`renderer/editor/lora_panel.js`: under a Comfy Cloud recipe the summary names Comfy Cloud's lists, the lists are read
+on the section's first look, the picker is *LoRAs on Comfy Cloud* (the account's own as a group "Your imports" outside
+the family split, the catalog's root as "Comfy Cloud's catalog", the line on imports, the search open without a list),
+a search no list holds offers "Use "<name>.safetensors" as typed" (".safetensors" added when the text has no
+extension), a row the lists lack is marked "(not in Comfy Cloud's lists)" in amber, no hint line. `renderer/shell.css`
+three rules (tokens). `renderer/commands.js`: `status.loras.source`, `set_generation loras` keeps a name Comfy Cloud's
+lists lack, `list_loras` lists Comfy Cloud's lists under a Comfy Cloud recipe (`source`, `own`, `error`, no hint), the
+descriptions of `list_recipes`, `set_generation`, `generate` and `list_loras` (`docs/COMMANDS.md` regenerated by the
+`commands_doc` gate). Docs: RECIPES.md "LoRA rows" (the Comfy Cloud paragraph rewritten), the manual's chapter, README,
+CHANGELOG `## Unreleased`, TESTING.md, CLAUDE.md item 50.
+
+**Tests:** `node tools/comfycloud_v2_test.js` 106 of 106 (§16 new: the chain in the submitted graph after `433:37` with
+both branches of the switch re-pointed, the patch graph of Z-Image Turbo before `57:11` on Generate new, the list's
+spelling, the recipe's graph untouched, the answer's `loras` and note, a name the list lacks sent and named by a failure,
+a node list without `LoraLoaderModelOnly` stopping the run by name, `loras: false` on `cloud_ideogram_4` and on both
+routes of `cloud_flux2_klein_9b`, the text route's own chain, a declared `75:200` honoured on the edit graph and dropped
+with its warning for the text graph, an unread node list, six rows; §17 new: `loraList` over the fake's asset list and
+node list, paging, the comma form, the minute's copy and `fresh`, a failed asset read, the test base; §15: the rows
+through `providers/index.js`, `lorasOfRequest`); `node tools/cloudgraph_test.js` 37 of 37 (§11 new, the legacy API);
+`tools/fake_comfy_v2.js` gained `loraAssets` (the v1 asset list), and **`tools/fake_comfy_v2_http.js`** (new) serves it
+on a loopback port for the app's gates through **`tools/fake_cloud_http.py`** (new: the mock as
+`settings.comfycloud.base` and a test key of the gate's own in the gate's profile, put back afterwards; a profile with a
+Comfy Cloud key skips). The `loras` gate gained `cloud_generate_new_sends_the_chain_to_comfy_cloud` (in a document of its
+own) and its hidden-reason case is now `cloud_ideogram_4`; `commands` gained `loras_on_comfy_cloud` (`list_recipes`
+`loras` for all fifteen Cloud recipes, only `cloud_ideogram_4` false with its reason; `generate_new`'s `loras_sent` on
+`cloud_z_image_turbo`, the chain before `57:11` in the graph the mock got). Beside them: `loras_test.js` 89,
+`recipes_test.js` 304, `loraheader_test.js` 56, `comfyprompt_test.js` 102, `cloudjobs_test.js` 36,
+`settings_migration_test.js` PASS. Gate runs on tiles (`--offline`, port 9574, the worktree's `dist/gates`): `lr5-a` loras
+and commands red (the Cloud step's document still held the earlier steps' local runs; one node list cached per key
+across the two gates), recipes, generate, lint (0 errors, the same 21 warnings), types green; `lr5-b` loras, commands
+PASS; `lr5-c` (below). **On the key instance** (read-only): `provider:cloudLoras` answered key true, own 0, shared 772
+(the 777 assets without five non-model files), assets and node list read, 5.3 s fresh; the picker on
+`cloud_qwen_image_edit_2509` showed *LoRAs on Comfy Cloud*, 772 files, the typed row's mark
+(`docs/measurements/lr5_2026-11-06/cloud_loras_picker.png`). `require(esm)` from inside an asar checked with an archive
+packed by `@electron/asar` under Electron 44's Node (probe.md); the packaged exe not built here.
+
+**Deviations, each by the code:**
+1. **The account route is v1 `/api/assets`, not v2**: v2 has no asset list (405); the documented route is the v1 one,
+   with X-API-Key, as the node list is.
+2. **The picker keeps the typed name in the found branch too**: an import cannot be confirmed in the list without one,
+   and a name typed by hand is the way for an import the list shows late; nothing is refused on a name on Comfy Cloud
+   (§3.5), so `set_generation` keeps one too.
+3. **No hint line on a Comfy Cloud row** (LR3's reader reads the local models folder: a local file of the same name
+   would speak for another file); `status` and `list_loras` give no hint there.
+4. **`loraTakes` reads a Cloud graph with the class-name table**, and the Cloud recipe's text route is not checked for a
+   source on its own (the edit graph decides; all shipped Cloud recipes but Ideogram 4 have one in both routes, LR0's
+   table).
+5. **The chain's classes join `needs`**, so a node list without `LoraLoaderModelOnly` stops the run by name before any
+   upload (the plan did not say).
+6. **`list_loras` follows the selected recipe** (Comfy Cloud's lists under a Comfy Cloud recipe) rather than staying a
+   ComfyUI-only command; its answer gained `source`, `own` and `error`.
+7. **The answer's `notes` carry "LoRAs: ..."** from main (the local path writes it in the renderer); `HINT_NOTE` keeps
+   the line plain.
+
+**Left (on the user's word, paid):** one Comfy Cloud run of `cloud_qwen_image_edit_2509` with one catalog LoRA (e.g.
+`Qwen-Edit-2509-Multiple-angles.safetensors` or a style one) and one of `cloud_moss_image_edit` (a few cents together;
+RECIPES.md says neither has run with a LoRA, and `cloud_moss_image_edit` not at all); the user's own import, if wanted,
+to confirm it shows under *Your imports*; the closing comments for #10 / #11 (drafted at LR10) say LoRAs on Comfy Cloud
+come later and change before they are posted.
+
 ### LR6 as built (2026-11-06)
 
 **Built:** `recipes/moss_image_edit_local.json` (new; "MOSS-Image Edit (ComfyUI)"): Comfy's template `image_moss_image_edit`

@@ -443,14 +443,17 @@ function serverUp() {
 function lorasView(r) {
     const t = host.loraTakes(r);
     const fam = t.takes ? recipeFamily(r) : null;
-    const names = host.loraNames();
+    // a Comfy Cloud recipe's rows name files of Comfy Cloud's lists (the account's imports and its catalog), read by
+    // the LoRAs section; no hint there (Scumble cannot read those files)
+    const cloud = t.takes && host.loraSource(r) === "cloud";
+    const names = t.takes ? host.loraNamesFor(r) : host.loraNames();
     const listed = (n) => (names.length ? names.some((x) => normalizeName(x) === normalizeName(n)) : null);
     const rows = r ? host.loraRows(r).map((row) => {
-        const inf = t.takes && row.name ? host.loraInfo(row.name) : null;
+        const inf = t.takes && !cloud && row.name ? host.loraInfo(row.name) : null;
         const h = inf ? loraHint(inf.fam, fam) : null;
         return { name: row.name, strength: row.strength, on: row.on, hint: h ? h.text : null, mismatch: !!(h && h.kind === "mismatch"), triggers: inf ? inf.triggers || [] : [], on_server: row.name ? listed(row.name) : false };
     }) : [];
-    return { takes: !!t.takes, reason: t.takes ? null : t.reason || null, family: fam, max: MAX_LORAS, rows, sent: t.takes ? host.lorasNow(r) : [] };
+    return { takes: !!t.takes, reason: t.takes ? null : t.reason || null, source: t.takes ? (cloud ? "comfycloud" : "comfyui") : null, family: fam, max: MAX_LORAS, rows, sent: t.takes ? host.lorasNow(r) : [] };
 }
 
 /**
@@ -487,11 +490,12 @@ async function lorasFromCall(r, given) {
         return { name, strength, on };
     });
     const asked = rows.map((row) => ({ name: row.name, strength: row.strength }));
-    let names = host.loraNames();
+    let names = host.loraNamesFor(r);
     let miss = missingLoras(asked, names);
-    if (!names.length || miss.some((m) => !m.server)) { names = await host.refreshLoraNames(); miss = missingLoras(asked, names); }
+    if (!names.length || miss.some((m) => !m.server)) { names = await host.refreshLoraNamesFor(r); miss = missingLoras(asked, names); }
     const lacks = miss.filter((m) => !m.server).map((m) => m.name);
-    if (lacks.length) {
+    // Comfy Cloud: a name its lists lack is kept as given (an import the lists do not show yet); Comfy answers a wrong one
+    if (lacks.length && host.loraSource(r) !== "cloud") {
         const one = lacks.length === 1;
         throw new Error(`Your ComfyUI's LoRA list lacks ${one ? "this file" : "these files"}: ${lacks.join(", ")}. list_loras gives the names it has (put a new file in models/loras and refresh ComfyUI first). Nothing was changed.`);
     }
@@ -927,7 +931,7 @@ const COMMANDS = {
     },
     list_recipes: {
         readOnly: true,
-        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the ${REALISM_LABEL} recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); aspects: the aspects the Generate new dialog and new_canvas's model preset offer for it (its chosen provider's own list, else the general one); classes: its size classes for those, [{ size, name, label }] (size: the long side in pixels, name: the provider's tier such as 1k, 2K or 2 MP, null where it names none); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. loras: whether the recipe takes LoRA rows (a recipe on your ComfyUI whose graph has one model loader; set_generation loras sets them, list_loras lists the server's files), loras_reason when not. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).`,
+        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the ${REALISM_LABEL} recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); aspects: the aspects the Generate new dialog and new_canvas's model preset offer for it (its chosen provider's own list, else the general one); classes: its size classes for those, [{ size, name, label }] (size: the long side in pixels, name: the provider's tier such as 1k, 2K or 2 MP, null where it names none); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. loras: whether the recipe takes LoRA rows (a recipe on your ComfyUI or Comfy Cloud whose graph has one model loader; set_generation loras sets them, list_loras lists the files they may name), loras_reason when not. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).`,
         params: {},
         async run() {
             const cur = host.recipe;
@@ -981,7 +985,7 @@ const COMMANDS = {
     // item 50 (docs/PLAN_LORAS.md §3.8): the server's LoRA files, the names set_generation loras takes
     list_loras: {
         readOnly: true,
-        scope: "app", description: `The LoRA files of your ComfyUI (models/loras and its extra paths), as set_generation loras names them, grouped by subfolder: folders [{ folder ("" for models/loras itself), count, names [{ name, hint, mismatch }] }], read from the server again on each call. hint: the base model the file looks made for where Scumble has read it (the LoRAs section reads a row's file; null otherwise), mismatch: its tensor names fit another model than the selected recipe's. filter: only the names holding every word of it (any case, / and \\ alike); family: only the files of that base model, by their folder's name or a hint read before (one of ${Object.keys(FAMILIES).join(", ")}, or "recipe" for the selected recipe's own); max: the most names listed (total says how many match). connected: false while no ComfyUI answers (the list is then the last one read, often empty). recipe_family: the base model the selected recipe's LoRAs should fit, when known.`,
+        scope: "app", description: `The LoRA files of your ComfyUI (models/loras and its extra paths), as set_generation loras names them, grouped by subfolder: folders [{ folder ("" for models/loras itself), count, names [{ name, hint, mismatch }] }], read from the server again on each call. hint: the base model the file looks made for where Scumble has read it (the LoRAs section reads a row's file; null otherwise), mismatch: its tensor names fit another model than the selected recipe's. filter: only the names holding every word of it (any case, / and \\ alike); family: only the files of that base model, by their folder's name or a hint read before (one of ${Object.keys(FAMILIES).join(", ")}, or "recipe" for the selected recipe's own); max: the most names listed (total says how many match). connected: false while no ComfyUI answers (the list is then the last one read, often empty). recipe_family: the base model the selected recipe's LoRAs should fit, when known. While a Comfy Cloud recipe is selected (source "comfycloud"; else "comfyui"): Comfy Cloud's lists for the stored key instead, your own imports (own: true) and its catalog, no hint; connected: whether they were read; error: why not.`,
         params: {
             filter: P.str("only the names holding every word of this (any case; / and \\ alike)"),
             family: P.str(`only the files of this base model (${Object.keys(FAMILIES).join(", ")}, or "recipe" for the selected recipe's)`),
@@ -998,10 +1002,13 @@ const COMMANDS = {
                 if (asked === "recipe" && !fam) throw new Error(`the selected recipe names no base-model family${t.takes ? "" : ` (${t.reason})`}: give a family (${Object.keys(FAMILIES).join(", ")})`);
                 if (!FAMILIES[fam]) throw new Error(`unknown family "${asked}" (${Object.keys(FAMILIES).join(", ")}, or "recipe")`);
             }
-            const connected = serverUp();
-            const names = connected ? await host.refreshLoraNames() : host.loraNames();
+            // a Comfy Cloud recipe: Comfy Cloud's lists (read with the stored key), else your ComfyUI's
+            const cloud = t.takes && host.loraSource(r) === "cloud";
+            const names = cloud ? await host.refreshLoraNamesFor(r) : serverUp() ? await host.refreshLoraNames() : host.loraNames();
+            const connected = cloud ? !!(host._cloudLoras && host._cloudLoras.key && (host._cloudLoras.assets || host._cloudLoras.nodeList)) : serverUp();
+            const own = new Set(cloud && host._cloudLoras && Array.isArray(host._cloudLoras.own) ? host._cloudLoras.own : []);
             // a hint known already (a look, never a read: the server lists over a thousand files)
-            const hintOf = (n) => { const inf = host.loraInfo(n, { read: false }); return inf ? inf.fam : null; };
+            const hintOf = (n) => { if (cloud) return null; const inf = host.loraInfo(n, { read: false }); return inf ? inf.fam : null; };
             let kept = filterNames(names, a.filter);
             if (fam) kept = kept.filter((n) => folderFits({ folder: loraFolder(n), names: [n] }, fam, hintOf));
             const max = a.max == null || a.max === "" ? 200 : clampInt(a.max, 0, 100000, 200);
@@ -1014,12 +1021,13 @@ const COMMANDS = {
                 folders.push({ folder: g.folder, count: g.names.length, names: take.map((n) => {
                     const f = hintOf(n);
                     const h = f ? loraHint(f, recipeFam) : null;
-                    return { name: n, hint: f ? f.label : null, mismatch: !!(h && h.kind === "mismatch") };
+                    return { name: n, hint: f ? f.label : null, mismatch: !!(h && h.kind === "mismatch"), ...(cloud ? { own: own.has(n) } : {}) };
                 }) });
             }
             return {
-                connected, recipe: r ? r.id : null, recipe_family: recipeFam, filter: a.filter != null && String(a.filter).trim() ? String(a.filter).trim() : null, family: fam,
+                connected, source: cloud ? "comfycloud" : "comfyui", recipe: r ? r.id : null, recipe_family: recipeFam, filter: a.filter != null && String(a.filter).trim() ? String(a.filter).trim() : null, family: fam,
                 total: kept.length, listed: max - left, folders,
+                ...(cloud ? { error: (host._cloudLoras && host._cloudLoras.error) || null } : {}),
             };
         },
     },
@@ -1342,7 +1350,7 @@ const COMMANDS = {
         },
     },
     set_generation: {
-        description: `Generation settings: mode api / local / cloud (the recipe decides what is available; select_recipe switches between the modes' recipes), seed, random seed, denoise, refine, the document's Boxes switch (boxes), and the selected recipe's LoRA rows (loras). loras replaces the rows of the LoRAs section of the selected recipe, which are kept per recipe for every document (not for this document alone): up to ${MAX_LORAS} [{ name, strength, on }], loaded in their order between the recipe's model loader and what reads the model, a switched-off row not sent; name a file of the server's list (list_loras; a name that differs only in / against \\ is taken in the server's spelling); strength 1.0 when left out (the LoRA as trained); [] clears them. Refused with nothing changed: a recipe that takes no LoRA rows (an API provider, an upscaler, a graph without one model loader: list_recipes loras_reason), more than ${MAX_LORAS} rows, a name the server's list lacks (read again first; while the list is unread a name is kept as given). The answer's loras: the recipe's rows as stored; status loras says what a run would send.`,
+        description: `Generation settings: mode api / local / cloud (the recipe decides what is available; select_recipe switches between the modes' recipes), seed, random seed, denoise, refine, the document's Boxes switch (boxes), and the selected recipe's LoRA rows (loras). loras replaces the rows of the LoRAs section of the selected recipe, which are kept per recipe for every document (not for this document alone): up to ${MAX_LORAS} [{ name, strength, on }], loaded in their order between the recipe's model loader and what reads the model, a switched-off row not sent; name a file of the server's list (list_loras; a name that differs only in / against \\ is taken in the server's spelling; on a Comfy Cloud recipe a file of Comfy Cloud's lists, your imports and its catalog, and a name they lack is kept as given); strength 1.0 when left out (the LoRA as trained); [] clears them. Refused with nothing changed: a recipe that takes no LoRA rows (an API provider, an upscaler, a graph without one model loader: list_recipes loras_reason), more than ${MAX_LORAS} rows, a name the server's list lacks (read again first; while the list is unread a name is kept as given). The answer's loras: the recipe's rows as stored; status loras says what a run would send.`,
         params: {
             mode: P.str("api, local or cloud (Comfy Cloud recipes)", { enum: ["api", "local", "cloud"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein on your ComfyUI) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay"),
             loras: P.arr(`the selected recipe's LoRA rows, replaced whole (at most ${MAX_LORAS}; [] clears): name (a file of list_loras), strength (default 1.0), on (default true)`, { items: { type: "object", properties: { name: { type: "string", description: "the LoRA file as the server lists it (list_loras), e.g. klein\\style.safetensors" }, strength: { type: "number", description: "1.0 is the LoRA as trained; -2..2 is the usual range" }, on: { type: "boolean", description: "false: kept in the row, not sent" } } } }),
@@ -1764,7 +1772,7 @@ const COMMANDS = {
         },
     },
     generate: {
-        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out; seed is the seed the model got, null when the route sends none (FLUX 3 Image); loras_sent the LoRAs the run loaded, [{ name, strength }] in their order (the selected recipe's switched-on rows on your ComfyUI, set_generation loras; [] for an API run).",
+        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out; seed is the seed the model got, null when the route sends none (FLUX 3 Image); loras_sent the LoRAs the run loaded, [{ name, strength }] in their order (the selected recipe's switched-on rows on your ComfyUI or Comfy Cloud, set_generation loras; [] for an API run).",
         params: { timeout: P.timeout(600) },
         async run(ed, a) {
             const n0 = ed.history.length;

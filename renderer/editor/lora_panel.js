@@ -16,8 +16,12 @@
 // Each row's info line (LR3, `.ipc-lora-info`): the base-model hint host.loraInfo reads (grey "looks like FLUX 3",
 // "metadata says SDXL", "in folder klein"; amber when the file's tensor names fit another family than the recipe's,
 // loras.js loraHint; never a refusal) and the trigger words as chips that append to the prompt. The picker shows the
-// recipe's family first (folders named for it, files whose hint fits it) and the rest behind *Show all*. LR5 the Comfy
-// Cloud rows.
+// recipe's family first (folders named for it, files whose hint fits it) and the rest behind *Show all*.
+//
+// A Comfy Cloud recipe (LR5, host.loraSource "cloud"): the rows name files of Comfy Cloud's lists (host.readCloudLoras:
+// the account's own imports, shown first as "Your imports", then Comfy Cloud's catalog), and a name typed in the search
+// goes as written (an import made since, a name the lists lack): nothing is refused on a name there, main splices the
+// rows and Comfy's own check answers a wrong one. No hint line (the file is Comfy Cloud's, not one Scumble can read).
 
 import { MAX_LORAS, normalizeName, loraStem, loraFolder, groupByFolder, filterNames, strengthRange, clampStrength,
     recipeFamily, familyLabel, familyGroups, loraHint, appendWord } from "./loras.js";
@@ -103,33 +107,38 @@ export function render(host, ed) {
     if (!p || !p.section) return;
     const r = host.recipe;
     const t = host.loraTakes(r);
+    const cloud = t.takes && host.loraSource(r) === "cloud";
+    // Comfy Cloud's lists are read once the section shows for a Comfy Cloud recipe (the section is drawn again then)
+    if (cloud && !host._cloudLoras && !host._cloudLorasRead) host.readCloudLoras();
     const rows = t.takes ? host.loraRows(r) : [];
-    const names = t.takes ? host.loraNames() : [];
-    // each named row's hint (the first look starts the read; the section is drawn again when it is in)
-    const infos = rows.map((row) => (row.name && host.loraInfo ? host.loraInfo(row.name) : null));
+    const names = t.takes ? host.loraNamesFor(r) : [];
+    // each named row's hint (the first look starts the read; the section is drawn again when it is in); none on Comfy
+    // Cloud, whose files Scumble cannot read
+    const infos = rows.map((row) => (row.name && !cloud && host.loraInfo ? host.loraInfo(row.name) : null));
     const fam = t.takes ? recipeFamily(r) : null;
-    const key = JSON.stringify([r ? r.id : null, t, rows, names, infos, fam]);
+    const key = JSON.stringify([r ? r.id : null, t, cloud, rows, names, infos, fam]);
     if (picker && picker.ed === ed && (!r || picker.recipeId !== r.id || !t.takes || picker.index >= rows.length)) closePicker();
     if (key === p.key) return;
     p.key = key;
     p.recipeId = r ? r.id : null;
     p.section.hidden = !t.takes;
     p.section.dataset.reason = t.takes ? "" : t.reason || "";
-    p.summary.title = t.takes
-        ? `LoRAs for ${r.name || r.id}: up to ${MAX_LORAS}, from your ComfyUI's list, loaded in this order between the recipe's model loader and what reads the model. Kept per recipe for every document; a switched-off row is not sent.`
-        : t.reason || "";
+    p.section.dataset.source = cloud ? "cloud" : t.takes ? "comfy" : "";
+    p.summary.title = !t.takes ? t.reason || ""
+        : cloud ? `LoRAs for ${r.name || r.id}: up to ${MAX_LORAS}, from Comfy Cloud's lists (your own imports and its catalog) or a name typed in the picker, loaded in this order between the recipe's model loader and what reads the model. Kept per recipe for every document; a switched-off row is not sent.`
+            : `LoRAs for ${r.name || r.id}: up to ${MAX_LORAS}, from your ComfyUI's list, loaded in this order between the recipe's model loader and what reads the model. Kept per recipe for every document; a switched-off row is not sent.`;
     const on = rows.filter((x) => x.on).length;
     p.count.textContent = rows.length ? `${on} on` : "";
     p.count.title = rows.length ? `${on} of ${rows.length} switched on` : "";
-    p.list.replaceChildren(...rows.map((row, i) => rowEl(host, ed, row, i, names, infos[i], fam)));
+    p.list.replaceChildren(...rows.map((row, i) => rowEl(host, ed, row, i, names, infos[i], fam, cloud)));
     const full = rows.length >= MAX_LORAS;
     p.add.disabled = !t.takes || full;
     p.add.title = full ? `Five LoRAs per recipe: remove one (\u00d7) to add another.` : "Add a LoRA row and pick its file";
-    p.note.textContent = full ? "Five LoRAs per recipe." : rows.length ? "" : "Add a LoRA from your ComfyUI's list (up to five per recipe).";
+    p.note.textContent = full ? "Five LoRAs per recipe." : rows.length ? "" : cloud ? "Add a LoRA from Comfy Cloud's lists (up to five per recipe)." : "Add a LoRA from your ComfyUI's list (up to five per recipe).";
 }
 
 /** One row: the tick, the name (opens the picker), the strength, ×, and the line with the hint and the trigger chips. */
-function rowEl(host, ed, row, i, names, inf, fam) {
+function rowEl(host, ed, row, i, names, inf, fam, cloud) {
     const r = host.recipe;
     const el = mk("div", "ipc-lora-row" + (row.on ? "" : " ipc-lora-off"));
     el.dataset.index = String(i);
@@ -145,12 +154,14 @@ function rowEl(host, ed, row, i, names, inf, fam) {
     name.appendChild(mk("span", "ipc-lora-stem", row.name ? loraStem(row.name) : "Pick a LoRA"));
     if (!row.name) name.classList.add("ipc-lora-empty");
     if (missing) {
-        name.classList.add("ipc-lora-missing");
-        name.appendChild(mk("span", "ipc-lora-miss", "(not on the server)"));
+        // on Comfy Cloud a mark, never a refusal (an import made since the lists were read, a name typed by hand)
+        name.classList.add(cloud ? "ipc-lora-unlisted" : "ipc-lora-missing");
+        name.appendChild(mk("span", "ipc-lora-miss", cloud ? "(not in Comfy Cloud's lists)" : "(not on the server)"));
     }
-    name.title = !row.name ? "Pick a LoRA from your ComfyUI's list"
-        : missing ? `${row.name} is not on the server: put the file in models/loras (and refresh ComfyUI), or pick another one. A run with this row switched on is refused.`
-            : `${row.name}\nClick to pick another one.`;
+    name.title = !row.name ? (cloud ? "Pick a LoRA from Comfy Cloud's lists, or type its file name" : "Pick a LoRA from your ComfyUI's list")
+        : missing && cloud ? `${row.name} is in neither of Comfy Cloud's lists (your imports, its catalog): a run sends it as written, and Comfy Cloud refuses the run if your account has no such file.`
+            : missing ? `${row.name} is not on the server: put the file in models/loras (and refresh ComfyUI), or pick another one. A run with this row switched on is refused.`
+                : `${row.name}\nClick to pick another one.`;
     name.addEventListener("click", (e) => { e.preventDefault(); if (picker && picker.ed === ed && picker.index === i) closePicker(); else openPicker(host, ed, i); });
     const range = strengthRange(host.objectInfo);
     const str = mk("input", "ipc-num ipc-lora-strength");
@@ -260,28 +271,33 @@ export function openPicker(host, ed, index) {
     const rows = host.loraRows(r);
     if (index < 0 || index >= rows.length) return null;
     const anchor = p.list.querySelector(`.ipc-lora-row[data-index="${index}"] .ipc-lora-name`) || p.add;
+    const cloud = host.loraSource(r) === "cloud";
     const dlg = mk("dialog", "ipc-lorapop");
     dlg.setAttribute("aria-label", "Pick a LoRA");
+    if (cloud) dlg.dataset.source = "cloud";
     const head = mk("div", "ipc-lp-head");
-    const title = mk("span", "ipc-lp-title", "LoRAs on your ComfyUI");
+    const title = mk("span", "ipc-lp-title", cloud ? "LoRAs on Comfy Cloud" : "LoRAs on your ComfyUI");
     const total = mk("span", "ipc-lp-total");
     head.append(title, total);
     const search = mk("input", "ipc-lp-search");
     search.type = "text";
-    search.placeholder = "Search by name or folder";
+    search.placeholder = cloud ? "Search, or type a file name" : "Search by name or folder";
     search.spellcheck = false;
     search.setAttribute("aria-label", "Search the LoRAs");
     const list = mk("div", "ipc-lp-list");
     list.setAttribute("role", "listbox");
     const note = mk("div", "ipc-lp-note");
+    // Comfy Cloud: where the account's own LoRAs come from, and that a typed name goes as written
+    const cloudNote = mk("div", "ipc-lp-note ipc-lp-cloudnote", cloud ? CLOUD_NOTE : "");
+    cloudNote.hidden = !cloud;
     const foot = mk("div", "ipc-lp-foot", "\u2191\u2193 Navigate \u00b7 \u23ce Pick \u00b7 Esc Close");
-    dlg.append(head, search, list, note, foot);
+    dlg.append(head, search, list, note, cloudNote, foot);
     // the editor never sees a press in it (its root acts on pointer events); a press on a row keeps the focus in the search
     for (const type of ["pointerdown", "pointerup", "click", "dblclick", "wheel", "contextmenu"]) dlg.addEventListener(type, (e) => e.stopPropagation());
     dlg.addEventListener("mousedown", (e) => { if (e.target !== search) e.preventDefault(); });
     const pk = {
-        host, ed, index, recipeId: r.id, el: dlg, search, list, note, total, anchor,
-        names: serverUp(host) ? host.loraNames() : [], up: serverUp(host), current: rows[index].name, items: [], cursor: -1,
+        host, ed, index, recipeId: r.id, el: dlg, search, list, note, total, anchor, cloud,
+        names: cloud ? host.loraNamesFor(r) : serverUp(host) ? host.loraNames() : [], up: cloud ? cloudUp(host) : serverUp(host), current: rows[index].name, items: [], cursor: -1,
         outside: null, family: recipeFamily(r), showAll: false,
     };
     pk.outside = (e) => {
@@ -316,11 +332,13 @@ export function openPicker(host, ed, index) {
     const focus = () => { if (picker === pk) { try { (search.disabled ? dlg : search).focus({ preventScroll: true }); } catch (_) { /* gone */ } } };
     focus();
     setTimeout(focus, 0);
-    if (pk.up) {
-        Promise.resolve(host.refreshLoraNames()).then((names) => {
+    if (pk.up || cloud) {
+        Promise.resolve(host.refreshLoraNamesFor(r)).then((names) => {
             if (picker !== pk) { renderAll(host); return; }
-            if (JSON.stringify(names) !== JSON.stringify(pk.names)) {
+            const up = cloud ? cloudUp(host) : pk.up;
+            if (JSON.stringify(names) !== JSON.stringify(pk.names) || up !== pk.up || cloud) {
                 pk.names = names.slice();
+                pk.up = up;
                 fill(pk, false);
                 if (document.activeElement === dlg && !search.disabled) focus();
             }
@@ -330,6 +348,18 @@ export function openPicker(host, ed, index) {
     return pk;
 }
 
+/** The group of the account's own imports on Comfy Cloud. */
+const OWN_GROUP = "Your imports";
+
+/** The picker's line under a Comfy Cloud list. */
+const CLOUD_NOTE = "LoRAs you import on Comfy Cloud's site (Creator plan or higher) show here under Your imports; a file name typed in the search goes as written.";
+
+/** Whether Comfy Cloud's lists were read with a stored key (null: not read yet). */
+function cloudUp(host) {
+    const c = host._cloudLoras;
+    return c ? !!c.key : null;
+}
+
 /** The list for the search's text now: the groups, the cursor on the row's own name or the first match. */
 function fill(pk, first) {
     const q = pk.search.value;
@@ -337,23 +367,35 @@ function fill(pk, first) {
     pk.items = [];
     const nodes = [];
     const all = pk.names;
-    if (!pk.up) {
+    const c = pk.cloud ? pk.host._cloudLoras : null;
+    if (pk.cloud && !all.length) {
+        // Comfy Cloud: the search stays open, a typed name goes as written
+        pk.search.disabled = false;
+        pk.note.textContent = pk.up === null ? "Reading Comfy Cloud's lists \u2026"
+            : c && c.error ? `Comfy Cloud's lists could not be read (${c.error}); a file name typed above goes as written.`
+                : !pk.up ? `${c && c.stale ? "The Comfy Cloud key was stored on another PC or Windows account: type it again" : "No Comfy Cloud key yet"} (Settings \u203a API providers), so its lists cannot be read; a file name typed above goes as written.`
+                    : "Comfy Cloud lists no LoRA files for this key; a file name typed above goes as written.";
+    } else if (!pk.cloud && !pk.up) {
         pk.note.textContent = "Connect ComfyUI to pick LoRAs (Settings \u203a ComfyUI). The row keeps its name.";
         pk.search.disabled = true;
-    } else if (!all.length) {
+    } else if (!pk.cloud && !all.length) {
         pk.note.textContent = "Your ComfyUI lists no LoRA files: put .safetensors files in its models/loras folder (and refresh ComfyUI).";
         pk.search.disabled = true;
     } else {
         pk.search.disabled = false;
         const hits = filterNames(all, q);
-        pk.note.textContent = hits.length ? "" : `No LoRA matches "${q.trim()}".`;
+        pk.note.textContent = hits.length || pk.cloud ? "" : `No LoRA matches "${q.trim()}".`;
+        // Comfy Cloud: the account's own imports first, as a group of their own, outside the family split
+        const own = new Set(c && Array.isArray(c.own) ? c.own : []);
+        const mine = pk.cloud ? hits.filter((n) => own.has(n)) : [];
+        const rest = pk.cloud ? hits.filter((n) => !own.has(n)) : hits;
         // the recipe's family first (folders named for it, files whose hint fits it), the rest behind Show all
-        const split = familyGroups(groupByFolder(hits), pk.family, (n) => { const i = pk.host.loraInfo(n, { read: false }); return i ? i.fam : null; });
+        const split = familyGroups(groupByFolder(rest), pk.family, (n) => { const i = pk.host.loraInfo(n, { read: false }); return i ? i.fam : null; });
         if (first && !pk.showAll && pk.current && split.rest.some((g) => g.names.some((n) => normalizeName(n) === normalizeName(pk.current)))) pk.showAll = true;
-        const shown = pk.showAll ? [...split.first, ...split.rest] : split.first;
+        const shown = [...(mine.length ? [{ folder: OWN_GROUP, names: mine, own: true }] : []), ...(pk.showAll ? [...split.first, ...split.rest] : split.first)];
         for (const g of shown) {
-            const head = mk("div", "ipc-lp-group");
-            head.append(mk("span", "ipc-lp-folder", g.folder || "(root)"), mk("span", "ipc-lp-n", String(g.names.length)));
+            const head = mk("div", "ipc-lp-group" + (g.own ? " ipc-lp-own" : ""));
+            head.append(mk("span", "ipc-lp-folder", g.folder || (pk.cloud ? "Comfy Cloud's catalog" : "(root)")), mk("span", "ipc-lp-n", String(g.names.length)));
             nodes.push(head);
             for (const name of g.names) {
                 const i = pk.items.length;
@@ -387,8 +429,25 @@ function fill(pk, first) {
             nodes.push(more);
         }
     }
+    // Comfy Cloud: a typed name no list holds goes as written (an import made since the lists were read)
+    const typed = q.trim();
+    if (pk.cloud && typed && !all.some((n) => normalizeName(n) === normalizeName(typed))) {
+        const name = /\.[a-z0-9]{2,12}$/i.test(typed) ? typed : typed + ".safetensors";
+        const i = pk.items.length;
+        const b = mk("button", "ipc-lp-row ipc-lp-typed");
+        b.type = "button";
+        b.tabIndex = -1;
+        b.setAttribute("role", "option");
+        b.title = `${name}: sent as written; Comfy Cloud refuses the run if your account has no such file`;
+        b.dataset.name = name;
+        b.append(mk("span", "ipc-lp-mark", ""), mk("span", "ipc-lp-stem", `Use “${name}” as typed`));
+        b.addEventListener("pointermove", (e) => { if ((!e.movementX && !e.movementY) || pk.cursor === i) return; pk.cursor = i; mark(pk, false); });
+        b.addEventListener("click", (e) => { e.preventDefault(); pick(pk, pk.items[i]); });
+        pk.items.push({ name, el: b, typed: true });
+        nodes.push(b);
+    }
     pk.note.hidden = !pk.note.textContent;
-    pk.total.textContent = pk.up && all.length ? (q.trim() ? `${pk.items.length} of ${all.length}` : `${all.length} files`) : "";
+    pk.total.textContent = pk.up && all.length ? (q.trim() ? `${pk.items.filter((it) => !it.typed).length} of ${all.length}` : `${all.length} files`) : "";
     pk.list.replaceChildren(...nodes);
     const want = prev != null ? prev : first ? pk.current : null;
     const at = want ? pk.items.findIndex((it) => it.name === want || normalizeName(it.name) === normalizeName(want)) : -1;

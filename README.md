@@ -72,7 +72,7 @@ under the name the chosen model knows that picture by.
 Recipes instead of node graphs: you pick a model and where it runs. On your own ComfyUI, local or on a rented box
 such as RunPod, any workflow with the Inpaint Canvas node becomes a recipe, and the *ComfyUI* button opens your
 ComfyUI's own page beside the editor to change a recipe's graph and save it back; up to five LoRAs from your ComfyUI's
-own list go into a recipe's runs without touching its graph. Comfy Cloud runs on your Comfy key
+own list (or Comfy Cloud's) go into a recipe's runs without touching its graph. Comfy Cloud runs on your Comfy key
 through Comfy's official SDK, with 15 recipes from Comfy's own templates, and the same key reaches the partner models
 on Comfy Router. Or paste a key into *Settings › API providers*: Black Forest Labs, OpenAI, Google, fal.ai, Replicate,
 OpenRouter and more. Keys go into the system's credential store, never into a settings file.
@@ -233,6 +233,7 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   loaded into the copy of the graph a run queues. A line under each says which base model the file looks made for
   (amber when it does not fit the recipe's, since ComfyUI loads such a LoRA silently and changes nothing), its trigger
   words go into the prompt with a click, and a file your ComfyUI lacks stops the run before anything is uploaded.
+  The Comfy Cloud recipes take LoRA rows too, from Comfy Cloud's catalog and the LoRAs you imported there.
 - Your own workflow becomes a recipe when it holds an Inpaint Canvas node. The *ComfyUI* window (Ctrl+Shift+K) shows
   your ComfyUI's page or Comfy Cloud; *Edit in ComfyUI* opens a recipe's graph there, and *Save to recipe* or *Save as
   new recipe* brings it back.

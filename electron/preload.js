@@ -156,6 +156,9 @@ contextBridge.exposeInMainWorld("scumble", {
         // main says the noted jobs changed (a run kept its job's note or put it back, the window was shown after an
         // ask it skipped): the window asks again; returns the unsubscribe
         onCloudJobsChanged: (cb) => on("provider:cloudJobsChanged", () => cb()),
+        // the LoRA files the Comfy Cloud key may name (item 50): { key, stale, own, shared, assets, nodeList, error };
+        // `{ fresh: true }` reads them again (the picker's open), else a minute's copy
+        cloudLoras: (opts) => ipcRenderer.invoke("provider:cloudLoras", opts || null),
         layout: (shape) => ipcRenderer.invoke("provider:layout", shape),
         balance: (id) => ipcRenderer.invoke("provider:balance", id),
     },

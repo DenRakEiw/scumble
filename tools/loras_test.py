@@ -1,4 +1,4 @@
-"""LoRAs on the user's ComfyUI (item 50, docs/PLAN_LORAS.md LR1): plain Node first, then the queue path in the app.
+"""LoRAs on the user's ComfyUI and Comfy Cloud (item 50, docs/PLAN_LORAS.md LR1-LR5): plain Node first, then the app.
 
 No ComfyUI, no API key, nothing reaches a server. The first step runs tools/loras_test.js (renderer/editor/loras.js
 over every shipped recipe: the model source, the chain, the rows, the declarations, missingLoras, the helpers). The
@@ -26,7 +26,8 @@ Then the LoRAs section of the Generate tab (LR2, renderer/editor/lora_panel.js),
 
 - it is the <details> right after Settings and before History, the Boxes plugin's panel still after Crop;
 - hidden under an API recipe (qwen_image_edit), an upscaler (rtx_vsr_local), the Realism Pass, a `loras: false`
-  recipe, a graph with two model loaders and a Comfy Cloud recipe, each with its reason in the summary's title;
+  recipe, a graph with two model loaders and the Comfy Cloud recipe that declares none (cloud_ideogram_4), each with
+  its reason in the summary's title;
 - + adds rows (each opens the picker; Escape closes it) up to five, the sixth greyed; × takes rows off; the store
   (settings.recipeLoras) follows;
 - a pick through the picker: the list read again on open, the search focused, the folder groups, a search, the
@@ -59,7 +60,19 @@ node it is ready, the run goes with the user's row chained after the recipe's ed
 encoders in the Moss-Image-Edit format, the via line naming the row; a server without the edit LoRA's file gets the
 run's own file check, which names the Edit LoRA row with its download link.
 
-Every stub, the recipe, the rows and the stored settings.recipeLoras are put back whatever happens.
+Then Comfy Cloud (LR5), against tools/fake_comfy_v2.js on a loopback port (tools/fake_cloud_http.py: the gate's profile
+gets the mock as settings.comfycloud.base and a test key, and the step skips where a Comfy Cloud key is stored already,
+so a real one is never replaced): under cloud_flux2_klein_9b the section shows with Comfy Cloud's lists read through
+main (the account's own imports first as "Your imports", then the catalog and the node list's combo), the picker offers
+a typed name as written and Enter takes it, marked "(not in Comfy Cloud's lists)"; set_generation keeps a name the lists
+lack, status and list_loras say source "comfycloud"; generate_new sends the text route's own graph with the chain
+after 75:70 (75:63 re-pointed, the switched-off row nowhere, nothing uploaded), its loras_sent and the status line's
+note name them; list_recipes: the Cloud recipe takes rows, cloud_ideogram_4 not, with its reason. The mock's record:
+the bearer (the test key) on every v2 call, X-API-Key on the node list and the asset reads, the comma form of
+include_tags.
+
+Every stub, the recipe, the rows, the stored settings.recipeLoras and the mock's key and address are put back whatever
+happens.
 
     python tools/loras_test.py
 
@@ -373,8 +386,8 @@ return { order: s.map((x) => x.title) };
     ("ui_hidden_where_a_recipe_takes_none", r"""
 const ed = ednow(window.__lr);
 const rec = (id) => { const r = host.shell.recipes().find((x) => x.id === id); if (!r) throw new Error(id + " is not listed"); return r; };
-const cloudRaw = rec("cloud_qwen_image_edit_2509");
-const cloud = { ...cloudRaw, provider: "comfycloud", options: cloudRaw.providers.comfycloud.options };
+// a Comfy Cloud recipe that declares none (cloud_ideogram_4, two model loaders: LR5); the others take rows there now
+const cloud = host.shell.resolveRecipe(rec("cloud_ideogram_4"), "comfycloud");
 const two = JSON.parse(JSON.stringify(klein3.prompt));
 two.unet2 = JSON.parse(JSON.stringify(two.unet));
 two.sched.inputs.model = ["unet2", 0];
@@ -384,7 +397,7 @@ const cases = [
     [rec("realism_pass"), /loads no model a LoRA could change\.$/],
     [{ ...klein3, id: "lr2_no_loras", name: "No LoRAs (test)", loras: false }, /^No LoRAs \(test\) takes no LoRA rows: the recipe takes no LoRAs\.$/],
     [{ ...klein3, id: "lr2_two", name: "Two loaders (test)", loras: undefined, prompt: two }, /^Two loaders \(test\)'s graph has 2 model loaders \(unet, unet2\) and the recipe names none of them/],
-    [cloud, /runs on Comfy Cloud, and Scumble does not send LoRA rows there yet\.$/],
+    [cloud, /takes no LoRA rows: its graph has 2 model loaders \(98:154, 98:23\), so the recipe declares none\.$/],
 ];
 host.loras = { flux3_klein_local: [{ name: NAMES[0], strength: 0.8, on: true }] };
 const out = {};
@@ -764,6 +777,126 @@ return { recipe: host.recipe && host.recipe.id, loras: Object.keys(host.loras ||
 """),
 ]
 
+# LR5: a Comfy Cloud recipe against the loopback Comfy Cloud (tools/fake_cloud_http.py), run before the cleanup: the
+# section shows with Comfy Cloud's lists (the account's own imports first, the catalog), the picker offers a typed name
+# as written, set_generation keeps a name the lists lack, and Generate new sends the text route's own graph with the
+# chain; the mock's record is read in Python afterwards
+CLOUD_RECIPE = "cloud_flux2_klein_9b"
+CLOUD_STEP = r"""
+// a document of its own: the earlier steps' local runs never landed, and Generate new waits for a document's runs
+const doc = (await run("new_document")).id;
+try {
+const ed = ednow(doc);
+host.shell.activate(ed);
+const raw = host.shell.recipes().find((r) => r.id === "cloud_flux2_klein_9b");
+if (!raw) throw new Error("cloud_flux2_klein_9b is not listed");
+host.setRecipe(host.shell.resolveRecipe(raw, "comfycloud"));
+if (host.recipeMode(host.recipe) !== "cloud") throw new Error("not a Comfy Cloud recipe: " + host.recipeMode(host.recipe));
+host.loras = {};
+const p = P(ed);
+panel.renderAll(host);
+if (p.section.hidden || p.section.dataset.source !== "cloud" || !/from Comfy Cloud's lists \(your own imports and its catalog\)/.test(p.summary.title))
+    throw new Error("the section under a Comfy Cloud recipe: " + JSON.stringify({ hidden: p.section.hidden, source: p.section.dataset.source, title: p.summary.title }));
+// the lists through main with the test key, from the mock: the account's own apart, the catalog, the node list's combo
+host._cloudLoras = null;
+await host.readCloudLoras({ fresh: true });
+const cl = host._cloudLoras || {};
+if (!cl.key || JSON.stringify(cl.own) !== JSON.stringify(["my_import.safetensors"]) || !(cl.shared || []).includes("cat_style.safetensors") || !(cl.shared || []).includes("combo_only.safetensors") || !cl.assets || !cl.nodeList)
+    throw new Error("Comfy Cloud's lists: " + JSON.stringify(cl));
+// the picker: Your imports first, then the catalog, the line on imports; a typed name offered as written, Enter takes it
+p.section.open = true;
+host.loras = { cloud_flux2_klein_9b: [{ name: "", strength: 1, on: true }] };
+panel.renderAll(host);
+panel.openPicker(host, ed, 0);
+const st = await until(() => { const s = panel.openPickerState(); return s && s.rows().length >= 3 ? s : null; }, 8000);
+if (!st) throw new Error("the picker listed " + JSON.stringify(panel.openPickerState() && panel.openPickerState().rows().map((x) => x.name)));
+const groups = Array.from(st.el.querySelectorAll(".ipc-lp-group .ipc-lp-folder")).map((x) => x.textContent);
+const title = st.el.querySelector(".ipc-lp-title").textContent, cnote = st.el.querySelector(".ipc-lp-cloudnote");
+if (groups[0] !== "Your imports" || !groups.includes("Comfy Cloud's catalog") || st.rows()[0].name !== "my_import.safetensors" || title !== "LoRAs on Comfy Cloud" || !cnote || cnote.hidden || !/Creator plan or higher/.test(cnote.textContent))
+    throw new Error("the picker: " + JSON.stringify({ groups, title, note: cnote && cnote.textContent, first: st.rows()[0] && st.rows()[0].name }));
+typeIn(st.search, "typed_lora");
+const typed = panel.openPickerState().rows();
+if (typed.length !== 1 || !typed[0].typed || typed[0].name !== "typed_lora.safetensors" || !/^Use .typed_lora\.safetensors. as typed$/.test(typed[0].el.textContent)) throw new Error("the typed row: " + JSON.stringify(typed.map((x) => [x.name, x.typed, x.el.textContent])));
+key(st.search, "Enter");
+if (panel.openPickerState()) throw new Error("Enter left the picker open");
+const picked = (host.loras.cloud_flux2_klein_9b || [])[0] || {};
+const mark = p.list.querySelector('.ipc-lora-row[data-index="0"] .ipc-lora-miss');
+if (picked.name !== "typed_lora.safetensors" || !mark || mark.textContent !== "(not in Comfy Cloud's lists)") throw new Error("the typed pick: " + JSON.stringify({ picked, mark: mark && mark.textContent }));
+// set_generation on a Comfy Cloud recipe: a name the lists lack is kept, never refused
+const sg = await run("set_generation", { doc, loras: [{ name: "cat_style.safetensors", strength: 0.75 }, { name: "not_listed.safetensors", strength: 1 }, { name: "off.safetensors", strength: 1, on: false }] });
+if ((sg.loras || []).length !== 3) throw new Error("set_generation: " + JSON.stringify(sg));
+const stl = (await run("status", { doc })).loras;
+if (stl.source !== "comfycloud" || !stl.takes || JSON.stringify(stl.rows.map((r) => r.on_server)) !== JSON.stringify([true, false, false]) || stl.rows.some((r) => r.hint))
+    throw new Error("status loras: " + JSON.stringify(stl));
+const ll = await run("list_loras", {});
+const mine = ll.folders.flatMap((f) => f.names).find((x) => x.name === "my_import.safetensors");
+if (ll.source !== "comfycloud" || !ll.connected || !mine || mine.own !== true || ll.error) throw new Error("list_loras: " + JSON.stringify(ll).slice(0, 400));
+// Generate new: the text route's own graph goes to the mock with the chain; the answer and the status line name them
+const gn = await run("generate_new", { doc, prompt: "a lighthouse at dusk", width: 256, height: 192, timeout: 60 });
+const want = [{ name: "cat_style.safetensors", strength: 0.75 }, { name: "not_listed.safetensors", strength: 1 }];
+if (gn.mode !== "api" || gn.provider !== "comfycloud" || JSON.stringify(gn.loras_sent) !== JSON.stringify(want) || !(gn.notes || []).includes("LoRAs: cat_style 0.75, not_listed 1.0."))
+    throw new Error("generate_new: " + JSON.stringify(gn).slice(0, 600));
+if (!/LoRAs: cat_style 0\.75, not_listed 1\.0\./.test(ed.status) || ed.statusKind === "warn" || ed.statusKind === "error") throw new Error("the status line: " + JSON.stringify([ed.status, ed.statusKind]));
+// list_recipes: the Cloud recipes take rows but cloud_ideogram_4, with its reason
+const lr = (await run("list_recipes")).recipes;
+const k9 = lr.find((x) => x.id === "cloud_flux2_klein_9b"), ig = lr.find((x) => x.id === "cloud_ideogram_4");
+if (!k9 || k9.loras !== true || k9.loras_reason !== null || !ig || ig.loras !== false || !/2 model loaders \(98:154, 98:23\), so the recipe declares none\.$/.test(ig.loras_reason || ""))
+    throw new Error("list_recipes: " + JSON.stringify({ k9: k9 && [k9.loras, k9.loras_reason], ig: ig && [ig.loras, ig.loras_reason] }));
+return { lists: { own: cl.own, shared: cl.shared.length }, groups: groups.slice(0, 3), loras_sent: gn.loras_sent, status: ed.status.slice(0, 160) };
+} finally {
+    panel.closePicker();
+    try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ }
+    host.shell.activate(ednow(window.__lr));
+}
+"""
+
+
+def cloud_options():
+    """The mock's node list: every class the recipe's two graphs need, LoraLoaderModelOnly with its combo."""
+    from fake_cloud_http import png_b64
+    with open(os.path.join(ROOT, "recipes", CLOUD_RECIPE + ".json"), encoding="utf-8") as f:
+        v = json.load(f)["providers"]["comfycloud"]
+    classes = set(v["options"]["needs"]) | set(v["text"]["options"]["needs"]) | {n["class_type"] for g in (v["options"]["graph"], v["text"]["options"]["graph"]) for n in g.values()}
+    info = {c: {} for c in classes}
+    info["LoraLoaderModelOnly"] = {"input": {"required": {"model": ["MODEL"], "lora_name": [["cat_style.safetensors", "combo_only.safetensors"], {}],
+                                                         "strength_model": ["FLOAT", {"default": 1, "min": -100, "max": 100}]}}, "output": ["MODEL"]}
+    return {"info": info, "loraAssets": {"own": ["my_import.safetensors"], "shared": ["cat_style.safetensors"]},
+            "outputs": [{"node_id": str(v["text"]["options"]["save"]), "name": "new.png"}], "picture": png_b64()}
+
+
+async def cloud_step(c):
+    """The Comfy Cloud step against the loopback mock; the mock's record checked here."""
+    from fake_cloud_http import FakeCloud, setup_js, CLOUD_RESTORE
+    with FakeCloud(cloud_options()) as fc:
+        keyed = await c.eval("(async () => { %s })()" % setup_js(fc.base), timeout=60)
+        if not keyed or keyed.get("skipped"):
+            return {"skipped": (keyed or {}).get("skipped")}
+        try:
+            res = await c.eval(PRE % (STUBS, CLOUD_STEP), timeout=240)
+        finally:
+            await c.eval("(async () => { %s })()" % CLOUD_RESTORE, timeout=60)
+        s = fc.state()
+    jobs = s["jobs"]
+    if len(jobs) != 1:
+        raise Exception("the mock got %d jobs" % len(jobs))
+    wf = jobs[0]
+    l1, l2 = (wf.get("scumble_lora_1") or {}).get("inputs", {}), (wf.get("scumble_lora_2") or {}).get("inputs", {})
+    if not (l1.get("model") == ["75:70", 0] and l1.get("lora_name") == "cat_style.safetensors" and l1.get("strength_model") == 0.75
+            and l2.get("model") == ["scumble_lora_1", 0] and l2.get("lora_name") == "not_listed.safetensors"
+            and wf.get("75:63", {}).get("inputs", {}).get("model") == ["scumble_lora_2", 0]
+            and "scumble_lora_3" not in wf and "off.safetensors" not in json.dumps(wf)):
+        raise Exception("the text graph the mock got: %s" % json.dumps({k: wf[k] for k in wf if k.startswith("scumble_lora") or k == "75:63"})[:800])
+    if s["uploads"] != 0:
+        raise Exception("Generate new uploaded %d pictures" % s["uploads"])
+    v2 = [x for x in s["calls"] if x["path"].startswith("/api/v2/")]
+    v1 = [x for x in s["calls"] if x["path"] in ("/api/object_info", "/api/assets")]
+    if not v2 or not all(x["bearer"] == "test" and not x["apiKey"] for x in v2) or not v1 or not all(x["apiKey"] == "test" and not x["bearer"] for x in v1):
+        raise Exception("the key on the calls: %s" % json.dumps(s["calls"])[:600])
+    if not any("include_public=false" in x["query"] for x in v1 if x["path"] == "/api/assets") or not all("include_tags=models%2Cloras" in x["query"] or "include_tags=models,loras" in x["query"] for x in v1 if x["path"] == "/api/assets"):
+        raise Exception("the asset reads: %s" % json.dumps([x["query"] for x in v1]))
+    return {**res, "mock": {"chain": [l1.get("lora_name"), l2.get("lora_name")], "calls": len(s["calls"]), "assetReads": s["assetReads"]}}
+
+
 PRE = """(async () => {
     const commands = window.__cmds.commands, host = window.__host;
     const run = (n, a) => commands.run(n, a || {});
@@ -784,6 +917,13 @@ async def run_all(c):
         return False
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
     for name, body in STEPS:
+        if name == "cleanup":
+            # LR5: the Comfy Cloud step against the loopback mock, before the stand-ins go
+            try:
+                print("[ok] cloud_generate_new_sends_the_chain_to_comfy_cloud: %s" % json.dumps(await cloud_step(c), ensure_ascii=False)[:600])
+            except Exception as err:  # noqa: BLE001
+                ok = False
+                print("[FAIL] cloud_generate_new_sends_the_chain_to_comfy_cloud: %s" % str(err)[:1200])
         try:
             res = await c.eval(PRE % (STUBS, body), timeout=240)
             print("[ok] %s: %s" % (name, json.dumps(res, ensure_ascii=False)[:600]))

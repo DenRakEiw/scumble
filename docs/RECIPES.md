@@ -448,9 +448,10 @@ your ComfyUI*). **The source** (`renderer/editor/loras.js` `modelSource`, with t
 table of class names): a declared `loras.model`, else the one live node (it leads to the result, the `save` node or an
 output) with a MODEL output a live node reads and no MODEL input of its own, the loader. None, or two that the recipe
 does not choose between, and the recipe takes no rows: the LoRAs section is hidden and `list_recipes` says `loras:
-false` with `loras_reason` (`host.loraTakes`, which also answers for the upscalers, the Realism Pass, relight, API
-recipes and, until the Cloud splice is built, Comfy Cloud recipes). Every shipped graph's source and the readers it
-re-points are in the table of "LR0 as built" in the plan.
+false` with `loras_reason` (`host.loraTakes`, which also answers for the upscalers, the Realism Pass, relight and API
+recipes; a Comfy Cloud recipe's edit graph is read with the class-name table, the local server's node list being no
+Comfy Cloud's). Every shipped graph's source and the readers it re-points are in the table of "LR0 as built" in the
+plan.
 
 **The splice** (`spliceLoras`, in `host.queueGenerate` after the Settings rows, the factor, the boxes and
 `wireUpsampler`, before `api.queuePrompt`; never for `upscale` or `pass`): the switched-on rows with a name, in their
@@ -478,7 +479,7 @@ own check answers. **After it**: the run's notes ("LoRAs: Flux3_Targa 0.8, nyc_s
 "... via your ComfyUI + 2 LoRAs: Flux3_Targa 0.8, nyc_style 1.0, 14 s", in the status line and the history entry), the
 log (`local run <id>: LoRAs ...`), `editor.lastLoras` (`generate` / `generate_new` `loras_sent`), the run's
 `extra_pnginfo.workflow.loras`, and a PNG export's workflow chunk (`workflowForPng` through `host.lorasNow`, local
-recipes; the chunk's `prompt` never shows the chain).
+and Comfy Cloud recipes; the chunk's `prompt` never shows the chain).
 
 **The hint** (never a refusal: ComfyUI loads a LoRA of another base model without an error, printing "lora key not
 loaded" for each key that does not fit, and the picture comes back unchanged): `electron/main/loraheader.js` reads a
@@ -494,10 +495,26 @@ as built" in the plan). Only a keys answer that fits none of the recipe's famili
 of the same shape are both named. Trigger words: `ss_tag_frequency` (the top five, each at least a quarter of the
 first's count) and the `modelspec` trigger phrase, split at commas.
 
-**Comfy Cloud**: a Cloud variant's `loras` is read and checked as above, but a Comfy Cloud recipe takes no rows yet:
-the splice in main (`comfycloud.js` `run` / `runV2`, after the node list's read and before the model-file check) is the
-plan's LR5, which waits for a probe of the account's LoRA listing with the user's key. Until then a LoRA goes into a
-Cloud recipe's graph by hand (*Edit in ComfyUI*, a Load LoRA node, *Save to recipe*).
+**Comfy Cloud** (LR5): a Comfy Cloud graph recipe takes rows as a ComfyUI recipe does, and **main splices them**: the
+request carries `loras: { rows, declared }` (`host.cloudLoraRows`, from `runProvider` with the variant's `loras` and from
+Generate new's own request with the text route's `text.loras`; more than five switched-on rows refused before the
+crop), and `comfycloud.js` `withLoras` writes the chain into a copy of `options.graph` with the same module
+(`renderer/editor/loras.js`, required as an ES module) in `run` and `runV2` **after the node list's read and before
+`checkModelFiles`**, so the chain's `lora_name` values are model files of the graph like any other: a separator-only
+difference goes in the node list's spelling, the chain's class joins the classes the list must hold, and **a name the
+list lacks is never refused** (the account's own imports are not in it; a failed run's note names it). An unread node
+list (`runV2`) splices by the class-name table. `buildDetached` copies the graph it is given. The answer's `loras` (what
+the chain loaded) gives the via line, `lastLoras` and `loras_sent`, its note "LoRAs: ..." the status line. **The
+picker's names** (`provider:cloudLoras`, `comfycloud.js` `loraList`, a minute's copy, read again on the picker's open):
+the documented account route `GET /api/assets?include_tags=models,loras` (v1, X-API-Key; the comma form, a repeated
+`include_tags` is a 400), the account's own imports with `include_public=false` shown first as "Your imports", then
+Comfy Cloud's catalog (its 777 public LoRA assets on 2026-11-06, a superset of the node list's 652-name
+`LoraLoaderModelOnly` combo, which is added where the assets lack a name), each by its `loader_path`; and a file name
+typed in the search goes as written (an import the list does not show yet; `set_generation` keeps one too). No hint line
+there (the files are Comfy Cloud's). `cloud_ideogram_4` declares `loras: false` (two model loaders), and its section is
+hidden with that reason. The probe that decided this: `docs/measurements/lr5_2026-11-06/probe.md`. **Not run live on
+Comfy Cloud yet** (a run with a LoRA is paid): the splice is held to the fake Comfy Cloud of `tools/fake_comfy_v2.js`
+by `comfycloud_v2_test.js`, `cloudgraph_test.js` and the `loras` and `commands` gates.
 
 **LoRA rows on your ComfyUI, run live 2026-11-06** (item 50, `docs/PLAN_LORAS.md` LR9; the user's ComfyUI 0.44.0, RTX
 5090, one seed per pair, the numbers and pictures in `docs/measurements/lr9_2026-11-06/`). Every family's LoRA changed the picture, and every mismatched one left it alone:
@@ -634,7 +651,7 @@ finds the `UNETLoader` in both, so the LoRA rows go before the template's edit L
 user's ComfyUI `moss_image_edit_local` puts them after it). Every model file is in Comfy Cloud's catalog and both MOSS
 classes in its node list (read through Comfy Cloud's MCP server on 2026-11-06), though its `LoraLoaderModelOnly` combo
 does not list the edit LoRA (the model check is advisory, above); the licence sentence as in `moss_image_edit_local`;
-**not run on Comfy Cloud yet**: LR5 runs it once), `cloud_p_h3_image` (P-H3-Image, `image_p_h3_image_edit` with
+**not run on Comfy Cloud yet**: its one paid run waits for the user's word, LR5 of the plan), `cloud_p_h3_image` (P-H3-Image, `image_p_h3_image_edit` with
 `image_p_h3_t2i` as its text route: the template's P-H3-Image LoRA on MiniMax H3's FL2VA model, `er_sde`, the crop at its
 own size; its prompt upsampler gets the prompt as written, without the template's "Aspect ratio" and "Request" lines,
 which the prompt control held; its pictures `<Picture {n}>`, sizes in steps of 32, Generate new's long sides 1024 to

@@ -5,8 +5,10 @@
 // POST /assets (multipart: content_type, file_path, expected_hash, then the file), POST /jobs (201 with the job and its
 // urls; a key it has seen is refused 422 idempotency_key_reuse), GET /jobs/<id> (the statuses of `statuses` in turn, the
 // last repeated), POST /jobs/<id>/cancel, GET /assets/<id>/content (a 302 to a signed storage URL the fake follows itself
-// when the request follows redirects, dropping Authorization across origins as fetch does), and the v1 node list
-// GET /api/object_info (X-API-Key). Every call is recorded with its auth, and every job body is kept.
+// when the request follows redirects, dropping Authorization across origins as fetch does), the v1 node list
+// GET /api/object_info (X-API-Key) and, given `loraAssets`, the v1 asset list GET /api/assets (the LoRA files a key may
+// name, item 50). Every call is recorded with its auth, and every job body is kept. tools/fake_comfy_v2_http.js serves
+// it on a loopback port for the app's gates.
 "use strict";
 
 const ORIGIN = "https://cloud.comfy.org";
@@ -49,6 +51,8 @@ const fail = (status, code, message, details, retryAfter) => json(status, { erro
  * @param {string} [o.infoRedirect] the node list answers a 302 to this URL first (followed as fetch follows one, with its
  *   headers, unless the request says redirect "manual")
  * @param {number} [o.outputsAfter] how many reads of the finished job list no outputs yet
+ * @param {{ own?: string[], shared?: string[], fails?: number }} [o.loraAssets] the v1 asset list GET /api/assets (item
+ *   50): the account's own LoRA files and Comfy Cloud's catalog, each a loader's name; `fails` answers every read so
  */
 function fakeComfyV2(o = {}) {
     const origin = o.origin || ORIGIN;
@@ -96,6 +100,22 @@ function fakeComfyV2(o = {}) {
         }
         if (u.origin !== origin) return json(404, { error: { code: "not_found", message: "no such origin in the fake: " + u.origin } });
         const p = u.pathname;
+        if (p === "/api/assets" && method === "GET" && o.loraAssets) {
+            // the v1 asset list (item 50, docs/PLAN_LORAS.md LR5; X-API-Key): the LoRA assets the key may name, the
+            // account's own (include_public=false) or with Comfy Cloud's catalog; include_tags in its comma form only, as
+            // Comfy answers a repeated one (read 2026-11-06); paged by limit and offset
+            s.assetReads = (s.assetReads || 0) + 1;
+            if (o.loraAssets.fails) return fail(o.loraAssets.fails, "upstream_error", "asset list broke");
+            if (u.searchParams.getAll("include_tags").length > 1) return json(400, { code: "BAD_REQUEST", message: "Invalid format for parameter include_tags: parameter 'include_tags' is not exploded, but is specified multiple times" });
+            const tags = String(u.searchParams.get("include_tags") || "").split(",").filter(Boolean);
+            const mine = (o.loraAssets.own || []).map((n) => ({ n, own: true }));
+            const pub = u.searchParams.get("include_public") === "false" ? [] : (o.loraAssets.shared || []).map((n) => ({ n, own: false }));
+            const all = tags.every((t) => t === "models" || t === "loras") ? [...mine, ...pub] : [];
+            const limit = Math.min(500, +u.searchParams.get("limit") || 20), offset = +u.searchParams.get("offset") || 0;
+            const page = all.slice(offset, offset + limit);
+            const assets = page.map(({ n, own }, i) => ({ id: `lora-${offset + i}`, name: n.split("/").pop(), display_name: n, file_path: `models/loras/${n}`, loader_path: n, tags: ["models", "loras"], size: 1000, is_immutable: !own, user_metadata: { filename: n, model_type: "loras" } }));
+            return json(200, { assets, total: all.length, has_more: offset + limit < all.length });
+        }
         if (p === "/api/object_info") {
             if (o.infoRedirect && !u.searchParams.has("hop")) {
                 if (init.redirect === "manual") return new Response(null, { status: 302, headers: { location: o.infoRedirect } });

@@ -1,0 +1,34 @@
+LR5 (item 50, docs/PLAN_LORAS.md "LR5 as built"): LoRA rows on Comfy Cloud. 2026-11-06, branch corridorkey.
+
+The probe: probe.md (read-only, the user's key typed into the dev instance on port 9571 by the user; the key never
+left that instance's main process). Decision: found (GET /api/assets, v1, X-API-Key, include_tags=models,loras in its
+comma form; the account's own with include_public=false: 0 today), plus a typed name sent as written.
+
+After the build, on the same instance (read-only, the app's own path window.scumble.providers.cloudLoras({ fresh: true })):
+  key true, stale false, own 0, shared 772 (the 777 LoRA assets less five that are no model file; the node list's 652
+  combo names all among them), assets read, node list read, error null, 5.3 s;
+  the three moss_* LoRAs among them (moss_image_color_depth_control, moss_image_edit_lora_rank_64_bf16,
+  moss_image_sft_lora_blocks_21_to_49_rank_512_bf16).
+  The picker on cloud_qwen_image_edit_2509 (rows in memory only, nothing stored, nothing run): "LoRAs on Comfy Cloud",
+  772 files, the catalog's groups, the line on imports, the typed row's "(not in Comfy Cloud's lists)" mark:
+  cloud_loras_picker.png. The instance was put back (its recipe, no rows stored, the look's document closed).
+
+No job, no upload, no import, no paid run on Comfy Cloud or Comfy Router. The user's ComfyUI (8188) not touched.
+
+Plain Node:
+  comfycloud_v2_test.js 106 of 106 (§16, §17 new; §15 the rows through providers/index.js)
+  cloudgraph_test.js 37 of 37 (§11 new, the legacy API)
+  loras_test.js 89, recipes_test.js 304, loraheader_test.js 56, comfyprompt_test.js 102, cloudjobs_test.js 36,
+  settings_migration_test.js PASS
+
+Gate runs (tiles, --offline, port 9574, dist/gates of the worktree):
+  lr5-a  loras FAIL (the Cloud step ran in a document still holding the earlier steps' local runs), commands FAIL (the
+         node list main had kept for the loras gate's test key), recipes PASS, generate PASS, lint rc 0, types rc 0
+  lr5-b  loras PASS, commands PASS (each gate its own document and test key)
+  lr5-c  loras, commands, recipes, generate, commands_doc, help PASS, lint rc 0 (0 errors, the same 21 warnings),
+         types rc 0: ALL PASS
+  lr5-d  commands_doc alone on a fresh instance (lr5-c's ran after commands, whose plugin reload reorders the plugins'
+         entries): docs/COMMANDS.md changes in the four descriptions only, 117 commands
+
+Left, on the user's word (paid, a few cents): one Comfy Cloud run of cloud_qwen_image_edit_2509 with one catalog LoRA,
+one of cloud_moss_image_edit; an import of the user's own LoRA to confirm it shows under "Your imports".

@@ -7,7 +7,7 @@
 // in their inputs, the run's own SaveImage answers before another output, a node the cloud lacks stops the run before
 // any upload, a run past the graph's picture count is refused by the layout, a fill recipe takes the mask, a model file
 // the cloud's node list lacks does not stop the run but is named, with the nearest file it lists, when the run fails
-// (V6 step 3).
+// (V6 step 3); a recipe's LoRA rows go into the prompt's graph on this legacy API too (item 50, LR5).
 "use strict";
 
 const fs = require("node:fs");
@@ -293,6 +293,39 @@ async function main() {
     check("the result is read from /api/jobs/<id>, never from /api/history", tagOf(jo.bytes) === "RESULT jobs.png" && s.calls.includes("GET /api/jobs/p1") && !s.calls.some((c) => c.includes("/api/history")), short(s.calls));
     const why = await cloud.failureDetail({ key: "k", fetch: fakeCloud({ jobError: "Value not in list" }).fetch }, "p1", "error", {});
     check("a failure without a cause in its status: the job's execution_error names the node and the exception", why === "error - UNETLoader: ValueError: Value not in list", why);
+
+    // 11. LoRA rows on the legacy API too (item 50, docs/PLAN_LORAS.md LR5): spliced after the node list's read and
+    // before checkModelFiles, so the chain is in the graph the prompt carries, a separator-only difference goes in the
+    // list's spelling, a name the list lacks is sent and named by a failure, the answer carries what was spliced
+    if (qv) {
+        const BS = String.fromCharCode(92);
+        const loraInfo = (names) => ({
+            ...Object.fromEntries(qv.options.needs.map((c) => [c, {}])),
+            LoraLoaderModelOnly: { input: { required: { model: ["MODEL"], lora_name: [names, {}], strength_model: ["FLOAT", { min: -100, max: 100 }] } }, output: ["MODEL"] },
+            SaveImageAdvanced: { output_node: true },
+        });
+        const rows = [{ name: "Wan22_FunReward" + BS + "a.safetensors", strength: 0.9, on: true }, { name: "mine.safetensors", strength: 1.2, on: true }];
+        const lreq = (loras) => reqOf({ options: qv.options, negative: "", params: {}, references: [png("ORIGINAL")], original: 1, loras });
+        cloud._clearNodeList();
+        let fc = fakeCloud({ info: loraInfo(["Wan22_FunReward/a.safetensors", "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors"]), outputs: () => ({ 469: { images: [{ filename: "l.png" }] } }) });
+        const lo = await cloud.edit(lreq({ rows, declared: undefined }), { key: "k-loras", fetch: fc.fetch, sleep: async () => {} });
+        const lg = fc.prompts[0] || {};
+        check("legacy: the chain in the prompt's graph after 433:37, the switch and the template's LoRA re-pointed, the list's spelling",
+            lg.scumble_lora_1 && JSON.stringify(lg.scumble_lora_1.inputs.model) === JSON.stringify(["433:37", 0]) && lg.scumble_lora_1.inputs.lora_name === "Wan22_FunReward/a.safetensors"
+            && lg.scumble_lora_2.inputs.lora_name === "mine.safetensors" && lg.scumble_lora_2.inputs.strength_model === 1.2
+            && JSON.stringify(lg["433:89"].inputs.model) === JSON.stringify(["scumble_lora_2", 0]) && JSON.stringify(lg["433:440"].inputs.on_false) === JSON.stringify(["scumble_lora_2", 0]),
+            short({ l1: lg.scumble_lora_1, l2: lg.scumble_lora_2 }));
+        check("legacy: the answer's loras and its note", JSON.stringify(lo.loras) === JSON.stringify([{ name: "Wan22_FunReward/a.safetensors", strength: 0.9 }, { name: "mine.safetensors", strength: 1.2 }]) && (lo.notes || []).includes("LoRAs: a 0.9, mine 1.2."), short({ loras: lo.loras, notes: lo.notes }));
+        cloud._clearNodeList();
+        fc = fakeCloud({ info: loraInfo(["Wan22_FunReward/a.safetensors"]), jobError: "Value not in list" });
+        const le = await thrown(() => cloud.edit(lreq({ rows, declared: undefined }), { key: "k-loras2", fetch: fc.fetch, sleep: async () => {} }));
+        check("legacy: a name the list lacks is sent, and the failure's note names it", fc.prompts.length === 1 && /mine\.safetensors \(LoraLoaderModelOnly lora_name\)/.test(le || ""), short(le));
+        cloud._clearNodeList();
+        fc = fakeCloud({ info: loraInfo(["mine.safetensors"]), outputs: () => ({ 469: { images: [{ filename: "l.png" }] } }) });
+        const lf = await cloud.edit(lreq({ rows, declared: false }), { key: "k-loras3", fetch: fc.fetch, sleep: async () => {} });
+        check("legacy: loras false leaves the graph alone", !Object.keys(fc.prompts[0] || {}).some((id) => /^scumble_lora_/.test(id)) && lf.loras.length === 0, short(lf.notes));
+        cloud._clearNodeList();
+    }
 
     fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
