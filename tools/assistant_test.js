@@ -1431,6 +1431,22 @@ async function main() {
                 && upLinux.action === "refuse" && upLinux.reason === linux
                 && upBlind.action === "ask" && eq(upBlind.card, { settings: { factor: "2×" } }),
                 JSON.stringify({ up2, upCap, oneCap, upLinux, upBlind }));
+            // item 49 B4: key_screen asks with its route on the card (status.key's default, your ComfyUI with its pack),
+            // a route status says cannot key is refused with the reason, and route app asks in Scumble's words
+            const fk = (extra) => { const x = facts(extra); x.tools.add("key_screen"); return x; };
+            const kReady = { ready: true, reason: null, route: "comfyui", comfy: { ready: true, reason: null, pack: "marawan206", pack_label: "ComfyUI-CorridorKey2.0" } };
+            const connect = "Full resolution on your ComfyUI needs your own ComfyUI with an RTX 30, 40 or 50 card and a CorridorKey 2.0 node pack: connect it under Settings › ComfyUI.";
+            const kAsk = policy.decide({ name: "key_screen", args: { hint: "none", screen: "green" } }, fk({ key: kReady }));
+            const kBlind = policy.decide({ name: "key_screen", args: {} }, fk());
+            const kNo = policy.decide({ name: "key_screen", args: {} }, fk({ key: { ...kReady, ready: false, reason: connect, comfy: { ready: false, reason: connect, pack: null, pack_label: null } } }));
+            const kApp = policy.decide({ name: "key_screen", args: { route: "app", rekey: true } }, fk({ key: kReady }));
+            check("key_screen_asks_with_its_route_and_is_refused_when_its_route_cannot_key",
+                policy.RUNS.has("key_screen") && kAsk.action === "ask" && kAsk.reason === "keys the green / blue screen with CorridorKey 2.0 on your ComfyUI: it queues there and adds a layer"
+                && eq(kAsk.card, { settings: { route: "your ComfyUI (ComfyUI-CorridorKey2.0)", screen: "green", hint: "none", trust: 0.5 } })
+                && kBlind.action === "ask" && kBlind.card.settings.route === "your ComfyUI"
+                && kNo.action === "refuse" && kNo.reason === connect
+                && kApp.action === "ask" && /in Scumble on your GPU/.test(kApp.reason) && kApp.card.settings.route === "in Scumble" && kApp.card.settings.trust === 0.95,
+                JSON.stringify({ kAsk, kBlind, kNo, kApp }));
             // release review 2026-10-05: cancel_run always asks, on the pinned document too, and says what is lost
             const fc = () => { const x = facts(); x.tools.add("cancel_run"); return x; };
             const cOne = policy.decide({ name: "cancel_run", args: { doc: 4 } }, fc());

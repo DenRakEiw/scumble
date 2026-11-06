@@ -751,7 +751,13 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   catalogue entry a placeholder, not offered), `ck-refine` (I6: `renderer/editor/keymatte.js`), `ck-ui` (I4 landing,
   I5 Key dialog, I7 `key_screen`, on a stubbed engine); the refine wired into `keyworker.js` / `host.landKey` for every
   scaled matte (Route B's key above the cap included). No in-app engine (I1, I3 not built): `host.keyEngine` answers
-  "not part of this build"; no in-app text in the CHANGELOG, the manual or the Store notes. Next: B0, then B1-B5.
+  "not part of this build"; no in-app text in the CHANGELOG, the manual or the Store notes. **B0-B4 done 2026-11-06**
+  (B0 on `ck-b0`: KEY_CAP stays 16 MP, every key evicts the previous prompt's models and the next Generate reloads,
+  a Cancel leaves no interrupt flag, the gate's fixture `tools/fixtures/corridorkey_routeb/`; B1 the pack table;
+  B2 `host.keyComfy`, the default route of this build; B3 the dialog's route row, no live loop on it; B4 `key_screen`
+  `route`, `status.key.comfy`, the ask card's route; the `key` gate's `comfy *` and `dialog comfy` steps on both
+  backends; plan §5 "B2 as built" ff.). Next: B5 (the manual's Route B section, RECIPES / HELPERS, the live run on the
+  user's ComfyUI with the user present).
 - 50: **LoRAs on the user's ComfyUI and Comfy Cloud, and MOSS Image Edit** (issues #10, hwatik, 2026-10-24: "lora
   support for local generations ... qwen 2.1 or moss"; #11, nadergits, 2026-10-31: "add moss image edit ... with
   loras"; the user, 2026-11-06). **The user's decisions:** LoRAs only for the user's own ComfyUI (local or remote) and

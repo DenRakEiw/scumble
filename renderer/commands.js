@@ -407,14 +407,23 @@ function realismState(ed) {
 }
 
 /**
- * Key green / blue screen on this document (item 49, docs/PLAN_CORRIDORKEY.md §4.8): whether key_screen would start now
- * (host.keyCheck: the engine, its set, a run going, no picture), the reason when not, the provider the engine runs on
- * and the working size.
+ * Key green / blue screen on this document (item 49, docs/PLAN_CORRIDORKEY.md §4.8, §4.11): whether key_screen with its
+ * default route (host.keyRoute) would start now (host.keyComfyCheck or host.keyCheck: what the route lacks, a run going,
+ * no picture), the reason when not, the in-app engine's provider and working size, and `comfy`: the ComfyUI route's
+ * readiness, its pack and card, and the settings it sends (B4).
  */
 function keyState(ed) {
-    const c = host.keyCheck(ed, {});
-    const sup = host.keySupport();
-    return { ready: !c, reason: c ? c.text : null, provider: sup.ok ? sup.provider || null : null, cpu: !!sup.cpu, working_size: host.keyWorkingSize() };
+    const route = host.keyRoute();
+    const cc = host.keyComfyCheck(ed, {});
+    const c = route === "comfyui" ? cc : host.keyCheck(ed, {});
+    const sup = host.keySupport(), cs = host.keyComfySupport(), v = host.keyValues();
+    return {
+        ready: !c, reason: c ? c.text : null, route, provider: sup.ok ? sup.provider || null : null, cpu: !!sup.cpu, working_size: host.keyWorkingSize(),
+        comfy: {
+            ready: !cc, reason: cc ? cc.text : null, pack: cs.pack || null, pack_label: cs.packLabel || null, verified: cs.pack ? !!cs.verified : null,
+            gpu: cs.gpu || null, note: cs.note || null, cap_mp: v.cap, keep_on_gpu: v.keepOnGpu, timeout: v.comfyTimeout,
+        },
+    };
 }
 
 /**
@@ -1059,7 +1068,7 @@ const COMMANDS = {
     // -- document --
     status: {
         readOnly: true,
-        description: `What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends. key: whether key_screen would start on this document now (ready; reason when not: the CorridorKey 2.0 engine or its set missing, a run going, no picture), the provider it runs on (cpu: on the CPU, no live preview) and the working size. loras: the selected recipe's LoRA rows (kept per recipe for every document; set_generation loras sets them): takes (whether its graph takes rows; reason when not), family (the base model its LoRAs should fit, when known), rows [{ name, strength, on, hint, mismatch, triggers, on_server }] (hint: the base model the file looks made for, null while unknown; mismatch: its tensor names fit another model than the recipe's, which never refuses a run; triggers: the file's trigger words; on_server: whether the server's list has it, null while the list is unread), and sent: what a run now would load, [{ name, strength }].`,
+        description: `What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends. key: whether key_screen with its default route would start on this document now (ready; reason when not: what the route lacks, a run going, no picture), route (that default: comfyui, the user's own ComfyUI with a CorridorKey 2.0 node pack, the only route of this build; app, in Scumble, once it has an engine), the in-app engine's provider (cpu: on the CPU, no live preview) and working size, and comfy: the ComfyUI route's own readiness (ready, reason: not connected, no RTX 30+ card, no node pack, no Inpaint Canvas), the pack it keys with (pack, pack_label, verified: whether that pack has keyed with Scumble), the card (gpu), cap_mp (settings.key.cap: the largest box that goes at its own size, in megapixels of 2^20 px), keep_on_gpu and timeout (settings.key). loras: the selected recipe's LoRA rows (kept per recipe for every document; set_generation loras sets them): takes (whether its graph takes rows; reason when not), family (the base model its LoRAs should fit, when known), rows [{ name, strength, on, hint, mismatch, triggers, on_server }] (hint: the base model the file looks made for, null while unknown; mismatch: its tensor names fit another model than the recipe's, which never refuses a run; triggers: the file's trigger words; on_server: whether the server's list has it, null while the list is unread), and sent: what a run now would load, [{ name, strength }].`,
         params: {},
         async run(ed) {
             const s = status(ed);
@@ -1658,8 +1667,9 @@ const COMMANDS = {
     },
     key_screen: {
         needsImage: true,
-        description: "Key green / blue screen with CorridorKey 2.0 inside Scumble (on the GPU when the engine runs there): one new layer \"Key\" lands directly above the source, its pixels the subject's own colour with the screen's spill taken out, its layer mask the matte (soft hair and motion blur), trimmed to the matte's box. A source layer is hidden in the same step; with the visible picture as the source a mid-grey Fill layer \"Grey\" goes under the key (grey: false leaves the base as it is). One undo step. The box is the selection's bounds grown by context (the whole picture, or the source layer, without a selection), keyed at the working size (settings.key.workingSize, 1,024 px by default; status.key.working_size) and scaled back to the full resolution. hint: selection (the selection's coverage as CorridorKey's alpha hint; select_mask gives a binary one), mask (the source layer's own layer mask as a soft hint, 0.95 unless trust says otherwise: give the source a mask with set_mask first), none (the model decides). trust: how much the hint is believed (0.5 rough, 0.75 automatic, 0.95 clean). preview: the matte becomes the selection instead (one selection step), nothing is added. rekey: the active key layer's own mask is the hint (0.95) and its pixels and mask are replaced from what it was keyed from (the hidden source layer, or the picture under the key; one step); after a restart the key starts from the layer's bounds and reads the hidden layer directly below it, else the picture under it. Refused before anything is read when the engine or its 2.4 GB set is missing (status.key says why), a run is going on the document, or no picture is loaded.",
+        description: "Key green / blue screen with CorridorKey 2.0: one new layer \"Key\" lands directly above the source, its pixels the subject's own colour with the screen's spill taken out, its layer mask the matte (soft hair and motion blur), trimmed to the matte's box. A source layer is hidden in the same step; with the visible picture as the source a mid-grey Fill layer \"Grey\" goes under the key (grey: false leaves the base as it is). One undo step. route: comfyui (the default and the only route of this build) keys on the user's own ComfyUI through a CorridorKey 2.0 node pack there (ComfyUI-CorridorKey2.0; status.key.comfy says whether it is ready and why not: connected, an RTX 30, 40 or 50 card, the pack, Inpaint Canvas; the pack's models, about 5.1 GB, are fetched once on that machine, never by Scumble, and a key without them fails naming the files): the box goes at its own size up to settings.key.cap (16 megapixels) and 8,192 px a side, else scaled by one factor and its matte refined against the full-resolution picture; it queues at the front of that ComfyUI's queue, the first key after another job there takes about 10 s more (the pack loads its models), and that job's models load again at its next run; the wait for the server is settings.key.comfyTimeout, the call's own timeout ends it too. route: app keys inside Scumble (not part of this build). The box is the selection's bounds grown by context (the whole picture, or the source layer, without a selection). hint: selection (the selection's coverage as CorridorKey's alpha hint; select_mask gives a binary one), mask (the source layer's own layer mask as a soft hint, 0.95 unless trust says otherwise: give the source a mask with set_mask first), none (the model decides). trust: how much the hint is believed (0.5 rough, 0.75 automatic, 0.95 clean). preview: the matte becomes the selection instead (one selection step), nothing is added. rekey: the active key layer's own mask is the hint (0.95) and its pixels and mask are replaced from what it was keyed from (the hidden source layer, or the picture under the key; one step); after a restart the key starts from the layer's bounds and reads the hidden layer directly below it, else the picture under it. Refused before anything is read or sent when the route cannot key (status.key says why), a run is going on the document, or no picture is loaded.",
         params: {
+            route: P.enum("comfyui (your ComfyUI with a CorridorKey 2.0 node pack) or app (in Scumble, not part of this build); the default is in Scumble when its engine is ready, else your ComfyUI (status.key.route)", ["comfyui", "app"]),
             source: P.str("\"picture\" (the default: the visible picture, filters skipped) or a layer whose own pixels are keyed (id, name, a unique part, or \"active\")", { default: "picture" }),
             screen: P.enum("auto (from the box's border), green or blue", keying.SCREENS.slice(), "auto"),
             hint: P.enum("selection (the default), mask (the source layer's own mask) or none", ["selection", "mask", "none"], "selection"),
@@ -1688,6 +1698,8 @@ const COMMANDS = {
                 grey: a.grey == null ? v.greyUnderBase : !!a.grey,
             };
             const ms = clampInt(a.timeout, 5, 3600, 300) * 1000;
+            // on your ComfyUI the job is given up a moment before the call's own end (its job taken off the queue)
+            if (host.keyRoute(opts.route) === "comfyui") opts.deadline = Date.now() + Math.max(1000, ms - 2000);
             let timer = null;
             const out = await Promise.race([
                 host.keyScreen(ed, opts),
@@ -1697,6 +1709,7 @@ const COMMANDS = {
             return {
                 layer: out.layer ? layerSummary(ed, out.layer) : null, grey: out.grey ? out.grey.id : null, hidden: out.hidden ? out.hidden.id : null,
                 seconds: Math.round((out.seconds || 0) * 10) / 10, box: out.box, matte_box: out.matteBox, workingSize: out.workingSize || null, provider: out.provider || null,
+                route: out.route || "app", pack: out.pack || null, sent: out.sent || null, scaled: !!out.scaled,
                 kept_percent: Math.round((out.kept || 0) * 10) / 10, preview: opts.preview, selection: opts.preview ? bounds(ed) : undefined,
                 status: out.layer || opts.preview ? ed.status : "The document was closed while the key ran; nothing was added.",
             };

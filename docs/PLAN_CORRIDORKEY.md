@@ -1374,6 +1374,27 @@ your ComfyUI's route alone, Key greyed with the connect sentence) PASS on both b
 instance with the server stood in for (the panel on B0's fixture: the rows, the readiness line, the first-run block).
 Not done: a key through the dialog against the user's ComfyUI (B5's live run, on the user's word).
 
+### B4 as built (2026-11-06)
+
+**`key_screen route`** (`renderer/commands.js`): `comfyui` or `app`, the default `host.keyRoute()`'s (your ComfyUI in this
+build); the description says what the ComfyUI route needs, the cap, the first key's model load (B0) and that the
+models are fetched on that machine, never by Scumble; on your ComfyUI the call's own `timeout` becomes the job's
+`deadline` 2 s before the call's end (comfyPictureRun takes the job off the queue then); the answer gains `route`,
+`pack`, `sent`, `scaled`. **`status.key`**: `ready` / `reason` for the default route, `route`, the in-app fields as
+before, and `comfy: { ready, reason, pack, pack_label, verified, gpu, note, cap_mp, keep_on_gpu, timeout }`.
+**The assistant** (`electron/main/assistant/policy.js` `keyRow`, `index.js` reads `status.key` into `facts.key` for a
+`key_screen` call): a route status says cannot key is refused with its reason (no card), else the question names the
+route ("... on your ComfyUI: it queues there and adds a layer", or "... in Scumble on your GPU") and the card starts
+with `route: "your ComfyUI (<pack>)"`. `docs/COMMANDS.md` regenerated (118 commands, `grep -c '^### \`'`), README and
+`docs/MCP.md` say 118 / 98 core, the LoRA CHANGELOG line lost its count and the new `## Unreleased` line for Route B
+carries it (Route B only: no in-app text).
+
+**Tests:** the `key` gate's `comfy command` step (status.key.comfy ready with pack A, the card and the settings; a
+`key_screen` on your ComfyUI bounded by its deadline; preview; `route: "app"` refused as not in this build; not
+connected: status and the command say why) PASS on both backends (`b4-key-tiles`, `b4-key-canvas`); `lint types
+commands mcp mcpb assistant` PASS on tiles (`b4-tiles`; `assistant_test.js` gained
+`key_screen_asks_with_its_route_and_is_refused_when_its_route_cannot_key`).
+
 ## 6. The user's answers, and the questions still open
 
 **The user's answers (2026-10-24; AskUserQuestion; binding):**

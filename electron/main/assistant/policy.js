@@ -159,8 +159,9 @@ const POLICY = {
 
     // ---- paid or queued -----------------------------------------------------------------
     cutout_layer: () => ASK("without an in-app matting model this queues on your ComfyUI"),
-    // item 49: CorridorKey 2.0 in Scumble on the GPU; `preview` changes the selection, so it asks too
-    key_screen: (call) => ASK("keys the green / blue screen with CorridorKey 2.0 on your GPU", keyCard(call)),
+    // item 49: CorridorKey 2.0 on the user's ComfyUI (Route B, the default of this build) or in Scumble; `status` says
+    // whether its route can key on the document; `preview` changes the selection, so it asks too
+    key_screen: (call, facts) => keyRow(call, facts),
     upsample_prompt: () => ASK("rewrites the prompt on a paid model or your ComfyUI"),
     generate: (call, facts) => ASK("renders: this costs money, or queues on your ComfyUI", renderCard(call, facts)),
     generate_new: (call, facts) => ASK("renders a new base image, replaces every layer but the reference layers and clears the undo history", renderCard(call, facts)),
@@ -342,6 +343,28 @@ function realismRow(call, facts) {
             { settings: { factor: `${factor}×`, ...(values || {}) } });
     }
     return ASK(`runs ${REALISM_LABEL} on your ComfyUI: it queues there and adds a layer`, { settings: values });
+}
+
+/**
+ * key_screen's row (item 49, docs/PLAN_CORRIDORKEY.md §4.8, §4.11; B4): the route asked, else status.key's default
+ * (`facts.key`; your ComfyUI when status was not read, this build's only route). A route that cannot key on the
+ * document is refused with status's reason, no card; else the card names the route and the pack.
+ */
+function keyRow(call, facts) {
+    const a = (call && call.args) || {};
+    const k = facts && facts.key;
+    const route = a.route === "app" || a.route === "comfyui" ? a.route : (k && k.route) || "comfyui";
+    if (k) {
+        const r = route === "comfyui" ? k.comfy : k.route === "app" ? k : null;
+        if (r && r.ready === false) return REFUSE(String(r.reason || "Key screen cannot run on this document"));
+    }
+    const comfy = route === "comfyui";
+    const card = keyCard(call);
+    const pack = comfy && k && k.comfy && k.comfy.pack_label ? ` (${k.comfy.pack_label})` : "";
+    card.settings = { route: comfy ? `your ComfyUI${pack}` : "in Scumble", ...card.settings };
+    return ASK(comfy
+        ? "keys the green / blue screen with CorridorKey 2.0 on your ComfyUI: it queues there and adds a layer"
+        : "keys the green / blue screen with CorridorKey 2.0 in Scumble on your GPU", card);
 }
 
 /** key_screen's ask card (item 49, docs/PLAN_CORRIDORKEY.md §4.8): the screen, the hint and its trust, what it does. */

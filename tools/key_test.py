@@ -32,6 +32,7 @@ Start the app first (tools/run_gates.sh does: `--offline`, on both backends). Ch
               landed bytes and mask the pack's rgba answer exactly), rekey (the picture under the key, a clean matte),
               scaled (the half fixture, the mask refineMatte's bytes, the colour within a level), refusals (not
               connected, no pack, a run going, the models missing, another size), cancel (the title row, a closed tab)
+  comfy command  B4: key_screen route comfyui, its deadline, preview, route app refused, status.key.comfy
   dialog comfy  B3: the route row on your ComfyUI: no session and nothing run before Key, the box line following the
               selection, the rows reaching the graph and the wait, Key and Re-key once, the first-run block, the
               readiness line following the server
@@ -1129,6 +1130,38 @@ C.delay = 0;
 ok(r2 && r2.layer === null && !host._keyBusy, "a closed tab: nothing landed", r2);
 host.shell.activate(ed);
 return { took: Math.round(took) };
+"""),
+
+    ("comfy command", r"""
+// B4: key_screen on your ComfyUI (route comfyui, the default of this build) and status.key.comfy
+const C = window.__comfyStub;
+comfyOn(); engineOff(); closeDialog();
+const ed = ednow(window.__ckDoc);
+host.shell.activate(ed);
+await run("select_none", { doc: ed.node.id });
+const s = (await run("status", { doc: ed.node.id })).key;
+ok(s.route === "comfyui" && s.ready === true && s.reason === null && s.comfy.ready === true && s.comfy.pack === "marawan206" && s.comfy.pack_label === "ComfyUI-CorridorKey2.0" && s.comfy.verified === true && s.comfy.gpu === "NVIDIA GeForce RTX 5090" && s.comfy.cap_mp === 16 && s.comfy.keep_on_gpu === false && s.comfy.timeout === 300, "status.key: your ComfyUI ready, its pack, card and settings", s);
+const n0 = ed.layers.length, c0 = C.calls.length, t0 = Date.now();
+const r = await run("key_screen", { doc: ed.node.id, hint: "none", screen: "green", timeout: 60 });
+ok(r.route === "comfyui" && r.pack === "marawan206" && r.sent.join() === "512,400" && r.scaled === false && r.provider === "comfyui" && r.layer && r.layer.name === "Key" && r.grey && ed.layers.length === n0 + 2 && /on your ComfyUI/.test(r.status), "key_screen keys on your ComfyUI", r);
+const call = C.calls[c0];
+ok(C.calls.length === c0 + 1 && call.deadline > t0 && call.deadline <= t0 + 60000, "the call's own timeout bounds the job", { d: call.deadline - t0 });
+await ed.undoStep();
+ok(ed.layers.length === n0, "one undo");
+const r2 = await run("key_screen", { doc: ed.node.id, route: "comfyui", hint: "none", screen: "green", preview: true });
+ok(!r2.layer && r2.preview && r2.selection && r2.route === "comfyui" && ed.layers.length === n0, "preview on your ComfyUI: the matte is the selection, nothing added", r2);
+await run("select_none", { doc: ed.node.id });
+let msg = "";
+try { await run("key_screen", { doc: ed.node.id, route: "app" }); } catch (err) { msg = err.message; }
+ok(msg === K.TEXTS.notInstalled, "route app: not part of this build", msg);
+host.server = { ...host.server, state: "disconnected" };
+const s2 = (await run("status", { doc: ed.node.id })).key;
+msg = "";
+try { await run("key_screen", { doc: ed.node.id }); } catch (err) { msg = err.message; }
+comfyOn();
+const connect = K.serverSupport({ state: "disconnected" }).reason;
+ok(s2.ready === false && s2.reason === connect && s2.comfy.ready === false && s2.comfy.reason === connect && s2.comfy.pack === null && msg === connect && C.calls.length === c0 + 2, "not connected: status.key says why and key_screen refuses with it", { s2, msg });
+return { status: s };
 """),
 
     ("dialog comfy", r"""

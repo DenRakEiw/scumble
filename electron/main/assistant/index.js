@@ -859,6 +859,13 @@ class Assistant {
                 }
             } catch (_) { facts.realism = null; }
         }
+        if (call.name === "key_screen") {
+            // whether its route can key on this document (refused with the reason, no card) and which pack the card names
+            try {
+                const answer = await this.read("status", { doc });
+                facts.key = (answer && answer.key) || null;
+            } catch (_) { facts.key = null; }
+        }
         if (call.name === "relight") {
             // a new relight layer takes `detail` from the remembered relight settings (host.relightSettings, stored flat)
             const all = (this.deps.settings && this.deps.settings.get && this.deps.settings.get()) || {};
