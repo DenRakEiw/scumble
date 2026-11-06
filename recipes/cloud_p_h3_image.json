@@ -4,6 +4,7 @@
   "task": "edit",
   "name": "P-H3-Image (Comfy Cloud)",
   "family": "Comfy Cloud",
+  "promptRequired": true,
   "description": "P-H3-Image, Pruna AI's 8-step image model on MiniMax H3 (the template runs its LoRA on MiniMax H3's FL2VA model): edits the crop from the prompt, one picture, at the crop's size; Generate new makes a new image with its text-to-image template. The template's prompt upsampler (on) gets your prompt as you write it, without the template's \"Aspect ratio\" and \"Request\" lines. Powered by MiniMax H3. P-H3-Image is under the MiniMax H3 Community License, which does not cover use in the EU, the UK, South Korea or the US without a separate licence from MiniMax (platform.minimax.io/h3-license). \"MiniMax H3 is licensed under the MiniMax H3 Community License Agreement, Copyright © 2026 MiniMax. All Rights Reserved.\" Runs on your Comfy Cloud key. Scumble crops and stitches. Comfy's template as Comfy Cloud has it; not run on Comfy Cloud from Scumble yet.",
   "default": "comfycloud",
   "providers": {

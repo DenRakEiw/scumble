@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "P-H3-Image",
   "family": "Pruna AI",
+  "promptRequired": true,
   "refs": {
     "name": "<Picture {n}>"
   },

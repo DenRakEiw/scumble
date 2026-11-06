@@ -147,6 +147,14 @@ linked input of a node of the graph other than the canvas; `normalize()` drops a
 white crop then goes, as on every other edit recipe), Save to recipe keeps it (`GRAPH_KEEPS`). With reference layers
 the crop still goes as the first picture (the numbering of the others stays). The Cloud copy does not carry it.
 
+`promptRequired` (optional, `true`; any recipe kind, at the top: the P-H3-Image recipes `p_h3_image_local`,
+`p_h3_image` and `cloud_p_h3_image`): a run whose prompt is empty or only blanks is refused before anything is
+uploaded, queued or sent, with one plain line, "<the recipe's name without its route in brackets> needs a prompt:
+say what to change, or what to make on Generate new." (`host.js` `promptMissing`, on the ComfyUI edit, the API edit
+and the API Generate new; Generate new without a prompt is refused for every recipe already). `normalize()` keeps
+`true` and drops any other value (with a warning when it is not `false`); Save to recipe keeps it (`GRAPH_KEEPS`),
+the Cloud copy carries it, `tools/cloud_recipes.js` writes it from a MANIFEST row's `promptRequired`.
+
 ### The shipped ComfyUI recipes
 
 - `flux2_klein_local`, **Flux.2 Klein 4B / 9B**: reads up to **4 pictures** of the crop batch, `refs: { "name":
@@ -300,8 +308,9 @@ the crop still goes as the first picture (the numbering of the others stays). Th
   crop (1.4 levels mean difference where the sky was not), the stitch needed no shift; without it the same request gave
   a new picture. `@img1` went as `<Picture 2>` and the result used that picture; Generate new sent no picture (16:9),
   and with a reference layer the white canvas as `<Picture 1>` composed well (no renumbering needed); a prompt starting
-  "Edit <Picture 1>" got no second lead (`verbatim`). Not run: the upsampler's file missing, `er_sde`, `<Picture 3>`
-  with the Original on. P-H3-Image is under
+  "Edit <Picture 1>" got no second lead (`verbatim`). An empty prompt redrew the crop without the upsampler and made the
+  upsampler invent an edit with it, so the recipe refuses one (`promptRequired`, above). Not run: the upsampler's
+  file missing, `er_sde`, `<Picture 3>` with the Original on. P-H3-Image is under
   the MiniMax H3 Community License, which does not cover use in the EU, the UK, South Korea or the US without a
   separate licence from MiniMax (platform.minimax.io/h3-license). "Powered by MiniMax H3" is encouraged by the licence,
   not required; its notice: "MiniMax H3 is licensed under the MiniMax H3 Community License Agreement, Copyright © 2026

@@ -193,7 +193,9 @@ was needed: the recipe and the code ran as built.
   first try did. The description, RECIPES.md and the manual already say so; the row stays as built (on by default).
 - **An empty prompt goes** (the driver's own slip, `set_prompt` with `prompt` for `text`, on two runs): without the
   upsampler the model redraws the crop; with it, the upsampler invents an edit (it replaced the car by a red sports
-  car). Open: whether a P-H3 edit with an empty prompt should be refused (other recipes take one too; the user's call).
+  car). **Refused since 2026-11-06** (the user's yes): the three P-H3-Image recipes carry `promptRequired: true`, and an
+  empty or blank prompt stops the edit, the API edit and the API Generate new before anything goes, with "P-H3-Image
+  needs a prompt: say what to change, or what to make on Generate new." (`docs/RECIPES.md`).
 - Not checked live: the upsampler's file missing (the note and the plain run), the er_sde preset, a cold start with
   the files out of the OS cache, whether the LoRA route matches Pruna AI's own model files in quality (Pruna AI's
   claim, unverified).

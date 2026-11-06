@@ -51,8 +51,9 @@ const MANIFEST = [
         text: "t2i/image_qwen_image_2_1_t2i.json", refs: "<image{n}>", limits: { step: 32 },
         about: "Qwen Image 2.1 edits the crop with a second picture (the Original or your first reference layer); the template's prompt enhancer stays off for an edit. Generate new makes a new image with its text-to-image template." },
     // P-H3-Image (docs/PLAN_PH3.md): the template's own LoRA on MiniMax H3's FL2VA model; the user's LoRA rows chain after
-    // the UNETLoader by the generic rule (the precedent of cloud_anima_base), so no `loras` here
-    { file: "edit/image_p_h3_image_edit.json", id: "cloud_p_h3_image", name: "P-H3-Image (Comfy Cloud)",
+    // the UNETLoader by the generic rule (the precedent of cloud_anima_base), so no `loras` here; an empty prompt is
+    // refused (`promptRequired`: without words the model redraws the crop, or the upsampler invents an edit)
+    { file: "edit/image_p_h3_image_edit.json", id: "cloud_p_h3_image", name: "P-H3-Image (Comfy Cloud)", promptRequired: true,
         // Generate new up to the node's own text-to-image size (2912 a side, 8.5 MP; the template asks 4 MP, Pruna AI
         // advises 8): a 16:9 at 2912 x 1632 is 4.8 MP
         text: "t2i/image_p_h3_t2i.json", refs: "<Picture {n}>", limits: { step: 32 }, sizes: [1024, 1536, 2048, 2560, 2912],
@@ -100,7 +101,7 @@ function build(m, info) {
     }
     const stitch = variant.edit === false ? "" : " Scumble crops and stitches.";
     return {
-        id: m.id, kind: "provider", task: "edit", name: m.name, family: "Comfy Cloud",
+        id: m.id, kind: "provider", task: "edit", name: m.name, family: "Comfy Cloud", ...(m.promptRequired ? { promptRequired: true } : {}),
         description: `${m.about} Runs on your Comfy Cloud key.${stitch} ${LIVE}`,
         default: "comfycloud",
         providers: { comfycloud: variant },

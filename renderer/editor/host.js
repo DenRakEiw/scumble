@@ -217,6 +217,16 @@ const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v 
 /** An API run, an upscale or a Realism Pass refused while another one holds the document (`editor.providerPending`). */
 const RUN_GOING = "A run is still going on this document: wait for it, or Cancel.";
 /**
+ * The refusal of a run whose recipe needs words (`promptRequired`, P-H3-Image: without them the model redraws the crop, or
+ * its upsampler invents an edit) when the prompt is empty or blank; "" otherwise. The model's name is the recipe's
+ * without its route in brackets ("P-H3-Image (ComfyUI)" -> "P-H3-Image"). A refusal of the user's state: a plain line.
+ */
+function promptMissing(r, prompt) {
+    if (!r || r.promptRequired !== true || /\S/.test(String(prompt || ""))) return "";
+    const model = String(r.name || r.id || "This recipe").replace(/\s*\([^()]*\)\s*$/, "") || String(r.id);
+    return `${model} needs a prompt: say what to change, or what to make on Generate new.`;
+}
+/**
  * The relight panel's values for a new relight layer when the user picked none. `light_type` has none: unset is "From the
  * lights" (the Bria route takes the type lightsToWords derives), until the user picks one.
  */
@@ -2232,8 +2242,11 @@ export const host = {
         if (editor.providerPending) throw refusal(RUN_GOING);
         const label = r.providerLabel || r.provider;
         if (r.edit === false) throw refusal(`${r.name || r.id} on ${label} makes images from the prompt alone: use "Generate new", not Generate.`);
-        // the prompt and the references of the click; a token that cannot go refuses before anything is made
+        // the prompt and the references of the click; a token that cannot go refuses before anything is made, an empty
+        // prompt where the recipe needs words (promptRequired) too
         const snap = opts.refs || editor.refSnapshot();
+        const noWords = promptMissing(r, snap.prompt);
+        if (noWords) throw refusal(noWords);
         this.refPrompt(editor, snap, "edit");
         editor.lastSentPrompt = null;
         editor.lastRunNotes = [];
@@ -2723,6 +2736,8 @@ export const host = {
         // the prompt and the references of the click; a token that cannot go refuses before anything is sent
         const base = opts.refs || editor.refSnapshot();
         const snap = { ...base, prompt: opts.prompt != null ? String(opts.prompt) : base.prompt, negative: opts.negative != null ? String(opts.negative) : base.negative };
+        const noWords = promptMissing(r, snap.prompt);
+        if (noWords) throw refusal(noWords);
         const takes = !!(this.refTokens && t.refs);
         // a model that sends no picture: the tab's negative (which the dialog neither shows nor sends) gets its tokens
         // written as layer names, as before 26f; only the prompt's tokens refuse
@@ -4154,6 +4169,9 @@ export const host = {
         // the node's batch (26e): checked here against the editor now, before anything is uploaded, and again below
         // against the canvas state the node will read.
         const snap = opts.refs || editor.refSnapshot();
+        // a recipe that needs words (promptRequired, P-H3-Image) refuses an empty prompt before anything is uploaded
+        const noWords = upscale ? "" : promptMissing(r, snap.prompt);
+        if (noWords) throw refusal(noWords);
         let texts, early = null;
         // the pass refuses before anything is uploaded: the server (§3.3), the selection, the size (§3.5)
         const support = pass ? this.realismSupport() : null;

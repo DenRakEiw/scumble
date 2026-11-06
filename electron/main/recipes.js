@@ -176,6 +176,8 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {LocalUpsampler} [upsampler]     ComfyUI recipes: a prompt upsampler in the graph (localUpsampler)
  * @property {LoraDecl} [loras]               ComfyUI recipes: where the LoRAs go (lorasOf); a provider recipe's is its variant's
  * @property {{ drop: string[] }} [newImage]  ComfyUI recipes: the inputs Generate new without pictures leaves out (localNewImage)
+ * @property {boolean} [promptRequired]       true: a run with an empty prompt is refused before anything goes (P-H3-Image:
+ *                                            without words the model redraws the crop, or its upsampler invents an edit)
  */
 
 /**
@@ -700,6 +702,11 @@ function lorasOf(decl, graph, canvas) {
 function normalize(r) {
     r.presets = shippedPresets(r.presets);
     if (!r.presets.length) delete r.presets;
+    // a recipe whose runs refuse an empty prompt (host.promptMissing): true or absent, any other value dropped
+    if (r.promptRequired !== undefined && r.promptRequired !== true) {
+        if (r.promptRequired !== false) console.warn(`${r.id}: promptRequired ${JSON.stringify(r.promptRequired)} is no true or false; an empty prompt goes`);
+        delete r.promptRequired;
+    }
     if (r.kind !== "provider") {
         // a ComfyUI recipe may be an upscaler too (recipes/upscale_model_local.json): the model picks its own
         // factor, and only the selection mode exists (the node's stitch fits the answer back into the box);
@@ -1211,7 +1218,7 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
 }
 
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
-const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler", "loras", "newImage"];
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler", "loras", "newImage", "promptRequired"];
 
 /**
  * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API
@@ -1795,6 +1802,7 @@ function detach(recipe) {
         description: `${name} without the Inpaint Canvas node, run on Comfy Cloud; Scumble crops and stitches.`,
         ...(recipe.task ? { task: recipe.task } : {}),
         ...(recipe.task === "upscale" ? { factor: { fixed: true } } : {}),
+        ...(recipe.promptRequired === true ? { promptRequired: true } : {}),
         default: "comfycloud",
         providers: {
             comfycloud: {

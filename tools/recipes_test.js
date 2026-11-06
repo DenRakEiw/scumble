@@ -1349,6 +1349,43 @@ async function main() {
             ["neg.edit_format=", "pos.images.image_10 unknown", "pos.image_strength=200", "neg.clip missing", "slg.single_layers is no text", "clip.type=", "ks.latent_image links", "neg.images takes at least 1 input, has 0"].every((s) => caught.includes(s)), caught);
     });
 
+    // ---- 16. promptRequired: a recipe whose runs refuse an empty prompt (P-H3-Image) --------------------------------
+    // host.promptMissing reads the field on the edit, the API edit and the API Generate new paths; here: which recipes
+    // carry it, what normalize keeps, and that Save to recipe, the Comfy Cloud copy and the generated Cloud recipe keep it
+    await section("16. promptRequired (P-H3-Image refuses an empty prompt)", async () => {
+        const warn = console.warn;
+        const warned = [];
+        console.warn = (...a) => warned.push(a.join(" "));
+        try {
+            freshUserData();
+            const all = await recipes.list(RECIPES);
+            const carry = all.filter((r) => r.promptRequired !== undefined).map((r) => `${r.id}=${r.promptRequired}`).sort();
+            check("the three P-H3-Image recipes carry promptRequired true and no other shipped recipe carries it",
+                eq(carry, ["cloud_p_h3_image=true", "p_h3_image=true", "p_h3_image_local=true"]) && !warned.some((w) => /promptRequired/.test(w)), short({ carry, warned }));
+            const n0 = warned.length;
+            const yes = recipes._normalize({ id: "t_yes", kind: "comfy", prompt: {}, promptRequired: "yes" });
+            const no = recipes._normalize({ id: "t_no", kind: "comfy", prompt: {}, promptRequired: false });
+            const api = recipes._normalize({ id: "t_api", kind: "provider", promptRequired: true, providers: { loopback: { model: "loopback" } } });
+            check("normalize: true kept (a provider recipe too, at the top), a value other than true or false dropped with a warning, false dropped quietly",
+                !("promptRequired" in yes) && !("promptRequired" in no) && api.promptRequired === true
+                && warned.length === n0 + 1 && /t_yes: promptRequired "yes" is no true or false/.test(warned[n0]), short({ said: warned.slice(n0) }));
+            const local = all.find((r) => r.id === "p_h3_image_local");
+            const workflow = { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} };
+            const saved = recipes.fromGraph({ output: recipes.toPrompt(local), workflow, objectInfo: {}, base: local, date: "2026-11-06" });
+            const { recipe: d } = recipes.detach(local);
+            const nd = recipes._normalize(JSON.parse(JSON.stringify(d)));
+            const { recipe: k } = recipes.detach(all.find((r) => r.id === "flux3_klein_local"));
+            check("Save to recipe keeps it (GRAPH_KEEPS), the Comfy Cloud copy carries it at the top through normalize, a copy of a recipe without it has none",
+                saved.promptRequired === true && d.promptRequired === true && nd.promptRequired === true && k.promptRequired === undefined, short({ saved: saved.promptRequired, copy: d.promptRequired, nd: nd.promptRequired, klein: k.promptRequired }));
+            const tool = require(path.join(ROOT, "tools", "cloud_recipes.js"));
+            const info = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfy_templates", "object_info.json"), "utf8"));
+            const rows = tool.MANIFEST.filter((m) => m.promptRequired).map((m) => m.id);
+            const built = tool.build(tool.MANIFEST.find((m) => m.id === "cloud_p_h3_image"), info);
+            check("the manifest marks cloud_p_h3_image alone, and build writes promptRequired at the recipe's top (not into the variant)",
+                eq(rows, ["cloud_p_h3_image"]) && built.promptRequired === true && built.providers.comfycloud.promptRequired === undefined, short(rows));
+        } finally { console.warn = warn; }
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

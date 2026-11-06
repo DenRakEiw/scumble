@@ -2715,6 +2715,78 @@ try {
     for (const doc of docs) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
 }
 """),
+    # P-H3-Image refuses an empty prompt (promptRequired): without words the model redraws the crop, or its upsampler
+    # invents an edit (docs/measurements/ph3_live_2026-11-06). The local edit, the WaveSpeed and Comfy Cloud variants'
+    # edits and their Generate new: refused with one plain line before anything is uploaded, queued or sent; a prompt
+    # goes; FLUX 3 Image Klein with an empty prompt still queues. Queued against stubs (nothing reaches a server)
+    ("p_h3_refuses_an_empty_prompt", """
+const api = (await import('./editor/host.js')).api;
+const all = host.shell.recipes();
+const ph3 = all.find((r) => r.id === "p_h3_image_local"), klein3 = all.find((r) => r.id === "flux3_klein_local");
+const ws = all.find((r) => r.id === "p_h3_image"), cloud = all.find((r) => r.id === "cloud_p_h3_image");
+if (!ph3 || ph3.promptRequired !== true || !ws || ws.promptRequired !== true || !cloud || cloud.promptRequired !== true || !klein3 || klein3.promptRequired !== undefined) throw new Error("promptRequired: " + JSON.stringify([ph3, ws, cloud, klein3].map((r) => r && r.promptRequired)));
+const WANT = "P-H3-Image needs a prompt: say what to change, or what to make on Generate new.";
+const info = Object.fromEntries([...ph3.needs, ...klein3.needs, "TextGenerate", "TextGenerateV2", "PreviewAny"].map((n) => [n, { input: { required: {} } }]));
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, missing: host.missingFilesRefusal, recipe: host.recipe };
+const sent = [];
+let ensured = 0, doc = null;
+const failed = async (p) => { try { await p; return null; } catch (e) { return e; } };
+try {
+    host.connected = true;
+    host.objectInfo = info;
+    host.missingFilesRefusal = () => null;
+    host.ensureOnServer = async () => { ensured++; return null; };
+    api.queuePrompt = async (n, body) => { const id = "ph3-empty-" + (sent.length + 1); sent.push({ id, body }); return { prompt_id: id }; };
+    doc = (await run("new_document")).id;
+    const ed = ednow(doc);
+    host.shell.activate(ed);
+    await run("new_canvas", { doc, width: 320, height: 240 });
+    await run("select_rect", { doc, x: 80, y: 60, w: 160, h: 120 });
+    ed.cropSettings.fill = "none";
+    ed.cropSettings.withOriginal = false;
+    const out = {};
+    const refusedHere = async (what, p) => {
+        const n = sent.length, e0 = ensured, l0 = ed.layers.length;
+        const err = await failed(p);
+        if (!err || err.message !== WANT || err.statusKind !== "info") throw new Error(what + ": " + (err ? err.message + " / " + err.statusKind : "not refused"));
+        if (sent.length !== n || ensured !== e0 || ed.layers.length !== l0 || ed.providerPending) throw new Error(what + ": something went: " + JSON.stringify({ queued: sent.length - n, ensured: ensured - e0, layers: ed.layers.length - l0, pending: !!ed.providerPending }));
+        return "refused";
+    };
+    // (1) the local edit: an empty prompt, then one of blanks, refused before ensureOnServer and the POST
+    host.setRecipe(ph3);
+    ed.setPromptText("");
+    out.local = await refusedHere("local, empty", host.queueGenerate(ed));
+    ed.setPromptText("  \\n\\t ");
+    out.blank = await refusedHere("local, blanks", host.queueGenerate(ed));
+    // (2) the same through the generate command: the status line shows it plain (a refusal of the user's state)
+    const said = await failed(run("generate", { doc, timeout: 20 }));
+    if (!said || said.message !== WANT || ed.status !== WANT || ed.statusKind !== "" || sent.length) throw new Error("the command: " + JSON.stringify({ said: said && said.message, status: ed.status, kind: ed.statusKind, queued: sent.length }));
+    out.command = "plain";
+    // (3) a prompt goes
+    ed.setPromptText("make the sky a warm sunset");
+    await host.queueGenerate(ed);
+    if (sent.length !== 1 || ensured !== 1) throw new Error("with a prompt nothing went: " + JSON.stringify({ queued: sent.length, ensured, status: ed.status }));
+    // (4) another recipe with an empty prompt queues as before
+    host.setRecipe(klein3);
+    ed.setPromptText("");
+    await host.queueGenerate(ed);
+    if (sent.length !== 2) throw new Error("FLUX 3 Image Klein with an empty prompt was not queued: " + ed.status);
+    out.klein = "queued";
+    // (5) the WaveSpeed and Comfy Cloud variants: the edit and Generate new refused before the request is made
+    if (ed._localRuns) ed._localRuns.clear();   // the two stubbed renders never land
+    for (const [name, raw] of [["wavespeed", ws], ["comfycloud", cloud]]) {
+        host.setRecipe(host.shell.resolveRecipe(raw));
+        ed.setPromptText(" ");
+        out[name] = await refusedHere(name + " edit", host.runProvider(ed));
+        out[name + "_new"] = await refusedHere(name + " Generate new", host.runGenerate(ed, { width: 512, height: 512, prompt: "" }));
+    }
+    return out;
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; host.missingFilesRefusal = saved.missing;
+    host.setRecipe(saved.recipe);
+    if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";
