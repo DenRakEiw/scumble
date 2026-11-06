@@ -25,6 +25,8 @@ import { LABEL as REALISM_LABEL } from "./editor/realism.js";
 import * as genpresets from "./editor/genpresets.js";
 import { refusal } from "./editor/inpaint_status.js";
 import { canvasSizeRefusal } from "./editor/inpaint_sizelimit.js";
+import { MAX_LORAS, FAMILIES, normalizeName, clampStrength, missingLoras, filterNames, groupByFolder, folderFits, loraFolder, loraHint, recipeFamily } from "./editor/loras.js";
+import * as loraPanel from "./editor/lora_panel.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -422,6 +424,79 @@ function recipeReadiness(r, v) {
     if (!host.connected || (st && st !== "connected" && st !== "missing-node")) return { ready: false, reason: "Not connected to ComfyUI: Settings › ComfyUI.", note: null };
     const missing = (r.needs || []).filter((n) => host.objectInfo && !host.objectInfo[n]);
     return { ready: !missing.length, reason: missing.length ? `The server lacks these node types: ${missing.join(", ")}.` : null, note: null };
+}
+
+// ---- LoRAs per recipe (item 50, docs/PLAN_LORAS.md §3.8): what the agents read and write -----------------------------
+
+/** Whether the server answers now (host.connected is never set back; the shell's last status is). */
+function serverUp() {
+    const st = host.server && host.server.state;
+    return !!host.connected && (!st || st === "connected" || st === "missing-node");
+}
+
+/**
+ * The selected recipe's LoRA rows as status reports them: whether it takes rows and why not (host.loraTakes, the
+ * LoRAs section's own answer), its base-model family, each stored row with its hint (the LoRAs section's line; null
+ * while unknown or still being read) and whether the server's list has it (null: the list is unread), and `sent`, what
+ * a run now would load ([{ name, strength }], host.lorasNow: the switched-on rows through the run's own splice).
+ */
+function lorasView(r) {
+    const t = host.loraTakes(r);
+    const fam = t.takes ? recipeFamily(r) : null;
+    const names = host.loraNames();
+    const listed = (n) => (names.length ? names.some((x) => normalizeName(x) === normalizeName(n)) : null);
+    const rows = r ? host.loraRows(r).map((row) => {
+        const inf = t.takes && row.name ? host.loraInfo(row.name) : null;
+        const h = inf ? loraHint(inf.fam, fam) : null;
+        return { name: row.name, strength: row.strength, on: row.on, hint: h ? h.text : null, mismatch: !!(h && h.kind === "mismatch"), triggers: inf ? inf.triggers || [] : [], on_server: row.name ? listed(row.name) : false };
+    }) : [];
+    return { takes: !!t.takes, reason: t.takes ? null : t.reason || null, family: fam, max: MAX_LORAS, rows, sent: t.takes ? host.lorasNow(r) : [] };
+}
+
+/**
+ * set_generation's `loras` checked into the rows the store keeps, before anything changes: an array (a JSON string of
+ * one counts) of at most MAX_LORAS `{ name, strength?, on? }`, each name a file of the server's list (separators
+ * normalised, the server's spelling kept), as queueGenerate checks a run's rows: against the list read again, and
+ * against an empty or unread list nothing is refused (the name is kept as given). Refused for a recipe that takes no
+ * LoRA rows. Every named row is checked, switched on or not.
+ * @returns {Promise<{ name: string, strength: number, on: boolean }[]>}
+ */
+async function lorasFromCall(r, given) {
+    let list = given;
+    if (typeof list === "string") { try { list = JSON.parse(list); } catch (_) { /* refused below */ } }
+    if (!Array.isArray(list)) throw new Error("loras must be an array of { name, strength, on } (list_loras gives the names); [] clears the rows");
+    const t = host.loraTakes(r);
+    if (!t.takes) throw refusal(t.reason || "The selected recipe takes no LoRA rows.");
+    if (list.length > MAX_LORAS) throw refusal(`At most ${MAX_LORAS} LoRAs per recipe: the call names ${list.length}. Nothing was changed.`, "warn");
+    const rows = list.map((x, i) => {
+        if (!x || typeof x !== "object" || Array.isArray(x)) throw new Error(`loras[${i}] must be an object { name, strength, on }`);
+        const name = typeof x.name === "string" ? x.name.trim() : "";
+        if (!name) throw new Error(`loras[${i}] names no file (list_loras gives the server's names)`);
+        let strength = 1;
+        if (x.strength != null && x.strength !== "") {
+            const v = clampStrength(x.strength, host.objectInfo);
+            if (v == null) throw new Error(`loras[${i}].strength must be a number (1.0 is the LoRA as trained), not ${JSON.stringify(x.strength)}`);
+            strength = v;
+        }
+        let on = true;
+        if (x.on != null) {
+            if (x.on === true || x.on === "true") on = true;
+            else if (x.on === false || x.on === "false") on = false;
+            else throw new Error(`loras[${i}].on must be true or false, not ${JSON.stringify(x.on)}`);
+        }
+        return { name, strength, on };
+    });
+    const asked = rows.map((row) => ({ name: row.name, strength: row.strength }));
+    let names = host.loraNames();
+    let miss = missingLoras(asked, names);
+    if (!names.length || miss.some((m) => !m.server)) { names = await host.refreshLoraNames(); miss = missingLoras(asked, names); }
+    const lacks = miss.filter((m) => !m.server).map((m) => m.name);
+    if (lacks.length) {
+        const one = lacks.length === 1;
+        throw new Error(`Your ComfyUI's LoRA list lacks ${one ? "this file" : "these files"}: ${lacks.join(", ")}. list_loras gives the names it has (put a new file in models/loras and refresh ComfyUI first). Nothing was changed.`);
+    }
+    const spelt = new Map(miss.map((m) => [m.name, m.server]));
+    return rows.map((row) => ({ ...row, name: spelt.get(row.name) || row.name }));
 }
 
 /** The longest side an upscaler's scope document takes (host.runUpscale's and upscaleSizeRefusal's), null: no cap. */
@@ -852,7 +927,7 @@ const COMMANDS = {
     },
     list_recipes: {
         readOnly: true,
-        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the ${REALISM_LABEL} recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); aspects: the aspects the Generate new dialog and new_canvas's model preset offer for it (its chosen provider's own list, else the general one); classes: its size classes for those, [{ size, name, label }] (size: the long side in pixels, name: the provider's tier such as 1k, 2K or 2 MP, null where it names none); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).`,
+        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the ${REALISM_LABEL} recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); aspects: the aspects the Generate new dialog and new_canvas's model preset offer for it (its chosen provider's own list, else the general one); classes: its size classes for those, [{ size, name, label }] (size: the long side in pixels, name: the provider's tier such as 1k, 2K or 2 MP, null where it names none); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. loras: whether the recipe takes LoRA rows (a recipe on your ComfyUI whose graph has one model loader; set_generation loras sets them, list_loras lists the server's files), loras_reason when not. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).`,
         params: {},
         async run() {
             const cur = host.recipe;
@@ -867,6 +942,9 @@ const COMMANDS = {
                     const rows = text ? text.settings || v.settings || [] : [];
                     // the aspects and size classes the Generate new dialog and new_canvas's preset offer (item 34)
                     const preset = makes && host.shell.genPresetOf ? host.shell.genPresetOf(r, api ? v.provider : "") : null;
+                    // whether the recipe takes LoRA rows (item 50): the LoRAs section's own answer and its reason, on the
+                    // recipe resolved to its chosen provider (a Comfy Cloud graph is told from an API route by it)
+                    const lt = host.loraTakes(v);
                     return {
                         id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: host.shell.modeOf(r), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit",
                         ...recipeReadiness(r, v),
@@ -879,6 +957,7 @@ const COMMANDS = {
                         factor: up ? v.factor || null : undefined, limits: up && !api ? r.limits || null : undefined, document_max: up ? documentMax(r, v) : undefined,
                         usesPrompt: up ? !!v.usesPrompt : undefined,
                         textRefs: up || pass || relight ? undefined : api ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots),
+                        loras: !!lt.takes, loras_reason: lt.takes ? null : lt.reason || null,
                         description: r.description || "", source: r.source || "builtin",
                     };
                 }),
@@ -899,6 +978,51 @@ const COMMANDS = {
             return { selected: host.recipe ? host.recipe.id : null, kind: r.kind || "comfy", provider: host.recipe && host.recipe.kind === "provider" ? host.recipe.provider : null };
         },
     },
+    // item 50 (docs/PLAN_LORAS.md §3.8): the server's LoRA files, the names set_generation loras takes
+    list_loras: {
+        readOnly: true,
+        scope: "app", description: `The LoRA files of your ComfyUI (models/loras and its extra paths), as set_generation loras names them, grouped by subfolder: folders [{ folder ("" for models/loras itself), count, names [{ name, hint, mismatch }] }], read from the server again on each call. hint: the base model the file looks made for where Scumble has read it (the LoRAs section reads a row's file; null otherwise), mismatch: its tensor names fit another model than the selected recipe's. filter: only the names holding every word of it (any case, / and \\ alike); family: only the files of that base model, by their folder's name or a hint read before (one of ${Object.keys(FAMILIES).join(", ")}, or "recipe" for the selected recipe's own); max: the most names listed (total says how many match). connected: false while no ComfyUI answers (the list is then the last one read, often empty). recipe_family: the base model the selected recipe's LoRAs should fit, when known.`,
+        params: {
+            filter: P.str("only the names holding every word of this (any case; / and \\ alike)"),
+            family: P.str(`only the files of this base model (${Object.keys(FAMILIES).join(", ")}, or "recipe" for the selected recipe's)`),
+            max: P.int("the most names listed", { default: 200 }),
+        },
+        async run(_, a) {
+            const r = host.recipe;
+            const t = host.loraTakes(r);
+            const recipeFam = t.takes ? recipeFamily(r) : null;
+            let fam = null;
+            const asked = a.family != null ? String(a.family).trim() : "";
+            if (asked) {
+                fam = asked === "recipe" ? recipeFam : asked;
+                if (asked === "recipe" && !fam) throw new Error(`the selected recipe names no base-model family${t.takes ? "" : ` (${t.reason})`}: give a family (${Object.keys(FAMILIES).join(", ")})`);
+                if (!FAMILIES[fam]) throw new Error(`unknown family "${asked}" (${Object.keys(FAMILIES).join(", ")}, or "recipe")`);
+            }
+            const connected = serverUp();
+            const names = connected ? await host.refreshLoraNames() : host.loraNames();
+            // a hint known already (a look, never a read: the server lists over a thousand files)
+            const hintOf = (n) => { const inf = host.loraInfo(n, { read: false }); return inf ? inf.fam : null; };
+            let kept = filterNames(names, a.filter);
+            if (fam) kept = kept.filter((n) => folderFits({ folder: loraFolder(n), names: [n] }, fam, hintOf));
+            const max = a.max == null || a.max === "" ? 200 : clampInt(a.max, 0, 100000, 200);
+            let left = max;
+            const folders = [];
+            for (const g of groupByFolder(kept)) {
+                const take = left > 0 ? g.names.slice(0, left) : [];
+                left -= take.length;
+                if (!take.length) continue;
+                folders.push({ folder: g.folder, count: g.names.length, names: take.map((n) => {
+                    const f = hintOf(n);
+                    const h = f ? loraHint(f, recipeFam) : null;
+                    return { name: n, hint: f ? f.label : null, mismatch: !!(h && h.kind === "mismatch") };
+                }) });
+            }
+            return {
+                connected, recipe: r ? r.id : null, recipe_family: recipeFam, filter: a.filter != null && String(a.filter).trim() ? String(a.filter).trim() : null, family: fam,
+                total: kept.length, listed: max - left, folders,
+            };
+        },
+    },
     list_plugins: {
         readOnly: true,
         scope: "app", description: "The plugins (built-in and from the user's plugin folder), their state and what they registered.",
@@ -914,14 +1038,14 @@ const COMMANDS = {
     // -- document --
     status: {
         readOnly: true,
-        description: `What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends.`,
+        description: `What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends. loras: the selected recipe's LoRA rows (kept per recipe for every document; set_generation loras sets them): takes (whether its graph takes rows; reason when not), family (the base model its LoRAs should fit, when known), rows [{ name, strength, on, hint, mismatch, triggers, on_server }] (hint: the base model the file looks made for, null while unknown; mismatch: its tensor names fit another model than the recipe's, which never refuses a run; triggers: the file's trigger words; on_server: whether the server's list has it, null while the list is unread), and sent: what a run now would load, [{ name, strength }].`,
         params: {},
         async run(ed) {
             const s = status(ed);
             let info = null;
             try { info = await host.refLayout(ed, {}, { keep: false }); } catch (_) { info = null; }
             s.references = s.references.map((x) => ({ ...x, sent_as: info && x.label ? info.names.get(x.id) || null : null }));
-            return { ...s, memory: await memoryMB() };
+            return { ...s, loras: lorasView(host.recipe), memory: await memoryMB() };
         },
     },
     new_canvas: {
@@ -1218,9 +1342,15 @@ const COMMANDS = {
         },
     },
     set_generation: {
-        description: "Generation settings: mode api / local / cloud (the recipe decides what is available; select_recipe switches between the modes' recipes), seed, random seed, denoise, refine, and the document's Boxes switch (boxes).",
-        params: { mode: P.str("api, local or cloud (Comfy Cloud recipes)", { enum: ["api", "local", "cloud"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein on your ComfyUI) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay") },
+        description: `Generation settings: mode api / local / cloud (the recipe decides what is available; select_recipe switches between the modes' recipes), seed, random seed, denoise, refine, the document's Boxes switch (boxes), and the selected recipe's LoRA rows (loras). loras replaces the rows of the LoRAs section of the selected recipe, which are kept per recipe for every document (not for this document alone): up to ${MAX_LORAS} [{ name, strength, on }], loaded in their order between the recipe's model loader and what reads the model, a switched-off row not sent; name a file of the server's list (list_loras; a name that differs only in / against \\ is taken in the server's spelling); strength 1.0 when left out (the LoRA as trained); [] clears them. Refused with nothing changed: a recipe that takes no LoRA rows (an API provider, an upscaler, a graph without one model loader: list_recipes loras_reason), more than ${MAX_LORAS} rows, a name the server's list lacks (read again first; while the list is unread a name is kept as given). The answer's loras: the recipe's rows as stored; status loras says what a run would send.`,
+        params: {
+            mode: P.str("api, local or cloud (Comfy Cloud recipes)", { enum: ["api", "local", "cloud"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein on your ComfyUI) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay"),
+            loras: P.arr(`the selected recipe's LoRA rows, replaced whole (at most ${MAX_LORAS}; [] clears): name (a file of list_loras), strength (default 1.0), on (default true)`, { items: { type: "object", properties: { name: { type: "string", description: "the LoRA file as the server lists it (list_loras), e.g. klein\\style.safetensors" }, strength: { type: "number", description: "1.0 is the LoRA as trained; -2..2 is the usual range" }, on: { type: "boolean", description: "false: kept in the row, not sent" } } } }),
+        },
         async run(ed, a) {
+            // the LoRA rows first: a refused call changes nothing (the check may read the server's list again)
+            const r = host.recipe;
+            const loraRows = a.loras != null ? await lorasFromCall(r, a.loras) : null;
             const g = ed.genSettings;
             if (a.mode != null) { if (!["api", "local", "cloud"].includes(a.mode)) throw new Error("mode must be api, local or cloud"); g.mode = a.mode; }
             if (a.seed != null) { g.seed = Math.max(0, Math.floor(+a.seed) || 0); g.seedRandom = false; }
@@ -1232,7 +1362,12 @@ const COMMANDS = {
             ed.renderInfo(); ed.notifyChanged();
             // the Boxes overlay draws the boxes dashed while the switch is off
             if (a.boxes != null) ed.draw();
-            return { mode: g.mode, seed: g.seed, seed_random: !!g.seedRandom, denoise: g.denoise, refine: !!g.refine, boxes: !!g.boxes };
+            // the rows are the recipe's, not the document's (no notifyChanged for them): every tab's LoRAs section follows
+            if (loraRows) {
+                await host.saveLoras(r.id, loraRows);
+                try { loraPanel.renderAll(host); } catch (err) { console.warn("loras section", err); }
+            }
+            return { mode: g.mode, seed: g.seed, seed_random: !!g.seedRandom, denoise: g.denoise, refine: !!g.refine, boxes: !!g.boxes, loras: r ? host.loraRows(r) : [] };
         },
     },
     set_crop: {
@@ -1344,7 +1479,7 @@ const COMMANDS = {
     },
     generate_new: {
         destructive: true,
-        description: "Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture (\"image 1\"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first. Without width, height and aspect it asks for the document's preset while its recipe is the selected one (new_canvas with a recipe, or the last generate_new on this picture: its aspect and size class; status generation.target), else 1024 x 1024; after the run the document keeps what was asked as its preset. With the Boxes switch on, the document's boxes go as fractions of the picture: an aspect of another shape stretches them, and the notes say so.",
+        description: "Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture (\"image 1\"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first. Without width, height and aspect it asks for the document's preset while its recipe is the selected one (new_canvas with a recipe, or the last generate_new on this picture: its aspect and size class; status generation.target), else 1024 x 1024; after the run the document keeps what was asked as its preset. With the Boxes switch on, the document's boxes go as fractions of the picture: an aspect of another shape stretches them, and the notes say so. loras_sent: the LoRAs the run loaded, [{ name, strength }] (as generate's).",
         params: {
             prompt: P.str("what to make; the tab's current prompt when left out. An @img token names a shown reference layer; a model that makes new images from the prompt alone refuses it"),
             negative: P.str("negative prompt (local chains only)"),
@@ -1389,7 +1524,7 @@ const COMMANDS = {
                 const out = await host.runGenerate(ed, { width: w, height: h, aspect, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed, background: a.background || null });
                 writeTarget(ed, r, aspect, asked);
                 ed.notifyChanged();
-                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, prompt_sent: out.prompt, references: out.references, kept: out.kept, dropped: out.dropped, notes: out.notes || [], info: out.info || null, boxes: out.boxes || 0, status: ed.status };
+                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, prompt_sent: out.prompt, references: out.references, kept: out.kept, dropped: out.dropped, notes: out.notes || [], info: out.info || null, boxes: out.boxes || 0, loras_sent: Array.isArray(out.loras) ? out.loras : [], status: ed.status };
             }
             if (a.background === "transparent" && r.kind !== "provider") throw new Error("a transparent background is an API model's parameter; this is a local ComfyUI recipe");
             // the run's token check, made before the canvas replaces the picture: the references stay, so this snapshot
@@ -1419,7 +1554,7 @@ const COMMANDS = {
             await ed.flatten();
             writeTarget(ed, r, aspect, asked);
             ed.notifyChanged();
-            return { mode: "local", recipe: r.id, width: ed.width, height: ed.height, seconds: Math.round((Date.now() - t0) / 1000), result: res && res.layer ? res.layer : null, prompt_sent: res ? res.prompt_sent : null, notes: res ? res.notes || [] : [], boxes: res ? res.boxes || 0 : 0, status: ed.status };
+            return { mode: "local", recipe: r.id, width: ed.width, height: ed.height, seconds: Math.round((Date.now() - t0) / 1000), result: res && res.layer ? res.layer : null, prompt_sent: res ? res.prompt_sent : null, notes: res ? res.notes || [] : [], boxes: res ? res.boxes || 0 : 0, loras_sent: res ? res.loras_sent || [] : [], status: ed.status };
         },
     },
     upscale: {
@@ -1629,7 +1764,7 @@ const COMMANDS = {
         },
     },
     generate: {
-        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out; seed is the seed the model got, null when the route sends none (FLUX 3 Image).",
+        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out; seed is the seed the model got, null when the route sends none (FLUX 3 Image); loras_sent the LoRAs the run loaded, [{ name, strength }] in their order (the selected recipe's switched-on rows on your ComfyUI, set_generation loras; [] for an API run).",
         params: { timeout: P.timeout(600) },
         async run(ed, a) {
             const n0 = ed.history.length;
@@ -1637,6 +1772,7 @@ const COMMANDS = {
             if (!wired) throw new Error("the recipe has no result output for this mode: select a recipe first");
             ed.lastSentPrompt = null;
             ed.lastRunNotes = [];
+            ed.lastLoras = [];
             ed.lastPassError = null;
             // a failure of the run: the status reads Error / failed, or is the Realism Pass's sentence for the pack's error
             const failed = () => /^Error|failed/i.test(ed.status || "") || (!!ed.lastPassError && String(ed.status || "").startsWith(ed.lastPassError));
@@ -1670,7 +1806,7 @@ const COMMANDS = {
             const layer = ed.layers.find((l) => l.id === h.layerId);
             // prompt_sent: the prompt as the model got it, each @img token written as the model's name for its picture;
             // notes: what the route (or a local recipe's slots) left out; boxes: how many boxes went in the prompt
-            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - started) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: ed.lastRunNotes || [], boxes: ed.lastSentBoxes || 0 };
+            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - started) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: ed.lastRunNotes || [], boxes: ed.lastSentBoxes || 0, loras_sent: ed.lastLoras || [] };
         },
     },
     cancel_run: {

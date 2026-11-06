@@ -1518,6 +1518,15 @@ async function main() {
                 bCheck.action === "auto" && policy.READS.has("boxes_check") && policy.undoStep({ name: "boxes_check", args: {} }) === null
                 && reopen.action === "auto" && !policy.READS.has("reopen_closed_tab") && policy.undoStep({ name: "reopen_closed_tab", args: {} }) === null,
                 JSON.stringify({ bCheck, reopen }));
+            // item 50 (docs/PLAN_LORAS.md LR4): list_loras only reads; set_generation's loras (the selected recipe's rows,
+            // app-wide) runs unasked as every set_generation does, with no undo step of the shell's
+            const fl = () => { const x = facts(); x.tools.add("list_loras"); x.tools.add("set_generation"); return x; };
+            const lList = policy.decide({ name: "list_loras", args: { filter: "klein", family: "flux3" } }, fl());
+            const lSet = policy.decide({ name: "set_generation", args: { loras: [{ name: "klein/a.safetensors", strength: 0.8, on: true }] } }, fl());
+            check("list_loras_reads_and_set_generation_loras_runs_unasked",
+                lList.action === "auto" && policy.READS.has("list_loras") && !policy.RUNS.has("list_loras") && policy.undoStep({ name: "list_loras", args: {} }) === null
+                && lSet.action === "auto" && !policy.READS.has("set_generation") && !policy.RUNS.has("set_generation") && policy.undoStep({ name: "set_generation", args: { loras: [] } }) === null,
+                JSON.stringify({ lList, lSet }));
 
             // factsFor reads a new layer's `detail` from the stored relight settings (host.setRelightSettings writes the picks
             // flat; a profile from before F3 may hold the nested keys, which have no detail: on, as host's default)

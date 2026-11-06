@@ -15,6 +15,8 @@ const READS = new Set([
     "ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips",
     "filter_types", "status", "get_state", "read_log", "film_looks", "film_copy_points", "glb_info", "sample_mean_color",
     "screenshot", "compare", "list_history", "boxes_list", "boxes_check", "list_settings", "sample_depth",
+    // item 50: the server's LoRA files (set_generation loras writes the selected recipe's rows, app-wide, as AUTO)
+    "list_loras",
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
@@ -44,7 +46,7 @@ const REFUSE = (reason) => ({ action: "refuse", reason });
  */
 const POLICY = {
     // ---- read the app -------------------------------------------------------------------
-    ping: AUTO, list_documents: AUTO, list_recipes: AUTO, list_plugins: AUTO, list_layers: AUTO,
+    ping: AUTO, list_documents: AUTO, list_recipes: AUTO, list_loras: AUTO, list_plugins: AUTO, list_layers: AUTO,
     list_brush_tips: AUTO, filter_types: AUTO, status: AUTO, get_state: AUTO, read_log: AUTO,
     film_looks: AUTO, glb_info: AUTO, sample_mean_color: AUTO, sample_depth: AUTO, depth_map: AUTO, depth_edit: AUTO, depth_from_layer: AUTO, screenshot: AUTO, compare: AUTO,
 

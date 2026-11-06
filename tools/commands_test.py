@@ -2505,6 +2505,194 @@ if (!/No closed tab to reopen/.test(err) || host.editors().length !== tabs) thro
 await c("activate_document", { doc: window.__testDoc });
 return { reopened: r.name, notes: r2.notes, status: ed2.status };
 """),
+    # item 50 (docs/PLAN_LORAS.md LR4): the agents' side of the LoRA rows, against a stood-in server (the page's fetch
+    # answers POST /prompt, /object_info/LoraLoaderModelOnly, /view_metadata and /queue; main's loras:header is
+    # host.loraHeader's stand-in): set_generation loras stored per recipe (the server's spelling, the strength clamped, a
+    # switched-off row kept), refused with nothing changed at six rows, at a name the list lacks (after a re-read), on a
+    # bad row and for recipes that take none; status loras (takes, the family, the hints, on_server, sent); list_recipes
+    # loras / loras_reason; list_loras (filter, family by folder and by a hint, max, the re-read, disconnected);
+    # generate's and generate_new's loras_sent on a local run landed through a dispatched `executed`, [] on an API run
+    ("loras_commands", r"""
+const { host, api } = await import("./editor/host.js");
+const rec = (id) => { const r = host.shell.recipes().find((x) => x.id === id); if (!r) throw new Error(id + " is not listed"); return r; };
+const klein3 = rec("flux3_klein_local"), qwenApi = rec("qwen_image_edit"), vsr = rec("rtx_vsr_local");
+const NAMES = ["Flux_3\\Flux3_Targa.safetensors", "klein\\nyc_style.safetensors", "klein\\anna_klein.safetensors", "qwen\\NYC_Qwen.safetensors", "root_style.safetensors"];
+const LORA = (names) => ({ input: { required: { model: ["MODEL"], lora_name: [names, {}], strength_model: ["FLOAT", { default: 1, min: -100, max: 100, step: 0.01 }] } }, output: ["MODEL"], output_node: false });
+const OI = () => ({ ...Object.fromEntries((klein3.needs || []).map((n) => [n, { input: { required: {} } }])), LoraLoaderModelOnly: LORA(NAMES) });
+const range = (n) => Array.from({ length: n }, (_, i) => i);
+const HEADERS = {
+    [NAMES[0]]: { keyCount: 516, modules: ["diffusion_model.content_mode_blocks.image.N.q_proj", "diffusion_model.single_blocks.N.attn_out"], blocks: { content_mode_blocks: range(5), single_blocks: range(28) }, width: { content_mode_blocks: 3072, single_blocks: 3072 }, outs: {}, metadata: { ss_base_model_version: "flux3", tags: ["Targa"] } },
+    [NAMES[3]]: { keyCount: 1680, modules: ["diffusion_model.transformer_blocks.N.attn.add_k_proj", "diffusion_model.transformer_blocks.N.img_mod.N"], blocks: { transformer_blocks: range(60) }, width: { transformer_blocks: 3072 }, outs: {}, metadata: { ss_base_model_version: "sd_1.5" } },
+};
+const S = { posts: [], rereads: 0, n: 0 };
+const json = (v) => new Response(JSON.stringify(v), { status: 200, headers: { "Content-Type": "application/json" } });
+const saved = { connected: host.connected, objectInfo: host.objectInfo, server: host.server, ensure: host.ensureOnServer, missing: host.missingFilesRefusal, ensureRefs: host.ensureRefs, recipe: host.recipe, loras: host.loras, fetch: window.fetch, loraHeader: host.loraHeader };
+const storeBefore = (await window.scumble.settings.get()).recipeLoras;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (f, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await f(); if (v) return v; await wait(50); } return null; };
+const stored = async () => (((await window.scumble.settings.get()).recipeLoras) || {}).flux3_klein_local;
+const png = async (w, h) => { const cv = new OffscreenCanvas(w, h); const x = cv.getContext("2d"); x.fillStyle = "#3366aa"; x.fillRect(0, 0, w, h); return cv.convertToBlob({ type: "image/png" }); };
+const out = {};
+let d = null;
+try {
+    host.connected = true;
+    host.server = { ...(host.server || {}), state: "connected" };
+    host.objectInfo = OI();
+    host.missingFilesRefusal = () => null;
+    host.ensureOnServer = async () => null;
+    host.ensureRefs = async () => ({ checked: 0, uploaded: [], missing: [] });
+    host.loraHeader = async (name) => HEADERS[name] || null;
+    host._loraInfo.clear();
+    host.loras = {};
+    window.fetch = async (url, init) => {
+        const u = String(url);
+        if (/\/prompt$/.test(u) && init && init.method === "POST") { const id = "lr4-" + (++S.n); S.posts.push({ id, body: JSON.parse(init.body) }); return json({ prompt_id: id, number: S.n, node_errors: {} }); }
+        if (/\/view_metadata\//.test(u)) return new Response("", { status: 404 });
+        if (u.includes("/object_info/LoraLoaderModelOnly")) { S.rereads++; return json({ LoraLoaderModelOnly: LORA(NAMES) }); }
+        // a run stays "running" until its result is dispatched (generate's wait never reads an idle queue)
+        if (/\/queue$/.test(u)) return json({ queue_running: [["lr4"]], queue_pending: [] });
+        return saved.fetch.call(window, url, init);
+    };
+    d = await c("new_document");
+    const ed = host.editors().find((e) => e.node.id === d.id);
+    host.shell.activate(ed);
+    await c("new_canvas", { doc: d.id, width: 320, height: 240 });
+    await c("set_prompt", { doc: d.id, text: "a red mug on the table" });
+    host.setRecipe(klein3);
+    // 1. set_generation loras: the server's spelling for "/", a strength clamped to the node's range, a row kept off
+    const set = await c("set_generation", { doc: d.id, seed: 77, loras: [
+        { name: "Flux_3/Flux3_Targa.safetensors", strength: 0.8 },
+        { name: NAMES[3], on: false },
+        { name: NAMES[2], strength: "250" },
+    ] });
+    const want = [{ name: NAMES[0], strength: 0.8, on: true }, { name: NAMES[3], strength: 1, on: false }, { name: NAMES[2], strength: 100, on: true }];
+    if (JSON.stringify(set.loras) !== JSON.stringify(want) || set.seed !== 77) throw new Error("set_generation's answer: " + JSON.stringify(set));
+    if (JSON.stringify(host.loras.flux3_klein_local) !== JSON.stringify(want) || JSON.stringify(await stored()) !== JSON.stringify(want)) throw new Error("the store: " + JSON.stringify([host.loras.flux3_klein_local, await stored()]));
+    const shown = ed._loraPanel ? ed._loraPanel.list.querySelectorAll(".ipc-lora-row").length : -1;
+    if (shown !== 3) throw new Error("the LoRAs section shows " + shown + " rows");
+    // 2. status loras: what a run now would load, each row's hint once read (the section reads them), on_server
+    const st0 = (await c("status", { doc: d.id })).loras;
+    if (st0.takes !== true || st0.reason !== null || st0.family !== "flux3" || st0.max !== 5) throw new Error("status loras: " + JSON.stringify(st0));
+    if (JSON.stringify(st0.sent) !== JSON.stringify([{ name: NAMES[0], strength: 0.8 }, { name: NAMES[2], strength: 100 }])) throw new Error("status loras.sent: " + JSON.stringify(st0.sent));
+    const st = await until(async () => { const x = (await c("status", { doc: d.id })).loras; return x.rows[0].hint && x.rows[1].hint ? x : null; });
+    if (!st) throw new Error("no hints in status: " + JSON.stringify((await c("status", { doc: d.id })).loras.rows));
+    const [r0, r1, r2] = st.rows;
+    if (r0.hint !== "looks like FLUX 3" || r0.mismatch || JSON.stringify(r0.triggers) !== '["Targa"]' || r0.on_server !== true || r0.on !== true) throw new Error("row 1: " + JSON.stringify(r0));
+    if (!r1.mismatch || !/^This LoRA looks made for Qwen Image/.test(r1.hint) || r1.on !== false) throw new Error("row 2: " + JSON.stringify(r1));
+    if (r2.hint !== null && r2.hint !== "in folder klein") throw new Error("row 3: " + JSON.stringify(r2));
+    out.status = { sent: st.sent.length, hints: st.rows.map((x) => x.hint && x.hint.slice(0, 40)) };
+    // 3. refused with nothing changed: six rows, a name the list lacks (read again first), bad rows, a recipe taking none
+    const refused = async (args, re, what) => {
+        const before = JSON.stringify(host.loras), store0 = JSON.stringify(await stored()), seed0 = ed.genSettings.seed;
+        let msg = null;
+        try { await c("set_generation", { doc: d.id, seed: 4711, ...args }); } catch (e) { msg = String(e.message || e); }
+        if (!msg || !re.test(msg)) throw new Error(what + " was not refused as expected: " + msg);
+        if (JSON.stringify(host.loras) !== before || JSON.stringify(await stored()) !== store0 || ed.genSettings.seed !== seed0) throw new Error(what + ": the refused call changed something");
+        return msg;
+    };
+    const six = [0, 1, 2, 3, 4, 0].map((i) => ({ name: NAMES[i] }));
+    out.six = await refused({ loras: six }, /^At most 5 LoRAs per recipe: the call names 6\. Nothing was changed\.$/, "six rows");
+    const rereads0 = S.rereads;
+    out.lacks = await refused({ loras: [{ name: NAMES[0] }, { name: "klein\\gone.safetensors", on: false }] }, /lacks this file: klein\\gone\.safetensors\. list_loras gives the names/, "a name the list lacks");
+    if (S.rereads !== rereads0 + 1) throw new Error("the list was not read again before refusing: " + (S.rereads - rereads0));
+    await refused({ loras: "nope" }, /must be an array/, "a string that is no array");
+    await refused({ loras: [{ strength: 1 }] }, /loras\[0\] names no file/, "a row without a name");
+    await refused({ loras: [{ name: NAMES[0], strength: "abc" }] }, /loras\[0\]\.strength must be a number/, "a strength that is no number");
+    await refused({ loras: [{ name: NAMES[0], on: "maybe" }] }, /loras\[0\]\.on must be true or false/, "an on that is no boolean");
+    host.setRecipe(host.shell.resolveRecipe(qwenApi));
+    out.api = await refused({ loras: [] }, /runs through an API provider: LoRAs go only to your ComfyUI and Comfy Cloud/, "an API recipe");
+    host.setRecipe(vsr);
+    out.upscaler = await refused({ loras: [] }, /is an upscaler/, "an upscaler");
+    host.setRecipe(klein3);
+    // a JSON string of rows counts; the unread list keeps a name as given (as a run's rows are sent)
+    host.objectInfo = null;
+    const fetch1 = window.fetch;
+    window.fetch = async (url, init) => (String(url).includes("/object_info/LoraLoaderModelOnly") ? new Response("no", { status: 500 }) : fetch1(url, init));
+    const typed = await c("set_generation", { doc: d.id, loras: JSON.stringify([{ name: "klein/typed_by_hand.safetensors", strength: 0.5 }]) });
+    window.fetch = fetch1;
+    host.objectInfo = OI();
+    if (JSON.stringify(typed.loras) !== JSON.stringify([{ name: "klein/typed_by_hand.safetensors", strength: 0.5, on: true }])) throw new Error("an unread list: " + JSON.stringify(typed.loras));
+    const st2 = (await c("status", { doc: d.id })).loras;
+    if (st2.rows[0].on_server !== false) throw new Error("on_server of a file the list lacks: " + JSON.stringify(st2.rows[0]));
+    // 4. list_recipes: loras and loras_reason, the LoRAs section's answer
+    const L = (await c("list_recipes")).recipes;
+    const lr = (id) => L.find((x) => x.id === id);
+    if (lr("flux3_klein_local").loras !== true || lr("flux3_klein_local").loras_reason !== null) throw new Error("list_recipes klein: " + JSON.stringify(lr("flux3_klein_local")));
+    if (lr("qwen_image_edit").loras !== false || !/API provider/.test(lr("qwen_image_edit").loras_reason || "")) throw new Error("list_recipes qwen_image_edit: " + JSON.stringify([lr("qwen_image_edit").loras, lr("qwen_image_edit").loras_reason]));
+    if (lr("rtx_vsr_local").loras !== false || !/upscaler/.test(lr("rtx_vsr_local").loras_reason || "")) throw new Error("list_recipes rtx_vsr_local: " + JSON.stringify(lr("rtx_vsr_local").loras_reason));
+    if (L.some((x) => typeof x.loras !== "boolean" || (x.loras ? x.loras_reason !== null : typeof x.loras_reason !== "string"))) throw new Error("a recipe's loras fields: " + JSON.stringify(L.filter((x) => typeof x.loras !== "boolean").map((x) => x.id)));
+    // 5. list_loras: read again on each call, grouped by folder; filter, family (folder name and a hint read), max
+    await c("set_generation", { doc: d.id, loras: [{ name: NAMES[0], strength: 0.8 }, { name: NAMES[3], on: false }] });
+    const rereads1 = S.rereads;
+    const all = await c("list_loras");
+    if (S.rereads !== rereads1 + 1 || all.connected !== true || all.total !== 5 || all.listed !== 5 || all.recipe !== "flux3_klein_local" || all.recipe_family !== "flux3") throw new Error("list_loras: " + JSON.stringify({ ...all, folders: undefined }));
+    if (JSON.stringify(all.folders.map((f) => [f.folder, f.count])) !== JSON.stringify([["Flux_3", 1], ["klein", 2], ["qwen", 1], ["", 1]])) throw new Error("the folders: " + JSON.stringify(all.folders.map((f) => [f.folder, f.count])));
+    const entry = (res, n) => res.folders.flatMap((f) => f.names).find((x) => x.name === n);
+    if (entry(all, NAMES[0]).hint !== "looks like FLUX 3" || entry(all, NAMES[0]).mismatch || entry(all, NAMES[3]).hint !== "looks like Qwen Image (Edit 2509 / 2511)" || !entry(all, NAMES[3]).mismatch || entry(all, NAMES[4]).hint !== null) throw new Error("the hints: " + JSON.stringify(all.folders));
+    const kl = await c("list_loras", { filter: "klein" });
+    if (kl.total !== 2 || kl.filter !== "klein" || kl.folders.length !== 1 || kl.folders[0].folder !== "klein") throw new Error("filter klein: " + JSON.stringify(kl));
+    const two = await c("list_loras", { filter: "klein/NYC" });
+    if (two.total !== 1 || entry(two, NAMES[1]) == null) throw new Error("filter klein/NYC: " + JSON.stringify(two));
+    const f3 = await c("list_loras", { family: "recipe" });
+    if (f3.family !== "flux3" || f3.total !== 1 || !entry(f3, NAMES[0])) throw new Error("family recipe: " + JSON.stringify(f3));
+    const qw = await c("list_loras", { family: "qwen_image" });
+    if (qw.total !== 1 || !entry(qw, NAMES[3])) throw new Error("family qwen_image: " + JSON.stringify(qw));
+    const capped = await c("list_loras", { max: 2 });
+    if (capped.total !== 5 || capped.listed !== 2 || capped.folders.flatMap((f) => f.names).length !== 2) throw new Error("max 2: " + JSON.stringify(capped));
+    let bad = null;
+    try { await c("list_loras", { family: "sd3" }); } catch (e) { bad = String(e.message || e); }
+    if (!/unknown family "sd3"/.test(bad || "")) throw new Error("an unknown family: " + bad);
+    host.server = { ...host.server, state: "disconnected" };
+    const rereads2 = S.rereads;
+    const off = await c("list_loras");
+    host.server = { ...host.server, state: "connected" };
+    if (off.connected !== false || S.rereads !== rereads2 || off.total !== 5) throw new Error("disconnected: " + JSON.stringify({ connected: off.connected, rereads: S.rereads - rereads2, total: off.total }));
+    out.list = { total: all.total, folders: all.folders.length, filtered: kl.total, family: f3.total };
+    // 6. generate's loras_sent: a local run of the rows (landed through the node's `executed` answer), then an API run
+    await c("set_generation", { doc: d.id, loras: [{ name: NAMES[0], strength: 0.8 }, { name: NAMES[3], on: false }, { name: NAMES[2], strength: 1 }] });
+    const runLanded = async (start, box) => {
+        const n0 = S.posts.length;
+        const p = start();
+        let failed = null;
+        p.catch((e) => { failed = e; });
+        if (!(await until(() => S.posts.length > n0 || failed, 15000)) || failed) { try { await p; } catch (e) { throw new Error("the run did not queue: " + (e.message || e)); } throw new Error("the run did not queue"); }
+        const post = S.posts[S.posts.length - 1];
+        const up = await host.uploadInput(await png(box.w, box.h), "lr4_result_" + Date.now() + ".png");
+        api.dispatch("executed", { prompt_id: post.id, node: "decode", output: { inpaint_result: [{ filename: up.filename, subfolder: up.subfolder, type: up.type, x: box.x, y: box.y, width: box.w, height: box.h }] } });
+        const res = await p;
+        // the prompt ends on the server: the document holds no open render any more (generate_new refuses one)
+        api.dispatch("execution_success", { prompt_id: post.id, timestamp: Date.now() });
+        return { res, post };
+    };
+    await c("select_rect", { doc: d.id, x: 80, y: 60, w: 160, h: 120 });
+    const gl = await runLanded(() => c("generate", { doc: d.id, timeout: 40 }), { x: 80, y: 60, w: 40, h: 40 });
+    const sentWant = [{ name: NAMES[0], strength: 0.8 }, { name: NAMES[2], strength: 1 }];
+    if (JSON.stringify(gl.res.loras_sent) !== JSON.stringify(sentWant)) throw new Error("generate's loras_sent: " + JSON.stringify(gl.res.loras_sent));
+    const g = gl.post.body.prompt;
+    if (!g.scumble_lora_1 || g.scumble_lora_1.inputs.lora_name !== NAMES[0] || !g.scumble_lora_2 || g.scumble_lora_2.inputs.lora_name !== NAMES[2] || g.scumble_lora_3) throw new Error("the queued chain: " + JSON.stringify([g.scumble_lora_1, g.scumble_lora_2, g.scumble_lora_3]));
+    if (!gl.res.layer || !/LoRAs: Flux3_Targa 0\.8, anna_klein 1\.0\./.test((gl.res.notes || []).join(" "))) throw new Error("generate's answer: " + JSON.stringify({ layer: gl.res.layer, notes: gl.res.notes }));
+    out.generate = gl.res.loras_sent;
+    // generate_new on the local recipe: the run's loras_sent passed through
+    const gn = await runLanded(() => c("generate_new", { doc: d.id, width: 256, height: 192, timeout: 40 }), { x: 0, y: 0, w: 256, h: 192 });
+    if (gn.res.mode !== "local" || JSON.stringify(gn.res.loras_sent) !== JSON.stringify(sentWant)) throw new Error("generate_new's loras_sent: " + JSON.stringify({ mode: gn.res.mode, loras_sent: gn.res.loras_sent }));
+    // an API run loads none: [] (not the local run's rows)
+    host.setRecipe(__LOOP_EDIT__);
+    await c("select_rect", { doc: d.id, x: 40, y: 40, w: 120, h: 90 });
+    const ga = await c("generate", { doc: d.id, timeout: 60 });
+    if (!Array.isArray(ga.loras_sent) || ga.loras_sent.length) throw new Error("an API run's loras_sent: " + JSON.stringify(ga.loras_sent));
+    out.api_run = ga.loras_sent;
+} finally {
+    window.fetch = saved.fetch;
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.server = saved.server; host.ensureOnServer = saved.ensure; host.missingFilesRefusal = saved.missing; host.ensureRefs = saved.ensureRefs; host.loraHeader = saved.loraHeader;
+    host._loraInfo.clear();
+    host.loras = saved.loras;
+    await window.scumble.settings.set({ recipeLoras: storeBefore || {} });
+    host.setRecipe(saved.recipe);
+    if (d) { try { await c("close_document", { doc: d.id, force: true }); } catch (_) { /* gone */ } }
+    await c("activate_document", { doc: window.__testDoc });
+}
+return out;
+""".replace("__LOOP_EDIT__", LOOP_EDIT)),
     ("close", """
 const before = (await c("list_documents")).documents.length;
 const r = await c("close_document", { doc: window.__testDoc });

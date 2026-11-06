@@ -1026,6 +1026,67 @@ the picker), fixed in the steps. `python tools/build_node.py --check`: ok (60 mo
 12. **`readHeader` checks the file can hold the length before the cap**: a text file reads as a huge length and is "not
     a safetensors file", a real 17 MB file claiming 16 MB + 1 is the cap's refusal.
 
+### LR4 as built (2026-11-06)
+
+**Built:** `renderer/commands.js` (imports `loras.js` and `lora_panel.js`; no `host.js` change): `serverUp()`,
+`lorasView(r)` and `lorasFromCall(r, given)` beside `recipeReadiness`. **`set_generation`** gains `loras` (an array of
+`{ name, strength, on }`, the items' properties declared in the schema): checked first, so a refused call changes nothing
+(the other fields included); replaced whole for the selected recipe through `host.saveLoras`, every tab's section drawn
+again (`loraPanel.renderAll`), no `notifyChanged` (not document state); the answer gains `loras` (the stored rows).
+**`status`** (the command, not the exported `status(ed)`) gains `loras: { takes, reason, family, max, rows: [{ name,
+strength, on, hint, mismatch, triggers, on_server }], sent: [{ name, strength }] }` (`host.loraTakes`, `recipeFamily`,
+`host.loraInfo` with `loraHint`, `host.lorasNow`). **`list_recipes`** gains `loras` / `loras_reason` (`host.loraTakes` on
+the recipe resolved to its provider). **`generate`** resets `ed.lastLoras` beside `lastRunNotes` and answers
+`loras_sent: ed.lastLoras`; **`generate_new`** answers generate's on a local recipe and `out.loras || []` on an API one
+(LR5 fills it). **`list_loras`** (new, `scope: "app"`, read-only): `filter` (`filterNames`), `family` (a `FAMILIES` id or
+`"recipe"`), `max` (default 200); the list read again on each call while the server answers (`refreshLoraNames`), else
+the last one; `{ connected, recipe, recipe_family, filter, family, total, listed, folders: [{ folder, count, names: [{
+name, hint, mismatch }] }] }`. `electron/main/assistant/policy.js`: `list_loras` in READS and AUTO; `set_generation`
+stays AUTO. `tools/commands_doc.py`: `list_loras` in the App group after `select_recipe`; `docs/COMMANDS.md` regenerated
+by the `commands_doc` gate from the runner's app (only the six commands' entries changed). The tool count **117 (97 core,
+20 plugin)** = `grep -c '^### \`' docs/COMMANDS.md`: `README.md` 83 and 305, `docs/MCP.md` 306; `PLAN_CORRIDORKEY.md`
+§4.8 and I7 now say "+1 on what README says" (118 / 98 after this). `dist/scumble-0.1.51.mcpb` built
+(`tools/mcpb_build.js`, 117 tools, `list_loras` in its manifest; untracked). CHANGELOG `## Unreleased`: the LoRA line's
+agents clause.
+
+**Tests (all green):** `commands` gained `loras_commands` (the page's `fetch` answering POST /prompt,
+`/object_info/LoraLoaderModelOnly`, `/view_metadata` and `/queue`; `host.loraHeader` stood in for): `set_generation loras`
+stored (a `/` name in the server's `\` spelling, `"250"` clamped to 100, a switched-off row kept, the section's three
+rows, `settings.recipeLoras`), `status.loras` (takes, family `flux3`, `sent` the two switched-on rows, the hints "looks
+like FLUX 3" with its chip and the amber Qwen 2509 sentence, `on_server`), refused with nothing changed (the seed of the
+same call included) at six rows, at a name the list lacks after one re-read (a switched-off row), on a string that is no
+array, a row without a name, a strength or an `on` of the wrong kind, under `qwen_image_edit` (API) and `rtx_vsr_local`;
+a JSON string of rows against an unread list kept as given, then `on_server: false`; `list_recipes` `loras` /
+`loras_reason` for every recipe; `list_loras` (the re-read, the four folders, the hints and the mismatch, `filter`
+`klein` and `klein/NYC`, `family` `recipe` and `qwen_image`, `max` 2, an unknown family refused, disconnected without a
+re-read); `generate`'s `loras_sent` on a `flux3_klein_local` run landed through a dispatched `executed` (the chain in the
+queued prompt, the note), `generate_new`'s on the same recipe, `[]` on a loopback API run. `mcp`: `list_loras` in the
+read-only hint list, `set_generation` in the neither list, 117 tools served and attached. `assistant`: the plain-Node
+check `list_loras_reads_and_set_generation_loras_runs_unasked` (269 of 269), `every_command_has_its_policy_row` at 117,
+38 of 38 app steps. Gate runs on tiles (`--offline`, port 9571, the worktree's `dist/gates`): `lr4-a` (`commands_doc`,
+`commands` red on generate_new: the dispatched run had no `execution_success`, so the document still held a render;
+fixed in the step), `lr4-b` commands PASS (45 steps), `lr4-c` commands, mcp, assistant, loras, mcpb, lint (0 errors, the
+same 21 warnings), types: ALL PASS. No other backend (no pixel path), no mutation round (Normal / Light).
+
+**Deviations, each by the code:**
+1. **`list_recipes` `loras` is never null** (§3.8 says null while the node list is unread): `host.loraTakes` answers from
+   the class-name table then (§3.1), as the section does (LR2 deviation 2), and `set_generation` accepts rows then;
+   a null would contradict both.
+2. **`status.loras.sent` is `[{ name, strength }]`** (`host.lorasNow`), not names alone, as `loras_sent` and the via
+   line carry strengths; `status.loras` also has `family`, `max`, and per row `mismatch`, `triggers`, `on_server` (the
+   section's marks). A row's hint is read on the first `status` as the section reads it (null until it is in).
+3. **`set_generation` checks every named row against the server's list, switched on or off** (the queue path checks
+   the switched-on ones: a run needs no more; a stored row is what the section shows); a row without a name is refused
+   (the section's empty "Pick a LoRA" row stays the UI's own); `on` takes `"true"` / `"false"`, and the array a JSON
+   string, as models send them; `[]` is refused too for a recipe that takes no rows.
+4. **`list_loras` `family`** keeps a file by its own folder's name or a keys hint read before (`folderFits` per file),
+   not the picker's split (`familyGroups` shows everything when no folder fits: a convenience of the picker, wrong for a
+   filter); `hint` is the short label ("looks like FLUX 3"), `mismatch` against the selected recipe; a look never reads
+   a file. `connected` false: the last list read (empty in a fresh profile).
+5. **`generate_new` on an API recipe answers `out.loras`** when main's answer carries it (LR5), else `[]`.
+6. **`mcp_test.py`'s hint lists** gained `list_loras` (read-only) and `set_generation` (neither): the row named the gate,
+   not the lists.
+
 ## 5. How it fits into 0.1.52 beside CorridorKey
 
 - **One branch, one release.** Both plans build on `corridorkey` (cut from `main` = 0.1.51) and ship as 0.1.52 on the
