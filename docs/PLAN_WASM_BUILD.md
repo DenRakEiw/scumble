@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0, D0 and K5 done 2026-11-06 (§7; K5 took ABI 21); Stop 3, W1 and K12 done the same day (§7); next Stop 5.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0, D0 and K5 done 2026-11-06 (§7; K5 took ABI 21); Stop 3, W1, K12 and Stop 5 done the same day (§7; Stop 5 keeps K13 / K14, decides the threads spike at K14 and adds K12b before G6); next K12b.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -1359,3 +1359,137 @@ march's group name) with their `summary.txt`, `gates/`, `mutation/`; `harness_tr
   block above. Not measured: `STRIPES_PER_WORKER` 8.
 
 Next: Stop 5.
+
+### Stop 5 (2026-11-06)
+
+Decided by a workflow of a decider and a critic from K12's runs; nothing was measured in this stop and no code changed.
+The files: A = `docs/measurements/k12_2026-11-06/after/summary.txt` (its before-runs in `../before/`), B =
+`../after_build/summary.txt` (the build's own after), D = `../diag/summary.txt`, W =
+`docs/measurements/w0b_2026-10-23/summary.txt`. The critic's corrections are taken: four musts (q6.7's "skip unless
+below 0.85" is §6's suggested answer, not the user's; the list of the pool's NORMAL work; the wording of the user's
+0.1.52 exception; two gaps in K12b's feed) and twelve smaller points. Its readings of the pool's priorities were checked
+in the code at `bc3c37e` and hold; the verdicts are the decider's.
+
+**What the rows say (A unless named):**
+- **The parallel efficiency** (the one-job march's summed kernel ms / (8 workers x the stripes' wall), medians of three
+  runs): one light 0.670 [0.528-0.689] on the named row (moved and released: the row q6.7 means) and 0.728
+  [0.632-0.827] on the same march again (B: 0.669 / 0.874); three lights 0.914 / 0.853; a sun 0.693 / 0.703. One light
+  and the sun are below q6.7's 0.85, three lights at or above it.
+- **Where one light's loss goes** (inferred from the medians): the one job's kernel is 3,474 ms, so 434 on 8 workers
+  would be ideal; the stripes take 649. Their kernel summed is 4,810, 601 a worker. About 48-55 ms are idle (649 - 601,
+  or 649 x (1 - busy 0.916)): the tail of 32 stripes on 8 workers, the dispatch and the landing. The other 167 (601 -
+  434) is the same work running slower: about 60 from eight busy cores (the re-march's kernel x 1.141) and about 105
+  from the window's work after the release (x 1.385 against x 1.141; D: released below left alone in all three runs,
+  inferred to be the window and the GPU process drawing the moved light's shading beside the workers).
+- **The sun:** busy 0.78-0.81, so about 50-55 ms of its 251-260 are idle (stripes of 60-75 ms). Its felt wall is the
+  named row, 260 [244-371]; 251 [244-378] is the re-march.
+- **The felt walls left:** one light 649 [626-923], three lights 1,031 [1,026-1,538], a sun 260. The twin's stripes are
+  0.89-0.98 busy, so these are mostly kernel time spread evenly over the workers. The first march after start, 2,286
+  [2,239-2,335], is not: it is the setup's march, timed while the run's earlier rows ran beside it
+  (`tools/perf_test.py:26-31`, `:826-834`), about 1.2 s above a three-light march. The window's longest block during a
+  march is 47-64 ms (the pan row's 64 [16-83]): a wait, not a freeze.
+- **The chain rows are not worse:** every pinned row lies inside its spread but one, which is a tie: at fit the mips'
+  longest block 25.3 [24.4-28.9] -> 29.7 [22.4-33.4], above before's maximum by less than the spread (§1.1 rule 2). A
+  whole change's mips during a three-light march 163 -> 150: INTERACTIVE work waits for at most one stripe.
+- **Two new costs.** (1) Other NORMAL pool work queues behind a full march's stripes: eight small NORMAL jobs posted
+  after a three-light move wait 1,019 [1,014-1,584] ms, against 5.0 with one job a light and 0 with no march (first
+  come, first served within NORMAL, the march's 96 stripes ahead). The wait is bounded by the rest of the march (about
+  0.65 s for one light, about 1.0 s for three) and happens only while a full march runs. NORMAL in the code: `resample`
+  (a transform's commit, a canvas turn; `inpaint_jobs.js:214`), the opens `png_read`, `tiff_read`, `image_read` and
+  `psd_read` (no priority given; `inpaint_canvas.js:553`, `:692`, `:784`, `:18628`), the full `relight_normals`
+  (`:23487`) and the other full marches (`:23666`). Not NORMAL: `depth_guide` (`:13111`, `:13223`), `depth_fuse`
+  (`host.js:5324`) and `relight_ratio` (`host.js:3857`) are INTERACTIVE; the row's `crc` is the harness's stand-in, the
+  app's crc runs at EXPORT through the band writers' `partsRun` (`inpaint_canvas.js:17858`, `inpaint_encode.js:63`).
+  (2) The drag step's block 29.9 [28.4-33.3] -> 36.7 [34.9-37.1] (B 37.3): outside the spreads, but across builds; no
+  one-run A/B of the quick map was run.
+
+**What Stop 5 decides:**
+1. **K13 and K14 run, in their places** (#25 and #26 of the order after Stop 1). The felt walls left are kernel time
+   spread evenly, so a faster kernel cuts them about in proportion, and §1.1 takes Rust wherever the whole operation
+   gets faster; the chain rows are not worse. Not a given: K13 hoists the per-tap `Math.hypot` in the twin too (the
+   same bytes), and the Rust f64 kernel has to beat that faster twin; today's f32 point kernel loses to the twin (W:191,
+   SIMD 3,984 against the twin's 3,348; explains only). K14 takes the sun's route (§4.5); q6.6 is unanswered and is
+   asked at K14's start with the behaviour said first (§1.2: f64 makes Rust and the twin give the same bytes, so rare
+   pixels of a sun change once against 0.1.50). The mixed sun stripes K12 accepted after a Rust trap end at K14, and
+   only if the sun goes f64 (K12's entry says "until K13"; the sun's route is K14's); with f32 they stay. **Not moved
+   up:** what relight leaves is a 0.65-1.0 s wait with a window block of 47-64 ms, and the sessions ahead are more felt
+   and more frequent (inferred): K26's brushes at 79-256 ms a move, K21-K23's selections at 1.2-4.9 s, K8's PNG open,
+   K32-K34 on every result. They stay on `wasm-kernels` for the release at the end: the user's 0.1.52 exception
+   (CLAUDE.md on `corridorkey`, `6e9c0cf`) ships the finished D0, K5, W1 and K12 and keeps the kernel work after it
+   (G6 on) on the branch.
+2. **The threads spike (§4.5's optional K-L4, q6.7): decided at K14, and asked now.** By §6's suggested answer ("skip,
+   unless K12's parallel efficiency is below 0.85"), which stands while the user says nothing, it is not skipped: 0.67
+   for one light, 0.69 for the sun. It cannot run before K14: until K13 / K14 every point and spot light marches on the
+   JS twin (`kernels.js:475` sends `light[3] !== 1` there), which a wasm-threads build does not speed up; only the sun
+   runs in wasm. Its ceiling is the dispatch inside the idle share (about 48-55 of 649 ms for one light, 50-55 of 260
+   for the sun); the other causes K12 found (eight busy cores running slower, the window's work after the release, the
+   tail) are ones threads do not remove. Its cost: 1-1.5 d, a nightly toolchain, a third build and a 4 GB shared memory
+   that never shrinks, against §3.2's release policy. K12b's 8-stripes row measures that ceiling for free (below); the
+   spike is decided again at K14 on K14's kernels and that row. The rule's letter and its reason disagree, so the user
+   is asked whether to drop it now (recommended).
+3. **A new session K12b before G6** (§1.2: a stop re-ranks by what was measured). K12 ships in 0.1.52 (merged into
+   `corridorkey` after this stop, the user's yes of 2026-11-06), and its own new row measured the NORMAL wait above; the
+   fix is small JS with the same bytes. Its scope:
+   - (a) **The feed.** One budget for all full marches on the pool together: about `pool.size` stripes queued at a time
+     across every march, the next posted as one answers, so a NORMAL job waits at most about one stripe round. A budget
+     per march is not enough: with three lights about 24 stripes would stay queued and a NORMAL job would still wait
+     two to three stripe rounds (about 250-350 ms, inferred). A class below NORMAL would be a new fourth one
+     (`inpaint_pool.js` `PRIORITIES` is 3), not EXPORT: EXPORT carries every layer upload's PNG encode
+     (`inpaint_encode.js:63`, `:89`), every export, the hash and the stack reads that default to it (`holdStack`,
+     `stackMatches`, `stackSamples`, `programStart`; `inpaint_canvas.js:8542-8712`), so a release's shadows would wait
+     behind an upload or an export in flight. Checks, as an A/B in one run: the eight-NORMAL-jobs row back near one
+     stripe's wait; the one-light, three-light, sun and mips-during-a-march rows inside their spreads.
+   - (b) **The drag step's block**, 30 -> 37 ms: a one-run A/B (the route `relightStripes` 0 against the stripes on the
+     quick map). If it holds, §1.1 rule 3 (the window's wall is its longest block): bring the block back, for example by
+     landing the quick channel in a task of its own; the quick map goes back to one job only if nothing else works.
+   - (c) **The `STRIPES_PER_WORKER` 8 row** (the route `relightStripes` 64, no code; the quick map stays at 21 stripes
+     by `STRIPE_MIN_ROWS`): the tail against the dispatch. If more stripes shrink the idle share, JS takes it; what is
+     left is what threads could win.
+   - Normal tier, the same bytes, about 0.5 d (inferred): the `relight` gate, `px_test.js`, `pxjobs`, `lint`, `types`.
+     Its commit goes into `corridorkey` too only on the user's yes (question 3).
+4. **G6 after K12b.** The user put G6 right after K12 (the answers of 2026-10-24); this stop puts K12b between them. #0
+   M9 measured the 0.4 s link block paid once per profile with a cold GPU cache, and "#0 M9" above leaves whether G6
+   still runs or ends as that note to the user when it comes up: it comes up now, so it is asked. Without an answer G6
+   runs after K12b.
+5. **Notes for 0.1.52, not asked:**
+   - K12's mixed sun stripes after a Rust trap ship in 0.1.52: rare, only after a trap; on the branch they end at K14
+     if the sun goes f64.
+   - K12's pinning found a cost nobody has placed: with the lights tool on a relight layer, a whole change of a layer
+     below costs the next frame about 380 ms on the window at 15k (`belowStats` reads 2,344-2,376 exact chains; A's
+     lights overlay row 383 -> 380). There since 0.1.47, not a regression, larger than the drag step's +7 ms; now in
+     `docs/BUGS.md` for the user to place. Its fix changes where the light's stats come from, so the behaviour is said
+     first.
+   - If K12b does not go into `corridorkey`, the 0.1.52 notes name the NORMAL wait and the drag step's +7 ms.
+
+**How often:** no frequency above is measured; the felt-cost ranking is inferred, as in Stops 1 and 3.
+
+#### The order after Stop 5
+
+K12b -> G6 (or K4 at once, if the user ends G6 as #0's note) -> the order after Stop 1 / Stop 3 from K4 on: K4, K26,
+K27; K21, K11, K22, K23, K25, K9, K36, K37 (Stop 3's #9-#16); K2, *Stop 2*, K6, K7, K8, *Stop 4*; K32, K33, K34; K13
+(#25) and K14 (#26), both run; the threads spike (the optional K-L4) right after K14, decided there unless the user
+drops it now; K24, K3, K10a-c, K15-K18, K20a-c, K28, K29, K30, *Stop 6*, K31, K19, K35, K38, K39, K40, K41.
+
+**Asked of the user:**
+1. **(q6.7) The threads spike.** The plan suggests skipping it unless K12's efficiency is below 0.85; the user has not
+   answered it yet. Measured: 0.67 for one light, 0.69 for a sun, 0.91 for three lights, so by that rule it is not
+   skipped. It can only run after K14: until then point and spot lights march in JS, which a wasm-threads build does not
+   speed up. K12 measured where the loss comes from: the same work runs slower on eight busy cores, and (probably) the
+   window draws beside it after the release; only about 48-55 of 649 ms are idle, and threads could win at most the
+   dispatch part of that, under 50 ms a march. Its cost: 1-1.5 days, a nightly toolchain, a third build, 4 GB of shared
+   memory that never shrinks. Recommended: drop it. Without an answer it stays the optional step after K14, decided
+   there with K12b's 8-stripes row.
+2. **G6, the shader link at start.** #0 measured the 0.4 s block once per profile with a cold GPU cache (probably the
+   first open after an install or a driver update). The plan leaves to the user whether G6 (about half a day) still
+   runs or ends as that note. The user put G6 right after K12; this stop puts K12b in between. Recommended: end it as
+   the note and go on with K4 after K12b. Without an answer G6 runs after K12b.
+3. **K12b in 0.1.52 too?** K12 goes into `corridorkey` after this stop on the user's yes, so into 0.1.52: clearly better
+   on the whole (at 15k a released light's shadows land after 0.65 s instead of 3.5 s, three lights' after 1.0 s
+   instead of 3.7 s), with one new drawback: other normal pool jobs wait during a march for its rest, about 0.65 s for
+   one light and 1 s for three, instead of 5 ms (the resample after a transform, opening a PNG, TIFF or PSD file), and
+   the drag step's block is 7 ms longer. K12b fixes that (JS only, the same bytes, about half a day). Should K12b go
+   into `corridorkey` too, as a second merge before G6 lands, or should the merge wait for K12b so there is one merge
+   (the user's word says to merge once K12 and Stop 5 are committed)? Recommended: a second merge. Without an answer
+   only K12 is merged, and the 0.1.52 notes name the wait and the +7 ms.
+
+Next: K12b.

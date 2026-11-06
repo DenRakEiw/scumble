@@ -15,6 +15,16 @@ Nothing at the moment (0.1.50's and 0.1.51's fixes went out with them; `CHANGELO
 
 ## Open
 
+### With the lights tool on a relight layer, a whole change below costs the next frame about 380 ms at 15k (found 2026-11-06, measured, K12)
+
+While a relight layer is active with the lights tool, every draw runs `drawLightsOverlay` -> `ownLightPos` ->
+`belowStats` (`renderer/editor/inpaint_canvas.js:23297`, `:23232`, `:15607` at `bc3c37e`); after a whole change of a
+layer below, that reads the whole picture at 256 px on the window: 2,344-2,376 exact mip chains, about 380 ms of the
+next frame at 15000 x 10000 (`perf_test.py` row `whole_1to1_lights`, 383 before K12 and 380 after it,
+`docs/measurements/k12_2026-11-06/after/summary.txt`). There since relight shipped in 0.1.47, not a regression. A fix
+changes where the light's stats come from (say the behaviour first); the user places it (`docs/PLAN_WASM_BUILD.md` §7
+"Stop 5").
+
 ### Ctrl+O sends the whole file to the window in one message (found 2026-11-06, read and measured once, D0)
 
 `electron/main/main.js` `openImage` (`:833-842` at `bbff117`) reads the chosen file whole (`fsp.readFile`) and sends
