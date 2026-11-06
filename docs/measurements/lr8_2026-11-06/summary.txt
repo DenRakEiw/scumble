@@ -1,0 +1,63 @@
+LR8 (docs/PLAN_LORAS.md §3.7, decision 7): the ComfyUI update and the two LoRA downloads, the record
+=====================================================================================================
+
+Nothing in this session changed the machine: the update and the downloads were done earlier on 2026-11-06 by the main
+(planning) session, each on the user's word; this file writes them down, read back from the disk on 2026-11-06.
+
+The update
+----------
+- ComfyUI (the user's portable install, F:/Comfyui/ComfyUI_windows_portable_nvidia) updated from v0.42.4 to v0.44.0
+  on 2026-11-06 at 02:55 by the main session, on the user's "ok, update" after the changed pins were shown to the user
+  in chat. The script: `update/update.py --stable` (ComfyUI's own; the stash, a backup branch, master, the newest v*
+  tag, pip because the requirements differed).
+- Backup branch: `backup_branch_2026-11-06_02_55_11` (in ComfyUI/, at 3f438ca69 "ComfyUI v0.42.4", 2026-10-21).
+  HEAD now 2c75dc1b3 "ComfyUI v0.44.0" (2026-11-03), `git describe --exact-match` v0.44.0; comfyui_version.py
+  __version__ "0.44.0". Rollback: `git checkout backup_branch_2026-11-06_02_55_11` in ComfyUI/, then
+  `pip install -r` that branch's requirements.txt (§3.7 step 5); not needed.
+- The pins applied (`git diff backup_branch_2026-11-06_02_55_11 v0.44.0 -- requirements.txt` in ComfyUI/, read in this
+  session, requirements_diff.txt here; the same as the update's own `req_installed_v0.42.4.txt` against
+  `req_v0.44.0.txt`):
+    comfyui-frontend-package    1.55.18 -> 1.57.6
+    comfyui-workflow-templates  0.11.94 -> 0.11.101 (and its template sub-packages, which it pins itself:
+                                comfyui-workflow-templates-core 0.3.385, -json 0.1.120, -media-api 0.3.84,
+                                -media-assets-01 0.1.48, -media-assets-02 0.1.21, -media-image 0.3.160,
+                                -media-other 0.3.229, -media-video 0.3.101 before; after: -core 0.3.392,
+                                -json 0.1.127, -media-assets-02 0.1.27, the other five unchanged)
+    comfyui-embedded-docs       0.5.14 -> 0.5.16
+    comfy-aimdo                 0.5.6 -> 0.6.0
+    comfy-kitchen               0.2.39 -> 0.2.40
+    Pillow                      (unpinned) -> >=10.1.0 (already satisfied)
+  torch unchanged: 2.10.0+cu130 (torchvision 0.25.0+cu130, torchaudio 2.10.0+cu130); Python 3.12.9.
+- pip_freeze_before.txt: `python_embeded\python.exe -m pip freeze` taken by the main session right before the update
+  (02:18; its scratchpad comfy_update/pip_freeze_before.txt), copied here unchanged.
+- pip_freeze_after.txt: the same command, taken in this session (06:45, ComfyUI running for LR9, nothing installed
+  since). Against the freeze before, exactly the five pins above and three template sub-packages changed (`diff` of the
+  sorted files: comfy-aimdo, comfy-kitchen, comfyui-embedded-docs, comfyui_frontend_package,
+  comfyui_workflow_templates, comfyui-workflow-templates-core / -json / -media-assets-02); nothing else moved.
+- ComfyUI's stash list holds older entries (stash@{0} on 12081cf, "feat(assets): previews for EXR assets"); this record
+  does not say which update made which.
+
+The probe start after the update (the main session, 02:57, ComfyUI started once with the flags of the user's
+run_nvidia_gpu.bat, then stopped)
+-----------------------------------------------------------------------------------------------------------------
+- "ComfyUI version: 0.44.0", pytorch 2.10.0+cu130, Total VRAM 32607 MB, total RAM 97397 MB, Python 3.12.9.
+- 5,904 node classes; InpaintCanvas with 23 outputs (box_prompt, elements at the end); TextEncodeMOSSImageEdit,
+  RTXVideoSuperResolution (RTX VSR), the DLSS5 nodes and SAM3Segment loaded.
+- IMPORT FAILED: custom_nodes/dlss and custom_nodes/inpaint (no __init__.py) and comfyui-tosvg (no vtracer): the same
+  three as on v0.42.4 and v0.41.2, none of them a pack Scumble's recipes need.
+- Read again in this session (LR9's start, 06:44, the same flags): system_stats.json here (comfyui_version 0.44.0,
+  every comfy package at its required version: frontend 1.57.6, templates 0.11.101, embedded-docs 0.5.16, aimdo 0.6.0,
+  kitchen 0.2.40); /object_info 5,904 classes with TextEncodeMOSSImageEdit, InpaintCanvas (23 outputs, the last two
+  box_prompt and elements), LoraLoaderModelOnly, SAM3Segment, DLSS5Settings, RTXVideoSuperResolution, TextGenerate,
+  TextGenerateV2, PH3ImageConditioning, SkipLayerGuidanceDiTSimple; LoraLoaderModelOnly's lora_name lists 1,205 files,
+  both downloads among them; IMPORT FAILED the same three (inpaint, dlss, comfyui-tosvg). A flux3_klein_local run landed
+  (LR9 run A0).
+
+The downloads (models/loras, 2026-11-06 06:15, by the main session on the user's yes)
+-------------------------------------------------------------------------------------
+  file                                                      bytes        sha256                                                            source
+  moss_image_edit_lora_rank_64_bf16.safetensors             297,382,216  17a48b8c605dcffdedb92a2b887d18cf316505be90802717669fb6556098dcdf  Comfy-Org/MOSS-Image (loras/)
+  qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors   913,314,512  208dd43250e1e01467ba190572ae2e7107a7870ec1ff026bc65f791fa1e80e95  Comfy-Org/Qwen-Image-2.1 (loras/)
+  The sha256 were checked against the Hugging Face API's lfs hashes at the download. Re-read in this session: both
+  files on disk at exactly these sizes (`ls -l`, 06:37) and, once the machine was free, `sha256sum` gave the same two
+  hashes (06:45).
