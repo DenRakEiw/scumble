@@ -1116,3 +1116,94 @@ The order after Stop 1, #3, on `4bfdd74`; full tier on the kernel, normal on the
   Stop 3 re-ranks #9-#16 from these rows; K5 reorders nothing.
 
 Next: Stop 3.
+
+### Stop 3 (2026-11-06)
+
+Re-ranked by a workflow of a ranker and a critic from K5's after-runs; nothing was measured in this stop and no code
+changed. The files: A = `docs/measurements/k5_2026-11-06/after/summary.txt` (its before-runs in `../before/`), W =
+`docs/measurements/w0b_2026-10-23/summary.txt`, K = `docs/measurements/k1b_2026-10-23/run2/summary.txt` (M9's
+`m9_2026-11-06/summary.txt` and D0's `d0_2026-11-06/summary.txt` touch none of #9-#16). The critic's corrected order is
+taken: one must (the ranker moved K9 down on a block argument; §1.1 decides by the wall, so its reason is rewritten and
+its place kept) and four shoulds (colour's number by route, K9's expected gain, K11 against K21 by felt cost x
+frequency, K36's own row). Where the two disagreed the critic's evidence decided; nowhere was the ranker's reading kept
+over it.
+
+**What the rows say (A unless named):**
+- **Select by depth** 1,205 ms (978-1,222) = the window's combine 236 + read 0 + 969: the 40 range_select jobs (8.4 s
+  summed over the workers), the edges and the done step 27 (A:36-37, :66).
+- **Select by luma** 1,734 = combine 137 (most tiles full coverage: one fill) + read 329 (stack_into jobs) + 1,268: the
+  10 range_select jobs (2.5 s summed) and the picture's stack_into jobs (kernel 0.42-0.53 s summed) (A:38-40, :67).
+- **range_depth_snap** (px_jobs) 2,435 (spread 57): read 1,172 + combine 136 + the jobs (A:41, :124).
+- **The wand** across the picture: native wall 901, block 94 (A:58); px_jobs wand_band 1,320 (spread 84) = the
+  worker's flood job (flood about 670 + shape about 177, kernel 835-922) + the window's combine 137 + mips and the box
+  job's read (A:42-43, :94). wand_add 1,623 in px_jobs (combine 162; A:44, :107), native wand_whole_add 811 / block 104
+  (A:60-61). wand_object 91 (spread 23; A:100), its Rust shape 1.7 ms of a 125-131 wall (K:65-66).
+- **Invert** 226 native, all of it block (tileExtent 33, writable 16, tileEmpty 9; A:56-57), perf 250 [247] (A:72);
+  K5 took nothing (230 -> 226, A:21-22). **Grow / shrink** 570 / 364 (A:52-54), their job cut 74 / 65 (W:44-45).
+- **Untouched by K5, so W0b's numbers stand:** colour 4,943 on the JS column; on Rust 4,841 with the picture read on the
+  window in two of three runs and 3,496 through stack_into in r2 (K0b's one run 3,479; W:34, :136, :140-142). The
+  current route (stack_into, as luma reads in every after-run, A:27-28) is unmeasured for colour. fill_limit_rows
+  9,782, psd_fill_limit 14,287 [378], 40 bands (W:108-109). The bucket over a 15k band 2,885, block 1,466
+  (getImageData 1,067 for 572 MB, flood 962; W:55-56); perf's bucket 80 [243], in a 1000 px selection 172 [288] (W:85);
+  the stroke commit 66 (perf), the release 12 (native) (W:86, :43).
+
+**What changed for each of #9-#16:**
+- **K21** (#11 -> #9): the largest remaining frequent wait in the block: all 150 MP are computed and every edge row is
+  read whatever the result (969 of depth's 1,205 in the jobs and the edges, the snap's read 1,172 of 2,435, luma's
+  jobs, colour's whole wall). K5 cleared the ground K21 was written for, and §5's "the combine may be most of range" is
+  answered: it is not. Its chain adds `range_color`, `depth_guide`, `fill_limit` and an `exportperf` with a
+  depth-limited fill layer (§4.8 "Measure"; K5's chain had none of them), so K22, K23, K25 and K24 are ranked on this
+  machine state, not on W0b's. The gain is proportional to the share of tiles outside the compute class (inferred) and
+  must clear depth's spread 244 and the snap's 57.
+- **K11** (#10, the same slot, now after K21): about 75-125 ms off a frequent operation (226 all block -> 100-150, §4.3:
+  the copies stream about 1 GB), certain, 0.75 d and independent of the M chain, so it delays the chain by little at
+  #10. Invert calls `writable` on every tile: the copy K5 deferred for the Rust route's frozen tiles (§7 K5) at a second
+  site; the combine's own copy is still measured on the wand rows, where it is built.
+- **K22** (#12 -> #11): content unchanged; Rust on the per-tile compute K21 leaves (a fresh 64 KB, `snapField`'s 16 taps
+  with two `exp` each, `rangeWeight`, `Math.round`); the snap's route by measurement.
+- **K23** (#14 -> #12, ahead of K25): colour (about 3.5 s on the stack_into route, up to 4.9 s on the window's read) is
+  the slowest interactive selection left, luma 1,734; more felt seconds per use at a higher frequency than K25's export
+  (inferred). Expected (inferred): colour -1.5 to -3 s, luma -0.2 to -0.3 s. **It swaps back behind K25** if
+  `range_color` on K21's chain lands at or below range_depth_snap's 2,435.
+- **K25** (#13, the same slot, now after K23): the largest wall in the block (about 10 s of a 15k layered export with
+  a depth-limited fill layer, W:108-109) for the rarest case. q6.2 is asked at its start; its suggested answer changes
+  the export's snap colour to the screen's, a byte change: said first, a `docs/BUGS.md` entry first.
+- **K9** (#9 -> #14): its reason changes, not its worth by §1.1. K5 took the window half (combineRows 193 + read 55
+  gone, the block 94), so what is left is wall, which counts as felt. It lands only where the cut is large: the shape
+  177 of wand_band's 1,320 (about 13 %), grow's and shrink's cut 74 / 65; on the common wand the Rust shape is 1.7 ms,
+  so at most 1-2 ms there. Expected (inferred): up to about the shape 177 plus the source copy-in 12-16, less the alpha
+  cut's own cost; the block at best 94 -> about 85 (only `_in` shrinks, about 4x; `allocTileBytes` 56 is the window's
+  destination tiles, which stay RGBA). It is K37's coverage source, so it goes right before K36 / K37. wand_band's
+  spread 84 is clearable; wand_object's 23 is not (the tie rule by the kernel row there).
+- **K36** (#15, unchanged): a small felt row of its own at every stroke on a tiles layer (the commit 66, the release
+  12; §4.11 switches it in for the stroke release and `inpaint_canvas.js:11838`), its larger value K37's first half. It
+  asks q6.4 at its start (the first session whose worth hangs on K37; K9 stands on its own); if K37 is refused or the
+  tile route does not measure faster, K36 is built only if the stroke row's gain is worth a session alone.
+- **K37** (#16, unchanged): the largest window freeze left in the block (1,466 of 2,885 on a 15k band) for a rare case;
+  one level against Skia at opacity below 1 (q6.4), said first; a size threshold if small fills lose.
+
+Nothing in #9-#16 is dropped or merged. **How often:** no frequency above is measured; all are inferred, as in Stop 1.
+
+#### The order after Stop 3 (#9-#16 rewritten; every other row as in "The order after Stop 1")
+
+| # | session | content | basis | needs |
+|---|---|---|---|---|
+| 9 | **K21** | M: tile classes, skipped rows, the cut span. Its chain adds `range_color`, `depth_guide`, `fill_limit` and an `exportperf` with a depth-limited fill layer | A:36-41, :66-67 depth 1,205 (jobs and edges 969), snap 2,435 (read 1,172), luma 1,734; W:136 colour 4,943 | K5 (in) |
+| 10 | **K11** | S: `mask_invert` | A:56-57 invert 226 = blk (tileExtent 33, writable 16); A:72 perf 250 [247] | K5 (in) |
+| 11 | **K22** | M: `range_tiles_depth`, the snap's route by measurement | A:36-37 the 40 range_select jobs, 8.4 s summed; A:41 snap 2,435 | K21 |
+| 12 | **K23** | M: `range_tiles_rgba`. Swaps behind K25 if `range_color` on K21's chain is at or below 2,435 | W:136, :140-142 colour 4,943 (JS) / 3,479-3,496 (stack_into); A:38-40 luma 1,734 (jobs 2.5 s summed) | K22 |
+| 13 | **K25** | M: `limit_alpha_rows` and the export / screen snap | W:108-109 fill_limit_rows 9,782; psd_fill_limit 14,287, blk 378 | K22, q6.2 |
+| 14 | **K9** | S: `flood_shape` `out_kind` / `cells`, the alpha-tile cut | A:42-43 wand_band 1,320 (shape about 177); W:44-45 grow / shrink cut 74 / 65; K:65-66 wand_object shape 1.7 | K5 (in) |
+| 15 | **K36** | F: `composite_masked_tile`; asks q6.4 | W:86 stroke commit 66, W:43 release 12; W:85 bucket 80 [243] / 172 [288] | K0b (in) |
+| 16 | **K37** | F: the bucket over tiles | W:55-56 2,885, blk 1,466 (getImageData 1,067 for 572 MB) | K9, K36, q6.4 |
+
+**Outside the block:** nothing moves. K24 (#27) needs K4, not K21-K23; K39 (#46) needs K1's release check (M8, in).
+The order from here is the user's of 2026-10-24: W1 -> K12 (Stop 5) -> G6 -> the table from K4 on, with #9-#16 as
+above. That answer's gloss names the E chain before the M chain and K11 after K9; the table's numbers govern (the
+answer says "the critic's table above"), Stop 3 leaves the E chain (#22-24) where it is, and K11 now runs before K9
+because K21's chain is the larger wait and K11 depends on neither.
+
+**Asked of the user:** nothing. No row is dropped and no behaviour the user sees changes in this stop; the two byte
+changes the block meets are asked by the sessions that need them (q6.2 at K25's start, q6.4 at K36's), as §6 says.
+
+Next: W1.
