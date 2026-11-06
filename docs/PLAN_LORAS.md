@@ -749,6 +749,15 @@ whenever the user has the key at hand; LR7 before LR5, since LR5 runs its varian
 
 ## 6. Open questions for the user, each with a recommendation
 
+**The user's answers (2026-11-06, AskUserQuestion; every recommendation taken):** Q1 one MOSS edit recipe fixed to
+`Moss-Image-Edit`, the ai-toolkit LoRAs by the user's own copy with the manual's sentence; Q2 Claude downloads the edit
+LoRA at LR8 with its sha256 checked, the size said in chat first; Q3 the two short comments posted the same day by Claude
+on the user's word ("Du postest sie jetzt"): #10 https://github.com/DenRakEiw/scumble/issues/10#issuecomment-6675196512,
+#11 https://github.com/DenRakEiw/scumble/issues/11#issuecomment-6675196818 (0.1.52 named as the next update; a closing
+comment at the release); Q4 Comfy-Org's Qwen Image 2.1 turbo LoRA for LR9, its size and link said in chat before the
+download, the user's 2509-era `qwen/` LoRAs as the amber line's check. Nothing below is open now but the conditional
+fifth question.
+
 Only what the code cannot answer. Where nothing is said by the session that needs it, the recommendation is taken and
 the hand-over says so.
 

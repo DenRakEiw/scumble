@@ -726,8 +726,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   start with the user's flags: 5,904 classes, InpaintCanvas 23 outputs, RTX VSR, DLSS5, `SAM3Segment`, the same three
   IMPORT FAILED as on 0.42.4 and 0.41.2 (`dlss`, `inpaint`, `comfyui-tosvg`); stopped again, as it was). **The plan is
   `docs/PLAN_LORAS.md`** (research of three readers in `docs/research/issues10_11_2026-11-06/`, two critics): sessions
-  LR0-LR10, about 8.5-9 days (inferred); open: its §6 Q1-Q4 (one MOSS edit recipe, who downloads the edit LoRA, issue
-  comments now, the Qwen 2.1 LoRA for the live run).
+  LR0-LR10, about 8.5-9 days (inferred); its §6 answered the same day (one MOSS edit recipe, Claude downloads the
+  edit LoRA with sha256, Comfy-Org's Qwen 2.1 turbo LoRA for the live run); the comments on #10 and #11 posted by Claude
+  on the user's word (0.1.52 named), a closing comment at the release.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
