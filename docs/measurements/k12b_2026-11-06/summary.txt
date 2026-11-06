@@ -1,0 +1,144 @@
+K12b (docs/PLAN_WASM_BUILD.md §7 "Stop 5", 3.): the marches' feed (a), the drag step's block (b), 64 stripes (c).
+15000 x 10000, `perf:15000x10000,--filter=relight,--map=4096x2731` (tools/perf_test.py), each run a fresh instance
+(run_gates.sh, offline, tiles, port 9555, its own profile) under the machine's busy lock; k12b_chain.sh (a copy of
+../k12_2026-11-06/k12_chain.sh), k12b_others.py, summarize.py (K12's rows plus K12b's), quick_gaps.py (the gaps of a row).
+
+The folders (three fresh runs each, all focused and visible at start and end, none retried):
+- before/      bc3c37e's code as it stands (renderer/ at HEAD 2ea002b, whose code is bc3c37e's) with the extended harness,
+               12:26-12:32. K12's after/ was not used as a stand-in (the harness gained rows); its rows agree with it
+               inside the spreads: 8 NORMAL jobs during a three-light march 986 (K12 1,019), one light 628 (649), three
+               lights 1,053 (1,031), a sun 253 (260), the drag step's block 33.9 (36.7).
+- after_build/ the feed as built, 12:46-12:51 (the build's own after; before the review's fixes, which change no row:
+               the terminate guard and the tests).
+- after2/      the same code, every relight row with its gaps and landings, and two A/B rows with the order swapped (three
+               lights moved with every stripe posted, then fed again; a whole change during a march fed again after the
+               unfed one), 13:08-13:14.
+- after_busy/  the code after the review (the terminate guard) with the review's new rows (eight NORMAL jobs of about a
+               stripe's time), 13:58-14:05; beside an outside CPU job (below), so every march row 3-5 % slower, the
+               one-job routes too.
+- after/       the same code plus one more row (the sun fed again after the unfed march), 14:41-14:48, beside the same
+               outside job: the set of record for the review's rows, the A/B in one run counts.
+- gates/       the functional runs (below).
+The machine: the lock waited 240 s (before; CK I0b's WebGPU bench), 630 s (after_build; CK I0b's CPU provider batch),
+900 s (after2; CK I0b's DirectML bisect), 0 s (after_busy) and 150 s (after; CK B0's ComfyUI start and GPU probe); no other
+agent's gate run during any run (before r1: the others' check waited 18 min on another agent's Bash wrapper shell that
+only waited for this lock, then the check was fixed to skip wrapper shells and the run went on, chain.log's NOTE; before
+r3 31 s and after_build r1 153 s on an instance on 9577, after2 r1 31 s on a gate run that ended). An outside CPU job
+(not this repo's and not under the lock: F:\hf_duck es_heist.py, four multiprocessing workers at about 1.1 threads each on
+this 24-thread machine, started 13:25:35) ran beside after_busy/ and after/; this session waited 14:08-14:38 for it to end
+and it did not (after/chain.log's NOTE). GPU before / after each run: 3,423-3,568 MiB at 0-11 % (before, after_build,
+after2), 4,046-4,127 MiB at 2-4 % (after_busy), 4,324-4,344 MiB at 1-4 % (after); ComfyUI on 8188 did not answer (000).
+
+Built (a), JS only, the same bytes (ABI 21, px.wasm / px_scalar.wasm untouched):
+- inpaint_relight.js: marchOnPool's `budget`; feedMarch / feedPump / feedFail, one feed per pool: at most `budget` stripes
+  of all full marches posted at once, first come first served across the marches, the next posted in the answer's
+  microtask; a fed march's stripes carry pool.defaults() of the march's start; cancelMarch(pool, group) drops a march's
+  stripes still in the feed and cancels its posted ones; marchFeedStats(pool). The review's fix: on a pool that is
+  terminated (inpaint_pool.js `terminate()` now sets `terminated`) or off, feedPump fails every march still waiting
+  instead of posting it (it used to start new workers on a terminated pool that nothing stopped: a harness's fresh pool,
+  inpaint_jobs.js resetPool).
+- inpaint_canvas.js: full marches budget = the route relightFeed, else pool.size + 1 (every worker busy and one stripe
+  queued: a worker that frees takes the queued stripe before any EXPORT job, so the classes keep their order; with the
+  size alone a queued EXPORT job would take the first worker that frees, px_test shows both); quick marches 0 (at once,
+  INTERACTIVE, never cancelled by a full one); supersede -> cancelMarch.
+- px/kernels.js: the route relightFeed (count; 0 = every stripe posted at once, K12's way).
+
+Medians [min-max] of three runs; "fed" and "every stripe posted" (the route relightFeed 0) in the same runs. The sets are
+named in the order before / after_build / after2 / after_busy / after.
+- 8 NORMAL jobs of 1 KB (a crc) posted after a three-light move, the slowest one's queue wait:
+    before 986 [982-1,002] ms; fed 73.5 [72.5-81.1] / 76.3 [69.5-77.5] / 69.2 [67.8-82.5] / 73.2 [70.8-73.4], every
+    stripe posted in the same runs 1,007 / 998 / 1,023 / 1,040; one job a light (before K12) 4.6-5.3 in every set.
+    What that number is (corrected by the review): one job's wait, not eight. With the budget at size + 1 the release
+    posts 8 stripes to the workers and 1 into the queue, and the eight jobs queue behind that one. When the first stripe
+    answers, its worker takes the queued stripe (the feed then posts the next one behind the jobs). When the second
+    answers, its worker takes the first job, and the eight 1 KB jobs (about 1 ms each) run back to back on that worker,
+    since `_reply` -> `_pump` gives a freed worker the queue's head: the slowest answers 1.1-1.2 ms after its send. So
+    73 ms is the release's second stripe answer (the cheapest stripes answer first; a stripe takes 110-130 ms at the
+    median) plus seven jobs of about 1 ms: the worst case for one NORMAL job at a march's start. Jobs this small cannot
+    tell one job's wait from eight.
+- 8 NORMAL jobs of about a stripe's time (the review's new row: a crc of one 30-31 MB blob, sized on a calm pool so a job
+  alone takes 59.7 [58.9-60.2] ms; eight side by side take 113 [110-217] ms each, the blob reads and the cores shared),
+  after (after_busy in parentheses where it differs): [the first job's queue wait, the last one's], then [the first answer,
+  the last]:
+    no march:               0 / 0;             answers 110 / 119 (113 / 117)
+    one job a light:        0 / 93.9 [91.5-94.5] (98);       answers 93.7 / 170 [169-172] (185)   (before K12: three
+                            workers march, the five others take five jobs at once, the last three wait for them)
+    fed:                    72.1 [69.9-74.1] / 142 [142-173] (75.4 / 160);   answers 142 / 208 [204-237] (160 / 225)
+    every stripe posted:    1,030 [1,022-1,048] / 1,044 [1,038-1,076] (1,046 / 1,074);   answers 1,135 / 1,151 (1,154 /
+                            1,173)
+    So work that takes real time gets the pool back within about one stripe round: the first job waits for the
+    release's second stripe answer, the last for about one stripe more (142-160 ms, a three-light stripe 121 [115-121]
+    ms in after), against about 1.04 s with every stripe posted (K12) and 94-98 ms with one job a light (before K12).
+    The eight answer 208-225 ms after their post, against 1,151-1,173 (K12) and 170-185 (before K12).
+- one light moved, landed: before 628 [610-630]; after_build 630 [629-644]; after2 609 [606-646]; after_busy 662
+    [657-667]; after 670 [642-762] (the outside job: the one-job route 3,504-3,578 -> 3,686-3,712 in the same sets). The
+    same march again in one run: fed 519 / 511 / 547 / 547, every stripe posted 505 / 513 / 557 / 539 (after_build,
+    after2, after_busy, after): inside the spreads.
+- three lights moved, landed: before 1,053 [1,036-1,053]; after_build 1,056; after2 1,064; after_busy 1,099; after 1,110
+    [1,077-1,120]. Again: fed 1,083 / 1,069 / 1,129 / 1,118, every stripe posted 1,080 / 1,083 / 1,126 / 1,134; moved
+    with the order swapped (after2, after_busy, after): every stripe posted 1,097 / 1,144 / 1,139, fed again 1,096 /
+    1,148 / 1,091. Inside.
+- a sun, landed: before 253 [248-258]; after_build 256; after2 263; after_busy 260; after 261 [252-279]. Again: fed 245
+    [243-255] / 250 [249-253] / 266 [263-283] / 265 [252-280], every stripe posted 243 [243-245] / 246 [246-251] / 251
+    [244-259] / 244 [243-263]. The unfed median is lower in all four sets (2, 4, 15, 21 ms) but the spreads touch in
+    three and the rows run in a fixed order (fed third, every stripe posted fifth), so after/ added the fed march again
+    after the unfed one (sixth): 256 [254-268] against 244 [243-263], the spreads touch, busy share 0.80 against 0.82.
+    A tie (rule 2's spreads), leaning to the unfed by a few ms on the medians; no mechanism found (both routes hand a
+    freed worker the queued stripe in the reply's task, the feed refills the queue in that task's microtask).
+- the window's longest block, three lights moved: before 58.1 [53.8-64.3]; after_build 91 [88-114]; after2 70.9
+    [65.6-99.8]; after_busy 48.8 [47.6-52.4]; after 50.6 [49.5-54.1]. Not the feed: in one run every stripe posted gives
+    the same (after2: again 60 [52-101] against fed 59.2 [43.4-74.5]; moved 60.6 [51.9-88.7] against fed again 53.1
+    [50.2-64.7]). The gaps (after2) put it at the end, 1,040-1,090 ms after the release: the second and third lights land
+    within about 40 ms of each other (landings at about 500, 1,010 and 1,050 ms in every row, fed or not) and their two
+    landings and redraws run back to back. A finding for later, not K12b's (there with every stripe posted too).
+- a whole change's mips during a three-light march: before 241 [219-257]; fed (first) 208 / 150 / 157 / 215 [167-244],
+    every stripe posted (second) 155 / 156 / 157 / 138 [137-162], fed again (third; after2 on) 152 / 144 / 155 [134-168].
+    The order of the rows, not the feed: the first of them is the slowest in every set, fed again ties the unfed one.
+(b) the drag step's quick map (quick marches are not fed), the window's longest block, one job (the route relightStripes
+    0) against the stripes in the same run: before 37.7 [37.3-38.2] / 37.9 [35.6-39.6]; after_build 36.0 [31.3-39.6] /
+    33.8 [33.7-37.1]; after2 38.9 [32.9-42.4] / 31.2 [29.8-33.3]; after_busy 38.0 / 34.9; after 37.0 [31.3-37.7] / 36.8
+    [32.6-37.2] (the named row 33.9 / 40.7 / 34.5 / 35.8 / 36.1). Not confirmed: the stripes are not worse in one run.
+    The gaps show the block is the step's own frame (a gap from 7-21 ms after the step, 31-40 ms long, in both routes);
+    the landing is a gap of its own after it (5-29 ms). K12's 30 -> 37 was across builds and harness positions (the
+    named row moves by 7 ms between these sets with the same code). No code for (b).
+(c) 64 stripes (the route relightStripes 64 = STRIPES_PER_WORKER 8 on 8 workers) against 32, the same march again (the
+    sets before / after_build / after2 on a quiet machine; after_busy / after beside the outside job):
+    - one light (the twin): 507 [496-511] / 500 [499-527] / 507 [494-528] / 554 / 542 against 32's 497 / 519 / 511 / 547
+      / 547; efficiency 0.872 / 0.873 / 0.868 against 0.879 / 0.849 / 0.863, busy 0.95 both: a tie.
+    - three lights: 1,036 [1,031-1,043] / 1,048 [1,029-1,072] / 1,030 [1,017-1,032] / 1,091 / 1,112 against 1,080 / 1,083
+      / 1,069 / 1,129 / 1,118: 64 wins by 3-4 % on the quiet machine (0.5-3 % beside the outside job); efficiency 0.915 /
+      0.901 / 0.930 against 0.875 / 0.877 / 0.892, busy 0.97 against 0.96 (the tail of the last light shorter).
+    - a sun (Rust, stripes of 60 -> 40 ms): 249 [246-256] / 262 [246-265] / 258 [256-264] / 267 / 266 against 241 / 245 /
+      250 / 266 / 265: 64 loses by 3-7 % (+8-17 ms) on the quiet machine (corrected by the review: 3.3 / 6.9 / 3.2 %),
+      +1 ms beside the outside job; efficiency 0.704 / 0.688 / 0.706 against 0.742 / 0.736 / 0.725, busy 0.77-0.79
+      against 0.81-0.82.
+    So more stripes shrink the twin's tail and cost the sun more than its tail: about 2-4 ms of a worker's time a stripe
+    (inferred: the sun's wall +8-17 ms for 32 more stripes on 8 workers, 4 more a worker), the per-stripe dispatch a
+    threads build could win; at 32 stripes that is about 8-16 ms of a sun's 245 and of a light's 510 (inferred). The
+    sun's idle share (1 - busy, 18 % at 32 stripes, 23 % at 64) is mostly per stripe, not tail. STRIPES_PER_WORKER stays
+    4 (mixed: a tie for one light, the sun worse); for K14, whose sun route changes: a stripe count per kernel (8 for the
+    twin, 4 or fewer for a sun) is the row to try.
+
+The route (§1.1): the feed is the default (the route relightFeed absent = the pool's size + 1, no route entry). The row it
+was built for: a NORMAL job's wait during a three-light march 1.04 s -> 73 ms for one job and -> 142-160 ms for the last
+of eight stripe-sized ones, far beyond the spreads; every march row inside its spread or a tie (the sun leaning a few ms
+to the unfed, spreads touching in four of five comparisons); no window work added (rule 3: the longest blocks the same
+fed or unfed in one run).
+
+Tests (gates/): px_test PASS (relightStripeCases + feedCases: the budget across two marches, first come first served,
+the bytes; a NORMAL job sent as soon as the first stripe answers, after every stripe without a budget; one set of fields
+a march; size + 1 keeps an EXPORT job behind the march and a NORMAL one after two stripes, the size alone lets EXPORT
+first; cancelMarch on a march partly posted and on one waiting whole; a failed stripe; the review's new case: a pool
+terminated with a march waiting whole in the feed rejects both, sends nothing of the waiting one, starts no worker after
+it, and a later march rejects at once; red with the guard taken out: B fulfilled, 8 stripes sent, 2 workers started).
+relight gate --offline: k12b-tiles-b 314 in-app checks, k12b-canvas-b 313, k12b-final-tiles 314 (new case nf: three
+lights' marches post at most the pool's size + 1, the rest waits in the feed, all land with the bytes of one call; the
+route relightFeed 0 posts every stripe at once; case nk counts the superseded marches' stripes in the pool and the feed
+together: 12 = 2 x 6, 3 of them in the feed); after the review k12b-fix-tiles 315 and k12b-fix-canvas 314 (case nf's new
+check: a quick march posted while the full marches wait in the feed feeds nothing, puts its stripes on the pool at once
+and lands before the full marches' last; red with quick marches given the full marches' budget, the file restored
+from its copy after: both nf checks). pxjobs PASS (k12b-tiles, k12b-final-tiles, k12b-fix-tiles-b), types
+PASS. lint: `npx eslint . --ignore-pattern ".claude/**"` 0 errors (k12b-fix-tiles-b/lint.log); `npx eslint .` itself is rc
+1 only from two parse errors in other agents' worktrees (.claude/worktrees/{ck-merge,corridorkey}/docs/measurements/
+ck_i0a_2026-11-06/scripts/s0_setup.js). build_node.py --check (read only): only the 15 expected "differs" lines
+(k12b-fix-tiles-b/build_node_check.log; the node build is due at the release).

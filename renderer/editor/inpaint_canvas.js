@@ -53,7 +53,7 @@ import { heightNormals, shadowMarch, pxCalls, kernelRoutes, setRoute as setKerne
 import { statusKindFor, failKind, refusal } from "./inpaint_status.js";
 import { RunProgress } from "./inpaint_progress.js";
 import { canvasSizeRefusal, CANVAS_MAX_SIDE } from "./inpaint_sizelimit.js";
-import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset, loraPercent, relightMapKey, relightDepthScale, relightVisKey, relightVisCurrent, marchOnPool, STRIPES_PER_WORKER } from "./inpaint_relight.js";
+import { lightToMap, defaultLight, KELVIN_PRESETS, LIGHT_MAX, lightColorHex, LIGHT_PRESETS, SPOT_GOBOS, applyLightPreset, loraPercent, relightMapKey, relightDepthScale, relightVisKey, relightVisCurrent, marchOnPool, cancelMarch, STRIPES_PER_WORKER } from "./inpaint_relight.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -23586,7 +23586,9 @@ class InpaintEditor {
         // size, the ticket), cut into stripes by marchOnPool. A full march of a channel supersedes the one still on its way for it (the light moved on,
         // went off, or came back to the key the channel holds): the older one's queued stripes are cancelled and its
         // pending key is freed at once, so the light can march there again. A quick march is never cancelled: the quick
-        // map trails the pointer, an older answer still lands over an older one.
+        // map trails the pointer, an older answer still lands over an older one. K12b: a full march's stripes go through
+        // the pool's feed (at most the route relightFeed, else the pool's size + 1, stripes of all full marches posted at
+        // once), so other NORMAL pool work waits for about one stripe; a quick march's go at once (INTERACTIVE).
         const fullMarches = cache.fullMarches || (cache.fullMarches = [null, null, null, null]);
         const supersede = (i) => {
             const m = fullMarches[i];
@@ -23595,7 +23597,7 @@ class InpaintEditor {
             m.superseded = true;
             cache.pending.delete(m.pendingKey);
             const pool = editorPool();
-            if (pool && !pool.off) pool.cancel(m.group);
+            if (pool && !pool.off) cancelMarch(pool, m.group);   // its stripes in the feed too (K12b)
         };
         // the depth map's name for the workers' resident copy of it (px.js `_slot`): its data, the march's size
         const depthKey = `${mapKey}:${quick ? "q" : "f"}:${targetW}x${targetH}`;
@@ -23651,7 +23653,7 @@ class InpaintEditor {
                     const pool = editorPool();
                     const posted = performance.now();
                     if (pool && !pool.off) {
-                        const stripes = kernelRoute("relightStripes");
+                        const stripes = kernelRoute("relightStripes"), feed = kernelRoute("relightFeed");
                         vChan = await marchOnPool(pool, {
                             depth: marchDepth,
                             w: targetW,
@@ -23663,7 +23665,12 @@ class InpaintEditor {
                             steps,
                             bias,
                             key: depthKey,
-                        }, { priority: quick ? INTERACTIVE : NORMAL, group: march.group, stripes: stripes === undefined ? STRIPES_PER_WORKER * pool.size : stripes });
+                        }, {
+                            priority: quick ? INTERACTIVE : NORMAL,
+                            group: march.group,
+                            stripes: stripes === undefined ? STRIPES_PER_WORKER * pool.size : stripes,
+                            budget: quick ? 0 : (feed === undefined ? pool.size + 1 : feed),
+                        });
                     } else {
                         vChan = shadowMarch(marchDepth, targetW, targetH, marchScale, lightVec, radius, taps, steps, bias, 0, targetH);
                     }

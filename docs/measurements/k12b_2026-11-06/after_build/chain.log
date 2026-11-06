@@ -1,0 +1,35 @@
+[12:32:53] commit 2ea002b (dirty: 6 files); px ABI ABI = 21; rounds: 1 2 3
+[12:32:53] px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+lock: held by 'CK I0b CPU provider batch 51064 2026-11-06T12:08:27', waiting
+lock: taken after 630 s
+[12:43:24] lock: taken (K12b measuring 46768 2026-11-06T12:32:53)
+others: busy, waiting: 44844 sh.exe: "C:\Program Files\Git\usr\bin\sh.exe" ./node_modules/.bin/electron . --remote-debugging-port=9577 --user-data-dir=C:/Users/SCHOEN~1/AppData/; 21516 node.exe: "C:\Program Files\nodejs\node.exe" node_modules\.bin/../electron/cli.js . --remote-debugging-port=9577 --user-data-dir=C:/Users/SCHOEN~1/App; 50836 electron.exe: F:\canvas\node_modules\electron\dist\electron.exe . --remote-debugging-port=9577 --user-data-dir=C:/Users/SCHOEN~1/AppData/Local/Temp/claude; 6252 electron.exe: "F:\canvas\node_modules\electron\dist\electron.exe" --type=renderer --user-data-dir="C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\5
+[12:45:57] others: 0 busy; no instance on 9571; waited 153 s
+[12:45:57] perf-relight r1 (try 1)
+[12:46:01] gpu: 3545 MiB, 2 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 85s 
+ALL PASS
+[12:47:42] rc=0
+[12:47:46] gpu: 3548 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[12:47:46] lock: taken (K12b measuring 48648 2026-11-06T12:47:46)
+[12:47:47] others: 0 busy; no instance on 9571
+[12:47:47] perf-relight r2 (try 1)
+[12:47:51] gpu: 3548 MiB, 2 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 84s 
+ALL PASS
+[12:49:31] rc=0
+[12:49:35] gpu: 3563 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[12:49:36] lock: taken (K12b measuring 42124 2026-11-06T12:49:36)
+[12:49:36] others: 0 busy; no instance on 9571
+[12:49:36] perf-relight r3 (try 1)
+[12:49:40] gpu: 3555 MiB, 2 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 85s 
+ALL PASS
+[12:51:21] rc=0
+[12:51:25] gpu: 3530 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+[12:51:25] done

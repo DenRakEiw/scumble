@@ -9,6 +9,7 @@ import { sstep } from "./inpaint_weights.js";
 import { registerGLFilter } from "./inpaint_filters_gl.js";
 import { bilinearResize } from "./inpaint_depth.js";
 import { heightNormals, shadowMarch, boxBlurs } from "./px/kernels.js";
+import { CancelledError } from "./inpaint_pool.js";
 
 // ---- the march on the pool in stripes (K12, docs/PLAN_WASM_BUILD.md section 4.5) ---------------------------------------------
 
@@ -50,12 +51,15 @@ export function stripePlan(h, count, minRows = STRIPE_MIN_ROWS) {
  * transferred, as before K12. Every stripe goes in `group` at `priority`; when one fails or answers other rows than it
  * was sent, the march rejects and the rest of its group is cancelled. A group cancelled from outside (a newer march of
  * the channel superseded this one) rejects with the pool's CancelledError (`err.cancelled`).
+ * `budget` > 0 (K12b, the full marches): the stripes go through the pool's feed (`feedMarch`), which keeps at most
+ * `budget` stripes of all fed marches on the pool at once; a fed march is cancelled with `cancelMarch`, not
+ * `pool.cancel` alone. 0 posts every stripe at once (the quick marches; the route relightFeed 0).
  * @param {any} pool
  * @param {any} args
- * @param {{ priority?: number, group?: any, stripes?: number }} [opts]
+ * @param {{ priority?: number, group?: any, stripes?: number, budget?: number }} [opts]
  * @returns {Promise<Uint8Array>}
  */
-export async function marchOnPool(pool, args, { priority = 1, group = null, stripes = 0 } = {}) {
+export async function marchOnPool(pool, args, { priority = 1, group = null, stripes = 0, budget = 0 } = {}) {
     const { depth, w, h } = args;
     const shared = typeof SharedArrayBuffer === "function" && !!depth && depth.buffer instanceof SharedArrayBuffer;
     if (!shared || !(stripes > 1)) {
@@ -64,6 +68,7 @@ export async function marchOnPool(pool, args, { priority = 1, group = null, stri
     }
     const out = new Uint8Array(new SharedArrayBuffer(w * h));
     const plan = stripePlan(h, stripes);
+    if (budget > 0) return feedMarch(pool, args, out, plan, { priority, group, budget });
     try {
         const replies = await pool.map(plan.map(([row0, rows]) => ({ op: "relight_shadow", args: { ...args, out, row0, rows } })), { priority, group });
         for (let i = 0; i < plan.length; i++) {
@@ -77,6 +82,142 @@ export async function marchOnPool(pool, args, { priority = 1, group = null, stri
         throw err;
     }
     return out;
+}
+
+// ---- the marches' feed (K12b, docs/PLAN_WASM_BUILD.md section 7 "Stop 5") -----------------------------------------------------
+//
+// K12 posted a march's stripes at once, so other NORMAL pool work (a transform's resample rows, a file's read) queued
+// behind every stripe of every full march in flight: eight small jobs after a three-light move waited about 1 s. The
+// feed of a pool keeps at most `budget` stripes of all fed marches posted at once, first come first served across the
+// marches, and posts the next as one answers, in that answer's microtask. The window gives the pool's size + 1: every
+// worker busy and one stripe queued, so a worker that frees takes that stripe before any EXPORT work (an upload's
+// encode, an export's bands: the classes keep their order, as with every stripe queued), and a NORMAL job posted
+// meanwhile waits for two stripes to answer at most, not for the marches. One feed per pool, so marches of every layer
+// and every tab of the page share the budget. A stripe carries the fields its march was posted with
+// (`pool.defaults()` once a march, as K12's stripes all took them at the march's start). A march cancelled from outside
+// (`cancelMarch`: its stripes not posted yet are dropped, the posted ones cancelled in the pool) or failing rejects,
+// and its stripes not posted yet are never posted; on a pool that is terminated (`pool.terminated`) or off, every march
+// still waiting rejects and nothing more is posted. A running stripe the pool cancelled leaves the feed's count at once
+// although its worker still runs it, so right after a supersede the next march's stripes may queue behind it (one
+// stripe round, accepted).
+
+/** pool -> its feed: { flying (stripes posted, not answered), limit (the budget), marches (stripes left to post, in order), dropped (stripes never posted: cancelled or failed) } */
+const FEEDS = new WeakMap();
+
+function feedOf(pool) {
+    let f = FEEDS.get(pool);
+    if (!f) FEEDS.set(pool, (f = { flying: 0, limit: 0, marches: [], dropped: 0, posted: 0, peak: 0 }));
+    return f;
+}
+
+/**
+ * The feed's counters for `pool` (tests, the harness): { flying, waiting (stripes not posted yet), marches, posted,
+ * dropped, peak (the most stripes posted at once), limit }.
+ * @param {any} pool
+ */
+export function marchFeedStats(pool) {
+    const f = FEEDS.get(pool);
+    if (!f) return { flying: 0, waiting: 0, marches: 0, posted: 0, dropped: 0, peak: 0, limit: 0 };
+    return { flying: f.flying, waiting: f.marches.reduce((a, m) => a + m.plan.length - m.next, 0), marches: f.marches.length, posted: f.posted, dropped: f.dropped, peak: f.peak, limit: f.limit };
+}
+
+/** A fed march ends: its stripes not posted yet are dropped (counted), and it rejects with `err` once. */
+function feedFail(f, m, err) {
+    if (m.over) return;
+    m.over = true;
+    const i = f.marches.indexOf(m);
+    if (i >= 0) f.marches.splice(i, 1);
+    f.dropped += m.plan.length - m.next;
+    m.next = m.plan.length;
+    m.reject(err);
+}
+
+function feedPump(pool, f) {
+    if (pool.terminated || pool.off) {
+        // a pool that is gone (terminate: tests, a harness's fresh pool) or off: the marches still waiting fail here, or
+        // their stripes would start new workers on a terminated pool that nothing ever stops
+        const err = new Error(pool.terminated ? "pool terminated" : "no worker pool");
+        for (const m of f.marches.slice()) feedFail(f, m, err);
+        return;
+    }
+    while (f.marches.length && f.flying < f.limit) {
+        const m = f.marches[0];
+        const i = m.next++;
+        if (m.next >= m.plan.length) f.marches.shift();
+        const [row0, rows] = m.plan[i];
+        f.flying++;
+        f.posted++;
+        if (f.flying > f.peak) f.peak = f.flying;
+        let p;
+        try {
+            p = pool.run("relight_shadow", { ...m.fields, ...m.args, out: m.out, row0, rows }, [], { priority: m.priority, group: m.group });
+        } catch (err) {
+            p = Promise.reject(err);
+        }
+        p.then((r) => {
+            f.flying--;
+            if (!m.over) {
+                if (!r || r.row0 !== row0 || r.rows !== rows) {
+                    feedFail(f, m, new Error(`relight_shadow: stripe ${i} answered rows ${r ? r.row0 : "-"}+${r ? r.rows : "-"}, it was sent ${row0}+${rows}`));
+                    if (m.group !== null && m.group !== undefined) pool.cancel(m.group);
+                } else if (++m.done === m.plan.length) {
+                    m.over = true;
+                    m.resolve(m.out);
+                }
+            }
+            feedPump(pool, f);
+        }, (err) => {
+            f.flying--;
+            if (!m.over) {
+                feedFail(f, m, err);
+                // a stripe that failed: the rest of the march's group goes too (a cancel from outside did that already)
+                if (!(err && err.cancelled) && m.group !== null && m.group !== undefined) pool.cancel(m.group);
+            }
+            feedPump(pool, f);
+        });
+    }
+}
+
+/**
+ * One march through the pool's feed (`marchOnPool` with a budget): its `plan`'s stripes into `out`, at most `budget`
+ * stripes of all fed marches posted at once.
+ * @param {any} pool
+ * @param {any} args
+ * @param {Uint8Array} out
+ * @param {Array<[number, number]>} plan
+ * @param {{ priority: number, group: any, budget: number }} opts
+ * @returns {Promise<Uint8Array>}
+ */
+function feedMarch(pool, args, out, plan, { priority, group, budget }) {
+    const f = feedOf(pool);
+    f.limit = Math.max(1, Math.floor(budget) || 1);
+    return new Promise((resolve, reject) => {
+        const fields = typeof pool.defaults === "function" ? pool.defaults() : null;
+        f.marches.push({ args, out, plan, priority, group, fields, next: 0, done: 0, over: false, resolve, reject });
+        feedPump(pool, f);
+    });
+}
+
+/**
+ * Cancels the march of `group` on `pool` (a newer march of the channel supersedes it): its stripes still in the feed are
+ * dropped and never posted, the posted ones cancelled in the pool (queued ones never run, a running one's answer is
+ * dropped); the march rejects with the pool's CancelledError. Returns the stripes cancelled (dropped + the pool's).
+ * @param {any} pool
+ * @param {any} group
+ * @returns {number}
+ */
+export function cancelMarch(pool, group) {
+    if (group === null || group === undefined) return 0;
+    const f = FEEDS.get(pool);
+    let n = 0;
+    if (f) {
+        for (const m of f.marches.slice()) {
+            if (m.group !== group) continue;
+            n += m.plan.length - m.next;
+            feedFail(f, m, new CancelledError(group));
+        }
+    }
+    return n + pool.cancel(group);
 }
 
 const DUMMY_NORMALS = { data: new Uint8Array([128, 128, 255, 255]), width: 1, height: 1, channels: 4, linear: true };

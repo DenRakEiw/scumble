@@ -1,0 +1,34 @@
+[13:58:49] commit 2ea002b (dirty: 7 files); px ABI ABI = 21; rounds: 1 2 3
+[13:58:49] px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+lock: taken after 0 s
+[13:58:49] lock: taken (K12b measuring 10216 2026-11-06T13:58:49)
+[13:58:50] others: 0 busy; no instance on 9571
+[13:58:50] perf-relight r1 (try 1)
+[13:58:54] gpu: 4124 MiB, 3 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 103s 
+ALL PASS
+[14:00:53] rc=0
+[14:00:57] gpu: 4127 MiB, 3 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[14:00:57] lock: taken (K12b measuring 38452 2026-11-06T14:00:57)
+[14:00:58] others: 0 busy; no instance on 9571
+[14:00:58] perf-relight r2 (try 1)
+[14:01:02] gpu: 4123 MiB, 3 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 101s 
+ALL PASS
+[14:02:59] rc=0
+[14:03:04] gpu: 4057 MiB, 4 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[14:03:04] lock: taken (K12b measuring 50132 2026-11-06T14:03:04)
+[14:03:05] others: 0 busy; no instance on 9571
+[14:03:05] perf-relight r3 (try 1)
+[14:03:09] gpu: 4046 MiB, 4 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 100s 
+ALL PASS
+[14:05:06] rc=0
+[14:05:10] gpu: 4114 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+[14:05:10] done
+NOTE (written 14:40, after the runs): an outside CPU job (not this repo's, no lock: F:\hf_duck es_heist.py, pid 46352 with four multiprocessing workers at about 1.1 threads each, started 13:25:35) ran beside every run of this set; the GPU's memory 4,0xx MiB against 3,4xx-3,5xx in before/ and after2/. Kept as after_busy/; after/ is the set run again with the swapped sun row (still beside that job).

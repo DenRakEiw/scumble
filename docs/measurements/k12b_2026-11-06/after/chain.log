@@ -1,0 +1,35 @@
+[14:39:15] NOTE: an outside CPU job (not this repo's, no lock: F:\hf_duck es_heist.py, pid 46352 with four multiprocessing workers at about 1.1 threads each, started 13:25:35) runs on this 24-thread machine; waited 14:08-14:38 for it to end, it did not; measured beside it, as after_busy/ was (13:58-14:05)
+[14:39:16] commit 2ea002b (dirty: 7 files); px ABI ABI = 21; rounds: 1 2 3
+[14:39:16] px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+lock: held by 'B0 ComfyUI start and GPU probe (ck-b0) 50320 2026-11-06T14:27:31', waiting
+lock: taken after 150 s
+[14:41:46] lock: taken (K12b measuring 49208 2026-11-06T14:39:16)
+[14:41:46] others: 0 busy; no instance on 9571
+[14:41:46] perf-relight r1 (try 1)
+[14:41:51] gpu: 4344 MiB, 4 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 103s 
+ALL PASS
+[14:43:55] rc=0
+[14:43:59] gpu: 4324 MiB, 4 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[14:44:00] lock: taken (K12b measuring 49216 2026-11-06T14:44:00)
+[14:44:00] others: 0 busy; no instance on 9571
+[14:44:00] perf-relight r2 (try 1)
+[14:44:05] gpu: 4331 MiB, 1 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 103s 
+ALL PASS
+[14:46:03] rc=0
+[14:46:08] gpu: 4328 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[14:46:08] lock: taken (K12b measuring 10448 2026-11-06T14:46:08)
+[14:46:09] others: 0 busy; no instance on 9571
+[14:46:09] perf-relight r3 (try 1)
+[14:46:13] gpu: 4340 MiB, 3 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 103s 
+ALL PASS
+[14:48:12] rc=0
+[14:48:17] gpu: 4341 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+[14:48:17] done

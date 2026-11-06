@@ -151,16 +151,33 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   resident depth slot (`px.js` `_slot`: eight keyed stripes copy the map once, a new key or size copies again and never
   answers from the old copy); `marchOnPool` on a real `WorkerPool` with fake workers (one shared out, no transfer, the
   bytes; the non-SAB and route-0 paths one job; a failed stripe or other rows reject and cancel the rest; a group
-  cancelled from outside rejects with `CancelledError` and sends none of its queued stripes). The `relight` gate's case
+  cancelled from outside rejects with `CancelledError` and sends none of its queued stripes); K12b's feed (`feedCases`:
+  at most the budget of stripes of two marches posted at once, first come first served, the bytes; a NORMAL job behind
+  two fed marches sent as soon as the first stripe answers, after every stripe without a budget; one set of job fields a
+  march; with the pool's size + 1 an EXPORT job waits for the march, with the size alone it would not; `cancelMarch` on a
+  march partly posted and on one waiting whole; a failed stripe; a pool terminated with a march waiting in the feed
+  rejects both marches and starts no worker after it). The `relight` gate's case
   nk ("three nudges: only the last key lands"): for a point and a sun three nudges flushed at once post three full
   marches, the pool cancels exactly the stripes of the two superseded ones, one landing (current) holds the last key and
   the bytes of one call, the sun's stripes on Rust and the point's on the twin, each nudge's quick march lands; three
   nudges without a flush cancel nothing; there, back and there again posts two full marches and lands one; the route
-  `relightStripes` 0 is one job of all rows. `perf_test.py --filter=relight` adds the stripes' rows (the stripes and
+  `relightStripes` 0 is one job of all rows; case nf (K12b): three lights released at once post at most the pool's size
+  + 1 stripes, the rest waits in the feed, all land with the bytes of one call; a quick march posted meanwhile bypasses
+  the feed (nothing more fed, its stripes on the pool at once) and lands before the full marches' last stripe; the route
+  `relightFeed` 0 posts every stripe at once (the superseded marches of case nk are counted in the pool and the feed
+  together).
+  `perf_test.py --filter=relight` adds the stripes' rows (the stripes and
   their workers, kernel ms, each worker's first stripe against its later ones, the other pool jobs and mip chains of a
   row, the efficiency of the named row and of the same march again against the one-job route), a whole change during a
   three-light march, eight NORMAL jobs during one, and a light made a sun; `docs/measurements/k12_2026-11-06/`
-  (`k12_chain.sh`, `summarize.py`) runs them three times on fresh instances under the machine's busy lock.
+  (`k12_chain.sh`, `summarize.py`) runs them three times on fresh instances under the machine's busy lock. K12b added
+  the same marches on 64 stripes (`_s64`) and, where the build has the route, with every stripe posted at once
+  (`_nofeed`, the route `relightFeed` 0), the drag step again on one job and on stripes (`relight_quick_job`, `_rep`)
+  with the window's longest gaps and the landings' times (`_gaps`, `_landings`), the sun fed again after the unfed march
+  (`relight_sun_feed2`, the order swapped), and eight NORMAL jobs of about a stripe's time each during a three-light
+  march (`relight_heavy_*`: a crc of one blob sized on a calm pool to about 60 ms a job, [the first job's queue wait,
+  the last one's] and the answers; the 1 KB rows above drain back to back on one worker, so they show one job's wait);
+  `docs/measurements/k12b_2026-11-06/`.
   `docs/measurements/w1_2026-11-06/w1_identity.js --old <the px.wasm before W1> file.png ...` re-filters real PNGs in
   the app's parts of 128 rows on the new SIMD build, the scalar build, the old SIMD build and the JS twin and compares
   every line (and, for a file Scumble wrote, the file's own lines); the old build is

@@ -1,0 +1,4 @@
+types rc=0 5s 
+pxjobs rc=0 106s PASS
+relight rc=0 30s PASS
+ALL PASS

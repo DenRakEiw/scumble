@@ -1,0 +1,36 @@
+[12:03:57] commit 2ea002b (dirty: 3 files); px ABI ABI = 21; rounds: 1 2 3
+[12:03:57] px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+lock: held by 'CK I0b bench batch (WebGPU ladder, 1.29 / 1.30) 50928 2026-11-06T12:03:09', waiting
+lock: taken after 240 s
+[12:07:57] lock: taken (K12b measuring 13820 2026-11-06T12:03:57)
+[12:26:38] OTHERS BUSY: measured while another agent's gate run went on (above)
+[12:26:38] perf-relight r1 (try 1)
+[12:26:42] gpu: 3423 MiB, 2 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 79s 
+ALL PASS
+[12:28:17] rc=0
+[12:28:22] gpu: 3427 MiB, 5 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[12:28:22] lock: taken (K12b measuring 50636 2026-11-06T12:28:22)
+[12:28:23] others: 0 busy; no instance on 9571
+[12:28:23] perf-relight r2 (try 1)
+[12:28:27] gpu: 3440 MiB, 2 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 79s 
+ALL PASS
+[12:30:02] rc=0
+[12:30:07] gpu: 3449 MiB, 2 %; comfy 8188: 000, no queue
+lock: released
+lock: taken after 0 s
+[12:30:07] lock: taken (K12b measuring 44164 2026-11-06T12:30:07)
+others: busy, waiting: 33196 sh.exe: "C:\Program Files\Git\usr\bin\sh.exe" ./node_modules/.bin/electron . --remote-debugging-port=9577 --user-data-dir=C:/Users/SCHOEN~1/AppData/; 33720 node.exe: "C:\Program Files\nodejs\node.exe" node_modules\.bin/../electron/cli.js . --remote-debugging-port=9577 --user-data-dir=C:/Users/SCHOEN~1/App; 18388 electron.exe: F:\canvas\node_modules\electron\dist\electron.exe . --remote-debugging-port=9577 --user-data-dir=C:/Users/SCHOEN~1/AppData/Local/Temp/claude; 49076 electron.exe: "F:\canvas\node_modules\electron\dist\electron.exe" --type=renderer --user-data-dir="C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\5
+[12:30:38] others: 0 busy; no instance on 9571; waited 31 s
+[12:30:38] perf-relight r3 (try 1)
+[12:30:42] gpu: 3434 MiB, 2 %; comfy 8188: 000, no queue
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 79s 
+ALL PASS
+[12:32:18] rc=0
+[12:32:22] gpu: 3439 MiB, 11 %; comfy 8188: 000, no queue
+lock: released
+[12:32:22] done
+[13:20:00] NOTE (added after the chain): the others' check before r1 waited 18 min on the other agent's Bash wrapper shell (pid 46988: it waited for this lock, then ran m0152-canvas; it ran no gate meanwhile); k12b_others.py now skips wrapper shells (shell-snapshots in the command line) and its waiting process was stopped at 12:26:38, so the OTHERS BUSY line at 12:26:38 is that stop, not a gate run

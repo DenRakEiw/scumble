@@ -458,7 +458,9 @@ BENCH = """
         const gaps = [];
         const tick = () => { const now = performance.now(); if (now - last > worst) worst = now - last; if (now - last > 4) gaps.push([last, now - last]); last = now; if (!stop) setTimeout(tick, 0); };
         setTimeout(tick, 0);
-        return (since = -Infinity) => { stop = true; return since === -Infinity ? +worst.toFixed(1) : +Math.max(0, ...gaps.filter((q) => q[0] >= since).map((q) => q[1])).toFixed(1); };
+        const done = (since = -Infinity) => { stop = true; return since === -Infinity ? +worst.toFixed(1) : +Math.max(0, ...gaps.filter((q) => q[0] >= since).map((q) => q[1])).toFixed(1); };
+        done.gaps = gaps;   // [start, length] of every gap over 4 ms (K12b: what the drag step's block is made of)
+        return done;
     };
     // the screen's colour matches and filter passes run again (a cache miss of a screen pass), counted while `on`
     const reruns = { on: false, n: 0 };
@@ -859,9 +861,13 @@ BENCH = """
         const relightTiles = await import("./editor/inpaint_tiles.js");
         const relightPool = () => relightJobs.editorPool();
         const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
-        const relightRow = async (key, quick, fn, stripes = undefined) => {
+        // K12b: the route `relightFeed` (the full marches' stripes in flight on the pool at once, across all of them), when
+        // this build has it; 0 posts every stripe at once (K12)
+        const hasFeed = (() => { try { E.setRoute("relightFeed", null); return true; } catch (_) { return false; } })();
+        const relightRow = async (key, quick, fn, stripes = undefined, feed = undefined) => {
             await calm();
             if (stripes !== undefined) E.setRoute("relightStripes", stripes);
+            if (feed !== undefined) E.setRoute("relightFeed", feed);
             try {
                 if (typeof E.jobTimings === "function") E.jobTimings(true);
                 const runs0 = relightPool().stats().run;
@@ -876,6 +882,10 @@ BENCH = """
                 out[key] = [blocked, wall];
                 out[key + "_marches"] = run ? [run.posted, run.slowest] : null;
                 otherNote(key, run, quick);
+                // K12b: the window's three longest gaps [start from the change, length] and the row's landings' times
+                // from the change, so a block can be told apart into the change, its frame and a landing
+                out[key + "_gaps"] = done.gaps.slice().sort((p, q) => q[1] - p[1]).slice(0, 3).map((g) => [+(g[0] - since).toFixed(1), +g[1].toFixed(1)]);
+                out[key + "_landings"] = marksIn(since).filter((m) => m.step === "landed" && !!m.quick === quick).map((m) => +(m.t - since).toFixed(1));
                 // the marches' jobs (a K12 worker answers each with its timing; an older one with none): [jobs, workers],
                 // and [the summed kernel ms, the kernel ms of the slowest job]
                 const tm = (typeof E.jobTimings === "function" ? E.jobTimings(true) : []).filter((t) => t && t.op === "relight_shadow");
@@ -907,6 +917,7 @@ BENCH = """
                 }
             } finally {
                 if (stripes !== undefined) E.setRoute("relightStripes", null);
+                if (feed !== undefined) E.setRoute("relightFeed", null);
             }
         };
         // the parallel efficiency of the stripes: [the serial work (the one-job route's summed kernel ms) / (the stripes'
@@ -937,6 +948,14 @@ BENCH = """
             await relightRow("relight_one_rep", false, again([0]));
             efficiency("relight_one", "relight_one_job");
             efficiency("relight_one_rep", "relight_one_job");
+            // K12b (c): STRIPES_PER_WORKER 8 (the route relightStripes 8 x the pool's size, 64 on 8 workers): the tail
+            // against the dispatch; (a): the same march with every stripe posted at once (the route relightFeed 0, K12)
+            await relightRow("relight_one_s64", false, again([0]), 8 * relightPool().size);
+            efficiency("relight_one_s64", "relight_one_job");
+            if (hasFeed) {
+                await relightRow("relight_one_nofeed", false, again([0]), undefined, 0);
+                efficiency("relight_one_nofeed", "relight_one_job");
+            }
         }
         await relightRow("relight_three", false, () => { moved(all.slice(0, 3), 0, dy); release(); });
         if (hasStripes) {
@@ -944,9 +963,28 @@ BENCH = """
             await relightRow("relight_three_rep", false, again(all.slice(0, 3)));
             efficiency("relight_three", "relight_three_job");
             efficiency("relight_three_rep", "relight_three_job");
+            await relightRow("relight_three_s64", false, again(all.slice(0, 3)), 8 * relightPool().size);
+            efficiency("relight_three_s64", "relight_three_job");
+            if (hasFeed) {
+                await relightRow("relight_three_nofeed", false, again(all.slice(0, 3)), undefined, 0);
+                efficiency("relight_three_nofeed", "relight_three_job");
+                // the named row's block, A/B in one run with the order swapped: moved and released with every stripe
+                // posted at once, then through the feed again (back where the named row left them)
+                await relightRow("relight_three_mv_nofeed", false, () => { moved(all.slice(0, 3), 0, -dy); release(); }, undefined, 0);
+                await relightRow("relight_three_mv_feed", false, () => { moved(all.slice(0, 3), 0, dy); release(); });
+            }
         }
-        await relightRow("relight_quick", true, () => { moved([Math.min(1, all.length - 1)], -dx, 0); dragStep(); });
+        const q1 = Math.min(1, all.length - 1);
+        await relightRow("relight_quick", true, () => { moved([q1], -dx, 0); dragStep(); });
         release();   // the drag's end: the full march of where it left the light, not timed
+        // K12b (b): the drag step's block, A/B in one run: the same light stepped again on the route relightStripes 0 (one
+        // job, as before K12), then on the build's own stripes; each drag's end marched before the next (not timed)
+        if (hasStripes) {
+            await relightRow("relight_quick_job", true, () => { moved([q1], dx, 0); dragStep(); }, 0);
+            release();
+            await relightRow("relight_quick_rep", true, () => { moved([q1], -dx, 0); dragStep(); });
+            release();
+        }
         // pan at 1:1 while a full march runs: [median frame, worst frame]; frames [start..idle]; the longest block of the
         // window meanwhile (the landings and their redraws between the frames) [mip chains built on this thread]. The light
         // moved is a point light: a spot's march ends in a sixth of the time (33 against 200 ms at 2048 x 1152, a 1024 map).
@@ -1024,6 +1062,14 @@ BENCH = """
             };
             await whole("relight_whole_calm", null);
             await whole("relight_whole_march", () => { moved(all.slice(0, 3), dx, 0); ed.ensureRelightMaps(fx, { quick: false }); });
+            if (hasFeed) {   // K12b (a): the same with every stripe posted at once (the route relightFeed 0, K12), then fed again
+                await calm();
+                E.setRoute("relightFeed", 0);
+                try { await whole("relight_whole_nofeed", () => { moved(all.slice(0, 3), -dx, 0); ed.ensureRelightMaps(fx, { quick: false }); }); }
+                finally { E.setRoute("relightFeed", null); }
+                await calm();
+                await whole("relight_whole_march2", () => { moved(all.slice(0, 3), dx, 0); ed.ensureRelightMaps(fx, { quick: false }); });
+            }
             await calm();   // its marches land before anything after this
             for (const l of hidden) l.visible = true;
             ed.activeLayerId = activeWas;
@@ -1036,9 +1082,10 @@ BENCH = """
         // no march; job: on the route relightStripes 0 (one job a light, as before K12)
         {
             const P = await import("./editor/inpaint_pool.js");
-            const normalRow = async (key, fn, stripes = undefined) => {
+            const normalRow = async (key, fn, stripes = undefined, feed = undefined) => {
                 await calm();
                 if (stripes !== undefined) E.setRoute("relightStripes", stripes);
+                if (feed !== undefined) E.setRoute("relightFeed", feed);
                 try {
                     const pool = relightPool();
                     if (fn) fn();
@@ -1051,11 +1098,61 @@ BENCH = """
                     if ((await quiet()) == null) notes.push(`${key}: still marching after ${LIMIT / 1000} s`);
                 } finally {
                     if (stripes !== undefined) E.setRoute("relightStripes", null);
+                    if (feed !== undefined) E.setRoute("relightFeed", null);
                 }
             };
             await normalRow("relight_normal_calm", null);
             await normalRow("relight_normal_march", () => { moved(all.slice(0, 3), 0, -dy); release(); });
             if (hasStripes) await normalRow("relight_normal_job", () => { moved(all.slice(0, 3), 0, dy); release(); }, 0);
+            // K12b (a): every stripe posted at once (the route relightFeed 0, K12's queue)
+            if (hasFeed) await normalRow("relight_normal_nofeed", () => { moved(all.slice(0, 3), 0, -dy); release(); }, undefined, 0);
+            // K12b (its review): the 1 KB jobs above drain back to back on the first worker the feed hands them (about 1 ms
+            // each), so their slowest wait is one job's: the march's second stripe answer. Eight NORMAL jobs of about a
+            // stripe's time each show what work that takes real time waits for: a crc of one blob, sized on a calm pool so
+            // a job takes about 60 ms (`_size`: [MB, one job's ms there]); [the first job's queue wait, the last one's],
+            // `_answer` [the first answer, the last] ms from the post, `_job` the jobs' median ms; calm: no march; job: one
+            // job a light (the route relightStripes 0, before K12); nofeed: every stripe posted at once (relightFeed 0, K12)
+            await calm();
+            const crcMs = async (blob) => (await relightPool().run("crc", { blob }, [], { priority: P.NORMAL })).timing.kernel;
+            let heavyMB = 16;
+            {
+                const probe = new Blob([new Uint8Array(heavyMB << 20)]);
+                await crcMs(probe);   // a first read warms the worker's crc
+                const ms = median([await crcMs(probe), await crcMs(probe), await crcMs(probe)]);
+                heavyMB = Math.max(4, Math.min(64, Math.round((heavyMB * 60) / Math.max(1, ms))));
+            }
+            const heavyBlob = new Blob([new Uint8Array(heavyMB << 20)]);
+            out.relight_heavy_size = [heavyMB, +median([await crcMs(heavyBlob), await crcMs(heavyBlob), await crcMs(heavyBlob)]).toFixed(1)];
+            const heavyRow = async (key, fn, stripes = undefined, feed = undefined) => {
+                await calm();
+                if (stripes !== undefined) E.setRoute("relightStripes", stripes);
+                if (feed !== undefined) E.setRoute("relightFeed", feed);
+                try {
+                    const pool = relightPool();
+                    if (fn) fn();
+                    const marchingAt = marching();
+                    const t0 = performance.now();
+                    const got = await Promise.all(Array.from({ length: pool.size }, () => pool.run("crc", { blob: heavyBlob }, [], { priority: P.NORMAL })
+                        .then((r) => [r.timing && r.timing.pool ? r.timing.pool.queueMs : 0, performance.now() - t0, r.timing ? r.timing.kernel : 0])));
+                    const waits = got.map((g) => g[0]), answers = got.map((g) => g[1]);
+                    out[key] = [+Math.min(...waits).toFixed(1), +Math.max(...waits).toFixed(1)];
+                    out[key + "_answer"] = [+Math.min(...answers).toFixed(1), +Math.max(...answers).toFixed(1)];
+                    out[key + "_job"] = +median(got.map((g) => g[2])).toFixed(1);
+                    out[key + "_marching"] = marchingAt;
+                    if ((await quiet()) == null) notes.push(`${key}: still marching after ${LIMIT / 1000} s`);
+                } finally {
+                    if (stripes !== undefined) E.setRoute("relightStripes", null);
+                    if (feed !== undefined) E.setRoute("relightFeed", null);
+                }
+            };
+            let net = 0;
+            const mv = (s) => () => { net += s; moved(all.slice(0, 3), 0, s * dy); release(); };
+            await heavyRow("relight_heavy_calm", null);
+            await heavyRow("relight_heavy_march", mv(1));
+            if (hasStripes) await heavyRow("relight_heavy_job", mv(-1), 0);
+            if (hasFeed) await heavyRow("relight_heavy_nofeed", mv(1), undefined, 0);
+            // back where the 1 KB rows left them (not timed): the rows after these start from the same lights as before
+            if (net) { moved(all.slice(0, 3), 0, -net * dy); release(); await calm(); }
         }
         // K12 (its review): a sun, the Rust sun (no row above marches one: the preset's lights run the twin), its depth map
         // resident in each worker (px.js `_slot`, kind relight_depth): light 0 made a sun (its first striped march copies
@@ -1070,6 +1167,16 @@ BENCH = """
                 await relightRow("relight_sun_rep", false, again([0]));
                 efficiency("relight_sun", "relight_sun_job");
                 efficiency("relight_sun_rep", "relight_sun_job");
+                await relightRow("relight_sun_s64", false, again([0]), 8 * relightPool().size);
+                efficiency("relight_sun_s64", "relight_sun_job");
+                if (hasFeed) {
+                    await relightRow("relight_sun_nofeed", false, again([0]), undefined, 0);
+                    efficiency("relight_sun_nofeed", "relight_sun_job");
+                    // the order swapped (K12b): fed again after the unfed march, so a row's place in the run is told
+                    // apart from the feed
+                    await relightRow("relight_sun_feed2", false, again([0]));
+                    efficiency("relight_sun_feed2", "relight_sun_job");
+                }
             }
         }
         // K12 (its review): why the named one-light row's stripes run slower than the same march again. Light 0 back to its
@@ -1225,6 +1332,10 @@ RELIGHT_ROWS = [
     ("    others [built, asked]", "relight_one_rep_others"),
     ("    efficiency [busy share]", "relight_one_rep_eff"),
     ("    stripes' kernel / one job's", "relight_one_rep_overhead"),
+    ("  again, 64 stripes (K12b c)", "relight_one_s64"),
+    ("    efficiency [busy share]", "relight_one_s64_eff"),
+    ("  again, every stripe posted (feed 0)", "relight_one_nofeed"),
+    ("    efficiency [busy share]", "relight_one_nofeed_eff"),
     ("three lights moved", "relight_three"),
     ("  marches [slowest landed]", "relight_three_marches"),
     ("  stripes [workers]", "relight_three_stripes"),
@@ -1243,8 +1354,20 @@ RELIGHT_ROWS = [
     ("    others [built, asked]", "relight_three_rep_others"),
     ("    efficiency [busy share]", "relight_three_rep_eff"),
     ("    stripes' kernel / one job's", "relight_three_rep_overhead"),
+    ("  again, 64 stripes (K12b c)", "relight_three_s64"),
+    ("    efficiency [busy share]", "relight_three_s64_eff"),
+    ("  again, every stripe posted (feed 0)", "relight_three_nofeed"),
+    ("    efficiency [busy share]", "relight_three_nofeed_eff"),
+    ("  moved, every stripe posted", "relight_three_mv_nofeed"),
+    ("  moved, fed again", "relight_three_mv_feed"),
     ("a drag step's quick map", "relight_quick"),
     ("  marches [slowest landed]", "relight_quick_marches"),
+    ("  gaps [from the step, ms]", "relight_quick_gaps"),
+    ("  landings [from the step]", "relight_quick_landings"),
+    ("  again, one job (stripes 0)", "relight_quick_job"),
+    ("    gaps [from the step, ms]", "relight_quick_job_gaps"),
+    ("  again, stripes", "relight_quick_rep"),
+    ("    gaps [from the step, ms]", "relight_quick_rep_gaps"),
     ("pan at 1:1 during a march", "relight_pan"),
     ("  frames [shadows landed]", "relight_pan_frames"),
     ("  block [chains built here]", "relight_pan_held"),
@@ -1254,9 +1377,25 @@ RELIGHT_ROWS = [
     ("  block [built, asked, marching]", "relight_whole_calm_held"),
     ("  during a 3-light march", "relight_whole_march"),
     ("  block [built, asked, marching]", "relight_whole_march_held"),
+    ("  during a 3-light march, feed 0", "relight_whole_nofeed"),
+    ("  block [built, asked, marching]", "relight_whole_nofeed_held"),
+    ("  during a 3-light march, fed again", "relight_whole_march2"),
+    ("  block [built, asked, marching]", "relight_whole_march2_held"),
     ("8 NORMAL jobs: wait [answer]", "relight_normal_calm"),
     ("  during a 3-light march", "relight_normal_march"),
     ("  the same, one job a light", "relight_normal_job"),
+    ("  the same, every stripe posted (feed 0)", "relight_normal_nofeed"),
+    ("8 NORMAL ~60 ms jobs: crc [job]", "relight_heavy_size"),
+    ("  no march: wait first [last]", "relight_heavy_calm"),
+    ("    answer first [last]", "relight_heavy_calm_answer"),
+    ("    one job's ms", "relight_heavy_calm_job"),
+    ("  during a 3-light march", "relight_heavy_march"),
+    ("    answer first [last]", "relight_heavy_march_answer"),
+    ("    one job's ms", "relight_heavy_march_job"),
+    ("  the same, one job a light", "relight_heavy_job"),
+    ("    answer first [last]", "relight_heavy_job_answer"),
+    ("  the same, every stripe posted (feed 0)", "relight_heavy_nofeed"),
+    ("    answer first [last]", "relight_heavy_nofeed_answer"),
     ("a light made a sun: landed", "relight_sun"),
     ("  stripes [workers]", "relight_sun_stripes"),
     ("  kernel ms [slowest job]", "relight_sun_kernel"),
@@ -1269,6 +1408,12 @@ RELIGHT_ROWS = [
     ("    first stripe ms [later]", "relight_sun_rep_first"),
     ("    efficiency [busy share]", "relight_sun_rep_eff"),
     ("    stripes' kernel / one job's", "relight_sun_rep_overhead"),
+    ("  again, 64 stripes (K12b c)", "relight_sun_s64"),
+    ("    efficiency [busy share]", "relight_sun_s64_eff"),
+    ("  again, every stripe posted (feed 0)", "relight_sun_nofeed"),
+    ("    efficiency [busy share]", "relight_sun_nofeed_eff"),
+    ("  again, fed after the unfed one", "relight_sun_feed2"),
+    ("    efficiency [busy share]", "relight_sun_feed2_eff"),
     ("a light moved, no redraw", "relight_nodraw"),
     ("  kernel ms [slowest job]", "relight_nodraw_kernel"),
     ("  first stripe ms [later]", "relight_nodraw_first"),
@@ -1478,6 +1623,10 @@ async def main():
                     cells.append("%22s" % "-")
                 elif key.endswith("_overhead"):
                     cells.append("%22s" % f"{v:.3f}")
+                elif not isinstance(v, list):
+                    cells.append("%22s" % f"{v} ms")
+                elif key == "relight_heavy_size":
+                    cells.append("%22s" % f"{v[0]} MB  [{v[1]} ms]")
                 elif key.endswith(("_marches", "_frames")):
                     cells.append("%22s" % f"{v[0]}  [{ms0(v[1])} ms]")
                 elif key.endswith("_stripes"):
@@ -1486,7 +1635,11 @@ async def main():
                     cells.append("%22s" % f"{v[0]}  [{v[1]}, {v[2]}]")
                 elif key.endswith("_eff"):
                     cells.append("%22s" % f"{v[0]:.3f}  [{'-' if v[1] is None else f'{v[1]:.3f}'}]")
-                elif key in ("relight_pan", "relight_whole_calm", "relight_whole_march"):
+                elif key.endswith("_gaps"):
+                    cells.append("%22s" % " ".join(f"{g[1]:.0f}@{g[0]:.0f}" for g in v))
+                elif key.endswith("_landings"):
+                    cells.append("%22s" % " ".join(f"{x:.0f}" for x in v[:4]))
+                elif key in ("relight_pan", "relight_whole_calm", "relight_whole_march", "relight_whole_nofeed", "relight_whole_march2"):
                     cells.append("%22s" % f"{v[0]:.1f} ms  [{v[1]:.1f}]")
                 elif key.endswith("_held") and len(v) > 2:
                     cells.append("%22s" % f"{ms0(v[0])} ms [{', '.join(str(x) for x in v[1:])}]")

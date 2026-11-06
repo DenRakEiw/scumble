@@ -920,6 +920,158 @@ async function relightStripeCases(js, simd, scalar) {
             `${errA && errA.name}; A sent ${of("A").length} (${sentA} before the cancel), ${n} cancelled, B ${of("B").length}`);
         pool.terminate();
     }
+    await feedCases({ RL, WorkerPool, CancelledError, sent, answer, args, shared16, want, of, h });
+}
+
+/**
+ * K12b (docs/PLAN_WASM_BUILD.md section 7 "Stop 5"): the full marches' feed. `marchOnPool` with a budget keeps at most that many
+ * stripes of all fed marches posted at once (counted by the fake workers: messages sent and not answered), first come first
+ * served across the marches, the bytes of one call each; another NORMAL job posted behind two fed marches is sent as soon as
+ * the first stripe answers (without the feed after every stripe); each stripe carries its march's fields of the march's start;
+ * `cancelMarch` drops a march's stripes not posted yet and cancels its posted ones (a CancelledError, another march lands
+ * whole, nothing left in the feed); a march waiting whole in the feed is cancelled without a stripe sent; a failed stripe
+ * rejects its march, whose stripes not posted yet are never sent; the quick path (budget 0) posts every stripe at once; a pool
+ * terminated with a march waiting in the feed rejects both marches and starts no worker after the terminate.
+ */
+async function feedCases({ RL, WorkerPool, CancelledError, sent, answer, args, shared16, want, of, h }) {
+    const { marchOnPool, cancelMarch, marchFeedStats, stripePlan } = RL;
+    if (typeof cancelMarch !== "function" || typeof marchFeedStats !== "function") {
+        check("inpaint_relight.js exports cancelMarch and marchFeedStats (K12b)", false);
+        return;
+    }
+    // fake workers as relightStripeCases', counting the messages in flight (sent, not answered), with a gen per defaults()
+    let inflight = 0, peak = 0, gen = 0;
+    const order = [];   // [tag or op] in the order the workers took them
+    const poolOf = (size, fail = null) => new WorkerPool({
+        size,
+        defaults: () => ({ gen: ++gen }),
+        create: () => {
+            const wk = { onmessage: null, onerror: null, terminate() {} };
+            wk.postMessage = (msg, transfer) => {
+                sent.push({ msg, transfer: transfer || [] });
+                order.push(msg.op === "relight_shadow" ? msg.tag : msg.op);
+                if (msg.op === "relight_shadow") { inflight++; if (inflight > peak) peak = inflight; }
+                setTimeout(() => {
+                    if (msg.op === "relight_shadow") inflight--;
+                    wk.onmessage({ data: msg.op === "relight_shadow" ? answer(msg, wk, fail) : { id: msg.id, ok: true } });
+                }, 1);
+            };
+            return wk;
+        },
+    });
+    const S = 8, planS = stripePlan(h, S);
+    {
+        const pool = poolOf(3);
+        inflight = 0; peak = 0; order.length = 0;
+        const A = marchOnPool(pool, args(shared16, "fA"), { priority: 1, group: "f:A", stripes: S, budget: 3 });
+        const B = marchOnPool(pool, args(shared16, "fB"), { priority: 1, group: "f:B", stripes: S, budget: 3 });
+        const taken = order.length;   // the stripes the three workers took at once
+        const N = pool.run("noop", {}, [], { priority: 1 });
+        const [gotA, gotB] = await Promise.all([A, B]);
+        await N;
+        const st = marchFeedStats(pool);
+        const firstB = order.indexOf("fB"), lastA = order.lastIndexOf("fA");
+        check("the feed: at most the budget of stripes of two marches posted at once, first come first served, the bytes of one call each",
+            eqBytes(gotA, want) && eqBytes(gotB, want) && peak === 3 && taken === 3 && st.peak === 3 && of("fA").length === planS.length
+                && of("fB").length === planS.length && firstB > lastA && st.flying === 0 && st.waiting === 0 && st.marches === 0,
+            `peak ${peak} (feed ${st.peak}), ${taken} at once, A ${of("fA").length} B ${of("fB").length} of ${planS.length}; order ${order.join(",")}`);
+        check("the feed: a NORMAL job posted behind two fed marches goes as soon as the first stripe answers",
+            order.indexOf("noop") === taken, `noop sent ${order.indexOf("noop")}th of ${order.length}`);
+        const gens = (tag) => new Set(of(tag).map((x) => x.msg.gen));
+        check("the feed: every stripe of a march carries the fields of the march's start (one gen a march, two marches two)",
+            gens("fA").size === 1 && gens("fB").size === 1 && [...gens("fA")][0] !== [...gens("fB")][0], `${[...gens("fA")]} / ${[...gens("fB")]}`);
+        // without the feed (budget 0, K12's way and the quick marches') every stripe is posted at once: the job goes last
+        order.length = 0;
+        const A0 = marchOnPool(pool, args(shared16, "fA0"), { priority: 1, group: "f:A0", stripes: S });
+        const B0 = marchOnPool(pool, args(shared16, "fB0"), { priority: 1, group: "f:B0", stripes: S });
+        const N0 = pool.run("noop", {}, [], { priority: 1 });
+        await Promise.all([A0, B0, N0]);
+        check("without a budget every stripe is posted at once: a NORMAL job posted after them goes after all of them",
+            order.indexOf("noop") === 2 * planS.length, `noop sent ${order.indexOf("noop")}th of ${order.length}`);
+        // the window's budget, the pool's size + 1: one stripe stays queued, so a worker that frees takes it before EXPORT
+        // work (the classes keep their order) and a NORMAL job waits for two stripes; with the size alone the EXPORT job
+        // would take the first worker that frees
+        order.length = 0;
+        const E1 = marchOnPool(pool, args(shared16, "eA"), { priority: 1, group: "e:A", stripes: S, budget: 4 });
+        const X1 = pool.run("export", {}, [], { priority: 2 });
+        const N1 = pool.run("normal", {}, [], { priority: 1 });
+        await Promise.all([E1, X1, N1]);
+        const exportAt = order.indexOf("export"), normalAt = order.indexOf("normal");
+        order.length = 0;
+        const E2 = marchOnPool(pool, args(shared16, "eB"), { priority: 1, group: "e:B", stripes: S, budget: 3 });
+        const X2 = pool.run("export", {}, [], { priority: 2 });
+        await Promise.all([E2, X2]);
+        check("with the pool's size + 1 an EXPORT job behind a fed march goes after all its stripes and a NORMAL job after two; with the size alone the EXPORT job goes first",
+            exportAt === planS.length + 1 && normalAt === 4 && order.indexOf("export") === 3, `export ${exportAt}th, normal ${normalAt}th; with the size ${order.indexOf("export")}th`);
+        pool.terminate();
+    }
+    {
+        // a superseded march: cancelMarch drops its stripes in the feed and cancels its posted ones; another march lands whole
+        const pool = poolOf(3);
+        order.length = 0;
+        const d0 = marchFeedStats(pool).dropped, c0 = pool.stats().cancelled;
+        const A = marchOnPool(pool, args(shared16, "cA"), { priority: 1, group: "c:A", stripes: S, budget: 3 });
+        const B = marchOnPool(pool, args(shared16, "cB"), { priority: 1, group: "c:B", stripes: S, budget: 3 });
+        const sentA = of("cA").length;
+        const n = cancelMarch(pool, "c:A");
+        let errA = null;
+        try { await A; } catch (e) { errA = e; }
+        const gotB = await B;
+        const st = marchFeedStats(pool);
+        check("cancelMarch: the march rejects with a CancelledError, sends no stripe after the cancel, every stripe counted once, another march lands whole",
+            errA instanceof CancelledError && errA.cancelled === true && sentA === 3 && of("cA").length === sentA && n === planS.length
+                && st.dropped - d0 + (pool.stats().cancelled - c0) === planS.length && eqBytes(gotB, want) && of("cB").length === planS.length
+                && st.flying === 0 && st.waiting === 0 && pool.pending === 0,
+            `${errA && errA.name}; A sent ${of("cA").length} (${sentA} before), ${n} cancelled (feed ${st.dropped - d0}, pool ${pool.stats().cancelled - c0}), B ${of("cB").length}`);
+        // a march waiting whole in the feed: cancelled without a stripe sent; the march before it lands whole
+        order.length = 0;
+        const C = marchOnPool(pool, args(shared16, "wC"), { priority: 1, group: "w:C", stripes: S, budget: 3 });
+        const D = marchOnPool(pool, args(shared16, "wD"), { priority: 1, group: "w:D", stripes: S, budget: 3 });
+        const nD = cancelMarch(pool, "w:D");
+        let errD = null;
+        try { await D; } catch (e) { errD = e; }
+        const gotC = await C;
+        check("cancelMarch on a march still waiting whole in the feed: none of its stripes sent, the march before lands whole",
+            errD instanceof CancelledError && of("wD").length === 0 && nD === planS.length && eqBytes(gotC, want) && marchFeedStats(pool).waiting === 0,
+            `${errD && errD.name}; D sent ${of("wD").length}, ${nD} cancelled`);
+        pool.terminate();
+    }
+    {
+        // a failed stripe of a fed march: the march rejects with its error, its stripes in the feed are never sent
+        const pool = poolOf(2, (msg) => msg.tag === "xF" && msg.row0 === planS[1][0]);
+        const F = marchOnPool(pool, args(shared16, "xF"), { priority: 1, group: "x:F", stripes: S, budget: 2 });
+        const G = marchOnPool(pool, args(shared16, "xG"), { priority: 1, group: "x:G", stripes: S, budget: 2 });
+        let errF = null;
+        try { await F; } catch (e) { errF = e; }
+        const gotG = await G;
+        await new Promise((r) => setTimeout(r, 20));
+        check("a failed stripe of a fed march rejects it with the stripe's error, its stripes in the feed never sent, the next march lands whole",
+            !!errF && !errF.cancelled && /on purpose/.test(errF.message) && of("xF").length <= 3 && eqBytes(gotG, want) && pool.pending === 0 && marchFeedStats(pool).flying === 0,
+            `${errF && errF.message}; F sent ${of("xF").length} of ${planS.length}, G ${of("xG").length}`);
+        pool.terminate();
+    }
+    {
+        // a pool terminated while a march waits whole in the feed (inpaint_jobs.js resetPool, a harness's fresh pool): both
+        // marches reject, the waiting one sends nothing, and no worker is started after the terminate (the feed used to
+        // post the waiting march's stripes, which started new workers on the terminated pool)
+        const pool = poolOf(2);
+        const A = marchOnPool(pool, args(shared16, "tA"), { priority: 1, group: "t:A", stripes: S, budget: 3 });
+        const B = marchOnPool(pool, args(shared16, "tB"), { priority: 1, group: "t:B", stripes: S, budget: 3 });
+        const waiting = marchFeedStats(pool).waiting, sentA = of("tA").length;
+        pool.terminate();
+        const started = pool.stats().started;
+        const [rA, rB] = await Promise.allSettled([A, B]);
+        await new Promise((r) => setTimeout(r, 20));
+        const st = marchFeedStats(pool);
+        const later = marchOnPool(pool, args(shared16, "tC"), { priority: 1, group: "t:C", stripes: S, budget: 3 }).then(() => "resolved", (e) => e.message);
+        const rC = await later;
+        check("a pool terminated with a march waiting whole in the feed: both reject, the waiting one sends nothing, no worker starts after it, a later march rejects at once",
+            rA.status === "rejected" && rB.status === "rejected" && /terminated/.test(String(rB.reason && rB.reason.message)) && waiting === 2 * planS.length - 3
+                && sentA === 2 && of("tA").length === sentA && of("tB").length === 0 && of("tC").length === 0 && pool.stats().started === started
+                && pool.stats().workers === 0 && st.waiting === 0 && st.flying === 0 && marchFeedStats(pool).marches === 0 && /terminated/.test(rC),
+            `A ${rA.status}, B ${rB.status} (${rB.reason && rB.reason.message}); waiting ${waiting}; sent A ${of("tA").length} B ${of("tB").length} C ${of("tC").length}; `
+                + `workers started after ${pool.stats().started - started}, now ${pool.stats().workers}; later: ${rC}`);
+    }
 }
 
 /**
