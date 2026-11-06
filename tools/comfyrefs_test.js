@@ -147,6 +147,32 @@ async function main() {
             && C.resolveMarkers("put {@ref:1} here, keep {@ref:0}", fOrig.pictures, fSpec.name).text === "put <ref_image_2> here, keep <ref_image_1>",
             short([C.resolveMarkers("{@ref:0}", fOne.pictures, fSpec.name).text, C.resolveMarkers("{@ref:1} {@ref:0}", fOrig.pictures, fSpec.name).text]));
 
+        // P-H3-Image (docs/PLAN_PH3.md): PH3ImageConditioning's images.image_1..8 by rank, the crop scaled (scale0), the
+        // other pictures straight from their ImageFromBatch; the upsampler's whole-batch read does not count
+        const [PH3, pWarn] = shipped("p_h3_image_local.json");
+        const pSpec = C.comfyRefSpec(PH3);
+        const pTrim = range(1, 8).map((k) => ({ node: "cond", input: `images.image_${k}`, batch: k - 1 }));
+        check("P-H3-Image: <Picture {n}>, 8 slots, not a guess, the trim cond.images.image_1..8 reading batches 0..7, read without a warning",
+            pSpec.name === "<Picture {n}>" && pSpec.slots === 8 && pSpec.guess === false && eq(pSpec.trim, pTrim) && !pWarn.length, short({ ...pSpec, trim: pSpec.trim && pSpec.trim.length, warned: pWarn }));
+        const pSlots = C.comfySlots(PH3.prompt, PH3.canvas);
+        check("P-H3-Image: comfySlots numbers each input by its rank (the batch + 1), class PH3ImageConditioning", pSlots.length === 8 && pSlots.every((s, i) => s.cls === "PH3ImageConditioning" && s.batch === i && s.num === i + 1), short(pSlots));
+        const pBare = clone(PH3);
+        delete pBare.refs;
+        const pDerived = C.comfyRefSpec(pBare);
+        check("P-H3-Image without refs: the identity trace derives the name and the 8 slots from the class", pDerived.name === "<Picture {n}>" && pDerived.slots === 8 && pDerived.guess === false && eq(pDerived.trim, pTrim), short({ ...pDerived, trim: pDerived.trim && pDerived.trim.length }));
+        // a run with two pictures (the crop and one reference): image_3..8 left out, image_1 and image_2 kept
+        const pp = clone(PH3.prompt), pRemoved = C.trimSlots(pp, pSpec, 2);
+        check("P-H3-Image: trimSlots with two pictures leaves out images.image_3..8 and keeps the crop's and the reference's",
+            eq(pRemoved, range(3, 8).map((k) => `cond.images.image_${k}`)) && eq(pp.cond.inputs["images.image_1"], ["scale0", 0]) && eq(pp.cond.inputs["images.image_2"], ["img1", 0]), short(pRemoved));
+        // with the Original in the batch it is <Picture 2>, the first reference layer <Picture 3>
+        const pOrig = C.comfyLayout(pSpec, { hasSelection: true, fill: "green", withOriginal: true, refine: false, count: 7 });
+        check("P-H3-Image: {@ref:1} after the Original is <Picture 3>, the Original <Picture 2>; seven references with the Original keep six (8 slots)",
+            C.resolveMarkers("put {@ref:1} here, keep {@ref:0}", pOrig.pictures, pSpec.name).text === "put <Picture 3> here, keep <Picture 2>" && pOrig.kept === 6 && pOrig.drops === 1,
+            short({ text: C.resolveMarkers("{@ref:1} {@ref:0}", pOrig.pictures, pSpec.name).text, kept: pOrig.kept, drops: pOrig.drops }));
+        const pNoUp = clone(PH3);
+        delete pNoUp.upsampler;
+        check("P-H3-Image: the upsampler's whole-batch read does not count (undeclared, it ends the identity)", C.comfyRefSpec(pNoUp).trim === null, short(C.comfyRefSpec(pNoUp)));
+
         const before = JSON.stringify(QWEN) + JSON.stringify(KLEIN);
         C.comfyRefSpec(QWEN); C.comfyRefSpec(KLEIN);
         check("comfyRefSpec leaves the recipe as it was", JSON.stringify(QWEN) + JSON.stringify(KLEIN) === before);

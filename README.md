@@ -213,20 +213,22 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   document: it selects, limits filter layers, and drives lens blur, haze and Relight.
 - Models: FLUX 3 Image, FLUX.2 (max, pro, flex, klein) and FLUX.1 Fill from Black Forest Labs; GPT Image 2.5 Flare /
   Sunburst and GPT Image 2; Nano Banana 2.1, 2, 2 Lite and Pro; Seedream 5 and 4.5; Qwen Image Edit and Qwen Image 2.1;
-  Ideogram 4 and 4.5; Grok Imagine, Krea 2, Recraft V4, Reve, Z-Image and HY Image 3.5; Magnific's Mystic, Ideogram
+  Ideogram 4 and 4.5; Grok Imagine, Krea 2, Recraft V4, Reve, Z-Image, HY Image 3.5 and P-H3-Image; Magnific's Mystic, Ideogram
   inpainting and Image Expand outpainting. Each runs on the model's own API where Scumble
   has one, or through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, Comfy Router, OpenRouter, Oxen.ai and
   Magnific. API runs go out at the size the provider really takes, with your reference layers.
 - On your own ComfyUI: FLUX 3 Image Klein, Black Forest Labs' open model (ComfyUI 0.41 or newer; it edits the selection
   with up to three more pictures, makes new ones with *Generate new* and takes boxes; Black Forest Labs' prompt
   upsampler writes your prompt out first when its file is on your ComfyUI; its weights come under Black Forest Labs'
-  own licence), Flux.2 Klein 4B / 9B, Qwen Image Edit 2.1 and its Turbo, and MOSS-Image (ComfyUI 0.42 or
-  newer; new pictures with *Generate new*, its JSON layout from your boxes; Apache-2.0); the upscale, Realism Pass and
-  relight recipes are below.
+  own licence), Flux.2 Klein 4B / 9B, Qwen Image Edit 2.1 and its Turbo, MOSS-Image (ComfyUI 0.42 or
+  newer; new pictures with *Generate new*, its JSON layout from your boxes; Apache-2.0), and P-H3-Image (ComfyUI 0.44
+  or newer, also on Comfy Cloud and WaveSpeedAI; edits with up to seven more pictures and new pictures, Pruna AI's
+  prompt upsampler in front; powered by MiniMax H3, whose licence does not cover the EU, the UK, South Korea or the US
+  without a separate licence from MiniMax); the upscale, Realism Pass and relight recipes are below.
 - Your own workflow becomes a recipe when it holds an Inpaint Canvas node. The *ComfyUI* window (Ctrl+Shift+K) shows
   your ComfyUI's page or Comfy Cloud; *Edit in ComfyUI* opens a recipe's graph there, and *Save to recipe* or *Save as
   new recipe* brings it back.
-- Comfy Cloud has a mode of its own beside *local* and *api*. Thirteen recipes from Comfy's templates come with
+- Comfy Cloud has a mode of its own beside *local* and *api*. Fourteen recipes from Comfy's templates come with
   Scumble (image edits, and new images for Generate new); *Cloud copy* turns one of your ComfyUI recipes into one that
   runs there, and a workflow made on Comfy Cloud imports as it is. Comfy Cloud and Comfy Router run through Comfy's
   official TypeScript SDK ([`@comfyorg/sdk`](https://www.npmjs.com/package/@comfyorg/sdk)). *Cancel* stops a Comfy

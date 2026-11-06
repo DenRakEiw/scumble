@@ -28,21 +28,29 @@ export function refName(pattern, n) {
 const isLink = (v) => Array.isArray(v) && v.length === 2 && (typeof v[0] === "string" || typeof v[0] === "number") && Number.isInteger(v[1]);
 
 /**
+ * The present `images.image_k` inputs of a node, each numbered by its rank among them (the slots sorted by suffix).
+ * @param {any} node
+ * @returns {[string, number][]}
+ */
+const byRank = (node) => {
+    const keys = Object.keys(node.inputs || {}).filter((k) => /^images\.image_\d+$/.test(k) && isLink(node.inputs[k]));
+    keys.sort((a, b) => +a.slice(13) - +b.slice(13));
+    return keys.map((k, i) => [k, i + 1]);
+};
+
+/**
  * The encoder classes whose picture inputs a token can name, the wording their model reads, and each input's place
  * among the pictures the class numbers (1-based). TextEncodeQwenImage21 numbers its present `images.image_k` by rank
- * (its tokenizer writes `<image1>`, `<image2>` ...), TextEncodeQwenImageEditPlus by input ("Picture 1" .. "Picture 3",
- * whether or not the ones before are present), a ReferenceLatent chain by its place in the chain (FLUX.2's "image 1").
+ * (its tokenizer writes `<image1>`, `<image2>` ...), and so does PH3ImageConditioning (P-H3-Image: the node sorts the
+ * present slots by their suffix, image_1 is the picture it edits, and the prompt names them `<Picture 1>`,
+ * `<Picture 2>` ...; ComfyUI 0.44 comfy_extras/nodes_minimax_h3.py), TextEncodeQwenImageEditPlus by input ("Picture
+ * 1" .. "Picture 3", whether or not the ones before are present), a ReferenceLatent chain by its place in the chain
+ * (FLUX.2's "image 1").
  * @type {Record<string, { name: string, inputs: (node: any, prompt: any) => [string, number][] }>}
  */
 const ENCODERS = {
-    TextEncodeQwenImage21: {
-        name: "<image{n}>",
-        inputs: (node) => {
-            const keys = Object.keys(node.inputs || {}).filter((k) => /^images\.image_\d+$/.test(k) && isLink(node.inputs[k]));
-            keys.sort((a, b) => +a.slice(13) - +b.slice(13));
-            return keys.map((k, i) => [k, i + 1]);
-        },
-    },
+    TextEncodeQwenImage21: { name: "<image{n}>", inputs: byRank },
+    PH3ImageConditioning: { name: "<Picture {n}>", inputs: byRank },
     TextEncodeQwenImageEditPlus: {
         name: "Picture {n}",
         inputs: (node) => ["image1", "image2", "image3"].filter((k) => isLink((node.inputs || {})[k])).map((k) => [k, +k.slice(5)]),

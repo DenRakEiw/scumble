@@ -4194,6 +4194,10 @@ export const host = {
         if (!canvas) throw new Error(`Recipe "${r.id}" has no canvas node "${r.canvas}".`);
         // the encoder inputs whose picture this batch does not hold are left out, so none repeats the last one
         if (plan) trimSlots(prompt, plan.spec, 1 + plan.lay.original + plan.lay.kept);
+        // Generate new without pictures after the crop on a recipe whose edit graph is text to image without its crop
+        // (P-H3-Image, `newImage`): the fresh canvas's white crop does not go as the picture to edit
+        const refsGo = !!(plan && plan.lay.original + plan.lay.kept > 0);
+        if (plan && fresh && !refsGo && r.newImage) comfyprompt.dropForNewImage(prompt, r);
         canvas.inputs = { ...(canvas.inputs || {}), ...this.nodeParams, canvas_state: state };
         // an upscaler sees the crop at its native size: the node grows the box to a multiple instead of scaling it
         if (upscale) canvas.inputs.target_size = 0;
@@ -4226,7 +4230,7 @@ export const host = {
         const upClips = this.objectInfo && this.objectInfo.CLIPLoader && this.objectInfo.CLIPLoader.input && this.objectInfo.CLIPLoader.input.required
             && Array.isArray(this.objectInfo.CLIPLoader.input.required.clip_name) ? this.objectInfo.CLIPLoader.input.required.clip_name[0] : null;
         const upsampled = comfyprompt.wireUpsampler(prompt, r, {
-            text: texts.prompt, fresh: !!fresh, refsGo: !!(plan && plan.lay.original + plan.lay.kept > 0),
+            text: texts.prompt, fresh: !!fresh, refsGo, pictures: plan ? 1 + plan.lay.original + plan.lay.kept : 1,
             aspect: fresh ? (fresh.aspect || aspectOf(editor.width, editor.height)) : null, boxes: boxSlot >= 0,
             files: Array.isArray(upClips) ? upClips.map(String) : null, classes: this.objectInfo || null,
         });

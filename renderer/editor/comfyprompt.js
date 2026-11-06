@@ -274,21 +274,73 @@ export function ordinalNames(text, r) {
 }
 
 /**
+ * The request a recipe's upsampler declares (`upsampler.request`, P-H3-Image): `edit` the text around the user's words
+ * for a run with pictures, `t2i` for Generate new without pictures after the crop, each with `{text}` (the prompt as
+ * written: its picture names stay as the recipe gives them, no ordinals), `edit` also with `{pictures}` (one `picture`
+ * block per picture the run sends, its `{n}` 1-based), `t2i` also with `{aspect}` (the canvas's aspect, the nearest of
+ * `aspects` when the request lists some). `verbatim` (optional): when the prompt matches `verbatim.match` (a pattern),
+ * the edit text goes without `verbatim.drop` (P-H3: a text that starts "Edit <Picture 2>" gets no "Edit <Picture 1>. "
+ * in front). Null for a recipe without one (FLUX 3 Image Klein: BFL's request).
+ * @param {any} u the recipe's upsampler
+ * @returns {{ edit?: string, t2i?: string, picture?: string, aspects?: string[], verbatim?: { match: string, drop: string } } | null}
+ */
+export function upsamplerRequest(u) {
+    const q = u && u.request;
+    return q && typeof q === "object" && !Array.isArray(q) && (typeof q.edit === "string" || typeof q.t2i === "string") ? q : null;
+}
+
+/** A request's `verbatim.match` as a RegExp, or null when it is none (recipes.js checks it; a page may hold any). */
+const verbatimRe = (/** @type {any} */ src) => {
+    if (typeof src !== "string" || !src) return null;
+    try { return new RegExp(src); } catch { return null; }
+};
+
+/** "W:H" (or "1.78:1") -> its ratio, or 0. */
+const ratioOfText = (a) => {
+    const m = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(String(a || ""));
+    return m && +m[1] > 0 && +m[2] > 0 ? +m[1] / +m[2] : 0;
+};
+
+/**
+ * The aspect of `list` nearest `aspect` ("W:H"), by the log of the ratio; `aspect` itself when the list is empty or
+ * it is no ratio.
+ * @param {string} aspect
+ * @param {string[] | undefined} list
+ */
+export function nearestListedAspect(aspect, list) {
+    const want = ratioOfText(aspect);
+    if (!want || !Array.isArray(list) || !list.length) return aspect;
+    let best = aspect, bestD = Infinity;
+    for (const a of list) {
+        const r = ratioOfText(a);
+        if (!r) continue;
+        const d = Math.abs(Math.log(r / want));
+        if (d < bestD) { bestD = d; best = String(a); }
+    }
+    return best;
+}
+
+/** The picture inputs of an upsampler's run node: TextGenerate's `image`, TextGenerateV2's `images.imageN`. */
+const runPictureInputs = (run) => Object.keys(run.inputs || {}).filter((k) => k === "image" || /^images\.image\d+$/.test(k));
+
+/**
  * `prompt` (a copy of the recipe's graph as it is queued, its Settings rows written) with the recipe's `upsampler`
  * resolved, in place. The recipe file keeps the upsampler as Comfy's templates do: a switch node (`upsampler.switch`,
  * a ComfySwitchNode whose `switch` a Settings row writes) choosing between the plain wrapper (on_false) and the
- * TextGenerate node (`upsampler.run`, on_true), and a PreviewAny (`upsampler.show`) on its caption. The queued prompt
- * never holds the switch: its consumers take the chosen side directly, and the upsampler's nodes (`upsampler.nodes`)
- * go only when it runs, since ComfyUI checks every node an output reads, a lazy side too (a missing upsampler file
- * would refuse every run). It runs when the switch is on, no box goes (its plain guides know no boxes), the server has
- * the upsampler's file and its node types; else the prompt goes as typed and `note` says why (null when the switch is
- * off). Running, the TextGenerate node gets the request: Generate new without pictures after the crop takes the `t2i`
- * guide (`upsampler.t2i`) with "TARGET CANVAS: W:H" and no picture, everything else the `i2i` guide the graph holds,
- * with the crop batch's pictures in the image model's order and BFL's three-line request; the pictures' names as
+ * Generate Text node (`upsampler.run`, a TextGenerate or a TextGenerateV2, on_true), and a PreviewAny
+ * (`upsampler.show`) on its caption. The queued prompt never holds the switch: its consumers take the chosen side
+ * directly, and the upsampler's nodes (`upsampler.nodes`) go only when it runs, since ComfyUI checks every node an
+ * output reads, a lazy side too (a missing upsampler file would refuse every run). It runs when the switch is on, no
+ * box goes (its plain guides know no boxes), the server has the upsampler's file and its node types; else the prompt
+ * goes as typed and `note` says why (null when the switch is off). Running, the run node gets the request: Generate new
+ * without pictures after the crop (`fresh` and no `refsGo`) takes no picture and the text-to-image request, everything
+ * else the crop batch's pictures in the image model's order and the edit request. A recipe that declares its request
+ * (`upsamplerRequest`) gets it filled with the prompt as written; else BFL's: the `t2i` guide (`upsampler.t2i`) with
+ * "TARGET CANVAS: W:H", or the `i2i` guide the graph holds with BFL's three-line request, the pictures' names as
  * ordinals (`ordinalNames`).
  * @param {Record<string, any>} prompt
  * @param {any} r
- * @param {{ text: string, fresh?: boolean, refsGo?: boolean, aspect?: string | null, boxes?: boolean, files?: string[] | null, classes?: Record<string, any> | null }} o
+ * @param {{ text: string, fresh?: boolean, refsGo?: boolean, pictures?: number, aspect?: string | null, boxes?: boolean, files?: string[] | null, classes?: Record<string, any> | null }} o
  * @returns {{ on: boolean, note: string | null, show: string | null }}
  */
 export function wireUpsampler(prompt, r, o) {
@@ -300,11 +352,12 @@ export function wireUpsampler(prompt, r, o) {
     const wanted = sw.inputs.switch !== false;
     const clip = run.inputs.clip && prompt[run.inputs.clip[0]];
     const file = clip && clip.inputs ? String(clip.inputs.clip_name || "") : "";
-    const lacks = ["TextGenerate", "PreviewAny"].filter((c) => o.classes && !o.classes[c]);
+    const runClass = run.class_type === "TextGenerateV2" ? "TextGenerateV2" : "TextGenerate";
+    const lacks = [runClass, "PreviewAny"].filter((c) => o.classes && !o.classes[c]);
     let why = null;
     if (!wanted) why = "";
     else if (o.boxes) why = "The prompt upsampler stays off while boxes go (its guides take no boxes); the prompt went with the boxes as typed.";
-    else if (lacks.length) why = `The prompt went as typed: the prompt upsampler needs ComfyUI's ${lacks.join(" and ")} node${lacks.length === 1 ? "" : "s"} (ComfyUI 0.42 or newer).`;
+    else if (lacks.length) why = `The prompt went as typed: the prompt upsampler needs ComfyUI's ${lacks.join(" and ")} node${lacks.length === 1 ? "" : "s"} (ComfyUI ${runClass === "TextGenerate" ? "0.42" : "0.44"} or newer).`;
     else if (o.files && file && !o.files.includes(file)) why = `The prompt went as typed: the prompt upsampler's file ${file} is not on your ComfyUI (models/text_encoders; the recipe's description says where to get it), or switch the Prompt upsampler row off.`;
     const on = why === null;
     const side = on ? [String(u.run), 0] : sw.inputs.on_false;
@@ -318,6 +371,30 @@ export function wireUpsampler(prompt, r, o) {
         for (const id of u.nodes || []) delete prompt[id];
         return { on: false, note: why || null, show: null };
     }
+    const show = { on: true, note: null, show: u.show && prompt[u.show] ? String(u.show) : null };
+    const req = upsamplerRequest(u);
+    if (req) {
+        // the recipe's own request (P-H3-Image): the prompt as written, its picture names kept (<Picture 2>)
+        const text = String(o.text || "");
+        const fill = (/** @type {string} */ t, /** @type {Record<string, string>} */ vals) => t.replace(/\{(text|pictures|aspect)\}/g, (m, k) => (k in vals ? vals[k] : m));
+        if (o.fresh && !o.refsGo && typeof req.t2i === "string") {
+            for (const k of runPictureInputs(run)) delete run.inputs[k];
+            const aspect = nearestListedAspect(o.aspect || "1:1", req.aspects);
+            run.inputs.prompt = fill(req.t2i, { text, aspect, pictures: "" });
+        } else if (typeof req.edit === "string") {
+            const n = Math.max(1, Math.round(+(o.pictures || 1)));
+            const block = typeof req.picture === "string" ? req.picture : "";
+            const pictures = block ? Array.from({ length: n }, (_, i) => block.replace(/\{n\}/g, String(i + 1))).join("") : "";
+            // a text that already names the picture it edits ("Edit <Picture 2>. ...") goes without the request's own
+            // lead (`verbatim.drop`), as the node itself treats it (P-H3's PH3_IMAGE_EDIT_VERBATIM)
+            const v = req.verbatim, re = v ? verbatimRe(v.match) : null;
+            const plain = !!(re && typeof v.drop === "string" && v.drop && re.test(text));
+            run.inputs.prompt = fill(plain ? req.edit.replace(v.drop, "") : req.edit, { text: plain ? text.trim() : text, pictures, aspect: "" });
+        } else {
+            run.inputs.prompt = text;
+        }
+        return show;
+    }
     const text = ordinalNames(String(o.text || ""), r);
     if (o.fresh && !o.refsGo && typeof u.t2i === "string") {
         delete run.inputs.image;
@@ -327,5 +404,30 @@ export function wireUpsampler(prompt, r, o) {
     } else {
         run.inputs.prompt = UPSAMPLE_EDIT_REQUEST(text);
     }
-    return { on: true, note: null, show: u.show && prompt[u.show] ? String(u.show) : null };
+    return show;
+}
+
+// ---- Generate new as text to image on an edit graph (P-H3-Image) ----------------------------------------------------
+
+/**
+ * The inputs a recipe leaves out on Generate new without pictures after the crop (`newImage.drop`, "node|input" each):
+ * P-H3-Image's conditioning node is text to image without its image_1, the white crop of Generate new's fresh canvas.
+ * In place, on the queued copy; answers the inputs removed as "node.input". The caller decides when (host.queueGenerate:
+ * a fresh canvas and no picture after the crop, the condition the upsampler's text-to-image request takes).
+ * @param {Record<string, any>} prompt
+ * @param {any} r
+ * @returns {string[]}
+ */
+export function dropForNewImage(prompt, r) {
+    const list = r && r.newImage && Array.isArray(r.newImage.drop) ? r.newImage.drop : [];
+    const removed = [];
+    for (const spec of list) {
+        const at = typeof spec === "string" ? spec.indexOf("|") : -1;
+        if (at <= 0) continue;
+        const node = prompt && prompt[spec.slice(0, at)], input = spec.slice(at + 1);
+        if (!node || !node.inputs || !(input in node.inputs)) continue;
+        delete node.inputs[input];
+        removed.push(`${spec.slice(0, at)}.${input}`);
+    }
+    return removed;
 }

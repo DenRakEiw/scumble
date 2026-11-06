@@ -1,0 +1,35 @@
+{
+  "id": "p_h3_image",
+  "kind": "provider",
+  "name": "P-H3-Image",
+  "family": "Pruna AI",
+  "refs": {
+    "name": "<Picture {n}>"
+  },
+  "description": "Pruna AI's 8-step image model on MiniMax H3 of November 2026: instruction edits of the crop with up to eight more pictures, named <Picture 2>, <Picture 3> ..., and new pictures from the prompt, 1k to 4k. On WaveSpeedAI (your ComfyUI runs it with the P-H3-Image (ComfyUI) recipe, Comfy Cloud with P-H3-Image (Comfy Cloud)). Powered by MiniMax H3. P-H3-Image is under the MiniMax H3 Community License, which does not cover use in the EU, the UK, South Korea or the US without a separate licence from MiniMax (platform.minimax.io/h3-license). Adapter written from the provider's docs, not run against the live API yet.",
+  "default": "wavespeed",
+  "providers": {
+    "wavespeed": {
+      "model": "wavespeed-ai/p-h3-image/edit",
+      "input": "edit",
+      "options": {
+        "max_images": 9,
+        "aspect_ratios": ["1:1", "1:2", "2:1", "1:3", "3:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "9:21", "21:9"],
+        "accepts": ["resolution", "output_format", "seed"],
+        "text_accepts": ["aspect_ratio", "resolution", "output_format", "seed"],
+        "tiers": { "1k": 1024, "1.5k": 1536, "2k": 2048, "3k": 3072, "4k": 4096 }
+      },
+      "settings": [
+        { "index": 1, "key": "resolution", "label": "Resolution", "spec": [["1k", "1.5k", "2k", "3k", "4k"], { "default": "2k" }] }
+      ],
+      "note": "Instruction edit of the crop (<Picture 1>) plus the reference layers (<Picture 2> ...), no mask input: the stitch keeps the selection. The edit answers in the crop's shape (WaveSpeed's aspect follows the first picture); a new image takes the preset closest to the canvas. Resolution 2k is about 4 MP, the edit size Pruna AI advises. WaveSpeed's schema has no prompt upsampler and no negative prompt. Per image: an edit $0.03 at 1k, $0.045 at 1.5k, $0.06 at 2k, $0.12 at 3k, $0.18 at 4k, plus $0.005 for each picture after the first; a new image $0.02, $0.03, $0.04, $0.08, $0.12 (WaveSpeed, 2026-11-06). Not run against the live API yet (written from WaveSpeed's schema, 2026-11-06).",
+      "text": {
+        "model": "wavespeed-ai/p-h3-image/text-to-image",
+        "sizes": [1024, 1536, 2048, 3072, 4096],
+        "refs": {
+          "model": "wavespeed-ai/p-h3-image/edit"
+        }
+      }
+    }
+  }
+}

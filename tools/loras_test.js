@@ -85,6 +85,8 @@ const EXPECT = {
     "flux2_klein_local/prompt": ["unet", ["guider.model"]],
     "flux3_klein_local/prompt": ["unet", ["guider.model", "sched.model"]],
     "moss_image_local/prompt": ["unet", ["slg.model"]],
+    // P-H3-Image (docs/PLAN_PH3.md): the declared source is the recipe's own P-H3-Image LoRA, so the rows stack after it
+    "p_h3_image_local/prompt": ["lora", ["shift.model"]],
     "qwen_image_edit_2_1_local/prompt": ["unet", ["cache.model"]],
     "qwen_image_edit_2_1_turbo_local/prompt": ["unet", ["cache.model"]],
     "relight_qwen_local/prompt": ["unet", ["lora_relight.model"]],
@@ -102,6 +104,9 @@ const EXPECT = {
     "cloud_krea_2_turbo/comfycloud": ["30:10", ["30:15.model", "30:22.on_false"]],
     "cloud_mage_flow/comfycloud": ["12:1", ["12:6.model"]],
     "cloud_mage_flow_edit_turbo/comfycloud": ["12:1", ["12:6.model"]],
+    // the template's own P-H3-Image LoRA after the UNETLoader: the rows go before it, by the generic rule
+    "cloud_p_h3_image/comfycloud": ["1", ["19.model"]],
+    "cloud_p_h3_image/comfycloud.text": ["29:1", ["29:19.model"]],
     "cloud_qwen_image_2_1_edit/comfycloud": ["459:451", ["459:469.model"]],
     "cloud_qwen_image_2_1_edit/comfycloud.text": ["459:451", ["459:480.model"]],
     "cloud_qwen_image_edit_2509/comfycloud": ["433:37", ["433:440.on_false", "433:89.model"]],
@@ -109,7 +114,7 @@ const EXPECT = {
     "relight/comfycloud": ["10:37", ["10:89.model"]],
 };
 // the patches a chain must come before (the plan's patch graphs) and the switch graphs whose two branches both re-point
-const PATCH = { "qwen_image_edit_2_1_local/prompt": "QwenImage21Cache", "cloud_qwen_image_2_1_edit/comfycloud": "QwenImage21Cache", "cloud_z_image_turbo/comfycloud": "ModelSamplingAuraFlow", "moss_image_local/prompt": "SkipLayerGuidanceDiTSimple", "cloud_boogu_image_edit/comfycloud": "ModelSamplingAuraFlow" };
+const PATCH = { "qwen_image_edit_2_1_local/prompt": "QwenImage21Cache", "cloud_qwen_image_2_1_edit/comfycloud": "QwenImage21Cache", "cloud_z_image_turbo/comfycloud": "ModelSamplingAuraFlow", "moss_image_local/prompt": "SkipLayerGuidanceDiTSimple", "p_h3_image_local/prompt": "MiniMaxH3SigmaShift", "cloud_boogu_image_edit/comfycloud": "ModelSamplingAuraFlow" };
 const SWITCH = ["cloud_anima_base/comfycloud", "cloud_flux2_dev/comfycloud", "cloud_krea_2_turbo/comfycloud", "cloud_qwen_image_edit_2509/comfycloud"];
 
 async function main() {
@@ -250,10 +255,10 @@ async function main() {
         const raw = rawFile("moss_image_local");
         const local = (loras, more = {}) => ({ ...clone(raw), kind: "comfy", loras, ...more });
         const kept = [];
-        for (const id of ["flux2_klein_local", "flux3_klein_local", "moss_image_local", "qwen_image_edit_2_1_local", "qwen_image_edit_2_1_turbo_local"]) kept.push(`${id}=${JSON.stringify(byId(id).loras)}`);
-        check("the five local edit / generate recipes declare their family through list()",
-            eq(kept, ['flux2_klein_local={"family":"flux2"}', 'flux3_klein_local={"family":"flux3"}', 'moss_image_local={"family":"moss_image"}', 'qwen_image_edit_2_1_local={"family":"qwen_image_2_1"}', 'qwen_image_edit_2_1_turbo_local={"family":"qwen_image_2_1"}']), short(kept));
-        const others = listed.filter((r) => r.loras !== undefined && !/^(flux2_klein|flux3_klein|moss_image|qwen_image_edit_2_1(_turbo)?)_local$/.test(r.id)).map((r) => r.id);
+        for (const id of ["flux2_klein_local", "flux3_klein_local", "moss_image_local", "p_h3_image_local", "qwen_image_edit_2_1_local", "qwen_image_edit_2_1_turbo_local"]) kept.push(`${id}=${JSON.stringify(byId(id).loras)}`);
+        check("the six local edit / generate recipes declare their family through list() (P-H3-Image its own LoRA node as the source too)",
+            eq(kept, ['flux2_klein_local={"family":"flux2"}', 'flux3_klein_local={"family":"flux3"}', 'moss_image_local={"family":"moss_image"}', 'p_h3_image_local={"model":"lora","family":"p_h3_image"}', 'qwen_image_edit_2_1_local={"family":"qwen_image_2_1"}', 'qwen_image_edit_2_1_turbo_local={"family":"qwen_image_2_1"}']), short(kept));
+        const others = listed.filter((r) => r.loras !== undefined && !/^(flux2_klein|flux3_klein|moss_image|p_h3_image|qwen_image_edit_2_1(_turbo)?)_local$/.test(r.id)).map((r) => r.id);
         const variants = listed.flatMap((r) => Object.entries(r.providers || {}).filter(([, v]) => v.loras !== undefined).map(([p]) => `${r.id}/${p}`));
         check("no other recipe declares loras at the top; of the variants only cloud_ideogram_4's", !others.length && eq(variants, ["cloud_ideogram_4/comfycloud"]), short({ others, variants }));
         const ideo = byId("cloud_ideogram_4").providers.comfycloud;

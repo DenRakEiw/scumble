@@ -2636,6 +2636,85 @@ try {
     if (doc) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
 }
 """),
+    # P-H3-Image (docs/PLAN_PH3.md): an edit names a reference layer <Picture 2> and sends Pruna AI's raw request with one
+    # picture block per picture; Generate new without reference layers is text to image (the white crop does not go as
+    # image_1) with the "Aspect ratio" request; FLUX 3 Image Klein's Generate new still sends its crop. Queued against
+    # stubs (nothing reaches a server)
+    ("p_h3_generate_new_is_text_to_image", """
+const api = (await import('./editor/host.js')).api;
+const ph3 = host.shell.recipes().find((r) => r.id === "p_h3_image_local"), klein3 = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
+if (!ph3 || !ph3.upsampler || !ph3.newImage || !klein3) throw new Error("p_h3_image_local (with its upsampler and newImage) or flux3_klein_local is not listed");
+const UP = "p-h3-image_prompt_upsampler_w4a8.safetensors";
+const info = Object.fromEntries([...ph3.needs, ...klein3.needs, "TextGenerate", "TextGenerateV2", "PreviewAny"].map((n) => [n, { input: { required: {} } }]));
+info.CLIPLoader = { input: { required: { clip_name: [["p-h3-image_text_encoder_int8_convrot.safetensors", UP, "qwen3vl_4b_int8_convrot.safetensors", "qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors"], {}] } } };
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, missing: host.missingFilesRefusal, recipe: host.recipe };
+const sent = [];
+const docs = [];
+const J = (v) => JSON.stringify(v);
+try {
+    host.connected = true;
+    host.objectInfo = info;
+    host.missingFilesRefusal = () => null;
+    host.ensureOnServer = async () => null;
+    api.queuePrompt = async (n, body) => { const id = "ph3-" + (sent.length + 1); sent.push({ id, body }); return { prompt_id: id }; };
+    const queue = async (ed) => { const n = sent.length; await host.queueGenerate(ed); if (sent.length !== n + 1) throw new Error("nothing was queued: " + ed.status); return sent[n].body.output; };
+    const tab = async (w, h) => {
+        const doc = (await run("new_document")).id;
+        docs.push(doc);
+        const ed = ednow(doc);
+        host.shell.activate(ed);
+        await run("new_canvas", { doc, width: w, height: h });
+        ed.cropSettings.fill = "none";
+        ed.cropSettings.withOriginal = false;
+        return { doc, ed };
+    };
+    const out = {};
+    // (1) an edit with one reference layer, the upsampler on: <Picture 2>, the crop scaled, image_3..8 left out, the raw block
+    host.setRecipe(ph3);
+    const a = await tab(320, 240);
+    await run("add_image_layer", { doc: a.doc, filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", role: "reference" });
+    await run("select_rect", { doc: a.doc, x: 80, y: 60, w: 160, h: 120 });
+    await run("set_prompt", { doc: a.doc, text: "put the hat of @img1 on the person" });
+    let g = await queue(a.ed);
+    const pics = Object.keys(g.cond.inputs).filter((k) => /^images\\./.test(k)).sort();
+    if (J(pics) !== J(["images.image_1", "images.image_2"]) || J(g.cond.inputs["images.image_1"]) !== J(["scale0", 0]) || J(g.cond.inputs["images.image_2"]) !== J(["img1", 0])) throw new Error("the edit's pictures: " + J(pics));
+    if (g.up_switch || J(g.cond.inputs.prompt) !== J(["up_run", 0]) || J(g.up_run.inputs["images.image1"]) !== J(["up_pics", 0])) throw new Error("the edit's upsampler: " + J({ keys: Object.keys(g), prompt: g.cond.inputs.prompt }));
+    const block = "<|vision_start|><|image_pad|><|vision_end|>";
+    const wantEdit = "<|im_start|>user\\n<Picture 1>: " + block + "<Picture 2>: " + block + "Edit <Picture 1>. put the hat of <Picture 2> on the person<|im_end|>\\n<|im_start|>assistant\\n<think>\\n";
+    if (g.up_run.inputs.prompt !== wantEdit) throw new Error("the edit's request: " + J(g.up_run.inputs.prompt));
+    if (J(g.shift.inputs.model) !== J(["lora", 0]) || J(g.lora.inputs.model) !== J(["unet", 0]) || J(g.cond.inputs.width) !== J(["size", 0])) throw new Error("the model chain or the size: " + J({ shift: g.shift.inputs, lora: g.lora.inputs.model }));
+    out.edit = a.ed.lastSentPrompt;
+    // (2) Generate new without reference layers: no picture into the conditioning, the size from the scaled crop, the
+    // text-to-image request with the dialog's aspect
+    const b = await tab(1024, 576);
+    await run("select_all", { doc: b.doc });
+    await run("set_prompt", { doc: b.doc, text: "a neon sign that says OPEN" });
+    b.ed._newBoxes = { from: [1024, 576], aspect: "16:9", plan: null };
+    g = await queue(b.ed);
+    if (Object.keys(g.cond.inputs).some((k) => /^images\\./.test(k)) || J(g.cond.inputs.width) !== J(["size", 0]) || J(g.cond.inputs.height) !== J(["size", 1]) || J(g.size.inputs.image) !== J(["scale0", 0])) throw new Error("Generate new's conditioning: " + J(g.cond.inputs));
+    if (g.up_run.inputs.prompt !== "Aspect ratio: 16:9\\nRequest: a neon sign that says OPEN" || "images.image1" in g.up_run.inputs || b.ed._newBoxes !== undefined) throw new Error("Generate new's request: " + J(g.up_run.inputs));
+    out.fresh = g.up_run.inputs.prompt;
+    // (3) the same with the Prompt upsampler row off: the prompt as typed, no upsampler node, still no picture
+    const row = Object.keys(b.ed.settings).find((k) => b.ed.settings[k].target === "p_h3_image_local/up_switch:switch");
+    if (!row) throw new Error("no Prompt upsampler row: " + J(Object.values(b.ed.settings).map((e) => e.target)));
+    b.ed.settings[row].value = false;
+    b.ed._newBoxes = { from: [1024, 576], aspect: "16:9", plan: null };
+    g = await queue(b.ed);
+    if (g.up_run || g.up_switch || g.up_clip || J(g.cond.inputs.prompt) !== J(["canvas", 7]) || Object.keys(g.cond.inputs).some((k) => /^images\\./.test(k))) throw new Error("the row off: " + J({ keys: Object.keys(g), cond: g.cond.inputs }));
+    b.ed.settings[row].value = true;
+    // (4) FLUX 3 Image Klein's Generate new as before: its crop still goes as the first reference latent, BFL's t2i guide
+    host.setRecipe(klein3);
+    b.ed._newBoxes = { from: [1024, 576], aspect: "16:9", plan: null };
+    g = await queue(b.ed);
+    if (J(g.ref_pos0.inputs.latent) !== J(["enc0", 0]) || g.up_run.inputs.system_prompt !== klein3.upsampler.t2i || g.up_run.inputs.prompt !== "TARGET CANVAS: 16:9\\na neon sign that says OPEN") throw new Error("Klein's Generate new changed: " + J({ ref: g.ref_pos0.inputs, prompt: g.up_run.inputs.prompt }));
+    out.klein = "as before";
+    return out;
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; host.missingFilesRefusal = saved.missing;
+    host.setRecipe(saved.recipe);
+    for (const doc of docs) { try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ } }
+}
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";

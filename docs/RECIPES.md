@@ -120,11 +120,32 @@ through `show`'s `executed` (`host._upsampledRuns`): into the log, the run's not
 status line after the result's own line. `normalize()` drops a declaration that does not hold (the graph then goes as
 it is, the switch deciding on the server); Save to recipe keeps it (`GRAPH_KEEPS`); the Comfy Cloud copy runs the
 prompt as typed (`withoutUpsampler`). The guides' licence: `recipes/licenses/`.
+A recipe whose upsampler was trained on a request of its own declares it (`p_h3_image_local`): `run` may be a
+`TextGenerateV2` (its pictures in `images.image1`, the whole crop batch, which the node splits into single pictures in
+order), and `request: { "edit", "picture", "t2i", "aspects" }` replaces BFL's text: `edit` with `{text}` and
+`{pictures}` (one `picture` block per picture the run sends, `{n}` 1-based: the crop, the Original, the references),
+`t2i` with `{text}` and `{aspect}` (the dialog's aspect, else the canvas's, snapped to the nearest of `aspects`; none
+known: 1:1). With a request the prompt goes as written: its picture names stay (`<Picture 2>`, no ordinals), no system
+prompt is set, Generate new without pictures takes the run's picture inputs out (`image` or `images.imageN`).
+`verbatim: { "match", "drop" }` (optional): a prompt that matches the pattern `match` gets the edit text without `drop`,
+trimmed (P-H3: `^\s*(Edit <Picture \d+>|subject_definitions:)` and "Edit <Picture 1>. ", the node's own
+`PH3_IMAGE_EDIT_VERBATIM`, so a prompt that already names the picture it edits is not given a second lead). A missing
+`TextGenerateV2` says "(ComfyUI 0.44 or newer)". `normalize()` drops a request that is no object, has neither `edit`
+nor `t2i`, an `edit` / `t2i` without `{text}`, a `picture` without `{n}`, `aspects` that are not `W:H`, or a `verbatim`
+whose pattern does not compile or whose `drop` its `edit` does not hold.
 
 `edit` (optional, `false`): the graph makes a picture from the prompt alone (`moss_image_local`), so only Generate new
 runs it; Generate on a selection refuses ("... makes new pictures from the prompt alone: use Generate new"), and
 `list_recipes` reports `edit: false`. `normalize()` sets it `true` on every other ComfyUI recipe, and Save to recipe
 keeps it (`GRAPH_KEEPS`).
+
+`newImage` (optional; an edit graph that is text to image without its crop, `p_h3_image_local`): `{ "drop":
+["node|input", ...] }`, the inputs Generate new leaves out of the queued copy when no picture goes after the crop (no
+reference layer shown, no Original: the condition the upsampler's text-to-image request takes), so the fresh canvas's
+white crop does not go as the picture to edit (`comfyprompt.dropForNewImage`, after `trimSlots`). Each must be a
+linked input of a node of the graph other than the canvas; `normalize()` drops a declaration that does not hold (the
+white crop then goes, as on every other edit recipe), Save to recipe keeps it (`GRAPH_KEEPS`). With reference layers
+the crop still goes as the first picture (the numbering of the others stays). The Cloud copy does not carry it.
 
 ### The shipped ComfyUI recipes
 
@@ -199,6 +220,45 @@ keeps it (`GRAPH_KEEPS`).
   left, a plant lower right) and a Keep box in 20 s: the word, the bicycle and the plant each landed in its box, the
   Keep box stayed out with the panel's warning and the run's note; `/history` showed `layout.element = ["canvas", 22]`
   and `pos.text = ["layout", 0]`. Generate on a selection refused before anything was queued.
+- `p_h3_image_local`, **P-H3-Image** (0.1.52, `docs/PLAN_PH3.md`): Pruna AI's 8-step image fine-tune of MiniMax H3
+  (published 2026-11-03), on ComfyUI 0.44 or newer, which runs it on its own nodes (PR Comfy-Org/ComfyUI#17506). The
+  graph is Comfy's templates' LoRA route: `UNETLoader` (`minimax_h3_fl2va_pruned_int8_convrot`, MiniMax H3's FL2VA
+  model from `Comfy-Org/MiniMax-H3`) -> `LoraLoaderModelOnly` (`p-h3-image_lora_bf16` at 1.0) -> `MiniMaxH3SigmaShift`
+  1.0 / 1.0 (the node's defaults 12 / 3 are wrong for it) -> `BasicGuider` (no CFG, no negative: the model is
+  guidance-distilled); `CLIPLoader` type `minimax` (`p-h3-image_text_encoder_int8_convrot`; MiniMax H3's own encoder
+  and video VAE do not fit), `VAELoader` (`p-h3-image_vae_int8_convrot`); `PH3ImageConditioning` (the prompt,
+  `images.image_1` the crop scaled by `scale0` to the Megapixels row, 4 MP by default as Pruna advises for edits, 8 its
+  best size, steps of 32; `images.image_2..8` the Original and the reference layers at the crop's size, which the node
+  scales down to the area only; `width` / `height` linked to the scaled crop's size) -> its `LATENT` into
+  `SamplerCustomAdvanced` with `ManualSigmas` (Pruna's 8-step grid "1.0, 0.984753, 0.967905, 0.951688, 0.925372,
+  0.881923, 0.810083, 0.528718, 0.0"), `KSamplerSelect` `euler` (Pruna's workflows; Comfy's templates take `er_sde`, the
+  Preset row has both and 8 MP), `RandomNoise` from the canvas's seed, `VAEDecode`. `refs: { "name": "<Picture {n}>",
+  "slots": 8 }`: the node numbers its present slots by rank (`comfyrefs.js` `PH3ImageConditioning`), so an @img token
+  is written as the `<Picture N>` its picture has and `trimSlots` leaves out the slots a run does not fill. The model
+  has no mask input: it renders the whole crop again and the stitch keeps the selection. With pictures the node puts
+  "Edit <Picture 1>. " in front of a prompt unless it starts with "Edit <Picture" or is the upsampler's brief. **What
+  Scumble sends**: the crop at Settings › ComfyUI's crop size (`target_size`, 1024 by default, the user's setting wins
+  over the recipe's), scaled up to the Megapixels row by lanczos in the graph; the result comes back at that size and
+  the stitch fits it into the selection. **Generate new** without reference layers is a real text-to-image run
+  (`newImage: { "drop": ["cond|images.image_1"] }`, above): the conditioning gets no picture, the latent the canvas's
+  aspect at the Megapixels row's area. **The prompt upsampler** (`up_*`, Settings rows 7 *Prompt upsampler* and 8
+  *Upsampler model*; `p-h3-image_prompt_upsampler_w4a8`, Pruna's Qwen3.5-9B fine-tune, Apache-2.0, 6.7 GB) runs
+  through `TextGenerateV2` (greedy, `max_length` 3072, thinking on, the default template) with Pruna's own requests
+  (`upsampler.request`, above): an edit as Pruna's raw chat block, one `<Picture N>: <|vision_start|><|image_pad|>
+  <|vision_end|>` per picture sent, then "Edit <Picture 1>. <prompt>" (the lead left out when the prompt starts "Edit
+  <Picture N>", `verbatim`), the reasoning open (`<think>`); Generate new
+  "Aspect ratio: W:H\nRequest: <prompt>" with the canvas's aspect snapped to Pruna's seven (1:1, 4:3, 3:4, 3:2, 2:3,
+  16:9, 9:16). Without it short edit requests often redraw the whole scene (Pruna's card). Its file missing or the row
+  off: the prompt goes as typed into the conditioning. The LoRA rows (`loras: { "model": "lora", "family":
+  "p_h3_image" }`) chain after the recipe's own P-H3-Image LoRA. Settings rows: Model, P-H3-Image LoRA, Text encoder,
+  VAE, Megapixels, Sampler, Prompt upsampler, Upsampler model; a missing file is refused with its link (`models`).
+  Pruna's full model files (`p-h3-image_int8_convrot` 21.2 GB, `_w4a8` 13.4 GB) are not this graph: they need the LoRA
+  node out. Pruna's VRAM figures at 8 MP: about 31 GB with the int8 set, 21 GB with w4a8 (the upsampler is moved out
+  before sampling). **Not run live yet** (checked against the node specs of ComfyUI 0.44.0 only). P-H3-Image is under
+  the MiniMax H3 Community License, which does not cover use in the EU, the UK, South Korea or the US without a
+  separate licence from MiniMax (platform.minimax.io/h3-license). "Powered by MiniMax H3" is encouraged by the licence,
+  not required; its notice: "MiniMax H3 is licensed under the MiniMax H3 Community License Agreement, Copyright © 2026
+  MiniMax. All Rights Reserved." Scumble ships no weights.
 - `qwen_image_edit_2_1_local`, **Qwen Image Edit 2.1** (added for 0.1.23): ComfyUI's own template
   `image_qwen_image_2_1_image_edit.json` with its subgraph flattened and its save and compare nodes left out (they
   would write every run into the server's output folder). `TextEncodeQwenImage21` takes **one picture per input**
@@ -393,8 +453,14 @@ model can carry one as its text route, `text: { model, options, sizes }` (`optio
 `generate()` runs only such a graph (a partner-node recipe makes no new image on Comfy Cloud): nothing is uploaded, the
 size goes in steps of 16. Generate new has a *Comfy Cloud* choice beside local and API.
 
-**Shipped:** thirteen of Comfy's templates as Comfy Cloud exports them, picked by the user (MIT,
-`tools/refs/comfy_cloud/edit/` and `t2i/`). Edits: `cloud_boogu_image_edit`, `cloud_flux2_klein_9b` (with the Flux.2
+**Shipped:** fourteen of Comfy's templates as Comfy Cloud exports them, picked by the user (MIT,
+`tools/refs/comfy_cloud/edit/` and `t2i/`). Edits: `cloud_p_h3_image` (P-H3-Image, `image_p_h3_image_edit` with
+`image_p_h3_t2i` as its text route: the template's P-H3-Image LoRA on MiniMax H3's FL2VA model, `er_sde`, the crop at its
+own size; its prompt upsampler gets the prompt as written, without the template's "Aspect ratio" and "Request" lines,
+which the prompt control held; its pictures `<Picture {n}>`, sizes in steps of 32, Generate new's long sides 1024 to
+2912, the node's own text-to-image size; the LoRA rows chain after the
+`UNETLoader`, before the template's LoRA; the MiniMax H3 Community License line as in `p_h3_image_local`; not run),
+`cloud_boogu_image_edit`, `cloud_flux2_klein_9b` (with the Flux.2
 Klein 9B text-to-image template as its text route), `cloud_flux2_klein_9b_multi` (the same template with its two-picture
 subgraph live), `cloud_flux2_dev` (Comfy's Flux.2 dev image-edit template, filed under text to image by the user),
 `cloud_mage_flow_edit_turbo`, `cloud_qwen_image_2_1_edit` (with its text-to-image template; its pictures named
@@ -754,6 +820,7 @@ of the request, and each family has its own word for it (the vendors' prompting 
   | `nano_banana_2`, `_pro` · WaveSpeed | 14 | https://wavespeed.ai/docs/docs-api/google/google-nano-banana-2-edit, `…-pro-edit` ("0 ~ 14 items") |
   | `grok_imagine` · fal | 5 | https://fal.ai/models/xai/grok-imagine-image/v2.0/edit/api ("A maximum of 5 images are supported.") |
   | `flux3` · bfl | 10 | https://docs.bfl.ai/flux_3/flux3_image_overview (`images`: 1 to 10, the crop included; read on 2026-10-01) |
+  | `p_h3_image` · WaveSpeed | 9 | https://wavespeed.ai/models/wavespeed-ai/p-h3-image/edit (`images` 1 to 9, the first edited; read 2026-11-06) |
 
   The Replicate pages that say "reference images" are read as the length of the `image_input` list, which carries
   the crop too (the lower of the two readings). The caps that were there before (OpenRouter, ModelArk, Oxen, Comfy
@@ -976,6 +1043,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
   | Nano Banana 2.1 | Gemini, ToAPIs, OpenRouter, Comfy Router, Replicate; fal and WaveSpeed (`/edit`) | - |
+  | P-H3-Image | WaveSpeed (`/edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
   | Seedream 5 lite, 5 pro | ModelArk, ToAPIs, OpenRouter, Comfy Router, Replicate (lite), Oxen.ai (pro); fal (`/edit`, `options: { sizing: "image_size" }`), WaveSpeed (`/edit`), Magnific (the `-edit` route) | - |
   | Seedream 4.5 | Magnific (`seedream-v4-5-edit`) | - |
