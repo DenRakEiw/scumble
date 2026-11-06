@@ -71,8 +71,9 @@ under the name the chosen model knows that picture by.
 
 Recipes instead of node graphs: you pick a model and where it runs. On your own ComfyUI, local or on a rented box
 such as RunPod, any workflow with the Inpaint Canvas node becomes a recipe, and the *ComfyUI* button opens your
-ComfyUI's own page beside the editor to change a recipe's graph and save it back. Comfy Cloud runs on your Comfy key
-through Comfy's official SDK, with 13 recipes from Comfy's own templates, and the same key reaches the partner models
+ComfyUI's own page beside the editor to change a recipe's graph and save it back; up to five LoRAs from your ComfyUI's
+own list go into a recipe's runs without touching its graph. Comfy Cloud runs on your Comfy key
+through Comfy's official SDK, with 15 recipes from Comfy's own templates, and the same key reaches the partner models
 on Comfy Router. Or paste a key into *Settings › API providers*: Black Forest Labs, OpenAI, Google, fal.ai, Replicate,
 OpenRouter and more. Keys go into the system's credential store, never into a settings file.
 
@@ -221,14 +222,21 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   with up to three more pictures, makes new ones with *Generate new* and takes boxes; Black Forest Labs' prompt
   upsampler writes your prompt out first when its file is on your ComfyUI; its weights come under Black Forest Labs'
   own licence), Flux.2 Klein 4B / 9B, Qwen Image Edit 2.1 and its Turbo, MOSS-Image (ComfyUI 0.42 or
-  newer; new pictures with *Generate new*, its JSON layout from your boxes; Apache-2.0), and P-H3-Image (ComfyUI 0.44
-  or newer, also on Comfy Cloud and WaveSpeedAI; edits with up to seven more pictures and new pictures, Pruna AI's
-  prompt upsampler in front; powered by MiniMax H3, whose licence does not cover the EU, the UK, South Korea or the US
-  without a separate licence from MiniMax); the upscale, Realism Pass and relight recipes are below.
+  newer; new pictures with *Generate new*, its JSON layout from your boxes; Apache-2.0), MOSS-Image Edit (ComfyUI 0.43
+  or newer, also on Comfy Cloud; it edits by instruction with up to three more pictures, through the edit LoRA of
+  Comfy's own template), and P-H3-Image (ComfyUI 0.44 or newer, also on Comfy Cloud and WaveSpeedAI; edits with up
+  to seven more pictures and new pictures, Pruna AI's prompt upsampler in front; powered by MiniMax H3, whose licence
+  does not cover the EU, the UK, South Korea or the US without a separate licence from MiniMax); the upscale, Realism
+  Pass and relight recipes are below.
+- LoRAs for every recipe on your own ComfyUI with one model loader: up to five per recipe in the *LoRAs* section of
+  the Generate tab, each picked from your ComfyUI's list with a strength and an on / off tick, kept per recipe and
+  loaded into the copy of the graph a run queues. A line under each says which base model the file looks made for
+  (amber when it does not fit the recipe's, since ComfyUI loads such a LoRA silently and changes nothing), its trigger
+  words go into the prompt with a click, and a file your ComfyUI lacks stops the run before anything is uploaded.
 - Your own workflow becomes a recipe when it holds an Inpaint Canvas node. The *ComfyUI* window (Ctrl+Shift+K) shows
   your ComfyUI's page or Comfy Cloud; *Edit in ComfyUI* opens a recipe's graph there, and *Save to recipe* or *Save as
   new recipe* brings it back.
-- Comfy Cloud has a mode of its own beside *local* and *api*. Fourteen recipes from Comfy's templates come with
+- Comfy Cloud has a mode of its own beside *local* and *api*. Fifteen recipes from Comfy's templates come with
   Scumble (image edits, and new images for Generate new); *Cloud copy* turns one of your ComfyUI recipes into one that
   runs there, and a workflow made on Comfy Cloud imports as it is. Comfy Cloud and Comfy Router run through Comfy's
   official TypeScript SDK ([`@comfyorg/sdk`](https://www.npmjs.com/package/@comfyorg/sdk)). *Cancel* stops a Comfy

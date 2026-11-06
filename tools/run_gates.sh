@@ -11,7 +11,7 @@
 # ($SCUMBLE_GATES/nodecopy), so the real node repo is never written.
 #
 # A gate is a tools/ script name without .py (editor, composite, pixels, shape, brush, commands,
-# film, relight, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, oxen, magnific, recipes, assistant, mcp, smoke,
+# film, relight, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, oxen, magnific, recipes, loras, assistant, mcp, smoke,
 # node, blendmodes, perf:<args>; mcpb is tools/mcpb_test.js in plain Node).
 # Gate "toapis" (tools/toapis_test.py) runs tools/toapis_test.js in plain Node first, then the app against
 # tools/toapis_mock.py; it needs no ToAPIs key and refuses a profile that holds one. Gate "openrouter"
@@ -23,7 +23,10 @@
 # (tools/magnific_test.py) with tools/magnific_test.js and tools/magnific_mock.py (it refuses a profile that holds a
 # Magnific key). Gate "recipes"
 # (tools/recipes_test.py) runs tools/recipes_test.js in plain Node first (the shipped recipes' settings slots and
-# the importer), then the import through the app's Settings dialog; it needs no key and no ComfyUI. Gate "assistant"
+# the importer), then the import through the app's Settings dialog; it needs no key and no ComfyUI. Gate "loras"
+# (tools/loras_test.py, the LoRA rows of docs/PLAN_LORAS.md) runs tools/loras_test.js and tools/loraheader_test.js in
+# plain Node first, then the queue path, the LoRAs section and the hints in the app with the server stood in for (the
+# page's fetch answers POST /prompt and the node list); run it --offline. Gate "assistant"
 # (tools/assistant_test.py) runs tools/assistant_test.js in plain Node first, then the in-app assistant against
 # tools/assistant_mock.py (every model family through the mock, the asks, the pin, the user-activity wait); it needs
 # no key, refuses a profile that holds one, refuses an instance connected to ComfyUI, and goes last in a list.

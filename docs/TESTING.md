@@ -365,7 +365,28 @@ CFG 4, euler / normal, Moss-Image-Edit on both encoders) and proves the check on
 after the edit LoRA) and the `loras` gate's step `moss_edit_needs_a_043_server_and_takes_rows_after_its_edit_lora`
 (against a v0.42 node list `list_recipes` says not ready with the sentence and the run is refused before any upload;
 with the node the queued graph holds the row after the edit LoRA; the missing edit LoRA refused with its link). Light
-/ Normal tier: a live run is LR9's.
+/ Normal tier; run live at LR9 (`docs/measurements/lr9_2026-11-06/`).
+
+LoRAs (item 50, `docs/PLAN_LORAS.md`): the gate `loras` (`tools/loras_test.py`) runs `node tools/loras_test.js` (89
+checks: `renderer/editor/loras.js` over every graph of every shipped recipe, raw and normalised, with the fixtures'
+node list and with the class table: the model source, the chain and every reader re-pointed, the declarations through
+`normalize`, the rows, `missingLoras`, `comboOf`, the family table and the hints, the picker's helpers) and `node
+tools/loraheader_test.js` (56 checks: `electron/main/loraheader.js` on synthetic safetensors files it writes in its own
+temp folder: each family's keys and shapes, the header and metadata caps, a file that is no safetensors, the server
+and path checks, the twins in `loras.js` held equal) first, then the app (`--offline`) with the server stood in for:
+the page's `fetch` answers POST /prompt (so `api.queuePrompt` builds the real body), `/object_info/LoraLoaderModelOnly`
+and `/view_metadata`, and `host.loraHeader` stands in for the IPC. Its steps: the chain in the queued copy with the
+strengths and the separators in the server's spelling, the recipe's graph untouched; a missing file refused after one
+re-read and before `ensureOnServer`, six rows refused, an unread list refusing nothing, `loras: false`; the via line in
+the landed result's history entry; the LoRAs section (after Settings, hidden with its reason under an API recipe, an
+upscaler, the pass, `loras: false`, two loaders and a Comfy Cloud recipe; **+** to five, **×**, the picker's search,
+groups, keys and pointer, the strength's clamp, the tick, the rows per recipe across documents, `copySavedLoras`); the
+hint lines (grey, amber with the run still queued, the chips, one read per server and name, the family split and *Show
+all*); MOSS-Image Edit's readiness against a v0.42 node list and the rows after its edit LoRA. Also:
+`settings_migration_test.js` (the `recipeLoras` store), `metadata` (the PNG chunk's `loras`), `commands`
+(`loras_commands`: `set_generation` `loras`, `status.loras`, `list_recipes` `loras`, `list_loras`, `loras_sent`),
+`skins` step 15 (the section and the picker in every skin), `mcp` and `assistant` (`list_loras` read-only). Normal
+tier on tiles (no pixel path changed); the live runs are LR9's (`docs/measurements/lr9_2026-11-06/`).
 
 Ideogram 4.5 (`recipes/ideogram_4_5.json`, `electron/main/providers/replicate.js`, `util.js` `ideogramMask`,
 `docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com and

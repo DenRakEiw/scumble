@@ -29,6 +29,7 @@ layer, exactly like in the ComfyUI node.
                                                   // "Reference images named in the prompt (local)"
   "boxes": { "schema": "flux3", "input": "say_in|string_b" },   // optional: boxes in the prompt, below
   "edit": false,                    // optional: a text-to-image graph, Generate new only (below)
+  "loras": { "family": "flux3" },  // optional: where LoRA rows go and the base model, or false ("LoRA rows")
   "settings": [ { "index": 1, "node": "unet", "input": "unet_name", "label": "Model",
                   "spec": [["file.safetensors"], {}] } ],   // spec optional: /object_info wins when connected
   "presets": [ { "name": "L", "values": { "rp_settings:dlss_model_preset": "L" } } ],   // optional, see "Presets"
@@ -155,25 +156,22 @@ and the API Generate new; Generate new without a prompt is refused for every rec
 `true` and drops any other value (with a warning when it is not `false`); Save to recipe keeps it (`GRAPH_KEEPS`),
 the Cloud copy carries it, `tools/cloud_recipes.js` writes it from a MANIFEST row's `promptRequired`.
 
-**LoRA rows on your ComfyUI, run live 2026-11-06** (item 50, `docs/PLAN_LORAS.md` LR9; the `loras` field and the splice
-are written up here at LR10; the user's ComfyUI 0.44.0, RTX 5090, one seed per pair, the numbers and pictures in
-`docs/measurements/lr9_2026-11-06/`). Every family's LoRA changed the picture, and every mismatched one left it alone:
-`Flux_3\Flux3_Targa` on `flux3_klein_local` (its int8_convrot model; given with `/`, sent in the server's `\`
-spelling) turned the generic sports car into the LoRA's car (45 levels mean difference), "looks like FLUX 3" with the
-chip "Targa", 9.9 s; `klein\Flux2-klein-9b-base_HerbstPhoto_v4_Texture` on `flux2_klein_local` (base 9B) "looks like
-FLUX.2 Klein 9B" and at 1.0 redrew the edit into its own autumn scene (77 levels: a strong style LoRA wants a lower
-strength on an edit), 45.9 s; Comfy-Org's `qwen_image_2.1_turbo_lora_avg_rank_178_bf16` on `qwen_image_edit_2_1_local`
-(the int8_convrot model, 8 steps) sharpened the brick and the tree and kept the edit (5.6 levels), 5.2 s. The mismatches:
-a FLUX.1 LoRA (`fluxirbrush_ep_05_dora`) on FLUX.2 Klein showed the amber line, ComfyUI printed 768 "lora key not
-loaded" lines and 118 "ERROR lora ... shape ... is invalid" at sampling, and the picture came back byte for byte the
-same; a Qwen Image Edit 2509 LoRA (`qwen\Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32`) on Qwen Image 2.1 showed the
-amber line, 1,776 keys not loaded, 128 attached by name and refused on shape, and the picture visibly the same (1.9
-levels mean; the same LoRA at 0.0, which ComfyUI's loader skips, is byte-identical, so where the 1.9 comes from is not
-shown). A switched-off row was not sent (four of five rows chained, `scumble_lora_1..4` in order with their strengths),
-five rows ran (53.6 s), the via line named them ("+ 5 LoRAs: ..."), and the exported PNG's `workflow` chunk carried
-`"loras": [{ "name": "Flux_3\\Flux3_Targa.safetensors", "strength": 1 }]` (JSON). Found and fixed: the turbo LoRA read no
-base model (its 1-D `norm_q` / `norm_k` diffs of 128 were taken as the width), now "looks like Qwen Image 2.1". No MOSS
-style LoRA is on the machine, so `moss_image_local` took none.
+`loras` (optional; the LoRA rows, item 50, `docs/PLAN_LORAS.md`; any graph recipe): `false`, or `{ "model": "<node
+id>", "family": "<family>" }` with either part optional. On a ComfyUI recipe it sits at the top; on a Comfy Cloud
+recipe it is a variant field (`providers.comfycloud.loras`) that holds for the edit graph and the text route's graph
+alike. `false` takes no rows (`cloud_ideogram_4`, whose graph has two MODEL sources). `model` names the node whose
+MODEL output the rows load after, any node of the graph but the canvas node; it may itself read a MODEL
+(`moss_image_edit_local` and `p_h3_image_local` name their own `LoraLoaderModelOnly` `lora`, so the user's rows go after
+the recipe's LoRA, where the rule alone would take the `UNETLoader`). `family` is the base model the recipe runs, for
+the hint and the picker's split: an id of `FAMILIES` in `renderer/editor/loras.js` (`flux3`, `flux2_klein`,
+`qwen_image_2_1`, `moss_image`, `p_h3_image` in the shipped files; `flux2_klein` fits a LoRA for 4B or 9B); without it
+`recipeFamily` reads the graph's text encoder (the `CLIPLoader` type, for FLUX.2 the model file's name). `normalize()`
+checks it against `r.prompt`, and on a Cloud variant per route (`v.loras` for `options.graph`, `v.text.loras` for
+`text.options.graph`: a `model` that is no node of a route's graph is dropped there, and the rule applies there); it
+drops whatever does not hold with one warning, `loras` on an API variant without a graph too (LoRAs never go to an API
+provider). Save to recipe keeps it while the saved graph still holds a declared `model` (`GRAPH_KEEPS`, `fromGraph`),
+the Cloud copy writes it into the copy's variant (`detach`), and `tools/cloud_recipes.js` writes a MANIFEST row's
+`loras` into `providers.comfycloud`. How the rows reach a run: "LoRA rows" below.
 
 ### The shipped ComfyUI recipes
 
@@ -442,6 +440,83 @@ the same name replaces it in the list, and one with a shipped one's values is sh
 deleted). `recipes.js` drops a malformed entry (no name, a duplicate name, values that
 are not plain strings, numbers or booleans, keys without `node:input`; the node id may hold colons, as a flattened
 subgraph's `57:12` does). The Realism Pass ships L and M.
+
+### LoRA rows
+
+Up to five LoRAs per graph recipe (item 50, `docs/PLAN_LORAS.md`; the user's side is the manual's chapter *LoRAs on
+your ComfyUI*). **The source** (`renderer/editor/loras.js` `modelSource`, with the node list or, while it is unread, a
+table of class names): a declared `loras.model`, else the one live node (it leads to the result, the `save` node or an
+output) with a MODEL output a live node reads and no MODEL input of its own, the loader. None, or two that the recipe
+does not choose between, and the recipe takes no rows: the LoRAs section is hidden and `list_recipes` says `loras:
+false` with `loras_reason` (`host.loraTakes`, which also answers for the upscalers, the Realism Pass, relight, API
+recipes and, until the Cloud splice is built, Comfy Cloud recipes). Every shipped graph's source and the readers it
+re-points are in the table of "LR0 as built" in the plan.
+
+**The splice** (`spliceLoras`, in `host.queueGenerate` after the Settings rows, the factor, the boxes and
+`wireUpsampler`, before `api.queuePrompt`; never for `upscale` or `pass`): the switched-on rows with a name, in their
+order, as a chain of `LoraLoaderModelOnly` nodes `scumble_lora_1` .. `scumble_lora_5` (an id the graph holds already
+gets a suffix, `scumble_lora_1_2`) from the source's MODEL, every live reader of that output re-pointed to the chain's end (`flux3_klein_local`'s
+`guider` and `sched`, a switch's `on_false`, a patch node such as `SkipLayerGuidanceDiTSimple` or `QwenImage21Cache`,
+which then patches the model with the LoRAs in it). A source that also gives a CLIP that a text encoder reads (a
+checkpoint loader in an imported recipe) gets `LoraLoader` nodes with `strength_clip` at the row's strength, its CLIP
+readers re-pointed too. A strength is clamped to the node's range (-100 .. 100; the section's arrows go -2 .. 2 by
+0.05). A name that differs from one in the server's list only in its separators goes in the server's spelling. Only
+the queued copy changes: `r.prompt` and the file never do. No usable row, or no source: nothing changes, and with rows
+the run's notes say why they stayed out.
+
+**The store**: `settings.recipeLoras[recipeId] = [{ name, strength, on }]` in `settings.json` (no default: an older
+profile reads `{}`; `host.loras`, `saveLoras` writes the whole object, `loraRows` drops a malformed row), shared by all
+documents, never in the `.scumble` file. A switched-off row and an empty one ("Pick a LoRA") stay in the store and are
+not sent. A recipe saved as new from the ComfyUI window takes the rows of the one it came from (`comfyview:saved` with
+`from`, `shell.js` `copySavedLoras`); a removed recipe's rows stay in the store.
+
+**Before a run** (`host.loraPlan`, after the connection, `needs` and the upscaler's checks, before the boxes' slot read
+and `ensureOnServer`): more than five switched-on rows are refused (a limit, `warn`), and a switched-on row whose file
+the server's list lacks is refused after one re-read of `/object_info/LoraLoaderModelOnly` ("Your ComfyUI lacks a LoRA
+file this recipe's rows name: ..."); an unread or empty list refuses nothing and the names go as typed, so ComfyUI's
+own check answers. **After it**: the run's notes ("LoRAs: Flux3_Targa 0.8, nyc_style 1.0."), the via line (`viaLine`,
+"... via your ComfyUI + 2 LoRAs: Flux3_Targa 0.8, nyc_style 1.0, 14 s", in the status line and the history entry), the
+log (`local run <id>: LoRAs ...`), `editor.lastLoras` (`generate` / `generate_new` `loras_sent`), the run's
+`extra_pnginfo.workflow.loras`, and a PNG export's workflow chunk (`workflowForPng` through `host.lorasNow`, local
+recipes; the chunk's `prompt` never shows the chain).
+
+**The hint** (never a refusal: ComfyUI loads a LoRA of another base model without an error, printing "lora key not
+loaded" for each key that does not fit, and the picture comes back unchanged): `electron/main/loraheader.js` reads a
+file's safetensors header (8 bytes and the JSON, never a tensor; a 16 MB cap; names under `<models>/loras` only, no
+`..`, drive or share), only for a server on this machine (127.x, `localhost`, `::1`, the machine's own name) and with
+Settings › Helpers at a ComfyUI `models` folder (one holding `loras/` and `checkpoints/` or `diffusion_models/`),
+reduced in main to the module paths, block counts, widths, out-features and the metadata's top tags before the IPC
+`loras:header` answers; else ComfyUI's `/view_metadata/loras` while the server answers; else the subfolder's name.
+`familyOf` decides keys over metadata over folder (metadata lies: ai-toolkit writes `sd_1.5` into FLUX and Qwen
+LoRAs); the thresholds per family (FLUX.1 against FLUX.2 Klein 4B / 9B and dev by width, blocks and MLP multiples, FLUX
+3, Qwen Image 2509 against 2.1, MOSS-Image, Z-Image, Ideogram 4) were read from the user's base models' headers ("LR3
+as built" in the plan). Only a keys answer that fits none of the recipe's families turns the line amber; two families
+of the same shape are both named. Trigger words: `ss_tag_frequency` (the top five, each at least a quarter of the
+first's count) and the `modelspec` trigger phrase, split at commas.
+
+**Comfy Cloud**: a Cloud variant's `loras` is read and checked as above, but a Comfy Cloud recipe takes no rows yet:
+the splice in main (`comfycloud.js` `run` / `runV2`, after the node list's read and before the model-file check) is the
+plan's LR5, which waits for a probe of the account's LoRA listing with the user's key. Until then a LoRA goes into a
+Cloud recipe's graph by hand (*Edit in ComfyUI*, a Load LoRA node, *Save to recipe*).
+
+**LoRA rows on your ComfyUI, run live 2026-11-06** (item 50, `docs/PLAN_LORAS.md` LR9; the user's ComfyUI 0.44.0, RTX
+5090, one seed per pair, the numbers and pictures in `docs/measurements/lr9_2026-11-06/`). Every family's LoRA changed the picture, and every mismatched one left it alone:
+`Flux_3\Flux3_Targa` on `flux3_klein_local` (its int8_convrot model; given with `/`, sent in the server's `\`
+spelling) turned the generic sports car into the LoRA's car (45 levels mean difference), "looks like FLUX 3" with the
+chip "Targa", 9.9 s; `klein\Flux2-klein-9b-base_HerbstPhoto_v4_Texture` on `flux2_klein_local` (base 9B) "looks like
+FLUX.2 Klein 9B" and at 1.0 redrew the edit into its own autumn scene (77 levels: a strong style LoRA wants a lower
+strength on an edit), 45.9 s; Comfy-Org's `qwen_image_2.1_turbo_lora_avg_rank_178_bf16` on `qwen_image_edit_2_1_local`
+(the int8_convrot model, 8 steps) sharpened the brick and the tree and kept the edit (5.6 levels), 5.2 s. The mismatches:
+a FLUX.1 LoRA (`flux\airbrush_ep_05_dora`) on FLUX.2 Klein showed the amber line, ComfyUI printed 768 "lora key not
+loaded" lines and 118 "ERROR lora ... shape ... is invalid" at sampling, and the picture came back byte for byte the
+same; a Qwen Image Edit 2509 LoRA (`qwen\Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32`) on Qwen Image 2.1 showed the
+amber line, 1,776 keys not loaded, 128 attached by name and refused on shape, and the picture visibly the same (1.9
+levels mean; the same LoRA at 0.0, which ComfyUI's loader skips, is byte-identical, so where the 1.9 comes from is not
+shown). A switched-off row was not sent (four of five rows chained, `scumble_lora_1..4` in order with their strengths),
+five rows ran (53.6 s), the via line named them ("+ 5 LoRAs: ..."), and the exported PNG's `workflow` chunk carried
+`"loras": [{ "name": "Flux_3\\Flux3_Targa.safetensors", "strength": 1 }]` (JSON). Found and fixed: the turbo LoRA read no
+base model (its 1-D `norm_q` / `norm_k` diffs of 128 were taken as the width), now "looks like Qwen Image 2.1". No MOSS
+style LoRA is on the machine, so `moss_image_local` took none.
 
 ### The local / api / comfy cloud select
 

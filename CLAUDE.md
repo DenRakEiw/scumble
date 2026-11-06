@@ -247,9 +247,11 @@ code.
   and LR9 (the live runs on the user's word: every family's LoRA changed the picture, the amber lines held against
   ComfyUI's "lora key not loaded" lines, five rows and a switched-off one, the PNG chunk read back; MOSS Image Edit with
   one and two pictures and Generate new, `refs.name` kept as `image {n}` when the prompt names each picture's role; the
-  Qwen 2.1 turbo LoRA's missing hint fixed, `e4b8a77`; `docs/measurements/lr9_2026-11-06/`) done 2026-11-06 ("LR8 as
-  built", "LR9 as built"); next there: LR10 (the docs and the hand-over); LR5 (Comfy Cloud) waits for the user's Comfy
-  key; the user's ComfyUI is at v0.44.0 since 2026-11-06.
+  Qwen 2.1 turbo LoRA's missing hint fixed, `e4b8a77`; `docs/measurements/lr9_2026-11-06/`) and LR10 (the docs: the
+  manual's chapter *LoRAs on your ComfyUI*, README, RECIPES.md "LoRA rows", the CHANGELOG lines, the gate `loras`
+  listed; the closing comments for #10 / #11 drafted for the release) done 2026-11-06 ("LR8 as built" .. "LR10 as
+  built"); open there: LR5 (Comfy Cloud) waits for the user's Comfy key, then the release block with CorridorKey; the
+  user's ComfyUI is at v0.44.0 since 2026-11-06.
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
@@ -747,7 +749,19 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `docs/PLAN_LORAS.md`** (research of three readers in `docs/research/issues10_11_2026-11-06/`, two critics): sessions
   LR0-LR10, about 8.5-9 days (inferred); its §6 answered the same day (one MOSS edit recipe, Claude downloads the
   edit LoRA with sha256, Comfy-Org's Qwen 2.1 turbo LoRA for the live run); the comments on #10 and #11 posted by Claude
-  on the user's word (0.1.52 named), a closing comment at the release.
+  on the user's word (0.1.52 named), a closing comment at the release. **Built 2026-11-06 on `corridorkey`** (each
+  session's "as built" in the plan's §4): LR0 `a218b2a` (the splice module `renderer/editor/loras.js`, the `loras`
+  declaration), LR1 `1cfe0bf` (the queue path, the store `settings.recipeLoras`, the via line, the PNG chunk, the gate
+  `loras`), LR2 `c48447c` (the LoRAs section, `renderer/editor/lora_panel.js`), LR3 `02a00f0` (the base-model hint,
+  amber on a mismatch, the trigger chips, `electron/main/loraheader.js`), LR4 `9cacabe` (MCP, the new `list_loras`; 117
+  tools, 97 core), LR6 `7f9c0b1` (`recipes/moss_image_edit_local.json`), LR7 `b9ca1b0` (`cloud_moss_image_edit`), LR8
+  `7267855` (the record of the ComfyUI update and the two LoRA downloads), LR9 `b67774b` (the live runs on the user's
+  ComfyUI; the turbo LoRA's hint fixed in `e4b8a77`), LR10 (the manual's chapter *LoRAs on your ComfyUI*, README,
+  RECIPES.md "LoRA rows", the CHANGELOG lines, `loras` in the gate lists; the closing comments for #10 and #11 drafted
+  in the session's report, for the user to post at the release). **Open:** LR5 (Comfy Cloud: the probe of the
+  account's LoRA listing, then the splice in main) waits for the user's Comfy key; until it lands a Comfy Cloud recipe
+  hides the section ("... Scumble does not send LoRA rows there yet"), and the manual, README, CHANGELOG and the
+  closing comments say LoRAs are for the user's own ComfyUI. Then the release block with CorridorKey (0.1.52).
 - 51: **GPT-Image-2.6 Sunburst and Flare** (OpenAI, released 2026-11-04; the user, 2026-11-06: "schaue welcher api
   anbieter es schon hat und integriere es"): two recipes beside 2.5's on the hosts that list it (OpenAI direct, fal,
   Replicate, WaveSpeed, OpenRouter, ToAPIs; not yet Comfy Cloud, Comfy Router, Oxen, Magnific), a *Complexity* row
@@ -870,7 +884,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight cloudjobs`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight cloudjobs loras`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
