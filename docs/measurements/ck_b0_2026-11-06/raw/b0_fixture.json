@@ -1,0 +1,111 @@
+{
+ "phase": "fixture",
+ "meta": {
+  "source": {
+   "still": "hair_green.png",
+   "sha256": "d0953714b0a25c88b849d14683776c900340b1bb036ccafeaa89e5cfa74cd853",
+   "box": [
+    832,
+    96,
+    512,
+    400
+   ],
+   "hint_source": "dist/ck_ref/hair_green/hint_full.png (I0a's rough brush hint)",
+   "half": "input and hint reduced to 256 x 200 with OpenCV INTER_AREA"
+  },
+  "server": {
+   "comfyui": "0.44.0",
+   "pack": "ComfyUI-CorridorKey2.0 @ c7662de"
+  },
+  "settings": {
+   "hint_quality": "loose hint (0.5)",
+   "trust": 0.5,
+   "despill": 0.5,
+   "screen": "green",
+   "keep_on_gpu": false,
+   "auto_download": false,
+   "vram_reserve_gb": 0.5
+  },
+  "cases": {
+   "native": {
+    "input": "input.png",
+    "hint": "hint.png",
+    "rgba": "rgba.png",
+    "graph": "graph.json",
+    "size": [
+     512,
+     400
+    ],
+    "rgba_shape": [
+     400,
+     512,
+     4
+    ],
+    "png_bitdepth": 8,
+    "png_colortype": 6,
+    "sha256": {
+     "input": "500998e17f4c41ca201cbb432bee39499b3166bceab2014d252c120637c95253",
+     "hint": "8c2f30f235b4267005926fab719da21408dadd61eea8bc4fca017bed136f93b4",
+     "rgba": "1870df405b8f543a8f45eabc2f6ffc006b2b670b8076b09b1b6fecdefbde6ada"
+    },
+    "bytes": {
+     "input": 319247,
+     "hint": 8728,
+     "rgba": 320202
+    },
+    "alpha_mean": 0.2993,
+    "alpha0_px": 127977,
+    "alpha255_px": 46509,
+    "px_rgb_above_alpha_plus2": 0.1346,
+    "node_s": {
+     "ck_in": 0.009,
+     "ck_hint_img": 0.004,
+     "ck_hint": 0.002,
+     "ck_key": 2.164,
+     "ck_out": 0.04
+    },
+    "wall_s": 2.226
+   },
+   "half": {
+    "input": "half_input.png",
+    "hint": "half_hint.png",
+    "rgba": "half_rgba.png",
+    "graph": "half_graph.json",
+    "size": [
+     256,
+     200
+    ],
+    "rgba_shape": [
+     200,
+     256,
+     4
+    ],
+    "png_bitdepth": 8,
+    "png_colortype": 6,
+    "sha256": {
+     "input": "198b3262b2ac3d3778aba1ef1d769c11a16cd3de0ba01f4bd9af112e28399c6b",
+     "hint": "c8acee187410fd52eb026b52ed615784661e682a6f4b3561d181c3ee5babd989",
+     "rgba": "5bbe857fb4f28f70403a5f723a172fe4194eb24a397a2f2e9e79fb925283c540"
+    },
+    "bytes": {
+     "input": 79159,
+     "hint": 3035,
+     "rgba": 93443
+    },
+    "alpha_mean": 0.2981,
+    "alpha0_px": 31354,
+    "alpha255_px": 9606,
+    "px_rgb_above_alpha_plus2": 0.1869,
+    "node_s": {
+     "ck_in": 0.004,
+     "ck_hint_img": 0.003,
+     "ck_hint": 0.002,
+     "ck_key": 2.085,
+     "ck_out": 0.016
+    },
+    "wall_s": 2.117
+   }
+  },
+  "date": "2026-11-06T14:38:50+0100"
+ }
+}
