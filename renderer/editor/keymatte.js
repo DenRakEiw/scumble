@@ -29,7 +29,21 @@
  *     edge); the model is linear, so the fit runs against the bucket guide blurred by the engine's own softness
  *     (`soft`: [1 2 1] passes; "auto" picks the count whose fit predicts the matte best over its transition) and the
  *     coefficients then apply to the sharp full-resolution guide.
- *     Pointwise at full resolution: a band needs no halo, and banded equals unbanded exactly.
+ *     Two guards keep the full-resolution apply from adding what the bucket cannot know (docs/ck2/refine_notes.md):
+ *       - the zone: the correction q - p acts only where the engine's matte is in transition, dilated by `gate` bucket
+ *         pixels (a smooth weight from the bucket alpha, upsampled); where the engine is sure (p near 0 or 1 over the
+ *         whole neighbourhood) the answer is the bilinear matte exactly, whatever the full-resolution pixels hold;
+ *       - the noise: the fit's gain is fitted at the bucket, where averaging removed the sensor noise, and applied to
+ *         the full-resolution pixels with it. The noise of the guide at full resolution is estimated once per matte from
+ *         a strip of the picture (`sampleRows`, `noteSample`: the median within-bucket-pixel variance), the noise the
+ *         apply would add per pixel is |A sigma|, and where that exceeds `tau` the correction is box-smoothed over up to
+ *         rhoMax = min(REFINE.rhoMax, floor(factor / 2)) full-resolution pixels (an exact integer box, so banded equals
+ *         unbanded), then shrunk by 1 / x^2 when even that is not enough. A band reads a halo of rhoMax rows for it.
+ *     **The picture read at full resolution must be the picture the bucket was read from** (the same source, the same
+ *     filter flags, the same background under transparent pixels; only the scale differs): the coefficients are a map
+ *     from the bucket's colours to the matte. The strip checks it: the median difference between the full-resolution
+ *     pixels averaged over each bucket pixel and the bucket pixel; above `guideTol` levels the matte falls back to the
+ *     bilinear upsample and the answer says so (`fallback`).
  *   - "full": the plan's first design, kept as the measured baseline: the matte upsampled, then the guided filter of
  *     inpaint_depth.js at full resolution with r from the upscale factor, a band read with a halo of 2r rows above and
  *     below (the filter's whole reach: means of means), the halo trimmed; grey guides only.
@@ -56,6 +70,10 @@ export const REFINE = Object.freeze({
     flat: 2e-5,       // a window whose guide variance is well below this has no edge: its fit passes the matte through
     soft: "auto",     // "fast": the engine's softness at the bucket, in [1 2 1] passes over the guide, or "auto"
     softs: [0, 1, 2, 3, 4],   // the pass counts "auto" chooses among (by the fit's residual over the transition)
+    gate: 1,          // "fast": the correction acts within this many bucket pixels of the matte's transition (false: everywhere)
+    tau: 0.04,        // "fast": the most noise (alpha 0..1, one sigma) the apply may add per pixel before it smooths and shrinks
+    rhoMax: 8,        // "fast": the largest smoothing radius, full-resolution pixels (and at most half the upscale factor)
+    guideTol: 3,      // "fast": levels; a full-resolution read further than this from the bucket's picture falls back
     fullK: 1.5,       // "full": r = round(fullK * upscale factor) full-resolution pixels
     bandPx: 4 << 20,  // a band's rows hold about this many pixels (plus the halo)
     unbandedPx: 16 << 20,   // a box up to this size runs as one band (PLAN §4.7 point 3: about 16 MP)
@@ -95,10 +113,12 @@ function decode(rgb, linear) {
 export function guideSetup(guide, screen, linear = REFINE.linear) {
     if (!GUIDES.includes(guide)) throw new Error(`keymatte: unknown guide "${guide}"`);
     const T = linear ? LIN : SRGB;
-    if (guide === "rgb") return { guide, planes: 3, T };
+    // noiseGain: a guide plane's noise (one sigma, guide units) per level of noise on each byte, about (the slope at
+    // mid grey in sRGB), for a `noise` the caller gives instead of the sample's estimate
+    if (guide === "rgb") return { guide, planes: 3, T, noiseGain: 1 / 255 };
     if (guide === "luma") {
         const t = [0, 1, 2].map((c) => Float32Array.from(T, (v) => v * LUMA[c]));
-        return { guide, planes: 1, T, t };
+        return { guide, planes: 1, T, t, noiseGain: Math.hypot(...LUMA) / 255 };
     }
     if (!screen || screen.length < 3) throw new Error(`keymatte: the "${guide}" guide needs the screen colour`);
     const s = decode(screen, linear);
@@ -110,11 +130,13 @@ export function guideSetup(guide, screen, linear = REFINE.linear) {
         for (const k of corners) max = Math.max(max, Math.hypot(CB[0] * k[0] + CB[1] * k[1] + CB[2] * k[2] - s0, CR[0] * k[0] + CR[1] * k[1] + CR[2] * k[2] - s1));
         const tb = [0, 1, 2].map((c) => Float32Array.from(T, (v) => v * CB[c]));
         const tr = [0, 1, 2].map((c) => Float32Array.from(T, (v) => v * CR[c]));
-        return { guide, planes: 1, T, tb, tr, s0, s1, norm: max > 0 ? 1 / max : 0 };
+        const norm = max > 0 ? 1 / max : 0;
+        return { guide, planes: 1, T, tb, tr, s0, s1, norm, noiseGain: norm * Math.sqrt((Math.hypot(...CB) ** 2 + Math.hypot(...CR) ** 2) / 2) / 255 };
     }
     let max = 0;
     for (const k of corners) max = Math.max(max, Math.hypot(k[0] - s[0], k[1] - s[1], k[2] - s[2]));
-    return { guide, planes: 1, T, s, norm: max > 0 ? 1 / max : 0 };
+    const norm = max > 0 ? 1 / max : 0;
+    return { guide, planes: 1, T, s, norm, noiseGain: norm / 255 };
 }
 
 /**
@@ -252,17 +274,22 @@ export function upsampleRows(plane, geo, y0, y1, out = new Float32Array((y1 - y0
 /**
  * The radius, eps and halo for an upscale factor (full-resolution pixels per bucket pixel).
  * "fast": r in bucket pixels (REFINE.r; a window must hold both sides of the matte's transition, which at the bucket
- * is about the same width whatever the factor), halo 0. "full": r = round(fullK * factor) full-resolution pixels (the
- * bilinear transition is about two factors wide), at least 1, halo 2r. "bilinear": no filter, halo 0.
+ * is about the same width whatever the factor); the halo is the noise smoothing's largest radius, rhoMax, at most half
+ * the factor (a fraction of a bucket pixel: beyond it the bilinear matte is as good). "full": r = round(fullK * factor)
+ * full-resolution pixels (the bilinear transition is about two factors wide), at least 1, halo 2r. "bilinear": no
+ * filter, halo 0.
  * @param {number} scale
- * @param {{ method?: string, r?: number, eps?: number, flat?: number, fullK?: number }} [o]
+ * @param {{ method?: string, r?: number, eps?: number, flat?: number, fullK?: number, rhoMax?: number }} [o]
  */
 export function refineParams(scale, o = {}) {
     const method = o.method || REFINE.method;
     if (!METHODS.includes(method)) throw new Error(`keymatte: unknown method "${method}"`);
     const eps = o.eps != null ? o.eps : REFINE.eps, flat = o.flat != null ? o.flat : REFINE.flat;
     if (method === "bilinear") return { method, r: 0, eps, flat, halo: 0 };
-    if (method === "fast") return { method, r: Math.max(1, Math.round(o.r != null ? o.r : REFINE.r)), eps, flat, halo: 0 };
+    if (method === "fast") {
+        const rho = Math.max(0, Math.min(Math.floor(o.rhoMax != null ? o.rhoMax : REFINE.rhoMax), Math.floor(scale / 2)));
+        return { method, r: Math.max(1, Math.round(o.r != null ? o.r : REFINE.r)), eps, flat, halo: rho };
+    }
     const k = o.fullK != null ? o.fullK : REFINE.fullK;
     const r = Math.max(1, Math.round(o.r != null ? o.r : k * Math.max(1, scale)));
     return { method, r, eps, flat, halo: 2 * r };
@@ -384,6 +411,142 @@ function fitResidual(coef, planes, p) {
     return m ? e / m : 0;
 }
 
+// ---- the zone and the noise (method "fast") -------------------------------------------------------------------------
+
+/**
+ * The engine counts as sure of a pixel below GATE_LO from 0 or 1, and as in transition above GATE_HI. At full
+ * resolution the upsampled weight counts from GATE_CUT up (rescaled to 0..1): the zone ends half a bucket pixel past the
+ * dilated cells instead of a whole one, which the measurement asked for (the noise left at its tail).
+ */
+const GATE_LO = 0.02, GATE_HI = 0.06, GATE_CUT = 0.5;
+
+/**
+ * The zone weight at the bucket: 1 where the matte is in transition (min(p, 1 - p) above GATE_HI, smoothly from
+ * GATE_LO), dilated by `m` bucket pixels (a max filter); 0 where the engine is sure over the whole neighbourhood.
+ */
+function gatePlane(p, aw, ah, m) {
+    const n = aw * ah, ind = new Float32Array(n), span = GATE_HI - GATE_LO;
+    for (let i = 0; i < n; i++) {
+        const d = p[i] < 1 - p[i] ? p[i] : 1 - p[i], t = (d - GATE_LO) / span;
+        ind[i] = t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+    }
+    if (!(m > 0)) return ind;
+    const tmp = new Float32Array(n), out = new Float32Array(n);
+    for (let y = 0; y < ah; y++) for (let x = 0; x < aw; x++) {
+        let v = 0;
+        for (let i = Math.max(0, x - m), e = Math.min(aw - 1, x + m); i <= e; i++) if (ind[y * aw + i] > v) v = ind[y * aw + i];
+        tmp[y * aw + x] = v;
+    }
+    for (let y = 0; y < ah; y++) for (let x = 0; x < aw; x++) {
+        let v = 0;
+        for (let j = Math.max(0, y - m), e = Math.min(ah - 1, y + m); j <= e; j++) if (tmp[j * aw + x] > v) v = tmp[j * aw + x];
+        out[y * aw + x] = v;
+    }
+    return out;
+}
+
+/** 1 within `m` bucket pixels of a cell whose zone weight is above 0, else 0. */
+function reachPlane(G, aw, ah, m) {
+    const n = aw * ah, out = new Float32Array(n), tmp = new Uint8Array(n);
+    for (let y = 0; y < ah; y++) for (let x = 0; x < aw; x++) {
+        let v = 0;
+        for (let i = Math.max(0, x - m), e = Math.min(aw - 1, x + m); i <= e && !v; i++) if (G[y * aw + i] > 0) v = 1;
+        tmp[y * aw + x] = v;
+    }
+    for (let y = 0; y < ah; y++) for (let x = 0; x < aw; x++) {
+        let v = 0;
+        for (let j = Math.max(0, y - m), e = Math.min(ah - 1, y + m); j <= e && !v; j++) if (tmp[j * aw + x]) v = 1;
+        out[y * aw + x] = v;
+    }
+    return out;
+}
+
+/**
+ * The rows of the matte's box the noise sample reads: a strip across the middle, at least 48 rows and four bucket
+ * pixels tall, the whole box when it is smaller. A function of the geometry alone, so every band plan reads the same.
+ * @param {*} geo geometry()
+ * @returns {[number, number]} [y0, y1) in the matte box's own rows
+ */
+export function sampleRows(geo) {
+    const rows = Math.min(geo.h, Math.max(48, Math.ceil(4 / geo.ky)));
+    const y0 = Math.floor((geo.h - rows) / 2);
+    return [y0, y0 + rows];
+}
+
+function median(a) {
+    if (!a.length) return 0;
+    const s = Float64Array.from(a).sort(), k = s.length >> 1;
+    return s.length & 1 ? s[k] : (s[k - 1] + s[k]) / 2;
+}
+
+/**
+ * The noise sample: `rgba`, the full-resolution rows `st.sample` of the matte's box (straight RGBA, w wide), sorted into
+ * the bucket pixels they average into. Sets, on `st`: `sigma` (per guide plane, guide units: the median within-bucket-
+ * pixel standard deviation, which is the sensor noise wherever most of the strip is screen or plain subject, and the
+ * sub-bucket texture the fit cannot see where it is not), `noise` (the same in levels per RGB channel, for the record),
+ * `guideDiff` (levels: the largest per-channel median of |the pixels' mean - the bucket pixel| over the bucket pixels the
+ * strip covers whole) and `fallback` (a reason when guideDiff exceeds `guideTol`: the read is not the bucket's picture).
+ * @param {*} st prepareRefine()
+ * @param {ArrayLike<number>} rgba
+ */
+export function noteSample(st, rgba) {
+    if (st.method !== "fast") return st;
+    const { geo, g } = st, { w, aw, ah, src, W, H, ox, oy, kx, ky } = geo, [sy0, sy1] = st.sample, rows = sy1 - sy0;
+    if (!rgba || rgba.length < rows * w * 4) throw new Error(`keymatte: the noise sample holds ${rgba ? rgba.length : 0} bytes, not ${rows * w * 4}`);
+    const cell = (u, n) => { const c = Math.floor(u); return c < 0 ? 0 : c >= n ? n - 1 : c; };
+    // how many key-box pixels each bucket column and row averages (a bucket pixel is whole when the strip saw them all)
+    const colAll = new Int32Array(aw), rowAll = new Int32Array(ah), colCell = new Int32Array(w);
+    for (let X = 0; X < W; X++) colAll[cell(src.x + (X + 0.5) * kx, aw)]++;
+    for (let Y = 0; Y < H; Y++) rowAll[cell(src.y + (Y + 0.5) * ky, ah)]++;
+    for (let x = 0; x < w; x++) colCell[x] = cell(src.x + (ox + x + 0.5) * kx, aw);
+    const rowCell = (y) => cell(src.y + (oy + y + 0.5) * ky, ah);
+    const cy0 = rowCell(sy0), ncy = rowCell(sy1 - 1) - cy0 + 1, nc = ncy * aw, P = g.planes;
+    const cnt = new Int32Array(nc), s1 = new Float64Array(nc * 3), s2 = new Float64Array(nc * 3), g1 = new Float64Array(nc * P), g2 = new Float64Array(nc * P);
+    const planes = Array.from({ length: P }, () => new Float32Array(w));
+    for (let y = 0; y < rows; y++) {
+        const base = (rowCell(sy0 + y) - cy0) * aw;
+        guidePlanes(g, rgba, y * w, w, planes, 0);
+        for (let x = 0, o = y * w * 4; x < w; x++, o += 4) {
+            const c = base + colCell[x];
+            cnt[c]++;
+            for (let k = 0; k < 3; k++) { const v = rgba[o + k]; s1[c * 3 + k] += v; s2[c * 3 + k] += v * v; }
+            for (let k = 0; k < P; k++) { const v = planes[k][x]; g1[c * P + k] += v; g2[c * P + k] += v * v; }
+        }
+    }
+    const whole = [], some = [];
+    for (let c = 0; c < nc; c++) {
+        const n = cnt[c];
+        if (n < 4) continue;
+        some.push(c);
+        if (n === colAll[c % aw] * rowAll[cy0 + Math.floor(c / aw)]) whole.push(c);
+    }
+    const use = whole.length >= 8 ? whole : some;
+    const vars = (S1, S2, k, K) => use.map((c) => { const n = cnt[c], m = S1[c * K + k] / n, v = (S2[c * K + k] - m * S1[c * K + k]) / (n - 1); return v > 0 ? v : 0; });
+    // the median of a sample variance of n values is below sigma^2 by about (1 - 2 / (9 (n - 1)))^3
+    const nMean = use.length ? use.reduce((a, c) => a + cnt[c], 0) / use.length : 2, k1 = Math.max(1, nMean - 1);
+    const fix = 1 / Math.pow(1 - 2 / (9 * k1), 3);
+    const sigma = new Float64Array(P), noise = [0, 0, 0];
+    if (use.length >= 8) {
+        for (let k = 0; k < P; k++) sigma[k] = Math.sqrt(median(vars(g1, g2, k, P)) * fix);
+        for (let k = 0; k < 3; k++) noise[k] = Math.round(Math.sqrt(median(vars(s1, s2, k, 3)) * fix) * 100) / 100;
+    }
+    let guideDiff = null;
+    if (whole.length >= 8) {
+        const d = st.small.data;
+        guideDiff = 0;
+        for (let k = 0; k < 3; k++) {
+            const m = median(whole.map((c) => { const at = ((cy0 + Math.floor(c / aw)) * aw + (c % aw)) * 4 + k; return Math.abs(s1[c * 3 + k] / cnt[c] - d[at]); }));
+            if (m > guideDiff) guideDiff = m;
+        }
+        guideDiff = Math.round(guideDiff * 100) / 100;
+    }
+    st.sigma = sigma; st.noise = noise; st.guideDiff = guideDiff; st.cells = whole.length;
+    st.fallback = guideDiff != null && guideDiff > st.guideTol
+        ? `the picture read at full resolution is not the bucket's picture (a median difference of ${guideDiff} levels per bucket pixel): the matte is the bilinear upsample`
+        : null;
+    return st;
+}
+
 // ---- prepare, one band, the whole matte -----------------------------------------------------------------------------
 
 /**
@@ -395,8 +558,10 @@ function fitResidual(coef, planes, p) {
  *   out?: { x: number, y: number, w: number, h: number },
  *   method?: string, guide?: string, linear?: boolean, screen?: number[] | null,
  *   r?: number, eps?: number, flat?: number, fullK?: number, soft?: number | "auto", softs?: number[],
+ *   gate?: number | false, tau?: number, rhoMax?: number, guideTol?: number, noise?: number | number[] | null, reach?: number,
  *   box?: (data: Float32Array, w: number, h: number, radii: number[]) => Float32Array
- * }} o
+ * }} o `noise` (levels of sensor noise per RGB channel, one sigma) skips the sample and its check (tests, a caller that
+ *   knows the noise); without it "fast" needs `noteSample` on `st.sample` before its first band.
  */
 export function prepareRefine(o) {
     const geo = geometry(o);
@@ -405,7 +570,12 @@ export function prepareRefine(o) {
     const prm = refineParams(geo.scale, o);
     const guide = o.guide || REFINE.guide, linear = o.linear != null ? o.linear : REFINE.linear;
     const box = o.box || boxBlurs;
-    const st = { geo, p, ...prm, guide, linear, box, g: null, coef: null, soft: 0, residual: 0, fitMs: 0 };
+    const st = {
+        geo, p, ...prm, guide, linear, box, g: null, coef: null, soft: 0, residual: 0, fitMs: 0, small: o.small || null,
+        gate: o.gate !== undefined ? o.gate : REFINE.gate, gateP: null, tau: o.tau != null ? o.tau : REFINE.tau,
+        guideTol: o.guideTol != null ? o.guideTol : REFINE.guideTol,
+        sample: null, sigma: null, noise: null, guideDiff: null, cells: 0, fallback: null, sat: null,
+    };
     if (prm.method === "bilinear") return st;
     if (prm.method === "full" && guide === "rgb") throw new Error('keymatte: the "full" method takes a grey guide');
     let screen = o.screen || null;
@@ -429,6 +599,16 @@ export function prepareRefine(o) {
             if (!best || res < best.res) best = { k, coef, res };
         }
         st.coef = best.coef; st.soft = best.k; st.residual = best.res;
+        st.gateP = st.gate === false || st.gate == null ? new Float32Array(n).fill(1) : gatePlane(p, aw, ah, Math.max(0, st.gate | 0));
+        // where the correction is needed at all: the zone and two bucket pixels around it, the smoothing's box reaching
+        // at most half a bucket pixel out of it (so the skipped pixels never enter a box: the answer is the same)
+        st.reachP = reachPlane(st.gateP, aw, ah, o.reach != null ? o.reach : 2);
+        st.sample = sampleRows(geo);
+        if (o.noise != null) {
+            const lv = Array.isArray(o.noise) ? o.noise : [o.noise, o.noise, o.noise];
+            st.noise = lv.map(Number);
+            st.sigma = Float64Array.from({ length: st.g.planes }, (_, k) => (st.g.planes === 3 ? st.noise[k] : Math.hypot(...st.noise) / Math.sqrt(3)) * st.g.noiseGain);
+        }
         st.fitMs = Date.now() - t0;
     }
     return st;
@@ -445,7 +625,7 @@ export function prepareRefine(o) {
  */
 export function refineBand(st, band, rgba, out = new Uint8Array((band.y1 - band.y0) * st.geo.w)) {
     const { geo } = st, { w } = geo, { y0, y1, ry0, ry1 } = band;
-    if (st.method !== "bilinear" && (!rgba || rgba.length < (ry1 - ry0) * w * 4)) throw new Error(`keymatte: the band's picture holds ${rgba ? rgba.length : 0} bytes, not ${(ry1 - ry0) * w * 4}`);
+    if (st.method !== "bilinear" && !st.fallback && (!rgba || rgba.length < (ry1 - ry0) * w * 4)) throw new Error(`keymatte: the band's picture holds ${rgba ? rgba.length : 0} bytes, not ${(ry1 - ry0) * w * 4}`);
     if (st.method === "bilinear") {
         const p = upsampleRows(st.p, geo, y0, y1);
         for (let i = 0; i < p.length; i++) out[i] = Math.round(p[i] * 255);
@@ -470,35 +650,112 @@ export function refineBand(st, band, rgba, out = new Uint8Array((band.y1 - band.
         }
         return out;
     }
-    // "fast": pointwise; the bucket rows lerped once per output row, then across
-    const { aw, i0, i1, fx } = geo, planes = [...st.coef, st.p], np = planes.length;
-    const rowBuf = Array.from({ length: np }, () => new Float32Array(aw));
-    const three = st.g.planes === 3, g = st.g, T = g.T;
-    const gp = [new Float32Array(w), new Float32Array(w), new Float32Array(w)];
-    for (let y = y0; y < y1; y++) {
-        const [j0, j1, fy] = rowAt(geo, y), a = j0 * aw, b = j1 * aw, gy = 1 - fy;
-        for (let k = 0; k < np; k++) {
-            const P = planes[k], R = rowBuf[k];
-            for (let i = 0; i < aw; i++) R[i] = gy * P[a + i] + fy * P[b + i];
-        }
-        const src = (y - ry0) * w, o = (y - y0) * w;
+    // "fast"
+    if (!st.sigma) throw new Error("keymatte: the noise sample first (noteSample on st.sample), or pass `noise`");
+    if (st.fallback) return refineBand({ ...st, method: "bilinear" }, band, null, out);
+    return fastBand(st, band, rgba, out);
+}
+
+/** Fixed point of the correction in the smoothing's sums: integers, so a box sums the same in any band. */
+const QF = 65536;
+
+/**
+ * One full-resolution row of the fast method's terms. With PP null (the box sums' pass): E, the correction q - p,
+ * wherever the reach plane says a box may need it, 0 elsewhere. With PP (the answer's pass): PP the bilinear matte p
+ * and WG the zone weight (from GATE_CUT up, rescaled) everywhere, E and SG (the noise the correction carries, |A sigma|
+ * in alpha units) inside the zone only. The bucket rows are lerped once per row; the same float operations in either
+ * pass, so a pixel's E is the same number in both.
+ */
+function rowTerms(st, y, rgba, src, R, gp, E, PP, WG, SG) {
+    const { geo, g, sigma, applyPlanes } = st, { aw, w, i0, i1, fx } = geo, np = applyPlanes.length;
+    const [j0, j1, fy] = rowAt(geo, y), a = j0 * aw, b = j1 * aw, gy = 1 - fy;
+    for (let k = 0; k < np; k++) {
+        const P = applyPlanes[k], Rk = R[k];
+        for (let i = 0; i < aw; i++) Rk[i] = gy * P[a + i] + fy * P[b + i];
+    }
+    const answer = !!PP, three = g.planes === 3;
+    if (!three) guidePlanes(g, rgba, src, w, gp, 0);
+    const I = gp[0], T = g.T;
+    const A0 = R[0], A1 = three ? R[1] : null, A2 = three ? R[2] : null, B = R[three ? 3 : 1], C = R[three ? 4 : 2];
+    const Pp = R[three ? 5 : 3], G = R[three ? 6 : 4], GR = R[three ? 7 : 5];
+    const z0 = sigma[0], z1 = three ? sigma[1] : 0, z2 = three ? sigma[2] : 0;
+    for (let x = 0; x < w; x++) {
+        const l = i0[x], r = i1[x], f = fx[x];
+        if (answer) {
+            PP[x] = Pp[l] + f * (Pp[r] - Pp[l]);
+            const gw = G[l] + f * (G[r] - G[l]), wg = gw > GATE_CUT ? (gw - GATE_CUT) / (1 - GATE_CUT) : 0;
+            WG[x] = wg;
+            if (!(wg > 0)) { E[x] = 0; SG[x] = 0; continue; }
+        } else if (!(GR[l] > 0 || GR[r] > 0)) { E[x] = 0; continue; }
+        const p = Pp[l] + f * (Pp[r] - Pp[l]), bb = B[l] + f * (B[r] - B[l]), cc = C[l] + f * (C[r] - C[l]);
+        const a0 = A0[l] + f * (A0[r] - A0[l]);
+        let q, sg = 0;
         if (three) {
-            const [A0, A1, A2, B, C, Pp] = rowBuf;
-            for (let x = 0, s = src * 4; x < w; x++, s += 4) {
-                const l = i0[x], r = i1[x], f = fx[x];
-                const q = (A0[l] + f * (A0[r] - A0[l])) * T[rgba[s]] + (A1[l] + f * (A1[r] - A1[l])) * T[rgba[s + 1]]
-                    + (A2[l] + f * (A2[r] - A2[l])) * T[rgba[s + 2]] + (B[l] + f * (B[r] - B[l]))
-                    + (1 - (C[l] + f * (C[r] - C[l]))) * (Pp[l] + f * (Pp[r] - Pp[l]));
-                out[o + x] = Math.round((q < 0 ? 0 : q > 1 ? 1 : q) * 255);
-            }
+            const s4 = (src + x) * 4;
+            const a1 = A1[l] + f * (A1[r] - A1[l]), a2 = A2[l] + f * (A2[r] - A2[l]);
+            q = a0 * T[rgba[s4]] + a1 * T[rgba[s4 + 1]] + a2 * T[rgba[s4 + 2]] + bb + (1 - cc) * p;
+            if (answer) { const u0 = a0 * z0, u1 = a1 * z1, u2 = a2 * z2; sg = Math.sqrt(u0 * u0 + u1 * u1 + u2 * u2); }
         } else {
-            guidePlanes(g, rgba, src, w, gp, 0);
-            const I = gp[0], [A, B, C, Pp] = rowBuf;
-            for (let x = 0; x < w; x++) {
-                const l = i0[x], r = i1[x], f = fx[x];
-                const q = (A[l] + f * (A[r] - A[l])) * I[x] + (B[l] + f * (B[r] - B[l])) + (1 - (C[l] + f * (C[r] - C[l]))) * (Pp[l] + f * (Pp[r] - Pp[l]));
-                out[o + x] = Math.round((q < 0 ? 0 : q > 1 ? 1 : q) * 255);
+            q = a0 * I[x] + bb + (1 - cc) * p;
+            if (answer) sg = Math.abs(a0 * z0);
+        }
+        E[x] = q - p;
+        if (answer) SG[x] = sg;
+    }
+}
+
+/**
+ * The fast method's band: q = p + w g e~, with p the bilinear matte, w the zone weight, e~ the correction e = A.I + B
+ * - C p smoothed by a box of radius rho = clamp((|A sigma| / tau - 1) / 2, 0, rhoMax) (lerped between whole radii, the
+ * sums over e in fixed point, so they are exact), and g = min(1, 1 / x^2) with x the noise left after the box over tau.
+ * Noise-free (sigma 0) it is the plain fast guided filter inside the zone and the bilinear matte outside it.
+ */
+function fastBand(st, band, rgba, out) {
+    const { geo, tau } = st, { w, aw } = geo, { y0, y1, ry0, ry1 } = band, rows = ry1 - ry0;
+    if (!st.applyPlanes) st.applyPlanes = [...st.coef, st.p, st.gateP, st.reachP];
+    const R = st.applyPlanes.map(() => new Float32Array(aw)), gp = [new Float32Array(w)];
+    const E = new Float32Array(w), PP = new Float32Array(w), WG = new Float32Array(w), SG = new Float32Array(w);
+    const rmax = st.halo, smooth = rmax > 0 && st.sigma.some((v) => v > 0) && tau > 0;
+    // the box sums: the correction of every row read (the halo included) in fixed point, summed into a table
+    let S = null;
+    const W1 = w + 1;
+    if (smooth) {
+        const need = (rows + 1) * W1;
+        if (!st.sat || st.sat.length < need) st.sat = new Float64Array(need);
+        S = st.sat;
+        S.fill(0, 0, W1);
+        for (let y = ry0; y < ry1; y++) {
+            rowTerms(st, y, rgba, (y - ry0) * w, R, gp, E, null, null, null);
+            const up = (y - ry0) * W1, at = up + W1;
+            let run = 0;
+            S[at] = 0;
+            for (let x = 0; x < w; x++) { run += Math.round(E[x] * QF); S[at + x + 1] = S[up + x + 1] + run; }
+        }
+    }
+    const boxAt = (x, yy, r) => {
+        const xa = x - r < 0 ? 0 : x - r, xb = x + r + 1 > w ? w : x + r + 1, ya = yy - r < 0 ? 0 : yy - r, yb = yy + r + 1 > rows ? rows : yy + r + 1;
+        return (S[yb * W1 + xb] - S[ya * W1 + xb] - S[yb * W1 + xa] + S[ya * W1 + xa]) / ((xb - xa) * (yb - ya) * QF);
+    };
+    for (let y = y0; y < y1; y++) {
+        const yy = y - ry0, o = (y - y0) * w;
+        rowTerms(st, y, rgba, yy * w, R, gp, E, PP, WG, SG);
+        for (let x = 0; x < w; x++) {
+            const wg = WG[x];
+            let v = PP[x];
+            if (wg > 0) {
+                const xs = tau > 0 ? SG[x] / tau : 0;
+                let rho = smooth && xs > 1 ? (xs - 1) / 2 : 0;
+                if (rho > rmax) rho = rmax;
+                let e = E[x];
+                if (rho > 0) {
+                    const r0 = Math.floor(rho), f = rho - r0;
+                    const b0 = r0 > 0 ? boxAt(x, yy, r0) : Math.round(e * QF) / QF;
+                    e = f > 0 ? (1 - f) * b0 + f * boxAt(x, yy, r0 + 1) : b0;
+                }
+                const xr = xs / (2 * rho + 1);
+                v += wg * (xr > 1 ? e / (xr * xr) : e);
             }
+            out[o + x] = Math.round((v < 0 ? 0 : v > 1 ? 1 : v) * 255);
         }
     }
     return out;
@@ -507,7 +764,8 @@ export function refineBand(st, band, rgba, out = new Uint8Array((band.y1 - band.
 /**
  * The whole matte, band by band, reading the picture through `read`. `read([x0, y0, x1, y1])` (the matte box's own
  * coordinates; x0 = 0, x1 = w: a band is whole rows) answers (or resolves to) straight RGBA bytes of that box, a typed
- * array or `{ data }` as `editor.readBoxBytes` gives it. `onBand(y0, y1, bytes)` takes each band's u8 rows as they are
+ * array or `{ data }`, **of the same picture the bucket was read from** at scale 1 (see the header; for the "fast"
+ * method the first read is the noise sample `st.sample`, then each band with its halo). `onBand(y0, y1, bytes)` takes each band's u8 rows as they are
  * made (the caller writes them into the mask, `combine(bytesSource(...), "add", MASK_RGB)`); without it the rows are
  * collected into one w x h array, answered as `alpha`.
  * @param {Parameters<typeof prepareRefine>[0] & {
@@ -518,13 +776,22 @@ export async function refineMatte(o) {
     const t0 = Date.now();
     const st = prepareRefine(o);
     const { w, h } = st.geo;
+    let readMs = 0;
+    if (st.method === "fast" && !st.sigma) {
+        // the noise sample (and the check that the read is the bucket's picture) before the first band
+        if (o.cancelled && o.cancelled()) return { cancelled: true };
+        if (typeof o.read !== "function") throw new Error("keymatte: no read callback for the picture");
+        const r0 = Date.now();
+        const got = await o.read([0, st.sample[0], w, st.sample[1]]);
+        readMs += Date.now() - r0;
+        noteSample(st, got && got.data ? got.data : got);
+    }
     const bands = bandPlan(w, h, { halo: st.halo, bandRows: o.bandRows, bandPx: o.bandPx, unbandedPx: o.unbandedPx });
     const whole = o.onBand ? null : new Uint8Array(w * h);
-    let readMs = 0;
     for (const band of bands) {
         if (o.cancelled && o.cancelled()) return { cancelled: true };
         let rgba = null;
-        if (st.method !== "bilinear") {
+        if (st.method !== "bilinear" && !st.fallback) {
             if (typeof o.read !== "function") throw new Error("keymatte: no read callback for the picture");
             const r0 = Date.now();
             const got = await o.read([0, band.ry0, w, band.ry1]);
@@ -536,6 +803,8 @@ export async function refineMatte(o) {
     }
     return {
         alpha: whole, w, h, bands: bands.length, method: st.method, guide: st.method === "bilinear" ? null : st.guide,
-        r: st.r, eps: st.eps, halo: st.halo, soft: st.soft, scale: st.geo.scale, ms: { all: Date.now() - t0, fit: st.fitMs, read: readMs },
+        r: st.r, eps: st.eps, halo: st.halo, soft: st.soft, scale: st.geo.scale,
+        sample: st.sample, noise: st.noise, guideDiff: st.guideDiff, fallback: st.fallback,
+        ms: { all: Date.now() - t0, fit: st.fitMs, read: readMs },
     };
 }

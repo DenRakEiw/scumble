@@ -38,7 +38,7 @@ const TAN = Math.tan(7 * Math.PI / 180);
  * A scene at upscale factor s over `cells` x `cellsY` bucket pixels. Returns the truth (W x H floats), the full picture
  * (RGBA bytes), the bucket picture and the engine's matte (cells floats), and the true edge per row (or null).
  */
-function scene(kind, s, cells = 40, { noise = 0, seed = 7, soft: blurred = true, avg = "bytes", pnoise = 0 } = {}) {
+function scene(kind, s, cells = 40, { noise = 0, seed = 7, soft: blurred = true, avg = "bytes", pnoise = 0, subject = null } = {}) {
     const W = cells * s, H = cells * s;
     const screen = kind === "blue" ? BLUE : GREEN, Bl = lin3(screen);
     const skin = sameLum([220, 150, 120], screen);
@@ -46,6 +46,7 @@ function scene(kind, s, cells = 40, { noise = 0, seed = 7, soft: blurred = true,
     let inside = null, soft = null, F = () => skin, B = () => Bl, sharp = true;
     if (kind === "skin" || kind === "blue") inside = (x, y) => x >= edge(y);
     else if (kind === "teal") { const t = lin3([0, 140, 140]); inside = (x, y) => x >= edge(y); F = () => t; }
+    else if (kind === "near") { const t = lin3(subject || [60, 158, 82]); inside = (x, y) => x >= edge(y); F = () => t; }
     else if (kind === "fold") {
         const dark = skin.map((v) => v * 0.35);
         inside = (x, y) => x >= edge(y);
@@ -164,6 +165,29 @@ function score(sc, est, bil) {
     return { mae, p99, leak, cross };
 }
 
+/**
+ * The largest difference from the unrefined matte farther than `d` bucket pixels from the true edge (both sides), away
+ * from the crop's borders by 2s: where the engine was sure, the refine must not add anything (noise, a wrong guide).
+ */
+function far(sc, est, bil, d = 3) {
+    const { W, H, s } = sc;
+    let m = 0;
+    for (let y = 2 * s; y < H - 2 * s; y++) {
+        const e = sc.edge(y + 0.5);
+        for (let x = 2 * s; x < W - 2 * s; x++) if (Math.abs(x + 0.5 - e) > d * s) m = Math.max(m, Math.abs(est[y * W + x] - bil[y * W + x]));
+    }
+    return m;
+}
+
+/** Filters a caller might wrongly composite into the full-resolution read only (the bucket stays unfiltered). */
+const FILTERS = {
+    "saturation 50%": (o) => { for (let i = 0; i < o.length; i += 4) { const y = 0.299 * o[i] + 0.587 * o[i + 1] + 0.114 * o[i + 2]; for (let c = 0; c < 3; c++) o[i + c] = Math.round(y + 0.5 * (o[i + c] - y)); } },
+    "gamma 0.8": (o) => { for (let i = 0; i < o.length; i++) if ((i & 3) !== 3) o[i] = Math.round(255 * Math.pow(o[i] / 255, 0.8)); },
+    "green x0.85": (o) => { for (let i = 1; i < o.length; i += 4) o[i] = Math.round(o[i] * 0.85); },
+    "+15 levels": (o) => { for (let i = 0; i < o.length; i++) if ((i & 3) !== 3) o[i] = Math.min(255, o[i] + 15); },
+};
+const filtered = (rgba, name) => { const o = Uint8ClampedArray.from(rgba); FILTERS[name](o); return o; };
+
 async function refineScene(K, sc, opts) {
     const { W, rgba } = sc;
     const res = await K.refineMatte({
@@ -263,7 +287,84 @@ async function measure() {
     }
     rows.sort((a, b) => a.all - b.all);
     for (const r of rows) out.push(r.n.padEnd(26) + r.all.toFixed(2).padStart(6) + "  per condition " + r.per.map((v) => v.toFixed(2)).join(" ") + `  worst leak ${r.leak.toFixed(0)}, crossing ${r.cross.toFixed(2)} px`);
+    out.push(...(await measureGuards(K)));
     console.log(out.join("\n"));
+}
+
+/**
+ * The review's round (docs/ck2/refine_notes.md "The guards"): sensor noise at full resolution, subjects near the
+ * screen's colour, the zone and the noise guard's parameters, and a full-resolution read that is not the bucket's picture.
+ * "far" is the largest difference from the unrefined matte more than 3 bucket px from the true edge.
+ */
+async function measureGuards(K) {
+    const out = [];
+    const near = [[60, 158, 82], [60, 164, 76], [50, 150, 80]];
+    const kinds = ["skin", "blue", "teal", "fold", "shade", "stripes", "blur", "hair"];
+    const run = async (sc, opts) => {
+        const res = await K.refineMatte({ alpha: sc.alpha, aw: sc.aw, ah: sc.ah, small: sc.small, full: { w: sc.W, h: sc.H }, screen: sc.screen, read: (b) => sc.rgba.subarray(b[1] * sc.W * 4, b[3] * sc.W * 4), ...opts });
+        return res;
+    };
+    const cell = (sc, est, bil) => { const r = score(sc, est, bil); return `${r.mae.toFixed(1)}/${r.leak != null ? r.leak.toFixed(0) : "-"}/${sc.edge ? far(sc, est, bil) : "-"}`; };
+    out.push("\n== the guards: sensor noise (+-levels on the bytes) and subjects near the screen [60,170,70]; MAE/leak/far ==");
+    out.push("(far: the largest |refined - unrefined| more than 3 bucket px from the true edge; the unguarded row is the first round's default)");
+    for (const s of [4, 15]) for (const pn of [0, 3, 6]) {
+        const scs = [...near.map((c) => ({ n: `near ${JSON.stringify(c)}`, sc: nearScene(c, s, pn) })), ...["skin", "teal", "fold", "hair"].map((k) => ({ n: k, sc: scene(k, s, 40, { pnoise: pn }) }))];
+        const lines = { bilinear: [], unguarded: [], defaults: [] };
+        let noise = null;
+        for (const { n, sc } of scs) {
+            const bil = (await run(sc, { method: "bilinear" })).alpha;
+            lines.bilinear.push(`${n} ${cell(sc, bil, bil)}`);
+            lines.unguarded.push(`${n} ${cell(sc, (await run(sc, { gate: false, tau: 0 })).alpha, bil)}`);
+            const d = await run(sc, {});
+            noise = d.noise;
+            lines.defaults.push(`${n} ${cell(sc, d.alpha, bil)}`);
+        }
+        out.push(`s ${s} noise +-${pn} (estimated ${JSON.stringify(noise)} levels):`);
+        for (const [k, v] of Object.entries(lines)) out.push(`  ${k.padEnd(10)} ` + v.join("  "));
+    }
+    out.push("\n== the guards' parameters: mean MAE / worst leak / worst far per set (clean: the 8 scenes; noisy: skin teal fold hair at +-3 and +-6; near: the 3 subjects at +-3 and +-6) ==");
+    const sets = [];
+    for (const s of [4, 15]) {
+        sets.push({ n: `clean s${s}`, scs: kinds.map((k) => scene(k, s)) });
+        sets.push({ n: `noisy s${s}`, scs: [3, 6].flatMap((pn) => ["skin", "teal", "fold", "hair"].map((k) => scene(k, s, 40, { pnoise: pn }))) });
+        sets.push({ n: `near s${s}`, scs: [3, 6].flatMap((pn) => near.map((c) => nearScene(c, s, pn))) });
+    }
+    for (const set of sets) { set.bil = []; for (const sc of set.scs) set.bil.push((await run(sc, { method: "bilinear" })).alpha); }
+    const variants = [{ gate: false, tau: 0 }];
+    for (const gate of [0, 1, 2]) for (const tau of [0.02, 0.03, 0.04, 0.06]) variants.push({ gate, tau });
+    for (const v of variants) {
+        const parts = [];
+        for (const set of sets) {
+            let mae = 0, leak = 0, fr = 0;
+            for (let i = 0; i < set.scs.length; i++) {
+                const sc = set.scs[i], est = (await run(sc, v)).alpha, r = score(sc, est, set.bil[i]);
+                mae += r.mae / set.scs.length;
+                if (r.leak != null) leak = Math.max(leak, r.leak);
+                if (sc.edge) fr = Math.max(fr, far(sc, est, set.bil[i]));
+            }
+            parts.push(`${set.n} ${mae.toFixed(2)}/${leak.toFixed(0)}/${fr}`);
+        }
+        const tag = v.gate === K.REFINE.gate && v.tau === K.REFINE.tau ? " (default)" : "";
+        out.push(`${JSON.stringify(v)}${tag}`.padEnd(34) + parts.join("  "));
+    }
+    out.push("\n== a full-resolution read that is not the bucket's picture (a filter composited into it only) ==");
+    for (const s of [4, 15]) for (const kind of ["skin", "hair", "stripes"]) {
+        const sc = scene(kind, s), bil = (await run(sc, { method: "bilinear" })).alpha;
+        const parts = [`${kind} s ${s}: bilinear ${score(sc, bil, bil).mae.toFixed(1)}`];
+        const same = await run(sc, {});
+        parts.push(`same picture: guideDiff ${same.guideDiff}, MAE ${score(sc, same.alpha, bil).mae.toFixed(1)}`);
+        for (const name of Object.keys(FILTERS)) {
+            const rgba = filtered(sc.rgba, name);
+            const unguarded = await K.refineMatte({ alpha: sc.alpha, aw: sc.aw, ah: sc.ah, small: sc.small, full: { w: sc.W, h: sc.H }, read: (b) => rgba.subarray(b[1] * sc.W * 4, b[3] * sc.W * 4), gate: false, tau: 0, guideTol: 1e9 });
+            const res = await K.refineMatte({ alpha: sc.alpha, aw: sc.aw, ah: sc.ah, small: sc.small, full: { w: sc.W, h: sc.H }, read: (b) => rgba.subarray(b[1] * sc.W * 4, b[3] * sc.W * 4) });
+            parts.push(`${name}: guideDiff ${res.guideDiff}, ${res.fallback ? "fallback" : "refined"} MAE ${score(sc, res.alpha, bil).mae.toFixed(1)} (unguarded ${score(sc, unguarded.alpha, bil).mae.toFixed(1)})`);
+        }
+        const R = rng(5), grain = Uint8ClampedArray.from(sc.rgba, (v, i) => (i & 3) === 3 ? v : v + Math.round((R() - 0.5) * 16));
+        const g = await K.refineMatte({ alpha: sc.alpha, aw: sc.aw, ah: sc.ah, small: sc.small, full: { w: sc.W, h: sc.H }, read: (b) => grain.subarray(b[1] * sc.W * 4, b[3] * sc.W * 4) });
+        parts.push(`grain +-8 (zero mean): guideDiff ${g.guideDiff}, noise ${JSON.stringify(g.noise)}, ${g.fallback ? "fallback" : "refined"} MAE ${score(sc, g.alpha, bil).mae.toFixed(1)}`);
+        out.push(parts.join("; "));
+    }
+    return out;
 }
 
 // ---- --time --------------------------------------------------------------------------------------------------------
@@ -284,30 +385,36 @@ async function time() {
         small.data[i * 4] = Math.round(60 + a * 137); small.data[i * 4 + 1] = Math.round(170 - a * 35); small.data[i * 4 + 2] = Math.round(70 + a * 38); small.data[i * 4 + 3] = 255;
     }
     const lines = [`node ${process.version}, ${require("node:os").cpus()[0].model}; bucket ${aw} x ${ah}; ms of the module alone (the read is a view, ${"<"} 1 ms)`];
+    lines.push("the picture rows carry +-3 levels of noise, so the fast method's smoothing runs as on a photo (\"clean\": none, the first round's case);");
+    lines.push("the rows are not the bucket's picture (one band's rows handed out for every band), so the check is off (guideTol 1e9)");
     const configs = [
         { label: "bilinear", o: { method: "bilinear" }, box: ["js"] },
         { label: "fast rgb (default)", o: {}, box: ["js", "rust"] },
-        { label: "fast chroma", o: { guide: "chroma" }, box: ["js", "rust"] },
+        { label: "fast rgb, clean", o: {}, box: ["rust"], clean: true },
+        { label: "fast chroma", o: { guide: "chroma" }, box: ["rust"] },
         { label: "full chroma K1.5", o: { method: "full", guide: "chroma" }, box: ["js", "rust"] },
     ];
     for (const [W, H] of sizes) {
         // one band's worth of picture rows, handed out again for every band (the read itself is the caller's cost)
         const maxRows = W * H <= K.REFINE.unbandedPx ? H : Math.min(H, Math.ceil(K.REFINE.bandPx / W) + 200);
-        const rows = new Uint8ClampedArray(W * maxRows * 4);
+        const rows = new Uint8ClampedArray(W * maxRows * 4), clean = new Uint8ClampedArray(W * maxRows * 4), R = rng(11);
         for (let y = 0; y < maxRows; y++) for (let x = 0; x < W; x++) {
             const a = Math.max(0, Math.min(1, (x - W * 0.4) / 3 + 0.5)), o = (y * W + x) * 4;
-            rows[o] = 60 + a * 137; rows[o + 1] = 170 - a * 35; rows[o + 2] = 70 + a * 38; rows[o + 3] = 255;
+            clean[o] = 60 + a * 137; clean[o + 1] = 170 - a * 35; clean[o + 2] = 70 + a * 38; clean[o + 3] = 255;
+            for (let c = 0; c < 3; c++) rows[o + c] = clean[o + c] + Math.round((R() - 0.5) * 6);
+            rows[o + 3] = 255;
         }
         for (const c of configs) for (const b of c.box) {
             if (c.o.method === "full" && b === "js" && W > 8192) continue;   // tens of seconds; the Rust row says enough
             let sink = 0;
+            const src = c.clean ? clean : rows;
             const res = await K.refineMatte({
-                alpha, aw, ah, small, full: { w: W, h: H }, screen: GREEN, box: boxes[b], ...c.o,
-                read: (bx) => rows.subarray(0, (bx[3] - bx[1]) * W * 4),
+                alpha, aw, ah, small, full: { w: W, h: H }, screen: GREEN, box: boxes[b], guideTol: 1e9, ...c.o,
+                read: (bx) => src.subarray(0, (bx[3] - bx[1]) * W * 4),
                 onBand: (y0, y1, bytes) => { sink += bytes[(bytes.length >> 1)]; },
             });
             const mp = (W * H / 1e6).toFixed(1);
-            lines.push(`${W} x ${H} (${mp} MP) ${c.label.padEnd(20)} box ${b.padEnd(4)}: ${String(res.ms.all - res.ms.read).padStart(6)} ms in all, fit ${res.ms.fit} ms, ${res.bands} bands (${(res.ms.all / res.bands).toFixed(0)} ms each), r ${res.r}, halo ${res.halo}, ${((res.ms.all - res.ms.read) / (W * H) * 1e6).toFixed(1)} ns/px`);
+            lines.push(`${W} x ${H} (${mp} MP) ${c.label.padEnd(20)} box ${b.padEnd(4)}: ${String(res.ms.all - res.ms.read).padStart(6)} ms in all, fit ${res.ms.fit} ms, ${res.bands} bands (${((res.ms.all - res.ms.fit) / res.bands).toFixed(0)} ms each after the fit), r ${res.r}, halo ${res.halo}, noise ${res.noise ? res.noise[1] : "-"}, ${((res.ms.all - res.ms.read) / (W * H) * 1e6).toFixed(1)} ns/px`);
             if (sink < 0) console.log(sink);
         }
     }
@@ -392,20 +499,71 @@ async function tests() {
         const one = await K.refineMatte({ ...o, read });
         asked.length = 0;
         const got = []; let rows = 0;
-        const banded = await K.refineMatte({ ...o, read, bandRows: 50, unbandedPx: 0, onBand: (y0, y1, bytes) => { got.push([y0, y1, bytes.length]); rows += y1 - y0; } });
+        const stream = new Uint8Array(W * H);
+        const banded = await K.refineMatte({ ...o, read, bandRows: 50, unbandedPx: 0, onBand: (y0, y1, bytes) => { got.push([y0, y1, bytes.length]); rows += y1 - y0; stream.set(bytes, y0 * W); } });
         const r = banded.r, plan = K.bandPlan(W, H, { halo: 2 * r, bandRows: 50, unbandedPx: 0 });
         const want = plan.map((b) => [0, Math.max(0, b.y0 - 2 * r), W, Math.min(H, b.y1 + 2 * r)]);
         check(`the full method's halo is 2r (r ${r} at s 8, K ${K.REFINE.fullK})`, banded.halo === 2 * r && r === Math.round(K.REFINE.fullK * 8), `halo ${banded.halo}`);
         check("each band reads its rows with the halo above and below, clamped to the box", JSON.stringify(asked) === JSON.stringify(want), JSON.stringify(asked.slice(0, 3)));
         check("each band answers exactly its own rows (the halo trimmed)", rows === H && got.every(([y0, y1, n], i) => y0 === plan[i].y0 && y1 === plan[i].y1 && n === (y1 - y0) * W), JSON.stringify(got.slice(0, 3)));
+        check("the full method's bands, streamed, are the unbanded matte's bytes (a halo off by a row shows here)", maxDiff(stream, one.alpha) <= 1, `max ${maxDiff(stream, one.alpha)} levels`);
         // the same bands answered without a halo: the box blurs read across the cut and the rows near it differ
         const st = K.prepareRefine(o);
         const cut = new Uint8Array(W * H);
         for (const b of K.bandPlan(W, H, { halo: 0, bandRows: 50, unbandedPx: 0 })) cut.set(K.refineBand(st, b, sc.rgba.subarray(b.ry0 * W * 4, b.ry1 * W * 4)), b.y0 * W);
         check("without the halo the band seams differ from the unbanded matte (the halo is what removes them)", maxDiff(cut, one.alpha) > 1, `max ${maxDiff(cut, one.alpha)} levels`);
-        // the fast method needs none
-        const fast = K.refineParams(8);
-        check("the fast method is pointwise at full resolution: halo 0", fast.halo === 0 && fast.method === "fast");
+        // the fast method's halo is the noise smoothing's reach: half the factor, at most rhoMax
+        const f8 = K.refineParams(8), f15 = K.refineParams(15), f40 = K.refineParams(40), f1 = K.refineParams(1.5);
+        check("the fast method's halo is min(rhoMax, floor(factor / 2))", f8.halo === 4 && f15.halo === 7 && f40.halo === K.REFINE.rhoMax && f1.halo === 0, `${f8.halo} / ${f15.halo} / ${f40.halo} / ${f1.halo}`);
+    }
+
+    // 4b. the same for the fast method on a noisy picture (the smoothing reads across band boundaries)
+    {
+        const sc = nearScene([60, 158, 82], 8, 6, 32), { W, H } = sc;
+        const asked = [];
+        const read = (b) => { asked.push(b); return sc.rgba.subarray(b[1] * W * 4, b[3] * W * 4); };
+        const o = { alpha: sc.alpha, aw: sc.aw, ah: sc.ah, small: sc.small, full: { w: W, h: H } };
+        const one = await K.refineMatte({ ...o, read });
+        asked.length = 0;
+        const stream = new Uint8Array(W * H);
+        const banded = await K.refineMatte({ ...o, read, bandRows: 37, unbandedPx: 0, onBand: (y0, y1, bytes) => { stream.set(bytes, y0 * W); } });
+        const halo = banded.halo, plan = K.bandPlan(W, H, { halo, bandRows: 37, unbandedPx: 0 });
+        const st = K.prepareRefine(o), [sy0, sy1] = st.sample;
+        const want = [[0, sy0, W, sy1], ...plan.map((b) => [0, Math.max(0, b.y0 - halo), W, Math.min(H, b.y1 + halo)])];
+        check(`the fast method reads the noise sample, then each band with a halo of ${halo} rows`, halo === 4 && JSON.stringify(asked) === JSON.stringify(want), JSON.stringify(asked.slice(0, 3)));
+        check(`the fast method's bands, streamed, are the unbanded matte's bytes exactly (smoothing on: noise ${banded.noise[1]} levels)`, maxDiff(stream, one.alpha) === 0 && banded.noise[1] > 3, `max ${maxDiff(stream, one.alpha)} levels`);
+        K.noteSample(st, sc.rgba.subarray(sy0 * W * 4, sy1 * W * 4));
+        const cut = new Uint8Array(W * H);
+        for (const b of K.bandPlan(W, H, { halo: 0, bandRows: 37, unbandedPx: 0 })) cut.set(K.refineBand(st, b, sc.rgba.subarray(b.ry0 * W * 4, b.ry1 * W * 4)), b.y0 * W);
+        check("without the halo the fast method's band seams differ (the halo is what removes them)", maxDiff(cut, one.alpha) > 1, `max ${maxDiff(cut, one.alpha)} levels`);
+        let threw = false; try { K.refineBand(K.prepareRefine(o), plan[0], sc.rgba); } catch { threw = true; }
+        check("refused: a fast band before the noise sample", threw);
+        // the smoothing's box is centred: the picture flipped (rows, then columns) gives the matte flipped, within a level
+        const flip = (a, n, wd, ht, rows) => {
+            const o2 = new a.constructor(a.length);
+            for (let y = 0; y < ht; y++) for (let x = 0; x < wd; x++) {
+                const yy = rows ? ht - 1 - y : y, xx = rows ? x : wd - 1 - x;
+                for (let c = 0; c < n; c++) o2[(yy * wd + xx) * n + c] = a[(y * wd + x) * n + c];
+            }
+            return o2;
+        };
+        for (const rows of [true, false]) {
+            const fr = flip(sc.rgba, 4, W, H, rows);
+            const fo = { alpha: flip(sc.alpha, 1, sc.aw, sc.ah, rows), aw: sc.aw, ah: sc.ah, small: { data: flip(sc.small.data, 4, sc.aw, sc.ah, rows), width: sc.aw, height: sc.ah }, full: { w: W, h: H }, noise: banded.noise };
+            const a = await K.refineMatte({ ...o, noise: banded.noise, read }), b = await K.refineMatte({ ...fo, read: (bx) => fr.subarray(bx[1] * W * 4, bx[3] * W * 4) });
+            const d = maxDiff(flip(b.alpha, 1, W, H, rows), a.alpha);
+            check(`the picture flipped ${rows ? "upside down" : "left to right"} gives the matte flipped (the smoothing's box is centred)`, d <= 1, `max ${d} levels`);
+        }
+        // the box sums skip the pixels farther than two bucket px from the zone: the answer is the one without the skip
+        for (const s2 of [2, 8, 15]) {
+            const z = nearScene([60, 158, 82], s2, 6, 24), rz = (bx) => z.rgba.subarray(bx[1] * z.W * 4, bx[3] * z.W * 4);
+            const oz = { alpha: z.alpha, aw: z.aw, ah: z.ah, small: z.small, full: { w: z.W, h: z.H }, read: rz };
+            const d = maxDiff((await K.refineMatte(oz)).alpha, (await K.refineMatte({ ...oz, reach: 99 })).alpha);
+            check(`s ${s2}: skipping the pixels no box reaches changes nothing`, d === 0, `max ${d} levels`);
+        }
+        asked.length = 0;
+        await K.refineMatte({ ...o, read, noise: 0 });
+        check("a given noise skips the sample read", asked.length === 1 && asked[0][1] === 0 && asked[0][3] === H, JSON.stringify(asked));
     }
 
     // 5. the geometry: the default map is inpaint_depth's bilinearResize; a source region and a matte box crop it
@@ -469,6 +627,10 @@ async function tests() {
         const parts = new Uint8Array(sc.W * sc.H);
         await K.refineMatte({ alpha: sc.alpha, aw: sc.aw, ah: sc.ah, small: sc.small, full: { w: sc.W, h: sc.H }, read: (b) => sc.rgba.subarray(b[1] * sc.W * 4, b[3] * sc.W * 4), bandRows: 13, unbandedPx: 0, onBand: (y0, y1, bytes) => { parts.set(bytes, y0 * sc.W); } });
         check("the matte streamed band by band equals the collected one", maxDiff(parts, one) === 0);
+        const nz = scene("teal", 4, 40, { pnoise: 6 });
+        const oneN = await refineScene(K, nz, {}), partsN = new Uint8Array(nz.W * nz.H);
+        await K.refineMatte({ alpha: nz.alpha, aw: nz.aw, ah: nz.ah, small: nz.small, full: { w: nz.W, h: nz.H }, read: (b) => nz.rgba.subarray(b[1] * nz.W * 4, b[3] * nz.W * 4), bandRows: 13, unbandedPx: 0, onBand: (y0, y1, bytes) => { partsN.set(bytes, y0 * nz.W); } });
+        check("on a noisy picture too (the smoothing's box sums are exact)", maxDiff(partsN, oneN) === 0, `max ${maxDiff(partsN, oneN)}`);
     }
 
     // 8. the box blur is px/kernels.js' (the JS twin here) and an injected one is used
@@ -484,10 +646,64 @@ async function tests() {
         check("hair strands over the screen come back closer to the truth than the bilinear matte", r.mae < rb.mae * 0.5, `MAE ${r.mae.toFixed(1)} against ${rb.mae.toFixed(1)} levels`);
     }
 
+    // 9. sensor noise: where the engine was sure (more than 3 bucket px from the edge) the refine adds at most 3 levels,
+    // also for a subject 12-24 levels from the screen's colour; it stays better than the unrefined matte overall
+    for (const s of [4, 15]) {
+        const cases = [];
+        // the bound on the mean error: below the unrefined matte's where the noise is a third of the colours' distance or
+        // more (an SNR-limited edge: the refine smooths toward the bilinear matte), a quarter of it where it is not
+        for (const pn of [3, 6]) for (const c of [[60, 158, 82], [60, 164, 76]]) cases.push([`a subject ${JSON.stringify(c)} near the screen, +-${pn} levels`, nearScene(c, s, pn), 1]);
+        for (const k of ["skin", "teal", "fold"]) cases.push([`${k}, +-6 levels`, scene(k, s, 40, { pnoise: 6 }), 0.25]);
+        for (const [label, sc, k] of cases) {
+            const bil = await refineScene(K, sc, { method: "bilinear" });
+            const est = await refineScene(K, sc, {});
+            const r = score(sc, est, bil), rb = score(sc, bil, bil), f = far(sc, est, bil);
+            check(`${label} at s ${s}: nothing added where the engine was sure, better than unrefined`, f <= 3 && r.mae < rb.mae * k && r.leak <= rb.leak, `far ${f} levels, MAE ${r.mae.toFixed(1)} / ${rb.mae.toFixed(1)}, leak ${r.leak.toFixed(0)} / ${rb.leak.toFixed(0)}`);
+        }
+    }
+    {
+        // without the guards (the zone and the noise) the same scene shows the speckle (the test can fail)
+        const sc = nearScene([60, 158, 82], 15, 3), bil = await refineScene(K, sc, { method: "bilinear" });
+        const raw = far(sc, await refineScene(K, sc, { gate: false, tau: 0 }), bil);
+        check("without the zone and the noise guard the near-screen subject speckles (the guards are what remove it)", raw > 20, `far ${raw} levels`);
+    }
+
+    // 10. the noise estimate from the sample
+    {
+        const read = (sc) => (b) => sc.rgba.subarray(b[1] * sc.W * 4, b[3] * sc.W * 4);
+        const hc = scene("hair", 8, 32), sc = scene("skin", 8, 32, { pnoise: 3 });
+        const clean = await K.refineMatte({ alpha: hc.alpha, aw: hc.aw, ah: hc.ah, small: hc.small, full: { w: hc.W, h: hc.H }, read: read(hc) });
+        const noisy = await K.refineMatte({ alpha: sc.alpha, aw: sc.aw, ah: sc.ah, small: sc.small, full: { w: sc.W, h: sc.H }, read: read(sc) });
+        // +-3 levels rounded from a uniform draw: sigma = sqrt(10 / 6 + 1.5) = 1.78 levels
+        check("a clean picture (hair over the screen) estimates no noise", clean.noise.every((v) => v === 0), JSON.stringify(clean.noise));
+        check("+-3 levels of sensor noise are estimated within 15 %", noisy.noise.every((v) => Math.abs(v - 1.78) < 0.27), JSON.stringify(noisy.noise));
+    }
+
+    // 11. the read must be the bucket's picture: a filtered read falls back to the bilinear matte, a faithful one does not
+    for (const s of [4, 15]) {
+        const sc = scene("skin", s), bil = await refineScene(K, sc, { method: "bilinear" });
+        const base = { alpha: sc.alpha, aw: sc.aw, ah: sc.ah, small: sc.small, full: { w: sc.W, h: sc.H } };
+        const ok = await K.refineMatte({ ...base, read: (b) => sc.rgba.subarray(b[1] * sc.W * 4, b[3] * sc.W * 4) });
+        check(`s ${s}: the bucket's own picture passes the check`, !ok.fallback && ok.guideDiff <= 1, `guideDiff ${ok.guideDiff}`);
+        for (const name of Object.keys(FILTERS)) {
+            const rgba = filtered(sc.rgba, name);
+            const res = await K.refineMatte({ ...base, read: (b) => rgba.subarray(b[1] * sc.W * 4, b[3] * sc.W * 4) });
+            check(`s ${s}: a read with ${name} that the bucket lacks falls back to the bilinear matte`, !!res.fallback && maxDiff(res.alpha, bil) === 0, `guideDiff ${res.guideDiff}`);
+        }
+        // grain is zero-mean: not a different picture, more noise; the refine smooths and stays far better than none
+        const R = rng(5), grain = Uint8ClampedArray.from(sc.rgba, (v, i) => (i & 3) === 3 ? v : v + Math.round((R() - 0.5) * 16));
+        const gr = await K.refineMatte({ ...base, read: (b) => grain.subarray(b[1] * sc.W * 4, b[3] * sc.W * 4) });
+        const r = score(sc, gr.alpha, bil), rb = score(sc, bil, bil);
+        check(`s ${s}: grain (+-8, zero mean) is noise, not a mismatch`, !gr.fallback && r.mae < rb.mae * 0.3 && far(sc, gr.alpha, bil) <= 3, `guideDiff ${gr.guideDiff}, MAE ${r.mae.toFixed(1)} / ${rb.mae.toFixed(1)}, far ${far(sc, gr.alpha, bil)}`);
+    }
+
     console.log(failed ? `\nkeymatte_test: ${failed} FAILED` : "\nkeymatte_test: all PASS");
     process.exit(failed ? 1 : 0);
 }
 
-if (require.main !== module) module.exports = { scene, bucketOf, score, refineScene, GREEN, BLUE };
+/** A subject close to the screen's colour (an olive garment, green spill), +-pnoise levels of sensor noise. */
+const nearScene = (subject, s, pnoise = 0, cells = 40) => scene("near", s, cells, { pnoise, subject });
+
+if (require.main !== module) module.exports = { scene, nearScene, bucketOf, score, far, refineScene, filtered, FILTERS, GREEN, BLUE };
 const mode = require.main === module ? process.argv[2] : "lib";
 if (mode !== "lib") (mode === "--measure" ? measure() : mode === "--time" ? time() : tests()).catch((err) => { console.error(err); process.exit(1); });
