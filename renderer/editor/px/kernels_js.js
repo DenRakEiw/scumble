@@ -1723,3 +1723,129 @@ export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias
     return dst;
 }
 
+
+// ---- the selection's combine (docs/PLAN_WASM_BUILD.md §4.3, K5) -------------------------------------------------------
+
+/** The kinds of an AlphaSource view (inpaint_raster.js): nothing covered, an alpha byte a pixel, all covered, RGBA8. */
+export const SEL_NONE = 0, SEL_ALPHA = 1, SEL_FULL = 2, SEL_RGBA = 4;
+
+let SEL_TABLES = null;
+
+/** T[mode][(d << 8) | s]: the combined alpha of inpaint_raster.js `combineAlpha`, one table per mode of SEL_MODES. */
+function selTables() {
+    if (SEL_TABLES) return SEL_TABLES;
+    const mul255 = (x, y) => { const t = x * y + 128; return (t + (t >> 8)) >> 8; };
+    const t = [new Uint8Array(65536), new Uint8Array(65536), new Uint8Array(65536), new Uint8Array(65536)];
+    for (let d = 0; d < 256; d++) {
+        for (let s = 0; s < 256; s++) {
+            const i = (d << 8) | s, m = mul255(d, s);
+            t[0][i] = s;
+            t[1][i] = d + s - m;
+            t[2][i] = Math.max(0, d - m);
+            t[3][i] = m;
+        }
+    }
+    SEL_TABLES = t;
+    return t;
+}
+
+/** Arguments selCombine refuses (sel.rs answers REFUSED for the same): a message, or "" when they are in range. */
+function selRefused(dst, size, src, off, stride, kind, bw, bh, mode) {
+    if (!(mode >= 0 && mode <= 3) || (mode | 0) !== mode) return `mode ${mode}`;
+    if (kind !== SEL_NONE && kind !== SEL_ALPHA && kind !== SEL_FULL && kind !== SEL_RGBA) return `source kind ${kind}`;
+    if (!(size > 0 && size <= 4096) || !(bw >= 0 && bw <= size) || !(bh >= 0 && bh <= size)) return `${bw} x ${bh} in a tile of ${size}`;
+    if (!dst || dst.length < size * size * 4) return "a tile too small";
+    if ((kind === SEL_ALPHA || kind === SEL_RGBA) && bw > 0 && bh > 0) {
+        const bpp = kind === SEL_RGBA ? 4 : 1;
+        if (!(stride >= bw) || !(off >= 0) || !src || src.length < (off + (bh - 1) * stride + bw) * bpp) return "a source too small";
+    }
+    return "";
+}
+
+/**
+ * Whether the `bw` x `bh` source region holds any alpha above 0 (`off` and `stride` in pixels, `kind` as selCombine
+ * takes it). kernels.js asks it on the twins' route before it makes a missing tile; the Rust route asks the combine
+ * itself (sel_combine reports whether the tile holds a pixel), so it has no Rust twin.
+ */
+export function alphaAny(src, off, stride, kind, bw, bh) {
+    if (!(bw > 0 && bh > 0)) return false;
+    if (kind === SEL_FULL) return true;
+    if (kind !== SEL_ALPHA && kind !== SEL_RGBA) return false;
+    const s = bytesOf(src), bpp = kind === SEL_RGBA ? 4 : 1, a = kind === SEL_RGBA ? 3 : 0;
+    for (let y = 0; y < bh; y++) {
+        for (let p = (off + y * stride) * bpp + a, e = p + bw * bpp; p < e; p += bpp) if (s[p]) return true;
+    }
+    return false;
+}
+
+/**
+ * One tile of the selection (`size`² RGBA8, straight alpha, in place) combined with an alpha source under `mode` (0
+ * replace, 1 add, 2 subtract, 3 intersect: inpaint_raster.js SEL_MODES), the maths of inpaint_raster.js `combineRows`:
+ * a covered pixel (combined alpha above 0) gets the colour `rgb` (0xRRGGBB) and that alpha, the others 0, 0, 0, 0; only
+ * the `bw` x `bh` pixels from the tile's corner, the rest of the tile kept. The source region starts at pixel `off` of
+ * `src`, `stride` pixels a row: SEL_ALPHA a byte a pixel, SEL_RGBA four (its alpha read), SEL_NONE all 0 and SEL_FULL all
+ * 255 (`src` unread). Returns the extent of the whole tile afterwards as inpaint_tiles.js `tileExtent` finds it, [x0,
+ * y0, x1, y1] in the tile's pixels, or null when no pixel of the tile has alpha. Throws for arguments out of range. Rust
+ * twin: crates/px/src/sel.rs (px.js `selCombine`, which takes a missing tile as `dst` null).
+ */
+export function selCombine(dst, size, src, off, stride, kind, bw, bh, mode, rgb) {
+    const refused = selRefused(dst, size, src, off, stride, kind, bw, bh, mode);
+    if (refused) throw new Error("selCombine: " + refused);
+    const d8 = bytesOf(dst);
+    const T = selTables()[mode];
+    // no buffer read when no pixel is combined (bw or bh 0), as sel.rs, which then needs no source
+    const s = (kind === SEL_ALPHA || kind === SEL_RGBA) && bw > 0 && bh > 0 ? bytesOf(src) : null;
+    const sa = kind === SEL_FULL ? 255 : 0;   // the source alpha without a buffer
+    const bpp = kind === SEL_RGBA ? 4 : 1, sOff = kind === SEL_RGBA ? 3 : 0;
+    const r = (rgb >>> 16) & 255, g = (rgb >>> 8) & 255, b = rgb & 255;
+    let x0 = size, y0 = -1, x1 = -1, y1 = -1;
+    const words = LITTLE && (d8.byteOffset & 3) === 0;
+    const d32 = words ? new Uint32Array(d8.buffer, d8.byteOffset, size * size) : null;
+    const RGB = ((b << 16) | (g << 8) | r) >>> 0;
+    for (let y = 0; y < size; y++) {
+        let first = -1, last = -1, from = 0;
+        if (y < bh && bw > 0) {
+            from = bw;
+            let sp = (off + y * stride) * bpp + sOff;
+            if (words) {
+                const row = y * size;
+                for (let x = 0, o = row; x < bw; x++, o++, sp += bpp) {
+                    const a = T[((d32[o] >>> 24) << 8) | (s === null ? sa : s[sp])];
+                    if (a) {
+                        d32[o] = ((a << 24) | RGB) >>> 0;
+                        if (first < 0) first = x;
+                        last = x;
+                    } else d32[o] = 0;
+                }
+            } else {
+                for (let x = 0, o = y * size * 4; x < bw; x++, o += 4, sp += bpp) {
+                    const a = T[(d8[o + 3] << 8) | (s === null ? sa : s[sp])];
+                    if (a) {
+                        d8[o] = r; d8[o + 1] = g; d8[o + 2] = b; d8[o + 3] = a;
+                        if (first < 0) first = x;
+                        last = x;
+                    } else {
+                        d8[o] = 0; d8[o + 1] = 0; d8[o + 2] = 0; d8[o + 3] = 0;
+                    }
+                }
+            }
+        }
+        // the rest of the row, read for the extent only: its first and its last pixel with alpha
+        const at = y * size * 4 + 3;
+        let x = from;
+        while (x < size && !d8[at + x * 4]) x++;
+        if (x < size) {
+            if (first < 0) first = x;
+            let e = size - 1;
+            while (e > x && !d8[at + e * 4]) e--;
+            last = e;
+        }
+        if (first >= 0) {
+            if (y0 < 0) y0 = y;
+            y1 = y;
+            if (first < x0) x0 = first;
+            if (last > x1) x1 = last;
+        }
+    }
+    return y0 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+}

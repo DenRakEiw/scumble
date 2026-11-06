@@ -179,7 +179,14 @@ layer.px.drawInto([100, 100, 300, 300], (ctx) => {
 });
 ed.markLayerChanged(layer);
 ed.draw();
+// K5 (docs/PLAN_WASM_BUILD.md §3.4): on tiles with the selCombine route on Rust the wand's combine runs sel_combine
+const E = ed.constructor;
+const rustSel = ed.tileMode && E.kernels !== "js" && (E.routes || {}).selCombine !== "js";
+E.pxCalls(true);
 await ed.wandSelect(150, 150, "replace");
+const selCalls = E.pxCalls(true).sel_combine || 0;
+if (rustSel && !(selCalls > 0)) throw new Error("the wand's combine ran no sel_combine on tiles with the route on rust");
+if (!ed.tileMode && selCalls) throw new Error("the canvas backend's wand called sel_combine " + selCalls + " times");
 const b = ed.getBounds();
 if (!b) throw new Error("wand selected nothing on tiles backend");
 if (b[0] !== 100 || b[1] !== 100 || b[2] !== 300 || b[3] !== 300) {
@@ -196,7 +203,7 @@ if (!bRedo || bRedo[0] !== 100 || bRedo[1] !== 100 || bRedo[2] !== 300 || bRedo[
     throw new Error("redo did not restore wand bounds: " + JSON.stringify(bRedo));
 }
 await run("remove_layer", { doc: window.__selDoc, layer: l.id });
-return { ok: true, bounds: b };
+return { ok: true, bounds: b, selCombine: selCalls };
 """),
     ("range_select_depth_cases", """
 const ed = ednow(window.__selDoc);
@@ -219,7 +226,13 @@ const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
 
 // Case 1: depth lo .25 hi .5, no feathers
 // at columns where v = .2 / .3 / .45 / .6 -> 0 / 255 / 255 / 0, exact (9 columns, middle row 600)
+// K5: on tiles with the selCombine route on Rust the range's combine runs sel_combine (its partial tiles)
+const E = ed.constructor;
+const rustSel = ed.tileMode && E.kernels !== "js" && (E.routes || {}).selCombine !== "js";
+E.pxCalls(true);
 await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0, fHi: 0 }, "replace");
+const rangeSelCalls = E.pxCalls(true).sel_combine || 0;
+if (rustSel && !(rangeSelCalls > 0)) throw new Error("the range's combine ran no sel_combine on tiles with the route on rust");
 const c1Cols = [160, 320, 400, 480, 720, 800, 960, 1200, 1440];
 const c1Vals = c1Cols.map((x) => at(x, 600));
 if (at(320, 600) !== 0) throw new Error("case 1: at v=0.2 (x=320) expected 0, got " + at(320, 600));

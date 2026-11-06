@@ -1,0 +1,5 @@
+LOG memory watch: card 30596 of 32607 MB used, 37 MB short of the 2048 MB to keep free (nvidia-smi); released 0 MB of caches in 1 background tab and 29 MB of the front tab's textures, GPU process now 1588 MB
+WARN Inpaint Canvas: selection encode failed Error: the selection is too large to be saved without the worker pool
+    at scumble://app/editor/inpaint_canvas.js:24546:76
+WARN Inpaint Canvas: selection encode failed Error: the selection is too large to be saved without the worker pool
+    at scumble://app/editor/inpaint_canvas.js:24546:76

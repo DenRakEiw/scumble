@@ -55,8 +55,8 @@ K1's switches (docs/PLAN_WASM_K1.md S7):
   --ab NAME=A:B   one per run: A runs in the "js" column and B in the "rust" column, so the table keeps its columns.
                   NAME is `kernels` (the whole kernel set, the default without --ab), `stacks` (off / on: the window's
                   stack route of the wand and the range rows, `InpaintEditor.stacks`) or a route of px/kernels.js
-                  (`flood`, `mips`, `releaseMB`, `keepMB`), with the kernel set on Rust in both arms; the values `js`,
-                  `rust`, a number or `inf`
+                  (`flood`, `mips`, `selCombine`, `releaseMB`, `keepMB`), with the kernel set on Rust in both arms; the
+                  values `js`, `rust`, a number or `inf`
   --set NAME=V    repeatable: a route or `stacks`, for both arms and the whole run
   --split         the px calls timed by part, on the window and in each job (implied by --check): one more line per
                   row with the copies in and out, the allocations, the memory grown, the instances renewed, each
@@ -164,6 +164,16 @@ BODY = """
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const shell = await import("./shell.js");
     const T = await import("./editor/inpaint_tiles.js");
+    // K5: the window's TileMaskPixels.combine timed per row (`combine` ms, `combineN` calls): the selCombine route's
+    // kernel row (tools/ab_median.py); the method is wrapped first thing in the rounds' try, put back in its finally
+    const KM = await import("./editor/px/kernels.js");
+    const SELK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "selCombine"));
+    const COMBINE = { ms: 0, n: 0 };
+    const combine0 = T.TileMaskPixels.prototype.combine;
+    const timedCombine = function (...a) {
+        const t = performance.now();
+        try { return combine0.apply(this, a); } finally { COMBINE.ms += performance.now() - t; COMBINE.n++; }
+    };
     window.__pxjobs = "document";
     const ed = shell.newDocument();
     shell.activate(ed);
@@ -590,13 +600,15 @@ BODY = """
     const op = async (kernels, fn, want, { marks = null, sel = true } = {}) => {
         useArm(kernels);
         const r0 = await rowStart();
+        COMBINE.ms = 0; COMBINE.n = 0;
         const t0 = performance.now();
         await fn();
         const wall = performance.now() - t0;
+        const combined = { combine: COMBINE.ms, combineN: COMBINE.n };
         const { ws, onWindow } = rowEnd(r0);
         const ops = want === null ? [] : [].concat(want);
         const timings = ofGen(E.jobTimings(true), r0.gen).filter((t) => ops.includes(t.op));
-        const out = { wall, ...parts(timings, ops), px: { window: onWindow, workers: callsOf(timings) }, ...k1(r0, ws, timings) };
+        const out = { wall, ...combined, ...parts(timings, ops), px: { window: onWindow, workers: callsOf(timings) }, ...k1(r0, ws, timings) };
         if (ops.includes("flood")) {
             const floods = timings.filter((t) => t.op === "flood");
             out.floodPx = floods.map((t) => t.pixels || 0);
@@ -745,6 +757,13 @@ BODY = """
         if (!GENS) return null;
         const jobs = (row.px && row.px.workers) || {}, win = (row.px && row.px.window) || {};
         const bad = [];
+        // `selCombine` (K5): with "js" the window calls no sel_combine; with "rust" a wand or range row, whose combine
+        // takes tiles of pixels (the wand's RGBA, the range's alpha), calls it at least once
+        if (SELK && (row.combineN || 0) > 0) {
+            const r = routeOf("selCombine"), n = win.sel_combine || 0;
+            if (r === "js" && n) bad.push(`selCombine=js: the window called sel_combine ${n} times`);
+            if (r === "rust" && !n && /^(wand_|range_)/.test(row.job)) bad.push("selCombine=rust: the window called sel_combine 0 times");
+        }
         if (row.floodPx) {
             const r = routeOf("flood");
             const want = r === "js" ? 0 : r === "rust" ? row.floodPx.length : row.floodPx.filter((n) => n >= r).length;
@@ -756,6 +775,7 @@ BODY = """
             }
             return bad;
         }
+        if (bad.length) return bad;
         if (row.job === "mips_direct" || row.job === "mips_whole") {
             const r = routeOf("mips");
             if (r === "js") {
@@ -816,6 +836,7 @@ BODY = """
     // the run's switches (checked above, before the document): the --set values for both arms, the split's clocks; the
     // finally puts every one of them back, takes the trap watch off and closes the run's tab, whatever a row threw
     try {
+        T.TileMaskPixels.prototype.combine = timedCombine;
         if (traps) await traps.take(true);
         if (has("pxTimed")) E.pxTimed(SPLITS);
         for (const [n, v] of SETS) {
@@ -879,6 +900,7 @@ BODY = """
         for (const n of touched) { try { E.setRoute(n, null); } catch (_) { /* a name the build refused above */ } }
         if (has("pxTimed")) E.pxTimed(false);
         if (traps) traps.unwatch();
+        T.TileMaskPixels.prototype.combine = combine0;
         shell.closeDocument(ed, { force: true });
     }
     return JSON.stringify({

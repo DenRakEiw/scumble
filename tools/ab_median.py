@@ -24,7 +24,9 @@ way on either branch, from the picture read to the shape drawn), as px_jobs.py's
 where the runs have one (px_jobs.py --split), only explains it: per arm the route's exports' `ms` and `copyIn`, the
 jobs' (`split.jobs`) and the window's (`split.window`) apart. The route (whose exports the split line names) is
 --route, else the run's own `ab`, else guessed from the rows: the wand and ladder rows are flood's, the mips rows mips';
-for the legacy kernels flip every export counts.
+for the legacy kernels flip every export counts. A route of ROUTE_KERNEL works on the window, not in a job: its kernel
+row is a field of the row (`selCombine`, K5: `combine`, px_jobs.py's time of the window's TileMaskPixels.combine), and
+a row whose combine ran in neither arm (`combineN` 0) gets "not touched by the route" in place of a verdict.
 
 Left out, each named: a run with `check` (one round, the split's clocks and the hashes on), a `failed` run, one whose
 window was behind, one whose threads renewed an instance after a trap or out of memory (px_jobs.py's `instances`); and
@@ -67,7 +69,10 @@ if [a for a in args if a.startswith("-")] or not PATHS:
 ARMS = ("js", "rust")
 # the exports a route sends to the twin (px/kernels.js: `rustPx("flood", size)` in floodShape and floodMask,
 # `rustPx("mips")` in mipHalf, mipChain and clampExtend); a route not named here counts every export
-ROUTE_EXPORTS = {"flood": ("flood_shape", "flood"), "mips": ("mip_chain", "clamp_extend", "mip_half")}
+ROUTE_EXPORTS = {"flood": ("flood_shape", "flood"), "mips": ("mip_chain", "clamp_extend", "mip_half"), "selCombine": ("sel_combine",)}
+# a route whose kernel works on the window, not in a job: its kernel row is a row field of its own (px_jobs.py times the
+# window's TileMaskPixels.combine per row as `combine`, K5), in place of px_jobs.py's KERNEL columns
+ROUTE_KERNEL = {"selCombine": ["combine"]}
 
 
 def kernel_table():
@@ -189,8 +194,11 @@ def left_out_row(x):
     return None
 
 
-def kernel_cols(job):
-    """px_jobs.py's kernel parts of a row; a ladder step takes its own entry, else the wand's."""
+def kernel_cols(job, route=None):
+    """px_jobs.py's kernel parts of a row (a ladder step takes its own entry, else the wand's); a route of ROUTE_KERNEL
+    takes its own field."""
+    if route in ROUTE_KERNEL:
+        return ROUTE_KERNEL[route]
     if job in KERNEL:
         return KERNEL[job]
     if job.startswith("flood_ladder"):
@@ -198,8 +206,8 @@ def kernel_cols(job):
     return None
 
 
-def parts_kernel(row, job):
-    cols = kernel_cols(job)
+def parts_kernel(row, job, route=None):
+    cols = kernel_cols(job, route)
     if not cols:
         return None
     return sum(num(row.get(k)) or 0.0 for k in cols)
@@ -270,7 +278,7 @@ def report_size(size, runs):
                 meds.append(med([num(x.get(KEY)) for x in rows]))
                 cold += [num(x.get(KEY)) for x in rows if x.get("round") == 0]
                 flags += sum(1 for x in rows if x.get("settleTimeout"))
-                kern.append(med([parts_kernel(x, job) for x in rows]))
+                kern.append(med([parts_kernel(x, job, route) for x in rows]))
                 for side, acc in (("jobs", jside), ("window", wside)):
                     got = [split_side(x, side, exports) for x in rows]
                     got = [g for g in got if g is not None]
@@ -287,13 +295,18 @@ def report_size(size, runs):
         spread = max(js["spread"], rs["spread"])
         kj, kr = js["kernel"], rs["kernel"]
         v, why = verdict(js["median"], rs["median"], spread, kj, kr)
+        if route in ROUTE_KERNEL:
+            # a route whose kernel is the window's combine: a row that never combined in either arm is not its business
+            mine = [x for lbl, _, _ in kept for x in rows_of[lbl] if x.get("job") == job]
+            if mine and all("combineN" in x for x in mine) and not any(num(x.get("combineN")) for x in mine):
+                v, why = "not touched by the route", f"the window's combine ran 0 times in both arms; {route} cannot change it"
         print(f"  {job}")
         for arm in ARMS:
             a = per[arm]
             runs_txt = " ".join(fmt(m, 0) for m in a["runs"]) or "-"
             print(f"    {arm:4s} per run {runs_txt:30s} | median {fmt(a['median'])} | spread {fmt(a['spread'])}"
                   + (f"  ({a['flags']} row(s) whose settle timed out)" if a["flags"] else ""))
-        cols = " + ".join(kernel_cols(job) or []) or "no kernel parts in px_jobs.py"
+        cols = " + ".join(kernel_cols(job, route) or []) or "no kernel parts in px_jobs.py"
         print(f"    round 0 (cold) js {fmt(js['cold']).strip()} / rust {fmt(rs['cold']).strip()}; "
               f"kernel row js {fmt(kj).strip()} / rust {fmt(kr).strip()} ({cols})")
         if any(per[arm][side] for arm in ARMS for side in ("jobs", "window")):

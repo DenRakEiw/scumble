@@ -31,6 +31,7 @@ mod poisson;
 mod psd;
 mod relight;
 mod resample;
+mod sel;
 mod smudge;
 
 /// dlmalloc hands out a page start plus its 8-byte header, while a JS ArrayBuffer of tile
@@ -41,11 +42,12 @@ fn align_for(bytes: usize) -> usize {
     if bytes >= 16 * 1024 { 4096 } else { 8 }
 }
 
-/// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention);
+/// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
+/// 21: sel_combine);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    20
+    21
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -415,3 +417,28 @@ pub unsafe extern "C" fn shadow_march(
 }
 
 
+
+// ---- the selection (PLAN_WASM_BUILD.md §4.3, K5) ----------------------------------------------------------------------
+
+/// One `size`² tile of the selection (RGBA8, straight alpha, in place) combined with an alpha source under `mode` (0
+/// replace, 1 add, 2 subtract, 3 intersect: SEL_MODES; plus 8 when the tile is new: its old alpha is taken as 0 and all
+/// of it is written), the colour `rgb` (0xRRGGBB) on what is covered. `src` is the source region's first pixel and
+/// `src_stride` its row in pixels, `src_kind` 1 one alpha byte a pixel or 4 RGBA8; 0 (nothing covered) and 2 (all of it)
+/// read no buffer. Only `bw` x `bh` pixels from the tile's corner are combined (`sel.rs`). Returns 1 when the tile holds
+/// a pixel afterwards and writes its extent (x0, y0, x1, y1: 4 i32) to `ext`, 0 when it holds none, 2 for arguments out
+/// of range (nothing written).
+#[no_mangle]
+pub unsafe extern "C" fn sel_combine(dst: *mut u8, size: usize, src: *const u8, src_stride: usize, src_kind: u32, bw: usize, bh: usize, mode: u32, rgb: u32, ext: *mut i32) -> u32 {
+    if dst.is_null() || ext.is_null() || size == 0 || size > 4096 || bw > size || bh > size {
+        return sel::REFUSED;
+    }
+    let need = match sel::source_bytes(src_kind, src_stride, bw, bh) {
+        Some(n) => n,
+        None => return sel::REFUSED,
+    };
+    if need > 0 && src.is_null() {
+        return sel::REFUSED;
+    }
+    let src = if need == 0 { &[][..] } else { slice::from_raw_parts(src, need) };
+    sel::sel_combine(slice::from_raw_parts_mut(dst, size * size * 4), size, src, src_stride, src_kind, bw, bh, mode, rgb, slice::from_raw_parts_mut(ext, 4))
+}

@@ -116,6 +116,23 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   window's reader; "fail": a job no worker knows, so the fallback runs) is a class switch for harnesses, like
   `mipsOnPool` and `pngParts`, not a route of `px/kernels.js`: it chooses where the reader runs, not which kernel
   (K20b's JS / Rust choice inside `psd_read` becomes a route).
+  K5 (the selection's combine, Rust `sel_combine`, ABI 21): `node tools/px_test.js`'s `selCases` twin `sel_combine` on
+  both builds against `kernels_js.js` `selCombine`, and that twin against the editor's `combineRows` with a plain extent
+  scan (every mode x the source kinds 0 / 1 / 2 / 4 x seven parts of a tile x four tile states, with a tile's stride and
+  a band's long row, which px.js packs: 448 cases; the twin also on a tile one byte off its alignment, its bytes path),
+  a new tile against a transparent one, seven refusals (short views
+  over longer buffers among them), no pixel to combine without a source, `alphaAny`, and the `selCombine` route of
+  `px/kernels.js` (the same bytes on js and rust, `write` at most once, Rust's calls counted, the twins' route making no
+  missing tile from a source that covers nothing); `PX_BENCH=1` adds one tile's medians. `node tools/combine_test.js`
+  section 12 runs `TileMaskPixels.combine` on both routes against a per-pixel model over every view and read kind (192
+  combines: the cached extents and `bounds()` exact), a fresh extent on every tile it writes, a fractional or
+  out-of-range colour clamped as a tile's bytes stored it, and the views' offsets and refusals. The `selection` gate's
+  `real_wand_on_tiles` and `range_select_depth_cases` and the `editor` gate's
+  `wand_and_bucket_flood_a_region_not_the_image` require `sel_combine` calls on tiles while the route is on Rust
+  (`InpaintEditor.pxCalls`). `px_jobs.py` times the window's combine per row (`combine`, `combineN` in the JSON) and
+  checks the route ran; `ab_median.py` takes `combine` as the `selCombine` route's kernel row and prints "not touched by
+  the route" for a row whose combine ran in neither arm. The `depth` gate has no script of its own (`docs/BUGS.md`):
+  run `node tools/depth_test.js` in its place.
   `python tools/mem_test.py [12000x8000] [--rounds 4] [--keep]` is the memory walk: a
   document per round, benchmarked, closed and collected, with the private bytes of the
   renderer and of the GPU process, a census of every live canvas and the line that made it.

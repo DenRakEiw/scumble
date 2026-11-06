@@ -1,0 +1,6 @@
+selection rc=0 5s PASS
+limit rc=0 5s PASS
+maps rc=0 4s PASS
+pixels rc=0 10s PASS
+editor rc=0 145s PASS
+ALL PASS

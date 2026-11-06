@@ -1,6 +1,6 @@
 # Rust kernels: the build plan (Umbauplan, item 44)
 
-**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0 and D0 done 2026-11-06 (§7); next K5.** The branch's
+**Status: planned 2026-10-23 against `dd61e97` on the branch `wasm-kernels`; K0a, K0b and K0c done 2026-10-23 (§7); K1a and K1b (K1's build, its measurements and defaults) done the same day; Stop 1 done and answered by the user 2026-10-24 (§7); G2 done on `main` and released as 0.1.51 2026-10-24; #0, D0 and K5 done 2026-11-06 (§7; K5 took ABI 21); next Stop 3, then W1.** The branch's
 `renderer/` and `crates/` equal `main` at `7def997` plus `10b1a39`; the wasm ABI is 20 (`crates/px/src/lib.rs:47`,
 `renderer/editor/px/px.js:14`). This file turns `docs/PLAN_WASM.md` (the ranking and its §5 "W0 as harvested") and the
 W0 measurements of 2026-10-23 (`docs/measurements/w0_2026-10-23/`) into sessions. It joins six designs (the TIFF
@@ -1044,3 +1044,75 @@ The order after Stop 1, #2 (the user's yes of 2026-10-24), on `bbff117`; full ti
   the fallback. The ORA reader is still the window's (K20c).
 
 Next: K5.
+
+### K5 (2026-11-06): the selection's combine in Rust
+
+The order after Stop 1, #3, on `4bfdd74`; full tier on the kernel, normal on the call site.
+`docs/measurements/k5_2026-11-06/` (`k5_chain.sh`, `summarize.py`, `before/` and `after/` with their `summary.txt`,
+`gates/`, `mutation/`).
+- **Built (ABI 21):** `crates/px/src/sel.rs` `sel_combine(dst, size, src, src_stride, src_kind, bw, bh, mode, rgb, ext)
+  -> u32`: `combineRows`' maths (the order of `SEL_MODES`, the exact `mul255`) in u32x4 lanes, one loop per (kind,
+  mode) pair by const generics, the scalar build per pixel; source kinds 0 none / 1 alpha bytes / 2 full / 4 RGBA;
+  mode + 8 for a new tile (its old alpha 0, all of it written: no zero fill, no copy in); 1 with the whole tile's extent
+  as `tileExtent` finds it, 0 for an empty tile, 2 refused. The twin `kernels_js.js` `selCombine` (in place, u32 words
+  on an aligned little-endian tile, one 64 KB table per mode) and `alphaAny`; `px.js` `Px.selCombine(dst | null, ...,
+  write)` (dst only read; the source copied as its span, or a band's long rows packed; `write()` once and only for a
+  non-empty result; the twin's length refusals); `kernels.js` `selCombine` on the route `selCombine` ("kernel"), trap
+  recovery as `floodShape`'s. `inpaint_raster.js` `view(rx, ry, rw, rh)` on `rectSource`, `bytesSource` and
+  `tilesSource`: `{ kind, data, off, stride }` without a copy, or null for `read` (a region across the source's edge or
+  two of its tiles, a short buffer, a fractional origin). `TileMaskPixels.combine`: the view, else `read`; nothing over
+  a missing tile skipped; full coverage under replace or add one `u32.fill`; else `selCombine`; the extent kept
+  (`t.ext`, `extVersion`) right after the write; an empty result drops the tile; the colour clamped and rounded per
+  channel as a tile's bytes stored it (in `invert` too). The canvas backend's `combineRows` is unchanged.
+- **The `alpha_any` choice:** §4.3 and §5 list a Rust `alpha_any`, but §4.3's own design runs `sel_combine` once on a
+  missing tile (no `alpha_any` then combine, which copied the source twice): a Rust export would have no caller, and
+  §1.1 rule 4 removes unrouted exports. Only the twins' route asks the JS `alphaAny` (a missing tile is made only where
+  the source covers something, the combine's promise).
+- **The review** (a workflow over the first build: 16 findings, 4 must, 6 should, 6 nice): fixed are the A/B, the
+  after-runs, the mutation round, the docs; `before/`'s px_jobs r2, which overlapped this session's cargo build
+  (04:51:15-21), replaced by a clean r4 from a tree exported at `4bfdd74` (r2 kept as `overlap_pxjobs_r2.jsonl`);
+  `ab_median.py` prints "not touched by the route" for a row whose combine ran in neither arm (grow, shrink, invert);
+  the gate steps that assert `sel_combine` ran (below); the colour clamp, the fractional view origin, px.js's length
+  refusals (a short view over a longer buffer), the twin's degenerate case, px_jobs' wrapper inside the rounds' try.
+  Decided by the A/B, not built: a route by kind (the wand's and the range's rows agree) and a `writable` without its
+  copy for the Rust route's frozen tiles (wand_add's tie goes to Rust by its kernel row, 162 against 405 ms; the copy is
+  a later gain, to be measured where it is built).
+- **Tests:** `node tools/px_test.js` `selCases` (448 cases both builds against the twin, the twin against `combineRows`
+  with a plain extent scan, also on an unaligned tile; a new tile, seven refusals, no pixel to combine, `alphaAny`, the
+  route), `node tools/combine_test.js` section 12 (192 combines on both routes against a per-pixel model, the cached
+  extents, a fresh extent on every written tile, the colour clamp, the views' offsets and refusals); the `selection`
+  gate's `real_wand_on_tiles` and `range_select_depth_cases` and the `editor` gate's wand step require `sel_combine`
+  calls on tiles with the route on Rust. Gates `--offline`, tiles: lint types selection limit maps pixels editor pxjobs
+  nodecopy PASS; canvas: selection limit maps pixels editor PASS. The `depth` gate has no script (`docs/BUGS.md`):
+  `node tools/depth_test.js` passes in its place, as do `selection_test.js`, `edges_test.js`, `weights_test.js`,
+  `layered_test.js`. `build_px.py --check` identical on both builds; `build_node.py --check` only the expected
+  "differs" lines (the node is built at the release).
+- **The mutation round** (a copy tree, `mutation/`; the untouched copy PASS first, the kill set `combine_test.js`,
+  `px_test.js`, then the gates selection pixels editor pxjobs on tiles on a fresh instance; Rust mutants rebuilt on both
+  builds): **52 of 53 red** (sel.rs 15 of 16, the twin and `alphaAny` 10 of 10, the route 2 of 2, px.js 7 of 7, the
+  views 8 of 8, the call site 10 of 10). The survivor is equivalent: the SIMD subtract without its clamp at 0
+  (`mul255(d, s) <= d`, so the difference never goes below 0). The twin's bytes path survived the first round and is
+  red since px_test runs the twin on an unaligned tile too. The restored copy: PASS, both builds identical.
+- **The A/B and the route** (`after/`, three fresh runs, `px_jobs.py --ab selCombine=js:rust`, the kernel row the
+  window's `TileMaskPixels.combine`): Rust on every row it touches: wand_band 1,320 / twin 1,657 and range_depth_snap
+  2,435 / 2,503 beyond the spread; inside it and Rust by the kernel row wand_object 91 / 90 (combine 1.0 / 2.3),
+  wand_add 1,623 / 1,844 (162 / 405), range_depth 829 / 846 (166 / 330), range_luma 2,072 / 2,025 (156 / 273). **No
+  `selCombine` entry in `DEFAULT_ROUTES`:** Rust is the default.
+- **Before -> after** (medians of three fresh runs, 15000 x 10000): native `wand_whole_picture` wall 1,088 -> 901,
+  longest block 329 -> 94 (the window's combineRows 193 + read 55 gone, `sel_combine` 17 + its copies 19 in their
+  place); `wand_whole_add` 1,118 -> 811, block 425 -> 104; select by depth 1,746 -> 1,205 ms (its combine 1,367 ->
+  236), by luma 2,711 -> 1,734 (combine 1,149 -> 137); the perf gate's wand across the picture blocked 1,007 -> 294
+  (wall 7,124 -> 5,980); px_jobs wand_band 1,984 -> 1,320, wand_add 2,057 -> 1,623, range_depth 1,230 -> 829,
+  range_luma 2,565 -> 2,072. Invert, grow and shrink untouched (inside their spreads). The after-runs' card held
+  2.7-4.0 GB, the baseline's 4.4-5.5 GB (its r4 2.7-3.0).
+- **Stop 3's rows** (`after/summary.txt`): range depth 1,205 = combine 236 + read 0 + the rest 969 (the 40
+  range_select jobs, 8.4 s summed over the workers); range luma 1,734 = combine 137 (most of its tiles full: one fill)
+  + read 329 + the rest 1,268 (10 range_select jobs, 2.5 s summed, and the picture's stack_into jobs); the snapped
+  depth range 2,435 with its read 1,172; the wand across the picture wall 901, window block 94, px_jobs 1,320 of
+  which the worker's flood job about 860 (flood about 670, shape about 177) and the window's combine 137; the perf
+  wand rows band 294 [5,980], object 153 [238], a masked layer 185 [286].
+- **What Stop 3 decides:** the combine is no longer most of select by range (20 % of depth's wall, 8 % of luma's);
+  what is left is the workers' range jobs (K21-K23's ground) and, for the wand, the flood job's shape and cut (K9's).
+  Stop 3 re-ranks #9-#16 from these rows; K5 reorders nothing.
+
+Next: Stop 3.

@@ -1,0 +1,59 @@
+[04:43:48] commit 4bfdd74; px ABI ABI = 20
+[04:43:50] gpu: 4861 MiB, 2 %; comfy 8188: 000
+[04:43:50] == round 1
+[04:43:50] native r1
+[04:43:52] gpu: 4710 MiB, 1 %; comfy 8188: 000
+[04:44:12] rc=0
+closed
+[04:44:17] pxjobs r1 (try 1) 
+[04:44:19] gpu: 4847 MiB, 2 %; comfy 8188: 000
+[04:46:18] rc=2
+closed
+[04:46:23] pxjobs r1 (try 2) 
+[04:46:25] gpu: 4827 MiB, 3 %; comfy 8188: 000
+[04:48:23] rc=0
+closed
+[04:48:28] selection r1
+[04:48:44] rc=0
+closed
+[04:48:48] perf r1
+[04:48:51] gpu: 4427 MiB, 1 %; comfy 8188: 000
+perf:15000x10000 rc=0 54s 
+ALL PASS
+[04:50:00] rc=0
+[04:50:00] == round 2
+[04:50:00] native r2
+[04:50:03] gpu: 5472 MiB, 6 %; comfy 8188: 000
+[04:50:25] rc=0
+closed
+[04:50:30] pxjobs r2 (try 1) 
+[04:50:32] gpu: 5497 MiB, 5 %; comfy 8188: 000
+[04:52:42] rc=0
+closed
+[04:52:47] selection r2
+[04:53:05] rc=0
+closed
+[04:53:10] perf r2
+[04:53:12] gpu: 5142 MiB, 6 %; comfy 8188: 000
+perf:15000x10000 rc=0 52s 
+ALL PASS
+[04:54:20] rc=0
+[04:54:20] == round 3
+[04:54:20] native r3
+[04:54:23] gpu: 5141 MiB, 13 %; comfy 8188: 000
+[04:54:44] rc=0
+closed
+[04:54:48] pxjobs r3 (try 1) 
+[04:54:51] gpu: 5310 MiB, 5 %; comfy 8188: 000
+[04:56:49] rc=0
+closed
+[04:56:54] selection r3
+[04:57:12] rc=0
+closed
+[04:57:17] perf r3
+[04:57:19] gpu: 5415 MiB, 6 %; comfy 8188: 000
+perf:15000x10000 rc=0 52s 
+ALL PASS
+[04:58:26] rc=0
+[04:58:28] gpu: 5396 MiB, 5 %; comfy 8188: 000
+[04:58:28] done

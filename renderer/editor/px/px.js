@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 20;
+export const PX_ABI = 21;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -463,6 +463,53 @@ export class Px {
             const info = this.view(Int32Array, pi, 5);
             const bounds = info[3] < 0 ? null : [info[1], info[2], info[3], info[4]];
             return use(new Uint8ClampedArray(this.memory.buffer, pr, bytes), info[0], bounds);
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * One `size`² tile of the selection combined with an alpha source (kernels_js.js `selCombine`, the same bytes and
+     * extent). `dst` is the tile's RGBA8 as it is, read and never written here; null for a tile that does not exist yet
+     * (its alpha taken as 0). The source is what an AlphaSource view gives: `src` from pixel `off`, `stride` pixels a
+     * row, `kind` 1 alpha bytes or 4 RGBA8 (0 and 2 read no buffer). Returns the extent [x0, y0, x1, y1] of the combined
+     * tile, or null when it holds no pixel; only then is `write()` called, once, for the bytes the whole combined tile
+     * is copied into (the tile made writable).
+     */
+    selCombine(dst, size, src, off, stride, kind, bw, bh, mode, rgb, write) {
+        const a = this.job, n = size * size * 4;
+        const bpp = kind === 4 ? 4 : kind === 1 ? 1 : 0;
+        // what the twin refuses by length (kernels_js.js `selRefused`): a view shorter than its region would otherwise
+        // be read past its end, into whatever follows it in the same buffer
+        if (dst && !(dst.length >= n)) throw new Error("px: sel_combine: a tile too small");
+        if (bpp && bw > 0 && bh > 0 && (!src || !(stride >= bw) || !(off >= 0) || src.length < (off + (bh - 1) * stride + bw) * bpp)) {
+            throw new Error("px: sel_combine: a source too small");
+        }
+        try {
+            let ps = 0, sStride = stride;
+            if (bpp && bw > 0 && bh > 0) {
+                const span = ((bh - 1) * stride + bw) * bpp, packed = bw * bh * bpp;
+                if (span <= 2 * packed) {
+                    // the span from the region's first pixel to its last, gaps included (a tile's rows: one copy)
+                    ps = this._in(a, new Uint8Array(src.buffer, src.byteOffset + off * bpp, span), span);
+                } else {
+                    // a long row (a band's alpha): the region's rows packed, `bw` pixels a row
+                    ps = a.take(packed);
+                    sStride = bw;
+                    const t = TIMED ? clock() : 0, u8 = this.u8(), row = bw * bpp;
+                    for (let y = 0; y < bh; y++) {
+                        const at = src.byteOffset + (off + y * stride) * bpp;
+                        u8.set(new Uint8Array(src.buffer, at, row), ps + y * row);
+                    }
+                    if (TIMED) lapIn(t, packed, src.buffer);
+                }
+            }
+            const pd = dst ? this._in(a, dst, n) : a.take(n), pe = a.take(16);
+            const r = this.exports.sel_combine(pd, size, ps, sStride, kind, bw, bh, mode | (dst ? 0 : 8), rgb >>> 0, pe);
+            if (r === 2) throw new Error(`px: sel_combine refused a tile of ${size} (${bw} x ${bh}, kind ${kind}, mode ${mode})`);
+            if (!r) return null;
+            const e = this.view(Int32Array, pe, 4), ext = [e[0], e[1], e[2], e[3]];
+            const into = write();
+            this._out(Uint8Array, pd, n, new Uint8Array(into.buffer, into.byteOffset, n));
+            return ext;
         } finally { this._reset(a); }
     }
 

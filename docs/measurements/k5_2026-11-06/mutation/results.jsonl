@@ -1,0 +1,54 @@
+{"mutant": "R01 scalar mul255 without its correction", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 51]}}
+{"mutant": "R02 SIMD mul255 without its correction", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "R03 SIMD subtract without its clamp (equivalent: mul255(d, s) <= d)", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": null, "details": {"combine_test.js": [0, 2], "px_test.js": [0, 51], "gates": [0, 326, "selection rc=0 13s PASS | pixels rc=0 10s PASS | editor rc=0 167s PASS | pxjobs rc=0 120s PASS | ALL PASS"]}}
+{"mutant": "R04 SIMD subtract clamped at 1", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "R05 scalar subtract takes one more", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 53]}}
+{"mutant": "R06 SIMD first pixel from the lane group's start", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "R07 SIMD last pixel the group's end", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "R08 FRESH ignored", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "R09 a fresh tile's rest not zeroed", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "R10 rest_of_row's last pixel its first", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 52]}}
+{"mutant": "R11 rest_of_row's first pixel at `from`", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 52]}}
+{"mutant": "R12 SIMD RGBA alpha from the third byte", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "R13 scalar alpha source halved", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [3221226505, 2]}}
+{"mutant": "R14 scalar add is max", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 55]}}
+{"mutant": "R15 extent's x1 not exclusive", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "R16 SIMD colour's red and blue swapped", "file": "crates/px/src/sel.rs", "build": [0, 5], "killed_by": "combine_test.js", "details": {"combine_test.js": [3221226505, 2]}}
+{"mutant": "J01 twin table's mul255 without its correction", "file": "renderer/editor/px/kernels_js.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 0]}}
+{"mutant": "J02 twin words path drops the colour", "file": "renderer/editor/px/kernels_js.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 0]}}
+{"mutant": "J03 twin bytes path red and blue swapped", "file": "renderer/editor/px/kernels_js.js", "killed_by": null, "details": {"combine_test.js": [0, 2], "px_test.js": [0, 56], "gates": [0, 335, "selection rc=0 14s PASS | pixels rc=0 10s PASS | editor rc=0 171s PASS | pxjobs rc=0 124s PASS | ALL PASS"]}}
+{"mutant": "J04 twin rest of row's last its first", "file": "renderer/editor/px/kernels_js.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 47]}}
+{"mutant": "J05 twin extent's x1 not exclusive", "file": "renderer/editor/px/kernels_js.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 0]}}
+{"mutant": "J06 twin source length unchecked", "file": "renderer/editor/px/kernels_js.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 47]}}
+{"mutant": "J07 twin reads the source with no pixel to combine", "file": "renderer/editor/px/kernels_js.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 51]}}
+{"mutant": "J08 alphaAny above 128 only", "file": "renderer/editor/px/kernels_js.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 53]}}
+{"mutant": "J09 alphaAny full is nothing", "file": "renderer/editor/px/kernels_js.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 50]}}
+{"mutant": "J10 alphaAny reads RGBA's red", "file": "renderer/editor/px/kernels_js.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 52]}}
+{"mutant": "K01 the route read under another name", "file": "renderer/editor/px/kernels.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "K02 a missing tile made without alphaAny", "file": "renderer/editor/px/kernels.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 52]}}
+{"mutant": "P01 a missing tile not FRESH", "file": "renderer/editor/px/px.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "P02 packed rows keep the long stride", "file": "renderer/editor/px/px.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [3221226505, 2]}}
+{"mutant": "P03 packed rows all at the first row", "file": "renderer/editor/px/px.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [3221226505, 2]}}
+{"mutant": "P04 a short tile view unchecked", "file": "renderer/editor/px/px.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 49]}}
+{"mutant": "P05 a short source view unchecked", "file": "renderer/editor/px/px.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 51]}}
+{"mutant": "P06 write() called for an empty result", "file": "renderer/editor/px/px.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 3], "px_test.js": [1, 18]}}
+{"mutant": "P07 the extent's y1 read as x1", "file": "renderer/editor/px/px.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "V01 bytesSource view's offset without its rows", "file": "renderer/editor/inpaint_raster.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 0]}}
+{"mutant": "V02 bytesSource view across the source's edge", "file": "renderer/editor/inpaint_raster.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 0]}}
+{"mutant": "V03 tilesSource view across two source tiles", "file": "renderer/editor/inpaint_raster.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 1]}}
+{"mutant": "V04 tilesSource view's offset without its rows", "file": "renderer/editor/inpaint_raster.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "V05 tilesSource view at a fractional origin", "file": "renderer/editor/inpaint_raster.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 24]}}
+{"mutant": "V06 rectSource full when it starts inside", "file": "renderer/editor/inpaint_raster.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 1]}}
+{"mutant": "V07 tilesSource full tile covers nothing", "file": "renderer/editor/inpaint_raster.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 1]}}
+{"mutant": "V08 tilesSource RGBA tile read as alpha", "file": "renderer/editor/inpaint_raster.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 1]}}
+{"mutant": "C01 fill: a new edge tile's extent the whole tile", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 1]}}
+{"mutant": "C02 fill path under subtract too", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 1]}}
+{"mutant": "C03 kernel path's extent the whole tile", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 0]}}
+{"mutant": "C04 kernel path's extent never fresh", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "C05 fill path's extent never fresh", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "C06 the old tile not given to the kernel", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 0]}}
+{"mutant": "C07 combine's colour unclamped", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "C08 invert's colour unclamped", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "C09 an empty result's tile kept", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 2]}}
+{"mutant": "C10 fill: an edge tile filled beyond the image", "file": "renderer/editor/inpaint_tiles.js", "killed_by": "combine_test.js", "details": {"combine_test.js": [1, 1]}}
+{"mutant": "J03 twin bytes path red and blue swapped", "file": "renderer/editor/px/kernels_js.js", "killed_by": "px_test.js", "details": {"combine_test.js": [0, 2], "px_test.js": [1, 53]}}

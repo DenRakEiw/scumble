@@ -8,9 +8,10 @@
  * load when it is imported, in the window and in every worker.
  *
  * `setKernels("js")` forces the twins in this thread (the benchmark, tools/px_jobs.py). Routes narrow that per kernel
- * (docs/PLAN_WASM_K1.md §1.3): `flood` and `mips` choose between the Rust build and the twin (a flood by its size), and
- * `releaseMB` / `keepMB` say how much grown memory an instance may keep. A route only ever chooses between the same
- * bytes. The window's overrides ride every job message (`routeOverrides`) and a worker takes them (`adoptRoutes`).
+ * (docs/PLAN_WASM_K1.md §1.3): `flood`, `mips` and `selCombine` (the selection's combine, K5) choose between the Rust
+ * build and the twin (a flood by its size), and `releaseMB` / `keepMB` say how much grown memory an instance may keep.
+ * A route only ever chooses between the same bytes. The window's overrides ride every job message (`routeOverrides`)
+ * and a worker takes them (`adoptRoutes`).
  *
  * wasm memory never shrinks, so after a call that grew the instance past `releaseMB` (a flood over a whole 15k picture
  * takes about 0.8 GB) the instance is replaced by a fresh one of the same compiled module and the old memory is
@@ -26,7 +27,7 @@ import * as J from "./kernels_js.js";
 import { loadPx, Px, PxOutOfMemory, pxLaps } from "./px.js";
 import { resampleBlock as resampleBlockJS, resampleTable } from "../inpaint_resample.js";
 
-export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan } from "./kernels_js.js";
+export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA } from "./kernels_js.js";
 // this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4), their clocks and the copies
 // around them (docs/PLAN_WASM_K1.md §1.1); they survive a new instance
 export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
@@ -37,7 +38,7 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * The routes and the kind of value each takes. "kernel": "js" or "rust". "kernelSize": also a number of pixels, Rust
  * from that size on. "mb": a number of MB >= 0, or Infinity.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", releaseMB: "mb", keepMB: "mb" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -489,4 +490,27 @@ export function floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, 
         finally { releaseIfLarge(); }
     }
     return J.floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use);
+}
+
+/**
+ * One tile of the selection combined with an alpha source (inpaint_tiles.js `TileMaskPixels.combine`; kernels_js.js
+ * `selCombine` and its Rust twin px.js `selCombine`, routed by `selCombine`). `dst`: the tile's bytes as they are, or
+ * null when the tile does not exist (its alpha taken as 0). `write()` makes the tile writable and returns its bytes: it
+ * is called at most once, and only when the result may hold a pixel (the twins' route writes in place, so it calls it
+ * before the combine and may then answer null: the caller drops the tile). The source as an AlphaSource view gives it
+ * (`src` from pixel `off`, `stride` pixels a row, `kind` SEL_NONE / SEL_ALPHA / SEL_FULL / SEL_RGBA), `mode` 0 to 3
+ * (SEL_MODES), `rgb` 0xRRGGBB. Returns the combined tile's extent [x0, y0, x1, y1] or null when it holds no pixel.
+ */
+export function selCombine(dst, write, src, off, stride, kind, bw, bh, mode, rgb, size = 256) {
+    const p = rustPx("selCombine");
+    let wrote = false;
+    const once = () => { wrote = true; return write(); };
+    if (p) {
+        try { return p.selCombine(dst, size, src, off, stride, kind, bw, bh, mode, rgb, once); }
+        catch (err) { if (wrote || !recovered(p, err, "sel_combine")) throw err; }
+        finally { touched(); }
+    }
+    // a missing tile is made only when the source covers something it keeps: replace and add keep the source's alpha
+    if (!dst && (mode >= 2 || !J.alphaAny(src, off, stride, kind, bw, bh))) return null;
+    return J.selCombine(once(), size, src, off, stride, kind, bw, bh, mode, rgb);
 }

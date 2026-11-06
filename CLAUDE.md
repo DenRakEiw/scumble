@@ -231,7 +231,7 @@ code.
   nothing on the wand rows, and a second document's open does not pay the 0.4 s shader link, so G6 stays where the user
   put it). **D0 done 2026-11-06** (`docs/measurements/d0_2026-11-06/`: the PSD reader in the pool job `psd_read`, plain
   JS; a 15k PSD open blocks the window 1.8 s instead of 11.0 s in the same machine state (baseline 9.0 s), the block
-  left is the file's read into the window, `docs/BUGS.md`). **Next: K5.** **Beside it, all for 0.1.52 on `corridorkey` (2026-11-06):** LoRAs (item 50, LR0-LR2 done there,
+  left is the file's read into the window, `docs/BUGS.md`). **K5 done** (the selection's combine in Rust, ABI 21, Rust on every row, no route entry: select by depth 1,746 -> 1,205 ms, the wand's window block 329 -> 94 ms at 15k). **Next: Stop 3.** **Beside it, all for 0.1.52 on `corridorkey` (2026-11-06):** LoRAs (item 50, LR0-LR2 done there,
   LR3 running), GPT-Image-2.6 (item 51, branch `gpt26`), P-H3-Image (item 52, branch `ph3`). **And (2026-10-24): CorridorKey 2.0 planned** (item 49,
   `docs/PLAN_CORRIDORKEY.md`) on its own branch `corridorkey` off `main` (worktree `.claude/worktrees/corridorkey`),
   released as 0.1.52 on the user's word; next there: I0a (pack A's code check, findings to the user before any install).

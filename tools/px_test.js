@@ -2996,6 +2996,212 @@ async function resampleCases(px, label, R) {
     console.log(`       2048 x 2048 turned 3 degrees, bicubic: ${label} ${tr.toFixed(0)} ms (${(tr * 1e6 / 2048 / 2048).toFixed(1)} ns/px), twin ${tj.toFixed(0)} ms (${(tj * 1e6 / 2048 / 2048).toFixed(1)} ns/px)`);
 }
 
+// ---- K5: the selection's combine (docs/PLAN_WASM_BUILD.md §4.3) --------------------------------------------------------
+
+/**
+ * sel_combine (crates/px/src/sel.rs, px.js `selCombine`) on both builds against its twin (kernels_js.js `selCombine`),
+ * and the twin against the editor's own `combineRows` with a plain extent scan (what inpaint_tiles.js `tileExtent`
+ * computes): every mode x the source kinds 0 / 1 / 2 / 4 x the parts of a tile inside the image (256, 152, 16, 1, 255,
+ * 152 x 16, 0) x a tile that is new, empty, random or holds pixels only beyond that part; sources at an offset with a
+ * tile's stride and with a long row's (packed by px.js); refused arguments; `alphaAny`; the `selCombine` route of
+ * kernels.js (`K`, loaded by relightBench): the same bytes either way, Rust's calls counted, `write` called at most once.
+ */
+async function selCases(js, simd, scalar, raster, K) {
+    const S = 256, N = S * S * 4;
+    let seed = 0x5e1c0;
+    const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const byte = (zeros) => (rnd() < zeros ? 0 : 1 + Math.floor(rnd() * 255));
+    // the tile states: a new one (null), all transparent, random (a third of the pixels transparent, some of those with a
+    // colour left in them), and pixels only beyond the part combined (x >= bw or y >= bh)
+    const tileOf = (state, bw, bh) => {
+        if (state === "new") return null;
+        const t = new Uint8Array(N);
+        if (state === "zero") return t;
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+            const o = (y * S + x) * 4;
+            if (state === "beyond" && x < bw && y < bh) continue;
+            if (state === "beyond" && rnd() < 0.97) continue;
+            t[o] = byte(0); t[o + 1] = byte(0); t[o + 2] = byte(0); t[o + 3] = byte(0.33);
+        }
+        return t;
+    };
+    // a source region of bw x bh at `off` pixels with `stride` pixels a row (40 % zeros, some 255s); kinds 0 and 2: null
+    const sourceOf = (kind, bw, bh, off, stride) => {
+        if (kind === 0 || kind === 2) return null;
+        const bpp = kind === 4 ? 4 : 1, n = (off + Math.max(0, bh - 1) * stride + bw) * bpp + 7;
+        const s = new Uint8Array(n);
+        for (let i = 0; i < n; i++) s[i] = rnd() < 0.1 ? 255 : byte(0.4);
+        return s;
+    };
+    const parts = [[256, 256], [152, 256], [256, 16], [1, 1], [255, 255], [152, 16], [0, 256]];
+    const cases = [];
+    for (const mode of [0, 1, 2, 3]) for (const kind of [0, 1, 2, 4]) for (const [bw, bh] of parts) for (const state of ["new", "zero", "random", "beyond"]) {
+        const long = cases.length % 3 === 0;   // a band's alpha: rows of 700 pixels, px.js packs them
+        const stride = long ? 700 : (cases.length % 3 === 1 ? 256 : Math.max(1, bw));
+        const off = long ? 3 * 700 + 11 : (stride === 256 ? 256 * 5 + 7 : 0);
+        const rgb = cases.length % 2 ? 0xff0000 : (cases.length * 2654435761) >>> 8;
+        cases.push({ tag: `mode ${mode} kind ${kind} ${bw}x${bh} ${state} stride ${stride}`,
+            args: [tileOf(state, bw, bh), sourceOf(kind, bw, bh, off, stride), off, stride, kind, bw, bh, mode, rgb] });
+    }
+    // one call: { ext, bytes } with the bytes only for a tile that holds something (an empty one is dropped by the editor)
+    const call = (k, [dst, src, off, stride, kind, bw, bh, mode, rgb]) => {
+        if (typeof k.alloc === "function") {   // a Px: `dst` read, the result into what `write` gives
+            const out = new Uint8Array(N);
+            let writes = 0;
+            const ext = k.selCombine(dst, S, src, off, stride, kind, bw, bh, mode, rgb, () => { writes++; return out; });
+            if (writes !== (ext ? 1 : 0)) throw new Error(`write called ${writes} times for an extent ${JSON.stringify(ext)}`);
+            return { ext, bytes: ext ? out : null };
+        }
+        const t = dst ? new Uint8Array(dst) : new Uint8Array(N);   // the twin works in place, on a new tile's zeros
+        const ext = k.selCombine(t, S, src, off, stride, kind, bw, bh, mode, rgb);
+        return { ext, bytes: ext ? t : null };
+    };
+    // the reference: the editor's combineRows over the part, then the extent of the whole tile by a plain scan
+    const reference = {
+        selCombine(t, size, src, off, stride, kind, bw, bh, mode, rgb) {
+            const a = new Uint8Array(bw * bh), bpp = kind === 4 ? 4 : 1;
+            for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+                a[y * bw + x] = kind === 0 ? 0 : kind === 2 ? 255 : src[(off + y * stride + x) * bpp + (kind === 4 ? 3 : 0)];
+            }
+            raster.combineRows(t, 0, size * 4, a, 0, bw, bw, bh, raster.SEL_MODES[mode], [(rgb >>> 16) & 255, (rgb >>> 8) & 255, rgb & 255]);
+            let x0 = size, y0 = -1, x1 = -1, y1 = -1;
+            for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+                if (!t[(y * size + x) * 4 + 3]) continue;
+                if (y0 < 0) y0 = y;
+                y1 = y;
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+            }
+            return y0 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+        },
+    };
+    // the twin on a tile one byte off its word alignment: its bytes path (taken on big-endian too), copied back
+    const jsOdd = {
+        selCombine(t, ...rest) {
+            const v = new Uint8Array(t.length + 1).subarray(1);
+            v.set(t);
+            const ext = js.selCombine(v, ...rest);
+            t.set(v);
+            return ext;
+        },
+    };
+    twinCheck({ name: "sel_combine", title: "selCombine's twin equals combineRows and a plain extent scan", builds: [["js", js], ["js on an unaligned tile (its bytes path)", jsOdd]], twin: reference, call, cases, shift: false });
+    twinCheck({ name: "sel_combine", builds: [["rust simd", simd], ["rust scalar", scalar]], twin: js, call, cases, shift: [0, 1] });
+
+    // a new tile (mode + 8 in Rust) is a transparent one: the same bytes and extent
+    let same = true, detail = "";
+    for (const c of cases) {
+        const [dst, ...rest] = c.args;
+        if (dst !== null) continue;
+        for (const px of [simd, scalar]) {
+            const a = call(px, [null, ...rest]), b = call(px, [new Uint8Array(N), ...rest]);
+            if (JSON.stringify(a.ext) !== JSON.stringify(b.ext) || (a.bytes && !eqBytes(a.bytes, b.bytes))) { same = false; detail = c.tag; break; }
+        }
+        if (!same) break;
+    }
+    check("sel_combine on a new tile gives what it gives on a transparent one (both builds)", same, detail);
+
+    // refused arguments: the twin throws, px.js throws on sel_combine's REFUSED, neither writes
+    const refusals = [
+        ["mode 4", [new Uint8Array(N), null, 0, 0, 2, 4, 4, 4, 0]],
+        ["kind 3", [new Uint8Array(N), new Uint8Array(64), 0, 4, 3, 4, 4, 0, 0]],
+        ["a stride below bw", [new Uint8Array(N), new Uint8Array(4096), 0, 8, 1, 16, 4, 0, 0]],
+        ["a source too short", [new Uint8Array(N), new Uint8Array(100), 0, 256, 1, 16, 4, 0, 0]],
+        ["bw above the tile", [new Uint8Array(N), null, 0, 0, 2, 257, 4, 0, 0]],
+        // a view shorter than its region over a longer buffer: px.js must not read on past the view's end
+        ["a source view shorter than its region (a longer buffer)", [new Uint8Array(N), new Uint8Array(new ArrayBuffer(4096), 0, 100), 0, 256, 1, 16, 4, 0, 0]],
+        ["a tile view shorter than the tile (a longer buffer)", [new Uint8Array(new ArrayBuffer(N + 64), 0, N - 4), null, 0, 0, 2, 4, 4, 1, 0]],
+    ];
+    for (const [what, args] of refusals) {
+        let threw = 0;
+        for (const k of [js, simd, scalar]) { try { call(k, args); } catch { threw++; } }
+        check(`selCombine refuses ${what} on the twin and both builds`, threw === 3, `${threw} of 3 threw`);
+    }
+    // no pixel combined (bw or bh 0) with a source kind that has a buffer but none given: all three keep the tile and
+    // answer its extent
+    {
+        const t = tileOf("random", 0, 0), got = [];
+        for (const k of [js, simd, scalar]) {
+            for (const [bw, bh] of [[0, 4], [4, 0]]) {
+                try { got.push(JSON.stringify(call(k, [t, null, 0, 0, 1, bw, bh, 1, 0xff0000]).ext)); } catch (err) { got.push("threw " + err.message); }
+            }
+        }
+        check("selCombine with no pixel to combine and no source buffer answers the kept tile's extent on all three", got.every((g) => g === got[0] && !g.startsWith("threw")), got.join(" | "));
+    }
+
+    // alphaAny against a plain scan
+    let anyOk = true, anyDetail = "";
+    for (const c of cases) {
+        const [, src, off, stride, kind, bw, bh] = c.args;
+        let want = false;
+        if (bw > 0 && bh > 0) {
+            if (kind === 2) want = true;
+            else if (kind === 1 || kind === 4) {
+                const bpp = kind === 4 ? 4 : 1;
+                for (let y = 0; y < bh && !want; y++) for (let x = 0; x < bw; x++) if (src[(off + y * stride + x) * bpp + bpp - 1]) { want = true; break; }
+            }
+        }
+        if (js.alphaAny(src, off, stride, kind, bw, bh) !== want) { anyOk = false; anyDetail = c.tag; break; }
+    }
+    check(`alphaAny says whether a source region covers anything (${cases.length} cases)`, anyOk, anyDetail);
+
+    // the route of kernels.js: js and rust give the same, Rust's calls are counted, a twin's never
+    if (!K || !K.rustPx || !Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, "selCombine")) {
+        check("kernels.js has the selCombine route", false);
+        return;
+    }
+    K.setKernels("rust");
+    const routed = (r) => {
+        K.setRoute("selCombine", r);
+        K.pxCalls(true);
+        const out = [];
+        for (const c of cases) {
+            const [dst, src, off, stride, kind, bw, bh, mode, rgb] = c.args;
+            if (!dst && mode >= 2) continue;   // the editor skips a missing tile under subtract and intersect
+            const target = dst ? new Uint8Array(dst) : new Uint8Array(N);
+            let writes = 0;
+            const ext = K.selCombine(dst ? new Uint8Array(dst) : null, () => { writes++; return target; }, src, off, stride, kind, bw, bh, mode, rgb, S);
+            out.push({ ext, writes, bytes: ext ? target : null, fresh: !dst, covers: js.alphaAny(src, off, stride, kind, bw, bh) });
+        }
+        return { out, calls: K.pxCalls(true).sel_combine || 0 };
+    };
+    const viaJs = routed("js"), viaRust = routed("rust");
+    let routeOk = viaJs.out.length === viaRust.out.length, routeDetail = "";
+    for (let i = 0; routeOk && i < viaJs.out.length; i++) {
+        const a = viaJs.out[i], b = viaRust.out[i];
+        if (JSON.stringify(a.ext) !== JSON.stringify(b.ext) || (a.bytes && !eqBytes(a.bytes, b.bytes)) || a.writes > 1 || b.writes > 1 || b.writes !== (b.ext ? 1 : 0)) {
+            routeOk = false;
+            routeDetail = `case ${i}: js ${JSON.stringify(a.ext)} (${a.writes} writes), rust ${JSON.stringify(b.ext)} (${b.writes} writes)`;
+        }
+    }
+    check(`kernels.js selCombine gives the same on the routes js and rust, write at most once (${viaJs.out.length} tiles)`, routeOk, routeDetail);
+    // TileMaskPixels.combine's promise ("allocates for add only where the source is non-zero"): the twins' route makes a
+    // missing tile only when the source covers something (alphaAny), the Rust route only when the result holds a pixel
+    const lazy = viaJs.out.filter((o) => o.fresh && !o.covers);
+    check(`the selCombine route js makes no missing tile from a source that covers nothing (${lazy.length} such tiles)`,
+        lazy.length > 0 && lazy.every((o) => o.writes === 0), `${lazy.filter((o) => o.writes).length} written`);
+    check("the selCombine route rust calls sel_combine for every tile, js never",
+        viaJs.calls === 0 && viaRust.calls === viaRust.out.length, `js ${viaJs.calls}, rust ${viaRust.calls} of ${viaRust.out.length}`);
+    K.setRoute("selCombine", null);
+    K.setKernels("js");
+
+    if (process.env.PX_BENCH) {
+        // one tile, replace from RGBA (the wand's case) and add from alpha (the range's): the twin in place, Rust with
+        // its copies in and out; explains only (docs/PLAN_WASM_BUILD.md §1.1 rule 5)
+        const tile = tileOf("random", S, S), rgbaSrc = sourceOf(4, S, S, 0, S), alphaSrc = sourceOf(1, S, S, 0, S);
+        for (const [what, src, kind, mode] of [["replace from RGBA", rgbaSrc, 4, 0], ["add from alpha", alphaSrc, 1, 1]]) {
+            const t = new Uint8Array(N), out = new Uint8Array(N);
+            const rows = [
+                ["twin", () => { t.set(tile); js.selCombine(t, S, src, 0, S, kind, S, S, mode, 0xff0000); }],
+                ["simd", () => simd.selCombine(tile, S, src, 0, S, kind, S, S, mode, 0xff0000, () => out)],
+                ["scalar", () => scalar.selCombine(tile, S, src, 0, S, kind, S, S, mode, 0xff0000, () => out)],
+            ];
+            const med = benchMedians(rows, { rounds: 200 });
+            console.log(`       sel_combine one 256² tile, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(3)}`).join(", ")} ms (median of 200)`);
+        }
+    }
+}
+
 async function main() {
     const { BLENDS } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "blend_modes.js")).href);
     for (const b of BLENDS) if (b.op >= 5) BLEND_NAMES[b.op - 5] = b.id;
@@ -3036,6 +3242,7 @@ async function main() {
     await routeCases(js, simdPx, scalarPx, raster);
     await trapCases(js, simdPx, raster);
     await lifecycleCases(js);
+    await selCases(js, simdPx, scalarPx, raster, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href));
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));
