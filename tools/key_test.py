@@ -297,10 +297,11 @@ ok(L && rf && !rf.fallback && !rf.error && rf.guideDiff != null && rf.guideDiff 
 const e1 = errs(L);
 ok(e1.refined < 0.6 * e1.bilinear, "the refined mask follows the sharp edge closer than the bilinear matte", e1);
 ok(!/not refined/.test(ed.status), "the status says nothing of a fallback", ed.status);
-// the same bytes as keymatte.refineMatte run in the window from the same inputs and the same reader
+// the same bytes as keymatte.refineMatte run in the window from the same inputs and the same reader (up to the key
+// layer: the picture now holds the key itself, which the landing's reads came before)
 const KM = await import("./editor/keymatte.js");
 const s = stub.last, prep = stub.prepared.get(preps().pop().key);
-const rd = host.keyBandReader(ed, { layer: null, fill: null, upTo: null });
+const rd = host.keyBandReader(ed, { layer: null, fill: null, upTo: ed.layers.indexOf(L) });
 const want = await KM.refineMatte({
     alpha: s.alpha, aw: s.w, ah: s.h, small: { data: prep.image, width: s.w, height: s.h },
     src: { x: 0, y: 0, w: cw, h: ch }, full: { w: W, h: H }, out: { x: L.x, y: L.y, w: L.w, h: L.h },

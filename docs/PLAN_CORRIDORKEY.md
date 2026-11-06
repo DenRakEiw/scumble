@@ -1292,7 +1292,15 @@ B4 changes the ask card's words ("on your GPU") to the route's. Nothing contradi
 
 **Open for B1-B4:** the menu entry and `key_screen` are visible and answer the dormant state until B3 / B4; README,
 `docs/MCP.md` and the LoRA CHANGELOG line still say 117 tools (`key_screen` is the 118th): B4 sets the count with the
-command's Route B form. **The gates:** GATES_PLACEHOLDER
+command's Route B form. **The gates** (2026-11-06, `--offline`, port 9571, `dist/gates/gates/ckint-*`): on tiles `lint types key editor export
+layered pixels document relight loras recipes commands mcp assistant skins maskview edges selection` PASS but `key`,
+whose new `refine` step compared the landed mask with a reference read after the landing (the picture then held the Key
+layer itself): the reference now reads up to the key layer, and `key` PASS on both backends (`ckint-key-tiles`,
+`ckint-key-canvas`); on canvases `pixels export` PASS. Plain Node: `keying_test` (the refine's steps through
+`RowsClient` against `refineMatte`, bands of 24 rows), `keymatte_test`, `download_test` (72), `scan_test`, `loras_test`,
+`recipes_test`, `px_test`, `settings_migration_test` PASS; `node tools/depth_test.js` (the broken `depth` gate's stand-in,
+`docs/BUGS.md`) all ok. The app's refine ran one band in the gate (the boxes are under 16 MP); several bands are
+`keying_test`'s.
 
 ## 6. The user's answers, and the questions still open
 
