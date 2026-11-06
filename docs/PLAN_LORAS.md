@@ -1224,6 +1224,75 @@ without a warning, the chain between `30` and the edit LoRA `31`, which keeps it
    them, and `specProblems` checks both Cloud graphs beside the required-input check.
 5. **One picture**: the template's one `LoadImage`; more pictures need titled nodes (§3.6), a later update.
 
+### LR8 as built
+
+**The record only** (the user's yes, 2026-11-06): the folder was at v0.44.0 at the session's start, so §3.7's steps 1-2
+did not run; the update (02:55, `update.py --stable`, on the user's "ok, update" after the pins were shown) and the two
+downloads into `models/loras` (06:15) were the main session's, each on the user's word. Written down in
+`docs/measurements/lr8_2026-11-06/` (`summary.txt`, `pip_freeze_before.txt` copied from that session's scratchpad,
+`pip_freeze_after.txt` taken here, `requirements_diff.txt` = `git diff backup_branch_2026-11-06_02_55_11 v0.44.0 --
+requirements.txt`, `system_stats.json`): backup branch `backup_branch_2026-11-06_02_55_11` at v0.42.4; the pins
+comfyui-frontend-package 1.55.18 → 1.57.6, comfyui-workflow-templates 0.11.94 → 0.11.101 (its sub-packages -core
+0.3.385 → 0.3.392, -json 0.1.120 → 0.1.127, -media-assets-02 0.1.21 → 0.1.27), comfyui-embedded-docs 0.5.14 → 0.5.16,
+comfy-aimdo 0.5.6 → 0.6.0, comfy-kitchen 0.2.39 → 0.2.40, `Pillow>=10.1.0`; torch 2.10.0+cu130 unchanged; the freezes
+differ in exactly those eight packages. The server read at LR9's start: `/system_stats` 0.44.0 with every Comfy package
+at its required version, `/object_info` 5,904 classes holding `TextEncodeMOSSImageEdit`, `InpaintCanvas` (23 outputs,
+`box_prompt`, `elements` last), `LoraLoaderModelOnly`, `SAM3Segment`, `DLSS5Settings`, `RTXVideoSuperResolution`,
+`TextGenerate`, `TextGenerateV2`, `PH3ImageConditioning`, `SkipLayerGuidanceDiTSimple`; IMPORT FAILED `inpaint`, `dlss`,
+`comfyui-tosvg` (the same three as on 0.42.4 and 0.41.2); a `flux3_klein_local` run landed (LR9 A0). The downloads:
+`moss_image_edit_lora_rank_64_bf16.safetensors` 297,382,216 B, sha256 `17a48b8c…98dcdf` (Comfy-Org/MOSS-Image), and
+`qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors` 913,314,512 B, sha256 `208dd432…1e80e95` (Comfy-Org/
+Qwen-Image-2.1), both re-read on disk at those sizes and re-hashed to the same values. **Deviation:** the pack-by-pack
+import read of §3.7 step 3 was not repeated beyond the IMPORT FAILED list (the main session's probe start and LR9's
+start agree); Scumble's ComfyUI window was not opened.
+
+### LR9 as built (2026-11-06)
+
+**Run live** on the user's ComfyUI 0.44.0 (RTX 5090; the user's yes in chat; started 06:44 for the runs and stopped
+07:01, the queue empty before and after, 17 own prompts, the machine lock held throughout) from the worktree at
+`564c67f`, a connected dev instance on port 9571 driven over CDP; neutral crops of `docs/images/tutorial/scene-clean.jpg`
+(no person in them), seed 424242 per pair. Numbers, side-by-sides, the queued graphs and ComfyUI's LoRA lines in
+`docs/measurements/lr9_2026-11-06/` (`summary.txt`).
+- **Every family's LoRA visibly changed the picture**: `Flux_3\Flux3_Targa` on `flux3_klein_local` (45 levels mean;
+  the generic sports car became the LoRA's car; 9.9 s), `klein\Flux2-klein-9b-base_HerbstPhoto_v4_Texture` on
+  `flux2_klein_local` (77 levels: at 1.0 it redrew the edit as its own autumn scene; 45.9 s), Comfy-Org's Qwen Image 2.1
+  turbo LoRA on `qwen_image_edit_2_1_local` at 8 steps (5.6 levels: crisper brick and tree, the same edit; 5.2 s). No
+  MOSS style LoRA is on the machine, so `moss_image_local` took none. **The int8_convrot point holds**: the first and
+  the third ran on `flux3-image-klein-int8-convrot` and `qwen_image_2.1_int8_convrot`.
+- **The amber lines hold against ComfyUI's log**: a FLUX.1 LoRA (`flux\airbrush_ep_05_dora`) on FLUX.2 Klein: 768 "lora
+  key not loaded", 118 "ERROR lora ... shape ... is invalid" at sampling, the picture byte-identical; a 2509 LoRA
+  (`qwen\Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32`) on Qwen Image 2.1: 1,776 not loaded, 128 attached by name and
+  refused on shape, the picture visibly the same (1.9 levels mean, max 74; the recipe is deterministic, and the same
+  LoRA at 0.0 is byte-identical only because ComfyUI's loader skips a zero strength, so the 1.9's source is not shown).
+- **The rows**: a switched-off row not sent (four chained in order with their strengths, `scumble_lora_1..4`), five
+  rows run (53.6 s), a row given as `Flux_3/...` stored and sent as `Flux_3\...` and loaded, the via line and the
+  history entry "+ N LoRAs: ...", the exported PNG's `workflow.loras` read back with Pillow.
+- **MOSS-Image Edit**: one picture (the sky to a sunset, the rest kept) 32.4 s; two pictures (a reference layer as
+  "image 2"): a bare "Put the blue bag from @img1 on the ground ..." placed another, translucent bag and redrew the
+  colonnade, "Image 1 is the scene to edit. @img1 is a reference picture of ... Place that bag ... in image 1. Keep ...
+  of image 1 unchanged." placed the reference's own bag and kept the scene, as did "the first image" / "the second
+  image" without a token (31-32 s); **`refs.name` stays `image {n}`** and the description and the manual give the role
+  wording. The references stay at 1 MP (a 280 x 210 reference carried its weave and chain), so the Megapixels row keeps
+  its reach. Generate new (1024 x 1024) edited the white canvas into a full photograph, 28.7 s.
+- **P-H3-Image's empty-prompt refusal** (step 0, `564c67f`): the plain line live, nothing queued.
+
+**Found and fixed** (`e4b8a77`, small and clear, with its test): the turbo LoRA's row showed no hint, since its 1-D
+`attn.norm_q` / `norm_k` `.diff`s (128) were read as the blocks' width; a 1-D `.diff` is now no out-feature
+(`electron/main/loraheader.js` `reduceHeader`). Over the user's 1,204 LoRAs only that file's answer changed; after a
+restart the row read "looks like Qwen Image 2.1". `tools/loraheader_test.js` 56 of 56.
+
+**Not a defect, noted:** `flux3_klein_local`'s default text encoder `qwen3vl_4b_int8_convrot` is not on this machine
+(it has `qwen3vl_4b_bf16`): the run was refused with the file's link before anything went, and the runs took the bf16
+file through the Text encoder row. A strong style LoRA at 1.0 can take over an edit (B1): the strength is the user's.
+
+**Docs:** `docs/RECIPES.md` (a paragraph on the LoRA rows' live run, `moss_image_edit_local`'s entry: the names kept,
+the 1 MP references kept, the run's results), `recipes/moss_image_edit_local.json`'s description (the role wording,
+"run on ComfyUI 0.44" for "not run yet"; `tools/recipes_test.js` §15's description check follows), `docs/MANUAL.md`'s
+MOSS-Image Edit paragraph (the wording that worked, Generate new). **Deviations:** the rows ran as edits (Generate new
+for the MOSS edit only); C0b and C3 were added to tell the recipe's determinism and the zero strength apart; the Klein
+recipe's Prompt upsampler stayed on (its default) in both of its runs. **Not run:** the Original as image 2, three or
+four pictures, another Megapixels value on the MOSS edit, the Comfy Cloud MOSS variant (LR5).
+
 ## 5. How it fits into 0.1.52 beside CorridorKey
 
 - **One branch, one release.** Both plans build on `corridorkey` (cut from `main` = 0.1.51) and ship as 0.1.52 on the

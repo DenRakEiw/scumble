@@ -243,9 +243,13 @@ code.
   and LR7 (the Comfy Cloud variant `cloud_moss_image_edit`, written by `tools/cloud_recipes.js` from Comfy's
   `image_moss_image_edit` with `image_moss_image_t2i` as its Generate new route; no `loras` declaration, as
   `cloud_p_h3_image`; not run on Comfy Cloud, LR5 runs it) done 2026-11-06 ("LR0 as built" .. "LR7 as built" in the
-  plan's §4), next there: LR8 (the ComfyUI checks and the edit LoRA's download) and LR9 (the live runs), both with the
-  user present and only on the user's word; LR5 (Comfy Cloud) waits for the user's Comfy key; the user's ComfyUI is at
-  v0.44.0 since 2026-11-06.
+  plan's §4), and LR8 (the record of the ComfyUI update and the two LoRA downloads, `docs/measurements/lr8_2026-11-06/`)
+  and LR9 (the live runs on the user's word: every family's LoRA changed the picture, the amber lines held against
+  ComfyUI's "lora key not loaded" lines, five rows and a switched-off one, the PNG chunk read back; MOSS Image Edit with
+  one and two pictures and Generate new, `refs.name` kept as `image {n}` when the prompt names each picture's role; the
+  Qwen 2.1 turbo LoRA's missing hint fixed, `e4b8a77`; `docs/measurements/lr9_2026-11-06/`) done 2026-11-06 ("LR8 as
+  built", "LR9 as built"); next there: LR10 (the docs and the hand-over); LR5 (Comfy Cloud) waits for the user's Comfy
+  key; the user's ComfyUI is at v0.44.0 since 2026-11-06.
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
@@ -750,7 +754,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   (default high), the size-rule regex of `openai.js` fixed for 2.6, and the stale 2.5 bits (WaveSpeed's mask, fal and
   Replicate variants); built from docs on the branch `gpt26`, **merged into `corridorkey` 2026-11-06** (`c847c13`). Research in `docs/research/gpt_image_2_6_2026-11-06/` on that branch.
 - 52: **P-H3-Image** (PrunaAI's 8-step image fine-tune of MiniMax H3; the user, 2026-11-06): a local recipe on the LoRA
-  route of Comfy's template (the user's `minimax_h3_fl2va_pruned_int8_convrot` plus `p-h3-image_lora_bf16`, the P-H3
+  route of Comfy's template (an empty prompt refused since 2026-11-06, `promptRequired`, `564c67f`; the user's `minimax_h3_fl2va_pruned_int8_convrot` plus `p-h3-image_lora_bf16`, the P-H3
   text encoder, VAE and upsampler, **downloaded 2026-11-06 into the user's models folder, sha256 checked**, 16.9 GB), a
   WaveSpeed variant and a Comfy Cloud variant; built on the branch `ph3` (`docs/PLAN_PH3.md`), **merged into `corridorkey` 2026-11-06** (`72bccbb`); the live run on the user's word. **The MiniMax H3
   Community License excludes the EU, the UK, South Korea and the US** (no use or display of the model or its outputs

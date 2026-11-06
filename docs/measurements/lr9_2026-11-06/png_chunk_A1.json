@@ -1,0 +1,21 @@
+{
+ "keys": [
+  "workflow",
+  "inpaint_canvas"
+ ],
+ "workflow.recipe": "flux3_klein_local",
+ "workflow.loras": [
+  {
+   "name": "Flux_3\\Flux3_Targa.safetensors",
+   "strength": 1
+  }
+ ],
+ "inpaint_canvas": {
+  "prompt": "a silver Targa sports car parked in front of the white colonnade",
+  "negative": "",
+  "width": 860,
+  "height": 520,
+  "seed": 424242,
+  "mode": "local"
+ }
+}

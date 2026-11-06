@@ -1,0 +1,146 @@
+LR9 (docs/PLAN_LORAS.md §4): the live runs of the LoRA rows and of MOSS-Image Edit, 2026-11-06
+==============================================================================================
+
+Setup
+- The user's ComfyUI 0.44.0 (portable, started 06:44 as run_nvidia_gpu.bat does, stopped 07:01; the queue empty before
+  and after; 17 own prompts, none left queued, the history kept). RTX 5090, 32,607 MiB. The machine lock
+  (scratchpad machine_busy.lock) waited out (another session's K5 measurement, 06:37-06:43), held "LR9 live runs" for
+  the whole run, deleted at the end.
+- Scumble from the worktree .claude/worktrees/corridorkey (branch corridorkey at 564c67f, step 0 in), a dev instance
+  on port 9571 with its own profile, connected (tiles backend), Settings > Helpers at the user's
+  ComfyUI\models (the header reads). Driven over CDP through the command core (commands.run: select_recipe,
+  set_generation with seed 424242 and loras, set_settings, set_prompt with `text`, select_all / select_rect, generate,
+  export_layer, export, remove_layer after each run so no result fed the next crop).
+- Pictures, from the repo, no person in them: "arch" = docs/images/tutorial/scene-clean.jpg cropped to (0, 0, 860, 520)
+  (white colonnade, blue sky, a tree, the top of a blue car's headlight); "bag" = scene-clean.jpg (770, 835, 1050, 1045)
+  (a blue woven bag with a gold chain), the reference layer.
+- Seconds: "comfy" = ComfyUI's "Prompt executed in"; "app" = from the generate command to the layer. "mean" = the mean
+  absolute difference (0-255, RGB, every pixel of the exported result layer) against the run named. The prompt
+  upsampler of flux3_klein_local was on (its default) in both of its runs.
+
+Runs
+----
+run  recipe / rows                                                       comfy s  app s  against        mean   hint (status.loras)
+A0   flux3_klein_local, no rows                                          17.60    19.1   -              -      -
+A1   + Flux_3\Flux3_Targa 1.0                                            9.90     11.2   A0             45.1   "looks like FLUX 3", chip Targa
+B0   flux2_klein_local, no rows                                          47.86    49.1   -              -      -
+B1   + klein\Flux2-klein-9b-base_HerbstPhoto_v4_Texture 1.0              45.85    47.1   B0             77.3   "looks like FLUX.2 Klein 9B", chip HerbstPhoto
+B2   + flux\airbrush_ep_05_dora 1.0 (FLUX.1)                             49.86    51.1   B0             0.0    amber (below); byte-identical
+B3   five rows, row 2 (klein\idbuzz-flux-klein 0.5) switched off         47.28    48.5   B1             28.1   five grey "looks like FLUX.2 Klein 9B"
+B4   the same five rows, all on                                          53.57    54.8   B3             21.7
+C0   qwen_image_edit_2_1_local, Steps 8, no rows                         8.62     9.9    -              -      -
+C0b  the same again                                                      6.68     7.9    C0             0.0    (deterministic)
+C1   + qwen_image_2.1_turbo_lora_avg_rank_178_bf16 1.0                   5.15     5.8    C0             5.6    none at the run (a defect, fixed: below)
+C2   + qwen\Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32 1.0          4.81     5.6    C0             1.9    amber (below)
+C3   the 2509 LoRA at 0.0                                                3.50     4.2    C0             0.0
+E1   moss_image_edit_local, the crop alone                               32.37    33.7   the crop       23.8   -
+E2   + the bag as a reference layer, wording 1                           31.07    32.4
+E2b  wording 2                                                           31.77    33.0
+E2c  wording 3                                                           32.04    33.3
+E3   moss_image_edit_local, Generate new 1024 x 1024                     28.72    30.2
+F    p_h3_image_local, an empty prompt                                   -        -      refused, nothing queued
+
+Prompts: A "a silver Targa sports car parked in front of the white colonnade" on a rect (60, 260, 740, 260) (the crop
+860 x 512); B "an autumn photograph of the white colonnade, warm low sun", C "make the sky a warm sunset", both on the
+whole picture; E below.
+
+The LoRA rows
+-------------
+- Every family's LoRA changed the picture: A1 the generic Porsche-like sports car of A0 became the LoRA's car (a
+  911-shaped Targa; A_flux3_base_vs_targa.jpg); B1 the style LoRA at 1.0 took over the edit and redrew the crop as its
+  own autumn scene, a temple on a wooded hill (B_klein2_base_vs_herbst.jpg: a strong style LoRA wants a lower strength
+  on an edit; Scumble's part was right); C1 the turbo LoRA at 8 steps sharpened the brick texture and the tree and kept
+  the edit (C_qwen21_base8_vs_turbo8.jpg). ComfyUI attached the patches (Flux3 172, Flux2 112, QwenImage21 200) and
+  logged no unloaded key for any of them.
+- The int8_convrot point (the plan's unverified one): A1 ran on flux3-image-klein-int8-convrot and C1 on
+  qwen_image_2.1_int8_convrot; both LoRAs loaded and changed the picture. (The P-H3-Image LoRA on its int8 model ran
+  in the P-H3 live run.)
+- FLUX.1 on FLUX.2 Klein (B2): the amber line "This LoRA looks made for FLUX.1; this recipe runs FLUX.2 Klein. ComfyUI
+  loads it without an error and the picture may come back unchanged."; ComfyUI: 768 "lora key not loaded" lines
+  (lora_unet_double_blocks_0_img_mod_lin.alpha ...), then at sampling 118 "ERROR lora diffusion_model.double_blocks.0.
+  img_attn.qkv.weight shape '[12288, 4096]' is invalid for input of size 28311552" and the like; the run ended normally
+  and the picture is byte for byte B0's (B_klein2_base_vs_flux1.jpg). The hint holds against the log.
+- Qwen Image Edit 2509 on Qwen Image 2.1 (C2): the amber line "This LoRA looks made for Qwen Image (Edit 2509 / 2511);
+  this recipe runs Qwen Image 2.1. ComfyUI loads it without an error and the picture may come back unchanged."; 1,776
+  keys not loaded (transformer_blocks.0.attn.add_k_proj.alpha ...), 128 attached by name (to_q / to_k / to_v / to_out
+  of blocks 0-31) and each refused at sampling ("ERROR lora ... attn.to_q.weight shape '[4096, 4096]' is invalid for
+  input of size 9437184"). The picture is visibly the same (C_qwen21_base8_vs_2509.jpg) but not byte-identical: 1.9
+  levels mean, max 74, 2.8 % of the pixels equal. C0b shows the recipe is deterministic, and C3 (the same LoRA at 0.0)
+  is byte-identical, but ComfyUI's LoraLoaderModelOnly skips a 0 strength altogether (no patches attached, no lines),
+  so C3 does not tell whether the 1.9 comes from the attached-and-refused patches' path on the int8 weights or from a
+  part of the LoRA that did apply. Not chased further: the line says "may come back unchanged", and it did to the eye.
+- A switched-off row (B3): not sent; the queued graph chains scumble_lora_1..4 = HerbstPhoto 1.0, vw_caddy 0.3,
+  GT1_50j 0.3, Ferrari1 0.3 in the rows' order, the off row's file nowhere; loras_sent the same four; the via line
+  "Flux.2 Klein 4B / 9B (ComfyUI) via your ComfyUI + 4 LoRAs: Flux2-klein-9b-base_HerbstPhoto_v4_Texture 1.0,
+  vw_caddy_1500 0.3, GT1_50j_klein 0.3, Ferrari1_epoch_10 0.3, 47 s". Five rows (B4): scumble_lora_1..5, "+ 5 LoRAs:
+  ...", 53.6 s; no out-of-memory with five LoRAs on the 9B base model.
+- A name with a backslash: A1's row was given as "Flux_3/Flux3_Targa.safetensors" (set_generation), stored and sent as
+  "Flux_3\Flux3_Targa.safetensors" (the server's spelling), and ComfyUI loaded it; every subfolder row went with "\".
+- The via line (A1): the status "Result 2 added (860 x 512 at 0, 8) · FLUX 3 Image Klein (ComfyUI) via your ComfyUI +
+  1 LoRA: Flux3_Targa 1.0, 10 s", the history entry's via "FLUX 3 Image Klein (ComfyUI) via your ComfyUI + 1 LoRA:
+  Flux3_Targa 1.0, 10 s", the note "LoRAs: Flux3_Targa 1.0.". The exported PNG (export with metadata, the whole
+  document) read back with Pillow: tEXt keys workflow and inpaint_canvas; workflow.loras
+  [{ "name": "Flux_3\\Flux3_Targa.safetensors", "strength": 1 }] (png_chunk_A1.json).
+- No MOSS style LoRA is on the machine (the one MOSS-family file is the edit LoRA of moss_image_edit_local), so
+  moss_image_local took no row.
+- The recipe's default text encoder qwen3vl_4b_int8_convrot is not on this machine (it has qwen3vl_4b_bf16 and
+  f3_qwen3vl_4b): the first A0 try was refused before anything went, with "Your ComfyUI lacks a model file this recipe
+  needs: Text encoder · clip_name: qwen3vl_4b_int8_convrot.safetensors (<BFL's link>) ..."; the runs then took
+  qwen3vl_4b_bf16 through the Text encoder row. As designed, no defect.
+
+The defect found and fixed (e4b8a77)
+------------------------------------
+C1's row showed no hint: Comfy-Org's Qwen Image 2.1 turbo LoRA (the plan's §6 Q4 file) carries 1-D `.diff` tensors of
+attn.norm_q / attn.norm_k at the head's width 128, and electron/main/loraheader.js reduceHeader took them as the
+transformer blocks' smallest out-features: width 128, so no family fit. A `.diff` of a 1-D tensor (a norm's scale) is
+now left out of width and outs. Over all 1,204 LoRAs on the user's machine only that file's answer changed (none ->
+"looks like Qwen Image 2.1"); after a restart of the dev instance its row read "looks like Qwen Image 2.1" in grey and
+the 2509 row beside it stayed amber (G_loras_section_crop.png). tools/loraheader_test.js gained a fixture in the turbo
+LoRA's naming (56 of 56).
+
+MOSS-Image Edit (moss_image_edit_local: moss_image_sft_bf16, the edit LoRA at 1, qwen3.5_9b_int8_convrot,
+flux2-vae_small, 30 steps, CFG 4, SLG layer 22)
+------------------------------------------------------------------------------------------------------------
+- E1, one picture (the whole arch crop): "Change only the sky to a warm orange sunset. Keep the building, the tree, the
+  car and the composition unchanged." The sky turned an orange sunset; the colonnade, the tree and the car stayed
+  (23.8 levels mean over the crop with the sky, 13.3 in its lower 40 %; E1_crop_vs_answer.jpg). 32.4 s, the session's
+  first MOSS run (FLUX 3 Klein, FLUX.2 Klein and Qwen had run before; ComfyUI 0.44 staged the MOSS model for dynamic loading).
+- E2, two pictures: the bag as a reference layer, Fill none, Original off, a rect (40, 300, 600, 220) (the crop
+  745 x 512 at 0, 8). The queued encoders got images.image_0 = the crop (scale0) and images.image_1 = the bag (scale1),
+  both through ImageScaleToTotalPixels at 1 MP (lanczos, steps of 16: the 280 x 210 bag up to about 1 MP, the crop to
+  1 MP, which is the output's size through GetImageSize); the trimmed slots image_2 / image_3 absent. @img1 went as
+  "image 2". Three wordings, the same seed (E2_wordings.jpg: the crop, then wordings 1-3 over it):
+    1 "Put the blue bag from @img1 on the ground in front of the white colonnade. Keep the building, the tree, the car
+      and the composition unchanged." -> a different, translucent blue tote, and the colonnade inside the selection
+      redrawn (the node's ring difference 59.9 before its align);
+    2 "Image 1 is the scene to edit. @img1 is a reference picture of a blue woven bag with a gold chain. Place that bag
+      on the ground in front of the white colonnade in image 1. Keep the building, the tree, the car and the
+      composition of image 1 unchanged." -> the reference's own woven bag with its gold chain on the ground, the scene
+      kept (ring 25.5);
+    3 "Edit the first image: place the blue woven bag with the gold chain shown in the second image on the ground in
+      front of the white colonnade. Keep everything else of the first image unchanged." (no token) -> the same bag,
+      smaller, the scene kept (ring 24.3).
+  Decided (the plan's §7 point, not asked): refs.name stays "image {n}"; the model follows the name when the prompt
+  says what each picture is, as the model card advises, and the recipe's description and the manual now give that
+  wording. A second picture cost nothing measurable (31-32 s against 32.4 s).
+- The references' size against the output's (the Megapixels row's reach): the row sets scale0 (the picture being edited
+  and so the output); the reference scalers stay at the file's 1 MP. At the default 1 MP both are the same area, and a
+  280 x 210 reference scaled up to 1 MP carried its weave and chain into the answer: kept as built. Not run: another
+  Megapixels value, the Original as image 2, three or four pictures.
+- E3, Generate new 1024 x 1024, "a lighthouse on a rocky coast at dawn, photograph": the white canvas went as the
+  picture to edit and came back a full photograph of a lighthouse at dawn on dark rocks, no white left (E3_generate_
+  new.jpg); 28.7 s.
+
+P-H3-Image's empty-prompt refusal (step 0, 564c67f), live
+---------------------------------------------------------
+p_h3_image_local selected, the prompt empty, Generate: "P-H3-Image needs a prompt: say what to change, or what to make
+on Generate new." in the status line as a plain line (statusKind ""; F_ph3_refusal_statusline.png); /queue held
+nothing before and after.
+
+Files: summary.txt; the side-by-sides (left the run named under "against", right the run): A_flux3_base_vs_targa.jpg,
+B_klein2_base_vs_herbst.jpg, B_klein2_base_vs_flux1.jpg, B_klein2_four_vs_five.jpg, C_qwen21_base8_vs_turbo8.jpg,
+C_qwen21_base8_vs_2509.jpg (the result layers' RGB; their transparent parts show black), E1_crop_vs_answer.jpg,
+E2_wordings.jpg, E3_generate_new.jpg; G_loras_section_crop.png (the LoRAs section after the fix);
+F_ph3_refusal_statusline.png; png_chunk_A1.json (the exported PNG's chunks read back); comfy_log_loras.txt (per prompt:
+the seconds, the "lora key not loaded" and "ERROR lora" counts with samples, the patches attached); queued_graphs.json
+(every queued graph as /history holds it, the canvas state left out, with each run's LoRA nodes and seconds).

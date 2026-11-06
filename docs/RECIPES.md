@@ -155,6 +155,26 @@ and the API Generate new; Generate new without a prompt is refused for every rec
 `true` and drops any other value (with a warning when it is not `false`); Save to recipe keeps it (`GRAPH_KEEPS`),
 the Cloud copy carries it, `tools/cloud_recipes.js` writes it from a MANIFEST row's `promptRequired`.
 
+**LoRA rows on your ComfyUI, run live 2026-11-06** (item 50, `docs/PLAN_LORAS.md` LR9; the `loras` field and the splice
+are written up here at LR10; the user's ComfyUI 0.44.0, RTX 5090, one seed per pair, the numbers and pictures in
+`docs/measurements/lr9_2026-11-06/`). Every family's LoRA changed the picture, and every mismatched one left it alone:
+`Flux_3\Flux3_Targa` on `flux3_klein_local` (its int8_convrot model; given with `/`, sent in the server's `\`
+spelling) turned the generic sports car into the LoRA's car (45 levels mean difference), "looks like FLUX 3" with the
+chip "Targa", 9.9 s; `klein\Flux2-klein-9b-base_HerbstPhoto_v4_Texture` on `flux2_klein_local` (base 9B) "looks like
+FLUX.2 Klein 9B" and at 1.0 redrew the edit into its own autumn scene (77 levels: a strong style LoRA wants a lower
+strength on an edit), 45.9 s; Comfy-Org's `qwen_image_2.1_turbo_lora_avg_rank_178_bf16` on `qwen_image_edit_2_1_local`
+(the int8_convrot model, 8 steps) sharpened the brick and the tree and kept the edit (5.6 levels), 5.2 s. The mismatches:
+a FLUX.1 LoRA (`fluxirbrush_ep_05_dora`) on FLUX.2 Klein showed the amber line, ComfyUI printed 768 "lora key not
+loaded" lines and 118 "ERROR lora ... shape ... is invalid" at sampling, and the picture came back byte for byte the
+same; a Qwen Image Edit 2509 LoRA (`qwen\Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32`) on Qwen Image 2.1 showed the
+amber line, 1,776 keys not loaded, 128 attached by name and refused on shape, and the picture visibly the same (1.9
+levels mean; the same LoRA at 0.0, which ComfyUI's loader skips, is byte-identical, so where the 1.9 comes from is not
+shown). A switched-off row was not sent (four of five rows chained, `scumble_lora_1..4` in order with their strengths),
+five rows ran (53.6 s), the via line named them ("+ 5 LoRAs: ..."), and the exported PNG's `workflow` chunk carried
+`"loras": [{ "name": "Flux_3\\Flux3_Targa.safetensors", "strength": 1 }]` (JSON). Found and fixed: the turbo LoRA read no
+base model (its 1-D `norm_q` / `norm_k` diffs of 128 were taken as the width), now "looks like Qwen Image 2.1". No MOSS
+style LoRA is on the machine, so `moss_image_local` took none.
+
 ### The shipped ComfyUI recipes
 
 - `flux2_klein_local`, **Flux.2 Klein 4B / 9B**: reads up to **4 pictures** of the crop batch, `refs: { "name":
@@ -246,21 +266,34 @@ the Cloud copy carries it, `tools/cloud_recipes.js` writes it from a MANIFEST ro
   encoders must use the LoRA's layout; a Settings row writes one input, so the format is no row). `refs: { "name":
   "image {n}", "slots": 4 }`: the node sorts its present `images.image_k` and numbers them by rank (`comfyrefs.js`
   `TextEncodeMOSSImageEdit`, `byRank`); in the Moss-Image-Edit format no "Picture N" marker enters the text, so the
-  name is a plain phrase until LR9's two-reference run settles what the model follows (§7 of the plan); `trimSlots`
+  name is a plain phrase, **kept as "image {n}" by LR9's run** (below): the model follows it when the prompt says what
+  each picture is; `trimSlots`
   leaves out the slots a run does not fill on both encoders, never `image_0` (the autogrow input's one required slot).
   No mask input: the stitch keeps the selection. The LoRA rows (`loras: { "model": "lora", "family": "moss_image" }`)
   chain after the recipe's edit LoRA, before the SLG patch; without the declaration the rule would find the
   `UNETLoader` (the edit LoRA itself reads a MODEL). Settings rows: Model, Text encoder, VAE, **Edit LoRA**
   (`lora.lora_name`: a file combo, so a server without the 297 MB file refuses the run with the `models.loras` link,
   Comfy-Org's rehost), LoRA strength, Steps, CFG, **Megapixels** (`scale0.megapixels`: the picture being edited alone;
-  the three reference scalers stay at the file's 1 MP, LR9 judges whether they should follow). Sampler, scheduler, the
+  the three reference scalers stay at the file's 1 MP, which LR9 kept: a 280 x 210 reference scaled to 1 MP carried its
+  weave and chain into the answer). Sampler, scheduler, the
   SLG window and the format stay the template's values in the file. An edit LoRA trained with ai-toolkit (its
   `ai-toolkit` or `ai-toolkit (kv_cache off)` layout) takes a user's own copy: *Edit in ComfyUI*, both encoders'
   `edit_format` and the LoRA changed, *Save as new recipe* (the plan's §6 Q1). No `boxes` (an edit is untrained on a
   layout), no `newImage` (the encoders need `image_0`: Generate new edits the white canvas; `moss_image_local` makes new
   pictures). The node specs are checked by `tools/recipes_test.js` §15 against the fixtures' node list, where LR6 wrote
-  `TextEncodeMOSSImageEdit` and `SkipLayerGuidanceDiTSimple` from ComfyUI 0.44.0's V3 schemas on disk. **Not run yet**
-  (the edit LoRA is not on the user's machine; LR8 downloads it, LR9 runs it). The edit LoRA is chinoll's
+  `TextEncodeMOSSImageEdit` and `SkipLayerGuidanceDiTSimple` from ComfyUI 0.44.0's V3 schemas on disk. **Run live
+  2026-11-06** (LR9; the user's ComfyUI 0.44.0, RTX 5090, `moss_image_sft_bf16` with the edit LoRA, the int8 encoder;
+  `docs/measurements/lr9_2026-11-06/`): an edit of the whole 860 x 520 crop, "Change only the sky to a warm orange
+  sunset. Keep the building, the tree, the car and the composition unchanged.", turned the sky orange and kept the rest,
+  32.4 s (ComfyUI's own time, the session's first MOSS run; the later ones 28.7-32.0 s); with one reference layer (a bag,
+  Original off, `prompt_sent` "image 2"): a bare "Put the blue bag from @img1 on the ground ..." placed a different,
+  translucent bag and redrew the colonnade in the selection, while "Image 1 is the scene to edit. @img1 is a reference
+  picture of a blue woven bag with a gold chain. Place that bag on the ground in front of the white colonnade in image
+  1. Keep ... of image 1 unchanged." placed the reference's own bag and kept the scene, as did the same in "the first
+  image" / "the second image" without a token (31-32 s each, the second picture costs nothing measurable); so
+  `refs.name` stays "image {n}" and the description says to name each picture's role. Generate new (1024 x 1024, "a
+  lighthouse on a rocky coast at dawn, photograph") edited the white canvas into a full photograph, nothing white left,
+  28.7 s. Not run: the Original as image 2, three or four pictures, another Megapixels value. The edit LoRA is chinoll's
   Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no
   licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0. The same template on Comfy Cloud
   is `cloud_moss_image_edit` (one picture; "Comfy Cloud recipes" below).

@@ -1,0 +1,27 @@
+prompt 1: executed 17.60 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached []
+prompt 2: executed 9.90 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('Flux3', '172')]
+prompt 3: executed 47.86 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached []
+prompt 4: executed 45.85 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('Flux2', '112')]
+prompt 5: executed 49.86 s; lora key not loaded 768; ERROR lora (shape) 118; patches attached [('Flux2', '112')]
+  lora key not loaded: lora_unet_double_blocks_0_img_mod_lin.alpha
+  lora key not loaded: lora_unet_double_blocks_0_img_mod_lin.dora_scale
+  lora key not loaded: lora_unet_double_blocks_0_img_mod_lin.lora_down.weight
+  ERROR lora diffusion_model.double_blocks.0.img_attn.qkv.weight shape '[12288, 4096]' is invalid for input of size 28311552
+  ERROR lora diffusion_model.double_blocks.0.txt_attn.qkv.weight shape '[12288, 4096]' is invalid for input of size 28311552
+prompt 6: executed 47.28 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('Flux2', '112')]
+prompt 7: executed 53.57 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('Flux2', '112')]
+prompt 8: executed 8.62 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached []
+prompt 9: executed 5.15 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('QwenImage21', '200')]
+prompt 10: executed 4.81 s; lora key not loaded 1776; ERROR lora (shape) 128; patches attached [('QwenImage21', '128')]
+  lora key not loaded: transformer_blocks.0.attn.add_k_proj.alpha
+  lora key not loaded: transformer_blocks.0.attn.add_q_proj.alpha
+  lora key not loaded: transformer_blocks.0.attn.add_v_proj.alpha
+  ERROR lora diffusion_model.transformer_blocks.0.attn.to_q.weight shape '[4096, 4096]' is invalid for input of size 9437184
+  ERROR lora diffusion_model.transformer_blocks.0.attn.to_k.weight shape '[4096, 4096]' is invalid for input of size 9437184
+prompt 11: executed 32.37 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('MOSSImage', '168')]
+prompt 12: executed 31.07 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('MOSSImage', '168')]
+prompt 13: executed 31.77 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('MOSSImage', '168')]
+prompt 14: executed 32.04 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('MOSSImage', '168')]
+prompt 15: executed 28.72 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached [('MOSSImage', '168')]
+prompt 16: executed 6.68 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached []
+prompt 17: executed 3.50 s; lora key not loaded 0; ERROR lora (shape) 0; patches attached []

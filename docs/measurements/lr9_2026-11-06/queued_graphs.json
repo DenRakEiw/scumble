@@ -1,0 +1,5327 @@
+[
+ {
+  "number": 0,
+  "prompt_id": "ab87f296-c42c-47a6-8817-667869711702",
+  "recipe": "flux3_klein_local",
+  "status": "success",
+  "exec_s": 17.6,
+  "lora_nodes": [],
+  "workflow_loras": null,
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "flux3-image-klein-int8-convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3vl_4b_bf16.safetensors",
+     "type": "flux3",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "sched": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "scheduler": "simple",
+     "steps": 16,
+     "denoise": 1
+    }
+   },
+   "say_in": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+     "string_a": "In <ref_image_0>,",
+     "string_b": [
+      "canvas",
+      7
+     ],
+     "delimiter": " "
+    }
+   },
+   "say_keep": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+     "string_a": [
+      "say_in",
+      0
+     ],
+     "string_b": "Keep everything else unchanged.",
+     "delimiter": " "
+    }
+   },
+   "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": [
+      "up_run",
+      0
+     ]
+    }
+   },
+   "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": ""
+    }
+   },
+   "enc0": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale0",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc1": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale1",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc2": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale2",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc3": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale3",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "ref_pos0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "pos",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_neg0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "neg",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_pos1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos0",
+      0
+     ]
+    }
+   },
+   "ref_neg1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg0",
+      0
+     ]
+    }
+   },
+   "ref_pos2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos1",
+      0
+     ]
+    }
+   },
+   "ref_neg2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg1",
+      0
+     ]
+    }
+   },
+   "ref_pos3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos2",
+      0
+     ]
+    }
+   },
+   "ref_neg3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg2",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "CFGGuider",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "positive": [
+      "ref_pos3",
+      0
+     ],
+     "negative": [
+      "ref_neg3",
+      0
+     ],
+     "cfg": 1
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sched",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "up_clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors",
+     "type": "flux3",
+     "device": "default"
+    }
+   },
+   "up_pics": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1.0,
+     "resolution_steps": 32
+    }
+   },
+   "up_run": {
+    "class_type": "TextGenerate",
+    "inputs": {
+     "clip": [
+      "up_clip",
+      0
+     ],
+     "image": [
+      "up_pics",
+      0
+     ],
+     "prompt": "Reference images follow in order (the first image, the second image, ...).\nUser request: a silver Targa sports car parked in front of the white colonnade\nOutput the caption.",
+     "system_prompt": "You are the prompt upsampler of an image-editing model. You see the reference image(s), attached in order (the first image, the second image, ...), and the user's short request. Expand it into ONE detailed, self-contained instruction: the caption the editing model receives together with the same images. Output only the instruction as one continuous English prose block, with no greetings, explanations, Markdown, JSON, coordinates, ids or angle-bracket tokens. Read a vague or conversational request as the most plausible edit of the supplied images.\n\nPick the voice by task shape. When one reference stays and gets bounded changes, write an imperative editing instruction on it (\"Remove the ...\", \"Change the ... to ...\", \"Zoom in on ...\"); a whole-image transformation opens with its scope (\"Convert the entire image into ...\", \"Apply a ... filter over the entire scene\", \"Horizontally flip the entire image so that ...\", \"Shift the camera viewpoint to ...\", then where the major elements should now be). When the references are drawn into a newly composed frame (combining subjects, a new scene, a garment, object or style donor), write a generation request (\"Create a photograph of ...\", \"Create an anime-style illustration of ...\", \"Generate a new image featuring ...\") that says what to take from each image, by ordinal, and what is newly generated.\n\nKeep every explicit edit, constraint, count, position, style cue and piece of wording, and decide what is left open as one concrete plan. Ground everything in what is actually visible: identify each referent unambiguously by its real appearance, never mention content that is not there, and use every image the user attached. State every end state concretely (which color, how large, which pose, which material) and give new content enough appearance to be generated. Cover the knock-on effects of the change (shadows, reflections, occlusion, perspective, scale, lighting) and say what fills a removed region. A zoom-in names what stays in frame and which neighbors are cropped out; an outpainting continues the scene in the same medium. Describe the change, not the whole scene, and close an editing instruction with one compact clause naming what stays unchanged; transferred people keep their identity, face and accessories unless asked otherwise. Transcribe on-image text verbatim in its original language inside double quotes, with line breaks as \\n, and match the original font, size and color when replacing it. Name recognizable public figures, brands and landmarks you can see. Directions are frame-relative; use no evaluative or quality words. Typical length is 50 to 150 words.\n\nOutput only the instruction.",
+     "max_length": 3584,
+     "sampling_mode": "on",
+     "sampling_mode.temperature": 1.0,
+     "sampling_mode.top_k": 1,
+     "sampling_mode.top_p": 0.95,
+     "sampling_mode.min_p": 0.0,
+     "sampling_mode.repetition_penalty": 1.0,
+     "sampling_mode.seed": 0,
+     "sampling_mode.presence_penalty": 0.0,
+     "thinking": false,
+     "use_default_template": true,
+     "mtp": "off"
+    }
+   },
+   "up_show": {
+    "class_type": "PreviewAny",
+    "inputs": {
+     "source": [
+      "up_run",
+      0
+     ]
+    }
+   }
+  }
+ },
+ {
+  "number": 1,
+  "prompt_id": "864e50f5-2fc6-41ad-b346-64e3d7cc7ddb",
+  "recipe": "flux3_klein_local",
+  "status": "success",
+  "exec_s": 9.89,
+  "lora_nodes": [
+   [
+    "scumble_lora_1",
+    "Flux_3\\Flux3_Targa.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": [
+   {
+    "name": "Flux_3\\Flux3_Targa.safetensors",
+    "strength": 1
+   }
+  ],
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "flux3-image-klein-int8-convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3vl_4b_bf16.safetensors",
+     "type": "flux3",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "sched": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+     "model": [
+      "scumble_lora_1",
+      0
+     ],
+     "scheduler": "simple",
+     "steps": 16,
+     "denoise": 1
+    }
+   },
+   "say_in": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+     "string_a": "In <ref_image_0>,",
+     "string_b": [
+      "canvas",
+      7
+     ],
+     "delimiter": " "
+    }
+   },
+   "say_keep": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+     "string_a": [
+      "say_in",
+      0
+     ],
+     "string_b": "Keep everything else unchanged.",
+     "delimiter": " "
+    }
+   },
+   "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": [
+      "up_run",
+      0
+     ]
+    }
+   },
+   "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": ""
+    }
+   },
+   "enc0": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale0",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc1": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale1",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc2": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale2",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc3": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale3",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "ref_pos0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "pos",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_neg0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "neg",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_pos1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos0",
+      0
+     ]
+    }
+   },
+   "ref_neg1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg0",
+      0
+     ]
+    }
+   },
+   "ref_pos2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos1",
+      0
+     ]
+    }
+   },
+   "ref_neg2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg1",
+      0
+     ]
+    }
+   },
+   "ref_pos3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos2",
+      0
+     ]
+    }
+   },
+   "ref_neg3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg2",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "CFGGuider",
+    "inputs": {
+     "model": [
+      "scumble_lora_1",
+      0
+     ],
+     "positive": [
+      "ref_pos3",
+      0
+     ],
+     "negative": [
+      "ref_neg3",
+      0
+     ],
+     "cfg": 1
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sched",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "up_clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors",
+     "type": "flux3",
+     "device": "default"
+    }
+   },
+   "up_pics": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1.0,
+     "resolution_steps": 32
+    }
+   },
+   "up_run": {
+    "class_type": "TextGenerate",
+    "inputs": {
+     "clip": [
+      "up_clip",
+      0
+     ],
+     "image": [
+      "up_pics",
+      0
+     ],
+     "prompt": "Reference images follow in order (the first image, the second image, ...).\nUser request: a silver Targa sports car parked in front of the white colonnade\nOutput the caption.",
+     "system_prompt": "You are the prompt upsampler of an image-editing model. You see the reference image(s), attached in order (the first image, the second image, ...), and the user's short request. Expand it into ONE detailed, self-contained instruction: the caption the editing model receives together with the same images. Output only the instruction as one continuous English prose block, with no greetings, explanations, Markdown, JSON, coordinates, ids or angle-bracket tokens. Read a vague or conversational request as the most plausible edit of the supplied images.\n\nPick the voice by task shape. When one reference stays and gets bounded changes, write an imperative editing instruction on it (\"Remove the ...\", \"Change the ... to ...\", \"Zoom in on ...\"); a whole-image transformation opens with its scope (\"Convert the entire image into ...\", \"Apply a ... filter over the entire scene\", \"Horizontally flip the entire image so that ...\", \"Shift the camera viewpoint to ...\", then where the major elements should now be). When the references are drawn into a newly composed frame (combining subjects, a new scene, a garment, object or style donor), write a generation request (\"Create a photograph of ...\", \"Create an anime-style illustration of ...\", \"Generate a new image featuring ...\") that says what to take from each image, by ordinal, and what is newly generated.\n\nKeep every explicit edit, constraint, count, position, style cue and piece of wording, and decide what is left open as one concrete plan. Ground everything in what is actually visible: identify each referent unambiguously by its real appearance, never mention content that is not there, and use every image the user attached. State every end state concretely (which color, how large, which pose, which material) and give new content enough appearance to be generated. Cover the knock-on effects of the change (shadows, reflections, occlusion, perspective, scale, lighting) and say what fills a removed region. A zoom-in names what stays in frame and which neighbors are cropped out; an outpainting continues the scene in the same medium. Describe the change, not the whole scene, and close an editing instruction with one compact clause naming what stays unchanged; transferred people keep their identity, face and accessories unless asked otherwise. Transcribe on-image text verbatim in its original language inside double quotes, with line breaks as \\n, and match the original font, size and color when replacing it. Name recognizable public figures, brands and landmarks you can see. Directions are frame-relative; use no evaluative or quality words. Typical length is 50 to 150 words.\n\nOutput only the instruction.",
+     "max_length": 3584,
+     "sampling_mode": "on",
+     "sampling_mode.temperature": 1.0,
+     "sampling_mode.top_k": 1,
+     "sampling_mode.top_p": 0.95,
+     "sampling_mode.min_p": 0.0,
+     "sampling_mode.repetition_penalty": 1.0,
+     "sampling_mode.seed": 0,
+     "sampling_mode.presence_penalty": 0.0,
+     "thinking": false,
+     "use_default_template": true,
+     "mtp": "off"
+    }
+   },
+   "up_show": {
+    "class_type": "PreviewAny",
+    "inputs": {
+     "source": [
+      "up_run",
+      0
+     ]
+    }
+   },
+   "scumble_lora_1": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "Flux_3\\Flux3_Targa.safetensors",
+     "strength_model": 1
+    }
+   }
+  }
+ },
+ {
+  "number": 2,
+  "prompt_id": "b032098b-4267-4fba-a23b-353889ed73a7",
+  "recipe": "flux2_klein_local",
+  "status": "success",
+  "exec_s": 47.86,
+  "lora_nodes": [],
+  "workflow_loras": null,
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "flux-2-klein-base-9b.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3_8b.safetensors",
+     "type": "flux2",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "sigmas": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+     "steps": 20,
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ]
+    }
+   },
+   "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": [
+      "canvas",
+      7
+     ]
+    }
+   },
+   "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": ""
+    }
+   },
+   "enc0": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale0",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc1": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale1",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc2": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale2",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc3": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale3",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "ref_pos0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "pos",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_neg0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "neg",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_pos1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos0",
+      0
+     ]
+    }
+   },
+   "ref_neg1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg0",
+      0
+     ]
+    }
+   },
+   "ref_pos2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos1",
+      0
+     ]
+    }
+   },
+   "ref_neg2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg1",
+      0
+     ]
+    }
+   },
+   "ref_pos3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos2",
+      0
+     ]
+    }
+   },
+   "ref_neg3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg2",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "CFGGuider",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "positive": [
+      "ref_pos3",
+      0
+     ],
+     "negative": [
+      "ref_neg3",
+      0
+     ],
+     "cfg": 5
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   }
+  }
+ },
+ {
+  "number": 3,
+  "prompt_id": "c0b0f5a4-edc5-4496-849f-ecd0e65b403c",
+  "recipe": "flux2_klein_local",
+  "status": "success",
+  "exec_s": 45.85,
+  "lora_nodes": [
+   [
+    "scumble_lora_1",
+    "klein\\Flux2-klein-9b-base_HerbstPhoto_v4_Texture.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": [
+   {
+    "name": "klein\\Flux2-klein-9b-base_HerbstPhoto_v4_Texture.safetensors",
+    "strength": 1
+   }
+  ],
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "flux-2-klein-base-9b.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3_8b.safetensors",
+     "type": "flux2",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "sigmas": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+     "steps": 20,
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ]
+    }
+   },
+   "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": [
+      "canvas",
+      7
+     ]
+    }
+   },
+   "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": ""
+    }
+   },
+   "enc0": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale0",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc1": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale1",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc2": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale2",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc3": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale3",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "ref_pos0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "pos",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_neg0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "neg",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_pos1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos0",
+      0
+     ]
+    }
+   },
+   "ref_neg1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg0",
+      0
+     ]
+    }
+   },
+   "ref_pos2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos1",
+      0
+     ]
+    }
+   },
+   "ref_neg2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg1",
+      0
+     ]
+    }
+   },
+   "ref_pos3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos2",
+      0
+     ]
+    }
+   },
+   "ref_neg3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg2",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "CFGGuider",
+    "inputs": {
+     "model": [
+      "scumble_lora_1",
+      0
+     ],
+     "positive": [
+      "ref_pos3",
+      0
+     ],
+     "negative": [
+      "ref_neg3",
+      0
+     ],
+     "cfg": 5
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "scumble_lora_1": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "klein\\Flux2-klein-9b-base_HerbstPhoto_v4_Texture.safetensors",
+     "strength_model": 1
+    }
+   }
+  }
+ },
+ {
+  "number": 4,
+  "prompt_id": "a8002538-40fa-47d4-b470-e69c68ef626c",
+  "recipe": "flux2_klein_local",
+  "status": "success",
+  "exec_s": 49.86,
+  "lora_nodes": [
+   [
+    "scumble_lora_1",
+    "flux\\airbrush_ep_05_dora.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": [
+   {
+    "name": "flux\\airbrush_ep_05_dora.safetensors",
+    "strength": 1
+   }
+  ],
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "flux-2-klein-base-9b.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3_8b.safetensors",
+     "type": "flux2",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "sigmas": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+     "steps": 20,
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ]
+    }
+   },
+   "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": [
+      "canvas",
+      7
+     ]
+    }
+   },
+   "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": ""
+    }
+   },
+   "enc0": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale0",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc1": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale1",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc2": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale2",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc3": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale3",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "ref_pos0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "pos",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_neg0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "neg",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_pos1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos0",
+      0
+     ]
+    }
+   },
+   "ref_neg1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg0",
+      0
+     ]
+    }
+   },
+   "ref_pos2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos1",
+      0
+     ]
+    }
+   },
+   "ref_neg2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg1",
+      0
+     ]
+    }
+   },
+   "ref_pos3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos2",
+      0
+     ]
+    }
+   },
+   "ref_neg3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg2",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "CFGGuider",
+    "inputs": {
+     "model": [
+      "scumble_lora_1",
+      0
+     ],
+     "positive": [
+      "ref_pos3",
+      0
+     ],
+     "negative": [
+      "ref_neg3",
+      0
+     ],
+     "cfg": 5
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "scumble_lora_1": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "flux\\airbrush_ep_05_dora.safetensors",
+     "strength_model": 1
+    }
+   }
+  }
+ },
+ {
+  "number": 5,
+  "prompt_id": "bc049ce0-8ef7-4b27-b02e-60c2e555fcd7",
+  "recipe": "flux2_klein_local",
+  "status": "success",
+  "exec_s": 47.28,
+  "lora_nodes": [
+   [
+    "scumble_lora_1",
+    "klein\\Flux2-klein-9b-base_HerbstPhoto_v4_Texture.safetensors",
+    1
+   ],
+   [
+    "scumble_lora_2",
+    "klein\\vw_caddy_1500.safetensors",
+    0.3
+   ],
+   [
+    "scumble_lora_3",
+    "klein\\GT1_50j_klein.safetensors",
+    0.3
+   ],
+   [
+    "scumble_lora_4",
+    "klein\\Ferrari1_epoch_10.safetensors",
+    0.3
+   ]
+  ],
+  "workflow_loras": [
+   {
+    "name": "klein\\Flux2-klein-9b-base_HerbstPhoto_v4_Texture.safetensors",
+    "strength": 1
+   },
+   {
+    "name": "klein\\vw_caddy_1500.safetensors",
+    "strength": 0.3
+   },
+   {
+    "name": "klein\\GT1_50j_klein.safetensors",
+    "strength": 0.3
+   },
+   {
+    "name": "klein\\Ferrari1_epoch_10.safetensors",
+    "strength": 0.3
+   }
+  ],
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "flux-2-klein-base-9b.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3_8b.safetensors",
+     "type": "flux2",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "sigmas": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+     "steps": 20,
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ]
+    }
+   },
+   "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": [
+      "canvas",
+      7
+     ]
+    }
+   },
+   "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": ""
+    }
+   },
+   "enc0": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale0",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc1": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale1",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc2": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale2",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc3": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale3",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "ref_pos0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "pos",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_neg0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "neg",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_pos1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos0",
+      0
+     ]
+    }
+   },
+   "ref_neg1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg0",
+      0
+     ]
+    }
+   },
+   "ref_pos2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos1",
+      0
+     ]
+    }
+   },
+   "ref_neg2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg1",
+      0
+     ]
+    }
+   },
+   "ref_pos3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos2",
+      0
+     ]
+    }
+   },
+   "ref_neg3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg2",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "CFGGuider",
+    "inputs": {
+     "model": [
+      "scumble_lora_4",
+      0
+     ],
+     "positive": [
+      "ref_pos3",
+      0
+     ],
+     "negative": [
+      "ref_neg3",
+      0
+     ],
+     "cfg": 5
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "scumble_lora_1": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "klein\\Flux2-klein-9b-base_HerbstPhoto_v4_Texture.safetensors",
+     "strength_model": 1
+    }
+   },
+   "scumble_lora_2": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "scumble_lora_1",
+      0
+     ],
+     "lora_name": "klein\\vw_caddy_1500.safetensors",
+     "strength_model": 0.3
+    }
+   },
+   "scumble_lora_3": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "scumble_lora_2",
+      0
+     ],
+     "lora_name": "klein\\GT1_50j_klein.safetensors",
+     "strength_model": 0.3
+    }
+   },
+   "scumble_lora_4": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "scumble_lora_3",
+      0
+     ],
+     "lora_name": "klein\\Ferrari1_epoch_10.safetensors",
+     "strength_model": 0.3
+    }
+   }
+  }
+ },
+ {
+  "number": 6,
+  "prompt_id": "1b9c0ce8-cbcc-42f1-a254-46968868a651",
+  "recipe": "flux2_klein_local",
+  "status": "success",
+  "exec_s": 53.56,
+  "lora_nodes": [
+   [
+    "scumble_lora_1",
+    "klein\\Flux2-klein-9b-base_HerbstPhoto_v4_Texture.safetensors",
+    1
+   ],
+   [
+    "scumble_lora_2",
+    "klein\\idbuzz-flux-klein.safetensors",
+    0.5
+   ],
+   [
+    "scumble_lora_3",
+    "klein\\vw_caddy_1500.safetensors",
+    0.3
+   ],
+   [
+    "scumble_lora_4",
+    "klein\\GT1_50j_klein.safetensors",
+    0.3
+   ],
+   [
+    "scumble_lora_5",
+    "klein\\Ferrari1_epoch_10.safetensors",
+    0.3
+   ]
+  ],
+  "workflow_loras": [
+   {
+    "name": "klein\\Flux2-klein-9b-base_HerbstPhoto_v4_Texture.safetensors",
+    "strength": 1
+   },
+   {
+    "name": "klein\\idbuzz-flux-klein.safetensors",
+    "strength": 0.5
+   },
+   {
+    "name": "klein\\vw_caddy_1500.safetensors",
+    "strength": 0.3
+   },
+   {
+    "name": "klein\\GT1_50j_klein.safetensors",
+    "strength": 0.3
+   },
+   {
+    "name": "klein\\Ferrari1_epoch_10.safetensors",
+    "strength": 0.3
+   }
+  ],
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "flux-2-klein-base-9b.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3_8b.safetensors",
+     "type": "flux2",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae.safetensors"
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 1
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "sigmas": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+     "steps": 20,
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ]
+    }
+   },
+   "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": [
+      "canvas",
+      7
+     ]
+    }
+   },
+   "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "text": ""
+    }
+   },
+   "enc0": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale0",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc1": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale1",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc2": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale2",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "enc3": {
+    "class_type": "VAEEncode",
+    "inputs": {
+     "pixels": [
+      "scale3",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "ref_pos0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "pos",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_neg0": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "neg",
+      0
+     ],
+     "latent": [
+      "enc0",
+      0
+     ]
+    }
+   },
+   "ref_pos1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos0",
+      0
+     ]
+    }
+   },
+   "ref_neg1": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg0",
+      0
+     ]
+    }
+   },
+   "ref_pos2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos1",
+      0
+     ]
+    }
+   },
+   "ref_neg2": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg1",
+      0
+     ]
+    }
+   },
+   "ref_pos3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_pos2",
+      0
+     ]
+    }
+   },
+   "ref_neg3": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+     "conditioning": [
+      "ref_neg2",
+      0
+     ]
+    }
+   },
+   "guider": {
+    "class_type": "CFGGuider",
+    "inputs": {
+     "model": [
+      "scumble_lora_5",
+      0
+     ],
+     "positive": [
+      "ref_pos3",
+      0
+     ],
+     "negative": [
+      "ref_neg3",
+      0
+     ],
+     "cfg": 5
+    }
+   },
+   "noise": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": [
+      "canvas",
+      10
+     ]
+    }
+   },
+   "sampler": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    }
+   },
+   "run": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "noise",
+      0
+     ],
+     "guider": [
+      "guider",
+      0
+     ],
+     "sampler": [
+      "sampler",
+      0
+     ],
+     "sigmas": [
+      "sigmas",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ]
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "scumble_lora_1": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "klein\\Flux2-klein-9b-base_HerbstPhoto_v4_Texture.safetensors",
+     "strength_model": 1
+    }
+   },
+   "scumble_lora_2": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "scumble_lora_1",
+      0
+     ],
+     "lora_name": "klein\\idbuzz-flux-klein.safetensors",
+     "strength_model": 0.5
+    }
+   },
+   "scumble_lora_3": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "scumble_lora_2",
+      0
+     ],
+     "lora_name": "klein\\vw_caddy_1500.safetensors",
+     "strength_model": 0.3
+    }
+   },
+   "scumble_lora_4": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "scumble_lora_3",
+      0
+     ],
+     "lora_name": "klein\\GT1_50j_klein.safetensors",
+     "strength_model": 0.3
+    }
+   },
+   "scumble_lora_5": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "scumble_lora_4",
+      0
+     ],
+     "lora_name": "klein\\Ferrari1_epoch_10.safetensors",
+     "strength_model": 0.3
+    }
+   }
+  }
+ },
+ {
+  "number": 7,
+  "prompt_id": "5ad7a4f7-169b-42a7-9a7b-0c502410d2c9",
+  "recipe": "qwen_image_edit_2_1_local",
+  "status": "success",
+  "exec_s": 8.62,
+  "lora_nodes": [],
+  "workflow_loras": null,
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "img8": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 8,
+     "length": 1
+    }
+   },
+   "img9": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 9,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "qwen_image_2.1_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+     "type": "qwen_image",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+   },
+   "cache": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "device": "auto",
+     "dtype": "default"
+    }
+   },
+   "encode": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "negative_prompt": [
+      "canvas",
+      12
+     ],
+     "resolution": 0,
+     "images.image_1": [
+      "img0",
+      0
+     ]
+    }
+   },
+   "run": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "cache",
+      0
+     ],
+     "positive": [
+      "encode",
+      0
+     ],
+     "negative": [
+      "encode",
+      1
+     ],
+     "latent_image": [
+      "encode",
+      2
+     ],
+     "seed": [
+      "canvas",
+      10
+     ],
+     "steps": 8,
+     "cfg": 1,
+     "sampler_name": "euler",
+     "scheduler": "simple",
+     "denoise": 1
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   }
+  }
+ },
+ {
+  "number": 8,
+  "prompt_id": "d239c33d-144c-4b72-b0af-52d159526cda",
+  "recipe": "qwen_image_edit_2_1_local",
+  "status": "success",
+  "exec_s": 5.15,
+  "lora_nodes": [
+   [
+    "scumble_lora_1",
+    "qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": [
+   {
+    "name": "qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",
+    "strength": 1
+   }
+  ],
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "img8": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 8,
+     "length": 1
+    }
+   },
+   "img9": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 9,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "qwen_image_2.1_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+     "type": "qwen_image",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+   },
+   "cache": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+     "model": [
+      "scumble_lora_1",
+      0
+     ],
+     "device": "auto",
+     "dtype": "default"
+    }
+   },
+   "encode": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "negative_prompt": [
+      "canvas",
+      12
+     ],
+     "resolution": 0,
+     "images.image_1": [
+      "img0",
+      0
+     ]
+    }
+   },
+   "run": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "cache",
+      0
+     ],
+     "positive": [
+      "encode",
+      0
+     ],
+     "negative": [
+      "encode",
+      1
+     ],
+     "latent_image": [
+      "encode",
+      2
+     ],
+     "seed": [
+      "canvas",
+      10
+     ],
+     "steps": 8,
+     "cfg": 1,
+     "sampler_name": "euler",
+     "scheduler": "simple",
+     "denoise": 1
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "scumble_lora_1": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",
+     "strength_model": 1
+    }
+   }
+  }
+ },
+ {
+  "number": 9,
+  "prompt_id": "72686428-fe9e-4258-9da5-27f41dd5565e",
+  "recipe": "qwen_image_edit_2_1_local",
+  "status": "success",
+  "exec_s": 4.79,
+  "lora_nodes": [
+   [
+    "scumble_lora_1",
+    "qwen\\Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": [
+   {
+    "name": "qwen\\Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32.safetensors",
+    "strength": 1
+   }
+  ],
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "img4": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 4,
+     "length": 1
+    }
+   },
+   "img5": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 5,
+     "length": 1
+    }
+   },
+   "img6": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 6,
+     "length": 1
+    }
+   },
+   "img7": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 7,
+     "length": 1
+    }
+   },
+   "img8": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 8,
+     "length": 1
+    }
+   },
+   "img9": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 9,
+     "length": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "qwen_image_2.1_int8_convrot.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+     "type": "qwen_image",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+   },
+   "cache": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+     "model": [
+      "scumble_lora_1",
+      0
+     ],
+     "device": "auto",
+     "dtype": "default"
+    }
+   },
+   "encode": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "negative_prompt": [
+      "canvas",
+      12
+     ],
+     "resolution": 0,
+     "images.image_1": [
+      "img0",
+      0
+     ]
+    }
+   },
+   "run": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "cache",
+      0
+     ],
+     "positive": [
+      "encode",
+      0
+     ],
+     "negative": [
+      "encode",
+      1
+     ],
+     "latent_image": [
+      "encode",
+      2
+     ],
+     "seed": [
+      "canvas",
+      10
+     ],
+     "steps": 8,
+     "cfg": 1,
+     "sampler_name": "euler",
+     "scheduler": "simple",
+     "denoise": 1
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "run",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   },
+   "scumble_lora_1": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "qwen\\Qwen-Image-Edit-2509-Lightning-8steps-V1.0-fp32.safetensors",
+     "strength_model": 1
+    }
+   }
+  }
+ },
+ {
+  "number": 10,
+  "prompt_id": "3ead0f59-5f23-4614-b6ff-67cefc51850d",
+  "recipe": "moss_image_edit_local",
+  "status": "success",
+  "exec_s": 32.37,
+  "lora_nodes": [
+   [
+    "lora",
+    "moss_image_edit_lora_rank_64_bf16.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": null,
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "moss_image_sft_bf16.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "moss_image_edit_lora_rank_64_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "slg": {
+    "class_type": "SkipLayerGuidanceDiTSimple",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "double_layers": "",
+     "single_layers": "22",
+     "start_percent": 0,
+     "end_percent": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
+     "type": "moss_image",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae_small.safetensors"
+    }
+   },
+   "pos": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "neg": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      12
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "ks": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "slg",
+      0
+     ],
+     "seed": [
+      "canvas",
+      10
+     ],
+     "steps": 30,
+     "cfg": 4,
+     "sampler_name": "euler",
+     "scheduler": "normal",
+     "positive": [
+      "pos",
+      0
+     ],
+     "negative": [
+      "neg",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ],
+     "denoise": 1
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "ks",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   }
+  }
+ },
+ {
+  "number": 11,
+  "prompt_id": "6b18568b-cc4c-4d54-b593-8503d73d68ef",
+  "recipe": "moss_image_edit_local",
+  "status": "success",
+  "exec_s": 31.07,
+  "lora_nodes": [
+   [
+    "lora",
+    "moss_image_edit_lora_rank_64_bf16.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": null,
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "moss_image_sft_bf16.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "moss_image_edit_lora_rank_64_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "slg": {
+    "class_type": "SkipLayerGuidanceDiTSimple",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "double_layers": "",
+     "single_layers": "22",
+     "start_percent": 0,
+     "end_percent": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
+     "type": "moss_image",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae_small.safetensors"
+    }
+   },
+   "pos": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "images.image_1": [
+      "scale1",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "neg": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      12
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "images.image_1": [
+      "scale1",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "ks": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "slg",
+      0
+     ],
+     "seed": [
+      "canvas",
+      10
+     ],
+     "steps": 30,
+     "cfg": 4,
+     "sampler_name": "euler",
+     "scheduler": "normal",
+     "positive": [
+      "pos",
+      0
+     ],
+     "negative": [
+      "neg",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ],
+     "denoise": 1
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "ks",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   }
+  }
+ },
+ {
+  "number": 12,
+  "prompt_id": "981ad255-a987-4c0b-b52c-6a8ddc02f6df",
+  "recipe": "moss_image_edit_local",
+  "status": "success",
+  "exec_s": 31.76,
+  "lora_nodes": [
+   [
+    "lora",
+    "moss_image_edit_lora_rank_64_bf16.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": null,
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "moss_image_sft_bf16.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "moss_image_edit_lora_rank_64_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "slg": {
+    "class_type": "SkipLayerGuidanceDiTSimple",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "double_layers": "",
+     "single_layers": "22",
+     "start_percent": 0,
+     "end_percent": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
+     "type": "moss_image",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae_small.safetensors"
+    }
+   },
+   "pos": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "images.image_1": [
+      "scale1",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "neg": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      12
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "images.image_1": [
+      "scale1",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "ks": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "slg",
+      0
+     ],
+     "seed": [
+      "canvas",
+      10
+     ],
+     "steps": 30,
+     "cfg": 4,
+     "sampler_name": "euler",
+     "scheduler": "normal",
+     "positive": [
+      "pos",
+      0
+     ],
+     "negative": [
+      "neg",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ],
+     "denoise": 1
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "ks",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   }
+  }
+ },
+ {
+  "number": 13,
+  "prompt_id": "d7f270ba-a3b2-4172-87c2-25aa7651275d",
+  "recipe": "moss_image_edit_local",
+  "status": "success",
+  "exec_s": 32.04,
+  "lora_nodes": [
+   [
+    "lora",
+    "moss_image_edit_lora_rank_64_bf16.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": null,
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "moss_image_sft_bf16.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "moss_image_edit_lora_rank_64_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "slg": {
+    "class_type": "SkipLayerGuidanceDiTSimple",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "double_layers": "",
+     "single_layers": "22",
+     "start_percent": 0,
+     "end_percent": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
+     "type": "moss_image",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae_small.safetensors"
+    }
+   },
+   "pos": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "images.image_1": [
+      "scale1",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "neg": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      12
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "images.image_1": [
+      "scale1",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "ks": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "slg",
+      0
+     ],
+     "seed": [
+      "canvas",
+      10
+     ],
+     "steps": 30,
+     "cfg": 4,
+     "sampler_name": "euler",
+     "scheduler": "normal",
+     "positive": [
+      "pos",
+      0
+     ],
+     "negative": [
+      "neg",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ],
+     "denoise": 1
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "ks",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   }
+  }
+ },
+ {
+  "number": 14,
+  "prompt_id": "15047fbb-c7c4-4917-b474-03aae5623d03",
+  "recipe": "moss_image_edit_local",
+  "status": "success",
+  "exec_s": 28.72,
+  "lora_nodes": [
+   [
+    "lora",
+    "moss_image_edit_lora_rank_64_bf16.safetensors",
+    1
+   ]
+  ],
+  "workflow_loras": null,
+  "graph": {
+   "canvas": {
+    "class_type": "InpaintCanvas",
+    "inputs": {
+     "padding": 64,
+     "target_size": 1024,
+     "feather": 16,
+     "multiple_of": 64,
+     "result_source_local": "decode:0"
+    }
+   },
+   "img0": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 0,
+     "length": 1
+    }
+   },
+   "img1": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 1,
+     "length": 1
+    }
+   },
+   "img2": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 2,
+     "length": 1
+    }
+   },
+   "img3": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+     "image": [
+      "canvas",
+      0
+     ],
+     "batch_index": 3,
+     "length": 1
+    }
+   },
+   "scale0": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img0",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale1": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img1",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale2": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img2",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "scale3": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+     "image": [
+      "img3",
+      0
+     ],
+     "upscale_method": "lanczos",
+     "megapixels": 1,
+     "resolution_steps": 16
+    }
+   },
+   "size": {
+    "class_type": "GetImageSize",
+    "inputs": {
+     "image": [
+      "scale0",
+      0
+     ]
+    }
+   },
+   "latent": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": [
+      "size",
+      0
+     ],
+     "height": [
+      "size",
+      1
+     ],
+     "batch_size": 1
+    }
+   },
+   "unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "moss_image_sft_bf16.safetensors",
+     "weight_dtype": "default"
+    }
+   },
+   "lora": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "unet",
+      0
+     ],
+     "lora_name": "moss_image_edit_lora_rank_64_bf16.safetensors",
+     "strength_model": 1
+    }
+   },
+   "slg": {
+    "class_type": "SkipLayerGuidanceDiTSimple",
+    "inputs": {
+     "model": [
+      "lora",
+      0
+     ],
+     "double_layers": "",
+     "single_layers": "22",
+     "start_percent": 0,
+     "end_percent": 1
+    }
+   },
+   "clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
+     "type": "moss_image",
+     "device": "default"
+    }
+   },
+   "vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae_small.safetensors"
+    }
+   },
+   "pos": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      7
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "neg": {
+    "class_type": "TextEncodeMOSSImageEdit",
+    "inputs": {
+     "clip": [
+      "clip",
+      0
+     ],
+     "prompt": [
+      "canvas",
+      12
+     ],
+     "vae": [
+      "vae",
+      0
+     ],
+     "edit_format": "Moss-Image-Edit",
+     "images.image_0": [
+      "scale0",
+      0
+     ],
+     "image_strength": 1
+    }
+   },
+   "ks": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "slg",
+      0
+     ],
+     "seed": [
+      "canvas",
+      10
+     ],
+     "steps": 30,
+     "cfg": 4,
+     "sampler_name": "euler",
+     "scheduler": "normal",
+     "positive": [
+      "pos",
+      0
+     ],
+     "negative": [
+      "neg",
+      0
+     ],
+     "latent_image": [
+      "latent",
+      0
+     ],
+     "denoise": 1
+    }
+   },
+   "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "ks",
+      0
+     ],
+     "vae": [
+      "vae",
+      0
+     ]
+    }
+   }
+  }
+ }
+]

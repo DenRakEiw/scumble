@@ -1330,8 +1330,8 @@ async function main() {
             eq(rows, [[1, "unet:unet_name", "Model"], [2, "clip:clip_name", "Text encoder"], [3, "vae:vae_name", "VAE"], [4, "lora:lora_name", "Edit LoRA"], [5, "lora:strength_model", "LoRA strength"], [6, "ks:steps", "Steps"], [7, "ks:cfg", "CFG"], [8, "scale0:megapixels", "Megapixels"]])
             && files.every((f) => !!link(f)) && link(g.lora.inputs.lora_name) === "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/loras/moss_image_edit_lora_rank_64_bf16.safetensors",
             short({ rows, links: files.map(link) }));
-        check("the description: ComfyUI 0.43 or newer, the Moss-Image-Edit format on both encoders, the ai-toolkit LoRAs by an own copy, not run yet, and the licence sentence",
-            /0\.43 or newer/.test(r.description) && /both encoders in the Moss-Image-Edit format/.test(r.description) && /ai-toolkit format on both encoders: Edit in ComfyUI/.test(r.description) && /not run yet/.test(r.description)
+        check("the description: ComfyUI 0.43 or newer, the Moss-Image-Edit format on both encoders, the ai-toolkit LoRAs by an own copy, what each picture is for (LR9), run on 0.44, and the licence sentence",
+            /0\.43 or newer/.test(r.description) && /both encoders in the Moss-Image-Edit format/.test(r.description) && /ai-toolkit format on both encoders: Edit in ComfyUI/.test(r.description) && /Image 1 is the scene to edit\. @img1 is a picture of the bag to place\."\): a bare/.test(r.description) && /run on ComfyUI 0\.44\./.test(r.description)
             && r.description.includes("The edit LoRA is chinoll's Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0."));
         // the check itself: what a slip in the file would be is caught
         const bad = JSON.parse(JSON.stringify(g));
