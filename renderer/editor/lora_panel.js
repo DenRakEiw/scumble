@@ -352,7 +352,7 @@ export function openPicker(host, ed, index) {
 const OWN_GROUP = "Your imports";
 
 /** The picker's line under a Comfy Cloud list. */
-const CLOUD_NOTE = "LoRAs you import on Comfy Cloud's site (Creator plan or higher) show here under Your imports; a file name typed in the search goes as written.";
+const CLOUD_NOTE = "Your imports: the LoRAs Comfy Cloud lists as your own (imported on its site, Creator plan or higher). One not listed can be typed in the search; the name goes as written.";
 
 /** Whether Comfy Cloud's lists were read with a stored key (null: not read yet). */
 function cloudUp(host) {

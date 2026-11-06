@@ -21,7 +21,7 @@
 // done, ended, not confirmed) and their words through providers/index.js; the progress throttle on a clock set back; a
 // context without cloudApi stays on the legacy API. LoRA rows (item 50, LR5): the chain in the submitted graph (both
 // branches of a switch graph, before a patch, the text route's own graph), the list's spelling, a name the list lacks sent
-// and named by a failure, loras false, a declared model per route, an unread node list, six rows refused, the answer's
+// and named by a failure only when the asset list lacks it too (a catalog LoRA or an own import is not), loras false, a declared model per route, an unread node list, six rows refused, the answer's
 // loras through providers/index.js; loraList over the v1 asset list and the node list.
 "use strict";
 
@@ -572,8 +572,36 @@ async function main() {
         const mw = (mf.jobs[0] || {}).workflow || {};
         check("Cloud LoRAs: a name the node list lacks is not refused: it goes out as typed",
             posts(mf).length === 1 && (mw.scumble_lora_1 || { inputs: {} }).inputs.lora_name === "my_import.safetensors", short(mw.scumble_lora_1));
-        check("Cloud LoRAs: the failed run's note names it among the files the node list lacked",
+        check("Cloud LoRAs: the failed run's note names it among the files the node list lacked (the asset list unread: the combo's word)",
             /my_import\.safetensors \(LoraLoaderModelOnly lora_name\)/.test(me || "") && /Comfy Cloud's node list does not name the model file/.test(me || ""), me);
+        // the picker offers Comfy Cloud's asset list, which holds LoRAs the node list's combo lacks (read 2026-11-06: 125 of
+        // 777): a run that fails for another reason does not blame a LoRA the asset list names (the catalog's or the
+        // account's own), nor drops the node list for it; one the asset list lacks too is still named
+        cloud._clearNodeList();
+        cloud._clearLoraList();
+        const CAT = "Qwen2.1_Anime_consistency.safetensors", OWN = "my_own_import.safetensors";
+        // the combo holds the recipe's own LoRA (433:89), so only the chain's names are in question
+        const combo = [QL, qv.options.graph["433:89"].inputs.lora_name];
+        const cf = fakeComfyV2({ info: infoOf(classesOf(qv.options.graph), combo), loraAssets: { own: [OWN], shared: [QL, CAT] }, statuses: ["failed"], error: { code: "execution_error", message: "Allocation on device failed" } });
+        const ce = await thrown(() => cloud.edit(editReq(qv, [{ name: CAT, strength: 1, on: true }, { name: OWN, strength: 0.5, on: true }]), ctxOf(cf)));
+        const cw = (cf.jobs[0] || {}).workflow || {};
+        check("Cloud LoRAs: a failed run with a catalog LoRA and an own import the combo lacks: both sent, neither named, the failure's own words kept",
+            posts(cf).length === 1 && (cw.scumble_lora_1 || { inputs: {} }).inputs.lora_name === CAT && (cw.scumble_lora_2 || { inputs: {} }).inputs.lora_name === OWN
+            && /Allocation on device failed/.test(ce || "") && !/does not name the model file/.test(ce || "") && !ce.includes(CAT) && !ce.includes(OWN) && cf.assetReads >= 1, ce);
+        const infoBefore = cf.infoReads;
+        cloud._clearLoraList();
+        await thrown(() => cloud.edit(editReq(qv, [{ name: CAT, strength: 1, on: true }]), ctxOf(cf)));
+        check("Cloud LoRAs: a LoRA the asset list names keeps the node list (no second read on the next run)", cf.infoReads === infoBefore, `${infoBefore} -> ${cf.infoReads}`);
+        cloud._clearNodeList();
+        cloud._clearLoraList();
+        const tf = fakeComfyV2({ info: infoOf(classesOf(qv.options.graph), combo), loraAssets: { own: [OWN], shared: [QL, CAT] }, statuses: ["failed"], error: { code: "execution_error", message: "Value not in list: lora_name: 'typo_lora.safetensors'" } });
+        const te = await thrown(() => cloud.edit(editReq(qv, [{ name: CAT, strength: 1, on: true }, { name: "typo_lora.safetensors", strength: 1, on: true }]), ctxOf(tf)));
+        const tInfo = tf.infoReads;
+        cloud._clearLoraList();
+        await thrown(() => cloud.edit(editReq(qv, [{ name: "typo_lora.safetensors", strength: 1, on: true }]), ctxOf(tf)));
+        check("Cloud LoRAs: a LoRA neither list names is still named (the catalog one beside it not), and the node list is read again for the next run",
+            /typo_lora\.safetensors \(LoraLoaderModelOnly lora_name\)/.test(te || "") && /does not name the model file typo_lora/.test(te || "") && !te.includes(CAT) && tf.infoReads === tInfo + 1, short({ te, reads: [tInfo, tf.infoReads] }));
+        cloud._clearLoraList();
         // the node list lacks the chain's class: the run stops before any upload, by name
         cloud._clearNodeList();
         const nf = fakeComfyV2({ classes: classesOf(zv.options.graph) });

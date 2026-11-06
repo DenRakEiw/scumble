@@ -389,8 +389,10 @@ all*); MOSS-Image Edit's readiness against a v0.42 node list and the rows after 
 step**, so a gate run against an instance with the user's key never replaces it): Comfy Cloud's lists through main (the
 account's own imports, the catalog, the node list's combo), the picker's *Your imports* group and a typed name,
 `set_generation` keeping a name the lists lack, `status` / `list_loras` source `comfycloud`, Generate new on
-`cloud_flux2_klein_9b` with the chain in the text graph the mock got and the note in the answer, the test key on every
-call (bearer on v2, X-API-Key on v1). Also: `settings_migration_test.js` (the `recipeLoras` store), `metadata` (the PNG
+`cloud_flux2_klein_9b` with the chain in the text graph the mock got and the note in the answer, then a Generate (an edit,
+`runProvider`) with the chain in the edit graph, its `loras_sent` and the result's history entry naming the rows ("...
+via Comfy Cloud + 2 LoRAs: ..."), the crop uploaded only after Generate new's submit, the test key on every call (bearer
+on v2, X-API-Key on v1). Also: `settings_migration_test.js` (the `recipeLoras` store), `metadata` (the PNG
 chunk's `loras`), `commands` (`loras_commands`: `set_generation` `loras`, `status.loras`, `list_recipes` `loras`,
 `list_loras`, `loras_sent`; `loras_on_comfy_cloud`: `list_recipes` `loras` for every Comfy Cloud recipe and
 `generate_new`'s `loras_sent` on `cloud_z_image_turbo` against the same mock, with its own test key), `skins` step 15

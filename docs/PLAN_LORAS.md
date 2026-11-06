@@ -1184,6 +1184,27 @@ RECIPES.md says neither has run with a LoRA, and `cloud_moss_image_edit` not at 
 to confirm it shows under *Your imports*; the closing comments for #10 / #11 (drafted at LR10) say LoRAs on Comfy Cloud
 come later and change before they are posted.
 
+**Review** (2026-11-06, three findings, all fixed): (1) a failed run's note checked the chain's `lora_name` against the
+node list's 652-name combo while the picker offers the 777-asset list, so a catalog LoRA (the `moss_*` and Qwen Image 2.1
+ones among the 125 the combo lacks) was blamed, with a different file suggested, on any failure (a 402, an OOM), and the
+kept node list dropped for it. Now `checkModelFiles` puts a `lora_name` the combo lacks in `loras`, and the failure
+(`failedWith`, both APIs) names one only when `lorasMissing` finds it in neither of the asset list's parts (`loraList`,
+the minute's copy or a read at the failure; one that does not answer in 10 s leaves the combo's word); only such a name
+drops the node list. Tests: `comfycloud_v2_test.js` §16 three new checks (a catalog LoRA and an own import on a failed
+run: sent, not named, the node list kept; a typo'd name beside a catalog one: named alone, the list read again; red on
+the old rule), `cloudgraph_test.js` §11 one (the legacy API, `fakeCloud` gained `loraAssets`). (2) The app side of a
+Comfy Cloud *edit* with rows (`runProvider`'s `loras` field, `viaLine`'s fourth argument, `lastLoras`) had no test: the
+`loras` gate's Cloud step now runs a `generate` on `cloud_flux2_klein_9b` after Generate new and checks `loras_sent`,
+`ed.lastLoras`, the history entry's via line ("Flux.2 Klein 9B base (Comfy Cloud) via Comfy Cloud + 2 LoRAs: cat_style
+0.75, not_listed 1.0, N s") and its row, and in Python the edit graph's chain, that each job is its own route's graph,
+and that the crop went up only after Generate new's submit. (3) The manual, the CHANGELOG and the picker's line said
+imports show under *Your imports* and the rows load on Comfy Cloud as if seen: the manual and the CHANGELOG now say both
+are unconfirmed (no import on the account probed, no paid run), the picker's line says *Your imports* is what Comfy
+Cloud lists as the account's own, and RECIPES.md describes the failure's check. After the fixes: `loras_test.js` 89,
+`cloudgraph_test.js` 38, `comfycloud_v2_test.js` 109, `recipes_test.js` 304; gates `lr5rev` (tiles, `--offline`, port
+9574) loras, commands, recipes, generate PASS, lint 0 errors (the same 21 warnings), types green; the via line's
+fourth argument dropped makes the `loras` gate's Cloud step red (`lr5rev-mut`).
+
 ### LR6 as built (2026-11-06)
 
 **Built:** `recipes/moss_image_edit_local.json` (new; "MOSS-Image Edit (ComfyUI)"): Comfy's template `image_moss_image_edit`

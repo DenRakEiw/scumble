@@ -352,11 +352,14 @@ function nearestFile(value, names) {
 /**
  * The model files of a recipe graph against the node list, before any upload. A value that differs from the cloud's
  * file only in its path separators (a recipe saved on Windows) is that file; one the list lacks is named in `missing`,
- * with the nearest file it has, for a failure's message (missingNote).
- * @returns {{ fixes: Map<string, string>, missing: string[] }} fixes: "<node>|<input>" -> the cloud's spelling
+ * with the nearest file it has, for a failure's message (missingNote). A LoRA file (a `lora_name`) the list lacks goes in
+ * `loras` instead: the list's combo leaves out part of Comfy Cloud's LoRA catalog (read 2026-11-06: 125 of 777 LoRA
+ * assets), so a failure first asks the asset list, the LoRA picker's own source (lorasMissing).
+ * @returns {{ fixes: Map<string, string>, missing: string[], loras: { text: string, value: string }[] }} fixes:
+ *   "<node>|<input>" -> the cloud's spelling
  */
 function checkModelFiles(req, info) {
-    const fixes = new Map(), missing = new Set();
+    const fixes = new Map(), missing = new Set(), loras = new Map();
     for (const f of modelFiles(req, info)) {
         const names = choicesOf(info, f.cls, f.input);
         if (!names || names.includes(f.value)) continue;
@@ -364,9 +367,46 @@ function checkModelFiles(req, info) {
         const same = names.find((n) => n.replace(/\\/g, "/") === slash);
         if (same) { fixes.set(`${f.id}|${f.input}`, same); continue; }
         const near = nearestFile(f.value, names);
-        missing.add(`${f.value} (${f.cls} ${f.input}${near ? `; it lists ${near}` : ""})`);
+        const text = `${f.value} (${f.cls} ${f.input}${near ? `; it lists ${near}` : ""})`;
+        if (f.input === "lora_name") loras.set(text, f.value);
+        else missing.add(text);
     }
-    return { fixes, missing: [...missing] };
+    return { fixes, missing: [...missing], loras: [...loras].map(([text, value]) => ({ text, value })) };
+}
+
+/** How long a failure waits for the asset list before it names the LoRAs the node list lacked as they are. */
+const LORA_CHECK_MS = 10 * 1000;
+
+/**
+ * The LoRA files of a failed run that Comfy Cloud has none of: those the node list's combo lacked (checkModelFiles
+ * `loras`) less the ones its asset list names, the account's own imports and the catalog (loraList, kept a minute: the
+ * picker's own read). An asset list that does not answer in LORA_CHECK_MS, or at all, leaves the combo's word (each
+ * named, as before the asset list was asked).
+ * @returns {Promise<string[]>} the texts for missingNote
+ */
+async function lorasMissing(ctx, loras) {
+    if (!loras || !loras.length) return [];
+    let timer = null, value = null;
+    try {
+        value = await Promise.race([
+            loraList(ctx),
+            new Promise((resolve) => { timer = setTimeout(resolve, LORA_CHECK_MS, null); if (timer.unref) timer.unref(); }),
+        ]);
+    } catch (_) { value = null; } finally { clearTimeout(timer); }
+    if (!value || !value.assets) return loras.map((l) => l.text);
+    const norm = (s) => String(s).replace(/\\/g, "/");
+    const have = new Set([...value.own, ...value.shared].map(norm));
+    return loras.filter((l) => !have.has(norm(l.value))).map((l) => l.text);
+}
+
+/**
+ * A failed run's error: its words plus the model files Comfy Cloud has none of (missingNote); when it names any, the next
+ * run reads the node list again (a file added on Comfy Cloud since).
+ */
+async function failedWith(ctx, files, msg) {
+    const missing = [...files.missing, ...(await lorasMissing(ctx, files.loras))];
+    if (missing.length) infoCache.delete(ctx.key);
+    return new Error(msg + missingNote(missing));
 }
 
 /** What a failed run adds when the node list lacked a model file of the graph. */
@@ -381,9 +421,10 @@ function missingNote(missing) {
 // { rows, declared }: the variant's declaration for the route that runs) go into a copy of `options.graph` through the
 // renderer's own module (renderer/editor/loras.js, an ES module main requires: require(esm), checked from an asar as
 // well), after the node list's read and before checkModelFiles, so the chain's lora_name values are model files of the
-// graph like any other (a separator-only difference goes in the list's spelling, a name the list lacks is named in a
-// failure's note, never a refusal: the account's own imports are not in the node list). buildDetached copies the graph
-// it is given and never splices.
+// graph like any other (a separator-only difference goes in the list's spelling; a name the list lacks is never a
+// refusal: the account's own imports and part of the catalog are not in the node list, so a failure's note names it
+// only when Comfy Cloud's asset list lacks it too, lorasMissing). buildDetached copies the graph it is given and never
+// splices.
 
 let lorasMod = null;
 function lorasModule() {
@@ -680,7 +721,7 @@ async function run(req, ctx, waitMs) {
         const node = detached ? "recipe graph" : String(req.options && req.options.node || "");
         if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
         const headers = { "X-API-Key": ctx.key, "Content-Type": "application/json" };
-        let files = { fixes: new Map(), missing: [] };
+        let files = { fixes: new Map(), missing: [], loras: [] };
         let loras = { applied: [], notes: [] };
         if (detached) {
             // what the graph refuses by itself, before any call; then every node it needs, before any upload (§2.4: a
@@ -695,12 +736,9 @@ async function run(req, ctx, waitMs) {
             if (missing.length) throw new Error(`Comfy Cloud has no ${missing.join(", ")} node${missing.length === 1 ? "" : "s"}, so this recipe cannot run there.`);
             files = checkModelFiles(req, info);
         }
-        // a failure names the model files the node list lacked, and the next run reads the list again (a file added on
-        // Comfy Cloud since)
-        const failed = (msg) => {
-            if (files.missing.length) infoCache.delete(ctx.key);
-            return new Error(msg + missingNote(files.missing));
-        };
+        // a failure names the model files Comfy Cloud lacks (a LoRA only when its asset list lacks it too), and the next
+        // run reads the list again (a file added on Comfy Cloud since)
+        const failed = (msg) => failedWith(ctx, files, msg);
         const graph = await buildGraph(req, ctx, node);
         for (const [k, v] of files.fixes) {
             const i = k.indexOf("|"), n = graph[k.slice(0, i)];
@@ -709,7 +747,7 @@ async function run(req, ctx, waitMs) {
         const saveId = !detached ? null : req.options.save && graph[req.options.save] ? String(req.options.save)
             : Object.keys(graph).find((id) => graph[id] && graph[id].class_type === "SaveImage" && /^scumble_save/.test(id));
         const submit = await ctx.fetch(BASE + "/api/prompt", { method: "POST", headers, body: JSON.stringify({ prompt: graph, client_id: "scumble" }) });
-        if (!submit.ok) throw failed(`Comfy Cloud prompt: ${await readError(submit)}`);
+        if (!submit.ok) throw await failed(`Comfy Cloud prompt: ${await readError(submit)}`);
         const job = await submit.json();
         const id = job.prompt_id;
         if (!id) throw new Error("Comfy Cloud answered without prompt_id: " + JSON.stringify(job).slice(0, 300));
@@ -724,7 +762,7 @@ async function run(req, ctx, waitMs) {
             info = await r.json();
             status = String(info.status || "").toLowerCase();
         }
-        if (status !== "success" && status !== "completed") throw failed(`Comfy Cloud ${node}: ${await failureDetail(ctx, id, status, info)}`);
+        if (status !== "success" && status !== "completed") throw await failed(`Comfy Cloud ${node}: ${await failureDetail(ctx, id, status, info)}`);
         // the job's outputs (ComfyUI's outputs object, keyed by node); a job just finished may not list them yet
         let file = null, entry = {};
         for (let tries = 0; !file && tries < 4; tries++) {
@@ -847,7 +885,7 @@ async function runV2(req, ctx, waitMs) {
     // the client first: a key that may not go where the settings point is refused before any request
     const client = sdk.cloudClient(ctx);
     const info = { node, model: req.model };
-    let files = { fixes: new Map(), missing: [] };
+    let files = { fixes: new Map(), missing: [], loras: [] };
     let loras = { applied: [], notes: [] };
     if (detached) {
         // v2 has no node list: the v1 read stays, advisory. One that fails or names nothing skips the check (v2's own
@@ -869,10 +907,7 @@ async function runV2(req, ctx, waitMs) {
             files = checkModelFiles(req, entry.info);
         } else if (entry) info.nodeList = "empty";
     }
-    const failed = (msg) => {
-        if (files.missing.length) infoCache.delete(ctx.key);
-        return new Error(msg + missingNote(files.missing));
-    };
+    const failed = (msg) => failedWith(ctx, files, msg);
     // every picture an asset handle in its LoadImage; nothing leaves before the graph is built and checked. Each goes up
     // through a client whose request limit fits its size (a large picture on a slow line outlasts the default).
     const pictures = [];
@@ -927,7 +962,7 @@ async function runV2(req, ctx, waitMs) {
             // a resend refused for anything but the workflow itself (a queue or concurrency limit the first job may hold,
             // the credits it may have used): the first submit may have landed
             if (tries > 0 && !REFUSED_ITSELF.has(code) && ![401, 403].includes(+(err && err.httpStatus))) throw new Error(`Comfy Cloud refused the resent submit (${say(err)}); the first one got no answer and may have landed: Scumble does not send it again, and if Comfy took it, it may run and be charged.`);
-            throw failed(`Comfy Cloud prompt: ${say(err)}`);
+            throw await failed(`Comfy Cloud prompt: ${say(err)}`);
         }
     }
     info.job_id = job.id;
@@ -1120,7 +1155,7 @@ async function finishV2(job, { req, ctx, waitMs, node, saveId, failed }) {
     }
     if (job.status === "canceled") throw new Error(`Comfy Cloud ${node}: the job was canceled on Comfy's side.`);
     if (job.status === "expired") throw new Error(`Comfy Cloud ${node}: the job expired on Comfy's side before it finished; run it again.`);
-    if (job.status !== "succeeded") throw failed(`Comfy Cloud ${node}: ${jobFailure(job, ctx.key, node)}`);
+    if (job.status !== "succeeded") throw await failed(`Comfy Cloud ${node}: ${jobFailure(job, ctx.key, node)}`);
     // a job just finished may not list its outputs yet; one that still lists none is paid for and may list its picture
     // later (its note stays, a later ask brings it); one that lists outputs and no image never gets one
     let out = pickOutput(job, saveId);

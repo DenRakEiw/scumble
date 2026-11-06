@@ -502,7 +502,10 @@ crop), and `comfycloud.js` `withLoras` writes the chain into a copy of `options.
 (`renderer/editor/loras.js`, required as an ES module) in `run` and `runV2` **after the node list's read and before
 `checkModelFiles`**, so the chain's `lora_name` values are model files of the graph like any other: a separator-only
 difference goes in the node list's spelling, the chain's class joins the classes the list must hold, and **a name the
-list lacks is never refused** (the account's own imports are not in it; a failed run's note names it). An unread node
+list lacks is never refused** (the account's own imports and part of the catalog are not in it): a failed run's note
+names a LoRA only when Comfy Cloud's asset list (the picker's source, `loraList`, read at the failure unless the
+minute's copy holds it) lacks it too, and only such a name drops the kept node list (`lorasMissing`; an asset list that
+does not answer in 10 s leaves the node list's word). An unread node
 list (`runV2`) splices by the class-name table. `buildDetached` copies the graph it is given. The answer's `loras` (what
 the chain loaded) gives the via line, `lastLoras` and `loras_sent`, its note "LoRAs: ..." the status line. **The
 picker's names** (`provider:cloudLoras`, `comfycloud.js` `loraList`, a minute's copy, read again on the picker's open):
@@ -514,7 +517,9 @@ typed in the search goes as written (an import the list does not show yet; `set_
 there (the files are Comfy Cloud's). `cloud_ideogram_4` declares `loras: false` (two model loaders), and its section is
 hidden with that reason. The probe that decided this: `docs/measurements/lr5_2026-11-06/probe.md`. **Not run live on
 Comfy Cloud yet** (a run with a LoRA is paid): the splice is held to the fake Comfy Cloud of `tools/fake_comfy_v2.js`
-by `comfycloud_v2_test.js`, `cloudgraph_test.js` and the `loras` and `commands` gates.
+by `comfycloud_v2_test.js`, `cloudgraph_test.js` and the `loras` and `commands` gates (the `loras` gate runs Generate
+new and an edit on `cloud_flux2_klein_9b` there). **Not confirmed** either: that an import shows under
+`include_public=false` (the account probed had none).
 
 **LoRA rows on your ComfyUI, run live 2026-11-06** (item 50, `docs/PLAN_LORAS.md` LR9; the user's ComfyUI 0.44.0, RTX
 5090, one seed per pair, the numbers and pictures in `docs/measurements/lr9_2026-11-06/`). Every family's LoRA changed the picture, and every mismatched one left it alone:

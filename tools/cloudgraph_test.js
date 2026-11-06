@@ -43,7 +43,7 @@ const json = (status, body, headers = {}) => new Response(JSON.stringify(body), 
  * A fake cloud.comfy.org: `classes` the node list it offers (or `info`, the node list itself), `outputs(graph)` what the
  * finished job's history holds; `promptError` refuses the prompt with that text, `jobError` fails the job with it.
  */
-function fakeCloud({ classes, info, outputs, promptError, jobError } = {}) {
+function fakeCloud({ classes, info, outputs, promptError, jobError, loraAssets } = {}) {
     const s = { uploads: [], prompts: [], calls: [] };
     s.fetch = async (url, init = {}) => {
         const u = new URL(String(url));
@@ -55,6 +55,8 @@ function fakeCloud({ classes, info, outputs, promptError, jobError } = {}) {
             return json(200, { name: `up${s.uploads.length}.png`, subfolder: "", type: "input" });
         }
         if (u.pathname === "/api/object_info") return json(200, info || Object.fromEntries((classes || []).map((c) => [c, {}])));
+        // the asset list (item 50): the LoRA files a key may name, given `loraAssets` (one page)
+        if (u.pathname === "/api/assets" && loraAssets) return json(200, { assets: loraAssets.map((n) => ({ loader_path: n })), has_more: false });
         if (method === "POST" && u.pathname === "/api/prompt") {
             s.prompts.push(JSON.parse(init.body).prompt);
             return promptError ? json(400, { error: { message: promptError } }) : json(200, { prompt_id: "p1" });
@@ -296,7 +298,8 @@ async function main() {
 
     // 11. LoRA rows on the legacy API too (item 50, docs/PLAN_LORAS.md LR5): spliced after the node list's read and
     // before checkModelFiles, so the chain is in the graph the prompt carries, a separator-only difference goes in the
-    // list's spelling, a name the list lacks is sent and named by a failure, the answer carries what was spliced
+    // list's spelling, a name the list lacks is sent and named by a failure (not when the asset list names it), the
+    // answer carries what was spliced
     if (qv) {
         const BS = String.fromCharCode(92);
         const loraInfo = (names) => ({
@@ -320,6 +323,13 @@ async function main() {
         fc = fakeCloud({ info: loraInfo(["Wan22_FunReward/a.safetensors"]), jobError: "Value not in list" });
         const le = await thrown(() => cloud.edit(lreq({ rows, declared: undefined }), { key: "k-loras2", fetch: fc.fetch, sleep: async () => {} }));
         check("legacy: a name the list lacks is sent, and the failure's note names it", fc.prompts.length === 1 && /mine\.safetensors \(LoraLoaderModelOnly lora_name\)/.test(le || ""), short(le));
+        // the same failure where Comfy Cloud's asset list names the file (its catalog or the account's own): not blamed
+        cloud._clearNodeList();
+        cloud._clearLoraList();
+        fc = fakeCloud({ info: loraInfo(["Wan22_FunReward/a.safetensors", "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors"]), jobError: "Out of memory", loraAssets: ["mine.safetensors"] });
+        const la = await thrown(() => cloud.edit(lreq({ rows, declared: undefined }), { key: "k-loras4", fetch: fc.fetch, sleep: async () => {} }));
+        check("legacy: a LoRA the asset list names is not named by a failure", fc.prompts.length === 1 && /Out of memory/.test(la || "") && !/does not name the model file/.test(la || "") && fc.calls.includes("GET /api/assets"), short(la));
+        cloud._clearLoraList();
         cloud._clearNodeList();
         fc = fakeCloud({ info: loraInfo(["mine.safetensors"]), outputs: () => ({ 469: { images: [{ filename: "l.png" }] } }) });
         const lf = await cloud.edit(lreq({ rows, declared: false }), { key: "k-loras3", fetch: fc.fetch, sleep: async () => {} });

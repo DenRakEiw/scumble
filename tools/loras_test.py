@@ -67,7 +67,10 @@ main (the account's own imports first as "Your imports", then the catalog and th
 a typed name as written and Enter takes it, marked "(not in Comfy Cloud's lists)"; set_generation keeps a name the lists
 lack, status and list_loras say source "comfycloud"; generate_new sends the text route's own graph with the chain
 after 75:70 (75:63 re-pointed, the switched-off row nowhere, nothing uploaded), its loras_sent and the status line's
-note name them; list_recipes: the Cloud recipe takes rows, cloud_ideogram_4 not, with its reason. The mock's record:
+note name them; then generate, an edit on that picture (runProvider, the request's loras field), sends the edit route's
+graph with the same chain (the crop uploaded only after Generate new's submit), its loras_sent and ed.lastLoras name
+them, and so does the result's history entry ("<recipe> via Comfy Cloud + 2 LoRAs: cat_style 0.75, not_listed 1.0, N s",
+shown in the row); list_recipes: the Cloud recipe takes rows, cloud_ideogram_4 not, with its reason. The mock's record:
 the bearer (the test key) on every v2 call, X-API-Key on the node list and the asset reads, the comma form of
 include_tags.
 
@@ -779,8 +782,9 @@ return { recipe: host.recipe && host.recipe.id, loras: Object.keys(host.loras ||
 
 # LR5: a Comfy Cloud recipe against the loopback Comfy Cloud (tools/fake_cloud_http.py), run before the cleanup: the
 # section shows with Comfy Cloud's lists (the account's own imports first, the catalog), the picker offers a typed name
-# as written, set_generation keeps a name the lists lack, and Generate new sends the text route's own graph with the
-# chain; the mock's record is read in Python afterwards
+# as written, set_generation keeps a name the lists lack, Generate new sends the text route's own graph with the chain,
+# and a Generate (an edit) the edit route's graph, its via line naming the rows; the mock's record is read in Python
+# afterwards
 CLOUD_RECIPE = "cloud_flux2_klein_9b"
 CLOUD_STEP = r"""
 // a document of its own: the earlier steps' local runs never landed, and Generate new waits for a document's runs
@@ -837,12 +841,25 @@ const want = [{ name: "cat_style.safetensors", strength: 0.75 }, { name: "not_li
 if (gn.mode !== "api" || gn.provider !== "comfycloud" || JSON.stringify(gn.loras_sent) !== JSON.stringify(want) || !(gn.notes || []).includes("LoRAs: cat_style 0.75, not_listed 1.0."))
     throw new Error("generate_new: " + JSON.stringify(gn).slice(0, 600));
 if (!/LoRAs: cat_style 0\.75, not_listed 1\.0\./.test(ed.status) || ed.statusKind === "warn" || ed.statusKind === "error") throw new Error("the status line: " + JSON.stringify([ed.status, ed.statusKind]));
+// Generate, an edit on the picture Generate new made (runProvider): the request carries the rows, the edit graph goes to
+// the mock with the chain (checked in Python), generate answers loras_sent, and the result's history entry names them
+await run("select_rect", { doc, x: 4, y: 4, w: 24, h: 16 });
+await run("set_prompt", { doc, prompt: "a red door" });
+const ge = await run("generate", { doc, timeout: 60 });
+if (JSON.stringify(ge.loras_sent) !== JSON.stringify(want) || JSON.stringify(ed.lastLoras) !== JSON.stringify(want)) throw new Error("generate: " + JSON.stringify({ loras_sent: ge.loras_sent, lastLoras: ed.lastLoras, status: ge.status }).slice(0, 600));
+const hv = ed.history[ed.history.length - 1];
+const viaRe = new RegExp("^" + host.recipe.name.replace(/[()]/g, "\\$&") + " via Comfy Cloud \\+ 2 LoRAs: cat_style 0\\.75, not_listed 1\\.0, \\d+ s$");
+if (!hv || !viaRe.test(hv.via || "")) throw new Error("the edit's history entry: " + JSON.stringify(hv && hv.via));
+ed.renderHistory();
+const shownVia = Array.from(ed.historyList.querySelectorAll(".ipc-hvia")).map((s) => s.textContent);
+if (!shownVia.includes(hv.via)) throw new Error("the history row shows " + JSON.stringify(shownVia));
+if (!/LoRAs: cat_style 0\.75, not_listed 1\.0\./.test(ed.status)) throw new Error("the edit's status line: " + JSON.stringify([ed.status, ed.statusKind]));
 // list_recipes: the Cloud recipes take rows but cloud_ideogram_4, with its reason
 const lr = (await run("list_recipes")).recipes;
 const k9 = lr.find((x) => x.id === "cloud_flux2_klein_9b"), ig = lr.find((x) => x.id === "cloud_ideogram_4");
 if (!k9 || k9.loras !== true || k9.loras_reason !== null || !ig || ig.loras !== false || !/2 model loaders \(98:154, 98:23\), so the recipe declares none\.$/.test(ig.loras_reason || ""))
     throw new Error("list_recipes: " + JSON.stringify({ k9: k9 && [k9.loras, k9.loras_reason], ig: ig && [ig.loras, ig.loras_reason] }));
-return { lists: { own: cl.own, shared: cl.shared.length }, groups: groups.slice(0, 3), loras_sent: gn.loras_sent, status: ed.status.slice(0, 160) };
+return { lists: { own: cl.own, shared: cl.shared.length }, groups: groups.slice(0, 3), loras_sent: gn.loras_sent, edit_loras_sent: ge.loras_sent, via: hv.via, status: ed.status.slice(0, 160) };
 } finally {
     panel.closePicker();
     try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ }
@@ -877,17 +894,25 @@ async def cloud_step(c):
             await c.eval("(async () => { %s })()" % CLOUD_RESTORE, timeout=60)
         s = fc.state()
     jobs = s["jobs"]
-    if len(jobs) != 1:
-        raise Exception("the mock got %d jobs" % len(jobs))
-    wf = jobs[0]
-    l1, l2 = (wf.get("scumble_lora_1") or {}).get("inputs", {}), (wf.get("scumble_lora_2") or {}).get("inputs", {})
-    if not (l1.get("model") == ["75:70", 0] and l1.get("lora_name") == "cat_style.safetensors" and l1.get("strength_model") == 0.75
-            and l2.get("model") == ["scumble_lora_1", 0] and l2.get("lora_name") == "not_listed.safetensors"
-            and wf.get("75:63", {}).get("inputs", {}).get("model") == ["scumble_lora_2", 0]
-            and "scumble_lora_3" not in wf and "off.safetensors" not in json.dumps(wf)):
-        raise Exception("the text graph the mock got: %s" % json.dumps({k: wf[k] for k in wf if k.startswith("scumble_lora") or k == "75:63"})[:800])
-    if s["uploads"] != 0:
-        raise Exception("Generate new uploaded %d pictures" % s["uploads"])
+    if len(jobs) != 2:
+        raise Exception("the mock got %d jobs (Generate new, then the edit)" % len(jobs))
+    with open(os.path.join(ROOT, "recipes", CLOUD_RECIPE + ".json"), encoding="utf-8") as f:
+        v = json.load(f)["providers"]["comfycloud"]
+    for what, wf, graph in (("the text graph", jobs[0], v["text"]["options"]["graph"]), ("the edit graph", jobs[1], v["options"]["graph"])):
+        l1, l2 = (wf.get("scumble_lora_1") or {}).get("inputs", {}), (wf.get("scumble_lora_2") or {}).get("inputs", {})
+        if not (l1.get("model") == ["75:70", 0] and l1.get("lora_name") == "cat_style.safetensors" and l1.get("strength_model") == 0.75
+                and l2.get("model") == ["scumble_lora_1", 0] and l2.get("lora_name") == "not_listed.safetensors"
+                and wf.get("75:63", {}).get("inputs", {}).get("model") == ["scumble_lora_2", 0]
+                and "scumble_lora_3" not in wf and "off.safetensors" not in json.dumps(wf)):
+            raise Exception("%s the mock got: %s" % (what, json.dumps({k: wf[k] for k in wf if k.startswith("scumble_lora") or k == "75:63"})[:800]))
+        # each job is its own route's graph: the edit's LoadImage nodes only in the edit graph
+        if set(k for k in wf if not k.startswith("scumble_lora")) != set(graph):
+            raise Exception("%s is not its route's graph: %s" % (what, sorted(set(wf) ^ set(graph))[:12]))
+    # Generate new uploads nothing; the edit's crop goes up after the first job's submit
+    first_job = next(i for i, x in enumerate(s["calls"]) if x["method"] == "POST" and x["path"] == "/api/v2/jobs")
+    early = [x for x in s["calls"][:first_job] if x["path"].startswith("/api/v2/assets")]
+    if early or s["uploads"] < 1:
+        raise Exception("the uploads: %d in all, before Generate new's submit %s" % (s["uploads"], json.dumps(early)[:300]))
     v2 = [x for x in s["calls"] if x["path"].startswith("/api/v2/")]
     v1 = [x for x in s["calls"] if x["path"] in ("/api/object_info", "/api/assets")]
     if not v2 or not all(x["bearer"] == "test" and not x["apiKey"] for x in v2) or not v1 or not all(x["apiKey"] == "test" and not x["bearer"] for x in v1):
