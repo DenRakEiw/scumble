@@ -259,7 +259,7 @@ code.
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
   time only finds where the time goes; the tie rule in the plan §1.1); **every session commits and pushes the branch,
   its measurement results committed too** under `docs/measurements/<step>_<date>/` ("dann gehen diese nicht verloren");
-  **one release at the end** (K40, K41 on the user's word), no small releases in between. W0 is done:
+  **one release at the end** (K40, K41 on the user's word), no small releases in between. **One exception, the user's "ja" of 2026-11-06:** the finished steps D0, K5, W1 and K12 ship in 0.1.52: once K12 and Stop 5 are committed, `wasm-kernels` is merged into `corridorkey`; the kernel work after it (G6 on) goes on on `wasm-kernels` for the release at the end. W0 is done:
   `docs/PLAN_WASM.md` §5 (the harvest of the old numbers) and `docs/measurements/w0_2026-10-23/` (the 15k rows;
   `tools/w0_bench.py`; `perf_test.py`'s relight row now has three lights). The plan's §6 open questions are asked by
   the session that needs one; with no answer by then its suggested answer is taken and the hand-over says so. `main`
