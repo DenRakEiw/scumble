@@ -1,0 +1,23 @@
+node v24.18.0, AMD Ryzen 9 7900X3D 12-Core Processor          ; bucket 1024 x 683; ms of the module alone (the read is a view, < 1 ms)
+the picture rows carry +-3 levels of noise, so the fast method's smoothing runs as on a photo ("clean": none, the first round's case);
+the rows are not the bucket's picture (one band's rows handed out for every band), so the check is off (guideTol 1e9)
+4096 x 2731 (11.2 MP) bilinear             box js  :     52 ms in all, fit 0 ms, 1 bands (52 ms each after the fit), r 0, halo 0, noise -, 4.6 ns/px
+4096 x 2731 (11.2 MP) fast rgb (default)   box js  :    807 ms in all, fit 527 ms, 1 bands (280 ms each after the fit), r 4, halo 2, noise 1.82, 72.1 ns/px
+4096 x 2731 (11.2 MP) fast rgb (default)   box rust:    719 ms in all, fit 412 ms, 1 bands (307 ms each after the fit), r 4, halo 2, noise 1.82, 64.3 ns/px
+4096 x 2731 (11.2 MP) fast rgb, clean      box rust:    618 ms in all, fit 435 ms, 1 bands (183 ms each after the fit), r 4, halo 2, noise 0, 55.2 ns/px
+4096 x 2731 (11.2 MP) fast chroma          box rust:   1071 ms in all, fit 568 ms, 1 bands (503 ms each after the fit), r 4, halo 2, noise 1.82, 95.7 ns/px
+4096 x 2731 (11.2 MP) full chroma K1.5     box js  :   1242 ms in all, fit 0 ms, 1 bands (1242 ms each after the fit), r 6, halo 12, noise -, 111.0 ns/px
+4096 x 2731 (11.2 MP) full chroma K1.5     box rust:    707 ms in all, fit 0 ms, 1 bands (707 ms each after the fit), r 6, halo 12, noise -, 63.2 ns/px
+8192 x 5461 (44.7 MP) bilinear             box js  :    246 ms in all, fit 0 ms, 11 bands (22 ms each after the fit), r 0, halo 0, noise -, 5.5 ns/px
+8192 x 5461 (44.7 MP) fast rgb (default)   box js  :   1873 ms in all, fit 671 ms, 11 bands (109 ms each after the fit), r 4, halo 4, noise 1.79, 41.9 ns/px
+8192 x 5461 (44.7 MP) fast rgb (default)   box rust:   1506 ms in all, fit 572 ms, 11 bands (85 ms each after the fit), r 4, halo 4, noise 1.79, 33.7 ns/px
+8192 x 5461 (44.7 MP) fast rgb, clean      box rust:    997 ms in all, fit 455 ms, 11 bands (49 ms each after the fit), r 4, halo 4, noise 0, 22.3 ns/px
+8192 x 5461 (44.7 MP) fast chroma          box rust:   1806 ms in all, fit 210 ms, 11 bands (145 ms each after the fit), r 4, halo 4, noise 1.79, 40.4 ns/px
+8192 x 5461 (44.7 MP) full chroma K1.5     box js  :   3572 ms in all, fit 0 ms, 11 bands (325 ms each after the fit), r 12, halo 24, noise -, 79.8 ns/px
+8192 x 5461 (44.7 MP) full chroma K1.5     box rust:   2434 ms in all, fit 0 ms, 11 bands (221 ms each after the fit), r 12, halo 24, noise -, 54.4 ns/px
+15000 x 10000 (150.0 MP) bilinear             box js  :    588 ms in all, fit 0 ms, 36 bands (16 ms each after the fit), r 0, halo 0, noise -, 3.9 ns/px
+15000 x 10000 (150.0 MP) fast rgb (default)   box js  :   3536 ms in all, fit 563 ms, 36 bands (83 ms each after the fit), r 4, halo 7, noise 1.78, 23.6 ns/px
+15000 x 10000 (150.0 MP) fast rgb (default)   box rust:   3464 ms in all, fit 464 ms, 36 bands (83 ms each after the fit), r 4, halo 7, noise 1.78, 23.1 ns/px
+15000 x 10000 (150.0 MP) fast rgb, clean      box rust:   2460 ms in all, fit 464 ms, 36 bands (55 ms each after the fit), r 4, halo 7, noise 0, 16.4 ns/px
+15000 x 10000 (150.0 MP) fast chroma          box rust:   4386 ms in all, fit 174 ms, 36 bands (117 ms each after the fit), r 4, halo 7, noise 1.78, 29.2 ns/px
+15000 x 10000 (150.0 MP) full chroma K1.5     box rust:  10580 ms in all, fit 0 ms, 36 bands (294 ms each after the fit), r 22, halo 44, noise -, 70.5 ns/px
