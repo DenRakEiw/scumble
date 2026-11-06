@@ -1,0 +1,84 @@
+{
+  "id": "p_h3_image_local",
+  "name": "P-H3-Image (ComfyUI)",
+  "description": "P-H3-Image, Pruna AI's 8-step image model on MiniMax H3, on your own ComfyUI (0.44 or newer, which runs it on its own nodes): an instruction edit of the crop, which goes as <Picture 1>, plus up to seven more pictures of the crop batch (the Original copy with a fill mode, then the reference layers) as <Picture 2>, <Picture 3> ...; an @img token is written as the <Picture N> its picture has, and inputs the batch does not fill are left out. The model has no mask input: it renders the whole crop again and the stitch keeps your selection. The crop (Settings › ComfyUI's crop size, 1024 by default) is scaled to the Megapixels row's area, 4 MP by default as Pruna AI advises for edits (8 MP is its best size and needs more memory), sides in steps of 32. Generate new without reference layers is a text-to-image run (the white canvas does not go as a picture), at the canvas's aspect and the same area. Pruna AI's sampling: 8 fixed steps, no CFG and no negative prompt, ModelSamplingMiniMaxH3 at 1.0 / 1.0, euler (Comfy's templates take er_sde, the Preset row has both). Pruna AI's prompt upsampler (the Prompt upsampler row, on by default) writes the prompt out first, as Pruna AI's own workflows do: a 9B language model on your ComfyUI (ComfyUI's Generate Text node; p-h3-image_prompt_upsampler_w4a8, 6.7 GB, under models/text_encoders) sees the pictures, each named <Picture N>, and turns your words into the brief the model was trained on (on Generate new, a request with the canvas's aspect); without it, short edit requests often redraw the whole scene. The upsampled prompt is in the log after the run. Without that file, or with the row off, the prompt goes as typed, and the node puts \"Edit <Picture 1>.\" in front. The model goes as Comfy's own templates run it: MiniMax H3's FL2VA model (minimax_h3_fl2va_pruned_int8_convrot, from Comfy-Org's MiniMax-H3 repository) with Pruna AI's P-H3-Image LoRA at 1.0, P-H3-Image's text encoder and its VAE (MiniMax H3's own text encoder and video VAE do not fit), each picked under Settings; the LoRA, the text encoder, the VAE and the upsampler are in Pruna AI's P-H3-Image-Comfy repository on Hugging Face (also in bf16, and Pruna AI's full P-H3-Image model files). Your own LoRA rows go after the P-H3-Image LoRA. Powered by MiniMax H3. P-H3-Image is under the MiniMax H3 Community License, which does not cover use in the EU, the UK, South Korea or the US without a separate licence from MiniMax (platform.minimax.io/h3-license). \"MiniMax H3 is licensed under the MiniMax H3 Community License Agreement, Copyright © 2026 MiniMax. All Rights Reserved.\" The upsampler and the text encoder's Qwen3-VL parts are Apache-2.0.",
+  "mode": "local",
+  "canvas": "canvas",
+  "result": "decode:0",
+  "loras": { "model": "lora", "family": "p_h3_image" },
+  "refs": { "name": "<Picture {n}>", "slots": 8 },
+  "newImage": { "drop": ["cond|images.image_1"] },
+  "needs": ["InpaintCanvas", "ImageFromBatch", "UNETLoader", "LoraLoaderModelOnly", "MiniMaxH3SigmaShift", "CLIPLoader", "VAELoader", "ImageScaleToTotalPixels", "GetImageSize", "PH3ImageConditioning", "BasicGuider", "RandomNoise", "KSamplerSelect", "ManualSigmas", "SamplerCustomAdvanced", "VAEDecode"],
+  "settings": [
+    { "index": 1, "node": "unet", "input": "unet_name", "label": "Model" },
+    { "index": 2, "node": "lora", "input": "lora_name", "label": "P-H3-Image LoRA" },
+    { "index": 3, "node": "clip", "input": "clip_name", "label": "Text encoder" },
+    { "index": 4, "node": "vae", "input": "vae_name", "label": "VAE" },
+    { "index": 5, "node": "scale0", "input": "megapixels", "label": "Megapixels" },
+    { "index": 6, "node": "sampler", "input": "sampler_name", "label": "Sampler" },
+    { "index": 7, "node": "up_switch", "input": "switch", "label": "Prompt upsampler" },
+    { "index": 8, "node": "up_clip", "input": "clip_name", "label": "Upsampler model" }
+  ],
+  "presets": [
+    { "name": "Pruna AI's workflows: euler, 4 MP", "values": { "sampler:sampler_name": "euler", "scale0:megapixels": 4 } },
+    { "name": "Pruna AI's best size: euler, 8 MP (more memory)", "values": { "sampler:sampler_name": "euler", "scale0:megapixels": 8 } },
+    { "name": "Comfy's templates: er_sde, 4 MP", "values": { "sampler:sampler_name": "er_sde", "scale0:megapixels": 4 } }
+  ],
+  "models": {
+    "diffusion_models": [
+      "minimax_h3_fl2va_pruned_int8_convrot.safetensors (https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors)"
+    ],
+    "loras": [
+      "p-h3-image_lora_bf16.safetensors (https://huggingface.co/PrunaAI/P-H3-Image-Comfy/resolve/main/loras/p-h3-image_lora_bf16.safetensors)"
+    ],
+    "text_encoders": [
+      "p-h3-image_text_encoder_int8_convrot.safetensors (https://huggingface.co/PrunaAI/P-H3-Image-Comfy/resolve/main/text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors)",
+      "p-h3-image_prompt_upsampler_w4a8.safetensors (https://huggingface.co/PrunaAI/P-H3-Image-Comfy/resolve/main/text_encoders/p-h3-image_prompt_upsampler_w4a8.safetensors)"
+    ],
+    "vae": ["p-h3-image_vae_int8_convrot.safetensors (https://huggingface.co/PrunaAI/P-H3-Image-Comfy/resolve/main/vae/p-h3-image_vae_int8_convrot.safetensors)"]
+  },
+  "prompt": {
+    "canvas": { "class_type": "InpaintCanvas", "inputs": { "padding": 64, "target_size": 1024, "feather": 16, "multiple_of": 64 } },
+    "img0": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 0, "length": 1 } },
+    "img1": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 1, "length": 1 } },
+    "img2": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 2, "length": 1 } },
+    "img3": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 3, "length": 1 } },
+    "img4": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 4, "length": 1 } },
+    "img5": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 5, "length": 1 } },
+    "img6": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 6, "length": 1 } },
+    "img7": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 7, "length": 1 } },
+    "unet": { "class_type": "UNETLoader", "inputs": { "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors", "weight_dtype": "default" } },
+    "lora": { "class_type": "LoraLoaderModelOnly", "inputs": { "model": ["unet", 0], "lora_name": "p-h3-image_lora_bf16.safetensors", "strength_model": 1 } },
+    "shift": { "class_type": "MiniMaxH3SigmaShift", "inputs": { "model": ["lora", 0], "shift_video": 1, "shift_audio": 1 } },
+    "clip": { "class_type": "CLIPLoader", "inputs": { "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors", "type": "minimax", "device": "default" } },
+    "vae": { "class_type": "VAELoader", "inputs": { "vae_name": "p-h3-image_vae_int8_convrot.safetensors" } },
+    "scale0": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["img0", 0], "upscale_method": "lanczos", "megapixels": 4, "resolution_steps": 32 } },
+    "size": { "class_type": "GetImageSize", "inputs": { "image": ["scale0", 0] } },
+    "cond": { "class_type": "PH3ImageConditioning", "inputs": { "clip": ["clip", 0], "vae": ["vae", 0], "prompt": ["up_switch", 0], "width": ["size", 0], "height": ["size", 1], "images.image_1": ["scale0", 0], "images.image_2": ["img1", 0], "images.image_3": ["img2", 0], "images.image_4": ["img3", 0], "images.image_5": ["img4", 0], "images.image_6": ["img5", 0], "images.image_7": ["img6", 0], "images.image_8": ["img7", 0] } },
+    "guider": { "class_type": "BasicGuider", "inputs": { "model": ["shift", 0], "conditioning": ["cond", 0] } },
+    "noise": { "class_type": "RandomNoise", "inputs": { "noise_seed": ["canvas", 10] } },
+    "sampler": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+    "sigmas": { "class_type": "ManualSigmas", "inputs": { "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0" } },
+    "run": { "class_type": "SamplerCustomAdvanced", "inputs": { "noise": ["noise", 0], "guider": ["guider", 0], "sampler": ["sampler", 0], "sigmas": ["sigmas", 0], "latent_image": ["cond", 1] } },
+    "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["run", 0], "vae": ["vae", 0] } },
+    "up_clip": { "class_type": "CLIPLoader", "inputs": { "clip_name": "p-h3-image_prompt_upsampler_w4a8.safetensors", "type": "minimax", "device": "default" } },
+    "up_pics": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["canvas", 0], "upscale_method": "lanczos", "megapixels": 1, "resolution_steps": 32 } },
+    "up_run": { "class_type": "TextGenerateV2", "inputs": { "clip": ["up_clip", 0], "images.image1": ["up_pics", 0], "prompt": ["canvas", 7], "max_length": 3072, "sampling_mode": "off", "thinking": true, "use_default_template": true, "mtp": "auto" } },
+    "up_show": { "class_type": "PreviewAny", "inputs": { "source": ["up_run", 0] } },
+    "up_switch": { "class_type": "ComfySwitchNode", "inputs": { "switch": true, "on_false": ["canvas", 7], "on_true": ["up_run", 0] } }
+  },
+  "upsampler": {
+    "switch": "up_switch",
+    "run": "up_run",
+    "show": "up_show",
+    "nodes": ["up_clip", "up_pics", "up_run", "up_show"],
+    "request": {
+      "edit": "<|im_start|>user\n{pictures}Edit <Picture 1>. {text}<|im_end|>\n<|im_start|>assistant\n<think>\n",
+      "picture": "<Picture {n}>: <|vision_start|><|image_pad|><|vision_end|>",
+      "t2i": "Aspect ratio: {aspect}\nRequest: {text}",
+      "aspects": ["1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16"],
+      "verbatim": { "match": "^\\s*(Edit <Picture \\d+>|subject_definitions:)", "drop": "Edit <Picture 1>. " }
+    },
+    "source": "Pruna AI's request texts, unchanged, from workflows/p-h3-image_edit.json and p-h3-image_text_to_image.json of huggingface.co/PrunaAI/P-H3-Image-Comfy (read 2026-11-06): the edit as a raw chat block with one <Picture N> picture per input, the text-to-image request with the aspect ratio of Pruna AI's Resolution Selector; verbatim is the node's own check (comfy_extras/nodes_minimax_h3.py PH3_IMAGE_EDIT_VERBATIM, ComfyUI 0.44.0): a prompt that already names the picture it edits gets no \"Edit <Picture 1>. \" in front"
+  }
+}

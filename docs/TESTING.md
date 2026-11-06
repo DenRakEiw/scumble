@@ -340,6 +340,20 @@ reaches the body, a request without boxes sends the same body as before) and tha
 unchanged.
 Light tier: written from the docs; a live call is the user's (`docs/PLAN_FLUX3.md`).
 
+P-H3-Image (`recipes/p_h3_image.json`, `recipes/p_h3_image_local.json`, `docs/PLAN_PH3.md`): `node tools/ph3_test.js`
+(plain Node, a scripted api.wavespeed.ai, 23 checks) pins the WaveSpeed variant as `recipes.js` serves it and its
+bodies against the schema's fields (an edit: the crop and the references as `images`, the Resolution row, the seed,
+png, no `aspect_ratio` and no negative; a new image: the nearest of fifteen aspects, the tier; with references the
+edit route), ten pictures refused before any upload; its §3 checks the local graph against the node specs of
+`tools/refs/comfy_templates/object_info.json` (every input name one its class declares, the required ones there,
+combos other than model files in their options, numbers in range, links to nodes of the graph; also the queued shapes
+of Generate new and of the upsampler off), pins Pruna AI's values (shift 1 / 1, the eight sigmas, the LoRA at 1, type
+`minimax`, `euler`, the latent from the conditioning) and proves the check catches a renamed input. The local recipe
+also: `comfyrefs_test.js` (its `<Picture {n}>` slots), `comfyprompt_test.js` (its upsampler request with `verbatim`,
+`dropForNewImage`), `recipes_test.js`, `loras_test.js` and the
+`generate` gate's step `p_h3_generate_new_is_text_to_image` (the queued graphs of an edit and of Generate new against
+stubs). Light / Normal tier: written from the docs and the node specs; a live run is the user's.
+
 Ideogram 4.5 (`recipes/ideogram_4_5.json`, `electron/main/providers/replicate.js`, `util.js` `ideogramMask`,
 `docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com and
 api.wavespeed.ai, 149 checks; 67 of them Replicate's, I1) pins

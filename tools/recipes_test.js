@@ -213,6 +213,8 @@ async function main() {
             gpt_image_2: "Image {n}", gpt_image_2_5_flare: "Image {n}", gpt_image_2_5_sunburst: "Image {n}", gpt_image_2_6_flare: "Image {n}", gpt_image_2_6_sunburst: "Image {n}",
             seedream_4_5: "Image {n}", seedream_5_lite: "Image {n}", seedream_5_pro: "Image {n}", qwen_image_edit: "Image {n}", hy_image_3_5: "Image {n}",
             qwen_image_2_1: "<image{n}>", cloud_qwen_image_2_1_edit: "<image{n}>",
+            // P-H3-Image (docs/PLAN_PH3.md): Pruna AI's and the node's <Picture 1>, <Picture 2> ...
+            p_h3_image: "<Picture {n}>", cloud_p_h3_image: "<Picture {n}>",
         };
         const wrong = [];
         for (const name of fs.readdirSync(RECIPES).filter((n) => n.endsWith(".json"))) {
@@ -274,6 +276,8 @@ async function main() {
             qwen_image_2_1: { oxen: {} },
             hy_image_3_5: { comfypartner: {} },
             grok_imagine: { fal: { model: "xai/grok-imagine-image/v2.0/edit" }, openrouter: {}, oxen: { model: "xai-grok-imagine-image-edit" } },
+            // P-H3-Image on WaveSpeed: the text-to-image route takes no picture, the edit route up to nine
+            p_h3_image: { wavespeed: { model: "wavespeed-ai/p-h3-image/edit" } },
         };
         // the text shapes that make a new image from the prompt alone (26f's "None" row): text-only or inpaint-only
         // models, a single-picture edit field, a Comfy Router dialect with no input picture, Reve (its edit cap unread)
@@ -284,6 +288,7 @@ async function main() {
             // Comfy Cloud's text-to-image graphs (item 35 V6 step 5): a template that takes no picture
             cloud_anima_base: ["comfycloud"], cloud_anima_preview: ["comfycloud"], cloud_flux2_klein_9b: ["comfycloud"], cloud_ideogram_4: ["comfycloud"],
             cloud_krea_2_turbo: ["comfycloud"], cloud_mage_flow: ["comfycloud"], cloud_qwen_image_2_1_edit: ["comfycloud"], cloud_z_image_turbo: ["comfycloud"],
+            cloud_p_h3_image: ["comfycloud"],
         };
         const NULLS = { max: null, field: null, model: null, options: null, name: null };
         const list = await recipes.list(RECIPES);
@@ -306,7 +311,7 @@ async function main() {
             }
         }
         const stale = Object.entries(TEXT_REFS).flatMap(([id, rows]) => Object.keys(rows).map((pid) => `${id}/${pid}`)).filter((n) => !seen.has(n));
-        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 126, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
+        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 127, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
         check("every row of the table names a shipped provider variant", !stale.length, stale.join(", "));
         check("every text shape without text.refs is on the takes-none list", !none.length, none.join(", "));
         const noneStale = Object.entries(TAKES_NONE).flatMap(([id, pids]) => pids.map((pid) => `${id}/${pid}`)).filter((n) => { const [id, pid] = n.split("/"); const r = list.find((x) => x.id === id); return !r || !r.providers[pid] || !r.providers[pid].text || r.providers[pid].text.refs !== null; });
@@ -590,6 +595,7 @@ async function main() {
         // graph's own 2× runs, docs/PLAN_0_1_42.md U1)
         const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, flux3_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, qwen_image_edit_2_1_turbo_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, relight_qwen_local: { pictures: 1, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] },
             moss_image_local: { pictures: 1, values: ["negative", "prompt", "seed"] },
+            p_h3_image_local: { pictures: 8, values: ["prompt", "seed"] },
             rtx_vsr_local: { pictures: 1, values: [], notes: [/^the Comfy Cloud copy runs at the factor its graph holds \(2×\); change it in its graph$/] }, realism_pass: { refused: /Cloud copy/ } };
         const unlisted = comfy.map((r) => r.id).filter((id) => !want[id]);
         check("every shipped ComfyUI recipe has its row in the table", !unlisted.length, unlisted.join(", "));
@@ -819,8 +825,9 @@ async function main() {
             cloud_qwen_image_2_1_edit: [2, true, true], cloud_qwen_image_edit_2509: [2, false, true], cloud_flux2_dev: [1, false, false],
             cloud_anima_base: [0, true, true], cloud_anima_preview: [0, true, true], cloud_ideogram_4: [0, true, false], cloud_krea_2_turbo: [0, true, false],
             cloud_mage_flow: [0, true, true], cloud_z_image_turbo: [0, true, false],
+            cloud_p_h3_image: [1, true, false],
         };
-        check("the manifest ships the thirteen", eq(tool.MANIFEST.map((m) => m.id).sort(), Object.keys(want).sort()), short(tool.MANIFEST.map((m) => m.id)));
+        check("the manifest ships the fourteen", eq(tool.MANIFEST.map((m) => m.id).sort(), Object.keys(want).sort()), short(tool.MANIFEST.map((m) => m.id)));
         const bad = [];
         const graphOk = (o, pictures) => {
             const g = o && o.graph;
@@ -838,7 +845,7 @@ async function main() {
                 && (!text || (v.text.model && Array.isArray(v.text.sizes) && v.text.refs === null && (pictures === 0 ? !v.text.options : graphOk(v.text.options, 0) && v.text.options.values.width && v.text.options.values.height)));
             if (!ok) bad.push(id);
         }
-        check("all thirteen are listed as shipped Comfy Cloud recipes: pictures titled, prompt and seed read (the negative where the template has one), their SaveImage, no node without inputs, the layout kept; the text-to-image ones (alone or as an edit recipe's text route) with their size", !bad.length, short(bad));
+        check("all fourteen are listed as shipped Comfy Cloud recipes: pictures titled, prompt and seed read (the negative where the template has one), their SaveImage, no node without inputs, the layout kept; the text-to-image ones (alone or as an edit recipe's text route) with their size", !bad.length, short(bad));
         // what step 5 reads: a prompt behind a switch, a preview and a prompt enhancer (Krea 2), the size from a resolution
         // node that goes (Anima base), the widget values a node list does not know (Ideogram 4)
         const krea = list.find((x) => x.id === "cloud_krea_2_turbo").providers.comfycloud.options;
@@ -1022,9 +1029,52 @@ async function main() {
             // FLUX 3 Image Klein's prompt upsampler (0.1.50 Q9): kept by normalize, a bad one dropped, kept by Save to recipe,
             // left out of the Cloud copy
             const kk = all.find((r) => r.id === "flux3_klein_local");
-            check("flux3_klein_local keeps its upsampler through list() (switch, run, show, nodes, t2i, source), and no other shipped recipe declares one",
+            check("flux3_klein_local keeps its upsampler through list() (switch, run, show, nodes, t2i, source), no request of its own, and no shipped recipe but it and P-H3-Image declares one",
                 !!kk && kk.upsampler && kk.upsampler.switch === "up_switch" && kk.upsampler.run === "up_run" && kk.upsampler.show === "up_show" && typeof kk.upsampler.t2i === "string" && /Apache-2\.0/.test(kk.upsampler.source)
-                && all.filter((r) => r.upsampler !== undefined).map((r) => r.id).join(",") === "flux3_klein_local", short(kk && kk.upsampler && { ...kk.upsampler, t2i: "..." }));
+                && kk.upsampler.request === undefined
+                && all.filter((r) => r.upsampler !== undefined).map((r) => r.id).sort().join(",") === "flux3_klein_local,p_h3_image_local", short(kk && kk.upsampler && { ...kk.upsampler, t2i: "..." }));
+            // P-H3-Image (docs/PLAN_PH3.md): a TextGenerateV2 run and a request of its own, kept by normalize; Generate new's
+            // drop kept; a bad request or newImage dropped with a warning; both kept by Save to recipe
+            const ph = all.find((r) => r.id === "p_h3_image_local");
+            const rawP = rawFile("p_h3_image_local.json");
+            check("p_h3_image_local keeps its upsampler (a TextGenerateV2 run, the request's edit, picture, t2i, aspects and verbatim) and its newImage drop",
+                !!ph && ph.upsampler && ph.upsampler.run === "up_run" && ph.upsampler.t2i === undefined && ph.upsampler.request
+                && ["edit", "picture", "t2i", "aspects", "verbatim"].every((k) => eq(ph.upsampler.request[k], rawP.upsampler.request[k])) && Object.keys(ph.upsampler.request).length === 5
+                && eq(ph.newImage, { drop: ["cond|images.image_1"] }) && all.filter((r) => r.newImage !== undefined).map((r) => r.id).join(",") === "p_h3_image_local",
+                short(ph && { upsampler: ph.upsampler && { ...ph.upsampler, request: Object.keys(ph.upsampler.request || {}) }, newImage: ph.newImage }));
+            const withP = (more) => ({ ...JSON.parse(JSON.stringify(rawP)), kind: "comfy", ...more });
+            const UPP = rawP.upsampler;
+            const badReq = [
+                ["a request that is a string", { ...UPP, request: "x" }],
+                ["a request with neither edit nor t2i", { ...UPP, request: { picture: "<Picture {n}>" } }],
+                ["an edit without {text}", { ...UPP, request: { ...UPP.request, edit: "Edit <Picture 1>." } }],
+                ["a picture without {n}", { ...UPP, request: { ...UPP.request, picture: "<Picture>" } }],
+                ["aspects that are not W:H", { ...UPP, request: { ...UPP.request, aspects: ["wide"] } }],
+                ["a verbatim pattern that does not compile", { ...UPP, request: { ...UPP.request, verbatim: { match: "(Edit", drop: "Edit <Picture 1>. " } } }],
+                ["a verbatim drop the edit does not hold", { ...UPP, request: { ...UPP.request, verbatim: { match: "^Edit", drop: "Edit <Picture 9>. " } } }],
+            ];
+            for (const [what, up] of badReq) {
+                const before = warned.length;
+                const r = recipes._normalize(withP({ upsampler: up }));
+                const said = warned.slice(before);
+                check(`a bad P-H3 upsampler (${what}) is dropped with a warning`, r.upsampler === undefined && said.length === 1 && /^p_h3_image_local: upsampler .*the graph goes as it is$/.test(said[0]), short({ said }));
+            }
+            const badNew = [
+                ["a list", ["cond|images.image_1"]],
+                ["an empty drop", { drop: [] }],
+                ["an input without node|", { drop: ["images.image_1"] }],
+                ["a node the graph lacks", { drop: ["nope|images.image_1"] }],
+                ["the canvas node", { drop: ["canvas|padding"] }],
+                ["an input that holds no link", { drop: ["cond|images.image_9"] }],
+            ];
+            for (const [what, n] of badNew) {
+                const before = warned.length;
+                const r = recipes._normalize(withP({ newImage: n }));
+                const said = warned.slice(before);
+                check(`a bad newImage (${what}) is dropped with a warning`, r.newImage === undefined && said.length === 1 && /^p_h3_image_local: newImage .*Generate new sends the fresh canvas$/.test(said[0]), short({ said }));
+            }
+            const overP = recipes.fromGraph({ output: recipes.toPrompt(ph), workflow: { nodes: [{ id: 1, type: "InpaintCanvas" }], links: [], extra: {} }, objectInfo: {}, base: ph, date: "2026-11-06" });
+            check("fromGraph (Save to recipe) keeps P-H3's request and newImage", !!overP.upsampler && eq(overP.upsampler.request, ph.upsampler.request) && eq(overP.newImage, ph.newImage), short({ up: overP.upsampler && overP.upsampler.run, newImage: overP.newImage }));
             const rawK = rawFile("flux3_klein_local.json");
             const withUp = (up, prompt) => ({ ...JSON.parse(JSON.stringify(rawK)), kind: "comfy", upsampler: up, ...(prompt ? { prompt } : {}) });
             const UPD = rawK.upsampler;
@@ -1157,7 +1207,7 @@ async function main() {
             const built = tool.build(tool.MANIFEST.find((m) => m.id === "cloud_ideogram_4"), info);
             check("the manifest declares loras false for cloud_ideogram_4 alone, and build writes it into providers.comfycloud", eq(withLoras, ["cloud_ideogram_4=false"]) && built.providers.comfycloud.loras === false && built.loras === undefined, short(withLoras));
             const run = require("node:child_process").spawnSync(process.execPath, [path.join(ROOT, "tools", "cloud_recipes.js"), "--check"], { encoding: "utf8" });
-            check("node tools/cloud_recipes.js --check", run.status === 0 && /^ok: 13 Comfy Cloud recipes match their exports/.test(run.stdout), short((run.stdout || "") + (run.stderr || "")));
+            check("node tools/cloud_recipes.js --check", run.status === 0 && /^ok: 14 Comfy Cloud recipes match their exports/.test(run.stdout), short((run.stdout || "") + (run.stderr || "")));
         } finally { console.warn = warn; }
     });
 

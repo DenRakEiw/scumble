@@ -408,6 +408,7 @@ export const FAMILIES = {
     moss_image: { label: "MOSS-Image" },
     z_image: { label: "Z-Image" },
     ideogram4: { label: "Ideogram 4" },
+    p_h3_image: { label: "P-H3-Image" },
 };
 
 /** A family's label ("FLUX.2 Klein 9B"); an unknown id as it is. @param {any} f */
@@ -590,7 +591,7 @@ export function familyOf(header, folder = null) {
 }
 
 /** The text encoder's type a graph's CLIPLoader names, as a family (DualCLIPLoader's "flux" is FLUX.1's pair). */
-const CLIP_FAMILY = { flux2: "flux2", flux3: "flux3", moss_image: "moss_image", qwen_image: "qwen_image", lumina2: "z_image", sdxl: "sdxl", ideogram4: "ideogram4" };
+const CLIP_FAMILY = { flux2: "flux2", flux3: "flux3", moss_image: "moss_image", qwen_image: "qwen_image", lumina2: "z_image", sdxl: "sdxl", ideogram4: "ideogram4", minimax: "p_h3_image" };
 
 /**
  * The base model a recipe's LoRAs must fit: its declared `loras.family` (a Comfy Cloud variant's, passed as `{ loras }`

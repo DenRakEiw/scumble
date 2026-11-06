@@ -304,6 +304,102 @@ async function main() {
         check("no node list known: it runs (the server decides)", n.res.on && !n.gone, short(n.res));
         const plain = clone(norm("flux2_klein_local").prompt);
         check("a recipe without an upsampler: nothing changes", eq(C.wireUpsampler(plain, norm("flux2_klein_local"), { text: "x" }), { on: false, note: null, show: null }) && eq(plain, norm("flux2_klein_local").prompt));
+        // the request a recipe can declare (P-H3-Image) leaves Klein's as it was: no request, a picture count changes nothing
+        const pk = clone(k.prompt);
+        C.wireUpsampler(pk, k, { text: "put <ref_image_1> on the table", files, classes, pictures: 3 });
+        check("Klein declares no request: a run with a picture count still gets BFL's three lines with ordinals and the i2i guide",
+            C.upsamplerRequest(k.upsampler) === null && eq(pk, p), short(pk.up_run.inputs.prompt));
+    });
+
+    // P-H3-Image (docs/PLAN_PH3.md): a TextGenerateV2 run with Pruna AI's own requests, the picture names kept
+    await section("the prompt upsampler in p_h3_image_local", async () => {
+        const h = norm("p_h3_image_local");
+        const before = clone(h);
+        const UP = "p-h3-image_prompt_upsampler_w4a8.safetensors";
+        const classes = { TextGenerateV2: {}, PreviewAny: {} };
+        const files = ["p-h3-image_text_encoder_int8_convrot.safetensors", UP];
+        const upIds = ["up_clip", "up_pics", "up_run", "up_show", "up_switch"];
+        const req = C.upsamplerRequest(h.upsampler);
+        check("the recipe declares its request (edit with {pictures} and {text}, picture with {n}, t2i with {aspect}, seven aspects), the run a TextGenerateV2 on the crop batch",
+            !!req && /\{pictures\}Edit <Picture 1>\. \{text\}/.test(req.edit) && req.picture === "<Picture {n}>: <|vision_start|><|image_pad|><|vision_end|>"
+            && req.t2i === "Aspect ratio: {aspect}\nRequest: {text}" && req.aspects.length === 7 && h.prompt.up_run.class_type === "TextGenerateV2"
+            && eq(h.prompt.up_run.inputs["images.image1"], ["up_pics", 0]) && eq(h.prompt.cond.inputs.prompt, ["up_switch", 0]) && eq(h.prompt.up_switch.inputs.on_false, ["canvas", 7]), short(req));
+        // an edit with the crop and two references: one picture block each, the names as written (no ordinals)
+        const p = clone(h.prompt);
+        const on = C.wireUpsampler(p, h, { text: "put the hat of <Picture 2> on the person, the lamp of <Picture 3> behind", files, classes, pictures: 3 });
+        const want = "<|im_start|>user\n<Picture 1>: <|vision_start|><|image_pad|><|vision_end|><Picture 2>: <|vision_start|><|image_pad|><|vision_end|><Picture 3>: <|vision_start|><|image_pad|><|vision_end|>"
+            + "Edit <Picture 1>. put the hat of <Picture 2> on the person, the lamp of <Picture 3> behind<|im_end|>\n<|im_start|>assistant\n<think>\n";
+        check("on (an edit, three pictures): cond takes the run, the switch is gone, the run reads the crop batch, Pruna AI's raw block with three pictures, <Picture N> kept",
+            on.on && on.note === null && on.show === "up_show" && !p.up_switch && eq(p.cond.inputs.prompt, ["up_run", 0]) && eq(p.up_run.inputs["images.image1"], ["up_pics", 0])
+            && p.up_run.inputs.prompt === want && !("system_prompt" in p.up_run.inputs) && eq(h, before), short(p.up_run.inputs.prompt));
+        // a text that already names the picture it edits (or an edit brief): no second "Edit <Picture 1>. " (the node's
+        // own check, PH3_IMAGE_EDIT_VERBATIM), the text trimmed as the node does; a text that only names one later keeps it
+        const pv = clone(h.prompt);
+        C.wireUpsampler(pv, h, { text: "  Edit <Picture 1>. put the hat of <Picture 2> on the person", files, classes, pictures: 2 });
+        const pb = clone(h.prompt);
+        C.wireUpsampler(pb, h, { text: "subject_definitions: a red hat", files, classes, pictures: 1 });
+        const pl = clone(h.prompt);
+        C.wireUpsampler(pl, h, { text: "the hat of <Picture 2>. Edit <Picture 1> too", files, classes, pictures: 2 });
+        const leads = (s) => (s.match(/Edit <Picture 1>\./g) || []).length;
+        check("verbatim: a text starting \"Edit <Picture N>\" or \"subject_definitions:\" goes without the lead, trimmed; a later mention keeps the lead",
+            leads(pv.up_run.inputs.prompt) === 1 && /<\|vision_end\|>Edit <Picture 1>\. put the hat of <Picture 2> on the person<\|im_end\|>/.test(pv.up_run.inputs.prompt)
+            && /<\|vision_end\|>subject_definitions: a red hat<\|im_end\|>/.test(pb.up_run.inputs.prompt) && leads(pb.up_run.inputs.prompt) === 0
+            && /<\|vision_end\|>Edit <Picture 1>\. the hat of <Picture 2>\. Edit <Picture 1> too<\|im_end\|>/.test(pl.up_run.inputs.prompt),
+            short([pv.up_run.inputs.prompt, pb.up_run.inputs.prompt, pl.up_run.inputs.prompt]));
+        const p1 = clone(h.prompt);
+        C.wireUpsampler(p1, h, { text: "make it night", files, classes });
+        check("an edit without a picture count: one picture block (the crop)", (p1.up_run.inputs.prompt.match(/<\|image_pad\|>/g) || []).length === 1 && /^<\|im_start\|>user\n<Picture 1>: /.test(p1.up_run.inputs.prompt), short(p1.up_run.inputs.prompt));
+        // Generate new without pictures after the crop: the text-to-image request, the aspect snapped to Pruna AI's seven,
+        // no picture input
+        const pn = clone(h.prompt);
+        const fresh = C.wireUpsampler(pn, h, { text: "a neon sign that says \"OPEN\"", fresh: true, refsGo: false, aspect: "1.85:1", files, classes, pictures: 1 });
+        check("on (Generate new, no pictures): \"Aspect ratio: 16:9\" (1.85:1 snapped), the request, no images.image1, no system prompt, no presence penalty",
+            fresh.on && pn.up_run.inputs.prompt === "Aspect ratio: 16:9\nRequest: a neon sign that says \"OPEN\"" && !("images.image1" in pn.up_run.inputs) && !("image" in pn.up_run.inputs)
+            && !("system_prompt" in pn.up_run.inputs) && !("sampling_mode.presence_penalty" in pn.up_run.inputs), short(pn.up_run.inputs));
+        const pa = clone(h.prompt);
+        C.wireUpsampler(pa, h, { text: "x", fresh: true, refsGo: false, aspect: "3:4", files, classes });
+        const pz = clone(h.prompt);
+        C.wireUpsampler(pz, h, { text: "x", fresh: true, refsGo: false, aspect: null, files, classes });
+        check("an aspect in the list goes as it is (3:4); none known goes as 1:1", /^Aspect ratio: 3:4\n/.test(pa.up_run.inputs.prompt) && /^Aspect ratio: 1:1\n/.test(pz.up_run.inputs.prompt), short([pa.up_run.inputs.prompt, pz.up_run.inputs.prompt]));
+        const pr = clone(h.prompt);
+        C.wireUpsampler(pr, h, { text: "<Picture 2> in a park", fresh: true, refsGo: true, aspect: "1:1", files, classes, pictures: 2 });
+        check("Generate new with a picture after the crop keeps the edit request and the pictures (two blocks)",
+            eq(pr.up_run.inputs["images.image1"], ["up_pics", 0]) && (pr.up_run.inputs.prompt.match(/<\|image_pad\|>/g) || []).length === 2 && /Edit <Picture 1>\. <Picture 2> in a park<\|im_end\|>/.test(pr.up_run.inputs.prompt), short(pr.up_run.inputs.prompt));
+        // off: the row, a missing file, missing nodes (TextGenerateV2 named)
+        const offCase = (o) => {
+            const q = clone(h.prompt);
+            const res = C.wireUpsampler(q, h, { text: "x", files, classes, ...o });
+            return { res, gone: upIds.every((id) => !q[id]), typed: eq(q.cond.inputs.prompt, ["canvas", 7]) };
+        };
+        const sw = clone(h);
+        sw.prompt.up_switch.inputs.switch = false;
+        const qs = clone(sw.prompt);
+        const rs = C.wireUpsampler(qs, sw, { text: "x", files, classes });
+        check("the row off: cond reads the canvas node's prompt as typed, the upsampler's nodes and the switch are gone, no note",
+            !rs.on && rs.note === null && upIds.every((id) => !qs[id]) && eq(qs.cond.inputs.prompt, ["canvas", 7]), short(rs));
+        const f = offCase({ files: ["p-h3-image_text_encoder_int8_convrot.safetensors"] });
+        check("its file not on the server: off, the note names the file", !f.res.on && f.gone && f.typed && f.res.note.includes(UP), short(f.res));
+        const c = offCase({ classes: { PreviewAny: {}, TextGenerate: {} } });
+        check("TextGenerateV2 not on the server (TextGenerate there): off, the note names TextGenerateV2 and ComfyUI 0.44", !c.res.on && c.gone && c.typed && /TextGenerateV2 node \(ComfyUI 0\.44 or newer\)/.test(c.res.note), short(c.res));
+        check("nearestListedAspect: the nearest by the log of the ratio, the aspect itself without a list or for no ratio",
+            C.nearestListedAspect("2:1", ["1:1", "16:9", "9:16"]) === "16:9" && C.nearestListedAspect("1:3", ["1:1", "16:9", "9:16"]) === "9:16"
+            && C.nearestListedAspect("5:4", []) === "5:4" && C.nearestListedAspect("wide", ["1:1"]) === "wide");
+    });
+
+    // P-H3-Image's Generate new: the conditioning without image_1 is text to image (newImage)
+    await section("Generate new as text to image (newImage)", async () => {
+        const h = norm("p_h3_image_local");
+        const p = clone(h.prompt);
+        const removed = C.dropForNewImage(p, h);
+        check("dropForNewImage leaves out cond.images.image_1 and nothing else; width and height still read the scaled crop's size",
+            eq(removed, ["cond.images.image_1"]) && !("images.image_1" in p.cond.inputs) && eq(p.cond.inputs.width, ["size", 0]) && eq(p.cond.inputs.height, ["size", 1])
+            && eq(p.size.inputs.image, ["scale0", 0]) && Object.keys(p).length === Object.keys(h.prompt).length && "images.image_1" in h.prompt.cond.inputs, short(removed));
+        const k = norm("flux3_klein_local");
+        const q = clone(k.prompt);
+        check("a recipe without newImage: nothing is dropped", eq(C.dropForNewImage(q, k), []) && eq(q, k.prompt));
+        const twice = clone(h.prompt);
+        C.dropForNewImage(twice, h);
+        check("an input already gone is no error and is not listed again", eq(C.dropForNewImage(twice, h), []));
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });

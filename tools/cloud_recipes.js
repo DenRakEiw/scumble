@@ -44,6 +44,13 @@ const MANIFEST = [
     { file: "edit/image_qwen_image_2_1_image_edit.json", id: "cloud_qwen_image_2_1_edit", name: "Qwen Image 2.1 Edit (Comfy Cloud)",
         text: "t2i/image_qwen_image_2_1_t2i.json", refs: "<image{n}>", limits: { step: 32 },
         about: "Qwen Image 2.1 edits the crop with a second picture (the Original or your first reference layer); the template's prompt enhancer stays off for an edit. Generate new makes a new image with its text-to-image template." },
+    // P-H3-Image (docs/PLAN_PH3.md): the template's own LoRA on MiniMax H3's FL2VA model; the user's LoRA rows chain after
+    // the UNETLoader by the generic rule (the precedent of cloud_anima_base), so no `loras` here
+    { file: "edit/image_p_h3_image_edit.json", id: "cloud_p_h3_image", name: "P-H3-Image (Comfy Cloud)",
+        // Generate new up to the node's own text-to-image size (2912 a side, 8.5 MP; the template asks 4 MP, Pruna AI
+        // advises 8): a 16:9 at 2912 x 1632 is 4.8 MP
+        text: "t2i/image_p_h3_t2i.json", refs: "<Picture {n}>", limits: { step: 32 }, sizes: [1024, 1536, 2048, 2560, 2912],
+        about: "P-H3-Image, Pruna AI's 8-step image model on MiniMax H3 (the template runs its LoRA on MiniMax H3's FL2VA model): edits the crop from the prompt, one picture, at the crop's size; Generate new makes a new image with its text-to-image template. The template's prompt upsampler (on) gets your prompt as you write it, without the template's \"Aspect ratio\" and \"Request\" lines. Powered by MiniMax H3. P-H3-Image is under the MiniMax H3 Community License, which does not cover use in the EU, the UK, South Korea or the US without a separate licence from MiniMax (platform.minimax.io/h3-license). \"MiniMax H3 is licensed under the MiniMax H3 Community License Agreement, Copyright © 2026 MiniMax. All Rights Reserved.\"" },
     { file: "edit/image_qwen_image_edit_2509.json", id: "cloud_qwen_image_edit_2509", name: "Qwen Image Edit 2509 (Comfy Cloud)",
         about: "Qwen Image Edit 2509 with its 4-step Lightning LoRA: the crop and a second picture (the Original or your first reference layer)." },
     // Comfy's "Image Edit (Flux.2 Dev)": the crop is its picture, and the new image takes the crop's size

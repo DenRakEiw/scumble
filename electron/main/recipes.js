@@ -175,14 +175,16 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {boolean} [edit]                 ComfyUI recipes: false = a text-to-image graph, Generate new only (normalize)
  * @property {LocalUpsampler} [upsampler]     ComfyUI recipes: a prompt upsampler in the graph (localUpsampler)
  * @property {LoraDecl} [loras]               ComfyUI recipes: where the LoRAs go (lorasOf); a provider recipe's is its variant's
+ * @property {{ drop: string[] }} [newImage]  ComfyUI recipes: the inputs Generate new without pictures leaves out (localNewImage)
  */
 
 /**
  * A prompt upsampler in a ComfyUI recipe's graph (`upsampler`, checked by localUpsampler; recipes/flux3_klein_local.json,
- * 0.1.50 Q9): `switch` a ComfySwitchNode whose on_true is `run` (a TextGenerate) and whose on_false is the prompt as
- * typed, `nodes` the nodes only the upsampler needs (they go only when it runs, comfyprompt.wireUpsampler), `show` a
- * PreviewAny among them on its caption, `t2i` the guide for Generate new without pictures, `source` where the guides
- * come from.
+ * 0.1.50 Q9): `switch` a ComfySwitchNode whose on_true is `run` (a TextGenerate or a TextGenerateV2) and whose on_false
+ * is the prompt as typed, `nodes` the nodes only the upsampler needs (they go only when it runs,
+ * comfyprompt.wireUpsampler), `show` a PreviewAny among them on its caption, `t2i` BFL's guide for Generate new without
+ * pictures, `request` a recipe's own request text instead of BFL's (recipes/p_h3_image_local.json:
+ * comfyprompt.upsamplerRequest), `source` where the guides come from.
  *
  * @typedef {Object} LocalUpsampler
  * @property {string} switch
@@ -190,7 +192,21 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {string[]} nodes
  * @property {string} [show]
  * @property {string} [t2i]
+ * @property {UpsamplerRequest} [request]
  * @property {string} [source]
+ */
+
+/**
+ * A recipe's own upsampler request (`upsampler.request`): `edit` (with `{text}`, and `{pictures}` for one `picture`
+ * block per picture sent, its `{n}` 1-based) and `t2i` (with `{text}` and `{aspect}`, the nearest of `aspects`);
+ * `verbatim` a pattern (`match`) a prompt that needs no lead matches, and the lead of `edit` it then goes without (`drop`).
+ *
+ * @typedef {Object} UpsamplerRequest
+ * @property {string} [edit]
+ * @property {string} [t2i]
+ * @property {string} [picture]
+ * @property {string[]} [aspects]
+ * @property {{ match: string, drop: string }} [verbatim]
  */
 
 /**
@@ -546,9 +562,12 @@ function localBoxes(r) {
 
 /**
  * A ComfyUI recipe's `upsampler` checked against its graph (LocalUpsampler): `switch` a ComfySwitchNode of the graph
- * whose on_true links `run`, a TextGenerate, and whose on_false is a link; `nodes` ids of the graph other than the
- * canvas, the switch and the nodes on_false reads, `run` among them; `show` (optional) among them too. Answers
- * `{ upsampler }` (only those keys and the strings `t2i`, `source`) or `{ why }`.
+ * whose on_true links `run`, a TextGenerate or a TextGenerateV2, and whose on_false is a link; `nodes` ids of the graph
+ * other than the canvas, the switch and the nodes on_false reads, `run` among them; `show` (optional) among them too;
+ * `request` (optional) an object whose `edit` / `t2i` (one at least) are strings holding `{text}`, `picture` a string
+ * holding `{n}`, `aspects` "W:H" strings, `verbatim` `{ match, drop }` (a pattern that compiles, a text `edit` holds).
+ * Answers `{ upsampler }` (only those keys and the strings `t2i`, `source`) or
+ * `{ why }`.
  * @param {Recipe} r
  * @returns {{ upsampler?: LocalUpsampler, why?: string }}
  */
@@ -558,7 +577,7 @@ function localUpsampler(r) {
     const g = r.prompt || {};
     const sw = g[u.switch], run = g[u.run];
     if (!sw || sw.class_type !== "ComfySwitchNode" || !sw.inputs) return { why: `names the switch ${JSON.stringify(u.switch)}, which is no ComfySwitchNode of the graph` };
-    if (!run || run.class_type !== "TextGenerate") return { why: `names the run ${JSON.stringify(u.run)}, which is no TextGenerate node of the graph` };
+    if (!run || (run.class_type !== "TextGenerate" && run.class_type !== "TextGenerateV2")) return { why: `names the run ${JSON.stringify(u.run)}, which is no TextGenerate or TextGenerateV2 node of the graph` };
     const on = sw.inputs.on_true, off = sw.inputs.on_false;
     if (!Array.isArray(on) || String(on[0]) !== String(u.run)) return { why: `names the switch ${u.switch}, whose on_true does not take ${u.run}` };
     if (!Array.isArray(off)) return { why: `names the switch ${u.switch}, whose on_false is no link (the prompt as typed)` };
@@ -571,8 +590,56 @@ function localUpsampler(r) {
     const out = { switch: String(u.switch), run: String(u.run), nodes };
     if (u.show !== undefined) out.show = String(u.show);
     if (typeof u.t2i === "string" && u.t2i) out.t2i = u.t2i;
+    if (u.request !== undefined) {
+        const q = u.request;
+        if (!q || typeof q !== "object" || Array.isArray(q)) return { why: "names a request that is no object { edit, t2i }" };
+        /** @type {UpsamplerRequest} */
+        const req = {};
+        for (const k of /** @type {const} */ (["edit", "t2i"])) {
+            if (q[k] === undefined) continue;
+            if (typeof q[k] !== "string" || !q[k].includes("{text}")) return { why: `names a request whose ${k} is no text with {text}` };
+            req[k] = q[k];
+        }
+        if (!req.edit && !req.t2i) return { why: "names a request with neither edit nor t2i" };
+        if (q.picture !== undefined) {
+            if (typeof q.picture !== "string" || !q.picture.includes("{n}")) return { why: "names a request whose picture is no text with {n}" };
+            req.picture = q.picture;
+        }
+        if (q.aspects !== undefined) {
+            if (!Array.isArray(q.aspects) || !q.aspects.length || !q.aspects.every((a) => typeof a === "string" && /^\d+:\d+$/.test(a))) return { why: "names a request whose aspects are no list of W:H" };
+            req.aspects = q.aspects.slice();
+        }
+        if (q.verbatim !== undefined) {
+            const v = q.verbatim;
+            let re = null;
+            try { re = v && typeof v === "object" && typeof v.match === "string" && v.match ? new RegExp(v.match) : null; } catch { re = null; }
+            if (!re || typeof v.drop !== "string" || !v.drop || !req.edit || !req.edit.includes(v.drop)) return { why: "names a request whose verbatim is no { match: a pattern, drop: a text of its edit }" };
+            req.verbatim = { match: v.match, drop: v.drop };
+        }
+        out.request = req;
+    }
     if (typeof u.source === "string" && u.source) out.source = u.source;
     return { upsampler: out };
+}
+
+/**
+ * A ComfyUI recipe's `newImage` checked against its graph: `drop` a list of "node|input", each an input of a node of
+ * the graph other than the canvas node that holds a link (the picture Generate new's fresh canvas would send).
+ * Answers `{ newImage }` or `{ why }`.
+ * @param {Recipe} r
+ * @returns {{ newImage?: { drop: string[] }, why?: string }}
+ */
+function localNewImage(r) {
+    const n = /** @type {any} */ (r.newImage);
+    if (!n || typeof n !== "object" || Array.isArray(n) || !Array.isArray(n.drop) || !n.drop.length) return { why: "is no object { drop: [\"node|input\", ...] }" };
+    const g = r.prompt || {};
+    for (const spec of n.drop) {
+        const at = typeof spec === "string" ? spec.indexOf("|") : -1;
+        const id = at > 0 ? spec.slice(0, at) : "", input = at > 0 ? spec.slice(at + 1) : "";
+        const node = id && id !== String(r.canvas) ? g[id] : null;
+        if (!node || !node.inputs || !Array.isArray(node.inputs[input])) return { why: `names ${JSON.stringify(spec)}, which is no linked input of a node of the graph` };
+    }
+    return { newImage: { drop: n.drop.map(String) } };
 }
 
 /**
@@ -660,6 +727,16 @@ function normalize(r) {
             else {
                 console.warn(`${r.id}: upsampler ${up.why}; the graph goes as it is`);
                 delete r.upsampler;
+            }
+        }
+        // Generate new as text to image on an edit graph (P-H3-Image): a declaration that does not hold is dropped (the
+        // fresh canvas's white crop then goes as the picture, as on every other edit recipe)
+        if (r.newImage !== undefined) {
+            const got = localNewImage(r);
+            if (got.newImage) r.newImage = got.newImage;
+            else {
+                console.warn(`${r.id}: newImage ${got.why}; Generate new sends the fresh canvas`);
+                delete r.newImage;
             }
         }
         // where the LoRA rows go (item 50): a part that does not hold is left out, the rest kept
@@ -1134,7 +1211,7 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
 }
 
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
-const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler", "loras"];
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler", "loras", "newImage"];
 
 /**
  * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API
@@ -1541,8 +1618,12 @@ function detectRoles(prompt, promoted, opts = {}) {
         };
         for (const id of ids) {
             const n = prompt[id];
-            if (!/Encode|Text/.test(n.class_type) || /Generate|Preview|Show|Note|Save/.test(n.class_type)) continue;
+            // a conditioning node with a prompt of its own (P-H3-Image's PH3ImageConditioning) is an encoder too, by its
+            // prompt input alone
+            const conditioner = /Conditioning$/.test(n.class_type) && !!n.inputs && "prompt" in n.inputs;
+            if (!conditioner && (!/Encode|Text/.test(n.class_type) || /Generate|Preview|Show|Note|Save/.test(n.class_type))) continue;
             for (const [k, v] of Object.entries(n.inputs || {})) {
+                if (conditioner && k !== "prompt") continue;
                 // a text that comes in by link (a text node, a concatenation of a fixed word and one): the text node at its end
                 const at = typeof v === "string" ? [id, k] : Array.isArray(v) && /^(text|prompt|positive)$/i.test(k) ? textSource(v) : null;
                 if (!at) continue;

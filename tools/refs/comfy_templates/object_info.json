@@ -9884,5 +9884,748 @@ true
 "search_aliases": null,
 "essentials_category": null,
 "has_intermediate_output": false
+},
+"PH3ImageConditioning": {
+"input": {
+"required": {
+"clip": [
+"CLIP",
+{}
+],
+"prompt": [
+"STRING",
+{
+"tooltip": "With images a short instruction gets \"Edit <Picture 1>. \" in front; an instruction that starts with \"Edit <Picture\" and an edit brief from the prompt upsampler are used as they are.",
+"multiline": true,
+"dynamicPrompts": true
+}
+],
+"width": [
+"INT",
+{
+"tooltip": "0 uses the width of image_1 after scaling, or 2912 without images.",
+"default": 0,
+"min": 0,
+"max": 16384,
+"step": 32
+}
+],
+"height": [
+"INT",
+{
+"tooltip": "0 uses the height of image_1 after scaling, or 2912 without images.",
+"default": 0,
+"min": 0,
+"max": 16384,
+"step": 32
+}
+]
+},
+"optional": {
+"vae": [
+"VAE",
+{
+"tooltip": "The p-h3-image VAE, needed when images are connected."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9"
+],
+"min": 0
+}
+}
+]
+}
+},
+"input_order": {
+"required": [
+"clip",
+"prompt",
+"width",
+"height"
+],
+"optional": [
+"vae",
+"images"
+]
+},
+"is_input_list": false,
+"output": [
+"CONDITIONING",
+"LATENT"
+],
+"output_is_list": [
+false,
+false
+],
+"output_name": [
+"positive",
+"LATENT"
+],
+"output_tooltips": [
+null,
+null
+],
+"output_matchtypes": null,
+"name": "PH3ImageConditioning",
+"display_name": "p-h3-image Conditioning",
+"description": "Text-to-image, or with images an edit of image_1 with the others as references. The prompt refers to them as <Picture 1>, <Picture 2>, ... The model needs ModelSamplingMiniMaxH3 at 1.0/1.0.",
+"python_module": "comfy_extras.nodes_minimax_h3",
+"category": "model/conditioning/minimax",
+"output_node": false,
+"deprecated": false,
+"experimental": false,
+"dev_only": false,
+"api_node": false,
+"price_badge": null,
+"search_aliases": null,
+"essentials_category": null,
+"has_intermediate_output": false
+},
+"MiniMaxH3SigmaShift": {
+"input": {
+"required": {
+"model": [
+"MODEL",
+{}
+],
+"shift_video": [
+"FLOAT",
+{
+"default": 12.0,
+"min": 0.01,
+"max": 100.0,
+"step": 0.01
+}
+],
+"shift_audio": [
+"FLOAT",
+{
+"default": 3.0,
+"min": 0.01,
+"max": 100.0,
+"step": 0.01
+}
+]
+}
+},
+"input_order": {
+"required": [
+"model",
+"shift_video",
+"shift_audio"
+]
+},
+"is_input_list": false,
+"output": [
+"MODEL"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"MODEL"
+],
+"output_tooltips": [
+null
+],
+"output_matchtypes": null,
+"name": "MiniMaxH3SigmaShift",
+"display_name": "ModelSamplingMiniMaxH3",
+"description": "Set the video/audio flow shifts.",
+"python_module": "comfy_extras.nodes_minimax_h3",
+"category": "model/patch/minimax",
+"output_node": false,
+"deprecated": false,
+"experimental": false,
+"dev_only": false,
+"api_node": false,
+"price_badge": null,
+"search_aliases": [
+"sigma shift",
+"minimax shift"
+],
+"essentials_category": null,
+"has_intermediate_output": false
+},
+"ManualSigmas": {
+"input": {
+"required": {
+"sigmas": [
+"STRING",
+{
+"default": "1, 0.5",
+"multiline": false
+}
+]
+}
+},
+"input_order": {
+"required": [
+"sigmas"
+]
+},
+"is_input_list": false,
+"output": [
+"SIGMAS"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"SIGMAS"
+],
+"output_tooltips": [
+null
+],
+"output_matchtypes": null,
+"name": "ManualSigmas",
+"display_name": "ManualSigmas",
+"description": "",
+"python_module": "comfy_extras.nodes_custom_sampler",
+"category": "model/sampling/sigmas",
+"output_node": false,
+"deprecated": false,
+"experimental": true,
+"dev_only": false,
+"api_node": false,
+"price_badge": null,
+"search_aliases": [
+"custom noise schedule",
+"define sigmas"
+],
+"essentials_category": null,
+"has_intermediate_output": false
+},
+"TextGenerateV2": {
+"input": {
+"required": {
+"clip": [
+"CLIP",
+{}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"dynamicPrompts": true
+}
+],
+"max_length": [
+"INT",
+{
+"default": 512,
+"min": 1,
+"max": 32768
+}
+],
+"sampling_mode": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "Sampling Mode",
+"options": [
+{
+"key": "on",
+"inputs": {
+"required": {
+"temperature": [
+"FLOAT",
+{
+"default": 0.7,
+"min": 0.01,
+"max": 2.0,
+"step": 1e-06
+}
+],
+"top_k": [
+"INT",
+{
+"default": 64,
+"min": 0,
+"max": 1000
+}
+],
+"top_p": [
+"FLOAT",
+{
+"default": 0.95,
+"min": 0.0,
+"max": 1.0,
+"step": 0.01
+}
+],
+"min_p": [
+"FLOAT",
+{
+"default": 0.05,
+"min": 0.0,
+"max": 1.0,
+"step": 0.01
+}
+],
+"repetition_penalty": [
+"FLOAT",
+{
+"default": 1.05,
+"min": 0.0,
+"max": 5.0,
+"step": 0.01
+}
+],
+"presence_penalty": [
+"FLOAT",
+{
+"default": 0.0,
+"min": 0.0,
+"max": 5.0,
+"step": 0.01
+}
+],
+"seed": [
+"INT",
+{
+"default": 0,
+"min": 0,
+"max": 18446744073709551615
+}
+]
+}
+}
+},
+{
+"key": "off",
+"inputs": {
+"required": {}
+}
+}
+]
+}
+]
+},
+"optional": {
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"names": [
+"image1",
+"image2",
+"image3",
+"image4",
+"image5",
+"image6",
+"image7",
+"image8",
+"image9",
+"image10",
+"image11",
+"image12",
+"image13",
+"image14",
+"image15",
+"image16",
+"image17",
+"image18",
+"image19",
+"image20",
+"image21",
+"image22",
+"image23",
+"image24",
+"image25",
+"image26",
+"image27",
+"image28",
+"image29",
+"image30",
+"image31",
+"image32",
+"image33",
+"image34",
+"image35",
+"image36",
+"image37",
+"image38",
+"image39",
+"image40",
+"image41",
+"image42",
+"image43",
+"image44",
+"image45",
+"image46",
+"image47",
+"image48",
+"image49",
+"image50"
+],
+"min": 0
+}
+}
+],
+"videos": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"video": [
+"IMAGE",
+{
+"tooltip": "Video frames as image batch. Assumed to be 24 FPS; subsampled to 1 FPS internally."
+}
+]
+}
+},
+"names": [
+"video1",
+"video2",
+"video3",
+"video4",
+"video5",
+"video6",
+"video7",
+"video8",
+"video9",
+"video10",
+"video11",
+"video12",
+"video13",
+"video14",
+"video15",
+"video16",
+"video17",
+"video18",
+"video19",
+"video20",
+"video21",
+"video22",
+"video23",
+"video24",
+"video25",
+"video26",
+"video27",
+"video28",
+"video29",
+"video30",
+"video31",
+"video32",
+"video33",
+"video34",
+"video35",
+"video36",
+"video37",
+"video38",
+"video39",
+"video40",
+"video41",
+"video42",
+"video43",
+"video44",
+"video45",
+"video46",
+"video47",
+"video48",
+"video49",
+"video50",
+"video51",
+"video52",
+"video53",
+"video54",
+"video55",
+"video56",
+"video57",
+"video58",
+"video59",
+"video60",
+"video61",
+"video62",
+"video63",
+"video64",
+"video65",
+"video66",
+"video67",
+"video68",
+"video69",
+"video70",
+"video71",
+"video72",
+"video73",
+"video74",
+"video75",
+"video76",
+"video77",
+"video78",
+"video79",
+"video80",
+"video81",
+"video82",
+"video83",
+"video84",
+"video85",
+"video86",
+"video87",
+"video88",
+"video89",
+"video90",
+"video91",
+"video92",
+"video93",
+"video94",
+"video95",
+"video96",
+"video97",
+"video98",
+"video99",
+"video100"
+],
+"min": 0
+}
+}
+],
+"audios": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"audio": [
+"AUDIO",
+{}
+]
+}
+},
+"names": [
+"audio1",
+"audio2",
+"audio3",
+"audio4",
+"audio5",
+"audio6",
+"audio7",
+"audio8",
+"audio9",
+"audio10",
+"audio11",
+"audio12",
+"audio13",
+"audio14",
+"audio15",
+"audio16",
+"audio17",
+"audio18",
+"audio19",
+"audio20",
+"audio21",
+"audio22",
+"audio23",
+"audio24",
+"audio25",
+"audio26",
+"audio27",
+"audio28",
+"audio29",
+"audio30",
+"audio31",
+"audio32",
+"audio33",
+"audio34",
+"audio35",
+"audio36",
+"audio37",
+"audio38",
+"audio39",
+"audio40",
+"audio41",
+"audio42",
+"audio43",
+"audio44",
+"audio45",
+"audio46",
+"audio47",
+"audio48",
+"audio49",
+"audio50",
+"audio51",
+"audio52",
+"audio53",
+"audio54",
+"audio55",
+"audio56",
+"audio57",
+"audio58",
+"audio59",
+"audio60",
+"audio61",
+"audio62",
+"audio63",
+"audio64",
+"audio65",
+"audio66",
+"audio67",
+"audio68",
+"audio69",
+"audio70",
+"audio71",
+"audio72",
+"audio73",
+"audio74",
+"audio75",
+"audio76",
+"audio77",
+"audio78",
+"audio79",
+"audio80",
+"audio81",
+"audio82",
+"audio83",
+"audio84",
+"audio85",
+"audio86",
+"audio87",
+"audio88",
+"audio89",
+"audio90",
+"audio91",
+"audio92",
+"audio93",
+"audio94",
+"audio95",
+"audio96",
+"audio97",
+"audio98",
+"audio99",
+"audio100"
+],
+"min": 0
+}
+}
+],
+"thinking": [
+"BOOLEAN",
+{
+"tooltip": "Operate in thinking mode if the model supports it.",
+"default": false
+}
+],
+"use_default_template": [
+"BOOLEAN",
+{
+"tooltip": "Use the built in system prompt/template if the model has one.",
+"advanced": true,
+"default": true
+}
+],
+"mtp": [
+"COMBO",
+{
+"tooltip": "Speculative decoding with the checkpoint's multi-token-prediction head. No effect without MTP weights. auto adapts the draft depth and breadth to observed token matches and execution cost; 2-5 pins a constant draft depth; tree modes pin both breadth and depth. Sampled output stays correctly distributed but differs from non-MTP output for the same seed.",
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"off",
+"2",
+"3",
+"4",
+"5",
+"tree2s1",
+"tree2s2",
+"tree3s1",
+"tree4s1m8"
+]
+}
+],
+"system_prompt": [
+"STRING",
+{
+"tooltip": "Replaces the system prompt in the model's chat template. Ignored when the default template is not used.",
+"forceInput": true,
+"multiline": false
+}
+]
+}
+},
+"input_order": {
+"required": [
+"clip",
+"prompt",
+"max_length",
+"sampling_mode"
+],
+"optional": [
+"images",
+"videos",
+"audios",
+"thinking",
+"use_default_template",
+"mtp",
+"system_prompt"
+]
+},
+"is_input_list": false,
+"output": [
+"STRING",
+"STRING"
+],
+"output_is_list": [
+false,
+false
+],
+"output_name": [
+"generated_text",
+"thinking"
+],
+"output_tooltips": [
+null,
+null
+],
+"output_matchtypes": null,
+"name": "TextGenerateV2",
+"display_name": "Generate Text",
+"description": "",
+"python_module": "comfy_extras.nodes_textgen",
+"category": "text",
+"output_node": false,
+"deprecated": false,
+"experimental": false,
+"dev_only": false,
+"api_node": false,
+"price_badge": null,
+"search_aliases": [
+"LLM",
+"gemma"
+],
+"essentials_category": null,
+"has_intermediate_output": false
 }
 }
