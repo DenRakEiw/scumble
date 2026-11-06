@@ -57,6 +57,11 @@ readbacks are the largest of the run, so a renderer that ends there loses no row
 The export rows keep the file in memory (host.saveExport stubbed out). Naming rows runs those (with build_the_file,
 open_the_file and close); these run only when named, at their place in the list:
 
+  open_again                               right after open_the_file: the same file opened again, into a new tab (a new
+                                           editor, so a new GPU compositor and its programs linked again) that is closed
+                                           after the row; the second open's wall and block beside the first, and the
+                                           programs' link waits ("gl getProgramParameter") of both (#0 of
+                                           docs/PLAN_WASM_BUILD.md §7: where G6, the shader link, goes)
   match_provider_crop film_provider_crop   after provider_crop: the crop under a matched layer and a film look (B item 7)
   save_png save_psd save_tiff save_ora     after export_ora: a real export through the `export` command into --out DIR
                                            (default a new temp folder), host.saveExport's read, IPC copy and write
@@ -101,7 +106,7 @@ SAVE_ROWS = {"save_png": "png", "save_psd": "psd", "save_tiff": "tiff", "save_or
 # the open of a file a save row wrote: the save row it needs
 OPEN_ROWS = {"open_psd": ("save_psd", "export_psd"), "open_ora": ("save_ora", "export_ora"), "open_tiff": ("save_tiff",)}
 # rows that change the document (B item 7) or write files (K0a): run only when named, after the rows they need
-OPT_IN = ("match_provider_crop", "film_provider_crop", *SAVE_ROWS, *OPEN_ROWS, "blend_export_png", "blend_export_psd", "blend_wand", "filter_export_png", "filter_export_psd", "filter_wand", "match_export_png", "match_export_psd", "match_wand")
+OPT_IN = ("open_again", "match_provider_crop","film_provider_crop", *SAVE_ROWS, *OPEN_ROWS, "blend_export_png", "blend_export_psd", "blend_wand", "filter_export_png", "filter_export_psd", "filter_wand", "match_export_png", "match_export_psd", "match_wand")
 
 PROBES = r"""
 (() => {
@@ -187,6 +192,15 @@ PROBES = r"""
         wrap(GL.prototype, "finish", "gl finish", null);
         wrap(GL.prototype, "getError", "gl getError", null);
     }
+    // the programs' compile and link (#0 of PLAN_WASM_BUILD §7): getProgramParameter right after linkProgram waits for
+    // the link, which is where a first open's 441 ms of K0c went; on WebGL 1 too (a filter context may be one)
+    for (const C of [window.WebGL2RenderingContext, window.WebGLRenderingContext]) {
+        if (!C) continue;
+        wrap(C.prototype, "compileShader", "gl compileShader", null);
+        wrap(C.prototype, "getShaderParameter", "gl getShaderParameter", null);
+        wrap(C.prototype, "linkProgram", "gl linkProgram", null);
+        wrap(C.prototype, "getProgramParameter", "gl getProgramParameter", null);
+    }
     window.__n1 = {
         reset() { S.calls = {}; },
         read() { const out = {}; for (const [k, v] of Object.entries(S.calls)) out[k] = { n: v.n, ms: +v.ms.toFixed(1), MB: +(v.bytes / 1048576).toFixed(1) }; return out; },
@@ -218,6 +232,9 @@ PRE = r"""(async () => {
     const ed = window.__n1doc ? ednow(window.__n1doc) : null;
     const E = (ed || host.editors()[0]).constructor;
     const FILES = __FILES__;   // the save rows' files by format (null without a save row)
+    const AGAIN = __AGAIN__;   // open_again named: open_the_file keeps the file for it
+    // whether an editor's GPU compositor exists yet (made at its first GPU composite, once per editor)
+    const compositorState = (e) => (e._compositor === undefined ? "not made" : e._compositor ? "made" : "none (Canvas 2D)");
     // the window's step marks (inpaint_jobs.js `markStep`; a build without them has none)
     const stepMarks = () => (typeof E.stepMarks === "function" ? E.stepMarks(true) : []);
     // the px module's calls on the window's thread by export (px.js counters, K0b), read and cleared; null in a build
@@ -400,16 +417,44 @@ return { size: [W, H], MP: Math.round(W * H / 1e6), fillMs, encodeMs: Math.round
     ("open_the_file", True, r"""
 const file = new File([window.__n1blob], "n1.png", { type: "image/png" });
 const r = await row(async () => {
+    const compositorBefore = compositorState(ed);
     const t0 = performance.now();
     await ed.loadFile(file);
     const loaded = Math.round(performance.now() - t0);
     if (ed.width !== W || ed.height !== H) throw new Error("the document is " + ed.width + " x " + ed.height + ": " + ed.status);
     ed.fitView(); ed.draw();
     await ed.mipsSettled();
-    return { loadFileMs: loaded, tiles: ed.basePx.tileCount };
+    return { loadFileMs: loaded, tiles: ed.basePx.tileCount, compositorBefore, compositorAfter: compositorState(ed) };
 });
+if (AGAIN) window.__n1again = window.__n1blob;
 window.__n1blob = null;
 return r;
+"""),
+    ("open_again", True, r"""
+const blob = window.__n1again;
+window.__n1again = null;
+if (!blob) throw new Error("open_the_file kept no file for open_again");
+const file = new File([blob], "n1.png", { type: "image/png" });
+const d = await run("new_document");
+const ed2 = ednow(d.id);
+shell.activate(ed2);
+await wait(300);
+ed2.resizeCanvas();
+try {
+    return await row(async () => {
+        const compositorBefore = compositorState(ed2);
+        const t0 = performance.now();
+        await ed2.loadFile(file);
+        const loaded = Math.round(performance.now() - t0);
+        if (ed2.width !== W || ed2.height !== H) throw new Error("the second document is " + ed2.width + " x " + ed2.height + ": " + ed2.status);
+        ed2.fitView(); ed2.draw();
+        await ed2.mipsSettled();
+        return { loadFileMs: loaded, tiles: ed2.basePx.tileCount, into: "a new tab", compositorBefore, compositorAfter: compositorState(ed2), editors: host.editors().length };
+    });
+} finally {
+    await run("close_document", { doc: d.id, force: true });
+    if (ed) shell.activate(ed);
+}
 """),
     ("add_the_paint_layer", False, r"""
 if (HUGE) return { skipped: "above the canvas limit the paint layer is the stroke's" };
@@ -698,7 +743,7 @@ return r;
 """),
     ("close", False, r"""
 const id = window.__n1doc;
-window.__n1doc = null; window.__n1blob = null; window.__n1kept = null; window.__n1saved = null;
+window.__n1doc = null; window.__n1blob = null; window.__n1again = null; window.__n1kept = null; window.__n1saved = null;
 await run("close_document", { doc: id, force: true });
 return { closed: id, arena: A.arenaStats() };
 """),
@@ -932,7 +977,8 @@ async def run_rows(c, w, h, files, results):
             print(f"[skip] {name}: {need} did not run (name it before {name})")
             results["rows"][name] = {"skipped": need + " did not run"}
             continue
-        expr = PRE.replace("__W__", w).replace("__H__", h).replace("__FILES__", json.dumps(files)).replace("__BODY__", body)
+        again = "true" if "open_again" in ONLY else "false"
+        expr = PRE.replace("__W__", w).replace("__H__", h).replace("__FILES__", json.dumps(files)).replace("__AGAIN__", again).replace("__BODY__", body)
         prof = None
         try:
             if PROFILE and profiled:
@@ -957,6 +1003,18 @@ async def run_rows(c, w, h, files, results):
         results["rows"][name] = {"row": r, "profile": prof}
         if not (isinstance(r, dict) and (r.get("error") or r.get("skipped"))):
             ran.add(name)
+    # open_again: the two opens side by side (wall, longest block, the link waits, the profile's getProgramParameter)
+    if "open_again" in ran and "open_the_file" in ran:
+        print("\n== the same file opened twice in this instance")
+        for name in ("open_the_file", "open_again"):
+            rr, pf = results["rows"][name]["row"], results["rows"][name]["profile"]
+            link = (rr.get("calls") or {}).get("gl getProgramParameter") or {"n": 0, "ms": 0}
+            comp = (rr.get("calls") or {}).get("gl compileShader") or {"n": 0, "ms": 0}
+            gpp = (pf or {}).get("natives", {}).get("getProgramParameter")
+            ex = rr.get("extra") or {}
+            print(f"   {name:14s} wall {rr['wall']:6d} ms  block {rr['blocked']:5d} ms  getProgramParameter {link['n']:3d} calls {link['ms']:6.1f} ms"
+                  f"  compileShader {comp['n']:3d} calls {comp['ms']:5.1f} ms" + (f"  (profile {gpp:.0f} ms)" if gpp is not None else "")
+                  + f"  compositor {ex.get('compositorBefore')} -> {ex.get('compositorAfter')}  focused {rr.get('focused')}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,96 @@
+#0 of docs/PLAN_WASM_BUILD.md §7 "The order after Stop 1": K1's M9 (docs/PLAN_WASM_K1.md §3) and the second open.
+2026-11-06 02:14-02:28, branch wasm-kernels at 51f5ea5 plus the uncommitted harness row (tools/native_test.py
+open_again and the four GL link wrappers; no app code changed). 15000 x 10000, --offline (--no-comfy), tiles, every run a
+fresh instance with its own profile, no DevTools frontend. The chain: m9_chain.sh, its log chain.log. Electron 44.2.0,
+Chrome 152.0.7977.76, V8 15.2.124.19-electron.0 (as K1b), NVIDIA driver 610.88. All ms wall unless named.
+
+The card: nvidia-smi 3,268 MiB used before the runs (3,156-3,443 at the starts, desktop apps and the user's installed
+Scumble, which was open); ComfyUI was not running (8188 refused the connection at every start), so nothing held the
+card for it. Not queued, not freed, not touched.
+
+Runs: every px_jobs run PASS, window focused and visible in every counted run; no route-not-taken row; no trap or
+out-of-memory renewal on any thread (only release renewals, 6 per M3 run and 3 per ladder run: the 150 MP flood jobs
+grow 644-657 MB, above releaseMB 256). m9-m3-r2 tries 1-2 and m9-m3-r3 try 1 ended rc 2 = NOT COUNTED (the window
+behind; the user was at the machine), each counted on its next try (the retry wrote the same log and jsonl name).
+mem rc 0, ALL PASS, with the GPU-process FAIL line K0c already printed. native_test RESULT measured in all four runs.
+
+== M9-M3: px_jobs --only wand_object,wand_band,wand_add --split, no --ab (the legacy kernels flip: "rust" is the app's
+   default with K1b's keepMB 16, "js" the whole JS kernel set), three runs; tools/ab_median.py over json/m9-m3-r*.jsonl
+row          arm   M9 median (per run)          spread  K1b M3 rust (flood A/B)  K1b M1s (legacy flip, --split)
+wand_band    rust  1,917.1 (1,770 1,917 1,944)    174   1,899.9 (1,895-1,934)    2,090.3 (1,888-2,389)
+             js    3,280.5 (3,281 3,669 3,238)    431   -                        4,805.3 (4,351-5,425)
+wand_object  rust    114.1 (106 114 121)            15     131.4 (117-134)          108.4 (100-135)
+             js      121.0 (121 138 120)            18   -                          146.8 (124-152)
+wand_add     rust  1,998.3 (1,845 2,074 1,998)    228   2,037.5 (1,987-2,104)    -
+             js    3,050.5 (2,795 3,051 3,200)    405   -                        -
+Verdicts (ab_median): rust in all three rows (wand_band and wand_add beyond the spread, wand_object inside it and rust
+by the kernel row, 6.3 against 18.8).
+Rust arm against K1b: wand_band +17 against M3 (inside M9's spread 174) and -173 against M1s (inside 500); wand_object
+-17 against M3 (faster, about M3's spread of 17) and +6 against M1s (inside 35); wand_add -39 against M3 (inside 228). The Rust split as
+K1b's M3: flood_shape 561-566 per row with copyIn 94 (587 MB, 576 shared).
+The js column (the legacy flip, no route) is faster than K1b's M1s by about 1.5 s on wand_band (3,281 vs 4,805): the
+box job's JS read 226 vs 571 and the wall outside the jobs; the cause is not measured and it decides nothing.
+
+== The check of keepMB 16 on the wand rows (Stop 1's question)
+keepMB 16 costs nothing measurable here. No row of the six runs renewed an instance for idle ("idle 0" in every row's
+split and over the rows): the large wand jobs give their 644-657 MB back by releaseMB 256 whatever keepMB says, and
+wand_object grows 2.3 MB, below 16. The Rust medians are at or below K1b's (keepMB 256) on every wand row but
+wand_band against M3 (+17, inside M9's spread of 174). The liquify window (about 69 MB, K1b's M7a: about 6 ms after a 2 s pause) is not on
+these rows and was not measured here.
+
+== M9-M4: px_jobs --only flood_ladder --split, no --ab, three runs; json/m9-m4-r*.jsonl
+step  box MP   rust M9 median (per run)    spread  K1b M4 rust      js (legacy flip)  verdict
+256     0.26    142.7 (116 155 143)          39     164.7 (142-171)   183.7            rust (tie rule, kernel 5.0 / 15.5)
+512     0.59     52.4 (49 95 52)             47      61.5 (54-68)     151.8            rust
+1024    1.64     69.8 (67 70 78)             11      69.4 (68-70)     194.0            rust
+2048    5.31    117.7 (115 133 118)          18     125.9 (125-130)   308.2            rust
+4096   18.94    342.5 (343 360 337)          23     360.5 (344-362)   749.4            rust
+8192  150.00  1,463.3 (1,454 1,539 1,463)    85   1,631.0 (1,617-1,665) 3,226.5          rust
+ab_median: "rust at every step from 256: no flood entry". The default (Rust) is the faster arm at every step, as K1b's
+flood A/B found; the Rust column is at or below K1b's at every step (8192 by 168, beyond K1b's spread of 81; the
+others inside). No regression.
+
+native_test's wand rows before and after a flood default (M9's third part): not run, no flood default landed (K1b).
+
+== mem:15000x10000,--rounds,3 (K0c's form; gates/gates/m9-mem; one more run m9-mem-b added to see the spread)
+                           start GPU   gc after r1 / r2 / r3   free GPU   GPU vs start   renderer at free
+K0c (w0b once, 2026-10-23)     193        445 / 576 / 793        548      +354 FAIL       2,944
+m9-mem                         194        497 / 597 / 652        641      +447 FAIL       3,280
+m9-mem-b (added)               195        500 / 697 / 776        691      +495 FAIL       3,246
+(MB; "GPU process back within 300 MB of the baseline" is the line that fails; pan, levels tick and canvas upload PASS in
+both runs, pan 4.50 -> 4.79 and 4.51 -> 4.14 ms, levels 9.70 -> 8.77 and 10.00 -> 8.71 ms.)
+Both runs today end 90-140 MB higher in the GPU process than K0c's one run, and the renderer about 300 MB higher. Not
+from keepMB (inferred): the wasm memories live in the renderer's threads, not in the GPU process, and a lower keepMB
+can only lower the renderer. What changed since K0c on the branch: K1a's lifecycle, K1b's keepMB, the merge of 0.1.51
+(G2's save in pieces, two skins); the driver of 2026-10-23 is not recorded. With one K0c run the spread of the old
+number is unknown, so this is a note, not a regression found; PERFORMANCE.md §11 already says the 300 MB bound is not
+met on tiles (+199 MB in C7's four rounds).
+
+== The second open: native_test.py 15000x10000 open_again (the same 15k PNG twice in one fresh instance; the second
+   into a new tab, so a new editor, a new GPU compositor, its programs compiled and linked again); native/open2-*.log
+                     first open (fresh profile)        second open (new tab, same process)
+                     wall    block   link (3 calls)   wall    block   link (3 calls)
+r1                   2,790     444      396.8          2,318      27      1.4
+r2                   2,796     453      396.3          2,305      29      1.5
+r3                   2,851     454      401.0          2,357      30      1.5
+median               2,796     453      396.8          2,318      29      1.5
+restart on r3's
+profile (caches warm) 2,367     46        1.7          2,367      35      1.6
+"link" = the window's ms inside gl getProgramParameter (the wait for the link; the profile's getProgramParameter agrees,
+396-401 / 1-2 ms); compileShader 6 calls, 0.0 ms, in every open. The compositor was "not made" before each open and
+"made" after, so the second open did compile and link its three programs: they come back from Chromium's program cache.
+Every row focused and visible. png_read (off the window) 1,957-2,046 ms in every open, unfilter 914-931.
+K0c's first open, for reference: 3,076 wall, 497 block, getProgramParameter 441 (focused False there).
+What it says: the 0.40 s block of K0c's open is the shader link of the process's first GPU compositor on a profile with a
+cold GPU cache. A second document does not pay it (block 29 ms), and neither does a restart on the same profile (block
+46 ms, link 1.7 ms): the link is paid once per profile until its GPU cache goes (inferred: the first open after an
+install, and after a driver or Chromium change empties that cache).
+
+== What #0 decides
+- K1's defaults hold (M9): no flood entry, Rust everywhere on the wand and the ladder; keepMB 16 costs nothing on the
+  wand rows. Nothing to change in px/kernels.js.
+- G6 (the shader link): the second open is cheap, so G6 does not move up to #8 of the critic's table; it stays where the
+  user put it (its own short session after K5 and W1, in the order after K12). Since a restart does not pay the link
+  either, the session's gain is one block of about 0.4 s once per profile; whether G6 still runs or shrinks to this note
+  is the user's call at that point (the plan's §7 "The user's answers" asked for the second-open check, and this is it).
+- mem: the GPU-process line fails as in K0c, 90-140 MB higher in two runs; not explained, not from keepMB (inferred).

@@ -1,0 +1,63 @@
+[02:14:42] gpu: 3268 MiB, 3 %; comfy 8188: 000
+[02:14:42] m9-m3-r1 (try 1): px_jobs.py --only wand_object,wand_band,wand_add --split 15000x10000
+[02:14:44] gpu: 3268 MiB, 3 %; comfy 8188: 000
+[02:15:32] rc=0
+closed
+[02:15:37] m9-m4-r1 (try 1): px_jobs.py --only flood_ladder --split 15000x10000
+[02:15:39] gpu: 3271 MiB, 3 %; comfy 8188: 000
+[02:16:22] rc=0
+closed
+[02:16:27] m9-m3-r2 (try 1): px_jobs.py --only wand_object,wand_band,wand_add --split 15000x10000
+[02:16:29] gpu: 3255 MiB, 4 %; comfy 8188: 000
+[02:17:17] rc=2
+closed
+[02:17:22] m9-m3-r2 (try 2): px_jobs.py --only wand_object,wand_band,wand_add --split 15000x10000
+[02:17:24] gpu: 3261 MiB, 4 %; comfy 8188: 000
+[02:18:12] rc=2
+closed
+[02:18:17] m9-m3-r2 (try 3): px_jobs.py --only wand_object,wand_band,wand_add --split 15000x10000
+[02:18:19] gpu: 3443 MiB, 2 %; comfy 8188: 000
+[02:19:11] rc=0
+closed
+[02:19:16] m9-m4-r2 (try 1): px_jobs.py --only flood_ladder --split 15000x10000
+[02:19:18] gpu: 3226 MiB, 2 %; comfy 8188: 000
+[02:20:04] rc=0
+closed
+[02:20:09] m9-m3-r3 (try 1): px_jobs.py --only wand_object,wand_band,wand_add --split 15000x10000
+[02:20:11] gpu: 3247 MiB, 2 %; comfy 8188: 000
+[02:21:02] rc=2
+closed
+[02:21:06] m9-m3-r3 (try 2): px_jobs.py --only wand_object,wand_band,wand_add --split 15000x10000
+[02:21:09] gpu: 3338 MiB, 2 %; comfy 8188: 000
+[02:22:00] rc=0
+closed
+[02:22:05] m9-m4-r3 (try 1): px_jobs.py --only flood_ladder --split 15000x10000
+[02:22:07] gpu: 3297 MiB, 3 %; comfy 8188: 000
+[02:22:51] rc=0
+closed
+[02:22:56] mem:15000x10000,--rounds,3
+[02:22:58] gpu: 3263 MiB, 2 %; comfy 8188: 000
+mem:15000x10000,--rounds,3 rc=0 45s 
+ALL PASS
+[02:23:59] open2-r1: native_test.py 15000x10000 open_again
+[02:24:01] gpu: 3159 MiB, 2 %; comfy 8188: 000
+[02:24:19] rc=0
+closed
+[02:24:23] open2-r2: native_test.py 15000x10000 open_again
+[02:24:25] gpu: 3159 MiB, 2 %; comfy 8188: 000
+[02:24:43] rc=0
+closed
+[02:24:47] open2-r3: native_test.py 15000x10000 open_again
+[02:24:50] gpu: 3160 MiB, 2 %; comfy 8188: 000
+[02:25:07] rc=0
+closed
+[02:25:12] open2-restart: native_test.py 15000x10000 open_again
+[02:25:14] gpu: 3159 MiB, 2 %; comfy 8188: 000
+[02:25:32] rc=0
+closed
+[02:25:38] gpu: 3158 MiB, 2 %; comfy 8188: 000
+[02:25:38] done
+[02:27:19] extra: mem:15000x10000,--rounds,3 again (m9-mem-b), to see the spread; gpu: 3156 MiB, 2 %
+mem:15000x10000,--rounds,3 rc=0 45s 
+ALL PASS
+[02:28:20] extra done

@@ -101,7 +101,9 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `--split`, `--fresh-pool` (a timing run with the window behind prints NOT COUNTED and exits 2),
   `python tools/ab_median.py` over three runs' `PX_JOBS_JSON` (medians, the spread, the tie rule), and
   `tools/px_probe.py` (`--cold`, `--regrow`, `--retention`; gate `pxprobe:<args>` with commas). `node tools/px_test.js`
-  takes about 8 s longer since K1 (its lifecycle cases wait out the 2 s idle trim).
+  takes about 8 s longer since K1 (its lifecycle cases wait out the 2 s idle trim). `native_test.py ... open_again`
+  (#0 of the plan's §7) opens the same file a second time into a new tab and prints both opens side by side with the
+  programs' link waits (`gl getProgramParameter`, counted in every row's boundaries since).
   `python tools/mem_test.py [12000x8000] [--rounds 4] [--keep]` is the memory walk: a
   document per round, benchmarked, closed and collected, with the private bytes of the
   renderer and of the GPU process, a census of every live canvas and the line that made it.

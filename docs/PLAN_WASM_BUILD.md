@@ -941,3 +941,38 @@ K11, the bucket K36-K37, the P chain, ...).
 - **Rode along** on the user's word: the skins Comfy and Black Forest. 0.1.51 published 2026-10-24T01:44:48Z.
 - **Merged into this branch** the same day: `saveExport` keeps K0a's marks (start, pieces, written), `docs/BUGS.md`
   drops the K0a entry. Next: #0 M9 and the second open, then D0.
+
+### #0 M9 and the second open (2026-11-06)
+
+K1's M9 (`docs/PLAN_WASM_K1.md` §3) and one new native_test row, at 15000 x 10000 on `51f5ea5` plus the row, every run a
+fresh instance (offline, tiles; `docs/measurements/m9_2026-11-06/`, `m9_chain.sh`, `summary.txt`). No app code changed.
+The card held 3.3 GB of desktop apps (the user's installed Scumble was open); ComfyUI was not running. Every px_jobs run
+PASS with the window in front; three tries the window was behind (NOT COUNTED) counted on the next try.
+- **Harness:** `native_test.py` row `open_again` (opt-in, right after `open_the_file`): the same file opened again into a
+  new tab, so a new editor and a new GPU compositor whose programs are compiled and linked again; the two opens are
+  printed side by side. `compileShader`, `getShaderParameter`, `linkProgram` and `getProgramParameter` are counted in
+  every row's boundaries now.
+- **M9-M3** (the wand rows, no `--ab`, `--split`, three runs; `ab_median.py`): Rust (the default, keepMB 16) 1,917 on
+  wand_band, 114 on wand_object, 1,998 on wand_add, against K1b's M3 Rust 1,900 / 131 / 2,038 and M1s 2,090 / 108; each
+  difference inside the spread or in Rust's favour, and Rust beats the legacy JS flip on all three rows. **keepMB 16 costs nothing measurable:**
+  no row of the six runs renewed an instance for idle; the large wand jobs give their 644-657 MB back by releaseMB 256
+  anyway, and wand_object grows 2.3 MB, below 16. The liquify window (about 69 MB) is not on these rows.
+- **M9-M4** (the ladder, three runs): Rust wins at every step from 256 (0.26 MP), at or below K1b's M4 Rust at every
+  step (8192: 1,463 against 1,631). No flood entry, nothing to change in `px/kernels.js`. native_test's wand rows before
+  and after a flood default were not run: none landed.
+- **mem** (`mem:15000x10000,--rounds,3`, once as asked plus one run added for the spread): the GPU process ends +447 and
+  +495 MB above its start, against K0c's one run of +354 (the same FAIL line under ALL PASS; pan, levels and upload
+  PASS); the renderer ends about 300 MB higher too. Not from keepMB (inferred: the wasm memories live in the renderer,
+  and a lower keepMB only lowers it); with one K0c run the old spread is unknown, so this is a note, not a regression
+  found. §11's 300 MB bound was already not met on tiles.
+- **The second open** (three fresh instances, then a restart on the third one's profile): the first open on a fresh
+  profile 2,796 wall, block 453, of which the link wait (`getProgramParameter`, 3 calls) 397; the second open into a new
+  tab 2,318 wall, block 29, link 1.5 (medians). The compositor was made new in the second tab, so its programs came back
+  from Chromium's program cache. A restart on the same profile does not pay it either (block 46, link 1.7). So K0c's
+  0.4-0.5 s open block is paid once per profile with a cold GPU cache (inferred: the first open after an install, or
+  after a driver or Chromium change).
+- **What it decides:** G6 does not move up to #8; it stays where the user put it (its own short session after K5 and
+  W1, after K12 in the order). Its gain is one block of about 0.4 s once per profile, so whether G6 still runs or ends
+  as this note is the user's call when it comes up.
+
+Next: D0.
