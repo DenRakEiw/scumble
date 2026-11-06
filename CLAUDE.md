@@ -252,8 +252,8 @@ code.
   listed; the closing comments for #10 / #11 drafted for the release) done 2026-11-06 ("LR8 as built" .. "LR10 as
   built") and LR5 (Comfy Cloud, with the user's key typed into a test instance: the read-only probe found the account
   route `GET /api/assets`, `docs/measurements/lr5_2026-11-06/probe.md`; the splice in main, the picker on Comfy Cloud's
-  lists with a typed name; "LR5 as built"); open there: LR5's two paid live runs on the user's word, then the release
-  block with CorridorKey; the user's ComfyUI is at v0.44.0 since 2026-11-06.
+  lists with a typed name; "LR5 as built"; its two paid live runs passed 2026-11-06: Qwen Image Edit 2509 with a catalog
+  LoRA 32.7 s, MOSS-Image Edit 26.8 s); open there: the release block with CorridorKey; the user's ComfyUI is at v0.44.0 since 2026-11-06.
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel
@@ -765,8 +765,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   comma form of `include_tags`; 777 catalog LoRAs, the account's own 0, so whether an import shows there is
   unconfirmed: an import is the user's call); the picker lists *Your imports* and Comfy Cloud's catalog and takes a
   typed name; `comfycloud.js` `withLoras` splices in `run` / `runV2` before `checkModelFiles` through `loras.js`,
-  never refusing a name; `docs/measurements/lr5_2026-11-06/probe.md`). **Open:** LR5's two paid live runs on the
-  user's word (`cloud_qwen_image_edit_2509` with one catalog LoRA, `cloud_moss_image_edit`, a few cents); the drafted
+  never refusing a name; `docs/measurements/lr5_2026-11-06/probe.md`). LR5's two paid live runs passed 2026-11-06 (`cloud_qwen_image_edit_2509` with
+  the catalog's `qwen-80s_fantasy_movie` 32.7 s, `cloud_moss_image_edit` 26.8 s; `docs/measurements/lr5_2026-11-06/live.md`). **Open:** the drafted
   closing comments for #10 / #11 still say LoRAs on Comfy Cloud come later (the manual, README and CHANGELOG say they
   work now). Then the release block with CorridorKey (0.1.52).
 - 51: **GPT-Image-2.6 Sunburst and Flare** (OpenAI, released 2026-11-04; the user, 2026-11-06: "schaue welcher api

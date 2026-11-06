@@ -515,8 +515,12 @@ Comfy Cloud's catalog (its 777 public LoRA assets on 2026-11-06, a superset of t
 `LoraLoaderModelOnly` combo, which is added where the assets lack a name), each by its `loader_path`; and a file name
 typed in the search goes as written (an import the list does not show yet; `set_generation` keeps one too). No hint line
 there (the files are Comfy Cloud's). `cloud_ideogram_4` declares `loras: false` (two model loaders), and its section is
-hidden with that reason. The probe that decided this: `docs/measurements/lr5_2026-11-06/probe.md`. **Not run live on
-Comfy Cloud yet** (a run with a LoRA is paid): the splice is held to the fake Comfy Cloud of `tools/fake_comfy_v2.js`
+hidden with that reason. The probe that decided this: `docs/measurements/lr5_2026-11-06/probe.md`. **Run live on
+Comfy Cloud 2026-11-06** (LR5, `docs/measurements/lr5_2026-11-06/live.md`): `cloud_qwen_image_edit_2509` with the
+catalog's `qwen-80s_fantasy_movie` at 1.0 on a whole-picture edit, 32.7 s, the history's via line "Qwen Image Edit 2509
+(Comfy Cloud) via Comfy Cloud + 1 LoRA: qwen-80s_fantasy_movie 1.0, 32 s"; the job took the name (a name the server
+lacks fails ComfyUI's validation), whether its weights took effect is seen by eye only (no run without it, no Cloud
+log). Beside it the splice is held to the fake Comfy Cloud of `tools/fake_comfy_v2.js`
 by `comfycloud_v2_test.js`, `cloudgraph_test.js` and the `loras` and `commands` gates (the `loras` gate runs Generate
 new and an edit on `cloud_flux2_klein_9b` there). **Not confirmed** either: that an import shows under
 `include_public=false` (the account probed had none).
@@ -656,7 +660,8 @@ finds the `UNETLoader` in both, so the LoRA rows go before the template's edit L
 user's ComfyUI `moss_image_edit_local` puts them after it). Every model file is in Comfy Cloud's catalog and both MOSS
 classes in its node list (read through Comfy Cloud's MCP server on 2026-11-06), though its `LoraLoaderModelOnly` combo
 does not list the edit LoRA (the model check is advisory, above); the licence sentence as in `moss_image_edit_local`;
-**not run on Comfy Cloud yet**: its one paid run waits for the user's word, LR5 of the plan), `cloud_p_h3_image` (P-H3-Image, `image_p_h3_image_edit` with
+run on Comfy Cloud 2026-11-06, LR5: a whole-picture edit in 26.8 s, the sky made a sunset and the rest kept;
+Generate new not run), `cloud_p_h3_image` (P-H3-Image, `image_p_h3_image_edit` with
 `image_p_h3_t2i` as its text route: the template's P-H3-Image LoRA on MiniMax H3's FL2VA model, `er_sde`, the crop at its
 own size; its prompt upsampler gets the prompt as written, without the template's "Aspect ratio" and "Request" lines,
 which the prompt control held; its pictures `<Picture {n}>`, sizes in steps of 32, Generate new's long sides 1024 to

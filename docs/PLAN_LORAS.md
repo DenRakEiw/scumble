@@ -1205,6 +1205,24 @@ Cloud lists as the account's own, and RECIPES.md describes the failure's check. 
 9574) loras, commands, recipes, generate PASS, lint 0 errors (the same 21 warnings), types green; the via line's
 fourth argument dropped makes the `loras` gate's Cloud step red (`lr5rev-mut`).
 
+**The live runs (2026-11-06, the user's yes; `docs/measurements/lr5_2026-11-06/live.md`).** On `eb77d4d`, the key
+instance on 9571 (the user's key typed by the user, `lr5_profile`), restarted on that commit; the machine lock held
+for the two runs. One picture, LR9's "arch" (`docs/images/tutorial/scene-clean.jpg` cropped to 860 x 520), the whole
+of it selected, seed 424242, LR9's E1 prompt ("Change only the sky to a warm orange sunset. Keep the building, the
+tree, the car and the composition unchanged."). (1) `cloud_qwen_image_edit_2509` with the catalog's
+`qwen-80s_fantasy_movie.safetensors` at 1.0: 32.7 s from the command to the layer, `loras_sent` and `lastLoras` that
+row, the status line and the history's via line "Qwen Image Edit 2509 (Comfy Cloud) via Comfy Cloud + 1 LoRA:
+qwen-80s_fantasy_movie 1.0, 32 s" with the note "LoRAs: qwen-80s_fantasy_movie 1.0."; the edge fit aligned it (shift
+-6.2, -0.2 px). The sky came back a pastel, painted sunset with streaks and the whole picture a cool film grade with
+deep blacks; the building, the tree and the car stayed (34.2 levels mean over the crop, 30.5 in its lower 40 %).
+Comfy Cloud took the name (a name the server lacks fails ComfyUI's validation); whether the weights took effect is
+judged by eye only: no run without the row (not asked), no Cloud log. (2) `cloud_moss_image_edit`, no rows (the
+recipe's declared edit LoRA only): 26.8 s, the via line "MOSS-Image Edit (Comfy Cloud) via Comfy Cloud, 26 s", no
+note. An orange sunset, the facade in warm evening light, the tree and the car kept (46.5 levels mean, 29.7 in the
+lower 40 %, the facade's warm light most of it): the recipe's first run on Comfy Cloud. Not run: Cloud Generate new
+of `cloud_moss_image_edit`, an own import under *Your imports* (the user's call), a failed Cloud run's LoRA note
+against the real asset list.
+
 ### LR6 as built (2026-11-06)
 
 **Built:** `recipes/moss_image_edit_local.json` (new; "MOSS-Image Edit (ComfyUI)"): Comfy's template `image_moss_image_edit`
