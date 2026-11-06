@@ -1,0 +1,29 @@
+The refine's full-resolution read per band in the app (readcost.py), 2026-11-06, branch ck-refine at 4e867de, a dev
+instance (electron . --no-comfy) on tiles, port 9577, a fresh profile. A 15,000 x 10,000 document: a gradient base with
+discs, a paint layer, a grey fill filter layer at 50 % over both. Each sweep reads what one refine of the whole box
+reads: the noise sample (60 rows, 0.9 MP), then the 36 bands of keymatte's bandPlan (279 rows plus a halo of 7 above
+and below, 4.4 MP each), each once. Times in ms.
+
+NOT A CLEAN MEASUREMENT: both runs below overlapped another workflow's timed run on this machine (its lock file
+appeared 4 s after the instance started, before the probe began, and was still there at the end); a first attempt
+(not kept) was taken entirely under that lock. The figures are indicative; the key gate's refine step (refine_notes.md,
+the integration's step 9) records the clean ones.
+
+                                                     sample  median band  max band  all 36 bands + sample
+run 2 (12:32)
+  same: sampleRegionSettled("image", box, 1,
+        { forRun: true, skipFilters: true })
+        + getImageData (the bucket's picture)          89        78          158         2,350
+  composite: readBoxBytes(box, { forRun: true,
+        held }) (the first notes' call, filters in)    50        50           85         1,859
+  same, again (warm)                                   77        73          183         2,285
+run 3 (12:43)
+  same                                                 87        80          158         2,373
+  composite                                            61        71        2,502         4,907
+  same, again (warm)                                   84        87          171         2,526
+
+The two reads differ by up to 48 levels (the grey fill at 50 % is in the composite only), which is what the guard's
+check catches when a read is not the bucket's picture. The bucket's own read costs about 80 ms per 4.4 MP band, about
+2.4 s for a whole 15k box (sampleRegionSettled waits for the region's chains, then draws the region and reads it back
+on the window's thread): it is the larger part of a 15k refine (the worker's apply, 83 ms per band
+in timing_r2.txt, runs beside the next read when the window posts bands ahead).

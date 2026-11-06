@@ -1,128 +1,163 @@
 # The key matte's refine: notes for the integration (CorridorKey 2.0, item 49, session I6)
 
-Branch `ck-refine` (from `corridorkey` at `6e9c0cf`), 2026-11-06. What I6 built as a pure module, what the edge
-measurement chose and why, the timing of the module alone, and the call the integration (keyworker.js, host.js, the
-`key` gate) has to make. The texts for the shared files (MANUAL, CHANGELOG, TESTING, CLAUDE.md) are at the end, for
-the integration to place; this branch does not touch them. Every number here is from synthetic scenes; the real
-engine's matte is not in it (Stop A runs in parallel), see "Unverified".
+Branch `ck-refine` (from `corridorkey` at `6e9c0cf`), 2026-11-06, two rounds: the first built the module and chose the
+method; the second, after a review, added **the guards** (the same-picture requirement and its check, the zone, the
+noise guard) and re-measured. What is built, the measurements that chose it, the timing, the call the integration
+(keyworker.js, host.js, the `key` gate) has to make, and the texts for the shared files (MANUAL, CHANGELOG, TESTING,
+CLAUDE.md), which this branch does not touch. Every number is from synthetic scenes; the real engine's matte is not in
+it (Stop A runs in parallel), see "Unverified".
 
 ## What was built
 
 - `renderer/editor/keymatte.js`: pure, app-only (imported by no shipped file; no FILES change, no node build). It
   imports `boxBlurs` from `px/kernels.js` (Rust once loaded in a window or worker, the JS twin under Node) and
   `guidedFilter` from `inpaint_depth.js`; neither file changed.
-- `tools/keymatte_test.js`: the tests (`node tools/keymatte_test.js`, 52 checks, under a second), `--measure` (the edge
-  measurement below, about 3.5 min; output `docs/measurements/ck_i6_2026-11-06/edges.txt`), `--time` (the module alone at
-  4k, 8k, 15k; output `docs/measurements/ck_i6_2026-11-06/timing.txt`).
+- `tools/keymatte_test.js`: the tests (`node tools/keymatte_test.js`, 93 checks, about 5 s), `--measure` (the edge
+  measurement, about 2 min), `--time` (the module alone at 4k, 8k, 15k).
+- `docs/measurements/ck_i6_2026-11-06/`: round 1 `edges.txt`, `timing.txt`; round 2 `edges_r2.txt`, `timing_r2.txt`,
+  `readcost.txt` (the app's read per band, `readcost.py`); `summary.txt` for both. `edges_r2.txt` was run before the
+  last change (the box sums skip what no box reaches), which leaves every byte as it was (the test "skipping the pixels
+  no box reaches changes nothing", and the same float operations per pixel).
 
-## The method the measurement chose (it is not the plan's first design)
+## The method the measurement chose (round 1; it is not the plan's first design)
 
 PLAN §4.7 point 3 described: upsample the alpha bilinearly to full resolution, run the guided filter of
 `inpaint_depth.js` at full resolution with r from the upscale factor, in bands with a halo of at least 2r, trimmed. That
 is built (`method: "full"`) and measured, and it is **barely better than no refine**: mean MAE 21.6-22.9 levels against
-the bilinear matte's 25.4-26.7, the edge still 50-60 levels wrong 1.5 px away from it. The reason is structural: it
-regresses a blurred matte on a sharp guide, and a regression of a blurred quantity comes out shallow (the soft ramp is
-spread over the windows; a larger r only trades that for lost detail).
+the bilinear matte's 25.4-26.7, the edge still 50-60 levels wrong 1.5 px away from it. It regresses a blurred matte on a
+sharp guide, and a regression of a blurred quantity comes out shallow.
 
-**What ships as the default (`method: "fast"`):** the guided filter's linear model fitted **at the bucket**, where the
-engine's matte and the picture it was keyed from describe the same pixels, then applied at full resolution (the fast
-guided filter of He and Sun, 2015): `q = A . I + B + (1 - C) p`, with A, B, C the window-averaged coefficients
-upsampled bilinearly, I the full-resolution pixel's guide, p the bilinear matte. Three parts of it are Scumble's and
-each was measured:
+**The default (`method: "fast"`):** the guided filter's linear model fitted **at the bucket**, where the engine's matte
+and the picture it was keyed from describe the same pixels, then applied at full resolution (the fast guided filter of
+He and Sun, 2015): `q = A . I + B + (1 - C) p`, with A, B, C the window-averaged coefficients upsampled bilinearly, I the
+full-resolution pixel's guide, p the bilinear matte. Three parts of it are Scumble's and each was measured:
 
 1. **The three-channel guide** (the colour guided filter, `(Sigma + eps U)^-1 cov(I, p)` per window). A mixed pixel is
    `alpha F + (1 - alpha) B`, so alpha is an affine function of the colour exactly, for one subject colour and for two
-   or three (a striped shirt, a fold in the skin) as long as they and the screen are affinely independent. The chroma
-   distance the plan named is exact only for one subject colour and needs the screen colour; it measured 2-4x worse
-   (mean MAE 3.0-4.4 against 0.5-1.4), worst on a shadow cast on the screen (MAE 7-12 against 0.4-1.4) and a fold
-   (3.4 against 1.2). Luminance fails as the plan expected: an edge between green and a skin tone of equal luminance
-   leaks 91-121 levels with it, and on the fold and shade scenes it is worse than nothing (MAE 31-74 against the
-   bilinear matte's 27-29).
-2. **Confidence-weighted windows:** each window's fit counts by `c = var / (var + flat)` (`flat` 2e-5 on the [0, 1]
-   guide, minus a floor of 5 % of it for the rounding of a flat window's means), and what a window does not claim
-   passes the matte through: `(1 - C) p`. A flat picture therefore leaves the matte exactly as the bilinear upsample
-   has it (0 levels, every method and guide; the test), where a plain guided filter would blur it by 2r.
-3. **The engine's softness matched** (`soft: "auto"`): a model's matte is softer than the picture it was keyed from,
-   and fitting a softer matte against the sharper bucket guide is the same shallow regression again (with no match on a
-   one-pass engine: MAE 10-13 on the edges and 28 on hair, leaks 16-82). The model is linear, so `blur(alpha) = A blur(I) + B` with the same A and B: the fit
-   runs against the bucket guide blurred by k passes of [1 2 1] and the coefficients then apply to the sharp
-   full-resolution guide. "auto" fits k = 0..4 and keeps the k whose fit predicts the matte best over its transition
-   (0.02 < p < 0.98) at the bucket. On engines of 0, 1, 2 and 3 passes it picked the engine's own k in all 32 cases
-   (4 scenes, 2 factors, 4 engines; `edges.txt` "the engine's softness"). A pass more is better on some scenes
-   (hair) and worse on others (the fold on a sharp engine: MAE 6.3 against 1.3); two more break the stripes finer than
-   a bucket pixel (MAE 3-10, leaks 35-144). The residual's pick is kept.
+   or three as long as they and the screen are affinely independent. The chroma distance the plan named measured 2-4x
+   worse (mean MAE 3.0-4.4 against 0.5-1.4), worst on a shadow cast on the screen. Luminance fails as the plan expected
+   (an edge between green and a skin tone of equal luminance leaks 91-121 levels with it).
+2. **Confidence-weighted windows:** each window's fit counts by `c = var / (var + flat)`, and what a window does not
+   claim passes the matte through, `(1 - C) p`: a flat picture leaves the matte exactly as the bilinear upsample has it.
+3. **The engine's softness matched** (`soft: "auto"`): the fit runs against the bucket guide blurred by k passes of
+   [1 2 1] and the coefficients apply to the sharp full-resolution guide; "auto" keeps the k whose fit predicts the matte
+   best over its transition. It picked the engine's own k in all 32 cases, in both rounds.
 
-**The guide on the sRGB bytes** (`linear: false`). A camera mixes in linear light, but the bucket picture is a byte
-average of the full-resolution one (the tile levels average bytes), so only in sRGB is the bucket guide the area average
-of the full-resolution guide that the fit's transfer between the scales assumes. sRGB measured better on the mean
-of every one of the five conditions (1.51 against 2.09 at the defaults' r and eps, the best linear 1.97; the scenes are
-mixed in linear light, sensor noise included). Per scene it is mixed: linear is better on some one-coloured sharp edges
-(skin 0.5 against 1.1 levels at s = 4) and on the motion blur (0.5 against 0.8) and places the 0.5 crossing about
-0.1 px closer; sRGB on the shaded screen, the stripes and the hair (shade 1.5 against 3.4, hair 3.7 against 5.7).
+**The guide on the sRGB bytes** (`linear: false`): the bucket picture is a byte average of the full-resolution one (the
+tile levels average bytes), so only in sRGB is the bucket guide the area average that the transfer between the scales
+assumes; sRGB measured better on the mean of all five conditions. **The parameters:** r = 4 bucket pixels, eps = 3e-6,
+flat = 2e-5; they do not follow the upscale factor (`refineParams(scale)` returns r in bucket pixels; "full" keeps
+r = round(1.5 x factor) full-resolution pixels).
 
-**The parameters:** r = 4 bucket pixels, eps = 3e-6 (1e-6 measured best by 0.07 levels; kept a step above it as a
-margin for real pictures' structure, which the synthetic scenes do not have), flat = 2e-5 (5e-6 was 0.09 levels better,
-1e-4 0.33 worse). r costs nothing at full resolution (the apply is pointwise) and almost nothing at the bucket (running
-sums). **The radius and eps do not follow the upscale factor** in this method: the transition the windows must
-straddle is about the same number of bucket pixels whatever the factor (`refineParams(scale)` returns r in bucket
-pixels; the "full" method keeps r = round(1.5 x factor) full-resolution pixels, 22 at 15k / 1,024).
+## The guards (round 2, from the review)
 
-**Bands:** the apply is pointwise, so a band needs **no halo** and banded equals unbanded byte for byte (the test, 37-row
-bands). The halo of at least 2r, read and trimmed exactly, is built for the "full" method (and tested: the read boxes,
-the trim, and that without it the seams differ by 22 levels). Boxes up to 16 MP run as one band; above, bands of about
-4 MP (279 rows at 15,000 wide).
+The fit is a map from **the bucket's colours** to the matte, and its gains are fitted where averaging has removed the
+sensor noise. Applied blindly at full resolution it breaks in two ways the review found and measured: a full-resolution
+read that is not the bucket's picture (a filter layer composited into one read only), and full-resolution noise
+multiplied by a large gain (a subject 12-24 levels from the screen's colour, green spill). Three guards, all in
+keymatte.js:
 
-### The measurement (`node tools/keymatte_test.js --measure`, `docs/measurements/ck_i6_2026-11-06/edges.txt`)
+1. **The same picture, and a check of it.** The full-resolution read **must be the picture the bucket was read from**:
+   the same source, the same filter flags, the same background under transparent pixels; only the scale differs (the
+   integration's step 4 below says which call). The module checks it on its noise sample: each bucket pixel the strip
+   covers whole is compared with the mean of its full-resolution pixels, and the largest per-channel median difference
+   is `guideDiff`; above `guideTol` (3 levels) the whole matte **falls back to the bilinear upsample** and the answer
+   says so (`fallback`, a sentence). The faithful read measured 0 levels (0.81 with zero-mean grain of +-8 on the read
+   only, which is noise, not a different picture); saturation 50 %, gamma 0.8, green x0.85 and +15 levels measured
+   15-31 and fell back. The fallback is a net under a caller's bug, never a mode: it is the unrefined matte, so it is
+   never worse than no refine (unguarded, saturation 50 % gave MAE 50-58 on the skin and stripe scenes against the
+   bilinear 27-29), but a mildly
+   different read that the refine would have survived (gamma 0.8: unguarded MAE 7-17) falls back too.
+2. **The zone.** The correction `q - p` acts only where the engine's matte is in transition (`min(p, 1 - p)` above
+   0.06, smoothly from 0.02), dilated by `gate` = 1 bucket pixel and counted from half the upsampled weight up; where the
+   engine is sure over the whole neighbourhood the answer **is the bilinear matte**, whatever the full-resolution pixels
+   hold. More than 3 bucket pixels from the edge the refine now adds 0 levels in every noisy and near-screen scene (the
+   first round's default: up to 141).
+3. **The noise.** One estimate per matte from a strip across the middle of the matte's box (`sampleRows`: at least 48
+   rows and four bucket pixels): the median within-bucket-pixel variance per guide plane (the sensor noise where most
+   of the strip is screen or plain subject; texture the fit cannot see where it is not). The noise a pixel's correction
+   carries is `|A sigma|`; where it exceeds `tau` = 0.04 (about 10 levels) the correction is box-smoothed over
+   `rho = (|A sigma| / tau - 1) / 2` full-resolution pixels, at most `rhoMax` = min(8, floor(factor / 2)), and shrunk by
+   `1 / x^2` when even that is not enough. The box sums are integers (the correction in 1/65536), so a band sums exactly
+   what the whole box would: **banded equals unbanded byte for byte**. A band therefore reads a halo of rhoMax rows (2 at
+   a 4k box, 7 at 15k). Noise-free (sigma 0) nothing is smoothed.
 
-Synthetic scenes made as a camera and the engine would: the truth alpha at full resolution (4 x 4 supersampled), subject
-and screen mixed in linear light and encoded to sRGB bytes; the bucket picture the byte average of s x s blocks; the
-engine's matte the area average of the truth softened by one [1 2 1] pass (more in the softness part). Eight scenes,
-40 x 40 bucket pixels each: `skin` (green against a skin tone of equal relative luminance, an edge at 7 degrees),
-`blue` (the same on a blue screen), `teal` (a subject close to the screen's colour), `fold` (a dark fold half a bucket
-pixel inside the edge), `shade` (a shadow cast on the screen beside the edge), `stripes` (navy and white stripes 1.5
-bucket pixels apart crossing the edge), `blur` (a soft truth: a 3-bucket-pixel motion blur), `hair` (strands of 0.8-2.2
-full-resolution pixels over the screen). At s = 4 (a 4k box keyed at 1,024) and s = 15 (a 15k box). Metrics in levels
-of 255 over the edge region (2s from the crop's borders): MAE, p99, the **leak** (the largest error farther than 1.5 px
-from the true edge: what is left of the transition outside +-1 px) and the **crossing** (the largest distance of a
-row's 0.5 crossing from the true edge, px).
+The estimate: +-3 levels of sensor noise (sigma 1.78) came out 1.78-1.93, +-6 (3.5) 3.5-3.8, a clean picture 0.
+
+### The measurement of the guards (`edges_r2.txt`, the last three sections)
+
+MAE / leak (the largest error beyond 1.5 px from the true edge) / far (the largest change from the unrefined matte more
+than 3 bucket px from the edge), levels of 255; the near-screen subjects on the screen [60, 170, 70]:
+
+| s = 15, +-6 levels of noise | near [60,158,82] | near [60,164,76] | near [50,150,80] | skin | teal | fold | hair (MAE) |
+|---|---|---|---|---|---|---|---|
+| bilinear (no refine) | 28.8/120/0 | 28.8/120/0 | 28.8/120/0 | 28.8/120/0 | 28.8/120/0 | 28.8/120/0 | 22.8 |
+| round 1's default (unguarded) | 19.1/127/84 | 33.8/224/141 | 13.8/103/68 | 2.7/15/11 | 3.5/27/19 | 3.4/23/16 | 4.3 |
+| **the defaults** | **7.1/71/0** | **12.3/107/0** | **5.5/45/0** | **2.1/15/0** | **2.7/27/0** | **2.6/23/0** | **4.1** |
+
+| s = 4, +-6 levels of noise | near [60,158,82] | near [60,164,76] | near [50,150,80] | skin | teal | fold | hair (MAE) |
+|---|---|---|---|---|---|---|---|
+| bilinear | 26.7/91/0 | 26.7/91/0 | 26.7/91/0 | 26.7/91/0 | 26.7/91/0 | 26.7/91/0 | 45.1 |
+| round 1's default | 20.3/122/81 | 35.6/220/136 | 14.5/90/59 | 3.3/17/13 | 3.6/22/15 | 3.9/23/14 | 6.0 |
+| **the defaults** | **12.6/62/0** | **22.3/87/0** | **9.3/36/0** | **2.7/17/0** | **2.8/22/0** | **3.1/23/0** | **5.7** |
+
+The hardest case (8.5 levels between subject and screen, +-6 levels of noise, a 4k box: one level of colour for every
+level of noise is all the pixel tells) stays SNR-limited: it is better than no refine (22.3 against 26.7, leak 87
+against 91) and no longer worse, but far from the clean 7.2. **The parameters** (`edges_r2.txt` "the guards'
+parameters", mean MAE / worst leak / worst far over clean, noisy and near-screen sets): `gate` 0 costs the clean edges
+(MAE 5.1-5.6 against 0.8-1.4: the transition needs its neighbourhood), `gate` 2 lets 14-50 levels through more than 3
+bucket px out, `tau` 0.04 had the lowest near-screen MAE at 15k (7.74) and at 4k the 0.06 one was lower (10.8 against
+12.2) with a higher leak and a far of 0 either way: 0.04 kept. **What the guards cost on noise-free edges:** the
+defaults' mean MAE 1.41 / 0.81 at s = 4 / 15 against round 1's 1.4 / 0.7 (hair at 15k 2.0 -> 2.5), worst leak 8 / 4,
+crossing 0.36 / 0.37 px, all unchanged otherwise.
+
+### Round 1's table, for the method choice (`edges.txt`; the guards changed only the defaults' row, above)
 
 | s = 4 / s = 15 | mean MAE | worst leak | worst crossing | hair MAE |
 |---|---|---|---|---|
 | bilinear (no refine) | 26.7 / 25.4 | 91 / 120 | 0.15 / 0.59 | 45.1 / 22.8 |
-| full, luma, K 1.5 | 31.9 / 29.9 | 107 / 128 | 0.68 / 1.72 | 44.0 / 21.4 |
 | full, chroma, K 1.5 (the plan's first design) | 22.9 / 21.6 | 63 / 76 | 0.37 / 0.40 | 43.9 / 21.3 |
 | fast, chroma, r 1, eps 1e-6 (its best) | 3.1 / 3.0 | 29 / 28 | 0.35 / 0.36 | 4.8 / 5.8 |
 | fast, rgb, r 4, eps 1e-6 | 1.2 / 0.6 | 6 / 3 | 0.35 / 0.36 | 3.3 / 1.9 |
-| **the defaults** (fast, rgb, sRGB, r 4, eps 3e-6, soft auto) | **1.4 / 0.7** | **8 / 4** | **0.36 / 0.37** | **3.7 / 2.0** |
+| round 1's defaults (fast, rgb, sRGB, r 4, eps 3e-6, soft auto) | 1.4 / 0.7 | 8 / 4 | 0.36 / 0.37 | 3.7 / 2.0 |
 
-(The defaults row is `edges.txt` "the defaults ... sRGB", noise 0.) With +-0.02 noise on the engine's matte the
-defaults stay at MAE 1.2-1.4 on the edges (hair 2.5-3.5) and leak 5-8; with +-3 levels of sensor noise on the picture at s = 15 the rgb grid's mean
-is 2.07-2.20.
+## Timing
 
-## Timing of the module alone (`node tools/keymatte_test.js --time`, `docs/measurements/ck_i6_2026-11-06/timing.txt`)
+**The module alone** (`node tools/keymatte_test.js --time`, `timing_r2.txt`; Node 24.18, Ryzen 9 7900X3D, one thread,
+the lock free; a 1,024 x 683 bucket; the picture rows a view with +-3 levels of noise so the smoothing runs as on a
+photo):
 
-Node 24.18 on the dev machine (Ryzen 9 7900X3D), one thread, the lock free; a 1,024 x 683 bucket; the picture rows a
-view (the read is the caller's cost, not in these numbers); ms of the module in all, of it the bucket fit:
-
-| Box | bilinear | **fast rgb (default)**, JS / px.wasm boxes | fast chroma, JS / px.wasm | full chroma (plan's first design), JS / px.wasm |
+| Box | bilinear | **fast rgb (default)**, noise +-3, JS / px.wasm boxes | fast rgb, clean picture, px.wasm | full chroma (plan's first design), px.wasm |
 |---|---|---|---|---|
-| 4,096 x 2,731 (11.2 MP, 1 band) | 49 | **592 / 483** (fit 456 / 339) | 355 / 293 | 596 / 486 |
-| 8,192 x 5,461 (44.7 MP, 11 bands) | 195 | **1,162 / 863** (fit 620 / 393) | 663 / 575 | 2,657 / 2,081 |
-| 15,000 x 10,000 (150 MP, 36 bands) | 544 | **2,076 / 1,860** (fit 473 / 369) | 1,750 / 1,588 | not run in JS / 7,837 |
+| 4,096 x 2,731 (11.2 MP, 1 band) | 52 | **807 / 719** (fit 527 / 412) | 618 | 707 |
+| 8,192 x 5,461 (44.7 MP, 11 bands) | 246 | **1,873 / 1,506** (fit 671 / 572) | 997 | 2,434 |
+| 15,000 x 10,000 (150 MP, 36 bands) | 588 | **3,536 / 3,464** (fit 563 / 464) | 2,460 | 10,580 |
 
-The default costs the bucket fit once (0.34-0.62 s: five fits for the softness, 18 box means each, on 0.7 MP; the first
-4k row carries the JIT's warm-up) and then about 10 ns a full-resolution pixel: **41 ms per band of about 4 MP at 15k,
-1.86 s for a whole 15k box in all**, a quarter of the plan's full-resolution filter (7.8 s with Rust boxes) and far
-more accurate. A band's 40-60 ms is a dropped frame or three on the window's thread, so the bands belong in the worker
-(the plan's option b) as planned; a box of a few MP could run in the window. If the fit's 0.35 s matters (the live
-loop does not refine; only Apply does), the softness choice can run on the transition's rows of the bucket alone, or
-on the one-channel fit first: not done, not measured.
+ms of the module in all. The machine ran slower than in round 1 (the full method, whose code did not change, took
+10.6 s at 15k against 7.8 s), so compare within the table: the clean fast run is 0.23 of the full method as in round 1
+(0.24). **At 15k: the bucket fit 0.46 s once, then 83 ms per band of about 4.2 MP on a noisy picture (55 ms clean)**,
+the smoothing's two passes over the band and its integer box table (35 MB, kept between bands) being the difference;
+the pixels outside the zone cost the bilinear lerp only. A band belongs in the worker (the plan's option b), as planned.
+
+**The app's read per band** (`readcost.txt`, `readcost.py`; a dev instance on tiles, a 15,000 x 10,000 document with a
+paint layer and a grey fill filter layer at 50 %, a band of 279 rows plus 7 halo rows above and below, 4.4 MP):
+
+| Read (each band once, as a refine reads them) | sample (60 rows) | median band | slowest band | 36 bands + sample |
+|---|---|---|---|---|
+| `sampleRegionSettled("image", box, 1, { forRun, skipFilters: true })` + `getImageData` (the bucket's picture) | 87-89 | 78-80 | 158 | 2,350-2,373 |
+| `readBoxBytes(box, { forRun, held })` (the first notes' call; filters composited) | 50-61 | 50-71 | 85-2,502 | 1,859-4,907 |
+
+ms, two runs. **Indicative only:** both overlapped another workflow's timed run (its lock appeared seconds after the
+instance started); the key gate's refine step records the clean figures. The two reads differ by up to 48 levels there
+(the grey fill is in the composite only). The right read costs about 80 ms per 4.4 MP band, about 2.4 s for a whole 15k
+box, more than the worker's apply (83 ms per band): the window should post the next band's read while the worker
+applies the last.
 
 ## The interface (exact)
 
 ```js
-import { REFINE, prepareRefine, refineBand, bandPlan, refineMatte, refineParams, upsampleRows, geometry,
-         toFloatAlpha, screenColor } from "./keymatte.js";
+import { REFINE, prepareRefine, noteSample, sampleRows, refineBand, bandPlan, refineMatte, refineParams,
+         upsampleRows, geometry, toFloatAlpha, screenColor } from "./keymatte.js";
 
 // once per matte (in the worker: its first message)
 const st = prepareRefine({
@@ -134,88 +169,139 @@ const st = prepareRefine({
     full,               // { w, h }: the key box at full resolution (picture pixels)
     out,                // optional { x, y, w, h } inside the key box: the matte's box, the layer (default the key box)
     // optional: method "fast" | "full" | "bilinear", guide "rgb" | "chroma" | "dist" | "luma", linear, screen [r,g,b],
-    // r, eps, flat, soft (number | "auto"), softs, fullK, box (a boxBlurs-shaped function)
+    // r, eps, flat, soft (number | "auto"), softs, fullK, gate (number | false), tau, rhoMax, guideTol,
+    // noise (levels per RGB channel: skips the sample and its check), box (a boxBlurs-shaped function)
 });
-// st.halo (0 for "fast"), st.soft (the engine softness auto chose), st.residual, st.fitMs
+// st.halo (the fast method: rhoMax rows; "full": 2r), st.sample = [y0, y1) (rows of the matte's box), st.soft,
+// st.residual, st.fitMs
+
+// the noise sample, once, before the first band ("fast" only; refineBand refuses a band before it)
+noteSample(st, rgbaOfSampleRows);          // straight RGBA of rows st.sample of the matte's box, out.w wide
+// -> st.noise (levels per channel), st.guideDiff (levels, or null when the strip covered too few bucket pixels),
+//    st.fallback (null, or the reason: then every band answers the bilinear rows and needs no picture)
 
 // per band
 const bands = bandPlan(out.w, out.h, { halo: st.halo });            // [{ y0, y1, ry0, ry1 }] in out's own rows
 const bytes = refineBand(st, band, rgba);  // rgba: straight RGBA of rows [ry0, ry1) of the matte's box, out.w wide
-                                           // -> Uint8Array of exactly (y1 - y0) * out.w: the mask rows
+                                           // (null when st.fallback) -> Uint8Array of exactly (y1 - y0) * out.w
 
-// or all in one thread (tests, a small box in the window)
+// or all in one thread (tests, a small box in the window): the sample read first, then the bands
 const res = await refineMatte({ ...sameOptions, read: (box) => /* [x0, y0, x1, y1] in out's coordinates */ rgbaOrPromise,
                                 onBand: (y0, y1, bytes) => { /* write the mask rows */ }, cancelled: () => false });
-// res: { alpha (whole w*h when no onBand), w, h, bands, method, guide, r, eps, halo, soft, scale, ms: { all, fit, read } }
+// res: { alpha (whole w*h when no onBand), w, h, bands, method, guide, r, eps, halo, soft, scale,
+//        sample, noise, guideDiff, fallback, ms: { all, fit, read } }
 ```
 
 `read`'s box is in the matte box's own coordinates (whole rows: x0 = 0, x1 = w); the caller adds the layer's picture
-position. A `{ data }` answer (what `editor.readBoxBytes` gives, a view on a SharedArrayBuffer included) is taken as
-well as a typed array. Refusals (thrown): an empty bucket or box, the matte's box outside the key box, the alpha or the
-bucket picture at another size, "full" with the three-channel guide, "chroma" / "dist" with no screen colour and no
-bucket picture to find it in, no `read` callback. The default needs **no screen colour** (only "chroma" and "dist" do;
-`screenColor(small, alpha)` finds it from the bucket where the matte is below 0.02).
+position. A `{ data }` answer (a view on a SharedArrayBuffer included) is taken as well as a typed array. Refusals
+(thrown): an empty bucket or box, the matte's box outside the key box, the alpha or the bucket picture at another size,
+"full" with the three-channel guide, "chroma" / "dist" with no screen colour and no bucket picture to find it in, no
+`read` callback, a fast band before `noteSample`, a sample or band picture shorter than its rows. The default needs **no
+screen colour**.
 
-## What the integration has to do (I4's step 2, the app-only `keyworker.js`, the `key` gate)
+## What the integration has to do
+
+**Merge order:** `ck-refine` touches only its own files (keymatte.js, keymatte_test.js, this file,
+`docs/measurements/ck_i6_2026-11-06/`), so it merges into `corridorkey` in any order against `ck-i2`; **before `ck-ui`**
+or with it, since ck-ui's keyworker.js imports keymatte.js. No conflicts are expected.
 
 1. **Keep the bucket picture.** The fit needs `small`, the exact RGBA sent to `helpers:keyPrepare` (2.8 MB at
-   1,024 x 683, 16 MB at 2,048 square). Keep it in the session-only `key` record beside `hash`, so a Re-key whose
-   features the engine still holds (nothing read) can refine; after a restart the Re-key's own `keyPrepare` read gives
-   it again.
-2. **The geometry:** `full` = the key box (the box planned by §4.7 point 1, at full resolution); `src` = where that box
-   lies in the bucket (the bucket minus the reflect-101 padding that the picture's edge left short); `out` = the
-   matte's box from §4.5 step 1 (the bucket alpha's bounding box, scaled, grown, clamped), relative to the key box.
-3. **`keyworker.js`** (a module worker owned by host.js, started like `stitch_worker.js`; it imports keymatte.js, so
-   `px/kernels.js` loads px.wasm there and the bucket fit's box blurs are Rust): message `refine:prepare` { alpha, aw,
-   ah, small, src, full, out } -> `prepareRefine` -> answer { soft, residual, fitMs, halo }; message `refine:band`
-   { band, rgba } -> `refineBand` -> answer the u8 rows (transfer the buffer); `refine:free` drops the state. One
-   prepare per key; the bands in order.
-4. **The window's loop:** hold the stack once for the whole key (`holdRunStack`), then per band of
-   `bandPlan(out.w, out.h, { halo: st.halo })`: `editor.readBoxBytes([X0, Y0 + band.ry0, X0 + out.w, Y0 + band.ry1],
-   { forRun: true, held })` with (X0, Y0) the layer's picture position, post the bytes, and write the answer with
-   `combine(bytesSource(bytes, 0, band.y0, out.w, band.y1 - band.y0), "add", MASK_RGB)` (never "replace" per band).
-   Re-key reads the picture **under the key layer**: the read goes through `readBox(box, { forRun: true, upTo })` (or the
-   `upTo` that `pictureInputBox` gains in I4) instead of `readBoxBytes`, which has no `upTo`.
+   1,024 x 683). Keep it in the session-only `key` record beside `hash`, so a Re-key whose features the engine still
+   holds can refine; after a restart the Re-key's own `keyPrepare` read gives it again.
+2. **The geometry:** `full` = the key box at full resolution (§4.7 point 1); `src` = where it lies in the bucket (the
+   bucket minus the reflect-101 padding); `out` = the matte's box from §4.5 step 1, relative to the key box.
+3. **`keyworker.js`** (a module worker owned by host.js, started like `stitch_worker.js`; importing keymatte.js loads
+   px.wasm there): `refine:prepare` { alpha, aw, ah, small, src, full, out } -> `prepareRefine` -> answer { halo,
+   sample, soft, residual, fitMs }; `refine:sample` { rgba } -> `noteSample` -> answer { noise, guideDiff, fallback };
+   `refine:band` { band, rgba } -> `refineBand` -> the u8 rows (transfer the buffer); `refine:free` drops the state. One
+   prepare and one sample per key, then the bands in order.
+4. **The window's reads: the same picture as the bucket, at scale 1.** Whatever call built `small` decides the read:
+   - *Visible picture* (the bucket from `pictureInputBox`, filters skipped): on tiles
+     `editor.sampleRegionSettled("image", [X0, Y0 + ry0, X0 + out.w, Y0 + ry1], 1, { forRun: true, skipFilters: true })`
+     then `getImageData` (as `inpaint_canvas.js:7383` reads its rows), with (X0, Y0) the layer's picture position; on
+     the canvas backend `flattenToCanvas({ forRun: true, skipFilters: true })` once, cropped per band. **Not
+     `readBoxBytes` / `holdRunStack`** (they composite filter layers: `stackPlan({ forRun, filters: true })`) and **not
+     `readBox`** (no `skipFilters`): the first notes said so, and a filter layer over the box (a grade, curves, film,
+     relight, the base key's grey fill) then made the refine worse than none; now it falls back instead (guard 1).
+   - *Re-key*: the same call with `upTo` (the grey layer's or the key layer's index, whichever is lower), as I4 gives
+     `pictureInputBox` its `upTo`.
+   - *Active layer*: the layer's own level-0 pixels with its mask applied and the same background under them as the
+     bucket had (`objectInput` draws a layer over #808080; whatever I4's bucket does, the band read does too).
+   - First the sample's rows (`st.sample`), posted as `refine:sample`; if the answer has `fallback`, log it (it is a bug
+     in the reads) and post the bands with no picture; else per band of `bandPlan(out.w, out.h, { halo: st.halo })` read
+     rows [ry0, ry1) and post them. Write each answer with `combine(bytesSource(bytes, 0, band.y0, out.w,
+     band.y1 - band.y0), "add", MASK_RGB)` (never "replace" per band).
 5. **Cancel** between bands (the token): stop posting, `refine:free`; nothing is landed.
 6. **The foreground** is not the refine's: it stays bilinear in band canvases (§4.5 step 2).
 7. **Until I6 is wired**, `method: "bilinear"` is the same call and answers the bilinear rows (no `small`, no `read`).
-8. **The status sentence** may say "refined" once the integration's own 15k measurement is in `ck_i6_<date>/` (the
-   key gate's refine step, below): this file's timing is the module alone.
-9. **The `key` gate's refine step** (Normal, both backends): with the engine stubbed (`host.keyEngine`, a fixture),
-   a 15k document, a 4k box and the whole picture: the layer's mask equals `refineMatte`'s answer for the same inputs run
-   in Node from the fixture (bytes exactly, both backends), the band reads cover every row once, a cancel mid-bands
-   lands nothing, and the seconds per band and in all go into `docs/measurements/ck_i6_<date>/`. `pxjobs` untouched.
+8. **The status sentence** may say "refined" once the integration's own 15k measurement is in `ck_i6_<date>/`; with a
+   `fallback` the key's status says "not refined: <reason>" (plain, it is not the user's error) and the log has the line.
+9. **The `key` gate's refine step** (Normal, both backends): with the engine stubbed (`host.keyEngine`, a fixture), a
+   15k document, a 4k box and the whole picture: the layer's mask equals `refineMatte`'s answer for the same inputs run
+   in Node from the fixture (bytes exactly, both backends); **a second document with a filter layer over the box (a
+   curves or the grey fill at 50 %): the answer has no `fallback`, `guideDiff` at most 1 level, and the mask equals the
+   one without the filter layer** (the reads skip it as the bucket did); the reads cover every row once plus the sample;
+   a cancel mid-bands lands nothing; the seconds per band, `guideDiff` and the estimated noise go into
+   `docs/measurements/ck_i6_<date>/`. `pxjobs` untouched.
+
+## The review's findings (round 2)
+
+- **must, the full-resolution read not the bucket's picture: fixed.** The notes' step 4 named `readBoxBytes` with
+  `holdRunStack` and `readBox`, which composite filter layers that the bucket skips. Step 4 now names the same call as
+  the bucket at scale 1 for each source, the module's header and `refineMatte`'s doc state the requirement, the module
+  checks it on the noise sample and falls back to the bilinear matte (tested with saturation, gamma, a channel gain and
+  an offset, and against zero-mean grain, which must not fall back), the key gate's step has a filter layer over the
+  box, and the read per band was measured in the app (`readcost.txt`; indicative, the machine was busy with another
+  workflow's timed runs).
+- **should, full-resolution noise through the bucket's gains: fixed** by the zone and the noise guard; the near-screen
+  subjects (the review's [60,158,82] and [60,164,76], one more) at +-3 and +-6 levels are in `--measure` and in the
+  tests (nothing added more than 3 bucket px from the edge, better than unrefined in MAE and leak); the default was
+  re-chosen over gate 0 / 1 / 2 and tau 0.02-0.06 (gate 1, tau 0.04). Not taken from the review's suggestions: raising
+  eps (the review measured it: it costs the clean edges and does not remove the holes) and a per-band noise estimate
+  (it would make bands differ at their seams; one estimate per matte from a fixed strip keeps banded equal to unbanded).
+- **nice, the halo trim untested: taken.** Test 4 compares the full method's streamed bands with the unbanded bytes
+  (the review's mutation `skip = 0` is red now); 4b does the same for the fast method, whose smoothing now has a halo,
+  with the reads checked, a no-halo run that must show seams, and a flip test that the box is centred.
+- **The mutation round** (a copy of the tree, `scratchpad/ckfix/mutate.sh`): red for the full trim, the fast halo, the
+  zone, the smoothing, the shrink, the fallback, the median noise estimate and both box clamps. Three survive, by
+  design: the box sums in floats instead of fixed point (it differs only in the last bits; the fixed point makes the
+  exactness a construction, not luck) and two cuts of the reach the box sums are computed over (to the gate's own
+  support or to the zone: the skipped corrections are within rounding of 0 there; the default reach of 2 bucket
+  pixels makes the skip exact by construction, which the test "skipping the pixels no box reaches changes nothing" holds).
 
 ## Unverified, and what would change it
 
-- **Synthetic only.** No CK2 matte was refined: the engine's real softness, its noise, its behaviour on hair and on
-  motion blur are I0a's reference keys' and Stop B's to show. `soft: "auto"` covers engines of 0-4 [1 2 1] passes; a
-  softer engine shows as auto picking 4 every time (add counts to `REFINE.softs`). When I0a's references are in
-  `dist/ck_ref/`, run the defaults on them against the native key of the same still (Stop B's hand check; a script
-  beside `--measure` reading the float16 arrays is a short job).
-- **Sub-bucket texture** (stripes finer than a bucket pixel crossing the edge) is the hardest case: the bucket cannot
-  see it, so its coefficients are a guess there (MAE 1.4 at s = 4, 0.4 at s = 15; p99 47 levels at s = 4 for r 6, eps 1e-6).
-- **A subject whose colour equals the screen's** has no edge in any guide: the confidence keeps the engine's matte
-  there, as it should.
-- **Linear light:** a motion-blurred or out-of-focus edge (many mixed pixels) is about 0.3 levels better with
-  `linear: true`; the sharp edges are better in sRGB. Not switched per picture.
-- **Timing in the app:** measured in Node with the JS twin and px.wasm loaded from the file; the worker's own numbers
-  and the window's read (`readBoxBytes` per band) are the integration's.
+- **Synthetic only.** No CK2 matte was refined: the engine's real softness, its noise, its behaviour on hair and motion
+  blur are I0a's reference keys' and Stop B's to show. When I0a's references are in `dist/ck_ref/`, run the defaults on
+  them against the native key of the same still.
+- **The app's bucket against the band read:** the check assumes the bucket pixel is about the mean of its
+  full-resolution pixels where the picture is smooth (tile levels averaged, then the resample to the bucket). The key
+  gate's step records `guideDiff` on real reads; if it is above about 1 level, `guideTol` and this assumption need a look.
+- **Camera noise varies with brightness** (more in the shadows) and JPEG concentrates it at edges; one estimate per
+  matte from the middle strip is a first cut. A subject whose texture fills most of the strip raises the estimate, which
+  only smooths more (a softer, never a noisier refine).
+- **Sub-bucket texture** crossing the edge (stripes finer than a bucket pixel) and **a subject whose colour equals the
+  screen's** stay as in round 1: the bucket cannot see the one, no guide sees the other (the confidence keeps the
+  engine's matte there).
 
 ## Texts for the shared files (the integration places them)
 
 - **docs/TESTING.md** (the tools table): "`node tools/keymatte_test.js`: the key matte's refine (keymatte.js) under
-  plain Node: an equal-luminance edge snapped to within 1 px, a flat picture left alone, banded equal to unbanded, the
-  full method's halo read and trimmed, the geometry, the refusals; `--measure` the edge measurement, `--time` the
-  module at 4k, 8k, 15k. Light (a pure module)."
+  plain Node: an equal-luminance edge snapped to within 1 px, a flat picture left alone, banded equal to unbanded (both
+  methods' halos read and trimmed), sensor noise and subjects near the screen's colour (nothing added where the engine
+  was sure), a read that is not the bucket's picture falling back, the noise estimate, the geometry, the refusals;
+  `--measure` the edge measurement, `--time` the module at 4k, 8k, 15k. Light (a pure module)."
 - **docs/MANUAL.md** (the key chapter, the resolution paragraph): "The matte is keyed at the working size and brought up
   to your picture's full resolution against the picture itself: where the picture shows an edge (the subject against
-  the screen, in colour, not only in brightness) the matte follows it to the pixel; where the picture shows none, the
-  matte stays as CorridorKey 2.0 made it."
+  the screen, in colour, not only in brightness) the matte follows it to the pixel; where the picture shows none, or
+  where CorridorKey 2.0 was sure, the matte stays as it made it. On a noisy photo, or a subject close to the screen's
+  colour, the edge is followed less closely rather than made grainy."
 - **CHANGELOG.md**: nothing of its own; the key's line (I4 / I5) says "refined against the full-resolution picture" once
   the integration's 15k measurement is recorded.
-- **CLAUDE.md** (item 49's block, the hand-over): "I6 built on `ck-refine` (2026-11-06): `renderer/editor/keymatte.js`
-  pure and app-only, the fast guided fit with a three-channel guide on the sRGB bytes, confidence-weighted, the engine's
-  softness matched by the fit's residual; the plan's full-resolution guided filter kept as a method and measured barely
-  better than none; `docs/ck2/refine_notes.md`, `docs/measurements/ck_i6_2026-11-06/`. The wiring into keyworker.js and
-  the key gate's refine step are the integration's."
+- **CLAUDE.md** (item 49's block, the hand-over): "I6 built on `ck-refine` (2026-11-06, two rounds):
+  `renderer/editor/keymatte.js` pure and app-only, the fast guided fit with a three-channel guide on the sRGB bytes,
+  confidence-weighted, the engine's softness matched by the fit's residual; guarded: the full-resolution read must be
+  the bucket's picture (checked, else the bilinear matte), the correction only in the matte's transition zone, the noise
+  estimated per matte and smoothed out with an exact integer box; the plan's full-resolution guided filter kept as a
+  method and measured barely better than none; `docs/ck2/refine_notes.md`, `docs/measurements/ck_i6_2026-11-06/`. The
+  wiring into keyworker.js and the key gate's refine step are the integration's."
