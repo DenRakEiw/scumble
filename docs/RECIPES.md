@@ -254,7 +254,8 @@ the crop still goes as the first picture (the numbering of the others stays). Th
   `TextEncodeMOSSImageEdit` and `SkipLayerGuidanceDiTSimple` from ComfyUI 0.44.0's V3 schemas on disk. **Not run yet**
   (the edit LoRA is not on the user's machine; LR8 downloads it, LR9 runs it). The edit LoRA is chinoll's
   Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no
-  licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0.
+  licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0. The same template on Comfy Cloud
+  is `cloud_moss_image_edit` (one picture; "Comfy Cloud recipes" below).
 - `p_h3_image_local`, **P-H3-Image** (0.1.52, `docs/PLAN_PH3.md`): Pruna AI's 8-step image fine-tune of MiniMax H3
   (published 2026-11-03), on ComfyUI 0.44 or newer, which runs it on its own nodes (PR Comfy-Org/ComfyUI#17506). The
   graph is Comfy's templates' LoRA route: `UNETLoader` (`minimax_h3_fl2va_pruned_int8_convrot`, MiniMax H3's FL2VA
@@ -499,8 +500,24 @@ model can carry one as its text route, `text: { model, options, sizes }` (`optio
 `generate()` runs only such a graph (a partner-node recipe makes no new image on Comfy Cloud): nothing is uploaded, the
 size goes in steps of 16. Generate new has a *Comfy Cloud* choice beside local and API.
 
-**Shipped:** fourteen of Comfy's templates as Comfy Cloud exports them, picked by the user (MIT,
-`tools/refs/comfy_cloud/edit/` and `t2i/`). Edits: `cloud_p_h3_image` (P-H3-Image, `image_p_h3_image_edit` with
+**Shipped:** fifteen of Comfy's templates as Comfy Cloud exports them, picked by the user (MIT,
+`tools/refs/comfy_cloud/edit/` and `t2i/`). Edits: `cloud_moss_image_edit` (MOSS-Image Edit, 0.1.52, item 50,
+`docs/PLAN_LORAS.md` LR7: `image_moss_image_edit`, read from Comfy-Org/workflow_templates (frontend 1.57.1, every widget
+value named, so the two MOSS classes keep theirs), with `image_moss_image_t2i` as its text route: the crop into its one
+`LoadImage`, `ImageScaleToTotalPixels` to 1 MP in steps of 16, `GetImageSize` into the latent, so the answer comes at
+the scaled crop's size; `UNETLoader` (`moss_image_sft_int8_convrot`) -> the template's edit LoRA `31`
+(`moss_image_edit_lora_rank_64_bf16`, 1) -> `SkipLayerGuidanceDiTSimple` (layer 22, 0 to 1) -> `KSampler` (30 steps, CFG
+4, `euler` / `normal`); both `TextEncodeMOSSImageEdit` nodes in the `Moss-Image-Edit` format on the scaled crop, the
+prompt into `39`, the negative into `36` (the template's "nsfw, worst quality, ..." while the editor's is empty); one
+picture (more need titled `LoadImage` nodes in a later update); Generate new on the text-to-image template, whose prompt
+enhancer (`TextGenerate` on Qwen3.5 9B, switched on) gets the prompt, 25 steps, CFG 2.5, `er_sde`, its skip-layer
+guidance switched off as the template has it. **No `loras` on the variant**: the edit LoRA is `31` in the edit graph and
+the text graph has none, so a declared source would warn on the text route (`cloud_p_h3_image`'s precedent); the rule
+finds the `UNETLoader` in both, so the LoRA rows go before the template's edit LoRA there (LoRA deltas add; on the
+user's ComfyUI `moss_image_edit_local` puts them after it). Every model file is in Comfy Cloud's catalog and both MOSS
+classes in its node list (read through Comfy Cloud's MCP server on 2026-11-06), though its `LoraLoaderModelOnly` combo
+does not list the edit LoRA (the model check is advisory, above); the licence sentence as in `moss_image_edit_local`;
+**not run on Comfy Cloud yet**: LR5 runs it once), `cloud_p_h3_image` (P-H3-Image, `image_p_h3_image_edit` with
 `image_p_h3_t2i` as its text route: the template's P-H3-Image LoRA on MiniMax H3's FL2VA model, `er_sde`, the crop at its
 own size; its prompt upsampler gets the prompt as written, without the template's "Aspect ratio" and "Request" lines,
 which the prompt control held; its pictures `<Picture {n}>`, sizes in steps of 32, Generate new's long sides 1024 to

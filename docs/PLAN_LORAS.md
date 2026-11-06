@@ -1162,6 +1162,68 @@ path). No app instance on the user's ComfyUI; nothing read there but the node so
    `iss_moss_edit/tpl/image_moss_image_edit.json`, read for the pinned values): LR7 commits it under
    `tools/refs/comfy_cloud/edit/`.
 
+### LR7 as built (2026-11-06)
+
+**Built:** `tools/refs/comfy_cloud/edit/image_moss_image_edit.json` (Comfy-Org/workflow_templates `main`, read
+2026-11-06: byte for byte the research's copy, md5 `01177a5f`; `frontendVersion` 1.57.1, `widgets_values_named` on all 15
+nodes with widget values) and **`tools/refs/comfy_cloud/t2i/image_moss_image_t2i.json`** (the same repository: MOSS-Image's
+text-to-image template exists, "MOSS-Image: Text to Image", 2026-10-17, frontend 1.55.18, one subgraph, every widget
+value named). `tools/cloud_recipes.js`: the MANIFEST row `cloud_moss_image_edit`, "MOSS-Image Edit (Comfy Cloud)", `text`
+the t2i template, an `about` with the trained phrasing, the template's settings, the prompt enhancer and §3.6's licence
+sentence word for word. `recipes/cloud_moss_image_edit.json` written by the tool (`--check`: ok, 15; the other fourteen
+files unchanged). What the reading gives: the crop `LoadImage 8` (titled `scumble:picture:0`), the prompt
+`TextEncodeMOSSImageEdit 39.prompt`, the negative `36.prompt`, the seed `KSampler 37.seed`, the result `SaveImage 9`,
+`ImageCompare 20` gone, `needs` the thirteen classes; the edit graph has no size value (the crop is scaled to 1 MP by
+`29`, `GetImageSize 27` into the latent `28`); the text route: the prompt `PrimitiveStringMultiline 18:17.value` (the
+text the template's `TextGenerate` enhancer reads, its switch `18:16` on), the negative `CLIPTextEncode 18:5.text`, the
+seed `18:7`, the size `EmptyFlux2LatentImage 18:6` (the `ResolutionSelector` gone), the template's SLG behind its switch
+`18:24` (off). Confirmed read-only through Comfy Cloud's MCP server: both templates are in its catalog,
+`TextEncodeMOSSImageEdit` and `SkipLayerGuidanceDiTSimple` in its live node list (the inputs as the fixtures' LR6 specs),
+the four model files in its model catalog (`moss_image_sft_int8_convrot`, `qwen3.5_9b_w4a8_gptq`, `flux2-vae_small`,
+`moss_image_edit_lora_rank_64_bf16`), though `LoraLoaderModelOnly`'s live combo does not list the edit LoRA (as §3.5
+says for `moss_*`; the model check is advisory). Docs: `docs/RECIPES.md` (the Cloud list's entry, fifteen; a pointer from
+`moss_image_edit_local`'s), the CHANGELOG's MOSS line. On the dev instance (port 9571, `--no-comfy`, a fresh profile):
+`list_recipes` lists it with `mode: "cloud"`, `new_image: true`, `edit: true`, `loras: false` with LR2's Cloud reason, and
+`select_recipe` puts the editor in mode `cloud`. Submitted nothing; no gate run (no app code changed).
+
+**Tests (all green):** `node tools/cloud_recipes.js --check` ok, 15. `node tools/recipes_test.js` 300 of 300: §10's `want`
+table at **fifteen** (`cloud_moss_image_edit: [1, true, true]`), its required-input check now over both MOSS classes;
+new checks: both exports name every widget value; the edit graph pinned (the crop into `29` at lanczos 1 MP / 16, the
+latent its size, the edit LoRA `31` at 1 between `30` and `32`, `32` `double_layers` "", `single_layers` "22",
+`start_percent` 0, `end_percent` 1, both encoders `edit_format` `Moss-Image-Edit`, `image_strength` 1, `images.image_0` on
+`29`, no `image_1`, CLIP and VAE; 30 / 4 / euler / normal); the text route pinned (the values, the enhancer's switch, 25 /
+2.5 / er_sde / simple, the SLG switch off); `specProblems` (`tools/node_specs.js`) empty on both graphs but the crop's
+`LoadImage` file a run fills; no `loras` on either route; the description's licence sentence; §3's takes-none list and
+§14's `--check` line follow. `node tools/cloudgraph_test.js` 33 of 33 (§8b new: an edit run against the fake Cloud, the
+crop alone into `8`, the prompt into `39`, an empty negative keeping the template's in `36` and a set one replacing it,
+the seed into `37`, `SaveImage 9` answering, the size the crop's; Generate new on the text route, nothing uploaded, the
+prompt into `18:17`, the seed into `18:7`, 1000 × 777 asked as 1008 × 784 in `18:6`). `node tools/loras_test.js` 89 of 89
+(`EXPECT` rows `cloud_moss_image_edit/comfycloud` `30` → `31.model` and `.text` `18:1` → `18:15.model`, `18:24.on_false`;
+`PATCH` the text route's SLG; `recipeFamily` `moss_image` on both routes by the CLIPLoader's type; a new check: read
+without a warning, the chain between `30` and the edit LoRA `31`, which keeps its file and strength and stays before
+`32`). Beside them, since they read the recipe files: `ark_test` 178, `comfycloud_v2_test` 81, `comfyprompt_test` 102,
+`comfyrefs_test` 110, `comfyrouter_test` 175, `genpresets_test` 31, `magnific_test` 138, `openrouter_test` 198,
+`oxen_test` 69, `refs_layout_test` 774, `secret_names_test`, `toapis_test`, `wavespeed_text_test` 22, `ph3_test` 23,
+`settings_migration_test`, `loraheader_test` 55: all PASS. `lint` (`npx eslint .`): 0 errors, the same 21 warnings;
+`types` clean.
+
+**Deviations, each by the code:**
+1. **No `loras: { model }` on the variant** (the row and §3.5 ask for one): with the text route paired, `normalize` checks
+   one declaration against both graphs, and the text graph has no node `31`, so every start would warn "loras names the
+   model source \"31\", which is no node of the graph" (and `recipes_test.js` §14's first check, no warning about loras
+   during `list()`, fails). `cloud_p_h3_image` made the same call on this branch (`docs/PLAN_PH3.md` deviation 1): the
+   rule finds the `UNETLoader` in both graphs, and the user's rows go before the template's edit LoRA (LoRA deltas add;
+   only a DoRA row, whose decomposition reads the weight it lands on, would differ slightly). Keeping the order of §3.6
+   would need a route's own declaration in the file (`text.loras` read by `normalize` before `textVariant` drops it), a
+   small change to `electron/main/recipes.js` not made here; `moss_image_edit_local` keeps its rows after the edit LoRA.
+2. **The t2i pairing was at hand**, so the variant has a Generate new route (§3.6 "when its export is at hand"); its
+   prompt enhancer stays on as the template ships it (the `cloud_krea_2_turbo` and `cloud_p_h3_image` precedent), said
+   in the description.
+3. **§10's table went to fifteen, not fourteen**: `cloud_p_h3_image` (merged from `ph3`) had made it fourteen before.
+4. **The specs were LR6's** (deviation 1 there), so `object_info.json` is unchanged; the checks of the row run against
+   them, and `specProblems` checks both Cloud graphs beside the required-input check.
+5. **One picture**: the template's one `LoadImage`; more pictures need titled nodes (§3.6), a later update.
+
 ## 5. How it fits into 0.1.52 beside CorridorKey
 
 - **One branch, one release.** Both plans build on `corridorkey` (cut from `main` = 0.1.51) and ship as 0.1.52 on the

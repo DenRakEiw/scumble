@@ -41,6 +41,12 @@ const MANIFEST = [
         about: "FLUX.2 [klein] 9B base with a second picture: the crop and the Original or your first reference layer." },
     { file: "edit/image_mage_flow_edit_turbo_int8.json", id: "cloud_mage_flow_edit_turbo", name: "Mage Flow Edit Turbo (Comfy Cloud)",
         about: "Mage-Flow-Edit Turbo, a 4B editor in four steps: the crop and a second picture (the Original or your first reference layer)." },
+    // MOSS-Image Edit (item 50, docs/PLAN_LORAS.md LR7): the template's edit LoRA is 31 in the edit graph and the text
+    // graph has none, so a declared source would warn on the text route (cloud_p_h3_image's precedent): no `loras`, the
+    // user's rows chain after the UNETLoader by the generic rule, before the edit LoRA (LoRA deltas add)
+    { file: "edit/image_moss_image_edit.json", id: "cloud_moss_image_edit", name: "MOSS-Image Edit (Comfy Cloud)",
+        text: "t2i/image_moss_image_t2i.json",
+        about: "MOSS-Image with its edit LoRA: an instruction edit of the crop, one picture, which the template scales to 1 MP; the phrasing the edit LoRA was trained on works best: \"Change only the X to Y. Keep the character, face, hair, pose, background and composition unchanged.\" The template's settings: 30 steps, CFG 4, skip-layer guidance on layer 22, both encoders in the Moss-Image-Edit format and the template's negative unless you set one. Generate new makes a new image with MOSS-Image's text-to-image template, whose prompt enhancer (on) expands your prompt first. The edit LoRA is chinoll's Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0." },
     { file: "edit/image_qwen_image_2_1_image_edit.json", id: "cloud_qwen_image_2_1_edit", name: "Qwen Image 2.1 Edit (Comfy Cloud)",
         text: "t2i/image_qwen_image_2_1_t2i.json", refs: "<image{n}>", limits: { step: 32 },
         about: "Qwen Image 2.1 edits the crop with a second picture (the Original or your first reference layer); the template's prompt enhancer stays off for an edit. Generate new makes a new image with its text-to-image template." },

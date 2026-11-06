@@ -185,6 +185,38 @@ async function main() {
         check("a partner-node recipe: no new image on Comfy Cloud, said by name", /only through a Comfy Cloud recipe's own graph/.test(ez || ""), ez);
     }
 
+    // 8b. MOSS-Image Edit on Comfy Cloud (item 50, docs/PLAN_LORAS.md LR7; Comfy's image_moss_image_edit with
+    // image_moss_image_t2i as its text route): the crop into its one LoadImage, the prompt and the negative into the two
+    // TextEncodeMOSSImageEdit nodes (an empty negative keeps the template's), the seed into the KSampler, the size the
+    // crop's (the graph scales it to 1 MP: no size value); Generate new: nothing uploaded, the prompt into the text the
+    // template's prompt enhancer reads, the negative, the seed and the size (steps of 16) into the latent
+    const mo2 = list.find((r) => r.id === "cloud_moss_image_edit");
+    const mv2 = mo2 && mo2.providers.comfycloud;
+    if (!mv2 || !mv2.text) check("the shipped recipe cloud_moss_image_edit is listed with a text route", false);
+    else {
+        cloud._clearNodeList();
+        s = fakeCloud({ classes: mv2.options.needs, outputs: () => ({ 9: { images: [{ filename: "moss.png" }] } }) });
+        const mctx = { key: "k-moss", fetch: s.fetch, sleep: async () => {} };
+        const me = await cloud.edit(reqOf({ options: mv2.options, model: mv2.model, kind: "edit", prompt: "Change only the door to green.", negative: "", seed: 314, params: {} }), mctx);
+        const mg = s.prompts[0];
+        check("MOSS-Image Edit on Comfy Cloud: the crop alone uploaded into LoadImage 8, the prompt into the positive encoder 39, the template's negative kept in 36 when the run's is empty, the seed into KSampler 37, its SaveImage 9 answers",
+            tagOf(me.bytes) === "RESULT moss.png" && s.uploads.join(",") === "CROP" && mg["8"].inputs.image === "up1.png" && mg["39"].inputs.prompt === "Change only the door to green." && mg["36"].inputs.prompt === "nsfw, worst quality, bad anatomy, watermark, jpeg artifact" && mg["37"].inputs.seed === 314,
+            short({ uploads: s.uploads, crop: mg["8"].inputs.image, prompt: mg["39"].inputs.prompt, negative: mg["36"].inputs.prompt, seed: mg["37"].inputs.seed }));
+        check("... the size the crop's: no width or height value in the edit graph, the crop scaled to 1 MP in steps of 16 and the latent its size; both encoders on the scaled crop alone",
+            !mv2.options.values.width && !mv2.options.values.height && mg["29"].inputs.megapixels === 1 && mg["29"].inputs.resolution_steps === 16 && JSON.stringify(mg["28"].inputs.width) === '["27",0]' && JSON.stringify(mg["27"].inputs.image) === '["29",0]'
+            && ["36", "39"].every((e) => JSON.stringify(mg[e].inputs["images.image_0"]) === '["29",0]' && !("images.image_1" in mg[e].inputs)), short(mg["28"].inputs));
+        await cloud.edit(reqOf({ options: mv2.options, model: mv2.model, kind: "edit", negative: "blurry", params: {} }), mctx);
+        check("... a negative of the run replaces the template's", s.prompts[1]["36"].inputs.prompt === "blurry", s.prompts[1]["36"].inputs.prompt);
+        cloud._clearNodeList();
+        s = fakeCloud({ classes: mv2.text.options.needs, outputs: () => ({ 9: { images: [{ filename: "moss_t2i.png" }] } }) });
+        const mt = await cloud.generate({ provider: "comfycloud", model: mv2.text.model, kind: "text", options: mv2.text.options, prompt: "a lighthouse at dusk", negative: "", seed: 99,
+            width: 1000, height: 777, references: [], params: {} }, { key: "k-moss-t", fetch: s.fetch, sleep: async () => {} });
+        const mtg = s.prompts[0];
+        check("... Generate new on its text route: nothing uploaded, the prompt into 18:17 (the enhancer's input), the template's negative kept, the seed into 18:7, 1000 x 777 asked as 1008 x 784 in 18:6, its SaveImage answers",
+            tagOf(mt.bytes) === "RESULT moss_t2i.png" && !s.uploads.length && mtg["18:17"].inputs.value === "a lighthouse at dusk" && mtg["18:5"].inputs.text === "nsfw, worst quality, bad anatomy, watermark, jpeg artifact" && mtg["18:7"].inputs.seed === 99
+            && mtg["18:6"].inputs.width === 1008 && mtg["18:6"].inputs.height === 784, short({ uploads: s.uploads, prompt: mtg["18:17"].inputs.value, seed: mtg["18:7"].inputs.seed, size: [mtg["18:6"].inputs.width, mtg["18:6"].inputs.height] }));
+    }
+
     // 9. the model files against the node list (V6 step 3, after its review): a file the list lacks does not stop the run
     // (Comfy Cloud also resolves the account's own models, which the list does not name); a failed run names it, with
     // the nearest file the list has, and the list is read again; sampler_name ("euler") is a combo but no file; an input

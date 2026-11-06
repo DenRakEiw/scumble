@@ -240,9 +240,12 @@ code.
   `loras_sent`, the new read-only `list_loras`; 117 tools, 97 core) and LR6 (the MOSS Image Edit recipe on the user's
   ComfyUI, `recipes/moss_image_edit_local.json` from Comfy's template, `comfyrefs.js` `TextEncodeMOSSImageEdit`, the
   node specs in the fixtures' `object_info.json` and `tools/node_specs.js`; not run, its edit LoRA is LR8's download)
-  done 2026-11-06 ("LR0 as built" .. "LR6 as built" in the plan's §4), next there: LR7 (the Comfy Cloud variant
-  `cloud_moss_image_edit`), since LR5 (Comfy Cloud) waits for the user's Comfy key; the user's ComfyUI is at v0.44.0
-  since 2026-11-06.
+  and LR7 (the Comfy Cloud variant `cloud_moss_image_edit`, written by `tools/cloud_recipes.js` from Comfy's
+  `image_moss_image_edit` with `image_moss_image_t2i` as its Generate new route; no `loras` declaration, as
+  `cloud_p_h3_image`; not run on Comfy Cloud, LR5 runs it) done 2026-11-06 ("LR0 as built" .. "LR7 as built" in the
+  plan's §4), next there: LR8 (the ComfyUI checks and the edit LoRA's download) and LR9 (the live runs), both with the
+  user present and only on the user's word; LR5 (Comfy Cloud) waits for the user's Comfy key; the user's ComfyUI is at
+  v0.44.0 since 2026-11-06.
   Issue #9 (one crop per connected selection area, bornd3vil): the user posted the answer on 2026-10-23.
   **The user's rules for it:** Rust wherever the
   *whole operation* (the wall time the user feels) is faster, however little; JS only where Rust is slower (the kernel

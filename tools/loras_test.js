@@ -109,6 +109,11 @@ const EXPECT = {
     "cloud_krea_2_turbo/comfycloud": ["30:10", ["30:15.model", "30:22.on_false"]],
     "cloud_mage_flow/comfycloud": ["12:1", ["12:6.model"]],
     "cloud_mage_flow_edit_turbo/comfycloud": ["12:1", ["12:6.model"]],
+    // MOSS-Image Edit on Comfy Cloud (LR7): no declaration (the edit LoRA is 31 here and the text graph has none), so the
+    // rule takes the UNETLoader and the rows go before the template's edit LoRA; the text graph's UNETLoader feeds its
+    // SLG and the switch that bypasses it, both re-pointed
+    "cloud_moss_image_edit/comfycloud": ["30", ["31.model"]],
+    "cloud_moss_image_edit/comfycloud.text": ["18:1", ["18:15.model", "18:24.on_false"]],
     // the template's own P-H3-Image LoRA after the UNETLoader: the rows go before it, by the generic rule
     "cloud_p_h3_image/comfycloud": ["1", ["19.model"]],
     "cloud_p_h3_image/comfycloud.text": ["29:1", ["29:19.model"]],
@@ -119,7 +124,7 @@ const EXPECT = {
     "relight/comfycloud": ["10:37", ["10:89.model"]],
 };
 // the patches a chain must come before (the plan's patch graphs) and the switch graphs whose two branches both re-point
-const PATCH = { "qwen_image_edit_2_1_local/prompt": "QwenImage21Cache", "cloud_qwen_image_2_1_edit/comfycloud": "QwenImage21Cache", "cloud_z_image_turbo/comfycloud": "ModelSamplingAuraFlow", "moss_image_local/prompt": "SkipLayerGuidanceDiTSimple", "moss_image_edit_local/prompt": "SkipLayerGuidanceDiTSimple", "p_h3_image_local/prompt": "MiniMaxH3SigmaShift", "cloud_boogu_image_edit/comfycloud": "ModelSamplingAuraFlow" };
+const PATCH = { "qwen_image_edit_2_1_local/prompt": "QwenImage21Cache", "cloud_qwen_image_2_1_edit/comfycloud": "QwenImage21Cache", "cloud_z_image_turbo/comfycloud": "ModelSamplingAuraFlow", "moss_image_local/prompt": "SkipLayerGuidanceDiTSimple", "moss_image_edit_local/prompt": "SkipLayerGuidanceDiTSimple", "p_h3_image_local/prompt": "MiniMaxH3SigmaShift", "cloud_boogu_image_edit/comfycloud": "ModelSamplingAuraFlow", "cloud_moss_image_edit/comfycloud.text": "SkipLayerGuidanceDiTSimple" };
 const SWITCH = ["cloud_anima_base/comfycloud", "cloud_flux2_dev/comfycloud", "cloud_krea_2_turbo/comfycloud", "cloud_qwen_image_edit_2509/comfycloud"];
 
 async function main() {
@@ -336,6 +341,19 @@ async function main() {
         ap.providers[pid].loras = { family: "flux3" };
         const [na, saidA] = warnsOf(() => recipes._normalize(ap));
         check("loras on an API variant (no graph) is dropped with a warning: LoRAs go into Comfy Cloud graphs only", na.providers[pid].loras === undefined && saidA.length === 1 && /without a graph/.test(saidA[0]), short(saidA));
+        // MOSS-Image Edit on Comfy Cloud (LR7): no declaration, read without a warning; on the edit graph the rows go
+        // between the UNETLoader and the template's edit LoRA (which keeps its file and stays before the SLG patch), on
+        // the text graph after its UNETLoader into both the SLG and the switch that bypasses it
+        const [mc, saidC] = warnsOf(() => recipes._normalize(rawFile("cloud_moss_image_edit")));
+        const vc = mc.providers.comfycloud;
+        const qce = clone(vc.options.graph), qct = clone(vc.text.options.graph);
+        const oce = L.spliceLoras(qce, { loras: vc.loras, save: vc.options.save }, ROWS2, info);
+        const oct = L.spliceLoras(qct, { loras: vc.text.loras, save: vc.text.options.save }, ROWS2, info);
+        check("cloud_moss_image_edit: no loras on either route and no warning; the edit graph's chain from the UNETLoader 30 into the edit LoRA 31 (its file and strength kept, SLG 32 still on it), the text graph's from 18:1 into the SLG 18:15 and the switch 18:24",
+            !saidC.length && vc.loras === undefined && vc.text.loras === undefined && oce.applied.length === 2 && oct.applied.length === 2
+            && eq(qce.scumble_lora_1.inputs.model, ["30", 0]) && eq(qce["31"].inputs, { lora_name: "moss_image_edit_lora_rank_64_bf16.safetensors", strength_model: 1, model: ["scumble_lora_2", 0] }) && eq(qce["32"].inputs.model, ["31", 0])
+            && eq(qct.scumble_lora_1.inputs.model, ["18:1", 0]) && eq(qct["18:15"].inputs.model, ["scumble_lora_2", 0]) && eq(qct["18:24"].inputs.on_false, ["scumble_lora_2", 0]),
+            short({ saidC, e: qce["31"] && qce["31"].inputs, t: [qct["18:15"] && qct["18:15"].inputs.model, qct["18:24"] && qct["18:24"].inputs.on_false] }));
     });
 
     await section("5. fixtures: a checkpoint loader with its CLIP, flattened ids, a taken id, Nunchaku, two loaders", () => {
@@ -489,6 +507,7 @@ async function main() {
             "cloud_qwen_image_2_1_edit/comfycloud": "qwen_image_2_1", "cloud_qwen_image_2_1_edit/comfycloud.text": "qwen_image_2_1",
             "cloud_qwen_image_edit_2509/comfycloud": "qwen_image", "cloud_z_image_turbo/comfycloud": "z_image", "relight/comfycloud": "qwen_image",
             "p_h3_image_local/prompt": "p_h3_image", "cloud_p_h3_image/comfycloud": "p_h3_image", "cloud_p_h3_image/comfycloud.text": "p_h3_image",
+            "cloud_moss_image_edit/comfycloud": "moss_image", "cloud_moss_image_edit/comfycloud.text": "moss_image",
         };
         const rf = {};
         for (const r of listed) for (const [route, g, rr] of graphsOf(r, true)) rf[`${r.id}/${route}`] = L.recipeFamily(route === "prompt" ? r : { loras: rr.loras, options: { graph: g } });

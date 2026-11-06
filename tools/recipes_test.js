@@ -290,7 +290,7 @@ async function main() {
             // Comfy Cloud's text-to-image graphs (item 35 V6 step 5): a template that takes no picture
             cloud_anima_base: ["comfycloud"], cloud_anima_preview: ["comfycloud"], cloud_flux2_klein_9b: ["comfycloud"], cloud_ideogram_4: ["comfycloud"],
             cloud_krea_2_turbo: ["comfycloud"], cloud_mage_flow: ["comfycloud"], cloud_qwen_image_2_1_edit: ["comfycloud"], cloud_z_image_turbo: ["comfycloud"],
-            cloud_p_h3_image: ["comfycloud"],
+            cloud_p_h3_image: ["comfycloud"], cloud_moss_image_edit: ["comfycloud"],
         };
         const NULLS = { max: null, field: null, model: null, options: null, name: null };
         const list = await recipes.list(RECIPES);
@@ -828,9 +828,9 @@ async function main() {
             cloud_qwen_image_2_1_edit: [2, true, true], cloud_qwen_image_edit_2509: [2, false, true], cloud_flux2_dev: [1, false, false],
             cloud_anima_base: [0, true, true], cloud_anima_preview: [0, true, true], cloud_ideogram_4: [0, true, false], cloud_krea_2_turbo: [0, true, false],
             cloud_mage_flow: [0, true, true], cloud_z_image_turbo: [0, true, false],
-            cloud_p_h3_image: [1, true, false],
+            cloud_p_h3_image: [1, true, false], cloud_moss_image_edit: [1, true, true],
         };
-        check("the manifest ships the fourteen", eq(tool.MANIFEST.map((m) => m.id).sort(), Object.keys(want).sort()), short(tool.MANIFEST.map((m) => m.id)));
+        check("the manifest ships the fifteen", eq(tool.MANIFEST.map((m) => m.id).sort(), Object.keys(want).sort()), short(tool.MANIFEST.map((m) => m.id)));
         const bad = [];
         const graphOk = (o, pictures) => {
             const g = o && o.graph;
@@ -848,7 +848,7 @@ async function main() {
                 && (!text || (v.text.model && Array.isArray(v.text.sizes) && v.text.refs === null && (pictures === 0 ? !v.text.options : graphOk(v.text.options, 0) && v.text.options.values.width && v.text.options.values.height)));
             if (!ok) bad.push(id);
         }
-        check("all fourteen are listed as shipped Comfy Cloud recipes: pictures titled, prompt and seed read (the negative where the template has one), their SaveImage, no node without inputs, the layout kept; the text-to-image ones (alone or as an edit recipe's text route) with their size", !bad.length, short(bad));
+        check("all fifteen are listed as shipped Comfy Cloud recipes: pictures titled, prompt and seed read (the negative where the template has one), their SaveImage, no node without inputs, the layout kept; the text-to-image ones (alone or as an edit recipe's text route) with their size", !bad.length, short(bad));
         // what step 5 reads: a prompt behind a switch, a preview and a prompt enhancer (Krea 2), the size from a resolution
         // node that goes (Anima base), the widget values a node list does not know (Ideogram 4)
         const krea = list.find((x) => x.id === "cloud_krea_2_turbo").providers.comfycloud.options;
@@ -880,6 +880,50 @@ async function main() {
         check("Qwen Image 2.1 on Comfy Cloud: its pictures named <image1>, its sizes in steps of 32", qwen.refs.name === "<image{n}>" && qwen.limits.step === 32, short({ refs: qwen.refs, limits: qwen.limits }));
         const ideo = list.find((x) => x.id === "cloud_ideogram_4").providers.comfycloud.options.graph;
         check("Ideogram 4: the nodes the fixtures' node list lacks take the export's named widget values", ideo["98:156"].inputs.choice === "Default" && ideo["98:157"].inputs.cfg === 3 && ideo["98:155"].inputs.cfg === 7, short(ideo["98:156"].inputs));
+        // MOSS-Image Edit (item 50, docs/PLAN_LORAS.md LR7): Comfy's image_moss_image_edit with image_moss_image_t2i as its
+        // text route; both exports name every widget value, and the node list knows both MOSS classes (LR6), so the
+        // required-input check above covers SkipLayerGuidanceDiTSimple and both TextEncodeMOSSImageEdit nodes
+        const { specProblems } = require(path.join(ROOT, "tools", "node_specs.js"));
+        const exportOf = (f) => JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfy_cloud", f), "utf8"));
+        const unnamed = [];
+        for (const f of ["edit/image_moss_image_edit.json", "t2i/image_moss_image_t2i.json"]) {
+            const wf = exportOf(f);
+            const nodes = [...wf.nodes, ...((wf.definitions && wf.definitions.subgraphs) || []).flatMap((sg) => sg.nodes || [])];
+            for (const n of nodes) if (Array.isArray(n.widgets_values) && !(n.widgets_values_named && typeof n.widgets_values_named === "object")) unnamed.push(`${f} ${n.id} ${n.type}`);
+        }
+        check("the MOSS exports carry widgets_values_named on every node with widget values (the edit export from frontend 1.57.1)", !unnamed.length && exportOf("edit/image_moss_image_edit.json").extra.frontendVersion === "1.57.1", short(unnamed));
+        const moss = list.find((x) => x.id === "cloud_moss_image_edit").providers.comfycloud;
+        const mg = moss.options.graph;
+        const mpins = [
+            ["8 the crop", (mg["8"]._meta || {}).title, "scumble:picture:0"], ["29.image", mg["29"].inputs.image, ["8", 0]], ["29", [mg["29"].inputs.upscale_method, mg["29"].inputs.megapixels, mg["29"].inputs.resolution_steps], ["lanczos", 1, 16]],
+            ["27.image", mg["27"].inputs.image, ["29", 0]], ["28", [mg["28"].inputs.width, mg["28"].inputs.height], [["27", 0], ["27", 1]]],
+            ["30.unet_name", mg["30"].inputs.unet_name, "moss_image_sft_int8_convrot.safetensors"], ["31", mg["31"].inputs, { lora_name: "moss_image_edit_lora_rank_64_bf16.safetensors", strength_model: 1, model: ["30", 0] }],
+            ["32", mg["32"].inputs, { double_layers: "", single_layers: "22", start_percent: 0, end_percent: 1, model: ["31", 0] }],
+            ["33", [mg["33"].inputs.clip_name, mg["33"].inputs.type], ["qwen3.5_9b_w4a8_gptq.safetensors", "moss_image"]], ["34.vae_name", mg["34"].inputs.vae_name, "flux2-vae_small.safetensors"],
+            ["37", [mg["37"].inputs.model, mg["37"].inputs.positive, mg["37"].inputs.negative, mg["37"].inputs.steps, mg["37"].inputs.cfg, mg["37"].inputs.sampler_name, mg["37"].inputs.scheduler, mg["37"].inputs.denoise], [["32", 0], ["39", 0], ["36", 0], 30, 4, "euler", "normal", 1]],
+        ];
+        for (const e of ["36", "39"]) mpins.push([e, [mg[e].inputs.edit_format, mg[e].inputs.image_strength, mg[e].inputs["images.image_0"], mg[e].inputs.clip, mg[e].inputs.vae, "images.image_1" in mg[e].inputs], ["Moss-Image-Edit", 1, ["29", 0], ["33", 0], ["34", 0], false]]);
+        const moff = mpins.filter(([, got, want]) => !eq(got, want)).map(([k, got]) => `${k}=${JSON.stringify(got)}`);
+        check("cloud_moss_image_edit: the crop into LoadImage 8, scaled to 1 MP in steps of 16, the latent its size; the edit LoRA 31 at 1 between the UNETLoader and SkipLayerGuidanceDiTSimple (\"\", layer 22, 0 to 1); both encoders Moss-Image-Edit at strength 1 on images.image_0 with the CLIP and the VAE; 30 steps, CFG 4, euler / normal; no ImageCompare",
+            !moff.length && moss.options.pictures === 1 && !Object.values(mg).some((n) => n.class_type === "ImageCompare") && eq(moss.options.values.prompt, [["39", "prompt"]]) && eq(moss.options.values.negative, [["36", "prompt"]]) && eq(moss.options.values.seed, [["37", "seed"]]),
+            short({ moff, values: moss.options.values }));
+        const mtg = moss.text.options.graph;
+        const mtoff = [
+            ["prompt", moss.text.options.values.prompt, [["18:17", "value"]]], ["negative", moss.text.options.values.negative, [["18:5", "text"]]], ["seed", moss.text.options.values.seed, [["18:7", "seed"]]],
+            ["width", moss.text.options.values.width, [["18:6", "width"]]], ["height", moss.text.options.values.height, [["18:6", "height"]]],
+            ["the enhancer's switch", [mtg["18:16"].inputs.switch, mtg["18:16"].inputs.on_true, mtg["18:16"].inputs.on_false], [true, ["18:11", 0], ["18:17", 0]]], ["the encoder reads the switch's pick", mtg["18:4"].inputs.text, ["18:13", 0]],
+            ["the SLG switch off", [mtg["18:24"].inputs.switch, mtg["18:24"].inputs.on_false, mtg["18:7"].inputs.model], [false, ["18:1", 0], ["18:24", 0]]],
+            ["18:7", [mtg["18:7"].inputs.steps, mtg["18:7"].inputs.cfg, mtg["18:7"].inputs.sampler_name, mtg["18:7"].inputs.scheduler], [25, 2.5, "er_sde", "simple"]],
+        ].filter(([, got, want]) => !eq(got, want)).map(([k, got]) => `${k}=${JSON.stringify(got)}`);
+        check("... its text route image_moss_image_t2i: the prompt into the text the enhancer reads (switch on), the negative, the seed, the size into the latent (the resolution node gone), 25 steps, CFG 2.5, er_sde / simple, the template's SLG switch off",
+            !mtoff.length && moss.text.model === "MOSS-Image Edit" && moss.text.options.pictures === 0 && !Object.values(mtg).some((n) => n.class_type === "ResolutionSelector"), short(mtoff));
+        // every input against its class's spec (tools/node_specs.js, as section 15 checks the local recipe); the crop's
+        // LoadImage has no file until a run uploads one
+        const mprobs = [...specProblems(mg, info).filter((p) => p !== "8.image=\"\" not among its options").map((p) => `edit ${p}`), ...specProblems(mtg, info).map((p) => `text ${p}`)];
+        check("cloud_moss_image_edit: both graphs sound against the node specs (combos in their options, numbers in range, links to nodes of the graph, the growing input's image_0)", !mprobs.length, short(mprobs));
+        check("cloud_moss_image_edit: no loras declaration (the edit LoRA is 31 in the edit graph and the text graph has none, cloud_p_h3_image's precedent), the description with the licence sentence and \"not run\"",
+            moss.loras === undefined && moss.text.loras === undefined && list.find((x) => x.id === "cloud_moss_image_edit").description.includes("The edit LoRA is chinoll's Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0.")
+            && /not run on Comfy Cloud from Scumble yet/.test(list.find((x) => x.id === "cloud_moss_image_edit").description), short({ loras: moss.loras }));
     });
 
     // ---- 11. task "pass" and the presets a recipe file ships (docs/PLAN_0_1_42.md R1) -----------------------------
@@ -1210,7 +1254,7 @@ async function main() {
             const built = tool.build(tool.MANIFEST.find((m) => m.id === "cloud_ideogram_4"), info);
             check("the manifest declares loras false for cloud_ideogram_4 alone, and build writes it into providers.comfycloud", eq(withLoras, ["cloud_ideogram_4=false"]) && built.providers.comfycloud.loras === false && built.loras === undefined, short(withLoras));
             const run = require("node:child_process").spawnSync(process.execPath, [path.join(ROOT, "tools", "cloud_recipes.js"), "--check"], { encoding: "utf8" });
-            check("node tools/cloud_recipes.js --check", run.status === 0 && /^ok: 14 Comfy Cloud recipes match their exports/.test(run.stdout), short((run.stdout || "") + (run.stderr || "")));
+            check("node tools/cloud_recipes.js --check", run.status === 0 && /^ok: 15 Comfy Cloud recipes match their exports/.test(run.stdout), short((run.stdout || "") + (run.stderr || "")));
         } finally { console.warn = warn; }
     });
 
