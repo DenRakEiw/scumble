@@ -714,8 +714,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   set, DML / WebGPU / CPU, go / no-go = **Stop A**), I0c (ORT pin, if needed), I1 (our own export, a dev-side venv), I2
   (downloader: sha256, the HF token only to HF; `docs/BUGS.md`), I3 (key process), I4 (landing), I5 (dialog, live loop),
   I6 (refine), I7 (command), I8 (docs, live run, **Stop B**); Route B (pack A through ComfyUI, B0-B5) on a no-go or by
-  the user's Stop B decision. The in-app release needs Corridor's written yes to hosting a converted set (asked in the
-  thank-you reply's second version); open for the user: whether and which reply went (plan §6).
+  the user's Stop B decision. **The user's decision (2026-11-06):** the thank-you reply went; the user reads Neex's
+  "implement however you like" for the free app as covering the in-app route with a hosted ONNX conversion, so the
+  in-app release no longer waits for a written answer (plan §0); the notices of §3.3 stay.
 - 50: **LoRAs on the user's ComfyUI and Comfy Cloud, and MOSS Image Edit** (issues #10, hwatik, 2026-10-24: "lora
   support for local generations ... qwen 2.1 or moss"; #11, nadergits, 2026-10-31: "add moss image edit ... with
   loras"; the user, 2026-11-06). **The user's decisions:** LoRAs only for the user's own ComfyUI (local or remote) and

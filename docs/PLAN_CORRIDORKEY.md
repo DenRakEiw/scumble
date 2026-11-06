@@ -53,6 +53,15 @@ answered in writing by Stop B, Scumble hosts nothing; what 0.1.52 ships then is 
 Route B built for 0.1.52, about four more days; wait for the answer; or release with the in-app rows hidden. Recommended:
 Route B), and the in-app route follows in a later release once the answer is there (§4.3).
 
+**The user's decision (2026-11-06):** the thank-you reply went (the user: "ja"); asked whether Corridor answered, the
+user said "ja, ich darf es einbauen und verwenden" and pasted Neex's message of 2026-10-24 again. No separate written
+answer to the follow-up questions is on record. **The user reads Neex's "you may implement CK2.0 (and 1.0) however you
+like" for the free app as covering the whole in-app route, a hosted ONNX / fp16 conversion of the weights included**, so
+the release of the in-app route no longer waits for a written answer to question 2; the Stop B branch above for "no
+written answer" falls away. The notices stay as §3.3 lists them (Corridor's licence and the name CorridorKey, NVIDIA's
+`Notice` beside C-RADIO, DeepMind's CC BY line, Microsoft's MIT notice; a `THIRD_PARTY_NOTICES.md` with the hosted set).
+A later written answer from Corridor goes in here verbatim.
+
 ## 1. What the user gets, and how pixels land
 
 **The behaviour in one sentence (the say-behaviour-first rule; repeated in chat before I4 and I5):** *Key green / blue
