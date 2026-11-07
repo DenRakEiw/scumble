@@ -249,6 +249,14 @@ another, the user's clipboard untouched); `resize_image` resizes the whole docum
 › Resize. Each is one undo step; a `copy_to_layer` cut is two in its own tab (the cut, then the
 paste: `undo {steps: 2}` takes both back).
 
+**Several separate areas** (CLAUDE.md item 54, issue #9). `status`'s `areas` counts the selection's separate areas on
+a coarse copy of it (`count`, `each_area`, `cap` 8, `specks`, each area's box): the parts whose crops would overlap
+are one area, specks below a 20,000th of the picture are left out. `generate` with `each_area: true` runs each area
+as its own crop and run with the same prompt, one after another, each result its own layer, and answers `areas`,
+`generated`, `layers`, `cancelled`, `failed` and `left_out`. It asks nothing first (the app's *Each area* button asks
+before an API run, which is charged once per area), and `cancel_run` stops the run going and the areas not yet sent.
+A plain `generate` of such a selection whose one crop goes out at under half its size says so in its `notes`.
+
 **Selections, the Settings rows, crop and filter values** (docs/PLAN_0_1_42.md F2b). `select_color` is
 the Magic wand at a point (`tolerance` 0..255, `contiguous`, `sample` image or layer), in the app with
 no model or server; `select_shape` selects an ellipse (`x`, `y`, `w`, `h`) or a polygon / lasso

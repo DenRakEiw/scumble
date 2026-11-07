@@ -244,6 +244,9 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   Cloud or Comfy Router job on Comfy's side, the status row's bar follows a Cloud run node by node, and a Cloud job
   still running when Scumble closes or crashes is asked for at the next start, its picture opening as a document of
   its own.
+- *Each area* beside Generate, shown while the selection holds two or more separate areas (people selected by text,
+  say): each area goes as its own crop and run with the same prompt, one after another, each result its own layer,
+  instead of one crop of all of them scaled down to the model's size. Up to 8 areas; before an API run Scumble asks.
 - *Generate new* makes the base picture from the prompt alone, locally or through a provider, and you edit it from
   there. *New* in the top bar can make the empty canvas for a model, in one of its own aspects and size classes (1k,
   2k, 4k), so boxes are drawn in the shape the picture will have; Generate new then opens on that choice.

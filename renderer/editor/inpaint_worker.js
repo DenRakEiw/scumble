@@ -40,6 +40,8 @@
  *                   from bytes (a new worker's cold and warm calls, tools/px_probe.py): a diagnostic only, like
  *                   inflate_bench.
  *   px_stats        this thread's px instances and memory (kernels.js `pxInstances`), answered at once like `arena`.
+ *   area_cells      the separate areas of the selection (inpaint_areas.js, CLAUDE.md item 54): its tiles' selected
+ *                   pixels counted on a coarse grid and the grid's parts labelled, their boxes back.
  *
  * Pixels arrive as ImageBitmaps (transferred, never copied through structured cloning) and
  * are closed as soon as they are drawn. Every reply carries the request's id; a failure
@@ -65,6 +67,7 @@ import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPa
 import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
+import { countTileCells, labelParts } from "./inpaint_areas.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
 const now = () => performance.now();
@@ -1424,6 +1427,34 @@ function relightShadowJob(msg) {
     return { vis: vis.buffer, row0, rows, transfer: [vis.buffer], timing: timing() };
 }
 
+/**
+ * The separate areas of the selection (CLAUDE.md item 54): `sel` the selection's tiles (a store as `storeRows` takes it,
+ * at (0, 0)), `W` x `H` the picture, `cell` the coarse grid's cell and `speck` the fewest pixels an area needs
+ * (inpaint_areas.js). Only the tiles the store names are read, each where it lies; the reply is `labelParts`'s.
+ */
+function areaCellsJob(msg) {
+    const t0 = now();
+    const W = msg.W | 0, H = msg.H | 0, cell = Math.max(1, msg.cell | 0);
+    const gw = Math.ceil(W / cell), gh = Math.ceil(H / cell);
+    const counts = new Uint32Array(gw * gh);
+    const store = msg.sel;
+    let tiles = 0;
+    for (const [row, names] of Object.entries(store.tiles || {})) {
+        const oy = (+row) * TILE;
+        if (!names || oy >= H) continue;
+        for (let tx = 0; tx < names.length; tx++) {
+            const t = names[tx];
+            const ox = tx * TILE;
+            if (!t || ox >= W) continue;
+            countTileCells(tileBytes(t).bytes, ox, oy, Math.min(TILE, W - ox), Math.min(TILE, H - oy), cell, gw, counts);
+            tiles++;
+        }
+    }
+    const t1 = now();
+    const out = labelParts(counts, gw, gh, cell, W, H, msg.speck | 0);
+    return { ...out, timing: { op: "area_cells", tiles, cells: gw * gh, count: t1 - t0, label: now() - t1, total: now() - t0 } };
+}
+
 function relightRatioJob(msg) {
     const { fullPx, lowPx, ansPx, W, H, wAns, hAns } = msg;
     const full = fullPx instanceof Uint8Array ? fullPx : new Uint8Array(fullPx);
@@ -1446,6 +1477,7 @@ async function run(msg) {
     if (msg.op === "relight_shadow") return relightShadowJob(msg);
     if (msg.op === "relight_ratio") return relightRatioJob(msg);
     if (msg.op === "range_select") return rangeSelectJob(msg);
+    if (msg.op === "area_cells") return areaCellsJob(msg);
     if (msg.op === "depth_guide") return depthGuide(msg);
     if (msg.op === "depth_fuse") return depthFuse(msg);
     if (msg.op === "resample") return resampleJob(msg);

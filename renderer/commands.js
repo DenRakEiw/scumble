@@ -28,6 +28,7 @@ import { refusal } from "./editor/inpaint_status.js";
 import { canvasSizeRefusal } from "./editor/inpaint_sizelimit.js";
 import { MAX_LORAS, FAMILIES, normalizeName, clampStrength, missingLoras, filterNames, groupByFolder, folderFits, loraFolder, loraHint, recipeFamily } from "./editor/loras.js";
 import * as loraPanel from "./editor/lora_panel.js";
+import { AREA_CAP } from "./editor/eacharea.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -320,6 +321,28 @@ function rectMask(ed, x, y, w, h) {
     const m = new Uint8Array(W * H);
     for (let yy = y0; yy < y1; yy++) m.fill(1, yy * W + x0, yy * W + x1);
     return m;
+}
+
+/**
+ * generate's `each_area` (item 54): every separate area of the selection on its own, through the host's run of them
+ * (eacharea.js; no question before an API run, the agent asked for it). A recipe on the user's ComfyUI has every area
+ * queued when it returns: their results are waited for here, as generate waits for one. A refusal (one area, more than
+ * the cap, a recipe that takes none) throws; a stop after a result landed answers with `failed` instead.
+ */
+async function generateEachArea(ed, a) {
+    if (ed.providerPending) throw refusal("a run is still going on this document");
+    const started = Date.now(), limit = clampInt(a.timeout, 5, 3600, 600) * 1000;
+    const n0 = ed.history.length;
+    const out = await host.generateEachArea(ed, { confirm: false });
+    const failed = () => /^Error|failed/i.test(ed.status || "");
+    if (out.queued && !out.cancelled) await until(() => ed.history.length >= n0 + out.queued || failed(), Math.max(5000, limit - (Date.now() - started)), 250);
+    const landed = ed.history.slice(n0);
+    if (!landed.length && out.failed) throw new Error(out.failed);
+    const layers = landed.map((h) => ed.layers.find((l) => l.id === h.layerId)).filter(Boolean).map((l) => layerSummary(ed, l));
+    return {
+        areas: out.areas, generated: landed.length, layers, cancelled: !!out.cancelled, failed: out.failed || null, left_out: out.leftOut || 0,
+        status: ed.status, seconds: Math.round((Date.now() - started) / 100) / 10,
+    };
 }
 
 /** A File from a mirror / server ref {filename, subfolder, type} or from a local path. */
@@ -1073,14 +1096,16 @@ const COMMANDS = {
     // -- document --
     status: {
         readOnly: true,
-        description: `What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends. key: whether key_screen with its default route would start on this document now (ready; reason when not: what the route lacks, a run going, no picture), route (that default: comfyui, the user's own ComfyUI with a CorridorKey 2.0 node pack, the only route of this build; app, in Scumble, once it has an engine), the in-app engine's provider (cpu: on the CPU, no live preview) and working size, and comfy: the ComfyUI route's own readiness (ready, reason: not connected, no RTX 30+ card, no node pack, no Inpaint Canvas), the pack it keys with (pack, pack_label, verified: whether that pack has keyed with Scumble), the card (gpu), cap_mp (settings.key.cap: the largest box that goes at its own size, in megapixels of 2^20 px), keep_on_gpu and timeout (settings.key). loras: the selected recipe's LoRA rows (kept per recipe for every document; set_generation loras sets them): takes (whether its graph takes rows; reason when not), family (the base model its LoRAs should fit, when known), rows [{ name, strength, on, hint, mismatch, triggers, on_server }] (hint: the base model the file looks made for, null while unknown; mismatch: its tensor names fit another model than the recipe's, which never refuses a run; triggers: the file's trigger words; on_server: whether the server's list has it, null while the list is unread), and sent: what a run now would load, [{ name, strength }].`,
+        description: `What the document holds: image size, prompt, generation settings (generation.target, when set: the document's preset for Generate new, from new_canvas with a recipe or the last generate_new, valid while the picture keeps the size it was made at), selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory. realism: whether realism_pass (${REALISM_LABEL}) at factor 1 would start on this document now (ready; reason when not: the server, a run going on it, a local render on the user's ComfyUI included, still loading, no picture, past 7680 × 4320 or 27.9 megapixels; status answers for factor 1, and above it a picture already past that size is refused too: only a picture whose output would pass it is scaled down), note (RTX 30), and the app's style, strength and preset it sends. key: whether key_screen with its default route would start on this document now (ready; reason when not: what the route lacks, a run going, no picture), route (that default: comfyui, the user's own ComfyUI with a CorridorKey 2.0 node pack, the only route of this build; app, in Scumble, once it has an engine), the in-app engine's provider (cpu: on the CPU, no live preview) and working size, and comfy: the ComfyUI route's own readiness (ready, reason: not connected, no RTX 30+ card, no node pack, no Inpaint Canvas), the pack it keys with (pack, pack_label, verified: whether that pack has keyed with Scumble), the card (gpu), cap_mp (settings.key.cap: the largest box that goes at its own size, in megapixels of 2^20 px), keep_on_gpu and timeout (settings.key). loras: the selected recipe's LoRA rows (kept per recipe for every document; set_generation loras sets them): takes (whether its graph takes rows; reason when not), family (the base model its LoRAs should fit, when known), rows [{ name, strength, on, hint, mismatch, triggers, on_server }] (hint: the base model the file looks made for, null while unknown; mismatch: its tensor names fit another model than the recipe's, which never refuses a run; triggers: the file's trigger words; on_server: whether the server's list has it, null while the list is unread), and sent: what a run now would load, [{ name, strength }]. areas: the selection's separate areas (counted on a coarse copy of it; the parts whose crops would overlap are one area, specks below a 20,000th of the picture are left out): count, each_area (whether generate each_area would run them with the selected recipe: 2 to ${AREA_CAP} areas), cap, specks, and each area's box [{ x, y, w, h }].`,
         params: {},
         async run(ed) {
             const s = status(ed);
             let info = null;
             try { info = await host.refLayout(ed, {}, { keep: false }); } catch (_) { info = null; }
             s.references = s.references.map((x) => ({ ...x, sent_as: info && x.label ? info.names.get(x.id) || null : null }));
-            return { ...s, loras: lorasView(host.recipe), memory: await memoryMB() };
+            let areas = null;
+            try { areas = await host.selectionAreas(ed); } catch (_) { areas = null; }
+            return { ...s, areas, loras: lorasView(host.recipe), memory: await memoryMB() };
         },
     },
     new_canvas: {
@@ -1853,9 +1878,13 @@ const COMMANDS = {
         },
     },
     generate: {
-        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out; seed is the seed the model got, null when the route sends none (FLUX 3 Image); loras_sent the LoRAs the run loaded, [{ name, strength }] in their order (the selected recipe's switched-on rows on your ComfyUI or Comfy Cloud, set_generation loras; [] for an API run).",
-        params: { timeout: P.timeout(600) },
+        needsImage: true, description: `Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out (and when a selection of several separate areas goes as one crop scaled to under half its size, that each area on its own would be sharper); seed is the seed the model got, null when the route sends none (FLUX 3 Image); loras_sent the LoRAs the run loaded, [{ name, strength }] in their order (the selected recipe's switched-on rows on your ComfyUI or Comfy Cloud, set_generation loras; [] for an API run). each_area: generate each separate area of the selection on its own (status areas: 2 to ${AREA_CAP} areas; the parts whose crops would overlap are one area, specks are left out): the same prompt, each area its own crop and run, one after another, each result its own layer (an API run is charged once per area; on your ComfyUI every area is queued at once). It answers areas, generated (the results that landed), layers, cancelled, failed (the error that stopped it, null), left_out (specks outside every area), status and seconds; cancel_run stops the run going and the areas not yet sent.`,
+        params: { timeout: P.timeout(600), each_area: P.bool(`generate each separate area of the selection on its own (2 to ${AREA_CAP} areas)`, { default: false }) },
         async run(ed, a) {
+            if (a.each_area) return generateEachArea(ed, a);
+            // the selection's separate areas counted before the run, so its notes can say when one crop of all of them
+            // goes out strongly scaled down (an agent's selection is often made just before)
+            if (ed.sel && host.selectionAreas) { try { await host.selectionAreas(ed); } catch (_) { /* the hint is optional */ } }
             const n0 = ed.history.length;
             const { wired } = host.resultInputState(ed);
             if (!wired) throw new Error("the recipe has no result output for this mode: select a recipe first");
@@ -1900,7 +1929,7 @@ const COMMANDS = {
     },
     cancel_run: {
         scope: "app",
-        description: `Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, key_screen, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass, key_screen) ends with the cancel once the provider answered the stop (Comfy Cloud, Comfy Router: up to about 10 s), and nothing lands. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running), each with said: how it ended as Scumble knows it (Scumble asked the provider to stop the job; the job had already finished and is charged, its picture not kept; the job had already ended on the provider without a picture, with its status; nothing had gone to the provider; or Scumble stopped waiting and the provider may still finish and charge it, and for a Comfy Cloud job whose stop was not confirmed that Scumble keeps the job and opens its picture as a document of its own when Comfy has it), null while it has not ended; landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 25 s for an API run, 10 s for a run on the user's ComfyUI); note: those words together, and for a run that did not end in time that a provider may still finish a job it already had and charge it.`,
+        description: `Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, key_screen, upscale of the whole picture with a local recipe), whose job is taken off the server; a generate each_area going stops after the run going, its areas not yet sent never go. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass, key_screen) ends with the cancel once the provider answered the stop (Comfy Cloud, Comfy Router: up to about 10 s), and nothing lands. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running), each with said: how it ended as Scumble knows it (Scumble asked the provider to stop the job; the job had already finished and is charged, its picture not kept; the job had already ended on the provider without a picture, with its status; nothing had gone to the provider; or Scumble stopped waiting and the provider may still finish and charge it, and for a Comfy Cloud job whose stop was not confirmed that Scumble keeps the job and opens its picture as a document of its own when Comfy has it), null while it has not ended; landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 25 s for an API run, 10 s for a run on the user's ComfyUI); note: those words together, and for a run that did not end in time that a provider may still finish a job it already had and charge it.`,
         params: { doc: P.int("only this tab's runs (the id from list_documents); every tab's when left out") },
         async run(_, a) {
             let ed = null;
@@ -1909,6 +1938,8 @@ const COMMANDS = {
                 if (!ed) throw new Error(`no document with id ${a.doc} (open: ${host.editors().map((e) => e.node.id).join(", ") || "none"})`);
             }
             const now = Date.now();
+            // a generate each_area going (item 54): its areas not yet sent stay out
+            const areaRuns = (ed ? [ed] : host.editors()).filter((e) => e._eachArea).length;
             const runs = host.cancelRuns(ed);
             // a run whose answer is in has left the title row but still holds its document until its result has landed:
             // it can no longer be cancelled, so it is named as landing (and waited for), never as nothing running
@@ -1931,6 +1962,7 @@ const COMMANDS = {
             if (runs.some((t) => api(t) && !(gone(t) && t.said))) notes.push("A provider may still finish a job it already had and charge it.");
             if (runs.some((t) => !api(t))) notes.push("A run on your ComfyUI has its job taken off the server.");
             if (landing.length) notes.push("A run's answer was already in and is landing: it can no longer be cancelled (Ctrl+Z takes it back once it is in).");
+            if (areaRuns) notes.push("Each area: the areas not yet sent do not go.");
             if (!notes.length) notes.push("Nothing was running" + (ed ? " on this document." : "."));
             return {
                 cancelled: runs.map((t) => ({ doc: t.editor && t.editor.node ? t.editor.node.id : null, provider: t.provider || null, label: t.label || t.provider || null, seconds: Math.round((now - (t.started || now)) / 100) / 10, said: gone(t) && t.said ? t.said : null })),

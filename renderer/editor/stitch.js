@@ -538,7 +538,16 @@ export function planFrame(editor, params, limits) {
         else { b = editor.scanBoundsIn(loose); exactBounds.set(editor, { loose, seq: editor.selectionSeq, b }); }
         if (!b) return null;
     }
-    const p = planCrop(cropSettingsOf(editor, params || {}, limits), { bounds: b, fullW: editor.width, fullH: editor.height });
+    return planBox(editor, params, limits, b);
+}
+
+/**
+ * The crop a run would send for a selection whose bounding box is `bounds` ([x0, y0, x1, y1] in image pixels, x1 and y1
+ * exclusive), as planFrame answers it: the same geometry as the run's planCrop, for a box that is not the selection's
+ * own (an area of a selection of several, eacharea.js).
+ */
+export function planBox(editor, params, limits, bounds) {
+    const p = planCrop(cropSettingsOf(editor, params || {}, limits), { bounds, fullW: editor.width, fullH: editor.height });
     return { x: p.x0, y: p.y0, w: p.cw, h: p.ch, emitted: [p.ew, p.eh], paste: p.info.paste, aspect: p.info.aspect };
 }
 

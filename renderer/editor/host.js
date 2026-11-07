@@ -35,8 +35,8 @@ function sentTexts(snap) {
 
 // a run note that only explains how the run went, not what it left out or changed (item 45: those show red); the
 // LoRA rows a recipe whose LoRAs section is hidden still keeps (loraPlan's `hidden`) are no omission the user could
-// see or mend there, so their line is plain too
-const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None |^Served by .+ \(Comfy Router's fallback provider\)\.$|^LoRAs: |^The LoRA rows stored for this recipe stayed out: /;
+// see or mend there, so their line is plain too; the separate areas' advice (eacharea.js areaHint) changes nothing
+const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None |^Served by .+ \(Comfy Router's fallback provider\)\.$|^LoRAs: |^The LoRA rows stored for this recipe stayed out: |^\d+ separate areas; the crop goes at /;
 /** The kind of a line that appends a run's notes to the one before: red when a note says something was left out. */
 function notesKind(editor, notes) {
     return notes.some((n) => !HINT_NOTE.test(String(n))) ? "warn" : (editor.statusKind || "info");
@@ -59,6 +59,7 @@ import { tileBoxes, fusedSize } from "./inpaint_edges.js";
 import { modelSize, DEPTH_LARGE, roundHalfEven } from "./inpaint_depth.js";
 import { INTERACTIVE } from "./inpaint_pool.js";
 import { editorPool, markStep } from "./inpaint_jobs.js";
+import { areasSoon, areaHint, areaState, buildAreaButton, runEachArea, syncAreaButton } from "./eacharea.js";
 
 const PROXY = "/comfy";
 
@@ -869,6 +870,7 @@ export const host = {
         try { this.buildExportSize(editor); } catch (err) { console.warn("export size row", err); }
         try { this.hookStatus(editor); } catch (err) { console.warn("status hook", err); }
         try { this.buildUpscaleButton(editor); } catch (err) { console.warn("upscale button", err); }
+        try { buildAreaButton(this, editor); } catch (err) { console.warn("each area button", err); }
         this.emit("built", { editor });
     },
 
@@ -1488,6 +1490,8 @@ export const host = {
     setRecipe(recipe) {
         this.recipe = recipe;
         for (const ed of this._editors) this.applyRecipe(ed);
+        // the areas' crops follow the recipe's limits, and an upscaler takes no Each area
+        for (const ed of this._editors) { try { syncAreaButton(this, ed); } catch (err) { console.warn("each area", err); } }
         // the plugins hear of it (a panel that says whether the recipe takes boxes): the active tab, the recipe's id
         this.emit("recipe", { editor: this.editor, recipe: recipe ? recipe.id : null });
     },
@@ -2399,11 +2403,14 @@ export const host = {
             // main names a reference picture by its place in the request: the Original first when it goes
             const original = info.original ? 1 : 0;
             named = this.refPrompt(editor, snap, "edit", { sent: [...Array(original).fill(null), ...snap.refIds] });
-        editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label}${info.keepAlpha ? ", transparent background" : ""} ...`);
+            // a selection of several separate areas whose one crop goes out strongly scaled down (item 54): said before
+            // the answer and kept in the run's notes
+            const areaNote = areaHint(this, editor, this.cropLimits(), Math.max(info.emitted[0], info.emitted[1]) / Math.max(1, w, h));
+        editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label}${info.keepAlpha ? ", transparent background" : ""} ...${areaNote ? " " + areaNote : ""}`);
             const shape = this.layoutShape(editor, { recipe: r, params, original, count: references.length });
             // the boxes (item 28): geometry in fractions of the crop, main writes the model's rows behind the variant's
             // `options.boxes`; only while the document's Boxes switch is on (S3d)
-            const preNotes = [];
+            const preNotes = areaNote ? [areaNote] : [];
             const boxes = [];
             const takes = !!(shape.options && typeof shape.options.boxes === "string");
             const sendBoxes = takes && !!editor.genSettings.boxes;
@@ -2439,6 +2446,9 @@ export const host = {
                 // the variant's declaration holds for its edit graph (recipes.js normalize)
                 ...(cloudLoras ? { loras: { rows: cloudLoras, declared: r.loras } } : {}),
             };
+            // a run of one area of several (Each area, eacharea.js): the crop is made, so the user's own selection comes
+            // back while the provider works
+            if (editor._eachAreaRun && editor._eachAreaRun.onSelectionRead) editor._eachAreaRun.onSelectionRead();
             res = await providerEdit(request, token);
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
             editor.lastRunNotes = [...preNotes, ...(res.notes || [])];
@@ -3140,8 +3150,23 @@ export const host = {
     cancelRuns(editor) {
         const runs = Array.from(this._providerRuns).filter((t) => !editor || t.editor === editor);
         for (const t of runs) t.cancelled = true;
+        // Each area (eacharea.js): the areas not yet sent never go
+        for (const ed of this._editors) if (ed._eachArea && (!editor || ed === editor)) ed._eachArea.cancelled = true;
         for (const t of runs) if (t.runId && window.scumble && window.scumble.providers && window.scumble.providers.cancel) window.scumble.providers.cancel(t.runId).catch(() => {});
         return runs;
+    },
+
+    /**
+     * Generate each separate area of the selection on its own (item 54, eacharea.js runEachArea): the button's click and
+     * the generate command's `each_area`. `confirm`: ask before an API run (the command does not).
+     */
+    generateEachArea(editor, opts = {}) {
+        return runEachArea(this, editor, opts);
+    },
+
+    /** The selection's separate areas for the status command (eacharea.js areaState): counted now when they are not. */
+    selectionAreas(editor) {
+        return areaState(this, editor);
     },
 
     /** The runs in the title row that hold `editor` (its close stops them, removeEditor). */
@@ -5322,6 +5347,8 @@ export const host = {
      * reference snapshot (docs/PLAN_REFS.md C3; a caller without one gets the references of now).
      */
     async queueGenerate(editor, opts = {}) {
+        // a run of one area of several (Each area, eacharea.js): the prompt and the references of its click, for every area
+        if (editor._eachAreaRun && editor._eachAreaRun.refs) opts = { ...opts, refs: editor._eachAreaRun.refs };
         // Generate new on a ComfyUI recipe (generate_new's local path, a fresh canvas): the size its boxes were drawn on,
         // read once whatever the run does
         const fresh = editor._newBoxes || null;
@@ -5472,8 +5499,15 @@ export const host = {
                 editor.lastRunNotes.push(`${listWords(left)} ${left.length === 1 ? "is" : "are"} not sent: ${r.name || r.id} reads ${plan.spec.slots} picture${plan.spec.slots === 1 ? "" : "s"}.`);
             }
             if (plan.spec.guess && texts.pairs.length) editor.lastRunNotes.push("(wording guessed from the graph)");
+            // a selection of several separate areas whose one crop the node scales down strongly (item 54)
+            if (!fresh) {
+                const areaNote = areaHint(this, editor, null);
+                if (areaNote) editor.lastRunNotes.push(areaNote);
+            }
         }
         if (texts.note) editor.setStatus(`${editor.status} ${texts.note}`, editor.statusKind || "info");
+        // a run of one area of several (Each area): the state holds its mask, so the user's own selection comes back
+        if (editor._eachAreaRun && editor._eachAreaRun.onSelectionRead) editor._eachAreaRun.onSelectionRead();
         await this.ensureOnServer(state, editor);
         const prompt = JSON.parse(JSON.stringify(r.prompt));
         const canvas = prompt[r.canvas];
@@ -5768,6 +5802,8 @@ export const host = {
         if (info && info.geometry) this.emit("geometry", { editor, ...info.geometry });
         // the Boxes switch counts the document's boxes: a plugin's data change and its undo come through here
         if (editor && editor.syncBoxesRow) editor.syncBoxesRow();
+        // the Each area button follows the selection's separate areas (eacharea.js: counted after a short wait)
+        if (editor) { try { areasSoon(this, editor); } catch (err) { console.warn("each area", err); } }
         this.emit("changed", { editor });
     },
 

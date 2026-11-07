@@ -102,6 +102,7 @@ Happy with it? Ctrl+Shift+E exports the visible picture, and Ctrl+S keeps the wh
 ### Notes
 
 - Feather the selection by a few pixels (Selection panel) before a generate and the edge gets easier for both the model and the stitch.
+- **Several separate areas** in one selection (three people selected by text, say) go to the model as one box around all of them, scaled down to the model's size, so each area comes back soft; the status line says so when that box goes out at less than half its size. **Each area**, beside Generate, is shown while the selection holds two or more separate areas and runs each one as its own crop and run instead: the same prompt, one after another, each result its own layer. It takes up to 8 areas; areas whose boxes would overlap count as one, and specks smaller than a 20,000th of the picture are left out. On an API model every area is a run of its own and is charged as one, so Scumble asks first, and Cancel stops the areas not yet sent; on your own ComfyUI every area is queued at once and the queue runs them in turn.
 - Every document is a tab: Ctrl+T new, Ctrl+W close, Ctrl+Shift+T reopen the last one closed, Ctrl+Tab next. A run keeps going while another tab is in front.
 - Ctrl+Z is a real undo stack, not a single step, and it covers the assistant's work too. The **Undo history** section of the Image tab lists every step by name, oldest first; a click on a row jumps there, and the rows below the highlighted one are what redo brings back. **Snapshot** keeps the whole document under a name (up to eight per tab, not saved with the file), and Restore puts it back as one undo step. How many steps are kept is set under Settings › Rendering (30 steps, 384 MB by default).
 
@@ -708,7 +709,7 @@ On your own ComfyUI none of the size machinery applies: there the Inpaint Canvas
 
 ### Notes
 
-- Result soft or short on detail? Raise the Highres fix, or select a smaller area — a smaller selection means a smaller box, and a smaller box at the same ceiling means more pixels per millimetre of picture.
+- Result soft or short on detail? Raise the Highres fix, or select a smaller area — a smaller selection means a smaller box, and a smaller box at the same ceiling means more pixels per millimetre of picture. A selection of several areas far apart makes one large box: *Each area* beside Generate sends each area as a box of its own (see *Your first edit*).
 - Run too expensive or too slow? Lower it. Providers charge by the size that goes out, and 2x crop is often indistinguishable from Maximum on a selection that is already big.
 - Edge of the patch visible? More feather in the Crop panel, and check colour match before blaming the model.
 - The model repainted things outside what you selected? It cannot have — what you see is inside the composite mask. Select more tightly, or feather less.
