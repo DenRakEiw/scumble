@@ -864,6 +864,18 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   https://huggingface.co/Cactus-Compute/mirage/tree/main: the spike and its download go with a later update. Open: the
   README's other questions (a closed-source engine as a download, the uses that matter, a mail to Cactus, the Store's
   policy 10.2.2 and Flathub), asked when that update is planned.
+- 54: **One crop per connected selection area** (issue #9, bornd3vil, 2026-10-23: several separate areas, e.g. people
+  selected by text, go as one large crop scaled down to the model's size, so the patches come out soft). The user,
+  2026-11-07: "ja, das wäre ok so", and the button only shows while the selection has more than one area. For the next
+  update, two parts: (1) **a hint** in the status line before a run when the selection has several separate areas and
+  the crop goes scaled down strongly because of them ("3 separate areas; the crop goes at 30 % of its size; generating
+  each area on its own gives sharper results"); (2) **"Generate each area separately"**, a button shown only while the
+  selection has two or more areas: the same prompt, each area its own crop and run in turn, each result its own layer,
+  at most about 8 areas, the cost of N runs named before an API run, Cancel stops the rest; no prompt per area (the
+  Boxes plugin covers that). Known (read 2026-11-07): the editor has no connected-area labelling yet; count the areas on
+  a coarse copy of the selection (at most about 1,024 px a side, on a selection change, debounced), leave specks below a
+  threshold out, and count areas whose crops would overlap as one. About one session (inferred); the issue's answer at
+  the release that ships it, not before.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
