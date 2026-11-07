@@ -962,6 +962,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   upscale and the Realism Pass above factor 1. Small to medium.
 - 58: **The eyedropper averages 3 x 3 / 5 x 5** (the user, 2026-11-07): a Point / 3 x 3 / 5 x 5 row in the eyedropper's
   options (beside its existing Sample image / layer), so grain or sensor noise does not pick a single stray pixel. Small.
+  **Built 2026-11-07 by agent B, merged (`67e866f`):** `buildOptsBar`'s Size row (`this.eyedropperSize` 1 / 3 / 5,
+  localStorage `ipc.eyedropperSize`), `pickColor` reads the box through `sampleRegion`, clipped to the picture, the
+  alpha-weighted mean sum(c·a) / sum(a) (Point gives the old colour); Alt+click with the brush follows it; `pickOnce`
+  (range, relight colour) and MCP unchanged; gate step `eyedropper_size_averages_a_box`. Open for the user: should the
+  panels' one-shot picks average too, and should MCP set the Size (`set_brush`)?
 - 59: **Smart guides to other layers** (the user, 2026-11-07): `snapLayer` / `snapScale` (`inpaint_canvas.js` near
   4955-4990) snap a moved or scaled layer to the canvas edges, its centre and the guides; add the edges and centres of
   the other visible layers, with the same 8 screen px and the drawn lines. Small to medium.
@@ -1001,6 +1006,13 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   scrubber dialog on Chromium's own `<video>` (no FFmpeg dependency) and takes the chosen frame as the picture or as a
   layer / reference, so a green-screen clip's frame goes straight to the key. Small. (The four-corner perspective of
   that idea list exists: the transform tool's Distort mode.)
+- 69: **`Scumble --run`: several commands in one call** (the user, 2026-11-07, with another agent's note): `--cmd`
+  runs one command per call, and with no Scumble running each call starts and quits its own headless app, so a load /
+  cut out / export chain loses its state between calls (checked in `main.js` `agentMain`). `--run <steps.json>` (or
+  `-` for stdin): one backend for the whole run, the steps in order, `{"files": [globs], "steps": [...]}` runs them
+  per file with `{file}` / `{stem}` / ... placeholders, one JSON line per step, exit 1 on a failure (`--keep-going`
+  goes on with the next file); for batches such as cutting out a folder of photos, keying plates overnight, a look on
+  a folder. Built 2026-11-07 night by agent F (`electron/main/cli_run.js`), merged after a review.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.

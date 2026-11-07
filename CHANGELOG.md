@@ -9,6 +9,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **The pixel kernels really give memory back now.** In 0.1.52 the first kernel instance of the window and of each background worker stayed in memory after it was replaced, so the memory 0.1.52 said its workers returned after a large operation (about 290 MB after a 15,000 x 10,000 export) stayed in use until the app was closed; now it is freed.
 - **GPT Image 2.6 Sunburst and Flare on Comfy Cloud too**, through OpenAI's partner node, with a Complexity setting and the selection as the mask (built from the node's own description, not run on Comfy Cloud yet).
 - **GPT Image 2 and 2.5 on Comfy Cloud:** a run with a selection and reference layers or the Original no longer fails. It goes without the mask, which that node takes beside one picture only, and the selection still limits the result; the status line says so as a plain note.
+- **The eyedropper can average.** A *Size* row in its options (Point, 3 x 3, 5 x 5; Point by default, remembered) picks the mean of the pixels around the cursor, so grain or noise does not give you one stray pixel's colour. Alt+click with the paint brush follows it; at the picture's edge only the pixels inside count, and transparent pixels count by their opacity.
 
 ## 0.1.52 - 2026-11-07
 
