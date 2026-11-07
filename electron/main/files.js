@@ -163,14 +163,23 @@ class FileMirror {
         this.knownSet().add(this.key(type, subfolder, filename));
     }
 
-    /** GET /view: the mirror first, else the server (and keep a copy, except temp files). */
-    async handleView(search) {
+    /**
+     * GET /view: the mirror first, else the server (and keep a copy, except temp files). `head` (a HEAD request: the
+     * editor asks whether an undo's file is still there) answers a mirrored file from a stat, without reading it.
+     */
+    async handleView(search, { head = false } = {}) {
         const q = new URLSearchParams(search);
         const filename = q.get("filename") || "";
         const subfolder = q.get("subfolder") || "";
         const type = q.get("type") || "input";
         let local;
         try { local = mirrorPath(type, subfolder, filename); } catch (err) { return new Response(err.message, { status: 400 }); }
+        if (head) {
+            try {
+                const st = await fsp.stat(local);
+                if (st.isFile()) return new Response(null, { status: 200, headers: { "content-type": mimeOf(filename), "cache-control": "no-cache" } });
+            } catch (_) { /* not mirrored: as a GET, from the server when it is connected */ }
+        }
         try {
             const data = await fsp.readFile(local);
             return new Response(data, { status: 200, headers: { "content-type": mimeOf(filename), "cache-control": "no-cache" } });

@@ -542,22 +542,56 @@ return out;
 async def closed_tabs_are_collected(c):
     """A closed tab gives its memory back. The export row's listener on the host held the editor
     for good, so every document ever opened stayed in memory with its layers and undo steps. Four
-    tabs are made, painted on, closed, and after a forced collection none of them may be alive."""
+    tabs are made, painted on, closed, and after a forced collection none of them may be alive.
+    The second tab closes with the layer row's menu open (openFlyout), the third with a choice list
+    open (openChoiceList): the window's capturing pointerdown listener the first flyout adds closed
+    over the editor and was never taken off (review 2026-11-07 canvas-c/F3); close() takes it off now.
+    The fourth closes with a question open (ask): its keydown listener on the window held the editor
+    too, and the dead dialog took the next Enter or Escape; the close answers it with null."""
     r = await c.eval(PRE % """
 window.__closedTabs = [];
+const dropped = [];
+let answered = "nothing";
 for (let i = 0; i < 4; i++) {
     const doc = await run("new_document");
     const ed = ednow(doc.id);
+    host.shell.activate(ed);
     await run("new_canvas", { width: 1200, height: 800, doc: doc.id });
-    await run("add_paint_layer", { doc: doc.id });
+    const L = await run("add_paint_layer", { doc: doc.id });
     await run("select_rect", { x: 10, y: 10, w: 300, h: 200, doc: doc.id });
     ed.fillSelection();
     await wait(200);
+    let fn = null;
+    if (i === 1) { ed.renderLayers(); ed.openLayerMenu(ed.layers.find((l) => l.id === L.id)); }
+    if (i === 2) ed.openChoiceList(ed.layers.find((l) => l.id === L.id), { key: "gate", default: "a", options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] }, ed.root);
+    if (i === 1 || i === 2) {
+        fn = ed._flyDocDown;
+        if (!ed.flyout || typeof fn !== "function") throw new Error("tab " + i + ": no flyout or no window listener for it");
+    }
+    // the fourth closes with a question open (ask): its window keydown listener closes over the editor; the close answers
+    // it with null, as Cancel does
+    if (i === 3) {
+        ed.ask({ title: "gate", message: "a question left open" }).then((v) => { answered = v === null ? "null" : "an answer"; });
+        if (!ed.askOpen) throw new Error("tab 3: no question open");
+    }
+    // the listener's removal seen on the window (only a flag is kept: the function itself holds the editor)
+    let gone = false;
+    const orig = window.removeEventListener;
+    window.removeEventListener = function (type, f, opts) { if (fn && type === "pointerdown" && f === fn) gone = true; return orig.call(this, type, f, opts); };
     window.__closedTabs.push(new WeakRef(ed));
-    await run("close_document", { doc: doc.id, force: true });
+    // the command returns before the tab is destroyed (closeDocument keeps it for Reopen Closed Tab first)
+    try {
+        await run("close_document", { doc: doc.id, force: true });
+        for (let k = 0; k < 200 && !ed._destroyed; k++) await wait(50);
+    } finally { window.removeEventListener = orig; }
+    if (fn) dropped.push(gone);
+    fn = null;
 }
 host.shell.activate(ednow(window.__t));
-return host.editors().length;
+if (dropped.some((g) => !g)) throw new Error("a closed tab's flyout listener stayed on the window: " + JSON.stringify(dropped));
+await wait(50);
+if (answered !== "null") throw new Error("the question open in a closed tab got " + answered);
+return { open: host.editors().length, dropped, answered };
 """, timeout=120)
     for _ in range(4):
         await c.call("HeapProfiler.collectGarbage")

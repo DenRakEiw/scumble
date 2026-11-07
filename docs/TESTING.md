@@ -229,7 +229,8 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   starting `dist/win-unpacked/Scumble.exe`. `Stop-Process -Name electron` in PowerShell.
 
 Since then: `tools/document_test.py` / `document_ux_test.py` / `document_perf.py` (gates `document`, `docux`,
-`docperf:WxH`, `.scumble` documents), `tools/quit_test.py` (gate `quit`), `tools/metadata_test.py` (gate `metadata`,
+`docperf:WxH`, `.scumble` documents; `document_test.py --only clean_up --no-node --big 64x64` runs its step C, the
+local files' clean-up against the undo steps, alone in a few seconds, for a mutation round), `tools/quit_test.py` (gate `quit`), `tools/metadata_test.py` (gate `metadata`,
 what an exported picture says about itself; `node tools/secret_names_test.js` the names it leaves out of an embedded
 recipe), `node tools/font_ref_test.js` (which file a text's font is loaded from), `node tools/pixel_memory_test.js`
 (the tile store at the renderer's typed-array limit, the refusal stood in for), `tools/tiff_test.js` with `tools/tiff_fixtures.py` and

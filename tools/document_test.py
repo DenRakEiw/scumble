@@ -42,8 +42,20 @@ default), and this gate starts and ends each of them itself (WM_CLOSE, or a kill
 U2. a_comfy_whole_picture_upscale_round_trips - (docs/PLAN_0_1_42.md U2) the whole picture upscaled 2x on the ComfyUI
     route (RTX Video Super Resolution, against stubs in the page: no server), saved, closed and opened: the size, the
     state, every layer's place and pixels, the base and the selection as before the save; the file read by zipfile.
+ C. clean_up_keeps_what_undo_brings_back - (review 2026-11-07 documents/D2+canvas-c/F1, and its review) two layers
+    with a mask and one without, a text layer in a user font and then another, one layer deleted, then a flatten; on
+    tiles a second document whose layer and base only a named snapshot holds (a flatten since), and a third whose text
+    font only the assistant's "Undo this turn" holds. Their files made two hours old, then Settings > Local files >
+    Clean up (files.prune with host.referencedFileKeys): every file a step, the snapshot or the turn holds is kept, and
+    the node's file list (InpaintEditor.referencedFiles) names them. The files of both masked layers (and their masks)
+    and of both old bases removed by hand: the undos and the snapshot bring them back and store them again (the
+    backstop; the quit's save waits for the base held back 2 s, and a run's cache of the gone base is let go); a second
+    clean-up keeps the flattened base a redo step holds; the documents restore from the local store (the next start's
+    path), save and open with every layer, mask, font and base; a state whose pixel layer and text layer have no file
+    leaves the first out with its name and draws the second again from its text (`leftOut.missing`, `redrawn`).
+    `--only clean_up` runs this step alone (a mutation round).
 
-(Steps 9, 10 and 12 of the plan need D3 and D4.) The order is the instances': the first profile runs 1, 3, 11, U2, 5, 6
+(Steps 9, 10 and 12 of the plan need D3 and D4.) The order is the instances': the first profile runs 1, 3, 11, U2, C, 5, 6
 (cancel) and 7 (killed), its next start 7 (the sweep) and 8 (closed), its third start the open of 8; the fresh
 profile 2, 4 and 6 (disk full).
 
@@ -626,6 +638,215 @@ shell.closeDocument(ed, { force: true });
 return { thrown, notes: r.notes || [], hits, leftOut: lo, note, probe };
 """
 
+# ---- step C: Settings > Local files > Clean up and what the undo steps hold ---------------------------------------------
+# (docs/research/review_full_2026-11-07 documents/D2+canvas-c/F1) Clean up kept only the files of the documents' current
+# state: a deleted layer, a flattened base and a layer only a named snapshot holds had their files removed, and an undo
+# put them back naming files the next start and the next save could not find.
+
+CLEANUP_BUILD = """
+const key = (r) => (r && r.filename ? `${r.type || "input"}/${r.subfolder || ""}/${r.filename}` : null);
+const fontFile = async (src, name) => new File([await (await fetch("./editor/fonts/" + src)).arrayBuffer()], name, { type: "font/ttf" });
+const setFont = async (e, layerId, file) => { e.fontTarget = e.layers.find((l) => l.id === layerId); await e.addFontFiles([file]); };
+let ed = shell.newDocument(); shell.activate(ed);
+await must("load_image", { path: G.dir + "/photo.png" });
+ed = host.editor;
+await settle(ed);
+G.cu = { id: ed.node.id };
+const fill = (e, layerId, color) => { e.activeLayerId = layerId; e.color = color; e.brushOpacity = 1; e.fillSelection(); };
+const A = await must("add_paint_layer", { name: "cleanup A" });
+await must("select_rect", { x: 20, y: 20, w: 120, h: 90 });
+fill(ed, A.id, "#d02040");
+await must("select_rect", { x: 40, y: 30, w: 60, h: 50 });
+ed.maskFromSelection(ed.layers.find((l) => l.id === A.id));
+const B = await must("add_paint_layer", { name: "cleanup B" });
+await must("select_rect", { x: 160, y: 60, w: 100, h: 120 });
+fill(ed, B.id, "#2040d0");
+const C = await must("add_paint_layer", { name: "cleanup C" });
+await must("select_rect", { x: 220, y: 150, w: 140, h: 100 });
+fill(ed, C.id, "#20a060");
+await must("select_rect", { x: 240, y: 160, w: 70, h: 50 });
+ed.maskFromSelection(ed.layers.find((l) => l.id === C.id));
+await must("select_none");
+// a text layer in a user font, then in another: the second font step holds the first font's file alone
+const T = await must("add_text", { text: "Clean up", x: 30, y: 200, size: 40, color: "#f0f0f0", name: "cleanup T" });
+await setFont(ed, T.id, await fontFile("Lobster-Regular.ttf", "CleanupFontOne.ttf"));
+const f1 = ed.layers.find((l) => l.id === T.id).text.fontRef;
+await setFont(ed, T.id, await fontFile("Anton-Regular.ttf", "CleanupFontTwo.ttf"));
+const f2 = ed.layers.find((l) => l.id === T.id).text.fontRef;
+await ed.syncLayers();
+const L = (id) => ed.layers.find((l) => l.id === id);
+const px = { A: await pxInfo(L(A.id).px), Amask: await pxInfo(L(A.id).maskPx), B: await pxInfo(L(B.id).px), C: await pxInfo(L(C.id).px), Cmask: await pxInfo(L(C.id).maskPx), base: await pxInfo(ed.basePx) };
+const keys = { A: key(L(A.id).ref), Amask: key(L(A.id).maskRef), B: key(L(B.id).ref), C: key(L(C.id).ref), Cmask: key(L(C.id).maskRef), base: key(ed.base.ref), F1: key(f1), F2: key(f2) };
+if (Object.values(keys).some((k) => !k) || keys.F1 === keys.F2) throw new Error("a file was not stored: " + JSON.stringify(keys));
+// a layers step (Delete layer) holds C; a canvas step (Flatten) holds the base and A (with its mask), B and T
+await must("remove_layer", { layer: C.id });
+await must("flatten");
+if (ed.layers.length || key(ed.base.ref) === keys.base) throw new Error("the flatten did not replace the layers and the base: " + ed.status);
+keys.flat = key(ed.base.ref);
+G.cu.names = { A: A.id, B: B.id, C: C.id, T: T.id };
+G.cu.px = px;
+if (ed.tileMode) {
+    // a named snapshot holds D and the base it was taken on, a flatten since replaced both, the steps cleared
+    let e2 = shell.newDocument(); shell.activate(e2);
+    await must("new_canvas", { width: 320, height: 200 });
+    e2 = host.editor;
+    G.cu.id2 = e2.node.id;
+    const D = await must("add_paint_layer", { name: "cleanup D" });
+    await must("select_rect", { x: 10, y: 10, w: 100, h: 80 });
+    fill(e2, D.id, "#c0c020");
+    await must("select_none");
+    await e2.syncLayers();
+    const dl = e2.layers.find((l) => l.id === D.id);
+    keys.D = key(dl.ref);
+    keys.Ybase = key(e2.base.ref);
+    G.cu.px.D = await pxInfo(dl.px);
+    G.cu.px.Ybase = await pxInfo(e2.basePx);
+    G.cu.names.D = D.id;
+    await must("take_snapshot", { name: "cleanup with D" });
+    await must("flatten");
+    e2.clearUndo();
+    if (e2.layers.length || key(e2.base.ref) === keys.Ybase || !e2.snapshots.length) throw new Error("the snapshot document is not as built");
+    // the assistant's "Undo this turn" holds U in its first font; a font changed since, the steps cleared
+    const turns = await import("./assistant_turns.js");
+    let e3 = shell.newDocument(); shell.activate(e3);
+    await must("new_canvas", { width: 240, height: 160 });
+    e3 = host.editor;
+    G.cu.id3 = e3.node.id;
+    const U = await must("add_text", { text: "Turn", x: 20, y: 40, size: 36, color: "#202020", name: "cleanup U" });
+    await setFont(e3, U.id, await fontFile("Bangers-Regular.ttf", "CleanupFontThree.ttf"));
+    keys.F3 = key(e3.layers.find((l) => l.id === U.id).text.fontRef);
+    await e3.syncLayers();
+    G.cu.turn = turns.beforeCall({ turn: "gate-cleanup-" + Date.now() }, e3.node.id);
+    if (G.cu.turn !== "taken") throw new Error("no turn snapshot: " + G.cu.turn);
+    await setFont(e3, U.id, await fontFile("BebasNeue-Regular.ttf", "CleanupFontFour.ttf"));
+    e3.clearUndo();
+    G.cu.names.U = U.id;
+}
+G.cu.keys = keys;
+shell.activate(ed);
+return { keys, tiles: !!ed.tileMode };
+"""
+
+# what Settings > Local files > Clean up does (shell.js setPrune), without its dialog; and the node's file list (the same
+# editor code: its Clean up files keeps these names)
+CLEANUP_PRUNE = """
+const { InpaintEditor } = await import("./editor/inpaint_canvas.js");
+const nodeKeep = InpaintEditor.referencedFiles();
+const keep = host.referencedFileKeys();
+const r = await window.scumble.files.prune({ keep, dryRun: false });
+return { keep, nodeKeep, deleted: r.deleted, files: r.files };
+"""
+
+# Ctrl+Z three times on X: the flatten (the base, A, B, T), the delete (C), the second font (T's first back); Y's snapshot
+# restored with its base's upload held back, while the quit's save runs and a run's cache names the old base; Z's turn
+# taken back
+CLEANUP_UNDO = """
+const key = (r) => (r && r.filename ? `${r.type || "input"}/${r.subfolder || ""}/${r.filename}` : null);
+const ed = ed4(G.cu.id);
+shell.activate(ed);
+for (let i = 0; i < 3; i++) await must("undo", { doc: ed.node.id });
+await ed.heldEdit();
+await ed.syncLayers();
+const L = (n) => ed.layers.find((l) => l.id === G.cu.names[n]);
+const back = ["A", "B", "C", "T"].filter((n) => L(n));
+const out = { back, redo: ed.redo.length, base: key(ed.base.ref), dirty: ed.layers.filter((l) => l.dirty || l.maskDirty).map((l) => l.name) };
+for (const n of ["A", "C"]) { out[n] = L(n) ? key(L(n).ref) : null; out[n + "mask"] = L(n) ? key(L(n).maskRef) : null; }
+out.T = L("T") && L("T").text.fontRef ? key(L("T").text.fontRef) : null;
+// the flattened base is held by a redo step now
+out.redoFlat = ed.redo.some((s) => s && s.base && key(s.base.ref) === G.cu.keys.flat);
+if (G.cu.id2) {
+    const e2 = ed4(G.cu.id2);
+    const old = e2.snapshots[0].snap.base.ref;
+    // the base's upload held back 2 s: the quit's save must wait for it
+    const upload = e2.uploadBase;
+    e2.uploadBase = async function (p) { await wait(2000); return upload.call(this, p); };
+    try {
+        await must("restore_snapshot", { doc: e2.node.id, name: "cleanup with D" });
+        // a run meanwhile took the base itself as its picture (no layer shown), as segmentSource does
+        e2.uploaded.baseRef = e2.base.ref; e2.uploaded.baseHash = "orig:" + e2.base.ref.filename;
+        out.checking = !!e2._fileCheck;
+        await shell.saveBeforeRestart();
+        out.quitWaited = !e2._fileCheck;
+    } finally { delete e2.uploadBase; }
+    await e2.heldEdit();
+    await e2.syncLayers();
+    out.Ybase = key(e2.base.ref);
+    out.runBase = e2.uploaded.baseRef && key(e2.uploaded.baseRef) === key(old) ? "the gone file" : "not the gone file";
+    out.D = e2.layers.some((l) => l.id === G.cu.names.D);
+    const turns = await import("./assistant_turns.js");
+    const tr = turns.restoreTurn();
+    const e3 = ed4(G.cu.id3);
+    await e3.heldEdit();
+    await e3.syncLayers();
+    const u = e3.layers.find((l) => l.id === G.cu.names.U);
+    out.turn = tr.ok;
+    out.U = u && u.text.fontRef ? key(u.text.fontRef) : null;
+}
+return out;
+"""
+
+# saved and opened again, and restored from the state as the next start restores it (the mirror's files); then a state
+# whose pixel layer and text layer have no file: the pixel layer is left out with its name, the text layer drawn again
+CLEANUP_SAVE = """
+const key = (r) => (r && r.filename ? `${r.type || "input"}/${r.subfolder || ""}/${r.filename}` : null);
+const problems = [];
+const check = async (e, where, names) => {
+    for (const n of names) {
+        const l = e.layers.find((x) => x.id === G.cu.names[n]);
+        if (!l) { problems.push(`${where}: ${n} did not come back`); continue; }
+        if (n === "T" || n === "U") {
+            const want = n === "T" ? G.cu.keys.F1 : G.cu.keys.F3;
+            if (key(l.text && l.text.fontRef) !== want) problems.push(`${where}: ${n}'s font is ${key(l.text && l.text.fontRef)}, not ${want}`);
+            continue;
+        }
+        const p = await pxInfo(l.px);
+        if (p !== G.cu.px[n]) problems.push(`${where}: ${n}'s pixels ${p} vs ${G.cu.px[n]}`);
+        if ((n === "A" || n === "C") && await pxInfo(l.maskPx) !== G.cu.px[n + "mask"]) problems.push(`${where}: ${n}'s mask differs`);
+    }
+    if (names.includes("A") && await pxInfo(e.basePx) !== G.cu.px.base) problems.push(`${where}: the base differs`);
+    if (names.includes("D") && await pxInfo(e.basePx) !== G.cu.px.Ybase) problems.push(`${where}: the snapshot's base differs`);
+    if (e.leftOut) problems.push(`${where}: left out ${JSON.stringify(e.leftOut)}`);
+};
+const docs = [[G.cu.id, G.cuPath, ["A", "B", "C", "T"]]];
+if (G.cu.id2) docs.push([G.cu.id2, G.cuPath2, ["D"]], [G.cu.id3, G.cuPath3, ["U"]]);
+for (const [id, path, names] of docs) {
+    const ed = ed4(id);
+    // the next start: the autosaved state restored from the local store
+    const sid = host.nextId++;
+    await ed.syncLayers();
+    await host.restore(JSON.stringify({ version: 2, active: sid, nextId: host.nextId, docs: [{ id: sid, state: ed.getValue() }] }));
+    const sc = ed4(sid);
+    try { await settle(sc); await check(sc, "restored " + names.join(""), names); } catch (err) { problems.push("restore: " + (err.message || err)); }
+    shell.closeDocument(sc, { force: true });
+    // the save (it refuses a file the local store lacks) and the open
+    try { await host.saveDocument(ed, { path }); } catch (err) { problems.push("save " + names.join("") + ": " + (err.message || err)); continue; }
+    shell.closeDocument(ed, { force: true });
+    await wait(300);
+    const o = await host.openDocument(path);
+    await settle(o.editor);
+    await check(o.editor, "opened " + names.join(""), names);
+    if (names.includes("B")) G.cu.opened = o.editor.node.id;
+    else shell.closeDocument(o.editor, { force: true });
+}
+// a pixel layer and a text layer whose files are gone: B left out by name, T drawn again from its text
+let lo = null, status = null, kind = null, stays = null, text = null;
+if (G.cu.opened) {
+    const e = ed4(G.cu.opened);
+    const st = JSON.parse(e.getValue());
+    const gone = (n) => { st.layers.find((l) => l.id === G.cu.names[n]).ref = { filename: "cleanup_gone_" + n + Date.now() + ".png", subfolder: "inpaint_canvas", type: "input" }; };
+    gone("B"); gone("T");
+    await e.setValue(JSON.stringify(st));
+    await settle(e);
+    lo = e.leftOut ? { ...e.leftOut } : null;
+    status = e.status; kind = e.statusKind;
+    stays = e.layers.some((l) => l.id === G.cu.names.B);
+    const t = e.layers.find((l) => l.id === G.cu.names.T);
+    text = t ? { content: t.text && t.text.content, w: t.px.width, dirty: !!t.dirty } : null;
+    shell.closeDocument(e, { force: true });
+}
+return { problems, leftOut: lo, status, kind, stays, text };
+"""
+
 
 # ---- files and pictures ------------------------------------------------------------------------------------------
 
@@ -981,6 +1202,24 @@ class Gate:
         paths = dict(dir=self.fwd(inp), everyPath=self.fwd(every), collidePath=self.fwd(collide), bigPath=self.fwd(big), upPath=self.fwd(up))
         state = {}
         g = self.guarded
+        if a.only:
+            # a mutation round's quick check: the named steps of the first profile alone
+            try:
+                A = await self.app("a1", prof_a)
+                await A.setg(**paths)
+                for name in a.only:
+                    if name == "clean_up":
+                        await g("clean_up_keeps_what_undo_brings_back", A, self.step_cleanup(A, prof_a, docs))
+                    else:
+                        self.step(name, False, "no such step for --only (clean_up)")
+                await A.close()
+            except Exception as err:  # noqa: BLE001
+                self.step("gate", False, str(err)[:1500])
+            finally:
+                for x in self.apps:
+                    await x.close_io()
+                    x.kill()
+            return self.finish()
         try:
             # ---- the first profile ----
             A = await self.app("a1", prof_a)
@@ -995,6 +1234,7 @@ class Gate:
             self.note(f"collide.scumble saved ({time.time() - t:.1f} s)")
             await g("newer_documents", A, self.step11(A, prof_a, every, docs, inp))
             await g("a_comfy_whole_picture_upscale_round_trips", A, self.step_upscale(A, up))
+            await g("clean_up_keeps_what_undo_brings_back", A, self.step_cleanup(A, prof_a, docs))
             t = time.time()
             bigr = await A.ev(BUILD_BIG, timeout=600)
             state["bigBase"] = bigr["base"]
@@ -1440,6 +1680,95 @@ class Gate:
         self.step("newer_documents", not problems, "; ".join(problems[:6]) if problems else
                   f"minReader 99 refused ({r['err'][:90]}...), nothing imported; version 99 opened with the note, and the unknown kind, filter id, top-level field and plugin data (with their files) came back unchanged in the next save; the layer without a file left out with a word, also in open_document's notes (with a filter layer that would not load), on two plain lines after the load", t)
 
+    async def step_cleanup(self, A, prof, docs):
+        """Step C (review 2026-11-07 documents/D2+canvas-c/F1 and its review): Settings > Local files > Clean up keeps the
+        files the undo and redo steps, the named snapshots and the assistant's "Undo this turn" hold (layers, masks, the
+        base, user fonts), with the files made older than its one-hour rule, and the node's file list names them too; files
+        gone anyway (removed here by hand) are stored again when an undo or a snapshot brings their layer, mask or base back,
+        the quit's save waits for that and a run's cache lets go of the gone base; the documents then save, open and restore
+        from the local store with every layer; a pixel layer whose file is gone is left out by name, a text layer drawn
+        again from its text."""
+        t = time.time()
+        problems = []
+        cu, cu2, cu3 = (os.path.join(docs, n) for n in ("cleanup.scumble", "cleanup_d.scumble", "cleanup_u.scumble"))
+        await A.setg(cuPath=self.fwd(cu), cuPath2=self.fwd(cu2), cuPath3=self.fwd(cu3))
+        b = await A.ev(CLEANUP_BUILD)
+        keys = b["keys"]
+
+        def fpath(k):
+            return os.path.join(prof, "files", *k.split("/"))
+
+        def there(k):
+            return bool(k) and os.path.isfile(fpath(k))
+        old = time.time() - 7200
+
+        def age(ks):
+            for k in ks:
+                if there(k):
+                    os.utime(fpath(k), (old, old))
+                elif k:
+                    problems.append(f"{k} is not in the local store")
+        held = [n for n in ("A", "Amask", "B", "C", "Cmask", "base", "F1", "F2", "D", "Ybase", "F3") if n in keys]
+        age([keys[n] for n in held] + [keys["flat"]])
+        r = await A.ev(CLEANUP_PRUNE)
+        for n in held:
+            k = keys[n]
+            if k not in r["keep"]:
+                problems.append(f"Clean up does not keep {n} ({k}), which an undo step, a snapshot or the assistant's turn holds")
+            if k in r["deleted"] or not there(k):
+                problems.append(f"Clean up removed {n}'s file")
+            # the node's Clean up files: the same editor code (F3 is the app's assistant alone)
+            if n != "F3" and k.split("/")[-1] not in r["nodeKeep"]:
+                problems.append(f"the node's file list does not name {n} ({k})")
+        # the backstop: the files of A and C (each with its mask), X's old base and Y's snapshot base removed by hand, as a
+        # clean-up before this fix did
+        for n in ("A", "Amask", "C", "Cmask", "base", "Ybase"):
+            if n in keys and there(keys[n]):
+                os.remove(fpath(keys[n]))
+        u = await A.ev(CLEANUP_UNDO)
+        if sorted(u["back"]) != ["A", "B", "C", "T"]:
+            problems.append(f"the undo brought back {u['back']}")
+        if u["dirty"]:
+            problems.append(f"layers not stored after the undo: {u['dirty']}")
+        for n in ("A", "Amask", "C", "Cmask", "base"):
+            if not there(u.get(n)):
+                problems.append(f"{n}'s file was not stored again after the undo ({u.get(n)})")
+        if u["T"] != keys["F1"]:
+            problems.append(f"the undo of the font gave T {u['T']}, not {keys['F1']}")
+        if not u["redoFlat"]:
+            problems.append("no redo step holds the flattened base")
+        if b["tiles"]:
+            if not u.get("D"):
+                problems.append("restore_snapshot did not bring D back")
+            if not there(u.get("Ybase")) or u.get("Ybase") == keys["Ybase"]:
+                problems.append(f"the snapshot's base was not stored again ({u.get('Ybase')})")
+            if not u.get("quitWaited"):
+                problems.append(f"the quit's save did not wait for the base's upload (checking {u.get('checking')})")
+            if u.get("runBase") != "not the gone file":
+                problems.append("a run's cache still names the gone base")
+            if not u.get("turn") or u.get("U") != keys["F3"]:
+                problems.append(f"the assistant's turn gave U {u.get('U')} (restored {u.get('turn')}), not {keys['F3']}")
+        # a redo step alone holds the flattened base now: a second clean-up keeps it
+        age([keys["flat"]])
+        r2 = await A.ev(CLEANUP_PRUNE)
+        if keys["flat"] not in r2["keep"] or not there(keys["flat"]):
+            problems.append("a second Clean up removed the flattened base, which a redo step holds")
+        s = await A.ev(CLEANUP_SAVE)
+        problems += s["problems"]
+        lo = s["leftOut"] or {}
+        note = lo.get("note") or ""
+        if lo.get("missing") != 1 or '"cleanup B"' not in note or s["stays"]:
+            problems.append(f"a pixel layer without its file: leftOut {lo}, kept {s['stays']}")
+        tx = s["text"] or {}
+        if lo.get("redrawn") != 1 or '"cleanup T"' not in note or tx.get("content") != "Clean up" or not tx.get("w") or tx.get("w") <= 1:
+            problems.append(f"a text layer without its file: leftOut {lo}, the layer {tx}")
+        if s["kind"] != "warn" or '"cleanup B"' not in (s["status"] or "") or '"cleanup T"' not in (s["status"] or ""):
+            problems.append(f"the status line does not name the layers: {s['status']!r} ({s['kind']})")
+        extra = " and a snapshot (its base too) and the assistant's turn" if "D" in keys else ""
+        self.step("clean_up_keeps_what_undo_brings_back", not problems, "; ".join(problems[:6]) if problems else
+                  f"Clean up kept {len(held)} files only undo steps{extra} hold (two fonts among them; {r['files']} removed), and a redo step's base; "
+                  f"the files of A, C (with their masks) and the bases, removed by hand, stored again by the undos; saved, opened and restored with every layer; {note!r}", t)
+
     def finish(self):
         ok = bool(self.results) and all(self.results)
         print("PASS" if ok else "FAIL")
@@ -1458,7 +1787,9 @@ def main():
     p.add_argument("--big", default="6000x4000", help="the noise picture of the slow saves (steps 5 to 8)")
     p.add_argument("--no-node", action="store_true", help="skip tools/document_test.js (a mutation round checks the app steps alone)")
     p.add_argument("--keep", action="store_true", help="keep the profiles and documents after a pass (they are always kept after a failure)")
+    p.add_argument("--only", default="", help="comma list of app steps to run alone in a first profile (a mutation round): clean_up")
     args = p.parse_args()
+    args.only = [s for s in args.only.split(",") if s]
     args.big = [int(v) for v in args.big.lower().split("x")]
     if args.exe:
         args.exe = os.path.abspath(args.exe)
