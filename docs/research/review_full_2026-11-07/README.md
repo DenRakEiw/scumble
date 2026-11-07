@@ -3,6 +3,9 @@
 The full list is in `verified.json` (73 findings, each with its claim, scenario, fix, effort and the verifier's reason).
 This page is the short version and a proposed order of work. Nothing has been fixed yet.
 
+
+**Status 2026-11-07 night:** `rust/px-deflate-sync-truncation` fixed and merged (`9d44bdc`; R1 as built in `docs/PLAN_WASM_BUILD.md` §7). The other musts and every should are open unless a later line says otherwise.
+
 ## What was reviewed
 
 - The code at commit `8f43b4a` on `wasm-kernels` (items 57 and 58 merged), in a detached worktree.
