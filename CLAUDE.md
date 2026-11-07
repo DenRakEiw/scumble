@@ -113,7 +113,7 @@ code.
   partner node gets no mask, a plain note says so; `ae5c086`) and **item 54, Each area** (`0c36f36`, three review rounds
   by workflows, the final gates on both backends green on the merged state with K26; the new gate `areas`; not offered
   in the ComfyUI node: it needs node host members, open question for the user, as are local areas one at a time (built
-  so) and the thresholds 1/20,000 / 50 % / 1.5x; issue #9 is answered at the release). **Next: U0, after a `/clear`.**
+  so) and the thresholds 1/20,000 / 50 % / 1.5x; issue #9 is answered at the release). **Next (after 2026-11-07's night, below): the user's picks of the open review musts and the questions, then K27.**
   **The next session runs in parallel** (the user, 2026-11-07: "ja, auf mehr agenten aufteilen"): the main loop does U0
   (and then U1) itself and starts background agents, each in its own worktree (`isolation: "worktree"`, a
   `node_modules` junction, its own CDP port, `--offline`, the busy lock respected for app starts, DenRakEiw commits
@@ -137,24 +137,34 @@ code.
     `renderer/editor/inpaint_canvas.js` in separate regions: merge them one at a time, the gates after each merge.
   The measurement steps (U0, K27, P10) stay one at a time under the busy lock. Weekly limit 68 % on 2026-11-07, reset
   2026-11-08 09:00.
-  **RUNNING since 2026-11-07 13:30 (the first start at 13:23 died with the `/clear` after a minute, its worktrees
-  unchanged and removed; restarted by session `982bb566`, the user away for the night: "mach die ganze nacht weiter
-  ohne auf clear zu warten"):** six
-  background agents, each in its own worktree under `.claude/worktrees/agent-*` on a branch `worktree-agent-*`, with
-  the common rules in that session's scratchpad `agent_rules.md` (base `8689d49` or later, own ports, the busy lock,
-  no edits to CHANGELOG / CLAUDE.md / the plan, a CHANGELOG line and an "as built" paragraph in each report):
-  **U0** (port 9588; measures SAM2, matting and depth on the main process under the busy lock, writes
-  `docs/measurements/u0_2026-11-07/` and `docs/PLAN_HELPERS_PROCESS.md`, builds no U1), **A = H1 + P15** (9581 / 9589),
-  **B = item 58** (9582 / 9590), **C = item 59** (9584 / 9591), **D = item 57** (9585 / 9592), **E = item 60's
-  design** (`docs/PLAN_VARIANTS.md`, no app). Their reports arrive as task notifications. **What the session after the
-  `/clear` does with each:** read the report; run a review workflow over the branch's diff (lenses by risk, each finding
-  verified by a second agent, as for item 54 and K26); send confirmed findings back to that agent (SendMessage to the
-  id in the notification) or fix small ones itself; merge into `wasm-kernels` one branch at a time (B, C, D touch
-  `inpaint_canvas.js` in separate regions: merge, then `bash tools/run_gates_both.sh <label> --offline lint types
-  editor` and the branch's own gates, then the next); add the CHANGELOG lines and the plan's "as built"; remove the
-  worktree (its `node_modules` junction with `cmd /c rmdir` first, then `git worktree remove --force`, then `git branch -d`);
-  commit and push the branch. U0's numbers decide U1 (build it next, on the plan U0 wrote) and the U0 report's
-  questions go to the user. No push of main, no tag, no release, no GitHub comment while the user sleeps. The preparation, as it was:
+  **DONE 2026-11-07 (session `982bb566`, the user away: "mach die ganze nacht weiter ohne auf clear zu warten", then
+  a `/loop`; the first six agents of 13:23 had died with the `/clear` unchanged and were restarted at 13:30).** Twelve
+  background agents, each in its own worktree, each branch reviewed by a workflow (lenses by risk, every finding
+  verified by a second agent), its confirmed findings fixed by the agent, merged into `wasm-kernels` one at a time
+  with the merged state's gates on both backends, all pushed (`wasm-kernels` at the hand-over commit; every worktree
+  removed). **Merged:** item 58 the eyedropper's Size (`67e866f`), item 57 filter sizes follow a resize (`72e9029`),
+  item 60's design plan `docs/PLAN_VARIANTS.md` (`bf94c43`, 21 questions in its §10), item 59 smart guides to other
+  layers (`f9708ab`), item 69 `Scumble --run` (`105867b`, gate `cli`), H1 the hardening + P15 (`96f037a`), U0 the
+  helpers measured (`6eded3d`, `docs/PLAN_HELPERS_PROCESS.md`), U1 the helpers in a utility process (`36d5e99`, gate
+  `helpers`), P10 + P13 + P18 + P8 (`2030f1c`), and two fixes from the whole-code review below: R1 the deflate
+  truncation (`9d44bdc`, data loss since 0.1.17 for noisy RGBA pictures) and E2 + F3 Clean up keeping what undo holds,
+  closed tabs freed (`6a66182`, data loss). **The whole-code review** (the user's ask; 12 slices of `8f43b4a`, 25
+  agents): `docs/research/review_full_2026-11-07/` (README with a suggested order by file lanes, `verified.json`): 73
+  findings (6 must, 40 should, 27 nice); three musts fixed (above), **three musts open for the user's pick**:
+  `providers/PRV-1` (fal, Replicate, WaveSpeed give up a paid job on one failed status read or download), `documents/D1`
+  (uploads matched on ComfyUI by file name only: content-addressed names would change file naming), and
+  `filters/filter-layer-over-its-own-input` (on half-transparent pictures the screen and the canvas export composite a
+  filter over its own input: changes pixels, say the effect first); every should open. **Not started:** K27 (the
+  weekly limit was 87 % at 17:00, the loop stopped at a committed state). **Questions for the user, collected:** the
+  ComfyUI window now denies camera and microphone, so ComfyUI's Webcam Capture and Record Audio nodes need a browser
+  (keep, or grant media to a local ComfyUI only?); item 58: should the panels' one-shot picks average too, should MCP
+  set the Size; item 57: a grain preset's name after its size scaled, a status word when a value hits min / max; item
+  59: reference / control layers as snap targets (included), a shorter guide line; item 69: clean the local store after
+  a run, a wait step for ComfyUI's connect, a user's window appearing during a run; H1: ids made safe vs settings stored
+  under an old id, the ORA 64:1 budget; U0/U1: `docs/PLAN_HELPERS_PROCESS.md` §6 (taken with the suggested answers:
+  5 minutes idle, LaMa separate, a double death falls back to main, no window port; open: the object map's form, the
+  free before a local run, the 15k shapes fix next); R1: a repair tool for PNGs cut short; item 60: its 21. The
+  preparation of 0.1.52, as it was:
   It holds
   items 49 (CorridorKey Route B, B5 run live with the user, the movable Key dialog), 50 (LoRAs, MOSS-Image Edit), 51
   (GPT-Image-2.6), 52 (P-H3-Image) and the kernel steps D0, K5, W1, K12, K12b. A release review workflow (four lenses,

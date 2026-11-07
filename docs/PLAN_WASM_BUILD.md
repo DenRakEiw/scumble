@@ -1761,6 +1761,28 @@ automask's JavaScript, the decoder's shape order, then the user's calls; seven q
 same evening** by a background agent with §6's suggested answers (5 minutes idle, LaMa separate, a double death falls
 back to the main thread, no window port) and without `warmObjects` (host.js was being edited).
 
+### P10, P13, P18, P8 (2026-11-07): the atlas slot in words, and three riders
+
+Built by a background agent on `e9ab0d3` (`ee938e6`, `4bc9fea`, `5d92ccd`, `8fd0d52`; the review's one test gap fixed
+in `2c7f15d`), merged `2030f1c`; `docs/measurements/p10_2026-11-07/`, `p13_2026-11-07/`, `p18_2026-11-07/`.
+- **P10** (full tier, the same bytes): `inpaint_tiles.js` `tileWithGutter` copies opaque runs with `Uint32Array.set`
+  (runs under 16 word by word), zeroes transparent runs with `fill`, premultiplies soft words in place
+  (SkMulDiv255Round for R and B in the two 16-bit halves of one word with `Math.imul`, G alone, A kept: the table's own
+  values); word views once per source per slot; misaligned views, a source `off` not a multiple of 4 and big-endian keep
+  the byte path; the coarse branch on `coarseSlot`'s word tests. `tools/gutter_words_test.js` against a verbatim twin
+  (asserts which path ran); mutation round 21 of 21 red. At 15k, three rounds: native pan_and_zoom 322 -> 201 ms, the
+  far pan at 1:1 12.1 -> 6.9 ms a frame (worst 18.1 -> 9.8), `put` 234 -> 111 ms, the frame after a whole change at 1:1
+  29.2 -> 21.7; uploads unchanged (540 calls, 137 MB). JS only, no Rust.
+- **P13** (bit for bit): `keymatte.js` `mP` once, one scratch for the products, `blur121` carried on from the last
+  whole softness (10 pass sets -> 4); `keymatte_test.js` case 12 and an A/B over 192 cases (22.4 M alpha bytes, 681 k
+  floats) equal; the fit at 2.8 MP 1,180 -> 970 ms. Mutation round 7 of 7 red.
+- **P18:** `shell.js` `refreshGpuMemory` (not awaited, the newest read wins; `memoryReads` exported for the test):
+  `openSettings` about 110 -> 40 ms here. The other serial awaits (`keys.list` twice) are left.
+- **P8:** the curves passes (GPU and CPU) no longer build a histogram; the panel draws `belowHistogram(layer).luma`
+  (alpha-weighted, so the old spike at black on transparent areas is gone: a visible change, in the CHANGELOG).
+- Gates: the agent's `lint types composite pixels editor key recipes skins comfyview help` on both backends PASS; the
+  merged state's in `mergep10`.
+
 ### H1 and P15 (2026-11-07): the hardening, the probe's requests together
 
 Built by a background agent on `8689d49` (`e5c7aff`, `57a5f55`), a review workflow's 9 confirmed findings fixed in
