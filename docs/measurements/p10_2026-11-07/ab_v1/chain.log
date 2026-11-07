@@ -1,0 +1,40 @@
+[16:13:09] after: /f/canvas/.claude/worktrees/agent-a24fab290e0ea66b6 (e9ab0d3 + the P10 working tree); before: C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/p10_before (e9ab0d3)
+lock: taken after 0 s
+[16:13:09] == round 1, lock taken (P10 measuring (agent a24fab29) round 1 52672 2026-11-07T16:13:09)
+[16:13:09] gpu: 3050 MiB, 2 %
+[16:13:22] before r1: native_test add_the_paint_layer pan_and_zoom
+[16:13:29] rc=0 == pan_and_zoom: wall 317 ms, longest block 317 ms
+closed
+[16:13:45] before r1: perf_test 15000x10000
+[16:14:32] rc=0
+closed
+[16:14:48] after r1: native_test add_the_paint_layer pan_and_zoom
+[16:14:56] rc=0 == pan_and_zoom: wall 215 ms, longest block 215 ms
+closed
+[16:15:12] after r1: perf_test 15000x10000
+[16:15:58] rc=0
+closed
+lock: released
+[16:16:03] round 1 done, lock released; a gap of 90 s
+[16:17:33] done
+[16:18:11] after: C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/p10_after (e9ab0d3 + the P10 working tree); before: C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/p10_before (e9ab0d3)
+lock: taken after 0 s
+[16:18:11] == round 2, lock taken (P10 measuring (agent a24fab29) round 2 3388 2026-11-07T16:18:11)
+[16:18:11] gpu: 3049 MiB, 1 %
+[16:18:23] after r2: native_test add_the_paint_layer pan_and_zoom
+[16:18:31] rc=0 == pan_and_zoom: wall 225 ms, longest block 225 ms
+closed
+[16:18:47] after r2: perf_test 15000x10000
+[16:19:34] rc=0
+closed
+[16:19:50] before r2: native_test add_the_paint_layer pan_and_zoom
+[16:19:58] rc=0 == pan_and_zoom: wall 334 ms, longest block 334 ms
+closed
+[16:20:13] before r2: perf_test 15000x10000
+[16:21:00] rc=0
+closed
+lock: released
+[16:21:05] round 2 done, lock released; a gap of 90 s
+lock: held by 'main loop gates mergeu1 44744 2026-11-07T16:18:39', waiting
+[16:25:01] lock: acquire failed (rc=127); stopping
+[note] stopped here by the agent before round 3 (the busy lock was the main loop's): this first variant (the opaque and transparent words, the soft words through the table) was replaced by the computed premultiply of ../ab; its two rounds are kept as they ran

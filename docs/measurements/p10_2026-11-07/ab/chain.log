@@ -1,0 +1,54 @@
+[16:25:35] after: C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/p10_after2 (e9ab0d3 + the P10 working tree); before: C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/p10_before (e9ab0d3)
+lock: held by 'main loop gates mergeu1 44744 2026-11-07T16:18:39', waiting
+lock: taken after 150 s
+[16:28:05] == round 1, lock taken (P10 measuring (agent a24fab29) round 1 23728 2026-11-07T16:25:35)
+[16:28:05] gpu: 3042 MiB, 2 %
+[16:28:16] before r1: native_test add_the_paint_layer pan_and_zoom
+[16:28:24] rc=0 == pan_and_zoom: wall 328 ms, longest block 328 ms
+closed
+[16:28:40] before r1: perf_test 15000x10000
+[16:29:26] rc=0
+closed
+[16:29:43] after r1: native_test add_the_paint_layer pan_and_zoom
+[16:29:50] rc=0 == pan_and_zoom: wall 201 ms, longest block 201 ms
+closed
+[16:30:06] after r1: perf_test 15000x10000
+[16:30:52] rc=0
+closed
+lock: released
+[16:30:57] round 1 done, lock released; a gap of 90 s
+lock: taken after 0 s
+[16:32:27] == round 2, lock taken (P10 measuring (agent a24fab29) round 2 41076 2026-11-07T16:32:27)
+[16:32:28] gpu: 3047 MiB, 0 %
+[16:32:38] after r2: native_test add_the_paint_layer pan_and_zoom
+[16:32:46] rc=0 == pan_and_zoom: wall 201 ms, longest block 201 ms
+closed
+[16:33:02] after r2: perf_test 15000x10000
+[16:33:48] rc=0
+closed
+[16:34:03] before r2: native_test add_the_paint_layer pan_and_zoom
+[16:34:11] rc=0 == pan_and_zoom: wall 317 ms, longest block 317 ms
+closed
+[16:34:27] before r2: perf_test 15000x10000
+[16:35:13] rc=0
+closed
+lock: released
+[16:35:18] round 2 done, lock released; a gap of 90 s
+lock: taken after 0 s
+[16:36:49] == round 3, lock taken (P10 measuring (agent a24fab29) round 3 31492 2026-11-07T16:36:48)
+[16:36:49] gpu: 3057 MiB, 0 %
+[16:36:59] before r3: native_test add_the_paint_layer pan_and_zoom
+[16:37:07] rc=0 == pan_and_zoom: wall 322 ms, longest block 322 ms
+closed
+[16:37:23] before r3: perf_test 15000x10000
+[16:38:09] rc=0
+closed
+[16:38:25] after r3: native_test add_the_paint_layer pan_and_zoom
+[16:38:32] rc=0 == pan_and_zoom: wall 202 ms, longest block 202 ms
+closed
+[16:38:48] after r3: perf_test 15000x10000
+[16:39:34] rc=0
+closed
+lock: released
+[16:39:39] round 3 done, lock released; a gap of 90 s
+[16:41:09] done
