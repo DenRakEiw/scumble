@@ -15,11 +15,16 @@
 use miniz_oxide::deflate::core::{compress, create_comp_flags_from_zip_params, CompressorOxide, TDEFLFlush, TDEFLStatus};
 
 /// Raw deflate of `src` into `out`; returns the bytes written, or -1 when `out` was too small.
+///
+/// A sync flush answers Okay with all of `src` consumed even when the end of the part (the last block's tail and the
+/// sync marker) did not fit: miniz_oxide keeps it in its own buffer for a next call, which never comes. Output can
+/// only be left there when `out` is full, so a part that is not the last and fills `out` exactly counts as too small
+/// (an exact fit costs the caller one retry). The last part is safe: Done comes only once nothing is left.
 pub fn deflate_part(src: &[u8], level: i32, last: bool, out: &mut [u8]) -> isize {
     let flags = create_comp_flags_from_zip_params(level, -15, 0);
     let mut c = Box::new(CompressorOxide::new(flags));
     let (status, consumed, written) = compress(&mut c, src, out, if last { TDEFLFlush::Finish } else { TDEFLFlush::Sync });
-    let done = if last { status == TDEFLStatus::Done } else { status == TDEFLStatus::Okay };
+    let done = if last { status == TDEFLStatus::Done } else { status == TDEFLStatus::Okay && written < out.len() };
     if !done || consumed != src.len() {
         return -1;
     }
