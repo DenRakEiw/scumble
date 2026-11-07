@@ -127,7 +127,8 @@ code.
   - **D (9585): item 57**, filter radii following a resize (a per-filter list of pixel parameters first).
   - **E (read-only): item 60's design plan** (variants on a result layer, compare against what lies below) as
     `docs/PLAN_VARIANTS.md`, its open questions for the user.
-  - **F (9586): the test speed-ups** (proposed 2026-11-07): a `PX_ONLY` filter in `tools/px_test.js` (the case groups by
+  - **F (9586 / 9587): the test speed-ups** (the user: "mach das", 2026-11-07; **started that evening as a background
+    agent in its own worktree**: review its branch and merge it when its report is in): a `PX_ONLY` filter in `tools/px_test.js` (the case groups by
     name), the mutation scripts' kill sets on it and on `SCUMBLE_EDITOR_ONLY` (a mutation round about 8 min instead of
     35-50), the tiles and canvas gate runs side by side on two ports; `docs/TESTING.md` says how. B, C and D all touch
     `renderer/editor/inpaint_canvas.js` in separate regions: merge them one at a time, the gates after each merge.
