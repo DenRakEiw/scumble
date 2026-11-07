@@ -1,0 +1,710 @@
+{
+ "scumble_map": {
+  "sam2_inapp": "How SAM2 runs inside the app today (worktree F:\\canvas\\.claude\\worktrees\\corridorkey, branch corridorkey):\n\nRUNTIME. onnxruntime-node ^1.29.0 (package.json:38; 1.29.0 installed). It is loaded lazily (runtime.js:8-13), so the app still starts without the binary. `Runtime` keeps one InferenceSession per model FILE, made on first use and never loaded twice (runtime.js:41-48). Providers are tried in order (runtime.js:19-24): Windows dml->cpu, Linux cuda->cpu, macOS coreml->cpu. Device \"cpu\" skips the GPU. A model can pass its own `auto` list (matting passes [\"cpu\"], matting.js:26). DML sessions get executionMode sequential and enableMemPattern false. CPU sessions get enableCpuMemArena false (runtime.js:54-58). `free()` releases every session (runtime.js:83-88). `status()` reports version, candidates, active and failures (runtime.js:95-107). The Linux CI build does not ship ORT's CUDA provider, so the cuda attempt fails and Linux runs on the CPU (HELPERS.md:469-473). Every model except LaMa runs synchronously ON THE MAIN PROCESS THREAD, which blocks IPC, MCP and autosave for the length of the run (HELPERS.md:241-254). LaMa runs in an Electron utility process (lama.js:79-84, lama_process.js). A worker thread is ruled out: terminating one inside a native call ended the whole process with 0xC0000409. Moving SAM2 and matting out of the main thread is still open (HELPERS.md:254, 476-477).\n\nMODEL MODULE electron/main/onnx/sam2.js (samexporter export):\n- Encoder: `image` [1,3,1024,1024], ImageNet mean/std (sam2.js:17-21, 42-44) -> high_res_feats_0 [1,32,256,256], high_res_feats_1 [1,64,128,128], image_embed [1,256,64,64].\n- `Sam2.encode(rgba1024, key)` caches the last 3 embeddings by key (sam2.js:58-73).\n- Decoder: `decode()` handles B prompts. Inputs point_coords [B,N,2] in 1024 space, point_labels (1 fg, 0 bg, 2/3 box corners), mask_input [B,1,256,256], has_mask_input. Outputs masks [B,3,256,256] logits and iou_predictions (sam2.js:79-90).\n- `predict(points, box)` returns the best of 3 masks as 256² logits (sam2.js:97-108).\n- `automask()` ports SAM2AutomaticMaskGenerator with crop_n_layers 0 (sam2.js:23-26, 115-191): 32x32 grid, batches of 64, predIoU >= 0.8, stability >= 0.92, box NMS 0.7, minArea 0.02 %. It paints large to small into a Uint16Array label map.\n- `logitsToMask` upsamples bilinearly (sam2.js:195-210).\n\nFACADE electron/main/onnx/index.js:\n- DEFAULTS: sam2 \"sam2_base_plus\" (index.js:20). Instances are kept per model id (index.js:24-27).\n- `presentOf(kind, wanted)` returns the chosen model if present, else the first present, else MISSING[kind] (index.js:158-171). `sam2For` is at index.js:173-177. `checkImage` requires RGBA 1024² (index.js:197-201).\n- `objects(req)` = encode + automask -> { ids Uint16Array outW x outH (at most 4096), count, seconds, encodeMs, provider, model, label } (index.js:207-221).\n- `segment(req)` uses the cached embedding by key, or encodes `req.image`. With `raw:true` it returns the 256² Float32 logits (index.js:227-243).\n- Also: `busy` set (index.js:28); `free()` clears the SAM2 caches and the runtime (index.js:153-156); `clearInstances` on a folder change or scan (index.js:98-102); `remove` (index.js:126-147); `status` / `configure` / `scan` (index.js:55-96).\n\nIPC: main.js:1231-1246 (`helpers:status|configure|scan|browseDir|openFolder|download|cancel|remove|free|objects|segment|cutout|inpaint|warmInpaint|depth` and the `helpers:progress` event). Preload `window.scumble.helpers.*` is at preload.js:190-206.\n\nRENDERER (renderer/editor/host.js):\n- `helpers` state and `refreshHelpers()` (host.js:6119-6128); it calls `ed.refreshCutoutBackends()` but not refreshSegmentBackends.\n- `helperCall(name,args)`: one stubbable member (host.js:6215-6217). Also `presentHelpers(kind)` (6219-6221), `sam2Model()` (6224-6227), `objectsInApp()` (6229-6231).\n- Model input: `objectInput` gives 1024² RGBA, either the flattened image or one layer on #808080, squashed. On tiles it reads from levels with no full flatten (host.js:6300-6339). `modelInput` is at 6376-6384.\n- Cache key: `inputHash` is SHA-1 of the input, 10 bytes (6368-6373), giving the key `${node.id}:image:<hash>`.\n- `findObjects(editor,pending)`: the label map comes back at most 2048 px on the long side, is nearest-scaled to the image, then goes to `editor.applySegmentIds`. It sets `helperUsed` and calls `slowHelperHint` (host.js:6419-6459).\n- `segmentKey` (6491-6507) and `segmentLogits(editor, points, box, layer)`: coordinates are mapped into 1024 space, the request is raw, and it re-sends the image when main lost the embedding (6513-6530). `segmentPoint` is a wrapper (6533-6535).\n- `selectBox` (6540-6557) and `selectPoint` (6564-6589) both call `editor.selectLogits`.\n- The EditorHost typedef members are at host.js:540-547.\n\nEDITOR FEATURES THAT USE SAM2 (renderer/editor/inpaint_canvas.js):\n- Object tool O, hover: `ensureObjects` -> host.findObjects (12786-12805). `applySegmentIds` (12849-12862), `updateObjectHover` (12890-12904).\n- Click: `toggleObjectAt` -> host.selectPoint where the map has no object (12907-12910).\n- Box drag: host.selectBox (6858).\n- `selectLogits`: a banded combine of 256² logits into the selection (7895ff).\n- `objectBackendAvailable` (1349-1353). The ComfyUI fallback `OBJECT_BACKEND` (Kijai's DownloadAndLoadSAM2Model plus InpaintCanvasObjectMap) is at 1335-1347.\n- MCP `select_point` (renderer/commands.js:1224-1240) calls host.segmentLogits + selectLogits.\n\nCUTOUT IS NOT SAM2. `host.cutoutInApp` (host.js:6466-6484), `cutoutBackends()` (6234-6236) and `cutoutInput` (6346-6365) feed `helpers:cutout`, which runs matting.js (BiRefNet lite/BiRefNet/RMBG-1.4/RMBG-2.0 at 1024², CPU by default). The editor reaches it through cutoutLayer at inpaint_canvas.js:16353.\n\nVRAM: features set `editor.helperUsed`. Before a local run, `freeHelperModels` (inpaint_canvas.js:24492-24508, 24536) calls host.freeHelpers -> helpers:free (host.js:6760-6766). A GPU run over 15 s gets `slowHelperHint` (host.js:6747-6752).\n\nMODEL FILES (models.js:21-35, 74-85): sam2_tiny / small / base_plus / large, files `sam2_hiera_<v>.encoder.onnx` + `.decoder.onnx`, from vietanhdev/segment-anything-2-onnx-models pinned to commit 071f5807..., with size and sha256 per file. Licence Apache-2.0. The large decoder is 20,640,910 bytes; the other three decoders are 20,640,886. Settings › Helpers has a picker \"Object tool\" (index.html:121, shell.js:2049-2056, 2164). The settings default is in settings.js:31; index.js:20 also adds depth. Download goes through the Downloader (helper_slot). Measured on RTX 5090 DML: base+ objects 4.2 s cold / 1.2 s warm, point prompt 0.4 s, CPU about 24 s; with ComfyUI filling VRAM, 125 s (HELPERS.md:439-457).",
+  "sam3_comfy": "How selection by text (SAM3) works today: on the user's ComfyUI only. There is no in-app text segmenter. CLAUDE.md:54 says \"SAM3 stays a ComfyUI helper (no ONNX export)\"; BRIEF.md:71-72 says \"SAM3 by text stays a ComfyUI helper until an ONNX export exists\"; HELPERS.md:4-6 says the same.\n\nBACKENDS: `SEGMENT_BACKENDS` in renderer/editor/inpaint_canvas.js:1075-1122.\n1. id \"sam3_rmbg\", label \"SAM3\", needs [\"SAM3Segment\"] (comfyui-rmbg). Node `seg_run` SAM3Segment with image, prompt, output_mode \"Merged\", confidence_threshold clamped 0.05..0.95, max_segments 0, ... unload_model false, background \"Alpha\". Mask output [\"seg_run\",1]. Weights: models/sam3 on the server.\n2. id \"dino_sam\", label \"GroundingDINO + SAM\", needs the three comfyui_segment_anything nodes (\"GroundingDinoModelLoader (segment anything)\", \"SAMModelLoader (segment anything)\", \"GroundingDinoSAMSegment (segment anything)\"). The HQ switch picks sam_vit_h over sam_vit_b.\n3. id \"sam3_core\", label \"SAM3 (core, experimental)\", needs SAM3_Detect, CheckpointLoaderSimple and CLIPTextEncode, and only shows when a ckpt matching /sam3/i is listed. Mask output [\"seg_run\",0].\n\n`withSpecDefaults` (inpaint_canvas.js:1055-1073) fills a helper node's left-out required inputs from /object_info. It is the fix for issue #7 (SAM3Segment's new `model_name`). `availableSegmentBackends()` filters by `host.nodeTypes()` (1258-1261).\n\nUI (inpaint_modal.js:633-672): segInput, segBtn \"Go\", segThreshold 0.3, an HQ toggle (dino_sam only), segSourceSel image / active layer, and segBackendSel. `refreshSegmentBackends` (inpaint_canvas.js:12470-12491) fills the menu, or shows \"no segmentation nodes installed\" / \"needs a ComfyUI (none connected)\". It runs from host.js:1421 and from refreshLLMs (host.js:6140), not from refreshHelpers.\n\nFLOW: `segmentByText()` (inpaint_canvas.js:12503-12553):\n- Text empty but a prompt present: a language model names the object (segmentTermInstruction, 1209-1212). An in-app API LLM goes through host.askLLM. A ComfyUI VLM node `term_run` is wired straight into the segment node's prompt.\n- No backend: with no ComfyUI connected the status says to use the object tool; otherwise \"No segmentation nodes installed (comfyui_segment_anything or comfyui-rmbg)\".\n- `segmentSource()` uploads the composite (or the layer on grey) as a ref (12560-12585).\n- The prompt is `seg_load` InpaintCanvasLoadRef + the backend's nodes + `seg_out` InpaintCanvasMaskOut {purpose \"segment\", canvas_node, label}. These are the Inpaint Canvas node pack's own nodes, so that pack must be installed too.\n- It is queued with api.queuePrompt as a helper prompt (extra.inpaint_canvas_helper), sets helperUsed, segmentPromptId and segmentPending.\n\nLANDING: the `executed` event's `out.inpaint_mask` -> `ed.applyMaskFile(info)` (host.js:6831-6836; segments and cutout have their own purposes). `applyMaskFile` (inpaint_canvas.js:12933-12970) reads the PNG via /view, keeps pixels > 127, clips to the layer alpha in layer mode, combines by segMode into the selection as one undo step \"Select by text\", and sets selectionLabel and the status (\"Selected ... % of the image\" / \"Nothing found ... Lower the threshold\"). Failures: `execution_error` with segmentPromptId -> \"Segmentation failed\" (host.js:6880-6882).\n\nMCP: `select_by_text` {text, mode, threshold, timeout} (renderer/commands.js:1203-1222). Its description says \"Runs the segmentation model on the connected ComfyUI (SAM3)\". It drives ed.segmentByText and then polls `ed.segmentPending` and the status text.\n\nIN-APP FALLBACK: none for the segmentation itself. Only the term-from-prompt step can run in-app (API language models). The text tells users to use the SAM2 object tool, which needs no ComfyUI (inpaint_canvas.js:12514). electron/main/comfy.js:201-205 says \"selection by text (SAM3 on the server)\" needs a ComfyUI. The manual's description is MANUAL.md:119 (triton-windows is needed for comfyui-rmbg's SAM3 on Windows). Tests: editor_test.py step `select_by_text_sends_the_inputs_the_node_requires` (tools/editor_test.py:11635ff). The live path is smoke_test.py's segment step (tools/smoke_test.py:116-125), which needs a real ComfyUI; the user's ComfyUI is a production machine (CLAUDE.md:527, 1195).",
+  "helper_slot": "What a third in-app segmentation helper (an add-on beside SAM2 and the SAM3 route) has to touch, and the rules that hold:\n\n1. REGISTRY (electron/main/onnx/models.js):\n- Add a MODELS entry {id, kind (a new kind, e.g. a text segmenter; never \"sam2\", or the object-tool picker would list it), label, note, source, sourceUrl, license, files:[{name, role, size, sha256, url}]} (models.js:73-132; the SAM2 builder pattern is at 25-35).\n- URLs are pinned to a Hugging Face commit, and sha256 is the HF tree API's LFS oid at that commit (models.js:18-20; HELPERS.md:279-281).\n- `offered()` needs a URL on every file, and a set (`subdir`, strict) also a size and sha256 per file (models.js:140-143).\n- Many files that must sit together (external data): a set catalogue via `fromSetCatalogue`, with a subdir under onnx/ (models.js:44-71; HELPERS.md:310-319).\n- A new lookup subfolder goes in SUBDIRS (models.js:146). The scan needs ONNX_ALIASES / OTHER_WEIGHTS regexes for HF snapshot layouts and ComfyUI PyTorch weights, which are reported, never loaded (models.js:277-299). A size-only match counts only when the size is unique in the registry (models.js:337-365).\n\n2. DOWNLOADER (`Downloader`, models.js:411-612):\n- Refuses before any request: unknown, not offered, `terms` not accepted, already running (446-451). Refuses as the download's error: free disk below need + 64 MB (461-470).\n- `.part` + Range resume; sha256 computed while streaming; a wrong hash or too many bytes deletes the .part (526-611).\n- Redirects followed by hand, at most 10, never https->http (503-523).\n- HF TOKEN RULE: the token goes only to https://huggingface.co or hf.co on the default port without userinfo, never to CDN hops or other hosts (`hfTokenAllowed`, models.js:375-381; HELPERS.md:290-296). The token is stored under \"hf-token\" in keys.js (index.js:19, 49).\n- `gated: true` gives the gated sentence on 401/403 (models.js:548-550). RMBG-2.0 is the precedent of a gated model with no sha256 (size check only, models.js:107-113).\n- NOTE: index.js:49 builds the Downloader without `termsAccepted`, so a model carrying `terms` cannot be downloaded until that is wired (CorridorKey I2's open terms dialog, PLAN_CORRIDORKEY.md:1049, 1214, 1257).\n- `verify()` / `remove()` are at models.js:619-649.\n\n3. FACADE + IPC:\n- index.js: DEFAULTS (20), an instance Map (24-27), MISSING[kind] (158-163), an `xFor(id)` via presentOf (165-195), a job function with `busy` (203-322), and the module.exports (324). Also clear it in clearInstances (98-102) and remove (141-145); free() (153-156) if it holds caches.\n- A model module beside sam2.js using `runtime.session(file, {auto})` and `runtime.tensor`.\n- If its runs are long: the LaMa utility-process shape (lama.js, lama_process.js; HELPERS.md:238, 241-254), since main-thread runs block IPC.\n- main.js:1231-1246 needs an ipcMain.handle(\"helpers:<job>\"). preload.js:190-206 needs the bridge entry.\n- settings.js:31 needs the helpers default id.\n\n4. SETTINGS › HELPERS UI:\n- renderer/index.html:116-133 (device, Object tool picker #set-helpers-sam2, folder row, #set-helpers-models, HF token row, runtime note).\n- renderer/shell.js `renderHelpers` (2046-2161) builds one row per model from describeAll: the kind label map for the tooltip (2079, so add the new kind), the licence in the info line (2095-2103), Download/Cancel/Remove/Unlink (2107-2140), and the progress bar (2142-2149).\n- A picker for the new helper would mirror helpersSam2 (2049-2056, 2164). The progress handler is at 2182-2187. host.onHelpersChanged is at 2188.\n\n5. EDITOR / HOST:\n- host.js: `presentHelpers(kind)` (6219), a `<x>Model()` like sam2Model (6224-6227), and calls through `helperCall` (6215-6217), which the gates stub.\n- For text selection the natural seam is the host-backend pattern used by `cutoutBackends()` / `upsampleBackends()` (host.js:6234-6236, 6145-6147): `inApp: true` backends merged into `availableSegmentBackends()` (inpaint_canvas.js:1258-1261). Then a branch `if (backend.inApp)` in `segmentByText` (12503-12553), landing through the same selection combine (applyMaskFile 12933-12970, or selectLogits 7895).\n- `refreshHelpers` (host.js:6123-6128) would also have to call `refreshSegmentBackends`.\n- The MCP command `select_by_text` (commands.js:1203-1222) keys on `segmentPending` and its description names SAM3. A separate command would follow `select_point` (1224-1240).\n- Every new host member goes into the EditorHost typedef (host.js:540-547) AND the node's js/host.js, where app-only members answer \"not here\" (BUILD_NODE.md:50-55, 58-65). Otherwise `python tools/build_node.py --check` fails.\n\n6. DOCS (HELPERS.md): the Modules table (228-239), the Models table with source, pinned commit, sha256 and licence (266-281), Settings › Helpers (428-437), Measured (439-457), Not done (466-482). Also docs/MANUAL.md:119 (the selection-by-text paragraph) and the CHANGELOG.\n\n7. LICENCE RULE (quoted):\n- App dependencies: CLAUDE.md:70-72 \"Licence: **GPL-3.0** ... Only MIT/Apache/BSD/OFL dependencies in the app.\" BRIEF.md:104-110 says the same (\"Only MIT/Apache/BSD/OFL dependencies. Not legal advice.\"). So any new runtime or JS package must be MIT/Apache/BSD/OFL; ORT itself is already one.\n- Downloaded weights are not app dependencies. They are a user download listed with their own licence in the row and in HELPERS.md. Precedents: RMBG-1.4 \"BRIA, non-commercial\" and RMBG-2.0 \"CC BY-NC 4.0\", gated (HELPERS.md:273-274; models.js:101-113).\n- CLAUDE.md:709-710 (CorridorKey) says \"never in the app without their agreement (no ONNX in the bundle; GPL-3.0 and the MIT/Apache/BSD/OFL rule)\". This was lifted for the free app by Corridor's written answer (CLAUDE.md:720).\n- PLAN_CORRIDORKEY.md:377-378: \"the weights are a user download under Corridor's licence (never in the repo or the bundle)\". PLAN_CORRIDORKEY.md:387-393: \"A separately licensed folder in the app is not a path\".\n- Hosting a converted ONNX of someone else's weights needs their permission to redistribute (PLAN_CORRIDORKEY.md:1588).\n- Glue code must be Scumble's own, never a port of non-GPL-compatible code (PLAN_CORRIDORKEY.md:377-386).\n\n8. GATES / TESTS:\n- Plain Node: `node tools/helpers_test.js [dir] [--sam2 id]` runs the ONNX modules with real model files; a missing model is skipped (tools/helpers_test.js:1-30; HELPERS.md:459-464; TESTING.md:80). `node tools/download_test.js` has 72 checks with no network: token rule, sha256, resume, sets, free disk, terms (TESTING.md:537-540; HELPERS.md:337-339). `node tools/scan_test.js` has 22 checks on a synthetic ComfyUI folder (HELPERS.md:406-408).\n- App gates through tools/run_gates.sh --offline: `selection` (SAM2 box/point via a stubbed host.helperCall, tools/selection_test.py:693-916; TESTING.md:249); `editor` steps `helper_inputs_read_levels_and_upload_nothing` (tools/editor_test.py:3517) and `select_by_text_sends_the_inputs_the_node_requires` (11635); `commands`, `mcp`; `lint` and `types` (EditorHost typedef); `skins` for new UI.\n- `smoke_test.py`'s helper steps need the real ComfyUI and only run on the user's word.\n- Tier per CLAUDE.md:1183-1190: a helper feature is Normal (one gate step on tiles plus the gates it touches); the registry and downloader against docs are Light.",
+  "constraints": [
+   "Shell is Electron: identical Chromium on Windows and Linux, and a Node main process for exports and the MCP server (CLAUDE.md:36-37).",
+   "The app never bundles Python/Torch. Local rendering is the user's own ComfyUI; the app checks /object_info and installs nothing there itself (CLAUDE.md:38-48).",
+   "Helper models run in-app via ONNX Runtime (onnxruntime-node ^1.29.0): DirectML on Windows, CUDA or CPU on Linux, CPU fallback everywhere. Model files are downloaded into the app data folder or read from a linked ComfyUI models/ folder (CLAUDE.md:52-54; runtime.js:19-24). Linux in practice runs on the CPU, because the CUDA EP is not shipped (HELPERS.md:469-473).",
+   "SAM3 stays a ComfyUI helper because it has no ONNX export (CLAUDE.md:54; BRIEF.md:71-72). An added helper is an add-on beside SAM2 (in-app) and the SAM3 ComfyUI route, not a replacement.",
+   "App licence is GPL-3.0 with no dual licensing and no CLA. Only MIT/Apache/BSD/OFL dependencies in the app (CLAUDE.md:70-72; BRIEF.md:104-110). A separately licensed folder in the app is not a path (PLAN_CORRIDORKEY.md:387-393).",
+   "Downloaded model weights are the user's download under their own licence, never in the repo or the bundle. The row shows the licence. Non-commercial weights (RMBG-1.4 BRIA, RMBG-2.0 CC BY-NC 4.0) are offered this way (HELPERS.md:268-277; PLAN_CORRIDORKEY.md:377-378). Hosting a conversion of third-party weights needs the rights holder's permission.",
+   "Every downloaded file is pinned to a commit with size and sha256. The HF token goes only to huggingface.co / hf.co. A gated model gets the gated sentence. Terms must be accepted, but the terms dialog is not wired yet (models.js:18-20, 375-381, 446-451; index.js:49).",
+   "All in-app helpers except LaMa run synchronously on the main process thread and block IPC, MCP and autosave during a run. A long-running model should follow LaMa's utility-process shape; a worker thread is ruled out (HELPERS.md:241-254).",
+   "Windows first, Linux second (CLAUDE.md:23).",
+   "New host members go into the EditorHost typedef and into the node's js/host.js; app-only members answer 'not here' there, or `build_node.py --check` fails (BUILD_NODE.md:50-65).",
+   "Test by risk (CLAUDE.md:1183-1190): helper features are Normal tier (one gate step on tiles plus the touched gates), providers and registry built against docs are Light. Gates run --offline. The user's ComfyUI on 8188 is a production machine: check /queue first, and no smoke test unless the user says so (CLAUDE.md:527, 1195).",
+   "Tune for 15k, not 30k (CLAUDE.md:528). Helper inputs are read from tile levels, never as a full-resolution flatten (host.js:6293-6339).",
+   "Answer the user in German; code, comments and docs in English. Never name another product as a feature's model in public texts (CLAUDE.md Working rules).",
+   "Releases only on the user's word. Planned work for the coming update goes on a branch with one release at the end (CLAUDE.md 'Where things stand')."
+  ],
+  "anchors": [
+   "CLAUDE.md:36-37 Shell Electron",
+   "CLAUDE.md:38-48 the user's ComfyUI; app never bundles Python/Torch",
+   "CLAUDE.md:52-54 Helper models: SAM2/RMBG in-app via ONNX; SAM3 stays a ComfyUI helper (no ONNX export)",
+   "CLAUDE.md:70-72 GPL-3.0, Only MIT/Apache/BSD/OFL dependencies in the app",
+   "CLAUDE.md:709-720 CorridorKey licence: never in the app without agreement, lifted for the free app",
+   "CLAUDE.md:1183-1190 test tiers",
+   "docs/BRIEF.md:71-75 helper models in-app, SAM3 until an ONNX export exists",
+   "docs/BRIEF.md:104-110 licence paragraph",
+   "docs/HELPERS.md:3-6 SAM3 stays a ComfyUI helper",
+   "docs/HELPERS.md:228-239 module table",
+   "docs/HELPERS.md:241-254 main-thread runs, LaMa utility process",
+   "docs/HELPERS.md:266-281 model table with licences and pins",
+   "docs/HELPERS.md:283-308 downloads, token rule",
+   "docs/HELPERS.md:377-383 SAM2 tensors",
+   "docs/HELPERS.md:385-408 folder scan",
+   "docs/HELPERS.md:428-457 Settings > Helpers, measurements",
+   "docs/PLAN_CORRIDORKEY.md:374-393 weights as user download, no separately licensed folder in the app",
+   "electron/main/onnx/runtime.js:19-24 providerCandidates",
+   "electron/main/onnx/runtime.js:41-71 session creation per file",
+   "electron/main/onnx/sam2.js:17-26 constants, automask defaults",
+   "electron/main/onnx/sam2.js:58-73 encode + 3-entry cache",
+   "electron/main/onnx/sam2.js:79-108 decode / predict",
+   "electron/main/onnx/sam2.js:115-191 automask",
+   "electron/main/onnx/index.js:20 DEFAULTS",
+   "electron/main/onnx/index.js:49-51 Downloader built (no termsAccepted)",
+   "electron/main/onnx/index.js:158-177 MISSING, presentOf, sam2For",
+   "electron/main/onnx/index.js:207-243 objects / segment jobs",
+   "electron/main/onnx/index.js:324 exports",
+   "electron/main/onnx/models.js:18-35 SAM2 pin and builder",
+   "electron/main/onnx/models.js:44-71 fromSetCatalogue",
+   "electron/main/onnx/models.js:73-132 MODELS registry",
+   "electron/main/onnx/models.js:140-146 offered, SUBDIRS",
+   "electron/main/onnx/models.js:277-299 ONNX_ALIASES, OTHER_WEIGHTS",
+   "electron/main/onnx/models.js:337-365 matchScan",
+   "electron/main/onnx/models.js:375-381 hfTokenAllowed",
+   "electron/main/onnx/models.js:411-612 Downloader (refusals 446-470, sha256 526-611)",
+   "electron/main/onnx/lama.js:79-84 utility process fork",
+   "electron/main/main.js:1231-1246 helpers IPC handlers",
+   "electron/preload.js:190-206 window.scumble.helpers",
+   "electron/main/settings.js:31 helpers defaults",
+   "electron/main/comfy.js:201-205 selection by text needs a ComfyUI",
+   "renderer/index.html:116-133 Settings > Helpers markup",
+   "renderer/shell.js:2046-2161 renderHelpers",
+   "renderer/shell.js:2079 kind label map (tooltip)",
+   "renderer/shell.js:2163-2188 Helpers handlers, progress",
+   "renderer/editor/host.js:540-547 EditorHost typedef helper members",
+   "renderer/editor/host.js:6119-6128 helpers state, refreshHelpers",
+   "renderer/editor/host.js:6215-6236 helperCall, presentHelpers, sam2Model, objectsInApp, cutoutBackends",
+   "renderer/editor/host.js:6300-6384 objectInput, cutoutInput, inputHash, modelInput",
+   "renderer/editor/host.js:6419-6459 findObjects",
+   "renderer/editor/host.js:6466-6484 cutoutInApp (matting)",
+   "renderer/editor/host.js:6491-6589 segmentKey, segmentLogits, selectBox, selectPoint",
+   "renderer/editor/host.js:6747-6766 slowHelperHint, freeHelpers",
+   "renderer/editor/host.js:6831-6836 inpaint_mask landing (segment / segments / cutout)",
+   "renderer/editor/host.js:6880-6882 segmentation failure",
+   "renderer/editor/inpaint_canvas.js:1055-1073 withSpecDefaults (issue #7)",
+   "renderer/editor/inpaint_canvas.js:1075-1122 SEGMENT_BACKENDS (sam3_rmbg, dino_sam, sam3_core)",
+   "renderer/editor/inpaint_canvas.js:1258-1261 availableSegmentBackends",
+   "renderer/editor/inpaint_canvas.js:1335-1353 OBJECT_BACKEND (ComfyUI SAM2 fallback), objectBackendAvailable",
+   "renderer/editor/inpaint_canvas.js:6858-6860 box drag / click in object tool",
+   "renderer/editor/inpaint_canvas.js:7895 selectLogits",
+   "renderer/editor/inpaint_canvas.js:12470-12496 refreshSegmentBackends",
+   "renderer/editor/inpaint_canvas.js:12503-12585 segmentByText, segmentSource",
+   "renderer/editor/inpaint_canvas.js:12786-12930 ensureObjects, applySegmentIds, toggleObjectAt",
+   "renderer/editor/inpaint_canvas.js:12933-12970 applyMaskFile",
+   "renderer/editor/inpaint_canvas.js:24492-24508 freeHelperModels",
+   "renderer/editor/inpaint_modal.js:633-672 segmentation controls",
+   "renderer/commands.js:1203-1222 select_by_text",
+   "renderer/commands.js:1224-1240 select_point",
+   "docs/BUILD_NODE.md:50-65 host members in both hosts and the typedef",
+   "docs/TESTING.md:80 helpers_test.js",
+   "docs/TESTING.md:249 selection gate (SAM2 box drag)",
+   "docs/TESTING.md:537-540 download_test.js, scan_test.js",
+   "docs/MANUAL.md:119 selection by text in the manual",
+   "tools/helpers_test.js:1-30",
+   "tools/selection_test.py:693-916 helperCall stub",
+   "tools/editor_test.py:3517 helper_inputs_read_levels_and_upload_nothing",
+   "tools/editor_test.py:11635 select_by_text_sends_the_inputs_the_node_requires",
+   "tools/smoke_test.py:116-125 live segment step"
+  ]
+ },
+ "mirage_research": [
+  {
+   "what": "Mirage is a small on-device vision model from Cactus Compute, a YC company. The blog lists Henry Ndubuaku, Karen Mosoyan, Jakub Mroz, Parkirat Sandhu, Justin H. Lee, Satyajit Kumar and Roman Shemet as authors. The HF repo Cactus-Compute/mirage was created 2026-11-05, the blog is dated 2026-11-06, and the release PRs #186/#187 were merged 2026-11-05. It takes one RGB image, letterboxed into a 512 px canvas. In one call (cactus_describe) it returns a structured JSON record: scene fields, open-vocabulary named objects with boxes on a 0-1000 grid, attributes, a mask per detected object, OCR lines, relations/events, a short reasoning trace, and optional form/decision fields (enum, bounded integer, string, box references). Masks are YOLACT-style: 32 shared 128x128 prototypes plus 32 coefficients per object. They are cut to the box the model proposed itself and returned as outline, polygons, merged path or an RLE bitmap. It is NOT promptable like SAM2 (no point or box input) or SAM3 (no text concept to segment). The C API takes only RGB pixels, an options JSON, a language and a keyword string. The model decides which objects exist, then names and masks them. So at most it is an add-on that proposes named objects and boxes, for example as box prompts for SAM2 (inferred). It is not a SAM replacement. The Cactus Compute model is the subject here. The name is ambiguous: Decart's real-time video model MirageLSD, the retinal-OCT foundation model MIRAGE, MonolithFoundation/Mirage-12B and the arXiv paper on visual 'mirages' (2603.21687) are unrelated.",
+   "facts": [
+    {
+     "fact": "The HF model card licence is apache-2.0. The repo is public and not gated. Created 2026-11-05T19:01:53Z, last modified 2026-11-06T18:51:27Z, 790 downloads and 30 likes when read on 2026-11-07.",
+     "source": "https://huggingface.co/api/models/Cactus-Compute/mirage",
+     "inferred": false
+    },
+    {
+     "fact": "The Mirage repo holds mirage.cact (21,611,043 bytes, sha256 4249a0f7...), mirage.safetensors (216,370,504 bytes), config.json, README.md and assets/overview.png. There is no ONNX, GGUF or CoreML file.",
+     "source": "https://huggingface.co/api/models/Cactus-Compute/mirage?blobs=true",
+     "inferred": false
+    },
+    {
+     "fact": "The safetensors header (read by a range request, no weights downloaded) lists 583 tensors, all F32, 54,078,804 parameters in total. Without the multi-token-prediction block (mtp_block, mtp_combine) it is 51,519,090, close to the blog's 51.3M. The header metadata says format 'mirage', training step 1,100,000.",
+     "source": "https://huggingface.co/Cactus-Compute/mirage/resolve/main/mirage.safetensors",
+     "inferred": false
+    },
+    {
+     "fact": "Tensor names follow Flax conventions ('kernel', 'scale', 'ZCRMSNorm_0', decoder layers stacked as [8, ...] like nn.scan), so the model was trained in JAX/Flax.",
+     "source": "https://huggingface.co/Cactus-Compute/mirage/resolve/main/mirage.safetensors",
+     "inferred": true
+    },
+    {
+     "fact": "PR #186 says it was validated with 'Mirage JAX/C++ parity', so a JAX reference implementation exists. A code search of the org finds 'mirage' only in the Python wrapper, CLI, fetch code, tests, README and llms.txt. No Mirage model definition (JAX or PyTorch) is published.",
+     "source": "https://github.com/cactus-compute/cactus/pull/186",
+     "inferred": true
+    },
+    {
+     "fact": "The mask head ('dense' module) has about 274k parameters: protos/kernel [128,32], coef/kernel [128,32], 3x3 depthwise convolutions, and out/kernel [128,10] for the detection map.",
+     "source": "https://huggingface.co/Cactus-Compute/mirage/resolve/main/mirage.safetensors",
+     "inferred": false
+    },
+    {
+     "fact": "config.json: canvas 512, stride 8, dense_dim 128, detections 64, regions 32, 16 HConvGLU body layers (kernel 65), 12 attention layers, 8 decoder layers, text vocab 8192, max_tokens 1536. Weights are 2-bit, with embedding and mHC at 4 bits. The config also lists 'seg_loss': 0.0.",
+     "source": "https://huggingface.co/Cactus-Compute/mirage/raw/main/config.json",
+     "inferred": false
+    },
+    {
+     "fact": "Masks are built from 32 shared prototype maps at 128x128 (one cell per four canvas pixels) and 32 coefficients per object, taken at the box-centre cell of a 64x64 grid, then sigmoid and zeroed outside the box. The authors say the 128x128 grid 'limits spatial detail', that tight boxes can clip objects and that polygon modes omit holes. They give no mask accuracy numbers ('still needs images and reference masks').",
+     "source": "https://cactuscompute.com/blog/instance-segmentation",
+     "inferred": false
+    },
+    {
+     "fact": "Mask output formats: largest outline (default), polygons, merged, and a bitmap as column-major RLE at the original image size. Polygons come from marching squares at 0.5 on a 0-1000 grid.",
+     "source": "https://cactuscompute.com/blog/instance-segmentation",
+     "inferred": false
+    },
+    {
+     "fact": "Masks cannot be prompted by points, boxes or text. Each mask belongs to a region the detector proposed, and a decoder names it afterwards. There are at most 64 object proposals and 32 text proposals. Missed proposals cannot be recovered, and small or nearby objects may be dropped.",
+     "source": "https://cactuscompute.com/blog/structured-perception",
+     "inferred": false
+    },
+    {
+     "fact": "The C header exposes cactus_describe(rgb, width, height, options, language, keywords, out, out_capacity). It has no point or box argument.",
+     "source": "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/windows-x86_64/cactus.h",
+     "inferred": false
+    },
+    {
+     "fact": "Python API: cactus.Mirage().describe(image, sections=..., fields=..., conf, text_conf, max_objects, max_text_lines, max_tokens, mask_format, nms, form). extract(image, form) fills enum, bounded integer, string or 'x-source' box-reference fields.",
+     "source": "https://github.com/cactus-compute/cactus/blob/main/llms.txt",
+     "inferred": false
+    },
+    {
+     "fact": "Languages: en, de, fr, es, it, nl, pl.",
+     "source": "https://huggingface.co/Cactus-Compute/mirage",
+     "inferred": false
+    },
+    {
+     "fact": "Vendor latency: 74 ms end to end on a Samsung Galaxy S26 NPU, 107 ms on its CPU. The image size is not stated. The blog gives no benchmark against SAM2, SAM3 or any detector or segmenter, and no detection, OCR or mask accuracy.",
+     "source": "https://cactuscompute.com/blog/mirage",
+     "inferred": false
+    },
+    {
+     "fact": "The only evaluation numbers are a small VQA experiment: Qwen3-0.6B answering 256 VQAv2 questions from Mirage's record scored 33.1 without the trace and 31.3 with it, against 9.3 for the question alone. The warm Mirage median was 77.5 ms on an unnamed CPU.",
+     "source": "https://cactuscompute.com/blog/structured-perception",
+     "inferred": false
+    },
+    {
+     "fact": "Third-party report (issue #188, 2026-11-06): 120-170 ms per 1920x1080 frame on a 16-core Apple M-series (arm64 Docker). 19,211 ms with 6 cores and 146,756 ms with 2 cores; 56-72 s on a 6x Cortex-A55 camera. Peak RSS was about 134 MB. The engine sizes its thread pool from hardware_concurrency and has no thread-count setting.",
+     "source": "https://github.com/cactus-compute/cactus/issues/188",
+     "inferred": false
+    },
+    {
+     "fact": "Third-party report: the HF team's demo Space wraps json.loads because 'cactus_describe sometimes emits bare nan / -nan literals in detection score fields'. The Space runs the engine on CPU through ctypes, needs no GPU, and pins cactus-compute==4.0.1.",
+     "source": "https://huggingface.co/spaces/hugging-apps/mirage-vision/raw/main/app.py",
+     "inferred": false
+    },
+    {
+     "fact": "Runtime 4.0.0 binaries on HF Cactus-Compute/cactus are licensed apache-2.0, with an Apache 2.0 LICENSE in releases/4.0.0. Targets include windows-x86_64 (cactus.exe 1.6 MB, libcactus.a, cactus.h), windows-arm64, Linux, macOS, Android, iOS, wasm (cactus.js plus cactus.wasm 1.24 MB, 'Browser and Node.js') and a WASI component. Python wheels include win_amd64 (863 KB) with the shared library.",
+     "source": "https://huggingface.co/Cactus-Compute/cactus",
+     "inferred": false
+    },
+    {
+     "fact": "No public repo holds the source of the 4.0.0 engine that runs Mirage. The older source repo cactus-compute/engine (C++, with Metal and Apple ANE code) is under a custom source-available licence, free only for individuals, non-commercial use and organisations under $2M funding and revenue, which is not OSI.",
+     "source": "https://github.com/cactus-compute/engine/blob/main/LICENSE",
+     "inferred": true
+    },
+    {
+     "fact": "The Python package cactus-compute (4.0.1 on PyPI, Apache-2.0) is code for the cactus-compute/cactus repo (Apache-2.0, 14.5k stars). It downloads the engine and weights from HF with pinned revisions and SHA-256: the Mirage revision is 76c1e9e5..., the .cact sha256 4249a0f7.... It sends anonymous usage telemetry unless CACTUS_TELEMETRY=0 or DO_NOT_TRACK=1.",
+     "source": "https://github.com/cactus-compute/cactus",
+     "inferred": false
+    },
+    {
+     "fact": "The static libcactus.a is built against libc++; linking it with gcc/libstdc++ fails.",
+     "source": "https://github.com/cactus-compute/cactus/issues/188",
+     "inferred": false
+    },
+    {
+     "fact": "The wasm glue cactus.js (63 KB) exports _cactus_describe and has Node support (ENVIRONMENT_IS_NODE). It contains no SharedArrayBuffer, Worker, pthread or WebGPU code, so the wasm build looks single-threaded and CPU-only.",
+     "source": "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/wasm/cactus.js",
+     "inferred": true
+    },
+    {
+     "fact": "No published Cactus page or binary names CUDA, DirectML, Vulkan or another GPU backend for Windows. On Windows, Mirage runs on the CPU.",
+     "source": "https://cactuscompute.com/blog/needle-supported-devices",
+     "inferred": true
+    },
+    {
+     "fact": "The .cact format is documented (196-byte header, tensor directory, Cactus Quants with a Hadamard rotation and Lloyd-Max codebooks, groups of 128; 2.125 bits per weight at CQ2). No other runtime (ONNX Runtime, llama.cpp, PyTorch) reads it. cactus.model.export.read_export is the reference reader.",
+     "source": "https://cactuscompute.com/blog/cact-format",
+     "inferred": false
+    },
+    {
+     "fact": "An ONNX port is possible in principle: every op seen in the tensor list (depthwise convolutions, per-channel 65-tap convolutions with Walsh-Hadamard transforms, GQA attention with RoPE and qk-norm, RMSNorm, GRN, gated MLPs, hashed engram embedding lookups, a cross-attention decoder, a CTC text reader) maps to standard ONNX ops. But there is no reference model code or exporter, the decoder uses grammar-constrained JSON decoding, and parity could only be checked against the closed engine. A port would mean reverse engineering. The smallest useful piece would be encoder + dense head (boxes and masks without names).",
+     "source": "https://huggingface.co/Cactus-Compute/mirage/raw/main/config.json",
+     "inferred": true
+    },
+    {
+     "fact": "No independent accuracy evaluation was found on HN, Reddit, X or HF discussions. HF discussion #2 asked about the licence and fine-tuning and was closed by its author without a visible answer.",
+     "source": "https://huggingface.co/Cactus-Compute/mirage/discussions",
+     "inferred": false
+    },
+    {
+     "fact": "'Mirage' is ambiguous. Unrelated namesakes: Decart's MirageLSD real-time video model, the retinal-OCT foundation model MIRAGE (j-morano/MIRAGE-Base, arXiv 2506.08900), MonolithFoundation/Mirage-12B, and arXiv 2603.21687 on visual 'mirages'. The general web search did not surface Cactus's Mirage, only an audio model of theirs (segmentation-3.0).",
+     "source": "https://decart.ai/publications/mirage",
+     "inferred": false
+    }
+   ],
+   "licence_code": "Apache-2.0 for the Python package and repo cactus-compute/cactus (LICENSE file, PyPI 4.0.1). The 4.0.0 runtime binaries on HF Cactus-Compute/cactus are also tagged apache-2.0, with an Apache LICENSE in releases/4.0.0. Their C++ source is not public (inferred from code search). The older engine source repo cactus-compute/engine is under a custom non-OSI licence (free only for personal, non-commercial and small organisations under $2M). Building from that source would break Scumble's MIT/Apache/BSD/OFL rule. Using the Apache-2.0 prebuilt binaries would not. Shipping a binary whose source is not public inside a GPL-3.0 app is a policy question, not a licence clash (inferred).",
+   "licence_weights": "Apache-2.0 per the HF model card of Cactus-Compute/mirage (cardData.license apache-2.0, tag license:apache-2.0). The blog states no licence. Training data is not disclosed anywhere (only COCO images and VQAv2 questions named as evaluation examples).",
+   "weights_where": "HF Cactus-Compute/mirage, ungated: mirage.cact (21,611,043 bytes, the 2-bit Cactus Quants archive the engine loads, sha256 4249a0f7515272ff76b9414bec17d7e7daf84b15b66c7fb4f17fce1e66f9f237) and mirage.safetensors (216,370,504 bytes, fp32, 583 tensors, 54.08M params with Flax-style names), plus config.json. The Python package pins revision 76c1e9e53381aca8fc3843c636216c96ff220122. The engine is in HF Cactus-Compute/cactus releases/4.0.0 (revision 1a028f5a..., manifest with SHA-256). No ONNX, GGUF, CoreML or MLX file exists for Mirage.",
+   "runtimes": "Only the Cactus engine (4.0.0) runs Mirage, reading the .cact archive. Ways in:\n(a) the Python package cactus-compute via ctypes over libcactus (win_amd64 wheel holds libcactus.dll).\n(b) the native runner cactus.exe and the static libcactus.a + cactus.h for windows-x86_64 and windows-arm64 (built against libc++).\n(c) wasm: cactus.js + cactus.wasm for 'Browser and Node.js', and a WASI component.\n(d) Linux, macOS, Android, iOS and other native targets.\nThere is no PyTorch or ONNX Runtime path. The JAX reference is internal. The safetensors could be used for a port, but no model code is published.\nHardware: CPU on Windows, Linux and wasm (no CUDA, DirectML or WebGPU anywhere, inferred). The vendor's numbers cover a Samsung S26 NPU and CPU. A third-party report shows a heavy slowdown when the engine does not have every core: no thread-count setting, a spin-barrier thread pool suspected.\nFor Scumble the plausible routes are the wasm build in a Node worker or utility process (single-threaded, inferred), or libcactus.dll through FFI or a small N-API addon. ONNX Runtime with DirectML or CUDA is not available without a reverse-engineered port.",
+   "quality_speed": "Parameters: 51.3M (blog). The safetensors counts 54.08M, or 51.52M without the multi-token-prediction block. The 2-bit archive is 21.6 MB (fp32 216 MB). Input is a 512 px letterboxed canvas. Masks come from 128x128 prototypes, so roughly 1/4 of the 512 canvas; at 15k px that is about 117 px per cell before upsampling (inferred). Polygon modes drop holes.\n\nVendor speed: 74 ms on a Samsung Galaxy S26 NPU and 107 ms on its CPU (image size not stated), and a 77.5 ms warm median on an unnamed CPU. Third party (issue #188): 120-170 ms per 1080p frame on 16 Apple M cores, 19.2 s with 6 cores, 146.8 s with 2, 56-72 s on a 6x Cortex-A55 camera; peak RSS about 134 MB.\n\nQuality: no published benchmark against SAM2, SAM3, YOLO, Florence or others. No COCO box or mask AP, no OCR accuracy. Only a 256-question VQAv2 sample through Qwen3-0.6B (33.1 without the trace, 31.3 with it). No independent quality evaluation found.\n\nCompared with SAM2 and SAM3: SAM2 is promptable by points and boxes and SAM3 by text concepts, at higher mask resolution (general knowledge, inferred). Mirage is neither. It lists and names what it detects, with coarse masks.",
+   "open_questions": [
+    "How good are its masks and its object naming on real photos and at 15k? No AP or IoU numbers exist. A local test on the user's own pictures would settle it, not done here.",
+    "Can extract() with an 'x-source' box-reference field pick one detected object by a text question such as 'the red cup'? That would be a text-to-box route ahead of SAM2. Not documented.",
+    "What does 'keywords' do for vision (favoured names, as for speech)? Not documented.",
+    "Speed on a Windows desktop CPU, natively and in the single-threaded wasm build inside Electron, while ComfyUI and Scumble's own workers keep cores busy (issue #188's thread-pool slowdown, no thread setting).",
+    "Does the 4.0.0 Windows engine use any GPU or NPU? Nothing published says so. Where does the S26 NPU path come from?",
+    "Will Cactus publish the 4.0.0 engine source or the Mirage JAX model code? Without them an ONNX port means reverse engineering, and parity can only be checked against the closed binary.",
+    "Is a binary-only (Apache-2.0) engine acceptable under Scumble's GPL-3.0 policy, or should it be downloaded on demand like the helper models? The user decides.",
+    "What does 'seg_loss': 0.0 in config.json mean for the mask head's training? Likely irrelevant, unexplained.",
+    "The engine sometimes emits invalid JSON (bare nan in score fields) according to the HF demo Space: does 4.0.1 fix it?",
+    "Training data and its licences are not disclosed."
+   ],
+   "urls": [
+    "https://cactuscompute.com/blog/mirage",
+    "https://cactuscompute.com/blog/instance-segmentation",
+    "https://cactuscompute.com/blog/structured-perception",
+    "https://cactuscompute.com/blog/cact-format",
+    "https://cactuscompute.com/blog/needle-supported-devices",
+    "https://cactuscompute.com/blog/needle-python-docs",
+    "https://huggingface.co/Cactus-Compute/mirage",
+    "https://huggingface.co/api/models/Cactus-Compute/mirage?blobs=true",
+    "https://huggingface.co/Cactus-Compute/mirage/raw/main/config.json",
+    "https://huggingface.co/Cactus-Compute/mirage/discussions",
+    "https://huggingface.co/Cactus-Compute/cactus",
+    "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/windows-x86_64/cactus.h",
+    "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/wasm/cactus.js",
+    "https://huggingface.co/spaces/hugging-apps/mirage-vision",
+    "https://github.com/cactus-compute/cactus",
+    "https://github.com/cactus-compute/cactus/blob/main/llms.txt",
+    "https://github.com/cactus-compute/cactus/pull/186",
+    "https://github.com/cactus-compute/cactus/pull/187",
+    "https://github.com/cactus-compute/cactus/issues/188",
+    "https://github.com/cactus-compute/engine/blob/main/LICENSE",
+    "https://pypi.org/project/cactus-compute/",
+    "https://decart.ai/publications/mirage",
+    "https://arxiv.org/pdf/2506.08900",
+    "https://huggingface.co/MonolithFoundation/Mirage-12B",
+    "https://arxiv.org/html/2603.21687v1"
+   ]
+  },
+  {
+   "what": "Mirage is a 51.3M-parameter on-device vision model from Cactus Compute, Inc. (a YC company). The authors are H. Ndubuaku, K. Mosoyan, J. Mroz, P. Sandhu, J. H. Lee, S. Kumar and R. Shemet. The blog post is dated 2026-11-06, and the weights went up on Hugging Face on 2026-11-05/06. You give it one RGB image, with no point, box or text prompt for segmentation, and one call returns a structured JSON record: a scene description, up to 64 detected objects with free-text names from its language decoder (not a fixed class list), attributes, boxes on a 0-1000 scale, scores and instance masks, plus OCR text lines (up to 32 regions), relations, events, a short reasoning trace, and 'forms' (pick from supplied enum labels, bounded counts, short text, a box linked to a chosen object). Detection is CenterNet-style and proposal-based, and the language decoder only names proposals that already exist. Masks are YOLACT-style: 32 shared prototypes on a 128x128 grid for a letterboxed 512x512 canvas, combined per object and cropped to its box. Output formats are largest (default), polygons, merged and bitmap (uncompressed RLE). It does no matting and no video tracking. It is therefore an automatic 'detect + name + coarse-mask + OCR' model, not a promptable segmenter like SAM2/SAM3. For Scumble it could only be an add-on (named object list, offline 'select by name', OCR, boxes fed to SAM2 as box prompts); it cannot replace point-prompted SAM2.",
+   "facts": [
+    {
+     "fact": "Released 2026-11-06 by Cactus Compute; 51.3M parameters; about 22 MB with 2-bit Cactus Quants (deployment file 21.6 MB); 74 ms end to end on a Samsung Galaxy S26 NPU, 107 ms on its CPU (image size and sections not stated)",
+     "source": "https://cactuscompute.com/blog/mirage",
+     "inferred": false
+    },
+    {
+     "fact": "Outputs: scene (setting, lighting, surface, background), objects with names, 0-1000 boxes, attributes and masks (outline / pieces / bitmap), OCR lines with boxes and scores from a CTC reader, relations, events, decisions/forms, a reasoning trace. Languages en, de, fr, es, it, nl, pl",
+     "source": "https://cactuscompute.com/blog/mirage",
+     "inferred": false
+    },
+    {
+     "fact": "No point, box or text prompt input for segmentation is described; object names come from the language model, not a fixed detector class list",
+     "source": "https://cactuscompute.com/blog/mirage",
+     "inferred": false
+    },
+    {
+     "fact": "Architecture: 512 px canvas, conv stem in 5 stages, a 16x16 grid (256 cells), 16 HConvGLU body blocks, 12 GQA attention blocks with 4 register tokens and gated level memory, an 8-layer Simple Attention decoder with Hadamard MLPs, engram lookups and 4 mHC lanes, detection and mask heads, a CTC OCR reader, JSON assembly. Most matrices 2-bit, embedding and mHC 4-bit, HConvGLU bands FP16",
+     "source": "https://cactuscompute.com/blog/mirage",
+     "inferred": false
+    },
+    {
+     "fact": "Masks: YOLACT-style, 32 shared prototype maps on a 128x128 grid (one cell per 4 canvas pixels) from a letterboxed 512x512 canvas, detection grid 64x64 (stride 8), sigmoid, crop to the box, threshold 0.5; mask_format largest (default), polygons, merged, bitmap (uncompressed RLE); polygons via marching squares in 0-1000 coordinates, with no holes",
+     "source": "https://cactuscompute.com/blog/instance-segmentation",
+     "inferred": false
+    },
+    {
+     "fact": "Stated mask limitations: shared maps can lose thin structures (e.g. a pole), the 128x128 grid limits detail, tight boxes clip objects, polygon modes omit holes and 'merged' can bridge background, and the detection score does not measure mask quality. No mask AP, LVIS or IoU numbers are given. SAM is mentioned only as a contrast (SAM takes prompts, Mirage selects a proposed detection)",
+     "source": "https://cactuscompute.com/blog/instance-segmentation",
+     "inferred": false
+    },
+    {
+     "fact": "Detection: two CenterNet-style centre heatmaps (objects, text); proposals carry no category until the decoder names them; budget of 64 objects and 32 text regions; a missed proposal cannot be recovered. OCR crops from the original image at 48 px height, CTC greedy decoding",
+     "source": "https://cactuscompute.com/blog/structured-perception",
+     "inferred": false
+    },
+    {
+     "fact": "The only quantitative quality result is a VQA sample: 256 VQAv2 val questions on 128 COCO images, with Qwen3-0.6B reading Mirage's JSON. Question only 9.3, scene fields 28.1, record without trace 33.1, with trace 31.3, another image's record 22.2; by type (with trace) yes/no 61.3, number 21.4, other 13.2. Warm calls median 77.5 ms on CPU (hardware not named). No COCO box/mask AP, no OCR benchmark, no comparison with SAM/SAM2/SAM3/EfficientSAM/MobileSAM",
+     "source": "https://cactuscompute.com/blog/structured-perception",
+     "inferred": false
+    },
+    {
+     "fact": "HF model card: licence field apache-2.0 (metadata only, no LICENSE file in the model repo), pipeline_tag image-text-to-text, library cactus-compute, tags include object-detection, zero-shot-object-detection, image-segmentation; not gated",
+     "source": "https://huggingface.co/Cactus-Compute/mirage",
+     "inferred": false
+    },
+    {
+     "fact": "The apache-2.0 licence was added to the model card on 2026-11-06 18:48 (commit 416320e8 'Add the Apache 2.0 license and every Mirage task to the model card'), after the revision the Python client pins (76c1e9e5, 2026-11-05). The mirage.cact sha256 is the same in both",
+     "source": "https://huggingface.co/api/models/Cactus-Compute/mirage/commits/main",
+     "inferred": false
+    },
+    {
+     "fact": "Files: mirage.cact 21,611,043 bytes (sha256 4249a0f7515272ff76b9414bec17d7e7daf84b15b66c7fb4f17fce1e66f9f237), mirage.safetensors 216,370,504 bytes, config.json 1,430 bytes, README.md, assets/overview.png. No ONNX, GGUF, CoreML or TFLite",
+     "source": "https://huggingface.co/api/models/Cactus-Compute/mirage/tree/main?recursive=true",
+     "inferred": false
+    },
+    {
+     "fact": "mirage.safetensors is the fp32 checkpoint (config dtype float32; 216 MB / 51.3M params is about 4.2 bytes per parameter)",
+     "source": "https://huggingface.co/Cactus-Compute/mirage/raw/main/config.json",
+     "inferred": true
+    },
+    {
+     "fact": "config.json: canvas 512, stem [32,64,128,256,512], body_layers 16, hconv_kernel 65, attn_layers 12, dec_layers 8, dim 512, text vocab 8192, detections 64, regions 32, reads 8, stride 8, max_tokens 1536, training_step 1,100,000, seg_loss 0.0, cact_bits 2 (embedding 4, mhc 4)",
+     "source": "https://huggingface.co/Cactus-Compute/mirage/raw/main/config.json",
+     "inferred": false
+    },
+    {
+     "fact": "Code licence: GitHub cactus-compute/cactus is Apache-2.0 (LICENSE file, Apache 2.0 text). It holds only the Python client (ctypes wrapper cactus/agent/mirage.py, CLI, tests); no Mirage model or architecture code (no 'mirage'/'hconv' in cactus/model/*)",
+     "source": "https://github.com/cactus-compute/cactus",
+     "inferred": false
+    },
+    {
+     "fact": "The engine that runs Mirage (Cactus 4.0.0) ships as prebuilt binaries on HF Cactus-Compute/cactus (repo licence apache-2.0, an Apache LICENSE file in releases/4.0.0). Its manifest source_commit d6a669a5... exists in neither public repo (cactus-compute/cactus nor cactus-compute/engine)",
+     "source": "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/manifest.json",
+     "inferred": false
+    },
+    {
+     "fact": "The 4.0.0 engine source is not public; Mirage would be a binary-only dependency",
+     "source": "https://huggingface.co/Cactus-Compute/cactus",
+     "inferred": true
+    },
+    {
+     "fact": "The older C++ engine repo cactus-compute/engine (v2.2.2, now published as cactus-engine) has a custom non-OSS licence: free only for individuals (personal/educational/research/non-commercial), organisations with under $2M funding AND under $2M revenue, education and non-profits; everyone else needs a commercial licence",
+     "source": "https://github.com/cactus-compute/engine/blob/main/LICENSE",
+     "inferred": false
+    },
+    {
+     "fact": "Engine 4.0.0 platforms: macOS arm64, Linux x86-64/arm64/armv7/riscv64/mipsel, Windows x64 and ARM64 (cactus.exe, libcactus.a, cactus.h), Android, iOS, tvOS, watchOS, 'Browser and Node.js' wasm (cactus.js 63 KB + cactus.wasm 1.24 MB) and a WASI component. Python wheels contain the shared library (win_amd64 wheel 864 KB with libcactus.dll)",
+     "source": "https://huggingface.co/Cactus-Compute/cactus",
+     "inferred": false
+    },
+    {
+     "fact": "The wasm glue cactus.js exports _cactus_describe; the WASI component's WIT exports only load/init/complete/embed/reset (no describe, so no vision there)",
+     "source": "https://huggingface.co/Cactus-Compute/cactus/tree/main/releases/4.0.0/wasm",
+     "inferred": false
+    },
+    {
+     "fact": "PR #187 says validation covered 'native and WebAssembly inference with 2-bit Mirage, OCR, detection, segmentation'; PR #186 mentions 'Mirage JAX/C++ parity' (the JAX model is not public)",
+     "source": "https://github.com/cactus-compute/cactus/pull/187",
+     "inferred": false
+    },
+    {
+     "fact": "C ABI: cactus_load(bytes, n), cactus_models() (bit 4 = vision), cactus_describe(rgb, width, height, options_json, language, keywords, out, capacity), cactus_last_error(). One process-global model; calls serialized",
+     "source": "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/windows-x86_64/cactus.h",
+     "inferred": false
+    },
+    {
+     "fact": "Describe options: sections, fields, conf, text_conf, max_objects, max_text_lines, max_tokens, mask_format, nms, form; extract() takes ordered fields with enum, bounded integer, string or x-source box references",
+     "source": "https://github.com/cactus-compute/cactus/blob/main/llms.txt",
+     "inferred": false
+    },
+    {
+     "fact": "Third-party measurement (open issue #188): 1920x1080 frames, 120-170 ms per cactus_describe on a 16-core Apple M-series (arm64 Docker), peak RSS 134 MB. 19,211 ms with 6 cores and 146,756 ms with 2 cores; 56-72 s on a 6x Cortex-A55 camera. Blamed on the thread pool (hardware_concurrency, barrier waits); there is no thread-count setting. The static lib is built against libc++",
+     "source": "https://github.com/cactus-compute/cactus/issues/188",
+     "inferred": false
+    },
+    {
+     "fact": "The engine sometimes emits bare nan/-nan in detection score fields (invalid JSON); the HF Space works around it with a sanitizer. Space defaults: conf 0.5, text_conf 0.35, max_objects 20 (1-64), nms on, mask formats polygons/largest/merged",
+     "source": "https://huggingface.co/spaces/hugging-apps/mirage-vision/blob/main/app.py",
+     "inferred": false
+    },
+    {
+     "fact": "The Python package sends anonymous usage telemetry by default (event, anon id stored in ~/.cache/cactus/telemetry_id, version, OS, arch, Python version) to a Supabase endpoint; off with CACTUS_TELEMETRY=0, DO_NOT_TRACK or CI. It also re-downloads config.json on every weights fetch",
+     "source": "https://github.com/cactus-compute/cactus/blob/main/cactus/_telemetry.py",
+     "inferred": false
+    },
+    {
+     "fact": "Python client: pip cactus-compute 4.0.1 (Apache-2.0, 2026-11-05), dependencies huggingface_hub and Pillow; it downloads the engine wheel and mirage.cact from HF pinned by commit and sha256; CACTUS_LIB_PATH / CACTUS_MIRAGE_WEIGHTS for offline use",
+     "source": "https://github.com/cactus-compute/cactus/blob/main/cactus/agent/fetch.py",
+     "inferred": false
+    },
+    {
+     "fact": ".cact format: a little-endian, memory-mapped single file with a 196-byte header and 44-byte directory records, documented with a Python parser; CQ2 = 2.125 bits per weight, CQ4 = 4.125; activations int8 (W2A8). No converter to or from ONNX/GGUF is mentioned",
+     "source": "https://cactuscompute.com/blog/cact-format",
+     "inferred": false
+    },
+    {
+     "fact": "Training data, teacher models and any distillation for Mirage are not described in any of the posts. Cactus's earlier Needle was reported as distilled from Gemini 3.1 Flash Lite",
+     "source": "https://rits.shanghai.nyu.edu/ai/cactus-releases-needle-a-26m-distilled-model-for-on-device-tool-calling",
+     "inferred": false
+    },
+    {
+     "fact": "Scumble's in-app SAM2 already takes a box prompt (electron/main/onnx/sam2.js predict(emb, points, box), box corners as labels 2/3), so Mirage's named boxes could feed SAM2 for full-resolution masks",
+     "source": "F:\\canvas\\.claude\\worktrees\\corridorkey\\electron\\main\\onnx\\sam2.js",
+     "inferred": true
+    },
+    {
+     "fact": "No third-party coverage or independent benchmark of Mirage was found by web search (released one day earlier)",
+     "source": "web search 2026-11-07",
+     "inferred": false
+    }
+   ],
+   "licence_code": "Python client (GitHub cactus-compute/cactus, PyPI cactus-compute 4.0.1): Apache-2.0, with the full Apache 2.0 text in its LICENSE file. The native engine 4.0.0 that actually runs Mirage is binary-only on HF Cactus-Compute/cactus. That repo's licence field is apache-2.0 and an Apache LICENSE file ships in releases/4.0.0, but the build's source commit is in no public repo. Trap: the older C++ engine repo cactus-compute/engine (v2.2.2) has a custom licence that is not open source: free only for individuals for non-commercial use, organisations under $2M funding and $2M revenue, education and non-profits; everyone else needs a commercial licence. It is not the Mirage engine, but it shows the engine's licensing has not been permissive in the past. On paper, Apache-2.0 is GPL-3.0-compatible and fits Scumble's MIT/Apache/BSD/OFL rule. In practice the app would carry a closed-source binary.",
+   "licence_weights": "HF model card metadata license: apache-2.0. There is no LICENSE file in the Cactus-Compute/mirage repo, and the field was only added on 2026-11-06 18:48 (commit 416320e8), after the revision the client pins (76c1e9e5); the .cact bytes are unchanged. The blog post itself states no licence. Training data and teacher models are not disclosed, so where the weights come from is unknown.",
+   "weights_where": "HF repo Cactus-Compute/mirage (not gated): mirage.cact 21,611,043 bytes, the deployment file in Cactus's own .cact format (CQ2 2-bit for most matrices, 4-bit embedding and mHC, FP16 HConvGLU bands; sha256 4249a0f7515272ff76b9414bec17d7e7daf84b15b66c7fb4f17fce1e66f9f237). mirage.safetensors 216,370,504 bytes (by inference the fp32 checkpoint, since config dtype is float32). config.json 1,430 bytes. No ONNX, GGUF, CoreML or TFLite. The safetensors cannot be run without the architecture code, and that code (JAX, per PR #186) is not public.",
+   "runtimes": "Only the Cactus 4.0.0 engine (closed binaries, C ABI cactus_load / cactus_describe). Builds exist for Windows x64 and ARM64 (cactus.exe, static libcactus.a built against libc++, cactus.h; libcactus.dll inside the win_amd64 Python wheel), Linux, macOS, Android, iOS, tvOS and watchOS. There is also a 'Browser and Node.js' wasm build (cactus.js + cactus.wasm, 1.24 MB) that exports _cactus_describe, and PR #187 says WebAssembly Mirage inference was validated. The WASI component has no describe. A Python wrapper (ctypes) exists. There is no PyTorch, ONNX, CoreML or GGUF path. Hardware: CPU everywhere; a Samsung Galaxy S26 NPU is named for the 74 ms figure (which NPU is not said); no GPU, DirectML or CUDA path is documented. The thread pool cannot be configured and slows badly when cores are shared (issue #188). Options for Scumble (inferred): the wasm build in a worker or utility process (no native addon), or libcactus.dll from the wheel through an FFI. CPU only on Windows.",
+   "quality_speed": "Size: 51.3M parameters, 21.6 MB at 2 bits, 512 px input canvas, masks on a 128x128 grid (YOLACT prototypes, 32 of them), up to 64 objects and 32 text regions. Speed: 74 ms on a Galaxy S26 NPU and 107 ms on its CPU (blog, end to end, image size not stated). 77.5 ms median warm on CPU (hardware not named). Third party (issue #188, 1920x1080): 120-170 ms on a 16-core Apple M-series, 134 MB peak RSS, but 19.2 s with 6 cores and 146.8 s with 2 cores (thread-pool contention). No Windows x64 numbers. Quality: no detection, segmentation or OCR benchmark at all (no COCO AP, mask AP, mIoU), and no comparison of any kind with SAM2, SAM3, EfficientSAM, MobileSAM or EdgeTAM. The only number is a VQAv2 sample with Qwen3-0.6B reading the JSON: 31.3 with trace, 33.1 without, 22.2 with a mismatched image, 9.3 question only. Masks are shown only as one qualitative COCO example (image 231049).",
+   "open_questions": [
+    "Mask quality against Scumble's SAM2 (and SAM3 through ComfyUI) on real pictures: no AP or IoU is published, so we would have to measure it ourselves. At 128x128 for a 512 canvas, one mask cell covers about 8 px of a 1k picture and about 117 px of a 15k one (inferred), so refinement (a SAM2 box prompt, edge snap) looks necessary",
+    "Speed on Windows x64 CPU, and in the wasm build inside Electron (single-threaded? SIMD?). Contention with Scumble's own worker pool, given issue #188's thread-pool slowdown and the missing thread-count setting",
+    "Can detection be steered by text (keywords, the zero-shot-object-detection tag), or are names only given to proposals after detection? Can extract() with an x-source box field return the box and mask of 'the red cup'?",
+    "Small objects in large pictures: everything is letterboxed to 512 px with a 64-object budget. Does tiling work, and is it supported?",
+    "Is the closed-source 4.0.0 engine really Apache-2.0, given that the earlier engine repo had a restrictive licence? Will its source be published? Is a binary-only dependency acceptable for Scumble (the user's call)?",
+    "Weights: is the apache-2.0 metadata (added 2026-11-06, no LICENSE file) binding? What training data and teacher models were used (Needle was distilled from Gemini)? Ask Cactus (founders@cactuscompute.com)",
+    "What does seg_loss 0.0 in config.json mean (a mask head trained earlier and then frozen?)",
+    "Does the native engine send telemetry, as the Python package does? Is the nan-in-JSON quirk fixed in a later engine?",
+    "The mask's exact JSON shape per format (the bitmap RLE layout, the polygon ring order), and the bbox order (x0,y0,x1,y1 per the Space, unconfirmed by Cactus)",
+    "Hosting: may Scumble redistribute mirage.cact and the engine binary, or must users download them from HF (Scumble's existing helper-download path)?"
+   ],
+   "urls": [
+    "https://cactuscompute.com/blog/mirage",
+    "https://cactuscompute.com/blog/instance-segmentation",
+    "https://cactuscompute.com/blog/structured-perception",
+    "https://cactuscompute.com/blog/hconvglu",
+    "https://cactuscompute.com/blog/cact-format",
+    "https://cactuscompute.com/blog/needle-python-docs",
+    "https://cactuscompute.com/blog/needle-supported-devices",
+    "https://huggingface.co/Cactus-Compute/mirage",
+    "https://huggingface.co/Cactus-Compute/mirage/raw/main/config.json",
+    "https://huggingface.co/api/models/Cactus-Compute/mirage/tree/main?recursive=true",
+    "https://huggingface.co/api/models/Cactus-Compute/mirage/commits/main",
+    "https://huggingface.co/Cactus-Compute/cactus",
+    "https://huggingface.co/Cactus-Compute/cactus/tree/main/releases/4.0.0",
+    "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/manifest.json",
+    "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/windows-x86_64/cactus.h",
+    "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/wasm-component/cactus.wit",
+    "https://huggingface.co/spaces/hugging-apps/mirage-vision",
+    "https://github.com/cactus-compute/cactus",
+    "https://github.com/cactus-compute/cactus/blob/main/LICENSE",
+    "https://github.com/cactus-compute/cactus/blob/main/cactus/agent/mirage.py",
+    "https://github.com/cactus-compute/cactus/blob/main/cactus/agent/fetch.py",
+    "https://github.com/cactus-compute/cactus/blob/main/cactus/_telemetry.py",
+    "https://github.com/cactus-compute/cactus/blob/main/llms.txt",
+    "https://github.com/cactus-compute/cactus/issues/188",
+    "https://github.com/cactus-compute/cactus/pull/186",
+    "https://github.com/cactus-compute/cactus/pull/187",
+    "https://github.com/cactus-compute/engine",
+    "https://github.com/cactus-compute/engine/blob/main/LICENSE",
+    "https://pypi.org/project/cactus-compute/",
+    "https://arxiv.org/abs/1904.02689",
+    "https://arxiv.org/abs/1904.07850",
+    "https://rits.shanghai.nyu.edu/ai/cactus-releases-needle-a-26m-distilled-model-for-on-device-tool-calling"
+   ]
+  }
+ ],
+ "fit": {
+  "verdict": "yes with conditions: zuerst ein Spike, gebaut wird erst danach. Mirage kann ein zusätzlicher Helfer neben SAM2 und SAM3 werden, aber keiner von beiden lässt sich damit ersetzen. Bedingungen: (1) Ein Spike mit dem wasm-Build auf den Bildern des Users zeigt brauchbare Namen und eine Laufzeit von wenigen Sekunden oder weniger auf der CPU. (2) Der User akzeptiert eine Engine, deren Quellcode nicht öffentlich ist (Apache-2.0-getaggtes Binary), als optionalen Download, nicht im Bundle. (3) Die Masken von Mirage werden über SAM2 als Box-Prompt verfeinert, sie landen nicht roh als Auswahl.",
+  "summary": "Mirage (Cactus Compute, veröffentlicht 2026-11-06, 51,3M Parameter, 21,6 MB als 2-Bit-.cact) nimmt nur ein RGB-Bild entgegen und gibt ein JSON zurück: Szene, bis zu 64 Objekte mit frei formulierten Namen und Attributen, Boxen auf 0-1000, grobe Instanzmasken, OCR-Zeilen, Relationen. Es nimmt weder Punkt- noch Box- noch Text-Prompts für die Segmentierung an. Die Signatur von cactus_describe in cactus.h hat kein solches Argument, das habe ich selbst gelesen. Für den Klick und die Box-Auswahl bringt es deshalb nichts, und SAM2 bleibt nötig. Was es wirklich dazubringt: Namen für Objekte, eine Auswahl per Name ganz ohne ComfyUI (heute braucht Auswahl per Text immer ComfyUI), Keep-Boxen mit echten Beschreibungen für die Box-Prompts von FLUX 3 und Ideogram (PLAN_BOXES §11 schreibt heute nur „object k“), OCR-Zeilen zum Auswählen von Schrift und einen Szenen-Datensatz für Assistent und MCP. Zum Freistellen trägt es nichts bei, es macht kein Matting. Ein ONNX-Export ist nicht vorhanden, und der Modellcode ist nicht veröffentlicht (JAX, nur intern). Ausführen lässt es sich nur mit Cactus' eigener Engine 4.0.0: geschlossene Binaries mit Apache-2.0-Tag, dazu ein wasm-Build für „Browser and Node.js“. Dessen Glue habe ich gelesen: keine pthreads, kein SharedArrayBuffer, kein WebGPU, keine fest eingetragene Remote-URL, und _cactus_describe wird exportiert. Der Weg mit dem geringsten Risiko ist dieser wasm-Build in einem Utility-Prozess nach dem Muster von LaMa, mit dem .cact und den Engine-Dateien als gepinntem Download samt sha256. Die Gewichte stehen laut Model-Card-Metadaten unter apache-2.0. Eine LICENSE-Datei liegt nicht im Repo, der Eintrag kam erst 2026-11-06 18:48 dazu, und woher die Trainingsdaten stammen, ist nicht offengelegt. Zur Qualität gibt es keine einzige Zahl: kein Box- oder Masken-AP, kein OCR-Benchmark, kein Vergleich mit SAM. Die Masken liegen auf einem 128er-Raster über der langen Seite eines auf 512 px letterboxed Bildes und sind schon binär. SAM2 liefert in Scumble 256²-Logits, die bilinear hochskaliert werden. Mirage ist also gröber, das ist abgeleitet. Für Windows x64 gibt es keine Geschwindigkeitswerte. Ein externer Bericht (Issue #188) zeigt, dass die native Engine massiv langsamer wird, sobald sie sich die Kerne teilen muss, und eine Thread-Einstellung gibt es nicht. Die Empfehlung ist deshalb ein Spike von etwa 0,5 bis 1 Sitzung ohne App-Code: im Scratchpad, mit dem Download erst nach dem Ja des Users. Erst danach wird über den Bau entschieden, der etwa 4-6 Sitzungen braucht (abgeleitet). Wenn 0.1.52 nicht warten soll, gehört Mirage ins Update danach.",
+  "adds": [
+   "Objekt-Karte (Tool O, Hover, host.findObjects): Heute liefert der SAM2-Automask unbenannte Segmente, gemessen 1,2 s warm und 4,2 s kalt auf DML, auf der CPU etwa 24 s (HELPERS.md). Mirage würde Namen und Attribute pro Objekt liefern, etwa „Tasse, rot“ für Hover und Statuszeile, laut Hersteller in etwa 0,1 s auf der CPU. Diese Zahl ist auf Windows nicht gemessen und stammt von einem Telefon bzw. einer unbenannten CPU. Möglich wäre auch eine schnelle Karte nur auf der CPU, wo keine GPU da ist, zum Beispiel unter Linux ohne CUDA-EP. Grenzen: höchstens 64 Objekte, grobe Masken, und fehlende Proposals kann man nicht zurückholen. Den feinen Automask von SAM2 ersetzt das nicht, es legt Namen darauf oder liefert pro Objekt eine Box als Prompt für SAM2.",
+   "Punktauswahl (Klick, Box ziehen, MCP select_point): bringt nichts. Mirage hat keinen Punkt- oder Box-Eingang. Höchstens indirekt: man wählt ein benanntes Objekt, und dessen Box geht als Prompt an SAM2 (sam2.js predict(emb, points, box), Ecken mit den Labels 2/3).",
+   "Auswahl per Text (segmentByText, MCP select_by_text): Heute geht das nur über ComfyUI (SAM3 über comfyui-rmbg, GroundingDINO+SAM, SAM3 core). Neu wäre ein Backend in der App, das offline läuft: describe, dann die Objektnamen mit dem Text oder dem LLM-Begriff abgleichen (Sprachen en, de, fr, es, it, nl, pl), die Boxen als Box-Prompts an SAM2, die Masken vereinigen. Grenze: Gefunden wird nur, was der Detektor selbst vorgeschlagen hat. Ein offenes Konzept wie bei SAM3 ist das nicht. Ob keywords oder extract() mit einem x-source-Feld die Detektion per Text steuern, ist nicht dokumentiert.",
+   "Freistellen (cutoutLayer, BiRefNet/RMBG): bringt nichts. Mirage macht kein Matting, die Masken sind binär und grob.",
+   "Über die vier Funktionen hinaus: benannte Keep-Boxen für das Box-Prompting von FLUX 3 und Ideogram 4 (PLAN_BOXES §11 S4 beschreibt heute „object k“ und nennt als Lücke ausdrücklich „a vision model that lists the main elements with their boxes“).",
+   "Darüber hinaus: OCR-Zeilen mit Box und Score (bis 32 Bereiche, CTC-Leser). Damit ginge „Schrift auswählen“, um Beschriftungen zu entfernen oder zu ersetzen. Die Genauigkeit ist ungemessen.",
+   "Darüber hinaus: ein Szenen- und Objekt-Datensatz für den Assistenten und MCP-Agenten ohne eigenes Sehen, etwa ein Befehl wie describe_image."
+  ],
+  "routes": [
+   {
+    "route": "A: Cactus-Engine als wasm-Build (cactus.js 63 KB + cactus.wasm 1,24 MB) in einem Electron-Utility-Prozess, Muster von lama.js / lama_process.js. Empfohlen, falls der Spike besteht.",
+    "work": "Registry-Einträge für mirage.cact, cactus.wasm und cactus.js, gepinnt auf HF-Commits mit Größe und sha256. Die Gewichte auf den Commit pinnen, der die Lizenz trägt (heute ist main bei 3d03cee8, nicht beim Client-Pin 76c1e9e5). Ein neuer kind, damit Mirage nicht im SAM2-Picker auftaucht. mirage_process.js: Glue laden oder einen eigenen minimalen Loader für die Imports schreiben, dann cactus_load(.cact) und cactus_describe(rgb, w, h, options). Das JSON von nan/-nan säubern, Boxen von 0-1000 und RLE oder Polygone auf Bildkoordinaten umrechnen, das Letterboxing beachten. Ein IPC-Job helpers:describe mit preload. Host-Mitglieder in den EditorHost-Typedef und als „not here“ in die js/host.js der Node (sonst schlägt build_node.py --check fehl). Ein Backend mit inApp:true in availableSegmentBackends, das per Name auswählt und über SAM2-Box-Prompts und selectLogits landet. Namen im Hover. Optional benannte Keep-Boxen und eine OCR-Auswahl. Zeilen in Settings › Helpers, Docs (HELPERS.md, MANUAL.md:119, CHANGELOG), Gate-Schritte über den stubbaren helperCall. Etwa 4-6 Sitzungen nach dem Spike (abgeleitet).",
+    "licence": "Keine neue npm-Abhängigkeit. Die Engine-Dateien tragen Apache-2.0 (LICENSE in releases/4.0.0), damit ist die Regel MIT/Apache/BSD/OFL auf dem Papier erfüllt, der Quellcode ist aber nicht öffentlich. Gewichte: apache-2.0 nur in den cardData, ohne LICENSE-Datei. Beides als Download des Users, nie im Repo oder im Bundle, so wie die Helfer-Modelle (HELPERS.md, PLAN_CORRIDORKEY.md:377-378). Abgeleitet, keine Rechtsberatung: Lägen sie im Bundle, könnten Weiterverteiler der GPL-3.0-App (Forks, Flathub, das aus Quellen baut) für das Binary keinen Corresponding Source liefern. Deshalb nur als Download.",
+    "risk": "Mittel. Die Geschwindigkeit ist unbekannt (wasm ohne Threads, SIMD unbekannt). Die Glue ist JS von Dritten und läuft im Utility-Prozess mit Node-Rechten, wenn wir keinen eigenen Loader schreiben. Die Engine ist einen Tag alt (ungültiges JSON mit nan). Die Qualität ist ungemessen. Ein Absturz oder Hänger trifft nur den Utility-Prozess."
+   },
+   {
+    "route": "B: natives libcactus.dll (aus dem win_amd64-Wheel) oder libcactus.a + cactus.h per FFI in einem Utility-Prozess",
+    "work": "Wie A, aber mit FFI (koffi, MIT) oder einem eigenen N-API-Addon (gegen libc++ gebaut, Toolchain nötig). Unter Linux die .so dazu. Ein Thread-Limit gibt es nicht, daher Messungen mit ausgelastetem Scumble-Pool und laufendem ComfyUI. Nur, wenn A zu langsam ist. Etwa 1 Sitzung zusätzlich zu A (abgeleitet).",
+    "licence": "Engine wie in A (Apache-2.0-Tag, Quellen fehlen). koffi wäre eine neue App-Abhängigkeit unter MIT und damit erlaubt. Niemals aus cactus-compute/engine bauen: Das Repo hat eine eigene, nicht OSI-konforme Lizenz, frei nur für Privatleute, nicht-kommerzielle Nutzung und Organisationen unter 2 Mio. USD.",
+    "risk": "Hoch. Issue #188: 19 s bei 6 Kernen, 147 s bei 2, wenn sich die Engine die Kerne teilt. Scumble hat seinen eigenen Worker-Pool, und ComfyUI läuft parallel. Natives Fremdbinary im Prozess."
+   },
+   {
+    "route": "C: ComfyUI-Helfer wie SAM3 (eine Node, die das Python-Paket cactus-compute aufruft)",
+    "work": "Ein Node-Pack für Mirage gibt es nicht. Meine Websuche fand keines, die Recherche fand gar keine Berichterstattung. Man müsste eines schreiben, zum Beispiel als zusätzliche Node im Inpaint-Canvas-Pack. Dazu gehören pip cactus-compute auf der Produktionsmaschine des Users (nur mit seinem Wort), CACTUS_TELEMETRY=0, ein neuer SEGMENT_BACKENDS-Eintrag und eine Rückgabe über InpaintCanvasMaskOut. Etwa 2-3 Sitzungen (abgeleitet).",
+    "licence": "In der App nichts Neues. Das pip-Paket steht unter Apache-2.0, schickt aber standardmäßig Telemetrie. Die Engine wie in A. Das Node-Pack steht unter GPL-3.0.",
+    "risk": "Hoch bei wenig Nutzen. Der Kern von Mirage ist ein kleines Offline-Modell für die CPU, und dafür ist die App der richtige Ort. Text-Auswahl über ComfyUI deckt SAM3 schon besser ab. Comfy Cloud nimmt keine Custom Nodes. Der YARA-Scan der Registry hat das Pack schon einmal markiert. Nicht empfohlen."
+   },
+   {
+    "route": "D: in der App über ONNX wie SAM2 (eigener Port)",
+    "work": "Es gibt keinen ONNX-Export und keinen öffentlichen Modellcode. Man müsste die Architektur aus den 583 Flax-Tensoren der safetensors nachbauen: HConvGLU mit Kernel 65, GQA mit Registern, Engram-Lookups, mHC-Lanes, Dense-Head, CTC-Leser und einen grammatikgeführten JSON-Decoder. Die Parität ließe sich nur gegen die geschlossene Engine prüfen. Das kleinste sinnvolle Stück wären Encoder und Dense-Head, also Boxen und Masken ohne Namen, und damit fiele der Hauptnutzen weg. Wochen statt Sitzungen (abgeleitet).",
+    "licence": "Apache-2.0 in den cardData würde eine eigene Konvertierung samt Hosting mit NOTICE erlauben, anders als bei CorridorKey. ORT steht schon unter MIT in der App. Woher die Trainingsdaten kommen, ist offen.",
+    "risk": "Sehr hoch, Reverse Engineering. Nicht für das kommende Update."
+   }
+  ],
+  "blockers": [
+   "Nicht promptbar: Es gibt keinen Eingang für Punkte, Boxen oder einen Text, der die Segmentierung steuert (cactus.h, Blog). Punktauswahl, Box-Auswahl und Konzept-Text-Auswahl kann es nicht übernehmen. Als Zusatz wie gewünscht ist das kein Hindernis, als Ersatz schon.",
+   "Nur Cactus' eigene Engine kann Mirage ausführen. Ein ONNX, GGUF oder CoreML gibt es nicht, und der JAX-Code ist nicht öffentlich. Der ONNX-Weg wie bei SAM2 ist damit blockiert. Jeder gangbare Weg setzt ein Binary ein, dessen Quellcode nicht öffentlich ist.",
+   "Qualität völlig unbelegt: kein Masken- oder Box-AP, kein OCR-Benchmark, kein Vergleich mit SAM2 oder SAM3, keine unabhängige Bewertung (veröffentlicht vor einem Tag). Die Masken liegen auf einem 128er-Raster, sind binär, haben in den Polygon-Modi keine Löcher, und dünne Strukturen gehen laut den Autoren verloren.",
+   "Die Engine ist unreif: nan/-nan im JSON (Workaround im HF-Space), Thread-Pool-Konkurrenz ohne Einstellung (Issue #188), keine Zahlen für Windows x64.",
+   "Neues Muster für Scumble: Heute lädt der Downloader nur Modelldaten herunter. Das ORT-Binary liegt im Bundle. Eine ausführbare Komponente (wasm und Glue-JS oder eine DLL) als Download des Users wäre neu und braucht die Entscheidung des Users.",
+   "Die Herkunft der Gewichte ist unklar. Die Lizenz steht nur in den Metadaten, eine LICENSE-Datei fehlt. Die Trainingsdaten und eine mögliche Destillation sind nicht offengelegt (Needle, ein anderes Cactus-Modell, wurde laut Berichten aus Gemini destilliert)."
+  ],
+  "to_settle": [
+   "Geschwindigkeit und Brauchbarkeit auf Windows x64. Am billigsten mit einem Spike-Skript im Scratchpad: Node lädt cactus.js und cactus.wasm samt mirage.cact (etwa 23 MB von HF, gepinnt und per sha256 geprüft, erst nach dem Ja des User) und ruft describe kalt und warm auf 10-20 Bildern des Users auf, eines davon ein 15k-Bild verkleinert. Boxen, Masken und Namen kommen als PNG-Overlay für das Urteil des Users nach Augenmaß. Daneben läuft der SAM2-Automask auf denselben Bildern über tools/helpers_test.js. Etwa 0,5-1 Sitzung, ohne App-Code.",
+   "Ob wasm in Node überhaupt und schnell genug läuft (ein Thread, SIMD unbekannt): derselbe Spike. Die Glue enthält weder pthreads noch SharedArrayBuffer, das ist gelesen.",
+   "Netzwerkstille der Engine: im Spike mit blockiertem Netz bzw. mitgeschnittenen ausgehenden Sockets laufen lassen. Die wasm-Glue enthält keine Remote-URL (gelesen), die native DLL ist ungeprüft.",
+   "Ob keywords oder extract() mit einem x-source-Boxfeld ein Objekt per Text auswählen („die rote Tasse“): im selben Spike drei Aufrufe. Sonst bei Cactus fragen.",
+   "Reihenfolge der bbox (x0,y0,x1,y1 nur laut HF-Space), RLE-Layout (spaltenweise, Originalgröße laut Blog) und Polygonformat: im Spike das JSON lesen.",
+   "Häufigkeit von ungültigem JSON (nan): im Spike zählen. Für die App ist ein Sanitizer ohnehin nötig.",
+   "Masken direkt von Mirage oder über SAM2 mit Box-Prompt: im Spike für 5 Objekte beides als Overlay. Zur Erinnerung: SAM2 liefert in Scumble 256²-Logits auf einem auf 1024² gestauchten Bild (sam2.js:12, 18), Mirage 128 Zellen über die lange Seite, binär.",
+   "Thread-Konkurrenz (nur Weg B): nur messen, falls wasm zu langsam ist, mit beschäftigtem px-Pool.",
+   "Lizenz und Rechte: eine Mail an Cactus (founders@cactuscompute.com, auf der Recherche-Seite genannt, nicht von mir verifiziert). Fragen: eine LICENSE-Datei im Model-Repo, Pläne für die Quellen der Engine 4.0.0, Weitergabe von wasm und .cact durch eine GPL-App, Trainingsdaten und Teacher. Eine Nachricht verschickt nur der User.",
+   "Grundsatzfrage für den User: Engine ohne öffentlichen Quellcode als optionaler Download ja oder nein? Und wie verträgt sich das mit der geplanten Flathub-Neueinreichung?"
+  ],
+  "size": "Spike: 0,5-1 Sitzung, nur im Scratchpad, ohne App-Code, Download erst nach dem Ja des Users. Bau über Weg A nach bestandenem Spike, etwa 4-6 Sitzungen (abgeleitet). M1: Registry, Downloader-Einträge und Utility-Prozess (etwa 1). M2: Host-Mitglieder, Namen im Hover, Verfeinerung per SAM2-Box (etwa 1-1,5). M3: Auswahl per Name als Backend in der App, Text der MCP-Beschreibung, Gate-Schritt (etwa 1). M4 optional: benannte Keep-Boxen (PLAN_BOXES S4), OCR-Auswahl, describe für Assistent und MCP (etwa 1-1,5). M5: Docs, Review, Gates auf tiles nach Normal-Tier (etwa 0,5-1). Zusammen grob 3-5 Arbeitstage (abgeleitet). Weg B kostet etwa +1 Sitzung, Weg C 2-3, Weg D Wochen.",
+  "questions": [
+   "Akzeptierst du für Mirage eine Engine ohne öffentlichen Quellcode (Binaries von Cactus mit Apache-2.0-Tag) als optionalen Download, nicht im Installer? Oder erst, wenn Cactus den Quellcode veröffentlicht?",
+   "Darf ich für den Spike die Engine (cactus.js und cactus.wasm, etwa 1,3 MB) und mirage.cact (21,6 MB) von Hugging Face in den Scratchpad laden, gepinnt und per sha256 geprüft, und sie auf 10-20 deiner Bilder laufen lassen?",
+   "Welche Funktionen sind dir wichtig: Auswahl per Name ohne ComfyUI, Namen beim Hover im Objekt-Tool, benannte Keep-Boxen für FLUX 3 und Ideogram, Schrift auswählen per OCR, eine Bildbeschreibung für Assistent und MCP?",
+   "Soll Mirage noch in 0.1.52 (corridorkey ist schon groß: CorridorKey, LoRAs, GPT-Image 2.6, P-H3) oder ins Update danach?",
+   "Willst du Cactus anschreiben (LICENSE-Datei, Quellen der Engine, Weitergabe durch eine GPL-App, Trainingsdaten)? Ich kann den Text entwerfen, verschicken musst du.",
+   "Flathub: Ist eine heruntergeladene geschlossene Engine für dich mit der geplanten Neueinreichung vereinbar, oder soll Mirage unter Linux und Flathub ausbleiben?"
+  ],
+  "key_claims": [
+   {
+    "claim": "cactus_describe nimmt nur rgb, width, height, options, language, keywords und einen Ausgabepuffer. Es gibt kein Punkt- oder Box-Argument, keine Thread- oder GPU-Funktion, und es wird ein prozessweites Modell über cactus_load geladen.",
+    "source": "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/windows-x86_64/cactus.h"
+   },
+   {
+    "claim": "Die Gewichte stehen unter Lizenz apache-2.0, aber nur in den cardData. Nicht gated, angelegt 2026-11-05, main aktuell bei 3d03cee8. Dateien: mirage.cact, mirage.safetensors, config.json, README und ein Bild, kein ONNX.",
+    "source": "https://huggingface.co/api/models/Cactus-Compute/mirage"
+   },
+   {
+    "claim": "Masken im YOLACT-Stil: 32 geteilte Prototypen auf 128x128 für ein letterboxed 512er-Bild, Schwelle 0,5, an die Box beschnitten. Polygone ohne Löcher, laut den Autoren begrenzte Detailtiefe, keine Masken-Genauigkeitszahlen.",
+    "source": "https://cactuscompute.com/blog/instance-segmentation"
+   },
+   {
+    "claim": "Der Blog nennt als Eingabe nur Bilder, keine Lizenz, keine Maskenzahlen und keinen SAM-Vergleich. Die Zahlen sind 74 ms auf der NPU und 107 ms auf der CPU eines Galaxy S26, und die Demo läuft lokal im Browser.",
+    "source": "https://cactuscompute.com/blog/mirage"
+   },
+   {
+    "claim": "Die wasm-Glue exportiert _cactus_describe und _cactus_load. Sie enthält keine pthreads, keinen SharedArrayBuffer, kein WebGPU und keine fest eingetragene Remote-URL. Das wasm wird über einen relativen Pfad geladen.",
+    "source": "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/wasm/cactus.js"
+   },
+   {
+    "claim": "Die native Engine wird sehr langsam, wenn sie sich die Kerne teilt: 120-170 ms bei 16 Kernen, 19,2 s bei 6, 146,8 s bei 2. Eine Einstellung für die Thread-Zahl gibt es nicht.",
+    "source": "https://github.com/cactus-compute/cactus/issues/188"
+   },
+   {
+    "claim": "Das ältere Quell-Repo der Engine steht unter einer eigenen, nicht OSI-konformen Lizenz, frei nur für Privatleute, nicht-kommerzielle Nutzung und kleine Organisationen. Die Quellen von 4.0.0 sind nicht öffentlich.",
+    "source": "https://github.com/cactus-compute/engine/blob/main/LICENSE"
+   },
+   {
+    "claim": "Die engine gibt manchmal nan/-nan als nackte Literale in den Score-Feldern aus. Der HF-Space säubert das JSON deshalb, bevor er es parst.",
+    "source": "https://huggingface.co/spaces/hugging-apps/mirage-vision/blob/main/app.py"
+   },
+   {
+    "claim": "Scumbles SAM2 nimmt einen Box-Prompt (Ecken als Labels 2/3) und liefert 256²-Masken-Logits auf einem auf 1024² gestauchten Bild. Damit können Mirage-Boxen über SAM2 verfeinert werden.",
+    "source": "F:\\canvas\\.claude\\worktrees\\corridorkey\\electron\\main\\onnx\\sam2.js:8-18,97-99"
+   },
+   {
+    "claim": "Heute laufen alle Helfer außer LaMa im Hauptprozess und blockieren dort IPC, MCP und Autosave. Länger laufende Modelle gehören in einen Utility-Prozess wie bei LaMa. Ein Worker-Thread ist ausgeschlossen (0xC0000409).",
+    "source": "F:\\canvas\\.claude\\worktrees\\corridorkey\\docs\\HELPERS.md:241-254"
+   },
+   {
+    "claim": "Die Keep-Boxen aus den Objekten (PLAN_BOXES S4) haben heute nur schwache Beschreibungen („object k“). Der Plan nennt als Quelle ausdrücklich ein Vision-Modell, das Elemente mit Boxen auflistet.",
+    "source": "F:\\canvas\\.claude\\worktrees\\corridorkey\\docs\\PLAN_BOXES.md:570-587"
+   },
+   {
+    "claim": "In der App sind nur Abhängigkeiten unter MIT, Apache, BSD oder OFL erlaubt. Heruntergeladene Gewichte sind ein Download des Users unter ihrer eigenen Lizenz, nie im Repo oder im Bundle.",
+    "source": "F:\\canvas\\CLAUDE.md (Licence) and F:\\canvas\\.claude\\worktrees\\corridorkey\\docs\\PLAN_CORRIDORKEY.md:377-393"
+   }
+  ]
+ },
+ "critic": {
+  "claims": [
+   {
+    "claim": "cactus_describe nimmt nur rgb, width, height, options, language, keywords und einen Ausgabepuffer. Es gibt kein Punkt- oder Box-Argument, keine Thread- oder GPU-Funktion, und das Modell wird prozessweit über cactus_load geladen.",
+    "status": "confirmed",
+    "seen": "https://huggingface.co/Cactus-Compute/cactus/raw/main/releases/4.0.0/windows-x86_64/cactus.h hat die Signatur cactus_describe(const unsigned char* rgb, int width, int height, const char* options, const char* language, const char* keywords, char* out, int out_capacity). Es gibt keine Thread-, GPU- oder Prompt-Funktion. Die wasm-cactus.h ist identisch (Diff leer, sha256 facefca1… laut manifest.json). Der Python-Wrapper hält ein globales `_loaded` und serialisiert alle Aufrufe über einen Lock: https://github.com/cactus-compute/cactus/blob/main/cactus/agent/mirage.py"
+   },
+   {
+    "claim": "Die Gewichte stehen unter apache-2.0, aber nur in den cardData. Das Repo ist nicht gated, wurde 2026-11-05 angelegt, main steht bei 3d03cee8. Es enthält mirage.cact, mirage.safetensors, config.json, eine README und ein Bild, aber kein ONNX.",
+    "status": "confirmed",
+    "seen": "https://huggingface.co/api/models/Cactus-Compute/mirage: gated false, createdAt 2026-11-05T19:01:53Z, sha 3d03cee8…, cardData.license apache-2.0. siblings: .gitattributes, README.md, assets/overview.png, config.json, mirage.cact (21.611.043 B), mirage.safetensors (216.370.504 B). Kein LICENSE, kein ONNX. Den Lizenz-Eintrag brachte Commit 416320e8 um 2026-11-06T18:48:00Z (https://huggingface.co/api/models/Cactus-Compute/mirage/commits/main). Ergänzung: Der LFS-sha256 von mirage.cact auf main (4249a0f7…) ist gleich dem MODEL_SHA256 des Client-Pins 76c1e9e5 (https://github.com/cactus-compute/cactus/blob/main/cactus/agent/fetch.py, Zeilen 21/23). Die Bytes sind also identisch, und der Pin auf den Lizenz-Commit ändert nur die Metadaten."
+   },
+   {
+    "claim": "Die Masken entstehen im YOLACT-Stil: 32 geteilte Prototypen auf 128x128 für ein letterboxed 512er-Bild, Schwelle 0,5, an die Box beschnitten. Polygone haben keine Löcher, die Detailtiefe ist laut den Autoren begrenzt, Zahlen zur Maskengenauigkeit gibt es nicht.",
+    "status": "confirmed",
+    "seen": "https://cactuscompute.com/blog/instance-segmentation nennt 32 Prototypen zu je 128×128, Koeffizienten auf einem 64×64-Raster, einen letterboxed 512×512-Canvas, Schwelle 0,5, die Wahrscheinlichkeit außerhalb der Box auf null gesetzt, Polygon-Modi ohne Lochränder, ein 128er-Raster, das das Detail begrenzt, und keine AP- oder IoU-Werte. bitmap ist ein spaltenweises RLE in Originalgröße. Zu SAM gibt es nur einen qualitativen Satz (SAM nimmt Punkt-Prompts, Mirage wählt ein vorgeschlagenes Objekt)."
+   },
+   {
+    "claim": "Der Blog nennt als Eingabe nur Bilder, keine Lizenz, keine Maskenzahlen und keinen SAM-Vergleich. Er nennt 74 ms auf der NPU und 107 ms auf der CPU eines Galaxy S26, und die Demo läuft lokal im Browser.",
+    "status": "confirmed",
+    "seen": "https://cactuscompute.com/blog/mirage: 2026-11-06, 51,3M Parameter, etwa 22 MB (21,6 MB), 74 ms NPU / 107 ms CPU auf dem Galaxy S26, eine Sandbox, die lokal im Browser läuft, keine Lizenzangabe, keine Detektions-, OCR- oder Maskenbenchmarks, kein Wort zu Trainingsdaten. Eine Einschränkung zur Aussage „keine einzige Zahl“: Es gibt genau eine Proxy-Qualitätszahl, 31,3/100 auf 256 VQAv2-Fragen über Qwen3-0.6B."
+   },
+   {
+    "claim": "Die wasm-Glue exportiert _cactus_describe und _cactus_load. Sie enthält keine pthreads, keinen SharedArrayBuffer, kein WebGPU und keine fest eingetragene Remote-URL. Das wasm wird über einen relativen Pfad geladen.",
+    "status": "confirmed",
+    "seen": "Ich habe cactus.js als Text gelesen, nicht ausgeführt (https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a…/releases/4.0.0/wasm/cactus.js). Der sha256 bb61bcf0… stimmt mit manifest.json überein. Exportiert werden 12 Funktionen _cactus_*, darunter _cactus_describe und _cactus_load. 0 Treffer für pthread, SharedArrayBuffer, Atomics, navigator.gpu und webgpu, keine http(s)-URL, keine Treffer für eval oder new Function. locateFile(\"cactus.wasm\") hängt den Namen an scriptDirectory. Neu gefunden: Unter Node lädt die Glue require(\"node:fs\") und require(\"node:crypto\"). getHeapMax liegt bei 2 GB. Es gibt nur 16 Wasm-Imports (fd_*, syscall_*, environ, clock, resize_heap, abort). Statisch gelesen habe ich auch cactus.wasm (sha256 4198b307…): Der Speicher ist nicht geteilt, maximal 32.768 Seiten, und 124 Local-Gruppen sind vom Typ v128. Daraus schließe ich, dass SIMD128 genutzt wird. „SIMD unbekannt“ ist damit erledigt."
+   },
+   {
+    "claim": "Die native Engine wird sehr langsam, wenn sie sich die Kerne teilen muss: 120-170 ms bei 16 Kernen, 19,2 s bei 6, 146,8 s bei 2. Eine Einstellung für die Thread-Zahl gibt es nicht.",
+    "status": "confirmed",
+    "seen": "https://github.com/cactus-compute/cactus/issues/188, offen, angelegt 2026-11-06 von oneshot2001: 120-170 ms bei 16 Kernen, 19.211 ms bei 6, 146.756 ms bei 2, 1920×1080, statisches linux-arm64-libcactus.a. Der Autor fand kein Env-Var und keine Option. Einschränkung: Gemessen wurde in arm64-Docker und auf einer Kamera, nicht unter Windows x64. Dass das für die Windows-Engine genauso gilt, ist abgeleitet."
+   },
+   {
+    "claim": "Das ältere Quell-Repo der Engine steht unter einer eigenen, nicht OSI-konformen Lizenz, frei nur für Privatleute, nicht-kommerzielle Nutzung und kleine Organisationen. Die Quellen von 4.0.0 sind nicht öffentlich.",
+    "status": "confirmed",
+    "seen": "https://github.com/cactus-compute/engine/blob/main/LICENSE: Die Erlaubnis gilt nur für Einzelpersonen bei persönlicher, Bildungs-, Forschungs- oder nicht-kommerzieller Nutzung, für Organisationen unter 2 Mio. USD Finanzierung UND unter 2 Mio. USD Umsatz, für Bildungseinrichtungen und für 501(c)(3)-Organisationen. Alle anderen brauchen eine kommerzielle Lizenz. Das Repo steht auf v2.2.2 (CACTUS_VERSION). Eine Code-Suche in der Org findet cactus_describe nur in den Python-Wrappern. Der source_commit d6a669a5… aus manifest.json existiert weder in cactus-compute/cactus noch in cactus-compute/engine (HTTP 422). Die Release-Workflows von cactus-compute/cactus laden nur vorgebaute Binaries."
+   },
+   {
+    "claim": "Die Engine gibt manchmal nan/-nan als nackte Literale in den Score-Feldern aus. Der HF-Space säubert das JSON deshalb, bevor er es parst.",
+    "status": "confirmed",
+    "seen": "https://huggingface.co/spaces/hugging-apps/mirage-vision/blob/main/app.py, Zeilen 26-37: Ein Kommentar sagt, cactus_describe gebe manchmal nackte nan/-nan aus. Die Regex -?(?:nan|inf) macht daraus null. Die bbox ist dort x0,y0,x1,y1 auf 0-1000 (Zeilen 118-124), Polygonpunkte ebenfalls auf 0-1000 (Zeile 154), und der Regler für max objects reicht von 1 bis 64. Hinweis: Der Space gehört 'hugging-apps', nicht Cactus. Das nan-Verhalten ist also eine Beobachtung Dritter."
+   },
+   {
+    "claim": "Scumbles SAM2 nimmt einen Box-Prompt (Ecken als Labels 2/3) und liefert 256²-Masken-Logits auf einem auf 1024² gestauchten Bild. Damit können Mirage-Boxen über SAM2 verfeinert werden.",
+    "status": "confirmed",
+    "seen": "F:\\canvas\\.claude\\worktrees\\corridorkey\\electron\\main\\onnx\\sam2.js:8-18: point_labels 2/3 sind Box-Ecken, masks [B,3,256,256], das Bild wird auf 1024 gestaucht, LOW=256. Zeilen 97-99: predict(emb, points, box) hängt label 2/3 an. Der Box-Pfad existiert in der App schon: index.js:235 übergibt req.box, host.js selectBox (~6538-6550) ruft segmentLogits(editor, [], box) und dann selectLogits({box}) auf."
+   },
+   {
+    "claim": "Heute laufen alle Helfer außer LaMa im Hauptprozess und blockieren dort IPC, MCP und Autosave. Länger laufende Modelle gehören in einen Utility-Prozess wie bei LaMa. Ein Worker-Thread ist ausgeschlossen (0xC0000409).",
+    "status": "confirmed",
+    "seen": "F:\\canvas\\.claude\\worktrees\\corridorkey\\docs\\HELPERS.md:241-254 sagt „Every model but LaMa runs on the main process's thread“, nennt IPC, ComfyUI-Events, MCP und Autosave als das, was wartet, und „Not a worker thread“ mit 0xC0000409. Einschränkung: Dieser Ausschluss gilt für synchrone native ORT-Aufrufe. Wasm in einem Worker kann V8 unterbrechen, also trägt das Argument für Mirage-wasm nicht (abgeleitet)."
+   },
+   {
+    "claim": "Die Keep-Boxen aus den Objekten (PLAN_BOXES S4) haben heute nur schwache Beschreibungen („object k“). Der Plan nennt als Quelle ausdrücklich ein Vision-Modell, das Elemente mit Boxen auflistet.",
+    "status": "confirmed",
+    "seen": "F:\\canvas\\.claude\\worktrees\\corridorkey\\docs\\PLAN_BOXES.md:570-587: Zeile 572 sagt „a vision model that lists the main elements with their boxes“, Zeile 584 nennt desc: \"object k\" und „The descriptions are weak without a vision model“."
+   },
+   {
+    "claim": "In der App sind nur Abhängigkeiten unter MIT, Apache, BSD oder OFL erlaubt. Heruntergeladene Gewichte sind ein Download des Users unter ihrer eigenen Lizenz, nie im Repo oder im Bundle.",
+    "status": "confirmed",
+    "seen": "F:\\canvas\\CLAUDE.md, Abschnitt Licence: „Only MIT/Apache/BSD/OFL dependencies in the app“. F:\\canvas\\.claude\\worktrees\\corridorkey\\docs\\PLAN_CORRIDORKEY.md:377-385: „nothing of it in the installer, MSIX, zip or asar“, „the weights are a user download … (never in the repo or the bundle)“."
+   },
+   {
+    "claim": "Weitere Aussagen aus dem Text: höchstens 64 Objekte und 32 Textbereiche, ein CTC-Leser, Telemetrie im pip-Paket per Default, auf Windows eine DLL nur im Wheel, „Modellcode nicht veröffentlicht“, Needle aus Gemini destilliert.",
+    "status": "confirmed",
+    "seen": "https://huggingface.co/Cactus-Compute/mirage/raw/main/config.json: \"detections\": 64, \"regions\": 32. Der Blog nennt einen „CTC reader“ auf „Detected text crops“. https://github.com/cactus-compute/cactus/blob/main/cactus/_telemetry.py ist an, solange nicht CACTUS_TELEMETRY=0, DO_NOT_TRACK oder CI gesetzt ist, und sendet an einen Supabase-Endpunkt. releases/4.0.0/windows-x86_64 enthält nur cactus.exe, libcactus.a und cactus.h. Die DLL steckt laut fetch.py lib_name() und der HF-README („These contain the shared library“) im win_amd64-Wheel. Dass der Mirage-Modellcode nicht öffentlich ist, sehe ich daran, dass cactus/model/architecture.py Mirage nicht erwähnt. JAX als Trainingscode ist unverifiziert, ebenso die 583 Flax-Tensoren (ich habe den safetensors-Header nicht gelesen). Needle aus Gemini destilliert: https://hn.svelte.dev/item/48111896 und https://gigazine.net/gsc_news/en/20260514-needle-tool-calling--distilled-gemini/."
+   },
+   {
+    "claim": "„Die Engine ist einen Tag alt.“",
+    "status": "wrong",
+    "seen": "Engine 4.0.0 wurde am 2026-11-05T19:36Z veröffentlicht (HF-Commit 1a028f5a „Publish Cactus engine 4.0.0“, https://huggingface.co/api/models/Cactus-Compute/cactus/commits/main). Am 2026-11-07 ist sie also zwei Tage alt. Am Urteil „unreif“ ändert das nichts."
+   },
+   {
+    "claim": "„Zur Qualität gibt es keine einzige Zahl.“",
+    "status": "wrong",
+    "seen": "Für Box, Maske und OCR stimmt das. Der Mirage-Blog nennt aber eine Proxy-Zahl: 31,3/100 auf 256 VQAv2-Fragen (128 Bilder) über Qwen3-0.6B, ohne Trace 33,1. Das ist kein Segmentierungsmaß und bestätigt eher, dass Brauchbarkeit offen ist."
+   },
+   {
+    "claim": "Der Ausschnitt in config.json zum Masken-Training (implizit: der Maskenkopf ist trainiert und nutzbar).",
+    "status": "unverifiable",
+    "seen": "config.json enthält \"seg_loss\": 0.0 beim training_step 1.100.000. Ob der Maskenkopf in einer früheren Phase trainiert wurde, ist nicht dokumentiert. Abgeleitet: ein weiterer Grund, die Masken im Spike gegen SAM2 zu prüfen und Cactus danach zu fragen."
+   }
+  ],
+  "verdict_follows": true,
+  "missing": [
+   "Ein Weg fehlt: der wasm-Build in einem Web Worker des Renderers mit einem eigenen kleinen Loader, also ohne Node-Rechte und ohne fremdes JS. Die Glue braucht nur 16 Imports (wasmImports in cactus.js), die CSP von renderer/index.html erlaubt schon 'wasm-unsafe-eval', und renderer/editor/inpaint_worker.js:644-646 kompiliert schon wasm aus Bytes. Wasm in einem Worker lässt sich abbrechen, das Verbot der Worker-Threads in HELPERS.md betrifft nur native ORT-Aufrufe (abgeleitet). Das ist risikoärmer als der Utility-Prozess, in dem die Glue mit node:fs und node:crypto läuft. script-src erlaubt kein blob:, die heruntergeladene Glue selbst ginge im Renderer also nicht. Das spricht ohnehin für den eigenen Loader.",
+   "SIMD ist erledigt: Die statische Lektüre von cactus.wasm zeigt 124 v128-Local-Gruppen, also SIMD128 (abgeleitet). Der Speicher ist nicht geteilt, also single-threaded, die Obergrenze liegt bei 2 GB (wasm32). Das RGB sollte deshalb vor dem Aufruf verkleinert werden, etwa auf 1024 px an der langen Seite, weil die Engine ohnehin auf 512 letterboxed (Blog). Das bitmap-RLE kommt dann in dieser Größe statt in 15k.",
+   "Ausgeschlossene Wege, die der Text nicht nennt: Die WASI-Komponente (cactus.wit) exportiert nur load, init, complete, embed und reset, ohne describe, kann Mirage also nicht ausführen. Der native Runner cactus.exe hat laut https://cactuscompute.com/blog/needle-supported-devices kein dokumentiertes Bild-Flag, ein Kindprozess über die CLI ist also nicht belegt. Im Windows-Ordner liegt nur ein statisches libcactus.a, gebaut gegen libc++, eine DLL gibt es nur im Python-Wheel.",
+   "Microsoft Store: Policy 10.2.2 verbietet, die beschriebene Funktion durch dynamisch eingebundenen Code zu erweitern („should not … download a remote script and subsequently execute that script“, https://learn.microsoft.com/en-us/windows/apps/publish/store-policies). Eine heruntergeladene wasm-Engine samt Glue in der Store-Kopie muss im Listing beschrieben sein oder dort abgeschaltet werden. Für Weg B kommt dazu: Eine unsignierte, heruntergeladene DLL kann Smart App Control unter Windows 11 blockieren (abgeleitet, nicht geprüft).",
+   "Die Namen kommen aus dem Sprachdecoder (Blog: „Names come from the language model“). Ob sie mit language übersetzt werden, ist nicht dokumentiert. Für den Abgleich mit deutschem Auswahltext im Spike prüfen. Halluzinierte Namen sind möglich, der Blog sagt selbst, der Trace „deserves the same scrutiny“.",
+   "„seg_loss“: 0.0 in config.json ist ungeklärt. Das gehört in die Mail an Cactus und in den Masken-Vergleich im Spike.",
+   "Der HF-Space mit dem nan-Workaround gehört 'hugging-apps', nicht Cactus. Das nan-Verhalten ist also Beobachtung Dritter. Der Sanitizer bleibt trotzdem sinnvoll.",
+   "Bei der Engine-Datei auf manifest.json pinnen: ENGINE_REVISION 1a028f5a, MANIFEST_SHA256 im Client, die Dateihashes stehen im Manifest. Die mirage.cact-Bytes sind beim Client-Pin und auf main gleich (4249a0f7…)."
+  ],
+  "corrected_verdict": "Ja, mit Bedingungen, und zuerst ein Spike. Mirage kann ein zusätzlicher Helfer neben SAM2 und SAM3 werden. Ersetzen kann es keinen von beiden, denn es lässt sich nicht über Punkt, Box oder Text steuern (cactus.h). Gegenüber der Bewertung ändert sich Folgendes. (a) Der empfohlene Weg ist der wasm-Build mit einem eigenen kleinen Loader (16 Imports) in einem Web Worker des Renderers, ohne Node-Rechte, CSP und Worker-Muster gibt es schon. Der Utility-Prozess mit der fremden Glue ist nur die Alternative. Weg B (DLL aus dem Wheel) bleibt die Notlösung. Die WASI-Komponente und die CLI fallen weg (kein describe bzw. kein Bild-Flag). (b) SIMD ist vorhanden (SIMD128 laut statischer Lektüre des Binaries), Threads gibt es keine, die Obergrenze liegt bei 2 GB. Das Bild wird vorher verkleinert. Ob das Ganze schnell genug ist, entscheidet weiter der Spike. (c) Bedingung (2) wird erweitert: Der User akzeptiert eine Engine ohne öffentliche Quellen als optionalen Download. Zusätzlich muss geklärt sein, wie das mit Store-Policy 10.2.2 vereinbar ist (Store-Kopie: im Listing beschreiben oder abschalten) und mit Flathub. (d) Zur Qualität gibt es nur eine VQA-Proxy-Zahl (31,3/100), keine für Box, Maske oder OCR, und seg_loss 0.0 ist ungeklärt. Bedingung (3) bleibt deshalb Pflicht: Masken nur über SAM2 mit Box-Prompt verfeinern. Der Spike (0,5-1 Sitzung, Download erst nach dem Ja des Users) und der Bau (etwa 4-6 Sitzungen) bleiben so geschätzt. Dass Mirage ins Update nach 0.1.52 gehört, statt das schon große corridorkey-Release zu verlängern, bleibt die richtige Empfehlung."
+ }
+}

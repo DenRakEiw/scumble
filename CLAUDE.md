@@ -823,6 +823,15 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   Community License excludes the EU, the UK, South Korea and the US** (no use or display of the model or its outputs
   there without MiniMax's separate licence); the user knows and decided to go ahead ("achte nicht auf die license");
   the recipe, RECIPES.md and the manual carry one plain line on it. Research in `docs/research/p_h3_image_2026-11-06/`.
+- 53: **Mirage (Cactus Compute) as an add-on beside SAM2 / SAM3** (the user, 2026-11-07, for the coming update:
+  "add on nicht ersatz", https://cactuscompute.com/blog/mirage). Researched the same night, nothing downloaded or run:
+  `docs/research/mirage_2026-11-07/README.md`. A 51.3M model (21.6 MB `.cact`) that describes a picture in one call
+  (named objects with boxes and coarse 128-grid masks, OCR lines, a scene record), **not promptable** (no point, box or
+  text input), quality unmeasured, running only on Cactus's engine 4.0.0 (binaries tagged Apache-2.0, source not public;
+  a wasm build usable in a renderer worker). It adds selection by name without ComfyUI (its boxes refined by SAM2),
+  names on hover, named Keep boxes, OCR text selection; it replaces nothing. Recommended: a spike first (0.5-1 session,
+  the download on the user's yes), then route A (about 4-6 sessions, inferred), not in 0.1.52. Open: the README's six
+  questions for the user (a closed-source engine as a download, the Store's policy 10.2.2 and Flathub, the spike).
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
