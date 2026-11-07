@@ -3145,6 +3145,149 @@ ed.clearSelection();
 await run("remove_layer", { layer: layer.id, doc: window.__t });
 return out;
 """),
+    # item 58: the eyedropper's Size row (Point / 3 x 3 / 5 x 5, the eyedropper's alone, kept in localStorage). On a noise
+    # patch Point picks the pixel under the cursor and 3 x 3 / 5 x 5 the rounded mean of the box; at the picture's corner and
+    # edge only the pixels inside count; Alt+click with the paint brush follows the same Size; on the active layer each
+    # pixel counts by its alpha, and a box of transparent pixels picks nothing.
+    ("eyedropper_size_averages_a_box", """
+await run("new_canvas", { width: 64, height: 48, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const out = {};
+// the base: noise, every pixel its own opaque colour from a fixed sequence
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+const bx = base.getContext("2d");
+const img = bx.createImageData(W, H);
+let seed = 12345;
+const rnd = () => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 16) & 255; };
+for (let i = 0; i < img.data.length; i += 4) { img.data[i] = rnd(); img.data[i + 1] = rnd(); img.data[i + 2] = rnd(); img.data[i + 3] = 255; }
+bx.putImageData(img, 0, 0);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "noise.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const N = img.data;
+const hex = (r, g, b) => "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+// the expected pick: the box of n x n around (x, y), the part inside the picture, each pixel weighted by its alpha
+const mean = (d, x, y, n) => {
+    const r = (n - 1) / 2;
+    let sr = 0, sg = 0, sb = 0, sa = 0, px = 0;
+    for (let yy = Math.max(0, y - r); yy < Math.min(H, y + r + 1); yy++) for (let xx = Math.max(0, x - r); xx < Math.min(W, x + r + 1); xx++) {
+        const i = (yy * W + xx) * 4, a = d[i + 3];
+        sr += d[i] * a; sg += d[i + 1] * a; sb += d[i + 2] * a; sa += a; px++;
+    }
+    return { hex: sa ? hex(Math.round(sr / sa), Math.round(sg / sa), Math.round(sb / sa)) : null, px };
+};
+const keep = { fill: ed.fillOpts, size: ed.eyedropperSize, color: ed.color, tool: ed.tool };
+let stored = null;
+try { stored = localStorage.getItem("ipc.eyedropperSize"); } catch (_) { /* no storage */ }
+const sel = ed.eyedropperSizeSel;
+let L = null;
+try {
+    if (!sel) throw new Error("no Size select in the eyedropper's options");
+    // Point unless the profile kept another size
+    if (stored == null && ed.eyedropperSize !== 1) throw new Error("the eyedropper's Size starts at " + ed.eyedropperSize + ", not Point");
+    // the row shows for the eyedropper alone
+    const lab = sel.closest("label");
+    ed.setTool("bucket");
+    const shownBucket = !ed.optsBar.hidden && !lab.hidden;
+    ed.setTool("paint");
+    const shownPaint = !ed.optsBar.hidden && !lab.hidden;
+    ed.setTool("eyedropper");
+    const shown = !ed.optsBar.hidden && !lab.hidden;
+    out.row = { shown, shownBucket, shownPaint, options: Array.from(sel.options).map((o) => o.textContent) };
+    if (!shown || shownBucket || shownPaint || out.row.options.join("|") !== "Point|3 × 3|5 × 5") throw new Error("the Size row: " + JSON.stringify(out.row));
+    const setSize = (n) => {
+        sel.value = String(n); sel.dispatchEvent(new Event("change"));
+        if (ed.eyedropperSize !== n) throw new Error("the Size select set " + ed.eyedropperSize + " for " + n);
+        if (localStorage.getItem("ipc.eyedropperSize") !== String(n)) throw new Error("the Size " + n + " is not kept: " + localStorage.getItem("ipc.eyedropperSize"));
+    };
+    ed.fillOpts = { ...(keep.fill || {}), sample: "image" };
+    const pick = (x, y) => { ed.color = "#010203"; ed.pickColor(x + 0.5, y + 0.5); return { color: ed.color, status: ed.status }; };
+    const cx = 30, cy = 20, ci = (cy * W + cx) * 4;
+    const picks = {};
+    for (const n of [1, 3, 5]) {
+        setSize(n);
+        const p = pick(cx, cy), e = mean(N, cx, cy, n);
+        picks[n] = p.color;
+        if (p.color !== e.hex) throw new Error(n + " x " + n + " at the centre picked " + p.color + ", the box's mean is " + e.hex + " (" + p.status + ")");
+        if (n > 1 && !p.status.includes("the mean of " + (n * n) + " pixels")) throw new Error("the status of a " + n + " x " + n + " pick: " + p.status);
+    }
+    out.centre = picks;
+    if (picks[1] !== hex(N[ci], N[ci + 1], N[ci + 2])) throw new Error("Point picked " + picks[1] + ", not the pixel under the cursor");
+    if (picks[3] === picks[1] || picks[5] === picks[3]) throw new Error("the noise gave the same colour for two sizes: " + JSON.stringify(picks));
+    // the picture's corners and an edge: only the pixels inside count (a 5 x 5 at a corner is 3 x 3, at the left edge 3 x 5)
+    setSize(5);
+    // the kept Size is read back: a document opened now builds its option bar at 5 x 5
+    {
+        const d2 = await run("new_document");
+        try {
+            const e2 = ednow(d2.id);
+            out.readBack = { size: e2 && e2.eyedropperSize, sel: e2 && e2.eyedropperSizeSel && e2.eyedropperSizeSel.value };
+            if (!e2 || e2.eyedropperSize !== 5 || out.readBack.sel !== "5") throw new Error("a new document's eyedropper Size after 5 x 5 was kept: " + JSON.stringify(out.readBack));
+        } finally {
+            await run("close_document", { doc: d2.id, force: true });
+            host.shell.activate(ed);
+        }
+    }
+    out.edges = {};
+    for (const [x, y, px] of [[0, 0, 9], [W - 1, H - 1, 9], [0, cy, 15], [cx, H - 1, 15]]) {
+        const p = pick(x, y), e = mean(N, x, y, 5);
+        out.edges[x + "," + y] = p.color;
+        if (e.px !== px || p.color !== e.hex || !p.status.includes("the mean of " + px + " pixels")) throw new Error("5 x 5 at " + x + "," + y + ": " + JSON.stringify({ picked: p, want: e }));
+    }
+    // a click beside the picture picks at its edge, as Point did
+    {
+        const p = pick(-7, cy), e = mean(N, 0, cy, 5);
+        if (p.color !== e.hex) throw new Error("5 x 5 left of the picture picked " + p.color + ", the edge's box is " + e.hex);
+    }
+    // Alt+click with the paint brush follows the same Size
+    ed.setTool("paint");
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const send = (type, ix, iy, extra = {}) => ed.canvas.dispatchEvent(new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 581, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra)));
+    for (const n of [3, 1]) {
+        setSize(n);
+        ed.color = "#010203";
+        const undo0 = ed.undo.length;
+        send("pointerdown", cx + 0.5, cy + 0.5, { altKey: true }); send("pointerup", cx + 0.5, cy + 0.5, { altKey: true });
+        if (ed.color !== picks[n]) throw new Error("Alt+click with the brush at Size " + n + " picked " + ed.color + ", the eyedropper " + picks[n] + " (" + ed.status + ")");
+        if (ed.undo.length !== undo0) throw new Error("Alt+click with the brush painted (an undo step)");
+    }
+    out.altClick = true;
+    // the active layer alone: each pixel by its alpha. Around (10, 10): four red, one blue at alpha 51, four transparent;
+    // around (40, 30) nothing at all
+    const lc = document.createElement("canvas"); lc.width = W; lc.height = H;
+    const lx = lc.getContext("2d");
+    const li = lx.createImageData(W, H);
+    const put = (x, y, c) => li.data.set(c, (y * W + x) * 4);
+    for (const [x, y] of [[9, 9], [11, 9], [9, 11], [11, 11]]) put(x, y, [255, 0, 0, 255]);
+    put(10, 10, [0, 0, 255, 51]);
+    lx.putImageData(li, 0, 0);
+    L = ed.addLayer({ name: "Alpha", kind: "paint", px: ed.pixels.Layer.fromCanvas(lc), x: 0, y: 0, w: W, h: H, dirty: true });
+    ed.activeLayerId = L.id; ed.renderLayers();
+    ed.setTool("eyedropper");
+    ed.fillOpts = { ...(keep.fill || {}), sample: "layer" };
+    setSize(3);
+    const a3 = pick(10, 10), ea = mean(li.data, 10, 10, 3);
+    out.alpha = { picked: a3.color, want: ea.hex };
+    if (a3.color !== ea.hex || ea.hex !== "#f3000c") throw new Error("3 x 3 on the layer picked " + a3.color + ", the alpha-weighted mean is " + ea.hex + " (#f3000c by hand)");
+    setSize(1);
+    const a1 = pick(10, 10);
+    if (a1.color !== "#0000ff") throw new Error("Point on the half-transparent blue pixel picked " + a1.color);
+    setSize(5);
+    const t5 = pick(40, 30);
+    if (t5.color !== "#010203" || !/Transparent/.test(t5.status)) throw new Error("5 x 5 over transparent pixels: " + JSON.stringify(t5));
+    out.transparent = t5.status;
+} finally {
+    if (L) await run("remove_layer", { layer: L.id, doc: window.__t });
+    ed.fillOpts = keep.fill;
+    if (sel) { sel.value = String(keep.size || 1); sel.dispatchEvent(new Event("change")); }
+    try { if (stored == null) localStorage.removeItem("ipc.eyedropperSize"); else localStorage.setItem("ipc.eyedropperSize", stored); } catch (_) { /* no storage */ }
+    ed.color = keep.color;
+    ed.setTool(keep.tool || "select");
+}
+return out;
+"""),
     ("a_sampled_pass_matches_only_the_part_of_a_matched_layer_it_shows", """
 // C6 (b3): a sampled pass (the wand's and the bucket's fine boxes, a plugin's flatten with a box) matched the whole
 // colour-matched layer for a box of a few hundred pixels: a GPU pass and a readback of the layer's size per box. It

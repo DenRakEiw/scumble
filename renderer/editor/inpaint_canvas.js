@@ -2593,6 +2593,19 @@ class InpaintEditor {
         const sample = selectInput(["image", "layer"], "image", "What the fill looks at: the visible image (all layers) or the active layer alone");
         sample.addEventListener("change", () => { this.fillOpts.sample = sample.value; });
         row("bucket eyedropper wand", "Sample", sample);
+        // item 58: the eyedropper takes the pixel under the cursor or the mean of the 3 x 3 / 5 x 5 around it (pickColor;
+        // Alt+click with the paint brush too), kept like the pressure curve; Point unless the user chose otherwise
+        this.eyedropperSize = 1;
+        try { const n = +localStorage.getItem("ipc.eyedropperSize"); if (n === 3 || n === 5) this.eyedropperSize = n; } catch (_) { /* no storage */ }
+        const dsize = selectInput([{ value: "1", label: "Point" }, { value: "3", label: "3 × 3" }, { value: "5", label: "5 × 5" }], String(this.eyedropperSize),
+            "Size: the one pixel under the cursor, or the average of the 3 × 3 or 5 × 5 pixels around it, so grain or noise does not hand you a stray pixel's colour");
+        dsize.addEventListener("change", () => {
+            this.eyedropperSize = +dsize.value === 3 || +dsize.value === 5 ? +dsize.value : 1;
+            try { localStorage.setItem("ipc.eyedropperSize", String(this.eyedropperSize)); } catch (_) { /* ignore */ }
+            this.root.focus({ preventScroll: true });
+        });
+        this.eyedropperSizeSel = dsize;
+        row("eyedropper", "Size", dsize);
         const gtype = selectInput(["linear", "radial"], "linear", "Gradient shape");
         gtype.addEventListener("change", () => { this.gradientOpts.type = gtype.value; });
         row("gradient", "Type", gtype);
@@ -11670,17 +11683,29 @@ class InpaintEditor {
         return this.compositeCanvas();
     }
 
-    /** Eyedropper: the colour of the visible image under (ix, iy) becomes the paint colour. */
+    /**
+     * Eyedropper (the tool's click and Alt+click with the paint brush): the colour under (ix, iy) becomes the paint colour,
+     * from what the tool bar's Sample says (the visible image or the active layer alone). Its Size (item 58) takes the one
+     * pixel there or the mean of the 3 x 3 / 5 x 5 box around it: at the picture's edge only the pixels inside count, and
+     * each counts by its alpha (sum(c * a) / sum(a), the mean of the premultiplied colours un-premultiplied), so a
+     * transparent pixel adds nothing and a half-transparent one half; the box is "transparent" only when all of it is.
+     * Point is the same rule on one pixel, the colour as it was before the Size row.
+     */
     pickColor(ix, iy) {
         if (!this.width) return;
         const x = Math.max(0, Math.min(this.width - 1, Math.floor(ix))), y = Math.max(0, Math.min(this.height - 1, Math.floor(iy)));
-        // one pixel composited, not the whole image (0.6 s on a 15k document)
-        const d = this.sampleRegion(this.fillOpts && this.fillOpts.sample, [x, y, x + 1, y + 1], 1).getContext("2d").getImageData(0, 0, 1, 1).data;
-        if (d[3] === 0) { this.setStatus("Transparent here, nothing to pick."); return; }
-        const hex = rgbToHex(d[0], d[1], d[2]);
+        const r = this.eyedropperSize === 3 ? 1 : this.eyedropperSize === 5 ? 2 : 0;
+        const x0 = Math.max(0, x - r), y0 = Math.max(0, y - r), x1 = Math.min(this.width, x + r + 1), y1 = Math.min(this.height, y + r + 1);
+        // the box composited, not the whole image (0.6 s on a 15k document)
+        const d = this.sampleRegion(this.fillOpts && this.fillOpts.sample, [x0, y0, x1, y1], 1).getContext("2d").getImageData(0, 0, x1 - x0, y1 - y0).data;
+        let sr = 0, sg = 0, sb = 0, sa = 0;
+        for (let i = 0; i < d.length; i += 4) { const a = d[i + 3]; sr += d[i] * a; sg += d[i + 1] * a; sb += d[i + 2] * a; sa += a; }
+        if (sa === 0) { this.setStatus("Transparent here, nothing to pick."); return; }
+        const hex = rgbToHex(Math.round(sr / sa), Math.round(sg / sa), Math.round(sb / sa));
         this.color = hex;
         if (this.colorInput) this.colorInput.value = hex;
-        this.setStatus(`Colour ${hex} picked.`);
+        const n = (x1 - x0) * (y1 - y0);
+        this.setStatus(n > 1 ? `Colour ${hex} picked, the mean of ${n} pixels.` : `Colour ${hex} picked.`);
     }
 
     /** Bucket: fill the area of similar colour under (ix, iy) on the active layer, within the selection. */
