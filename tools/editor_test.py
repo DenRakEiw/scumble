@@ -2922,6 +2922,104 @@ ed.snapGuides = null;
 await run("remove_layer", { layer: L.id, doc: window.__t });
 return out;
 """),
+    ("move_and_scale_snap_to_other_layers", """
+// item 59: the transform tool snaps a dragged or scaled layer's edges and centre to the edges and centres of the other
+// shown layers too (within 8 screen px, the line drawn for what snapped); farther away, with Alt held, to a hidden layer
+// and to the dragged layers' own places it does not; the targets are collected once per drag
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+try {
+    await run("new_canvas", { width: 1000, height: 800, doc: d.id });
+    const mk = async (name, x, y, w, h) => { const L = ed.addPaintLayer(); L.name = name; await run("set_layer", { layer: L.id, x, y, w, h, doc: d.id }); return L.id; };
+    // T: x 250 / 340 / 430, y 210 / 270 / 330 (none within 8 px of the canvas's 0 / 500 / 1000 and 0 / 400 / 800)
+    const T = await mk("T", 250, 210, 180, 120), M = await mk("M", 600, 500, 100, 60), N = await mk("N", 750, 650, 50, 50);
+    const lay = (id) => ed.layers.find((l) => l.id === id);
+    const box = (id) => { const l = lay(id); return [l.x, l.y, l.w, l.h]; };
+    const place = (id, x, y, w, h) => run("set_layer", Object.assign({ layer: id, x, y, doc: d.id }, w ? { w, h } : {}));
+    const near = (a, b) => Math.abs(a - b) <= 1;
+    await run("set_active_layer", { layer: M, doc: d.id });
+    ed.setTool("transform");
+    ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false; ed.view.x = 20; ed.view.y = 20; ed.draw();
+    let pid = 5900;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, alt) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1, altKey: !!alt }, client(ix, iy)));
+    // a drag from a to b in four moves (Alt held on the moves when `alt`); the state is read before the release
+    const drag = (a, b, alt) => {
+        pid++;
+        ed.canvas.dispatchEvent(ev("pointerdown", a[0], a[1]));
+        let first = null;
+        for (let i = 1; i <= 4; i++) {
+            ed.canvas.dispatchEvent(ev("pointermove", a[0] + (b[0] - a[0]) * i / 4, a[1] + (b[1] - a[1]) * i / 4, alt));
+            if (i === 1) first = ed.pointer && ed.pointer.snapTo;
+        }
+        const p = ed.pointer;
+        const held = { kind: p && p.kind, guides: ed.snapGuides && { x: [...ed.snapGuides.x], y: [...ed.snapGuides.y] }, targets: p && p.snapTo, once: !!first && first === (p && p.snapTo) };
+        ed.canvas.dispatchEvent(ev("pointerup", b[0], b[1], alt));
+        held.after = ed.snapGuides;
+        return held;
+    };
+    const lines = (h) => JSON.stringify(h.guides);
+    // 1. M's left edge 4 px right of T's right edge: it snaps there, the line at 430, nothing on y (410 is 10 px off 400)
+    let h = drag([650, 530], [484, 380]);
+    out.edge = { box: box(M), guides: h.guides };
+    if (h.kind !== "move" || box(M)[0] !== 430 || !near(box(M)[1], 350)) throw new Error("the left edge did not snap to T's right edge: " + JSON.stringify(out.edge));
+    if (lines(h) !== JSON.stringify({ x: [430], y: [] })) throw new Error("the lines for the edge snap: " + lines(h));
+    if (!h.once || !h.targets.x.includes(430) || h.targets.x.length !== 9) throw new Error("the targets are not one list of the canvas's and the other two layers': " + JSON.stringify(h.targets));
+    if (h.after !== null) throw new Error("the lines outlived the release");
+    // 2. centres: M's centre 4 px right of T's centre on x and its middle 4 px below T's middle on y: both snap
+    await place(M, 600, 500);
+    h = drag([650, 530], [344, 274]);
+    out.centre = { box: box(M), guides: h.guides };
+    if (box(M)[0] !== 290 || box(M)[1] !== 240) throw new Error("the centres did not snap: " + JSON.stringify(out.centre));
+    if (lines(h) !== JSON.stringify({ x: [340], y: [270] })) throw new Error("the lines for the centre snap: " + lines(h));
+    // 3. 14 px from T's left edge: too far, no snap
+    await place(M, 600, 500);
+    h = drag([650, 530], [186, 630]);
+    out.far = { box: box(M), guides: h.guides };
+    if (!near(box(M)[0], 136) || !near(box(M)[1], 600) || h.guides) throw new Error("snapped from 14 px: " + JSON.stringify(out.far));
+    // 4. Alt held: the drag of 1. lands where the pointer put it
+    await place(M, 600, 500);
+    h = drag([650, 530], [484, 380], true);
+    out.alt = { box: box(M), guides: h.guides };
+    if (!near(box(M)[0], 434) || !near(box(M)[1], 350) || h.guides) throw new Error("Alt did not turn snapping off: " + JSON.stringify(out.alt));
+    // 5. a hidden layer is no target: the drag of 2. with T hidden stays where it went
+    await place(M, 600, 500);
+    await run("set_layer", { layer: T, visible: false, doc: d.id });
+    h = drag([650, 530], [344, 274]);
+    out.hidden = { box: box(M), guides: h.guides };
+    if (!near(box(M)[0], 294) || !near(box(M)[1], 244) || h.guides) throw new Error("snapped to a hidden layer: " + JSON.stringify(out.hidden));
+    await run("set_layer", { layer: T, visible: true, doc: d.id });
+    // 6. the dragged layer's own place is no target: a 3 px drag is not pulled back
+    await place(M, 600, 500);
+    h = drag([650, 530], [653, 532]);
+    out.own = { box: box(M), guides: h.guides };
+    if (!near(box(M)[0], 603) || !near(box(M)[1], 502) || h.guides) throw new Error("the drag was pulled back to its start: " + JSON.stringify(out.own));
+    // 7. M and N together: a 3 px drag is not pulled back to their places, and the box snaps to T
+    await place(M, 600, 500);
+    await run("set_active_layer", { layers: [M, N], doc: d.id });
+    h = drag([650, 580], [653, 582]);
+    out.group = { m: box(M), n: box(N), guides: h.guides };
+    if (!near(box(M)[0], 603) || !near(box(N)[0], 753) || h.guides) throw new Error("the group was pulled back: " + JSON.stringify(out.group));
+    if (h.targets.x.length !== 6) throw new Error("the group's own layers are targets: " + JSON.stringify(h.targets));
+    await place(M, 600, 500); await place(N, 750, 650);
+    h = drag([650, 580], [484, 430]);
+    out.groupT = { m: box(M), n: box(N), guides: h.guides };
+    if (box(M)[0] !== 430 || box(N)[0] !== 580 || lines(h) !== JSON.stringify({ x: [430], y: [] })) throw new Error("the group did not snap to T: " + JSON.stringify(out.groupT));
+    // 8. scale: M's west handle dragged to 4 px right of T's right edge snaps there; with Alt it does not
+    await run("set_active_layer", { layer: M, doc: d.id });
+    await place(M, 600, 500, 100, 60);
+    h = drag([600, 530], [434, 530]);
+    out.scale = { box: box(M), guides: h.guides };
+    if (h.kind !== "scale" || box(M)[0] !== 430 || box(M)[2] !== 270 || lines(h) !== JSON.stringify({ x: [430], y: [] })) throw new Error("the scale did not snap to T: " + JSON.stringify(out.scale));
+    await place(M, 600, 500, 100, 60);
+    h = drag([600, 530], [434, 530], true);
+    out.scaleAlt = { box: box(M), guides: h.guides };
+    if (!near(box(M)[0], 434) || !near(box(M)[2], 266) || h.guides) throw new Error("Alt did not turn the scale's snapping off: " + JSON.stringify(out.scaleAlt));
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("escape_closes_the_shell_dialogs", lambda c: escape_closes_the_shell_dialogs(c)),
     ("settings_form_accepts_its_own_values", lambda c: settings_form_accepts_its_own_values(c)),
     ("svg_import_rasterises_on_the_way_in", lambda c: svg_import_rasterises_on_the_way_in(c)),

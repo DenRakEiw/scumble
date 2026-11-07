@@ -4948,16 +4948,43 @@ class InpaintEditor {
     }
 
     /**
-     * Snap the edges a scale gesture drags to the canvas edges, its centre and the guides
-     * (within 8 screen px), like a magnet: the pointer is shifted by the snap and the scale
-     * re-applied, so a kept aspect ratio stays consistent and "drag to the full picture" lands
-     * exactly. Rotated layers are not snapped (their edges are not axis-aligned).
+     * What a move or scale snaps to (item 59), `{ x, y }`: the canvas edges and centre and the guides first (for one
+     * edge a tie goes to them), then the left / right edges and the centre, the top / bottom edges and the middle, of
+     * every other layer the screen draws: shown (its own eye and its groups'), with pixels, not a filter layer (it covers
+     * the canvas), and a clipped layer only while its base is shown too. Reference and control layers count while they
+     * are shown: the canvas draws them. Each layer goes by its box, the frame the transform tool draws around it, not by
+     * what is painted in it. Collected once per gesture, at its first snap, and kept on the pointer `p` (no layer moves
+     * during a drag but the ones it moves): a pointer move only compares numbers. The layers the gesture moves are left
+     * out (`moving`, or a group gesture's members).
+     */
+    snapTargets(p, moving) {
+        if (p && p.snapTo) return p.snapTo;
+        const g = this.guides || {};
+        const x = [0, this.width / 2, this.width, ...(g.x || [])], y = [0, this.height / 2, this.height, ...(g.y || [])];
+        const skip = new Set(p && p.group ? p.group.map((m) => m.layer) : [moving]);
+        this.layers.forEach((l, i) => {
+            if (skip.has(l) || l.kind === "filter" || !l.px || !(l.w > 0 && l.h > 0) || !this.shown(l)) return;
+            const cb = l.clip ? this.clipBaseOf(l, i) : null;
+            if (cb && !this.shown(cb)) return;
+            x.push(l.x, l.x + l.w / 2, l.x + l.w);
+            y.push(l.y, l.y + l.h / 2, l.y + l.h);
+        });
+        const out = { x, y };
+        if (p) p.snapTo = out;
+        return out;
+    }
+
+    /**
+     * Snap the edges a scale gesture drags to the canvas edges, its centre, the guides and the
+     * other layers' edges and centres (`snapTargets`, within 8 screen px), like a magnet: the
+     * pointer is shifted by the snap and the scale re-applied, so a kept aspect ratio stays
+     * consistent and "drag to the full picture" lands exactly. Rotated layers are not snapped
+     * (their edges are not axis-aligned). Alt held skips the call (the pointer move's caller).
      */
     snapScale(p, ix, iy) {
         const l = p.layer, h = p.handle;
         const th = 8 / this.view.scale;
-        const tx = [0, this.width / 2, this.width, ...((this.guides && this.guides.x) || [])];
-        const ty = [0, this.height / 2, this.height, ...((this.guides && this.guides.y) || [])];
+        const { x: tx, y: ty } = this.snapTargets(p, l);
         const nearest = (edge, targets) => { let best = null; for (const t of targets) { const d = Math.abs(edge - t); if (d <= th && (!best || d < best[0])) best = [d, t - edge, t]; } return best; };
         const edgeX = () => (h.includes("e") ? l.x + l.w : h.includes("w") ? l.x : null);
         const edgeY = () => (h.includes("s") ? l.y + l.h : h.includes("n") ? l.y : null);
@@ -4973,12 +5000,15 @@ class InpaintEditor {
         this.snapGuides = gx.length || gy.length ? { x: gx, y: gy } : null;
     }
 
-    /** Snap a moving layer's edges and centre to the canvas edges and centre (within 8 screen px). */
-    snapLayer(l) {
+    /**
+     * Snap a moving layer's edges and centre to the canvas edges and centre, the guides and the other layers' edges and
+     * centres (`snapTargets`, within 8 screen px). `p`: the gesture's pointer, which keeps the targets; Alt held skips the
+     * call (the pointer move's caller).
+     */
+    snapLayer(l, p = null) {
         const th = 8 / this.view.scale;
         const gx = [], gy = [];
-        const tx = [0, this.width / 2, this.width, ...((this.guides && this.guides.x) || [])];
-        const ty = [0, this.height / 2, this.height, ...((this.guides && this.guides.y) || [])];
+        const { x: tx, y: ty } = this.snapTargets(p, l);
         let best = null;
         for (const a of [l.x, l.x + l.w / 2, l.x + l.w]) for (const b of tx) { const d = Math.abs(a - b); if (d <= th && (!best || d < best[0])) best = [d, b - a, b]; }
         if (best) { l.x = Math.round(l.x + best[1]); gx.push(best[2]); }
@@ -6654,7 +6684,7 @@ class InpaintEditor {
             p.layer.x = Math.round(p.orig.x + (ix - p.start[0]));
             p.layer.y = Math.round(p.orig.y + (iy - p.start[1]));
             this.snapGuides = null;
-            if (!e.altKey) this.snapLayer(p.layer);
+            if (!e.altKey) this.snapLayer(p.layer, p);
             if (p.group) this.applyGroupBox(p);
         } else if (p.kind === "scale" && p.group) {
             this.applyScale(p, ix, iy);
