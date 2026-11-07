@@ -967,7 +967,8 @@ export const FILTERS = {
             { key: "size", label: "Size", min: 0.5, max: 6, step: 0.1, default: 1.5, unit: "px", notWithPlate: true },
             { key: "speckle", label: "Speckle", min: 0, max: 100, step: 1, default: 25, unit: "%", notWithPlate: true },
             { key: "chroma", label: "Colour", min: 0, max: 100, step: 1, default: 0, unit: "%", notWithPlate: true },
-            { key: "plate_scale", label: "Plate", min: 0.25, max: 4, step: 0.05, default: 1, unit: "×", onlyWithPlate: true, keepPreset: true },
+            // plate pixels per image pixel: a resize scales it as it scales a length (`scalesWithPicture`)
+            { key: "plate_scale", label: "Plate", min: 0.25, max: 4, step: 0.05, default: 1, unit: "×", onlyWithPlate: true, keepPreset: true, scales: true },
         ],
         presets: GRAIN_PRESETS,
         plate: true,
@@ -1327,6 +1328,51 @@ export function filterDefaults(id) {
         } else {
             out[p.key] = p.default;
         }
+    }
+    return out;
+}
+
+/**
+ * Item 57: whether a filter parameter is a length in image pixels, which a resize of the picture scales. `scales: true`
+ * says it is one (the grain's plate scale, plate pixels per image pixel), `scales: false` that it is not; otherwise a
+ * number parameter is one when its unit is "px", what its slider shows (a radius, a grain size, a shift, a pattern size).
+ * Percentages of the picture, angles, colours and levels are not.
+ */
+export function scalesWithPicture(p) {
+    if (!p || (p.type && p.type !== "number")) return false;
+    return p.scales != null ? !!p.scales : p.unit === "px";
+}
+
+const stepDecimals = (step) => { const s = String(step), i = s.indexOf("."); return i < 0 ? 0 : s.length - i - 1; };
+
+/**
+ * A filter layer's parameters after the picture was resized by `sx` x `sy` (Resize image, a whole-picture upscale, the
+ * Realism Pass above 1x; resizeImageNow), so the effect keeps its size on the picture: every length in image pixels
+ * (`scalesWithPicture`) times sqrt(sx * sy), the geometric mean (a radius, a cell or a shift is one length, none of them
+ * is per axis; the film pack's control points scale their radii by the same factor), rounded to the parameter's step (the
+ * grid its slider moves on: whole pixels for a step of 1, halves for 0.5) and kept within its min and max. Returns a new
+ * object when a value changed (the resize's undo step holds the old one), else null; null too for a filter that is not
+ * installed (its plugin off), whose values stay as they are.
+ */
+export function scaleFilterParams(id, params, sx, sy) {
+    const def = FILTERS[id];
+    const k = Math.sqrt(sx * sy);
+    if (!def || !Number.isFinite(k) || !(k > 0) || k === 1) return null;
+    let out = null;
+    for (const p of def.params || []) {
+        if (!scalesWithPicture(p)) continue;
+        const cur = params && params[p.key] != null ? +params[p.key] : +p.default;
+        if (!Number.isFinite(cur)) continue;
+        let v = cur * k;
+        const step = +p.step;
+        // half up on the step's grid; the quotient is cut to 9 decimals first, so float noise (0.75 / 0.1 is
+        // 7.4999999...) does not round a half down
+        if (step > 0) v = +(Math.round(+(v / step).toFixed(9)) * step).toFixed(stepDecimals(step));
+        if (p.max != null && Number.isFinite(+p.max)) v = Math.min(+p.max, v);
+        if (p.min != null && Number.isFinite(+p.min)) v = Math.max(+p.min, v);
+        if (v === cur) continue;
+        if (!out) out = { ...(params || {}) };
+        out[p.key] = v;
     }
     return out;
 }

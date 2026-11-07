@@ -13,7 +13,7 @@
 //   * receive stitched results from the backend and add them as layers
 
 import { api, host } from "./host.js";
-import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats, colourStats, fillPixels, hexRgb } from "./inpaint_filters.js";
+import { FILTERS, FILTER_IDS, filterDefaults, scaleFilterParams, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats, colourStats, fillPixels, hexRgb } from "./inpaint_filters.js";
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces, runShader, glToCanvas } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
@@ -6017,6 +6017,8 @@ class InpaintEditor {
         let before = null, pushed = false;
         try {
             this.setStatus(`Resizing to ${nw} × ${nh} ...`);
+            // a filter preview shown goes back first: the sizes scaled below are the committed ones, which the step holds
+            this.cancelPreviews();
             before = this.snapshot({ kind: "canvas" });
             if (this.pending) this.cancelPending();
             const nb = makeCanvas(nw, nh);
@@ -6030,9 +6032,14 @@ class InpaintEditor {
             else this.drawBaseInto(nctx, 0, 0, nw, nh);
             const { ref } = await uploadCanvas(nb, `n${this.node.id}_base`);
             const px = this.pixels.Layer.fromCanvas(nb);
+            let scaledFilters = 0;
             for (const l of this.layers) {
                 if (l.kind === "filter") {
                     l.w = nw; l.h = nh; l._fcache = null;
+                    // item 57: its sizes in image pixels follow the picture (a 4 px blur is a 2 px one at half the size), a new
+                    // params object the canvas step does not hold; relight's lights move in followGeometry
+                    const scaled = scaleFilterParams(l.filter, l.params, sx, sy);
+                    if (scaled) { l.params = scaled; l._fcacheView = null; l._fcacheSample = null; l._fxCacheSample = null; scaledFilters++; }
                     if (l.maskPx) { const m = makeCanvas(nw, nh); const mc = m.getContext("2d"); mc.imageSmoothingEnabled = true; l.maskPx.drawTo(mc, 0, 0, nw, nh); l.maskPx = this.pixels.Mask.fromCanvas(m); l.maskDirty = true; }
                 } else {
                     l.x = Math.round(l.x * sx); l.y = Math.round(l.y * sy);
@@ -6054,7 +6061,8 @@ class InpaintEditor {
             this.selectionDataUrl = null; this.selectionEncoded = false;
             this.followGeometry("resize", xfScale(sx, sy), { width: W, height: H }, { width: nw, height: nh });
             this.renderLayers(); this.renderHistory(); this.renderInfo(); this.fitView(); this.drawThumb(); this.notifyChanged();
-            this.setStatus(`Image ${base ? "upscaled" : "resized"} to ${nw} × ${nh} (Ctrl+Z takes it back). Layers keep their own resolution.`);
+            const scaledNote = scaledFilters ? ` The sizes in pixels of ${scaledFilters} filter layer${scaledFilters === 1 ? "" : "s"} scaled along.` : "";
+            this.setStatus(`Image ${base ? "upscaled" : "resized"} to ${nw} × ${nh} (Ctrl+Z takes it back). Layers keep their own resolution.${scaledNote}`);
         } catch (err) {
             if (!pushed) this.releaseSnapshot(before);
             console.error(err);

@@ -242,6 +242,10 @@ A select param named `preset` is a preset list: picking an entry copies its othe
 (`amount: 3` above) into the params, renames the layer after it, and a drag on any slider
 without `keepPreset: true` switches it back to the `custom` entry (so give it one). Any
 other select (a mode, a style) just sets its value. `title` is the tooltip of a param.
+A number param with `unit: "px"` is a length in image pixels: Resize image (and an upscale of the
+whole picture) scales it by the geometric mean of the two factors, rounded to its `step` and kept
+within `min` and `max`, so the effect keeps its size on the picture; `scales: true` marks another
+param that does (a scale of plate pixels), `scales: false` one with "px" that does not.
 `params.limit` is reserved by the engine for limit stages (depth/luma/color range limiting)
 and cannot be declared as a filter parameter.
 

@@ -2583,7 +2583,7 @@ const COMMANDS = {
     resize_image: {
         destructive: true,
         needsImage: true,
-        description: "Resize the whole document, as Image › Canvas › Resize: the base picture is resampled to the new size, every layer keeps its own pixels and is scaled in place, masks and the selection follow; one undo step. Give width and height, or one of them (the other keeps the aspect), or percent, or long_side (the aspect kept). Refused while a run or another job of the document is going (its result would land in the old geometry), below 8 px a side, and past what one canvas holds (65,535 px a side, 268 megapixels). from: the size before.",
+        description: "Resize the whole document, as Image › Canvas › Resize: the base picture is resampled to the new size, every layer keeps its own pixels and is scaled in place, masks and the selection follow, and a filter layer's sizes in pixels (a blur radius, a grain size) scale by the same factor; one undo step. Give width and height, or one of them (the other keeps the aspect), or percent, or long_side (the aspect kept). Refused while a run or another job of the document is going (its result would land in the old geometry), below 8 px a side, and past what one canvas holds (65,535 px a side, 268 megapixels). from: the size before.",
         params: {
             width: P.int("the new width in pixels"), height: P.int("the new height in pixels"),
             percent: P.num("instead: percent of the current size (1..1000)"), long_side: P.int("instead: the new long side in pixels"),
