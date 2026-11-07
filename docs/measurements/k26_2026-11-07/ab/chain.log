@@ -1,0 +1,63 @@
+lock: taken after 0 s
+[09:39:26] lock: taken (K26 measuring 45912 2026-11-07T09:39:26)
+[09:39:26] after: ae5c086 + working tree, px.wasm c3cd4f481cf3275e; before: C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/k26/before_tree px.wasm 5921fca6577a3172
+[09:39:26] gpu: 6966 MiB, 3 %; comfy 8188: 200
+[09:39:26] == round 1
+[09:39:38] before r1: brush_perf blur
+[09:40:03] rc=0
+closed
+[09:40:19] before r1: brush_perf sharpen
+[09:40:42] rc=0
+closed
+[09:40:57] before r1: w0_bench freqsep_4000
+[09:41:05] rc=0
+closed
+[09:41:20] after r1: brush_perf blur
+[09:41:34] rc=0
+closed
+[09:41:50] after r1: brush_perf sharpen
+[09:42:05] rc=0
+closed
+[09:42:21] after r1: w0_bench freqsep_4000
+[09:42:27] rc=0
+closed
+[09:42:32] == round 2
+[09:42:42] after r2: brush_perf blur
+[09:42:57] rc=0
+closed
+[09:43:13] after r2: brush_perf sharpen
+[09:43:29] rc=0
+closed
+[09:43:44] after r2: w0_bench freqsep_4000
+[09:43:50] rc=0
+closed
+[09:44:06] before r2: brush_perf blur
+[09:44:28] rc=0
+closed
+[09:44:43] before r2: brush_perf sharpen
+[09:45:06] rc=0
+closed
+[09:45:22] before r2: w0_bench freqsep_4000
+[09:45:29] rc=0
+closed
+[09:45:34] == round 3
+[09:45:45] before r3: brush_perf blur
+[09:46:07] rc=0
+closed
+[09:46:22] before r3: brush_perf sharpen
+[09:46:45] rc=0
+closed
+[09:47:01] before r3: w0_bench freqsep_4000
+[09:47:08] rc=0
+closed
+[09:47:23] after r3: brush_perf blur
+[09:47:38] rc=0
+closed
+[09:47:53] after r3: brush_perf sharpen
+[09:48:08] rc=0
+closed
+[09:48:24] after r3: w0_bench freqsep_4000
+[09:48:30] rc=0
+closed
+[09:48:34] done
+lock: released

@@ -1,0 +1,47 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 5 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 164633 bytes, sha256 5921fca6577a3172
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 140232 bytes, sha256 eb438650d2a75ad1
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.98s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.29s
+$ node tools/px_test.js  (rc 0, 72 s)
+PASS
+ok   rust scalar a large alloc grows memory  229048320 -> 497549312
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+PASS
+(node:20808) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/k4/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 5 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 164633 bytes, sha256 5921fca6577a3172
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 140232 bytes, sha256 eb438650d2a75ad1
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.81s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.23s
+$ node tools/px_test.js  (rc 1, 37 s)
+FAIL rust simd blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (220 cases, each also at an odd offset)  noise 1x1 r 0: threw k.blurRGBA is not a function
+FAIL rust simd sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (272 cases, each also at an odd offset)  noise 1x1 r 0 amount 1: threw k.sharpenRGBA is not a function
+       1492 x 1492: dilate rust simd 19.6 ms, twin 44.2; three box blurs rust simd 11.7 ms, twin 23.0
+FAIL rust simd blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (220 cases, each also at an odd offset)  noise 1x1 r 0: threw k.blurRGBA is not a function
+ok   js blur_rgba gives the same at an odd offset
+FAIL rust simd sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (272 cases, each also at an odd offset)  noise 1x1 r 0 amount 1: threw k.sharpenRGBA is not a function
+ok   js sharpen_rgba gives the same at an odd offset
+(node:51380) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/k4/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TypeError: px.blurRGBA is not a function
+    at dabCases (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\tools\px_test.js:521:25)
+    at async main (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k4\tree\tools\px_test.js:3735:9)

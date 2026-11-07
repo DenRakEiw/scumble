@@ -1,0 +1,8 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+sharpen (cold) | Sharpen | layer | 200 | fit | 156.5 | 36.5 | 29.1 | 23.5 | 23.9 | 1.3 | 68.3 | 261 | 5 | 5.5 | 0 | 0 | 12164 | mip_chain 32, sharpen_rgba 43, smudge_dab 86
+sharpen | Sharpen | layer | 400 | fit | 156.5 | 17.4 | 48.7 | 40.8 | 45.5 | 2 | 68.4 | 1398 | 5 | 5.1 | 0 | 0 | 12207 | mip_chain 279, sharpen_rgba 121, smudge_dab 242
+sharpen | Sharpen | layer | 1000 | fit | 156.5 | 85.3 | 142.9 | 115.5 | 127.2 | 2.8 | 231.3 | 3764 | 7.8 | 8.1 | 0 | 0 | 12201 | mip_chain 480, sharpen_rgba 61, smudge_dab 122
+sharpen | Sharpen | layer | 400 | 1:1 | 18 | 45.2 | 11.5 | 11.5 | 12.3 | 1.6 | 59.4 | 541 | 10.6 | 10.8 | 0 | 0 | 12193 | sharpen_rgba 31, smudge_dab 62
+sharpen | Sharpen | layer | 1000 | 1:1 | 18 | 88 | 69.8 | 66.2 | 74.3 | 8.9 | 160.9 | 2263 | 23.8 | 24.1 | 0 | 0 | 12190 | mip_chain 41, sharpen_rgba 31, smudge_dab 62
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["sharpen"], "SIZES": [400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 5655}}
+rc=0

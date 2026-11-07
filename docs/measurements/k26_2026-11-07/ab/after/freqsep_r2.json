@@ -1,0 +1,60 @@
+{
+ "freqsep_4000": {
+  "visibility": "visible",
+  "focus": true,
+  "load": 1520.8,
+  "picture": "F:\\canvas\\dist\\daily\\adobe_15000x10000.jpg",
+  "size": [
+   15000,
+   10000
+  ],
+  "wall": 1041.4,
+  "blocked": 1029.4,
+  "box": [
+   5500,
+   3000,
+   9500,
+   7000
+  ],
+  "radius": 40,
+  "marks": [
+   {
+    "op": "freqsep",
+    "total": 1040.8,
+    "steps": [
+     {
+      "step": "start",
+      "ms": 0,
+      "w": 4000,
+      "h": 4000,
+      "radius": 40
+     },
+     {
+      "step": "read",
+      "ms": 25.9
+     },
+     {
+      "step": "blur",
+      "ms": 720.1
+     },
+     {
+      "step": "split",
+      "ms": 219.9
+     },
+     {
+      "step": "written",
+      "ms": 73.2
+     },
+     {
+      "step": "done",
+      "ms": 1.6
+     }
+    ]
+   }
+  ],
+  "pxCalls": {
+   "blur_rgba": 1,
+   "mip_chain": 16
+  }
+ }
+}

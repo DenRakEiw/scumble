@@ -93,7 +93,9 @@ code.
   node's editor built in a clone and pushed (`ComfyUI-InpaintCanvas` `4e7bd24..4bef98a`, no pyproject bump, so no
   registry version); issues #10 and #11 answered and closed; the bodies of 0.1.37 and 0.1.28 have their @tokens in
   backticks now; `wasm-kernels` fast-forwarded to `main` (`0fcef6f`). **The Store update for 0.1.52 is done** (the user,
-  2026-11-07: "hab store update gemacht"). **Open:** the worktrees `gpt26` and `ph3` can go; on `wasm-kernels` K4 and the
+  2026-11-07: "hab store update gemacht"). **Cleaned up 2026-11-07 (the user's word):** the merged branches `ck-b0`,
+  `ck-i2`, `ck-merge`, `ck-refine`, `ck-ui`, `corridorkey`, `gpt26`, `ph3` deleted on GitHub and here, their worktrees
+  removed (their junctions to node_modules taken off first); GitHub keeps `main`, `wasm-kernels`, `gh-pages`. On `wasm-kernels` K4 and the
   kernel steps after it (the user, 2026-11-07: "K4 anfangen und dann die rust updates weitermachen"), item 54 beside it by
   a subagent in its own worktree, merged into `wasm-kernels` after a review. **K4 done 2026-11-07** (the generic box pass
   `maskf::box_pass::<C>`, `box_blurs` on it with its bytes pinned: stitch's `gaussBlur` 40.6 -> 32.5 ms at 2048^2, a
@@ -102,7 +104,11 @@ code.
   second subagent in its own worktree. **An external review** (another agent's, pasted by the user 2026-11-07) verified
   by a workflow of eight: `docs/research/review_external_2026-11-07/` (nothing high; S5, a crafted PSD / ORA can crash
   the renderer, is the one a file triggers; P10 the tile gutter's byte copy and P14 the ONNX helpers on the main
-  process the felt performance points; a hardening session H1 and P10 suggested to the user, no answer yet). The preparation, as it was:
+  process the felt performance points; the user's answers: H1 in this release, SAM2 (U0, U1) first, P10 with P13 and P15;
+  the plan's §7 "The user's answers after K4"). **K26 done 2026-11-07** (the blur and sharpen brushes and frequency
+  separation's blur in Rust, ABI 22: blur 400 px at fit 74.0 -> 32.7 ms per move at 15k, frequency separation of a 16 MP
+  box 2,053 -> 1,012 ms; its review found **a memory leak since K1, in 0.1.52 too** (every thread's first wasm instance
+  kept after a release), fixed with K26, no hotfix (the user); "K26" in the plan's §7). **Next: U0.** The preparation, as it was:
   It holds
   items 49 (CorridorKey Route B, B5 run live with the user, the movable Key dialog), 50 (LoRAs, MOSS-Image Edit), 51
   (GPT-Image-2.6), 52 (P-H3-Image) and the kernel steps D0, K5, W1, K12, K12b. A release review workflow (four lenses,
@@ -563,8 +569,8 @@ The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27
   for the web. The tutorial material (`docs/TUTORIAL.md`, `docs/images/tutorial/`, `docs/images/video/`) stays
   uncommitted until the user says so.
 - **Standing:** the user's ComfyUI (8188) is a production machine (no `smoke` and no forwarding gate unless the user
-  says it is free; gates run `--offline`). Tune for 15k, not 30k. One-channel masks on ice; `inpaint_canvas.js` is
-  split only where a subject is reworked anyway; the object tool's change A parked; tiles are the default, the canvas
+  says it is free; gates run `--offline`). Tune for 15k, not 30k. One-channel masks on ice; the long files are split as
+  item 56 says (the user, 2026-11-07); the object tool's change A parked; tiles are the default, the canvas
   backend the escape hatch. A parked idea, not a plan: a mobile companion.
 - **Unverified:** ToAPIs beyond GPT Image 2's `standard` / `vip` channels (those ran live through this adapter in
   ToAPIs' own run of 2026-10-13, issue #5: a new image and whole-picture reference edits; channel `official` with the
@@ -884,6 +890,25 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   a coarse copy of the selection (at most about 1,024 px a side, on a selection change, debounced), leave specks below a
   threshold out, and count areas whose crops would overlap as one. About one session (inferred); the issue's answer at
   the release that ships it, not before.
+- 55: **SAM2 and the other ONNX helpers off Electron's main process** (the user, 2026-11-07: "höchste prio sam (das
+  ist echt lahm)", after the external review's P14): SAM2, the matting models and depth run `session.run()` and their
+  loops on the main process and freeze its IPC for seconds per run; LaMa already runs in a utility process. Sessions
+  U0 (measure), U1 (the helpers process), U2 (a speed fix if U0 shows one) in `docs/PLAN_WASM_BUILD.md` §7 "The user's
+  answers after K4", right after K26, in the kernel update's release.
+- 56: **Split the long files** (the user, 2026-11-07: "das aufräumen der langen dateien: für bessere ai wartbarkeit,
+  geringerer kontext"; with another agent's analysis). Counted the same day: `renderer/editor/inpaint_canvas.js` 25,246
+  lines (1.49 MB: ICONS from line 1359, STYLE from 1494, then the InpaintEditor class), `renderer/editor/host.js` 6,924,
+  `renderer/shell.js` 3,524 (tabs, the top bar, the Generate dialog, the whole Settings dialog, the GPU watch, the log),
+  `renderer/commands.js` 3,105 (every command in one object), `electron/main/recipes.js` 1,888 (templates, the graph
+  parser, migrations). Natural seams: STYLE and ICONS into modules of their own; the text tool's UI next to
+  `inpaint_text.js`; transform / perspective / warp; the Settings dialog out of `shell.js`; commands by area. Rules:
+  every new editor module goes into `tools/build_node.py`'s FILES with plain named imports (`--check` green, the node
+  hosts' members unchanged), behaviour and bytes unchanged (a move, not a rewrite: the gates on both backends, `lint`,
+  `types`, `nodecopy`), one file per session, never while another branch or agent edits the same file (merge
+  conflicts). Timing: the slices no open branch touches (STYLE / ICONS, the Settings dialog) may go between kernel
+  sessions; the rest of `inpaint_canvas.js` and `host.js` after the kernel release (K41), as a block of its own before
+  new features. A plan with a line map first. This replaces the standing rule "split only where a subject is reworked
+  anyway".
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.

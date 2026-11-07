@@ -178,6 +178,16 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   march (`relight_heavy_*`: a crc of one blob sized on a calm pool to about 60 ms a job, [the first job's queue wait,
   the last one's] and the answers; the 1 KB rows above drain back to back on one worker, so they show one job's wait);
   `docs/measurements/k12b_2026-11-06/`.
+  K4 / K26 (the generic box pass `maskf::box_pass::<C>`; the blur and sharpen brushes' `blur_rgba` / `sharpen_rgba`,
+  ABI 22): `node tools/px_test.js`'s `maskCases` (75 `box_blurs` cases on both builds, among them floats over fifteen
+  decades: a mask's multiples of 1/255 add up exactly in f64 and cannot tell one rounding order from another) and
+  `dabCases` (274 blur and 338 sharpen cases against `inpaint_stroke.js`, the "faint" kind's alphas of 1 to 12 among
+  zeros reaching the unpremultiply's 0.5 edge; the refusals). The `editor` gate's blur and sharpen step and its
+  frequency separation step assert the Rust calls ran and replay the stroke / separation on the route `dabBlur` "js"
+  after an undo, 0 bytes allowed to differ. `node --expose-gc tools/kernels_release_test.js`: a released instance of
+  `kernels.js` is collected (the first load's promise used to keep the first one); its WeakRef is read and the
+  collector run in separate jobs, since a deref keeps its target alive to the end of its job.
+  `docs/measurements/k4_2026-11-07/`, `docs/measurements/k26_2026-11-07/`.
   `docs/measurements/w1_2026-11-06/w1_identity.js --old <the px.wasm before W1> file.png ...` re-filters real PNGs in
   the app's parts of 128 rows on the new SIMD build, the scalar build, the old SIMD build and the JS twin and compares
   every line (and, for a file Scumble wrote, the file's own lines); the old build is

@@ -1,0 +1,25 @@
+== reader (node)
+PASS v1: {"tips":["? 32x32 @0.3","? 24x12 @0.15","? 16x4 @0"]}
+PASS v2: {"tips":["Ring 32x32 @0.3","Bar 24x12 @0.15","Ramp 16x4 @0"]}
+PASS v6.1: {"tips":["Ring Brush 32x32 @0.3","Bar Brush 24x12 @0.15","Bar Brush (dual) 16x4 @0.5"]}
+PASS v6.2: {"tips":["Ring Brush 32x32 @0.3","Bar Brush 24x12 @0.15","Bar Brush (dual) 16x4 @0.5"]}
+PASS unknown version: ".abr version 3.1 is not one this reader knows (1, 2, 6 and 10 are)"
+PASS only computed: "only computed (round) tips in this file, 1 of them; the editor's own round dab covers those"
+PASS real Default Brushes.abr: {"version":"6.2","tips":18,"named":18,"computed":10,"presets":28,"ms":10,"warnings":[]}
+PASS real Legacy Brushes.abr: {"version":"10.2","tips":214,"named":214,"computed":208,"presets":471,"ms":17,"warnings":[]}
+PASS real Converted Legacy Tool Presets.abr: {"version":"10.2","tips":36,"named":36,"computed":109,"presets":144,"ms":13,"warnings":[]}
+PASS real boris.abr: {"version":"6.2","tips":109,"named":109,"computed":15,"presets":187,"ms":233,"warnings":[]}
+wrote C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_brush_test\synthetic_v6.abr
+RESULT PASS
+== app
+PASS document: {"width": 600, "library": 0}
+PASS import_abr_through_the_editor: {"names": ["Ring Brush", "Bar Brush", "Bar Brush (dual)"], "spacing": [0.3, 0.15, 0.5], "status": "3 brush tips imported, 1 computed (round) tip skipped. Pick one under Tip."}
+PASS stroke_with_the_ring_tip: {"ringCentre": 0, "ringBand": 255, "roundCentre": 255, "ringCover": 35844, "roundCover": 37128}
+PASS erase_with_a_tip: {"centre": 255, "band": 0, "far": 255}
+PASS ring_is_the_tips_box_and_the_thumbnail_shows_it: {"top": true, "side": true, "inside": false, "circleTop": false, "thumbPixels": 342}
+PASS tip_popover_previews_recent_search_and_closes: {"rows": 4, "groups": ["Built in", "synthetic_v6.abr"], "lit": {"round": 4764, "ring": 4461, "bar": 2723}, "chips": 2, "recent": 4}
+PASS commands: {"listed": 4, "set": [true, 66, 80], "spacing": 0.5}
+PASS persistence_over_reload: {"names": ["Ring Brush", "Bar Brush", "Bar Brush (dual)"], "restored": 3, "barSpacing": 0.5}
+PASS remove: {"before": 3, "after": 0}
+PASS removed_stays_removed: {"library": 0}
+RESULT PASS

@@ -461,6 +461,15 @@ async function maskCases(px, label, js) {
     // four values a step (a width that is not a multiple of 4 leaves a tail; under 4 none), so the small sizes below
     // put every split at the lanes' edges
     const small = [[2, 2], [4, 4], [5, 6], [6, 5], [8, 1], [1, 8], [16, 3], [3, 16], [9, 9]].map(([w, h]) => [mask(w, h, w * 17 + h), w, h]);
+    // Floats over a wide range of magnitudes (1e-12 .. 1e3): a mask's multiples of 1/255 add up exactly in f64, so they
+    // cannot tell one rounding order from another (K4's mutation round: `(sum + enter) - leave` passed on them); these
+    // round in f64 at almost every step, as relight's heights and the guided filter's products do
+    const wide = (w, h, seed) => {
+        let s = seed >>> 0;
+        const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+        return [Float32Array.from({ length: w * h }, () => rnd() * 10 ** (rnd() * 15 - 12)), w, h];
+    };
+    small.push(wide(7, 5, 71), wide(64, 33, 72), wide(131, 77, 73), wide(1, 9, 74));
     twinCheck({
         name: "box_blurs", title: "box_blurs equals its twin bit for bit", builds: [[label, px]], twin: js,
         call: (k, [m, w, h, radii]) => k.boxBlurs(m, w, h, radii),
@@ -474,6 +483,51 @@ async function maskCases(px, label, js) {
     const t3 = performance.now(); js.boxBlurs(big, 1492, 1492, [19, 20, 20]);
     const t4 = performance.now();
     console.log(`       1492 x 1492: dilate ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)}; three box blurs ${label} ${(t3 - t2).toFixed(1)} ms, twin ${(t4 - t3).toFixed(1)}`);
+}
+
+/**
+ * The blur and sharpen brushes' filters (blur_rgba, sharpen_rgba; K26) against inpaint_stroke.js, byte for byte: every
+ * size from 1 x 1 up past the lanes' edges, radii 0 to 200 (above the box), the alpha values at the premultiply's and the
+ * unpremultiply's edges (0, 1, 2, 127, 128, 254, 255), sharpen's amounts; the refusals the caller turns into the twin.
+ */
+async function dabCases(px, label) {
+    const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_stroke.js")).href);
+    const twin = { blurRGBA: S.blurRGBA, sharpenRGBA: S.sharpenRGBA };
+    const EDGE = [0, 1, 2, 127, 128, 254, 255];
+    const pic = (w, h, seed, kind) => {
+        let s = seed >>> 0;
+        const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s >>> 24; };
+        const d = new Uint8ClampedArray(w * h * 4);
+        for (let i = 0; i < w * h; i++) {
+            d[i * 4] = rnd(); d[i * 4 + 1] = rnd(); d[i * 4 + 2] = rnd();
+            // "faint": alphas of 1 to 12 among zeros, so the blur's alphas land around 0.5 to 1, the unpremultiply's edge
+            // (K26's mutation round: a threshold of 1 instead of 0.5 passed every other kind)
+            d[i * 4 + 3] = kind === "opaque" ? 255 : kind === "edges" ? EDGE[rnd() % EDGE.length] : kind === "holes" ? (rnd() < 90 ? 0 : 255) : kind === "faint" ? (rnd() < 180 ? 0 : 1 + rnd() % 12) : rnd();
+        }
+        return d;
+    };
+    const sizes = [[1, 1], [2, 3], [3, 2], [5, 4], [7, 9], [16, 16], [33, 17], [64, 48], [131, 77]];
+    const kinds = ["noise", "edges", "holes", "opaque", "faint"];
+    const cases = [];
+    for (const [w, h] of sizes) {
+        for (const kind of kinds) {
+            const src = pic(w, h, w * 977 + h * 13 + kind.length, kind);
+            for (const r of [0, 1, 2, 8, 40, 200]) cases.push({ tag: `${kind} ${w}x${h} r ${r}`, args: [src, w, h, r] });
+        }
+    }
+    const dab = pic(448, 448, 4481, "noise");
+    cases.push({ tag: "a 400 px brush's box 448x448 r 8", args: [dab, 448, 448, 8] }, { tag: "the same r 2.5 (rounded as the twin)", args: [dab, 448, 448, 2.5] }, { tag: "r NaN (no pass)", args: [pic(9, 7, 3, "edges"), 9, 7, NaN] }, { tag: "r -3", args: [pic(9, 7, 4, "edges"), 9, 7, -3] });
+    twinCheck({ name: "blur_rgba", title: "blur_rgba equals inpaint_stroke.js blurRGBA byte for byte", builds: [[label, px]], twin, call: (k, [src, w, h, r]) => k.blurRGBA(src, w, h, r), cases });
+    const sharp = cases.flatMap((c, i) => [1, 0.5, 2.25].map((amount, j) => (i % 3 === j || c.args[1] > 100 ? { tag: `${c.tag} amount ${amount}`, args: [...c.args, amount] } : null))).filter(Boolean);
+    twinCheck({ name: "sharpen_rgba", title: "sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte", builds: [[label, px]], twin, call: (k, [src, w, h, r, amount]) => k.sharpenRGBA(src, w, h, r, amount), cases: sharp });
+    const refused = [px.blurRGBA(new Uint8ClampedArray(7), 1, 2, 1), px.blurRGBA(new Uint8ClampedArray(0), 0, 4, 1), px.sharpenRGBA(new Uint8ClampedArray(16), 2.5, 2, 1), px.blurRGBA(new Uint8ClampedArray(16), 2, 2, 2 ** 31)];
+    check(`${label} blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)`, refused.every((v) => v === null), refused.map((v) => (v === null ? "null" : v.length)).join(", "));
+    const t0 = performance.now(); px.blurRGBA(dab, 448, 448, 8);
+    const t1 = performance.now(); S.blurRGBA(dab, 448, 448, 8);
+    const t2 = performance.now(); px.sharpenRGBA(dab, 448, 448, 8, 1);
+    const t3 = performance.now(); S.sharpenRGBA(dab, 448, 448, 8, 1);
+    const t4 = performance.now();
+    console.log(`       a 448 x 448 dab, r 8: blur ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)}; sharpen ${label} ${(t3 - t2).toFixed(1)} ms, twin ${(t4 - t3).toFixed(1)}`);
 }
 
 /** The edge and map kernels (range_max, docs/PLAN_WASM.md #1) against their twin. */
@@ -3680,6 +3734,7 @@ async function main() {
         await floodCases(px, label, js, raster);
         await jobCases(px, label, raster);
         await maskCases(px, label, js);
+        await dabCases(px, label);
         await edgeCases(px, label, js);
         await relightCases(px, label, js);
         await pngReadCases(px, label, js);

@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 21;
+export const PX_ABI = 22;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -354,6 +354,34 @@ export class Px {
             const pd = this._in(a, data, n * 4);
             this.exports.box_blurs(pd, w, h, radii[0] | 0, radii[1] | 0, radii[2] | 0);
             return this._out(Float32Array, pd, n, null);
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * `blurRGBA(src, w, h, r)` of inpaint_stroke.js (K26): straight RGBA8 premultiplied, three box passes of radius r
+     * each way, back to straight bytes; a new Uint8ClampedArray. `r` is rounded as the twin rounds it. Null when the
+     * kernel refuses the call (a size or radius it cannot take, a short `src`): the caller runs the twin then.
+     */
+    blurRGBA(src, w, h, r) { return this._dab(src, w, h, r, false, 1); }
+
+    /**
+     * `sharpenRGBA(src, w, h, r, amount)` of inpaint_stroke.js (K26), as `blurRGBA`. `amount` goes to the export as it
+     * is: the wasm f64 parameter's ToNumber is the twin's arithmetic (null 0, a numeric string its number).
+     */
+    sharpenRGBA(src, w, h, r, amount = 1) { return this._dab(src, w, h, r, true, amount); }
+
+    _dab(src, w, h, r, sharpen, amount) {
+        const n = w * h * 4;
+        r = Math.max(0, Math.round(r));
+        const ri = r > 0 ? r : 0;   // NaN: no pass, as the twin's `r > 0`
+        if (!(Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0) || ri > 0x3fffffff || !(src && src.length >= n)) return null;
+        const bytes = this.exports.dab_scratch_bytes(w, h) >>> 0;
+        if (!bytes) return null;
+        const a = this.job;
+        try {
+            const ps = this._in(a, src, n), po = a.take(n), pt = a.take(bytes);
+            const ok = sharpen ? this.exports.sharpen_rgba(ps, po, pt, w, h, ri, amount) : this.exports.blur_rgba(ps, po, pt, w, h, ri);
+            return ok === 1 ? this._out(Uint8ClampedArray, po, n, null) : null;
         } finally { this._reset(a); }
     }
 
