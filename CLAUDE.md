@@ -113,7 +113,26 @@ code.
   partner node gets no mask, a plain note says so; `ae5c086`) and **item 54, Each area** (`0c36f36`, three review rounds
   by workflows, the final gates on both backends green on the merged state with K26; the new gate `areas`; not offered
   in the ComfyUI node: it needs node host members, open question for the user, as are local areas one at a time (built
-  so) and the thresholds 1/20,000 / 50 % / 1.5x; issue #9 is answered at the release). **Next: U0, after a `/clear`.** The preparation, as it was:
+  so) and the thresholds 1/20,000 / 50 % / 1.5x; issue #9 is answered at the release). **Next: U0, after a `/clear`.**
+  **The next session runs in parallel** (the user, 2026-11-07: "ja, auf mehr agenten aufteilen"): the main loop does U0
+  (and then U1) itself and starts background agents, each in its own worktree (`isolation: "worktree"`, a
+  `node_modules` junction, its own CDP port, `--offline`, the busy lock respected for app starts, DenRakEiw commits
+  without a trailer, no push, no edits to `CHANGELOG.md` / `CLAUDE.md` / `docs/PLAN_WASM_BUILD.md`: the CHANGELOG line
+  goes into the report), each merged by the main loop after a review workflow of its diff:
+  - **A (port 9581): H1, the hardening** of the plan's §7 "The user's answers after K4" (S1, S5, S6, S9a, S8, the
+    permission handler of `persist:comfyui`), plus **P15** (`ComfyClient.probe`'s requests together); the review's
+    evidence is `docs/research/review_external_2026-11-07/verified.json`.
+  - **B (9582): item 58**, the eyedropper's 3 x 3 / 5 x 5 average.
+  - **C (9584): item 59**, smart guides to other layers (`snapLayer` / `snapScale`).
+  - **D (9585): item 57**, filter radii following a resize (a per-filter list of pixel parameters first).
+  - **E (read-only): item 60's design plan** (variants on a result layer, compare against what lies below) as
+    `docs/PLAN_VARIANTS.md`, its open questions for the user.
+  - **F (9586): the test speed-ups** (proposed 2026-11-07): a `PX_ONLY` filter in `tools/px_test.js` (the case groups by
+    name), the mutation scripts' kill sets on it and on `SCUMBLE_EDITOR_ONLY` (a mutation round about 8 min instead of
+    35-50), the tiles and canvas gate runs side by side on two ports; `docs/TESTING.md` says how. B, C and D all touch
+    `renderer/editor/inpaint_canvas.js` in separate regions: merge them one at a time, the gates after each merge.
+  The measurement steps (U0, K27, P10) stay one at a time under the busy lock. Weekly limit 68 % on 2026-11-07, reset
+  2026-11-08 09:00. The preparation, as it was:
   It holds
   items 49 (CorridorKey Route B, B5 run live with the user, the movable Key dialog), 50 (LoRAs, MOSS-Image Edit), 51
   (GPT-Image-2.6), 52 (P-H3-Image) and the kernel steps D0, K5, W1, K12, K12b. A release review workflow (four lenses,
