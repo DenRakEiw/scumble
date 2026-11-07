@@ -1743,6 +1743,44 @@ started: the app log's relative path after the `cd` into the tree), `gates/`, `m
   the filter, `smudge_dab` and the write, not split here); frequency separation's blur 698 of 1,012 ms and its split
   210; the tone and sponge dabs untouched.
 
+### H1 and P15 (2026-11-07): the hardening, the probe's requests together
+
+Built by a background agent on `8689d49` (`e5c7aff`, `57a5f55`), a review workflow's 9 confirmed findings fixed in
+`eb1224f`, merged into `wasm-kernels` (`96f037a`).
+- **S1:** `electron/main/links.js` `openHttp` (http / https only, the parsed href) is the one way out to the system
+  browser: the main window's `setWindowOpenHandler`, `app:openExternal`, `app:share`, the ComfyUI window's bar, page,
+  will-navigate and sign-in children.
+- **staysInApp:** `appPage(url, ORIGIN)` lets the main window go only to `/index.html` or `/` (a query or hash
+  allowed); the bridge's `navigates` and `did-start-navigation`'s reload rule read the same predicate.
+- **The ComfyUI window's permissions:** `guardPermissions(session)` once per session before the first load (request,
+  check and device handlers); `comfyhosts.js` `DENIED_PERMISSIONS` media, geolocation, midi, midiSysex, hid, serial,
+  usb and openExternal (added by the review: a frame could hand any scheme to the OS); the rest granted. ComfyUI's core
+  Webcam Capture and Record Audio nodes need a browser now (the manual says so; **asked of the user**).
+- **S5:** `inpaint_layered.js` `inflateAtMost(bytes, format, cap)` in 64 KB slices for the window and the pool (the
+  same bytes within the cap); rectangles at most 65,535 px a side and 2^30 px; a channel's data must be able to fill
+  its rectangle (raw every byte, RLE at least 2 bytes per 128 and its rows inside its own length, ZIP at least 1 per
+  1,032); a refused merged picture of a file without layers refuses the open; ORA entries capped at their directory
+  size, `stack.xml` at 16 MB, all deflated entries at 256 MB + 64x the file, one layer PNG below 2^29 px and all layers'
+  IHDR totals at max(268 MP, 64 x W x H); `onHeader` puts the window route's size check before the parse. The node
+  gets it with its next build.
+- **S6:** `local.js`' line splitter keeps chunks and searches only the new one (64 MB in one line: 7,607 -> 44 ms),
+  `MAX_LINE` 500 MB (a longer line ends that connection only), umask 077 for the Unix socket bind.
+- **S9a:** recipe ids made safe when read (a warning), refused at `save`, which writes over the file the recipe was
+  read from; `remove` deletes `r.file`.
+- **S8:** `build.yml` `contents: read` at the top, write on draft, windows, linux and sizes, `persist-credentials:
+  false`; `provision.sh` packs pinned (Inpaint Canvas `4bef98a`, overridable with `SCUMBLE_NODE_REF`, a full id),
+  the Hugging Face token by curl; RELEASING.md's node step moves the pin. Proven only by the next tag build (the eight
+  assets on the draft; a 403 names a job without write).
+- **P15:** `ComfyClient.probe` sends `/queue`, the node check and the nine loader lists together after
+  `/system_stats` (a stub with 120 ms per answer: 1,830 -> 417 ms), the answer key for key as before.
+- **Tests:** `tools/links_test.js`, `comfyprobe_test.js`, `local_test.js` (new; `mcp_test.py` runs it first),
+  `comfyhosts_test.js`, `recipes_test.js` §17, `layered_test.js` (inflateAtMost, 64 PSDs twinned between the readers,
+  crafted fixtures with 512 MB bombs), `layered_test.py` `crafted_files_are_refused_on_both_routes`, `comfyview_test.py`
+  (a permission probe, `main_stays`). Gates: the agent's `layered` on both backends and `lint types recipes comfyview`
+  on tiles PASS; the merged state's in `mergeh1*`.
+- **Asked of the user:** the media denial and the two core nodes; ids made safe vs settings stored under an old id; the
+  ORA budget's 64:1.
+
 The order from here: U0, U1 (U2), H1, K27, P10 (+ P13, P15), then as after Stop 5:
 K21, K11, K22, K23, K25, K9, K36, K37; K2, *Stop 2*, K6, K7, K8, *Stop 4*; K32, K33, K34; K13, K14, the threads spike;
 K24, K3, K10a-c, K15-K18, K20a-c, K28, K29, K30, *Stop 6*, K31, K19, K35, K38, K39, K40, K41.

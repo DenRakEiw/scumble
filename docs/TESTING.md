@@ -847,6 +847,12 @@ ruled out side by side.
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-11-07 (`wasm-kernels`, the merge of H1, `run_gates_both.sh mergeh1`): `layered_test.py`
+  `crafted_files_are_refused_on_both_routes` failed on tiles with "crafted_bomb.ora (window): the renderer grew by 203
+  MB" (its limit is 200 MB above where the step began) while the canvas side ran beside it; every file was refused in
+  its own words. The step alone on a fresh tiles instance (`mergeh1-tiles-rerun`) passed with 96 MB, and the canvas
+  side passed. The private memory read has no `gc()` between the files, so a second instance's load moves it; if it
+  fails twice, read `grewMB` alone before suspecting the caps.
 - 2026-11-06 (`corridorkey`, LR2, tiles, the third gate of one instance after `loras` and `skins`): `editor_test.py`
   `a_new_mask_and_a_neighbours_write_reach_the_screen` failed at zoom 0.2 ("a fill whose box ends on a tile border",
   shifts 0-2: 10 and 235 levels on about 2,500-2,900 bytes, "a slot kept a neighbour's old edge line"; zoom 0.75 and
