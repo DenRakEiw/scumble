@@ -1,0 +1,11 @@
+lint rc=0 7s 
+types rc=0 4s 
+editor rc=0 167s PASS
+brush rc=0 15s RESULT PASS
+ALL PASS
+lint rc=0 7s 
+types rc=0 4s 
+editor rc=0 136s PASS
+brush rc=0 14s RESULT PASS
+ALL PASS
+SEQUENTIAL: tiles 210 s, canvas 178 s, together 388 s

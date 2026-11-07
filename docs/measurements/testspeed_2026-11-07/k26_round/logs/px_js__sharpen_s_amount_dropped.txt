@@ -1,0 +1,16 @@
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=dab)
+FAIL rust simd sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  noise 2x3 r 1 amount 0.5: out[1] is 139, the twin has 134
+FAIL rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  noise 2x3 r 1 amount 0.5: out[1] is 139, the twin has 134
+FAIL (2) (only: dab; PX_ONLY, not the full test)
+ok   rust simd blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust simd 3.9 ms, twin 13.2; sharpen rust simd 9.4 ms, twin 18.0
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)
+FAIL rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  noise 2x3 r 1 amount 0.5: out[1] is 139, the twin has 134
+ok   rust scalar blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust scalar 7.0 ms, twin 13.3; sharpen rust scalar 12.1 ms, twin 19.0
+FAIL (2) (only: dab; PX_ONLY, not the full test)
+(node:56220) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

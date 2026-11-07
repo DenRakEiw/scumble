@@ -1,0 +1,26 @@
+side by side: lint types editor brush (tiles on 9586, canvas on 9587, the canvas side 25 s later)
+[tiles] lint rc=0 7s 
+[tiles] types rc=0 5s 
+[canvas] lint rc=0 9s 
+[canvas] types rc=0 5s 
+[canvas] editor rc=0 144s PASS
+[tiles] editor rc=0 175s PASS
+[canvas] brush rc=0 15s RESULT PASS
+[tiles] brush rc=0 14s RESULT PASS
+[canvas] ALL PASS
+[tiles] ALL PASS
+== par25-tiles (rc 0, 217 s): C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/gates/gates/par25-tiles/summary.txt
+   lint rc=0 7s 
+   types rc=0 5s 
+   editor rc=0 175s PASS
+   brush rc=0 14s RESULT PASS
+   ALL PASS
+== par25-canvas (rc 0, 189 s): C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/gates/gates/par25-canvas/summary.txt
+   lint rc=0 9s 
+   types rc=0 5s 
+   editor rc=0 144s PASS
+   brush rc=0 15s RESULT PASS
+   ALL PASS
+wall time 217 s
+BOTH PASS
+SIDE BY SIDE (par25, stagger 25): 217 s

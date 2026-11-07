@@ -1,0 +1,32 @@
+mutant                                                     full round     s    focused     s
+premultiply by 1/256                                           KILLED    75     KILLED     7
+premultiply: green from red                                    KILLED    75     KILLED     7
+premultiply: the alpha premultiplied too                       KILLED    74     KILLED     7
+two passes, not three                                          KILLED    75     KILLED     7
+the passes' factor as a divisor                              SURVIVED   264   SURVIVED   249
+unpremultiply: transparent below 1, not 0.5                    KILLED    72     KILLED     7
+unpremultiply: a transparent pixel's bytes not written         KILLED    85     KILLED     7
+unpremultiply by 256 / alpha                                   KILLED    88     KILLED     7
+the alpha truncated                                            KILLED    75     KILLED     7
+clamp8: 254 the top                                            KILLED    83     KILLED     7
+sharpen: a transparent blur not kept                           KILLED    72     KILLED     7
+sharpen: the difference reversed                               KILLED    75     KILLED     7
+sharpen: the blur's alpha kept                                 KILLED    76     KILLED     8
+rows4: channels 2-3 from 0-1                                   KILLED    74     KILLED     8
+rows4: enter and leave swapped                                 KILLED    73     KILLED     8
+rows4: the sum moved as (sum + enter) - leave                SURVIVED   244   SURVIVED   258
+rows4: four channels left to the scalar loop                 SURVIVED   253   SURVIVED   263
+apply: multiply as divide                                      KILLED    79     KILLED     8
+Norm::of: multiply as divide                                   KILLED    74     KILLED     8
+Norm::of: divide by a reciprocal                             SURVIVED   259   SURVIVED   250
+px.js: the radius floored                                      KILLED    69     KILLED     2
+px.js: a short source not refused                              KILLED    38     KILLED     1
+px.js: sharpen's amount dropped                                KILLED    71     KILLED     2
+kernels.js: blur always the twin                               KILLED   229     KILLED    17
+kernels.js: the route ignored                                  KILLED   236     KILLED    17
+kernels.js: sharpen's amount dropped                           KILLED   162   SURVIVED   272   <- differs
+inpaint_canvas.js: the dabs on the twins again                 KILLED   232     KILLED    17
+verdicts equal: 26 of 27
+sum of seconds: full round 3282, focused 1465
+killed (22): full round 2100 s (mean 95), focused 173 s (mean 7.9)
+survived (5): full round 1182 s (mean 236), focused + re-check 1292 s (mean 258)

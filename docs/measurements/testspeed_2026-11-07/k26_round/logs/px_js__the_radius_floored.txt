@@ -1,0 +1,18 @@
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=dab)
+FAIL rust simd blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)  the same r 2.5 (rounded as the twin): out[0] is 154, the twin has 142
+FAIL rust simd sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  the same r 2.5 (rounded as the twin) amount 1: out[1] is 246, the twin has 243
+FAIL rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)  the same r 2.5 (rounded as the twin): out[0] is 154, the twin has 142
+FAIL rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  the same r 2.5 (rounded as the twin) amount 1: out[1] is 246, the twin has 243
+FAIL (4) (only: dab; PX_ONLY, not the full test)
+ok   rust simd blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust simd 4.1 ms, twin 13.5; sharpen rust simd 8.2 ms, twin 18.2
+ok   rust scalar module reports its SIMD flag
+FAIL rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)  the same r 2.5 (rounded as the twin): out[0] is 154, the twin has 142
+FAIL rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  the same r 2.5 (rounded as the twin) amount 1: out[1] is 246, the twin has 243
+ok   rust scalar blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust scalar 6.7 ms, twin 13.7; sharpen rust scalar 11.2 ms, twin 18.0
+FAIL (4) (only: dab; PX_ONLY, not the full test)
+(node:50876) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

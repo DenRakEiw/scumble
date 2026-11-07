@@ -724,6 +724,97 @@ a reference row and a layer row dropped on the prompt field writing nothing. The
 `tools/assistant_test.js` cover QW4's `preset`. Run: `bash tools/run_gates.sh <label> --offline --tiles on cloudjobs
 generate editor log lint types`.
 
+## Faster runs without less coverage
+
+Added 2026-11-07 (the user: "Tests auslassen: nein. Schneller machen: ja, deutlich"). Nothing here leaves a check out
+of a full run: the filters below are for a mutation round's focused kill sets and for iterating, and every filtered
+run says so on its verdict line. The numbers are in `docs/measurements/testspeed_2026-11-07/`.
+
+**px_test's case groups.** `PX_ONLY=mask,dab node tools/px_test.js` runs only those groups: the case functions
+`main()` calls, named without their `Cases` suffix (`GROUPS` at the top of the file: twinSelfTest, mip, edt, flood,
+composite, matchTwin, smudgeTwin, poissonTwin, png, compositeSha, blendFixture, blendGlsl, tierC, relightBench,
+relightStripe, counter, split, route, trap, lifecycle, sel, pngFilter, job, mask, dab, edge, relight, pngRead, match,
+smudge, poisson, pngPart, psd, resample, memory). A group runs wherever `main()` calls it (mip, edt, flood, composite
+and png on the reference and on both builds), in `main()`'s order; the builds' SIMD flag check always runs. An unknown
+name exits 2 with the list, the first line says `PX_ONLY: only the groups ... run`, and the last says
+`PASS (only: dab, mask; PX_ONLY, not the full test)`. `PX_TIMES=1` prints each group's time. Without `PX_ONLY` (or with
+it empty) it runs what it ran before: 397 `ok` lines, the same titles in the same order (compared line by line on
+2026-11-07), 67 s. Where the 67 s go (one run, both builds summed): poisson 17.2 s, relightStripe 15.6, composite 8.3,
+lifecycle 6.3 (the 2 s idle trims), sel 4.0, resample 3.9, dab 2.1, tierC 1.8, poissonTwin 1.6, pngFilter 1.3, route
+1.0, everything else under 0.6 each. `PX_ONLY=mask,dab` takes 2 s.
+
+**The editor gate's steps.** `SCUMBLE_EDITOR_ONLY=step,step` (the first step, those steps, the cleanup) now refuses a
+name that is no step (`[FAIL] SCUMBLE_EDITOR_ONLY names no step: ...`, before anything runs) and its verdict line reads
+`PASS (only: ...; SCUMBLE_EDITOR_ONLY, not the full gate)`. The gate with K26's two steps (blur and sharpen,
+frequency separation) took 18 s through `run_gates.sh`, the instance's start and close included, against 173 s whole.
+
+**Mutation rounds: `tools/mutation_round.py`.** The rounds of K4 and K26 (`mut_k4.py`, `mut_k26.py`) generalised, so a
+session writes only its mutants file:
+
+    python tools/mutation_round.py make TREE MUTANTS.py
+    python tools/mutation_round.py run TREE OUT MUTANTS.py [names...] --port 9586 [--lock BUSY_LOCK]
+
+`make` writes the tracked files of the checkout's HEAD (git archive, unpacked by Python) plus the file's `WORKING` list
+into TREE, with `node_modules` as a junction to the checkout's real one (PowerShell `New-Item -ItemType Junction`), and
+a marker `.mutation_tree`; it refuses a TREE inside F:/canvas or the checkout, and replaces an existing TREE only when
+the marker says `make` made it, the junction removed with `cmd /c rmdir` before any `rmtree`. The mutants file is
+Python: `TITLE`, `WORKING`, `GATES` (the gates a survivor runs whole, e.g. `["editor"]`), `TILES` ("on"), and
+`MUTANTS`, each `(name, file, [(old, new), ...], expected, kill)`: every `old` must occur exactly once (checked before
+anything runs), `expected` starting with "killed" means it should die, and `kill` is the focused kill set, a dict of
+`px` (px_test groups for `PX_ONLY`), `editor` (steps for `SCUMBLE_EDITOR_ONLY`), `gates` (gates run whole as part of
+the focused set), optionally `full_gates` (this mutant's re-check gates instead of `GATES`) and `tiles`. The names are
+checked against the tree's `GROUPS` and the editor gate's `STEPS` before the round starts. A 4-tuple without `kill`
+runs the full px_test and `GATES`, as the rounds before did. `run` goes:
+- **orig**: both wasm builds rebuilt in TREE and byte-identical to the checkout's, then the full px_test, every
+  distinct focused px set, every gate a survivor would run (whole) and every distinct focused editor set, each green;
+  otherwise nothing is believed and the round stops. With names given, orig runs only when "orig" is named.
+- **each mutant** on its focused set (px, then the editor steps, then gates; the first red one kills). A Rust mutant
+  (`.rs`) is rebuilt on both builds (`tools/build_px.py`); its file is restored after and the untouched copy's two wasm
+  files are copied back (byte-exact, no rebuild per mutant).
+- **the re-check**: a mutant its focused set leaves green runs the full px_test and its gates whole before it counts
+  as a survivor, so the speed-up cannot hide a kill. A kill there is reported as `red on the re-check` with
+  `<-- THE FOCUSED KILL SET MISSED IT: widen it`; a verdict against `expected` gets `<-- NOT AS EXPECTED`.
+- **restored copy**: every mutated file back, a rebuild compared with the checkout's bytes, the full px_test.
+Results are appended to `OUT/results.txt` (one line per mutant: the verdict, the first failing line, the builds'
+hashes, the time and its parts), the commands' tails to `OUT/logs/<mutant>.txt`, the gates' logs under `OUT/gates`
+(their profiles deleted after each gate). `--lock PATH` (or `SCUMBLE_BUSY_LOCK`) waits out a busy lock before every
+test. K26's 27 mutants in this format: `docs/measurements/testspeed_2026-11-07/mutants_k26.py`.
+
+Measured on K26's 27 mutants (2026-11-07, `testspeed_2026-11-07/k26_round/`, the focused sets `mask`, `dab` (and
+`relight` for `maskf.rs`'s shared code) on the kernel, `dab` on px.js, the editor gate's blur and sharpen step and its
+frequency separation step on the call site): a killed mutant took 7-8 s (Rust: the rebuild 5 s, `PX_ONLY` 2 s), 1-2 s
+(px.js) and 17 s (the call site), against 72-88 s, 38-71 s and 229-236 s in K26's full round (`mut_k26.py`: the full
+px_test, then the whole editor gate); the 22 killed mutants 173 s against 2,100 s. A survivor pays the focused set and
+then the full kill set (250-272 s against 244-264 s). The whole round 1,465 s against 3,282 s, plus the orig (272 s:
+the build, the full px_test, the three px sets, the whole editor gate, the two steps). Every kill came from the focused
+set (none on the re-check), and the verdicts equal the full round's on 26 of 27; the 27th, "kernels.js: sharpen's
+amount dropped", was killed in the full round before K26's review gave px.js's `sharpenRGBA` its default `amount = 1`,
+and today both the focused set and the full kill set leave it green (an equivalent mutant now: the brush passes 1).
+The more mutants a round kills, the more it gains; a list of equivalent mutants gains nothing, since each pays the full
+kill set anyway.
+
+**Both backends side by side: `tools/run_gates_both.sh`.**
+
+    bash tools/run_gates_both.sh <label> [--stagger S] [--ports T,C] [--offline] [--exe PATH] [...] gate [gate ...]
+
+runs `tools/run_gates.sh` twice at once, `--tiles on` as `<label>-tiles` on port T (default 9586) and `--tiles off` as
+`<label>-canvas` on port C (default 9587), the other run_gates.sh options passed to both (`--tiles` is refused), each
+side with its own TEMP / TMP under `$SCUMBLE_GATES/tmp/` (brush, boxes, glb and the editor gate write fixed names under
+the temp folder). Each side's lines come prefixed (`[tiles]`, `[canvas]`), then both summaries, the wall time and
+`BOTH PASS` or `SOME FAILED` (exit 1). The canvas side starts S seconds later (default 25, only when a gate needs an
+app). Gates that cannot share the machine run after the side-by-side part, tiles then canvas, as
+`<label>-tiles-serial` / `<label>-canvas-serial`: `smoke`, `mcp` (its attach test's fixed port 9573), `cloudjobs`
+(9576), `portable`, `quit`, `document`, `node`, `nodecopy` (one `$SCUMBLE_GATES/nodecopy`), `mcpb`, and every timed
+row (`perf:`, `exportperf:`, `tiffperf:`, `mem:`, `docperf:`, `huge:`, `upscaleperf:`, `pxjobs`, `pxprobe:`).
+Measured 2026-11-07 with `lint types editor brush` `--offline` (`testspeed_2026-11-07/gates/`): one after the other
+388 s (tiles 210 s, canvas 178 s); side by side 217 s with the default stagger and 218 s without one, all green each
+time; the editor gate took 175 / 144 s side by side against 167 / 136 s alone (tiles / canvas), the live stroke step
+counted 112 / 107 frames against 115 / 109. The stagger costs nothing while the tiles side is the slower one (it is,
+by about 30 s, in the editor gate). One run each with and without the stagger, so the flake below was neither seen nor
+ruled out side by side.
+
+## Known flakes
+
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:
@@ -776,7 +867,10 @@ Known flakes; **re-run before believing any of these**:
 - The live stroke steps (`live_stroke_reaches_the_screen_before_the_release`, `live_stroke_preview_shows_what_the_commit_writes`)
   fail when a real mouse is over the test window (they drive synthetic pointer events), or right after a diagnostic
   instance was closed. 2026-09-28: `live_stroke_reaches_the_screen_before_the_release` failed once in a full editor run
-  on the canvas backend (28 frames against 200: the window not in front) and passed alone at once.
+  on the canvas backend (28 frames against 200: the window not in front) and passed alone at once. 2026-11-07
+  (`tools/run_gates_both.sh`, two instances side by side, each step calling `Page.bringToFront` on its own window):
+  both steps passed on both sides with the canvas side started 25 s later and with both started at once (one run
+  each, 107-112 frames against 109-115 alone); the stagger stays the default.
 - The marching ants (120 ms) break a screen comparison now and then; steps that compare the screen draw the selection as a
   tint.
 - `composite_test.py` once got a 1200 × 794 canvas against its 1200 × 800 reference and then crashed with `KeyError 'bytes'`

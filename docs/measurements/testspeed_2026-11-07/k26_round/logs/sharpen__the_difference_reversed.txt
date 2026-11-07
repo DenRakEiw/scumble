@@ -1,0 +1,25 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 5 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 167723 bytes, sha256 922a4e3723ee8e3f
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 145102 bytes, sha256 0e68fe6dc0920599
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.89s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.36s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=mask,dab)
+FAIL rust simd sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  noise 2x3 r 1 amount 0.5: out[0] is 64, the twin has 0
+FAIL rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  noise 2x3 r 1 amount 0.5: out[0] is 64, the twin has 0
+FAIL (2) (only: mask, dab; PX_ONLY, not the full test)
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 23.4 ms, twin 41.6; three box blurs rust scalar 17.7 ms, twin 20.5
+ok   rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)
+FAIL rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  noise 2x3 r 1 amount 0.5: out[0] is 64, the twin has 0
+ok   rust scalar blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust scalar 7.0 ms, twin 13.8; sharpen rust scalar 9.4 ms, twin 19.3
+FAIL (2) (only: mask, dab; PX_ONLY, not the full test)
+(node:54312) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

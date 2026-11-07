@@ -1,0 +1,75 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 167723 bytes, sha256 5d844a4415ea72d3
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 145102 bytes, sha256 48520a35e6a1a635
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.72s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.08s
+$ node tools/px_test.js  (rc 0, 67 s)
+PASS
+ok   rust scalar a large alloc grows memory  229048320 -> 497549312
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+PASS
+(node:55740) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 2 s, PX_ONLY=dab,mask)
+PASS (only: mask, dab; PX_ONLY, not the full test)
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 21.5 ms, twin 43.0; three box blurs rust scalar 17.4 ms, twin 21.7
+ok   rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)
+ok   rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)
+ok   rust scalar blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust scalar 6.6 ms, twin 13.9; sharpen rust scalar 12.9 ms, twin 17.9
+PASS (only: mask, dab; PX_ONLY, not the full test)
+(node:39632) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 3 s, PX_ONLY=dab,mask,relight)
+PASS (only: mask, dab, relight; PX_ONLY, not the full test)
+       1492 x 1492: dilate rust scalar 21.3 ms, twin 41.1; three box blurs rust scalar 16.9 ms, twin 44.6
+ok   rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)
+ok   rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)
+ok   rust scalar blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust scalar 6.8 ms, twin 14.2; sharpen rust scalar 11.2 ms, twin 17.8
+ok   rust scalar height_normals equals its twin within 1 level
+ok   rust scalar shadow_march equals its twin within 1 level
+PASS (only: mask, dab, relight; PX_ONLY, not the full test)
+(node:48272) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 2 s, PX_ONLY=dab)
+PASS (only: dab; PX_ONLY, not the full test)
+ok   rust simd blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust simd 3.8 ms, twin 12.9; sharpen rust simd 8.0 ms, twin 17.4
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)
+ok   rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)
+ok   rust scalar blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust scalar 6.5 ms, twin 13.0; sharpen rust scalar 10.9 ms, twin 17.6
+PASS (only: dab; PX_ONLY, not the full test)
+(node:56928) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-editor-on --offline --tiles on editor  (rc 0, 173 s)
+editor rc=0 157s PASS
+ALL PASS
+$ bash tools/run_gates.sh mut-orig-ed0-on --offline --tiles on editor  (rc 0, 18 s, SCUMBLE_EDITOR_ONLY=blur_and_sharpen_modes_soften_and_crisp_an_edge,frequency_separation_gives_the_picture_back_on_every_path)
+editor rc=0 2s PASS (only: blur_and_sharpen_modes_soften_and_crisp_an_edge, frequency_separation_gives_the_picture_back_on_every_path; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS

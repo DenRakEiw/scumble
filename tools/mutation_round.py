@@ -155,7 +155,7 @@ class Round:
         meta = json.load(open(os.path.join(tree, MARK), encoding="utf-8"))
         self.repo = meta["repo"]
         os.makedirs(os.path.join(out, "logs"), exist_ok=True)
-        self.res = open(os.path.join(out, "results.txt"), "a", encoding="utf-8")
+        self.res = open(os.path.join(out, "results.txt"), "a", encoding="utf-8", newline=chr(10))
         self.px_dir = os.path.join(tree, "renderer", "editor", "px")
         self.want = {n: sha(os.path.join(self.repo, "renderer", "editor", "px", n)) for n in WASM}
         self.saved_wasm = os.path.join(out, "orig_wasm")
@@ -183,7 +183,7 @@ class Round:
             out, rc = f"TIMEOUT after {timeout} s\n{got}", 124
         dt = time.time() - t
         extra = "".join(f", {k}={env[k]}" for k in ("PX_ONLY", "SCUMBLE_EDITOR_ONLY") if env and env.get(k))
-        with open(log, "a", encoding="utf-8") as f:
+        with open(log, "a", encoding="utf-8", newline=chr(10)) as f:
             f.write(f"$ {' '.join(cmd)}  (rc {rc}, {dt:.0f} s{extra})\n")
             lines = out.splitlines()
             keep = [x for x in lines if x.startswith(("FAIL", "not ok", "PASS", "error", "[FAIL]"))] + lines[-12:]

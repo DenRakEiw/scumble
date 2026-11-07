@@ -1,0 +1,44 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 5 s)
+   |
+92 | pub enum Norm {
+   |          ---- variant in this enum
+93 |     Div(f64),
+94 |     Mul(f64),
+   |     ^^^
+   |
+   = note: `Norm` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 2.36s
+$ node tools/px_test.js  (rc 0, 2 s, PX_ONLY=mask,dab)
+PASS (only: mask, dab; PX_ONLY, not the full test)
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 22.5 ms, twin 41.7; three box blurs rust scalar 17.6 ms, twin 20.8
+ok   rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)
+ok   rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)
+ok   rust scalar blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust scalar 8.3 ms, twin 14.8; sharpen rust scalar 12.4 ms, twin 19.2
+PASS (only: mask, dab; PX_ONLY, not the full test)
+(node:24432) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 66 s)
+PASS
+ok   rust scalar a large alloc grows memory  229048320 -> 497549312
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+PASS
+(node:54100) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/testspeed_f/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\testspeed_f\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-the_passes__factor_as_a_divisor-full-editor --offline --tiles on editor  (rc 0, 175 s)
+editor rc=0 159s PASS
+ALL PASS

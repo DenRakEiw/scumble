@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-kernels_js__the_route_ignored-ed --offline --tiles on editor  (rc 1, 17 s, SCUMBLE_EDITOR_ONLY=blur_and_sharpen_modes_soften_and_crisp_an_edge,frequency_separation_gives_the_picture_back_on_every_path)
+editor rc=1 1s FAIL (only: blur_and_sharpen_modes_soften_and_crisp_an_edge, frequency_separation_gives_the_picture_back_on_every_path; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

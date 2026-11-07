@@ -43,7 +43,7 @@
 # Logs, profiles and the node copy go under $SCUMBLE_GATES (default F:/canvas/dist/gates, ignored by git).
 SP="${SCUMBLE_GATES:-/f/canvas/dist/gates}"
 # SCUMBLE_CDP_PORT picks the DevTools port (default 9555), so two runs with different labels can go side by side;
-# tools/cdp.py and tools/close_app.py read the same variable.
+# tools/cdp.py and tools/close_app.py read the same variable. tools/run_gates_both.sh runs both backends that way.
 PORT="${SCUMBLE_CDP_PORT:-9555}"
 export SCUMBLE_CDP_PORT="$PORT"
 LABEL="$1"; shift
