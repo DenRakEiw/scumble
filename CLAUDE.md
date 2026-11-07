@@ -981,6 +981,14 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 59: **Smart guides to other layers** (the user, 2026-11-07): `snapLayer` / `snapScale` (`inpaint_canvas.js` near
   4955-4990) snap a moved or scaled layer to the canvas edges, its centre and the guides; add the edges and centres of
   the other visible layers, with the same 8 screen px and the drawn lines. Small to medium.
+  **Built 2026-11-07 by agent C, merged (`f9708ab`, a review workflow's 3 findings fixed in `cf04163`):**
+  `snapTargets(p, moving)` lists the canvas edges and centre and the guides first, then the box edges and centres of
+  every other layer the screen draws (shown, with pixels, not a filter layer, a clipped layer only while its base is
+  shown, reference / control layers while visible; in compare mode only the compared results), kept on the pointer
+  (`p.snapTo`) with a stamp (`historyGen`, `compositeVersion`, canvas size, guides) so an agent's change during a drag
+  rebuilds it; a pending rotation snaps by the turned quad's bounds; Alt turns snapping off (as before). Gate step
+  `move_and_scale_snap_to_other_layers`. Open for the user: reference / control layers as targets (included), a shorter
+  guide line between the two layers.
 - 60: **Variants on a result layer, and compare against what lies below** (the user, 2026-11-07): another run on the same
   selection lands as a variant of the result layer (`◀ 2/4 ▶` on the layer, each variant with its own edge fit and colour
   match) instead of one more layer; and Compare (today `toggleCompare`, two result layers A / B with a divider; `\` held
