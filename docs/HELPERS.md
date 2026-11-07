@@ -251,7 +251,9 @@ a utility process is killed where it stands (measured in the app: a folder scan 
 process). The process is killed on a folder change, a scan, the model's removal and at quit
 (`will-quit`); **Free VRAM leaves it** (it holds no VRAM, and a Remove under way would lose its
 answer), and a Remove does not set the editor's `helperUsed`, so a local run does not free it.
-Moving SAM2 and the matting models out of the main thread is open.
+Moving SAM2 and the matting models out of the main thread is open: measured by U0 (2026-11-07; the first SAM2 call
+holds main 1.1 s in one piece, an object map about 0.2 s sixteen times, a CPU cutout 4.8 s; in a utility process main
+did not block at all), planned as U1 in `docs/PLAN_HELPERS_PROCESS.md`.
 
 The renderer side is in `renderer/editor/host.js` (`findObjects`, `cutoutInApp`,
 `selectPoint`, `segmentPoint`, `segmentKey`, `segmentLogits`, `selectBox`, `refreshHelpers`, `cutoutBackends`, `removeModel`,
@@ -449,6 +451,12 @@ cutout model lists in every open editor.
 | Depth Anything V2 Small (CPU, 24 threads; the same) | not timed | 0.48-0.73 s |
 | the guided filter after it (CPU, 2,048 px working size) | | 0.41-0.64 s |
 | the whole depth map in the app on 15,000 × 10,000 (model on DirectML, guide in the workers at 4,096 × 2,731; 2026-10-09) | | 1.06 s, 22 MB map |
+
+**Measured again 2026-11-07 (U0, RTX 5090, DirectML, the scene's 1024² input; `docs/PLAN_HELPERS_PROCESS.md` §1,
+`docs/measurements/u0_2026-11-07/summary.txt`):** SAM2 base+'s first call 1.6 s (the sessions 1.2 s), a warm point
+8 ms, the object map 1.9 s (16 decoder batches 1.3 s, JavaScript 0.6 s), after Free VRAM 2.8 s; tiny and small the same
+map (one decoder file); the CPU 38 s per map. BiRefNet lite 4.8 s on the CPU, 3.5 s on "gpu" (a load each run); depth
+0.24 s (DirectML) and 0.8 s (CPU) at 924 x 518.
 
 **VRAM pressure:** with ComfyUI holding Flux.2 Klein plus its helper models (29 of
 32 GB in use) the same SAM2 run took 125 s: DirectML pages through system memory. After

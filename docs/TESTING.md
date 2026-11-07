@@ -116,6 +116,14 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   window's reader; "fail": a job no worker knows, so the fallback runs) is a class switch for harnesses, like
   `mipsOnPool` and `pngParts`, not a route of `px/kernels.js`: it chooses where the reader runs, not which kernel
   (K20b's JS / Rust choice inside `psd_read` becomes a route).
+  U0 (the ONNX helpers, `docs/PLAN_HELPERS_PROCESS.md`; a measurement, not a gate): `python tools/helpers_perf.py
+  --out DIR [--runs 1,2,3] [--batches gpu,cpu,editor,probe,batchsize,hovermem] [--quick] [--no-lock]` starts its own
+  instance per batch (port 9588, main's inspector on 9598 with `--inspect`, a profile whose helpers folder is the
+  user's ComfyUI `models/` read only), installs its timers in main through the inspector (no app code: wrappers around
+  `InferenceSession.create` / `run` / `release`, `Sam2`'s methods and the `helpers:*` handlers, a 4 ms event-loop
+  sampler) and an IPC round-trip probe in the window; `probe` forks `tools/helpers_process_probe.js` (the
+  `electron/main/onnx` engine in a utility process) from main. It takes the machine's busy lock per batch and waits for
+  other agents' instances first; `--summarize` writes `summary.txt` from `raw/*.json` again.
   K5 (the selection's combine, Rust `sel_combine`, ABI 21): `node tools/px_test.js`'s `selCases` twin `sel_combine` on
   both builds against `kernels_js.js` `selCombine`, and that twin against the editor's `combineRows` with a plain extent
   scan (every mode x the source kinds 0 / 1 / 2 / 4 x seven parts of a tile x four tile states, with a tile's stride and

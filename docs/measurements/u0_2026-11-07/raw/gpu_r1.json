@@ -1,0 +1,6958 @@
+{
+ "batch": "gpu",
+ "run": 1,
+ "device": "gpu",
+ "started": "2026-11-07T13:52:07",
+ "others": [],
+ "card_before_start": 8475,
+ "main_setup": {
+  "pid": 48628,
+  "ort": "1.29.0",
+  "electron": "44.2.0",
+  "hist": true
+ },
+ "page_setup": {
+  "ok": true,
+  "tiles": true
+ },
+ "image": "F:\\canvas\\docs\\images\\tutorial\\scene.jpg",
+ "prep": {
+  "W": 2000,
+  "H": 1125,
+  "loadMs": 597,
+  "inputMs": 38.3,
+  "outW": 2000,
+  "outH": 1125,
+  "dw": 924,
+  "dh": 518,
+  "lw": 1568,
+  "lh": 882,
+  "tiles": true
+ },
+ "rows": [
+  {
+   "name": "idle",
+   "reps": [
+    {
+     "wall": 1506.1,
+     "probe": {
+      "n": 102,
+      "max": 3.1,
+      "p50": 0.4,
+      "p95": 0.7,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.2,
+      "histP99Ms": 16
+     }
+    }
+   ]
+  },
+  {
+   "name": "ipc_tiny",
+   "reps": [
+    {
+     "wall": 2.5,
+     "probe": {
+      "n": 5,
+      "max": 0.6,
+      "p50": 0.3,
+      "p95": 0.6,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 13338.9951,
+        "ms": 0.11620000000038999
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    },
+    {
+     "wall": 1.1,
+     "probe": {
+      "n": 5,
+      "max": 0.8,
+      "p50": 0.7,
+      "p95": 0.8,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 13726.7845,
+        "ms": 0.06830000000081782
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.8,
+      "histP99Ms": 15.8
+     }
+    },
+    {
+     "wall": 0.7,
+     "probe": {
+      "n": 5,
+      "max": 0.5,
+      "p50": 0.3,
+      "p95": 0.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 14114.0052,
+        "ms": 0.05850000000100408
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 0.7,
+     "probe": {
+      "n": 5,
+      "max": 0.6,
+      "p50": 0.3,
+      "p95": 0.6,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 14501.8402,
+        "ms": 0.05129999999917345
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.8,
+      "histP99Ms": 15.8
+     }
+    },
+    {
+     "wall": 0.6,
+     "probe": {
+      "n": 5,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 14889.9471,
+        "ms": 0.050600000000486034
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ]
+  },
+  {
+   "name": "ipc_4mb",
+   "reps": [
+    {
+     "wall": 9.9,
+     "probe": {
+      "n": 6,
+      "max": 7.4,
+      "p50": 0.4,
+      "p95": 7.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 15286.621,
+        "ms": 0.05680000000029395
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.9,
+      "histP99Ms": 15.9
+     }
+    },
+    {
+     "wall": 11.1,
+     "probe": {
+      "n": 7,
+      "max": 7.3,
+      "p50": 0.5,
+      "p95": 7.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 15691.305,
+        "ms": 0.06890000000021246
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.8,
+      "histP99Ms": 15.8
+     }
+    },
+    {
+     "wall": 9.4,
+     "probe": {
+      "n": 6,
+      "max": 6.8,
+      "p50": 0.4,
+      "p95": 6.8,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 16107.4784,
+        "ms": 0.06409999999959837
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 9.9,
+     "probe": {
+      "n": 6,
+      "max": 7.1,
+      "p50": 0.4,
+      "p95": 7.1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 16511.1725,
+        "ms": 0.044200000000273576
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    },
+    {
+     "wall": 10,
+     "probe": {
+      "n": 6,
+      "max": 7.1,
+      "p50": 0.4,
+      "p95": 7.1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 \u00d7 1024 pixels",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 16915.1721,
+        "ms": 0.04809999999997672
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.9,
+      "histP99Ms": 15.9
+     }
+    }
+   ]
+  },
+  {
+   "name": "sam2_base_plus.point_cold",
+   "reps": [
+    {
+     "wall": 1782.7,
+     "probe": {
+      "n": 10,
+      "max": 1197.2,
+      "p50": 7.4,
+      "p95": 1197.2,
+      "over50": 4,
+      "over200": 2,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.8812333345413208,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "sam2_hiera_base_plus.encoder.onnx",
+        "p": "dml",
+        "t0": 17319.6327,
+        "ms": 1192.7161000000015
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.encoder.onnx",
+        "t0": 18521.3869,
+        "ms": 73.66189999999915,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "encode",
+        "t0": 17319.4517,
+        "ms": 1275.6261999999988
+       },
+       {
+        "k": "create",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "p": "dml",
+        "t0": 18595.3033,
+        "ms": 211.8185999999987
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 18807.1913,
+        "ms": 283.8539000000019,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 18595.0857,
+        "ms": 496.0645000000004
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 17318.8202,
+        "ms": 1772.3474000000024
+       }
+      ],
+      "blockN": 4,
+      "blockMax": 1212.4,
+      "blockSum": 1782.4,
+      "top": [
+       [
+        17309.2,
+        1212.4
+       ],
+       [
+        18807.2,
+        284.3
+       ],
+       [
+        18595.4,
+        211.9
+       ],
+       [
+        18521.6,
+        73.8
+       ]
+      ],
+      "histMaxMs": 1213.2,
+      "histP99Ms": 1213.2
+     }
+    }
+   ],
+   "model": "sam2_base_plus"
+  },
+  {
+   "name": "sam2_base_plus.point_warm",
+   "reps": [
+    {
+     "wall": 9.9,
+     "probe": {
+      "n": 7,
+      "max": 1,
+      "p50": 0.4,
+      "p95": 1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.8812333345413208,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 21857.009,
+        "ms": 8.503100000001723,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 21856.9571,
+        "ms": 8.606700000000274
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 21856.5889,
+        "ms": 8.988499999999476
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    },
+    {
+     "wall": 8.4,
+     "probe": {
+      "n": 7,
+      "max": 0.9,
+      "p50": 0.3,
+      "p95": 0.9,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.8812333345413208,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 22261.0254,
+        "ms": 6.863800000002811,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 22260.9857,
+        "ms": 6.9821999999985565
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 22260.6894,
+        "ms": 7.287599999999657
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.2,
+      "histP99Ms": 16.2
+     }
+    },
+    {
+     "wall": 8.7,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.8812333345413208,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 22664.1816,
+        "ms": 7.457600000001548,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 22664.1188,
+        "ms": 7.606700000000274
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 22663.7969,
+        "ms": 7.940599999998085
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    },
+    {
+     "wall": 13.5,
+     "probe": {
+      "n": 6,
+      "max": 0.6,
+      "p50": 0.5,
+      "p95": 0.6,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.8812333345413208,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 23070.8766,
+        "ms": 7.980100000000675,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 23070.7241,
+        "ms": 8.194299999999203
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 23067.304,
+        "ms": 11.621800000000803
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.3,
+      "histP99Ms": 18.3
+     }
+    },
+    {
+     "wall": 11.3,
+     "probe": {
+      "n": 7,
+      "max": 0.6,
+      "p50": 0.3,
+      "p95": 0.6,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.8812333345413208,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 23470.0011,
+        "ms": 9.707899999997608,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 23469.9663,
+        "ms": 9.826499999999214
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 23469.6618,
+        "ms": 10.14259999999922
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    }
+   ],
+   "model": "sam2_base_plus"
+  },
+  {
+   "name": "sam2_base_plus.objects_cached",
+   "reps": [
+    {
+     "wall": 2065,
+     "probe": {
+      "n": 22,
+      "max": 204.4,
+      "p50": 99.4,
+      "p95": 194.2,
+      "over50": 16,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "idsBytes": 4500000,
+      "width": 2000,
+      "height": 1125,
+      "count": 95,
+      "candidates": 837,
+      "seconds": 2.043,
+      "encodeMs": 73,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "encode",
+        "t0": 23883.9302,
+        "ms": 0.013300000002345769
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 23884.5123,
+        "ms": 160.75860000000102,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 24097.3339,
+        "ms": 79.80529999999999,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 24224.077,
+        "ms": 73.30199999999968,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 24329.9761,
+        "ms": 74.08190000000104,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 24437.2465,
+        "ms": 77.10329999999885,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 24539.7507,
+        "ms": 117.98449999999866,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 24678.0493,
+        "ms": 81.04680000000008,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 24782.5642,
+        "ms": 74.82579999999871,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 24883.0283,
+        "ms": 74.96839999999793,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 24977.3718,
+        "ms": 78.0673999999999,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 25076.9056,
+        "ms": 81.69610000000102,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 25185.8512,
+        "ms": 94.5743999999977,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 25311.7984,
+        "ms": 78.15169999999853,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 25429.6927,
+        "ms": 81.83420000000115,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 25570.8085,
+        "ms": 80.07749999999942,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 25716.144,
+        "ms": 77.94210000000021,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 23883.9465,
+        "ms": 2042.4212000000007
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 23883.496,
+        "ms": 2042.913700000001
+       }
+      ],
+      "blockN": 16,
+      "blockMax": 224.6,
+      "blockSum": 2057,
+      "top": [
+       [
+        23872.8,
+        224.6
+       ],
+       [
+        25716.2,
+        213.7
+       ],
+       [
+        25570.8,
+        145.3
+       ],
+       [
+        25429.7,
+        141.1
+       ],
+       [
+        24539.8,
+        138.3
+       ],
+       [
+        24097.4,
+        126.7
+       ],
+       [
+        25185.9,
+        125.9
+       ],
+       [
+        25311.8,
+        117.9
+       ],
+       [
+        25076.9,
+        109
+       ],
+       [
+        24330,
+        107.3
+       ],
+       [
+        24224.1,
+        105.9
+       ],
+       [
+        24678.1,
+        104.5
+       ]
+      ],
+      "histMaxMs": 224.7,
+      "histP99Ms": 224.7
+     }
+    },
+    {
+     "wall": 1944.9,
+     "probe": {
+      "n": 22,
+      "max": 206.7,
+      "p50": 95.2,
+      "p95": 133.6,
+      "over50": 16,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "idsBytes": 4500000,
+      "width": 2000,
+      "height": 1125,
+      "count": 95,
+      "candidates": 837,
+      "seconds": 1.923,
+      "encodeMs": 73,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "encode",
+        "t0": 26333.3042,
+        "ms": 0.010700000002543675
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 26333.4471,
+        "ms": 80.76249999999709,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 26471.3142,
+        "ms": 76.91690000000017,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 26586.0397,
+        "ms": 80.6407999999974,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 26696.6795,
+        "ms": 81.89240000000063,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 26805.39,
+        "ms": 80.04720000000088,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 26910.7395,
+        "ms": 82.57800000000134,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 27017.1589,
+        "ms": 78.94670000000042,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 27119.6429,
+        "ms": 79.44810000000143,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 27224.9595,
+        "ms": 79.41799999999785,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 27323.4336,
+        "ms": 114.11549999999988,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 27458.4218,
+        "ms": 71.57070000000022,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 27551.9014,
+        "ms": 76.90000000000146,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 27654.1869,
+        "ms": 74.86130000000048,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 27769.4395,
+        "ms": 78.41999999999825,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 27907.884,
+        "ms": 79.95050000000265,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 28049.0798,
+        "ms": 77.6823000000004,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 26333.3179,
+        "ms": 1923.5673000000024
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 26332.9198,
+        "ms": 1924.0011999999988
+       }
+      ],
+      "blockN": 16,
+      "blockMax": 211,
+      "blockSum": 1937.1,
+      "top": [
+       [
+        28049.1,
+        211
+       ],
+       [
+        26323,
+        148.4
+       ],
+       [
+        27907.9,
+        141.2
+       ],
+       [
+        27769.5,
+        138.4
+       ],
+       [
+        27323.5,
+        135
+       ],
+       [
+        27654.2,
+        115.2
+       ],
+       [
+        26471.4,
+        114.7
+       ],
+       [
+        26586.1,
+        110.6
+       ],
+       [
+        26696.7,
+        108.7
+       ],
+       [
+        26910.8,
+        106.4
+       ],
+       [
+        26805.4,
+        105.4
+       ],
+       [
+        27119.7,
+        105.3
+       ]
+      ],
+      "histMaxMs": 211.2,
+      "histP99Ms": 211.2
+     }
+    }
+   ],
+   "model": "sam2_base_plus"
+  },
+  {
+   "name": "sam2_base_plus.objects_new",
+   "reps": [
+    {
+     "wall": 1950,
+     "probe": {
+      "n": 23,
+      "max": 197.4,
+      "p50": 79.8,
+      "p95": 157.6,
+      "over50": 16,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "idsBytes": 4500000,
+      "width": 2000,
+      "height": 1125,
+      "count": 89,
+      "candidates": 819,
+      "seconds": 1.929,
+      "encodeMs": 37,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.encoder.onnx",
+        "t0": 28683.9103,
+        "ms": 36.78120000000126,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "encode",
+        "t0": 28677.0819,
+        "ms": 43.631900000000314
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 28720.8377,
+        "ms": 79.18130000000019,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 28859.7013,
+        "ms": 75.73349999999846,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 28972.0626,
+        "ms": 75.65929999999935,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 29076.8077,
+        "ms": 142.3760000000002,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 29243.3837,
+        "ms": 74.03210000000036,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 29334.5496,
+        "ms": 71.69160000000193,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 29423.6294,
+        "ms": 75.71569999999701,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 29518.5441,
+        "ms": 73.28250000000116,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 29615.0563,
+        "ms": 71.95279999999912,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 29708.2946,
+        "ms": 74.01919999999882,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 29807.3668,
+        "ms": 73.13270000000193,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 29906.0389,
+        "ms": 75.82370000000083,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 30007.4007,
+        "ms": 74.78190000000177,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 30127.2164,
+        "ms": 76.29880000000048,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 30268.088,
+        "ms": 75.29980000000069,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 30401.7622,
+        "ms": 72.65729999999894,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 28720.717,
+        "ms": 1884.760699999999
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 28676.7322,
+        "ms": 1928.8019999999997
+       }
+      ],
+      "blockN": 17,
+      "blockMax": 207.6,
+      "blockSum": 1942.7,
+      "top": [
+       [
+        30401.8,
+        207.6
+       ],
+       [
+        29076.8,
+        166.6
+       ],
+       [
+        30127.2,
+        140.9
+       ],
+       [
+        28720.9,
+        138.9
+       ],
+       [
+        30268.1,
+        133.7
+       ],
+       [
+        30007.4,
+        119.8
+       ],
+       [
+        28859.7,
+        112.3
+       ],
+       [
+        28972.1,
+        104.7
+       ],
+       [
+        29906.1,
+        101.4
+       ],
+       [
+        29708.3,
+        99.1
+       ],
+       [
+        29807.4,
+        98.7
+       ],
+       [
+        29518.6,
+        96.5
+       ]
+      ],
+      "histMaxMs": 207.6,
+      "histP99Ms": 207.6
+     }
+    }
+   ],
+   "model": "sam2_base_plus"
+  },
+  {
+   "name": "sam2_base_plus.point_after_objects",
+   "reps": [
+    {
+     "wall": 9.5,
+     "probe": {
+      "n": 7,
+      "max": 0.6,
+      "p50": 0.4,
+      "p95": 0.6,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.8812333345413208,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 31010.3473,
+        "ms": 7.958999999998923,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 31010.3111,
+        "ms": 8.053100000000995
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 31009.9559,
+        "ms": 8.418099999998958
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 9.4,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.8812333345413208,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 31413.8266,
+        "ms": 8.03570000000036,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 31413.7883,
+        "ms": 8.157800000000861
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 31413.4664,
+        "ms": 8.485199999999168
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 8,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.4,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.8812333345413208,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 31816.9988,
+        "ms": 6.551599999998871,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 31816.9639,
+        "ms": 6.652799999999843
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 31816.6417,
+        "ms": 6.979299999999057
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16,
+      "histP99Ms": 16
+     }
+    }
+   ],
+   "model": "sam2_base_plus"
+  },
+  {
+   "name": "sam2_base_plus.objects_perbatch16",
+   "reps": [
+    {
+     "wall": 120.6,
+     "probe": {
+      "n": 7,
+      "max": 105.4,
+      "p50": 0.4,
+      "p95": 105.4,
+      "over50": 1,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644)",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "encode",
+        "t0": 32232.9989,
+        "ms": 0.03269999999974971
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 32232.6386,
+        "ms": 107.89680000000226
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 120.7,
+      "blockSum": 120.7,
+      "top": [
+       [
+        32220.3,
+        120.7
+       ]
+      ],
+      "histMaxMs": 120.7,
+      "histP99Ms": 120.7
+     }
+    }
+   ],
+   "model": "sam2_base_plus",
+   "params": {
+    "pointsPerBatch": 16
+   }
+  },
+  {
+   "name": "sam2_base_plus.objects_perbatch32",
+   "reps": [
+    {
+     "wall": 25.3,
+     "probe": {
+      "n": 7,
+      "max": 10.1,
+      "p50": 0.4,
+      "p95": 10.1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644)",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "encode",
+        "t0": 32745.6595,
+        "ms": 0.011599999997997656
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 32745.3837,
+        "ms": 12.050100000000384
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 25.3,
+      "blockSum": 25.3,
+      "top": [
+       [
+        32732.7,
+        25.3
+       ]
+      ],
+      "histMaxMs": 25.3,
+      "histP99Ms": 25.3
+     }
+    }
+   ],
+   "model": "sam2_base_plus",
+   "params": {
+    "pointsPerBatch": 32
+   }
+  },
+  {
+   "name": "sam2_base_plus.objects_perbatch128",
+   "reps": [
+    {
+     "wall": 66.4,
+     "probe": {
+      "n": 7,
+      "max": 35.8,
+      "p50": 0.4,
+      "p95": 35.8,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644)",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "encode",
+        "t0": 33172.5789,
+        "ms": 0.010799999996379483
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 33172.3035,
+        "ms": 45.64719999999943
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 50.8,
+      "blockSum": 50.8,
+      "top": [
+       [
+        33167.4,
+        50.8
+       ]
+      ],
+      "histMaxMs": 50.9,
+      "histP99Ms": 50.9
+     }
+    }
+   ],
+   "model": "sam2_base_plus",
+   "params": {
+    "pointsPerBatch": 128
+   }
+  },
+  {
+   "name": "sam2_base_plus.objects_perbatch256",
+   "reps": [
+    {
+     "wall": 104.9,
+     "probe": {
+      "n": 8,
+      "max": 74.1,
+      "p50": 0.5,
+      "p95": 74.1,
+      "over50": 1,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": null,
+     "err": "Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644)",
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "encode",
+        "t0": 33629.2955,
+        "ms": 0.008800000003247987
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 33628.8784,
+        "ms": 93.1455999999962
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 104.9,
+      "blockSum": 104.9,
+      "top": [
+       [
+        33617.5,
+        104.9
+       ]
+      ],
+      "histMaxMs": 104.9,
+      "histP99Ms": 104.9
+     }
+    }
+   ],
+   "model": "sam2_base_plus",
+   "params": {
+    "pointsPerBatch": 256
+   }
+  },
+  {
+   "name": "sam2_base_plus.objects_perside16",
+   "reps": [
+    {
+     "wall": 543.9,
+     "probe": {
+      "n": 9,
+      "max": 188.1,
+      "p50": 9.8,
+      "p95": 188.1,
+      "over50": 4,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "idsBytes": 4500000,
+      "width": 2000,
+      "height": 1125,
+      "count": 47,
+      "candidates": 210,
+      "seconds": 0.52,
+      "encodeMs": 73,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "encode",
+        "t0": 34126.6158,
+        "ms": 0.01479999999719439
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 34126.7911,
+        "ms": 87.81199999999808,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 34257.1803,
+        "ms": 78.23380000000179,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 34359.8845,
+        "ms": 80.2563999999984,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 34456.6636,
+        "ms": 84.38229999999749,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 34126.6347,
+        "ms": 519.9949999999953
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 34126.1929,
+        "ms": 520.4749000000011
+       }
+      ],
+      "blockN": 4,
+      "blockMax": 193.4,
+      "blockSum": 536.6,
+      "top": [
+       [
+        34456.7,
+        193.4
+       ],
+       [
+        34113.5,
+        143.7
+       ],
+       [
+        34257.2,
+        102.7
+       ],
+       [
+        34359.9,
+        96.8
+       ]
+      ],
+      "histMaxMs": 193.5,
+      "histP99Ms": 193.5
+     }
+    }
+   ],
+   "model": "sam2_base_plus",
+   "params": {
+    "pointsPerSide": 16
+   }
+  },
+  {
+   "name": "sam2_base_plus.free",
+   "reps": [
+    {
+     "wall": 371.4,
+     "probe": {
+      "n": 6,
+      "max": 356.2,
+      "p50": 0.3,
+      "p95": 356.2,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": 2,
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "release",
+        "f": "sam2_hiera_base_plus.encoder.onnx",
+        "t0": 37375.4478,
+        "ms": 180.3359999999957
+       },
+       {
+        "k": "release",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 37555.7955,
+        "ms": 190.54989999999816
+       },
+       {
+        "k": "handler",
+        "name": "free",
+        "t0": 37375.3652,
+        "ms": 370.98739999999816
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 371.4,
+      "blockSum": 371.4,
+      "top": [
+       [
+        37375.1,
+        371.4
+       ]
+      ],
+      "histMaxMs": 371.5,
+      "histP99Ms": 371.5
+     }
+    }
+   ],
+   "model": "sam2_base_plus"
+  },
+  {
+   "name": "sam2_base_plus.objects_after_free",
+   "reps": [
+    {
+     "wall": 3107.9,
+     "probe": {
+      "n": 24,
+      "max": 1154,
+      "p50": 67,
+      "p95": 251.1,
+      "over50": 19,
+      "over200": 3,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "idsBytes": 4500000,
+      "width": 2000,
+      "height": 1125,
+      "count": 95,
+      "candidates": 837,
+      "seconds": 3.087,
+      "encodeMs": 68,
+      "provider": "dml",
+      "model": "sam2_base_plus",
+      "label": "SAM2 base+"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "sam2_hiera_base_plus.encoder.onnx",
+        "p": "dml",
+        "t0": 40580.663,
+        "ms": 1075.873099999997
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.encoder.onnx",
+        "t0": 41740.2001,
+        "ms": 68.67309999999998,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "encode",
+        "t0": 40580.6311,
+        "ms": 1228.2908000000025
+       },
+       {
+        "k": "create",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "p": "dml",
+        "t0": 41809.0587,
+        "ms": 215.03450000000157
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42024.1717,
+        "ms": 218.91070000000036,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42280.8484,
+        "ms": 55.758099999999104,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42370.4607,
+        "ms": 53.01259999999456,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42453.6818,
+        "ms": 50.95320000000356,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42529.7776,
+        "ms": 52.81119999999646,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42608.0471,
+        "ms": 49.8150999999998,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42681.0757,
+        "ms": 55.15099999999802,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42760.8357,
+        "ms": 54.34139999999752,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42843.1893,
+        "ms": 55.13230000000476,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42919.9882,
+        "ms": 53.62370000000374,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 42995.5855,
+        "ms": 56.38609999999608,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 43074.186,
+        "ms": 52.84309999999823,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 43152.7538,
+        "ms": 55.420600000004924,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 43248.5453,
+        "ms": 52.8836999999985,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 43361.5414,
+        "ms": 53.878899999996065,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 43476.4582,
+        "ms": 56.54769999999553,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 41808.9243,
+        "ms": 1859.079700000002
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 40580.2764,
+        "ms": 3087.7612999999983
+       }
+      ],
+      "blockN": 19,
+      "blockMax": 1169.5,
+      "blockSum": 3100.7,
+      "top": [
+       [
+        40570.8,
+        1169.5
+       ],
+       [
+        42024.2,
+        256.7
+       ],
+       [
+        41809.1,
+        215.1
+       ],
+       [
+        43476.5,
+        194.8
+       ],
+       [
+        43361.6,
+        114.9
+       ],
+       [
+        43248.6,
+        113
+       ],
+       [
+        43152.8,
+        95.8
+       ],
+       [
+        42280.9,
+        89.6
+       ],
+       [
+        42370.5,
+        83.2
+       ],
+       [
+        42760.9,
+        82.4
+       ],
+       [
+        42681.1,
+        79.8
+       ],
+       [
+        42995.6,
+        78.6
+       ]
+      ],
+      "histMaxMs": 1170.2,
+      "histP99Ms": 1170.2
+     }
+    }
+   ],
+   "model": "sam2_base_plus"
+  },
+  {
+   "name": "sam2_base_plus.free2",
+   "reps": [
+    {
+     "wall": 362.5,
+     "probe": {
+      "n": 7,
+      "max": 347,
+      "p50": 0.3,
+      "p95": 347,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": 2,
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "release",
+        "f": "sam2_hiera_base_plus.encoder.onnx",
+        "t0": 46391.0783,
+        "ms": 196.33729999999923
+       },
+       {
+        "k": "release",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 46587.4256,
+        "ms": 165.67599999999948
+       },
+       {
+        "k": "handler",
+        "name": "free",
+        "t0": 46391.0593,
+        "ms": 362.0593000000008
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 362.4,
+      "blockSum": 362.4,
+      "top": [
+       [
+        46390.8,
+        362.4
+       ]
+      ],
+      "histMaxMs": 362.5,
+      "histP99Ms": 362.5
+     }
+    }
+   ],
+   "model": "sam2_base_plus"
+  },
+  {
+   "name": "sam2_tiny.point_cold",
+   "reps": [
+    {
+     "wall": 1503.5,
+     "probe": {
+      "n": 10,
+      "max": 891.1,
+      "p50": 6.9,
+      "p95": 891.1,
+      "over50": 3,
+      "over200": 3,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.5220081210136414,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "sam2_hiera_tiny.encoder.onnx",
+        "p": "dml",
+        "t0": 49551.1953,
+        "ms": 878.4601000000039
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.encoder.onnx",
+        "t0": 50447.2585,
+        "ms": 46.681699999993725,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "encode",
+        "t0": 49551.1559,
+        "ms": 942.8254000000015
+       },
+       {
+        "k": "create",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "p": "dml",
+        "t0": 50494.0325,
+        "ms": 243.90759999999864
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 50737.9829,
+        "ms": 305.7037999999957,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 50493.9864,
+        "ms": 549.7820999999967
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 49550.7153,
+        "ms": 1493.0604999999996
+       }
+      ],
+      "blockN": 4,
+      "blockMax": 906.3,
+      "blockSum": 1503.1,
+      "top": [
+       [
+        49541,
+        906.3
+       ],
+       [
+        50738,
+        306.1
+       ],
+       [
+        50494.1,
+        243.9
+       ],
+       [
+        50447.3,
+        46.8
+       ]
+      ],
+      "histMaxMs": 906.5,
+      "histP99Ms": 906.5
+     }
+    }
+   ],
+   "model": "sam2_tiny"
+  },
+  {
+   "name": "sam2_tiny.point_warm",
+   "reps": [
+    {
+     "wall": 7.8,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.5220081210136414,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 53751.2181,
+        "ms": 6.504200000003038,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 53751.19,
+        "ms": 6.559999999997672
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 53750.8469,
+        "ms": 6.908300000002782
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    },
+    {
+     "wall": 8.8,
+     "probe": {
+      "n": 7,
+      "max": 0.6,
+      "p50": 0.3,
+      "p95": 0.6,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.5220081210136414,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 54154.6012,
+        "ms": 7.244400000003225,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 54154.5686,
+        "ms": 7.351500000004307
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 54154.2564,
+        "ms": 7.668000000005122
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.8,
+      "histP99Ms": 15.8
+     }
+    },
+    {
+     "wall": 9.2,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.5220081210136414,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 54557.3723,
+        "ms": 7.914099999994505,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 54557.3362,
+        "ms": 8.021899999999732
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 54557.0754,
+        "ms": 8.286099999997532
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 11.2,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.5220081210136414,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 54961.4979,
+        "ms": 9.954399999995076,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 54961.4674,
+        "ms": 10.045200000000477
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 54961.1598,
+        "ms": 10.355999999999767
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 9.7,
+     "probe": {
+      "n": 7,
+      "max": 1.2,
+      "p50": 0.4,
+      "p95": 1.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.5220081210136414,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 55365.0705,
+        "ms": 8.04989999999816,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 55365.0385,
+        "ms": 8.146699999997509
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 55364.7427,
+        "ms": 8.44829999999638
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.8,
+      "histP99Ms": 15.8
+     }
+    }
+   ],
+   "model": "sam2_tiny"
+  },
+  {
+   "name": "sam2_tiny.objects_cached",
+   "reps": [
+    {
+     "wall": 1876.1,
+     "probe": {
+      "n": 22,
+      "max": 201.9,
+      "p50": 88.3,
+      "p95": 199,
+      "over50": 16,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "idsBytes": 4500000,
+      "width": 2000,
+      "height": 1125,
+      "count": 71,
+      "candidates": 758,
+      "seconds": 1.854,
+      "encodeMs": 46,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "encode",
+        "t0": 55777.1737,
+        "ms": 0.011599999997997656
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 55777.3019,
+        "ms": 161.93450000000303,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 55981.4017,
+        "ms": 75.07289999999921,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56095.8167,
+        "ms": 78.42269999999553,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56206.4098,
+        "ms": 76.91219999999885,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56304.9046,
+        "ms": 70.76019999999698,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56396.9753,
+        "ms": 75.50360000000364,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56492.2205,
+        "ms": 74.03409999999712,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56584.7607,
+        "ms": 81.02240000000165,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56689.9953,
+        "ms": 80.16669999999431,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56787.4887,
+        "ms": 74.61909999999625,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56872.9533,
+        "ms": 74.29969999999594,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 56964.6786,
+        "ms": 76.00100000000384,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 57063.7635,
+        "ms": 77.49719999999797,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 57177.8953,
+        "ms": 75.64640000000509,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 57303.5488,
+        "ms": 75.64670000000478,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 57436.2627,
+        "ms": 71.95070000000123,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 55777.1875,
+        "ms": 1854.4040999999997
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 55776.827,
+        "ms": 1854.8001000000004
+       }
+      ],
+      "blockN": 16,
+      "blockMax": 214,
+      "blockSum": 1868.5,
+      "top": [
+       [
+        55767.4,
+        214
+       ],
+       [
+        57436.3,
+        199.7
+       ],
+       [
+        57303.6,
+        132.7
+       ],
+       [
+        57177.9,
+        125.7
+       ],
+       [
+        55981.4,
+        114.4
+       ],
+       [
+        57063.8,
+        114.1
+       ],
+       [
+        56095.9,
+        110.6
+       ],
+       [
+        56584.8,
+        105.2
+       ],
+       [
+        56964.7,
+        99.1
+       ],
+       [
+        56206.4,
+        98.5
+       ],
+       [
+        56690,
+        97.5
+       ],
+       [
+        56397,
+        95.2
+       ]
+      ],
+      "histMaxMs": 214,
+      "histP99Ms": 214
+     }
+    }
+   ],
+   "model": "sam2_tiny"
+  },
+  {
+   "name": "sam2_tiny.objects_new",
+   "reps": [
+    {
+     "wall": 1880.3,
+     "probe": {
+      "n": 22,
+      "max": 190.5,
+      "p50": 89.8,
+      "p95": 130.4,
+      "over50": 16,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "idsBytes": 4500000,
+      "width": 2000,
+      "height": 1125,
+      "count": 65,
+      "candidates": 822,
+      "seconds": 1.858,
+      "encodeMs": 22,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.encoder.onnx",
+        "t0": 58062.0639,
+        "ms": 21.41580000000249,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "encode",
+        "t0": 58043.7978,
+        "ms": 39.703199999996286
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 58083.622,
+        "ms": 90.08489999999438,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 58224.2487,
+        "ms": 82.39060000000609,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 58355.5115,
+        "ms": 80.30219999999827,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 58477.6073,
+        "ms": 72.00529999999708,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 58576.9617,
+        "ms": 76.27530000000115,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 58681.7651,
+        "ms": 75.34410000000207,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 58780.5392,
+        "ms": 78.87570000000414,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 58892.2841,
+        "ms": 78.32590000000346,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 58990.5265,
+        "ms": 72.39639999999781,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 59078.6967,
+        "ms": 80.24689999999828,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 59174.3393,
+        "ms": 79.37380000000121,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 59271.3924,
+        "ms": 76.02130000000034,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 59365.814,
+        "ms": 69.93950000000041,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 59468.7609,
+        "ms": 70.29249999999593,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 59586.0222,
+        "ms": 73.55290000000241,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 59715.8534,
+        "ms": 77.32269999999698,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 58083.5032,
+        "ms": 1817.8542000000016
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 58043.3705,
+        "ms": 1858.0167000000001
+       }
+      ],
+      "blockN": 17,
+      "blockMax": 188.7,
+      "blockSum": 1872.3,
+      "top": [
+       [
+        59715.9,
+        188.7
+       ],
+       [
+        58083.6,
+        140.6
+       ],
+       [
+        58224.3,
+        131.3
+       ],
+       [
+        59586,
+        129.8
+       ],
+       [
+        58355.5,
+        122.1
+       ],
+       [
+        59468.8,
+        117.3
+       ],
+       [
+        58780.6,
+        111.8
+       ],
+       [
+        58577,
+        104.8
+       ],
+       [
+        59365.8,
+        102.9
+       ],
+       [
+        58477.6,
+        99.4
+       ],
+       [
+        58681.8,
+        98.8
+       ],
+       [
+        58892.3,
+        98.2
+       ]
+      ],
+      "histMaxMs": 188.7,
+      "histP99Ms": 188.7
+     }
+    }
+   ],
+   "model": "sam2_tiny"
+  },
+  {
+   "name": "sam2_tiny.point_after_objects",
+   "reps": [
+    {
+     "wall": 7.7,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.5220081210136414,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 60299.0523,
+        "ms": 6.282899999998335,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 60299.0158,
+        "ms": 6.385699999998906
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 60298.6474,
+        "ms": 6.7612999999983
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 7.2,
+     "probe": {
+      "n": 7,
+      "max": 0.3,
+      "p50": 0.3,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.5220081210136414,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 60702.1801,
+        "ms": 6.058100000002014,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 60702.156,
+        "ms": 6.1423999999969965
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 60701.9139,
+        "ms": 6.38749999999709
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 7.5,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.5220081210136414,
+      "provider": "dml",
+      "model": "sam2_tiny",
+      "label": "SAM2 tiny"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 61105.7869,
+        "ms": 6.280800000000454,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 61105.7595,
+        "ms": 6.375
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 61105.4742,
+        "ms": 6.664100000001781
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    }
+   ],
+   "model": "sam2_tiny"
+  },
+  {
+   "name": "sam2_tiny.free",
+   "reps": [
+    {
+     "wall": 272.5,
+     "probe": {
+      "n": 7,
+      "max": 257.2,
+      "p50": 0.3,
+      "p95": 257.2,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": 2,
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "release",
+        "f": "sam2_hiera_tiny.encoder.onnx",
+        "t0": 63836.3659,
+        "ms": 115.20600000000559
+       },
+       {
+        "k": "release",
+        "f": "sam2_hiera_tiny.decoder.onnx",
+        "t0": 63951.5785,
+        "ms": 156.79839999999967
+       },
+       {
+        "k": "handler",
+        "name": "free",
+        "t0": 63836.3339,
+        "ms": 272.0501000000004
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 272.5,
+      "blockSum": 272.5,
+      "top": [
+       [
+        63836,
+        272.5
+       ]
+      ],
+      "histMaxMs": 272.6,
+      "histP99Ms": 272.6
+     }
+    }
+   ],
+   "model": "sam2_tiny"
+  },
+  {
+   "name": "sam2_small.point_cold",
+   "reps": [
+    {
+     "wall": 1447.4,
+     "probe": {
+      "n": 9,
+      "max": 862.7,
+      "p50": 8,
+      "p95": 862.7,
+      "over50": 3,
+      "over200": 3,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.7239422798156738,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "sam2_hiera_small.encoder.onnx",
+        "p": "dml",
+        "t0": 66827.9305,
+        "ms": 860.0580999999947
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.encoder.onnx",
+        "t0": 67693.3851,
+        "ms": 50.20840000000317,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "encode",
+        "t0": 66827.9121,
+        "ms": 915.7060000000056
+       },
+       {
+        "k": "create",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "p": "dml",
+        "t0": 67743.6773,
+        "ms": 233.55350000000908
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 67977.2954,
+        "ms": 284.9177999999956,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 67743.6259,
+        "ms": 518.6852999999974
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 66826.2723,
+        "ms": 1436.0469000000012
+       }
+      ],
+      "blockN": 4,
+      "blockMax": 877.8,
+      "blockSum": 1447,
+      "top": [
+       [
+        66815.6,
+        877.8
+       ],
+       [
+        67977.3,
+        285.3
+       ],
+       [
+        67743.7,
+        233.6
+       ],
+       [
+        67693.4,
+        50.3
+       ]
+      ],
+      "histMaxMs": 878.2,
+      "histP99Ms": 878.2
+     }
+    }
+   ],
+   "model": "sam2_small"
+  },
+  {
+   "name": "sam2_small.point_warm",
+   "reps": [
+    {
+     "wall": 8.1,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.7239422798156738,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 71025.8936,
+        "ms": 6.359000000011292,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 71025.8635,
+        "ms": 6.416099999987637
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 71025.1557,
+        "ms": 7.129000000000815
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    },
+    {
+     "wall": 8.5,
+     "probe": {
+      "n": 7,
+      "max": 0.8,
+      "p50": 0.3,
+      "p95": 0.8,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.7239422798156738,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 71429.6033,
+        "ms": 6.549100000003818,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 71429.576,
+        "ms": 6.6582000000053085
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 71428.8343,
+        "ms": 7.403900000004796
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 8.2,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.7239422798156738,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 71833.4225,
+        "ms": 6.221000000005006,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 71833.3914,
+        "ms": 6.320000000006985
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 71832.4161,
+        "ms": 7.300199999997858
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    },
+    {
+     "wall": 13.9,
+     "probe": {
+      "n": 6,
+      "max": 1.1,
+      "p50": 0.5,
+      "p95": 1.1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.7239422798156738,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 72237.299,
+        "ms": 11.678499999994528,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 72237.2428,
+        "ms": 11.802899999995134
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 72236.1778,
+        "ms": 12.873099999997066
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 17.4,
+      "histP99Ms": 17.4
+     }
+    },
+    {
+     "wall": 8.6,
+     "probe": {
+      "n": 7,
+      "max": 1.4,
+      "p50": 0.4,
+      "p95": 1.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.7239422798156738,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 72640.2963,
+        "ms": 6.710699999995995,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 72640.2681,
+        "ms": 6.791400000001886
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 72639.4177,
+        "ms": 7.645699999993667
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    }
+   ],
+   "model": "sam2_small"
+  },
+  {
+   "name": "sam2_small.objects_cached",
+   "reps": [
+    {
+     "wall": 1946.9,
+     "probe": {
+      "n": 22,
+      "max": 225.3,
+      "p50": 90.9,
+      "p95": 193.8,
+      "over50": 16,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "idsBytes": 4500000,
+      "width": 2000,
+      "height": 1125,
+      "count": 69,
+      "candidates": 847,
+      "seconds": 1.925,
+      "encodeMs": 50,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "encode",
+        "t0": 73054.1443,
+        "ms": 0.013600000005681068
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 73054.2721,
+        "ms": 175.49090000000433,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 73282.6123,
+        "ms": 83.66170000001148,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 73409.4172,
+        "ms": 81.72250000000349,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 73529.2002,
+        "ms": 85.00319999999192,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 73640.9495,
+        "ms": 79.87179999999353,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 73742.2015,
+        "ms": 75.1542000000045,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 73838.1323,
+        "ms": 75.20880000000761,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 73937.7509,
+        "ms": 73.37639999999374,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 74034.1307,
+        "ms": 72.46360000000277,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 74129.9621,
+        "ms": 70.92119999999704,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 74221.6238,
+        "ms": 78.92639999999665,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 74327.3896,
+        "ms": 76.13410000001022,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 74427.1677,
+        "ms": 73.19759999999951,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 74536.2796,
+        "ms": 76.02170000001206,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 74659.4017,
+        "ms": 73.91760000000068,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 74786.5551,
+        "ms": 76.19659999999567,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 73054.1605,
+        "ms": 1924.1294000000053
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 73052.9928,
+        "ms": 1925.3248999999923
+       }
+      ],
+      "blockN": 16,
+      "blockMax": 240.3,
+      "blockSum": 1939.4,
+      "top": [
+       [
+        73042.3,
+        240.3
+       ],
+       [
+        74786.6,
+        195.3
+       ],
+       [
+        74659.4,
+        127.1
+       ],
+       [
+        73282.7,
+        126.8
+       ],
+       [
+        74536.3,
+        123.1
+       ],
+       [
+        73409.5,
+        119.8
+       ],
+       [
+        73529.2,
+        111.7
+       ],
+       [
+        74427.2,
+        109.1
+       ],
+       [
+        74221.6,
+        105.8
+       ],
+       [
+        73641,
+        101.2
+       ],
+       [
+        74327.4,
+        99.8
+       ],
+       [
+        73838.2,
+        99.6
+       ]
+      ],
+      "histMaxMs": 240.4,
+      "histP99Ms": 240.4
+     }
+    }
+   ],
+   "model": "sam2_small"
+  },
+  {
+   "name": "sam2_small.objects_new",
+   "reps": [
+    {
+     "wall": 1883.6,
+     "probe": {
+      "n": 24,
+      "max": 209,
+      "p50": 86.2,
+      "p95": 128.7,
+      "over50": 16,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "idsBytes": 4500000,
+      "width": 2000,
+      "height": 1125,
+      "count": 70,
+      "candidates": 807,
+      "seconds": 1.862,
+      "encodeMs": 22,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.encoder.onnx",
+        "t0": 75401.1607,
+        "ms": 21.908800000004703,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "encode",
+        "t0": 75396.3581,
+        "ms": 26.724700000006123
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 75423.1813,
+        "ms": 75.9548000000068,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 75551.4931,
+        "ms": 82.19599999999627,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 75679.6614,
+        "ms": 72.25239999999758,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 75788.2539,
+        "ms": 77.69460000000254,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 75891.0547,
+        "ms": 69.7387000000017,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 75984.1882,
+        "ms": 75.0219999999972,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 76079.3101,
+        "ms": 70.2045999999973,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 76174.4077,
+        "ms": 79.29780000000028,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 76278.6827,
+        "ms": 78.20530000000144,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 76374.5455,
+        "ms": 79.2329000000027,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 76471.5537,
+        "ms": 84.2722999999969,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 76577.0034,
+        "ms": 77.30800000000454,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 76676.2373,
+        "ms": 79.97970000001078,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 76787.9183,
+        "ms": 79.64349999999104,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 76916.6617,
+        "ms": 76.03239999999641,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 77049.8744,
+        "ms": 81.14569999999367,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 75423.0854,
+        "ms": 1835.2170000000042
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 75395.4491,
+        "ms": 1862.8883999999962
+       }
+      ],
+      "blockN": 17,
+      "blockMax": 211.9,
+      "blockSum": 1875.8,
+      "top": [
+       [
+        77049.9,
+        211.9
+       ],
+       [
+        76916.7,
+        133.2
+       ],
+       [
+        76788,
+        128.7
+       ],
+       [
+        75423.2,
+        128.3
+       ],
+       [
+        75551.5,
+        128.2
+       ],
+       [
+        76676.3,
+        111.7
+       ],
+       [
+        75679.7,
+        108.6
+       ],
+       [
+        76471.6,
+        105.4
+       ],
+       [
+        76174.4,
+        104.3
+       ],
+       [
+        75788.3,
+        102.8
+       ],
+       [
+        76577,
+        99.2
+       ],
+       [
+        76374.6,
+        97
+       ]
+      ],
+      "histMaxMs": 211.9,
+      "histP99Ms": 211.9
+     }
+    }
+   ],
+   "model": "sam2_small"
+  },
+  {
+   "name": "sam2_small.point_after_objects",
+   "reps": [
+    {
+     "wall": 8.5,
+     "probe": {
+      "n": 7,
+      "max": 0.7,
+      "p50": 0.3,
+      "p95": 0.7,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.7239422798156738,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 77666.4506,
+        "ms": 6.586800000004587,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 77666.4098,
+        "ms": 6.683799999998882
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 77665.4756,
+        "ms": 7.624199999991106
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    },
+    {
+     "wall": 8.7,
+     "probe": {
+      "n": 7,
+      "max": 0.6,
+      "p50": 0.3,
+      "p95": 0.6,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.7239422798156738,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 78069.9809,
+        "ms": 7.004000000000815,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 78069.9477,
+        "ms": 7.1076000000030035
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 78069.1112,
+        "ms": 7.948000000003958
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 8.1,
+     "probe": {
+      "n": 7,
+      "max": 0.4,
+      "p50": 0.3,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "logitsBytes": 262144,
+      "n": 256,
+      "score": 0.7239422798156738,
+      "provider": "dml",
+      "model": "sam2_small",
+      "label": "SAM2 small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 78473.1737,
+        "ms": 6.3518999999942025,
+        "dims": [
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "predict",
+        "t0": 78473.1445,
+        "ms": 6.452799999999115
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 78472.3779,
+        "ms": 7.2233999999880325
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    }
+   ],
+   "model": "sam2_small"
+  },
+  {
+   "name": "sam2_small.free",
+   "reps": [
+    {
+     "wall": 323.3,
+     "probe": {
+      "n": 6,
+      "max": 307.9,
+      "p50": 0.5,
+      "p95": 307.9,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": 2,
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "release",
+        "f": "sam2_hiera_small.encoder.onnx",
+        "t0": 81264.9383,
+        "ms": 148.79400000000896
+       },
+       {
+        "k": "release",
+        "f": "sam2_hiera_small.decoder.onnx",
+        "t0": 81413.7394,
+        "ms": 173.85039999999572
+       },
+       {
+        "k": "handler",
+        "name": "free",
+        "t0": 81264.9185,
+        "ms": 322.675900000002
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 322.9,
+      "blockSum": 322.9,
+      "top": [
+       [
+        81264.7,
+        322.9
+       ]
+      ],
+      "histMaxMs": 323,
+      "histP99Ms": 323
+     }
+    }
+   ],
+   "model": "sam2_small"
+  },
+  {
+   "name": "birefnet_lite.cutout",
+   "reps": [
+    {
+     "wall": 5596.3,
+     "probe": {
+      "n": 8,
+      "max": 2894.1,
+      "p50": 0.8,
+      "p95": 2894.1,
+      "over50": 2,
+      "over200": 2,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "seconds": 5.585,
+      "provider": "dml",
+      "model": "birefnet_lite",
+      "label": "BiRefNet lite"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "birefnet_lite.onnx",
+        "p": "dml",
+        "t0": 84301.4159,
+        "ms": 2677.3381999999983
+       },
+       {
+        "k": "run",
+        "f": "birefnet_lite.onnx",
+        "t0": 86985.186,
+        "ms": 2105.2681999999913,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "release",
+        "f": "birefnet_lite.onnx",
+        "t0": 89108.3584,
+        "ms": 777.0302999999985
+       },
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 84300.8764,
+        "ms": 5584.590800000005
+       }
+      ],
+      "blockN": 2,
+      "blockMax": 2901.5,
+      "blockSum": 5595.1,
+      "top": [
+       [
+        86985.2,
+        2901.5
+       ],
+       [
+        84291.6,
+        2693.6
+       ]
+      ],
+      "histMaxMs": 2902.5,
+      "histP99Ms": 2902.5
+     }
+    },
+    {
+     "wall": 5525.9,
+     "probe": {
+      "n": 8,
+      "max": 2902.1,
+      "p50": 1,
+      "p95": 2902.1,
+      "over50": 2,
+      "over200": 2,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "seconds": 5.508,
+      "provider": "dml",
+      "model": "birefnet_lite",
+      "label": "BiRefNet lite"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "birefnet_lite.onnx",
+        "p": "dml",
+        "t0": 90298.5477,
+        "ms": 2593.549800000008
+       },
+       {
+        "k": "run",
+        "f": "birefnet_lite.onnx",
+        "t0": 92900.7337,
+        "ms": 2058.6682,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "release",
+        "f": "birefnet_lite.onnx",
+        "t0": 94976.2266,
+        "ms": 830.636400000003
+       },
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 90297.8809,
+        "ms": 5509.015399999989
+       }
+      ],
+      "blockN": 2,
+      "blockMax": 2907.6,
+      "blockSum": 5524.5,
+      "top": [
+       [
+        92900.8,
+        2907.6
+       ],
+       [
+        90283.8,
+        2616.9
+       ]
+      ],
+      "histMaxMs": 2908.7,
+      "histP99Ms": 2908.7
+     }
+    },
+    {
+     "wall": 5334.2,
+     "probe": {
+      "n": 8,
+      "max": 2739.7,
+      "p50": 2.4,
+      "p95": 2739.7,
+      "over50": 2,
+      "over200": 2,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "seconds": 5.315,
+      "provider": "dml",
+      "model": "birefnet_lite",
+      "label": "BiRefNet lite"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "birefnet_lite.onnx",
+        "p": "dml",
+        "t0": 96214.443,
+        "ms": 2555.3610000000044
+       },
+       {
+        "k": "run",
+        "f": "birefnet_lite.onnx",
+        "t0": 98774.4868,
+        "ms": 1860.4578000000038,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "release",
+        "f": "birefnet_lite.onnx",
+        "t0": 100651.423,
+        "ms": 878.3505000000005
+       },
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 96213.8826,
+        "ms": 5315.927299999996
+       }
+      ],
+      "blockN": 2,
+      "blockMax": 2756.7,
+      "blockSum": 5332.7,
+      "top": [
+       [
+        98774.5,
+        2756.7
+       ],
+       [
+        96198.5,
+        2576
+       ]
+      ],
+      "histMaxMs": 2757.8,
+      "histP99Ms": 2757.8
+     }
+    }
+   ],
+   "model": "birefnet_lite"
+  },
+  {
+   "name": "birefnet_lite.free",
+   "reps": [
+    {
+     "wall": 0.4,
+     "probe": {
+      "n": 5,
+      "max": 0.5,
+      "p50": 0.4,
+      "p95": 0.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": 0,
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "free",
+        "t0": 104363.8483,
+        "ms": 0.02509999999892898
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.6,
+      "histP99Ms": 18.6
+     }
+    }
+   ],
+   "model": "birefnet_lite"
+  },
+  {
+   "name": "rmbg14.cutout",
+   "reps": [
+    {
+     "wall": 1162.5,
+     "probe": {
+      "n": 7,
+      "max": 604.3,
+      "p50": 0.4,
+      "p95": 604.3,
+      "over50": 2,
+      "over200": 2,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "seconds": 1.15,
+      "provider": "dml",
+      "model": "rmbg14",
+      "label": "RMBG-1.4"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "rmbg14.onnx",
+        "p": "dml",
+        "t0": 107137.2316,
+        "ms": 524.0032000000065
+       },
+       {
+        "k": "run",
+        "f": "rmbg14.onnx",
+        "t0": 107672.8885,
+        "ms": 463.90110000000277,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "release",
+        "f": "rmbg14.onnx",
+        "t0": 108144.4261,
+        "ms": 142.62420000000566
+       },
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 107136.7793,
+        "ms": 1150.3152000000118
+       }
+      ],
+      "blockN": 2,
+      "blockMax": 615.5,
+      "blockSum": 1161.1,
+      "top": [
+       [
+        107673,
+        615.5
+       ],
+       [
+        107127.4,
+        545.6
+       ]
+      ],
+      "histMaxMs": 615.5,
+      "histP99Ms": 615.5
+     }
+    },
+    {
+     "wall": 989.6,
+     "probe": {
+      "n": 8,
+      "max": 485.1,
+      "p50": 0.6,
+      "p95": 485.1,
+      "over50": 2,
+      "over200": 2,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "seconds": 0.977,
+      "provider": "dml",
+      "model": "rmbg14",
+      "label": "RMBG-1.4"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "rmbg14.onnx",
+        "p": "dml",
+        "t0": 108688.8694,
+        "ms": 483.1328000000067
+       },
+       {
+        "k": "run",
+        "f": "rmbg14.onnx",
+        "t0": 109178.8701,
+        "ms": 323.34590000000026,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "release",
+        "f": "rmbg14.onnx",
+        "t0": 109507.5117,
+        "ms": 158.29850000000442
+       },
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 108688.5303,
+        "ms": 977.3243000000075
+       }
+      ],
+      "blockN": 2,
+      "blockMax": 500.1,
+      "blockSum": 988.2,
+      "top": [
+       [
+        108678.9,
+        500.1
+       ],
+       [
+        109178.9,
+        488.1
+       ]
+      ],
+      "histMaxMs": 500.2,
+      "histP99Ms": 500.2
+     }
+    },
+    {
+     "wall": 1017.8,
+     "probe": {
+      "n": 8,
+      "max": 509,
+      "p50": 0.5,
+      "p95": 509,
+      "over50": 2,
+      "over200": 2,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "seconds": 1.006,
+      "provider": "dml",
+      "model": "rmbg14",
+      "label": "RMBG-1.4"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "rmbg14.onnx",
+        "p": "dml",
+        "t0": 110069.0362,
+        "ms": 496.9658999999956
+       },
+       {
+        "k": "run",
+        "f": "rmbg14.onnx",
+        "t0": 110583.7009,
+        "ms": 330.5890000000072,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "release",
+        "f": "rmbg14.onnx",
+        "t0": 110918.3727,
+        "ms": 156.57029999999213
+       },
+       {
+        "k": "handler",
+        "name": "cutout",
+        "t0": 110068.7171,
+        "ms": 1006.2458000000042
+       }
+      ],
+      "blockN": 2,
+      "blockMax": 524.2,
+      "blockSum": 1016.7,
+      "top": [
+       [
+        110059.6,
+        524.2
+       ],
+       [
+        110583.8,
+        492.5
+       ]
+      ],
+      "histMaxMs": 524.3,
+      "histP99Ms": 524.3
+     }
+    }
+   ],
+   "model": "rmbg14"
+  },
+  {
+   "name": "rmbg14.free",
+   "reps": [
+    {
+     "wall": 0.2,
+     "probe": {
+      "n": 5,
+      "max": 0.3,
+      "p50": 0.3,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": 0,
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "handler",
+        "name": "free",
+        "t0": 113782.6324,
+        "ms": 0.042799999995622784
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    }
+   ],
+   "model": "rmbg14"
+  },
+  {
+   "name": "da2_small.depth",
+   "reps": [
+    {
+     "wall": 1017.9,
+     "probe": {
+      "n": 8,
+      "max": 501.7,
+      "p50": 0.3,
+      "p95": 501.7,
+      "over50": 2,
+      "over200": 2,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "min": 0,
+      "max": 7.84991455078125,
+      "seconds": 1.008,
+      "runMs": 497,
+      "provider": "dml",
+      "model": "da2_small",
+      "label": "Depth Anything V2 Small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "depth_anything_v2_small.onnx",
+        "p": "dml",
+        "t0": 116488.1346,
+        "ms": 502.7926999999909
+       },
+       {
+        "k": "run",
+        "f": "depth_anything_v2_small.onnx",
+        "t0": 116999.0091,
+        "ms": 490.0115000000078,
+        "dims": [
+         1,
+         3,
+         518,
+         924
+        ]
+       },
+       {
+        "k": "handler",
+        "name": "depth",
+        "t0": 116487.0974,
+        "ms": 1008.3316999999952
+       }
+      ],
+      "blockN": 2,
+      "blockMax": 516.9,
+      "blockSum": 1014.7,
+      "top": [
+       [
+        116482.2,
+        516.9
+       ],
+       [
+        116999.1,
+        497.8
+       ]
+      ],
+      "histMaxMs": 516.9,
+      "histP99Ms": 516.9
+     }
+    },
+    {
+     "wall": 239.1,
+     "probe": {
+      "n": 7,
+      "max": 224.1,
+      "p50": 0.5,
+      "p95": 224.1,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "min": 0,
+      "max": 7.84991455078125,
+      "seconds": 0.228,
+      "runMs": 226,
+      "provider": "dml",
+      "model": "da2_small",
+      "label": "Depth Anything V2 Small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "depth_anything_v2_small.onnx",
+        "t0": 117902.0804,
+        "ms": 225.0893999999971,
+        "dims": [
+         1,
+         3,
+         518,
+         924
+        ]
+       },
+       {
+        "k": "handler",
+        "name": "depth",
+        "t0": 117899.2038,
+        "ms": 228.87579999999434
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 235.5,
+      "blockSum": 235.5,
+      "top": [
+       [
+        117894.2,
+        235.5
+       ]
+      ],
+      "histMaxMs": 235.5,
+      "histP99Ms": 235.5
+     }
+    },
+    {
+     "wall": 240.3,
+     "probe": {
+      "n": 7,
+      "max": 225.2,
+      "p50": 0.5,
+      "p95": 225.2,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "min": 0,
+      "max": 7.84991455078125,
+      "seconds": 0.231,
+      "runMs": 228,
+      "provider": "dml",
+      "model": "da2_small",
+      "label": "Depth Anything V2 Small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "depth_anything_v2_small.onnx",
+        "t0": 118537.4011,
+        "ms": 225.09819999999308,
+        "dims": [
+         1,
+         3,
+         518,
+         924
+        ]
+       },
+       {
+        "k": "handler",
+        "name": "depth",
+        "t0": 118534.4488,
+        "ms": 230.98270000000775
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 236.7,
+      "blockSum": 236.7,
+      "top": [
+       [
+        118530.2,
+        236.7
+       ]
+      ],
+      "histMaxMs": 236.7,
+      "histP99Ms": 236.7
+     }
+    },
+    {
+     "wall": 236.8,
+     "probe": {
+      "n": 6,
+      "max": 221.7,
+      "p50": 0.5,
+      "p95": 221.7,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "min": 0,
+      "max": 7.84991455078125,
+      "seconds": 0.226,
+      "runMs": 224,
+      "provider": "dml",
+      "model": "da2_small",
+      "label": "Depth Anything V2 Small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "depth_anything_v2_small.onnx",
+        "t0": 119173.7887,
+        "ms": 223.53779999999097,
+        "dims": [
+         1,
+         3,
+         518,
+         924
+        ]
+       },
+       {
+        "k": "handler",
+        "name": "depth",
+        "t0": 119170.8218,
+        "ms": 227.20809999998892
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 233.2,
+      "blockSum": 233.2,
+      "top": [
+       [
+        119166.3,
+        233.2
+       ]
+      ],
+      "histMaxMs": 233.2,
+      "histP99Ms": 233.2
+     }
+    }
+   ],
+   "model": "da2_small"
+  },
+  {
+   "name": "da2_small.depth_large",
+   "reps": [
+    {
+     "wall": 802.6,
+     "probe": {
+      "n": 7,
+      "max": 787.8,
+      "p50": 0.4,
+      "p95": 787.8,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "depthBytes": 5531904,
+      "width": 1568,
+      "height": 882,
+      "min": 0,
+      "max": 8.883711814880371,
+      "seconds": 0.776,
+      "runMs": 769,
+      "provider": "dml",
+      "model": "da2_small",
+      "label": "Depth Anything V2 Small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "depth_anything_v2_small.onnx",
+        "t0": 119809.056,
+        "ms": 767.6631000000052,
+        "dims": [
+         1,
+         3,
+         882,
+         1568
+        ]
+       },
+       {
+        "k": "handler",
+        "name": "depth",
+        "t0": 119800.7358,
+        "ms": 776.8227000000043
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 793.5,
+      "blockSum": 793.5,
+      "top": [
+       [
+        119787.9,
+        793.5
+       ]
+      ],
+      "histMaxMs": 793.8,
+      "histP99Ms": 793.8
+     }
+    },
+    {
+     "wall": 786.5,
+     "probe": {
+      "n": 7,
+      "max": 772.2,
+      "p50": 0.4,
+      "p95": 772.2,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "depthBytes": 5531904,
+      "width": 1568,
+      "height": 882,
+      "min": 0,
+      "max": 8.883711814880371,
+      "seconds": 0.757,
+      "runMs": 751,
+      "provider": "dml",
+      "model": "da2_small",
+      "label": "Depth Anything V2 Small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "depth_anything_v2_small.onnx",
+        "t0": 121002.0494,
+        "ms": 749.6915000000008,
+        "dims": [
+         1,
+         3,
+         882,
+         1568
+        ]
+       },
+       {
+        "k": "handler",
+        "name": "depth",
+        "t0": 120994.8019,
+        "ms": 758.3252999999968
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 775.9,
+      "blockSum": 775.9,
+      "top": [
+       [
+        120982.8,
+        775.9
+       ]
+      ],
+      "histMaxMs": 776.5,
+      "histP99Ms": 776.5
+     }
+    },
+    {
+     "wall": 724.7,
+     "probe": {
+      "n": 6,
+      "max": 710.1,
+      "p50": 0.4,
+      "p95": 710.1,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "depthBytes": 5531904,
+      "width": 1568,
+      "height": 882,
+      "min": 0,
+      "max": 8.883711814880371,
+      "seconds": 0.698,
+      "runMs": 690,
+      "provider": "dml",
+      "model": "da2_small",
+      "label": "Depth Anything V2 Small"
+     },
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "run",
+        "f": "depth_anything_v2_small.onnx",
+        "t0": 122183.6176,
+        "ms": 689.394100000005,
+        "dims": [
+         1,
+         3,
+         882,
+         1568
+        ]
+       },
+       {
+        "k": "handler",
+        "name": "depth",
+        "t0": 122174.6462,
+        "ms": 699.2981999999902
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 715.9,
+      "blockSum": 715.9,
+      "top": [
+       [
+        122162.1,
+        715.9
+       ]
+      ],
+      "histMaxMs": 716.2,
+      "histP99Ms": 716.2
+     }
+    }
+   ],
+   "model": "da2_small"
+  },
+  {
+   "name": "da2_small.free",
+   "reps": [
+    {
+     "wall": 175.5,
+     "probe": {
+      "n": 6,
+      "max": 160.1,
+      "p50": 0.5,
+      "p95": 160.1,
+      "over50": 1,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": 1,
+     "err": null,
+     "parts": [],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "release",
+        "f": "depth_anything_v2_small.onnx",
+        "t0": 125574.0556,
+        "ms": 175.1195999999909
+       },
+       {
+        "k": "handler",
+        "name": "free",
+        "t0": 125574.0398,
+        "ms": 175.14310000000114
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 175.4,
+      "blockSum": 175.4,
+      "top": [
+       [
+        125573.8,
+        175.4
+       ]
+      ],
+      "histMaxMs": 175.5,
+      "histP99Ms": 175.5
+     }
+    }
+   ],
+   "model": "da2_small"
+  }
+ ],
+ "mems": [
+  {
+   "label": "start",
+   "main": {
+    "rssMB": 132,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 48628,
+     "privMB": 87,
+     "wsMB": 132,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 401,
+      "wsMB": 181,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 240,
+      "wsMB": 270,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 8774
+   }
+  },
+  {
+   "label": "sam2_base_plus after the cold point",
+   "main": {
+    "rssMB": 515,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 3499,
+     "wsMB": 515,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 404,
+      "wsMB": 181,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 265,
+      "wsMB": 299,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 3008,
+      "sharedMB": 73
+     }
+    },
+    "cardMB": 11822
+   }
+  },
+  {
+   "label": "sam2_base_plus after objects",
+   "main": {
+    "rssMB": 623,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 8592,
+     "wsMB": 623,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 404,
+      "wsMB": 181,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 237,
+      "wsMB": 274,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 8007,
+      "sharedMB": 137
+     }
+    },
+    "cardMB": 16815
+   }
+  },
+  {
+   "label": "sam2_base_plus after Free VRAM",
+   "main": {
+    "rssMB": 318,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 328,
+     "wsMB": 318,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 404,
+      "wsMB": 181,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 237,
+      "wsMB": 274,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 8802
+   }
+  },
+  {
+   "label": "sam2_base_plus after objects after Free VRAM",
+   "main": {
+    "rssMB": 586,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 6177,
+     "wsMB": 586,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 404,
+      "wsMB": 181,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 233,
+      "wsMB": 270,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 5617,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 14395
+   }
+  },
+  {
+   "label": "sam2_base_plus after the second Free VRAM",
+   "main": {
+    "rssMB": 323,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 322,
+     "wsMB": 323,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 404,
+      "wsMB": 181,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 233,
+      "wsMB": 270,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 8779
+   }
+  },
+  {
+   "label": "sam2_tiny after the cold point",
+   "main": {
+    "rssMB": 544,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 2117,
+     "wsMB": 544,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 404,
+      "wsMB": 181,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 229,
+      "wsMB": 266,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 1656,
+      "sharedMB": 73
+     }
+    },
+    "cardMB": 10435
+   }
+  },
+  {
+   "label": "sam2_tiny after objects",
+   "main": {
+    "rssMB": 622,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 4838,
+     "wsMB": 622,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 403,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 233,
+      "wsMB": 271,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 4293,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 13064
+   }
+  },
+  {
+   "label": "sam2_tiny after Free VRAM",
+   "main": {
+    "rssMB": 316,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 322,
+     "wsMB": 316,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 233,
+      "wsMB": 271,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 8775
+   }
+  },
+  {
+   "label": "sam2_small after the cold point",
+   "main": {
+    "rssMB": 528,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 2200,
+     "wsMB": 528,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 229,
+      "wsMB": 266,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 1710,
+      "sharedMB": 73
+     }
+    },
+    "cardMB": 10481
+   }
+  },
+  {
+   "label": "sam2_small after objects",
+   "main": {
+    "rssMB": 611,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 4924,
+     "wsMB": 611,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 237,
+      "wsMB": 275,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 4347,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 13272
+   }
+  },
+  {
+   "label": "sam2_small after Free VRAM",
+   "main": {
+    "rssMB": 322,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 335,
+     "wsMB": 322,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 237,
+      "wsMB": 275,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 8846
+   }
+  },
+  {
+   "label": "birefnet_lite after three cutouts",
+   "main": {
+    "rssMB": 435,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 395,
+     "wsMB": 435,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 229,
+      "wsMB": 266,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 8522
+   }
+  },
+  {
+   "label": "birefnet_lite after Free VRAM",
+   "main": {
+    "rssMB": 267,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 196,
+     "wsMB": 267,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 220,
+      "wsMB": 258,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 8523
+   }
+  },
+  {
+   "label": "rmbg14 after three cutouts",
+   "main": {
+    "rssMB": 346,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 479,
+     "wsMB": 346,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 229,
+      "wsMB": 266,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 8653
+   }
+  },
+  {
+   "label": "rmbg14 after Free VRAM",
+   "main": {
+    "rssMB": 330,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 260,
+     "wsMB": 330,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 229,
+      "wsMB": 266,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 8654
+   }
+  },
+  {
+   "label": "da2_small after depth",
+   "main": {
+    "rssMB": 463,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 4107,
+     "wsMB": 463,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 253,
+      "wsMB": 290,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 3702,
+      "sharedMB": 47
+     }
+    },
+    "cardMB": 12366
+   }
+  },
+  {
+   "label": "da2_small after Free VRAM",
+   "main": {
+    "rssMB": 364,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 48628,
+     "privMB": 538,
+     "wsMB": 364,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 52680,
+      "privMB": 399,
+      "wsMB": 180,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 57244,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 25928,
+      "privMB": 253,
+      "wsMB": 290,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48628": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 8663
+   }
+  }
+ ],
+ "focus_end": {
+  "focus": true,
+  "vis": "visible"
+ }
+}

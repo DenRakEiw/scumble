@@ -1,0 +1,914 @@
+{
+ "batch": "hovermem",
+ "run": 1,
+ "device": "auto",
+ "started": "2026-11-07T15:10:29",
+ "others": [],
+ "card_before_start": 3000,
+ "main_setup": {
+  "pid": 52360,
+  "ort": "1.29.0",
+  "electron": "44.2.0",
+  "hist": true
+ },
+ "page_setup": {
+  "ok": true,
+  "tiles": true
+ },
+ "rows": [
+  {
+   "name": "hover15000.prep",
+   "prep": {
+    "W": 15000,
+    "H": 8438,
+    "loadMs": 1011,
+    "inputMs": 32.5,
+    "outW": 2048,
+    "outH": 1152,
+    "dw": 924,
+    "dh": 518,
+    "lw": 1568,
+    "lh": 882,
+    "tiles": true
+   }
+  },
+  {
+   "name": "hover15000.ensureObjects",
+   "reps": [
+    {
+     "wall": 3170.3,
+     "probe": {
+      "n": 33,
+      "max": 1094,
+      "p50": 66.5,
+      "p95": 427.2,
+      "over50": 19,
+      "over200": 3,
+      "rendGapMax": 248.3,
+      "rendGaps": 1
+     },
+     "err": null,
+     "parts": [
+      {
+       "k": "objectInput",
+       "at": 0.5,
+       "ms": 4.2
+      },
+      {
+       "k": "inputHash",
+       "at": 4.7,
+       "ms": 2.3
+      },
+      {
+       "k": "helperCall",
+       "at": 7.1,
+       "ms": 2925.8
+      },
+      {
+       "k": "applySegmentIds",
+       "at": 3169.8,
+       "ms": 0.4
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "create",
+        "f": "sam2_hiera_base_plus.encoder.onnx",
+        "p": "dml",
+        "t0": 9293.4665,
+        "ms": 1090.2847999999994
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.encoder.onnx",
+        "t0": 10391.455,
+        "ms": 76.58899999999994,
+        "dims": [
+         1,
+         3,
+         1024,
+         1024
+        ]
+       },
+       {
+        "k": "encode",
+        "t0": 9293.2626,
+        "ms": 1174.8125999999993
+       },
+       {
+        "k": "create",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "p": "dml",
+        "t0": 10471.3237,
+        "ms": 181.5791999999983
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 10653.0046,
+        "ms": 200.84610000000066,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 10892.2427,
+        "ms": 53.47229999999945,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 10978.7539,
+        "ms": 50.304299999999785,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11062.5635,
+        "ms": 50.291299999998955,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11138.552,
+        "ms": 53.47320000000036,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11215.3127,
+        "ms": 49.39860000000044,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11288.3063,
+        "ms": 48.995199999999386,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11359.7606,
+        "ms": 54.281699999999546,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11437.1567,
+        "ms": 49.15390000000116,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11504.3254,
+        "ms": 50.243099999999686,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11573.2576,
+        "ms": 50.14899999999943,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11643.8772,
+        "ms": 50.048899999999776,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11717.3699,
+        "ms": 49.21640000000116,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11802.7448,
+        "ms": 50.7536999999993,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 11910.7341,
+        "ms": 49.95690000000104,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "run",
+        "f": "sam2_hiera_base_plus.decoder.onnx",
+        "t0": 12017.0941,
+        "ms": 49.15660000000025,
+        "dims": [
+         64,
+         1,
+         2
+        ]
+       },
+       {
+        "k": "automask",
+        "t0": 10468.0788,
+        "ms": 1729.4746000000014
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 9292.5475,
+        "ms": 2905.059799999999
+       }
+      ],
+      "blockN": 19,
+      "blockMax": 1116.7,
+      "blockSum": 2926.3,
+      "top": [
+       [
+        9275,
+        1116.7
+       ],
+       [
+        10653,
+        239.2
+       ],
+       [
+        12017.1,
+        184.2
+       ],
+       [
+        10471.4,
+        181.7
+       ],
+       [
+        11802.8,
+        108
+       ],
+       [
+        11910.8,
+        106.4
+       ],
+       [
+        10892.3,
+        86.5
+       ],
+       [
+        11717.4,
+        85.4
+       ],
+       [
+        10978.8,
+        83.8
+       ],
+       [
+        10391.7,
+        79.7
+       ],
+       [
+        11359.8,
+        77.4
+       ],
+       [
+        11138.7,
+        76.7
+       ]
+      ],
+      "histMaxMs": 1116.7,
+      "histP99Ms": 1116.7
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_01",
+   "reps": [
+    {
+     "wall": 316.5,
+     "probe": {
+      "n": 14,
+      "max": 1.7,
+      "p50": 0.2,
+      "p95": 1.7,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 316.9,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 316.4
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19.3,
+      "histP99Ms": 19.3
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_02",
+   "reps": [
+    {
+     "wall": 193.9,
+     "probe": {
+      "n": 10,
+      "max": 1.9,
+      "p50": 0.2,
+      "p95": 1.9,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 194.5,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0.1,
+       "ms": 193.9
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_03",
+   "reps": [
+    {
+     "wall": 310.9,
+     "probe": {
+      "n": 8,
+      "max": 1.3,
+      "p50": 0.2,
+      "p95": 1.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 311.4,
+      "rendGaps": 2
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 310.8
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_04",
+   "reps": [
+    {
+     "wall": 207.3,
+     "probe": {
+      "n": 14,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 207.5,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 207.3
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_05",
+   "reps": [
+    {
+     "wall": 225,
+     "probe": {
+      "n": 9,
+      "max": 0.5,
+      "p50": 0.2,
+      "p95": 0.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 225.5,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0.1,
+       "ms": 224.9
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_06",
+   "reps": [
+    {
+     "wall": 172,
+     "probe": {
+      "n": 8,
+      "max": 1.9,
+      "p50": 0.2,
+      "p95": 1.9,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 172.6,
+      "rendGaps": 2
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 171.9
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_07",
+   "reps": [
+    {
+     "wall": 302.1,
+     "probe": {
+      "n": 13,
+      "max": 302.2,
+      "p50": 0.2,
+      "p95": 302.2,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 302.2,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 302
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.1,
+      "histP99Ms": 16.1
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_08",
+   "reps": [
+    {
+     "wall": 326.5,
+     "probe": {
+      "n": 10,
+      "max": 1.8,
+      "p50": 0.2,
+      "p95": 1.8,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 327.1,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 326.4
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16,
+      "histP99Ms": 16
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_09",
+   "reps": [
+    {
+     "wall": 212.2,
+     "probe": {
+      "n": 14,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 212.4,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 212.2
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_10",
+   "reps": [
+    {
+     "wall": 161.8,
+     "probe": {
+      "n": 8,
+      "max": 1.5,
+      "p50": 0.2,
+      "p95": 1.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 162.5,
+      "rendGaps": 2
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 161.8
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_11",
+   "reps": [
+    {
+     "wall": 173.4,
+     "probe": {
+      "n": 15,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 173.5,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 173.3
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_12",
+   "reps": [
+    {
+     "wall": 187.1,
+     "probe": {
+      "n": 7,
+      "max": 187.6,
+      "p50": 0.2,
+      "p95": 187.6,
+      "over50": 1,
+      "over200": 0,
+      "rendGapMax": 187.6,
+      "rendGaps": 2
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 187
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.1,
+      "histP99Ms": 16.1
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_13",
+   "reps": [
+    {
+     "wall": 194.8,
+     "probe": {
+      "n": 14,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 194.9,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 194.7
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16,
+      "histP99Ms": 16
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.shape_14",
+   "reps": [
+    {
+     "wall": 190.6,
+     "probe": {
+      "n": 7,
+      "max": 215.7,
+      "p50": 0.2,
+      "p95": 215.7,
+      "over50": 1,
+      "over200": 1,
+      "rendGapMax": 215.7,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 190.6
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ]
+  },
+  {
+   "name": "hover15000.memory",
+   "hovermem": {
+    "before": {
+     "tabMB": 1165,
+     "gpuMB": 413,
+     "cache": 0
+    },
+    "after": {
+     "tabMB": 1645,
+     "gpuMB": 6339,
+     "cache": 13
+    },
+    "cleared": {
+     "tabMB": 1146,
+     "gpuMB": 12807,
+     "cache": 0
+    },
+    "shapes": 14
+   }
+  }
+ ],
+ "mems": [],
+ "focus_end": {
+  "focus": true,
+  "vis": "visible"
+ }
+}

@@ -1,0 +1,84 @@
+
+Debugger listening on ws://127.0.0.1:9598/1dbc6689-5dcf-4440-8b87-85782c17e442
+For help, see: https://nodejs.org/learn/getting-started/debugging
+
+DevTools listening on ws://127.0.0.1:9588/devtools/browser/5f0f7b02-f462-4634-82d0-628ec4cb9051
+Debugger attached.
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+[1;31m2026-11-07 13:58:57.8887990 [E:onnxruntime:, sequential_executor.cc:671 onnxruntime::ExecuteKernel] Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core/providers/cpu/math/element_wise_ops.h:563 onnxruntime::BroadcastIterator::Init axis == 1 || axis == largest was false. Attempting to broadcast an axis by a dimension other than 1. 64 by 256
+[m
+Error occurred in handler for 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core/providers/cpu/math/element_wise_ops.h:563 onnxruntime::BroadcastIterator::Init axis == 1 || axis == largest was false. Attempting to broadcast an axis by a dimension other than 1. 64 by 256
+
+    at Immediate.<anonymous> (F:\canvas\node_modules\onnxruntime-node\dist\backend.js:117:108)
+    at process.processImmediate (node:internal/timers:574:21)
+Debugger ending on ws://127.0.0.1:9598/1dbc6689-5dcf-4440-8b87-85782c17e442
+For help, see: https://nodejs.org/learn/getting-started/debugging

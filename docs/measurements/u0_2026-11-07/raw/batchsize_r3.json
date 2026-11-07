@@ -1,0 +1,1369 @@
+{
+ "batch": "batchsize",
+ "run": 3,
+ "device": "auto",
+ "started": "2026-11-07T15:09:20",
+ "others": [],
+ "card_before_start": 3000,
+ "main_setup": {
+  "pid": 44904,
+  "ort": "1.29.0",
+  "electron": "44.2.0",
+  "hist": true
+ },
+ "page_setup": {
+  "ok": true,
+  "tiles": true
+ },
+ "image": "F:\\canvas\\docs\\images\\tutorial\\scene.jpg",
+ "prep": {
+  "W": 2000,
+  "H": 1125,
+  "loadMs": 525,
+  "inputMs": 36.9,
+  "outW": 2000,
+  "outH": 1125,
+  "dw": 924,
+  "dh": 518,
+  "lw": 1568,
+  "lh": 882,
+  "tiles": true
+ },
+ "rows": [
+  {
+   "name": "batch16.fork",
+   "fork": {
+    "pid": 19104,
+    "spawnMs": 11.6
+   }
+  },
+  {
+   "name": "batch16.init",
+   "reps": [
+    {
+     "rtt": 47.6,
+     "ms": 9.5,
+     "error": null,
+     "res": {
+      "pid": 19104,
+      "device": "gpu",
+      "ortMs": 9.485699999999998,
+      "startMs": 23.9559,
+      "version": "1.29.0"
+     },
+     "probe": {
+      "n": 27,
+      "max": 0.4,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch16.point_cold",
+   "reps": [
+    {
+     "rtt": 1573.6,
+     "ms": 1565.5,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 414,
+      "max": 8.9,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.1,
+      "histP99Ms": 16
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch16.objects_b16",
+   "reps": [
+    {
+     "rtt": 31.3,
+     "ms": 22.1,
+     "error": "Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(2) tid(5680) 80070057 Falscher Parameter.\r\n\n    at Immediate.<anonymous> (F:\\canvas\\node_modules\\onnxruntime-node\\dist\\backend.js:117:108)\n    at process.processImmediate (node:internal/timers:574:21)",
+     "res": {},
+     "probe": {
+      "n": 22,
+      "max": 4.2,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.7,
+      "histP99Ms": 18.7
+     }
+    },
+    {
+     "rtt": 16.3,
+     "ms": 7.3,
+     "error": "Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(4) tid(5680) 80070057 Falscher Parameter.\r\n\n    at Immediate.<anonymous> (F:\\canvas\\node_modules\\onnxruntime-node\\dist\\backend.js:117:108)\n    at process.processImmediate (node:internal/timers:574:21)",
+     "res": {},
+     "probe": {
+      "n": 19,
+      "max": 3.7,
+      "p50": 0.1,
+      "p95": 3.7,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch16.objects_b64_after",
+   "reps": [
+    {
+     "rtt": 1809.8,
+     "ms": 1790.9,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "dml",
+      "encodeMs": 0.00980000000004111,
+      "automaskMs": 1790.8975,
+      "encodeRunMs": 64
+     },
+     "probe": {
+      "n": 474,
+      "max": 4.1,
+      "p50": 0.1,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19.2,
+      "histP99Ms": 16.2
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch16.point_after",
+   "reps": [
+    {
+     "rtt": 15.3,
+     "ms": 6.4,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 18,
+      "max": 3.8,
+      "p50": 0.1,
+      "p95": 3.8,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19.6,
+      "histP99Ms": 19.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch32.fork",
+   "fork": {
+    "pid": 48072,
+    "spawnMs": 21.1
+   }
+  },
+  {
+   "name": "batch32.init",
+   "reps": [
+    {
+     "rtt": 47.4,
+     "ms": 9.1,
+     "error": null,
+     "res": {
+      "pid": 48072,
+      "device": "gpu",
+      "ortMs": 9.0613,
+      "startMs": 23.8827,
+      "version": "1.29.0"
+     },
+     "probe": {
+      "n": 26,
+      "max": 0.3,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch32.point_cold",
+   "reps": [
+    {
+     "rtt": 1527.3,
+     "ms": 1519.1,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 399,
+      "max": 3.2,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16,
+      "histP99Ms": 15.7
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch32.objects_b32",
+   "reps": [
+    {
+     "rtt": 34.3,
+     "ms": 25,
+     "error": "Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(2) tid(c670) 80070057 Falscher Parameter.\r\n\n    at Immediate.<anonymous> (F:\\canvas\\node_modules\\onnxruntime-node\\dist\\backend.js:117:108)\n    at process.processImmediate (node:internal/timers:574:21)",
+     "res": {},
+     "probe": {
+      "n": 22,
+      "max": 5.4,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    },
+    {
+     "rtt": 17.4,
+     "ms": 8.4,
+     "error": "Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(4) tid(c670) 80070057 Falscher Parameter.\r\n\n    at Immediate.<anonymous> (F:\\canvas\\node_modules\\onnxruntime-node\\dist\\backend.js:117:108)\n    at process.processImmediate (node:internal/timers:574:21)",
+     "res": {},
+     "probe": {
+      "n": 18,
+      "max": 5,
+      "p50": 0.1,
+      "p95": 5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 17.8,
+      "histP99Ms": 17.8
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch32.objects_b64_after",
+   "reps": [
+    {
+     "rtt": 1767.7,
+     "ms": 1748.3,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "dml",
+      "encodeMs": 0.026699999999891588,
+      "automaskMs": 1748.2288000000003,
+      "encodeRunMs": 65
+     },
+     "probe": {
+      "n": 462,
+      "max": 5.6,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.3,
+      "histP99Ms": 16.1
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch32.point_after",
+   "reps": [
+    {
+     "rtt": 14.3,
+     "ms": 6.3,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 19,
+      "max": 3.7,
+      "p50": 0.1,
+      "p95": 3.7,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch128.fork",
+   "fork": {
+    "pid": 20548,
+    "spawnMs": 11.2
+   }
+  },
+  {
+   "name": "batch128.init",
+   "reps": [
+    {
+     "rtt": 48.6,
+     "ms": 9.2,
+     "error": null,
+     "res": {
+      "pid": 20548,
+      "device": "gpu",
+      "ortMs": 9.130199999999999,
+      "startMs": 24.2466,
+      "version": "1.29.0"
+     },
+     "probe": {
+      "n": 30,
+      "max": 0.3,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19.1,
+      "histP99Ms": 19.1
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch128.point_cold",
+   "reps": [
+    {
+     "rtt": 1541.6,
+     "ms": 1532.9,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 400,
+      "max": 3.4,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16,
+      "histP99Ms": 15.7
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch128.objects_b128",
+   "reps": [
+    {
+     "rtt": 57.7,
+     "ms": 48.1,
+     "error": "Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(2) tid(d728) 80070057 Falscher Parameter.\r\n\n    at Immediate.<anonymous> (F:\\canvas\\node_modules\\onnxruntime-node\\dist\\backend.js:117:108)\n    at process.processImmediate (node:internal/timers:574:21)",
+     "res": {},
+     "probe": {
+      "n": 29,
+      "max": 4.7,
+      "p50": 0.1,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.2,
+      "histP99Ms": 18.2
+     }
+    },
+    {
+     "rtt": 26.3,
+     "ms": 14.3,
+     "error": "Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(4) tid(d728) 80070057 Falscher Parameter.\r\n\n    at Immediate.<anonymous> (F:\\canvas\\node_modules\\onnxruntime-node\\dist\\backend.js:117:108)\n    at process.processImmediate (node:internal/timers:574:21)",
+     "res": {},
+     "probe": {
+      "n": 22,
+      "max": 7.1,
+      "p50": 0.1,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 17.1,
+      "histP99Ms": 17.1
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch128.objects_b64_after",
+   "reps": [
+    {
+     "rtt": 1759.1,
+     "ms": 1740.5,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "dml",
+      "encodeMs": 0.008199999999987995,
+      "automaskMs": 1740.4753999999998,
+      "encodeRunMs": 64
+     },
+     "probe": {
+      "n": 458,
+      "max": 4.8,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19,
+      "histP99Ms": 16
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch128.point_after",
+   "reps": [
+    {
+     "rtt": 15.2,
+     "ms": 6.7,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 19,
+      "max": 3.5,
+      "p50": 0.2,
+      "p95": 3.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch256.fork",
+   "fork": {
+    "pid": 23588,
+    "spawnMs": 11.8
+   }
+  },
+  {
+   "name": "batch256.init",
+   "reps": [
+    {
+     "rtt": 47.6,
+     "ms": 9,
+     "error": null,
+     "res": {
+      "pid": 23588,
+      "device": "gpu",
+      "ortMs": 8.969000000000005,
+      "startMs": 23.5575,
+      "version": "1.29.0"
+     },
+     "probe": {
+      "n": 28,
+      "max": 0.3,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.5,
+      "histP99Ms": 18.5
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch256.point_cold",
+   "reps": [
+    {
+     "rtt": 1555.2,
+     "ms": 1547,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 402,
+      "max": 3,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.1,
+      "histP99Ms": 16.1
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch256.objects_b256",
+   "reps": [
+    {
+     "rtt": 86.2,
+     "ms": 77.3,
+     "error": "Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(2) tid(146c) 80070057 Falscher Parameter.\r\n\n    at Immediate.<anonymous> (F:\\canvas\\node_modules\\onnxruntime-node\\dist\\backend.js:117:108)\n    at process.processImmediate (node:internal/timers:574:21)",
+     "res": {},
+     "probe": {
+      "n": 38,
+      "max": 4,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19.8,
+      "histP99Ms": 19.8
+     }
+    },
+    {
+     "rtt": 27.2,
+     "ms": 18,
+     "error": "Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\MLOperatorAuthorImpl.cpp(2901)\\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(4) tid(146c) 80070057 Falscher Parameter.\r\n\n    at Immediate.<anonymous> (F:\\canvas\\node_modules\\onnxruntime-node\\dist\\backend.js:117:108)\n    at process.processImmediate (node:internal/timers:574:21)",
+     "res": {},
+     "probe": {
+      "n": 22,
+      "max": 4,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch256.objects_b64_after",
+   "reps": [
+    {
+     "rtt": 1763,
+     "ms": 1744.8,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "dml",
+      "encodeMs": 0.009999999999990905,
+      "automaskMs": 1744.7661000000003,
+      "encodeRunMs": 65
+     },
+     "probe": {
+      "n": 460,
+      "max": 4.9,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.9,
+      "histP99Ms": 16.5
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch256.point_after",
+   "reps": [
+    {
+     "rtt": 14.5,
+     "ms": 6.4,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 18,
+      "max": 4,
+      "p50": 0.1,
+      "p95": 4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.2,
+      "histP99Ms": 18.2
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch64.fork",
+   "fork": {
+    "pid": 7652,
+    "spawnMs": 11.5
+   }
+  },
+  {
+   "name": "batch64.init",
+   "reps": [
+    {
+     "rtt": 50.4,
+     "ms": 9.5,
+     "error": null,
+     "res": {
+      "pid": 7652,
+      "device": "gpu",
+      "ortMs": 9.436800000000002,
+      "startMs": 24.6714,
+      "version": "1.29.0"
+     },
+     "probe": {
+      "n": 29,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19.1,
+      "histP99Ms": 19.1
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch64.point_cold",
+   "reps": [
+    {
+     "rtt": 1550.1,
+     "ms": 1541.9,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 403,
+      "max": 3.1,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.3,
+      "histP99Ms": 16.1
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch64.objects_b64",
+   "reps": [
+    {
+     "rtt": 1782.7,
+     "ms": 1763.1,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "dml",
+      "encodeMs": 0.009399999999914144,
+      "automaskMs": 1763.0297,
+      "encodeRunMs": 64
+     },
+     "probe": {
+      "n": 465,
+      "max": 6.3,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 17.6,
+      "histP99Ms": 16
+     }
+    },
+    {
+     "rtt": 1737.3,
+     "ms": 1718.7,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "dml",
+      "encodeMs": 0.020200000000386353,
+      "automaskMs": 1718.6472999999996,
+      "encodeRunMs": 64
+     },
+     "probe": {
+      "n": 453,
+      "max": 4.9,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16,
+      "histP99Ms": 15.8
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "batch64.point_after",
+   "reps": [
+    {
+     "rtt": 14.4,
+     "ms": 6.3,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 18,
+      "max": 3.9,
+      "p50": 0.1,
+      "p95": 3.9,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  }
+ ],
+ "mems": [
+  {
+   "label": "start",
+   "main": {
+    "rssMB": 129,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 44904,
+     "privMB": 85,
+     "wsMB": 129,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 34628,
+      "privMB": 398,
+      "wsMB": 183,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 14036,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 23692,
+      "privMB": 261,
+      "wsMB": 289,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 3291
+   }
+  },
+  {
+   "label": "batch 16 after",
+   "main": {
+    "rssMB": 131,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 44904,
+     "privMB": 86,
+     "wsMB": 131,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 34628,
+      "privMB": 393,
+      "wsMB": 182,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 14036,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     },
+     {
+      "pid": 19104,
+      "privMB": 6341,
+      "wsMB": 759,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 23692,
+      "privMB": 264,
+      "wsMB": 292,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "19104": {
+      "dedicatedMB": 5646,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 8935
+   }
+  },
+  {
+   "label": "batch 32 after",
+   "main": {
+    "rssMB": 131,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 44904,
+     "privMB": 86,
+     "wsMB": 131,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 34628,
+      "privMB": 393,
+      "wsMB": 182,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 14036,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     },
+     {
+      "pid": 48072,
+      "privMB": 6150,
+      "wsMB": 566,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 23692,
+      "privMB": 249,
+      "wsMB": 281,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "48072": {
+      "dedicatedMB": 5654,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 8943
+   }
+  },
+  {
+   "label": "batch 128 after",
+   "main": {
+    "rssMB": 131,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 44904,
+     "privMB": 86,
+     "wsMB": 131,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 34628,
+      "privMB": 393,
+      "wsMB": 182,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 14036,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     },
+     {
+      "pid": 20548,
+      "privMB": 6259,
+      "wsMB": 572,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 23692,
+      "privMB": 219,
+      "wsMB": 252,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "20548": {
+      "dedicatedMB": 5751,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 9040
+   }
+  },
+  {
+   "label": "batch 256 after",
+   "main": {
+    "rssMB": 131,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 44904,
+     "privMB": 86,
+     "wsMB": 131,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 34628,
+      "privMB": 393,
+      "wsMB": 182,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 14036,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     },
+     {
+      "pid": 23588,
+      "privMB": 8558,
+      "wsMB": 820,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 23692,
+      "privMB": 218,
+      "wsMB": 251,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "23588": {
+      "dedicatedMB": 7798,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 11090
+   }
+  },
+  {
+   "label": "batch 64 after",
+   "main": {
+    "rssMB": 131,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 44904,
+     "privMB": 87,
+     "wsMB": 131,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 34628,
+      "privMB": 393,
+      "wsMB": 182,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 14036,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     },
+     {
+      "pid": 7652,
+      "privMB": 6402,
+      "wsMB": 823,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 23692,
+      "privMB": 219,
+      "wsMB": 252,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "7652": {
+      "dedicatedMB": 5646,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 8935
+   }
+  }
+ ],
+ "focus_end": {
+  "focus": true,
+  "vis": "visible"
+ }
+}
