@@ -1743,6 +1743,24 @@ started: the app log's relative path after the `cd` into the tree), `gates/`, `m
   the filter, `smudge_dab` and the write, not split here); frequency separation's blur 698 of 1,012 ms and its split
   210; the tone and sponge dabs untouched.
 
+### U0 (2026-11-07): where the helpers' time goes
+
+On `8689d49` by a background agent (`84a8d4d`, merged `6eded3d`); a measurement, no app code (`tools/helpers_perf.py`,
+`tools/helpers_process_probe.js`; `docs/measurements/u0_2026-11-07/`, `docs/PLAN_HELPERS_PROCESS.md` §0-§2). Three
+fresh runs per batch under the busy lock, the scene's 1024² input, the user's ComfyUI models folder read only. SAM2
+base+ on DirectML: the first call 1,575 ms with main blocked 1,077 in one piece (the encoder's session), a warm point
+8, the object map 1,928 (16 decoder batches 1,287, JavaScript 627) with main blocked about 0.2 s sixteen times, after
+Free VRAM 2,786; tiny and small the same map (one decoder file); the export runs batch 1 and 64 only; the CPU 38 s per
+map. BiRefNet lite on the CPU 4.8 s, all of it a main block; depth 0.24 s on DirectML. SAM2's DirectML allocations
+are main's 3.5-6.2 GB of private bytes (the 6.1 GB of BUGS.md), back at Free VRAM. In a utility process forked from
+main the same engine ran every DirectML job with main's longest block 0, and `kill()` returned everything in 9 ms. At
+15k the object tool's shapes are document-sized canvases (0.3 s a hover, 1.3-2 s a click, 5-6 GB in the GPU process
+for 13; BUGS.md). The plan: U1a / U1b (one helpers utility process, kill on Free VRAM / the device / the folder / quit,
+the idle unload, the main-thread fallback); U2 ranked: warm on the tool pick, the shapes at the map's size, the
+automask's JavaScript, the decoder's shape order, then the user's calls; seven questions in its §6. **U1 started the
+same evening** by a background agent with §6's suggested answers (5 minutes idle, LaMa separate, a double death falls
+back to the main thread, no window port) and without `warmObjects` (host.js was being edited).
+
 ### H1 and P15 (2026-11-07): the hardening, the probe's requests together
 
 Built by a background agent on `8689d49` (`e5c7aff`, `57a5f55`), a review workflow's 9 confirmed findings fixed in
