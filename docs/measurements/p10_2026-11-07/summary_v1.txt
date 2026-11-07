@@ -1,0 +1,18 @@
+P10 A/B at 15000 x 10000, tiles, a fresh instance per run; rounds (native, perf): before (2, 2), after (2, 2)
+row                                                  before       (spread)      after       (spread)
+native pan_and_zoom wall (ms)                         325.5        317-334      220.0        215-225
+  frame pan at 1:1 far, median (ms)                   12.36     11.81-12.9       7.61      7.53-7.69
+  frame pan at 1:1 far, max (ms)                       17.4    16.77-18.03      11.16    10.93-11.39
+  frame pan at 1:1, max (ms)                           9.52     8.78-10.26        4.3      4.07-4.53
+  frame zoom, max (ms)                                10.61    10.31-10.91        6.8      6.66-6.94
+  profile: put self time (ms)                        236.95    226.2-247.7      129.4    128.7-130.1
+  profile: inpaint_tiles.js self time (ms)           249.65    242.8-256.5     140.55    139.5-141.6
+  texSubImage2D calls [MB]                       540 [137.1]                540 [137.1]               
+perf pan at 1:1 (30 frames), median (ms)                3.2        3.1-3.3       3.05          3-3.1
+perf pan at 1:1 (30 frames), max (ms)                   9.7       9.3-10.1        9.9       9.7-10.1
+perf pan (60 frames), median (ms)                      3.05          3-3.1        3.1        3.1-3.1
+perf wheel zoom (10), median (ms)                      3.15        3.1-3.2       3.15        3.1-3.2
+perf first frame fit -> 1:1, GPU (ms)                   1.5        1.3-1.7       1.35        1.3-1.4
+perf frame after a whole change, fit (ms)             18.25      18.1-18.4      19.95      18.8-21.1
+perf frame after a whole change, 1:1 (ms)              30.4        28.8-32       23.3        23-23.6
+perf frame after a whole touch, fit (ms)               10.3      10.3-10.3       10.7        10.4-11

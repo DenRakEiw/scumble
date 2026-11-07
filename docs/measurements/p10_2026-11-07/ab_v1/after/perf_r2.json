@@ -1,0 +1,417 @@
+[
+ {
+  "size": "15000x10000",
+  "mp": 150,
+  "filter": "film.look",
+  "setBase": 4340,
+  "memMB": null,
+  "view": "1820x1198",
+  "display": {
+   "mirrors": 2,
+   "mirrorMB": 1144.4,
+   "regions": 15,
+   "regionMB": 197.1,
+   "pyramidMB": 0
+  },
+  "focus": [
+   true,
+   "visible",
+   true,
+   "visible"
+  ],
+  "opacity_tick": [
+   8.3,
+   8.7
+  ],
+  "match_tick": [
+   8,
+   10.4
+  ],
+  "filter_tick": [
+   8,
+   11.3
+  ],
+  "pan": [
+   3.1,
+   15.1
+  ],
+  "zoom": [
+   3.2,
+   6.5
+  ],
+  "fit": [
+   0,
+   0
+  ],
+  "redraw_cached": [
+   0,
+   0
+  ],
+  "pan_1to1": [
+   3.1,
+   10.1
+  ],
+  "gl_stack": 1,
+  "pan_1to1_gl": [
+   0.1,
+   0.2
+  ],
+  "pan_fit_gl": [
+   0.2,
+   5.8
+  ],
+  "first_1to1_gl": [
+   1.3,
+   1.3
+  ],
+  "glMB": {
+   "atlas": 94.8,
+   "pages": 82,
+   "slots": 18874,
+   "textures": 0
+  },
+  "whole_level": 3,
+  "whole_level_row": [
+   3,
+   1
+  ],
+  "whole_fit_gl": [
+   18.8,
+   18.8
+  ],
+  "whole_fit_gl_state": [
+   0,
+   0
+  ],
+  "whole_fit_gl_chains": [
+   16,
+   2360
+  ],
+  "whole_fit_gl_settled": [
+   86.9,
+   22.4
+  ],
+  "whole_fit_gl_landed": [
+   2360,
+   0
+  ],
+  "touch_fit_gl": [
+   10.4,
+   10.4
+  ],
+  "whole_1to1_gl": [
+   23,
+   23
+  ],
+  "whole_1to1_gl_state": [
+   0,
+   0
+  ],
+  "whole_1to1_gl_chains": [
+   16,
+   2344
+  ],
+  "whole_1to1_gl_settled": [
+   77.4,
+   13.5
+  ],
+  "whole_1to1_gl_landed": [
+   2344,
+   2344
+  ],
+  "panel_flatten_sync": [
+   338.1,
+   338.1
+  ],
+  "panel_flatten_sync_chains": [
+   2360,
+   0
+  ],
+  "panel_flatten_sync_keptMB": [
+   221,
+   0
+  ],
+  "panel_flatten_settled": [
+   57,
+   144.9
+  ],
+  "panel_flatten_settled_chains": [
+   98,
+   2262
+  ],
+  "panel_flatten_settled_keptMB": [
+   32.7,
+   0
+  ],
+  "stroke_frame": [
+   1.2,
+   5.7
+  ],
+  "stroke_commit": [
+   13.6,
+   99
+  ],
+  "undo_bytes": 4718592,
+  "undo_step": [
+   28.5,
+   0
+  ],
+  "selection_change": [
+   17.4,
+   0
+  ],
+  "get_value": [
+   0.1,
+   49.5
+  ],
+  "bounds_scan": [
+   2.4,
+   2.8
+  ],
+  "draw_with_ants": [
+   0.3,
+   29.1
+  ],
+  "full_composite": [
+   136.2,
+   1965.4
+  ],
+  "grow": [
+   87.8,
+   558.8
+  ],
+  "shrink": [
+   43.8,
+   324.8
+  ],
+  "invert": [
+   229.1,
+   223
+  ],
+  "invert_landings": [
+   0,
+   20.5
+  ],
+  "feather": [
+   54,
+   382.9
+  ],
+  "wand": [
+   254.4,
+   5715.8
+  ],
+  "wand_object": [
+   144.8,
+   246.6
+  ],
+  "bucket": [
+   79.2,
+   223.8
+  ],
+  "fill_small": [
+   27.5,
+   27.3
+  ],
+  "undo_fill": [
+   25.7,
+   24.6
+  ],
+  "clear_small": [
+   27.9,
+   26.8
+  ],
+  "long_stroke": [
+   176.1,
+   173.4
+  ],
+  "long_buffer": [
+   14698,
+   9698,
+   28
+  ],
+  "long_commit": [
+   61.4,
+   61.3
+  ],
+  "png": [
+   7.5,
+   3822
+  ],
+  "png_main": [
+   363.4,
+   4255.2
+  ],
+  "point_add": [
+   219.1,
+   214
+  ],
+  "point_add_plain": [
+   59.9,
+   59.7
+  ],
+  "mean_color": [
+   133.6,
+   131.8
+  ],
+  "mean_color_plain": [
+   14,
+   13.9
+  ],
+  "bucket_sel": [
+   225.6,
+   363.7
+  ],
+  "screenshot": [
+   29.5,
+   29.3
+  ],
+  "screenshot_mb": [
+   0,
+   0
+  ],
+  "prompt_ctx": [
+   69.8,
+   69.6
+  ],
+  "prompt_ctx_mb": [
+   0,
+   0
+  ],
+  "prompt_ctx_sel": [
+   122,
+   121.8
+  ],
+  "prompt_ctx_sel_mb": [
+   0,
+   0
+  ],
+  "object_input": [
+   85.2,
+   85.1
+  ],
+  "object_input_mb": [
+   0,
+   0
+  ],
+  "object_input_old": [
+   1769.5,
+   1769.4
+  ],
+  "object_input_old_mb": [
+   1733,
+   0
+  ],
+  "cutout_input": [
+   24.3,
+   24.2
+  ],
+  "cutout_input_mb": [
+   0,
+   0
+  ],
+  "cutout_input_old": [
+   487.4,
+   487.3
+  ],
+  "cutout_input_old_mb": [
+   0,
+   0
+  ],
+  "wand_masked": [
+   168.1,
+   260.5
+  ],
+  "wand_masked_mb": [
+   0,
+   0
+  ],
+  "pick_layer": [
+   7.5,
+   7.5
+  ],
+  "pick_layer_mb": [
+   0,
+   0
+  ],
+  "wand_layer": [
+   50.5,
+   114.3
+  ],
+  "wand_layer_mb": [
+   0,
+   0
+  ],
+  "pan_masked_filter": [
+   3.2,
+   5.7
+  ],
+  "pan_masked_filter_mb": [
+   0,
+   0
+  ],
+  "peek_fit": [
+   17.6,
+   17.6
+  ],
+  "peek_fit_mb": [
+   0,
+   0
+  ],
+  "peek_1to1": [
+   10.9,
+   10.9
+  ],
+  "peek_1to1_mb": [
+   0,
+   0
+  ],
+  "move_first": [
+   0.5,
+   0.5
+  ],
+  "move_mb": [
+   0,
+   0
+  ],
+  "match_full_fit": [
+   13.5,
+   0.2
+  ],
+  "match_full_fit_mb": [
+   0,
+   0
+  ],
+  "match_full_1to1": [
+   103.8,
+   33.3
+  ],
+  "match_full_1to1_mb": [
+   0,
+   0
+  ],
+  "match_full_pan": [
+   3.4,
+   21.5
+  ],
+  "match_full_pan_mb": [
+   0,
+   0
+  ],
+  "match_full_pick": [
+   38.2,
+   38.1
+  ],
+  "match_full_pick_mb": [
+   0,
+   0
+  ],
+  "match_full_wand": [
+   174.5,
+   282.2
+  ],
+  "match_full_wand_mb": [
+   0,
+   0
+  ]
+ }
+]

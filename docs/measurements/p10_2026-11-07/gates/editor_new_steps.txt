@@ -1,0 +1,4 @@
+[ok] curves_histogram_is_the_picture_below: {"ks": 0.003, "shape": 0.0206, "bins": 210, "asked": 1}
+[ok] settings_open_does_not_wait_for_the_card: {"times": [{"openMs": 66, "lineThen": "Reading the GPU's memory ..."}, {"openMs": 64, "lineThen": "Reading the GPU's memory ..."}], "filledAfterMs": 101, "line": "The GPU process is using 1493 MB right now. The card holds 7043 of 32607 MB (everything on"}
+[ok] curves_histogram_is_the_picture_below: {"ks": 0.0016, "shape": 0.0048, "bins": 213, "asked": 1}
+[ok] settings_open_does_not_wait_for_the_card: {"times": [{"openMs": 71, "lineThen": "Reading the GPU's memory ..."}, {"openMs": 51, "lineThen": "Reading the GPU's memory ..."}], "filledAfterMs": 106, "line": "The GPU process is using 2221 MB right now. The card holds 7897 of 32607 MB (everything on"}

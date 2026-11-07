@@ -19895,6 +19895,7 @@ class InpaintEditor {
                     preview: () => { this.filterPreview = layer.id; this.markFilterChanged(layer, { soon: true }); },
                     commit: (opts) => { this.filterPreview = null; if (layer._undoPending) { this.pushUndoSnapshot(layer._undoPending, { label: (opts && opts.label) || stepLabel(p) }); layer._undoPending = null; } this.markFilterChanged(layer); },
                     stop,
+                    histogram: () => { const h = this.belowHistogram(layer); return h ? h.luma : null; },   // the curves' backdrop (P8)
                 });
                 if (node) { node.style.gridColumn = "1 / -1"; box.appendChild(node); }
                 continue;

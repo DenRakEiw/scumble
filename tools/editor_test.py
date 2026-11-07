@@ -12235,6 +12235,118 @@ if (cropped.width !== 390) throw new Error("a crop through extend_canvas: " + JS
 await run("close_document", { doc: d.id, force: true });
 return { refusal: said.slice(0, 80), landed: [land.width, land.height], resize: "refused", frame: "kept" };
 """),
+    ("curves_histogram_is_the_picture_below", """
+// P8 (docs/PLAN_WASM_BUILD.md section 7): the curves panel draws the luma histogram of the picture below the layer from
+// the editor's belowHistogram (cached per composite below, as the range bars read it). The filter passes no longer read
+// a 256 px thumbnail of their input back for it (on screen that was a view pass, whose slot the panel never read), and
+// the panel's backdrop looks as the old pass's histogram of the same picture did: the two thumbnails are resampled
+// differently, so a gradient's counts move between neighbouring bins; the distributions agree within 0.02 (the largest
+// gap of their running sums) and the drawn shape, sqrt(h / max) over bins of 8 levels, within 0.05
+await run("new_canvas", { width: 600, height: 400, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, "rgb(10,20,30)"); g.addColorStop(1, "rgb(240,230,200)");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.fillStyle = "rgb(40,140,60)"; x.fillRect(0, 0, W / 3, H / 2);
+    x.fillStyle = "rgb(200,60,90)"; x.fillRect(W / 2, H / 2, W / 4, H / 3);
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "curves_hist.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const fx = ed.addFilterLayer("curves");
+ed.activeLayerId = fx.id;
+ed.renderLayers(); ed.fitView(); ed.draw();
+if (ed.mipsSettled) await ed.mipsSettled();
+// the old pass's histogram of its input: a 256 px thumbnail, Rec. 601 luma, one count per pixel
+const s = Math.min(1, 256 / Math.max(W, H)), tw = Math.max(1, Math.round(W * s)), th = Math.max(1, Math.round(H * s));
+const t = document.createElement("canvas"); t.width = tw; t.height = th;
+const tc = t.getContext("2d", { willReadFrequently: true });
+tc.drawImage(base, 0, 0, tw, th);
+const px = tc.getImageData(0, 0, tw, th).data, ref = new Float64Array(256);
+for (let i = 0; i < px.length; i += 4) ref[(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2] + 0.5) | 0]++;
+const below = ed.belowHistogram(fx);
+if (!below || !below.luma || below.luma.length !== 256) throw new Error("belowHistogram gave no luma histogram: " + JSON.stringify(below && Object.keys(below)));
+const total = (h) => { let n = 0; for (let i = 0; i < 256; i++) n += h[i]; return n; };
+const na = total(ref), nb = total(below.luma);
+let ks = 0, ca = 0, cb = 0;
+for (let i = 0; i < 256; i++) { ca += ref[i] / na; cb += below.luma[i] / nb; ks = Math.max(ks, Math.abs(ca - cb)); }
+const coarse = (h) => { const c = new Float64Array(32); for (let i = 0; i < 256; i++) c[i >> 3] += h[i]; let m = 0; for (const v of c) m = Math.max(m, v); return Array.from(c, (v) => Math.sqrt(v / m)); };
+const a = coarse(ref), b = coarse(below.luma);
+let worst = 0, at = -1;
+for (let i = 0; i < 32; i++) { const d = Math.abs(a[i] - b[i]); if (d > worst) { worst = d; at = i; } }
+if (ks > 0.02 || worst > 0.05) throw new Error(`the panel's backdrop differs from the old pass's histogram: running sums by ${ks.toFixed(3)}, the shape by ${worst.toFixed(3)} at levels ${at * 8}-${at * 8 + 7}`);
+// the panel asks the editor: its canvas redraws on pointerenter, and every draw reads the histogram
+const curves = ed.root.querySelector(".ipc-curves canvas");
+if (!curves) throw new Error("no curves panel for the active curves layer");
+const orig = ed.belowHistogram;
+let asked = 0, gave = null;
+ed.belowHistogram = function (...args) { asked++; gave = orig.apply(this, args); return gave; };
+try { curves.dispatchEvent(new PointerEvent("pointerenter")); } finally { ed.belowHistogram = orig; }
+if (!asked || !gave || gave.luma !== below.luma) throw new Error(`the curves panel did not draw the editor's histogram (${asked} reads)`);
+// no filter pass of the layer wrote a histogram (the view's slot, the full-resolution one after a run's flatten)
+ed.flattenToCanvas({ forRun: true });
+for (const slot of ["_fxCache", "_fxCacheView", "_fxCacheSample"]) {
+    if (fx[slot] && fx[slot].histogram !== undefined) throw new Error(`a filter pass still wrote ${slot}.histogram`);
+}
+ed.removeLayer(fx.id);
+return { ks: +ks.toFixed(4), shape: +worst.toFixed(4), bins: below.luma.filter((v) => v > 0).length, asked };
+"""),
+    ("settings_open_does_not_wait_for_the_card", """
+// P18 (docs/PLAN_WASM_BUILD.md section 7): openSettings no longer waits for the GPU memory line; the card's read starts
+// nvidia-smi or a PowerShell counter (electron/main/gpumem.js), and the line is written when it lands. With the card's
+// read held open (shell.memoryReads: the contextBridge object cannot be wrapped) the open must return, the dialog open
+// and the line still the placeholder; a second open while the first read is out, its read landing first, keeps its
+// line when the older read lands after it; then, with the real reads, the line fills. No timing is asserted
+const shell = await import("./shell.js");
+const line = document.getElementById("set-gpu-mem"), dlg = document.getElementById("shell-settings");
+const PLACEHOLDER = "Reading the GPU's memory ...";
+const reads = shell.memoryReads;
+if (!reads || typeof reads.card !== "function" || typeof reads.process !== "function") throw new Error("shell.js has no memoryReads to hold the line's reads");
+const orig = { process: reads.process, card: reads.card };
+const held = [];
+let pending = null;
+const out = {};
+try {
+    reads.process = () => Promise.resolve(123);
+    reads.card = () => new Promise((res) => held.push(res));
+    for (const d of document.querySelectorAll("dialog[open]")) d.close();
+    pending = shell.openSettings();
+    const r = await Promise.race([pending.then(() => "opened"), wait(5000).then(() => "waiting")]);
+    if (r !== "opened") throw new Error("openSettings waited for the card's read: still not back 5 s after the open with the read held");
+    if (!dlg.open) throw new Error("the settings dialog is not open after openSettings");
+    if (line.textContent !== PLACEHOLDER) throw new Error("with the card's read held the line is " + JSON.stringify(line.textContent.slice(0, 80)) + ", not the placeholder");
+    if (held.length !== 1) throw new Error(`${held.length} card reads after one open`);
+    // a second open: the newer read lands first, the older one after it, and the line stays the newer one's
+    dlg.close();
+    await shell.openSettings();
+    if (held.length !== 2) throw new Error(`${held.length} card reads after two opens`);
+    held[1]({ usedMB: 2, totalMB: 9, source: "the newer read" });
+    for (let i = 0; i < 50 && line.textContent === PLACEHOLDER; i++) await wait(20);
+    if (!line.textContent.startsWith("The GPU process is using 123 MB") || !line.textContent.includes("the newer read")) throw new Error("the newer read did not write the line: " + JSON.stringify(line.textContent.slice(0, 120)));
+    held[0]({ usedMB: 1, totalMB: 9, source: "the older read" });
+    await wait(100);
+    if (!line.textContent.includes("the newer read")) throw new Error("an older read landing after a newer one overwrote the line: " + JSON.stringify(line.textContent.slice(0, 120)));
+    out.held = { placeholder: true, newerKept: true };
+} finally {
+    reads.process = orig.process; reads.card = orig.card;
+    for (const res of held) res(null);
+    if (pending) await pending.catch(() => {});
+}
+// the real reads: the line fills
+dlg.close();
+await shell.openSettings();
+if (!dlg.open) throw new Error("the settings dialog is not open after openSettings");
+for (let i = 0; i < 150 && !line.textContent.startsWith("The GPU process is using"); i++) await wait(100);
+if (!line.textContent.startsWith("The GPU process is using") || line.textContent.includes("the newer read")) throw new Error("the GPU memory line was not filled in from the real reads: " + JSON.stringify(line.textContent.slice(0, 120)));
+dlg.close();
+out.line = line.textContent.slice(0, 90);
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

@@ -1,0 +1,23 @@
+killed   opaque test widened: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 263161 at 0,255: 0,255,254,254 against the twin's 0,254,253,254
+killed   opaque run scan widened: RESULT FAIL Error: 601x501 tile 0,1 level 0 (larger): byte 179684 at 29,174: 145,149,153,254 against the twin's 144,148,152,254
+killed   opaque run's last word left out: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 265216 at 256,256: 156,149,254,48 against the twin's 255,0,248,255
+killed   opaque run: q not advanced: RESULT FAIL Error: 601x501 tile 2,1 level 0 (larger): byte 33028 at 1,32: 115,99,129,157 against the twin's 250,120,101,255
+killed   short opaque run copies a neighbour: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 264192 at 0,256: 1,254,6,255 against the twin's 0,255,255,255
+killed   transparent test widened: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 2065 at 0,2: 0,0,0,0 against the twin's 0,1,0,1
+killed   transparent run scan widened: RESULT FAIL Error: 1024x768 tile 0,1 level 0 (fresh): byte 265288 at 16,257: 0,0,0,0 against the twin's 1,0,0,1
+killed   transparent run filled with 1: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 4 at 1,0: 1,0,0,0 against the twin's 0,0,0,0
+killed   short transparent run keeps the colour: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 1 at 0,0: 0,255,0,0 against the twin's 0,0,0,0
+killed   soft alpha forced: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 2067 at 0,2: 0,1,0,255 against the twin's 0,1,0,1
+killed   soft R / B rounding: +128 in the high half only: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 2580 at 129,2: 0,0,1,1 against the twin's 1,0,1,1
+killed   soft R / B: the low half's x >> 8 dropped: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 4984 at 214,4: 2,0,3,3 against the twin's 3,0,3,3
+killed   soft R / B mask keeps G's bits: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 2065 at 0,2: 0,129,0,1 against the twin's 0,1,0,1
+killed   soft G rounding 127: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 2577 at 128,2: 0,0,0,1 against the twin's 0,1,0,1
+killed   soft G without the x >> 8 term: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 4301 at 43,4: 0,2,0,3 against the twin's 0,3,0,3
+killed   soft G from B: RESULT FAIL Error: 601x501 tile 0,0 level 0 (larger): byte 2065 at 0,2: 0,0,0,1 against the twin's 0,1,0,1
+passes (equivalent)  RUN_MIN 1 (every run by set / fill: same bytes, a check that the set path is right): RESULT PASS 
+killed   coarse opaque threshold: RESULT FAIL Error: display 2,0 level 1 (fresh): byte 13 at 3,0: 127,236,106,254 against the twin's 127,235,106,254
+killed   coarse transparent copies the word: RESULT FAIL Error: display 0,0 level 1 (fresh): byte 0 at 0,0: 86,171,221,0 against the twin's 0,0,0,0
+killed   coarse word index: RESULT FAIL Error: display 2,0 level 1 (fresh): byte 20 at 5,0: 0,0,0,0 against the twin's 82,2,68,128
+killed   off ignored: RESULT FAIL Error: misaligned source 0,0 level 0 (exact): byte 265224 at 0,257: 0,0,126,215 against the twin's 150,215,7,255
+killed   output offset ignored: RESULT FAIL Error: 601x501 tile 0,0 level 0 ring (shared): byte 1032 at 0,1: 117,27,120,212 against the twin's 0,0,0,0
+22 of 22 as expected

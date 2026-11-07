@@ -1,0 +1,13 @@
+P18 (docs/PLAN_WASM_BUILD.md section 7, "The user's answers after K4", item 3): the Settings dialog opens without
+waiting for the GPU memory line. p18_chain.sh, 2026-11-07 16:41-16:44, the busy lock held: before = a tree at e9ab0d3,
+after = the agent's worktree (renderer/shell.js refreshGpuMemory), each arm on a fresh instance (offline, tiles, port
+9603), five opens 6 s apart (the card's read is cached for 5 s, so each open starts nvidia-smi anew), two rounds.
+
+                         openSettings until it resolves (the dialog shows at its end), median of 5   the GPU line
+  before r1 / r2         104.1 / 115.8 ms                                                         68.8 / 68.3 ms
+  after  r1 / r2          42.1 /  39.9 ms                                                         69.4 / 68.8 ms
+
+On this machine (an NVIDIA card, nvidia-smi answers in about 70 ms) the open is about 70 ms shorter, the card's read;
+the line lands about 30 ms after the dialog shows. Without nvidia-smi gpumem.js runs PowerShell's Get-Counter (an
+8 s timeout), which the review put at 1-3 s an open (inferred, not measured here): that wait is off the open now too.
+The rest of the open (about 40 ms) is the IPC reads the rows are built from, unchanged.

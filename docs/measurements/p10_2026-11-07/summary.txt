@@ -1,0 +1,48 @@
+P10 A/B at 15000 x 10000, tiles, a fresh instance per run; rounds (native, perf): before (3, 3), after (3, 3)
+row                                                  before       (spread)      after       (spread)
+native pan_and_zoom wall (ms)                           322        317-328        201        201-202
+  frame pan at 1:1 far, median (ms)                   12.14    11.59-12.44       6.85       6.8-6.86
+  frame pan at 1:1 far, max (ms)                      18.09    17.45-18.15       9.81      9.66-10.3
+  frame pan at 1:1, max (ms)                           7.85      7.31-8.15       3.79         3.67-4
+  frame zoom, max (ms)                                10.96     10.31-11.7        6.2       6.19-6.4
+  profile: put self time (ms)                         234.4    222.2-237.7      110.8    100.3-112.3
+  profile: inpaint_tiles.js self time (ms)            254.5    237.5-258.0      123.9    114.9-129.5
+  texSubImage2D calls [MB]                       540 [137.1]                540 [137.1]
+perf pan at 1:1 (30 frames), median (ms)                3.1        3.1-3.2        3.1        3.1-3.1
+perf pan at 1:1 (30 frames), max (ms)                   7.7       7.2-10.4       14.3       8.7-17.5
+perf pan (60 frames), median (ms)                         3          2.8-3        2.9          2.9-3
+perf wheel zoom (10), median (ms)                         3        2.8-3.1        2.8        2.8-2.9
+perf first frame fit -> 1:1, GPU (ms)                   1.6        1.4-1.7        1.4        1.4-1.4
+perf frame after a whole change, fit (ms)              18.6      18.5-18.8       18.6      18.5-19.5
+perf frame after a whole change, 1:1 (ms)              29.2      28.8-29.4       21.7      21.3-21.8
+perf frame after a whole touch, fit (ms)               10.5      10.2-10.8       10.7      10.3-11.1
+
+(the table is `python summarize.py ab`)
+
+How it ran: p10_chain.sh, 2026-11-07 16:28-16:40, three rounds, before (a tree exported at e9ab0d3) and after (the same
+tree with this commit's renderer/editor/inpaint_tiles.js) alternating, each run on a fresh instance (offline, tiles,
+port 9603, the window in front: every row says focused / visible), the busy lock taken per round. native_test.py is
+profiled (as W0 / W0b), so its walls are the profiled ones; W0b's pan_and_zoom was 340 ms, its far frame 12.2 [16.4].
+
+Read: the row the review named (the slots' premultiply and upload on the main thread) is 322 -> 201 ms (-38 %), the
+far pan at 1:1 (new tiles every frame) 12.1 -> 6.9 ms a frame, its worst 18.1 -> 9.8; put's self time 234 -> 111 ms
+(the paint layer of that document is a wash at alpha 89 almost everywhere, so about half its pixels take the soft
+path; the photo below is opaque); the frame after a whole change at 1:1 29.2 -> 21.7 ms. The same uploads: 540
+texSubImage2D calls, 137 MB, in both. perf's pan at 1:1 (30 frames) draws on the Canvas 2D path (its stack carries a
+filter layer), not through the atlas slots: its median is 3.1 in both, and its max (one frame of 30: 7.2 / 10.4 / 7.7
+before, 14.3 / 8.7 / 17.5 after; ab_v1 10.1 / 9.3 before, 9.7 / 10.1 after) is the noisiest number of the table.
+
+ab_v1/ (summary_v1.txt): the first variant, opaque and transparent words as words but the soft words still through the
+table, two rounds (16:13-16:21; its round 1's after arm ran from the agent's worktree, the same inpaint_tiles.js):
+325 -> 220 ms, the far frame 12.4 -> 7.6, put 237 -> 129. The computed premultiply of the soft words (the second
+variant, this commit) took put from 129 to 111 ms and the row from 220 to 201. Stopped before its third round.
+
+Node, the slot alone (100 level-0 slots of 258 x 258, ns per pixel, old -> new): opaque 4.3 -> 1.0, transparent
+3.7 -> 1.0, soft (every alpha) 5.3 -> 3.5.
+
+tools/gutter_words_test.js holds the bytes (a twin of the old tileWithGutter: every level, ring, display / coarse,
+aligned and misaligned outputs and sources, every (colour, alpha) pair); its mutation round: mutation.txt.
+
+gates/: run_gates_both.sh on ports 9603 / 9604, offline. p10v1_*: lint types composite pixels editor on the first
+variant, both backends PASS. final_*: lint types composite pixels editor key recipes skins comfyview help on the agent's
+final tree (P10, P13, P18, P8 together), both backends PASS; editor_new_steps.txt the P8 and P18 steps' answers.

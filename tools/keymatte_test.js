@@ -639,7 +639,8 @@ async function tests() {
         let calls = 0;
         const box = (d, w, h, r) => { calls++; return KJ.boxBlurs(d, w, h, r); };
         const a = await refineScene(K, sc, {}), b = await refineScene(K, sc, { box });
-        const want = 18 * K.REFINE.softs.length;   // the colour fit's 18 means, once per softness "auto" tries
+        // the colour fit's 17 means once per softness "auto" tries, and the matte's mean once for all of them (P13)
+        const want = 1 + 17 * K.REFINE.softs.length;
         check("an injected box blur is the one the fit uses, with the same bytes", calls === want && maxDiff(a, b) === 0, `${calls} calls of ${want}`);
         const bil = await refineScene(K, sc, { method: "bilinear" });
         const r = score(sc, a, bil), rb = score(sc, bil, bil);
@@ -697,8 +698,140 @@ async function tests() {
         check(`s ${s}: grain (+-8, zero mean) is noise, not a mismatch`, !gr.fallback && r.mae < rb.mae * 0.3 && far(sc, gr.alpha, bil) <= 3, `guideDiff ${gr.guideDiff}, MAE ${r.mae.toFixed(1)} / ${rb.mae.toFixed(1)}, far ${far(sc, gr.alpha, bil)}`);
     }
 
+    // 12. P13: the fit's floats are the code's before P13 (twinFit below: the matte's mean per softness, a new array per
+    // product, every softness's blur from the planes): every coefficient float, the softness and the residual, on the
+    // JS and the Rust box, rgb / chroma / luma guides, the default softnesses and orders that go back and repeat
+    {
+        const { loadPx } = await imp("px/px.js");
+        const px = await loadPx(fs.readFileSync(path.join(EDITOR, "px", "px.wasm")));
+        const boxes = { js: (d, w, h, r) => KJ.boxBlurs(d, w, h, r), rust: (d, w, h, r) => px.boxBlurs(d, w, h, r) };
+        const cases = [
+            ["hair", 4, 24, {}], ["skin", 15, 40, {}], ["teal", 4, 40, { pnoise: 6 }], ["stripes", 4, 32, {}],
+            ["skin", 4, 40, { guide: "chroma" }], ["fold", 4, 32, { guide: "luma" }],
+            ["hair", 4, 24, { softs: [3, 1, 4, 4, 0, 2] }], ["shade", 4, 32, { soft: 3 }], ["blue", 4, 32, { softs: [2, 1.5, 3] }],
+            // a softness that is not a whole number of passes (1.5 runs 2) is never carried on from: here the best is 4
+            ["fold", 4, 32, { guide: "luma", softs: [1.5, 4] }],
+        ];
+        let floats = 0, worst = "";
+        for (const [kind, s, cells, extra] of cases) {
+            const { pnoise, ...opt } = extra;
+            const sc = scene(kind, s, cells, pnoise ? { pnoise } : {});
+            for (const b of ["js", "rust"]) {
+                const o = { alpha: sc.alpha, aw: sc.aw, ah: sc.ah, small: sc.small, full: { w: sc.W, h: sc.H }, screen: sc.screen, box: boxes[b], noise: 2, ...opt };
+                const st = K.prepareRefine(o), tw = twinFit(K, o);
+                let same = st.soft === tw.k && Object.is(st.residual, tw.res) && st.coef.length === tw.coef.length;
+                for (let c = 0; same && c < tw.coef.length; c++) {
+                    const A = st.coef[c], B = tw.coef[c];
+                    if (A.length !== B.length) { same = false; break; }
+                    for (let i = 0; i < A.length; i++) if (!Object.is(A[i], B[i])) { same = false; worst = `${kind} ${b} plane ${c} at ${i}: ${A[i]} vs ${B[i]}`; break; }
+                    floats += A.length;
+                }
+                if (!same && !worst) worst = `${kind} ${b}: soft ${st.soft} vs ${tw.k}, residual ${st.residual} vs ${tw.res}`;
+                check(`P13 ${kind} s ${s} ${JSON.stringify(opt)} box ${b}: the fit's floats are the old code's bit for bit`, same, same ? `soft ${st.soft}, residual ${st.residual.toExponential(3)}` : worst);
+            }
+        }
+        console.log(`  (P13: ${floats} coefficient floats compared)`);
+    }
+
     console.log(failed ? `\nkeymatte_test: ${failed} FAILED` : "\nkeymatte_test: all PASS");
     process.exit(failed ? 1 : 0);
+}
+
+// ---- P13's twin: keymatte.js's fit before P13, verbatim (fitGrey, fitColour, blur121, fitResidual, the loop) ---------
+
+const TWIN_FLOOR = 0.05;
+function twinMean(box, a, w, h, r) { return box(a, w, h, [r]); }
+function twinFitGrey(I, p, w, h, r, eps, flat, box) {
+    const n = w * h, Ip = new Float32Array(n), II = new Float32Array(n);
+    for (let i = 0; i < n; i++) { Ip[i] = I[i] * p[i]; II[i] = I[i] * I[i]; }
+    const mI = twinMean(box, I, w, h, r), mP = twinMean(box, p, w, h, r), mIp = twinMean(box, Ip, w, h, r), mII = twinMean(box, II, w, h, r);
+    const ca = new Float32Array(n), cb = new Float32Array(n), cc = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+        let v = mII[i] - mI[i] * mI[i] - flat * TWIN_FLOOR;
+        if (!(v > 0)) v = 0;
+        const a = (mIp[i] - mI[i] * mP[i]) / (v + eps), c = v / (v + flat);
+        ca[i] = c * a; cb[i] = c * (mP[i] - a * mI[i]); cc[i] = c;
+    }
+    return [twinMean(box, ca, w, h, r), twinMean(box, cb, w, h, r), twinMean(box, cc, w, h, r)];
+}
+function twinFitColour(I0, I1, I2, p, w, h, r, eps, flat, box) {
+    const n = w * h, mean = twinMean;
+    const prod = (x, y) => { const o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = x[i] * y[i]; return o; };
+    const m0 = mean(box, I0, w, h, r), m1 = mean(box, I1, w, h, r), m2 = mean(box, I2, w, h, r), mP = mean(box, p, w, h, r);
+    const m0p = mean(box, prod(I0, p), w, h, r), m1p = mean(box, prod(I1, p), w, h, r), m2p = mean(box, prod(I2, p), w, h, r);
+    const v00 = mean(box, prod(I0, I0), w, h, r), v01 = mean(box, prod(I0, I1), w, h, r), v02 = mean(box, prod(I0, I2), w, h, r);
+    const v11 = mean(box, prod(I1, I1), w, h, r), v12 = mean(box, prod(I1, I2), w, h, r), v22 = mean(box, prod(I2, I2), w, h, r);
+    const ca0 = new Float32Array(n), ca1 = new Float32Array(n), ca2 = new Float32Array(n), cb = new Float32Array(n), cc = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+        const a0 = m0[i], a1 = m1[i], a2 = m2[i], mp = mP[i];
+        const s00 = v00[i] - a0 * a0, s01 = v01[i] - a0 * a1, s02 = v02[i] - a0 * a2;
+        const s11 = v11[i] - a1 * a1, s12 = v12[i] - a1 * a2, s22 = v22[i] - a2 * a2;
+        const tr = s00 + s11 + s22 - flat * TWIN_FLOOR;
+        if (!(tr > 0)) continue;
+        const q0 = m0p[i] - a0 * mp, q1 = m1p[i] - a1 * mp, q2 = m2p[i] - a2 * mp;
+        const e00 = s00 + eps, e11 = s11 + eps, e22 = s22 + eps;
+        const c00 = e11 * e22 - s12 * s12, c01 = s02 * s12 - s01 * e22, c02 = s01 * s12 - e11 * s02;
+        const c11 = e00 * e22 - s02 * s02, c12 = s01 * s02 - e00 * s12, c22 = e00 * e11 - s01 * s01;
+        const det = e00 * c00 + s01 * c01 + s02 * c02;
+        const k = det !== 0 ? 1 / det : 0;
+        const x0 = (c00 * q0 + c01 * q1 + c02 * q2) * k, x1 = (c01 * q0 + c11 * q1 + c12 * q2) * k, x2 = (c02 * q0 + c12 * q1 + c22 * q2) * k;
+        const c = tr / (tr + flat);
+        ca0[i] = c * x0; ca1[i] = c * x1; ca2[i] = c * x2; cb[i] = c * (mp - x0 * a0 - x1 * a1 - x2 * a2); cc[i] = c;
+    }
+    return [mean(box, ca0, w, h, r), mean(box, ca1, w, h, r), mean(box, ca2, w, h, r), mean(box, cb, w, h, r), mean(box, cc, w, h, r)];
+}
+function twinBlur121(planes, w, h, k) {
+    return planes.map((P) => {
+        let a = Float32Array.from(P);
+        const b = new Float32Array(w * h);
+        for (let pass = 0; pass < k; pass++) {
+            for (let y = 0; y < h; y++) {
+                const o = y * w;
+                for (let x = 0; x < w; x++) b[o + x] = (a[o + (x > 0 ? x - 1 : 0)] + 2 * a[o + x] + a[o + (x < w - 1 ? x + 1 : w - 1)]) * 0.25;
+            }
+            for (let y = 0; y < h; y++) {
+                const o = y * w, u = (y > 0 ? y - 1 : 0) * w, d = (y < h - 1 ? y + 1 : h - 1) * w;
+                for (let x = 0; x < w; x++) a[o + x] = (b[u + x] + 2 * b[o + x] + b[d + x]) * 0.25;
+            }
+        }
+        return a;
+    });
+}
+function twinFitResidual(coef, planes, p) {
+    const three = planes.length === 3, n = p.length;
+    let e = 0, m = 0;
+    for (let i = 0; i < n; i++) {
+        const v = p[i];
+        if (!(v > 0.02 && v < 0.98)) continue;
+        const q = three
+            ? coef[0][i] * planes[0][i] + coef[1][i] * planes[1][i] + coef[2][i] * planes[2][i] + coef[3][i] + (1 - coef[4][i]) * v
+            : coef[0][i] * planes[0][i] + coef[1][i] + (1 - coef[2][i]) * v;
+        const d = (q < 0 ? 0 : q > 1 ? 1 : q) - v;
+        e += d * d; m++;
+    }
+    return m ? e / m : 0;
+}
+/** prepareRefine's "fast" fit as it was before P13, from the module's exported pieces: the best { k, coef, res }. */
+function twinFit(K, o) {
+    const geo = K.geometry(o), p = K.toFloatAlpha(o.alpha), prm = K.refineParams(geo.scale, o);
+    const guide = o.guide || K.REFINE.guide, linear = o.linear != null ? o.linear : K.REFINE.linear;
+    let screen = o.screen || null;
+    if (!screen && (guide === "chroma" || guide === "dist") && o.small) screen = K.screenColor(o.small, p);
+    const g = K.guideSetup(guide, screen, linear), n = geo.aw * geo.ah, { aw, ah } = geo;
+    const planes = Array.from({ length: g.planes }, () => new Float32Array(n));
+    K.guidePlanes(g, o.small.data, 0, n, planes, 0);
+    const fit = (P) => P.length === 3
+        ? twinFitColour(P[0], P[1], P[2], p, aw, ah, prm.r, prm.eps, prm.flat, o.box)
+        : twinFitGrey(P[0], p, aw, ah, prm.r, prm.eps, prm.flat, o.box);
+    const soft = o.soft != null ? o.soft : K.REFINE.soft;
+    const softs = soft === "auto" ? (o.softs || K.REFINE.softs) : [Math.max(0, soft | 0)];
+    let best = null;
+    for (const k of softs) {
+        const P = k ? twinBlur121(planes, aw, ah, k) : planes, coef = fit(P);
+        const res = softs.length > 1 ? twinFitResidual(coef, P, p) : 0;
+        if (!best || res < best.res) best = { k, coef, res };
+    }
+    return best;
 }
 
 /** A subject close to the screen's colour (an olive garment, green spill), +-pnoise levels of sensor noise. */

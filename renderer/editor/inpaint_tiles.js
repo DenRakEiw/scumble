@@ -81,6 +81,7 @@ const BLOCK = 4096;                // a big scratch is read back in blocks of th
 const DISPLAY_RECT_MAX_PX = 4 * 1024 * 1024;   // displayRectSource: above this the mirror is the source
 const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 const ALPHA = 0x1000000;           // a word >= this has a non-zero alpha byte (little-endian)
+const RUN_MIN = 16;                // tileWithGutter: a run of opaque or transparent words this long goes as one set / fill
 
 let tileSeq = 0;                   // tile versions are unique across all tiles
 let STROKE_SCRATCH = null;         // compositeStroke's tile, kept
@@ -1123,10 +1124,18 @@ const tiled = (Base) => class extends Base {
         if (!own) return null;
         const side = TILE_SIZE >> level, S = side + 2;
         if (!out || out.length < S * S * 4) out = new Uint8Array(S * S * 4);
+        // P10: an opaque or a transparent pixel is one 32-bit word (little-endian: alpha in the high byte), as in
+        // `coarseSlot`; null (a view off a 4-byte boundary, or big-endian) keeps the byte path for every pixel
+        const o32 = words(out);
         const near = [];
         const infoAt = (dx, dy) => {
             const k = (dy + 1) * 3 + (dx + 1);
-            if (near[k] === undefined) near[k] = !dx && !dy ? own : this._levelBytes(tx + dx, ty + dy, level, display);
+            if (near[k] === undefined) {
+                const info = !dx && !dy ? own : this._levelBytes(tx + dx, ty + dy, level, display);
+                // the word view of each source made once per slot (a view per row or per put would eat the gain)
+                if (info && o32) info.w32 = info.coarse ? u32Of(info.t) : info.off & 3 ? null : words(info.data);
+                near[k] = info;
+            }
             return near[k];
         };
         // which neighbour each gutter pixel comes from, and its row / column there; at the image's
@@ -1138,12 +1147,18 @@ const tiled = (Base) => class extends Base {
         const P = premulTable();
         const put = (info, sx, sy, n, o) => {
             if (!info) { out.fill(0, o, o + n * 4); return; }
+            const s32 = info.w32;
             if (info.coarse) {
                 // a tile whose chain is on its way and that has none: its bytes sampled nearest, only the pixels put here (C6 b)
                 const d = info.t.data, f = 1 << level, half = f >> 1, lastX = info.vw - 1;
                 const row = Math.min(sy * f + half, info.vh - 1) * TILE_SIZE;
                 for (let k = 0; k < n; k++, o += 4) {
-                    const i = (row + Math.min((sx + k) * f + half, lastX)) * 4;
+                    const j = row + Math.min((sx + k) * f + half, lastX), i = j * 4;
+                    if (s32) {
+                        const w = s32[j];
+                        if (w >= 0xFF000000) { o32[o >> 2] = w; continue; }
+                        if (w < ALPHA) { o32[o >> 2] = 0; continue; }
+                    }
                     const a = d[i + 3];
                     if (a === 255) { out[o] = d[i]; out[o + 1] = d[i + 1]; out[o + 2] = d[i + 2]; out[o + 3] = 255; continue; }
                     if (!a) { out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0; continue; }
@@ -1154,6 +1169,41 @@ const tiled = (Base) => class extends Base {
             }
             const d = info.data;
             let i = info.off + (sy * side + sx) * 4;
+            if (s32) {
+                // the same pixels a word at a time: an opaque word copied whole, a transparent one written as 0 (what the
+                // byte path below writes for them), the rest premultiplied into one word, the table's values computed
+                // (little-endian: R in the low byte, A in the high one)
+                let j = i >> 2, q = o >> 2;
+                const end = j + n;
+                while (j < end) {
+                    const w = s32[j], a = w >>> 24;
+                    if (a === 255) {
+                        // a run of opaque words: found, then copied as one block (a short one word by word)
+                        let r = j + 1;
+                        while (r < end && s32[r] >>> 24 === 255) r++;
+                        if (r - j < RUN_MIN) { while (j < r) o32[q++] = s32[j++]; continue; }
+                        o32.set(s32.subarray(j, r), q);
+                        q += r - j; j = r;
+                        continue;
+                    }
+                    if (!a) {
+                        // a run of transparent words, zeroed
+                        let r = j + 1;
+                        while (r < end && s32[r] < ALPHA) r++;
+                        if (r - j < RUN_MIN) { while (j < r) { o32[q++] = 0; j++; } continue; }
+                        o32.fill(0, q, q + r - j);
+                        q += r - j; j = r;
+                        continue;
+                    }
+                    // SkMulDiv255Round of every channel, (x + (x >> 8)) >> 8 with x = c * a + 128, as the table holds it:
+                    // R and B side by side in the 16-bit halves of one word (no half overflows: x + (x >> 8) <= 65,407),
+                    // G alone, A kept
+                    const rb = Math.imul(w & 0xFF00FF, a) + 0x800080, g = ((w >>> 8) & 255) * a + 128;
+                    o32[q++] = (((rb + ((rb >>> 8) & 0xFF00FF)) >>> 8) & 0xFF00FF) | (((g + (g >> 8)) >> 8) << 8) | (w & 0xFF000000);
+                    j++;
+                }
+                return;
+            }
             for (let k = 0; k < n; k++, i += 4, o += 4) {
                 const a = d[i + 3];
                 if (a === 255) { out[o] = d[i]; out[o + 1] = d[i + 1]; out[o + 2] = d[i + 2]; out[o + 3] = 255; continue; }

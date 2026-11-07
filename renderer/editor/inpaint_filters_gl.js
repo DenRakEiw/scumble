@@ -775,21 +775,10 @@ const SETUP = {
         gl.uniform1i(u.u_mode, 0);
         return true;
     },
-    curves(g, p, info, src) {
+    curves(g, p) {
         const { gl, u } = g;
-        // the curve editor draws a luma histogram of the input; a 256 px thumbnail is plenty for
-        // that (a chained input is a texture, which would have to be read back: no histogram then)
-        if (info && info.cache && !isGLSurface(src)) {
-            const s = Math.min(1, 256 / Math.max(src.width, src.height));
-            const tw = Math.max(1, Math.round(src.width * s)), th = Math.max(1, Math.round(src.height * s));
-            const t = makeCanvas(tw, th);
-            const tctx = t.getContext("2d");
-            tctx.drawImage(src, 0, 0, tw, th);
-            const px = tctx.getImageData(0, 0, tw, th).data;
-            const hist = new Uint32Array(256);
-            for (let i = 0; i < px.length; i += 4) hist[(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2] + 0.5) | 0]++;
-            info.cache.histogram = hist;
-        }
+        // the curve editor's luma histogram is the editor's belowHistogram (inpaint_filters.js curvesControl, P8): no
+        // thumbnail and readback of the input here on every pass any more
         const tables = curvesToTables(p.curves);
         if (!tables) return false;
         setTables(g, tables.r, tables.g, tables.b);

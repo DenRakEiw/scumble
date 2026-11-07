@@ -2376,6 +2376,25 @@ function fmtBytes(b) {
     return b >= 1024 * 1024 * 1024 ? (b / 1024 ** 3).toFixed(2) + " GB" : b >= 1024 * 1024 ? (b / 1024 ** 2).toFixed(1) + " MB" : Math.round(b / 1024) + " kB";
 }
 
+/**
+ * The memory line of Settings > Performance, written when its reads land (P18): openSettings does not wait for it,
+ * since the card's read (electron/main/gpumem.js) starts nvidia-smi or a PowerShell counter, which held the dialog back
+ * on almost every open. Only the newest call writes the line.
+ */
+let gpuMemSeq = 0;
+/** The line's two reads; a test replaces them to hold a read open (the contextBridge object cannot be wrapped). */
+export const memoryReads = { process: () => gpuMemoryMB(), card: () => cardMemory() };
+async function refreshGpuMemory() {
+    const seq = ++gpuMemSeq;
+    ui.setGpuMem.textContent = "Reading the GPU's memory ...";
+    try {
+        const [mb, card] = await Promise.all([memoryReads.process(), memoryReads.card()]);
+        if (seq !== gpuMemSeq) return;
+        const cardText = card ? (card.totalMB ? ` The card holds ${card.usedMB} of ${card.totalMB} MB (everything on it, read through ${card.source}).` : ` The card holds ${card.usedMB} MB in all (read through ${card.source}; its size is not reported).`) : " The card's own memory cannot be read here (no nvidia-smi, no counters).";
+        ui.setGpuMem.textContent = `The GPU process is using ${mb} MB right now.${cardText} A background tab keeps its filtered copies, its display pyramids and the compositor's textures until they are released here.`;
+    } catch (_) { if (seq === gpuMemSeq) ui.setGpuMem.textContent = ""; }
+}
+
 async function refreshFileStats() {
     try {
         const s = await window.scumble.files.stats();
@@ -2459,12 +2478,7 @@ async function openSettings() {
     ui.setAsSteps.value = Math.max(1, Math.round(Number(as.maxSteps) || 25));
     ui.setAsNote.textContent = "";
     await renderTileMode();
-    try {
-        const mb = await gpuMemoryMB();
-        const card = await cardMemory();
-        const cardText = card ? (card.totalMB ? ` The card holds ${card.usedMB} of ${card.totalMB} MB (everything on it, read through ${card.source}).` : ` The card holds ${card.usedMB} MB in all (read through ${card.source}; its size is not reported).`) : " The card's own memory cannot be read here (no nvidia-smi, no counters).";
-        ui.setGpuMem.textContent = `The GPU process is using ${mb} MB right now.${cardText} A background tab keeps its filtered copies, its display pyramids and the compositor's textures until they are released here.`;
-    } catch (_) { ui.setGpuMem.textContent = ""; }
+    refreshGpuMemory();   // not awaited (P18): the card's read starts nvidia-smi or a PowerShell counter
     try {
         const info = await window.scumble.info();
         ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}${info.portable ? " (portable copy)" : ""}.${info.comfySdk ? ` Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK (@comfyorg/sdk ${info.comfySdk}, MIT).` : ""} Green and blue screen keying by CorridorKey 2.0 from Corridor Digital (Corridor Key Licence, a CC BY-NC-SA 4.0 variant), used with permission in this free app; it builds on C-RADIOv4 (NVIDIA), MoGe-2 (Microsoft) and RVM (Google DeepMind), which its node pack downloads from their publishers onto your ComfyUI. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products. NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation; Scumble is not affiliated with or endorsed by NVIDIA, and the Realism Pass (Windows only, RTX only) runs only what you installed on your own ComfyUI.`;
