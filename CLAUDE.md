@@ -84,6 +84,24 @@ code.
 
 ## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
+- **0.1.52 is prepared on `corridorkey` (2026-11-07), waiting for the user's word on the release chain.** It holds
+  items 49 (CorridorKey Route B, B5 run live with the user, the movable Key dialog), 50 (LoRAs, MOSS-Image Edit), 51
+  (GPT-Image-2.6), 52 (P-H3-Image) and the kernel steps D0, K5, W1, K12, K12b. A release review workflow (four lenses,
+  six findings confirmed, eight small ones) fixed in `c1b74d3`; gates `docs/measurements/rr52_2026-11-07/`; the version
+  commit `22b5f3e` (`## 0.1.52 - 2026-11-07`, package.json; a later release day moves the date). Built in the
+  worktree's `dist/` from `22b5f3e`: the installer, the portable zip, `scumble-0.1.52.mcpb` (118 tools),
+  `Scumble-0.1.52.msix` (win-unpacked is the Store layout since) and `store-listing/whats-new-0.1.52.txt`; exe gates
+  green on both backends with the known flakes rerun (`rr52_2026-11-07/exe_gates.txt`). `tools/release_notes.py` now
+  refuses a section with a bare @token. **The blog post is drafted, uncommitted, in `F:\portfolio_web`**
+  (`lib/scumble-posts.ts` with a DRAFT time, the user's two 15k key screenshots as a pair under
+  `public/projects/scumble/blog/v0-1-52-*.webp`, `images` in `lib/scumble.ts` and the blog page, CET for winter times);
+  at the release: the time from `publishedAt`, `hub.version`, the manual sync. The GEO page went live 2026-11-07 on the
+  user's word (`/geo`, `/geo.md`, llms.txt's portfolio part; `Portfolio_vercel` `a00fe99`). The chain: merge
+  `corridorkey` into `main` (a fast-forward), push, tag v0.1.52, the CI draft, the assets, publish, the manual sync and
+  the post, `server.json` and the MCP Registry (the user's device code), the node build in a clone (shipped editor
+  files changed; no write into the user's live node folder), the closing comments of #10 / #11 (drafts after "LR10 as
+  built" in `docs/PLAN_LORAS.md`), the Store upload by the user. ComfyUI was stopped again after B5.
+
 - **0.1.49 = Comfy Cloud and Comfy Router on Comfy's official SDK + eight quick wins (the user, 2026-10-18: "alles in
   einem update", all eight quick wins picked, "mache plan und fange mit der entwicklung an").** The plan is
   `docs/PLAN_COMFY_SDK.md` (critic-checked by a workflow of three; **section 10 overrides sections 3, 5, 9**). Order:

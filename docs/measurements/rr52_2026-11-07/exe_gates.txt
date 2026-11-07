@@ -1,0 +1,104 @@
+0.1.52's exe gates, 2026-11-07, --offline, against dist/win-unpacked/Scumble.exe built from 22b5f3e (the installer's layout, before dist:store):
+== rel52-exe
+platform rc=0 6s PASS
+layered rc=0 3s PASS
+upscale rc=0 12s PASS
+log rc=0 8s RESULT PASS
+pixels rc=0 10s PASS
+editor rc=0 164s PASS
+composite rc=0 6s PASS
+commands rc=0 28s PASS
+mcp rc=0 16s PASS
+recipes rc=0 4s PASS
+llm rc=0 2s PASS
+export rc=0 153s PASS
+help rc=0 3s PASS
+generate rc=0 79s PASS
+transparent rc=0 1s PASS
+toapis rc=0 38s PASS
+openrouter rc=0 7s PASS
+ark rc=0 11s PASS
+comfyrouter rc=0 27s PASS
+skins rc=0 9s PASS
+magnific rc=0 37s PASS
+oxen rc=0 7s PASS
+quit rc=0 19s PASS
+assistant rc=0 35s PASS: 38 of 38 steps in 34 s
+document rc=0 39s PASS
+docux rc=0 20s PASS: 5 of 5 steps in 19 s
+metadata rc=0 1s PASS
+tiff rc=0 13s PASS
+canvasonly rc=0 17s PASS
+glb rc=0 11s RESULT PASS
+film rc=0 18s RESULT PASS
+brush rc=0 15s RESULT PASS
+pxjobs rc=0 146s PASS
+boxes rc=0 11s RESULT PASS
+comfyview rc=1 40s FAIL (24 of 25)
+fill rc=0 3s PASS
+clip rc=0 4s PASS
+groups rc=0 3s PASS
+blendmodes rc=0 13s PASS
+edges rc=0 18s PASS
+depthfx rc=0 6s PASS
+grading rc=0 6s PASS
+masks rc=0 5s PASS
+effects rc=0 4s PASS
+mcpb rc=0 3s 
+relight rc=0 34s PASS
+selection rc=0 13s PASS
+limit rc=0 6s PASS
+maps rc=0 4s PASS
+cloudjobs rc=0 15s PASS
+loras rc=0 4s PASS
+key rc=0 19s PASS
+SOME FAILED
+== rel52-exe-rerun
+comfyview rc=0 41s PASS (25 of 25)
+ALL PASS
+== rel52-exe-canvas
+platform rc=0 5s PASS
+layered rc=0 5s PASS
+upscale rc=0 16s PASS
+pixels rc=0 13s PASS
+editor rc=1 417s FAIL
+composite rc=0 5s PASS
+film rc=0 23s RESULT PASS
+export rc=0 12s PASS
+help rc=0 4s PASS
+generate rc=1 130s FAIL
+commands rc=0 65s PASS
+skins rc=0 10s PASS
+quit rc=0 18s PASS
+assistant rc=0 28s PASS: 38 of 38 steps in 27 s
+document rc=0 41s PASS
+docux rc=0 30s PASS: 5 of 5 steps in 30 s
+metadata rc=0 2s PASS
+tiff rc=0 12s PASS
+glb rc=0 11s RESULT PASS
+brush rc=0 14s RESULT PASS
+boxes rc=0 15s RESULT PASS
+blendmodes rc=0 15s PASS
+clip rc=0 3s PASS
+fill rc=0 4s PASS
+groups rc=0 3s PASS
+depthfx rc=0 8s PASS
+relight rc=0 66s PASS
+magnific rc=0 38s PASS
+edges rc=0 25s PASS
+key rc=0 26s PASS
+SOME FAILED
+== rel52-exe-canvas-rerun
+editor rc=1 72s FAIL
+generate rc=0 79s PASS
+SOME FAILED
+== rel52-exe-canvas-rerun2
+editor rc=0 151s PASS
+ALL PASS
+
+Known flakes (docs/TESTING.md), each green on a rerun: comfyview's control step (tiles), generate's cancel_and_a_closed_tab_add_nothing
+and editor on canvas (closed_tabs_are_collected, then live_stroke_reaches_the_screen_before_the_release with a real mouse over the window; the third run PASS).
+
+Built from 22b5f3e: dist/Scumble Setup 0.1.52.exe (129,736,025 bytes), dist/Scumble-0.1.52-portable-win-x64.zip (182,926,241),
+dist/scumble-0.1.52.mcpb (81,773; 118 tools), dist/Scumble-0.1.52.msix (188,906,976; win-unpacked is the Store layout since),
+dist/store-listing/whats-new-0.1.52.txt (1,426 characters, everything since 0.1.47).
