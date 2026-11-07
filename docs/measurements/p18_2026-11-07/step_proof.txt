@@ -1,0 +1,14 @@
+lock: P18 step proof (agent a24fab29) 10556 2026-11-07T17:04:59
+as expected: as committed: green
+    [ok] settings_open_does_not_wait_for_the_card: {"held": {"placeholder": true, "newerKept": true}, "line": "The GPU process is using 331 MB right now. The card holds 3306 of 32607 MB (everything on "}
+    PASS (only: settings_open_does_not_wait_for_the_card; SCUMBLE_EDITOR_ONLY, not the full gate)
+as expected: P18 reverted: openSettings reads the line itself, as at e9ab0d3: red
+    [FAIL] settings_open_does_not_wait_for_the_card: JS exception: Error: with the card's read held the line is "The GPU process is using 326 MB right now. The card holds 3301 of 32607 MB (ever", not the placeholder
+    FAIL (only: settings_open_does_not_wait_for_the_card; SCUMBLE_EDITOR_ONLY, not the full gate)
+as expected: openSettings awaits refreshGpuMemory: red
+    [FAIL] settings_open_does_not_wait_for_the_card: JS exception: Error: openSettings waited for the card's read: still not back 5 s after the open with the read held
+    FAIL (only: settings_open_does_not_wait_for_the_card; SCUMBLE_EDITOR_ONLY, not the full gate)
+as expected: no seq guard: red
+    [FAIL] settings_open_does_not_wait_for_the_card: JS exception: Error: an older read landing after a newer one overwrote the line: "The GPU process is using 123 MB right now. The card holds 1 of 9 MB (everything on it, read through the older read). A b"
+    FAIL (only: settings_open_does_not_wait_for_the_card; SCUMBLE_EDITOR_ONLY, not the full gate)
+RESULT PASS

@@ -12264,25 +12264,54 @@ return { ks: +ks.toFixed(4), shape: +worst.toFixed(4), bins: below.luma.filter((
 """),
     ("settings_open_does_not_wait_for_the_card", """
 // P18 (docs/PLAN_WASM_BUILD.md section 7): openSettings no longer waits for the GPU memory line; the card's read starts
-// nvidia-smi or a PowerShell counter (electron/main/gpumem.js), and the line is written when it lands. Two opens in a row
-// leave one full line (only the newest read writes it); the times are information, not a limit (the card's read is
-// cached for 5 s, so a second open within that is quick either way)
+// nvidia-smi or a PowerShell counter (electron/main/gpumem.js), and the line is written when it lands. With the card's
+// read held open (shell.memoryReads: the contextBridge object cannot be wrapped) the open must return, the dialog open
+// and the line still the placeholder; a second open while the first read is out, its read landing first, keeps its
+// line when the older read lands after it; then, with the real reads, the line fills. No timing is asserted
 const shell = await import("./shell.js");
 const line = document.getElementById("set-gpu-mem"), dlg = document.getElementById("shell-settings");
-const times = [];
-for (let k = 0; k < 2; k++) {
+const PLACEHOLDER = "Reading the GPU's memory ...";
+const reads = shell.memoryReads;
+if (!reads || typeof reads.card !== "function" || typeof reads.process !== "function") throw new Error("shell.js has no memoryReads to hold the line's reads");
+const orig = { process: reads.process, card: reads.card };
+const held = [];
+let pending = null;
+const out = {};
+try {
+    reads.process = () => Promise.resolve(123);
+    reads.card = () => new Promise((res) => held.push(res));
     for (const d of document.querySelectorAll("dialog[open]")) d.close();
-    const t0 = performance.now();
-    await shell.openSettings();
-    times.push({ openMs: Math.round(performance.now() - t0), lineThen: line.textContent.slice(0, 32) });
+    pending = shell.openSettings();
+    const r = await Promise.race([pending.then(() => "opened"), wait(5000).then(() => "waiting")]);
+    if (r !== "opened") throw new Error("openSettings waited for the card's read: still not back 5 s after the open with the read held");
     if (!dlg.open) throw new Error("the settings dialog is not open after openSettings");
+    if (line.textContent !== PLACEHOLDER) throw new Error("with the card's read held the line is " + JSON.stringify(line.textContent.slice(0, 80)) + ", not the placeholder");
+    if (held.length !== 1) throw new Error(`${held.length} card reads after one open`);
+    // a second open: the newer read lands first, the older one after it, and the line stays the newer one's
+    dlg.close();
+    await shell.openSettings();
+    if (held.length !== 2) throw new Error(`${held.length} card reads after two opens`);
+    held[1]({ usedMB: 2, totalMB: 9, source: "the newer read" });
+    for (let i = 0; i < 50 && line.textContent === PLACEHOLDER; i++) await wait(20);
+    if (!line.textContent.startsWith("The GPU process is using 123 MB") || !line.textContent.includes("the newer read")) throw new Error("the newer read did not write the line: " + JSON.stringify(line.textContent.slice(0, 120)));
+    held[0]({ usedMB: 1, totalMB: 9, source: "the older read" });
+    await wait(100);
+    if (!line.textContent.includes("the newer read")) throw new Error("an older read landing after a newer one overwrote the line: " + JSON.stringify(line.textContent.slice(0, 120)));
+    out.held = { placeholder: true, newerKept: true };
+} finally {
+    reads.process = orig.process; reads.card = orig.card;
+    for (const res of held) res(null);
+    if (pending) await pending.catch(() => {});
 }
-const t1 = performance.now();
-for (let i = 0; i < 150 && !line.textContent.startsWith("The GPU process is using"); i++) await wait(100);
-if (!line.textContent.startsWith("The GPU process is using")) throw new Error("the GPU memory line was not filled in: " + JSON.stringify(line.textContent));
-const filledAfterMs = Math.round(performance.now() - t1);
+// the real reads: the line fills
 dlg.close();
-return { times, filledAfterMs, line: line.textContent.slice(0, 90) };
+await shell.openSettings();
+if (!dlg.open) throw new Error("the settings dialog is not open after openSettings");
+for (let i = 0; i < 150 && !line.textContent.startsWith("The GPU process is using"); i++) await wait(100);
+if (!line.textContent.startsWith("The GPU process is using") || line.textContent.includes("the newer read")) throw new Error("the GPU memory line was not filled in from the real reads: " + JSON.stringify(line.textContent.slice(0, 120)));
+dlg.close();
+out.line = line.textContent.slice(0, 90);
+return out;
 """),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }

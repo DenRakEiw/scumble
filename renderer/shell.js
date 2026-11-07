@@ -2382,11 +2382,13 @@ function fmtBytes(b) {
  * on almost every open. Only the newest call writes the line.
  */
 let gpuMemSeq = 0;
+/** The line's two reads; a test replaces them to hold a read open (the contextBridge object cannot be wrapped). */
+export const memoryReads = { process: () => gpuMemoryMB(), card: () => cardMemory() };
 async function refreshGpuMemory() {
     const seq = ++gpuMemSeq;
     ui.setGpuMem.textContent = "Reading the GPU's memory ...";
     try {
-        const [mb, card] = await Promise.all([gpuMemoryMB(), cardMemory()]);
+        const [mb, card] = await Promise.all([memoryReads.process(), memoryReads.card()]);
         if (seq !== gpuMemSeq) return;
         const cardText = card ? (card.totalMB ? ` The card holds ${card.usedMB} of ${card.totalMB} MB (everything on it, read through ${card.source}).` : ` The card holds ${card.usedMB} MB in all (read through ${card.source}; its size is not reported).`) : " The card's own memory cannot be read here (no nvidia-smi, no counters).";
         ui.setGpuMem.textContent = `The GPU process is using ${mb} MB right now.${cardText} A background tab keeps its filtered copies, its display pyramids and the compositor's textures until they are released here.`;
