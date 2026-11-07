@@ -66,6 +66,7 @@ only when their module is open or a measurement names them.
 | **Curves, levels, colour balance as CPU fallback** | JS per pixel | only with the filters' CPU fallback as a whole; the GPU is the path |
 | **Native Rust in the main process** (a napi-rs addon instead of wasm) | `sharp` and `onnxruntime-node` are native already | only for a new capability: a PSD reader with layer styles, a faster `.scumble` writer; not for speed of what exists |
 | **wgpu compute** (a native addon with compute shaders for the depth and edge maths) | WebGL2 fragment shaders | later, with the threads spike's result; it would also be the first step toward anything that outgrows WebGL2 |
+| **WebGPU compute in the window** (`navigator.gpu` in Electron's Chromium, which runs WebGPU on Dawn; no native build) | WebGL2 fragment shaders | the cheaper form of the row above (no addon, the node's browser has it too); candidates lens blur, the guided filter and the edge maps at 15k; a spike with a byte or level parity test first (the CorridorKey spike of 2026-11-06 ran ONNX on WebGPU but missed parity). Noted 2026-11-07 from another agent's idea list the user forwarded, with a native `px.node` (AVX2, rayon): that stays the napi-rs row above, decided after the threads spike (K-L4) shows a limit wasm cannot pass |
 
 ## 3. The rules
 
