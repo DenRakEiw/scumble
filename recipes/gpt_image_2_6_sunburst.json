@@ -4,7 +4,7 @@
   "name": "GPT Image 2.6 Sunburst",
   "family": "OpenAI",
   "refs": { "name": "Image {n}" },
-  "description": "OpenAI's high-fidelity image model (November 2026) for detail-rich edits that stay consistent over many rounds; slower than Flare. Custom sizes in multiples of 16 up to 3840 px an edge, quality up to max, and a Complexity setting (how much the model plans before it draws). Also on fal.ai. Also on Replicate. Also on WaveSpeedAI. Also on ToAPIs. Also on OpenRouter. Adapters written from the providers' docs, not run against the live API yet.",
+  "description": "OpenAI's high-fidelity image model (November 2026) for detail-rich edits that stay consistent over many rounds; slower than Flare. Custom sizes in multiples of 16 up to 3840 px an edge, quality up to max, and a Complexity setting (how much the model plans before it draws). Also on fal.ai. Also on Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Adapters written from the providers' docs (Comfy Cloud's from its partner node's spec), not run against the live API yet.",
   "default": "openai",
   "providers": {
     "toapis": {
@@ -495,6 +495,56 @@
           "model": "openai/gpt-image-2.6-sunburst/edit"
         }
       }
+    },
+    "comfycloud": {
+      "model": "gpt-image-2.6-sunburst",
+      "input": "fill",
+      "options": {
+        "node": "OpenAIGPTImageNodeV2",
+        "mask": true
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "model.quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "model.complexity",
+          "label": "Complexity",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 3840,
+        "step": 16,
+        "pixels": 8294400,
+        "minPixels": 655360,
+        "ratio": 3
+      },
+      "note": "Runs OpenAI's Partner Node on Comfy Cloud (paid plan, credits). Mask inpainting through the node's mask input at the crop's own size (multiples of 16, at most 3840 px an edge, 655,360 to 8,294,400 pixels, no steeper than 3:1). The node takes a mask beside one picture only: with the Original or reference layers beside the crop the run goes without the mask, the model edits the whole crop with every picture and the selection still limits the result (the status line says so).Complexity is how much the model plans before it draws: low is faster for simple edits, high (the model's default) suits dense scenes and lettering; the node requires it for 2.6, so it always goes. Written from the partner node's spec as Comfy Cloud listed it on 2026-11-07, not run against the live API yet."
     },
     "openrouter": {
       "model": "openai/gpt-image-2.6-sunburst",

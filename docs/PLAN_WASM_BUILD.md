@@ -1588,3 +1588,38 @@ Stop 5's scope 3. (a)-(c), on `2ea002b` (K12's code); normal tier, the same byte
     worse beyond its spread, and it adds no work on the window (§1.1 rule 3).
 
 Next: K4 (G6 ended as #0 M9's note, the user's answer to Stop 5).
+
+### K4 (2026-11-07): the generic box pass
+
+The order after Stop 5, first row, on `4f1826d`; full tier on the kernel (§1.4), no call site changed.
+`docs/measurements/k4_2026-11-07/` (`k4_chain.sh`, `summarize.py`, `summary_rows.txt`, `before/`, `after/`, `gates/`,
+`mutation/`).
+- **Built (ABI 21, unchanged; no new export):** `crates/px/src/maskf.rs` `box_pass::<C>(data, tmp, sums, w, h, r,
+  norm)`: one box blur of radius r along the rows and down the columns of a w x h image of C interleaved f32 channels,
+  in place, the scratch the caller's (nothing allocated); `Norm::Div(n)` gives `sum / n` (the masks' twin,
+  `kernels_js.js` `boxRow` / `boxCol`), `Norm::Mul(k)` `sum * k` (the dab blur's twin, `inpaint_stroke.js` `boxRows` /
+  `boxCols`; K26's). The order of every twin: a running f64 sum per line and channel, started over the clamped window
+  and moved by `sum + (enter - leave)`. The lanes (`lanes`, SIMD build only): one channel's rows two at a time, one per
+  f64 lane (an odd height's last row on the scalar loop); four channels' rows one pixel a load, channels 0-1 and 2-3 in
+  two f64x2 (reachable from K26 on); the column pass four values a step over the w * C values of a line, its tail on
+  the scalar loop. `box_blurs` keeps C = 1 and `Div(2r + 1)` and allocates its scratch as before. Tried and dropped:
+  four rows in two f64x2 sums (slower than the pairs in the explaining run below: 55.6 / 61.0 ms at 4096 x 2731).
+- **Tests:** `node tools/px_test.js` PASS; `box_blurs` 63 cases on both builds against the twin bit for bit, each also at
+  an odd offset (the 36 of before plus nine small sizes, 2 x 2 to 16 x 3, that put the pairs, the odd last row and the
+  column tails at every edge, with radii above the width); `height_normals`' twin (`box_blurs` inside Rust) unchanged.
+- **Before -> after** (`summary_rows.txt`: medians of three fresh instances, the window in front, the busy lock held;
+  `w0_bench.py --rows=stitch_masks_2048,box_blurs_k4`; the output checksums the same in every run before and after):
+  stitch.js `gaussBlur` on a 2048^2 mask (sigma 8, the whole function, the row that decides) 40.6 [36.5-55.0] -> 32.5
+  [32.5-33.7] ms; `box_blurs` through kernels.js 2048^2 sigma 8 28.7 -> 21.2, a 4096 x 2731 map sigma 3 78.7 -> 57.4,
+  one radius 8 (the guided filter's) 33.2 -> 25.6, sigma 16 82.7 -> 56.7; relight's `height_normals` 4096 x 2731 323 ->
+  279. The twin 1.9-2.5x slower than Rust in every row. Explaining (Electron as Node, nine alternating rounds): the
+  scalar build 89.3 -> 87.7 at 4096 x 2731 sigma 3 (the restructure alone, a tie).
+- **Gates** (`--offline`, tiles, port 9583 beside the mutation round): lint types pxjobs relight edges maps key generate
+  selection PASS; `node tools/edges_test.js`, `node tools/depth_test.js` PASS; `build_px.py --check` identical on both
+  builds; `build_node.py --check` only the expected "differs" lines. The canvas backend not run: no call site and no
+  byte changed (the twin cases and the app's checksums).
+- **The mutation round:** `mutation/mut_k4.py` (a copy tree; the untouched copy green on px_test and the `edges` gate,
+  both builds identical to `F:/canvas`'s); its results follow in the next commit.
+- **No route:** `box_blurs` was Rust before and is faster now in every row; the twin stays the fallback.
+
+Next: K26 (the dab blur and sharpen on `box_pass::<4>`).

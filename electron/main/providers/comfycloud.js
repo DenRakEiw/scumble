@@ -63,14 +63,22 @@ function fit(w, h, lo, hi, step) {
 
 const GEMINI_AR = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
 
+// GPT Image 2.6 on OpenAIGPTImageNodeV2 (the node's spec read on Comfy Cloud on 2026-11-07, saved as
+// tools/refs/comfy_cloud/nodes/OpenAIGPTImageNodeV2.json): the 2.6 options carry 2.5's sub-fields plus a required
+// `model.complexity` (low / medium / high, the node's default high), which the node's other models do not have
+const GPT26 = /gpt-image-2\.6/;
+const GPT_COMPLEXITY = ["low", "medium", "high"];
+
 // How each partner node is wired. `g` is the graph builder: g.crop / g.refs are [node id, 0]
 // image links, g.mask() a MASK link (null without a mask), g.set(key, value) writes an input.
 const SHAPES = {
     OpenAIGPTImageNodeV2(g, v) {
         g.set("prompt", v.prompt); g.set("model", v.model); g.set("n", 1); g.set("seed", v.seed);
         g.set("model.size", "auto"); g.set("model.background", "auto"); g.set("model.quality", "medium");
+        // the node's default; a Complexity row overrides it, and AFTER_PARAMS holds the row to the rule
+        if (GPT26.test(v.model)) g.set("model.complexity", "high");
         if (/gpt-image-2/.test(v.model)) {
-            // any size in multiples of 16 within OpenAI's limits: keep the crop's size
+            // any size in multiples of 16 within OpenAI's limits (2, 2.5 and 2.6 alike): keep the crop's size
             const [w, h] = fit(v.width, v.height, 480, 3840, 16);
             if (w * h >= 655360 && w * h <= 8294400 && Math.max(w, h) / Math.min(w, h) <= 3) { g.set("model.size", "Custom"); g.set("model.custom_width", w); g.set("model.custom_height", h); }
         }
@@ -156,8 +164,23 @@ const autogrow = (req) => [["crop", "model.images.image_1"], ...refRoles(req).ma
 const list = (node, req, own = []) => layoutOf({ seq: autogrow(req), own, max: picturesOf(node, req.model) });
 const ONE_PICTURE = "this node takes one picture";
 const cropOnly = (field) => layoutOf({ seq: [["crop", field]], max: 1, drops: ONE_PICTURE });
+
+// The nodes that take a mask beside one picture only: OpenAI's GPT Image node refuses a mask with more pictures (its
+// code: "Cannot use a mask with multiple image"; its spec of 2026-11-07: "Requires exactly one reference image"), for
+// every model it runs. With the Original or a reference layer beside the crop the run goes without the mask and keeps
+// every picture (the user's answer of 2026-11-07): the model edits the whole crop and the stitch keeps the selection,
+// as for every instruction edit; the answer's note says so once. With the crop alone the mask goes as before.
+const MASK_ONE_PICTURE = new Set(["OpenAIGPTImageNodeV2"]);
+const MASK_LEFT_OUT = "Comfy Cloud's GPT Image node takes a mask with one picture only: sent without the mask, the selection still limits the result.";
+/** Whether a run of `node` would send the selection's mask: a mask, and on an edit only with options.mask (g.mask()'s rule). */
+const maskWanted = (req) => !!req.mask && !(req.kind === "edit" && !(req.options && req.options.mask));
+/** Whether this run leaves the mask out because the node takes it beside one picture only and more go. */
+const maskLeftOut = (node, req) => MASK_ONE_PICTURE.has(node) && maskWanted(req) && refRoles(req).length > 0;
+/** The answer's note for a run that left the mask out, or none. */
+const maskNotes = (node, req) => (maskLeftOut(node, req) ? [MASK_LEFT_OUT] : []);
+
 const LAYOUTS = {
-    OpenAIGPTImageNodeV2: (req, mask) => list("OpenAIGPTImageNodeV2", req, mask ? [["mask", "model.mask"]] : []),
+    OpenAIGPTImageNodeV2: (req, mask) => list("OpenAIGPTImageNodeV2", req, mask && !maskLeftOut("OpenAIGPTImageNodeV2", req) ? [["mask", "model.mask"]] : []),
     GeminiNanoBanana2V2: (req) => list("GeminiNanoBanana2V2", req),
     GeminiImage2Node: () => cropOnly("images"),
     GeminiImageNode: () => cropOnly("images"),
@@ -209,6 +232,17 @@ function rtxFactor(v) {
 
 /** The nodes whose own numbers buildGraph checks before it uploads anything (the SHAPE checks them again). */
 const BEFORE_UPLOAD = { RTXVideoSuperResolution: rtxFactor };
+
+/** What a node's inputs must hold after buildGraph has copied the recipe's rows in: the rules no row may break. */
+const AFTER_PARAMS = {
+    // `model.complexity` always on a 2.6 model (the node requires it; a value it does not list goes as its default
+    // high) and never on another of the node's models (a row or a direct call that hands one in for 2.5 or 2)
+    OpenAIGPTImageNodeV2(inputs, v) {
+        if (!GPT26.test(String(v.model || ""))) { delete inputs["model.complexity"]; return; }
+        const c = String(inputs["model.complexity"] || "").toLowerCase();
+        inputs["model.complexity"] = GPT_COMPLEXITY.includes(c) ? c : "high";
+    },
+};
 
 async function upload(ctx, bytes, name) {
     const fd = new FormData();
@@ -608,6 +642,7 @@ async function buildGraph(req, ctx, node) {
     shape(g, vals);
     // recipe settings and fixed values by input key (the settings' keys are the full input keys)
     for (const [k, v] of Object.entries(req.params)) { if (k === "random_seed" || k === "model" || v === "" || v == null || v === "auto") continue; partner.inputs[k] = v; }
+    if (AFTER_PARAMS[node]) AFTER_PARAMS[node](partner.inputs, vals);
     const pid = String(++n);
     graph[pid] = partner;
     graph[String(++n)] = { class_type: "SaveImage", inputs: { images: [pid, 0], filename_prefix: "scumble" } };
@@ -620,9 +655,8 @@ function layout(req) {
     const node = String(req.options && req.options.node || "");
     if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
     if (!Object.prototype.hasOwnProperty.call(LAYOUTS, node)) throw new Error(`Comfy Cloud: no wiring for the node ${node} (known: ${Object.keys(SHAPES).join(", ")})`);
-    // g.mask(): a mask, and on an edit only with options.mask
-    const mask = !!req.mask && !(req.kind === "edit" && !(req.options && req.options.mask));
-    return LAYOUTS[node](req, mask);
+    // g.mask(): a mask, and on an edit only with options.mask (a node that takes it beside one picture only decides on)
+    return LAYOUTS[node](req, maskWanted(req));
 }
 
 async function download(ctx, file) {
@@ -781,7 +815,7 @@ async function run(req, ctx, waitMs) {
             throw new Error("Comfy Cloud: the job finished without an image (" + JSON.stringify(rest).slice(0, 300) + ")");
         }
         const got = await download(ctx, file);
-        return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id }, loras: loras.applied, notes: loras.notes };
+        return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id }, loras: loras.applied, notes: [...loras.notes, ...maskNotes(node, req)] };
 }
 
 // ---- the Comfy API v2 through the SDK (docs/PLAN_COMFY_SDK.md 3.3, 3.6, 10) ------------------------------------------
@@ -982,7 +1016,7 @@ async function runV2(req, ctx, waitMs) {
         ctx.jobDone = true;
         got.info = info;   // the events' summary joins it below
         got.loras = loras.applied;   // what the chain loaded, in the node list's spelling (item 50)
-        got.notes = loras.notes;
+        got.notes = [...loras.notes, ...maskNotes(node, req)];
         return got;
     } catch (err) {
         if (!stopped()) {

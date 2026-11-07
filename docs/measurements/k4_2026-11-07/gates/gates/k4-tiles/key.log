@@ -1,0 +1,32 @@
+[ok] setup: {"doc": 24, "tiles": true, "worker": true}
+[ok] refusals: {"msg": "Key screen: the CorridorKey 2.0 engine is not part of this build yet."}
+[ok] picture: {"box": [0, 0, 512, 512], "matteBox": [96, 96, 416, 416], "kept": 28, "status": "Key: 28 % of the box kept, in 0.1 s in Scumble (CorridorKey 2.0 on a test engine, green screen, no hint; keyed at 512 px). A grey layer sits under the Key layer: replace it with your background."}
+[ok] layer: {"at": 3}
+[ok] scaled: {"box": [333, 150, 1267, 850], "bucket": {"w": 512, "h": 384}, "layer": [495, 295, 610, 410], "worst": 0}
+[ok] refine: {"bucket": {"w": 512, "h": 384}, "refine": {"fallback": null, "guideDiff": 0, "noise": [0, 0, 0], "bands": 1, "halo": 1, "soft": 4, "ms": 134, "error": null}, "layerRefine": {"fallback": null, "guideDiff": 0, "noise": [0, 0, 0], "bands": 1, "halo": 1, "soft": 4, "ms": 119, "error": null}, "err": {"r
+[ok] restore: {"box": [0, 0, 512, 512]}
+[ok] rekey read: {"key": "24:bdccec38018a02bb8767:512x512", "magenta": 0}
+[ok] rekey layer: {"screen": "blue"}
+[ok] rekey: {"ok": true}
+[ok] cancel: {"msg": "Key screen: the keyer stopped: the keyer process died"}
+[ok] export: {"psd": 3, "ora": 3, "mid": [0, 177, 64, 255], "corner": [128, 128, 128, 255]}
+[ok] dialog: {"burstRuns": 3, "dropped": null, "ticket": 5}
+[ok] dialog rekey: {"ok": true}
+[ok] dialog follow: {"during": [115054, 150146, 185018, 220023, 255183, 290084, 324973, 360065]}
+[ok] dialog values: {"ok": true}
+[ok] dialog geometry: {"ok": true}
+[ok] dialog states: {"ok": true}
+[ok] command: {"s0": {"ready": true, "reason": null, "route": "app", "provider": "stub", "cpu": false, "working_size": 512, "trust": 0.5, "comfy": {"ready": false, "reason": "Full resolution on your ComfyUI needs your own ComfyUI with an NVIDIA card of the RTX 30 generation (Ampere) or newer and a CorridorKey 2.0
+[ok] comfy setup: {"calls": 0, "nodes": 6}
+[ok] comfy native: {"box": [0, 0, 512, 400], "matteBox": [0, 8, 341, 400], "kept": 30, "status": "Key: 30 % of the box kept, in 0.1 s on your ComfyUI (CorridorKey 2.0 through ComfyUI-CorridorKey2.0 on NVIDIA GeForce RTX 5090, green screen, hint from the sele"}
+[ok] comfy rekey: {"status": "Re-key: 30 % of the box kept, in 0 s on your ComfyUI (CorridorKey 2.0 through ComfyUI-CorridorKey2.0 on NVIDIA GeForce R"}
+[ok] comfy scaled: {"refine": {"fallback": null, "guideDiff": 0.25, "noise": [4.62, 4.03, 4.03], "bands": 1, "halo": 1, "soft": 1, "ms": 59, "error": null}, "maeRefinedVsNative": 2.63, "maeBilinearVsNative": 3.37}
+[ok] comfy refusals: {"ok": true}
+[ok] comfy cancel: {"took": 25}
+[ok] comfy stale: {"ok": true}
+[ok] comfy command: {"status": {"ready": true, "reason": null, "route": "comfyui", "provider": null, "cpu": false, "working_size": 512, "trust": 0.5, "comfy": {"ready": true, "reason": null, "pack": "marawan206", "pack_label": "ComfyUI-CorridorKey2.0", "verified": true, "gpu": "NVIDIA GeForce RTX 5090", "note": null, "
+[ok] dialog comfy: {"ready": "Full resolution on your ComfyUI needs your own ComfyUI with an NVIDIA card of th"}
+[ok] dialog move: {"r1": [902, 46], "r3": [1218, 338], "tall": [112, 62, 112]}
+[ok] cleanup: {"ok": true}
+[ok] status seeded: {"trust": 0.95, "timeout": 900}
+PASS

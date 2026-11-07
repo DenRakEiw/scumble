@@ -16,7 +16,9 @@
 // result; a dropped or throttled download is read again, one Comfy says is gone is not; a finished job that lists no
 // output yet keeps its note, one that lists outputs and no image does not; a 5xx upload goes again under a
 // fresh upload key; a gateway's 503 on the submit is sent again under the same key; the node list is advisory (a failed
-// read does not stop the run, a node it lacks does) and follows a redirect on its own origin only; a fill recipe's mask;
+// read does not stop the run, a node it lacks does) and follows a redirect on its own origin only; GPT Image 2.6 on the
+// partner node (model.complexity from the row, high without one, never on GPT Image 2); the GPT Image node's mask only
+// beside the crop alone (with references it stays out and a note says so); a fill recipe's mask;
 // Generate new uploads nothing; an upscaler partner node; a test base takes only a test key; the Cancel's flags (asked,
 // done, ended, not confirmed) and their words through providers/index.js; the progress throttle on a clock set back; a
 // context without cloudApi stays on the legacy API. LoRA rows (item 50, LR5): the chain in the submitted graph (both
@@ -82,27 +84,30 @@ async function main() {
         image: png("CROP"), mask: png("MASK"), width: 1024, height: 768, references: [], params: { "unet|unet_name": "my-unet.safetensors", random_seed: false }, original: 0, ...extra,
     });
 
-    // 1. a partner node with the crop, two references and the mask: four assets, each in its LoadImage
+    // 1. a partner node with the crop, two references and the selection: three assets, each in its LoadImage; the GPT
+    // Image node takes a mask beside one picture only, so the mask stays out and the answer's note says so (the user's
+    // answer of 2026-11-07; the mask as an asset beside the crop alone is 2b's)
     {
         const f = fakeComfyV2({ outputs: saveOutput });
         const c1 = ctxOf(f);
         const out = await cloud.edit(partnerReq(), c1);
         check("a run that brought its picture marks the job done (a Cancel that lands after it is worded as a finished, charged job)", c1.jobDone === true, String(c1.jobDone));
         const bodies = f.calls.filter((c) => c.method === "POST");
-        check("the submit and the uploads follow no redirect (the submit's body carries the key)", bodies.length >= 5 && bodies.every((c) => c.redirect === "error"), short(bodies.map((c) => `${c.path} ${c.redirect}`)));
+        check("the submit and the uploads follow no redirect (the submit's body carries the key)", bodies.length >= 4 && bodies.every((c) => c.redirect === "error"), short(bodies.map((c) => `${c.path} ${c.redirect}`)));
         const body = f.jobs[0] || {};
         const wf = body.workflow || {};
         const loads = Object.entries(wf).filter(([, n]) => n.class_type === "LoadImage");
         const tags = loads.map(([, n]) => (isRef(n.inputs.image) && f.assets.get(n.inputs.image.info.id) ? tagOf(f.assets.get(n.inputs.image.info.id).bytes) : "?"));
-        check("a partner node: the crop, the two references and the mask uploaded as assets in that order, under Scumble's file names",
-            f.uploads.map((u) => u.tag).join(",") === "CROP,REF1,REF2,MASK" && f.uploads.every((u) => /^scumble-[0-9a-z]+-(crop|ref\d|mask)\.png$/.test(u.filePath)),
+        check("a partner node: the crop and the two references uploaded as assets in that order, under Scumble's file names; the mask beside them not",
+            f.uploads.map((u) => u.tag).join(",") === "CROP,REF1,REF2" && f.uploads.every((u) => /^scumble-[0-9a-z]+-(crop|ref\d)\.png$/.test(u.filePath)),
             short(f.uploads.map((u) => [u.tag, u.filePath])));
-        check("every LoadImage holds a core/ASSET reference to its picture", loads.length === 4 && loads.every(([, n]) => isRef(n.inputs.image)) && tags.join(",") === "CROP,REF1,REF2,MASK", short(tags));
+        check("every LoadImage holds a core/ASSET reference to its picture", loads.length === 3 && loads.every(([, n]) => isRef(n.inputs.image)) && tags.join(",") === "CROP,REF1,REF2", short(tags));
         const partner = Object.values(wf).find((n) => n.class_type === "OpenAIGPTImageNodeV2") || { inputs: {} };
         const mask = Object.values(wf).find((n) => n.class_type === "ImageToMask");
-        check("the partner node links the three pictures and the mask through ImageToMask; SaveImage answers",
-            ["model.images.image_1", "model.images.image_2", "model.images.image_3"].every((k) => Array.isArray(partner.inputs[k])) && Array.isArray(partner.inputs["model.mask"]) && !!mask && saveIdOf(wf),
-            short(partner.inputs));
+        check("the partner node links the three pictures, no mask and no ImageToMask beside them; SaveImage answers; the note says so once",
+            ["model.images.image_1", "model.images.image_2", "model.images.image_3"].every((k) => Array.isArray(partner.inputs[k])) && !("model.mask" in partner.inputs) && !mask && saveIdOf(wf)
+            && JSON.stringify(out.notes) === JSON.stringify(["Comfy Cloud's GPT Image node takes a mask with one picture only: sent without the mask, the selection still limits the result."]),
+            short({ inputs: partner.inputs, notes: out.notes }));
         check("one submit with an Idempotency-Key, the key again in extra_data, no metadata",
             posts(f).length === 1 && UUID.test(posts(f)[0].idem || "") && body.extra_data && body.extra_data.api_key_comfy_org === KEY && !("metadata" in body) && Object.keys(body).sort().join(",") === "extra_data,workflow",
             short({ idem: posts(f)[0] && posts(f)[0].idem, keys: Object.keys(body) }));
@@ -118,8 +123,31 @@ async function main() {
         const out2 = await cloud.edit(partnerReq({ references: [], mask: null, kind: "edit" }), ctxOf(f));
         const crop2 = (f.jobs[1] && Object.values(f.jobs[1].workflow).find((n) => n.class_type === "LoadImage")) || { inputs: {} };
         check("bytes Comfy holds go by hash (from-hash), not uploaded again",
-            f.uploads.length === 4 && f.fromHash.length === 1 && isRef(crop2.inputs.image) && tagOf(f.assets.get(crop2.inputs.image.info.id).bytes) === "CROP" && tagOf(out2.bytes) === "RESULT out.png",
+            f.uploads.length === 3 && f.fromHash.length === 1 && isRef(crop2.inputs.image) && tagOf(f.assets.get(crop2.inputs.image.info.id).bytes) === "CROP" && tagOf(out2.bytes) === "RESULT out.png",
             short({ uploads: f.uploads.length, fromHash: f.fromHash }));
+        check("GPT Image 2 on the partner node: no model.complexity in either submitted workflow (a 2.6 field)",
+            f.jobs.length === 2 && f.jobs.every((j) => { const p = Object.values(j.workflow).find((n) => n.class_type === "OpenAIGPTImageNodeV2"); return p && p.inputs.model === "gpt-image-2" && !("model.complexity" in p.inputs); }));
+    }
+
+    // 2b. GPT Image 2.6 (the shipped Comfy Cloud variants, 2026-11-07) on v2: the 2.6 id, model.complexity from the row and
+    // high without one (the node requires it), the crop's own size as Custom, the mask through ImageToMask (the crop
+    // alone: the mask goes, no note)
+    for (const id of ["gpt_image_2_6_flare", "gpt_image_2_6_sunburst"]) {
+        const v = list.find((r) => r.id === id).providers.comfycloud;
+        const f = fakeComfyV2({ outputs: saveOutput });
+        const run = (params) => cloud.edit(partnerReq({ model: v.model, options: v.options, references: [], width: 1536, height: 1024, params }), ctxOf(f));
+        const out = await run({ "model.quality": "high", "model.complexity": "medium" });
+        await run({});
+        const partnerOf = (j) => (j && Object.values(j.workflow).find((n) => n.class_type === "OpenAIGPTImageNodeV2")) || { inputs: {} };
+        const [p1, p2] = [partnerOf(f.jobs[0]), partnerOf(f.jobs[1])];
+        const maskNode = p1.inputs["model.mask"] && f.jobs[0].workflow[p1.inputs["model.mask"][0]];
+        check(`${id} on v2: model ${v.model}, Complexity medium and Quality high from the rows, Custom 1536 x 1024, the crop and the mask as assets, the mask through ImageToMask`,
+            tagOf(out.bytes) === "RESULT out.png" && p1.inputs.model === v.model && p1.inputs["model.complexity"] === "medium" && p1.inputs["model.quality"] === "high"
+            && p1.inputs["model.size"] === "Custom" && p1.inputs["model.custom_width"] === 1536 && p1.inputs["model.custom_height"] === 1024
+            && Array.isArray(p1.inputs["model.images.image_1"]) && !("model.images.image_2" in p1.inputs) && !!maskNode && maskNode.class_type === "ImageToMask"
+            && f.uploads.map((u) => u.tag).join(",") === "CROP,MASK" && Array.isArray(out.notes) && out.notes.length === 0,
+            short({ inputs: p1.inputs, notes: out.notes }));
+        check(`${id} on v2: a run that names no row sends model.complexity high`, p2.inputs["model.complexity"] === "high" && p2.inputs.model === v.model, short(p2.inputs));
     }
 
     // 3. a recipe graph: the crop, the Original and a reference into the titled LoadImage nodes; its own SaveImage
@@ -462,7 +490,7 @@ async function main() {
         const out = await cloud.edit(partnerReq(), ctxOf(g));
         const crop = Object.values(g.jobs[0].workflow).find((n) => n.class_type === "LoadImage");
         check("an upload that got a 5xx: sent again under a fresh upload key, the run's handle by hash, one job",
-            tagOf(out.bytes) === "RESULT out.png" && g.uploadKeys.length === 5 && new Set(g.uploadKeys).size === 5 && g.fromHash.length === 1 && g.jobs.length === 1 && tagOf(g.assets.get(crop.inputs.image.info.id).bytes) === "CROP",
+            tagOf(out.bytes) === "RESULT out.png" && g.uploadKeys.length === 4 && new Set(g.uploadKeys).size === 4 && g.fromHash.length === 1 && g.jobs.length === 1 && tagOf(g.assets.get(crop.inputs.image.info.id).bytes) === "CROP",
             short({ keys: g.uploadKeys.length, fromHash: g.fromHash.length }));
     }
 
@@ -777,11 +805,11 @@ async function main() {
             const f = fakeComfyV2({ origin: MOCK, outputs: saveOutput });
             const wrap = { fetch: async (u, i = {}) => {
                 const r = await f.fetch(u, i);
-                if (String(i.method || "GET").toUpperCase() === "POST" && new URL(String(u)).pathname === "/api/v2/assets" && ++ups === 4) index.cancel(runId);
+                if (String(i.method || "GET").toUpperCase() === "POST" && new URL(String(u)).pathname === "/api/v2/assets" && ++ups === 3) index.cancel(runId);
                 return r;
             } };
             const r = await viaIndex(wrap, { ...partnerReq(), runId });
-            check("a Cancel after the last upload, before the submit: nothing submitted, the words say nothing runs", /^Cancelled after \d+\.\d s, before the job went to Comfy Cloud: nothing runs or is charged\.$/.test(r.err || "") && ups === 4 && posts(f).length === 0 && f.cancels.length === 0, short({ err: r.err, ups }));
+            check("a Cancel after the last upload, before the submit: nothing submitted, the words say nothing runs", /^Cancelled after \d+\.\d s, before the job went to Comfy Cloud: nothing runs or is charged\.$/.test(r.err || "") && ups === 3 && posts(f).length === 0 && f.cancels.length === 0, short({ err: r.err, ups }));
         }
         // a Comfy Cloud graph's LoRA rows through index.edit (item 50, LR5): the rows checked as IPC input, the chain in the
         // submitted graph, the answer's loras and the note beside the run's other notes

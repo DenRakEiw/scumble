@@ -168,6 +168,31 @@ ROWS = {
         out.mk = await time(() => mk(), 3);
         out.note = "gaussBlur and dilate run Rust (box_blurs, dilate_mask) and include the mask's build (mk, also timed); max_clamp is the JS loop of denoiseMask";
     """,
+    "box_blurs_k4": """
+        // K4 (docs/PLAN_WASM_BUILD.md): box_blurs through kernels.js (Rust) and its twin at the sizes its callers use, and
+        // height_normals (relight's, box_blurs inside Rust); `sum` is a checksum of the output's u32 words, the same
+        // before and after K4 when its bytes are pinned. Kernel rows: they explain, never decide (section 1.1 rule 5).
+        const K = await import('./editor/px/kernels.js');
+        const J = await import('./editor/px/kernels_js.js');
+        const fill = (n, seed) => { const d = new Float32Array(n); let s = seed >>> 0; for (let i = 0; i < n; i++) { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; d[i] = (s >>> 8) / 16777216; } return d; };
+        const sum = (f) => { const u = new Uint32Array(f.buffer, f.byteOffset, f.length); let h = 2166136261 >>> 0; for (let i = 0; i < u.length; i++) h = Math.imul(h ^ u[i], 16777619) >>> 0; return h; };
+        const cases = [["stitch_2048_s8", 2048, 2048, [6, 7, 7]], ["map_4096_s3", 4096, 2731, [2, 2, 3]], ["guided_4096_r8", 4096, 2731, [8]], ["map_4096_s16", 4096, 2731, [13, 13, 14]]];
+        out.rows = {};
+        for (const [name, w, h, radii] of cases) {
+            const d = fill(w * h, w + h);
+            let a = null, b = null;
+            const rust = await time(() => { a = K.boxBlurs(d, w, h, radii); }, 7);
+            const twin = await time(() => { b = J.boxBlurs(d, w, h, radii); }, 3);
+            out.rows[name] = { w, h, radii, rust, twin, sum: sum(a), same: sum(a) === sum(b) };
+        }
+        const w = 4096, h = 2731, dep = new Uint16Array(w * h);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) dep[y * w + x] = (x * 13 + y * 7 + ((x * y) >> 5)) & 65535;
+        let hn = null;
+        const hnT = await time(() => { hn = K.heightNormals(dep, w, h, 1, 3); }, 5);
+        const hnOut = hn && (hn.normals || hn.out || hn);
+        out.rows.height_normals_4096_s3 = { w, h, rust: hnT, sum: hnOut && hnOut.buffer ? sum(new Float32Array(hnOut.buffer, hnOut.byteOffset, (hnOut.byteLength >> 2))) : null };
+        out.pxCalls = await pxc(true);
+    """,
     "crc32_64mb": """
         const P = await import('./editor/inpaint_png.js');
         const buf = noise(64 * 1024 * 1024);
