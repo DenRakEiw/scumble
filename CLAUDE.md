@@ -1038,7 +1038,16 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `-` for stdin): one backend for the whole run, the steps in order, `{"files": [globs], "steps": [...]}` runs them
   per file with `{file}` / `{stem}` / ... placeholders, one JSON line per step, exit 1 on a failure (`--keep-going`
   goes on with the next file); for batches such as cutting out a folder of photos, keying plates overnight, a look on
-  a folder. Built 2026-11-07 night by agent F (`electron/main/cli_run.js`), merged after a review.
+  a folder. **Built 2026-11-07 by agent F, merged (`105867b`, a review workflow's 9 findings fixed in `6391ba1`):**
+  `electron/main/cli_run.js` (parseSteps, expandFiles, fill, runPlan, main; plain functions, `tools/cli_run_test.js`
+  on a fake backend), `main.js` `--run` / `--keep-going` on a sticky `AgentBackend` (no `--attach-only` stub, no
+  reconnect or take-over mid-run: a lost instance stops the run), `agentMode = "run"` while it goes, `maybeQuit` after;
+  steps pinned to the document `new_document` / `open_document` made (one found open already is left alone and its
+  file skipped), relative paths against the call's folder, export folders made, each command's `timeout` default sent
+  (the socket waited 600 s for an upscale that waits 1,800), `close_document` `remember: false` for the run's own tabs;
+  `mcp/launch.js` kills its child at stdin's end only for `--mcp`; `restart.js` drops `--run`. Gate `cli`
+  (`tools/cli_run_live.py`, its own headless instances, serial). Open for the user: clean the local store after a run,
+  a wait step for ComfyUI's connect, a user's window that appears during a run.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
@@ -1149,7 +1158,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight cloudjobs loras key areas`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight cloudjobs loras key areas cli`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
