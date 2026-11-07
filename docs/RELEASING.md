@@ -14,6 +14,10 @@ release's `published_at` in German time).
 Before the tag: the exe gates `--offline` on both backends against `dist/win-unpacked/Scumble.exe`, each on its own
 profile (`bash tools/run_gates.sh <label> --offline --exe dist/win-unpacked/Scumble.exe --tiles on|off <gates>`).
 
+**The node build** (when a shipped editor file changed; `docs/BUILD_NODE.md`, in a clone of the node repo): once the
+node commit is pushed, move `INPAINT_CANVAS_REF` in `docker/runpod/provision.sh` to it (the full 40-character id from
+`git ls-remote https://github.com/DenRakEiw/ComfyUI-InpaintCanvas HEAD`), so a new RunPod pod gets that node.
+
 **The portable zip** (item 36, since 0.1.42): `npm run dist:portable` (`tools/portable_zip.js`) zips
 `dist/win-unpacked` with the marker `portable.txt` into `dist/Scumble-<version>-portable-win-x64.zip` (one top folder
 `Scumble\`, no `data`; about 180 MB, a few seconds). It comes **after `npm run dist` and before any `npm run

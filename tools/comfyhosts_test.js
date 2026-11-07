@@ -22,9 +22,9 @@ check("My ComfyUI: the page stays on its origin", navigationAllowed(origin + "/x
 check("Comfy Cloud: its origin and the sign-in hosts", navigationAllowed(CLOUD_URL + "/cloud/login", CLOUD_URL, "cloud") && navigationAllowed("https://github.com/login", CLOUD_URL, "cloud") && !navigationAllowed("https://evil.com/", CLOUD_URL, "cloud"));
 
 // H1: the session's permissions (comfyview.js guardPermissions), in Electron's names
-const denied = ["media", "geolocation", "midi", "midiSysex", "hid", "serial", "usb"];
-const granted = ["clipboard-read", "clipboard-sanitized-write", "fullscreen", "notifications", "pointerLock", "keyboardLock", "openExternal", "fileSystem", "storage-access", "window-management", "idle-detection", "speaker-selection", "unknown"];
-check("camera and microphone (media), location, MIDI, HID, serial and USB are denied", denied.every((p) => !permissionAllowed(p)) && DENIED_PERMISSIONS.size === denied.length, denied.filter(permissionAllowed).join(" "));
+const denied = ["media", "geolocation", "midi", "midiSysex", "hid", "serial", "usb", "openExternal"];
+const granted = ["clipboard-read", "clipboard-sanitized-write", "fullscreen", "notifications", "pointerLock", "keyboardLock", "fileSystem", "storage-access", "window-management", "idle-detection", "speaker-selection", "unknown"];
+check("camera and microphone (media), location, MIDI, HID, serial, USB and a non-web scheme handed to the OS (openExternal) are denied", denied.every((p) => !permissionAllowed(p)) && DENIED_PERMISSIONS.size === denied.length, denied.filter(permissionAllowed).join(" "));
 check("the rest stays granted (the clipboard, fullscreen, notifications ...)", granted.every(permissionAllowed), granted.filter((p) => !permissionAllowed(p)).join(" "));
 
 const failed = results.filter((x) => !x).length;

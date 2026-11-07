@@ -252,6 +252,16 @@ function craftedFixtures(bombMB = 64) {
     // a raw channel of 4096 x 4096 with 16 bytes of data
     files["crafted_raw_short.psd"] = { re: /"Short" holds less data than its 4,096 × 4,096 px need/, bytes: psd({ width: 64, height: 64, layers: [
         { name: "Short", top: 0, left: 0, w: 4096, h: 4096, blocks: [[0, new B().u16(0).bytes(new Uint8Array(16)).out()]] }] }) };
+    // an RLE channel whose own length holds its row table alone: its rows (256 KB) would be read from the next
+    // channel's bytes, so many such records could each claim the same data
+    const table = new B().u16(1);
+    for (let y = 0; y < 4096; y++) table.u16(64);
+    files["crafted_overlap.psd"] = { re: /"Overlap" holds less data than its 4,096 × 4,096 px need/, bytes: psd({ width: 64, height: 64, layers: [
+        { name: "Overlap", top: 0, left: 0, w: 4096, h: 4096, blocks: [[0, table.out()], [1, new B().u16(0).bytes(new Uint8Array(300000)).out()]] }] }) };
+    // a flat file of 16,000 x 16,000 (no layers) whose merged rows are all empty: refused, not opened empty
+    const flat = new B().ascii("8BPS").u16(1).bytes([0, 0, 0, 0, 0, 0]).u16(3).u32(16000).u32(16000).u16(8).u16(3).u32(0).u32(0).u32(0).u16(1);
+    for (let i = 0; i < 3 * 16000; i++) flat.u16(0);
+    files["crafted_flat.psd"] = { re: /the PSD's merged picture holds less data than its 16,000 × 16,000 px need/, bytes: flat.out() };
     // OpenRaster: a layer's PNG deflated to a bomb behind a directory size of 1 KB; an entry the directory says is 1 GB;
     // a stack.xml of 20 MB; a stored PNG whose IHDR says 70,000 x 4
     const xml = `<?xml version='1.0' encoding='UTF-8'?>\n<image version="0.0.3" w="64" h="64"><stack><layer name="L" src="data/l.png" /></stack></image>\n`;
@@ -263,6 +273,15 @@ function craftedFixtures(bombMB = 64) {
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(ihdr, 0);
     ihdr.writeUInt32BE(13, 8); ihdr.write("IHDR", 12, "latin1"); ihdr.writeUInt32BE(70000, 16); ihdr.writeUInt32BE(4, 20); ihdr[24] = 8;
     files["crafted_png.ora"] = { re: /the ORA layer "L" is 70,000 × 4 px, more than a layer can be/, bytes: ora({ name: "data/l.png", data: Buffer.concat([ihdr, Buffer.alloc(12)]) }) };
+    // three layers of 16,000 x 16,000 px (each below the one-layer cap) over a picture of 64 x 64: more than 268 MP
+    const big = Buffer.from(ihdr);
+    big.writeUInt32BE(16000, 16); big.writeUInt32BE(16000, 20);
+    const xml3 = `<?xml version='1.0' encoding='UTF-8'?>\n<image version="0.0.3" w="64" h="64"><stack><layer name="L3" src="data/l.png" /><layer name="L2" src="data/l.png" /><layer name="L1" src="data/l.png" /></stack></image>\n`;
+    files["crafted_many.ora"] = { re: /the ORA file's layers add up to more than 268 MP at the ORA layer "L2"/, bytes: ora({ name: "data/l.png", data: Buffer.concat([big, Buffer.alloc(12)]) }, { name: "stack.xml", data: xml3 }) };
+    // one layer past what Blink decodes (2^29 px), below the 65,535 px side
+    const huge = Buffer.from(ihdr);
+    huge.writeUInt32BE(30000, 16); huge.writeUInt32BE(20000, 20);
+    files["crafted_decode.ora"] = { re: /the ORA layer "L" is 30,000 × 20,000 px, more than a layer can be \(65,535 px a side, 537 MP\)/, bytes: ora({ name: "data/l.png", data: Buffer.concat([huge, Buffer.alloc(12)]) }) };
     return files;
 }
 
@@ -1098,12 +1117,14 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
         const looseOra = await throwsWith(() => readOra(crafted["crafted_bomb.ora"].bytes, { inflateRaw }), crafted["crafted_bomb.ora"].re);
         check("an inflater that ignores the cap is held to it: the same refusals", loose.ok && looseOra.ok, `${loose.msg} / ${looseOra.msg}`);
 
-        // a flat file of 16,000 x 16,000 whose merged rows are empty: no merged picture, and no 768 MB of planes for it
-        const flat = new B().ascii("8BPS").u16(1).bytes([0, 0, 0, 0, 0, 0]).u16(3).u32(16000).u32(16000).u16(8).u16(3).u32(0).u32(0).u32(0).u16(1);
-        for (let i = 0; i < 3 * 16000; i++) flat.u16(0);
-        t = performance.now();
-        const fd = await readPsd(flat.out(), {});
-        check(`a flat file whose merged rows cannot fill it has no merged picture (${(performance.now() - t).toFixed(0)} ms)`, fd.composite === null && !fd.layers.length && performance.now() - t < 2000);
+        // a merged picture too short for its size beside layers: the layers open (the merged picture is not shown then)
+        const W2 = 8, H2 = 8, lay = { name: "kept", top: 0, left: 0, w: W2, h: H2, ch: { 0: fill(64, (i) => i), 1: fill(64, (i) => i), 2: fill(64, (i) => i) } };
+        const withLayers = psd({ width: 16, height: 16, layers: [lay], merged: [fill(256, () => 0), fill(256, () => 0), fill(256, () => 0)] });
+        // the merged rows' table sits after the layer section: zero it, so the rows cannot fill the picture
+        const zeroed = withLayers.slice(), at = zeroed.length - (3 * 16 * 2 + 3 * 16 * 2);   // 48 row lengths, then 48 rows of 2 bytes
+        for (let i = at; i < at + 96; i++) zeroed[i] = 0;
+        const kept = await readPsd(zeroed, {});
+        check("a merged picture too short beside layers: the layers open, no merged picture", kept.layers.length === 1 && kept.layers[0].name === "kept" && kept.composite === null, short({ layers: kept.layers.length, composite: !!kept.composite }));
 
         // onHeader: the caller's size check before anything else is read or made
         const seen = [];

@@ -866,11 +866,16 @@ async function remove(id) {
     return true;
 }
 
+/**
+ * Write a user recipe: over the file a user recipe of the same id was read from (its `file`, which may differ from
+ * `<id>.json`, so one id never lies in two files), else as `<id>.json`.
+ */
 async function save(recipe) {
     const id = String(recipe && recipe.id);
     if (!safeId(id)) throw new Error(`a recipe id is letters, digits, ".", "_" and "-" only; "${id.slice(0, 80)}" is not saved`);
     const dir = userDir();
-    const file = path.join(dir, id + ".json");
+    const had = (await readDir(dir, "user")).find((x) => String(x.id) === id);
+    const file = path.join(dir, had ? had.file : id + ".json");
     if (path.dirname(file) !== dir) throw new Error(`the recipe "${id.slice(0, 80)}" would land outside the recipes folder`);
     await fsp.mkdir(dir, { recursive: true });
     await fsp.writeFile(file, JSON.stringify(recipe, null, 2) + "\n", "utf8");

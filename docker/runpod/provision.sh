@@ -12,7 +12,8 @@
 #                     (comfyui-rmbg, ComfyUI-QwenVL) so those work remotely too; default 0
 #   HF_TOKEN          Hugging Face token for gated downloads (Flux.2 Klein needs it); sent by curl, which drops it
 #                     on a redirect to another host (Hugging Face's CDN), never by wget (which sends it on)
-#   SCUMBLE_NODE_REF  the Inpaint Canvas commit to check out (default: the one pinned below)
+#   SCUMBLE_NODE_REF  the Inpaint Canvas commit to check out: the full 40-character commit id (or a branch or tag;
+#                     a short id fails the shallow fetch), default the one pinned below
 #
 # Every node pack is checked out at a pinned commit (H1 S8): a fresh pod gets the code this file was written for, never
 # whatever a repository's head holds that day, and a restart does not pull. To move a pack, change its commit here

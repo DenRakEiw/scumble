@@ -37,8 +37,10 @@ const READ_JS = `(async () => { try { const p = await window.app.graphToPrompt()
     catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
 
 /**
- * The session's permission answers (comfyhosts.js permissionAllowed): camera, microphone, location, MIDI and the device
- * APIs denied for the page and its sign-in windows, the rest granted as Electron's default does. Set once per session
+ * The session's permission answers (comfyhosts.js permissionAllowed): camera, microphone, location, MIDI, the device
+ * APIs and the hand-over of a non-web scheme to the OS ("openExternal") denied for the page and its sign-in windows
+ * (ComfyUI's core Webcam Capture and Record Audio nodes get no device here), the rest granted as Electron's default
+ * does. Set once per session
  * (the partition outlives the window); the request handler answers what a page asks for, the check handler what it
  * looks up (navigator.permissions.query, a device list), the device handler a HID / serial / USB grant.
  */

@@ -49,6 +49,12 @@ const ORA_XML_MAX = 16 * 1024 * 1024;
 const ORA_INFLATE_BASE = 256 * 1024 * 1024;
 const ORA_INFLATE_RATIO = 64;
 const INFLATE_SLICE = 64 * 1024;
+// OpenRaster layers are PNGs the browser decodes: one below 2^29 px (what Blink decodes at all, so the refusal is
+// plain), and all of a file's together at most what a layered file opens at (268 MP, inpaint_canvas.js
+// checkLayeredSize) or 64 times the picture, whichever is more, counted from the PNGs' headers before any decode
+const ORA_LAYER_MAX_PIXELS = 2 ** 29 - 1;
+const ORA_PIXELS_BASE = 268435456;
+const ORA_PIXELS_PER_PICTURE = 64;
 
 const mbText = (n) => (n >= 1048576 ? `${Math.round(n / 1048576).toLocaleString("en-US")} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const sizeText = (w, h) => `${w.toLocaleString("en-US")} × ${h.toLocaleString("en-US")} px`;
@@ -99,9 +105,9 @@ export async function inflateAtMost(bytes, format = "deflate", cap = Infinity) {
 }
 
 /** A layer or mask rectangle against what a document can hold; `what` names it in the refusal. */
-function checkRect(what, w, h) {
-    if (w > LAYER_MAX_SIDE || h > LAYER_MAX_SIDE || w * h > LAYER_MAX_PIXELS) {
-        throw new Error(`${what} is ${sizeText(w, h)}, more than a layer can be (${LAYER_MAX_SIDE.toLocaleString("en-US")} px a side, ${Math.round(LAYER_MAX_PIXELS / 1e6).toLocaleString("en-US")} MP): the file is damaged or not one this reader takes`);
+function checkRect(what, w, h, maxPixels = LAYER_MAX_PIXELS) {
+    if (w > LAYER_MAX_SIDE || h > LAYER_MAX_SIDE || w * h > maxPixels) {
+        throw new Error(`${what} is ${sizeText(w, h)}, more than a layer can be (${LAYER_MAX_SIDE.toLocaleString("en-US")} px a side, ${Math.round(maxPixels / 1e6).toLocaleString("en-US")} MP): the file is damaged or not one this reader takes`);
     }
 }
 
@@ -202,11 +208,14 @@ async function readChannel(r, compression, w, h, depth, dataLen, inflate, what =
         out = new Uint8Array(size);
         out.set(r.bytes(size));
     } else if (compression === 1) {
+        // the row table and the rows lie inside the channel's own length: rows read past it would be the next
+        // channels' bytes, so a few MB of records could each claim the same data for planes of gigabytes
+        if (2 * h > dataLen) throw tooShort(what, w, h);
         const lens = new Array(h);
         for (let y = 0; y < h; y++) lens[y] = r.u16();
         const total = lens.reduce((a, b) => a + b, 0);
         r.need(total);
-        if (total < packedAtLeast(h, rowBytes)) throw tooShort(what, w, h);
+        if (total < packedAtLeast(h, rowBytes) || 2 * h + total > dataLen) throw tooShort(what, w, h);
         out = new Uint8Array(size);
         unpackRows(r.b, r.p, lens, rowBytes, out);
         r.p += total;
@@ -432,7 +441,12 @@ function mergedPlanes(r, bytes, width, height, channels, depth, gray) {
             const rowLens = lens.subarray(c * height, (c + 1) * height);
             let total = 0;
             for (let y = 0; y < rowLens.length; y++) total += rowLens[y];
-            if (total < packedAtLeast(height, rowBytes)) throw new Error("the merged picture holds less data than its size needs");
+            if (total < packedAtLeast(height, rowBytes)) {
+                // refused, not dropped quietly: a file without layers then has nothing to open (decodePsd throws it)
+                const err = new Error(`the PSD's merged picture holds less data than its ${sizeText(width, height)} need: the file is damaged`);
+                err.refused = true;
+                throw err;
+            }
             const out = new Uint8Array(width * height * depth / 8);
             r.p = unpackRows(bytes, r.p, rowLens, rowBytes, out);
             planes[c] = out;
@@ -532,12 +546,12 @@ async function decodePsd(input, inflate, stream, onHeader = null) {
     }
     r.p = lmEnd;
     // the merged picture (the stream reads it after the layers, and only when none has pixels)
-    let composite = null;
+    let composite = null, mergedRefused = null;
     if (!stream) {
         try {
             const ch = mergedPlanes(r, bytes, width, height, channels, depth, gray);
             if (ch) composite = interleave(ch, width, height, gray);
-        } catch (_) { composite = null; }
+        } catch (err) { composite = null; if (err && err.refused) mergedRefused = err; }
     }
     // records are bottom first; groups are a bounding divider (3) below their layers and a folder record (1 / 2) above.
     // A group comes back as a folder (PLAN_0_1_31 §6.5): `groups` [{ id, name, visible, collapsed, parent }], a layer's
@@ -589,9 +603,11 @@ async function decodePsd(input, inflate, stream, onHeader = null) {
     if (stream && !layers.length && width > 0 && height > 0) {   // a header of no area has no merged picture to send
         r.p = lmEnd;
         let ch = null;
-        try { ch = mergedPlanes(r, bytes, width, height, channels, depth, gray); } catch (_) { ch = null; }
+        try { ch = mergedPlanes(r, bytes, width, height, channels, depth, gray); } catch (err) { ch = null; if (err && err.refused) mergedRefused = err; }
         if (ch) composite = streamPixels(stream, ch, width, height, gray, null);
     }
+    // a file whose only picture is a merged picture too short for its size is refused (both readers alike)
+    if (!layers.length && mergedRefused) throw mergedRefused;
     const hasComposite = composite != null;
     if (adjust.length) notes.push(`${adjust.length} adjustment or fill layer${adjust.length > 1 ? "s" : ""} left out (${listNames(adjust)}): the picture can look different`);
     if (clips) notes.push(`${clips} clipped layer${clips > 1 ? "s" : ""} kept clipped`);
@@ -690,6 +706,8 @@ export async function readOra(input, { inflateRaw = null, onHeader = null } = {}
     const width = Math.round(+attr(img[0], "w")), height = Math.round(+attr(img[0], "h"));
     if (!(width > 0 && height > 0)) throw new Error("the ORA image has no size");
     if (onHeader) onHeader({ width, height });
+    const pixelBudget = Math.max(ORA_PIXELS_BASE, ORA_PIXELS_PER_PICTURE * width * height);
+    let pixels = 0;
     const notes = [];
     const found = [];   // top first
     const blends = [], missing = [];
@@ -721,7 +739,12 @@ export async function readOra(input, { inflateRaw = null, onHeader = null } = {}
         const png = src ? await get(src) : null;
         if (!png) { missing.push(name); continue; }
         const size = pngSize(png);
-        if (size) checkRect(`the ORA layer "${String(name).slice(0, 60)}"`, size.w, size.h);
+        if (size) {
+            const label = `the ORA layer "${String(name).slice(0, 60)}"`;
+            checkRect(label, size.w, size.h, ORA_LAYER_MAX_PIXELS);
+            pixels += size.w * size.h;
+            if (pixels > pixelBudget) throw new Error(`the ORA file's layers add up to more than ${Math.round(pixelBudget / 1e6).toLocaleString("en-US")} MP at ${label}, more than the layers of a ${sizeText(width, height)} picture can be: the file is damaged`);
+        }
         found.push({ name, x: Math.round(x), y: Math.round(y), opacity: Math.max(0, Math.min(1, opacity)), visible, blend, png });
     }
     if (blends.length) notes.push(`blend modes the editor lacks became normal: ${listNames(blends)}`);

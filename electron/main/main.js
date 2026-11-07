@@ -392,8 +392,8 @@ function createWindow() {
     win.webContents.on("did-start-navigation", (details) => {
         if (!details || details.isSameDocument || !details.isMainFrame) return;
         // a new page of the app (a reload): the Comfy Cloud pictures the old one did not ack go to it (a navigation
-        // out of the app is refused by will-navigate below and keeps the page)
-        const reload = String(details.url || "").startsWith(ORIGIN + "/");
+        // anywhere else is refused by will-navigate below and keeps the page: the same rule, links.js appPage)
+        const reload = appPage(String(details.url || ""), ORIGIN);
         if (reload) cloudPageGone();
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window reloaded" });
         for (const w of askWaits.values()) w.gone();

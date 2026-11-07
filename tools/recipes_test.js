@@ -1412,6 +1412,10 @@ async function main() {
             check("save refuses an id outside them, and nothing lands beside the recipes folder", refused.every((m) => /letters, digits/.test(m || "")) && !fs.existsSync(path.join(USERDATA, "settings.json")), short(refused));
             const file = await recipes.save({ ...base, id: "fine_id-2.v" });
             check("a safe id is saved as <id>.json in the recipes folder", path.dirname(file) === dir && path.basename(file) === "fine_id-2.v.json" && fs.existsSync(file));
+            const over = await recipes.save({ ...base, id: "other_id", name: "Saved over" });
+            const reread = (await recipes.list(RECIPES)).filter((r) => r.id === "other_id");
+            check("saving an id a user recipe was read from under another file name writes that file (one id, one file)",
+                path.basename(over) === "other file.json" && !fs.existsSync(path.join(dir, "other_id.json")) && reread.length === 1 && reread[0].name === "Saved over", short({ over: path.basename(over), n: reread.length }));
             await recipes.remove("other_id");
             await recipes.remove("my_recipe");
             check("remove deletes the file a recipe was read from, whatever its name", !fs.existsSync(path.join(dir, "other file.json")) && !fs.existsSync(path.join(dir, "my recipe.json")) && fs.existsSync(path.join(dir, "hand.json")));
