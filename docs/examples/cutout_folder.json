@@ -1,0 +1,13 @@
+{
+  "comment": "Cut out every photo in photos/ with the in-app matting model and save each as a PNG with transparency in cutouts/. Needs a matting model under Settings > Helpers (BiRefNet lite is the small one); without one the background removal of a connected ComfyUI with comfyui-rmbg runs instead. From the folder that holds photos/: Scumble --run cutout_folder.json (docs/MCP.md, Batches).",
+  "files": ["photos/*.jpg", "photos/*.jpeg", "photos/*.png", "photos/*.webp"],
+  "keep_going": true,
+  "steps": [
+    { "cmd": "new_document", "comment": "a tab of its own: the run never changes the documents you have open" },
+    { "cmd": "load_image", "args": { "path": "{file}" } },
+    { "cmd": "add_image_layer", "args": { "path": "{file}", "name": "cutout" }, "comment": "the photo once more, as a layer: the background is removed from a layer" },
+    { "cmd": "cutout_layer", "args": { "layer": "cutout" } },
+    { "cmd": "export_layer", "args": { "layer": "cutout", "path": "cutouts/{stem}.png" } },
+    { "cmd": "close_document" }
+  ]
+}

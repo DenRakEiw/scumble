@@ -1,0 +1,12 @@
+{
+  "comment": "Put the same film look on every photo in photos/ and save each as a JPEG in graded/ (film.looks lists the stock ids). Nothing to install: the film pack is built in. From the folder that holds photos/: Scumble --run look_folder.json (docs/MCP.md, Batches).",
+  "files": ["photos/*.jpg", "photos/*.jpeg", "photos/*.png"],
+  "keep_going": true,
+  "steps": [
+    { "cmd": "new_document", "comment": "a tab of its own: the run never changes the documents you have open" },
+    { "cmd": "load_image", "args": { "path": "{file}" } },
+    { "cmd": "film.apply_look", "args": { "preset": "portra400", "strength": 80 } },
+    { "cmd": "export", "args": { "format": "jpg", "quality": 0.92, "path": "graded/{stem}.jpg" } },
+    { "cmd": "close_document" }
+  ]
+}

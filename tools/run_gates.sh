@@ -75,7 +75,7 @@ if curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null; then
 fi
 
 needs_app=0
-for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document|portable|mcpb) ;; *) needs_app=1 ;; esac; done
+for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document|portable|mcpb|cli) ;; *) needs_app=1 ;; esac; done
 TILEARG=""
 case "$TILES" in
   on) export SCUMBLE_TILES=1; TILEARG="--tiles" ;;
@@ -140,6 +140,10 @@ for g in "$@"; do
     # the .mcpb bundle (docs/PLAN_MCPB.md): plain Node (the manifest, the starter's search and start forms, the fallback
     # over stdio); with --exe also a real headless start through the starter on a profile of its own (--no-comfy)
     mcpb) timeout 900 node tools/mcpb_test.js ${EXE:+--exe "$EXE"} > "$OUT/mcpb.log" 2>&1; rc=$? ;;
+    # Scumble --run (electron/main/cli_run.js): tools/cli_run_test.js in plain Node, then seven batches, each starting
+    # and quitting its own headless instance (--no-comfy, a profile under $OUT/cli, no DevTools port), so no app of the
+    # runner's
+    cli) timeout 900 python tools/cli_run_live.py ${EXE:+--exe "$EXE"} --out "$OUT/cli" > "$OUT/cli.log" 2>&1; rc=$? ;;
     # tiffperf:15000x10000: a TIFF export and open of a noise picture at size (docs/PLAN_0_1_29.md 3d, the 15k measurement);
     # tiffperf:15000x10000,--variant,all opens the other files of PLAN_WASM_BUILD K0a too (commas for spaces)
     tiffperf:*) timeout 7200 python tools/tiff_test.py --size $(echo "${g#tiffperf:}" | tr ',' ' ') --out "$OUT/tiffperf" > "$OUT/tiffperf.log" 2>&1; rc=$? ;;

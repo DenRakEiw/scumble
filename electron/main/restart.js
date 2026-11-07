@@ -7,14 +7,18 @@
  * headless process (the same rule as parseArgs in main.js). The button is pressed in a visible window,
  * so the new process has to open one: `--mcp` again would serve a stdin nobody writes to and quit with
  * no window, `--headless` would come back invisible holding the instance lock, and `--cmd` would run
- * its command once more and exit. Everything else stays (`--tiles` / `--no-tiles`, `--user-data-dir`,
- * the dev run's ".").
+ * its command once more and exit, `--run` its whole batch. Everything else stays (`--tiles` /
+ * `--no-tiles`, `--user-data-dir`, the dev run's ".").
  */
 function relaunchArgs(argv) {
     const out = [];
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
-        if (a === "--mcp" || a === "--headless") continue;
+        if (a === "--mcp" || a === "--headless" || a === "--keep-going") continue;
+        if (a === "--run") {
+            if (argv[i + 1] != null && (argv[i + 1] === "-" || !argv[i + 1].startsWith("--"))) i++;   // its steps file
+            continue;
+        }
         if (a === "--cmd") {
             i++;   // the command's name
             if (argv[i + 1] && !argv[i + 1].startsWith("--")) i++;   // its JSON arguments

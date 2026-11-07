@@ -62,11 +62,12 @@ Bring a tab to the front.
 
 ### `close_document` *(destructive)*
 
-Close a tab without asking (unsaved changes are not written to its .scumble file). A run going in it stops as cancel_run stops it, and nothing lands: an API provider may still charge a job it already had. File › Reopen Closed Tab brings the tab back in this session, without the run; the document's files stay in the local store.
+Close a tab without asking (unsaved changes are not written to its .scumble file). A run going in it stops as cancel_run stops it, and nothing lands: an API provider may still charge a job it already had. File › Reopen Closed Tab brings the tab back in this session, without the run (remember false: it does not, and the tab stays off that list and the autosave's); the document's files stay in the local store.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
+| `remember` | boolean | put the tab on File › Reopen Closed Tab (default true) (default `true`) |
 
 ### `reopen_closed_tab` *(app)*
 

@@ -329,6 +329,22 @@ module` is never true under `import()` either). `--store` (by hand) does the sam
 machine. PASS on 2026-10-09 (plain, the 0.1.44 exe, the Store copy 0.1.42). The install in Claude Desktop itself is
 a hand test (`docs/PLAN_MCPB.md` §7).
 
+The `cli` gate (`tools/cli_run_live.py`; `docs/MCP.md` "Batches: `--run`") runs `tools/cli_run_test.js` in plain Node
+first (the steps file's three shapes and its refusals, the globs, the placeholders, the doc pinning, the stop and
+keep-going rules and the clean-up close, the lines and the exit codes, against a fake backend; the examples of
+`docs/examples/` parse), then seven batches, each starting and quitting its own headless instance (`--no-comfy`, a
+profile under `$OUT/cli`, no DevTools port unless `--port` gives one; a run that does not end in `--timeout` seconds
+is killed; `--lock` / `SCUMBLE_BUSY_LOCK` is waited out before each start), so it runs without a runner app and in
+`run_gates_both.sh`'s serial part. Two fixtures by a
+glob (new_document, load_image, add_image_layer, flip_layer, export to a relative path, close_document): directly
+(the empty line before the first JSON line skipped) and through the launcher with the steps on stdin (stdout starts
+with `{`), both exported PNGs the mirror of their source within 3 levels, and the autosave the quit wrote holding no
+picture in its open or its closed tabs; a bad command (exit 1, the first file's steps up to it and its clean-up close,
+no line of the second file); a broken picture first with `--keep-going` (the other file exported) and without (not);
+`docs/examples/look_folder.json` on two JPEGs as it is, against the same steps without the look as a baseline (a mean
+difference of 4 levels or more, where a re-encode alone is about 1 to 1.7); every command the examples name in the
+app's command table. About 15 s in all on the dev tree.
+
 The `portable` gate (P3, `tools/portable_test.py`, `--exe` only) starts portable copies of the exe's folder the way a
 user does, **without `--user-data-dir`**, so it is the one gate that could reach the user's own `%APPDATA%\Scumble`.
 It refuses, starting nothing and reading nothing there, without `--exe` and while any `Scumble.exe` runs (the user's
