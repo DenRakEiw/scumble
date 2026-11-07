@@ -136,7 +136,23 @@ code.
     35-50), the tiles and canvas gate runs side by side on two ports; `docs/TESTING.md` says how. B, C and D all touch
     `renderer/editor/inpaint_canvas.js` in separate regions: merge them one at a time, the gates after each merge.
   The measurement steps (U0, K27, P10) stay one at a time under the busy lock. Weekly limit 68 % on 2026-11-07, reset
-  2026-11-08 09:00. The preparation, as it was:
+  2026-11-08 09:00.
+  **RUNNING since 2026-11-07 late evening (started by the session before the `/clear`, the user asleep):** six
+  background agents, each in its own worktree under `.claude/worktrees/agent-*` on a branch `worktree-agent-*`, with
+  the common rules in that session's scratchpad `agent_rules.md` (base `db62ba9` or later, own ports, the busy lock,
+  no edits to CHANGELOG / CLAUDE.md / the plan, a CHANGELOG line and an "as built" paragraph in each report):
+  **U0** (port 9588; measures SAM2, matting and depth on the main process under the busy lock, writes
+  `docs/measurements/u0_2026-11-07/` and `docs/PLAN_HELPERS_PROCESS.md`, builds no U1), **A = H1 + P15** (9581 / 9589),
+  **B = item 58** (9582 / 9590), **C = item 59** (9584 / 9591), **D = item 57** (9585 / 9592), **E = item 60's
+  design** (`docs/PLAN_VARIANTS.md`, no app). Their reports arrive as task notifications. **What the session after the
+  `/clear` does with each:** read the report; run a review workflow over the branch's diff (lenses by risk, each finding
+  verified by a second agent, as for item 54 and K26); send confirmed findings back to that agent (SendMessage to the
+  id in the notification) or fix small ones itself; merge into `wasm-kernels` one branch at a time (B, C, D touch
+  `inpaint_canvas.js` in separate regions: merge, then `bash tools/run_gates_both.sh <label> --offline lint types
+  editor` and the branch's own gates, then the next); add the CHANGELOG lines and the plan's "as built"; remove the
+  worktree (its `node_modules` junction with `cmd /c rmdir` first, then `git worktree remove --force`, then `git branch -d`);
+  commit and push the branch. U0's numbers decide U1 (build it next, on the plan U0 wrote) and the U0 report's
+  questions go to the user. No push of main, no tag, no release, no GitHub comment while the user sleeps. The preparation, as it was:
   It holds
   items 49 (CorridorKey Route B, B5 run live with the user, the movable Key dialog), 50 (LoRAs, MOSS-Image Edit), 51
   (GPT-Image-2.6), 52 (P-H3-Image) and the kernel steps D0, K5, W1, K12, K12b. A release review workflow (four lenses,
