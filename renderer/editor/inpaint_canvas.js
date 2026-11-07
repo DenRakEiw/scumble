@@ -6032,14 +6032,27 @@ class InpaintEditor {
             else this.drawBaseInto(nctx, 0, 0, nw, nh);
             const { ref } = await uploadCanvas(nb, `n${this.node.id}_base`);
             const px = this.pixels.Layer.fromCanvas(nb);
-            let scaledFilters = 0;
+            // again after the upload's wait, before anything is scaled: a hover or a slider drag begun meanwhile would be
+            // scaled live and its cancel would write the unscaled values back
+            this.cancelPreviews();
+            let scaledFilters = 0, keptFilters = 0;
             for (const l of this.layers) {
                 if (l.kind === "filter") {
                     l.w = nw; l.h = nh; l._fcache = null;
                     // item 57: its sizes in image pixels follow the picture (a 4 px blur is a 2 px one at half the size), a new
-                    // params object the canvas step does not hold; relight's lights move in followGeometry
+                    // params object the canvas step does not hold; relight's lights move in followGeometry. A filter of a
+                    // plugin that is off keeps its values (the line says so)
+                    if (!FILTERS[l.filter]) keptFilters++;
                     const scaled = scaleFilterParams(l.filter, l.params, sx, sy);
                     if (scaled) { l.params = scaled; l._fcacheView = null; l._fcacheSample = null; l._fxCacheSample = null; scaledFilters++; }
+                    // a "before" an edit in progress still holds (a slider the list was rebuilt under, a hover left over)
+                    // is in the new picture's sizes too, or its step would put the old ones back later
+                    for (const k of ["_undoPending", "_hoverSnap"]) {
+                        const snap = l[k];
+                        if (!snap || snap.kind !== "filter" || !snap.params) continue;
+                        const sp = scaleFilterParams(snap.filter || l.filter, snap.params, sx, sy);
+                        if (sp) snap.params = sp;
+                    }
                     if (l.maskPx) { const m = makeCanvas(nw, nh); const mc = m.getContext("2d"); mc.imageSmoothingEnabled = true; l.maskPx.drawTo(mc, 0, 0, nw, nh); l.maskPx = this.pixels.Mask.fromCanvas(m); l.maskDirty = true; }
                 } else {
                     l.x = Math.round(l.x * sx); l.y = Math.round(l.y * sy);
@@ -6061,7 +6074,8 @@ class InpaintEditor {
             this.selectionDataUrl = null; this.selectionEncoded = false;
             this.followGeometry("resize", xfScale(sx, sy), { width: W, height: H }, { width: nw, height: nh });
             this.renderLayers(); this.renderHistory(); this.renderInfo(); this.fitView(); this.drawThumb(); this.notifyChanged();
-            const scaledNote = scaledFilters ? ` The sizes in pixels of ${scaledFilters} filter layer${scaledFilters === 1 ? "" : "s"} scaled along.` : "";
+            let scaledNote = scaledFilters ? ` The sizes in pixels of ${scaledFilters} filter layer${scaledFilters === 1 ? "" : "s"} scaled along.` : "";
+            if (keptFilters) scaledNote += keptFilters === 1 ? " 1 filter layer of a plugin that is off kept its sizes." : ` ${keptFilters} filter layers of plugins that are off kept their sizes.`;
             this.setStatus(`Image ${base ? "upscaled" : "resized"} to ${nw} × ${nh} (Ctrl+Z takes it back). Layers keep their own resolution.${scaledNote}`);
         } catch (err) {
             if (!pushed) this.releaseSnapshot(before);

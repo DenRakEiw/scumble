@@ -10871,39 +10871,63 @@ try {
 return out;
 """),
     ("filter_sizes_in_pixels_follow_a_resize", """
-// item 57: a resize scales a filter layer's sizes in image pixels (unit "px", or scales: true) by sqrt(sx * sy), rounded to
-// the step and kept in the range, inside the resize's own undo step; percentages and the rest stay. At 50 % a blur of 8 px
-// is one of 4 px and a grain of 4 px one of 2 px, and the picture at 50 % is the one at 100 % scaled down, on numbers,
-// where the old sizes would give another picture
+// item 57: a resize scales a filter layer's sizes in image pixels (unit "px", or scales: true) by sqrt(sx * sy), exactly
+// (no step grid: a small length never becomes 0, there and back gives it back) and kept in the range, inside the resize's
+// own undo step; percentages and the rest stay. At 50 % a blur of 8 px is one of 4 px and a grain of 4 px one of 2 px, and
+// the picture at 50 % is the one at 100 % scaled down, on numbers, where the old sizes would give another picture
 const F = await import("./editor/inpaint_filters.js");
+const P = await import("./plugins.js");
 const d = await run("new_document");
 const ed = ednow(d.id);
 host.shell.activate(ed);
 const out = {};
 const eq = (a, b, what) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(what + ": " + JSON.stringify(a) + ", not " + JSON.stringify(b)); };
+const sample = P.pluginHost.entries().get("sample");
+if (!sample || !sample.api) throw new Error("the sample plugin is not loaded: the scales passthrough of filters.register cannot be checked");
+let tid = null;
 try {
-    // the rules on their own: the geometric mean, the step's grid (half up, 0.75 / 0.1 is not 7.4999), min and max
-    eq(F.scaleFilterParams("blur", { radius: 4 }, 0.37, 0.37), { radius: 1.5 }, "a blur of 4 px at 37 %");
+    // the rules on their own: the geometric mean, exact products (float noise trimmed), min and max
+    eq(F.scaleFilterParams("blur", { radius: 4 }, 0.37, 0.37), { radius: 1.48 }, "a blur of 4 px at 37 %");
     eq(F.scaleFilterParams("blur", { radius: 40 }, 2, 2), { radius: 64 }, "a blur of 40 px at 200 % (its max)");
     eq(F.scaleFilterParams("blur", { radius: 6 }, 0.5, 2), null, "an aspect change of the same area");
     eq(F.scaleFilterParams("blur", { radius: 6 }, 0.5, 0.125), { radius: 1.5 }, "the geometric mean of 50 % and 12.5 %");
-    eq(F.scaleFilterParams("sharpen", { amount: 100, radius: 1.5, threshold: 10 }, 0.5, 0.5), { amount: 100, radius: 0.8, threshold: 10 }, "sharpen at 50 %");
+    eq(F.scaleFilterParams("sharpen", { amount: 100, radius: 1.5, threshold: 10 }, 0.5, 0.5), { amount: 100, radius: 0.75, threshold: 10 }, "sharpen at 50 %");
     eq(F.scaleFilterParams("sharpen", { amount: 100, radius: 0.4, threshold: 0 }, 0.5, 0.5), { amount: 100, radius: 0.3, threshold: 0 }, "sharpen at its min");
     eq(F.scaleFilterParams("grain", { preset: "portra400", amount: 18, size: 1.5, speckle: 36, chroma: 30, plate_scale: 1 }, 0.5, 0.5),
-        { preset: "portra400", amount: 18, size: 0.8, speckle: 36, chroma: 30, plate_scale: 0.5 }, "a grain stock at 50 %");
+        { preset: "portra400", amount: 18, size: 0.75, speckle: 36, chroma: 30, plate_scale: 0.5 }, "a grain stock at 50 %");
     eq(F.scaleFilterParams("vignette", { amount: 40, size: 60, softness: 50 }, 0.5, 0.5), null, "the vignette (percentages)");
     eq(F.scaleFilterParams("lens_blur", F.filterDefaults("lens_blur"), 0.5, 0.5), null, "the lens blur (its aperture a percentage)");
     eq(F.scaleFilterParams("relight", F.filterDefaults("relight"), 0.5, 0.5), null, "relight (its lights follow the geometry)");
     eq(F.scaleFilterParams("no.such_filter", { radius: 8 }, 0.5, 0.5), null, "a filter not installed");
-    // the plugins' params come through filters.register with their unit (and `scales`)
-    const plugin = {};
-    if (F.FILTERS["film.halation"]) plugin.halation = F.scaleFilterParams("film.halation", { threshold: 65, radius: 30, strength: 40, hue: 12, saturation: 85 }, 0.5, 0.5);
-    if (F.FILTERS["effects.glass"]) plugin.glass = F.scaleFilterParams("effects.glass", { style: "ribbed", size: 6, amount: 12, frost: 3, angle: 30, sheen: 15, seed: 4 }, 0.5, 0.5);
-    if (F.FILTERS["effects.chromatic_shift"]) plugin.chromatic = F.scaleFilterParams("effects.chromatic_shift", { style: "plates", amount: 5, angle: 30, strength: 100 }, 0.5, 0.5);
-    if (plugin.halation) eq(plugin.halation.radius, 15, "the film pack's halation radius");
-    if (plugin.glass) eq([plugin.glass.size, plugin.glass.amount, plugin.glass.frost, plugin.glass.angle, plugin.glass.seed], [4, 6, 2, 30, 4], "the glass (its size at its min 4, frost 1.5 half up)");
-    if (plugin.chromatic) eq([plugin.chromatic.amount, plugin.chromatic.angle], [3, 30], "the chromatic shift (2.5 half up to a whole pixel)");
-    out.plugin = Object.keys(plugin);
+    // the plugins' params come through filters.register with their unit: each of these is installed in the gate profile
+    for (const id of ["film.halation", "effects.glass", "effects.chromatic_shift"]) if (!F.FILTERS[id]) throw new Error(id + " is not installed: its plugin's params cannot be checked");
+    const hal = F.scaleFilterParams("film.halation", { threshold: 65, radius: 30, strength: 40, hue: 12, saturation: 85 }, 0.5, 0.5);
+    const glass = F.scaleFilterParams("effects.glass", { style: "ribbed", size: 6, amount: 12, frost: 3, angle: 30, sheen: 15, seed: 4 }, 0.5, 0.5);
+    const chrom = F.scaleFilterParams("effects.chromatic_shift", { style: "plates", amount: 5, angle: 30, strength: 100 }, 0.5, 0.5);
+    if (!hal || !glass || !chrom) throw new Error("a plugin filter's lengths did not scale: " + JSON.stringify({ hal, glass, chrom }));
+    eq([hal.radius, hal.threshold, hal.hue], [15, 65, 12], "the film pack's halation");
+    eq([glass.size, glass.amount, glass.frost, glass.angle, glass.seed, glass.sheen], [4, 6, 1.5, 30, 4, 15], "the glass (its size at its min 4)");
+    eq([chrom.amount, chrom.angle, chrom.strength], [2.5, 30, 100], "the chromatic shift");
+    // small lengths survive a resize down and back up: 1 px at 40 % and then 250 % is 1 px again, not 0
+    const there = (id, p) => F.scaleFilterParams(id, F.scaleFilterParams(id, p, 0.4, 0.4), 2.5, 2.5);
+    eq(there("effects.chromatic_shift", { style: "plates", amount: 1, angle: 30, strength: 100 }).amount, 1, "a 1 px chromatic shift at 40 % and back");
+    eq(there("blur", { radius: 0.5 }), { radius: 0.5 }, "a 0.5 px blur at 40 % and back");
+    eq(there("effects.glass", { style: "ribbed", size: 40, amount: 12, frost: 1, angle: 0, sheen: 15, seed: 0 }).frost, 1, "a 1 px frost at 40 % and back");
+    eq(there("grain", { amount: 25, size: 1.5 }).size, 1.5, "a grain of 1.5 px at 40 % and back");
+    // filters.register passes `scales` through: false keeps a "px" param, true scales one in another unit
+    tid = sample.api.filters.register({
+        id: "scales57_test", label: "Scales test",
+        params: [
+            { key: "kept", label: "Kept", type: "number", min: 0, max: 100, step: 1, default: 10, unit: "px", scales: false },
+            { key: "scaled", label: "Scaled", type: "number", min: 0.1, max: 10, step: 0.1, default: 2, unit: "x", scales: true },
+            { key: "plain", label: "Plain", type: "number", min: 0, max: 100, step: 1, default: 10, unit: "px" },
+            { key: "pct", label: "Percent", type: "number", min: 0, max: 100, step: 1, default: 50, unit: "%" },
+        ],
+        reach: 0,
+        apply: (src) => src,
+    });
+    eq(F.scaleFilterParams(tid, { kept: 10, scaled: 2, plain: 10, pct: 50 }, 0.5, 0.5), { kept: 10, scaled: 1, plain: 5, pct: 50 }, "a plugin's scales: false / true");
+    out.plugin = ["film.halation", "effects.glass", "effects.chromatic_shift", tid];
     // a picture with hard edges (what the blur changes) on mid grey (where the grain shows); the edges on even pixels
     const W = 640, H = 400;
     const bc = document.createElement("canvas"); bc.width = W; bc.height = H;
@@ -10962,8 +10986,23 @@ try {
     await host.landWholePicture(ed, ubytes, "image/png", { label: "Test", seconds: 1, W: 320, H: 200 });
     if (ed.width !== 640 || ed.height !== 400 || ed.undo.length !== n1 + 1 || ed.undo[ed.undo.length - 1].label !== "Upscale image") throw new Error("the landing: " + ed.width + " x " + ed.height + " / " + ed.undo.slice(n1).map((s) => s.label));
     eq(now(), [8, 4, 60, 0, 60, 50], "the values after a 2x upscale's landing");
+    // a filter layer whose plugin went off keeps its values, and the line says so
+    const off = await run("add_filter", { type: tid, params: { plain: 10 }, doc: d.id });
+    sample.api.filters.unregister(tid); tid = null;
+    // and the "before" of an edit left in progress (a slider the list was rebuilt under) is in the new sizes too
+    ed.filterPreview = null;
+    L(b.id)._undoPending = ed.snapshot({ kind: "filter", id: b.id });
+    await run("resize_image", { percent: 50, doc: d.id });
+    const pend = L(b.id)._undoPending;
+    L(b.id)._undoPending = null;
+    if (!pend || pend.params.radius !== 4) throw new Error("the pending step's radius after the resize: " + JSON.stringify(pend && pend.params));
+    if (L(off.id).params.plain !== 10 || L(b.id).params.radius !== 4) throw new Error("a resize with a plugin off: " + JSON.stringify([L(off.id).params.plain, L(b.id).params.radius]));
+    if (!ed.status.includes("The sizes in pixels of 2 filter layers scaled along. 1 filter layer of a plugin that is off kept its sizes.")) throw new Error("the status line with a plugin off: " + ed.status);
     out.tiles = !!ed.tileMode;
-} finally { await run("close_document", { doc: d.id, force: true }); }
+} finally {
+    if (tid) { try { sample.api.filters.unregister(tid); } catch (_) { /* gone */ } }
+    await run("close_document", { doc: d.id, force: true });
+}
 return out;
 """),
     ("a_text_layer_keeps_its_free_angle", """

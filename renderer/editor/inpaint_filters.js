@@ -1343,16 +1343,16 @@ export function scalesWithPicture(p) {
     return p.scales != null ? !!p.scales : p.unit === "px";
 }
 
-const stepDecimals = (step) => { const s = String(step), i = s.indexOf("."); return i < 0 ? 0 : s.length - i - 1; };
-
 /**
  * A filter layer's parameters after the picture was resized by `sx` x `sy` (Resize image, a whole-picture upscale, the
  * Realism Pass above 1x; resizeImageNow), so the effect keeps its size on the picture: every length in image pixels
  * (`scalesWithPicture`) times sqrt(sx * sy), the geometric mean (a radius, a cell or a shift is one length, none of them
- * is per axis; the film pack's control points scale their radii by the same factor), rounded to the parameter's step (the
- * grid its slider moves on: whole pixels for a step of 1, halves for 0.5) and kept within its min and max. Returns a new
- * object when a value changed (the resize's undo step holds the old one), else null; null too for a filter that is not
- * installed (its plugin off), whose values stay as they are.
+ * is per axis; the film pack's control points scale their radii by the same factor), and kept within its min and max.
+ * Not rounded to the slider's step: every renderer of these takes fractions (blur sigmas, bilinear shifts, pattern
+ * periods), a step would turn a small length into 0 for good and a resize there and back would drift; only float noise
+ * is trimmed (ten significant digits, so 1 px at 40 % and then 250 % is 1 px again). The row shows the value on its
+ * step. Returns a new object when a value changed (the resize's undo step holds the old one), else null; null too for a
+ * filter that is not installed (its plugin off), whose values stay as they are.
  */
 export function scaleFilterParams(id, params, sx, sy) {
     const def = FILTERS[id];
@@ -1363,11 +1363,7 @@ export function scaleFilterParams(id, params, sx, sy) {
         if (!scalesWithPicture(p)) continue;
         const cur = params && params[p.key] != null ? +params[p.key] : +p.default;
         if (!Number.isFinite(cur)) continue;
-        let v = cur * k;
-        const step = +p.step;
-        // half up on the step's grid; the quotient is cut to 9 decimals first, so float noise (0.75 / 0.1 is
-        // 7.4999999...) does not round a half down
-        if (step > 0) v = +(Math.round(+(v / step).toFixed(9)) * step).toFixed(stepDecimals(step));
+        let v = +(cur * k).toPrecision(10);
         if (p.max != null && Number.isFinite(+p.max)) v = Math.min(+p.max, v);
         if (p.min != null && Number.isFinite(+p.min)) v = Math.max(+p.min, v);
         if (v === cur) continue;
