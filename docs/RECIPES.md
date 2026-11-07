@@ -73,11 +73,11 @@ edit of a fresh white canvas) measures the boxes before the fresh canvas replace
 sends its New, Text and From boxes, scaled from the picture they were drawn on to the fresh canvas (the stretch note when
 the shape differs); a Keep, Move or Remove box stays out with the note an API model's new image gives
 (`comfyprompt.newImageBoxes`), a From box goes along (its reference goes in the node's batch; an API model's new image
-leaves it out), and the selection never goes as a box. A node without that output (the Comfy Registry's 0.3.4) is read
+leaves it out), and the selection never goes as a box. A node without that output (0.3.4 and older; the Comfy Registry has 0.4.1 since 2026-10-23) is read
 again for its own entry first, then the run refuses before anything is uploaded or queued (Generate new before its
-canvas replaces the picture): "... update the Inpaint Canvas node to its current GitHub version (a git clone: git pull
-in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git
-clone of https://github.com/DenRakEiw/ComfyUI-InpaintCanvas), then restart ComfyUI, or turn the Boxes switch under the
+canvas replaces the picture): "... update the Inpaint Canvas node to 0.4.1 or newer (installed from the Comfy Registry: update
+it there; a git clone of https://github.com/DenRakEiw/ComfyUI-InpaintCanvas: git pull in its folder under
+custom_nodes), then restart ComfyUI, or turn the Boxes switch under the
 prompt off." The status line says "Sent with N boxes." (the count the state carries, 1 for the selection's box;
 `generate` and `generate_new` answer it as `boxes`), the switch off with boxes held adds the note "The document's N
 boxes did not go", and the notes the node returns for boxes it left out (`ui.inpaint_boxes`) go into the run's notes,
@@ -209,7 +209,7 @@ the Cloud copy writes it into the copy's variant (`detach`), and `tools/cloud_re
   both seeds tried: the model takes boxes as text, locally too. So the recipe declares `boxes: { "schema": "flux3",
   "input": "say_in|string_b" }` (above): with the Boxes switch on, a run takes `say_in.string_b` from the node's
   `box_prompt` (the caption and the edit rows inside the "In <ref_image_0>, ... Keep everything else unchanged."
-  wrapper); it needs an Inpaint Canvas node with that output (2026-10-15 or newer, not the Comfy Registry's 0.3.4).
+  wrapper); it needs an Inpaint Canvas node with that output (0.4.1 or newer on the Comfy Registry, a clone of 2026-10-15 or newer).
   Generate new sends the New, Text and From boxes. **Run live 2026-10-19** (the user's ComfyUI 0.41.2, the node at
   `6a0ad1e`, the distilled int8 file, seed 31): one New box drawn in Scumble on an edit, the switch on; `/history`
   showed `say_in.string_b = ["canvas", 21]`, and the cat landed in its box in 5 s. The node's edit rows (`{id, from,

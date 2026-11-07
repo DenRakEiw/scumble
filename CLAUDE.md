@@ -277,11 +277,12 @@ code.
   since 0.3.4: boxes, the 0.1.44-0.1.50 editor, Q5) was **Flagged** by the registry's YARA scan for one token,
   `.listen(` in `js/prompt_field.js` (read as a network socket); the method is `bindEvents()` since `10b1a39` (main, the
   editor gate PASS), and **0.4.1** (`4e7bd24`, that editor build) was published the same morning, **Pending** at the
-  hand-over: check `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions?include_status_reason=true`. Once 0.4.1
-  is Active, the app's texts that say "the Comfy Registry's 0.3.4 has no boxes" (`renderer/editor/comfyprompt.js`
-  `oldNodeBoxes` and NODE_REPO's comment, README 159, MANUAL 212, RECIPES 75 / 165) change to "0.4.1 or newer" on the
-  branch; should it be flagged again, read the reason there and rename the token the same way (the plan's K40 scans
-  the shipped files for such tokens before a node build).
+  hand-over. **0.4.1 is Active** (read 2026-11-07: "Passed automated checks"; 0.4.0 stays Flagged): the app's texts
+  now say "0.4.1 or newer" on `corridorkey` (`renderer/editor/comfyprompt.js` `oldNodeBoxes` and NODE_REPO's comment,
+  README, MANUAL's boxes chapter, RECIPES; `tools/comfyprompt_test.js` and `tools/boxes_test.py` follow). A later node
+  version that is flagged: read the reason at
+  `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions?include_status_reason=true` and rename the token the same
+  way (the plan's K40 scans the shipped files for such tokens before a node build).
 - **Edit-box prompting in the Inpaint Canvas node: built in the night 2026-10-14/15 (B0-B6 of
   `docs/PLAN_NODE_BOXES.md`), pushed and live on 2026-10-15** (the user: "kannst das update pushen und in meinem
   comfyui aktualisieren"): Scumble main pushed (`779e357..99c2cfd`); the live node folder fast-forwarded to `6a0ad1e`

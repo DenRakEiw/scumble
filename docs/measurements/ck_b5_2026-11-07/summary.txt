@@ -19,7 +19,12 @@ execution_start to execution_success (the key on the server; Scumble's upload, d
 - The blue plate's key went with screen "green" (its border ring is blue by 46 levels, Auto reads blue: checked below).
   The stored Screen value afterwards was "auto"; the likely cause is the dialog's Screen row set to Green by hand for
   that key. Asked the user.
-- No job of the 15k tab and no interrupted job are in the history (a key cancelled before it ran leaves none). The
+- Later, in the restarted instance with the movable dialog (the user's two screenshots, kept for the 0.1.52 post in
+  F:/portfolio_web/public/scumble/blog/v0-1-52/): the whole 15,000 x 10,000 picture, Screen set to Green by hand, the
+  box line "Keys the whole picture, 15,000 x 10,000, sent at 5,016 x 3,344 (the cap) and scaled back":
+  1032ef4d  doc 3 (hair_green_15k)  5,016 x 3,344  screen green  no hint  trust 0.75   9.6 s on the server; the matte
+            scaled back and refined against the full picture, the hair's flyaways kept on the grey layer.
+- Before that, no job of the 15k tab and no interrupted job were in the history (a key cancelled before it ran leaves none). The
   blue_plate tab (doc 2) was closed afterwards; the user opened their own picture M008_IP003 (2,752 x 1,806, doc 5)
   and drew a rectangle on it, no key of it in the history.
 - The user's verdict: "die funktionen funktionieren alle", and one wish: the Key dialog should be movable and closable

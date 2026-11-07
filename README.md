@@ -156,9 +156,9 @@ Planned, not started yet.
 
   The ComfyUI Manager does not list the pack at the moment; once it does, you can install it from there too. Then
   type the server's address in Scumble's top bar and press Connect. Scumble checks for the pack when it connects and
-  says so when it is missing; it does not install it for you. Boxes for FLUX 3 Image Klein need the node's current
-  version from GitHub (the Comfy Registry's 0.3.4 has none yet): update a clone with `git pull` in its folder, replace
-  a copy installed from the Registry with the clone above, then restart ComfyUI.
+  says so when it is missing; it does not install it for you. Boxes for FLUX 3 Image Klein and MOSS-Image need the node at
+  0.4.1 or newer (on the Comfy Registry since 2026-10-23; 0.3.4 and older have none): update a copy installed from the
+  Registry there, a clone with `git pull` in its folder, then restart ComfyUI.
 - **Comfy Cloud:** your Comfy key in *Settings › API providers*; the same key runs Comfy Router.
 
 Without any of these Scumble still opens, paints, selects, layers, filters, saves and exports, and its in-app models

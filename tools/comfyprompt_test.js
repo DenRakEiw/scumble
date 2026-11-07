@@ -193,8 +193,8 @@ async function main() {
         check("no slot, a recipe without the declaration, or an input that no longer reads the canvas node: nothing is wired",
             !C.wireBoxPrompt(p2, k, -1) && !C.wireBoxPrompt(p2, norm("flux2_klein_local"), 21) && eq(p2, k.prompt)
             && !C.wireBoxPrompt({ ...p2, say_in: { ...p2.say_in, inputs: { ...p2.say_in.inputs, string_b: "typed" } } }, k, 21));
-        check("an older node's sentence names the recipe, the update (a pull for a clone, a clone for a Registry or Manager install) and the switch",
-            /^FLUX 3 Image Klein \(ComfyUI\) sends the boxes through the Inpaint Canvas node's box_prompt output, .*update the Inpaint Canvas node to its current GitHub version \(a git clone: git pull in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git clone of https:\/\/github\.com\/DenRakEiw\/ComfyUI-InpaintCanvas\), then restart ComfyUI, or turn the Boxes switch under the prompt off\.$/.test(C.oldNodeBoxes(k)), C.oldNodeBoxes(k));
+        check("an older node's sentence names the recipe, the update (0.4.1 or newer: the Registry, or a pull for a clone) and the switch",
+            /^FLUX 3 Image Klein \(ComfyUI\) sends the boxes through the Inpaint Canvas node's box_prompt output, .*update the Inpaint Canvas node to 0\.4\.1 or newer \(installed from the Comfy Registry: update it there; a git clone of https:\/\/github\.com\/DenRakEiw\/ComfyUI-InpaintCanvas: git pull in its folder under custom_nodes\), then restart ComfyUI, or turn the Boxes switch under the prompt off\.$/.test(C.oldNodeBoxes(k)), C.oldNodeBoxes(k));
         const st = { boxes: [
             { id: "a_1", kind: "new", rect: [100, 50, 300, 250], desc: "a" },
             { id: "b_1", kind: "move", rect: [0, 0, 100, 100], src: [200, 200, 400, 300], desc: "b" },

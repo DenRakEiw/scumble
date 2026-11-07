@@ -177,19 +177,19 @@ export function wireBoxPrompt(prompt, r, slot) {
     return true;
 }
 
-/** Where the Inpaint Canvas node's current version is (the boxes are newer than the Comfy Registry's 0.3.4). */
+/** Where the Inpaint Canvas node's source is (the boxes came with 0.4.0 / 0.4.1; the Comfy Registry's 0.3.4 has none). */
 export const NODE_REPO = "https://github.com/DenRakEiw/ComfyUI-InpaintCanvas";
 
 /**
  * The sentence a run that sends boxes refuses with when the Inpaint Canvas node on the server has no box_prompt output
- * (the Comfy Registry's 0.3.4 has none: the boxes came to the node on 2026-10-15). A Registry or Manager install has no
- * .git folder, so a git pull is no way out for it: it is replaced by a clone.
+ * (0.3.4 and older have none: the boxes came to the node on 2026-10-15 and to the Comfy Registry with 0.4.1, Active
+ * since 2026-10-23; 0.4.0 was flagged). A Registry install is updated there, a git clone by a pull.
  * @param {any} r
  */
 export function oldNodeBoxes(r) {
     const name = (r && (r.name || r.id)) || "This recipe";
     const out = localBoxSchema(r) === "moss" ? "elements" : "box_prompt";
-    return `${name} sends the boxes through the Inpaint Canvas node's ${out} output, which the node on this ComfyUI does not have: update the Inpaint Canvas node to its current GitHub version (a git clone: git pull in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git clone of ${NODE_REPO}), then restart ComfyUI, or turn the Boxes switch under the prompt off.`;
+    return `${name} sends the boxes through the Inpaint Canvas node's ${out} output, which the node on this ComfyUI does not have: update the Inpaint Canvas node to 0.4.1 or newer (installed from the Comfy Registry: update it there; a git clone of ${NODE_REPO}: git pull in its folder under custom_nodes), then restart ComfyUI, or turn the Boxes switch under the prompt off.`;
 }
 
 /**

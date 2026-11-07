@@ -819,7 +819,7 @@ try {
     const n0 = T.queued.length, e0 = T.ensured, f0 = T.fetched;
     let refused = "";
     try { await host.queueGenerate(ed); } catch (err) { refused = String(err.message || err); }
-    const OLD_NODE = /does not have: update the Inpaint Canvas node to its current GitHub version [(]a git clone: git pull in its folder under custom_nodes; installed through the Comfy Registry or the Manager: replace that folder with a git clone of https:..github[.]com.DenRakEiw.ComfyUI-InpaintCanvas[)], then restart ComfyUI, or turn the Boxes switch under the prompt off[.]$/;
+    const OLD_NODE = /does not have: update the Inpaint Canvas node to 0[.]4[.]1 or newer [(]installed from the Comfy Registry: update it there; a git clone of https:..github[.]com.DenRakEiw.ComfyUI-InpaintCanvas: git pull in its folder under custom_nodes[)], then restart ComfyUI, or turn the Boxes switch under the prompt off[.]$/;
     if (!OLD_NODE.test(refused) || T.queued.length !== n0 || T.ensured !== e0 || T.fetched !== f0 + 1) throw new Error("an older node: " + JSON.stringify({ refused, queued: T.queued.length - n0, ensured: T.ensured - e0, fetched: T.fetched - f0 }));
     out.refused = refused;
     // the node updated since the connect: its entry read again has box_prompt, and the run goes
