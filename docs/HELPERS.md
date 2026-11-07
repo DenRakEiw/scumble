@@ -236,14 +236,34 @@ error names the URL. It puts `settings.llm` back at the end.
 | `matting.js` | `Matting`: one 1024 × 1024 RGB in with the model's mean / std, the output tensor of 1024² values (sigmoid applied when the range says it is a logit; RMBG-1.4 already outputs probabilities) → `Uint8Array` alpha. |
 | `depth.js` | `Depth`: one `[1, 3, H, W]` RGB in at multiples of 14 with ImageNet mean / std, the output tensor of $H \times W$ values → `Float32Array` depth map. |
 | `lama.js`, `lama_process.js` | `Lama`: the Remove model (below) in a **process of its own** (an Electron utility process; a forked Node process under plain Node): `warm()` loads the session, `run(rgba512, mask512)` answers RGBA 512² (outside the mask the input's bytes), `kill()` ends the process where it stands and refuses its jobs, `busy()`. `engine(ort)` is the load / run code the process and the fallback share: a process that dies before its first answer (it could not start or load onnxruntime) leaves the engine to the main thread, and the jobs that waited run there. |
-| `index.js` | The IPC facade: `status`, `configure({device, dir, sam2, matting, inpaint, depth})`, `browseDir`, `openFolder`, `download`, `cancel`, `remove`, `free`, `objects`, `segment` (with `raw: true` returns the 256 × 256 `Float32Array` logits tensor), `cutout`, `inpaint`, `warmInpaint`, `depth`. Settings under `helpers` in `settings.json`, the Hugging Face token under `hf-token` in `keys.js`. |
+| `engine.js` | `engine(runtime)`: the jobs `objects`, `segment`, `cutout`, `depth` (the bodies `index.js` ran on the main process until U1) with their `Sam2` / `Matting` / `Depth` instances keyed by file, one encode in flight per embedding key, `free()`, `clear()`, `status()`; `checkImage`, `checkDepth`, `modelInfo`. No Electron and no settings: every job carries `{ device, model: { id, label, input, mean, std }, files }`. The helpers' process and the main-thread fallback run the same engine. |
+| `helpers_process.js` | The helpers' process (an Electron utility process "Scumble helpers"; a forked Node process under plain Node): loads onnxruntime, posts `{ type: "ready", pid, status }`, then answers `{ id, type, ...job }` with `{ id, result \| error, ms, status }` (`ms` the job's time there, `status` the runtime's). |
+| `helpers.js` | `HelperProcess`, main's side of it on `Lama`'s shape: `call(type, job)` (started by the first job), `kill({ clear })` (resolves once the process exited, with the number of sessions it held), `busy()`, `status(device)` (the runtime part of `helpers:status` from the last answer, with `process: { pid, state }`; never a call into the process), the idle unload, the fallback, `onJob` (a hook for `tools/helpers_perf.py`). |
+| `index.js` | The IPC facade: `status`, `configure({device, dir, sam2, matting, inpaint, depth})`, `browseDir`, `openFolder`, `download`, `cancel`, `remove`, `free`, `objects`, `segment` (with `raw: true` returns the 256 × 256 `Float32Array` logits tensor), `cutout`, `inpaint`, `warmInpaint`, `depth`. Settings under `helpers` in `settings.json`, the Hugging Face token under `hf-token` in `keys.js`. It resolves the model and its files and sends them with each job to `helperProcess` (exported for the tests); it loads no onnxruntime itself. |
 
-**Every model but LaMa runs on the main process's thread.** onnxruntime-node's
-`InferenceSession.create` and `run` are synchronous native calls behind a `setImmediate`
-(`backend.js`), so while one runs, every IPC channel, the ComfyUI events, MCP and the autosave
-wait (a SAM2 object map about a second, a BiRefNet cutout 2.5 s). LaMa loads for 9 s and runs
-for 1.5 s on the CPU, so it runs in a process of its own (2026-09-28: the main process answered an
-IPC call in 51 ms during a run). **Not a worker thread:** a worker cannot be stopped inside such
+**The models run in processes of their own, never on the main process's thread** (U1, 2026-11-07,
+`docs/PLAN_HELPERS_PROCESS.md` §3): SAM2, the matting models and depth in the helpers' process, LaMa in its own.
+onnxruntime-node's `InferenceSession.create`, `run` and `release` are synchronous native calls behind a `setImmediate`
+(`backend.js`), so on main's thread every IPC channel, the ComfyUI events, MCP and the autosave waited while one ran:
+U0 measured the first SAM2 call holding main 1.1 s in one piece, an object map 0.2 s sixteen times, Free VRAM 0.3 s, a
+CPU cutout its whole 4.8 s; in the helpers' process main's longest block stays near zero (U1's numbers in
+`docs/measurements/u1_2026-11-07/`). The helpers' process starts with the first helper job (about 50 ms for the spawn
+and onnxruntime, then the sessions as before), holds one `Sam2` per model with its embedding cache, and ends:
+**at Free VRAM** (the button, and `freeHelperModels` before every local ComfyUI run once a helper was used: the kill
+gives the card's memory back at once and blocks nothing; a job under way is refused, "The helper models were stopped
+(Free VRAM or a settings change); try again."), at the device switch, a folder change, a scan, a model's removal
+(awaited, so the file it held can go), the quit, and **5 minutes after the last helper job** (the idle unload, never
+while a job runs). The next job starts a new process; the window does not notice except that a point's embedding is
+gone, and `host.segmentLogits` sends the picture again as after a Free VRAM before. `helpers:status`' runtime part
+comes from the process's last answer (`process: { pid, state }`, "off" / "starting" / "ready" / "fallback"); while the
+process is off Settings says "nothing loaded yet". **The fallback:** a process that ends before its "ready" (no utility
+process, onnxruntime missing) leaves the engine to main's thread for the session and the jobs that waited run there
+(the behaviour before U1, with its blocks); one that dies after it refuses its jobs ("The helper models' process
+stopped; try again.") and the next job starts a new one; a second such death within a minute falls back to main's
+thread. Main relays the pictures (the window -> main -> the process): about 9 ms per 4 MB each way, 1 % of an object
+map. LaMa stays in its own process (a Remove's CPU run would otherwise wait behind an object map). LaMa loads for 9 s
+and runs for 1.5 s on the CPU (2026-09-28: the main process answered an IPC call in 51 ms during a run).
+**Not a worker thread:** a worker cannot be stopped inside such
 a native call, and `terminate()` during a load or a run, or a quit meanwhile, ended the whole
 process with 0xC0000409 when the call returned (the review's measurement in plain Node, 2026-09-28);
 a utility process is killed where it stands (measured in the app: a folder scan 1 s into the load and
@@ -251,9 +271,8 @@ a utility process is killed where it stands (measured in the app: a folder scan 
 process). The process is killed on a folder change, a scan, the model's removal and at quit
 (`will-quit`); **Free VRAM leaves it** (it holds no VRAM, and a Remove under way would lose its
 answer), and a Remove does not set the editor's `helperUsed`, so a local run does not free it.
-Moving SAM2 and the matting models out of the main thread is open: measured by U0 (2026-11-07; the first SAM2 call
-holds main 1.1 s in one piece, an object map about 0.2 s sixteen times, a CPU cutout 4.8 s; in a utility process main
-did not block at all), planned as U1 in `docs/PLAN_HELPERS_PROCESS.md`.
+Not run with the helpers' process: the packaged exe and the Store's MSIX (LaMa's utility process runs in both;
+DirectML from one is verified in the dev app only), Linux, macOS.
 
 The renderer side is in `renderer/editor/host.js` (`findObjects`, `cutoutInApp`,
 `selectPoint`, `segmentPoint`, `segmentKey`, `segmentLogits`, `selectBox`, `refreshHelpers`, `cutoutBackends`, `removeModel`,
@@ -429,7 +448,8 @@ that card between keys until ComfyUI's *Free model and node cache*.
 
 ## Settings › Helpers
 
-Device (auto / GPU / CPU; changing it frees the sessions; LaMa always runs on the CPU), the
+Device (auto / GPU / CPU; changing it ends the helpers' process, so the next job loads its sessions on the new one;
+LaMa always runs on the CPU), the
 SAM2 model for the object tool, the model folder (Change folder … / App folder / Open folder / Scan folder,
 with a summary line of the last scan), one row per
 model with Download (progress bar, Cancel; a `.part` resumes; a model not offered yet, such as the CorridorKey 2.0
@@ -469,7 +489,21 @@ image (three shapes on grey) through automask, a point prompt and the matting mo
 and checks that the shapes come out as distinct objects, and a red square on a grey ramp
 through LaMa (in its own process) with the square masked: no red left, the ramp continued
 within 12 levels on average (1.1 measured), the pixels outside the mask unchanged. A
-model that is not in the folder is skipped; no model at all is a failure.
+model that is not in the folder is skipped; no model at all is a failure. `--also DIR` looks in a second folder for
+what the first lacks.
+
+`node tools/helpers_test.js DIR --also APP --process` (U1) sends the objects, two points, a cutout and a depth map
+through `HelperProcess` (the forked Node process of plain Node) and through the main-thread engine and requires the
+same bytes (the label map, the logits, the mask, the alpha, the depth map), then a kill during an object map (refused,
+the next job a new process), a point without its picture on a new process (refused, as `host.segmentLogits` expects),
+a death after "ready" (refused) and a second within the minute (the fallback, the same bytes on this thread), a
+process that exits at once (the fallback with the waiting job answered), and the idle unload (never during a job).
+The gate `helpers` (`tools/helpers_test.py`, run it `--offline`) runs that first (SAM2 tiny and RMBG-1.4 from the
+user's ComfyUI models folder, depth from the app folder; skipped where there is no SAM2 tiny), then in the app with
+the helpers folder set to that ComfyUI folder: an object map on a cold process with the process in the app's metrics
+and the renderer's IPC round trips under 150 ms throughout, the editor's own paths (the hover map, `select_point`,
+`cutout_layer`), Free VRAM ending the process and the next point starting a new one, Free VRAM during a map, and the
+device switch to the CPU; the settings put back at the end.
 
 ## Not done / ideas
 
@@ -481,8 +515,12 @@ model that is not in the folder is skipped; no model at all is a failure.
   downloading it on demand like a model, is open; untested either way.
 - WebGPU EP (`webgpu`, experimental in onnxruntime-node) as a DirectML alternative; for LaMa
   it may be the way onto the GPU (DirectML fails on its Fourier unit).
-- SAM2 and the matting models in a process like LaMa's (they hold the main process for their run
-  today).
+- Warming SAM2 when the object tool is picked (U2 item 1 of `docs/PLAN_HELPERS_PROCESS.md`: the process, both
+  sessions and a decode of each shape before the first hover, as Remove warms LaMa); not built with U1, it touches
+  `host.js` and `inpaint_canvas.js`. The other U2 items (the hover shapes at the map's size, the automask's
+  JavaScript, the decoder's shapes) are the waits U1 does not change.
+- A newer object map of the same document stopping an older one at its next decoder batch (§3.5 of the plan): not
+  built; the window drops the older answer, as before U1.
 - LaMa beyond 512: the export is fixed at 512 x 512, so a hole wider than about 256 px comes
   back softer than the picture; Carve's notebook exports other sizes, and a refinement pass
   (LaMa's own "refine", or the Poisson solver's texture transfer) is the other way.

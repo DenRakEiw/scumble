@@ -2,6 +2,9 @@
 // the ONNX runtime with its device choice, and the jobs the editor asks for (objects
 // for the hover tool, segment for a click, cutout for a layer, inpaint for Remove). Settings live in settings.json
 // under `helpers`; the Hugging Face token in keys.js under "hf-token".
+// SAM2, the matting models and depth run in the helpers' process (helpers.js, helpers_process.js; engine.js holds the
+// jobs), LaMa in its own (lama.js): this module resolves the model files from the settings and sends them with each
+// job, and never loads onnxruntime itself unless that process could not start (docs/PLAN_HELPERS_PROCESS.md §3).
 "use strict";
 
 const path = require("node:path");
@@ -10,21 +13,16 @@ const { app, dialog, shell } = require("electron");
 const settings = require("../settings");
 const keys = require("../keys");
 const models = require("./models");
-const { Runtime } = require("./runtime");
-const { Sam2, logitsToMask, SIZE } = require("./sam2");
-const { Matting } = require("./matting");
+const { checkImage, checkDepth, modelInfo } = require("./engine");
+const { HelperProcess } = require("./helpers");
 const { Lama, SIZE: LAMA_SIZE } = require("./lama");
-const { Depth } = require("./depth");
 
 const HF_TOKEN = "hf-token";
 const DEFAULTS = { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama", depth: "da2_small" };
 
-const runtime = new Runtime();
+const helperProcess = new HelperProcess();
 let progressSink = null;
-const sam2Instances = new Map();     // model id -> Sam2
-const mattingInstances = new Map();  // model id -> Matting
 const inpaintInstances = new Map();  // model id -> Lama
-const depthInstances = new Map();    // model id -> Depth
 const busy = new Set();              // running jobs, for the status line
 
 function conf() {
@@ -54,7 +52,6 @@ function setProgressSink(fn) { progressSink = fn; }
 
 function status() {
     const c = conf();
-    runtime.setDevice(c.device);
     const dir = modelsDir();
     const sc = lastScan(dir);
     return {
@@ -63,7 +60,8 @@ function status() {
         models: models.describeAll(dir, links(), sc ? sc.elsewhere : null),
         scan: sc,
         downloads: downloader.running(),
-        runtime: runtime.status(),
+        // from the helpers' process's last answer (nothing loaded while it is off): never a call into it
+        runtime: helperProcess.status(c.device),
         hfToken: keys.describe(HF_TOKEN),
         busy: Array.from(busy),
     };
@@ -72,10 +70,14 @@ function status() {
 async function configure(patch) {
     const before = conf();
     const next = { ...before, ...(patch || {}) };
-    if (patch && "device" in patch && next.device !== before.device) { runtime.setDevice(next.device); await free(); }
+    const deviceChanged = !!(patch && "device" in patch && next.device !== before.device);
     const dirChanged = !!(patch && "dir" in patch && patch.dir !== before.dir);
-    if (dirChanged) { clearInstances(); await free(); }
+    // the settings first, so a job that comes in meanwhile is sent with the new device and the new folder's files
     settings.set({ helpers: next });
+    // the helpers' process ends (its sessions were made on the old device, or from the old folder's files); the next
+    // job starts one on the new device
+    if (dirChanged) await clearInstances();
+    else if (deviceChanged) await helperProcess.kill();
     // a new folder is scanned at once, so a ComfyUI models folder links what it can
     return dirChanged ? scan() : status();
 }
@@ -91,18 +93,24 @@ async function scan() {
     const walk = await models.scanFolder(dir);
     const m = models.matchScan(walk);
     settings.set({ helpers: { ...conf(), links: m.links, scan: { dir, time: Date.now(), files: walk.files.length, dirs: walk.dirs, truncated: walk.truncated, elsewhere: m.elsewhere } } });
-    clearInstances();
+    await clearInstances();
     return status();
 }
 
+/** The models' files may have moved: LaMa's process and the helpers' process end (resolves once the latter exited). */
 function clearInstances() {
-    sam2Instances.clear(); mattingInstances.clear(); depthInstances.clear();
     for (const l of inpaintInstances.values()) l.kill();
     inpaintInstances.clear();
+    return helperProcess.kill({ clear: true });
 }
 
-// LaMa's process ends with the app (a utility process would too; the forked one of plain Node would not)
-if (app && typeof app.on === "function") app.on("will-quit", () => { for (const l of inpaintInstances.values()) l.kill(); });
+// LaMa's process and the helpers' end with the app (a utility process would too; the forked one of plain Node would not)
+if (app && typeof app.on === "function") {
+    app.on("will-quit", () => {
+        for (const l of inpaintInstances.values()) l.kill();
+        helperProcess.kill();
+    });
+}
 
 async function browseDir(win) {
     const r = await dialog.showOpenDialog(win, { title: "Model folder (the app's own, or a ComfyUI models folder)", defaultPath: modelsDir(), properties: ["openDirectory", "createDirectory"] });
@@ -128,31 +136,29 @@ async function remove(id) {
     const model = models.byId(id);
     if (!model) throw new Error("unknown model " + id);
     const loc = models.locate(model, dir, links());
+    // the helpers' process ends first (resolved once it exited, so the file it held can go on Windows); a LaMa model
+    // leaves it alone, as Free VRAM does
+    if (model.kind !== "inpaint") await helperProcess.kill({ clear: true });
     if (loc.present && loc.linked) {
         // a linked file belongs to the user's folder (a ComfyUI models folder, mostly):
         // forget the link, never delete the file
         const l = { ...links() };
         delete l[id];
         settings.set({ helpers: { ...conf(), links: l } });
-    } else {
-        await free();
-        await models.remove(id, dir);
     }
-    sam2Instances.delete(id);
-    mattingInstances.delete(id);
-    depthInstances.delete(id);
     const lama = inpaintInstances.get(id);
     if (lama) { lama.kill(); inpaintInstances.delete(id); }
+    if (!(loc.present && loc.linked)) await models.remove(id, dir);
     return status();
 }
 
 /**
- * The GPU sessions let go (Free VRAM, a local ComfyUI run). LaMa stays: it runs on the CPU in its own process, holds no
- * VRAM, and a Remove under way would lose its answer.
+ * The GPU sessions let go (Free VRAM, a local ComfyUI run): the helpers' process ends where it stands, its VRAM and
+ * memory back at once (a job under way is refused), and the next job starts it again. LaMa stays: it runs on the CPU in
+ * its own process, holds no VRAM, and a Remove under way would lose its answer. -> the number of sessions it held
  */
 async function free() {
-    for (const s of sam2Instances.values()) s.cache.clear();
-    return runtime.free();
+    return helperProcess.kill();
 }
 
 const MISSING = {
@@ -170,16 +176,10 @@ function presentOf(kind, wanted) {
     return pick;
 }
 
-function sam2For(id) {
-    const model = presentOf("sam2", id || conf().sam2);
-    if (!sam2Instances.has(model.id)) sam2Instances.set(model.id, new Sam2(runtime, models.paths(model, modelsDir(), links())));
-    return { model, sam: sam2Instances.get(model.id) };
-}
-
-function mattingFor(id) {
-    const model = presentOf("matting", id || conf().matting);
-    if (!mattingInstances.has(model.id)) mattingInstances.set(model.id, new Matting(runtime, model, models.paths(model, modelsDir(), links()).model));
-    return { model, matting: mattingInstances.get(model.id) };
+/** The model a job runs and its files, as the helpers' process gets them. */
+function jobModel(kind, id) {
+    const model = presentOf(kind, id);
+    return { model: modelInfo(model), files: models.paths(model, modelsDir(), links()) };
 }
 
 function inpaintFor(id) {
@@ -188,16 +188,14 @@ function inpaintFor(id) {
     return { model, lama: inpaintInstances.get(model.id) };
 }
 
-function depthFor(id) {
-    const model = presentOf("depth", id || conf().depth);
-    if (!depthInstances.has(model.id)) depthInstances.set(model.id, new Depth(runtime, model, models.paths(model, modelsDir(), links()).model));
-    return { model, depth: depthInstances.get(model.id) };
-}
-
-function checkImage(req) {
-    const image = req && req.image;
-    if (!image || image.length !== SIZE * SIZE * 4) throw new Error(`the helper needs an RGBA image of ${SIZE} × ${SIZE} pixels`);
-    return image;
+/** One job in the helpers' process (or, where it could not start, on this thread), sent with the settings' device. */
+async function job(type, payload) {
+    busy.add(type);
+    try {
+        return await helperProcess.call(type, { device: conf().device, ...payload });
+    } finally {
+        busy.delete(type);
+    }
 }
 
 /**
@@ -206,54 +204,26 @@ function checkImage(req) {
  */
 async function objects(req) {
     const image = checkImage(req);
-    const { model, sam } = sam2For(req.model);
-    const outW = Math.max(1, Math.min(4096, Math.round(req.outWidth || SIZE)));
-    const outH = Math.max(1, Math.min(4096, Math.round(req.outHeight || SIZE)));
-    const t0 = Date.now();
-    busy.add("objects");
-    try {
-        const emb = await sam.encode(image, req.key || null);
-        const res = await sam.automask(emb, outW, outH, req.params || {});
-        return { ids: res.ids, width: outW, height: outH, count: res.count, candidates: res.candidates, seconds: (Date.now() - t0) / 1000, encodeMs: emb.encodeMs, provider: emb.provider, model: model.id, label: model.label };
-    } finally {
-        busy.delete("objects");
-    }
+    const m = jobModel("sam2", req.model || conf().sam2);
+    return job("objects", { ...m, key: req.key || null, image, outWidth: req.outWidth, outHeight: req.outHeight, params: req.params || {} });
 }
 
 /**
  * One prompt on an already encoded image (or the given one). req: { model?, key, image?,
  * points: [{x, y, label}] in 1024 space, box?, outWidth, outHeight } -> { mask: Uint8Array, score }
+ * (with raw: true { logits: Float32Array(256²), n, score }). Without the image for a key the process does not hold (a
+ * Free VRAM, a new process) it refuses, and host.segmentLogits sends the picture.
  */
 async function segment(req) {
-    const { model, sam } = sam2For(req.model);
-    let emb = req.key ? sam.cache.get(req.key) : null;
-    if (!emb) emb = await sam.encode(checkImage(req), req.key || null);
-    const outW = Math.max(1, Math.min(4096, Math.round(req.outWidth || SIZE)));
-    const outH = Math.max(1, Math.min(4096, Math.round(req.outHeight || SIZE)));
-    busy.add("segment");
-    try {
-        const { logits, score } = await sam.predict(emb, req.points || [], req.box || null);
-        if (req.raw === true) {
-            return { logits, n: 256, score, provider: emb.provider, model: model.id, label: model.label };
-        }
-        return { mask: logitsToMask(logits, outW, outH), width: outW, height: outH, score, provider: emb.provider, model: model.id, label: model.label };
-    } finally {
-        busy.delete("segment");
-    }
+    const m = jobModel("sam2", req.model || conf().sam2);
+    return job("segment", { ...m, key: req.key || null, image: req.image || null, points: req.points || [], box: req.box || null, raw: req.raw === true, outWidth: req.outWidth, outHeight: req.outHeight });
 }
 
 /** Cutout: req { model?, image (RGBA 1024²) } -> { alpha: Uint8Array(1024²), size, seconds, provider, model } */
 async function cutout(req) {
     const image = checkImage(req);
-    const { model, matting } = mattingFor(req.model);
-    const t0 = Date.now();
-    busy.add("cutout");
-    try {
-        const res = await matting.run(image);
-        return { alpha: res.alpha, size: res.size, seconds: (Date.now() - t0) / 1000, provider: res.provider, model: model.id, label: model.label };
-    } finally {
-        busy.delete("cutout");
-    }
+    const m = jobModel("matting", req.model || conf().matting);
+    return job("cutout", { ...m, image });
 }
 
 /**
@@ -300,25 +270,9 @@ async function warmInpaint(req) {
  * Both width and height must be multiples of 14 in [14, 2058].
  */
 async function depth(req) {
-    const w = req && req.width | 0;
-    const h = req && req.height | 0;
-    const image = req && req.image;
-    if (!w || !h || w < 14 || h < 14 || w > 2058 || h > 2058 || w % 14 !== 0 || h % 14 !== 0 || !image || image.length !== w * h * 4) {
-        throw new Error(`the depth model needs RGBA at multiples of 14 (got ${w} × ${h}, length ${image ? image.length : 0})`);
-    }
-    const { model, depth: depthModel } = depthFor(req.model);
-    const t0 = Date.now();
-    busy.add("depth");
-    try {
-        const res = await depthModel.run(image, w, h);
-        return {
-            depth: res.depth, width: res.width, height: res.height,
-            min: res.min, max: res.max, seconds: (Date.now() - t0) / 1000,
-            runMs: res.ms, provider: res.provider, model: model.id, label: model.label,
-        };
-    } finally {
-        busy.delete("depth");
-    }
+    const { w, h, image } = checkDepth(req);
+    const m = jobModel("depth", req.model || conf().depth);
+    return job("depth", { ...m, image, width: w, height: h });
 }
 
-module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, inpaint, warmInpaint, depth, setProgressSink, HF_TOKEN, DEFAULTS, LAMA_SIZE };
+module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, inpaint, warmInpaint, depth, setProgressSink, helperProcess, HF_TOKEN, DEFAULTS, LAMA_SIZE };

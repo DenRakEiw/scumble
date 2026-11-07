@@ -80,7 +80,12 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   286 of 108k bytes, only where alpha < 255; 0 on tiles): an expectation for such a picture is built from the reader
   the tool uses (`brushSource("all").bytes`), as the move step's case 15 does.
   `node tools/helpers_test.js` runs the ONNX modules without Electron (LaMa in its own process too); it needs the
-  model files, a missing one is skipped. `node tools/remove_test.js` checks the Remove tool's crop and resampling
+  model files, a missing one is skipped. With `--process` (U1) it runs the jobs through the helpers' process and the
+  main-thread engine and requires the same bytes, then the kill, the deaths, the fallback and the idle unload
+  (`docs/HELPERS.md`). The gate `helpers` (`tools/helpers_test.py`, `--offline`) runs that first, then the helpers'
+  process in the app on the user's ComfyUI models folder (read only; SAM2 tiny, RMBG-1.4): the map, `select_point`,
+  `cutout_layer`, Free VRAM, the device switch, the renderer's IPC round trips under 150 ms; it loads SAM2 on the GPU
+  (about 1 GB), so it waits for the busy lock like a timed batch. `node tools/remove_test.js` checks the Remove tool's crop and resampling
   (`renderer/editor/inpaint_remove.js`) without models. `node tools/liquify_test.js` holds Liquify's kernel
   (`renderer/editor/inpaint_liquify.js`) to 23b's resampler on constant fields, to a direct integer reference on random
   ones, the bounded gather's split to the unsplit bytes, and the brushes to their rules (advected, restore exact, no fold).

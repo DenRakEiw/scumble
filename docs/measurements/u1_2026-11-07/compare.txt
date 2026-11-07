@@ -1,0 +1,59 @@
+U1 of docs/PLAN_HELPERS_PROCESS.md (the in-app ONNX helpers in the helpers' process): main's longest block and the
+waits before and after, tools/helpers_perf.py --batches gpu,editor --runs 1 --quick on port 9601 / inspector 9602.
+  before/  the tree at aa2e68a (the models on main's thread), run from a copy of it in the session's scratchpad
+  after/   U1 (this branch); the harness hooks HelperProcess.onJob ("proc" = the job's time inside the process,
+           "post -> answer" = main's post to the answer) and counts the process ("Scumble helpers") in the memory rows
+One fresh instance per batch (--no-comfy, its own profile, the window in front), the busy lock per batch with the 90 s
+gap; the harness waited for other agents' instances and tests before each batch (473 s before the first, 247 s before
+the after editor batch). The user's ComfyUI ran beside it (the card at 3.2-3.8 GB used at the batches' starts).
+The helpers folder: the user's ComfyUI models folder (SAM2 base+, BiRefNet lite in onnx/) with the app folder's depth
+model linked; read only, nothing downloaded. One run each: a row with reps is median [min-max] over its reps.
+
+wall = the renderer's await of the IPC call; main block = main's longest event-loop gap (a 4 ms sampler, gaps over
+20 ms); rtt = the longest renderer -> main -> renderer round trip (app:tileMode every 3 ms) during the call.
+
+gpu batch (device "gpu": every model on DirectML; SAM2 base+ on the scene's 1024² input)
+row                          wall before        wall after         main block before    after       rtt before  after
+sam2_base_plus.point_cold    1698               1654               1159                 21          1139        8
+  .point_warm (5)            7 [7-7]            8 [8-9]            0                    0           4 [3-5]     0
+  .objects_cached (2)        1834 [1757-1910]   1823 [1739-1908]   226 [194-258]        22 [22-22]  217         12
+  .objects_new               1782               1797               197                  22          201         14
+  .objects_perside16         565                533                192                  23          196         12
+  .free (Free VRAM)          317                306                330                  0           313         0
+  .objects_after_free        2744               2921               1001                 0           991         12
+  .free2                     273                261                286                  0           271         0
+birefnet_lite.cutout (3)     3405 [3348-4038]   3455 [3402-3672]   2613 [2573-2852]     21 [0-21]   2597        7
+da2_small.depth (4)          230 [227-883]      243 [238-1076]     233 [230-470]        0           220         5
+da2_small.depth_large (3)    684 [678-830]      799 [723-861]      681 [661-828]        24 [24-25]  661         16
+da2_small.free               128                130                140                  0           125         0
+
+editor batch (device "auto": the object tool's own path, the scene scaled to 6000 x 3375)
+doc6000.ensureObjects        2879               3106               1074                 0           1053        68
+  (the first hover's map, the instance's first SAM2 call)
+doc6000.ensureObjects_cached 1432               1675               177                  21          221         72
+doc6000.select_point (3)     51 [48-260]        161 [71-388]       33 [33-212]          0 [0-0]     26 [24-206] 15 [1-23]
+
+Memory (MB; main's private bytes after a forced GC; the helpers' process from the app's metrics and the WDDM counters)
+                                      main before   main after   the helpers' process after (private / GPU dedicated)
+the start                             84            82           -
+SAM2 base+ after the cold point       3492          81           3454 / 3008
+SAM2 base+ after the object maps      8585          83           8744 / 8007 (the failed batch sizes' allocations, as U0)
+after Free VRAM                       320           83           gone; the card back at 3356 MiB (before 3340)
+depth on DirectML                     4104          80           4097 / 3702
+the editor's object tool at 6000      6204          83           6342 / 5646
+
+Reading:
+- Main no longer blocks on a model: its longest gap went from 1.2 s (the first SAM2 call), 0.2 s (each map's decoder
+  batches), 0.3 s (Free VRAM), 2.6 s (a BiRefNet lite cutout on DirectML) and 0.7 s (a large depth map) to 0-25 ms.
+  The 21-25 ms left are main relaying the answer to the window (a 4.5 MB label map, a 5.5 MB depth map, the 4 MB
+  picture to the process: structured-clone copies, §3.2), under the sampler's 20 ms floor for the small answers.
+- The renderer's IPC round trips during a job stay under 20 ms in the gpu batch (before: the block's length); in the
+  editor batch the 68-72 ms are the window's own work (objectInput, the scale-back), as before.
+- The waits did not get shorter (U1 moves the work, U2 shortens it). The gpu batch's are the same within a few percent.
+  The editor batch's cached map took 1675 ms against 1432 (the job 1567 in the process against an automask of 1369 on
+  main) and its point 161 against 51: one run each, not isolated. U0's probe saw the same for a map run first in a
+  utility process (1.55-1.6 s, §1.4 of the plan), so the "B 64 first" advantage on main may not carry over; U2 item 4
+  (the decoder's shapes) is where to measure it. Free VRAM's wall stays about 0.3 s (the process's exit with its
+  DirectML allocations), but main is free throughout.
+- Main's private bytes stay at 80-84 MB whatever runs: SAM2's 3.5-8.6 GB live in the helpers' process and go with it
+  at Free VRAM, the idle unload or the quit.

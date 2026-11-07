@@ -1,0 +1,77 @@
+[15:27:46] U0 chain: runs 1, batches gpu,editor, port 9601, inspect 9602, models F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\models
+[15:27:46] lock: rc 0 lock: taken after 0 s
+[15:27:46] waiting for: 46188 F:\canvas\.claude\worktrees\agent-a2dc06b6f9b907b2e\node_modules\electron\dist\electron.exe . --remote-debugging-port=9595 --user-data-dir=F:/canvas/.claude/wor; 14560 C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/export_test.py; 5300 F:\canvas\.claude\worktrees\agent-a2dc06b6f9b907b2e\node_modules\electron\dist\electron.exe . --remote-debugging-port=9596 --user-data-dir=F:/canvas/.claude/wor; 53716 C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/export_test.py; 46592 C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe F:\canvas\.claude\worktrees\agent-ae1b52516578f1133\tools\document_test.py --port 9597 -; 54120 F:\canvas\.claude\worktrees\agent-ae1b52516578f1133\node_modules\electron\dist\electron.exe . --remote-debugging-port=9597 --user-data-dir=F:\canvas\.claude\wor
+[15:35:39] others gone after 473 s
+[15:35:49] == gpu r1: main pid 24040, {"pid": 24040, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[15:35:51]    prep: {"W": 2000, "H": 1125, "loadMs": 515, "inputMs": 37, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[15:35:54]    mem start: main 84 MB private, rss 129; gpu main None, card 3341 MiB
+[15:35:55]    idle#1: wall 1504.2 ms, main block 0 ms, rtt max 0.5 ms
+[15:35:56]    ipc_tiny#1: wall 1.6 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:35:56]    ipc_tiny#2: wall 0.5 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:35:56]    ipc_tiny#3: wall 0.5 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:35:57]    ipc_tiny#4: wall 0.4 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:35:57]    ipc_tiny#5: wall 0.6 ms, main block 0 ms, rtt max 0.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:35:57]    ipc_4mb#1: wall 9.1 ms, main block 0 ms, rtt max 2.8 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:35:58]    ipc_4mb#2: wall 8.9 ms, main block 0 ms, rtt max 2.8 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:35:58]    ipc_4mb#3: wall 9.1 ms, main block 0 ms, rtt max 2.9 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:35:59]    ipc_4mb#4: wall 9 ms, main block 0 ms, rtt max 2.9 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:35:59]    ipc_4mb#5: wall 9.2 ms, main block 0 ms, rtt max 2.9 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[15:36:01]    sam2_base_plus.point_cold#1: wall 1697.8 ms, main block 1159.4 ms, rtt max 1138.9 ms
+[15:36:04]    mem sam2_base_plus after the cold point: main 3492 MB private, rss 514; gpu main {'dedicatedMB': 3008, 'sharedMB': 73}, card 6347 MiB
+[15:36:04]    sam2_base_plus.point_warm#1: wall 7.3 ms, main block 0 ms, rtt max 5.3 ms
+[15:36:04]    sam2_base_plus.point_warm#2: wall 7.2 ms, main block 0 ms, rtt max 3.7 ms
+[15:36:04]    sam2_base_plus.point_warm#3: wall 7.3 ms, main block 0 ms, rtt max 2.8 ms
+[15:36:05]    sam2_base_plus.point_warm#4: wall 7.2 ms, main block 0 ms, rtt max 3.7 ms
+[15:36:05]    sam2_base_plus.point_warm#5: wall 7.4 ms, main block 0 ms, rtt max 4 ms
+[15:36:07]    sam2_base_plus.objects_cached#1: wall 1910.5 ms, main block 258.3 ms, rtt max 236.8 ms
+[15:36:10]    sam2_base_plus.objects_cached#2: wall 1757.3 ms, main block 193.6 ms, rtt max 197.1 ms
+[15:36:12]    sam2_base_plus.objects_new#1: wall 1782.4 ms, main block 197.4 ms, rtt max 200.8 ms
+[15:36:12]    sam2_base_plus.point_after_objects#1: wall 7.3 ms, main block 0 ms, rtt max 5.3 ms
+[15:36:12]    sam2_base_plus.point_after_objects#2: wall 7 ms, main block 0 ms, rtt max 5.1 ms
+[15:36:13]    sam2_base_plus.point_after_objects#3: wall 7 ms, main block 0 ms, rtt max 3.6 ms
+[15:36:13]    sam2_base_plus.objects_perbatch16#1: wall 26.3 ms, main block 32.1 ms, rtt max 13.9 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[15:36:14]    sam2_base_plus.objects_perbatch32#1: wall 22.3 ms, main block 28.7 ms, rtt max 6.5 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[15:36:14]    sam2_base_plus.objects_perbatch128#1: wall 47.2 ms, main block 53.1 ms, rtt max 35.3 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[15:36:14]    sam2_base_plus.objects_perbatch256#1: wall 103.8 ms, main block 109.6 ms, rtt max 88.9 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[15:36:15]    sam2_base_plus.objects_perside16#1: wall 564.9 ms, main block 192.4 ms, rtt max 196.3 ms
+[15:36:18]    mem sam2_base_plus after objects: main 8585 MB private, rss 598; gpu main {'dedicatedMB': 8007, 'sharedMB': 137}, card 11346 MiB
+[15:36:18]    sam2_base_plus.free#1: wall 316.8 ms, main block 330.4 ms, rtt max 312.9 ms
+[15:36:21]    mem sam2_base_plus after Free VRAM: main 320 MB private, rss 315; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3340 MiB
+[15:36:24]    sam2_base_plus.objects_after_free#1: wall 2744 ms, main block 1001.2 ms, rtt max 990.9 ms
+[15:36:26]    mem sam2_base_plus after objects after Free VRAM: main 6176 MB private, rss 584; gpu main {'dedicatedMB': 5617, 'sharedMB': 136}, card 8955 MiB
+[15:36:27]    sam2_base_plus.free2#1: wall 273.3 ms, main block 286.2 ms, rtt max 271.4 ms
+[15:36:29]    mem sam2_base_plus after the second Free VRAM: main 327 MB private, rss 320; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3340 MiB
+[15:36:33]    birefnet_lite.cutout#1: wall 4038.3 ms, main block 2852 ms, rtt max 2840.4 ms
+[15:36:37]    birefnet_lite.cutout#2: wall 3405.1 ms, main block 2613.4 ms, rtt max 2596.8 ms
+[15:36:41]    birefnet_lite.cutout#3: wall 3348.1 ms, main block 2572.8 ms, rtt max 2552.7 ms
+[15:36:44]    mem birefnet_lite after three cutouts: main 400 MB private, rss 278; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3340 MiB
+[15:36:44]    birefnet_lite.free#1: wall 0.1 ms, main block 0 ms, rtt max 0.3 ms
+[15:36:46]    mem birefnet_lite after Free VRAM: main 147 MB private, rss 216; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3340 MiB
+[15:36:47]    da2_small.depth#1: wall 882.9 ms, main block 469.7 ms, rtt max 469.2 ms
+[15:36:48]    da2_small.depth#2: wall 228.3 ms, main block 231.3 ms, rtt max 218.2 ms
+[15:36:48]    da2_small.depth#3: wall 226.7 ms, main block 230.5 ms, rtt max 216.4 ms
+[15:36:49]    da2_small.depth#4: wall 232.1 ms, main block 235.4 ms, rtt max 221.7 ms
+[15:36:50]    da2_small.depth_large#1: wall 830.5 ms, main block 828.5 ms, rtt max 809 ms
+[15:36:51]    da2_small.depth_large#2: wall 684.2 ms, main block 681.3 ms, rtt max 661 ms
+[15:36:52]    da2_small.depth_large#3: wall 678 ms, main block 661.4 ms, rtt max 655.9 ms
+[15:36:55]    mem da2_small after depth: main 4104 MB private, rss 451; gpu main {'dedicatedMB': 3702, 'sharedMB': 47}, card 7039 MiB
+[15:36:55]    da2_small.free#1: wall 127.7 ms, main block 139.6 ms, rtt max 124.6 ms
+[15:36:58]    mem da2_small after Free VRAM: main 448 MB private, rss 266; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3334 MiB
+[15:37:01] lock: lock: released
+[15:37:01] gap: the lock is free for 90 s
+[15:38:32] lock: rc 0 lock: taken after 0 s
+[15:38:41] == editor r1: main pid 23360, {"pid": 23360, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[15:38:45]    mem start: main 86 MB private, rss 130; gpu main None, card 3155 MiB
+[15:38:47]    prep 6000x3375: {"W": 6000, "H": 3375, "loadMs": 608, "inputMs": 54.7, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[15:38:50]    doc6000.ensureObjects#1: wall 2879 ms, main block 1074.4 ms, rtt max 1052.9 ms
+[15:38:52]    doc6000.ensureObjects_cached#1: wall 1432.1 ms, main block 177.3 ms, rtt max 221.4 ms
+[15:38:52]    objects 6000x3375: {"count": 96, "big": 2, "small": 89, "bigAt": [41, 1936], "smallAt": [4594, 1506], "empty": [0, 0]}
+[15:38:52]    doc6000.hover_shape_big#1: wall 50.9 ms, main block 0 ms, rtt max 1.7 ms
+[15:38:53]    doc6000.hover_shape_small#1: wall 25.9 ms, main block 0 ms, rtt max 1.6 ms
+[15:38:53]    doc6000.click_object#1: wall 207.2 ms, main block 0 ms, rtt max 4.5 ms
+[15:38:54]    doc6000.select_point#1: wall 259.5 ms, main block 212.2 ms, rtt max 206.4 ms
+[15:38:54]    doc6000.select_point#2: wall 48.4 ms, main block 33.2 ms, rtt max 24.4 ms
+[15:38:55]    doc6000.select_point#3: wall 50.7 ms, main block 33.3 ms, rtt max 26.4 ms
+[15:38:57]    mem doc6000 after the object tool: main 6204 MB private, rss 580; gpu main {'dedicatedMB': 5646, 'sharedMB': 136}, card 9158 MiB
+[15:39:01] lock: lock: released
+[15:39:01] done

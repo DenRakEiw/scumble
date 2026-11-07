@@ -1,0 +1,51 @@
+U0 of docs/PLAN_WASM_BUILD.md §7: the in-app ONNX helpers, measured (tools/helpers_perf.py).
+Times in ms, median [min-max] over the fresh runs (each run one instance; rows with several reps: every rep).
+wall = the renderer's await of the IPC call; block = main's longest event-loop gap (sampler, 4 ms);
+rtt = the longest app:tileMode round trip from the renderer during the call; handler = main's IPC handler.
+
+== batch gpu (device gpu), runs [1]
+   idle                               wall 1501  block 0  rtt 0
+   ipc_tiny                           wall 0 [0-2]  block 0 [0-0]  rtt 0 [0-0]  handler 0 [0-0]  ipc 0 [0-2]  ERR Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 
+   ipc_4mb                            wall 9 [9-9]  block 0 [0-0]  rtt 3 [3-7]  handler 0 [0-0]  ipc 9 [9-9]  ERR Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 
+   sam2_base_plus.point_cold          wall 1654  block 21  rtt 8  handler 1644  ipc 10  proc 1563 (post -> answer 1643)  res {"score": 0.8812333345413208, "provider": "dml"}
+   sam2_base_plus.point_warm          wall 8 [8-9]  block 0 [0-0]  rtt 0 [0-0]  handler 8 [7-8]  ipc 1 [1-1]  proc 6 [6-7] (post -> answer 7 [7-7])  res {"score": 0.8812333345413208, "provider": "dml"}
+   sam2_base_plus.objects_cached      wall 1823 [1739-1908]  block 22 [22-22]  rtt 12 [11-12]  handler 1803 [1719-1888]  ipc 20 [20-20]  proc 1785 [1701-1869] (post -> answer 1803 [1719-1887])  res {"width": 2000, "height": 1125, "count": 95, "candidates": 837, "seconds": 1.868, "encodeMs": 63, "provider": "dml"}
+   sam2_base_plus.objects_new         wall 1797  block 22  rtt 14  handler 1776  ipc 20  proc 1757 (post -> answer 1776)  res {"width": 2000, "height": 1125, "count": 89, "candidates": 819, "seconds": 1.757, "encodeMs": 40, "provider": "dml"}
+   sam2_base_plus.point_after_objects wall 8 [8-8]  block 0 [0-0]  rtt 0 [0-0]  handler 7 [7-8]  ipc 1 [1-1]  proc 6 [6-6] (post -> answer 7 [6-8])  res {"score": 0.8812333345413208, "provider": "dml"}
+   sam2_base_plus.objects_perbatch16  wall 35  block 24  rtt 9  handler 24  ipc 12  proc 15 (post -> answer 23)  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perbatch32  wall 28  block 23  rtt 8  handler 17  ipc 10  proc 9 (post -> answer 16)  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perbatch128 wall 54  block 23  rtt 9  handler 43  ipc 11  proc 35 (post -> answer 43)  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perbatch256 wall 111  block 23  rtt 8  handler 101  ipc 11  proc 93 (post -> answer 100)  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perside16   wall 533  block 23  rtt 12  handler 512  ipc 21  proc 494 (post -> answer 512)  res {"width": 2000, "height": 1125, "count": 47, "candidates": 210, "seconds": 0.494, "encodeMs": 63, "provider": "dml"}
+   sam2_base_plus.free                wall 306  block 0  rtt 0  handler 306  ipc 0
+   sam2_base_plus.objects_after_free  wall 2921  block 0  rtt 12  handler 2902  ipc 19  proc 2825 (post -> answer 2901)  res {"width": 2000, "height": 1125, "count": 95, "candidates": 837, "seconds": 2.825, "encodeMs": 62, "provider": "dml"}
+   sam2_base_plus.free2               wall 261  block 0  rtt 0  handler 260  ipc 0
+   birefnet_lite.cutout               wall 3455 [3402-3672]  block 21 [0-21]  rtt 7 [5-8]  handler 3443 [3390-3660]  ipc 12 [11-12]  proc 3434 [3381-3589] (post -> answer 3443 [3390-3660])  res {"size": 1024, "seconds": 3.589, "provider": "dml"}
+   birefnet_lite.free                 wall 11  block 0  rtt 0  handler 11  ipc 0
+   da2_small.depth                    wall 243 [238-1076]  block 0 [0-0]  rtt 5 [4-6]  handler 235 [228-1067]  ipc 9 [9-10]  proc 226 [220-996] (post -> answer 234 [228-1065])  res {"width": 924, "height": 518, "seconds": 0.996, "runMs": 500, "provider": "dml"}
+   da2_small.depth_large              wall 799 [723-861]  block 24 [24-25]  rtt 16 [16-17]  handler 774 [699-836]  ipc 25 [24-26]  proc 751 [678-813] (post -> answer 773 [698-835])  res {"width": 1568, "height": 882, "seconds": 0.814, "runMs": 807, "provider": "dml"}
+   da2_small.free                     wall 130  block 0  rtt 0  handler 129  ipc 0
+   memory (MB; main private after a forced GC, main rss, GPU dedicated / shared of main [and the probe], the card's used MiB):
+     start                                          priv 82  rss 127  gpu 0 / 0  card 3359
+     sam2_base_plus after the cold point            priv 81  rss 128  gpu 0 / 0  probe gpu 3008 priv 3454  card 6366
+     sam2_base_plus after objects                   priv 83  rss 130  gpu 0 / 0  probe gpu 8007 priv 8744  card 11365
+     sam2_base_plus after Free VRAM                 priv 83  rss 130  gpu 0 / 0  card 3356
+     sam2_base_plus after objects after Free VRAM   priv 83  rss 130  gpu 0 / 0  probe gpu 5617 priv 6418  card 8972
+     sam2_base_plus after the second Free VRAM      priv 83  rss 130  gpu 0 / 0  card 3359
+     birefnet_lite after three cutouts              priv 84  rss 130  gpu 0 / 0  probe gpu 0 priv 345  card 3358
+     birefnet_lite after Free VRAM                  priv 81  rss 128  gpu 0 / 0  card 3358
+     da2_small after depth                          priv 80  rss 127  gpu 0 / 0  probe gpu 3702 priv 4097  card 7060
+     da2_small after Free VRAM                      priv 80  rss 127  gpu 0 / 0  card 3359
+
+== batch editor (device auto), runs [1]
+   doc6000.prep                       {"W": 6000, "H": 3375, "loadMs": 848, "inputMs": 65, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+   doc6000.ensureObjects              wall 3106  block 0  rtt 68  handler 3023  ipc 83  proc 2925 (post -> answer 3021)  parts objectInput 6, inputHash 2, helperCall 3046, applySegmentIds 0  scale-back 51  renderer gap 64
+   doc6000.ensureObjects_cached       wall 1675  block 21  rtt 72  handler 1589  ipc 86  proc 1567 (post -> answer 1589)  parts objectInput 4, inputHash 3, helperCall 1614, applySegmentIds 1  scale-back 54  renderer gap 65
+   doc6000.hover_shape_big            wall 65  block 0  rtt 2  parts objectShape 65  renderer gap 66
+   doc6000.hover_shape_small          wall 36  block 0  rtt 0  parts objectShape 36  renderer gap 36
+   doc6000.click_object               wall 264  block 0  rtt 5  parts objectShape 23 [0-45]  renderer gap 267
+   doc6000.select_point               wall 161 [71-388]  block 0 [0-0]  rtt 15 [1-23]  handler 43 [42-310]  ipc 77 [29-118]  proc 41 [41-308] (post -> answer 42 [42-310])  parts helperCall 43 [43-311], segmentLogits 43 [43-311], selectLogits 76 [28-118]  renderer gap 0 [0-32]  res {"score": 0.8661423921585083}
+   memory (MB; main private after a forced GC, main rss, GPU dedicated / shared of main [and the probe], the card's used MiB):
+     start                                          priv 83  rss 126  gpu 0 / 0  card 3765
+     doc6000 after the object tool                  priv 83  rss 129  gpu 0 / 0  probe gpu 5646 priv 6342  card 9955
+

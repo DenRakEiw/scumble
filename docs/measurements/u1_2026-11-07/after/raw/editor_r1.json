@@ -1,0 +1,597 @@
+{
+ "batch": "editor",
+ "run": 1,
+ "device": "auto",
+ "started": "2026-11-07T15:45:43",
+ "others": [],
+ "card_before_start": 3060,
+ "main_setup": {
+  "pid": 43192,
+  "ort": null,
+  "u1": true,
+  "electron": "44.2.0",
+  "hist": true
+ },
+ "page_setup": {
+  "ok": true,
+  "tiles": true
+ },
+ "images": [
+  [
+   "C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/u1_work\\scene_6000.jpg",
+   6000,
+   3375
+  ],
+  [
+   "C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/u1_work\\scene_15000.jpg",
+   15000,
+   8438
+  ]
+ ],
+ "rows": [
+  {
+   "name": "doc6000.prep",
+   "prep": {
+    "W": 6000,
+    "H": 3375,
+    "loadMs": 848,
+    "inputMs": 65,
+    "outW": 2048,
+    "outH": 1152,
+    "dw": 924,
+    "dh": 518,
+    "lw": 1568,
+    "lh": 882,
+    "tiles": true
+   }
+  },
+  {
+   "name": "doc6000.ensureObjects",
+   "reps": [
+    {
+     "wall": 3105.9,
+     "probe": {
+      "n": 777,
+      "max": 68.4,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 1,
+      "over200": 0,
+      "rendGapMax": 63.9,
+      "rendGaps": 1
+     },
+     "err": null,
+     "parts": [
+      {
+       "k": "objectInput",
+       "at": 0.4,
+       "ms": 5.5
+      },
+      {
+       "k": "inputHash",
+       "at": 6,
+       "ms": 2.4
+      },
+      {
+       "k": "helperCall",
+       "at": 8.5,
+       "ms": 3046.2
+      },
+      {
+       "k": "applySegmentIds",
+       "at": 3105.4,
+       "ms": 0.5
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "job",
+        "type": "objects",
+        "ms": 2925.1549999999997,
+        "wallMs": 3021,
+        "error": null,
+        "pid": 31240,
+        "t0": 11633.832
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 11631.6944,
+        "ms": 3023.3320000000003
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.7,
+      "histP99Ms": 16.3
+     }
+    }
+   ]
+  },
+  {
+   "name": "doc6000.ensureObjects_cached",
+   "reps": [
+    {
+     "wall": 1675.1,
+     "probe": {
+      "n": 411,
+      "max": 71.8,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 1,
+      "over200": 0,
+      "rendGapMax": 65.3,
+      "rendGaps": 1
+     },
+     "err": null,
+     "parts": [
+      {
+       "k": "objectInput",
+       "at": 0.1,
+       "ms": 4.1
+      },
+      {
+       "k": "inputHash",
+       "at": 4.2,
+       "ms": 2.6
+      },
+      {
+       "k": "helperCall",
+       "at": 6.9,
+       "ms": 1613.6
+      },
+      {
+       "k": "applySegmentIds",
+       "at": 1674.4,
+       "ms": 0.6
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "job",
+        "type": "objects",
+        "ms": 1566.5895000000005,
+        "wallMs": 1589,
+        "error": null,
+        "pid": 31240,
+        "t0": 15106.990099999999
+       },
+       {
+        "k": "handler",
+        "name": "objects",
+        "t0": 15106.6055,
+        "ms": 1589.4326999999994
+       }
+      ],
+      "blockN": 1,
+      "blockMax": 21.4,
+      "blockSum": 21.4,
+      "top": [
+       [
+        16679.7,
+        21.4
+       ]
+      ],
+      "histMaxMs": 21.4,
+      "histP99Ms": 17.3
+     }
+    }
+   ]
+  },
+  {
+   "name": "doc6000.hover_shape_big",
+   "reps": [
+    {
+     "wall": 65.3,
+     "probe": {
+      "n": 13,
+      "max": 2,
+      "p50": 0.2,
+      "p95": 2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 65.8,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0.1,
+       "ms": 65.2
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.4,
+      "histP99Ms": 16.4
+     }
+    }
+   ]
+  },
+  {
+   "name": "doc6000.hover_shape_small",
+   "reps": [
+    {
+     "wall": 36,
+     "probe": {
+      "n": 13,
+      "max": 0.3,
+      "p50": 0.1,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 36.5,
+      "rendGaps": 1
+     },
+     "res": {},
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0,
+       "ms": 36
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ]
+  },
+  {
+   "name": "doc6000.click_object",
+   "reps": [
+    {
+     "wall": 264.4,
+     "probe": {
+      "n": 10,
+      "max": 5.4,
+      "p50": 0.2,
+      "p95": 5.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 267,
+      "rendGaps": 1
+     },
+     "err": null,
+     "parts": [
+      {
+       "k": "objectShape",
+       "at": 0.1,
+       "ms": 45.4
+      },
+      {
+       "k": "objectShape",
+       "at": 46.2,
+       "ms": 0
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.9,
+      "histP99Ms": 15.9
+     }
+    }
+   ]
+  },
+  {
+   "name": "doc6000.select_point",
+   "reps": [
+    {
+     "wall": 387.5,
+     "probe": {
+      "n": 105,
+      "max": 14.9,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "score": 0.8661423921585083
+     },
+     "err": null,
+     "parts": [
+      {
+       "k": "helperCall",
+       "at": 0.3,
+       "ms": 310.9
+      },
+      {
+       "k": "segmentLogits",
+       "at": 0.2,
+       "ms": 311
+      },
+      {
+       "k": "selectLogits",
+       "at": 311.2,
+       "ms": 76.3
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "job",
+        "type": "segment",
+        "ms": 308.2395999999999,
+        "wallMs": 310,
+        "error": null,
+        "pid": 31240,
+        "t0": 18581.8595
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 18581.8658,
+        "ms": 310.03849999999875
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.7,
+      "histP99Ms": 18.7
+     }
+    },
+    {
+     "wall": 71,
+     "probe": {
+      "n": 30,
+      "max": 1,
+      "p50": 0.2,
+      "p95": 0.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "res": {
+      "score": 0.8661423921585083
+     },
+     "err": null,
+     "parts": [
+      {
+       "k": "helperCall",
+       "at": 0.1,
+       "ms": 42.8
+      },
+      {
+       "k": "segmentLogits",
+       "at": 0.1,
+       "ms": 42.8
+      },
+      {
+       "k": "selectLogits",
+       "at": 42.9,
+       "ms": 28.1
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "job",
+        "type": "segment",
+        "ms": 40.58569999999963,
+        "wallMs": 42,
+        "error": null,
+        "pid": 31240,
+        "t0": 19325.1229
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 19325.1573,
+        "ms": 41.9958000000006
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "wall": 161,
+     "probe": {
+      "n": 47,
+      "max": 22.6,
+      "p50": 0.2,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 32,
+      "rendGaps": 1
+     },
+     "res": {
+      "score": 0.8661423921585083
+     },
+     "err": null,
+     "parts": [
+      {
+       "k": "helperCall",
+       "at": 0.1,
+       "ms": 43.3
+      },
+      {
+       "k": "segmentLogits",
+       "at": 0.1,
+       "ms": 43.4
+      },
+      {
+       "k": "selectLogits",
+       "at": 43.4,
+       "ms": 117.5
+      }
+     ],
+     "focus": true,
+     "vis": "visible",
+     "main": {
+      "ev": [
+       {
+        "k": "job",
+        "type": "segment",
+        "ms": 40.94200000000001,
+        "wallMs": 42,
+        "error": null,
+        "pid": 31240,
+        "t0": 19760.8894
+       },
+       {
+        "k": "handler",
+        "name": "segment",
+        "t0": 19760.3875,
+        "ms": 42.546699999998964
+       }
+      ],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ]
+  }
+ ],
+ "mems": [
+  {
+   "label": "start",
+   "main": {
+    "rssMB": 126,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 43192,
+     "privMB": 83,
+     "wsMB": 126,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 54320,
+      "privMB": 173,
+      "wsMB": 118,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 8936,
+      "privMB": 12,
+      "wsMB": 58,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 49540,
+      "privMB": 86,
+      "wsMB": 148,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 3765
+   }
+  },
+  {
+   "label": "doc6000 after the object tool",
+   "main": {
+    "rssMB": 129,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 43192,
+     "privMB": 83,
+     "wsMB": 129,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 54320,
+      "privMB": 551,
+      "wsMB": 335,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 8936,
+      "privMB": 12,
+      "wsMB": 59,
+      "name": "Network Service"
+     },
+     {
+      "pid": 31240,
+      "privMB": 6342,
+      "wsMB": 760,
+      "name": "Scumble helpers"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 49540,
+      "privMB": 471,
+      "wsMB": 774,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "31240": {
+      "dedicatedMB": 5646,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 9955
+   }
+  }
+ ],
+ "focus_end": {
+  "focus": true,
+  "vis": "visible"
+ }
+}
