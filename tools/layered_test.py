@@ -19,7 +19,11 @@ No ComfyUI, no key. First `node tools/layered_test.js` (the reader on files buil
   bands came is not read again on the window;
 - a PSD dropped on an open document adds its layers (the bottom one included) where the file has them;
 - a file named .png that is a PSD is still read as one (the first bytes decide); the layers reach the local store
-  (`syncLayers`), so autosave keeps them.
+  (`syncLayers`), so autosave keeps them;
+- H1 S5: the crafted files of tools/layered_test.js (deflate bombs of 512 MB, a huge layer or mask of empty rows, a
+  side past 65,535, an ORA entry or stack.xml past its size, a PNG header of 70,000 px) refused in their own words on
+  the pool's and the window's reader, the renderer's private memory at most 200 MB above the step's start; load_image of
+  one says why and leaves the tab.
 
     python tools/layered_test.py
 
@@ -434,6 +438,46 @@ if (!/ends early/.test(msg)) throw new Error("a truncated PSD: " + (msg || "no e
 if (ed.width !== 160 || ed.layers.length !== n) throw new Error("the failed open changed the tab");
 return { message: msg };
 """),
+    ("crafted_files_are_refused_on_both_routes", """
+// H1 S5: the crafted files of tools/layered_test.js (deflate bombs of 512 MB, a 30,000 x 30,000 layer of empty rows, a
+// 20,000 x 20,000 mask, a side past 65,535, a raw channel with no data, an ORA entry or stack.xml past its size, a PNG
+// whose header says 70,000 px): each refused in its own words, a PSD through the pool's reader and the window's, an ORA
+// through the window's, and the renderer's private memory never more than 200 MB above where the step began
+const E = ednow(window.__l.src).constructor;
+const d = await run("new_document");
+window.__l.more.push(d.id);
+const ed = ednow(d.id);
+const dir = %(TMPDIR)s, want = %(CRAFTED)s;
+const mem = async () => (await window.scumble.metrics()).renderer.process.private;   // KB
+const fileOf = async (name) => new File([(await window.scumble.file.read(dir + "/" + name)).data], name);
+const was = E.psdOnPool, ms = {};
+const m0 = await mem();
+let most = 0;
+try {
+    for (const [name, re] of Object.entries(want)) {
+        const psd = name.endsWith(".psd");
+        for (const route of psd ? ["pool", "window"] : ["window"]) {
+            if (route === "window") E.psdOnPool = false; else delete E.psdOnPool;
+            const f = await fileOf(name);
+            const t0 = performance.now();
+            let msg = "";
+            try { await ed.readLayered(f, psd ? "psd" : "ora"); } catch (err) { msg = String(err.message || err); }
+            if (!new RegExp(re).test(msg)) throw new Error(name + " (" + route + "): " + (msg || "no error"));
+            ms[name.replace(/^crafted_/, "") + " " + route] = Math.round(performance.now() - t0);
+            const m = await mem();
+            most = Math.max(most, m - m0);
+            if (m - m0 > 200 * 1024) throw new Error(name + " (" + route + "): the renderer grew by " + Math.round((m - m0) / 1024) + " MB");
+        }
+    }
+} finally { if (was === undefined) delete E.psdOnPool; else E.psdOnPool = was; }
+// through load_image too: the refusal is the command's error and the tab stays as it was
+const tabShape = () => JSON.stringify([ed.width, ed.height, ed.layers.length]);
+const s0 = tabShape();
+let said = "";
+try { await run("load_image", { doc: d.id, path: dir + "/crafted_zip_bomb.psd" }); } catch (err) { said = String(err.message || err); }
+if (!new RegExp(want["crafted_zip_bomb.psd"]).test(said) || tabShape() !== s0) throw new Error("load_image: " + (said || "no error") + ", " + tabShape() + " after " + s0);
+return { grewMB: Math.round(most / 1024), tiles: !!ed.tileMode, ms };
+"""),
     ("cleanup", """
 for (const k of ["psd", "ora", "src"]) { try { if (window.__l && window.__l[k]) await run("close_document", { doc: window.__l[k] }); } catch (_) { /* gone */ } }
 for (const id of (window.__l && window.__l.more) || []) { try { await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
@@ -471,6 +515,8 @@ async def run_all(c):
     subs = {"PSD": J("roundtrip.psd"), "ORA": J("roundtrip.ora"), "LOOSE_PSD": J("loose.psd"), "LOOSE_ORA": J("loose.ora"), "BROKEN": J("broken.psd"),
             "MASK_BANDS": J("masks_bands.psd"), "MASK_CANVAS": J("masks_canvas.psd"), "MASK_ORA": J("masks.ora"),
             "FLAT_PSD": J("flat.psd"), "DEEP_PSD": J("deep.psd"),
+            "TMPDIR": json.dumps(TMP.replace("\\", "/")),
+            "CRAFTED": open(os.path.join(TMP, "crafted.json"), encoding="utf-8").read(),
             "PS_PSD": json.dumps(os.path.join(ROOT, "tools", "fixtures", "blendmodes", "blendmodes.psd").replace("\\", "/"))}
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
     for name, body in STEPS:

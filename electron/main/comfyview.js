@@ -13,8 +13,9 @@
 // the window (§2.5): nothing retries by itself, Reload tries again.
 "use strict";
 
-const { BaseWindow, WebContentsView, session, shell, ipcMain, dialog } = require("electron");
-const { CLOUD_URL, popupAction, navigationAllowed } = require("./comfyhosts");
+const { BaseWindow, WebContentsView, session, ipcMain, dialog } = require("electron");
+const { CLOUD_URL, popupAction, navigationAllowed, permissionAllowed } = require("./comfyhosts");
+const { openHttp } = require("./links");
 
 const BAR_H = 36;
 const PARTITION = "persist:comfyui";
@@ -34,6 +35,21 @@ const READY_JS = `(() => { const a = window.app; return { app: !!a, graph: !!(a 
 const READ_JS = `(async () => { try { const p = await window.app.graphToPrompt();
     return { ok: true, workflow: JSON.stringify((p && p.workflow) || null), output: JSON.stringify((p && p.output) || null) }; }
     catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
+
+/**
+ * The session's permission answers (comfyhosts.js permissionAllowed): camera, microphone, location, MIDI and the device
+ * APIs denied for the page and its sign-in windows, the rest granted as Electron's default does. Set once per session
+ * (the partition outlives the window); the request handler answers what a page asks for, the check handler what it
+ * looks up (navigator.permissions.query, a device list), the device handler a HID / serial / USB grant.
+ */
+const guarded = new WeakSet();
+function guardPermissions(ses) {
+    if (!ses || guarded.has(ses)) return;
+    guarded.add(ses);
+    ses.setPermissionRequestHandler((_wc, permission, callback) => callback(permissionAllowed(permission)));
+    ses.setPermissionCheckHandler((_wc, permission) => permissionAllowed(permission));
+    ses.setDevicePermissionHandler(() => false);
+}
 
 /** Whether a graph needs the Inpaint Canvas node (every ComfyUI recipe does; Comfy Cloud has none, §2.4). */
 function needsCanvasNode(prompt) {
@@ -269,6 +285,7 @@ class ComfyView {
         // no menu here (Windows, Linux), and neither view takes the application menu's shortcuts (macOS keeps its
         // global menu): ComfyUI's own Ctrl+S, Ctrl+Z and Ctrl+Enter reach the page, never Scumble's Save or Reload
         this.dropMenu();
+        guardPermissions(this.session());   // before the page's first load
         const bar = new WebContentsView({ webPreferences: { preload: this.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false } });
         const page = new WebContentsView({ webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false } });
         this.bar = bar;
@@ -282,7 +299,7 @@ class ComfyView {
         // the bar: the app's own file, nothing else
         const barUrl = this.origin + "/comfybar.html";
         bar.webContents.on("will-navigate", (e) => e.preventDefault());
-        bar.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: "deny" }; });
+        bar.webContents.setWindowOpenHandler(({ url }) => { openHttp(url); return { action: "deny" }; });
         bar.webContents.on("did-finish-load", () => this.sendState());
         bar.webContents.loadURL(barUrl).catch(() => { /* a reload or a close while it loads */ });
 
@@ -298,7 +315,7 @@ class ComfyView {
                     webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
                 } };
             }
-            if (act === "external") shell.openExternal(url);
+            if (act === "external") openHttp(url);
             return { action: "deny" };
         });
         wc.on("did-create-window", (child) => {
@@ -306,12 +323,13 @@ class ComfyView {
             child.on("closed", () => this.children.delete(child));
             if (process.platform !== "darwin") child.setMenu(null);
             child.webContents.setIgnoreMenuShortcuts(true);
-            child.webContents.setWindowOpenHandler(({ url }) => { if (popupAction(url) !== "deny") shell.openExternal(url); return { action: "deny" }; });
+            // a sign-in window's own popups: every http(s) one to the system browser ("child" and "external" alike)
+            child.webContents.setWindowOpenHandler(({ url }) => { openHttp(url); return { action: "deny" }; });
         });
         wc.on("will-navigate", (e, url) => {
             if (navigationAllowed(url, this.shown.origin, this.kind)) return;
             e.preventDefault();
-            if (/^https?:\/\//.test(String(url))) shell.openExternal(url);
+            openHttp(url);
         });
         // basic auth: the stored user and password, once per load (a wrong password must not ask forever, and no
         // browser prompt ever shows); never for a proxy or another origin

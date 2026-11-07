@@ -15,6 +15,8 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `electron/main/mcp/launch.js` (proxy mode while the dev instance runs, headless when
   nothing runs; `--exe dist/win-unpacked/Scumble.exe` for the package, `--direct` for the
   old registration, which the Python client rejects by design).
+  It runs `node tools/local_test.js` first (the local command socket of `electron/main/local.js` on a pipe of its own:
+  the line splitter across chunks, linear on a 64 MB line, the cap's refusal on the server and on the client, H1 S6).
   `python tools/mcp_attach_test.py` (run by the `mcp` gate after it) checks `--attach-only`, the switch of the repo's
   `.mcp.json`, on a profile of its own: `ping` alone and nothing started while no Scumble runs, the attach to an
   instance it starts (port 9573) with `tools/list_changed`, nothing started after that instance closes.
@@ -116,6 +118,13 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   window's reader; "fail": a job no worker knows, so the fallback runs) is a class switch for harnesses, like
   `mipsOnPool` and `pngParts`, not a route of `px/kernels.js`: it chooses where the reader runs, not which kernel
   (K20b's JS / Rust choice inside `psd_read` becomes a route).
+  H1 S5 (crafted PSD / ORA files): `node tools/layered_test.js`'s last section checks `inflateAtMost` (zlib's bytes
+  within its cap, a byte past it refused, a cut stream or a wrong checksum still an error, a 256 MB bomb stopped at
+  1 MB), valid ZIP files through it against zlib, and the crafted files of `craftedFixtures` (deflate bombs, a huge
+  layer or mask of empty rows, a side past 65,535, a raw channel without data, ORA entries past their sizes, a PNG
+  header of 70,000 px) refused in their words with no buffers made; the `layered` gate's step
+  `crafted_files_are_refused_on_both_routes` opens the same files (bombs of 512 MB) through the pool and the window and
+  holds the renderer's private memory to 200 MB above the step's start.
   K5 (the selection's combine, Rust `sel_combine`, ABI 21): `node tools/px_test.js`'s `selCases` twin `sel_combine` on
   both builds against `kernels_js.js` `selCombine`, and that twin against the editor's `combineRows` with a plain extent
   scan (every mode x the source kinds 0 / 1 / 2 / 4 x seven parts of a tile x four tile states, with a tile's stride and
@@ -225,7 +234,10 @@ a user copy, its rows and labels kept, the UI graph stored) and the editor selec
 name in the bar, a graph without the node and an answer that is no prompt are refused; the recipes it saves are
 removed at the end, and it refuses a profile holding a user recipe it would overwrite; `tools/recipes_test.js`
 section 6 checks `recipes.fromGraph`; V4: `tools/comfyhosts_test.js` (the sign-in hosts, popups and navigation in plain
-Node), then with the stub standing in for the cloud the window titled Comfy Cloud refuses a recipe with the node and
+Node; since H1 also the session's permission list), `tools/links_test.js` (`electron/main/links.js`: only http(s) to
+the system browser, the main window only on the app's page) and `tools/comfyprobe_test.js` (Settings › ComfyUI's
+Test against a stub server: the requests after `/system_stats` together, the answer the serial probe's key for key,
+P15), then with the stub standing in for the cloud the window titled Comfy Cloud refuses a recipe with the node and
 offers no save, the bar's select switches back and the recipe loads, the target is kept, the start page names Comfy
 Cloud and its Use Comfy Cloud switches; the target the profile had is put back; V5b: `tools/cloudgraph_test.js` runs
 the Flux.2 Klein recipe's cloud form through `comfycloud.js` against a fake cloud.comfy.org (pictures into the titled

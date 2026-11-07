@@ -4,7 +4,7 @@ Works in both modes: with the app running (the server proxies to it over the loc
 and without (the server starts the app headless in its own process and quits it at the end).
 No ComfyUI needed. Loads the test image from the local store, runs a selection, reads the
 undo history (list_history), a plugin filter (WebGL2 in the hidden window), a screenshot (image content), an export to a fixed
-path and an error case.
+path and an error case. First tools/local_test.js in plain Node (the local socket's line splitter, its cap).
 
     python tools/mcp_test.py [--exe <Scumble.exe | electron.exe>] [--direct] [--user-data-dir <dir>] [out_dir]
     python tools/mcp_test.py --store [out_dir]
@@ -174,6 +174,11 @@ async def main():
     if not os.path.isfile(TEST_IMAGE):
         raise SystemExit(f"test image missing: {TEST_IMAGE} (run the smoke test once)")
     report = {}
+    # the local command socket's line splitter and cap (electron/main/local.js, H1 S6), plain Node on a pipe of its own
+    lt = subprocess.run(["node", os.path.join(ROOT, "tools", "local_test.js")], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=180)
+    if lt.returncode != 0 or not lt.stdout.strip().endswith("PASS"):
+        raise RuntimeError("tools/local_test.js: " + (lt.stdout + lt.stderr)[-800:])
+    report["local"] = f"{lt.stdout.count('[ok]')} checks"
     report["raw"] = raw_check()
     async with stdio_client(SERVER) as (read, write):
         async with ClientSession(read, write) as session:

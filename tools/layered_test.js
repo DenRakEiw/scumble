@@ -12,8 +12,13 @@
 // The writers (inpaint_export.js PsdWriter on stand-in canvases, inpaint_bands.js PsdBandWriter on row sources with
 // the psd_part job run here, on the JS twin and on px.wasm): a masked layer, a switched-off one and plain ones written,
 // parsed by this file's own reader and read back by readPsd; the two writers byte-identical; without masks, the bytes
-// of before (a SHA-256); ORA ignores a stray mask. The app side (open, drop, the round trip through the editor's own
-// writers) is tools/layered_test.py.
+// of before (a SHA-256); ORA ignores a stray mask. H1 S5: inflateAtMost (zlib's bytes within its cap, a byte past it
+// refused, a cut stream or a wrong checksum still an error), valid ZIP files the same through it as through zlib, and
+// crafted files (craftedFixtures: deflate bombs, a 30,000 x 30,000 layer and a 20,000 x 20,000 mask of empty rows, a
+// side past 65,535, a raw channel without data, ORA entries past their sizes, a PNG header of 70,000 px) refused in
+// their words at once, with no buffers made; `--write-fixtures DIR` writes them too (crafted.json their refusals). The
+// app side (open, drop, the round trip through the editor's own writers, the crafted files on both routes) is
+// tools/layered_test.py.
 "use strict";
 
 const zlib = require("node:zlib");
@@ -112,7 +117,8 @@ function psd({ width, height, depth = 8, mode = 3, version = 1, layers = [], mer
     const rec = new B(), data = new B();
     for (const L of layers) {
         const ids = Object.keys(L.ch || {}).map(Number);
-        const blocks = ids.map((id) => {
+        // `blocks`: [[id, bytes]] written as they are (a crafted channel: its compression and data, H1 S5)
+        const blocks = L.blocks || ids.map((id) => {
             const [w, h] = L.dims && L.dims[id] ? L.dims[id] : id === -3 && L.mask.real ? [L.mask.real.w, L.mask.real.h] : id === -2 || id === -3 ? [L.mask.w, L.mask.h] : [L.w, L.h];
             return [id, channelData(L.ch[id], w, h, depth, L.comp ?? 1)];
         });
@@ -178,15 +184,15 @@ function crc32(buf) {
     }
     return (crc ^ 0xffffffff) >>> 0;
 }
-function zip(entries) {   // [{ name, data, deflate }]
+function zip(entries) {   // [{ name, data, deflate, body, size }]: `body` deflated bytes as they are, `size` the size the directory gives
     const parts = [], central = [];
     let off = 0;
     const le = (n, v) => { const b = Buffer.alloc(n); if (n === 2) b.writeUInt16LE(v); else b.writeUInt32LE(v >>> 0); return b; };
     for (const e of entries) {
-        const data = Buffer.from(e.data), body = e.deflate ? zlib.deflateRawSync(data) : data, name = Buffer.from(e.name);
-        const crc = crc32(data), method = e.deflate ? 8 : 0;
-        const local = Buffer.concat([le(4, 0x04034b50), le(2, 20), le(2, 0), le(2, method), le(2, 0), le(2, 0), le(4, crc), le(4, body.length), le(4, data.length), le(2, name.length), le(2, 0), name]);
-        central.push(Buffer.concat([le(4, 0x02014b50), le(2, 20), le(2, 20), le(2, 0), le(2, method), le(2, 0), le(2, 0), le(4, crc), le(4, body.length), le(4, data.length), le(2, name.length), le(2, 0), le(2, 0), le(2, 0), le(2, 0), le(4, 0), le(4, off), name]));
+        const data = Buffer.from(e.data || ""), body = e.body ? Buffer.from(e.body) : e.deflate ? zlib.deflateRawSync(data) : data, name = Buffer.from(e.name);
+        const crc = crc32(data), method = e.deflate || e.body ? 8 : 0, size = e.size ?? data.length;
+        const local = Buffer.concat([le(4, 0x04034b50), le(2, 20), le(2, 0), le(2, method), le(2, 0), le(2, 0), le(4, crc), le(4, body.length), le(4, size), le(2, name.length), le(2, 0), name]);
+        central.push(Buffer.concat([le(4, 0x02014b50), le(2, 20), le(2, 20), le(2, 0), le(2, method), le(2, 0), le(2, 0), le(4, crc), le(4, body.length), le(4, size), le(2, name.length), le(2, 0), le(2, 0), le(2, 0), le(2, 0), le(4, 0), le(4, off), name]));
         parts.push(local, body);
         off += local.length + body.length;
     }
@@ -220,6 +226,46 @@ function bandFixtures() {
  * does not cover the picture (so the base is transparent), a mask and a hidden group; `loose.ora`, the same shape;
  * `flat.psd` and `deep.psd` (bandFixtures).
  */
+/**
+ * H1 S5's crafted files (docs/research/review_external_2026-11-07/verified.json): small files that asked the reader for
+ * gigabytes before, each with the refusal it gets now (`re`) and the reader it is for. `bombMB`: what the deflate bombs
+ * unpack to (the app's fixtures make them large enough to see in the renderer's memory).
+ */
+function craftedFixtures(bombMB = 64) {
+    const rleZeros = (rows) => { const b = new B().u16(1); for (let y = 0; y < rows; y++) b.u16(0); return b.out(); };
+    const zeros = zlib.deflateSync(Buffer.alloc(bombMB * 1048576));
+    const zipBomb = new B().u16(2).bytes(zeros).out();
+    const tiny = (w, h, comp = 1) => channelData(fill(w * h, (i) => i % 251), w, h, 8, comp);
+    const files = {};
+    // a 30,000 x 30,000 layer whose RLE rows are all empty: 180 KB of row lengths for 2.7 GB of planes
+    files["crafted_huge_rle.psd"] = { re: /"Huge" holds less data than its 30,000 × 30,000 px need/, bytes: psd({ width: 64, height: 64, layers: [
+        { name: "Huge", top: 0, left: 0, w: 30000, h: 30000, blocks: [[0, rleZeros(30000)], [1, rleZeros(30000)], [2, rleZeros(30000)]] }] }) };
+    // a side past what a document can hold
+    files["crafted_wide.psd"] = { re: /"Wide" is 70,000 × 4 px, more than a layer can be/, bytes: psd({ width: 64, height: 64, layers: [
+        { name: "Wide", top: 0, left: 0, w: 70000, h: 4, blocks: [[0, rleZeros(4)]] }] }) };
+    // a real 8 x 8 layer with a 20,000 x 20,000 mask of empty rows
+    files["crafted_mask.psd"] = { re: /"Masked"'s mask holds less data than its 20,000 × 20,000 px need/, bytes: psd({ width: 64, height: 64, layers: [
+        { name: "Masked", top: 0, left: 0, w: 8, h: 8, mask: { top: 0, left: 0, w: 20000, h: 20000, def: 0 }, blocks: [[0, tiny(8, 8)], [1, tiny(8, 8)], [2, tiny(8, 8)], [-2, rleZeros(20000)]] }] }) };
+    // a ZIP channel of a 512 x 512 layer that unpacks to bombMB MB (a deflate bomb)
+    files["crafted_zip_bomb.psd"] = { re: /a ZIP channel of the PSD layer "Bomb" unpacks to more than its 512 × 512 px/, bytes: psd({ width: 64, height: 64, layers: [
+        { name: "Bomb", top: 0, left: 0, w: 512, h: 512, blocks: [[0, zipBomb]] }] }) };
+    // a raw channel of 4096 x 4096 with 16 bytes of data
+    files["crafted_raw_short.psd"] = { re: /"Short" holds less data than its 4,096 × 4,096 px need/, bytes: psd({ width: 64, height: 64, layers: [
+        { name: "Short", top: 0, left: 0, w: 4096, h: 4096, blocks: [[0, new B().u16(0).bytes(new Uint8Array(16)).out()]] }] }) };
+    // OpenRaster: a layer's PNG deflated to a bomb behind a directory size of 1 KB; an entry the directory says is 1 GB;
+    // a stack.xml of 20 MB; a stored PNG whose IHDR says 70,000 x 4
+    const xml = `<?xml version='1.0' encoding='UTF-8'?>\n<image version="0.0.3" w="64" h="64"><stack><layer name="L" src="data/l.png" /></stack></image>\n`;
+    const ora = (entry, xmlEntry = { name: "stack.xml", data: xml }) => zip([{ name: "mimetype", data: "image/openraster" }, xmlEntry, entry]);
+    files["crafted_bomb.ora"] = { re: /the ORA entry data\/l\.png unpacks to more than the 1,024 bytes its zip directory gives/, bytes: ora({ name: "data/l.png", body: zlib.deflateRawSync(Buffer.alloc(bombMB * 1048576)), size: 1024 }) };
+    files["crafted_declared.ora"] = { re: /the ORA file's entries unpack to more than \d[\d,]* MB \(at data\/l\.png\)/, bytes: ora({ name: "data/l.png", body: zlib.deflateRawSync(Buffer.alloc(1024)), size: 1024 * 1048576 }) };
+    files["crafted_xml.ora"] = { re: /stack\.xml unpacks to 20 MB, more than a stack\.xml can be \(16 MB\)/, bytes: ora({ name: "data/l.png", data: "x" }, { name: "stack.xml", body: zlib.deflateRawSync(Buffer.from(xml)), size: 20 * 1048576 }) };
+    const ihdr = Buffer.alloc(25);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(ihdr, 0);
+    ihdr.writeUInt32BE(13, 8); ihdr.write("IHDR", 12, "latin1"); ihdr.writeUInt32BE(70000, 16); ihdr.writeUInt32BE(4, 20); ihdr[24] = 8;
+    files["crafted_png.ora"] = { re: /the ORA layer "L" is 70,000 × 4 px, more than a layer can be/, bytes: ora({ name: "data/l.png", data: Buffer.concat([ihdr, Buffer.alloc(12)]) }) };
+    return files;
+}
+
 function writeFixtures(dir) {
     const solid = (w, h, r, g, b) => ({ 0: fill(w * h, () => r), 1: fill(w * h, () => g), 2: fill(w * h, () => b), "-1": fill(w * h, () => 255) });
     const file = psd({ width: 40, height: 30, layers: [
@@ -252,6 +298,11 @@ function writeFixtures(dir) {
         { name: "data/a.png", data: png(10, 8, [255, 0, 0]) },
         { name: "data/b.png", data: png(6, 7, [0, 0, 255]), deflate: true },
     ]));
+    // H1 S5: the crafted files, their bombs at 512 MB (what a reader without its caps would make the renderer hold),
+    // and crafted.json with each one's refusal for tools/layered_test.py
+    const crafted = craftedFixtures(512), said = {};
+    for (const [name, f] of Object.entries(crafted)) { fs.writeFileSync(path.join(dir, name), f.bytes); said[name] = f.re.source; }
+    fs.writeFileSync(path.join(dir, "crafted.json"), JSON.stringify(said, null, 1));
     console.log("fixtures written");
 }
 
@@ -990,6 +1041,83 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
         const grayFlat = await readPsd(psd({ width: W, height: H, mode: 1, merged: [plane(7)] }));
         check("a grayscale flat file: gray replicated, opaque", !!grayFlat.composite && grayFlat.composite[4] === plane(7)[1] && grayFlat.composite[5] === plane(7)[1] && grayFlat.composite[6] === plane(7)[1] && grayFlat.composite[7] === 255, short(Array.from(grayFlat.composite || []).slice(0, 8)));
     }
+    console.log("\n--- H1 S5: crafted files are refused before they grow; valid files read as before ---");
+    {
+        const { inflateAtMost } = mod;
+        const capped = (b, cap) => inflateAtMost(b, "deflate", cap), cappedRaw = (b, cap) => inflateAtMost(b, "deflate-raw", cap);
+        // the inflater both readers use: the whole inflate within its cap, zlib's bytes; a byte past it refused
+        const mixed = Buffer.concat([crypto.randomBytes(300000), Buffer.alloc(500000, 7), crypto.randomBytes(77)]);
+        const z = zlib.deflateSync(mixed), zr = zlib.deflateRawSync(mixed);
+        const whole = await inflateAtMost(z, "deflate"), exact = await inflateAtMost(zr, "deflate-raw", mixed.length);
+        check("inflateAtMost: zlib's bytes, zlib and raw, with no cap and with the cap at the size", equalBytes(whole, mixed) && equalBytes(exact, mixed), `${whole.length} / ${exact.length} of ${mixed.length}`);
+        let over = null;
+        try { await inflateAtMost(z, "deflate", mixed.length - 1); } catch (err) { over = err; }
+        check("a cap one byte short is refused (.tooLarge)", over && over.tooLarge && /unpacks to more than 800,076 bytes/.test(over.message), over && over.message);
+        const cut = await throwsWith(() => inflateAtMost(z.subarray(0, z.length - 9), "deflate", Infinity), /./);
+        const bad = Buffer.from(z); bad[bad.length - 1] ^= 1;
+        const sum = await throwsWith(() => inflateAtMost(bad, "deflate", mixed.length), /./);
+        check("a cut stream and a wrong checksum still fail as a whole inflate does (the end is read within the cap)", cut.ok && sum.ok && !/unpacks to more/.test(cut.msg + sum.msg), `${cut.msg} / ${sum.msg}`);
+        const bomb = zlib.deflateSync(Buffer.alloc(256 * 1048576));
+        let t = performance.now(), ab0 = process.memoryUsage().arrayBuffers, b2 = null;
+        try { await inflateAtMost(bomb, "deflate", 1048576); } catch (err) { b2 = err; }
+        const bombMs = performance.now() - t, grew = (process.memoryUsage().arrayBuffers - ab0) / 1048576;
+        check(`a bomb of 256 MB (${Math.round(bomb.length / 1024)} KB) with a cap of 1 MB stops there: ${bombMs.toFixed(0)} ms, ${grew.toFixed(0)} MB of buffers more`, b2 && b2.tooLarge && bombMs < 1500 && grew < 100, b2 && b2.message);
+
+        // valid ZIP files: the same layers through the capped inflater as through zlib (8 and 16 bit, prediction, a mask)
+        const W = 37, H = 19, ramp = fill(W * H, (i) => (i * 13 + 5) % 256), r16 = fill(W * H, (i) => (i * 3001) % 65536);
+        const zips = [
+            psd({ width: W, height: H, layers: [{ name: "z", top: 1, left: 2, w: W, h: H, comp: 2, ch: { 0: ramp, 1: ramp.map((v) => 255 - v), 2: ramp, "-1": fill(W * H, (i) => (i % 5) * 60) } }] }),
+            psd({ width: W, height: H, layers: [{ name: "zp", top: 0, left: 0, w: W, h: H, comp: 3, ch: { 0: ramp, 1: ramp, 2: ramp, "-2": fill(10 * 6, (i) => i * 4) }, mask: { top: 2, left: 3, w: 10, h: 6, def: 255 } }] }),
+            psd({ width: W, height: H, depth: 16, layers: [{ name: "z16", top: 0, left: 0, w: W, h: H, comp: 3, ch: { 0: r16, 1: r16, 2: r16, "-1": fill(W * H, () => 65535) } }] }),
+            ...Object.values(bandFixtures()),
+        ];
+        let same = 0;
+        const diffs = [];
+        for (const f of zips) {
+            const a = await readPsd(f, { inflate }), b = await readPsd(f, { inflate: capped });
+            const key = (d) => JSON.stringify({ w: d.width, h: d.height, notes: d.notes, layers: d.layers.map((l) => ({ ...l, rgba: crypto.createHash("sha256").update(l.rgba).digest("hex"), mask: l.mask ? { ...l.mask, data: crypto.createHash("sha256").update(l.mask.data).digest("hex") } : null })), c: d.composite ? crypto.createHash("sha256").update(d.composite).digest("hex") : null });
+            if (key(a) === key(b)) same++; else diffs.push(key(b).slice(0, 200));
+        }
+        check(`${zips.length} valid ZIP-channel PSDs read the same through the capped inflater as through zlib`, same === zips.length, diffs.join(" | "));
+        const oraFile = zip([{ name: "mimetype", data: "image/openraster" }, { name: "stack.xml", data: `<image w="4" h="4"><stack><layer name="a" src="a.png" /></stack></image>`, deflate: true }, { name: "a.png", data: crypto.randomBytes(5000), deflate: true }]);
+        const o1 = await readOra(oraFile, { inflateRaw }), o2 = await readOra(oraFile, { inflateRaw: cappedRaw });
+        check("a valid ORA with deflated entries reads the same through it", equalBytes(o1.layers[0].png, o2.layers[0].png) && JSON.stringify(o1.notes) === JSON.stringify(o2.notes));
+
+        // the crafted files: each refused with its words, at once, before its planes are made
+        for (const [name, f] of Object.entries(craftedFixtures(64))) {
+            const ora = name.endsWith(".ora");
+            t = performance.now();
+            ab0 = process.memoryUsage().arrayBuffers;
+            const res = await throwsWith(() => (ora ? readOra(f.bytes, { inflateRaw: cappedRaw }) : readPsd(f.bytes, { inflate: capped })), f.re);
+            const ms = performance.now() - t, more = (process.memoryUsage().arrayBuffers - ab0) / 1048576;
+            check(`${name} (${Math.max(1, Math.round(f.bytes.length / 1024))} KB) is refused in ${ms.toFixed(0)} ms with ${more.toFixed(0)} MB of buffers more`, res.ok && ms < 2000 && more < 100, res.msg);
+        }
+        // a test's inflater that ignores the cap is held to it as well (the bomb's channel and entry)
+        const crafted = craftedFixtures(64);
+        const loose = await throwsWith(() => readPsd(crafted["crafted_zip_bomb.psd"].bytes, { inflate }), crafted["crafted_zip_bomb.psd"].re);
+        const looseOra = await throwsWith(() => readOra(crafted["crafted_bomb.ora"].bytes, { inflateRaw }), crafted["crafted_bomb.ora"].re);
+        check("an inflater that ignores the cap is held to it: the same refusals", loose.ok && looseOra.ok, `${loose.msg} / ${looseOra.msg}`);
+
+        // a flat file of 16,000 x 16,000 whose merged rows are empty: no merged picture, and no 768 MB of planes for it
+        const flat = new B().ascii("8BPS").u16(1).bytes([0, 0, 0, 0, 0, 0]).u16(3).u32(16000).u32(16000).u16(8).u16(3).u32(0).u32(0).u32(0).u16(1);
+        for (let i = 0; i < 3 * 16000; i++) flat.u16(0);
+        t = performance.now();
+        const fd = await readPsd(flat.out(), {});
+        check(`a flat file whose merged rows cannot fill it has no merged picture (${(performance.now() - t).toFixed(0)} ms)`, fd.composite === null && !fd.layers.length && performance.now() - t < 2000);
+
+        // onHeader: the caller's size check before anything else is read or made
+        const seen = [];
+        const okDoc = await mod.readPsd(zips[0], { inflate, onHeader: (h) => seen.push(h) });
+        const big = new B().ascii("8BPS").u16(1).bytes([0, 0, 0, 0, 0, 0]).u16(3).u32(40000).u32(40000).u16(8).u16(3).out();
+        const stop = await throwsWith(() => mod.readPsd(big, { onHeader: (h) => { if (h.width * h.height > 268435456) throw new Error(`${h.width} x ${h.height} too large`); } }), /40000 x 40000 too large/);
+        const oraSeen = [];
+        await readOra(oraFile, { inflateRaw, onHeader: (h) => oraSeen.push(h) });
+        const oraStop = await throwsWith(() => readOra(crafted["crafted_bomb.ora"].bytes, { inflateRaw, onHeader: () => { throw new Error("size refused"); } }), /size refused/);
+        check("readPsd and readOra call onHeader once with the size, before the layers (a throw there stops the read before the file ends early)",
+            seen.length === 1 && seen[0].width === W && seen[0].height === H && seen[0].depth === 8 && okDoc.layers.length === 1 && stop.ok
+            && oraSeen.length === 1 && oraSeen[0].width === 4 && oraSeen[0].height === 4 && oraStop.ok, `${short(seen)} ${stop.msg} ${short(oraSeen)} ${oraStop.msg}`);
+    }
+
     check(`readPsdStream answers as readPsd on all ${TWIN.files} PSDs read above (${TWIN.refusals} of them refused), in bands of 3 rows and of 256`, TWIN.files >= 40 && TWIN.refusals >= 5 && TWIN.fails.length === 0, TWIN.fails.length ? TWIN.fails.slice(0, 4).join(" | ") : `${TWIN.files} files`);
 
     const failed = results.filter((x) => !x).length;

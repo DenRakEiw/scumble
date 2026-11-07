@@ -47,4 +47,16 @@ function navigationAllowed(url, origin, target) {
     return target === "cloud" && cloudAuthUrl(url);
 }
 
-module.exports = { CLOUD_URL, CLOUD_AUTH_HOSTS, cloudAuthUrl, popupAction, navigationAllowed };
+// The permissions the page (and its sign-in windows) never gets, in Electron's names (H1, docs/PLAN_WASM_BUILD.md §7
+// "The user's answers after K4"): the page runs every node pack's JavaScript, and Electron grants whatever a page asks
+// for unless the session says otherwise. Camera and microphone ("media"; a screen capture needs a handler of its own,
+// which is not set, so it fails anyway), location, MIDI, and the device APIs (HID, serial, USB). Everything else stays
+// as before (granted): ComfyUI's page keeps its clipboard, fullscreen and notifications.
+const DENIED_PERMISSIONS = new Set(["media", "geolocation", "midi", "midiSysex", "hid", "serial", "usb"]);
+
+/** Whether the ComfyUI window's session grants `permission` (an Electron permission name). */
+function permissionAllowed(permission) {
+    return !DENIED_PERMISSIONS.has(String(permission));
+}
+
+module.exports = { CLOUD_URL, CLOUD_AUTH_HOSTS, cloudAuthUrl, popupAction, navigationAllowed, DENIED_PERMISSIONS, permissionAllowed };

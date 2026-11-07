@@ -151,22 +151,39 @@ class ComfyClient {
                 devices: ((stats && stats.devices) || []).map((d) => ({ name: d.name, vramTotal: d.vram_total, vramFree: d.vram_free })),
                 node: false, nodeVersion: "", queue: null, models: {},
             };
-            try { const q = await get("/queue"); if (q.ok) { const j = await q.json(); out.queue = { running: (j.queue_running || []).length, pending: (j.queue_pending || []).length }; } } catch (_) { /* ignore */ }
-            try { const n = await get("/object_info/InpaintCanvas"); out.node = n.status === 200 && Object.keys(await n.json()).length > 0; } catch (_) { out.node = false; }
-            if (out.node) { try { const i = await get("/inpaint_canvas/info"); if (i.ok) out.nodeVersion = (await i.json()).version || ""; } catch (_) { /* older node */ } }
-            for (const [cls, inputs] of Object.entries(MODEL_COMBOS)) {
+            // the rest together (P15: one round trip instead of eleven or twelve one after another on a remote server),
+            // each request's failure its own, as before; the node's version needs the node, so it follows its check
+            const queue = (async () => {
+                try { const q = await get("/queue"); if (q.ok) { const j = await q.json(); return { running: (j.queue_running || []).length, pending: (j.queue_pending || []).length }; } } catch (_) { /* ignore */ }
+                return null;
+            })();
+            const node = (async () => {
+                let has = false, version = "";
+                try { const n = await get("/object_info/InpaintCanvas"); has = n.status === 200 && Object.keys(await n.json()).length > 0; } catch (_) { has = false; }
+                if (has) { try { const i = await get("/inpaint_canvas/info"); if (i.ok) version = (await i.json()).version || ""; } catch (_) { /* older node */ } }
+                return { has, version };
+            })();
+            const lists = Object.entries(MODEL_COMBOS).map(async ([cls, inputs]) => {
+                const found = [];
                 try {
                     const r2 = await get("/object_info/" + cls);
-                    if (!r2.ok) continue;
+                    if (!r2.ok) return found;
                     const info = (await r2.json())[cls];
                     const req = (info && info.input && info.input.required) || {};
                     for (const inp of inputs) {
                         const spec = req[inp];
                         const opts = Array.isArray(spec) && Array.isArray(spec[0]) ? spec[0] : (spec && spec[1] && Array.isArray(spec[1].options) ? spec[1].options : null);
-                        if (opts) out.models[`${cls}.${inp}`] = opts;
+                        if (opts) found.push([`${cls}.${inp}`, opts]);
                     }
                 } catch (_) { /* ignore */ }
-            }
+                return found;
+            });
+            const [q, n, ...models] = await Promise.all([queue, node, ...lists]);
+            out.queue = q;
+            out.node = n.has;
+            out.nodeVersion = n.version;
+            // in MODEL_COMBOS order, as the requests one after another wrote them
+            for (const found of models) for (const [key, opts] of found) out.models[key] = opts;
             return out;
         } catch (err) {
             if (err.name === "AbortError") throw new Error("no answer within " + Math.round(timeoutMs / 1000) + " s");
