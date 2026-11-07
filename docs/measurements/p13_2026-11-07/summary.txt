@@ -1,0 +1,19 @@
+P13 (docs/PLAN_WASM_BUILD.md section 7, "The user's answers after K4", item 3): the CorridorKey refine's fit
+(renderer/editor/keymatte.js prepareRefine, method "fast") without its repeated work, the same floats.
+
+ab.js: keymatte.js at e9ab0d3 (written beside it as keymatte_old.mjs by `git show e9ab0d3:renderer/editor/keymatte.js`,
+its two imports pointed at the worktree's px/kernels.js and inpaint_depth.js) against the worktree's, under plain Node
+(node v24, V8 13.6), 2026-11-07 16:31 with no app running on the agent's side.
+
+  192 cases (kinds skin blue teal fold shade stripes hair near, s 4 / 15, picture noise 0 / 6, guides rgb / chroma /
+  luma, the JS twin's box and px.wasm's): refineMatte's alpha and prepareRefine's coefficients, softness, residual
+  192 cases, 0 differ; 22395648 alpha bytes and 681472 coefficient floats compared
+
+  the fit alone at a 2048 x 1366 bucket (2.8 MP), px.wasm's box, best of 3, two alternations:
+  old: 1186 ms (1186, 1210, 1187)      new: 973 ms (982, 984, 973)
+  old: 1178 ms (1178, 1184, 1184)      new: 970 ms (970, 991, 978)
+  -> about 18 % off the fit (the 15k key's 16.8 MP bucket, inferred: the same share of a fit 6x as long)
+
+What it changes: the matte's mean once for all softnesses (90 box calls -> 86), one scratch for the nine products of
+the colour fit (and the grey fit's two) instead of a new array each, and each softness's [1 2 1] passes carried on from
+the last whole softness's planes (1 + 2 + 3 + 4 = 10 pass sets -> 4). tools/keymatte_test.js case 12 holds the twin.

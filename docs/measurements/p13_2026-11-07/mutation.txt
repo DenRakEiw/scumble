@@ -1,0 +1,8 @@
+killed   carry one pass too many: FAIL P13 hair s 4 {} box js: the fit's floats are the old code's bit for bit: hair js: soft 1 vs 1, residual 0.0013509677693984948 vs 0.00004467793275
+killed   carry from the planes' count: FAIL P13 fold s 4 {"guide":"luma"} box js: the fit's floats are the old code's bit for bit: fold js: soft 4 vs 4, residual 0.016711060207119047 vs 0.0
+killed   carry kept for a smaller k: FAIL P13 hair s 4 {"softs":[3,1,4,4,0,2]} box js: the fit's floats are the old code's bit for bit: hair js: soft 3 vs 1, residual 0.003318731391469296
+killed   a fractional k carried: FAIL P13 fold s 4 {"guide":"luma","softs":[1.5,4]} box js: the fit's floats are the old code's bit for bit: fold js: soft 4 vs 4, residual 0.030917474
+killed   mP of the first guide plane: FAIL skin edge of equal luminance at s 4: the transition stays within 1 px of the true edge: leak 183.0 levels beyond 1.5 px, crossing off by 0.81 px 
+killed   products not stored as f32: FAIL P13 hair s 4 {} box rust: the fit's floats are the old code's bit for bit: hair rust: soft 0 vs 1, residual NaN vs 0.000044677932756432455
+killed   grey fit: II from I * p: FAIL a flat picture leaves the matte alone (fast luma): max 46 levels from the bilinear matte
+7 of 7 killed

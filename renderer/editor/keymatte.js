@@ -326,13 +326,22 @@ const FLOOR = 0.05;
 function mean(box, a, w, h, r) { return box(a, w, h, [r]); }
 
 /**
- * The window-averaged coefficients of the confidence-weighted linear model, one-channel guide.
+ * The mean of the products x * y (stored as f32, as a new array of them would hold them) through one scratch: the box
+ * copies its input (px/px.js `boxBlurs`, kernels_js.js), so the scratch is free again when it returns (P13).
+ */
+function prodMean(box, s, x, y, w, h, r) {
+    for (let i = 0, n = s.length; i < n; i++) s[i] = x[i] * y[i];
+    return mean(box, s, w, h, r);
+}
+
+/**
+ * The window-averaged coefficients of the confidence-weighted linear model, one-channel guide. `mP` is the matte's
+ * mean, the same for every softness (P13: made once by the caller).
  * @returns {Float32Array[]} [A, B, C]
  */
-function fitGrey(I, p, w, h, r, eps, flat, box) {
-    const n = w * h, Ip = new Float32Array(n), II = new Float32Array(n);
-    for (let i = 0; i < n; i++) { Ip[i] = I[i] * p[i]; II[i] = I[i] * I[i]; }
-    const mI = mean(box, I, w, h, r), mP = mean(box, p, w, h, r), mIp = mean(box, Ip, w, h, r), mII = mean(box, II, w, h, r);
+function fitGrey(I, p, mP, w, h, r, eps, flat, box) {
+    const n = w * h, s = new Float32Array(n);
+    const mI = mean(box, I, w, h, r), mIp = prodMean(box, s, I, p, w, h, r), mII = prodMean(box, s, I, I, w, h, r);
     const ca = new Float32Array(n), cb = new Float32Array(n), cc = new Float32Array(n);
     for (let i = 0; i < n; i++) {
         let v = mII[i] - mI[i] * mI[i] - flat * FLOOR;   // the rounding of a flat window's means is not an edge
@@ -345,16 +354,16 @@ function fitGrey(I, p, w, h, r, eps, flat, box) {
 
 /**
  * The same for the three-channel guide (He et al.'s colour guided filter: a = (Sigma + eps U)^-1 cov(I, p)); the
- * confidence from the trace of Sigma.
+ * confidence from the trace of Sigma. `mP` as in fitGrey; the nine products go through one scratch (P13).
  * @returns {Float32Array[]} [A0, A1, A2, B, C]
  */
-function fitColour(I0, I1, I2, p, w, h, r, eps, flat, box) {
-    const n = w * h;
-    const prod = (x, y) => { const o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = x[i] * y[i]; return o; };
-    const m0 = mean(box, I0, w, h, r), m1 = mean(box, I1, w, h, r), m2 = mean(box, I2, w, h, r), mP = mean(box, p, w, h, r);
-    const m0p = mean(box, prod(I0, p), w, h, r), m1p = mean(box, prod(I1, p), w, h, r), m2p = mean(box, prod(I2, p), w, h, r);
-    const v00 = mean(box, prod(I0, I0), w, h, r), v01 = mean(box, prod(I0, I1), w, h, r), v02 = mean(box, prod(I0, I2), w, h, r);
-    const v11 = mean(box, prod(I1, I1), w, h, r), v12 = mean(box, prod(I1, I2), w, h, r), v22 = mean(box, prod(I2, I2), w, h, r);
+function fitColour(I0, I1, I2, p, mP, w, h, r, eps, flat, box) {
+    const n = w * h, s = new Float32Array(n);
+    const prod = (x, y) => prodMean(box, s, x, y, w, h, r);
+    const m0 = mean(box, I0, w, h, r), m1 = mean(box, I1, w, h, r), m2 = mean(box, I2, w, h, r);
+    const m0p = prod(I0, p), m1p = prod(I1, p), m2p = prod(I2, p);
+    const v00 = prod(I0, I0), v01 = prod(I0, I1), v02 = prod(I0, I2);
+    const v11 = prod(I1, I1), v12 = prod(I1, I2), v22 = prod(I2, I2);
     const ca0 = new Float32Array(n), ca1 = new Float32Array(n), ca2 = new Float32Array(n), cb = new Float32Array(n), cc = new Float32Array(n);
     for (let i = 0; i < n; i++) {
         const a0 = m0[i], a1 = m1[i], a2 = m2[i], mp = mP[i];
@@ -587,14 +596,22 @@ export function prepareRefine(o) {
         const t0 = Date.now(), n = geo.aw * geo.ah, { aw, ah } = geo;
         const planes = Array.from({ length: st.g.planes }, () => new Float32Array(n));
         guidePlanes(st.g, s.data, 0, n, planes, 0);
+        // the matte's mean is the same box of the same p for every softness: once (P13)
+        const mP = mean(box, p, aw, ah, prm.r);
         const fit = (P) => P.length === 3
-            ? fitColour(P[0], P[1], P[2], p, aw, ah, prm.r, prm.eps, prm.flat, box)
-            : fitGrey(P[0], p, aw, ah, prm.r, prm.eps, prm.flat, box);
+            ? fitColour(P[0], P[1], P[2], p, mP, aw, ah, prm.r, prm.eps, prm.flat, box)
+            : fitGrey(P[0], p, mP, aw, ah, prm.r, prm.eps, prm.flat, box);
         const soft = o.soft != null ? o.soft : REFINE.soft;
         const softs = soft === "auto" ? (o.softs || REFINE.softs) : [Math.max(0, soft | 0)];
-        let best = null;
+        let best = null, lastK = 0, lastP = planes;
         for (const k of softs) {
-            const P = k ? blur121(planes, aw, ah, k) : planes, coef = fit(P);
+            // k passes carried on from the last softness's planes (P13): the passes are the same operations on the same
+            // floats, so blur121(blur121(P, j), k - j) is blur121(P, k) bit for bit; a smaller k (or one that is not a
+            // whole number of passes) starts from the planes
+            const whole = Number.isInteger(k) && k > 0;
+            const P = !k ? planes : whole && k >= lastK ? blur121(lastP, aw, ah, k - lastK) : blur121(planes, aw, ah, k);
+            if (whole) { lastK = k; lastP = P; }
+            const coef = fit(P);
             const res = softs.length > 1 ? fitResidual(coef, P, p) : 0;
             if (!best || res < best.res) best = { k, coef, res };
         }
