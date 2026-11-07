@@ -297,6 +297,8 @@ function registerFilter(entry, def) {
         }
         else throw new Error(`filter "${id}": unknown param type "${type}" (number, select, bool, custom, color)`);
         for (const k of ["keepPreset", "notWithPlate", "onlyWithPlate"]) if (p[k]) out[k] = true;
+        // a length in image pixels or not, against what its unit "px" says (inpaint_filters.js scalesWithPicture)
+        if (type === "number" && p.scales != null) out.scales = !!p.scales;
         if (p.title) out.title = String(p.title);
         if (p.hidden) out.hidden = true;
         return out;

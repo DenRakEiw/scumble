@@ -11013,6 +11013,141 @@ try {
 } finally { host.off("geometry", onGeom); await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
+    ("filter_sizes_in_pixels_follow_a_resize", """
+// item 57: a resize scales a filter layer's sizes in image pixels (unit "px", or scales: true) by sqrt(sx * sy), exactly
+// (no step grid: a small length never becomes 0, there and back gives it back) and kept in the range, inside the resize's
+// own undo step; percentages and the rest stay. At 50 % a blur of 8 px is one of 4 px and a grain of 4 px one of 2 px, and
+// the picture at 50 % is the one at 100 % scaled down, on numbers, where the old sizes would give another picture
+const F = await import("./editor/inpaint_filters.js");
+const P = await import("./plugins.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+const eq = (a, b, what) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(what + ": " + JSON.stringify(a) + ", not " + JSON.stringify(b)); };
+const sample = P.pluginHost.entries().get("sample");
+if (!sample || !sample.api) throw new Error("the sample plugin is not loaded: the scales passthrough of filters.register cannot be checked");
+let tid = null;
+try {
+    // the rules on their own: the geometric mean, exact products (float noise trimmed), min and max
+    eq(F.scaleFilterParams("blur", { radius: 4 }, 0.37, 0.37), { radius: 1.48 }, "a blur of 4 px at 37 %");
+    eq(F.scaleFilterParams("blur", { radius: 40 }, 2, 2), { radius: 64 }, "a blur of 40 px at 200 % (its max)");
+    eq(F.scaleFilterParams("blur", { radius: 6 }, 0.5, 2), null, "an aspect change of the same area");
+    eq(F.scaleFilterParams("blur", { radius: 6 }, 0.5, 0.125), { radius: 1.5 }, "the geometric mean of 50 % and 12.5 %");
+    eq(F.scaleFilterParams("sharpen", { amount: 100, radius: 1.5, threshold: 10 }, 0.5, 0.5), { amount: 100, radius: 0.75, threshold: 10 }, "sharpen at 50 %");
+    eq(F.scaleFilterParams("sharpen", { amount: 100, radius: 0.4, threshold: 0 }, 0.5, 0.5), { amount: 100, radius: 0.3, threshold: 0 }, "sharpen at its min");
+    eq(F.scaleFilterParams("grain", { preset: "portra400", amount: 18, size: 1.5, speckle: 36, chroma: 30, plate_scale: 1 }, 0.5, 0.5),
+        { preset: "portra400", amount: 18, size: 0.75, speckle: 36, chroma: 30, plate_scale: 0.5 }, "a grain stock at 50 %");
+    eq(F.scaleFilterParams("vignette", { amount: 40, size: 60, softness: 50 }, 0.5, 0.5), null, "the vignette (percentages)");
+    eq(F.scaleFilterParams("lens_blur", F.filterDefaults("lens_blur"), 0.5, 0.5), null, "the lens blur (its aperture a percentage)");
+    eq(F.scaleFilterParams("relight", F.filterDefaults("relight"), 0.5, 0.5), null, "relight (its lights follow the geometry)");
+    eq(F.scaleFilterParams("no.such_filter", { radius: 8 }, 0.5, 0.5), null, "a filter not installed");
+    // the plugins' params come through filters.register with their unit: each of these is installed in the gate profile
+    for (const id of ["film.halation", "effects.glass", "effects.chromatic_shift"]) if (!F.FILTERS[id]) throw new Error(id + " is not installed: its plugin's params cannot be checked");
+    const hal = F.scaleFilterParams("film.halation", { threshold: 65, radius: 30, strength: 40, hue: 12, saturation: 85 }, 0.5, 0.5);
+    const glass = F.scaleFilterParams("effects.glass", { style: "ribbed", size: 6, amount: 12, frost: 3, angle: 30, sheen: 15, seed: 4 }, 0.5, 0.5);
+    const chrom = F.scaleFilterParams("effects.chromatic_shift", { style: "plates", amount: 5, angle: 30, strength: 100 }, 0.5, 0.5);
+    if (!hal || !glass || !chrom) throw new Error("a plugin filter's lengths did not scale: " + JSON.stringify({ hal, glass, chrom }));
+    eq([hal.radius, hal.threshold, hal.hue], [15, 65, 12], "the film pack's halation");
+    eq([glass.size, glass.amount, glass.frost, glass.angle, glass.seed, glass.sheen], [4, 6, 1.5, 30, 4, 15], "the glass (its size at its min 4)");
+    eq([chrom.amount, chrom.angle, chrom.strength], [2.5, 30, 100], "the chromatic shift");
+    // small lengths survive a resize down and back up: 1 px at 40 % and then 250 % is 1 px again, not 0
+    const there = (id, p) => F.scaleFilterParams(id, F.scaleFilterParams(id, p, 0.4, 0.4), 2.5, 2.5);
+    eq(there("effects.chromatic_shift", { style: "plates", amount: 1, angle: 30, strength: 100 }).amount, 1, "a 1 px chromatic shift at 40 % and back");
+    eq(there("blur", { radius: 0.5 }), { radius: 0.5 }, "a 0.5 px blur at 40 % and back");
+    eq(there("effects.glass", { style: "ribbed", size: 40, amount: 12, frost: 1, angle: 0, sheen: 15, seed: 0 }).frost, 1, "a 1 px frost at 40 % and back");
+    eq(there("grain", { amount: 25, size: 1.5 }).size, 1.5, "a grain of 1.5 px at 40 % and back");
+    // filters.register passes `scales` through: false keeps a "px" param, true scales one in another unit
+    tid = sample.api.filters.register({
+        id: "scales57_test", label: "Scales test",
+        params: [
+            { key: "kept", label: "Kept", type: "number", min: 0, max: 100, step: 1, default: 10, unit: "px", scales: false },
+            { key: "scaled", label: "Scaled", type: "number", min: 0.1, max: 10, step: 0.1, default: 2, unit: "x", scales: true },
+            { key: "plain", label: "Plain", type: "number", min: 0, max: 100, step: 1, default: 10, unit: "px" },
+            { key: "pct", label: "Percent", type: "number", min: 0, max: 100, step: 1, default: 50, unit: "%" },
+        ],
+        reach: 0,
+        apply: (src) => src,
+    });
+    eq(F.scaleFilterParams(tid, { kept: 10, scaled: 2, plain: 10, pct: 50 }, 0.5, 0.5), { kept: 10, scaled: 1, plain: 5, pct: 50 }, "a plugin's scales: false / true");
+    out.plugin = ["film.halation", "effects.glass", "effects.chromatic_shift", tid];
+    // a picture with hard edges (what the blur changes) on mid grey (where the grain shows); the edges on even pixels
+    const W = 640, H = 400;
+    const bc = document.createElement("canvas"); bc.width = W; bc.height = H;
+    const bx = bc.getContext("2d");
+    bx.fillStyle = "#808080"; bx.fillRect(0, 0, W, H);
+    bx.fillStyle = "#202020"; bx.fillRect(40, 40, 200, 160);
+    bx.fillStyle = "#e0e0e0"; bx.fillRect(320, 120, 240, 200);
+    await ed.setBaseFromCanvas(bc);
+    const g = await run("add_filter", { type: "grain", params: { amount: 60, size: 4, speckle: 0, chroma: 0 }, doc: d.id });
+    const b = await run("add_filter", { type: "blur", params: { radius: 8 }, doc: d.id });
+    const vg = await run("add_filter", { type: "vignette", params: { amount: 40, size: 60, softness: 50 }, doc: d.id });
+    const L = (id) => ed.layers.find((l) => l.id === id);
+    const show = (id, on) => run("set_layer", { layer: id, visible: on, doc: d.id });
+    const flat = () => ed.flattenToCanvas({ forRun: true });
+    const half = (cv) => { const c = document.createElement("canvas"); c.width = cv.width / 2; c.height = cv.height / 2; const x = c.getContext("2d"); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high"; x.drawImage(cv, 0, 0, c.width, c.height); return c; };
+    const data = (cv) => cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+    const diff = (p0, q0) => { const p = data(p0), q = data(q0); let s = 0, m = 0; for (let i = 0; i < p.length; i += 4) for (let k = 0; k < 3; k++) { const e = Math.abs(p[i + k] - q[i + k]); s += e; if (e > m) m = e; } return { mean: Math.round(s / (p.length / 4 * 3) * 1000) / 1000, max: m }; };
+    // at 100 %, each filter alone, scaled down to 320 x 200 as the resize scales the base
+    await show(vg.id, false);
+    await show(g.id, false);
+    const aBlur = half(flat());
+    await show(g.id, true); await show(b.id, false);
+    const aGrain = half(flat());
+    await show(b.id, true); await show(vg.id, true);
+    const n0 = ed.undo.length;
+    await run("resize_image", { percent: 50, doc: d.id });
+    if (ed.width !== 320 || ed.height !== 200) throw new Error("the resize made " + ed.width + " x " + ed.height);
+    if (ed.undo.length !== n0 + 1 || ed.undo[ed.undo.length - 1].label !== "Resize image") throw new Error("the resize pushed " + (ed.undo.length - n0) + " steps: " + ed.undo.slice(n0).map((s) => s.label));
+    const now = () => [L(b.id).params.radius, L(g.id).params.size, L(g.id).params.amount, L(g.id).params.speckle, L(vg.id).params.size, L(vg.id).params.softness];
+    eq(now(), [4, 2, 60, 0, 60, 50], "blur radius, grain size, amount, speckle, vignette size, softness after the resize");
+    if (!ed.status.includes("The sizes in pixels of 2 filter layers scaled along.")) throw new Error("the status line: " + ed.status);
+    // one Ctrl+Z puts the sizes back with the picture, the redo brings the scaled ones again
+    await run("undo", { doc: d.id });
+    if (ed.width !== W) throw new Error("the undo left " + ed.width);
+    eq(now(), [8, 4, 60, 0, 60, 50], "the values after the undo");
+    await run("redo", { doc: d.id });
+    if (ed.width !== 320) throw new Error("the redo left " + ed.width);
+    eq(now(), [4, 2, 60, 0, 60, 50], "the values after the redo");
+    // the pictures: each filter alone at 50 % against the 100 % one scaled down, and against the old size at 50 %
+    const withValue = (id, key, v) => { const l = L(id), p0 = l.params; l.params = { ...p0, [key]: v }; ed.markFilterChanged(l); const c = flat(); l.params = p0; ed.markFilterChanged(l); return c; };
+    await show(vg.id, false);
+    await show(g.id, false);
+    out.blur = { scaled: diff(aBlur, flat()), unscaled: diff(aBlur, withValue(b.id, "radius", 8)) };
+    await show(g.id, true); await show(b.id, false);
+    out.grain = { scaled: diff(aGrain, flat()), unscaled: diff(aGrain, withValue(g.id, "size", 4)) };
+    for (const [k, r] of Object.entries({ blur: out.blur, grain: out.grain })) {
+        if (!(r.scaled.mean <= 1) || r.scaled.max > 8) throw new Error(k + " at 50 % is not the 100 % picture scaled down: " + JSON.stringify(r));
+        if (!(r.unscaled.mean > 5 * Math.max(0.2, r.scaled.mean))) throw new Error(k + ": the old size at 50 % is as close as the scaled one, the comparison sees nothing: " + JSON.stringify(r));
+    }
+    // a whole-picture upscale lands through the same resize (resizeImageNow's `base`, as the Realism Pass above 1x does):
+    // at 2x the sizes double again, in the landing's own step
+    const up = new OffscreenCanvas(640, 400);
+    const ux = up.getContext("2d"); ux.fillStyle = "#808080"; ux.fillRect(0, 0, 640, 400);
+    const ubytes = new Uint8Array(await (await up.convertToBlob({ type: "image/png" })).arrayBuffer());
+    const n1 = ed.undo.length;
+    await host.landWholePicture(ed, ubytes, "image/png", { label: "Test", seconds: 1, W: 320, H: 200 });
+    if (ed.width !== 640 || ed.height !== 400 || ed.undo.length !== n1 + 1 || ed.undo[ed.undo.length - 1].label !== "Upscale image") throw new Error("the landing: " + ed.width + " x " + ed.height + " / " + ed.undo.slice(n1).map((s) => s.label));
+    eq(now(), [8, 4, 60, 0, 60, 50], "the values after a 2x upscale's landing");
+    // a filter layer whose plugin went off keeps its values, and the line says so
+    const off = await run("add_filter", { type: tid, params: { plain: 10 }, doc: d.id });
+    sample.api.filters.unregister(tid); tid = null;
+    // and the "before" of an edit left in progress (a slider the list was rebuilt under) is in the new sizes too
+    ed.filterPreview = null;
+    L(b.id)._undoPending = ed.snapshot({ kind: "filter", id: b.id });
+    await run("resize_image", { percent: 50, doc: d.id });
+    const pend = L(b.id)._undoPending;
+    L(b.id)._undoPending = null;
+    if (!pend || pend.params.radius !== 4) throw new Error("the pending step's radius after the resize: " + JSON.stringify(pend && pend.params));
+    if (L(off.id).params.plain !== 10 || L(b.id).params.radius !== 4) throw new Error("a resize with a plugin off: " + JSON.stringify([L(off.id).params.plain, L(b.id).params.radius]));
+    if (!ed.status.includes("The sizes in pixels of 2 filter layers scaled along. 1 filter layer of a plugin that is off kept its sizes.")) throw new Error("the status line with a plugin off: " + ed.status);
+    out.tiles = !!ed.tileMode;
+} finally {
+    if (tid) { try { sample.api.filters.unregister(tid); } catch (_) { /* gone */ } }
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("a_text_layer_keeps_its_free_angle", """
 // PLAN_0_1_31 §7 (23b step 4): a text turned by any angle stays text (text.angle, drawn at it as vectors); the transform
 // tool, the Angle field and set_text turn it; flips negate the angle, turns keep it; distort makes it pixels
