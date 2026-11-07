@@ -914,6 +914,21 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   sessions; the rest of `inpaint_canvas.js` and `host.js` after the kernel release (K41), as a block of its own before
   new features. A plan with a line map first. This replaces the standing rule "split only where a subject is reworked
   anyway".
+- 57: **Filter radii follow a resize** (the user, 2026-11-07, from another agent's idea list): `resizeImageNow`
+  (`renderer/editor/inpaint_canvas.js` near 6033) sets a filter layer's `w` / `h` only, so a blur radius, a grain size,
+  a lens blur or another parameter in pixels keeps its value and the effect doubles after a resize to 50 %. Scale the
+  parameters that are in image pixels (a per-filter list first; some may already be relative) on Resize, a whole-picture
+  upscale and the Realism Pass above factor 1. Small to medium.
+- 58: **The eyedropper averages 3 x 3 / 5 x 5** (the user, 2026-11-07): a Point / 3 x 3 / 5 x 5 row in the eyedropper's
+  options (beside its existing Sample image / layer), so grain or sensor noise does not pick a single stray pixel. Small.
+- 59: **Smart guides to other layers** (the user, 2026-11-07): `snapLayer` / `snapScale` (`inpaint_canvas.js` near
+  4955-4990) snap a moved or scaled layer to the canvas edges, its centre and the guides; add the edges and centres of
+  the other visible layers, with the same 8 screen px and the drawn lines. Small to medium.
+- 60: **Variants on a result layer, and compare against what lies below** (the user, 2026-11-07): another run on the same
+  selection lands as a variant of the result layer (`◀ 2/4 ▶` on the layer, each variant with its own edge fit and colour
+  match) instead of one more layer; and Compare (today `toggleCompare`, two result layers A / B with a divider; `\` held
+  shows the base) also against the picture under the active layer, for a Realism Pass, relight or a filter layer. A design
+  plan first (masks, undo, the `.scumble` format, the history, MCP). Medium.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.

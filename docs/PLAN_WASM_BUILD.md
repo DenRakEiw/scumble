@@ -1654,7 +1654,9 @@ An external review (another agent's, pasted by the user) was verified by a workf
    card; where "slow" comes from decides U1's scope) and **U1** (the helpers in a utility process on LaMa's pattern,
    `electron/main/onnx/lama.js` / `lama_process.js`: one process owning its runtime and SAM2's embedding cache, the
    main-thread engine as the fallback, VRAM release and the device switch reaching it; DirectML in a child process has
-   never run here), **U2** if U0's numbers show a speed fix beyond the move.
+   never run here; an idle unload too, the user's pick of 2026-11-07: the process ends after some minutes without a
+   helper call, so a cold SAM2 session's 6.1 GB on DirectML (`docs/BUGS.md`) goes back to the system), **U2** if U0's
+   numbers show a speed fix beyond the move.
 3. **P10 into the plan:** the tile gutter's copy in u32 words (`inpaint_tiles.js` `tileWithGutter`, as `coarseSlot`
    does; the same bytes; full tier, the atlas path), with P13 (the CorridorKey refine's hoisted mean and reused
    scratch, `keymatte.js`) and P15 (`ComfyClient.probe`'s requests together) riding along.
