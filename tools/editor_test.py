@@ -3218,6 +3218,18 @@ try {
     if (picks[3] === picks[1] || picks[5] === picks[3]) throw new Error("the noise gave the same colour for two sizes: " + JSON.stringify(picks));
     // the picture's corners and an edge: only the pixels inside count (a 5 x 5 at a corner is 3 x 3, at the left edge 3 x 5)
     setSize(5);
+    // the kept Size is read back: a document opened now builds its option bar at 5 x 5
+    {
+        const d2 = await run("new_document");
+        try {
+            const e2 = ednow(d2.id);
+            out.readBack = { size: e2 && e2.eyedropperSize, sel: e2 && e2.eyedropperSizeSel && e2.eyedropperSizeSel.value };
+            if (!e2 || e2.eyedropperSize !== 5 || out.readBack.sel !== "5") throw new Error("a new document's eyedropper Size after 5 x 5 was kept: " + JSON.stringify(out.readBack));
+        } finally {
+            await run("close_document", { doc: d2.id, force: true });
+            host.shell.activate(ed);
+        }
+    }
     out.edges = {};
     for (const [x, y, px] of [[0, 0, 9], [W - 1, H - 1, 9], [0, cy, 15], [cx, H - 1, 15]]) {
         const p = pick(x, y), e = mean(N, x, y, 5);
