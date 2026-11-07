@@ -84,7 +84,18 @@ code.
 
 ## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
-- **0.1.52 is prepared on `corridorkey` (2026-11-07), waiting for the user's word on the release chain.** It holds
+- **0.1.52 is out (2026-11-07; the user's answers: the node to GitHub only, the old release bodies regenerated).**
+  `corridorkey` fast-forwarded into `main` (`2d9a353..8f21f28`), tag v0.1.52 on `8f21f28`, published
+  2026-11-07T04:07:52Z, title "Scumble 0.1.52: green screen keying on your ComfyUI, and LoRAs"; the tag build green, the
+  eight assets checked (the zip's layout, the `.mcpb` 0.1.52 with 118 tools, `latest.yml`); the post `v0-1-52` live
+  with the user's two 15k key screenshots, the manual sync and hub 0.1.52 (`Portfolio_vercel` `19f0bad`, Vercel
+  success); `server.json` 0.1.52 (`0fcef6f`) published to the MCP Registry (the user's device code; 0.1.52 latest); the
+  node's editor built in a clone and pushed (`ComfyUI-InpaintCanvas` `4e7bd24..4bef98a`, no pyproject bump, so no
+  registry version); issues #10 and #11 answered and closed; the bodies of 0.1.37 and 0.1.28 have their @tokens in
+  backticks now; `wasm-kernels` fast-forwarded to `main` (`0fcef6f`). **Open:** the Store update (the user's upload:
+  `dist/Scumble-0.1.52.msix` and `dist/store-listing/whats-new-0.1.52.txt` in the `corridorkey` worktree), the worktrees
+  `gpt26` and `ph3` can go, next on `wasm-kernels`: K4. The preparation, as it was:
+  It holds
   items 49 (CorridorKey Route B, B5 run live with the user, the movable Key dialog), 50 (LoRAs, MOSS-Image Edit), 51
   (GPT-Image-2.6), 52 (P-H3-Image) and the kernel steps D0, K5, W1, K12, K12b. A release review workflow (four lenses,
   six findings confirmed, eight small ones) fixed in `c1b74d3`; gates `docs/measurements/rr52_2026-11-07/`; the version
