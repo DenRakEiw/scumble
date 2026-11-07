@@ -18,6 +18,14 @@ const roundUp = (n, to) => Math.ceil(n / to) * to;
 
 const clock = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
+/**
+ * The first output buffer of `deflate_part` for `n` bytes: their worst case, stored blocks. miniz_oxide ends a block
+ * after 31,745 bytes of literals (stored with 5 bytes of overhead each), not 65,535, so noise in all four channels
+ * needs about 5 bytes per 31 KB plus the flush's own; the 64 cover the sync marker and the bits around it. Too small
+ * is only slower (`deflate_part` answers -1 and the caller doubles it), never shorter.
+ */
+const storedCap = (n) => n + Math.ceil(n / 31744) * 5 + 64;
+
 /** A stopwatch over `laps`: each call adds the milliseconds since the one before (or since it was made) to `laps[key]`. */
 function lapper(laps) {
     let t = clock();
@@ -684,7 +692,7 @@ export class Px {
         try {
             const pi = this._in(a, bytes, n);
             const adler = this.exports.adler32(pi, n, 1) >>> 0;
-            let cap = n + Math.ceil(n / 65535) * 5 + 64;
+            let cap = storedCap(n);
             for (;;) {
                 const po = a.take(cap);
                 const written = this.exports.deflate_part(pi, n, level, 1, po, cap);
@@ -712,8 +720,7 @@ export class Px {
             if (lap) lap("filter");
             const adler = this.exports.adler32(pf, n, 1) >>> 0;
             if (lap) lap("adler");
-            // stored blocks are the worst case: 5 bytes per 64 KB, and the flush's own
-            let cap = n + Math.ceil(n / 65535) * 5 + 64;
+            let cap = storedCap(n);
             for (;;) {
                 const po = a.take(cap);
                 const written = this.exports.deflate_part(pf, n, level, last ? 1 : 0, po, cap);

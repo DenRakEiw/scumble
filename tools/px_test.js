@@ -3098,6 +3098,67 @@ async function pngPartCases(px, label) {
     let nout = null;
     try { nout = new Uint8Array(zlib.inflateRawSync(Buffer.from(np.bytes))); } catch (_) { /* reported below */ }
     check(`${label} pngPart of noise inflates back`, !!nout && nout.length === np.raw);
+    await noisePartCases(px, label, png, zlib);
+}
+
+/** Uniform noise in all four channels, alpha too (AES-CTR over zeros: the same bytes every run): what deflate can only store. */
+function noiseRGBA(w, h, seed) {
+    const key = Buffer.alloc(16, seed & 255), iv = Buffer.alloc(16, (seed >>> 8) & 255);
+    return new Uint8Array(crypto.createCipheriv("aes-128-ctr", key, iv).update(Buffer.alloc(w * h * 4)));
+}
+
+// The review's must rust/px-deflate-sync-truncation (docs/research/review_full_2026-11-07): at level 2 miniz_oxide
+// stores noise in blocks of 31,745 bytes, 5 bytes of overhead each, while px.js' first buffer allowed 5 per 65,535. A
+// part that is not the last could fill its buffer exactly with the last block's tail and the sync marker still inside
+// miniz_oxide, and `deflate_part` took it as done: the part came back cut short and the joined stream broke (layer
+// files in the store, the .scumble, the autosave, exports). Each shape (720 px wide: about the narrowest whose 256-row
+// part broke; 4096 x 256 a tile row; 15,000 x 139 the scenario's 8 MB part): a non-last level-2 part of noise and a
+// last part, joined and inflated by node, with one `deflate_part` call a part (the first buffer is enough, so noise is
+// not deflated twice). Then the export itself against buffers around the part's real size, the first buffer of before
+// among them: each answer is -1 (too small, the caller doubles) or the whole part, never a shorter one.
+async function noisePartCases(px, label, png, zlib) {
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    for (const [w, rows, tail] of [[720, 256, 3], [4096, 256, 8], [15000, 139, 2]]) {
+        const src = noiseRGBA(w, rows + tail, w), row = w * 4;
+        P.pxCalls(true);
+        const a = px.pngPart(src.subarray(0, rows * row), w, rows, null, 2, false);
+        const b = px.pngPart(src.subarray(rows * row), w, tail, src.subarray((rows - 1) * row, rows * row), 2, true);
+        const calls = P.pxCalls().deflate_part || 0;
+        const adler = png.adlerCombine(png.adlerCombine(1, a.adler, a.raw), b.adler, b.raw);
+        const stream = Buffer.concat([Buffer.from([0x78, 0x9C]), Buffer.from(a.bytes), Buffer.from(b.bytes),
+            Buffer.from([adler >>> 24, (adler >>> 16) & 255, (adler >>> 8) & 255, adler & 255])]);
+        let out = null, err = "";
+        try { out = new Uint8Array(zlib.inflateSync(stream)); } catch (e) { err = String(e.message || e); }
+        const want = px.pngFilterRows(src, w, rows + tail, null);
+        check(`${label} pngPart of ${w} x ${rows} noise rows (level 2, not the last part) and a last part join into one zlib stream`,
+            !!out && eqBytes(out, want), err || `${want.length} -> ${stream.length} (the first part ${a.raw} -> ${a.bytes.length})`);
+        check(`${label} pngPart of ${w} x ${rows} noise rows: the first buffer is enough (one deflate_part call a part)`, calls === 2, `${calls} calls`);
+        if (w !== 4096) continue;
+        // the export at buffers around the part's size: never a part shorter than the whole one
+        const f = px.pngFilterRows(src.subarray(0, rows * row), w, rows, null), n = f.length;
+        const pi = px.alloc(n), big = 2 * n + 1024, po = px.alloc(big);
+        try {
+            px.u8().set(f, pi);
+            const full = px.exports.deflate_part(pi, n, 2, 0, po, big), ref = px.u8().slice(po, po + Math.max(0, full));
+            const old = n + Math.ceil(n / 65535) * 5 + 64;
+            const bad = full > 0 && eqBytes(ref, a.bytes) ? [] : [`a buffer of ${big}: ${full}, the pngPart ${a.bytes.length}`];
+            for (const cap of [old, full - 1, full, full + 1]) {
+                const r = px.exports.deflate_part(pi, n, 2, 0, po, cap);
+                const whole = r === full && eqBytes(px.u8().subarray(po, po + r), ref);
+                if (!(r === -1 ? cap <= full : whole)) bad.push(`cap ${cap}: ${r}`);
+            }
+            check(`${label} deflate_part of a non-last noise part: each buffer gives -1 or the whole part (${full} bytes, as pngPart's), never a shorter one`,
+                old < full && !bad.length, bad.join(", ") || `the first buffer of before was ${old}`);
+        } finally { px.free(pi, n); px.free(po, big); }
+    }
+    // a whole zlib stream of noise (a TIFF strip): one call, and it inflates back
+    const strip = noiseRGBA(1024, 512, 7);
+    P.pxCalls(true);
+    const z = px.zlib(strip, 2);
+    const zc = P.pxCalls().deflate_part || 0;
+    let zout = null;
+    try { zout = new Uint8Array(zlib.inflateSync(Buffer.from(z))); } catch (_) { /* reported below */ }
+    check(`${label} zlib of a 2 MB noise strip inflates back, in one deflate_part call`, !!zout && eqBytes(zout, strip) && zc === 1, `${zc} calls`);
 }
 
 // W1 (docs/PLAN_WASM_BUILD.md §7): the writer's filter choice. The SIMD build adds the five filters' costs 16 bytes at a
