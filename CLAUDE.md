@@ -940,7 +940,17 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   ist echt lahm)", after the external review's P14): SAM2, the matting models and depth run `session.run()` and their
   loops on the main process and freeze its IPC for seconds per run; LaMa already runs in a utility process. Sessions
   U0 (measure), U1 (the helpers process), U2 (a speed fix if U0 shows one) in `docs/PLAN_WASM_BUILD.md` §7 "The user's
-  answers after K4", right after K26, in the kernel update's release.
+  answers after K4", right after K26, in the kernel update's release. **U0 done 2026-11-07** (merged `6eded3d`;
+  `docs/PLAN_HELPERS_PROCESS.md`, `docs/measurements/u0_2026-11-07/`): main blocked 1.1 s in one piece on SAM2's
+  first call, about 0.2 s sixteen times per object map, 4.8 s for a CPU cutout; the map takes 1.9 s per new picture,
+  2.8 s after a Free VRAM. **U1 done the same evening** (merged `36d5e99`, a review's 3 findings fixed in `4d776ac`):
+  `engine.js` / `helpers_process.js` / `helpers.js` `HelperProcess`, main's longest block 1,159 -> 21 ms on SAM2's
+  first call, 2,613 -> 21 ms on a BiRefNet cutout, main's memory about 83 MB instead of 3.5-8.6 GB, the answers byte for
+  byte; a free, the device switch, a folder change or a scan drains the process (new jobs to a fresh one, the old
+  ends after its jobs, at most 8 s), a model's removal and the quit kill it; the idle unload after 5 minutes; the plan's
+  §6 questions went with the suggested answers. Gate `helpers` (serial, takes the busy lock). Not built: `warmObjects`
+  and U2 (its §4: the 15k shapes at the map's size, the automask's JavaScript, the decoder order); the 7 questions of
+  its §6 for the user.
 - 56: **Split the long files** (the user, 2026-11-07: "das aufräumen der langen dateien: für bessere ai wartbarkeit,
   geringerer kontext"; with another agent's analysis). Counted the same day: `renderer/editor/inpaint_canvas.js` 25,246
   lines (1.49 MB: ICONS from line 1359, STYLE from 1494, then the InpaintEditor class), `renderer/editor/host.js` 6,924,
@@ -1158,7 +1168,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight cloudjobs loras key areas cli`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip groups comfyview portable selection limit maps depth maskview edges depthfx grading masks effects mcpb blendmodes relight cloudjobs loras key areas cli helpers`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
@@ -1367,9 +1377,10 @@ there; add a new flake there, with the date and what was ruled out.
   the console). `window.editor` is always the active tab.
 - Helpers in-app: editor → `host.findObjects` / `host.cutoutInApp` / `host.selectPoint`
   (source scaled to 1024² in the renderer) → IPC `helpers:objects|cutout|segment` →
-  `electron/main/onnx/index.js` → `sam2.js` / `matting.js` on the `Runtime` → label
-  map / alpha back, scaled to the image in the renderer. Models and folder in
-  `docs/HELPERS.md`.
+  `electron/main/onnx/index.js` (main's checks) → `helpers.js` `HelperProcess` → the utility process
+  `helpers_process.js` → `engine.js` → `sam2.js` / `matting.js` / depth on the `Runtime` (since U1, 2026-11-07; the
+  same `engine.js` on main's thread is the fallback) → label map / alpha back, scaled to the image in the renderer.
+  LaMa keeps its own process (`lama.js`). Models and folder in `docs/HELPERS.md`.
 - Agents: MCP client → `Scumble --mcp` (`electron/main/mcp/server.js`) → `AgentBackend` in
   `main.js` → the running instance over `electron/main/local.js` (named pipe) or the app
   started headless in the same process → `electron/main/bridge.js` (IPC `commands:request` /
