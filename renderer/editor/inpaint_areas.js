@@ -25,7 +25,8 @@ export function areaCell(W, H) {
 }
 
 /**
- * The smallest separate area that counts, in selected pixels: a 20,000th of the picture, at least 16 x 16 (256 px at
+ * The smallest separate area that counts, in selected pixels: max(256, W * H / 20000), a 20,000th of the picture and at
+ * least 16 x 16 (256 px at
  * 1024 x 1024, 839 at 4096 x 4096, 7,500 at 15000 x 10000, about an 87 px square). A stray dab of a brush or the
  * crumbs of a selection by text are smaller; anything a model should paint on its own is larger.
  */
@@ -78,9 +79,9 @@ function countWords(d, stride, ox, oy, vw, vh, cell, gw, counts) {
  * a W x H picture; `speck`: the fewest selected pixels a part needs to count (speckPixels). Returns `{ parts, specks,
  * speckBoxes, more }`: each part `{ box: [x0, y0, x1, y1] (image pixels, x1 and y1 exclusive), px (its selected pixels),
  * cells }` in the order found (top to bottom); `specks` how many parts were too small, `speckBoxes` the boxes of the
- * first 256 of them; at most `maxParts` parts are listed and `more` counts the rest.
+ * first `maxSpecks` of them; at most `maxParts` parts are listed and `more` counts the rest.
  */
-export function labelParts(counts, gw, gh, cell, W, H, speck, maxParts = 2048) {
+export function labelParts(counts, gw, gh, cell, W, H, speck, maxParts = 2048, maxSpecks = 4096) {
     const n = gw * gh;
     const seen = new Uint8Array(n);
     const queue = new Int32Array(n);
@@ -112,7 +113,7 @@ export function labelParts(counts, gw, gh, cell, W, H, speck, maxParts = 2048) {
         const box = [cx0 * cell, cy0 * cell, Math.min(W, (cx1 + 1) * cell), Math.min(H, (cy1 + 1) * cell)];
         if (px < speck) {
             specks++;
-            if (speckBoxes.length < 256) speckBoxes.push(box);
+            if (speckBoxes.length < maxSpecks) speckBoxes.push(box);
             continue;
         }
         if (parts.length < maxParts) parts.push({ box, px, cells });

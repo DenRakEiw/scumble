@@ -163,7 +163,7 @@ const POLICY = {
     // whether its route can key on the document; `preview` changes the selection, so it asks too
     key_screen: (call, facts) => keyRow(call, facts),
     upsample_prompt: () => ASK("rewrites the prompt on a paid model or your ComfyUI"),
-    generate: (call, facts) => ASK("renders: this costs money, or queues on your ComfyUI", renderCard(call, facts)),
+    generate: (call, facts) => (call.args && call.args.each_area ? eachAreaRow(call, facts) : ASK("renders: this costs money, or queues on your ComfyUI", renderCard(call, facts))),
     generate_new: (call, facts) => ASK("renders a new base image, replaces every layer but the reference layers and clears the undo history", renderCard(call, facts)),
     upscale: (call, facts) => ASK(call.args && call.args.scope === "document"
         ? "upscales the whole picture (a paid model or your ComfyUI): every layer is scaled along"
@@ -271,6 +271,29 @@ function renderCard(call, facts) {
         changedByChat: f.changedByChat || [],
         queue: f.queue === undefined ? null : f.queue,
     };
+}
+
+/**
+ * generate with each_area (item 54): one run per separate area of the selection, so the question names how many runs
+ * and whether each is charged, from `status` (facts.areas: its count and cap; facts.areaRecipe: the selected recipe's
+ * kind and provider). A count outside 2 to the cap is refused with it, as the command would refuse it; without the count
+ * (status not read) the question says each area is a run of its own.
+ */
+function eachAreaRow(call, facts) {
+    const f = facts || {};
+    const a = f.areas || null;
+    const n = a && Number.isFinite(Number(a.count)) ? Number(a.count) : null;
+    const cap = a && Number(a.cap) > 0 ? Number(a.cap) : 8;
+    if (n !== null && (n < 2 || n > cap)) return REFUSE(`generate each_area runs 2 to ${cap} separate areas; the selection holds ${n}${n < 2 ? ": use generate" : ": select fewer"}.`);
+    const r = f.areaRecipe || null;
+    const remote = !!(r && r.kind === "provider");
+    const free = remote && r.provider === "inapp";
+    const runs = n !== null ? `${n} runs, one per area` : "one run per area";
+    const reason = !r ? `renders each separate area as its own run (${runs}): on an API model each is charged as one, on your ComfyUI each is queued in turn`
+        : free ? `renders each separate area as its own run in the app (${runs}; free)`
+            : remote ? `renders each separate area as its own run on ${r.provider} (${runs}): each is charged as one run`
+                : `queues each separate area as its own run on your ComfyUI (${runs}), one after another`;
+    return ASK(reason, { ...renderCard(call, facts), areas: n });
 }
 
 /**

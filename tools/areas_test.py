@@ -1,16 +1,18 @@
-"""Each area separately (CLAUDE.md item 54, issue #9), against the loopback provider.
+"""Each area separately (CLAUDE.md item 54, issue #9), against the loopback provider and a stubbed local queue.
 
 No ComfyUI, no API key. A selection of three separate areas and a speck: the count (the speck left out, areas whose
 crops would overlap joined), the Each area button shown only while there are two or more, the hint in a Generate's
-status line when one crop of all of them goes out at under half its size, each area run on its own (one result layer
-per area at that area's crop, the user's selection back after every run, the speck left out), the question before an
-API run and its No, a Cancel during the second run (the third never goes), the cap of 8 and the one-area refusal, and
-the generate command's each_area with status's areas.
+status line when one crop of all of them goes out at under half its size (an API recipe and a local one), each area
+run on its own (one result layer per area at that area's crop, the document's selection never touched, the speck left
+out), the question before an API run and its No, a selection edit and its undo while the areas run (the user's history
+stays the user's), a Cancel while the second area is at the provider (the third never goes, the second counts as sent),
+a failure before an area was sent, a local recipe one area at a time and its Stop, the recipe switched mid-run, the cap
+of 8 and the one-area refusal, and the generate command's each_area with status's areas.
 
     python tools/areas_test.py
 
 SCUMBLE_AREAS_PERF=15000x10000 adds the count's measurement at that size (a few areas, then a selection over the whole
-picture): the window's own milliseconds, the worker's, and the longest gap of a 4 ms timer while the count runs.
+picture): the window's own milliseconds, the worker's, and the longest gap between two tasks while the count runs.
 
 Start the app first: ./node_modules/.bin/electron . --remote-debugging-port=9555 --no-comfy
 """
@@ -35,11 +37,59 @@ const three = async () => {
     await run("select_rect", { doc, x: 900, y: 300, w: 8, h: 8, mode: "add" });
 };
 const RECTS = [[100, 100, 150, 150], [1300, 120, 160, 140], [700, 780, 180, 150]];
+// each area's crop as a run makes it (the auto context's 512 px, held to the picture)
+const CROPS = [[0, 0, 512, 512], [1088, 0, 512, 512], [534, 488, 512, 512]];
 const meets = (a, b) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
 const selectedAt = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3] >= 128;
 const btnState = () => { const b = ed.eachAreaBtn; return b ? { hidden: b.hidden, disabled: b.disabled, label: (b.querySelector("span") || {}).textContent || "" } : null; };
 const waitBtn = async (want) => { for (let i = 0; i < 40; i++) { const s = btnState(); if (s && want(s)) return s; await wait(100); } return btnState(); };
+const until = async (fn, ms = 10000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await wait(25); } return false; };
 const resultsSince = (h0) => ed.history.slice(h0).map((h) => ed.layers.find((l) => l.id === h.layerId)).filter(Boolean);
+const boxesOf = (layers) => layers.map((l) => [l.x, l.y, l.w, l.h]);
+"""
+
+# the user's ComfyUI stood in for: /prompt answered here, each queued prompt's result landed `L.land` ms later unless
+# `L.hold(i)` keeps it running; nothing reaches a server
+LOCAL = """
+const klein = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
+if (!klein) throw new Error("flux3_klein_local is not listed");
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, missing: host.missingFilesRefusal, recipe: host.recipe, fetch: window.fetch, ask: ed.ask, np: host.nodeParams };
+const posts = [];
+const L = { hold: () => false, land: 150, landed: [] };
+// a result of its own per prompt (the editor takes a result it has seen once only)
+const resultFor = async (i) => {
+    const png = await new Promise((r) => { const c = document.createElement("canvas"); c.width = 64; c.height = 64; const x = c.getContext("2d"); x.fillStyle = "rgb(" + (10 + i * 20) + ",40,90)"; x.fillRect(0, 0, 64, 64); c.toBlob(r, "image/png"); });
+    return host.uploadResult(png, "areas_local_" + Date.now() + "_" + i + ".png");
+};
+let made = 0;
+const install = () => {
+    host.connected = true;
+    host.objectInfo = Object.fromEntries(klein.needs.map((n) => [n, { input: { required: {} } }]));
+    host.missingFilesRefusal = () => null;
+    host.ensureOnServer = async () => null;
+    window.fetch = async (url, init) => {
+        if (/\\/prompt$/.test(String(url)) && init && init.method === "POST") {
+            const i = posts.length, id = "areas-" + (i + 1);
+            posts.push({ body: JSON.parse(init.body), at: performance.now(), id, landedBefore: L.landed.length });
+            if (!L.hold(i)) setTimeout(async () => {
+                const ref = await resultFor(made++);
+                await ed.addResults([{ ...ref, x: 0, y: 0, width: 64, height: 64, canvas_node: ed.node.id }]);
+                L.landed.push(performance.now());
+                if (ed._localRuns) ed._localRuns.delete(id);
+            }, L.land);
+            return new Response(JSON.stringify({ prompt_id: id, number: posts.length, node_errors: {} }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        return saved.fetch.call(window, url, init);
+    };
+    host.setRecipe(klein);
+};
+const uninstall = () => {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; host.missingFilesRefusal = saved.missing; window.fetch = saved.fetch; ed.ask = saved.ask; host.nodeParams = saved.np;
+    host.setRecipe(saved.recipe);
+    if (ed._localRuns) ed._localRuns.clear();
+    if (ed.runProgress) for (const p of posts) ed.runProgress.done(p.id);
+};
+const stateOf = (p) => JSON.parse(p.body.prompt[klein.canvas].inputs.canvas_state);
 """
 
 STEPS = [
@@ -55,10 +105,9 @@ e.cropSettings.context = "auto";
 window.__prevRecipe = host.recipe;
 host.setRecipe(%s);
 if (!e.eachAreaBtn) throw new Error("no Each area button in the top bar");
-if (!e.eachAreaBtn.hidden) throw new Error("the button shows without a selection");
 return { doc: d.id, tiles: !!e.tileMode };
 """ % LOOP),
-    # the count: three areas, the speck left out; the button shows "Each area · 3"
+    # the count: three areas, the speck left out; the button shows "Each area · 3", and goes with the selection
     ("count_three", THREE + """
 await three();
 const st = await host.selectionAreas(ed);
@@ -72,6 +121,9 @@ const b = await waitBtn((s) => !s.hidden && s.label === "Each area · 3");
 if (b.hidden || b.label !== "Each area · 3") throw new Error("the button: " + JSON.stringify(b));
 const s = await run("status", { doc });
 if (!s.areas || s.areas.count !== 3 || !s.areas.each_area) throw new Error("status areas: " + JSON.stringify(s.areas));
+await run("select_none", { doc });
+const gone = await waitBtn((x) => x.hidden);
+if (!gone.hidden) throw new Error("the button stays without a selection: " + JSON.stringify(gone));
 return { areas: st.areas, specks: st.specks, button: b.label };
 """),
     # two rectangles 40 px apart: their crops overlap, so they are one area and the button goes
@@ -118,49 +170,77 @@ ed.ask = async (o) => { asked = o; return null; };
 let out;
 try { out = await host.generateEachArea(ed); } finally { ed.ask = ask0; }
 if (!asked || !/^3 areas, 3 runs on Loopback \\(Loopback areas\\): .*charges each run as one/.test(asked.message) || asked.ok !== "Generate 3") throw new Error("the question: " + JSON.stringify(asked));
-if (ed.history.length !== h0 || out.done !== 0 || ed.status !== "Each area: nothing was sent.") throw new Error("a No: " + JSON.stringify({ out, status: ed.status, landed: ed.history.length - h0 }));
+if (ed.history.length !== h0 || out.done !== 0 || out.sent !== 0 || ed.status !== "Each area: nothing was sent.") throw new Error("a No: " + JSON.stringify({ out, status: ed.status, landed: ed.history.length - h0 }));
 return { message: asked.message };
 """),
-    # each area its own run: three result layers, each at its own area's crop, the user's selection back after each
+    # each area its own run: three result layers, each at its own area's crop; the document's selection is never touched
     ("each_area_runs", THREE + """
 await three();
 await host.selectionAreas(ed);
-const before = ed.getBounds().slice();
-const h0 = ed.history.length;
+const before = ed.getBounds().slice(), sel0 = ed.sel, seq0 = ed.selectionSeq;
+const h0 = ed.history.length, undo0 = ed.undo.length;
 const ask0 = ed.ask;
 ed.ask = async () => true;
-// the selection the user sees once an area's answer is in (its crop was read from the area's own selection before)
+// the selection the user has while an area's answer is in: the one of the click, the same object, never changed
 const upload0 = host.uploadResult;
 const seen = [];
-host.uploadResult = async function (...a) { seen.push({ during: ed.getBounds().slice(), area: !!ed._eachAreaSwap }); return upload0.apply(this, a); };
+host.uploadResult = async function (...a) { seen.push({ bounds: ed.getBounds().slice(), same: ed.sel === sel0, seq: ed.selectionSeq }); return upload0.apply(this, a); };
 let out;
 try { out = await host.generateEachArea(ed); } finally { ed.ask = ask0; host.uploadResult = upload0; }
-if (out.done !== 3 || out.cancelled || out.failed || out.leftOut !== 1) throw new Error("the run: " + JSON.stringify(out));
+if (out.done !== 3 || out.sent !== 3 || out.notSent !== 0 || out.cancelled || out.failed || out.leftOut !== 1) throw new Error("the run: " + JSON.stringify(out));
 const layers = resultsSince(h0);
 if (layers.length !== 3) throw new Error("layers: " + layers.length);
-const boxes = layers.map((l) => [l.x, l.y, l.w, l.h]);
-for (let i = 0; i < 3; i++) {
-    const hits = RECTS.filter((r) => meets(boxes[i], r));
-    if (hits.length !== 1) throw new Error("result " + (i + 1) + " covers " + hits.length + " areas: " + JSON.stringify(boxes));
-    for (let j = i + 1; j < 3; j++) if (meets(boxes[i], boxes[j])) throw new Error("two results overlap: " + JSON.stringify(boxes));
-}
-// the loopback hands the crop back: each crop is the area's own (512 px with the auto context), not the picture's
-if (boxes.some((b) => b[2] > 600 || b[3] > 600)) throw new Error("a crop of more than its area: " + JSON.stringify(boxes));
-const after = ed.getBounds();
-if (JSON.stringify(after) !== JSON.stringify(before)) throw new Error("the selection after: " + JSON.stringify({ before, after }));
+const boxes = boxesOf(layers);
+if (JSON.stringify(boxes) !== JSON.stringify(CROPS)) throw new Error("the results are not the areas' crops: " + JSON.stringify(boxes));
+if (JSON.stringify(ed.getBounds()) !== JSON.stringify(before) || ed.sel !== sel0 || ed.selectionSeq !== seq0) throw new Error("the selection was changed: " + JSON.stringify({ before, after: ed.getBounds(), same: ed.sel === sel0, seq: [seq0, ed.selectionSeq] }));
 for (const r of RECTS) if (!selectedAt(r[0] + 5, r[1] + 5)) throw new Error("an area is no longer selected: " + r);
 if (!selectedAt(902, 302)) throw new Error("the speck is no longer selected");
-if (ed._eachArea || ed._eachAreaRun || ed._eachAreaSwap) throw new Error("the run's state stayed");
-if (!/^Each area: 3 areas generated, each its own layer .* 1 small speck of the selection outside the areas was left out\\.$/.test(ed.status)) throw new Error("the status: " + ed.status);
+if (ed._eachArea) throw new Error("the run's state stayed");
+if (ed.status !== "Each area: 3 areas generated, each its own layer. 1 small speck of the selection outside the areas was left out.") throw new Error("the status: " + ed.status);
+if (ed.undo.length !== undo0) throw new Error("the run pushed undo steps: " + (ed.undo.length - undo0));
 const prompts = ed.history.slice(h0).map((h) => h.prompt);
 if (new Set(prompts).size !== 1) throw new Error("the prompts: " + JSON.stringify(prompts));
-// while the provider worked on an area, the user's selection was back
-if (seen.length !== 3 || seen.some((s) => s.area || JSON.stringify(s.during) !== JSON.stringify(before))) throw new Error("the selection during the runs: " + JSON.stringify({ seen, before }));
+if (seen.length !== 3 || seen.some((s) => !s.same || s.seq !== seq0 || JSON.stringify(s.bounds) !== JSON.stringify(before))) throw new Error("the selection during the runs: " + JSON.stringify({ seen, before }));
 const b = await waitBtn((s) => !s.hidden && !s.disabled && s.label === "Each area · 3");
 if (b.hidden || b.disabled) throw new Error("the button after: " + JSON.stringify(b));
 return { boxes, status: ed.status };
 """),
-    # a Cancel while the second area runs: the first stays, the second stops, the third never goes
+    # the user edits the selection while an area is at the provider, and undoes it: the runs keep the click's areas, the
+    # user's history keeps the user's steps (undo and redo of that edit work after the run)
+    ("edit_and_undo_while_the_areas_run", THREE + """
+host.setRecipe(%s);
+await three();
+await host.selectionAreas(ed);
+const sel0 = ed.sel;
+const h0 = ed.history.length;
+const ask0 = ed.ask;
+ed.ask = async () => true;
+let out, during = null;
+try {
+    const p = host.generateEachArea(ed);
+    if (!(await until(() => /^Sending crop/.test(ed.status) && !!ed.providerPending))) throw new Error("the first area did not go: " + ed.status);
+    during = { label: btnState().label };
+    // a square inside the third area's crop: had a run read the document's selection, the third crop would grow
+    await run("select_rect", { doc, x: 560, y: 520, w: 60, h: 60, mode: "add" });
+    during.edited = selectedAt(565, 525);
+    await run("undo", { doc });
+    during.undone = !selectedAt(565, 525);
+    await run("redo", { doc });
+    during.redone = selectedAt(565, 525);
+    out = await p;
+} finally { ed.ask = ask0; host.setRecipe(%s); }
+if (!during.edited || !during.undone || !during.redone || during.label !== "Stop · 1/3") throw new Error("the edit during the run: " + JSON.stringify(during));
+if (out.done !== 3 || out.stopped) throw new Error("the run: " + JSON.stringify(out));
+const boxes = boxesOf(resultsSince(h0));
+if (JSON.stringify(boxes) !== JSON.stringify(CROPS)) throw new Error("an area read the edited selection: " + JSON.stringify(boxes));
+// the user's own history: the edit is there, and undo takes it back
+if (ed.sel !== sel0 || !selectedAt(565, 525)) throw new Error("the edit is gone after the run");
+await run("undo", { doc });
+if (selectedAt(565, 525) || !RECTS.every((r) => selectedAt(r[0] + 5, r[1] + 5))) throw new Error("undo after the run did not take the edit back");
+return { during, boxes };
+""" % (LOOP_SLOW, LOOP)),
+    # a Cancel while the second area is at the provider: the first stays, the second counts as sent with the provider's
+    # words, the third never goes
     ("cancel_stops_the_rest", THREE + """
 host.setRecipe(%s);
 await three();
@@ -175,26 +255,24 @@ host.runProvider = function (...a) { calls++; return runProvider0.apply(this, a)
 let out, label = null, cancel = null;
 try {
     const p = host.generateEachArea(ed);
-    for (let i = 0; i < 100 && !(ed.history.length === h0 + 1 && ed.providerPending); i++) await wait(100);
-    if (ed.history.length !== h0 + 1 || !ed.providerPending) throw new Error("the second run did not start: " + JSON.stringify({ landed: ed.history.length - h0, pending: !!ed.providerPending }));
+    if (!(await until(() => ed.history.length === h0 + 1 && /^Sending crop/.test(ed.status) && !!ed.providerPending))) throw new Error("the second area did not go: " + JSON.stringify({ landed: ed.history.length - h0, status: ed.status }));
     label = btnState().label;
     cancel = await run("cancel_run", { doc });
     out = await p;
 } finally { ed.ask = ask0; host.runProvider = runProvider0; host.setRecipe(%s); }
 await wait(2500);
-if (!out.cancelled || out.done !== 1 || calls !== 2) throw new Error("the cancel: " + JSON.stringify({ out, calls }));
+if (!out.cancelled || out.done !== 1 || out.sent !== 2 || out.notSent !== 1 || calls !== 2 || !/^Cancelled after /.test(out.said || "")) throw new Error("the cancel: " + JSON.stringify({ out, calls }));
 if (ed.history.length !== h0 + 1) throw new Error("landed after the cancel: " + (ed.history.length - h0));
-if (!/^Each area cancelled: 1 of 3 areas generated; the other 2 were not sent\\.$/.test(ed.status) || ed.statusKind) throw new Error("the status: " + JSON.stringify([ed.status, ed.statusKind]));
+if (!/^Each area cancelled: 1 of 3 areas generated; area 2 was cancelled after it was sent \\(Cancelled after .+\\); 1 was not sent\\.$/.test(ed.status) || ed.statusKind) throw new Error("the status: " + JSON.stringify([ed.status, ed.statusKind]));
 if (!String(cancel.note || "").includes("Each area: the areas not yet sent do not go.")) throw new Error("cancel_run's note: " + JSON.stringify(cancel.note));
-if (label !== "Each area 2/3") throw new Error("the button during the run: " + label);
+if (label !== "Stop · 2/3") throw new Error("the button during the run: " + label);
 if (JSON.stringify(ed.getBounds()) !== JSON.stringify(before)) throw new Error("the selection after a cancel: " + JSON.stringify(ed.getBounds()));
-return { status: ed.status, note: cancel.note };
+return { status: ed.status, said: out.said };
 """ % (LOOP_SLOW, LOOP)),
-    # a run that fails stops the rest: the first area's layer stays, the status says where it stopped, red
+    # a run refused before anything was sent stops the rest: the first area's layer stays, the refused one is not a run
     ("failure_stops_the_rest", THREE + """
 await three();
 await host.selectionAreas(ed);
-const before = ed.getBounds().slice();
 const h0 = ed.history.length;
 const ask0 = ed.ask;
 ed.ask = async () => true;
@@ -203,51 +281,106 @@ const runProvider0 = host.runProvider;
 host.runProvider = function (...a) { calls++; return calls === 2 ? Promise.reject(new Error("The provider refused the crop")) : runProvider0.apply(this, a); };
 let out;
 try { out = await host.generateEachArea(ed); } finally { ed.ask = ask0; host.runProvider = runProvider0; }
-if (out.done !== 1 || out.cancelled || out.failed !== "The provider refused the crop" || calls !== 2) throw new Error("the failure: " + JSON.stringify({ out, calls }));
+if (out.done !== 1 || out.sent !== 1 || out.notSent !== 2 || out.cancelled || out.failed !== "The provider refused the crop" || calls !== 2) throw new Error("the failure: " + JSON.stringify({ out, calls }));
 if (ed.history.length !== h0 + 1) throw new Error("landed: " + (ed.history.length - h0));
-if (ed.status !== "Each area stopped at area 2 of 3: The provider refused the crop. 1 area was not run." || ed.statusKind !== "error") throw new Error("the status: " + JSON.stringify([ed.status, ed.statusKind]));
-if (JSON.stringify(ed.getBounds()) !== JSON.stringify(before) || ed._eachAreaSwap) throw new Error("the selection after a failure: " + JSON.stringify(ed.getBounds()));
+if (ed.status !== "Each area stopped before area 2 of 3 was sent: The provider refused the crop. 1 of 3 areas generated, 2 not sent." || ed.statusKind !== "error") throw new Error("the status: " + JSON.stringify([ed.status, ed.statusKind]));
 return { status: ed.status };
 """),
-    # a recipe on the user's ComfyUI (a stubbed /prompt, nothing reaches a server): every area queued at once, each prompt
-    # with its own mask, no question asked, the user's selection back
-    ("local_queues_each_area", THREE + """
-const klein = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
-if (!klein) throw new Error("flux3_klein_local is not listed");
-const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, missing: host.missingFilesRefusal, recipe: host.recipe, fetch: window.fetch, ask: ed.ask };
-const posts = [];
-let asked = 0;
+    # the recipe switched while the areas run: the areas after it do not go on another recipe
+    ("recipe_switch_stops_the_rest", THREE + """
+host.setRecipe(%s);
+await three();
+await host.selectionAreas(ed);
+const h0 = ed.history.length;
+const ask0 = ed.ask;
+ed.ask = async () => true;
+let out;
 try {
-    host.connected = true;
-    host.objectInfo = Object.fromEntries(klein.needs.map((n) => [n, { input: { required: {} } }]));
-    host.missingFilesRefusal = () => null;
-    host.ensureOnServer = async () => null;
-    window.fetch = async (url, init) => {
-        if (/\\/prompt$/.test(String(url)) && init && init.method === "POST") {
-            posts.push(JSON.parse(init.body));
-            return new Response(JSON.stringify({ prompt_id: "areas-" + posts.length, number: posts.length, node_errors: {} }), { status: 200, headers: { "Content-Type": "application/json" } });
-        }
-        return saved.fetch.call(window, url, init);
-    };
+    const p = host.generateEachArea(ed);
+    if (!(await until(() => /^Sending crop/.test(ed.status) && !!ed.providerPending))) throw new Error("the first area did not go");
+    host.setRecipe(%s);
+    out = await p;
+} finally { ed.ask = ask0; host.setRecipe(%s); }
+if (out.stopped !== "recipe" || out.done !== 1 || out.notSent !== 2) throw new Error("the switch: " + JSON.stringify(out));
+if (ed.status !== "Each area stopped: the recipe changed while the areas ran; 1 of 3 areas generated; the other 2 were not sent.") throw new Error("the status: " + ed.status);
+return { status: ed.status };
+""" % (LOOP_SLOW, LOOP, LOOP)),
+    # the in-app models are free and offline: no question; the command's time: no area starts that the time left would
+    # not hold (an area took 1.5 s, so with 0.5 s left after it none follows)
+    ("free_and_timed", THREE + """
+await three();
+await host.selectionAreas(ed);
+const prev = host.recipe, ask0 = ed.ask, runProvider0 = host.runProvider;
+let asked = 0, calls = 0, timed;
+try {
     ed.ask = async () => { asked++; return true; };
-    host.setRecipe(klein);
+    host.setRecipe({ id: "inapp_areas", kind: "provider", provider: "inapp", providerLabel: "In-app", model: "lama", input: "edit", name: "Remove (LaMa)", settings: [], limits: { min: 64, max: 512, step: 8, pixels: 0, minPixels: 0, ratio: 0, aspects: [] } });
+    host.runProvider = async () => { calls++; return {}; };
+    const free = await host.generateEachArea(ed);
+    if (asked || calls !== 3 || free.done !== 3) throw new Error("the in-app run: " + JSON.stringify({ asked, calls, free }));
+    host.runProvider = runProvider0;
+    host.setRecipe(%s);
+    const h0 = ed.history.length;
+    timed = await host.generateEachArea(ed, { confirm: false, deadline: Date.now() + 500 });
+    if (timed.stopped !== "time" || timed.done !== 1 || timed.notSent !== 2 || ed.history.length !== h0 + 1) throw new Error("the deadline: " + JSON.stringify(timed));
+    if (ed.status !== "Each area stopped: the command's time ran out; 1 of 3 areas generated; the other 2 were not sent.") throw new Error("the status: " + ed.status);
+} finally { ed.ask = ask0; host.runProvider = runProvider0; host.setRecipe(prev); }
+return { asked, timed: timed.stopped };
+""" % LOOP_SLOW),
+    # a recipe on the user's ComfyUI (a stubbed /prompt, nothing reaches a server): the hint on a plain Generate, then
+    # each area queued only once the one before landed, each with its own mask, no question asked
+    ("local_one_area_at_a_time", THREE + LOCAL + """
+try {
+    install();
+    host.nodeParams = { ...saved.np, target_size: 512 };   // the node scales a crop to 512: all three go at 32 %
     await three();
-    const before = ed.getBounds().slice();
-    const out = await host.generateEachArea(ed);
-    if (out.areas !== 3 || out.queued !== 3 || out.cancelled || out.failed || asked) throw new Error("the local run: " + JSON.stringify({ out, asked }));
-    if (posts.length !== 3) throw new Error("prompts queued: " + posts.length);
-    const states = posts.map((p) => JSON.parse(p.prompt[klein.canvas].inputs.canvas_state));
+    await host.selectionAreas(ed);
+    const h00 = ed.history.length;
+    const g = await ed.generate();
+    if (g && g.error) throw g.error;
+    if (!(ed.lastRunNotes || []).some((n) => /^3 separate areas; the crop goes at 32 % of its size/.test(n))) throw new Error("the local hint: " + JSON.stringify(ed.lastRunNotes));
+    if (!(await until(() => ed.history.length === h00 + 1))) throw new Error("the plain local run did not land");
+    host.nodeParams = saved.np;
+    posts.length = 0;
+    L.landed.length = 0;
+    let asked = 0;
+    ed.ask = async () => { asked++; return true; };
+    const before = ed.getBounds().slice(), h0 = ed.history.length;
+    const out = await host.generateEachArea(ed, { api: null });
+    if (out.areas !== 3 || out.done !== 3 || out.sent !== 3 || out.stopped || out.failed || asked) throw new Error("the local run: " + JSON.stringify({ out, asked }));
+    if (posts.length !== 3 || ed.history.length !== h0 + 3) throw new Error("prompts / results: " + posts.length + " / " + (ed.history.length - h0));
+    // one at a time: each prompt went after the one before had landed
+    if (posts.some((p, i) => p.landedBefore !== i)) throw new Error("queued before the one before landed: " + JSON.stringify(posts.map((p) => p.landedBefore)));
+    const states = posts.map(stateOf);
     const masks = states.map((s) => s.mask && s.mask.filename);
-    if (new Set(masks).size !== 3 || states.some((s) => !s.hasSelection) || new Set(states.map((s) => s.prompt)).size !== 1) throw new Error("the queued states: " + JSON.stringify({ masks, has: states.map((s) => s.hasSelection) }));
-    if (JSON.stringify(ed.getBounds()) !== JSON.stringify(before) || ed._eachAreaSwap) throw new Error("the selection after: " + JSON.stringify(ed.getBounds()));
-    if (!/^Each area: 3 areas queued on your ComfyUI; they run one after another, each result its own layer\\. 1 small speck/.test(ed.status)) throw new Error("the status: " + ed.status);
-    return { masks, status: ed.status };
-} finally {
-    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; host.missingFilesRefusal = saved.missing; window.fetch = saved.fetch; ed.ask = saved.ask;
-    host.setRecipe(saved.recipe);
-    if (ed._localRuns) ed._localRuns.clear();
-    if (ed.runProgress) for (let i = 1; i <= posts.length; i++) ed.runProgress.done("areas-" + i);
-}
+    if (new Set(masks).size !== 3 || states.some((s) => !s.hasSelection) || new Set(states.map((s) => s.prompt)).size !== 1) throw new Error("the queued states: " + JSON.stringify({ masks }));
+    if (JSON.stringify(ed.getBounds()) !== JSON.stringify(before)) throw new Error("the selection after: " + JSON.stringify(ed.getBounds()));
+    // the areas' run notes (here the recipe's upsampler note, the same for every area) once each, after the line
+    const head = "Each area: 3 areas generated on your ComfyUI, each its own layer. 1 small speck of the selection outside the areas was left out.";
+    const note = (out.notes || []).find((n) => /prompt upsampler/.test(n));
+    if (!ed.status.startsWith(head) || !note || out.notes.length !== new Set(out.notes).size || ed.status.split(note).length !== 2) throw new Error("the status: " + JSON.stringify({ status: ed.status, notes: out.notes }));
+    return { masks, status: ed.status, kind: ed.statusKind };
+} finally { uninstall(); }
+"""),
+    # the Stop while the second area runs on the user's ComfyUI: it finishes there, the third is never queued
+    ("local_stop_keeps_the_rest_off_the_queue", THREE + LOCAL + """
+try {
+    install();
+    L.hold = (i) => i === 1;
+    await three();
+    await host.selectionAreas(ed);
+    const h0 = ed.history.length;
+    const p = host.generateEachArea(ed, { api: null });
+    if (!(await until(() => posts.length === 2))) throw new Error("the second area was not queued: " + posts.length);
+    const label = btnState().label;
+    ed.eachAreaBtn.click();
+    const out = await p;
+    await wait(500);
+    if (out.done !== 1 || out.sent !== 2 || out.running !== 2 || out.notSent !== 1 || !out.cancelled || posts.length !== 2) throw new Error("the stop: " + JSON.stringify({ out, posts: posts.length }));
+    if (!ed.status.startsWith("Each area cancelled: 1 of 3 areas landed; area 2 is still running on your ComfyUI and lands when it is done; 1 was not sent.")) throw new Error("the status: " + ed.status);
+    if (label !== "Stop · 2/3") throw new Error("the button during the run: " + label);
+    return { status: ed.status };
+} finally { uninstall(); }
 """),
     # more than 8 areas: refused plainly, nothing sent
     ("cap_of_eight", THREE + """
@@ -273,7 +406,7 @@ try {
 await three();
 const h0 = ed.history.length;
 const g = await run("generate", { doc, each_area: true, timeout: 120 });
-if (g.areas !== 3 || g.generated !== 3 || g.layers.length !== 3 || g.cancelled || g.failed || g.left_out !== 1) throw new Error("generate each_area: " + JSON.stringify(g));
+if (g.areas !== 3 || g.generated !== 3 || g.layers.length !== 3 || g.sent !== 3 || g.not_sent !== 0 || g.cancelled || g.failed || g.left_out !== 1 || !Array.isArray(g.notes)) throw new Error("generate each_area: " + JSON.stringify(g));
 if (ed.history.length !== h0 + 3) throw new Error("landed " + (ed.history.length - h0));
 await run("select_rect", { doc, x: 100, y: 100, w: 150, h: 150 });
 let msg = "";
@@ -323,6 +456,8 @@ await run("select_rect", { doc: d.id, x: W >> 1, y: H >> 1, w: 20, h: 20, mode: 
 big.getBounds();
 // the same wait without a count: what the window does anyway after the selection changed
 rows.idle_few = await probe(() => wait(30)); delete rows.idle_few.out;
+// one pixel of the selection read back first: on the canvas backend what the GPU still owes the selection's canvas
+{ const t = performance.now(); big.sel.readRect(0, 0, 1, 1); rows.first_pixel_ms = Math.round((performance.now() - t) * 10) / 10; }
 for (let k = 0; k < 3; k++) {
     // a fresh count each time: the selection's change counter moves, the pixels stay
     big.selectionSeq++;
@@ -371,8 +506,12 @@ async def run_all(c):
     if perf:
         w, h = (int(v) for v in perf.lower().split("x"))
         steps.append(("perf_%dx%d" % (w, h), PERF % (w, h)))
+    # SCUMBLE_AREAS_ONLY=name,name: the setup, those steps and the cleanup, for iterating on a few
+    only = set(filter(None, os.environ.get("SCUMBLE_AREAS_ONLY", "").split(",")))
     steps.append(("cleanup", CLEANUP))
     for name, body in steps:
+        if only and name not in only and name not in ("setup", "cleanup"):
+            continue
         try:
             res = await c.eval(PRE % body, timeout=600)
             text = json.dumps(res)

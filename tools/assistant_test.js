@@ -1323,6 +1323,23 @@ async function main() {
                 dFrom.action === "ask" && chSrc && chSrc.to === "Result 1",
                 JSON.stringify(dFrom));
         }
+        {
+            // generate each_area (item 54): the question names the runs and whether each is charged; a count outside 2 to
+            // the cap is refused; without status's count it still says each area is a run of its own
+            const ask = (extra) => { const f = facts(extra); f.tools.add("generate"); return policy.decide({ name: "generate", args: { each_area: true } }, f); };
+            const paid = ask({ areas: { count: 3, cap: 8 }, areaRecipe: { kind: "provider", provider: "fal" } });
+            const local = ask({ areas: { count: 4, cap: 8 }, areaRecipe: { kind: "comfy", provider: null } });
+            const free = ask({ areas: { count: 2, cap: 8 }, areaRecipe: { kind: "provider", provider: "inapp" } });
+            const one = ask({ areas: { count: 1, cap: 8 }, areaRecipe: { kind: "provider", provider: "fal" } });
+            const nine = ask({ areas: { count: 9, cap: 8 }, areaRecipe: { kind: "provider", provider: "fal" } });
+            const unknown = ask({});
+            check("each_area_names_the_runs",
+                paid.action === "ask" && /3 runs, one per area/.test(paid.reason) && /each is charged as one run/.test(paid.reason) && paid.card && paid.card.areas === 3
+                && local.action === "ask" && /4 runs/.test(local.reason) && /your ComfyUI/.test(local.reason) && !/charged/.test(local.reason)
+                && free.action === "ask" && /free/.test(free.reason) && !/charged/.test(free.reason)
+                && one.action === "refuse" && nine.action === "refuse" && unknown.action === "ask" && /one run per area/.test(unknown.reason),
+                JSON.stringify({ paid: paid.reason, local: local.reason, free: free.reason, one: one.action, nine: nine.action, unknown: unknown.reason }));
+        }
         check("a_busy_document_refuses_a_run", policy.decide({ name: "generate", args: {} }, facts({ busy: true })).action === "refuse");
         check("export_without_a_path_is_refused", policy.decide({ name: "export", args: {} }, facts()).action === "refuse");
         check("an_export_whose_extension_disagrees_is_refused",
@@ -1492,6 +1509,9 @@ async function main() {
                 check("key_screen_names_its_key_and_grey_layers_as_its_own",
                     eq(own, ["Lkey", "Lgrey"]) && eq(ownNoGrey, ["Lkey"]) && eq(ownPreview, []),
                     JSON.stringify({ own, ownNoGrey, ownPreview }));
+                // generate each_area (item 54): every area's result layer is the chat's own
+                const ownAreas = _idsNamedBy("generate", { areas: 2, generated: 2, layers: [{ id: "La1", name: "Result 1" }, { id: "La2", name: "Result 2" }] });
+                check("each_area_results_are_the_chats_own", eq(ownAreas, ["La1", "La2"]), JSON.stringify(ownAreas));
             }
             // release review 2026-10-05: cancel_run always asks, on the pinned document too, and says what is lost
             const fc = () => { const x = facts(); x.tools.add("cancel_run"); return x; };

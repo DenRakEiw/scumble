@@ -847,6 +847,14 @@ class Assistant {
             facts.recipe = chat.recipe || null;
             facts.changedByChat = [...(chat.changedSettings || [])];
         }
+        if (call.name === "generate" && call.args && call.args.each_area) {
+            // the question names the runs (item 54): the selection's areas and the recipe that runs them, from status
+            try {
+                const answer = await this.read("status", { doc });
+                facts.areas = (answer && answer.areas) || null;
+                facts.areaRecipe = (answer && answer.recipe) || null;
+            } catch (_) { facts.areas = null; facts.areaRecipe = null; }
+        }
         if (call.name === "realism_pass" || call.name === "relight") {
             // whether the pass can run on this document (refused with the reason, no card), and what the card shows:
             // the app's Style, Strength and model preset (no command sets them)
@@ -974,6 +982,8 @@ function idsNamedBy(name, result) {
     const add = (v) => { if (typeof v === "string" && v) out.push(v); };
     if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "duplicate_layer", "film_apply_look", "copy_to_layer"].includes(name)) add(result.id);
     if (name === "generate" || name === "upscale" || name === "realism_pass" || name === "glb_place" || name === "relight") { add(result.layer && result.layer.id); add(result.depthLayer && result.depthLayer.id); }
+    // generate each_area (item 54): every area's result layer
+    if (name === "generate" && Array.isArray(result.layers)) for (const l of result.layers) add(l && l.id);
     if (name === "film_add_point" || name === "film_paste_points") add(result.layer);
     // key_screen: the Key layer (a layer summary) and the grey Fill layer under it (its id), when they landed
     if (name === "key_screen") { add(result.layer && result.layer.id); add(result.grey); }

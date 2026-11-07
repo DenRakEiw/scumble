@@ -35,8 +35,10 @@ function sentTexts(snap) {
 
 // a run note that only explains how the run went, not what it left out or changed (item 45: those show red); the
 // LoRA rows a recipe whose LoRAs section is hidden still keeps (loraPlan's `hidden`) are no omission the user could
-// see or mend there, so their line is plain too; the separate areas' advice (eacharea.js areaHint) changes nothing
-const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None |^Served by .+ \(Comfy Router's fallback provider\)\.$|^LoRAs: |^The LoRA rows stored for this recipe stayed out: |^\d+ separate areas; the crop goes at /;
+// see or mend there, so their line is plain too; the separate areas' advice (eacharea.js areaHint) changes nothing, and
+// Comfy Cloud's GPT Image node sending no mask beside several pictures (comfycloud.js MASK_LEFT_OUT) still keeps the
+// result inside the selection
+const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None |^Served by .+ \(Comfy Router's fallback provider\)\.$|^LoRAs: |^The LoRA rows stored for this recipe stayed out: |^\d+ separate areas; the crop goes at |^Comfy Cloud's GPT Image node takes a mask with one picture only/;
 /** The kind of a line that appends a run's notes to the one before: red when a note says something was left out. */
 function notesKind(editor, notes) {
     return notes.some((n) => !HINT_NOTE.test(String(n))) ? "warn" : (editor.statusKind || "info");
@@ -527,7 +529,7 @@ export const api = {
  * @property {(editor: any) => any} resultInputState     which result input the recipe writes to
  * @property {(editor: any) => any} workflowForPng       the workflow to embed in a saved PNG, null = embed nothing
  * @property {(editor: any, sec: any) => void} buildGenerateExtras   the extra rows under Generate
- * @property {(editor: any, opts?: { refs?: any }) => Promise<any>} queueGenerate   run the recipe; `refs`: the click's reference snapshot (docs/PLAN_REFS.md C3)
+ * @property {(editor: any, opts?: { refs?: any, area?: any }) => Promise<any>} queueGenerate   run the recipe; `refs`: the click's reference snapshot (docs/PLAN_REFS.md C3); `area`: one area of the selection instead of the selection (the app's Each area; the node's host is never given one)
  * @property {() => boolean} generateNewAvailable
  * @property {(editor: any) => void} openGenerateNew
  * @property {(editor: any) => ({ models: { value: string, label: string, group: string, providers: { value: string, label: string, aspects: string[], classes: { value: number, label: string }[] }[] }[], pick: { model: string, provider: string, aspect: string | null, size: number | null } | null, working: (aspect: string, size: number) => [number, number] } | null)} [newCanvasChoices]   New with a model (item 34): the models, the preset to open on, the canvas of a preset; the node answers null
@@ -2361,10 +2363,13 @@ export const host = {
      * A run through an API provider: crop in the app (stitch.js), one request to the
      * main process (electron/main/providers), the answer stitched back into an RGBA
      * patch that is stored in the file mirror as a result and added like a result from
-     * the node. No ComfyUI involved. `opts.refs`: the click's reference snapshot.
+     * the node. No ComfyUI involved. `opts.refs`: the click's reference snapshot. `opts.area` (Each area, eacharea.js):
+     * one area of the selection, read instead of the document's selection (its `window()`, its `bounds()` for the boxes);
+     * its `sent` is set once the request goes to the provider.
      */
     async runProvider(editor, opts = {}) {
         const r = this.recipe;
+        const area = opts.area || null;
         if (!editor.base) throw refusal("Load an image first.");
         // one run per document: a second token would take the slot, and its end would clear it under the first (a Realism
         // Pass, an upscale), which then reads as idle (busy(), Close without asking, turnBlocked)
@@ -2395,7 +2400,7 @@ export const host = {
             const seed = editor.genSettings.seed;
             // the crop and its masks off the window: the box from the tile workers, the pixels in the stitch worker;
             // the references are the click's
-            const prep = await prepareCropAsync(editor, this.nodeParams, this.cropLimits(), { refIds: snap.refIds });
+            const prep = await prepareCropAsync(editor, this.nodeParams, this.cropLimits(), { refIds: snap.refIds, ...(area ? { area } : {}) });
             const references = prep.references;
             info = prep.info; sel = prep.sel;
             [x, y, w, h] = info.bbox;
@@ -2404,8 +2409,8 @@ export const host = {
             const original = info.original ? 1 : 0;
             named = this.refPrompt(editor, snap, "edit", { sent: [...Array(original).fill(null), ...snap.refIds] });
             // a selection of several separate areas whose one crop goes out strongly scaled down (item 54): said before
-            // the answer and kept in the run's notes
-            const areaNote = areaHint(this, editor, this.cropLimits(), Math.max(info.emitted[0], info.emitted[1]) / Math.max(1, w, h));
+            // the answer and kept in the run's notes (not for a run of one area of them)
+            const areaNote = area ? "" : areaHint(this, editor, this.cropLimits(), Math.max(info.emitted[0], info.emitted[1]) / Math.max(1, w, h));
         editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label}${info.keepAlpha ? ", transparent background" : ""} ...${areaNote ? " " + areaNote : ""}`);
             const shape = this.layoutShape(editor, { recipe: r, params, original, count: references.length });
             // the boxes (item 28): geometry in fractions of the crop, main writes the model's rows behind the variant's
@@ -2416,7 +2421,7 @@ export const host = {
             const sendBoxes = takes && !!editor.genSettings.boxes;
             const held = takes && this.plugins ? this.plugins.countBoxes(editor) : 0;
             if (takes && !sendBoxes && held) preNotes.push(`The document's ${held} box${held === 1 ? "" : "es"} did not go: the Boxes switch under the prompt is off.`);
-            const selBounds = sendBoxes && info.has_selection ? editor.selectionBounds() : null;
+            const selBounds = sendBoxes && info.has_selection ? (area ? area.bounds() : editor.selectionBounds()) : null;
             // the plugins' boxes (S2): every scumble.generate source, in image pixels, mapped into the crop by the core
             if (sendBoxes && this.plugins) {
                 const ctx = this.boxContext(editor, { mode: "edit", recipe: r, provider: shape.provider, model: shape.model, schema: shape.options.boxes, frame: frameOf(info), bounds: selBounds, sent: [...Array(original).fill(null), ...snap.refIds] });
@@ -2446,9 +2451,8 @@ export const host = {
                 // the variant's declaration holds for its edit graph (recipes.js normalize)
                 ...(cloudLoras ? { loras: { rows: cloudLoras, declared: r.loras } } : {}),
             };
-            // a run of one area of several (Each area, eacharea.js): the crop is made, so the user's own selection comes
-            // back while the provider works
-            if (editor._eachAreaRun && editor._eachAreaRun.onSelectionRead) editor._eachAreaRun.onSelectionRead();
+            // a run of one area of several (Each area, eacharea.js): from here on it counts as sent (it may be charged)
+            if (area && !token.cancelled) area.sent = true;
             res = await providerEdit(request, token);
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
             editor.lastRunNotes = [...preNotes, ...(res.notes || [])];
@@ -2464,7 +2468,7 @@ export const host = {
             // an adapter that knows its answer covers the crop exactly (Magnific's preset shapes, Image Expand) says so
             if (res && res.info && res.info.fit === "stretch") info.fit = "stretch";
             // the answer decoded and stitched in the stitch worker, the region (for a colour match) from the tile workers
-            const fin = await finishResultAsync(editor, info, sel, res.bytes, res.mime);
+            const fin = await finishResultAsync(editor, info, sel, res.bytes, res.mime, area);
             const { blob, align } = fin;
             const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
             const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
@@ -3161,7 +3165,17 @@ export const host = {
      * the generate command's `each_area`. `confirm`: ask before an API run (the command does not).
      */
     generateEachArea(editor, opts = {}) {
-        return runEachArea(this, editor, opts);
+        return runEachArea(this, editor, { ...opts, api });
+    },
+
+    /** Why a run of recipe `r` with this prompt is refused before anything is made (promptRequired), or "" (Each area asks it before its question). */
+    promptRefusal(r, prompt) {
+        return promptMissing(r, prompt);
+    },
+
+    /** The kind of a line that carries a run's notes: red when a note says something was left out (Each area's final line). */
+    runNotesKind(editor, notes) {
+        return notesKind(editor, notes);
     },
 
     /** The selection's separate areas for the status command (eacharea.js areaState): counted now when they are not. */
@@ -5344,11 +5358,12 @@ export const host = {
 
     /**
      * Fill the recipe with the editor state and queue it. Called by editor.generate(); `opts.refs` is the click's
-     * reference snapshot (docs/PLAN_REFS.md C3; a caller without one gets the references of now).
+     * reference snapshot (docs/PLAN_REFS.md C3; a caller without one gets the references of now). `opts.area` (Each
+     * area, eacharea.js): one area of the selection, run instead of the selection itself (the document's selection is
+     * never read for it); its `sent` and `promptId` are set once the prompt is queued.
      */
     async queueGenerate(editor, opts = {}) {
-        // a run of one area of several (Each area, eacharea.js): the prompt and the references of its click, for every area
-        if (editor._eachAreaRun && editor._eachAreaRun.refs) opts = { ...opts, refs: editor._eachAreaRun.refs };
+        const area = opts.area || null;
         // Generate new on a ComfyUI recipe (generate_new's local path, a fresh canvas): the size its boxes were drawn on,
         // read once whatever the run does
         const fresh = editor._newBoxes || null;
@@ -5359,8 +5374,10 @@ export const host = {
         // a render queued now would land in the old geometry (editor.generate refuses first; this is the net)
         if (editor.providerPending && editor.providerPending.resizes) throw refusal(RUN_GOING);
         if (r.kind === "provider" && r.task === "upscale") return this.runUpscale(editor, { scope: "selection", refs: opts.refs });
-        if (r.kind === "provider") return this.runProvider(editor, { refs: opts.refs });
+        if (r.kind === "provider") return this.runProvider(editor, { refs: opts.refs, ...(area ? { area } : {}) });
         if (!r.prompt) throw refusal("No recipe selected.");
+        // an area of Each area is an edit of the selection: never an upscale or the pass (eacharea.js refuses them first)
+        if (area && (r.task === "upscale" || r.task === "pass" || fresh)) throw refusal(`Each area runs an edit recipe; ${r.name || r.id} is not one.`);
         // a text-to-image graph (recipes/moss_image_local.json, `edit: false`): only Generate new's fresh canvas runs it;
         // on a selection it would paint a picture made from the prompt alone into the crop
         if (r.edit === false && !fresh) throw refusal(`${r.name || r.id} makes new pictures from the prompt alone: use "Generate new", not Generate.`);
@@ -5454,7 +5471,7 @@ export const host = {
         }
         // an upscale's canvas state carries no references (upscaleState), so none is read or uploaded for it; a reference
         // past the recipe's slots is not uploaded either
-        const sopts = upscale ? { refIds: [], prompt: texts.prompt, negative: texts.negative } : { refIds: runRefs, prompt: snap.prompt, negative: snap.negative, ...(boxGiven ? { boxes: boxGiven } : {}) };
+        const sopts = upscale ? { refIds: [], prompt: texts.prompt, negative: texts.negative } : { refIds: runRefs, prompt: snap.prompt, negative: snap.negative, ...(boxGiven ? { boxes: boxGiven } : {}), ...(area ? { area } : {}) };
         let state, plan = null;
         if (upscale) state = this.upscaleState(await editor.serializeForPrompt(sopts));
         else {
@@ -5499,15 +5516,14 @@ export const host = {
                 editor.lastRunNotes.push(`${listWords(left)} ${left.length === 1 ? "is" : "are"} not sent: ${r.name || r.id} reads ${plan.spec.slots} picture${plan.spec.slots === 1 ? "" : "s"}.`);
             }
             if (plan.spec.guess && texts.pairs.length) editor.lastRunNotes.push("(wording guessed from the graph)");
-            // a selection of several separate areas whose one crop the node scales down strongly (item 54)
-            if (!fresh) {
+            // a selection of several separate areas whose one crop the node scales down strongly (item 54; not for a run
+            // of one area of them)
+            if (!fresh && !area) {
                 const areaNote = areaHint(this, editor, null);
                 if (areaNote) editor.lastRunNotes.push(areaNote);
             }
         }
         if (texts.note) editor.setStatus(`${editor.status} ${texts.note}`, editor.statusKind || "info");
-        // a run of one area of several (Each area): the state holds its mask, so the user's own selection comes back
-        if (editor._eachAreaRun && editor._eachAreaRun.onSelectionRead) editor._eachAreaRun.onSelectionRead();
         await this.ensureOnServer(state, editor);
         const prompt = JSON.parse(JSON.stringify(r.prompt));
         const canvas = prompt[r.canvas];
@@ -5582,6 +5598,8 @@ export const host = {
         }
         const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo(lorasSent.length ? { loras: lorasSent } : null) });
         editor.lastPromptId = res && res.prompt_id;
+        // a run of one area of several (Each area): queued, so it counts as sent; its prompt is what the run waits for
+        if (area && res && res.prompt_id != null) { area.sent = true; area.promptId = res.prompt_id; }
         // the tab closed while its prompt was being queued (the uploads take a while): its result lands nowhere
         if (res && res.prompt_id && !this._editors.includes(editor)) this._closedPrompts.add(String(res.prompt_id));
         // a Klein run's files: its sampler's shape error is said as the text encoder that does not fit (0.1.50 Q1)

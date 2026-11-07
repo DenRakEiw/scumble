@@ -589,7 +589,8 @@ export function cropPixels(p, sel, region, { own = false, laps = null } = {}) {
  * multiple_of } (the app's node params).
  */
 export function prepareCrop(editor, params, limits, opts = {}) {
-    const sel = selectionWindow(editor);
+    // `area`: one area of a selection of several (eacharea.js), read instead of the document's selection
+    const sel = opts.area ? windowMask(opts.area.window()) : selectionWindow(editor);
     const p = planCrop(cropSettingsOf(editor, params, limits, opts.crop), sel);
     // E2: the crop box composited on its own (`readBox`: a region pass at full resolution, or the box cut out of the
     // whole flatten when no margin gives those pixels), never the whole image for a box of it
@@ -878,7 +879,8 @@ async function regionBytes(editor, x, y, w, h, held = undefined) {
  * size, `info` as `prepareCrop` gives it, `sel` for `finishResultAsync`, `how` the region's way (or "window" when it
  * ran as before), `laps` the steps' milliseconds by name (K0b: the worker's loops and the window's waits) and, from the
  * worker, `pxCalls` its kernel calls by name. Falls back to `prepareCrop` on the window when the worker is not there or
- * fails.
+ * fails. `opts.area` (eacharea.js): one area of a selection of several, `{ window() }` (a window read as
+ * selectionWindowPixels gives it, of that area alone), read instead of the document's selection.
  */
 export async function prepareCropAsync(editor, params, limits, opts = {}) {
     const settings = cropSettingsOf(editor, params, limits, opts.crop);
@@ -892,7 +894,7 @@ export async function prepareCropAsync(editor, params, limits, opts = {}) {
         try {
             const laps = {}, pxCalls = {};
             let t0 = performance.now();
-            const win = selectionWindowPixels(editor);
+            const win = opts.area ? opts.area.window() : selectionWindowPixels(editor);
             lapSince(laps, "selection", t0);
             holding = typeof editor.holdRunStack === "function" ? editor.holdRunStack({ forRun: true }) : null;
             const refs = refLayers.map((l) => editor.layerPixels(l));
@@ -934,9 +936,10 @@ export async function prepareCropAsync(editor, params, limits, opts = {}) {
  * stitch worker; the region's composite, read only for a colour match, comes from the tile workers.
  * `{ blob, cutout, x, y, w, h, align, how, laps }`: the patch as a PNG, whether it carries real transparency
  * (`transparentPixels`), the steps' milliseconds by name (K0b; from the worker also `pxCalls`, its kernel calls).
- * Falls back to `finishResult` on the window.
+ * Falls back to `finishResult` on the window. `area`: the run's area (prepareCropAsync's `opts.area`), whose window the
+ * fallback reads again instead of the document's selection.
  */
-export async function finishResultAsync(editor, info, selIn, bytes, mime = "image/png") {
+export async function finishResultAsync(editor, info, selIn, bytes, mime = "image/png", area = null) {
     let sel = selIn;
     const [x, y, w, h] = info.bbox;
     if (STITCH_IN_WORKER && stitchWorker()) {
@@ -955,7 +958,7 @@ export async function finishResultAsync(editor, info, selIn, bytes, mime = "imag
             console.warn("Scumble: the stitch in the stitch worker failed, stitching on the window:", (err && err.message) || err);
         }
         // the mask went to the worker that failed: the selection's window as it is now
-        if (!sel.data || sel.data.length !== sel.w * sel.h) sel = selectionWindow(editor);
+        if (!sel.data || sel.data.length !== sel.w * sel.h) sel = area ? windowMask(area.window()) : selectionWindow(editor);
     }
     const laps = {};
     let t0 = performance.now();

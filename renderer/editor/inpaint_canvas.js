@@ -24507,7 +24507,12 @@ class InpaintEditor {
         }
     }
 
-    async generate() {
+    /**
+     * Generate with the host's recipe. `opts` (the app's Each area, eacharea.js; the button and Ctrl+Enter pass none):
+     * `refs` a reference snapshot to send instead of the one of now, `area` one area of the selection to run on instead of
+     * the selection itself (the host reads it in place of `this.sel`; the document's selection is never touched).
+     */
+    async generate(opts = {}) {
         this.lastRunError = null;
         if (!this.base) { this.setStatus("Load an image first."); return; }
         // One API run per document: the host holds `providerPending` until its result has landed, and the button stays
@@ -24524,7 +24529,8 @@ class InpaintEditor {
         }
         // the prompt and the references as they are at the click (docs/PLAN_REFS.md C3): a later hide or move does not
         // change what this run sends
-        const refs = this.refSnapshot();
+        const refs = (opts && opts.refs) || this.refSnapshot();
+        const area = (opts && opts.area) || null;
         if (this.removePending || this.healPending || this.liquifyPending) { this.setStatus("Waiting for the stroke to land..."); await this.heldEdit(); }
         if (this.genSettings.seedRandom) { this.genSettings.seed = randomSeed(); if (this.seedInput) this.seedInput.value = this.genSettings.seed; }
         const { name, wired } = this.resultInputState();
@@ -24535,7 +24541,7 @@ class InpaintEditor {
             // model such as Flux.2 gets the whole card; in API mode they simply stay resident.
             if (this.genSettings.mode === "local" && this.helperUsed) await this.freeHelperModels();
             this.setStatus(wired ? `Queueing (${this.genSettings.mode}, seed ${this.genSettings.seed}, result from ${name}) ...` : `Queueing, but nothing is wired into "result" or "result_local": the result will not come back into the canvas.`);
-            await host.queueGenerate(this, { refs });
+            await host.queueGenerate(this, area ? { refs, area } : { refs });
         } catch (err) {
             console.error(err);
             // kept for the app's generate command, which throws it at once; also returned, so a caller gets its own run's
@@ -24950,11 +24956,14 @@ class InpaintEditor {
      * app): `refIds` the click's references (refLayersFor), `prompt` / `negative` the texts to send instead of the fields';
      * `boxes` ({ boxes, notes }, promptPayload's shape; `boxes` null: none, the selection goes as one) the boxes a run
      * sends while the Boxes switch is on, measured by the caller, instead of the document's (Generate new measures them
-     * on the picture they were drawn on, before its fresh canvas replaces it).
+     * on the picture they were drawn on, before its fresh canvas replaces it). `area` (the app's Each area): one area of
+     * the selection, `{ maskCanvas(), crop }`, whose mask goes instead of the selection's (never through the upload cache,
+     * which stays the selection's) and whose crop the status line names.
      */
     async serializeForPrompt(opts = {}) {
         if (!this.base) return "{}";
         const id = this.node.id;
+        const area = opts.area || null;
         await this.syncLayers();
         let baseRef = this.uploaded.baseRef;
         if (!this.uploaded.baseHash || !baseRef) {
@@ -24971,9 +24980,12 @@ class InpaintEditor {
         }
         // the selection the mask below holds, read in the same tick (the app numbers the batch's pictures from it; the
         // node ignores the key)
-        const hasSelection = !!this.getBounds();
+        const hasSelection = area ? true : !!this.getBounds();
         let maskRef = this.uploaded.maskRef;
-        if (!this.uploaded.maskHash || !maskRef) {
+        if (area) {
+            const c = area.maskCanvas();
+            try { maskRef = (await uploadCanvas(c, `n${id}_mask`)).ref; } finally { c.width = 1; c.height = 1; }
+        } else if (!this.uploaded.maskHash || !maskRef) {
             const up = await uploadCanvas(this.maskToCanvas(), `n${id}_mask`);
             maskRef = up.ref;
             this.uploaded.maskHash = up.hash;
@@ -25017,7 +25029,7 @@ class InpaintEditor {
             boxPart = { selectionBoxId: selectionBoxIdOf(promptSent), referenceIds: refLayers.map((l) => l.id), referenceLabels: refLayers.map((l) => (labels.has(l.id) ? `img${labels.get(l.id)}` : null)), ...((given ? Array.isArray(given.boxes) : list.length) ? { boxes: p.boxes } : {}) };
             boxNote = p.notes.join(" ");
         }
-        const [x, y, w, h] = this.cropRect();
+        const [x, y, w, h] = area && Array.isArray(area.crop) ? area.crop : this.cropRect();
         this.setStatus(`Queued crop ${w} × ${h} at ${x}, ${y}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}. Waiting for the result ...${boxNote ? " " + boxNote : ""}`, boxNote ? "warn" : undefined);
         return JSON.stringify({
             width: this.width,

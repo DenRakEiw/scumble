@@ -251,11 +251,16 @@ paste: `undo {steps: 2}` takes both back).
 
 **Several separate areas** (CLAUDE.md item 54, issue #9). `status`'s `areas` counts the selection's separate areas on
 a coarse copy of it (`count`, `each_area`, `cap` 8, `specks`, each area's box): the parts whose crops would overlap
-are one area, specks below a 20,000th of the picture are left out. `generate` with `each_area: true` runs each area
-as its own crop and run with the same prompt, one after another, each result its own layer, and answers `areas`,
-`generated`, `layers`, `cancelled`, `failed` and `left_out`. It asks nothing first (the app's *Each area* button asks
-before an API run, which is charged once per area), and `cancel_run` stops the run going and the areas not yet sent.
-A plain `generate` of such a selection whose one crop goes out at under half its size says so in its `notes`.
+are one area, and parts smaller than a speck (max(256 px, a 20,000th of the picture)) are not counted: those outside
+every area's crop are left out of the runs. `generate` with `each_area: true` runs each area as its own crop and run
+with the same prompt and the selected recipe, one after another (on the user's ComfyUI too: the next area is queued once
+the one before landed), each result its own layer; the document's selection is never changed by it. It answers
+`areas`, `generated`, `layers`, `sent`, `not_sent`, `still_running`, `cancelled`, `stopped`, `failed`, `said` (a
+cancel's words for an area that had gone out: whether it is charged), `left_out` and `notes` (the areas' run notes,
+once each). Its `timeout` bounds the whole run: no area starts that the time left would not hold. It asks nothing first
+(the app's *Each area* button asks before a charged API run; the in-app assistant's card names the runs), and
+`cancel_run` stops the run going and the areas not yet sent. A plain `generate` of such a selection whose one crop goes
+out at under half its size says so in its `notes`.
 
 **Selections, the Settings rows, crop and filter values** (docs/PLAN_0_1_42.md F2b). `select_color` is
 the Magic wand at a point (`tolerance` 0..255, `contiguous`, `sample` image or layer), in the app with
