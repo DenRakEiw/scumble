@@ -515,7 +515,7 @@
           ]
         }
       ],
-      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Mask inpainting through the node's mask input at the crop's size (multiples of 16)."
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Mask inpainting through the node's mask input at the crop's size (multiples of 16). The node takes a mask beside one picture only: with the Original or reference layers beside the crop the run goes without the mask, the model edits the whole crop with every picture and the selection still limits the result (the status line says so)."
     },
     "openrouter": {
       "model": "openai/gpt-image-2.5-flare",

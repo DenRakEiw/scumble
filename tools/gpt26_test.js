@@ -10,7 +10,9 @@
 // one, WaveSpeed's crop widened to one of its presets (stitch.js planCrop), and no GIF or SVG output anywhere. Comfy Cloud
 // (added 2026-11-07): the partner node OpenAIGPTImageNodeV2's graph held to its spec as Comfy Cloud listed it that day
 // (tools/refs/comfy_cloud/nodes/), model.complexity always on 2.6 and never on 2.5 or 2, the mask, a Custom size at the
-// crop's size for crops the stitch plans by the variant's limits; built through comfycloud.js _buildGraph, nothing sent.
+// crop's size for crops the stitch plans by the variant's limits, the mask only beside the crop alone (with the Original or
+// a reference layer it stays out, on 2, 2.5 and 2.6, and the answer's note says so once); built through comfycloud.js
+// _buildGraph and a scripted legacy run, nothing sent.
 "use strict";
 
 const fs = require("node:fs");
@@ -543,6 +545,36 @@ async function runToapis(req, verb = "edit") {
             && ["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"].every((m) => { const s = SPEC.model_inputs[m], c = s["model.complexity"]; const { "model.complexity": _c, ...rest } = s; return c.required && c.default === "high" && eq(c.options, ["low", "medium", "high"]) && eq(rest, SPEC.model_inputs["gpt-image-2.5-flare"]); })
             && !("model.complexity" in SPEC.model_inputs["gpt-image-2.5-sunburst"]) && SPEC.model_inputs["gpt-image-2.6-flare"]["model.images.image_"].max === 16
             && /exactly one reference image/.test(SPEC.model_inputs["gpt-image-2.6-sunburst"]["model.mask"].tooltip));
+        // a whole run on the legacy API (upload, prompt, status, job, view, the signed download) for the answer's notes
+        const runCloud = async (req) => {
+            const prompts = [];
+            let n = 0;
+            const fetch = async (url, init = {}) => {
+                const u = new URL(String(url)), method = String(init.method || "GET").toUpperCase();
+                if (method === "POST" && u.pathname === "/api/upload/image") return json(200, { name: `u${++n}.png`, subfolder: "", type: "input" });
+                if (method === "POST" && u.pathname === "/api/prompt") { prompts.push(JSON.parse(init.body).prompt); return json(200, { prompt_id: "p1" }); }
+                if (u.pathname === "/api/job/p1/status") return json(200, { status: "success" });
+                if (u.pathname === "/api/jobs/p1") return json(200, { id: "p1", status: "completed", outputs: { 9: { images: [{ filename: "out.png", subfolder: "", type: "output" }] } } });
+                if (u.pathname === "/api/view") return new Response(null, { status: 302, headers: { location: "https://signed.example/out.png" } });
+                if (u.host === "signed.example") return png();
+                return json(404, { error: "no route " + u.pathname });
+            };
+            const out = await cloud.edit(req, { key: "k-test", fetch, log() {}, sleep: async () => {} });
+            const node = Object.values(prompts[0] || {}).find((x) => x.class_type === NODE) || { inputs: {} };
+            return { out, inputs: node.inputs };
+        };
+        const LEFT_OUT = "Comfy Cloud's GPT Image node takes a mask with one picture only: sent without the mask, the selection still limits the result.";
+        /** What a selection run with more than one picture breaks: a mask or ImageToMask in the graph, a mask uploaded, a picture missing. */
+        const withoutMask = (g, tags) => {
+            const bad = [];
+            if ("model.mask" in g.inputs) bad.push("model.mask sent");
+            if (Object.values(g.graph).some((x) => x.class_type === "ImageToMask")) bad.push("an ImageToMask in the graph");
+            if (g.uploads.includes("MASK")) bad.push("the mask uploaded");
+            const sent = tags.map((_, k) => g.tagAt(g.inputs[`model.images.image_${k + 1}`]));
+            if (!eq(sent, tags) || `model.images.image_${tags.length + 1}` in g.inputs) bad.push(`pictures ${short(sent)}, not ${short(tags)}`);
+            if (!eq(g.uploads, tags)) bad.push(`uploads ${short(g.uploads)}`);
+            return bad;
+        };
         const recipes = recipesModule();
         const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "stitch.js")).href);
         const W = 4000, H = 3000;
@@ -552,7 +584,7 @@ async function runToapis(req, verb = "edit") {
             check(`${r.id}: Comfy Cloud is the partner node with the mask, the 2.5 variant's shape (Quality low..max, default medium) plus the Complexity row, no text route`,
                 v.model === `gpt-image-2.6-${tier}` && v.input === "fill" && eq(v.options, { node: NODE, mask: true }) && !v.text
                 && eq(v.settings.map((s) => [s.index, s.key, s.label, s.spec[0], s.spec[1].default]), [[1, "model.quality", "Quality", ["low", "medium", "high", "xhigh", "max"], "medium"], [2, "model.complexity", "Complexity", ["low", "medium", "high"], "high"]])
-                && /Partner Node on Comfy Cloud/.test(v.note) && /exactly one picture/.test(v.note) && /listed it on 2026-11-07/.test(v.note), short(v.settings));
+                && /Partner Node on Comfy Cloud/.test(v.note) && /a mask beside one picture only: with the Original or reference layers beside the crop the run goes without the mask/.test(v.note) && /listed it on 2026-11-07/.test(v.note), short(v.settings));
             const a = await graphOf(editReq("comfycloud", v));
             const i = a.inputs;
             check(`${r.id} edit 3840 x 2160 with the selection: model ${v.model}, Complexity high and Quality medium from the rows, Custom 3840 x 2160, the crop in image_1, the mask through ImageToMask's red channel, n 1, the seed`,
@@ -573,6 +605,22 @@ async function runToapis(req, verb = "edit") {
             check(`${r.id}: a reference layer without a selection goes in image_2`, ref1.tagAt(ref1.inputs["model.images.image_2"]) === "REF1" && !specBad(ref1.inputs, ref1.graph).length, short(ref1.inputs));
             const lay = cloud.layout(editReq("comfycloud", v));
             check(`${r.id}: the layout caps at 16 pictures, the crop in model.images.image_1, the mask in model.mask`, lay.max === 16 && lay.pictures.some((p) => p.role === "crop" && p.field === "model.images.image_1") && lay.pictures.some((p) => p.role === "mask" && p.field === "model.mask"), short(lay.pictures));
+            // the node takes a mask beside one picture only (the user's answer of 2026-11-07: keep the references): with a
+            // reference layer or the Original beside the crop, no mask, every picture; the crop alone keeps the mask
+            const selRef = await graphOf(editReq("comfycloud", v, { references: [pngOf(1024, 1024, "REF1")] }));
+            check(`${r.id}: a selection run with a reference layer goes without the mask, the crop and the reference in image_1 / image_2`, !withoutMask(selRef, ["CROP", "REF1"]).length && !specBad(selRef.inputs, selRef.graph).length && selRef.inputs["model.complexity"] === "high", withoutMask(selRef, ["CROP", "REF1"]).join(" | ") || short(selRef.inputs));
+            const selOrig = await graphOf(editReq("comfycloud", v, { references: [pngOf(3840, 2160, "ORIGINAL")], original: 1 }));
+            check(`${r.id}: a selection run with the Original goes without the mask, the Original in image_2`, !withoutMask(selOrig, ["CROP", "ORIGINAL"]).length, withoutMask(selOrig, ["CROP", "ORIGINAL"]).join(" | ") || short(selOrig.inputs));
+            const many = await graphOf(editReq("comfycloud", v, { references: [pngOf(3840, 2160, "ORIGINAL"), pngOf(1024, 1024, "REF1"), pngOf(1024, 1024, "REF2")], original: 1 }));
+            check(`${r.id}: the Original and two reference layers: no mask, all four pictures in order`, !withoutMask(many, ["CROP", "ORIGINAL", "REF1", "REF2"]).length, withoutMask(many, ["CROP", "ORIGINAL", "REF1", "REF2"]).join(" | "));
+            const layRef = cloud.layout(editReq("comfycloud", v, { references: [pngOf(1024, 1024, "REF1")] }));
+            check(`${r.id}: the layout of a selection run with a reference names no mask, the reference in model.images.image_2`, !layRef.pictures.some((p) => p.role === "mask") && layRef.pictures.some((p) => p.role === "reference" && p.field === "model.images.image_2"), short(layRef.pictures));
+            const runRef = await runCloud(editReq("comfycloud", v, { references: [pngOf(1024, 1024, "REF1")] }));
+            const runSel = await runCloud(editReq("comfycloud", v));
+            const runBare = await runCloud(editReq("comfycloud", v, { mask: null, maskAlpha: null, references: [pngOf(1024, 1024, "REF1")] }));
+            check(`${r.id}: the answer's notes say it once when the mask was left out, never when the mask went or there was none`,
+                eq(runRef.out.notes, [LEFT_OUT]) && !("model.mask" in runRef.inputs) && eq(runSel.out.notes, []) && Array.isArray(runSel.inputs["model.mask"]) && eq(runBare.out.notes, []),
+                short({ ref: runRef.out.notes, sel: runSel.out.notes, bare: runBare.out.notes }));
             // the crop the stitch plans by the variant's limits (max mode, and the crop's own size for a small one): the
             // node gets a Custom size equal to it, inside the node's rules
             const lim = recipes._normalize(JSON.parse(JSON.stringify(r))).providers.comfycloud.limits;
@@ -594,6 +642,15 @@ async function runToapis(req, verb = "edit") {
             check(`${id} on Comfy Cloud: no model.complexity (also when one is handed in), Custom 2048 x 1152, the rest as before${v.model in SPEC.model_inputs ? ", inside the node's spec" : ""}`,
                 !("model.complexity" in plain.inputs) && !("model.complexity" in handed) && plain.inputs.model === v.model && plain.inputs["model.size"] === "Custom" && plain.inputs["model.custom_width"] === 2048 && plain.inputs["model.custom_height"] === 1152 && !inSpec.length,
                 inSpec.join(" | ") || short(handed));
+            // the same node, the same mask rule: the crop alone keeps the mask, a reference or the Original drops it
+            const selRef = await graphOf(editReq("comfycloud", v, { width: 2048, height: 1152, references: [pngOf(1024, 1024, "REF1")] }));
+            const selOrig = await graphOf(editReq("comfycloud", v, { width: 2048, height: 1152, references: [pngOf(2048, 1152, "ORIGINAL")], original: 1 }));
+            check(`${id} on Comfy Cloud: the crop alone keeps the mask; with a reference layer or the Original the run goes without it, every picture sent`,
+                plain.tagAt(plain.inputs["model.mask"]) === "MASK" && eq(plain.uploads, ["CROP", "MASK"]) && !withoutMask(selRef, ["CROP", "REF1"]).length && !withoutMask(selOrig, ["CROP", "ORIGINAL"]).length,
+                [...withoutMask(selRef, ["CROP", "REF1"]), ...withoutMask(selOrig, ["CROP", "ORIGINAL"])].join(" | ") || short(plain.inputs));
+            const runRef = await runCloud(editReq("comfycloud", v, { width: 2048, height: 1152, references: [pngOf(1024, 1024, "REF1")] }));
+            const runSel = await runCloud(editReq("comfycloud", v, { width: 2048, height: 1152 }));
+            check(`${id} on Comfy Cloud: the note only when the mask was left out`, eq(runRef.out.notes, [LEFT_OUT]) && eq(runSel.out.notes, []), short({ ref: runRef.out.notes, sel: runSel.out.notes }));
         }
     });
 

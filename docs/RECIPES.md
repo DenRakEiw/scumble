@@ -1069,7 +1069,7 @@ of the request, and each family has its own word for it (the vendors' prompting 
   | `gpt_image_2_5_*`, `gpt_image_2_6_*` · fal | 16 | `image_urls` `maxItems: 16` in the saved schemas (`tools/refs/fal/openai_gpt-image-2.*`, read 2026-11-06) |
   | `gpt_image_2_6_*` · WaveSpeed, OpenAI | 16 | `images` `maxItems: 16` (`tools/refs/wavespeed/openai_gpt-image-2.6-*`); OpenAI's `image` `maxItems: 16` (`tools/refs/openai/images_gpt-image-2.6.json`) |
   | `gpt_image_2_6_sunburst` · ToAPIs | 16 | https://docs.toapis.com/docs/en/api-reference/images/gpt-image-2.6-official/generation.md ("up to 16 images", read 2026-11-06) |
-  | `gpt_image_2_6_*` · Comfy Cloud | 16 | the node `OpenAIGPTImageNodeV2` (`model.images.image_1` .. `image_16`, the live catalog 2026-11-07, `tools/refs/comfy_cloud/nodes/`); with a mask the node takes one picture, which the layout does not enforce |
+  | `gpt_image_2_6_*` · Comfy Cloud | 16 | the node `OpenAIGPTImageNodeV2` (`model.images.image_1` .. `image_16`, the live catalog 2026-11-07, `tools/refs/comfy_cloud/nodes/`); the mask goes only beside the crop alone (with more pictures the run goes without it, `MASK_ONE_PICTURE`) |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · WaveSpeed | 16 | https://wavespeed.ai/docs/docs-api/openai/openai-gpt-image-2-edit, `…-2.5-flare-edit`, `…-2.5-sunburst-edit` ("0 ~ 16 items") |
   | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · OpenAI | 16 | OpenAI's `image[]` (not read at a URL in this step; not read by `openai.js` yet, above) |
   | `nano_banana_2`, `_2_lite`, `_pro` · Gemini | 14 | Google's limit (not read at a URL in this step) |
@@ -1398,7 +1398,9 @@ behind `settings.comfycloud.api` "legacy" for this release); settings keys are t
 for the model combos such as `model.quality`, and override what the node's wiring sets (Nano Banana 2.1:
 `model` "Gemini Nano Banana 2.1" on `GeminiNanoBanana2V2`, `model.thinking_level` MINIMAL / MEDIUM / HIGH over the
 wiring's MINIMAL; GPT Image 2.6: `model.complexity` low / medium / high over the wiring's high, which `AFTER_PARAMS`
-then keeps on a 2.6 model and off the node's other models); needs a paid plan), **openrouter** (`POST
+then keeps on a 2.6 model and off the node's other models); `OpenAIGPTImageNodeV2` gets the selection's mask only
+beside the crop alone, and a run with the Original or reference layers goes without it with a note ("GPT Image 2.6
+Sunburst and Flare" below); needs a paid plan), **openrouter** (`POST
 /api/v1/images`, one synchronous request with the pictures inline as data URLs and the image back
 as base64; no mask input, so a `fill` variant sends the mask as a second picture as the Gemini
 adapter does; only the parameters `options.accepts` names; tiers and aspect presets from
@@ -1680,7 +1682,7 @@ against its page's parameter list, the Comfy Cloud graph against the node's spec
 | fal.ai | `openai/gpt-image-2.6/sunburst/edit`; new images `.../text-to-image` | fill: `image_urls`, `mask_url` (white = repaint) | `image_size` `{ width, height }` inside the rules (`sizing: "pixels"`) | `reasoning_effort`, fal's name for it | 16 |
 | Replicate | `openai/gpt-image-2.6-sunburst` | edit: `input_images`, no mask field (the stitch keeps the selection) | an edit `aspect_ratio: "auto"`; a new image the asked aspect, else the closest of Replicate's seven | `complexity` | undocumented |
 | WaveSpeedAI | `openai/gpt-image-2.6-sunburst/edit`; new images `/text-to-image` | fill: `images` and `mask_image` (white = repaint) | with a mask no preset: WaveSpeed picks the shape from the crop (its docs; not verified that it keeps the exact ratio), and `limits.aspects` (its 15 presets) widens the crop to the nearest preset first; else the closest of 15; the Resolution row (1k, 2k, 4k) | `complexity` | 16 |
-| Comfy Cloud | `gpt-image-2.6-sunburst` on the partner node `OpenAIGPTImageNodeV2` (titled "OpenAI GPT Image 2.6") | fill: the crop in `model.images.image_1`, the selection in `model.mask` through ImageToMask (white = repaint); the node's mask takes exactly one picture | `model.size` Custom at the crop's own size (`model.custom_width` / `_height`) | `model.complexity`, which the node requires for 2.6: always sent, high without a row | 16 |
+| Comfy Cloud | `gpt-image-2.6-sunburst` on the partner node `OpenAIGPTImageNodeV2` (titled "OpenAI GPT Image 2.6") | fill: the crop in `model.images.image_1`, the selection in `model.mask` through ImageToMask (white = repaint) when the crop goes alone; with the Original or reference layers no mask (the node takes one beside one picture only), the stitch keeps the selection | `model.size` Custom at the crop's own size (`model.custom_width` / `_height`) | `model.complexity`, which the node requires for 2.6: always sent, high without a row | 16 |
 | OpenRouter | `openai/gpt-image-2.6-sunburst` | fill (the mask as a second picture) | none (the host picks; new images 1536) | a passthrough, `provider.options.openai.complexity` | 16 |
 | ToAPIs | `gpt-image-2.6-sunburst-official` (Sunburst only) | fill: `mask_url` (alpha) | `WxH` inside the rules | `complexity` | 16 |
 
@@ -1705,9 +1707,14 @@ against its page's parameter list, the Comfy Cloud graph against the node's spec
   size takes as it is. No Background row: the cut-out handling keys on a `background` row, the node's input is
   `model.background`. The 2.5 node's code (`comfy_api_nodes/nodes_openai.py` of ComfyUI v0.44.0) refuses a mask beside
   more than one picture ("Cannot use a mask with multiple image"), and the live spec's tooltip says the mask "Requires
-  exactly one reference image": a selection run with reference layers or the Original fails there, on 2.6 as on 2.5
-  and 2 (the layout still sends them; the variant's note says to leave them off). Built from the node's spec, **not run
-  on Comfy Cloud**.
+  exactly one reference image". So for every model of the node (2, 2.5 and 2.6) a selection run that sends the
+  Original or reference layers beside the crop goes **without the mask** and keeps every picture (the user's answer of
+  2026-11-07, "keep the references"): the model edits the whole crop with all pictures, and the stitch keeps only the
+  selection area, as for every instruction edit. The layout leaves `model.mask` out then (`MASK_ONE_PICTURE`,
+  `maskLeftOut`), so the mask is neither uploaded nor wired, and the answer's notes say it once: "Comfy Cloud's GPT Image
+  node takes a mask with one picture only: sent without the mask, the selection still limits the result." (a note of
+  something left out, so the status line shows it in the warning colour). The crop alone keeps the mask as before.
+  Built from the node's spec, **not run on Comfy Cloud**.
 - **Not offered:** GIF and SVG output (a layer is a raster picture: `common()` turns any other format into PNG, and
   fal, Replicate and WaveSpeed are sent PNG), `markup` edits (they exclude the mask), Batch and the Responses tool.
 - **Not yet, re-check before the release:** Comfy Router (its `router-schemas/openai/gpt-image-2.6-*.json` answer 404,
