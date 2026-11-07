@@ -1,0 +1,13 @@
+lock: taken after 0 s
+[16:41:30] lock taken (P18 measuring (agent a24fab29) 51560 2026-11-07T16:41:30)
+[16:41:30] gpu: 7120 MiB, 4 %
+[16:42:10] before r1: rc=0 openSettings median 104.1 ms, the GPU line after 68.8 ms
+closed
+[16:42:54] after r1: rc=0 openSettings median 42.1 ms, the GPU line after 69.4 ms
+closed
+[16:43:39] after r2: rc=0 openSettings median 39.9 ms, the GPU line after 68.8 ms
+closed
+[16:44:23] before r2: rc=0 openSettings median 115.8 ms, the GPU line after 68.3 ms
+closed
+[16:44:28] done
+lock: released

@@ -1,0 +1,6 @@
+{"openMs": 167.5, "shown": true, "lineMs": 97.3, "focused": true}
+{"openMs": 84.9, "shown": true, "lineMs": 52.2, "focused": true}
+{"openMs": 84, "shown": true, "lineMs": 52.3, "focused": true}
+{"openMs": 104.1, "shown": true, "lineMs": 68.8, "focused": true}
+{"openMs": 126.8, "shown": true, "lineMs": 75.4, "focused": true}
+openSettings median 104.1 ms, the GPU line after 68.8 ms

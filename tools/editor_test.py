@@ -12201,6 +12201,28 @@ if (cropped.width !== 390) throw new Error("a crop through extend_canvas: " + JS
 await run("close_document", { doc: d.id, force: true });
 return { refusal: said.slice(0, 80), landed: [land.width, land.height], resize: "refused", frame: "kept" };
 """),
+    ("settings_open_does_not_wait_for_the_card", """
+// P18 (docs/PLAN_WASM_BUILD.md section 7): openSettings no longer waits for the GPU memory line; the card's read starts
+// nvidia-smi or a PowerShell counter (electron/main/gpumem.js), and the line is written when it lands. Two opens in a row
+// leave one full line (only the newest read writes it); the times are information, not a limit (the card's read is
+// cached for 5 s, so a second open within that is quick either way)
+const shell = await import("./shell.js");
+const line = document.getElementById("set-gpu-mem"), dlg = document.getElementById("shell-settings");
+const times = [];
+for (let k = 0; k < 2; k++) {
+    for (const d of document.querySelectorAll("dialog[open]")) d.close();
+    const t0 = performance.now();
+    await shell.openSettings();
+    times.push({ openMs: Math.round(performance.now() - t0), lineThen: line.textContent.slice(0, 32) });
+    if (!dlg.open) throw new Error("the settings dialog is not open after openSettings");
+}
+const t1 = performance.now();
+for (let i = 0; i < 150 && !line.textContent.startsWith("The GPU process is using"); i++) await wait(100);
+if (!line.textContent.startsWith("The GPU process is using")) throw new Error("the GPU memory line was not filled in: " + JSON.stringify(line.textContent));
+const filledAfterMs = Math.round(performance.now() - t1);
+dlg.close();
+return { times, filledAfterMs, line: line.textContent.slice(0, 90) };
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

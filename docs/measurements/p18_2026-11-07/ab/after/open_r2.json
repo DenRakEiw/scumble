@@ -1,0 +1,36 @@
+{
+ "opens": [
+  {
+   "openMs": 114.6,
+   "shown": true,
+   "lineMs": 119.6,
+   "focused": true
+  },
+  {
+   "openMs": 38.6,
+   "shown": true,
+   "lineMs": 68.5,
+   "focused": true
+  },
+  {
+   "openMs": 36.4,
+   "shown": true,
+   "lineMs": 68.9,
+   "focused": true
+  },
+  {
+   "openMs": 42.5,
+   "shown": true,
+   "lineMs": 68.8,
+   "focused": true
+  },
+  {
+   "openMs": 39.9,
+   "shown": true,
+   "lineMs": 68.1,
+   "focused": true
+  }
+ ],
+ "openMs_median": 39.9,
+ "lineMs_median": 68.8
+}
