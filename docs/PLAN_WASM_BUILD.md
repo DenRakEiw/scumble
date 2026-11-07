@@ -1618,8 +1618,126 @@ The order after Stop 5, first row, on `4f1826d`; full tier on the kernel (§1.4)
   selection PASS; `node tools/edges_test.js`, `node tools/depth_test.js` PASS; `build_px.py --check` identical on both
   builds; `build_node.py --check` only the expected "differs" lines. The canvas backend not run: no call site and no
   byte changed (the twin cases and the app's checksums).
-- **The mutation round:** `mutation/mut_k4.py` (a copy tree; the untouched copy green on px_test and the `edges` gate,
-  both builds identical to `F:/canvas`'s); its results follow in the next commit.
+- **The mutation round** (`mutation/mut_k4.py`, `results.txt`; a copy tree, the untouched copy green on px_test and the
+  `edges` gate, both builds identical to `F:/canvas`'s; each mutant rebuilt on both builds, px_test the kill set, the
+  `edges` gate for a mutant px_test left green): **22 of 26 red** at first. Two survivors are equivalent, as expected
+  (one channel's rows left to the scalar loop; the column lanes a group short: the scalar loop gives the same floats).
+  Two were not: `(sum + enter) - leave` in the row lanes and `s * (1 / n)` for `s / n`. **A gap in the test data:** the
+  twin cases' masks are multiples of 1/255, whose sums are exact in f64, so no rounding order shows, and a last-bit
+  difference in f64 rarely survives the store as f32. px_test now also blurs floats over fifteen decades (1e-12 to
+  1e3, 75 cases), which round at almost every step; the order mutant is red on them (`box blurs 64x33 1: out[1269]`).
+  The reciprocal mutant's rerun on the K4 tree was not valid (that tree lacks K26's px.js, so only K26's new dab
+  cases failed): it goes into K26's round, which has the whole test. The restored copy: both builds identical.
 - **No route:** `box_blurs` was Rust before and is faster now in every row; the twin stays the fallback.
 
 Next: K26 (the dab blur and sharpen on `box_pass::<4>`).
+
+### The user's answers after K4 (2026-11-07): the external review, SAM2 first
+
+An external review (another agent's, pasted by the user) was verified by a workflow of eight read-only agents:
+`docs/research/review_external_2026-11-07/` (`README.md`, `verified.json`). The user's answers the same day:
+1. **Hardening in this release** ("ok ändere es in diesem release"): one session **H1** with S1 (the main window's
+   `setWindowOpenHandler` only for http(s), one helper shared with `app:openExternal` and `comfyview.js`), S5 (a crafted
+   PSD / ORA: the inflate capped at the bytes kept, layer and mask rectangles bounded, the ORA entry's size read, the
+   window route's size check before `readPsd`; `layered` gate on both backends, the node build gets it at the release),
+   S6 (the local pipe's line buffer linear and capped above the largest legitimate line, umask on Linux), S9a (recipe
+   ids sanitised where recipes are read and refused at `save`), S8 (CI `contents: read` at the top, write only for the
+   tag jobs; `provision.sh` pinned, its token by curl), and **the permission handler of the ComfyUI window's session**
+   (`persist:comfyui`; found by the verification, not in the review; the user asked whether it makes sense: yes): deny
+   camera, microphone, location, MIDI, HID, serial and USB, allow the rest, so ComfyUI's page keeps its clipboard,
+   fullscreen and notifications. S3 (the sign-in popups' guard and the narrowed Firebase host) waits for a live sign-in
+   by the user (Comfy Cloud, GitHub, Google).
+2. **Top priority: SAM2** ("höchste prio sam (das ist echt lahm)"): the ONNX helpers (SAM2, the matting models,
+   depth) run on Electron's main process and freeze its IPC for seconds per run (P14; `docs/HELPERS.md` "Every model
+   but LaMa runs on the main process's thread"). New sessions **U0** (measure first: SAM2's load, encoder, decoder
+   batches, the pre- and post-processing, DirectML against the CPU, the main process's longest block, on the user's
+   card; where "slow" comes from decides U1's scope) and **U1** (the helpers in a utility process on LaMa's pattern,
+   `electron/main/onnx/lama.js` / `lama_process.js`: one process owning its runtime and SAM2's embedding cache, the
+   main-thread engine as the fallback, VRAM release and the device switch reaching it; DirectML in a child process has
+   never run here), **U2** if U0's numbers show a speed fix beyond the move.
+3. **P10 into the plan:** the tile gutter's copy in u32 words (`inpaint_tiles.js` `tileWithGutter`, as `coarseSlot`
+   does; the same bytes; full tier, the atlas path), with P13 (the CorridorKey refine's hoisted mean and reused
+   scratch, `keymatte.js`) and P15 (`ComfyClient.probe`'s requests together) riding along.
+
+### K26 (2026-11-07): the blur and sharpen brushes in Rust
+
+On `2c912d8` (K4) with the GPT Image 2.6 Comfy Cloud route merged under it; full tier (a kernel and the dabs' and
+frequency separation's call sites, §1.4). `docs/measurements/k26_2026-11-07/` (`k26_chain.sh`, `summarize.py`,
+`summary_rows.txt`, `ab/` with `before/` and `after/`, `ab_failed_relative_path/` (a first chain whose before arm never
+started: the app log's relative path after the `cd` into the tree), `gates/`, `mutation/`).
+- **Built (ABI 22):** `crates/px/src/stroke.rs` `blur_rgba` and `sharpen_rgba` (`inpaint_stroke.js` `blurRGBA` /
+  `sharpenRGBA`, which stay as the twins): straight RGBA8 premultiplied in f64 and stored as f32, three
+  `maskf::box_pass::<4>` with `Norm::Mul(1 / (2r + 1))` (the twin's `sum * k`), back to straight bytes through `clamp8`
+  (a `Uint8ClampedArray` store: NaN 0, clamped, ties to even); every output byte written (the arena is never zeroed).
+  `lib.rs` exports `dab_scratch_bytes(w, h)` (two f32 planes and the column sums, 0 on an overflow), `blur_rgba(src,
+  out, scratch, w, h, r) -> u32`, `sharpen_rgba(..., amount)`. `px.js` `Px.blurRGBA` / `sharpenRGBA`: the radius
+  rounded as the twin rounds it, null for what the kernel refuses (a short source, an empty or fractional size, a
+  radius past 2^30), so the caller runs the twin. `kernels.js` `blurRGBA` / `sharpenRGBA` on the new route `dabBlur`
+  ("js" for the twins), trap recovery and `releaseIfLarge`, the twins imported from `../inpaint_stroke.js` (which
+  imports nothing). `inpaint_canvas.js` takes both from `./px/kernels.js`: the blur and sharpen brushes' dabs and
+  frequency separation's blur (16 MP at most: the window's instance grows to about 640 MB for it and is released
+  after, K1's release check). No route entry: Rust is the default.
+- **Tests:** `node tools/px_test.js` PASS: `dabCases` 274 blur and 338 sharpen cases on both builds against the twins,
+  byte for byte, each also at an odd offset (every size from 1 x 1 past the lanes' edges, radii 0 to 200, the alpha
+  values at the premultiply's and unpremultiply's edges, faint alphas of 1 to 12 among zeros (added after the mutation
+  round), transparent holes, opaque boxes, a 400 px brush's 448 x 448
+  box, r 2.5, NaN, -3, amounts 0.5, 1 and 2.25), the refusals; `box_blurs` 75 cases (K4's plus the wide-range floats).
+  `node tools/stroke_test.js` PASS. The `editor` gate's blur and sharpen step and its frequency separation step now
+  assert `blur_rgba` / `sharpen_rgba` ran and run the same stroke (or separation) again on the route "js" after an undo:
+  31 blur and 11 sharpen calls, 0 bytes differ, frequency separation 1 call, 0 bytes differ. Gates `--offline` (port
+  9583, `gates/`): before the review tiles lint types editor brush pxjobs and canvas editor brush PASS; after its fixes
+  `k26-fix-tiles` types editor brush pxjobs PASS (the sharpen replay too: 0 bytes differ), `k26-fix-canvas` brush PASS
+  and editor red once in `live_stroke_preview_shows_what_the_commit_writes` (a TESTING.md flake: the mutation round
+  started and closed its instances beside it), `k26-fix-canvas-rerun` lint editor PASS. `node tools/stroke_test.js`,
+  `node --expose-gc tools/kernels_release_test.js` PASS; `build_px.py --check` identical on both builds;
+  `build_node.py --check` only "differs" lines (the node is built at the release).
+- **Before -> after** (`summary_rows.txt`: three rounds, the arms alternating within each, a fresh instance per tool,
+  15000 x 10000, the window in front, the busy lock held; before = a tree exported at `2c912d8`), ms per pointer move,
+  median [min-max]: blur 400 px at fit 74.0 [73.9-94.6] -> 32.7 [32.0-33.5], 1000 px at fit 230.9 -> 99.3, 400 px at
+  1:1 20.2 -> 9.7, 1000 px at 1:1 126.0 -> 58.1; sharpen 400 px at fit 78.7 -> 41.1, 1000 px at fit 246.1 -> 115.5,
+  400 px at 1:1 20.6 -> 11.5, 1000 px at 1:1 133.5 -> 66.2; the stroke's longest window block about halved in every
+  row (blur 1000 px at fit 398.6 -> 210.5). Frequency separation of a 4000 x 4000 box of the 15k photo (radius 40):
+  wall 2,053 -> 1,012 ms, the window block 2,036 -> 1,004, its blur 1,756 -> 698; its split (K27's) 190 -> 210 and the
+  read and write unchanged. All beyond their spreads.
+- **The review** (a workflow of three lenses, each verified by a second agent: 10 findings, 6 confirmed, 2 should and 4
+  nice; all fixed or settled):
+  - **A memory leak since K1, in the released 0.1.52 too** (should): `kernels.js` `LOADING`, the first load's promise,
+    resolved to the first instance and was kept for good, so every thread's first instance (the window's and each
+    worker's) stayed reachable, with all the memory it had grown, after a release or the idle trim replaced it.
+    K1b's "the window's synchronous release works" read the new instance's size (`pxInstances().bytes`), not the old
+    one's fate. With K26 the window's instance grows to about 640 MB for a 16 MP frequency separation. Fixed:
+    `LOADING` keeps a flag, `kernelsReady()` answers the instance in use. `node --expose-gc tools/kernels_release_test.js`
+    (new): the released first instance is collected; red against the old loader (it also answered the first
+    instance). In practice it held what the threads held before K1's releases; no hotfix asked (the user's call).
+  - The four-channel lanes' rounding order (should): on the dab blur's premultiplied byte values the window sums are
+    exact in f64, so neither `(sum + enter) - leave` nor `Div` for `Mul` changes a byte (the review's scratch run over
+    dabCases' inputs: 0 bytes and 0 plane floats differ). Settled as equivalent on this kernel's inputs (no float user
+    of four channels is planned; K24 is one channel); `maskf.rs`' comment and `mut_k26.py`'s expectations say so.
+  - `Px.sharpenRGBA(..., null)` ran the blur (`_dab` read `amount === null` as the blur): an explicit mode flag now,
+    the amount goes to the export as it is. A scratch past one `px_alloc` block is refused (`stroke.rs` `MAX_BLOCK`),
+    so the twin runs instead of an out-of-memory recovery. The editor gate's sharpen step now replays its stroke on the
+    route "js" too (0 bytes differ).
+  - Refuted: the frequency separation arm hiding blur differences behind the split, a plain Array or a typed array of
+    another element type as the source (no caller passes one), the node build's import of `../inpaint_stroke.js` (it is
+    shipped).
+- **The mutation round** (`mutation/mut_k26.py`, `results.txt`; a copy tree, the untouched copy green on px_test and
+  the `editor` gate, both builds identical to `F:/canvas`'s; Rust mutants rebuilt on both builds, px_test the kill set,
+  the `editor` gate for every mutant px_test left green and for the call-site ones): **21 of 27 red** at first. Four
+  survivors are equivalent on this kernel's inputs: the passes' factor as a divisor and `(sum + enter) - leave` in the
+  four-channel lanes (premultiplied bytes keep the sums exact), the four-channel rows left to the scalar loop (the same
+  floats), and K4's `s * (1 / n)` for `s / n` (a last-bit f64 difference reaches an f32 only next to a rounding boundary,
+  not once in 75 cases of wide-range floats). Two were a gap: the unpremultiply's threshold at 1 instead of 0.5 and
+  sharpen without its transparent-blur case passed, since no case blurred alphas down to 0.5-1; px_test's new "faint"
+  kind (alphas of 1 to 12 among zeros) kills both (the rerun on the review-fixed sources, `results.txt`'s last block).
+  One kill is not counted: `kernels.js` sharpen's amount dropped went red on an editor gate that wrote no summary; the
+  brush always passes 1 and px_test checks px.js' amounts, so it is equivalent at the call site. The restored copy:
+  both builds identical.
+- **What it leaves for K27:** a move is still almost all dab (30.6 of 32.7 ms for blur 400 px at fit: the box's read,
+  the filter, `smudge_dab` and the write, not split here); frequency separation's blur 698 of 1,012 ms and its split
+  210; the tone and sponge dabs untouched.
+
+The order from here: U0, U1 (U2), H1, K27, P10 (+ P13, P15), then as after Stop 5:
+K21, K11, K22, K23, K25, K9, K36, K37; K2, *Stop 2*, K6, K7, K8, *Stop 4*; K32, K33, K34; K13, K14, the threads spike;
+K24, K3, K10a-c, K15-K18, K20a-c, K28, K29, K30, *Stop 6*, K31, K19, K35, K38, K39, K40, K41.
+
+Next: U0 (SAM2 measured first: the user's top priority).

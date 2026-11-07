@@ -1,0 +1,3 @@
+lint rc=0 90s 
+editor rc=0 132s PASS
+ALL PASS

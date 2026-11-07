@@ -86,9 +86,9 @@ pub fn dilate(data: &mut [f32], w: usize, h: usize, r: usize) {
 
 /// How a box pass turns its running sum into a value: `Div(n)` is `sum / n`, the masks' twin (`kernels_js.js`
 /// `boxRow` / `boxCol`, n = 2r + 1); `Mul(k)` is `sum * k`, the dab blur's twin (`inpaint_stroke.js` `boxRows` /
-/// `boxCols`, k = 1 / (2r + 1)). The two differ in the last bit for many sums, so each caller keeps its twin's.
+/// `boxCols`, k = 1 / (2r + 1)). The two can differ in a sum's last f64 bit, so each caller keeps its twin's; on the
+/// dab blur's byte-derived values that difference never reached a byte (K26's review), on wide-range floats it does.
 #[derive(Clone, Copy)]
-#[allow(dead_code)] // `Mul` is the dab blur's (K26)
 pub enum Norm {
     Div(f64),
     Mul(f64),

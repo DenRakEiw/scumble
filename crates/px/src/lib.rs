@@ -33,6 +33,7 @@ mod relight;
 mod resample;
 mod sel;
 mod smudge;
+mod stroke;
 
 /// dlmalloc hands out a page start plus its 8-byte header, while a JS ArrayBuffer of tile
 /// size starts on a page. A copy between the two then has its destination 8 bytes past the
@@ -43,11 +44,11 @@ fn align_for(bytes: usize) -> usize {
 }
 
 /// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
-/// 21: sel_combine);
+/// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    21
+    22
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -151,6 +152,47 @@ pub unsafe extern "C" fn dilate_mask(data: *mut f32, w: usize, h: usize, r: usiz
 #[no_mangle]
 pub unsafe extern "C" fn box_blurs(data: *mut f32, w: usize, h: usize, r0: usize, r1: usize, r2: usize) {
     maskf::box_blurs(slice::from_raw_parts_mut(data, w * h), w, h, &[r0, r1, r2]);
+}
+
+// ---- the blur and sharpen brushes (K26) ----------------------------------------------------
+
+/// The scratch `blur_rgba` and `sharpen_rgba` need for a w x h box, in bytes (8-aligned at its start): two f32 planes
+/// of w * h * 4 and w * 4 f64 column sums; 0 when w or h is 0 or the size does not fit.
+#[no_mangle]
+pub extern "C" fn dab_scratch_bytes(w: usize, h: usize) -> usize {
+    if w == 0 || h == 0 { return 0; }
+    stroke::scratch_bytes(w, h).unwrap_or(0)
+}
+
+/// The scratch's three parts as slices: plane a, plane b, the sums. The caller checked `dab_scratch_bytes`.
+unsafe fn dab_scratch<'a>(scratch: *mut u8, w: usize, h: usize) -> (&'a mut [f32], &'a mut [f32], &'a mut [f64]) {
+    let n4 = w * h * 4;
+    let a = slice::from_raw_parts_mut(scratch as *mut f32, n4);
+    let b = slice::from_raw_parts_mut((scratch as *mut f32).add(n4), n4);
+    let sums = slice::from_raw_parts_mut(scratch.add(n4 * 8) as *mut f64, w * 4);
+    (a, b, sums)
+}
+
+/// `blurRGBA(src, w, h, r)` of `inpaint_stroke.js` from `src` into `out` (w * h * 4 bytes each, every byte of `out`
+/// written), `r` already rounded as the twin rounds it; `scratch` holds `dab_scratch_bytes(w, h)` bytes. 1 done, 0
+/// refused (w or h 0, a size that does not fit).
+#[no_mangle]
+pub unsafe extern "C" fn blur_rgba(src: *const u8, out: *mut u8, scratch: *mut u8, w: usize, h: usize, r: usize) -> u32 {
+    if dab_scratch_bytes(w, h) == 0 { return 0; }
+    let n4 = w * h * 4;
+    let (a, b, sums) = dab_scratch(scratch, w, h);
+    stroke::blur_rgba(slice::from_raw_parts(src, n4), slice::from_raw_parts_mut(out, n4), a, b, sums, w, h, r);
+    1
+}
+
+/// `sharpenRGBA(src, w, h, r, amount)` of `inpaint_stroke.js`, as `blur_rgba`.
+#[no_mangle]
+pub unsafe extern "C" fn sharpen_rgba(src: *const u8, out: *mut u8, scratch: *mut u8, w: usize, h: usize, r: usize, amount: f64) -> u32 {
+    if dab_scratch_bytes(w, h) == 0 { return 0; }
+    let n4 = w * h * 4;
+    let (a, b, sums) = dab_scratch(scratch, w, h);
+    stroke::sharpen_rgba(slice::from_raw_parts(src, n4), slice::from_raw_parts_mut(out, n4), a, b, sums, w, h, r, amount);
+    1
 }
 
 // ---- flood ------------------------------------------------------------------------------

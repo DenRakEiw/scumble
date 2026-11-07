@@ -1,0 +1,77 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+    Finished `release` profile [optimized] target(s) in 3.30s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px)
+warning: unused variable: `ba`
+  --> src\stroke.rs:74:18
+   |
+74 |         let (sa, ba) = (src[i + 3], out[i + 3]);
+   |                  ^^ help: if this is intentional, prefix it with an underscore: `_ba`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 2.62s
+$ node tools/px_test.js  (rc 0, 79 s)
+PASS
+ok   rust scalar a large alloc grows memory  229048320 -> 497549312
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+PASS
+(node:50508) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/k26/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-sharpen__a_transparent_blur_not_kept --offline --tiles on editor  (rc 0, 187 s)
+editor rc=0 171s PASS
+ALL PASS
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 167686 bytes, sha256 c3cd4f481cf3275e
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 145065 bytes, sha256 4d536a9ad1757e57
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.12s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.63s
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 5 s)
+    Finished `release` profile [optimized] target(s) in 2.80s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px)
+warning: unused variable: `ba`
+  --> src\stroke.rs:79:18
+   |
+79 |         let (sa, ba) = (src[i + 3], out[i + 3]);
+   |                  ^^ help: if this is intentional, prefix it with an underscore: `_ba`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 2.28s
+$ node tools/px_test.js  (rc 1, 67 s)
+FAIL rust simd sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  faint 2x3 r 8 amount 1: out[8] is 255, the twin has 235
+FAIL rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  faint 2x3 r 8 amount 1: out[8] is 255, the twin has 235
+FAIL (2)
+ok   rust scalar a large alloc grows memory  229048320 -> 497549312
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+FAIL (2)
+(node:45708) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/k26/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 5 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 167723 bytes, sha256 5d844a4415ea72d3
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 145102 bytes, sha256 48520a35e6a1a635
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.78s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\cedffc32-4015-48b3-9701-7b53ab2707ce\scratchpad\k26\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.35s

@@ -9923,15 +9923,51 @@ try {
     ed.setTool("smudge");
     ed.brushSize = 60; ed.hardness = 1;
     Object.assign(ed.smudgeOpts, { mode: "blur", strength: 100, sample: "layer", length: 0, finger: false });
+    // K26 (docs/PLAN_WASM_BUILD.md §4.9): with the dabBlur route on Rust the dabs run blur_rgba / sharpen_rgba
+    const EC = ed.constructor;
+    const rustDab = EC.kernels !== "js" && (EC.routes || {}).dabBlur !== "js";
+    EC.pxCalls(true);
     stroke(400, 60, 240);
+    out.blurRgba = EC.pxCalls(true).blur_rgba || 0;
+    if (rustDab && !(out.blurRgba > 0)) throw new Error("the blur dabs ran no blur_rgba with the route on rust");
     const mid = row(150), away = row(280);
     const soft = (r) => { let n = 0; for (let x = 385; x <= 415; x++) if (r[x] > 20 && r[x] < 235) n++; return n; };
     out.blur = { ramp: soft(mid), away: soft(away) };
     if (!(out.blur.ramp >= 3)) throw new Error("the blur did not soften the edge: " + mid.slice(390, 411).join(","));
     if (out.blur.away !== 0) throw new Error("the edge softened where the blur did not pass: " + away.slice(390, 411).join(","));
+    // the same stroke again on the twins (the route "js", after an undo): the same bytes as Rust's
+    if (rustDab) {
+        const area = () => L.px.readRect(300, 0, 200, 300).data.slice();
+        const rust = area();
+        await ed.undoStep();
+        EC.setRoute("dabBlur", "js");
+        try { stroke(400, 60, 240); } finally { EC.setRoute("dabBlur", null); }
+        out.twinBlurRgba = EC.pxCalls(true).blur_rgba || 0;
+        const twin = area();
+        let differ = 0; for (let i = 0; i < rust.length; i++) if (rust[i] !== twin[i]) differ++;
+        out.twinDiffer = differ;
+        if (out.twinBlurRgba !== 0) throw new Error("the route js still ran blur_rgba");
+        if (differ) throw new Error("the blur on the twins differs from Rust's in " + differ + " bytes");
+    }
     const before = row(360);
     Object.assign(ed.smudgeOpts, { mode: "sharpen" });
     stroke(400, 320, 390);
+    out.sharpenRgba = EC.pxCalls(true).sharpen_rgba || 0;
+    if (rustDab && !(out.sharpenRgba > 0)) throw new Error("the sharpen dabs ran no sharpen_rgba with the route on rust");
+    // the same stroke again on the twins (the route "js", after an undo): the same bytes as Rust's
+    if (rustDab) {
+        const area = () => L.px.readRect(300, 290, 200, 110).data.slice();
+        const rust = area();
+        await ed.undoStep();
+        EC.setRoute("dabBlur", "js");
+        try { stroke(400, 320, 390); } finally { EC.setRoute("dabBlur", null); }
+        out.twinSharpenRgba = EC.pxCalls(true).sharpen_rgba || 0;
+        const twin = area();
+        let differ = 0; for (let i = 0; i < rust.length; i++) if (rust[i] !== twin[i]) differ++;
+        out.twinSharpenDiffer = differ;
+        if (out.twinSharpenRgba !== 0) throw new Error("the route js still ran sharpen_rgba");
+        if (differ) throw new Error("the sharpen on the twins differs from Rust's in " + differ + " bytes");
+    }
     const after = row(360);
     out.sharpen = { dark: [before[379], after[379]], light: [before[421], after[421]], label: ed.undoList().slice(-1)[0].label };
     if (!(after[379] < before[379] - 2 && after[421] > before[421] + 2)) throw new Error("the sharpen did not crisp the ramp's ends: " + JSON.stringify(out.sharpen));
@@ -9971,7 +10007,28 @@ try {
     await ed.setBase({ filename: "freqsep_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
     const pic = ed.basePx.readRect(0, 0, W, H).data.slice();
     const n0 = ed.layers.length;
+    // K26: with the dabBlur route on Rust the low layer's blur runs blur_rgba
+    const EC = ed.constructor;
+    const rustDab = EC.kernels !== "js" && (EC.routes || {}).dabBlur !== "js";
+    EC.pxCalls(true);
     const r = await run("frequency_separation", { doc: d.id, radius: 6 });
+    out.blurRgba = EC.pxCalls(true).blur_rgba || 0;
+    if (rustDab && !(out.blurRgba > 0)) throw new Error("frequency separation's blur ran no blur_rgba with the route on rust");
+    if (rustDab) {
+        // the same separation on the twins (the route "js", after an undo): the same low layer
+        const lowOf = (id) => { const l = ed.layers.find((x) => x.id === id); return l && l.px.readRect(0, 0, W, H).data.slice(); };
+        const rustLow = lowOf(r.low);
+        await ed.undoStep();
+        EC.setRoute("dabBlur", "js");
+        let r2;
+        try { r2 = await run("frequency_separation", { doc: d.id, radius: 6 }); } finally { EC.setRoute("dabBlur", null); }
+        out.twinBlurRgba = EC.pxCalls(true).blur_rgba || 0;
+        const twinLow = lowOf(r2.low);
+        let differ = 0; for (let i = 0; i < rustLow.length; i++) if (rustLow[i] !== twinLow[i]) differ++;
+        out.twinDiffer = differ;
+        if (out.twinBlurRgba !== 0 || differ) throw new Error("frequency separation on the twins: blur_rgba " + out.twinBlurRgba + ", " + differ + " bytes differ");
+        r.low = r2.low; r.high = r2.high;
+    }
     const low = ed.layers.find((l) => l.id === r.low), high = ed.layers.find((l) => l.id === r.high);
     out.layers = [low && low.blend, high && high.blend, ed.activeLayerId === r.high];
     if (!low || !high || high.blend !== "linear-light" || ed.layers.length !== n0 + 2) throw new Error("the two layers are not there: " + JSON.stringify(out.layers));

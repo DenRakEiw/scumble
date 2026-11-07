@@ -1,0 +1,6 @@
+lint rc=1 80s 
+types rc=0 5s 
+editor rc=0 161s PASS
+brush rc=0 14s RESULT PASS
+pxjobs rc=0 128s PASS
+SOME FAILED

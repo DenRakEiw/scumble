@@ -1,0 +1,11 @@
+lock: taken after 0 s
+[09:26:55] lock: taken (K26 measuring 30060 2026-11-07T09:26:55)
+[09:26:55] after: ae5c086 + working tree, px.wasm c3cd4f481cf3275e; before: C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/cedffc32-4015-48b3-9701-7b53ab2707ce/scratchpad/k26/before_tree px.wasm 5921fca6577a3172
+[09:26:55] gpu: 5865 MiB, 1 %; comfy 8188: 200
+[09:26:55] == round 1
+[09:31:13] before r1: brush_perf blur
+[09:31:16] rc=1
+no instance on 9555 Cannot connect to host 127.0.0.1:9555 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+[09:35:39] before r1: brush_perf sharpen
+[09:35:42] rc=1
+no instance on 9555 Cannot connect to host 127.0.0.1:9555 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

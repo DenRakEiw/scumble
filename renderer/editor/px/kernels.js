@@ -26,6 +26,8 @@
 import * as J from "./kernels_js.js";
 import { loadPx, Px, PxOutOfMemory, pxLaps } from "./px.js";
 import { resampleBlock as resampleBlockJS, resampleTable } from "../inpaint_resample.js";
+// the blur and sharpen brushes' twins live with the brushes (K26; inpaint_stroke.js imports nothing, so no cycle)
+import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin } from "../inpaint_stroke.js";
 
 export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA } from "./kernels_js.js";
 // this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4), their clocks and the copies
@@ -41,9 +43,10 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * march is cut into (0 or 1: one job a light, as before K12); absent, `STRIPES_PER_WORKER` times the pool's size
  * (inpaint_relight.js `marchOnPool`). `relightFeed` (K12b), read on the window too: how many stripes of all full marches
  * are posted to the pool at once (inpaint_relight.js `feedMarch`); absent, the pool's size + 1; 0 posts every stripe
- * at once (K12).
+ * at once (K12). `dabBlur` (K26): `blurRGBA` and `sharpenRGBA`, the blur and sharpen brushes and frequency separation's
+ * blur, "js" for the twins in inpaint_stroke.js.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -113,15 +116,20 @@ const RENEWS = { release: 0, idle: 0, trap: 0, oom: 0 };   // instances replaced
 const MADE = { sync: 0, async: 0 };                        // and how their successors were made
 const WARNED = new Set();
 
-/** Resolves to the Rust kernels of this thread, or null when they cannot load (the twins then run). */
+/**
+ * Resolves to the Rust kernels of this thread (the instance in use when it settles), or null when they cannot load
+ * (the twins then run). `LOADING` keeps only whether the first load worked: a promise that resolved to the first
+ * instance would keep it, and all the memory it grew, alive after a release or the idle trim replaced it (K26's review;
+ * `tools/kernels_release_test.js`).
+ */
 export function kernelsReady() {
     if (!LOADING) {
-        LOADING = loadPx(new URL("./px.wasm", import.meta.url)).then((px) => { PX = px; SERIAL++; return px; }).catch((err) => {
+        LOADING = loadPx(new URL("./px.wasm", import.meta.url)).then((px) => { PX = px; SERIAL++; return true; }).catch((err) => {
             console.warn("Inpaint Canvas: the Rust pixel kernels did not load, using the JS ones:", (err && err.message) || err);
-            return null;
+            return false;
         });
     }
-    return LOADING;
+    return LOADING.then((ok) => (ok ? PX : null));
 }
 
 // not in Node (tools/px_test.js imports the loader and the twins directly): there is no fetch of a file URL
@@ -371,6 +379,32 @@ export function dilateMask(data, w, h, r) {
         finally { releaseIfLarge(); }
     }
     return J.dilateMask(data, w, h, r);
+}
+
+/**
+ * The blur brush's filter and frequency separation's blur (inpaint_stroke.js `blurRGBA`, K26): straight RGBA8, three
+ * box passes of radius r, back to straight bytes; a new Uint8ClampedArray. The twin when the route says "js", when Rust
+ * refuses the call (px.js returns null) or after a trap.
+ */
+export function blurRGBA(src, w, h, r) {
+    const p = rustPx("dabBlur");
+    if (p) {
+        try { const out = p.blurRGBA(src, w, h, r); if (out) return out; }
+        catch (err) { if (!recovered(p, err, "blur_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return blurRGBATwin(src, w, h, r);
+}
+
+/** The sharpen brush's filter (inpaint_stroke.js `sharpenRGBA`, K26), as `blurRGBA`. */
+export function sharpenRGBA(src, w, h, r, amount = 1) {
+    const p = rustPx("dabBlur");
+    if (p) {
+        try { const out = p.sharpenRGBA(src, w, h, r, amount); if (out) return out; }
+        catch (err) { if (!recovered(p, err, "sharpen_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return sharpenRGBATwin(src, w, h, r, amount);
 }
 
 /** Box blurs of up to three radii over a float mask (the passes of stitch.js' gaussian); a new Float32Array. */

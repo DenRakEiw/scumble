@@ -1,0 +1,39 @@
+row                                                          before                  after
+  blur 400 px fit move                             74.0 [73.9-94.6]       32.7 [32.0-33.5]   n=3/3
+  blur 400 px fit dab                              72.1 [71.9-92.3]       30.6 [30.1-31.5]   n=3/3
+  blur 400 px fit blocked max                   127.7 [120.5-173.6]       59.7 [58.7-64.4]   n=3/3
+  blur 400 px fit px calls                       ['smudge_dab 242'] ['blur_rgba 121, smudge_dab 242']
+  blur 1000 px fit move                         230.9 [227.2-236.8]      99.3 [96.6-101.7]   n=3/3
+  blur 1000 px fit dab                          228.1 [224.0-233.8]       96.2 [93.9-98.6]   n=3/3
+  blur 1000 px fit blocked max                  398.6 [385.9-442.2]    210.5 [204.7-213.6]   n=3/3
+  blur 1000 px fit px calls                      ['smudge_dab 122'] ['blur_rgba 61, smudge_dab 122']
+  blur 400 px 1:1 move                             20.2 [19.3-22.4]          9.7 [9.3-9.8]   n=3/3
+  blur 400 px 1:1 dab                              18.4 [17.6-21.3]          8.0 [7.8-8.1]   n=3/3
+  blur 400 px 1:1 blocked max                      78.3 [74.5-87.6]       57.8 [57.8-59.0]   n=3/3
+  blur 400 px 1:1 px calls                        ['smudge_dab 62'] ['blur_rgba 31, smudge_dab 62']
+  blur 1000 px 1:1 move                         126.0 [122.2-128.8]       58.1 [57.1-60.4]   n=3/3
+  blur 1000 px 1:1 dab                          114.5 [112.1-119.2]       49.1 [48.1-50.4]   n=3/3
+  blur 1000 px 1:1 blocked max                  272.2 [271.9-278.7]    142.6 [141.4-144.0]   n=3/3
+  blur 1000 px 1:1 px calls                       ['smudge_dab 62'] ['blur_rgba 31, smudge_dab 62']
+  sharpen 400 px fit move                          78.7 [78.2-79.3]       41.1 [40.8-42.5]   n=3/3
+  sharpen 400 px fit dab                           76.6 [76.2-77.0]       39.1 [38.9-40.5]   n=3/3
+  sharpen 400 px fit blocked max                133.3 [130.0-133.5]       69.2 [68.4-69.2]   n=3/3
+  sharpen 400 px fit px calls                    ['smudge_dab 242'] ['sharpen_rgba 121, smudge_dab 242']
+  sharpen 1000 px fit move                      246.1 [244.6-246.9]    115.5 [112.4-116.1]   n=3/3
+  sharpen 1000 px fit dab                       243.2 [241.3-243.5]    112.7 [109.7-113.4]   n=3/3
+  sharpen 1000 px fit blocked max               413.9 [413.8-430.6]    231.3 [227.3-234.8]   n=3/3
+  sharpen 1000 px fit px calls                   ['smudge_dab 122'] ['sharpen_rgba 61, smudge_dab 122']
+  sharpen 400 px 1:1 move                          20.6 [20.6-20.9]       11.5 [11.3-12.5]   n=3/3
+  sharpen 400 px 1:1 dab                           19.0 [18.9-19.3]         9.9 [9.8-10.7]   n=3/3
+  sharpen 400 px 1:1 blocked max                   79.5 [76.8-80.4]       60.2 [59.4-66.2]   n=3/3
+  sharpen 400 px 1:1 px calls                     ['smudge_dab 62'] ['sharpen_rgba 31, smudge_dab 62']
+  sharpen 1000 px 1:1 move                      133.5 [131.7-137.2]       66.2 [65.5-68.3]   n=3/3
+  sharpen 1000 px 1:1 dab                       123.3 [121.9-125.3]       57.2 [56.5-58.6]   n=3/3
+  sharpen 1000 px 1:1 blocked max               293.6 [290.8-299.0]    160.9 [154.7-164.9]   n=3/3
+  sharpen 1000 px 1:1 px calls                    ['smudge_dab 62'] ['sharpen_rgba 31, smudge_dab 62']
+  freqsep 4000^2 r 40 wall                   2053.3 [2043.6-2195.0]  1012.0 [955.1-1041.4]   n=3/3
+  freqsep 4000^2 r 40 blocked                2036.2 [2026.2-2180.1]  1004.0 [939.3-1029.4]   n=3/3
+  freqsep  its blur                          1755.6 [1751.0-1890.5]    697.7 [652.9-720.1]   n=3/3
+  freqsep  its split                            190.0 [188.2-191.9]    210.2 [203.9-219.9]   n=3/3
+  freqsep  its read                                31.1 [30.2-32.9]       27.6 [25.9-28.9]   n=3/3
+  freqsep  its written                             72.9 [72.4-79.1]       73.2 [67.5-74.3]   n=3/3
