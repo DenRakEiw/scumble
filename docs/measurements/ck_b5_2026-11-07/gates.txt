@@ -1,0 +1,16 @@
+Gates of the Key dialog's move / close / keys change, 2026-11-07, --offline, port 9575, from this worktree:
+== kmove-tiles5 (--tiles on)
+lint rc=0 10s 
+types rc=0 5s 
+key rc=1 17s FAIL
+SOME FAILED
+(the step's own order: its tall-panel drags came after the double click it then expected; a second double
+click added before the key checks, nothing in the app changed)
+== kmove-tiles6 (--tiles on)
+key rc=0 17s PASS
+ALL PASS
+== kmove-touch (--tiles on)
+canvasonly rc=0 19s PASS
+editor rc=0 193s PASS
+commands rc=0 34s PASS
+ALL PASS

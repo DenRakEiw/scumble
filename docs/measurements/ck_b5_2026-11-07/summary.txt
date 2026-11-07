@@ -1,0 +1,37 @@
+B5, the live run of CorridorKey 2.0 through the user's ComfyUI (Route B), 2026-11-07 01:53-02:11, with the user at the machine.
+
+Setup (Claude):
+- ComfyUI v0.44.0 started as run_nvidia_gpu.bat does (plus --disable-auto-launch), queue empty; pack A
+  ComfyUI-CorridorKey2.0 (marawan206) at c7662de, 17 CorridorKey2* node classes, InpaintCanvas listed, 5,926 classes.
+- A Scumble dev instance from the corridorkey worktree at 478627c, connected to 127.0.0.1:8188, a fresh profile, port 9571.
+  status.key: ready, route comfyui, pack marawan206 verified, NVIDIA GeForce RTX 5090, cap 16 MP, wait 300 s.
+- Tabs: green_plate (1,344 x 1,344), blue_plate (1,344 x 1,344), hair_green_15k (15,000 x 10,000, a 2,600 x 2,600
+  rectangle selection at 3,616 / 744 for a 3,900 x 3,900 box); nvidia-smi sampled every 0.5 s.
+
+The user's runs (the dialog, by hand). What ComfyUI's /history holds afterwards, the execution times from
+execution_start to execution_success (the key on the server; Scumble's upload, decode and landing come on top):
+  c9b68f44  doc 1 (green_plate)  1,344 x 1,344  screen green  no hint  trust 0.5   13.6 s  (the first: the pack loads its models)
+  ba5248c0  doc 1 (green_plate)  1,344 x 1,344  screen green  no hint  trust 0.75   3.0 s
+  fa06e472  doc 1 (green_plate)  1,344 x 1,344  screen green  no hint  trust 0.75   2.9 s
+  54d35bd0  doc 2 (blue_plate)   1,344 x 1,344  screen green  no hint  trust 0.75   2.7 s
+- green_plate's undo history: Key screen, Delete layer, Delete layer, Key screen, Erase (on the key's mask); the tab
+  ended with Key (408 x 1,259, trimmed to the matte) and Grey.
+- The blue plate's key went with screen "green" (its border ring is blue by 46 levels, Auto reads blue: checked below).
+  The stored Screen value afterwards was "auto"; the likely cause is the dialog's Screen row set to Green by hand for
+  that key. Asked the user.
+- No job of the 15k tab and no interrupted job are in the history (a key cancelled before it ran leaves none). The
+  blue_plate tab (doc 2) was closed afterwards; the user opened their own picture M008_IP003 (2,752 x 1,806, doc 5)
+  and drew a rectangle on it, no key of it in the history.
+- The user's verdict: "die funktionen funktionieren alle", and one wish: the Key dialog should be movable and closable
+  with an x (built the same night: the title row drags it, an x closes it; gate key "dialog move").
+
+Claude's two keys through the command (key_screen, route comfyui) in a background tab of the same instance:
+  38432a3d  blue_plate, screen auto, no hint: screen "blue" sent; Scumble's status "in 4.3 s", 18 % of the box kept.
+  9bd7999b  blue_plate, screen auto, hint from a 520 x 1,240 rectangle (trust 0.5): the hint picture uploaded
+            (n6_keyhint_*), screen "blue", box 1,140 x 1,344 at its own size; "in 3.8 s", 21 % kept.
+
+GPU memory (nvidia-smi, the whole card: the desktop, the user's Scumble, this instance): 6.1-7.0 GB between keys,
+11.6-11.8 GB during each 1,344 px key (about 5.5 GB for the key), the peak 12.6 GB at 02:07 (the two command keys).
+
+Not run: H (the models folder renamed for one key) and I (ComfyUI with Inpaint Canvas only): both need the user's yes,
+not given; their texts are checked against a stub in the key gate.

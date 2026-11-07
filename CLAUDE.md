@@ -765,8 +765,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   pack B (`hashu786`) is detected but refused (it downloads its 5.1 GB inside the job); the nice ones too (the ask card's
   hint and trust as sent, `route: "app"` refused, a renamed download switch refused / filled false). The manual's
   chapter *Key green / blue screen* (slug `key-screen`), `docs/RECIPES.md` and `docs/HELPERS.md` "Models on your ComfyUI
-  that Scumble drives", the CHANGELOG line with the licence credit. **Open: B5's live run** (the user present, `/queue`
-  first). **K12b is in** (the user's "Ja, in 0.1.52"): `wasm-kernels` up to `404c5d6` merged into `corridorkey` by a
+  that Scumble drives", the CHANGELOG line with the licence credit. **B5's live run done 2026-11-07** (the user: "die
+  funktionen funktionieren alle"; four keys, 13.6 s the first, then about 3 s; plan §5 "B5 as run",
+  `docs/measurements/ck_b5_2026-11-07/`); the user's wish from it, **the Key dialog movable with a close x**, built the
+  same night, and with it the panel's keys kept its own (`data-own-keys`: Escape, Tab and digits had gone to the
+  editor). Asked: whether the blue plate's Screen was set to Green by hand, whether the 15k key and Cancel ran. **K12b is in** (the user's "Ja, in 0.1.52"): `wasm-kernels` up to `404c5d6` merged into `corridorkey` by a
   second merge 2026-11-06 (`docs/measurements/merge2_0152_2026-11-06/`).
 - 50: **LoRAs on the user's ComfyUI and Comfy Cloud, and MOSS Image Edit** (issues #10, hwatik, 2026-10-24: "lora
   support for local generations ... qwen 2.1 or moss"; #11, nadergits, 2026-10-31: "add moss image edit ... with

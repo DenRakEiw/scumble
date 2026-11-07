@@ -1317,6 +1317,131 @@ await host.setKeyValues({ ...K.keyDefaults, workingSize: 512 });
 return { ready: st.ready.slice(0, 80) };
 """),
 
+    ("dialog move", r"""
+// the panel moves by its title row and stays inside the window, keeps its place for the session, goes back top right
+// on a double click, follows a smaller window; its x closes it as Close and Escape do, and a press on it moves nothing;
+// a tall panel moves both ways and keeps its title row and buttons in view; keys from inside it stay its own
+const M = window.__keyDialogMod;
+comfyOn(); engineOff(); closeDialog();
+const ed = ednow(window.__ckDoc);
+host.shell.activate(ed);
+ed.activeLayerId = null;
+await host.setKeyValues({ ...K.keyDefaults, workingSize: 512 });
+// the window's resize listener the panel adds, and whether its close takes it off again
+const addEv = window.addEventListener, remEv = window.removeEventListener;
+const added = [], removed = [];
+let dlg;
+try {
+    window.addEventListener = function (type, fn, o) { if (type === "resize") added.push(fn); return addEv.call(this, type, fn, o); };
+    dlg = await M.openKeyDialog(ed);
+} finally { delete window.addEventListener; }
+const firstFn = dlg.placeSaved;
+ok(window.addEventListener === addEv && typeof firstFn === "function" && added.includes(firstFn), "the panel adds its resize listener", added.length);
+await wait(80);
+const parts = (d) => ({ box: d.root.querySelector(".box"), head: d.root.querySelector(".head"), x: d.root.querySelector("button.x"), body: d.root.querySelector(".body") });
+let { box, head, x, body } = parts(dlg);
+ok(head && x && body && head.contains(dlg.root.querySelector(".title")) && head.contains(x) && x.getAttribute("aria-label") === "Close" && x.type === "button" && box.firstElementChild === head && dlg.hostEl.hasAttribute("data-own-keys"), "the title row holds the title and a close button; the host keeps its keys", { first: box.firstElementChild && box.firstElementChild.className });
+ok(body.contains(dlg.els.screen) && !body.contains(dlg.els.key) && box.contains(dlg.els.key), "the rows scroll in the body, the buttons stay below it");
+head.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+const W = window.innerWidth, H = window.innerHeight;
+const panel = () => box.getBoundingClientRect();
+const r0 = panel();
+ok(Math.abs(r0.right - (W - 24)) <= 1 && Math.abs(r0.top - 96) <= 1, "its spot: top right", { r0, W });
+const pe = (type, px, py, target = head) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, composed: true, cancelable: true, clientX: px, clientY: py, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 9, pointerType: "mouse" }));
+const dragBy = (fx, fy, tx, ty) => { pe("pointerdown", fx, fy); pe("pointermove", tx, ty); pe("pointerup", tx, ty); };
+// up and left: no edge can clamp this way on any window the app allows (its top stays above 96)
+dragBy(r0.left + 40, r0.top + 10, r0.left - 260, r0.top - 40);
+const r1 = panel();
+ok(Math.abs(r1.left - (r0.left - 300)) <= 1 && Math.abs(r1.top - (r0.top - 50)) <= 1, "a drag of the title row moves the panel by the pointer's way", { r0, r1 });
+ok(!!box.style.maxHeight && Math.abs(parseFloat(getComputedStyle(box).maxHeight) - (H - r1.top - 8)) <= 1, "its height is capped from its new top", { cap: getComputedStyle(box).maxHeight, H, top: r1.top });
+pe("pointermove", 0, 0);
+ok(Math.abs(panel().left - r1.left) <= 0.5, "a move after the release moves nothing");
+dragBy(r1.left + 40, r1.top + 10, -5000, -5000);
+const r2 = panel();
+ok(Math.abs(r2.left - 8) <= 0.5 && Math.abs(r2.top - 8) <= 0.5, "dragged past the top left: kept 8 px inside", r2);
+dragBy(r2.left + 40, r2.top + 10, 99999, 99999);
+const r3 = panel();
+ok(Math.abs(r3.right - (W - 8)) <= 1 && Math.abs(r3.bottom - (H - 8)) <= 1 && r3.top > 8, "dragged past the bottom right: kept 8 px inside, whole", { r3, W, H });
+// rows that grow at the bottom edge (an error line, the first-run block) stay under the cap: the panel stays inside
+const grow = body.appendChild(document.createElement("div"));
+grow.style.cssText = "height: 400px; flex: none";
+ok(panel().bottom <= H - 8 + 1 && box.contains(dlg.els.key) && dlg.els.key.getBoundingClientRect().bottom <= H - 8 + 1, "a panel that grows at the bottom stays inside, its buttons in view", panel());
+grow.remove();
+// a press on the x starts no drag; the x closes the panel as Close does, and takes its resize listener with it
+const r4 = panel();
+const xr = x.getBoundingClientRect();
+pe("pointerdown", xr.left + 5, xr.top + 5, x); pe("pointermove", xr.left - 200, xr.top + 200, head); pe("pointerup", xr.left - 200, xr.top + 200, head);
+ok(Math.abs(panel().left - r4.left) <= 0.5 && Math.abs(panel().top - r4.top) <= 0.5, "a press on the x moves nothing", { r4, now: panel() });
+try {
+    window.removeEventListener = function (type, fn, o) { if (type === "resize") removed.push(fn); return remEv.call(this, type, fn, o); };
+    x.click();
+} finally { delete window.removeEventListener; }
+ok(window.removeEventListener === remEv && removed.includes(firstFn), "the close takes the panel's resize listener off", removed.length);
+ok(M.currentKeyDialog() === null && dlg.closed && !dlg.hostEl.isConnected, "the x closes the panel");
+// the next open comes up where it was left
+dlg = await M.openKeyDialog(ed);
+await wait(80);
+({ box, head, x, body } = parts(dlg));
+const r5 = panel();
+ok(Math.abs(r5.left - r4.left) <= 1 && Math.abs(r5.top - r4.top) <= 1, "the next open: where it was left", { r4, r5 });
+// the resize handler keeps it inside: a panel made wider than the room right of it is pulled left (the same clamp a
+// narrower window takes), and once it is narrow again it goes back to where it was left (a resize keeps the place)
+box.style.width = `${Math.round(W - r5.left + 200)}px`;
+window.dispatchEvent(new Event("resize"));
+const r5b = panel();
+ok(r5b.right <= W - 8 + 0.5 && r5b.left >= 8 - 0.5 && r5b.left < r5.left - 100, "the resize handler pulls it back inside", { r5, r5b, W });
+box.style.width = "";
+window.dispatchEvent(new Event("resize"));
+ok(Math.abs(panel().left - r5.left) <= 1 && Math.abs(panel().top - r5.top) <= 1, "narrow again: back where it was left", { r5, now: panel() });
+// a panel taller than the window's room (its rows scroll): it moves down and up again, never sticks, and its title
+// row and buttons stay in view while the rows scroll
+head.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+const tall = body.appendChild(document.createElement("div"));
+tall.style.cssText = "height: 3000px; flex: none";
+const t0 = panel();
+dragBy(t0.left + 40, t0.top + 10, t0.left + 40, t0.top + 210);
+const t1 = panel();
+ok(Math.abs(t1.top - 112) <= 1 && t1.bottom <= H - 8 + 1, "a tall panel moves down (to the top its cap allows)", { t0, t1, H });
+dragBy(t1.left + 40, t1.top + 10, t1.left + 40, t1.top - 40);
+const t2 = panel();
+dragBy(t2.left + 40, t2.top + 10, t2.left + 40, t2.top + 60);
+const t3 = panel();
+ok(Math.abs(t2.top - (t1.top - 50)) <= 1 && Math.abs(t3.top - t1.top) <= 1, "a drag up and the same drag down: back where it was (no ratchet)", { t1: t1.top, t2: t2.top, t3: t3.top });
+body.scrollTop = 2000;
+const hr = head.getBoundingClientRect(), kr = dlg.els.key.getBoundingClientRect();
+ok(body.scrollTop > 0 && hr.top >= t3.top && hr.bottom <= t3.top + 40 && kr.bottom <= t3.bottom + 1 && kr.top >= t3.top, "the rows scroll; the title row and the buttons stay in view", { scroll: body.scrollTop, hr, kr, t3 });
+tall.remove();
+head.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+ok(!box.style.left && Math.abs(panel().top - 96) <= 1, "a double click: back top right, the place forgotten", panel());
+// keys from inside the panel are its own (they reach the window's capture handlers retargeted to the host): a digit in
+// the Wait field is no editor shortcut, Tab does not toggle the canvas-only view, Escape closes the panel
+const key = (target, k) => target.dispatchEvent(new KeyboardEvent("keydown", { key: k, code: k === "Tab" ? "Tab" : k === "Escape" ? "Escape" : "Digit5", bubbles: true, composed: true, cancelable: true }));
+const onKey0 = ed.onKey;
+let edKeys = 0;
+let canvasOnlyFlip = false;
+try {
+    ed.onKey = function (e) { edKeys++; return onKey0.call(this, e); };
+    const only0 = document.body.classList.contains("shell-canvas-only");
+    key(dlg.els.timeout, "5");
+    key(dlg.els.screen, "Tab");
+    canvasOnlyFlip = document.body.classList.contains("shell-canvas-only") !== only0;
+} finally { ed.onKey = onKey0; }
+ok(edKeys === 0 && !canvasOnlyFlip && !dlg.closed, "a digit and Tab from inside the panel stay its own", { edKeys, canvasOnlyFlip });
+if (canvasOnlyFlip) (await import("./shell.js")).menuCommand("canvas-only");
+key(dlg.els.screen, "Escape");
+ok(M.currentKeyDialog() === null && dlg.closed, "a real Escape from inside the panel closes it");
+// a double click put it back top right and forgot the place: the next open is there
+dlg = await M.openKeyDialog(ed);
+await wait(80);
+({ box } = parts(dlg));
+const r7 = panel();
+ok(Math.abs(r7.right - (W - 24)) <= 1 && Math.abs(r7.top - 96) <= 1 && !box.style.left && !box.style.maxHeight, "after the double click the next open is top right again", r7);
+dlg.close();
+ok(!document.querySelector(".sc-keydialog"), "no panel left in the page");
+await host.setKeyValues({ ...K.keyDefaults, workingSize: 512 });
+return { r1: [Math.round(r1.left), Math.round(r1.top)], r3: [Math.round(r3.left), Math.round(r3.top)], tall: [Math.round(t1.top), Math.round(t2.top), Math.round(t3.top)] };
+"""),
+
     ("cleanup", r"""
 closeDialog();
 engineOff();

@@ -37,6 +37,10 @@ const DAB_MS = 40;
 let current = null;
 /** A key on your ComfyUI landed from the dialog this session: its first-run block stays folded from then on. */
 let comfyKeyed = false;
+/** Where the panel was dragged to this session ({ left, top } in CSS px), or null: its spot top right (KeyDialog.movable). */
+let keyDialogPos = null;
+/** The least gap a dragged panel keeps to the window's edges (px). */
+const EDGE = 8;
 
 /** The open Key dialog, or null (tests, the menu's second click). */
 export function currentKeyDialog() {
@@ -298,12 +302,17 @@ const CSS = `
 :host { all: initial; }
 .box {
     position: fixed; right: 24px; top: 96px; z-index: 2147483000; box-sizing: border-box; width: 360px;
-    max-height: calc(100vh - 120px); overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 14px;
+    max-height: calc(100vh - 120px); overflow: hidden; display: flex; flex-direction: column; gap: 8px; padding: 14px;
     background: var(--sc-surface, #242424); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-border, #4a4a4a);
     border-radius: var(--sc-radius-lg, 10px); box-shadow: var(--sc-shadow, 0 12px 40px rgba(0,0,0,.6));
     font: 13px/1.45 var(--sc-font, system-ui, sans-serif); color-scheme: var(--sc-scheme, normal);
 }
 .title { font-weight: 600; font-size: 14px; color: var(--sc-fg-strong, #eee); }
+.head { flex: none; display: flex; align-items: center; gap: 8px; margin: -6px -6px 0 0; cursor: move; user-select: none; touch-action: none; }
+.body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin: -3px -4px; padding: 3px 4px; }
+.head .title { flex: 1; min-width: 0; }
+button.x { flex: none; width: 26px; height: 26px; padding: 0; border: 0; background: transparent; color: var(--sc-fg-2, #aaa); font-size: 18px; line-height: 1; cursor: pointer; }
+button.x:hover { background: var(--sc-btn-hover, #3a3a3a); color: var(--sc-fg-strong, #eee); }
 .line { color: var(--sc-fg-2, #aaa); overflow-wrap: anywhere; }
 .line.warn, .line.error { color: var(--sc-error, #e0533d); }
 .row { display: flex; align-items: center; gap: 8px; }
@@ -311,7 +320,7 @@ const CSS = `
 .row select, .row input[type=range] { flex: 1; min-width: 0; }
 select, input[type=number] { font: inherit; color: var(--sc-fg, #ddd); background: var(--sc-btn, #2d2d2d); border: 1px solid var(--sc-border, #555); border-radius: var(--sc-radius, 3px); padding: 2px 4px; }
 input[type=number] { width: 72px; flex: none; }
-.buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.buttons { flex: none; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 button { font: inherit; color: var(--sc-fg, #ddd); background: var(--sc-btn, #2d2d2d); border: 1px solid var(--sc-border, #555); border-radius: var(--sc-radius, 3px); padding: 5px 12px; cursor: pointer; }
 button:hover { background: var(--sc-btn-hover, #3a3a3a); }
 button.primary { background: var(--sc-go, #2f6b3f); color: var(--sc-on-active, #fff); border-color: transparent; }
@@ -372,7 +381,7 @@ class KeyDialog {
         this.comfyError = "";
         this.comfyMissing = false;
         this.build(active, rekeyable);
-        this._off = [
+        this._off.push(
             host.on("removed", (e) => { if (e && e.editor === ed) this.close(); }),
             // the picture turned, cropped, extended, resized or straightened: the box and the features are another
             // picture's; the box is planned and the picture prepared again
@@ -382,22 +391,27 @@ class KeyDialog {
             // your ComfyUI's route: the box line follows the selection, the readiness line the server
             host.on("changed", (e) => { if (e && e.editor === ed && !this.closed && this.values.route === "comfyui") { this.replan(); this.sync(); } }),
             host.on("realism", () => { if (!this.closed && this.values.route === "comfyui") this.sync(); }),
-        ];
+        );
         this.sync();
+        this.placeSaved();
         this.restart();
     }
 
     build(active, rekeyable) {
         const el = document.createElement("div");
         el.className = "sc-keydialog";
+        // a key from inside the panel reaches the window's capture handlers with this host as its target (the shadow root
+        // retargets it), never a field: the marker tells the editor's and the shell's handlers to leave it to the panel
+        // (Escape closes it, Tab moves the focus, digits go into the Wait field), as they do for an open <dialog>
+        el.setAttribute("data-own-keys", "");
         const root = el.attachShadow({ mode: "open" });
         const sheet = new CSSStyleSheet();
         sheet.replaceSync(CSS);
         root.adoptedStyleSheets = [sheet];
-        const box = document.createElement("div");
-        box.className = "box";
-        box.setAttribute("role", "dialog");
-        box.setAttribute("aria-label", "Key green / blue screen");
+        const panel = document.createElement("div");
+        panel.className = "box";
+        panel.setAttribute("role", "dialog");
+        panel.setAttribute("aria-label", "Key green / blue screen");
         const E = this.els;
         const node = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
         const row = (label, ...kids) => { const r = node("div", "row"); r.appendChild(node("label", "", label)); for (const k of kids) r.appendChild(k); box.appendChild(r); return r; };
@@ -407,7 +421,16 @@ class KeyDialog {
             s.value = String(value);
             return s;
         };
-        box.appendChild(node("div", "title", "Key green / blue screen"));
+        // the title row: the handle the panel is dragged by, and its × (Close, as the button below and Escape)
+        E.head = panel.appendChild(node("div", "head"));
+        E.head.title = "Drag to move; double-click to put it back top right";
+        E.head.appendChild(node("div", "title", "Key green / blue screen"));
+        E.x = E.head.appendChild(node("button", "x", "\u00d7"));
+        E.x.type = "button";
+        E.x.title = "Close (Esc)";
+        E.x.setAttribute("aria-label", "Close");
+        // the rows: they scroll when the panel is short, the title row above and the buttons below stay in view
+        const box = panel.appendChild(node("div", "body"));
         // the route: in Scumble only once its engine is offered (not in this build), your ComfyUI always
         const app = host.keySupport();
         const routes = [];
@@ -498,8 +521,8 @@ class KeyDialog {
         E.key = buttons.appendChild(node("button", "primary", rekeyable ? "Re-key" : "Key"));
         E.close = buttons.appendChild(node("button", "", "Close"));
         for (const b of [E.refit, E.download, E.settings, E.key, E.close]) b.type = "button";
-        box.appendChild(buttons);
-        root.appendChild(box);
+        panel.appendChild(buttons);
+        root.appendChild(panel);
         this.root = root;
         this.hostEl = el;
         document.body.appendChild(el);
@@ -548,7 +571,58 @@ class KeyDialog {
         E.settings.addEventListener("click", () => openHelpersSettings());
         E.key.addEventListener("click", () => { this.apply().catch(() => { /* the status line says it */ }); });
         E.close.addEventListener("click", () => this.close());
-        box.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.close(); } });
+        E.x.addEventListener("click", () => this.close());
+        panel.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.close(); } });
+        this.box = panel;
+        this.movable(panel, E.head, box);
+    }
+
+    /**
+     * The panel moves by its title row: a drag keeps it inside the window (EDGE px from each side), a double click puts
+     * it back top right. Where it was left holds for the session (keyDialogPos: the next open comes up there, placed by
+     * open() once sync() has set the rows, so the clamp sees the panel's real height), and a window made smaller pulls
+     * it back in without forgetting the place. Its height is capped from its top, so it never reaches past the window.
+     */
+    movable(box, head, body) {
+        const place = (left, top) => {
+            const r = box.getBoundingClientRect();
+            // the panel's own height (its rows in full), not what the cap left of it: clamped by the capped height, a
+            // tall panel could never move down again. A panel that fits stays whole; a taller one keeps at least the
+            // height it has at its spot top right, and its rows scroll under the cap set below.
+            const natural = r.height - body.clientHeight + body.scrollHeight;
+            const need = Math.min(natural, Math.max(160, window.innerHeight - 120));
+            const l = Math.round(Math.max(EDGE, Math.min(left, window.innerWidth - r.width - EDGE)));
+            const t = Math.round(Math.max(EDGE, Math.min(top, window.innerHeight - need - EDGE)));
+            box.style.right = "auto";
+            box.style.left = `${l}px`;
+            box.style.top = `${t}px`;
+            box.style.maxHeight = `calc(100vh - ${t + EDGE}px)`;
+            return { left: l, top: t };
+        };
+        const onButton = (e) => !!(e.target && e.target.closest && e.target.closest("button"));
+        let drag = null;
+        head.addEventListener("pointerdown", (e) => {
+            if (e.button !== 0 || onButton(e)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const r = box.getBoundingClientRect();
+            drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top };
+            try { head.setPointerCapture(e.pointerId); } catch (_) { /* a pointer the browser does not know (a scripted event) */ }
+        });
+        head.addEventListener("pointermove", (e) => {
+            if (!drag || e.pointerId !== drag.id || this.closed) return;
+            keyDialogPos = place(e.clientX - drag.dx, e.clientY - drag.dy);
+        });
+        const end = (e) => { if (drag && e.pointerId === drag.id) drag = null; };
+        for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) head.addEventListener(type, end);
+        head.addEventListener("dblclick", (e) => {
+            if (onButton(e)) return;
+            keyDialogPos = null;
+            for (const k of ["left", "top", "right", "maxHeight"]) box.style[k] = "";
+        });
+        this.placeSaved = () => { if (!this.closed && keyDialogPos) place(keyDialogPos.left, keyDialogPos.top); };
+        window.addEventListener("resize", this.placeSaved);
+        this._off.push(() => window.removeEventListener("resize", this.placeSaved));
     }
 
     /** The options a run and a landing take, from the rows. */

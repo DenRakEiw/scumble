@@ -3093,6 +3093,7 @@ class InpaintEditor {
             const t = e.target;
             if (this.askOpen) return;   // the question dialog has its own keys
             if (t && t.closest && t.closest("dialog[open]")) return;   // a key inside an open <dialog> (a host settings dialog, a plugin's) stays with the dialog: Escape has to reach its native close
+            if (t && t.closest && t.closest("[data-own-keys]")) return;   // a host's own floating panel (a shadow root's host: its keys arrive retargeted to it) keeps its keys, as a dialog does
             if (document.querySelector("dialog:modal")) return;        // the rest of the page is inert under a modal dialog (the app's questions)
             const inField = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
             if (e.key === "Escape") {

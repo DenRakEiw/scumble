@@ -1446,6 +1446,30 @@ and failure sentence, the 8-bit note, the cutout as the alternative, agents); `d
 licences, and the Realism Pass's runtime); the CHANGELOG line with the card, the chapter and the licence credit. No
 in-app text anywhere. **Open: B5's live run** (the user present, `/queue` first; `docs/measurements/ck_b5_<date>/`).
 
+### B5 as run (2026-11-07)
+
+The user at the machine, Claude's setup over CDP: ComfyUI v0.44.0 started as the user's bat does (queue empty, pack A at
+`c7662de`), a connected dev instance from this worktree at `478627c` with green_plate, blue_plate and a 15,000 x 10,000
+hair picture, nvidia-smi logged. ComfyUI's history afterwards: four keys from the dialog at 1,344 x 1,344, 13.6 s the
+first (the pack's model load), then 3.0, 2.9 and 2.7 s on the server; about 5.5 GB on the card during a key. The user:
+"die funktionen funktionieren alle". The blue plate's key from the dialog went with screen green (most likely the Screen
+row set by hand: Auto through `key_screen` sent blue, and a selection hint went with its picture, both checked the same
+night; asked). No 15k key or interrupted job shows in the history (asked). H (the models folder renamed) and I (ComfyUI
+with Inpaint Canvas only) not run: no yes for either. `docs/measurements/ck_b5_2026-11-07/summary.txt`.
+
+**The user's wish from the run: the dialog movable, with a close x.** Built the same night: a title row that drags the
+panel (kept 8 px inside the window, its height capped from its top, its place kept for the session, a double click back
+top right, a resize pulling it in without forgetting the place) with a x; the rows scroll in a body of their own, so the
+title row and the buttons stay in view. A review workflow (three lenses, eight verifiers) confirmed five points: the
+clamp by the capped height (a tall panel stuck), **keys from inside the panel reaching the window's capture handlers
+retargeted to its shadow host** (Escape never closed it and ran the editor's Escape chain, Tab toggled the canvas-only
+view, digits typed into Wait were editor shortcuts; the host now carries `data-own-keys`, which `_docKey` in
+`renderer/editor/inpaint_canvas.js` and the shell's Tab handler leave alone, as they leave an open `<dialog>`), the
+title row scrolling away, and two gate checks that could not fail; all fixed. Gate key step `dialog move` (scripted
+pointer events, a spy on the resize listener's removal, keys sent composed from inside the panel), a mutation round of
+eight all caught (`docs/measurements/ck_b5_2026-11-07/dialog_move_mutations.txt`); a real CDP mouse drag and double
+click in the test instance. Gates: key, lint, types, canvasonly, editor, commands on tiles PASS.
+
 **Tests:** `node tools/keying_test.js` (the Route B paragraph; `cardFit` on 20 passing and 17 refused names and the
 generations; a RunPod A100 / H100 / L40S / A40 keys, one Ampere card among older ones is enough; pack B refused, both
 packs: A; `comfyFirstRun` per pack; the renamed switch refused, a download BOOLEAN filled false) and

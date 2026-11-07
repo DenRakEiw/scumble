@@ -1,0 +1,14 @@
+The Key dialog's move / close / keys change (2026-11-07, the user's wish after B5): a mutation round of eight,
+each on a fresh gate instance (--tiles on --offline, gate key, step "dialog move"), the file restored after each.
+Runner: the session scratchpad's b5/mutate_move.py.
+
+('own-keys-editor', 'CAUGHT', ['[FAIL] dialog move: JS exception: Error: a digit and Tab from inside the panel stay its own: {"edKeys":2,"canvasOnlyFlip":false}'])
+('own-keys-shell', 'CAUGHT', ['[FAIL] dialog move: JS exception: Error: a digit and Tab from inside the panel stay its own: {"edKeys":0,"canvasOnlyFlip":true}'])
+('clamp-capped-height', 'CAUGHT', ['[FAIL] dialog move: JS exception: Error: a drag up and the same drag down: back where it was (no ratchet): {"t1":112,"t2":62,"t3":62}'])
+('no-cap', 'CAUGHT', ['[FAIL] dialog move: JS exception: Error: its height is capped from its new top: {"cap":"817.333px","H":937,"top":46}'])
+('listener-leak', 'CAUGHT', ["[FAIL] dialog move: JS exception: Error: the close takes the panel's resize listener off: 0"])
+('place-before-sync', 'CAUGHT', ['[FAIL] dialog move: JS exception: Error: the next open: where it was left: {"r4":{"x":1218,"y":338,"width":360,"height":591.3229370117188,"top":338,"right":1578,"bottom":929.3229370117188,"left":1218},"r5":{"x":1218,"y":'])
+('x-not-wired', 'CAUGHT', ["[FAIL] dialog move: JS exception: Error: the close takes the panel's resize listener off: 0"])
+('no-dblclick-reset', 'CAUGHT', ['[FAIL] dialog move: JS exception: Error: after the double click the next open is top right again: {"x":1202,"y":112,"width":360,"height":591.3229370117188,"top":112,"right":1562,"bottom":703.3229370117188,"left":1202}'])
+
+ALL CAUGHT; git diff --stat the same before and after the round.

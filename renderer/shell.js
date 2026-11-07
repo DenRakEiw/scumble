@@ -3150,7 +3150,7 @@ window.addEventListener("keydown", (e) => {
     // under the view the Help and assistant columns are covered: a key that lands there is the view's (the assistant's
     // question is drawn over the picture and keeps its own keys)
     const covered = canvasOnlyState && t && t.closest && t.closest("#help, #assistant") && !t.closest(".as-ask");
-    if (!covered && t && t.closest && t.closest("dialog[open]")) return;
+    if (!covered && t && t.closest && t.closest("dialog[open], [data-own-keys]")) return;   // a panel of its own (the Key dialog) keeps Tab
     if (!covered && t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     const ed = host.editor;
     if (!ed || ed.askOpen) return;

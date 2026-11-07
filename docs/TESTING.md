@@ -520,7 +520,14 @@ bilinear rows), the refusals (not connected, no pack, a run going, the models mi
 a Cancel or a closed tab mid-job; `key_screen` on that route (step `comfy command`: its deadline, preview, `route: "app"`
 refused, `status.key.comfy` ready and not connected); the Key dialog on that route (step `dialog comfy`: no session and nothing run before
 Key, the box line following the selection, the rows and the wait in the graph, Key and Re-key once, the first-run
-block, the readiness line following the server). Plain Node: `node
+block, the readiness line following the server) and the panel itself (step `dialog move`: dragged by its title row by
+scripted pointer events, kept 8 px inside the window, its height capped from its top, rows that grow keeping it inside,
+a press on the close button moving nothing, the close button closing it and taking its resize listener off (a spy on
+`window.removeEventListener`), the next open where it was left, the resize handler pulling it back in without
+forgetting the place, a panel taller than the window moving down and up again without sticking and keeping its title row
+and buttons in view while its rows scroll, keys sent composed from inside the panel (a digit in the Wait field reaching
+no editor shortcut, Tab not toggling the canvas-only view, Escape closing it), a double click back top right; a mutation
+round of eight on 2026-11-07, `docs/measurements/ck_b5_2026-11-07/`). Plain Node: `node
 tools/keying_test.js` (the box plan at 1k / 4k / 15k, `comfyPlan` (Route B's box and the cap), the buckets, reflect-101, the screen from the ring, the matte's
 box, the bilinear rows, the queue, the texts, and the refine's steps through `RowsClient` against `refineMatte`'s
 bytes) and `node tools/keymatte_test.js` (the refine module, `renderer/editor/keymatte.js`: an equal-luminance edge
