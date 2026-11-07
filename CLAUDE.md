@@ -966,6 +966,15 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   plan aufnehmen und testen ob es besser ist als unser color match"): a small ONNX harmonization model (PCT-Net,
   CDTNet or another, licence checked first) set against the layer's Match on the same cut-outs and results, judged by
   eye by the user and by numbers; built only if it is clearly better. A plan with the candidates first.
+- 65: **A live scope and a clipping warning** (the user, 2026-11-07): a small panel over the layer stack with the RGB and
+  luma histogram (or a waveform) of the visible picture, from what `belowHistogram` already computes for the range bars,
+  and a key (J) that marks pure black blue and pure white red in the viewport (a view pass, never in exports), for
+  grading with the filter suite. Small to medium.
+- 66: **Expose a node's input as a recipe slider from the ComfyUI window** (the user, 2026-11-07): in `comfybar`, a
+  *Parameters* list of the graph's inputs (denoise, an IPAdapter weight, a ControlNet strength ...) where a tick makes
+  one a row of the recipe's Settings panel (a `settings` entry `{index, node, input, label}` in `recipes.js`'s
+  format), saved with *Save to recipe*, so a user never edits the recipe JSON by hand. Check first what the importer
+  already reads. Medium.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.

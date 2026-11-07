@@ -1642,7 +1642,8 @@ An external review (another agent's, pasted by the user) was verified by a workf
    window route's size check before `readPsd`; `layered` gate on both backends, the node build gets it at the release),
    S6 (the local pipe's line buffer linear and capped above the largest legitimate line, umask on Linux), S9a (recipe
    ids sanitised where recipes are read and refused at `save`), S8 (CI `contents: read` at the top, write only for the
-   tag jobs; `provision.sh` pinned, its token by curl), and **the permission handler of the ComfyUI window's session**
+   tag jobs; `provision.sh` pinned, its token by curl), `main.js` `staysInApp` limited to the app's own pages (no
+   navigation of the window to `scumble://app/comfy/*`; added 2026-11-07), and **the permission handler of the ComfyUI window's session**
    (`persist:comfyui`; found by the verification, not in the review; the user asked whether it makes sense: yes): deny
    camera, microphone, location, MIDI, HID, serial and USB, allow the rest, so ComfyUI's page keeps its clipboard,
    fullscreen and notifications. S3 (the sign-in popups' guard and the narrowed Firebase host) waits for a live sign-in
@@ -1659,7 +1660,11 @@ An external review (another agent's, pasted by the user) was verified by a workf
    numbers show a speed fix beyond the move.
 3. **P10 into the plan:** the tile gutter's copy in u32 words (`inpaint_tiles.js` `tileWithGutter`, as `coarseSlot`
    does; the same bytes; full tier, the atlas path), with P13 (the CorridorKey refine's hoisted mean and reused
-   scratch, `keymatte.js`) and P15 (`ComfyClient.probe`'s requests together) riding along.
+   scratch, `keymatte.js`; also `blur121` carried on from k - 1 instead of from 0 for each k, 4 passes instead of 10, if
+   the floats stay bit for bit), P15 (`ComfyClient.probe`'s requests together), P18 (the Settings dialog opens at once:
+   `gpuMemoryMB()` / `cardMemory()`, which spawn `nvidia-smi` or a PowerShell counter, filled in afterwards as
+   `refreshFileStats()` is) and P8 (the curves layer's histogram read back on every view pass: take
+   `belowHistogram(layer).luma` instead) riding along (P8, P18 added 2026-11-07).
 
 ### K26 (2026-11-07): the blur and sharpen brushes in Rust
 
