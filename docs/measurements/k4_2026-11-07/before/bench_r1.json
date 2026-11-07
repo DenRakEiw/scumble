@@ -1,0 +1,130 @@
+{
+ "stitch_masks_2048": {
+  "visibility": "visible",
+  "focus": true,
+  "gauss": {
+   "median": 36.48,
+   "max": 70.37,
+   "n": 3
+  },
+  "dilate": {
+   "median": 37.25,
+   "max": 56.72,
+   "n": 3
+  },
+  "max_clamp": {
+   "median": 11.03,
+   "max": 11.35,
+   "n": 3
+  },
+  "mk": {
+   "median": 4.96,
+   "max": 7.57,
+   "n": 3
+  },
+  "note": "gaussBlur and dilate run Rust (box_blurs, dilate_mask) and include the mask's build (mk, also timed); max_clamp is the JS loop of denoiseMask"
+ },
+ "box_blurs_k4": {
+  "visibility": "visible",
+  "focus": true,
+  "rows": {
+   "stitch_2048_s8": {
+    "w": 2048,
+    "h": 2048,
+    "radii": [
+     6,
+     7,
+     7
+    ],
+    "rust": {
+     "median": 27.69,
+     "max": 29.85,
+     "n": 7
+    },
+    "twin": {
+     "median": 48.64,
+     "max": 52.36,
+     "n": 3
+    },
+    "sum": 1003460266,
+    "same": true
+   },
+   "map_4096_s3": {
+    "w": 4096,
+    "h": 2731,
+    "radii": [
+     2,
+     2,
+     3
+    ],
+    "rust": {
+     "median": 76.92,
+     "max": 90.75,
+     "n": 7
+    },
+    "twin": {
+     "median": 155.95,
+     "max": 172.8,
+     "n": 3
+    },
+    "sum": 3369515234,
+    "same": true
+   },
+   "guided_4096_r8": {
+    "w": 4096,
+    "h": 2731,
+    "radii": [
+     8
+    ],
+    "rust": {
+     "median": 33.2,
+     "max": 34.19,
+     "n": 7
+    },
+    "twin": {
+     "median": 51.3,
+     "max": 51.31,
+     "n": 3
+    },
+    "sum": 1280479568,
+    "same": true
+   },
+   "map_4096_s16": {
+    "w": 4096,
+    "h": 2731,
+    "radii": [
+     13,
+     13,
+     14
+    ],
+    "rust": {
+     "median": 76.61,
+     "max": 80,
+     "n": 7
+    },
+    "twin": {
+     "median": 119.23,
+     "max": 125.55,
+     "n": 3
+    },
+    "sum": 3467051775,
+    "same": true
+   },
+   "height_normals_4096_s3": {
+    "w": 4096,
+    "h": 2731,
+    "rust": {
+     "median": 297.08,
+     "max": 412.66,
+     "n": 5
+    },
+    "sum": 2854775992
+   }
+  },
+  "pxCalls": {
+   "box_blurs": 31,
+   "dilate_mask": 3,
+   "height_normals": 5
+  }
+ }
+}

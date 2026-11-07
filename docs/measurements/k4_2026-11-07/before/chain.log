@@ -1,0 +1,17 @@
+lock: taken after 0 s
+[08:30:11] lock: taken (K4 measuring 58168 2026-11-07T08:30:11)
+[08:30:11] commit 4f1826d; px.wasm 1000640eba8b5574, px_scalar.wasm ade55404e282dd7d
+[08:30:13] gpu: 4402 MiB, 4 %; comfy 8188: 000
+[08:31:20] px_test box line:        1492 x 1492: dilate rust simd 18.4 ms, twin 42.0; three box blurs rust simd 14.2 ms, twin 23.8
+       1492 x 1492: dilate rust scalar 22.9 ms, twin 43.1; three box blurs rust scalar 20.0 ms, twin 47.8
+[08:31:31] round 1: w0_bench
+[08:31:36] rc=0
+closed
+[08:31:52] round 2: w0_bench
+[08:31:58] rc=0
+closed
+[08:32:13] round 3: w0_bench
+[08:32:19] rc=0
+closed
+[08:32:23] done
+lock: released
