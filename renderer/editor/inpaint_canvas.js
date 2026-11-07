@@ -4953,23 +4953,30 @@ class InpaintEditor {
      * every other layer the screen draws: shown (its own eye and its groups'), with pixels, not a filter layer (it covers
      * the canvas), and a clipped layer only while its base is shown too. Reference and control layers count while they
      * are shown: the canvas draws them. Each layer goes by its box, the frame the transform tool draws around it, not by
-     * what is painted in it. Collected once per gesture, at its first snap, and kept on the pointer `p` (no layer moves
-     * during a drag but the ones it moves): a pointer move only compares numbers. The layers the gesture moves are left
-     * out (`moving`, or a group gesture's members).
+     * what is painted in it. While two results are compared (`compare` a and b) the screen draws those two, their eyes
+     * aside, and no other result layer: so do the targets (drawLayersInto's `compareShow` rule). Collected at the
+     * gesture's first snap and kept on the pointer `p` with a stamp of what an outside change moves (an agent's command
+     * runs during a drag: a layer set, hidden or removed, an undo, a resize or an extend, a guide): made again only when
+     * the stamp changes, which the dragged layers' own moves do not do. A compare's draw moves `compositeVersion`, so in
+     * compare mode it is made again at each move (3 us for 50 layers, the editor gate's `list_us_50`). The layers the
+     * gesture moves are left out (`moving`, or a group gesture's members).
      */
     snapTargets(p, moving) {
-        if (p && p.snapTo) return p.snapTo;
         const g = this.guides || {};
+        const stamp = `${this.historyGen}|${this.compositeVersion}|${this.width}x${this.height}|${(g.x || []).join()}|${(g.y || []).join()}`;
+        if (p && p.snapTo && p.snapTo.stamp === stamp) return p.snapTo;
         const x = [0, this.width / 2, this.width, ...(g.x || [])], y = [0, this.height / 2, this.height, ...(g.y || [])];
         const skip = new Set(p && p.group ? p.group.map((m) => m.layer) : [moving]);
+        const cmp = this.compare && this.compare.a && this.compare.b ? this.compare : null;
         this.layers.forEach((l, i) => {
-            if (skip.has(l) || l.kind === "filter" || !l.px || !(l.w > 0 && l.h > 0) || !this.shown(l)) return;
+            if (skip.has(l) || l.kind === "filter" || !l.px || !(l.w > 0 && l.h > 0)) return;
+            if (cmp && l.kind === "result" ? l.id !== cmp.a && l.id !== cmp.b : !this.shown(l)) return;
             const cb = l.clip ? this.clipBaseOf(l, i) : null;
             if (cb && !this.shown(cb)) return;
             x.push(l.x, l.x + l.w / 2, l.x + l.w);
             y.push(l.y, l.y + l.h / 2, l.y + l.h);
         });
-        const out = { x, y };
+        const out = { x, y, stamp };
         if (p) p.snapTo = out;
         return out;
     }
@@ -5003,17 +5010,25 @@ class InpaintEditor {
     /**
      * Snap a moving layer's edges and centre to the canvas edges and centre, the guides and the other layers' edges and
      * centres (`snapTargets`, within 8 screen px). `p`: the gesture's pointer, which keeps the targets; Alt held skips the
-     * call (the pointer move's caller).
+     * call (the pointer move's caller). A layer with a pending rotation snaps what the screen shows: the axis-aligned
+     * bounds of its turned quad and their centre (the layer's own), and the shift moves the layer by the same amount.
      */
     snapLayer(l, p = null) {
         const th = 8 / this.view.scale;
         const gx = [], gy = [];
         const { x: tx, y: ty } = this.snapTargets(p, l);
+        let bx = l.x, by = l.y, bw = l.w, bh = l.h;
+        const pr = this.pending;
+        if (pr && pr.mode === "rotate" && pr.layer === l && Math.abs(pr.angle) > 1e-6) {
+            const qs = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([u, v]) => this.pendingDst(pr, u, v));
+            bx = Math.min(...qs.map((q) => q[0])); by = Math.min(...qs.map((q) => q[1]));
+            bw = Math.max(...qs.map((q) => q[0])) - bx; bh = Math.max(...qs.map((q) => q[1])) - by;
+        }
         let best = null;
-        for (const a of [l.x, l.x + l.w / 2, l.x + l.w]) for (const b of tx) { const d = Math.abs(a - b); if (d <= th && (!best || d < best[0])) best = [d, b - a, b]; }
+        for (const a of [bx, bx + bw / 2, bx + bw]) for (const b of tx) { const d = Math.abs(a - b); if (d <= th && (!best || d < best[0])) best = [d, b - a, b]; }
         if (best) { l.x = Math.round(l.x + best[1]); gx.push(best[2]); }
         best = null;
-        for (const a of [l.y, l.y + l.h / 2, l.y + l.h]) for (const b of ty) { const d = Math.abs(a - b); if (d <= th && (!best || d < best[0])) best = [d, b - a, b]; }
+        for (const a of [by, by + bh / 2, by + bh]) for (const b of ty) { const d = Math.abs(a - b); if (d <= th && (!best || d < best[0])) best = [d, b - a, b]; }
         if (best) { l.y = Math.round(l.y + best[1]); gy.push(best[2]); }
         this.snapGuides = gx.length || gy.length ? { x: gx, y: gy } : null;
     }

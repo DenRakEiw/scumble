@@ -2940,6 +2940,7 @@ try {
     const place = (id, x, y, w, h) => run("set_layer", Object.assign({ layer: id, x, y, doc: d.id }, w ? { w, h } : {}));
     const near = (a, b) => Math.abs(a - b) <= 1;
     await run("set_active_layer", { layer: M, doc: d.id });
+    await ed.mipsSettled();   // nothing lands during the drags: a change that moves the stamp makes the targets again
     ed.setTool("transform");
     ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false; ed.view.x = 20; ed.view.y = 20; ed.draw();
     let pid = 5900;
@@ -3007,6 +3008,7 @@ try {
     h = drag([650, 580], [484, 430]);
     out.groupT = { m: box(M), n: box(N), guides: h.guides };
     if (box(M)[0] !== 430 || box(N)[0] !== 580 || lines(h) !== JSON.stringify({ x: [430], y: [] })) throw new Error("the group did not snap to T: " + JSON.stringify(out.groupT));
+    await place(N, 750, 650);
     // 8. scale: M's west handle dragged to 4 px right of T's right edge snaps there; with Alt it does not
     await run("set_active_layer", { layer: M, doc: d.id });
     await place(M, 600, 500, 100, 60);
@@ -3017,6 +3019,58 @@ try {
     h = drag([600, 530], [434, 530], true);
     out.scaleAlt = { box: box(M), guides: h.guides };
     if (!near(box(M)[0], 434) || !near(box(M)[2], 266) || h.guides) throw new Error("Alt did not turn the scale's snapping off: " + JSON.stringify(out.scaleAlt));
+    // 9. a pending rotation of 30 degrees: the turned quad's bounds snap (its left edge, 2.7 px right of T's right edge),
+    // not the unturned box (whose left edge is 11 px off and whose top lies on the canvas's middle)
+    await place(M, 600, 500, 100, 60);
+    ed.startPending("rotate");
+    ed.pending.angle = Math.PI / 6; ed.draw();
+    h = drag([650, 530], [491, 430]);
+    const quad = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([u, v]) => ed.pendingDst(ed.pending, u, v));
+    out.rotated = { box: box(M), guides: h.guides, left: Math.min(...quad.map((q) => q[0])) };
+    ed.cancelPending();
+    if (h.kind !== "move" || box(M)[0] !== 438 || !near(box(M)[1], 400) || Math.abs(out.rotated.left - 430) > 0.5 || lines(h) !== JSON.stringify({ x: [430], y: [] })) throw new Error("the turned quad did not snap: " + JSON.stringify(out.rotated));
+    // 10. an agent's command during the drag: T moved next to M snaps at its new place, then hidden it no longer does
+    await place(M, 600, 500);
+    pid++;
+    ed.canvas.dispatchEvent(ev("pointerdown", 650, 530));
+    ed.canvas.dispatchEvent(ev("pointermove", 640, 520));
+    const list0 = ed.pointer.snapTo;
+    await place(T, 406, 210);
+    ed.canvas.dispatchEvent(ev("pointermove", 641, 521));
+    out.agentMoved = { box: box(M), guides: ed.snapGuides && { ...ed.snapGuides }, made: ed.pointer.snapTo !== list0 };
+    await run("set_layer", { layer: T, visible: false, doc: d.id });
+    ed.canvas.dispatchEvent(ev("pointermove", 642, 522));
+    out.agentHid = { box: box(M), guides: ed.snapGuides };
+    ed.canvas.dispatchEvent(ev("pointerup", 642, 522));
+    await run("set_layer", { layer: T, visible: true, doc: d.id });
+    await place(T, 250, 210);
+    if (out.agentMoved.box[0] !== 586 || JSON.stringify(out.agentMoved.guides) !== JSON.stringify({ x: [586], y: [] })) throw new Error("no snap to T's new place: " + JSON.stringify(out.agentMoved));
+    if (!near(out.agentHid.box[0], 592) || out.agentHid.guides) throw new Error("snapped to T hidden during the drag: " + JSON.stringify(out.agentHid));
+    // 11. compare: the two compared results count (RA with its eye off), another result layer (RC, where T was) does not
+    const mkResult = (name, x, y, w, hh) => { const c = document.createElement("canvas"); c.width = w; c.height = hh; c.getContext("2d").fillRect(0, 0, w, hh); return ed.addLayer({ name, kind: "result", ref: null, px: ed.pixels.Layer.fromCanvas(c), x, y, w, h: hh, dirty: true }).id; };
+    const RA = mkResult("RA", 100, 100, 200, 50), RB = mkResult("RB", 900, 50, 40, 40), RC = mkResult("RC", 250, 210, 180, 120);
+    await run("set_layer", { layer: RA, visible: false, doc: d.id });
+    await run("set_layer", { layer: T, visible: false, doc: d.id });
+    await run("set_active_layer", { layer: M, doc: d.id });
+    await place(M, 600, 500);
+    ed.compare = { a: RA, b: RB, split: 0.02 }; ed.draw();
+    try {
+        h = drag([650, 530], [484, 380]);
+        out.compareOther = { box: box(M), guides: h.guides };
+        await place(M, 600, 500);
+        h = drag([650, 530], [354, 380]);
+        out.compareHidden = { box: box(M), guides: h.guides };
+    } finally { ed.compare = null; ed.draw(); }
+    if (!near(out.compareOther.box[0], 434) || out.compareOther.guides) throw new Error("snapped to a result layer the compare does not show: " + JSON.stringify(out.compareOther));
+    if (out.compareHidden.box[0] !== 300 || JSON.stringify(out.compareHidden.guides) !== JSON.stringify({ x: [300], y: [] })) throw new Error("no snap to the compared result with its eye off: " + JSON.stringify(out.compareHidden));
+    // what making the list costs: 50 layers (swapped in for one synchronous loop, no draw sees them)
+    const keepLayers = ed.layers;
+    try {
+        ed.layers = Array.from({ length: 50 }, (_, i) => ({ id: "f" + i, kind: "paint", px: {}, visible: true, x: i * 7, y: i * 5, w: 40, h: 30 }));
+        const t0 = performance.now();
+        for (let i = 0; i < 2000; i++) ed.snapTargets(null, null);
+        out.list_us_50 = Math.round((performance.now() - t0) / 2000 * 10000) / 10;
+    } finally { ed.layers = keepLayers; }
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
