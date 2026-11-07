@@ -339,9 +339,11 @@ is killed; `--lock` / `SCUMBLE_BUSY_LOCK` is waited out before each start), so i
 glob (new_document, load_image, add_image_layer, flip_layer, export to a relative path, close_document): directly
 (the empty line before the first JSON line skipped) and through the launcher with the steps on stdin (stdout starts
 with `{`), both exported PNGs the mirror of their source within 3 levels, and the autosave the quit wrote holding no
-picture; a bad command (exit 1, the first file's steps up to it and its clean-up close, no line of the second file); a
-broken picture first with `--keep-going` (the other file exported) and without (not); `docs/examples/look_folder.json`
-on two JPEGs as it is; every command the examples name in the app's command table. About 15 s in all on the dev tree.
+picture in its open or its closed tabs; a bad command (exit 1, the first file's steps up to it and its clean-up close,
+no line of the second file); a broken picture first with `--keep-going` (the other file exported) and without (not);
+`docs/examples/look_folder.json` on two JPEGs as it is, against the same steps without the look as a baseline (a mean
+difference of 4 levels or more, where a re-encode alone is about 1 to 1.7); every command the examples name in the
+app's command table. About 15 s in all on the dev tree.
 
 The `portable` gate (P3, `tools/portable_test.py`, `--exe` only) starts portable copies of the exe's folder the way a
 user does, **without `--user-data-dir`**, so it is the one gate that could reach the user's own `%APPDATA%\Scumble`.

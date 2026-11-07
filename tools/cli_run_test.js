@@ -90,19 +90,27 @@ for (const n of ["a10.png", "a2.png", "a1.png", "b.jpg", "A3.PNG", "notes.txt"])
 
 // ---- the run against a fake backend -------------------------------------------------------------------------------
 
+// as renderer/commands.js describe() lists them: a document command's params carry `doc`; cancel_run is an app command
+// that takes one of its own
+const DOC = { doc: { type: "integer" } };
 const TABLE = [
     { name: "ping", scope: "app", params: {} },
     { name: "new_document", scope: "app", params: {} },
-    { name: "open_document", scope: "app", params: {} },
-    { name: "close_document", scope: "doc", params: {} },
-    { name: "load_image", scope: "doc", params: { path: {} } },
-    { name: "flip_layer", scope: "doc", params: {} },
-    { name: "export", scope: "doc", params: { path: {} } },
-    { name: "cutout_layer", scope: "doc", params: { timeout: { type: "integer", default: 300 } } },
-    { name: "film.apply_look", scope: "doc", params: {} },
+    { name: "open_document", scope: "app", params: { path: {} } },
+    { name: "cancel_run", scope: "app", params: { ...DOC } },
+    { name: "close_document", scope: "doc", params: { ...DOC, remember: { type: "boolean", default: true } } },
+    { name: "load_image", scope: "doc", params: { ...DOC, path: {} } },
+    { name: "flip_layer", scope: "doc", params: { ...DOC } },
+    { name: "export", scope: "doc", params: { ...DOC, path: {} } },
+    { name: "cutout_layer", scope: "doc", params: { ...DOC, timeout: { type: "integer", default: 300 } } },
+    { name: "film.apply_look", scope: "doc", params: { ...DOC } },
 ];
 
-/** A backend that records every call; `fail(name, args)` true makes that call throw. */
+/**
+ * A backend that records every call; `fail(name, args)` true makes that call throw (an Error, or the value it returns
+ * when that is an Error: `fatal` set, as AgentBackend's sticky mode throws once the Scumble went away). A `table` that
+ * is an Error makes describe() throw it, as AgentBackend does for --run with --attach-only and no Scumble running.
+ */
 function fakeBackend({ fail = () => false, already = false, table = TABLE } = {}) {
     let next = 7;
     const calls = [];
@@ -112,7 +120,9 @@ function fakeBackend({ fail = () => false, already = false, table = TABLE } = {}
         async run(name, args) {
             calls.push({ name, args });
             if (!table.some((c) => c.name === name)) throw new Error(`unknown command "${name}"`);
-            if (fail(name, args)) throw new Error(`${name} failed`);
+            const f = fail(name, args);
+            if (f instanceof Error) throw f;
+            if (f) throw new Error(`${name} failed`);
             if (name === "new_document") return { id: next++, name: "Untitled" };
             if (name === "open_document") return { id: 3, already };
             if (name === "close_document") return { closed: args.doc };
@@ -215,12 +225,35 @@ const STEPS = (extra = []) => [
         // a failing new_document opens nothing: its file's close is skipped too
         const r = await run(JSON.stringify({ files: ["in/a1.png"], steps: STEPS() }), { backend: fakeBackend({ fail: (n) => n === "new_document" }) });
         check("no document opened: no clean-up close", r.code === 1 && r.calls.length === 1 && r.lines.length === 2, r.calls.map((c) => c.name));
-        // a document open_document found open already is the user's: a failure does not close it
-        const u = await run(JSON.stringify({ files: ["in/a1.png"], steps: [{ cmd: "open_document", args: { path: "x.scumble" } }, { cmd: "flip_layer" }, { cmd: "close_document" }] }), { backend: fakeBackend({ already: true, fail: (n) => n === "flip_layer" }) });
-        check("a document that was open already is not closed after a failure", u.calls.length === 2 && u.calls[1].args.doc === 3, u.calls);
+        // a document open_document found open already is the user's: left alone, the file's other steps skipped, no close
+        const u = await run(JSON.stringify({ files: ["in/a1.png", "in/a2.png"], steps: [{ cmd: "open_document", args: { path: "x.scumble" } }, { cmd: "flip_layer" }, { cmd: "close_document" }] }), { keepGoing: true, backend: fakeBackend({ already: true }) });
+        const ul = u.lines.filter((l) => l.cmd);
+        check("a document open in a tab already: its line fails, nothing else of the file runs, no close_document",
+            u.code === 1 && u.calls.length === 2 && u.calls.every((c) => c.name === "open_document") && ul.length === 2 && ul.every((l) => !l.ok && /open in a tab already: left alone/.test(l.error)), u.calls);
         const o = await run(JSON.stringify({ files: ["in/a1.png"], steps: [{ cmd: "open_document", args: { path: "x.scumble" } }, { cmd: "flip_layer" }, { cmd: "close_document" }] }), { backend: fakeBackend({ fail: (n) => n === "flip_layer" }) });
         check("a document open_document opened is closed after a failure", o.calls.length === 3 && o.calls[2].name === "close_document" && o.calls[2].args.doc === 3, o.calls);
         check("open_document's path taken against the current folder", o.calls[0].args.path === path.join(tmp, "x.scumble"), o.calls[0].args.path);
+    }
+    {
+        // the run's own tab closes with remember false; a step's own remember, or a close of another document, stays
+        const r = await run(JSON.stringify({ steps: [{ cmd: "new_document" }, { cmd: "cancel_run" }, { cmd: "close_document" }, { cmd: "new_document" }, { cmd: "close_document", args: { remember: true } }, { cmd: "close_document", args: { doc: 5 } }] }));
+        const closes = r.calls.filter((c) => c.name === "close_document");
+        check("close_document of the run's own tab: remember false", closes[0].args.remember === false && closes[0].args.doc === 7, closes[0]);
+        check("a step's own remember stays", closes[1].args.remember === true && closes[1].args.doc === 8, closes[1]);
+        check("a close of a document the run did not open: no doc, no remember added", closes[2].args.doc === 5 && closes[2].args.remember === undefined, closes[2]);
+        check("an app command that takes doc (cancel_run) gets the file's document", r.calls[1].name === "cancel_run" && r.calls[1].args.doc === 7, r.calls[1]);
+        // a drive-less root path (\out\a.png passes isAbsolute on Windows) is taken against the call's folder too
+        const d = await run(JSON.stringify({ steps: [{ cmd: "export", args: { path: "/out/a.png" } }] }));
+        check("a path is always resolved against the call's folder", d.calls[0].args.path === path.resolve(tmp, "/out/a.png") && (process.platform !== "win32" || /^[A-Za-z]:\\/.test(d.calls[0].args.path)), d.calls[0].args.path);
+    }
+    {
+        // the Scumble went away (AgentBackend's sticky mode marks the error fatal): the run stops, --keep-going or not
+        const gone = Object.assign(new Error("the Scumble this run drives went away"), { fatal: true });
+        const r = await run(JSON.stringify({ files: ["in/a1.png", "in/a2.png"], steps: STEPS([{ cmd: "flip_layer" }]) }), { keepGoing: true, backend: fakeBackend({ fail: (n) => (n === "flip_layer" ? gone : false) }) });
+        const names = r.lines.filter((l) => l.cmd).map((l) => `${l.cmd}:${l.ok}`);
+        const sum = r.lines[r.lines.length - 1];
+        check("fatal: the run stops at once, no clean-up close, the other file never starts", r.code === 1 && same(names, ["new_document:true", "load_image:true", "flip_layer:false"]) && r.calls.length === 3, names);
+        check("fatal: the summary", sum.stopped === true && sum.failed === 1 && sum.skipped === 2 + 5, sum);
     }
     {
         // the run cannot start

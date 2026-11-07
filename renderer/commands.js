@@ -965,9 +965,9 @@ const COMMANDS = {
     },
     close_document: {
         destructive: true,
-        description: "Close a tab without asking (unsaved changes are not written to its .scumble file). A run going in it stops as cancel_run stops it, and nothing lands: an API provider may still charge a job it already had. File › Reopen Closed Tab brings the tab back in this session, without the run; the document's files stay in the local store.",
-        params: {},
-        async run(ed) { const id = ed.node.id; host.shell.closeDocument(ed, { force: true }); return { closed: id, documents: host.editors().map(docSummary) }; },
+        description: "Close a tab without asking (unsaved changes are not written to its .scumble file). A run going in it stops as cancel_run stops it, and nothing lands: an API provider may still charge a job it already had. File › Reopen Closed Tab brings the tab back in this session, without the run (remember false: it does not, and the tab stays off that list and the autosave's); the document's files stay in the local store.",
+        params: { remember: P.bool("put the tab on File › Reopen Closed Tab (default true)", { default: true }) },
+        async run(ed, a) { const id = ed.node.id; host.shell.closeDocument(ed, { force: true, remember: a.remember !== false }); return { closed: id, documents: host.editors().map(docSummary) }; },
     },
     reopen_closed_tab: {
         scope: "app",

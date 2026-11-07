@@ -1444,24 +1444,28 @@ function startApp() {
 
 /** An agent-started app ends when nobody talks to it any more and no window is shown. */
 function maybeQuit() {
-    if (ARGS.mcp && !agentMode && !windowVisible() && local.clients.size === 0) { agentsLeft = true; comfy.disconnect(); app.quit(); }
+    if ((ARGS.mcp || ARGS.run !== null) && !agentMode && !windowVisible() && local.clients.size === 0) { agentsLeft = true; comfy.disconnect(); app.quit(); }
 }
 
 /**
  * The command backend for --mcp, --cmd and --run: the running Scumble instance over the local socket
  * when there is one, otherwise this process starts the app headless and runs the commands in
- * it. A proxy whose instance went away reconnects, or takes over, at the next call.
+ * it. A proxy whose instance went away reconnects, or takes over, at the next call; a sticky one
+ * (--run) does not: once attached, a lost connection fails every later call with `fatal` set, and it
+ * never answers describe() with the --attach-only stub.
  */
 class AgentBackend extends require("node:events").EventEmitter {
-    constructor() { super(); this.client = null; this.own = false; this.stub = false; }
+    constructor({ sticky = false } = {}) { super(); this.client = null; this.own = false; this.stub = false; this.sticky = sticky; this.attached = false; }
 
     async ensure() {
         if (this.own) return bridge;
         if (this.client && !this.client.closed) return this.client;
+        if (this.sticky && this.attached) throw Object.assign(new Error("the Scumble this run drives went away: nothing more runs (no reconnect, no other Scumble)"), { fatal: true });
         const userData = app.getPath("userData");
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
                 this.client = await LocalClient.connect(userData);
+                this.attached = true;
                 this.client.on("commands", () => this.emit("changed"));
                 this.client.on("close", () => { this.client = null; });
                 if (this.stub) { this.stub = false; this.emit("changed"); }   // the client lists the real tools now
@@ -1482,13 +1486,20 @@ class AgentBackend extends require("node:events").EventEmitter {
         throw new Error("Scumble is running in another process but does not answer on the local socket");
     }
 
-    async run(name, args) { return (await this.ensure()).run(name, args); }
+    async run(name, args) {
+        const c = await this.ensure();
+        try { return await c.run(name, args); }
+        catch (err) {
+            if (this.sticky && c !== bridge && c.closed && err && typeof err === "object") err.fatal = true;   // went away mid-call
+            throw err;
+        }
+    }
     async describe() {
         try { return await (await this.ensure()).describe(); }
         catch (err) {
             // --attach-only with no Scumble running: ping alone, so the client keeps the server; the first call that
-            // reaches a started Scumble says the list changed
-            if (!ARGS.attachOnly) throw err;
+            // reaches a started Scumble says the list changed (not for --run, which says it cannot start)
+            if (!ARGS.attachOnly || this.sticky) throw err;
             this.stub = true;
             return [{ name: "ping", description: `Whether Scumble answers. ${err.message}. Call ping again once it runs: the other tools come then.`, params: {} }];
         }
@@ -1497,17 +1508,22 @@ class AgentBackend extends require("node:events").EventEmitter {
 }
 
 async function agentMain() {
-    const backend = new AgentBackend();
+    const backend = new AgentBackend({ sticky: ARGS.run !== null });
     if (ARGS.run !== null) {
         // --run: every step on this one backend (cli_run.js), a JSON line each on stdout. The exit code of a quit of the
         // app it starts: 1 while the run goes (a window that kept crashing closed it), then the run's
         let code = 1;
         app.once("will-quit", (e) => { e.preventDefault(); app.exit(code); });
-        code = await require("./cli_run").main({ source: ARGS.run, keepGoing: ARGS.keepGoing, backend, cwd: process.cwd() });
+        // an app this run starts is an agent's while the run goes: a close of its window hides it, a relaunch is refused
+        agentMode = "run";
+        try { code = await require("./cli_run").main({ source: ARGS.run, keepGoing: ARGS.keepGoing, backend, cwd: process.cwd() }); }
+        finally { agentMode = null; }
         if (!backend.own) { if (backend.client) backend.client.close(); app.exit(code); return; }
         // the app it started headless quits as a close does (the window saves first, so the autosave holds no tab the
-        // run closed); a window a second start showed during the run is the user's now and quits when they close it
-        if (!windowVisible()) app.quit();
+        // run closed), once no window is shown and no other agent talks to its socket; else it is handed over as an
+        // --mcp start's is: it quits when the last of them goes (maybeQuit, on the socket's clients)
+        showAgents();
+        maybeQuit();
         return;
     }
     if (ARGS.cmd) {

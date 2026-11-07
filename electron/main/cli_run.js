@@ -158,10 +158,12 @@ function fill(value, vars) {
  * Run a plan on `backend` ({ describe(), run(name, args) }): each file's steps in order (once without files), one line
  * per step through `write`. A failing step skips the rest of its file's steps, except a close_document step while the
  * file's steps opened a document that is still open (so a failed file leaves no tab behind), and stops the run unless
- * `keepGoing`. A file's new_document / open_document answer pins its later steps to that document (`doc`, unless a step
- * gives its own). A relative `path` is taken against `cwd`; export, export_layer, export_mask and save_document make
- * their path's folder; a command with a `timeout` parameter gets its default when the step gives none (so the call waits
- * for the command's own end). -> { code, summary }
+ * `keepGoing`; an error marked `fatal` (the Scumble went away) stops it whatever `keepGoing` says. A file's
+ * new_document / open_document answer pins its later steps to that document (`doc`, for every command that takes one,
+ * unless a step gives its own), and its close_document goes with `remember: false`; an open_document that finds the
+ * file open in a tab already fails (that tab is the user's: left alone). A `path` is taken against `cwd`; export,
+ * export_layer, export_mask and save_document make their path's folder; a command with a `timeout` parameter gets its
+ * default when the step gives none (so the call waits for the command's own end). -> { code, summary }
  */
 async function runPlan(plan, backend, { cwd = process.cwd(), write, keepGoing = false, now = Date.now, files = null, mkdir = (d) => fs.mkdirSync(d, { recursive: true }) } = {}) {
     const t0 = now();
@@ -177,32 +179,48 @@ async function runPlan(plan, backend, { cwd = process.cwd(), write, keepGoing = 
         if (stopped) { skipped += plan.steps.length; continue; }
         const file = list[f];
         const vars = file ? fileVars(file, f + 1) : null;
-        let doc = null, owned = false, broke = false;
+        // doc: the document this file's steps opened and that is still open (only one the run opened itself: a document
+        // open_document finds open already is the user's, and the file stops there)
+        let doc = null, broke = false;
         for (let i = 0; i < plan.steps.length; i++) {
             const step = plan.steps[i];
             const name = resolveName(step.cmd);
             const desc = cmds.get(name);
+            const params = (desc && desc.params) || {};
             // after a failure only the clean-up of a document this file's steps opened
-            if (broke && !(name === "close_document" && doc != null && owned)) { skipped++; continue; }
+            if (broke && !(name === "close_document" && doc != null)) { skipped++; continue; }
             const args = fill(step.args, vars);
-            if (typeof args.path === "string" && args.path.trim() && !path.isAbsolute(args.path.trim())) args.path = path.resolve(cwd, args.path.trim());
-            if (doc != null && desc && desc.scope !== "app" && (args.doc == null || args.doc === "")) args.doc = doc;
-            const tp = desc && desc.params && desc.params.timeout;
+            // always against the call's folder: a drive-less "\out\a.png" too, which the Scumble it drives would put on
+            // the drive of its own current folder
+            if (typeof args.path === "string" && args.path.trim()) args.path = path.resolve(cwd, args.path.trim());
+            if (doc != null && params.doc && (args.doc == null || args.doc === "")) args.doc = doc;
+            const mine = doc != null && args.doc != null && String(args.doc) === String(doc);
+            // the run's own tab goes without a place on Reopen Closed Tab (nor in the autosave's list of closed tabs)
+            if (name === "close_document" && mine && args.remember === undefined) args.remember = false;
+            const tp = params.timeout;
             if (tp && Number.isFinite(+tp.default) && (args.timeout == null || args.timeout === "")) args.timeout = +tp.default;
             const s0 = now();
-            let line;
+            let line, fatal = false;
             try {
                 if (WRITES.has(name) && typeof args.path === "string" && args.path.trim()) mkdir(path.dirname(args.path));
                 const result = await backend.run(name, args);
                 line = { index: i + 1, file, cmd: name, ok: true, result: result === undefined ? null : result, ms: now() - s0 };
-                if (OPENS.has(name) && result && result.id != null) { doc = result.id; owned = !result.already; }
-                if (name === "close_document" && (args.doc == null || String(args.doc) === String(doc))) { doc = null; owned = false; }
+                if (OPENS.has(name) && result && result.id != null) {
+                    if (result.already) {
+                        // the user's tab: nothing of this file touches it, and no close_document goes to it
+                        line = { index: i + 1, file, cmd: name, ok: false, error: `${args.path || "the document"} is open in a tab already: left alone (the rest of this file's steps are skipped)`, ms: line.ms };
+                    } else doc = result.id;
+                }
+                if (name === "close_document" && mine) doc = null;
             } catch (err) {
+                // fatal: the Scumble the run drives went away (AgentBackend's sticky mode): nothing more can run
+                fatal = !!(err && err.fatal);
                 line = { index: i + 1, file, cmd: name, ok: false, error: String((err && err.message) || err), ms: now() - s0 };
             }
             ran++;
             if (!line.ok) { failed++; broke = true; }
             await write(line);
+            if (fatal) { skipped += plan.steps.length - i - 1; stopped = true; break; }
         }
         if (broke) {
             filesFailed++;

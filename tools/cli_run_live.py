@@ -15,8 +15,9 @@ Runs tools/cli_run_test.js (plain Node, the fake backend) first, then starts the
     stops (no line of the second file, its PNG not written).
  4. a broken picture first (load_image fails for it only) with --keep-going: exit 1, the other file is exported.
  5. the same without --keep-going: exit 1, the other file is not exported.
- 6. docs/examples/look_folder.json as it is, from a folder holding photos/*.jpg: both graded JPEGs written, each with
-    the look on it.
+ 6. docs/examples/look_folder.json as it is, from a folder holding photos/*.jpg: both graded JPEGs written; the same
+    steps without the look export a baseline, which is the photo within re-encode noise, and each graded file differs
+    from its baseline by a mean of 4 levels or more.
  7. every command docs/examples/*.json names is in the app's command table (list_commands through --run).
 
 --port: a DevTools port for the instances (only to close the rest of one that hangs; default none: a run that does not
@@ -31,7 +32,7 @@ import subprocess
 import sys
 import time
 
-from PIL import Image, ImageChops, ImageOps
+from PIL import Image, ImageChops, ImageOps, ImageStat
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
@@ -140,7 +141,8 @@ def same_as_mirror(src, out):
 
 
 def autosave_pictures(profile):
-    """How many documents of the profile's autosave hold a picture (None when there is no autosave)."""
+    """How many documents of the profile's autosave hold a picture, its open tabs and its closed ones (Reopen Closed
+    Tab's list): None when there is no autosave."""
     p = os.path.join(profile, "autosave.json")
     if not os.path.exists(p):
         return None
@@ -148,7 +150,7 @@ def autosave_pictures(profile):
         outer = json.load(f)
     bundle = json.loads(outer.get("state") or "{}")
     n = 0
-    for d in bundle.get("docs", []):
+    for d in list(bundle.get("docs") or []) + list(bundle.get("closed") or []):
         try:
             s = json.loads(d.get("state") or "{}")
         except ValueError:
@@ -286,12 +288,30 @@ def main():
         stepl = [x for x in lines if "cmd" in x]
         check("look example: exit 0, 10 step lines all ok", p.returncode == 0 and len(stepl) == 10 and all(x.get("ok") for x in stepl),
               [(x.get("cmd"), x.get("error")) for x in stepl if not x.get("ok")] or (p.returncode, len(stepl)))
+        # the baseline: the same photos through the same export without the look (a JPEG re-encode alone differs from
+        # its source by a mean of about 1 to 1.7 levels, so the look has to stand clearly above that)
+        with open(os.path.join(examples, "look_folder.json"), encoding="utf-8") as f:
+            base_plan = json.load(f)
+        base_plan["steps"] = [s for s in base_plan["steps"] if s["cmd"] != "film.apply_look"]
+        for s in base_plan["steps"]:
+            if s["cmd"] == "export":
+                s["args"]["path"] = "plain/{stem}.jpg"
+        p2, lines2, _ = r.run(["--run", write("look_baseline.json", base_plan)], label="look_baseline")
+        check("look baseline: exit 0", p2.returncode == 0, [x.get("error") for x in lines2 if x.get("ok") is False])
+
+        def mean_diff(x, y):
+            a, b = Image.open(x).convert("RGB"), Image.open(y).convert("RGB")
+            if a.size != b.size:
+                return None
+            return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
+
         for i in (1, 2):
-            src, o = os.path.join(photos, f"shot_{i}.jpg"), os.path.join(r.out, "graded", f"shot_{i}.jpg")
-            if check(f"look example: graded/shot_{i}.jpg exists", os.path.exists(o)):
-                a, b = Image.open(src).convert("RGB"), Image.open(o).convert("RGB")
-                d = max(hi for _, hi in ImageChops.difference(a, b).getextrema()) if a.size == b.size else None
-                check(f"look example: graded/shot_{i}.jpg has the look (differs from the photo, same size)", d is not None and d > 8, d)
+            src = os.path.join(photos, f"shot_{i}.jpg")
+            o, plain = os.path.join(r.out, "graded", f"shot_{i}.jpg"), os.path.join(r.out, "plain", f"shot_{i}.jpg")
+            if check(f"look example: graded/shot_{i}.jpg and plain/shot_{i}.jpg exist", os.path.exists(o) and os.path.exists(plain)):
+                noise, look = mean_diff(src, plain), mean_diff(plain, o)
+                check(f"look example: plain/shot_{i}.jpg is the photo within re-encode noise (mean < 2.5)", noise is not None and noise < 2.5, noise)
+                check(f"look example: graded/shot_{i}.jpg has the look (mean difference from the plain export 4 or more)", look is not None and look >= 4, f"{look} (re-encode noise {noise})")
     except Exception as e:  # noqa: BLE001
         check("look example run", False, e)
 

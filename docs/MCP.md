@@ -72,10 +72,15 @@ In every string of `args` (inside objects and arrays too) the file's placeholder
 
 Other text in braces stays as written. Besides that, `--run`:
 
-- takes a relative `path` against the current folder of the call (the Scumble it drives may run in another);
+- takes every `path` against the current folder of the call (the Scumble it drives may run in another; a drive-less
+  `\out\a.png` lands on the call's drive);
 - makes the folder of the `path` of `export`, `export_layer`, `export_mask` and `save_document` when it is missing;
-- sends the steps that follow a `new_document` (or `open_document`) to that document (`doc`), whichever tab is in
-  front in the window, unless a step names its own `doc`; without one the steps go to the active tab, as `--cmd` does;
+- sends the steps that follow a `new_document` (or `open_document`) to that document (`doc`, every command that takes
+  one), whichever tab is in front in the window, unless a step names its own `doc`; without one the steps go to the
+  active tab, as `--cmd` does. That document's `close_document` goes with `remember: false`: the run's tabs stay off
+  *File › Reopen Closed Tab* (and its list in the autosave), so your own closed tabs keep their places there;
+- leaves a file alone that `open_document` finds open in a tab already: that tab is yours, so the step fails ("open in
+  a tab already: left alone") and nothing else of that file runs, no `close_document` included;
 - sends a command that has a `timeout` parameter (`cutout_layer`, `key_screen`, `realism_pass`, `upscale`,
   `generate`, ...) its default when the step gives none, so the call waits as long as the command does (the socket
   gives every command 10 minutes on top of its `timeout`).
@@ -88,10 +93,14 @@ tab of its own and leaves the documents you have open as they were (`close_docum
 
 By default the run stops. The failing step's line carries `error`, the rest of that file's steps are skipped, and the
 files after it do not start; exit code 1. The one step that still runs is a `close_document` while the document that
-file's steps opened is still open, so a failed file leaves no tab behind (a document `open_document` found open
-already is yours and is not closed). With `--keep-going`, or `"keep_going": true` in the file, the rest of that file's
-steps are skipped the same way and the run goes on with the next file; the exit code is 1 all the same. An unknown
-command fails at its step, like any other failure, not before the run.
+file's steps opened is still open, so a failed file leaves no tab behind. With `--keep-going`, or `"keep_going": true`
+in the file, the rest of that file's steps are skipped the same way and the run goes on with the next file; the exit
+code is 1 all the same. An unknown command fails at its step, like any other failure, not before the run.
+
+The run stays with the Scumble it started on. When the open Scumble it drives goes away during the run (quit,
+crashed), the step that was going fails and the run stops there, `--keep-going` or not: it does not reconnect and
+does not start a Scumble of its own for the rest. With `--attach-only` and no Scumble running nothing starts:
+`{"done":false,...}`, exit code 1.
 
 ### The output
 
@@ -148,8 +157,10 @@ Worth knowing:
   fills it, and *Settings › Local files › Clean up* removes what no document uses.
 - A Scumble the run starts for itself restores your last session first (headless, as `--cmd` and `--mcp` do) and
   quits through the same save as a close, so its autosave afterwards holds your documents and none of the run's
-  closed tabs. Starting Scumble while such a run goes shows that window; it then stays open after the run, and the
-  call ends when you close it.
+  tabs, open or closed. While the run goes it is an agent's, as an `--mcp` start is: starting Scumble shows its window,
+  closing that window only hides it again, and a restart is refused. After the run it quits once no window is shown
+  and no other agent (an `--mcp` client, a `--cmd`) talks to it; else it stays until the last of them goes, and the
+  call ends then.
 - That Scumble connects to ComfyUI a moment after its start; a ComfyUI step at the very start of a batch on it may be
   refused as not connected (not measured). Batches of ComfyUI steps are best run with Scumble open and connected.
 

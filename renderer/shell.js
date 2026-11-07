@@ -258,7 +258,7 @@ function renderTabs() {
  * The tab leaves the bar at once and goes on the closed list (Reopen Closed Tab) with its layers uploaded, then the
  * editor is destroyed. Resolves true when it closed.
  */
-async function closeDocument(editor, { force = false } = {}) {
+async function closeDocument(editor, { force = false, remember = true } = {}) {
     if (!editor || !host.editors().includes(editor)) return false;
     // a render on the user's ComfyUI counts (busy() leaves it out): its result lands nowhere once the tab is closed
     // (one the bar no longer follows, deleted from ComfyUI's queue or ended unseen, does not count)
@@ -290,7 +290,8 @@ async function closeDocument(editor, { force = false } = {}) {
     if (!host.editors().length) newDocument();
     activate(host.editor);
     host.saveAll();
-    try { await host.rememberClosed(editor); } catch (err) { console.warn("closed tab", err); }
+    // remember false (close_document's, a --run's own tabs): not on File › Reopen Closed Tab, nor in the autosave's list
+    if (remember) { try { await host.rememberClosed(editor); } catch (err) { console.warn("closed tab", err); } }
     try { editor.destroy(); } catch (err) { console.warn(err); }
     return true;
 }
