@@ -15,7 +15,9 @@ recipe's backend like it does in the window.
 | `Scumble --mcp` | the stdio MCP server. If Scumble is already running, the server drives that instance over the local command socket. If not, this process starts the app **headless** (no window) and quits it when the client disconnects. |
 | `Scumble --headless` | the app without a window, for scripts (`--cmd`) or a later `--mcp` |
 | `Scumble --cmd <name> [json]` | run one command against the running instance (or a short-lived headless one), print the result as JSON, exit 1 on error |
-| `--attach-only` (with `--mcp` or `--cmd`) | drive a running instance and never start one. With no Scumble running, `--mcp` lists `ping` alone and every call answers "Scumble is not running"; the first call that reaches a started Scumble sends `tools/list_changed`, and the client lists every command. |
+| `Scumble --run <steps.json>` / `--run -` | run several commands in order on one instance, once per file of a folder if the file says so; a JSON line per step ([Batches](#batches---run) below) |
+| `--keep-going` (with `--run`) | a failing step skips the rest of its file's steps, and the run goes on with the next file |
+| `--attach-only` (with `--mcp`, `--cmd` or `--run`) | drive a running instance and never start one. With no Scumble running, `--mcp` lists `ping` alone and every call answers "Scumble is not running"; the first call that reaches a started Scumble sends `tools/list_changed`, and the client lists every command. |
 
 Dev: `node_modules/.bin/electron . --mcp` (or `.cmd`, `--headless`, `--cmd status` likewise).
 
@@ -31,6 +33,125 @@ on Windows, `show()` alone leaves it hidden). While an MCP client is connected, 
 window only hides it; the app ends when the MCP session ends and no other process talks to
 the socket. The window title shows `Scumble · n agents connected` while agents are attached
 and the status bar says "MCP client connected." once.
+
+## Batches: `--run`
+
+`--cmd` runs one command per call, and with no Scumble running each call starts the app headless and quits it again,
+so what one call loaded is gone for the next. `Scumble --run <steps.json>` runs a whole list of commands in one call
+on one Scumble: **the Scumble you have open, when one runs** (over the local socket, in the window you see; it stays
+open afterwards), else one the run starts headless for itself and quits at the end. `Scumble --run -` reads the steps
+from stdin. The code is `electron/main/cli_run.js`.
+
+### The steps file
+
+- **A plain array** of steps: `[{"cmd": "new_document"}, {"cmd": "load_image", "args": {"path": "C:/shoot/a.jpg"}}, ...]`
+- **JSON lines**: one step object per line, empty lines skipped (handy for `--run -`).
+- **An object** `{"files": [...], "steps": [...], "keep_going": false}`: the steps run once per file.
+
+A step is `{"cmd": "<name>", "args": {...}}`: the command's name as in `docs/COMMANDS.md` (an MCP tool's name works
+too: `film_apply_look` for `film.apply_look`) and its parameters. A `"comment"` key, in a step or in the object, is
+ignored; any other key is refused before anything runs, so a parameter written beside `cmd` instead of inside `args`
+is caught.
+
+`files` holds paths and globs, relative ones taken against the current folder (in JSON a Windows path is written with
+`/` or with doubled backslashes: `"D:/shoot/photos/*.jpg"`, `"D:\\shoot\\photos\\*.jpg"`). `*` and `?` in the last part of a path
+(the file name, not a folder) match that folder's files, sorted by name with numbers in their order (`shot_2` before
+`shot_10`), case-insensitive on Windows; a plain path must be a file. A glob that matches nothing is fine as long as
+the whole list finds at least one file; a file named twice runs once.
+
+In every string of `args` (inside objects and arrays too) the file's placeholders are filled in:
+
+| Placeholder | Is |
+| --- | --- |
+| `{file}` | the file's absolute path |
+| `{dir}` | its folder |
+| `{name}` | its name with the extension (`shot_2.jpg`) |
+| `{stem}` | its name without the extension (`shot_2`) |
+| `{ext}` | the extension without the dot (`jpg`) |
+| `{index}` | its number in the run, from 1 |
+
+Other text in braces stays as written. Besides that, `--run`:
+
+- takes a relative `path` against the current folder of the call (the Scumble it drives may run in another);
+- makes the folder of the `path` of `export`, `export_layer`, `export_mask` and `save_document` when it is missing;
+- sends the steps that follow a `new_document` (or `open_document`) to that document (`doc`), whichever tab is in
+  front in the window, unless a step names its own `doc`; without one the steps go to the active tab, as `--cmd` does;
+- sends a command that has a `timeout` parameter (`cutout_layer`, `key_screen`, `realism_pass`, `upscale`,
+  `generate`, ...) its default when the step gives none, so the call waits as long as the command does (the socket
+  gives every command 10 minutes on top of its `timeout`).
+
+Start every batch with `new_document` and end it with `close_document`, as the examples do: the run then works in a
+tab of its own and leaves the documents you have open as they were (`close_document` never asks, see
+`docs/COMMANDS.md`).
+
+### When a step fails
+
+By default the run stops. The failing step's line carries `error`, the rest of that file's steps are skipped, and the
+files after it do not start; exit code 1. The one step that still runs is a `close_document` while the document that
+file's steps opened is still open, so a failed file leaves no tab behind (a document `open_document` found open
+already is yours and is not closed). With `--keep-going`, or `"keep_going": true` in the file, the rest of that file's
+steps are skipped the same way and the run goes on with the next file; the exit code is 1 all the same. An unknown
+command fails at its step, like any other failure, not before the run.
+
+### The output
+
+One JSON line per step on stdout, written when the step ends, then a summary line:
+
+```
+{"index":2,"file":"D:\\shoot\\photos\\shot_1.jpg","cmd":"load_image","ok":true,"result":{"width":4000,"height":3000,"base":{...}},"ms":180}
+{"index":4,"file":"D:\\shoot\\photos\\shot_1.jpg","cmd":"cutout_layer","ok":false,"error":"No background removal model: ...","ms":3}
+{"done":true,"steps":12,"failed":1,"skipped":7,"files":3,"files_failed":1,"stopped":true,"ms":5230}
+```
+
+`index` is the step's place in `steps` (from 1), `file` the file (null without `files`), `result` the command's answer
+as `--cmd` prints it, `error` the command core's message. A skipped step writes no line. In the summary `steps` counts
+the steps that ran, `skipped` the ones that did not, `stopped` says the run ended at a failure.
+
+Exit codes: **0** every step ran and none failed; **1** a step failed, or no Scumble could be reached (`--attach-only`
+with none running); **2** the steps file could not be used (not found, not JSON, a step without `cmd`, an unknown
+key, no file found), and nothing ran. A run that does not start writes the one line `{"done":false,"error":"..."}`
+and the message on stderr.
+
+Electron writes an empty line (CR LF) to stdout before any JavaScript runs (["Why the launcher
+exists"](#why-the-launcher-exists)): **a reader skips empty lines**. Through the launcher, stdout starts with the first
+JSON line, and the steps can come on its stdin:
+
+```bash
+ELECTRON_RUN_AS_NODE=1 "C:\Users\<you>\AppData\Local\Programs\Scumble\Scumble.exe" "C:\Users\<you>\AppData\Local\Programs\Scumble\resources\app.asar\electron\main\mcp\launch.js" --run steps.json
+printf '%s\n' '{"cmd":"new_document"}' '{"cmd":"load_image","args":{"path":"a.png"}}' '{"cmd":"export","args":{"path":"a.webp","format":"webp"}}' '{"cmd":"close_document"}' | Scumble --run -
+```
+
+`Scumble.exe` prints to a console only through a pipe or the launcher ("Known small things"). Dev:
+`node_modules/.bin/electron . --run steps.json`. A switch such as `--user-data-dir=<dir>` goes before `--run`, which
+takes the next argument as its steps file.
+
+### Examples
+
+`docs/examples/` holds three, each run from the folder that holds the pictures (`cd D:\shoot`, then
+`Scumble --run <path>\cutout_folder.json`):
+
+- `cutout_folder.json`: every photo in `photos/` cut out with the in-app matting model and saved as a PNG with
+  transparency in `cutouts/` (a matting model under *Settings › Helpers*; without one, a connected ComfyUI's
+  background removal runs instead).
+- `key_folder.json`: every green-screen plate in `plates/` keyed on your ComfyUI (route `comfyui`: the CorridorKey 2.0
+  node pack there, an NVIDIA card of the RTX 30 generation or newer), each key saved as a PNG with its matte as
+  transparency in `keys/`. Run it with Scumble open and connected to that ComfyUI.
+- `look_folder.json`: one film look (`portra400` at 80 %) on every photo in `photos/`, saved as JPEGs in `graded/`
+  (`film.looks` lists the stocks). For a recipe's preset instead, put `select_recipe` and `apply_preset` before the
+  `generate` or `realism_pass` step.
+
+Worth knowing:
+
+- Give `export`, `export_layer` and `export_mask` their `path`: without one they ask for a file in a dialog (in the
+  open window, for every file of the run; a Scumble without a window refuses).
+- Every picture a run loads goes into Scumble's local store, as a picture opened by hand does: a run over many files
+  fills it, and *Settings › Local files › Clean up* removes what no document uses.
+- A Scumble the run starts for itself restores your last session first (headless, as `--cmd` and `--mcp` do) and
+  quits through the same save as a close, so its autosave afterwards holds your documents and none of the run's
+  closed tabs. Starting Scumble while such a run goes shows that window; it then stays open after the run, and the
+  call ends when you close it.
+- That Scumble connects to ComfyUI a moment after its start; a ComfyUI step at the very start of a batch on it may be
+  refused as not connected (not measured). Batches of ComfyUI steps are best run with Scumble open and connected.
 
 ## Registering with a client
 
@@ -354,6 +475,14 @@ Both PASS on 2026-09-09 with the dev electron and the packaged exe.
 
 `node_modules/.bin/electron . --cmd status` is the quickest check of the socket; a stray
 `\r\n` precedes the JSON on stdout (see above).
+
+`python tools/cli_run_live.py [--exe dist/win-unpacked/Scumble.exe]` (the `cli` gate) covers `--run`: first
+`node tools/cli_run_test.js` (the parser, the globs, the placeholders, the doc pinning, the stop and keep-going rules,
+the lines and exit codes against a fake backend), then seven batches on headless instances of its own (`--no-comfy`):
+two fixtures by a glob flipped and exported, directly and through the launcher with the steps on stdin, the pixels
+checked against the mirrored source and the autosave checked for the run's tabs; a bad command (the stop and the
+clean-up close); a broken picture with and without `--keep-going`; `docs/examples/look_folder.json` as it is; and every
+command the examples name in the app's command table.
 
 `node tools/mcpb_test.js [--exe dist/win-unpacked/Scumble.exe] [--store]` (the `mcpb` gate) covers the `.mcpb`
 bundle: the manifest, the starter's search and start forms, the fallback over stdio, and with `--exe` a real headless

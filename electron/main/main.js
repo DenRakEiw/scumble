@@ -72,25 +72,31 @@ const { ComfyView } = require("./comfyview");
 //                               headless when none runs (docs/MCP.md)
 //   Scumble --cmd <name> [json] run one command against the running (or a headless) instance,
 //                               print the result as JSON and exit
-//   --attach-only               with --mcp / --cmd: drive a running instance, never start one (a dev
+//   Scumble --run <file | ->    run the steps of a file (or stdin) in order on one instance, once per
+//                               file of its `files`; a JSON line per step (electron/main/cli_run.js)
+//   --keep-going                with --run: a failing step skips the rest of its file, not the run
+//   --attach-only               with --mcp / --cmd / --run: drive a running instance, never start one (a dev
 //                               checkout's registration: its headless app would take the user's profile)
 //
 // Electron writes a CR LF to stdout before any JavaScript runs, which strict MCP clients
 // reject; it cannot be suppressed from here. Clients register mcp/launch.js instead, which
 // runs in Node mode (prints nothing), spawns this process and drops those bytes.
 function parseArgs(argv) {
-    const out = { mcp: false, headless: false, cmd: null, cmdArgs: null, attachOnly: false };
+    const out = { mcp: false, headless: false, cmd: null, cmdArgs: null, attachOnly: false, run: null, keepGoing: false };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === "--mcp") out.mcp = true;
         else if (a === "--headless") out.headless = true;
         else if (a === "--attach-only") out.attachOnly = true;
+        else if (a === "--keep-going") out.keepGoing = true;
         else if (a === "--cmd") { out.cmd = argv[++i] || "ping"; if (argv[i + 1] && !argv[i + 1].startsWith("--")) out.cmdArgs = argv[++i]; }
+        // "" when no file follows: cli_run says so
+        else if (a === "--run") out.run = argv[i + 1] != null && (argv[i + 1] === "-" || !argv[i + 1].startsWith("--")) ? argv[++i] : "";
     }
     return out;
 }
 const ARGS = parseArgs(process.argv.slice(1));
-if (ARGS.mcp) {
+if (ARGS.mcp || ARGS.run !== null) {
     // stdout carries the protocol: every console line goes to stderr
     const util = require("node:util");
     for (const k of ["log", "info", "debug", "warn"]) console[k] = (...a) => process.stderr.write(util.format(...a) + "\n");
@@ -1442,7 +1448,7 @@ function maybeQuit() {
 }
 
 /**
- * The command backend for --mcp and --cmd: the running Scumble instance over the local socket
+ * The command backend for --mcp, --cmd and --run: the running Scumble instance over the local socket
  * when there is one, otherwise this process starts the app headless and runs the commands in
  * it. A proxy whose instance went away reconnects, or takes over, at the next call.
  */
@@ -1492,6 +1498,18 @@ class AgentBackend extends require("node:events").EventEmitter {
 
 async function agentMain() {
     const backend = new AgentBackend();
+    if (ARGS.run !== null) {
+        // --run: every step on this one backend (cli_run.js), a JSON line each on stdout. The exit code of a quit of the
+        // app it starts: 1 while the run goes (a window that kept crashing closed it), then the run's
+        let code = 1;
+        app.once("will-quit", (e) => { e.preventDefault(); app.exit(code); });
+        code = await require("./cli_run").main({ source: ARGS.run, keepGoing: ARGS.keepGoing, backend, cwd: process.cwd() });
+        if (!backend.own) { if (backend.client) backend.client.close(); app.exit(code); return; }
+        // the app it started headless quits as a close does (the window saves first, so the autosave holds no tab the
+        // run closed); a window a second start showed during the run is the user's now and quits when they close it
+        if (!windowVisible()) app.quit();
+        return;
+    }
     if (ARGS.cmd) {
         let args = {};
         if (ARGS.cmdArgs) { try { args = JSON.parse(ARGS.cmdArgs); } catch (err) { throw new Error("the arguments must be JSON: " + err.message); } }
@@ -1520,7 +1538,7 @@ async function agentMain() {
 }
 
 app.setName("Scumble");
-if (ARGS.mcp || ARGS.cmd) {
+if (ARGS.mcp || ARGS.cmd || ARGS.run !== null) {
     agentMain().catch((err) => { process.stderr.write("scumble: " + (err.message || err) + "\n"); app.exit(1); });
 } else if (!app.requestSingleInstanceLock()) {
     app.quit();

@@ -1,0 +1,12 @@
+{
+  "comment": "Key every green-screen plate in plates/ on your ComfyUI (the CorridorKey 2.0 node pack there, an NVIDIA card of the RTX 30 generation or newer) and save each key as a PNG in keys/, the matte as its transparency. Run it while Scumble is open and connected to that ComfyUI: --run drives the open Scumble. From the folder that holds plates/: Scumble --run key_folder.json (docs/MCP.md, Batches).",
+  "files": ["plates/*.png", "plates/*.jpg", "plates/*.tif", "plates/*.tiff"],
+  "keep_going": true,
+  "steps": [
+    { "cmd": "new_document", "comment": "a tab of its own: the run never changes the documents you have open" },
+    { "cmd": "load_image", "args": { "path": "{file}" } },
+    { "cmd": "key_screen", "args": { "route": "comfyui", "screen": "green", "hint": "none", "grey": false, "timeout": 300 } },
+    { "cmd": "export_layer", "args": { "layer": "Key", "path": "keys/{stem}_key.png" } },
+    { "cmd": "close_document" }
+  ]
+}

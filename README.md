@@ -326,8 +326,9 @@ and what it costs: [docs/ASSISTANT.md](docs/ASSISTANT.md).
 - JavaScript plugins (filters with GPU and processor paths, panels, menu actions, tools, commands) and a command core
   with 118 documented commands, 98 core and 20 from the built-in plugins ([docs/COMMANDS.md](docs/COMMANDS.md),
   [docs/PLUGINS.md](docs/PLUGINS.md)).
-- MCP server for any MCP client (an `.mcpb` bundle for Claude Desktop with every release), plus `--headless` and
-  `--cmd` for scripts ([docs/MCP.md](docs/MCP.md)).
+- MCP server for any MCP client (an `.mcpb` bundle for Claude Desktop with every release), plus `--headless`,
+  `--cmd` for scripts and `--run` for batches: a list of commands in one call, once per file of a folder
+  ([docs/MCP.md](docs/MCP.md), examples in [docs/examples](docs/examples)).
 - A status line that shows errors in red, and a thin bar beside it that follows each run: the node and the sampler's
   steps on your ComfyUI, the node on Comfy Cloud, the seconds on other providers.
 - Tabs with session restore, a local file mirror (no server needed to reopen your work), a console and a log file,

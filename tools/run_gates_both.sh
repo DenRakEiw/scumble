@@ -32,7 +32,7 @@ SP="${SCUMBLE_GATES:-/f/canvas/dist/gates}"
 PAR=(); SER=(); needs_app=0
 for g in "$@"; do
   case "$g" in
-    smoke|mcp|mcpb|cloudjobs|portable|quit|quit:*|document|node|nodecopy|perf:*|exportperf:*|tiffperf:*|mem:*|docperf:*|huge:*|upscaleperf:*|pxjobs|pxjobs:*|pxprobe:*) SER+=("$g") ;;
+    smoke|mcp|mcpb|cli|cloudjobs|portable|quit|quit:*|document|node|nodecopy|perf:*|exportperf:*|tiffperf:*|mem:*|docperf:*|huge:*|upscaleperf:*|pxjobs|pxjobs:*|pxprobe:*) SER+=("$g") ;;
     *) PAR+=("$g")
        case "$g" in lint|types) ;; *) needs_app=1 ;; esac ;;
   esac
