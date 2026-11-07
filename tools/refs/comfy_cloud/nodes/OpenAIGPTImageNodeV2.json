@@ -1,0 +1,56 @@
+{
+  "source": "Comfy Cloud's node catalog: get_node OpenAIGPTImageNodeV2 with refresh on the user's account, catalog 2026-11-07T07:43Z, read by the main loop and transcribed here (the inputs an API-format prompt sets, not the raw answer). The 2.5 sub-fields agree with comfy_api_nodes/nodes_openai.py of the user's ComfyUI v0.44.0 (_gpt_image_2_model_inputs, read 2026-11-07), which has no 2.6 options yet. Not read: the sub-fields of gpt-image-2 and gpt-image-1.5.",
+  "class": "OpenAIGPTImageNodeV2",
+  "display_name": "OpenAI GPT Image 2.6",
+  "inputs": {
+    "prompt": { "type": "STRING", "required": true },
+    "model": {
+      "type": "DYNAMIC_COMBO",
+      "required": true,
+      "options": ["gpt-image-2.6-flare", "gpt-image-2.6-sunburst", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2", "gpt-image-1.5"]
+    },
+    "n": { "type": "INT", "required": true, "min": 1, "max": 8 },
+    "seed": { "type": "INT", "required": true, "min": 0, "max": 2147483647 }
+  },
+  "model_inputs": {
+    "gpt-image-2.6-flare": {
+      "model.size": { "type": "COMBO", "required": true, "default": "auto", "options": ["auto", "1024x1024", "1024x1536", "1536x1024", "2048x2048", "2048x1152", "1152x2048", "3840x2160", "2160x3840", "Custom"] },
+      "model.custom_width": { "type": "INT", "required": true, "min": 480, "max": 3840, "step": 16, "used": "only when model.size is Custom" },
+      "model.custom_height": { "type": "INT", "required": true, "min": 480, "max": 3840, "step": 16, "used": "only when model.size is Custom" },
+      "model.background": { "type": "COMBO", "required": true, "default": "auto", "options": ["auto", "opaque", "transparent"] },
+      "model.quality": { "type": "COMBO", "required": true, "default": "low", "options": ["low", "medium", "high", "xhigh", "max"] },
+      "model.complexity": { "type": "COMBO", "required": true, "default": "high", "options": ["low", "medium", "high"], "tooltip": "How much the model plans the image before rendering." },
+      "model.images.image_": { "type": "IMAGE", "required": false, "autogrow": true, "names": "image_1 .. image_16", "min": 0, "max": 16 },
+      "model.mask": { "type": "MASK", "required": false, "tooltip": "Optional mask for inpainting (white areas will be replaced). Requires exactly one reference image." }
+    },
+    "gpt-image-2.6-sunburst": {
+      "model.size": { "type": "COMBO", "required": true, "default": "auto", "options": ["auto", "1024x1024", "1024x1536", "1536x1024", "2048x2048", "2048x1152", "1152x2048", "3840x2160", "2160x3840", "Custom"] },
+      "model.custom_width": { "type": "INT", "required": true, "min": 480, "max": 3840, "step": 16, "used": "only when model.size is Custom" },
+      "model.custom_height": { "type": "INT", "required": true, "min": 480, "max": 3840, "step": 16, "used": "only when model.size is Custom" },
+      "model.background": { "type": "COMBO", "required": true, "default": "auto", "options": ["auto", "opaque", "transparent"] },
+      "model.quality": { "type": "COMBO", "required": true, "default": "low", "options": ["low", "medium", "high", "xhigh", "max"] },
+      "model.complexity": { "type": "COMBO", "required": true, "default": "high", "options": ["low", "medium", "high"], "tooltip": "How much the model plans the image before rendering." },
+      "model.images.image_": { "type": "IMAGE", "required": false, "autogrow": true, "names": "image_1 .. image_16", "min": 0, "max": 16 },
+      "model.mask": { "type": "MASK", "required": false, "tooltip": "Optional mask for inpainting (white areas will be replaced). Requires exactly one reference image." }
+    },
+    "gpt-image-2.5-flare": {
+      "model.size": { "type": "COMBO", "required": true, "default": "auto", "options": ["auto", "1024x1024", "1024x1536", "1536x1024", "2048x2048", "2048x1152", "1152x2048", "3840x2160", "2160x3840", "Custom"] },
+      "model.custom_width": { "type": "INT", "required": true, "min": 480, "max": 3840, "step": 16, "used": "only when model.size is Custom" },
+      "model.custom_height": { "type": "INT", "required": true, "min": 480, "max": 3840, "step": 16, "used": "only when model.size is Custom" },
+      "model.background": { "type": "COMBO", "required": true, "default": "auto", "options": ["auto", "opaque", "transparent"] },
+      "model.quality": { "type": "COMBO", "required": true, "default": "low", "options": ["low", "medium", "high", "xhigh", "max"] },
+      "model.images.image_": { "type": "IMAGE", "required": false, "autogrow": true, "names": "image_1 .. image_16", "min": 0, "max": 16 },
+      "model.mask": { "type": "MASK", "required": false, "tooltip": "Optional mask for inpainting (white areas will be replaced). Requires exactly one reference image." }
+    },
+    "gpt-image-2.5-sunburst": {
+      "model.size": { "type": "COMBO", "required": true, "default": "auto", "options": ["auto", "1024x1024", "1024x1536", "1536x1024", "2048x2048", "2048x1152", "1152x2048", "3840x2160", "2160x3840", "Custom"] },
+      "model.custom_width": { "type": "INT", "required": true, "min": 480, "max": 3840, "step": 16, "used": "only when model.size is Custom" },
+      "model.custom_height": { "type": "INT", "required": true, "min": 480, "max": 3840, "step": 16, "used": "only when model.size is Custom" },
+      "model.background": { "type": "COMBO", "required": true, "default": "auto", "options": ["auto", "opaque", "transparent"] },
+      "model.quality": { "type": "COMBO", "required": true, "default": "low", "options": ["low", "medium", "high", "xhigh", "max"] },
+      "model.images.image_": { "type": "IMAGE", "required": false, "autogrow": true, "names": "image_1 .. image_16", "min": 0, "max": 16 },
+      "model.mask": { "type": "MASK", "required": false, "tooltip": "Optional mask for inpainting (white areas will be replaced). Requires exactly one reference image." }
+    }
+  },
+  "execute": "From the 2.5 node's code (nodes_openai.py, the user's ComfyUI v0.44.0): a Custom size must be multiples of 16, at most 3840 an edge, no steeper than 3:1 and 655,360 to 8,294,400 pixels; a mask needs an image, exactly one picture in model.images (\"Cannot use a mask with multiple image\") and the picture's own size (\"Mask and Image must be the same size\"); pictures and mask go to OpenAI scaled down to 2048 x 2048 pixels in all."
+}

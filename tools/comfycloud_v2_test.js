@@ -16,7 +16,8 @@
 // result; a dropped or throttled download is read again, one Comfy says is gone is not; a finished job that lists no
 // output yet keeps its note, one that lists outputs and no image does not; a 5xx upload goes again under a
 // fresh upload key; a gateway's 503 on the submit is sent again under the same key; the node list is advisory (a failed
-// read does not stop the run, a node it lacks does) and follows a redirect on its own origin only; a fill recipe's mask;
+// read does not stop the run, a node it lacks does) and follows a redirect on its own origin only; GPT Image 2.6 on the
+// partner node (model.complexity from the row, high without one, never on GPT Image 2); a fill recipe's mask;
 // Generate new uploads nothing; an upscaler partner node; a test base takes only a test key; the Cancel's flags (asked,
 // done, ended, not confirmed) and their words through providers/index.js; the progress throttle on a clock set back; a
 // context without cloudApi stays on the legacy API. LoRA rows (item 50, LR5): the chain in the submitted graph (both
@@ -120,6 +121,28 @@ async function main() {
         check("bytes Comfy holds go by hash (from-hash), not uploaded again",
             f.uploads.length === 4 && f.fromHash.length === 1 && isRef(crop2.inputs.image) && tagOf(f.assets.get(crop2.inputs.image.info.id).bytes) === "CROP" && tagOf(out2.bytes) === "RESULT out.png",
             short({ uploads: f.uploads.length, fromHash: f.fromHash }));
+        check("GPT Image 2 on the partner node: no model.complexity in either submitted workflow (a 2.6 field)",
+            f.jobs.length === 2 && f.jobs.every((j) => { const p = Object.values(j.workflow).find((n) => n.class_type === "OpenAIGPTImageNodeV2"); return p && p.inputs.model === "gpt-image-2" && !("model.complexity" in p.inputs); }));
+    }
+
+    // 2b. GPT Image 2.6 (the shipped Comfy Cloud variants, 2026-11-07) on v2: the 2.6 id, model.complexity from the row and
+    // high without one (the node requires it), the crop's own size as Custom, the mask through ImageToMask
+    for (const id of ["gpt_image_2_6_flare", "gpt_image_2_6_sunburst"]) {
+        const v = list.find((r) => r.id === id).providers.comfycloud;
+        const f = fakeComfyV2({ outputs: saveOutput });
+        const run = (params) => cloud.edit(partnerReq({ model: v.model, options: v.options, references: [], width: 1536, height: 1024, params }), ctxOf(f));
+        const out = await run({ "model.quality": "high", "model.complexity": "medium" });
+        await run({});
+        const partnerOf = (j) => (j && Object.values(j.workflow).find((n) => n.class_type === "OpenAIGPTImageNodeV2")) || { inputs: {} };
+        const [p1, p2] = [partnerOf(f.jobs[0]), partnerOf(f.jobs[1])];
+        const maskNode = p1.inputs["model.mask"] && f.jobs[0].workflow[p1.inputs["model.mask"][0]];
+        check(`${id} on v2: model ${v.model}, Complexity medium and Quality high from the rows, Custom 1536 x 1024, the crop and the mask as assets, the mask through ImageToMask`,
+            tagOf(out.bytes) === "RESULT out.png" && p1.inputs.model === v.model && p1.inputs["model.complexity"] === "medium" && p1.inputs["model.quality"] === "high"
+            && p1.inputs["model.size"] === "Custom" && p1.inputs["model.custom_width"] === 1536 && p1.inputs["model.custom_height"] === 1024
+            && Array.isArray(p1.inputs["model.images.image_1"]) && !("model.images.image_2" in p1.inputs) && !!maskNode && maskNode.class_type === "ImageToMask"
+            && f.uploads.map((u) => u.tag).join(",") === "CROP,MASK",
+            short(p1.inputs));
+        check(`${id} on v2: a run that names no row sends model.complexity high`, p2.inputs["model.complexity"] === "high" && p2.inputs.model === v.model, short(p2.inputs));
     }
 
     // 3. a recipe graph: the crop, the Original and a reference into the titled LoadImage nodes; its own SaveImage

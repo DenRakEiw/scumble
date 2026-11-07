@@ -63,14 +63,22 @@ function fit(w, h, lo, hi, step) {
 
 const GEMINI_AR = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
 
+// GPT Image 2.6 on OpenAIGPTImageNodeV2 (the node's spec read on Comfy Cloud on 2026-11-07, saved as
+// tools/refs/comfy_cloud/nodes/OpenAIGPTImageNodeV2.json): the 2.6 options carry 2.5's sub-fields plus a required
+// `model.complexity` (low / medium / high, the node's default high), which the node's other models do not have
+const GPT26 = /gpt-image-2\.6/;
+const GPT_COMPLEXITY = ["low", "medium", "high"];
+
 // How each partner node is wired. `g` is the graph builder: g.crop / g.refs are [node id, 0]
 // image links, g.mask() a MASK link (null without a mask), g.set(key, value) writes an input.
 const SHAPES = {
     OpenAIGPTImageNodeV2(g, v) {
         g.set("prompt", v.prompt); g.set("model", v.model); g.set("n", 1); g.set("seed", v.seed);
         g.set("model.size", "auto"); g.set("model.background", "auto"); g.set("model.quality", "medium");
+        // the node's default; a Complexity row overrides it, and AFTER_PARAMS holds the row to the rule
+        if (GPT26.test(v.model)) g.set("model.complexity", "high");
         if (/gpt-image-2/.test(v.model)) {
-            // any size in multiples of 16 within OpenAI's limits: keep the crop's size
+            // any size in multiples of 16 within OpenAI's limits (2, 2.5 and 2.6 alike): keep the crop's size
             const [w, h] = fit(v.width, v.height, 480, 3840, 16);
             if (w * h >= 655360 && w * h <= 8294400 && Math.max(w, h) / Math.min(w, h) <= 3) { g.set("model.size", "Custom"); g.set("model.custom_width", w); g.set("model.custom_height", h); }
         }
@@ -209,6 +217,17 @@ function rtxFactor(v) {
 
 /** The nodes whose own numbers buildGraph checks before it uploads anything (the SHAPE checks them again). */
 const BEFORE_UPLOAD = { RTXVideoSuperResolution: rtxFactor };
+
+/** What a node's inputs must hold after buildGraph has copied the recipe's rows in: the rules no row may break. */
+const AFTER_PARAMS = {
+    // `model.complexity` always on a 2.6 model (the node requires it; a value it does not list goes as its default
+    // high) and never on another of the node's models (a row or a direct call that hands one in for 2.5 or 2)
+    OpenAIGPTImageNodeV2(inputs, v) {
+        if (!GPT26.test(String(v.model || ""))) { delete inputs["model.complexity"]; return; }
+        const c = String(inputs["model.complexity"] || "").toLowerCase();
+        inputs["model.complexity"] = GPT_COMPLEXITY.includes(c) ? c : "high";
+    },
+};
 
 async function upload(ctx, bytes, name) {
     const fd = new FormData();
@@ -608,6 +627,7 @@ async function buildGraph(req, ctx, node) {
     shape(g, vals);
     // recipe settings and fixed values by input key (the settings' keys are the full input keys)
     for (const [k, v] of Object.entries(req.params)) { if (k === "random_seed" || k === "model" || v === "" || v == null || v === "auto") continue; partner.inputs[k] = v; }
+    if (AFTER_PARAMS[node]) AFTER_PARAMS[node](partner.inputs, vals);
     const pid = String(++n);
     graph[pid] = partner;
     graph[String(++n)] = { class_type: "SaveImage", inputs: { images: [pid, 0], filename_prefix: "scumble" } };
