@@ -157,6 +157,18 @@ the hints) is therefore dropped until the Manager PR lands; not seen in a runnin
 The node's `/inpaint_canvas/upload` and `/cleanup` routes
 still take no authentication (`/command` answers loopback only); nothing decided.
 
+### The object tool's hover shapes are canvases of the whole document (found 2026-11-07, measured, U0)
+
+**Measured** (`docs/PLAN_HELPERS_PROCESS.md` §1.4, `hovermem` in `docs/measurements/u0_2026-11-07/`, four runs on
+15000 x 8438): `objectShape(id)` (`renderer/editor/inpaint_canvas.js` near 12875) draws a canvas of the document's size
+for every hovered object and keeps 13 (`objectShapeCache`): a hover over a new object blocks the window 0.16-0.33 s, a
+click on an object 1.3-2 s, and 14 hovered objects take the GPU process from 0.41 to 5.4-6.4 GB (up to 14 GB for a few
+seconds after the shapes are dropped, 1.5 GB 20 s later). `findObjects`' nearest scale of the ≤ 2048 px label map to
+the document (`host.js` near 6528) blocks the window 0.24-0.53 s and holds a 253 MB `Uint16Array`. At 6000 x 3375 the
+same costs 46-53 ms per hover and 0.2 s per click. **Planned:** U2 item 2 of `docs/PLAN_HELPERS_PROCESS.md` (the ids and
+the shapes at the map's size, drawn scaled with smoothing off: the same pixels). The ComfyUI helpers' map
+(`applySegmentsFile`) feeds the same `objectShape`; the node's editor too.
+
 ### The main process grew to 29 GB while building the trailer's assets (seen 2026-10-07; the cutout part fixed for 0.1.43, B5)
 
 **Seen:** the trailer's recording instance (a dev instance of main at e7866f8, `--no-comfy`, profile
@@ -188,6 +200,11 @@ twice): main 0.12 GB before, **0.43 GB after the first** (10.2 s, the load inclu
 on "gpu" 13.1 s (a load each time) and back to 0.43 GB. **Still open:** the rest of the 29 GB (a cold SAM2
 `select_point` gave 6.1 GB on DirectML; SAM2 stays on the GPU, its sessions were not measured here) and the other
 suspects above.
+**SAM2 measured (U0, 2026-11-07, `docs/PLAN_HELPERS_PROCESS.md` §1.3, `docs/measurements/u0_2026-11-07/`):** SAM2 base+
+on DirectML puts its allocations into main's private bytes: 3.5 GB after the first call (3.0 GB of GPU memory), 6.2 GB
+after an object map (5.6 GB), the same after every later map, and Free VRAM gives all of it back (0.33 GB). Depth on
+DirectML 4.1 GB, back at Free VRAM. So the 6.1 GB is SAM2's session, held until Free VRAM, not a leak; U1 moves it into a
+utility process that the idle unload ends.
 
 ### A shown reference layer can take over an unrelated FLUX 3 edit (seen once 2026-10-05, run live)
 

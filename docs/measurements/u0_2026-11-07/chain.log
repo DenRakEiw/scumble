@@ -1,0 +1,1099 @@
+[13:52:07] U0 chain: runs 1,2,3, batches gpu,cpu,editor,probe, port 9588, inspect 9598, models F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\models
+[13:52:07] lock: rc 0 lock: taken after 0 s
+[13:52:16] == gpu r1: main pid 48628, {"pid": 48628, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[13:52:18]    prep: {"W": 2000, "H": 1125, "loadMs": 597, "inputMs": 38.3, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[13:52:21]    mem start: main 87 MB private, rss 132; gpu main None, card 8774 MiB
+[13:52:22]    idle#1: wall 1506.1 ms, main block 0 ms, rtt max 3.1 ms
+[13:52:23]    ipc_tiny#1: wall 2.5 ms, main block 0 ms, rtt max 0.6 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:23]    ipc_tiny#2: wall 1.1 ms, main block 0 ms, rtt max 0.8 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:24]    ipc_tiny#3: wall 0.7 ms, main block 0 ms, rtt max 0.5 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:24]    ipc_tiny#4: wall 0.7 ms, main block 0 ms, rtt max 0.6 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:24]    ipc_tiny#5: wall 0.6 ms, main block 0 ms, rtt max 0.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:25]    ipc_4mb#1: wall 9.9 ms, main block 0 ms, rtt max 7.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:25]    ipc_4mb#2: wall 11.1 ms, main block 0 ms, rtt max 7.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:26]    ipc_4mb#3: wall 9.4 ms, main block 0 ms, rtt max 6.8 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:26]    ipc_4mb#4: wall 9.9 ms, main block 0 ms, rtt max 7.1 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:26]    ipc_4mb#5: wall 10 ms, main block 0 ms, rtt max 7.1 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:52:29]    sam2_base_plus.point_cold#1: wall 1782.7 ms, main block 1212.4 ms, rtt max 1197.2 ms
+[13:52:31]    mem sam2_base_plus after the cold point: main 3499 MB private, rss 515; gpu main {'dedicatedMB': 3008, 'sharedMB': 73}, card 11822 MiB
+[13:52:31]    sam2_base_plus.point_warm#1: wall 9.9 ms, main block 0 ms, rtt max 1 ms
+[13:52:32]    sam2_base_plus.point_warm#2: wall 8.4 ms, main block 0 ms, rtt max 0.9 ms
+[13:52:32]    sam2_base_plus.point_warm#3: wall 8.7 ms, main block 0 ms, rtt max 0.4 ms
+[13:52:33]    sam2_base_plus.point_warm#4: wall 13.5 ms, main block 0 ms, rtt max 0.6 ms
+[13:52:33]    sam2_base_plus.point_warm#5: wall 11.3 ms, main block 0 ms, rtt max 0.6 ms
+[13:52:35]    sam2_base_plus.objects_cached#1: wall 2065 ms, main block 224.6 ms, rtt max 204.4 ms
+[13:52:38]    sam2_base_plus.objects_cached#2: wall 1944.9 ms, main block 211 ms, rtt max 206.7 ms
+[13:52:40]    sam2_base_plus.objects_new#1: wall 1950 ms, main block 207.6 ms, rtt max 197.4 ms
+[13:52:40]    sam2_base_plus.point_after_objects#1: wall 9.5 ms, main block 0 ms, rtt max 0.6 ms
+[13:52:41]    sam2_base_plus.point_after_objects#2: wall 9.4 ms, main block 0 ms, rtt max 0.4 ms
+[13:52:41]    sam2_base_plus.point_after_objects#3: wall 8 ms, main block 0 ms, rtt max 0.4 ms
+[13:52:42]    sam2_base_plus.objects_perbatch16#1: wall 120.6 ms, main block 120.7 ms, rtt max 105.4 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[13:52:42]    sam2_base_plus.objects_perbatch32#1: wall 25.3 ms, main block 25.3 ms, rtt max 10.1 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[13:52:43]    sam2_base_plus.objects_perbatch128#1: wall 66.4 ms, main block 50.8 ms, rtt max 35.8 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[13:52:43]    sam2_base_plus.objects_perbatch256#1: wall 104.9 ms, main block 104.9 ms, rtt max 74.1 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[13:52:44]    sam2_base_plus.objects_perside16#1: wall 543.9 ms, main block 193.4 ms, rtt max 188.1 ms
+[13:52:47]    mem sam2_base_plus after objects: main 8592 MB private, rss 623; gpu main {'dedicatedMB': 8007, 'sharedMB': 137}, card 16815 MiB
+[13:52:47]    sam2_base_plus.free#1: wall 371.4 ms, main block 371.4 ms, rtt max 356.2 ms
+[13:52:50]    mem sam2_base_plus after Free VRAM: main 328 MB private, rss 318; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 8802 MiB
+[13:52:53]    sam2_base_plus.objects_after_free#1: wall 3107.9 ms, main block 1169.5 ms, rtt max 1154 ms
+[13:52:56]    mem sam2_base_plus after objects after Free VRAM: main 6177 MB private, rss 586; gpu main {'dedicatedMB': 5617, 'sharedMB': 136}, card 14395 MiB
+[13:52:56]    sam2_base_plus.free2#1: wall 362.5 ms, main block 362.4 ms, rtt max 347 ms
+[13:52:59]    mem sam2_base_plus after the second Free VRAM: main 322 MB private, rss 323; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 8779 MiB
+[13:53:01]    sam2_tiny.point_cold#1: wall 1503.5 ms, main block 906.3 ms, rtt max 891.1 ms
+[13:53:03]    mem sam2_tiny after the cold point: main 2117 MB private, rss 544; gpu main {'dedicatedMB': 1656, 'sharedMB': 73}, card 10435 MiB
+[13:53:03]    sam2_tiny.point_warm#1: wall 7.8 ms, main block 0 ms, rtt max 0.4 ms
+[13:53:04]    sam2_tiny.point_warm#2: wall 8.8 ms, main block 0 ms, rtt max 0.6 ms
+[13:53:04]    sam2_tiny.point_warm#3: wall 9.2 ms, main block 0 ms, rtt max 0.4 ms
+[13:53:04]    sam2_tiny.point_warm#4: wall 11.2 ms, main block 0 ms, rtt max 0.4 ms
+[13:53:05]    sam2_tiny.point_warm#5: wall 9.7 ms, main block 0 ms, rtt max 1.2 ms
+[13:53:07]    sam2_tiny.objects_cached#1: wall 1876.1 ms, main block 214 ms, rtt max 201.9 ms
+[13:53:09]    sam2_tiny.objects_new#1: wall 1880.3 ms, main block 188.7 ms, rtt max 190.5 ms
+[13:53:10]    sam2_tiny.point_after_objects#1: wall 7.7 ms, main block 0 ms, rtt max 0.4 ms
+[13:53:10]    sam2_tiny.point_after_objects#2: wall 7.2 ms, main block 0 ms, rtt max 0.3 ms
+[13:53:11]    sam2_tiny.point_after_objects#3: wall 7.5 ms, main block 0 ms, rtt max 0.4 ms
+[13:53:13]    mem sam2_tiny after objects: main 4838 MB private, rss 622; gpu main {'dedicatedMB': 4293, 'sharedMB': 136}, card 13064 MiB
+[13:53:14]    sam2_tiny.free#1: wall 272.5 ms, main block 272.5 ms, rtt max 257.2 ms
+[13:53:16]    mem sam2_tiny after Free VRAM: main 322 MB private, rss 316; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 8775 MiB
+[13:53:18]    sam2_small.point_cold#1: wall 1447.4 ms, main block 877.8 ms, rtt max 862.7 ms
+[13:53:20]    mem sam2_small after the cold point: main 2200 MB private, rss 528; gpu main {'dedicatedMB': 1710, 'sharedMB': 73}, card 10481 MiB
+[13:53:20]    sam2_small.point_warm#1: wall 8.1 ms, main block 0 ms, rtt max 0.4 ms
+[13:53:21]    sam2_small.point_warm#2: wall 8.5 ms, main block 0 ms, rtt max 0.8 ms
+[13:53:21]    sam2_small.point_warm#3: wall 8.2 ms, main block 0 ms, rtt max 0.4 ms
+[13:53:22]    sam2_small.point_warm#4: wall 13.9 ms, main block 0 ms, rtt max 1.1 ms
+[13:53:22]    sam2_small.point_warm#5: wall 8.6 ms, main block 0 ms, rtt max 1.4 ms
+[13:53:24]    sam2_small.objects_cached#1: wall 1946.9 ms, main block 240.3 ms, rtt max 225.3 ms
+[13:53:27]    sam2_small.objects_new#1: wall 1883.6 ms, main block 211.9 ms, rtt max 209 ms
+[13:53:27]    sam2_small.point_after_objects#1: wall 8.5 ms, main block 0 ms, rtt max 0.7 ms
+[13:53:28]    sam2_small.point_after_objects#2: wall 8.7 ms, main block 0 ms, rtt max 0.6 ms
+[13:53:28]    sam2_small.point_after_objects#3: wall 8.1 ms, main block 0 ms, rtt max 0.4 ms
+[13:53:31]    mem sam2_small after objects: main 4924 MB private, rss 611; gpu main {'dedicatedMB': 4347, 'sharedMB': 136}, card 13272 MiB
+[13:53:31]    sam2_small.free#1: wall 323.3 ms, main block 322.9 ms, rtt max 307.9 ms
+[13:53:34]    mem sam2_small after Free VRAM: main 335 MB private, rss 322; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 8846 MiB
+[13:53:39]    birefnet_lite.cutout#1: wall 5596.3 ms, main block 2901.5 ms, rtt max 2894.1 ms
+[13:53:45]    birefnet_lite.cutout#2: wall 5525.9 ms, main block 2907.6 ms, rtt max 2902.1 ms
+[13:53:51]    birefnet_lite.cutout#3: wall 5334.2 ms, main block 2756.7 ms, rtt max 2739.7 ms
+[13:53:54]    mem birefnet_lite after three cutouts: main 395 MB private, rss 435; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 8522 MiB
+[13:53:54]    birefnet_lite.free#1: wall 0.4 ms, main block 0 ms, rtt max 0.5 ms
+[13:53:57]    mem birefnet_lite after Free VRAM: main 196 MB private, rss 267; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 8523 MiB
+[13:53:58]    rmbg14.cutout#1: wall 1162.5 ms, main block 615.5 ms, rtt max 604.3 ms
+[13:53:59]    rmbg14.cutout#2: wall 989.6 ms, main block 500.1 ms, rtt max 485.1 ms
+[13:54:01]    rmbg14.cutout#3: wall 1017.8 ms, main block 524.2 ms, rtt max 509 ms
+[13:54:03]    mem rmbg14 after three cutouts: main 479 MB private, rss 346; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 8653 MiB
+[13:54:03]    rmbg14.free#1: wall 0.2 ms, main block 0 ms, rtt max 0.3 ms
+[13:54:06]    mem rmbg14 after Free VRAM: main 260 MB private, rss 330; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 8654 MiB
+[13:54:07]    da2_small.depth#1: wall 1017.9 ms, main block 516.9 ms, rtt max 501.7 ms
+[13:54:08]    da2_small.depth#2: wall 239.1 ms, main block 235.5 ms, rtt max 224.1 ms
+[13:54:08]    da2_small.depth#3: wall 240.3 ms, main block 236.7 ms, rtt max 225.2 ms
+[13:54:09]    da2_small.depth#4: wall 236.8 ms, main block 233.2 ms, rtt max 221.7 ms
+[13:54:10]    da2_small.depth_large#1: wall 802.6 ms, main block 793.5 ms, rtt max 787.8 ms
+[13:54:11]    da2_small.depth_large#2: wall 786.5 ms, main block 775.9 ms, rtt max 772.2 ms
+[13:54:12]    da2_small.depth_large#3: wall 724.7 ms, main block 715.9 ms, rtt max 710.1 ms
+[13:54:15]    mem da2_small after depth: main 4107 MB private, rss 463; gpu main {'dedicatedMB': 3702, 'sharedMB': 47}, card 12366 MiB
+[13:54:15]    da2_small.free#1: wall 175.5 ms, main block 175.4 ms, rtt max 160.1 ms
+[13:54:18]    mem da2_small after Free VRAM: main 538 MB private, rss 364; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 8663 MiB
+[13:54:22] lock: lock: released
+[13:54:22] lock: rc 0 lock: taken after 0 s
+[13:54:30] == cpu r1: main pid 19428, {"pid": 19428, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[13:54:33]    prep: {"W": 2000, "H": 1125, "loadMs": 585, "inputMs": 39.9, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[13:54:35]    mem start: main 84 MB private, rss 129; gpu main None, card 8839 MiB
+[13:54:37]    idle#1: wall 1505 ms, main block 0 ms, rtt max 2.6 ms
+[13:54:37]    ipc_tiny#1: wall 2.4 ms, main block 0 ms, rtt max 0.5 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:37]    ipc_tiny#2: wall 0.6 ms, main block 0 ms, rtt max 0.5 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:38]    ipc_tiny#3: wall 0.7 ms, main block 0 ms, rtt max 0.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:38]    ipc_tiny#4: wall 0.5 ms, main block 0 ms, rtt max 0.8 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:39]    ipc_tiny#5: wall 0.7 ms, main block 0 ms, rtt max 0.6 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:39]    ipc_4mb#1: wall 9.1 ms, main block 0 ms, rtt max 6.7 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:39]    ipc_4mb#2: wall 10.1 ms, main block 0 ms, rtt max 7.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:40]    ipc_4mb#3: wall 9.3 ms, main block 0 ms, rtt max 6.7 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:40]    ipc_4mb#4: wall 9.3 ms, main block 0 ms, rtt max 6.9 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:41]    ipc_4mb#5: wall 10.3 ms, main block 0 ms, rtt max 7.7 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:54:44]    sam2_base_plus.point_cold#1: wall 2774.3 ms, main block 2157.8 ms, rtt max 2141.8 ms
+[13:54:46]    mem sam2_base_plus after the cold point: main 445 MB private, rss 499; gpu main None, card 8777 MiB
+[13:54:46]    sam2_base_plus.point_warm#1: wall 36.7 ms, main block 36.5 ms, rtt max 21.3 ms
+[13:54:47]    sam2_base_plus.point_warm#2: wall 50.3 ms, main block 49.5 ms, rtt max 35 ms
+[13:54:47]    sam2_base_plus.point_warm#3: wall 29.9 ms, main block 29.5 ms, rtt max 14.8 ms
+[13:56:28] U0 chain: runs 1,2,3, batches gpu,cpu,editor,probe,batchsize, port 9588, inspect 9598, models F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\models
+[13:56:28] lock: rc 0 lock: taken after 0 s
+[13:56:37] == cpu r1: main pid 56964, {"pid": 56964, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[13:56:39]    prep: {"W": 2000, "H": 1125, "loadMs": 503, "inputMs": 38.8, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[13:56:42]    mem start: main 84 MB private, rss 126; gpu main None, card 9075 MiB
+[13:56:43]    idle#1: wall 1504.5 ms, main block 0 ms, rtt max 0.5 ms
+[13:56:44]    ipc_tiny#1: wall 2 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:44]    ipc_tiny#2: wall 0.5 ms, main block 0 ms, rtt max 0.6 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:44]    ipc_tiny#3: wall 0.5 ms, main block 0 ms, rtt max 0.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:45]    ipc_tiny#4: wall 0.5 ms, main block 0 ms, rtt max 0.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:45]    ipc_tiny#5: wall 0.5 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:45]    ipc_4mb#1: wall 9.2 ms, main block 0 ms, rtt max 6.9 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:46]    ipc_4mb#2: wall 8.7 ms, main block 0 ms, rtt max 6.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:46]    ipc_4mb#3: wall 10.2 ms, main block 0 ms, rtt max 3.1 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:46]    ipc_4mb#4: wall 9.2 ms, main block 0 ms, rtt max 3.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:47]    ipc_4mb#5: wall 9.2 ms, main block 0 ms, rtt max 3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[13:56:50]    sam2_base_plus.point_cold#1: wall 2941 ms, main block 2306.7 ms, rtt max 2303 ms
+[13:56:53]    mem sam2_base_plus after the cold point: main 446 MB private, rss 497; gpu main None, card 8962 MiB
+[13:56:53]    sam2_base_plus.point_warm#1: wall 35.1 ms, main block 49.5 ms, rtt max 30.7 ms
+[13:56:53]    sam2_base_plus.point_warm#2: wall 42.6 ms, main block 48.5 ms, rtt max 39.2 ms
+[13:56:54]    sam2_base_plus.point_warm#3: wall 30.6 ms, main block 36.4 ms, rtt max 26.7 ms
+[13:56:54]    sam2_base_plus.point_warm#4: wall 30.6 ms, main block 36.6 ms, rtt max 27.2 ms
+[13:56:54]    sam2_base_plus.point_warm#5: wall 31.5 ms, main block 36.5 ms, rtt max 28.2 ms
+[13:57:34]    sam2_base_plus.objects_cached#1: wall 39097.1 ms, main block 2575.6 ms, rtt max 2585 ms
+[13:58:13]    sam2_base_plus.objects_cached#2: wall 38902.5 ms, main block 2532.3 ms, rtt max 2529.5 ms
+[13:58:55]    sam2_base_plus.objects_new#1: wall 41717.2 ms, main block 2640.4 ms, rtt max 2625.4 ms
+[13:58:56]    sam2_base_plus.point_after_objects#1: wall 42.2 ms, main block 48.3 ms, rtt max 37.3 ms
+[13:58:56]    sam2_base_plus.point_after_objects#2: wall 36 ms, main block 41.2 ms, rtt max 33.1 ms
+[13:58:56]    sam2_base_plus.point_after_objects#3: wall 30.8 ms, main block 36.5 ms, rtt max 26.4 ms
+[13:58:58]    sam2_base_plus.objects_perbatch256#1: wall 763.7 ms, main block 769.3 ms, rtt max 754 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[13:59:08]    sam2_base_plus.objects_perside16#1: wall 10017.3 ms, main block 2642.2 ms, rtt max 2644.9 ms
+[13:59:11]    mem sam2_base_plus after objects: main 463 MB private, rss 515; gpu main None, card 9260 MiB
+[13:59:11]    sam2_base_plus.free#1: wall 23.5 ms, main block 23.8 ms, rtt max 22.1 ms
+[13:59:13]    mem sam2_base_plus after Free VRAM: main 102 MB private, rss 154; gpu main None, card 9872 MiB
+[13:59:46]    sam2_base_plus.objects_after_free#1: wall 32381.5 ms, main block 2513.7 ms, rtt max 2509.5 ms
+[13:59:48]    mem sam2_base_plus after objects after Free VRAM: main 449 MB private, rss 501; gpu main None, card 9796 MiB
+[13:59:49]    sam2_base_plus.free2#1: wall 24.1 ms, main block 38.4 ms, rtt max 20.2 ms
+[13:59:51]    mem sam2_base_plus after the second Free VRAM: main 103 MB private, rss 153; gpu main None, card 9759 MiB
+[13:59:53]    sam2_tiny.point_cold#1: wall 1582.2 ms, main block 1225 ms, rtt max 1221.8 ms
+[13:59:56]    mem sam2_tiny after the cold point: main 281 MB private, rss 334; gpu main None, card 9757 MiB
+[13:59:56]    sam2_tiny.point_warm#1: wall 30.1 ms, main block 44.2 ms, rtt max 26.8 ms
+[13:59:56]    sam2_tiny.point_warm#2: wall 46 ms, main block 52.2 ms, rtt max 41.6 ms
+[13:59:56]    sam2_tiny.point_warm#3: wall 60.1 ms, main block 66 ms, rtt max 58.7 ms
+[13:59:57]    sam2_tiny.point_warm#4: wall 32.8 ms, main block 39.3 ms, rtt max 29.4 ms
+[13:59:57]    sam2_tiny.point_warm#5: wall 33.5 ms, main block 39.7 ms, rtt max 30.5 ms
+[14:00:38]    sam2_tiny.objects_cached#1: wall 40199.7 ms, main block 2664.6 ms, rtt max 2668.2 ms
+[14:00:38]    sam2_tiny.point_after_objects#1: wall 40 ms, main block 45.1 ms, rtt max 35.5 ms
+[14:00:39]    sam2_tiny.point_after_objects#2: wall 32.1 ms, main block 37.8 ms, rtt max 28.7 ms
+[14:00:39]    sam2_tiny.point_after_objects#3: wall 58.7 ms, main block 65.2 ms, rtt max 54.2 ms
+[14:00:42]    mem sam2_tiny after objects: main 277 MB private, rss 330; gpu main None, card 9572 MiB
+[14:00:42]    sam2_tiny.free#1: wall 13.7 ms, main block 25.9 ms, rtt max 9.6 ms
+[14:00:44]    mem sam2_tiny after Free VRAM: main 108 MB private, rss 155; gpu main None, card 9436 MiB
+[14:00:46]    sam2_small.point_cold#1: wall 1661.5 ms, main block 1276.5 ms, rtt max 1273.4 ms
+[14:00:49]    mem sam2_small after the cold point: main 310 MB private, rss 363; gpu main None, card 9450 MiB
+[14:00:49]    sam2_small.point_warm#1: wall 30.6 ms, main block 43.6 ms, rtt max 28.5 ms
+[14:00:49]    sam2_small.point_warm#2: wall 29.3 ms, main block 35.8 ms, rtt max 26.9 ms
+[14:00:50]    sam2_small.point_warm#3: wall 37.9 ms, main block 43.3 ms, rtt max 34.5 ms
+[14:00:50]    sam2_small.point_warm#4: wall 36.5 ms, main block 41.8 ms, rtt max 34.8 ms
+[14:00:50]    sam2_small.point_warm#5: wall 31.9 ms, main block 37.2 ms, rtt max 29.3 ms
+[14:01:30]    sam2_small.objects_cached#1: wall 39396.1 ms, main block 2537.3 ms, rtt max 2540.3 ms
+[14:01:31]    sam2_small.point_after_objects#1: wall 32.2 ms, main block 37.6 ms, rtt max 29.2 ms
+[14:01:31]    sam2_small.point_after_objects#2: wall 53.5 ms, main block 59.6 ms, rtt max 52 ms
+[14:01:31]    sam2_small.point_after_objects#3: wall 34.6 ms, main block 40.5 ms, rtt max 31.3 ms
+[14:01:34]    mem sam2_small after objects: main 309 MB private, rss 362; gpu main None, card 9682 MiB
+[14:01:34]    sam2_small.free#1: wall 16.3 ms, main block 30.2 ms, rtt max 14.4 ms
+[14:01:37]    mem sam2_small after Free VRAM: main 100 MB private, rss 154; gpu main None, card 9687 MiB
+[14:01:45]    birefnet_lite.cutout#1: wall 8479.3 ms, main block 5876.4 ms, rtt max 5874 ms
+[14:01:50]    birefnet_lite.cutout#2: wall 4778.4 ms, main block 4785.1 ms, rtt max 4754.6 ms
+[14:01:56]    birefnet_lite.cutout#3: wall 4795.6 ms, main block 4799.7 ms, rtt max 4785.8 ms
+[14:01:58]    mem birefnet_lite after three cutouts: main 398 MB private, rss 450; gpu main None, card 9494 MiB
+[14:01:58]    birefnet_lite.free#1: wall 57.6 ms, main block 70.6 ms, rtt max 53.7 ms
+[14:02:01]    mem birefnet_lite after Free VRAM: main 105 MB private, rss 157; gpu main None, card 9409 MiB
+[14:02:02]    rmbg14.cutout#1: wall 1043.5 ms, main block 734.2 ms, rtt max 730.6 ms
+[14:02:03]    rmbg14.cutout#2: wall 595.6 ms, main block 601.1 ms, rtt max 585.5 ms
+[14:02:04]    rmbg14.cutout#3: wall 645.4 ms, main block 649.7 ms, rtt max 615.2 ms
+[14:02:07]    mem rmbg14 after three cutouts: main 280 MB private, rss 334; gpu main None, card 9229 MiB
+[14:02:07]    rmbg14.free#1: wall 11.1 ms, main block 25 ms, rtt max 7.8 ms
+[14:02:09]    mem rmbg14 after Free VRAM: main 102 MB private, rss 156; gpu main None, card 9176 MiB
+[14:02:27]    rmbg2.cutout#1: wall 18020 ms, main block 11807.7 ms, rtt max 11805.6 ms
+[14:02:36]    rmbg2.cutout#2: wall 8444.7 ms, main block 8449.4 ms, rtt max 8423.2 ms
+[14:02:45]    rmbg2.cutout#3: wall 8495.4 ms, main block 8485.3 ms, rtt max 8463.7 ms
+[14:02:48]    mem rmbg2 after three cutouts: main 1150 MB private, rss 1200; gpu main None, card 9490 MiB
+[14:02:48]    rmbg2.free#1: wall 72 ms, main block 86.3 ms, rtt max 68.1 ms
+[14:02:51]    mem rmbg2 after Free VRAM: main 105 MB private, rss 158; gpu main None, card 9451 MiB
+[14:02:52]    da2_small.depth#1: wall 1118.3 ms, main block 895.6 ms, rtt max 895.2 ms
+[14:02:53]    da2_small.depth#2: wall 838.4 ms, main block 840.8 ms, rtt max 827.4 ms
+[14:02:54]    da2_small.depth#3: wall 872.9 ms, main block 875.2 ms, rtt max 860.9 ms
+[14:02:55]    da2_small.depth#4: wall 799.9 ms, main block 802.6 ms, rtt max 787.8 ms
+[14:03:00]    da2_small.depth_large#1: wall 4045.8 ms, main block 4040.7 ms, rtt max 4022.2 ms
+[14:03:04]    da2_small.depth_large#2: wall 3849.8 ms, main block 3833.4 ms, rtt max 3827.3 ms
+[14:03:08]    da2_small.depth_large#3: wall 3861.2 ms, main block 3858.7 ms, rtt max 3836.9 ms
+[14:03:11]    mem da2_small after depth: main 214 MB private, rss 266; gpu main None, card 9438 MiB
+[14:03:11]    da2_small.free#1: wall 9.6 ms, main block 22.4 ms, rtt max 6.1 ms
+[14:03:13]    mem da2_small after Free VRAM: main 104 MB private, rss 158; gpu main None, card 9158 MiB
+[14:03:17] lock: lock: released
+[14:03:17] gap: the lock is free for 90 s
+[14:04:47] lock: rc 0 lock: taken after 0 s
+[14:04:48] waiting for: 19900 F:\canvas\.claude\worktrees\agent-af1dacfc424fbc8c7\node_modules\electron\dist\electron.exe . --remote-debugging-port=9589 --user-data-dir=F:/canvas/.claude/wor; 50116 C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/layered_test.py
+[14:05:08] others gone after 21 s
+[14:05:17] == editor r1: main pid 49560, {"pid": 49560, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:05:19]    mem start: main 85 MB private, rss 129; gpu main None, card 9018 MiB
+[14:05:21]    prep 6000x3375: {"W": 6000, "H": 3375, "loadMs": 653, "inputMs": 61.9, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:05:24]    doc6000.ensureObjects#1: wall 3167.4 ms, main block 1157.7 ms, rtt max 1142.9 ms
+[14:05:26]    doc6000.ensureObjects_cached#1: wall 1558.5 ms, main block 193.5 ms, rtt max 242.6 ms
+[14:05:27]    objects 6000x3375: {"count": 96, "big": 2, "small": 89, "bigAt": [41, 1936], "smallAt": [4594, 1506], "empty": [0, 0]}
+[14:05:27]    doc6000.hover_shape_big#1: wall 66.3 ms, main block 0 ms, rtt max 2.2 ms
+[14:05:27]    doc6000.hover_shape_small#1: wall 45.1 ms, main block 0 ms, rtt max 45.6 ms
+[14:05:28]    doc6000.click_object#1: wall 214.8 ms, main block 0 ms, rtt max 217.3 ms
+[14:05:28]    doc6000.select_point#1: wall 315.7 ms, main block 231 ms, rtt max 218.6 ms
+[14:05:29]    doc6000.select_point#2: wall 62.7 ms, main block 35 ms, rtt max 20.7 ms
+[14:05:29]    doc6000.select_point#3: wall 119.1 ms, main block 30.4 ms, rtt max 15.8 ms
+[14:05:32]    mem doc6000 after the object tool: main 6210 MB private, rss 581; gpu main {'dedicatedMB': 5646, 'sharedMB': 136}, card 15283 MiB
+[14:05:34]    prep 15000x8438: {"W": 15000, "H": 8438, "loadMs": 567, "inputMs": 17.1, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:05:36]    doc15000.ensureObjects#1: wall 1855.5 ms, main block 190.6 ms, rtt max 460.5 ms
+[14:05:39]    doc15000.ensureObjects_cached#1: wall 2101.7 ms, main block 196.2 ms, rtt max 733.7 ms
+[14:05:39]    objects 15000x8438: {"count": 97, "big": 3, "small": 89, "bigAt": [95, 4922], "smallAt": [11484, 3773], "empty": [0, 0]}
+[14:05:39]    doc15000.hover_shape_big#1: wall 355.2 ms, main block 0 ms, rtt max 355.4 ms
+[14:05:40]    doc15000.hover_shape_small#1: wall 307.6 ms, main block 0 ms, rtt max 308.1 ms
+[14:05:42]    doc15000.click_object#1: wall 1258.4 ms, main block 0 ms, rtt max 1260.5 ms
+[14:05:42]    doc15000.select_point#1: wall 133.6 ms, main block 28.1 ms, rtt max 15.6 ms
+[14:05:43]    doc15000.select_point#2: wall 72 ms, main block 28.4 ms, rtt max 14.6 ms
+[14:05:43]    doc15000.select_point#3: wall 198.8 ms, main block 47.9 ms, rtt max 18 ms
+[14:05:46]    mem doc15000 after the object tool: main 6229 MB private, rss 600; gpu main {'dedicatedMB': 5646, 'sharedMB': 137}, card 16541 MiB
+[14:05:50] lock: lock: released
+[14:05:50] gap: the lock is free for 90 s
+[14:07:20] lock: rc 0 lock: taken after 0 s
+[14:07:29] == probe r1: main pid 41008, {"pid": 41008, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:07:31]    prep: {"W": 2000, "H": 1125, "loadMs": 549, "inputMs": 40.2, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:07:34]    mem start: main 84 MB private, rss 129; gpu main None, card 3467 MiB
+[14:07:34]    probe gpu: forked {"pid": 33708, "spawnMs": 12.2}
+[14:07:34]    probe_gpu.init#1: rtt 51.8 ms, in process 9.6 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:07:36]    mem probe gpu started: main 84 MB private, rss 130; gpu main None, card 3468 MiB
+[14:07:38]    probe_gpu.point_cold#1: rtt 1628.8 ms, in process 1620 ms, main block 0 ms, ipc rtt max 5.6 ms
+[14:07:38]    probe_gpu.point_warm#1: rtt 8.1 ms, in process 7.2 ms, main block 0 ms, ipc rtt max 0.7 ms
+[14:07:38]    probe_gpu.point_warm#2: rtt 6.9 ms, in process 6.2 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:07:38]    probe_gpu.point_warm#3: rtt 7.1 ms, in process 6.5 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:07:38]    probe_gpu.point_warm#4: rtt 7.5 ms, in process 6.9 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:07:38]    probe_gpu.point_warm#5: rtt 8.2 ms, in process 7.4 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:07:40]    probe_gpu.objects_cached#1: rtt 1935.1 ms, in process 1915.7 ms, main block 0 ms, ipc rtt max 1.7 ms
+[14:07:42]    probe_gpu.objects_cached#2: rtt 1822.9 ms, in process 1804.6 ms, main block 0 ms, ipc rtt max 1.5 ms
+[14:07:42]    probe_gpu.point_after_objects#1: rtt 6.6 ms, in process 5.9 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:07:42]    probe_gpu.point_after_objects#2: rtt 6.4 ms, in process 5.9 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:07:42]    probe_gpu.point_after_objects#3: rtt 6.8 ms, in process 6.3 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:07:45]    mem probe gpu after SAM2: main 84 MB private, rss 130; gpu main None, card 9211 MiB
+[14:07:48]    probe_gpu.cutout_lite#1: rtt 3699.1 ms, in process 3690.2 ms, main block 0 ms, ipc rtt max 0.8 ms
+[14:07:53]    probe_gpu.cutout_lite#2: rtt 3990 ms, in process 3981 ms, main block 0 ms, ipc rtt max 0.7 ms
+[14:07:53]    probe_gpu.depth#1: rtt 620.6 ms, in process 610.5 ms, main block 0 ms, ipc rtt max 3.8 ms
+[14:07:54]    probe_gpu.depth#2: rtt 242.9 ms, in process 234.4 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:07:54]    probe_gpu.depth#3: rtt 238.5 ms, in process 230.5 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:07:56]    mem probe gpu after cutout and depth: main 85 MB private, rss 132; gpu main None, card 9491 MiB
+[14:07:57]    probe_gpu.free#1: rtt 537.7 ms, in process 537.4 ms, main block 0 ms, ipc rtt max 0.9 ms
+[14:07:59]    mem probe gpu after free: main 85 MB private, rss 132; gpu main None, card 3117 MiB
+[14:07:59]    probe_gpu.echo_4mb#1: rtt 16.8 ms, in process 0 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:07:59]    probe_gpu.echo_4mb#2: rtt 17.3 ms, in process 0 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:07:59]    probe_gpu.echo_4mb#3: rtt 18 ms, in process 0 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:08:00]    probe_gpu.echo_4mb#4: rtt 18.1 ms, in process 0 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:08:00]    probe_gpu.echo_4mb#5: rtt 17.5 ms, in process 0 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:08:00]    probe_gpu.echo_8mb#1: rtt 35.8 ms, in process 0 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:08:00]    probe_gpu.echo_8mb#2: rtt 34.8 ms, in process 0 ms, main block 0 ms, ipc rtt max 0.6 ms
+[14:08:00]    probe_gpu.echo_8mb#3: rtt 32.9 ms, in process 0 ms, main block 21 ms, ipc rtt max 4.4 ms
+[14:08:00]    probe_gpu.echo_8mb#4: rtt 33.6 ms, in process 0 ms, main block 22.3 ms, ipc rtt max 5 ms
+[14:08:00]    probe_gpu.echo_8mb#5: rtt 33.7 ms, in process 0 ms, main block 0 ms, ipc rtt max 5.1 ms
+[14:08:00]    probe_gpu.echo_16mb#1: rtt 71.1 ms, in process 0 ms, main block 28.2 ms, ipc rtt max 12.8 ms
+[14:08:01]    probe_gpu.echo_16mb#2: rtt 65 ms, in process 0 ms, main block 24.3 ms, ipc rtt max 8.6 ms
+[14:08:01]    probe_gpu.echo_16mb#3: rtt 73 ms, in process 0 ms, main block 30.4 ms, ipc rtt max 15.1 ms
+[14:08:01]    probe_gpu.echo_16mb#4: rtt 57.2 ms, in process 0 ms, main block 22.4 ms, ipc rtt max 7.2 ms
+[14:08:01]    probe_gpu.echo_16mb#5: rtt 56.5 ms, in process 0 ms, main block 21.6 ms, ipc rtt max 6.7 ms
+[14:08:01]    probe_gpu.mem#1: rtt 0.4 ms, in process 0.2 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:08:01]    probe_gpu.kill: {"exited": 0, "exitMs": 8.5}
+[14:08:04]    mem probe gpu after kill: main 84 MB private, rss 131; gpu main None, card 3293 MiB
+[14:08:04]    probe cpu: forked {"pid": 30348, "spawnMs": 12.1}
+[14:08:05]    probe_cpu.init#1: rtt 47.8 ms, in process 9.4 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:08:07]    mem probe cpu started: main 84 MB private, rss 131; gpu main None, card 3431 MiB
+[14:08:10]    probe_cpu.point_cold#1: rtt 2661.5 ms, in process 2653 ms, main block 0 ms, ipc rtt max 3.3 ms
+[14:08:10]    probe_cpu.point_warm#1: rtt 34.3 ms, in process 33.5 ms, main block 0 ms, ipc rtt max 0.6 ms
+[14:08:10]    probe_cpu.point_warm#2: rtt 28.2 ms, in process 27.4 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:08:10]    probe_cpu.point_warm#3: rtt 28.3 ms, in process 27.6 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:08:10]    probe_cpu.point_warm#4: rtt 28.7 ms, in process 28 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:08:10]    probe_cpu.point_warm#5: rtt 29 ms, in process 28.4 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:08:49]    probe_cpu.objects_cached#1: rtt 38448 ms, in process 38429.1 ms, main block 44.5 ms, ipc rtt max 29.2 ms
+[14:09:27]    probe_cpu.objects_cached#2: rtt 38368.6 ms, in process 38345 ms, main block 54.4 ms, ipc rtt max 26 ms
+[14:09:27]    probe_cpu.point_after_objects#1: rtt 30.3 ms, in process 29.4 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:09:27]    probe_cpu.point_after_objects#2: rtt 28.5 ms, in process 27.8 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:09:27]    probe_cpu.point_after_objects#3: rtt 29.3 ms, in process 28.6 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:09:30]    mem probe cpu after SAM2: main 84 MB private, rss 130; gpu main None, card 3200 MiB
+[14:09:38]    probe_cpu.cutout_lite#1: rtt 8320 ms, in process 8312.1 ms, main block 0 ms, ipc rtt max 3.8 ms
+[14:09:43]    probe_cpu.cutout_lite#2: rtt 4655.4 ms, in process 4646.1 ms, main block 0 ms, ipc rtt max 4.4 ms
+[14:09:44]    probe_cpu.depth#1: rtt 1030.2 ms, in process 1021.7 ms, main block 0 ms, ipc rtt max 3.9 ms
+[14:09:45]    probe_cpu.depth#2: rtt 753.5 ms, in process 743.9 ms, main block 0 ms, ipc rtt max 1.7 ms
+[14:09:46]    probe_cpu.depth#3: rtt 731.3 ms, in process 721.9 ms, main block 0 ms, ipc rtt max 1.1 ms
+[14:09:48]    mem probe cpu after cutout and depth: main 83 MB private, rss 129; gpu main None, card 3387 MiB
+[14:09:48]    probe_cpu.free#1: rtt 85.4 ms, in process 85.1 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:09:50]    mem probe cpu after free: main 83 MB private, rss 129; gpu main None, card 3310 MiB
+[14:09:50]    probe_cpu.kill: {"exited": 0, "exitMs": 3}
+[14:09:54]    mem probe cpu after kill: main 83 MB private, rss 129; gpu main None, card 3332 MiB
+[14:09:57] lock: lock: released
+[14:09:57] gap: the lock is free for 90 s
+[14:11:27] lock: rc 0 lock: taken after 0 s
+[14:11:28] waiting for: 22156 F:\canvas\.claude\worktrees\agent-af1dacfc424fbc8c7\node_modules\electron\dist\electron.exe . --remote-debugging-port=9581 --user-data-dir=F:/canvas/.claude/wor; 51988 F:\canvas\.claude\worktrees\agent-a29190074b5e517b7\node_modules\electron\dist\electron.exe . --remote-debugging-port=9585 --user-data-dir=F:/canvas/.claude/wor
+[14:14:52] others gone after 205 s
+[14:15:01] == batchsize r1: main pid 45348, {"pid": 45348, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:15:03]    prep: {"W": 2000, "H": 1125, "loadMs": 496, "inputMs": 39, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:15:05]    mem start: main 85 MB private, rss 129; gpu main None, card 3501 MiB
+[14:15:05]    batch16.init#1: rtt 47.9 ms, in process 9.1 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:15:07]    batch16.point_cold#1: rtt 1448.4 ms, in process 1439.9 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:15:07]    batch16.objects_b16#1: rtt 22 ms, in process 12.6 ms, main block 0 ms, ipc rtt max 0.5 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:15:07]    batch16.objects_b16#2: rtt 16.9 ms, in process 7.8 ms, main block 0 ms, ipc rtt max 0.4 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:15:09]    batch16.objects_b64_after#1: rtt 1791.2 ms, in process 1771.8 ms, main block 0 ms, ipc rtt max 0.6 ms
+[14:15:09]    batch16.point_after#1: rtt 14.5 ms, in process 6.3 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:15:11]    mem batch 16 after: main 85 MB private, rss 130; gpu main None, card 9154 MiB
+[14:15:13]    batch32.init#1: rtt 44.5 ms, in process 8.3 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:15:14]    batch32.point_cold#1: rtt 1496.9 ms, in process 1488.9 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:15:14]    batch32.objects_b32#1: rtt 33.1 ms, in process 23.6 ms, main block 0 ms, ipc rtt max 0.6 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:15:15]    batch32.objects_b32#2: rtt 17.5 ms, in process 8.5 ms, main block 0 ms, ipc rtt max 0.4 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:15:16]    batch32.objects_b64_after#1: rtt 1767.6 ms, in process 1748.5 ms, main block 0 ms, ipc rtt max 0.6 ms
+[14:15:16]    batch32.point_after#1: rtt 15.1 ms, in process 5.8 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:15:19]    mem batch 32 after: main 85 MB private, rss 131; gpu main None, card 9160 MiB
+[14:15:20]    batch128.init#1: rtt 46.6 ms, in process 9.1 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:15:22]    batch128.point_cold#1: rtt 1443.3 ms, in process 1435.1 ms, main block 0 ms, ipc rtt max 0.6 ms
+[14:15:22]    batch128.objects_b128#1: rtt 56.1 ms, in process 46.7 ms, main block 0 ms, ipc rtt max 0.5 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:15:22]    batch128.objects_b128#2: rtt 20.5 ms, in process 12 ms, main block 0 ms, ipc rtt max 0.3 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:15:24]    batch128.objects_b64_after#1: rtt 1784.2 ms, in process 1765.9 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:15:24]    batch128.point_after#1: rtt 13.9 ms, in process 5.3 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:15:26]    mem batch 128 after: main 85 MB private, rss 131; gpu main None, card 9243 MiB
+[14:15:27]    batch256.init#1: rtt 43.5 ms, in process 8.4 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:15:29]    batch256.point_cold#1: rtt 1455.5 ms, in process 1447.6 ms, main block 0 ms, ipc rtt max 0.7 ms
+[14:15:29]    batch256.objects_b256#1: rtt 83.1 ms, in process 73.6 ms, main block 0 ms, ipc rtt max 0.5 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:15:29]    batch256.objects_b256#2: rtt 26.9 ms, in process 17.8 ms, main block 0 ms, ipc rtt max 0.4 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:15:31]    batch256.objects_b64_after#1: rtt 1761 ms, in process 1742.4 ms, main block 0 ms, ipc rtt max 1.5 ms
+[14:15:31]    batch256.point_after#1: rtt 14.6 ms, in process 5.9 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:15:33]    mem batch 256 after: main 86 MB private, rss 132; gpu main None, card 11299 MiB
+[14:15:35]    batch64.init#1: rtt 53.2 ms, in process 10.8 ms, main block 0 ms, ipc rtt max 0.6 ms
+[14:15:36]    batch64.point_cold#1: rtt 1467.5 ms, in process 1457.6 ms, main block 0 ms, ipc rtt max 0.6 ms
+[14:15:38]    batch64.objects_b64#1: rtt 1781.7 ms, in process 1763.1 ms, main block 0 ms, ipc rtt max 0.8 ms
+[14:15:40]    batch64.objects_b64#2: rtt 1775 ms, in process 1756.3 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:15:40]    batch64.point_after#1: rtt 14.5 ms, in process 5.6 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:15:43]    mem batch 64 after: main 86 MB private, rss 132; gpu main None, card 9154 MiB
+[14:15:47] lock: lock: released
+[14:15:47] gap: the lock is free for 90 s
+[14:20:17] lock: rc 0 lock: held by 'main loop gates merge5857 56692 2026-11-07T14:16:00', waiting
+lock: taken after 180 s
+[14:20:26] == gpu r2: main pid 56304, {"pid": 56304, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:20:28]    prep: {"W": 2000, "H": 1125, "loadMs": 539, "inputMs": 34.8, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:20:31]    mem start: main 84 MB private, rss 129; gpu main None, card 3453 MiB
+[14:20:32]    idle#1: wall 1511.1 ms, main block 0 ms, rtt max 0.5 ms
+[14:20:33]    ipc_tiny#1: wall 2.2 ms, main block 0 ms, rtt max 0.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:33]    ipc_tiny#2: wall 0.7 ms, main block 0 ms, rtt max 0.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:33]    ipc_tiny#3: wall 0.5 ms, main block 0 ms, rtt max 0.5 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:34]    ipc_tiny#4: wall 1.1 ms, main block 0 ms, rtt max 0.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:34]    ipc_tiny#5: wall 0.7 ms, main block 0 ms, rtt max 0.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:35]    ipc_4mb#1: wall 9.4 ms, main block 0 ms, rtt max 6.8 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:35]    ipc_4mb#2: wall 8.8 ms, main block 0 ms, rtt max 6.5 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:35]    ipc_4mb#3: wall 8.7 ms, main block 0 ms, rtt max 6.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:36]    ipc_4mb#4: wall 8.9 ms, main block 0 ms, rtt max 6.6 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:36]    ipc_4mb#5: wall 8.6 ms, main block 0 ms, rtt max 6.5 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:20:38]    sam2_base_plus.point_cold#1: wall 1483.7 ms, main block 992.4 ms, rtt max 977.2 ms
+[14:20:41]    mem sam2_base_plus after the cold point: main 3495 MB private, rss 515; gpu main {'dedicatedMB': 3008, 'sharedMB': 73}, card 6462 MiB
+[14:20:41]    sam2_base_plus.point_warm#1: wall 8.3 ms, main block 0 ms, rtt max 0.4 ms
+[14:20:41]    sam2_base_plus.point_warm#2: wall 8 ms, main block 0 ms, rtt max 0.3 ms
+[14:20:41]    sam2_base_plus.point_warm#3: wall 7.3 ms, main block 0 ms, rtt max 0.4 ms
+[14:20:42]    sam2_base_plus.point_warm#4: wall 7.2 ms, main block 0 ms, rtt max 0.4 ms
+[14:20:42]    sam2_base_plus.point_warm#5: wall 7.2 ms, main block 0 ms, rtt max 0.3 ms
+[14:20:45]    sam2_base_plus.objects_cached#1: wall 1957.7 ms, main block 245.9 ms, rtt max 235.7 ms
+[14:20:47]    sam2_base_plus.objects_cached#2: wall 1747.5 ms, main block 203.4 ms, rtt max 204.3 ms
+[14:20:49]    sam2_base_plus.objects_new#1: wall 1916 ms, main block 203.4 ms, rtt max 198.5 ms
+[14:20:49]    sam2_base_plus.point_after_objects#1: wall 7.2 ms, main block 0 ms, rtt max 0.4 ms
+[14:20:50]    sam2_base_plus.point_after_objects#2: wall 7.2 ms, main block 0 ms, rtt max 0.4 ms
+[14:20:50]    sam2_base_plus.point_after_objects#3: wall 7.2 ms, main block 0 ms, rtt max 0.3 ms
+[14:20:51]    sam2_base_plus.objects_perbatch16#1: wall 20.1 ms, main block 20.1 ms, rtt max 7.9 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:20:51]    sam2_base_plus.objects_perbatch32#1: wall 21.5 ms, main block 21.5 ms, rtt max 8.3 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:20:52]    sam2_base_plus.objects_perbatch128#1: wall 43.3 ms, main block 43.3 ms, rtt max 28 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:20:52]    sam2_base_plus.objects_perbatch256#1: wall 95.1 ms, main block 95 ms, rtt max 80 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:20:53]    sam2_base_plus.objects_perside16#1: wall 583.7 ms, main block 196.5 ms, rtt max 197.9 ms
+[14:20:56]    mem sam2_base_plus after objects: main 8584 MB private, rss 598; gpu main {'dedicatedMB': 8007, 'sharedMB': 137}, card 11462 MiB
+[14:20:56]    sam2_base_plus.free#1: wall 271.4 ms, main block 271.4 ms, rtt max 256.2 ms
+[14:20:58]    mem sam2_base_plus after Free VRAM: main 325 MB private, rss 316; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3396 MiB
+[14:21:01]    sam2_base_plus.objects_after_free#1: wall 2716.9 ms, main block 938.6 ms, rtt max 923.5 ms
+[14:21:04]    mem sam2_base_plus after objects after Free VRAM: main 6204 MB private, rss 614; gpu main {'dedicatedMB': 5617, 'sharedMB': 136}, card 9011 MiB
+[14:21:04]    sam2_base_plus.free2#1: wall 237.3 ms, main block 237.4 ms, rtt max 222.1 ms
+[14:21:07]    mem sam2_base_plus after the second Free VRAM: main 368 MB private, rss 323; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3396 MiB
+[14:21:08]    sam2_tiny.point_cold#1: wall 1110.4 ms, main block 648.6 ms, rtt max 633.7 ms
+[14:21:10]    mem sam2_tiny after the cold point: main 2127 MB private, rss 529; gpu main {'dedicatedMB': 1656, 'sharedMB': 73}, card 5051 MiB
+[14:21:10]    sam2_tiny.point_warm#1: wall 7.1 ms, main block 0 ms, rtt max 0.4 ms
+[14:21:11]    sam2_tiny.point_warm#2: wall 14.5 ms, main block 0 ms, rtt max 0.4 ms
+[14:21:11]    sam2_tiny.point_warm#3: wall 17.4 ms, main block 0 ms, rtt max 2.1 ms
+[14:21:12]    sam2_tiny.point_warm#4: wall 16.4 ms, main block 0 ms, rtt max 1 ms
+[14:21:12]    sam2_tiny.point_warm#5: wall 14.9 ms, main block 0 ms, rtt max 0.5 ms
+[14:21:14]    sam2_tiny.objects_cached#1: wall 1962.3 ms, main block 432.3 ms, rtt max 417 ms
+[14:21:16]    sam2_tiny.objects_new#1: wall 1718.8 ms, main block 175.9 ms, rtt max 172.9 ms
+[14:21:17]    sam2_tiny.point_after_objects#1: wall 7 ms, main block 0 ms, rtt max 0.4 ms
+[14:21:17]    sam2_tiny.point_after_objects#2: wall 6.9 ms, main block 0 ms, rtt max 0.4 ms
+[14:21:18]    sam2_tiny.point_after_objects#3: wall 7.8 ms, main block 0 ms, rtt max 0.5 ms
+[14:21:20]    mem sam2_tiny after objects: main 4850 MB private, rss 609; gpu main {'dedicatedMB': 4293, 'sharedMB': 136}, card 7687 MiB
+[14:21:20]    sam2_tiny.free#1: wall 190.6 ms, main block 190.4 ms, rtt max 175.5 ms
+[14:21:23]    mem sam2_tiny after Free VRAM: main 327 MB private, rss 322; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3396 MiB
+[14:21:24]    sam2_small.point_cold#1: wall 1166.8 ms, main block 712.3 ms, rtt max 697.1 ms
+[14:21:27]    mem sam2_small after the cold point: main 2188 MB private, rss 527; gpu main {'dedicatedMB': 1710, 'sharedMB': 73}, card 5106 MiB
+[14:21:27]    sam2_small.point_warm#1: wall 15.1 ms, main block 0 ms, rtt max 0.4 ms
+[14:21:27]    sam2_small.point_warm#2: wall 15.3 ms, main block 0 ms, rtt max 0.6 ms
+[14:21:28]    sam2_small.point_warm#3: wall 15.4 ms, main block 0 ms, rtt max 0.5 ms
+[14:21:28]    sam2_small.point_warm#4: wall 14.7 ms, main block 0 ms, rtt max 0.3 ms
+[14:21:28]    sam2_small.point_warm#5: wall 16.5 ms, main block 0 ms, rtt max 1.2 ms
+[14:21:31]    sam2_small.objects_cached#1: wall 1931.2 ms, main block 361.6 ms, rtt max 346 ms
+[14:21:33]    sam2_small.objects_new#1: wall 1731.8 ms, main block 185.7 ms, rtt max 187.1 ms
+[14:21:33]    sam2_small.point_after_objects#1: wall 8 ms, main block 0 ms, rtt max 0.4 ms
+[14:21:34]    sam2_small.point_after_objects#2: wall 7.6 ms, main block 0 ms, rtt max 0.4 ms
+[14:21:34]    sam2_small.point_after_objects#3: wall 9 ms, main block 0 ms, rtt max 0.4 ms
+[14:21:37]    mem sam2_small after objects: main 4912 MB private, rss 609; gpu main {'dedicatedMB': 4347, 'sharedMB': 136}, card 7741 MiB
+[14:21:37]    sam2_small.free#1: wall 199.3 ms, main block 199.3 ms, rtt max 184 ms
+[14:21:39]    mem sam2_small after Free VRAM: main 344 MB private, rss 322; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3395 MiB
+[14:21:42]    birefnet_lite.cutout#1: wall 2864.7 ms, main block 2238.5 ms, rtt max 2223.3 ms
+[14:21:46]    birefnet_lite.cutout#2: wall 2813.6 ms, main block 2195.3 ms, rtt max 2180 ms
+[14:21:49]    birefnet_lite.cutout#3: wall 2783.4 ms, main block 2152.2 ms, rtt max 2137 ms
+[14:21:51]    mem birefnet_lite after three cutouts: main 398 MB private, rss 284; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3529 MiB
+[14:21:51]    birefnet_lite.free#1: wall 0.3 ms, main block 0 ms, rtt max 0.3 ms
+[14:21:54]    mem birefnet_lite after Free VRAM: main 148 MB private, rss 220; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3446 MiB
+[14:21:55]    rmbg14.cutout#1: wall 786.1 ms, main block 411.9 ms, rtt max 396.8 ms
+[14:21:56]    rmbg14.cutout#2: wall 769.1 ms, main block 411.7 ms, rtt max 396.5 ms
+[14:21:57]    rmbg14.cutout#3: wall 751.3 ms, main block 409.7 ms, rtt max 394.6 ms
+[14:22:00]    mem rmbg14 after three cutouts: main 406 MB private, rss 262; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3559 MiB
+[14:22:00]    rmbg14.free#1: wall 0.2 ms, main block 0 ms, rtt max 0.4 ms
+[14:22:02]    mem rmbg14 after Free VRAM: main 179 MB private, rss 246; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3538 MiB
+[14:22:03]    da2_small.depth#1: wall 844.3 ms, main block 445 ms, rtt max 442 ms
+[14:22:04]    da2_small.depth#2: wall 240.4 ms, main block 237.1 ms, rtt max 225.4 ms
+[14:22:04]    da2_small.depth#3: wall 239.8 ms, main block 236.2 ms, rtt max 224.8 ms
+[14:22:05]    da2_small.depth#4: wall 240.9 ms, main block 237.6 ms, rtt max 225.6 ms
+[14:22:06]    da2_small.depth_large#1: wall 853 ms, main block 844.9 ms, rtt max 838.2 ms
+[14:22:07]    da2_small.depth_large#2: wall 656.3 ms, main block 647 ms, rtt max 641.7 ms
+[14:22:09]    da2_small.depth_large#3: wall 766.4 ms, main block 757.8 ms, rtt max 751.7 ms
+[14:22:11]    mem da2_small after depth: main 4106 MB private, rss 456; gpu main {'dedicatedMB': 3702, 'sharedMB': 47}, card 7241 MiB
+[14:22:11]    da2_small.free#1: wall 133.8 ms, main block 133.9 ms, rtt max 118.7 ms
+[14:22:14]    mem da2_small after Free VRAM: main 447 MB private, rss 270; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3643 MiB
+[14:22:17] lock: lock: released
+[14:22:17] gap: the lock is free for 90 s
+[14:23:47] lock: rc 0 lock: taken after 0 s
+[14:23:56] == cpu r2: main pid 29740, {"pid": 29740, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:23:58]    prep: {"W": 2000, "H": 1125, "loadMs": 492, "inputMs": 33.8, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:24:01]    mem start: main 84 MB private, rss 126; gpu main None, card 3588 MiB
+[14:24:02]    idle#1: wall 1501.3 ms, main block 0 ms, rtt max 1.7 ms
+[14:24:03]    ipc_tiny#1: wall 2 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:03]    ipc_tiny#2: wall 0.7 ms, main block 0 ms, rtt max 0.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:03]    ipc_tiny#3: wall 0.4 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:04]    ipc_tiny#4: wall 0.4 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:04]    ipc_tiny#5: wall 0.5 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:04]    ipc_4mb#1: wall 9.2 ms, main block 0 ms, rtt max 6.9 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:05]    ipc_4mb#2: wall 9 ms, main block 0 ms, rtt max 3.1 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:05]    ipc_4mb#3: wall 9.1 ms, main block 0 ms, rtt max 2.9 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:06]    ipc_4mb#4: wall 9.2 ms, main block 0 ms, rtt max 3.1 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:06]    ipc_4mb#5: wall 9.7 ms, main block 0 ms, rtt max 3.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:24:09]    sam2_base_plus.point_cold#1: wall 2683.3 ms, main block 2099.1 ms, rtt max 2095.6 ms
+[14:24:12]    mem sam2_base_plus after the cold point: main 446 MB private, rss 497; gpu main None, card 3360 MiB
+[14:24:12]    sam2_base_plus.point_warm#1: wall 28.7 ms, main block 40.5 ms, rtt max 24.8 ms
+[14:24:12]    sam2_base_plus.point_warm#2: wall 24.1 ms, main block 30 ms, rtt max 20.7 ms
+[14:24:12]    sam2_base_plus.point_warm#3: wall 27.5 ms, main block 32.6 ms, rtt max 24.1 ms
+[14:24:13]    sam2_base_plus.point_warm#4: wall 21.5 ms, main block 27.8 ms, rtt max 20.6 ms
+[14:24:13]    sam2_base_plus.point_warm#5: wall 24.5 ms, main block 29.9 ms, rtt max 21.6 ms
+[14:24:52]    sam2_base_plus.objects_cached#1: wall 38442 ms, main block 2524.1 ms, rtt max 2528.8 ms
+[14:25:31]    sam2_base_plus.objects_cached#2: wall 38124.8 ms, main block 2490.3 ms, rtt max 2491.8 ms
+[14:26:11]    sam2_base_plus.objects_new#1: wall 39963.7 ms, main block 2487.5 ms, rtt max 2488.5 ms
+[14:26:11]    sam2_base_plus.point_after_objects#1: wall 29.9 ms, main block 29.4 ms, rtt max 14.5 ms
+[14:26:12]    sam2_base_plus.point_after_objects#2: wall 29.3 ms, main block 29 ms, rtt max 14 ms
+[14:26:12]    sam2_base_plus.point_after_objects#3: wall 29.7 ms, main block 29.3 ms, rtt max 14.3 ms
+[14:26:13]    sam2_base_plus.objects_perbatch256#1: wall 735.4 ms, main block 735.4 ms, rtt max 720.2 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:26:23]    sam2_base_plus.objects_perside16#1: wall 9657.3 ms, main block 2461.7 ms, rtt max 2453.5 ms
+[14:26:26]    mem sam2_base_plus after objects: main 465 MB private, rss 517; gpu main None, card 3472 MiB
+[14:26:26]    sam2_base_plus.free#1: wall 22.3 ms, main block 22.3 ms, rtt max 6.9 ms
+[14:26:29]    mem sam2_base_plus after Free VRAM: main 106 MB private, rss 157; gpu main None, card 3464 MiB
+[14:26:59]    sam2_base_plus.objects_after_free#1: wall 30279.2 ms, main block 2357.9 ms, rtt max 2343.7 ms
+[14:27:02]    mem sam2_base_plus after objects after Free VRAM: main 449 MB private, rss 502; gpu main None, card 3464 MiB
+[14:27:02]    sam2_base_plus.free2#1: wall 24.4 ms, main block 24.4 ms, rtt max 8.9 ms
+[14:27:04]    mem sam2_base_plus after the second Free VRAM: main 106 MB private, rss 157; gpu main None, card 3463 MiB
+[14:27:06]    sam2_tiny.point_cold#1: wall 1479 ms, main block 1133.8 ms, rtt max 1130.9 ms
+[14:27:08]    mem sam2_tiny after the cold point: main 281 MB private, rss 334; gpu main None, card 3475 MiB
+[14:27:09]    sam2_tiny.point_warm#1: wall 30.2 ms, main block 29.9 ms, rtt max 14.9 ms
+[14:27:09]    sam2_tiny.point_warm#2: wall 28.9 ms, main block 28.6 ms, rtt max 13.6 ms
+[14:27:09]    sam2_tiny.point_warm#3: wall 30.2 ms, main block 29.9 ms, rtt max 14.8 ms
+[14:27:10]    sam2_tiny.point_warm#4: wall 30.2 ms, main block 29.9 ms, rtt max 14.9 ms
+[14:27:10]    sam2_tiny.point_warm#5: wall 30.8 ms, main block 30.4 ms, rtt max 15.6 ms
+[14:27:49]    sam2_tiny.objects_cached#1: wall 38774.1 ms, main block 2526.1 ms, rtt max 2511.5 ms
+[14:27:50]    sam2_tiny.point_after_objects#1: wall 32.1 ms, main block 31.7 ms, rtt max 16.6 ms
+[14:27:50]    sam2_tiny.point_after_objects#2: wall 31.6 ms, main block 31.2 ms, rtt max 16.2 ms
+[14:27:51]    sam2_tiny.point_after_objects#3: wall 30.7 ms, main block 30.3 ms, rtt max 15.4 ms
+[14:27:53]    mem sam2_tiny after objects: main 280 MB private, rss 333; gpu main None, card 3465 MiB
+[14:27:53]    sam2_tiny.free#1: wall 13.6 ms, main block 0 ms, rtt max 1 ms
+[14:27:56]    mem sam2_tiny after Free VRAM: main 108 MB private, rss 157; gpu main None, card 3462 MiB
+[14:27:58]    sam2_small.point_cold#1: wall 1746.1 ms, main block 1315.3 ms, rtt max 1307.8 ms
+[14:28:00]    mem sam2_small after the cold point: main 310 MB private, rss 363; gpu main None, card 3403 MiB
+[14:28:01]    sam2_small.point_warm#1: wall 34.1 ms, main block 33.7 ms, rtt max 18.2 ms
+[14:28:01]    sam2_small.point_warm#2: wall 31.3 ms, main block 31 ms, rtt max 16 ms
+[14:28:01]    sam2_small.point_warm#3: wall 31.9 ms, main block 31.4 ms, rtt max 16.6 ms
+[14:28:02]    sam2_small.point_warm#4: wall 32.6 ms, main block 32.3 ms, rtt max 17.4 ms
+[14:28:02]    sam2_small.point_warm#5: wall 32.2 ms, main block 31.8 ms, rtt max 16.9 ms
+[14:28:41]    sam2_small.objects_cached#1: wall 37885.2 ms, main block 2485.7 ms, rtt max 2485.4 ms
+[14:28:41]    sam2_small.point_after_objects#1: wall 31.9 ms, main block 31.5 ms, rtt max 16.5 ms
+[14:28:41]    sam2_small.point_after_objects#2: wall 30.5 ms, main block 30.1 ms, rtt max 15.4 ms
+[14:28:42]    sam2_small.point_after_objects#3: wall 29.8 ms, main block 29.4 ms, rtt max 14.4 ms
+[14:28:44]    mem sam2_small after objects: main 307 MB private, rss 363; gpu main None, card 3706 MiB
+[14:28:44]    sam2_small.free#1: wall 14.1 ms, main block 0 ms, rtt max 0.3 ms
+[14:28:47]    mem sam2_small after Free VRAM: main 107 MB private, rss 161; gpu main None, card 3711 MiB
+[14:28:55]    birefnet_lite.cutout#1: wall 8418.6 ms, main block 5698.1 ms, rtt max 5687 ms
+[14:29:00]    birefnet_lite.cutout#2: wall 4584.8 ms, main block 4583.2 ms, rtt max 4569.5 ms
+[14:29:06]    birefnet_lite.cutout#3: wall 4721.8 ms, main block 4720.3 ms, rtt max 4706.9 ms
+[14:29:08]    mem birefnet_lite after three cutouts: main 400 MB private, rss 454; gpu main None, card 3725 MiB
+[14:29:08]    birefnet_lite.free#1: wall 53.3 ms, main block 53.4 ms, rtt max 38 ms
+[14:29:11]    mem birefnet_lite after Free VRAM: main 106 MB private, rss 163; gpu main None, card 3721 MiB
+[14:29:12]    rmbg14.cutout#1: wall 952.2 ms, main block 647 ms, rtt max 642.5 ms
+[14:29:13]    rmbg14.cutout#2: wall 566.8 ms, main block 565.6 ms, rtt max 551.6 ms
+[14:29:14]    rmbg14.cutout#3: wall 581.2 ms, main block 579.7 ms, rtt max 566 ms
+[14:29:17]    mem rmbg14 after three cutouts: main 283 MB private, rss 340; gpu main None, card 3722 MiB
+[14:29:17]    rmbg14.free#1: wall 10 ms, main block 0 ms, rtt max 0.4 ms
+[14:29:19]    mem rmbg14 after Free VRAM: main 107 MB private, rss 164; gpu main None, card 3722 MiB
+[14:29:37]    rmbg2.cutout#1: wall 17560.3 ms, main block 11329 ms, rtt max 11318.8 ms
+[14:29:46]    rmbg2.cutout#2: wall 8180.9 ms, main block 8178.6 ms, rtt max 8165.8 ms
+[14:29:55]    rmbg2.cutout#3: wall 8521.6 ms, main block 8520.3 ms, rtt max 8505.9 ms
+[14:29:57]    mem rmbg2 after three cutouts: main 1155 MB private, rss 1207; gpu main None, card 3719 MiB
+[14:29:57]    rmbg2.free#1: wall 86.1 ms, main block 86 ms, rtt max 70.8 ms
+[14:30:00]    mem rmbg2 after Free VRAM: main 112 MB private, rss 167; gpu main None, card 3751 MiB
+[14:30:01]    da2_small.depth#1: wall 1097.7 ms, main block 843.3 ms, rtt max 834.5 ms
+[14:30:02]    da2_small.depth#2: wall 773.1 ms, main block 769.6 ms, rtt max 758.1 ms
+[14:30:04]    da2_small.depth#3: wall 791 ms, main block 787.4 ms, rtt max 775.9 ms
+[14:30:05]    da2_small.depth#4: wall 795.9 ms, main block 792.3 ms, rtt max 780.7 ms
+[14:30:09]    da2_small.depth_large#1: wall 4076.7 ms, main block 4065.9 ms, rtt max 4062.6 ms
+[14:30:13]    da2_small.depth_large#2: wall 3931.2 ms, main block 3921.6 ms, rtt max 3901.6 ms
+[14:30:18]    da2_small.depth_large#3: wall 3957.8 ms, main block 3948 ms, rtt max 3942.7 ms
+[14:30:20]    mem da2_small after depth: main 217 MB private, rss 272; gpu main None, card 3757 MiB
+[14:30:21]    da2_small.free#1: wall 12.4 ms, main block 0 ms, rtt max 0.4 ms
+[14:30:23]    mem da2_small after Free VRAM: main 111 MB private, rss 167; gpu main None, card 3757 MiB
+[14:30:27] lock: lock: released
+[14:30:27] gap: the lock is free for 90 s
+[14:31:57] lock: rc 0 lock: taken after 0 s
+[14:31:57] waiting for: 20540 F:\canvas\.claude\worktrees\agent-a22ef12b8f7a801ac\node_modules\electron\dist\electron.exe . --remote-debugging-port=9584 --user-data-dir=F:/canvas/.claude/wor; 53012 C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/editor_test.py; 25120 F:\canvas\.claude\worktrees\agent-a22ef12b8f7a801ac\node_modules\electron\dist\electron.exe . --remote-debugging-port=9591 --user-data-dir=F:/canvas/.claude/wor; 22336 C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/editor_test.py
+[14:34:21] others gone after 144 s
+[14:34:30] == editor r2: main pid 33828, {"pid": 33828, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:34:32]    mem start: main 84 MB private, rss 128; gpu main None, card 3540 MiB
+[14:34:34]    prep 6000x3375: {"W": 6000, "H": 3375, "loadMs": 622, "inputMs": 59.7, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:34:37]    doc6000.ensureObjects#1: wall 2909.7 ms, main block 1066.2 ms, rtt max 1047.2 ms
+[14:34:39]    doc6000.ensureObjects_cached#1: wall 1461.1 ms, main block 176.4 ms, rtt max 219.3 ms
+[14:34:39]    objects 6000x3375: {"count": 96, "big": 2, "small": 89, "bigAt": [41, 1936], "smallAt": [4594, 1506], "empty": [0, 0]}
+[14:34:40]    doc6000.hover_shape_big#1: wall 53.1 ms, main block 0 ms, rtt max 53.6 ms
+[14:34:40]    doc6000.hover_shape_small#1: wall 45.7 ms, main block 0 ms, rtt max 0.3 ms
+[14:34:41]    doc6000.click_object#1: wall 199.3 ms, main block 0 ms, rtt max 4.1 ms
+[14:34:41]    doc6000.select_point#1: wall 296.3 ms, main block 243.8 ms, rtt max 236.5 ms
+[14:34:42]    doc6000.select_point#2: wall 53.8 ms, main block 36.4 ms, rtt max 28.1 ms
+[14:34:42]    doc6000.select_point#3: wall 106.7 ms, main block 35.1 ms, rtt max 28.7 ms
+[14:34:45]    mem doc6000 after the object tool: main 6212 MB private, rss 581; gpu main {'dedicatedMB': 5646, 'sharedMB': 136}, card 9521 MiB
+[14:34:47]    prep 15000x8438: {"W": 15000, "H": 8438, "loadMs": 489, "inputMs": 18.1, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:34:49]    doc15000.ensureObjects#1: wall 1743.6 ms, main block 180.6 ms, rtt max 421.2 ms
+[14:34:51]    doc15000.ensureObjects_cached#1: wall 1931.7 ms, main block 186.3 ms, rtt max 720.4 ms
+[14:34:51]    objects 15000x8438: {"count": 97, "big": 3, "small": 89, "bigAt": [95, 4922], "smallAt": [11484, 3773], "empty": [0, 0]}
+[14:34:52]    doc15000.hover_shape_big#1: wall 328.4 ms, main block 0 ms, rtt max 329 ms
+[14:34:52]    doc15000.hover_shape_small#1: wall 276.5 ms, main block 0 ms, rtt max 276.9 ms
+[14:34:55]    doc15000.click_object#1: wall 1896.4 ms, main block 0 ms, rtt max 29 ms
+[14:34:55]    doc15000.select_point#1: wall 92.1 ms, main block 34.5 ms, rtt max 27.3 ms
+[14:34:55]    doc15000.select_point#2: wall 66.2 ms, main block 36.9 ms, rtt max 27 ms
+[14:34:56]    doc15000.select_point#3: wall 133.1 ms, main block 35.9 ms, rtt max 28.9 ms
+[14:34:59]    mem doc15000 after the object tool: main 6232 MB private, rss 601; gpu main {'dedicatedMB': 5646, 'sharedMB': 137}, card 10396 MiB
+[14:35:03] lock: lock: released
+[14:35:03] gap: the lock is free for 90 s
+[14:40:03] lock: rc 0 lock: held by 'main loop gates merge59 34408 2026-11-07T14:35:32', waiting
+lock: taken after 210 s
+[14:40:12] == probe r2: main pid 25020, {"pid": 25020, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:40:14]    prep: {"W": 2000, "H": 1125, "loadMs": 544, "inputMs": 38.1, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:40:17]    mem start: main 85 MB private, rss 128; gpu main None, card 3567 MiB
+[14:40:17]    probe gpu: forked {"pid": 35168, "spawnMs": 11.6}
+[14:40:17]    probe_gpu.init#1: rtt 52.8 ms, in process 9.8 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:40:19]    mem probe gpu started: main 86 MB private, rss 130; gpu main None, card 3573 MiB
+[14:40:21]    probe_gpu.point_cold#1: rtt 1623.8 ms, in process 1616.1 ms, main block 0 ms, ipc rtt max 7.9 ms
+[14:40:21]    probe_gpu.point_warm#1: rtt 7 ms, in process 6.4 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:40:21]    probe_gpu.point_warm#2: rtt 6.8 ms, in process 6.3 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:40:21]    probe_gpu.point_warm#3: rtt 6.9 ms, in process 6.3 ms, main block 0 ms, ipc rtt max 0.2 ms
+[14:40:21]    probe_gpu.point_warm#4: rtt 6.8 ms, in process 6.2 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:40:21]    probe_gpu.point_warm#5: rtt 6.8 ms, in process 6.1 ms, main block 0 ms, ipc rtt max 0.2 ms
+[14:40:23]    probe_gpu.objects_cached#1: rtt 1853.7 ms, in process 1836.5 ms, main block 0 ms, ipc rtt max 2.5 ms
+[14:40:25]    probe_gpu.objects_cached#2: rtt 1772 ms, in process 1755.8 ms, main block 0 ms, ipc rtt max 3.4 ms
+[14:40:25]    probe_gpu.point_after_objects#1: rtt 7.1 ms, in process 6.4 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:40:25]    probe_gpu.point_after_objects#2: rtt 6.6 ms, in process 6.1 ms, main block 0 ms, ipc rtt max 0.2 ms
+[14:40:25]    probe_gpu.point_after_objects#3: rtt 6.7 ms, in process 6.1 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:40:27]    mem probe gpu after SAM2: main 86 MB private, rss 131; gpu main None, card 9218 MiB
+[14:40:32]    probe_gpu.cutout_lite#1: rtt 4579.7 ms, in process 4572 ms, main block 0 ms, ipc rtt max 2 ms
+[14:40:36]    probe_gpu.cutout_lite#2: rtt 4096.8 ms, in process 4089 ms, main block 0 ms, ipc rtt max 13.8 ms
+[14:40:37]    probe_gpu.depth#1: rtt 597.7 ms, in process 590.8 ms, main block 0 ms, ipc rtt max 5.7 ms
+[14:40:37]    probe_gpu.depth#2: rtt 241.6 ms, in process 233.8 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:40:38]    probe_gpu.depth#3: rtt 247.9 ms, in process 240.2 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:40:40]    mem probe gpu after cutout and depth: main 86 MB private, rss 131; gpu main None, card 9020 MiB
+[14:40:40]    probe_gpu.free#1: rtt 490 ms, in process 489.8 ms, main block 0 ms, ipc rtt max 0.8 ms
+[14:40:43]    mem probe gpu after free: main 86 MB private, rss 131; gpu main None, card 3169 MiB
+[14:40:43]    probe_gpu.echo_4mb#1: rtt 18.3 ms, in process 0 ms, main block 0 ms, ipc rtt max 3.2 ms
+[14:40:43]    probe_gpu.echo_4mb#2: rtt 16.7 ms, in process 0 ms, main block 0 ms, ipc rtt max 3.3 ms
+[14:40:43]    probe_gpu.echo_4mb#3: rtt 17.3 ms, in process 0 ms, main block 0 ms, ipc rtt max 2.8 ms
+[14:40:43]    probe_gpu.echo_4mb#4: rtt 16.7 ms, in process 0 ms, main block 0 ms, ipc rtt max 2.2 ms
+[14:40:43]    probe_gpu.echo_4mb#5: rtt 16.9 ms, in process 0 ms, main block 0 ms, ipc rtt max 3.3 ms
+[14:40:43]    probe_gpu.echo_8mb#1: rtt 32.2 ms, in process 0 ms, main block 0 ms, ipc rtt max 8.6 ms
+[14:40:43]    probe_gpu.echo_8mb#2: rtt 32.8 ms, in process 0 ms, main block 21.2 ms, ipc rtt max 8.8 ms
+[14:40:43]    probe_gpu.echo_8mb#3: rtt 33.6 ms, in process 0 ms, main block 0 ms, ipc rtt max 9.7 ms
+[14:40:44]    probe_gpu.echo_8mb#4: rtt 32.4 ms, in process 0 ms, main block 0 ms, ipc rtt max 8.6 ms
+[14:40:44]    probe_gpu.echo_8mb#5: rtt 35 ms, in process 0 ms, main block 0 ms, ipc rtt max 8.3 ms
+[14:40:44]    probe_gpu.echo_16mb#1: rtt 62.6 ms, in process 0 ms, main block 25.1 ms, ipc rtt max 21.1 ms
+[14:40:44]    probe_gpu.echo_16mb#2: rtt 66.4 ms, in process 0 ms, main block 25.7 ms, ipc rtt max 20.9 ms
+[14:40:44]    probe_gpu.echo_16mb#3: rtt 63.4 ms, in process 0 ms, main block 25.1 ms, ipc rtt max 21.4 ms
+[14:40:44]    probe_gpu.echo_16mb#4: rtt 66.2 ms, in process 0 ms, main block 28 ms, ipc rtt max 20.3 ms
+[14:40:44]    probe_gpu.echo_16mb#5: rtt 64 ms, in process 0 ms, main block 27.8 ms, ipc rtt max 20.2 ms
+[14:40:44]    probe_gpu.mem#1: rtt 0.4 ms, in process 0.2 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:40:44]    probe_gpu.kill: {"exited": 0, "exitMs": 9.2}
+[14:40:48]    mem probe gpu after kill: main 86 MB private, rss 131; gpu main None, card 3166 MiB
+[14:40:48]    probe cpu: forked {"pid": 24608, "spawnMs": 11.7}
+[14:40:48]    probe_cpu.init#1: rtt 49.7 ms, in process 9.6 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:40:50]    mem probe cpu started: main 86 MB private, rss 132; gpu main None, card 3167 MiB
+[14:40:53]    probe_cpu.point_cold#1: rtt 2669.3 ms, in process 2660.7 ms, main block 0 ms, ipc rtt max 2.9 ms
+[14:40:53]    probe_cpu.point_warm#1: rtt 29.2 ms, in process 28.5 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:40:53]    probe_cpu.point_warm#2: rtt 28.9 ms, in process 28.3 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:40:53]    probe_cpu.point_warm#3: rtt 30.7 ms, in process 30.1 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:40:53]    probe_cpu.point_warm#4: rtt 30.5 ms, in process 29.9 ms, main block 0 ms, ipc rtt max 0.8 ms
+[14:40:53]    probe_cpu.point_warm#5: rtt 30.6 ms, in process 29.9 ms, main block 0 ms, ipc rtt max 0.6 ms
+[14:41:33]    probe_cpu.objects_cached#1: rtt 39604.2 ms, in process 39587.2 ms, main block 0 ms, ipc rtt max 6.1 ms
+[14:42:13]    probe_cpu.objects_cached#2: rtt 39696.7 ms, in process 39679.2 ms, main block 37.9 ms, ipc rtt max 28.2 ms
+[14:42:13]    probe_cpu.point_after_objects#1: rtt 29.1 ms, in process 28.4 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:42:13]    probe_cpu.point_after_objects#2: rtt 30.9 ms, in process 30.2 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:42:13]    probe_cpu.point_after_objects#3: rtt 30.4 ms, in process 29.7 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:42:15]    mem probe cpu after SAM2: main 84 MB private, rss 129; gpu main None, card 3209 MiB
+[14:42:25]    probe_cpu.cutout_lite#1: rtt 9022.6 ms, in process 9013.5 ms, main block 0 ms, ipc rtt max 3.4 ms
+[14:42:29]    probe_cpu.cutout_lite#2: rtt 4651 ms, in process 4642.6 ms, main block 0 ms, ipc rtt max 6.8 ms
+[14:42:30]    probe_cpu.depth#1: rtt 1069.7 ms, in process 1061.3 ms, main block 0 ms, ipc rtt max 1.6 ms
+[14:42:31]    probe_cpu.depth#2: rtt 767.1 ms, in process 758.3 ms, main block 0 ms, ipc rtt max 1.7 ms
+[14:42:32]    probe_cpu.depth#3: rtt 780.9 ms, in process 771.3 ms, main block 0 ms, ipc rtt max 1.8 ms
+[14:42:34]    mem probe cpu after cutout and depth: main 84 MB private, rss 130; gpu main None, card 3207 MiB
+[14:42:35]    probe_cpu.free#1: rtt 88 ms, in process 87.8 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:42:37]    mem probe cpu after free: main 84 MB private, rss 129; gpu main None, card 3207 MiB
+[14:42:37]    probe_cpu.kill: {"exited": 0, "exitMs": 3.3}
+[14:42:40]    mem probe cpu after kill: main 84 MB private, rss 129; gpu main None, card 3209 MiB
+[14:42:44] lock: lock: released
+[14:42:44] gap: the lock is free for 90 s
+[14:44:14] lock: rc 0 lock: taken after 0 s
+[14:44:14] waiting for: 58248 F:\canvas\.claude\worktrees\agent-af1dacfc424fbc8c7\node_modules\electron\dist\electron.exe . --remote-debugging-port=9581 --user-data-dir=F:/canvas/.claude/wor; 42100 C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/layered_test.py
+[14:44:56] others gone after 42 s
+[14:45:04] == batchsize r2: main pid 22980, {"pid": 22980, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:45:06]    prep: {"W": 2000, "H": 1125, "loadMs": 548, "inputMs": 45.2, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:45:09]    mem start: main 85 MB private, rss 129; gpu main None, card 3194 MiB
+[14:45:09]    batch16.init#1: rtt 60.5 ms, in process 11.7 ms, main block 0 ms, ipc rtt max 0.6 ms
+[14:45:11]    batch16.point_cold#1: rtt 1778.2 ms, in process 1771 ms, main block 0 ms, ipc rtt max 7.4 ms
+[14:45:11]    batch16.objects_b16#1: rtt 24.1 ms, in process 15.7 ms, main block 0 ms, ipc rtt max 4 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:45:11]    batch16.objects_b16#2: rtt 16.5 ms, in process 8.3 ms, main block 0 ms, ipc rtt max 4.3 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:45:13]    batch16.objects_b64_after#1: rtt 1834.5 ms, in process 1815.6 ms, main block 0 ms, ipc rtt max 5.3 ms
+[14:45:13]    batch16.point_after#1: rtt 15 ms, in process 6.3 ms, main block 0 ms, ipc rtt max 3.8 ms
+[14:45:15]    mem batch 16 after: main 86 MB private, rss 131; gpu main None, card 8841 MiB
+[14:45:17]    batch32.init#1: rtt 51.9 ms, in process 9.8 ms, main block 0 ms, ipc rtt max 0.3 ms
+[14:45:18]    batch32.point_cold#1: rtt 1642.4 ms, in process 1634.3 ms, main block 0 ms, ipc rtt max 3.2 ms
+[14:45:18]    batch32.objects_b32#1: rtt 35.5 ms, in process 26 ms, main block 0 ms, ipc rtt max 4.4 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:45:19]    batch32.objects_b32#2: rtt 17.8 ms, in process 8.8 ms, main block 0 ms, ipc rtt max 4.5 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:45:20]    batch32.objects_b64_after#1: rtt 1806.2 ms, in process 1788.3 ms, main block 0 ms, ipc rtt max 3.6 ms
+[14:45:20]    batch32.point_after#1: rtt 15.6 ms, in process 6.6 ms, main block 0 ms, ipc rtt max 3.7 ms
+[14:45:23]    mem batch 32 after: main 86 MB private, rss 131; gpu main None, card 8848 MiB
+[14:45:24]    batch128.init#1: rtt 53.4 ms, in process 10.1 ms, main block 0 ms, ipc rtt max 0.5 ms
+[14:45:26]    batch128.point_cold#1: rtt 1761.6 ms, in process 1752.6 ms, main block 0 ms, ipc rtt max 4.9 ms
+[14:45:26]    batch128.objects_b128#1: rtt 58.9 ms, in process 49.6 ms, main block 0 ms, ipc rtt max 5.2 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:45:26]    batch128.objects_b128#2: rtt 22.1 ms, in process 13 ms, main block 0 ms, ipc rtt max 5.2 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:45:28]    batch128.objects_b64_after#1: rtt 1810 ms, in process 1792.3 ms, main block 0 ms, ipc rtt max 8.4 ms
+[14:45:28]    batch128.point_after#1: rtt 15 ms, in process 6.5 ms, main block 0 ms, ipc rtt max 3.3 ms
+[14:45:31]    mem batch 128 after: main 86 MB private, rss 131; gpu main None, card 8945 MiB
+[14:45:32]    batch256.init#1: rtt 59.2 ms, in process 12.3 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:45:34]    batch256.point_cold#1: rtt 1735.9 ms, in process 1726.9 ms, main block 0 ms, ipc rtt max 3.3 ms
+[14:45:34]    batch256.objects_b256#1: rtt 88.1 ms, in process 78.9 ms, main block 0 ms, ipc rtt max 4.4 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:45:34]    batch256.objects_b256#2: rtt 27.9 ms, in process 18.4 ms, main block 0 ms, ipc rtt max 4.2 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[14:45:36]    batch256.objects_b64_after#1: rtt 1802 ms, in process 1784.2 ms, main block 0 ms, ipc rtt max 3.9 ms
+[14:45:36]    batch256.point_after#1: rtt 14.7 ms, in process 6.5 ms, main block 0 ms, ipc rtt max 3 ms
+[14:45:38]    mem batch 256 after: main 85 MB private, rss 131; gpu main None, card 10994 MiB
+[14:45:40]    batch64.init#1: rtt 51.1 ms, in process 9.8 ms, main block 0 ms, ipc rtt max 0.4 ms
+[14:45:41]    batch64.point_cold#1: rtt 1676.5 ms, in process 1668 ms, main block 0 ms, ipc rtt max 3.4 ms
+[14:45:43]    batch64.objects_b64#1: rtt 1859.2 ms, in process 1840.5 ms, main block 0 ms, ipc rtt max 5.3 ms
+[14:45:45]    batch64.objects_b64#2: rtt 1828.6 ms, in process 1810.8 ms, main block 0 ms, ipc rtt max 4.7 ms
+[14:45:45]    batch64.point_after#1: rtt 15.8 ms, in process 6.9 ms, main block 0 ms, ipc rtt max 2.8 ms
+[14:45:48]    mem batch 64 after: main 86 MB private, rss 131; gpu main None, card 8837 MiB
+[14:45:53] lock: lock: released
+[14:45:53] gap: the lock is free for 90 s
+[14:48:53] lock: rc 0 lock: held by 'main loop gates merge69 45968 2026-11-07T14:45:13', waiting
+lock: taken after 90 s
+[14:49:02] == gpu r3: main pid 3660, {"pid": 3660, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:49:04]    prep: {"W": 2000, "H": 1125, "loadMs": 529, "inputMs": 39.5, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:49:06]    mem start: main 85 MB private, rss 129; gpu main None, card 3195 MiB
+[14:49:08]    idle#1: wall 1502.6 ms, main block 0 ms, rtt max 0.4 ms
+[14:49:08]    ipc_tiny#1: wall 2.1 ms, main block 0 ms, rtt max 0.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:08]    ipc_tiny#2: wall 0.5 ms, main block 0 ms, rtt max 0.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:09]    ipc_tiny#3: wall 0.5 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:09]    ipc_tiny#4: wall 0.4 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:10]    ipc_tiny#5: wall 0.5 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:10]    ipc_4mb#1: wall 9.4 ms, main block 0 ms, rtt max 3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:10]    ipc_4mb#2: wall 9 ms, main block 0 ms, rtt max 6.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:11]    ipc_4mb#3: wall 9.7 ms, main block 0 ms, rtt max 4.1 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:11]    ipc_4mb#4: wall 9.1 ms, main block 0 ms, rtt max 6.5 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:11]    ipc_4mb#5: wall 9.3 ms, main block 0 ms, rtt max 3.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:49:13]    sam2_base_plus.point_cold#1: wall 1575.1 ms, main block 1077.4 ms, rtt max 1057.9 ms
+[14:49:16]    mem sam2_base_plus after the cold point: main 3492 MB private, rss 513; gpu main {'dedicatedMB': 3008, 'sharedMB': 73}, card 6208 MiB
+[14:49:16]    sam2_base_plus.point_warm#1: wall 7.8 ms, main block 21.3 ms, rtt max 5.9 ms
+[14:49:16]    sam2_base_plus.point_warm#2: wall 7.7 ms, main block 0 ms, rtt max 4.3 ms
+[14:49:17]    sam2_base_plus.point_warm#3: wall 7.5 ms, main block 0 ms, rtt max 3.6 ms
+[14:49:17]    sam2_base_plus.point_warm#4: wall 7.1 ms, main block 0 ms, rtt max 3.2 ms
+[14:49:18]    sam2_base_plus.point_warm#5: wall 7.3 ms, main block 0 ms, rtt max 4.8 ms
+[14:49:20]    sam2_base_plus.objects_cached#1: wall 1912 ms, main block 239 ms, rtt max 218.6 ms
+[14:49:22]    sam2_base_plus.objects_cached#2: wall 1763.4 ms, main block 196.8 ms, rtt max 200.5 ms
+[14:49:24]    sam2_base_plus.objects_new#1: wall 1820.3 ms, main block 208.1 ms, rtt max 212.1 ms
+[14:49:24]    sam2_base_plus.point_after_objects#1: wall 7.2 ms, main block 0 ms, rtt max 3.3 ms
+[14:49:25]    sam2_base_plus.point_after_objects#2: wall 7.6 ms, main block 0 ms, rtt max 4.3 ms
+[14:49:25]    sam2_base_plus.point_after_objects#3: wall 7.2 ms, main block 0 ms, rtt max 3.3 ms
+[14:49:26]    sam2_base_plus.objects_perbatch16#1: wall 21.2 ms, main block 27.1 ms, rtt max 5.8 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:49:26]    sam2_base_plus.objects_perbatch32#1: wall 24 ms, main block 29.8 ms, rtt max 11.4 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:49:26]    sam2_base_plus.objects_perbatch128#1: wall 46.2 ms, main block 52 ms, rtt max 33.8 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:49:27]    sam2_base_plus.objects_perbatch256#1: wall 104.4 ms, main block 110.8 ms, rtt max 88.5 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:49:28]    sam2_base_plus.objects_perside16#1: wall 529 ms, main block 177.2 ms, rtt max 178.5 ms
+[14:49:30]    mem sam2_base_plus after objects: main 8583 MB private, rss 597; gpu main {'dedicatedMB': 8007, 'sharedMB': 137}, card 11207 MiB
+[14:49:31]    sam2_base_plus.free#1: wall 310.2 ms, main block 323.7 ms, rtt max 308.8 ms
+[14:49:33]    mem sam2_base_plus after Free VRAM: main 324 MB private, rss 314; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3200 MiB
+[14:49:36]    sam2_base_plus.objects_after_free#1: wall 2785.9 ms, main block 998.6 ms, rtt max 987.1 ms
+[14:49:39]    mem sam2_base_plus after objects after Free VRAM: main 6166 MB private, rss 577; gpu main {'dedicatedMB': 5617, 'sharedMB': 136}, card 8826 MiB
+[14:49:39]    sam2_base_plus.free2#1: wall 269.3 ms, main block 282.5 ms, rtt max 266.5 ms
+[14:49:42]    mem sam2_base_plus after the second Free VRAM: main 326 MB private, rss 315; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3200 MiB
+[14:49:43]    sam2_tiny.point_cold#1: wall 1145.5 ms, main block 668 ms, rtt max 656.9 ms
+[14:49:46]    mem sam2_tiny after the cold point: main 2166 MB private, rss 555; gpu main {'dedicatedMB': 1656, 'sharedMB': 73}, card 4855 MiB
+[14:49:46]    sam2_tiny.point_warm#1: wall 7.6 ms, main block 21.8 ms, rtt max 3.2 ms
+[14:49:46]    sam2_tiny.point_warm#2: wall 7.4 ms, main block 0 ms, rtt max 4.3 ms
+[14:49:47]    sam2_tiny.point_warm#3: wall 7.2 ms, main block 0 ms, rtt max 3.3 ms
+[14:49:47]    sam2_tiny.point_warm#4: wall 7.2 ms, main block 0 ms, rtt max 2.8 ms
+[14:49:47]    sam2_tiny.point_warm#5: wall 7.3 ms, main block 0 ms, rtt max 4.3 ms
+[14:49:50]    sam2_tiny.objects_cached#1: wall 1842.3 ms, main block 237.5 ms, rtt max 222.5 ms
+[14:49:52]    sam2_tiny.objects_new#1: wall 1748.9 ms, main block 179.1 ms, rtt max 181.2 ms
+[14:49:52]    sam2_tiny.point_after_objects#1: wall 7.9 ms, main block 0 ms, rtt max 4 ms
+[14:49:52]    sam2_tiny.point_after_objects#2: wall 7.3 ms, main block 0 ms, rtt max 3.8 ms
+[14:49:53]    sam2_tiny.point_after_objects#3: wall 8 ms, main block 0 ms, rtt max 4.6 ms
+[14:49:56]    mem sam2_tiny after objects: main 4854 MB private, rss 604; gpu main {'dedicatedMB': 4293, 'sharedMB': 136}, card 7492 MiB
+[14:49:56]    sam2_tiny.free#1: wall 209.2 ms, main block 222.2 ms, rtt max 205.9 ms
+[14:49:58]    mem sam2_tiny after Free VRAM: main 327 MB private, rss 317; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3200 MiB
+[14:50:00]    sam2_small.point_cold#1: wall 1251.4 ms, main block 771.3 ms, rtt max 757.9 ms
+[14:50:02]    mem sam2_small after the cold point: main 2183 MB private, rss 518; gpu main {'dedicatedMB': 1710, 'sharedMB': 73}, card 4911 MiB
+[14:50:02]    sam2_small.point_warm#1: wall 8 ms, main block 21.1 ms, rtt max 6 ms
+[14:50:03]    sam2_small.point_warm#2: wall 15.2 ms, main block 21.3 ms, rtt max 11.8 ms
+[14:50:03]    sam2_small.point_warm#3: wall 11.2 ms, main block 0 ms, rtt max 7.2 ms
+[14:50:04]    sam2_small.point_warm#4: wall 10 ms, main block 0 ms, rtt max 8.1 ms
+[14:50:04]    sam2_small.point_warm#5: wall 9.7 ms, main block 0 ms, rtt max 4.3 ms
+[14:50:06]    sam2_small.objects_cached#1: wall 2046.5 ms, main block 448.2 ms, rtt max 428.1 ms
+[14:50:08]    sam2_small.objects_new#1: wall 1747.6 ms, main block 181.9 ms, rtt max 185.2 ms
+[14:50:09]    sam2_small.point_after_objects#1: wall 8.1 ms, main block 0 ms, rtt max 4.7 ms
+[14:50:09]    sam2_small.point_after_objects#2: wall 7.9 ms, main block 0 ms, rtt max 4.4 ms
+[14:50:10]    sam2_small.point_after_objects#3: wall 7.7 ms, main block 0 ms, rtt max 5.8 ms
+[14:50:12]    mem sam2_small after objects: main 4908 MB private, rss 601; gpu main {'dedicatedMB': 4347, 'sharedMB': 136}, card 7546 MiB
+[14:50:13]    sam2_small.free#1: wall 244.5 ms, main block 257.8 ms, rtt max 240.6 ms
+[14:50:15]    mem sam2_small after Free VRAM: main 318 MB private, rss 313; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3200 MiB
+[14:50:19]    birefnet_lite.cutout#1: wall 3547.4 ms, main block 2763.6 ms, rtt max 2753.1 ms
+[14:50:23]    birefnet_lite.cutout#2: wall 3512.4 ms, main block 2769.4 ms, rtt max 2750 ms
+[14:50:27]    birefnet_lite.cutout#3: wall 3540.7 ms, main block 2766.8 ms, rtt max 2747.3 ms
+[14:50:29]    mem birefnet_lite after three cutouts: main 401 MB private, rss 276; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3205 MiB
+[14:50:29]    birefnet_lite.free#1: wall 0.2 ms, main block 0 ms, rtt max 0.4 ms
+[14:50:32]    mem birefnet_lite after Free VRAM: main 157 MB private, rss 217; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3199 MiB
+[14:50:33]    rmbg14.cutout#1: wall 825.9 ms, main block 444.8 ms, rtt max 434.3 ms
+[14:50:34]    rmbg14.cutout#2: wall 833.3 ms, main block 437.3 ms, rtt max 417.8 ms
+[14:50:35]    rmbg14.cutout#3: wall 831.6 ms, main block 460.4 ms, rtt max 442.3 ms
+[14:50:38]    mem rmbg14 after three cutouts: main 399 MB private, rss 261; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3199 MiB
+[14:50:38]    rmbg14.free#1: wall 0.2 ms, main block 0 ms, rtt max 0.3 ms
+[14:50:41]    mem rmbg14 after Free VRAM: main 181 MB private, rss 245; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3199 MiB
+[14:50:42]    da2_small.depth#1: wall 983.8 ms, main block 501.2 ms, rtt max 500.2 ms
+[14:50:42]    da2_small.depth#2: wall 231 ms, main block 234.5 ms, rtt max 220.3 ms
+[14:50:43]    da2_small.depth#3: wall 233.2 ms, main block 235.6 ms, rtt max 222 ms
+[14:50:43]    da2_small.depth#4: wall 230.2 ms, main block 233.3 ms, rtt max 219.9 ms
+[14:50:45]    da2_small.depth_large#1: wall 801.3 ms, main block 784.5 ms, rtt max 778.9 ms
+[14:50:46]    da2_small.depth_large#2: wall 692.6 ms, main block 690.1 ms, rtt max 671.1 ms
+[14:50:47]    da2_small.depth_large#3: wall 695 ms, main block 678.7 ms, rtt max 671.7 ms
+[14:50:49]    mem da2_small after depth: main 4108 MB private, rss 457; gpu main {'dedicatedMB': 3702, 'sharedMB': 47}, card 6900 MiB
+[14:50:50]    da2_small.free#1: wall 129 ms, main block 141.9 ms, rtt max 127.1 ms
+[14:50:52]    mem da2_small after Free VRAM: main 540 MB private, rss 357; gpu main {'dedicatedMB': 0, 'sharedMB': 0}, card 3199 MiB
+[14:50:56] lock: lock: released
+[14:50:56] gap: the lock is free for 90 s
+[14:54:56] lock: rc 0 lock: held by 'main loop gates merge-h1 54688 2026-11-07T14:48:55', waiting
+lock: taken after 150 s
+[14:55:05] == cpu r3: main pid 52340, {"pid": 52340, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[14:55:07]    prep: {"W": 2000, "H": 1125, "loadMs": 526, "inputMs": 40.8, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[14:55:09]    mem start: main 84 MB private, rss 129; gpu main None, card 3292 MiB
+[14:55:11]    idle#1: wall 1502.9 ms, main block 0 ms, rtt max 0.4 ms
+[14:55:11]    ipc_tiny#1: wall 2 ms, main block 0 ms, rtt max 0.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:12]    ipc_tiny#2: wall 0.5 ms, main block 0 ms, rtt max 0.3 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:12]    ipc_tiny#3: wall 0.5 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:12]    ipc_tiny#4: wall 0.5 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:13]    ipc_tiny#5: wall 0.5 ms, main block 0 ms, rtt max 0.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:13]    ipc_4mb#1: wall 9.1 ms, main block 0 ms, rtt max 6.7 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:14]    ipc_4mb#2: wall 9.5 ms, main block 0 ms, rtt max 3.2 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:14]    ipc_4mb#3: wall 8.9 ms, main block 0 ms, rtt max 2.9 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:14]    ipc_4mb#4: wall 8.9 ms, main block 0 ms, rtt max 2.9 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:15]    ipc_4mb#5: wall 9.1 ms, main block 0 ms, rtt max 3.4 ms, err Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+[14:55:18]    sam2_base_plus.point_cold#1: wall 2639.7 ms, main block 2054.2 ms, rtt max 2050.6 ms
+[14:55:20]    mem sam2_base_plus after the cold point: main 445 MB private, rss 499; gpu main None, card 3297 MiB
+[14:55:20]    sam2_base_plus.point_warm#1: wall 29.4 ms, main block 42.5 ms, rtt max 26 ms
+[14:55:21]    sam2_base_plus.point_warm#2: wall 30 ms, main block 36.4 ms, rtt max 29 ms
+[14:55:21]    sam2_base_plus.point_warm#3: wall 28.6 ms, main block 35.1 ms, rtt max 26.7 ms
+[14:55:22]    sam2_base_plus.point_warm#4: wall 32.7 ms, main block 38.2 ms, rtt max 29.3 ms
+[14:55:22]    sam2_base_plus.point_warm#5: wall 29.1 ms, main block 35.1 ms, rtt max 27.2 ms
+[14:56:00]    sam2_base_plus.objects_cached#1: wall 37909.6 ms, main block 2438.7 ms, rtt max 2435.5 ms
+[14:56:39]    sam2_base_plus.objects_cached#2: wall 38074.3 ms, main block 2469.2 ms, rtt max 2475.7 ms
+[14:57:19]    sam2_base_plus.objects_new#1: wall 40115 ms, main block 2503.6 ms, rtt max 2506.8 ms
+[14:57:19]    sam2_base_plus.point_after_objects#1: wall 29.8 ms, main block 35.3 ms, rtt max 26.4 ms
+[14:57:20]    sam2_base_plus.point_after_objects#2: wall 30 ms, main block 35.9 ms, rtt max 26.5 ms
+[14:57:20]    sam2_base_plus.point_after_objects#3: wall 29 ms, main block 34.5 ms, rtt max 26.6 ms
+[14:57:21]    sam2_base_plus.objects_perbatch256#1: wall 770.6 ms, main block 776.9 ms, rtt max 758.7 ms, err Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_
+[14:57:31]    sam2_base_plus.objects_perside16#1: wall 9718.4 ms, main block 2493 ms, rtt max 2496.9 ms
+[14:57:34]    mem sam2_base_plus after objects: main 461 MB private, rss 516; gpu main None, card 3308 MiB
+[14:57:34]    sam2_base_plus.free#1: wall 20.4 ms, main block 33.4 ms, rtt max 18.5 ms
+[14:57:37]    mem sam2_base_plus after Free VRAM: main 103 MB private, rss 157; gpu main None, card 3308 MiB
+[14:58:07]    sam2_base_plus.objects_after_free#1: wall 30506.6 ms, main block 2448.3 ms, rtt max 2444.9 ms
+[14:58:10]    mem sam2_base_plus after objects after Free VRAM: main 447 MB private, rss 503; gpu main None, card 3308 MiB
+[14:58:10]    sam2_base_plus.free2#1: wall 20.7 ms, main block 33.9 ms, rtt max 18.3 ms
+[14:58:13]    mem sam2_base_plus after the second Free VRAM: main 102 MB private, rss 157; gpu main None, card 3308 MiB
+[14:58:14]    sam2_tiny.point_cold#1: wall 1458 ms, main block 1107.6 ms, rtt max 1104.3 ms
+[14:58:17]    mem sam2_tiny after the cold point: main 280 MB private, rss 336; gpu main None, card 3307 MiB
+[14:58:17]    sam2_tiny.point_warm#1: wall 30.5 ms, main block 43.9 ms, rtt max 26.5 ms
+[14:58:17]    sam2_tiny.point_warm#2: wall 29.9 ms, main block 35.5 ms, rtt max 26.5 ms
+[14:58:18]    sam2_tiny.point_warm#3: wall 30.2 ms, main block 35.7 ms, rtt max 26.9 ms
+[14:58:18]    sam2_tiny.point_warm#4: wall 30.2 ms, main block 36.1 ms, rtt max 27.8 ms
+[14:58:19]    sam2_tiny.point_warm#5: wall 30.8 ms, main block 37 ms, rtt max 29.3 ms
+[14:58:57]    sam2_tiny.objects_cached#1: wall 38449 ms, main block 2504.1 ms, rtt max 2506.8 ms
+[14:58:58]    sam2_tiny.point_after_objects#1: wall 30.3 ms, main block 36.3 ms, rtt max 26.8 ms
+[14:58:58]    sam2_tiny.point_after_objects#2: wall 29.5 ms, main block 35 ms, rtt max 27.1 ms
+[14:58:59]    sam2_tiny.point_after_objects#3: wall 30 ms, main block 36.6 ms, rtt max 28.1 ms
+[14:59:01]    mem sam2_tiny after objects: main 278 MB private, rss 334; gpu main None, card 3318 MiB
+[14:59:01]    sam2_tiny.free#1: wall 13.4 ms, main block 26.2 ms, rtt max 9 ms
+[14:59:04]    mem sam2_tiny after Free VRAM: main 101 MB private, rss 156; gpu main None, card 3313 MiB
+[14:59:06]    sam2_small.point_cold#1: wall 1647.2 ms, main block 1255.1 ms, rtt max 1251.4 ms
+[14:59:08]    mem sam2_small after the cold point: main 309 MB private, rss 364; gpu main None, card 3308 MiB
+[14:59:08]    sam2_small.point_warm#1: wall 29.9 ms, main block 42.5 ms, rtt max 25.9 ms
+[14:59:09]    sam2_small.point_warm#2: wall 28.9 ms, main block 34.9 ms, rtt max 24.9 ms
+[14:59:09]    sam2_small.point_warm#3: wall 29.2 ms, main block 34.2 ms, rtt max 25.3 ms
+[14:59:09]    sam2_small.point_warm#4: wall 29.5 ms, main block 35 ms, rtt max 26.1 ms
+[14:59:10]    sam2_small.point_warm#5: wall 28.7 ms, main block 34.3 ms, rtt max 25.3 ms
+[14:59:48]    sam2_small.objects_cached#1: wall 37656.3 ms, main block 2466 ms, rtt max 2468.5 ms
+[14:59:48]    sam2_small.point_after_objects#1: wall 30.6 ms, main block 36.2 ms, rtt max 27.2 ms
+[14:59:49]    sam2_small.point_after_objects#2: wall 29.6 ms, main block 37.2 ms, rtt max 24.7 ms
+[14:59:49]    sam2_small.point_after_objects#3: wall 29.2 ms, main block 35.2 ms, rtt max 26.7 ms
+[14:59:52]    mem sam2_small after objects: main 302 MB private, rss 358; gpu main None, card 3299 MiB
+[14:59:52]    sam2_small.free#1: wall 15.1 ms, main block 28.8 ms, rtt max 14.2 ms
+[14:59:54]    mem sam2_small after Free VRAM: main 98 MB private, rss 155; gpu main None, card 3299 MiB
+[15:00:03]    birefnet_lite.cutout#1: wall 8461 ms, main block 5580 ms, rtt max 5577.9 ms
+[15:00:08]    birefnet_lite.cutout#2: wall 4552.2 ms, main block 4556.6 ms, rtt max 4535 ms
+[15:00:13]    birefnet_lite.cutout#3: wall 4586.3 ms, main block 4591.9 ms, rtt max 4569.1 ms
+[15:00:15]    mem birefnet_lite after three cutouts: main 411 MB private, rss 464; gpu main None, card 3344 MiB
+[15:00:16]    birefnet_lite.free#1: wall 57.4 ms, main block 69.8 ms, rtt max 53.1 ms
+[15:00:18]    mem birefnet_lite after Free VRAM: main 101 MB private, rss 158; gpu main None, card 3342 MiB
+[15:00:19]    rmbg14.cutout#1: wall 940.3 ms, main block 636.6 ms, rtt max 634.8 ms
+[15:00:20]    rmbg14.cutout#2: wall 537.9 ms, main block 542.3 ms, rtt max 519.6 ms
+[15:00:21]    rmbg14.cutout#3: wall 545.4 ms, main block 550 ms, rtt max 526.1 ms
+[15:00:24]    mem rmbg14 after three cutouts: main 279 MB private, rss 335; gpu main None, card 3342 MiB
+[15:00:24]    rmbg14.free#1: wall 12.1 ms, main block 26.5 ms, rtt max 12.1 ms
+[15:00:26]    mem rmbg14 after Free VRAM: main 101 MB private, rss 159; gpu main None, card 3342 MiB
+[15:00:44]    rmbg2.cutout#1: wall 17852.8 ms, main block 11221.9 ms, rtt max 11219.5 ms
+[15:00:53]    rmbg2.cutout#2: wall 8184.7 ms, main block 8189.4 ms, rtt max 8167 ms
+[15:01:01]    rmbg2.cutout#3: wall 8166.5 ms, main block 8172.1 ms, rtt max 8157.7 ms
+[15:01:04]    mem rmbg2 after three cutouts: main 1150 MB private, rss 1202; gpu main None, card 3350 MiB
+[15:01:04]    rmbg2.free#1: wall 65.3 ms, main block 78.7 ms, rtt max 60.9 ms
+[15:01:07]    mem rmbg2 after Free VRAM: main 105 MB private, rss 162; gpu main None, card 3350 MiB
+[15:01:08]    da2_small.depth#1: wall 1003.8 ms, main block 797.3 ms, rtt max 797.5 ms
+[15:01:09]    da2_small.depth#2: wall 749.8 ms, main block 752.3 ms, rtt max 739.6 ms
+[15:01:10]    da2_small.depth#3: wall 756.4 ms, main block 759.2 ms, rtt max 744.6 ms
+[15:01:11]    da2_small.depth#4: wall 751.2 ms, main block 753.2 ms, rtt max 741 ms
+[15:01:15]    da2_small.depth_large#1: wall 3921.1 ms, main block 3917.6 ms, rtt max 3901.9 ms
+[15:01:19]    da2_small.depth_large#2: wall 3805 ms, main block 3803.2 ms, rtt max 3795.5 ms
+[15:01:24]    da2_small.depth_large#3: wall 3824.9 ms, main block 3821.9 ms, rtt max 3804.7 ms
+[15:01:26]    mem da2_small after depth: main 212 MB private, rss 268; gpu main None, card 3352 MiB
+[15:01:26]    da2_small.free#1: wall 8.8 ms, main block 21.6 ms, rtt max 4.9 ms
+[15:01:29]    mem da2_small after Free VRAM: main 107 MB private, rss 162; gpu main None, card 3356 MiB
+[15:01:33] lock: lock: released
+[15:01:33] gap: the lock is free for 90 s
+[15:03:03] lock: rc 0 lock: taken after 0 s
+[15:03:12] == editor r3: main pid 42484, {"pid": 42484, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[15:03:14]    mem start: main 84 MB private, rss 128; gpu main None, card 3210 MiB
+[15:03:16]    prep 6000x3375: {"W": 6000, "H": 3375, "loadMs": 631, "inputMs": 55.2, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[15:03:19]    doc6000.ensureObjects#1: wall 3081.7 ms, main block 1182.5 ms, rtt max 1165.9 ms
+[15:03:21]    doc6000.ensureObjects_cached#1: wall 1455.9 ms, main block 175.4 ms, rtt max 220.9 ms
+[15:03:22]    objects 6000x3375: {"count": 96, "big": 2, "small": 89, "bigAt": [41, 1936], "smallAt": [4594, 1506], "empty": [0, 0]}
+[15:03:22]    doc6000.hover_shape_big#1: wall 51.5 ms, main block 0 ms, rtt max 1.7 ms
+[15:03:22]    doc6000.hover_shape_small#1: wall 46.2 ms, main block 0 ms, rtt max 1.6 ms
+[15:03:23]    doc6000.click_object#1: wall 188.1 ms, main block 0 ms, rtt max 5.7 ms
+[15:03:23]    doc6000.select_point#1: wall 304.5 ms, main block 248 ms, rtt max 241.6 ms
+[15:03:24]    doc6000.select_point#2: wall 54.2 ms, main block 36.2 ms, rtt max 29.5 ms
+[15:03:24]    doc6000.select_point#3: wall 94.5 ms, main block 35.3 ms, rtt max 26.9 ms
+[15:03:27]    mem doc6000 after the object tool: main 6207 MB private, rss 581; gpu main {'dedicatedMB': 5646, 'sharedMB': 136}, card 9185 MiB
+[15:03:29]    prep 15000x8438: {"W": 15000, "H": 8438, "loadMs": 544, "inputMs": 14.8, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[15:03:31]    doc15000.ensureObjects#1: wall 1744.5 ms, main block 183.3 ms, rtt max 420.3 ms
+[15:03:33]    doc15000.ensureObjects_cached#1: wall 1938.9 ms, main block 182.6 ms, rtt max 715.1 ms
+[15:03:33]    objects 15000x8438: {"count": 97, "big": 3, "small": 89, "bigAt": [95, 4922], "smallAt": [11484, 3773], "empty": [0, 0]}
+[15:03:34]    doc15000.hover_shape_big#1: wall 322.4 ms, main block 0 ms, rtt max 1.6 ms
+[15:03:34]    doc15000.hover_shape_small#1: wall 278.3 ms, main block 0 ms, rtt max 2.3 ms
+[15:03:37]    doc15000.click_object#1: wall 2015.4 ms, main block 0 ms, rtt max 35.5 ms
+[15:03:37]    doc15000.select_point#1: wall 102.9 ms, main block 36.1 ms, rtt max 30 ms
+[15:03:38]    doc15000.select_point#2: wall 64.3 ms, main block 34.6 ms, rtt max 27.9 ms
+[15:03:38]    doc15000.select_point#3: wall 127.7 ms, main block 34.6 ms, rtt max 25.4 ms
+[15:03:41]    mem doc15000 after the object tool: main 6227 MB private, rss 602; gpu main {'dedicatedMB': 5646, 'sharedMB': 137}, card 10068 MiB
+[15:03:45] lock: lock: released
+[15:03:45] gap: the lock is free for 90 s
+[15:05:15] lock: rc 0 lock: taken after 0 s
+[15:05:24] == probe r3: main pid 26836, {"pid": 26836, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[15:05:26]    prep: {"W": 2000, "H": 1125, "loadMs": 513, "inputMs": 34.6, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[15:05:29]    mem start: main 86 MB private, rss 129; gpu main None, card 3327 MiB
+[15:05:29]    probe gpu: forked {"pid": 46972, "spawnMs": 11.4}
+[15:05:29]    probe_gpu.init#1: rtt 51.9 ms, in process 9.4 ms, main block 0 ms, ipc rtt max 0.4 ms
+[15:05:31]    mem probe gpu started: main 84 MB private, rss 129; gpu main None, card 3322 MiB
+[15:05:33]    probe_gpu.point_cold#1: rtt 1579.8 ms, in process 1573 ms, main block 0 ms, ipc rtt max 8.8 ms
+[15:05:33]    probe_gpu.point_warm#1: rtt 6.7 ms, in process 6.2 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:05:33]    probe_gpu.point_warm#2: rtt 6.6 ms, in process 6.1 ms, main block 0 ms, ipc rtt max 0.2 ms
+[15:05:33]    probe_gpu.point_warm#3: rtt 6.9 ms, in process 6.3 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:05:33]    probe_gpu.point_warm#4: rtt 6.6 ms, in process 6.1 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:05:33]    probe_gpu.point_warm#5: rtt 6.9 ms, in process 6.3 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:05:35]    probe_gpu.objects_cached#1: rtt 1808 ms, in process 1792.4 ms, main block 0 ms, ipc rtt max 1.7 ms
+[15:05:37]    probe_gpu.objects_cached#2: rtt 1726.2 ms, in process 1712.5 ms, main block 0 ms, ipc rtt max 1.6 ms
+[15:05:37]    probe_gpu.point_after_objects#1: rtt 6.7 ms, in process 6.1 ms, main block 0 ms, ipc rtt max 0.2 ms
+[15:05:37]    probe_gpu.point_after_objects#2: rtt 6.6 ms, in process 6 ms, main block 0 ms, ipc rtt max 0.2 ms
+[15:05:37]    probe_gpu.point_after_objects#3: rtt 6.7 ms, in process 6.1 ms, main block 0 ms, ipc rtt max 0.2 ms
+[15:05:39]    mem probe gpu after SAM2: main 85 MB private, rss 130; gpu main None, card 8966 MiB
+[15:05:44]    probe_gpu.cutout_lite#1: rtt 4308.5 ms, in process 4301 ms, main block 0 ms, ipc rtt max 1.2 ms
+[15:05:48]    probe_gpu.cutout_lite#2: rtt 3972 ms, in process 3963 ms, main block 0 ms, ipc rtt max 3.2 ms
+[15:05:48]    probe_gpu.depth#1: rtt 637.1 ms, in process 628.7 ms, main block 0 ms, ipc rtt max 8.3 ms
+[15:05:49]    probe_gpu.depth#2: rtt 269.3 ms, in process 259.9 ms, main block 0 ms, ipc rtt max 1.3 ms
+[15:05:49]    probe_gpu.depth#3: rtt 258.3 ms, in process 249.2 ms, main block 0 ms, ipc rtt max 0.9 ms
+[15:05:51]    mem probe gpu after cutout and depth: main 86 MB private, rss 131; gpu main None, card 9252 MiB
+[15:05:52]    probe_gpu.free#1: rtt 531.6 ms, in process 531.3 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:05:54]    mem probe gpu after free: main 85 MB private, rss 130; gpu main None, card 2885 MiB
+[15:05:55]    probe_gpu.echo_4mb#1: rtt 17 ms, in process 0 ms, main block 0 ms, ipc rtt max 2.5 ms
+[15:05:55]    probe_gpu.echo_4mb#2: rtt 17 ms, in process 0 ms, main block 0 ms, ipc rtt max 2.5 ms
+[15:05:55]    probe_gpu.echo_4mb#3: rtt 17.1 ms, in process 0 ms, main block 0 ms, ipc rtt max 2.4 ms
+[15:05:55]    probe_gpu.echo_4mb#4: rtt 16.6 ms, in process 0 ms, main block 0 ms, ipc rtt max 2.4 ms
+[15:05:55]    probe_gpu.echo_4mb#5: rtt 16.7 ms, in process 0 ms, main block 0 ms, ipc rtt max 2.5 ms
+[15:05:55]    probe_gpu.echo_8mb#1: rtt 33.3 ms, in process 0 ms, main block 0 ms, ipc rtt max 8.6 ms
+[15:05:55]    probe_gpu.echo_8mb#2: rtt 32.4 ms, in process 0 ms, main block 0 ms, ipc rtt max 9.2 ms
+[15:05:55]    probe_gpu.echo_8mb#3: rtt 31.7 ms, in process 0 ms, main block 0 ms, ipc rtt max 9.1 ms
+[15:05:55]    probe_gpu.echo_8mb#4: rtt 32.4 ms, in process 0 ms, main block 20.7 ms, ipc rtt max 9.1 ms
+[15:05:55]    probe_gpu.echo_8mb#5: rtt 31.6 ms, in process 0 ms, main block 0 ms, ipc rtt max 9.4 ms
+[15:05:55]    probe_gpu.echo_16mb#1: rtt 66.7 ms, in process 0 ms, main block 25.4 ms, ipc rtt max 20.8 ms
+[15:05:56]    probe_gpu.echo_16mb#2: rtt 67.1 ms, in process 0 ms, main block 27.2 ms, ipc rtt max 23.5 ms
+[15:05:56]    probe_gpu.echo_16mb#3: rtt 70.8 ms, in process 0 ms, main block 25.5 ms, ipc rtt max 22 ms
+[15:05:56]    probe_gpu.echo_16mb#4: rtt 64.1 ms, in process 0 ms, main block 25.6 ms, ipc rtt max 21.2 ms
+[15:05:56]    probe_gpu.echo_16mb#5: rtt 67.9 ms, in process 0 ms, main block 24.7 ms, ipc rtt max 21.2 ms
+[15:05:56]    probe_gpu.mem#1: rtt 0.4 ms, in process 0.2 ms, main block 0 ms, ipc rtt max 0.2 ms
+[15:05:56]    probe_gpu.kill: {"exited": 0, "exitMs": 8.7}
+[15:05:59]    mem probe gpu after kill: main 85 MB private, rss 130; gpu main None, card 2885 MiB
+[15:05:59]    probe cpu: forked {"pid": 49856, "spawnMs": 12}
+[15:05:59]    probe_cpu.init#1: rtt 52.1 ms, in process 9.6 ms, main block 0 ms, ipc rtt max 0.6 ms
+[15:06:02]    mem probe cpu started: main 85 MB private, rss 131; gpu main None, card 3132 MiB
+[15:06:04]    probe_cpu.point_cold#1: rtt 2587.5 ms, in process 2578.9 ms, main block 0 ms, ipc rtt max 3.2 ms
+[15:06:05]    probe_cpu.point_warm#1: rtt 28.2 ms, in process 27.4 ms, main block 0 ms, ipc rtt max 0.5 ms
+[15:06:05]    probe_cpu.point_warm#2: rtt 28.8 ms, in process 28 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:06:05]    probe_cpu.point_warm#3: rtt 27.1 ms, in process 26.5 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:06:05]    probe_cpu.point_warm#4: rtt 29.5 ms, in process 28.9 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:06:05]    probe_cpu.point_warm#5: rtt 26.7 ms, in process 26 ms, main block 0 ms, ipc rtt max 0.6 ms
+[15:06:42]    probe_cpu.objects_cached#1: rtt 37388.6 ms, in process 37370.9 ms, main block 22.4 ms, ipc rtt max 6.9 ms
+[15:07:20]    probe_cpu.objects_cached#2: rtt 37660.4 ms, in process 37642.4 ms, main block 32.4 ms, ipc rtt max 16.8 ms
+[15:07:20]    probe_cpu.point_after_objects#1: rtt 29.8 ms, in process 28.9 ms, main block 0 ms, ipc rtt max 0.4 ms
+[15:07:20]    probe_cpu.point_after_objects#2: rtt 29.6 ms, in process 28.9 ms, main block 0 ms, ipc rtt max 0.5 ms
+[15:07:20]    probe_cpu.point_after_objects#3: rtt 28.7 ms, in process 28 ms, main block 0 ms, ipc rtt max 0.5 ms
+[15:07:23]    mem probe cpu after SAM2: main 85 MB private, rss 130; gpu main None, card 3129 MiB
+[15:07:31]    probe_cpu.cutout_lite#1: rtt 8487.8 ms, in process 8479.3 ms, main block 0 ms, ipc rtt max 3.2 ms
+[15:07:36]    probe_cpu.cutout_lite#2: rtt 4500.9 ms, in process 4492.4 ms, main block 0 ms, ipc rtt max 4.8 ms
+[15:07:37]    probe_cpu.depth#1: rtt 1056.7 ms, in process 1047.1 ms, main block 0 ms, ipc rtt max 1.7 ms
+[15:07:38]    probe_cpu.depth#2: rtt 764.5 ms, in process 755 ms, main block 0 ms, ipc rtt max 1.4 ms
+[15:07:39]    probe_cpu.depth#3: rtt 756.5 ms, in process 748 ms, main block 0 ms, ipc rtt max 1.5 ms
+[15:07:41]    mem probe cpu after cutout and depth: main 84 MB private, rss 129; gpu main None, card 3184 MiB
+[15:07:41]    probe_cpu.free#1: rtt 86.6 ms, in process 86.3 ms, main block 0 ms, ipc rtt max 0.4 ms
+[15:07:43]    mem probe cpu after free: main 84 MB private, rss 129; gpu main None, card 3184 MiB
+[15:07:43]    probe_cpu.kill: {"exited": 0, "exitMs": 3.1}
+[15:07:47]    mem probe cpu after kill: main 83 MB private, rss 129; gpu main None, card 3184 MiB
+[15:07:50] lock: lock: released
+[15:07:50] gap: the lock is free for 90 s
+[15:09:20] lock: rc 0 lock: taken after 0 s
+[15:09:29] == batchsize r3: main pid 44904, {"pid": 44904, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[15:09:31]    prep: {"W": 2000, "H": 1125, "loadMs": 525, "inputMs": 36.9, "outW": 2000, "outH": 1125, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+[15:09:34]    mem start: main 85 MB private, rss 129; gpu main None, card 3291 MiB
+[15:09:34]    batch16.init#1: rtt 47.6 ms, in process 9.5 ms, main block 0 ms, ipc rtt max 0.4 ms
+[15:09:36]    batch16.point_cold#1: rtt 1573.6 ms, in process 1565.5 ms, main block 0 ms, ipc rtt max 8.9 ms
+[15:09:36]    batch16.objects_b16#1: rtt 31.3 ms, in process 22.1 ms, main block 0 ms, ipc rtt max 4.2 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[15:09:36]    batch16.objects_b16#2: rtt 16.3 ms, in process 7.3 ms, main block 0 ms, ipc rtt max 3.7 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[15:09:38]    batch16.objects_b64_after#1: rtt 1809.8 ms, in process 1790.9 ms, main block 0 ms, ipc rtt max 4.1 ms
+[15:09:38]    batch16.point_after#1: rtt 15.3 ms, in process 6.4 ms, main block 0 ms, ipc rtt max 3.8 ms
+[15:09:40]    mem batch 16 after: main 86 MB private, rss 131; gpu main None, card 8935 MiB
+[15:09:41]    batch32.init#1: rtt 47.4 ms, in process 9.1 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:09:43]    batch32.point_cold#1: rtt 1527.3 ms, in process 1519.1 ms, main block 0 ms, ipc rtt max 3.2 ms
+[15:09:43]    batch32.objects_b32#1: rtt 34.3 ms, in process 25 ms, main block 0 ms, ipc rtt max 5.4 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[15:09:43]    batch32.objects_b32#2: rtt 17.4 ms, in process 8.4 ms, main block 0 ms, ipc rtt max 5 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[15:09:45]    batch32.objects_b64_after#1: rtt 1767.7 ms, in process 1748.3 ms, main block 0 ms, ipc rtt max 5.6 ms
+[15:09:45]    batch32.point_after#1: rtt 14.3 ms, in process 6.3 ms, main block 0 ms, ipc rtt max 3.7 ms
+[15:09:47]    mem batch 32 after: main 86 MB private, rss 131; gpu main None, card 8943 MiB
+[15:09:49]    batch128.init#1: rtt 48.6 ms, in process 9.2 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:09:50]    batch128.point_cold#1: rtt 1541.6 ms, in process 1532.9 ms, main block 0 ms, ipc rtt max 3.4 ms
+[15:09:51]    batch128.objects_b128#1: rtt 57.7 ms, in process 48.1 ms, main block 0 ms, ipc rtt max 4.7 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[15:09:51]    batch128.objects_b128#2: rtt 26.3 ms, in process 14.3 ms, main block 0 ms, ipc rtt max 7.1 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[15:09:52]    batch128.objects_b64_after#1: rtt 1759.1 ms, in process 1740.5 ms, main block 0 ms, ipc rtt max 4.8 ms
+[15:09:53]    batch128.point_after#1: rtt 15.2 ms, in process 6.7 ms, main block 0 ms, ipc rtt max 3.5 ms
+[15:09:55]    mem batch 128 after: main 86 MB private, rss 131; gpu main None, card 9040 MiB
+[15:09:56]    batch256.init#1: rtt 47.6 ms, in process 9 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:09:58]    batch256.point_cold#1: rtt 1555.2 ms, in process 1547 ms, main block 0 ms, ipc rtt max 3 ms
+[15:09:58]    batch256.objects_b256#1: rtt 86.2 ms, in process 77.3 ms, main block 0 ms, ipc rtt max 4 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[15:09:58]    batch256.objects_b256#2: rtt 27.2 ms, in process 18 ms, main block 0 ms, ipc rtt max 4 ms, Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src
+[15:10:00]    batch256.objects_b64_after#1: rtt 1763 ms, in process 1744.8 ms, main block 0 ms, ipc rtt max 4.9 ms
+[15:10:00]    batch256.point_after#1: rtt 14.5 ms, in process 6.4 ms, main block 0 ms, ipc rtt max 4 ms
+[15:10:02]    mem batch 256 after: main 86 MB private, rss 131; gpu main None, card 11090 MiB
+[15:10:04]    batch64.init#1: rtt 50.4 ms, in process 9.5 ms, main block 0 ms, ipc rtt max 0.3 ms
+[15:10:05]    batch64.point_cold#1: rtt 1550.1 ms, in process 1541.9 ms, main block 0 ms, ipc rtt max 3.1 ms
+[15:10:07]    batch64.objects_b64#1: rtt 1782.7 ms, in process 1763.1 ms, main block 0 ms, ipc rtt max 6.3 ms
+[15:10:09]    batch64.objects_b64#2: rtt 1737.3 ms, in process 1718.7 ms, main block 0 ms, ipc rtt max 4.9 ms
+[15:10:09]    batch64.point_after#1: rtt 14.4 ms, in process 6.3 ms, main block 0 ms, ipc rtt max 3.9 ms
+[15:10:11]    mem batch 64 after: main 87 MB private, rss 131; gpu main None, card 8935 MiB
+[15:10:16] lock: lock: released
+[15:10:16] done
+[15:10:29] U0 chain: runs 1,2,3, batches hovermem, port 9588, inspect 9598, models F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\models
+[15:10:29] lock: rc 0 lock: taken after 0 s
+[15:10:38] == hovermem r1: main pid 52360, {"pid": 52360, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[15:10:44]    hover15000.ensureObjects#1: wall 3170.3 ms, main block 1116.7 ms, rtt max 1094 ms
+[15:10:44]    hover15000.shape_01#1: wall 316.5 ms, main block 0 ms, rtt max 1.7 ms
+[15:10:45]    hover15000.shape_02#1: wall 193.9 ms, main block 0 ms, rtt max 1.9 ms
+[15:10:46]    hover15000.shape_03#1: wall 310.9 ms, main block 0 ms, rtt max 1.3 ms
+[15:10:46]    hover15000.shape_04#1: wall 207.3 ms, main block 0 ms, rtt max 0.3 ms
+[15:10:47]    hover15000.shape_05#1: wall 225 ms, main block 0 ms, rtt max 0.5 ms
+[15:10:47]    hover15000.shape_06#1: wall 172 ms, main block 0 ms, rtt max 1.9 ms
+[15:10:48]    hover15000.shape_07#1: wall 302.1 ms, main block 0 ms, rtt max 302.2 ms
+[15:10:49]    hover15000.shape_08#1: wall 326.5 ms, main block 0 ms, rtt max 1.8 ms
+[15:10:49]    hover15000.shape_09#1: wall 212.2 ms, main block 0 ms, rtt max 0.3 ms
+[15:10:50]    hover15000.shape_10#1: wall 161.8 ms, main block 0 ms, rtt max 1.5 ms
+[15:10:50]    hover15000.shape_11#1: wall 173.4 ms, main block 0 ms, rtt max 0.3 ms
+[15:10:51]    hover15000.shape_12#1: wall 187.1 ms, main block 0 ms, rtt max 187.6 ms
+[15:10:51]    hover15000.shape_13#1: wall 194.8 ms, main block 0 ms, rtt max 0.3 ms
+[15:10:52]    hover15000.shape_14#1: wall 190.6 ms, main block 0 ms, rtt max 215.7 ms
+[15:10:57]    hover memory 15000x8438: before {'tabMB': 1165, 'gpuMB': 413, 'cache': 0}, after 14 shapes {'tabMB': 1645, 'gpuMB': 6339, 'cache': 13}, cache cleared {'tabMB': 1146, 'gpuMB': 12807, 'cache': 0}
+[15:11:01] lock: lock: released
+[15:11:01] gap: the lock is free for 90 s
+[15:12:32] lock: rc 0 lock: taken after 0 s
+[15:12:41] == hovermem r2: main pid 48520, {"pid": 48520, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[15:12:46]    hover15000.ensureObjects#1: wall 3150.9 ms, main block 1084.2 ms, rtt max 1068.7 ms
+[15:12:47]    hover15000.shape_01#1: wall 315.6 ms, main block 0 ms, rtt max 2.1 ms
+[15:12:48]    hover15000.shape_02#1: wall 200.5 ms, main block 0 ms, rtt max 0.3 ms
+[15:12:48]    hover15000.shape_03#1: wall 310.3 ms, main block 0 ms, rtt max 1.8 ms
+[15:12:49]    hover15000.shape_04#1: wall 198.8 ms, main block 0 ms, rtt max 0.5 ms
+[15:12:50]    hover15000.shape_05#1: wall 224.1 ms, main block 0 ms, rtt max 1.7 ms
+[15:12:50]    hover15000.shape_06#1: wall 308.9 ms, main block 0 ms, rtt max 309.3 ms
+[15:12:51]    hover15000.shape_07#1: wall 295.4 ms, main block 0 ms, rtt max 295.5 ms
+[15:12:52]    hover15000.shape_08#1: wall 314.2 ms, main block 0 ms, rtt max 1.7 ms
+[15:12:52]    hover15000.shape_09#1: wall 192.9 ms, main block 0 ms, rtt max 0.3 ms
+[15:12:53]    hover15000.shape_10#1: wall 161 ms, main block 0 ms, rtt max 161.5 ms
+[15:12:53]    hover15000.shape_11#1: wall 173.4 ms, main block 0 ms, rtt max 0.3 ms
+[15:12:54]    hover15000.shape_12#1: wall 171.9 ms, main block 0 ms, rtt max 172.4 ms
+[15:12:54]    hover15000.shape_13#1: wall 178.1 ms, main block 0 ms, rtt max 0.3 ms
+[15:12:55]    hover15000.shape_14#1: wall 186.1 ms, main block 0 ms, rtt max 231.5 ms
+[15:13:00]    hover memory 15000x8438: before {'tabMB': 1163, 'gpuMB': 415, 'cache': 0}, after 14 shapes {'tabMB': 1644, 'gpuMB': 6351, 'cache': 13}, cache cleared {'tabMB': 1145, 'gpuMB': 12819, 'cache': 0}
+[15:13:04] lock: lock: released
+[15:13:04] gap: the lock is free for 90 s
+[15:14:34] lock: rc 0 lock: taken after 0 s
+[15:14:52] == hovermem r3: main pid 51244, {"pid": 51244, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[15:14:58]    hover15000.ensureObjects#1: wall 3138.8 ms, main block 1133.4 ms, rtt max 1117.8 ms
+[15:14:59]    hover15000.shape_01#1: wall 312.7 ms, main block 0 ms, rtt max 2.6 ms
+[15:14:59]    hover15000.shape_02#1: wall 197.6 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:00]    hover15000.shape_03#1: wall 296.5 ms, main block 0 ms, rtt max 1.6 ms
+[15:15:00]    hover15000.shape_04#1: wall 214.8 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:01]    hover15000.shape_05#1: wall 222.4 ms, main block 0 ms, rtt max 1.5 ms
+[15:15:02]    hover15000.shape_06#1: wall 289.3 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:02]    hover15000.shape_07#1: wall 312.5 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:03]    hover15000.shape_08#1: wall 175.3 ms, main block 0 ms, rtt max 175.4 ms
+[15:15:04]    hover15000.shape_09#1: wall 193.3 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:04]    hover15000.shape_10#1: wall 168.1 ms, main block 0 ms, rtt max 168.3 ms
+[15:15:05]    hover15000.shape_11#1: wall 163.8 ms, main block 0 ms, rtt max 0.4 ms
+[15:15:05]    hover15000.shape_12#1: wall 169.6 ms, main block 0 ms, rtt max 1.4 ms
+[15:15:06]    hover15000.shape_13#1: wall 217.2 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:06]    hover15000.shape_14#1: wall 276 ms, main block 0 ms, rtt max 19.9 ms
+[15:15:12]    hover memory 15000x8438: before {'tabMB': 1168, 'gpuMB': 417, 'cache': 0}, after 14 shapes {'tabMB': 1649, 'gpuMB': 5383, 'cache': 13}, cache cleared {'tabMB': 1150, 'gpuMB': 14074, 'cache': 0}
+[15:15:16] lock: lock: released
+[15:15:16] done
+[15:15:25] U0 chain: runs 4, batches hovermem, port 9588, inspect 9598, models F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\models
+[15:15:25] lock: rc 0 lock: taken after 0 s
+[15:15:34] == hovermem r4: main pid 22668, {"pid": 22668, "ort": "1.29.0", "electron": "44.2.0", "hist": true}
+[15:15:40]    hover15000.ensureObjects#1: wall 3087 ms, main block 1086.2 ms, rtt max 1066.4 ms
+[15:15:41]    hover15000.shape_01#1: wall 313.1 ms, main block 0 ms, rtt max 1.7 ms
+[15:15:41]    hover15000.shape_02#1: wall 203.4 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:42]    hover15000.shape_03#1: wall 190 ms, main block 0 ms, rtt max 1.7 ms
+[15:15:42]    hover15000.shape_04#1: wall 192.6 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:43]    hover15000.shape_05#1: wall 339.7 ms, main block 0 ms, rtt max 340.3 ms
+[15:15:44]    hover15000.shape_06#1: wall 281.9 ms, main block 0 ms, rtt max 1.8 ms
+[15:15:44]    hover15000.shape_07#1: wall 302.4 ms, main block 0 ms, rtt max 302.5 ms
+[15:15:45]    hover15000.shape_08#1: wall 289.3 ms, main block 0 ms, rtt max 289.8 ms
+[15:15:46]    hover15000.shape_09#1: wall 198.3 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:46]    hover15000.shape_10#1: wall 161.2 ms, main block 0 ms, rtt max 161.6 ms
+[15:15:47]    hover15000.shape_11#1: wall 157.1 ms, main block 0 ms, rtt max 0.3 ms
+[15:15:47]    hover15000.shape_12#1: wall 172.9 ms, main block 0 ms, rtt max 1.6 ms
+[15:15:48]    hover15000.shape_13#1: wall 176.2 ms, main block 0 ms, rtt max 176.4 ms
+[15:15:48]    hover15000.shape_14#1: wall 188.2 ms, main block 0 ms, rtt max 0.5 ms
+[15:16:54]    hover memory 15000x8438: before {'tabMB': 1165, 'gpuMB': 409, 'cache': 0}, after 14 shapes {'tabMB': 1645, 'gpuMB': 6337, 'cache': 13}, cache cleared {'tabMB': 1146, 'gpuMB': 11552, 'cache': 0}, later [{'s': 20, 'tabMB': 1139, 'gpuMB': 1491, 'cache': 0}, {'s': 60, 'tabMB': 1139, 'gpuMB': 1490, 'cache': 0}]
+[15:16:58] lock: lock: released
+[15:16:58] done

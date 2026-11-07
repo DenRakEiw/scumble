@@ -1,0 +1,102 @@
+
+Debugger listening on ws://127.0.0.1:9598/bf6c7d21-4ffb-4c6f-b005-374bee8bdb0c
+For help, see: https://nodejs.org/learn/getting-started/debugging
+
+DevTools listening on ws://127.0.0.1:9588/devtools/browser/5f06b197-7d83-4782-ab2b-0f1ef56c8e60
+Debugger attached.
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+Error occurred in handler for 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 pixels
+    at checkImage (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:199:59)
+    at Object.cutout (F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\onnx\index.js:247:19)
+    at helpers.<computed> [as cutout] (<anonymous>:37:87)
+    at F:\canvas\.claude\worktrees\agent-a311c41109a242509\electron\main\main.js:1243:59
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:123650)
+    at Session.emit (node:events:514:28)
+[1;31m2026-11-07 14:49:26.0673206 [E:onnxruntime:, sequential_executor.cc:671 onnxruntime::ExecuteKernel] Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src\MLOperatorAuthorImpl.cpp(2901)\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(2) tid(d17c) 80070057 Falscher Parameter.
+[m
+Error occurred in handler for 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src\MLOperatorAuthorImpl.cpp(2901)\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(2) tid(d17c) 80070057 Falscher Parameter.
+
+    at Immediate.<anonymous> (F:\canvas\node_modules\onnxruntime-node\dist\backend.js:117:108)
+    at process.processImmediate (node:internal/timers:574:21)
+[1;31m2026-11-07 14:49:26.4572318 [E:onnxruntime:, sequential_executor.cc:671 onnxruntime::ExecuteKernel] Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src\MLOperatorAuthorImpl.cpp(2901)\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(4) tid(d17c) 80070057 Falscher Parameter.
+[m
+Error occurred in handler for 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src\MLOperatorAuthorImpl.cpp(2901)\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(4) tid(d17c) 80070057 Falscher Parameter.
+
+    at Immediate.<anonymous> (F:\canvas\node_modules\onnxruntime-node\dist\backend.js:117:108)
+    at process.processImmediate (node:internal/timers:574:21)
+[1;31m2026-11-07 14:49:26.8667743 [E:onnxruntime:, sequential_executor.cc:671 onnxruntime::ExecuteKernel] Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src\MLOperatorAuthorImpl.cpp(2901)\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(6) tid(d17c) 80070057 Falscher Parameter.
+[m
+Error occurred in handler for 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src\MLOperatorAuthorImpl.cpp(2901)\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(6) tid(d17c) 80070057 Falscher Parameter.
+
+    at Immediate.<anonymous> (F:\canvas\node_modules\onnxruntime-node\dist\backend.js:117:108)
+    at process.processImmediate (node:internal/timers:574:21)
+[1;31m2026-11-07 14:49:27.3279501 [E:onnxruntime:, sequential_executor.cc:671 onnxruntime::ExecuteKernel] Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src\MLOperatorAuthorImpl.cpp(2901)\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(8) tid(d17c) 80070057 Falscher Parameter.
+[m
+Error occurred in handler for 'helpers:objects': Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\core\providers\dml\DmlExecutionProvider\src\MLOperatorAuthorImpl.cpp(2901)\onnxruntime.dll!00007FF8DB8A8884: (caller: 00007FF8DB8A8644) Exception(8) tid(d17c) 80070057 Falscher Parameter.
+
+    at Immediate.<anonymous> (F:\canvas\node_modules\onnxruntime-node\dist\backend.js:117:108)
+    at process.processImmediate (node:internal/timers:574:21)
+Debugger ending on ws://127.0.0.1:9598/bf6c7d21-4ffb-4c6f-b005-374bee8bdb0c
+For help, see: https://nodejs.org/learn/getting-started/debugging

@@ -1,0 +1,9 @@
+
+Debugger listening on ws://127.0.0.1:9598/aff794e6-22a2-481e-87a2-7f2068c85207
+For help, see: https://nodejs.org/learn/getting-started/debugging
+
+DevTools listening on ws://127.0.0.1:9588/devtools/browser/588c8df0-cbec-41c7-86e2-67fa7786c72e
+Debugger attached.
+Debugger ending on ws://127.0.0.1:9598/aff794e6-22a2-481e-87a2-7f2068c85207
+For help, see: https://nodejs.org/learn/getting-started/debugging
+Error occurred in handler for 'BROWSER_GET_PROCESS_MEMORY_INFO': [Error: Failed to create memory dump]

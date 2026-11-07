@@ -1,0 +1,2277 @@
+{
+ "batch": "probe",
+ "run": 3,
+ "device": "auto",
+ "started": "2026-11-07T15:05:15",
+ "others": [],
+ "card_before_start": 3032,
+ "main_setup": {
+  "pid": 26836,
+  "ort": "1.29.0",
+  "electron": "44.2.0",
+  "hist": true
+ },
+ "page_setup": {
+  "ok": true,
+  "tiles": true
+ },
+ "image": "F:\\canvas\\docs\\images\\tutorial\\scene.jpg",
+ "prep": {
+  "W": 2000,
+  "H": 1125,
+  "loadMs": 513,
+  "inputMs": 34.6,
+  "outW": 2000,
+  "outH": 1125,
+  "dw": 924,
+  "dh": 518,
+  "lw": 1568,
+  "lh": 882,
+  "tiles": true
+ },
+ "rows": [
+  {
+   "name": "probe_gpu.fork",
+   "fork": {
+    "pid": 46972,
+    "spawnMs": 11.4
+   }
+  },
+  {
+   "name": "probe_gpu.init",
+   "reps": [
+    {
+     "rtt": 51.9,
+     "ms": 9.4,
+     "error": null,
+     "res": {
+      "pid": 46972,
+      "device": "gpu",
+      "ortMs": 9.376399999999997,
+      "startMs": 24.9806,
+      "version": "1.29.0"
+     },
+     "probe": {
+      "n": 26,
+      "max": 0.4,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.point_cold",
+   "reps": [
+    {
+     "rtt": 1579.8,
+     "ms": 1573,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 419,
+      "max": 8.8,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.8,
+      "histP99Ms": 15.8
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.point_warm",
+   "reps": [
+    {
+     "rtt": 6.7,
+     "ms": 6.2,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 16,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "rtt": 6.6,
+     "ms": 6.1,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 15,
+      "max": 0.2,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    },
+    {
+     "rtt": 6.9,
+     "ms": 6.3,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 15,
+      "max": 0.3,
+      "p50": 0.1,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "rtt": 6.6,
+     "ms": 6.1,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 17,
+      "max": 0.3,
+      "p50": 0.1,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "rtt": 6.9,
+     "ms": 6.3,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 20,
+      "max": 0.3,
+      "p50": 0.1,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.objects_cached",
+   "reps": [
+    {
+     "rtt": 1808,
+     "ms": 1792.4,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "dml",
+      "encodeMs": 0.009699999999611464,
+      "automaskMs": 1792.4219999999996,
+      "encodeRunMs": 63
+     },
+     "probe": {
+      "n": 479,
+      "max": 1.7,
+      "p50": 0.1,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.5,
+      "histP99Ms": 16.1
+     }
+    },
+    {
+     "rtt": 1726.2,
+     "ms": 1712.5,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "dml",
+      "encodeMs": 0.007599999999911233,
+      "automaskMs": 1712.4595,
+      "encodeRunMs": 63
+     },
+     "probe": {
+      "n": 451,
+      "max": 1.6,
+      "p50": 0.1,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16,
+      "histP99Ms": 15.7
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.point_after_objects",
+   "reps": [
+    {
+     "rtt": 6.7,
+     "ms": 6.1,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 16,
+      "max": 0.2,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    },
+    {
+     "rtt": 6.6,
+     "ms": 6,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 16,
+      "max": 0.2,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16,
+      "histP99Ms": 16
+     }
+    },
+    {
+     "rtt": 6.7,
+     "ms": 6.1,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812333345413208,
+      "provider": "dml"
+     },
+     "probe": {
+      "n": 15,
+      "max": 0.2,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.cutout_lite",
+   "reps": [
+    {
+     "rtt": 4308.5,
+     "ms": 4301,
+     "error": null,
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "provider": "dml",
+      "runMs": 1882
+     },
+     "probe": {
+      "n": 1108,
+      "max": 1.2,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.2,
+      "histP99Ms": 16.2
+     }
+    },
+    {
+     "rtt": 3972,
+     "ms": 3963,
+     "error": null,
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "provider": "dml",
+      "runMs": 1454
+     },
+     "probe": {
+      "n": 1011,
+      "max": 3.2,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19.1,
+      "histP99Ms": 16.1
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.depth",
+   "reps": [
+    {
+     "rtt": 637.1,
+     "ms": 628.7,
+     "error": null,
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "provider": "dml",
+      "runMs": 325
+     },
+     "probe": {
+      "n": 176,
+      "max": 8.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 17.2,
+      "histP99Ms": 17.2
+     }
+    },
+    {
+     "rtt": 269.3,
+     "ms": 259.9,
+     "error": null,
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "provider": "dml",
+      "runMs": 256
+     },
+     "probe": {
+      "n": 81,
+      "max": 1.3,
+      "p50": 0.2,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.9,
+      "histP99Ms": 15.9
+     }
+    },
+    {
+     "rtt": 258.3,
+     "ms": 249.2,
+     "error": null,
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "provider": "dml",
+      "runMs": 246
+     },
+     "probe": {
+      "n": 82,
+      "max": 0.9,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.1,
+      "histP99Ms": 16.1
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.free",
+   "reps": [
+    {
+     "rtt": 531.6,
+     "ms": 531.3,
+     "error": null,
+     "res": {
+      "released": 3
+     },
+     "probe": {
+      "n": 149,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.echo_4mb",
+   "reps": [
+    {
+     "rtt": 17,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 4194304
+     },
+     "probe": {
+      "n": 18,
+      "max": 2.5,
+      "p50": 0.2,
+      "p95": 2.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.5,
+      "histP99Ms": 16.5
+     }
+    },
+    {
+     "rtt": 17,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 4194304
+     },
+     "probe": {
+      "n": 18,
+      "max": 2.5,
+      "p50": 0.1,
+      "p95": 2.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 18.9,
+      "histP99Ms": 18.9
+     }
+    },
+    {
+     "rtt": 17.1,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 4194304
+     },
+     "probe": {
+      "n": 18,
+      "max": 2.4,
+      "p50": 0.1,
+      "p95": 2.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19.2,
+      "histP99Ms": 19.2
+     }
+    },
+    {
+     "rtt": 16.6,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 4194304
+     },
+     "probe": {
+      "n": 19,
+      "max": 2.4,
+      "p50": 0.1,
+      "p95": 2.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    },
+    {
+     "rtt": 16.7,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 4194304
+     },
+     "probe": {
+      "n": 17,
+      "max": 2.5,
+      "p50": 0.1,
+      "p95": 2.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.echo_8mb",
+   "reps": [
+    {
+     "rtt": 33.3,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 8388608
+     },
+     "probe": {
+      "n": 20,
+      "max": 8.6,
+      "p50": 0.1,
+      "p95": 8.6,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.6,
+      "histP99Ms": 16.6
+     }
+    },
+    {
+     "rtt": 32.4,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 8388608
+     },
+     "probe": {
+      "n": 21,
+      "max": 9.2,
+      "p50": 0.1,
+      "p95": 1.9,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "rtt": 31.7,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 8388608
+     },
+     "probe": {
+      "n": 19,
+      "max": 9.1,
+      "p50": 0.2,
+      "p95": 9.1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.7,
+      "histP99Ms": 15.7
+     }
+    },
+    {
+     "rtt": 32.4,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 8388608
+     },
+     "probe": {
+      "n": 21,
+      "max": 9.1,
+      "p50": 0.1,
+      "p95": 4.9,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 1,
+      "blockMax": 20.7,
+      "blockSum": 20.7,
+      "top": [
+       [
+        37567.5,
+        20.7
+       ]
+      ],
+      "histMaxMs": 20.7,
+      "histP99Ms": 20.7
+     }
+    },
+    {
+     "rtt": 31.6,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 8388608
+     },
+     "probe": {
+      "n": 20,
+      "max": 9.4,
+      "p50": 0.1,
+      "p95": 9.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.echo_16mb",
+   "reps": [
+    {
+     "rtt": 66.7,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 16777216
+     },
+     "probe": {
+      "n": 24,
+      "max": 20.8,
+      "p50": 0.2,
+      "p95": 7.1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 2,
+      "blockMax": 25.4,
+      "blockSum": 50.7,
+      "top": [
+       [
+        37744.1,
+        25.4
+       ],
+       [
+        37787.2,
+        25.3
+       ]
+      ],
+      "histMaxMs": 25.3,
+      "histP99Ms": 25.3
+     }
+    },
+    {
+     "rtt": 67.1,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 16777216
+     },
+     "probe": {
+      "n": 24,
+      "max": 23.5,
+      "p50": 0.2,
+      "p95": 8.8,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 1,
+      "blockMax": 27.2,
+      "blockSum": 27.2,
+      "top": [
+       [
+        37869.2,
+        27.2
+       ]
+      ],
+      "histMaxMs": 16,
+      "histP99Ms": 16
+     }
+    },
+    {
+     "rtt": 70.8,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 16777216
+     },
+     "probe": {
+      "n": 28,
+      "max": 22,
+      "p50": 0.2,
+      "p95": 6.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 1,
+      "blockMax": 25.5,
+      "blockSum": 25.5,
+      "top": [
+       [
+        37993.5,
+        25.5
+       ]
+      ],
+      "histMaxMs": 16.9,
+      "histP99Ms": 16.9
+     }
+    },
+    {
+     "rtt": 64.1,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 16777216
+     },
+     "probe": {
+      "n": 23,
+      "max": 21.2,
+      "p50": 0.1,
+      "p95": 8.8,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 2,
+      "blockMax": 25.6,
+      "blockSum": 49.3,
+      "top": [
+       [
+        38133.2,
+        25.6
+       ],
+       [
+        38175.4,
+        23.7
+       ]
+      ],
+      "histMaxMs": 25.2,
+      "histP99Ms": 25.2
+     }
+    },
+    {
+     "rtt": 67.9,
+     "ms": 0,
+     "error": null,
+     "res": {
+      "dataBytes": 16777216
+     },
+     "probe": {
+      "n": 23,
+      "max": 21.2,
+      "p50": 0.2,
+      "p95": 7.1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 1,
+      "blockMax": 24.7,
+      "blockSum": 24.7,
+      "top": [
+       [
+        38256.4,
+        24.7
+       ]
+      ],
+      "histMaxMs": 18.2,
+      "histP99Ms": 18.2
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.mem",
+   "reps": [
+    {
+     "rtt": 0.4,
+     "ms": 0.2,
+     "error": null,
+     "res": {
+      "pid": 46972,
+      "rssMB": 216.359375,
+      "privMB": null,
+      "heapMB": 2.95635986328125,
+      "abMB": 0
+     },
+     "probe": {
+      "n": 16,
+      "max": 0.2,
+      "p50": 0.1,
+      "p95": 0.2,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_gpu.kill",
+   "kill": {
+    "exited": 0,
+    "exitMs": 8.7
+   }
+  },
+  {
+   "name": "probe_cpu.fork",
+   "fork": {
+    "pid": 49856,
+    "spawnMs": 12
+   }
+  },
+  {
+   "name": "probe_cpu.init",
+   "reps": [
+    {
+     "rtt": 52.1,
+     "ms": 9.6,
+     "error": null,
+     "res": {
+      "pid": 49856,
+      "device": "cpu",
+      "ortMs": 9.559200000000004,
+      "startMs": 27.3348,
+      "version": "1.29.0"
+     },
+     "probe": {
+      "n": 26,
+      "max": 0.6,
+      "p50": 0.2,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_cpu.point_cold",
+   "reps": [
+    {
+     "rtt": 2587.5,
+     "ms": 2578.9,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812316656112671,
+      "provider": "cpu"
+     },
+     "probe": {
+      "n": 648,
+      "max": 3.2,
+      "p50": 0.3,
+      "p95": 0.9,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.5,
+      "histP99Ms": 16.3
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_cpu.point_warm",
+   "reps": [
+    {
+     "rtt": 28.2,
+     "ms": 27.4,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812316656112671,
+      "provider": "cpu"
+     },
+     "probe": {
+      "n": 23,
+      "max": 0.5,
+      "p50": 0.2,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "rtt": 28.8,
+     "ms": 28,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812316656112671,
+      "provider": "cpu"
+     },
+     "probe": {
+      "n": 23,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "rtt": 27.1,
+     "ms": 26.5,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812316656112671,
+      "provider": "cpu"
+     },
+     "probe": {
+      "n": 24,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "rtt": 29.5,
+     "ms": 28.9,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812316656112671,
+      "provider": "cpu"
+     },
+     "probe": {
+      "n": 23,
+      "max": 0.3,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    },
+    {
+     "rtt": 26.7,
+     "ms": 26,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812316656112671,
+      "provider": "cpu"
+     },
+     "probe": {
+      "n": 22,
+      "max": 0.6,
+      "p50": 0.2,
+      "p95": 0.5,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.9,
+      "histP99Ms": 15.9
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_cpu.objects_cached",
+   "reps": [
+    {
+     "rtt": 37388.6,
+     "ms": 37370.9,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "cpu",
+      "encodeMs": 0.01040000000011787,
+      "automaskMs": 37370.858400000005,
+      "encodeRunMs": 1997
+     },
+     "probe": {
+      "n": 9024,
+      "max": 6.9,
+      "p50": 0.3,
+      "p95": 1.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 1,
+      "blockMax": 22.4,
+      "blockSum": 22.4,
+      "top": [
+       [
+        60272.4,
+        22.4
+       ]
+      ],
+      "histMaxMs": 22.4,
+      "histP99Ms": 16.5
+     }
+    },
+    {
+     "rtt": 37660.4,
+     "ms": 37642.4,
+     "error": null,
+     "res": {
+      "idsBytes": 4500000,
+      "count": 95,
+      "candidates": 837,
+      "provider": "cpu",
+      "encodeMs": 0.009599999997590203,
+      "automaskMs": 37642.4026,
+      "encodeRunMs": 1997
+     },
+     "probe": {
+      "n": 9119,
+      "max": 16.8,
+      "p50": 0.3,
+      "p95": 1.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 2,
+      "blockMax": 32.4,
+      "blockSum": 54.1,
+      "top": [
+       [
+        90271.7,
+        32.4
+       ],
+       [
+        116834.5,
+        21.7
+       ]
+      ],
+      "histMaxMs": 32.4,
+      "histP99Ms": 16.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_cpu.point_after_objects",
+   "reps": [
+    {
+     "rtt": 29.8,
+     "ms": 28.9,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812316656112671,
+      "provider": "cpu"
+     },
+     "probe": {
+      "n": 24,
+      "max": 0.4,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.5,
+      "histP99Ms": 15.5
+     }
+    },
+    {
+     "rtt": 29.6,
+     "ms": 28.9,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812316656112671,
+      "provider": "cpu"
+     },
+     "probe": {
+      "n": 22,
+      "max": 0.5,
+      "p50": 0.2,
+      "p95": 0.4,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.1,
+      "histP99Ms": 16.1
+     }
+    },
+    {
+     "rtt": 28.7,
+     "ms": 28,
+     "error": null,
+     "res": {
+      "logitsBytes": 262144,
+      "score": 0.8812316656112671,
+      "provider": "cpu"
+     },
+     "probe": {
+      "n": 23,
+      "max": 0.5,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 15.6,
+      "histP99Ms": 15.6
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_cpu.cutout_lite",
+   "reps": [
+    {
+     "rtt": 8487.8,
+     "ms": 8479.3,
+     "error": null,
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "provider": "cpu",
+      "runMs": 5503
+     },
+     "probe": {
+      "n": 2088,
+      "max": 3.2,
+      "p50": 0.2,
+      "p95": 1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 17.1,
+      "histP99Ms": 16.6
+     }
+    },
+    {
+     "rtt": 4500.9,
+     "ms": 4492.4,
+     "error": null,
+     "res": {
+      "alphaBytes": 1048576,
+      "size": 1024,
+      "provider": "cpu",
+      "runMs": 4488
+     },
+     "probe": {
+      "n": 1072,
+      "max": 4.8,
+      "p50": 0.3,
+      "p95": 1.7,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 19.4,
+      "histP99Ms": 16.7
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_cpu.depth",
+   "reps": [
+    {
+     "rtt": 1056.7,
+     "ms": 1047.1,
+     "error": null,
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "provider": "cpu",
+      "runMs": 835
+     },
+     "probe": {
+      "n": 272,
+      "max": 1.7,
+      "p50": 0.3,
+      "p95": 1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.4,
+      "histP99Ms": 16.2
+     }
+    },
+    {
+     "rtt": 764.5,
+     "ms": 755,
+     "error": null,
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "provider": "cpu",
+      "runMs": 752
+     },
+     "probe": {
+      "n": 197,
+      "max": 1.4,
+      "p50": 0.3,
+      "p95": 1,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.1,
+      "histP99Ms": 16
+     }
+    },
+    {
+     "rtt": 756.5,
+     "ms": 748,
+     "error": null,
+     "res": {
+      "depthBytes": 1914528,
+      "width": 924,
+      "height": 518,
+      "provider": "cpu",
+      "runMs": 745
+     },
+     "probe": {
+      "n": 199,
+      "max": 1.5,
+      "p50": 0.3,
+      "p95": 0.9,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.1,
+      "histP99Ms": 16
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_cpu.free",
+   "reps": [
+    {
+     "rtt": 86.6,
+     "ms": 86.3,
+     "error": null,
+     "res": {
+      "released": 4
+     },
+     "probe": {
+      "n": 38,
+      "max": 0.4,
+      "p50": 0.2,
+      "p95": 0.3,
+      "over50": 0,
+      "over200": 0,
+      "rendGapMax": 0,
+      "rendGaps": 0
+     },
+     "main": {
+      "ev": [],
+      "blockN": 0,
+      "blockMax": 0,
+      "blockSum": 0,
+      "top": [],
+      "histMaxMs": 16.1,
+      "histP99Ms": 16.1
+     }
+    }
+   ],
+   "probe": true
+  },
+  {
+   "name": "probe_cpu.kill",
+   "kill": {
+    "exited": 0,
+    "exitMs": 3.1
+   }
+  }
+ ],
+ "mems": [
+  {
+   "label": "start",
+   "main": {
+    "rssMB": 129,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 26836,
+     "privMB": 86,
+     "wsMB": 129,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 396,
+      "wsMB": 185,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 266,
+      "wsMB": 291,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 3327
+   }
+  },
+  {
+   "label": "probe gpu started",
+   "main": {
+    "rssMB": 129,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 26836,
+     "privMB": 84,
+     "wsMB": 129,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 391,
+      "wsMB": 185,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     },
+     {
+      "pid": 46972,
+      "privMB": 25,
+      "wsMB": 108,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 266,
+      "wsMB": 291,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 3322
+   }
+  },
+  {
+   "label": "probe gpu after SAM2",
+   "main": {
+    "rssMB": 130,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 26836,
+     "privMB": 85,
+     "wsMB": 130,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 390,
+      "wsMB": 184,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     },
+     {
+      "pid": 46972,
+      "privMB": 6403,
+      "wsMB": 817,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 269,
+      "wsMB": 294,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "46972": {
+      "dedicatedMB": 5646,
+      "sharedMB": 136
+     }
+    },
+    "cardMB": 8966
+   }
+  },
+  {
+   "label": "probe gpu after cutout and depth",
+   "main": {
+    "rssMB": 131,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 26836,
+     "privMB": 86,
+     "wsMB": 131,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 390,
+      "wsMB": 202,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     },
+     {
+      "pid": 46972,
+      "privMB": 6986,
+      "wsMB": 4860,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 221,
+      "wsMB": 253,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "46972": {
+      "dedicatedMB": 6369,
+      "sharedMB": 162
+     }
+    },
+    "cardMB": 9252
+   }
+  },
+  {
+   "label": "probe gpu after free",
+   "main": {
+    "rssMB": 130,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 26836,
+     "privMB": 85,
+     "wsMB": 130,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 390,
+      "wsMB": 202,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     },
+     {
+      "pid": 46972,
+      "privMB": 364,
+      "wsMB": 297,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 221,
+      "wsMB": 253,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {
+     "46972": {
+      "dedicatedMB": 0,
+      "sharedMB": 0
+     }
+    },
+    "cardMB": 2885
+   }
+  },
+  {
+   "label": "probe gpu after kill",
+   "main": {
+    "rssMB": 130,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 26836,
+     "privMB": 85,
+     "wsMB": 130,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 390,
+      "wsMB": 202,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 222,
+      "wsMB": 255,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 2885
+   }
+  },
+  {
+   "label": "probe cpu started",
+   "main": {
+    "rssMB": 131,
+    "abMB": 0,
+    "heapMB": 13,
+    "main": {
+     "pid": 26836,
+     "privMB": 85,
+     "wsMB": 131,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 390,
+      "wsMB": 202,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     },
+     {
+      "pid": 49856,
+      "privMB": 28,
+      "wsMB": 111,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 222,
+      "wsMB": 255,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 3132
+   }
+  },
+  {
+   "label": "probe cpu after SAM2",
+   "main": {
+    "rssMB": 130,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 26836,
+     "privMB": 85,
+     "wsMB": 130,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 389,
+      "wsMB": 201,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     },
+     {
+      "pid": 49856,
+      "privMB": 519,
+      "wsMB": 611,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 235,
+      "wsMB": 269,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 3129
+   }
+  },
+  {
+   "label": "probe cpu after cutout and depth",
+   "main": {
+    "rssMB": 129,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 26836,
+     "privMB": 84,
+     "wsMB": 129,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 389,
+      "wsMB": 201,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     },
+     {
+      "pid": 49856,
+      "privMB": 840,
+      "wsMB": 929,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 236,
+      "wsMB": 270,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 3184
+   }
+  },
+  {
+   "label": "probe cpu after free",
+   "main": {
+    "rssMB": 129,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 26836,
+     "privMB": 84,
+     "wsMB": 129,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 389,
+      "wsMB": 201,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     },
+     {
+      "pid": 49856,
+      "privMB": 113,
+      "wsMB": 205,
+      "name": "Scumble U0 probe"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 236,
+      "wsMB": 270,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 3184
+   }
+  },
+  {
+   "label": "probe cpu after kill",
+   "main": {
+    "rssMB": 129,
+    "abMB": 0,
+    "heapMB": 14,
+    "main": {
+     "pid": 26836,
+     "privMB": 83,
+     "wsMB": 129,
+     "name": ""
+    },
+    "gpu": [
+     {
+      "pid": 14124,
+      "privMB": 389,
+      "wsMB": 201,
+      "name": "GPU"
+     }
+    ],
+    "utility": [
+     {
+      "pid": 21288,
+      "privMB": 12,
+      "wsMB": 60,
+      "name": "Network Service"
+     }
+    ],
+    "tab": [
+     {
+      "pid": 50116,
+      "privMB": 236,
+      "wsMB": 270,
+      "name": ""
+     }
+    ]
+   },
+   "gpu": {
+    "procs": {},
+    "cardMB": 3184
+   }
+  }
+ ],
+ "focus_end": {
+  "focus": true,
+  "vis": "visible"
+ }
+}

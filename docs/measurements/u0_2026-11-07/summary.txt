@@ -1,0 +1,236 @@
+U0 of docs/PLAN_WASM_BUILD.md §7: the in-app ONNX helpers, measured (tools/helpers_perf.py).
+Times in ms, median [min-max] over the fresh runs (each run one instance; rows with several reps: every rep).
+wall = the renderer's await of the IPC call; block = main's longest event-loop gap (sampler, 4 ms);
+rtt = the longest app:tileMode round trip from the renderer during the call; handler = main's IPC handler.
+
+== batch gpu (device gpu), runs [1, 2, 3]
+   idle                               wall 1506 [1503-1511]  block 0 [0-0]  rtt 0 [0-3]
+   ipc_tiny                           wall 1 [0-2]  block 0 [0-0]  rtt 0 [0-1]  handler 0 [0-0]  ipc 1 [0-2]  ERR Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 
+   ipc_4mb                            wall 9 [9-11]  block 0 [0-0]  rtt 6 [3-7]  handler 0 [0-0]  ipc 9 [9-11]  ERR Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 
+   sam2_base_plus.point_cold          wall 1575 [1484-1783]  block 1077 [992-1212]  rtt 1058 [977-1197]  handler 1566 [1474-1772]  ipc 10 [9-10]  create 1227 [1136-1405] [('sam2_hiera_base_plus.encoder.onnx', 'dml', 1193), ('sam2_hiera_base_plus.decoder.onnx', 'dml', 212)]  enc.run 65 [65-74]  enc.js 9 [8-9]  dec.run 265.1 [263.1-283.9]  res {"score": 0.8812333345413208, "provider": "dml"}
+   sam2_base_plus.point_warm          wall 8 [7-14]  block 0 [0-21]  rtt 1 [0-6]  handler 7 [6-12]  ipc 1 [1-2]  dec.run 6.5 [5.9-9.7]  res {"score": 0.8812333345413208, "provider": "dml"}
+   sam2_base_plus.objects_cached      wall 1928 [1748-2065]  block 218 [197-246]  rtt 206 [200-236]  handler 1908 [1727-2043]  ipc 21 [19-25]  enc.js 0 [0-0]  automask 1908 [1727-2042] (decode 1287 [1103-1386] in 16 batches, js 627 [577-656]: filter/batch 33.1 [30.4-34.9], nms+paint 95 [87-97])  res {"width": 2000, "height": 1125, "count": 95, "candidates": 837, "seconds": 2.043, "encodeMs": 73, "provider": "dml"}
+   sam2_base_plus.objects_new         wall 1916 [1820-1950]  block 208 [203-208]  rtt 198 [197-212]  handler 1896 [1800-1929]  ipc 21 [20-21]  enc.run 37 [32-39]  enc.js 6 [6-7]  automask 1851 [1761-1885] (decode 1237 [1183-1262] in 16 batches, js 613 [578-623]: filter/batch 31.9 [30.2-32.8], nms+paint 98 [95-102])  res {"width": 2000, "height": 1125, "count": 89, "candidates": 819, "seconds": 1.929, "encodeMs": 37, "provider": "dml"}
+   sam2_base_plus.point_after_objects wall 7 [7-10]  block 0 [0-0]  rtt 0 [0-4]  handler 7 [6-8]  ipc 1 [1-1]  dec.run 6.2 [5.8-8.0]  res {"score": 0.8812333345413208, "provider": "dml"}
+   sam2_base_plus.objects_perbatch16  wall 21 [20-121]  block 27 [20-121]  rtt 8 [6-105]  handler 11 [10-108]  ipc 11 [10-13]  enc.js 0 [0-0]  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perbatch32  wall 24 [22-25]  block 25 [22-30]  rtt 10 [8-11]  handler 12 [11-12]  ipc 12 [10-13]  enc.js 0 [0-0]  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perbatch128 wall 46 [43-66]  block 51 [43-52]  rtt 34 [28-36]  handler 36 [32-46]  ipc 12 [11-21]  enc.js 0 [0-0]  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perbatch256 wall 104 [95-105]  block 105 [95-111]  rtt 80 [74-88]  handler 93 [85-94]  ipc 11 [11-12]  enc.js 0 [0-0]  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perside16   wall 544 [529-584]  block 193 [177-196]  rtt 188 [178-198]  handler 520 [510-562]  ipc 21 [19-23]  enc.js 0 [0-0]  automask 520 [510-562] (decode 340 [331-376] in 4 batches, js 186 [170-189]: filter/batch 27.9 [23.9-28.2], nms+paint 74 [73-78])  res {"width": 2000, "height": 1125, "count": 47, "candidates": 210, "seconds": 0.52, "encodeMs": 73, "provider": "dml"}
+   sam2_base_plus.free                wall 310 [271-371]  block 324 [271-371]  rtt 309 [256-356]  handler 310 [271-371]  ipc 0 [0-0]  release 310 [271-371]
+   sam2_base_plus.objects_after_free  wall 2786 [2717-3108]  block 999 [939-1170]  rtt 987 [924-1154]  handler 2767 [2697-3088]  ipc 20 [18-20]  create 1107 [1025-1291] [('sam2_hiera_base_plus.encoder.onnx', 'dml', 1076), ('sam2_hiera_base_plus.decoder.onnx', 'dml', 215)]  enc.run 67 [62-69]  enc.js 70 [65-84]  automask 1709 [1706-1859] (decode 956 [937-1027] in 16 batches, js 769 [752-832]: filter/batch 31.9 [30.1-32.1], nms+paint 92 [90-103])  res {"width": 2000, "height": 1125, "count": 95, "candidates": 837, "seconds": 3.087, "encodeMs": 68, "provider": "dml"}
+   sam2_base_plus.free2               wall 269 [237-362]  block 282 [237-362]  rtt 266 [222-347]  handler 269 [237-362]  ipc 0 [0-0]  release 269 [237-362]
+   sam2_tiny.point_cold               wall 1146 [1110-1504]  block 668 [649-906]  rtt 657 [634-891]  handler 1136 [1100-1493]  ipc 10 [10-11]  create 835 [792-1122] [('sam2_hiera_tiny.encoder.onnx', 'dml', 878), ('sam2_hiera_tiny.decoder.onnx', 'dml', 244)]  enc.run 40 [38-47]  enc.js 17 [7-18]  dec.run 253.0 [252.4-305.7]  res {"score": 0.5220081210136414, "provider": "dml"}
+   sam2_tiny.point_warm               wall 9 [7-17]  block 0 [0-22]  rtt 1 [0-4]  handler 8 [6-16]  ipc 1 [1-1]  dec.run 7.2 [6.0-15.8]  res {"score": 0.5220081210136414, "provider": "dml"}
+   sam2_tiny.objects_cached           wall 1876 [1842-1962]  block 238 [214-432]  rtt 222 [202-417]  handler 1855 [1823-1943]  ipc 20 [20-21]  enc.js 0 [0-0]  automask 1854 [1822-1942] (decode 1302 [1299-1401] in 16 batches, js 541 [520-555]: filter/batch 28.0 [26.7-28.8], nms+paint 93 [93-95])  res {"width": 2000, "height": 1125, "count": 71, "candidates": 758, "seconds": 1.854, "encodeMs": 46, "provider": "dml"}
+   sam2_tiny.objects_new              wall 1749 [1719-1880]  block 179 [176-189]  rtt 181 [173-190]  handler 1730 [1700-1858]  ipc 19 [18-22]  enc.run 19 [18-21]  enc.js 16 [6-18]  automask 1705 [1666-1818] (decode 1168 [1108-1233] in 16 batches, js 557 [537-585]: filter/batch 30.1 [29.0-31.8], nms+paint 76 [72-76])  res {"width": 2000, "height": 1125, "count": 65, "candidates": 822, "seconds": 1.858, "encodeMs": 22, "provider": "dml"}
+   sam2_tiny.point_after_objects      wall 8 [7-8]  block 0 [0-0]  rtt 0 [0-5]  handler 7 [6-7]  ipc 1 [1-1]  dec.run 6.3 [5.7-6.9]  res {"score": 0.5220081210136414, "provider": "dml"}
+   sam2_tiny.free                     wall 209 [191-272]  block 222 [190-272]  rtt 206 [176-257]  handler 209 [190-272]  ipc 0 [0-0]  release 209 [190-272]
+   sam2_small.point_cold              wall 1251 [1167-1447]  block 771 [712-878]  rtt 758 [697-863]  handler 1241 [1156-1436]  ipc 11 [10-11]  create 936 [863-1094] [('sam2_hiera_small.encoder.onnx', 'dml', 860), ('sam2_hiera_small.decoder.onnx', 'dml', 234)]  enc.run 41 [38-50]  enc.js 5 [5-6]  dec.run 257.9 [246.6-284.9]  res {"score": 0.7239422798156738, "provider": "dml"}
+   sam2_small.point_warm              wall 11 [8-16]  block 0 [0-21]  rtt 1 [0-12]  handler 10 [7-15]  ipc 1 [1-1]  dec.run 9.5 [6.2-14.3]  res {"score": 0.7239422798156738, "provider": "dml"}
+   sam2_small.objects_cached          wall 1947 [1931-2046]  block 362 [240-448]  rtt 346 [225-428]  handler 1925 [1912-2027]  ipc 19 [19-22]  enc.js 0 [0-0]  automask 1924 [1911-2026] (decode 1327 [1325-1462] in 16 batches, js 586 [565-597]: filter/batch 31.4 [30.5-32.1], nms+paint 83 [77-83])  res {"width": 2000, "height": 1125, "count": 69, "candidates": 847, "seconds": 1.925, "encodeMs": 50, "provider": "dml"}
+   sam2_small.objects_new             wall 1748 [1732-1884]  block 186 [182-212]  rtt 187 [185-209]  handler 1729 [1712-1863]  ipc 20 [19-21]  enc.run 21 [21-22]  enc.js 5 [5-5]  automask 1702 [1685-1835] (decode 1157 [1111-1238] in 16 batches, js 574 [545-597]: filter/batch 30.7 [29.1-31.3], nms+paint 83 [78-96])  res {"width": 2000, "height": 1125, "count": 70, "candidates": 807, "seconds": 1.862, "encodeMs": 22, "provider": "dml"}
+   sam2_small.point_after_objects     wall 8 [8-9]  block 0 [0-0]  rtt 1 [0-6]  handler 7 [7-8]  ipc 1 [1-1]  dec.run 6.4 [6.0-7.4]  res {"score": 0.7239422798156738, "provider": "dml"}
+   sam2_small.free                    wall 244 [199-323]  block 258 [199-323]  rtt 241 [184-308]  handler 244 [199-323]  ipc 0 [0-1]  release 244 [199-323]
+   birefnet_lite.cutout               wall 3541 [2783-5596]  block 2764 [2152-2908]  rtt 2747 [2137-2902]  handler 3530 [2772-5585]  ipc 12 [10-18]  create 2594 [2139-2751] [('birefnet_lite.onnx', 'dml', 2677)]  run 388 [295-2105]  release 362 [302-878]  res {"size": 1024, "seconds": 5.585, "provider": "dml"}
+   birefnet_lite.free                 wall 0 [0-0]  block 0 [0-0]  rtt 0 [0-0]  handler 0 [0-0]  ipc 0 [0-0]
+   rmbg14.cutout                      wall 832 [751-1162]  block 445 [410-616]  rtt 434 [395-604]  handler 821 [740-1150]  ipc 12 [10-12]  create 427 [384-524] [('rmbg14.onnx', 'dml', 524)]  run 267 [243-464]  release 109 [92-158]  res {"size": 1024, "seconds": 1.15, "provider": "dml"}
+   rmbg14.free                        wall 0 [0-0]  block 0 [0-0]  rtt 0 [0-0]  handler 0 [0-0]  ipc 0 [0-0]
+   da2_small.depth                    wall 240 [230-1018]  block 236 [233-517]  rtt 225 [220-502]  handler 231 [221-1008]  ipc 9 [9-10]  create 0 [0-503] [('depth_anything_v2_small.onnx', 'dml', 503)]  run 225 [218-490]  res {"width": 924, "height": 518, "seconds": 1.008, "runMs": 497, "provider": "dml"}
+   da2_small.depth_large              wall 766 [656-853]  block 758 [647-845]  rtt 752 [642-838]  handler 743 [632-830]  ipc 25 [23-28]  run 733 [624-821]  res {"width": 1568, "height": 882, "seconds": 0.776, "runMs": 769, "provider": "dml"}
+   da2_small.free                     wall 134 [129-176]  block 142 [134-175]  rtt 127 [119-160]  handler 133 [129-175]  ipc 0 [0-0]  release 133 [129-175]
+   memory (MB; main private after a forced GC, main rss, GPU dedicated / shared of main [and the probe], the card's used MiB):
+     start                                          priv 85 [84-87]  rss 129 [129-132]  gpu 0 [0-0] / 0 [0-0]  card 3453 [3195-8774]
+     sam2_base_plus after the cold point            priv 3495 [3492-3499]  rss 515 [513-515]  gpu 3008 [3008-3008] / 73 [73-73]  card 6462 [6208-11822]
+     sam2_base_plus after objects                   priv 8584 [8583-8592]  rss 598 [597-623]  gpu 8007 [8007-8007] / 137 [137-137]  card 11462 [11207-16815]
+     sam2_base_plus after Free VRAM                 priv 325 [324-328]  rss 316 [314-318]  gpu 0 [0-0] / 0 [0-0]  card 3396 [3200-8802]
+     sam2_base_plus after objects after Free VRAM   priv 6177 [6166-6204]  rss 586 [577-614]  gpu 5617 [5617-5617] / 136 [136-136]  card 9011 [8826-14395]
+     sam2_base_plus after the second Free VRAM      priv 326 [322-368]  rss 323 [315-323]  gpu 0 [0-0] / 0 [0-0]  card 3396 [3200-8779]
+     sam2_tiny after the cold point                 priv 2127 [2117-2166]  rss 544 [529-555]  gpu 1656 [1656-1656] / 73 [73-73]  card 5051 [4855-10435]
+     sam2_tiny after objects                        priv 4850 [4838-4854]  rss 609 [604-622]  gpu 4293 [4293-4293] / 136 [136-136]  card 7687 [7492-13064]
+     sam2_tiny after Free VRAM                      priv 327 [322-327]  rss 317 [316-322]  gpu 0 [0-0] / 0 [0-0]  card 3396 [3200-8775]
+     sam2_small after the cold point                priv 2188 [2183-2200]  rss 527 [518-528]  gpu 1710 [1710-1710] / 73 [73-73]  card 5106 [4911-10481]
+     sam2_small after objects                       priv 4912 [4908-4924]  rss 609 [601-611]  gpu 4347 [4347-4347] / 136 [136-136]  card 7741 [7546-13272]
+     sam2_small after Free VRAM                     priv 335 [318-344]  rss 322 [313-322]  gpu 0 [0-0] / 0 [0-0]  card 3395 [3200-8846]
+     birefnet_lite after three cutouts              priv 398 [395-401]  rss 284 [276-435]  gpu 0 [0-0] / 0 [0-0]  card 3529 [3205-8522]
+     birefnet_lite after Free VRAM                  priv 157 [148-196]  rss 220 [217-267]  gpu 0 [0-0] / 0 [0-0]  card 3446 [3199-8523]
+     rmbg14 after three cutouts                     priv 406 [399-479]  rss 262 [261-346]  gpu 0 [0-0] / 0 [0-0]  card 3559 [3199-8653]
+     rmbg14 after Free VRAM                         priv 181 [179-260]  rss 246 [245-330]  gpu 0 [0-0] / 0 [0-0]  card 3538 [3199-8654]
+     da2_small after depth                          priv 4107 [4106-4108]  rss 457 [456-463]  gpu 3702 [3702-3702] / 47 [47-47]  card 7241 [6900-12366]
+     da2_small after Free VRAM                      priv 538 [447-540]  rss 357 [270-364]  gpu 0 [0-0] / 0 [0-0]  card 3643 [3199-8663]
+
+== batch cpu (device cpu), runs [1, 2, 3]
+   r2: the window was not focused / visible at the end: {'focus': False, 'vis': 'visible'}
+   idle                               wall 1503 [1501-1504]  block 0 [0-0]  rtt 0 [0-2]
+   ipc_tiny                           wall 0 [0-2]  block 0 [0-0]  rtt 0 [0-1]  handler 0 [0-0]  ipc 0 [0-2]  ERR Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 
+   ipc_4mb                            wall 9 [9-10]  block 0 [0-0]  rtt 3 [3-7]  handler 0 [0-0]  ipc 9 [9-10]  ERR Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 
+   sam2_base_plus.point_cold          wall 2683 [2640-2941]  block 2099 [2054-2307]  rtt 2096 [2051-2303]  handler 2674 [2631-2931]  ipc 10 [9-10]  create 511 [503-554] [('sam2_hiera_base_plus.encoder.onnx', 'cpu', 449), ('sam2_hiera_base_plus.decoder.onnx', 'cpu', 105)]  enc.run 2099 [2054-2307]  enc.js 8 [8-9]  dec.run 60.7 [54.6-65.1]  res {"score": 0.8812316656112671, "provider": "cpu"}
+   sam2_base_plus.point_warm          wall 29 [22-43]  block 36 [28-50]  rtt 27 [21-39]  handler 28 [20-42]  ipc 1 [1-1]  dec.run 28.0 [20.0-41.3]  res {"score": 0.8812316656112671, "provider": "cpu"}
+   sam2_base_plus.objects_cached      wall 38283 [37910-39097]  block 2507 [2439-2576]  rtt 2510 [2436-2585]  handler 38263 [37890-39078]  ipc 20 [20-23]  enc.js 0 [0-0]  automask 38263 [37890-39077] (decode 37591 [37223-38398] in 16 batches, js 663 [638-687]: filter/batch 36.0 [34.2-37.2], nms+paint 92 [83-94])  res {"width": 2000, "height": 1125, "count": 95, "candidates": 837, "seconds": 39.077, "encodeMs": 2306, "provider": "cpu"}
+   sam2_base_plus.objects_new         wall 40115 [39964-41717]  block 2504 [2488-2640]  rtt 2507 [2488-2625]  handler 40096 [39943-41697]  ipc 20 [19-20]  enc.run 1815 [1775-1927]  enc.js 14 [9-16]  automask 38271 [38153-39756] (decode 37629 [37505-39085] in 16 batches, js 648 [642-671]: filter/batch 34.5 [34.4-35.8], nms+paint 96 [90-98])  res {"width": 2000, "height": 1125, "count": 89, "candidates": 819, "seconds": 41.697, "encodeMs": 1926, "provider": "cpu"}
+   sam2_base_plus.point_after_objects wall 30 [29-42]  block 35 [29-48]  rtt 26 [14-37]  handler 29 [28-41]  ipc 1 [1-1]  dec.run 28.5 [27.9-40.4]  res {"score": 0.8812316656112671, "provider": "cpu"}
+   sam2_base_plus.objects_perbatch256 wall 764 [735-771]  block 769 [735-777]  rtt 754 [720-759]  handler 751 [722-760]  ipc 13 [11-13]  enc.js 0 [0-0]  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perside16   wall 9718 [9657-10017]  block 2493 [2462-2642]  rtt 2497 [2454-2645]  handler 9697 [9627-9995]  ipc 22 [22-30]  enc.js 0 [0-0]  automask 9696 [9627-9995] (decode 9485 [9410-9772] in 4 batches, js 217 [212-223]: filter/batch 29.4 [29.1-30.8], nms+paint 94 [94-106])  res {"width": 2000, "height": 1125, "count": 47, "candidates": 210, "seconds": 9.995, "encodeMs": 2306, "provider": "cpu"}
+   sam2_base_plus.free                wall 22 [20-24]  block 24 [22-33]  rtt 18 [7-22]  handler 22 [20-23]  ipc 0 [0-0]  release 22 [20-23]
+   sam2_base_plus.objects_after_free  wall 30507 [30279-32382]  block 2448 [2358-2514]  rtt 2445 [2344-2510]  handler 30487 [30259-32361]  ipc 20 [19-20]  create 467 [449-535] [('sam2_hiera_base_plus.encoder.onnx', 'cpu', 432), ('sam2_hiera_base_plus.decoder.onnx', 'cpu', 103)]  enc.run 2093 [2089-2173]  enc.js 76 [65-83]  automask 27968 [27745-29672] (decode 27289 [27041-28949] in 16 batches, js 705 [680-722]: filter/batch 31.9 [30.2-32.7], nms+paint 94 [90-96])  res {"width": 2000, "height": 1125, "count": 95, "candidates": 837, "seconds": 32.361, "encodeMs": 2174, "provider": "cpu"}
+   sam2_base_plus.free2               wall 24 [21-24]  block 34 [24-38]  rtt 18 [9-20]  handler 24 [21-24]  ipc 0 [0-0]  release 24 [21-24]
+   sam2_tiny.point_cold               wall 1479 [1458-1582]  block 1134 [1108-1225]  rtt 1131 [1104-1222]  handler 1468 [1448-1572]  ipc 11 [10-11]  create 270 [266-272] [('sam2_hiera_tiny.encoder.onnx', 'cpu', 164), ('sam2_hiera_tiny.decoder.onnx', 'cpu', 108)]  enc.run 1134 [1108-1225]  enc.js 9 [9-18]  dec.run 56.6 [54.4-65.0]  res {"score": 0.5220083594322205, "provider": "cpu"}
+   sam2_tiny.point_warm               wall 30 [29-60]  block 36 [29-66]  rtt 27 [14-59]  handler 29 [28-59]  ipc 1 [1-1]  dec.run 29.0 [27.7-58.1]  res {"score": 0.5220083594322205, "provider": "cpu"}
+   sam2_tiny.objects_cached           wall 38774 [38449-40200]  block 2526 [2504-2665]  rtt 2512 [2507-2668]  handler 38754 [38430-40179]  ipc 21 [19-21]  enc.js 0 [0-0]  automask 38753 [38430-40179] (decode 38146 [37845-39515] in 16 batches, js 607 [584-664]: filter/batch 31.8 [30.8-32.5], nms+paint 98 [92-144])  renderer gap 0 [0-38]  res {"width": 2000, "height": 1125, "count": 71, "candidates": 758, "seconds": 40.179, "encodeMs": 1225, "provider": "cpu"}
+   sam2_tiny.point_after_objects      wall 32 [30-59]  block 36 [30-65]  rtt 27 [15-54]  handler 31 [29-58]  ipc 1 [1-1]  dec.run 30.1 [28.2-57.5]  res {"score": 0.5220083594322205, "provider": "cpu"}
+   sam2_tiny.free                     wall 14 [13-14]  block 26 [0-26]  rtt 9 [1-10]  handler 13 [13-14]  ipc 0 [0-0]  release 13 [13-14]
+   sam2_small.point_cold              wall 1662 [1647-1746]  block 1276 [1255-1315]  rtt 1273 [1251-1308]  handler 1651 [1637-1733]  ipc 11 [10-13]  create 307 [306-344] [('sam2_hiera_small.encoder.onnx', 'cpu', 203), ('sam2_hiera_small.decoder.onnx', 'cpu', 104)]  enc.run 1276 [1255-1315]  enc.js 9 [9-18]  dec.run 57.0 [56.2-62.3]  res {"score": 0.7239443063735962, "provider": "cpu"}
+   sam2_small.point_warm              wall 31 [29-38]  block 35 [31-44]  rtt 25 [16-35]  handler 30 [28-37]  ipc 1 [1-1]  dec.run 29.1 [27.1-36.0]  res {"score": 0.7239443063735962, "provider": "cpu"}
+   sam2_small.objects_cached          wall 37885 [37656-39396]  block 2486 [2466-2537]  rtt 2485 [2468-2540]  handler 37862 [37638-39377]  ipc 20 [18-23]  enc.js 0 [0-0]  automask 37861 [37637-39376] (decode 37233 [37020-38704] in 16 batches, js 628 [617-672]: filter/batch 34.2 [33.7-37.1], nms+paint 78 [77-81])  res {"width": 2000, "height": 1125, "count": 69, "candidates": 847, "seconds": 39.376, "encodeMs": 1277, "provider": "cpu"}
+   sam2_small.point_after_objects     wall 31 [29-54]  block 36 [29-60]  rtt 27 [14-52]  handler 30 [28-51]  ipc 1 [1-3]  dec.run 28.8 [27.4-49.8]  res {"score": 0.7239443063735962, "provider": "cpu"}
+   sam2_small.free                    wall 15 [14-16]  block 29 [0-30]  rtt 14 [0-14]  handler 15 [14-16]  ipc 0 [0-0]  release 15 [14-16]
+   birefnet_lite.cutout               wall 4778 [4552-8479]  block 4785 [4557-5876]  rtt 4755 [4535-5874]  handler 4766 [4542-8467]  ipc 12 [10-13]  create 0 [0-2865] [('birefnet_lite.onnx', 'cpu', 2584)]  run 4744 [4524-5852]  res {"size": 1024, "seconds": 8.467, "provider": "cpu"}
+   birefnet_lite.free                 wall 57 [53-58]  block 70 [53-71]  rtt 53 [38-54]  handler 57 [53-57]  ipc 0 [0-0]  release 57 [53-57]
+   rmbg14.cutout                      wall 596 [538-1044]  block 601 [542-734]  rtt 586 [520-731]  handler 584 [527-1032]  ipc 11 [11-13]  create 0 [0-285] [('rmbg14.onnx', 'cpu', 285)]  run 571 [514-724]  res {"size": 1024, "seconds": 1.031, "provider": "cpu"}
+   rmbg14.free                        wall 11 [10-12]  block 25 [0-26]  rtt 8 [0-12]  handler 11 [10-12]  ipc 0 [0-0]  release 11 [10-12]
+   rmbg2.cutout                       wall 8495 [8166-18020]  block 8485 [8172-11808]  rtt 8464 [8158-11806]  handler 8478 [8157-18009]  ipc 12 [10-17]  create 0 [0-6613] [('rmbg2.onnx', 'cpu', 6182)]  run 8465 [8148-11798]  res {"size": 1024, "seconds": 18.008, "provider": "cpu"}
+   rmbg2.free                         wall 72 [65-86]  block 86 [79-86]  rtt 68 [61-71]  handler 72 [65-86]  ipc 0 [0-0]  release 72 [65-86]
+   da2_small.depth                    wall 798 [750-1118]  block 795 [752-896]  rtt 784 [740-895]  handler 787 [741-1108]  ipc 10 [9-11]  create 0 [0-241] [('depth_anything_v2_small.onnx', 'cpu', 211)]  run 783 [736-884]  res {"width": 924, "height": 518, "seconds": 1.107, "runMs": 894, "provider": "cpu"}
+   da2_small.depth_large              wall 3921 [3805-4077]  block 3918 [3803-4066]  rtt 3902 [3796-4063]  handler 3898 [3783-4047]  ipc 25 [22-30]  run 3889 [3775-4037]  res {"width": 1568, "height": 882, "seconds": 4.018, "runMs": 4010, "provider": "cpu"}
+   da2_small.free                     wall 10 [9-12]  block 22 [0-22]  rtt 5 [0-6]  handler 9 [9-12]  ipc 0 [0-0]  release 9 [9-12]
+   memory (MB; main private after a forced GC, main rss, GPU dedicated / shared of main [and the probe], the card's used MiB):
+     start                                          priv 84 [84-84]  rss 126 [126-129]  gpu 0 [0-0] / 0 [0-0]  card 3588 [3292-9075]
+     sam2_base_plus after the cold point            priv 446 [445-446]  rss 497 [497-499]  gpu 0 [0-0] / 0 [0-0]  card 3360 [3297-8962]
+     sam2_base_plus after objects                   priv 463 [461-465]  rss 516 [515-517]  gpu 0 [0-0] / 0 [0-0]  card 3472 [3308-9260]
+     sam2_base_plus after Free VRAM                 priv 103 [102-106]  rss 157 [154-157]  gpu 0 [0-0] / 0 [0-0]  card 3464 [3308-9872]
+     sam2_base_plus after objects after Free VRAM   priv 449 [447-449]  rss 502 [501-503]  gpu 0 [0-0] / 0 [0-0]  card 3464 [3308-9796]
+     sam2_base_plus after the second Free VRAM      priv 103 [102-106]  rss 157 [153-157]  gpu 0 [0-0] / 0 [0-0]  card 3463 [3308-9759]
+     sam2_tiny after the cold point                 priv 281 [280-281]  rss 334 [334-336]  gpu 0 [0-0] / 0 [0-0]  card 3475 [3307-9757]
+     sam2_tiny after objects                        priv 278 [277-280]  rss 333 [330-334]  gpu 0 [0-0] / 0 [0-0]  card 3465 [3318-9572]
+     sam2_tiny after Free VRAM                      priv 108 [101-108]  rss 156 [155-157]  gpu 0 [0-0] / 0 [0-0]  card 3462 [3313-9436]
+     sam2_small after the cold point                priv 310 [309-310]  rss 363 [363-364]  gpu 0 [0-0] / 0 [0-0]  card 3403 [3308-9450]
+     sam2_small after objects                       priv 307 [302-309]  rss 362 [358-363]  gpu 0 [0-0] / 0 [0-0]  card 3706 [3299-9682]
+     sam2_small after Free VRAM                     priv 100 [98-107]  rss 155 [154-161]  gpu 0 [0-0] / 0 [0-0]  card 3711 [3299-9687]
+     birefnet_lite after three cutouts              priv 400 [398-411]  rss 454 [450-464]  gpu 0 [0-0] / 0 [0-0]  card 3725 [3344-9494]
+     birefnet_lite after Free VRAM                  priv 105 [101-106]  rss 158 [157-163]  gpu 0 [0-0] / 0 [0-0]  card 3721 [3342-9409]
+     rmbg14 after three cutouts                     priv 280 [279-283]  rss 335 [334-340]  gpu 0 [0-0] / 0 [0-0]  card 3722 [3342-9229]
+     rmbg14 after Free VRAM                         priv 102 [101-107]  rss 159 [156-164]  gpu 0 [0-0] / 0 [0-0]  card 3722 [3342-9176]
+     rmbg2 after three cutouts                      priv 1150 [1150-1155]  rss 1202 [1200-1207]  gpu 0 [0-0] / 0 [0-0]  card 3719 [3350-9490]
+     rmbg2 after Free VRAM                          priv 105 [105-112]  rss 162 [158-167]  gpu 0 [0-0] / 0 [0-0]  card 3751 [3350-9451]
+     da2_small after depth                          priv 214 [212-217]  rss 268 [266-272]  gpu 0 [0-0] / 0 [0-0]  card 3757 [3352-9438]
+     da2_small after Free VRAM                      priv 107 [104-111]  rss 162 [158-167]  gpu 0 [0-0] / 0 [0-0]  card 3757 [3356-9158]
+
+== batch editor (device auto), runs [1, 2, 3]
+   doc6000.prep                       {"W": 6000, "H": 3375, "loadMs": 653, "inputMs": 61.9, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}; {"W": 6000, "H": 3375, "loadMs": 622, "inputMs": 59.7, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}; {"W": 6000, "H": 3375, "loadMs": 631, "inputMs": 55.2, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+   doc6000.ensureObjects              wall 3082 [2910-3167]  block 1158 [1066-1182]  rtt 1143 [1047-1166]  handler 3016 [2842-3092]  ipc 68 [65-75]  create 1341 [1222-1350] [('sam2_hiera_base_plus.encoder.onnx', 'dml', 1142), ('sam2_hiera_base_plus.decoder.onnx', 'dml', 208)]  enc.run 66 [65-66]  enc.js 11 [10-12]  automask 1783 [1723-1872] (decode 995 [957-1033] in 16 batches, js 788 [766-839]: filter/batch 31.2 [30.5-33.1], nms+paint 100 [97-103])  parts objectInput 5 [5-5], inputHash 2 [2-2], helperCall 3031 [2862-3114], applySegmentIds 2 [0-2]  scale-back 41 [39-43]  renderer gap 52 [51-64]
+   doc6000.ensureObjects_cached       wall 1461 [1456-1558]  block 176 [175-194]  rtt 221 [219-243]  handler 1398 [1392-1488]  ipc 64 [63-71]  enc.js 0 [0-0]  automask 1397 [1391-1487] (decode 818 [811-853] in 16 batches, js 580 [579-634]: filter/batch 30.6 [30.4-33.1], nms+paint 92 [91-105])  parts objectInput 3 [3-3], inputHash 2 [2-2], helperCall 1418 [1412-1509], applySegmentIds 1 [1-1]  scale-back 38 [38-43]  renderer gap 52 [47-57]
+   doc6000.hover_shape_big            wall 53 [52-66]  block 0 [0-0]  rtt 2 [2-54]  parts objectShape 53 [51-66]  renderer gap 54 [52-67]
+   doc6000.hover_shape_small          wall 46 [45-46]  block 0 [0-0]  rtt 2 [0-46]  parts objectShape 46 [45-46]  renderer gap 46 [46-47]
+   doc6000.click_object               wall 199 [188-215]  block 0 [0-0]  rtt 6 [4-217]  parts objectShape 17 [0-38]  renderer gap 201 [190-217]
+   doc6000.select_point               wall 107 [54-316]  block 36 [30-248]  rtt 29 [16-242]  handler 30 [28-240]  ipc 64 [25-94]  dec.run 29.3 [27.8-239.9]  parts helperCall 31 [29-241], segmentLogits 31 [29-242], selectLogits 63 [24-92]  res {"score": 0.8661423921585083}
+   doc15000.prep                      {"W": 15000, "H": 8438, "loadMs": 567, "inputMs": 17.1, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}; {"W": 15000, "H": 8438, "loadMs": 489, "inputMs": 18.1, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}; {"W": 15000, "H": 8438, "loadMs": 544, "inputMs": 14.8, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+   doc15000.ensureObjects             wall 1744 [1744-1856]  block 183 [181-191]  rtt 421 [420-460]  handler 1488 [1481-1563]  ipc 263 [257-292]  enc.run 41 [34-41]  enc.js 6 [6-6]  automask 1440 [1434-1523] (decode 864 [858-908] in 16 batches, js 582 [570-614]: filter/batch 30.1 [29.5-31.9], nms+paint 100 [97-103])  parts objectInput 5 [4-5], inputHash 2 [2-2], helperCall 1501 [1501-1584], applySegmentIds 0 [0-1]  scale-back 236 [235-263]  renderer gap 249 [242-288]
+   doc15000.ensureObjects_cached      wall 1939 [1932-2102]  block 186 [183-196]  rtt 720 [715-734]  handler 1390 [1377-1532]  ipc 555 [549-570]  enc.js 0 [0-0]  automask 1389 [1376-1531] (decode 809 [807-919] in 16 batches, js 581 [569-613]: filter/batch 30.0 [29.2-31.7], nms+paint 102 [100-106])  parts objectInput 4 [3-4], inputHash 2 [2-2], helperCall 1402 [1397-1552], applySegmentIds 3 [0-4]  scale-back 527 [526-544]  renderer gap 541 [538-562]
+   doc15000.hover_shape_big           wall 328 [322-355]  block 0 [0-0]  rtt 329 [2-355]  parts objectShape 328 [322-355]  renderer gap 329 [323-356]
+   doc15000.hover_shape_small         wall 278 [276-308]  block 0 [0-0]  rtt 277 [2-308]  parts objectShape 278 [276-308]  renderer gap 279 [277-308]
+   doc15000.click_object              wall 1896 [1258-2015]  block 0 [0-0]  rtt 36 [29-1260]  parts objectShape 171 [0-388]  renderer gap 1900 [1260-2018]
+   doc15000.select_point              wall 103 [64-199]  block 35 [28-48]  rtt 27 [15-30]  handler 28 [27-31]  ipc 74 [37-167]  dec.run 27.8 [26.9-31.0]  parts helperCall 29 [28-33], segmentLogits 29 [28-33], selectLogits 72 [36-166]  res {"score": 0.8652782440185547}
+   memory (MB; main private after a forced GC, main rss, GPU dedicated / shared of main [and the probe], the card's used MiB):
+     start                                          priv 84 [84-85]  rss 128 [128-129]  gpu 0 [0-0] / 0 [0-0]  card 3540 [3210-9018]
+     doc6000 after the object tool                  priv 6210 [6207-6212]  rss 581 [581-581]  gpu 5646 [5646-5646] / 136 [136-136]  card 9521 [9185-15283]
+     doc15000 after the object tool                 priv 6229 [6227-6232]  rss 601 [600-602]  gpu 5646 [5646-5646] / 137 [137-137]  card 10396 [10068-16541]
+
+== batch probe (device auto), runs [1, 2, 3]
+   probe_gpu.fork                     spawn 11.6 [11.4-12.2]
+   probe_gpu.init                     rtt 52 [52-53]  in process 10 [9-10]  main block 0 [0-0]  ipc rtt max 0 [0-0]  res {"pid": 33708, "device": "gpu", "ortMs": 9.566699999999997, "startMs": 25.3193, "version": "1.29.0"}
+   probe_gpu.point_cold               rtt 1624 [1580-1629]  in process 1616 [1573-1620]  main block 0 [0-0]  ipc rtt max 8 [6-9]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   probe_gpu.point_warm               rtt 7 [7-8]  in process 6 [6-7]  main block 0 [0-0]  ipc rtt max 0 [0-1]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   probe_gpu.objects_cached           rtt 1815 [1726-1935]  in process 1798 [1712-1916]  main block 0 [0-0]  ipc rtt max 2 [2-3]  res {"idsBytes": 4500000, "count": 95, "candidates": 837, "provider": "dml", "encodeMs": 0.011400000000321597, "automaskMs": 1915.6571999999996, "encodeRunMs": 66}
+   probe_gpu.point_after_objects      rtt 7 [6-7]  in process 6 [6-6]  main block 0 [0-0]  ipc rtt max 0 [0-0]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   probe_gpu.cutout_lite              rtt 4043 [3699-4580]  in process 4035 [3690-4572]  main block 0 [0-0]  ipc rtt max 2 [1-14]  res {"alphaBytes": 1048576, "size": 1024, "provider": "dml", "runMs": 1697}
+   probe_gpu.depth                    rtt 258 [238-637]  in process 249 [230-629]  main block 0 [0-0]  ipc rtt max 1 [0-8]  res {"depthBytes": 1914528, "width": 924, "height": 518, "provider": "dml", "runMs": 317}
+   probe_gpu.free                     rtt 532 [490-538]  in process 531 [490-537]  main block 0 [0-0]  ipc rtt max 1 [0-1]  res {"released": 3}
+   probe_gpu.echo_4mb                 rtt 17 [17-18]  in process 0 [0-0]  main block 0 [0-0]  ipc rtt max 2 [0-3]  res {"dataBytes": 4194304}
+   probe_gpu.echo_8mb                 rtt 33 [32-36]  in process 0 [0-0]  main block 0 [0-22]  ipc rtt max 9 [0-10]  res {"dataBytes": 8388608}
+   probe_gpu.echo_16mb                rtt 66 [56-73]  in process 0 [0-0]  main block 26 [22-30]  ipc rtt max 21 [7-24]  res {"dataBytes": 16777216}
+   probe_gpu.mem                      rtt 0 [0-0]  in process 0 [0-0]  main block 0 [0-0]  ipc rtt max 0 [0-0]  res {"pid": 33708, "rssMB": 255.59375, "privMB": null, "heapMB": 2.9810028076171875, "abMB": 0}
+   probe_gpu.kill                     kill -> exit 8.7 [8.5-9.2] ms
+   probe_cpu.fork                     spawn 12.0 [11.7-12.1]
+   probe_cpu.init                     rtt 50 [48-52]  in process 10 [9-10]  main block 0 [0-0]  ipc rtt max 0 [0-1]  res {"pid": 30348, "device": "cpu", "ortMs": 9.3276, "startMs": 24.1865, "version": "1.29.0"}
+   probe_cpu.point_cold               rtt 2662 [2588-2669]  in process 2653 [2579-2661]  main block 0 [0-0]  ipc rtt max 3 [3-3]  res {"logitsBytes": 262144, "score": 0.8812316656112671, "provider": "cpu"}
+   probe_cpu.point_warm               rtt 29 [27-34]  in process 28 [26-34]  main block 0 [0-0]  ipc rtt max 0 [0-1]  res {"logitsBytes": 262144, "score": 0.8812316656112671, "provider": "cpu"}
+   probe_cpu.objects_cached           rtt 38408 [37389-39697]  in process 38387 [37371-39679]  main block 35 [0-54]  ipc rtt max 21 [6-29]  res {"idsBytes": 4500000, "count": 95, "candidates": 837, "provider": "cpu", "encodeMs": 0.007599999999911233, "automaskMs": 38429.040100000006, "encodeRunMs": 2082
+   probe_cpu.point_after_objects      rtt 30 [28-31]  in process 29 [28-30]  main block 0 [0-0]  ipc rtt max 0 [0-0]  res {"logitsBytes": 262144, "score": 0.8812316656112671, "provider": "cpu"}
+   probe_cpu.cutout_lite              rtt 6488 [4501-9023]  in process 6479 [4492-9014]  main block 0 [0-0]  ipc rtt max 4 [3-7]  res {"alphaBytes": 1048576, "size": 1024, "provider": "cpu", "runMs": 5662}
+   probe_cpu.depth                    rtt 767 [731-1070]  in process 758 [722-1061]  main block 0 [0-0]  ipc rtt max 2 [1-4]  res {"depthBytes": 1914528, "width": 924, "height": 518, "provider": "cpu", "runMs": 818}
+   probe_cpu.free                     rtt 87 [85-88]  in process 86 [85-88]  main block 0 [0-0]  ipc rtt max 0 [0-0]  res {"released": 4}
+   probe_cpu.kill                     kill -> exit 3.1 [3.0-3.3] ms
+   memory (MB; main private after a forced GC, main rss, GPU dedicated / shared of main [and the probe], the card's used MiB):
+     start                                          priv 85 [84-86]  rss 129 [128-129]  gpu 0 [0-0] / 0 [0-0]  card 3467 [3327-3567]
+     probe gpu started                              priv 84 [84-86]  rss 130 [129-130]  gpu 0 [0-0] / 0 [0-0]  probe gpu 0 [0-0] priv 26 [25-28]  card 3468 [3322-3573]
+     probe gpu after SAM2                           priv 85 [84-86]  rss 130 [130-131]  gpu 0 [0-0] / 0 [0-0]  probe gpu 5646 [5646-5646] priv 6340 [6330-6403]  card 9211 [8966-9218]
+     probe gpu after cutout and depth               priv 86 [85-86]  rss 131 [131-132]  gpu 0 [0-0] / 0 [0-0]  probe gpu 6369 [5858-6369] priv 6990 [6986-7047]  card 9252 [9020-9491]
+     probe gpu after free                           priv 85 [85-86]  rss 131 [130-132]  gpu 0 [0-0] / 0 [0-0]  probe gpu 0 [0-0] priv 364 [359-429]  card 3117 [2885-3169]
+     probe gpu after kill                           priv 85 [84-86]  rss 131 [130-131]  gpu 0 [0-0] / 0 [0-0]  card 3166 [2885-3293]
+     probe cpu started                              priv 85 [84-86]  rss 131 [131-132]  gpu 0 [0-0] / 0 [0-0]  probe gpu 0 [0-0] priv 26 [25-28]  card 3167 [3132-3431]
+     probe cpu after SAM2                           priv 84 [84-85]  rss 130 [129-130]  gpu 0 [0-0] / 0 [0-0]  probe gpu 0 [0-0] priv 517 [391-519]  card 3200 [3129-3209]
+     probe cpu after cutout and depth               priv 84 [83-84]  rss 129 [129-130]  gpu 0 [0-0] / 0 [0-0]  probe gpu 0 [0-0] priv 838 [809-840]  card 3207 [3184-3387]
+     probe cpu after free                           priv 84 [83-84]  rss 129 [129-129]  gpu 0 [0-0] / 0 [0-0]  probe gpu 0 [0-0] priv 110 [83-113]  card 3207 [3184-3310]
+     probe cpu after kill                           priv 83 [83-84]  rss 129 [129-129]  gpu 0 [0-0] / 0 [0-0]  card 3209 [3184-3332]
+
+== batch batchsize (device auto), runs [1, 2, 3]
+   r1: the window was not focused / visible at the end: {'focus': False, 'vis': 'visible'}
+   batch16.fork                       spawn 12.6 [11.6-13.7]
+   batch16.init                       rtt 48 [48-60]  in process 10 [9-12]  main block 0 [0-0]  ipc rtt max 0 [0-1]  res {"pid": 2204, "device": "gpu", "ortMs": 9.067200000000003, "startMs": 23.1933, "version": "1.29.0"}
+   batch16.point_cold                 rtt 1574 [1448-1778]  in process 1566 [1440-1771]  main block 0 [0-0]  ipc rtt max 7 [0-9]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   batch16.objects_b16                rtt 19 [16-31]  in process 10 [7-22]  main block 0 [0-0]  ipc rtt max 4 [0-4]  ERR Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\cor
+   batch16.objects_b64_after          rtt 1810 [1791-1834]  in process 1791 [1772-1816]  main block 0 [0-0]  ipc rtt max 4 [1-5]  res {"idsBytes": 4500000, "count": 95, "candidates": 837, "provider": "dml", "encodeMs": 0.010800000000017462, "automaskMs": 1771.7668999999999, "encodeRunMs": 63}
+   batch16.point_after                rtt 15 [14-15]  in process 6 [6-6]  main block 0 [0-0]  ipc rtt max 4 [0-4]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   batch32.fork                       spawn 11.3 [11.3-21.1]
+   batch32.init                       rtt 47 [44-52]  in process 9 [8-10]  main block 0 [0-0]  ipc rtt max 0 [0-0]  res {"pid": 18272, "device": "gpu", "ortMs": 8.2745, "startMs": 22.0914, "version": "1.29.0"}
+   batch32.point_cold                 rtt 1527 [1497-1642]  in process 1519 [1489-1634]  main block 0 [0-0]  ipc rtt max 3 [0-3]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   batch32.objects_b32                rtt 25 [17-36]  in process 16 [8-26]  main block 0 [0-0]  ipc rtt max 4 [0-5]  ERR Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\cor
+   batch32.objects_b64_after          rtt 1768 [1768-1806]  in process 1748 [1748-1788]  main block 0 [0-0]  ipc rtt max 4 [1-6]  res {"idsBytes": 4500000, "count": 95, "candidates": 837, "provider": "dml", "encodeMs": 0.02409999999986212, "automaskMs": 1748.5114999999998, "encodeRunMs": 65}
+   batch32.point_after                rtt 15 [14-16]  in process 6 [6-7]  main block 0 [0-0]  ipc rtt max 4 [0-4]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   batch128.fork                      spawn 11.5 [11.2-11.6]
+   batch128.init                      rtt 49 [47-53]  in process 9 [9-10]  main block 0 [0-0]  ipc rtt max 0 [0-0]  res {"pid": 56772, "device": "gpu", "ortMs": 9.034699999999997, "startMs": 23.2587, "version": "1.29.0"}
+   batch128.point_cold                rtt 1542 [1443-1762]  in process 1533 [1435-1753]  main block 0 [0-0]  ipc rtt max 3 [1-5]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   batch128.objects_b128              rtt 41 [20-59]  in process 30 [12-50]  main block 0 [0-0]  ipc rtt max 5 [0-7]  ERR Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\cor
+   batch128.objects_b64_after         rtt 1784 [1759-1810]  in process 1766 [1740-1792]  main block 0 [0-0]  ipc rtt max 5 [0-8]  res {"idsBytes": 4500000, "count": 95, "candidates": 837, "provider": "dml", "encodeMs": 0.00980000000004111, "automaskMs": 1765.8904, "encodeRunMs": 62}
+   batch128.point_after               rtt 15 [14-15]  in process 6 [5-7]  main block 0 [0-0]  ipc rtt max 3 [0-4]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   batch256.fork                      spawn 11.3 [11.2-11.8]
+   batch256.init                      rtt 48 [44-59]  in process 9 [8-12]  main block 0 [0-0]  ipc rtt max 0 [0-0]  res {"pid": 34336, "device": "gpu", "ortMs": 8.355, "startMs": 21.3824, "version": "1.29.0"}
+   batch256.point_cold                rtt 1555 [1456-1736]  in process 1547 [1448-1727]  main block 0 [0-0]  ipc rtt max 3 [1-3]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   batch256.objects_b256              rtt 56 [27-88]  in process 46 [18-79]  main block 0 [0-0]  ipc rtt max 4 [0-4]  ERR Error: Non-zero status code returned while running Mul node. Name:'/Mul_14' Status Message: N:\_work\1\s\onnxruntime\cor
+   batch256.objects_b64_after         rtt 1763 [1761-1802]  in process 1745 [1742-1784]  main block 0 [0-0]  ipc rtt max 4 [2-5]  res {"idsBytes": 4500000, "count": 95, "candidates": 837, "provider": "dml", "encodeMs": 0.010700000000042564, "automaskMs": 1742.3435000000002, "encodeRunMs": 64}
+   batch256.point_after               rtt 15 [14-15]  in process 6 [6-6]  main block 0 [0-0]  ipc rtt max 3 [0-4]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   batch64.fork                       spawn 12.5 [11.5-13.7]
+   batch64.init                       rtt 51 [50-53]  in process 10 [10-11]  main block 0 [0-0]  ipc rtt max 0 [0-1]  res {"pid": 46756, "device": "gpu", "ortMs": 10.7742, "startMs": 26.7445, "version": "1.29.0"}
+   batch64.point_cold                 rtt 1550 [1468-1676]  in process 1542 [1458-1668]  main block 0 [0-0]  ipc rtt max 3 [1-3]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   batch64.objects_b64                rtt 1782 [1737-1859]  in process 1763 [1719-1840]  main block 0 [0-0]  ipc rtt max 5 [0-6]  res {"idsBytes": 4500000, "count": 95, "candidates": 837, "provider": "dml", "encodeMs": 0.009000000000014552, "automaskMs": 1763.0296, "encodeRunMs": 62}
+   batch64.point_after                rtt 14 [14-16]  in process 6 [6-7]  main block 0 [0-0]  ipc rtt max 3 [0-4]  res {"logitsBytes": 262144, "score": 0.8812333345413208, "provider": "dml"}
+   memory (MB; main private after a forced GC, main rss, GPU dedicated / shared of main [and the probe], the card's used MiB):
+     start                                          priv 85 [85-85]  rss 129 [129-129]  gpu 0 [0-0] / 0 [0-0]  card 3291 [3194-3501]
+     batch 16 after                                 priv 86 [85-86]  rss 131 [130-131]  gpu 0 [0-0] / 0 [0-0]  probe gpu 5646 [5646-5646] priv 6280 [6146-6341]  card 8935 [8841-9154]
+     batch 32 after                                 priv 86 [85-86]  rss 131 [131-131]  gpu 0 [0-0] / 0 [0-0]  probe gpu 5654 [5654-5654] priv 6289 [6150-6291]  card 8943 [8848-9160]
+     batch 128 after                                priv 86 [85-86]  rss 131 [131-131]  gpu 0 [0-0] / 0 [0-0]  probe gpu 5751 [5751-5751] priv 6259 [6253-6392]  card 9040 [8945-9243]
+     batch 256 after                                priv 86 [85-86]  rss 131 [131-132]  gpu 0 [0-0] / 0 [0-0]  probe gpu 7798 [7798-7798] priv 8435 [8299-8558]  card 11090 [10994-11299]
+     batch 64 after                                 priv 86 [86-87]  rss 131 [131-132]  gpu 0 [0-0] / 0 [0-0]  probe gpu 5646 [5646-5646] priv 6402 [6340-6416]  card 8935 [8837-9154]
+
+== batch hovermem (device auto), runs [1, 2, 3, 4]
+   hover15000.prep                    {"W": 15000, "H": 8438, "loadMs": 1011, "inputMs": 32.5, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}; {"W": 15000, "H": 8438, "loadMs": 1095, "inputMs": 34.1, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}; {"W": 15000, "H": 8438, "loadMs": 1050, "inputMs": 34.4, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}; {"W": 15000, "H": 8438, "loadMs": 993, "inputMs": 31.7, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+   hover15000.ensureObjects           wall 3145 [3087-3170]  block 1101 [1084-1133]  rtt 1081 [1066-1118]  handler 2882 [2829-2905]  ipc 262 [258-268]  create 1256 [1238-1299] [('sam2_hiera_base_plus.encoder.onnx', 'dml', 1090), ('sam2_hiera_base_plus.decoder.onnx', 'dml', 182)]  enc.run 69 [66-77]  enc.js 7 [6-9]  automask 1713 [1689-1748] (decode 944 [932-960] in 16 batches, js 767 [756-793]: filter/batch 30.0 [29.5-32.1], nms+paint 100 [98-101])  parts objectInput 4 [4-5], inputHash 2 [2-2], helperCall 2902 [2849-2926], applySegmentIds 0 [0-0]  scale-back 234 [230-239]  renderer gap 247 [242-254]
+   hover15000.shape_01                wall 314 [313-316]  block 0 [0-0]  rtt 2 [2-3]  parts objectShape 314 [313-316]  renderer gap 315 [313-317]
+   hover15000.shape_02                wall 199 [194-203]  block 0 [0-0]  rtt 0 [0-2]  parts objectShape 199 [194-203]  renderer gap 200 [194-204]
+   hover15000.shape_03                wall 303 [190-311]  block 0 [0-0]  rtt 2 [1-2]  parts objectShape 303 [190-311]  renderer gap 304 [190-311]
+   hover15000.shape_04                wall 203 [193-215]  block 0 [0-0]  rtt 0 [0-0]  parts objectShape 203 [193-215]  renderer gap 203 [193-215]
+   hover15000.shape_05                wall 225 [222-340]  block 0 [0-0]  rtt 2 [0-340]  parts objectShape 224 [222-340]  renderer gap 225 [223-340]
+   hover15000.shape_06                wall 286 [172-309]  block 0 [0-0]  rtt 2 [0-309]  parts objectShape 286 [172-309]  renderer gap 286 [173-310]
+   hover15000.shape_07                wall 302 [295-312]  block 0 [0-0]  rtt 299 [0-302]  parts objectShape 302 [295-312]  renderer gap 302 [296-313]
+   hover15000.shape_08                wall 302 [175-326]  block 0 [0-0]  rtt 89 [2-290]  parts objectShape 302 [175-326]  renderer gap 302 [176-327]
+   hover15000.shape_09                wall 196 [193-212]  block 0 [0-0]  rtt 0 [0-0]  parts objectShape 196 [193-212]  renderer gap 196 [193-212]
+   hover15000.shape_10                wall 162 [161-168]  block 0 [0-0]  rtt 162 [2-168]  parts objectShape 161 [161-168]  renderer gap 162 [162-169]
+   hover15000.shape_11                wall 169 [157-173]  block 0 [0-0]  rtt 0 [0-0]  parts objectShape 169 [157-173]  renderer gap 169 [157-174]
+   hover15000.shape_12                wall 172 [170-187]  block 0 [0-0]  rtt 87 [1-188]  parts objectShape 172 [170-187]  renderer gap 173 [170-188]
+   hover15000.shape_13                wall 186 [176-217]  block 0 [0-0]  rtt 0 [0-176]  parts objectShape 186 [176-217]  renderer gap 187 [176-217]
+   hover15000.shape_14                wall 189 [186-276]  block 0 [0-0]  rtt 118 [0-232]  parts objectShape 189 [186-276]  renderer gap 224 [212-276]
+   hover15000.memory                  renderer / GPU process private MB: before {'tabMB': 1165, 'gpuMB': 413, 'cache': 0}, after 14 shapes {'tabMB': 1645, 'gpuMB': 6339, 'cache': 13}, cache cleared {'tabMB': 1146, 'gpuMB': 12807, 'cache': 0}
+   hover15000.memory                  renderer / GPU process private MB: before {'tabMB': 1163, 'gpuMB': 415, 'cache': 0}, after 14 shapes {'tabMB': 1644, 'gpuMB': 6351, 'cache': 13}, cache cleared {'tabMB': 1145, 'gpuMB': 12819, 'cache': 0}
+   hover15000.memory                  renderer / GPU process private MB: before {'tabMB': 1168, 'gpuMB': 417, 'cache': 0}, after 14 shapes {'tabMB': 1649, 'gpuMB': 5383, 'cache': 13}, cache cleared {'tabMB': 1150, 'gpuMB': 14074, 'cache': 0}
+   hover15000.memory                  renderer / GPU process private MB: before {'tabMB': 1165, 'gpuMB': 409, 'cache': 0}, after 14 shapes {'tabMB': 1645, 'gpuMB': 6337, 'cache': 13}, cache cleared {'tabMB': 1146, 'gpuMB': 11552, 'cache': 0}, later [{'s': 20, 'tabMB': 1139, 'gpuMB': 1491, 'cache': 0}, {'s': 60, 'tabMB': 1139, 'gpuMB': 1490, 'cache': 0}]
+
