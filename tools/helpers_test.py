@@ -12,9 +12,12 @@ scan links what it finds, nothing is downloaded), and
   - the editor's own paths through it: the hover tool's map (ensureObjects), select_point on a shape, cutout_layer on
     a layer;
   - Free VRAM: the process gone; the next point (host.segmentLogits sends the picture again) starts a new one;
-  - Free VRAM during an object map: the map refused in a plain sentence, the next job answered;
+  - Free VRAM during an object map (the free a local Generate does): the map still lands, the process ends after it,
+    a point sent meanwhile goes to a new process;
   - the device switch to CPU: the process ends, the next answer's provider is the CPU.
 The folder, the models and the device are put back at the end. Skipped (PASS with a note) where DIR has no SAM2 tiny.
+It holds the machine's busy lock while it runs (it loads SAM2 on the GPU and times IPC round trips), waiting at most
+5 minutes for it; tools/run_gates_both.sh runs it serially.
 """
 import asyncio
 import json
@@ -40,6 +43,10 @@ def _arg(name, default=None):
 MODELS = _arg("--models-dir", r"F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\models")
 APP_MODELS = _arg("--app-models", os.path.join(os.environ.get("APPDATA", ""), "Scumble", "models"))
 RTT_MAX = 150   # ms: the longest renderer -> main -> renderer round trip allowed while a helper job runs
+# the machine's busy lock (docs/measurements/w1_2026-11-06/w1_lock.py; SCUMBLE_BUSY_LOCK names another file): the gate
+# loads SAM2 on the GPU and times IPC round trips, so it holds the lock while it runs, as a timed batch does
+LOCK_SCRIPT = os.path.join(os.path.dirname(HERE), "docs", "measurements", "w1_2026-11-06", "w1_lock.py")
+LOCK_WAIT_S = 300
 SAM2_TINY = os.path.join(MODELS, "onnx", "sam2_hiera_tiny.encoder.onnx")
 
 
@@ -176,14 +183,25 @@ if (r.rttMax > __RTT__) throw new Error(`main blocked ${r.rttMax} ms during the 
 return { released: n, oldPid: before.pid, newPid: p2.pid, selection: r.res.selection, wall: r.wall, rttMax: r.rttMax };
 """),
     ("free_during_a_map", """
-const job = H.objects({ model: "sam2_tiny", key: "gate:b", image: G.img, outWidth: 1024, outHeight: 1024 }).then(() => "answered", (e) => String(e.message || e));
+// the free a local Generate does (or the button) while a map runs: the map still lands, the process ends after it,
+// and a point sent meanwhile goes to a new process
+const old = (await proc()).pid;
+const job = H.objects({ model: "sam2_tiny", key: "gate:b", image: G.img, outWidth: 1024, outHeight: 1024 }).then((r) => r, (e) => ({ error: String(e.message || e) }));
 await wait(250);
-await H.free();
+const freeing = H.free();
+await wait(20);
+const p1 = await proc();
+if (p1.pid === old || p1.retiring !== 1) throw new Error("the process should be retiring during the map: " + JSON.stringify(p1));
+const point = H.segment({ model: "sam2_tiny", key: "gate:c", image: G.img, points: [{ x: 750, y: 280, label: 1 }], raw: true });
 const r = await job;
-if (!/were stopped/.test(r)) throw new Error("the map should be refused by Free VRAM: " + r);
-const next = await H.segment({ model: "sam2_tiny", key: "gate:c", image: G.img, points: [{ x: 750, y: 280, label: 1 }], raw: true });
-if (!next || !next.logits || next.logits.length !== 65536) throw new Error("the next job did not answer");
-return { refused: r, next: { score: next.score, provider: next.provider } };
+await freeing;
+if (r.error || !(r.count > 0)) throw new Error("the map should land through Free VRAM: " + (r.error || JSON.stringify({ count: r.count })));
+if (!(await gone(old))) throw new Error("the retired process " + old + " is still in the metrics");
+const next = await point;
+if (!next || !next.logits || next.logits.length !== 65536) throw new Error("the point sent during the drain did not answer");
+const p2 = await proc();
+if (!p2.pid || p2.pid === old || p2.retiring !== 0) throw new Error("the point should have gone to a new process: " + JSON.stringify(p2));
+return { landed: r.count, oldPid: old, newPid: p2.pid, next: { score: next.score, provider: next.provider } };
 """),
     ("device_cpu", """
 const pid = (await proc()).pid;
@@ -239,27 +257,61 @@ async def run_all(c):
     return ok
 
 
-if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8")
+def lock_acquire():
+    """The busy lock, waited for at most LOCK_WAIT_S (the gate's own timeout is 420 s): its token, or None when another
+    holder kept it (the gate then runs beside it and says so)."""
+    import contextlib
+    import importlib.util
+    import io
+    if not os.path.isfile(LOCK_SCRIPT):
+        return None
+    spec = importlib.util.spec_from_file_location("w1_lock", LOCK_SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.WAIT_S, mod.STEP_S = LOCK_WAIT_S, 10
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = mod.acquire("helpers gate")
+    if rc != 0:
+        print(f"lock: still held after {LOCK_WAIT_S} s by {mod.holder()!r}: the gate runs beside it")
+        return None
+    return mod, out.getvalue().strip()
+
+
+def main():
     if not os.path.isfile(SAM2_TINY):
         print(f"SKIP: no SAM2 tiny in {MODELS} (onnx/)")
         print("PASS (skipped)")
-        sys.exit(0)
+        return 0
+    held = lock_acquire()
+    try:
+        return run_gate()
+    finally:
+        if held:
+            held[0].release(held[1])
+
+
+def run_gate():
     node_cmd = ["node", os.path.join(HERE, "helpers_test.js"), MODELS, "--also", APP_MODELS, "--process", "--sam2", "sam2_tiny", "--matting", "rmbg14"]
     p = subprocess.run(node_cmd, capture_output=True, text=True, encoding="utf-8")
     print(p.stdout.rstrip())
     if p.returncode != 0:
         print("[FAIL] node helpers_test.js --process:", (p.stderr or "")[-2000:])
         print("FAIL")
-        sys.exit(1)
+        return 1
     print("[ok] node helpers_test.js --process passed")
     if "--node-only" in sys.argv:
         print("PASS")
-        sys.exit(0)
+        return 0
     try:
         ok = asyncio.run(session(run_all))
     except Exception as err:  # noqa: BLE001
         print(f"[FAIL] CDP session not reachable: {err}")
         ok = False
     print("PASS" if ok else "FAIL")
-    sys.exit(0 if ok else 1)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.exit(main())

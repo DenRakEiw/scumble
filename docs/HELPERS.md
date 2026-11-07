@@ -249,13 +249,20 @@ U0 measured the first SAM2 call holding main 1.1 s in one piece, an object map 0
 CPU cutout its whole 4.8 s; in the helpers' process main's longest block stays near zero (U1's numbers in
 `docs/measurements/u1_2026-11-07/`). The helpers' process starts with the first helper job (about 50 ms for the spawn
 and onnxruntime, then the sessions as before), holds one `Sam2` per model with its embedding cache, and ends:
-**at Free VRAM** (the button, and `freeHelperModels` before every local ComfyUI run once a helper was used: the kill
-gives the card's memory back at once and blocks nothing; a job under way is refused, "The helper models were stopped
-(Free VRAM or a settings change); try again."), at the device switch, a folder change, a scan, a model's removal
-(awaited, so the file it held can go), the quit, and **5 minutes after the last helper job** (the idle unload, never
-while a job runs). The next job starts a new process; the window does not notice except that a point's embedding is
-gone, and `host.segmentLogits` sends the picture again as after a Free VRAM before. `helpers:status`' runtime part
-comes from the process's last answer (`process: { pid, state }`, "off" / "starting" / "ready" / "fallback"); while the
+**at Free VRAM** (the button, and `freeHelperModels` before every local ComfyUI run once a helper was used; both
+come as the same `helpers:free`), the device switch, a folder change and a scan, it **retires** (`HelperProcess.retire`):
+new jobs go to a new process at once, and the old one ends as soon as it has answered the jobs it has, at most 8 s
+later (`DRAIN_MS`), its memory and VRAM back then; nothing blocks main. Before U1 a free released the sessions and a
+job under way went on (its next decode loaded them again), so a cutout on another tab, a hover map or an agent's
+second call still lands when a local Generate frees the helpers; a job still open after the 8 s is refused with a
+sentence naming the cause ("The helper models were unloaded to free VRAM (Free VRAM, or a local ComfyUI run starting)
+before this job finished; try again.", and one each for the folder and the device). A model's removal and the quit
+**kill** it where it stands (`kill`: awaited at the removal, so the file it held can go; its jobs refused with the
+cause), and it ends **5 minutes after the last helper job** (the idle unload, never while a job runs). The next job
+starts a new process; the window does not notice except that a point's embedding is gone, and `host.segmentLogits`
+sends the picture again as after a Free VRAM before. A kill in the first milliseconds, before the utility process's
+"spawn" (its `kill()` does nothing then), is done at the spawn. `helpers:status`' runtime part comes from the
+process's last answer (`process: { pid, state, retiring }`, "off" / "starting" / "ready" / "fallback"); while the
 process is off Settings says "nothing loaded yet". **The fallback:** a process that ends before its "ready" (no utility
 process, onnxruntime missing) leaves the engine to main's thread for the session and the jobs that waited run there
 (the behaviour before U1, with its blocks); one that dies after it refuses its jobs ("The helper models' process
@@ -494,16 +501,19 @@ what the first lacks.
 
 `node tools/helpers_test.js DIR --also APP --process` (U1) sends the objects, two points, a cutout and a depth map
 through `HelperProcess` (the forked Node process of plain Node) and through the main-thread engine and requires the
-same bytes (the label map, the logits, the mask, the alpha, the depth map), then a kill during an object map (refused,
-the next job a new process), a point without its picture on a new process (refused, as `host.segmentLogits` expects),
+same bytes (the label map, the logits, the mask, the alpha, the depth map), then Free VRAM during an object map (the
+map lands with the same bytes and the process ends after it, a job meanwhile goes to a new process; a job longer than
+the drain refused with the cause's sentence), a model's removal during a map (refused at once with its cause), a point
+without its picture on a new process (refused, as `host.segmentLogits` expects),
 a death after "ready" (refused) and a second within the minute (the fallback, the same bytes on this thread), a
 process that exits at once (the fallback with the waiting job answered), and the idle unload (never during a job).
 The gate `helpers` (`tools/helpers_test.py`, run it `--offline`) runs that first (SAM2 tiny and RMBG-1.4 from the
 user's ComfyUI models folder, depth from the app folder; skipped where there is no SAM2 tiny), then in the app with
 the helpers folder set to that ComfyUI folder: an object map on a cold process with the process in the app's metrics
 and the renderer's IPC round trips under 150 ms throughout, the editor's own paths (the hover map, `select_point`,
-`cutout_layer`), Free VRAM ending the process and the next point starting a new one, Free VRAM during a map, and the
-device switch to the CPU; the settings put back at the end.
+`cutout_layer`), Free VRAM ending the process and the next point starting a new one, Free VRAM during a map (the
+map lands, the process retiring meanwhile and gone after it, a point sent meanwhile answered by a new process), and the
+device switch to the CPU; the settings put back at the end. It holds the busy lock while it runs.
 
 ## Not done / ideas
 

@@ -84,8 +84,10 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   main-thread engine and requires the same bytes, then the kill, the deaths, the fallback and the idle unload
   (`docs/HELPERS.md`). The gate `helpers` (`tools/helpers_test.py`, `--offline`) runs that first, then the helpers'
   process in the app on the user's ComfyUI models folder (read only; SAM2 tiny, RMBG-1.4): the map, `select_point`,
-  `cutout_layer`, Free VRAM, the device switch, the renderer's IPC round trips under 150 ms; it loads SAM2 on the GPU
-  (about 1 GB), so it waits for the busy lock like a timed batch. `node tools/remove_test.js` checks the Remove tool's crop and resampling
+  `cutout_layer`, Free VRAM (a map under way still lands), the device switch, the renderer's IPC round trips under
+  150 ms; it loads SAM2 on the GPU (about 1 GB) and times round trips, so it holds the busy lock while it runs (it waits
+  at most 5 minutes for it, then runs beside the holder and says so) and `tools/run_gates_both.sh` runs it serially.
+  `node tools/remove_test.js` checks the Remove tool's crop and resampling
   (`renderer/editor/inpaint_remove.js`) without models. `node tools/liquify_test.js` holds Liquify's kernel
   (`renderer/editor/inpaint_liquify.js`) to 23b's resampler on constant fields, to a direct integer reference on random
   ones, the bounded gather's split to the unsplit bytes, and the brushes to their rules (advected, restore exact, no fold).

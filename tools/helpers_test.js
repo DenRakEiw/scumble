@@ -13,10 +13,11 @@
 //
 // `--process` (U1, docs/PLAN_HELPERS_PROCESS.md §3.8): the same jobs through `HelperProcess` (helpers.js, the forked
 // Node process of plain Node) and through the main-thread engine (engine.js on this thread), the answers byte for byte
-// the same (the objects' ids, the point's logits, the cutout's alpha, the depth map); a kill during an object map
-// refuses it and the next job starts a new process; a death after the first answer refuses its jobs, a second within
-// a minute falls back to this thread; a process that exits at once falls back with the waiting job answered; the
-// idle unload ends the process.
+// the same (the objects' ids, the point's logits, the cutout's alpha, the depth map); Free VRAM during an object map
+// lets the map land and ends the process after it (a job meanwhile goes to a new one; one longer than the drain is
+// refused naming the cause); a model's removal ends it at once, refusing its job with that cause; a death after
+// "ready" refuses its jobs, a second within a minute falls back to this thread; a process that exits at once falls
+// back with the waiting job answered; the idle unload ends the process.
 "use strict";
 
 const fs = require("node:fs");
@@ -330,7 +331,7 @@ function cutoutSource() {
 }
 
 async function processMain() {
-    const { HelperProcess, STOPPED, KILLED } = require("../electron/main/onnx/helpers");
+    const { HelperProcess, STOPPED, REASONS } = require("../electron/main/onnx/helpers");
     const { engine, modelInfo } = require("../electron/main/onnx/engine");
     const device = args.includes("--cpu") ? "cpu" : "auto";
     console.log("models in", dir, also ? "and " + also : "", "· device", device);
@@ -369,8 +370,8 @@ async function processMain() {
     const st = hp.status(device);
     check("status from the last answer: its sessions and its pid, no call into it", st.loaded >= 1 && st.process.pid === pid0 && st.process.state === "ready" && !!st.version,
         JSON.stringify({ loaded: st.loaded, active: Object.values(st.active), process: st.process, version: st.version }));
-    const released = await hp.kill();
-    check("kill (Free VRAM): the process gone, its sessions counted, nothing loaded after", released === st.loaded && !alive(pid0) && hp.state === "off" && hp.status(device).loaded === 0 && hp.status(device).process.pid === null,
+    const released = await hp.retire({ reason: "free" });
+    check("Free VRAM with nothing running: the process gone at once, its sessions counted, nothing loaded after", released === st.loaded && !alive(pid0) && hp.state === "off" && hp.status(device).loaded === 0 && hp.status(device).process.pid === null,
         `released ${released}, alive ${alive(pid0)}`);
     const local = engine(new Runtime());
     for (const [name, type, job] of jobs) {
@@ -417,38 +418,60 @@ async function processMain() {
     }
 
     if (samFiles) {
-        // 2. a kill during an object map: refused; a point without its picture on the new process refused (the window
-        // sends the picture then), with it answered
+        // 2. Free VRAM (the button, or the free a local ComfyUI run does) during an object map: the map still lands and
+        // the process ends after it, a job sent meanwhile goes to a new process; a job longer than the drain is refused
+        // naming the cause; a model's removal ends the process at once, refusing its job with that cause; a point
+        // without its picture on a new process is refused (the window sends the picture then), with it answered
         const hp2 = new HelperProcess({ idleMs: 0 });
         await hp2.call("segment", pointWithImage);
         const pid1 = hp2.pid;
-        const map = hp2.call("objects", { ...objectsJob, key: "kill" }).then(() => "answered", (e) => e.message);
+        const map = hp2.call("objects", { ...objectsJob, key: "drain" }).then((r) => r, (e) => ({ error: e.message }));
         await sleep(300);
-        await hp2.kill();
-        const r1 = await map;
-        check("a kill during an object map refuses it in a plain sentence", r1 === KILLED, r1);
-        check("... and the process is gone", !alive(pid1) && hp2.pid === null && hp2.state === "off");
+        const freed = hp2.retire({ reason: "free" });
+        check("a retired process takes no new job", hp2.pid === null && hp2.state === "off" && hp2.status(device).process.retiring === 1 && hp2.busy());
+        const during = hp2.call("segment", pointWithImage);
+        const landed = await map;
+        const releasedB = await freed;
+        check("Free VRAM during an object map: the map still lands, the same bytes", !landed.error && sameBytes(landed.ids, viaProc.objects.ids), landed.error || `${landed.count} objects`);
+        check("... and the retired process ended after it", !alive(pid1) && hp2.status(device).process.retiring === 0 && releasedB >= 0, `released ${releasedB}`);
+        const dur = await during;
+        check("a job sent during the drain went to a new process", hp2.pid && hp2.pid !== pid1 && hp2.starts === 2 && sameBytes(dur.logits, viaProc.point.logits), `pid ${hp2.pid}, starts ${hp2.starts}`);
+        const pidB = hp2.pid;
+        const capped = hp2.call("objects", { ...objectsJob, key: "cap" }).then(() => "answered", (e) => e.message);
+        await sleep(200);
+        await hp2.retire({ reason: "free", drainMs: 100 });
+        const rCap = await capped;
+        check("a job the drain cannot wait for is refused, naming the cause", rCap === REASONS.free, rCap);
+        check("... and that process is gone", !alive(pidB) && hp2.pid === null);
+        await hp2.call("segment", pointWithImage);
+        const pidC = hp2.pid;
+        const removed = hp2.call("objects", { ...objectsJob, key: "remove" }).then(() => "answered", (e) => e.message);
+        await sleep(200);
+        await hp2.kill({ reason: "remove" });
+        const rRemove = await removed;
+        check("a model's removal ends the process at once and refuses its job, naming the cause", rRemove === REASONS.remove && !alive(pidC) && hp2.pid === null, rRemove);
+        const startsBefore = hp2.starts;
         const noImage = await hp2.call("segment", pointJob).then(() => "answered", (e) => e.message);
         check("a point without its picture on the new process is refused (host.segmentLogits sends it then)", /RGBA image of 1024/.test(noImage), noImage);
         const again = await hp2.call("segment", pointWithImage);
-        check("the next job started a new process and answered the same", hp2.pid && hp2.pid !== pid1 && hp2.starts === 2 && sameBytes(again.logits, viaProc.point.logits), `pid ${hp2.pid}, starts ${hp2.starts}`);
+        check("the next job started a new process and answered the same", hp2.pid && hp2.pid !== pidC && hp2.starts === startsBefore + 1 && sameBytes(again.logits, viaProc.point.logits), `pid ${hp2.pid}, starts ${hp2.starts}`);
 
         // 3. a death after "ready" (killed from outside, as a crash ends it) during a job: refused; the next job starts
         // a new process; a second death within the minute leaves the helpers to this thread
         const pid2 = hp2.pid;
-        const map2 = hp2.call("objects", { ...objectsJob, key: "death" }).then(() => "answered", (e) => e.message);
+        const dying = hp2.call("objects", { ...objectsJob, key: "death" }).then(() => "answered", (e) => e.message);
         await sleep(300);
         process.kill(pid2);
-        const r2 = await map2;
+        const r2 = await dying;
         check("a death refuses the job under way", r2 === STOPPED && hp2.state === "off" && hp2.deaths.length === 1, `${r2}; state ${hp2.state}, deaths ${hp2.deaths.length}`);
         const after = await hp2.call("segment", pointWithImage);
         const pid3 = hp2.pid;
-        check("the job after a death starts a new process", pid3 && pid3 !== pid2 && hp2.starts === 3 && sameBytes(after.logits, viaProc.point.logits), `pid ${pid3}`);
+        check("the job after a death starts a new process", pid3 && pid3 !== pid2 && hp2.starts === startsBefore + 2 && sameBytes(after.logits, viaProc.point.logits), `pid ${pid3}`);
         process.kill(pid3);
         await waitFor(() => hp2.state === "fallback", 5000);
         check("a second death within a minute falls back to this thread", hp2.state === "fallback" && !!hp2.local && hp2.pid === null, `state ${hp2.state}`);
         const fb = await hp2.call("segment", pointWithImage);
-        check("the fallback answers on this thread, the same bytes", sameBytes(fb.logits, viaProc.point.logits) && hp2.starts === 3 && hp2.status(device).process.state === "fallback");
+        check("the fallback answers on this thread, the same bytes", sameBytes(fb.logits, viaProc.point.logits) && hp2.starts === startsBefore + 2 && hp2.status(device).process.state === "fallback");
         await hp2.kill();
 
         // 4. a process that ends at its start (onnxruntime missing, say): the engine runs here, the waiting job answered

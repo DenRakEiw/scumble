@@ -74,10 +74,10 @@ async function configure(patch) {
     const dirChanged = !!(patch && "dir" in patch && patch.dir !== before.dir);
     // the settings first, so a job that comes in meanwhile is sent with the new device and the new folder's files
     settings.set({ helpers: next });
-    // the helpers' process ends (its sessions were made on the old device, or from the old folder's files); the next
-    // job starts one on the new device
+    // the helpers' process retires (its sessions were made on the old device, or from the old folder's files): the next
+    // job starts one on the new device, a job under way still lands (helpers.js `retire`)
     if (dirChanged) await clearInstances();
-    else if (deviceChanged) await helperProcess.kill();
+    else if (deviceChanged) await helperProcess.retire({ reason: "device" });
     // a new folder is scanned at once, so a ComfyUI models folder links what it can
     return dirChanged ? scan() : status();
 }
@@ -97,18 +97,21 @@ async function scan() {
     return status();
 }
 
-/** The models' files may have moved: LaMa's process and the helpers' process end (resolves once the latter exited). */
+/**
+ * The models' files may have moved: LaMa's process ends, the helpers' process retires (a job under way still lands;
+ * resolves once it exited).
+ */
 function clearInstances() {
     for (const l of inpaintInstances.values()) l.kill();
     inpaintInstances.clear();
-    return helperProcess.kill({ clear: true });
+    return helperProcess.retire({ reason: "folder", clear: true });
 }
 
 // LaMa's process and the helpers' end with the app (a utility process would too; the forked one of plain Node would not)
 if (app && typeof app.on === "function") {
     app.on("will-quit", () => {
         for (const l of inpaintInstances.values()) l.kill();
-        helperProcess.kill();
+        helperProcess.kill({ reason: "quit" });
     });
 }
 
@@ -136,9 +139,9 @@ async function remove(id) {
     const model = models.byId(id);
     if (!model) throw new Error("unknown model " + id);
     const loc = models.locate(model, dir, links());
-    // the helpers' process ends first (resolved once it exited, so the file it held can go on Windows); a LaMa model
-    // leaves it alone, as Free VRAM does
-    if (model.kind !== "inpaint") await helperProcess.kill({ clear: true });
+    // the helpers' processes end where they stand first (resolved once they exited, so the file one held can go on
+    // Windows); a LaMa model leaves them alone, as Free VRAM does
+    if (model.kind !== "inpaint") await helperProcess.kill({ reason: "remove", clear: true });
     if (loc.present && loc.linked) {
         // a linked file belongs to the user's folder (a ComfyUI models folder, mostly):
         // forget the link, never delete the file
@@ -153,12 +156,14 @@ async function remove(id) {
 }
 
 /**
- * The GPU sessions let go (Free VRAM, a local ComfyUI run): the helpers' process ends where it stands, its VRAM and
- * memory back at once (a job under way is refused), and the next job starts it again. LaMa stays: it runs on the CPU in
- * its own process, holds no VRAM, and a Remove under way would lose its answer. -> the number of sessions it held
+ * The GPU sessions let go (the Free VRAM button and the free before a local ComfyUI run come here alike): the helpers'
+ * process retires, its VRAM and memory back once it has answered the jobs it has (at most 8 s; a job then still open is
+ * refused, naming the cause), and the next job starts a new one at once. Before U1 a free released the sessions and a
+ * job under way went on, so a cutout on another tab still lands. LaMa stays: it runs on the CPU in its own process,
+ * holds no VRAM, and a Remove under way would lose its answer. -> the number of sessions it held
  */
 async function free() {
-    return helperProcess.kill();
+    return helperProcess.retire({ reason: "free" });
 }
 
 const MISSING = {
