@@ -41,6 +41,8 @@ export default [
         ignores: [
             "node_modules/**",
             "dist/**",
+            // the agents' and sessions' worktrees: whole copies of the repo (lint took 80-100 s with them, 27 s without)
+            ".claude/**",
             "renderer/editor/px/*.wasm",
             // Built from renderer/editor/ by tools/build_node.py; never edited here.
             "**/js/inpaint_canvas.js",
