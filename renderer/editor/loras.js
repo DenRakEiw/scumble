@@ -200,6 +200,18 @@ export function modelSource(prompt, r, info = null) {
     return { node, slot, clip };
 }
 
+/**
+ * Why a graph takes no LoRA rows, as words after a colon (a modelSource answer of `none` or `many`), or "" for a graph
+ * with its one source: the splice's note and the queue path's note on rows its hidden LoRAs section keeps.
+ * @param {ReturnType<typeof modelSource>} src
+ */
+export function noSourceWords(src) {
+    if (!src || typeof src !== "object") return "";
+    if ("none" in src) return src.none;
+    if ("many" in src) return `the graph has ${src.many.length} model loaders (${src.many.join(", ")}) and the recipe names none of them`;
+    return "";
+}
+
 /** A fresh node id `stem` (then `stem_2`, `stem_3` ...) the graph does not hold yet; flattened imports use "57:12". */
 function freshId(/** @type {Set<string>} */ taken, /** @type {string} */ stem) {
     let id = stem, n = 2;
@@ -224,8 +236,7 @@ export function spliceLoras(prompt, r, rows, info = null) {
     if (use.length > MAX_LORAS) throw new Error(`At most ${MAX_LORAS} LoRAs per recipe; the rows name ${use.length}.`);
     if (!use.length || !prompt || typeof prompt !== "object") return { applied: [], note: null };
     const src = modelSource(prompt, r, info);
-    if ("none" in src) return { applied: [], note: `The LoRAs stayed out: ${src.none}.` };
-    if ("many" in src) return { applied: [], note: `The LoRAs stayed out: the graph has ${src.many.length} model loaders (${src.many.join(", ")}) and the recipe names none of them.` };
+    if ("none" in src || "many" in src) return { applied: [], note: `The LoRAs stayed out: ${noSourceWords(src)}.` };
     const cls = src.clip ? LORA_CLIP_CLASS : LORA_MODEL_CLASS;
     const names = comboOf(info, cls, "lora_name") || comboOf(info, LORA_MODEL_CLASS, "lora_name");
     const taken = new Set(Object.keys(prompt));

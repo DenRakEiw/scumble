@@ -838,7 +838,10 @@ as at LR0, none new), `types`: ALL PASS. No mutation round (Normal tier); no oth
    the re-read's spelling by `loraPlan` itself, since `spliceLoras` sees no combo in a null node list).
 4. **A graph without a model source refuses nothing** (no file check): its rows stay out with the splice's note
    ("The LoRAs stayed out: ..."), which `notesKind` shows red; the note `LoRAs: ...` joined `HINT_NOTE`, so a run whose
-   only note is its LoRAs stays a plain line.
+   only note is its LoRAs stays a plain line. **Changed by the release review (2026-11-07):** on a local recipe whose
+   section is hidden (`loraTakes` false: its graph changed after rows were stored) `loraPlan` gives the plain line "The
+   LoRA rows stored for this recipe stayed out: ..." (`loras.js` `noSourceWords`, kept out of red by `HINT_NOTE`), and
+   `set_generation` `loras: []` clears such stored rows; a recipe whose section shows keeps the red note.
 5. **`workflowForPng` names local recipes' rows only** (`loraGraph`): a Comfy Cloud recipe's rows are spliced in main
    from LR5, and `resolveRecipe` (shell.js 507) does not carry the variant's `loras` yet, so LR5 adds the Cloud branch to
    `loraGraph` (the graph `r.options.graph`, the declaration `{ loras: v.loras, save: r.options.save }`) and to

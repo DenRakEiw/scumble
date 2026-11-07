@@ -484,7 +484,9 @@ function lorasView(r) {
  * one counts) of at most MAX_LORAS `{ name, strength?, on? }`, each name a file of the server's list (separators
  * normalised, the server's spelling kept), as queueGenerate checks a run's rows: against the list read again, and
  * against an empty or unread list nothing is refused (the name is kept as given). Refused for a recipe that takes no
- * LoRA rows. Every named row is checked, switched on or not.
+ * LoRA rows, but [] (a clear) where such a recipe still keeps rows from before it stopped taking them (its graph saved
+ * again with a second model loader, say): its LoRAs section is hidden, so this is the one way to clear them. Every
+ * named row is checked, switched on or not.
  * @returns {Promise<{ name: string, strength: number, on: boolean }[]>}
  */
 async function lorasFromCall(r, given) {
@@ -492,6 +494,8 @@ async function lorasFromCall(r, given) {
     if (typeof list === "string") { try { list = JSON.parse(list); } catch (_) { /* refused below */ } }
     if (!Array.isArray(list)) throw new Error("loras must be an array of { name, strength, on } (list_loras gives the names); [] clears the rows");
     const t = host.loraTakes(r);
+    const held = !!(r && host.loras && Array.isArray(host.loras[r.id]) && host.loras[r.id].length);
+    if (!list.length && r && (t.takes || held)) return [];
     if (!t.takes) throw refusal(t.reason || "The selected recipe takes no LoRA rows.");
     if (list.length > MAX_LORAS) throw refusal(`At most ${MAX_LORAS} LoRAs per recipe: the call names ${list.length}. Nothing was changed.`, "warn");
     const rows = list.map((x, i) => {
@@ -1373,7 +1377,7 @@ const COMMANDS = {
         },
     },
     set_generation: {
-        description: `Generation settings: mode api / local / cloud (the recipe decides what is available; select_recipe switches between the modes' recipes), seed, random seed, denoise, refine, the document's Boxes switch (boxes), and the selected recipe's LoRA rows (loras). loras replaces the rows of the LoRAs section of the selected recipe, which are kept per recipe for every document (not for this document alone): up to ${MAX_LORAS} [{ name, strength, on }], loaded in their order between the recipe's model loader and what reads the model, a switched-off row not sent; name a file of the server's list (list_loras; a name that differs only in / against \\ is taken in the server's spelling; on a Comfy Cloud recipe a file of Comfy Cloud's lists, your imports and its catalog, and a name they lack is kept as given); strength 1.0 when left out (the LoRA as trained); [] clears them. Refused with nothing changed: a recipe that takes no LoRA rows (an API provider, an upscaler, a graph without one model loader: list_recipes loras_reason), more than ${MAX_LORAS} rows, a name the server's list lacks (read again first; while the list is unread a name is kept as given). The answer's loras: the recipe's rows as stored; status loras says what a run would send.`,
+        description: `Generation settings: mode api / local / cloud (the recipe decides what is available; select_recipe switches between the modes' recipes), seed, random seed, denoise, refine, the document's Boxes switch (boxes), and the selected recipe's LoRA rows (loras). loras replaces the rows of the LoRAs section of the selected recipe, which are kept per recipe for every document (not for this document alone): up to ${MAX_LORAS} [{ name, strength, on }], loaded in their order between the recipe's model loader and what reads the model, a switched-off row not sent; name a file of the server's list (list_loras; a name that differs only in / against \\ is taken in the server's spelling; on a Comfy Cloud recipe a file of Comfy Cloud's lists, your imports and its catalog, and a name they lack is kept as given); strength 1.0 when left out (the LoRA as trained); [] clears them (also the rows a recipe that takes none now still keeps from before). Refused with nothing changed: a recipe that takes no LoRA rows (an API provider, an upscaler, a graph without one model loader: list_recipes loras_reason), more than ${MAX_LORAS} rows, a name the server's list lacks (read again first; while the list is unread a name is kept as given). The answer's loras: the recipe's rows as stored; status loras says what a run would send.`,
         params: {
             mode: P.str("api, local or cloud (Comfy Cloud recipes)", { enum: ["api", "local", "cloud"] }), seed: P.int("a fixed seed (turns random off)"), seed_random: P.bool("a new seed per run"), denoise: P.num("0.05..1"), refine: P.bool("refine pass"), boxes: P.bool("the Boxes switch under the prompt: on, a run of a recipe that takes boxes (FLUX 3 Image, Ideogram 4, FLUX 3 Image Klein on your ComfyUI) sends the document's boxes, or the selection as one box when there are none; off, none goes and the boxes stay"),
             loras: P.arr(`the selected recipe's LoRA rows, replaced whole (at most ${MAX_LORAS}; [] clears): name (a file of list_loras), strength (default 1.0), on (default true)`, { items: { type: "object", properties: { name: { type: "string", description: "the LoRA file as the server lists it (list_loras), e.g. klein\\style.safetensors" }, strength: { type: "number", description: "1.0 is the LoRA as trained; -2..2 is the usual range" }, on: { type: "boolean", description: "false: kept in the row, not sent" } } } }),
@@ -1562,7 +1566,8 @@ const COMMANDS = {
             // is the run's, and the run selects the whole canvas (a token past the recipe's slots, a parked one, or one
             // that names nothing refuses here, not after the wipe); an unreachable server too
             const snap = ed.refSnapshot();
-            const plan = r.task !== "upscale" ? host.comfyPlan(ed, r, snap.refIds.length, { hasSelection: true, crop: ed.cropSettings, gen: ed.genSettings }) : null;
+            // (the fresh canvas's Original, the blank canvas before the fill, does not go: host.comfyPlan `fresh`)
+            const plan = r.task !== "upscale" ? host.comfyPlan(ed, r, snap.refIds.length, { hasSelection: true, crop: ed.cropSettings, gen: ed.genSettings }, { fresh: true }) : null;
             if (host.refTokens && plan) host.refPrompt(ed, snap, "comfy", { recipe: r, comfy: plan });
             if (!host.connected) throw new Error("Not connected to ComfyUI.");
             // the node types the recipe needs (queueGenerate's own check), and its boxes: a recipe that declares them (its
@@ -1570,6 +1575,9 @@ const COMMANDS = {
             // layers they were drawn on (host.newBoxPlan); a node without box_prompt refuses them here, not after the wipe
             const missing = (r.needs || []).filter((n) => host.objectInfo && !host.objectInfo[n]);
             if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
+            // the recipe's LoRA rows (item 50): more than five, or a file the server's list lacks, refuse here, not after
+            // the wipe (host.loraPlan only reads, the server's list again at most; queueGenerate asks it again for the run)
+            if (r.task !== "upscale") await host.loraPlan(ed, r);
             const boxPlan = plan ? await host.newBoxPlan(ed, r, snap.refIds.slice(0, plan.lay.kept)) : null;
             // local: a flat canvas of the wanted size (the reference layers stay and go along in the crop_image batch, after
             // the white crop: 26e names them), everything selected, the recipe run, then the result flattened into the
@@ -1892,7 +1900,7 @@ const COMMANDS = {
     },
     cancel_run: {
         scope: "app",
-        description: `Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass) ends with the cancel once the provider answered the stop (Comfy Cloud, Comfy Router: up to about 10 s), and nothing lands. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running), each with said: how it ended as Scumble knows it (Scumble asked the provider to stop the job; the job had already finished and is charged, its picture not kept; the job had already ended on the provider without a picture, with its status; nothing had gone to the provider; or Scumble stopped waiting and the provider may still finish and charge it, and for a Comfy Cloud job whose stop was not confirmed that Scumble keeps the job and opens its picture as a document of its own when Comfy has it), null while it has not ended; landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 25 s for an API run, 10 s for a run on the user's ComfyUI); note: those words together, and for a run that did not end in time that a provider may still finish a job it already had and charge it.`,
+        description: `Cancel the runs in flight, as the title row's Cancel does: API runs (generate, generate_new and upscale on an API model) and the runs on the user's ComfyUI that hold a document (realism_pass, key_screen, upscale of the whole picture with a local recipe), whose job is taken off the server. doc: only that tab's runs; without it every tab's. A command waiting on a cancelled run (generate, generate_new, upscale, realism_pass, key_screen) ends with the cancel once the provider answered the stop (Comfy Cloud, Comfy Router: up to about 10 s), and nothing lands. A Generate with a recipe on the user's own ComfyUI is not stopped (Scumble never interrupts the user's server). cancelled: the runs (none: nothing was running), each with said: how it ended as Scumble knows it (Scumble asked the provider to stop the job; the job had already finished and is charged, its picture not kept; the job had already ended on the provider without a picture, with its status; nothing had gone to the provider; or Scumble stopped waiting and the provider may still finish and charge it, and for a Comfy Cloud job whose stop was not confirmed that Scumble keeps the job and opens its picture as a document of its own when Comfy has it), null while it has not ended; landing: runs whose answer was already in and is landing (no longer cancellable; Ctrl+Z takes the result back once it is in); ended: whether they have let go of their documents (waited for up to 25 s for an API run, 10 s for a run on the user's ComfyUI); note: those words together, and for a run that did not end in time that a provider may still finish a job it already had and charge it.`,
         params: { doc: P.int("only this tab's runs (the id from list_documents); every tab's when left out") },
         async run(_, a) {
             let ed = null;

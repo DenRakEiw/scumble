@@ -86,6 +86,13 @@ card that says why:
   shows the factor first. Where the pass cannot run on the document (the server, the picture's size) the assistant
   gets the reason instead and no card is shown, at every factor: a picture past 7680 × 4320 or 27.9 megapixels cannot
   get larger either.
+- **`key_screen`** (Key Green / Blue Screen, CorridorKey 2.0) - it queues on your ComfyUI and adds a layer **Key**,
+  with a mid-grey layer **Grey** under a key of the picture and the source layer hidden on a key of a layer, all in
+  one undo step (`preview` adds nothing and makes the matte the selection). The card names the route (your ComfyUI
+  and the node pack) and shows the screen, the hint (the selection, the source layer's mask, the key layer's mask for
+  a Re-key, or none) and the trust it sends: 0.95 for a Re-key or a mask hint, else the trust asked or your own from
+  the dialog, as Rough 0.5, Automatic 0.75 or Clean 0.95. Where your ComfyUI cannot key on the document the
+  assistant gets the reason instead and no card is shown; the in-app route is refused, since this build has none.
 - **`flatten`, `extend_canvas`, `new_canvas`, `load_image`** - they clear the undo stack or bake
   every layer into the base.
 - **`resize_image`, `rotate_canvas`, `flip_canvas`, `straighten_canvas`** - they change the whole picture,
@@ -101,7 +108,9 @@ card that says why:
 - Editing a layer the assistant made itself (a transform or a cut included), a copy onto a new layer in the same
   tab, the selections (`select_color`, the magic wand; `select_shape`, an ellipse or a polygon), and the
   per-document fields (prompt, generation settings, crop, the recipe's settings, a preset of them with
-  `apply_preset`; `list_settings` reads them), run **without** asking.
+  `apply_preset`; `list_settings` reads them), run **without** asking. So does `set_generation`'s `loras`, though
+  it is not a field of the document: it replaces the LoRA rows of the selected recipe, which every document uses
+  with that recipe (the *LoRAs* section shows the change); `list_loras` only reads.
 
 Neither button of an ask card is the default, and Enter in the chat field never answers one. An
 export without a path, or with an extension that does not match the format, is refused outright.

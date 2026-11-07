@@ -792,7 +792,11 @@ Known flakes; **re-run before believing any of these**:
   four runs alone failed at four different timing-bound steps (the live stroke with the pointer message,
   `closed_tabs_are_collected` twice with the last two tabs alive, `helper_inputs_read_levels_and_upload_nothing` with
   one upload counted), while the unchanged tree passed once and `closed_tabs_are_collected` alone passed 3 of 3 on
-  both trees; not looked into further.
+  both trees; not looked into further. 2026-11-07 (0.1.52's release review, `corridorkey`): the same
+  `helper_inputs_read_levels_and_upload_nothing` failed twice in a row on port 9575 (`rr52-tiles` as the second gate,
+  `rr52-tiles-b` as the first, 20 s in), then passed twice on a fresh instance on 9576 (once with the upload's URL and
+  stack logged, `diag-editor`, once unchanged, `rr52-editor-c`), so its one upload was not caught; re-run it before
+  believing it.
 - 2026-10-07 (0.1.43): the editor gate on tiles failed `a_settled_read_builds_its_levels_in_the_worker_not_here`
   (`requested: 0`) in every run of the evening, dev tree and exe alike, and with it excluded
   `a_whole_change_builds_its_mips_in_the_worker_and_the_screen_ends_exact` (the settled screen 13 levels off on 859

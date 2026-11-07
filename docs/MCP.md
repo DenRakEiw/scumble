@@ -199,6 +199,32 @@ keeps the layer's route and renders nothing. `preset` takes one of the panel's e
 message lists the eight). It returns `layer`, `lights`, `fit` (the picture's own light direction as the fit read
 it), `route`, `seconds` and `notes`.
 
+**`key_screen`** (item 49, 0.1.52; docs/PLAN_CORRIDORKEY.md). Keys a green or blue screen with CorridorKey 2.0 by
+Corridor Digital and adds one layer "Key": the subject's own colour with the screen's spill taken out, the matte as
+its layer mask, trimmed to the matte's box. A source layer (`source`) is hidden in the same step; with the visible
+picture as the source (the default) a mid-grey Fill layer "Grey" goes under the key unless `grey` is false; it is all
+one undo step. Route `comfyui` is the one that works in this build: the user's own ComfyUI with the community node
+pack ComfyUI-CorridorKey2.0 and an NVIDIA card of the RTX 30 generation or newer, set up as the manual's chapter
+*Key green / blue screen* says; route `app` (in Scumble) is refused, since this build has no in-app engine. The hint
+is the selection (`hint` `selection`, or `mask` for the source layer's own mask, or `none`) at a `trust` of 0.5,
+0.75 or 0.95; `preview` makes the matte the selection and adds nothing; `rekey` keys the key layer again from its
+painted mask and replaces its pixels and mask in one undo step. Read `status`'s `key` first: `ready` and `reason`
+for the default route, `route`, and `comfy` (the ComfyUI route's own readiness, the pack it keys with, the card,
+`cap_mp`, `keep_on_gpu`, `timeout`). The command waits for the answer (`timeout`, 300 s by default; the job is taken
+off the queue when it runs out). [COMMANDS.md](COMMANDS.md#key_screen-image) has every parameter and the answer.
+
+**LoRAs** (item 50, 0.1.52; docs/PLAN_LORAS.md). A recipe on the user's ComfyUI or on Comfy Cloud whose graph has one
+model loader takes up to five LoRA rows, kept per recipe for every document (not for one document alone):
+`list_recipes` gives each recipe `loras` (whether it takes rows) and `loras_reason` when not (an API provider, an
+upscaler, a graph without one model loader). `list_loras` lists the files the rows may name, grouped by subfolder
+(`filter`, `family`, `max`), each with `hint` (the base model it looks made for, where Scumble has read it) and
+`mismatch` against the selected recipe's; with a Comfy Cloud recipe selected it lists Comfy Cloud's lists for the
+stored key instead (`source` "comfycloud": the account's own imports with `own` true, then the catalog; no hint).
+`set_generation` `loras` replaces the selected recipe's rows (`[{ name, strength, on }]`, `[]` clears them; a name
+the server's list lacks is refused, on Comfy Cloud kept as given), and `status`'s `loras` gives the rows with their
+hints and `sent`, what a run would load now. `generate` and `generate_new` return `loras_sent`, the LoRAs the run
+loaded, in their order.
+
 **Before a run, during it, and the picture** (docs/PLAN_0_1_42.md F2a). `list_recipes` says per recipe
 whether it can run now: `ready`, and `reason` when not (an API recipe: a key stored for its chosen
 provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected, and every node
@@ -207,9 +233,9 @@ type it needs on the server), `keys` (per provider of the recipe, `true` / `fals
 null: any), `background` (whether `generate_new`'s `background: "transparent"` reaches it), and an
 upscaler's `document_max`; `provider_keys` lists every API provider with whether a key is stored, as a
 boolean (never the key or its last characters). `cancel_run` cancels the runs in flight as the
-title row's Cancel does (one tab's with `doc`, else every tab's); a `generate`, `upscale` or
-`realism_pass` waiting on one ends once the run has ended (on Comfy Cloud and Comfy Router once the provider answered
-the stop, up to about 10 s), and `cancel_run` returns each run's own words in `said` (the stop taken; the job had
+title row's Cancel does (one tab's with `doc`, else every tab's); a `generate`, `upscale`,
+`realism_pass` or `key_screen` waiting on one ends once the run has ended (the pass's or the key's job is taken
+off the user's ComfyUI; on Comfy Cloud and Comfy Router once the provider answered the stop, up to about 10 s), and `cancel_run` returns each run's own words in `said` (the stop taken; the job had
 finished and is charged; it had ended without a picture; nothing had gone out; a Comfy Cloud job whose stop was not
 confirmed is kept and its picture opens when Comfy has it); the generic "a provider may still charge a job it already
 had" is for a run that did not end within the wait, or a provider that only stops waiting. A run

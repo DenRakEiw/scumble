@@ -34,7 +34,9 @@ It renders through your own ComfyUI, on your machine or a rented server, or thro
 API provider whose key you give it: Google's Nano Banana, OpenAI's GPT Image, Black Forest Labs' FLUX.2,
 ByteDance's Seedream, Qwen Image Edit and others, directly or through fal.ai, Replicate, WaveSpeedAI, Comfy
 Cloud or OpenRouter. You pay the provider directly; Scumble has no account, no subscription and no server of
-its own in between.
+its own in between. On your own ComfyUI it runs open models too, among them FLUX 3 Image Klein, Qwen Image Edit,
+MOSS-Image and MOSS-Image Edit, and P-H3-Image (powered by MiniMax H3, whose licence does not cover the EU, the UK,
+South Korea or the US without a separate licence from MiniMax).
 
 What it does:
 
@@ -46,6 +48,10 @@ What it does:
 - Filter layers on the GPU: curves, levels, colour balance, grain, LUTs and a film pack.
 - Text, shapes, brushes, retouching (clone, heal, smudge) and 3D objects placed into the picture.
 - Upscaling of the whole picture or a selection, through the providers or your ComfyUI.
+- Keying of a subject on a green or blue screen with CorridorKey 2.0 by Corridor Digital, on your own ComfyUI with
+  an NVIDIA RTX 30 card or newer: the subject comes back as a layer with its soft matte as the mask and the screen's
+  spill taken out.
+- LoRAs on your own ComfyUI and on Comfy Cloud: up to five per recipe, each with its strength, loaded into the run.
 - Large pictures: documents up to 65,535 pixels a side, kept in tiles.
 - Export to PNG, JPEG, WebP, and PSD or OpenRaster with every layer; PSD and ORA files open with theirs.
 - An assistant that drives the editor for you on your own key, asking before anything costs money, with
@@ -55,7 +61,9 @@ What it does:
 
 Scumble is free and open source (GPL-3.0). Your pictures, keys and settings stay on your computer; keys are
 kept in Windows' own credential store. The app sends nothing anywhere unless you run a recipe, a prompt
-upsampling or the assistant, and then only to the service you picked.
+upsampling or the assistant, or download a helper model, and then only to the service you picked. One exception:
+with a Comfy Cloud key stored, a selected Comfy Cloud recipe reads Comfy Cloud's LoRA lists with that key, with no
+picture or prompt.
 
 ## Short description (the first lines people see)
 
@@ -64,18 +72,20 @@ through your own ComfyUI or the image models of the API provider you choose.
 
 ## Product features (up to 20, 200 characters each)
 
-1. Inpaint a selection with FLUX.2, GPT Image, Nano Banana, Seedream, Qwen and more
+1. Inpaint a selection with FLUX.2, GPT Image, Nano Banana, Seedream, Qwen, MOSS-Image and more
 2. Render on your own ComfyUI, locally or on a rented GPU, or through your API key
 3. Select by brush, wand, lasso, a hovered object (SAM2 in the app) or a few words
 4. Layers with masks, blend modes and a colour match per layer
 5. GPU filter layers: curves, colour balance, grain, LUTs and a film pack
 6. Upscale the whole picture or a selection
-7. Open and save PSD and OpenRaster files with their layers
-8. An assistant that drives the editor on your own key and asks before it spends money
-9. The manual in the app (F1), with a chat that answers from it
-10. A built-in MCP server for Claude and other AI agents
-11. No account, no subscription: pay the provider you choose directly
-12. Free and open source under GPL-3.0
+7. Key a green or blue screen with CorridorKey 2.0 on your own ComfyUI: the subject as a layer with a soft matte
+8. Up to five LoRAs per recipe on your own ComfyUI and on Comfy Cloud, each with its strength
+9. Open and save PSD and OpenRaster files with their layers
+10. An assistant that drives the editor on your own key and asks before it spends money
+11. The manual in the app (F1), with a chat that answers from it
+12. A built-in MCP server for Claude and other AI agents
+13. No account, no subscription: pay the provider you choose directly
+14. Free and open source under GPL-3.0
 
 ## Keywords (up to 7)
 

@@ -1455,6 +1455,44 @@ async function main() {
                 && kMask.action === "ask" && kMask.card.settings.hint === "the source layer's mask" && kMask.card.settings.trust === 0.95
                 && kMaskT.card.settings.trust === 0.5,
                 JSON.stringify({ kAsk, kBlind, kNo, kApp, kAppReady, kMask, kMaskT }));
+            // release review 2026-11-07: the canonical arguments leave key_screen's source "picture" (its default, the
+            // visible picture) and an enum field (select_range's source) as given; a real layer reference still resolves.
+            // The schemas go through the server's own toTool, as the chat's are made from the tool list.
+            {
+                const { _resolveLayer, _idsNamedBy } = require(path.join(ROOT, "electron", "main", "assistant", "index.js"));
+                const kProps = toTool({ name: "key_screen", params: {
+                    source: { type: "string", description: "\"picture\" (the default) or a layer", default: "picture" },
+                    hint: { type: "string", description: "selection, mask or none", enum: ["selection", "mask", "none"], default: "selection" },
+                    layer: { type: "string", description: "rekey: the key layer", default: "active" },
+                } }).inputSchema.properties;
+                const rProps = toTool({ name: "select_range", params: { source: { type: "string", description: "depth, luma or color", enum: ["depth", "luma", "color"], default: "depth" } } }).inputSchema.properties;
+                const mProps = toTool({ name: "set_mask", params: { layer: { type: "string" }, source: { type: "string", description: "from_layer: the layer" } } }).inputSchema.properties;
+                const withPic = [{ id: "Lbg", name: "Background picture", active: true }, { id: "Lsub", name: "Subject", active: false }];
+                const noPic = [{ id: "Lsub", name: "Subject", active: true }];
+                const kPic = _resolveLayer({ source: "picture", hint: "none" }, withPic, "key_screen", kProps);
+                const kNone = _resolveLayer({ source: "picture" }, noPic, "key_screen", kProps);
+                const kLayer = _resolveLayer({ source: "Subject", hint: "mask" }, withPic, "key_screen", kProps);
+                const kPart = _resolveLayer({ source: "backgr" }, withPic, "key_screen", kProps);
+                const kGone = _resolveLayer({ source: "Nothing" }, withPic, "key_screen", kProps);
+                const sDepth = _resolveLayer({ source: "depth", lo: 0, hi: 0.5 }, [{ id: "Ld", name: "Depth", active: true }], "select_range", rProps);
+                const mPic = _resolveLayer({ op: "from_layer", source: "picture" }, withPic, "set_mask", mProps);
+                check("key_screen_source_picture_and_enum_fields_are_no_layer_references",
+                    !kPic.error && kPic.args.source === "picture" && kPic.args.hint === "none"
+                    && !kNone.error && kNone.args.source === "picture"
+                    && !kLayer.error && kLayer.args.source === "Lsub" && kLayer.args.hint === "mask"
+                    && !kPart.error && kPart.args.source === "Lbg"
+                    && !!kGone.error && /no layer "Nothing"/.test(kGone.error)
+                    && !sDepth.error && sDepth.args.source === "depth"
+                    && !mPic.error && mPic.args.source === "Lbg",
+                    JSON.stringify({ kPic, kNone, kLayer, kPart, kGone, sDepth, mPic }));
+                // ownership: key_screen's answer names the Key layer (a layer summary) and the grey Fill layer (an id)
+                const own = _idsNamedBy("key_screen", { layer: { id: "Lkey", name: "Key" }, grey: "Lgrey", hidden: "Lsub", route: "comfyui" });
+                const ownNoGrey = _idsNamedBy("key_screen", { layer: { id: "Lkey", name: "Key" }, grey: null, hidden: "Lsub" });
+                const ownPreview = _idsNamedBy("key_screen", { layer: null, grey: null, hidden: null, preview: true });
+                check("key_screen_names_its_key_and_grey_layers_as_its_own",
+                    eq(own, ["Lkey", "Lgrey"]) && eq(ownNoGrey, ["Lkey"]) && eq(ownPreview, []),
+                    JSON.stringify({ own, ownNoGrey, ownPreview }));
+            }
             // release review 2026-10-05: cancel_run always asks, on the pinned document too, and says what is lost
             const fc = () => { const x = facts(); x.tools.add("cancel_run"); return x; };
             const cOne = policy.decide({ name: "cancel_run", args: { doc: 4 } }, fc());

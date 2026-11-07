@@ -34,8 +34,10 @@ Start the app first (tools/run_gates.sh does: `--offline`, on both backends). Ch
               connected, no pack, a run going, the models missing, another size), cancel (the title row, a closed tab)
   comfy command  B4: key_screen route comfyui, its deadline, preview, route app refused, status.key.comfy
   dialog comfy  B3: the route row on your ComfyUI: no session and nothing run before Key, the box line following the
-              selection, the rows reaching the graph and the wait, Key and Re-key once, the first-run block, the
-              readiness line following the server
+              selection, the rows reaching the graph and the wait, Key and Re-key once (the button's word following the
+              Hint row, in Scumble too), the first-run block, the readiness line following the server
+  status seeded  the stored settings.key (trust 0.95, a wait of 900 s) in status.key after a window reload, before
+              any key or Key dialog read it; the stored key put back after
 """
 import asyncio
 import json
@@ -43,7 +45,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from cdp import session  # noqa: E402
+from cdp import HOOK, session  # noqa: E402
 
 # B0's Route B fixture (docs/measurements/ck_b0_2026-11-06/summary.txt section 6): real answers of pack A at c7662de
 FIXDIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "corridorkey_routeb").replace("\\", "/")
@@ -652,6 +654,15 @@ let d = p0.length === p1.length ? 0 : 999;
 for (let i = 0; i < p0.length && !d; i++) if (p0[i] !== p1[i]) d++;
 for (let i = 3; i < m0.length && !d; i += 4) if (m0[i] !== m1[i]) d++;
 ok(!d && [L1.x, L1.y, L1.w, L1.h].join() === r0.join(), "one Ctrl+Z restores pixels and mask", d);
+// the in-app route too: the Key button follows the Hint row (Key away from the mask, Re-key back on it)
+ed.activeLayerId = L1.id;
+const dlg2 = await M.openKeyDialog(ed);
+await waitFor(() => dlg2.session && dlg2.session.matte);
+const hintTo = (h) => { dlg2.els.hint.value = h; dlg2.els.hint.dispatchEvent(new Event("change")); return dlg2.els.key.textContent; };
+const kOpen = dlg2.els.key.textContent, kNone = hintTo("none"), kSel = hintTo("selection"), kMask = hintTo("mask");
+ok(dlg2.values.route === "app" && kOpen === "Re-key" && kNone === "Key" && kSel === "Key" && kMask === "Re-key" && dlg2.values.hint === "mask", "the Key button follows the Hint row in Scumble too", { route: dlg2.values.route, kOpen, kNone, kSel, kMask });
+await waitFor(() => dlg2.session && dlg2.session.matte);
+dlg2.close();
 return { ok: true };
 """),
 
@@ -1287,6 +1298,11 @@ dlg = await M.openKeyDialog(ed);
 await wait(80);
 st = dlg.state();
 ok(st.values.hint === "mask" && dlg.els.key.textContent === "Re-key" && /^Keys the key layer's box, 512 × 400, at its own size, read from the picture under the key\.$/.test(st.boxLine) && !st.rows.sourceRow, "a key layer active: Re-key on your ComfyUI", st);
+// the Key button follows the Hint row: Key once the hint is not the layer's mask, Re-key again with it; nothing runs
+const hintTo = (h) => { dlg.els.hint.value = h; dlg.els.hint.dispatchEvent(new Event("change")); return dlg.els.key.textContent; };
+const kNone = hintTo("none"), kSel = hintTo("selection"), kMask = hintTo("mask");
+await wait(50);
+ok(kNone === "Key" && kSel === "Key" && kMask === "Re-key" && dlg.els.key.textContent === "Re-key" && dlg.state().values.hint === "mask" && /read from the picture under the key\.$/.test(dlg.state().boxLine) && C.calls.length === c0 + 1, "the Key button follows the Hint row: Key away from the mask, Re-key back on it, nothing run", { kNone, kSel, kMask, box: dlg.state().boxLine, calls: C.calls.length - c0 });
 const u0 = ed.undo.length;
 const rk = await dlg.apply();
 ok(rk && rk.layer && rk.layer.id === keyId && ed.undo.length === u0 + 1 && C.calls.length === c0 + 2 && C.calls[C.calls.length - 1].prompt.ck_key.inputs.hint_quality === "clean matte (0.95)", "Re-key ran once with the mask as a clean matte, one step");
@@ -1461,9 +1477,60 @@ PRE = """(async () => {
     %s
 })()"""
 
+LOAD = "(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()"
+
+# after the window's reload (status seeded): no key ran and no Key dialog opened in this window, the stored settings.key
+# (trust 0.95, wait 900 s) is what status.key reports
+SEEDED = r"""
+const M = await import("./keydialog.js");
+for (let t = 0; t < 600 && host._restoring; t++) await wait(100);
+ok(M.currentKeyDialog() === null && host.keySession === null && host._keyBusy === null, "no Key dialog and no key in the reloaded window");
+ok(host._keyLoaded === true && host.keyStored && host.keyStored.trust === 0.95 && host.keyStored.comfyTimeout === 900, "the shell took settings.key at start", host.keyStored);
+const d = await run("new_document");
+let s;
+try { s = (await run("status", { doc: d.id })).key; } finally { await run("close_document", { doc: d.id, force: true }); }
+ok(s.trust === 0.95 && s.comfy.timeout === 900, "status.key reports the stored trust and wait before the dialog ever opened", s);
+return { trust: s.trust, timeout: s.comfy.timeout };
+"""
+
+
+async def reload_window(c):
+    """Reload the window and wait until the shell is up again (its modules loaded); the console hook back on. A marker
+    set before tells the old page from the new one."""
+    await c.eval("window.__keyReloadMark = 1")
+    await c.call("Page.reload")
+    await asyncio.sleep(1.0)
+    fresh = "(async () => window.__keyReloadMark ? 0 : await %s)()" % LOAD
+    for _ in range(120):
+        try:
+            if await c.eval(fresh, timeout=30) == 1:
+                break
+        except Exception:  # noqa: BLE001
+            pass
+        await asyncio.sleep(0.5)
+    else:
+        raise RuntimeError("the window did not come back after the reload")
+    await c.eval(HOOK)
+
+
+async def status_seeded(c, saved):
+    """Release review 2026-11-07: status.key shows the stored settings.key before a key or the Key dialog read it
+    (renderer/shell.js seeds host.keyStored at start). The stored key set to trust 0.95 and a wait of 900 s, the window
+    reloaded, status.key reports both; the stored key the gate found at its start put back after, in the file and in the
+    window."""
+    restore = "undefined" if saved is None else saved
+    try:
+        await c.eval("(async () => { const K = await import('./editor/keying.js'); await window.scumble.settings.set({ key: { ...K.keyDefaults, trust: 0.95, comfyTimeout: 900 } }); const h = (await import('./editor/host.js')).host; await window.scumble.state.save(JSON.stringify(h.bundle())); return 1; })()")
+        await reload_window(c)
+        return await c.eval(PRE % (HELPERS, SEEDED), timeout=120)
+    finally:
+        await c.eval("(async () => { const v = %s; await window.scumble.settings.set({ key: v }); const h = (await import('./editor/host.js')).host; h.keyStored = v || null; h._keyLoaded = true; return 1; })()" % restore)
+
 
 async def run_all(c):
-    await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
+    await c.eval(LOAD)
+    # the stored settings.key before the gate (the dialog steps store theirs): status seeded puts it back
+    saved = await c.eval("(async () => JSON.stringify(((await window.scumble.settings.get()) || {}).key))()")
     ok = True
     for name, body in STEPS:
         try:
@@ -1474,6 +1541,13 @@ async def run_all(c):
             print("[FAIL] %s: %s" % (name, err))
             if name == "setup":
                 break
+    else:
+        try:
+            res = await status_seeded(c, saved)
+            print("[ok] status seeded: %s" % json.dumps(res)[:300])
+        except Exception as err:  # noqa: BLE001
+            ok = False
+            print("[FAIL] status seeded: %s" % err)
     if not ok:
         try:
             await c.eval("(async () => { const h = window.__host; if (window.__keyEngine0) h.keyEngine = window.__keyEngine0; const o = window.__comfy0; if (o) { h.server = o.server; h.objectInfo = o.objectInfo; h.comfyPictureRun = o.comfyPictureRun; h.uploadInput = o.uploadInput; h.keyComfyFit = o.keyComfyFit; } h.keyStored = null; h._keyLoaded = false; return 1; })()")

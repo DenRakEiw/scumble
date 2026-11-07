@@ -558,6 +558,13 @@ async function main() {
         const words = L.loraWords([{ name: "Flux_3\\Flux3_Targa.safetensors", strength: 0.8 }, { name: "klein/nyc_style.safetensors", strength: 1 }, { name: "x.safetensors", strength: 0.855 }, { name: "y.safetensors", strength: -2 }]);
         check("loraWords: the stems with their strengths, one decimal at least, two at most", words === "Flux3_Targa 0.8, nyc_style 1.0, x 0.86, y -2.0", words);
         check("loraWords of none, of no list: \"\"", L.loraWords([]) === "" && L.loraWords(null) === "");
+        // the words after "stayed out:" (the splice's note, and the queue path's plain line on rows a hidden section keeps)
+        const two = { a: { class_type: "UNETLoader", inputs: {} }, b: { class_type: "UNETLoader", inputs: {} }, k: { class_type: "KSampler", inputs: { model: ["a", 0] } }, k2: { class_type: "KSampler", inputs: { model: ["b", 0] } } };
+        const w = [L.noSourceWords({ none: "the recipe takes no LoRAs" }), L.noSourceWords({ many: ["a", "b"] }), L.noSourceWords({ node: "a", slot: 0, clip: null }), L.noSourceWords(null)];
+        check("noSourceWords: none's reason, many's loaders, \"\" for a source and for nothing",
+            eq(w, ["the recipe takes no LoRAs", "the graph has 2 model loaders (a, b) and the recipe names none of them", "", ""]), short(w));
+        const note = L.spliceLoras(clone(two), {}, ROWS2, null).note;
+        check("... the splice's note is built from them", note === `The LoRAs stayed out: ${L.noSourceWords(L.modelSource(two, {}, null))}.` && /2 model loaders \(a, b\)/.test(note || ""), short(note));
     });
 
     await section("9. the LoRAs section's helpers (LR2: the picker's groups and search, the strength's range)", () => {

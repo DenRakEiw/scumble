@@ -1,0 +1,85 @@
+0.1.52's release review fixes, gates 2026-11-07 (--offline, this worktree):
+== rr52-tiles
+lint rc=0 14s 
+types rc=0 6s 
+commands_doc rc=0 1s 
+pixels rc=0 14s PASS
+editor rc=1 21s FAIL
+composite rc=0 7s PASS
+commands rc=0 56s PASS
+export rc=0 221s PASS
+layered rc=0 5s PASS
+pxjobs rc=0 284s PASS
+document rc=0 41s PASS
+tiff rc=0 14s PASS
+relight rc=1 51s FAIL
+selection rc=1 3s FAIL
+limit rc=1 3s FAIL
+maps rc=1 3s FAIL
+loras rc=1 3s 
+recipes rc=1 2s 
+generate rc=1 3s 
+metadata rc=1 3s 
+skins rc=1 2s 
+toapis rc=1 3s 
+openrouter rc=1 3s 
+transparent rc=1 2s 
+boxes rc=1 3s 
+help rc=1 3s 
+cloudjobs rc=0 16s PASS
+key rc=1 3s 
+mcp rc=0 19s PASS
+mcpb rc=0 2s 
+assistant rc=1 5s 
+canvasonly rc=1 3s 
+SOME FAILED
+== rr52-tiles-b
+editor rc=1 20s FAIL
+relight rc=0 83s PASS
+selection rc=0 14s PASS
+limit rc=0 8s PASS
+maps rc=0 5s PASS
+loras rc=0 4s PASS
+recipes rc=0 5s PASS
+generate rc=0 149s PASS
+metadata rc=0 3s PASS
+skins rc=0 11s PASS
+toapis rc=0 38s PASS
+openrouter rc=0 8s PASS
+transparent rc=0 2s PASS
+boxes rc=0 12s RESULT PASS
+help rc=0 3s PASS
+key rc=0 36s PASS
+assistant rc=0 36s PASS: 38 of 38 steps in 35 s
+canvasonly rc=0 18s PASS
+SOME FAILED
+== rr52-editor-c
+editor rc=0 178s PASS
+ALL PASS
+== rr52-canvas
+pixels rc=0 13s PASS
+composite rc=0 6s PASS
+export rc=0 11s PASS
+layered rc=0 5s PASS
+document rc=0 42s PASS
+tiff rc=0 14s PASS
+relight rc=0 66s PASS
+selection rc=0 4s PASS
+key rc=0 17s PASS
+ALL PASS
+
+rr52-tiles lost its instance in relight (its window closed while the user tidied the desktop): the gates after it
+failed in 3 s each without an instance and ran again in rr52-tiles-b. The editor gate's
+helper_inputs_read_levels_and_upload_nothing is a known flake (docs/TESTING.md): red twice on 9575, green twice on 9576.
+
+node px_test.js rc=0
+node depth_test.js rc=0
+node keying_test.js rc=0
+node keymatte_test.js rc=0
+node assistant_test.js rc=0
+node loras_test.js rc=0
+node loraheader_test.js rc=0
+node comfyprompt_test.js rc=0
+release_notes self-test rc=0
+release_notes Unreleased rc=0
+end 2026-11-07T03:55:53+01:00

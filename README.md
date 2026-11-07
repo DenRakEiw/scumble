@@ -272,6 +272,16 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   the picture larger in the same step. It needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and a community node
   pack with its runtime, which you install there; Scumble ships none of it, and there is no Comfy Cloud version. The
   [manual](docs/MANUAL.md)'s chapter of the same name has the steps.
+- *Image › Key Green / Blue Screen...* keys a subject shot on a green or blue screen (or generated on a flat green)
+  with CorridorKey 2.0 by Corridor Digital, on your own ComfyUI through the community node pack ComfyUI-CorridorKey2.0.
+  It needs an NVIDIA card of the RTX 30 generation or newer on that machine; the pack and its models, about 5.1 GB,
+  are installed there, never by Scumble, and there is no Comfy Cloud version. The answer is one new layer **Key**: the
+  subject's own colour with the screen's spill taken out, and the soft matte (hair, motion blur) as its layer mask; the
+  selection is the hint, and a key of the picture gets a mid-grey layer under it. CorridorKey 2.0 is under the Corridor
+  Key Licence 2.0 (CC BY-NC-SA 4.0 with their terms), used with Corridor Digital's permission in this free app; your
+  keyed pictures are yours, also commercially, and **organisations with more than US $20M yearly revenue need one
+  CorridorKey seat per user** (corridorkey.com). The [manual](docs/MANUAL.md)'s chapter *Key green / blue screen* has
+  the steps.
 
 ### Layers, filters, text
 

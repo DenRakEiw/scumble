@@ -33,8 +33,10 @@ function sentTexts(snap) {
     return { prompt: snap.prompt || "", negative: snap.negative || "", refs: Object.keys(refs).length ? refs : null };
 }
 
-// a run note that only explains how the run went, not what it left out or changed (item 45: those show red)
-const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None |^Served by .+ \(Comfy Router's fallback provider\)\.$|^LoRAs: /;
+// a run note that only explains how the run went, not what it left out or changed (item 45: those show red); the
+// LoRA rows a recipe whose LoRAs section is hidden still keeps (loraPlan's `hidden`) are no omission the user could
+// see or mend there, so their line is plain too
+const HINT_NOTE = /^\(wording guessed from the graph\)$|^Prompt expansion went as None |^Served by .+ \(Comfy Router's fallback provider\)\.$|^LoRAs: |^The LoRA rows stored for this recipe stayed out: /;
 /** The kind of a line that appends a run's notes to the one before: red when a note says something was left out. */
 function notesKind(editor, notes) {
     return notes.some((n) => !HINT_NOTE.test(String(n))) ? "warn" : (editor.statusKind || "info");
@@ -49,7 +51,7 @@ import { bandPlan as refineBandPlan } from "./keymatte.js";
 import { bytesSource } from "./inpaint_raster.js";
 import { readPng } from "./inpaint_png.js";
 import * as comfyprompt from "./comfyprompt.js";
-import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, spliceLoras, missingLoras, normalizeName, loraWords, loraFolder, familyOf, loraTriggers, loraMeta } from "./loras.js";
+import { MAX_LORAS, LORA_MODEL_CLASS, comboOf, usableRows, modelSource, noSourceWords, spliceLoras, missingLoras, normalizeName, loraWords, loraFolder, familyOf, loraTriggers, loraMeta } from "./loras.js";
 import * as genpresets from "./genpresets.js";
 import * as loraPanel from "./lora_panel.js";
 import * as dialogs from "../dialogs.js";
@@ -1749,15 +1751,20 @@ export const host = {
      * or no row is switched on; `{ rows }` in the server's spelling (a name that differs only in its separators). Refuses
      * more than MAX_LORAS rows, and a file the server's list lacks, after reading the list again; against an empty or
      * unread list nothing is refused and the names go as typed (ComfyUI's own check answers, as for the Settings rows).
-     * A graph without a model source refuses nothing either: the splice's note says why the rows stayed out.
+     * A graph without a model source refuses nothing either, whatever its rows hold: its LoRAs section is hidden
+     * (loraTakes, the same rule), so the user can neither see nor change the rows a recipe kept from before it stopped
+     * taking them (an imported graph saved again with a second loader). `{ rows: [], hidden }` then, `hidden` the plain
+     * line that says why they stayed out (HINT_NOTE; set_generation loras [] clears them). Only reads: the server's list
+     * read again is the one thing it keeps (refreshLoraNames), so Generate new asks it before its fresh canvas too.
      */
     async loraPlan(editor, r) {
         const g = this.loraGraph(r);
         if (!g || g.cloud) return null;
         const use = usableRows(this.loraRows(r));
         if (!use.length) return null;
+        const src = modelSource(g.graph, g.decl, this.objectInfo);
+        if (!("node" in src)) return { rows: [], hidden: `The LoRA rows stored for this recipe stayed out: ${noSourceWords(src)}.` };
         if (use.length > MAX_LORAS) throw refusal(`At most ${MAX_LORAS} LoRAs per recipe: ${r.name || r.id}'s rows switch on ${use.length}. Switch rows off in the LoRAs section, then try again.`, "warn");
-        if (!("node" in modelSource(g.graph, g.decl, this.objectInfo))) return { rows: use };
         let names = this.loraNames();
         let miss = missingLoras(use, names);
         if (!names.length || miss.some((m) => !m.server)) { names = await this.refreshLoraNames(); miss = missingLoras(use, names); }
@@ -2270,7 +2277,7 @@ export const host = {
         else if (r.kind !== "provider") {
             // a local recipe: the names its graph gives the pictures of the node's batch, worked out here (comfyrefs.js)
             // `over.state`: the run a caller has in mind (Generate new's white canvas, all of it selected), else the editor now
-            const { spec, lay } = this.comfyPlan(editor, r, refs.length, over.state || null);
+            const { spec, lay } = this.comfyPlan(editor, r, refs.length, over.state || null, { fresh: !!over.state });
             const names = new Map(refs.map((l, k) => {
                 const pic = lay.pictures.find((p) => p.role === "reference" && p.ref === lay.original + k);
                 return [l.id, pic ? refName(spec.name, pic.n) : null];
@@ -2310,16 +2317,19 @@ export const host = {
     /**
      * A local recipe's names and slots (comfyrefs.js `comfyRefSpec`, kept per recipe object) and the batch a run of it
      * sends (`comfyLayout`, the node's rule): from a canvas state `st` when given (what the node will read), else from
-     * the editor now. `count`: the reference layers that would go.
+     * the editor now. `count`: the reference layers that would go. `fresh`: Generate new's fresh canvas (generate_new's
+     * local path, its dialog), whose Original, the blank canvas before the fill, carries nothing: it does not go
+     * (queueGenerate leaves it out of the state the node reads too), so a recipe's `newImage` and the upsampler's
+     * text-to-image guide see no picture after the crop.
      */
-    comfyPlan(editor, r, count, st = null) {
+    comfyPlan(editor, r, count, st = null, { fresh = false } = {}) {
         let spec = this._comfySpecs.get(r);
         if (!spec) { spec = comfyRefSpec(r); this._comfySpecs.set(r, spec); }
         const cs = st ? st.crop || {} : editor.cropSettings || {};
         const gs = st ? st.gen || {} : editor.genSettings || {};
         const lay = comfyLayout(spec, {
             hasSelection: st ? !!st.hasSelection : !!(editor.getBounds && editor.getBounds()),
-            fill: cs.fill || "none", withOriginal: !!cs.withOriginal,
+            fill: cs.fill || "none", withOriginal: !!cs.withOriginal && !fresh,
             refine: !!gs.refine && gs.mode === "local", count,
         });
         return { spec, lay };
@@ -5358,7 +5368,7 @@ export const host = {
             // the pass's graph reads no prompt at all, so its tokens need no note
             texts = { prompt: p.text, negative: n.text, note: !pass && (p.note || n.note) ? "Upscale sends no reference images: the prompt's @img tokens were written as layer names." : "" };
         } else {
-            early = this.comfyPlan(editor, r, snap.refIds.length);
+            early = this.comfyPlan(editor, r, snap.refIds.length, null, { fresh: !!fresh });
             texts = this.refPrompt(editor, snap, "comfy", { recipe: r, comfy: early });
         }
         if (!this.connected) throw refusal("Not connected to ComfyUI.");
@@ -5423,7 +5433,10 @@ export const host = {
         else {
             // the state decides: a selection, the fill or Original changed while the references were uploaded
             const st = JSON.parse(await editor.serializeForPrompt(sopts));
-            plan = this.comfyPlan(editor, r, (st.references || []).length, st);
+            // Generate new's fresh canvas: its Original (the blank canvas before the fill) carries nothing, so the node
+            // sends none (it reads the state's crop) and the plan counts none; a run on a picture keeps the user's switch
+            if (fresh && st.crop && st.crop.withOriginal) st.crop = { ...st.crop, withOriginal: false };
+            plan = this.comfyPlan(editor, r, (st.references || []).length, st, { fresh: !!fresh });
             st.references = (st.references || []).slice(0, plan.lay.kept);
             texts = this.refPrompt(editor, snap, "comfy", { recipe: r, comfy: plan });
             st.prompt = texts.prompt;
@@ -5515,7 +5528,9 @@ export const host = {
         // MODEL re-pointed to the chain's end, in this copy only (the recipe's own graph never changes); last, so the
         // Settings rows, the boxes and the upsampler have written the graph it reads
         let lorasSent = [];
-        if (loraPlan) {
+        // rows a recipe without a model source keeps (its section hidden): a plain line, nothing spliced
+        if (loraPlan && loraPlan.hidden) editor.lastRunNotes.push(loraPlan.hidden);
+        else if (loraPlan) {
             const spliced = spliceLoras(prompt, r, loraPlan.rows, this.objectInfo);
             lorasSent = spliced.applied;
             if (spliced.note) editor.lastRunNotes.push(spliced.note);

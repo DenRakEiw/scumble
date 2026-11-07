@@ -15,10 +15,16 @@ store's shape; the LoRAs section's own steps follow):
   status note, the log line, editor.lastLoras;
 - a row at a file the list lacks: refused with the sentence after one re-read, before ensureOnServer, nothing queued
   (two such rows: the plural); the re-read listing it (a file copied in since the connect): queued;
+- generate_new on the local recipe (a document of its own): a row at a file the list lacks, and six rows, refused
+  before its fresh canvas replaces the picture: the base, the size, the layers, the history and the selection stay,
+  nothing uploaded or queued;
 - the node list unread (objectInfo null) and the re-read failing: nothing refused, the names sent as typed; the
   re-read answering: the server's spelling, and the node list stays unread (no partial list);
 - six switched-on rows refused before anything is uploaded (a limit, so "warn"), five sent in order;
-- a recipe that declares `loras: false`: no chain, no refusal, the note says why the rows stayed out;
+- a recipe that declares `loras: false`, and a graph with two model loaders, keeping rows from before (their LoRAs
+  section is hidden): no chain, no refusal (six rows neither), no re-read, the note says why the rows stayed out in a
+  plain line, not a red one; set_generation loras [] clears them (the store too), a row is still refused, and [] with
+  nothing stored is refused with the reason;
 - the result of the first run lands (the node's `executed` answer dispatched): its history entry's via line names
   the LoRAs and the seconds, and the history row shows it.
 
@@ -59,6 +65,11 @@ node types: TextEncodeMOSSImageEdit.", and a run is refused with that sentence b
 node it is ready, the run goes with the user's row chained after the recipe's edit LoRA (slg on the chain's end), both
 encoders in the Moss-Image-Edit format, the via line naming the row; a server without the edit LoRA's file gets the
 run's own file check, which names the Edit LoRA row with its download link.
+
+Then Generate new's blank Original (a document of its own, P-H3-Image, a green fill with Original on): a run on the
+picture sends the crop and the Original, the state keeping the switch; Generate new's fresh canvas (`_newBoxes`, as
+generate_new's local path sets it) sends no picture (the recipe's `newImage` drop) and tells the node withOriginal false,
+the tab's own crop untouched; host.comfyPlan with `fresh` counts no Original (the first reference <Picture 2>).
 
 Then Comfy Cloud (LR5), against tools/fake_comfy_v2.js on a loopback port (tools/fake_cloud_http.py: the gate's profile
 gets the mock as settings.comfycloud.base and a test key, and the step skips where a Comfy Cloud key is stored already,
@@ -278,6 +289,51 @@ S.rereadNames = NAMES;
 host.objectInfo = OI();
 return { refused: one.slice(0, 80), rereads: S.rereads - rereads0 };
 """),
+    ("generate_new_refuses_the_rows_before_its_fresh_canvas", r"""
+// generate_new's local path wipes the document (newCanvas) before it queues: a row naming a file the server lacks, and
+// six switched-on rows, are refused before that, so the base, the layers and the history stay and nothing goes up.
+// A document of its own: the earlier steps' runs never landed, and Generate new waits for a document's runs
+const doc = (await run("new_document")).id;
+const savedUpload = host.uploadInput;
+let uploads = 0;
+try {
+    const ed = ednow(doc);
+    await run("new_canvas", { doc, width: 320, height: 240 });
+    await run("select_rect", { doc, x: 40, y: 30, w: 120, h: 90 });
+    await run("set_prompt", { doc, text: "a lighthouse at dusk" });
+    host.setRecipe(klein3);
+    host.objectInfo = OI();
+    S.reread = "list"; S.rereadNames = NAMES;
+    host.uploadInput = async (...a) => { uploads++; return savedUpload.apply(host, a); };
+    const now = () => ({ w: ed.width, h: ed.height, layers: ed.layers.map((l) => l.id).join(), history: ed.history.length, sel: JSON.stringify(ed.getBounds && ed.getBounds()) });
+    const base0 = ed.base, s0 = JSON.stringify(now());
+    if (!base0) throw new Error("no base to keep");
+    const refused = async (rows, re, what) => {
+        host.loras = { flux3_klein_local: rows };
+        const ensured0 = S.ensured, posts0 = S.posts.length, uploads0 = uploads;
+        let msg = "";
+        try { await run("generate_new", { doc, width: 256, height: 192, timeout: 30 }); } catch (e) { msg = String((e && e.message) || e); }
+        if (!re.test(msg)) throw new Error(what + ": " + JSON.stringify(msg));
+        if (ed.base !== base0 || JSON.stringify(now()) !== s0) throw new Error(what + ": the document changed: " + JSON.stringify(now()) + " from " + s0);
+        if (S.ensured !== ensured0 || S.posts.length !== posts0 || uploads !== uploads0) throw new Error(what + ": went up: " + JSON.stringify({ ensured: S.ensured - ensured0, posts: S.posts.length - posts0, uploads: uploads - uploads0 }));
+        return msg.slice(0, 90);
+    };
+    const out = {};
+    const rereads0 = S.rereads;
+    out.lacks = await refused([{ name: NAMES[0], strength: 0.8, on: true }, { name: "klein\\gone.safetensors", strength: 1, on: true }],
+        /^Your ComfyUI lacks a LoRA file this recipe's rows name: klein\\gone\.safetensors\. /, "a file the server lacks");
+    if (S.rereads !== rereads0 + 1) throw new Error("the list was not read again before refusing: " + (S.rereads - rereads0));
+    out.six = await refused([0, 1, 2, 3, 0, 1].map((i, k) => ({ name: NAMES[i], strength: 0.1 * (k + 1), on: true })),
+        /^At most 5 LoRAs per recipe: .+'s rows switch on 6\. /, "six rows");
+    return out;
+} finally {
+    host.uploadInput = savedUpload;
+    host.loras = {};
+    host.setRecipe(klein3);
+    try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ }
+    host.shell.activate(ednow(window.__lr));
+}
+"""),
     ("an_unread_node_list_refuses_nothing", r"""
 const ed = ednow(window.__lr);
 host.objectInfo = null;
@@ -330,25 +386,70 @@ if (q.body.extra_data.extra_pnginfo.workflow.loras.length !== 5) throw new Error
 return { five: want.map((r) => r.name) };
 """),
     ("a_recipe_that_takes_none_keeps_its_graph", r"""
+// rows a recipe keeps from before it stopped taking them: its LoRAs section is hidden, so the user can neither see nor
+// mend them there; the run goes without them and says so in a plain line (not red: item 45's red is for what was left
+// out of a run the user set up), six of them refuse nothing, and set_generation loras [] clears them
 const ed = ednow(window.__lr);
 host.objectInfo = OI();
 const none = { ...klein3, id: "lr1_no_loras", name: "No LoRAs (test)", loras: false };
-host.setRecipe(none);
-host.loras = { lr1_no_loras: [{ name: "klein\\gone.safetensors", strength: 1, on: true }] };
-const q = await queue(ed);
-if (q.err) throw new Error("refused: " + q.err);
-const g = q.body.prompt;
-if (Object.keys(g).some((k) => /^scumble_lora/.test(k)) || readers(g, "unet", 0).join() !== readers(klein3.prompt, "unet", 0).join()) throw new Error("the graph changed: " + JSON.stringify(readers(g, "unet", 0)));
-if (!ed.lastRunNotes.includes("The LoRAs stayed out: the recipe takes no LoRAs.")) throw new Error("the note: " + JSON.stringify(ed.lastRunNotes));
-if ("loras" in q.body.extra_data.extra_pnginfo.workflow || ed.lastLoras.length) throw new Error("loras reported: " + JSON.stringify(q.body.extra_data.extra_pnginfo.workflow.loras));
-const via = ed._sentTexts.get(q.id).via;
-if (via !== "No LoRAs (test) via your ComfyUI") throw new Error("the via text: " + via);
-// without rows the run is as before: no note, no key
-host.loras = {};
-const q2 = await queue(ed);
-if (ed.lastRunNotes.some((n) => /LoRA/.test(n)) || "loras" in q2.body.extra_data.extra_pnginfo.workflow) throw new Error("without rows: " + JSON.stringify(ed.lastRunNotes));
-host.setRecipe(klein3);
-return { note: "The LoRAs stayed out: the recipe takes no LoRAs.", via };
+const two = JSON.parse(JSON.stringify(klein3.prompt));
+two.unet2 = JSON.parse(JSON.stringify(two.unet));
+two.sched.inputs.model = ["unet2", 0];
+const twoR = { ...klein3, id: "lr1_two", name: "Two loaders (test)", loras: undefined, prompt: two };
+const store0 = (await window.scumble.settings.get()).recipeLoras || {};
+const NOTE = "The LoRA rows stored for this recipe stayed out: the recipe takes no LoRAs.";
+const NOTE2 = "The LoRA rows stored for this recipe stayed out: the graph has 2 model loaders (unet, unet2) and the recipe names none of them.";
+/** one run of `r` with `rows`: the queued body, its notes, the line's kind; nothing spliced and no LoRAs reported */
+const plain = async (r, rows, note, what) => {
+    host.setRecipe(r);
+    host.loras = { [r.id]: rows };
+    // the upsampler's nodes listed, so its own note (red) does not colour the line: the LoRA line is the run's only note
+    host.objectInfo = { ...OI(), TextGenerate: { input: { required: {} } }, TextGenerateV2: { input: { required: {} } }, PreviewAny: { input: { required: {} } } };
+    ed.setStatus("ready", "info");
+    const rereads0 = S.rereads;
+    const q = await queue(ed);
+    if (q.err) throw new Error(what + ": refused: " + q.err);
+    const g = q.body.prompt;
+    if (Object.keys(g).some((k) => /^scumble_lora/.test(k)) || readers(g, "unet", 0).join() !== readers(r.prompt, "unet", 0).join()) throw new Error(what + ": the graph changed: " + JSON.stringify(readers(g, "unet", 0)));
+    if (!ed.lastRunNotes.includes(note) || !ed.status.includes(note)) throw new Error(what + ": the note: " + JSON.stringify({ notes: ed.lastRunNotes, status: ed.status }));
+    const others = ed.lastRunNotes.filter((n) => n !== note);
+    if (others.length) throw new Error(what + ": other notes: " + JSON.stringify(others));
+    if (ed.statusKind === "warn" || ed.statusKind === "error") throw new Error(what + ": the line is red: " + JSON.stringify([ed.status, ed.statusKind]));
+    if ("loras" in q.body.extra_data.extra_pnginfo.workflow || ed.lastLoras.length) throw new Error(what + ": loras reported: " + JSON.stringify(q.body.extra_data.extra_pnginfo.workflow.loras));
+    if (S.rereads !== rereads0) throw new Error(what + ": the server's list was read for rows that cannot go");
+    return { q, kind: ed.statusKind, others };
+};
+try {
+    const a = await plain(none, [{ name: "klein\\gone.safetensors", strength: 1, on: true }], NOTE, "loras: false");
+    const via = ed._sentTexts.get(a.q.id).via;
+    if (via !== "No LoRAs (test) via your ComfyUI") throw new Error("the via text: " + via);
+    // six switched-on rows: nothing refused (the refusal names the LoRAs section, which is hidden here)
+    const six = await plain(none, [0, 1, 2, 3, 0, 1].map((i, k) => ({ name: NAMES[i], strength: 0.1 * (k + 1), on: true })), NOTE, "six rows");
+    // a graph with two model loaders (an imported recipe saved again with a second one)
+    const b = await plain(twoR, [{ name: NAMES[0], strength: 0.8, on: true }], NOTE2, "two loaders");
+    // set_generation loras [] clears them (the section cannot), the store too; a list with a row is still refused
+    let msg = "";
+    try { await run("set_generation", { doc: window.__lr, loras: [{ name: NAMES[0] }] }); } catch (e) { msg = String((e && e.message) || e); }
+    if (!/^Two loaders \(test\)'s graph has 2 model loaders \(unet, unet2\) and the recipe names none of them, so it takes no LoRA rows\.$/.test(msg) || host.loraRows(twoR).length !== 1) throw new Error("a row for a recipe that takes none: " + JSON.stringify(msg));
+    const cleared = await run("set_generation", { doc: window.__lr, loras: [] });
+    if (JSON.stringify(cleared.loras) !== "[]" || host.loraRows(twoR).length || JSON.stringify(((await window.scumble.settings.get()).recipeLoras || {}).lr1_two) !== "[]") throw new Error("the clear: " + JSON.stringify({ answer: cleared.loras, rows: host.loraRows(twoR) }));
+    // with nothing stored, [] on a recipe that takes none is still refused (nothing to clear: list_recipes says why)
+    host.setRecipe(none);
+    host.loras = {};
+    msg = "";
+    try { await run("set_generation", { doc: window.__lr, loras: [] }); } catch (e) { msg = String((e && e.message) || e); }
+    if (!/takes no LoRA rows: the recipe takes no LoRAs\.$/.test(msg)) throw new Error("[] with nothing stored: " + JSON.stringify(msg));
+    // without rows the run is as before: no note, no key
+    host.setRecipe(twoR);
+    const q2 = await queue(ed);
+    if (ed.lastRunNotes.some((n) => /LoRA/.test(n)) || "loras" in q2.body.extra_data.extra_pnginfo.workflow) throw new Error("without rows: " + JSON.stringify(ed.lastRunNotes));
+    return { note: NOTE, kinds: [a.kind, six.kind, b.kind], via, cleared: cleared.loras };
+} finally {
+    host.loras = {};
+    host.objectInfo = OI();
+    host.setRecipe(klein3);
+    await window.scumble.settings.set({ recipeLoras: store0 });
+}
 """),
     ("the_result_lands_with_the_loras_in_its_via_line", r"""
 const ed = ednow(window.__lr);
@@ -771,6 +872,54 @@ host.objectInfo = OI();
 host.loras = {};
 host.setRecipe(klein3);
 return { v042: sentence, chain: "lora -> scumble_lora_1 -> slg", pictures: pics("pos"), via, missing: said.slice(0, 120) };
+"""),
+    ("generate_new_sends_no_blank_original", r"""
+// Generate new's fresh canvas with a fill and Original on (set_crop): the Original, the blank canvas before the fill,
+// carries nothing, so it does not go. P-H3-Image (recipes/p_h3_image_local.json, `newImage`) stays text to image (its
+// picture to edit dropped, no picture input left), and the node is told so (the state's crop); a run on a picture keeps
+// the user's switch: the Original goes as <Picture 2>. The plan Generate new's dialog and its token check read counts no
+// Original either (host.comfyPlan `fresh`)
+const doc = (await run("new_document")).id;
+const ph3 = host.shell.recipes().find((r) => r.id === "p_h3_image_local");
+if (!ph3 || !ph3.newImage) throw new Error("p_h3_image_local is not listed with its newImage");
+try {
+    const ed = ednow(doc);
+    await run("new_canvas", { doc, width: 320, height: 240 });
+    await run("set_prompt", { doc, text: "a lighthouse at dusk" });
+    await run("set_crop", { doc, fill: "green", withOriginal: true });
+    host.setRecipe(ph3);
+    host.loras = {};
+    host.objectInfo = { ...Object.fromEntries(ph3.needs.map((n) => [n, { input: { required: {} } }])), LoraLoaderModelOnly: LORA(NAMES) };
+    const pics = (g) => Object.keys(g.cond.inputs).filter((k) => /^images\.image_\d+$/.test(k)).sort();
+    const stateOf = (q) => JSON.parse(q.body.prompt.canvas.inputs.canvas_state);
+    // a run on the picture: the crop and its Original, the user's switch in the state
+    await run("select_rect", { doc, x: 40, y: 30, w: 120, h: 90 });
+    const q1 = await queue(ed);
+    if (q1.err) throw new Error("the run on the picture refused: " + q1.err);
+    const st1 = stateOf(q1);
+    if (st1.crop.withOriginal !== true || st1.crop.fill !== "green" || JSON.stringify(pics(q1.body.prompt)) !== '["images.image_1","images.image_2"]') throw new Error("the run on the picture: " + JSON.stringify({ crop: st1.crop, pics: pics(q1.body.prompt) }));
+    // Generate new (generate_new's local path: the fresh canvas, all of it selected, `_newBoxes` read once)
+    await run("select_all", { doc });
+    ed._newBoxes = { from: [ed.width, ed.height], aspect: null, plan: null };
+    let q2;
+    try { q2 = await queue(ed); } finally { ed._newBoxes = undefined; }
+    if (q2.err) throw new Error("Generate new refused: " + q2.err);
+    const st2 = stateOf(q2);
+    if (st2.crop.withOriginal !== false || st2.crop.fill !== "green" || pics(q2.body.prompt).length) throw new Error("Generate new sent a picture: " + JSON.stringify({ crop: st2.crop, pics: pics(q2.body.prompt) }));
+    if (ed.cropSettings.withOriginal !== true || ed.cropSettings.fill !== "green") throw new Error("the run changed the tab's crop: " + JSON.stringify(ed.cropSettings));
+    // the plan of Generate new's token check and dialog: no Original, the first reference is <Picture 2>
+    const state = { hasSelection: true, crop: ed.cropSettings, gen: ed.genSettings };
+    const fresh = host.comfyPlan(ed, ph3, 1, state, { fresh: true }).lay, onPic = host.comfyPlan(ed, ph3, 1, state).lay;
+    const ref = (lay) => (lay.pictures.find((p) => p.role === "reference") || {}).n;
+    if (fresh.original !== 0 || ref(fresh) !== 2 || onPic.original !== 1 || ref(onPic) !== 3) throw new Error("the plans: " + JSON.stringify({ fresh: [fresh.original, ref(fresh)], onPic: [onPic.original, ref(onPic)] }));
+    return { picture: pics(q1.body.prompt), generateNew: pics(q2.body.prompt), withOriginal: [st1.crop.withOriginal, st2.crop.withOriginal], plan: { fresh: ref(fresh), onPicture: ref(onPic) } };
+} finally {
+    try { await run("set_crop", { doc, fill: "none", withOriginal: false }); } catch (_) { /* gone */ }
+    host.objectInfo = OI();
+    host.setRecipe(klein3);
+    try { await run("close_document", { doc, force: true }); } catch (_) { /* gone */ }
+    host.shell.activate(ednow(window.__lr));
+}
 """),
     ("cleanup", r"""
 S.restore();

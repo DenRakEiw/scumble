@@ -86,7 +86,15 @@ In detail, Scumble talks to these systems, and to nothing else:
   local recipe, a helper node, or test the connection.
 - **An API provider** (ToAPIs, Google, OpenAI, Black Forest Labs, fal.ai, Replicate, WaveSpeedAI,
   Comfy Cloud, OpenRouter, BytePlus ModelArk, Anthropic), only when you run a recipe or a prompt upsampling that names it,
-  or click *check balance* next to its key, with the key you stored. Keys are kept in the operating
+  or click *check balance* next to its key, with the key you stored. Comfy Cloud is also asked for
+  its LoRA lists while a key for it is stored and a Comfy Cloud recipe that takes LoRAs is selected
+  (at start too, when it is the selected recipe): the *LoRAs* section reads the account's own LoRA
+  imports and Comfy Cloud's LoRA catalog (`GET /api/assets`) and Comfy Cloud's node list
+  (`GET /api/object_info`), with the key, once when it first shows. The answer is kept for a minute
+  (the node list for ten), and the lists are read again when, on such a recipe, you open the LoRA
+  picker, or an agent calls `list_loras` or sets LoRA rows (`set_generation` `loras`) naming a file
+  the lists do not hold. No picture, prompt or LoRA row goes with these reads; without a
+  stored Comfy Cloud key nothing is asked. Keys are kept in the operating
   system's credential store (Electron `safeStorage`, DPAPI on Windows) and never leave the machine
   except in the request to that provider. OpenRouter (`openrouter.ai`) passes a request on to a host
   that serves the model, and Scumble asks it to leave out every host it lists in China; for that list

@@ -732,7 +732,7 @@ class Assistant {
                 }
                 return errorResult(`not run: could not read the document (${err.message})`);
             }
-            const resolved = resolveLayer(args, layers, name);
+            const resolved = resolveLayer(args, layers, name, props);
             if (resolved.error) return errorResult(resolved.error);
             args = resolved.args;
         }
@@ -975,18 +975,26 @@ function idsNamedBy(name, result) {
     if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "duplicate_layer", "film_apply_look", "copy_to_layer"].includes(name)) add(result.id);
     if (name === "generate" || name === "upscale" || name === "realism_pass" || name === "glb_place" || name === "relight") { add(result.layer && result.layer.id); add(result.depthLayer && result.depthLayer.id); }
     if (name === "film_add_point" || name === "film_paste_points") add(result.layer);
+    // key_screen: the Key layer (a layer summary) and the grey Fill layer under it (its id), when they landed
+    if (name === "key_screen") { add(result.layer && result.layer.id); add(result.grey); }
     return out;
 }
 
 /**
  * Every layer reference to an id, the way the command core resolves it (`findLayer`): an id, a
- * name, a unique part of a name, "active" or nothing for the active layer.
+ * name, a unique part of a name, "active" or nothing for the active layer. `props` is the tool's
+ * schema properties: a field whose schema has an enum is never a layer reference (select_range's
+ * source "depth" / "luma" / "color"), nor is key_screen's source "picture" (its default, the
+ * visible picture), so those stay as given.
  */
-function resolveLayer(args, layers, name) {
+function resolveLayer(args, layers, name, props = {}) {
     const out = { ...args };
     for (const field of ["layer", "source", "target"]) {
         const raw = out[field];
         if (raw === undefined || raw === null || raw === "") continue;
+        const schema = (props && props[field]) || {};
+        if (Array.isArray(schema.enum)) continue;
+        if (name === "key_screen" && field === "source" && raw === "picture") continue;
         const found = findLayer(layers, raw);
         if (found.error) return { error: found.error };
         out[field] = found.id;

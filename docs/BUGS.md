@@ -31,6 +31,15 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 
 ## Open
 
+### A Comfy Cloud recipe with no LoRA section still says its stored rows stayed out in red (found 2026-11-07, the 0.1.52 release review, read)
+
+Seen in the code only: rows stored for a Comfy Cloud recipe whose LoRAs section is hidden (its routes declare no LoRA
+source, e.g. `cloud_ideogram_4`, after rows were stored on another of its variants) reach main, and
+`electron/main/providers/comfycloud.js` `withLoras` answers with its red "The LoRAs stayed out: ..." on every run. The
+local route got the plain line and the clear by `set_generation` `loras: []` in the review's fixes (`docs/PLAN_LORAS.md`
+LR1 deviation 4); the Comfy Cloud side needs the same rule in main (the plain line when the route takes no rows). Small;
+no user report. Test: the `loras` gate's Comfy Cloud stub with a stored row on a route without a source.
+
 ### The local relight recipe names LoRA files at the folder root that the user's server holds under other names (found 2026-11-06, read, not run; item 50's research)
 
 `recipes/relight_qwen_local.json` hard-codes its two `lora_name` values at the root of `models/loras`

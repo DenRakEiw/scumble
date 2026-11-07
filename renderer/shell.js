@@ -131,6 +131,10 @@ ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188"
 // ---- documents (tabs) --------------------------------------------------------------------
 
 host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe, llmRefPictures: refPicturesOn(settings), realism: settings.realism, depthDetail: (settings.depth && settings.depth.detail) || "standard", relight: settings.relight });
+// settings.key as stored, as host.loadKeyValues() would read it: status.key (and the assistant's ask card, which shows
+// what a key_screen without `trust` sends) report the stored values before a key or the Key dialog has run once
+host.keyStored = (settings && settings.key) || null;
+host._keyLoaded = true;
 
 /** settings.llm.refPictures: the reference pictures go to the upsampling model unless it is false (absent = on, 26d2). */
 function refPicturesOn(set) {

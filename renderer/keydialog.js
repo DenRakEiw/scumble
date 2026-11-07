@@ -742,6 +742,8 @@ class KeyDialog {
         E.loop.hidden = dormant || !loop;
         E.key.disabled = !sup.ok || this.busy;
         E.key.title = sup.ok ? "" : sup.text;
+        // the Hint row decides: "This layer's mask (Re-key)" re-keys the key layer, the others key anew
+        E.key.textContent = rekey ? "Re-key" : "Key";
     }
 
     /**
@@ -786,6 +788,7 @@ class KeyDialog {
         E.loop.hidden = !loop;
         E.key.disabled = !cs.ok || this.busy;
         E.key.title = cs.ok ? "" : cs.reason;
+        E.key.textContent = rekey ? "Re-key" : "Key";
     }
 
     focus() {
