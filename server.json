@@ -3,7 +3,7 @@
   "name": "io.github.DenRakEiw/scumble",
   "title": "Scumble",
   "description": "Agents drive a layered AI inpainting editor: select by text, inpaint, mask, layers, PSD/ORA export.",
-  "version": "0.1.51",
+  "version": "0.1.52",
   "websiteUrl": "https://github.com/DenRakEiw/scumble/blob/main/docs/MCP.md",
   "repository": {
     "url": "https://github.com/DenRakEiw/scumble",
@@ -21,8 +21,8 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/DenRakEiw/scumble/releases/download/v0.1.51/scumble-0.1.51.mcpb",
-      "fileSha256": "c6b5523fce69f221ac38aa5a40b3bbb95430977fee6d9539db0567663bd28cad",
+      "identifier": "https://github.com/DenRakEiw/scumble/releases/download/v0.1.52/scumble-0.1.52.mcpb",
+      "fileSha256": "080176ff4377bade5e0a0dfb80dfe56686a512beb73c92ed20ce1375a3192911",
       "transport": {
         "type": "stdio"
       }
