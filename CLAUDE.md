@@ -137,9 +137,11 @@ code.
     `renderer/editor/inpaint_canvas.js` in separate regions: merge them one at a time, the gates after each merge.
   The measurement steps (U0, K27, P10) stay one at a time under the busy lock. Weekly limit 68 % on 2026-11-07, reset
   2026-11-08 09:00.
-  **RUNNING since 2026-11-07 late evening (started by the session before the `/clear`, the user asleep):** six
+  **RUNNING since 2026-11-07 13:30 (the first start at 13:23 died with the `/clear` after a minute, its worktrees
+  unchanged and removed; restarted by session `982bb566`, the user away for the night: "mach die ganze nacht weiter
+  ohne auf clear zu warten"):** six
   background agents, each in its own worktree under `.claude/worktrees/agent-*` on a branch `worktree-agent-*`, with
-  the common rules in that session's scratchpad `agent_rules.md` (base `db62ba9` or later, own ports, the busy lock,
+  the common rules in that session's scratchpad `agent_rules.md` (base `8689d49` or later, own ports, the busy lock,
   no edits to CHANGELOG / CLAUDE.md / the plan, a CHANGELOG line and an "as built" paragraph in each report):
   **U0** (port 9588; measures SAM2, matting and depth on the main process under the busy lock, writes
   `docs/measurements/u0_2026-11-07/` and `docs/PLAN_HELPERS_PROCESS.md`, builds no U1), **A = H1 + P15** (9581 / 9589),
