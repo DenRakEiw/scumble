@@ -844,13 +844,9 @@ export function applyHsl(src, p) {
 // curves
 // ---------------------------------------------------------------------------
 
-function applyCurves(src, p, info) {
+function applyCurves(src, p) {
     const tables = curvesToTables(p.curves);
     const { out, octx, img, px } = openPixels(src);
-    // luma histogram of the input for the curve editor (every 4th pixel is plenty)
-    const hist = new Uint32Array(256);
-    for (let i = 0; i < px.length; i += 16) hist[(LR * px[i] + LG * px[i + 1] + LB * px[i + 2] + 0.5) | 0]++;
-    if (info && info.cache) info.cache.histogram = hist;
     if (!tables) return out;
     const tr = tables.r, tg = tables.g, tb = tables.b;
     for (let i = 0; i < px.length; i += 4) { px[i] = tr[px[i]]; px[i + 1] = tg[px[i + 1]]; px[i + 2] = tb[px[i + 2]]; }
@@ -858,8 +854,13 @@ function applyCurves(src, p, info) {
     return out;
 }
 
+/**
+ * The curve editor. Its luma histogram is the picture below the layer, from the editor's `belowHistogram` (cached per
+ * composite below, as the range bars read it; `callbacks.histogram`), P8: the filter passes no longer read a thumbnail
+ * of their input back on every view pass for it, and the panel has one on the tile backend and the GPU chain too.
+ */
 function curvesControl(layer, param, callbacks) {
-    return buildCurvesControl(layer, param, callbacks, { histogram: () => (layer._fxCache && layer._fxCache.histogram) || null });
+    return buildCurvesControl(layer, param, callbacks, { histogram: typeof callbacks.histogram === "function" ? callbacks.histogram : null });
 }
 
 // ---------------------------------------------------------------------------
