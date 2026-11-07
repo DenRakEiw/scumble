@@ -127,8 +127,11 @@ code.
   - **D (9585): item 57**, filter radii following a resize (a per-filter list of pixel parameters first).
   - **E (read-only): item 60's design plan** (variants on a result layer, compare against what lies below) as
     `docs/PLAN_VARIANTS.md`, its open questions for the user.
-  - **F (9586 / 9587): the test speed-ups** (the user: "mach das", 2026-11-07; **started that evening as a background
-    agent in its own worktree**: review its branch and merge it when its report is in): a `PX_ONLY` filter in `tools/px_test.js` (the case groups by
+  - **F (9586 / 9587): the test speed-ups: DONE and merged 2026-11-07** (`5f75cbc`, `ef0d464`; `docs/TESTING.md` "Faster
+    runs without less coverage", `docs/measurements/testspeed_2026-11-07/`): `PX_ONLY` (2 s instead of 67 s; the full
+    run still 397 ok), `tools/mutation_round.py` (focused kill sets, a survivor re-run on the full set: K26's round
+    1,465 s instead of 3,282, a kill 7-17 s instead of 72-236, the verdicts equal), `tools/run_gates_both.sh` (tiles
+    and canvas side by side: 217 s instead of 388). Kernel sessions use these from now on. As planned: a `PX_ONLY` filter in `tools/px_test.js` (the case groups by
     name), the mutation scripts' kill sets on it and on `SCUMBLE_EDITOR_ONLY` (a mutation round about 8 min instead of
     35-50), the tiles and canvas gate runs side by side on two ports; `docs/TESTING.md` says how. B, C and D all touch
     `renderer/editor/inpaint_canvas.js` in separate regions: merge them one at a time, the gates after each merge.
@@ -949,6 +952,20 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   match) instead of one more layer; and Compare (today `toggleCompare`, two result layers A / B with a divider; `\` held
   shows the base) also against the picture under the active layer, for a Realism Pass, relight or a filter layer. A design
   plan first (masks, undo, the `.scumble` format, the history, MCP). Medium.
+- 61: **A contact shadow under a cut-out** (the user, 2026-11-07, from another agent's idea list): from a layer's alpha
+  (a cutout, a key, a pasted reference) and the picture's depth map, a soft shadow layer of its own under it (where it
+  touches the ground, falling off with the depth), procedural, no model. Small to medium.
+- 62: **A local mini VLM** (Florence-2, MIT, about 250 MB ONNX; the user, 2026-11-07): automatic names for new cutout,
+  result and reference layers (which the `@img1` prompting shows), "describe the selection" and an offline prompt draft
+  without a key or a local LLM server. Planned after U1 (it runs in the helpers process), weighed then against and with
+  item 53 (Mirage), which also names objects.
+- 63: **Outpaint: generate after the extend** (the user, 2026-11-07): a checkbox in the Canvas tool, "Generate the new
+  border on apply": after Extend the new border is selected already (today's behaviour), the checkbox starts the
+  selected recipe on it; before an API run the usual cost question. Small.
+- 64: **A harmonization model, as a test against colour match** (the user, 2026-11-07: "harmonize als option mal in nen
+  plan aufnehmen und testen ob es besser ist als unser color match"): a small ONNX harmonization model (PCT-Net,
+  CDTNet or another, licence checked first) set against the layer's Match on the same cut-outs and results, judged by
+  eye by the user and by numbers; built only if it is clearly better. A plan with the candidates first.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.

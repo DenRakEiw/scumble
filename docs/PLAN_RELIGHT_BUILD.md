@@ -362,7 +362,7 @@ forum's first complaint). Off: the answer itself, stretched to the picture as `r
 | 8 | L5 | The prompt routes: the ComfyUI local recipe, the Comfy Cloud variant, fal iclight-v2, Bria; `lightsToWords` wired; `/object_info` hints | L4 | L | 1 |
 | 9 | L6 | Docs pass, CHANGELOG, COMMANDS.md, HELPERS.md, the exe-independent gates on both backends, the hand-over for the release | L5 | L | 0.5 |
 | 10 | R | **The release** (this account): review of the whole, the user's test, CHANGELOG section, `npm run dist`, exe gates, tag, post, Store, registry | L6 | - | 1 |
-| 11 | N1 | Phase 2: MoGe-2 ViT-S normal (ONNX, MIT): registry row, runner, `ed.maps.normals`, the shader reads it when present; the camera (FOV, metric depth) measured | R | N | 1.5 |
+| 11 | N1 | Phase 2: MoGe-2 ViT-S normal (ONNX, MIT): registry row, runner, `ed.maps.normals`, the shader reads it when present; the camera (FOV, metric depth) measured. An alternative noted 2026-11-07 (the user): normals from a geometry model on the user's ComfyUI (Lotus-2, StableNormal; licences not checked), as CorridorKey's Route B does | R | N | 1.5 |
 | 12 | N2 | Phase 2: `horizon_ao` (Rust), specular (gloss), the spot's gobo (a mask picture), light presets (fal's and Bria's words as presets on the in-app lights) | N1 | N | 1.5 |
 | 13 | N3 | Phase 2: the 15k measurement (the shading in tiles, the cache's memory), the perf rows, the tuning | N2 | F | 1 |
 
