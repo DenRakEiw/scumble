@@ -11804,8 +11804,16 @@ async def run_all(c):
     await c.eval("window.__exportPath = %s; 1" % json.dumps(os.path.join(os.environ.get("TEMP", os.getcwd()), "scumble_editor_test_export.png")))
     ok = True
     # SCUMBLE_EDITOR_ONLY=name,name: the first step (it opens the test document), those steps and the cleanup, for iterating on
-    # a step; a gate run leaves it unset
-    only = set(filter(None, os.environ.get("SCUMBLE_EDITOR_ONLY", "").split(",")))
+    # a step or a mutation round's focused kill set (tools/mutation_round.py); a gate run leaves it unset. An unknown name
+    # fails the run, and the verdict line says the run was filtered
+    only = set(filter(None, (s.strip() for s in os.environ.get("SCUMBLE_EDITOR_ONLY", "").split(","))))
+    unknown = sorted(only - {name for name, _ in STEPS})
+    if unknown:
+        print("[FAIL] SCUMBLE_EDITOR_ONLY names no step: %s" % ", ".join(unknown))
+        print("FAIL")
+        return False
+    if only:
+        print("SCUMBLE_EDITOR_ONLY: %d of %d steps (a filtered run, not the full gate)" % (len(only), len(STEPS)))
     for name, body in STEPS:
         if only and name not in only and name not in (STEPS[0][0], "cleanup"):
             continue
@@ -11824,7 +11832,8 @@ async def run_all(c):
     for level, text in (await c.logs())[-15:]:
         if level == "error":
             print("  console error:", text[:200])
-    print("PASS" if ok else "FAIL")
+    note = " (only: %s; SCUMBLE_EDITOR_ONLY, not the full gate)" % ", ".join(sorted(only)) if only else ""
+    print(("PASS" if ok else "FAIL") + note)
     return ok
 
 

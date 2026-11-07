@@ -14,6 +14,14 @@
 // recovery from a trap or an out-of-memory and its instance's lifecycle (docs/PLAN_WASM_K1.md), and with
 // `PX_BENCH=1` (or `large`) the timed rows: medians over rotating rounds and a cold first call on a fresh
 // compile (docs/PLAN_WASM_BUILD.md §3.4).
+//
+//     PX_ONLY=mask,dab node tools/px_test.js
+//
+// runs only those case groups (GROUPS below: the case functions main() calls, named without their `Cases` suffix), each
+// where main() calls it today (the reference, the twin, both builds) and in the same order; the builds' SIMD flag check
+// always runs. An unknown name is an error, and the last line says the run was filtered ("PASS (only: dab, mask; ...)"):
+// it is a mutation round's focused kill set (tools/mutation_round.py), never the full test. `PX_TIMES=1` prints each
+// group's time. Without PX_ONLY (or with it empty) every group runs, as before.
 "use strict";
 
 const fs = require("node:fs");
@@ -28,6 +36,33 @@ let failures = 0;
 function check(name, ok, detail = "") {
     console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? "  " + detail : ""}`);
     if (!ok) failures++;
+}
+
+// The case groups in main()'s order (a group in both the reference part and the per-build loop runs in both)
+const GROUPS = ["twinSelfTest", "mip", "edt", "flood", "composite", "matchTwin", "smudgeTwin", "poissonTwin", "png", "compositeSha",
+    "blendFixture", "blendGlsl", "tierC", "relightBench", "relightStripe", "counter", "split", "route", "trap", "lifecycle", "sel",
+    "pngFilter", "job", "mask", "dab", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "memory"];
+const ONLY = (() => {
+    const names = (process.env.PX_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (!names.length) return null;
+    const unknown = names.filter((n) => !GROUPS.includes(n));
+    if (unknown.length) {
+        console.error(`PX_ONLY: unknown group${unknown.length > 1 ? "s" : ""} ${unknown.join(", ")}; the groups are ${GROUPS.join(", ")}`);
+        process.exit(2);
+    }
+    return new Set(names);
+})();
+const ONLY_NOTE = ONLY ? ` (only: ${GROUPS.filter((g) => ONLY.has(g)).join(", ")}; PX_ONLY, not the full test)` : "";
+const groupsRan = new Set();
+
+/** One case group of main(): skipped unless PX_ONLY names it (or PX_ONLY is unset). */
+async function group(name, fn) {
+    if (!GROUPS.includes(name)) throw new Error(`px_test: group ${name} is not in GROUPS`);
+    if (ONLY && !ONLY.has(name)) return;
+    groupsRan.add(name);
+    const t = performance.now();
+    await fn();
+    if (process.env.PX_TIMES) console.log(`       group ${name}: ${(performance.now() - t).toFixed(0)} ms`);
 }
 
 async function memoryCases(px, label) {
@@ -3702,53 +3737,57 @@ async function main() {
         },
     };
     const label = "reference (distanceTransform / floodMask for the EDT and the flood)";
-    twinSelfTest();
-    await mipCases(ref, label, js);
-    await edtCases(ref, label, js, raster);
-    await floodCases(ref, label, js, raster);
-    await compositeCases(ref, label, js);
-    await matchTwinCases(js);
-    await smudgeTwinCases(js);
-    await poissonTwinCases(js);
-    await pngCases(ref, label, js);
+    if (ONLY) console.log(`PX_ONLY: only the groups ${GROUPS.filter((g) => ONLY.has(g)).join(", ")} run (a filtered run, not the full test)`);
+    await group("twinSelfTest", () => twinSelfTest());
+    await group("mip", () => mipCases(ref, label, js));
+    await group("edt", () => edtCases(ref, label, js, raster));
+    await group("flood", () => floodCases(ref, label, js, raster));
+    await group("composite", () => compositeCases(ref, label, js));
+    await group("matchTwin", () => matchTwinCases(js));
+    await group("smudgeTwin", () => smudgeTwinCases(js));
+    await group("poissonTwin", () => poissonTwinCases(js));
+    await group("png", () => pngCases(ref, label, js));
     const simdPx = await loadPx(fs.readFileSync(path.join(PX_DIR, "px.wasm")));
     const scalarPx = await loadPx(fs.readFileSync(path.join(PX_DIR, "px_scalar.wasm")));
-    await compositeShaCases(js, simdPx, scalarPx);
-    await blendFixtureCases(js, simdPx, scalarPx);
-    await blendGlslCases();
-    await tierCCases(js, simdPx, scalarPx, ref);
-    await relightBench(js, simdPx);   // before memoryCases grows simdPx past 2 GB
-    await relightStripeCases(js, simdPx, scalarPx);
-    await counterCases(simdPx);
-    await splitCases(simdPx, js);
-    await routeCases(js, simdPx, scalarPx, raster);
-    await trapCases(js, simdPx, raster);
-    await lifecycleCases(js);
-    await selCases(js, simdPx, scalarPx, raster, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href));
-    pngFilterCases(js, simdPx, scalarPx);
+    await group("compositeSha", () => compositeShaCases(js, simdPx, scalarPx));
+    await group("blendFixture", () => blendFixtureCases(js, simdPx, scalarPx));
+    await group("blendGlsl", () => blendGlslCases());
+    await group("tierC", () => tierCCases(js, simdPx, scalarPx, ref));
+    await group("relightBench", () => relightBench(js, simdPx));   // before memoryCases grows simdPx past 2 GB
+    await group("relightStripe", () => relightStripeCases(js, simdPx, scalarPx));
+    await group("counter", () => counterCases(simdPx));
+    await group("split", () => splitCases(simdPx, js));
+    await group("route", () => routeCases(js, simdPx, scalarPx, raster));
+    await group("trap", () => trapCases(js, simdPx, raster));
+    await group("lifecycle", () => lifecycleCases(js));
+    await group("sel", async () => selCases(js, simdPx, scalarPx, raster, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href)));
+    await group("pngFilter", () => pngFilterCases(js, simdPx, scalarPx));
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));
-        await mipCases(px, label, js);
-        await edtCases(px, label, js, raster);
-        await floodCases(px, label, js, raster);
-        await jobCases(px, label, raster);
-        await maskCases(px, label, js);
-        await dabCases(px, label);
-        await edgeCases(px, label, js);
-        await relightCases(px, label, js);
-        await pngReadCases(px, label, js);
-        await compositeCases(px, label, js);
-        await matchCases(px, label, js);
-        await smudgeCases(px, label, js);
-        await poissonCases(px, label, js);
-        await pngCases(px, label, js);
-        await pngPartCases(px, label);
-        await psdCases(px, label, js);
-        await resampleCases(px, label, resample);
-        await memoryCases(px, label);
+        await group("mip", () => mipCases(px, label, js));
+        await group("edt", () => edtCases(px, label, js, raster));
+        await group("flood", () => floodCases(px, label, js, raster));
+        await group("job", () => jobCases(px, label, raster));
+        await group("mask", () => maskCases(px, label, js));
+        await group("dab", () => dabCases(px, label));
+        await group("edge", () => edgeCases(px, label, js));
+        await group("relight", () => relightCases(px, label, js));
+        await group("pngRead", () => pngReadCases(px, label, js));
+        await group("composite", () => compositeCases(px, label, js));
+        await group("match", () => matchCases(px, label, js));
+        await group("smudge", () => smudgeCases(px, label, js));
+        await group("poisson", () => poissonCases(px, label, js));
+        await group("png", () => pngCases(px, label, js));
+        await group("pngPart", () => pngPartCases(px, label));
+        await group("psd", () => psdCases(px, label, js));
+        await group("resample", () => resampleCases(px, label, resample));
+        await group("memory", () => memoryCases(px, label));
     }
-    console.log(failures ? `FAIL (${failures})` : "PASS");
+    // a group PX_ONLY named that main() never reached (GROUPS and the calls above out of step) fails the run
+    const missed = ONLY ? [...ONLY].filter((g) => !groupsRan.has(g)) : GROUPS.filter((g) => !groupsRan.has(g));
+    if (missed.length) check(`every group in GROUPS ran${ONLY ? " that PX_ONLY named" : ""}`, false, `never reached: ${missed.join(", ")}`);
+    console.log(failures ? `FAIL (${failures})${ONLY_NOTE}` : `PASS${ONLY_NOTE}`);
     process.exit(failures ? 1 : 0);
 }
 
