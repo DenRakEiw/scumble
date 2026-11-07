@@ -79,6 +79,12 @@ build through route A about 4-6 sessions (inferred): the registry, downloader ro
 names on hover, the SAM2 refinement (1-1.5), selection by name as an in-app backend, the MCP texts, a gate step (1), more
 for OCR and the scene record.
 
+## The user's answer (2026-11-07)
+
+"ja, für ein nächstes update, nicht jetzt ;)", with the weights' page https://huggingface.co/Cactus-Compute/mirage/tree/main
+(the files listed above: `mirage.cact`, `mirage.safetensors`, `config.json`). So: not in 0.1.52; the spike, its download
+included, goes with a later update. The questions below stay open until that update is planned.
+
 ## Questions for the user
 
 1. A Cactus engine without public source (Apache-2.0-tagged binaries) as an optional download, not in the installer: yes,

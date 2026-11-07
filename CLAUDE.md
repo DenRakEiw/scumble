@@ -830,8 +830,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   text input), quality unmeasured, running only on Cactus's engine 4.0.0 (binaries tagged Apache-2.0, source not public;
   a wasm build usable in a renderer worker). It adds selection by name without ComfyUI (its boxes refined by SAM2),
   names on hover, named Keep boxes, OCR text selection; it replaces nothing. Recommended: a spike first (0.5-1 session,
-  the download on the user's yes), then route A (about 4-6 sessions, inferred), not in 0.1.52. Open: the README's six
-  questions for the user (a closed-source engine as a download, the Store's policy 10.2.2 and Flathub, the spike).
+  the download on the user's yes), then route A (about 4-6 sessions, inferred), not in 0.1.52. **The user's answer
+  (2026-11-07): "ja, für ein nächstes update, nicht jetzt"**, with the weights' page
+  https://huggingface.co/Cactus-Compute/mirage/tree/main: the spike and its download go with a later update. Open: the
+  README's other questions (a closed-source engine as a download, the uses that matter, a mail to Cactus, the Store's
+  policy 10.2.2 and Flathub), asked when that update is planned.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
