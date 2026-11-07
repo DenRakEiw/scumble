@@ -92,9 +92,17 @@ code.
   success); `server.json` 0.1.52 (`0fcef6f`) published to the MCP Registry (the user's device code; 0.1.52 latest); the
   node's editor built in a clone and pushed (`ComfyUI-InpaintCanvas` `4e7bd24..4bef98a`, no pyproject bump, so no
   registry version); issues #10 and #11 answered and closed; the bodies of 0.1.37 and 0.1.28 have their @tokens in
-  backticks now; `wasm-kernels` fast-forwarded to `main` (`0fcef6f`). **Open:** the Store update (the user's upload:
-  `dist/Scumble-0.1.52.msix` and `dist/store-listing/whats-new-0.1.52.txt` in the `corridorkey` worktree), the worktrees
-  `gpt26` and `ph3` can go, next on `wasm-kernels`: K4. The preparation, as it was:
+  backticks now; `wasm-kernels` fast-forwarded to `main` (`0fcef6f`). **The Store update for 0.1.52 is done** (the user,
+  2026-11-07: "hab store update gemacht"). **Open:** the worktrees `gpt26` and `ph3` can go; on `wasm-kernels` K4 and the
+  kernel steps after it (the user, 2026-11-07: "K4 anfangen und dann die rust updates weitermachen"), item 54 beside it by
+  a subagent in its own worktree, merged into `wasm-kernels` after a review. **K4 done 2026-11-07** (the generic box pass
+  `maskf::box_pass::<C>`, `box_blurs` on it with its bytes pinned: stitch's `gaussBlur` 40.6 -> 32.5 ms at 2048^2, a
+  4096 x 2731 map's blur 78.7 -> 57.4; "K4" in the plan's §7). **Also for the next update (the user, 2026-11-07):** the
+  Comfy Cloud route of GPT Image 2.6 (the partner node lists 2.6 since 2026-11-07; Comfy Router does not yet), built by a
+  second subagent in its own worktree. **An external review** (another agent's, pasted by the user 2026-11-07) verified
+  by a workflow of eight: `docs/research/review_external_2026-11-07/` (nothing high; S5, a crafted PSD / ORA can crash
+  the renderer, is the one a file triggers; P10 the tile gutter's byte copy and P14 the ONNX helpers on the main
+  process the felt performance points; a hardening session H1 and P10 suggested to the user, no answer yet). The preparation, as it was:
   It holds
   items 49 (CorridorKey Route B, B5 run live with the user, the movable Key dialog), 50 (LoRAs, MOSS-Image Edit), 51
   (GPT-Image-2.6), 52 (P-H3-Image) and the kernel steps D0, K5, W1, K12, K12b. A release review workflow (four lenses,

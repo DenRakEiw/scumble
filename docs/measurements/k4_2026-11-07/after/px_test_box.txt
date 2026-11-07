@@ -1,0 +1,2 @@
+       1492 x 1492: dilate rust simd 19.3 ms, twin 47.0; three box blurs rust simd 12.2 ms, twin 25.9
+       1492 x 1492: dilate rust scalar 22.3 ms, twin 47.6; three box blurs rust scalar 19.1 ms, twin 46.0

@@ -457,10 +457,15 @@ async function maskCases(px, label, js) {
         call: (k, [m, w, h, r]) => k.dilateMask(m, w, h, r),
         cases: masks.flatMap(([m, w, h]) => [1, 2, 5, 40, 500].map((r) => ({ tag: `dilate ${w}x${h} by ${r}`, args: [m, w, h, r] }))),
     });
+    // K4's lanes: one-channel rows two at a time (an odd height leaves its last row to the scalar loop), the column pass
+    // four values a step (a width that is not a multiple of 4 leaves a tail; under 4 none), so the small sizes below
+    // put every split at the lanes' edges
+    const small = [[2, 2], [4, 4], [5, 6], [6, 5], [8, 1], [1, 8], [16, 3], [3, 16], [9, 9]].map(([w, h]) => [mask(w, h, w * 17 + h), w, h]);
     twinCheck({
         name: "box_blurs", title: "box_blurs equals its twin bit for bit", builds: [[label, px]], twin: js,
         call: (k, [m, w, h, radii]) => k.boxBlurs(m, w, h, radii),
-        cases: masks.flatMap(([m, w, h]) => [[1, 1, 1], [0, 1, 2], [3, 3, 4], [17, 18, 18], [200, 200, 201], [0, 0, 0]].map((radii) => ({ tag: `box blurs ${w}x${h} ${radii}`, args: [m, w, h, radii] }))),
+        cases: masks.flatMap(([m, w, h]) => [[1, 1, 1], [0, 1, 2], [3, 3, 4], [17, 18, 18], [200, 200, 201], [0, 0, 0]].map((radii) => ({ tag: `box blurs ${w}x${h} ${radii}`, args: [m, w, h, radii] })))
+            .concat(small.flatMap(([m, w, h]) => [[1], [2, 0, 3], [7, 7, 8]].map((radii) => ({ tag: `box blurs ${w}x${h} ${radii}`, args: [m, w, h, radii] })))),
     });
     const big = mask(1492, 1492, 9);
     const t0 = performance.now(); px.dilateMask(big, 1492, 1492, 47);

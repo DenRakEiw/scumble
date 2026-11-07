@@ -1,0 +1,42 @@
+== before
+  stitch gaussBlur 2048^2 sigma 8 (whole function)     median    40.64 ms  [36.48 - 55.02]  n=3
+    its mask build mk (not K4's)                       median     5.19 ms  [4.96 - 5.35]  n=3
+  stitch_2048_s8 rust                                  median    28.73 ms  [27.69 - 28.98]  n=3
+  stitch_2048_s8 twin                                  median    51.41 ms  [48.64 - 52.05]  n=3
+  stitch_2048_s8 sum                                   ['1003460266']
+  stitch_2048_s8 same as twin                          ['True']
+  map_4096_s3 rust                                     median    78.72 ms  [76.92 - 80.48]  n=3
+  map_4096_s3 twin                                     median   155.95 ms  [150.51 - 177.17]  n=3
+  map_4096_s3 sum                                      ['3369515234']
+  map_4096_s3 same as twin                             ['True']
+  guided_4096_r8 rust                                  median    33.20 ms  [31.27 - 33.38]  n=3
+  guided_4096_r8 twin                                  median    53.06 ms  [51.30 - 58.42]  n=3
+  guided_4096_r8 sum                                   ['1280479568']
+  guided_4096_r8 same as twin                          ['True']
+  map_4096_s16 rust                                    median    82.67 ms  [76.61 - 95.07]  n=3
+  map_4096_s16 twin                                    median   129.53 ms  [119.23 - 145.90]  n=3
+  map_4096_s16 sum                                     ['3467051775']
+  map_4096_s16 same as twin                            ['True']
+  height_normals_4096_s3 rust                          median   323.14 ms  [297.08 - 326.28]  n=3
+  height_normals_4096_s3 sum                           ['2854775992']
+== after
+  stitch gaussBlur 2048^2 sigma 8 (whole function)     median    32.50 ms  [32.47 - 33.65]  n=3
+    its mask build mk (not K4's)                       median     4.91 ms  [4.91 - 5.02]  n=3
+  stitch_2048_s8 rust                                  median    21.23 ms  [20.78 - 21.45]  n=3
+  stitch_2048_s8 twin                                  median    49.61 ms  [45.83 - 50.45]  n=3
+  stitch_2048_s8 sum                                   ['1003460266']
+  stitch_2048_s8 same as twin                          ['True']
+  map_4096_s3 rust                                     median    57.44 ms  [57.20 - 57.89]  n=3
+  map_4096_s3 twin                                     median   128.09 ms  [124.45 - 135.46]  n=3
+  map_4096_s3 sum                                      ['3369515234']
+  map_4096_s3 same as twin                             ['True']
+  guided_4096_r8 rust                                  median    25.59 ms  [23.83 - 26.05]  n=3
+  guided_4096_r8 twin                                  median    59.84 ms  [52.59 - 78.33]  n=3
+  guided_4096_r8 sum                                   ['1280479568']
+  guided_4096_r8 same as twin                          ['True']
+  map_4096_s16 rust                                    median    56.74 ms  [55.67 - 56.78]  n=3
+  map_4096_s16 twin                                    median   119.02 ms  [118.01 - 122.67]  n=3
+  map_4096_s16 sum                                     ['3467051775']
+  map_4096_s16 same as twin                            ['True']
+  height_normals_4096_s3 rust                          median   279.26 ms  [274.38 - 288.52]  n=3
+  height_normals_4096_s3 sum                           ['2854775992']
