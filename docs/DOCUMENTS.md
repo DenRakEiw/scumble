@@ -313,7 +313,8 @@ the document does not carry were refused or left the history before, §6.1).
   and `open_document` / `reopen_closed_tab` carry it in their notes; the next save drops them. A pixel layer whose file
   does not load (gone from the local store with no server to ask, or not a picture) is counted too since the review of
   2026-11-07 (`leftOut.missing`, its names in `leftOut.names`): the note names the first three ("1 layer could not be
-  read and was left out: "paint 2".").
+  read and was left out: "paint 2"."). A text layer whose file does not load is drawn again from its text instead, as
+  one never stored is (without a mask it had), and the note says so (`leftOut.redrawn`, `redrawnNames`).
 - **Plugin data** of unknown plugins rides along (§5).
 - **Not kept on the next save:** unknown fields at the top of `document.json` beside `document`, entries that `files[]`
   does not list, and unknown fields inside a layer, a history entry, a `selections` item, `match` or `guides` (the
@@ -378,11 +379,15 @@ One save per tab at a time. A failed or cancelled save keeps the tab's file as i
 - **The clean-up and the undo steps** (the whole-code review of 2026-11-07, `documents/D2+canvas-c/F1`): an undo puts a
   deleted layer, a flattened or cropped base or a named snapshot's layers back with the files they had and uploads none
   of them again, so `host.referencedFileKeys` also walks every open editor's `heldFileRefs()` (the undo and redo steps
-  and the named snapshots: each layer record's `ref` and `maskRef`, a filter's LUT and plate, a step's base, the maps'
-  files, the plugin data a step keeps). As a backstop, `applySnapshot` asks (a HEAD on `/view`, which main answers from a
-  stat) for each file a layers step puts back that the replaced layers did not hold, and for a canvas or turn step's
-  base; one that is gone is uploaded again (a layer marked dirty and synced, the base by `uploadBase`), and `heldEdit()`
-  waits for it, so a save does not name the old file.
+  and the named snapshots, each walked as data by `fileRefsOf`: every plain object with a `filename`, so a layer
+  record's `ref` and `maskRef`, a text's `fontRef`, a filter's LUT and plate, a step's base, the maps' files and the
+  plugin data a step keeps), and `host.fileRefSources` (the assistant's "Undo this turn" record,
+  `assistant_turns.js` `heldRefs`); the node's *Clean up files* (`InpaintEditor.referencedFiles`) names
+  `heldFileRefs()` too. As a backstop, `applySnapshot` asks (a HEAD on `/view`, which main answers from a stat) for each
+  file a layers step puts back that the replaced layers did not hold stored (a dirty layer's upload was still to come),
+  and for a canvas or turn step's base; one that is gone is uploaded again (a layer marked dirty and synced, the base by
+  `uploadBase`, and a run's cache of it let go), and `heldEdit()` and the quit's `saveBeforeRestart` wait for it, so a
+  save does not name the old file.
 - **The answer:** `{ path, name, bytes, entries, ms, mtime, size, notes }`; the path goes on *File › Open Recent*
   (not for a copy).
 

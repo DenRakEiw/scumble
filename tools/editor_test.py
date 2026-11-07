@@ -545,10 +545,13 @@ async def closed_tabs_are_collected(c):
     tabs are made, painted on, closed, and after a forced collection none of them may be alive.
     The second tab closes with the layer row's menu open (openFlyout), the third with a choice list
     open (openChoiceList): the window's capturing pointerdown listener the first flyout adds closed
-    over the editor and was never taken off (review 2026-11-07 canvas-c/F3); close() takes it off now."""
+    over the editor and was never taken off (review 2026-11-07 canvas-c/F3); close() takes it off now.
+    The fourth closes with a question open (ask): its keydown listener on the window held the editor
+    too, and the dead dialog took the next Enter or Escape; the close answers it with null."""
     r = await c.eval(PRE % """
 window.__closedTabs = [];
 const dropped = [];
+let answered = "nothing";
 for (let i = 0; i < 4; i++) {
     const doc = await run("new_document");
     const ed = ednow(doc.id);
@@ -565,6 +568,12 @@ for (let i = 0; i < 4; i++) {
         fn = ed._flyDocDown;
         if (!ed.flyout || typeof fn !== "function") throw new Error("tab " + i + ": no flyout or no window listener for it");
     }
+    // the fourth closes with a question open (ask): its window keydown listener closes over the editor; the close answers
+    // it with null, as Cancel does
+    if (i === 3) {
+        ed.ask({ title: "gate", message: "a question left open" }).then((v) => { answered = v === null ? "null" : "an answer"; });
+        if (!ed.askOpen) throw new Error("tab 3: no question open");
+    }
     // the listener's removal seen on the window (only a flag is kept: the function itself holds the editor)
     let gone = false;
     const orig = window.removeEventListener;
@@ -580,7 +589,9 @@ for (let i = 0; i < 4; i++) {
 }
 host.shell.activate(ednow(window.__t));
 if (dropped.some((g) => !g)) throw new Error("a closed tab's flyout listener stayed on the window: " + JSON.stringify(dropped));
-return { open: host.editors().length, dropped };
+await wait(50);
+if (answered !== "null") throw new Error("the question open in a closed tab got " + answered);
+return { open: host.editors().length, dropped, answered };
 """, timeout=120)
     for _ in range(4):
         await c.call("HeapProfiler.collectGarbage")

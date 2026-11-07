@@ -94,6 +94,22 @@ export function restoreTurn() {
     return { ok: !!done.length, turn, docs: done, missing };
 }
 
+/**
+ * The file refs the kept turn's snapshots hold, for Settings › Local files › Clean up (host.referencedFileKeys): a
+ * restore puts each document's layers back with their LUTs, plates, maps and fonts, and uploads only the pixels again.
+ * Walked as the editor walks a turn step (InpaintEditor.fileRefsOf).
+ */
+export function heldRefs() {
+    if (!record) return [];
+    const out = [];
+    for (const [docId, entry] of record.docs) {
+        const ed = editor(docId);
+        if (entry.snap && ed && typeof ed.fileRefsOf === "function") out.push(...ed.fileRefsOf([entry.snap]));
+    }
+    return out;
+}
+host.fileRefSources.push(heldRefs);
+
 /** The reset and a closing window drop what they hold. */
 export function forgetTurns() {
     release(record);

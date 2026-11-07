@@ -2898,6 +2898,9 @@ async function saveBeforeRestart(say = () => {}, when = "the restart") {
     const eds = host.editors();
     // a heal stroke still blending in a worker (the button is up, the gesture held until it lands: `healBlend`)
     for (const until = Date.now() + 10000; eds.some((ed) => ed.pointer && ed.pointer.healing) && Date.now() < until;) await new Promise((r) => setTimeout(r, 50));
+    // an undo's files being stored again (InpaintEditor.recheckRestoredFiles: a base upload, layers marked for the rounds
+    // below): the bundle would name the file that is gone
+    for (const until = Date.now() + 30000; eds.some((ed) => ed._fileCheck) && Date.now() < until;) await new Promise((r) => setTimeout(r, 50));
     const edited = (ed) => ed.base && ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx));
     if (eds.some(edited)) say(`Saving the edited layers before ${when}...`);
     // each document's layers, then the bundle, so a save cut short still keeps the documents done so far; again for

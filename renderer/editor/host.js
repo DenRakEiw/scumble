@@ -5872,9 +5872,17 @@ export const host = {
     },
 
     /**
+     * Holders of file refs outside the documents that the clean-up keeps too: functions answering refs (or anything
+     * referencedFileKeys walks). The assistant's "Undo this turn" record registers its own (renderer/assistant_turns.js
+     * heldRefs): its snapshots put LUTs, plates, maps and fonts back with their files.
+     * @type {Array<() => any>}
+     */
+    fileRefSources: [],
+
+    /**
      * Every file ref ({filename, subfolder, type}) any open document mentions, as mirror keys: its state, its plugin data,
      * and what its undo and redo steps and its named snapshots hold (an undo puts those files back and uploads none of
-     * them again: InpaintEditor.heldFileRefs), and the closed tabs.
+     * them again: InpaintEditor.heldFileRefs), the closed tabs, and `fileRefSources`.
      */
     referencedFileKeys() {
         const keys = new Set();
@@ -5899,6 +5907,7 @@ export const host = {
             walk(c.plugins);
             walk(c.extra);
         }
+        for (const src of this.fileRefSources) walk(src());   // not caught either
         return Array.from(keys);
     },
 
