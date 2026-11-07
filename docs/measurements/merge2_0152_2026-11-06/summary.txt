@@ -1,0 +1,54 @@
+The second merge of wasm-kernels into corridorkey (478627c: K12b, Stop 5's answers), gates on 2026-11-06,
+SCUMBLE_CDP_PORT=9571, --offline, from the corridorkey worktree (scratchpad merge2_gates.sh).
+
+== m2-0152-tiles (--tiles on)
+lint rc=0 10s 
+types rc=0 5s 
+pixels rc=0 10s PASS
+editor rc=0 162s PASS
+composite rc=0 5s PASS
+commands rc=0 29s PASS
+export rc=0 144s PASS
+layered rc=0 3s PASS
+pxjobs rc=0 139s PASS
+document rc=0 37s PASS
+tiff rc=0 12s PASS
+relight rc=0 32s PASS
+selection rc=0 12s PASS
+limit rc=0 7s PASS
+maps rc=0 3s PASS
+loras rc=0 4s PASS
+recipes rc=0 5s PASS
+generate rc=0 80s PASS
+metadata rc=0 1s PASS
+skins rc=0 10s PASS
+toapis rc=0 38s PASS
+openrouter rc=0 8s PASS
+transparent rc=0 1s PASS
+boxes rc=0 11s RESULT PASS
+help rc=0 3s PASS
+cloudjobs rc=0 16s PASS
+key rc=0 15s PASS
+mcp rc=0 15s PASS
+mcpb rc=0 1s 
+assistant rc=0 35s PASS: 38 of 38 steps in 35 s
+ALL PASS
+
+== m2-0152-canvas (--tiles off)
+pixels rc=0 10s PASS
+composite rc=0 5s PASS
+export rc=0 10s PASS
+layered rc=0 4s PASS
+document rc=0 39s PASS
+tiff rc=0 12s PASS
+relight rc=0 33s PASS
+selection rc=0 5s PASS
+key rc=0 14s PASS
+ALL PASS
+
+== plain-Node tests
+px_test: PASS
+depth_test: all ok
+keying_test: PASS
+keymatte_test: keymatte_test: all PASS
+assistant_test: PASS
