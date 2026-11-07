@@ -108,7 +108,12 @@ code.
   the plan's §7 "The user's answers after K4"). **K26 done 2026-11-07** (the blur and sharpen brushes and frequency
   separation's blur in Rust, ABI 22: blur 400 px at fit 74.0 -> 32.7 ms per move at 15k, frequency separation of a 16 MP
   box 2,053 -> 1,012 ms; its review found **a memory leak since K1, in 0.1.52 too** (every thread's first wasm instance
-  kept after a release), fixed with K26, no hotfix (the user); "K26" in the plan's §7). **Next: U0.** The preparation, as it was:
+  kept after a release), fixed with K26, no hotfix (the user); "K26" in the plan's §7). **Merged the same day:** the GPT
+  Image 2.6 Comfy Cloud route with the mask rule (the user's "Refs behalten": with references or the Original the
+  partner node gets no mask, a plain note says so; `ae5c086`) and **item 54, Each area** (`0c36f36`, three review rounds
+  by workflows, the final gates on both backends green on the merged state with K26; the new gate `areas`; not offered
+  in the ComfyUI node: it needs node host members, open question for the user, as are local areas one at a time (built
+  so) and the thresholds 1/20,000 / 50 % / 1.5x; issue #9 is answered at the release). **Next: U0, after a `/clear`.** The preparation, as it was:
   It holds
   items 49 (CorridorKey Route B, B5 run live with the user, the movable Key dialog), 50 (LoRAs, MOSS-Image Edit), 51
   (GPT-Image-2.6), 52 (P-H3-Image) and the kernel steps D0, K5, W1, K12, K12b. A release review workflow (four lenses,
@@ -1169,6 +1174,11 @@ there; add a new flake there, with the date and what was ruled out.
 - `editor_test.py`'s `window.__t` is 600 × 300 by the time later steps run; call `new_canvas` first.
 - A test that sets `layer.blend` or `layer.visible` by hand leaves the composite version where it was, and the wand's
   coarse pass answers from before the change; go through `set_layer` (it calls `touch`).
+- Twin cases built from bytes (a mask's multiples of 1/255, premultiplied RGBA) cannot tell one rounding order or
+  `/ n` against `* (1 / n)` from another: their f64 sums are exact. Add floats over many decades and alphas near a
+  threshold (K4 / K26's mutation rounds, 2026-11-07).
+- A WeakRef garbage probe: `deref()` keeps its target alive to the end of the job it runs in, so `gc()` in the same job
+  never frees it; await a timer between `gc()` and the next `deref()` (`tools/kernels_release_test.js`).
 - Three 8-bit roundings in a blend formula are up to 1.45 levels off and a level from the shader on 29 % of the bytes of
   a half-transparent layer; one rounding of exact products is within 0.5. Measure a kernel against exact floats
   before blaming the other path.
