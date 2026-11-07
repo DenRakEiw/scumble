@@ -975,6 +975,13 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   match) instead of one more layer; and Compare (today `toggleCompare`, two result layers A / B with a divider; `\` held
   shows the base) also against the picture under the active layer, for a Realism Pass, relight or a filter layer. A design
   plan first (masks, undo, the `.scumble` format, the history, MCP). Medium.
+  **Planned 2026-11-07 by agent E** (merged `bf94c43`; read-only against `8689d49`, not critic-reviewed: re-read its
+  anchors at V0): `docs/PLAN_VARIANTS.md`: variants as hidden member layers shown as one row (`vset` / `vno` /
+  `vshown`, a `FEATURES` row with version 3 and no `minReader` raise), a run on the same crop box joins as a variant
+  made from the picture under the layer, Compare A / B of two variants and a new without / with split for any layer,
+  all on one stack-walk predicate `passShows` (V0, Full tier); sessions V0-V6, about 7.5-10 days (inferred), after K41
+  and item 56's split; **21 open questions for the user in its §10** (each with a recommendation). Found while reading:
+  the landing's missing undo step (`docs/BUGS.md`), DOCUMENTS.md's stale version numbers (fixed).
 - 61: **A contact shadow under a cut-out** (the user, 2026-11-07, from another agent's idea list): from a layer's alpha
   (a cutout, a key, a pasted reference) and the picture's depth map, a soft shadow layer of its own under it (where it
   touches the ground, falling off with the depth), procedural, no model. Small to medium.

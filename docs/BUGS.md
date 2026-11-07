@@ -31,6 +31,16 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 
 ## Open
 
+### A landed Generate result may not be one Ctrl+Z away, though `cancel_run` says it is (found 2026-11-07, read, not run; item 60's plan)
+
+Seen in the code only (`docs/PLAN_VARIANTS.md` §10 Q19): `addLayer` (`renderer/editor/inpaint_canvas.js`, the result's
+landing) records no undo step ("no undo step, but a waiting restore of the layer list must not drop it"), while
+`cancel_run`'s description (`renderer/commands.js`, `docs/COMMANDS.md`) tells agents "Ctrl+Z takes the result back once
+it is in". Whether Ctrl+Z removes a landed result depends on what the step before it was. To measure before any code:
+generate on the loopback provider after (a) a `layers` step, (b) a pixel stroke, (c) nothing; press Ctrl+Z once and
+say what comes back. Then either make the landing an undo step (the plan's recommendation, a small item of its own) or
+correct the description.
+
 ### A Comfy Cloud recipe with no LoRA section still says its stored rows stayed out in red (found 2026-11-07, the 0.1.52 release review, read)
 
 Seen in the code only: rows stored for a Comfy Cloud recipe whose LoRAs section is hidden (its routes declare no LoRA

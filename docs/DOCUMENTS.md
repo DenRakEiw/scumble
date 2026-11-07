@@ -275,8 +275,8 @@ listed, or listed as `required: false` and missing) leaves the history, with a n
 | Case | What happens |
 |---|---|
 | `format` is not `"scumble"`, `version` is not an integer >= 1, `document` is not an object, `files` is not an array | refused |
-| `minReader` (`version` when it is missing) above the reader's version (`READER_VERSION`, 5) | refused before anything is imported: "made by a newer Scumble ... update Scumble to open it" |
-| `version` above `FORMAT_VERSION` (1), `minReader` within reach | opens with a note; the tab's file is marked `newer`, and a save in place asks first (*Save As / Overwrite / Cancel*) |
+| `minReader` (`version` when it is missing) above the reader's version (`READER_VERSION`, 6) | refused before anything is imported: "made by a newer Scumble ... update Scumble to open it" |
+| `version` above `FORMAT_VERSION` (2), `minReader` within reach | opens with a note; the tab's file is marked `newer`, and a save in place asks first (*Save As / Overwrite / Cancel*) |
 | otherwise | opens |
 
 ### 6.3 Files into the mirror
