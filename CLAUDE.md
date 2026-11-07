@@ -960,6 +960,17 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   a lens blur or another parameter in pixels keeps its value and the effect doubles after a resize to 50 %. Scale the
   parameters that are in image pixels (a per-filter list first; some may already be relative) on Resize, a whole-picture
   upscale and the Realism Pass above factor 1. Small to medium.
+  **Built 2026-11-07 by agent D, merged (`72e9029`, after a review workflow's 6 findings fixed in `1e5537f`):**
+  `inpaint_filters.js` `scaleFilterParams(id, params, sx, sy)` scales every param that `scalesWithPicture` names
+  (`unit: "px"` unless `scales: false`, or `scales: true`: the grain's `plate_scale`; `filters.register` passes `scales`)
+  by sqrt(sx·sy), storing the exact product (float noise trimmed to ten significant digits, no step rounding, so a
+  round trip gives the value back and nothing drops to 0), clamped to min / max; `resizeImageNow` applies it inside its
+  canvas step, cancels previews before and again after the upload's await, scales a leftover `_undoPending` /
+  `_hoverSnap`, and names layers of plugins that are off (they keep their sizes). Resize, `landWholePicture` and the
+  Realism Pass above 1x all go through it; relight's lights and the film control points keep their own handlers; the
+  Film look's and B&W film's own grain stay fixed constants. Gate step `filter_sizes_in_pixels_follow_a_resize`; the
+  per-filter table is in the agent's report (summarised in the step's comment). Open for the user: a grain preset's
+  name after its size scaled (stays, or switch to Custom?), a status word when a value hits min / max.
 - 58: **The eyedropper averages 3 x 3 / 5 x 5** (the user, 2026-11-07): a Point / 3 x 3 / 5 x 5 row in the eyedropper's
   options (beside its existing Sample image / layer), so grain or sensor noise does not pick a single stray pixel. Small.
   **Built 2026-11-07 by agent B, merged (`67e866f`):** `buildOptsBar`'s Size row (`this.eyedropperSize` 1 / 3 / 5,
