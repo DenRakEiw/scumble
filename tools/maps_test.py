@@ -14,7 +14,8 @@ Second group "maps":
   * setMap, undo and redo swap the object.
   * .scumble save and open returns map's bytes exactly (unpack equals original) and its xf.
   * Autosave restore (the quit gate's restart pattern) returns map's bytes and xf.
-  * referencedFileKeys: map file is tracked, and drops out on the next save when map is removed.
+  * referencedFileKeys: map file is tracked; removed, it leaves the saved state but stays referenced while the
+    removal's undo step holds it, and drops out once no step does.
   * Document with map writes version 2 / minReader 1, one without writes 1 / 1.
   * load_image / setBaseFromCanvas clears maps.
   * mapStale check.
@@ -318,7 +319,13 @@ JS_MAPS = r"""
     await host.saveDocument(ed, { path: scumbleNoMapPath, copy: true, history: false });
     const refKeysWithoutMap = host.referencedFileKeys();
     if (mapBKey) {
-        check("removed map file drops out of referencedFileKeys on next save", !refKeysWithoutMap.includes(mapBKey), mapBKey);
+        // the removal's undo step holds the map, and Ctrl+Z puts it back with its file: the clean-up keeps the file while
+        // the step lives (review 2026-11-07 documents/D2+canvas-c/F1), the saved state no longer names it
+        const st = JSON.parse(ed.getValue());
+        check("the saved state no longer names the removed map", !(st.maps && st.maps.depth), st.maps);
+        check("a removed map's file stays referenced while its undo step holds it", refKeysWithoutMap.includes(mapBKey), mapBKey);
+        ed.clearUndo();
+        check("removed map file drops out of referencedFileKeys once no undo step holds it", !host.referencedFileKeys().includes(mapBKey), mapBKey);
     }
 
     // 8. mapStale check

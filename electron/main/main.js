@@ -230,7 +230,7 @@ async function serveScheme(request) {
         try {
             if (rel === "/upload/image" && request.method === "POST") return await mirror.handleUpload(request);
             if (rel === "/inpaint_canvas/upload" && request.method === "POST") return await mirror.handleRawUpload(request, url.search);
-            if (rel === "/view" && (request.method === "GET" || request.method === "HEAD")) return await mirror.handleView(url.search);
+            if (rel === "/view" && (request.method === "GET" || request.method === "HEAD")) return await mirror.handleView(url.search, { head: request.method === "HEAD" });
         } catch (err) {
             console.error("mirror", rel, err);
             return new Response("file mirror error: " + (err.message || err), { status: 500 });

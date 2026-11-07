@@ -5871,7 +5871,11 @@ export const host = {
         if (this.onDocsChanged) { try { this.onDocsChanged(); } catch (err) { console.warn(err); } }
     },
 
-    /** Every file ref ({filename, subfolder, type}) any open document mentions, as mirror keys. */
+    /**
+     * Every file ref ({filename, subfolder, type}) any open document mentions, as mirror keys: its state, its plugin data,
+     * and what its undo and redo steps and its named snapshots hold (an undo puts those files back and uploads none of
+     * them again: InpaintEditor.heldFileRefs), and the closed tabs.
+     */
     referencedFileKeys() {
         const keys = new Set();
         const walk = (v) => {
@@ -5885,6 +5889,9 @@ export const host = {
             if (ed.base && ed.base.ref) walk(ed.base.ref);
             walk(ed.pluginData);          // a 3D layer's model file (glb plugin), and whatever else a plugin keeps per document
             walk(ed.docExtra);            // the fields of a newer document this app does not know may name files too
+            // the undo and redo steps and the named snapshots: a deleted layer, a flattened or cropped base (not caught: a
+            // walk that fails stops the clean-up, which then removes nothing)
+            if (typeof ed.heldFileRefs === "function") walk(ed.heldFileRefs());
         }
         // the closed tabs Reopen Closed Tab can bring back
         for (const c of this.closed) {

@@ -111,8 +111,11 @@ export const RELIGHT_LIGHT_TYPES = [
     "cloud-filtered lighting", "fog-diffused lighting", "moonlight lighting", "starlight nighttime", "soft bokeh lighting", "harsh studio lighting",
 ];
 
-/** The status line of a load that left layers out: `newer` of a kind this version does not know, `failed` filter layers that would not load. */
-function leftOutText(newer, failed) {
+/**
+ * The status line of a load that left layers out: `newer` of a kind this version does not know, `failed` filter layers
+ * that would not load, `missing` the names of pixel layers whose file would not.
+ */
+function leftOutText(newer, failed, missing = []) {
     const parts = [];
     if (newer > 0) {
         const one = newer === 1;
@@ -120,6 +123,12 @@ function leftOutText(newer, failed) {
         parts.push(`${newer} layer${one ? "" : "s"} saved by ${hostText("newerApp", "a newer version")} ${one ? "was" : "were"} left out: this version cannot show ${one ? "it" : "them"}, and the next save drops ${one ? "it" : "them"}.`);
     }
     if (failed > 0) parts.push(`${failed} filter layer${failed === 1 ? "" : "s"} could not be read and ${failed === 1 ? "was" : "were"} left out.`);
+    // a pixel layer whose file would not load (gone from the store, or not a picture): named, the first few
+    if (missing.length) {
+        const n = missing.length, one = n === 1;
+        const names = missing.slice(0, 3).map((s) => `"${s}"`).join(", ") + (n > 3 ? ` and ${n - 3} more` : "");
+        parts.push(`${n} layer${one ? "" : "s"} could not be read and ${one ? "was" : "were"} left out: ${names}.`);
+    }
     return parts.join(" ");
 }
 /** What an undo step is called in the Undo history when its site gives no label of its own. */
@@ -479,6 +488,24 @@ function viewUrl(ref) {
         type: ref.type || "input",
     });
     return api.apiURL("/view?" + p.toString());
+}
+
+/** A ref's mirror key ("type/subfolder/filename", as host.referencedFileKeys and the clean-up write it). */
+function refKey(ref) {
+    return ref && typeof ref.filename === "string" ? `${ref.type || "input"}/${ref.subfolder || ""}/${ref.filename}` : "";
+}
+
+/**
+ * Is this file gone from the store /view reads (the app's local store, which asks a connected ComfyUI for what it lacks;
+ * the node's ComfyUI)? A HEAD request: true only on a 404, so a failed request or another answer leaves the file be.
+ */
+async function fileGone(ref) {
+    try {
+        const r = await fetch(viewUrl(ref), { method: "HEAD", cache: "no-store" });
+        return r.status === 404;
+    } catch (_) {
+        return false;
+    }
 }
 
 /** An undo snapshot's image: the URL may still be encoding when undo is pressed. */
@@ -3203,6 +3230,7 @@ class InpaintEditor {
         this._docKeyUp = null;
         if (this.textEdit) this.endTextEdit(true);
         this.closeFlyout();
+        this.dropFlyoutListener();
         this.closeTipPicker();   // its window listener and preview slices go with the editor (8c14eee)
         // a relight nudge or wheel burst still in its 300 ms is dropped, not committed: its timer and flush, the snapshot it
         // would have pushed (the layer's next edit would take it as its own "before") and its preview
@@ -4666,6 +4694,16 @@ class InpaintEditor {
     scheduleFlyoutClose() {
         clearTimeout(this._flyClose);
         this._flyClose = setTimeout(() => this.closeFlyout(), 160);
+    }
+
+    /**
+     * The window's capturing pointerdown listener the first flyout adds (openFlyout, openChoiceList: a press outside
+     * closes the flyout). It closes over the editor, so one left on the window kept a closed tab's editor with all its
+     * pixels for the rest of the session; close() and destroy() take it off, and the next flyout adds it again.
+     */
+    dropFlyoutListener() {
+        if (this._flyDocDown) window.removeEventListener("pointerdown", this._flyDocDown, true);
+        this._flyDocDown = null;
     }
 
     closeFlyout() {
@@ -10783,6 +10821,8 @@ class InpaintEditor {
      */
     async heldEdit() {
         for (let h; (h = this.removePending || this.healPending || this.liquifyPending);) await h.catch(() => {});
+        // an undo's restored files, stored again when they had left the store (recheckRestoredFiles; it never rejects)
+        while (this._fileCheck) await this._fileCheck;
     }
 
     /** What the status line says while a held gesture waits (a press or a key meanwhile). */
@@ -14589,6 +14629,9 @@ class InpaintEditor {
             const outgoing = this.layers;
             this.layers = snap.layers.map((l) => installLayerAliases({ ...l, _maskedValid: false, _mcache: null, _fcache: null }, this.pixels));
             this.releaseDroppedEdits(outgoing);
+            // the layers that come back keep their files and are not uploaded again: one whose file left the store meanwhile
+            // (a clean-up, a file removed by hand) is uploaded from its pixels
+            this.recheckRestoredFiles({ layers: this.layers, outgoing });
             this.groups = (snap.groups || []).map((g) => ({ ...g }));
             this.activeLayerId = this.layers.some((l) => l.id === snap.activeLayerId) ? snap.activeLayerId : null;
             this.uploaded.baseHash = null;
@@ -14636,6 +14679,7 @@ class InpaintEditor {
             const resized = snap.width !== this.width || snap.height !== this.height;
             this.restoreGeometry(snap);
             this.groups = (snap.groups || []).map((g) => ({ ...g }));
+            if (snap.base !== this.base) this.recheckRestoredFiles({ base: snap.base });   // the layers below are all uploaded again
             this.base = snap.base;
             this.width = snap.width;
             this.height = snap.height;
@@ -14697,6 +14741,8 @@ class InpaintEditor {
             const selImg = images.selection || null;   // null: its encode failed, an empty selection
             this.restoreGeometry(snap);
             this.groups = (snap.groups || []).map((g) => ({ ...g }));
+            // the base comes back with its file and is not uploaded again (the layers below are, all of them)
+            if (snap.base !== this.base) this.recheckRestoredFiles({ base: snap.base });
             this.base = snap.base;
             this.width = snap.width;
             this.height = snap.height;
@@ -14853,6 +14899,62 @@ class InpaintEditor {
             }
         }
         this.draw();
+    }
+
+    /**
+     * After an undo or redo that put back layers (`layers`: the layers step's, against the `outgoing` ones it replaced) or a
+     * base (`base`: a canvas or turn step's) with the files they had: those steps upload nothing again, so a file that left
+     * the store since (Settings › Local files › Clean up, a file removed by hand) would be named by the next save and the
+     * next start and found by neither. Each file not named by what the document held a moment ago is asked for (a HEAD
+     * request, after this task), and one that is gone is uploaded again from the pixels the document holds: a layer is
+     * marked for the next syncLayers (started at once), the base is uploaded here. `heldEdit()` waits for it, so a
+     * document save does not name the old file. Clean up keeps what the steps hold (heldFileRefs); this is the backstop.
+     */
+    recheckRestoredFiles({ layers = null, outgoing = [], base = null } = {}) {
+        const items = [];
+        if (layers) {
+            const held = new Set();
+            for (const l of outgoing || []) { if (l && l.ref) held.add(refKey(l.ref)); if (l && l.maskRef) held.add(refKey(l.maskRef)); }
+            for (const l of layers) {
+                if (!l) continue;
+                if (l.px && l.ref && !l.dirty && !held.has(refKey(l.ref))) items.push({ layer: l, key: "ref", ref: l.ref });
+                if (l.maskPx && l.maskRef && !l.maskDirty && !held.has(refKey(l.maskRef))) items.push({ layer: l, key: "maskRef", ref: l.maskRef });
+            }
+        }
+        if (base && base.ref && base.px) items.push({ base, ref: base.ref });
+        if (!items.length) return;
+        const run = (this._fileCheck || Promise.resolve())
+            .then(() => this.runFileChecks(items))
+            .catch((err) => console.warn("Inpaint Canvas: a restored file could not be stored again", err));
+        this._fileCheck = run;
+        run.then(() => { if (this._fileCheck === run) this._fileCheck = null; });
+    }
+
+    /** recheckRestoredFiles' requests and uploads, one item after the other; an item changed meanwhile is left alone. */
+    async runFileChecks(items) {
+        let layers = false, base = false;
+        // not the document's any more (another undo, a delete): the step that holds it checks again when it comes back
+        const live = (it) => (it.layer ? this.layers.includes(it.layer) && it.layer[it.key] === it.ref : this.base === it.base && it.base.ref === it.ref);
+        for (const it of items) {
+            if (this._destroyed) return;
+            if (!live(it)) continue;
+            if (!(await fileGone(it.ref))) continue;
+            if (this._destroyed || !live(it)) continue;
+            if (it.layer) {
+                // an edit since marked it already, or the next syncLayers uploads it (the PNG's hash names the file)
+                if (it.key === "ref") it.layer.dirty = true; else it.layer.maskDirty = true;
+                layers = true;
+                console.warn("Inpaint Canvas: a restored layer's file was gone; it is stored again", it.ref.filename);
+            } else {
+                const { ref } = await this.uploadBase(it.base.px);
+                // every step that holds this base names the new file with it (the base is never written, only replaced)
+                if (it.base.ref === it.ref) { it.base.ref = ref; base = true; }
+                console.warn("Inpaint Canvas: the restored base's file was gone; it is stored again as", ref && ref.filename);
+            }
+        }
+        if (this._destroyed || !(layers || base)) return;
+        if (layers) await this.syncLayers();
+        else this.notifyChanged();   // syncLayers ends with it
     }
 
     /**
@@ -24583,6 +24685,44 @@ class InpaintEditor {
         return out;
     }
 
+    /**
+     * Every file ref (`{ filename, subfolder, type }`) the undo and redo steps and the named snapshots hold: each layer's
+     * `ref` and `maskRef` in a layers, canvas or turn step, a filter layer's LUT and grain plate (a filter step's too), a
+     * canvas or turn step's base, the document maps' files, and the plugins' data a step keeps. An undo puts these back
+     * with their refs and uploads none of them again, so Settings › Local files › Clean up keeps them
+     * (host.referencedFileKeys); it removed them, and an undo across the clean-up left a layer or the whole picture
+     * naming a file the next start could not find. The pixels the steps hold are not walked.
+     */
+    heldFileRefs() {
+        const out = [];
+        const add = (r) => { if (r && typeof r === "object" && typeof r.filename === "string" && r.filename) out.push(r); };
+        // the plugins' data is plain JSON (pluginDataCopy): walked whole, as host.referencedFileKeys walks the document's
+        const json = (v, depth = 0) => {
+            if (!v || typeof v !== "object" || depth > 32) return;
+            if (Array.isArray(v)) { for (const x of v) json(x, depth + 1); return; }
+            add(v);
+            for (const x of Object.values(v)) json(x, depth + 1);
+        };
+        const layer = (l) => {
+            if (!l) return;
+            add(l.ref); add(l.maskRef);
+            add(l.lut && l.lut.ref); add(l.plate && l.plate.ref);
+        };
+        const map = (m) => { if (m && typeof m === "object") { add(m.ref); add(m.guideRef); } };
+        for (const list of [this.undo || [], this.redo || [], (this.snapshots || []).map((s) => s && s.snap)]) {
+            for (const st of list) {
+                if (!st) continue;
+                add(st.base && st.base.ref);                        // a canvas or turn step's base
+                for (const l of st.layers || []) layer(l);           // a layers, canvas or turn step's layer records
+                add(st.lut && st.lut.ref); add(st.plate && st.plate.ref);   // a filter step
+                if (st.kind === "maps") map(st.prev);
+                if (st.maps && typeof st.maps === "object") for (const m of Object.values(st.maps)) map(m);   // a turn step's maps
+                if (st.pluginData) json(st.pluginData);              // a data, canvas or turn step's plugin data
+            }
+        }
+        return out;
+    }
+
     async freeHelperModels() {
         const freed = this.releaseCaches({ deep: true });
         const mb = Math.round(freed / 1048576);
@@ -24861,8 +25001,9 @@ class InpaintEditor {
             // a list drawn while a layer loads (an await below) must not drop a group whose layers are not in yet
             this.holdGroups = (this.holdGroups || 0) + 1;
             // what is left out says so (docs/PLAN_0_1_50.md Q4): a layer of a kind a newer version wrote without a file,
-            // and a filter layer that would not load
+            // a filter layer that would not load, and a pixel layer whose file would not (by name: `missing`)
             let newer = 0, failed = 0;
+            const missing = [];
             this.leftOut = null;
             this._loadNote = null;
             try {
@@ -24941,11 +25082,12 @@ class InpaintEditor {
                         if (l.kind === "text") this.textCounter = (this.textCounter || 0) + 1;
                     } catch (err) {
                         console.warn("Inpaint Canvas: layer missing", l.ref, err);
+                        missing.push(String(l.name || l.id || "layer"));
                     }
                 }
             } finally { this.holdGroups--; }
-            if (newer || failed) {
-                this.leftOut = { newer, failed, note: leftOutText(newer, failed) };
+            if (newer || failed || missing.length) {
+                this.leftOut = { newer, failed, missing: missing.length, names: missing, note: leftOutText(newer, failed, missing) };
                 this.setStatus(this.leftOut.note, "warn");
                 this._loadNote = { note: this.leftOut.note, lines: LOAD_NOTE_LINES, until: Date.now() + LOAD_NOTE_MS };
             }
@@ -25346,6 +25488,8 @@ class InpaintEditor {
         clearTimeout(this._refLayTimer);
         if (this._compositor) { try { this._compositor.dispose(); } catch (_) { /* context gone */ } this._compositor = null; }
         this.close();
+        this.closeFlyout();
+        this.dropFlyoutListener();   // close() returns early for an editor that is not open
         if (this.promptField) this.promptField.destroy();   // its document listener and the context callback
         // after close(), which commits an open text edit: that step's blob URL is revoked with the rest
         this.clearUndo();   // the blob URLs of the whole-layer steps are revoked, not left behind
