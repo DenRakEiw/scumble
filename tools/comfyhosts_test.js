@@ -3,7 +3,7 @@
 // The gate comfyview runs it first.
 "use strict";
 
-const { cloudAuthUrl, popupAction, navigationAllowed, CLOUD_URL } = require("../electron/main/comfyhosts.js");
+const { cloudAuthUrl, popupAction, navigationAllowed, permissionAllowed, DENIED_PERMISSIONS, CLOUD_URL } = require("../electron/main/comfyhosts.js");
 
 const results = [];
 function check(what, ok, detail) {
@@ -20,6 +20,12 @@ check("other http(s) popups go to the system browser, anything else is denied", 
 const origin = "http://127.0.0.1:8188";
 check("My ComfyUI: the page stays on its origin", navigationAllowed(origin + "/x", origin, "comfy") && !navigationAllowed("https://accounts.google.com/", origin, "comfy") && !navigationAllowed("scumble://app/index.html", origin, "comfy"));
 check("Comfy Cloud: its origin and the sign-in hosts", navigationAllowed(CLOUD_URL + "/cloud/login", CLOUD_URL, "cloud") && navigationAllowed("https://github.com/login", CLOUD_URL, "cloud") && !navigationAllowed("https://evil.com/", CLOUD_URL, "cloud"));
+
+// H1: the session's permissions (comfyview.js guardPermissions), in Electron's names
+const denied = ["media", "geolocation", "midi", "midiSysex", "hid", "serial", "usb", "openExternal"];
+const granted = ["clipboard-read", "clipboard-sanitized-write", "fullscreen", "notifications", "pointerLock", "keyboardLock", "fileSystem", "storage-access", "window-management", "idle-detection", "speaker-selection", "unknown"];
+check("camera and microphone (media), location, MIDI, HID, serial, USB and a non-web scheme handed to the OS (openExternal) are denied", denied.every((p) => !permissionAllowed(p)) && DENIED_PERMISSIONS.size === denied.length, denied.filter(permissionAllowed).join(" "));
+check("the rest stays granted (the clipboard, fullscreen, notifications ...)", granted.every(permissionAllowed), granted.filter((p) => !permissionAllowed(p)).join(" "));
 
 const failed = results.filter((x) => !x).length;
 console.log(`\n${results.length - failed} of ${results.length} checks passed`);

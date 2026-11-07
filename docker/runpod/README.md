@@ -25,6 +25,10 @@ docker push <dockerhub-user>/scumble-comfyui:latest
   - `SCUMBLE_RECIPES`: `flux2_klein_9b` (default) or `none`
   - `SCUMBLE_HELPERS`: `1` to install the RMBG / Qwen-VL helper packs (select by text
     with SAM3 needs the ComfyUI SAM3 nodes too; in-app ONNX helpers are phase 3)
+  - `SCUMBLE_NODE_REF`: the Inpaint Canvas commit to check out instead of the one
+    `provision.sh` pins, as the full 40-character commit id (or a branch or tag; a
+    short id fails the shallow fetch). Every pack is checked out at a pinned commit,
+    and a restart does not pull: change the commit in `provision.sh` to move a pack
 
 ## In the app
 

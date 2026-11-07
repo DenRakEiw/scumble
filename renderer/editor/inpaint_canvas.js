@@ -34,7 +34,7 @@ import { JOB_TIMINGS, STEP_MARKS, markStep, editorWorker, workerCall, editorPool
 import { buildEditorModal } from "./inpaint_modal.js";
 import { encodeCanvas, canvasToBlob, partsUsable, partsRun, partsFlights, bandPause, partsFailed, nextPartsSeq, encodeTilePixels, encodeBands, encodeRows } from "./inpaint_encode.js";
 import { SUBFOLDER, uploadBlob, uploadCanvas, uploadPixels } from "./inpaint_upload.js";
-import { LAYERED_EXT, isPsd, isOra, readPsd, readOra } from "./inpaint_layered.js";
+import { LAYERED_EXT, isPsd, isOra, readPsd, readOra, inflateAtMost } from "./inpaint_layered.js";
 import { THEME } from "./inpaint_theme.js";
 import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap } from "./inpaint_resample.js";
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
@@ -571,12 +571,6 @@ async function pixelsFromTiff(blob, Cls, progress = null) {
  */
 function psdOnPool(file) {
     return InpaintEditor.psdOnPool !== false && typeof Worker === "function" && typeof Blob === "function" && file instanceof Blob && !editorPool().off;
-}
-
-/** zlib ("deflate") or raw ("deflate-raw") bytes inflated by the browser. */
-async function inflateBytes(bytes, format) {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 /** The size an SVG declares: width / height attributes (px, pt, mm, cm, in, pc at 96 dpi), else the viewBox. */
@@ -18649,11 +18643,15 @@ class InpaintEditor {
         markStep("layered_open", "read", { MB: bytes.length / 1048576 });
         // the K0a harness: the inflates' time (they run one after another), and the layer loop's parts below
         let inflateMs = 0, inflates = 0, maskMs = 0, rgbaMs = 0, bitmapMs = 0, fromImageMs = 0, t0 = 0;
-        const timed = async (b, format) => {
+        // each inflate stops at the bytes the reader keeps (inpaint_layered.js inflateAtMost, the pool's inflater too)
+        const timed = async (b, format, cap) => {
             const t = performance.now();
-            try { return await inflateBytes(b, format); } finally { inflateMs += performance.now() - t; inflates++; }
+            try { return await inflateAtMost(b, format, cap); } finally { inflateMs += performance.now() - t; inflates++; }
         };
-        const doc = kind === "psd" ? await readPsd(bytes, { inflate: (b) => timed(b, "deflate") }) : await readOra(bytes, { inflateRaw: (b) => timed(b, "deflate-raw") });
+        // the size is checked from the header before anything else is read or made (H1 S5), as the pool route does
+        const onHeader = (h) => this.checkLayeredSize(h.width, h.height);
+        const doc = kind === "psd" ? await readPsd(bytes, { inflate: (b, cap) => timed(b, "deflate", cap), onHeader })
+            : await readOra(bytes, { inflateRaw: (b, cap) => timed(b, "deflate-raw", cap), onHeader });
         markStep("layered_open", "parsed", { inflateMs, inflates });
         this.checkLayeredSize(doc.width, doc.height);
         for (const L of doc.layers) {

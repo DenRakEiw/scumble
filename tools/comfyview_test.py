@@ -7,7 +7,8 @@ opener passes a stub's URL):
 - with no target the window shows the bar's start page and loads nothing; a second open brings the same window to
   the front; its bounds come back after a close;
 - on the stub the page loads in its own process and has no window.scumble, no window.comfybar and no require; a
-  navigation away from the stub's origin and a window.open are refused;
+  navigation away from the stub's origin and a window.open are refused; its session denies camera, microphone,
+  location and MIDI (looked up and asked for) and grants notifications and the clipboard (H1);
 - Ctrl+S in the page reaches the page and no menu command of Scumble's, also after Scumble's menu was built again;
 - the auth of Settings › ComfyUI reaches the page and its websocket: basic, bearer and a custom header; a wrong
   password ends on the start page with the 401 (no prompt, no loop); a server that does not answer says so;
@@ -36,7 +37,10 @@ opener passes a stub's URL):
 - a page that keeps unsaved changes (beforeunload, as ComfyUI does): Reload asks, Stay ends on the page as it was
   (ready to save, the window not stuck on "Loading"), Leave loads it again;
 - a page whose ComfyUI sets up after the wait gave up (many node packs): the save buttons are on with the page, a
-  save before window.app says so, and once it is there the save works without a reload.
+  save before window.app says so, and once it is there the save works without a reload;
+- H1: the main window refuses a navigation to scumble://app/comfy/* and to another file of the scheme, and still
+  answers a command. The V4 step also runs tools/links_test.js (links.js: what goes to the system browser, where the
+  main window may go) and tools/comfyprobe_test.js (Settings › ComfyUI's Test, its requests together) in plain Node.
 
 It refuses an instance connected to ComfyUI and a profile that holds a ComfyUI secret; the settings and the secret it
 writes are put back at the end whatever happens.
@@ -68,6 +72,17 @@ const ws = new WebSocket(location.origin.replace(/^http/, 'ws') + '/ws?clientId=
 ws.onopen = () => { document.title = 'open'; };
 ws.onclose = (e) => { if (document.title !== 'open') document.title = 'closed ' + e.code; };
 </script><p>stub ComfyUI</p>"""
+
+# H1: what the page gets of the permissions it looks up or asks for (camera / microphone only asked once looked up denied)
+PERMS_JS = """(async () => {
+    const q = async (name) => { try { return (await navigator.permissions.query({ name })).state; } catch (e) { return 'error ' + e.name; } };
+    const out = {};
+    for (const n of ['geolocation', 'camera', 'microphone', 'midi', 'notifications', 'clipboard-write']) out[n] = await q(n);
+    out.mic = out.microphone === 'denied' ? await navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => { s.getTracks().forEach((t) => t.stop()); return 'granted'; }, (e) => e.name) : 'not asked';
+    out.midiAccess = await navigator.requestMIDIAccess().then(() => 'granted', (e) => e.name);
+    out.notify = await Notification.requestPermission();
+    return out;
+})()"""
 
 # a fake ComfyUI frontend for V2: window.app records the graph it is given ("throw": its load fails)
 FAKE_APP = """<script>
@@ -245,7 +260,10 @@ class Gate:
             await c.eval("location.href = 'scumble://app/index.html'; 1")
             await asyncio.sleep(0.8)
             here = await c.eval("location.href")
-            return {**g, "openDenied": pop, "after": here}
+            # H1: the session's permissions (comfyview.js guardPermissions). Looked up first; a device is asked for only
+            # once the lookup says denied, so a broken handler never opens the microphone here
+            perms = await c.eval(PERMS_JS, timeout=30)
+            return {**g, "openDenied": pop, "after": here, "perms": perms}
         g = await on_target(self.stub.url, inside)
         if g["title"] != "open":
             raise Exception("the page's websocket did not open: " + json.dumps(g))
@@ -253,6 +271,15 @@ class Gate:
             raise Exception("the page reaches the app: " + json.dumps(g))
         if not g["openDenied"] or not g["after"].startswith(self.stub.url):
             raise Exception("the page left the stub: " + json.dumps(g))
+        p = g["perms"]
+        want = {"geolocation": "denied", "camera": "denied", "microphone": "denied", "midi": "denied", "notifications": "granted",
+                "clipboard-write": "granted", "mic": "NotAllowedError", "notify": "granted"}
+        bad = {k: p.get(k) for k, v in want.items() if p.get(k) != v}
+        # a refused MIDI request: NotAllowedError (older Chromium: SecurityError), never granted
+        if p.get("midiAccess") not in ("NotAllowedError", "SecurityError"):
+            bad["midiAccess"] = p.get("midiAccess")
+        if bad:
+            raise Exception("the page's permissions: " + json.dumps(bad) + " in " + json.dumps(p))
         return g
 
     async def keys(self):
@@ -479,7 +506,7 @@ class Gate:
         # plain Node: the sign-in hosts (V4) and a detached recipe run through the Comfy Cloud adapter (V5b)
         root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
         out = {}
-        for name in ("comfyhosts_test.js", "cloudgraph_test.js"):
+        for name in ("comfyhosts_test.js", "cloudgraph_test.js", "links_test.js", "comfyprobe_test.js"):
             r = subprocess.run(["node", os.path.join(root, "tools", name)], cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=120)
             tail = r.stdout.strip()
             if r.returncode != 0 or not tail.endswith("PASS"):
@@ -747,6 +774,22 @@ class Gate:
         await self.close()
         return {"before": i1["saveNote"][:60], "after": i2["saveNote"][:60]}
 
+    async def main_stays(self):
+        # links.js appPage: a navigation of the main window to the ComfyUI proxy (whose answers carry the server's content
+        # types) or to another file of the scheme is refused, and the Bridge keeps its readiness for it (a command answers)
+        before = await self.c.eval("location.href")
+        tries = ["scumble://app/comfy/view?filename=gate.html&type=input", "scumble://app/comfybar.html"]
+        for u in tries:
+            await self.c.eval("location.href = %s; 1" % json.dumps(u))
+            await asyncio.sleep(1.0)
+            here = await self.c.eval("location.href")
+            if here != before:
+                await self.c.call("Page.navigate", url="scumble://app/index.html")
+                await asyncio.sleep(6)
+                raise Exception(f"the main window went to {here} (from {before})")
+        pong = await self.js("const cmds = await import('./commands.js'); return (await cmds.commands.run('ping', {})) ? 'answered' : 'no answer';")
+        return {"stayed": before, "tried": tries, "ping": pong}
+
     async def unreachable(self):
         await self.close()
         s = socket.socket()
@@ -806,6 +849,7 @@ async def main():
             await g.step("V6: the cloud mode lists the Comfy Cloud recipes alone, api none of them, each mode its last recipe", g.cloud_mode)
             await g.step("a page with unsaved changes: Reload asks, Stay keeps it ready to save, Leave loads it again", g.unsaved)
             await g.step("a page whose ComfyUI sets up late: saving asks the page again, no reload needed", g.late_app)
+            await g.step("H1: the main window stays on the app's page (no navigation to scumble://app/comfy/*)", g.main_stays)
         finally:
             await g.close()
             await g.cleanup_recipes()

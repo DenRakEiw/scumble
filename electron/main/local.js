@@ -23,19 +23,49 @@ function socketPath(userData) {
     return path.join(userData, "scumble.sock");
 }
 
-function lines(socket, onLine) {
-    let buf = "";
+// The longest line either side takes, in UTF-16 code units: just under V8's longest string (2^29 - 24 on 64-bit), so
+// every line that could be read before still is (a select_mask array or a base64 picture at 15k), and a line that
+// never ends stops here instead of growing until the string throws on the main process (H1 S6).
+const MAX_LINE = 500 * 1024 * 1024;
+const sizeText = (n) => (n >= 1048576 ? `${Math.round(n / 1048576)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/**
+ * One JSON message per line from `socket` to `onLine`. The part of a line not ended yet is kept as its chunks and only
+ * each new chunk is searched for the newline, so a long line costs its length once (the whole buffer copied and
+ * searched again on every chunk was quadratic: seconds of the main process for a 100 MB line). A line longer than
+ * `max` ends the reading: `onTooLong()` is called once and nothing more is read from the socket.
+ */
+function lines(socket, onLine, { max = MAX_LINE, onTooLong = null } = {}) {
+    let parts = [], size = 0, dead = false;
     socket.setEncoding("utf8");
+    const take = (line) => {
+        line = line.trim();
+        if (!line) return;
+        let msg;
+        try { msg = JSON.parse(line); } catch (_) { return; }
+        onLine(msg);
+    };
+    const tooLong = () => {
+        dead = true;
+        parts = []; size = 0;
+        if (onTooLong) onTooLong(); else socket.destroy();
+    };
     socket.on("data", (chunk) => {
-        buf += chunk;
-        let i;
-        while ((i = buf.indexOf("\n")) >= 0) {
-            const line = buf.slice(0, i).trim();
-            buf = buf.slice(i + 1);
-            if (!line) continue;
-            let msg;
-            try { msg = JSON.parse(line); } catch (_) { continue; }
-            onLine(msg);
+        if (dead) return;
+        let from = 0, i;
+        while ((i = chunk.indexOf("\n", from)) >= 0) {
+            if (size + (i - from) > max) { tooLong(); return; }
+            const piece = chunk.slice(from, i);
+            from = i + 1;
+            let line = piece;
+            if (parts.length) { parts.push(piece); line = parts.join(""); parts = []; size = 0; }
+            take(line);
+            if (dead) return;
+        }
+        if (from < chunk.length) {
+            size += chunk.length - from;
+            if (size > max) { tooLong(); return; }
+            parts.push(from ? chunk.slice(from) : chunk);
         }
     });
 }
@@ -49,10 +79,11 @@ function write(socket, obj) {
 // ---- server (inside the running app) ----------------------------------------------------------
 
 class LocalServer extends EventEmitter {
-    /** @param bridge the command bridge (bridge.js) */
-    constructor(bridge) {
+    /** @param bridge the command bridge (bridge.js); `maxLine` the longest request line taken (a test makes it small) */
+    constructor(bridge, { maxLine = MAX_LINE } = {}) {
         super();
         this.bridge = bridge;
+        this.maxLine = maxLine;
         this.server = null;
         this.clients = new Set();
         this.path = null;
@@ -64,7 +95,10 @@ class LocalServer extends EventEmitter {
         if (process.platform !== "win32") { try { fs.unlinkSync(this.path); } catch (_) { /* none */ } }
         this.server = net.createServer((socket) => this._accept(socket));
         this.server.on("error", (err) => console.error("local command socket:", err.message));
-        this.server.listen(this.path);
+        // a Unix socket is made with the process's umask: 077 for its bind, so only this user can connect (H1 S6). The
+        // bind of a path is synchronous inside listen(), so the umask is back before any other file is made
+        const umask = process.platform !== "win32" ? process.umask(0o077) : null;
+        try { this.server.listen(this.path); } finally { if (umask !== null) process.umask(umask); }
         return this.path;
     }
 
@@ -73,6 +107,14 @@ class LocalServer extends EventEmitter {
         this.emit("clients", this.clients.size);
         socket.on("close", () => { this.clients.delete(socket); this.emit("clients", this.clients.size); });
         socket.on("error", () => { /* closed by the peer */ });
+        const tooLong = () => {
+            // the reason, then the connection ends (destroyed once the line is out, or after a second)
+            const end = () => socket.destroy();
+            const t = setTimeout(end, 1000);
+            if (t.unref) t.unref();
+            if (socket.destroyed || !socket.writable) { end(); return; }
+            socket.end(JSON.stringify({ id: null, ok: false, error: `a request line longer than ${sizeText(this.maxLine)}: the connection is closed` }) + "\n", end);
+        };
         lines(socket, async (msg) => {
             if (!msg || msg.id == null) return;
             let out;
@@ -85,7 +127,7 @@ class LocalServer extends EventEmitter {
                 out = { id: msg.id, ok: false, error: String((err && err.message) || err) };
             }
             write(socket, out);
-        });
+        }, { max: this.maxLine, onTooLong: tooLong });
     }
 
     broadcast(obj) {
@@ -103,12 +145,19 @@ class LocalServer extends EventEmitter {
 // ---- client (the --mcp / --cmd process) --------------------------------------------------------
 
 class LocalClient extends EventEmitter {
-    constructor(socket) {
+    /** `maxLine` the longest answer line taken (a test makes it small). */
+    constructor(socket, { maxLine = MAX_LINE } = {}) {
         super();
         this.socket = socket;
         this.pending = new Map();
         this.seq = 0;
         this.closed = false;
+        const gone = (why = "Scumble closed the connection") => {
+            if (this.closed) return;
+            this.closed = true;
+            for (const [id, p] of this.pending) { this.pending.delete(id); p.reject(new Error(why)); }
+            this.emit("close");
+        };
         lines(socket, (msg) => {
             if (msg.event) { this.emit(msg.event); return; }
             const p = this.pending.get(msg.id);
@@ -116,23 +165,17 @@ class LocalClient extends EventEmitter {
             this.pending.delete(msg.id);
             if (msg.ok) p.resolve(msg.result === undefined ? null : msg.result);
             else p.reject(new Error(msg.error || "command failed"));
-        });
-        const gone = () => {
-            if (this.closed) return;
-            this.closed = true;
-            for (const [id, p] of this.pending) { this.pending.delete(id); p.reject(new Error("Scumble closed the connection")); }
-            this.emit("close");
-        };
-        socket.on("close", gone);
-        socket.on("error", gone);
+        }, { max: maxLine, onTooLong: () => { gone(`Scumble's answer was longer than ${sizeText(maxLine)}: the connection is closed`); socket.destroy(); } });
+        socket.on("close", () => gone());
+        socket.on("error", () => gone());
     }
 
     /** Connect to the running instance; resolves with a client or rejects when none listens. */
-    static connect(userData, timeout = 2000) {
+    static connect(userData, timeout = 2000, opts = {}) {
         return new Promise((resolve, reject) => {
             const socket = net.createConnection(socketPath(userData));
             const t = setTimeout(() => { socket.destroy(); reject(new Error("no answer from the local socket")); }, timeout);
-            socket.once("connect", () => { clearTimeout(t); resolve(new LocalClient(socket)); });
+            socket.once("connect", () => { clearTimeout(t); resolve(new LocalClient(socket, opts)); });
             socket.once("error", (err) => { clearTimeout(t); reject(err); });
         });
     }
@@ -152,4 +195,4 @@ class LocalClient extends EventEmitter {
     close() { this.socket.destroy(); }
 }
 
-module.exports = { LocalServer, LocalClient, socketPath };
+module.exports = { LocalServer, LocalClient, socketPath, MAX_LINE, _lines: lines };

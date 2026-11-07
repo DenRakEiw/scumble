@@ -282,6 +282,20 @@ function userDir() {
     return path.join(app.getPath("userData"), "recipes");
 }
 
+// A recipe id is a file name in the recipes folder (save writes `<id>.json`, remove looks it up): letters, digits, ".",
+// "_" and "-" only, never a path separator (H1 S9a). Every shipped id and every id the app makes (`slug`) is one.
+const SAFE_ID = /^[A-Za-z0-9._-]+$/;
+const safeId = (id) => SAFE_ID.test(String(id));
+
+/** An id read from a recipe file made safe: what is not a letter, digit, ".", "_" or "-" becomes "_" (a warning says so). */
+function readId(id, file) {
+    const s = String(id);
+    if (SAFE_ID.test(s)) return id;
+    const fixed = s.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64) || "recipe";
+    console.warn(`recipe ${file}: its id ${JSON.stringify(s).slice(0, 80)} holds characters other than letters, digits, ".", "_" and "-"; read as "${fixed}"`);
+    return fixed;
+}
+
 async function readDir(dir, source) {
     const out = [];
     let names = [];
@@ -289,7 +303,7 @@ async function readDir(dir, source) {
     for (const n of names) {
         try {
             const r = JSON.parse(await fsp.readFile(path.join(dir, n), "utf8"));
-            r.id = r.id || n.replace(/\.json$/, "");
+            r.id = readId(r.id || n.replace(/\.json$/, ""), n);
             r.file = n;
             r.source = source;
             r.kind = r.kind === "provider" ? "provider" : "comfy";
@@ -842,16 +856,28 @@ async function list(builtinDir) {
     return [...user, ...builtin.filter((r) => !seen.has(r.id))];
 }
 
+/** Remove the user recipe `id`: the file it was read from (its `file`, which may differ from `<id>.json`). */
 async function remove(id) {
-    const safe = String(id || "").replace(/[^A-Za-z0-9._-]/g, "");
-    if (!safe) throw new Error("bad recipe id");
-    await fsp.unlink(path.join(userDir(), safe + ".json"));
+    const want = String(id || "");
+    if (!safeId(want)) throw new Error("bad recipe id");
+    const r = (await readDir(userDir(), "user")).find((x) => String(x.id) === want);
+    if (!r) throw new Error(`no recipe of yours has the id "${want}"`);
+    await fsp.unlink(path.join(userDir(), r.file));
     return true;
 }
 
+/**
+ * Write a user recipe: over the file a user recipe of the same id was read from (its `file`, which may differ from
+ * `<id>.json`, so one id never lies in two files), else as `<id>.json`.
+ */
 async function save(recipe) {
-    await fsp.mkdir(userDir(), { recursive: true });
-    const file = path.join(userDir(), recipe.id + ".json");
+    const id = String(recipe && recipe.id);
+    if (!safeId(id)) throw new Error(`a recipe id is letters, digits, ".", "_" and "-" only; "${id.slice(0, 80)}" is not saved`);
+    const dir = userDir();
+    const had = (await readDir(dir, "user")).find((x) => String(x.id) === id);
+    const file = path.join(dir, had ? had.file : id + ".json");
+    if (path.dirname(file) !== dir) throw new Error(`the recipe "${id.slice(0, 80)}" would land outside the recipes folder`);
+    await fsp.mkdir(dir, { recursive: true });
     await fsp.writeFile(file, JSON.stringify(recipe, null, 2) + "\n", "utf8");
     return file;
 }

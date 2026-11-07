@@ -57,7 +57,7 @@ import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, clipCoverage, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
 import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
 import { readTiff, tiffPart } from "./inpaint_tiff.js";
-import { readPsdStream } from "./inpaint_layered.js";
+import { readPsdStream, inflateAtMost } from "./inpaint_layered.js";
 import { resampleStore } from "./inpaint_resample.js";
 import { liquifyStore } from "./inpaint_liquify.js";
 import { guidedFar } from "./inpaint_depth.js";
@@ -510,12 +510,6 @@ async function tiffRead(msg) {
     return { info, timing: { op: "tiff_read", kernels: "js", pixels: info.width * info.height, kernel: now() - t0, ...spent } };
 }
 
-/** zlib bytes inflated by the browser (the window's inflateBytes, inpaint_canvas.js: the same inflater, the same bytes). */
-async function inflateZlib(bytes) {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
 /**
  * A PSD read in this worker (inpaint_layered.js `readPsdStream`, docs/PLAN_WASM_BUILD.md §7 D0): the file's bytes read
  * here from the blob, so the window makes no array of them (the window has checked the size from the header's 26 bytes
@@ -533,7 +527,8 @@ async function psdRead(msg) {
     const timing = () => ({ op: "psd_read", kernels: "js", pixels, kernel: now() - t0, read, inflate, inflates, ...spent });
     try {
         const doc = await readPsdStream(bytes, {
-            inflate: async (b) => { const t = now(); try { return await inflateZlib(b); } finally { inflate += now() - t; inflates++; } },
+            // the window's inflater (inpaint_layered.js inflateAtMost): the same bytes, stopped at the bytes kept
+            inflate: async (b, cap) => { const t = now(); try { return await inflateAtMost(b, "deflate", cap); } finally { inflate += now() - t; inflates++; } },
             rowsPerBand: msg.rowsPerBand || TILE,
             onHeader: (h) => { pixels = h.width * h.height; },   // the window checked the size from the header before the job
             onRows: (index, kind, rgba, w, h, y0, rows) => { self.postMessage({ id: msg.id, progress: true, index, mask: kind === "mask", rgba: rgba.buffer, w, h, y0, rows }, [rgba.buffer]); },

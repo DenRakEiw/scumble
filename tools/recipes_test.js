@@ -1386,6 +1386,46 @@ async function main() {
         } finally { console.warn = warn; }
     });
 
+    // ---- 17. recipe ids are file names (H1 S9a) -------------------------------------------------------------
+    await section("17. a recipe id is a file name: made safe where recipes are read, refused at save", async () => {
+        freshUserData();
+        const dir = path.join(USERDATA, "recipes");
+        fs.mkdirSync(dir, { recursive: true });
+        const warn = console.warn, warned = [];
+        console.warn = (...a) => warned.push(a.join(" "));
+        try {
+            const shipped = await recipes.list(RECIPES);
+            check("every shipped recipe's id is letters, digits, \".\", \"_\" and \"-\"", shipped.length > 70 && shipped.every((r) => /^[A-Za-z0-9._-]+$/.test(String(r.id))), shipped.filter((r) => !/^[A-Za-z0-9._-]+$/.test(String(r.id))).map((r) => r.id).join(" "));
+            const n0 = warned.length;
+            const base = { kind: "provider", name: "Hand", providers: { loopback: { model: "loopback" } } };
+            fileOf(dir, "hand.json", { ...rawFile("flux2_klein_local.json"), name: "Hand", id: "../settings" });
+            fileOf(dir, "other file.json", { ...base, id: "other_id" });
+            fileOf(dir, "my recipe.json", { ...base });
+            const mine = (await recipes.list(RECIPES)).filter((r) => r.source === "user");
+            const hand = mine.find((r) => r.file === "hand.json"), other = mine.find((r) => r.file === "other file.json"), nameless = mine.find((r) => r.file === "my recipe.json");
+            check("a hand-written id with a path in it is read as a safe one, with a warning; a file name with a space gives a safe id too",
+                hand && hand.id === ".._settings" && nameless && nameless.id === "my_recipe" && other && other.id === "other_id"
+                && warned.length === n0 + 2 && /hand\.json: its id "\.\.\/settings" holds characters/.test(warned[n0]), short({ ids: mine.map((r) => r.id), said: warned.slice(n0) }));
+            const { recipe: copy } = recipes.detach(hand);
+            check("its Comfy Cloud copy's id has no separator either", copy && copy.id === ".._settings_cloud", short(copy && copy.id));
+            const refused = await Promise.all(["../settings", "..\\settings", "a/b", "C:x", "", "x y"].map((id) => thrown(() => recipes.save({ ...base, id }))));
+            check("save refuses an id outside them, and nothing lands beside the recipes folder", refused.every((m) => /letters, digits/.test(m || "")) && !fs.existsSync(path.join(USERDATA, "settings.json")), short(refused));
+            const file = await recipes.save({ ...base, id: "fine_id-2.v" });
+            check("a safe id is saved as <id>.json in the recipes folder", path.dirname(file) === dir && path.basename(file) === "fine_id-2.v.json" && fs.existsSync(file));
+            const over = await recipes.save({ ...base, id: "other_id", name: "Saved over" });
+            const reread = (await recipes.list(RECIPES)).filter((r) => r.id === "other_id");
+            check("saving an id a user recipe was read from under another file name writes that file (one id, one file)",
+                path.basename(over) === "other file.json" && !fs.existsSync(path.join(dir, "other_id.json")) && reread.length === 1 && reread[0].name === "Saved over", short({ over: path.basename(over), n: reread.length }));
+            await recipes.remove("other_id");
+            await recipes.remove("my_recipe");
+            check("remove deletes the file a recipe was read from, whatever its name", !fs.existsSync(path.join(dir, "other file.json")) && !fs.existsSync(path.join(dir, "my recipe.json")) && fs.existsSync(path.join(dir, "hand.json")));
+            const bad = await thrown(() => recipes.remove("../hand")), none = await thrown(() => recipes.remove("not_there"));
+            check("remove refuses an unsafe id and says when no recipe of the user's has the id", /bad recipe id/.test(bad || "") && /no recipe of yours/.test(none || "") && fs.existsSync(path.join(dir, "hand.json")), short({ bad, none }));
+            await recipes.remove(".._settings");
+            check("the made-safe recipe can be removed by its new id (its own file goes)", !fs.existsSync(path.join(dir, "hand.json")));
+        } finally { console.warn = warn; }
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

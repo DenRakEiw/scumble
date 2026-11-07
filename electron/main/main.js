@@ -63,6 +63,7 @@ const docfile = require("./docfile");
 const { FileSaves } = require("./filesaves");
 const registration = require("./mcp/registration");
 const { ComfyView } = require("./comfyview");
+const { openHttp, appPage } = require("./links");
 
 // ---- command line -------------------------------------------------------------------------
 //
@@ -397,8 +398,8 @@ function createWindow() {
     win.webContents.on("did-start-navigation", (details) => {
         if (!details || details.isSameDocument || !details.isMainFrame) return;
         // a new page of the app (a reload): the Comfy Cloud pictures the old one did not ack go to it (a navigation
-        // out of the app is refused by will-navigate below and keeps the page)
-        const reload = String(details.url || "").startsWith(ORIGIN + "/");
+        // anywhere else is refused by will-navigate below and keeps the page: the same rule, links.js appPage)
+        const reload = appPage(String(details.url || ""), ORIGIN);
         if (reload) cloudPageGone();
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window reloaded" });
         for (const w of askWaits.values()) w.gone();
@@ -437,12 +438,15 @@ function createWindow() {
     // the canvas-only view follows the window's full screen: F11 or the OS ending it ends the view too (renderer/shell.js)
     win.on("enter-full-screen", () => send("window:fullScreen", true));
     win.on("leave-full-screen", () => { viewFullScreen = false; send("window:fullScreen", false); });
-    win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
+    // only http(s) leaves for the system browser (links.js): a middle click on an `href="#"` link hands over the app's
+    // own URL, and a file:, smb: or ms-* URL would start whatever the system has for it
+    win.webContents.setWindowOpenHandler(({ url }) => { openHttp(url); return { action: "deny" }; });
     // an unhandled file drop (the shell bar, the tabs, a panel) would navigate the window to the file:
-    // every call in flight rejects and the editor is gone. Only the app's own origin may be navigated
-    // to; the Bridge reads the same rule, because `did-start-navigation` fires before this handler and
-    // a drop for a navigation that never happens would leave it waiting for a `commands:ready` forever
-    const staysInApp = (url) => String(url).startsWith(ORIGIN + "/");
+    // every call in flight rejects and the editor is gone. Only the app's own page may be navigated to
+    // (links.js appPage: never scumble://app/comfy/*, the ComfyUI proxy, whose answers carry the server's
+    // content types); the Bridge reads the same rule, because `did-start-navigation` fires before this
+    // handler and a drop for a navigation that never happens would leave it waiting for a `commands:ready` forever
+    const staysInApp = (url) => appPage(url, ORIGIN);
     win.webContents.on("will-navigate", (e, url) => { if (!staysInApp(url)) e.preventDefault(); });
     bridge.attach(win.webContents, { navigates: staysInApp });
     win.loadURL(ORIGIN + "/index.html");
@@ -1315,13 +1319,13 @@ function installIpc() {
         return a.noticed;
     });
     ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: msix.forExplorer(app.getPath("userData")), pluginDir: msix.forExplorer(plugins.userDir()), store: msix.isStore(), portable: PORTABLE, dataDir: PORTABLE ? DATA_HOME.dir : null, comfySdk: require("./providers/comfysdk").version() }));
-    ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
+    ipcMain.handle("app:openExternal", (_e, url) => { openHttp(url); });
     // item 40: the share targets for Settings › About; "copy" puts the line and the link on the clipboard
     ipcMain.handle("app:shareTargets", () => ({ repo: share.REPO, targets: share.TARGETS }));
     ipcMain.handle("app:share", (_e, id) => {
         if (id === "copy") { clipboard.writeText(share.copyText()); return "copied"; }
         const url = share.urlFor(String(id));
-        if (url) shell.openExternal(url);
+        if (url) openHttp(url);
         return url ? "opened" : null;
     });
     // the quiet line after an update, once per version (the Store and portable copies too): asked once by the window
