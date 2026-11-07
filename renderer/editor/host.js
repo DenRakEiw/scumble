@@ -229,6 +229,7 @@ const RUN_GOING = "A run is still going on this document: wait for it, or Cancel
 const AREA_RECIPE_CHANGED = "The recipe changed while the areas ran: this area was not sent.";
 /** An area of Each area stopped (its Stop, a Cancel) before its prompt went to the user's ComfyUI. */
 const AREA_STOPPED = "Stopped before this area was queued: nothing went to your ComfyUI.";
+const AREA_STOPPED_API = "Stopped before this area was sent: nothing went to the provider.";
 /** Main's refusals before a request goes out (no or a stale key, no such provider or endpoint, a malformed request). */
 const NOT_SENT = /^No API key for |key was stored on another PC or Windows account|^Unknown provider: |has no (text-to-image endpoint|upscaler|relight endpoint) in Scumble|nothing was sent|nothing runs or is charged/;
 /**
@@ -2377,6 +2378,9 @@ export const host = {
         const r = this.recipe;
         const area = opts.area || null;
         if (area && !sameRecipe(r, area.recipe)) throw refusal(AREA_RECIPE_CHANGED);
+        // a Stop while the area's generate() still waited (a stroke landing, the helper models freed): this run has no
+        // token yet for the Stop to cancel, so it is asked here, before anything is made or sent
+        if (area && typeof area.stopped === "function" && area.stopped()) throw Object.assign(new Error(AREA_STOPPED_API), { kind: "cancelled", statusKind: "info" });
         if (!editor.base) throw refusal("Load an image first.");
         // one run per document: a second token would take the slot, and its end would clear it under the first (a Realism
         // Pass, an upscale), which then reads as idle (busy(), Close without asking, turnBlocked)
@@ -6901,6 +6905,7 @@ api.addEventListener("executed", ({ detail }) => {
         const notes = ed && ed._boxNotes && detail.prompt_id != null ? ed._boxNotes.get(String(detail.prompt_id)) : null;
         if (notes) ed._boxNotes.delete(String(detail.prompt_id));
         if (ed && ed._boxPrompts && detail.prompt_id != null) ed._boxPrompts.delete(String(detail.prompt_id));
+        const h0 = ed ? ed.history.length : 0;   // addResults says nothing of a result it could not land: the history does
         const landed = ed ? ed.addResults(sent ? out.inpaint_result.map((r) => ({ ...r, ...sent, via: sent.via ? `${sent.via}, ${Math.round((Date.now() - sent.viaStarted) / 1000)} s` : undefined })) : out.inpaint_result) : null;
         if (notes) Promise.resolve(landed).then(() => ed.setStatus(`${ed.status} Boxes: ${notes.join(" ")}`, "warn")).catch(() => { /* the result's own line stands */ });
         // the run's upsampled prompt (0.1.50 Q9): its note after the result's line; a caption still to come finds the mark
@@ -6908,8 +6913,9 @@ api.addEventListener("executed", ({ detail }) => {
         const upNote = ed && pid && ed._upNotes ? ed._upNotes.get(pid) : null;
         if (upNote) { ed._upNotes.delete(pid); Promise.resolve(landed).then(() => ed.setStatus(`${ed.status} ${upNote}`, ed.statusKind || "info")).catch(() => { /* the result's own line stands */ }); }
         else if (ed && pid && host._upsampledRuns.has(pid)) Promise.resolve(landed).then(() => { const l = ed._upLanded || (ed._upLanded = new Set()); l.add(pid); while (l.size > 64) l.delete(l.values().next().value); }).catch(() => { /* nothing to mark */ });
-        // the prompts whose result has landed in the document (Each area waits for its own area's, eacharea.js waitLocal)
-        if (ed && pid) Promise.resolve(landed).then(() => markLanded(ed, pid)).catch(() => { /* the area waits for its prompt's end */ });
+        // the prompts whose result has landed in the document as a layer (Each area waits for its own area's, eacharea.js
+        // waitLocal); one that landed nothing (an empty answer, a result seen before, a file that would not load) is not
+        if (ed && pid) Promise.resolve(landed).then(() => { if (ed.history.length > h0) markLanded(ed, pid); }).catch(() => { /* the area waits for its prompt's end */ });
     }
     // a closed tab's helper output (queued while it closed: no prompt id was known) lands nowhere either
     const forNode = (info) => (info && info.canvas_node != null && host._closedNodes.has(String(info.canvas_node)) ? null

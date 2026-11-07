@@ -387,28 +387,32 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  * One area on the user's ComfyUI, after its prompt was queued: "landed" when that prompt's result landed (by its id, the
  * host's `_landedPrompts`: no other render's result is taken for it), "ended" when its prompt ended without one (an error,
  * an interrupt), "stopped" (a Stop or a Cancel), "closed" (the tab), "time" (the caller's deadline), "lost" (the server's
- * connection went). The prompt's end comes from the server's events (the document's open renders, `_localRuns`) and, as
- * the generate command does, from the queue read every 2 s; a result may land a little after its prompt's end.
+ * connection gone for 5 s: the shell's state disconnected or error, or the socket down). The prompt's end comes from the
+ * server's events (the document's open renders, `_localRuns`) and, as the generate command does, from the queue read
+ * every 2 s (5 s at most each), whose verdict holds until the next read (a prompt deleted in ComfyUI's queue panel ends
+ * the wait though the other jobs go on); a result may land a little after its prompt's end.
  */
 async function waitLocal(host, api, editor, area, seq, deadline) {
     const id = area.promptId, key = String(area.promptId);
     const status0 = editor.status;
-    let gone = 0, readAt = 0;
+    const down = () => { const st = host.server && host.server.state; return st === "disconnected" || st === "error" || host._socketWas === false; };
+    let gone = 0, readAt = 0, queueGone = false, downSince = 0;
     for (;;) {
         if (editor._landedPrompts && editor._landedPrompts.has(key)) return "landed";
         if (seq.cancelled) return "stopped";
         if (!host.editors().includes(editor)) return "closed";
         if (deadline && Date.now() > deadline) return "time";
-        if (!host.connected) return "lost";
-        let open = !!(editor._localRuns && id != null && editor._localRuns.has(id));
-        if (open && api && Date.now() - readAt > 2000) {
+        if (down()) { if (!downSince) downSince = Date.now(); else if (Date.now() - downSince > 5000) return "lost"; } else downSince = 0;
+        const inRuns = !!(editor._localRuns && id != null && editor._localRuns.has(id));
+        if (inRuns && api && Date.now() - readAt > 2000) {
             readAt = Date.now();
             try {
-                const q = await (await api.fetchApi("/queue")).json();
+                const q = await (await api.fetchApi("/queue", { signal: AbortSignal.timeout(5000) })).json();
                 const ids = [...(q.queue_running || []), ...(q.queue_pending || [])].map((x) => String(x && x[1]));
-                if (!ids.includes(key)) open = false;
-            } catch (_) { /* the events decide */ }
+                queueGone = !ids.includes(key);
+            } catch (_) { /* the last read's verdict, and the events, decide */ }
         }
+        const open = inRuns && !queueGone;
         if (open) gone = 0;
         else {
             // a failure says so at once (the execution_error listener's line); a result is waited for a little longer
@@ -473,9 +477,10 @@ export async function runEachArea(host, editor, { confirm = true, deadline = 0, 
     }
     if (editor.providerPending && (remote || editor.providerPending.resizes)) throw refusal(RUN_GOING);
     if (editor._eachArea) throw refusal("Each area is already running on this document: wait for it, or stop it.");
-    // the picture the areas were cut from: a turn, a crop, a new picture are refused while the areas run (turnBlocked,
-    // generateNewBlocked); should one get through, the areas after it do not go
-    const picture = { base: editor.base, w: editor.width, h: editor.height };
+    // the picture's geometry the areas were cut in: a turn, a crop, a resize, a new picture are refused while the areas
+    // run (turnBlocked, generateNewBlocked, setBasePixels); should one get through, the areas after it do not go. A merge
+    // into the base or a flatten keeps the geometry and the areas with it
+    const picture = { geo: editor.geometrySeq, w: editor.width, h: editor.height };
     const snap = editor.refSnapshot();   // the prompt and the references of the click, for every area
     // each area's part of the selection as it is now (on tiles the copies share the selection's tiles); the document's
     // own selection is left as it is, for the user to go on with
@@ -493,7 +498,7 @@ export async function runEachArea(host, editor, { confirm = true, deadline = 0, 
             if (seq.cancelled) { stopped = "cancel"; break; }
             if (!host.editors().includes(editor)) { stopped = "closed"; break; }
             if (!sameRecipe(host.recipe, r)) { stopped = "recipe"; break; }
-            if (editor.base !== picture.base || editor.width !== picture.w || editor.height !== picture.h) { stopped = "picture"; break; }
+            if (editor.geometrySeq !== picture.geo || editor.width !== picture.w || editor.height !== picture.h) { stopped = "picture"; break; }
             // no area starts that the time left would not hold (the longest area so far as the guess)
             if (deadline && Date.now() + longest > deadline) { stopped = "time"; break; }
             const area = areaRun(editor, parts[i], groups[i], i, n, r, () => seq.cancelled);

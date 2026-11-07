@@ -18412,6 +18412,8 @@ class InpaintEditor {
      * change placed again the way a new reference is (referenceBox), their masks, opacity and visibility unchanged.
      */
     async setBasePixels(ref, px, { keepLayers = true, keep = null } = {}) {
+        // the app's Each area (eacharea.js): its areas were cut from the picture there is now
+        if (this._eachArea) throw refusal("Each area is running on this document: a new picture waits until it is done, or stop it.");
         this.checkBaseSize(px.width, px.height);
         const sizeChanged = px.width !== this.width || px.height !== this.height;
         this.historyGen++;   // a restore still loading must not put the old document over the new image

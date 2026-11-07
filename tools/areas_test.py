@@ -53,12 +53,13 @@ const boxesOf = (layers) => layers.map((l) => [l.x, l.y, l.w, l.h]);
 LOCAL = """
 const klein = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
 if (!klein) throw new Error("flux3_klein_local is not listed");
-const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, missing: host.missingFilesRefusal, recipe: host.recipe, fetch: window.fetch, ask: ed.ask, np: host.nodeParams };
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, missing: host.missingFilesRefusal, recipe: host.recipe, fetch: window.fetch, ask: ed.ask, np: host.nodeParams, server: host.server, socket: host._socketWas };
 const posts = [];
 window.__areasIds = window.__areasIds || 0;
 const hapi = (await import('./editor/host.js')).api;
-// `onEnsure(i)`: called as the i-th prompt's pictures go up (before it is queued)
-const L = { hold: () => false, land: 150, landed: [], onEnsure: null };
+// `onEnsure(i)`: called as the i-th prompt's pictures go up (before it is queued); `dropped`: prompt ids the queue no
+// longer lists (deleted in ComfyUI's queue panel), while another job of the user's stays
+const L = { hold: () => false, land: 150, landed: [], onEnsure: null, dropped: new Set() };
 // a prompt's result as the server sends it: through the real `executed` listener (which keeps its prompt id), then its end
 const landPrompt = async (id, i) => {
     const ref = await resultFor(i);
@@ -74,6 +75,8 @@ const resultFor = async (i) => {
 let made = 0;
 const install = () => {
     host.connected = true;
+    host.server = { ...(host.server || {}), state: "connected" };
+    host._socketWas = true;
     host.objectInfo = Object.fromEntries(klein.needs.map((n) => [n, { input: { required: {} } }]));
     host.missingFilesRefusal = () => null;
     host.ensureOnServer = async () => { if (L.onEnsure) await L.onEnsure(posts.length); return null; };
@@ -89,12 +92,17 @@ const install = () => {
             }, L.land);
             return new Response(JSON.stringify({ prompt_id: id, number: posts.length, node_errors: {} }), { status: 200, headers: { "Content-Type": "application/json" } });
         }
+        // ComfyUI's queue: the document's open prompts (but the dropped ones) and a job of the user's
+        if (/\\/queue$/.test(String(url)) && !(init && init.method === "POST")) {
+            const open = [...(ed._localRuns || [])].map(String).filter((x) => !L.dropped.has(x));
+            return new Response(JSON.stringify({ queue_running: [[0, "users-own-job", {}, {}, []]], queue_pending: open.map((x, k) => [k + 1, x, {}, {}, []]) }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
         return saved.fetch.call(window, url, init);
     };
     host.setRecipe(klein);
 };
 const uninstall = () => {
-    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; host.missingFilesRefusal = saved.missing; window.fetch = saved.fetch; ed.ask = saved.ask; host.nodeParams = saved.np;
+    host.connected = saved.connected; host.server = saved.server; host._socketWas = saved.socket; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; host.missingFilesRefusal = saved.missing; window.fetch = saved.fetch; ed.ask = saved.ask; host.nodeParams = saved.np;
     host.setRecipe(saved.recipe);
     if (ed._localRuns) ed._localRuns.clear();
     if (ed.runProgress) for (const p of posts) ed.runProgress.done(p.id);
@@ -485,6 +493,83 @@ try {
     if (out.done !== 3 || posts.length !== 3 || posts.some((x) => !x.prevLanded) || ed.history.length !== h0 + 4) throw new Error("the run: " + JSON.stringify({ out, posts: posts.length, landed: ed.history.length - h0 }));
     return { plain, queuedWhileHeld };
 } finally { uninstall(); }
+"""),
+    # an answer of the area's prompt that lands nothing (an empty result) is no landing: the next area waits for a result
+    ("local_empty_answer_is_no_landing", THREE + LOCAL + """
+try {
+    install();
+    L.hold = (i) => i === 0;
+    await three();
+    await host.selectionAreas(ed);
+    const h0 = ed.history.length;
+    const p = host.generateEachArea(ed);
+    if (!(await until(() => posts.length === 1))) throw new Error("the first area was not queued");
+    hapi.dispatch("executed", { prompt_id: posts[0].id, output: { inpaint_result: [] } });
+    await wait(800);
+    const marked = !!(ed._landedPrompts && ed._landedPrompts.has(posts[0].id)), queued = posts.length;
+    await landPrompt(posts[0].id, made++);
+    const out = await p;
+    if (marked || queued !== 1) throw new Error("an empty answer counted as the area's result: " + JSON.stringify({ marked, queued }));
+    if (out.done !== 3 || ed.history.length !== h0 + 3) throw new Error("the run: " + JSON.stringify({ out, landed: ed.history.length - h0 }));
+    return { marked, queued };
+} finally { uninstall(); }
+"""),
+    # an area's prompt deleted from ComfyUI's queue while the user's other job stays: the queue read ends that area
+    # within its grace (about 10 s), not at the deadline
+    ("local_prompt_gone_from_the_queue", THREE + LOCAL + """
+try {
+    install();
+    L.hold = (i) => i === 0;
+    await three();
+    await host.selectionAreas(ed);
+    const t0 = Date.now();
+    const p = host.generateEachArea(ed, { deadline: Date.now() + 60000 });
+    if (!(await until(() => posts.length === 1))) throw new Error("the first area was not queued");
+    L.dropped.add(String(posts[0].id));
+    const out = await p;
+    const s = Math.round((Date.now() - t0) / 1000);
+    if (out.stopped !== "failed" || out.failed !== "its prompt ended on your ComfyUI without a result" || out.sent !== 1 || out.notSent !== 2 || out.running !== null || s > 20 || posts.length !== 1) throw new Error("the vanished prompt: " + JSON.stringify({ out, s, posts: posts.length }));
+    if (ed.status !== "Each area stopped at area 1 of 3: its prompt ended on your ComfyUI without a result. 0 of 3 areas landed, 2 not sent.") throw new Error("the status: " + ed.status);
+    return { seconds: s, status: ed.status };
+} finally { uninstall(); }
+"""),
+    # a flatten while the areas run keeps the picture's geometry, so the areas after it still go
+    ("flatten_keeps_the_areas", THREE + """
+host.setRecipe(%s);
+await three();
+await host.selectionAreas(ed);
+const ask0 = ed.ask;
+ed.ask = async () => true;
+let out, flat = null;
+try {
+    await run("add_paint_layer", { doc, name: "to flatten" });
+    const p = host.generateEachArea(ed);
+    if (!(await until(() => /^Sending crop/.test(ed.status) && !!ed.providerPending))) throw new Error("the first area did not go");
+    flat = await run("flatten", { doc }).then(() => "ran", (e) => String(e.message || e));
+    out = await p;
+} finally { ed.ask = ask0; host.setRecipe(%s); }
+if (flat !== "ran" || out.stopped || out.done !== 3) throw new Error("the flatten: " + JSON.stringify({ flat, out }));
+return { flat, done: out.done };
+""" % (LOOP_SLOW, LOOP)),
+    # an API area whose generate() still waits (a stroke landing) when the Stop comes: it is not sent
+    ("api_stop_while_the_area_waits", THREE + """
+await three();
+await host.selectionAreas(ed);
+const h0 = ed.history.length;
+const ask0 = ed.ask, held0 = ed.heldEdit, upload0 = host.uploadResult, edit0 = host.runProvider;
+let armed = false, refusedAtStart = 0;
+let out;
+try {
+    ed.ask = async () => true;
+    // area 1's answer is in: a stroke is said to be landing, so area 2's generate() waits for it, and the Stop comes then
+    host.uploadResult = async function (...a) { if (!armed) { armed = true; ed.removePending = true; } return upload0.apply(this, a); };
+    ed.heldEdit = async () => { ed.eachAreaBtn.click(); ed.removePending = false; };
+    host.runProvider = function (...a) { return edit0.apply(this, a).catch((e) => { if (/^Stopped before this area was sent/.test(String(e.message))) refusedAtStart++; throw e; }); };
+    out = await host.generateEachArea(ed);
+} finally { ed.ask = ask0; ed.heldEdit = held0; host.uploadResult = upload0; host.runProvider = edit0; ed.removePending = false; }
+if (!out.cancelled || out.done !== 1 || out.sent !== 1 || out.notSent !== 2 || refusedAtStart !== 1 || ed.history.length !== h0 + 1) throw new Error("the stop: " + JSON.stringify({ out, refusedAtStart, landed: ed.history.length - h0 }));
+if (ed.status !== "Each area cancelled: 1 of 3 areas generated; the other 2 were not sent.") throw new Error("the status: " + ed.status);
+return { status: ed.status };
 """),
     # more than 8 areas: refused plainly, nothing sent
     ("cap_of_eight", THREE + """
