@@ -3,13 +3,25 @@
 // and a point prompt, a shape on black through the matting model, and a red square on a
 // gradient through LaMa with the square masked.
 //
-//     node tools/helpers_test.js [modelsDir] [--sam2 sam2_tiny] [--matting birefnet_lite] [--cpu]
+//     node tools/helpers_test.js [modelsDir] [--also DIR] [--sam2 sam2_tiny] [--matting birefnet_lite] [--cpu]
+//     node tools/helpers_test.js [modelsDir] [--also DIR] --process [--sam2 ...] [--matting ...] [--cpu]
 //
-// Prints timings and the execution provider; a model that is not in the folder is skipped.
-// Exits non-zero when the objects, the cutout or the fill are not what they should be, or
-// when no model ran at all.
+// `--also DIR`: a second folder where a model missing in the first is looked for (the user's ComfyUI models folder
+// holds SAM2 tiny and BiRefNet lite, the app folder depth). Prints timings and the execution provider; a model that is
+// not in the folders is skipped. Exits non-zero when the objects, the cutout or the fill are not what they should be,
+// or when no model ran at all.
+//
+// `--process` (U1, docs/PLAN_HELPERS_PROCESS.md §3.8): the same jobs through `HelperProcess` (helpers.js, the forked
+// Node process of plain Node) and through the main-thread engine (engine.js on this thread), the answers byte for byte
+// the same (the objects' ids, the point's logits, the cutout's alpha, the depth map); Free VRAM during an object map
+// lets the map land and ends the process after it (a job meanwhile goes to a new one; one longer than the drain is
+// refused naming the cause); a model's removal ends it at once, refusing its job with that cause; a death after
+// "ready" refuses its jobs, a second within a minute falls back to this thread; a process that exits at once falls
+// back with the waiting job answered; the idle unload ends the process.
 "use strict";
 
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { Runtime } = require("../electron/main/onnx/runtime");
 const models = require("../electron/main/onnx/models");
@@ -21,11 +33,17 @@ const { Depth } = require("../electron/main/onnx/depth");
 const args = process.argv.slice(2);
 const flag = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def; };
 const dir = args.length && !args[0].startsWith("--") ? args[0] : path.join(process.env.APPDATA || ".", "Scumble", "models");
+const also = flag("--also", null);
 const sam2Id = flag("--sam2", "sam2_tiny");
 const mattingId = flag("--matting", "birefnet_lite");
 const depthId = flag("--depth", "da2_small");
 const depthRefDir = flag("--depth-ref", null);
 const timed = args.includes("--time");
+
+/** A model's files in the folder, else in `--also`. */
+function pathsOf(model) {
+    return (model && (models.paths(model, dir) || (also ? models.paths(model, also) : null))) || null;
+}
 
 function synthetic() {
     const img = new Uint8ClampedArray(SIZE * SIZE * 4);
@@ -44,9 +62,10 @@ function synthetic() {
 }
 
 async function main() {
+    if (args.includes("--process")) return processMain();
     const runtime = new Runtime();
     if (args.includes("--cpu")) runtime.setDevice("cpu");
-    console.log("models in", dir);
+    console.log("models in", dir, also ? "and " + also : "");
     const samOk = await testSam2(runtime);
     const cutOk = await testMatting(runtime);
     const lamaOk = await testLama(runtime);
@@ -61,7 +80,7 @@ async function main() {
 
 async function testSam2(runtime) {
     const sam2Model = models.byId(sam2Id);
-    const sam2Paths = models.paths(sam2Model, dir);
+    const sam2Paths = pathsOf(sam2Model);
     if (!sam2Paths) { console.log(`SAM2 model ${sam2Id} not present, skipped`); return null; }
     const sam = new Sam2(runtime, sam2Paths);
     const img = synthetic();
@@ -94,7 +113,7 @@ async function testMatting(runtime) {
     // the yellow rectangle on black
     let t0;
     const mattingModel = models.byId(mattingId);
-    const mp = models.paths(mattingModel, dir);
+    const mp = pathsOf(mattingModel);
     let cutOk = null;
     if (mp) {
         const m = new Matting(runtime, mattingModel, mp.model);
@@ -120,7 +139,7 @@ async function testLama(runtime) {
     // a red square on a horizontal gradient, the square masked: the fill continues the
     // gradient (no red left), the pixels outside the mask come back as they went in
     const model = models.byId("lama");
-    const lp = models.paths(model, dir);
+    const lp = pathsOf(model);
     if (!lp) { console.log("LaMa not present, skipped"); return null; }
     const n = LAMA * LAMA;
     const src = new Uint8Array(n * 4), mask = new Uint8Array(n);
@@ -190,7 +209,7 @@ function rankCorr(x) {
 
 async function testDepth(runtime) {
     const depthModel = models.byId(depthId);
-    const dp = models.paths(depthModel, dir);
+    const dp = pathsOf(depthModel);
     if (!dp) { console.log(`depth model ${depthId} not present, skipped`); return null; }
     const depth = new Depth(runtime, depthModel, dp.model);
 
@@ -281,6 +300,201 @@ async function testDepth(runtime) {
 
     const depthOk = spearman >= 0.95 && skyMean <= p10;
     return depthOk;
+}
+
+// ---- --process: the helpers' process against the main-thread engine (U1) ----------------------------------------
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function alive(pid) {
+    try { process.kill(pid, 0); return true; } catch (_) { return false; }
+}
+
+async function waitFor(fn, ms) {
+    const t = Date.now();
+    while (!fn() && Date.now() - t < ms) await sleep(20);
+    return fn();
+}
+
+function sameBytes(a, b) {
+    if (!a || !b || a.length !== b.length || a.constructor !== b.constructor) return false;
+    const x = new Uint8Array(a.buffer, a.byteOffset, a.byteLength), y = new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+    return true;
+}
+
+function cutoutSource() {
+    const src = new Uint8ClampedArray(SIZE * SIZE * 4);
+    for (let i = 3; i < src.length; i += 4) src[i] = 255;
+    for (let y = 200; y < 800; y++) for (let x = 250; x < 700; x++) { const i = (y * SIZE + x) * 4; src[i] = 250; src[i + 1] = 200; src[i + 2] = 60; }
+    return src;
+}
+
+async function processMain() {
+    const { HelperProcess, STOPPED, REASONS } = require("../electron/main/onnx/helpers");
+    const { engine, modelInfo } = require("../electron/main/onnx/engine");
+    const device = args.includes("--cpu") ? "cpu" : "auto";
+    console.log("models in", dir, also ? "and " + also : "", "· device", device);
+    let failures = 0;
+    const check = (name, ok, detail = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? "  " + detail : ""}`); if (!ok) failures++; return ok; };
+
+    const sam = models.byId(sam2Id), samFiles = pathsOf(sam);
+    const mat = models.byId(mattingId), matFiles = pathsOf(mat);
+    const dep = models.byId(depthId), depFiles = pathsOf(dep);
+    for (const [m, f] of [[sam, samFiles], [mat, matFiles], [dep, depFiles]]) if (!f) console.log(`${m ? m.label : "a model"} not present, skipped`);
+    if (!samFiles && !matFiles && !depFiles) { console.log("FAIL no model present"); process.exit(1); }
+
+    const W = 784, H = 518;
+    const objectsJob = samFiles && { device, model: modelInfo(sam), files: samFiles, key: "test", image: synthetic(), outWidth: SIZE, outHeight: SIZE, params: {} };
+    const pointJob = samFiles && { device, model: modelInfo(sam), files: samFiles, key: "test", image: null, points: [{ x: 750, y: 280, label: 1 }], box: null, raw: true };
+    const pointWithImage = samFiles && { ...pointJob, image: objectsJob.image };
+    const jobs = [];
+    if (samFiles) {
+        jobs.push(["objects", "objects", objectsJob]);
+        jobs.push(["point", "segment", pointJob]);
+        jobs.push(["point_mask", "segment", { ...pointJob, raw: false, box: [560, 100, 940, 460], outWidth: 512, outHeight: 300 }]);
+    }
+    if (matFiles) jobs.push(["cutout", "cutout", { device, model: modelInfo(mat), files: matFiles, image: cutoutSource() }]);
+    if (depFiles) jobs.push(["depth", "depth", { device, model: modelInfo(dep), files: depFiles, image: syntheticDepth(W, H), width: W, height: H }]);
+
+    // 1. every job through the helpers' process, then the same on this thread's engine
+    const hp = new HelperProcess({ idleMs: 0 });
+    const viaProc = {}, viaLocal = {};
+    for (const [name, type, job] of jobs) {
+        const t = Date.now();
+        viaProc[name] = await hp.call(type, job);
+        console.log(`process ${name}: ${Date.now() - t} ms on ${viaProc[name].provider} (pid ${hp.pid})`);
+    }
+    const pid0 = hp.pid;
+    check("the jobs ran in the helpers' process", hp.state === "ready" && pid0 && pid0 !== process.pid && hp.starts === 1, `state ${hp.state}, pid ${pid0}, starts ${hp.starts}`);
+    const st = hp.status(device);
+    check("status from the last answer: its sessions and its pid, no call into it", st.loaded >= 1 && st.process.pid === pid0 && st.process.state === "ready" && !!st.version,
+        JSON.stringify({ loaded: st.loaded, active: Object.values(st.active), process: st.process, version: st.version }));
+    const released = await hp.retire({ reason: "free" });
+    check("Free VRAM with nothing running: the process gone at once, its sessions counted, nothing loaded after", released === st.loaded && !alive(pid0) && hp.state === "off" && hp.status(device).loaded === 0 && hp.status(device).process.pid === null,
+        `released ${released}, alive ${alive(pid0)}`);
+    const local = engine(new Runtime());
+    for (const [name, type, job] of jobs) {
+        local.runtime.setDevice(job.device);
+        const t = Date.now();
+        viaLocal[name] = await local[type](job);
+        console.log(`this thread ${name}: ${Date.now() - t} ms on ${viaLocal[name].provider}`);
+    }
+    await local.free();
+    const keys = (o) => Object.keys(o).sort().join(",");
+    for (const [name] of jobs) {
+        const a = viaProc[name], b = viaLocal[name];
+        check(`${name}: the same answer's fields in the process and on this thread`, keys(a) === keys(b), keys(a));
+    }
+    if (samFiles) {
+        const a = viaProc.objects, b = viaLocal.objects;
+        check("objects: the label map's bytes the same", sameBytes(a.ids, b.ids) && a.count === b.count && a.candidates === b.candidates, `${a.count} / ${b.count} objects, ${a.candidates} / ${b.candidates} candidates`);
+        const idAt = (x, y) => a.ids[y * SIZE + x];
+        const red = idAt(260, 300), blue = idAt(750, 280), yellow = idAt(530, 760), bg = idAt(50, 1000);
+        check("objects: the three shapes three objects, apart from the background", new Set([red, blue, yellow]).size === 3 && red && blue && yellow && ![red, blue, yellow].includes(bg), `red ${red}, blue ${blue}, yellow ${yellow}, background ${bg}`);
+        check("point: the logits' bytes and the score the same", sameBytes(viaProc.point.logits, viaLocal.point.logits) && viaProc.point.score === viaLocal.point.score && viaProc.point.n === 256, `score ${viaProc.point.score}`);
+        check("point with a box, as a mask: the bytes the same", sameBytes(viaProc.point_mask.mask, viaLocal.point_mask.mask) && viaProc.point_mask.width === 512 && viaProc.point_mask.height === 300);
+        const mask = logitsToMask(viaProc.point.logits, SIZE, SIZE);
+        let inside = 0, outside = 0;
+        for (let y = 0; y < SIZE; y += 4) for (let x = 0; x < SIZE; x += 4) {
+            const isBlue = ((x - 750) / 190) ** 2 + ((y - 280) / 180) ** 2 <= 1;
+            if (isBlue) inside += mask[y * SIZE + x]; else outside += mask[y * SIZE + x];
+        }
+        check("point: the blue ellipse", inside > 1000 && outside < inside * 0.1, `inside ${inside}, outside ${outside}`);
+    }
+    if (matFiles) {
+        const a = viaProc.cutout;
+        check("cutout: the alpha's bytes the same", sameBytes(a.alpha, viaLocal.cutout.alpha) && a.size === viaLocal.cutout.size);
+        let inA = 0, outA = 0, nIn = 0, nOut = 0;
+        for (let y = 0; y < SIZE; y += 8) for (let x = 0; x < SIZE; x += 8) {
+            const v = a.alpha[y * SIZE + x];
+            if (y >= 220 && y < 780 && x >= 270 && x < 680) { inA += v; nIn++; } else if (y < 150 || y > 850 || x < 200 || x > 750) { outA += v; nOut++; }
+        }
+        check("cutout: the rectangle kept, the black gone", inA / nIn > 200 && outA / nOut < 40, `inside ${(inA / nIn).toFixed(0)}, outside ${(outA / nOut).toFixed(0)}`);
+    }
+    if (depFiles) {
+        const a = viaProc.depth, b = viaLocal.depth;
+        check("depth: the map's bytes, min and max the same", sameBytes(a.depth, b.depth) && a.min === b.min && a.max === b.max && a.width === W && a.height === H, `range [${a.min.toFixed(2)}, ${a.max.toFixed(2)}] on ${a.provider}`);
+    }
+
+    if (samFiles) {
+        // 2. Free VRAM (the button, or the free a local ComfyUI run does) during an object map: the map still lands and
+        // the process ends after it, a job sent meanwhile goes to a new process; a job longer than the drain is refused
+        // naming the cause; a model's removal ends the process at once, refusing its job with that cause; a point
+        // without its picture on a new process is refused (the window sends the picture then), with it answered
+        const hp2 = new HelperProcess({ idleMs: 0 });
+        await hp2.call("segment", pointWithImage);
+        const pid1 = hp2.pid;
+        const map = hp2.call("objects", { ...objectsJob, key: "drain" }).then((r) => r, (e) => ({ error: e.message }));
+        await sleep(300);
+        const freed = hp2.retire({ reason: "free" });
+        check("a retired process takes no new job", hp2.pid === null && hp2.state === "off" && hp2.status(device).process.retiring === 1 && hp2.busy());
+        const during = hp2.call("segment", pointWithImage);
+        const landed = await map;
+        const releasedB = await freed;
+        check("Free VRAM during an object map: the map still lands, the same bytes", !landed.error && sameBytes(landed.ids, viaProc.objects.ids), landed.error || `${landed.count} objects`);
+        check("... and the retired process ended after it", !alive(pid1) && hp2.status(device).process.retiring === 0 && releasedB >= 0, `released ${releasedB}`);
+        const dur = await during;
+        check("a job sent during the drain went to a new process", hp2.pid && hp2.pid !== pid1 && hp2.starts === 2 && sameBytes(dur.logits, viaProc.point.logits), `pid ${hp2.pid}, starts ${hp2.starts}`);
+        const pidB = hp2.pid;
+        const capped = hp2.call("objects", { ...objectsJob, key: "cap" }).then(() => "answered", (e) => e.message);
+        await sleep(200);
+        await hp2.retire({ reason: "free", drainMs: 100 });
+        const rCap = await capped;
+        check("a job the drain cannot wait for is refused, naming the cause", rCap === REASONS.free, rCap);
+        check("... and that process is gone", !alive(pidB) && hp2.pid === null);
+        await hp2.call("segment", pointWithImage);
+        const pidC = hp2.pid;
+        const removed = hp2.call("objects", { ...objectsJob, key: "remove" }).then(() => "answered", (e) => e.message);
+        await sleep(200);
+        await hp2.kill({ reason: "remove" });
+        const rRemove = await removed;
+        check("a model's removal ends the process at once and refuses its job, naming the cause", rRemove === REASONS.remove && !alive(pidC) && hp2.pid === null, rRemove);
+        const startsBefore = hp2.starts;
+        const noImage = await hp2.call("segment", pointJob).then(() => "answered", (e) => e.message);
+        check("a point without its picture on the new process is refused (host.segmentLogits sends it then)", /RGBA image of 1024/.test(noImage), noImage);
+        const again = await hp2.call("segment", pointWithImage);
+        check("the next job started a new process and answered the same", hp2.pid && hp2.pid !== pidC && hp2.starts === startsBefore + 1 && sameBytes(again.logits, viaProc.point.logits), `pid ${hp2.pid}, starts ${hp2.starts}`);
+
+        // 3. a death after "ready" (killed from outside, as a crash ends it) during a job: refused; the next job starts
+        // a new process; a second death within the minute leaves the helpers to this thread
+        const pid2 = hp2.pid;
+        const dying = hp2.call("objects", { ...objectsJob, key: "death" }).then(() => "answered", (e) => e.message);
+        await sleep(300);
+        process.kill(pid2);
+        const r2 = await dying;
+        check("a death refuses the job under way", r2 === STOPPED && hp2.state === "off" && hp2.deaths.length === 1, `${r2}; state ${hp2.state}, deaths ${hp2.deaths.length}`);
+        const after = await hp2.call("segment", pointWithImage);
+        const pid3 = hp2.pid;
+        check("the job after a death starts a new process", pid3 && pid3 !== pid2 && hp2.starts === startsBefore + 2 && sameBytes(after.logits, viaProc.point.logits), `pid ${pid3}`);
+        process.kill(pid3);
+        await waitFor(() => hp2.state === "fallback", 5000);
+        check("a second death within a minute falls back to this thread", hp2.state === "fallback" && !!hp2.local && hp2.pid === null, `state ${hp2.state}`);
+        const fb = await hp2.call("segment", pointWithImage);
+        check("the fallback answers on this thread, the same bytes", sameBytes(fb.logits, viaProc.point.logits) && hp2.starts === startsBefore + 2 && hp2.status(device).process.state === "fallback");
+        await hp2.kill();
+
+        // 4. a process that ends at its start (onnxruntime missing, say): the engine runs here, the waiting job answered
+        const script = path.join(os.tmpdir(), `scumble_u1_exit_${process.pid}.js`);
+        fs.writeFileSync(script, "process.exit(3);\n");
+        const hp3 = new HelperProcess({ script, idleMs: 0 });
+        const r3 = await hp3.call("segment", pointWithImage).then((r) => r, (e) => ({ error: e.message }));
+        check("a process that exits at once falls back with the waiting job answered", hp3.state === "fallback" && r3.logits && sameBytes(r3.logits, viaProc.point.logits), r3.error || `state ${hp3.state}`);
+        await hp3.kill();
+        fs.unlinkSync(script);
+
+        // 5. the idle unload: never while a job runs (a cold point takes longer than the 200 ms here), then the end
+        const hp4 = new HelperProcess({ idleMs: 200 });
+        const cold = await hp4.call("segment", pointWithImage).then((r) => r, (e) => ({ error: e.message }));
+        const pid4 = hp4.pid;
+        check("the idle timer does not end a job under way", !!cold.logits && hp4.state === "ready", cold.error || "");
+        await waitFor(() => hp4.state === "off" && !alive(pid4), 3000);
+        check("the idle unload ended the process after the last answer", hp4.state === "off" && !alive(pid4) && hp4.status(device).loaded === 0, `state ${hp4.state}`);
+        await hp4.kill();
+    }
+
+    console.log(failures ? `FAIL ${failures} check(s)` : "PASS");
+    process.exit(failures ? 1 : 0);
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });

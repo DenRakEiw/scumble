@@ -349,3 +349,71 @@ so (`docs/PLAN_WASM_BUILD.md` §6's rule).
 7. **The shapes' memory at 15k** (§1.4, U2 item 2): the GPU process held 5.4-6.4 GB with 13 kept shapes, up to 14 GB for
    a few seconds after they were dropped, 1.5 GB after 20 s. *Suggested:* U2 item 2 right after U1a, before the other U2
    items: it is the window's own fix, independent of U1, and the largest wait the user meets on a 15k picture.
+
+## 7. U1 as built (2026-11-07)
+
+U1a and U1b's gate step, measurement and docs in one session; **`warmObjects` (U2 item 1, the U1b row's
+`renderer/editor/host.js` / `inpaint_canvas.js` part) is not built**: another agent edits those files tonight, so it
+waits for a later session. §6's questions 1, 4, 5 and 6 had no answer by this session and went with the suggested
+answers (the plan §6's rule): the idle unload after **5 minutes** without a helper job; **LaMa stays in its own
+process**; a process that dies twice within a minute **falls back to main's thread**; **no port straight from the
+window** (main relays).
+
+- **`electron/main/onnx/engine.js`**: `engine(runtime)` with the jobs `objects`, `segment`, `cutout`, `depth` (the
+  bodies of `index.js` before, the same answers field for field), the instances keyed by their files, `free()`,
+  `clear()`, `status()`; `checkImage`, `checkDepth`, `modelInfo`. One encode in flight per key (§3.5): a second job for
+  a picture being encoded awaits that encode, and a point without its picture waits for it too instead of being
+  refused. The stale-map rule of §3.5 (a newer map of the same document stopping an older one) is not built: the window
+  drops the older answer, as before.
+- **`electron/main/onnx/helpers_process.js`**: loads onnxruntime first (a process that cannot ends before "ready"),
+  posts `{ type: "ready", pid, status }`, answers `{ id, result | error, ms, status }`. Every job carries the device
+  (`runtime.setDevice` per job, a no-op unless it changed), so there is no `init` message.
+- **`electron/main/onnx/helpers.js`**: `HelperProcess` (`call`, `retire({ reason, clear })`, `kill({ reason, clear })`,
+  `busy`, `status(device)`, `onJob`; `IDLE_MS` 5 min, `DEATH_WINDOW_MS` 60 s, `DRAIN_MS` 8 s; each process holds its
+  own pending jobs). "Ready" and not "the first answer" decides the fallback: a process that crashes during its first
+  job (a DirectML fault) is a death, not a failed start, so the job is refused and the next one starts a new process
+  instead of running the crash on main. **`retire`** (Free VRAM and the free before a local run, which come as the same
+  `helpers:free`; the device switch; a folder change; a scan; the review of U1, below) sends new jobs to a new process
+  at once and ends the old one once it has answered its jobs, at most 8 s later, refusing what is still open with a
+  sentence naming the cause (`REASONS`); **`kill`** (a model's removal, the quit) ends the current process and every
+  retiring one where they stand, refusing their jobs with the cause. Both resolve once the processes exited (at most
+  2 s after the kill) with the sessions the current one held, so `remove()` deletes a file only after no process holds
+  it; in the fallback both free the engine's sessions (and with `clear` drop its instances), as before U1. A kill
+  before the utility process's "spawn" (its `kill()` does nothing then) is done at the spawn.
+- **`electron/main/onnx/index.js`**: the settings, the files (`jobModel`: `presentOf` + `models.paths`), the busy set
+  and the IPC facade; main checks the picture (and a depth job's sides) itself first, so the errors and their order are
+  today's and a refused request starts no process. `configure` writes the settings before it retires the process (a
+  job that comes in meanwhile goes out with the new device and folder); a device change retires, a folder change and a
+  scan retire and clear, a model's removal (linked or not; a LaMa model leaves the helpers alone) kills and clears;
+  `free` retires; `will-quit` kills beside LaMa. `helpers:status`' `runtime` is `helperProcess.status(device)`: `device` and `candidates` from the settings, the
+  sessions and failures from the last answer (failures kept after a kill), `version` from the last answer or
+  `onnxruntime-node/package.json` (main never loads the binary), `process: { pid, state }`. `helperProcess` is exported
+  for the tests and the harness. Settings' runtime line needed no change ("nothing loaded yet" while the process is off).
+- **Tests**: `node tools/helpers_test.js DIR --also APP --process` (SAM2 tiny, RMBG-1.4, Depth Anything V2 Small on
+  DirectML): every answer byte for byte the main-thread engine's (the label map, the logits, a box prompt's mask, the
+  alpha, the depth map), status from the last answer, Free VRAM during a map (the map lands, the process ends after
+  it, a job meanwhile goes to a new one; one longer than the drain refused naming the cause), a removal's kill during a
+  map (refused at once with its cause), a point without its picture on a new process refused,
+  a death refused and a second within the minute falling back (the same bytes on this thread), a process that exits at
+  once falling back with its job answered, the idle unload never during a job: PASS. The new gate **`helpers`**
+  (`tools/helpers_test.py`, `--offline`) runs that, then in the app on the user's ComfyUI models folder (read only):
+  a cold map with the process in the metrics and the IPC round trips at most 9.7 ms, the editor's map, `select_point`
+  and `cutout_layer` through it (round trips at most 71 ms: the window's own work), Free VRAM ending the process and
+  the next point starting another, Free VRAM during a map (the map lands, a point sent meanwhile answered by a new
+  process), the device switch to the CPU: PASS on tiles. The gate holds the busy lock while it runs (at most 5 minutes'
+  wait) and `tools/run_gates_both.sh` runs it serially. `lint`, `types`, `selection`, `maps`, `limit`, `key` PASS on tiles; `node tools/depth_test.js` (the
+  `depth` gate's stand-in) all ok.
+- **Measured** (`docs/measurements/u1_2026-11-07/`, `compare.txt`; `--quick`, the gpu and editor batches, one run each
+  under the busy lock): main's longest block 1,159 -> 21 ms for SAM2's first call, 226 -> 22 for a map, 330 -> 0 for
+  Free VRAM, 1,001 -> 0 for a map after Free VRAM, 2,613 -> 21 for a BiRefNet lite cutout on DirectML, 681 -> 24 for a
+  large depth map, 1,074 -> 0 for the editor's first hover map; what is left is main relaying the answers. Main's
+  private bytes stay at about 83 MB (SAM2's 3.5-8.6 GB live in the process). The waits are unchanged in the gpu batch;
+  the editor's cached map took 1,675 ms against 1,432 and its point 161 against 51, one run, not isolated (U0's probe
+  saw the same map-first time in a utility process, §1.4; U2 item 4).
+- **Not run**: the packaged exe, the MSIX, Linux, the canvas backend (no pixel path changed).
+- **The review of U1** (three findings, 2026-11-07): every free killed the process and refused its jobs, the free a
+  local Generate does by itself included, so a cutout on another tab or an agent's second call failed red: the free,
+  the device switch, a folder change and a scan retire the process instead (above), the removal and the quit kill it,
+  and each refusal names its cause. A kill in the first milliseconds left the utility process alive (its `kill()` does
+  nothing before "spawn"): it is done at the spawn. The gate took no busy lock and ran on both sides of
+  `run_gates_both.sh` at once: it holds the lock now and runs serially.

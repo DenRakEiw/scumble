@@ -1,0 +1,51 @@
+U0 of docs/PLAN_WASM_BUILD.md §7: the in-app ONNX helpers, measured (tools/helpers_perf.py).
+Times in ms, median [min-max] over the fresh runs (each run one instance; rows with several reps: every rep).
+wall = the renderer's await of the IPC call; block = main's longest event-loop gap (sampler, 4 ms);
+rtt = the longest app:tileMode round trip from the renderer during the call; handler = main's IPC handler.
+
+== batch gpu (device gpu), runs [1]
+   idle                               wall 1504  block 0  rtt 0
+   ipc_tiny                           wall 0 [0-2]  block 0 [0-0]  rtt 0 [0-0]  handler 0 [0-0]  ipc 0 [0-1]  ERR Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 
+   ipc_4mb                            wall 9 [9-9]  block 0 [0-0]  rtt 3 [3-3]  handler 0 [0-0]  ipc 9 [9-9]  ERR Error invoking remote method 'helpers:cutout': Error: the helper needs an RGBA image of 1024 × 1024 
+   sam2_base_plus.point_cold          wall 1698  block 1159  rtt 1139  handler 1688  ipc 10  create 1316 [('sam2_hiera_base_plus.encoder.onnx', 'dml', 1134), ('sam2_hiera_base_plus.decoder.onnx', 'dml', 183)]  enc.run 67  enc.js 9  dec.run 294.2  res {"score": 0.8812333345413208, "provider": "dml"}
+   sam2_base_plus.point_warm          wall 7 [7-7]  block 0 [0-0]  rtt 4 [3-5]  handler 6 [6-7]  ipc 1 [1-1]  dec.run 6.1 [5.9-6.3]  res {"score": 0.8812333345413208, "provider": "dml"}
+   sam2_base_plus.objects_cached      wall 1834 [1757-1910]  block 226 [194-258]  rtt 217 [197-237]  handler 1814 [1738-1890]  ipc 20 [19-21]  enc.js 0 [0-0]  automask 1813 [1737-1889] (decode 1245 [1167-1323] in 16 batches, js 568 [566-570]: filter/batch 30.0 [30.0-30.1], nms+paint 88 [84-91])  res {"width": 2000, "height": 1125, "count": 95, "candidates": 837, "seconds": 1.889, "encodeMs": 67, "provider": "dml"}
+   sam2_base_plus.objects_new         wall 1782  block 197  rtt 201  handler 1762  ipc 20  enc.run 38  enc.js 6  automask 1718 (decode 1146 in 16 batches, js 572: filter/batch 29.8, nms+paint 95)  res {"width": 2000, "height": 1125, "count": 89, "candidates": 819, "seconds": 1.762, "encodeMs": 38, "provider": "dml"}
+   sam2_base_plus.point_after_objects wall 7 [7-7]  block 0 [0-0]  rtt 5 [4-5]  handler 6 [6-6]  ipc 1 [1-1]  dec.run 6.1 [6.0-6.1]  res {"score": 0.8812333345413208, "provider": "dml"}
+   sam2_base_plus.objects_perbatch16  wall 26  block 32  rtt 14  handler 15  ipc 11  enc.js 0  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perbatch32  wall 22  block 29  rtt 6  handler 11  ipc 11  enc.js 0  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perbatch128 wall 47  block 53  rtt 35  handler 37  ipc 11  enc.js 0  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perbatch256 wall 104  block 110  rtt 89  handler 93  ipc 10  enc.js 0  ERR Error invoking remote method 'helpers:objects': Error: Non-zero status code returned while running M
+   sam2_base_plus.objects_perside16   wall 565  block 192  rtt 196  handler 544  ipc 21  enc.js 0  automask 544 (decode 374 in 4 batches, js 170: filter/batch 25.0, nms+paint 70)  res {"width": 2000, "height": 1125, "count": 47, "candidates": 210, "seconds": 0.544, "encodeMs": 67, "provider": "dml"}
+   sam2_base_plus.free                wall 317  block 330  rtt 313  handler 317  ipc 0  release 316
+   sam2_base_plus.objects_after_free  wall 2744  block 1001  rtt 991  handler 2725  ipc 19  create 1114 [('sam2_hiera_base_plus.encoder.onnx', 'dml', 930), ('sam2_hiera_base_plus.decoder.onnx', 'dml', 184)]  enc.run 61  enc.js 64  automask 1669 (decode 921 in 16 batches, js 748: filter/batch 29.6, nms+paint 91)  res {"width": 2000, "height": 1125, "count": 95, "candidates": 837, "seconds": 2.724, "encodeMs": 61, "provider": "dml"}
+   sam2_base_plus.free2               wall 273  block 286  rtt 271  handler 273  ipc 0  release 273
+   birefnet_lite.cutout               wall 3405 [3348-4038]  block 2613 [2573-2852]  rtt 2597 [2553-2840]  handler 3393 [3337-4027]  ipc 12 [11-12]  create 2579 [2553-2827] [('birefnet_lite.onnx', 'dml', 2827)]  run 394 [338-404]  release 444 [370-762]  res {"size": 1024, "seconds": 4.026, "provider": "dml"}
+   birefnet_lite.free                 wall 0  block 0  rtt 0  handler 0  ipc 0
+   da2_small.depth                    wall 230 [227-883]  block 233 [230-470]  rtt 220 [216-469]  handler 221 [218-874]  ipc 9 [9-9]  create 0 [0-402] [('depth_anything_v2_small.onnx', 'dml', 402)]  run 218 [214-462]  res {"width": 924, "height": 518, "seconds": 0.872, "runMs": 468, "provider": "dml"}
+   da2_small.depth_large              wall 684 [678-830]  block 681 [661-828]  rtt 661 [656-809]  handler 659 [655-806]  ipc 24 [23-25]  run 651 [647-799]  res {"width": 1568, "height": 882, "seconds": 0.806, "runMs": 800, "provider": "dml"}
+   da2_small.free                     wall 128  block 140  rtt 125  handler 127  ipc 0  release 127
+   memory (MB; main private after a forced GC, main rss, GPU dedicated / shared of main [and the probe], the card's used MiB):
+     start                                          priv 84  rss 129  gpu 0 / 0  card 3341
+     sam2_base_plus after the cold point            priv 3492  rss 514  gpu 3008 / 73  card 6347
+     sam2_base_plus after objects                   priv 8585  rss 598  gpu 8007 / 137  card 11346
+     sam2_base_plus after Free VRAM                 priv 320  rss 315  gpu 0 / 0  card 3340
+     sam2_base_plus after objects after Free VRAM   priv 6176  rss 584  gpu 5617 / 136  card 8955
+     sam2_base_plus after the second Free VRAM      priv 327  rss 320  gpu 0 / 0  card 3340
+     birefnet_lite after three cutouts              priv 400  rss 278  gpu 0 / 0  card 3340
+     birefnet_lite after Free VRAM                  priv 147  rss 216  gpu 0 / 0  card 3340
+     da2_small after depth                          priv 4104  rss 451  gpu 3702 / 47  card 7039
+     da2_small after Free VRAM                      priv 448  rss 266  gpu 0 / 0  card 3334
+
+== batch editor (device auto), runs [1]
+   doc6000.prep                       {"W": 6000, "H": 3375, "loadMs": 608, "inputMs": 54.7, "outW": 2048, "outH": 1152, "dw": 924, "dh": 518, "lw": 1568, "lh": 882, "tiles": true}
+   doc6000.ensureObjects              wall 2879  block 1074  rtt 1053  handler 2810  ipc 69  create 1221 [('sam2_hiera_base_plus.encoder.onnx', 'dml', 1047), ('sam2_hiera_base_plus.decoder.onnx', 'dml', 174)]  enc.run 68  enc.js 10  automask 1684 (decode 941 in 16 batches, js 743: filter/batch 29.6, nms+paint 95)  parts objectInput 5, inputHash 2, helperCall 2830, applySegmentIds 2  scale-back 39  renderer gap 53
+   doc6000.ensureObjects_cached       wall 1432  block 177  rtt 221  handler 1369  ipc 63  enc.js 0  automask 1369 (decode 799 in 16 batches, js 570: filter/batch 29.7, nms+paint 95)  parts objectInput 3, inputHash 2, helperCall 1389, applySegmentIds 1  scale-back 37  renderer gap 52
+   doc6000.hover_shape_big            wall 51  block 0  rtt 2  parts objectShape 51  renderer gap 52
+   doc6000.hover_shape_small          wall 26  block 0  rtt 2  parts objectShape 26
+   doc6000.click_object               wall 207  block 0  rtt 4  parts objectShape 16 [0-32]  renderer gap 209
+   doc6000.select_point               wall 51 [48-260]  block 33 [33-212]  rtt 26 [24-206]  handler 26 [26-205]  ipc 25 [22-54]  dec.run 25.9 [25.7-204.6]  parts helperCall 27 [27-206], segmentLogits 27 [27-206], selectLogits 24 [21-53]  res {"score": 0.8661423921585083}
+   memory (MB; main private after a forced GC, main rss, GPU dedicated / shared of main [and the probe], the card's used MiB):
+     start                                          priv 86  rss 130  gpu 0 / 0  card 3155
+     doc6000 after the object tool                  priv 6204  rss 580  gpu 5646 / 136  card 9158
+

@@ -24,6 +24,11 @@ Batches:
           after the shapes were dropped
   batchsize  the SAM2 decoder's batch size on DirectML, each size in a fresh utility process (the export runs only
           B 1 and B 64: every other size fails at /Mul_14, on DirectML and on the CPU)
+After U1 (docs/PLAN_HELPERS_PROCESS.md; the models in the helpers' utility process, `helpers.helperProcess` in
+electron/main/onnx/index.js) main loads no onnxruntime and its wrappers see no session: the harness then hooks the
+process's answers instead (`HelperProcess.onJob`: each job's time inside the process, `proc` in the summary, and the
+wall from main's post to the answer) and counts the process ("Scumble helpers") in the memory rows; main's sampler and
+the renderer's IPC probe measure the same as before.
 RMBG-2.0 runs on the CPU only (BiRefNet lite on DirectML held 24.7 GB of main's private bytes, docs/BUGS.md B5;
 RMBG-2.0 is the full BiRefNet). Each batch takes the machine's busy lock (docs/measurements/w1_2026-11-06/w1_lock.py)
 for its instance only, after waiting for other agents' Electron instances and test scripts to end; it is released
@@ -243,19 +248,22 @@ MAIN_SETUP = r"""(() => {
     const rt = find(/[\\/]electron[\\/]main[\\/]onnx[\\/]runtime\.js$/);
     const sam2m = find(/[\\/]electron[\\/]main[\\/]onnx[\\/]sam2\.js$/);
     const helpers = find(/[\\/]electron[\\/]main[\\/]onnx[\\/]index\.js$/);
-    const ort = rt.loadOrt();
-    const IS = ort.InferenceSession;
     const U = globalThis.__u0 = { ev: [], blocks: [], fileOf: new WeakMap(), R };
     const now = () => performance.now();
     const rec = (o) => { U.ev.push(o); };
+    // U1: the models run in the helpers' process; main loads no onnxruntime, so its answers are what there is to time
+    const hp = helpers.helperProcess || null;
+    if (hp) hp.onJob = (j) => rec({ k: "job", type: j.type, ms: j.ms, wallMs: j.wallMs, error: j.error, pid: j.pid, t0: now() - (j.wallMs || 0) });
+    const ort = hp ? null : rt.loadOrt();
+    const IS = ort ? ort.InferenceSession : function () {};
     const oc = IS.create;
-    IS.create = async function (a, b, ...rest) {
+    if (ort) IS.create = async function (a, b, ...rest) {
         const t = now(), f = typeof a === "string" ? path.basename(a) : "(buffer)", p = b && b.executionProviders ? String(b.executionProviders[0]) : "?";
         try { const s = await oc.call(this, a, b, ...rest); rec({ k: "create", f, p, t0: t, ms: now() - t }); U.fileOf.set(s, f); return s; }
         catch (e) { rec({ k: "createFail", f, p, t0: t, ms: now() - t, err: String((e && e.message) || e).slice(0, 200) }); throw e; }
     };
     const orun = IS.prototype.run;
-    IS.prototype.run = async function (feeds, ...rest) {
+    if (ort) IS.prototype.run = async function (feeds, ...rest) {
         const t = now();
         const r = await orun.call(this, feeds, ...rest);
         const d = feeds && (feeds.point_coords || Object.values(feeds)[0]);
@@ -263,7 +271,7 @@ MAIN_SETUP = r"""(() => {
         return r;
     };
     const orel = IS.prototype.release;
-    IS.prototype.release = async function (...a) { const t = now(); const r = await orel.apply(this, a); rec({ k: "release", f: U.fileOf.get(this) || "?", t0: t, ms: now() - t }); return r; };
+    if (ort) IS.prototype.release = async function (...a) { const t = now(); const r = await orel.apply(this, a); rec({ k: "release", f: U.fileOf.get(this) || "?", t0: t, ms: now() - t }); return r; };
     for (const name of ["encode", "automask", "predict"]) {
         const o = sam2m.Sam2.prototype[name];
         sam2m.Sam2.prototype[name] = async function (...a) { const t = now(); const r = await o.apply(this, a); rec({ k: name, t0: t, ms: now() - t }); return r; };
@@ -311,7 +319,7 @@ MAIN_SETUP = r"""(() => {
         return JSON.stringify({ rtt: +r.rtt.toFixed(1), ms: r.ms != null ? +r.ms.toFixed(1) : null, error: r.error || null, res: o });
     };
     U.read = (f) => { const b = R("node:fs").readFileSync(f); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
-    return JSON.stringify({ pid: process.pid, ort: ort.env && ort.env.versions ? ort.env.versions.node : null, electron: process.versions.electron, hist: !!U.hist });
+    return JSON.stringify({ pid: process.pid, ort: ort && ort.env && ort.env.versions ? ort.env.versions.node : null, u1: !!hp, electron: process.versions.electron, hist: !!U.hist });
 })()"""
 
 PAGE_SETUP = r"""(async () => {
@@ -419,7 +427,8 @@ class Batch:
         await self.gc()
         await asyncio.sleep(0.5)
         m = await self.main.eval("__u0.mem()")
-        g = await asyncio.get_running_loop().run_in_executor(None, gpu_mem, [self.pid, *extra_pids])
+        helper_pids = [u["pid"] for u in (m or {}).get("utility") or [] if "helpers" in (u.get("name") or "")]
+        g = await asyncio.get_running_loop().run_in_executor(None, gpu_mem, [self.pid, *extra_pids, *helper_pids])
         entry = {"label": label, "main": m, "gpu": g}
         self.mems.append(entry)
         mm = (m or {}).get("main") or {}
@@ -754,7 +763,9 @@ def breakdown(rep):
          "enc_run": sum(e["ms"] for e in ev if e["k"] == "run" and "encoder" in e["f"]),
          "dec_runs": [e["ms"] for e in ev if e["k"] == "run" and "decoder" in e["f"]],
          "other_runs": sum(e["ms"] for e in ev if e["k"] == "run" and "encoder" not in e["f"] and "decoder" not in e["f"]),
-         "release": sum(e["ms"] for e in ev if e["k"] == "release")}
+         "release": sum(e["ms"] for e in ev if e["k"] == "release"),
+         "proc": sum(e["ms"] or 0 for e in ev if e["k"] == "job"),
+         "proc_wall": sum(e["wallMs"] or 0 for e in ev if e["k"] == "job")}
     am = [e for e in ev if e["k"] == "automask"]
     if am:
         a = am[0]
@@ -845,6 +856,8 @@ def summarize(out):
                 line += f"  dec.run {fmt([sum(x['dec_runs']) for x in bd], 1)}"
             if any(x["other_runs"] for x in bd):
                 line += f"  run {fmt([x['other_runs'] for x in bd])}"
+            if any(x["proc"] for x in bd):
+                line += f"  proc {fmt([x['proc'] for x in bd])} (post -> answer {fmt([x['proc_wall'] for x in bd])})"
             if any(x["release"] for x in bd):
                 line += f"  release {fmt([x['release'] for x in bd])}"
             parts = {}
@@ -890,7 +903,7 @@ def summarize(out):
                 ded = [((m["gpu"]["procs"].get(p) or {}).get("dedicatedMB", 0)) for m, p in zip(ms, pids)]
                 sh = [((m["gpu"]["procs"].get(p) or {}).get("sharedMB", 0)) for m, p in zip(ms, pids)]
                 util = [sum((v or {}).get("dedicatedMB", 0) for k, v in m["gpu"]["procs"].items() if k != p) for m, p in zip(ms, pids)]
-                uprv = [sum(u.get("privMB", 0) for u in ((m["main"] or {}).get("utility") or []) if "U0" in (u.get("name") or "")) for m in ms]
+                uprv = [sum(u.get("privMB", 0) for u in ((m["main"] or {}).get("utility") or []) if "U0" in (u.get("name") or "") or "helpers" in (u.get("name") or "")) for m in ms]
                 card = [m["gpu"]["cardMB"] for m in ms]
                 lines.append(f"     {lab:46s} priv {fmt(priv)}  rss {fmt(rss)}  gpu {fmt(ded)} / {fmt(sh)}"
                              + (f"  probe gpu {fmt(util)} priv {fmt(uprv)}" if any(util) or any(uprv) else "")
