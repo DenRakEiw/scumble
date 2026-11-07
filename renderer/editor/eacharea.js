@@ -183,6 +183,15 @@ function areaCount(host, editor, entry) {
     return groups ? groups.length : entry.parts.length + entry.more;
 }
 
+/**
+ * Whether two recipes are the same run: the same id on the same provider and model. The shell makes a new object for a
+ * recipe each time it is selected again (a key saved, a provider row refreshed), so identity would read as a change.
+ */
+export function sameRecipe(a, b) {
+    if (!a || !b) return a === b;
+    return a.id === b.id && (a.provider || null) === (b.provider || null) && (a.model || null) === (b.model || null) && (a.kind || null) === (b.kind || null);
+}
+
 /** Why Each area cannot run the recipe `r`, or "". */
 export function recipeRefusal(r) {
     if (!r) return "No recipe selected.";
@@ -270,7 +279,8 @@ export function buildAreaButton(host, editor) {
     b.addEventListener("click", (e) => {
         e.stopPropagation(); e.preventDefault();
         if (editor._eachArea) { host.cancelRuns(editor); syncAreaButton(host, editor); return; }
-        runEachArea(host, editor).catch((err) => editor.setStatus(String((err && err.message) || err), failKind(err)));
+        // through the host, which hands the run ComfyUI's api (the queue read of an area on the user's ComfyUI)
+        host.generateEachArea(editor).catch((err) => editor.setStatus(String((err && err.message) || err), failKind(err)));
     });
     editor.generateBtn.before(b);
     editor.eachAreaBtn = b;
@@ -345,11 +355,13 @@ function partBounds(part, at) {
  * run on the user's ComfyUI makes ([x, y, w, h]); the run sets `sent` once the request went out or the prompt was
  * queued, and `promptId` for a queued one. The document's selection is never read or written for it.
  */
-function areaRun(editor, part, g, index, n) {
+function areaRun(editor, part, g, index, n, recipe, stopped) {
     const W = editor.width, H = editor.height, at = [g.reach[0], g.reach[1]];
     let exact;
     return {
-        index, n, reach: g.reach.slice(), sent: false, promptId: null,
+        // `recipe`: the one the click confirmed (queueGenerate and runProvider refuse another); `stopped()`: a Stop came
+        // (queueGenerate queues nothing after it)
+        index, n, reach: g.reach.slice(), sent: false, promptId: null, recipe, stopped,
         crop: [g.crop[0], g.crop[1], g.crop[2] - g.crop[0], g.crop[3] - g.crop[1]],
         window: () => ({ img: part.readRect(0, 0, part.width, part.height), ox: at[0], oy: at[1], fullW: W, fullH: H }),
         bounds: () => (exact === undefined ? (exact = partBounds(part, at)) : exact),
@@ -372,30 +384,33 @@ function areaRun(editor, part, g, index, n) {
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * One area on the user's ComfyUI, after its prompt was queued: "landed" when a result came in, "ended" when its prompt
- * ended without one (an error, an interrupt), "stopped" (a Stop or a Cancel), "closed" (the tab), "time" (the caller's
- * deadline). The prompt's end comes from the server's events (the document's open renders, `_localRuns`) and, as the
- * generate command does, from the queue read every 2 s; a result may land a little after its prompt's end.
+ * One area on the user's ComfyUI, after its prompt was queued: "landed" when that prompt's result landed (by its id, the
+ * host's `_landedPrompts`: no other render's result is taken for it), "ended" when its prompt ended without one (an error,
+ * an interrupt), "stopped" (a Stop or a Cancel), "closed" (the tab), "time" (the caller's deadline), "lost" (the server's
+ * connection went). The prompt's end comes from the server's events (the document's open renders, `_localRuns`) and, as
+ * the generate command does, from the queue read every 2 s; a result may land a little after its prompt's end.
  */
-async function waitLocal(host, api, editor, area, h0, seq, deadline) {
-    const id = area.promptId;
+async function waitLocal(host, api, editor, area, seq, deadline) {
+    const id = area.promptId, key = String(area.promptId);
     const status0 = editor.status;
     let gone = 0, readAt = 0;
     for (;;) {
-        if (editor.history.length > h0) return "landed";
+        if (editor._landedPrompts && editor._landedPrompts.has(key)) return "landed";
         if (seq.cancelled) return "stopped";
         if (!host.editors().includes(editor)) return "closed";
         if (deadline && Date.now() > deadline) return "time";
+        if (!host.connected) return "lost";
         let open = !!(editor._localRuns && id != null && editor._localRuns.has(id));
         if (open && api && Date.now() - readAt > 2000) {
             readAt = Date.now();
             try {
                 const q = await (await api.fetchApi("/queue")).json();
                 const ids = [...(q.queue_running || []), ...(q.queue_pending || [])].map((x) => String(x && x[1]));
-                if (!ids.includes(String(id))) open = false;
+                if (!ids.includes(key)) open = false;
             } catch (_) { /* the events decide */ }
         }
-        if (!open) {
+        if (open) gone = 0;
+        else {
             // a failure says so at once (the execution_error listener's line); a result is waited for a little longer
             if (editor.status !== status0 && editor.statusKind === "error") return "ended";
             if (!gone) gone = Date.now();
@@ -412,11 +427,13 @@ async function waitLocal(host, api, editor, area, h0, seq, deadline) {
  * at the click. Before a charged API run (`confirm`) the editor's own question names the runs. A Cancel (host.cancelRuns,
  * the title row, the button, cancel_run) stops the run going as it always does and the areas not yet sent never go; on
  * the user's ComfyUI an area is queued only once the one before landed, so the rest never reach the queue. A failure
- * stops the rest, so does a change of the recipe, and the `deadline` (ms since the epoch, the generate command's
- * timeout): no area starts that the time left would not hold. Refuses (throws) before anything runs; afterwards resolves
- * to `{ areas, done, sent, notSent, running (an area left running on the user's ComfyUI, or null), cancelled, stopped
- * (why: "cancel", "recipe", "time", "closed", "failed" or null), failed, said (a cancel's words for an area that had
- * gone), leftOut, notes }`.
+ * stops the rest, so does a change of the recipe or of the picture, a lost connection to the user's ComfyUI, and the
+ * `deadline` (ms since the epoch, the generate command's timeout): no area starts that the time left would not hold.
+ * While it runs, a Generate of the whole selection, a turn, a crop and Generate new are refused on the document
+ * (inpaint_canvas.js generate / turnBlocked, host.generateNewBlocked). Refuses (throws) before anything runs; afterwards
+ * resolves to `{ areas, done, sent, notSent, running (an area left running on the user's ComfyUI, or null), cancelled,
+ * stopped (why: "cancel", "recipe", "picture", "lost", "time", "closed", "failed" or null), failed, said (a cancel's
+ * words for an area that had gone), leftOut, notes }`.
  */
 export async function runEachArea(host, editor, { confirm = true, deadline = 0, api = null } = {}) {
     if (!editor.base) throw refusal("Load an image first.");
@@ -426,6 +443,13 @@ export async function runEachArea(host, editor, { confirm = true, deadline = 0, 
     if (editor._eachArea) throw refusal("Each area is already running on this document: wait for it, or stop it.");
     const remote = r.kind === "provider";
     if (editor.providerPending && (remote || editor.providerPending.resizes)) throw refusal(RUN_GOING);
+    // on the user's ComfyUI the areas go one after another, each waited for by its prompt: a render of the document
+    // still on the server first would hold them up behind it
+    if (!remote && editor._localRuns && editor._localRuns.size) throw refusal("A render on your ComfyUI is still running on this document: run Each area when it is in.");
+    // a key the provider would refuse (none, or one stored on another PC), or the in-app model not downloaded: before the
+    // question, not after it
+    const ks = remote && host.shell && typeof host.shell.keyState === "function" ? host.shell.keyState(r) : null;
+    if (ks && !ks.ok) throw refusal(`Each area cannot run on ${r.providerLabel || r.provider}: ${ks.text}.`);
     let entry = await countAreas(editor);
     if (!sameKey(entry, keyOf(editor))) entry = await countAreas(editor);
     const groups = areaGroups(host, editor, entry);
@@ -445,9 +469,13 @@ export async function runEachArea(host, editor, { confirm = true, deadline = 0, 
             ok: `Generate ${n}`,
         });
         if (!ok) { editor.setStatus("Each area: nothing was sent."); return { areas: n, done: 0, sent: 0, notSent: n, running: null, cancelled: true, stopped: "cancel", failed: null, said: null, leftOut: 0, notes: [] }; }
-        if (!sameKey(entry, keyOf(editor)) || host.recipe !== r) throw refusal("The selection or the recipe changed while the question was open: nothing was sent. Click Each area again.");
+        if (!sameKey(entry, keyOf(editor)) || !sameRecipe(host.recipe, r)) throw refusal("The selection or the recipe changed while the question was open: nothing was sent. Click Each area again.");
     }
     if (editor.providerPending && (remote || editor.providerPending.resizes)) throw refusal(RUN_GOING);
+    if (editor._eachArea) throw refusal("Each area is already running on this document: wait for it, or stop it.");
+    // the picture the areas were cut from: a turn, a crop, a new picture are refused while the areas run (turnBlocked,
+    // generateNewBlocked); should one get through, the areas after it do not go
+    const picture = { base: editor.base, w: editor.width, h: editor.height };
     const snap = editor.refSnapshot();   // the prompt and the references of the click, for every area
     // each area's part of the selection as it is now (on tiles the copies share the selection's tiles); the document's
     // own selection is left as it is, for the user to go on with
@@ -464,18 +492,24 @@ export async function runEachArea(host, editor, { confirm = true, deadline = 0, 
         for (let i = 0; i < n; i++) {
             if (seq.cancelled) { stopped = "cancel"; break; }
             if (!host.editors().includes(editor)) { stopped = "closed"; break; }
-            if (host.recipe !== r) { stopped = "recipe"; break; }
+            if (!sameRecipe(host.recipe, r)) { stopped = "recipe"; break; }
+            if (editor.base !== picture.base || editor.width !== picture.w || editor.height !== picture.h) { stopped = "picture"; break; }
             // no area starts that the time left would not hold (the longest area so far as the guess)
             if (deadline && Date.now() + longest > deadline) { stopped = "time"; break; }
-            const area = areaRun(editor, parts[i], groups[i], i, n);
-            const t0 = Date.now(), h0 = editor.history.length;
+            const area = areaRun(editor, parts[i], groups[i], i, n, r, () => seq.cancelled);
+            const t0 = Date.now();
             const out = await editor.generate({ refs: snap, area });
-            if (out && out.error) { failure = out.error; failedAt = i; failedSent = area.sent; stopped = isCancel(failure) || seq.cancelled ? "cancel" : "failed"; break; }
+            if (out && out.error) {
+                failure = out.error; failedAt = i; failedSent = area.sent;
+                // another recipe selected during the area's own waits: the run refused it (host.js AREA_RECIPE_CHANGED)
+                stopped = isCancel(failure) || seq.cancelled ? "cancel" : !failedSent && !sameRecipe(host.recipe, r) ? "recipe" : "failed";
+                break;
+            }
             if (!remote) {
-                // one area at a time on the user's ComfyUI: the next is queued once this one's result is in
+                // one area at a time on the user's ComfyUI: the next is queued once this one's own result is in
                 if (!area.sent) { failure = new Error("its prompt was not queued"); failedAt = i; stopped = "failed"; break; }
-                const got = await waitLocal(host, api, editor, area, h0, seq, deadline);
-                if (got === "stopped" || got === "closed" || got === "time") { running = i; stopped = got === "stopped" ? "cancel" : got; break; }
+                const got = await waitLocal(host, api, editor, area, seq, deadline);
+                if (got === "stopped" || got === "closed" || got === "time" || got === "lost") { running = i; stopped = got === "stopped" ? "cancel" : got; break; }
                 if (got === "ended") {
                     const said = editor.statusKind === "error" && editor.status ? editor.status : "its prompt ended on your ComfyUI without a result";
                     failure = new Error(said); failedAt = i; failedSent = true; stopped = "failed"; break;
@@ -500,7 +534,9 @@ export async function runEachArea(host, editor, { confirm = true, deadline = 0, 
     const result = { areas: n, done, sent, notSent, running: running != null ? running + 1 : null, cancelled: stopped === "cancel", stopped, failed: null, said: null, leftOut: left.n, notes };
     if (!host.editors().includes(editor)) return result;
     const generated = remote ? "generated" : "landed";
-    const notSentWords = notSent ? `; ${notSent === n - done ? "the other " : ""}${notSent} ${notSent === 1 ? "was" : "were"} not sent` : "";
+    const notSentWords = !notSent ? ""
+        : notSent === n - done ? (notSent === 1 ? "; the last was not sent" : `; the other ${notSent} were not sent`)
+            : `; ${notSent} ${notSent === 1 ? "was" : "were"} not sent`;
     const runningWords = running != null ? `; area ${running + 1} is still running on your ComfyUI and lands when it is done` : "";
     let line, kind = "info";
     if (stopped === "cancel") {
@@ -510,6 +546,11 @@ export async function runEachArea(host, editor, { confirm = true, deadline = 0, 
         line = `Each area cancelled: ${done} of ${n} areas ${generated}${said ? `; area ${failedAt + 1} was cancelled after it was sent (${said.replace(/[.!?]$/, "")})` : ""}${runningWords}${notSentWords}.`;
     } else if (stopped === "recipe") {
         line = `Each area stopped: the recipe changed while the areas ran; ${done} of ${n} areas ${generated}${notSentWords}.`;
+    } else if (stopped === "picture") {
+        line = `Each area stopped: the picture changed while the areas ran; ${done} of ${n} areas ${generated}${notSentWords}.`;
+    } else if (stopped === "lost") {
+        line = `Each area stopped: the connection to your ComfyUI was lost; ${done} of ${n} areas ${generated}; area ${running + 1} may still land when the connection is back${notSentWords}.`;
+        kind = "warn";
     } else if (stopped === "time") {
         line = `Each area stopped: the command's time ran out; ${done} of ${n} areas ${generated}${runningWords}${notSentWords}.`;
     } else if (stopped === "closed") {

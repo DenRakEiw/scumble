@@ -55,7 +55,17 @@ const klein = host.shell.recipes().find((r) => r.id === "flux3_klein_local");
 if (!klein) throw new Error("flux3_klein_local is not listed");
 const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, missing: host.missingFilesRefusal, recipe: host.recipe, fetch: window.fetch, ask: ed.ask, np: host.nodeParams };
 const posts = [];
-const L = { hold: () => false, land: 150, landed: [] };
+window.__areasIds = window.__areasIds || 0;
+const hapi = (await import('./editor/host.js')).api;
+// `onEnsure(i)`: called as the i-th prompt's pictures go up (before it is queued)
+const L = { hold: () => false, land: 150, landed: [], onEnsure: null };
+// a prompt's result as the server sends it: through the real `executed` listener (which keeps its prompt id), then its end
+const landPrompt = async (id, i) => {
+    const ref = await resultFor(i);
+    hapi.dispatch("executed", { prompt_id: id, output: { inpaint_result: [{ ...ref, x: 0, y: 0, width: 64, height: 64, canvas_node: ed.node.id }] } });
+    await wait(150);
+    hapi.dispatch("execution_success", { prompt_id: id });
+};
 // a result of its own per prompt (the editor takes a result it has seen once only)
 const resultFor = async (i) => {
     const png = await new Promise((r) => { const c = document.createElement("canvas"); c.width = 64; c.height = 64; const x = c.getContext("2d"); x.fillStyle = "rgb(" + (10 + i * 20) + ",40,90)"; x.fillRect(0, 0, 64, 64); c.toBlob(r, "image/png"); });
@@ -66,16 +76,16 @@ const install = () => {
     host.connected = true;
     host.objectInfo = Object.fromEntries(klein.needs.map((n) => [n, { input: { required: {} } }]));
     host.missingFilesRefusal = () => null;
-    host.ensureOnServer = async () => null;
+    host.ensureOnServer = async () => { if (L.onEnsure) await L.onEnsure(posts.length); return null; };
     window.fetch = async (url, init) => {
         if (/\\/prompt$/.test(String(url)) && init && init.method === "POST") {
-            const i = posts.length, id = "areas-" + (i + 1);
-            posts.push({ body: JSON.parse(init.body), at: performance.now(), id, landedBefore: L.landed.length });
+            // an id never used before in this page: a landed one is kept by id (host.js markLanded)
+            const i = posts.length, id = "areas-" + Date.now() + "-" + (++window.__areasIds);
+            const prev = posts[i - 1];
+            posts.push({ body: JSON.parse(init.body), at: performance.now(), id, prevLanded: !prev || !!(ed._landedPrompts && ed._landedPrompts.has(prev.id)) });
             if (!L.hold(i)) setTimeout(async () => {
-                const ref = await resultFor(made++);
-                await ed.addResults([{ ...ref, x: 0, y: 0, width: 64, height: 64, canvas_node: ed.node.id }]);
+                await landPrompt(id, made++);
                 L.landed.push(performance.now());
-                if (ed._localRuns) ed._localRuns.delete(id);
             }, L.land);
             return new Response(JSON.stringify({ prompt_id: id, number: posts.length, node_errors: {} }), { status: 200, headers: { "Content-Type": "application/json" } });
         }
@@ -286,7 +296,8 @@ if (ed.history.length !== h0 + 1) throw new Error("landed: " + (ed.history.lengt
 if (ed.status !== "Each area stopped before area 2 of 3 was sent: The provider refused the crop. 1 of 3 areas generated, 2 not sent." || ed.statusKind !== "error") throw new Error("the status: " + JSON.stringify([ed.status, ed.statusKind]));
 return { status: ed.status };
 """),
-    # the recipe switched while the areas run: the areas after it do not go on another recipe
+    # the recipe switched while the areas run: the areas after it do not go on another recipe; the same recipe selected
+    # again (a new object, as the shell makes one after a key is saved) is no switch
     ("recipe_switch_stops_the_rest", THREE + """
 host.setRecipe(%s);
 await three();
@@ -299,32 +310,73 @@ try {
     const p = host.generateEachArea(ed);
     if (!(await until(() => /^Sending crop/.test(ed.status) && !!ed.providerPending))) throw new Error("the first area did not go");
     host.setRecipe(%s);
+    if (!(await until(() => ed.history.length === h0 + 1 && /^Sending crop/.test(ed.status) && !!ed.providerPending))) throw new Error("the second area did not go after the same recipe was selected again: " + ed.status);
+    host.setRecipe(%s);
     out = await p;
 } finally { ed.ask = ask0; host.setRecipe(%s); }
-if (out.stopped !== "recipe" || out.done !== 1 || out.notSent !== 2) throw new Error("the switch: " + JSON.stringify(out));
-if (ed.status !== "Each area stopped: the recipe changed while the areas ran; 1 of 3 areas generated; the other 2 were not sent.") throw new Error("the status: " + ed.status);
+if (out.stopped !== "recipe" || out.done !== 2 || out.notSent !== 1) throw new Error("the switch: " + JSON.stringify(out));
+if (ed.status !== "Each area stopped: the recipe changed while the areas ran; 2 of 3 areas generated; the last was not sent.") throw new Error("the status: " + ed.status);
 return { status: ed.status };
-""" % (LOOP_SLOW, LOOP, LOOP)),
+""" % (LOOP_SLOW, LOOP_SLOW, LOOP, LOOP)),
+    # while the areas run, nothing changes the picture they were cut from: a turn, a resize, Generate new and a Generate
+    # of the whole selection are refused with a plain line, and every area lands where the click's picture had it
+    ("geometry_refused_while_areas_run", THREE + """
+host.setRecipe(%s);
+await three();
+await host.selectionAreas(ed);
+const h0 = ed.history.length, W0 = ed.width, H0 = ed.height;
+const ask0 = ed.ask;
+ed.ask = async () => true;
+let out, said = {};
+const msgOf = async (f) => { try { await f(); return "ran"; } catch (e) { return String((e && e.message) || e); } };
+try {
+    const p = host.generateEachArea(ed);
+    if (!(await until(() => /^Sending crop/.test(ed.status) && !!ed.providerPending))) throw new Error("the first area did not go");
+    said.turn = await msgOf(() => run("rotate_canvas", { doc, angle: 90 }));
+    said.resize = await msgOf(() => run("resize_image", { doc, percent: 50 }));
+    said.generateNew = host.generateNewBlocked(ed);
+    const g = await ed.generate();
+    said.generate = g && g.error ? g.error.message : "ran";
+    out = await p;
+} finally { ed.ask = ask0; host.setRecipe(%s); }
+const EA = /^Each area is running on this document/;
+if (!EA.test(said.turn) || !EA.test(said.resize) || !EA.test(said.generateNew) || said.generate !== "Each area is running on this document: wait for it, or stop it.") throw new Error("refusals: " + JSON.stringify(said));
+if (ed.width !== W0 || ed.height !== H0 || out.done !== 3 || out.stopped) throw new Error("the run: " + JSON.stringify({ out, size: [ed.width, ed.height] }));
+if (JSON.stringify(boxesOf(resultsSince(h0))) !== JSON.stringify(CROPS)) throw new Error("the results: " + JSON.stringify(boxesOf(resultsSince(h0))));
+// after the run the turn works again (and is taken back)
+await run("rotate_canvas", { doc, angle: 90 });
+if (ed.width !== H0) throw new Error("no turn after the run");
+await run("undo", { doc });
+return said;
+""" % (LOOP_SLOW, LOOP)),
     # the in-app models are free and offline: no question; the command's time: no area starts that the time left would
     # not hold (an area took 1.5 s, so with 0.5 s left after it none follows)
     ("free_and_timed", THREE + """
 await three();
 await host.selectionAreas(ed);
-const prev = host.recipe, ask0 = ed.ask, runProvider0 = host.runProvider;
+const prev = host.recipe, ask0 = ed.ask, runProvider0 = host.runProvider, keyState0 = host.shell.keyState;
 let asked = 0, calls = 0, timed;
 try {
     ed.ask = async () => { asked++; return true; };
+    // a provider without a usable key is refused before the question (nothing counted as sent)
+    host.shell.keyState = () => ({ ok: false, text: "no Loopback key yet: Settings (Ctrl+,) › API providers" });
+    let noKey = "";
+    try { await host.generateEachArea(ed); } catch (e) { noKey = String(e.message || e); }
+    if (noKey !== "Each area cannot run on Loopback: no Loopback key yet: Settings (Ctrl+,) › API providers." || asked) throw new Error("no key: " + JSON.stringify({ noKey, asked }));
+    // the in-app model, its file present (as keyState says for a downloaded LaMa)
+    host.shell.keyState = () => ({ ok: true });
     host.setRecipe({ id: "inapp_areas", kind: "provider", provider: "inapp", providerLabel: "In-app", model: "lama", input: "edit", name: "Remove (LaMa)", settings: [], limits: { min: 64, max: 512, step: 8, pixels: 0, minPixels: 0, ratio: 0, aspects: [] } });
     host.runProvider = async () => { calls++; return {}; };
     const free = await host.generateEachArea(ed);
     if (asked || calls !== 3 || free.done !== 3) throw new Error("the in-app run: " + JSON.stringify({ asked, calls, free }));
     host.runProvider = runProvider0;
+    host.shell.keyState = keyState0;
     host.setRecipe(%s);
     const h0 = ed.history.length;
     timed = await host.generateEachArea(ed, { confirm: false, deadline: Date.now() + 500 });
     if (timed.stopped !== "time" || timed.done !== 1 || timed.notSent !== 2 || ed.history.length !== h0 + 1) throw new Error("the deadline: " + JSON.stringify(timed));
     if (ed.status !== "Each area stopped: the command's time ran out; 1 of 3 areas generated; the other 2 were not sent.") throw new Error("the status: " + ed.status);
-} finally { ed.ask = ask0; host.runProvider = runProvider0; host.setRecipe(prev); }
+} finally { ed.ask = ask0; host.runProvider = runProvider0; host.shell.keyState = keyState0; host.setRecipe(prev); }
 return { asked, timed: timed.stopped };
 """ % LOOP_SLOW),
     # a recipe on the user's ComfyUI (a stubbed /prompt, nothing reaches a server): the hint on a plain Generate, then
@@ -339,18 +391,18 @@ try {
     const g = await ed.generate();
     if (g && g.error) throw g.error;
     if (!(ed.lastRunNotes || []).some((n) => /^3 separate areas; the crop goes at 32 % of its size/.test(n))) throw new Error("the local hint: " + JSON.stringify(ed.lastRunNotes));
-    if (!(await until(() => ed.history.length === h00 + 1))) throw new Error("the plain local run did not land");
+    if (!(await until(() => ed.history.length === h00 + 1 && !(ed._localRuns && ed._localRuns.size)))) throw new Error("the plain local run did not land");
     host.nodeParams = saved.np;
     posts.length = 0;
     L.landed.length = 0;
     let asked = 0;
     ed.ask = async () => { asked++; return true; };
     const before = ed.getBounds().slice(), h0 = ed.history.length;
-    const out = await host.generateEachArea(ed, { api: null });
+    const out = await host.generateEachArea(ed);
     if (out.areas !== 3 || out.done !== 3 || out.sent !== 3 || out.stopped || out.failed || asked) throw new Error("the local run: " + JSON.stringify({ out, asked }));
     if (posts.length !== 3 || ed.history.length !== h0 + 3) throw new Error("prompts / results: " + posts.length + " / " + (ed.history.length - h0));
     // one at a time: each prompt went after the one before had landed
-    if (posts.some((p, i) => p.landedBefore !== i)) throw new Error("queued before the one before landed: " + JSON.stringify(posts.map((p) => p.landedBefore)));
+    if (posts.some((p) => !p.prevLanded)) throw new Error("queued before the one before landed: " + JSON.stringify(posts.map((p) => p.prevLanded)));
     const states = posts.map(stateOf);
     const masks = states.map((s) => s.mask && s.mask.filename);
     if (new Set(masks).size !== 3 || states.some((s) => !s.hasSelection) || new Set(states.map((s) => s.prompt)).size !== 1) throw new Error("the queued states: " + JSON.stringify({ masks }));
@@ -370,7 +422,7 @@ try {
     await three();
     await host.selectionAreas(ed);
     const h0 = ed.history.length;
-    const p = host.generateEachArea(ed, { api: null });
+    const p = host.generateEachArea(ed);
     if (!(await until(() => posts.length === 2))) throw new Error("the second area was not queued: " + posts.length);
     const label = btnState().label;
     ed.eachAreaBtn.click();
@@ -380,6 +432,58 @@ try {
     if (!ed.status.startsWith("Each area cancelled: 1 of 3 areas landed; area 2 is still running on your ComfyUI and lands when it is done; 1 was not sent.")) throw new Error("the status: " + ed.status);
     if (label !== "Stop · 2/3") throw new Error("the button during the run: " + label);
     return { status: ed.status };
+} finally { uninstall(); }
+"""),
+    # the Stop while the second area's pictures go up: nothing more is queued, so it counts as not sent
+    ("local_stop_before_it_is_queued", THREE + LOCAL + """
+try {
+    install();
+    L.onEnsure = (i) => { if (i === 1) ed.eachAreaBtn.click(); };
+    await three();
+    await host.selectionAreas(ed);
+    const out = await host.generateEachArea(ed);
+    await wait(500);
+    if (out.done !== 1 || out.sent !== 1 || out.running !== null || out.notSent !== 2 || !out.cancelled || posts.length !== 1) throw new Error("the stop: " + JSON.stringify({ out, posts: posts.length }));
+    if (!ed.status.startsWith("Each area cancelled: 1 of 3 areas landed; the other 2 were not sent.")) throw new Error("the status: " + ed.status);
+    return { status: ed.status };
+} finally { uninstall(); }
+"""),
+    # another render on the document: one still on the server refuses Each area; while the areas run, a Generate of the
+    # whole selection is refused, and a result of another prompt that lands in the document is not taken for an area's,
+    # so the next area waits for its own
+    ("local_other_renders_are_not_areas", THREE + LOCAL + """
+try {
+    install();
+    await three();
+    await host.selectionAreas(ed);
+    // a plain render still on the server
+    L.hold = (i) => i === 0;
+    const g0 = await ed.generate();
+    if (g0 && g0.error) throw g0.error;
+    let refused = "";
+    try { await host.generateEachArea(ed); } catch (e) { refused = String(e.message || e); }
+    if (refused !== "A render on your ComfyUI is still running on this document: run Each area when it is in.") throw new Error("a render going: " + refused);
+    await landPrompt(posts[0].id, made++);
+    if (!(await until(() => !(ed._localRuns && ed._localRuns.size)))) throw new Error("the plain render did not end");
+    // the run, its first area held on the server
+    posts.length = 0;
+    L.hold = (i) => i === 0;
+    const h0 = ed.history.length;
+    const p = host.generateEachArea(ed);
+    if (!(await until(() => posts.length === 1))) throw new Error("the first area was not queued");
+    const g1 = await ed.generate();
+    const plain = g1 && g1.error ? g1.error.message : "ran";
+    // a result of another prompt lands in the document (the tab in front takes it)
+    const ref = await resultFor(made++);
+    hapi.dispatch("executed", { prompt_id: "other-" + Date.now(), output: { inpaint_result: [{ ...ref, x: 0, y: 0, width: 64, height: 64, canvas_node: ed.node.id }] } });
+    await wait(1200);
+    const queuedWhileHeld = posts.length;
+    await landPrompt(posts[0].id, made++);
+    const out = await p;
+    if (plain !== "Each area is running on this document: wait for it, or stop it.") throw new Error("a plain Generate during the run: " + plain);
+    if (queuedWhileHeld !== 1) throw new Error("the next area went before the first one's own result: " + queuedWhileHeld);
+    if (out.done !== 3 || posts.length !== 3 || posts.some((x) => !x.prevLanded) || ed.history.length !== h0 + 4) throw new Error("the run: " + JSON.stringify({ out, posts: posts.length, landed: ed.history.length - h0 }));
+    return { plain, queuedWhileHeld };
 } finally { uninstall(); }
 """),
     # more than 8 areas: refused plainly, nothing sent

@@ -1712,8 +1712,9 @@ against its page's parameter list, the Comfy Cloud graph against the node's spec
   2026-11-07, "keep the references"): the model edits the whole crop with all pictures, and the stitch keeps only the
   selection area, as for every instruction edit. The layout leaves `model.mask` out then (`MASK_ONE_PICTURE`,
   `maskLeftOut`), so the mask is neither uploaded nor wired, and the answer's notes say it once: "Comfy Cloud's GPT Image
-  node takes a mask with one picture only: sent without the mask, the selection still limits the result." (a note of
-  something left out, so the status line shows it in the warning colour). The crop alone keeps the mask as before.
+  node takes a mask with one picture only: sent without the mask, the selection still limits the result." The result is
+  still the selection's alone, so the note is a plain hint, not a warning (renderer/editor/host.js `HINT_NOTE`; the
+  decision of 2026-11-07): the status line keeps its colour. The crop alone keeps the mask as before.
   Built from the node's spec, **not run on Comfy Cloud**.
 - **Not offered:** GIF and SVG output (a layer is a raster picture: `common()` turns any other format into PNG, and
   fal, Replicate and WaveSpeed are sent PNG), `markup` edits (they exclude the mask), Batch and the Responses tool.

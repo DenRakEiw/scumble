@@ -5288,6 +5288,8 @@ class InpaintEditor {
 
     /** Why the document cannot be turned now (a job that would land where the picture was), or "". */
     turnBlocked() {
+        // the app's Each area (eacharea.js): its areas were cut from the picture as it is, and the next one goes soon
+        if (this._eachArea) return "Each area is running on this document: its areas were cut from the picture as it is. Wait for it, or stop it.";
         if (this.providerPending || this.segmentPending || this.cutoutPending || this.objectsPending || this._pointPending
             || this._loading || this._docSaving) return "Wait for the running job to finish: it would land where the picture was before the turn.";
         // a render queued on ComfyUI lands in the geometry it was made for (the app's host counts them, host.js)
@@ -24522,6 +24524,14 @@ class InpaintEditor {
         // queueing (ComfyUI queues on purpose), also while a 1× pass or a selection's upscale holds it; not while a run
         // whose landing resizes the document holds it (`resizes`: an upscale of the whole picture, the Realism Pass
         // above 1×), whose result would land in the old geometry. The node's host has no slot.
+        const area = (opts && opts.area) || null;
+        // the app's Each area (eacharea.js) runs its areas one by one on this document: a Generate of the whole selection
+        // meanwhile would land among them (and on the user's ComfyUI hold up the next area)
+        if (!area && this._eachArea) {
+            this.lastRunError = new Error("Each area is running on this document: wait for it, or stop it.");
+            this.setStatus(this.lastRunError.message, "info");
+            return { error: this.lastRunError };
+        }
         if (this.providerPending && (this.resultInputState().provider || this.providerPending.resizes)) {
             this.lastRunError = new Error(RUN_GOING_TEXT);
             this.setStatus(this.lastRunError.message, "info");
@@ -24530,7 +24540,6 @@ class InpaintEditor {
         // the prompt and the references as they are at the click (docs/PLAN_REFS.md C3): a later hide or move does not
         // change what this run sends
         const refs = (opts && opts.refs) || this.refSnapshot();
-        const area = (opts && opts.area) || null;
         if (this.removePending || this.healPending || this.liquifyPending) { this.setStatus("Waiting for the stroke to land..."); await this.heldEdit(); }
         if (this.genSettings.seedRandom) { this.genSettings.seed = randomSeed(); if (this.seedInput) this.seedInput.value = this.genSettings.seed; }
         const { name, wired } = this.resultInputState();

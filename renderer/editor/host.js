@@ -61,7 +61,7 @@ import { tileBoxes, fusedSize } from "./inpaint_edges.js";
 import { modelSize, DEPTH_LARGE, roundHalfEven } from "./inpaint_depth.js";
 import { INTERACTIVE } from "./inpaint_pool.js";
 import { editorPool, markStep } from "./inpaint_jobs.js";
-import { areasSoon, areaHint, areaState, buildAreaButton, runEachArea, syncAreaButton } from "./eacharea.js";
+import { areasSoon, areaHint, areaState, buildAreaButton, runEachArea, syncAreaButton, sameRecipe } from "./eacharea.js";
 
 const PROXY = "/comfy";
 
@@ -225,6 +225,12 @@ const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v 
 
 /** An API run, an upscale or a Realism Pass refused while another one holds the document (`editor.providerPending`). */
 const RUN_GOING = "A run is still going on this document: wait for it, or Cancel.";
+/** An area of Each area (eacharea.js) reached its run with another recipe selected than the one its click confirmed. */
+const AREA_RECIPE_CHANGED = "The recipe changed while the areas ran: this area was not sent.";
+/** An area of Each area stopped (its Stop, a Cancel) before its prompt went to the user's ComfyUI. */
+const AREA_STOPPED = "Stopped before this area was queued: nothing went to your ComfyUI.";
+/** Main's refusals before a request goes out (no or a stale key, no such provider or endpoint, a malformed request). */
+const NOT_SENT = /^No API key for |key was stored on another PC or Windows account|^Unknown provider: |has no (text-to-image endpoint|upscaler|relight endpoint) in Scumble|nothing was sent|nothing runs or is charged/;
 /**
  * The refusal of a run whose recipe needs words (`promptRequired`, P-H3-Image: without them the model redraws the crop, or
  * its upsampler invents an edit) when the prompt is empty or blank; "" otherwise. The model's name is the recipe's
@@ -2370,6 +2376,7 @@ export const host = {
     async runProvider(editor, opts = {}) {
         const r = this.recipe;
         const area = opts.area || null;
+        if (area && !sameRecipe(r, area.recipe)) throw refusal(AREA_RECIPE_CHANGED);
         if (!editor.base) throw refusal("Load an image first.");
         // one run per document: a second token would take the slot, and its end would clear it under the first (a Realism
         // Pass, an upscale), which then reads as idle (busy(), Close without asking, turnBlocked)
@@ -2451,9 +2458,10 @@ export const host = {
                 // the variant's declaration holds for its edit graph (recipes.js normalize)
                 ...(cloudLoras ? { loras: { rows: cloudLoras, declared: r.loras } } : {}),
             };
-            // a run of one area of several (Each area, eacharea.js): from here on it counts as sent (it may be charged)
+            // a run of one area of several (Each area, eacharea.js): from here on it counts as sent (it may be charged),
+            // unless main refuses it before its request goes out (no key, no such endpoint: NOT_SENT's words)
             if (area && !token.cancelled) area.sent = true;
-            res = await providerEdit(request, token);
+            try { res = await providerEdit(request, token); } catch (err) { if (area && NOT_SENT.test(String((err && err.message) || ""))) area.sent = false; throw err; }
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
             editor.lastRunNotes = [...preNotes, ...(res.notes || [])];
             editor.lastLoras = Array.isArray(res.loras) ? res.loras : [];
@@ -3245,6 +3253,8 @@ export const host = {
      * The API route (runGenerate) and the local one (the generate_new command, before its newCanvas) both ask it.
      */
     generateNewBlocked(editor) {
+        // Each area (eacharea.js): its areas were cut from this picture, and the next one goes soon
+        if (editor._eachArea) return "Each area is running on this document: its areas would land in the picture Generate new replaces. Wait for it, or stop it.";
         if (editor._localRuns && editor._localRuns.size) return "A render on your ComfyUI is still running: its result would land in the picture Generate new replaces. Try again when it is in.";
         if (editor.providerPending || editor.segmentPending || editor.cutoutPending || editor.objectsPending || editor._pointPending || editor._loading || editor._docSaving) {
             return "Wait for the running job to finish: it would land in the picture Generate new replaces.";
@@ -5364,6 +5374,8 @@ export const host = {
      */
     async queueGenerate(editor, opts = {}) {
         const area = opts.area || null;
+        // an area runs the recipe its click confirmed: one selected meanwhile (during generate()'s waits) is refused
+        if (area && !sameRecipe(this.recipe, area.recipe)) throw refusal(AREA_RECIPE_CHANGED);
         // Generate new on a ComfyUI recipe (generate_new's local path, a fresh canvas): the size its boxes were drawn on,
         // read once whatever the run does
         const fresh = editor._newBoxes || null;
@@ -5524,6 +5536,9 @@ export const host = {
             }
         }
         if (texts.note) editor.setStatus(`${editor.status} ${texts.note}`, editor.statusKind || "info");
+        // an area of Each area stopped while its pictures went up: nothing is queued for it
+        const areaStop = () => { if (area && typeof area.stopped === "function" && area.stopped()) throw Object.assign(new Error(AREA_STOPPED), { kind: "cancelled", statusKind: "info" }); };
+        areaStop();
         await this.ensureOnServer(state, editor);
         const prompt = JSON.parse(JSON.stringify(r.prompt));
         const canvas = prompt[r.canvas];
@@ -5596,6 +5611,7 @@ export const host = {
                 if (node && node.class_type === "DLSS5Settings") node.inputs = realism.passSettings(node.inputs, { style: v.style, intensity: v.intensity });
             }
         }
+        areaStop();
         const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo(lorasSent.length ? { loras: lorasSent } : null) });
         editor.lastPromptId = res && res.prompt_id;
         // a run of one area of several (Each area): queued, so it counts as sent; its prompt is what the run waits for
@@ -6892,6 +6908,8 @@ api.addEventListener("executed", ({ detail }) => {
         const upNote = ed && pid && ed._upNotes ? ed._upNotes.get(pid) : null;
         if (upNote) { ed._upNotes.delete(pid); Promise.resolve(landed).then(() => ed.setStatus(`${ed.status} ${upNote}`, ed.statusKind || "info")).catch(() => { /* the result's own line stands */ }); }
         else if (ed && pid && host._upsampledRuns.has(pid)) Promise.resolve(landed).then(() => { const l = ed._upLanded || (ed._upLanded = new Set()); l.add(pid); while (l.size > 64) l.delete(l.values().next().value); }).catch(() => { /* nothing to mark */ });
+        // the prompts whose result has landed in the document (Each area waits for its own area's, eacharea.js waitLocal)
+        if (ed && pid) Promise.resolve(landed).then(() => markLanded(ed, pid)).catch(() => { /* the area waits for its prompt's end */ });
     }
     // a closed tab's helper output (queued while it closed: no prompt id was known) lands nowhere either
     const forNode = (info) => (info && info.canvas_node != null && host._closedNodes.has(String(info.canvas_node)) ? null
@@ -6905,6 +6923,13 @@ api.addEventListener("executed", ({ detail }) => {
         else ed.applyMaskFile(info);
     }
 });
+
+/** A local prompt's result landed in `ed`: kept by its id (the last 64), so a run can wait for its own prompt's result. */
+function markLanded(ed, pid) {
+    const l = ed._landedPrompts || (ed._landedPrompts = new Set());
+    l.add(String(pid));
+    while (l.size > 64) l.delete(l.values().next().value);
+}
 
 /** A prompt ended on ComfyUI: no document counts it as an open render any more (see queueGenerate). */
 function localRunEnded(detail) {

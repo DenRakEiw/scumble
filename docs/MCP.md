@@ -254,7 +254,8 @@ a coarse copy of it (`count`, `each_area`, `cap` 8, `specks`, each area's box): 
 are one area, and parts smaller than a speck (max(256 px, a 20,000th of the picture)) are not counted: those outside
 every area's crop are left out of the runs. `generate` with `each_area: true` runs each area as its own crop and run
 with the same prompt and the selected recipe, one after another (on the user's ComfyUI too: the next area is queued once
-the one before landed), each result its own layer; the document's selection is never changed by it. It answers
+the one before landed, by its own prompt), each result its own layer; the document's selection is never changed by
+it, and while it runs a turn, a crop or resize, `generate_new` and a plain `generate` on that document are refused. It answers
 `areas`, `generated`, `layers`, `sent`, `not_sent`, `still_running`, `cancelled`, `stopped`, `failed`, `said` (a
 cancel's words for an area that had gone out: whether it is charged), `left_out` and `notes` (the areas' run notes,
 once each). Its `timeout` bounds the whole run: no area starts that the time left would not hold. It asks nothing first
