@@ -4,7 +4,7 @@ The full list is in `verified.json` (73 findings, each with its claim, scenario,
 This page is the short version and a proposed order of work. Nothing has been fixed yet.
 
 
-**Status 2026-11-07 night:** `rust/px-deflate-sync-truncation` fixed and merged (`9d44bdc`; R1 as built in `docs/PLAN_WASM_BUILD.md` §7). The other musts and every should are open unless a later line says otherwise.
+**Status 2026-11-07 night:** `rust/px-deflate-sync-truncation` fixed and merged (`9d44bdc`; R1 as built in `docs/PLAN_WASM_BUILD.md` §7). `documents/D2+canvas-c/F1` and `canvas-c/F3` fixed and merged (`6a66182`, after a review's 12 findings were fixed in `3a34445`: fonts, the node's clean-up, the assistant's turn, the quit save, the ask() leak). The other three musts (`providers/PRV-1`, `documents/D1`, `filters/filter-layer-over-its-own-input`) and every should are open, left for the user's pick.
 
 ## What was reviewed
 
