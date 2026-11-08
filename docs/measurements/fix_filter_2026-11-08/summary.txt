@@ -1,12 +1,34 @@
 fix-filter (docs/research/review_full_2026-11-07/verified.json "filters/filter-layer-over-its-own-input"):
-a plain filter layer stands for the picture on every path. In renderer/editor/inpaint_canvas.js:
-  1. filteredCanvas(layer, below, forRun, preview, keepSurface = false, plain = keepSurface):
-     info.limitOver = !plain (a plain filter layer with params.limit mixes the input back in where w = 0,
-     matching the chained and band paths, instead of zeroing alpha before ctx.clearRect);
-     if (info.limitMissing && canvas === input && !(keepSurface && isGLSurface(canvas))) canvas = null.
-  2. applyFilterLayer: passes plain to filteredCanvas; returns null if (!out || (plain && out === ctx.canvas));
+a plain filter layer stands for the picture on every path. In renderer/editor/inpaint_canvas.js and renderer/editor/inpaint_filters_gl.js:
+  1. filterKey(layer, below, forRun, preview, vp = this.viewPass, plain = false):
+     uses vp.crop dimensions when present and pushes !!plain into baseKey when layer.params.limit is set,
+     keeping the exact legacy key when no limit is set while separating u_over = 0 (plain) from u_over = 1 (!plain)
+     cache entries on limited filter layers.
+  2. cropFilterInput(below, { bx0, by0, bw, bh, ix0, iy0, iw, ih }):
+     when a region pass reaches outside the document (zoomed-out view / Fit), crops the canvas input to the
+     document's pixel box [bx0, by0, bw, bh] and clamps any 1-pixel fractional straddling rim from the
+     strictly-inside pixels [ix0, iy0, iw, ih] so spatial/displacement filters (Glass, Lens blur, etc.) clamp
+     at the document edge and never sample the empty margin or a subpixel anti-aliased boundary pixel.
+  3. filteredCanvas(layer, below, forRun, preview, keepSurface = false, plain = keepSurface):
+     passes plain to filterKey; crops below via cropFilterInput when vp.crop is set; sets info.limitOver = !plain
+     (a plain filter layer with params.limit mixes the input back in via single-round mix(i, c, w) in the shader,
+     matching earlier filters in a chain and the band path, instead of zeroing alpha before ctx.clearRect);
+     sets canvas = null when info.limitMissing && canvas === input && !(keepSurface && isGLSurface(canvas)).
+     Note on opaque soft Limit: on an opaque picture (alpha === 255), output bytes without a soft Limit (or outside
+     the soft ramp, w = 0 or w = 1) are byte-for-byte identical to 2068af87 (diffMax === 0); for a plain filter
+     layer with a soft Limit (0 < w < 1) as the last filter in a stack, using single-round mix(i, c, w) (u_over = 0)
+     instead of quantizing w * 255 to an 8-bit FBO alpha (u_over = 1) and dividing again in 8-bit source-over
+     unifies the last filter with earlier filters in the chain and differs by 1-2 / 255 inside the soft ramp
+     (measured maxRamp = 1, maxOutside = 0 against frozen 2068af87 hash deec60b1d3b8... on the 256x256 opaque base).
+  4. applyFilterLayer: uses Math.round(layer.opacity * 255) === 255 in plain; restricts rx, ry, rw, rh and
+     this.viewPass = fvp to the document box when vp reaches past the document on a non-fill filter layer;
+     passes plain to filteredCanvas; returns null if (!out || (plain && out === ctx.canvas));
      calls if (plain) ctx.clearRect(rx, ry, rw, rh) before ctx.drawImage(src, rx, ry, rw, rh).
-  3. flushFilterChain: calls ctx.clearRect(chain.x, chain.y, chain.w, chain.h) before drawSurfaceTo / drawImage.
+  5. drawSurfaceTo(ctx, surface, dx, dy, dw, dh, clear = false) & flushFilterChain:
+     drawSurfaceTo clears (dx, dy, dw, dh) only inside readSurface's callback on the first piece after
+     blitFramebuffer succeeds, and flushFilterChain's fallback clears only inside if (flat), so a lost/replaced
+     WebGL context never wipes the canvas below to transparent black.
+  6. Frozen 2068af87 references: freeze_base.py, frozen_off.json (--no-tiles), and frozen_on.json (--tiles).
 
 1. 15000 x 10000 exportperf (exportperf:15000x10000,--filter=film.look)
    measure_exportperf.sh, 2026-11-08 18:32-18:39, busy lock held per round, port 9627 (--offline, --tiles on),
@@ -22,15 +44,21 @@ a plain filter layer stands for the picture on every path. In renderer/editor/in
    psd_masked (620.5 MB)          9867 (1221)/ 8730 (229) / 8794 (326) 9025 (345) /10050 (1033)/ 8382 (295) 8794 (326) -> 9025 (345) ms
 
 2. Mutation round (tools/mutation_round.py, docs/measurements/fix_filter_2026-11-08/mutants.py)
-   8 mutants (4 changed sites x 2 backends: --tiles on and --tiles off) against the composite gate:
-   - orig: build 9 s, both wasm builds identical to checkout's: True; full px_test green (113 s);
-     composite gate green on tiles (26 s) and canvas (25 s).
-   - applyFilterLayer clear reversed (tiles=on):        KILLED by composite (see_through_filters: identity curves screen/flatten/size max diff 64)
-   - applyFilterLayer clear reversed (tiles=off):       KILLED by composite (see_through_filters: identity curves screen/flatten/png/size max diff 64)
-   - flushFilterChain clear reversed (tiles=on):        KILLED by composite (see_through_filters: flushFilterChain before masked filter max diff 64, alpha 192)
-   - flushFilterChain clear reversed (tiles=off):       KILLED by composite (see_through_filters: flushFilterChain before masked filter max diff 64, alpha 192)
-   - filteredCanvas limitOver=!keepSurface (tiles=on):  KILLED by composite (see_through_filters: limited plain bw w=0 erased to [0,0,0,0], max diff 128)
-   - filteredCanvas limitOver=!keepSurface (tiles=off): KILLED by composite (see_through_filters: limited plain bw w=0 erased to [0,0,0,0])
-   - limitMissing self-clear guard reversed (tiles=on): KILLED by composite (see_through_filters: missing-depth plain filter max diff 255)
-   - limitMissing self-clear guard reversed (tiles=off):KILLED by composite (see_through_filters: missing-depth plain filter max diff 255)
-   8 killed (0 on re-check), 0 survived.
+   14 mutants (7 changed sites x 2 backends: --tiles on and --tiles off) against the composite gate:
+   - orig: build 15 s, both wasm builds identical to checkout's: True; full px_test green (128 s);
+     composite gate green on tiles (37 s) and canvas (25 s).
+   - applyFilterLayer clear reversed (tiles=on):               KILLED by composite (see_through_filters: identity curves screen/flatten/size max diff 64)
+   - applyFilterLayer clear reversed (tiles=off):              KILLED by composite (see_through_filters: identity curves screen/flatten/png/size max diff 64)
+   - flushFilterChain clear reversed (tiles=on):               KILLED by composite (see_through_filters: flushFilterChain before masked filter max diff 64, alpha 192)
+   - flushFilterChain clear reversed (tiles=off):              KILLED by composite (see_through_filters: flushFilterChain before masked filter max diff 64, alpha 192)
+   - filteredCanvas limitOver=!keepSurface (tiles=on):         KILLED by composite (see_through_filters: limited plain bw w=0 erased to [0,0,0,0], max diff 128)
+   - filteredCanvas limitOver=!keepSurface (tiles=off):        KILLED by composite (see_through_filters: limited plain bw w=0 erased to [0,0,0,0])
+   - limitMissing non-plain guard reversed (tiles=on):         KILLED by composite (see_through_filters: missing-depth non-plain filter opacity 0.5 max diff 32)
+   - limitMissing non-plain guard reversed (tiles=off):        KILLED by composite (see_through_filters: missing-depth non-plain filter opacity 0.5 max diff 32)
+   - applyFilterLayer no-op self-clear guard reversed (tiles=on):  KILLED by composite (see_through_filters: no-op plain filter returning input canvas max diff 255)
+   - applyFilterLayer no-op self-clear guard reversed (tiles=off): KILLED by composite (see_through_filters: no-op plain filter returning input canvas max diff 255)
+   - filterKey limit plain omitted (tiles=on):                 KILLED by composite (see_through_filters: limited filter cache at opacity 0.5 -> 1.0 max diff 128)
+   - filterKey limit plain omitted (tiles=off):                KILLED by composite (see_through_filters: limited filter cache at opacity 0.5 -> 1.0 max diff 128)
+   - applyFilterLayer view margin crop disabled (tiles=on):    KILLED by composite (see_through_filters: opaque glass with view margin & drawViewComposite minDocA 0)
+   - applyFilterLayer view margin crop disabled (tiles=off):   KILLED by composite (see_through_filters: opaque glass with view margin & drawViewComposite minDocA 0)
+   14 killed (0 on re-check), 0 survived.

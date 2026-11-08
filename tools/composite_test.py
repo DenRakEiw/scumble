@@ -709,7 +709,26 @@ SEE_THROUGH_FILTERS = """
         w0: pxAt(limFlat, 16, 16), w1: pxAt(limFlat, 240, 16),
     });
 
-    // And a plain filter with a missing depth map (limitMissing: hands input back, must not clear ctx onto itself)
+    // 1e. Filter cache keys on plain when limit is set: opacity 0.5 -> 1.0 and 1.0 -> 0.5 without compositeVersion bump
+    const renderScreenKeepCache = () => {
+        const c = mk(W, H), ctx = c.getContext("2d");
+        const prev = ed.viewPass;
+        ed.viewPass = { x: 0, y: 0, w: W, h: H, sx: 1, sy: 1, screen: true };
+        try { ed.drawComposite(ctx, {}); } finally { ed.viewPass = prev; }
+        return ctx.getImageData(0, 0, W, H).data;
+    };
+    fxBw.opacity = 0.5;
+    const limScreenHalfFresh = screenBytes(false);
+    fxBw.opacity = 1.0;
+    const limScreenOneFromCache = renderScreenKeepCache();
+    check("limited filter cache at opacity 0.5 -> 1.0 without version bump matches fresh", diffMax(limScreenOneFromCache, limScreen) === 0, diffMax(limScreenOneFromCache, limScreen));
+    fxBw.opacity = 0.5;
+    const limScreenHalfFromCache = renderScreenKeepCache();
+    check("limited filter cache at opacity 1.0 -> 0.5 without version bump matches fresh", diffMax(limScreenHalfFromCache, limScreenHalfFresh) === 0, diffMax(limScreenHalfFromCache, limScreenHalfFresh));
+    fxBw.opacity = 1.0;
+
+    // 1f. Split no-op guards:
+    // (i) plain filter with missing depth map (limitMissing=true, plain=true) AND at opacity 0.5 (limitMissing=true, plain=false)
     ed.maps = {};
     fxBw.params = { ...fxBw.params, limit: { source: "depth", lo: 0.2, hi: 0.8, fLo: 0, fHi: 0 } };
     ed.markFilterChanged(fxBw);
@@ -717,7 +736,61 @@ SEE_THROUGH_FILTERS = """
     check("missing-depth plain filter leaves base untouched", diffMax(missFlat, baseFlat) === 0 && diffMax(missFlatOff, baseFlat) === 0, {
         on: diffMax(missFlat, baseFlat), off: diffMax(missFlatOff, baseFlat),
     });
+    fxBw.opacity = 0.5;
+    ed.markFilterChanged(fxBw);
+    const missHalfFlat = flatBytes(true, false), missHalfScreen = screenBytes(false);
+    check("missing-depth non-plain filter (opacity 0.5) leaves base untouched", diffMax(missHalfFlat, baseFlat) === 0 && diffMax(missHalfScreen, baseFlat) === 0, {
+        flat: diffMax(missHalfFlat, baseFlat), screen: diffMax(missHalfScreen, baseFlat),
+    });
     ed.removeLayer(fxBw.id);
+    // (ii) plain filter whose apply() returns input canvas unchanged (plain=true, limitMissing=false, out === ctx.canvas)
+    const fxNoop = ed.addFilterLayer("effects.chromatic_shift");
+    fxNoop.params = { ...fxNoop.params, amount: 0 };
+    ed.markFilterChanged(fxNoop);
+    const noopFlat = flatBytes(true, false), noopScreen = screenBytes(false);
+    check("no-op plain filter returning input canvas leaves base untouched", diffMax(noopFlat, baseFlat) === 0 && diffMax(noopScreen, baseFlat) === 0, {
+        flat: diffMax(noopFlat, baseFlat), screen: diffMax(noopScreen, baseFlat),
+    });
+    ed.removeLayer(fxNoop.id);
+
+    // 1g. flushFilterChain preserves ctx when a surface from a lost/replaced GL context fails to blit or read back
+    {
+        const gc = mk(16, 16), gctx = gc.getContext("2d");
+        const gimg = gctx.createImageData(16, 16), gd = gimg.data;
+        for (let i = 0; i < gd.length; i += 4) { gd[i] = 120; gd[i + 1] = 40; gd[i + 2] = 20; gd[i + 3] = 128; }
+        gctx.putImageData(gimg, 0, 0);
+        const staleChain = { surface: { __glSurface: true, width: 16, height: 16, gen: -1 }, x: 0, y: 0, w: 16, h: 16 };
+        ed.flushFilterChain(gctx, staleChain);
+        const afterBlit = pxAt(gctx.getImageData(0, 0, 16, 16).data, 8, 8, 16);
+        ed.filterChainOff = true;
+        try { ed.flushFilterChain(gctx, staleChain); } finally { ed.filterChainOff = false; }
+        const afterFallback = pxAt(gctx.getImageData(0, 0, 16, 16).data, 8, 8, 16);
+        check("flushFilterChain preserves ctx when surface readback fails", eqPx(afterBlit, [120, 40, 20, 128]) && eqPx(afterFallback, [120, 40, 20, 128]), { afterBlit, afterFallback });
+    }
+
+    // 1h. Real drawViewComposite at view.scale = 0.5 and after pan on see-through base
+    {
+        const fxViewBw = ed.addFilterLayer("bw");
+        ed.markFilterChanged(fxViewBw);
+        const prevScale = ed.view.scale, prevX = ed.view.x, prevY = ed.view.y;
+        try {
+            clearCaches();
+            ed.view.scale = 0.5; ed.view.x = 40; ed.view.y = 30;
+            ed.draw();
+            const d1 = ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+            const p1L = pxAt(d1, 48, 38, ed.canvas.width), p1R = pxAt(d1, 160, 38, ed.canvas.width);
+            ed.view.x = 64; ed.view.y = 48;
+            ed.draw();
+            const d2 = ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+            const p2L = pxAt(d2, 72, 56, ed.canvas.width), p2R = pxAt(d2, 184, 56, ed.canvas.width);
+            check("drawViewComposite at scale 0.5 and after pan keeps pure grey alpha 128",
+                eqPx(p1L, [62, 62, 62, 128]) && eqPx(p1R, [92, 92, 92, 128]) && eqPx(p2L, [62, 62, 62, 128]) && eqPx(p2R, [92, 92, 92, 128]),
+                { p1L, p1R, p2L, p2R });
+        } finally {
+            ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
+            ed.removeLayer(fxViewBw.id);
+        }
+    }
 
     // 2. Non-plain filter layers (mask, opacity, blend mode, limitView, clip) checked byte-for-byte against frozen base 2068af87
     const halfBase = mk(W, H);
@@ -855,6 +928,143 @@ SEE_THROUGH_FILTERS = """
     ed.removeLayer(fxOInv2.id);
     ed.removeLayer(fxOSh.id);
     ed.removeLayer(fxOBw.id);
+
+    // 3a. Opaque soft-limit case (last filter in stack, soft ramp 0 < w < 1 and outside w = 0 / w = 1) against frozen 2068af87
+    {
+        const fxOSoft = ed.addFilterLayer("bw");
+        fxOSoft.params = { ...fxOSoft.params, limit: { source: "luma", lo: 0.35, hi: 0.65, fLo: 0.2, fHi: 0.2 } };
+        ed.markFilterChanged(fxOSoft);
+        // Reconstruct 2068af87's two-round path (plain = false -> u_over = 1 + source-over onto opaqueBase) and verify its SHA-256 against frozen 2068af87
+        clearCaches();
+        const overC = ed.filteredCanvas(fxOSoft, opaqueBase, true, false, null, false);
+        const refC = mk(W, H), refCtx = refC.getContext("2d");
+        refCtx.drawImage(opaqueBase, 0, 0);
+        refCtx.drawImage(overC, 0, 0);
+        const ref2068 = refCtx.getImageData(0, 0, W, H).data;
+        const ref2068Hash = await sha256(ref2068);
+        check("frozen opaque soft-limit 2068af87 reference hash verified", ref2068Hash === "deec60b1d3b84105e22093b65061c5a557864c985b3b4a87663172b38ec464e6", ref2068Hash);
+
+        const softFlat = flatBytes(true, false), softFlatOff = flatBytes(true, true);
+        const softScreen = screenBytes(false), softPng = await pngBytes();
+        check("opaque soft-limit paths agree byte-for-byte",
+            diffMax(softFlat, softFlatOff) === 0 && diffMax(softScreen, softFlat) === 0 && diffMax(softPng, softFlat) === 0,
+            { flatOff: diffMax(softFlat, softFlatOff), screen: diffMax(softScreen, softFlat), png: diffMax(softPng, softFlat) });
+
+        // Compare every pixel of the 256x256 image against verified 2068af87 reference: 0 outside the ramp, <= 2 inside
+        const sstep = (a, b, x) => {
+            if (x <= a) return 0;
+            if (x >= b) return 1;
+            const t = (x - a) / (b - a);
+            return t * t * (3 - 2 * t);
+        };
+        const baseData = opaqueBase.getContext("2d").getImageData(0, 0, W, H).data;
+        let maxOutside = 0, maxRamp = 0, minAlpha = 255;
+        for (let i = 0; i < softFlat.length; i += 4) {
+            const v = (0.299 * baseData[i] + 0.587 * baseData[i + 1] + 0.114 * baseData[i + 2]) / 255;
+            const w = sstep(0.15, 0.35, v) * (1 - sstep(0.65, 0.85, v));
+            const d = Math.max(
+                Math.abs(softFlat[i] - ref2068[i]),
+                Math.abs(softFlat[i + 1] - ref2068[i + 1]),
+                Math.abs(softFlat[i + 2] - ref2068[i + 2]),
+                Math.abs(softFlat[i + 3] - ref2068[i + 3]),
+                Math.abs(softScreen[i] - ref2068[i]),
+                Math.abs(softScreen[i + 1] - ref2068[i + 1]),
+                Math.abs(softScreen[i + 2] - ref2068[i + 2]),
+                Math.abs(softScreen[i + 3] - ref2068[i + 3]),
+            );
+            if (w === 0 || w === 1) { if (d > maxOutside) maxOutside = d; }
+            else { if (d > maxRamp) maxRamp = d; }
+            if (softFlat[i + 3] < minAlpha) minAlpha = softFlat[i + 3];
+            if (softScreen[i + 3] < minAlpha) minAlpha = softScreen[i + 3];
+        }
+        check("opaque soft-limit matches 2068af87 (0 outside ramp, <= 2 inside ramp, alpha 255)",
+            maxOutside === 0 && maxRamp >= 1 && maxRamp <= 2 && minAlpha === 255,
+            { maxOutside, maxRamp, minAlpha });
+        ed.removeLayer(fxOSoft.id);
+    }
+
+    // 3b. View-margin crop and rim clamping on opaque base with effects.glass (amount 25):
+    // neither an explicit viewPass with margin nor a zoomed-out drawViewComposite (even at fractional zoom/pan)
+    // pulls transparent margin alpha < 255 into the document rim
+    {
+        const fxGlass = ed.addFilterLayer("effects.glass");
+        fxGlass.params = { ...fxGlass.params, amount: 25 };
+        ed.markFilterChanged(fxGlass);
+        const glassFlat = flatBytes(true, false);
+        for (const chainOff of [false, true]) {
+            ed.filterChainOff = chainOff;
+            clearCaches();
+            const pad = 32, vw = W + pad * 2, vh = H + pad * 2;
+            const vc = mk(vw, vh), vctx = vc.getContext("2d");
+            vctx.setTransform(1, 0, 0, 1, pad, pad);
+            const prevVp = ed.viewPass;
+            ed.viewPass = { x: -pad, y: -pad, w: vw, h: vh, sx: 1, sy: 1, screen: true };
+            try { ed.drawComposite(vctx, {}); } finally { ed.viewPass = prevVp; ed.filterChainOff = false; }
+            const vd = vctx.getImageData(0, 0, vw, vh).data;
+            let minDocA = 255, maxMarginA = 0, maxDocDiff = 0;
+            for (let y = 0; y < vh; y++) {
+                const inY = y >= pad && y < pad + H;
+                for (let x = 0; x < vw; x++) {
+                    const inX = x >= pad && x < pad + W;
+                    const vi = (y * vw + x) * 4;
+                    if (inX && inY) {
+                        if (vd[vi + 3] < minDocA) minDocA = vd[vi + 3];
+                        const fi = ((y - pad) * W + (x - pad)) * 4;
+                        for (let c = 0; c < 4; c++) {
+                            const d = Math.abs(vd[vi + c] - glassFlat[fi + c]);
+                            if (d > maxDocDiff) maxDocDiff = d;
+                        }
+                    } else if (vd[vi + 3] > maxMarginA) {
+                        maxMarginA = vd[vi + 3];
+                    }
+                }
+            }
+            check(`opaque glass with view margin (chainOff=${chainOff}) keeps doc alpha 255 and matches flatten`,
+                minDocA === 255 && maxMarginA === 0 && maxDocDiff === 0,
+                { minDocA, maxMarginA, maxDocDiff });
+        }
+        // Real zoomed-out drawViewComposite at integer and fractional zoom/pan
+        const prevScale = ed.view.scale, prevX = ed.view.x, prevY = ed.view.y;
+        try {
+            for (const [sc, vx, vy] of [[0.5, 40, 30], [0.47, 37.3, 29.7]]) {
+                clearCaches();
+                ed.view.scale = sc; ed.view.x = vx; ed.view.y = vy;
+                ed.draw();
+                const reg = ed._viewRegion || ed.viewportRegion();
+                const vcw = ed.viewCanvas.width, vch = ed.viewCanvas.height;
+                const sx = vcw / reg.w, sy = vch / reg.h;
+                const bx0 = Math.max(0, Math.floor(-reg.x * sx));
+                const by0 = Math.max(0, Math.floor(-reg.y * sy));
+                const bx1 = Math.min(vcw, Math.ceil((W - reg.x) * sx));
+                const by1 = Math.min(vch, Math.ceil((H - reg.y) * sy));
+                const vcd = ed.viewCanvas.getContext("2d").getImageData(0, 0, vcw, vch).data;
+                let minVcDocA = 255;
+                for (let y = by0; y < by1; y++) {
+                    for (let x = bx0; x < bx1; x++) {
+                        const a = vcd[(y * vcw + x) * 4 + 3];
+                        if (a < minVcDocA) minVcDocA = a;
+                    }
+                }
+                const cd = ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+                const cx0 = Math.max(0, Math.ceil(vx)), cy0 = Math.max(0, Math.ceil(vy));
+                const cx1 = Math.min(ed.canvas.width, Math.floor(vx + W * sc));
+                const cy1 = Math.min(ed.canvas.height, Math.floor(vy + H * sc));
+                let minCanvasDocA = 255;
+                for (let y = cy0; y < cy1; y++) {
+                    for (let x = cx0; x < cx1; x++) {
+                        const a = cd[(y * ed.canvas.width + x) * 4 + 3];
+                        if (a < minCanvasDocA) minCanvasDocA = a;
+                    }
+                }
+                check(`opaque glass drawViewComposite at scale=${sc} keeps alpha 255 on viewCanvas and canvas`,
+                    minVcDocA === 255 && minCanvasDocA === 255,
+                    { minVcDocA, minCanvasDocA, bx0, by0, bx1, by1 });
+            }
+        } finally {
+            ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
+            ed.removeLayer(fxGlass.id);
+        }
+    }
 
     shell.closeDocument(ed, { force: true });
     if (before) shell.activate(before);

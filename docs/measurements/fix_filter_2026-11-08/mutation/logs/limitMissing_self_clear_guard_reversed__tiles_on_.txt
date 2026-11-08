@@ -1,3 +1,0 @@
-$ bash tools/run_gates.sh mut-limitMissing_self_clear_guard_reversed__tiles_on_-composite --offline --tiles on composite  (rc 1, 26 s)
-composite rc=1 9s FAIL
-SOME FAILED
