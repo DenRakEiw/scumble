@@ -1031,6 +1031,10 @@ Known flakes; **re-run before believing any of these**:
   30 s each and are only a warning (`relight_test.py`); the rerun took 30 s. The canvas run of the same exe passed.
 - `editor_test.py` `selection_keeps_its_bounds_through_a_restore_above_1mp` failed once with no message on the canvas
   backend (2026-09-23, after `help` and `assistant` in the same instance) and passed on the rerun in the same order.
+  The same step timed out after 180 s on tiles in the merged gates of K29 (2026-11-08, side by side with the canvas run,
+  a model training on the card with 20.8 GB of its VRAM, other agents running gates); run alone, the same code then failed
+  `helper_inputs_read_levels_and_upload_nothing` once ("the in-app object map uploaded 1 files", never seen before), and
+  passed the whole gate on the next run. Neither step touches what K29 changed. Not looked into further.
 - `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed once with `requested: 0` in some twenty
   runs since the mip chains go through the pool; not reproduced.
 - The first exe instance of the 0.1.18 gates failed `a_settled_read_builds_its_levels_in_the_worker_not_here`

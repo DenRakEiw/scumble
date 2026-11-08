@@ -1879,6 +1879,24 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K29 (2026-11-08): liquify's preview in Rust, its window in wasm memory (the Antigravity B chain)
+
+By the same chain as K28 on `21b53a3` (`f38f26e`, the review's findings fixed in `32c4f12`), merged with the ABI
+renumbered 26 -> 27 and both builds rebuilt; `docs/measurements/k29_2026-11-08/`. `crates/px/src/resample.rs`
+`liquify_preview`, route `liquifyPreview`; `kernels.js` `allocLiquifyWindow` / `freeLiquifyWindow` / `liquifyPreview`
+(the stroke's source window lives in `px.alloc` memory of one instance, `win.px`, no per-frame copy; the preview runs
+on `win.px`, never `rustPx()`), `previewBlock` refreshing `win.data` after a `memory.grow`, `inpaint_canvas.js` the
+window freed on every way a stroke ends (pointer up, Escape, tool switch, tab close, an error). Two review rounds (the
+second a pre-check of the uncommitted fixes). The kernel matched `previewBlock` byte for byte; the findings were about
+its window: the fill held a wasm view across `_levelBytes`, whose `mipChain` / `clampExtend` can grow the same instance
+(a fresh one after the idle trim, a window over unchained or edge tiles): a detached view threw in the draw, a blank
+frame and the stroke shown unliquified until redrawn; now a fresh `view()` after each call that can allocate. The
+"freed" checks read only JS fields (a dropped `p.free` passed): now the next alloc must return the same pointer. The
+new Escape cancel left a freeze stroke's painted cells: `freezeBefore` restores them. The detach test's L = 0 case
+compared transparent pixels only (taken at the merge: it samples the edge tile's band and asserts non-zero alpha).
+Mutation 28 + the new ones killed. At 15k a 1000 px push at 1:1: the window 52.0 -> 34.9 ms, a preview p50 15.9 -> 10.1 ms,
+worst 69.5 -> 44.7; 200 px p50 2.9 -> 1.5 ms; mid-stroke after the idle trim 17.5 -> 9.1 ms.
+
 ### K33 (2026-11-08): stitch's colour match and alpha writes in Rust (the Antigravity E chain)
 
 By the same chain on `cb9479d` (`dafad55`, the review's one finding fixed in `7883021`), merged `c10d6d3`, ABI 26 (no
