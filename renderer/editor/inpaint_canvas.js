@@ -497,7 +497,7 @@ function viewUrl(ref) {
     return api.apiURL("/view?" + p.toString());
 }
 
-/** A ref's mirror key ("type/subfolder/filename", as host.referencedFileKeys and the clean-up write it). */
+/** A ref's mirror key ("type/subfolder/filename", as the host's referencedFileKeys and the clean-up write it). */
 function refKey(ref) {
     return ref && typeof ref.filename === "string" ? `${ref.type || "input"}/${ref.subfolder || ""}/${ref.filename}` : "";
 }
@@ -24828,7 +24828,7 @@ class InpaintEditor {
      * record's `ref` and `maskRef` (layers, canvas and turn steps), a text's user font (`text.fontRef`, a text step's
      * too), a filter's LUT and grain plate, a canvas or turn step's base, the document maps' files, the plugins' data a
      * step keeps. An undo puts these back with their refs and uploads none of them again, so Settings › Local files ›
-     * Clean up keeps them (host.referencedFileKeys, and the node's referencedFiles); it removed them, and an undo across
+     * Clean up keeps them (the host's referencedFileKeys, and the node's referencedFiles); it removed them, and an undo across
      * the clean-up left a layer, a font or the whole picture naming a file the next start and the next save could not find.
      */
     heldFileRefs() {
