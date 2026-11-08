@@ -1894,9 +1894,8 @@ alone against the twin through the route map it now wins every row (`stitch_alig
 killed; trap rows added. Whole operation: `stitch_align_2048` worker 752 -> 610 ms, 4096 2,471 -> 2,104 ms, a warmed 15k
 provider crop 514 -> 420 ms.
 **K35** (`edgefit_levels`, conditional): the split shows `fitEdges` at 6-41 ms, 1.1-6.8 % of a stitch's wall and below its
-run-to-run spread, but 58 % of a standalone `fitLayerRGBA` (about 31 of 54 ms, *Match edges*). The agent recommends "stays
-JS, measured"; open for the user (the rule "Rust wherever the whole operation is faster, however little" against the plan's "only
-if a measurable share").
+run-to-run spread, but 58 % of a standalone `fitLayerRGBA` (about 31 of 54 ms, *Match edges*). **The user's word (2026-11-08): it stays JS, measured**, on the
+list for a someday update (CLAUDE.md item 70). The E chain ends with K34.
 
 ### K11 (2026-11-08): selection invert in Rust, the frozen tile's copy deferred (the Antigravity M chain)
 

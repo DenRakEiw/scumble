@@ -1070,6 +1070,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `mcp/launch.js` kills its child at stdin's end only for `--mcp`; `restart.js` drops `--run`. Gate `cli`
   (`tools/cli_run_live.py`, its own headless instances, serial). Open for the user: clean the local store after a run,
   a wait step for ComfyUI's connect, a user's window that appears during a run.
+- 70: **`fitEdges` in Rust (K35 of `docs/PLAN_WASM_BUILD.md`)**: parked, someday maybe (the user, 2026-11-08: "in js belassen, auf die liste für vielleicht irgendwann einmal updates"). Measured at K34: 6-41 ms, 1-7 % of a stitch's wall and below its spread, but about 31 of 54 ms of a standalone *Match edges*, so 15-25 ms to win there (inferred). The plan's "K34" in §7.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
