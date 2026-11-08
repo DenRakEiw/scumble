@@ -41,14 +41,18 @@ number boxes); one made with FLUX 3 on BFL at 7:5 and the 4k class is 2048 x 145
 selects the recipe and opens the next New on it, and "Any size" makes a canvas without one (the recipes restored after).
 
     python tools/editor_test.py
+    python tools/editor_test.py --list     # the step names in order, no app
 
 Start the app first: ./node_modules/.bin/electron . --remote-debugging-port=9555
+Each result line ends with the step's time in brackets; tools/editor_shards.py plans a sharded run from them
+(tools/run_gates_both.sh --shards N, docs/TESTING.md "The editor gate in shards").
 """
 import asyncio
 import json
 import os
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
@@ -12416,16 +12420,31 @@ async def run_all(c):
     # a step or a mutation round's focused kill set (tools/mutation_round.py); a gate run leaves it unset. An unknown name
     # fails the run, and the verdict line says the run was filtered
     only = set(filter(None, (s.strip() for s in os.environ.get("SCUMBLE_EDITOR_ONLY", "").split(","))))
-    unknown = sorted(only - {name for name, _ in STEPS})
+    # SCUMBLE_EDITOR_SHARD=i/N: this run is shard i of a sharded editor gate (tools/editor_shards.py,
+    # tools/run_gates_both.sh --shards N); it only labels the run and keeps the full run's short result lines, the
+    # sharded run's check of every shard's log decides the gate. SCUMBLE_EDITOR_FAIL_STEP=name: that step fails on
+    # purpose after it ran (the sharded runner's own test: one red step in one shard must turn the whole run red)
+    shard = os.environ.get("SCUMBLE_EDITOR_SHARD", "").strip()
+    fail_step = os.environ.get("SCUMBLE_EDITOR_FAIL_STEP", "").strip()
+    names = {name for name, _ in STEPS}
+    unknown = sorted(only - names)
     if unknown:
         print("[FAIL] SCUMBLE_EDITOR_ONLY names no step: %s" % ", ".join(unknown))
         print("FAIL")
         return False
+    if fail_step and fail_step not in names:
+        print("[FAIL] SCUMBLE_EDITOR_FAIL_STEP names no step: %s" % fail_step)
+        print("FAIL")
+        return False
     if only:
-        print("SCUMBLE_EDITOR_ONLY: %d of %d steps (a filtered run, not the full gate)" % (len(only), len(STEPS)))
+        print("SCUMBLE_EDITOR_ONLY: %d of %d steps (%s)" % (len(only), len(STEPS), "shard %s of a sharded run" % shard if shard else "a filtered run, not the full gate"))
+    if fail_step:
+        print("SCUMBLE_EDITOR_FAIL_STEP: %s fails on purpose after it ran" % fail_step)
+    t_all = time.monotonic()
     for name, body in STEPS:
         if only and name not in only and name not in (STEPS[0][0], "cleanup"):
             continue
+        t0 = time.monotonic()
         try:
             res = await (body(c) if callable(body) else c.eval(PRE % body, timeout=180))
             # after every step: every pixels object an open editor holds is of that editor's backend (a site
@@ -12433,19 +12452,40 @@ async def run_all(c):
             mixed = await c.eval(BACKEND_SWEEP)
             if mixed:
                 raise Exception("pixels of the other backend held after the step: %s" % json.dumps(mixed)[:400])
-            print("[ok] %s: %s" % (name, json.dumps(res)[:4000 if only else 280]))
+            if name == fail_step:
+                raise Exception("SCUMBLE_EDITOR_FAIL_STEP: a deliberate failure after the step passed")
+            # the step's time in brackets at the end: tools/editor_shards.py plans the shards from it
+            print("[ok] %s: %s [%.1f s]" % (name, json.dumps(res)[:4000 if only and not shard else 280], time.monotonic() - t0))
         except Exception as err:  # noqa: BLE001
             ok = False
-            print("[FAIL] %s: %s" % (name, err))
+            print("[FAIL] %s: %s [%.1f s]" % (name, err, time.monotonic() - t0))
             break
     for level, text in (await c.logs())[-15:]:
         if level == "error":
             print("  console error:", text[:200])
-    note = " (only: %s; SCUMBLE_EDITOR_ONLY, not the full gate)" % ", ".join(sorted(only)) if only else ""
+    # the backend this run ran on, for the shard planner's step times (tiles and canvases differ by about 30 s)
+    try:
+        tiles = await c.eval("window.scumble.pixels.tiles")
+    except Exception:  # noqa: BLE001
+        tiles = None
+    print("backend: %s, %.1f s in the steps" % ("tiles" if tiles is True else "canvas" if tiles is False else "unknown", time.monotonic() - t_all))
+    if shard:
+        note = " (shard %s: %d of %d steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate)" % (shard, len(only), len(STEPS))
+    else:
+        note = " (only: %s; SCUMBLE_EDITOR_ONLY, not the full gate)" % ", ".join(sorted(only)) if only else ""
+    if fail_step:
+        # no capital FAIL in the note: run_gates.sh reads a verdict line holding one as red
+        note += " (%s made to fail on purpose)" % fail_step
     print(("PASS" if ok else "FAIL") + note)
     return ok
 
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
+    if "--list" in sys.argv[1:]:
+        # the step names in the order the gate runs them, one per line (plain LF, for bash's read), no app needed
+        sys.stdout.reconfigure(newline="\n")
+        for name, _ in STEPS:
+            print(name)
+        sys.exit(0)
     sys.exit(0 if asyncio.run(session(run_all)) else 1)

@@ -75,7 +75,9 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `liquify_freeze_holds_what_it_covers` (a frozen band holds its bytes under a push, thaw, Restore all under a freeze,
   Invert, Clear, the veil, a flip and a new picture drop the freeze). `python tools/brush_perf.py '{}' liquify_perf.js`
   measures Liquify at 15000 x 10000 (docs/PERFORMANCE.md §15.1; a measurement, not a gate).
-  `SCUMBLE_EDITOR_ONLY=name,name` runs just those steps. On the canvas backend `readRect` of a sub-rectangle of a
+  `SCUMBLE_EDITOR_ONLY=name,name` runs just those steps; `python tools/editor_test.py --list` prints the step names in
+  order (no app), every result line ends with the step's time (`[12.3 s]`) and the log with a `backend:` line, and
+  `run_gates_both.sh --shards N` runs the gate in groups (below, "The editor gate in shards"). On the canvas backend `readRect` of a sub-rectangle of a
   canvas with pixels that are not opaque can differ by a level from a read of the whole canvas (measured 2026-09-28,
   286 of 108k bytes, only where alpha < 255; 0 on tiles): an expectation for such a picture is built from the reader
   the tool uses (`brushSource("all").bytes`), as the move step's case 15 does.
@@ -849,7 +851,7 @@ kill set anyway.
 
 **Both backends side by side: `tools/run_gates_both.sh`.**
 
-    bash tools/run_gates_both.sh <label> [--stagger S] [--ports T,C] [--offline] [--exe PATH] [...] gate [gate ...]
+    bash tools/run_gates_both.sh <label> [--stagger S] [--ports T,C] [--shards N] [--lock PATH] [--offline] [--exe PATH] [...] gate [gate ...]
 
 runs `tools/run_gates.sh` twice at once, `--tiles on` as `<label>-tiles` on port T (default 9586) and `--tiles off` as
 `<label>-canvas` on port C (default 9587), the other run_gates.sh options passed to both (`--tiles` is refused), each
@@ -866,6 +868,85 @@ time; the editor gate took 175 / 144 s side by side against 167 / 136 s alone (t
 counted 112 / 107 frames against 115 / 109. The stagger costs nothing while the tiles side is the slower one (it is,
 by about 30 s, in the editor gate). One run each with and without the stagger, so the flake below was neither seen nor
 ruled out side by side.
+
+**The editor gate in shards: `run_gates_both.sh --shards N`.** Added 2026-11-08 (the user: only "wenn es keine großen
+Nachteile (Genauigkeit) hat").
+
+    bash tools/run_gates_both.sh <label> --shards N --ports P1,P2,P3,P4 [--lock BUSY_LOCK] --offline editor [gate ...]
+
+runs the editor gate on each backend as N groups of its steps, each group as the editor gate with
+`SCUMBLE_EDITOR_ONLY` (and `SCUMBLE_EDITOR_SHARD=i/N`, which only labels the run) on an instance, port, profile and
+temp folder of its own: `<label>-tiles-editor1` .. `N`, the same for canvas. The other gates of the side-by-side part
+run on each backend's own instance as before, minus the editor (`<label>-tiles`, `<label>-canvas`); the serial gates
+are unchanged. The runs share the ports given: a run waits for a free one, and each start comes S seconds after the
+one before (`--stagger`, default 10 with `--shards`; without `--shards` nothing changes, two ports, 25 s).
+`--lock PATH`: before each run starts, the script waits (60 s polls) while a busy-lock file exists, and the runs that
+waited then start one stagger apart. Afterwards `<label>-tiles-editor/summary.txt` (and canvas) holds the gate's
+verdict for that backend: it passes only when every group passed (its log's verdict **and** its run's exit code, so a
+group that printed PASS and then timed out or failed in its close is red, and a group with no `.rc` file is too),
+**and** every step ran exactly once over all groups (the first step and the cleanup once in each group), each group
+exactly the steps it was planned with and on the plan's backend (its log's `backend:` line); each problem is named
+with its group (`check.txt`). Without `--shards` the script runs as before.
+
+`tools/editor_shards.py` (no app) does the planning and the check: `units` prints the steps that must stay together,
+`plan N --backend tiles|canvas --logs DIR` the groups, `check PLAN LOG...` the verdict. The groups are runs of
+**consecutive** steps, so every step keeps the predecessor it has in the full run except the first step of a group,
+which follows the gate's first step instead (it opens the test document, `window.__t`, and runs in every group). The
+split balances the step times of the newest timed editor logs of that backend under `$SCUMBLE_GATES/gates` (the
+`[ok] ... [12.3 s]` lines and the `backend:` line; a step without a time gets the median; with no timed log the groups
+get equal counts). Steps that share state stay in one group: a step that reads a `window.__name` global it does not
+write depends on the last step before it that writes it (found in the steps' sources, Python steps through the
+functions and module strings they reach), and the two and everything between them form a unit. On 2026-11-08 that gives
+four units: `copy_paste_a_layer_into_another_tab` .. `duplicate_button_in_the_layer_row` (`window.__t2`),
+`pixel_backend_is_the_one_the_flag_chose` .. `editing_on_the_flags_backend_in_pixels_and_on_screen` (`window.__tb`),
+`pixels_nothing_draws_get_no_display_mirror` .. `the_screen_draws_no_cpu_mirror_and_stale_textures_leave`
+(`window.__dc`) and the five Undo history steps (`window.__uh`, `__uhLayer`, `__uhOpen`). The rule does not see a step
+that reads an earlier step's global and then resets it: `the_screen_draws_...` derefs `window.__droppedPixels` (and
+drops `__heldDisplay`) from `pixels_nothing_draws_...` and sets both to null, so `EXTRA_CHAINS` declares 61-63 as well,
+and `units` prints both reasons (counting every read-then-write instead would tie the ten prompt field and reference
+picker steps together, which each set `window.__pf` / `__pfPane` themselves before they read them). Read by hand
+besides: every other step opens a document of its own or starts with `new_canvas` on the test
+document, or reads only what the first step made (steps 1-9 and 14 use the test document as it is, and need no more
+than a picture of at least 400 x 300, 17, 18, 58 and 77 only bring it to the front or read its status; group 1 starts
+at step 1, as the full run does); the steps that change settings (`memory`, `tiles`, the recipe), localStorage (`ipc.pane`,
+`ipc.undoOpen`, `ipc.eyedropperSize`, `ipc.sideWidth`) or stub a method put them back before they end; the prompt field
+and reference picker steps each open and close their own document (`pfSetup` / `pfClose`); the cleanup closes only
+what exists. A dependency that no global shows goes into `EXTRA_CHAINS` in `tools/editor_shards.py`; a step that reads
+a global no earlier step writes stops the plan. `python tools/editor_shards.py selftest` checks the check against
+made-up logs (a step missing, twice, failed, a red verdict, a log short or not there, a group on the other backend or
+with no `backend:` line), that no plan splits a unit and that the declared chain holds 61-63.
+
+Measured 2026-11-08 (`docs/measurements/gates_shard_2026-11-08/`, `--offline editor`, other agents' instances on the
+machine): unsharded side by side 203 s wall (tiles 187 s, canvas 151 s); `--shards 2` on four ports 130 s (the groups
+88 + 91 s / 80 + 77 s in their steps, each run 94-107 s from start to close), all green, every step once; `--shards 3`
+on the same four ports 154 s (six runs, two wait for a port, each run pays about 16 s of start and close), all green;
+with `lint composite skins` beside it 148 s. One step failed on purpose (`SCUMBLE_EDITOR_FAIL_STEP`) turned its group,
+its backend's editor verdict and the run red (exit 1), the other group green. `live_stroke_reaches_the_screen_before_the_release`
+alone takes 41 s, the floor of any group: past four groups per backend nothing is gained (the plan says so). **How many
+at once:** four instances were measured safe (at most 16.2 GB private for all four, one process 5.5 GB, the machine
+at least 48 GB available); use `--shards 2` with four ports, `--shards 3` only with six (about 24 GB by these numbers,
+not measured). The live stroke steps counted 109-118 frames in the sharded runs against 111-118 unsharded, green in
+all ten runs of them beside three other instances started 10 s apart; the stagger stays 10 s with `--shards`.
+`SCUMBLE_EDITOR_FAIL_STEP=name` (the runner's own test) makes that step fail after it passed; the verdict line says so.
+
+**What a sharded run can miss** (it runs the same steps and checks, but not in one renderer): (1) cumulative effects
+of the whole sequence in one instance: memory that grows step by step (the full run carries 127 steps' documents,
+closed tabs, undo copies, atlas pages and arena chunks; a leak that only bites after many steps, or a cap such as the
+closed-tab list's or the memory watch's releases reached only late, can stay below the line in a group of 40);
+(2) Chromium's canvas acceleration latch (CLAUDE.md "Chromium, canvas, WebGL": after 100 readbacks have disabled
+acceleration on 95 % of the canvases made, every new canvas is software), which the full run's later steps may run
+under and a group's steps, with a fresh count, may not, so a difference that shows only on software (or only on GPU)
+canvases can be seen by one and not the other; (3) state an earlier step leaves behind without a global (a changed
+tool, brush or view setting, a cache, a shader program, a worker's warm wasm instance, a dialog's remembered value):
+inside a group the order is the full run's, but a group's first step starts on a fresher instance; (4) the 420 s
+timeout of the whole gate, which catches a broad slowdown of every step (the full gate's own time is a coarse
+performance signal; each group is far below it); (5) the order of gates on one instance: in a full run the gates after
+the editor run on an instance that ran its 127 steps (the order-dependent flakes above), in a sharded run the editor
+has instances of its own. It also adds load: four to six instances at once make the timing-bound steps (the live
+stroke frames, `helper_inputs_read_levels_and_upload_nothing`, `closed_tabs_are_collected`) likelier to fail for no
+fault, so re-run a red step in sequence before believing it. **Use the shards while iterating; run the full
+sequential gate (`run_gates_both.sh` without `--shards`, or `run_gates.sh`) before a merge into `wasm-kernels` or
+`main` and for every release's exe gates.**
 
 ## Known flakes
 

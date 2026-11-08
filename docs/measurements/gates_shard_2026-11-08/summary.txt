@@ -1,0 +1,53 @@
+The editor gate in shards (2026-11-08; docs/TESTING.md "The editor gate in shards"). One machine (Ryzen 9 7900X3D,
+12 cores, 95 GB, RTX 5090), other agents' instances running beside it, the busy lock waited out before every run
+(run_gates_both.sh --lock), every gate --offline, ports 9611 / 9612 / 9619 / 9620, the tree at ec623bc plus this work.
+The editor gate has 127 steps (the brief said 123: four came with the merges of items 57-59 and P8 / P18).
+
+1. Unsharded, both backends side by side (run_gates_both.sh shbase --ports 9611,9612 --offline editor; runs/base.txt)
+   tiles 187 s (185.9 s in the steps), canvas 151 s (151.1 s), wall 203 s, BOTH PASS
+   the heaviest steps (tiles / canvas): live_stroke_reaches_the_screen_before_the_release 41.9 / 40.8 s, then nothing
+   above 6.7 s (a_new_mask_and_a_neighbours_write_reach_the_screen); the live stroke step alone is the floor of a group
+   memory (runs/base.mem.csv, every 3 s, the processes of this worktree's gate profiles): at most 11.4 GB private,
+   one process 4.6 GB
+
+2. --shards 2, both backends (4 runs on the 4 ports at once; runs/s2.txt, plans/shs2-*)
+   tiles: groups 1-51 / 52-125, 88 + 91 s in the steps, each run from start to close 105 / 107 s, 127 s first start to
+   last close; canvas: 1-50 / 51-125, 80 + 77 s, 97 / 94 s, 114 s; wall 130 s (against 203 s), BOTH PASS, the check:
+   "all 127 steps ran, 125 of them exactly once and the first step and the cleanup in every shard" on both backends
+   memory: at most 15.6 GB private for the four instances (16 processes), one process 5.2 GB; the machine kept at least
+   50.8 GB available
+
+3. --shards 3, both backends (6 runs on 4 ports: two wait for a free port; runs/s3.txt)
+   tiles: 1-47 / 48-60 / 61-125, 44 + 66 + 71 s, runs 60 / 84 / 88 s; canvas: 1-47 / 48-56 / 57-125, 36 + 58 + 63 s,
+   runs 53 / 75 / 79 s; wall 154 s, BOTH PASS. Slower than 2 shards on 4 ports: two runs wait for a port and every
+   run pays about 16 s of start and close. 3 shards pay only with 6 ports (and 6 instances, about 24 GB by the numbers
+   above, not measured here: this agent had 4 ports)
+
+4. --shards 2 with other gates (lint composite skins editor; runs/s2rest.txt)
+   lint, composite, skins on each backend's own instance as before (43 / 42 s, ALL PASS), the editor in 2 groups per
+   backend (PASS both, every step once); 6 runs on 4 ports, wall 148 s, BOTH PASS
+
+5. A step failing on purpose (SCUMBLE_EDITOR_FAIL_STEP=the_whole_document_turns_and_flips_with_everything_on_it,
+   --shards 2; runs/sfail2.txt, plans/shfail2-*)
+   group 1 of each backend PASS, group 2 FAIL at step 100 (the step passed, then failed on purpose) and its 26 steps
+   after it never ran; each backend's editor verdict FAIL with 30 problems (the failed step, the red verdict, "did not
+   run 27 planned step(s)", MISSING for each step that never ran), SOME FAILED, exit 1; wall 106 s.
+   The first try (runs/sfail.txt) also showed group 1 red although it passed: its verdict line carried the note
+   "(SCUMBLE_EDITOR_FAIL_STEP=...)", and run_gates.sh reads any verdict line holding "FAIL" as red; the note now reads
+   "(<step> made to fail on purpose)"
+
+6. The live stroke step's frames (the timing-bound step most likely to suffer from instances beside it):
+   unsharded 118 / 111 (tiles / canvas); in the sharded runs 112-118 / 109-112, every run green (5 sharded runs,
+   10 executions of each live stroke step, beside 3 other instances started 10 s apart)
+
+7. The units (units.txt): the steps that must stay in one group, from the window.__ globals a step reads but does not
+   write: 10-11 (__t2), 57-60 (__tb), 61-63 (__dc), 73-77 (__uh, __uhLayer, __uhOpen). The groups' first steps in the
+   runs above, each green right after the gate's first step instead of its own predecessor (the planner moved the
+   boundaries between runs as the newest step times changed): 48 live_stroke_reaches_the_screen_before_the_release,
+   49 a_masked_filter_layer_reads_its_mask_from_tiles, 50 peek_shows_the_base_from_its_tiles,
+   51 a_new_mask_and_a_neighbours_write_reach_the_screen, 52 a_whole_change_builds_its_mips_in_the_worker_and_the_screen_ends_exact,
+   57 pixel_backend_is_the_one_the_flag_chose, 61 pixels_nothing_draws_get_no_display_mirror. Group 1 always starts at
+   step 1, as the full run does
+
+Memory: four instances at once measured safe (at most 16.2 GB private in any run, the machine at least 48 GB
+available throughout, other agents' instances included). More than four at once was not run (4 ports).
