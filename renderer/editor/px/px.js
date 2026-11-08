@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 31;
+export const PX_ABI = 32;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -934,6 +934,34 @@ export class Px {
             }
             this.exports.composite_tile(pd, px, n, psrcs, pops, palphas, pmasks);
             return this._out(Uint8Array, pd, px * 4, dst);
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * One tile of `px` pixels (`src` straight RGBA8, `op` an OPS number, `alpha` 0..255, optional `mask` of `px`
+     * coverage bytes) composited over `dst` (`px * 4` straight RGBA8 bytes, or null when the destination tile does not
+     * exist yet), keeping `dst` (or 0) untouched where `src` has alpha 0 or `mask` is 0 (`compositeStroke` in
+     * `inpaint_tiles.js`, K36). Returns 0 when no pixel changed, 1 when changed and non-empty (calling `write(true)`
+     * once for the buffer all `px * 4` bytes are copied into), 2 when changed and every pixel has alpha 0 afterwards.
+     */
+    compositeMaskedTile(dst, src, op, alpha, mask, px, write) {
+        const a = this.job, n = px * 4;
+        if (!Number.isInteger(px) || px <= 0 || px > 4096 * 4096) throw new Error(`px: composite_masked_tile: refused ${px} pixels`);
+        if (!src || !(src.length >= n)) throw new Error("px: composite_masked_tile: a source too small");
+        if (dst && !(dst.length >= n)) throw new Error("px: composite_masked_tile: a tile too small");
+        if (mask && !(mask.length >= px)) throw new Error("px: composite_masked_tile: a mask too small");
+        if (typeof write !== "function") throw new Error("px: composite_masked_tile: no write callback");
+        try {
+            const pd = dst ? this._in(a, dst, n) : a.take(n);
+            const ps = this._in(a, src, n);
+            const pm = mask ? this._in(a, mask, px) : 0;
+            const r = this.exports.composite_masked_tile(pd, dst ? 1 : 0, ps, px, op | 0, alpha | 0, pm);
+            if (r === 3) throw new Error(`px: composite_masked_tile: refused ${px} pixels`);
+            if (r === 1) {
+                const into = write(true);
+                this._out(Uint8Array, pd, n, new Uint8Array(into.buffer, into.byteOffset, n));
+            }
+            return r;
         } finally { this._reset(a); }
     }
 

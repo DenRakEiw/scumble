@@ -87,6 +87,11 @@ pub const DARKER_COLOR: u8 = 28;
 pub const LIGHTER_COLOR: u8 = 29;
 pub const LAST_BLEND: u8 = LIGHTER_COLOR;
 
+pub const UNCHANGED: u32 = 0;
+pub const WRITTEN: u32 = 1;
+pub const EMPTY: u32 = 2;
+pub const REFUSED: u32 = 3;
+
 #[allow(dead_code)]
 const SIMD_BLENDS: [u8; 14] = [
     MULTIPLY,
@@ -591,6 +596,96 @@ fn scalar_layer(dst: &mut [u8], src: &[u8], op: u8, o: u32, mask: Option<&[u8]>,
     }
 }
 
+/// Composites `src` (`px * 4` straight RGBA8 bytes) over `dst` (`px * 4` straight RGBA8 bytes, in place; `has_dst`
+/// false when the destination tile does not exist yet and is taken as 0) under `op` and `alpha` (0..255) with optional
+/// coverage `mask` (`px` bytes), keeping `dst` (or 0) untouched where `src` has alpha 0 or `mask` is 0
+/// (`compositeStroke` in `inpaint_tiles.js`, K36). Returns `UNCHANGED` (0) when no pixel changed, `WRITTEN` (1) when
+/// changed and at least one pixel has alpha > 0 afterwards, `EMPTY` (2) when changed and every pixel has alpha 0
+/// afterwards, or `REFUSED` (3) when arguments are out of range.
+pub fn masked_tile(dst: &mut [u8], has_dst: bool, src: &[u8], op: u8, alpha: u8, mask: Option<&[u8]>) -> u32 {
+    if dst.is_empty() || dst.len() % 4 != 0 || src.len() < dst.len() {
+        return REFUSED;
+    }
+    let px = dst.len() / 4;
+    if mask.is_some_and(|m| m.len() < px) {
+        return REFUSED;
+    }
+    if !has_dst && matches!(op, DESTINATION_OUT | SOURCE_ATOP | DESTINATION_IN) {
+        return UNCHANGED;
+    }
+    const CHUNK: usize = 256;
+    let mut orig = [0u8; CHUNK * 4];
+    let mut changed = false;
+    let mut non_empty = false;
+    for base in (0..px).step_by(CHUNK) {
+        let c_px = (px - base).min(CHUNK);
+        let d_chunk = &mut dst[base * 4..(base + c_px) * 4];
+        let s_chunk = &src[base * 4..(base + c_px) * 4];
+        let m_chunk = mask.map(|m| &m[base..base + c_px]);
+        let Some((x0, x1)) = simd::active_span(s_chunk, m_chunk, c_px) else {
+            if has_dst {
+                if !non_empty && simd::any_alpha(d_chunk) {
+                    non_empty = true;
+                }
+            } else {
+                d_chunk.fill(0);
+            }
+            continue;
+        };
+        if has_dst {
+            if !non_empty && (simd::any_alpha(&d_chunk[..x0 * 4]) || simd::any_alpha(&d_chunk[x1 * 4..])) {
+                non_empty = true;
+            }
+        } else {
+            d_chunk[..x0 * 4].fill(0);
+            d_chunk[x1 * 4..].fill(0);
+        }
+        let span_px = x1 - x0;
+        let span_bytes = span_px * 4;
+        let d_span = &mut d_chunk[x0 * 4..x1 * 4];
+        let s_span = &s_chunk[x0 * 4..x1 * 4];
+        let m_span = m_chunk.map(|m| &m[x0..x1]);
+        let orig_span = &mut orig[..span_bytes];
+        if has_dst {
+            orig_span.copy_from_slice(d_span);
+            begin(d_span);
+        } else {
+            orig_span.fill(0);
+            d_span.fill(0);
+        }
+        let layer = Layer {
+            src: s_span,
+            op,
+            alpha,
+            mask: m_span,
+        };
+        apply(d_span, &layer);
+        end(d_span);
+        let (done, c, ne) = simd::finish_masked(d_span, orig_span, s_span, m_span);
+        changed |= c;
+        non_empty |= ne;
+        for p in done..span_px {
+            let o = p * 4;
+            let m = m_span.map_or(255, |m| m[p]);
+            if s_span[o + 3] == 0 || m == 0 {
+                d_span[o..o + 4].copy_from_slice(&orig_span[o..o + 4]);
+            } else if d_span[o..o + 4] != orig_span[o..o + 4] {
+                changed = true;
+            }
+            if d_span[o + 3] != 0 {
+                non_empty = true;
+            }
+        }
+    }
+    if !changed {
+        UNCHANGED
+    } else if non_empty {
+        WRITTEN
+    } else {
+        EMPTY
+    }
+}
+
 #[cfg(not(target_feature = "simd128"))]
 mod simd {
     use super::*;
@@ -610,6 +705,20 @@ mod simd {
     #[inline(always)]
     pub fn blend(_: &mut [u8], _: &[u8], _: u8, _: u8, _: Option<&[u8]>) -> usize {
         0
+    }
+    #[inline(always)]
+    pub fn any_alpha(rgba: &[u8]) -> bool {
+        rgba.chunks_exact(4).any(|d| d[3] != 0)
+    }
+    #[inline(always)]
+    pub fn active_span(src: &[u8], mask: Option<&[u8]>, px: usize) -> Option<(usize, usize)> {
+        let first = (0..px).find(|&i| src[i * 4 + 3] != 0 && mask.map_or(true, |m| m[i] != 0))?;
+        let last = (first..px).rev().find(|&i| src[i * 4 + 3] != 0 && mask.map_or(true, |m| m[i] != 0)).unwrap_or(first);
+        Some(((first / 4) * 4, (((last / 4) + 1) * 4).min(px)))
+    }
+    #[inline(always)]
+    pub fn finish_masked(_: &mut [u8], _: &[u8], _: &[u8], _: Option<&[u8]>) -> (usize, bool, bool) {
+        (0, false, false)
     }
 }
 
@@ -868,5 +977,134 @@ mod simd {
             }
         }
         n / 4
+    }
+
+    pub fn any_alpha(rgba: &[u8]) -> bool {
+        let n = (rgba.len() / 16) * 16;
+        unsafe {
+            let p = rgba.as_ptr();
+            let amask = u32x4_splat(0xFF00_0000);
+            let mut acc = u32x4_splat(0);
+            let mut i = 0;
+            while i < n {
+                acc = v128_or(acc, v128_and(v128_load(p.add(i) as *const v128), amask));
+                i += 16;
+            }
+            if v128_any_true(acc) {
+                return true;
+            }
+        }
+        rgba[n..].chunks_exact(4).any(|d| d[3] != 0)
+    }
+
+    pub fn active_span(src: &[u8], mask: Option<&[u8]>, px: usize) -> Option<(usize, usize)> {
+        let n4 = px / 4;
+        let mut first_g = usize::MAX;
+        unsafe {
+            let ps = src.as_ptr();
+            let zero = u32x4_splat(0);
+            match mask {
+                None => {
+                    for g in 0..n4 {
+                        let s = v128_load(ps.add(g * 16) as *const v128);
+                        if v128_any_true(u32x4_shr(s, 24)) {
+                            first_g = g;
+                            break;
+                        }
+                    }
+                }
+                Some(m) => {
+                    let pm = m.as_ptr();
+                    for g in 0..n4 {
+                        let w = (pm.add(g * 4) as *const u32).read_unaligned();
+                        if w == 0 {
+                            continue;
+                        }
+                        let s = v128_load(ps.add(g * 16) as *const v128);
+                        let sa = u32x4_gt(u32x4_shr(s, 24), zero);
+                        if !v128_any_true(sa) {
+                            continue;
+                        }
+                        let mv = u32x4_splat(w);
+                        let mv = u8x16_shuffle::<0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3>(mv, mv);
+                        if v128_any_true(v128_and(sa, u32x4_gt(mv, zero))) {
+                            first_g = g;
+                            break;
+                        }
+                    }
+                }
+            }
+            let tail_active = (n4 * 4..px).any(|i| src[i * 4 + 3] != 0 && mask.map_or(true, |m| m[i] != 0));
+            if first_g == usize::MAX {
+                return if tail_active { Some((n4 * 4, px)) } else { None };
+            }
+            if tail_active {
+                return Some((first_g * 4, px));
+            }
+            let mut last_g = first_g;
+            match mask {
+                None => {
+                    for g in ((first_g + 1)..n4).rev() {
+                        let s = v128_load(ps.add(g * 16) as *const v128);
+                        if v128_any_true(u32x4_shr(s, 24)) {
+                            last_g = g;
+                            break;
+                        }
+                    }
+                }
+                Some(m) => {
+                    let pm = m.as_ptr();
+                    for g in ((first_g + 1)..n4).rev() {
+                        let w = (pm.add(g * 4) as *const u32).read_unaligned();
+                        if w == 0 {
+                            continue;
+                        }
+                        let s = v128_load(ps.add(g * 16) as *const v128);
+                        let sa = u32x4_gt(u32x4_shr(s, 24), zero);
+                        if !v128_any_true(sa) {
+                            continue;
+                        }
+                        let mv = u32x4_splat(w);
+                        let mv = u8x16_shuffle::<0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3>(mv, mv);
+                        if v128_any_true(v128_and(sa, u32x4_gt(mv, zero))) {
+                            last_g = g;
+                            break;
+                        }
+                    }
+                }
+            }
+            Some((first_g * 4, ((last_g + 1) * 4).min(px)))
+        }
+    }
+
+    pub fn finish_masked(dst: &mut [u8], orig: &[u8], src: &[u8], mask: Option<&[u8]>) -> (usize, bool, bool) {
+        let n = (dst.len() / 16) * 16;
+        unsafe {
+            let pd = dst.as_mut_ptr();
+            let po = orig.as_ptr();
+            let ps = src.as_ptr();
+            let zero = u32x4_splat(0);
+            let mut changed_acc = zero;
+            let mut alpha_acc = zero;
+            let mut i = 0;
+            while i < n {
+                let s = v128_load(ps.add(i) as *const v128);
+                let mut active = u32x4_gt(u32x4_shr(s, 24), zero);
+                if let Some(m) = mask {
+                    let w = (m.as_ptr().add(i / 4) as *const u32).read_unaligned();
+                    let mv = u32x4_splat(w);
+                    let mv = u8x16_shuffle::<0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3>(mv, mv);
+                    active = v128_and(active, u32x4_gt(mv, zero));
+                }
+                let d_after = v128_load(pd.add(i) as *const v128);
+                let d_orig = v128_load(po.add(i) as *const v128);
+                let d_final = v128_bitselect(d_after, d_orig, active);
+                v128_store(pd.add(i) as *mut v128, d_final);
+                changed_acc = v128_or(changed_acc, v128_xor(d_final, d_orig));
+                alpha_acc = v128_or(alpha_acc, u32x4_shr(d_final, 24));
+                i += 16;
+            }
+            (n / 4, v128_any_true(changed_acc), v128_any_true(alpha_acc))
+        }
     }
 }

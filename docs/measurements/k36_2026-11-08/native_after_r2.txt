@@ -1,0 +1,52 @@
+probes in
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1136, "encodeMs": 2009, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 3308 ms, longest block 526 ms
+   {"loadFileMs": 3223, "tiles": 2360, "compositorBefore": "not made", "compositorAfter": "made"}
+   main thread ms: idle 2278 | browser natives 532 | px kernels 4 | other JS 338 | GC 28 | (program) 304
+     natives: getProgramParameter 464, getImageData 17, beat 14, getContext 8, setTimeout 7, walk 4, getShaderParameter 4, postMessage 3
+     px kernels by function (self time): _out [px.js:268] 3, wasm-function[4] [wasm] 1
+     JS by file: inpaint_tiles.js 309, inpaint_compositor.js 8, inpaint_canvas.js 7, inpaint_arena.js 7, inpaint_pool.js 4, inpaint_resample.js 2
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1384] 204, normalizeBlock [inpaint_tiles.js:540] 89
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   3     464.3 ms        0.0 MB
+     2d getImageData                          1      17.3 ms        0.3 MB
+     gl getShaderParameter                    6       4.9 ms        0.0 MB
+     gl texSubImage2D                      2360       2.2 ms        1.0 MB
+     blob arrayBuffer (until settled)         8       1.9 ms        0.0 MB
+     worker postMessage (moved)             164       1.9 ms        0.0 MB
+     blob arrayBuffer                         8       0.7 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.2 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 2269.7, "parse": 1, "read": 57.7, "write": 2209.1, "wait": 1111.6, "copy": 78.5, "unfilter": 1034.6, "deliver": 23.5, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 559.5, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+
+== add_the_paint_layer: wall 833 ms, longest block 732 ms
+   {"tiles": 2301, "genMs": 67, "writeMs": 603, "addMs": 164}
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      4589       6.6 ms        9.9 MB
+     2d putImageData                       2286       2.0 ms        1.1 MB
+     worker postMessage (moved)              90       1.9 ms        0.0 MB
+     2d drawImage >= 1 MP                    11       0.4 ms       92.0 MB
+     2d drawImage < 1 MP                     20       0.3 ms       11.2 MB
+   worker mips: 18 jobs, {"kernel": 629.4, "gen": 0}  px: mip_chain 2340, clamp_extend 39
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2340, clamp_extend 39
+
+== stroke_and_release: wall 324 ms, longest block 324 ms
+   {"frame_median": 2.38, "frame_max": 67.68, "release": 15.3}
+   main thread ms: idle 76 | browser natives 279 | px kernels 1 | other JS 80 | GC 5 | (program) 37
+     natives: restore 220, putImageData 23, drawImage 13, texSubImage2D 7, getImageData 4, (anonymous) 3, f 2, bufferData 1
+     px kernels by function (self time): wasm-function[34] [wasm] 1
+     JS by file: inpaint_tiles.js 60, inpaint_canvas.js 11, inpaint_compositor.js 5, eacharea.js 1, plugins.js 1, main.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): put [inpaint_tiles.js:1152] 24, regionCanvas [inpaint_tiles.js:2218] 23
+   boundaries (calls, ms inside the call, MB):
+     2d putImageData                        200      21.1 ms       70.8 MB
+     2d drawImage >= 1 MP                   363      13.2 ms     4684.8 MB
+     2d getImageData                        120       3.8 ms        1.4 MB
+   px calls, window: composite_masked_tile 3
+   px calls, workers: -
+[ok] close: {"closed": 2, "arena": {"slots": 4667, "chunks": 19, "allocated": 7027, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 1275068416, "freeSlots": 197}}
+
+RESULT measured

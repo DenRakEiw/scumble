@@ -2927,6 +2927,367 @@ async function compositeShaCases(js, simd, scalar) {
         }
     }
     check("compositeTile op 30 equals op 0 on twin, px.wasm, and px_scalar.wasm", op30Ok, op30Detail);
+
+    // ---- K36: composite_masked_tile (docs/PLAN_WASM_BUILD.md §4.5) ----
+    const refMaskedTile = (dst, src, op, alpha, mask, px) => {
+        const scratch = dst ? new Uint8Array(dst.subarray(0, px * 4)) : new Uint8Array(px * 4);
+        reference.compositeTile(scratch, [src.subarray(0, px * 4)], [op], [alpha], mask ? [mask.subarray(0, px)] : null);
+        let changed = false, nonEmpty = false;
+        for (let p = 0; p < px; p++) {
+            const i = p * 4;
+            if (src[i + 3] === 0 || (mask && mask[p] === 0)) {
+                if (dst) {
+                    scratch[i] = dst[i]; scratch[i + 1] = dst[i + 1]; scratch[i + 2] = dst[i + 2]; scratch[i + 3] = dst[i + 3];
+                } else {
+                    scratch[i] = 0; scratch[i + 1] = 0; scratch[i + 2] = 0; scratch[i + 3] = 0;
+                }
+            }
+            if (dst) {
+                if (scratch[i] !== dst[i] || scratch[i + 1] !== dst[i + 1] || scratch[i + 2] !== dst[i + 2] || scratch[i + 3] !== dst[i + 3]) changed = true;
+            } else if (scratch[i] || scratch[i + 1] || scratch[i + 2] || scratch[i + 3]) {
+                changed = true;
+            }
+            if (scratch[i + 3] > 0) nonEmpty = true;
+        }
+        if (!changed) return { r: 0, bytes: null };
+        if (!nonEmpty) return { r: 2, bytes: null };
+        return { r: 1, bytes: scratch };
+    };
+
+    const callMasked = (k, [dst, src, op, alpha, mask, px]) => {
+        if (k === refMaskedObj) return refMaskedTile(dst, src, op, alpha, mask, px);
+        const out = new Uint8Array(px * 4);
+        out.fill(0xa5);
+        let writes = 0, wholeArg = null;
+        const r = k.compositeMaskedTile(dst, src, op, alpha, mask, px, (whole) => {
+            writes++;
+            wholeArg = whole;
+            return out;
+        });
+        if (writes !== (r === 1 ? 1 : 0) || (r === 1 && wholeArg !== true)) {
+            throw new Error(`write(${wholeArg}) called ${writes} times for return code ${r}`);
+        }
+        if (r !== 1 && out[0] !== 0xa5) {
+            throw new Error(`out buffer modified when return code was ${r}`);
+        }
+        return { r, bytes: r === 1 ? out : null };
+    };
+    const refMaskedObj = { compositeMaskedTile: refMaskedTile };
+
+    const maskedCases = [];
+    // 1. All ops 0..=30 with mixed backdrop (including low-alpha pixels that drift if premultiplied+unpremultiplied when s.a==0 or m==0)
+    const makeDriftDst = (px, seed) => {
+        const d = pixelRow(px, seed, { opaque: false });
+        // Force some low-alpha pixels with high RGB (e.g. [200, 100, 50, 1]) and zero-alpha pixels with non-zero RGB
+        for (let p = 0; p < px; p += 7) {
+            const i = p * 4;
+            d[i] = 213; d[i + 1] = 117; d[i + 2] = 63; d[i + 3] = 2;
+        }
+        for (let p = 3; p < px; p += 13) {
+            const i = p * 4;
+            d[i] = 99; d[i + 1] = 44; d[i + 2] = 11; d[i + 3] = 0;
+        }
+        return d;
+    };
+    for (let op = 0; op <= 30; op++) {
+        const px = op % 5 === 0 ? 1031 : op % 3 === 0 ? 259 : 64;
+        const dst = makeDriftDst(px, 400 + op);
+        const src = pixelRow(px, 500 + op, { opaque: false });
+        const mask = randomMask(px, 600 + op);
+        const alpha = [255, 180, 1, 127, 0][op % 5];
+        maskedCases.push({ tag: `op ${op} dst+mask px=${px} a=${alpha}`, args: [dst, src, op, alpha, mask, px] });
+        maskedCases.push({ tag: `op ${op} dst no-mask px=${px} a=${alpha}`, args: [dst, src, op, alpha === 0 ? 200 : alpha, null, px] });
+        maskedCases.push({ tag: `op ${op} null-dst+mask px=${px}`, args: [null, src, op, 200, mask, px] });
+    }
+    // 2. Full 256x256 tile (65536 px) with sparse active chunks and inactive chunks
+    {
+        const px = 65536;
+        const dst = makeDriftDst(px, 777);
+        const srcSparse = new Uint8Array(px * 4);
+        // Only chunk 3 (pixels 768..1024) at pixel 777 and chunk 200 at pixel 51205 have alpha > 0
+        srcSparse[777 * 4] = 250; srcSparse[777 * 4 + 1] = 120; srcSparse[777 * 4 + 2] = 30; srcSparse[777 * 4 + 3] = 200;
+        srcSparse[51205 * 4] = 40; srcSparse[51205 * 4 + 1] = 220; srcSparse[51205 * 4 + 2] = 180; srcSparse[51205 * 4 + 3] = 255;
+        const maskSparse = new Uint8Array(px).fill(255);
+        maskSparse[51205] = 0; // masks out pixel 51205 so chunk 200 becomes completely inactive!
+        maskedCases.push({ tag: "65536px sparse active chunk with dst", args: [dst, srcSparse, 0, 255, maskSparse, px] });
+        maskedCases.push({ tag: "65536px sparse active chunk null dst", args: [null, srcSparse, 0, 255, maskSparse, px] });
+        // Completely inactive 65536px tile (masked out) -> r = 0 (UNCHANGED)
+        const maskZero = new Uint8Array(px);
+        maskedCases.push({ tag: "65536px all masked out -> UNCHANGED (0)", args: [dst, srcSparse, 0, 255, maskZero, px] });
+    }
+    // 3. Single-pixel and SIMD+tail pair active positions across 4-pixel SIMD lane boundaries and 256-pixel chunk boundaries
+    for (const px of [1, 2, 3, 4, 5, 7, 19, 255, 256, 257, 263, 513]) {
+        const dst = makeDriftDst(px, 800 + px);
+        for (const pos of [0, 1, 2, 3, 4, Math.min(px - 1, 255), Math.min(px - 1, 256), px - 1]) {
+            if (pos >= px) continue;
+            const src = new Uint8Array(px * 4);
+            src[pos * 4] = 180; src[pos * 4 + 1] = 90; src[pos * 4 + 2] = 240; src[pos * 4 + 3] = 220;
+            maskedCases.push({ tag: `single active pos=${pos}/${px}`, args: [dst, src, 0, 255, null, px] });
+        }
+        if (px >= 5 && px % 4 !== 0) {
+            const srcPair = new Uint8Array(px * 4);
+            const firstPos = (px >> 8) * 256;
+            srcPair[firstPos * 4] = 210; srcPair[firstPos * 4 + 1] = 80; srcPair[firstPos * 4 + 2] = 40; srcPair[firstPos * 4 + 3] = 230;
+            srcPair[(px - 1) * 4] = 50; srcPair[(px - 1) * 4 + 1] = 190; srcPair[(px - 1) * 4 + 2] = 240; srcPair[(px - 1) * 4 + 3] = 200;
+            maskedCases.push({ tag: `SIMD+tail pair active ${firstPos}+${px - 1}/${px}`, args: [dst, srcPair, 0, 255, null, px] });
+        }
+    }
+    // 4. Explicit outcome 0 (UNCHANGED) and outcome 2 (EMPTY) cases
+    {
+        const px = 260;
+        const dstSpot = new Uint8Array(px * 4);
+        // Only pixels 10 and 258 are non-transparent in dstSpot
+        dstSpot[10 * 4] = 255; dstSpot[10 * 4 + 3] = 200;
+        dstSpot[258 * 4 + 1] = 255; dstSpot[258 * 4 + 3] = 128;
+        const srcEraseSpot = new Uint8Array(px * 4);
+        srcEraseSpot[10 * 4 + 3] = 255;
+        srcEraseSpot[258 * 4 + 3] = 255;
+        // Outcome 2 (EMPTY): destination-out erases the only two non-transparent pixels in dstSpot
+        maskedCases.push({ tag: "destination-out erases sparse dst to EMPTY (2)", args: [dstSpot, srcEraseSpot, 1, 255, null, px] });
+        // Outcome 2 (EMPTY): destination-in at alpha=0 erases dstSpot to EMPTY (2)
+        maskedCases.push({ tag: "destination-in alpha=0 erases dst to EMPTY (2)", args: [dstSpot, srcEraseSpot, 3, 0, null, px] });
+        // Outcome 2 (EMPTY): copy at alpha=0 erases dstSpot to EMPTY (2)
+        maskedCases.push({ tag: "copy alpha=0 erases dst to EMPTY (2)", args: [dstSpot, srcEraseSpot, 4, 0, null, px] });
+        // Outcome 2 (EMPTY): dst has only RGB garbage [50, 60, 70, 0] at pixel 10; source-atop over it zeroes the RGB garbage -> changed=true, non_empty=false -> EMPTY (2)
+        const dstGarbage = new Uint8Array(px * 4);
+        dstGarbage[10 * 4] = 50; dstGarbage[10 * 4 + 1] = 60; dstGarbage[10 * 4 + 2] = 70; dstGarbage[10 * 4 + 3] = 0;
+        maskedCases.push({ tag: "source-atop over RGB garbage with alpha=0 zeroes RGB -> EMPTY (2)", args: [dstGarbage, srcEraseSpot, 2, 255, null, px] });
+        // Outcome 0 (UNCHANGED): destination-out over already-transparent pixels
+        const srcMiss = new Uint8Array(px * 4);
+        srcMiss[5 * 4 + 3] = 255;
+        maskedCases.push({ tag: "destination-out over transparent pixel -> UNCHANGED (0)", args: [dstSpot, srcMiss, 1, 255, null, px] });
+        // Outcome 0 (UNCHANGED): painting identical opaque colour over opaque pixel
+        const dstOpaque1 = new Uint8Array(px * 4);
+        dstOpaque1[5 * 4] = 100; dstOpaque1[5 * 4 + 1] = 150; dstOpaque1[5 * 4 + 2] = 200; dstOpaque1[5 * 4 + 3] = 255;
+        const srcSame = new Uint8Array(px * 4);
+        srcSame[5 * 4] = 100; srcSame[5 * 4 + 1] = 150; srcSame[5 * 4 + 2] = 200; srcSame[5 * 4 + 3] = 255;
+        maskedCases.push({ tag: "source-over identical opaque pixel -> UNCHANGED (0)", args: [dstOpaque1, srcSame, 0, 255, null, px] });
+        // Outcome 1 (WRITTEN) when active span is erased to 0 but non-empty pixel remains in prefix, suffix, suffix tail, or inactive chunk
+        const srcErase10 = new Uint8Array(px * 4);
+        srcErase10[10 * 4 + 3] = 255;
+        maskedCases.push({ tag: "erase active span in chunk 0 while chunk 1 (4-px) has alpha -> WRITTEN (1)", args: [dstSpot, srcErase10, 1, 255, null, px] });
+        maskedCases.push({ tag: "erase active span in chunk 0 while chunk 1 (3-px tail) has alpha -> WRITTEN (1)", args: [dstSpot.subarray(0, 259 * 4), srcErase10.subarray(0, 259 * 4), 1, 255, null, 259] });
+        const dstPrefix = new Uint8Array(px * 4);
+        dstPrefix[1 * 4 + 3] = 90; dstPrefix[10 * 4 + 3] = 200;
+        maskedCases.push({ tag: "erase active span while chunk prefix (< x0) has alpha -> WRITTEN (1)", args: [dstPrefix, srcErase10, 1, 255, null, px] });
+        const dstSuffix = new Uint8Array(px * 4);
+        dstSuffix[10 * 4 + 3] = 200; dstSuffix[20 * 4 + 3] = 90;
+        maskedCases.push({ tag: "erase active span while chunk suffix (>= x1) has alpha -> WRITTEN (1)", args: [dstSuffix, srcErase10, 1, 255, null, px] });
+        const dstSuffixTail = new Uint8Array(263 * 4), srcErase256 = new Uint8Array(263 * 4);
+        dstSuffixTail[256 * 4 + 3] = 200; dstSuffixTail[262 * 4 + 3] = 75;
+        srcErase256[256 * 4 + 3] = 255;
+        maskedCases.push({ tag: "erase active span while chunk suffix scalar tail has alpha -> WRITTEN (1)", args: [dstSuffixTail, srcErase256, 1, 255, null, 263] });
+    }
+
+    const seenOutcomes = new Set();
+    for (const c of maskedCases) seenOutcomes.add(refMaskedTile(...c.args).r);
+    check("composite_masked_tile test cases cover outcomes 0 (UNCHANGED), 1 (WRITTEN), and 2 (EMPTY)",
+        seenOutcomes.has(0) && seenOutcomes.has(1) && seenOutcomes.has(2), `saw ${[...seenOutcomes].join(",")}`);
+
+    twinCheck({
+        name: "composite_masked_tile (ref)",
+        title: "compositeMaskedTile's twin equals compositeTile + inactive-pixel restore + empty check",
+        builds: [["js", js]],
+        twin: refMaskedObj,
+        call: callMasked,
+        cases: maskedCases,
+        shift: false,
+    });
+    twinCheck({
+        name: "composite_masked_tile",
+        builds: [["rust simd", simd], ["rust scalar", scalar]],
+        twin: js,
+        call: callMasked,
+        cases: maskedCases,
+        shift: [0, 1, 4],
+    });
+
+    // Refusal checks on twin, simd, scalar, and raw export
+    {
+        const s16 = new Uint8Array(16 * 4), d16 = new Uint8Array(16 * 4), m16 = new Uint8Array(16);
+        const refusals = [
+            ["px = 0", [d16, s16, 0, 255, null, 0]],
+            ["px < 0", [d16, s16, 0, 255, null, -4]],
+            ["px > 4096*4096", [d16, s16, 0, 255, null, 4096 * 4096 + 1]],
+            ["null src", [d16, null, 0, 255, null, 16]],
+            ["short src view over longer buffer", [d16, new Uint8Array(new ArrayBuffer(128), 0, 16 * 4 - 4), 0, 255, null, 16]],
+            ["short dst view over longer buffer", [new Uint8Array(new ArrayBuffer(128), 0, 16 * 4 - 4), s16, 0, 255, null, 16]],
+            ["short mask view over longer buffer", [d16, s16, 0, 255, new Uint8Array(new ArrayBuffer(64), 0, 15), 16]],
+        ];
+        for (const [what, args] of refusals) {
+            let threw = 0;
+            for (const k of [js, simd, scalar]) {
+                try { callMasked(k, args); } catch { threw++; }
+            }
+            check(`compositeMaskedTile refuses ${what} on twin and both builds`, threw === 3, `${threw}/3 threw`);
+        }
+        let noWriteThrew = 0;
+        for (const k of [js, simd, scalar]) {
+            try { k.compositeMaskedTile(d16, s16, 0, 255, null, 16, null); } catch { noWriteThrew++; }
+        }
+        check("compositeMaskedTile refuses missing write callback on twin and both builds", noWriteThrew === 3, `${noWriteThrew}/3 threw`);
+        const rawRefused = [
+            simd.exports.composite_masked_tile(0, 0, 0, 16, 0, 255, 0),
+            simd.exports.composite_masked_tile(0, 1, 16, 16, 0, 255, 0),
+            simd.exports.composite_masked_tile(16, 0, 16, 0, 0, 255, 0),
+            simd.exports.composite_masked_tile(16, 0, 16, 4096 * 4096 + 1, 0, 255, 0),
+            scalar.exports.composite_masked_tile(0, 0, 0, 16, 0, 255, 0),
+        ];
+        check("raw composite_masked_tile returns 3 (REFUSED) on invalid pointers or pixel counts",
+            rawRefused.every((r) => r === 3), JSON.stringify(rawRefused));
+    }
+
+    // Route, trap recovery, and TileLayerPixels.compositeStroke checks
+    {
+        let K = null, TileLayerPixels = null;
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (u, ...rest) => {
+            const s = String(u && u.href ? u.href : u);
+            return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+        };
+        try {
+            K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+            await K.kernelsReady();
+            ({ TileLayerPixels } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_tiles.js")).href));
+        } finally { globalThis.fetch = realFetch; }
+        if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, "compositeMaskedTile")) {
+            check("kernels.js has the compositeMaskedTile route", false);
+            return;
+        }
+        const prevMode = K.kernelsMode();
+        K.setKernels("rust");
+        try {
+            const runRoute = (rt) => {
+                K.setRoute("compositeMaskedTile", rt);
+                K.pxCalls(true);
+                const out = [];
+                for (const c of maskedCases) {
+                    const [dst, src, op, alpha, mask, px] = c.args;
+                    const target = new Uint8Array(px * 4);
+                    let writes = 0, wholeArg = null;
+                    const r = K.compositeMaskedTile(dst, (whole) => { writes++; wholeArg = whole; return target; }, src, op, alpha, mask, px);
+                    out.push({ r, writes, whole: wholeArg, bytes: r === 1 ? target : null });
+                }
+                return { out, calls: K.pxCalls(true).composite_masked_tile || 0 };
+            };
+            const viaJs = runRoute("js"), viaRust = runRoute("rust");
+            let routeOk = viaJs.out.length === viaRust.out.length, routeDetail = "";
+            for (let i = 0; routeOk && i < viaJs.out.length; i++) {
+                const a = viaJs.out[i], b = viaRust.out[i];
+                if (a.r !== b.r || a.writes !== (a.r === 1 ? 1 : 0) || b.writes !== (b.r === 1 ? 1 : 0)
+                    || (a.r === 1 && (!a.whole || !b.whole || !eqBytes(a.bytes, b.bytes)))) {
+                    routeOk = false;
+                    routeDetail = `case ${i} (${maskedCases[i].tag}): js r=${a.r} w=${a.writes}, rust r=${b.r} w=${b.writes}`;
+                }
+            }
+            check(`kernels.js compositeMaskedTile gives the same on routes js (0 calls) and rust (${viaRust.calls} calls), write(true) only when r === 1`,
+                routeOk && viaJs.calls === 0 && viaRust.calls === maskedCases.length,
+                routeDetail || `js=${viaJs.calls}, rust=${viaRust.calls}`);
+
+            // Trap recovery on compositeMaskedTile
+            K.setRoute("compositeMaskedTile", "rust");
+            const warned = [], realWarn = console.warn;
+            console.warn = (...a) => { warned.push(a.map(String).join(" ")); };
+            try {
+                const [dst, src, op, alpha, mask, px] = maskedCases[0].args;
+                const want = refMaskedTile(dst, src, op, alpha, mask, px);
+                const p = K.rustPx(), i0 = K.pxInstances();
+                p.compositeMaskedTile = function () { return trapIn(this); };
+                const target = new Uint8Array(px * 4);
+                let writes = 0;
+                const r = K.compositeMaskedTile(dst, () => { writes++; return target; }, src, op, alpha, mask, px);
+                const i1 = K.pxInstances();
+                check("kernels.js compositeMaskedTile recovers from a trap via the twin, calls write once, and replaces the instance",
+                    r === want.r && writes === 1 && eqBytes(target, want.bytes) && K.rustPx() !== p && i1.trap === i0.trap + 1
+                    && warned.some((w) => /composite_masked_tile.*trap/.test(w)),
+                    `r=${r}, writes=${writes}, trap=${i1.trap - i0.trap}`);
+            } finally { console.warn = realWarn; }
+
+            // TileLayerPixels.compositeStroke across all 4 tile outcomes on both js and rust routes
+            const packTiles = (tp) => {
+                const out = new Uint8Array(4 * 256 * 256 * 4);
+                for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) {
+                    const t = tp.tileAt(tx, ty);
+                    if (t) out.set(t.data, (ty * 2 + tx) * 256 * 256 * 4);
+                }
+                return out;
+            };
+            const buildAndStroke = (rt) => {
+                K.setRoute("compositeMaskedTile", rt);
+                const layer = new TileLayerPixels(512, 512);
+                // Tile (0,0): existing pixels, will be painted over partially -> r = 1
+                const t00 = layer.writable(0, 0);
+                for (let i = 0; i < t00.data.length; i += 4) { t00.data[i] = 40; t00.data[i + 1] = 80; t00.data[i + 2] = 120; t00.data[i + 3] = 200; }
+                // Tile (1,0): existing pixels, will be erased completely by destination-out -> r = 2 (dropped)
+                const t10 = layer.writable(1, 0);
+                t10.data[0] = 255; t10.data[3] = 180;
+                // Tile (0,1): existing pixels, stroke tile has pixels only where coverage mask is 0 -> r = 0 (unchanged, stays shared with clone)
+                const t01 = layer.writable(0, 1);
+                t01.data[0] = 10; t01.data[1] = 20; t01.data[2] = 30; t01.data[3] = 255;
+                // Tile (1,1): absent in layer, stroke paints new pixels -> r = 1 (created)
+                const snap = layer.clone(); // freezes t00, t10, t01 as commitStroke does
+
+                // Step 1: compositeStroke with source-over (op = 0) on (0,0), (0,1), (1,1)
+                const stroke1 = new TileLayerPixels(512, 512);
+                const s00 = stroke1.writable(0, 0);
+                for (let p = 0; p < 1000; p++) { s00.data[p * 4] = 250; s00.data[p * 4 + 1] = 30; s00.data[p * 4 + 2] = 60; s00.data[p * 4 + 3] = 180; }
+                const s01 = stroke1.writable(0, 1);
+                s01.data[0] = 255; s01.data[3] = 255;
+                const s11 = stroke1.writable(1, 1);
+                s11.data[100] = 90; s11.data[101] = 190; s11.data[102] = 210; s11.data[103] = 240;
+                const zeroCov = new Uint8Array(65536);
+                const cov1 = (tx, ty) => (tx === 0 && ty === 1 ? zeroCov : true); // all 0 on tile (0,1), full on others
+
+                K.pxCalls(true);
+                const w1 = layer.compositeStroke(stroke1, 0, 220, cov1);
+                const c1 = K.pxCalls(true).composite_masked_tile || 0;
+
+                // Step 2: compositeStroke with destination-out (op = 1) on (1,0) to erase it completely
+                const stroke2 = new TileLayerPixels(512, 512);
+                const s10 = stroke2.writable(1, 0);
+                s10.data[3] = 255;
+                const w2 = layer.compositeStroke(stroke2, 1, 255, null);
+                const c2 = K.pxCalls(true).composite_masked_tile || 0;
+
+                return {
+                    bytes: packTiles(layer),
+                    snapBytes: packTiles(snap),
+                    w1, w2, c1, c2,
+                    shared01: layer.tileAt(0, 1) === snap.tileAt(0, 1),
+                    dropped10: layer.tileAt(1, 0) === null && snap.tileAt(1, 0) !== null,
+                    created11: layer.tileAt(1, 1) !== null && snap.tileAt(1, 1) === null,
+                };
+            };
+            const stJs = buildAndStroke("js"), stRust = buildAndStroke("rust");
+            check("TileLayerPixels.compositeStroke on js and rust routes matches byte-for-byte, drops emptied tiles, and keeps unchanged tiles shared with frozen clones",
+                eqBytes(stJs.bytes, stRust.bytes) && eqBytes(stJs.snapBytes, stRust.snapBytes)
+                && stJs.w1 === 2 && stRust.w1 === 2 && stJs.w2 === 1 && stRust.w2 === 1
+                && stJs.c1 === 0 && stJs.c2 === 0 && stRust.c1 === 3 && stRust.c2 === 1
+                && stJs.shared01 && stRust.shared01 && stJs.dropped10 && stRust.dropped10 && stJs.created11 && stRust.created11,
+                `js w=${stJs.w1},${stJs.w2} c=${stJs.c1},${stJs.c2}; rust w=${stRust.w1},${stRust.w2} c=${stRust.c1},${stRust.c2}`);
+        } finally {
+            kernelsBack(K);
+            K.setKernels(prevMode);
+        }
+    }
+
+    if (process.env.PX_BENCH) {
+        const px = 65536, dst = makeDriftDst(px, 901), srcFull = pixelRow(px, 902), out = new Uint8Array(px * 4);
+        const srcSparse = new Uint8Array(px * 4);
+        for (let y = 40; y < 88; y++) for (let x = 40; x < 88; x++) {
+            const i = (y * 256 + x) * 4;
+            srcSparse[i] = 220; srcSparse[i + 1] = 80; srcSparse[i + 2] = 140; srcSparse[i + 3] = 200;
+        }
+        for (const [what, s] of [["full 256² tile", srcFull], ["48² dab in 256² tile", srcSparse]]) {
+            const rows = [
+                ["twin", () => js.compositeMaskedTile(dst, s, 0, 200, null, px, () => out)],
+                ["simd", () => simd.compositeMaskedTile(dst, s, 0, 200, null, px, () => out)],
+                ["scalar", () => scalar.compositeMaskedTile(dst, s, 0, 200, null, px, () => out)],
+            ];
+            const med = benchMedians(rows, { rounds: 200 });
+            console.log(`       composite_masked_tile ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(3)}`).join(", ")} ms (median of 200)`);
+        }
+    }
 }
 
 /** An 8-bit, non-interlaced PNG of colour type 2 (RGB) or 6 (RGBA) as RGBA bytes (alpha 255 for RGB). */

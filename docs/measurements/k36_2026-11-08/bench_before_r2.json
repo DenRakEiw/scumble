@@ -1,0 +1,15 @@
+{
+  "before": {
+    "paint_ms": 8.255,
+    "clipped_ms": 8.695,
+    "erase_ms": 7.955,
+    "paint_tiles": 24,
+    "erase_tiles": 16,
+    "paint_hash": 458399173,
+    "clipped_hash": 458399173,
+    "erase_hash": 956926557,
+    "calls": {
+      "composite_tile": 648
+    }
+  }
+}

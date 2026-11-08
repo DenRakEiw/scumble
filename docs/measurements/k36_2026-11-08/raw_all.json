@@ -1,0 +1,459 @@
+{
+  "before": [
+    {
+      "native": {
+        "wall": 285,
+        "blocked": 285,
+        "calls": {
+          "2d getImageData": {
+            "n": 120,
+            "ms": 3.2,
+            "MB": 1.4
+          },
+          "2d putImageData": {
+            "n": 200,
+            "ms": 21.5,
+            "MB": 70.8
+          },
+          "2d drawImage >= 1 MP": {
+            "n": 363,
+            "ms": 10.2,
+            "MB": 4684.8
+          },
+          "gl texSubImage2D": {
+            "n": 51,
+            "ms": 0.3,
+            "MB": 0.8
+          },
+          "gl draw": {
+            "n": 5,
+            "ms": 0,
+            "MB": 0
+          },
+          "gl bufferData": {
+            "n": 2,
+            "ms": 0,
+            "MB": 0
+          }
+        },
+        "jobs": {},
+        "marks": {},
+        "pxCalls": {
+          "window": {
+            "composite_tile": 3
+          },
+          "workers": {}
+        },
+        "extra": {
+          "frame_median": 2.06,
+          "frame_max": 60.22,
+          "release": 11.1
+        },
+        "error": null,
+        "status": "15000 \u00d7 10000",
+        "focused": true,
+        "visibility": "visible"
+      },
+      "bench": {
+        "before": {
+          "paint_ms": 7.79,
+          "clipped_ms": 8.61,
+          "erase_ms": 8.125,
+          "paint_tiles": 24,
+          "erase_tiles": 16,
+          "paint_hash": 458399173,
+          "clipped_hash": 458399173,
+          "erase_hash": 956926557,
+          "calls": {
+            "composite_tile": 648
+          }
+        }
+      }
+    },
+    {
+      "native": {
+        "wall": 332,
+        "blocked": 332,
+        "calls": {
+          "2d getImageData": {
+            "n": 120,
+            "ms": 4.1,
+            "MB": 1.4
+          },
+          "2d putImageData": {
+            "n": 200,
+            "ms": 24.5,
+            "MB": 70.8
+          },
+          "2d drawImage >= 1 MP": {
+            "n": 363,
+            "ms": 13,
+            "MB": 4684.8
+          },
+          "gl texSubImage2D": {
+            "n": 51,
+            "ms": 0.2,
+            "MB": 0.8
+          },
+          "gl draw": {
+            "n": 5,
+            "ms": 0,
+            "MB": 0
+          },
+          "gl bufferData": {
+            "n": 2,
+            "ms": 0,
+            "MB": 0
+          }
+        },
+        "jobs": {},
+        "marks": {},
+        "pxCalls": {
+          "window": {
+            "composite_tile": 3
+          },
+          "workers": {}
+        },
+        "extra": {
+          "frame_median": 2.13,
+          "frame_max": 70.31,
+          "release": 11.5
+        },
+        "error": null,
+        "status": "15000 \u00d7 10000",
+        "focused": true,
+        "visibility": "visible"
+      },
+      "bench": {
+        "before": {
+          "paint_ms": 8.255,
+          "clipped_ms": 8.695,
+          "erase_ms": 7.955,
+          "paint_tiles": 24,
+          "erase_tiles": 16,
+          "paint_hash": 458399173,
+          "clipped_hash": 458399173,
+          "erase_hash": 956926557,
+          "calls": {
+            "composite_tile": 648
+          }
+        }
+      }
+    },
+    {
+      "native": {
+        "wall": 315,
+        "blocked": 315,
+        "calls": {
+          "2d getImageData": {
+            "n": 120,
+            "ms": 3.9,
+            "MB": 1.4
+          },
+          "2d putImageData": {
+            "n": 200,
+            "ms": 22.7,
+            "MB": 70.8
+          },
+          "2d drawImage >= 1 MP": {
+            "n": 363,
+            "ms": 12,
+            "MB": 4684.8
+          },
+          "gl texSubImage2D": {
+            "n": 51,
+            "ms": 0.2,
+            "MB": 0.8
+          },
+          "gl draw": {
+            "n": 5,
+            "ms": 0,
+            "MB": 0
+          },
+          "gl bufferData": {
+            "n": 2,
+            "ms": 0,
+            "MB": 0
+          }
+        },
+        "jobs": {},
+        "marks": {},
+        "pxCalls": {
+          "window": {
+            "composite_tile": 3
+          },
+          "workers": {}
+        },
+        "extra": {
+          "frame_median": 2.37,
+          "frame_max": 63.19,
+          "release": 12.3
+        },
+        "error": null,
+        "status": "15000 \u00d7 10000",
+        "focused": true,
+        "visibility": "visible"
+      },
+      "bench": {
+        "before": {
+          "paint_ms": 7.505,
+          "clipped_ms": 8.505,
+          "erase_ms": 7.63,
+          "paint_tiles": 24,
+          "erase_tiles": 16,
+          "paint_hash": 458399173,
+          "clipped_hash": 458399173,
+          "erase_hash": 956926557,
+          "calls": {
+            "composite_tile": 648
+          }
+        }
+      }
+    }
+  ],
+  "after": [
+    {
+      "native": {
+        "wall": 360,
+        "blocked": 360,
+        "calls": {
+          "2d getImageData": {
+            "n": 120,
+            "ms": 4.5,
+            "MB": 1.4
+          },
+          "2d putImageData": {
+            "n": 200,
+            "ms": 29.5,
+            "MB": 70.8
+          },
+          "2d drawImage >= 1 MP": {
+            "n": 363,
+            "ms": 14.6,
+            "MB": 4684.8
+          },
+          "gl texSubImage2D": {
+            "n": 51,
+            "ms": 0.8,
+            "MB": 0.8
+          },
+          "gl draw": {
+            "n": 5,
+            "ms": 0,
+            "MB": 0
+          },
+          "gl bufferData": {
+            "n": 2,
+            "ms": 0,
+            "MB": 0
+          }
+        },
+        "jobs": {},
+        "marks": {},
+        "pxCalls": {
+          "window": {
+            "composite_masked_tile": 3
+          },
+          "workers": {}
+        },
+        "extra": {
+          "frame_median": 2.53,
+          "frame_max": 93.66,
+          "release": 18.5
+        },
+        "error": null,
+        "status": "15000 \u00d7 10000",
+        "focused": true,
+        "visibility": "visible"
+      },
+      "bench": {
+        "rust": {
+          "paint_ms": 4.815,
+          "clipped_ms": 5.46,
+          "erase_ms": 6.085,
+          "paint_tiles": 24,
+          "erase_tiles": 16,
+          "paint_hash": 458399173,
+          "clipped_hash": 458399173,
+          "erase_hash": 956926557,
+          "calls": {
+            "composite_masked_tile": 648
+          }
+        },
+        "js": {
+          "paint_ms": 11.775,
+          "clipped_ms": 13.17,
+          "erase_ms": 13.37,
+          "paint_tiles": 24,
+          "erase_tiles": 16,
+          "paint_hash": 458399173,
+          "clipped_hash": 458399173,
+          "erase_hash": 956926557,
+          "calls": {}
+        }
+      }
+    },
+    {
+      "native": {
+        "wall": 324,
+        "blocked": 324,
+        "calls": {
+          "2d getImageData": {
+            "n": 120,
+            "ms": 3.8,
+            "MB": 1.4
+          },
+          "2d putImageData": {
+            "n": 200,
+            "ms": 21.1,
+            "MB": 70.8
+          },
+          "2d drawImage >= 1 MP": {
+            "n": 363,
+            "ms": 13.2,
+            "MB": 4684.8
+          },
+          "gl texSubImage2D": {
+            "n": 51,
+            "ms": 0.4,
+            "MB": 0.8
+          },
+          "gl draw": {
+            "n": 5,
+            "ms": 0,
+            "MB": 0
+          },
+          "gl bufferData": {
+            "n": 2,
+            "ms": 0,
+            "MB": 0
+          }
+        },
+        "jobs": {},
+        "marks": {},
+        "pxCalls": {
+          "window": {
+            "composite_masked_tile": 3
+          },
+          "workers": {}
+        },
+        "extra": {
+          "frame_median": 2.38,
+          "frame_max": 67.68,
+          "release": 15.3
+        },
+        "error": null,
+        "status": "15000 \u00d7 10000",
+        "focused": true,
+        "visibility": "visible"
+      },
+      "bench": {
+        "rust": {
+          "paint_ms": 4.18,
+          "clipped_ms": 4.96,
+          "erase_ms": 5.41,
+          "paint_tiles": 24,
+          "erase_tiles": 16,
+          "paint_hash": 458399173,
+          "clipped_hash": 458399173,
+          "erase_hash": 956926557,
+          "calls": {
+            "composite_masked_tile": 648
+          }
+        },
+        "js": {
+          "paint_ms": 11.08,
+          "clipped_ms": 13.405,
+          "erase_ms": 12.935,
+          "paint_tiles": 24,
+          "erase_tiles": 16,
+          "paint_hash": 458399173,
+          "clipped_hash": 458399173,
+          "erase_hash": 956926557,
+          "calls": {}
+        }
+      }
+    },
+    {
+      "native": {
+        "wall": 294,
+        "blocked": 294,
+        "calls": {
+          "2d getImageData": {
+            "n": 120,
+            "ms": 3.2,
+            "MB": 1.4
+          },
+          "2d putImageData": {
+            "n": 200,
+            "ms": 24.3,
+            "MB": 70.8
+          },
+          "2d drawImage >= 1 MP": {
+            "n": 363,
+            "ms": 10.3,
+            "MB": 4684.8
+          },
+          "gl texSubImage2D": {
+            "n": 51,
+            "ms": 0.2,
+            "MB": 0.8
+          },
+          "gl draw": {
+            "n": 5,
+            "ms": 0,
+            "MB": 0
+          },
+          "gl bufferData": {
+            "n": 2,
+            "ms": 0,
+            "MB": 0
+          }
+        },
+        "jobs": {},
+        "marks": {},
+        "pxCalls": {
+          "window": {
+            "composite_masked_tile": 3
+          },
+          "workers": {}
+        },
+        "extra": {
+          "frame_median": 1.79,
+          "frame_max": 74.08,
+          "release": 7
+        },
+        "error": null,
+        "status": "15000 \u00d7 10000",
+        "focused": true,
+        "visibility": "visible"
+      },
+      "bench": {
+        "rust": {
+          "paint_ms": 4.575,
+          "clipped_ms": 5.265,
+          "erase_ms": 5.48,
+          "paint_tiles": 24,
+          "erase_tiles": 16,
+          "paint_hash": 458399173,
+          "clipped_hash": 458399173,
+          "erase_hash": 956926557,
+          "calls": {
+            "composite_masked_tile": 648
+          }
+        },
+        "js": {
+          "paint_ms": 11.59,
+          "clipped_ms": 12.8,
+          "erase_ms": 12.83,
+          "paint_tiles": 24,
+          "erase_tiles": 16,
+          "paint_hash": 458399173,
+          "clipped_hash": 458399173,
+          "erase_hash": 956926557,
+          "calls": {}
+        }
+      }
+    }
+  ]
+}

@@ -36,7 +36,7 @@
 
 import { CANVAS_MAX_PIXELS, CANVAS_MAX_SIDE } from "./inpaint_sizelimit.js";
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN } from "./inpaint_pixels.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, resampleBlock, liquifyBlock, selCombine, maskInvert, SEL_NONE, SEL_ALPHA, SEL_FULL } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeMaskedTile, resampleBlock, liquifyBlock, selCombine, maskInvert, SEL_NONE, SEL_ALPHA, SEL_FULL } from "./px/kernels.js";
 import { allocTileBytes, isShared } from "./inpaint_arena.js";
 import { canvasRoundTrip, resampleOptions, resampleStore, toFixed, preimage } from "./inpaint_resample.js";
 import { liquifyStore, liquifyBox } from "./inpaint_liquify.js";
@@ -84,7 +84,6 @@ const ALPHA = 0x1000000;           // a word >= this has a non-zero alpha byte (
 const RUN_MIN = 16;                // tileWithGutter: a run of opaque or transparent words this long goes as one set / fill
 
 let tileSeq = 0;                   // tile versions are unique across all tiles
-let STROKE_SCRATCH = null;         // compositeStroke's tile, kept
 // Pixels versions are unique across all pixels objects (docs/PLAN_BCE.md §C6 a). A cache that keys on
 // `version` then cannot mistake one object for another: a new mask started at 0 and was 1 after its first
 // touch, exactly what the mask it replaced had, and the atlas's instances and the region view kept
@@ -1411,7 +1410,7 @@ const tiled = (Base) => class extends Base {
 
     /**
      * A stroke store's tiles (`stroke`: pixels of the same size, so the same grid) composited into these pixels in place,
-     * a tile at a time through the compositing kernel (`compositeTile`): `op` an OPS number (source-over,
+     * a tile at a time through the compositing kernel (`compositeMaskedTile`, K36): `op` an OPS number (source-over,
      * destination-out, source-atop), `alpha` the opacity 0..255, `coverage(tx, ty)` what of the tile may change: true
      * for all of it, null for none, or 65,536 bytes of coverage (the selection's clip, the stroke's box). A stroke's
      * release through canvases held the window up to 0.3 s at 15000 x 10000 (docs/BUGS.md). Only the pixels the stroke
@@ -1420,8 +1419,6 @@ const tiled = (Base) => class extends Base {
      */
     compositeStroke(stroke, op, alpha, coverage = null) {
         this._guard();
-        const scratch = STROKE_SCRATCH || (STROKE_SCRATCH = new Uint8Array(TILE_BYTES));
-        const w32 = new Uint32Array(scratch.buffer, 0, TILE_SIZE * TILE_SIZE);
         let written = 0;
         for (const key of stroke.tileKeys()) {
             const tx = key & 0xFFFF, ty = key >>> 16;
@@ -1431,18 +1428,10 @@ const tiled = (Base) => class extends Base {
             let cov = coverage ? coverage(tx, ty) : true;
             if (!cov) continue;
             if (cov === true) cov = null;
-            if (old) scratch.set(old.data); else scratch.fill(0);
-            compositeTile(scratch, [s.data], [op], [alpha], [cov]);
-            const s32 = u32Of(s), o32 = old ? u32Of(old) : null;
-            let changed = false;
-            for (let i = 0; i < w32.length; i++) {
-                if (s32[i] < ALPHA || (cov && !cov[i])) w32[i] = o32 ? o32[i] : 0;
-                else if (!changed && w32[i] !== (o32 ? o32[i] : 0)) changed = true;
-            }
-            if (!changed) continue;
-            const t = this.writable(tx, ty);
-            t.data.set(scratch);
-            if (tileEmpty(t)) this._dropTile(key);
+            const r = compositeMaskedTile(old ? old.data : null, (whole) => this.writable(tx, ty, true, whole && TILE_SIZE === 256).data,
+                s.data, op, alpha, cov, TILE_SIZE * TILE_SIZE);
+            if (!r) continue;
+            if (r === 2) this._dropTile(key);
             written++;
         }
         return written;

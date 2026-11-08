@@ -48,11 +48,12 @@ fn align_for(bytes: usize) -> usize {
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
-/// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells);
+/// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells;
+/// 32: composite_masked_tile);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    31
+    32
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -620,6 +621,32 @@ pub unsafe extern "C" fn composite_tile(dst: *mut u8, px: usize, n: usize, srcs:
         composite::apply(dst, &layer);
     }
     composite::end(dst);
+}
+
+/// One source `src` (`px * 4` RGBA8 bytes, straight alpha) composited over `dst` (`px * 4` RGBA8 bytes, in place;
+/// `has_dst == 0` when the destination tile does not exist yet and is taken as transparent) under `op` and `alpha`
+/// (0..255) with optional coverage `mask` (`px` bytes, or null for full coverage), keeping `dst` (or 0) untouched
+/// wherever `src` has alpha 0 or `mask` is 0 (`compositeStroke` in `inpaint_tiles.js`, K36).
+/// Returns 0 when no pixel changed, 1 when changed and at least one pixel has alpha > 0 afterwards (`dst` holds all
+/// `px * 4` bytes), 2 when changed and every pixel has alpha 0 afterwards, 3 when refused.
+#[no_mangle]
+pub unsafe extern "C" fn composite_masked_tile(
+    dst: *mut u8,
+    has_dst: u32,
+    src: *const u8,
+    px: usize,
+    op: u8,
+    alpha: u8,
+    mask: *const u8,
+) -> u32 {
+    if dst.is_null() || src.is_null() || px == 0 || px > 4096 * 4096 {
+        return composite::REFUSED;
+    }
+    let Some(bytes) = px.checked_mul(4) else { return composite::REFUSED };
+    let dst = slice::from_raw_parts_mut(dst, bytes);
+    let src = slice::from_raw_parts(src, bytes);
+    let mask = if mask.is_null() { None } else { Some(slice::from_raw_parts(mask, px)) };
+    composite::masked_tile(dst, has_dst != 0, src, op, alpha, mask)
 }
 
 /// One smudge dab over `n` pixels (docs/PLAN_0_1_31.md §4 step 3, `smudge.rs`): `dst` straight RGBA8 written where
