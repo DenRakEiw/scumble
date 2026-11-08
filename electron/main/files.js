@@ -8,6 +8,7 @@ const crypto = require("node:crypto");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { app } = require("electron");
+const { renameRetry, BUSY } = require("./docfile");
 
 const SAFE_NAME = /^[^\\/:*?"<>|\x00-\x1f]+$/;
 const HASH_NAME = /~([0-9a-f]{8,64})(?:\.[a-z0-9]+)?$/i;
@@ -63,17 +64,22 @@ function contentName(filename, buf, len = 8) {
 
 let tmpSeq = 0;
 
-async function writeAtomic(dest, buf) {
+async function writeAtomic(dest, buf, { overwrite = false, tries = 20, delay = 100 } = {}) {
     await fsp.mkdir(path.dirname(dest), { recursive: true });
     const tmp = `${dest}.tmp-${process.pid}-${Date.now()}-${++tmpSeq}-${crypto.randomBytes(4).toString("hex")}`;
     try {
         await fsp.writeFile(tmp, buf);
         try {
-            await fsp.rename(tmp, dest);
+            await renameRetry(tmp, dest, { tries, delay, rename: (a, b) => fsp.rename(a, b) });
         } catch (err) {
-            if (err && (err.code === "EPERM" || err.code === "EBUSY" || err.code === "EACCES")) {
-                const st = await fsp.stat(dest).catch(() => null);
-                if (st && st.isFile() && st.size === buf.length) return;
+            if (err && BUSY.has(err.code)) {
+                if (overwrite) {
+                    const existing = await fsp.readFile(dest).catch(() => null);
+                    if (existing && existing.length === buf.length && existing.equals(buf)) return;
+                } else {
+                    const st = await fsp.stat(dest).catch(() => null);
+                    if (st && st.isFile() && st.size === buf.length) return;
+                }
             }
             throw err;
         }
@@ -85,7 +91,7 @@ async function writeAtomic(dest, buf) {
 async function storeMirrorFile(rawName, type, subfolder, buf, base, overwrite) {
     if (overwrite) {
         const target = mirrorPath(type, subfolder, rawName, base);
-        await writeAtomic(target, buf);
+        await writeAtomic(target, buf, { overwrite: true });
         return { filename: rawName, target };
     }
     let filename = rawName, target = "";
@@ -373,4 +379,4 @@ class FileMirror {
     }
 }
 
-module.exports = { FileMirror, mirrorPath, contentName, isHashName, hasContentHash };
+module.exports = { FileMirror, mirrorPath, contentName, isHashName, hasContentHash, writeAtomic };

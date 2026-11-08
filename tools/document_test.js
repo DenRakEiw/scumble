@@ -20,6 +20,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const fsp = require("node:fs/promises");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
@@ -28,7 +29,7 @@ const { spawnSync } = require("node:child_process");
 
 const ROOT = path.join(__dirname, "..");
 const doc = require(path.join(ROOT, "electron", "main", "docfile.js"));
-const { FileMirror, contentName, isHashName, hasContentHash } = require(path.join(ROOT, "electron", "main", "files.js"));
+const { FileMirror, contentName, isHashName, hasContentHash, writeAtomic } = require(path.join(ROOT, "electron", "main", "files.js"));
 
 const BIG = process.argv.includes("--big");
 let failed = 0;
@@ -538,6 +539,11 @@ function listTree(dir) {
                     const form = await new Request("http://127.0.0.1" + req.url, { method: "POST", headers: req.headers, body: raw }).formData();
                     const f = form.get("image");
                     const name = f.name;
+                    if (name === "large_legacy.png") {
+                        res.writeHead(413);
+                        res.end();
+                        return;
+                    }
                     const subfolder = String(form.get("subfolder") || "");
                     const type = String(form.get("type") || "input");
                     const overwrite = form.get("overwrite");
@@ -615,6 +621,59 @@ function listTree(dir) {
                 fs.unlinkSync(path.join(M, "input", "inpaint_canvas", uCollision.name));
                 fs.writeFileSync(pA, bytesA);
 
+                // 1c. writeAtomic: failed write leaves old target and no temp; renameRetry handles transient EBUSY;
+                // persistent EBUSY resolves only when existing file matches (size for content-addressed, bytes for overwrite:true)
+                const noTempsIn = (dir) => fs.readdirSync(dir).filter((n) => n.includes(".tmp-")).length === 0;
+                const mirrorDir = path.join(M, "input", "inpaint_canvas");
+                const pAtomic = path.join(mirrorDir, "atomic_target.png");
+                const origWriteFile = fsp.writeFile;
+                const origRename = fsp.rename;
+                try {
+                    fs.writeFileSync(pAtomic, bytesA);
+                    fsp.writeFile = async (p, data, ...rest) => {
+                        await origWriteFile(p, Buffer.from(data).subarray(0, 12), ...rest);
+                        throw Object.assign(new Error("ENOSPC: simulated mid-write failure"), { code: "ENOSPC" });
+                    };
+                    const failRes = await fm.handleUpload(mkUploadReq("atomic_target.png", bytesB, true));
+                    assert(failRes.status === 400 && fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "failed handleUpload write must return 400, keep old target, and leave no .tmp- file");
+                    let threwWrite = false;
+                    try { await writeAtomic(pAtomic, bytesB, { overwrite: true, tries: 3, delay: 5 }); } catch (_) { threwWrite = true; }
+                    assert(threwWrite && fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "failed writeAtomic must keep old target and leave no .tmp- file");
+                    fsp.writeFile = origWriteFile;
+
+                    // Transient EBUSY (fails twice, succeeds on 3rd try via renameRetry)
+                    let renameCalls = 0;
+                    fsp.rename = async (a, b) => {
+                        if (++renameCalls < 3) throw Object.assign(new Error("EBUSY"), { code: "EBUSY" });
+                        return origRename(a, b);
+                    };
+                    await writeAtomic(pAtomic, bytesB, { overwrite: true, tries: 5, delay: 5 });
+                    assert(renameCalls === 3 && fs.readFileSync(pAtomic).equals(bytesB) && noTempsIn(mirrorDir), "writeAtomic must retry transient EBUSY via renameRetry");
+
+                    // Persistent EBUSY on content-addressed (overwrite:false): equal size resolves, different size rejects
+                    fsp.rename = async () => { throw Object.assign(new Error("EBUSY"), { code: "EBUSY" }); };
+                    fs.writeFileSync(pAtomic, bytesA);
+                    await writeAtomic(pAtomic, bytesA, { overwrite: false, tries: 3, delay: 5 });
+                    assert(fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "EBUSY with equal size on overwrite:false must resolve and clean up temp");
+                    let threwDiffSize = false;
+                    try { await writeAtomic(pAtomic, bytesB, { overwrite: false, tries: 3, delay: 5 }); } catch (_) { threwDiffSize = true; }
+                    assert(threwDiffSize && fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "EBUSY with different size on overwrite:false must reject and keep old target");
+
+                    // Persistent EBUSY on overwrite:true: equal size with different bytes rejects, identical bytes resolves
+                    const bytesSameLenOther = rnd(bytesA.length, 99);
+                    fs.writeFileSync(pAtomic, bytesSameLenOther);
+                    let threwSameLenOther = false;
+                    try { await writeAtomic(pAtomic, bytesA, { overwrite: true, tries: 3, delay: 5 }); } catch (_) { threwSameLenOther = true; }
+                    assert(threwSameLenOther && fs.readFileSync(pAtomic).equals(bytesSameLenOther) && noTempsIn(mirrorDir), "EBUSY on overwrite:true with equal size but different bytes must reject");
+                    fs.writeFileSync(pAtomic, bytesA);
+                    await writeAtomic(pAtomic, bytesA, { overwrite: true, tries: 3, delay: 5 });
+                    assert(fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "EBUSY on overwrite:true with identical bytes must resolve");
+                } finally {
+                    fsp.writeFile = origWriteFile;
+                    fsp.rename = origRename;
+                    fs.rmSync(pAtomic, { force: true });
+                }
+
                 // 2. Different bytes with the same stem -> different names
                 const u3 = await (await fm.handleUpload(mkUploadReq("image.png", bytesB, false))).json();
                 assert(u3.name === `image~${hashB}.png` && u3.name !== u1.name, `different bytes must give different names: ${u1.name} vs ${u3.name}`);
@@ -679,19 +738,25 @@ function listTree(dir) {
                 const repMatch = await fm.ensureOnServer([{ ...plainRef }, { ...lookRef }]);
                 assert(repMatch.checked === 2 && repMatch.uploaded.length === 0 && repMatch.missing.length === 0 && uploads.length === 0, "matching Content-Length must be a no-op: " + JSON.stringify(repMatch));
 
-                // Server holds different-sized files under legacy.png and IMG_20231005.jpg
+                // Server holds different-sized files under legacy.png, IMG_20231005.jpg, and large_legacy.png (413 -> pushLargeToServer)
+                const largeRef = { filename: "large_legacy.png", subfolder: "inpaint_canvas", type: "input" };
+                put(M, largeRef, bytesA);
                 serverFiles.set("input/inpaint_canvas/legacy.png", bytesB);
                 serverFiles.set("input/inpaint_canvas/IMG_20231005.jpg", bytesB);
+                serverFiles.set("input/inpaint_canvas/large_legacy.png", bytesB);
                 fm.known.clear();
                 uploads.length = 0;
                 const plainRefRun = { ...plainRef };
                 const lookRefRun = { ...lookRef };
-                const repMismatch = await fm.ensureOnServer([plainRefRun, lookRefRun]);
-                assert(repMismatch.checked === 2 && same(repMismatch.uploaded, ["input/inpaint_canvas/legacy.png", "input/inpaint_canvas/IMG_20231005.jpg"]) && uploads.length === 2, "mismatched Content-Length must re-upload both plain and lookalike: " + JSON.stringify(repMismatch));
+                const largeRefRun = { ...largeRef };
+                const repMismatch = await fm.ensureOnServer([plainRefRun, lookRefRun, largeRefRun]);
+                assert(repMismatch.checked === 3 && same(repMismatch.uploaded, ["input/inpaint_canvas/legacy.png", "input/inpaint_canvas/IMG_20231005.jpg", "input/inpaint_canvas/large_legacy.png"]) && uploads.length === 3, "mismatched Content-Length must re-upload plain, lookalike, and large: " + JSON.stringify(repMismatch));
                 assert(repMismatch.renamed["input/inpaint_canvas/legacy.png"] === "legacy (1).png" && plainRefRun.filename === "legacy (1).png", "ensureOnServer must report renamed plain ref: " + JSON.stringify(repMismatch));
                 assert(repMismatch.renamed["input/inpaint_canvas/IMG_20231005.jpg"] === "IMG_20231005 (1).jpg" && lookRefRun.filename === "IMG_20231005 (1).jpg", "ensureOnServer must report renamed lookalike ref: " + JSON.stringify(repMismatch));
+                assert(repMismatch.renamed["input/inpaint_canvas/large_legacy.png"] === "large_legacy (1).png" && largeRefRun.filename === "large_legacy (1).png" && uploads[2].route === "/inpaint_canvas/upload", "ensureOnServer must report renamed large ref via pushLargeToServer: " + JSON.stringify(repMismatch));
                 assert(serverFiles.get("input/inpaint_canvas/legacy.png").equals(bytesB) && serverFiles.get("input/inpaint_canvas/legacy (1).png").equals(bytesA), "server keeps other client's legacy.png and stores ours at legacy (1).png");
-                assert(!fm.knownSet().has("input/inpaint_canvas/legacy.png") && !fm.knownSet().has("input/inpaint_canvas/IMG_20231005.jpg"), "renamed plain keys must not be added to known");
+                assert(serverFiles.get("input/inpaint_canvas/large_legacy.png").equals(bytesB) && serverFiles.get("input/inpaint_canvas/large_legacy (1).png").equals(bytesA), "server keeps other client's large_legacy.png and stores ours at large_legacy (1).png");
+                assert(!fm.knownSet().has("input/inpaint_canvas/legacy.png") && !fm.knownSet().has("input/inpaint_canvas/IMG_20231005.jpg") && !fm.knownSet().has("input/inpaint_canvas/large_legacy.png"), "renamed plain keys must not be added to known");
 
                 // 7. HEAD without Content-Length (re-uploads), mirror file deleted before ensureOnServer (accepted), hash name with server size mismatch (re-uploads with overwrite)
                 serverFiles.set("input/inpaint_canvas/legacy.png", Buffer.from(bytesA));

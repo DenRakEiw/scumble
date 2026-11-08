@@ -12840,6 +12840,19 @@ class InpaintEditor {
             }
             this.uploaded.baseRef = ref;
         }
+        if (this.base && ref === this.base.ref && typeof host["ensureRefs"] === "function") {
+            const sent = { filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" };
+            const key = `${sent.type}/${sent.subfolder}/${sent.filename}`;
+            let report = null;
+            try {
+                report = await host["ensureRefs"]([sent]);
+            } catch (err) {
+                if (host.connected) throw err;
+            }
+            if (report && report.missing && report.missing.length) throw new Error("These files are neither on the server nor in the local store: " + report.missing.join(", "));
+            if (report && report.renamed && report.renamed[key]) sent.filename = report.renamed[key];
+            ref = sent;
+        }
         return { ref, hash: this.uploaded.baseHash, layer: null };
     }
 

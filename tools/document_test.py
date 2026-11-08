@@ -853,6 +853,7 @@ return { problems, leftOut: lo, status, kind, stays, text };
 
 CONTENT_NAMES_UPLOAD = """
 const { api } = await import('./editor/host.js');
+const { Document } = await import('./plugins.js');
 await window.scumble.comfy.connect({ url: G.d1ServerUrl });
 for (let i = 0; i < 50 && (await window.scumble.comfy.status()).state !== "connected"; i++) await wait(50);
 let ed1 = shell.newDocument(); shell.activate(ed1);
@@ -860,6 +861,7 @@ await must("load_image", { path: G.d1Img1 });
 ed1 = host.editor;
 await settle(ed1);
 const docName1 = host.documentName(ed1);
+const pluginDocName1 = new Document(ed1).name;
 const baseRef1 = ed1.base.ref.filename;
 const px1 = await pxInfo(ed1.basePx);
 
@@ -874,7 +876,10 @@ await must("load_image", { path: G.d1ImgLook });
 edLook = host.editor;
 await settle(edLook);
 const docNameLook = host.documentName(edLook);
+const pluginDocNameLook = new Document(edLook).name;
 const baseRefLook = edLook.base.ref.filename;
+const addedFromRef = await must("add_image_layer", { doc: edLook.node.id, filename: baseRefLook, subfolder: "inpaint_canvas", type: "input" });
+const cmdLayerNameLook = addedFromRef.name;
 
 const saved = { connected: host.connected, objectInfo: host.objectInfo, queue: api.queuePrompt, recipe: host.recipe };
 const queued = [];
@@ -916,7 +921,8 @@ const st1 = queued[0] ? JSON.parse(queued[0].output["1"].inputs.canvas_state) : 
 const st2 = queued[1] ? JSON.parse(queued[1].output["1"].inputs.canvas_state) : null;
 const st1Ref = queued[2] ? JSON.parse(queued[2].output["1"].inputs.canvas_state) : null;
 return {
-    docName1, layerName1, docNameLook, layerNameLook, baseRef1, layerRef1, baseRef2, baseRefLook, layerRefLook, px1, pxRef1,
+    docName1, pluginDocName1, layerName1, docNameLook, pluginDocNameLook, layerNameLook, cmdLayerNameLook,
+    baseRef1, layerRef1, baseRef2, baseRefLook, layerRefLook, px1, pxRef1,
     sentImage: st1 && st1.base ? st1.base.filename : null,
     sentImage2: st2 && st2.base ? st2.base.filename : null,
     serRefs: (st1Ref && st1Ref.references || []).map((r) => r && r.filename),
@@ -939,6 +945,7 @@ const pxLayer = await pxInfo(lRef.px);
 const saved = { connected: host.connected, objectInfo: host.objectInfo, queue: api.queuePrompt, recipe: host.recipe, ensureRefs: host.ensureRefs };
 const queued = [];
 const ensureReports = [];
+let segRef = null, baseRefAfterSeg = null, uploadedBaseAfterSeg = null;
 try {
     host.connected = true;
     host.objectInfo = {};
@@ -957,6 +964,10 @@ try {
     await host.queueGenerate(ed);
     for (const l of ed.layers) l.visible = false;
     ed.uploaded = ed.makeUploaded();
+    const seg = await ed.segmentSource();
+    segRef = seg && seg.ref ? seg.ref.filename : null;
+    baseRefAfterSeg = ed.base.ref.filename;
+    uploadedBaseAfterSeg = ed.uploaded.baseRef ? ed.uploaded.baseRef.filename : null;
     await host.queueGenerate(ed);
 } finally {
     if (ed && ed._localRuns) ed._localRuns.clear();
@@ -969,6 +980,7 @@ const stWithRef = queued[0] ? JSON.parse(queued[0].output["1"].inputs.canvas_sta
 const stBare = queued[1] ? JSON.parse(queued[1].output["1"].inputs.canvas_state) : null;
 return {
     baseRef, layerRef, lookRef, docNamePlainLook, pxBase, pxLayer, ensureReports,
+    segRef, baseRefAfterSeg, uploadedBaseAfterSeg,
     sentImage: stBare && stBare.base ? stBare.base.filename : null,
     serBase: stBare && stBare.base ? stBare.base.filename : null,
     serRefs: (stWithRef && stWithRef.references || []).map((r) => r && r.filename),
@@ -2011,8 +2023,10 @@ class Gate:
                 problems.append(f"uploads got {u['baseRef1']}, {u['layerRef1']}, {u['baseRefLook']} (wanted {want1}, {want2}, {want_look})")
             if u["baseRef2"] != want2:
                 problems.append(f"second upload of the same picture got {u['baseRef2']}, not {want2}")
-            if u["docName1"] != "image" or u["layerName1"] != "image" or u["docNameLook"] != "IMG_20231005" or u["layerNameLook"] != "IMG_20231005":
-                problems.append(f"displayed names wrong: docName1={u['docName1']!r}, layerName1={u['layerName1']!r}, docNameLook={u['docNameLook']!r}, layerNameLook={u['layerNameLook']!r}")
+            if (u["docName1"] != "image" or u["pluginDocName1"] != "image" or u["layerName1"] != "image"
+                    or u["docNameLook"] != "IMG_20231005" or u["pluginDocNameLook"] != "IMG_20231005"
+                    or u["layerNameLook"] != "IMG_20231005" or u["cmdLayerNameLook"] != "IMG_20231005"):
+                problems.append(f"displayed names wrong: docName1={u['docName1']!r}, pluginDocName1={u['pluginDocName1']!r}, layerName1={u['layerName1']!r}, docNameLook={u['docNameLook']!r}, pluginDocNameLook={u['pluginDocNameLook']!r}, layerNameLook={u['layerNameLook']!r}, cmdLayerNameLook={u['cmdLayerNameLook']!r}")
             if u["sentImage"] != want1 or u["sentImage2"] != want2 or u["serRefs"] != [want2, want_look]:
                 problems.append(f"run sent {u['sentImage']!r}, {u['sentImage2']!r} (refs={u['serRefs']!r})")
             if (server_files.get(f"input/inpaint_canvas/{u['sentImage']}") != b1
@@ -2067,6 +2081,8 @@ class Gate:
                     != {"IMG_20231005.png": ("IMG_20231005 (1).png", None, len(b_look)),
                         "image.png": ("image (1).png", None, len(b1))}):
                 problems.append(f"plain-name re-uploads on size mismatch: {plain_ups} (all: {uploads})")
+            if o["segRef"] != "image (1).png" or o["baseRefAfterSeg"] != "image.png" or o["uploadedBaseAfterSeg"] != "image.png":
+                problems.append(f"segmentSource on plain base ref: segRef={o['segRef']!r}, baseRefAfterSeg={o['baseRefAfterSeg']!r}, uploadedBaseAfterSeg={o['uploadedBaseAfterSeg']!r}")
             if o["sentImage"] != "image (1).png" or o["serBase"] != "image (1).png" or o["serRefs"] != ["ref.png", "IMG_20231005 (1).png"]:
                 problems.append(f"old document run sent {o['sentImage']!r} (base={o['serBase']!r}, refs={o['serRefs']!r})")
             if (server_files.get("input/inpaint_canvas/image.png") != b"other-client-image-png"
