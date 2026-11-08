@@ -10,8 +10,10 @@ WORKING = [
     "renderer/editor/px/px.js",
     "renderer/editor/px/kernels_js.js",
     "renderer/editor/px/kernels.js",
+    "renderer/editor/inpaint_weights.js",
     "renderer/editor/inpaint_worker.js",
     "tools/px_test.js",
+    "tools/weights_test.js",
     "tools/px_jobs.py",
     "tools/ab_median.py",
     "tools/selection_test.py",
@@ -24,6 +26,8 @@ RG = "crates/px/src/range.rs"
 PJ = "renderer/editor/px/px.js"
 KJ = "renderer/editor/px/kernels_js.js"
 KR = "renderer/editor/px/kernels.js"
+WT = "renderer/editor/inpaint_weights.js"
+WK = "renderer/editor/inpaint_worker.js"
 
 MUTANTS = [
     # ---- range.rs: luma & colour tables, opponent weights, sstep_f64x2 early exits, out-of-bounds zeroing, guards
@@ -223,5 +227,45 @@ MUTANTS = [
         )],
         "killed",
         {"px": ["retouchRoute"]},
+    ),
+    (
+        "kernels_js.js: RANGE_OPP_R[i] = 0.299 * u mutated to (0.299 * i) / 255",
+        KJ,
+        [(
+            "    RANGE_INV255[i] = u;\n    RANGE_OPP_R[i] = 0.299 * u;\n    RANGE_OPP_G[i] = 0.587 * u;",
+            "    RANGE_INV255[i] = u;\n    RANGE_OPP_R[i] = (0.299 * i) / 255;\n    RANGE_OPP_G[i] = 0.587 * u;",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "inpaint_worker.js: rangeSelectJob luma/color alphaSum += res.alphaSum mutated to alphaSum = res.alphaSum",
+        WK,
+        [(
+            "        for (let ty = startTileY; ty < endTileY; ty++) {\n            const res = rangeTilesRgba(buf, W, H, ty, y0, y1, rowLimit, invert, TILE);\n            alphaSum += res.alphaSum;",
+            "        for (let ty = startTileY; ty < endTileY; ty++) {\n            const res = rangeTilesRgba(buf, W, H, ty, y0, y1, rowLimit, invert, TILE);\n            alphaSum = res.alphaSum;",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "inpaint_worker.js: rangeSelectJob luma/color bY0 = Math.min(bY0, res.bounds[1]) mutated to bY0 = res.bounds[1]",
+        WK,
+        [(
+            "        for (let ty = startTileY; ty < endTileY; ty++) {\n            const res = rangeTilesRgba(buf, W, H, ty, y0, y1, rowLimit, invert, TILE);\n            alphaSum += res.alphaSum;\n            for (const t of res.tiles) {\n                tiles.push(t);\n                if (t.alpha) transfer.push(t.alpha);\n            }\n            if (res.bounds) {\n                bX0 = Math.min(bX0, res.bounds[0]);\n                bY0 = Math.min(bY0, res.bounds[1]);",
+            "        for (let ty = startTileY; ty < endTileY; ty++) {\n            const res = rangeTilesRgba(buf, W, H, ty, y0, y1, rowLimit, invert, TILE);\n            alphaSum += res.alphaSum;\n            for (const t of res.tiles) {\n                tiles.push(t);\n                if (t.alpha) transfer.push(t.alpha);\n            }\n            if (res.bounds) {\n                bX0 = Math.min(bX0, res.bounds[0]);\n                bY0 = res.bounds[1];",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "inpaint_weights.js: normalizeLimit #rgb / #rrggbb hex validation dropped",
+        WT,
+        [(
+            "        if (v.color != null) {\n            if (typeof v.color !== \"string\" || !/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.color)) {\n                throw new Error(`limit.color must be #rgb or #rrggbb (got ${JSON.stringify(v.color)})`);\n            }\n            res.color = v.color;\n        }",
+            "        if (v.color != null) {\n            res.color = String(v.color);\n        }",
+        )],
+        "killed",
+        {"px": ["range"]},
     ),
 ]

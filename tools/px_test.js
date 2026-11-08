@@ -5108,8 +5108,10 @@ async function selCases(js, simd, scalar, raster, K) {
 async function rangeCases(js, simd, scalar, resample, K) {
     const weights = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_weights.js")).href);
     const edges = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_edges.js")).href);
-    const { LUMA, opp, hexToRgb, u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping } = weights;
+    const workerMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_worker.js")).href);
+    const { LUMA, opp, hexToRgb, u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping, normalizeLimit, limitWeight } = weights;
     const { snapField, snapParams, SNAP_TAU } = edges;
+    const { rangeSelectJob } = workerMod;
 
     let seed = 0x4b3231;
     const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
@@ -6055,11 +6057,10 @@ async function rangeCases(js, simd, scalar, resample, K) {
                     const R = u8[idx], G = u8[idx + 1], B = u8[idx + 2];
                     let v;
                     if (isColor) {
-                        const r = R / 255, g = G / 255, b = B / 255;
-                        const L = (LUMA[0] * R) / 255 + (LUMA[1] * G) / 255 + (LUMA[2] * B) / 255;
-                        const d0 = L - ref[0];
-                        const d1 = (r - L) - ref[1];
-                        const d2 = (b - L) - ref[2];
+                        const o3 = opp(R / 255, G / 255, B / 255);
+                        const d0 = o3[0] - ref[0];
+                        const d1 = o3[1] - ref[1];
+                        const d2 = o3[2] - ref[2];
                         const dd = d0 * d0 + 4 * (d1 * d1 + d2 * d2);
                         v = js.libmExp(-dd / twoS2);
                     } else {
@@ -6099,6 +6100,7 @@ async function rangeCases(js, simd, scalar, resample, K) {
         return { tiles, bounds, alphaSum };
     };
 
+    const ALPHA_PAT = [0, 1, 128, 254, 255];
     const makeRgbaBand = (W, rows, kind) => {
         const u8 = new Uint8Array(W * rows * 4);
         for (let y = 0; y < rows; y++) {
@@ -6109,7 +6111,7 @@ async function rangeCases(js, simd, scalar, resample, K) {
                     u8[idx] = t;
                     u8[idx + 1] = Math.min(255, Math.max(0, 255 - t));
                     u8[idx + 2] = (x * 3 + y * 5) & 255;
-                    u8[idx + 3] = 255;
+                    u8[idx + 3] = ALPHA_PAT[(x * 7 + y * 13) % 5];
                 } else if (kind === "stripes") {
                     const tx = Math.floor(x / 256);
                     if (tx % 3 === 0) {
@@ -6126,7 +6128,7 @@ async function rangeCases(js, simd, scalar, resample, K) {
                     u8[idx] = Math.floor(rnd() * 256);
                     u8[idx + 1] = Math.floor(rnd() * 256);
                     u8[idx + 2] = Math.floor(rnd() * 256);
-                    u8[idx + 3] = 255;
+                    u8[idx + 3] = ALPHA_PAT[(x + y * 3) % 5];
                 }
             }
         }
@@ -6257,7 +6259,7 @@ async function rangeCases(js, simd, scalar, resample, K) {
                 JSON.stringify(outTie));
         }
 
-        // Engine-independent spy: js.rangeTilesRgba in colour mode must call libmExp, never Math.exp
+        //Engine-independent spy: js.rangeTilesRgba in colour mode must call libmExp, never Math.exp
         const origMathExp = Math.exp;
         let mathExpCalls = 0;
         Math.exp = (v) => { mathExpCalls++; return origMathExp(v); };
@@ -6267,6 +6269,74 @@ async function rangeCases(js, simd, scalar, resample, K) {
             Math.exp = origMathExp;
         }
         check("js rangeTilesRgba colour call uses libmExp (0 Math.exp calls)", mathExpCalls === 0, `mathExpCalls=${mathExpCalls}`);
+
+        // Frozen opp(r, g, b) order-of-operations tie case: at pixel (15, 0, 0) against #000000 (tol=0),
+        // 0.299 * (15 / 255) gives v = 0.07362357377680942 >= lo - 1e-12 (lo = 0.07362357377780943),
+        // whereas (0.299 * 15) / 255 gives v = 0.07362357377680939 < lo - 1e-12.
+        const oppOrderPic = new Uint8Array(256 * 256 * 4);
+        for (let i = 0; i < oppOrderPic.length; i += 4) {
+            oppOrderPic[i] = 15;
+            oppOrderPic[i + 1] = 0;
+            oppOrderPic[i + 2] = 0;
+            oppOrderPic[i + 3] = ALPHA_PAT[(i >> 2) % 5];
+        }
+        const limOppOrder = { source: "color", color: "#000000", tol: 0, lo: 0.07362357377780943, hi: 1.0, fLo: 0, fHi: 0, invert: false };
+        rgbaCases.push({
+            tag: "K23 colour opp(R/255) vs (0.299*R)/255 order tie case (pixel 15,0,0 vs #000000 tol=0)",
+            args: [oppOrderPic, 256, 256, 0, 0, 256, limOppOrder, false, 256],
+        });
+        for (const [bName, k] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+            const outOpp = k.rangeTilesRgba(oppOrderPic, 256, 256, 0, 0, 256, limOppOrder, false, 256);
+            check(`range_tiles_rgba K23 opp(R/255) order tie case gives full tile (alphaSum=${255 * 65536}) on ${bName}`,
+                outOpp.alphaSum === 255 * 65536 && outOpp.tiles.length === 1 && outOpp.tiles[0].full === true,
+                JSON.stringify(outOpp));
+        }
+
+        // Multi-tile-row rangeSelectJob alphaSum and bounds union check (3 tile rows: ty=0,1,2)
+        const wJob = 300, hJob = 600;
+        const jobBand = makeRgbaBand(wJob, hJob, "ramp");
+        for (const [srcKind, limJ] of [
+            ["luma", { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1, invert: false }],
+            ["color", { source: "color", color: "#5080a0", tol: 30, lo: 0.25, hi: 0.9, fLo: 0.1, fHi: 0.05, invert: false }],
+        ]) {
+            const jobOut = rangeSelectJob({ W: wJob, H: hJob, y0: 0, y1: hJob, source: srcKind, limit: limJ, invert: false, sab: jobBand.buffer });
+            let wantSum = 0, bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+            for (let y = 0; y < hJob; y++) {
+                for (let x = 0; x < wJob; x++) {
+                    const idx = (y * wJob + x) * 4;
+                    const a = Math.round(255 * limitWeight(limJ, jobBand[idx] / 255, jobBand[idx + 1] / 255, jobBand[idx + 2] / 255, 0));
+                    if (a > 0) {
+                        wantSum += a;
+                        if (x < bx0) bx0 = x;
+                        if (y < by0) by0 = y;
+                        if (x + 1 > bx1) bx1 = x + 1;
+                        if (y + 1 > by1) by1 = y + 1;
+                    }
+                }
+            }
+            const wantB = [bx0, by0, bx1, by1];
+            check(`rangeSelectJob ${srcKind} multi-row band (3 tile rows) matches per-pixel alphaSum and bounds union`,
+                jobOut.alphaSum === wantSum && JSON.stringify(jobOut.bounds) === JSON.stringify(wantB),
+                `alphaSum=${jobOut.alphaSum}/${wantSum} bounds=${JSON.stringify(jobOut.bounds)}/${JSON.stringify(wantB)}`);
+        }
+
+        // normalizeLimit refuses invalid color (#rgb/#rrggbb required) and non-numeric lo/hi/fLo/fHi/tol
+        let normRefused = 0;
+        for (const badLim of [
+            { source: "color", lo: 0.2, hi: 0.8, color: "red" },
+            { source: "color", lo: 0.2, hi: 0.8, color: "#xyz" },
+            { source: "luma", lo: "bad", hi: 0.8 },
+            { source: "luma", lo: 0.2, hi: NaN },
+            { source: "depth", lo: 0.2, hi: 0.8, fLo: "bad" },
+            { source: "depth", lo: 0.2, hi: 0.8, fHi: Infinity },
+            { source: "color", lo: 0.2, hi: 0.8, color: "#ffffff", tol: "bad" },
+        ]) {
+            try { normalizeLimit(badLim); } catch (e) {
+                if (/must be (#rgb or #rrggbb|a finite number)/.test(String(e.message || e))) normRefused++;
+            }
+        }
+        check("normalizeLimit refuses invalid color and non-numeric lo/hi/fLo/fHi/tol with readable message",
+            normRefused === 7, `${normRefused}/7 refused`);
     }
 
     let refRgbaOk = true, refRgbaDetail = "";

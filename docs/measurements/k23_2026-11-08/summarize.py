@@ -58,7 +58,7 @@ def load_arm(arm):
         txt = open(f, encoding="utf-8", errors="replace").read()
         m = re.search(r"range luma 15000x10000: selectRange ([\d.]+) ms \(wall ([\d.]+) ms\)", txt)
         if m:
-            out.setdefault("selection_test 15k luma wall", []).append(float(m.group(2)))
+            out.setdefault("selection_test 15k luma wall (unmatched)", []).append(float(m.group(2)))
     return out
 
 

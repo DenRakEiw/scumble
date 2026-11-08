@@ -714,6 +714,21 @@ if (ed.tileMode) {
     }
 }
 
+// K23: select_range / selectRange refuses invalid color and non-numeric lo/hi/fLo/fHi/tol on both backends
+for (const [badArgs, re] of [
+    [{ source: "color", lo: 0.2, hi: 0.8, color: "red" }, /limit\.color must be #rgb or #rrggbb/],
+    [{ source: "color", lo: 0.2, hi: 0.8, color: "#xyz" }, /limit\.color must be #rgb or #rrggbb/],
+    [{ source: "luma", lo: "nope", hi: 0.8 }, /limit\.lo must be a finite number/],
+    [{ source: "luma", lo: 0.2, hi: NaN }, /limit\.hi must be a finite number/],
+    [{ source: "luma", lo: 0.2, hi: 0.8, fLo: "nope" }, /limit\.fLo must be a finite number/],
+    [{ source: "luma", lo: 0.2, hi: 0.8, fHi: Infinity }, /limit\.fHi must be a finite number/],
+    [{ source: "color", lo: 0.2, hi: 0.8, color: "#ffffff", tol: "nope" }, /limit\.tol must be a finite number/],
+]) {
+    let msg = "";
+    try { await run("select_range", { doc: window.__selDoc, ...badArgs }); } catch (e) { msg = String(e.message || e); }
+    if (!re.test(msg)) throw new Error("select_range " + JSON.stringify(badArgs) + " expected " + re + ", got: " + (msg || "not refused"));
+}
+
 // Case 8: the same picture with a levels-to-black filter layer on top, luma lo .5 -> nothing selected (it reads the shown picture)
 const fl = await run("add_filter", { doc: window.__selDoc, type: "fill" });
 const fLayer = ed.layers.find((x) => x.id === fl.id);
