@@ -1,0 +1,13 @@
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=retouchRoute)
+(Use `node --trace-warnings ...` to show where the warning was created)
+RuntimeError: memory access out of bounds
+    at wasm://wasm/000c26f2:wasm-function[16]:0x3843
+    at wasm://wasm/000c26f2:wasm-function[64]:0x1f6c0
+    at out.<computed> [as mip_half] (file:///F:/scumble_mut_k34/renderer/editor/px/px.js:146:40)
+    at trapIn2 (F:\scumble_mut_k34\tools\px_test.js:1315:42)
+    at p.<computed> [as warpRgba] (F:\scumble_mut_k34\tools\px_test.js:1331:40)
+    at Module.warpRgba (file:///F:/scumble_mut_k34/renderer/editor/px/kernels.js:508:24)
+    at F:\scumble_mut_k34\tools\px_test.js:1324:46
+    at retouchRouteCases (F:\scumble_mut_k34\tools\px_test.js:1332:25)
+    at async group (F:\scumble_mut_k34\tools\px_test.js:65:5)
+    at async main (F:\scumble_mut_k34\tools\px_test.js:4735:5)

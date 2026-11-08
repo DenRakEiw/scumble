@@ -1073,29 +1073,38 @@ mod lanes {
         let [a00, a01, tx, a10, a11, ty] = m;
         let cap_x = (w - 1) as f64;
         let cap_y = (h - 1) as f64;
+        if !(a00.abs() * cap_x + a01.abs() * cap_y + tx.abs()).is_finite()
+            || !(a10.abs() * cap_x + a11.abs() * cap_y + ty.abs()).is_finite()
+        {
+            return false;
+        }
         let max_x0 = (w - 2) as i32;
         let max_y0 = (h - 2) as i32;
         let dy = w * 4;
         let (s, d) = (src.as_ptr(), dst.as_mut_ptr());
         unsafe {
+            let va0 = f64x2(a00, a10);
+            let va1 = f64x2(a01, a11);
+            let vt = f64x2(tx, ty);
+            let vcap = f64x2(cap_x, cap_y);
+            let vzero = f64x2_splat(0.0);
+            let vone = f64x2_splat(1.0);
+            let vmax0 = i32x4(max_x0, max_y0, 0, 0);
             let mut o = 0;
             for y in 0..h {
-                let ay_x = a01 * (y as f64);
-                let ay_y = a11 * (y as f64);
+                let vay = f64x2_mul(va1, f64x2_splat(y as f64));
                 for x in 0..w {
-                    let raw_x = (a00 * (x as f64) + ay_x) + tx;
-                    let raw_y = (a10 * (x as f64) + ay_y) + ty;
-                    let xx = if raw_x > 0.0 { raw_x.min(cap_x) } else { 0.0 };
-                    let yy = if raw_y > 0.0 { raw_y.min(cap_y) } else { 0.0 };
-                    let x0 = (xx as i32).min(max_x0);
-                    let y0 = (yy as i32).min(max_y0);
-                    let fx = xx - (x0 as f64);
-                    let fy = yy - (y0 as f64);
-                    let vfx = f64x2_splat(fx);
-                    let v1fx = f64x2_splat(1.0 - fx);
-                    let vfy = f64x2_splat(fy);
-                    let v1fy = f64x2_splat(1.0 - fy);
-                    let j = (y0 as usize * w + x0 as usize) * 4;
+                    let raw = f64x2_add(f64x2_add(f64x2_mul(va0, f64x2_splat(x as f64)), vay), vt);
+                    let cl = f64x2_pmin(vcap, f64x2_pmax(vzero, raw));
+                    let xy0 = i32x4_min(i32x4_trunc_sat_f64x2_zero(cl), vmax0);
+                    let fxy = f64x2_sub(cl, f64x2_convert_low_i32x4(xy0));
+                    let vfx = i64x2_shuffle::<0, 0>(fxy, fxy);
+                    let vfy = i64x2_shuffle::<1, 1>(fxy, fxy);
+                    let v1fx = f64x2_sub(vone, vfx);
+                    let v1fy = f64x2_sub(vone, vfy);
+                    let x0 = u32x4_extract_lane::<0>(xy0) as usize;
+                    let y0 = u32x4_extract_lane::<1>(xy0) as usize;
+                    let j = (y0 * w + x0) * 4;
                     let top8 = u16x8_extend_low_u8x16(v128_load64_zero(s.add(j) as *const u64));
                     let bot8 = u16x8_extend_low_u8x16(v128_load64_zero(s.add(j + dy) as *const u64));
                     let top32 = u32x4_extend_low_u16x8(top8);
@@ -1128,6 +1137,11 @@ mod lanes {
         let [a00, a01, tx, a10, a11, ty] = m;
         let cap_x = (w - 1) as f64;
         let cap_y = (h - 1) as f64;
+        if !(a00.abs() * cap_x + a01.abs() * cap_y + tx.abs() + cap_x + 1.0).is_finite()
+            || !(a10.abs() * cap_x + a11.abs() * cap_y + ty.abs() + cap_y + 1.0).is_finite()
+        {
+            return false;
+        }
         let va00 = f64x2_splat(a00);
         let va10 = f64x2_splat(a10);
         let vtx = f64x2_splat(tx);

@@ -19,6 +19,7 @@ GATES = ["editor"]
 TILES = "on"
 
 PX_MASK = {"px": ["mask"]}
+PX_ROUTE = {"px": ["retouchRoute"]}
 EDITOR_ALIGN = {"px": ["mask"], "editor": ["an_aligned_answer_shows_no_repeated_edge"]}
 
 MUTANTS = [
@@ -60,8 +61,20 @@ MUTANTS = [
     (
         "warp_rgba_simd_fx",
         "crates/px/src/maskf.rs",
-        [("let v1fx = f64x2_splat(1.0 - fx);", "let v1fx = f64x2_splat(fx);")],
+        [("let v1fx = f64x2_sub(vone, vfx);", "let v1fx = vfx;")],
         "killed: SIMD warp_rgba horizontal weight 1 - fx replaced with fx",
+        PX_MASK,
+    ),
+    (
+        "warp_rgba_simd_overflow_guard",
+        "crates/px/src/maskf.rs",
+        [
+            (
+                "if !(a00.abs() * cap_x + a01.abs() * cap_y + tx.abs()).is_finite()\n            || !(a10.abs() * cap_x + a11.abs() * cap_y + ty.abs()).is_finite()",
+                "if false",
+            )
+        ],
+        "killed: SIMD warp_rgba finite overflow guard bypassed",
         PX_MASK,
     ),
     (
@@ -76,6 +89,18 @@ MUTANTS = [
         "crates/px/src/maskf.rs",
         [("let d0 = f64x2_add(m0, vone);", "let d0 = m0;")],
         "killed: SIMD warp_coverage +1.0 ramp offset dropped",
+        PX_MASK,
+    ),
+    (
+        "warp_coverage_simd_overflow_guard",
+        "crates/px/src/maskf.rs",
+        [
+            (
+                "if !(a00.abs() * cap_x + a01.abs() * cap_y + tx.abs() + cap_x + 1.0).is_finite()\n            || !(a10.abs() * cap_x + a11.abs() * cap_y + ty.abs() + cap_y + 1.0).is_finite()",
+                "if false",
+            )
+        ],
+        "killed: SIMD warp_coverage finite overflow guard bypassed",
         PX_MASK,
     ),
     (
@@ -98,6 +123,18 @@ MUTANTS = [
         [('const p = rustPx("edgefit") && rustPx("warpCoverage");', "const p = null;")],
         "killed: warpCoverage route bypassed to JS twin",
         EDITOR_ALIGN,
+    ),
+    (
+        "kernels_trap_warp_rgba",
+        "renderer/editor/px/kernels.js",
+        [
+            (
+                'catch (err) { if (!recovered(p, err, "warp_rgba")) throw err; }',
+                "catch (err) { throw err; }",
+            )
+        ],
+        "killed: warpRgba trap recovery catch rethrows without fallback",
+        PX_ROUTE,
     ),
     (
         "edgefit_call_warp_coverage",

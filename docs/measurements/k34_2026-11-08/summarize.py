@@ -118,6 +118,38 @@ def main():
     print_native_section("2a. native_test 15000x10000 --no-profile provider_crop (cold)", nat)
     print_native_section("2b. warm_native 15000x10000 --no-profile provider_crop (warmed by 1 untimed provider_crop)", nat_warm)
 
+    warp_ab_dir = os.path.join(HERE, "warp_ab")
+    if os.path.isdir(warp_ab_dir):
+        print("== 3. warpRgba route ALONE A/B (js vs rust, 3 alternating rounds) ==")
+        wab = {
+            arm: [json.load(open(os.path.join(warp_ab_dir, arm, f"w0_r{r}.json"), encoding="utf-8")) for r in ROUNDS]
+            for arm in ("js", "rust")
+        }
+        w_js = [x["edgefit_2048"]["split"]["warp"] for x in wab["js"]]
+        w_rs = [x["edgefit_2048"]["split"]["warp"] for x in wab["rust"]]
+        c_js = [x["edgefit_2048"]["split"]["coverage"] for x in wab["js"]]
+        c_rs = [x["edgefit_2048"]["split"]["coverage"] for x in wab["rust"]]
+        print(f"  edgefit_2048.split.warp       js {fmt_series(w_js)}   |   rust {fmt_series(w_rs)}   (delta {med(w_rs) - med(w_js):+.2f} ms)")
+        print(f"  edgefit_2048.split.coverage   js {fmt_series(c_js)}   |   rust {fmt_series(c_rs)}   (delta {med(c_rs) - med(c_js):+.2f} ms)")
+        print("  edgefit_2048.pxCalls js  :", wab["js"][0]["edgefit_2048"].get("pxCalls"))
+        print("  edgefit_2048.pxCalls rust:", wab["rust"][0]["edgefit_2048"].get("pxCalls"))
+        for row in ("stitch_align_2048", "stitch_align_4096"):
+            for mode in ("worker", "window"):
+                bw = [x[row][mode]["wall"] for x in wab["js"]]
+                aw = [x[row][mode]["wall"] for x in wab["rust"]]
+                bs = [x[row][mode]["laps_sum"] for x in wab["js"]]
+                as_ = [x[row][mode]["laps_sum"] for x in wab["rust"]]
+                lw_js = [x[row][mode]["laps"]["warp"] for x in wab["js"]]
+                lw_rs = [x[row][mode]["laps"]["warp"] for x in wab["rust"]]
+                lc_js = [x[row][mode]["laps"]["coverage"] for x in wab["js"]]
+                lc_rs = [x[row][mode]["laps"]["coverage"] for x in wab["rust"]]
+                print(f"  {row}.{mode}.wall      js {fmt_series(bw)}   |   rust {fmt_series(aw)}   (delta {med(aw) - med(bw):+.2f} ms)")
+                print(f"  {row}.{mode}.laps_sum  js {fmt_series(bs)}   |   rust {fmt_series(as_)}   (delta {med(as_) - med(bs):+.2f} ms)")
+                print(f"  {row}.{mode}.warp      js {fmt_series(lw_js)}   |   rust {fmt_series(lw_rs)}   (delta {med(lw_rs) - med(lw_js):+.2f} ms)")
+                print(f"  {row}.{mode}.coverage  js {fmt_series(lc_js)}   |   rust {fmt_series(lc_rs)}   (delta {med(lc_rs) - med(lc_js):+.2f} ms)")
+            print(f"  {row}.worker.workerPx js  :", wab["js"][0][row]["worker"].get("workerPx"))
+            print(f"  {row}.worker.workerPx rust:", wab["rust"][0][row]["worker"].get("workerPx"))
+
 
 if __name__ == "__main__":
     main()

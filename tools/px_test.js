@@ -875,9 +875,11 @@ async function maskCases(px, label, js) {
             ["affine scale+shear+shift", [1.03, -0.02, 1.37, 0.015, 0.97, -0.83]],
             ["flip/negative", [-1, 0, 6, 0, -1, 2]],
             ["far out-of-bounds", [1, 0, -100, 0, 1, 100]],
+            ["finite overflow to NaN", [1.797e308, -1.797e308, 0, 0, 1, 0]],
+            ["finite overflow y to NaN", [1, 0, 0, 1.797e308, -1.797e308, 0]],
             ["NaN and +-Infinity", [NaN, 0, 0, 0, 1, Infinity]],
         ];
-        for (const [w, h, seed] of [[1, 1, 840], [1, 5, 841], [5, 1, 842], [2, 2, 843], [7, 3, 844], [19, 11, 845]]) {
+        for (const [w, h, seed] of [[1, 1, 840], [1, 5, 841], [5, 1, 842], [2, 2, 843], [5, 3, 848], [7, 3, 844], [19, 11, 845]]) {
             const src = randomRGBA(w, h, seed);
             for (const [mTag, m] of mats) {
                 wrCases.push({ tag: `${w}x${h} ${mTag}`, args: [src, w, h, m, (w + h) % 2 === 0] });
@@ -907,9 +909,11 @@ async function maskCases(px, label, js) {
             ["exact boundary -1.0 (d==0 -> +0.0)", [1, 0, -1, 0, 1, -1]],
             ["affine scale+shear+shift", [1.04, -0.02, -0.65, 0.025, 0.96, 0.72]],
             ["far outside", [1, 0, 500, 0, 1, -500]],
+            ["finite overflow to NaN", [1.797e308, -1.797e308, 0, 0, 1, 0]],
+            ["finite overflow y to NaN", [1, 0, 0, 1.797e308, -1.797e308, 0]],
             ["NaN and +-Infinity", [NaN, 0, 0, 0, 1, -Infinity]],
         ];
-        for (const [w, h] of [[1, 1], [1, 5], [5, 1], [4, 4], [7, 3], [19, 11], [64, 64], [131, 77]]) {
+        for (const [w, h] of [[1, 1], [1, 5], [5, 1], [4, 4], [5, 3], [7, 3], [19, 11], [64, 64], [131, 77]]) {
             for (const [mTag, m] of mats) {
                 wcCases.push({ tag: `${w}x${h} ${mTag}`, args: [w, h, m, (w + h) % 2 === 1] });
             }
@@ -1299,6 +1303,15 @@ async function retouchRouteCases(js) {
             eqBytes(rt, S.toneRGBA(I, short, true)) && eqBytes(rs, S.spongeRGBA(odd, 0.7, true)) && eqBytes(rlOut, lWant) && rl === lWantCount
             && (() => { const l = S.blurRGBA(I, w, h - 1, 3); const hh = S.freqSplit(I, l); return eqBytes(rr.low, l) && eqBytes(rr.high, hh); })());
         // a trap in each: the twin's bytes, the instance replaced, the next call Rust again
+        const eqFloats = (a, b) => eqBytes(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), new Uint8Array(b.buffer, b.byteOffset, b.byteLength));
+        const warpM = [1.02, -0.01, 0.75, 0.015, 0.98, -0.5];
+        want.es = js.edgefitShrink(I, w, h, 32, 20);
+        want.wr = js.warpRgba(I, w, h, warpM);
+        want.wc = js.warpCoverage(w, h, warpM);
+        K.setRoute("edgefit", "rust");
+        K.setRoute("edgefitShrink", "rust");
+        K.setRoute("warpRgba", "rust");
+        K.setRoute("warpCoverage", "rust");
         const trapIn2 = (p) => p.exports.mip_half(-16, 256, 256, 0);
         let ok = true, detail = "";
         for (const [name, method, callIt, check1] of [
@@ -1307,6 +1320,9 @@ async function retouchRouteCases(js) {
             ["split", "freqSplit", () => { const low = want.blur.slice(); const hh = K.freqSplit(I, low); return { low, hh }; }, (o) => eqBytes(o.low, want.low) && eqBytes(o.hh, want.high)],
             ["separate", "freqSeparate", () => K.freqSeparate(I, w, h, 3), (o) => eqBytes(o.low, want.low) && eqBytes(o.high, want.high)],
             ["liquify", "liquifyBlock", () => { const out = new Uint8Array(8 * 8 * 4); const c = K.liquifyBlock(I, 16, 16, 0, 0, lNodes, 5, 0, 0, 2, null, out, 0, 32, 0, 0, 8, 8); return { out, c }; }, (o) => eqBytes(o.out, lWant) && o.c === lWantCount],
+            ["edgefitShrink", "edgefitShrink", () => K.edgefitShrink(I, w, h, 32, 20), (o) => eqFloats(o.gray, want.es.gray) && eqFloats(o.alpha, want.es.alpha)],
+            ["warpRgba", "warpRgba", () => K.warpRgba(I, w, h, warpM), (o) => eqBytes(o, want.wr)],
+            ["warpCoverage", "warpCoverage", () => K.warpCoverage(w, h, warpM), (o) => eqFloats(o, want.wc)],
         ]) {
             const p = K.rustPx(), i0 = K.pxInstances();
             // the split traps after its kernel wrote L in wasm memory, before the copy out (the caller's L untouched)
@@ -1316,7 +1332,7 @@ async function retouchRouteCases(js) {
             const got = callIt(), after = K.rustPx(), i1 = K.pxInstances();
             if (!(check1(got) && p.trapped instanceof WebAssembly.RuntimeError && after !== p && i1.trap === i0.trap + 1)) { ok = false; detail = `${name}: ${JSON.stringify(i1)}`; }
         }
-        check("kernels.js K27 / K28 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
+        check("kernels.js K27 / K28 / K34 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
         // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
         const i0 = K.pxInstances();
         K.setRoute("releaseMB", 0);
@@ -1327,7 +1343,7 @@ async function retouchRouteCases(js) {
         console.warn = realWarn;
         kernelsBack(K);
     }
-    check("the K27 / K28 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block/.test(w)).length === 5, warned.join(" | "));
+    check("the K27 / K28 / K34 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|edgefit_shrink|warp_rgba|warp_coverage/.test(w)).length === 8, warned.join(" | "));
     void js;
 }
 

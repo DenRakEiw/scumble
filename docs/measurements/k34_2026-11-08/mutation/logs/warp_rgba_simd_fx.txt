@@ -25,3 +25,57 @@ FAIL (4) (only: mask; PX_ONLY, not the full test)
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k34\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 199091 bytes, sha256 e01b609790eadfbf
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 159923 bytes, sha256 1c49a33979823ce5
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.18s
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.47s
+$ node tools/px_test.js  (rc 1, 4 s, PX_ONLY=mask)
+FAIL rust simd warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)  2x2 identity: out[0] is 0, the twin has 13
+FAIL kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs  out.wr[0] is 174, the twin has 172
+FAIL stitch_test.js vs 29f6749 loops  [FAIL] [rust] warpRGBA 7 x 3: byte 0 is 30, was 39
+FAIL edgefit_test.js in js and rust modes  FAIL [rust] warpRGBA: a whole-pixel shift is a byte shift  calls=1
+FAIL (4) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+ok   rust scalar edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   rust scalar warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   rust scalar warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 23.5 ms, twin 43.8; three box blurs rust scalar 19.5 ms, twin 22.5
+FAIL (4) (only: mask; PX_ONLY, not the full test)
+(node:58548) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/scumble_mut_k34/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k34\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 199091 bytes, sha256 e01b609790eadfbf
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 159923 bytes, sha256 1c49a33979823ce5
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.38s
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.54s
+$ node tools/px_test.js  (rc 1, 4 s, PX_ONLY=mask)
+FAIL rust simd warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)  2x2 identity: out[0] is 0, the twin has 13
+FAIL kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs  out.wr[0] is 174, the twin has 172
+FAIL stitch_test.js vs 29f6749 loops  [FAIL] [rust] warpRGBA 7 x 3: byte 0 is 30, was 39
+FAIL edgefit_test.js in js and rust modes  FAIL [rust] warpRGBA: a whole-pixel shift is a byte shift  calls=1
+FAIL (4) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+ok   rust scalar edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   rust scalar warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   rust scalar warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 34.6 ms, twin 43.1; three box blurs rust scalar 19.1 ms, twin 22.2
+FAIL (4) (only: mask; PX_ONLY, not the full test)
+(node:40876) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/scumble_mut_k34/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k34\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

@@ -21,3 +21,49 @@ PASS
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k34\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 199100 bytes, sha256 74a3fc873f383211
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 159923 bytes, sha256 1c49a33979823ce5
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.17s
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.65s
+$ node tools/px_test.js  (rc 0, 85 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:58560) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/scumble_mut_k34/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k34\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 199100 bytes, sha256 74a3fc873f383211
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 159923 bytes, sha256 1c49a33979823ce5
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.49s
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.58s
+$ node tools/px_test.js  (rc 0, 84 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:51696) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/scumble_mut_k34/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k34\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

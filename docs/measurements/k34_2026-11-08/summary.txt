@@ -26,16 +26,17 @@ Scope (docs/PLAN_WASM_BUILD.md §4.10 & §5 K34)
 
 Wasm Binary Sizes
 -----------------
-- `renderer/editor/px/px.wasm`:        188,285 B -> 198,871 B (+10,586 B vs HEAD `da4ba5e`, +4,102 B vs K34 pre-build, sha256 `e7c752c4f02c0d85`)
+- `renderer/editor/px/px.wasm`:        188,285 B -> 199,100 B (+10,815 B vs HEAD `da4ba5e`, +4,331 B vs K34 pre-build, sha256 `74a3fc873f383211`)
 - `renderer/editor/px/px_scalar.wasm`: 155,461 B -> 159,923 B ( +4,462 B vs HEAD `da4ba5e`, +3,217 B vs K34 pre-build, sha256 `1c49a33979823ce5`)
 
 1. Kernel Microbenchmark (`PX_BENCH=1 PX_ONLY=mask node tools/px_test.js`, 1492 x 1492)
 ---------------------------------------------------------------------------------------
   Kernel            Rust SIMD    Rust Scalar    JS Twin    SIMD Speedup
   ----------------  -----------  -------------  ---------  ------------
-  edgefit_shrink       4.18 ms        7.71 ms   19.76 ms         4.73x
-  warp_rgba           43.91 ms       38.24 ms   51.79 ms         1.18x (1.35x scalar)
-  warp_coverage        3.66 ms       11.64 ms    4.39 ms         1.20x
+  edgefit_shrink       4.17 ms        7.82 ms   22.58 ms         5.41x
+  warp_rgba           36.83 ms       43.93 ms   54.39 ms         1.48x
+  warp_coverage        3.56 ms       11.79 ms    4.86 ms         1.37x
+  (Review fix `K34-route-warp-default`: vectorizing `raw`, `[0, cap]` clamp, `xy0` truncation/clamping, and `vfx`/`vfy`/`v1fx`/`v1fy` in `f64x2` inside `lanes::warp_rgba` eliminated the per-pixel scalar branches and four scalar-to-XMM `f64x2_splat` transfers, dropping `warp_rgba` SIMD from `43.91 ms` to `36.83 ms`, ahead of both scalar `43.93 ms` and JS twin `54.39 ms`.)
 
 2. `w0_bench.py --rows=edgefit_2048,stitch_align_2048,stitch_align_4096` (3 alternating rounds, port 9615)
 ----------------------------------------------------------------------------------------------------------
@@ -132,11 +133,36 @@ c) `stitch_align_4096` (4608 x 4608 picture, 4096 x 4096 crop, feather 434, grow
     - before: `{"alpha_to_mask": 2, "mask_bounds_f32": 2, "box_blurs": 3, "dilate_mask": 2, "mask_max_clamp": 3, "mask_to_rgba": 3, "blend_alpha": 2, "color_match_rgba": 1, "erode_mask": 1, "mask_one_minus": 1}`
     - after:  `{"alpha_to_mask": 2, "mask_bounds_f32": 2, "box_blurs": 3, "dilate_mask": 2, "mask_max_clamp": 3, "mask_to_rgba": 3, "blend_alpha": 2, "color_match_rgba": 1, "edgefit_shrink": 2, "erode_mask": 1, "mask_one_minus": 1}`
 
-4. Decision Rule (docs/PLAN_WASM_BUILD.md §1.1) & K35 Split Analysis (§4.10)
+4. Standalone `warpRgba` Route A/B after Vectorizing `lanes::warp_rgba` (`docs/measurements/k34_2026-11-08/warp_ab/`, 3 alternating rounds, port 9615)
+------------------------------------------------------------------------------------------------------------------------------------------------------
+- Per review finding `K34-route-warp-default`, after vectorizing the coordinate/clamp/weight computation in `lanes::warp_rgba`, we ran 3 alternating fresh-instance Electron rounds comparing `warpRgba: "js"` vs `warpRgba: "rust"` ALONE (with `edgefitShrink: "rust"` and `warpCoverage: "rust"` held constant in both arms; worker route propagated via `STITCH_WORKER_ROUTES` in `stitch_worker.js`):
+  a) `edgefit_2048` (2048 x 2048):
+     - `split.warp`:            JS  81.81 ms [81.8, 79.1, 82.9]    | Rust  63.20 ms [63.7, 63.1, 63.2]    (delta -18.61 ms, 1.29x faster, non-overlapping ranges)
+     - `split.K34_sum`:         JS 109.90 ms [109.9, 108.1, 111.3] | Rust  91.19 ms [91.2, 91.9, 91.2]    (delta -18.71 ms, 1.21x faster, non-overlapping ranges)
+     - `pxCalls`:               JS `{"edgefit_shrink": 6, "warp_coverage": 3}` | Rust `{"edgefit_shrink": 6, "warp_coverage": 3, "warp_rgba": 3}`
+  b) `stitch_align_2048` (2048 x 2048 crop):
+     - `worker.warp`:           JS  86.46 ms [86.5, 84.3, 89.0]    | Rust  63.41 ms [64.4, 63.4, 62.2]    (delta -23.05 ms, 1.36x faster, non-overlapping ranges)
+     - `worker.K34_sum`:        JS 127.18 ms [127.2, 121.6, 128.0] | Rust 103.52 ms [104.2, 103.5, 100.3] (delta -23.66 ms, 1.23x faster, non-overlapping ranges)
+     - `worker.laps_sum`:       JS 634.09 ms [688.8, 634.1, 632.9] | Rust 629.10 ms [640.0, 629.1, 616.0] (delta  -4.99 ms)
+     - `worker.wall`:           JS 691.21 ms [767.4, 691.2, 685.8] | Rust 686.26 ms [696.2, 686.3, 668.9] (delta  -4.95 ms)
+     - `window.warp`:           JS  85.64 ms [85.6, 82.6, 86.6]    | Rust  62.52 ms [62.5, 62.7, 61.8]    (delta -23.12 ms, 1.37x faster, non-overlapping ranges)
+     - `window.K34_sum`:        JS 125.92 ms [125.9, 124.2, 126.9] | Rust 103.26 ms [104.5, 103.3, 102.7] (delta -22.66 ms, 1.22x faster, non-overlapping ranges)
+     - `window.laps_sum`:       JS 594.96 ms [595.0, 608.6, 588.8] | Rust 571.60 ms [577.7, 571.6, 557.9] (delta -23.36 ms, non-overlapping ranges)
+     - `window.wall`:           JS 712.63 ms [733.2, 710.3, 712.6] | Rust 689.53 ms [698.0, 689.5, 666.1] (delta -23.10 ms, non-overlapping ranges)
+  c) `stitch_align_4096` (4096 x 4096 crop):
+     - `worker.warp`:           JS 304.44 ms [304.4, 303.3, 321.1] | Rust 240.22 ms [240.2, 245.3, 237.7] (delta -64.22 ms, 1.27x faster, non-overlapping ranges)
+     - `worker.K34_sum`:        JS 456.67 ms [456.7, 452.9, 474.9] | Rust 390.26 ms [389.0, 405.5, 390.3] (delta -66.41 ms, 1.17x faster, non-overlapping ranges)
+     - `worker.laps_sum`:       JS 2050.91 ms [2050.9, 2008.7, 2112.9] | Rust 2041.24 ms [2063.4, 2041.2, 1986.2] (delta -9.67 ms)
+     - `worker.wall`:           JS 2237.14 ms [2237.1, 2208.2, 2321.1] | Rust 2230.48 ms [2264.2, 2230.5, 2175.6] (delta -6.66 ms)
+     - `window.warp`:           JS 308.55 ms [308.6, 305.0, 313.9] | Rust 248.63 ms [248.6, 248.9, 239.8] (delta -59.92 ms, 1.24x faster, non-overlapping ranges)
+     - `window.K34_sum`:        JS 460.02 ms [460.0, 456.4, 463.7] | Rust 396.32 ms [397.9, 396.3, 394.6] (delta -63.70 ms, 1.16x faster, non-overlapping ranges)
+     - `window.laps_sum`:       JS 1966.08 ms [1956.4, 1966.1, 1969.0] | Rust 1933.78 ms [1933.8, 1986.8, 1906.8] (delta -32.30 ms)
+
+5. Decision Rule (docs/PLAN_WASM_BUILD.md §1.1) & K35 Split Analysis (§4.10)
 ----------------------------------------------------------------------------
-- **K34 routes**:
-  - Whole-operation walls win across every benchmark: `edgefit_2048` `fit` `-70.93 ms` (`2.32x`) and `K34_sum` `-47.32 ms` (`1.43x`), `stitch_align_2048` worker wall `-142.00 ms` (`-18.9%`), `stitch_align_4096` worker wall `-367.06 ms` (`-14.9%`), cold `native_test provider_crop` wall `-41.00 ms` (`-7.6%`), and warmed `provider_crop` wall `-94.00 ms` (`-18.3%`, `finish.SUM` `-112.97 ms` / `-29.1%`).
-  - All three kernels (`edgefit_shrink`, `warp_rgba`, `warp_coverage`) also win on `PX_BENCH` at `1492 x 1492` (`4.73x`, `1.18x`, `1.20x`). Note that on 2048^2 and 4096^2 in `w0_bench`, `warp` alone (`warpRGBA` + wasm copy-in/copy-out of 16.8 MB / 67.1 MB) ties the JS twin within ~1-5 ms on the worker (`81.42 ms` vs `77.63 ms` at 2048^2, `313.25 ms` vs `312.19 ms` at 4096^2; `78.05 ms` vs `79.37 ms` on window at 2048^2) and wins in `PX_BENCH` (`43.91 ms` vs `51.79 ms`, `1.18x`), so under §1.1 rule 1 & rule 2 all three stay on `"rust"` in `DEFAULT_ROUTES`.
+- **K34 routes (`edgefitShrink: "rust"`, `warpRgba: "rust"`, `warpCoverage: "rust"`)**:
+  - Whole-operation walls win across every benchmark: `edgefit_2048` `fit` `-70.93 ms` (`2.32x`), `stitch_align_2048` worker wall `-142.00 ms` (`-18.9%`), `stitch_align_4096` worker wall `-367.06 ms` (`-14.9%`), cold `native_test provider_crop` wall `-41.00 ms` (`-7.6%`), and warmed `provider_crop` wall `-94.00 ms` (`-18.3%`, `finish.SUM` `-112.97 ms` / `-29.1%`).
+  - Every individual kernel wins in both `PX_BENCH` (`edgefit_shrink` `5.41x`, `warp_rgba` `1.48x`, `warp_coverage` `1.37x`) and Electron (`edgefit_shrink` `-50.8 ms` at 2048^2 and `-121.8 ms` at 4096^2; `warp_rgba` alone `-18.61 ms` on `edgefit_2048`, `-23.05 ms` on `stitch_align_2048` worker, `-64.22 ms` on `stitch_align_4096` worker; `warp_coverage` `-1.62 ms`, `-2.60 ms`, `-21.43 ms`). All three stay `"rust"` in `DEFAULT_ROUTES`.
 - **K35 (`edgefit_levels`) conditional split analysis**:
   - Because `fitEdges` always operates on the shrunk `512 x 512` working plane (`WORK = 512`), its cost is `O(512^2)` and does not grow with document or crop size:
     - `native_test provider_crop` (1492^2 crop, early stop): `finish.fit` = **5.91 ms** warmed (**6.83 ms** cold), which is **2.2%** of `finish.SUM` (`274.59 ms`) and **1.4%** of `provider_crop` wall (`420.00 ms`).
@@ -145,11 +171,19 @@ c) `stitch_align_4096` (4608 x 4608 picture, 4096 x 4096 crop, feather 434, grow
     - `edgefit_2048` (standalone synthetic `fitLayerRGBA` without stitch mask/blur/colorMatch/encode): `split.fitEdges` = **31.09 ms** out of `53.66 ms` `fitLayerRGBA` (**57.9%** of `fitLayerRGBA` alone now that `shrink` is `21.58 ms`, and **21.3%** of the `146.18 ms` `shrink + ring + fitEdges + warp + coverage` sum).
   - **Recommendation**: In real stitch operations (`provider_crop`, `stitch_align_2048`, `stitch_align_4096`), `fitEdges` is **6–41 ms** (**1.1%–6.8%** of `finishResultAsync` wall, **0.8%–4.1%** of prepare + finish wall), smaller than the run-to-run spread of `stitch_align`. Recommend **skipping K35 ("stays JS, measured")** unless you want the remaining ~15–25 ms on standalone `fitLayerRGBA` / `Match edges` (`match_edges`) captured.
 
-5. Gates & Mutation Round
--------------------------
-- Gates (`run_gates_both.sh k34 --ports 9615,9616 --offline lint types pixels editor generate size transparent`):
-  - `k34-tiles`:  `lint rc=0 13s`, `types rc=0 9s`, `pixels rc=0 13s PASS`, `editor rc=0 163s PASS`, `generate rc=0 76s PASS`, `size rc=0 4s PASS`, `transparent rc=0 1s PASS` -> ALL PASS (279s).
-  - `k34-canvas`: `lint rc=0 13s`, `types rc=0 9s`, `pixels rc=0 11s PASS`, `editor rc=0 144s PASS`, `generate rc=0 75s PASS`, `size rc=0 3s PASS`, `transparent rc=0 2s PASS` -> ALL PASS (257s).
-- Mutation round (`docs/measurements/k34_2026-11-08/mutation/results.txt`, 12 mutants in `mut_k34.py`):
+6. Gates, Review Fixes & Mutation Round
+---------------------------------------
+- Review fixes applied:
+  1. `K34-route-warp-default`: vectorized coordinate/clamp/weight computation in `lanes::warp_rgba` (`crates/px/src/maskf.rs`), cutting `warp_rgba` SIMD time from `43.91 -> 36.83 ms` in `PX_BENCH` and winning every row in the 3-round standalone `warpRgba` Electron A/B (`-18.61 ms` on `edgefit_2048`, `-23.05 ms` on `stitch_align_2048` worker, `-64.22 ms` on `stitch_align_4096` worker).
+  2. `K34-simd-finite-overflow`: added finite-bound overflow guards (`(a00.abs()*cap_x + a01.abs()*cap_y + tx.abs()).is_finite()` and y counterpart, plus `+ cap_x + 1.0` / `+ cap_y + 1.0` in `warp_coverage`) to `lanes::warp_rgba` and `lanes::warp_coverage` so finite matrices whose products overflow to `+inf + -inf = NaN` fall back to scalar; added `["finite overflow to NaN", [1.797e308, -1.797e308, 0, 0, 1, 0]]`, `["finite overflow y to NaN", [1, 0, 0, 1.797e308, -1.797e308, 0]]`, and `[5, 3]` geometry (`82 cases x 2 offsets` for `warp_rgba`, `90 cases x 2 offsets` for `warp_coverage`) to `tools/px_test.js`.
+  3. `K34-no-trap-regression-test`: added trap recovery rows for `K.edgefitShrink`, `K.warpRgba`, and `K.warpCoverage` to `retouchRouteCases` in `tools/px_test.js` and updated the warned-once regex and count (`5 -> 8`).
+- Gates:
+  - Initial (`k34-tiles`, `k34-canvas` via `run_gates_both.sh k34 --ports 9615,9616 --offline lint types pixels editor generate size transparent`):
+    - `k34-tiles`:  `lint rc=0 13s`, `types rc=0 9s`, `pixels rc=0 13s PASS`, `editor rc=0 163s PASS`, `generate rc=0 76s PASS`, `size rc=0 4s PASS`, `transparent rc=0 1s PASS` -> ALL PASS (279s).
+    - `k34-canvas`: `lint rc=0 13s`, `types rc=0 9s`, `pixels rc=0 11s PASS`, `editor rc=0 144s PASS`, `generate rc=0 75s PASS`, `size rc=0 3s PASS`, `transparent rc=0 2s PASS` -> ALL PASS (257s).
+  - Review fix (`k34fix-tiles`, `k34fix-canvas` via `run_gates_both.sh k34fix --ports 9615,9616 --offline lint types pixels generate size transparent`):
+    - `k34fix-tiles`:  `lint rc=0 7s`, `types rc=0 5s`, `pixels rc=0 10s PASS`, `generate rc=0 78s PASS`, `size rc=0 2s PASS`, `transparent rc=0 1s PASS` -> ALL PASS (119s).
+    - `k34fix-canvas`: `lint rc=0 8s`, `types rc=0 5s`, `pixels rc=0 10s PASS`, `generate rc=0 77s PASS`, `size rc=0 2s PASS`, `transparent rc=0 1s PASS` -> ALL PASS (119s).
+- Mutation rounds (`docs/measurements/k34_2026-11-08/mutation/results.txt`, 15 mutants in `mut_k34.py`):
   - `orig`: build identical (`True`), full `px_test` green (`101 s`), focused `px_test (only: mask)` green (`4 s`), full `editor` gate green (`176 s`), focused `editor (an_aligned_answer_shows_no_repeated_edge)` green (`17 s`).
-  - All 12 mutants (`shrink_row_scalar_green_coeff`, `shrink_row_simd_green_coeff`, `edgefit_shrink_alpha_floor`, `edgefit_shrink_1to1_alpha_floor`, `warp_rgba_scalar_dy`, `warp_rgba_simd_fx`, `warp_coverage_scalar_ramp`, `warp_coverage_simd_ramp`, `kernels_route_edgefit_shrink`, `kernels_route_warp_rgba`, `kernels_route_warp_coverage`, `edgefit_call_warp_coverage`) killed in `px_test (only: mask)` (`12 / 12` killed, `0` survived); restored copy identical (`True`) and full `px_test` green.
+  - All 15 mutants (`shrink_row_scalar_green_coeff`, `shrink_row_simd_green_coeff`, `edgefit_shrink_alpha_floor`, `edgefit_shrink_1to1_alpha_floor`, `warp_rgba_scalar_dy`, `warp_rgba_simd_fx`, `warp_rgba_simd_overflow_guard`, `warp_coverage_scalar_ramp`, `warp_coverage_simd_ramp`, `warp_coverage_simd_overflow_guard`, `kernels_route_edgefit_shrink`, `kernels_route_warp_rgba`, `kernels_route_warp_coverage`, `kernels_trap_warp_rgba`, `edgefit_call_warp_coverage`) killed (`15 / 15` killed, `0` survived); restored copy identical (`True`) and full `px_test` green.
