@@ -1,26 +1,26 @@
 lock: taken after 0 s
-[05:15:20] lock: taken (K28 measuring 34916 2026-11-08T05:15:20)
-[05:15:20] tree: /f/canvas/.claude/worktrees/ag-chain-b at 7de75d7, px.wasm bc7daf9b7ad2caf5, px_scalar.wasm 22b768d2eeae1729
-[05:15:20] == round 1
-[05:15:31] before r1: liquify_perf KERNELS=js
-[05:15:40] {"built": 5243, "s": 4, "tiles": true, "kernels": "js", "kernelsInUse": "js", "undoMB": 133.1} rc=0 
+[05:41:54] lock: taken (K28 measuring 49852 2026-11-08T05:41:54)
+[05:41:54] tree: /f/canvas/.claude/worktrees/ag-chain-b at c6bbbb7, px.wasm bc7daf9b7ad2caf5, px_scalar.wasm 22b768d2eeae1729
+[05:41:54] == round 1
+[05:42:05] before r1: liquify_perf ROUTES.liquifyBlock=js
+[05:42:14] {"built": 4975, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyBlock": "js"}, "undoMB": 133.1} rc=0 
 closed
-[05:15:56] after r1: liquify_perf KERNELS=rust
-[05:16:05] {"built": 5202, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "undoMB": 133.1} rc=0 
+[05:42:29] after r1: liquify_perf ROUTES.liquifyBlock=rust
+[05:42:38] {"built": 5171, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyBlock": "rust"}, "undoMB": 133.1} rc=0 
 closed
-[05:16:10] == round 2
-[05:16:21] after r2: liquify_perf KERNELS=rust
-[05:16:30] {"built": 5325, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "undoMB": 133.1} rc=0 
+[05:42:43] == round 2
+[05:42:54] after r2: liquify_perf ROUTES.liquifyBlock=rust
+[05:43:03] {"built": 5004, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyBlock": "rust"}, "undoMB": 133.1} rc=0 
 closed
-[05:16:45] before r2: liquify_perf KERNELS=js
-[05:16:55] {"built": 5430, "s": 4, "tiles": true, "kernels": "js", "kernelsInUse": "js", "undoMB": 133.1} rc=0 
+[05:43:18] before r2: liquify_perf ROUTES.liquifyBlock=js
+[05:43:27] {"built": 5183, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyBlock": "js"}, "undoMB": 133.1} rc=0 
 closed
-[05:17:00] == round 3
-[05:17:10] before r3: liquify_perf KERNELS=js
-[05:17:20] {"built": 5324, "s": 4, "tiles": true, "kernels": "js", "kernelsInUse": "js", "undoMB": 133.1} rc=0 
+[05:43:32] == round 3
+[05:43:43] before r3: liquify_perf ROUTES.liquifyBlock=js
+[05:43:52] {"built": 5167, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyBlock": "js"}, "undoMB": 133.1} rc=0 
 closed
-[05:17:36] after r3: liquify_perf KERNELS=rust
-[05:17:45] {"built": 5447, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "undoMB": 133.1} rc=0 
+[05:44:08] after r3: liquify_perf ROUTES.liquifyBlock=rust
+[05:44:17] {"built": 5333, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyBlock": "rust"}, "undoMB": 133.1} rc=0 
 closed
-[05:17:50] done
+[05:44:22] done
 lock: released

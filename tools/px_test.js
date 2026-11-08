@@ -3840,9 +3840,8 @@ async function liquifyCases(px, label, L, R) {
         const d = new Uint8Array(bw * bh * 4);
         if (kind === "zero") return d;
         for (let i = 0; i < d.length; i += 4) {
-            const a = kind === "opaque" ? 255 : kind === "faint" ? (rand() < 0.5 ? 0 : 1 + Math.floor(rand() * 3)) : rand() < 0.25 ? 0 : rand() < 0.15 ? 255 : 1 + Math.floor(rand() * 254);
-            d[i + 3] = a;
-            if (a) { d[i] = Math.floor(rand() * 256); d[i + 1] = Math.floor(rand() * 256); d[i + 2] = Math.floor(rand() * 256); }
+            d[i] = Math.floor(rand() * 256); d[i + 1] = Math.floor(rand() * 256); d[i + 2] = Math.floor(rand() * 256);
+            d[i + 3] = kind === "opaque" ? 255 : kind === "faint" ? (rand() < 0.5 ? 0 : 1 + Math.floor(rand() * 3)) : rand() < 0.25 ? 0 : rand() < 0.15 ? 255 : 1 + Math.floor(rand() * 254);
         }
         return d;
     };

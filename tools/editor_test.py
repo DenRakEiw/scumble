@@ -9190,8 +9190,7 @@ try {
             twinHereSame: dTwHere === dHere && cTwHere === cHere,
             twinPoolSame: dTwPool === dHere && cTwPool === cHere,
         };
-        const poolRan = ed.tileMode && h3.stats && h3.stats.pool > 0 ? h3.pxCalls.pool : h3.pxCalls.win;
-        if (h2.pxCalls.win !== h2.stats.blocks || !(h2.pxCalls.win > 0) || poolRan !== h3.stats.blocks || h4.pxCalls.win !== h4.stats.blocks) {
+        if (h2.pxCalls.win !== h2.stats.blocks || !(h2.pxCalls.win > 0) || h3.pxCalls.pool + h3.pxCalls.win !== h3.stats.blocks || h4.pxCalls.win !== h4.stats.blocks) {
             throw new Error("K28: liquify_block call counts did not match the blocks baked: " + JSON.stringify(k28));
         }
         if (hjHere.pxCalls.win || hjHere.pxCalls.pool || hjPool.pxCalls.win || hjPool.pxCalls.pool || !k28.twinHereSame || !k28.twinPoolSame) {

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # K28 of docs/PLAN_WASM_BUILD.md: liquify's bake kernel (liquify_block in crates/px/src/resample.rs, ABI 24).
-# Three rounds on 15000 x 10000 (grid step 4), the arms alternating within each round (before = KERNELS "js" first in
-# rounds 1 and 3, after = KERNELS "rust" first in round 2), each arm on a fresh instance (offline, tiles, its own
-# profile, port 9617; brush_perf.py brings the window to the front). The machine's busy lock is held for the whole chain.
+# Three rounds on 15000 x 10000 (grid step 4), the arms alternating within each round (before = ROUTES
+# {"liquifyBlock":"js"} first in rounds 1 and 3, after = ROUTES {"liquifyBlock":"rust"} first in round 2; IE.kernels
+# stays "rust" in both arms), each arm on a fresh instance (offline, tiles, its own profile, port 9617; brush_perf.py
+# brings the window to the front). The machine's busy lock is held for the whole chain.
 # Usage: bash k28_chain.sh <outdir> [rounds]   (rounds "1 2 3" by default)
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,12 +36,12 @@ stop() {   # $1 = profile
     SCUMBLE_CDP_PORT=$PORT python tools/close_app.py >> "$OUTDIR/chain.log" 2>&1; sleep 4
     rm -rf "$1"
 }
-one() {   # $1 = arm (before / after), $2 = kernels ("js" / "rust"), $3 = round
-    local arm="$1" kernels="$2" R="$3" d="$OUTDIR/$1"
+one() {   # $1 = arm (before / after), $2 = route ("js" / "rust"), $3 = round
+    local arm="$1" route="$2" R="$3" d="$OUTDIR/$1"
     mkdir -p "$d/run"
     start "$d/profile" "$d/app_r$R.log"
-    log "$arm r$R: liquify_perf KERNELS=$kernels"
-    (cd "$d/run" && SCUMBLE_CDP_PORT=$PORT PYTHONIOENCODING=utf-8 timeout 1500 python "$ROOT/tools/brush_perf.py" "{\"KERNELS\":\"$kernels\"}" liquify_perf.js > "../liquify_r$R.log" 2>&1; echo "rc=$?" >> "../liquify_r$R.log"; mv brush_perf.out.json "../liquify_r$R.json" 2>/dev/null)
+    log "$arm r$R: liquify_perf ROUTES.liquifyBlock=$route"
+    (cd "$d/run" && SCUMBLE_CDP_PORT=$PORT PYTHONIOENCODING=utf-8 timeout 1500 python "$ROOT/tools/brush_perf.py" "{\"ROUTES\":{\"liquifyBlock\":\"$route\"}}" liquify_perf.js > "../liquify_r$R.log" 2>&1; echo "rc=$?" >> "../liquify_r$R.log"; mv brush_perf.out.json "../liquify_r$R.json" 2>/dev/null)
     log "$(tail -2 "$d/liquify_r$R.log" | tr '\n' ' ')"
     stop "$d/profile"
 }
