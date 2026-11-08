@@ -62,6 +62,16 @@ MUTANTS = [
         PX_KILL,
     ),
     (
+        "jobs.rs: grow_mask no-cells branch writes alpha 254 instead of 255",
+        JR,
+        [(
+            "                p.copy_from_slice(&[255, 0, 0, if inside { 255 } else { 0 }]);",
+            "                p.copy_from_slice(&[255, 0, 0, if inside { 254 } else { 0 }]);",
+        )],
+        "killed",
+        PX_KILL,
+    ),
+    (
         "jobs.rs: flood_shape out_kind == 1 writes 254 instead of 255",
         JR,
         [(

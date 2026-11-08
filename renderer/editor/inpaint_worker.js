@@ -798,9 +798,8 @@ async function selectionOverTiles(msg) {
     const cols = (W + 255) >> 8, rows = (H + 255) >> 8;
     let bounds, cells = null;
     if (msg.kind === "grow") {
-        cells = new Uint8Array(cols * rows);
+        cells = rustPx() ? new Uint8Array(cols * rows) : null;
         bounds = growMaskBounds(data, W, H, msg.n, { ms, cells });
-        if (ms.kernel === undefined) cells = null;
     } else if (msg.kind === "feather") {
         const c = new OffscreenCanvas(W, H);
         c.getContext("2d").putImageData(new ImageData(data, W, H), 0, 0);

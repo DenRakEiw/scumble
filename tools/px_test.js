@@ -2603,7 +2603,10 @@ async function jobCases(px, label, raster) {
         const a = src.slice(), ca = new Uint8Array(cols * rows);
         raster.growMask(a, w, h, n, { cells: ca });
         const ab = raster.maskBounds(a, w, h);
+        const a2 = src.slice();
+        raster.growMask(a2, w, h, n);
         const b = src.slice(), cb = new Uint8Array(cols * rows), bb = px.growMask(b, w, h, n, cb);
+        const c = src.slice(), cb2 = px.growMask(c, w, h, n);
         const wantCells = new Uint8Array(cols * rows);
         for (let ty = 0; ty < rows; ty++) for (let tx = 0; tx < cols; tx++) {
             const x0 = tx * 256, y0 = ty * 256, x1 = Math.min(x0 + 256, w), y1 = Math.min(y0 + 256, h);
@@ -2617,8 +2620,8 @@ async function jobCases(px, label, raster) {
             wantCells[ty * cols + tx] = kind;
             seenCellKinds.add(kind);
         }
-        if (!eqBytes(a, b) || JSON.stringify(ab) !== JSON.stringify(bb) || !eqBytes(ca, cb) || !eqBytes(cb, wantCells)) {
-            ok = false; detail = `${w}x${h} n ${n} ${firstDiff(a, b) || firstDiff(ca, cb) || firstDiff(cb, wantCells) || `bounds ${ab} vs ${bb}`}`;
+        if (!eqBytes(a, b) || !eqBytes(a2, b) || !eqBytes(c, b) || JSON.stringify(ab) !== JSON.stringify(bb) || JSON.stringify(cb2) !== JSON.stringify(bb) || !eqBytes(ca, cb) || !eqBytes(cb, wantCells)) {
+            ok = false; detail = `${w}x${h} n ${n} ${firstDiff(a, b) || firstDiff(a2, b) || firstDiff(c, b) || firstDiff(ca, cb) || firstDiff(cb, wantCells) || `bounds ${ab} vs ${bb} vs ${cb2}`}`;
         }
     }
     if (!seenCellKinds.has(0) || !seenCellKinds.has(1) || !seenCellKinds.has(2)) {
