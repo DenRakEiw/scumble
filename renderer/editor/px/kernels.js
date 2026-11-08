@@ -46,7 +46,7 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * at once (K12). `dabBlur` (K26): `blurRGBA` and `sharpenRGBA`, the blur and sharpen brushes and frequency separation's
  * blur, "js" for the twins in inpaint_stroke.js.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", mapTileStats: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -558,3 +558,18 @@ export function selCombine(dst, write, src, off, stride, kind, bw, bh, mode, rgb
     if (!dst && (mode >= 2 || !J.alphaAny(src, off, stride, kind, bw, bh))) return null;
     return J.selCombine(once(), size, src, off, stride, kind, bw, bh, mode, rgb);
 }
+
+/**
+ * Per-tile minimum, maximum, and edge flag over a depth map (`map` and optional `rmax`, `mw` x `mh` u16) for a
+ * `W` x `H` document in `tile`² tiles (K21, docs/PLAN_WASM_BUILD.md §4.8), routed by `mapTileStats`.
+ */
+export function mapTileStats(map, rmax, mw, mh, xf, W, H, thresh = 0, tile = 256) {
+    const p = rustPx("mapTileStats");
+    if (p) {
+        try { return p.mapTileStats(map, rmax, mw, mh, xf, W, H, thresh, tile); }
+        catch (err) { if (!recovered(p, err, "map_tile_stats")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.mapTileStats(map, rmax, mw, mh, xf, W, H, thresh, tile);
+}
+

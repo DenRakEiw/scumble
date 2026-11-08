@@ -1,0 +1,29 @@
+Running node tools/maps_test.js...
+Running maps_test.js...
+(node:55664) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-m/renderer/editor/host.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-m\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Inpaint Canvas: the Rust pixel kernels did not load, using the JS ones: fetch failed
+  [ok] host.pictureInput works on both canvas and tiles backends with options
+  [ok] passStores with skipFilters: true names no store the pass does not draw
+  [ok] drawComposite ignores filter layers for hasFilters when skipFilters is set, keeping colour-matched layers
+  [ok] packRG16 / unpackRG16 round trip 65,536 values exact
+  [ok] passToMap against direct composition for scale 1 and 0.25 under 90° xf and crop offset
+  [ok] sampleMap at corners (exact), edges (clamp) and centres (mean)
+  [ok] fingerprint of constant picture is constant, fingerprintDiff of equal is 0
+  [ok] rg8View and mapToJSON / mapFromJSON serialization
+mapFromJSON guide load failed: Error: File not found
+    at F:\canvas\.claude\worktrees\ag-chain-m\tools\maps_test.js:434:49
+    at mapFromJSON (file:///F:/canvas/.claude/worktrees/ag-chain-m/renderer/editor/inpaint_maps.js:284:36)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async main (F:\canvas\.claude\worktrees\ag-chain-m\tools\maps_test.js:433:32)
+  [ok] guideView, deriveMap, and guide serialization / deserialization
+Inpaint Canvas: no worker: Worker is not defined
+  [ok] InpaintEditor maps store, geometryToken, undo/redo, geometry following, memoryReport, and filterKey
+  [ok] setMapMeta preview, commit, cancel, 0-byte undo/redo, memoryReport, and guide identity across turns
+ALL MAPS TESTS PASSED!
+[ok] node maps_test.js passed
+[ok] picture_input on canvas
+[ok] maps on canvas
+PASS

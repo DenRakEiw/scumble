@@ -1,0 +1,49 @@
+row                                                      before (29f6749)              after (K21)
+  range_depth (js) wall                               886.0 [787.3-894.3]      399.6 [379.8-416.9]   n=3/3
+  range_depth (js) worker job                      6326.0 [5506.3-6371.3]   1944.4 [1892.4-1984.1]   n=3/3
+  range_depth (js) readMs                                   0.0 [0.0-0.0]            0.0 [0.0-0.0]   n=3/3
+  range_depth (js) pictureTiles                             0.0 [0.0-0.0]            0.0 [0.0-0.0]   n=3/3
+  range_depth (js) window px calls                               ['none']                 ['none']
+  range_depth_snap (js) wall                       2350.5 [2234.3-2489.2]   1266.9 [1096.3-1329.7]   n=3/3
+  range_depth_snap (js) worker job                 8513.9 [7469.4-9021.5]   3242.8 [3007.6-3338.3]   n=3/3
+  range_depth_snap (js) rmax                          164.0 [163.9-168.9]      163.8 [163.0-166.6]   n=3/3
+  range_depth_snap (js) edges                            17.8 [17.0-18.5]         29.1 [28.9-31.0]   n=3/3
+  range_depth_snap (js) readMs                     1261.9 [1205.9-1537.7]      871.8 [684.1-896.0]   n=3/3
+  range_depth_snap (js) pictureTiles                  881.0 [881.0-881.0]      465.0 [465.0-465.0]   n=3/3
+  range_depth_snap (js) window px calls                          ['none']                 ['none']
+  range_luma (js) wall                             3538.9 [3322.0-3556.1]   3522.6 [3402.1-3721.2]   n=3/3
+  range_luma (js) worker job                       1774.5 [1676.7-2052.6]   1932.1 [1861.9-2087.4]   n=3/3
+  range_luma (js) window px calls                                ['none']                 ['none']
+  range_color (js) wall                            4684.4 [4552.8-4999.0]   4573.0 [4514.6-4576.2]   n=3/3
+  range_color (js) worker job                      6307.1 [5707.6-6607.2]   5878.4 [5631.2-5954.6]   n=3/3
+  range_color (js) window px calls                               ['none']                 ['none']
+  depth_guide (js) wall                            1304.4 [1181.5-1340.1]   1346.3 [1160.9-1420.6]   n=3/3
+  depth_guide (js) worker job                         551.4 [532.7-599.9]      531.8 [511.6-579.9]   n=3/3
+  depth_guide (js) window px calls                               ['none']                 ['none']
+  fill_limit (js) wall                           10097.3 [9543.3-10892.9] 10105.8 [9970.5-10268.6]   n=3/3
+  fill_limit (js) window px calls                                ['none']                 ['none']
+  range_depth (rust) wall                             601.9 [600.4-704.9]      267.7 [265.2-296.0]   n=3/3
+  range_depth (rust) worker job                    4309.3 [4245.1-5123.1]   1718.7 [1667.5-1770.3]   n=3/3
+  range_depth (rust) readMs                                 0.0 [0.0-0.0]            0.0 [0.0-0.0]   n=3/3
+  range_depth (rust) pictureTiles                           0.0 [0.0-0.0]            0.0 [0.0-0.0]   n=3/3
+  range_depth (rust) window px calls             ['mip_chain 128, sel_combine 723', 'mip_chain 96, sel_combine 723'] ['mip_chain 32, sel_combine 699', 'mip_chain 48, sel_combine 699', 'mip_chain 64, sel_combine 699']
+  range_depth_snap (rust) wall                     2332.7 [2162.3-2391.5]   1302.0 [1071.5-1306.8]   n=3/3
+  range_depth_snap (rust) worker job               8145.2 [7354.6-8997.5]   3187.6 [3117.4-3315.8]   n=3/3
+  range_depth_snap (rust) rmax                           51.0 [50.4-53.6]         53.3 [53.2-53.5]   n=3/3
+  range_depth_snap (rust) edges                          18.1 [15.9-18.2]            5.7 [5.6-8.0]   n=3/3
+  range_depth_snap (rust) readMs                   1255.1 [1157.6-1516.3]      913.5 [701.2-928.7]   n=3/3
+  range_depth_snap (rust) pictureTiles                881.0 [881.0-881.0]      465.0 [465.0-465.0]   n=3/3
+  range_depth_snap (rust) window px calls        ['mip_chain 128, sel_combine 722', 'mip_chain 80, sel_combine 722'] ['mip_chain 128, sel_combine 698', 'mip_chain 96, sel_combine 698']
+  range_luma (rust) wall                           1691.0 [1575.4-1941.4]   1443.0 [1353.5-1457.6]   n=3/3
+  range_luma (rust) worker job                     2364.0 [2286.0-2691.0]   1939.7 [1911.9-1951.6]   n=3/3
+  range_luma (rust) window px calls              ['mip_chain 80, sel_combine 530', 'mip_chain 96, sel_combine 530'] ['mip_chain 112, sel_combine 530', 'mip_chain 80, sel_combine 530', 'mip_chain 96, sel_combine 530']
+  range_color (rust) wall                          3264.9 [2897.1-3373.7]   3150.3 [3140.2-3155.7]   n=3/3
+  range_color (rust) worker job                    5979.3 [5093.9-6164.4]   5632.1 [5521.5-5714.8]   n=3/3
+  range_color (rust) window px calls             ['mip_chain 15, sel_combine 14'] ['mip_chain 15, sel_combine 14']
+  depth_guide (rust) wall                            993.3 [981.6-1275.7]   1290.6 [1020.1-1291.8]   n=3/3
+  depth_guide (rust) worker job                       317.4 [286.6-320.9]      317.7 [301.9-318.0]   n=3/3
+  depth_guide (rust) window px calls                             ['none']                 ['none']
+  fill_limit (rust) wall                         10245.9 [9835.9-10315.6] 10314.6 [10151.1-10562.6]   n=3/3
+  fill_limit (rust) window px calls                              ['none']                 ['none']
+  selection_test 15k depth ramp wall                  814.1 [799.7-847.7]      835.5 [825.7-883.6]   n=3/3
+  selection_test 15k luma wall                     1328.0 [1154.6-1406.8]   1328.3 [1284.3-1389.5]   n=3/3

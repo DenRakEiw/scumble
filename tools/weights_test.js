@@ -34,8 +34,12 @@ async function main() {
         weightTable,
         normalizeLimit,
         u16Bilinear,
+        rangeTileClass,
+        rangeRowBookkeeping,
         WEIGHTS_GLSL,
     } = weightsMod;
+    const edgesMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_edges.js")).href);
+    const { mapTileStats } = edgesMod;
     const rasterMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_raster.js")).href);
     const { combineAlpha, tilesSource } = rasterMod;
     const workerMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_worker.js")).href);
@@ -432,6 +436,62 @@ async function main() {
                 if (act !== expected) {
                     throw new Error(`color mismatch at (${x}, ${y}): actual ${act} !== expected ${expected}`);
                 }
+            }
+        }
+    });
+
+    // ---------------------------------------------------------------------------
+    // 12. K21: rangeTileClass, rangeRowBookkeeping, and rangeSelectJob with classes
+    // ---------------------------------------------------------------------------
+    test("K21: rangeTileClass, rangeRowBookkeeping, and rangeSelectJob with classes", () => {
+        const W = 900, H = 500;
+        const mapW = 300, mapH = 150;
+        const mapData = new Uint16Array(mapW * mapH);
+        for (let y = 0; y < mapH; y++) {
+            for (let x = 0; x < mapW; x++) {
+                mapData[y * mapW + x] = Math.round(65535 * x / (mapW - 1));
+            }
+        }
+        const m = [mapW / W, 0, 0, mapH / H, 0, 0];
+        const stats = mapTileStats({ data: mapData, w: mapW, h: mapH }, null, m, W, H, 0.02, 256);
+
+        for (const [limit, invert] of [
+            [{ source: "depth", lo: 0.3, hi: 0.7, fLo: 0, fHi: 0, invert: false }, false],
+            [{ source: "depth", lo: 0.3, hi: 0.7, fLo: 0.08, fHi: 0.08, invert: false }, true],
+            [{ source: "depth", lo: 0.0, hi: 1.0, fLo: 0, fHi: 0, invert: false }, false],
+            [{ source: "depth", lo: 0.0, hi: 1.0, fLo: 0, fHi: 0, invert: true }, false],
+        ]) {
+            for (let ty = 0; ty < stats.rows; ty++) {
+                const y0 = ty * 256, y1 = Math.min(H, (ty + 1) * 256);
+                const rowClasses = new Uint8Array(stats.cols);
+                let hasCompute = false;
+                for (let tx = 0; tx < stats.cols; tx++) {
+                    const idx = ty * stats.cols + tx;
+                    const cls = rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, invert);
+                    rowClasses[tx] = cls === "full" ? 1 : cls === "compute" ? 2 : 0;
+                    if (cls === "compute") hasCompute = true;
+                }
+
+                const refJob = rangeSelectJob({
+                    W, H, y0, y1, source: "depth", limit, invert,
+                    map: { w: mapW, h: mapH, data: mapData, m },
+                });
+
+                const k21Job = hasCompute
+                    ? rangeSelectJob({
+                        W, H, y0, y1, source: "depth", limit, invert,
+                        map: { w: mapW, h: mapH, data: mapData, m },
+                        classes: rowClasses,
+                    })
+                    : rangeRowBookkeeping(W, H, ty, rowClasses, 256);
+
+                assert.equal(k21Job.alphaSum, refJob.alphaSum, `alphaSum must match on ty=${ty}`);
+                assert.deepEqual(k21Job.bounds, refJob.bounds, `bounds must match on ty=${ty}`);
+                assert.equal(k21Job.tiles.length, refJob.tiles.length, `tile count must match on ty=${ty}`);
+
+                const rRef = tilesSource(refJob.tiles, [0, 0], [0, y0, W, y1]).read(0, y0, W, y1 - y0);
+                const rK21 = tilesSource(k21Job.tiles, [0, 0], [0, y0, W, y1]).read(0, y0, W, y1 - y0);
+                assert.deepEqual(rK21, rRef, `combined row pixels must match byte-for-byte on ty=${ty}`);
             }
         }
     });

@@ -215,6 +215,9 @@ JS = r"""
     // -------------------------------------------------------------------------
     const hash50 = await sha1(selAlpha50);
     console.log(`[ok] selection SHA-1 hash (${ed.tileMode ? "tiles" : "canvas"}): ${hash50}`);
+    if (ed.tileMode) {
+        check("Case e: selection SHA-1 hash on tiles matches reference", hash50 === "ab46130a9a542201cd4ec8cb0855ce240658090b", { hash50 });
+    }
 
     // -------------------------------------------------------------------------
     // f. mode: "intersect" over rectangle
@@ -247,7 +250,7 @@ JS = r"""
     await commands.run("new_canvas", { doc: ed.node.id, width: W15, height: H15 });
     await settle(ed);
 
-    // Synthetic 15k map: 4096 x 2731 working resolution, step at x = 2048 (doc x = 7500)
+    // Synthetic 15k map: 4096 x 2731 working resolution, step at x = 2048 (doc x = 7500) and non-compute step at x = 3500 (doc x ~ 12817)
     const mw15 = 4096, mh15 = 2731;
     const u16_15 = new Uint16Array(mw15 * mh15);
     const g15 = new Uint8ClampedArray(mw15 * mh15 * 4);
@@ -255,7 +258,7 @@ JS = r"""
         for (let x = 0; x < mw15; x++) {
             const idx = y * mw15 + x;
             const isLeft = x < 2048;
-            u16_15[idx] = isLeft ? 13107 : 52428;
+            u16_15[idx] = isLeft ? 13107 : (x < 3500 ? 52428 : 62000);
             const gIdx = idx * 4;
             g15[gIdx] = isLeft ? 200 : 40;
             g15[gIdx + 1] = isLeft ? 40 : 60;
@@ -269,9 +272,13 @@ JS = r"""
 
     // Spy on sampleRegionSettled (filtered to edge picture sampling with skipFilters)
     let sampleRegionSettledCalls = 0;
+    let maxSampleX = 0;
     const origSample = ed.sampleRegionSettled.bind(ed);
     ed.sampleRegionSettled = async function(source, box, scale, opts) {
-        if (opts && opts.skipFilters) sampleRegionSettledCalls++;
+        if (opts && opts.skipFilters) {
+            sampleRegionSettledCalls++;
+            if (Array.isArray(box) && box[2] > maxSampleX) maxSampleX = box[2];
+        }
         return origSample(source, box, scale, opts);
     };
 
@@ -294,9 +301,10 @@ JS = r"""
     for (let i = 0; i < et15.length; i++) if (et15[i] === 1) edgeCount15++;
     const edgeSharePct = ((edgeCount15 / et15.length) * 100).toFixed(1);
 
-    console.log(`[ok] 15k select_range: ${t15_ms.toFixed(0)} ms, edge tiles: ${edgeCount15}/${et15.length} (${edgeSharePct}%), sample calls: ${sampleRegionSettledCalls}, scratch canvases: ${scratchCreated}`);
+    console.log(`[ok] 15k select_range: ${t15_ms.toFixed(0)} ms, edge tiles: ${edgeCount15}/${et15.length} (${edgeSharePct}%), sample calls: ${sampleRegionSettledCalls}, maxSampleX: ${maxSampleX}, scratch canvases: ${scratchCreated}`);
 
     check("Case d: sampleRegionSettled calls <= 40", sampleRegionSettledCalls <= tileRows15, { sampleRegionSettledCalls, tileRows: tileRows15 });
+    check("Case d: picture span cut to compute-class edge tiles (maxSampleX <= 8192, excluding empty-class edge at x ~ 12817)", maxSampleX > 0 && maxSampleX <= 8192, { maxSampleX });
     check("Case d: at most 1 scratch canvas created", scratchCreated <= 1, { scratchCreated });
 
     // Check selection mirror / memory report

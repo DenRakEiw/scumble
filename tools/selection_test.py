@@ -227,18 +227,43 @@ const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
 // Case 1: depth lo .25 hi .5, no feathers
 // at columns where v = .2 / .3 / .45 / .6 -> 0 / 255 / 255 / 0, exact (9 columns, middle row 600)
 // K5: on tiles with the selCombine route on Rust the range's combine runs sel_combine (its partial tiles)
+// K21: map_tile_stats runs on the cold map when the route is on Rust, and is cached on the warm call
 const E = ed.constructor;
 const rustSel = ed.tileMode && E.kernels !== "js" && (E.routes || {}).selCombine !== "js";
+const rustStats = E.kernels !== "js" && (E.routes || {}).mapTileStats !== "js";
 E.pxCalls(true);
 await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0, fHi: 0 }, "replace");
-const rangeSelCalls = E.pxCalls(true).sel_combine || 0;
+const calls1 = E.pxCalls(true);
+const rangeSelCalls = calls1.sel_combine || 0;
+const statsCalls = calls1.map_tile_stats || 0;
 if (rustSel && !(rangeSelCalls > 0)) throw new Error("the range's combine ran no sel_combine on tiles with the route on rust");
+if (rustStats && statsCalls !== Math.ceil(1200 / 256)) throw new Error("selectRange ran map_tile_stats " + statsCalls + " times, expected " + Math.ceil(1200 / 256));
 const c1Cols = [160, 320, 400, 480, 720, 800, 960, 1200, 1440];
 const c1Vals = c1Cols.map((x) => at(x, 600));
 if (at(320, 600) !== 0) throw new Error("case 1: at v=0.2 (x=320) expected 0, got " + at(320, 600));
 if (at(480, 600) !== 255) throw new Error("case 1: at v=0.3 (x=480) expected 255, got " + at(480, 600));
 if (at(720, 600) !== 255) throw new Error("case 1: at v=0.45 (x=720) expected 255, got " + at(720, 600));
 if (at(960, 600) !== 0) throw new Error("case 1: at v=0.6 (x=960) expected 0, got " + at(960, 600));
+
+// K21: replay on a fresh map copy with the mapTileStats route on "js" gives identical selection bytes and 0 Rust calls
+if (rustStats) {
+    const rustRow = ed.sel.readRect(0, 600, 1600, 1).data.slice();
+    await ed.setMap("depth", makeMap("depth", mapW, mapH, ramp.slice(), [1600, 0, 0, 1200, 0, 0], {}));
+    E.setRoute("mapTileStats", "js");
+    E.pxCalls(true);
+    try {
+        await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0, fHi: 0 }, "replace");
+        const jsStatsCalls = E.pxCalls(true).map_tile_stats || 0;
+        if (jsStatsCalls !== 0) throw new Error("mapTileStats route 'js' called map_tile_stats " + jsStatsCalls + " times");
+        const jsRow = ed.sel.readRect(0, 600, 1600, 1).data;
+        for (let i = 0; i < rustRow.length; i++) {
+            if (rustRow[i] !== jsRow[i]) throw new Error("mapTileStats route 'js' differed at byte " + i);
+        }
+    } finally {
+        E.setRoute("mapTileStats", null);
+    }
+    await ed.setMap("depth", map);
+}
 
 // Case 2: fLo .1 at v = .2 -> round(255 * sstep(.15, .25, .2)) = 128 (+-1)
 await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0.1, fHi: 0 }, "replace");
@@ -324,6 +349,26 @@ if (ed.tileMode) {
         if (val !== probeBytesBefore[i]) {
             throw new Error(`case 12: at x=${probes[i]} expected preserved ${probeBytesBefore[i]}, got ${val}`);
         }
+    }
+
+    // K21: skipped rows (all-full and all-empty) post 0 pool jobs and produce exact pct, bounds, and tiles
+    const { STEP_MARKS } = await import("./editor/inpaint_jobs.js");
+    STEP_MARKS.length = 0;
+    const fullRes = await ed.selectRange({ source: "depth", lo: 0, hi: 1, fLo: 0, fHi: 0 }, "replace");
+    const fullPosted = STEP_MARKS.find((s) => s.op === "range" && s.step === "posted");
+    const fullDone = STEP_MARKS.find((s) => s.op === "range" && s.step === "done");
+    if (!fullPosted || fullPosted.jobs !== 0) throw new Error("K21 all-full range posted " + (fullPosted && fullPosted.jobs) + " jobs, expected 0");
+    if (!fullDone || fullDone.pct !== 100 || fullRes.tiles !== 35) throw new Error("K21 all-full bookkeeping mismatch: " + JSON.stringify({ fullDone, fullRes }));
+    if (!fullRes.bounds || fullRes.bounds[0] !== 0 || fullRes.bounds[1] !== 0 || fullRes.bounds[2] !== 1600 || fullRes.bounds[3] !== 1200) {
+        throw new Error("K21 all-full bounds mismatch: " + JSON.stringify(fullRes.bounds));
+    }
+    STEP_MARKS.length = 0;
+    const emptyRes = await ed.selectRange({ source: "depth", lo: 0, hi: 1, fLo: 0, fHi: 0, invert: true }, "replace");
+    const emptyPosted = STEP_MARKS.find((s) => s.op === "range" && s.step === "posted");
+    const emptyDone = STEP_MARKS.find((s) => s.op === "range" && s.step === "done");
+    if (!emptyPosted || emptyPosted.jobs !== 0) throw new Error("K21 all-empty range posted " + (emptyPosted && emptyPosted.jobs) + " jobs, expected 0");
+    if (!emptyDone || emptyDone.pct !== 0 || emptyRes.tiles !== 0 || emptyRes.bounds !== null) {
+        throw new Error("K21 all-empty bookkeeping mismatch: " + JSON.stringify({ emptyDone, emptyRes }));
     }
 }
 

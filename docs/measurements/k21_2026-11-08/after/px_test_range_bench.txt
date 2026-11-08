@@ -1,0 +1,29 @@
+(node:5784) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-m/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-m\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PX_ONLY: only the groups range run (a filtered run, not the full test)
+ok   map_tile_stats 2-texel halo reaches ±2 texels and thresh uses strict >  st500=1234..64321 e=1, st501 e=0
+ok   js mapTileStats equals the plain reference (82 cases)
+ok   rust simd map_tile_stats equals its twin byte for byte (82 cases, each also at an odd offset)
+ok   rust scalar map_tile_stats equals its twin byte for byte (82 cases, each also at an odd offset)
+ok   js map_tile_stats gives the same at an odd offset
+ok   mapTileStats refuses null map on twin and both builds  3/3 threw
+ok   mapTileStats refuses short map on twin and both builds  3/3 threw
+ok   mapTileStats refuses short rmax on twin and both builds  3/3 threw
+ok   mapTileStats refuses zero mw on twin and both builds  3/3 threw
+ok   mapTileStats refuses zero W on twin and both builds  3/3 threw
+ok   mapTileStats refuses zero tile on twin and both builds  3/3 threw
+ok   mapTileStats refuses NaN xf on twin and both builds  3/3 threw
+ok   raw map_tile_stats returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  got 0
+ok   kernels.js mapTileStats route switches between twin (0 calls) and rust (rows calls) with identical output  jsCalls=0, rustCalls=2
+ok   rangeTileClass hard boundaries at lo and hi
+ok   rangeTileClass invert (r.invert xor jobInvert)
+ok   rangeTileClass soft feather boundaries
+ok   rangeTileClass full/empty tiles match per-pixel bilinear and snapField weights across all tiles
+ok   rangeRowBookkeeping matches exact in-image pixel alphaSum, bounds, and tiles on full and partial rows
+       map_tile_stats 4096x2731 -> 15000x10000 (depth only): twin 18.85, simd 3.18, scalar 13.32 ms (median of 15)
+       map_tile_stats 4096x2731 -> 15000x10000 (depth + rmax): twin 33.58, simd 5.13, scalar 19.70 ms (median of 15)
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: range; PX_ONLY, not the full test)

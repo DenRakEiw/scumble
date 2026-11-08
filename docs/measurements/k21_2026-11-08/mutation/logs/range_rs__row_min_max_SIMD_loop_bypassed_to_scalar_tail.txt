@@ -1,0 +1,86 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 170785 bytes, sha256 9116e3f9b85d4bda
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 147314 bytes, sha256 facfe880460c1cd0
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.28s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.73s
+$ node tools/px_test.js  (rc 0, 0 s, PX_ONLY=range)
+PASS (only: range; PX_ONLY, not the full test)
+ok   rangeTileClass hard boundaries at lo and hi
+ok   rangeTileClass invert (r.invert xor jobInvert)
+ok   rangeTileClass soft feather boundaries
+ok   rangeTileClass full/empty tiles match per-pixel bilinear and snapField weights across all tiles
+ok   rangeRowBookkeeping matches exact in-image pixel alphaSum, bounds, and tiles on full and partial rows
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: range; PX_ONLY, not the full test)
+(node:23504) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k21_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 95 s)
+PASS
+ok   rust scalar a large alloc grows memory  229048320 -> 497549312
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+PASS
+(node:55960) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k21_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-range_rs__row_min_max_SIMD_loop_bypassed_to_scalar-full-selection --offline --tiles on selection  (rc 0, 28 s)
+selection rc=0 11s PASS
+ALL PASS
+$ bash tools/run_gates.sh mut-range_rs__row_min_max_SIMD_loop_bypassed_to_scalar-full-edges --offline --tiles on edges  (rc 0, 32 s)
+edges rc=0 16s PASS
+ALL PASS
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 170785 bytes, sha256 9116e3f9b85d4bda
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 147314 bytes, sha256 facfe880460c1cd0
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.48s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.57s
+$ node tools/px_test.js  (rc 0, 0 s, PX_ONLY=range)
+PASS (only: range; PX_ONLY, not the full test)
+ok   rangeTileClass hard boundaries at lo and hi
+ok   rangeTileClass invert (r.invert xor jobInvert)
+ok   rangeTileClass soft feather boundaries
+ok   rangeTileClass full/empty tiles match per-pixel bilinear and snapField weights across all tiles
+ok   rangeRowBookkeeping matches exact in-image pixel alphaSum, bounds, and tiles on full and partial rows
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: range; PX_ONLY, not the full test)
+(node:644) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k21_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 96 s)
+PASS
+ok   rust scalar a large alloc grows memory  229048320 -> 497549312
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+PASS
+(node:38116) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k21_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-range_rs__row_min_max_SIMD_loop_bypassed_to_scalar-full-selection --offline --tiles on selection  (rc 0, 27 s)
+selection rc=0 12s PASS
+ALL PASS
+$ bash tools/run_gates.sh mut-range_rs__row_min_max_SIMD_loop_bypassed_to_scalar-full-edges --offline --tiles on edges  (rc 0, 31 s)
+edges rc=0 15s PASS
+ALL PASS

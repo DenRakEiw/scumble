@@ -1,0 +1,72 @@
+[06:04:03] after: 29f6749 + working tree, px.wasm c08e5a6977c19e11, px_scalar.wasm facfe880460c1cd0
+[06:04:03] before: /c/Users/schoeneberg/AppData/Local/Temp/k21_before_tree, px.wasm 5ed9fb4b74c13eed
+[06:04:05] gpu: 6116 MiB, 0 %; comfy 8188: 000
+lock: held by 'K32 measuring (chain-e, port 9615) 29748 2026-11-08T05:46:37', waiting
+lock: taken after 120 s
+[06:06:05] lock: taken (K21 measuring (px_test range bench) 31808 2026-11-08T06:04:05) for px_test range bench
+[06:06:07] px_test range bench rc=0
+lock: released
+[06:06:07] == round 1
+lock: taken after 0 s
+[06:06:07] lock: taken (K21 measuring (before r1) 56500 2026-11-08T06:06:07) for before r1
+[06:06:17] before r1: px_jobs 15000x10000
+[06:07:10] before r1: px_jobs rc=0
+[06:07:10] before r1: selection_test 15000x10000
+[06:07:16] before r1: selection_test rc=0
+[06:07:17] before r1: edges_test
+[06:07:31] before r1: edges_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[06:07:35] lock: taken (K21 measuring (after r1) 39620 2026-11-08T06:07:35) for after r1
+[06:07:44] after r1: px_jobs 15000x10000
+[06:08:34] after r1: px_jobs rc=0
+[06:08:34] after r1: selection_test 15000x10000
+[06:08:40] after r1: selection_test rc=0
+[06:08:40] after r1: edges_test
+[06:08:54] after r1: edges_test rc=0
+closed
+lock: released
+[06:08:58] == round 2
+lock: taken after 0 s
+[06:08:58] lock: taken (K21 measuring (after r2) 31048 2026-11-08T06:08:58) for after r2
+[06:09:07] after r2: px_jobs 15000x10000
+[06:09:56] after r2: px_jobs rc=0
+[06:09:56] after r2: selection_test 15000x10000
+[06:10:03] after r2: selection_test rc=0
+[06:10:03] after r2: edges_test
+[06:10:17] after r2: edges_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[06:10:21] lock: taken (K21 measuring (before r2) 54556 2026-11-08T06:10:21) for before r2
+[06:10:30] before r2: px_jobs 15000x10000
+[06:11:25] before r2: px_jobs rc=0
+[06:11:25] before r2: selection_test 15000x10000
+[06:11:31] before r2: selection_test rc=0
+[06:11:31] before r2: edges_test
+[06:11:49] before r2: edges_test rc=0
+closed
+lock: released
+[06:11:53] == round 3
+lock: taken after 0 s
+[06:11:53] lock: taken (K21 measuring (before r3) 35284 2026-11-08T06:11:53) for before r3
+[06:12:04] before r3: px_jobs 15000x10000
+[06:12:57] before r3: px_jobs rc=0
+[06:12:57] before r3: selection_test 15000x10000
+[06:13:03] before r3: selection_test rc=0
+[06:13:03] before r3: edges_test
+[06:13:17] before r3: edges_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[06:13:21] lock: taken (K21 measuring (after r3) 45612 2026-11-08T06:13:21) for after r3
+[06:13:31] after r3: px_jobs 15000x10000
+[06:14:20] after r3: px_jobs rc=0
+[06:14:20] after r3: selection_test 15000x10000
+[06:14:26] after r3: selection_test rc=0
+[06:14:26] after r3: edges_test
+[06:14:41] after r3: edges_test rc=0
+closed
+lock: released
+[06:14:46] done

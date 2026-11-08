@@ -41,6 +41,7 @@ async function main() {
         fuseTiles,
         rangeMax,
         edgeTiles,
+        mapTileStats,
         gaussRadii,
         gaussBlur,
     } = edgesMod;
@@ -405,20 +406,32 @@ async function main() {
     const docW = 1600, docH = 1200;
     const xfDocToMap = [0.25, 0, 0, 0.25, 0, 0];
     const et = edgeTiles(edgeMap, rmax, xfDocToMap, docW, docH, SNAP_TAU, 256);
+    const stats = mapTileStats(edgeMap, rmax, xfDocToMap, docW, docH, SNAP_TAU, 256);
+    assert.deepEqual(stats.edge, et, "mapTileStats.edge must equal edgeTiles");
     const cols = Math.ceil(docW / 256); // 7
     const rows = Math.ceil(docH / 256); // 5
+    assert.equal(stats.cols, cols);
+    assert.equal(stats.rows, rows);
 
     // Step at map x = 200 corresponds to doc x = 800.
     // Tile index for doc x = 800 is Math.floor(800 / 256) = 3.
     // Only col 3 (or +- 1 col) should be 1
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-            const val = et[r * cols + c];
+            const idx = r * cols + c;
+            const val = et[idx];
             if (Math.abs(c - 3) <= 1) {
                 // Should be flagged at or near the boundary
-                if (c === 3) assert.equal(val, 1, `tile col 3 must be flagged at row ${r}`);
+                if (c === 3) {
+                    assert.equal(val, 1, `tile col 3 must be flagged at row ${r}`);
+                    assert.equal(stats.min[idx], 10000, `tile col 3 min must be 10000 at row ${r}`);
+                    assert.equal(stats.max[idx], 50000, `tile col 3 max must be 50000 at row ${r}`);
+                }
             } else {
                 assert.equal(val, 0, `tile col ${c} must not be flagged at row ${r}`);
+                const expectedFlatVal = c < 3 ? 10000 : 50000;
+                assert.equal(stats.min[idx], expectedFlatVal, `flat tile col ${c} min must be ${expectedFlatVal}`);
+                assert.equal(stats.max[idx], expectedFlatVal, `flat tile col ${c} max must be ${expectedFlatVal}`);
             }
         }
     }

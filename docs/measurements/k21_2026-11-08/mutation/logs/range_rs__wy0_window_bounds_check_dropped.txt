@@ -1,0 +1,52 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+    Finished `release` profile [optimized] target(s) in 3.15s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px)
+warning: unused variable: `wy1`
+  --> src\range.rs:40:9
+   |
+40 |     let wy1 = wy0 + wh;
+   |         ^^^ help: if this is intentional, prefix it with an underscore: `_wy1`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 2.53s
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=range)
+(Use `node --trace-warnings ...` to show where the warning was created)
+RuntimeError: unreachable
+    at wasm://wasm/000a687e:wasm-function[83]:0x26bc2
+    at wasm://wasm/000a687e:wasm-function[82]:0x26bb8
+    at wasm://wasm/000a687e:wasm-function[88]:0x26c82
+    at wasm://wasm/000a687e:wasm-function[87]:0x26bf4
+    at wasm://wasm/000a687e:wasm-function[72]:0x23491
+    at wasm://wasm/000a687e:wasm-function[16]:0x3bdc
+    at wasm://wasm/000a687e:wasm-function[14]:0x353b
+    at wasm://wasm/000a687e:wasm-function[48]:0x1a377
+    at out.<computed> [as map_tile_stats] (file:///C:/Users/schoeneberg/AppData/Local/Temp/k21_mut_tree/renderer/editor/px/px.js:140:40)
+    at rangeCases (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\tools\px_test.js:3957:40)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+    Finished `release` profile [optimized] target(s) in 3.28s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px)
+warning: unused variable: `wy1`
+  --> src\range.rs:40:9
+   |
+40 |     let wy1 = wy0 + wh;
+   |         ^^^ help: if this is intentional, prefix it with an underscore: `_wy1`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 2.56s
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=range)
+(Use `node --trace-warnings ...` to show where the warning was created)
+RuntimeError: unreachable
+    at wasm://wasm/000a687e:wasm-function[83]:0x26bc2
+    at wasm://wasm/000a687e:wasm-function[82]:0x26bb8
+    at wasm://wasm/000a687e:wasm-function[88]:0x26c82
+    at wasm://wasm/000a687e:wasm-function[87]:0x26bf4
+    at wasm://wasm/000a687e:wasm-function[72]:0x23491
+    at wasm://wasm/000a687e:wasm-function[16]:0x3bdc
+    at wasm://wasm/000a687e:wasm-function[14]:0x353b
+    at wasm://wasm/000a687e:wasm-function[48]:0x1a377
+    at out.<computed> [as map_tile_stats] (file:///C:/Users/schoeneberg/AppData/Local/Temp/k21_mut_tree/renderer/editor/px/px.js:140:40)
+    at rangeCases (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\tools\px_test.js:3957:40)
