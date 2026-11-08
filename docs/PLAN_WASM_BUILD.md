@@ -1821,8 +1821,41 @@ Built by a background agent on `8689d49` (`e5c7aff`, `57a5f55`), a review workfl
 - **Asked of the user:** the media denial and the two core nodes; ids made safe vs settings stored under an old id; the
   ORA budget's 64:1.
 
-The order from here: U0, U1 (U2), H1, K27, P10 (+ P13, P15), then as after Stop 5:
-K21, K11, K22, K23, K25, K9, K36, K37; K2, *Stop 2*, K6, K7, K8, *Stop 4*; K32, K33, K34; K13, K14, the threads spike;
-K24, K3, K10a-c, K15-K18, K20a-c, K28, K29, K30, *Stop 6*, K31, K19, K35, K38, K39, K40, K41.
+### K27 (2026-11-08): the tone brush, the sponge and frequency separation's split in Rust
 
-Next: U0 (SAM2 measured first: the user's top priority).
+On `8729426` by a background agent (`97f9221`, `01acdb4`, merged `7de75d7`; a review workflow of two lenses found
+nothing); full tier. `docs/measurements/k27_2026-11-08/` (`k27_chain.sh`, `summarize.py`, `summary.txt`,
+`summary_rows.txt`, `ab/`, `gates/`, `mutation/`).
+- **Built (ABI 23):** `crates/px/src/stroke.rs` `tone_rgba` (the stroke's 256-byte table copied in per call, never
+  resident; protect's factor `(lut[v] - o) / v` divided once per brightest value into a table: the twin's f64s),
+  `sponge_rgba` (SIMD four pixels a step: i32x4 channels / mx / mn / luma, the gain and outputs in two f64x2 halves, the
+  twin's `Infinity` sides divided per lane and masked; `lim`, `max(1, lim)` and the cap as pmin / pmax, exact since
+  lim >= 1; kept pixels from the source; the store nearest, then pmax 0 / pmin 255), `freq_split` (SIMD sixteen bytes a
+  step in u8 lanes: t = I + !L, the floor average as avgr less the odd bit, alpha from I); the scalar build and the tails
+  keep the twins' loops; `clamp8` through i32 (same bytes, cheaper; K26's blur and sharpen share it). `px.js`
+  `toneRGBA`, `spongeRGBA`, `freqSplit`, `freqSeparate` (blur and split in one arena, the detail in the blur's
+  scratch: no more memory than K26's blur, about 640 MB at 16 MP); `kernels.js` routes `dabTone`, `dabSponge`,
+  `freqSplit` (trap recovery, `releaseIfLarge`), `freqSeparate` one call with both on Rust; `inpaint_stroke.js`
+  `freqSplit` (the loop moved verbatim: the twin). No route entry.
+- **Tests:** `px_test.js` groups `tone` (7,848 tone and 1,882 sponge cases on both builds, odd offsets, every edge
+  combination at four alphas, the tables' extremes, the sponge's amounts and switches), `freq` (every (I, L) byte pair,
+  the separation in one arena against blur then split, radii 0 to 200, NaN, -3), `retouchRoute`; the `editor` gate's
+  tone / sponge and frequency separation steps replay on the route "js" after an undo (0 bytes differ). Gates lint types
+  editor on both backends, pxjobs on tiles PASS; brush's node reader hung at exit side by side (a new TESTING.md flake),
+  PASS alone. Mutation round 48 of 53 killed, the 5 survivors equivalent (`lim` >= 1, grey pixels' luma, a 32-byte lane
+  step, a part pixel the export refuses).
+- **Before -> after** (three rounds alternating, fresh instances, 15000 x 10000, the busy lock; ms per move): sponge
+  400 px at fit 31.0 -> 22.1, 1000 px at fit 87.4 -> 66.6, 400 px at 1:1 8.9 -> 7.0, 1000 px at 1:1 52.0 -> 42.2;
+  tone 400 px at fit 22.9 -> 19.9, 1000 px at fit 69.0 -> 63.6 and 400 px at 1:1 6.9 -> 6.4 inside their spreads (Rust
+  by the tie rule: the kernel rows 5.4 / 6.7 ms smooth, 5.8 / 10.8 noise at 1002²), 1000 px at 1:1 43.1 -> 39.5;
+  frequency separation of a 4000 x 4000 box: wall 1,033 -> 716 ms, the window block 1,021 -> 702, the split's kernel
+  11.6 ms against the JS loop's 211; the window's instance back to 2.1 MB after a 16 MP separation.
+- **What it leaves:** a tone or sponge move is mostly the rest of the dab (the box's read, `smudge_dab` twice, the
+  write: 61 of 64 ms for tone 1000 px at fit); frequency separation's blur 580 of 716 ms.
+
+The order from here (2026-11-08): the M chain (K21, K11, K22, K23, K25) and the E chain (K32, K33, K34, K35 on its
+split) by Antigravity agents, the liquify part of the B chain (K28, K29, K30, *Stop 6*, K31) likewise once K27 is
+merged (`.claude/coord/`, each branch reviewed and merged by the Claude main loop, the ABI renumbered at merge); then
+as after Stop 5: K9, K36, K37; K2, *Stop 2*, K6, K7, K8, *Stop 4*; K13, K14, the threads spike; K24, K3, K10a-c,
+K15-K18, K20a-c, K19, K38, K39, K40, K41. U2 (`docs/PLAN_HELPERS_PROCESS.md` §4: warm on the tool pick, the 15k shapes)
+after the weekly reset.
