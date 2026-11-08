@@ -14,7 +14,10 @@ scan links what it finds, nothing is downloaded), and
   - Free VRAM: the process gone; the next point (host.segmentLogits sends the picture again) starts a new one;
   - Free VRAM during an object map (the free a local Generate does): the map still lands, the process ends after it,
     a point sent meanwhile goes to a new process;
-  - the device switch to CPU: the process ends, the next answer's provider is the CPU.
+  - the device switch to CPU: the process ends, the next answer's provider is the CPU;
+  - two deaths within a minute (the gate kills the process from outside, as a crash ends it): the helpers fall back to
+    main's thread, helpers:status carries the note, the window's status line shows it once as a warning, and a point
+    answers there. Last before the cleanup: the fallback stays for this instance (no helper gate after this one on it).
 The folder, the models and the device are put back at the end. Skipped (PASS with a note) where DIR has no SAM2 tiny.
 It holds the machine's busy lock while it runs (it loads SAM2 on the GPU and times IPC round trips), waiting at most
 5 minutes for it; tools/run_gates_both.sh runs it serially.
@@ -22,6 +25,7 @@ It holds the machine's busy lock while it runs (it loads SAM2 on the GPU and tim
 import asyncio
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -217,6 +221,8 @@ if (r.rttMax > __RTT__) throw new Error(`main blocked ${r.rttMax} ms during a CP
 await H.configure({ device: "auto" });
 return { provider: r.res.provider, wall: r.wall, rttMax: r.rttMax, active: Object.values(rt.active) };
 """),
+    # the fallback (run_all: fallback_note) kills the process twice: last, since main's thread keeps the helpers then
+    ("fallback_note", None),
     ("cleanup", """
 const b = (G && G.before) || {};
 await H.free();
@@ -237,6 +243,19 @@ async def run_all(c):
     cutout_png(cut)
     ok = True
     for name, body in STEPS:
+        if body is None:
+            try:
+                res = await fallback_note(c)
+                print("[ok] %s: %s" % (name, json.dumps(res)[:600]))
+                continue
+            except Exception as err:  # noqa: BLE001
+                ok = False
+                print("[FAIL] %s: %s" % (name, err))
+                try:
+                    await c.eval(PRE % STEPS[-1][1], timeout=120)
+                except Exception as e2:  # noqa: BLE001
+                    print("  cleanup after the failure:", e2)
+                break
         body = (body.replace("__MODELS__", json.dumps(MODELS)).replace("__PICTURE__", json.dumps(pic))
                 .replace("__CUTOUT__", json.dumps(cut)).replace("__RTT__", str(RTT_MAX)))
         try:
@@ -255,6 +274,47 @@ async def run_all(c):
         if level == "error":
             print("  console error:", text[:220])
     return ok
+
+
+FALLBACK_POINT = """const r = await H.segment({ model: "sam2_tiny", key: "gate:f%d", image: G.img, points: [{ x: 750, y: 280, label: 1 }], raw: true });
+if (!r || !r.logits) throw new Error("no point before the death");
+const p = await proc();
+if (p.state !== "ready" || !p.pid) throw new Error("no process for the point: " + JSON.stringify(p));
+return p.pid;"""
+FALLBACK_WAIT = """for (let i = 0; i < 100; i++) { const p = await proc(); if (p.state !== "ready" || p.pid !== %d) return p; await wait(50); } return await proc();"""
+FALLBACK_LINE = """const ed = host.editor;
+if (!ed) throw new Error("no editor in front");
+const p = await proc();
+if (p.state !== "fallback" || p.pid !== null) throw new Error("after the second death: " + JSON.stringify(p));
+if (!p.note || !/stopped twice/.test(p.note) || !/restart Scumble/.test(p.note)) throw new Error("helpers:status's note: " + JSON.stringify(p.note));
+let line = null;
+for (let i = 0; i < 60 && !line; i++) { if (ed.status === p.note) line = { status: ed.status, kind: ed.statusKind }; else await wait(50); }
+if (!line) throw new Error("the window's status line is not the note: " + JSON.stringify({ status: ed.status, kind: ed.statusKind, note: p.note }));
+if (line.kind !== "warn") throw new Error("the note's kind: " + line.kind);
+// the fallback answers here, and says nothing more
+const r = await H.segment({ model: "sam2_tiny", key: "gate:f9", image: G.img, points: [{ x: 750, y: 280, label: 1 }], raw: true });
+if (!r || !r.logits || r.logits.length !== 65536) throw new Error("the fallback's point did not answer");
+ed.setStatus("gate: after the fallback");
+await wait(1200);
+if (ed.status !== "gate: after the fallback") throw new Error("a second note came: " + ed.status);
+return { line, process: await proc() };"""
+
+
+async def fallback_note(c):
+    """Two deaths within a minute in the app (killed from outside, as a crash ends the process): the helpers fall back to
+    main's thread for the instance and the window shows the note once, as a warning line (onnx/helpers.js _fallBack,
+    main.js helpers:notice, shell.js). The last step before the cleanup: the fallback stays for this instance."""
+    pids = []
+    for k in range(2):
+        pid = await c.eval(PRE % (FALLBACK_POINT % k), timeout=120)
+        pids.append(pid)
+        os.kill(pid, signal.SIGTERM)
+        after = await c.eval(PRE % (FALLBACK_WAIT % pid), timeout=60)
+        want = "off" if k == 0 else "fallback"
+        if after.get("state") != want:
+            raise Exception(f"after death {k + 1}: " + json.dumps(after))
+    res = await c.eval(PRE % FALLBACK_LINE, timeout=180)
+    return {"killed": pids, **res}
 
 
 def lock_acquire():

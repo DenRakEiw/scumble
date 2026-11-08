@@ -17,7 +17,8 @@
 //   - ends by itself `idleMs` after the last job answered (5 minutes, §6 Q1), so SAM2's RAM and VRAM go back;
 //   - that dies before "ready" (it could not start or load onnxruntime) leaves the engine to main's thread, and the
 //     jobs that waited run there (today's behaviour, with its blocks); one that dies after it refuses its jobs, and a
-//     second such death within a minute (§6 Q5) falls back to main's thread for the session.
+//     second such death within a minute (§6 Q5) falls back to main's thread for the session. Either fallback tells
+//     the window once (`onFallback`, FALLBACK_NOTES: a status line, so the user notices the slower helpers).
 // `status(device)` answers the runtime's part of helpers:status from the process's last answer (`lastStatus`), never
 // asking it: what is loaded where, the failures, `process: { pid, state, retiring }`.
 "use strict";
@@ -30,6 +31,15 @@ const IDLE_MS = 5 * 60 * 1000;
 const DEATH_WINDOW_MS = 60 * 1000;
 const DRAIN_MS = 8000;
 const STOPPED = "The helper models' process stopped; try again.";
+/**
+ * The window's one status line when the helpers fall back to main's thread for the session (the user, 2026-11-08:
+ * "dazu nur eine Statuszeile, damit man es merkt"), by the cause: two deaths within a minute, or a process that never
+ * reached "ready" (it could not start, or load onnxruntime).
+ */
+const FALLBACK_NOTES = {
+    deaths: "The helper models' process stopped twice; SAM2, background removal and depth now run in Scumble's main process for this session (slower; restart Scumble to try again).",
+    start: "The helper models' process could not start; SAM2, background removal and depth now run in Scumble's main process for this session (slower; restart Scumble to try again).",
+};
 /** A job's refusal when main ended its process, by the cause main gave (`retire` / `kill`). */
 const REASONS = {
     free: "The helper models were unloaded to free VRAM (Free VRAM, or a local ComfyUI run starting) before this job finished; try again.",
@@ -88,13 +98,17 @@ class HelperProcess {
         this.idleTimer = null;
         this.starts = 0;            // processes started (the tests, the measurement)
         this.onJob = null;          // optional hook: ({ type, ms, wallMs, error, pid }) per answered job (tools/helpers_perf.py)
+        // the fallback's note ({ cause: "deaths" | "start", message: FALLBACK_NOTES[cause] }) once it happened, and the
+        // hook main sets to show it in the window (main.js: helpers:notice); called once, the first time
+        this.fallbackNote = null;
+        this.onFallback = null;
     }
 
     _start() {
         if (this.proc || this.local) return;
         let proc;
         try { proc = spawn(this.script, this.name); }
-        catch (err) { this._fallBack(err, []); return; }
+        catch (err) { this._fallBack(err, [], "start"); return; }
         this.starts++;
         proc.pending = new Map();
         proc.ready = false;
@@ -143,22 +157,31 @@ class HelperProcess {
         this._clearIdle();
         this.lastStatus = this._offStatus();
         // dead before "ready": it could not start or load onnxruntime, so the engine runs here from now on
-        if (!proc.ready) { this._fallBack(new Error(`the helpers' process ended at its start (${code})`), jobs); return; }
+        if (!proc.ready) { this._fallBack(new Error(`the helpers' process ended at its start (${code})`), jobs, "start"); return; }
         const now = Date.now();
         this.deaths = this.deaths.filter((t) => now - t < DEATH_WINDOW_MS);
         this.deaths.push(now);
         for (const job of jobs) job.reject(new Error(STOPPED));
         console.warn(`onnx: the helpers' process stopped (${code})`);
-        if (this.deaths.length >= 2) this._fallBack(new Error("the helpers' process stopped twice within a minute"), []);
+        if (this.deaths.length >= 2) this._fallBack(new Error("the helpers' process stopped twice within a minute"), [], "deaths");
     }
 
-    /** The engine on this thread, and the jobs that waited for the process run on it. */
-    _fallBack(err, jobs) {
+    /**
+     * The engine on this thread, and the jobs that waited for the process run on it. The note goes to `onFallback`
+     * once: at once when no job waits, else once the waiting jobs have answered here (so the window's line for the
+     * note comes after their own lines).
+     */
+    _fallBack(err, jobs, cause) {
         console.warn("onnx: the helper models run on the main thread:", (err && err.message) || err);
         this.local = engine();
         this.state = "fallback";
         this.pid = null;
-        for (const job of jobs) this._runLocal(job.type, job.job).then(job.resolve, job.reject);
+        const runs = jobs.map((job) => this._runLocal(job.type, job.job).then(job.resolve, job.reject));
+        if (this.fallbackNote) return;
+        const c = cause === "deaths" ? "deaths" : "start";
+        this.fallbackNote = { cause: c, message: FALLBACK_NOTES[c] };
+        const tell = () => { if (this.onFallback) { try { this.onFallback(this.fallbackNote); } catch (e) { console.warn("onnx: the fallback's note:", (e && e.message) || e); } } };
+        if (runs.length) Promise.allSettled(runs).then(() => setTimeout(tell, 0)); else tell();
     }
 
     _runLocal(type, job) {
@@ -299,9 +322,9 @@ class HelperProcess {
             failures: base.failures || {},
             loaded: base.loaded || 0,
             version: base.version || ortVersion(),
-            process: { pid: this.pid, state: this.state, retiring: this.retiring.size },
+            process: { pid: this.pid, state: this.state, retiring: this.retiring.size, note: this.fallbackNote ? this.fallbackNote.message : null },
         };
     }
 }
 
-module.exports = { HelperProcess, IDLE_MS, DEATH_WINDOW_MS, DRAIN_MS, STOPPED, REASONS };
+module.exports = { HelperProcess, IDLE_MS, DEATH_WINDOW_MS, DRAIN_MS, STOPPED, REASONS, FALLBACK_NOTES };

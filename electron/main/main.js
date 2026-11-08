@@ -1239,6 +1239,9 @@ function installIpc() {
     });
     // in-app helper models (electron/main/onnx): SAM2 objects, background removal
     helpers.setProgressSink((ev) => send("helpers:progress", ev));
+    // the helper models fell back to main's thread for the session (onnx/helpers.js _fallBack): one warning line in
+    // the window (renderer/shell.js); the log has main's own warning
+    helpers.helperProcess.onFallback = (note) => send("helpers:notice", { kind: "warn", cause: note.cause, message: note.message });
     ipcMain.handle("helpers:status", () => helpers.status());
     ipcMain.handle("helpers:configure", (_e, patch) => helpers.configure(patch));
     ipcMain.handle("helpers:scan", () => helpers.scan());

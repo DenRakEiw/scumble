@@ -17,7 +17,8 @@
 // lets the map land and ends the process after it (a job meanwhile goes to a new one; one longer than the drain is
 // refused naming the cause); a model's removal ends it at once, refusing its job with that cause; a death after
 // "ready" refuses its jobs, a second within a minute falls back to this thread; a process that exits at once falls
-// back with the waiting job answered; the idle unload ends the process.
+// back with the waiting job answered; either fallback tells the window once (onFallback, FALLBACK_NOTES: the window's
+// warning line), the start's after the waiting job answered; the idle unload ends the process.
 "use strict";
 
 const fs = require("node:fs");
@@ -331,7 +332,7 @@ function cutoutSource() {
 }
 
 async function processMain() {
-    const { HelperProcess, STOPPED, REASONS } = require("../electron/main/onnx/helpers");
+    const { HelperProcess, STOPPED, REASONS, FALLBACK_NOTES } = require("../electron/main/onnx/helpers");
     const { engine, modelInfo } = require("../electron/main/onnx/engine");
     const device = args.includes("--cpu") ? "cpu" : "auto";
     console.log("models in", dir, also ? "and " + also : "", "· device", device);
@@ -423,6 +424,8 @@ async function processMain() {
         // naming the cause; a model's removal ends the process at once, refusing its job with that cause; a point
         // without its picture on a new process is refused (the window sends the picture then), with it answered
         const hp2 = new HelperProcess({ idleMs: 0 });
+        const notes2 = [];
+        hp2.onFallback = (n) => notes2.push(n);
         await hp2.call("segment", pointWithImage);
         const pid1 = hp2.pid;
         const map = hp2.call("objects", { ...objectsJob, key: "drain" }).then((r) => r, (e) => ({ error: e.message }));
@@ -464,22 +467,31 @@ async function processMain() {
         process.kill(pid2);
         const r2 = await dying;
         check("a death refuses the job under way", r2 === STOPPED && hp2.state === "off" && hp2.deaths.length === 1, `${r2}; state ${hp2.state}, deaths ${hp2.deaths.length}`);
+        check("... and tells the window nothing yet (one death is no fallback)", notes2.length === 0 && hp2.status(device).process.note === null, JSON.stringify(notes2));
         const after = await hp2.call("segment", pointWithImage);
         const pid3 = hp2.pid;
         check("the job after a death starts a new process", pid3 && pid3 !== pid2 && hp2.starts === startsBefore + 2 && sameBytes(after.logits, viaProc.point.logits), `pid ${pid3}`);
         process.kill(pid3);
         await waitFor(() => hp2.state === "fallback", 5000);
         check("a second death within a minute falls back to this thread", hp2.state === "fallback" && !!hp2.local && hp2.pid === null, `state ${hp2.state}`);
+        check("... and tells the window once, the two deaths named (main.js: helpers:notice, a warning line)", notes2.length === 1 && notes2[0].cause === "deaths" && notes2[0].message === FALLBACK_NOTES.deaths
+            && /stopped twice/.test(notes2[0].message) && /restart Scumble/.test(notes2[0].message) && hp2.status(device).process.note === FALLBACK_NOTES.deaths, JSON.stringify(notes2));
         const fb = await hp2.call("segment", pointWithImage);
         check("the fallback answers on this thread, the same bytes", sameBytes(fb.logits, viaProc.point.logits) && hp2.starts === startsBefore + 2 && hp2.status(device).process.state === "fallback");
+        check("... and its jobs tell the window nothing more", notes2.length === 1, JSON.stringify(notes2));
         await hp2.kill();
 
         // 4. a process that ends at its start (onnxruntime missing, say): the engine runs here, the waiting job answered
         const script = path.join(os.tmpdir(), `scumble_u1_exit_${process.pid}.js`);
         fs.writeFileSync(script, "process.exit(3);\n");
         const hp3 = new HelperProcess({ script, idleMs: 0 });
-        const r3 = await hp3.call("segment", pointWithImage).then((r) => r, (e) => ({ error: e.message }));
+        const notes3 = [];
+        let answered3 = false;
+        hp3.onFallback = (n) => notes3.push({ ...n, afterTheJob: answered3 });
+        const r3 = await hp3.call("segment", pointWithImage).then((r) => { answered3 = true; return r; }, (e) => { answered3 = true; return { error: e.message }; });
+        await waitFor(() => notes3.length > 0, 2000);
         check("a process that exits at once falls back with the waiting job answered", hp3.state === "fallback" && r3.logits && sameBytes(r3.logits, viaProc.point.logits), r3.error || `state ${hp3.state}`);
+        check("... and tells the window once, after the waiting job answered, that the process could not start", notes3.length === 1 && notes3[0].cause === "start" && notes3[0].message === FALLBACK_NOTES.start && notes3[0].afterTheJob, JSON.stringify(notes3));
         await hp3.kill();
         fs.unlinkSync(script);
 

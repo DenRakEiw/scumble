@@ -262,12 +262,15 @@ cause), and it ends **5 minutes after the last helper job** (the idle unload, ne
 starts a new process; the window does not notice except that a point's embedding is gone, and `host.segmentLogits`
 sends the picture again as after a Free VRAM before. A kill in the first milliseconds, before the utility process's
 "spawn" (its `kill()` does nothing then), is done at the spawn. `helpers:status`' runtime part comes from the
-process's last answer (`process: { pid, state, retiring }`, "off" / "starting" / "ready" / "fallback"); while the
+process's last answer (`process: { pid, state, retiring, note }`, "off" / "starting" / "ready" / "fallback"); while the
 process is off Settings says "nothing loaded yet". **The fallback:** a process that ends before its "ready" (no utility
 process, onnxruntime missing) leaves the engine to main's thread for the session and the jobs that waited run there
 (the behaviour before U1, with its blocks); one that dies after it refuses its jobs ("The helper models' process
 stopped; try again.") and the next job starts a new one; a second such death within a minute falls back to main's
-thread. Main relays the pictures (the window -> main -> the process): about 9 ms per 4 MB each way, 1 % of an object
+thread. Either fallback tells the window once (`HelperProcess.onFallback` -> IPC `helpers:notice` -> `shell.js`): a
+warning in the status line, "The helper models' process stopped twice (or could not start); SAM2, background removal
+and depth now run in Scumble's main process for this session (slower; restart Scumble to try again).", shown again
+after the helper calls in flight wrote their own lines; `process.note` holds it. Main relays the pictures (the window -> main -> the process): about 9 ms per 4 MB each way, 1 % of an object
 map. LaMa stays in its own process (a Remove's CPU run would otherwise wait behind an object map). LaMa loads for 9 s
 and runs for 1.5 s on the CPU (2026-09-28: the main process answered an IPC call in 51 ms during a run).
 **Not a worker thread:** a worker cannot be stopped inside such

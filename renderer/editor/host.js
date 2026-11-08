@@ -6318,7 +6318,23 @@ export const host = {
      * a gate can stand in for it.
      */
     helperCall(name, args) {
-        return window.scumble.helpers[name](args);
+        const p = window.scumble.helpers[name](args);
+        // the calls in flight, for the shell's fallback line (shell.js helpers.onNotice: shown again after their own lines)
+        this.helperCalls = (this.helperCalls || 0) + 1;
+        const done = () => {
+            this.helperCalls--;
+            if (!this.helperCalls) for (const fn of this.helpersIdle.splice(0)) { try { fn(); } catch (err) { console.warn(err); } }
+        };
+        Promise.resolve(p).then(done, done);
+        return p;
+    },
+    helperCalls: 0,
+    /** @type {Array<() => void>} */
+    helpersIdle: [],
+
+    /** Resolves once no helper call is in flight (at once when none is). */
+    whenHelpersIdle() {
+        return this.helperCalls ? new Promise((resolve) => this.helpersIdle.push(() => resolve(undefined))) : Promise.resolve();
     },
 
     presentHelpers(kind) {
