@@ -1,0 +1,2 @@
+editor rc=1 2s FAIL (only: liquify_bakes_each_stroke_from_the_session_source; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

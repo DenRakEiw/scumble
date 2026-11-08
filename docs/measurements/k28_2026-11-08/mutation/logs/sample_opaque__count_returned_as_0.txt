@@ -1,0 +1,27 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 175323 bytes, sha256 f9bb38da0ecb9189
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 149895 bytes, sha256 b76462fda9d9e8e1
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.58s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.85s
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=liquify)
+FAIL rust simd liquify_block (rust simd) equals its twin byte for byte (96 cases, each also at an odd offset)  s=1 opaque fracX rt=true stride=44 off=0: out.count is 0, the twin has 99
+FAIL rust simd liquify_block equals its twin across 1 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)  s=1 opaque clamp=false rt=false blockMax=65536: counts [51519,11264,3584,-18] vs [65536,11264,3584,-18]
+FAIL rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)  s=1 opaque fracX rt=true stride=44 off=0: out.count is 0, the twin has 99
+FAIL rust scalar liquify_block equals its twin across 1 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)  s=1 opaque clamp=false rt=false blockMax=65536: counts [51519,11264,3584,-18] vs [65536,11264,3584,-18]
+FAIL (4) (only: liquify; PX_ONLY, not the full test)
+FAIL rust simd liquify_block equals its twin across 1 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)  s=1 opaque clamp=false rt=false blockMax=65536: counts [51519,11264,3584,-18] vs [65536,11264,3584,-18]
+ok   rust simd liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar module reports its SIMD flag
+FAIL rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)  s=1 opaque fracX rt=true stride=44 off=0: out.count is 0, the twin has 99
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+FAIL rust scalar liquify_block equals its twin across 1 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)  s=1 opaque clamp=false rt=false blockMax=65536: counts [51519,11264,3584,-18] vs [65536,11264,3584,-18]
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+FAIL (4) (only: liquify; PX_ONLY, not the full test)
+(node:51964) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut-k28-tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

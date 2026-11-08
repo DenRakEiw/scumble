@@ -1,0 +1,17 @@
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=retouchRoute)
+FAIL kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never  rust {"blur_rgba":1,"freq_split":2,"sponge_rgba":1,"tone_rgba":1}, js {}
+FAIL kernels.js K27 / K28 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)  liquify: {"serial":5,"bytes":2228224,"pending":false,"holds":0,"release":0,"idle":0,"trap":4,"oom":0,"sync":4,"async":0}
+FAIL the K27 / K28 wrappers' traps warned once per kernel  Inpaint Canvas: the Rust pixel kernel tone_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel sponge_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_split failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_separate failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance
+FAIL (3) (only: retouchRoute; PX_ONLY, not the full test)
+ok   kernels.js freqSeparate with one route on the twin: the blur or the split alone in Rust, the same bytes  {"blur_rgba":1} {"freq_split":1}
+ok   kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's, a plain array of nodes): the twin's bytes
+FAIL kernels.js K27 / K28 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)  liquify: {"serial":5,"bytes":2228224,"pending":false,"holds":0,"release":0,"idle":0,"trap":4,"oom":0,"sync":4,"async":0}
+ok   kernels.js freqSeparate releases an instance grown past releaseMB (release +1)  {"serial":6,"bytes":1114112,"pending":false,"holds":0,"release":1,"idle":0,"trap":4,"oom":0,"sync":5,"async":0}
+FAIL the K27 / K28 wrappers' traps warned once per kernel  Inpaint Canvas: the Rust pixel kernel tone_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel sponge_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_split failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_separate failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (3) (only: retouchRoute; PX_ONLY, not the full test)
+(node:21796) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut-k28-tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

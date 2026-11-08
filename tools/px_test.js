@@ -41,7 +41,7 @@ function check(name, ok, detail = "") {
 // The case groups in main()'s order (a group in both the reference part and the per-build loop runs in both)
 const GROUPS = ["twinSelfTest", "mip", "edt", "flood", "composite", "matchTwin", "smudgeTwin", "poissonTwin", "png", "compositeSha",
     "blendFixture", "blendGlsl", "tierC", "relightBench", "relightStripe", "counter", "split", "route", "trap", "lifecycle", "sel",
-    "pngFilter", "retouchRoute", "job", "mask", "dab", "tone", "freq", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "memory"];
+    "pngFilter", "retouchRoute", "job", "mask", "dab", "tone", "freq", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "liquify", "memory"];
 const ONLY = (() => {
     const names = (process.env.PX_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
     if (!names.length) return null;
@@ -735,12 +735,17 @@ async function retouchRouteCases(js) {
         await K.kernelsReady();
     } finally { globalThis.fetch = realFetch; }
     const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_stroke.js")).href);
-    for (const r of ["dabTone", "dabSponge", "freqSplit"]) if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, r)) { check(`kernels.js has the ${r} route`, false); return; }
+    const L = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_liquify.js")).href);
+    for (const r of ["dabTone", "dabSponge", "freqSplit", "liquifyBlock"]) if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, r)) { check(`kernels.js has the ${r} route`, false); return; }
     const warned = [], realWarn = console.warn;
     console.warn = (...a) => { warned.push(a.map(String).join(" ")); };
     K.setKernels("rust");
     try {
         const w = 97, h = 61, I = retouchPixels(w * h, 9, "noise"), lut = S.toneLUT("shadows", 0.6, false);
+        const lNodes = new Int32Array(5 * 5 * 2);
+        for (let i = 0; i < lNodes.length; i++) lNodes[i] = (i * 43) - 300;
+        const lWant = new Uint8Array(8 * 8 * 4);
+        const lWantCount = L.liquifyBlock(I, 16, 16, 0, 0, lNodes, 5, 0, 0, 2, null, lWant, 0, 32, 0, 0, 8, 8);
         const want = {
             tone: S.toneRGBA(I, lut, true), sponge: S.spongeRGBA(I, 0.7, true, true),
             low: S.blurRGBA(I, w, h, 3), blur: null, high: null,
@@ -748,17 +753,19 @@ async function retouchRouteCases(js) {
         want.blur = want.low.slice();
         want.high = S.freqSplit(I, want.low);
         const all = () => {
-            const L = want.blur.slice(), high = K.freqSplit(I, L), sep = K.freqSeparate(I, w, h, 3);
-            return { tone: K.toneRGBA(I, lut, true), sponge: K.spongeRGBA(I, 0.7, true, true), low: L, high, sepLow: sep.low, sepHigh: sep.high };
+            const low = want.blur.slice(), high = K.freqSplit(I, low), sep = K.freqSeparate(I, w, h, 3);
+            const liq = new Uint8Array(8 * 8 * 4);
+            const liqCount = K.liquifyBlock(I, 16, 16, 0, 0, lNodes, 5, 0, 0, 2, null, liq, 0, 32, 0, 0, 8, 8);
+            return { tone: K.toneRGBA(I, lut, true), sponge: K.spongeRGBA(I, 0.7, true, true), low, high, sepLow: sep.low, sepHigh: sep.high, liq, liqCount };
         };
-        const same = (o) => eqBytes(o.tone, want.tone) && eqBytes(o.sponge, want.sponge) && eqBytes(o.low, want.low) && eqBytes(o.high, want.high) && eqBytes(o.sepLow, want.low) && eqBytes(o.sepHigh, want.high);
+        const same = (o) => eqBytes(o.tone, want.tone) && eqBytes(o.sponge, want.sponge) && eqBytes(o.low, want.low) && eqBytes(o.high, want.high) && eqBytes(o.sepLow, want.low) && eqBytes(o.sepHigh, want.high) && eqBytes(o.liq, lWant) && o.liqCount === lWantCount;
         K.pxCalls(true);
         const rust = all(), cr = K.pxCalls(true);
-        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur"]) K.setRoute(r, "js");
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock"]) K.setRoute(r, "js");
         const twin = all(), cj = K.pxCalls(true);
-        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur"]) K.setRoute(r, null);
-        check("kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate: the routes rust and js give the twins' bytes; Rust's calls counted (the separation one blur_rgba and one freq_split), the twins' never",
-            same(rust) && same(twin) && cr.tone_rgba === 1 && cr.sponge_rgba === 1 && cr.freq_split === 2 && cr.blur_rgba === 1 && !cj.tone_rgba && !cj.sponge_rgba && !cj.freq_split && !cj.blur_rgba,
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock"]) K.setRoute(r, null);
+        check("kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never",
+            same(rust) && same(twin) && cr.tone_rgba === 1 && cr.sponge_rgba === 1 && cr.freq_split === 2 && cr.blur_rgba === 1 && cr.liquify_block === 1 && !cj.tone_rgba && !cj.sponge_rgba && !cj.freq_split && !cj.blur_rgba && !cj.liquify_block,
             `rust ${JSON.stringify(cr)}, js ${JSON.stringify(cj)}`);
         // the separation with one of its routes on the twin: the other half still Rust, the same bytes
         K.setRoute("freqSplit", "js");
@@ -770,18 +777,21 @@ async function retouchRouteCases(js) {
             eqBytes(a.low, want.low) && eqBytes(a.high, want.high) && eqBytes(b.low, want.low) && eqBytes(b.high, want.high)
             && ca.blur_rgba === 1 && !ca.freq_split && cb.freq_split === 1 && !cb.blur_rgba, `${JSON.stringify(ca)} ${JSON.stringify(cb)}`);
         // refused by Rust: the twin's bytes
-        const odd = I.subarray(0, 4 * 7 + 2), short = lut.subarray(0, 200);
+        const odd = I.subarray(0, 4 * 7 + 2), short = lut.subarray(0, 200), rlOut = new Uint8Array(8 * 8 * 4);
         const rt = K.toneRGBA(I, short, true), rs = K.spongeRGBA(odd, 0.7, true), rr = K.freqSeparate(I, w, h - 1, 3);
-        check("kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's): the twin's bytes",
-            eqBytes(rt, S.toneRGBA(I, short, true)) && eqBytes(rs, S.spongeRGBA(odd, 0.7, true)) && (() => { const l = S.blurRGBA(I, w, h - 1, 3); const hh = S.freqSplit(I, l); return eqBytes(rr.low, l) && eqBytes(rr.high, hh); })());
+        const rl = K.liquifyBlock(I, 16, 16, 0, 0, Array.from(lNodes), 5, 0, 0, 2, null, rlOut, 0, 32, 0, 0, 8, 8);
+        check("kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's, a plain array of nodes): the twin's bytes",
+            eqBytes(rt, S.toneRGBA(I, short, true)) && eqBytes(rs, S.spongeRGBA(odd, 0.7, true)) && eqBytes(rlOut, lWant) && rl === lWantCount
+            && (() => { const l = S.blurRGBA(I, w, h - 1, 3); const hh = S.freqSplit(I, l); return eqBytes(rr.low, l) && eqBytes(rr.high, hh); })());
         // a trap in each: the twin's bytes, the instance replaced, the next call Rust again
         const trapIn2 = (p) => p.exports.mip_half(-16, 256, 256, 0);
         let ok = true, detail = "";
         for (const [name, method, callIt, check1] of [
             ["tone", "toneRGBA", () => K.toneRGBA(I, lut, true), (o) => eqBytes(o, want.tone)],
             ["sponge", "spongeRGBA", () => K.spongeRGBA(I, 0.7, true, true), (o) => eqBytes(o, want.sponge)],
-            ["split", "freqSplit", () => { const L = want.blur.slice(); const hh = K.freqSplit(I, L); return { L, hh }; }, (o) => eqBytes(o.L, want.low) && eqBytes(o.hh, want.high)],
+            ["split", "freqSplit", () => { const low = want.blur.slice(); const hh = K.freqSplit(I, low); return { low, hh }; }, (o) => eqBytes(o.low, want.low) && eqBytes(o.hh, want.high)],
             ["separate", "freqSeparate", () => K.freqSeparate(I, w, h, 3), (o) => eqBytes(o.low, want.low) && eqBytes(o.high, want.high)],
+            ["liquify", "liquifyBlock", () => { const out = new Uint8Array(8 * 8 * 4); const c = K.liquifyBlock(I, 16, 16, 0, 0, lNodes, 5, 0, 0, 2, null, out, 0, 32, 0, 0, 8, 8); return { out, c }; }, (o) => eqBytes(o.out, lWant) && o.c === lWantCount],
         ]) {
             const p = K.rustPx(), i0 = K.pxInstances();
             // the split traps after its kernel wrote L in wasm memory, before the copy out (the caller's L untouched)
@@ -791,7 +801,7 @@ async function retouchRouteCases(js) {
             const got = callIt(), after = K.rustPx(), i1 = K.pxInstances();
             if (!(check1(got) && p.trapped instanceof WebAssembly.RuntimeError && after !== p && i1.trap === i0.trap + 1)) { ok = false; detail = `${name}: ${JSON.stringify(i1)}`; }
         }
-        check("kernels.js K27 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
+        check("kernels.js K27 / K28 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
         // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
         const i0 = K.pxInstances();
         K.setRoute("releaseMB", 0);
@@ -802,7 +812,7 @@ async function retouchRouteCases(js) {
         console.warn = realWarn;
         kernelsBack(K);
     }
-    check("the K27 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate/.test(w)).length === 4, warned.join(" | "));
+    check("the K27 / K28 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block/.test(w)).length === 5, warned.join(" | "));
     void js;
 }
 
@@ -3814,6 +3824,133 @@ async function resampleCases(px, label, R) {
     console.log(`       2048 x 2048 turned 3 degrees, bicubic: ${label} ${tr.toFixed(0)} ms (${(tr * 1e6 / 2048 / 2048).toFixed(1)} ns/px), twin ${tj.toFixed(0)} ms (${(tj * 1e6 / 2048 / 2048).toFixed(1)} ns/px)`);
 }
 
+/**
+ * Liquify's bake kernel (docs/PLAN_WASM_BUILD.md §4.9, K28): `liquify_block` against its twin `liquifyBlock` in
+ * inpaint_liquify.js, byte for byte, directly (with odd `byteOffset`, stride and offset, grid steps 1 / 2 / 4 / 8,
+ * whole-pixel shifts, single-axis and two-axis fractional shifts, opaque / mixed / faint / transparent blocks, null and
+ * round-trip tables, clamped edges and refused calls) and through the `liquifyStore` walk over all six brush modes.
+ */
+async function liquifyCases(px, label, L, R) {
+    let seed = 0x4b3238;
+    const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const rt = new Uint8Array(65536);
+    for (let a = 1; a < 256; a++) for (let c = 0; c < 256; c++) { const p = Math.floor((c * a + 127) / 255); rt[(a << 8) | c] = Math.min(255, Math.floor((p * 255 + (a >> 1)) / a)); }
+    const weights = R.resampleTable(1).table;
+    const makeBlock = (bw, bh, kind) => {
+        const d = new Uint8Array(bw * bh * 4);
+        if (kind === "zero") return d;
+        for (let i = 0; i < d.length; i += 4) {
+            const a = kind === "opaque" ? 255 : kind === "faint" ? (rand() < 0.5 ? 0 : 1 + Math.floor(rand() * 3)) : rand() < 0.25 ? 0 : rand() < 0.15 ? 255 : 1 + Math.floor(rand() * 254);
+            d[i + 3] = a;
+            if (a) { d[i] = Math.floor(rand() * 256); d[i + 1] = Math.floor(rand() * 256); d[i + 2] = Math.floor(rand() * 256); }
+        }
+        return d;
+    };
+    const directCases = [];
+    for (const s of [1, 2, 4, 8]) {
+        const ls = Math.log2(s) | 0;
+        for (const kind of ["opaque", "mixed", "faint", "zero"]) {
+            for (const pat of ["identity", "whole", "fracX", "fracY", "bilinear", "clampEdge"]) {
+                const vw = s === 1 ? 11 : 19, vh = s === 1 ? 9 : 15;
+                const X0 = 12 + s, Y0 = 8 + s, nx0 = (X0 >> ls) - 1, ny0 = (Y0 >> ls) - 1;
+                const nw = ((X0 + vw - 1) >> ls) - nx0 + 3, nh = ((Y0 + vh - 1) >> ls) - ny0 + 3;
+                const nodes = new Int32Array(nw * nh * 2);
+                for (let j = 0; j < nh; j++) {
+                    for (let i = 0; i < nw; i++) {
+                        const q = (j * nw + i) * 2;
+                        if (pat === "whole") {
+                            nodes[q] = ((i - 1) * 2 - j) * 256;
+                            nodes[q + 1] = (j - i) * 256;
+                        } else if (pat === "fracX") {
+                            nodes[q] = (i * 37 + j * 13) - 60;
+                            nodes[q + 1] = 256;
+                        } else if (pat === "fracY") {
+                            nodes[q] = -256;
+                            nodes[q + 1] = (i * 19 - j * 41) + 30;
+                        } else if (pat === "bilinear") {
+                            nodes[q] = Math.round((Math.sin(i * 0.9 + j * 0.4) * 3.7 + (i - j) * 0.6) * 256);
+                            nodes[q + 1] = Math.round((Math.cos(j * 0.8 - i * 0.5) * 3.3 + (j + i) * 0.4) * 256);
+                        } else if (pat === "clampEdge") {
+                            nodes[q] = (i % 2 ? 40 : -40) * 256 + (j % 2 ? 73 : 0);
+                            nodes[q + 1] = (j % 2 ? -40 : 40) * 256 + (i % 2 ? 0 : -91);
+                        }
+                    }
+                }
+                const bw = vw + 14, bh = vh + 14, bx = X0 - 5, by = Y0 - 5;
+                const block = makeBlock(bw, bh, kind);
+                const useRt = (s + pat.length) % 2 === 0 ? rt : null;
+                const stride = vw * 4 + ((s & 2) ? 12 : 0), off = (s & 4) ? 16 : 0;
+                directCases.push({
+                    tag: `s=${s} ${kind} ${pat} rt=${!!useRt} stride=${stride} off=${off}`,
+                    args: [block, bw, bh, bx, by, nodes, nw, nx0, ny0, s, useRt, off, stride, X0, Y0, vw, vh],
+                });
+            }
+        }
+    }
+    const callDirect = (k, [block, bw, bh, bx, by, nodes, nw, nx0, ny0, s, table, off, stride, X0, Y0, vw, vh]) => {
+        const out = new Uint8Array(off + vh * stride + 8);
+        out.fill(0xa5);
+        const count = typeof k.alloc === "function"
+            ? k.liquifyBlock(block, bw, bh, bx, by, nodes, nw, nx0, ny0, s, table, out, off, stride, X0, Y0, vw, vh, weights)
+            : L.liquifyBlock(block, bw, bh, bx, by, nodes, nw, nx0, ny0, s, table, out, off, stride, X0, Y0, vw, vh);
+        return { out, count };
+    };
+    twinCheck({ name: `liquify_block (${label})`, builds: [[label, px]], twin: { liquifyBlock: L.liquifyBlock }, call: callDirect, cases: directCases, shift: [0, 1] });
+
+    // full liquifyStore walk across all six brush modes, grid steps 1 / 2 / 4 / 8, clamp and region splits
+    const rustKernel = (block, bw, bh, bx, by, nodes, nw, nx0, ny0, s, table, out, off, stride, X0, Y0, vw, vh) =>
+        px.liquifyBlock(block, bw, bh, bx, by, nodes, nw, nx0, ny0, s, table, out, off, stride, X0, Y0, vw, vh, weights);
+    let bad = "";
+    let storeRuns = 0;
+    for (const s of [1, 2, 4, 8]) {
+        for (const kind of ["opaque", "mixed"]) {
+            const W = 300, H = 270, img = makeBlock(W, H, kind);
+            const field = new L.LiquifyField(W, H, s);
+            const before = new Map();
+            field.dab("push", 80, 70, 55, 0.4, 0.8, [14, -9], null, before);
+            field.dab("grow", 200, 90, 60, 0.3, 0.9, null, null, before);
+            field.dab("shrink", 120, 190, 65, 0.5, 0.9, null, null, before);
+            field.dab("swirlcw", 230, 200, 55, 0.2, 0.85, null, null, before);
+            field.dab("swirlccw", 60, 210, 50, 0.3, 0.85, null, null, before);
+            field.dab("restore", 85, 75, 35, 0.4, 0.5, null, null, before);
+            const keys = [[0, 0], [1, 0], [0, 1], [1, 1]];
+            for (const [clamp, table, blockMax] of [[false, null, 65536], [true, rt, 1024]]) {
+                const run = (kernel) => {
+                    const out = new Uint8Array(W * H * 4);
+                    const counts = [];
+                    const stats = L.liquifyStore({
+                        width: W, height: H, has: () => true,
+                        copyRun: (sy, x0, x1, dst, off) => dst.set(img.subarray((sy * W + x0) * 4, (sy * W + x1) * 4), off),
+                    }, s, (tx, ty) => field.tileNodes(tx, ty), keys, clamp, table, {
+                        share: (tx, ty) => counts.push(-1 - tx - ty * 16),
+                        tile: (tx, ty) => [out, (ty * 256 * W + tx * 256) * 4, W * 4],
+                        done: (_tx, _ty, n) => counts.push(n),
+                    }, blockMax, kernel);
+                    return { out, counts, stats };
+                };
+                const a = run(L.liquifyBlock), b = run(rustKernel);
+                storeRuns++;
+                if (!eqBytes(a.out, b.out) || JSON.stringify(a.counts) !== JSON.stringify(b.counts) || JSON.stringify(a.stats) !== JSON.stringify(b.stats)) {
+                    bad = `s=${s} ${kind} clamp=${clamp} rt=${!!table} blockMax=${blockMax}: counts ${JSON.stringify(b.counts)} vs ${JSON.stringify(a.counts)}`;
+                    break;
+                }
+            }
+            if (bad) break;
+        }
+        if (bad) break;
+    }
+    check(`${label} liquify_block equals its twin across ${storeRuns} liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)`, !bad, bad);
+
+    // refusals: px.liquifyBlock returns null and the raw export returns 0 without writing
+    const okBlock = new Uint8Array(8 * 8 * 4), okNodes = new Int32Array(6 * 6 * 2), okOut = new Uint8Array(4 * 4 * 4);
+    check(`${label} liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets`,
+        px.liquifyBlock(okBlock, 8, 8, 0, 0, okNodes, 6, 0, 0, 3, null, okOut, 0, 16, 0, 0, 4, 4, weights) === null
+        && px.liquifyBlock(okBlock, 3, 8, 0, 0, okNodes, 6, 0, 0, 1, null, okOut, 0, 16, 0, 0, 4, 4, weights) === null
+        && px.liquifyBlock(okBlock, 8, 8, 0, 0, okNodes.subarray(0, 10), 6, 0, 0, 1, null, okOut, 0, 16, 0, 0, 4, 4, weights) === null
+        && px.liquifyBlock(okBlock, 8, 8, 0, 0, okNodes, 6, 1, 0, 1, null, okOut, 0, 16, 0, 0, 4, 4, weights) === null
+        && px.liquifyBlock(okBlock, 8, 8, 0, 0, okNodes, 6, 0, 0, 1, null, okOut.subarray(0, 20), 0, 16, 0, 0, 4, 4, weights) === null);
+}
+
 // ---- K5: the selection's combine (docs/PLAN_WASM_BUILD.md §4.3) --------------------------------------------------------
 
 /**
@@ -4027,6 +4164,7 @@ async function main() {
     for (let i = 0; i < TIER_C_NAMES.length; i++) BLEND_NAMES[19 + i] = TIER_C_NAMES[i];
     const js = await import(pathToFileURL(path.join(PX_DIR, "kernels_js.js")).href);
     const resample = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_resample.js")).href);
+    const liquify = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_liquify.js")).href);
     const raster = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_raster.js")).href);
     const { loadPx } = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
     const ref = {
@@ -4087,6 +4225,7 @@ async function main() {
         await group("pngPart", () => pngPartCases(px, label));
         await group("psd", () => psdCases(px, label, js));
         await group("resample", () => resampleCases(px, label, resample));
+        await group("liquify", () => liquifyCases(px, label, liquify, resample));
         await group("memory", () => memoryCases(px, label));
     }
     // a group PX_ONLY named that main() never reached (GROUPS and the calls above out of step) fails the run

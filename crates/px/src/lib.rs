@@ -44,11 +44,11 @@ fn align_for(bytes: usize) -> usize {
 }
 
 /// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
-/// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split);
-/// `px.js` refuses a module it does not know.
+/// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
+/// 24: liquify_block); `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    23
+    24
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -323,6 +323,45 @@ pub unsafe extern "C" fn resample_block(block: *const u8, bw: u32, bh: u32, bx: 
     let rt = if rt.is_null() { None } else { Some(slice::from_raw_parts(rt, 65536)) };
     let mut out = resample::Out { data: slice::from_raw_parts_mut(out, vw * vh * 4), x0: x0 as i64, y0: y0 as i64, w: vw, h: vh };
     resample::resample(&block, &map, weights, taps, alpha != 0, rgb, rt, &mut out)
+}
+
+/// One block of destination pixels through a liquify field (`liquifyBlock` in `renderer/editor/inpaint_liquify.js`, K28):
+/// `block` is `bw` x `bh` straight RGBA8 at `(bx, by)`, `nodes` has `nodes_len` `i32`s (`nw` nodes a row from `(nx0, ny0)`
+/// at grid step `s`), `weights` the 4-tap bicubic table (256 phases x 4 `i32`s), `rt` the canvas round-trip table or null.
+/// Writes `vw` x `vh` packed pixels to `out` for destination pixels from `(x0, y0)`; returns how many have an alpha above 0.
+#[no_mangle]
+pub unsafe extern "C" fn liquify_block(
+    block: *const u8,
+    bw: u32,
+    bh: u32,
+    bx: i32,
+    by: i32,
+    nodes: *const i32,
+    nodes_len: u32,
+    nw: u32,
+    nx0: i32,
+    ny0: i32,
+    s: u32,
+    weights: *const i32,
+    rt: *const u8,
+    out: *mut u8,
+    x0: i32,
+    y0: i32,
+    vw: u32,
+    vh: u32,
+) -> u32 {
+    let (bw, bh, vw, vh, nw, nodes_len) = (bw as usize, bh as usize, vw as usize, vh as usize, nw as usize, nodes_len as usize);
+    if bw < 4 || bh < 4 || vw == 0 || vh == 0 || nw < 2 || !matches!(s, 1 | 2 | 4 | 8) || block.is_null() || nodes.is_null() || weights.is_null() || out.is_null() {
+        return 0;
+    }
+    let Some(need_block) = bw.checked_mul(bh).and_then(|n| n.checked_mul(4)) else { return 0 };
+    let Some(need_out) = vw.checked_mul(vh).and_then(|n| n.checked_mul(4)) else { return 0 };
+    let block = resample::Block { data: slice::from_raw_parts(block, need_block), w: bw, h: bh, x: bx as i64, y: by as i64 };
+    let nodes = slice::from_raw_parts(nodes, nodes_len);
+    let weights = slice::from_raw_parts(weights, 256 * 4);
+    let rt = if rt.is_null() { None } else { Some(slice::from_raw_parts(rt, 65536)) };
+    let mut out = resample::Out { data: slice::from_raw_parts_mut(out, need_out), x0: x0 as i64, y0: y0 as i64, w: vw, h: vh };
+    resample::liquify(&block, nodes, nw, nx0, ny0, s, weights, rt, &mut out)
 }
 
 // ---- composite --------------------------------------------------------------------------

@@ -9046,13 +9046,18 @@ try {
         const T0 = ed.tileMode ? tilesOf(layer.px) : null;
         const u = ed.undo.length;
         ed.lastLiquify = null;
+        IE.pxCalls(true); IE.jobTimings(true);
         const g = await stroke(pts, o);
+        const pxCalls = {
+            win: IE.pxCalls(true).liquify_block || 0,
+            pool: IE.jobTimings(true).filter((j) => j && j.op === "liquify").reduce((n, j) => n + ((j.pxCalls && j.pxCalls.liquify_block) || 0), 0),
+        };
         const r = refCheck(layer, what);
         const [tw, th] = tileGrid(layer.px), keys = ed.liq.field.changedTiles(before, tw, th);
         let moved = 0;
         if (T0) { const T1 = tilesOf(layer.px); for (const [k, t] of T0) if (!keys.has(k) && T1.get(k) !== t) moved++; }
         const lq = ed.lastLiquify;
-        Object.assign(r, { steps: ed.undo.length - u, label: top(), keys: keys.size, moved, where: lq && lq.where, landedTiles: lq && lq.tiles, stats: lq && lq.stats, sid: ed.liq.sid });
+        Object.assign(r, { steps: ed.undo.length - u, label: top(), keys: keys.size, moved, where: lq && lq.where, landedTiles: lq && lq.tiles, stats: lq && lq.stats, pxCalls, sid: ed.liq.sid });
         if (g.kind !== "liquify" || r.steps !== 1 || r.label !== (o.label || "Liquify: push") || !lq || lq.tiles !== keys.size || !keys.size || moved) throw new Error(what + ": the stroke did not land as one step on its output tiles: " + JSON.stringify(r));
         if (o.where && lq.where !== o.where) throw new Error(what + ": landed " + lq.where + ", not " + o.where + ": " + JSON.stringify(r));
         return r;
@@ -9160,7 +9165,40 @@ try {
     let h4;
     try { h4 = await landed("the second push, its bake split small", L, pts2, { where: "here" }); } finally { IE.liquifyBlockMax = 0; }
     const split = { bytes: digest(L) === dHere, cells: fieldKey() === cHere };
-    out.here = { keys: h2.keys, mid: mid2, undo: u2, pool, poolStats: h3.stats, split, splitStats: h4.stats, hereStats: h2.stats };
+    // K28 (docs/PLAN_WASM_BUILD.md §4.9): with the liquifyBlock route on Rust the bake runs liquify_block once per block
+    // (on the window for "here", in the pool jobs on tiles for "pool"), and the route "js" gives the same bytes with 0 calls
+    const rustBake = IE.kernels !== "js" && (IE.routes || {}).liquifyBlock !== "js";
+    let k28 = { rustBake, hereCalls: h2.pxCalls, poolCalls: h3.pxCalls, splitCalls: h4.pxCalls };
+    if (rustBake) {
+        await ed.undoStep();
+        IE.setRoute("liquifyBlock", "js");
+        let hjHere, hjPool, dTwHere, cTwHere, dTwPool, cTwPool;
+        try {
+            hjHere = await landed("the second push on the twin, here", L, pts2, { where: "here" });
+            dTwHere = digest(L); cTwHere = fieldKey();
+            await ed.undoStep();
+            IE.liquifySyncMax = 0;
+            hjPool = await landed("the second push on the twin, in the pool", L, pts2, { where: "pool" });
+            dTwPool = digest(L); cTwPool = fieldKey();
+        } finally {
+            IE.liquifySyncMax = BIG;
+            IE.setRoute("liquifyBlock", null);
+        }
+        k28 = {
+            ...k28,
+            twinHereCalls: hjHere.pxCalls, twinPoolCalls: hjPool.pxCalls,
+            twinHereSame: dTwHere === dHere && cTwHere === cHere,
+            twinPoolSame: dTwPool === dHere && cTwPool === cHere,
+        };
+        const poolRan = ed.tileMode && h3.stats && h3.stats.pool > 0 ? h3.pxCalls.pool : h3.pxCalls.win;
+        if (h2.pxCalls.win !== h2.stats.blocks || !(h2.pxCalls.win > 0) || poolRan !== h3.stats.blocks || h4.pxCalls.win !== h4.stats.blocks) {
+            throw new Error("K28: liquify_block call counts did not match the blocks baked: " + JSON.stringify(k28));
+        }
+        if (hjHere.pxCalls.win || hjHere.pxCalls.pool || hjPool.pxCalls.win || hjPool.pxCalls.pool || !k28.twinHereSame || !k28.twinPoolSame) {
+            throw new Error("K28: the liquifyBlock route js ran Rust or differed from Rust's bytes: " + JSON.stringify(k28));
+        }
+    }
+    out.here = { keys: h2.keys, mid: mid2, undo: u2, pool, poolStats: h3.stats, split, splitStats: h4.stats, hereStats: h2.stats, k28 };
     if (!mid2 || !u2.same || !u2.cells) throw new Error("the second push: the layer changed during it, or its undo did not give the layer and the field back: " + JSON.stringify(out.here));
     if (!pool.bytes || !pool.cells) throw new Error("the pool's bake is not the one made here: " + JSON.stringify(out.here));
     if (!split.bytes || !split.cells || !(h4.stats && h4.stats.splits > 0)) throw new Error("the bake split into small blocks is not the same, or did not split: " + JSON.stringify(out.here));

@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 23;
+export const PX_ABI = 24;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -671,6 +671,36 @@ export class Px {
             const n = vw * vh * 4, po = a.take(n);
             const count = this.exports.resample_block(pb, bw, bh, bx, by, pm, pw, taps, alpha ? 1 : 0, rgb >>> 0, prt, po, X0, Y0, vw, vh) >>> 0;
             const src = this.view(Uint8Array, po, n), row = vw * 4, t = TIMED ? clock() : 0;
+            if (stride === row) out.set(src, off);
+            else for (let j = 0; j < vh; j++) out.set(src.subarray(j * row, j * row + row), off + j * stride);
+            if (TIMED) lapOut(t, n);
+            return count;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * `liquifyBlock` of inpaint_liquify.js (the same arguments and bytes, K28): the block and the dense nodes in,
+     * `vw` x `vh` pixels out into `out` at `off` with `stride` bytes a row; the bicubic weight table and the round trip
+     * stay resident. Returns `null` when the arguments are outside the kernel's contract (the wrapper then runs the twin).
+     */
+    liquifyBlock(block, bw, bh, bx, by, nodes, nw, nx0, ny0, s, rt, out, off, stride, X0, Y0, vw, vh, weights) {
+        if (!(s === 1 || s === 2 || s === 4 || s === 8)) return null;
+        if (!(bw >= 4 && bh >= 4 && vw > 0 && vh > 0 && nw >= 2)) return null;
+        const ls = 31 - Math.clz32(s);
+        const gx0 = (X0 >> ls) - nx0, gx1 = ((X0 + vw - 1) >> ls) - nx0 + 1;
+        const gy0 = (Y0 >> ls) - ny0, gy1 = ((Y0 + vh - 1) >> ls) - ny0 + 1;
+        const needNodes = (gy1 * nw + gx1 + 1) * 2;
+        if (gx0 < 0 || gx1 >= nw || gy0 < 0 || !(nodes instanceof Int32Array) || nodes.length < needNodes) return null;
+        const blockBytes = bw * bh * 4, row = vw * 4;
+        if (!block || block.byteLength < blockBytes || !out || off < 0 || stride < row || out.byteLength < off + (vh - 1) * stride + row) return null;
+        const a = this.job;
+        try {
+            const pb = this._in(a, block, blockBytes);
+            const pn = this._in(a, nodes, needNodes * 4);
+            const pw = this._resident(weights), prt = rt ? this._resident(rt) : 0;
+            const n = vw * vh * 4, po = a.take(n);
+            const count = this.exports.liquify_block(pb, bw, bh, bx, by, pn, needNodes, nw, nx0, ny0, s, pw, prt, po, X0, Y0, vw, vh) >>> 0;
+            const src = this.view(Uint8Array, po, n), t = TIMED ? clock() : 0;
             if (stride === row) out.set(src, off);
             else for (let j = 0; j < vh; j++) out.set(src.subarray(j * row, j * row + row), off + j * stride);
             if (TIMED) lapOut(t, n);

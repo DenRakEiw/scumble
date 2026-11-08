@@ -1,0 +1,2 @@
+editor rc=0 173s PASS
+ALL PASS

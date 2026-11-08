@@ -1,0 +1,256 @@
+{
+ "built": 5324,
+ "s": 4,
+ "tiles": true,
+ "kernels": "js",
+ "kernelsInUse": "js",
+ "undoMB": 133.1,
+ "rows": [
+  {
+   "row": "push fit size 200",
+   "travel": 3130,
+   "press": 59.4,
+   "window": 11.4,
+   "dab": {
+    "p50": 2.6,
+    "p95": 8.6,
+    "worst": 8.6
+   },
+   "frame": {
+    "p50": 0.3,
+    "p95": 13.8,
+    "worst": 13.8
+   },
+   "preview": {
+    "p50": 0.1,
+    "p95": 12.9,
+    "worst": 12.9
+   },
+   "land": 46.1,
+   "blockedMax": 14.1,
+   "tiles": 48,
+   "where": "pool",
+   "stats": {
+    "blocks": 28,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 5,
+    "local": 0
+   },
+   "fieldMB": 0.9,
+   "stepMB": 0,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "js",
+     "tiles": 28,
+     "total": 111.7,
+     "pxCalls": {},
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push fit size 1000",
+   "travel": 3130,
+   "press": 1,
+   "window": 9.6,
+   "dab": {
+    "p50": 14.5,
+    "p95": 15.1,
+    "worst": 15.1
+   },
+   "frame": {
+    "p50": 1.5,
+    "p95": 11.2,
+    "worst": 11.2
+   },
+   "preview": {
+    "p50": 1.2,
+    "p95": 10.9,
+    "worst": 10.9
+   },
+   "land": 95.4,
+   "blockedMax": 67.5,
+   "tiles": 113,
+   "where": "pool",
+   "stats": {
+    "blocks": 86,
+    "splits": 0,
+    "maxBlock": 396489,
+    "pool": 9,
+    "local": 0
+   },
+   "fieldMB": 3.6,
+   "stepMB": 28.3,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 9,
+     "kernels": "js",
+     "tiles": 86,
+     "total": 349.6,
+     "pxCalls": {},
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 200",
+   "travel": 1080,
+   "press": 35,
+   "window": 25.7,
+   "dab": {
+    "p50": 0.3,
+    "p95": 0.5,
+    "worst": 2.7
+   },
+   "frame": {
+    "p50": 3,
+    "p95": 4.9,
+    "worst": 29.4
+   },
+   "preview": {
+    "p50": 2.9,
+    "p95": 4.4,
+    "worst": 29
+   },
+   "land": 28.4,
+   "blockedMax": 14.5,
+   "tiles": 23,
+   "where": "pool",
+   "stats": {
+    "blocks": 13,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 3,
+    "local": 0
+   },
+   "fieldMB": 4,
+   "stepMB": 5.8,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 3,
+     "kernels": "js",
+     "tiles": 13,
+     "total": 26.8,
+     "pxCalls": {},
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 1000",
+   "travel": 1080,
+   "press": 35.7,
+   "window": 53.8,
+   "dab": {
+    "p50": 3.6,
+    "p95": 4,
+    "worst": 4.1
+   },
+   "frame": {
+    "p50": 15.6,
+    "p95": 19.1,
+    "worst": 71.4
+   },
+   "preview": {
+    "p50": 15.3,
+    "p95": 18.8,
+    "worst": 71
+   },
+   "land": 58.3,
+   "blockedMax": 20.5,
+   "tiles": 61,
+   "where": "pool",
+   "stats": {
+    "blocks": 45,
+    "splits": 0,
+    "maxBlock": 321264,
+    "pool": 6,
+    "local": 0
+   },
+   "fieldMB": 5.4,
+   "stepMB": 15.3,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 6,
+     "kernels": "js",
+     "tiles": 45,
+     "total": 148.9,
+     "pxCalls": {},
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "js",
+     "tiles": 13,
+     "kernel": 3.5,
+     "pxCalls": {},
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "shrink held 150 ticks size 1000",
+   "tick": {
+    "p50": 3.3,
+    "p95": 4,
+    "worst": 4.9
+   },
+   "land": 33,
+   "blockedMax": 14.9,
+   "tiles": 33,
+   "where": "pool",
+   "stats": {
+    "blocks": 25,
+    "splits": 1,
+    "maxBlock": 908208,
+    "pool": 5,
+    "local": 0
+   },
+   "maxReachPx": 691.6,
+   "fieldMB": 6.1,
+   "pxCalls": {},
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "js",
+     "tiles": 22,
+     "total": 70.9,
+     "pxCalls": {},
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "js",
+     "tiles": 42,
+     "kernel": 7,
+     "pxCalls": {},
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "restore all",
+   "ms": 8,
+   "blockedMax": 8.1,
+   "tiles": 278,
+   "where": "pool",
+   "fieldMB": 0,
+   "pxCalls": {},
+   "jobs": {}
+  }
+ ],
+ "table": [
+  "{\"row\":\"push fit size 200\",\"travel\":3130,\"press\":59.4,\"window\":11.4,\"dab\":{\"p50\":2.6,\"p95\":8.6,\"worst\":8.6},\"frame\":{\"p50\":0.3,\"p95\":13.8,\"worst\":13.8},\"preview\":{\"p50\":0.1,\"p95\":12.9,\"worst\":12.9},\"land\":46.1,\"blockedMax\":14.1,\"tiles\":48,\"where\":\"pool\",\"stats\":{\"blocks\":28,\"splits\":0,\"maxBlock\":119497,\"pool\":5,\"local\":0},\"fieldMB\":0.9,\"stepMB\":0,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"js\",\"tiles\":28,\"total\":111.7,\"pxCalls\":{},\"gen\":0}}}",
+  "{\"row\":\"push fit size 1000\",\"travel\":3130,\"press\":1,\"window\":9.6,\"dab\":{\"p50\":14.5,\"p95\":15.1,\"worst\":15.1},\"frame\":{\"p50\":1.5,\"p95\":11.2,\"worst\":11.2},\"preview\":{\"p50\":1.2,\"p95\":10.9,\"worst\":10.9},\"land\":95.4,\"blockedMax\":67.5,\"tiles\":113,\"where\":\"pool\",\"stats\":{\"blocks\":86,\"splits\":0,\"maxBlock\":396489,\"pool\":9,\"local\":0},\"fieldMB\":3.6,\"stepMB\":28.3,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":9,\"kernels\":\"js\",\"tiles\":86,\"total\":349.6,\"pxCalls\":{},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 200\",\"travel\":1080,\"press\":35,\"window\":25.7,\"dab\":{\"p50\":0.3,\"p95\":0.5,\"worst\":2.7},\"frame\":{\"p50\":3,\"p95\":4.9,\"worst\":29.4},\"preview\":{\"p50\":2.9,\"p95\":4.4,\"worst\":29},\"land\":28.4,\"blockedMax\":14.5,\"tiles\":23,\"where\":\"pool\",\"stats\":{\"blocks\":13,\"splits\":0,\"maxBlock\":119497,\"pool\":3,\"local\":0},\"fieldMB\":4,\"stepMB\":5.8,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":3,\"kernels\":\"js\",\"tiles\":13,\"total\":26.8,\"pxCalls\":{},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 1000\",\"travel\":1080,\"press\":35.7,\"window\":53.8,\"dab\":{\"p50\":3.6,\"p95\":4,\"worst\":4.1},\"frame\":{\"p50\":15.6,\"p95\":19.1,\"worst\":71.4},\"preview\":{\"p50\":15.3,\"p95\":18.8,\"worst\":71},\"land\":58.3,\"blockedMax\":20.5,\"tiles\":61,\"where\":\"pool\",\"stats\":{\"blocks\":45,\"splits\":0,\"maxBlock\":321264,\"pool\":6,\"local\":0},\"fieldMB\":5.4,\"stepMB\":15.3,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":6,\"kernels\":\"js\",\"tiles\":45,\"total\":148.9,\"pxCalls\":{},\"gen\":0},\"mips\":{\"n\":1,\"kernels\":\"js\",\"tiles\":13,\"kernel\":3.5,\"pxCalls\":{},\"gen\":0}}}",
+  "{\"row\":\"shrink held 150 ticks size 1000\",\"tick\":{\"p50\":3.3,\"p95\":4,\"worst\":4.9},\"land\":33,\"blockedMax\":14.9,\"tiles\":33,\"where\":\"pool\",\"stats\":{\"blocks\":25,\"splits\":1,\"maxBlock\":908208,\"pool\":5,\"local\":0},\"maxReachPx\":691.6,\"fieldMB\":6.1,\"pxCalls\":{},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"js\",\"tiles\":22,\"total\":70.9,\"pxCalls\":{},\"gen\":0},\"mips\":{\"n\":1,\"kernels\":\"js\",\"tiles\":42,\"kernel\":7,\"pxCalls\":{},\"gen\":0}}}",
+  "{\"row\":\"restore all\",\"ms\":8,\"blockedMax\":8.1,\"tiles\":278,\"where\":\"pool\",\"fieldMB\":0,\"pxCalls\":{},\"jobs\":{}}"
+ ]
+}

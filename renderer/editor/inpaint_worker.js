@@ -63,7 +63,7 @@ import { liquifyStore } from "./inpaint_liquify.js";
 import { guidedFar } from "./inpaint_depth.js";
 import { u16Bilinear, rangeWeight, LUMA, opp, colourSimilarity, hexToRgb as hexToRgb01 } from "./inpaint_weights.js";
 import { snapField, fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory } from "./px/kernels.js";
 import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
@@ -1042,8 +1042,8 @@ function liquifyJob(msg) {
         done: (tx, _ty, count) => {
             if (count) { tiles.push({ tx, data: current.buffer }); transfer.push(current.buffer); } else tiles.push({ tx, empty: true });
         },
-    }, msg.blockMax || undefined);
-    return { tiles, stats, transfer, timing: { op: "liquify", tiles: msg.txs.length, total: now() - t0 } };
+    }, msg.blockMax || undefined, liquifyBlock);
+    return { tiles, stats, transfer, timing: { op: "liquify", kernels: kernelsInUse(), tiles: msg.txs.length, total: now() - t0 } };
 }
 
 function depthGuide(msg) {
