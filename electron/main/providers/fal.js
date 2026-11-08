@@ -244,7 +244,7 @@ async function queued(model, input, ctx, waitMs) {
     if (!submit.ok) throw new Error(scrub(`fal.ai ${model}: ${await readError(submit, ctx.key)}`, ctx.key));
     const job = await submit.json();
     const statusUrl = job.status_url, resultUrl = job.response_url;
-    if (!statusUrl || !resultUrl) throw new Error(scrub("fal.ai answered without status_url / response_url: " + JSON.stringify(job).slice(0, 200), ctx.key));
+    if (!statusUrl || !resultUrl) throw new Error("fal.ai answered without status_url / response_url: " + scrub(JSON.stringify(job), ctx.key).slice(0, 200));
     const id = String(job.request_id || (/\/requests\/([^/?#]+)/.exec(String(statusUrl)) || [])[1] || statusUrl);
     const out = await pollJob(ctx, {
         who: `fal.ai ${model}`,
@@ -322,7 +322,7 @@ module.exports = {
         const input = inputFor(req);
         const out = await queued(model, input, ctx, EDIT_WAIT_MS);
         const img = (out.images && out.images[0]) || out.image;
-        if (!img || !img.url) throw new Error(scrub("fal.ai: no image in the result (" + JSON.stringify(out).slice(0, 200) + ")", ctx.key));
+        if (!img || !img.url) throw new Error("fal.ai: no image in the result (" + scrub(JSON.stringify(out), ctx.key).slice(0, 200) + ")");
         if (Array.isArray(out.has_nsfw_concepts) && out.has_nsfw_concepts[0]) ctx.log("result flagged as nsfw by fal.ai, image may be blurred");
         const file = await downloadImage(img.url, ctx, { who: `fal.ai ${model}`, id: out._requestId });
         const flux = req.options && req.options.sizing === "flux3";
@@ -337,7 +337,7 @@ module.exports = {
         const input = upscaleInput(req);
         const out = await queued(model, input, ctx, UPSCALE_WAIT_MS);
         const img = out.image || (out.images && out.images[0]);
-        if (!img || !img.url) throw new Error(scrub("fal.ai: no image in the result (" + JSON.stringify(out).slice(0, 200) + ")", ctx.key));
+        if (!img || !img.url) throw new Error("fal.ai: no image in the result (" + scrub(JSON.stringify(out), ctx.key).slice(0, 200) + ")");
         const file = await downloadImage(img.url, ctx, { who: `fal.ai ${model}`, id: out._requestId });
         return { bytes: file.bytes, mime: img.content_type || file.mime, seed: num(out.seed, req.seed), info: { model, factor: input[(req.fields && req.fields.factor) || "upscale_factor"] || null, width: img.width, height: img.height } };
     },
@@ -347,7 +347,7 @@ module.exports = {
         const input = relightInput(req);
         const out = await queued(model, input, ctx, EDIT_WAIT_MS);
         const img = (out.images && out.images[0]) || out.image;
-        if (!img || !img.url) throw new Error(scrub("fal.ai: no image in the result (" + JSON.stringify(out).slice(0, 200) + ")", ctx.key));
+        if (!img || !img.url) throw new Error("fal.ai: no image in the result (" + scrub(JSON.stringify(out), ctx.key).slice(0, 200) + ")");
         if (Array.isArray(out.has_nsfw_concepts) && out.has_nsfw_concepts[0]) ctx.log("result flagged as nsfw by fal.ai, image may be blurred");
         const file = await downloadImage(img.url, ctx, { who: `fal.ai ${model}`, id: out._requestId });
         return { bytes: file.bytes, mime: img.content_type || file.mime, seed: num(out.seed, "seed" in input ? req.seed : null), info: { model, width: img.width, height: img.height } };

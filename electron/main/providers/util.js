@@ -42,14 +42,27 @@ async function readError(r, key) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const RETRY_AFTER_MAX_MS = 60 * 1000;
+
 function retryAfterMs(r, fallback = 1000) {
     const h = r && r.headers;
     const v = h && (typeof h.get === "function" ? h.get("retry-after") : (h["retry-after"] ?? h["Retry-After"]));
     if (v == null || v === "") return fallback;
     const n = Number(v);
-    if (Number.isFinite(n)) return Math.max(0, n * 1000);
+    if (Number.isFinite(n)) {
+        const asked = n * 1000;
+        return asked > 0 ? Math.min(asked, RETRY_AFTER_MAX_MS) : fallback;
+    }
     const at = Date.parse(v);
-    return Number.isFinite(at) ? Math.max(0, at - Date.now()) : fallback;
+    if (Number.isFinite(at)) {
+        const asked = at - Date.now();
+        return asked > 0 ? Math.min(asked, RETRY_AFTER_MAX_MS) : fallback;
+    }
+    return fallback;
+}
+
+function isTransientStatus(status) {
+    return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
 const POLL_FAILURES_MAX = 5;
@@ -155,9 +168,10 @@ async function downloadImage(url, ctx, opts = {}) {
 
 /**
  * Polls a submitted job until `done(state)` is true (modelled on bfl.js): up to 5 failed status reads in a row
- * (a thrown fetch, 429, 5xx, or a body that is not a status JSON object), reset by a good read, with a backoff on
- * `ctx.sleep` and `Retry-After` respected; definite 4xx answers (400/401/402/403/404/422) and provider-reported
- * failures end at once; a Cancel stops at once; if `resultUrl` is given, the result JSON is tried up to 3 times.
+ * (a thrown fetch, 408, 425, 429, 5xx, or a body that is not a status JSON object), reset by a good read, with a
+ * backoff on `ctx.sleep` and `Retry-After` (above 0, capped at 60 s) respected; other 4xx answers (such as
+ * 400/401/402/403/404/422) and provider-reported failures end at once; a Cancel stops at once; if `resultUrl` is
+ * given, the result JSON is tried up to 3 times.
  */
 async function pollJob(ctx, opts) {
     const {
@@ -183,12 +197,13 @@ async function pollJob(ctx, opts) {
     let nextWait = null;
 
     while (!done(state)) {
-        if (Date.now() - t0 > waitMs) {
+        const rem = waitMs - (Date.now() - t0);
+        if (rem <= 0) {
             throw new Error(scrub(`${timeoutWho}: timed out after ${Math.round(waitMs / 60000)} minutes${tag}; the job may still finish and be charged.`, key));
         }
         const wait = nextWait != null ? nextWait : (typeof delay === "function" ? delay(state) : delay);
         nextWait = null;
-        await pause(wait, ctx);
+        await pause(Math.min(wait, rem), ctx);
         const pollUrl = typeof url === "function" ? url(state) : url;
         let r;
         try {
@@ -203,11 +218,11 @@ async function pollJob(ctx, opts) {
             continue;
         }
         const { json, text } = await readBody(r);
-        const parsed = (!r.ok && (r.status === 429 || r.status >= 500)) ? null : (parse ? parse(json, state) : (json && typeof json === "object" && !Array.isArray(json) ? json : null));
+        const parsed = (!r.ok && isTransientStatus(r.status)) ? null : (parse ? parse(json, state) : (json && typeof json === "object" && !Array.isArray(json) ? json : null));
         if (!r.ok || !parsed) {
             const detail = errorText(r, text, json, key);
-            if (!r.ok && r.status !== 429 && r.status < 500) {
-                throw new Error(scrub(`${statusWho}: ${detail}`, key));
+            if (!r.ok && !isTransientStatus(r.status)) {
+                throw new Error(scrub(`${statusWho}${tag}: ${detail}`, key));
             }
             const why = !r.ok ? `HTTP ${r.status}${detail ? " " + detail : ""}` : `invalid status JSON${text ? ": " + scrub(text, key).slice(0, 200) : ""}`;
             if (++misses > POLL_FAILURES_MAX) {
@@ -235,8 +250,8 @@ async function pollJob(ctx, opts) {
             continue;
         }
         const { json, text } = await readBody(r);
-        if (!r.ok && r.status !== 429 && r.status < 500) {
-            throw new Error(scrub(`${resultWho}: ${errorText(r, text, json, key)}`, key));
+        if (!r.ok && !isTransientStatus(r.status)) {
+            throw new Error(scrub(`${resultWho}${tag}: ${errorText(r, text, json, key)}`, key));
         }
         if (r.ok && json && typeof json === "object" && !Array.isArray(json)) {
             return json;

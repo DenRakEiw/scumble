@@ -76,7 +76,7 @@ async function upload(ctx, bytes, name, mime = "image/png") {
     const r = await ctx.fetch(BASE + "media/upload/binary", { method: "POST", headers: auth, body: fd });
     if (!r.ok) throw new Error(scrub(`WaveSpeed upload (${name}): ${await readError(r, ctx.key)}`, ctx.key));
     const d = ((await r.json()) || {}).data || {};
-    if (!d.download_url) throw new Error("WaveSpeed upload answered without download_url: " + JSON.stringify(d).slice(0, 200));
+    if (!d.download_url) throw new Error("WaveSpeed upload answered without download_url: " + scrub(JSON.stringify(d), ctx.key).slice(0, 200));
     return d.download_url;
 }
 
@@ -288,7 +288,7 @@ module.exports = {
         if (!submit.ok) throw new Error(scrub(`WaveSpeed ${model}: ${await readError(submit, ctx.key)}`, ctx.key));
         const first = (await submit.json()) || {};
         let data = first.data || {};
-        if (!data.id) throw new Error(scrub("WaveSpeed answered without a prediction id: " + JSON.stringify(first).slice(0, 200), ctx.key));
+        if (!data.id) throw new Error("WaveSpeed answered without a prediction id: " + scrub(JSON.stringify(first), ctx.key).slice(0, 200));
         const id = String(data.id);
         const resultUrl = (data.urls && data.urls.get) || `${BASE}predictions/${data.id}/result`;
         const done = new Set(["completed", "failed", "cancelled", "timeout", "deleted"]);
@@ -307,7 +307,7 @@ module.exports = {
         });
         if (String(data.status || "").toLowerCase() !== "completed") throw new Error(scrub(`WaveSpeed ${model}: ${data.error || data.status}`, ctx.key));
         const out = Array.isArray(data.outputs) ? data.outputs[0] : null;
-        if (!out) throw new Error(scrub("WaveSpeed: no output in the result (" + JSON.stringify(data).slice(0, 200) + ")", ctx.key));
+        if (!out) throw new Error("WaveSpeed: no output in the result (" + scrub(JSON.stringify(data), ctx.key).slice(0, 200) + ")");
         if (Array.isArray(data.has_nsfw_contents) && data.has_nsfw_contents[0]) ctx.log("result flagged as nsfw by WaveSpeed");
         // outputs are CDN URLs, or naked base64 with enable_base64_output
         const file = /^https?:/.test(out) ? await downloadImage(out, ctx, { who: `WaveSpeed ${model}`, id }) : { bytes: Buffer.from(String(out).replace(/^data:[^,]*,/, ""), "base64"), mime: "image/png" };

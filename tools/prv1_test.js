@@ -216,12 +216,20 @@ function makeWaveSpeedRig({ id = "ws-job-99", submit, status = [], download = []
 
 async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusFailedFn) {
     await section(`${label}: transient poll failures, reset, 6th failure, Retry-After`, async () => {
-        // 1. A 502 in the middle of the poll still lands the picture
+        // 1. A 500, 502, 408 and 425 in the middle of the poll still land the picture
         {
-            const g = makeRig({ status: [() => html(502, "<html>502 Bad Gateway</html>"), () => statusPendingFn()] });
+            const g = makeRig({
+                status: [
+                    () => html(500, "<html>500 Internal Server Error</html>"),
+                    () => html(502, "<html>502 Bad Gateway</html>"),
+                    () => json(408, { error: "Request Timeout" }),
+                    () => json(425, { error: "Too Early" }),
+                    () => statusPendingFn(),
+                ],
+            });
             const out = await runFn(g.req, g.ctx);
-            check(`${label}: 502 in the middle of the poll lands the picture, POST sent once`,
-                Buffer.compare(out.bytes, PNG) === 0 && g.calls.submit === 1 && g.calls.status === 3 && g.calls.download === 1);
+            check(`${label}: 500, 502, 408 and 425 in the middle of the poll land the picture, POST sent once`,
+                Buffer.compare(out.bytes, PNG) === 0 && g.calls.submit === 1 && g.calls.status === 6 && g.calls.download === 1);
         }
         // 2. A thrown fetch in the middle of the poll still lands the picture
         {
@@ -260,25 +268,78 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
                 Buffer.compare(out.bytes, PNG) === 0 && g2.calls.submit === 1 && g2.calls.status === 12 && g2.sleeps.includes(3000),
                 `statuses=${g2.calls.status} submits=${g2.calls.submit}`);
         }
-        // 5. Six failed reads in a row (5 + 1 more) fails, names the request id, says job may still finish and be charged, scrubs key
+        // 5. Six failed reads in a row (5 + 1 more) fails, names the request id, says job may still finish and be charged, scrubs key, and sleeps [1000,2000,3000,4000,5000]
         {
             let g;
             const failStep = () => html(502, `gateway down for ${g.KEY}`);
             g = makeRig({ status: [failStep, failStep, failStep, failStep, failStep, failStep] });
             const err = await throws(() => runFn(g.req, g.ctx));
-            check(`${label}: 6 failed status reads in a row throws naming ${g.id} and saying job may still finish and be charged, key scrubbed, POST sent once`,
-                !!err && err.includes(g.id) && /may still finish and be charged/.test(err) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.status === 6,
-                err);
+            check(`${label}: 6 failed status reads in a row throws naming ${g.id}, sleeps [1000..5000], says job may still finish and be charged, key scrubbed, POST sent once`,
+                !!err && err.includes(g.id) && /may still finish and be charged/.test(err) && !err.includes(g.KEY)
+                && g.calls.submit === 1 && g.calls.status === 6
+                && JSON.stringify(g.sleeps.slice(1)) === JSON.stringify([1000, 2000, 3000, 4000, 5000]),
+                `${err} | sleeps=${JSON.stringify(g.sleeps)}`);
         }
-        // 6. Six thrown fetches in a row also names the request id and scrubs key
+        // 6. Six thrown fetches in a row also names the request id, scrubs key, and sleeps [1000,2000,3000,4000,5000]
         {
             let g;
             const throwStep = () => { throw new Error(`ECONNRESET with ${g.KEY}`); };
             g = makeRig({ status: [throwStep, throwStep, throwStep, throwStep, throwStep, throwStep] });
             const err = await throws(() => runFn(g.req, g.ctx));
-            check(`${label}: 6 thrown status fetches in a row throws naming ${g.id} and saying job may still finish and be charged, key scrubbed, POST sent once`,
-                !!err && err.includes(g.id) && /may still finish and be charged/.test(err) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.status === 6,
-                err);
+            check(`${label}: 6 thrown status fetches in a row throws naming ${g.id}, sleeps [1000..5000], says job may still finish and be charged, key scrubbed, POST sent once`,
+                !!err && err.includes(g.id) && /may still finish and be charged/.test(err) && !err.includes(g.KEY)
+                && g.calls.submit === 1 && g.calls.status === 6
+                && JSON.stringify(g.sleeps.slice(1)) === JSON.stringify([1000, 2000, 3000, 4000, 5000]),
+                `${err} | sleeps=${JSON.stringify(g.sleeps)}`);
+        }
+        // 6b. Retry-After: 0 or a past HTTP-date falls back to the plain backoff [1000..5000], never 0 ms; Retry-After: 3600 is capped at 60000 ms
+        {
+            const zeroStep = (i) => html(503, "busy", { "Retry-After": i % 2 === 0 ? "0" : "Wed, 21 Oct 2015 07:28:00 GMT" });
+            const gZero = makeRig({ status: [0, 1, 2, 3, 4, 5].map((i) => () => zeroStep(i)) });
+            await throws(() => runFn(gZero.req, gZero.ctx));
+            check(`${label}: six 503s with Retry-After: 0 / past date sleep the plain backoff [1000..5000]`,
+                JSON.stringify(gZero.sleeps.slice(1)) === JSON.stringify([1000, 2000, 3000, 4000, 5000]),
+                JSON.stringify(gZero.sleeps));
+
+            const gCap = makeRig({
+                status: [() => html(429, "rate limit", { "Retry-After": "3600" })],
+                download: [() => html(502, "cdn busy", { "Retry-After": "7200" })],
+            });
+            const outCap = await runFn(gCap.req, gCap.ctx);
+            check(`${label}: Retry-After: 3600 on status and 7200 on download are capped at 60000 ms`,
+                Buffer.compare(outCap.bytes, PNG) === 0
+                && gCap.sleeps.filter((ms) => ms === 60000).length === 2
+                && gCap.sleeps.every((ms) => ms <= 60000),
+                JSON.stringify(gCap.sleeps));
+        }
+        // 6c. Fake-clock timeout clamps remaining wait and throws naming request id and saying job may still finish and be charged
+        {
+            const realNow = Date.now;
+            let fakeNow = 1_000_000;
+            Date.now = () => fakeNow;
+            try {
+                const g = makeRig({
+                    status: [
+                        () => {
+                            fakeNow = 1_000_000 + 15 * 60 * 1000 - 5000;
+                            return html(429, `rate limited ${g.KEY}`, { "Retry-After": "60" });
+                        },
+                        () => statusPendingFn(),
+                    ],
+                });
+                g.ctx.sleep = async (ms) => {
+                    g.sleeps.push(ms);
+                    fakeNow += ms;
+                };
+                const err = await throws(() => runFn(g.req, g.ctx));
+                check(`${label}: poll timeout clamps sleep to remaining 5000 ms and throws naming ${g.id} and saying job may still finish and be charged`,
+                    !!err && err.includes("timed out after 15 minutes") && err.includes(g.id)
+                    && /may still finish and be charged/.test(err) && !err.includes(g.KEY)
+                    && g.sleeps.includes(5000) && !g.sleeps.includes(60000),
+                    `${err} | sleeps=${JSON.stringify(g.sleeps)}`);
+            } finally {
+                Date.now = realNow;
+            }
         }
     });
 
@@ -295,15 +356,27 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
             check(`${label}: 2 failed picture downloads then a good 3rd try lands the picture, POST sent once`,
                 Buffer.compare(out.bytes, PNG) === 0 && g.calls.submit === 1 && g.calls.download === 3 && g.sleeps.includes(4000));
         }
-        // 8. 3 failed picture downloads throws naming request id and saying job may still finish and be charged
+        // 8. 3 failed picture downloads (HTTP 503 without Retry-After, and thrown fetch) sleeps [1500, 3000] and throws naming request id and saying job may still finish and be charged
         {
             let g;
             const badDl = () => html(503, `CDN unavailable ${g.KEY}`);
             g = makeRig({ download: [badDl, badDl, badDl] });
             const err = await throws(() => runFn(g.req, g.ctx));
-            check(`${label}: 3 failed picture downloads throws naming ${g.id} and saying job may still finish and be charged, key scrubbed, POST sent once`,
-                !!err && err.includes(g.id) && /may still finish and be charged/.test(err) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.download === 3,
-                err);
+            check(`${label}: 3 failed picture downloads throws naming ${g.id}, sleeps [1500,3000], says job may still finish and be charged, key scrubbed, POST sent once`,
+                !!err && err.includes(g.id) && /may still finish and be charged/.test(err) && !err.includes(g.KEY)
+                && g.calls.submit === 1 && g.calls.download === 3
+                && JSON.stringify(g.sleeps.slice(-2)) === JSON.stringify([1500, 3000]),
+                `${err} | sleeps=${JSON.stringify(g.sleeps)}`);
+
+            let gThrow;
+            const throwDl = () => { throw new Error(`CDN socket hang up ${gThrow.KEY}`); };
+            gThrow = makeRig({ download: [throwDl, throwDl, throwDl] });
+            const errThrow = await throws(() => runFn(gThrow.req, gThrow.ctx));
+            check(`${label}: 3 thrown picture downloads sleeps [1500,3000] and throws naming ${gThrow.id}, key scrubbed`,
+                !!errThrow && errThrow.includes(gThrow.id) && /may still finish and be charged/.test(errThrow) && !errThrow.includes(gThrow.KEY)
+                && gThrow.calls.download === 3
+                && JSON.stringify(gThrow.sleeps.slice(-2)) === JSON.stringify([1500, 3000]),
+                `${errThrow} | sleeps=${JSON.stringify(gThrow.sleeps)}`);
         }
         // 9. Cancel during the status retry's sleep ends at once and sends no further request
         {
@@ -379,13 +452,14 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
                 !!err && /content blocked/.test(err) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.status === 1 && g.calls.download === 0,
                 err);
         }
-        // 13. Definite HTTP 4xx on status poll (400, 401, 402, 403, 404, 422) is not retried
+        // 13. Definite HTTP 4xx on status poll (400, 401, 402, 403, 404, 422) is not retried and names request id
         for (const code of [400, 401, 402, 403, 404, 422]) {
             let g;
             g = makeRig({ status: [() => json(code, { error: `definite ${code} error with ${g.KEY}` })] });
             const err = await throws(() => runFn(g.req, g.ctx));
-            check(`${label}: HTTP ${code} on status poll ends at once without retry, key scrubbed`,
-                !!err && err.includes(`definite ${code} error`) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.status === 1);
+            check(`${label}: HTTP ${code} on status poll ends at once without retry, names ${g.id}, key scrubbed`,
+                !!err && err.includes(`definite ${code} error`) && err.includes(g.id) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.status === 1,
+                err);
         }
         // 14. Failed submit POST is never retried (even on 502 / 429)
         for (const code of [429, 502]) {
@@ -408,35 +482,63 @@ async function main() {
     );
 
     await section("fal.js: resultUrl JSON retries (3 tries), upscale & relight download retries", async () => {
-        // Result JSON tried 3 times: 2 failures then success
+        // Result JSON tried 3 times: 2 failures (thrown fetch, then 429 with Retry-After) then success
         {
             const g = makeFalRig({
                 result: [
                     () => { throw new Error("result socket reset"); },
-                    () => html(502, "<html>result 502</html>", { "retry-after": "2" }),
+                    () => html(429, "<html>result 429</html>", { "retry-after": "2" }),
                 ],
             });
             const out = await fal.edit(g.req, g.ctx);
-            check("fal.js: 2 failed resultUrl reads then a good 3rd read lands the picture, POST sent once",
-                Buffer.compare(out.bytes, PNG) === 0 && g.calls.submit === 1 && g.calls.result === 3 && g.sleeps.includes(2000));
+            check("fal.js: 2 failed resultUrl reads (thrown + 429) then a good 3rd read lands the picture, POST sent once",
+                Buffer.compare(out.bytes, PNG) === 0 && g.calls.submit === 1 && g.calls.result === 3 && JSON.stringify(g.sleeps.slice(-2)) === JSON.stringify([1500, 2000]));
         }
-        // Result JSON fails all 3 times -> names request id and says job may still finish and be charged
+        // Result JSON transient 500, 408 and 425 are retried
+        for (const code of [500, 408, 425]) {
+            const g = makeFalRig({ result: [() => html(code, `result ${code}`)] });
+            const out = await fal.edit(g.req, g.ctx);
+            check(`fal.js: HTTP ${code} on resultUrl is retried and lands the picture`,
+                Buffer.compare(out.bytes, PNG) === 0 && g.calls.result === 2);
+        }
+        // Result JSON fails all 3 times (HTTP 503 with Retry-After: 0, and thrown fetch) -> sleeps [1500, 3000], names request id and says job may still finish and be charged
         {
             let g;
-            const badRes = () => html(503, `result unavailable ${g.KEY}`);
+            const badRes = () => html(503, `result unavailable ${g.KEY}`, { "Retry-After": "0" });
             g = makeFalRig({ result: [badRes, badRes, badRes] });
             const err = await throws(() => fal.edit(g.req, g.ctx));
-            check("fal.js: 3 failed resultUrl reads throws naming request id and saying job may still finish and be charged, key scrubbed",
-                !!err && err.includes(g.id) && /may still finish and be charged/.test(err) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.result === 3,
+            check("fal.js: 3 failed resultUrl reads sleeps [1500,3000] and throws naming request id and saying job may still finish and be charged, key scrubbed",
+                !!err && err.includes(g.id) && /may still finish and be charged/.test(err) && !err.includes(g.KEY)
+                && g.calls.submit === 1 && g.calls.result === 3
+                && JSON.stringify(g.sleeps.slice(-2)) === JSON.stringify([1500, 3000]),
+                `${err} | sleeps=${JSON.stringify(g.sleeps)}`);
+
+            let gThrow;
+            const throwRes = () => { throw new Error(`result reset ${gThrow.KEY}`); };
+            gThrow = makeFalRig({ result: [throwRes, throwRes, throwRes] });
+            const errThrow = await throws(() => fal.edit(gThrow.req, gThrow.ctx));
+            check("fal.js: 3 thrown resultUrl reads sleeps [1500,3000] and throws naming request id, key scrubbed",
+                !!errThrow && errThrow.includes(gThrow.id) && /may still finish and be charged/.test(errThrow) && !errThrow.includes(gThrow.KEY)
+                && gThrow.calls.result === 3
+                && JSON.stringify(gThrow.sleeps.slice(-2)) === JSON.stringify([1500, 3000]),
+                `${errThrow} | sleeps=${JSON.stringify(gThrow.sleeps)}`);
+        }
+        // Result JSON definite 422 / 403 is not retried and names request id
+        for (const code of [403, 422]) {
+            let g;
+            g = makeFalRig({ result: [() => json(code, { detail: `unusable image ${code} ${g.KEY}` })] });
+            const err = await throws(() => fal.edit(g.req, g.ctx));
+            check(`fal.js: HTTP ${code} on resultUrl ends at once without retry, names ${g.id}, key scrubbed`,
+                !!err && err.includes(`unusable image ${code}`) && err.includes(g.id) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.result === 1,
                 err);
         }
-        // Result JSON definite 422 is not retried
+        // fal.js status with s.error without FAILED ends at once without retry
         {
             let g;
-            g = makeFalRig({ result: [() => json(422, { detail: `unusable image ${g.KEY}` })] });
+            g = makeFalRig({ status: [() => json(200, { status: "IN_PROGRESS", error: `worker crashed (${g.KEY})` })] });
             const err = await throws(() => fal.edit(g.req, g.ctx));
-            check("fal.js: HTTP 422 on resultUrl ends at once without retry, key scrubbed",
-                !!err && /unusable image/.test(err) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.result === 1);
+            check("fal.js: status object with error field (without FAILED status) ends at once without retry, key scrubbed",
+                !!err && /worker crashed/.test(err) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.status === 1);
         }
         // fal.upscale and fal.relight also retry picture download 3 times and name request id on failure
         for (const [verb, extra] of [["upscale", { factor: 2 }], ["relight", {}]]) {
@@ -466,6 +568,103 @@ async function main() {
         () => json(200, { code: 200, data: { status: "processing" } }),
         (key) => json(200, { code: 200, data: { status: "failed", error: `content blocked (${key})` } }),
     );
+
+    await section("replicate.js & wavespeed.js: terminal status edges & 200-char boundary key scrubbing", async () => {
+        // fal.js resultUrl Retry-After: 86400 is capped at 60000 ms
+        {
+            const g = makeFalRig({ result: [() => html(429, "result rate limit", { "Retry-After": "86400" })] });
+            const out = await fal.edit(g.req, g.ctx);
+            check("fal.js: Retry-After: 86400 on resultUrl is capped at 60000 ms",
+                Buffer.compare(out.bytes, PNG) === 0 && g.sleeps.slice(-1)[0] === 60000 && g.sleeps.every((ms) => ms <= 60000),
+                JSON.stringify(g.sleeps));
+        }
+        // Replicate "canceled" status ends at once without retry
+        {
+            let g;
+            g = makeReplicateRig({ status: [() => json(200, { status: "canceled", error: `user canceled (${g.KEY})` })] });
+            const err = await throws(() => replicate.edit(g.req, g.ctx));
+            check("replicate.js: status 'canceled' ends at once without retry, key scrubbed",
+                !!err && /user canceled/.test(err) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.status === 1);
+        }
+        // WaveSpeed "cancelled", "timeout", "deleted" statuses each end at once without retry
+        for (const st of ["cancelled", "timeout", "deleted"]) {
+            let g;
+            g = makeWaveSpeedRig({ status: [() => json(200, { code: 200, data: { status: st, error: `job ${st} (${g.KEY})` } })] });
+            const err = await throws(() => wavespeed.edit(g.req, g.ctx));
+            check(`wavespeed.js: status '${st}' ends at once without retry, key scrubbed`,
+                !!err && err.includes(`job ${st}`) && !err.includes(g.KEY) && g.calls.submit === 1 && g.calls.status === 1);
+        }
+        // Key straddling the 200-char JSON slice boundary is scrubbed before slicing across fal, replicate, wavespeed
+        {
+            const straddlePad = (makeObj, key) => {
+                const base = JSON.stringify(makeObj("")).indexOf(key);
+                return "x".repeat(Math.max(0, 192 - base));
+            };
+
+            let gFalSub;
+            gFalSub = makeFalRig({
+                submit: () => {
+                    const mk = (p) => ({ note: p + gFalSub.KEY });
+                    return json(200, mk(straddlePad(mk, gFalSub.KEY)));
+                },
+            });
+            const e1 = await throws(() => fal.edit(gFalSub.req, gFalSub.ctx));
+            check("fal.js: key straddling 200-char cut in submit JSON without status_url is scrubbed before slice",
+                !!e1 && e1.includes("[key]") && !e1.includes(gFalSub.KEY.slice(0, 8)), e1);
+
+            for (const [verb, extra] of [["edit", {}], ["upscale", { factor: 2 }], ["relight", {}]]) {
+                let gFalOut;
+                gFalOut = makeFalRig({
+                    result: [() => {
+                        const mk = (p) => ({ note: p + gFalOut.KEY, images: [] });
+                        return json(200, mk(straddlePad(mk, gFalOut.KEY)));
+                    }],
+                });
+                const eOut = await throws(() => fal[verb]({ ...gFalOut.req, kind: verb, ...extra }, gFalOut.ctx));
+                check(`fal.${verb}: key straddling 200-char cut in empty result JSON is scrubbed before slice`,
+                    !!eOut && eOut.includes("[key]") && !eOut.includes(gFalOut.KEY.slice(0, 8)), eOut);
+            }
+
+            let gRepOut;
+            gRepOut = makeReplicateRig({
+                status: [() => {
+                    const mk = (p) => ({ note: p + gRepOut.KEY });
+                    return json(200, { id: "p1", status: "succeeded", output: mk(straddlePad(mk, gRepOut.KEY)) });
+                }],
+            });
+            const eRep = await throws(() => replicate.edit(gRepOut.req, gRepOut.ctx));
+            check("replicate.js: key straddling 200-char cut in empty output JSON is scrubbed before slice",
+                !!eRep && eRep.includes("[key]") && !eRep.includes(gRepOut.KEY.slice(0, 8)), eRep);
+
+            let gWsSub;
+            gWsSub = makeWaveSpeedRig({
+                submit: () => {
+                    const mk = (p) => ({ code: 200, data: { note: p + gWsSub.KEY } });
+                    return json(200, mk(straddlePad(mk, gWsSub.KEY)));
+                },
+            });
+            const eWs1 = await throws(() => wavespeed.edit(gWsSub.req, gWsSub.ctx));
+            check("wavespeed.js: key straddling 200-char cut in submit JSON without id is scrubbed before slice",
+                !!eWs1 && eWs1.includes("[key]") && !eWs1.includes(gWsSub.KEY.slice(0, 8)), eWs1);
+
+            let gWsOut;
+            gWsOut = makeWaveSpeedRig({
+                status: [() => {
+                    const full = (p) => ({
+                        id: "ws-job-99",
+                        status: "completed",
+                        urls: { get: "https://api.wavespeed.ai/api/v3/predictions/ws-job-99/result" },
+                        note: p + gWsOut.KEY,
+                        outputs: [],
+                    });
+                    return json(200, { code: 200, data: full(straddlePad(full, gWsOut.KEY)) });
+                }],
+            });
+            const eWs2 = await throws(() => wavespeed.edit(gWsOut.req, gWsOut.ctx));
+            check("wavespeed.js: key straddling 200-char cut in result JSON without outputs is scrubbed before slice",
+                !!eWs2 && eWs2.includes("[key]") && !eWs2.includes(gWsOut.KEY.slice(0, 8)), eWs2);
+        }
+    });
 
     await section("comfyrouter.js and comfypartner.js: download retries (3 tries), Cancel, request id", async () => {
         const BASE = "http://127.0.0.1:5598";

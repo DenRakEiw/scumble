@@ -214,7 +214,7 @@ module.exports = {
         });
         if (pred.status !== "succeeded") throw new Error(scrub("Replicate: " + (pred.error || pred.status), ctx.key));
         const imgUrl = firstUrl(pred.output);
-        if (!imgUrl) throw new Error(scrub("Replicate: no image URL in the output (" + JSON.stringify(pred.output).slice(0, 200) + ")", ctx.key));
+        if (!imgUrl) throw new Error("Replicate: no image URL in the output (" + scrub(JSON.stringify(pred.output), ctx.key).slice(0, 200) + ")");
         const file = await downloadImage(imgUrl, ctx, { who: `Replicate ${model}`, id });
         const metrics = pred.metrics || {};
         // a seed `options.omit` kept home means nothing to the model: none is reported

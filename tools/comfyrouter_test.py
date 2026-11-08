@@ -46,6 +46,8 @@ from comfyrouter_mock import Mock  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE_TEST = os.path.join(ROOT, "tools", "comfyrouter_test.js")
+PRV1_TEST = os.path.join(ROOT, "tools", "prv1_test.js")
+NONET = os.path.join(ROOT, "tools", "nonet.js")
 KEY = "test-comfyrouter-gate-0123456789"
 REAL_KEY = "comfyui-0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd"   # the shape of a Comfy key; never a real one
 OTHER_RECIPES = ["hy_image_3_5"]   # put back by the cleanup too
@@ -287,16 +289,23 @@ return out;
 """
 
 
-def node_step():
-    r = subprocess.run(["node", NODE_TEST], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=180)
+def run_node_test(script_path, label):
+    r = subprocess.run(["node", "-r", NONET, script_path], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=180)
     tail = (r.stdout + r.stderr).strip()
-    if r.returncode != 0 or not tail.endswith("PASS"):
+    if r.returncode != 0 or not tail.endswith("PASS") or "NONET-FIRED" in tail or "NONET-SOCKET" in tail:
         lines = tail.splitlines()
-        failed = [ln for ln in lines if ln.startswith("[FAIL]")]
+        failed = [ln for ln in lines if ln.startswith("[FAIL]") or "NONET-" in ln]
         counted = [ln for ln in lines if " checks passed" in ln]
         shown = "\n    ".join([ln[:400] for ln in failed] + counted[-1:]) if failed else tail[-1500:]
-        raise Exception("tools/comfyrouter_test.js (rc %d):\n    %s" % (r.returncode, shown))
-    return {"checks": tail.count("[ok]")}
+        raise Exception("%s (rc %d):\n    %s" % (label, r.returncode, shown))
+    return tail.count("[ok]")
+
+
+def node_step():
+    return {
+        "checks": run_node_test(NODE_TEST, "tools/comfyrouter_test.js"),
+        "prv1_checks": run_node_test(PRV1_TEST, "tools/prv1_test.js"),
+    }
 
 
 def log_detail(entry):
