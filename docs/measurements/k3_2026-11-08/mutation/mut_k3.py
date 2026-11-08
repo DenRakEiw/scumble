@@ -189,6 +189,15 @@ MUTANTS = [
         "expect": "killed",
         "note": "pngPart bytes subarray starts at 0 instead of 8",
     },
+    {
+        "id": "M21_combine_loop_b17",
+        "file": "renderer/editor/inpaint_png.js",
+        "rust": False,
+        "find": "for (let b = 0; n > 0 && b < 32; b++, n = Math.floor(n / 2)) {",
+        "replace": "for (let b = 0; n > 0 && b < 17; b++, n = Math.floor(n / 2)) {",
+        "expect": "killed",
+        "note": "crc32Combine stops at bit 16 (64 KB) instead of bit 31 (15k part ~7.7 MB)",
+    },
 ]
 
 

@@ -4604,18 +4604,24 @@ async function crcAndFrameCases(px, label, png, zlib, js) {
     }
     const combBuf = new Uint8Array(70000);
     for (let i = 0; i < combBuf.length; i++) combBuf[i] = (i * 53 + (i >>> 7) * 19 + 5) & 255;
+    const bigZero = new Uint8Array((1 << 24) + 1024);
+    bigZero.set(combBuf.subarray(0, 1024), 0);
     const combSplits = [
         ...Array.from({ length: 261 }, (_, i) => [37, i]),
-        ...[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 4096, 16384, 32768, 65536].map((l2) => [113, l2]),
+        ...[
+            1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 4096, 16384, 32768, 65536,
+            1 << 17, 1 << 18, 1 << 19, 1 << 20, 1 << 21, 1 << 22, 7_700_000, 1 << 23, 1 << 24,
+        ].map((l2) => [113, l2]),
         [0, 0], [0, 1], [0, 257], [257, 0],
     ];
     for (const [l1, l2] of combSplits) {
-        const a = combBuf.subarray(0, l1), b = combBuf.subarray(l1, l1 + l2);
-        const want = px.crc32(combBuf.subarray(0, l1 + l2), 0);
-        const got = png.crc32Combine(px.crc32(a, 0), px.crc32(b, 0), l2);
+        const src = l1 + l2 <= combBuf.length ? combBuf : bigZero;
+        const a = src.subarray(0, l1), b = src.subarray(l1, l1 + l2);
+        const want = zlib.crc32(src.subarray(0, l1 + l2)) >>> 0;
+        const got = png.crc32Combine(px.crc32(a, 0), l2 <= combBuf.length ? px.crc32(b, 0) : zlib.crc32(b) >>> 0, l2);
         if (got !== want) { combOk = false; combDetail = `l1=${l1} l2=${l2}: ${got} vs ${want}`; break; }
     }
-    check(`${label} crc32Combine (zero lengths, powers of 2, 0..260 B) equals crc32 of the concatenation`, combOk, combDetail);
+    check(`${label} crc32Combine (zero lengths, powers of 2 up to 16 MB, ~7.7 MB, 0..260 B) equals zlib.crc32 of the concatenation`, combOk, combDetail);
 
     // png_chunk_frame against twin and against png.pngChunk
     const chunkTypes = ["IHDR", "IDAT", "IEND", "tEXt", "sRGB", "gAMA"];
