@@ -55,7 +55,7 @@
  */
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, clipCoverage, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
-import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
+import { crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
 import { readTiff, tiffPart } from "./inpaint_tiff.js";
 import { readPsdStream, inflateAtMost } from "./inpaint_layered.js";
 import { resampleStore } from "./inpaint_resample.js";
@@ -453,13 +453,10 @@ async function pngPart(msg) {
     const tc = now();
     const prev = msg.rgba ? (msg.prev ? new Uint8Array(msg.prev, 0, msg.w * 4) : null) : msg.stack ? rowsOfStack(msg, true) : rowsOfTiles(msg, true);
     const tp = now();
-    const laps = {};   // copyIn, filter, adler, deflate, copyOut (px.js pngPart)
+    const laps = {};   // copyIn, filter, adler, deflate, chunk, copyOut (px.js pngPart)
     const r = p.pngPart(rgba, msg.w, msg.rows, prev, msg.level === undefined ? PNG_LEVEL : msg.level, !!msg.last, laps);
     releaseIfLarge();
-    const tk = now();
-    const chunk = pngChunk("IDAT", r.bytes);
-    const chunkMs = now() - tk;   // the chunk's copy and its JS CRC-32
-    return { chunk: chunk.buffer, adler: r.adler, raw: r.raw, transfer: [chunk.buffer], timing: { op: "png_part", kernels: "rust", pixels: msg.w * msg.rows, kernel: now() - t0, compose: msg.stack ? tc - t0 : 0, rows: tc - t0, prev: tp - tc, ...laps, chunk: chunkMs } };
+    return { chunk: r.chunk.buffer, adler: r.adler, raw: r.raw, crc: r.crc, transfer: [r.chunk.buffer], timing: { op: "png_part", kernels: "rust", pixels: msg.w * msg.rows, kernel: now() - t0, compose: msg.stack ? tc - t0 : 0, rows: tc - t0, prev: tp - tc, ...laps } };
 }
 
 /**

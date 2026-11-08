@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 31;
+export const PX_ABI = 32;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -969,12 +969,14 @@ export class Px {
     }
 
     /**
-     * One part of a PNG's zlib stream (docs/PLAN_BCE.md §E2): `rows` rows of RGBA8 filtered (`pngFilterRows`) and
-     * deflated raw at `level`, every part but the `last` ending on a sync flush, so the parts of a picture are one
-     * deflate stream when written one after the other. `{ bytes, adler, raw }`: the deflated part (a copy), the
-     * Adler-32 of its `raw` filtered bytes alone (joined by `adlerCombine`). `laps` (optional, on `pngPart` below): the
-     * milliseconds of `copyIn` (the rows into memory), `filter`, `adler`, `deflate` (summed over its retries) and
-     * `copyOut` are added to its fields.
+     * One part of a PNG's zlib stream (docs/PLAN_BCE.md §E2, K3): `rows` rows of RGBA8 filtered (`pngFilterRows`),
+     * deflated raw at `level` (every part but the `last` ending on a sync flush, so the parts of a picture are one
+     * deflate stream when written one after the other) and framed in wasm as an `IDAT` chunk (`png_chunk_frame`).
+     * `{ bytes, adler, raw, chunk, crc }`: `chunk` the whole framed IDAT chunk (a copy), `bytes` its deflated payload
+     * (`chunk.subarray(8, 8 + written)`), `crc` the chunk's CRC-32 over type and data, `adler` the Adler-32 of its
+     * `raw` filtered bytes alone (joined by `adlerCombine`). `laps` (optional, on `pngPart` below): the milliseconds of
+     * `copyIn` (the rows into memory), `filter`, `adler`, `deflate` (summed over its retries), `chunk` and `copyOut`
+     * are added to its fields.
      */
     /** A whole zlib stream of `bytes` (a TIFF strip, inpaint_tiff.js): `78 9C`, one final deflate part, the Adler-32. */
     zlib(bytes, level) {
@@ -1000,6 +1002,24 @@ export class Px {
         } finally { this._reset(a); }
     }
 
+    crc32(bytes, start = 0) {
+        const a = this.job, n = bytes.byteLength;
+        try {
+            const ps = n > 0 ? this._in(a, bytes, n) : 0;
+            return this.exports.crc32(ps, n, start >>> 0) >>> 0;
+        } finally { this._reset(a); }
+    }
+
+    pngChunkFrame(buf, dataLen = buf.byteLength - 12, kind = 0x49444154) {
+        const a = this.job, n = dataLen + 12;
+        try {
+            const pb = this._in(a, buf, n);
+            const crc = this.exports.png_chunk_frame(pb, dataLen, kind >>> 0) >>> 0;
+            this._out(Uint8Array, pb, n, new Uint8Array(buf.buffer, buf.byteOffset, n));
+            return crc;
+        } finally { this._reset(a); }
+    }
+
     pngPart(rgba, w, rows, prev, level, last, laps = null) {
         const a = this.job, n = rows * (1 + 4 * w);
         const lap = laps ? lapper(laps) : null;
@@ -1012,15 +1032,18 @@ export class Px {
             if (lap) lap("adler");
             let cap = storedCap(n);
             for (;;) {
-                const po = a.take(cap);
-                const written = this.exports.deflate_part(pf, n, level, last ? 1 : 0, po, cap);
+                const po = a.take(cap + 12);
+                const written = this.exports.deflate_part(pf, n, level, last ? 1 : 0, po + 8, cap);
                 if (lap) lap("deflate");
                 if (written >= 0) {
+                    const crc = this.exports.png_chunk_frame(po, written, 0x49444154) >>> 0;
+                    if (lap) lap("chunk");
                     const t = TIMED ? clock() : 0;
-                    const bytes = this.u8().slice(po, po + written);
-                    if (TIMED) lapOut(t, written);
+                    const chunk = this.u8().slice(po, po + written + 12);
+                    const bytes = chunk.subarray(8, 8 + written);
+                    if (TIMED) lapOut(t, written + 12);
                     if (lap) lap("copyOut");
-                    return { bytes, adler, raw: n };
+                    return { bytes, adler, raw: n, chunk, crc };
                 }
                 cap *= 2;
             }

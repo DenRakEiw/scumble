@@ -54,14 +54,16 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * `colorMatch` and `blendAlpha` (K33): `colorMatchRgba` and `blendAlpha` of stitch.js. `edgefit`, `edgefitShrink`,
  * `warpRgba` and `warpCoverage` (K34): `edgefitShrink`, `warpRgba` and `warpCoverage` of edgefit.js.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
 // keepMB 16 (K1b, docs/measurements/k1b_2026-10-23/run2/summary.txt): re-growing an instance costs about 0.07 ms per MB
 // (M7a: 9.1 ms at 128 MB, below the wand row's spread of 16.5-38.3 ms), and after a 15k export the pool keeps 11.7 MB
 // instead of 288 MB (M7b). No flood or mips entry: Rust won every A/B of M1-M4 (the flood ladder from a 0.26 MP box up).
-const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16 });
+// crc32 64 (K3, docs/measurements/k3_2026-11-08/summary.txt): slice-by-16 in wasm beats the byte-wise JS loop from 64 B
+// up (1.43x at 64 B, 2.85x at 128 B, 7.5x at 64 KB); smaller headers (PNG signature, IHDR, 4-byte chunk lengths) stay in JS.
+const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16, crc32: 64 });
 
 const TAKES = { kernel: '"js" or "rust"', kernelSize: '"js", "rust" or a number of pixels >= 0', mb: "a number of MB >= 0 or Infinity", count: "a whole number >= 0" };
 
@@ -745,6 +747,28 @@ export function pngFilterRows(rgba, w, rows, prev = null, out = null) {
         finally { touched(); }
     }
     return J.pngFilterRows(rgba, w, rows, prev, out || undefined);
+}
+
+/** The CRC-32 of `bytes`, continued from `start` (0 for a new checksum); routed by `crc32` at `bytes.byteLength` bytes (K3). */
+export function crc32(bytes, start = 0) {
+    const p = rustPx("crc32", bytes ? bytes.byteLength : 0);
+    if (p) {
+        try { return p.crc32(bytes, start); }
+        catch (err) { if (!recovered(p, err, "crc32")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.crc32(bytes, start);
+}
+
+/** Frame `dataLen` bytes at `buf[8..8 + dataLen]` as a PNG chunk of 4-byte `kind` (big-endian u32); returns its CRC-32 (K3). */
+export function pngChunkFrame(buf, dataLen = buf.byteLength - 12, kind = 0x49444154) {
+    const p = rustPx("crc32", dataLen + 4);
+    if (p) {
+        try { return p.pngChunkFrame(buf, dataLen, kind); }
+        catch (err) { if (!recovered(p, err, "png_chunk_frame")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.pngChunkFrame(buf, dataLen, kind);
 }
 
 /** Computes max - min over each texel's 4x4 block of a w x h Uint16Array. */

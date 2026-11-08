@@ -1,0 +1,149 @@
+K3 measurement summary (2026-11-08)
+===================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.3 K3, §5 row 15):
+- `crates/px/src/png.rs`: compile-time `const CRC_TABLE: [[u32; 256]; 16]` (IEEE 802.3 reflected polynomial `0xEDB8_8320`,
+  slice-by-16, zero external dependencies), `pub fn crc32(src: &[u8], start: u32) -> u32`, and
+  `pub fn chunk_frame(buf: &mut [u8], data_len: usize, kind: u32) -> u32` (writes `data_len` BE to `buf[0..4]`, `kind` BE
+  to `buf[4..8]`, `crc = crc32(&buf[4..8 + data_len], 0)` BE to `buf[8 + data_len..12 + data_len]`, returns `crc`).
+- `crates/px/src/lib.rs`: bumped `px_abi_version()` to `32` (`32: crc32, png_chunk_frame`); exported `crc32` (with
+  null/zero-len guard returning `start`) and `png_chunk_frame` (with null guard returning `0`).
+- `renderer/editor/px/px.wasm`: `225,516 bytes`, sha256 `af9167aeab2bc319` (before: `208,177 bytes`, sha256
+  `2208b82f6775478a`).
+- `renderer/editor/px/px_scalar.wasm`: `184,788 bytes`, sha256 `b7cd2fd78ddfbcf3` (before: `167,451 bytes`, sha256
+  `ac99651178ff1fd3`).
+- `renderer/editor/px/kernels_js.js`: moved byte-wise `CRC_TABLE` and `crc32(bytes, start = 0)` here as the JS twin, plus
+  `pngChunkFrame(buf, dataLen, kind)` twin.
+- `renderer/editor/px/px.js`: bumped `PX_ABI = 32`; added `crc32` and `pngChunkFrame` methods; updated `Px.prototype.pngPart`
+  to allocate `po = a.take(cap + 12)`, deflate into `po + 8`, call `this.exports.png_chunk_frame(po, written, 0x49444154) >>> 0`
+  (timed under `lap("chunk")`), copy out `chunk = this.u8().slice(po, po + written + 12)` once, set
+  `bytes = chunk.subarray(8, 8 + written)`, and return `{ bytes, adler, raw: n, chunk, crc }`.
+- `renderer/editor/px/kernels.js`: added `crc32: "kernelSize"` to `ROUTE_KINDS` and `crc32: 64` to `DEFAULT_ROUTES`
+  (crossover measured at 64 B, where Rust slice-by-16 including JS->wasm copy-in is already 2.29x-2.53x faster than JS).
+- `renderer/editor/inpaint_png.js`: kept `export function crc32(bytes, crc = 0)` at line 30 routing through `kernels.js`;
+  added `export function crc32Combine(crc1, crc2, len2)` (GF(2) matrix method via precomputed 32x32 operators `CRC_POW2`);
+  updated `PngStreamWriter.finish()` to fold each worker part's `r.crc` via `crc32Combine(crc, r.crc >>> 0, c.byteLength - 8)`
+  between its 4-byte length header and 4-byte CRC trailer, storing `this.crc = crc` and `blob.crc = crc`.
+- `renderer/editor/inpaint_worker.js`: `pngPart(msg)` transfers `r.chunk.buffer` directly and returns `crc: r.crc` without
+  calling `pngChunk("IDAT", r.bytes)` in JS.
+- `renderer/editor/inpaint_bands.js`: `OraBandWriter._add(name, blob, crc)` takes the precomputed `crc` when available
+  (`"mimetype"`, `"stack.xml"`, `layer` PNGs from `writePng`, and `mergedimage.png` from `writePng`), only dispatching a
+  worker `"crc"` job when `crc === undefined` (`Thumbnails/thumbnail.png`).
+- `renderer/editor/inpaint_export.js`: removed duplicate `CRC_TABLE` and `crc32`, importing `crc32` from `./inpaint_png.js`.
+
+1. Node & Electron-as-Node kernel benchmarks (`docs/measurements/k3_2026-11-08/node/`)
+--------------------------------------------------------------------------------------
+a) CRC-32 size sweep (including JS -> wasm copy-in, Electron V8 `node/electron_bench.log`):
+size          simd (us)   scalar (us)       js (us)   simd/js   simd ms/MB   js ms/MB
+      16 B        0.097         0.099         0.028     0.29x            -          -
+      32 B        0.075         0.072         0.052     0.69x            -          -
+      48 B        0.100         0.083         0.074     0.74x            -          -
+      64 B        0.093         0.094         0.235     2.53x            -          -   <-- DEFAULT_ROUTES.crc32 = 64
+      96 B        0.104         0.132         0.156     1.50x            -          -
+     128 B        0.138         0.109         0.218     1.58x            -          -
+     256 B        0.168         0.151         1.036     6.17x            -          -
+    1024 B        0.413         0.420         1.687     4.08x            -          -
+    4096 B        1.416         1.474        16.283    11.50x            -          -
+   65536 B       20.698        20.496       102.950     4.97x        0.331      1.647
+  262144 B       80.728        80.777       410.058     5.08x        0.323      1.640
+ 1048576 B      342.938       344.133      1663.403     4.85x        0.343      1.663
+67108864 B    29919.600     29145.900    111498.600     3.73x        0.467      1.742
+
+b) IDAT chunk framing + CRC (`png_chunk_frame` in wasm vs legacy JS `pngChunk`, Electron V8):
+payload          before (JS pngChunk)   after (wasm png_chunk_frame + slice)   speedup
+256 KB IDAT                  0.540 ms                               0.152 ms     3.55x
+1 MB IDAT                    2.328 ms                               0.611 ms     3.81x
+4 MB IDAT                   10.672 ms                               2.107 ms     5.07x
+
+c) ORA PNG entry CRC (`crc32Combine` fold across 40 parts, 150 MB PNG vs full-file CRC-32, Electron V8):
+- `combineFold` (40 parts): `0.0112 ms` (`11.2 us`)
+- Rust full-file `crc32` (150 MB): `64.25 ms`
+- JS full-file `crc32` (150 MB): `260.56 ms`
+
+2. 15,000 x 10,000 PNG & ORA export before (`ad148e2e`) vs after (`K3`), 3 alternating rounds on port 9621 (`w1_lock.py` held)
+------------------------------------------------------------------------------------------------------------------------------
+All 6 `native_test.py` runs (3 before, 3 after) and all 3 `w0_bench.py --rows=crc32_64mb` runs executed on fresh offline
+instances with `"focused": true` (`notcounted/` empty).
+
+row                                      before (ad148e2e)           after (K3)                  before / after (medians)
+build_the_file encodeMs                  1,657.0 [1,507.0-1,769.0]   1,902.0 [1,631.0-2,128.0]   0.87x
+open_the_file wall                       3,171.0 [2,593.0-3,414.0]   2,923.0 [2,642.0-3,835.0]   1.08x
+open_the_file longest block              562.0 [520.0-591.0]         536.0 [495.0-639.0]         1.05x
+add_the_paint_layer wall                 803.0 [793.0-805.0]         789.0 [717.0-1,153.0]       1.02x
+add_the_paint_layer longest block        690.0 [669.0-703.0]         682.0 [624.0-989.0]         1.01x
+export_png wall                          1,585.0 [1,352.0-1,588.0]   1,231.0 [1,152.0-1,507.0]   1.29x
+export_png longest block                 94.0 [76.0-123.0]           79.0 [65.0-105.0]           1.19x
+export_png png_part jobs                 79.0 [79.0-79.0]            79.0 [79.0-79.0]            1.00x
+export_png png_part kernel               11,329.8 [9,871.7-11,643.7] 8,889.6 [8,258.3-10,835.5]  1.27x
+export_png png_part filter               370.8 [295.9-377.3]         329.3 [286.8-357.6]         1.13x
+export_png png_part deflate              6,867.2 [6,007.6-7,364.1]   5,918.8 [5,644.5-7,650.6]   1.16x
+export_png png_part adler                210.6 [168.5-231.0]         182.5 [155.5-216.1]         1.15x
+export_png png_part chunk                899.8 [857.4-999.0]         99.5 [98.1-118.6]           9.04x
+export_png png_part compose              2,504.4 [2,378.1-2,766.0]   2,152.0 [1,917.9-2,319.7]   1.16x
+export_png worker png_filter_rows calls  79.0 [79.0-79.0]            79.0 [79.0-79.0]            1.00x
+export_png worker adler32 calls          79.0 [79.0-79.0]            79.0 [79.0-79.0]            1.00x
+export_png worker png_chunk_frame calls  -                           79.0 [79.0-79.0]
+export_png window crc32 calls            -                           4.0 [4.0-4.0]
+export_ora wall                          3,615.0 [3,576.0-3,995.0]   2,526.0 [2,303.0-3,089.0]   1.43x
+export_ora longest block                 53.0 [47.0-69.0]            46.0 [44.0-57.0]            1.15x
+export_ora png_part jobs                 237.0 [237.0-237.0]         237.0 [237.0-237.0]         1.00x
+export_ora png_part kernel               21,869.3 [21,571.2-23,498.4]18,378.9 [16,644.4-22,671.4]1.19x
+export_ora png_part filter               990.3 [960.9-1,063.8]       899.3 [833.9-1,101.6]       1.10x
+export_ora png_part deflate              15,102.1 [14,619.3-15,835.8]13,124.0 [11,945.6-16,677.8]1.15x
+export_ora png_part adler                590.6 [550.5-643.6]         513.2 [471.3-653.8]         1.15x
+export_ora png_part chunk                1,628.7 [1,392.0-1,660.6]   213.7 [194.2-265.5]         7.62x
+export_ora png_part compose              1,725.7 [1,713.3-2,208.3]   1,737.9 [1,584.2-1,986.5]   0.99x
+export_ora crc jobs                      6.0 [6.0-6.0]               1.0 [1.0-1.0]               6.00x
+export_ora crc kernel                    1,426.8 [1,393.1-1,608.9]   5.0 [4.1-5.5]               285.36x
+export_ora worker png_filter_rows calls  237.0 [237.0-237.0]         237.0 [237.0-237.0]         1.00x
+export_ora worker adler32 calls          237.0 [237.0-237.0]         237.0 [237.0-237.0]         1.00x
+export_ora worker png_chunk_frame calls  -                           237.0 [237.0-237.0]
+export_ora worker crc32 calls            -                           1.0 [1.0-1.0]
+export_ora window crc32 calls            -                           1.0 [1.0-1.0]
+
+`w0_bench.py --rows=crc32_64mb` (3 rounds in live Electron renderer):
+- `crc32_64mb` Rust median: `24.610 ms [24.440-25.310]` (`0.385 ms/MB [0.382-0.395]`)
+- `crc32_64mb` JS median:   `105.510 ms [104.820-105.760]` (`1.649 ms/MB [1.638-1.653]`)
+- `crc32_64mb` speedup:     `4.26x [4.18x-4.32x]`
+
+Observations:
+- `export_png png_part chunk` drops from `899.8 [857.4-999.0] ms` to `99.5 [98.1-118.6] ms` (9.04x faster, saving ~800 ms
+  of worker time across 79 parts), reducing `export_png wall` from `1,585.0 [1,352.0-1,588.0] ms` to
+  `1,231.0 [1,152.0-1,507.0] ms` (1.29x faster, `-354 ms`).
+- `export_ora png_part chunk` drops from `1,628.7 [1,392.0-1,660.6] ms` to `213.7 [194.2-265.5] ms` (7.62x faster, saving
+  ~1,415 ms of worker time across 237 parts).
+- `export_ora crc jobs` drops from `6` to `1` (only `Thumbnails/thumbnail.png` runs a worker `crc` job; `"mimetype"`,
+  `"stack.xml"`, the two layer PNGs, and `mergedimage.png` all carry their precomputed CRC-32 directly into
+  `OraBandWriter._add`), cutting `export_ora crc kernel` from `1,426.8 [1,393.1-1,608.9] ms` to `5.0 [4.1-5.5] ms`
+  (285.36x faster, saving ~1,422 ms) and reducing `export_ora wall` from `3,615.0 [3,576.0-3,995.0] ms` to
+  `2,526.0 [2,303.0-3,089.0] ms` (1.43x faster, `-1,089 ms`, non-overlapping 3-run ranges).
+
+3. Unit & property checks (`tools/px_test.js` group `pngPart`)
+--------------------------------------------------------------
+- `crc32` and `png_chunk_frame` tested on both builds (`rust simd`, `rust scalar`) against `js`:
+  - Standard IEEE 802.3 vectors (`"" -> 0`, `"123456789" -> 0xCBF43926`) and null/zero-len continuation.
+  - 303-case `twinCheck` for `crc32` across lengths `0..67`, `128..65537`, all 256 byte values in every slice-by-16 lane
+    `0..15` and remainder, non-zero `start`, odd `byteOffset`, and cross-check against Node `zlib.crc32`.
+  - Continuation across arbitrary splits (`0..257` bytes).
+  - `crc32Combine` property checks across zero/negative lengths, powers of 2 (`1 << 0` .. `1 << 17`), and all split points
+    `0..260`.
+  - 84-case `twinCheck` for `png_chunk_frame` against `pngChunk` and `js.pngChunkFrame`.
+  - `inpaint_png.crc32` route cut-off check (`< 64` B stays in JS, `>= 64` B routes to Rust, `setRoute("crc32", "js")`
+    forces JS).
+  - `OraBandWriter` combined entry CRCs check: verifies `crcJobs === 1` (thumbnail only) and that all 5 ZIP entry local and
+    central directory CRCs match `px.crc32(entryBytes)`.
+
+4. Mutation round (`docs/measurements/k3_2026-11-08/mutation/summary.txt`)
+--------------------------------------------------------------------------
+- 20 targeted mutants across `crates/px/src/png.rs` (10), `renderer/editor/inpaint_png.js` (6), and
+  `renderer/editor/px/px.js` (4):
+  - **20 killed**, **0 survived**, **0 unexpected**.
+
+5. Gates (`F:/canvas/.claude/worktrees/ag-chain-p/dist/gates/gates/`)
+---------------------------------------------------------------------
+- `k3-core-tiles` (`--offline --tiles on`, port 9621): lint 9s, types 6s, pixels 16s, export 163s, layered 10s -> ALL PASS
+- `k3-core-canvas` (`--offline --tiles off`, port 9622): lint 18s, types 8s, pixels 13s, export 13s, layered 16s -> ALL PASS
+- `k3-ed-tiles` (`--offline --tiles on`, port 9621): editor 188s -> ALL PASS
+- `k3-ed-canvas` (`--offline --tiles off`, port 9622): editor 165s -> ALL PASS
+- `k3-tiles-serial` (`--offline --tiles on`, port 9621): pxjobs 137s -> ALL PASS
+

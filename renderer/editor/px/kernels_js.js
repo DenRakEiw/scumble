@@ -1353,6 +1353,35 @@ export function pngUnfilterRows(lines, rows, rowBytes, bpp, prev, rgba = null) {
     return rows;
 }
 
+const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+    return t;
+})();
+
+/** CRC-32 of `bytes`, continued from `start` (0 for a new checksum). */
+export function crc32(bytes, start = 0) {
+    bytes = bytesOf(bytes);
+    let c = (start ^ 0xFFFFFFFF) >>> 0;
+    for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+/**
+ * Frame `dataLen` bytes already at `buf[8..8 + dataLen]` as a PNG chunk of 4-byte `kind` (big-endian u32, e.g.
+ * `0x49444154` for `"IDAT"`): length and type in `buf[0..8]`, the CRC-32 over `buf[4..8 + dataLen]` in
+ * `buf[8 + dataLen..12 + dataLen]`. Returns that CRC-32.
+ */
+export function pngChunkFrame(buf, dataLen = buf.byteLength - 12, kind = 0x49444154) {
+    buf = bytesOf(buf);
+    const dv = new DataView(buf.buffer, buf.byteOffset, dataLen + 12);
+    dv.setUint32(0, dataLen >>> 0);
+    dv.setUint32(4, kind >>> 0);
+    const crc = crc32(buf.subarray(4, 8 + dataLen), 0);
+    dv.setUint32(8 + dataLen, crc);
+    return crc;
+}
+
 // ---- the smudge's dab (PLAN_0_1_31 §4 step 3) ---------------------------------------------------
 
 export const SMUDGE_ALPHA_LOCK = 1, SMUDGE_PICKUP = 2;

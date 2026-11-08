@@ -201,9 +201,16 @@ ROWS = {
     """,
     "crc32_64mb": """
         const P = await import('./editor/inpaint_png.js');
+        const K = await import('./editor/px/kernels.js');
         const buf = noise(64 * 1024 * 1024);
         const t = await time(() => P.crc32(buf), 3);
+        let tj = null;
+        if (K.ROUTE_KINDS && K.ROUTE_KINDS.crc32) {
+            K.setRoute('crc32', 'js');
+            try { tj = await time(() => P.crc32(buf), 3); } finally { K.setRoute('crc32', null); }
+        }
         out.crc = t; out.msPerMB = +(t.median / 64).toFixed(3);
+        if (tj) { out.js = tj; out.jsMsPerMB = +(tj.median / 64).toFixed(3); out.speedup = +(tj.median / t.median).toFixed(2); }
     """,
     "dabs_256": """
         const K = await import('./editor/inpaint_stroke.js');

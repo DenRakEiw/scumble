@@ -504,3 +504,75 @@ mod lanes {
         }
     }
 }
+
+/// IEEE 802.3 reflected CRC-32 (`0xEDB8_8320`) slice-by-16 lookup tables (`CRC_TABLE[0]` byte-wise, `CRC_TABLE[s]`
+/// shifted `s` bytes ahead). Built at compile time so `Cargo.lock` gains no dependency (`tools/build_px.py --locked`).
+const CRC_TABLE: [[u32; 256]; 16] = {
+    let mut t = [[0u32; 256]; 16];
+    let mut i = 0;
+    while i < 256 {
+        let mut c = i as u32;
+        let mut k = 0;
+        while k < 8 {
+            c = if c & 1 != 0 { (c >> 1) ^ 0xEDB8_8320 } else { c >> 1 };
+            k += 1;
+        }
+        t[0][i] = c;
+        i += 1;
+    }
+    let mut s = 1;
+    while s < 16 {
+        let mut i = 0;
+        while i < 256 {
+            let prev = t[s - 1][i];
+            t[s][i] = t[0][(prev & 0xFF) as usize] ^ (prev >> 8);
+            i += 1;
+        }
+        s += 1;
+    }
+    t
+};
+
+/// The CRC-32 of `src`, continued from `start` (0 for a new checksum), 16 bytes at a time through `CRC_TABLE`.
+pub fn crc32(src: &[u8], start: u32) -> u32 {
+    let mut c = !start;
+    let mut chunks = src.chunks_exact(16);
+    for b in &mut chunks {
+        let d0 = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) ^ c;
+        let d1 = u32::from_le_bytes([b[4], b[5], b[6], b[7]]);
+        let d2 = u32::from_le_bytes([b[8], b[9], b[10], b[11]]);
+        let d3 = u32::from_le_bytes([b[12], b[13], b[14], b[15]]);
+        c = CRC_TABLE[15][(d0 & 0xFF) as usize]
+            ^ CRC_TABLE[14][((d0 >> 8) & 0xFF) as usize]
+            ^ CRC_TABLE[13][((d0 >> 16) & 0xFF) as usize]
+            ^ CRC_TABLE[12][(d0 >> 24) as usize]
+            ^ CRC_TABLE[11][(d1 & 0xFF) as usize]
+            ^ CRC_TABLE[10][((d1 >> 8) & 0xFF) as usize]
+            ^ CRC_TABLE[9][((d1 >> 16) & 0xFF) as usize]
+            ^ CRC_TABLE[8][(d1 >> 24) as usize]
+            ^ CRC_TABLE[7][(d2 & 0xFF) as usize]
+            ^ CRC_TABLE[6][((d2 >> 8) & 0xFF) as usize]
+            ^ CRC_TABLE[5][((d2 >> 16) & 0xFF) as usize]
+            ^ CRC_TABLE[4][(d2 >> 24) as usize]
+            ^ CRC_TABLE[3][(d3 & 0xFF) as usize]
+            ^ CRC_TABLE[2][((d3 >> 8) & 0xFF) as usize]
+            ^ CRC_TABLE[1][((d3 >> 16) & 0xFF) as usize]
+            ^ CRC_TABLE[0][(d3 >> 24) as usize];
+    }
+    for &byte in chunks.remainder() {
+        c = CRC_TABLE[0][((c ^ byte as u32) & 0xFF) as usize] ^ (c >> 8);
+    }
+    !c
+}
+
+/// Frame `data_len` bytes already at `buf[8..8 + data_len]` as a PNG chunk of 4-byte `kind` (big-endian, e.g.
+/// `0x49444154` for `"IDAT"`): length and type in `buf[0..8]`, the chunk's CRC-32 over `buf[4..8 + data_len]` in
+/// `buf[8 + data_len..12 + data_len]`. Returns that CRC-32.
+pub fn chunk_frame(buf: &mut [u8], data_len: usize, kind: u32) -> u32 {
+    buf[0..4].copy_from_slice(&(data_len as u32).to_be_bytes());
+    buf[4..8].copy_from_slice(&kind.to_be_bytes());
+    let crc = crc32(&buf[4..8 + data_len], 0);
+    buf[8 + data_len..12 + data_len].copy_from_slice(&crc.to_be_bytes());
+    crc
+}
+

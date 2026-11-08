@@ -1,0 +1,210 @@
+{
+  "target": "K3 (crc32, png_chunk_frame, crc32Combine, OraBandWriter combined CRC)",
+  "total": 20,
+  "killed": 20,
+  "survived": 0,
+  "unexpected_survivors": 0,
+  "seconds": 190.4,
+  "mutants": [
+    {
+      "id": "M01_poly_lsb",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 10.54,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=352917074/352917074 at 5429: 21 vs 219",
+      "note": "Reflected polynomial LSB mutated"
+    },
+    {
+      "id": "M02_slice_table_shift",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 10.96,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=340286088/340286088 at 5429: 20 vs 219",
+      "note": "Slice-by-16 table step shift 8 -> 7"
+    },
+    {
+      "id": "M03_crc_init_no_invert",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 14.47,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=4045023550/4045023550 at 5429: 241 vs 219",
+      "note": "Initial CRC state not inverted"
+    },
+    {
+      "id": "M04_crc_final_no_invert",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 14.09,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=605146293/605146293 at 5429: 36 vs 219",
+      "note": "Final CRC state not inverted"
+    },
+    {
+      "id": "M05_crc_d0_no_xor_c",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 10.7,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=1881414581/1881414581 at 5429: 112 vs 219",
+      "note": "16-byte block drops running CRC state c"
+    },
+    {
+      "id": "M06_crc_lane15_to_14",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 10.05,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=4125014597/4125014597 at 5429: 245 vs 219",
+      "note": "First byte of 16-byte block uses table 14 instead of 15"
+    },
+    {
+      "id": "M07_crc_lane0_to_1",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 13.1,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=3299545416/3299545416 at 5429: 196 vs 219",
+      "note": "Last byte of 16-byte block uses table 1 instead of 0"
+    },
+    {
+      "id": "M08_crc_remainder_no_shift",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 13.58,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=3679149145/3679149145 at 5430: 75 vs 238",
+      "note": "Remainder byte loop drops (c >> 8)"
+    },
+    {
+      "id": "M09_frame_len_le",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 11.7,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=3689821002/3689821002 at 0: 45 vs 0",
+      "note": "Chunk length written as little-endian instead of big-endian"
+    },
+    {
+      "id": "M10_frame_kind_le",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 10.23,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=628080072/628080072 at 4: 84 vs 73",
+      "note": "Chunk type written as little-endian instead of big-endian"
+    },
+    {
+      "id": "M11_frame_crc_includes_len",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 10.83,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=2072968288/3689821002 at 5429: 123 vs 219",
+      "note": "Chunk CRC includes the 4-byte length field"
+    },
+    {
+      "id": "M12_frame_crc_omits_kind",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 13.15,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=4254494969/3689821002 at 5429: 253 vs 219",
+      "note": "Chunk CRC omits the 4-byte type field"
+    },
+    {
+      "id": "M13_frame_crc_trailer_le",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 13.68,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=3689821002/3689821002 at 5429: 74 vs 219",
+      "note": "Chunk CRC trailer written as little-endian instead of big-endian"
+    },
+    {
+      "id": "M14_frame_return_zero",
+      "file": "crates/px/src/png.rs",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 11.32,
+      "detail": "FAIL rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)  level 1 part 0: sub=true crc=0/3689821002 ",
+      "note": "chunk_frame returns 0 instead of crc"
+    },
+    {
+      "id": "M15_combine_zero_len",
+      "file": "renderer/editor/inpaint_png.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 10.69,
+      "detail": "FAIL rust simd crc32Combine (zero lengths, powers of 2, 0..260 B) equals crc32 of the concatenation  l1=37 l2=0: 0 vs 1991280443",
+      "note": "crc32Combine returns 0 instead of crc1 when len2 <= 0"
+    },
+    {
+      "id": "M16_combine_bit_invert",
+      "file": "renderer/editor/inpaint_png.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 2.13,
+      "detail": "FAIL rust simd crc32Combine (zero lengths, powers of 2, 0..260 B) equals crc32 of the concatenation  l1=37 l2=1: 2514282073 vs 1376860353",
+      "note": "crc32Combine shifts on 0 bits instead of 1 bits of len2"
+    },
+    {
+      "id": "M17_combine_drop_crc2",
+      "file": "renderer/editor/inpaint_png.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 2.28,
+      "detail": "FAIL rust simd crc32Combine (zero lengths, powers of 2, 0..260 B) equals crc32 of the concatenation  l1=37 l2=1: 2977782179 vs 1376860353",
+      "note": "crc32Combine omits XOR with crc2"
+    },
+    {
+      "id": "M18_writer_combine_len_no_minus8",
+      "file": "renderer/editor/inpaint_png.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 2.14,
+      "detail": "FAIL OraBandWriter combines layer and merged PNG CRCs from their parts (1 crc job for thumbnail only, all 5 zip entry CRCs exact)  data/layer0.png: header crc 0x6096c6c9 / local 0x6096c6c9 vs 0x36da8f4c",
+      "note": "PngStreamWriter combines r.crc over c.byteLength instead of c.byteLength - 8"
+    },
+    {
+      "id": "M19_writer_combine_drop_trailer",
+      "file": "renderer/editor/inpaint_png.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 2.27,
+      "detail": "FAIL OraBandWriter combines layer and merged PNG CRCs from their parts (1 crc job for thumbnail only, all 5 zip entry CRCs exact)  data/layer0.png: header crc 0xd7b778d2 / local 0xd7b778d2 vs 0x36da8f4c",
+      "note": "PngStreamWriter omits the 4-byte chunk CRC trailer from the file CRC"
+    },
+    {
+      "id": "M20_pngpart_bytes_subarray_offset",
+      "file": "renderer/editor/px/px.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 2.46,
+      "detail": "FAIL rust simd pngPart level 1: 4 parts join into one zlib stream with a valid Adler-32  invalid stored block lengths",
+      "note": "pngPart bytes subarray starts at 0 instead of 8"
+    }
+  ]
+}

@@ -48,11 +48,11 @@ fn align_for(bytes: usize) -> usize {
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
-/// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells);
-/// `px.js` refuses a module it does not know.
+/// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells;
+/// 32: crc32, png_chunk_frame); `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    31
+    32
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -673,6 +673,26 @@ pub unsafe extern "C" fn deflate_part(src: *const u8, len: usize, level: i32, la
 #[no_mangle]
 pub unsafe extern "C" fn adler32(src: *const u8, len: usize, start: u32) -> u32 {
     png::adler32(slice::from_raw_parts(src, len), start)
+}
+
+/// The CRC-32 of `len` bytes at `src`, continued from `start` (0 for a new checksum).
+#[no_mangle]
+pub unsafe extern "C" fn crc32(src: *const u8, len: usize, start: u32) -> u32 {
+    if len == 0 || src.is_null() {
+        return start;
+    }
+    png::crc32(slice::from_raw_parts(src, len), start)
+}
+
+/// Frame `data_len` bytes already at `buf[8..8 + data_len]` as a PNG chunk of 4-byte `kind` (big-endian, e.g.
+/// `0x49444154` for `"IDAT"`): length and type in `buf[0..8]`, the CRC-32 over type and data in
+/// `buf[8 + data_len..12 + data_len]`. Returns that CRC-32.
+#[no_mangle]
+pub unsafe extern "C" fn png_chunk_frame(buf: *mut u8, data_len: usize, kind: u32) -> u32 {
+    if buf.is_null() {
+        return 0;
+    }
+    png::chunk_frame(slice::from_raw_parts_mut(buf, data_len + 12), data_len, kind)
 }
 
 // ---- PSD --------------------------------------------------------------------------------

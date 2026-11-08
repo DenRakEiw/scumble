@@ -4086,7 +4086,7 @@ async function pngCases(ref, label, js) {
 
 // E2: the parts of a PNG's zlib stream, deflated one by one (any order, any worker), are one stream when joined:
 // header, the parts, the Adler-32 joined from the parts' own sums. Node's inflate checks the checksum itself.
-async function pngPartCases(px, label) {
+async function pngPartCases(px, label, js) {
     const zlib = require("node:zlib");
     const png = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_png.js")).href);
     const w = 700, rows = [5, 1, 64, 30];
@@ -4094,12 +4094,23 @@ async function pngPartCases(px, label) {
     const src = randomRGBA(w, total, 21);
     src.fill(9, 0, w * 4 * 3);                                     // runs, so that deflate has something to match
     for (let y = 10; y < 60; y += 2) src.copyWithin(y * w * 4, 0, w * 4);
+    let framedOk = true, framedDetail = "";
     for (const level of [1, 2, 6]) {
         const parts = [];
         let y = 0;
         rows.forEach((n, i) => {
             const prev = y ? src.subarray((y - 1) * w * 4, y * w * 4) : null;
-            parts.push(px.pngPart(src.subarray(y * w * 4, (y + n) * w * 4), w, n, prev, level, i === rows.length - 1));
+            const p = px.pngPart(src.subarray(y * w * 4, (y + n) * w * 4), w, n, prev, level, i === rows.length - 1);
+            parts.push(p);
+            const wantChunk = png.pngChunk("IDAT", p.bytes);
+            const wantCrc = px.crc32(p.chunk.subarray(4, p.chunk.byteLength - 4), 0);
+            const isSub = p.chunk instanceof Uint8Array && p.bytes instanceof Uint8Array
+                && p.bytes.buffer === p.chunk.buffer && p.bytes.byteOffset === p.chunk.byteOffset + 8
+                && p.bytes.byteLength === p.chunk.byteLength - 12;
+            if (framedOk && (!isSub || p.crc !== wantCrc || !eqBytes(p.chunk, wantChunk))) {
+                framedOk = false;
+                framedDetail = `level ${level} part ${i}: sub=${isSub} crc=${p.crc}/${wantCrc} ${firstDiff(p.chunk, wantChunk)}`;
+            }
             y += n;
         });
         let adler = 1;
@@ -4112,6 +4123,7 @@ async function pngPartCases(px, label) {
         check(`${label} pngPart level ${level}: ${rows.length} parts join into one zlib stream with a valid Adler-32`, !!out && eqBytes(out, want), err || `${want.length} -> ${stream.length}`);
         check(`${label} pngPart level ${level}: the joined rows unfilter back to the input`, !!out && eqBytes(unfilter(out, w, total, null), src));
     }
+    check(`${label} pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)`, framedOk, framedDetail);
     const big = px.pngPart(new Uint8Array(4096 * 64 * 4), 4096, 64, null, 2, true);
     check(`${label} pngPart of an empty band is small`, big.bytes.length < 4096, `${big.bytes.length} bytes`);
     // incompressible rows: the output is larger than the input and the first buffer is still enough
@@ -4120,7 +4132,221 @@ async function pngPartCases(px, label) {
     let nout = null;
     try { nout = new Uint8Array(zlib.inflateRawSync(Buffer.from(np.bytes))); } catch (_) { /* reported below */ }
     check(`${label} pngPart of noise inflates back`, !!nout && nout.length === np.raw);
+    await crcAndFrameCases(px, label, png, zlib, js);
     await noisePartCases(px, label, png, zlib);
+}
+
+// K3 (docs/PLAN_WASM_BUILD.md §3.3, §4.2): slice-by-16 crc32, png_chunk_frame, crc32Combine, PngStreamWriter's
+// combined CRC and OraBandWriter._add(name, blob, crc).
+async function crcAndFrameCases(px, label, png, zlib, js) {
+    const empty = new Uint8Array(0);
+    const vec123 = new Uint8Array(Buffer.from("123456789"));
+    check(`${label} crc32 standard vectors ("" -> 00000000, "123456789" -> CBF43926) and null/zero continuation`,
+        px.crc32(empty, 0) === 0 && js.crc32(empty, 0) === 0
+        && px.crc32(vec123, 0) === 0xCBF43926 && js.crc32(vec123, 0) === 0xCBF43926
+        && (px.exports.crc32(0, 0, 0xCBF43926) >>> 0) === 0xCBF43926
+        && px.crc32(empty, 0xCBF43926) === 0xCBF43926 && js.crc32(empty, 0xCBF43926) === 0xCBF43926);
+
+    // Every length 0..67 (0..4 whole 16-byte blocks and every 0..15 remainder), larger sizes, all 256 byte values in
+    // every lane 0..15 and tail, and non-zero start values against the twin and Node's zlib.crc32.
+    const crcLens = [...Array.from({ length: 68 }, (_, i) => i), 128, 255, 256, 257, 1024, 4099, 65537];
+    const starts = [0, 1, 0xCBF43926, 0x12345678, 0x80000000, 0xFFFFFFFF];
+    const crcCases = [];
+    let zlibOk = true, zlibDetail = "";
+    for (const n of crcLens) {
+        const b = new Uint8Array(n);
+        for (let i = 0; i < n; i++) b[i] = (i * 73 + n * 19 + 11) & 255;
+        for (const st of n <= 33 ? starts : [0, 0xCBF43926]) {
+            crcCases.push({ tag: `len ${n} start 0x${st.toString(16)}`, args: [b, st] });
+            const got = js.crc32(b, st), want = zlib.crc32(b, st) >>> 0;
+            if (zlibOk && got !== want) { zlibOk = false; zlibDetail = `len ${n} start 0x${st.toString(16)}: ${got} vs ${want}`; }
+        }
+    }
+    // Every byte value 0..255 at each of the 16 slice positions and in the remainder
+    for (let lane = 0; lane < 17; lane++) {
+        const b = new Uint8Array(256 * (lane < 16 ? 16 : 1) + (lane === 16 ? 7 : 0));
+        for (let v = 0; v < 256; v++) {
+            if (lane < 16) b[v * 16 + lane] = v;
+            else b[v] = v;
+        }
+        crcCases.push({ tag: `all 256 byte values at lane ${lane}`, args: [b, lane * 0x11111111] });
+    }
+    check(`${label} js crc32 equals Node's zlib.crc32 (${crcCases.length} cases)`, zlibOk, zlibDetail);
+    twinCheck({
+        name: "crc32", builds: [[label, px]], twin: js,
+        call: (k, [b, st]) => k.crc32(b, st),
+        cases: crcCases,
+    });
+
+    // Continuation across every split point of small and multi-block buffers, plus multi-part splits
+    let contOk = true, contDetail = "";
+    for (const n of [0, 1, 7, 15, 16, 17, 31, 32, 33, 64, 257, 4099]) {
+        const buf = new Uint8Array(n);
+        for (let i = 0; i < n; i++) buf[i] = (i * 131 + n * 7 + 3) & 255;
+        const whole = px.crc32(buf, 0);
+        const step = n <= 33 ? 1 : Math.floor(n / 19);
+        for (let split = 0; split <= n; split += step) {
+            const c1 = px.crc32(buf.subarray(0, split), 0);
+            const c2 = px.crc32(buf.subarray(split), c1);
+            if (c2 !== whole) { contOk = false; contDetail = `n=${n} split=${split}: ${c2} vs ${whole}`; break; }
+        }
+        // 4-way split
+        const p1 = Math.floor(n / 5), p2 = Math.floor((2 * n) / 5), p3 = Math.floor((4 * n) / 5);
+        let c = 0;
+        for (const [s, e] of [[0, p1], [p1, p2], [p2, p3], [p3, n]]) c = px.crc32(buf.subarray(s, e), c);
+        if (c !== whole) { contOk = false; contDetail = `n=${n} 4-way: ${c} vs ${whole}`; }
+        if (!contOk) break;
+    }
+    check(`${label} crc32 continuation across splits equals one call`, contOk, contDetail);
+
+    // crc32Combine: zero/negative lengths, empty left/right, every length 0..260, powers of two, and multi-part chains
+    let combOk = true, combDetail = "";
+    if (png.crc32Combine(0xCBF43926, 0, 0) !== 0xCBF43926
+        || png.crc32Combine(0xCBF43926, 0xDEADBEEF, 0) !== 0xCBF43926
+        || png.crc32Combine(0xCBF43926, 0xDEADBEEF, -7) !== 0xCBF43926
+        || png.crc32Combine(0, 0xCBF43926, 9) !== 0xCBF43926) {
+        combOk = false; combDetail = "zero/empty edge case failed";
+    }
+    const combBuf = new Uint8Array(70000);
+    for (let i = 0; i < combBuf.length; i++) combBuf[i] = (i * 53 + (i >>> 7) * 19 + 5) & 255;
+    const combSplits = [
+        ...Array.from({ length: 261 }, (_, i) => [37, i]),
+        ...[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 4096, 16384, 32768, 65536].map((l2) => [113, l2]),
+        [0, 0], [0, 1], [0, 257], [257, 0],
+    ];
+    for (const [l1, l2] of combSplits) {
+        const a = combBuf.subarray(0, l1), b = combBuf.subarray(l1, l1 + l2);
+        const want = px.crc32(combBuf.subarray(0, l1 + l2), 0);
+        const got = png.crc32Combine(px.crc32(a, 0), px.crc32(b, 0), l2);
+        if (got !== want) { combOk = false; combDetail = `l1=${l1} l2=${l2}: ${got} vs ${want}`; break; }
+    }
+    check(`${label} crc32Combine (zero lengths, powers of 2, 0..260 B) equals crc32 of the concatenation`, combOk, combDetail);
+
+    // png_chunk_frame against twin and against png.pngChunk
+    const chunkTypes = ["IHDR", "IDAT", "IEND", "tEXt", "sRGB", "gAMA"];
+    const chunkLens = [0, 1, 2, 4, 13, 15, 16, 17, 31, 32, 33, 64, 257, 4099];
+    const frameCases = [];
+    let vsPngChunkOk = true, vsPngChunkDetail = "";
+    for (const type of chunkTypes) {
+        const kind = ((type.charCodeAt(0) << 24) | (type.charCodeAt(1) << 16) | (type.charCodeAt(2) << 8) | type.charCodeAt(3)) >>> 0;
+        for (const n of chunkLens) {
+            const payload = combBuf.subarray(0, n);
+            const buf = new Uint8Array(n + 12);
+            buf.fill(0xA5);
+            buf.set(payload, 8);
+            frameCases.push({ tag: `${type} ${n} B`, args: [buf, n, kind] });
+            const wantChunk = png.pngChunk(type, payload);
+            const wantCrc = new DataView(wantChunk.buffer, wantChunk.byteOffset + 8 + n, 4).getUint32(0);
+            const testBuf = buf.slice();
+            const gotCrc = px.pngChunkFrame(testBuf, n, kind);
+            if (vsPngChunkOk && (gotCrc !== wantCrc || !eqBytes(testBuf, wantChunk))) {
+                vsPngChunkOk = false;
+                vsPngChunkDetail = `${type} ${n} B: crc ${gotCrc} vs ${wantCrc}, ${firstDiff(testBuf, wantChunk)}`;
+            }
+        }
+    }
+    if (px.exports.png_chunk_frame(0, 0, 0x49444154) !== 0) {
+        vsPngChunkOk = false; vsPngChunkDetail = "null buf did not return 0";
+    }
+    check(`${label} png_chunk_frame equals inpaint_png.pngChunk byte for byte (${frameCases.length} cases)`, vsPngChunkOk, vsPngChunkDetail);
+    twinCheck({
+        name: "png_chunk_frame", builds: [[label, px]], twin: js,
+        call: (k, [buf, n, kind]) => { const crc = k.pngChunkFrame(buf, n, kind); return { buf, crc }; },
+        cases: frameCases,
+    });
+
+    // PngStreamWriter combined CRC, OraBandWriter without worker "crc" jobs for written PNGs, and inpaint_png.crc32 route
+    if (label === "rust simd") {
+        const bands = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_bands.js")).href);
+        const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (u, ...rest) => {
+            const s = String(u && u.href ? u.href : u);
+            return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+        };
+        try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+        K.setKernels("rust");
+
+        // Route check on png.crc32: below 64 B stays in JS, from 64 B on runs Rust
+        P.pxCalls(true);
+        const cSmall = png.crc32(combBuf.subarray(0, 63));
+        const smallCalls = P.pxCalls().crc32 || 0;
+        const cLarge = png.crc32(combBuf.subarray(0, 64));
+        const largeCalls = P.pxCalls().crc32 || 0;
+        K.setRoute("crc32", "js");
+        P.pxCalls(true);
+        const cForcedJs = png.crc32(combBuf.subarray(0, 4096));
+        const jsRouteCalls = P.pxCalls().crc32 || 0;
+        K.setRoute("crc32", "rust");
+        const cForcedRust = png.crc32(combBuf.subarray(0, 16));
+        const rustRouteCalls = P.pxCalls().crc32 || 0;
+        K.setRoute("crc32", null);
+        check("inpaint_png.crc32 routes inputs from the cut-off (64 B) to Rust and smaller ones to the JS twin",
+            smallCalls === 0 && largeCalls === 1 && jsRouteCalls === 0 && rustRouteCalls === 1
+            && cSmall === js.crc32(combBuf.subarray(0, 63)) && cLarge === js.crc32(combBuf.subarray(0, 64))
+            && cForcedJs === js.crc32(combBuf.subarray(0, 4096)) && cForcedRust === js.crc32(combBuf.subarray(0, 16)),
+            `small=${smallCalls} large=${largeCalls} jsRoute=${jsRouteCalls} rustRoute=${rustRouteCalls}`);
+
+        // OraBandWriter & PngStreamWriter: combined entry CRCs match the whole PNG files without "crc" worker jobs
+        const W = 64, H = 20, layerRgba = randomRGBA(W, H, 501), mergedRgba = randomRGBA(W, H, 502);
+        const makeSource = (rgba) => ({
+            width: W, height: H, align: 8,
+            async part(y, n) {
+                const slice = rgba.slice(y * W * 4, (y + n) * W * 4);
+                const prev = y > 0 ? rgba.slice((y - 1) * W * 4, y * W * 4) : null;
+                return { args: { rgba: slice.buffer, prev: prev ? prev.buffer : null }, transfer: [] };
+            },
+        });
+        let crcJobs = 0, partJobs = 0;
+        const runJob = async (op, args) => {
+            if (op === "png_part") {
+                partJobs++;
+                const r = px.pngPart(new Uint8Array(args.rgba), args.w, args.rows, args.prev ? new Uint8Array(args.prev) : null, args.level ?? 2, !!args.last);
+                return { chunk: r.chunk.buffer, adler: r.adler, raw: r.raw, crc: r.crc };
+            }
+            if (op === "crc") {
+                crcJobs++;
+                const bytes = new Uint8Array(await args.blob.arrayBuffer());
+                return { crc: png.crc32(bytes), size: bytes.length };
+            }
+            throw new Error("unexpected op " + op);
+        };
+        const thumbBytes = png.pngChunk("IEND", new Uint8Array(0));
+        const thumbBlob = new Blob([thumbBytes], { type: "image/png" });
+        const ora = new bands.OraBandWriter({ width: W, height: H, run: runJob });
+        await ora.layer({ name: "L0", x: 0, y: 0, opacity: 1, visible: true, blend: "normal" }, makeSource(layerRgba));
+        const oraBlob = await ora.finish(makeSource(mergedRgba), thumbBlob);
+        const z = new Uint8Array(await oraBlob.arrayBuffer());
+        const le32 = (o) => (z[o] | (z[o + 1] << 8) | (z[o + 2] << 16) | (z[o + 3] << 24)) >>> 0;
+        const le16 = (o) => z[o] | (z[o + 1] << 8);
+        const eo = z.length - 22, count = le16(eo + 10);
+        let co = le32(eo + 16), zipOk = count === 5, zipDetail = "";
+        for (let i = 0; i < count && zipOk; i++) {
+            const crc = le32(co + 16), size = le32(co + 20), nl = le16(co + 28), lo = le32(co + 42);
+            const name = new TextDecoder().decode(z.subarray(co + 46, co + 46 + nl));
+            const localCrc = le32(lo + 14);
+            const data = z.subarray(lo + 30 + le16(lo + 26) + le16(lo + 28), lo + 30 + le16(lo + 26) + le16(lo + 28) + size);
+            const want = px.crc32(data, 0);
+            if (crc !== want || localCrc !== want) {
+                zipOk = false;
+                zipDetail = `${name}: header crc 0x${crc.toString(16)} / local 0x${localCrc.toString(16)} vs 0x${want.toString(16)}`;
+            }
+            co += 46 + nl;
+        }
+        check("OraBandWriter combines layer and merged PNG CRCs from their parts (1 crc job for thumbnail only, all 5 zip entry CRCs exact)",
+            zipOk && crcJobs === 1 && partJobs >= 2, zipDetail || `crcJobs=${crcJobs}, partJobs=${partJobs}`);
+
+        if (process.env.PX_BENCH) {
+            const buf64m = new Uint8Array(64 * 1048576);
+            for (let i = 0; i < buf64m.length; i += 4096) buf64m[i] = (i >>> 12) & 255;
+            const t = benchMedians([
+                ["simd", () => px.crc32(buf64m, 0)],
+                ["js", () => js.crc32(buf64m, 0)],
+            ], 3);
+            console.log(`       crc32 64 MB: rust ${(t.simd / 64).toFixed(3)} ms/MB (${t.simd.toFixed(1)} ms), twin ${(t.js / 64).toFixed(3)} ms/MB (${t.js.toFixed(1)} ms), ${(t.js / t.simd).toFixed(2)}x`);
+        }
+    }
 }
 
 /** Uniform noise in all four channels, alpha too (AES-CTR over zeros: the same bytes every run): what deflate can only store. */
@@ -5761,7 +5987,7 @@ async function main() {
         await group("smudge", () => smudgeCases(px, label, js));
         await group("poisson", () => poissonCases(px, label, js));
         await group("png", () => pngCases(px, label, js));
-        await group("pngPart", () => pngPartCases(px, label));
+        await group("pngPart", () => pngPartCases(px, label, js));
         await group("psd", () => psdCases(px, label, js));
         await group("resample", () => resampleCases(px, label, resample));
         await group("liquify", () => liquifyCases(px, label, liquify, resample));
