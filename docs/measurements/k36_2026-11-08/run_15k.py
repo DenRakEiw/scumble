@@ -156,7 +156,7 @@ BENCH_JS = r"""(async () => {
             lastErase = runErase(); eraseTimes.push(lastErase.dt);
         }
         const calls = K.pxCalls(true);
-        // Compute FNV-1a hashes of the 24 tiles to verify byte-for-byte identity across before, after(js), after(rust)
+        // Compute FNV-1a hashes over every byte of the 24 tiles to verify byte-for-byte identity across before, after(js), after(rust)
         const hashLayer = (px) => {
             let h = 2166136261 >>> 0;
             for (let i = 0; i < 24; i++) {
@@ -166,21 +166,29 @@ BENCH_JS = r"""(async () => {
                     continue;
                 }
                 const d = t.data;
-                for (let j = 0; j < d.length; j += 16) {
+                for (let j = 0; j < d.length; j++) {
                     h = Math.imul(h ^ d[j], 16777619) >>> 0;
                 }
             }
             return h >>> 0;
         };
+        const base_hash = hashLayer(baseLayer);
+        const paint_hash = hashLayer(lastPaint.target);
+        const clipped_hash = hashLayer(lastClip.target);
+        const erase_hash = hashLayer(lastErase.target);
+        if (paint_hash === base_hash || clipped_hash === base_hash || erase_hash === base_hash || paint_hash === clipped_hash || paint_hash === erase_hash || clipped_hash === erase_hash) {
+            throw new Error(`hash collision or blind hash: base=${base_hash} paint=${paint_hash} clipped=${clipped_hash} erase=${erase_hash}`);
+        }
         const out = {
             paint_ms: median(paintTimes),
             clipped_ms: median(clipTimes),
             erase_ms: median(eraseTimes),
             paint_tiles: lastPaint.target.tileCount,
             erase_tiles: lastErase.target.tileCount,
-            paint_hash: hashLayer(lastPaint.target),
-            clipped_hash: hashLayer(lastClip.target),
-            erase_hash: hashLayer(lastErase.target),
+            base_hash,
+            paint_hash,
+            clipped_hash,
+            erase_hash,
             calls,
         };
         lastPaint.target.release();
@@ -307,7 +315,19 @@ def main():
             release_lock(token)
     with open(os.path.join(OUT_DIR, "raw_all.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(all_res, f, indent=2)
-    print("ALL 3 ROUNDS DONE", flush=True)
+    b0 = all_res["before"][0]["bench"]["before"]
+    for r_idx in range(3):
+        bb = all_res["before"][r_idx]["bench"]["before"]
+        ar = all_res["after"][r_idx]["bench"]["rust"]
+        aj = all_res["after"][r_idx]["bench"]["js"]
+        for side_name, side in (("before", bb), ("after.rust", ar), ("after.js", aj)):
+            assert side["paint_hash"] != side["clipped_hash"], f"r{r_idx+1} {side_name}: paint_hash == clipped_hash"
+            assert side["paint_hash"] != side["base_hash"], f"r{r_idx+1} {side_name}: paint_hash == base_hash"
+            assert side["clipped_hash"] != side["base_hash"], f"r{r_idx+1} {side_name}: clipped_hash == base_hash"
+            assert side["erase_hash"] != side["base_hash"], f"r{r_idx+1} {side_name}: erase_hash == base_hash"
+            for k in ("base_hash", "paint_hash", "clipped_hash", "erase_hash", "paint_tiles", "erase_tiles"):
+                assert side[k] == b0[k], f"r{r_idx+1} {side_name} {k}={side[k]} != before[0] {b0[k]}"
+    print("ALL 3 ROUNDS DONE (hashes verified distinct and equal across before/rust/js)", flush=True)
 
 
 if __name__ == "__main__":

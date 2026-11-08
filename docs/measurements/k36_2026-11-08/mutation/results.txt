@@ -24,3 +24,8 @@ orig skipped (names given without 'orig'): the verdicts lean on an earlier orig 
 KILLED   composite.rs: simd::active_span drops scalar tail when first_g < n4 and tail_active: red: px_test (only: compositeSha) (3 failing lines; first: FAIL rust simd composite_masked_tile equals its twin byte for byte (200 cases, each also at an odd offset)  op 0 dst+mask px=1031 a=255: out.bytes[411); builds {'px.wasm': '442ed8428e10', 'px_scalar.wasm': '09940291941b'}; 15 s (build 14 s, px_test 1 s); expected killed
 restored copy: every mutated file back: True; rebuilt, both builds identical to the checkout's: True; green: the full px_test
 mutants: 1 killed (0 of them only on the re-check), 0 survived of 1; 0 not as expected; 152 s for the mutants
+== K36 (composite_masked_tile, compositeStroke on it) mutation round 2026-11-08 20:09 on C:\Users\schoeneberg\AppData\Local\Temp\claude\F--canvas\mut_k36 (tools/mutation_round.py; 1 mutants, port 9619, re-check gates none)
+orig skipped (names given without 'orig'): the verdicts lean on an earlier orig run of this tree
+KILLED   inpaint_tiles.js: compositeStroke write returns old.data on existing tile: red: px_test (only: compositeSha) (2 failing lines; first: FAIL TileLayerPixels.compositeStroke on js and rust routes matches byte-for-byte, drops emptied tiles, and keeps unchanged tiles shared with frozen cl); builds None; 1 s (px_test 1 s); expected killed
+restored copy: every mutated file back: True; green: the full px_test
+mutants: 1 killed (0 of them only on the re-check), 0 survived of 1; 0 not as expected; 126 s for the mutants

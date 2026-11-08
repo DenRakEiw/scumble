@@ -40,32 +40,43 @@ Node microbenchmarks (`PX_BENCH=1 PX_ONLY=compositeSha node tools/px_test.js`, m
 
 15000 x 10000 before (`21accab7`) vs after (`K36`), 3 alternating rounds on port 9619 (`w1_lock.py` held per round):
 row                                                         before (21accab7)               after (K36)
-  compositeStroke 24 frozen tiles paint (rust) ms            7.79 [7.51-8.26]          4.58 [4.18-4.82]   n=3/3  (1.70x)
-  compositeStroke 24 frozen tiles paint (js twin) ms         7.79 [7.51-8.26]        11.59 [11.08-11.78]  n=3/3
-  compositeStroke 24 frozen tiles clipped (rust) ms          8.61 [8.51-8.70]          5.27 [4.96-5.46]   n=3/3  (1.63x)
-  compositeStroke 24 frozen tiles clipped (js twin) ms       8.61 [8.51-8.70]        13.17 [12.80-13.41]  n=3/3
-  compositeStroke 24 frozen tiles erase (rust) ms            7.96 [7.63-8.13]          5.48 [5.41-6.09]   n=3/3  (1.45x)
-  compositeStroke 24 frozen tiles erase (js twin) ms         7.96 [7.63-8.13]        12.94 [12.83-13.37]  n=3/3
-  native stroke_and_release (3 tiles + draw) wall ms      315.0 [285.0-332.0]       324.0 [294.0-360.0]   n=3/3
-  native stroke_and_release (3 tiles + draw) blocked ms   315.0 [285.0-332.0]       324.0 [294.0-360.0]   n=3/3
-  native stroke_and_release (3 tiles + draw) release ms      11.5 [11.1-12.3]           15.3 [7.0-18.5]   n=3/3
+  compositeStroke 24 frozen tiles paint (rust) ms           9.60 [9.28-10.78]          5.03 [4.61-5.33]   n=3/3  (1.91x)
+  compositeStroke 24 frozen tiles paint (js twin) ms        9.60 [9.28-10.78]         10.83 [8.92-13.84]  n=3/3
+  compositeStroke 24 frozen tiles clipped (rust) ms        10.50 [9.97-12.18]          6.01 [5.33-6.34]   n=3/3  (1.75x)
+  compositeStroke 24 frozen tiles clipped (js twin) ms     10.50 [9.97-12.18]        13.77 [11.11-17.81]  n=3/3
+  compositeStroke 24 frozen tiles erase (rust) ms           9.46 [8.94-11.20]          6.10 [5.74-6.90]   n=3/3  (1.55x)
+  compositeStroke 24 frozen tiles erase (js twin) ms        9.46 [8.94-11.20]        13.18 [10.55-17.27]  n=3/3
+  native stroke_and_release (3 tiles + draw) wall ms      372.0 [317.0-640.0]       419.0 [347.0-456.0]   n=3/3  (tie, spreads overlap)
+  native stroke_and_release (3 tiles + draw) blocked ms   372.0 [317.0-640.0]       419.0 [347.0-456.0]   n=3/3  (tie, spreads overlap)
+  native stroke_and_release (3 tiles + draw) release ms      13.9 [11.5-35.8]            7.7 [6.9-18.7]   n=3/3  (tie, spreads overlap)
+
+Verdict (docs/PLAN_WASM_BUILD.md §1.1):
+- The felt whole-operation row (`stroke_and_release`, which touches 3 tiles out of 60 dab frames plus `ed.draw()`) ties
+  between `before` and `after` (`wall` 372.0 ms [317.0-640.0] vs 419.0 ms [347.0-456.0], `release` 13.9 ms [11.5-35.8]
+  vs 7.7 ms [6.9-18.7]; the spreads overlap).
+- Rust stays by §1.1 rule 2 (the tie rule) because the `compositeStroke` kernel row is strictly faster on Rust across
+  all three modes: paint `5.03 ms [4.61-5.33]` vs `9.60 ms [9.28-10.78]` before and `10.83 ms [8.92-13.84]` JS twin,
+  clipped paint `6.01 ms [5.33-6.34]` vs `10.50 ms [9.97-12.18]` before and `13.77 ms [11.11-17.81]` JS twin, and
+  erase `6.10 ms [5.74-6.90]` vs `9.46 ms [8.94-11.20]` before and `13.18 ms [10.55-17.27]` JS twin.
 
 Pins & byte-equality:
 - `px_test.js` (`compositeSha` on `simd`, `scalar`, and `js`: 200 cases x 2 offsets across all ops `0..=30`, opacities,
   `dst` present / `null`, `mask` present / `null` / zero, sparse 65,536-px tiles, SIMD+tail active spans, outcomes `0`,
-  `1`, `2`, refusals `3`, route switching, trap recovery, and `TileLayerPixels.compositeStroke`): PASS (0 differences).
+  `1`, `2`, refusals `3`, route switching, trap recovery, and `TileLayerPixels.compositeStroke` including frozen clone
+  byte preservation): PASS (0 differences).
 - `editor_test.py` (`a_stroke_commits_through_the_kernel_on_tiles`): PASS (`composite_masked_tile > 0` on `"rust"`, `0`
   on `"js"`, `!composite_tile`, byte-for-byte + `tileCount` identical between `"js"` and `"rust"` on paint and erase).
-- 15000 x 10000 24-tile benchmark hashes (`paint_hash=458399173`, `clipped_hash=458399173`, `erase_hash=956926557`,
-  `paint_tiles=24`, `erase_tiles=16`): identical across `before (21accab7)`, `after (rust)`, and `after (js)`.
+- 15000 x 10000 24-tile benchmark all-byte FNV-1a hashes (`base_hash=2350680613`, `paint_hash=1178011791`,
+  `clipped_hash=1299386662`, `erase_hash=2968442365`, `paint_tiles=24`, `erase_tiles=16`): all four hashes are distinct
+  and identical across `before (21accab7)`, `after (rust)`, and `after (js)` in every round.
 
 Mutation round (`docs/measurements/k36_2026-11-08/mutation/results.txt`):
-- 17 mutants across `composite.rs`, `px.js`, `kernels_js.js`, `kernels.js`, and `inpaint_tiles.js`:
+- 18 mutants across `composite.rs`, `px.js`, `kernels_js.js`, `kernels.js`, and `inpaint_tiles.js`:
   - Initial run: 16 killed, 1 survived (`simd::active_span` dropping scalar tail when `first_g < n4 && tail_active`),
     which exposed a missing test case with both a SIMD group and the scalar tail active in the same chunk.
-  - Added SIMD+tail pair test cases (`px = 5, 7, 19, 255, 263, 513, 1031`) to `tools/px_test.js` and re-ran:
-    killed in 1 s (`17/17` killed on `PX_ONLY=compositeSha`, 0 survived).
+  - Added SIMD+tail pair test cases (`px = 5, 7, 19, 255, 263, 513, 1031`) and frozen-clone byte check (`eqBytes(snapBytes, before)`)
+    to `tools/px_test.js` plus the `old.data` write mutant: `18/18` killed on `PX_ONLY=compositeSha`, 0 survived.
 
 Gates (`lint types pixels composite brush editor` on both backends):
-- `k36-tiles`:  lint 12s, types 8s, pixels 18s, composite 11s, brush 16s, editor 349s -> ALL PASS
-- `k36-canvas`: lint 19s, types 12s, pixels 12s, composite 7s, brush 15s, editor 172s -> ALL PASS
+- `k36-tiles` (461s):  lint 23s, types 14s, pixels 25s, composite 16s, brush 19s, editor 342s -> ALL PASS
+- `k36-canvas` (289s): lint 18s, types 10s, pixels 25s, composite 9s, brush 16s, editor 187s -> ALL PASS

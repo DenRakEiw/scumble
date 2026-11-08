@@ -202,4 +202,14 @@ MUTANTS = [
         "killed",
         PX_KILL,
     ),
+    (
+        "inpaint_tiles.js: compositeStroke write returns old.data on existing tile",
+        IT,
+        [(
+            "            const r = compositeMaskedTile(old ? old.data : null, (whole) => this.writable(tx, ty, true, whole && TILE_SIZE === 256).data,\n                s.data, op, alpha, cov, TILE_SIZE * TILE_SIZE);",
+            "            const r = compositeMaskedTile(old ? old.data : null, (whole) => (old ? old.data : this.writable(tx, ty, true, whole && TILE_SIZE === 256).data),\n                s.data, op, alpha, cov, TILE_SIZE * TILE_SIZE);",
+        )],
+        "killed",
+        PX_KILL,
+    ),
 ]

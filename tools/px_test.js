@@ -3226,6 +3226,7 @@ async function compositeShaCases(js, simd, scalar) {
                 t01.data[0] = 10; t01.data[1] = 20; t01.data[2] = 30; t01.data[3] = 255;
                 // Tile (1,1): absent in layer, stroke paints new pixels -> r = 1 (created)
                 const snap = layer.clone(); // freezes t00, t10, t01 as commitStroke does
+                const before = packTiles(snap).slice();
 
                 // Step 1: compositeStroke with source-over (op = 0) on (0,0), (0,1), (1,1)
                 const stroke1 = new TileLayerPixels(512, 512);
@@ -3252,6 +3253,7 @@ async function compositeShaCases(js, simd, scalar) {
                 return {
                     bytes: packTiles(layer),
                     snapBytes: packTiles(snap),
+                    before,
                     w1, w2, c1, c2,
                     shared01: layer.tileAt(0, 1) === snap.tileAt(0, 1),
                     dropped10: layer.tileAt(1, 0) === null && snap.tileAt(1, 0) !== null,
@@ -3261,6 +3263,7 @@ async function compositeShaCases(js, simd, scalar) {
             const stJs = buildAndStroke("js"), stRust = buildAndStroke("rust");
             check("TileLayerPixels.compositeStroke on js and rust routes matches byte-for-byte, drops emptied tiles, and keeps unchanged tiles shared with frozen clones",
                 eqBytes(stJs.bytes, stRust.bytes) && eqBytes(stJs.snapBytes, stRust.snapBytes)
+                && eqBytes(stJs.snapBytes, stJs.before) && eqBytes(stRust.snapBytes, stRust.before)
                 && stJs.w1 === 2 && stRust.w1 === 2 && stJs.w2 === 1 && stRust.w2 === 1
                 && stJs.c1 === 0 && stJs.c2 === 0 && stRust.c1 === 3 && stRust.c2 === 1
                 && stJs.shared01 && stRust.shared01 && stJs.dropped10 && stRust.dropped10 && stJs.created11 && stRust.created11,

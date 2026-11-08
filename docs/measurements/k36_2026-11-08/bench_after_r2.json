@@ -1,26 +1,28 @@
 {
   "rust": {
-    "paint_ms": 4.18,
-    "clipped_ms": 4.96,
-    "erase_ms": 5.41,
+    "paint_ms": 5.33,
+    "clipped_ms": 6.335,
+    "erase_ms": 5.74,
     "paint_tiles": 24,
     "erase_tiles": 16,
-    "paint_hash": 458399173,
-    "clipped_hash": 458399173,
-    "erase_hash": 956926557,
+    "base_hash": 2350680613,
+    "paint_hash": 1178011791,
+    "clipped_hash": 1299386662,
+    "erase_hash": 2968442365,
     "calls": {
       "composite_masked_tile": 648
     }
   },
   "js": {
-    "paint_ms": 11.08,
-    "clipped_ms": 13.405,
-    "erase_ms": 12.935,
+    "paint_ms": 13.835,
+    "clipped_ms": 17.81,
+    "erase_ms": 17.27,
     "paint_tiles": 24,
     "erase_tiles": 16,
-    "paint_hash": 458399173,
-    "clipped_hash": 458399173,
-    "erase_hash": 956926557,
+    "base_hash": 2350680613,
+    "paint_hash": 1178011791,
+    "clipped_hash": 1299386662,
+    "erase_hash": 2968442365,
     "calls": {}
   }
 }
