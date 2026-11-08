@@ -45,11 +45,12 @@ fn align_for(bytes: usize) -> usize {
 
 /// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
-/// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32);
+/// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
+/// 26: color_match_rgba, blend_alpha);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    25
+    26
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -212,6 +213,34 @@ pub unsafe extern "C" fn mask_bounds_f32(src: *const f32, w: usize, h: usize, bo
         return 0;
     }
     maskf::mask_bounds_f32(slice::from_raw_parts(src, w * h), w, h, slice::from_raw_parts_mut(bounds, 4))
+}
+
+/// Matches the weighted RGB mean and standard deviation of `patch` (`n * 4` RGBA8 bytes, in place) to `reference`
+/// (`n * 4` RGBA8 bytes) under `weight` (`n` f32, `stitch.js` `colorMatch`). Leaves `patch` untouched and returns 0
+/// when the clamped weight sum is below 64 (or `n == 0` or a pointer is null), else 1.
+#[no_mangle]
+pub unsafe extern "C" fn color_match_rgba(patch: *mut u8, reference: *const u8, weight: *const f32, n: usize) -> u32 {
+    if n == 0 || patch.is_null() || reference.is_null() || weight.is_null() {
+        return 0;
+    }
+    maskf::color_match_rgba(
+        slice::from_raw_parts_mut(patch, n * 4),
+        slice::from_raw_parts(reference, n * 4),
+        slice::from_raw_parts(weight, n),
+    )
+}
+
+/// The alpha byte of each RGBA8 pixel of `src` (`n * 4` bytes) replaced in `dst` (`n * 4` bytes, `dst` may alias `src`)
+/// by `Math.round(clamp01(mask[i]) * (keep_alpha != 0 ? src[i * 4 + 3] : 255))` (`stitch.js` align copy and final alpha).
+#[no_mangle]
+pub unsafe extern "C" fn blend_alpha(src: *const u8, mask: *const f32, dst: *mut u8, n: usize, keep_alpha: u32) {
+    if n == 0 || src.is_null() || mask.is_null() || dst.is_null() {
+        return;
+    }
+    if src != dst as *const u8 {
+        core::ptr::copy(src, dst, n * 4);
+    }
+    maskf::blend_alpha(slice::from_raw_parts_mut(dst, n * 4), slice::from_raw_parts(mask, n), keep_alpha != 0);
 }
 
 /// Box blurs of the radii `r0`, `r1`, `r2` (0: none), rows then columns each, in place with clamped edges.

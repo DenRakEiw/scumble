@@ -1,0 +1,326 @@
+{
+ "size": "15000x10000",
+ "profiled": false,
+ "rows": {
+  "build_the_file": {
+   "row": {
+    "size": [
+     15000,
+     10000
+    ],
+    "MP": 150,
+    "fillMs": 954,
+    "encodeMs": 1369,
+    "MB": 275.8,
+    "arena": {
+     "slots": 2360,
+     "chunks": 10,
+     "allocated": 2360,
+     "freed": 0,
+     "droppedChunks": 0,
+     "refused": 0,
+     "failed": 0,
+     "enabled": true,
+     "bytes": 671088640,
+     "freeSlots": 200
+    }
+   },
+   "profile": null
+  },
+  "open_the_file": {
+   "row": {
+    "wall": 2869,
+    "blocked": 445,
+    "calls": {
+     "blob arrayBuffer": {
+      "n": 8,
+      "ms": 0.5,
+      "MB": 0
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 8,
+      "ms": 1.1,
+      "MB": 0
+     },
+     "worker postMessage (moved)": {
+      "n": 164,
+      "ms": 1.4,
+      "MB": 0
+     },
+     "2d putImageData": {
+      "n": 1,
+      "ms": 0.1,
+      "MB": 0.3
+     },
+     "2d getImageData": {
+      "n": 1,
+      "ms": 14.7,
+      "MB": 0.3
+     },
+     "gl compileShader": {
+      "n": 6,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getShaderParameter": {
+      "n": 6,
+      "ms": 4.1,
+      "MB": 0
+     },
+     "gl linkProgram": {
+      "n": 3,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getProgramParameter": {
+      "n": 3,
+      "ms": 399.7,
+      "MB": 0
+     },
+     "gl bufferData": {
+      "n": 12,
+      "ms": 0.1,
+      "MB": 0.1
+     },
+     "gl texImage2D": {
+      "n": 13,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "gl texSubImage2D": {
+      "n": 2360,
+      "ms": 2.3,
+      "MB": 1
+     },
+     "gl draw": {
+      "n": 13,
+      "ms": 0,
+      "MB": 0
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 5,
+      "ms": 0.2,
+      "MB": 41.8
+     }
+    },
+    "jobs": {
+     "png_read": {
+      "jobs": 1,
+      "pixels": 150000000,
+      "kernel": 2034.8,
+      "parse": 0.7,
+      "read": 42.9,
+      "write": 1989.9,
+      "wait": 1039.3,
+      "copy": 46.9,
+      "unfilter": 923.4,
+      "deliver": 7.2,
+      "gen": 0,
+      "pxCalls": {
+       "png_unfilter_rows": 40
+      }
+     },
+     "mips": {
+      "jobs": 19,
+      "tiles": 2344,
+      "kernel": 482.9,
+      "gen": 0,
+      "pxCalls": {
+       "clamp_extend": 98,
+       "mip_chain": 2442
+      }
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": {
+      "mip_chain": 16
+     },
+     "workers": {
+      "png_unfilter_rows": 40,
+      "clamp_extend": 98,
+      "mip_chain": 2442
+     }
+    },
+    "extra": {
+     "loadFileMs": 2799,
+     "tiles": 2360,
+     "compositorBefore": "not made",
+     "compositorAfter": "made"
+    },
+    "error": null,
+    "status": "15000 \u00d7 10000",
+    "focused": true,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "warm_provider_crop": {
+   "row": {
+    "warmed": true
+   },
+   "profile": null
+  },
+  "provider_crop": {
+   "row": {
+    "wall": 518,
+    "blocked": 8,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 18,
+      "ms": 0.3,
+      "MB": 0
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 55,
+      "ms": 0.6,
+      "MB": 485.5
+     },
+     "2d drawImage < 1 MP": {
+      "n": 26,
+      "ms": 0.7,
+      "MB": 1.2
+     },
+     "gl texImage2D": {
+      "n": 24,
+      "ms": 0.1,
+      "MB": 0.3
+     },
+     "gl draw": {
+      "n": 12,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getError": {
+      "n": 12,
+      "ms": 5.6,
+      "MB": 0
+     },
+     "createImageBitmap": {
+      "n": 1,
+      "ms": 0.1,
+      "MB": 0.2
+     },
+     "createImageBitmap (until settled)": {
+      "n": 1,
+      "ms": 5.3,
+      "MB": 0
+     }
+    },
+    "jobs": {
+     "stack_into": {
+      "jobs": 14,
+      "pixels": 4452128,
+      "kernel": 16.3,
+      "gen": 0,
+      "pxCalls": {}
+     },
+     "area_cells": {
+      "jobs": 1,
+      "tiles": 25,
+      "cells": 586250,
+      "count": 1.6,
+      "label": 2.8,
+      "total": 4.3,
+      "gen": 0,
+      "pxCalls": {}
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": {},
+     "workers": {}
+    },
+    "extra": {
+     "prepMs": 93.9,
+     "bbox": [
+      6754,
+      4254,
+      1492,
+      1492
+     ],
+     "emitted": [
+      1024,
+      1024
+     ],
+     "window": [
+      1024,
+      1024
+     ],
+     "patch": [
+      1492,
+      1492
+     ],
+     "how": [
+      "stack",
+      "stack"
+     ],
+     "laps": {
+      "prep": {
+       "selection": 2.1099999845027924,
+       "maskFromAlpha": 2.3499999940395355,
+       "selectionBbox": 0.4099999964237213,
+       "region": 2.1800000071525574,
+       "dilate": 14.194999992847443,
+       "blur": 10.740000009536743,
+       "maskMax": 2.520000010728836,
+       "resize": 0.15000000596046448,
+       "maskToCanvas": 7.0950000286102295,
+       "alphaMask": 1.030000001192093,
+       "encode": 43.21000000834465
+      },
+      "finish": {
+       "region": 1.9200000166893005,
+       "decode": 2.4950000047683716,
+       "resize": 0.05500000715255737,
+       "dilate": 39.67500001192093,
+       "blur": 58.269999980926514,
+       "maskMax": 12.9200000166893,
+       "erode": 38.99500000476837,
+       "alignCopy": 7.305000007152557,
+       "shrink": 146.44499999284744,
+       "ring": 5.830000013113022,
+       "fit": 6.120000004768372,
+       "colorMatch": 61.03000000119209,
+       "finalAlpha": 9.280000001192093,
+       "encode": 10.319999992847443
+      }
+     },
+     "stitchCalls": {
+      "alpha_to_mask": 2,
+      "mask_bounds_f32": 2,
+      "box_blurs": 3,
+      "dilate_mask": 2,
+      "mask_max_clamp": 3,
+      "mask_to_rgba": 3,
+      "erode_mask": 1,
+      "mask_one_minus": 1
+     }
+    },
+    "error": null,
+    "status": "15000 \u00d7 10000",
+    "focused": true,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "close": {
+   "row": {
+    "closed": 2,
+    "arena": {
+     "slots": 2410,
+     "chunks": 10,
+     "allocated": 4770,
+     "freed": 2360,
+     "droppedChunks": 9,
+     "refused": 0,
+     "failed": 0,
+     "enabled": true,
+     "bytes": 671088640,
+     "freeSlots": 150
+    }
+   },
+   "profile": null
+  }
+ }
+}

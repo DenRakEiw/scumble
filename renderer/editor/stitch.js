@@ -15,7 +15,7 @@
 // Navier-Stokes inpainting (it behaves like "blur"). Alignment uses an affine Lucas-Kanade
 // fit on the edge ring (edgefit.js).
 
-import { alphaToMask, maskMaxClamp, maskOneMinus, dilateMask, erodeMask, maskToRgba, maskBoundsF32, boxBlurs, kernelsMode, routeOverrides } from "./px/kernels.js";
+import { alphaToMask, maskMaxClamp, maskOneMinus, dilateMask, erodeMask, maskToRgba, maskBoundsF32, colorMatchRgba, blendAlpha, boxBlurs, kernelsMode, routeOverrides } from "./px/kernels.js";
 import { fitLayerRGBA, warpRGBA, warpCoverage } from "./edgefit.js";
 
 const MIN_AUTO_CROP = 512;
@@ -591,25 +591,11 @@ export function alphaMask(m) {
 function blurMask(m, radius) { return radius > 0 ? gaussBlur(m, radius) : m; }
 
 /** Weighted per-channel mean / std match of the patch to the reference (nodes.py _color_match). */
-function colorMatch(patch, region, weight) {
+export function colorMatch(patch, region, weight) {
     const w = patch.width, h = patch.height;
-    let total = 0;
-    for (let i = 0; i < weight.data.length; i++) total += Math.min(1, Math.max(0, weight.data[i]));
-    if (total < 64) return patch;
     const pd = patch.getContext("2d").getImageData(0, 0, w, h);
     const rd = region.getContext("2d").getImageData(0, 0, w, h).data;
-    const p = pd.data;
-    const stats = (d) => {
-        const mean = [0, 0, 0], v = [0, 0, 0];
-        for (let i = 0, j = 0; i < w * h; i++, j += 4) { const wt = weight.data[i]; if (wt <= 0) continue; mean[0] += d[j] * wt; mean[1] += d[j + 1] * wt; mean[2] += d[j + 2] * wt; }
-        for (let c = 0; c < 3; c++) mean[c] /= total;
-        for (let i = 0, j = 0; i < w * h; i++, j += 4) { const wt = weight.data[i]; if (wt <= 0) continue; for (let c = 0; c < 3; c++) { const dd = d[j + c] - mean[c]; v[c] += dd * dd * wt; } }
-        return { mean, std: v.map((x) => Math.sqrt(Math.max(x / total, 1e-6 * 255 * 255))) };
-    };
-    const r = stats(rd), t = stats(p);
-    const scale = [0, 1, 2].map((c) => Math.min(2, Math.max(0.5, r.std[c] / t.std[c])));
-    for (let j = 0; j < p.length; j += 4) for (let c = 0; c < 3; c++) p[j + c] = Math.min(255, Math.max(0, (p[j + c] - t.mean[c]) * scale[c] + r.mean[c]));
-    pd.data.set(p);
+    if (!colorMatchRgba(pd.data, rd, weight.data)) return patch;
     const out = makeCanvas(w, h);
     out.getContext("2d").putImageData(pd, 0, 0);
     return out;
@@ -668,10 +654,7 @@ export function finishPixels(info, sel, resultImage, region, laps = null) {
             const pdata = patch.getContext("2d").getImageData(0, 0, w, h);
             const rdata = region.getContext("2d").getImageData(0, 0, w, h);
             const tc = lapStart();
-            const layRGBA = new Uint8ClampedArray(pdata.data);
-            for (let i = 0, j = 3; i < w * h; i++, j += 4) {
-                layRGBA[j] = Math.round(Math.min(1, Math.max(0, blend.data[i])) * 255);
-            }
+            const layRGBA = blendAlpha(pdata.data, blend.data, false);
             lapEnd("alignCopy", tc);
             const r = fitLayerRGBA({ baseRGBA: rdata.data, layerRGBA: layRGBA, w, h, laps: LAPS });
             align = { aligned: r.aligned, ...(r.reason ? { reason: r.reason } : {}), scale: r.scale, shift: r.shift, shear: r.shear, before: r.before, after: r.after };
@@ -709,10 +692,7 @@ export function finishPixels(info, sel, resultImage, region, laps = null) {
     // keeps its edges and a model that ignored the request still blends in as before.
     const ta = lapStart();
     const pd = patch.getContext("2d").getImageData(0, 0, w, h);
-    for (let i = 0, j = 3; i < w * h; i++, j += 4) {
-        const a = Math.min(1, Math.max(0, blend.data[i]));
-        pd.data[j] = Math.round(info.keepAlpha ? a * pd.data[j] : a * 255);
-    }
+    blendAlpha(pd.data, blend.data, !!info.keepAlpha, pd.data);
     lapEnd("finalAlpha", ta);
     const out = makeCanvas(w, h);
     out.getContext("2d").putImageData(pd, 0, 0);

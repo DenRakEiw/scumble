@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 25;
+export const PX_ABI = 26;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -420,6 +420,28 @@ export class Px {
             if (!this.exports.mask_bounds_f32(ps, w, h, pb)) return null;
             const b = this.view(Int32Array, pb, 4);
             return [b[0], b[1], b[2], b[3]];
+        } finally { this._reset(a); }
+    }
+
+    /** Matches the weighted RGB mean and standard deviation of `patch` (RGBA8, in place) to `reference` under `weight` (`stitch.js` `colorMatch`). */
+    colorMatchRgba(patch, reference, weight) {
+        const a = this.job, n = weight.length;
+        if (!(n > 0)) return false;
+        try {
+            const pp = this._in(a, patch, n * 4), pr = this._in(a, reference, n * 4), pw = this._in(a, weight, n * 4);
+            if (!this.exports.color_match_rgba(pp, pr, pw, n)) return false;
+            this._out(Uint8Array, pp, n * 4, new Uint8Array(patch.buffer, patch.byteOffset, n * 4));
+            return true;
+        } finally { this._reset(a); }
+    }
+
+    /** The alpha byte of each RGBA8 pixel of `rgba` replaced in `out` (or a new Uint8ClampedArray; may be `rgba`) by `Math.round(clamp01(mask[i]) * (keepAlpha ? rgba[i * 4 + 3] : 255))`. */
+    blendAlpha(rgba, mask, keepAlpha = false, out = null) {
+        const a = this.job, n = mask.length;
+        try {
+            const pr = this._in(a, rgba, n * 4), pm = this._in(a, mask, n * 4);
+            this.exports.blend_alpha(pr, pm, pr, n, keepAlpha ? 1 : 0);
+            return this._out(Uint8ClampedArray, pr, n * 4, out);
         } finally { this._reset(a); }
     }
 

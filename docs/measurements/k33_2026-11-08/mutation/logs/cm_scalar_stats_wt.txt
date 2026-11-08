@@ -1,0 +1,24 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k33\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 188285 bytes, sha256 ae1c88b53a5d28cf
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k33\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 155488 bytes, sha256 355cb5a30655254c
+   Compiling px v0.1.0 (F:\scumble_mut_k33\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.58s
+   Compiling px v0.1.0 (F:\scumble_mut_k33\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.91s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=mask)
+FAIL rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)  65 pixels weight 2.5 (clamped total 64, unclamped stats): out.patch[0] is 25, the twin has 18
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+FAIL rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)  65 pixels weight 2.5 (clamped total 64, unclamped stats): out.patch[0] is 25, the twin has 18
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+       1492 x 1492: dilate rust scalar 23.0 ms, twin 46.9; three box blurs rust scalar 22.2 ms, twin 22.5
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+(node:24972) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/scumble_mut_k33/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k33\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

@@ -267,7 +267,7 @@ function colorMatchRef(patchBytes, regionBytes, w, h, weight) {
     return p;
 }
 
-function finishPixelsRef(info, sel, resultBytes, regionBytes) {
+function finishPixelsRef(info, sel, resultBytes, regionBytes, EF = null) {
     const [x, y, w, h] = info.bbox;
     const width = info.width, height = info.height;
     const feather = info.feather | 0;
@@ -279,6 +279,18 @@ function finishPixelsRef(info, sel, resultBytes, regionBytes) {
     const selWin = cropMaskRef(sel, wx0, wy0, ww, wh);
     const full = info.auto_feather ? compositeMaskRef(selWin, info.grow | 0, feather, info.blend | 0) : (feather > 0 ? gaussBlurRef(selWin, feather) : selWin);
     const blend = cropMaskRef(full, x - wx0, y - wy0, w, h);
+    if (info.align && regionBytes && !info.keepAlpha && EF) {
+        const layRGBA = new Uint8ClampedArray(pd);
+        for (let i = 0, j = 3; i < w * h; i++, j += 4) {
+            layRGBA[j] = Math.round(Math.min(1, Math.max(0, blend.data[i])) * 255);
+        }
+        const r = EF.fitLayerRGBA({ baseRGBA: regionBytes, layerRGBA: layRGBA, w, h });
+        if (r.aligned && r.matrix) {
+            pd = EF.warpRGBA(pd, w, h, r.matrix);
+            const cov = EF.warpCoverage(w, h, r.matrix);
+            for (let i = 0; i < cov.length; i++) blend.data[i] *= cov[i];
+        }
+    }
     if (info.color_match && regionBytes && !info.keepAlpha) {
         const keep = { data: new Float32Array(w * h), w, h };
         for (let i = 0; i < keep.data.length; i++) keep.data[i] = 1 - blend.data[i];
@@ -339,6 +351,7 @@ function sameBbox(a, b) {
     };
     try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
     const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "stitch.js")).href);
+    const EF = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "edgefit.js")).href);
     let bad = 0;
     const check = (what, diff) => { if (diff) { bad++; console.log(`[FAIL] ${what}: ${diff}`); } else console.log(`[ok] ${what}`); };
     const sizes = [[1, 1], [7, 3], [3, 97], [64, 64], [131, 77], [300, 211]];
@@ -417,7 +430,58 @@ function sameBbox(a, b) {
                     keepAlpha: false,
                 };
                 const fin = S.finishPixels(info, m, resCv, regCv);
-                check(`[${mode}] finishPixels colour-match ${w} x ${h}`, sameBytes(fin.patch._data, finishPixelsRef(info, m, resBytes, regBytes)));
+                check(`[${mode}] finishPixels colour-match ${w} x ${h}`, sameBytes(fin.patch._data, finishPixelsRef(info, m, resBytes, regBytes, EF)));
+                // keepAlpha: true with partial alpha in resBytes
+                const cutBytes = resBytes.slice();
+                for (let i = 0; i < w * h; i++) cutBytes[i * 4 + 3] = (i * 41 + 17) & 255;
+                const cutCv = new globalThis.OffscreenCanvas(w, h);
+                cutCv._data.set(cutBytes);
+                const cutInfo = { ...info, keepAlpha: true };
+                const finCut = S.finishPixels(cutInfo, m, cutCv, regCv);
+                check(`[${mode}] finishPixels keepAlpha ${w} x ${h}`, sameBytes(finCut.patch._data, finishPixelsRef(cutInfo, m, cutBytes, regBytes, EF)));
+                // Direct colorMatch checks: total < 64 (untouched), total == 64, total > 64
+                const wt63 = { data: new Float32Array(w * h), w, h };
+                wt63.data.fill(0.5, 0, 127); // sum = 63.5 < 64
+                const cmLow = S.colorMatch(resCv, regCv, wt63);
+                check(`[${mode}] colorMatch untouched below 64 ${w} x ${h}`, cmLow === resCv ? sameBytes(cmLow._data, resBytes) : "returned new canvas when total < 64");
+                const wt64 = { data: new Float32Array(w * h), w, h };
+                wt64.data.fill(0.5, 0, 128); // sum = 64.0
+                for (let i = 128; i < Math.min(w * h, 160); i++) wt64.data[i] = i % 2 ? -0.5 : 0; // <= 0 weights ignored
+                const cm64 = S.colorMatch(resCv, regCv, wt64);
+                check(`[${mode}] colorMatch at total == 64 ${w} x ${h}`, sameBytes(cm64._data, colorMatchRef(resBytes, regBytes, w, h, wt64)));
+                const wtFull = { data: m2.data.map((v, i) => (i % 9 === 0 ? -0.25 : i % 11 === 0 ? 1.5 : v)), w, h };
+                const cmFull = S.colorMatch(resCv, regCv, wtFull);
+                check(`[${mode}] colorMatch with out-of-range weights ${w} x ${h}`, sameBytes(cmFull._data, colorMatchRef(resBytes, regBytes, w, h, wtFull)));
+                if (w > 64 && h > 64) {
+                    // Aligned finishPixels: base has a soft pattern, result is shifted by (+2, +1) with non-255 alpha
+                    const baseB = new Uint8ClampedArray(w * h * 4);
+                    const shiftB = new Uint8ClampedArray(w * h * 4);
+                    const pat = (px, py) => {
+                        const v0 = Math.round(128 + 80 * Math.sin(px * 0.15) * Math.cos(py * 0.15));
+                        const v1 = Math.round(128 + 70 * Math.cos(px * 0.11 - py * 0.09));
+                        const v2 = Math.round(128 + 60 * Math.sin((px + py) * 0.12));
+                        return [v0, v1, v2];
+                    };
+                    for (let py = 0; py < h; py++) {
+                        for (let px = 0; px < w; px++) {
+                            const idx = (py * w + px) * 4;
+                            const [r0, g0, b0] = pat(px, py);
+                            baseB[idx] = r0; baseB[idx + 1] = g0; baseB[idx + 2] = b0; baseB[idx + 3] = 255;
+                            const [r1, g1, b1] = pat(px - 1.5, py - 1.0);
+                            shiftB[idx] = Math.min(255, r1 + 15);
+                            shiftB[idx + 1] = Math.max(0, g1 - 10);
+                            shiftB[idx + 2] = b1;
+                            shiftB[idx + 3] = 180; // < 255 so alignCopy's keepAlpha=false vs true differs!
+                        }
+                    }
+                    const bCv = new globalThis.OffscreenCanvas(w, h); bCv._data.set(baseB);
+                    const sCv = new globalThis.OffscreenCanvas(w, h); sCv._data.set(shiftB);
+                    const alignInfo = { ...info, align: true, color_match: true, keepAlpha: false };
+                    const finAlign = S.finishPixels(alignInfo, m, sCv, bCv);
+                    const wantAlign = finishPixelsRef(alignInfo, m, shiftB, baseB, EF);
+                    check(`[${mode}] finishPixels align + colour-match ${w} x ${h} (aligned=${finAlign.align.aligned})`,
+                        !finAlign.align.aligned ? `expected aligned=true, got ${finAlign.align.reason}` : sameBytes(finAlign.patch._data, wantAlign));
+                }
             }
         }
     }

@@ -1063,6 +1063,65 @@ export function maskBoundsF32(src, w, h) {
 }
 
 /**
+ * Matches the weighted RGB mean and standard deviation of `patch` (`n * 4` RGBA8 bytes, in place) to `reference`
+ * (`n * 4` RGBA8 bytes) under `weight` (`n` f32, `stitch.js` `colorMatch`). Leaves `patch` untouched and returns
+ * `false` when the clamped weight sum is below 64, else `true`.
+ */
+export function colorMatchRgba(patch, reference, weight) {
+    const n = weight.length;
+    let total = 0;
+    for (let i = 0; i < n; i++) total += Math.min(1, Math.max(0, weight[i]));
+    if (total < 64) return false;
+    const p = patch instanceof Uint8ClampedArray ? patch : new Uint8ClampedArray(patch.buffer, patch.byteOffset, n * 4);
+    const stats = (d) => {
+        const mean = [0, 0, 0], v = [0, 0, 0];
+        for (let i = 0, j = 0; i < n; i++, j += 4) {
+            const wt = weight[i];
+            if (wt <= 0) continue;
+            mean[0] += d[j] * wt; mean[1] += d[j + 1] * wt; mean[2] += d[j + 2] * wt;
+        }
+        for (let c = 0; c < 3; c++) mean[c] /= total;
+        for (let i = 0, j = 0; i < n; i++, j += 4) {
+            const wt = weight[i];
+            if (wt <= 0) continue;
+            for (let c = 0; c < 3; c++) { const dd = d[j + c] - mean[c]; v[c] += dd * dd * wt; }
+        }
+        return { mean, std: v.map((x) => Math.sqrt(Math.max(x / total, 1e-6 * 255 * 255))) };
+    };
+    const r = stats(reference), t = stats(p);
+    const scale = [0, 1, 2].map((c) => Math.min(2, Math.max(0.5, r.std[c] / t.std[c])));
+    for (let j = 0, end = n * 4; j < end; j += 4) {
+        for (let c = 0; c < 3; c++) {
+            p[j + c] = Math.min(255, Math.max(0, (p[j + c] - t.mean[c]) * scale[c] + r.mean[c]));
+        }
+    }
+    return true;
+}
+
+/**
+ * The alpha byte of each RGBA8 pixel of `rgba` replaced in `out` (allocated when absent; may be `rgba`) by
+ * `Math.round(clamp01(mask[i]) * (keepAlpha ? rgba[i * 4 + 3] : 255))` (`stitch.js` align copy and final alpha).
+ */
+export function blendAlpha(rgba, mask, keepAlpha = false, out = null) {
+    const n = mask.length;
+    const dst = out || new Uint8ClampedArray(n * 4);
+    if (dst !== rgba) dst.set(rgba.subarray(0, n * 4));
+    const clamped = dst instanceof Uint8ClampedArray ? dst : new Uint8ClampedArray(dst.buffer, dst.byteOffset, n * 4);
+    if (keepAlpha) {
+        for (let i = 0, j = 3; i < n; i++, j += 4) {
+            const a = Math.min(1, Math.max(0, mask[i]));
+            clamped[j] = Math.round(a * clamped[j]);
+        }
+    } else {
+        for (let i = 0, j = 3; i < n; i++, j += 4) {
+            const a = Math.min(1, Math.max(0, mask[i]));
+            clamped[j] = Math.round(a * 255);
+        }
+    }
+    return dst;
+}
+
+/**
  * The running maximum of every row over [x - r, x + r] (clamped to the row), never below 0: a monotonic queue of
  * indices, so a pixel costs the same whatever the radius (a loop over the radius took 1.9 s of a run's crop,
  * docs/PERFORMANCE.md section 14). `idx` is scratch of at least w entries.

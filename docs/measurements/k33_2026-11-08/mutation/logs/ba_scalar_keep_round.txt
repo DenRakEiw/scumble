@@ -1,0 +1,25 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k33\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 188258 bytes, sha256 5ac12dc9d53395bc
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k33\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 155452 bytes, sha256 5d3626e2b85db26c
+   Compiling px v0.1.0 (F:\scumble_mut_k33\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.62s
+   Compiling px v0.1.0 (F:\scumble_mut_k33\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.79s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=mask)
+FAIL rust simd blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)  zeros and NaNs (7) keep=true new: out[23] is 2, the twin has 3
+FAIL rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)  zeros and NaNs (7) keep=true new: out[23] is 2, the twin has 3
+FAIL (2) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+FAIL rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)  zeros and NaNs (7) keep=true new: out[23] is 2, the twin has 3
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+       1492 x 1492: dilate rust scalar 26.0 ms, twin 45.0; three box blurs rust scalar 22.7 ms, twin 23.0
+FAIL (2) (only: mask; PX_ONLY, not the full test)
+(node:32672) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/scumble_mut_k33/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k33\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

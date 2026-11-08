@@ -1,0 +1,352 @@
+{
+ "size": "15000x10000",
+ "profiled": false,
+ "rows": {
+  "build_the_file": {
+   "row": {
+    "size": [
+     15000,
+     10000
+    ],
+    "MP": 150,
+    "fillMs": 979,
+    "encodeMs": 1421,
+    "MB": 275.8,
+    "arena": {
+     "slots": 2360,
+     "chunks": 10,
+     "allocated": 2360,
+     "freed": 0,
+     "droppedChunks": 0,
+     "refused": 0,
+     "failed": 0,
+     "enabled": true,
+     "bytes": 671088640,
+     "freeSlots": 200
+    }
+   },
+   "profile": null
+  },
+  "open_the_file": {
+   "row": {
+    "wall": 3045,
+    "blocked": 478,
+    "calls": {
+     "blob arrayBuffer": {
+      "n": 8,
+      "ms": 0.6,
+      "MB": 0
+     },
+     "blob arrayBuffer (until settled)": {
+      "n": 8,
+      "ms": 1.4,
+      "MB": 0
+     },
+     "worker postMessage (moved)": {
+      "n": 164,
+      "ms": 1.5,
+      "MB": 0
+     },
+     "2d putImageData": {
+      "n": 1,
+      "ms": 0.1,
+      "MB": 0.3
+     },
+     "2d getImageData": {
+      "n": 1,
+      "ms": 0.1,
+      "MB": 0.3
+     },
+     "gl compileShader": {
+      "n": 6,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getShaderParameter": {
+      "n": 6,
+      "ms": 4.4,
+      "MB": 0
+     },
+     "gl linkProgram": {
+      "n": 3,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getProgramParameter": {
+      "n": 3,
+      "ms": 426.6,
+      "MB": 0
+     },
+     "gl bufferData": {
+      "n": 12,
+      "ms": 0.1,
+      "MB": 0.1
+     },
+     "gl texImage2D": {
+      "n": 13,
+      "ms": 0.1,
+      "MB": 0
+     },
+     "gl texSubImage2D": {
+      "n": 2360,
+      "ms": 1.5,
+      "MB": 1
+     },
+     "gl draw": {
+      "n": 13,
+      "ms": 0,
+      "MB": 0
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 5,
+      "ms": 0.2,
+      "MB": 41.8
+     }
+    },
+    "jobs": {
+     "png_read": {
+      "jobs": 1,
+      "pixels": 150000000,
+      "kernel": 2106.9,
+      "parse": 0.9,
+      "read": 49.2,
+      "write": 2055.2,
+      "wait": 1073.7,
+      "copy": 53.5,
+      "unfilter": 958.7,
+      "deliver": 8,
+      "gen": 0,
+      "pxCalls": {
+       "png_unfilter_rows": 40
+      }
+     },
+     "mips": {
+      "jobs": 19,
+      "tiles": 2344,
+      "kernel": 489.1,
+      "gen": 0,
+      "pxCalls": {
+       "clamp_extend": 98,
+       "mip_chain": 2442
+      }
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": {
+      "mip_chain": 16
+     },
+     "workers": {
+      "png_unfilter_rows": 40,
+      "clamp_extend": 98,
+      "mip_chain": 2442
+     }
+    },
+    "extra": {
+     "loadFileMs": 2974,
+     "tiles": 2360,
+     "compositorBefore": "not made",
+     "compositorAfter": "made"
+    },
+    "error": null,
+    "status": "15000 \u00d7 10000",
+    "focused": true,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "provider_crop": {
+   "row": {
+    "wall": 546,
+    "blocked": 84,
+    "calls": {
+     "worker postMessage (moved)": {
+      "n": 18,
+      "ms": 0.3,
+      "MB": 0
+     },
+     "2d drawImage >= 1 MP": {
+      "n": 44,
+      "ms": 0.6,
+      "MB": 388.4
+     },
+     "2d putImageData": {
+      "n": 1,
+      "ms": 0.2,
+      "MB": 0.6
+     },
+     "2d drawImage < 1 MP": {
+      "n": 26,
+      "ms": 2.1,
+      "MB": 1.2
+     },
+     "gl compileShader": {
+      "n": 4,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getShaderParameter": {
+      "n": 4,
+      "ms": 3.3,
+      "MB": 0
+     },
+     "gl linkProgram": {
+      "n": 2,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getProgramParameter": {
+      "n": 2,
+      "ms": 34.2,
+      "MB": 0
+     },
+     "gl bufferData": {
+      "n": 1,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl texImage2D": {
+      "n": 25,
+      "ms": 0.3,
+      "MB": 0.3
+     },
+     "gl draw": {
+      "n": 12,
+      "ms": 0,
+      "MB": 0
+     },
+     "gl getError": {
+      "n": 12,
+      "ms": 29.8,
+      "MB": 0
+     },
+     "createImageBitmap": {
+      "n": 1,
+      "ms": 0.1,
+      "MB": 0.2
+     },
+     "createImageBitmap (until settled)": {
+      "n": 1,
+      "ms": 6.7,
+      "MB": 0
+     }
+    },
+    "jobs": {
+     "stack_into": {
+      "jobs": 14,
+      "pixels": 4452128,
+      "kernel": 20.4,
+      "gen": 0,
+      "pxCalls": {}
+     },
+     "area_cells": {
+      "jobs": 1,
+      "tiles": 25,
+      "cells": 586250,
+      "count": 3.4,
+      "label": 3.6,
+      "total": 7.1,
+      "gen": 0,
+      "pxCalls": {}
+     }
+    },
+    "marks": {},
+    "pxCalls": {
+     "window": {},
+     "workers": {}
+    },
+    "extra": {
+     "prepMs": 184,
+     "bbox": [
+      6754,
+      4254,
+      1492,
+      1492
+     ],
+     "emitted": [
+      1024,
+      1024
+     ],
+     "window": [
+      1024,
+      1024
+     ],
+     "patch": [
+      1492,
+      1492
+     ],
+     "how": [
+      "stack",
+      "stack"
+     ],
+     "laps": {
+      "prep": {
+       "selection": 5.740000009536743,
+       "maskFromAlpha": 5.229999989271164,
+       "selectionBbox": 0.5250000059604645,
+       "region": 2.634999990463257,
+       "dilate": 26.930000007152557,
+       "blur": 19.42500001192093,
+       "maskMax": 3.0399999916553497,
+       "resize": 1.0750000178813934,
+       "maskToCanvas": 11.91499999165535,
+       "alphaMask": 1.0649999976158142,
+       "encode": 50.74500000476837
+      },
+      "finish": {
+       "region": 2.5049999952316284,
+       "decode": 2.9749999940395355,
+       "resize": 0.07500001788139343,
+       "dilate": 48.33500000834465,
+       "blur": 64.00999999046326,
+       "maskMax": 13.935000032186508,
+       "erode": 43.04499998688698,
+       "alignCopy": 5.800000011920929,
+       "shrink": 47.24500000476837,
+       "ring": 8.159999996423721,
+       "fit": 6.9200000166893005,
+       "colorMatch": 40.04999998211861,
+       "finalAlpha": 12.9549999833107,
+       "encode": 16.099999994039536
+      }
+     },
+     "stitchCalls": {
+      "alpha_to_mask": 2,
+      "mask_bounds_f32": 2,
+      "box_blurs": 3,
+      "dilate_mask": 2,
+      "mask_max_clamp": 3,
+      "mask_to_rgba": 3,
+      "blend_alpha": 2,
+      "color_match_rgba": 1,
+      "erode_mask": 1,
+      "mask_one_minus": 1
+     }
+    },
+    "error": null,
+    "status": "15000 \u00d7 10000",
+    "focused": true,
+    "visibility": "visible"
+   },
+   "profile": null
+  },
+  "close": {
+   "row": {
+    "closed": 2,
+    "arena": {
+     "slots": 2385,
+     "chunks": 10,
+     "allocated": 4745,
+     "freed": 2360,
+     "droppedChunks": 9,
+     "refused": 0,
+     "failed": 0,
+     "enabled": true,
+     "bytes": 671088640,
+     "freeSlots": 175
+    }
+   },
+   "profile": null
+  }
+ }
+}
