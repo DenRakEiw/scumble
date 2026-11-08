@@ -41,7 +41,7 @@ function check(name, ok, detail = "") {
 
 // The case groups in main()'s order (a group in both the reference part and the per-build loop runs in both)
 const GROUPS = ["twinSelfTest", "mip", "edt", "flood", "composite", "matchTwin", "smudgeTwin", "poissonTwin", "png", "compositeSha",
-    "blendFixture", "blendGlsl", "tierC", "relightBench", "relightStripe", "counter", "split", "route", "trap", "lifecycle", "sel",
+    "blendFixture", "blendGlsl", "tierC", "relightBench", "relightStripe", "counter", "split", "route", "trap", "lifecycle", "sel", "range",
     "pngFilter", "retouchRoute", "job", "mask", "dab", "tone", "freq", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "liquify", "memory"];
 const ONLY = (() => {
     const names = (process.env.PX_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -4674,6 +4674,364 @@ async function selCases(js, simd, scalar, raster, K) {
     }
 }
 
+// ---- K21: map_tile_stats, rangeTileClass, rangeRowBookkeeping (docs/PLAN_WASM_BUILD.md §4.8) --------------------------
+
+async function rangeCases(js, simd, scalar, resample, K) {
+    const weights = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_weights.js")).href);
+    const edges = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_edges.js")).href);
+    const { u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping } = weights;
+    const { snapField, snapParams, SNAP_TAU } = edges;
+
+    let seed = 0x4b3231;
+    const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+
+    // Plain independent reference for mapTileStats using resample.xfBox
+    const refMapTileStats = (map, rmax, mw, mh, xf, W, H, thresh = 0, tile = 256) => {
+        const cols = Math.ceil(W / tile);
+        const rows = Math.ceil(H / tile);
+        const min = new Uint16Array(cols * rows);
+        const max = new Uint16Array(cols * rows);
+        const edge = new Uint8Array(cols * rows);
+        const hasRmax = rmax != null && rmax.length > 0;
+        const thr = hasRmax ? Math.max(0, Math.min(0xffffffff, Math.floor(Number(thresh) || 0))) : 0;
+        for (let ty = 0; ty < rows; ty++) {
+            const y0 = ty * tile, y1 = Math.min(H, (ty + 1) * tile);
+            for (let tx = 0; tx < cols; tx++) {
+                const x0 = tx * tile, x1 = Math.min(W, (tx + 1) * tile);
+                const [mx0, my0, mx1, my1] = resample.xfBox(xf, x0, y0, x1, y1);
+                const ix0 = Math.max(0, Math.min(mw - 1, Math.floor(mx0 - 2)));
+                const iy0 = Math.max(0, Math.min(mh - 1, Math.floor(my0 - 2)));
+                const ix1 = Math.max(0, Math.min(mw - 1, Math.ceil(mx1 + 2)));
+                const iy1 = Math.max(0, Math.min(mh - 1, Math.ceil(my1 + 2)));
+                let lo = 65535, hi = 0, hasEdge = 0;
+                for (let my = iy0; my <= iy1; my++) {
+                    for (let mx = ix0; mx <= ix1; mx++) {
+                        const v = map[my * mw + mx];
+                        if (v < lo) lo = v;
+                        if (v > hi) hi = v;
+                    }
+                }
+                if (hasRmax) {
+                    const eix0 = Math.max(0, Math.floor(mx0 - 2));
+                    const eiy0 = Math.max(0, Math.floor(my0 - 2));
+                    const eix1 = Math.min(mw - 1, Math.ceil(mx1 + 2));
+                    const eiy1 = Math.min(mh - 1, Math.ceil(my1 + 2));
+                    for (let my = eiy0; my <= eiy1 && !hasEdge; my++) {
+                        for (let mx = eix0; mx <= eix1; mx++) {
+                            if (rmax[my * mw + mx] > thr) { hasEdge = 1; break; }
+                        }
+                    }
+                }
+                const idx = ty * cols + tx;
+                min[idx] = lo;
+                max[idx] = hi;
+                edge[idx] = hasEdge;
+            }
+        }
+        return { min, max, edge, cols, rows };
+    };
+
+    const makeMapPair = (mw, mh, kind) => {
+        const map = new Uint16Array(mw * mh);
+        const rmax = new Uint16Array(mw * mh);
+        if (kind === "ramp") {
+            for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+                map[y * mw + x] = Math.round(((x + y * 0.25) / Math.max(1, mw + mh * 0.25)) * 65535);
+                rmax[y * mw + x] = (x === (mw >> 1)) ? 2000 : 100;
+            }
+        } else if (kind === "extremes") {
+            for (let i = 0; i < map.length; i++) {
+                map[i] = i % 7 === 0 ? 0 : i % 11 === 0 ? 65535 : Math.floor(rnd() * 65536);
+                rmax[i] = i % 13 === 0 ? 65535 : i % 5 === 0 ? 0 : Math.floor(rnd() * 65536);
+            }
+        } else {
+            for (let i = 0; i < map.length; i++) {
+                map[i] = Math.floor(rnd() * 65536);
+                rmax[i] = Math.floor(rnd() * 65536);
+            }
+        }
+        return { map, rmax };
+    };
+
+    // Transform variants: upright, 90° CW, 180°, 270° CW, h-flip, v-flip, free rotation+shift, out-of-bounds shift
+    const makeXfs = (mw, mh, W, H) => [
+        ["upright", [mw / W, 0, 0, mh / H, 0, 0]],
+        ["hflip", [-mw / W, 0, 0, mh / H, mw, 0]],
+        ["vflip", [mw / W, 0, 0, -mh / H, 0, mh]],
+        ["rot180", [-mw / W, 0, 0, -mh / H, mw, mh]],
+        ["rot90", [0, mh / W, -mw / H, 0, mw, 0]],
+        ["rot270", [0, -mh / W, mw / H, 0, 0, mh]],
+        ["rot17_shift", [0.23 * Math.cos(0.3), 0.23 * Math.sin(0.3), -0.21 * Math.sin(0.3), 0.21 * Math.cos(0.3), 17.5, -9.25]],
+        ["extend_2x", [2 * mw / W, 0, 0, 2 * mh / H, 0, 0]],
+        ["outside_clamped", [0.1, 0, 0, 0.1, -500, mw + 500]],
+    ];
+
+    const shapes = [
+        [1, 1, 1, 1],
+        [7, 5, 13, 9],
+        [8, 3, 256, 256],
+        [9, 4, 257, 255],
+        [15, 11, 513, 257],
+        [16, 12, 600, 300],
+        [17, 13, 600, 300],
+        [23, 19, 800, 550],
+        [37, 23, 1000, 700],
+        [120, 90, 1600, 1200],
+    ];
+
+    const cases = [];
+    for (const [mw, mh, W, H] of shapes) {
+        const { map, rmax } = makeMapPair(mw, mh, (mw + mh) % 3 === 0 ? "ramp" : (mw + mh) % 3 === 1 ? "extremes" : "random");
+        for (const [xName, xf] of makeXfs(mw, mh, W, H)) {
+            const withRmax = (cases.length % 3) !== 0;
+            const thresh = [0, 1311, 2000, 32768, 65534, 65535][cases.length % 6];
+            cases.push({
+                tag: `map ${mw}x${mh} doc ${W}x${H} ${xName} rmax=${withRmax} thr=${thresh}`,
+                args: [map, withRmax ? rmax : null, mw, mh, xf, W, H, thresh, 256],
+            });
+        }
+    }
+
+    // Specific halo = 2 boundary pin & thresh > (not >=) boundary pin:
+    // On a 64 x 64 map for a 256 x 256 doc (1 tile, scale 0.25 -> mapped box [0, 0, 64, 64] shifted to [10, 10, 20, 20]):
+    // Halo 2 reaches ix0 = 8, iy0 = 8, ix1 = 22, iy1 = 22; halo 1 would only reach 9..21.
+    {
+        const mw = 64, mh = 64, W = 256, H = 256;
+        const map = new Uint16Array(mw * mh).fill(30000);
+        const rmax = new Uint16Array(mw * mh).fill(500);
+        // Place min spike at (8, 15) and max spike at (22, 15) - exactly 2 texels outside [10, 20]
+        map[15 * mw + 8] = 1234;
+        map[15 * mw + 22] = 64321;
+        rmax[15 * mw + 8] = 501;
+        const xf = [10 / 256, 0, 0, 10 / 256, 10, 10];
+        cases.push({
+            tag: "halo=2 boundary and thresh=500 (<501 -> edge 1)",
+            args: [map, rmax, mw, mh, xf, W, H, 500, 256],
+        });
+        cases.push({
+            tag: "halo=2 boundary and thresh=501 (==501 -> edge 0)",
+            args: [map, rmax, mw, mh, xf, W, H, 501, 256],
+        });
+        const st500 = simd.mapTileStats(map, rmax, mw, mh, xf, W, H, 500, 256);
+        const st501 = simd.mapTileStats(map, rmax, mw, mh, xf, W, H, 501, 256);
+        check("map_tile_stats 2-texel halo reaches ±2 texels and thresh uses strict >",
+            st500.min[0] === 1234 && st500.max[0] === 64321 && st500.edge[0] === 1 && st501.edge[0] === 0,
+            `st500=${st500.min[0]}..${st500.max[0]} e=${st500.edge[0]}, st501 e=${st501.edge[0]}`);
+    }
+
+    let refOk = true, refDetail = "";
+    for (const c of cases) {
+        const got = js.mapTileStats(...c.args), want = refMapTileStats(...c.args);
+        const d = twinDiff(got, want, [], {});
+        if (d) { refOk = false; refDetail = `${c.tag}: ${d}`; break; }
+    }
+    check(`js mapTileStats equals the plain reference (${cases.length} cases)`, refOk, refDetail);
+
+    twinCheck({
+        name: "map_tile_stats",
+        builds: [["rust simd", simd], ["rust scalar", scalar]],
+        twin: js,
+        call: (k, args) => k.mapTileStats(...args),
+        cases,
+    });
+
+    // Refusal checks on invalid arguments and out-of-window wy0
+    {
+        const map = new Uint16Array(16 * 16), rmax = new Uint16Array(16 * 16);
+        const xf = [1, 0, 0, 1, 0, 0];
+        const badArgs = [
+            ["null map", [null, rmax, 16, 16, xf, 64, 64, 100, 256]],
+            ["short map", [new Uint16Array(48), null, 16, 16, [0, 0, 0, 0, 0, 0], 64, 64, 100, 256]],
+            ["short rmax", [map, new Uint16Array(48), 16, 16, [0, 0, 0, 0, 0, 0], 64, 64, 100, 256]],
+            ["zero mw", [map, null, 0, 16, xf, 64, 64, 100, 256]],
+            ["zero W", [map, null, 16, 16, xf, 0, 64, 100, 256]],
+            ["zero tile", [map, null, 16, 16, xf, 64, 64, 100, 0]],
+            ["NaN xf", [map, null, 16, 16, [NaN, 0, 0, 1, 0, 0], 64, 64, 100, 256]],
+        ];
+        for (const [what, args] of badArgs) {
+            let threw = 0;
+            for (const k of [js, simd, scalar]) {
+                try { k.mapTileStats(...args); } catch { threw++; }
+            }
+            check(`mapTileStats refuses ${what} on twin and both builds`, threw === 3, `${threw}/3 threw`);
+        }
+        // Raw export refuses wy0 window that does not cover tile's iy0..iy1
+        const a = simd.job;
+        try {
+            const pm = simd._in(a, map, map.byteLength);
+            const pMin = a.take(2), pMax = a.take(2), pEdge = a.take(1);
+            const okOut = simd.exports.map_tile_stats(pm, 0, 16, 16, 5, 4, 64, 0, 64, 256, 0.25, 0, 0, 0.25, 0, 0, 0, pMin, pMax, pEdge);
+            check("raw map_tile_stats returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)", okOut === 0, `got ${okOut}`);
+        } finally { simd._reset(a); }
+    }
+
+    // Route & trap recovery check via kernels.js
+    {
+        K.setKernels("rust");
+        if (!K.rustPx()) {
+            const realFetch = globalThis.fetch;
+            globalThis.fetch = async (u, ...rest) => {
+                const s = String(u && u.href ? u.href : u);
+                return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+            };
+            try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+        }
+        const { map, rmax } = makeMapPair(64, 48, "ramp");
+        const xf = [64 / 600, 0, 0, 48 / 300, 0, 0];
+        K.setRoute("mapTileStats", "js");
+        K.pxCalls(true);
+        const viaJs = K.mapTileStats(map, rmax, 64, 48, xf, 600, 300, 1000, 256);
+        const jsCalls = K.pxCalls(true).map_tile_stats || 0;
+        K.setRoute("mapTileStats", "rust");
+        const viaRust = K.mapTileStats(map, rmax, 64, 48, xf, 600, 300, 1000, 256);
+        const rustCalls = K.pxCalls(true).map_tile_stats || 0;
+        K.setRoute("mapTileStats", null);
+        check("kernels.js mapTileStats route switches between twin (0 calls) and rust (rows calls) with identical output",
+            jsCalls === 0 && rustCalls === Math.ceil(300 / 256) && twinDiff(viaRust, viaJs, [], {}) === "",
+            `jsCalls=${jsCalls}, rustCalls=${rustCalls}`);
+        K.setKernels("js");
+    }
+
+    // rangeTileClass boundary & ulp checks (lo / hi on tile min / max, ±1 ulp, ±1e-12, feathers, invert)
+    {
+        const ulp = Number.EPSILON;
+        const rHard = { lo: 0.25, hi: 0.75, fLo: 0, fHi: 0, invert: false };
+        // Exact boundary at lo and hi
+        check("rangeTileClass hard boundaries at lo and hi",
+            rangeTileClass(0.25, 0.75, rHard) === "full"
+            && rangeTileClass(0.25 - 1e-12, 0.75 + 1e-12, rHard) === "full"
+            && rangeTileClass(0.25 - 1e-12 * (1 - 4 * ulp), 0.75 + 1e-12 * (1 - 4 * ulp), rHard) === "full"
+            && rangeTileClass(0.25 - 1e-12 - 1e-15, 0.5, rHard) === "compute"
+            && rangeTileClass(0.5, 0.75 + 1e-12 + 1e-15, rHard) === "compute"
+            && rangeTileClass(0.0, 0.25 - 1e-12 - 1e-15, rHard) === "empty"
+            && rangeTileClass(0.75 + 1e-12 + 1e-15, 1.0, rHard) === "empty"
+            && rangeTileClass(0.0, 0.25, rHard) === "compute"
+            && rangeTileClass(0.75, 1.0, rHard) === "compute");
+
+        // Invert combinations: r.invert xor jobInvert
+        check("rangeTileClass invert (r.invert xor jobInvert)",
+            rangeTileClass(0.3, 0.7, rHard, true) === "empty"
+            && rangeTileClass(0.3, 0.7, { ...rHard, invert: true }, false) === "empty"
+            && rangeTileClass(0.3, 0.7, { ...rHard, invert: true }, true) === "full"
+            && rangeTileClass(0.0, 0.1, rHard, true) === "full"
+            && rangeTileClass(0.0, 0.1, { ...rHard, invert: true }, false) === "full"
+            && rangeTileClass(0.0, 0.1, { ...rHard, invert: true }, true) === "empty");
+
+        // Feathers (fLo > 0, fHi > 0) and sstep's 1e-14 clamp
+        const rSoft = { lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1, invert: false };
+        check("rangeTileClass soft feather boundaries",
+            rangeTileClass(0.3, 0.7, rSoft) === "full"
+            && rangeTileClass(0.3 - 0.1 * 1e-15, 0.7 + 0.1 * 1e-15, rSoft) === "full"
+            && rangeTileClass(0.25, 0.7, rSoft) === "compute"
+            && rangeTileClass(0.3, 0.75, rSoft) === "compute"
+            && rangeTileClass(0.0, 0.2, rSoft) === "empty"
+            && rangeTileClass(0.0, 0.2 + 0.1 * 1e-15, rSoft) === "empty"
+            && rangeTileClass(0.8, 1.0, rSoft) === "empty"
+            && rangeTileClass(0.8 - 0.1 * 1e-15, 1.0, rSoft) === "empty"
+            && rangeTileClass(0.15, 0.25, rSoft) === "compute"
+            && rangeTileClass(0.75, 0.85, rSoft) === "compute"
+            && rangeTileClass(0.15, 0.85, rSoft) === "compute");
+
+        // Convex combination guarantee across random/step maps (with and without snapField)
+        const mw = 48, mh = 36, W = 600, H = 400;
+        const { map } = makeMapPair(mw, mh, "ramp");
+        const guide = new Uint8Array(mw * mh * 4);
+        for (let i = 0; i < guide.length; i++) guide[i] = Math.floor(rnd() * 256);
+        const rmax = simd.rangeMax(map, mw, mh);
+        const [sigmaR, tau] = snapParams(50);
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const st = simd.mapTileStats(map, rmax, mw, mh, xf, W, H, Math.round(tau * 65535), 256);
+        const mapObj = { data: map, w: mw, h: mh }, guideObj = { data: guide, w: mw, h: mh };
+        let convexOk = true, convexDetail = "";
+        for (const lim of [
+            { lo: 0.25, hi: 0.65, fLo: 0, fHi: 0, invert: false },
+            { lo: 0.3, hi: 0.6, fLo: 0.08, fHi: 0.08, invert: false },
+            { lo: 0.3, hi: 0.6, fLo: 0.05, fHi: 0.05, invert: true },
+        ]) {
+            for (const jobInv of [false, true]) {
+                for (let ty = 0; ty < st.rows && convexOk; ty++) {
+                    for (let tx = 0; tx < st.cols && convexOk; tx++) {
+                        const idx = ty * st.cols + tx;
+                        const cls = rangeTileClass(st.min[idx] / 65535, st.max[idx] / 65535, lim, jobInv);
+                        if (cls === "compute") continue;
+                        const wantA = cls === "full" ? 255 : 0;
+                        const x0 = tx * 256, x1 = Math.min(W, x0 + 256);
+                        const y0 = ty * 256, y1 = Math.min(H, y0 + 256);
+                        for (let y = y0; y < y1 && convexOk; y += 7) {
+                            for (let x = x0; x < x1 && convexOk; x += 7) {
+                                const mx = xf[0] * (x + 0.5) + xf[2] * (y + 0.5) + xf[4];
+                                const my = xf[1] * (x + 0.5) + xf[3] * (y + 0.5) + xf[5];
+                                const vBil = u16Bilinear(map, mw, mh, mx, my);
+                                const vSnap = snapField(mapObj, guideObj, mx, my, rnd(), rnd(), rnd(), sigmaR, tau);
+                                for (const v of [vBil, vSnap]) {
+                                    const w = rangeWeight(v, lim);
+                                    const a = Math.round(255 * (jobInv ? 1 - w : w));
+                                    if (a !== wantA) {
+                                        convexOk = false;
+                                        convexDetail = `tile (${tx},${ty}) cls=${cls} got a=${a} at v=${v} (min=${st.min[idx]/65535}, max=${st.max[idx]/65535})`;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        check("rangeTileClass full/empty tiles match per-pixel bilinear and snapField weights across all tiles", convexOk, convexDetail);
+    }
+
+    // rangeRowBookkeeping on partial right/bottom tiles (600 x 300, 257 x 255, 15000 x 10000)
+    {
+        let bkOk = true, bkDetail = "";
+        for (const [W, H] of [[512, 512], [600, 300], [257, 255], [15000, 10000]]) {
+            const cols = Math.ceil(W / 256), rows = Math.ceil(H / 256);
+            for (const ty of [0, rows - 1]) {
+                for (const pattern of ["all_empty", "all_full", "mixed"]) {
+                    const rowClasses = Array.from({ length: cols }, (_, tx) =>
+                        pattern === "all_empty" ? "empty" : pattern === "all_full" ? "full" : ((tx + ty) % 2 === 0 ? "full" : "empty")
+                    );
+                    const got = rangeRowBookkeeping(W, H, ty, rowClasses, 256);
+                    const y0 = ty * 256, y1 = Math.min(H, y0 + 256), th = y1 - y0;
+                    let wantAlpha = 0, bX0 = Infinity, bY0 = Infinity, bX1 = -Infinity, bY1 = -Infinity;
+                    const wantTiles = [];
+                    for (let tx = 0; tx < cols; tx++) {
+                        if (rowClasses[tx] !== "full") continue;
+                        const x0 = tx * 256, x1 = Math.min(W, x0 + 256), tw = x1 - x0;
+                        wantAlpha += 255 * tw * th;
+                        wantTiles.push({ tx, ty, full: true });
+                        bX0 = Math.min(bX0, x0); bY0 = Math.min(bY0, y0);
+                        bX1 = Math.max(bX1, x1); bY1 = Math.max(bY1, y1);
+                    }
+                    const wantBounds = Number.isFinite(bX0) ? [bX0, bY0, bX1, bY1] : null;
+                    if (got.alphaSum !== wantAlpha || JSON.stringify(got.bounds) !== JSON.stringify(wantBounds) || JSON.stringify(got.tiles) !== JSON.stringify(wantTiles)) {
+                        bkOk = false;
+                        bkDetail = `${W}x${H} ty=${ty} ${pattern}: got ${JSON.stringify(got)}, want alpha=${wantAlpha} bounds=${JSON.stringify(wantBounds)}`;
+                        break;
+                    }
+                }
+            }
+        }
+        check("rangeRowBookkeeping matches exact in-image pixel alphaSum, bounds, and tiles on full and partial rows", bkOk, bkDetail);
+    }
+
+    if (process.env.PX_BENCH) {
+        const mw = 4096, mh = 2731, W = 15000, H = 10000;
+        const { map, rmax } = makeMapPair(mw, mh, "ramp");
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const thr = Math.round(SNAP_TAU * 65535);
+        for (const [what, rm] of [["depth only", null], ["depth + rmax", rmax]]) {
+            const rows = [
+                ["twin", () => js.mapTileStats(map, rm, mw, mh, xf, W, H, thr, 256)],
+                ["simd", () => simd.mapTileStats(map, rm, mw, mh, xf, W, H, thr, 256)],
+                ["scalar", () => scalar.mapTileStats(map, rm, mw, mh, xf, W, H, thr, 256)],
+            ];
+            const med = benchMedians(rows, { rounds: 15 });
+            console.log(`       map_tile_stats 4096x2731 -> 15000x10000 (${what}): ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 15)`);
+        }
+    }
+}
+
 async function main() {
     const { BLENDS } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "blend_modes.js")).href);
     for (const b of BLENDS) if (b.op >= 5) BLEND_NAMES[b.op - 5] = b.id;
@@ -4718,6 +5076,7 @@ async function main() {
     await group("trap", () => trapCases(js, simdPx, raster));
     await group("lifecycle", () => lifecycleCases(js));
     await group("sel", async () => selCases(js, simdPx, scalarPx, raster, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href)));
+    await group("range", async () => rangeCases(js, simdPx, scalarPx, resample, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href)));
     await group("pngFilter", () => pngFilterCases(js, simdPx, scalarPx));
     await group("retouchRoute", () => retouchRouteCases(js));
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {

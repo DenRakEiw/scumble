@@ -1,0 +1,15 @@
+[ok] node selection_test.js passed
+[ok] node selection_test.js passed
+[ok] setup: {"doc": 3, "width": 800, "height": 600, "tiles": true}
+[ok] range_select_15k_tile_case: {"ms": 813.6, "tiles": 2301, "flattenCount": 0}
+  range depth 15000x10000: selectRange 813.6 ms (wall 814.1 ms), 2301 partial tiles
+   range_select jobs: 40, summed {"ms": 5818.2, "tiles": 2301, "gen": 480}
+   px calls: window mip_chain 16, sel_combine 2301; range_select jobs none
+   marks range: edges 0.1, posted 0.2, combined 797.8, done 15.6 | total 813.6 ms  (source "depth", mode "replace", snap false, readMs 0, pictureTiles 0, jobs 40, combineMs 177.3, ms 813.6, tiles 2301, pct 50)
+[ok] range_select_15k_luma_case: {"ms": 1154, "tiles": 2360, "flattenCount": 0}
+  range luma 15000x10000: selectRange 1154.0 ms (wall 1154.6 ms), 2360 partial tiles
+   range_select jobs: 10, summed {"ms": 1789.4, "tiles": 2360, "gen": 120}; the picture in 40 stack_into jobs, kernel 413.9 ms summed
+   px calls: window mip_chain 16, sel_combine 98; range_select jobs none; stack_into jobs none
+   marks range: held 0.8, combined 1138.7, done 14.6 | total 1154.1 ms  (source "luma", mode "replace", snap false, program false, readMs 226.4, combineMs 121.4, bands 10, ms 1154, tiles 2360, pct 100)
+[ok] cleanup: "ok"
+PASS

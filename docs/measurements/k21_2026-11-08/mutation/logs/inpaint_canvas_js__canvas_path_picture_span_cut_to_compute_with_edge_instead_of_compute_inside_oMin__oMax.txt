@@ -1,0 +1,9 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__canvas_path_picture_span_cut_to-selection --offline --tiles off selection  (rc 1, 18 s)
+selection rc=1 2s FAIL
+SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__canvas_path_picture_span_cut_to-selection --offline --tiles off selection  (rc 1, 18 s)
+selection rc=1 2s FAIL
+SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__canvas_path_picture_span_cut_to-selection --offline --tiles off selection  (rc 1, 18 s)
+selection rc=1 2s FAIL
+SOME FAILED

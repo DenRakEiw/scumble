@@ -41,6 +41,7 @@ async function main() {
         fuseTiles,
         rangeMax,
         edgeTiles,
+        mapTileStats,
         gaussRadii,
         gaussBlur,
     } = edgesMod;
@@ -400,25 +401,84 @@ async function main() {
     assert.equal(rmax[150 * emW + 350], 0, "flat region has rmax 0");
     assert.ok(rmax[150 * emW + 200] > 30000, "step edge has rmax > 30000");
 
+    // Frozen copy of 29f6749's edgeTiles (one-sided clamp: a tile whose 2-texel window lies wholly beyond the map
+    // scans 0 iterations and gets edge = 0).
+    const frozenEdgeTiles = (map, rmaxBuf, xfInvToMap, W, H, tau, tile = 256) => {
+        const colsF = Math.ceil(W / tile);
+        const rowsF = Math.ceil(H / tile);
+        const out = new Uint8Array(colsF * rowsF);
+        const thresh = Math.round(tau * 65535);
+        const mw = map.w, mh = map.h;
+        const rData = rmaxBuf.data || rmaxBuf;
+        const xf = xfInvToMap || [mw / W, 0, 0, mh / H, 0, 0];
+        for (let ty = 0; ty < rowsF; ty++) {
+            const y0 = ty * tile, y1 = Math.min(H, (ty + 1) * tile);
+            for (let tx = 0; tx < colsF; tx++) {
+                const x0 = tx * tile, x1 = Math.min(W, (tx + 1) * tile);
+                const x00 = xf[0] * x0 + xf[2] * y0 + xf[4], y00 = xf[1] * x0 + xf[3] * y0 + xf[5];
+                const x10 = xf[0] * x1 + xf[2] * y0 + xf[4], y10 = xf[1] * x1 + xf[3] * y0 + xf[5];
+                const x01 = xf[0] * x0 + xf[2] * y1 + xf[4], y01 = xf[1] * x0 + xf[3] * y1 + xf[5];
+                const x11 = xf[0] * x1 + xf[2] * y1 + xf[4], y11 = xf[1] * x1 + xf[3] * y1 + xf[5];
+                const mx0 = Math.min(x00, x10, x01, x11), my0 = Math.min(y00, y10, y01, y11);
+                const mx1 = Math.max(x00, x10, x01, x11), my1 = Math.max(y00, y10, y01, y11);
+                const ix0 = Math.max(0, Math.floor(mx0 - 2));
+                const iy0 = Math.max(0, Math.floor(my0 - 2));
+                const ix1 = Math.min(mw - 1, Math.ceil(mx1 + 2));
+                const iy1 = Math.min(mh - 1, Math.ceil(my1 + 2));
+                let hasEdge = false;
+                for (let my = iy0; my <= iy1 && !hasEdge; my++) {
+                    const row = my * mw;
+                    for (let mx = ix0; mx <= ix1; mx++) {
+                        if (rData[row + mx] > thresh) { hasEdge = true; break; }
+                    }
+                }
+                if (hasEdge) out[ty * colsF + tx] = 1;
+            }
+        }
+        return out;
+    };
+
     // Document 1600 x 1200, tiles 256 x 256 -> 7 cols x 5 rows
     // Identity mapping doc px -> map px: scale 400/1600 = 0.25
     const docW = 1600, docH = 1200;
     const xfDocToMap = [0.25, 0, 0, 0.25, 0, 0];
     const et = edgeTiles(edgeMap, rmax, xfDocToMap, docW, docH, SNAP_TAU, 256);
+    const stats = mapTileStats(edgeMap, rmax, xfDocToMap, docW, docH, SNAP_TAU, 256);
+    const frozenEt = frozenEdgeTiles(edgeMap, rmax, xfDocToMap, docW, docH, SNAP_TAU, 256);
+    assert.deepEqual(stats.edge, frozenEt, "mapTileStats.edge must equal frozen 29f6749 edgeTiles");
+    assert.deepEqual(et, frozenEt, "edgeTiles must equal frozen 29f6749 edgeTiles");
+
+    // Extend translation [1/16, 0, 0, 1/16, 0, 0] on a document twice the map's span (12800 x 9600):
+    // tiles beyond x >= 6400 or y >= 4800 lie wholly outside the 400 x 300 map and must not be flagged as edges.
+    const xfExtend = [1 / 16, 0, 0, 1 / 16, 0, 0];
+    const extW = 12800, extH = 9600;
+    const statsExt = mapTileStats(edgeMap, rmax, xfExtend, extW, extH, SNAP_TAU, 256);
+    const frozenExt = frozenEdgeTiles(edgeMap, rmax, xfExtend, extW, extH, SNAP_TAU, 256);
+    assert.deepEqual(statsExt.edge, frozenExt, "mapTileStats.edge on extended doc (tiles beyond map) must equal frozen 29f6749 edgeTiles");
     const cols = Math.ceil(docW / 256); // 7
     const rows = Math.ceil(docH / 256); // 5
+    assert.equal(stats.cols, cols);
+    assert.equal(stats.rows, rows);
 
     // Step at map x = 200 corresponds to doc x = 800.
     // Tile index for doc x = 800 is Math.floor(800 / 256) = 3.
     // Only col 3 (or +- 1 col) should be 1
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-            const val = et[r * cols + c];
+            const idx = r * cols + c;
+            const val = et[idx];
             if (Math.abs(c - 3) <= 1) {
                 // Should be flagged at or near the boundary
-                if (c === 3) assert.equal(val, 1, `tile col 3 must be flagged at row ${r}`);
+                if (c === 3) {
+                    assert.equal(val, 1, `tile col 3 must be flagged at row ${r}`);
+                    assert.equal(stats.min[idx], 10000, `tile col 3 min must be 10000 at row ${r}`);
+                    assert.equal(stats.max[idx], 50000, `tile col 3 max must be 50000 at row ${r}`);
+                }
             } else {
                 assert.equal(val, 0, `tile col ${c} must not be flagged at row ${r}`);
+                const expectedFlatVal = c < 3 ? 10000 : 50000;
+                assert.equal(stats.min[idx], expectedFlatVal, `flat tile col ${c} min must be ${expectedFlatVal}`);
+                assert.equal(stats.max[idx], expectedFlatVal, `flat tile col ${c} max must be ${expectedFlatVal}`);
             }
         }
     }
@@ -429,6 +489,12 @@ async function main() {
     // e.g. xf sends doc y ~ 800 to map x ~ 200
     const xfRot90 = [0, 0.25, -0.25, 0, 300, 0];
     const etRot = edgeTiles(edgeMap, rmax, xfRot90, docW, docH, SNAP_TAU, 256);
+    const frozenRot = frozenEdgeTiles(edgeMap, rmax, xfRot90, docW, docH, SNAP_TAU, 256);
+    assert.deepEqual(etRot, frozenRot, "90 deg rotated edgeTiles must equal frozen 29f6749 edgeTiles");
+    const xfRotExtend = [0, 1 / 16, -1 / 16, 0, 300, 0];
+    const statsRotExt = mapTileStats(edgeMap, rmax, xfRotExtend, 9600, 12800, SNAP_TAU, 256);
+    const frozenRotExt = frozenEdgeTiles(edgeMap, rmax, xfRotExtend, 9600, 12800, SNAP_TAU, 256);
+    assert.deepEqual(statsRotExt.edge, frozenRotExt, "90 deg rotated + extended mapTileStats.edge must equal frozen 29f6749 edgeTiles");
     // Now a row is flagged, not all columns
     let flaggedRows = new Set();
     for (let r = 0; r < rows; r++) {

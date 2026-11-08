@@ -1996,3 +1996,88 @@ export function selCombine(dst, size, src, off, stride, kind, bw, bh, mode, rgb)
     }
     return y0 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
 }
+
+/**
+ * Per-tile minimum, maximum, and edge flag over a depth map (`map` and optional `rmax`, `mw` x `mh` u16) for a
+ * `W` x `H` document in `tile`² tiles (K21, docs/PLAN_WASM_BUILD.md §4.8). Rust twin: crates/px/src/range.rs
+ * (`px.js` `mapTileStats`).
+ */
+export function mapTileStats(map, rmax, mw, mh, xf, W, H, thresh = 0, tile = 256) {
+    if (!map || !(mw > 0) || !(mh > 0) || !(W > 0) || !(H > 0) || !(tile > 0) || !Array.isArray(xf) || xf.length < 6) {
+        throw new Error("mapTileStats: bad arguments");
+    }
+    const [m0, m1, m2, m3, m4, m5] = xf;
+    if (!Number.isFinite(m0) || !Number.isFinite(m1) || !Number.isFinite(m2) || !Number.isFinite(m3) || !Number.isFinite(m4) || !Number.isFinite(m5)) {
+        throw new Error("mapTileStats: non-finite xf");
+    }
+    if (map.length < mw * mh) throw new Error("mapTileStats: short map");
+    const hasRmax = rmax != null && rmax.length > 0;
+    if (hasRmax && rmax.length < mw * mh) throw new Error("mapTileStats: short rmax");
+    const thr = hasRmax ? Math.max(0, Math.min(0xffffffff, Math.floor(Number(thresh) || 0))) : 0;
+
+    const cols = Math.ceil(W / tile);
+    const rows = Math.ceil(H / tile);
+    const min = new Uint16Array(cols * rows);
+    const max = new Uint16Array(cols * rows);
+    const edge = new Uint8Array(cols * rows);
+
+    for (let ty = 0; ty < rows; ty++) {
+        const y0 = ty * tile;
+        const y1 = Math.min(H, (ty + 1) * tile);
+        const rowOff = ty * cols;
+        for (let tx = 0; tx < cols; tx++) {
+            const x0 = tx * tile;
+            const x1 = Math.min(W, (tx + 1) * tile);
+
+            const x00 = m0 * x0 + m2 * y0 + m4;
+            const y00 = m1 * x0 + m3 * y0 + m5;
+            const x10 = m0 * x1 + m2 * y0 + m4;
+            const y10 = m1 * x1 + m3 * y0 + m5;
+            const x01 = m0 * x0 + m2 * y1 + m4;
+            const y01 = m1 * x0 + m3 * y1 + m5;
+            const x11 = m0 * x1 + m2 * y1 + m4;
+            const y11 = m1 * x1 + m3 * y1 + m5;
+
+            const mx0 = Math.min(x00, x10, x01, x11);
+            const my0 = Math.min(y00, y10, y01, y11);
+            const mx1 = Math.max(x00, x10, x01, x11);
+            const my1 = Math.max(y00, y10, y01, y11);
+
+            const rx0 = Math.floor(mx0 - 2);
+            const ry0 = Math.floor(my0 - 2);
+            const rx1 = Math.ceil(mx1 + 2);
+            const ry1 = Math.ceil(my1 + 2);
+            const meetsMap = rx0 <= mw - 1 && rx1 >= 0 && ry0 <= mh - 1 && ry1 >= 0;
+
+            const ix0 = Math.max(0, Math.min(mw - 1, rx0));
+            const iy0 = Math.max(0, Math.min(mh - 1, ry0));
+            const ix1 = Math.max(0, Math.min(mw - 1, rx1));
+            const iy1 = Math.max(0, Math.min(mh - 1, ry1));
+
+            let lo = 65535;
+            let hi = 0;
+            let hasEdge = 0;
+
+            for (let my = iy0; my <= iy1; my++) {
+                const row = my * mw;
+                for (let mx = ix0; mx <= ix1; mx++) {
+                    const idx = row + mx;
+                    const v = map[idx];
+                    if (v < lo) lo = v;
+                    if (v > hi) hi = v;
+                    if (meetsMap && !hasEdge && hasRmax && rmax[idx] > thr) {
+                        hasEdge = 1;
+                    }
+                }
+            }
+
+            const outIdx = rowOff + tx;
+            min[outIdx] = lo;
+            max[outIdx] = hi;
+            edge[outIdx] = hasEdge;
+        }
+    }
+
+    return { min, max, edge, cols, rows };
+}
+

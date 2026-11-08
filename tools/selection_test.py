@@ -227,18 +227,43 @@ const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
 // Case 1: depth lo .25 hi .5, no feathers
 // at columns where v = .2 / .3 / .45 / .6 -> 0 / 255 / 255 / 0, exact (9 columns, middle row 600)
 // K5: on tiles with the selCombine route on Rust the range's combine runs sel_combine (its partial tiles)
+// K21: map_tile_stats runs on the cold map when the route is on Rust, and is cached on the warm call
 const E = ed.constructor;
 const rustSel = ed.tileMode && E.kernels !== "js" && (E.routes || {}).selCombine !== "js";
+const rustStats = E.kernels !== "js" && (E.routes || {}).mapTileStats !== "js";
 E.pxCalls(true);
 await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0, fHi: 0 }, "replace");
-const rangeSelCalls = E.pxCalls(true).sel_combine || 0;
+const calls1 = E.pxCalls(true);
+const rangeSelCalls = calls1.sel_combine || 0;
+const statsCalls = calls1.map_tile_stats || 0;
 if (rustSel && !(rangeSelCalls > 0)) throw new Error("the range's combine ran no sel_combine on tiles with the route on rust");
+if (rustStats && statsCalls !== Math.ceil(1200 / 256)) throw new Error("selectRange ran map_tile_stats " + statsCalls + " times, expected " + Math.ceil(1200 / 256));
 const c1Cols = [160, 320, 400, 480, 720, 800, 960, 1200, 1440];
 const c1Vals = c1Cols.map((x) => at(x, 600));
 if (at(320, 600) !== 0) throw new Error("case 1: at v=0.2 (x=320) expected 0, got " + at(320, 600));
 if (at(480, 600) !== 255) throw new Error("case 1: at v=0.3 (x=480) expected 255, got " + at(480, 600));
 if (at(720, 600) !== 255) throw new Error("case 1: at v=0.45 (x=720) expected 255, got " + at(720, 600));
 if (at(960, 600) !== 0) throw new Error("case 1: at v=0.6 (x=960) expected 0, got " + at(960, 600));
+
+// K21: replay on a fresh map copy with the mapTileStats route on "js" gives identical selection bytes and 0 Rust calls
+if (rustStats) {
+    const rustRow = ed.sel.readRect(0, 600, 1600, 1).data.slice();
+    await ed.setMap("depth", makeMap("depth", mapW, mapH, ramp.slice(), [1600, 0, 0, 1200, 0, 0], {}));
+    E.setRoute("mapTileStats", "js");
+    E.pxCalls(true);
+    try {
+        await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0, fHi: 0 }, "replace");
+        const jsStatsCalls = E.pxCalls(true).map_tile_stats || 0;
+        if (jsStatsCalls !== 0) throw new Error("mapTileStats route 'js' called map_tile_stats " + jsStatsCalls + " times");
+        const jsRow = ed.sel.readRect(0, 600, 1600, 1).data;
+        for (let i = 0; i < rustRow.length; i++) {
+            if (rustRow[i] !== jsRow[i]) throw new Error("mapTileStats route 'js' differed at byte " + i);
+        }
+    } finally {
+        E.setRoute("mapTileStats", null);
+    }
+    await ed.setMap("depth", map);
+}
 
 // Case 2: fLo .1 at v = .2 -> round(255 * sstep(.15, .25, .2)) = 128 (+-1)
 await ed.selectRange({ source: "depth", lo: 0.25, hi: 0.5, fLo: 0.1, fHi: 0 }, "replace");
@@ -325,6 +350,222 @@ if (ed.tileMode) {
             throw new Error(`case 12: at x=${probes[i]} expected preserved ${probeBytesBefore[i]}, got ${val}`);
         }
     }
+
+    // K21: skipped rows (all-full and all-empty) post 0 pool jobs and produce exact pct, bounds, and tiles
+    const { STEP_MARKS } = await import("./editor/inpaint_jobs.js");
+    STEP_MARKS.length = 0;
+    const fullRes = await ed.selectRange({ source: "depth", lo: 0, hi: 1, fLo: 0, fHi: 0 }, "replace");
+    const fullPosted = STEP_MARKS.find((s) => s.op === "range" && s.step === "posted");
+    const fullDone = STEP_MARKS.find((s) => s.op === "range" && s.step === "done");
+    if (!fullPosted || fullPosted.jobs !== 0) throw new Error("K21 all-full range posted " + (fullPosted && fullPosted.jobs) + " jobs, expected 0");
+    if (!fullDone || fullDone.pct !== 100 || fullRes.tiles !== 35) throw new Error("K21 all-full bookkeeping mismatch: " + JSON.stringify({ fullDone, fullRes }));
+    if (!fullRes.bounds || fullRes.bounds[0] !== 0 || fullRes.bounds[1] !== 0 || fullRes.bounds[2] !== 1600 || fullRes.bounds[3] !== 1200) {
+        throw new Error("K21 all-full bounds mismatch: " + JSON.stringify(fullRes.bounds));
+    }
+    STEP_MARKS.length = 0;
+    const emptyRes = await ed.selectRange({ source: "depth", lo: 0, hi: 1, fLo: 0, fHi: 0, invert: true }, "replace");
+    const emptyPosted = STEP_MARKS.find((s) => s.op === "range" && s.step === "posted");
+    const emptyDone = STEP_MARKS.find((s) => s.op === "range" && s.step === "done");
+    if (!emptyPosted || emptyPosted.jobs !== 0) throw new Error("K21 all-empty range posted " + (emptyPosted && emptyPosted.jobs) + " jobs, expected 0");
+    if (!emptyDone || emptyDone.pct !== 0 || emptyRes.tiles !== 0 || emptyRes.bounds !== null) {
+        throw new Error("K21 all-empty bookkeeping mismatch: " + JSON.stringify({ emptyDone, emptyRes }));
+    }
+}
+
+// K21-L3: select-by-depth after Extend with snap on, compared byte-for-byte with js route and class-free base span
+{
+    const { snapField, snapParams, rangeMax } = await import("./editor/inpaint_edges.js");
+    const { rangeWeight, u16Bilinear } = await import("./editor/inpaint_weights.js");
+    const dExt = await run("new_document");
+    await run("new_canvas", { doc: dExt.id, width: 1024, height: 256, color: "#0000ff" });
+    const edExt = ednow(dExt.id);
+    const mw = 64, mh = 16;
+    const depth = new Uint16Array(mw * mh);
+    const guideData = new Uint8Array(mw * mh * 4);
+    for (let y = 0; y < mh; y++) {
+        for (let x = 0; x < mw; x++) {
+            const i = y * mw + x;
+            if (x < 10) depth[i] = (x & 1) ? 10000 : 17000;
+            else if (x <= 18) depth[i] = 17000;
+            else if (x < 50) depth[i] = (x % 4 < 2) ? 17000 : 18311;
+            else depth[i] = (y & 1) ? 17000 : 24000;
+            const left = (x < 50) ? ((x % 4) < 2) : ((y & 1) === 0);
+            guideData[i * 4] = left ? 255 : 0;
+            guideData[i * 4 + 2] = left ? 0 : 255;
+            guideData[i * 4 + 3] = 255;
+        }
+    }
+    await edExt.setMap("depth", makeMap("depth", mw, mh, depth, [1024, 0, 0, 256, 0, 0], { snap: { strength: 50 } }, guideData));
+    await run("extend_canvas", { doc: dExt.id, right: 1024 });
+    const lExt = await run("add_paint_layer", { doc: dExt.id, name: "ext_guide" });
+    const layerExt = edExt.layers.find((x) => x.id === lExt.id);
+    layerExt.px.drawInto([0, 0, 2048, 256], (ctx) => {
+        ctx.fillStyle = "#0000ff";
+        ctx.fillRect(0, 0, 2048, 256);
+        ctx.fillStyle = "#ff0000";
+        for (let x = 0; x < 800; x += 16) {
+            if ((Math.floor(x / 16) % 4) < 2) ctx.fillRect(x, 0, 16, 256);
+        }
+        for (let y = 0; y < 256; y += 16) {
+            if ((Math.floor(y / 16) & 1) === 0) ctx.fillRect(800, y, 1248, 16);
+        }
+    });
+    edExt.markLayerChanged(layerExt);
+    edExt.renderLayers();
+    edExt.draw();
+    if (edExt.mipsSettled) await edExt.mipsSettled();
+
+    const extLim = { source: "depth", lo: 0.268780517307024, hi: 0.35, fLo: 0, fHi: 0 };
+    const sampledBoxes = [];
+    const origSample = edExt.sampleRegionSettled.bind(edExt);
+    edExt.sampleRegionSettled = function(kind, box, ...rest) {
+        if (kind === "image" && Array.isArray(box)) sampledBoxes.push(box.slice());
+        return origSample(kind, box, ...rest);
+    };
+    try {
+        await edExt.selectRange(extLim, "replace");
+    } finally {
+        edExt.sampleRegionSettled = origSample;
+    }
+    if (sampledBoxes.length !== 1 || sampledBoxes[0][0] !== 256 || sampledBoxes[0][2] !== 1280) {
+        throw new Error("K21-L3 extended snap picture box mismatch: " + JSON.stringify(sampledBoxes));
+    }
+    const rustExt = edExt.sel.readRect(0, 0, 2048, 256).data.slice();
+
+    // Replay with mapTileStats route 'js' (fresh map.data so RMAX_CACHE recomputes via the twin) and compare byte-for-byte
+    const E = edExt.constructor;
+    edExt.maps.depth.data = edExt.maps.depth.data.slice();
+    E.setRoute("mapTileStats", "js");
+    E.pxCalls(true);
+    try {
+        await edExt.selectRange(extLim, "replace");
+        const jsStatsCalls = E.pxCalls(true).map_tile_stats || 0;
+        if (jsStatsCalls !== 0) throw new Error("K21-L3 mapTileStats route 'js' called map_tile_stats " + jsStatsCalls + " times");
+    } finally {
+        E.setRoute("mapTileStats", null);
+        edExt.maps.depth.data = edExt.maps.depth.data.slice();
+    }
+    const jsExt = edExt.sel.readRect(0, 0, 2048, 256).data;
+    for (let i = 3; i < rustExt.length; i += 4) {
+        if (rustExt[i] !== jsExt[i]) throw new Error("K21-L3 js route differed at alpha byte " + i);
+    }
+
+    // Compare byte-for-byte with frozen base span logic (without tile classes)
+    const mapObj = { data: depth, w: mw, h: mh };
+    const rmax = rangeMax(mapObj);
+    const [sigmaR, tau] = snapParams(50);
+    const thresh = Math.round(tau * 65535);
+    const xf = [1 / 16, 0, 0, 1 / 16, 0, 0];
+    let oMin = -1, oMax = -1;
+    for (let tx = 0; tx < 8; tx++) {
+        const mx0 = tx * 256 * xf[0], mx1 = Math.min(2048, (tx + 1) * 256) * xf[0];
+        const ix0 = Math.max(0, Math.floor(mx0 - 2)), ix1 = Math.min(mw - 1, Math.ceil(mx1 + 2));
+        let hit = false;
+        for (let my = 0; my < mh && !hit; my++) {
+            for (let mx = ix0; mx <= ix1; mx++) {
+                if (rmax[my * mw + mx] > thresh) { hit = true; break; }
+            }
+        }
+        if (hit) {
+            if (oMin === -1) oMin = tx;
+            oMax = tx;
+        }
+    }
+    const baseMinX = oMin === -1 ? 0 : oMin * 256;
+    const baseMaxX = oMin === -1 ? 0 : Math.min(2048, (oMax + 1) * 256);
+    for (let y = 0; y < 256; y++) {
+        const py = y + 0.5;
+        const my = py * xf[3] + xf[5];
+        for (let x = 0; x < 2048; x++) {
+            const px = x + 0.5;
+            const mx = px * xf[0] + xf[4];
+            let v;
+            if (x >= baseMinX && x < baseMaxX) {
+                const left = (x < 800) ? ((Math.floor(x / 16) % 4) < 2) : ((Math.floor(y / 16) & 1) === 0);
+                v = snapField(mapObj, guideData, mx, my, left ? 1 : 0, 0, left ? 0 : 1, sigmaR, tau);
+            } else {
+                v = u16Bilinear(depth, mw, mh, mx, my);
+            }
+            const refA = Math.round(255 * rangeWeight(v, extLim));
+            const gotA = rustExt[(y * 2048 + x) * 4 + 3];
+            if (gotA !== refA) {
+                throw new Error(`K21-L3 frozen base mismatch at (${x}, ${y}): got ${gotA}, expected ${refA}`);
+            }
+        }
+    }
+
+    // K21-R2: 2-row document (2048 x 512) with opaque row 0 and a transparent hole [256, 256, 512, 512] in row 1,
+    // tested with both equal row spans (1024 wide on both rows) and differing row spans (1024 on row 0, 512 on row 1).
+    await run("extend_canvas", { doc: dExt.id, bottom: 256 });
+    const mh2 = 32;
+    const depthEq = new Uint16Array(mw * mh2);
+    const depthDiff = new Uint16Array(mw * mh2);
+    const guideData2 = new Uint8Array(mw * mh2 * 4);
+    for (let y = 0; y < mh2; y++) {
+        const srcY = y <= 16 ? Math.min(15, y) : (y & 15);
+        for (let x = 0; x < mw; x++) {
+            const i = y * mw + x;
+            const baseVal = depth[srcY * mw + x];
+            depthEq[i] = baseVal;
+            depthDiff[i] = (y >= 14 && x >= 35) ? ((x & 1) ? 10000 : 17000) : baseVal;
+            const si = (srcY * mw + x) * 4;
+            guideData2[i * 4] = guideData[si];
+            guideData2[i * 4 + 1] = guideData[si + 1];
+            guideData2[i * 4 + 2] = guideData[si + 2];
+            guideData2[i * 4 + 3] = 255;
+        }
+    }
+    // Cut a transparent hole at [256, 256, 512, 512] in row 1
+    edExt.basePx.drawInto([256, 256, 512, 512], (ctx) => ctx.clearRect(256, 256, 256, 256));
+    for (const l of edExt.layers) {
+        if (l.px) {
+            l.px.drawInto([256, 256, 512, 512], (ctx) => ctx.clearRect(256, 256, 256, 256));
+            edExt.markLayerChanged(l);
+        }
+    }
+    edExt.renderLayers();
+    edExt.draw();
+    if (edExt.mipsSettled) await edExt.mipsSettled();
+
+    // (a) Equal spans on row 0 and row 1 ([256..1280] on both; scratchCanvas is not resized between rows)
+    await edExt.setMap("depth", makeMap("depth", mw, mh2, depthEq, [1024, 0, 0, 512, 0, 0], { snap: { strength: 50 } }, guideData2));
+    await edExt.selectRange(extLim, "replace");
+    const selEqRow0 = edExt.sel.readRect(0, 0, 2048, 256).data;
+    for (let i = 3; i < rustExt.length; i += 4) {
+        if (selEqRow0[i] !== rustExt[i]) throw new Error("K21-R2 opaque row 0 changed at byte " + i);
+    }
+    const selEqHole = edExt.sel.readRect(256, 256, 256, 256).data.slice();
+
+    // (b) Differing spans on row 0 ([256..1280]) and row 1 ([256..768], since tx >= 3 on row 1 is empty)
+    await edExt.setMap("depth", makeMap("depth", mw, mh2, depthDiff, [1024, 0, 0, 512, 0, 0], { snap: { strength: 50 } }, guideData2));
+    const diffBoxes = [];
+    edExt.sampleRegionSettled = function(kind, box, ...rest) {
+        if (kind === "image" && Array.isArray(box)) diffBoxes.push(box.slice());
+        return origSample(kind, box, ...rest);
+    };
+    try {
+        await edExt.selectRange(extLim, "replace");
+    } finally {
+        edExt.sampleRegionSettled = origSample;
+    }
+    if (diffBoxes.length !== 2 || diffBoxes[0][2] - diffBoxes[0][0] === diffBoxes[1][2] - diffBoxes[1][0]) {
+        throw new Error("K21-R2 expected differing row spans, got " + JSON.stringify(diffBoxes));
+    }
+    const selDiffHole = edExt.sel.readRect(256, 256, 256, 256).data;
+    const mapObj2 = { data: depthEq, w: mw, h: mh2 };
+    for (let y = 0; y < 256; y++) {
+        const my = (256 + y + 0.5) * xf[3] + xf[5];
+        for (let x = 0; x < 256; x++) {
+            const mx = (256 + x + 0.5) * xf[0] + xf[4];
+            const vHole = snapField(mapObj2, guideData2, mx, my, 0, 0, 0, sigmaR, tau);
+            const refA = Math.round(255 * rangeWeight(vHole, extLim));
+            const idx = (y * 256 + x) * 4 + 3;
+            if (selEqHole[idx] !== refA || selDiffHole[idx] !== refA) {
+                throw new Error(`K21-R2 transparent hole mismatch at (${256 + x}, ${256 + y}): eq=${selEqHole[idx]}, diff=${selDiffHole[idx]}, ref=${refA}`);
+            }
+        }
+    }
+    await run("close_document", { doc: dExt.id, force: true });
 }
 
 return { c1Vals, aCase2, aCase4, expectedSub };

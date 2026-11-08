@@ -1,0 +1,32 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+    Finished `release` profile [optimized] target(s) in 2.95s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px)
+warning: unused variable: `r_hi`
+  --> src\range.rs:82:24
+   |
+82 |             let (r_lo, r_hi) = row_min_max(row_slice);
+   |                        ^^^^ help: if this is intentional, prefix it with an underscore: `_r_hi`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 2.43s
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=range)
+FAIL map_tile_stats 2-texel halo reaches ±2 texels and thresh uses strict >  st500=1234..30000 e=1, st501 e=0
+FAIL rust simd map_tile_stats equals its twin byte for byte (92 cases, each also at an odd offset)  map 7x5 doc 13x9 upright rmax=false thr=32768: out.max[0] is 7944, the twin has 55605
+FAIL rust scalar map_tile_stats equals its twin byte for byte (92 cases, each also at an odd offset)  map 7x5 doc 13x9 upright rmax=false thr=32768: out.max[0] is 7944, the twin has 55605
+FAIL kernels.js mapTileStats route switches between twin (0 calls) and rust (rows calls) with identical output  jsCalls=0, rustCalls=2
+FAIL rangeTileClass full/empty tiles match per-pixel bilinear and snapField weights across all tiles  tile (0,0) cls=empty got a=255 at v=0.2621561192521552 (min=0, max=0.11403067063401236)
+FAIL (5) (only: range; PX_ONLY, not the full test)
+ok   rangeTileClass hard boundaries at lo and hi
+ok   rangeTileClass invert (r.invert xor jobInvert)
+ok   rangeTileClass soft feather boundaries
+FAIL rangeTileClass full/empty tiles match per-pixel bilinear and snapField weights across all tiles  tile (0,0) cls=empty got a=255 at v=0.2621561192521552 (min=0, max=0.11403067063401236)
+ok   rangeRowBookkeeping matches exact in-image pixel alphaSum, bounds, and tiles on full and partial rows
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (5) (only: range; PX_ONLY, not the full test)
+(node:54676) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k21_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

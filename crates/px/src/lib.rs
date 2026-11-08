@@ -29,6 +29,7 @@ mod mip;
 mod png;
 mod poisson;
 mod psd;
+mod range;
 mod relight;
 mod resample;
 mod sel;
@@ -46,11 +47,11 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
-/// 26: color_match_rgba, blend_alpha; 27: liquify_preview);
+/// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    27
+    28
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -703,3 +704,88 @@ pub unsafe extern "C" fn sel_combine(dst: *mut u8, size: usize, src: *const u8, 
     let src = if need == 0 { &[][..] } else { slice::from_raw_parts(src, need) };
     sel::sel_combine(slice::from_raw_parts_mut(dst, size * size * 4), size, src, src_stride, src_kind, bw, bh, mode, rgb, slice::from_raw_parts_mut(ext, 4))
 }
+
+// ---- range selection & limits (PLAN_WASM_BUILD.md §4.8, K21) --------------------------------------------------------
+
+/// Per-tile minimum, maximum, and edge flag for one document tile row `[0, y0, w, y1]` over a `wh`-row window of `map`
+/// (and optional `rmax`) starting at map row `wy0`. Returns `1` on success, `0` when refused.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn map_tile_stats(
+    map: *const u16,
+    rmax: *const u16,
+    mw: usize,
+    mh: usize,
+    wy0: usize,
+    wh: usize,
+    w: usize,
+    y0: usize,
+    y1: usize,
+    tile: usize,
+    m0: f64,
+    m1: f64,
+    m2: f64,
+    m3: f64,
+    m4: f64,
+    m5: f64,
+    thresh: u32,
+    min_out: *mut u16,
+    max_out: *mut u16,
+    edge_out: *mut u8,
+) -> u32 {
+    if map.is_null()
+        || min_out.is_null()
+        || max_out.is_null()
+        || edge_out.is_null()
+        || mw == 0
+        || mh == 0
+        || wh == 0
+        || wy0 >= mh
+        || wy0.saturating_add(wh) > mh
+        || w == 0
+        || tile == 0
+        || y0 >= y1
+        || !m0.is_finite()
+        || !m1.is_finite()
+        || !m2.is_finite()
+        || !m3.is_finite()
+        || !m4.is_finite()
+        || !m5.is_finite()
+    {
+        return 0;
+    }
+    let win_len = match wh.checked_mul(mw) {
+        Some(n) => n,
+        None => return 0,
+    };
+    let cols = (w - 1) / tile + 1;
+    let map_slice = slice::from_raw_parts(map, win_len);
+    let rmax_slice = if rmax.is_null() {
+        None
+    } else {
+        Some(slice::from_raw_parts(rmax, win_len))
+    };
+    range::map_tile_stats(
+        map_slice,
+        rmax_slice,
+        mw,
+        mh,
+        wy0,
+        wh,
+        w,
+        y0,
+        y1,
+        tile,
+        m0,
+        m1,
+        m2,
+        m3,
+        m4,
+        m5,
+        thresh,
+        slice::from_raw_parts_mut(min_out, cols),
+        slice::from_raw_parts_mut(max_out, cols),
+        slice::from_raw_parts_mut(edge_out, cols),
+    )
+}
+

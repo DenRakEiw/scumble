@@ -61,7 +61,7 @@ import { readPsdStream, inflateAtMost } from "./inpaint_layered.js";
 import { resampleStore } from "./inpaint_resample.js";
 import { liquifyStore } from "./inpaint_liquify.js";
 import { guidedFar } from "./inpaint_depth.js";
-import { u16Bilinear, rangeWeight, LUMA, opp, colourSimilarity, hexToRgb as hexToRgb01 } from "./inpaint_weights.js";
+import { u16Bilinear, rangeWeight, rangeRowBookkeeping, LUMA, opp, colourSimilarity, hexToRgb as hexToRgb01 } from "./inpaint_weights.js";
 import { snapField, fuseTiles } from "./inpaint_edges.js";
 import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory } from "./px/kernels.js";
 import { Px } from "./px/px.js";
@@ -1127,11 +1127,29 @@ export function rangeSelectJob(msg) {
         const tileCols = Math.ceil(W / TILE);
         const startTileY = Math.floor(y0 / TILE);
         const endTileY = Math.ceil(y1 / TILE);
+        const rowClasses = (msg.classes && startTileY === endTileY - 1 && y0 <= startTileY * TILE && y1 >= Math.min((startTileY + 1) * TILE, H))
+            ? msg.classes
+            : null;
+        if (rowClasses) {
+            const bk = rangeRowBookkeeping(W, H, startTileY, rowClasses, TILE);
+            alphaSum += bk.alphaSum;
+            for (const ft of bk.tiles) tiles.push(ft);
+            if (bk.bounds) {
+                bX0 = Math.min(bX0, bk.bounds[0]);
+                bY0 = Math.min(bY0, bk.bounds[1]);
+                bX1 = Math.max(bX1, bk.bounds[2]);
+                bY1 = Math.max(bY1, bk.bounds[3]);
+            }
+        }
 
         for (let ty = startTileY; ty < endTileY; ty++) {
             const tileY0 = ty * TILE;
             const tileY1 = Math.min(tileY0 + TILE, H);
             for (let tx = 0; tx < tileCols; tx++) {
+                if (rowClasses) {
+                    const cls = rowClasses[tx];
+                    if (cls !== 2 && cls !== "compute") continue;
+                }
                 const tileX0 = tx * TILE;
                 const tileX1 = Math.min(tileX0 + TILE, W);
 

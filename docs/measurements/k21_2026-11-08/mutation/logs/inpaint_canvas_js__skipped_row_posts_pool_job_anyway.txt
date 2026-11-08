@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__skipped_row_posts_pool_job_anyw-selection --offline --tiles on selection  (rc 1, 18 s)
+selection rc=1 2s FAIL
+SOME FAILED

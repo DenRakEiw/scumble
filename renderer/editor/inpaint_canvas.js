@@ -44,8 +44,8 @@ import { promptPayload, selectionBoxIdOf } from "./boxes_model.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
 import { STALE_DIFF, GUIDE, RANGE_BAND_ROWS, WORK_MAX, modelSize, workSize, disparityRange } from "./inpaint_depth.js";
 import { packRG16, mapToJSON, mapFromJSON, fingerprint, fingerprintDiff, passToMap, makeMap, sampleMap, deriveMap, selectionOnMap, editMap } from "./inpaint_maps.js";
-import { SNAP_DEFAULT, SNAP_TAU, snapParams, snapField, rangeMax, edgeTiles } from "./inpaint_edges.js";
-import { normalizeLimit, u16Bilinear, rangeWeight, opp, colourSimilarity, hexToRgb as hexToRgb01, WEIGHTS_GLSL } from "./inpaint_weights.js";
+import { SNAP_DEFAULT, SNAP_TAU, snapParams, snapField, rangeMax, mapTileStats } from "./inpaint_edges.js";
+import { normalizeLimit, u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping, opp, colourSimilarity, hexToRgb as hexToRgb01, WEIGHTS_GLSL } from "./inpaint_weights.js";
 import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
@@ -1954,8 +1954,24 @@ const STROKE_SCRATCH_KEEP_PX = 16 * 1024 * 1024;
 // whole box (a 561 MB scratch read back in blocks, 1.3 s on tiles).
 const STROKE_BAND = 1024;
 
-// WeakMap caching rangeMax(map) keyed by map.data (immutable Uint16Array) for selectRange depth edge tiles (R2-S6)
+// WeakMap caching { rmax, stats: Map } keyed by map.data (immutable Uint16Array) for selectRange depth tile stats (R2-S6, K21)
 const RMAX_CACHE = new WeakMap();
+function cachedMapTileStats(map, m, W, H, snapOn, tau) {
+    let entry = RMAX_CACHE.get(map.data);
+    if (!entry) {
+        entry = { rmax: null, stats: new Map() };
+        RMAX_CACHE.set(map.data, entry);
+    }
+    const thresh = snapOn ? Math.round(tau * 65535) : 0;
+    const key = `${W}x${H}:${m.join(",")}:${snapOn ? 1 : 0}:${thresh}`;
+    let stats = entry.stats.get(key);
+    if (!stats) {
+        if (snapOn && !entry.rmax) entry.rmax = rangeMax(map);
+        stats = mapTileStats(map, snapOn ? entry.rmax : null, m, W, H, tau, 256);
+        entry.stats.set(key, stats);
+    }
+    return stats;
+}
 
 // A pixel source's identity and version as a key part, "-" for none (`belowSignature`): a source replaced by another
 // (an undo, a flip, a new base) is another key even where `pixelVersion` would not tell
@@ -7494,22 +7510,16 @@ class InpaintEditor {
                     const tau = snap ? snap[1] : SNAP_TAU;
                     start.snap = !!snap;
 
-                    let edgeFlags = null;
-                    if (sigmaR > 0 && map.guide) {
-                        let rmax = RMAX_CACHE.get(map.data);
-                        if (!rmax) {
-                            rmax = rangeMax(map);
-                            RMAX_CACHE.set(map.data, rmax);
-                        }
-                        edgeFlags = edgeTiles(map, rmax, m, W, H, tau, 256);
-                    }
+                    const snapOn = !!(sigmaR > 0 && map.guide);
+                    const stats = cachedMapTileStats(map, m, W, H, snapOn, tau);
                     markStep("range", "edges");
 
                     const tileCols = Math.ceil(W / 256);
                     const tileRows = Math.ceil(H / 256);
                     let pictureTiles = 0;
+                    let postedJobs = 0;
 
-                    const guideMsg = (map.guide && sigmaR > 0) ? {
+                    const guideMsg = snapOn ? {
                         sab: (typeof SharedArrayBuffer !== "undefined" && map.guide.buffer instanceof SharedArrayBuffer) ? map.guide.buffer : null,
                         data: (typeof SharedArrayBuffer !== "undefined" && map.guide.buffer instanceof SharedArrayBuffer) ? null : map.guide,
                         w: map.w,
@@ -7534,15 +7544,37 @@ class InpaintEditor {
                             const y1 = Math.min(y0 + 256, H);
                             const bh = y1 - y0;
 
+                            const rowOffset = ty * tileCols;
+                            const rowClasses = new Uint8Array(tileCols);
+                            let hasCompute = false;
+                            let oMin = -1, oMax = -1;
+                            for (let tx = 0; tx < tileCols; tx++) {
+                                const idx = rowOffset + tx;
+                                if (snapOn && stats.edge[idx] === 1) {
+                                    if (oMin === -1) oMin = tx;
+                                    oMax = tx;
+                                }
+                                const cls = rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, jobInvert);
+                                if (cls === "full") {
+                                    rowClasses[tx] = 1;
+                                } else if (cls === "compute") {
+                                    rowClasses[tx] = 2;
+                                    hasCompute = true;
+                                }
+                            }
                             let minTx = -1, maxTx = -1;
-                            if (edgeFlags) {
-                                const rowOffset = ty * tileCols;
-                                for (let tx = 0; tx < tileCols; tx++) {
-                                    if (edgeFlags[rowOffset + tx] === 1) {
+                            if (oMin !== -1) {
+                                for (let tx = oMin; tx <= oMax; tx++) {
+                                    if (rowClasses[tx] === 2) {
                                         if (minTx === -1) minTx = tx;
                                         maxTx = tx;
                                     }
                                 }
+                            }
+
+                            if (!hasCompute) {
+                                bandPromises.push(Promise.resolve({ y0, y1, res: rangeRowBookkeeping(W, H, ty, rowClasses, 256) }));
+                                continue;
                             }
 
                             let picture = null;
@@ -7565,6 +7597,7 @@ class InpaintEditor {
                                     scratchCanvas.width = bw;
                                     scratchCanvas.height = bh;
                                 }
+                                scratchCtx.clearRect(0, 0, bw, bh);
                                 scratchCtx.drawImage(regCanvas, 0, 0);
                                 const imgData = scratchCtx.getImageData(0, 0, bw, bh);
 
@@ -7599,8 +7632,10 @@ class InpaintEditor {
                                 snap: snap ? [sigmaR, tau] : null,
                                 guide: guideMsg,
                                 picture,
+                                classes: rowClasses,
                             };
 
+                            postedJobs++;
                             bandPromises.push(
                                 editorPool().run("range_select", msg, [], { priority: INTERACTIVE, group })
                                     .then((res) => ({ y0, y1, res }))
@@ -7614,7 +7649,7 @@ class InpaintEditor {
                             scratchCtx = null;
                         }
                     }
-                    markStep("range", "posted", { readMs, pictureTiles, jobs: bandPromises.length });
+                    markStep("range", "posted", { readMs, pictureTiles, jobs: postedJobs });
 
                     for (const p of bandPromises) {
                         const { y0, y1, res } = await p;
@@ -7741,15 +7776,8 @@ class InpaintEditor {
                     const tau = snap ? snap[1] : SNAP_TAU;
                     start.snap = !!snap;
 
-                    let edgeFlags = null;
-                    if (sigmaR > 0 && map.guide) {
-                        let rmax = RMAX_CACHE.get(map.data);
-                        if (!rmax) {
-                            rmax = rangeMax(map);
-                            RMAX_CACHE.set(map.data, rmax);
-                        }
-                        edgeFlags = edgeTiles(map, rmax, m, W, H, tau, 256);
-                    }
+                    const snapOn = !!(sigmaR > 0 && map.guide);
+                    const stats = cachedMapTileStats(map, m, W, H, snapOn, tau);
                     markStep("range", "edges");
 
                     const tileCols = Math.ceil(W / 256);
@@ -7767,12 +7795,22 @@ class InpaintEditor {
                             const alpha = new Uint8Array(W * bh);
 
                             let minTx = -1, maxTx = -1;
-                            if (edgeFlags) {
+                            if (snapOn) {
                                 const rowOffset = ty * tileCols;
+                                let oMin = -1, oMax = -1;
                                 for (let tx = 0; tx < tileCols; tx++) {
-                                    if (edgeFlags[rowOffset + tx] === 1) {
-                                        if (minTx === -1) minTx = tx;
-                                        maxTx = tx;
+                                    if (stats.edge[rowOffset + tx] === 1) {
+                                        if (oMin === -1) oMin = tx;
+                                        oMax = tx;
+                                    }
+                                }
+                                if (oMin !== -1) {
+                                    for (let tx = oMin; tx <= oMax; tx++) {
+                                        const idx = rowOffset + tx;
+                                        if (rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, jobInvert) === "compute") {
+                                            if (minTx === -1) minTx = tx;
+                                            maxTx = tx;
+                                        }
                                     }
                                 }
                             }
@@ -7796,6 +7834,7 @@ class InpaintEditor {
                                     scratchCanvas.width = picW;
                                     scratchCanvas.height = bh;
                                 }
+                                scratchCtx.clearRect(0, 0, picW, bh);
                                 scratchCtx.drawImage(regCanvas, 0, 0);
                                 picData = scratchCtx.getImageData(0, 0, picW, bh).data;
                             }

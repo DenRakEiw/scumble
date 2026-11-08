@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 27;
+export const PX_ABI = 28;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -962,6 +962,65 @@ export class Px {
                 cap *= 2;
             }
         } finally { this._reset(a); }
+    }
+
+    /**
+     * Per-tile minimum, maximum, and edge flag over a depth map (`map` and optional `rmax`, `mw` x `mh` u16) for a
+     * `W` x `H` document in `tile`² tiles (K21, docs/PLAN_WASM_BUILD.md §4.8). Copies only the map row window `[wy0..wy1]`
+     * that each document tile row `ty` can read, never the whole map at once. `min` / `max` clamp the 2-texel window on
+     * both sides to `[0, mw - 1] x [0, mh - 1]`; `edge` is set only when the unclamped window meets the map.
+     */
+    mapTileStats(map, rmax, mw, mh, xf, W, H, thresh = 0, tile = 256) {
+        if (!map || !(mw > 0) || !(mh > 0) || !(W > 0) || !(H > 0) || !(tile > 0) || !Array.isArray(xf) || xf.length < 6) {
+            throw new Error("mapTileStats: bad arguments");
+        }
+        const [m0, m1, m2, m3, m4, m5] = xf;
+        if (!Number.isFinite(m0) || !Number.isFinite(m1) || !Number.isFinite(m2) || !Number.isFinite(m3) || !Number.isFinite(m4) || !Number.isFinite(m5)) {
+            throw new Error("mapTileStats: non-finite xf");
+        }
+        if (map.length < mw * mh) throw new Error("mapTileStats: short map");
+        const hasRmax = rmax != null && rmax.length > 0;
+        if (hasRmax && rmax.length < mw * mh) throw new Error("mapTileStats: short rmax");
+        const thr = hasRmax ? Math.max(0, Math.min(0xffffffff, Math.floor(Number(thresh) || 0))) : 0;
+        const cols = Math.ceil(W / tile);
+        const rows = Math.ceil(H / tile);
+        const min = new Uint16Array(cols * rows);
+        const max = new Uint16Array(cols * rows);
+        const edge = new Uint8Array(cols * rows);
+        const a = this.job;
+        for (let ty = 0; ty < rows; ty++) {
+            const y0 = ty * tile;
+            const y1 = Math.min(H, (ty + 1) * tile);
+            const ry00 = m1 * 0 + m3 * y0 + m5;
+            const ry10 = m1 * W + m3 * y0 + m5;
+            const ry01 = m1 * 0 + m3 * y1 + m5;
+            const ry11 = m1 * W + m3 * y1 + m5;
+            const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11) - 2)));
+            const wy1 = Math.max(0, Math.min(mh - 1, Math.ceil(Math.max(ry00, ry10, ry01, ry11) + 2)));
+            const wh = wy1 - wy0 + 1;
+            const wLen = wh * mw;
+            const wStart = wy0 * mw;
+            try {
+                const pm = this._in(a, map.subarray(wStart, wStart + wLen), wLen * 2);
+                const pr = hasRmax ? this._in(a, rmax.subarray(wStart, wStart + wLen), wLen * 2) : 0;
+                const pMin = a.take(cols * 2);
+                const pMax = a.take(cols * 2);
+                const pEdge = a.take(cols);
+                const ok = this.exports.map_tile_stats(
+                    pm, pr, mw, mh, wy0, wh, W, y0, y1, tile,
+                    m0, m1, m2, m3, m4, m5, thr,
+                    pMin, pMax, pEdge
+                );
+                if (!ok) throw new Error("map_tile_stats: refused");
+                const rowOff = ty * cols;
+                const t = TIMED ? clock() : 0;
+                min.set(this.view(Uint16Array, pMin, cols), rowOff);
+                max.set(this.view(Uint16Array, pMax, cols), rowOff);
+                edge.set(this.view(Uint8Array, pEdge, cols), rowOff);
+                if (TIMED) lapOut(t, cols * 5);
+            } finally { this._reset(a); }
+        }
+        return { min, max, edge, cols, rows };
     }
 }
 
