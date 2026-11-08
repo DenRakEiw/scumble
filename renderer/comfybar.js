@@ -60,4 +60,30 @@
     $("cb-target").addEventListener("change", () => bar.setTarget($("cb-target").value).then(show, () => {}));
     bar.onState(show);
     bar.state().then(show, () => {});
+    // main's questions (comfyview.js askInBar: the page's camera / microphone) in the app's own dialog; main lays the
+    // bar over the whole window first, and a question waits for that size to reach this page (at most 500 ms), so it
+    // never opens in the 36 px strip. It is acknowledged at once (main's 1 s fallback counts from the ask, not from the
+    // showModal), and one main takes back while it waits (comfyview:dismiss) never opens: dialogs.js listen() knows a
+    // question only once it is handed on, so a dismiss before that would be lost and leave an orphan modal over the bar
+    const waiting = new Set();
+    const roomy = () => new Promise((resolve) => {
+        if (innerHeight > 60) { resolve(); return; }
+        let timer = null;
+        const done = () => { removeEventListener("resize", check); clearTimeout(timer); resolve(); };
+        const check = () => { if (innerHeight > 60) done(); };
+        addEventListener("resize", check);
+        timer = setTimeout(done, 500);
+    });
+    const asks = bar.dialog && {
+        onAsk: (cb) => bar.dialog.onAsk((m) => {
+            const id = m && m.id;
+            waiting.add(id);
+            bar.dialog.shown(id);
+            roomy().then(() => { if (waiting.delete(id)) cb(m); });
+        }),
+        onDismiss: (cb) => bar.dialog.onDismiss((id) => { if (!waiting.delete(id)) cb(id); }),
+        shown: (id) => bar.dialog.shown(id),
+        answer: (id, index) => bar.dialog.answer(id, index),
+    };
+    import("./dialogs.js").then((d) => d.listen(asks), (err) => console.warn("comfybar: no dialogs", err));
 })();

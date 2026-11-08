@@ -44,6 +44,7 @@ button:focus-visible { outline: 2px solid var(--sc-active, #4a90d9); outline-off
 button.primary { background: var(--sc-go, #2f6b3f); color: var(--sc-on-active, #fff); border-color: transparent; }
 button.danger { border-color: var(--sc-error, #e0533d); }
 button.danger:hover { background: var(--sc-error-bg, #3a1f1c); }
+.row.guard button { opacity: .55; cursor: default; }
 `;
 
 let sheet = null;
@@ -56,8 +57,12 @@ const open = new Set();        // the dialogs on screen: { dialog, finish }
  * question that opens unasked, while the user may be typing, puts it on the harmless answer; Enter answers the
  * focused button). Resolves with the index of the button pressed.
  * `signal` (an AbortSignal) closes the dialog with `cancelId` (main took the question back).
+ * `guardMs`: for a question that opens unasked under the pointer (the ComfyUI page's camera / microphone, whose
+ * request needs no click of the user's): no button answers a click, Enter or Space for that long after the dialog
+ * opened (the buttons drawn faded, the dialog marked data-guarded), so a click meant for what was there before cannot
+ * answer it; Escape still answers `cancelId`.
  */
-export function ask({ title = "", message = "", detail = "", buttons = ["OK", "Cancel"], defaultId = 0, cancelId = null, danger = -1, primary = true, focusId = null, signal = null } = {}) {
+export function ask({ title = "", message = "", detail = "", buttons = ["OK", "Cancel"], defaultId = 0, cancelId = null, danger = -1, primary = true, focusId = null, signal = null, guardMs = 0 } = {}) {
     const labels = (Array.isArray(buttons) && buttons.length ? buttons : ["OK"]).map((b) => String(b));
     const cancel = cancelId != null && cancelId >= 0 && cancelId < labels.length ? cancelId : labels.length - 1;
     const def = defaultId >= 0 && defaultId < labels.length ? defaultId : 0;
@@ -80,13 +85,16 @@ export function ask({ title = "", message = "", detail = "", buttons = ["OK", "C
         add("detail", detail);
         const row = document.createElement("div");
         row.className = "row";
+        const guard = Math.max(0, Math.min(5000, +guardMs || 0));
+        let guarded = guard > 0;
+        if (guarded) { row.classList.add("guard"); dialog.dataset.guarded = "1"; }
         const els = labels.map((label, i) => {
             const b = document.createElement("button");
             b.type = "button";
             b.textContent = label;
             if (i === danger) b.className = "danger";
             else if (i === def && primary && i !== cancel) b.className = "primary";
-            b.addEventListener("click", () => finish(i));
+            b.addEventListener("click", () => { if (!guarded) finish(i); });
             row.appendChild(b);
             return b;
         });
@@ -111,6 +119,7 @@ export function ask({ title = "", message = "", detail = "", buttons = ["OK", "C
             if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); finish(cancel); return; }
             if (e.key === "Enter") {
                 e.preventDefault(); e.stopImmediatePropagation();
+                if (guarded) return;
                 const f = els.indexOf(root.activeElement);
                 finish(f >= 0 ? f : def);
                 return;
@@ -135,6 +144,8 @@ export function ask({ title = "", message = "", detail = "", buttons = ["OK", "C
         open.add(entry);
         try { dialog.showModal(); } catch (_) { dialog.setAttribute("open", ""); }
         els[focusId != null && focusId >= 0 && focusId < els.length ? focusId : def].focus();
+        // the guard runs from the moment the question is on screen (Space on a button answers by a click: ignored too)
+        if (guarded) setTimeout(() => { guarded = false; row.classList.remove("guard"); delete dialog.dataset.guarded; }, guard);
     });
 }
 

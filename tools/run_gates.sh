@@ -83,12 +83,15 @@ case "$TILES" in
   *) unset SCUMBLE_TILES ;;
 esac
 
+# Chromium's fake camera and microphone on every instance: no gate opens a real device (the comfyview gate allows a
+# camera in the ComfyUI window, docs/PLAN_WASM_BUILD.md §7 "media asks"; it refuses that step without the switch)
+FAKEMEDIA="--use-fake-device-for-media-stream"
 if [ "$needs_app" = 1 ]; then
   if [ -n "$EXE" ]; then
-    "$EXE" --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE ${JSFLAGS:+"--js-flags=$JSFLAGS"} > "$OUT/app.log" 2>&1 &
+    "$EXE" --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $FAKEMEDIA $COPY $TILEARG $OFFLINE ${JSFLAGS:+"--js-flags=$JSFLAGS"} > "$OUT/app.log" 2>&1 &
   else
     if [ "$STRICT" = 1 ]; then export SCUMBLE_STRICT=1; else export SCUMBLE_STRICT=0; fi
-    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE ${JSFLAGS:+"--js-flags=$JSFLAGS"} > "$OUT/app.log" 2>&1 &
+    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $FAKEMEDIA $COPY $TILEARG $OFFLINE ${JSFLAGS:+"--js-flags=$JSFLAGS"} > "$OUT/app.log" 2>&1 &
   fi
   for i in $(seq 1 90); do
     curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null && break

@@ -2191,6 +2191,15 @@ window.scumble.helpers.onProgress((ev) => {
     helpersRenderTimer = setTimeout(async () => { try { renderHelpers(await window.scumble.helpers.status()); } catch (_) { /* closing */ } }, ev.done || ev.error ? 0 : 250);
 });
 host.onHelpersChanged = (st) => { if (ui.settings.open) renderHelpers(st); };
+// SAM2, matting and depth fell back to main's thread for the session (electron/main/onnx/helpers.js _fallBack, once):
+// a warning line, and once more after the helper calls in flight wrote their own lines, so the note is what stays
+window.scumble.helpers.onNotice((n) => {
+    if (!n || !n.message) return;
+    const say = () => { if (host.editor) host.editor.setStatus(String(n.message), n.kind === "error" ? "error" : "warn"); };
+    const waiting = host.helperCalls > 0;
+    say();
+    if (waiting) host.whenHelpersIdle().then(() => setTimeout(say, 800));
+});
 
 // ---- plugins (Settings › Plugins) -------------------------------------------------------------
 

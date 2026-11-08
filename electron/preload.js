@@ -204,6 +204,8 @@ contextBridge.exposeInMainWorld("scumble", {
         warmInpaint: (req) => ipcRenderer.invoke("helpers:warmInpaint", req),
         depth: (req) => ipcRenderer.invoke("helpers:depth", req),
         onProgress: (cb) => on("helpers:progress", cb),
+        // { kind, cause, message } once, when SAM2, matting and depth fall back to main's thread for the session
+        onNotice: (cb) => on("helpers:notice", cb),
     },
     plugins: {
         list: () => ipcRenderer.invoke("plugins:list"),
