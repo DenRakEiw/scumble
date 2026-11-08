@@ -285,7 +285,7 @@ export function selectionBbox(m, padding) {
 // ---- fill modes ---------------------------------------------------------------------------
 
 /** Fill the selected area of an RGB(A) crop before it goes to the model (nodes.py _fill_masked). */
-function fillMasked(crop, fillMask, mode) {
+export function fillMasked(crop, fillMask, mode) {
     if (!mode || mode === "none") return crop;
     const w = crop.width, h = crop.height;
     const ctx = crop.getContext("2d");

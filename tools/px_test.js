@@ -27,6 +27,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { spawnSync } = require("node:child_process");
 const { pathToFileURL, fileURLToPath } = require("node:url");
 
 const ROOT = path.dirname(__dirname);
@@ -708,6 +709,9 @@ async function maskCases(px, label, js) {
         } finally {
             kernelsBack(K);
         }
+        const stRun = spawnSync(process.execPath, [path.join(ROOT, "tools", "stitch_test.js")], { encoding: "utf-8" });
+        const stFail = ((stRun.stdout || "") + (stRun.stderr || "")).split(/\r?\n/).find((l) => l.startsWith("[FAIL]"));
+        check("stitch_test.js vs 29f6749 loops", stRun.status === 0 && !stFail, stFail || `rc=${stRun.status}`);
     }
 
     const big = mask(1492, 1492, 9);

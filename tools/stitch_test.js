@@ -22,9 +22,12 @@ globalThis.OffscreenCanvas = class OffscreenCanvas {
     getContext() {
         const self = this;
         return {
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: "high",
             createImageData(w, h) { return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }; },
             putImageData(img) { self._data.set(img.data); },
-            getImageData(x, y, w, h) { return { width: w, height: h, data: self._data.slice() }; },
+            getImageData() { return { width: self.width, height: self.height, data: self._data.slice() }; },
+            drawImage(src) { self._data.set(src._data); },
         };
     }
 };
@@ -188,6 +191,106 @@ function selectionBboxRef(m, padding) {
     return { has: true, x0: Math.max(0, ox + x0 - padding), y0: Math.max(0, oy + y0 - padding), x1: Math.min(W, ox + x1 + 1 + padding), y1: Math.min(H, oy + y1 + 1 + padding) };
 }
 
+function fillMaskedRef(cropBytes, w, h, fillMask, mode) {
+    const d = new Uint8ClampedArray(cropBytes);
+    if (!mode || mode === "none") return d;
+    const hard = { data: new Float32Array(w * h), w, h };
+    let count = 0;
+    for (let i = 0; i < w * h; i++) { hard.data[i] = fillMask.data[i] > 0.5 ? 1 : 0; count += hard.data[i]; }
+    if (!count) return d;
+    if (mode === "green") {
+        for (let i = 0, j = 0; i < w * h; i++, j += 4) if (hard.data[i]) { d[j] = 0; d[j + 1] = 255; d[j + 2] = 0; d[j + 3] = 255; }
+        return d;
+    }
+    const soft = gaussBlurRef(hard, 4);
+    for (let i = 0; i < soft.data.length; i++) soft.data[i] = Math.max(Math.min(1, soft.data[i]), hard.data[i]);
+    if (mode === "neutral") {
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let i = 0, j = 0; i < w * h; i++, j += 4) if (!hard.data[i]) { r += d[j]; g += d[j + 1]; b += d[j + 2]; n++; }
+        const col = n ? [r / n, g / n, b / n] : [128, 128, 128];
+        for (let i = 0, j = 0; i < w * h; i++, j += 4) {
+            const s = soft.data[i];
+            d[j] = d[j] * (1 - s) + col[0] * s; d[j + 1] = d[j + 1] * (1 - s) + col[1] * s; d[j + 2] = d[j + 2] * (1 - s) + col[2] * s;
+        }
+        return d;
+    }
+    const sigma = Math.max(8, 0.05 * Math.max(w, h));
+    const inv = { data: new Float32Array(w * h), w, h };
+    for (let i = 0; i < w * h; i++) inv.data[i] = 1 - hard.data[i];
+    const den = gaussBlurRef(inv, sigma);
+    const chans = [0, 1, 2].map((c) => {
+        const m = { data: new Float32Array(w * h), w, h };
+        for (let i = 0, j = c; i < w * h; i++, j += 4) m.data[i] = d[j] * inv.data[i];
+        return gaussBlurRef(m, sigma);
+    });
+    for (let i = 0, j = 0; i < w * h; i++, j += 4) {
+        const s = soft.data[i];
+        if (s <= 0) continue;
+        const dn = den.data[i];
+        for (let c = 0; c < 3; c++) {
+            const sm = dn > 1e-4 ? chans[c].data[i] / Math.max(dn, 1e-4) : d[j + c];
+            d[j + c] = d[j + c] * (1 - s) + sm * s;
+        }
+    }
+    return d;
+}
+
+function cropMaskRef(m, x0, y0, w, h) {
+    const o = { data: new Float32Array(w * h), w, h };
+    const ox = m.ox | 0, oy = m.oy | 0;
+    const sx0 = Math.max(x0, ox), sy0 = Math.max(y0, oy);
+    const sx1 = Math.min(x0 + w, ox + m.w), sy1 = Math.min(y0 + h, oy + m.h);
+    if (sx1 <= sx0 || sy1 <= sy0) return o;
+    for (let y = sy0; y < sy1; y++) {
+        const row = (y - oy) * m.w;
+        o.data.set(m.data.subarray(row + sx0 - ox, row + sx1 - ox), (y - y0) * w + (sx0 - x0));
+    }
+    return o;
+}
+
+function colorMatchRef(patchBytes, regionBytes, w, h, weight) {
+    const p = new Uint8ClampedArray(patchBytes);
+    let total = 0;
+    for (let i = 0; i < weight.data.length; i++) total += Math.min(1, Math.max(0, weight.data[i]));
+    if (total < 64) return p;
+    const rd = regionBytes;
+    const stats = (d) => {
+        const mean = [0, 0, 0], v = [0, 0, 0];
+        for (let i = 0, j = 0; i < w * h; i++, j += 4) { const wt = weight.data[i]; if (wt <= 0) continue; mean[0] += d[j] * wt; mean[1] += d[j + 1] * wt; mean[2] += d[j + 2] * wt; }
+        for (let c = 0; c < 3; c++) mean[c] /= total;
+        for (let i = 0, j = 0; i < w * h; i++, j += 4) { const wt = weight.data[i]; if (wt <= 0) continue; for (let c = 0; c < 3; c++) { const dd = d[j + c] - mean[c]; v[c] += dd * dd * wt; } }
+        return { mean, std: v.map((x) => Math.sqrt(Math.max(x / total, 1e-6 * 255 * 255))) };
+    };
+    const r = stats(rd), t = stats(p);
+    const scale = [0, 1, 2].map((c) => Math.min(2, Math.max(0.5, r.std[c] / t.std[c])));
+    for (let j = 0; j < p.length; j += 4) for (let c = 0; c < 3; c++) p[j + c] = Math.min(255, Math.max(0, (p[j + c] - t.mean[c]) * scale[c] + r.mean[c]));
+    return p;
+}
+
+function finishPixelsRef(info, sel, resultBytes, regionBytes) {
+    const [x, y, w, h] = info.bbox;
+    const width = info.width, height = info.height;
+    const feather = info.feather | 0;
+    let pd = new Uint8ClampedArray(resultBytes);
+    const margin = Math.ceil(Math.max(feather, info.grow | 0, info.blend | 0) * 2 + 3 * Math.max(feather, info.blend | 0) / 2.5) + 8;
+    const wx0 = Math.max(0, x - margin), wy0 = Math.max(0, y - margin);
+    const wx1 = Math.min(width, x + w + margin), wy1 = Math.min(height, y + h + margin);
+    const ww = wx1 - wx0, wh = wy1 - wy0;
+    const selWin = cropMaskRef(sel, wx0, wy0, ww, wh);
+    const full = info.auto_feather ? compositeMaskRef(selWin, info.grow | 0, feather, info.blend | 0) : (feather > 0 ? gaussBlurRef(selWin, feather) : selWin);
+    const blend = cropMaskRef(full, x - wx0, y - wy0, w, h);
+    if (info.color_match && regionBytes && !info.keepAlpha) {
+        const keep = { data: new Float32Array(w * h), w, h };
+        for (let i = 0; i < keep.data.length; i++) keep.data[i] = 1 - blend.data[i];
+        pd = colorMatchRef(pd, regionBytes, w, h, keep);
+    }
+    for (let i = 0, j = 3; i < w * h; i++, j += 4) {
+        const a = Math.min(1, Math.max(0, blend.data[i]));
+        pd[j] = Math.round(info.keepAlpha ? a * pd[j] : a * 255);
+    }
+    return pd;
+}
+
 // a selection as a run sees it: blobs with soft edges, and some plain noise so ties and plateaus both occur
 function mask(w, h, seed) {
     let s = seed >>> 0;
@@ -276,6 +379,46 @@ function sameBbox(a, b) {
             }
             const empty = { data: new Float32Array(w * h).fill(0.5), w, h };
             check(`[${mode}] selectionBbox empty (<= 0.5) ${w} x ${h}`, sameBbox(S.selectionBbox(empty, 8), selectionBboxRef(empty, 8)));
+            for (const fillMode of ["neutral", "blur"]) {
+                const c = new globalThis.OffscreenCanvas(w, h);
+                c._data.set(rgba);
+                check(`[${mode}] fillMasked ${fillMode} ${w} x ${h}`, sameBytes(S.fillMasked(c, m, fillMode)._data, fillMaskedRef(rgba, w, h, m, fillMode)));
+            }
+            if (w * h >= 256) {
+                const resBytes = new Uint8ClampedArray(w * h * 4);
+                const regBytes = new Uint8ClampedArray(w * h * 4);
+                for (let i = 0; i < w * h; i++) {
+                    resBytes[i * 4] = (i * 53 + 40) & 255;
+                    resBytes[i * 4 + 1] = (i * 97 + 80) & 255;
+                    resBytes[i * 4 + 2] = (i * 193 + 120) & 255;
+                    resBytes[i * 4 + 3] = 255;
+                    regBytes[i * 4] = ((i * 23 + 10) & 127) + 30;
+                    regBytes[i * 4 + 1] = ((i * 61 + 50) & 127) + 40;
+                    regBytes[i * 4 + 2] = ((i * 113 + 90) & 127) + 20;
+                    regBytes[i * 4 + 3] = 255;
+                }
+                const resCv = new globalThis.OffscreenCanvas(w, h);
+                resCv._data.set(resBytes);
+                const regCv = new globalThis.OffscreenCanvas(w, h);
+                regCv._data.set(regBytes);
+                const info = {
+                    bbox: [0, 0, w, h],
+                    width: w,
+                    height: h,
+                    emitted: [w, h],
+                    fit: "stretch",
+                    paste: "selection",
+                    auto_feather: true,
+                    feather: 6,
+                    grow: 3,
+                    blend: 6,
+                    align: false,
+                    color_match: true,
+                    keepAlpha: false,
+                };
+                const fin = S.finishPixels(info, m, resCv, regCv);
+                check(`[${mode}] finishPixels colour-match ${w} x ${h}`, sameBytes(fin.patch._data, finishPixelsRef(info, m, resBytes, regBytes)));
+            }
         }
     }
     // the size of a real crop's mask, and what it costs now

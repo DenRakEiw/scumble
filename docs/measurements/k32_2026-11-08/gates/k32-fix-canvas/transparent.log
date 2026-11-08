@@ -1,0 +1,10 @@
+[ok] openai_adapter_rules: {"flare_small":"944x720","flare_plain":"1024x768","flare_huge":"3312x2480","flare_long":"1504x512","two":"1600x1200","one":"1536x1024","transparent_png":{"background":"transparent","output_format":"png"},"transparent_jpeg":{"background":"transparent","output_format":"png"},"webp"
+[ok] setup: {"size": [1200, 800]}
+[ok] a_transparent_run_keeps_the_models_alpha: {"region": [400, 300], "centre": [230, 90, 160, 255], "corner": [0, 0, 0, 0], "status": "Result 1 added (400 \u00d7 300 at 400, 250) \u00b7 Loopback via Loopback, 0 s The layer is a cut-out on a transparent ground."}
+[ok] an_ordinary_run_is_unchanged: {"centre": [230, 90, 160, 255], "corner": [255, 255, 255, 255], "status": "Result 2 added (400 \u00d7 300 at 400, 250) \u00b7 Loopback via Loopback, 0 s"}
+[ok] generate_new_makes_a_transparent_base: {"size": [512, 512], "corner": [0, 0, 0, 0], "centre": [230, 90, 7, 255]}
+[ok] a_local_recipe_refuses_it: {"error": "a transparent background is an API model's parameter; this is a local ComfyUI recipe"}
+[ok] the_pixel_floor_grows_a_small_crop: {"plain": [256, 192], "grown": [944, 704], "pixels": 664576}
+[ok] the_gpt_image_recipes_offer_it: {"gpt_image_2": {"keys": ["quality", "size", "background", "output_format", "output_compression", "moderation"], "limits": [2048, 16, 8294400, 0], "sizes": 2}, "gpt_image_2_5_flare": {"keys": ["quality", "size", "background", "output_format", "output_compression", "moderation"], 
+[ok] cleanup: "ok"
+PASS

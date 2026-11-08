@@ -1,0 +1,36 @@
+probes in
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1005, "encodeMs": 1432, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 3098 ms, longest block 503 ms
+   {"loadFileMs": 3021, "tiles": 2360, "compositorBefore": "not made", "compositorAfter": "made"}
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   3     452.6 ms        0.0 MB
+     gl getShaderParameter                    6       4.7 ms        0.0 MB
+     gl texSubImage2D                      2872       4.4 ms        3.2 MB
+     worker postMessage (moved)             164       1.8 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.6 ms        0.0 MB
+     blob arrayBuffer                         8       0.6 ms        0.0 MB
+     2d drawImage >= 1 MP                     8       0.4 ms       66.9 MB
+   worker png_read: 1 jobs, {"kernel": 2118.1, "parse": 0.9, "read": 49.3, "write": 2066.3, "wait": 1062.5, "copy": 50.4, "unfilter": 981.1, "deliver": 9.1, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 502.4, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+[ok] warm_provider_crop: {"warmed": true}
+
+== provider_crop: wall 721 ms, longest block 9 ms
+   {"prepMs": 183.8, "bbox": [6754, 4254, 1492, 1492], "emitted": [1024, 1024], "window": [1024, 1024], "patch": [1492, 1492], "how": ["stack", "stack"]}
+   boundaries (calls, ms inside the call, MB):
+     gl getError                             12       6.0 ms        0.0 MB
+     createImageBitmap (until settled)        1       5.5 ms        0.0 MB
+     2d drawImage >= 1 MP                    66       0.8 ms      582.6 MB
+     2d drawImage < 1 MP                     26       0.8 ms        1.2 MB
+   worker stack_into: 14 jobs, {"kernel": 16.6, "gen": 0}
+   worker area_cells: 1 jobs, {"cells": 586250, "count": 1.6, "label": 2.4, "total": 3.9, "gen": 0}
+   px calls, window: -
+   px calls, workers: -
+   px calls, stitch worker: box_blurs 3, dilate_mask 3
+   stitch laps prep: selection 3.0, maskFromAlpha 18.1, selectionBbox 4.9, region 2.0, dilate 16.5, blur 11.7, maskMax 15.9, maskClamp 12.2, resize 0.1, maskToCanvas 18.4, alphaMask 5.2, encode 56.9 | sum 165.0 ms
+   stitch laps finish: region 1.9, decode 2.6, resize 0.3, dilate 83.7, blur 63.4, maskMax 22.7, maskClamp 16.9, erode 14.0, alignCopy 8.2, shrink 154.9, ring 6.4, fit 5.7, colorMatch 74.3, finalAlpha 18.2, encode 20.3 | sum 493.8 ms
+[ok] close: {"closed": 2, "arena": {"slots": 2410, "chunks": 10, "allocated": 4770, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 150}}
+
+RESULT measured

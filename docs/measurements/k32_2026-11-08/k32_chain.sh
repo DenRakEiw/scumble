@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # K32 of docs/PLAN_WASM_BUILD.md: the stitch worker's mask steps in Rust (alpha_to_mask, mask_max_clamp, mask_one_minus,
 # erode_mask, mask_to_rgba, mask_bounds_f32), routed under stitchMask in renderer/editor/px/kernels.js.
-# Before = a tree exported at HEAD (29f6749, before K32), after = this worktree; the two alternate within each round,
+# Before = a tree exported at 29f6749 (before K32), after = this worktree; the two alternate within each round,
 # each run on a fresh instance (offline, tiles, its own profile, port 9615):
 #   w0_bench.py --rows=stitch_masks_2048,stitch_align_2048,stitch_align_4096
-#   native_test.py 15000x10000 --no-profile provider_crop
-# Usage: bash k32_chain.sh <outdir> <before_tree> [rounds]   (rounds "1 2 3" by default)
+#   native_test.py 15000x10000 --no-profile provider_crop (cold)
+#   warm_native.py 15000x10000 --no-profile provider_crop (warmed by one untimed provider_crop run)
+# Usage: bash k32_chain.sh <outdir> <before_tree> [rounds]   (rounds "1 2 3" by default; WARM_ONLY=1 runs only warm_native)
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AFTER="$(cd "$HERE/../../.." && pwd)"
@@ -15,6 +16,7 @@ PORT="${SCUMBLE_CDP_PORT:-9615}"
 W1LOCK="$AFTER/docs/measurements/w1_2026-11-06/w1_lock.py"
 COORDLOCK="/f/canvas/.claude/coord/machine_busy.lock"
 ELECTRON="$AFTER/node_modules/electron/dist/electron.exe"
+WARM_SCRIPT="$HERE/warm_native.py"
 mkdir -p "$OUTDIR"
 OUTDIR="$(cd "$OUTDIR" && pwd)"
 log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$OUTDIR/chain.log"; }
@@ -60,16 +62,24 @@ stop() {   # $1 = profile
 one() {   # $1 = arm (before / after), $2 = tree, $3 = round
     local arm="$1" tree="$2" R="$3" d="$OUTDIR/$1"
     mkdir -p "$d"
-    start "$tree" "$d/profile" "$d/app_w0_r$R.log"
-    log "$arm r$R: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096"
-    (cd "$tree" && SCUMBLE_CDP_PORT=$PORT PYTHONIOENCODING=utf-8 timeout 900 python tools/w0_bench.py --rows=stitch_masks_2048,stitch_align_2048,stitch_align_4096 --json "$d/w0_r$R.json" > "$d/w0_r$R.log" 2>&1)
-    log "w0 rc=$?"
-    stop "$d/profile"
+    if [ "${WARM_ONLY:-0}" != "1" ]; then
+        start "$tree" "$d/profile" "$d/app_w0_r$R.log"
+        log "$arm r$R: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096"
+        (cd "$tree" && SCUMBLE_CDP_PORT=$PORT PYTHONIOENCODING=utf-8 timeout 900 python tools/w0_bench.py --rows=stitch_masks_2048,stitch_align_2048,stitch_align_4096 --json "$d/w0_r$R.json" > "$d/w0_r$R.log" 2>&1)
+        log "w0 rc=$?"
+        stop "$d/profile"
 
-    start "$tree" "$d/profile" "$d/app_native_r$R.log"
-    log "$arm r$R: native_test 15000x10000 --no-profile provider_crop"
-    (cd "$tree" && SCUMBLE_CDP_PORT=$PORT PYTHONIOENCODING=utf-8 timeout 900 python tools/native_test.py 15000x10000 --no-profile provider_crop --json "$d/native_r$R.json" > "$d/native_r$R.log" 2>&1)
-    log "native rc=$?"
+        start "$tree" "$d/profile" "$d/app_native_r$R.log"
+        log "$arm r$R: native_test 15000x10000 --no-profile provider_crop (cold)"
+        (cd "$tree" && SCUMBLE_CDP_PORT=$PORT PYTHONIOENCODING=utf-8 timeout 900 python tools/native_test.py 15000x10000 --no-profile provider_crop --json "$d/native_r$R.json" > "$d/native_r$R.log" 2>&1)
+        log "native rc=$?"
+        stop "$d/profile"
+    fi
+
+    start "$tree" "$d/profile" "$d/app_native_warm_r$R.log"
+    log "$arm r$R: warm_native 15000x10000 --no-profile provider_crop (warmed)"
+    (cd "$tree" && SCUMBLE_CDP_PORT=$PORT PYTHONIOENCODING=utf-8 timeout 900 python "$WARM_SCRIPT" 15000x10000 --no-profile provider_crop --json "$d/native_warm_r$R.json" > "$d/native_warm_r$R.log" 2>&1)
+    log "native_warm rc=$?"
     stop "$d/profile"
 }
 
@@ -84,6 +94,8 @@ for R in $ROUNDS; do
     fi
 done
 
-log "px_bench: PX_BENCH=1 PX_ONLY=mask node tools/px_test.js"
-(cd "$AFTER" && PX_BENCH=1 PX_ONLY=mask node tools/px_test.js > "$OUTDIR/px_bench.txt" 2>&1)
+if [ "${WARM_ONLY:-0}" != "1" ]; then
+    log "px_bench: PX_BENCH=1 PX_ONLY=mask node tools/px_test.js"
+    (cd "$AFTER" && PX_BENCH=1 PX_ONLY=mask node tools/px_test.js > "$OUTDIR/px_bench.txt" 2>&1)
+fi
 log "done"

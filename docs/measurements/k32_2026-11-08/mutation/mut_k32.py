@@ -156,7 +156,37 @@ MUTANTS = [
             "const keep = { data: maskOneMinus(blend.data), w, h };",
             "const keep = { data: blend.data, w, h };",
         )],
-        "killed: finishPixels must invert blend.data via maskOneMinus for colorMatch keep weights",
-        {"editor": ["an_aligned_answer_shows_no_repeated_edge"]},
+        "killed: finishPixels must invert blend.data via maskOneMinus for colorMatch keep weights (first killed by the export counter only; now killed on pixels by stitch_test)",
+        PX_MASK,
+    ),
+    (
+        "stitch_keep_double_invert",
+        "renderer/editor/stitch.js",
+        [(
+            "const keep = { data: maskOneMinus(blend.data), w, h };",
+            "const keep = { data: maskOneMinus(maskOneMinus(blend.data)), w, h };",
+        )],
+        "killed: finishPixels colour-match keep weights must be 1 - blend, not 1 - (1 - blend) (still calls mask_one_minus, dies on pixels)",
+        PX_MASK,
+    ),
+    (
+        "fill_masked_clamp_into_hard",
+        "renderer/editor/stitch.js",
+        [(
+            "maskMaxClamp(soft.data, hard.data, true, soft.data);",
+            "maskMaxClamp(soft.data, hard.data, true, hard.data);",
+        )],
+        "killed: fillMasked must write the clamped soft mask into soft.data, not hard.data (still calls mask_max_clamp, dies on pixels)",
+        PX_MASK,
+    ),
+    (
+        "fill_masked_inv_double_invert",
+        "renderer/editor/stitch.js",
+        [(
+            "const inv = { data: maskOneMinus(hard.data), w, h };",
+            "const inv = { data: maskOneMinus(maskOneMinus(hard.data)), w, h };",
+        )],
+        "killed: fillMasked blur mode must invert hard.data once for inv (still calls mask_one_minus, dies on pixels)",
+        PX_MASK,
     ),
 ]
