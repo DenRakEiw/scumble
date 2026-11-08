@@ -1,0 +1,15 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=liquify)
+FAIL liquifyDabNodes (K30): dense twin equals Map-based dab bit for bit across all 6 modes, s = 1..8, selection/freeze thaw planes, before sharing and restore pruning  s=1 q=1 grow: box [343,22,540,246] vs [343,22,540,245]
+FAIL (1) (only: liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (1) (only: liquify; PX_ONLY, not the full test)
+(node:52908) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k30_r2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k30_r2\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

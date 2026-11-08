@@ -719,6 +719,138 @@ async function main() {
         }
         check("dab: the returned box holds every pixel whose bake changed (12 dabs of every mode, s = 2)", !bad, bad);
     }
+    // K30 (docs/PLAN_WASM_BUILD.md §4.9): thawPlane, liquifyDabNodes and dab(..., liquifyDabNodes) equal the Map-based dab
+    {
+        let badThaw = "";
+        for (const s of [1, 2, 4, 8]) {
+            const n = 256 / s, sh = Math.log2(n) | 0, m = n - 1, r = rng(300 + s);
+            const cells = new Map();
+            for (const [tx, ty] of [[0, 0], [1, 0], [0, 1], [2, 1]]) {
+                const c = new Uint8Array(n * n);
+                for (let k = 0; k < c.length; k++) c[k] = r() < 0.25 ? 0 : r() < 0.5 ? 255 : 1 + Math.floor(r() * 254);
+                cells.set((ty << 16) | tx, c);
+            }
+            const cellOf = (tx, ty) => cells.get((ty << 16) | tx);
+            for (const [i0, j0, ow, oh] of [[0, 0, n, n], [3, 5, n + 7, n + 9], [n - 4, n - 3, n + 10, 8], [2 * n - 2, 0, n + 5, 2 * n + 3]]) {
+                const p = L.thawPlane(cellOf, n, sh, i0, j0, ow, oh);
+                if (p.length !== ow * oh) { badThaw = `s=${s} len ${p.length} != ${ow * oh}`; break; }
+                for (let j = 0; j < oh && !badThaw; j++) for (let i = 0; i < ow; i++) {
+                    const gi = i0 + i, gj = j0 + j, c = cellOf(gi >> sh, gj >> sh);
+                    const want = c ? c[(gj & m) * n + (gi & m)] : 0;
+                    if (p[j * ow + i] !== want) { badThaw = `s=${s} at (${gi},${gj}): ${p[j * ow + i]} vs ${want}`; break; }
+                }
+            }
+            if (L.thawPlane(cellOf, n, sh, 0, 0, 0, 5).length !== 0 || L.thawPlane(cellOf, n, sh, 0, 0, 5, 0).length !== 0) badThaw = `s=${s} non-empty on 0 size`;
+        }
+        check("thawPlane (K30): extracts byte planes across present and missing cells at s = 1, 2, 4, 8", !badThaw, badThaw);
+
+        let badDab = "";
+        for (const s of [1, 2, 4, 8]) {
+            const W = 540, H = 380, n = 256 / s, sh = Math.log2(n) | 0, m = n - 1, r = rng(400 + s);
+            const selCells = new Map(), frCells = new Map();
+            const tw = Math.ceil((Math.ceil(W / s) + 1) / n), th = Math.ceil((Math.ceil(H / s) + 1) / n);
+            for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) {
+                if (r() < 0.75) {
+                    const c = new Uint8Array(n * n);
+                    for (let k = 0; k < c.length; k++) c[k] = r() < 0.2 ? 0 : r() < 0.5 ? 255 : 1 + Math.floor(r() * 254);
+                    selCells.set((ty << 16) | tx, c);
+                }
+                if (r() < 0.75) {
+                    const c = new Uint8Array(n * n);
+                    for (let k = 0; k < c.length; k++) c[k] = r() < 0.3 ? 0 : r() < 0.5 ? 255 : 1 + Math.floor(r() * 254);
+                    frCells.set((ty << 16) | tx, c);
+                }
+            }
+            const selByte = (i, j) => { const c = selCells.get(((j >> sh) << 16) | (i >> sh)); return c ? c[(j & m) * n + (i & m)] : 0; };
+            const frByte = (i, j) => { const c = frCells.get(((j >> sh) << 16) | (i >> sh)); return c ? c[(j & m) * n + (i & m)] : 0; };
+            const selFn = (i, j) => selByte(i, j) / 255;
+            selFn.planes = (i0, j0, ow, oh) => ({ sel: L.thawPlane((tx, ty) => selCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh), freeze: null });
+            const frFn = (i, j) => 1 - frByte(i, j) / 255;
+            frFn.planes = (i0, j0, ow, oh) => ({ sel: null, freeze: L.thawPlane((tx, ty) => frCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh) });
+            const bothFn = (i, j) => {
+                const sv = selByte(i, j);
+                if (!sv) return 0;
+                const fv = frByte(i, j);
+                return fv === 255 ? 0 : (sv / 255) * (1 - fv / 255);
+            };
+            bothFn.planes = (i0, j0, ow, oh) => ({
+                sel: L.thawPlane((tx, ty) => selCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh),
+                freeze: L.thawPlane((tx, ty) => frCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh),
+            });
+            const thaws = [null, selFn, frFn, bothFn];
+            const fMap = new L.LiquifyField(W, H, s), fDense = new L.LiquifyField(W, H, s);
+            let beforeMap = new Map(), beforeDense = new Map(), snapDense = new Map();
+            const reseedBefore = () => {
+                beforeMap = new Map(fMap.cells);
+                beforeDense = new Map(fDense.cells);
+                snapDense = new Map([...beforeDense].map(([k, c]) => [k, c.slice()]));
+            };
+            for (let q = 0; q < 120 && !badDab; q++) {
+                if (q % 15 === 0) reseedBefore();
+                const mode = L.LIQUIFY_MODES[q % 6];
+                const cx = -30 + r() * (W + 60), cy = -30 + r() * (H + 60);
+                const rad = 4 + r() * 140, h = q % 11 === 0 ? 1 : r() * 0.9;
+                const amount = (q % 13 === 0 ? -1 : 1) * (0.05 + r() * 0.95);
+                const delta = [Math.cos(q) * 0.25 * rad, Math.sin(q) * 0.25 * rad];
+                const thaw = thaws[q % 4];
+                const b1 = fMap.dab(mode, cx, cy, rad, h, amount, delta, thaw, beforeMap, null);
+                const b2 = fDense.dab(mode, cx, cy, rad, h, amount, delta, thaw, beforeDense, L.liquifyDabNodes);
+                if (JSON.stringify(b1) !== JSON.stringify(b2)) { badDab = `s=${s} q=${q} ${mode}: box ${JSON.stringify(b1)} vs ${JSON.stringify(b2)}`; break; }
+                if (fMap.cells.size !== fDense.cells.size) { badDab = `s=${s} q=${q} ${mode}: size ${fMap.cells.size} vs ${fDense.cells.size}`; break; }
+                for (const [k, c1] of fMap.cells) {
+                    const c2 = fDense.cells.get(k);
+                    if (!c2) { badDab = `s=${s} q=${q} ${mode}: missing cell ${k}`; break; }
+                    for (let i = 0; i < c1.length; i++) if (c1[i] !== c2[i]) { badDab = `s=${s} q=${q} ${mode}: cell ${k}[${i}] ${c1[i]} vs ${c2[i]}`; break; }
+                    if ((c1 === beforeMap.get(k)) !== (c2 === beforeDense.get(k))) { badDab = `s=${s} q=${q} ${mode}: before sharing mismatch on cell ${k}`; break; }
+                }
+                for (const [k, c] of beforeDense) {
+                    const o = snapDense.get(k);
+                    for (let i = 0; i < c.length; i++) if (c[i] !== o[i]) { badDab = `s=${s} q=${q} ${mode}: beforeDense cell ${k} mutated`; break; }
+                }
+            }
+            // full restore with kernel prunes every cell back to empty, a plain thaw function without .planes falls back cleanly,
+            // nodes(..., out) zeros the reused slice, and restore over untouched cells skips the dense gather and kernel
+            if (!badDab) {
+                const fPlain = fDense.copy();
+                const bPlain1 = fMap.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, null);
+                const bPlain2 = fPlain.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, L.liquifyDabNodes);
+                const nPlain1 = fMap.nodes(0, 0, fMap.ni + 2, fMap.nj + 2), nPlain2 = fPlain.nodes(0, 0, fPlain.ni + 2, fPlain.nj + 2);
+                let plainDiff = JSON.stringify(bPlain1) !== JSON.stringify(bPlain2) || nPlain1.length !== nPlain2.length;
+                for (let i = 0; i < nPlain1.length && !plainDiff; i++) if (nPlain1[i] !== nPlain2[i]) plainDiff = true;
+                if (plainDiff) badDab = `s=${s} plain thaw mismatch`;
+                const dirtyOut = new Int32Array((fDense.ni + 2) * (fDense.nj + 2) * 2).fill(999);
+                const reusedNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2, dirtyOut);
+                const freshNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2);
+                for (let i = 0; i < freshNodes.length && !badDab; i++) if (reusedNodes[i] !== freshNodes[i]) badDab = `s=${s} nodes(..., out) dirty at ${i}`;
+                for (let q = 0; q < 200 && !fDense.empty; q++) fDense.dab("restore", W / 2, H / 2, W + H, 0.9, 1, null, null, null, L.liquifyDabNodes);
+                if (!fDense.empty) badDab = `s=${s} restore did not prune all cells (${fDense.cells.size} left)`;
+                let restoreCalls = 0;
+                const countKernel = (...a) => { restoreCalls++; return L.liquifyDabNodes(...a); };
+                if (fDense.dab("restore", 100, 100, 40, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} empty restore called kernel`;
+                fDense.dab("push", 30, 30, 15, 0.5, 0.8, [4, 4], null, null, L.liquifyDabNodes);
+                if (fDense.dab("restore", W - 15, H - 15, 15, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} untouched-cell restore called kernel`;
+            }
+        }
+        check("liquifyDabNodes (K30): dense twin equals Map-based dab bit for bit across all 6 modes, s = 1..8, selection/freeze thaw planes, before sharing and restore pruning", !badDab, badDab);
+
+        const src = new Int32Array(6 * 6 * 2), out = new Int32Array(4 * 4 * 2), box = new Int32Array(4);
+        out.fill(77);
+        let threwBogus = false;
+        try { L.liquifyDabNodes("bogus", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box); } catch (e) { threwBogus = /no liquify mode/.test(String(e && e.message)); }
+        const rBad = [
+            L.liquifyDabNodes("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 0, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            L.liquifyDabNodes("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 0, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            L.liquifyDabNodes("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 0, 0, null, null, 0, 0, 4, 4, out, box),
+            L.liquifyDabNodes("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 0, 4, out, box),
+            L.liquifyDabNodes("push", src.subarray(0, 10), 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            L.liquifyDabNodes("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, new Uint8Array(3), null, 0, 0, 4, 4, out, box),
+            L.liquifyDabNodes("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, new Uint8Array(3), 0, 0, 4, 4, out, box),
+            L.liquifyDabNodes("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out.subarray(0, 4), box),
+            L.liquifyDabNodes("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, new Int32Array(2)),
+        ];
+        check("liquifyDabNodes (K30): refuses invalid modes, zero radius/amount/delta/dims and short buffers without writing",
+            threwBogus && rBad.every((c) => c === 0) && out.every((v) => v === 77), JSON.stringify(rBad));
+    }
 
     // ---- 9. the preview ----------------------------------------------------------------------------------
     for (const s of [1, 4]) {

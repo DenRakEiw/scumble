@@ -1,0 +1,87 @@
+K30 of docs/PLAN_WASM_BUILD.md (2026-11-08): the dense JS twin liquifyDabNodes with LiquifyField.prototype.dab(..., kernel),
+_writeDense, and thawPlane (inpaint_liquify.js, kernels.js, inpaint_canvas.js); no wasm changes (ABI stays 27).
+
+Before = DAB "map" (InpaintEditor.liquifyDabKernel = null, the Map-based LiquifyField.prototype.dab, while IE.kernels stays
+"rust" so liquify_block and liquify_preview run on Rust); after = DAB "dense" (InpaintEditor.liquifyDabKernel = K.liquifyDab,
+calling liquifyDabNodes over a dense pre-dab node box from this.nodes(si0, sj0, sw, sh, this._dabSrc) with dense byte
+thaw/freeze planes from thawPlane, reusing this._dabSrc / this._dabOut / this._dabBox, skipping empty-cell regions on restore,
+and writing changed cells back row-by-row via _writeDense).
+k30_chain.sh: three rounds on 15000 x 10000 (grid step 4), the arms alternating within each round (before first in rounds 1
+and 3, after first in round 2), plus a swapped view-order check (VIEWS=["1:1","fit"]), each on a fresh instance, offline,
+tiles, port 9617, the window in front, the machine's busy lock held for the whole chain (taken 13:07:13, released 13:11:33).
+Medians over the rounds of each row's own figure, [min-max]; the full table in summary_rows.txt.
+
+Dab, tick, frame, and landing rows (15000 x 10000, s = 4, ms):
+  push fit size 200        dab p50   2.4 [2.4-2.5]   ->   1.2 [1.2-1.3]   (p95  8.0 [7.7-8.4]  ->  5.3 [5.1-6.5], worst  8.0 [7.7-8.4]  -> 5.3 [5.1-6.5])   beyond the spread
+                           laps p50  nodes 0.06 [0.06-0.09], kernel 1.04 [1.04-1.05] (87%), write 0.06 [0.06-0.09] (map write: 0.18 [0.17-0.19])
+                           land     33.1 [30.2-33.1] ->  29.5 [27.9-29.7] (blockedMax 13.2 [12.5-13.6] -> 11.0 [10.8-12.0]; upSync 9.1 -> 7.8, commit 8.8 -> 8.2)
+  push fit size 1000       dab p50  13.7 [13.2-13.7] ->   6.7 [6.4-6.7]   (p95 14.9 [14.2-15.1] -> 7.3 [6.8-7.7], worst 14.9 [14.2-15.1] -> 7.3 [6.8-7.7])   beyond the spread (4 sub-dabs/move)
+                           laps p50  nodes 0.17 [0.16-0.18] (2.5%), kernel 6.23 [6.03-6.26] (93.0%), write 0.21 [0.20-0.22] (3.1%) (map write: 1.02 [1.01-1.03])
+                           land     76.7 [75.8-82.5] ->  44.9 [44.0-46.5] (blockedMax 57.4 [57.4-62.0] -> 11.4 [10.7-12.6]; upSync 4.6 -> 4.3, commit 9.7 -> 9.0)
+  push 1:1 size 200        dab p50   0.3 [0.3-0.3]   ->   0.2 [0.2-0.2]   (p95  0.3 [0.3-0.5]  ->  0.2 [0.2-0.3], worst  0.4 [0.4-0.6]  -> 0.4 [0.3-0.4])   beyond the spread on p50/p95
+                           laps p50  nodes 0.01 [0.01-0.01], kernel 0.14 [0.13-0.14] (88%), write 0.01 [0.01-0.01] (map write: 0.02 [0.02-0.02])
+                           land     18.8 [18.5-19.0] ->  18.5 [14.3-20.6] (blockedMax 11.6 [10.8-14.1] -> 11.2 [7.2-13.8]; upSync 1.3 -> 1.4, commit 9.4 -> 9.3)
+  push 1:1 size 1000       dab p50   3.4 [3.4-3.4]   ->   1.8 [1.7-1.8]   (p95  3.8 [3.5-4.0]  ->  2.0 [1.9-2.2], worst  6.5 [3.8-6.9]  -> 2.6 [2.2-3.7])   beyond the spread
+                           laps p50  nodes 0.04 [0.04-0.05] (2.3%), kernel 1.64 [1.59-1.65] (94.8%), write 0.05 [0.05-0.05] (2.9%) (map write: 0.25 [0.25-0.26])
+                           frame p50 8.9 [7.4-9.2]   ->   7.2 [6.9-7.4]   (preview p50 8.7 [7.3-8.8] -> 7.1 [6.8-7.3])
+                           land     33.8 [33.6-35.6] ->  80.8 [77.0-83.5] (blockedMax 15.5 [15.4-18.5] -> 66.5 [56.5-73.0]; upSync 2.0 -> 2.4, commit 15.1 -> 15.1)
+  shrink held 150 ticks    tick p50  2.8 [2.8-2.9]   ->   1.7 [1.7-1.7]   (p95  3.1 [3.0-3.2]  ->  1.9 [1.9-1.9], worst  3.5 [3.3-3.8]  -> 2.1 [2.1-2.6])   beyond the spread
+                           laps p50  nodes 0.04 [0.04-0.04] (2.3%), kernel 1.65 [1.64-1.66] (95.4%), write 0.04 [0.04-0.04] (2.3%) (map write: 0.25 [0.24-0.25])
+                           land     24.2 [21.6-25.4] ->  24.8 [21.3-26.4] (blockedMax 18.9 [16.7-20.4] -> 16.8 [15.9-20.5]; upSync 2.5 -> 2.5, commit 5.6 -> 5.6)
+  restore 1:1 1000 pushed  dab p50   1.3 [1.3-1.4]   ->   0.9 [0.9-1.0]   (p95  2.2 [2.1-2.3]  ->  1.5 [1.5-1.6], worst  2.2 [2.1-2.3]  -> 1.5 [1.5-1.6])   beyond the spread
+                           laps p50  nodes 0.05 [0.05-0.07] (5.7%), kernel 0.72 [0.72-0.75] (82.8%), write 0.10 [0.10-0.12] (11.5%) (map write: 0.31 [0.30-0.31])
+                           land     32.8 [29.0-35.8] ->  31.7 [27.3-32.7] (blockedMax 15.1 [11.6-18.2] -> 15.6 [14.1-15.7]; upSync 2.3 -> 2.0, commit 14.5 -> 12.0)
+  restore all              wall      7.5 [7.1-7.5]   ->   7.2 [7.1-7.3]   (blockedMax  7.5 [7.2-7.6]  ->  7.3 [7.2-7.3])
+  restore 1:1 1000 empty   dab p50   0.5 [0.5-0.6]   ->   0.0 [0.0-0.0]   (p95  0.9 [0.7-0.9]  ->  0.1 [0.1-0.1], worst  0.9 [0.7-0.9]  -> 0.1 [0.1-0.1])   beyond the spread
+                           laps p50  nodes 0.00, kernel 0.00, write 0.00 (returns null before nodes() when no cell intersects i0..i1, j0..j1)
+                           land      0.5 [0.5-0.5]   ->   0.5 [0.5-0.5]   (blockedMax  0.5 [0.5-0.5]  ->  0.5 [0.5-0.5])
+  pause 2s 1:1 size 1000   dab       4.0 [3.9-4.3]   ->   2.7 [2.3-3.8]   (midDab 3.5 [3.5-3.8] -> 2.1 [2.0-2.2], land 21.0 [20.7-24.4] -> 22.5 [21.5-22.5])
+                           laps      nodes 0.09 [0.08-0.09], kernel 1.70 [1.66-1.76], write 0.34 [0.34-0.91] (map write: 0.50 [0.50-0.56])
+
+Cause of the ~57-67 ms landing blockedMax shift between row 2 (push fit size 1000) and row 4 (push 1:1 size 1000):
+  - In landSplit, the synchronous main-thread work of the landing itself (upSync + commit) is equal in both arms: on push fit
+    size 1000, upSync is 4.6 -> 4.3 ms and commit is 9.7 -> 9.0 ms; on push 1:1 size 1000, upSync is 2.0 -> 2.4 ms and commit is
+    15.1 -> 15.1 ms. The 57-67 ms blockedMax occurs between upSync and commit while the main thread awaits the worker pool
+    (liq.orig.liquifiedAsync) and V8 runs a single deferred Major Mark-Compact GC after the 15k document setup (~255-288 MB JS
+    heap).
+  - In standard view order (VIEWS=["fit","1:1"]), the Map path allocates new Float64Array(ow * oh * 4) (~2.0 MB in V8 Old Large
+    Object Space) on every sub-dab (~160 MB across the 80 sub-dabs of push fit size 1000), crossing V8's Old Space GC threshold
+    during row 2 (push fit size 1000: blockedMax 57.4 [57.4-62.0] ms, land 76.7 [75.8-82.5] ms) so row 4 (push 1:1 size 1000) is
+    GC-free (blockedMax 15.5 [15.4-18.5] ms, land 33.8 [33.6-35.6] ms). The dense path reuses _dabSrc and _dabOut (0 LO_SPACE
+    allocations after the first sub-dab; heapMB0 at row 2 is 255.2 MB vs 272.2-308.4 MB), so row 2 does not trigger the major GC
+    (blockedMax 11.4 [10.7-12.6] ms, land 44.9 [44.0-46.5] ms) and that deferred GC fires two rows later during row 4 (push 1:1
+    size 1000, after 60 frames of 1:1 preview ImageData allocations raise heapMB0 to 288.2 MB: blockedMax 66.5 [56.5-73.0] ms,
+    land 80.8 [77.0-83.5] ms).
+  - Verified by running the views in swapped order (VIEWS=["1:1","fit"], ab/before/swap.json vs ab/after/swap.json): when push
+    1:1 size 1000 runs as row 2, both arms hit that same major GC on push 1:1 size 1000 (before: land 83.9 ms, blockedMax 75.8
+    ms, upSync 3.6 ms, commit 16.1 ms; after: land 85.0 ms, blockedMax 72.8 ms, upSync 3.6 ms, commit 15.7 ms), and neither arm
+    hits it on row 4 (push fit size 1000: before land 46.4 ms, blockedMax 17.2 ms; after land 45.5 ms, blockedMax 12.3 ms). The
+    block moved two rows later because the dense dab allocates ~160 MB less during push fit size 1000; it did not grow.
+
+Verdict for K30: the dense twin wins beyond the spread on every dab and tick row (cutting 1000 px push dab p50 from 13.7 -> 6.7
+ms at fit and 3.4 -> 1.8 ms at 1:1, held shrink tick p50 from 2.8 -> 1.7 ms, pushed restore dab p50 from 1.3 -> 0.9 ms, and
+empty restore dab p50 from 0.5 -> 0.0 ms), while landing upSync and commit times are unchanged or slightly faster.
+
+Stop 6 measured split (whether K31 Rust liquify_dab is worth building; goes to the user):
+  - Measured in Electron (dabLaps on 15000 x 10000, s = 4, size 1000): the kernel (liquifyDabNodes) is 93-95% of an advected dab
+    and 83% of a pushed restore dab:
+    - push fit size 1000 (4 sub-dabs/move, dab p50 6.7 ms): nodes 0.17 ms (2.5%), kernel 6.23 ms (93.0%), write 0.21 ms (3.1%).
+    - push 1:1 size 1000 (1 sub-dab/move, dab p50 1.8 ms): nodes 0.04 ms (2.3%), kernel 1.64 ms (94.8%), write 0.05 ms (2.9%).
+    - shrink held size 1000 (1 dab/tick, tick p50 1.7 ms): nodes 0.04 ms (2.3%), kernel 1.65 ms (95.4%), write 0.04 ms (2.3%).
+    - restore 1:1 size 1000 pushed (1 dab/move, dab p50 0.9 ms): nodes 0.05 ms (5.7%), kernel 0.72 ms (82.8%), write 0.10 ms
+      (11.5%).
+  - A Rust liquify_dab in K31 does not need 1 MB of extra JS<->wasm copy-in/copy-out per sub-dab: nodes() can gather directly
+    into a wasm memory slice (as K29's window does) and _writeDense can read changed rows directly from a wasm output view.
+  - Therefore, K31's ceiling is the kernel lap itself: 1.64-1.65 ms per 1000 px advected sub-dab (6.23 ms per move across 4
+    sub-dabs at fit, 1.64 ms per move at 1:1, 1.65 ms per held tick, 0.72 ms per pushed restore move). A 2-3x faster Rust SIMD
+    liquify_dab would save ~0.8-1.1 ms per 1000 px sub-dab (~3.1-4.2 ms per move at fit size 1000, bringing dab p50 from 6.7 ms
+    to ~2.5-3.6 ms; and ~0.8-1.1 ms per move at 1:1 size 1000, where dab + frame is currently 1.8 + 7.2 = 9.0 ms). Conversely,
+    K30's dense JS twin has already reached the plan's §4.9 6-8 ms target (6.7 ms p50 at fit, 1.7-1.8 ms per single 1000 px dab)
+    without the swirl sin/cos libm-vs-V8 parity risk. Stop 6 goes to the user with these numbers.
+
+Gates (gates/, --offline, ports 9617 / 9618): k30-tiles (--tiles on: lint types pixels brush editor) ALL PASS; k30-canvas
+(--tiles off: lint types pixels brush editor) ALL PASS.
+
+Mutation round (mutation/, tools/mutation_round.py on a copy tree; the untouched copy green on the full px_test, the editor
+gate and every focused set, both builds identical to the checkout's): 29 of 29 killed (0 on the re-check), 0 survived; 0 not
+as expected; the restored copy green on the full px_test.

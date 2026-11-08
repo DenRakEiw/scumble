@@ -1,0 +1,6 @@
+﻿lint rc=0 9s
+types rc=0 6s
+pixels rc=0 12s PASS
+brush rc=0 15s RESULT PASS
+editor rc=0 175s PASS
+ALL PASS
