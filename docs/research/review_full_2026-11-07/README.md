@@ -4,7 +4,7 @@ The full list is in `verified.json` (73 findings, each with its claim, scenario,
 This page is the short version and a proposed order of work. Nothing has been fixed yet.
 
 
-**Status 2026-11-07 night:** `rust/px-deflate-sync-truncation` fixed and merged (`9d44bdc`; R1 as built in `docs/PLAN_WASM_BUILD.md` §7). `documents/D2+canvas-c/F1` and `canvas-c/F3` fixed and merged (`6a66182`, after a review's 12 findings were fixed in `3a34445`: fonts, the node's clean-up, the assistant's turn, the quit save, the ask() leak). The other three musts (`providers/PRV-1`, `documents/D1`, `filters/filter-layer-over-its-own-input`) and every should are open, left for the user's pick.
+**Status 2026-11-07 night:** `rust/px-deflate-sync-truncation` fixed and merged (`9d44bdc`; R1 as built in `docs/PLAN_WASM_BUILD.md` §7). `documents/D2+canvas-c/F1` and `canvas-c/F3` fixed and merged (`6a66182`, after a review's 12 findings were fixed in `3a34445`: fonts, the node's clean-up, the assistant's turn, the quit save, the ask() leak). The other three musts (`providers/PRV-1`, `documents/D1`, `filters/filter-layer-over-its-own-input`) and every should were left for the user's pick; the user took all three musts on 2026-11-08 (built by Antigravity agents, reviewed here). **`providers/PRV-1` fixed and merged (`d004fadd`):** `util.js` `pollJob` and `downloadImage` (up to 5 failed status reads in a row with a backoff, 408 / 425 / 429 / 5xx transient, `Retry-After` above 0 and at most 60 s, 3 tries of the result and the picture, the request id in the final error; the submit never retried, a Cancel stops at once), used by fal, Replicate, WaveSpeed, Comfy Router and the Partner API. Every should is still open.
 
 ## What was reviewed
 

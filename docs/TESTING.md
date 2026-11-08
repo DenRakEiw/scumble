@@ -1043,6 +1043,7 @@ Known flakes; **re-run before believing any of these**:
   a model training on the card with 20.8 GB of its VRAM, other agents running gates); run alone, the same code then failed
   `helper_inputs_read_levels_and_upload_nothing` once ("the in-app object map uploaded 1 files", never seen before), and
   passed the whole gate on the next run. Neither step touches what K29 changed. Not looked into further.
+- `generate`'s `dialog_opens_and_computes_the_size` failed once on both backends ("size note wrong: 576 x 1024 px", 2026-11-08, merged gates of PRV-1, in one instance after `toapis openrouter ark magnific oxen recipes`, with four other agents' gates running) and passed alone on the next run; the same gate list had passed in the agent's own run. Not looked into further.
 - `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed once with `requested: 0` in some twenty
   runs since the mip chains go through the pool; not reproduced.
 - The first exe instance of the 0.1.18 gates failed `a_settled_read_builds_its_levels_in_the_worker_not_here`
