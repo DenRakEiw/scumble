@@ -20,6 +20,8 @@
 "use strict";
 
 const fs = require("node:fs");
+const fsp = require("node:fs/promises");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -27,6 +29,7 @@ const { spawnSync } = require("node:child_process");
 
 const ROOT = path.join(__dirname, "..");
 const doc = require(path.join(ROOT, "electron", "main", "docfile.js"));
+const { FileMirror, contentName, isHashName, hasContentHash, writeAtomic } = require(path.join(ROOT, "electron", "main", "files.js"));
 
 const BIG = process.argv.includes("--big");
 let failed = 0;
@@ -494,6 +497,293 @@ function listTree(dir) {
             const argv = documentArgs(["--flag", "x.png", target, path.join(scratch, "nope.scumble")], scratch);
             assert(argv.length === 1 && argv[0] === target, "documentArgs " + JSON.stringify(argv));
             return "target kept; 2 selection fields dropped; argv found 1 of 4";
+        });
+        await check("content_addressed_names_and_ensure_on_server", async () => {
+            const M = mirror("FM");
+            const serverFiles = new Map();   // "type/subfolder/filename" -> Buffer
+            const uploads = [];              // recorded upload requests on the fake server
+            let omitContentLength = false;
+            const storeOnServer = (type, subfolder, name, bytes, overwrite) => {
+                let finalName = name;
+                let k = `${type}/${subfolder}/${finalName}`;
+                if (overwrite !== "true" && overwrite !== "1") {
+                    const ext = path.extname(name);
+                    const stem = name.slice(0, name.length - ext.length);
+                    let i = 1;
+                    while (serverFiles.has(k)) {
+                        if (serverFiles.get(k).equals(bytes)) break;
+                        finalName = `${stem} (${i})${ext}`;
+                        k = `${type}/${subfolder}/${finalName}`;
+                        i++;
+                    }
+                }
+                serverFiles.set(k, bytes);
+                return finalName;
+            };
+            const srv = http.createServer(async (req, res) => {
+                const u = new URL(req.url, "http://127.0.0.1");
+                if (u.pathname === "/view" && (req.method === "HEAD" || req.method === "GET")) {
+                    const k = `${u.searchParams.get("type") || "input"}/${u.searchParams.get("subfolder") || ""}/${u.searchParams.get("filename") || ""}`;
+                    const b = serverFiles.get(k);
+                    if (!b) { res.writeHead(404); res.end(); return; }
+                    const hdrs = { "Content-Type": "image/png" };
+                    if (!omitContentLength) hdrs["Content-Length"] = String(b.length);
+                    res.writeHead(200, hdrs);
+                    res.end(req.method === "HEAD" ? undefined : b);
+                    return;
+                }
+                const chunks = [];
+                for await (const ch of req) chunks.push(ch);
+                const raw = Buffer.concat(chunks);
+                if (u.pathname === "/upload/image" && req.method === "POST") {
+                    const form = await new Request("http://127.0.0.1" + req.url, { method: "POST", headers: req.headers, body: raw }).formData();
+                    const f = form.get("image");
+                    const name = f.name;
+                    if (name === "large_legacy.png") {
+                        res.writeHead(413);
+                        res.end();
+                        return;
+                    }
+                    const subfolder = String(form.get("subfolder") || "");
+                    const type = String(form.get("type") || "input");
+                    const overwrite = form.get("overwrite");
+                    const bytes = Buffer.from(await f.arrayBuffer());
+                    const finalName = storeOnServer(type, subfolder, name, bytes, overwrite);
+                    uploads.push({ route: "/upload/image", name, finalName, subfolder, type, overwrite, size: bytes.length });
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ name: finalName, subfolder, type }));
+                    return;
+                }
+                if (u.pathname === "/inpaint_canvas/upload" && req.method === "POST") {
+                    const name = u.searchParams.get("filename") || "";
+                    const subfolder = u.searchParams.get("subfolder") || "";
+                    const type = u.searchParams.get("type") || "input";
+                    const overwrite = u.searchParams.get("overwrite");
+                    const finalName = storeOnServer(type, subfolder, name, raw, overwrite);
+                    uploads.push({ route: "/inpaint_canvas/upload", name, finalName, subfolder, type, overwrite, size: raw.length });
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ name: finalName, subfolder, type, size: raw.length }));
+                    return;
+                }
+                res.writeHead(404); res.end();
+            });
+            await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+            try {
+                const port = srv.address().port;
+                assert(port !== 8188, "fake server must never use 8188");
+                const baseUrl = `http://127.0.0.1:${port}`;
+                const comfy = {
+                    url: baseUrl,
+                    status: { state: "connected" },
+                    fetch: (rel, init) => fetch(baseUrl + rel, init),
+                };
+                const fm = new FileMirror(comfy, { root: M });
+                const mkUploadReq = (filename, buf, overwrite, subfolder = "inpaint_canvas") => {
+                    const fd = new FormData();
+                    fd.append("image", new File([buf], filename, { type: "image/png" }));
+                    fd.append("subfolder", subfolder);
+                    fd.append("type", "input");
+                    if (overwrite !== undefined) fd.append("overwrite", overwrite ? "true" : "false");
+                    return new Request("http://scumble/comfy/upload/image", { method: "POST", body: fd });
+                };
+                const mkRawReq = (filename, buf, overwrite) => {
+                    const q = new URLSearchParams({ filename, subfolder: "inpaint_canvas", type: "input", overwrite: overwrite ? "true" : "false" });
+                    return [new Request("http://scumble/comfy/inpaint_canvas/upload?" + q, { method: "POST", body: buf }), "?" + q.toString()];
+                };
+                const bytesA = rnd(256, 11);
+                const bytesB = rnd(384, 22);
+                const hashA = crypto.createHash("sha256").update(bytesA).digest("hex").slice(0, 8);
+                const hashA16 = crypto.createHash("sha256").update(bytesA).digest("hex").slice(0, 16);
+                const hashB = crypto.createHash("sha256").update(bytesB).digest("hex").slice(0, 8);
+                assert(hashA !== hashB, "distinct test buffers must have distinct 8-hex hashes");
+
+                // 1. Same bytes -> same name (stem~<hash8>.ext), one file in the mirror, mtime touched on reuse
+                const u1 = await (await fm.handleUpload(mkUploadReq("image.png", bytesA, false))).json();
+                const pA = path.join(M, "input", "inpaint_canvas", u1.name);
+                const oldTime = new Date(Date.now() - 7200 * 1000);
+                fs.utimesSync(pA, oldTime, oldTime);
+                const u2 = await (await fm.handleUpload(mkUploadReq("image.png", bytesA, false))).json();
+                const stReused = fs.statSync(pA);
+                assert(stReused.mtimeMs > oldTime.getTime() + 1000, "reusing an existing mirror file must touch its mtime for prune");
+                const [rawReqA, rawSearchA] = mkRawReq("image.png", bytesA, false);
+                const u2Raw = await (await fm.handleRawUpload(rawReqA, rawSearchA)).json();
+                assert(u1.name === `image~${hashA}.png`, `expected image~${hashA}.png, got ${u1.name}`);
+                assert(u2.name === u1.name && u2Raw.name === u1.name, `same bytes must give same name: ${u1.name} vs ${u2.name} vs ${u2Raw.name}`);
+                assert(contentName(u1.name, bytesA) === u1.name, "already-hashed stem must not double-append hash");
+
+                // 1b. A cut/truncated file at target is replaced atomically on retry; a different-bytes collision steps up to 16 hex
+                fs.writeFileSync(pA, bytesA.subarray(0, 40));
+                const uRetryCut = await (await fm.handleUpload(mkUploadReq("image.png", bytesA, false))).json();
+                assert(uRetryCut.name === u1.name && fs.readFileSync(pA).equals(bytesA), "truncated file at target must be replaced with full bytes");
+                fs.writeFileSync(pA, bytesB);
+                const uCollision = await (await fm.handleUpload(mkUploadReq("image.png", bytesA, false))).json();
+                assert(uCollision.name === `image~${hashA16}.png`, `8-hex collision must step up to 16-hex hash: got ${uCollision.name}`);
+                fs.unlinkSync(path.join(M, "input", "inpaint_canvas", uCollision.name));
+                fs.writeFileSync(pA, bytesA);
+
+                // 1c. writeAtomic: failed write leaves old target and no temp; renameRetry handles transient EBUSY;
+                // persistent EBUSY resolves only when existing file matches (size for content-addressed, bytes for overwrite:true)
+                const noTempsIn = (dir) => fs.readdirSync(dir).filter((n) => n.includes(".tmp-")).length === 0;
+                const mirrorDir = path.join(M, "input", "inpaint_canvas");
+                const pAtomic = path.join(mirrorDir, "atomic_target.png");
+                const origWriteFile = fsp.writeFile;
+                const origRename = fsp.rename;
+                try {
+                    fs.writeFileSync(pAtomic, bytesA);
+                    fsp.writeFile = async (p, data, ...rest) => {
+                        await origWriteFile(p, Buffer.from(data).subarray(0, 12), ...rest);
+                        throw Object.assign(new Error("ENOSPC: simulated mid-write failure"), { code: "ENOSPC" });
+                    };
+                    const failRes = await fm.handleUpload(mkUploadReq("atomic_target.png", bytesB, true));
+                    assert(failRes.status === 400 && fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "failed handleUpload write must return 400, keep old target, and leave no .tmp- file");
+                    let threwWrite = false;
+                    try { await writeAtomic(pAtomic, bytesB, { overwrite: true, tries: 3, delay: 5 }); } catch (_) { threwWrite = true; }
+                    assert(threwWrite && fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "failed writeAtomic must keep old target and leave no .tmp- file");
+                    fsp.writeFile = origWriteFile;
+
+                    // Transient EBUSY (fails twice, succeeds on 3rd try via renameRetry)
+                    let renameCalls = 0;
+                    fsp.rename = async (a, b) => {
+                        if (++renameCalls < 3) throw Object.assign(new Error("EBUSY"), { code: "EBUSY" });
+                        return origRename(a, b);
+                    };
+                    await writeAtomic(pAtomic, bytesB, { overwrite: true, tries: 5, delay: 5 });
+                    assert(renameCalls === 3 && fs.readFileSync(pAtomic).equals(bytesB) && noTempsIn(mirrorDir), "writeAtomic must retry transient EBUSY via renameRetry");
+
+                    // Persistent EBUSY on content-addressed (overwrite:false): equal size resolves, different size rejects
+                    fsp.rename = async () => { throw Object.assign(new Error("EBUSY"), { code: "EBUSY" }); };
+                    fs.writeFileSync(pAtomic, bytesA);
+                    await writeAtomic(pAtomic, bytesA, { overwrite: false, tries: 3, delay: 5 });
+                    assert(fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "EBUSY with equal size on overwrite:false must resolve and clean up temp");
+                    let threwDiffSize = false;
+                    try { await writeAtomic(pAtomic, bytesB, { overwrite: false, tries: 3, delay: 5 }); } catch (_) { threwDiffSize = true; }
+                    assert(threwDiffSize && fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "EBUSY with different size on overwrite:false must reject and keep old target");
+
+                    // Persistent EBUSY on overwrite:true: equal size with different bytes rejects, identical bytes resolves
+                    const bytesSameLenOther = rnd(bytesA.length, 99);
+                    fs.writeFileSync(pAtomic, bytesSameLenOther);
+                    let threwSameLenOther = false;
+                    try { await writeAtomic(pAtomic, bytesA, { overwrite: true, tries: 3, delay: 5 }); } catch (_) { threwSameLenOther = true; }
+                    assert(threwSameLenOther && fs.readFileSync(pAtomic).equals(bytesSameLenOther) && noTempsIn(mirrorDir), "EBUSY on overwrite:true with equal size but different bytes must reject");
+                    fs.writeFileSync(pAtomic, bytesA);
+                    await writeAtomic(pAtomic, bytesA, { overwrite: true, tries: 3, delay: 5 });
+                    assert(fs.readFileSync(pAtomic).equals(bytesA) && noTempsIn(mirrorDir), "EBUSY on overwrite:true with identical bytes must resolve");
+                } finally {
+                    fsp.writeFile = origWriteFile;
+                    fsp.rename = origRename;
+                    fs.rmSync(pAtomic, { force: true });
+                }
+
+                // 2. Different bytes with the same stem -> different names
+                const u3 = await (await fm.handleUpload(mkUploadReq("image.png", bytesB, false))).json();
+                assert(u3.name === `image~${hashB}.png` && u3.name !== u1.name, `different bytes must give different names: ${u1.name} vs ${u3.name}`);
+                const dirEntries = fs.readdirSync(path.join(M, "input", "inpaint_canvas")).sort();
+                assert(same(dirEntries, [u1.name, u3.name].sort()), "mirror holds exactly the two content-addressed files: " + JSON.stringify(dirEntries));
+
+                // 3. overwrite:true uploads keep their given name and forward overwrite=true (layer edits, MyFont.ttf)
+                const layerName = "n1_layer_1a2b3c4d5e6f.png";
+                uploads.length = 0;
+                const uLayer = await (await fm.handleUpload(mkUploadReq(layerName, bytesA, true))).json();
+                assert(uLayer.name === layerName && uploads[0].overwrite === "true", `overwrite:true must keep name and forward overwrite=true: ${JSON.stringify(uploads[0])}`);
+                const [rawLayerReq, rawLayerSearch] = mkRawReq(layerName, bytesB, true);
+                const uLayerRaw = await (await fm.handleRawUpload(rawLayerReq, rawLayerSearch)).json();
+                assert(uLayerRaw.name === layerName && uploads[1].overwrite === "true" && fs.readFileSync(path.join(M, "input", "inpaint_canvas", layerName)).equals(bytesB), "overwrite:true raw upload must keep name and replace bytes");
+                serverFiles.set("input/inpaint_canvas/fonts/MyFont.ttf", bytesA);
+                uploads.length = 0;
+                const uFont = await (await fm.handleUpload(mkUploadReq("MyFont.ttf", bytesB, true, "inpaint_canvas/fonts"))).json();
+                assert(uFont.name === "MyFont.ttf" && uploads[0].overwrite === "true" && uploads[0].finalName === "MyFont.ttf" && serverFiles.get("input/inpaint_canvas/fonts/MyFont.ttf").equals(bytesB), "overwrite:true font upload must replace server copy in place");
+
+                // 4. No extension, odd characters, lookalike names, and long 250-char stems
+                const uNoExt = await (await fm.handleUpload(mkUploadReq("readme", bytesA, false))).json();
+                assert(uNoExt.name === `readme~${hashA}` && isHashName(uNoExt.name) && hasContentHash(uNoExt.name, bytesA), `no-extension name: ${uNoExt.name}`);
+                const uOdd = await (await fm.handleUpload(mkUploadReq("my photo (1) [final]#2~?.PNG", bytesA, false))).json();
+                assert(uOdd.name === `my_photo__1___final__2~${hashA}.png` && isHashName(uOdd.name), `odd-char name: ${uOdd.name}`);
+                const [rawOddReq, rawOddSearch] = mkRawReq("...___.png", bytesB, false);
+                const uEmptyStem = await (await fm.handleRawUpload(rawOddReq, rawOddSearch)).json();
+                assert(uEmptyStem.name === `image~${hashB}.png`, `empty sanitized stem falls back to image: ${uEmptyStem.name}`);
+                const longStem = "prompt_word_".repeat(22) + "end"; // 267 chars
+                const uLong = await (await fm.handleUpload(mkUploadReq(longStem + ".png", bytesA, false))).json();
+                assert(uLong.name.length <= 214 && uLong.name.endsWith(`~${hashA}.png`), `long stem must be capped before hash: len=${uLong.name.length}, name=${uLong.name}`);
+                for (const lookalike of ["IMG_20231005.jpg", "Screenshot_20231015.png", "DSC_12345678.png", "scan_123456789012.png"]) {
+                    assert(!isHashName(lookalike) && !hasContentHash(lookalike, bytesA), `lookalike ${lookalike} must not be classified as hashed`);
+                    const ext = path.extname(lookalike).toLowerCase();
+                    const stem = lookalike.slice(0, lookalike.length - ext.length);
+                    const uLook = await (await fm.handleUpload(mkUploadReq(lookalike, bytesA, false))).json();
+                    assert(uLook.name === `${stem}~${hashA}${ext}`, `lookalike upload must append ~hash: ${uLook.name}`);
+                }
+
+                // 5. A non-hash name is never forwarded with overwrite=true; server collision returns renamed file and keeps plain key out of known
+                assert(!hasContentHash(u1.name, bytesB) && hasContentHash(u1.name, bytesA), "hasContentHash verifies bytes against suffix");
+                serverFiles.set("input/inpaint_canvas/plain.png", bytesB);
+                fm.known.clear();
+                uploads.length = 0;
+                const pushedPlain = await fm.pushToServer("input", "inpaint_canvas", "plain.png", bytesA, "image/png");
+                await fm.pushLargeToServer("input", "inpaint_canvas", "plain_large.png", bytesA);
+                await fm.pushToServer("input", "inpaint_canvas", u1.name, bytesA, "image/png");
+                assert(uploads.length === 3, "3 push calls recorded");
+                assert(uploads[0].name === "plain.png" && uploads[0].overwrite !== "true" && pushedPlain === "plain (1).png", `non-hash multipart collision must return server's renamed file: ${pushedPlain}`);
+                assert(!fm.knownSet().has("input/inpaint_canvas/plain.png"), "plain key must not be added to known when server renamed it");
+                assert(uploads[1].name === "plain_large.png" && uploads[1].overwrite === "false", `non-hash large must send overwrite=false: ${JSON.stringify(uploads[1])}`);
+                assert(uploads[2].name === u1.name && uploads[2].overwrite === "true", `proven hash name sends overwrite=true: ${JSON.stringify(uploads[2])}`);
+
+                // 6. ensureOnServer on plain and lookalike names: no-op when Content-Length matches, re-uploads and reports renamed on mismatch
+                const plainRef = { filename: "legacy.png", subfolder: "inpaint_canvas", type: "input" };
+                const lookRef = { filename: "IMG_20231005.jpg", subfolder: "inpaint_canvas", type: "input" };
+                put(M, plainRef, bytesA);
+                put(M, lookRef, bytesA);
+                serverFiles.set("input/inpaint_canvas/legacy.png", Buffer.from(bytesA));
+                serverFiles.set("input/inpaint_canvas/IMG_20231005.jpg", Buffer.from(bytesA));
+                fm.known.clear();
+                uploads.length = 0;
+                const repMatch = await fm.ensureOnServer([{ ...plainRef }, { ...lookRef }]);
+                assert(repMatch.checked === 2 && repMatch.uploaded.length === 0 && repMatch.missing.length === 0 && uploads.length === 0, "matching Content-Length must be a no-op: " + JSON.stringify(repMatch));
+
+                // Server holds different-sized files under legacy.png, IMG_20231005.jpg, and large_legacy.png (413 -> pushLargeToServer)
+                const largeRef = { filename: "large_legacy.png", subfolder: "inpaint_canvas", type: "input" };
+                put(M, largeRef, bytesA);
+                serverFiles.set("input/inpaint_canvas/legacy.png", bytesB);
+                serverFiles.set("input/inpaint_canvas/IMG_20231005.jpg", bytesB);
+                serverFiles.set("input/inpaint_canvas/large_legacy.png", bytesB);
+                fm.known.clear();
+                uploads.length = 0;
+                const plainRefRun = { ...plainRef };
+                const lookRefRun = { ...lookRef };
+                const largeRefRun = { ...largeRef };
+                const repMismatch = await fm.ensureOnServer([plainRefRun, lookRefRun, largeRefRun]);
+                assert(repMismatch.checked === 3 && same(repMismatch.uploaded, ["input/inpaint_canvas/legacy.png", "input/inpaint_canvas/IMG_20231005.jpg", "input/inpaint_canvas/large_legacy.png"]) && uploads.length === 3, "mismatched Content-Length must re-upload plain, lookalike, and large: " + JSON.stringify(repMismatch));
+                assert(repMismatch.renamed["input/inpaint_canvas/legacy.png"] === "legacy (1).png" && plainRefRun.filename === "legacy (1).png", "ensureOnServer must report renamed plain ref: " + JSON.stringify(repMismatch));
+                assert(repMismatch.renamed["input/inpaint_canvas/IMG_20231005.jpg"] === "IMG_20231005 (1).jpg" && lookRefRun.filename === "IMG_20231005 (1).jpg", "ensureOnServer must report renamed lookalike ref: " + JSON.stringify(repMismatch));
+                assert(repMismatch.renamed["input/inpaint_canvas/large_legacy.png"] === "large_legacy (1).png" && largeRefRun.filename === "large_legacy (1).png" && uploads[2].route === "/inpaint_canvas/upload", "ensureOnServer must report renamed large ref via pushLargeToServer: " + JSON.stringify(repMismatch));
+                assert(serverFiles.get("input/inpaint_canvas/legacy.png").equals(bytesB) && serverFiles.get("input/inpaint_canvas/legacy (1).png").equals(bytesA), "server keeps other client's legacy.png and stores ours at legacy (1).png");
+                assert(serverFiles.get("input/inpaint_canvas/large_legacy.png").equals(bytesB) && serverFiles.get("input/inpaint_canvas/large_legacy (1).png").equals(bytesA), "server keeps other client's large_legacy.png and stores ours at large_legacy (1).png");
+                assert(!fm.knownSet().has("input/inpaint_canvas/legacy.png") && !fm.knownSet().has("input/inpaint_canvas/IMG_20231005.jpg") && !fm.knownSet().has("input/inpaint_canvas/large_legacy.png"), "renamed plain keys must not be added to known");
+
+                // 7. HEAD without Content-Length (re-uploads), mirror file deleted before ensureOnServer (accepted), hash name with server size mismatch (re-uploads with overwrite)
+                serverFiles.set("input/inpaint_canvas/legacy.png", Buffer.from(bytesA));
+                omitContentLength = true;
+                fm.known.clear();
+                uploads.length = 0;
+                const repNoLen = await fm.ensureOnServer([{ ...plainRef }]);
+                omitContentLength = false;
+                assert(repNoLen.uploaded.length === 1 && uploads.length === 1, "HEAD without Content-Length must re-upload: " + JSON.stringify(repNoLen));
+
+                const serverOnlyRef = { filename: "server_only.png", subfolder: "inpaint_canvas", type: "input" };
+                serverFiles.set("input/inpaint_canvas/server_only.png", bytesA);
+                fm.known.clear();
+                uploads.length = 0;
+                const repDeletedMirror = await fm.ensureOnServer([serverOnlyRef]);
+                assert(repDeletedMirror.checked === 1 && repDeletedMirror.uploaded.length === 0 && repDeletedMirror.missing.length === 0, "deleted mirror file present on server must be accepted without missing entry: " + JSON.stringify(repDeletedMirror));
+
+                serverFiles.set(`input/inpaint_canvas/${u1.name}`, bytesA.subarray(0, 50)); // truncated on server
+                fm.known.clear();
+                uploads.length = 0;
+                const repHashMismatch = await fm.ensureOnServer([{ filename: u1.name, subfolder: "inpaint_canvas", type: "input" }]);
+                assert(repHashMismatch.uploaded.length === 1 && uploads.length === 1 && uploads[0].overwrite === "true" && serverFiles.get(`input/inpaint_canvas/${u1.name}`).equals(bytesA), "hash name with server size mismatch must re-upload with overwrite=true and restore server bytes");
+
+                return `${u1.name}, ${u3.name}, ${uNoExt.name}, ${uOdd.name}; collision+size-check+rename verified`;
+            } finally {
+                await new Promise((r) => srv.close(r));
+            }
         });
         if (BIG) {
             await check("a_real_zip64_file_above_4_GiB", async () => {

@@ -4,12 +4,15 @@
 // re-uploaded on demand before a run (ensureOnServer). Editing works without a server.
 "use strict";
 
-const fs = require("node:fs");
+const crypto = require("node:crypto");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { app } = require("electron");
+const { renameRetry, BUSY } = require("./docfile");
 
 const SAFE_NAME = /^[^\\/:*?"<>|\x00-\x1f]+$/;
+const HASH_NAME = /~([0-9a-f]{8,64})(?:\.[a-z0-9]+)?$/i;
+const STEM_MAX = 200;
 
 // Above this a file goes to the node's streaming upload route instead of ComfyUI's
 // multipart one, which stops at --max-upload-size (100 MB by default). The editor uses
@@ -20,11 +23,11 @@ function root() {
     return path.join(app.getPath("userData"), "files");
 }
 
-function mirrorPath(type, subfolder, filename) {
+function mirrorPath(type, subfolder, filename, base = root()) {
     if (!SAFE_NAME.test(filename) || filename === "." || filename === "..") throw new Error("bad file name: " + filename);
     const sub = String(subfolder || "").replace(/\\/g, "/").split("/").filter((s) => s && s !== "." && s !== "..");
     if (!["input", "output", "temp"].includes(type)) throw new Error("bad file type: " + type);
-    return path.join(root(), type, ...sub, filename);
+    return path.join(base, type, ...sub, filename);
 }
 
 function mimeOf(name) {
@@ -33,19 +36,93 @@ function mimeOf(name) {
         ".tif": "image/tiff", ".tiff": "image/tiff", ".svg": "image/svg+xml", ".ttf": "font/ttf", ".otf": "font/otf", ".woff": "font/woff", ".woff2": "font/woff2", ".cube": "text/plain" }[ext] || "application/octet-stream";
 }
 
-/** ComfyUI's collision rule: "name (1).png", "name (2).png", ... */
-async function freeName(dir, filename) {
-    const ext = path.extname(filename);
-    const stem = filename.slice(0, filename.length - ext.length);
-    let name = filename, n = 1;
-    while (fs.existsSync(path.join(dir, name))) { name = `${stem} (${n})${ext}`; n++; }
-    return name;
+function isHashName(filename) {
+    return HASH_NAME.test(String(filename || ""));
+}
+
+function hasContentHash(filename, buf) {
+    if (!Buffer.isBuffer(buf)) return false;
+    const m = String(filename || "").match(HASH_NAME);
+    if (!m) return false;
+    const suffix = m[1].toLowerCase();
+    const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
+    return sha256.startsWith(suffix);
+}
+
+/** Content-addressed name `stem~<hash>.ext` hashed from `buf` for `overwrite:false` uploads. */
+function contentName(filename, buf, len = 8) {
+    const raw = path.basename(String(filename || "image.png"));
+    const extMatch = raw.match(/(\.[a-z0-9]+)$/i);
+    const ext = extMatch ? extMatch[1].toLowerCase() : "";
+    const base = (ext ? raw.slice(0, raw.length - ext.length) : raw).replace(/~[0-9a-f]{8,64}$/i, "");
+    let stem = base.replace(/[^a-z0-9._-]/gi, "_").replace(/^[_.-]+|[_.-]+$/g, "");
+    if (stem.length > STEM_MAX) stem = stem.slice(0, STEM_MAX).replace(/[_.-]+$/g, "");
+    if (!stem) stem = "image";
+    const hash = crypto.createHash("sha256").update(buf).digest("hex").slice(0, len);
+    return `${stem}~${hash}${ext}`;
+}
+
+let tmpSeq = 0;
+
+async function writeAtomic(dest, buf, { overwrite = false, tries = 20, delay = 100 } = {}) {
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    const tmp = `${dest}.tmp-${process.pid}-${Date.now()}-${++tmpSeq}-${crypto.randomBytes(4).toString("hex")}`;
+    try {
+        await fsp.writeFile(tmp, buf);
+        try {
+            await renameRetry(tmp, dest, { tries, delay, rename: (a, b) => fsp.rename(a, b) });
+        } catch (err) {
+            if (err && BUSY.has(err.code)) {
+                if (overwrite) {
+                    const existing = await fsp.readFile(dest).catch(() => null);
+                    if (existing && existing.length === buf.length && existing.equals(buf)) return;
+                } else {
+                    const st = await fsp.stat(dest).catch(() => null);
+                    if (st && st.isFile() && st.size === buf.length) return;
+                }
+            }
+            throw err;
+        }
+    } finally {
+        await fsp.unlink(tmp).catch(() => {});
+    }
+}
+
+async function storeMirrorFile(rawName, type, subfolder, buf, base, overwrite) {
+    if (overwrite) {
+        const target = mirrorPath(type, subfolder, rawName, base);
+        await writeAtomic(target, buf, { overwrite: true });
+        return { filename: rawName, target };
+    }
+    let filename = rawName, target = "";
+    for (const len of [8, 16, 32, 64]) {
+        filename = contentName(rawName, buf, len);
+        target = mirrorPath(type, subfolder, filename, base);
+        let existing = null;
+        try { existing = await fsp.readFile(target); } catch (_) { existing = null; }
+        if (!existing) {
+            await writeAtomic(target, buf);
+            return { filename, target };
+        }
+        if (existing.length === buf.length && existing.equals(buf)) {
+            const now = new Date();
+            await fsp.utimes(target, now, now).catch(() => {});
+            return { filename, target };
+        }
+        if (existing.length === 0 || (existing.length < buf.length && buf.subarray(0, existing.length).equals(existing))) {
+            await writeAtomic(target, buf);
+            return { filename, target };
+        }
+    }
+    await writeAtomic(target, buf);
+    return { filename, target };
 }
 
 class FileMirror {
-    constructor(comfy) {
+    constructor(comfy, { root: customRoot } = {}) {
         this.comfy = comfy;             // ComfyClient: fetch(), url, connected state
         this.known = new Map();         // server url -> Set of "type/subfolder/filename" known to exist there
+        this._root = customRoot || null;
     }
 
     key(type, subfolder, filename) {
@@ -79,17 +156,14 @@ class FileMirror {
         const type = String(form.get("type") || "input");
         const subfolder = String(form.get("subfolder") || "");
         const overwrite = String(form.get("overwrite") || "") === "true";
-        let filename = path.basename(String(file.name || "image.png"));
-        let target;
-        try { target = mirrorPath(type, subfolder, filename); } catch (err) { return Response.json({ error: err.message }, { status: 400 }); }
-        const dir = path.dirname(target);
-        await fsp.mkdir(dir, { recursive: true });
-        if (!overwrite) { filename = await freeName(dir, filename); target = path.join(dir, filename); }
+        const rawName = path.basename(String(file.name || "image.png"));
+        if (rawName === "." || rawName === "..") return Response.json({ error: "bad file name: " + rawName }, { status: 400 });
         const buf = Buffer.from(await file.arrayBuffer());
-        if (overwrite || !fs.existsSync(target)) await fsp.writeFile(target, buf);
+        let filename;
+        try { ({ filename } = await storeMirrorFile(rawName, type, subfolder, buf, this.root(), overwrite)); } catch (err) { return Response.json({ error: err.message }, { status: 400 }); }
         if (this.serverUp() && !this.localOnly) {
             try {
-                await this.pushToServer(type, subfolder, filename, buf, file.type || mimeOf(filename));
+                await this.pushToServer(type, subfolder, filename, buf, file.type || mimeOf(filename), { overwrite: true });
             } catch (err) {
                 console.warn("upload not forwarded:", filename, err.message);
             }
@@ -106,22 +180,19 @@ class FileMirror {
      */
     async handleRawUpload(request, search) {
         const q = new URLSearchParams(search || "");
-        let filename = path.basename(String(q.get("filename") || ""));
-        if (!filename) return Response.json({ error: "filename missing" }, { status: 400 });
+        const rawName = path.basename(String(q.get("filename") || ""));
+        if (!rawName) return Response.json({ error: "filename missing" }, { status: 400 });
+        if (rawName === "." || rawName === "..") return Response.json({ error: "bad file name: " + rawName }, { status: 400 });
         const type = String(q.get("type") || "input");
         const subfolder = String(q.get("subfolder") || "");
         const overwrite = String(q.get("overwrite") || "").toLowerCase() === "true";
-        let target;
-        try { target = mirrorPath(type, subfolder, filename); } catch (err) { return Response.json({ error: err.message }, { status: 400 }); }
-        const dir = path.dirname(target);
-        await fsp.mkdir(dir, { recursive: true });
-        if (!overwrite) { filename = await freeName(dir, filename); target = path.join(dir, filename); }
         const buf = Buffer.from(await request.arrayBuffer());
         if (!buf.length) return Response.json({ error: "empty body" }, { status: 400 });
-        if (overwrite || !fs.existsSync(target)) await fsp.writeFile(target, buf);
+        let filename;
+        try { ({ filename } = await storeMirrorFile(rawName, type, subfolder, buf, this.root(), overwrite)); } catch (err) { return Response.json({ error: err.message }, { status: 400 }); }
         if (this.serverUp() && !this.localOnly) {
             try {
-                await this.pushToServer(type, subfolder, filename, buf, mimeOf(filename));
+                await this.pushToServer(type, subfolder, filename, buf, mimeOf(filename), { overwrite: true });
             } catch (err) {
                 console.warn("upload not forwarded:", filename, err.message);
             }
@@ -134,23 +205,27 @@ class FileMirror {
      * files, the node's streaming route above its --max-upload-size (100 MB by default;
      * the multipart body is a little larger than the file, so the switch sits below it).
      */
-    async pushToServer(type, subfolder, filename, buf, mime) {
-        if (buf.length >= LARGE_UPLOAD) return this.pushLargeToServer(type, subfolder, filename, buf);
+    async pushToServer(type, subfolder, filename, buf, mime, { overwrite = false } = {}) {
+        const canOverwrite = !!(overwrite || hasContentHash(filename, buf));
+        if (buf.length >= LARGE_UPLOAD) return this.pushLargeToServer(type, subfolder, filename, buf, { overwrite: canOverwrite });
         const fd = new FormData();
         fd.append("image", new Blob([buf], { type: mime || mimeOf(filename) }), filename);
         fd.append("subfolder", subfolder || "");
         fd.append("type", type);
-        fd.append("overwrite", "true");
+        if (canOverwrite) fd.append("overwrite", "true");
         const r = await this.comfy.fetch("/upload/image", { method: "POST", body: fd });
-        if (r.status === 413) return this.pushLargeToServer(type, subfolder, filename, buf);
+        if (r.status === 413) return this.pushLargeToServer(type, subfolder, filename, buf, { overwrite: canOverwrite });
         if (r.status !== 200) throw new Error(`/upload/image answered ${r.status}`);
         const data = await r.json().catch(() => ({}));
-        if (data.name && data.name !== filename) console.warn("server renamed", filename, "to", data.name);
-        this.knownSet().add(this.key(type, subfolder, filename));
+        const serverName = (data && typeof data.name === "string" && data.name) ? data.name : filename;
+        if (serverName !== filename) console.warn("server renamed", filename, "to", serverName);
+        else this.knownSet().add(this.key(type, subfolder, filename));
+        return serverName;
     }
 
-    async pushLargeToServer(type, subfolder, filename, buf) {
-        const q = new URLSearchParams({ filename, subfolder: subfolder || "", type, overwrite: "true" });
+    async pushLargeToServer(type, subfolder, filename, buf, { overwrite = false } = {}) {
+        const canOverwrite = !!(overwrite || hasContentHash(filename, buf));
+        const q = new URLSearchParams({ filename, subfolder: subfolder || "", type, overwrite: canOverwrite ? "true" : "false" });
         const r = await this.comfy.fetch("/inpaint_canvas/upload?" + q, {
             method: "POST",
             body: buf,
@@ -159,8 +234,10 @@ class FileMirror {
         if (r.status === 404) throw new Error(`${Math.round(buf.length / 1048576)} MB needs the node's upload route: update ComfyUI-InpaintCanvas on the server and restart ComfyUI`);
         if (r.status !== 200) throw new Error(`/inpaint_canvas/upload answered ${r.status}`);
         const data = await r.json().catch(() => ({}));
-        if (data.name && data.name !== filename) console.warn("server renamed", filename, "to", data.name);
-        this.knownSet().add(this.key(type, subfolder, filename));
+        const serverName = (data && typeof data.name === "string" && data.name) ? data.name : filename;
+        if (serverName !== filename) console.warn("server renamed", filename, "to", serverName);
+        else this.knownSet().add(this.key(type, subfolder, filename));
+        return serverName;
     }
 
     /**
@@ -173,11 +250,11 @@ class FileMirror {
         const subfolder = q.get("subfolder") || "";
         const type = q.get("type") || "input";
         let local;
-        try { local = mirrorPath(type, subfolder, filename); } catch (err) { return new Response(err.message, { status: 400 }); }
+        try { local = mirrorPath(type, subfolder, filename, this.root()); } catch (err) { return new Response(err.message, { status: 400 }); }
         if (head) {
             try {
                 const st = await fsp.stat(local);
-                if (st.isFile()) return new Response(null, { status: 200, headers: { "content-type": mimeOf(filename), "cache-control": "no-cache" } });
+                if (st.isFile()) return new Response(null, { status: 200, headers: { "content-type": mimeOf(filename), "content-length": String(st.size), "cache-control": "no-cache" } });
             } catch (_) { /* not mirrored: as a GET, from the server when it is connected */ }
         }
         try {
@@ -189,7 +266,7 @@ class FileMirror {
         if (r.status !== 200) return new Response(await r.text().catch(() => ""), { status: r.status });
         const buf = Buffer.from(await r.arrayBuffer());
         if (type !== "temp") {
-            try { await fsp.mkdir(path.dirname(local), { recursive: true }); await fsp.writeFile(local, buf); } catch (err) { console.warn("mirror write failed", err.message); }
+            try { await writeAtomic(local, buf); } catch (err) { console.warn("mirror write failed", err.message); }
         }
         this.knownSet().add(this.key(type, subfolder, filename));
         return new Response(buf, { status: 200, headers: { "content-type": r.headers.get("content-type") || mimeOf(filename), "cache-control": "no-cache" } });
@@ -198,32 +275,57 @@ class FileMirror {
     /**
      * Make sure the server has these files (refs: [{filename, subfolder, type}]). Files the
      * proxy already uploaded to or fetched from this server are skipped; the others are
-     * checked with HEAD /view and uploaded from the mirror when missing.
+     * checked with HEAD /view (including Content-Length against the mirror file's size) and
+     * uploaded from the mirror when missing or mismatched.
      */
     async ensureOnServer(refs) {
         if (!this.serverUp()) throw new Error("ComfyUI is not connected");
         const known = this.knownSet();
-        const report = { checked: 0, uploaded: [], missing: [] };
+        const report = { checked: 0, uploaded: [], missing: [], renamed: {} };
         for (const ref of refs || []) {
             if (!ref || !ref.filename) continue;
             const type = ref.type || "input", subfolder = ref.subfolder || "";
             const k = this.key(type, subfolder, ref.filename);
+            if (report.renamed[k]) { ref.filename = report.renamed[k]; continue; }
             if (known.has(k)) continue;
             report.checked++;
+            let local, st = null;
+            try {
+                local = mirrorPath(type, subfolder, ref.filename, this.root());
+                st = await fsp.stat(local);
+                if (!st.isFile()) st = null;
+            } catch (_) { st = null; }
             const q = new URLSearchParams({ filename: ref.filename, subfolder, type });
             let onServer = false;
-            try { const h = await this.comfy.fetch("/view?" + q.toString(), { method: "HEAD" }); onServer = h.status === 200; } catch (_) { onServer = false; }
+            try {
+                const h = await this.comfy.fetch("/view?" + q.toString(), { method: "HEAD" });
+                if (h.status === 200) {
+                    if (!st) {
+                        onServer = true;
+                    } else {
+                        const len = h.headers && typeof h.headers.get === "function" ? h.headers.get("content-length") : null;
+                        onServer = len !== null && len !== "" && Number(len) === st.size;
+                    }
+                }
+            } catch (_) { onServer = false; }
             if (onServer) { known.add(k); continue; }
             let buf;
-            try { buf = await fsp.readFile(mirrorPath(type, subfolder, ref.filename)); } catch (_) { report.missing.push(k); continue; }
-            await this.pushToServer(type, subfolder, ref.filename, buf);
+            try { buf = await fsp.readFile(local || mirrorPath(type, subfolder, ref.filename, this.root())); } catch (_) { report.missing.push(k); continue; }
+            const proven = hasContentHash(ref.filename, buf);
+            const serverName = await this.pushToServer(type, subfolder, ref.filename, buf, undefined, { overwrite: proven });
+            if (serverName && serverName !== ref.filename) {
+                report.renamed[k] = serverName;
+                ref.filename = serverName;
+            } else {
+                known.add(k);
+            }
             report.uploaded.push(k);
         }
         return report;
     }
 
     root() {
-        return root();
+        return this._root || root();
     }
 
     /**
@@ -234,7 +336,7 @@ class FileMirror {
     async prune({ keep = [], dryRun = false } = {}) {
         const keepSet = new Set(keep);
         const report = { files: 0, bytes: 0, deleted: [] };
-        const base = root();
+        const base = this.root();
         const now = Date.now();
         const walk = async (dir) => {
             let entries = [];
@@ -262,6 +364,7 @@ class FileMirror {
     /** Size and count of the mirror, for the settings UI. */
     async stats() {
         let files = 0, bytes = 0;
+        const base = this.root();
         const walk = async (dir) => {
             let entries = [];
             try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch (_) { return; }
@@ -271,9 +374,9 @@ class FileMirror {
                 else { files++; try { bytes += (await fsp.stat(p)).size; } catch (_) { /* ignore */ } }
             }
         };
-        await walk(root());
-        return { files, bytes, root: root() };
+        await walk(base);
+        return { files, bytes, root: base };
     }
 }
 
-module.exports = { FileMirror, mirrorPath };
+module.exports = { FileMirror, mirrorPath, contentName, isHashName, hasContentHash, writeAtomic };

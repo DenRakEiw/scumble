@@ -3386,9 +3386,11 @@ export const host = {
         if (resp.status !== 200) throw new Error("storing the picture failed (" + resp.status + ")");
         const data = await resp.json();
         const ref = { filename: data.name, subfolder: data.subfolder || SUBFOLDER, type: "input" };
+        const key = `${ref.type}/${ref.subfolder || ""}/${ref.filename}`;
         let report;
         try { report = await this.ensureRefs([ref]); } catch (err) { throw new Error(`Your ComfyUI did not take the picture: ${String((err && err.message) || err)}`); }
         if (report && report.missing && report.missing.length) throw new Error("Your ComfyUI did not take the picture.");
+        if (report && report.renamed && report.renamed[key]) ref.filename = report.renamed[key];
         return ref;
     },
 
@@ -5543,7 +5545,8 @@ export const host = {
         // an area of Each area stopped while its pictures went up: nothing is queued for it
         const areaStop = () => { if (area && typeof area.stopped === "function" && area.stopped()) throw Object.assign(new Error(AREA_STOPPED), { kind: "cancelled", statusKind: "info" }); };
         areaStop();
-        await this.ensureOnServer(state, editor);
+        const ensured = await this.ensureOnServer(state, editor);
+        if (ensured && typeof ensured.state === "string") state = ensured.state;
         const prompt = JSON.parse(JSON.stringify(r.prompt));
         const canvas = prompt[r.canvas];
         if (!canvas) throw new Error(`Recipe "${r.id}" has no canvas node "${r.canvas}".`);
@@ -5697,6 +5700,23 @@ export const host = {
         return refs;
     },
 
+    /** Rewrite base, mask, control and references in `stateJson` when `ensureOnServer` renamed plain refs on the server. */
+    rewriteStateRefs(stateJson, renamed) {
+        if (!renamed || !Object.keys(renamed).length) return stateJson;
+        const isStr = typeof stateJson === "string";
+        let s = null;
+        try { s = isStr ? JSON.parse(stateJson) : stateJson; } catch (_) { return stateJson; }
+        if (!s || typeof s !== "object") return stateJson;
+        const fix = (ref) => {
+            if (!ref || typeof ref.filename !== "string") return;
+            const k = `${ref.type || "input"}/${ref.subfolder || ""}/${ref.filename}`;
+            if (renamed[k]) ref.filename = renamed[k];
+        };
+        fix(s.base); fix(s.mask); fix(s.control);
+        for (const ref of s.references || []) fix(ref);
+        return isStr ? JSON.stringify(s) : s;
+    },
+
     /**
      * Files live in the local mirror (electron/main/files.js); the server only has copies.
      * Before a run, upload those it lacks (a fresh server, a restarted RunPod, a cleanup).
@@ -5707,6 +5727,10 @@ export const host = {
         const report = await this.ensureRefs(refs);
         if (report && report.uploaded.length && editor) editor.setStatus(`Uploaded ${report.uploaded.length} file${report.uploaded.length > 1 ? "s" : ""} to the server. Waiting for the result ...`);
         if (report && report.missing.length) throw new Error("These files are neither on the server nor in the local store: " + report.missing.join(", "));
+        if (report && report.renamed && Object.keys(report.renamed).length) {
+            const next = this.rewriteStateRefs(stateJson, report.renamed);
+            if (typeof next === "string") report.state = next;
+        }
         return report;
     },
 
@@ -5963,7 +5987,7 @@ export const host = {
     documentName(ed) {
         if (ed && ed.docFile && ed.docFile.name) return String(ed.docFile.name).replace(/\.scumble$/i, "");
         if (!ed || !ed.base || !ed.base.ref) return "Untitled";
-        return String(ed.base.ref.filename || "image").replace(/\.[a-z0-9]+$/i, "");
+        return String(ed.base.ref.filename || "image").replace(/\.[a-z0-9]+$/i, "").replace(/~[0-9a-f]{8,64}$/i, "");
     },
 
     /**
