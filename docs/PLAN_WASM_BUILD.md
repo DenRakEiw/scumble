@@ -1853,6 +1853,32 @@ nothing); full tier. `docs/measurements/k27_2026-11-08/` (`k27_chain.sh`, `summa
 - **What it leaves:** a tone or sponge move is mostly the rest of the dab (the box's read, `smudge_dab` twice, the
   write: 61 of 64 ms for tone 1000 px at fit); frequency separation's blur 580 of 716 ms.
 
+### K28 (2026-11-08): liquify's bake in Rust (the Antigravity B chain)
+
+By a Gemini agent in Antigravity (`.claude/coord/chain-b/`) on `7de75d7` (`c6bbbb7`, the review's 4 findings fixed in
+`9979f58`), merged `0ae12df` (ABI 24); `docs/measurements/k28_2026-11-08/`. `crates/px/src/resample.rs`: the tap sum
+`sample<const T: usize>` shared by `resample::run` (its bytes unchanged) and the new `resample::liquify` (s in
+{1, 2, 4, 8}, the (dx, dy) bilinear from the node grid's corners, the whole-pixel path copying all four bytes);
+`liquify_block` export; `px.js` `liquifyBlock`, `kernels.js` route `liquifyBlock` (the twin `inpaint_liquify.js`
+`liquifyBlock`), passed as `liquifyStore`'s ninth argument in `inpaint_worker.js`, `inpaint_tiles.js`,
+`inpaint_pixels.js`. Tests: px_test `liquify` (96 twin cases on both builds, colour under alpha 0 since the review),
+`retouchRoute`, the editor's liquify step (call counts, the js route replayed after an undo). Before -> after at 15k
+(three rounds, only the `liquifyBlock` route switched): the pool's liquify jobs about 1.7-1.9x faster on every row (a
+1000 px push at fit 350 -> 199 ms summed), a 200 px push at 1:1 lands 31 -> 19 ms. Mutation round in its folder.
+
+### K32 (2026-11-08): stitch's mask kernels in Rust (the Antigravity E chain)
+
+By a Gemini agent in Antigravity (`.claude/coord/chain-e/`) on `29f6749` (`15e2009`, the review's 4 findings fixed in
+`9bc125a`), merged `21b53a3` with the ABI renumbered 23 -> 25 and both builds rebuilt; `docs/measurements/k32_2026-11-08/`.
+`crates/px/src/maskf.rs` `alpha_to_mask`, `mask_max_clamp` (V8's Math.max / Math.min NaN and signed zero),
+`mask_one_minus`, `erode_mask` (one minus, `dilate`, one minus in one call), `mask_to_rgba` (white, luminance,
+alphaMask), `mask_bounds_f32`; twins in `kernels_js.js`, route `stitchMask`; `stitch.js` wired (`maskFromAlpha`,
+`maskMaxClamped`, `erode`, `maskToCanvas`, `selectionBbox`, `alphaMask`, `fillMasked`, `finishPixels`). The review
+checked every kernel expression by expression against the old `stitch.js`; `tools/stitch_test.js` now holds
+`fillMasked` and `finishPixels`' colour match against verbatim copies of the old loops (mutants killed on pixels).
+At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
+in the worker.
+
 The order from here (2026-11-08): the M chain (K21, K11, K22, K23, K25) and the E chain (K32, K33, K34, K35 on its
 split) by Antigravity agents, the liquify part of the B chain (K28, K29, K30, *Stop 6*, K31) likewise once K27 is
 merged (`.claude/coord/`, each branch reviewed and merged by the Claude main loop, the ABI renumbered at merge); then
