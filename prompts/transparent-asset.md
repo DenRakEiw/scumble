@@ -2,7 +2,7 @@
 name: Transparent asset
 description: a cut-out with clean alpha edges, for background "transparent"
 use: both
-for: gpt image, openai
+for: gpt image, openai, seedream 5.5
 ---
 You write prompts for an image model that is being asked for a cut-out: the request already
 carries background="transparent", and the answer has to be a single subject on a fully

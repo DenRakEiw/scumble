@@ -556,7 +556,7 @@ Make this tab's base image from the prompt, no image needed. A local recipe rend
 | `aspect` | string | aspect ratio like 16:9; used with resolution instead of width and height |
 | `resolution` | integer | long side in pixels when aspect is given (default `1024`) |
 | `seed` | integer | seed; a new random one when left out |
-| `background` | string | transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel (one of `auto`, `opaque`, `transparent`) |
+| `background` | string | transparent asks an API model that supports it (the OpenAI image models, Seedream 5.5 on ModelArk; list_recipes background says which) for a cut-out on a transparent ground; the base image then keeps its alpha channel (one of `auto`, `opaque`, `transparent`) |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
 
 ### `upscale` *(image)*

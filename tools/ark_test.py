@@ -7,14 +7,19 @@ accepts) and a test key stored under the name "ark". The key starts with "test-"
 to a loopback base, and any other key never to one.
 
 - ToAPIs stays first in Settings › API providers, ModelArk has its row with "get a key" and no balance query, the
-  two Seedream 5.0 recipes list "ark" right after "toapis" and keep fal as their default, and the provider select
-  says "(no key)" until a key is stored;
+  two Seedream 5.0 recipes list "ark" right after "toapis" and keep fal as their default, Seedream 5.5 lists "ark"
+  alone as its default, and the provider select says "(no key)" until a key is stored;
 - Seedream 5.0 Lite inpaints: one POST /api/v3/images/generations with the crop as image[0] (a PNG data URL of the
   emitted size), size "WxH" in the crop's shape inside the model's pixel range (at least 3,686,400), watermark false,
   response_format b64_json, output_format png, no mask, the key as a Bearer;
 - the Region row reaches the adapter: set to eu-west, the run still goes to the test base and the log says eu-west;
 - Seedream 5.0 Pro inpaints with its own model id and a size inside [921,600, 4,624,220];
 - Generate new asks for 2560x1440 without a picture and gets a 16:9 base of that size;
+- Seedream 5.5 (early access) inpaints with its own model id, a size inside [921,600, 4,624,220] and its Background
+  row: on Auto no `background` goes and the layer is opaque; set to Transparent, `background: "transparent"` and png
+  go, the mock answers a disc on a transparent ground, and the result layer keeps that alpha inside the selection
+  (opaque in the middle, transparent beside the disc) and the status line says cut-out; Generate new with
+  `background: "transparent"` gets a base with the same alpha;
 - a QuotaExceeded puts "free quota" and the server's words in the status line and the log, never the key, and is
   not sent again; a ModelAccountIpmRateLimitExceeded is sent once more after Retry-After; a ModelNotOpen says the
   model is not activated;
@@ -45,8 +50,9 @@ KEY = "test-ark-gate-0123456789"
 REAL_KEY = "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0"   # the shape of a ModelArk API key (a UUID); never a real one
 LABEL = "BytePlus ModelArk (Seedream)"
 KEY_URL = "https://ai.byteplus.com/ark/region:ap-southeast-1/apiKey"
-LITE, PRO = "seedream-5-0-260128", "dola-seedream-5-0-pro-260628"
+LITE, PRO, S55 = "seedream-5-0-260128", "dola-seedream-5-0-pro-260628", "dola-seedream-5-5-261028"
 LITE_PIXELS, PRO_PIXELS = (3686400, 16777216), (921600, 4624220)
+S55_PIXELS = PRO_PIXELS   # Seedream 5.5's range is 5.0 pro's (BytePlus's preview docs, 2026-11-08)
 BODY_KEYS = {"model", "prompt", "image", "size", "watermark", "response_format", "output_format"}
 # refs.instruction under the Seedream recipes' refs.name "Image {n}": the crop is Image 1
 EDIT_PREFIX = "Edit Image 1 and keep its size and framing."
@@ -107,14 +113,21 @@ const remembered = (await window.scumble.settings.get()).recipeProviders || {};
 const rl = await run("list_recipes");
 const withArk = rl.recipes.filter((r) => (r.providers || []).includes("ark"));
 const ids = withArk.map((r) => r.id).sort();
-if (JSON.stringify(ids) !== JSON.stringify(["seedream_5_lite", "seedream_5_pro"])) throw new Error("recipes that list ark: " + ids.join(", "));
+if (JSON.stringify(ids) !== JSON.stringify(["seedream_5_5", "seedream_5_lite", "seedream_5_pro"])) throw new Error("recipes that list ark: " + ids.join(", "));
+// Seedream 5.5 (early access) runs on ModelArk alone; the 5.0 recipes keep fal as their default
+const ONLY = "seedream_5_5";
 const order = {};
 for (const r of withArk) {
-    const i = r.providers.indexOf("toapis");
-    if (i < 0 || r.providers[i + 1] !== "ark") throw new Error(r.id + ": ark does not come right after toapis: " + r.providers.join(", "));
-    if (!remembered[r.id] && r.provider !== "fal") throw new Error(r.id + ": the default moved to " + r.provider);
     const raw = host.shell.recipes().find((x) => x.id === r.id);
-    if (raw.default !== "fal") throw new Error(r.id + ": the file's default is " + raw.default);
+    if (r.id === ONLY) {
+        if (JSON.stringify(r.providers) !== JSON.stringify(["ark"]) || r.provider !== "ark" || raw.default !== "ark") throw new Error(r.id + ": providers " + r.providers.join(", ") + ", provider " + r.provider + ", the file's default " + raw.default);
+        if (r.background !== true) throw new Error(r.id + ": list_recipes says background " + r.background);
+    } else {
+        const i = r.providers.indexOf("toapis");
+        if (i < 0 || r.providers[i + 1] !== "ark") throw new Error(r.id + ": ark does not come right after toapis: " + r.providers.join(", "));
+        if (!remembered[r.id] && r.provider !== "fal") throw new Error(r.id + ": the default moved to " + r.provider);
+        if (raw.default !== "fal") throw new Error(r.id + ": the file's default is " + raw.default);
+    }
     order[r.id] = r.providers.join(",");
 }
 await shell.openSettings();
@@ -129,7 +142,7 @@ try {
         if (!sel) throw new Error("no provider select for " + id);
         const values = Array.from(sel.options).map((o) => o.value);
         const i = values.indexOf("ark");
-        if (i < 0 || values[i - 1] !== "toapis") throw new Error(id + ": the select's options are " + values.join(", "));
+        if (id === ONLY ? JSON.stringify(values) !== JSON.stringify(["ark"]) : (i < 0 || values[i - 1] !== "toapis")) throw new Error(id + ": the select's options are " + values.join(", "));
         options[id] = sel.options[i].textContent;
         if (options[id] !== __LABEL__ + " (no key)") throw new Error(id + ": the ark option reads " + options[id]);
     }
@@ -155,25 +168,51 @@ if (label !== __LABEL__) throw new Error("with a key the option reads " + label)
 return { keyRow: text.slice(0, 90), option: label };
 """
 
-# select_recipe through the commands core, the Region row through set_settings (null: leave it), then a Generate on
-# the document's selection; the size the crop is emitted at is computed beforehand by the same function the run uses
+# select_recipe through the commands core, the settings rows through set_settings (__VALUES__, by label; null: leave
+# them), then a Generate on the document's selection; the size the crop is emitted at is computed beforehand by the
+# same function the run uses. __FLAT__: no context and no feather for the run (put back after it), so the result layer
+# is exactly the selection and its alpha at a point says what the answer's alpha was there (tools/transparent_test.py);
+# `alpha` samples the result layer at the selection's middle and 20 px inside its left edge, on the middle row
 EDIT = """
 const ed = await fresh();
 const sel = await run("select_recipe", { id: __ID__, provider: "ark" });
 const r = host.recipe;
 if (!r || r.id !== __ID__ || r.provider !== "ark" || r.model !== __MODEL__) throw new Error("select_recipe gave " + JSON.stringify(sel) + " / " + (r && [r.id, r.provider, r.model].join(" ")));
-const region = __REGION__;
-if (region) await run("set_settings", { doc: window.__arkDoc, values: { Region: region } });
+const values = __VALUES__;
+if (values) await run("set_settings", { doc: window.__arkDoc, values });
 const targets = host.settingTargets(ed).map((t) => ({ index: t.index, label: t.node.title, key: t.inputName, choices: Array.isArray(t.spec && t.spec[0]) ? t.spec[0] : null, value: (ed.settings[String(t.index)] || {}).value }));
-const stitch = await import("./editor/stitch.js");
-const info = stitch.prepareCrop(ed, host.nodeParams, host.cropLimits()).info;
-const params = host.providerParams(ed);
-const mark = await logMark();
-const before = ed.layers.length;
-const out = await run("generate", { doc: window.__arkDoc, timeout: 120 });
+const flat = __FLAT__;
+const keep = flat ? { params: { ...host.nodeParams }, crop: { ...ed.cropSettings } } : null;
+let info, params, mark, out, before;
+try {
+    if (flat) { host.nodeParams.padding = 0; host.nodeParams.feather = 0; ed.cropSettings.context = 0; ed.cropSettings.feather = 0; }
+    const stitch = await import("./editor/stitch.js");
+    info = stitch.prepareCrop(ed, host.nodeParams, host.cropLimits()).info;
+    params = host.providerParams(ed);
+    mark = await logMark();
+    before = ed.layers.length;
+    out = await run("generate", { doc: window.__arkDoc, timeout: 120 });
+} finally {
+    if (keep) { Object.assign(host.nodeParams, keep.params); Object.assign(ed.cropSettings, keep.crop); }
+}
 if (ed.layers.length !== before + 1) throw new Error("no result layer: " + ed.status);
 const log = (await logSince(mark)).filter((e) => e.source === "ark");
-return { emitted: info.emitted, bbox: info.bbox, input: r.input, limits: r.limits, status: ed.status, params, targets, log, layer: out && out.layer ? [out.layer.width, out.layer.height] : null };
+const l = ed.layers.find((x) => out && out.layer && x.id === out.layer.id) || ed.layers[ed.layers.length - 1];
+const at = (dx, dy) => {
+    const px = l.px;
+    const lx = Math.min(px.width - 1, Math.max(0, Math.floor((dx - l.x) * px.width / l.w)));
+    const ly = Math.min(px.height - 1, Math.max(0, Math.floor((dy - l.y) * px.height / l.h)));
+    return px.readRect(lx, ly, 1, 1).data[3];
+};
+const [sx, sy, sw, sh] = info.bbox;
+const alpha = { middle: at(sx + sw / 2, sy + sh / 2), beside: at(sx + 20, sy + sh / 2), layer: [l.x, l.y, l.w, l.h], disc: Math.min(l.w, l.h) / 4, besideFromMiddle: sw / 2 - 20 };
+return { emitted: info.emitted, bbox: info.bbox, input: r.input, limits: r.limits, status: ed.status, params, targets, log, layer: out && out.layer ? [out.layer.w, out.layer.h] : null, alpha };
+"""
+
+BACKGROUND_BACK = """
+const ed = ednow(window.__arkDoc);
+await run("set_settings", { doc: window.__arkDoc, values: { Background: "auto" } });
+return { background: host.providerParams(ed).background };
 """
 
 REGION_BACK = """
@@ -182,16 +221,21 @@ await run("set_settings", { doc: window.__arkDoc, values: { Region: "ap-southeas
 return { region: host.providerParams(ed).region };
 """
 
+# __BG__: generate_new's background (null: none); `alpha` reads the new base's corner and middle
 GENERATE_NEW = """
 const ed = ednow(window.__arkDoc);
 host.shell.activate(ed);
-await run("select_recipe", { id: "seedream_5_lite", provider: "ark" });
+await run("select_recipe", { id: __ID__, provider: "ark" });
 const t = host.recipe.text;
 if (!t || t.model !== __MODEL__) throw new Error("the ModelArk variant's text shape: " + JSON.stringify(t));
 const mark = await logMark();
-const out = await run("generate_new", { doc: window.__arkDoc, prompt: __TEXT__, aspect: "16:9", resolution: __LONG__, timeout: 120 });
+const bg = __BG__;
+const out = await run("generate_new", { doc: window.__arkDoc, prompt: __TEXT__, aspect: "16:9", resolution: __LONG__, timeout: 120, ...(bg ? { background: bg } : {}) });
 const log = (await logSince(mark)).filter((e) => e.source === "ark");
-return { size: [ed.width, ed.height], model: out.model, status: ed.status, sizes: t.sizes, log };
+const c = ed.flattenToCanvas({ forRun: true });
+const g = c.getContext("2d", { willReadFrequently: true });
+const alpha = { corner: g.getImageData(2, 2, 1, 1).data[3], middle: g.getImageData(c.width >> 1, c.height >> 1, 1, 1).data[3] };
+return { size: [ed.width, ed.height], model: out.model, transparent: !!out.transparent, status: ed.status, sizes: t.sizes, log, alpha };
 """
 
 # a synthetic variant of the shipped Seedream 5.0 Lite one, resolved like a recipe
@@ -316,8 +360,9 @@ def check_key_absent(texts, what):
             raise Exception("a key is in %s" % what)
 
 
-def check_edit(mock, res, model, pixels, region):
-    """One POST with the crop as image[0] and the request shape of ark.js; the log line names the region."""
+def check_edit(mock, res, model, pixels, region, background=None):
+    """One POST with the crop as image[0] and the request shape of ark.js; the log line names the region.
+    `background`: the value the body must carry (None: the body has no such field)."""
     snap = mock.snapshot()
     posts = image_posts(snap)
     if len(posts) != 1 or len(snap["images"]) != 1 or len(snap["calls"]) != 1:
@@ -343,7 +388,9 @@ def check_edit(mock, res, model, pixels, region):
         raise Exception("size %s is not the crop's shape (%dx%d)" % (b["size"], ew, eh))
     if b.get("watermark") is not False or b.get("response_format") != "b64_json" or b.get("output_format") != "png":
         raise Exception("watermark / response_format / output_format: %s" % json.dumps({k: b.get(k) for k in ("watermark", "response_format", "output_format")}))
-    extra = sorted(set(b) - BODY_KEYS - {"image_type"})
+    if b.get("background") != background:
+        raise Exception("background %r, wanted %r" % (b.get("background"), background))
+    extra = sorted(set(b) - BODY_KEYS - {"image_type"} - ({"background"} if background else set()))
     if extra:
         raise Exception("fields ark.js does not send (a mask among them?): %s" % extra)
     prompt = str(b.get("prompt") or "")
@@ -357,14 +404,14 @@ def check_edit(mock, res, model, pixels, region):
     if not str(posts[0]["headers"].get("content-type") or "").startswith("application/json"):
         raise Exception("Content-Type %r" % posts[0]["headers"].get("content-type"))
     entry, info = ok_entry(res, "edit")
-    if info.get("region") != region or info.get("size") != b["size"] or info.get("model") != model:
-        raise Exception("the log line's info: %s (wanted region %s, size %s)" % (info, region, b["size"]))
+    if info.get("region") != region or info.get("size") != b["size"] or info.get("model") != model or info.get("background") != background:
+        raise Exception("the log line's info: %s (wanted region %s, size %s, background %s)" % (info, region, b["size"], background))
     check_key_absent([json.dumps(res["log"]), res["status"]], "the log or the status line")
     return {"crop": [ew, eh], "size": b["size"], "same_as_crop": [w, h] == [ew, eh], "pictures": len(refs), "region": info.get("region"),
             "params": res["params"], "log": entry.get("message"), "status": res["status"][:120]}
 
 
-def check_text(mock, res, want_size):
+def check_text(mock, res, want_size, model=LITE, background=None):
     snap = mock.snapshot()
     posts = image_posts(snap)
     if len(posts) != 1 or len(snap["calls"]) != 1:
@@ -372,11 +419,13 @@ def check_text(mock, res, want_size):
     b = snap["images"][0]["body"]
     if "image" in b or snap["images"][0]["refs"]:
         raise Exception("a text request carried pictures")
-    if b.get("model") != LITE or b.get("size") != want_size or b.get("prompt") != TEXT_PROMPT:
+    if b.get("model") != model or b.get("size") != want_size or b.get("prompt") != TEXT_PROMPT:
         raise Exception("the text request: %s" % json.dumps(b))
     if b.get("watermark") is not False or b.get("response_format") != "b64_json" or b.get("output_format") != "png":
         raise Exception("watermark / response_format / output_format: %s" % json.dumps(b))
-    extra = sorted(set(b) - BODY_KEYS)
+    if b.get("background") != background:
+        raise Exception("background %r, wanted %r" % (b.get("background"), background))
+    extra = sorted(set(b) - BODY_KEYS - ({"background"} if background else set()))
     if extra:
         raise Exception("fields ark.js does not send: %s" % extra)
     if posts[0]["auth"] != "Bearer " + KEY:
@@ -452,7 +501,7 @@ async def run_all(c):
         # 2. edits and Generate new
         async def lite():
             mock.reset()
-            res = await ev(EDIT, __ID__=json.dumps("seedream_5_lite"), __MODEL__=json.dumps(LITE), __REGION__="null")
+            res = await ev(EDIT, __ID__=json.dumps("seedream_5_lite"), __MODEL__=json.dumps(LITE), __VALUES__="null", __FLAT__="false")
             if res["input"] != "edit":
                 raise Exception("the Seedream 5.0 Lite variant's input is %s" % res["input"])
             region = [t for t in res["targets"] if t["key"] == "region"]
@@ -467,7 +516,7 @@ async def run_all(c):
         async def region():
             mock.reset()
             try:
-                res = await ev(EDIT, __ID__=json.dumps("seedream_5_lite"), __MODEL__=json.dumps(LITE), __REGION__=json.dumps("eu-west"))
+                res = await ev(EDIT, __ID__=json.dumps("seedream_5_lite"), __MODEL__=json.dumps(LITE), __VALUES__=json.dumps({"Region": "eu-west"}), __FLAT__="false")
             finally:
                 back = await ev(REGION_BACK)
             if res["params"].get("region") != "eu-west":
@@ -480,17 +529,72 @@ async def run_all(c):
 
         async def pro():
             mock.reset()
-            res = await ev(EDIT, __ID__=json.dumps("seedream_5_pro"), __MODEL__=json.dumps(PRO), __REGION__="null")
+            res = await ev(EDIT, __ID__=json.dumps("seedream_5_pro"), __MODEL__=json.dumps(PRO), __VALUES__="null", __FLAT__="false")
             if res["input"] != "edit" or res["targets"]:
                 raise Exception("the Seedream 5.0 Pro variant: input %s, settings %s" % (res["input"], res["targets"]))
             done("edit_on_seedream_5_pro", check_edit(mock, res, PRO, PRO_PIXELS, "ap-southeast"))
         await step("edit_on_seedream_5_pro", pro)
 
+        # Seedream 5.5 (early access): its Background row, Auto then Transparent on the same selection (before the
+        # Generate new steps, which leave the document's prompt at theirs), and a transparent Generate new
+        def background_row(res):
+            rows = [t for t in res["targets"] if t["key"] == "background"]
+            if len(res["targets"]) != 1 or len(rows) != 1 or rows[0]["label"] != "Background" or rows[0]["choices"] != ["auto", "transparent", "opaque"]:
+                raise Exception("the Seedream 5.5 settings rows: %s" % res["targets"])
+            return rows[0]
+
+        async def s55_auto():
+            mock.reset()
+            res = await ev(EDIT, __ID__=json.dumps("seedream_5_5"), __MODEL__=json.dumps(S55), __VALUES__="null", __FLAT__="true")
+            if res["input"] != "edit" or background_row(res)["value"] != "auto":
+                raise Exception("the Seedream 5.5 variant: input %s, rows %s" % (res["input"], res["targets"]))
+            out = check_edit(mock, res, S55, S55_PIXELS, "ap-southeast")
+            a = res["alpha"]
+            # the mock echoes the crop (opaque): the layer is opaque inside the selection, at both points
+            if a["middle"] < 250 or a["beside"] < 250:
+                raise Exception("an Auto run should land opaque inside the selection: %s" % a)
+            if "cut-out" in res["status"]:
+                raise Exception("an Auto run speaks of a cut-out: %s" % res["status"][:200])
+            done("edit_on_seedream_5_5_background_auto", {**out, "alpha": a})
+        await step("edit_on_seedream_5_5_background_auto", s55_auto)
+
+        async def s55_transparent():
+            mock.reset()
+            try:
+                res = await ev(EDIT, __ID__=json.dumps("seedream_5_5"), __MODEL__=json.dumps(S55), __VALUES__=json.dumps({"Background": "transparent"}), __FLAT__="true")
+            finally:
+                back = await ev(BACKGROUND_BACK)
+            if res["params"].get("background") != "transparent" or background_row(res)["value"] != "transparent":
+                raise Exception("the Background row did not reach the run: %s / %s" % (res["params"], res["targets"]))
+            out = check_edit(mock, res, S55, S55_PIXELS, "ap-southeast", background="transparent")
+            a = res["alpha"]
+            if a["besideFromMiddle"] < 1.3 * a["disc"]:
+                raise Exception("the point beside the disc lies on it, the step proves nothing: %s" % a)
+            # the answer's own alpha inside the selection: the disc opaque, its ground transparent
+            if a["middle"] < 250 or a["beside"] != 0:
+                raise Exception("the transparent answer's alpha did not survive the landing: %s" % a)
+            if "cut-out on a transparent ground" not in res["status"]:
+                raise Exception("the status line says nothing about the cut-out: %s" % res["status"][:220])
+            if back.get("background") != "auto":
+                raise Exception("the Background row did not go back: %s" % back)
+            done("edit_on_seedream_5_5_background_transparent", {**out, "alpha": a})
+        await step("edit_on_seedream_5_5_background_transparent", s55_transparent)
+
         async def text():
             mock.reset()
-            res = await ev(GENERATE_NEW, __MODEL__=json.dumps(LITE), __TEXT__=json.dumps(TEXT_PROMPT), __LONG__="2560")
+            res = await ev(GENERATE_NEW, __ID__=json.dumps("seedream_5_lite"), __MODEL__=json.dumps(LITE), __TEXT__=json.dumps(TEXT_PROMPT), __LONG__="2560", __BG__="null")
             done("generate_new_on_ark", {**check_text(mock, res, "2560x1440"), "sizes": res["sizes"]})
         await step("generate_new_on_ark", text)
+
+        async def s55_text():
+            mock.reset()
+            res = await ev(GENERATE_NEW, __ID__=json.dumps("seedream_5_5"), __MODEL__=json.dumps(S55), __TEXT__=json.dumps(TEXT_PROMPT), __LONG__="1280", __BG__=json.dumps("transparent"))
+            out = check_text(mock, res, "1280x720", model=S55, background="transparent")
+            a = res["alpha"]
+            if not res["transparent"] or a["corner"] != 0 or a["middle"] < 250:
+                raise Exception("the new base should be a disc on a transparent ground: transparent %s, alpha %s" % (res["transparent"], a))
+            done("generate_new_on_seedream_5_5_transparent", {**out, "sizes": res["sizes"], "alpha": a, "status": res["status"][:160]})
+        await step("generate_new_on_seedream_5_5_transparent", s55_text)
 
         # 3. failures
         async def quota():

@@ -1,0 +1,61 @@
+{
+  "id": "seedream_5_5",
+  "kind": "provider",
+  "name": "Seedream 5.5",
+  "family": "ByteDance",
+  "refs": { "name": "Image {n}" },
+  "description": "ByteDance's Seedream 5.5, 1K to 2K, with a transparent background on request. Early access: BytePlus ModelArk (ByteDance's own API) only, and only for accounts BytePlus has let in; activate the model in the ModelArk console under Model activation first (BytePlus may have to allow-list the account). Adapter written from the provider's preview docs, not run against the live API yet.",
+  "default": "ark",
+  "providers": {
+    "ark": {
+      "model": "dola-seedream-5-5-261028",
+      "input": "edit",
+      "options": {
+        "pixels": [
+          921600,
+          4624220
+        ],
+        "max_images": 10,
+        "png": true,
+        "background": true,
+        "early_access": true,
+        "regions": [
+          "ap-southeast"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "transparent",
+              "opaque"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 4096,
+        "step": 16,
+        "pixels": 4624220,
+        "minPixels": 921600,
+        "ratio": 16
+      },
+      "text": {
+        "sizes": [
+          1280,
+          1536,
+          2048
+        ],
+        "refs": {}
+      },
+      "note": "Runs on BytePlus ModelArk, ByteDance's own API for Seedream; not run against the live API yet (written from BytePlus's preview docs for early-access customers). Seedream 5.5 is in early access: the account must be let in by BytePlus, and the model activated in the ModelArk console under Model activation; a key works only in the region it was made in. The pictures go inline in the request to BytePlus in Johor, Malaysia, which may route a request to its other region; BytePlus names data centres in Malaysia, Indonesia and the EU/EEA for its processing, keeps what its content filter flags for 180 days in Malaysia (its filter page says Malaysia or Singapore), and uses nothing for training without consent. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The answer is the crop's own shape at a pixel size inside the model's range (0.92 to 4.6 megapixels), as PNG, without a watermark. Background Transparent asks for a cut-out on a transparent ground (an edit and Generate new): the result layer keeps the answer's alpha inside the selection, and its colour is not matched; say it in the prompt as well. At most ten pictures go in (the crop, Original and the reference layers), none steeper than 16:1. The Johor region only. The price is not on BytePlus's public price list yet."
+    }
+  }
+}
