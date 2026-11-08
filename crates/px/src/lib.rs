@@ -48,11 +48,11 @@ fn align_for(bytes: usize) -> usize {
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
-/// 30: edgefit_shrink, warp_rgba, warp_coverage);
+/// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: range_tiles_depth);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    30
+    31
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -870,4 +870,124 @@ pub unsafe extern "C" fn map_tile_stats(
         slice::from_raw_parts_mut(edge_out, cols),
     )
 }
+
+/// Evaluates the `"compute"`-class tiles (`classes[tx] == 2`) of one document tile row `ty` (`[y0, y1)` clipped to
+/// `[ty * tile, min((ty + 1) * tile, h))`) over a `wh`-row window of `map` (and optional `guide`) starting at map row
+/// `wy0`, plus optional `pic` (`pic_w` x `pic_h` RGBA8 at `(pic_x0, pic_y0)`).
+/// `params` holds 12 `f64`s: `[m0, m1, m2, m3, m4, m5, lo, hi, f_lo, f_hi, sigma_r, tau]`.
+/// `flags`: bit 0 = `limit.invert`, bit 1 = `job_invert`.
+/// Writes each partial tile's `tile * tile` alpha bytes sequentially into `alpha_out`, writes per-column status into
+/// `status_out` (`0` = empty/skipped, `1` = partial in next slot of `alpha_out`, `2` = full), and writes
+/// `[alpha_sum, b_x0, b_y0, b_x1, b_y1]` into `info_out` (`b_x0 = -1.0` when no compute tile has non-zero alpha).
+/// Returns `1` on success, `0` when refused.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn range_tiles_depth(
+    map: *const u16,
+    guide: *const u8,
+    pic: *const u8,
+    mw: usize,
+    mh: usize,
+    wy0: usize,
+    wh: usize,
+    pic_x0: usize,
+    pic_y0: usize,
+    pic_w: usize,
+    pic_h: usize,
+    w: usize,
+    h: usize,
+    ty: usize,
+    y0: usize,
+    y1: usize,
+    tile: usize,
+    classes: *const u8,
+    params: *const f64,
+    flags: u32,
+    alpha_out: *mut u8,
+    status_out: *mut u8,
+    info_out: *mut f64,
+) -> u32 {
+    if map.is_null()
+        || classes.is_null()
+        || params.is_null()
+        || status_out.is_null()
+        || info_out.is_null()
+        || mw == 0
+        || mh == 0
+        || wh == 0
+        || wy0 >= mh
+        || wy0.saturating_add(wh) > mh
+        || w == 0
+        || h == 0
+        || tile == 0
+        || tile > 4096
+        || y0 >= y1
+    {
+        return 0;
+    }
+    let Some(win_len) = wh.checked_mul(mw) else { return 0 };
+    let Some(tile_bytes) = tile.checked_mul(tile) else { return 0 };
+    let cols = (w - 1) / tile + 1;
+    let p_slice = slice::from_raw_parts(params, 12);
+    if p_slice.iter().any(|x| !x.is_finite()) {
+        return 0;
+    }
+    let mut p = [0.0f64; 12];
+    p.copy_from_slice(p_slice);
+
+    let cls = slice::from_raw_parts(classes, cols);
+    let n_compute = cls.iter().filter(|&&c| c == 2).count();
+    let Some(alpha_len) = n_compute.checked_mul(tile_bytes) else { return 0 };
+    if alpha_len > 0 && alpha_out.is_null() {
+        return 0;
+    }
+
+    let map_slice = slice::from_raw_parts(map, win_len);
+    let guide_slice = if guide.is_null() {
+        None
+    } else {
+        let Some(guide_len) = win_len.checked_mul(4) else { return 0 };
+        Some(slice::from_raw_parts(guide, guide_len))
+    };
+    let pic_slice = if pic.is_null() || pic_w == 0 || pic_h == 0 {
+        None
+    } else {
+        let Some(pic_len) = pic_w.checked_mul(pic_h).and_then(|n| n.checked_mul(4)) else { return 0 };
+        Some(slice::from_raw_parts(pic, pic_len))
+    };
+    let alpha_slice = if alpha_len == 0 {
+        &mut [][..]
+    } else {
+        slice::from_raw_parts_mut(alpha_out, alpha_len)
+    };
+    let status_slice = slice::from_raw_parts_mut(status_out, cols);
+    let info_slice = slice::from_raw_parts_mut(info_out, 5);
+
+    range::range_tiles_depth(
+        map_slice,
+        guide_slice,
+        pic_slice,
+        mw,
+        mh,
+        wy0,
+        wh,
+        pic_x0,
+        pic_y0,
+        pic_w,
+        pic_h,
+        w,
+        h,
+        ty,
+        y0,
+        y1,
+        tile,
+        cls,
+        &p,
+        flags,
+        alpha_slice,
+        status_slice,
+        info_slice,
+    )
+}
+
 

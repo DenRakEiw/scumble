@@ -51,15 +51,20 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * `liquifyBlock`, `previewBlock`). `stitchMask` (K32): the mask kernels of
  * stitch.js (`alphaToMask`, `maskMaxClamp`, `maskOneMinus`, `erodeMask`, `maskToRgba`, `maskBoundsF32`).
  * `colorMatch` and `blendAlpha` (K33): `colorMatchRgba` and `blendAlpha` of stitch.js. `edgefit`, `edgefitShrink`,
- * `warpRgba` and `warpCoverage` (K34): `edgefitShrink`, `warpRgba` and `warpCoverage` of edgefit.js.
+ * `warpRgba` and `warpCoverage` (K34): `edgefitShrink`, `warpRgba` and `warpCoverage` of edgefit.js. `mapTileStats`
+ * (K21), `rangeDepth` and `rangeDepthSnap` (K22): `mapTileStats` and `rangeTilesDepth` (plain bilinear tiles and
+ * joint-bilateral snapped tiles).
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
 // keepMB 16 (K1b, docs/measurements/k1b_2026-10-23/run2/summary.txt): re-growing an instance costs about 0.07 ms per MB
 // (M7a: 9.1 ms at 128 MB, below the wand row's spread of 16.5-38.3 ms), and after a 15k export the pool keeps 11.7 MB
 // instead of 288 MB (M7b). No flood or mips entry: Rust won every A/B of M1-M4 (the flood ladder from a 0.26 MP box up).
+// No rangeDepth or rangeDepthSnap entry (K22, docs/measurements/k22_2026-11-08/summary.txt): at 15000x10000 Rust won
+// range_depth (172.1 vs 366.1 ms wall, spread 30.7; worker job 973.2 vs 1815.4 ms) and rangeDepthSnap=js:rust on
+// range_depth_snap (1120.8 vs 1736.3 ms wall, spread 457.1; worker job 1702.4 vs 2902.8 ms).
 const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16 });
 
 const TAKES = { kernel: '"js" or "rust"', kernelSize: '"js", "rust" or a number of pixels >= 0', mb: "a number of MB >= 0 or Infinity", count: "a whole number >= 0" };
@@ -852,5 +857,93 @@ export function mapTileStats(map, rmax, mw, mh, xf, W, H, thresh = 0, tile = 256
         finally { releaseIfLarge(); }
     }
     return J.mapTileStats(map, rmax, mw, mh, xf, W, H, thresh, tile);
+}
+
+/**
+ * Evaluates the `"compute"`-class tiles of one document tile row `ty` over a depth map and optional joint-bilateral
+ * snap (K22, docs/PLAN_WASM_BUILD.md §4.8): plain bilinear tiles routed by `rangeDepth`, snapped tiles (those meeting
+ * `pic` when `sigmaR > 0`, `guide`, and `pic` are given) routed by `rangeDepthSnap`. Where one route is `"rust"` and
+ * the other is `"js"`, the row's compute classes split between `p.rangeTilesDepth` and `J.rangeTilesDepth` and merge in
+ * column order.
+ */
+export function rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert = false, snap = null, guide = null, pic = null, classes = null, tile = 256) {
+    const sigmaR = Array.isArray(snap) && snap.length >= 2 ? +snap[0] || 0 : 0;
+    const gBytes = guide && (guide.data || guide);
+    const pBytes = pic && pic.data;
+    const snapActive = !!(sigmaR > 0 && gBytes && pBytes && (pic.w | 0) > 0 && (pic.h | 0) > 0);
+    const pPlain = rustPx("rangeDepth");
+    const pSnap = snapActive ? rustPx("rangeDepthSnap") : pPlain;
+
+    if (pPlain && pSnap) {
+        try {
+            const out = pPlain.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert, snap, guide, pic, classes, tile);
+            if (out) return out;
+        } catch (err) {
+            if (!recovered(pPlain, err, "range_tiles_depth")) throw err;
+        } finally { releaseIfLarge(); }
+        return J.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert, snap, guide, pic, classes, tile);
+    }
+
+    if (!pPlain && !pSnap) {
+        return J.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert, snap, guide, pic, classes, tile);
+    }
+
+    // Split routing: plain bilinear tiles on one side (`rangeDepth`) and snapped tiles on the other (`rangeDepthSnap`).
+    if (!(W > 0 && H > 0 && tile > 0)) {
+        return J.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert, snap, guide, pic, classes, tile);
+    }
+    const cols = Math.ceil(W / tile);
+    const tileY0 = ty * tile, tileY1 = Math.min(tileY0 + tile, H);
+    const ry0 = Math.max(tileY0, y0), ry1 = Math.min(tileY1, y1);
+    const picX0 = pic.x0 | 0, picY0 = pic.y0 | 0;
+    const picX1 = picX0 + (pic.w | 0), picY1 = picY0 + (pic.h | 0);
+    const yOverlaps = ry0 < picY1 && ry1 > picY0;
+    const plainClasses = new Uint8Array(cols);
+    const snapClasses = new Uint8Array(cols);
+    let hasPlain = false, hasSnap = false;
+    for (let tx = 0; tx < cols; tx++) {
+        const cls = classes ? classes[tx] : 2;
+        if (cls !== 2 && cls !== "compute") continue;
+        const tileX0 = tx * tile, tileX1 = Math.min(tileX0 + tile, W);
+        if (yOverlaps && tileX0 < picX1 && tileX1 > picX0) {
+            snapClasses[tx] = 2;
+            hasSnap = true;
+        } else {
+            plainClasses[tx] = 2;
+            hasPlain = true;
+        }
+    }
+
+    const runSide = (p, cls, withSnap) => {
+        const s = withSnap ? snap : null, g = withSnap ? guide : null, pc = withSnap ? pic : null;
+        if (p) {
+            try {
+                const out = p.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert, s, g, pc, cls, tile);
+                if (out) return out;
+            } catch (err) {
+                if (!recovered(p, err, "range_tiles_depth")) throw err;
+            } finally { releaseIfLarge(); }
+        }
+        return J.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert, s, g, pc, cls, tile);
+    };
+
+    if (!hasSnap) return runSide(pPlain, plainClasses, false);
+    if (!hasPlain) return runSide(pSnap, snapClasses, true);
+
+    const rPlain = runSide(pPlain, plainClasses, false);
+    const rSnap = runSide(pSnap, snapClasses, true);
+    const tiles = [...rPlain.tiles, ...rSnap.tiles].sort((a, b) => a.tx - b.tx);
+    let bounds = null;
+    if (rPlain.bounds && rSnap.bounds) {
+        bounds = [
+            Math.min(rPlain.bounds[0], rSnap.bounds[0]),
+            Math.min(rPlain.bounds[1], rSnap.bounds[1]),
+            Math.max(rPlain.bounds[2], rSnap.bounds[2]),
+            Math.max(rPlain.bounds[3], rSnap.bounds[3]),
+        ];
+    } else {
+        bounds = rPlain.bounds || rSnap.bounds;
+    }
+    return { tiles, bounds, alphaSum: (rPlain.alphaSum || 0) + (rSnap.alphaSum || 0) };
 }
 

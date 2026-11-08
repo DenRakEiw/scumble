@@ -1,0 +1,13 @@
+-- 15000x10000 (150.0 MP), 1 rounds ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  arms: the "js" column rangeDepthSnap=js, the "rust" column rangeDepthSnap=rust
+  range_depth_snap kernel js   2822.6  rust   1702.4  (1.66x) | worker job js   2822.6  rust   1702.4  (1.66x) | wall js   1767.9  rust   1120.8  (1.58x)  1718 partial tiles in 40 jobs, selectRange's ms js 1767.6 / rust 1120.7, 513 edge tiles
+                   parts js/rust: ms 2822.6/1702.4  rmax 44.7/45.8  edges 5.3/6.7
+                   marks js/rust: edges 0.2/0.3  posted 1188.2/898.7  combined 538.3/216.2  done 41.1/5.5  total 1767.7/1120.7; read 1186.1/896.2  combine 104.7/103.2  (rust: source "depth", mode "replace", snap true, pictureTiles 652, jobs 40, tiles 1718, pct 57)
+                   px calls js: window mip_chain 80, sel_combine 698; jobs range_tiles_depth 34 | rust: window mip_chain 64, sel_combine 698; jobs range_tiles_depth 40
+                   split js/rust: job 2823.5/1703.4  copyIn 7.2/40.8 (82.6/285.6 MB, shared 39.6/242.6 MB)  copyOut 44.3/47.1 (200.5/223.5 MB)  alloc 0.0/2.4  grew MB 0.0/19.1  bytes0 MB 22/22 (window 45/45)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {mip_chain 3.4, range_tiles_depth 411.8, sel_combine 19.4} rust {mip_chain 2.8, range_tiles_depth 1642.7, sel_combine 20.7}  first js {} rust {}  queue 20680.3/14070.4  trip 11851.7/7697.5  workers 8/8
+  instances renewed over the rows: {release 0, idle 0, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 10 threads read: 0
+
+PASS

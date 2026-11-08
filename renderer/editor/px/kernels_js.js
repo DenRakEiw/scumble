@@ -2220,3 +2220,239 @@ export function mapTileStats(map, rmax, mw, mh, xf, W, H, thresh = 0, tile = 256
     return { min, max, edge, cols, rows };
 }
 
+function rangeSstep(a, b, x) {
+    if (b <= a) return x >= b ? 1 : 0;
+    if (x <= a) return 0;
+    if (x >= b) return 1;
+    const t = (x - a) / (b - a);
+    if (t <= 1e-14) return 0;
+    if (t >= 1 - 1e-14) return 1;
+    return t * t * (3 - 2 * t);
+}
+
+function rangeWeightScalar(v, lo, hi, fLo, fHi, limitInvert) {
+    const wLo = fLo > 0 ? rangeSstep(lo - fLo, lo, v) : (v >= lo - 1e-12 ? 1 : 0);
+    const wHi = fHi > 0 ? (1 - rangeSstep(hi, hi + fHi, v)) : (v <= hi + 1e-12 ? 1 : 0);
+    const w = wLo * wHi;
+    return limitInvert ? 1 - w : w;
+}
+
+function rangeU16Bilinear(data, w, h, px, py) {
+    const u = px - 0.5;
+    const v = py - 0.5;
+    const x0 = Math.floor(u);
+    const y0 = Math.floor(v);
+    const x1 = x0 + 1;
+    const y1 = y0 + 1;
+    const fx = u - x0;
+    const fy = v - y0;
+    const cx0 = Math.max(0, Math.min(w - 1, x0));
+    const cx1 = Math.max(0, Math.min(w - 1, x1));
+    const cy0 = Math.max(0, Math.min(h - 1, y0));
+    const cy1 = Math.max(0, Math.min(h - 1, y1));
+    const s00 = data[cy0 * w + cx0] / 65535;
+    const s10 = data[cy0 * w + cx1] / 65535;
+    const s01 = data[cy1 * w + cx0] / 65535;
+    const s11 = data[cy1 * w + cx1] / 65535;
+    const top = s00 + fx * (s10 - s00);
+    const bot = s01 + fx * (s11 - s01);
+    return top + fy * (bot - top);
+}
+
+function rangeSnapField(mdata, w, h, gdata, gw, gh, mx, my, pr, pg, pb, sigmaR, tau) {
+    if (!(sigmaR > 0) || !gdata) {
+        return rangeU16Bilinear(mdata, w, h, mx, my);
+    }
+    const u = mx - 0.5;
+    const v = my - 0.5;
+    const ix = Math.floor(u);
+    const iy = Math.floor(v);
+
+    let lo = 65535;
+    let hi = 0;
+    for (let dy = -1; dy <= 2; dy++) {
+        const y = Math.max(0, Math.min(h - 1, iy + dy));
+        const row = y * w;
+        for (let dx = -1; dx <= 2; dx++) {
+            const x = Math.max(0, Math.min(w - 1, ix + dx));
+            const val = mdata[row + x];
+            if (val < lo) lo = val;
+            if (val > hi) hi = val;
+        }
+    }
+
+    const range = hi / 65535 - lo / 65535;
+    const k = rangeSstep(tau, 2 * tau, range);
+    if (k <= 0) {
+        return rangeU16Bilinear(mdata, w, h, mx, my);
+    }
+
+    const inv2SigmaR2 = 0.5 / (sigmaR * sigmaR);
+    let num = 0;
+    let den = 0;
+    for (let dy = -1; dy <= 2; dy++) {
+        const ty = iy + dy;
+        const distY = v - ty;
+        const distY2 = distY * distY;
+        const cy = Math.max(0, Math.min(h - 1, ty));
+        const gy = Math.max(0, Math.min(gh - 1, ty));
+        const mrow = cy * w;
+        const grow = gy * gw;
+        for (let dx = -1; dx <= 2; dx++) {
+            const tx = ix + dx;
+            const distX = u - tx;
+            const distSpatial2 = distX * distX + distY2;
+            const cx = Math.max(0, Math.min(w - 1, tx));
+            const gx = Math.max(0, Math.min(gw - 1, tx));
+            const gIdx = (grow + gx) * 4;
+            const gr = gdata[gIdx] / 255;
+            const gg = gdata[gIdx + 1] / 255;
+            const gb = gdata[gIdx + 2] / 255;
+            const dr = pr - gr;
+            const dg = pg - gg;
+            const db = pb - gb;
+            const distColor2 = dr * dr + dg * dg + db * db;
+            const wSpatial = Math.exp(-0.5 * distSpatial2);
+            const wColor = Math.exp(-distColor2 * inv2SigmaR2);
+            const weight = wSpatial * wColor;
+            const mVal = mdata[mrow + cx] / 65535;
+            num += weight * mVal;
+            den += weight;
+        }
+    }
+
+    const bil = rangeU16Bilinear(mdata, w, h, mx, my);
+    if (!(den > 1e-6)) return bil;
+    const snapped = num / den;
+    return bil + k * (snapped - bil);
+}
+
+/**
+ * Evaluates the `"compute"`-class tiles (`classes[tx] === 2` or `"compute"`, or every column when `classes` is null)
+ * of one document tile row `ty` (`[y0, y1)` clipped to `[ty * tile, min((ty + 1) * tile, H))`) over a depth map
+ * (`map`, `mw` x `mh` u16, affine transform `xf`) and optional joint-bilateral snap (`snap = [sigmaR, tau]`, `guide`,
+ * `pic`) (K22, docs/PLAN_WASM_BUILD.md §4.8). Rust twin: crates/px/src/range.rs `range_tiles_depth` (`px.js`
+ * `rangeTilesDepth`).
+ */
+export function rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert = false, snap = null, guide = null, pic = null, classes = null, tile = 256) {
+    if (!map || !limit || !(mw > 0) || !(mh > 0) || !(W > 0) || !(H > 0) || !(tile > 0 && tile <= 4096) || !(ty >= 0) || !(y0 < y1) || !Array.isArray(xf) || xf.length < 6) {
+        throw new Error("rangeTilesDepth: bad arguments");
+    }
+    const [m0, m1, m2, m3, m4, m5] = xf;
+    const lo = +limit.lo || 0, hi = +limit.hi || 0;
+    const fLo = +limit.fLo || 0, fHi = +limit.fHi || 0;
+    const limitInvert = !!limit.invert;
+    const jobInvert = !!invert;
+    const sigmaR = Array.isArray(snap) && snap.length >= 2 ? +snap[0] || 0 : 0;
+    const tau = Array.isArray(snap) && snap.length >= 2 ? +snap[1] || 0 : 0;
+    if (![m0, m1, m2, m3, m4, m5, lo, hi, fLo, fHi, sigmaR, tau].every(Number.isFinite)) {
+        throw new Error("rangeTilesDepth: non-finite parameters");
+    }
+    if (map.length < mw * mh) throw new Error("rangeTilesDepth: short map");
+    const cols = Math.ceil(W / tile);
+    if (classes && classes.length < cols) throw new Error("rangeTilesDepth: short classes");
+
+    let gBytes = null, gw = mw, gh = mh;
+    if (guide) {
+        const gd = guide.data || guide;
+        gw = guide.w != null ? guide.w | 0 : mw;
+        gh = guide.h != null ? guide.h | 0 : mh;
+        if (!gd || gw !== mw || gh !== mh) throw new Error("rangeTilesDepth: bad guide");
+        gBytes = bytesOf(gd);
+        if (gBytes.length < mw * mh * 4) throw new Error("rangeTilesDepth: short guide");
+    }
+    let pBytes = null, picX0 = 0, picY0 = 0, picX1 = 0, picY1 = 0, picW = 0;
+    if (pic && pic.data && (pic.w | 0) > 0 && (pic.h | 0) > 0) {
+        if ((pic.x0 | 0) < 0 || (pic.y0 | 0) < 0) throw new Error("rangeTilesDepth: bad pic origin");
+        pBytes = bytesOf(pic.data);
+        picX0 = pic.x0 | 0;
+        picY0 = pic.y0 | 0;
+        picW = pic.w | 0;
+        const picH = pic.h | 0;
+        if (pBytes.length < picW * picH * 4) throw new Error("rangeTilesDepth: short pic");
+        picX1 = picX0 + picW;
+        picY1 = picY0 + picH;
+    }
+    const snapOn = sigmaR > 0 && gBytes !== null && pBytes !== null;
+
+    const tileY0 = ty * tile;
+    const tileY1 = Math.min(tileY0 + tile, H);
+    const tiles = [];
+    let bX0 = Infinity, bY0 = Infinity, bX1 = -Infinity, bY1 = -Infinity;
+    let alphaSum = 0;
+
+    for (let tx = 0; tx < cols; tx++) {
+        if (classes) {
+            const cls = classes[tx];
+            if (cls !== 2 && cls !== "compute") continue;
+        }
+        const tileX0 = tx * tile;
+        const tileX1 = Math.min(tileX0 + tile, W);
+        const alpha = new Uint8Array(tile * tile);
+        let zeros = 0, fulls = 0;
+        let tMinX = tile, tMinY = tile, tMaxX = -1, tMaxY = -1;
+
+        for (let py = 0; py < tile; py++) {
+            const y = tileY0 + py;
+            if (y < y0 || y >= y1 || y >= H) {
+                zeros += tile;
+                continue;
+            }
+            const pyOffset = py * tile;
+            const pyCentre = y + 0.5;
+            for (let px = 0; px < tile; px++) {
+                const x = tileX0 + px;
+                if (x >= W) {
+                    zeros++;
+                    continue;
+                }
+                const pxCentre = x + 0.5;
+                const mx = m0 * pxCentre + m2 * pyCentre + m4;
+                const my = m1 * pxCentre + m3 * pyCentre + m5;
+                let v;
+                if (snapOn && x >= picX0 && x < picX1 && y >= picY0 && y < picY1) {
+                    const pOffset = ((y - picY0) * picW + (x - picX0)) * 4;
+                    const pr = pBytes[pOffset] / 255;
+                    const pg = pBytes[pOffset + 1] / 255;
+                    const pb = pBytes[pOffset + 2] / 255;
+                    v = rangeSnapField(map, mw, mh, gBytes, gw, gh, mx, my, pr, pg, pb, sigmaR, tau);
+                } else {
+                    v = rangeU16Bilinear(map, mw, mh, mx, my);
+                }
+                const w = rangeWeightScalar(v, lo, hi, fLo, fHi, limitInvert);
+                const a = Math.round(255 * (jobInvert ? 1 - w : w));
+                alpha[pyOffset + px] = a;
+                alphaSum += a;
+                if (a === 0) {
+                    zeros++;
+                } else {
+                    if (a === 255) fulls++;
+                    if (px < tMinX) tMinX = px;
+                    if (px > tMaxX) tMaxX = px;
+                    if (py < tMinY) tMinY = py;
+                    if (py > tMaxY) tMaxY = py;
+                }
+            }
+        }
+
+        if (zeros === tile * tile) continue;
+        if (fulls === tile * tile && (tileX1 - tileX0) === tile && (tileY1 - tileY0) === tile) {
+            tiles.push({ tx, ty, full: true });
+            bX0 = Math.min(bX0, tileX0);
+            bY0 = Math.min(bY0, tileY0);
+            bX1 = Math.max(bX1, tileX0 + tile);
+            bY1 = Math.max(bY1, tileY0 + tile);
+        } else {
+            tiles.push({ tx, ty, alpha: alpha.buffer });
+            bX0 = Math.min(bX0, tileX0 + tMinX);
+            bY0 = Math.min(bY0, tileY0 + tMinY);
+            bX1 = Math.max(bX1, tileX0 + tMaxX + 1);
+            bY1 = Math.max(bY1, tileY0 + tMaxY + 1);
+        }
+    }
+
+    const bounds = Number.isFinite(bX0) ? [bX0, bY0, bX1, bY1] : null;
+    return { tiles, bounds, alphaSum };
+}
+
+

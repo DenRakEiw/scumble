@@ -225,6 +225,10 @@ function copyView(v, odd) {
  * allowed ones added to `counts` by rule name. Outputs: typed arrays, numbers, plain arrays and objects of them, null.
  */
 function twinDiff(got, want, rules, counts, at = "out") {
+    if (want instanceof ArrayBuffer || got instanceof ArrayBuffer) {
+        if (!(want instanceof ArrayBuffer) || !(got instanceof ArrayBuffer)) return `${at}: an ArrayBuffer against ${got instanceof ArrayBuffer ? String(want) : String(got)}`;
+        return twinDiff(new Uint8Array(got), new Uint8Array(want), rules, counts, at);
+    }
     if (ArrayBuffer.isView(want) || ArrayBuffer.isView(got)) {
         if (!ArrayBuffer.isView(want) || !ArrayBuffer.isView(got)) return `${at}: a typed array against ${ArrayBuffer.isView(got) ? String(want) : String(got)}`;
         if (isFloatArray(got) !== isFloatArray(want) || got.BYTES_PER_ELEMENT !== want.BYTES_PER_ELEMENT) return `${at}: ${got.constructor.name} against the twin's ${want.constructor.name}`;
@@ -5391,6 +5395,375 @@ async function rangeCases(js, simd, scalar, resample, K) {
         check("rangeRowBookkeeping matches exact in-image pixel alphaSum, bounds, and tiles on full and partial rows", bkOk, bkDetail);
     }
 
+    // ---- K22: range_tiles_depth (docs/PLAN_WASM_BUILD.md §4.8) ----
+    const refRangeTilesDepth = (map, mw, mh, xf, W, H, ty, y0, y1, limit, jobInvert = false, snap = null, guide = null, pic = null, classes = null, tile = 256) => {
+        const cols = Math.ceil(W / tile);
+        const tileY0 = ty * tile, tileY1 = Math.min(tileY0 + tile, H);
+        const ry0 = Math.max(tileY0, y0), ry1 = Math.min(tileY1, y1);
+        const [a, b, c, d, e, f] = xf;
+        const sigmaR = Array.isArray(snap) && snap.length >= 2 ? +snap[0] || 0 : 0;
+        const tau = Array.isArray(snap) && snap.length >= 2 ? +snap[1] || 0 : 0;
+        const doSnap = guide != null && pic != null && pic.data != null && (pic.w | 0) > 0 && (pic.h | 0) > 0 && sigmaR > 0;
+        const mapObj = doSnap ? { data: map, w: mw, h: mh } : null;
+        const px0 = doSnap ? (pic.x0 | 0) : 0;
+        const py0 = doSnap ? (pic.y0 | 0) : 0;
+        const pw = doSnap ? (pic.w | 0) : 0;
+        const ph = doSnap ? (pic.h | 0) : 0;
+        const pData = doSnap ? pic.data : null;
+        const tiles = [];
+        let alphaSum = 0;
+        let bX0 = W, bY0 = H, bX1 = 0, bY1 = 0;
+        for (let tx = 0; tx < cols; tx++) {
+            const cls = classes ? classes[tx] : 2;
+            if (cls !== 2 && cls !== "compute") continue;
+            const tx0 = tx * tile, tx1 = Math.min(W, tx0 + tile);
+            if (!(ry0 < ry1) || !(tx0 < tx1)) continue;
+            const buf = new Uint8Array(tile * tile);
+            let any = false, all = (tx1 - tx0 === tile) && (ry1 - ry0 === tile);
+            for (let y = ry0; y < ry1; y++) {
+                const rowOff = (y - tileY0) * tile;
+                const py = y + 0.5;
+                const pRow = doSnap && y >= py0 && y < py0 + ph ? (y - py0) * pw : -1;
+                for (let x = tx0; x < tx1; x++) {
+                    const px = x + 0.5;
+                    const mx = a * px + c * py + e;
+                    const my = b * px + d * py + f;
+                    let v;
+                    if (pRow >= 0 && x >= px0 && x < px0 + pw) {
+                        const pi = (pRow + (x - px0)) * 4;
+                        v = snapField(mapObj, guide, mx, my, pData[pi] / 255, pData[pi + 1] / 255, pData[pi + 2] / 255, sigmaR, tau);
+                    } else {
+                        v = u16Bilinear(map, mw, mh, mx, my);
+                    }
+                    let w = rangeWeight(v, limit);
+                    if (jobInvert) w = 1 - w;
+                    const ai = Math.round(255 * w);
+                    buf[rowOff + (x - tx0)] = ai;
+                    alphaSum += ai;
+                    if (ai > 0) {
+                        any = true;
+                        if (x < bX0) bX0 = x;
+                        if (y < bY0) bY0 = y;
+                        if (x + 1 > bX1) bX1 = x + 1;
+                        if (y + 1 > bY1) bY1 = y + 1;
+                    }
+                    if (ai < 255) all = false;
+                }
+            }
+            if (all) tiles.push({ tx, ty, full: true });
+            else if (any) tiles.push({ tx, ty, alpha: buf.buffer });
+        }
+        return { tiles, bounds: bX1 > bX0 ? [bX0, bY0, bX1, bY1] : null, alphaSum };
+    };
+
+    // Call helper so twinRun can shift map, guideData, picData, and classes as top-level typed arrays
+    const callRangeDepth = (k, [map, guideData, picData, classes, mw, mh, xf, W, H, ty, y0, y1, limit, jobInvert, picBox, snap, tile]) => {
+        const guide = guideData ? { data: guideData, w: mw, h: mh } : null;
+        const pic = picData ? { data: picData, x0: picBox[0], y0: picBox[1], w: picBox[2], h: picBox[3] } : null;
+        return k.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, jobInvert, snap, guide, pic, classes, tile);
+    };
+
+    const depthCases = [];
+    const limits = [
+        { lo: 0.25, hi: 0.75, fLo: 0, fHi: 0, invert: false },
+        { lo: 0.3, hi: 0.65, fLo: 0.08, fHi: 0.08, invert: false },
+        { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.12, invert: true },
+        { lo: 0.0, hi: 0.5, fLo: 0.0, fHi: 0.1, invert: false },
+        { lo: 0.5, hi: 1.0, fLo: 0.1, fHi: 0.0, invert: true },
+    ];
+    for (const [mw, mh, W, H] of [
+        [1, 1, 1, 1],
+        [7, 5, 13, 9],
+        [8, 6, 256, 256],
+        [9, 7, 257, 255],
+        [15, 11, 513, 257],
+        [16, 12, 600, 300],
+        [24, 18, 800, 550],
+    ]) {
+        const { map, rmax } = makeMapPair(mw, mh, (mw + mh) % 2 === 0 ? "ramp" : "random");
+        const guideData = new Uint8Array(mw * mh * 4);
+        for (let i = 0; i < guideData.length; i++) guideData[i] = (i & 3) === 3 ? 255 : Math.floor(rnd() * 256);
+        const xfs = makeXfs(mw, mh, W, H);
+        const cols = Math.ceil(W / 256), rows = Math.ceil(H / 256);
+        for (let ci = 0; ci < xfs.length; ci++) {
+            const [xName, xf] = xfs[ci];
+            const lim = limits[(ci + mw) % limits.length];
+            const jobInv = ((ci + mh) & 1) === 1;
+            const useSnap = (ci % 2) === 0;
+            const snap = useSnap ? snapParams(50 + (ci % 3) * 20) : null;
+            const thr = useSnap ? Math.round(snap[1] * 65535) : 0;
+            const st = simd.mapTileStats(map, useSnap ? rmax : null, mw, mh, xf, W, H, thr, 256);
+            for (const ty of rows > 1 ? [0, rows - 1] : [0]) {
+                const y0 = ty * 256, y1 = Math.min(H, y0 + 256);
+                const classes = new Uint8Array(cols);
+                let cMinTx = cols, cMaxTx = -1;
+                for (let tx = 0; tx < cols; tx++) {
+                    const idx = ty * cols + tx;
+                    const c = rangeTileClass(st.min[idx] / 65535, st.max[idx] / 65535, lim, jobInv);
+                    classes[tx] = c === "empty" ? 0 : c === "full" ? 1 : 2;
+                    if (classes[tx] === 2 && useSnap && st.edge[idx] === 1) {
+                        if (tx < cMinTx) cMinTx = tx;
+                        if (tx > cMaxTx) cMaxTx = tx;
+                    }
+                }
+                let picData = null, picBox = [0, y0, 0, 0];
+                if (useSnap && cMaxTx >= cMinTx) {
+                    const px0 = cMinTx * 256, pw = Math.min(W, (cMaxTx + 1) * 256) - px0, ph = y1 - y0;
+                    picBox = [px0, y0, pw, ph];
+                    picData = new Uint8Array(pw * ph * 4);
+                    for (let i = 0; i < picData.length; i++) picData[i] = (i & 3) === 3 ? 255 : Math.floor(rnd() * 256);
+                }
+                depthCases.push({
+                    tag: `depth ${mw}x${mh}->${W}x${H} ty=${ty} ${xName} snap=${useSnap} inv=${lim.invert}/${jobInv}`,
+                    args: [map, useSnap ? guideData : null, picData, classes, mw, mh, xf, W, H, ty, y0, y1, lim, jobInv, picBox, snap, 256],
+                });
+            }
+        }
+    }
+
+    // Exact boundary cases:
+    // 1. Exact even-half in IEEE-754: d = 16384 -> v = 16384 / 65535, lo = fLo = 0.9909749217157413 -> 255 * w === 40.5
+    //    Math.round(40.5) === 41 (ties toward +Infinity), whereas round_ties_even(40.5) === 40!
+    // 2. Hard-step 1e-12 boundary and sstep 1e-14 clamp boundary
+    // 3. All 4 combinations of (limit.invert, jobInvert)
+    // 4. snapField tau .. 2*tau smoothstep blend, > 2*tau snap, wSum <= 1e-12 fallback, and partial pic box fallback
+    {
+        const mw = 8, mh = 8, W = 300, H = 260;
+        const mapHalf = new Uint16Array(mw * mh).fill(16384);
+        const limHalf = { lo: 0.9909749217157413, hi: 1.0, fLo: 0.9909749217157413, fHi: 0, invert: false };
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const cls2 = new Uint8Array([2, 2]);
+        depthCases.push({
+            tag: "exact even-half 255 * w === 40.5 (Math.round -> 41 vs ties-to-even -> 40)",
+            args: [mapHalf, null, null, cls2, mw, mh, xf, W, H, 0, 0, 256, limHalf, false, [0, 0, 0, 0], null, 256],
+        });
+        const gotHalf = simd.rangeTilesDepth(mapHalf, mw, mh, xf, W, H, 0, 0, 256, limHalf, false, null, null, null, cls2, 256);
+        const alpha0 = new Uint8Array(gotHalf.tiles[0].alpha)[0];
+        check("range_tiles_depth rounds exact even-half 40.5 up to 41 (JS Math.round, not ties-to-even 40)", alpha0 === 41, `got ${alpha0}`);
+
+        // Hard-step 1e-12 tolerance: v = 16384 / 65535; lo = v + 0.5e-12 (inside tolerance -> 255) vs lo = v + 2e-12 (outside -> 0)
+        const vExact = 16384 / 65535;
+        for (const [delta, wantByte] of [[0.5e-12, 255], [-0.5e-12, 255], [2e-12, 0]]) {
+            const limTol = { lo: vExact + delta, hi: vExact + 0.1, fLo: 0, fHi: 0, invert: false };
+            depthCases.push({
+                tag: `hard-step 1e-12 tolerance delta=${delta}`,
+                args: [mapHalf, null, null, cls2, mw, mh, xf, W, H, 0, 0, 256, limTol, false, [0, 0, 0, 0], null, 256],
+            });
+            const rTol = simd.rangeTilesDepth(mapHalf, mw, mh, xf, W, H, 0, 0, 256, limTol, false, null, null, null, cls2, 256);
+            const gotSum = rTol.alphaSum;
+            check(`range_tiles_depth hard-step tolerance at delta=${delta} gives byte ${wantByte}`,
+                gotSum === wantByte * W * 256, `got alphaSum=${gotSum}, want ${wantByte * W * 256}`);
+        }
+
+        // sstep 1e-14 endpoint clamp boundary: t in (0, 1e-14) clamps to 0, t in (1 - 1e-14, 1) clamps to 1, t = 0.5 gives 0.5
+        for (const frac of [0.5e-14, 2e-14, 0.5, 1 - 2e-14, 1 - 0.5e-14]) {
+            const fLo = 0.1;
+            const lo = vExact + fLo * (1 - frac);
+            const limSstep = { lo, hi: 1.0, fLo, fHi: 0, invert: false };
+            depthCases.push({
+                tag: `sstep clamp boundary frac=${frac}`,
+                args: [mapHalf, null, null, cls2, mw, mh, xf, W, H, 0, 0, 256, limSstep, false, [0, 0, 0, 0], null, 256],
+            });
+        }
+
+        // All 4 combinations of (limit.invert, jobInvert) on a feathered ramp
+        const { map: mapRamp } = makeMapPair(mw, mh, "ramp");
+        for (const limInv of [false, true]) {
+            for (const jobInv of [false, true]) {
+                depthCases.push({
+                    tag: `invert matrix limit.invert=${limInv} jobInvert=${jobInv}`,
+                    args: [mapRamp, null, null, cls2, mw, mh, xf, W, H, 0, 0, 256, { lo: 0.25, hi: 0.75, fLo: 0.12, fHi: 0.12, invert: limInv }, jobInv, [0, 0, 0, 0], null, 256],
+                });
+            }
+        }
+
+        // snapField tau .. 2*tau transition, > 2*tau full snap, wSum <= 1e-12 fallback, and partial pic box
+        const mapEdge = new Uint16Array(mw * mh);
+        const guideEdge = new Uint8Array(mw * mh * 4);
+        const tau = 0.02, sigmaR = 0.05;
+        // Left half of map has step = 1.5 * tau (in the smoothstep blend between tau and 2*tau);
+        // right half has step = 3.0 * tau (full snap).
+        for (let y = 0; y < mh; y++) {
+            for (let x = 0; x < mw; x++) {
+                const i = y * mw + x;
+                const isMid = x < (mw >> 1);
+                const step = isMid ? 1.5 * tau : 3.0 * tau;
+                const side = (x + y) & 1;
+                mapEdge[i] = Math.round((0.4 + (side ? step : 0)) * 65535);
+                guideEdge[i * 4] = side ? 240 : 20;
+                guideEdge[i * 4 + 1] = side ? 200 : 40;
+                guideEdge[i * 4 + 2] = side ? 180 : 60;
+                guideEdge[i * 4 + 3] = 255;
+            }
+        }
+        // Partial pic box covering x in [10..280), y in [5..250) so edges of the tile row fall outside pic and use bilinear
+        const picBox = [10, 5, 270, 245];
+        const picEdge = new Uint8Array(picBox[2] * picBox[3] * 4);
+        for (let i = 0; i < picEdge.length; i += 4) {
+            picEdge[i] = (i * 17) & 255;
+            picEdge[i + 1] = (i * 31) & 255;
+            picEdge[i + 2] = (i * 47) & 255;
+            picEdge[i + 3] = 255;
+        }
+        depthCases.push({
+            tag: "snapField 1.5*tau blend, 3*tau snap, and partial pic box",
+            args: [mapEdge, guideEdge, picEdge, cls2, mw, mh, xf, W, H, 0, 0, 256, { lo: 0.35, hi: 0.55, fLo: 0.05, fHi: 0.05, invert: false }, false, picBox, [sigmaR, tau], 256],
+        });
+        // Ultra-small sigmaR so exp(-dc2 / (2 * sigmaR^2)) underflows and wSum <= 1e-12 falls back to vBil
+        depthCases.push({
+            tag: "snapField wSum <= 1e-12 fallback to vBil",
+            args: [mapEdge, guideEdge, picEdge, cls2, mw, mh, xf, W, H, 0, 0, 256, { lo: 0.35, hi: 0.55, fLo: 0.05, fHi: 0.05, invert: false }, false, picBox, [1e-4, tau], 256],
+        });
+    }
+
+    let refDepthOk = true, refDepthDetail = "";
+    for (const c of depthCases) {
+        const got = callRangeDepth(js, c.args);
+        const [map, guideData, picData, classes, mw, mh, xf, W, H, ty, y0, y1, limit, jobInvert, picBox, snap, tile] = c.args;
+        const guide = guideData ? { data: guideData, w: mw, h: mh } : null;
+        const pic = picData ? { data: picData, x0: picBox[0], y0: picBox[1], w: picBox[2], h: picBox[3] } : null;
+        const want = refRangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, jobInvert, snap, guide, pic, classes, tile);
+        const d = twinDiff(got, want, [], {});
+        if (d) { refDepthOk = false; refDepthDetail = `${c.tag}: ${d}`; break; }
+    }
+    check(`js rangeTilesDepth equals the plain reference (${depthCases.length} cases)`, refDepthOk, refDepthDetail);
+
+    twinCheck({
+        name: "range_tiles_depth",
+        builds: [["rust simd", simd], ["rust scalar", scalar]],
+        twin: js,
+        call: callRangeDepth,
+        cases: depthCases,
+    });
+
+    // Dirty arena out-of-bounds zeroing check on partial right and bottom compute tiles
+    {
+        const mw = 8, mh = 8, W = 300, H = 270; // col 1 has vw = 44, row 1 has vh = 14
+        const { map } = makeMapPair(mw, mh, "ramp");
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const lim = { lo: 0.2, hi: 0.8, fLo: 0.1, fHi: 0.1, invert: false };
+        const cls = new Uint8Array([2, 2]);
+        let padOk = true, padDetail = "";
+        for (const [bName, px] of [["simd", simd], ["scalar", scalar]]) {
+            // Dirty the job arena with 0xde before calling rangeTilesDepth on the partial bottom-right row (ty=1, y0=256..270)
+            const a = px.job;
+            try {
+                const p = a.take(512 * 1024);
+                px.u8().fill(0xde, p, p + 512 * 1024);
+            } finally { px._reset(a); }
+            const got = px.rangeTilesDepth(map, mw, mh, xf, W, H, 1, 256, 270, lim, false, null, null, null, cls, 256);
+            const want = js.rangeTilesDepth(map, mw, mh, xf, W, H, 1, 256, 270, lim, false, null, null, null, cls, 256);
+            const d = twinDiff(got, want, [], {});
+            if (d) { padOk = false; padDetail = `${bName}: ${d}`; break; }
+            for (const t of got.tiles) {
+                if (!t.alpha) continue;
+                const u = new Uint8Array(t.alpha);
+                const vw = Math.min(256, W - t.tx * 256), vh = 270 - 256;
+                for (let y = 0; y < 256 && padOk; y++) {
+                    for (let x = 0; x < 256; x++) {
+                        if ((x >= vw || y >= vh) && u[y * 256 + x] !== 0) {
+                            padOk = false;
+                            padDetail = `${bName} tile (${t.tx},${t.ty}) non-zero pad at (${x},${y}): ${u[y * 256 + x]}`;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        check("range_tiles_depth zeroes out-of-bounds right and bottom columns/rows in dirty wasm arena", padOk, padDetail);
+    }
+
+    // Refusal checks for rangeTilesDepth and raw export wy0 window check
+    {
+        const map = new Uint16Array(16 * 16), guideData = new Uint8Array(16 * 16 * 4);
+        const guide = { data: guideData, w: 16, h: 16 };
+        const pic = { data: new Uint8Array(64 * 64 * 4), x0: 0, y0: 0, w: 64, h: 64 };
+        const xf = [0.25, 0, 0, 0.25, 0, 0];
+        const lim = { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const cls = new Uint8Array([2]);
+        const snap = [0.05, 0.02];
+        const badDepthArgs = [
+            ["null map", [null, 16, 16, xf, 64, 64, 0, 0, 64, lim, false, null, null, null, cls, 256]],
+            ["short map", [new Uint16Array(32), 16, 16, [0, 0, 0, 0, 0, 0], 64, 64, 0, 0, 64, lim, false, null, null, null, cls, 256]],
+            ["short classes", [map, 16, 16, xf, 600, 64, 0, 0, 64, lim, false, null, null, null, new Uint8Array(1), 256]],
+            ["short guide", [map, 16, 16, xf, 64, 64, 0, 0, 64, lim, false, snap, { data: new Uint8Array(20), w: 16, h: 16 }, pic, cls, 256]],
+            ["short pic", [map, 16, 16, xf, 64, 64, 0, 0, 64, lim, false, snap, guide, { data: new Uint8Array(20), x0: 0, y0: 0, w: 64, h: 64 }, cls, 256]],
+            ["zero mw", [map, 0, 16, xf, 64, 64, 0, 0, 64, lim, false, null, null, null, cls, 256]],
+            ["zero W", [map, 16, 16, xf, 0, 64, 0, 0, 64, lim, false, null, null, null, cls, 256]],
+            ["y0 >= y1", [map, 16, 16, xf, 64, 64, 0, 32, 32, lim, false, null, null, null, cls, 256]],
+            ["zero tile", [map, 16, 16, xf, 64, 64, 0, 0, 64, lim, false, null, null, null, cls, 0]],
+            ["NaN xf", [map, 16, 16, [NaN, 0, 0, 1, 0, 0], 64, 64, 0, 0, 64, lim, false, null, null, null, cls, 256]],
+            ["null limit", [map, 16, 16, xf, 64, 64, 0, 0, 64, null, false, null, null, null, cls, 256]],
+        ];
+        for (const [what, args] of badDepthArgs) {
+            let threw = 0;
+            for (const k of [js, simd, scalar]) {
+                try { k.rangeTilesDepth(...args); } catch { threw++; }
+            }
+            check(`rangeTilesDepth refuses ${what} on twin and both builds`, threw === 3, `${threw}/3 threw`);
+        }
+        // Raw export returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)
+        const a = simd.job;
+        try {
+            const pm = simd._in(a, map, map.byteLength);
+            const pCls = simd._in(a, cls, 1);
+            const pParams = a.take(12 * 8);
+            const pv = simd.view(Float64Array, pParams, 12);
+            pv[0] = 0.25; pv[3] = 0.25; pv[6] = 0.2; pv[7] = 0.8; pv[8] = 0.05; pv[9] = 0.05;
+            const pAlpha = a.take(65536), pStatus = a.take(1), pInfo = a.take(5 * 8);
+            const okRaw = simd.exports.range_tiles_depth(
+                pm, 0, 0, 16, 16, 5, 4,
+                0, 0, 0, 0,
+                64, 64, 0, 0, 64, 256,
+                pCls, pParams, 0,
+                pAlpha, pStatus, pInfo
+            );
+            check("raw range_tiles_depth returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)", okRaw === 0, `got ${okRaw}`);
+        } finally { simd._reset(a); }
+    }
+
+    // Route & split-routing check on K.rangeTilesDepth (rangeDepth & rangeDepthSnap)
+    {
+        K.setKernels("rust");
+        const mw = 32, mh = 24, W = 1536, H = 256; // 6 tiles across: classes [2, 2, 0, 2, 1, 2], pic spans tiles 1..3 (x0=256..1024)
+        const { map } = makeMapPair(mw, mh, "ramp");
+        const guideData = new Uint8Array(mw * mh * 4);
+        for (let i = 0; i < guideData.length; i++) guideData[i] = (i * 29) & 255;
+        const guide = { data: guideData, w: mw, h: mh };
+        const pic = { data: new Uint8Array(768 * H * 4), x0: 256, y0: 0, w: 768, h: H };
+        for (let i = 0; i < pic.data.length; i++) pic.data[i] = (i * 13) & 255;
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const lim = { lo: 0.2, hi: 0.75, fLo: 0.08, fHi: 0.08, invert: false };
+        const classes = new Uint8Array([2, 2, 0, 2, 1, 2]);
+        const snap = snapParams(50);
+
+        const runCombo = (rd, rs) => {
+            K.setRoute("rangeDepth", rd);
+            K.setRoute("rangeDepthSnap", rs);
+            K.pxCalls(true);
+            const res = K.rangeTilesDepth(map, mw, mh, xf, W, H, 0, 0, H, lim, false, snap, guide, pic, classes, 256);
+            const calls = K.pxCalls(true).range_tiles_depth || 0;
+            return { res, calls };
+        };
+        const jj = runCombo("js", "js");
+        const rr = runCombo("rust", "rust");
+        const rj = runCombo("rust", "js");
+        const jr = runCombo("js", "rust");
+        K.setRoute("rangeDepth", null);
+        K.setRoute("rangeDepthSnap", null);
+        K.setKernels("js");
+
+        const orderOk = [jj.res, rr.res, rj.res, jr.res].every((r) =>
+            r.tiles.every((t, i) => i === 0 || t.tx > r.tiles[i - 1].tx)
+        );
+        const diffRR = twinDiff(rr.res, jj.res, [], {});
+        const diffRJ = twinDiff(rj.res, jj.res, [], {});
+        const diffJR = twinDiff(jr.res, jj.res, [], {});
+        check("kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order",
+            orderOk && !diffRR && !diffRJ && !diffJR && jj.calls === 0 && rr.calls === 1 && rj.calls === 1 && jr.calls === 1,
+            `calls jj=${jj.calls} rr=${rr.calls} rj=${rj.calls} jr=${jr.calls} diffs=${diffRR || diffRJ || diffJR}`);
+    }
+
     if (process.env.PX_BENCH) {
         const mw = 4096, mh = 2731, W = 15000, H = 10000;
         const { map, rmax } = makeMapPair(mw, mh, "ramp");
@@ -5404,6 +5777,26 @@ async function rangeCases(js, simd, scalar, resample, K) {
             ];
             const med = benchMedians(rows, { rounds: 15 });
             console.log(`       map_tile_stats 4096x2731 -> 15000x10000 (${what}): ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 15)`);
+        }
+        // One 15000 x 256 tile row (59 tiles across), plain bilinear and snapped
+        const cols = Math.ceil(W / 256), ty = 10, y0 = 2560, y1 = 2816;
+        const lim = { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const cls = new Uint8Array(cols).fill(2);
+        const guideData = new Uint8Array(mw * mh * 4).fill(128);
+        const guide = { data: guideData, w: mw, h: mh };
+        const pic = { data: new Uint8Array(W * 256 * 4).fill(140), x0: 0, y0, w: W, h: 256 };
+        const snap = snapParams(50);
+        for (const [what, s, g, p] of [
+            ["plain bilinear (59 tiles)", null, null, null],
+            ["snapped (59 edge tiles)", snap, guide, pic],
+        ]) {
+            const rows = [
+                ["twin", () => js.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, lim, false, s, g, p, cls, 256)],
+                ["simd", () => simd.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, lim, false, s, g, p, cls, 256)],
+                ["scalar", () => scalar.rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, lim, false, s, g, p, cls, 256)],
+            ];
+            const med = benchMedians(rows, { rounds: 9 });
+            console.log(`       range_tiles_depth 15000x256 row, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 9)`);
         }
     }
 }

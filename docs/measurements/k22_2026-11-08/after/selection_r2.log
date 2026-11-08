@@ -1,0 +1,10 @@
+[ok] node selection_test.js passed
+[ok] node selection_test.js passed
+[ok] setup: {"doc": 4, "width": 800, "height": 600, "tiles": true}
+[ok] range_select_15k_tile_case: {"ms": 450, "tiles": 2301, "flattenCount": 0}
+  range depth 15000x10000: selectRange 450.0 ms (wall 450.5 ms), 2301 partial tiles
+   range_select jobs: 40, summed {"ms": 3135.3, "tiles": 2301, "gen": 240}
+   px calls: window map_tile_stats 40, mip_chain 16, sel_combine 2301; range_select jobs range_tiles_depth 40
+   marks range: edges 0.9, posted 0.2, combined 434.8, done 14.1 | total 450.0 ms  (source "depth", mode "replace", snap false, readMs 0, pictureTiles 0, jobs 40, combineMs 169.1, ms 450, tiles 2301, pct 50)
+[ok] cleanup: "ok"
+PASS

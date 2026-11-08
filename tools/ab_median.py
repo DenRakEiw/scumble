@@ -69,7 +69,7 @@ if [a for a in args if a.startswith("-")] or not PATHS:
 ARMS = ("js", "rust")
 # the exports a route sends to the twin (px/kernels.js: `rustPx("flood", size)` in floodShape and floodMask,
 # `rustPx("mips")` in mipHalf, mipChain and clampExtend); a route not named here counts every export
-ROUTE_EXPORTS = {"flood": ("flood_shape", "flood"), "mips": ("mip_chain", "clamp_extend", "mip_half"), "selCombine": ("sel_combine",), "maskInvert": ("mask_invert",)}
+ROUTE_EXPORTS = {"flood": ("flood_shape", "flood"), "mips": ("mip_chain", "clamp_extend", "mip_half"), "selCombine": ("sel_combine",), "maskInvert": ("mask_invert",), "rangeDepth": ("range_tiles_depth",), "rangeDepthSnap": ("range_tiles_depth",)}
 # a route whose kernel works on the window, not in a job: its kernel row is a row field of its own (px_jobs.py times the
 # window's TileMaskPixels.combine per row as `combine`, K5, and TileMaskPixels.invert as `invert`, K11), in place of
 # px_jobs.py's KERNEL columns

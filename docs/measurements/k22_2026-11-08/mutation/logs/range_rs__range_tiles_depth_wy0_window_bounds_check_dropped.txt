@@ -1,0 +1,26 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+    |
+546 |             let iy0 = (my0 - 2.0).floor().max(0.0).min(max_y) as usize;
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_iy0`
+
+warning: unused variable: `iy1`
+   --> src\range.rs:547:17
+    |
+547 |             let iy1 = (my1 + 2.0).ceil().max(0.0).min(max_y) as usize;
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_iy1`
+
+warning: `px` (lib) generated 3 warnings (run `cargo fix --lib -p px` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 2.80s
+$ node tools/px_test.js  (rc 1, 7 s, PX_ONLY=range)
+(Use `node --trace-warnings ...` to show where the warning was created)
+RuntimeError: unreachable
+    at wasm://wasm/000d36a6:wasm-function[103]:0x31974
+    at wasm://wasm/000d36a6:wasm-function[102]:0x3196a
+    at wasm://wasm/000d36a6:wasm-function[108]:0x31a34
+    at wasm://wasm/000d36a6:wasm-function[107]:0x319a6
+    at wasm://wasm/000d36a6:wasm-function[92]:0x2e243
+    at wasm://wasm/000d36a6:wasm-function[17]:0x3df7
+    at wasm://wasm/000d36a6:wasm-function[9]:0x2822
+    at wasm://wasm/000d36a6:wasm-function[80]:0x26508
+    at out.<computed> [as range_tiles_depth] (file:///C:/Users/schoeneberg/AppData/Local/Temp/ag_mut_k22/renderer/editor/px/px.js:146:40)
+    at rangeCases (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:5714:40)

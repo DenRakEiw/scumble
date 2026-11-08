@@ -1,0 +1,83 @@
+K22 measurement summary (2026-11-08)
+====================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.8 K22):
+- `range_tiles_depth` in `crates/px/src/range.rs` (SIMD128 `f64x2` + scalar), exported from `crates/px/src/lib.rs`
+  (ABI 31), wrapped in `renderer/editor/px/px.js` (`Px.rangeTilesDepth`, copying only the `[wy0..wy1]` map and guide
+  row windows `[min(ry)..max(ry)] ± 2` per document tile row `ty`, never the 22 MB full map/guide), JS twin in
+  `renderer/editor/px/kernels_js.js`, routed in `renderer/editor/px/kernels.js` under `"rangeDepth"` (`snap === false`)
+  and `"rangeDepthSnap"` (`snap === true`) with split-routing support when one route is `"rust"` and the other `"js"`.
+- `rangeSelectJob` (`source === "depth"`) in `renderer/editor/inpaint_worker.js` delegates `"compute"` tiles (`c === 2`)
+  to `rangeTilesDepth` and merges the partial tiles' `alphaSum` and `bounds` with the `"full"` tiles' (`c === 1`)
+  `rangeRowBookkeeping`.
+- `rangeDepthSnap` route decision by measurement (§1.1): `ab_median.py` on 3 alternating 15,000 x 10,000 rounds with
+  `--ab rangeDepthSnap=js:rust` gives `verdict: rust` (`1120.8 ms` vs `1736.3 ms` wall, lower by `615.5 ms` > spread
+  `457.1 ms`; worker job `1702.4 ms` vs `2902.8 ms`). Both `rangeDepth` and `rangeDepthSnap` stay on Rust (`DEFAULT_ROUTES`
+  carries no entry for either, documented above `DEFAULT_ROUTES` in `renderer/editor/px/kernels.js`).
+
+Builds (`python tools/build_px.py --check`):
+- `renderer/editor/px/px.wasm`:        216,822 bytes  sha256 0e3f9a9c1d477ce8
+- `renderer/editor/px/px_scalar.wasm`: 173,395 bytes  sha256 0ce97531b679f714
+
+Node unit & kernel benchmarks (`PX_BENCH=1 PX_ONLY=range node tools/px_test.js`):
+- `range_tiles_depth 15000x256 row, plain bilinear (59 tiles)`: twin 108.68 ms, simd 75.64 ms (1.44x), scalar 65.63 ms (median of 9)
+- `range_tiles_depth 15000x256 row, snapped (59 edge tiles)`:   twin 242.79 ms, simd 114.72 ms (2.12x), scalar 115.39 ms (median of 9)
+- 105 deterministic/property cases + odd-offset views + exact even-half rounding (`40.5 -> 41`) + hard-step `1e-12`
+  tolerance + `sstep` `1e-14` clamps + `snapField` `den > 1e-6` + partial `pic` box + dirty arena out-of-bounds
+  zeroing + 11 invalid-arg refusals + raw `wy0` refusal + `K.rangeTilesDepth` split-routing: PASS on twin, simd, scalar.
+
+15000 x 10000 before (`548c7f4`) vs after (`K22`), 3 alternating rounds on port 9613 (`w1_lock.py` held per batch):
+row                                                          before (548c7f4)              after (K22)
+  range_depth (js) wall                                   351.3 [347.4-371.5]      366.1 [356.9-387.7]   n=3/3
+  range_depth (js) worker job                          1878.9 [1873.0-1893.3]   1815.4 [1808.1-1895.6]   n=3/3
+  range_depth (js) window px calls                                   ['none']                 ['none']
+  range_depth (js) worker px calls                                   ['none']                 ['none']
+  range_depth_snap (js) wall                           1328.5 [1273.5-1632.8]   1636.1 [1331.6-1677.2]   n=3/3
+  range_depth_snap (js) worker job                     3110.1 [3095.0-3166.6]   3084.2 [2995.3-3343.2]   n=3/3
+  range_depth_snap (js) rmax                              161.0 [157.8-164.3]      159.6 [156.9-164.3]   n=3/3
+  range_depth_snap (js) edges                                29.8 [29.7-30.3]         30.3 [29.4-37.4]   n=3/3
+  range_depth_snap (js) window px calls                              ['none']                 ['none']
+  range_depth_snap (js) worker px calls                              ['none']                 ['none']
+  range_depth (rust) wall                                 223.4 [210.6-265.7]      172.1 [167.8-195.0]   n=3/3  (1.30x)
+  range_depth (rust) worker job                        1290.0 [1253.7-1667.3]     973.2 [945.6-1115.8]   n=3/3  (1.33x)
+  range_depth (rust) window px calls                 ['mip_chain 32, sel_combine 699', 'mip_chain 48, sel_combine 699'] ['mip_chain 32, sel_combine 699', 'mip_chain 48, sel_combine 699']
+  range_depth (rust) worker px calls                                 ['none'] ['range_tiles_depth 40']
+  range_depth_snap (rust) wall                         1448.7 [1193.4-1717.6]   1143.1 [1101.9-1318.7]   n=3/3  (1.27x)
+  range_depth_snap (rust) worker job                   3129.8 [3029.8-3812.1]   1708.4 [1625.8-1716.5]   n=3/3  (1.83x)
+  range_depth_snap (rust) rmax                               51.1 [48.4-51.8]         49.5 [47.8-72.7]   n=3/3
+  range_depth_snap (rust) edges                                 5.7 [5.6-8.9]            5.6 [5.5-6.0]   n=3/3
+  range_depth_snap (rust) window px calls            ['mip_chain 112, sel_combine 698', 'mip_chain 80, sel_combine 698'] ['mip_chain 64, sel_combine 698']
+  range_depth_snap (rust) worker px calls                            ['none'] ['range_tiles_depth 40']
+  selection_test 15k depth ramp wall                      767.5 [704.8-866.1]      436.1 [435.2-450.5]   n=3/3  (1.76x)
+  range_depth (rust) split.range_tiles_depth                                -      949.9 [936.0-994.8]   n=0/3
+  range_depth_snap (rust) split.range_tiles_depth                           -   1653.0 [1580.5-1669.0]   n=0/3
+
+`tools/ab_median.py` verdicts at 15000 x 10000:
+1. `--ab rangeDepthSnap=js:rust` (`after/ab_snap_r1..3.jsonl`):
+   - `range_depth_snap`: js `1767.9 1736.3 1310.8` (median `1736.3`, spread `457.1`) vs rust `1120.8 1387.5 1118.8`
+     (median `1120.8`, spread `268.7`); kernel row js `2902.8` / rust `1702.4` ms;
+     split: js jobs `418.8 + copyIn 1.7`, rust jobs `1642.7 + copyIn 34.3` ->
+     `verdict: rust (its median lower by 615.5, beyond the spread 457.1)`.
+2. `kernels=js:rust` (`after/pxjobs_r1..3.jsonl`):
+   - `range_depth`: js `356.9 366.1 387.7` (median `366.1`, spread `30.7`) vs rust `167.8 172.1 195.0` (median `172.1`,
+     spread `27.2`); kernel row js `1815.4` / rust `973.2` ms; split rust jobs `949.9 + copyIn 3.0` ->
+     `verdict: rust (its median lower by 194.0, beyond the spread 30.7)`.
+   - `range_depth_snap`: js `1677.2 1636.1 1331.6` (median `1636.1`, spread `345.6`) vs rust `1101.9 1318.7 1143.1`
+     (median `1143.1`, spread `216.8`); kernel row js `3084.2` / rust `1708.4` ms; split rust jobs `1653.0 + copyIn 36.5` ->
+     `verdict: rust (its median lower by 492.9, beyond the spread 345.6)`.
+
+Pins & byte-equality:
+- `edges_test.py` Case e (1200x800 tiles selection SHA-1): `ab46130a9a542201cd4ec8cb0855ce240658090b` (exact match across all 3 after rounds).
+- `selection_test.py` Case 12 (15k depth ramp + cancel): `436.1 [435.2-450.5] ms`, cancel cleanly discards partial run.
+- `px_jobs.py --check 2048x1152 --only range_depth,range_depth_snap` (`after/pxjobs_check.log`): `same bytes` on both rows,
+  `window release: sync`, 0 traps / OOMs across all 7 threads (`range_depth` kernel `2.38x`, wall `2.00x`; `range_depth_snap`
+  kernel `1.87x`, wall `1.44x`).
+
+Mutation round (`docs/measurements/k22_2026-11-08/mutation/results.txt`):
+- 14 mutants across `crates/px/src/range.rs`, `renderer/editor/px/px.js`, `renderer/editor/px/kernels_js.js`, and
+  `renderer/editor/px/kernels.js`: 14 killed, 0 survived, 0 unexpected (238 s).
+
+Gates (`lint types selection edges limit maps pixels editor` on both backends + `pxjobs` on tiles):
+- `k22-tiles`:  lint 10s, types 6s, selection 11s, edges 13s, limit 9s, maps 4s, pixels 9s, editor 156s, pxjobs 103s -> ALL PASS
+- `k22-canvas`: selection 5s, edges 20s, limit 8s, maps 4s, pixels 9s, editor 134s -> ALL PASS
+
