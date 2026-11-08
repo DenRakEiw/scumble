@@ -28,7 +28,7 @@
 // layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { dataUri, fetchImage, readError, sleep, num, closestAspect, closestSize, seedOf, textShape, ideogramMask, checkRatio, withinBytes } = require("./util");
+const { dataUri, downloadImage, pollJob, scrub, readError, num, closestAspect, closestSize, seedOf, textShape, ideogramMask, checkRatio, withinBytes } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://api.replicate.com/v1";
@@ -42,7 +42,7 @@ async function fileUrl(bytes, name, ctx, mime = "image/png") {
     const fd = new FormData();
     fd.append("content", new Blob([bytes], { type: mime }), name);
     const r = await ctx.fetch(`${BASE}/files`, { method: "POST", headers: { Authorization: "Bearer " + ctx.key }, body: fd });
-    if (!r.ok) throw new Error(`Replicate file upload: ${await readError(r)}`);
+    if (!r.ok) throw new Error(scrub(`Replicate file upload: ${await readError(r, ctx.key)}`, ctx.key));
     const f = await r.json();
     if (!f.urls || !f.urls.get) throw new Error("Replicate file upload answered without urls.get");
     return f.urls.get;
@@ -196,21 +196,26 @@ module.exports = {
         if (m) { url = `${BASE}/predictions`; body = { version: m[2], input }; }
         else { url = `${BASE}/models/${model}/predictions`; body = { input }; }
         const submit = await ctx.fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-        if (!submit.ok) throw new Error(`Replicate ${model}: ${await readError(submit)}`);
+        if (!submit.ok) throw new Error(scrub(`Replicate ${model}: ${await readError(submit, ctx.key)}`, ctx.key));
         let pred = await submit.json();
-        const t0 = Date.now();
-        while (!["succeeded", "failed", "canceled"].includes(pred.status)) {
-            if (Date.now() - t0 > 15 * 60 * 1000) throw new Error("Replicate: timed out after 15 minutes");
-            await sleep(pred.status === "starting" ? 2000 : 1000);
-            const get = pred.urls && pred.urls.get ? pred.urls.get : `${BASE}/predictions/${pred.id}`;
-            const r = await ctx.fetch(get, { headers: { Authorization: headers.Authorization } });
-            if (!r.ok) throw new Error(`Replicate poll: ${await readError(r)}`);
-            pred = await r.json();
-        }
-        if (pred.status !== "succeeded") throw new Error("Replicate: " + (pred.error || pred.status));
+        const id = String((pred && pred.id) || "unknown");
+        pred = await pollJob(ctx, {
+            who: `Replicate ${model}`,
+            timeoutWho: "Replicate",
+            statusWho: "Replicate poll",
+            id,
+            waitMs: 15 * 60 * 1000,
+            initial: pred,
+            url: (p) => (p.urls && p.urls.get ? p.urls.get : `${BASE}/predictions/${p.id}`),
+            headers: { Authorization: headers.Authorization },
+            delay: (p) => (p.status === "starting" ? 2000 : 1000),
+            parse: (j, prev) => (j && typeof j === "object" && typeof j.status === "string" ? { ...prev, ...j } : null),
+            done: (p) => ["succeeded", "failed", "canceled"].includes(p.status),
+        });
+        if (pred.status !== "succeeded") throw new Error(scrub("Replicate: " + (pred.error || pred.status), ctx.key));
         const imgUrl = firstUrl(pred.output);
-        if (!imgUrl) throw new Error("Replicate: no image URL in the output (" + JSON.stringify(pred.output).slice(0, 200) + ")");
-        const file = await fetchImage(imgUrl, ctx.fetch);
+        if (!imgUrl) throw new Error(scrub("Replicate: no image URL in the output (" + JSON.stringify(pred.output).slice(0, 200) + ")", ctx.key));
+        const file = await downloadImage(imgUrl, ctx, { who: `Replicate ${model}`, id });
         const metrics = pred.metrics || {};
         // a seed `options.omit` kept home means nothing to the model: none is reported
         const omitted = Array.isArray((req.options || {}).omit) && req.options.omit.includes("seed");

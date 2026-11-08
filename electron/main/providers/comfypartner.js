@@ -185,7 +185,7 @@ async function run(req, ctx, kind) {
         const m = BUSINESS_ERROR.exec(String(raw));
         throw new Error(scrub(`HY Image 3.5: ${m ? m[1].trim() : raw}`, ctx.key));
     }
-    const file = await download(image.url, ctx, test, "HY Image 3.5");
+    const file = await download(image.url, ctx, test, "HY Image 3.5", j.request_id);
     const bytes = Buffer.from(file.bytes);
     return {
         bytes, mime: sniff(bytes, file.mime), seed: body.seed,

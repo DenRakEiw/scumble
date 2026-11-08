@@ -45,7 +45,7 @@
 // Referral: the key link (keyUrl) carries DenRakEiw's WaveSpeed referral code.
 "use strict";
 
-const { fetchImage, readError, sleep, num, closestAspect, tierFor, checkRatio, withinBytes, ideogramMask } = require("./util");
+const { downloadImage, pollJob, scrub, readError, num, closestAspect, tierFor, checkRatio, withinBytes, ideogramMask } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 const flux3 = require("./flux3");
 const openrouter = require("./openrouter");
@@ -64,7 +64,7 @@ async function upload(ctx, bytes, name, mime = "image/png") {
         const up = t.upload || {};
         if (t.download_url && up.url) {
             const put = await ctx.fetch(up.url, { method: up.method || "PUT", headers: up.headers || { "Content-Type": mime }, body: bytes });
-            if (!put.ok) throw new Error(`WaveSpeed upload (${name}): ${await readError(put)}`);
+            if (!put.ok) throw new Error(scrub(`WaveSpeed upload (${name}): ${await readError(put, ctx.key)}`, ctx.key));
             return t.download_url;
         }
         ctx.log("upload ticket without download_url / upload.url, using the binary upload:", JSON.stringify(t).slice(0, 200));
@@ -74,7 +74,7 @@ async function upload(ctx, bytes, name, mime = "image/png") {
     const fd = new FormData();
     fd.append("file", new Blob([bytes], { type: mime }), name);
     const r = await ctx.fetch(BASE + "media/upload/binary", { method: "POST", headers: auth, body: fd });
-    if (!r.ok) throw new Error(`WaveSpeed upload (${name}): ${await readError(r)}`);
+    if (!r.ok) throw new Error(scrub(`WaveSpeed upload (${name}): ${await readError(r, ctx.key)}`, ctx.key));
     const d = ((await r.json()) || {}).data || {};
     if (!d.download_url) throw new Error("WaveSpeed upload answered without download_url: " + JSON.stringify(d).slice(0, 200));
     return d.download_url;
@@ -285,26 +285,32 @@ module.exports = {
         const sent = {};
         const input = await inputFor(req, ctx, sent);
         const submit = await ctx.fetch(BASE + model, { method: "POST", headers, body: JSON.stringify(input) });
-        if (!submit.ok) throw new Error(`WaveSpeed ${model}: ${await readError(submit)}`);
+        if (!submit.ok) throw new Error(scrub(`WaveSpeed ${model}: ${await readError(submit, ctx.key)}`, ctx.key));
         const first = (await submit.json()) || {};
         let data = first.data || {};
-        if (!data.id) throw new Error("WaveSpeed answered without a prediction id: " + JSON.stringify(first).slice(0, 200));
+        if (!data.id) throw new Error(scrub("WaveSpeed answered without a prediction id: " + JSON.stringify(first).slice(0, 200), ctx.key));
+        const id = String(data.id);
         const resultUrl = (data.urls && data.urls.get) || `${BASE}predictions/${data.id}/result`;
-        const t0 = Date.now();
         const done = new Set(["completed", "failed", "cancelled", "timeout", "deleted"]);
-        while (!done.has(String(data.status || "").toLowerCase())) {
-            if (Date.now() - t0 > 15 * 60 * 1000) throw new Error("WaveSpeed: timed out after 15 minutes");
-            await sleep(POLL_MS);
-            const r = await ctx.fetch(resultUrl, { headers: { Authorization: headers.Authorization } });
-            if (!r.ok) throw new Error(`WaveSpeed status: ${await readError(r)}`);
-            data = ((await r.json()) || {}).data || {};
-        }
-        if (data.status !== "completed") throw new Error(`WaveSpeed ${model}: ${data.error || data.status}`);
+        data = await pollJob(ctx, {
+            who: `WaveSpeed ${model}`,
+            timeoutWho: "WaveSpeed",
+            statusWho: "WaveSpeed status",
+            id,
+            waitMs: 15 * 60 * 1000,
+            initial: data,
+            url: resultUrl,
+            headers: { Authorization: headers.Authorization },
+            delay: POLL_MS,
+            parse: (j, prev) => (j && typeof j === "object" && j.data && typeof j.data === "object" && typeof j.data.status === "string" ? { ...prev, ...j.data } : null),
+            done: (d) => done.has(String(d.status || "").toLowerCase()),
+        });
+        if (String(data.status || "").toLowerCase() !== "completed") throw new Error(scrub(`WaveSpeed ${model}: ${data.error || data.status}`, ctx.key));
         const out = Array.isArray(data.outputs) ? data.outputs[0] : null;
-        if (!out) throw new Error("WaveSpeed: no output in the result (" + JSON.stringify(data).slice(0, 200) + ")");
+        if (!out) throw new Error(scrub("WaveSpeed: no output in the result (" + JSON.stringify(data).slice(0, 200) + ")", ctx.key));
         if (Array.isArray(data.has_nsfw_contents) && data.has_nsfw_contents[0]) ctx.log("result flagged as nsfw by WaveSpeed");
         // outputs are CDN URLs, or naked base64 with enable_base64_output
-        const file = /^https?:/.test(out) ? await fetchImage(out, ctx.fetch) : { bytes: Buffer.from(String(out).replace(/^data:[^,]*,/, ""), "base64"), mime: "image/png" };
+        const file = /^https?:/.test(out) ? await downloadImage(out, ctx, { who: `WaveSpeed ${model}`, id }) : { bytes: Buffer.from(String(out).replace(/^data:[^,]*,/, ""), "base64"), mime: "image/png" };
         // a route whose allowlist kept the seed home reports none (two runs differ)
         const seed = acceptsOf(req) && !("seed" in input) ? undefined : num(input.seed, req.seed);
         return { bytes: file.bytes, mime: file.mime, seed, info: { model, ms: data.timings && data.timings.inference, ...sent } };
