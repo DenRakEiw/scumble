@@ -1879,6 +1879,20 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K11 (2026-11-08): selection invert in Rust, the frozen tile's copy deferred (the Antigravity M chain)
+
+By the same chain on `dfe2f35` (`38284f4`), merged `29695d4`, ABI 29 (the next free number);
+`docs/measurements/k11_2026-11-08/`. `crates/px/src/sel.rs` `mask_invert` (the `bw x bh` corner of a tile, the extent over
+the whole tile, 0 when the tile inverts to empty), twin in `kernels_js.js`, route `maskInvert`; the big-endian branch
+stays JS. `inpaint_tiles.js` `writable(tx, ty, create, whole)`: a write that replaces the whole tile skips the copy of a
+frozen tile and the zeroing of a reused slot (`allocTileBytes(owner, zero)`), `invert` and `combine` pass it (only for a
+full 256 x 256 corner); a tile that inverts to empty is dropped with no `writable` on the Rust route. The review (two
+lenses, verified) ran 6,750 tiles through simd, scalar and the twin against literal copies of the base loops, and a store
+differential against the extracted `dfe2f35` tree (444 inverts, 396 combines, with and without the arena and reused
+dirty slots, frozen clones hashed): no difference. Its one finding, a test gap: nothing pins the `whole` guard on edge
+tiles (a mutant passes, because Node runs without the arena); added by the chain with K22. At 15k invert 228 -> 128 ms,
+px_jobs' invert 201 -> 100 ms.
+
 ### K21 (2026-11-08): the limit's map tile stats in Rust, a tile class per tile (the Antigravity M chain)
 
 By a Gemini agent in Antigravity (`.claude/coord/chain-m/`) on `29f6749` (`308ca8a`, two review rounds' findings fixed in
