@@ -2259,6 +2259,84 @@ function rangeU16Bilinear(data, w, h, px, py) {
     return top + fy * (bot - top);
 }
 
+const _expBuf = new ArrayBuffer(8);
+const _expDV = new DataView(_expBuf);
+const EXP_LN2HI = 6.93147180369123816490e-01; // 0x3fe62e42, 0xfee00000
+const EXP_LN2LO = 1.90821492927058770002e-10; // 0x3dea39ef, 0x35793c76
+const EXP_INVLN2 = 1.44269504088896338700e+00; // 0x3ff71547, 0x652b82fe
+const EXP_P1 = 1.66666666666666019037e-01; // 0x3FC55555, 0x5555553E
+const EXP_P2 = -2.77777777770155933842e-03; // 0xBF66C16C, 0x16BEBD93
+const EXP_P3 = 6.61375632143793436117e-05; // 0x3F11566A, 0xAF25DE2C
+const EXP_P4 = -1.65339022054652515390e-06; // 0xBEBBBD41, 0xC5D26BF1
+const EXP_P5 = 4.13813679705723846039e-08; // 0x3E663769, 0x72BEA4D0
+const EXP_1P1023 = 8.98846567431158e+307; // 0x7fe0000000000000 (2^1023)
+const EXP_SUBNORM_MUL = 2.0041683600089728e-292; // 0x0360000000000000 (2^-969)
+
+/**
+ * Port of `compiler_builtins` / `libm::exp` (`e_exp.c` + `scalbn`, IEEE 754 `f64`) as compiled into `px.wasm` and
+ * `px_scalar.wasm`, so the JS twin and Rust kernel produce identical `f64` bits across all V8 versions (Node and
+ * Electron).
+ */
+export function libmExp(x) {
+    _expDV.setFloat64(0, x, true);
+    let hx = _expDV.getUint32(4, true);
+    const sign = hx >>> 31;
+    hx &= 0x7fffffff;
+
+    if (hx >= 0x4086232b) {
+        if (Number.isNaN(x)) return x;
+        if (x > 709.782712893383973096) return x * EXP_1P1023;
+        if (x < -745.13321910194110842) return 0.0;
+    }
+
+    let hi = 0.0;
+    let lo = 0.0;
+    let k = 0;
+    if (hx > 0x3fd62e42) {
+        if (hx >= 0x3ff0a2b2) {
+            k = (EXP_INVLN2 * x + (sign ? -0.5 : 0.5)) | 0;
+        } else {
+            k = 1 - sign - sign;
+        }
+        hi = x - k * EXP_LN2HI;
+        lo = k * EXP_LN2LO;
+        x = hi - lo;
+    } else if (hx > 0x3e300000) {
+        k = 0;
+        hi = x;
+        lo = 0.0;
+    } else {
+        return 1.0 + x;
+    }
+
+    const xx = x * x;
+    const c = x - xx * (EXP_P1 + xx * (EXP_P2 + xx * (EXP_P3 + xx * (EXP_P4 + xx * EXP_P5))));
+    let y = 1.0 + (x * c / (2.0 - c) - lo + hi);
+    if (k === 0) return y;
+
+    let n = k;
+    if (n > 1023) {
+        y *= EXP_1P1023;
+        n -= 1023;
+        if (n > 1023) {
+            y *= EXP_1P1023;
+            n -= 1023;
+            if (n > 1023) n = 1023;
+        }
+    } else if (n < -1022) {
+        y *= EXP_SUBNORM_MUL;
+        n += 969;
+        if (n < -1022) {
+            y *= EXP_SUBNORM_MUL;
+            n += 969;
+            if (n < -1022) n = -1022;
+        }
+    }
+    _expDV.setUint32(0, 0, true);
+    _expDV.setUint32(4, ((1023 + n) << 20) >>> 0, true);
+    return y * _expDV.getFloat64(0, true);
+}
+
 function rangeSnapField(mdata, w, h, gdata, gw, gh, mx, my, pr, pg, pb, sigmaR, tau) {
     if (!(sigmaR > 0) || !gdata) {
         return rangeU16Bilinear(mdata, w, h, mx, my);
@@ -2312,8 +2390,8 @@ function rangeSnapField(mdata, w, h, gdata, gw, gh, mx, my, pr, pg, pb, sigmaR, 
             const dg = pg - gg;
             const db = pb - gb;
             const distColor2 = dr * dr + dg * dg + db * db;
-            const wSpatial = Math.exp(-0.5 * distSpatial2);
-            const wColor = Math.exp(-distColor2 * inv2SigmaR2);
+            const wSpatial = libmExp(-0.5 * distSpatial2);
+            const wColor = libmExp(-distColor2 * inv2SigmaR2);
             const weight = wSpatial * wColor;
             const mVal = mdata[mrow + cx] / 65535;
             num += weight * mVal;

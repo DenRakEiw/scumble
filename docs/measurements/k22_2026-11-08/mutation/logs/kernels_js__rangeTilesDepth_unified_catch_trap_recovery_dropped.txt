@@ -1,0 +1,13 @@
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=retouchRoute)
+(Use `node --trace-warnings ...` to show where the warning was created)
+RuntimeError: memory access out of bounds
+    at wasm://wasm/000d3bda:wasm-function[16]:0x38dc
+    at wasm://wasm/000d3bda:wasm-function[67]:0x2122a
+    at out.<computed> [as mip_half] (file:///C:/Users/schoeneberg/AppData/Local/Temp/ag_mut_k22/renderer/editor/px/px.js:146:40)
+    at trapIn2 (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:1402:42)
+    at p.<computed> [as rangeTilesDepth] (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:1437:40)
+    at Module.rangeTilesDepth (file:///C:/Users/schoeneberg/AppData/Local/Temp/ag_mut_k22/renderer/editor/px/kernels.js:881:32)
+    at C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:1422:60
+    at retouchRouteCases (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:1438:25)
+    at async group (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:65:5)
+    at async main (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:6053:5)

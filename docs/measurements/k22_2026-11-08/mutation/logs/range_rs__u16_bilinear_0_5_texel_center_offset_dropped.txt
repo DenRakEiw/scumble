@@ -1,4 +1,4 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 17 s)
 warning: unused variable: `half_v`
    --> src\range.rs:621:21
     |
@@ -8,24 +8,23 @@ warning: unused variable: `half_v`
     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
 warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
-    Finished `release` profile [optimized] target(s) in 3.63s
+    Finished `release` profile [optimized] target(s) in 8.55s
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px)
-    Finished `release` profile [optimized] target(s) in 2.84s
-$ node tools/px_test.js  (rc 1, 4 s, PX_ONLY=range)
-FAIL rust simd range_tiles_depth equals its twin byte for byte (105 cases, each also at an odd offset)  depth 7x5->13x9 ty=0 hflip snap=false inv=false/false: out.tiles[0].alpha[3] is 0, the twin has 92
-FAIL rust scalar range_tiles_depth equals its twin byte for byte (105 cases, each also at an odd offset)  depth 7x5->13x9 ty=0 hflip snap=false inv=false/false: out.tiles[0].alpha[3] is 0, the twin has 92
+    Finished `release` profile [optimized] target(s) in 7.82s
+$ node tools/px_test.js  (rc 1, 12 s, PX_ONLY=range)
+FAIL rust simd range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)  depth 7x5->13x9 ty=0 hflip snap=false inv=false/false: out.tiles[0].alpha[3] is 0, the twin has 92
+FAIL rust scalar range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)  depth 7x5->13x9 ty=0 hflip snap=false inv=false/false: out.tiles[0].alpha[3] is 0, the twin has 92
 FAIL range_tiles_depth zeroes out-of-bounds right and bottom columns/rows in dirty wasm arena  simd: out.tiles[0].alpha[0] is 219, the twin has 215
 FAIL kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order  calls jj=0 rr=1 rj=1 jr=1 diffs=out.tiles[0].alpha[222] is 1, the twin has 0
-FAIL (4) (only: range; PX_ONLY, not the full test)
-ok   rangeTilesDepth refuses zero tile on twin and both builds  3/3 threw
-ok   rangeTilesDepth refuses NaN xf on twin and both builds  3/3 threw
-ok   rangeTilesDepth refuses null limit on twin and both builds  3/3 threw
-ok   raw range_tiles_depth returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  got 0
-FAIL kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order  calls jj=0 rr=1 rj=1 jr=1 diffs=out.tiles[0].alpha[222] is 1, the twin has 0
-ok   rust simd module reports its SIMD flag
-ok   rust scalar module reports its SIMD flag
-FAIL (4) (only: range; PX_ONLY, not the full test)
-(node:56448) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/ag_mut_k22/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
+TypeError: Cannot read properties of undefined (reading 'find')
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:239:32)
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:230:16)
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:260:43)
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:254:59)
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:260:43)
+    at rangeCases (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:5963:18)
+    at async group (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:65:5)
+    at async main (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:6051:5)

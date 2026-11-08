@@ -1384,10 +1384,21 @@ async function retouchRouteCases(js) {
         want.es = js.edgefitShrink(I, w, h, 32, 20);
         want.wr = js.warpRgba(I, w, h, warpM);
         want.wc = js.warpCoverage(w, h, warpM);
+        const rtdMap = new Uint16Array(16 * 16);
+        for (let i = 0; i < rtdMap.length; i++) rtdMap[i] = (i * 257) & 0xffff;
+        const rtdGuide = { data: new Uint8Array(16 * 16 * 4).fill(128), w: 16, h: 16 };
+        const rtdPic = { data: new Uint8Array(256 * 256 * 4).fill(140), x0: 0, y0: 0, w: 256, h: 256 };
+        const rtdXf = [16 / 512, 0, 0, 16 / 256, 0, 0];
+        const rtdLim = { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const rtdCls = new Uint8Array([2, 2]);
+        const rtdSnap = [0.05, 0.02];
+        want.rtd = js.rangeTilesDepth(rtdMap, 16, 16, rtdXf, 512, 256, 0, 0, 256, rtdLim, false, rtdSnap, rtdGuide, rtdPic, rtdCls, 256);
         K.setRoute("edgefit", "rust");
         K.setRoute("edgefitShrink", "rust");
         K.setRoute("warpRgba", "rust");
         K.setRoute("warpCoverage", "rust");
+        K.setRoute("rangeDepth", "rust");
+        K.setRoute("rangeDepthSnap", "rust");
         const trapIn2 = (p) => p.exports.mip_half(-16, 256, 256, 0);
         let ok = true, detail = "";
         for (const [name, method, callIt, check1] of [
@@ -1408,6 +1419,16 @@ async function retouchRouteCases(js) {
             ["edgefitShrink", "edgefitShrink", () => K.edgefitShrink(I, w, h, 32, 20), (o) => eqFloats(o.gray, want.es.gray) && eqFloats(o.alpha, want.es.alpha)],
             ["warpRgba", "warpRgba", () => K.warpRgba(I, w, h, warpM), (o) => eqBytes(o, want.wr)],
             ["warpCoverage", "warpCoverage", () => K.warpCoverage(w, h, warpM), (o) => eqFloats(o, want.wc)],
+            ["rangeTilesDepth", "rangeTilesDepth", () => K.rangeTilesDepth(rtdMap, 16, 16, rtdXf, 512, 256, 0, 0, 256, rtdLim, false, rtdSnap, rtdGuide, rtdPic, rtdCls, 256), (o) => !twinDiff(o, want.rtd)],
+            ["rangeTilesDepthSplit", "rangeTilesDepth", () => {
+                K.setRoute("rangeDepth", "rust");
+                K.setRoute("rangeDepthSnap", "js");
+                try {
+                    return K.rangeTilesDepth(rtdMap, 16, 16, rtdXf, 512, 256, 0, 0, 256, rtdLim, false, rtdSnap, rtdGuide, rtdPic, rtdCls, 256);
+                } finally {
+                    K.setRoute("rangeDepthSnap", "rust");
+                }
+            }, (o) => !twinDiff(o, want.rtd)],
         ]) {
             const p = K.rustPx(), i0 = K.pxInstances();
             // the split traps after its kernel wrote L in wasm memory, before the copy out (the caller's L untouched)
@@ -1417,7 +1438,17 @@ async function retouchRouteCases(js) {
             const got = callIt(), after = K.rustPx(), i1 = K.pxInstances();
             if (!(check1(got) && p.trapped instanceof WebAssembly.RuntimeError && after !== p && i1.trap === i0.trap + 1)) { ok = false; detail = `${name}: ${JSON.stringify(i1)}`; }
         }
-        check("kernels.js K27 / K28 / K29 / K34 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
+        {
+            const p = K.rustPx(), i0 = K.pxInstances();
+            p.rangeTilesDepth = function () { return this.alloc(0xffff0000); };
+            const got = K.rangeTilesDepth(rtdMap, 16, 16, rtdXf, 512, 256, 0, 0, 256, rtdLim, false, rtdSnap, rtdGuide, rtdPic, rtdCls, 256);
+            const after = K.rustPx(), i1 = K.pxInstances();
+            if (!(!twinDiff(got, want.rtd) && after !== p && i1.oom === i0.oom + 1)) {
+                ok = false;
+                detail = `rangeTilesDepthOom: ${JSON.stringify(i1)}`;
+            }
+        }
+        check("kernels.js K27 / K28 / K29 / K34 / K22 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
         // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
         const i0 = K.pxInstances();
         K.setRoute("releaseMB", 0);
@@ -1428,7 +1459,7 @@ async function retouchRouteCases(js) {
         console.warn = realWarn;
         kernelsBack(K);
     }
-    check("the K27 / K28 / K29 / K34 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|edgefit_shrink|warp_rgba|warp_coverage/.test(w)).length === 9, warned.join(" | "));
+    check("the K27 / K28 / K29 / K34 / K22 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|edgefit_shrink|warp_rgba|warp_coverage|range_tiles_depth/.test(w)).length === 11, warned.join(" | "));
     void js;
 }
 
@@ -5396,6 +5427,121 @@ async function rangeCases(js, simd, scalar, resample, K) {
     }
 
     // ---- K22: range_tiles_depth (docs/PLAN_WASM_BUILD.md §4.8) ----
+    const refSnapField = (mapObj, guide, mx, my, pr, pg, pb, sigmaR, tau) => {
+        const mdata = mapObj.data, w = mapObj.w, h = mapObj.h;
+        const gdata = guide && (guide.data || guide);
+        const gw = guide && guide.w != null ? guide.w : w;
+        const gh = guide && guide.h != null ? guide.h : h;
+        if (!(sigmaR > 0) || !gdata) return u16Bilinear(mdata, w, h, mx, my);
+        const u = mx - 0.5, v = my - 0.5;
+        const ix = Math.floor(u), iy = Math.floor(v);
+        let lo = 65535, hi = 0;
+        for (let dy = -1; dy <= 2; dy++) {
+            const y = Math.max(0, Math.min(h - 1, iy + dy));
+            const row = y * w;
+            for (let dx = -1; dx <= 2; dx++) {
+                const x = Math.max(0, Math.min(w - 1, ix + dx));
+                const val = mdata[row + x];
+                if (val < lo) lo = val;
+                if (val > hi) hi = val;
+            }
+        }
+        const range = hi / 65535 - lo / 65535;
+        const k = tau >= 2 * tau ? (range >= 2 * tau ? 1 : 0) : range <= tau ? 0 : range >= 2 * tau ? 1 : (() => {
+            const t = (range - tau) / tau;
+            return t <= 1e-14 ? 0 : t >= 1 - 1e-14 ? 1 : t * t * (3 - 2 * t);
+        })();
+        if (k <= 0) return u16Bilinear(mdata, w, h, mx, my);
+        const inv2SigmaR2 = 0.5 / (sigmaR * sigmaR);
+        let num = 0, den = 0;
+        for (let dy = -1; dy <= 2; dy++) {
+            const ty = iy + dy, distY = v - ty, distY2 = distY * distY;
+            const cy = Math.max(0, Math.min(h - 1, ty));
+            const gy = Math.max(0, Math.min(gh - 1, ty));
+            const mrow = cy * w, grow = gy * gw;
+            for (let dx = -1; dx <= 2; dx++) {
+                const tx = ix + dx, distX = u - tx;
+                const distSpatial2 = distX * distX + distY2;
+                const cx = Math.max(0, Math.min(w - 1, tx));
+                const gx = Math.max(0, Math.min(gw - 1, tx));
+                const gIdx = (grow + gx) * 4;
+                const dr = pr - gdata[gIdx] / 255;
+                const dg = pg - gdata[gIdx + 1] / 255;
+                const db = pb - gdata[gIdx + 2] / 255;
+                const distColor2 = dr * dr + dg * dg + db * db;
+                const weight = js.libmExp(-0.5 * distSpatial2) * js.libmExp(-distColor2 * inv2SigmaR2);
+                num += weight * (mdata[mrow + cx] / 65535);
+                den += weight;
+            }
+        }
+        const bil = u16Bilinear(mdata, w, h, mx, my);
+        if (!(den > 1e-6)) return bil;
+        return bil + k * (num / den - bil);
+    };
+
+    // Frozen table of cases generated from px.wasm's compiled libm::exp (including branch boundaries, subnormals,
+    // overflows, underflows, and arguments where Electron 44's V8 15.2 Math.exp differs by 1 ulp).
+    {
+        const FROZEN_WASM_EXP_CASES = [
+            ["0x0000000000000000", "0x3ff0000000000000"],
+            ["0x8000000000000000", "0x3ff0000000000000"],
+            ["0x3ff0000000000000", "0x4005bf0a8b14576a"],
+            ["0xbff0000000000000", "0x3fd78b56362cef38"],
+            ["0xbff8800000000000", "0x3fcbae93b5663054"],
+            ["0xbfe0000000000000", "0x3fe368b2fc6f960a"],
+            ["0x3fe0000000000000", "0x3ffa61298e1e069c"],
+            ["0x3fd62e42fefa39ef", "0x3ff6a09e667f3bcc"],
+            ["0xbfd62e42fefa39ef", "0x3fe6a09e667f3bcc"],
+            ["0x3ff0a2b23f3bab73", "0x4006a09e667f3bcc"],
+            ["0xbff0a2b23f3bab73", "0x3fd6a09e667f3bcd"],
+            ["0x3e112e0be826d695", "0x3ff000000044b830"],
+            ["0xbe112e0be826d695", "0x3fefffffff768fa1"],
+            ["0x3cd203af9ee75616", "0x3ff0000000000005"],
+            ["0xbcd203af9ee75616", "0x3feffffffffffff7"],
+            ["0x4086280000000000", "0x7fdd422d2be5dc9b"],
+            ["0x40862e42fefa39ee", "0x7feffffffffffb2a"],
+            ["0x40862e42fefa39f0", "0x7ff0000000000000"],
+            ["0x4086300000000000", "0x7ff0000000000000"],
+            ["0xc086200000000000", "0x0017c8ab2288c9ab"],
+            ["0xc086232bdd7abcd1", "0x001000000000027c"],
+            ["0xc086232bdd7abcd3", "0x000ffffffffffe7c"],
+            ["0xc086800000000000", "0x0000000993b4dc95"],
+            ["0xc087480000000000", "0x0000000000000001"],
+            ["0xc0874910d52d3050", "0x0000000000000001"],
+            ["0xc0874910d52d3052", "0x0000000000000000"],
+            ["0xc087700000000000", "0x0000000000000000"],
+            ["0x7ff0000000000000", "0x7ff0000000000000"],
+            ["0xfff0000000000000", "0x0000000000000000"],
+            ["0xc037c7fd9096fb70", "0x3dc9d46af4ab84d5"],
+            ["0xbffab1edcbc00000", "0x3fc8221cba844e14"],
+            ["0xc02189112d400000", "0x3f2467bf5e100dbe"],
+            ["0xc025879c5c880000", "0x3ef627c4b6b4507c"],
+            ["0xc0180a4096700000", "0x3f641a88bd5a2d80"],
+            ["0xc033604c4d700000", "0x3e3085024662b946"],
+            ["0xc0154f9c44100000", "0x3f73e2d8444b78e4"],
+            ["0xc026a7d05b980000", "0x3ee93cc9f87c7524"],
+            ["0xc0295b6ee5a00000", "0x3eca261a28433fde"],
+            ["0xbff18d0708c00000", "0x3fd55e869253c7ce"],
+            ["0xbfcb1e1566000000", "0x3fe9e3fef73f9c54"],
+            ["0xc02f23ec74980000", "0x3e87371c4b5fded4"],
+            ["0xc02f4c9f23680000", "0x3e8570fda46cc79e"],
+            ["0xbfe75e1287000000", "0x3fded5c1018b76a0"],
+        ];
+        const b = new ArrayBuffer(8), dv = new DataView(b);
+        const f64FromBits = (hex) => { dv.setBigUint64(0, BigInt(hex), true); return dv.getFloat64(0, true); };
+        const bitsFromF64 = (v) => { dv.setFloat64(0, v, true); return "0x" + dv.getBigUint64(0, true).toString(16).padStart(16, "0"); };
+        let expOk = Number.isNaN(js.libmExp(NaN)), expDetail = "";
+        for (const [xHex, wantHex] of FROZEN_WASM_EXP_CASES) {
+            const gotHex = bitsFromF64(js.libmExp(f64FromBits(xHex)));
+            if (gotHex !== wantHex) {
+                expOk = false;
+                expDetail = `x=${xHex}: got ${gotHex}, want ${wantHex}`;
+                break;
+            }
+        }
+        check(`js libmExp matches frozen wasm libm::exp bit for bit (${FROZEN_WASM_EXP_CASES.length} cases + NaN)`, expOk, expDetail);
+    }
+
     const refRangeTilesDepth = (map, mw, mh, xf, W, H, ty, y0, y1, limit, jobInvert = false, snap = null, guide = null, pic = null, classes = null, tile = 256) => {
         const cols = Math.ceil(W / tile);
         const tileY0 = ty * tile, tileY1 = Math.min(tileY0 + tile, H);
@@ -5431,7 +5577,7 @@ async function rangeCases(js, simd, scalar, resample, K) {
                     let v;
                     if (pRow >= 0 && x >= px0 && x < px0 + pw) {
                         const pi = (pRow + (x - px0)) * 4;
-                        v = snapField(mapObj, guide, mx, my, pData[pi] / 255, pData[pi + 1] / 255, pData[pi + 2] / 255, sigmaR, tau);
+                        v = refSnapField(mapObj, guide, mx, my, pData[pi] / 255, pData[pi + 1] / 255, pData[pi + 2] / 255, sigmaR, tau);
                     } else {
                         v = u16Bilinear(map, mw, mh, mx, my);
                     }
@@ -5614,6 +5760,43 @@ async function rangeCases(js, simd, scalar, resample, K) {
             tag: "snapField wSum <= 1e-12 fallback to vBil",
             args: [mapEdge, guideEdge, picEdge, cls2, mw, mh, xf, W, H, 0, 0, 256, { lo: 0.35, hi: 0.55, fLo: 0.05, fHi: 0.05, invert: false }, false, picBox, [1e-4, tau], 256],
         });
+
+        // K22-exp-band tie case: W = H = 256, map 128 x 128, 16384 for x < 64 else 49151, guide and picture flat grey
+        // 128, m = [0.5,0,0,0.5,0.25,0], snap [0.145,0.02], limit {lo 0.55, hi 1, fLo 0.1, fHi 0}. Column x = 127 hits
+        // the 127.5 tie where Electron 44's Math.exp(-0.5 / 0.145^2) differs by 1 ulp from libm::exp; with libmExp both
+        // the twin and both wasm builds give 127 on all 256 pixels of column x = 127.
+        const mwTie = 128, mhTie = 128, WTie = 256, HTie = 256;
+        const mapTie = new Uint16Array(mwTie * mhTie);
+        for (let y = 0; y < mhTie; y++) {
+            for (let x = 0; x < mwTie; x++) mapTie[y * mwTie + x] = x < 64 ? 16384 : 49151;
+        }
+        const guideTie = new Uint8Array(mwTie * mhTie * 4).fill(128);
+        const picTie = new Uint8Array(WTie * HTie * 4).fill(128);
+        const mTie = [0.5, 0, 0, 0.5, 0.25, 0];
+        const snapTie = [0.145, 0.02];
+        const limTie = { lo: 0.55, hi: 1, fLo: 0.1, fHi: 0, invert: false };
+        const clsTie = new Uint8Array([2]);
+        depthCases.push({
+            tag: "K22-exp-band tie case (column x = 127)",
+            args: [mapTie, guideTie, picTie, clsTie, mwTie, mhTie, mTie, WTie, HTie, 0, 0, 256, limTie, false, [0, 0, WTie, HTie], snapTie, 256],
+        });
+        let tieOk = true, tieDetail = "";
+        for (const [bName, k] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+            const outTie = callRangeDepth(k, [mapTie, guideTie, picTie, clsTie, mwTie, mhTie, mTie, WTie, HTie, 0, 0, 256, limTie, false, [0, 0, WTie, HTie], snapTie, 256]);
+            const aTie = new Uint8Array(outTie.tiles[0].alpha);
+            let n127 = 0, n128 = 0;
+            for (let y = 0; y < 256; y++) {
+                const v = aTie[y * 256 + 127];
+                if (v === 127) n127++;
+                else if (v === 128) n128++;
+            }
+            if (n127 !== 128 || n128 !== 128) {
+                tieOk = false;
+                tieDetail = `${bName}: got n127=${n127}, n128=${n128} on column x=127 (want 128 of each)`;
+                break;
+            }
+        }
+        check("range_tiles_depth K22-exp-band tie case gives 127 on the 128 odd-row pixels of column x=127 across twin, simd, and scalar", tieOk, tieDetail);
     }
 
     let refDepthOk = true, refDepthDetail = "";
@@ -5762,6 +5945,26 @@ async function rangeCases(js, simd, scalar, resample, K) {
         check("kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order",
             orderOk && !diffRR && !diffRJ && !diffJR && jj.calls === 0 && rr.calls === 1 && rj.calls === 1 && jr.calls === 1,
             `calls jj=${jj.calls} rr=${rr.calls} rj=${rj.calls} jr=${jr.calls} diffs=${diffRR || diffRJ || diffJR}`);
+
+        // Turned-map window bounds: on a 90-degree turn (m1 = mh / W), a row with only 1 compute tile (tx = 2 of 6)
+        // bounds [wy0..wy1] over [minTx..maxTx] instead of [0..W].
+        const xfTurn = [0, mh / W, mw / H, 0, 0, 0];
+        const clsSingle = new Uint8Array([0, 0, 2, 0, 0, 0]);
+        let copiedMapBytes = 0;
+        const origIn = simd._in;
+        simd._in = function (arena, src, bytes) {
+            if (src.buffer === map.buffer) copiedMapBytes = bytes;
+            return origIn.call(this, arena, src, bytes);
+        };
+        try {
+            const gotTurn = simd.rangeTilesDepth(map, mw, mh, xfTurn, W, H, 0, 0, H, lim, false, null, null, null, clsSingle, 256);
+            const wantTurn = js.rangeTilesDepth(map, mw, mh, xfTurn, W, H, 0, 0, H, lim, false, null, null, null, clsSingle, 256);
+            check("px.js rangeTilesDepth bounds [wy0..wy1] over [minTx..maxTx] on a 90-degree turned map",
+                !twinDiff(gotTurn, wantTurn) && copiedMapBytes > 0 && copiedMapBytes <= (mh / 2) * mw * 2,
+                `copiedMapBytes=${copiedMapBytes} fullMapBytes=${map.byteLength}`);
+        } finally {
+            simd._in = origIn;
+        }
     }
 
     if (process.env.PX_BENCH) {

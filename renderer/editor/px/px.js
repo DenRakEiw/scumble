@@ -1101,11 +1101,13 @@ export class Px {
         const cols = Math.ceil(W / tile);
         if (classes && classes.length < cols) throw new Error("rangeTilesDepth: short classes");
         const clsBytes = new Uint8Array(cols);
-        let nCompute = 0;
+        let nCompute = 0, minTx = cols, maxTx = -1;
         for (let tx = 0; tx < cols; tx++) {
             const c = classes ? classes[tx] : 2;
             if (c === 2 || c === "compute") {
                 clsBytes[tx] = 2;
+                if (tx < minTx) minTx = tx;
+                maxTx = tx;
                 nCompute++;
             }
         }
@@ -1139,10 +1141,12 @@ export class Px {
         }
         const snapOn = sigmaR > 0 && gBytes !== null && pBytes !== null;
 
-        const ry00 = m1 * 0 + m3 * ry0 + m5;
-        const ry10 = m1 * W + m3 * ry0 + m5;
-        const ry01 = m1 * 0 + m3 * ry1 + m5;
-        const ry11 = m1 * W + m3 * ry1 + m5;
+        const rx0 = minTx * tile;
+        const rx1 = Math.min((maxTx + 1) * tile, W);
+        const ry00 = m1 * rx0 + m3 * ry0 + m5;
+        const ry10 = m1 * rx1 + m3 * ry0 + m5;
+        const ry01 = m1 * rx0 + m3 * ry1 + m5;
+        const ry11 = m1 * rx1 + m3 * ry1 + m5;
         const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11) - 2)));
         const wy1 = Math.max(0, Math.min(mh - 1, Math.ceil(Math.max(ry00, ry10, ry01, ry11) + 2)));
         const wh = wy1 - wy0 + 1;

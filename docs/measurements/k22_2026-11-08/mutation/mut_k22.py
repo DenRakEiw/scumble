@@ -161,8 +161,18 @@ MUTANTS = [
         "px.js: rangeTilesDepth wy0 halo 2 -> 0",
         PJ,
         [(
-            "        const ry11 = m1 * W + m3 * ry1 + m5;\n        const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11) - 2)));",
-            "        const ry11 = m1 * W + m3 * ry1 + m5;\n        const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11))));",
+            "        const ry11 = m1 * rx1 + m3 * ry1 + m5;\n        const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11) - 2)));",
+            "        const ry11 = m1 * rx1 + m3 * ry1 + m5;\n        const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11))));",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "px.js: rangeTilesDepth turned-map [minTx..maxTx] x window reverted to [0..W]",
+        PJ,
+        [(
+            "        const rx0 = minTx * tile;\n        const rx1 = Math.min((maxTx + 1) * tile, W);",
+            "        const rx0 = 0;\n        const rx1 = W;",
         )],
         "killed",
         {"px": ["range"]},
@@ -188,6 +198,16 @@ MUTANTS = [
         {"px": ["range"]},
     ),
     (
+        "kernels_js.js: libmExp P1 polynomial term sign flipped",
+        KJ,
+        [(
+            "    const c = x - xx * (EXP_P1 + xx * (EXP_P2 + xx * (EXP_P3 + xx * (EXP_P4 + xx * EXP_P5))));",
+            "    const c = x + xx * (EXP_P1 + xx * (EXP_P2 + xx * (EXP_P3 + xx * (EXP_P4 + xx * EXP_P5))));",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
         "kernels.js: rangeTilesDepth split-route sort order reversed",
         KR,
         [(
@@ -196,5 +216,25 @@ MUTANTS = [
         )],
         "killed",
         {"px": ["range"]},
+    ),
+    (
+        "kernels.js: rangeTilesDepth unified catch trap recovery dropped",
+        KR,
+        [(
+            "        } catch (err) {\n            if (!recovered(pPlain, err, \"range_tiles_depth\")) throw err;\n        }",
+            "        } catch (err) {\n            throw err;\n        }",
+        )],
+        "killed",
+        {"px": ["retouchRoute"]},
+    ),
+    (
+        "kernels.js: rangeTilesDepth split runSide catch trap recovery dropped",
+        KR,
+        [(
+            "            } catch (err) {\n                if (!recovered(p, err, \"range_tiles_depth\")) throw err;\n            }",
+            "            } catch (err) {\n                throw err;\n            }",
+        )],
+        "killed",
+        {"px": ["retouchRoute"]},
     ),
 ]

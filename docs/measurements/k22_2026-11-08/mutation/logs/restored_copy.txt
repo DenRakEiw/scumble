@@ -1,13 +1,13 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 8 s)
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
 px.wasm: 216822 bytes, sha256 0e3f9a9c1d477ce8
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
 px_scalar.wasm: 173395 bytes, sha256 0ce97531b679f714
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px)
-    Finished `release` profile [optimized] target(s) in 3.55s
+    Finished `release` profile [optimized] target(s) in 4.13s
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px)
-    Finished `release` profile [optimized] target(s) in 2.68s
-$ node tools/px_test.js  (rc 0, 92 s)
+    Finished `release` profile [optimized] target(s) in 3.34s
+$ node tools/px_test.js  (rc 0, 103 s)
 PASS
 ok   rust scalar a large alloc grows memory  225312768 -> 493813760
 ok   rust scalar the old view is detached after growth
@@ -17,7 +17,7 @@ ok   rust scalar arena blocks do not overlap
 ok   rust scalar after a reset the job fits one kept chunk  chunks 1
 ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
 PASS
-(node:54556) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/ag_mut_k22/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:60808) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/ag_mut_k22/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)

@@ -80,3 +80,40 @@ lock: taken after 0 s
 closed
 lock: released
 [14:50:35] done
+[16:20:44] after: c800d393 + working tree, px.wasm 0e3f9a9c1d477ce8, px_scalar.wasm 0ce97531b679f714
+[16:20:44] before: /tmp/ag_k22_before, px.wasm f421cac87c6fc2ab
+[16:20:44] gpu: 22187 MiB, 0 %; comfy 8188: 200
+lock: taken after 0 s
+[16:20:44] lock: taken (K22 measuring (px_test range bench) 9208 2026-11-08T16:20:44) for px_test range bench
+[16:21:04] px_test range bench rc=0
+lock: released
+lock: taken after 0 s
+[16:21:04] lock: taken (K22 measuring (after check 2048x1152) 30208 2026-11-08T16:21:04) for after check 2048x1152
+[16:21:16] after check 2048x1152 rc=0
+closed
+lock: released
+lock: taken after 0 s
+[16:21:20] lock: taken (K22 measuring (after ab r1) 22848 2026-11-08T16:21:20) for after ab r1
+[16:21:29] after r1: px_jobs --rounds 3 --ab rangeDepth=js:rust 15000x10000
+[16:21:44] after r1: px_jobs ab_plain rc=0
+[16:21:44] after r1: px_jobs --rounds 3 --ab rangeDepthSnap=js:rust 15000x10000
+[16:22:04] after r1: px_jobs ab_snap rc=0
+closed
+lock: released
+lock: taken after 0 s
+[16:22:08] lock: taken (K22 measuring (after ab r2) 30616 2026-11-08T16:22:08) for after ab r2
+[16:22:17] after r2: px_jobs --rounds 3 --ab rangeDepth=js:rust 15000x10000
+[16:22:29] after r2: px_jobs ab_plain rc=0
+[16:22:29] after r2: px_jobs --rounds 3 --ab rangeDepthSnap=js:rust 15000x10000
+[16:22:47] after r2: px_jobs ab_snap rc=0
+closed
+lock: released
+lock: taken after 0 s
+[16:22:51] lock: taken (K22 measuring (after ab r3) 56164 2026-11-08T16:22:51) for after ab r3
+[16:23:00] after r3: px_jobs --rounds 3 --ab rangeDepth=js:rust 15000x10000
+[16:23:12] after r3: px_jobs ab_plain rc=0
+[16:23:12] after r3: px_jobs --rounds 3 --ab rangeDepthSnap=js:rust 15000x10000
+[16:23:31] after r3: px_jobs ab_snap rc=0
+closed
+lock: released
+[16:23:35] done

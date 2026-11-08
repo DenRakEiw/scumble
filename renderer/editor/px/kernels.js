@@ -63,8 +63,10 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // (M7a: 9.1 ms at 128 MB, below the wand row's spread of 16.5-38.3 ms), and after a 15k export the pool keeps 11.7 MB
 // instead of 288 MB (M7b). No flood or mips entry: Rust won every A/B of M1-M4 (the flood ladder from a 0.26 MP box up).
 // No rangeDepth or rangeDepthSnap entry (K22, docs/measurements/k22_2026-11-08/summary.txt): at 15000x10000 Rust won
-// range_depth (172.1 vs 366.1 ms wall, spread 30.7; worker job 973.2 vs 1815.4 ms) and rangeDepthSnap=js:rust on
-// range_depth_snap (1120.8 vs 1736.3 ms wall, spread 457.1; worker job 1702.4 vs 2902.8 ms).
+// rangeDepth=js:rust on range_depth (214.5 vs 331.1 ms wall, lower by 116.6 > spread 107.1; worker job 1139.6 vs
+// 2013.5 ms; before/after on Rust 223.4 -> 172.1 ms wall) and rangeDepthSnap=js:rust on range_depth_snap (1174.4 vs
+// 1385.3 ms wall; worker job 1802.2 vs 3541.1 ms, while the window's pre-job picture read is 912-1136 ms independent
+// of the route).
 const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16 });
 
 const TAKES = { kernel: '"js" or "rust"', kernelSize: '"js", "rust" or a number of pixels >= 0', mb: "a number of MB >= 0 or Infinity", count: "a whole number >= 0" };

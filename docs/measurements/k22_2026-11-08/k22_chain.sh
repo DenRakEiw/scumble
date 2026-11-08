@@ -77,9 +77,14 @@ one() {   # $1 = arm (before / after), $2 = tree, $3 = round
     log "$arm r$R: px_jobs rc=$?"
 
     if [ "$arm" = "after" ]; then
+        log "$arm r$R: px_jobs --ab rangeDepth=js:rust 15000x10000"
+        rm -f "$d/ab_plain_r$R.jsonl"
+        (cd "$tree" && SCUMBLE_CDP_PORT=$PORT PX_JOBS_JSON="$d/ab_plain_r$R.jsonl" PYTHONIOENCODING=utf-8 timeout 900 python tools/px_jobs.py --rounds 3 --split --ab rangeDepth=js:rust --only range_depth 15000x10000 > "$d/ab_plain_r$R.log" 2>&1)
+        log "$arm r$R: px_jobs ab_plain rc=$?"
+
         log "$arm r$R: px_jobs --ab rangeDepthSnap=js:rust 15000x10000"
         rm -f "$d/ab_snap_r$R.jsonl"
-        (cd "$tree" && SCUMBLE_CDP_PORT=$PORT PX_JOBS_JSON="$d/ab_snap_r$R.jsonl" PYTHONIOENCODING=utf-8 timeout 900 python tools/px_jobs.py --rounds 1 --split --ab rangeDepthSnap=js:rust --only range_depth_snap 15000x10000 > "$d/ab_snap_r$R.log" 2>&1)
+        (cd "$tree" && SCUMBLE_CDP_PORT=$PORT PX_JOBS_JSON="$d/ab_snap_r$R.jsonl" PYTHONIOENCODING=utf-8 timeout 900 python tools/px_jobs.py --rounds 3 --split --ab rangeDepthSnap=js:rust --only range_depth_snap 15000x10000 > "$d/ab_snap_r$R.log" 2>&1)
         log "$arm r$R: px_jobs ab_snap rc=$?"
     fi
 
@@ -96,6 +101,24 @@ one() {   # $1 = arm (before / after), $2 = tree, $3 = round
 }
 
 for R in $ROUNDS; do
+    if [ "$R" = "ab" ]; then
+        for AR in 1 2 3; do
+            d="$OUTDIR/after"
+            acquire_batch "after ab r$AR"
+            start_app "$REPO" "$d/profile_ab_r$AR" "$d/app_ab_r$AR.log"
+            log "after r$AR: px_jobs --rounds 3 --ab rangeDepth=js:rust 15000x10000"
+            rm -f "$d/ab_plain_r$AR.jsonl"
+            (cd "$REPO" && SCUMBLE_CDP_PORT=$PORT PX_JOBS_JSON="$d/ab_plain_r$AR.jsonl" PYTHONIOENCODING=utf-8 timeout 900 python tools/px_jobs.py --rounds 3 --split --ab rangeDepth=js:rust --only range_depth 15000x10000 > "$d/ab_plain_r$AR.log" 2>&1)
+            log "after r$AR: px_jobs ab_plain rc=$?"
+            log "after r$AR: px_jobs --rounds 3 --ab rangeDepthSnap=js:rust 15000x10000"
+            rm -f "$d/ab_snap_r$AR.jsonl"
+            (cd "$REPO" && SCUMBLE_CDP_PORT=$PORT PX_JOBS_JSON="$d/ab_snap_r$AR.jsonl" PYTHONIOENCODING=utf-8 timeout 900 python tools/px_jobs.py --rounds 3 --split --ab rangeDepthSnap=js:rust --only range_depth_snap 15000x10000 > "$d/ab_snap_r$AR.log" 2>&1)
+            log "after r$AR: px_jobs ab_snap rc=$?"
+            stop_app "$d/profile_ab_r$AR"
+            release
+        done
+        continue
+    fi
     log "== round $R"
     if [ $((R % 2)) -eq 1 ]; then
         one before "$BEFORE" "$R"
