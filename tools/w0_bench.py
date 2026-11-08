@@ -18,6 +18,8 @@ error and the rest go on. Rows:
   stitch_masks_2048   stitch.js gaussBlur (sigma 8) and dilate (8 px) on a 2048^2 mask, and the JS max / clamp around them
   crc32_64mb          inpaint_png.crc32 over 64 MB (ms per MB)
   dabs_256            inpaint_stroke blurRGBA / sharpenRGBA / toneRGBA / spongeRGBA on a 256^2 dab
+  dabs_k27            px/kernels.js toneRGBA / spongeRGBA (Rust) against the twins on a 402^2 and a 1002^2 box (smooth
+                      and noise), and freqSplit at 16 MP; medians of alternating rounds (K27's kernel rows)
   match_loop_4096     matchCanvas's CPU loop (the fallback when the shader is not there) on 4096^2
   histogram_depth     the editor's mapHistogram("depth") on a 4096 x 2731 depth map
 
@@ -207,6 +209,31 @@ ROWS = {
         out.sharpen = await time(() => K.sharpenRGBA(src, w, h, 6, 1), 20);
         out.tone = await time(() => K.toneRGBA(src, lut, false), 20);
         out.sponge = await time(() => K.spongeRGBA(src, 0.5, true, true), 20);
+    """,
+    "dabs_k27": """
+        // K27 (docs/PLAN_WASM_BUILD.md §4.9): the tone brush's and the sponge's filter through px/kernels.js (Rust, its
+        // copies in and out included) against the twins in inpaint_stroke.js, on the box of a 400 and a 1000 px brush
+        // (402^2, 1002^2) of a smooth picture (a photo's coherence) and of noise, the brushes' settings as brush_perf.js
+        // sets them (midtones dodge 50 % with protect, saturate 50 % with vibrance); and the split at 16 MP. The rounds
+        // alternate the two; medians of 15. Kernel rows: they explain, never decide (section 1.1 rule 5), unless the
+        // whole operation ties (rule 2).
+        const K = await import('./editor/px/kernels.js');
+        const S = await import('./editor/inpaint_stroke.js');
+        const smooth = (side) => { const d = new Uint8ClampedArray(side * side * 4); for (let y = 0, j = 0; y < side; y++) for (let x = 0; x < side; x++, j += 4) { d[j] = 128 + 100 * Math.sin(x / 90) * Math.cos(y / 70); d[j + 1] = 90 + 60 * Math.sin((x + y) / 120); d[j + 2] = 60 + 50 * Math.cos(x / 50) + ((x * 7 + y * 3) & 7); d[j + 3] = 255; } return d; };
+        const lut = S.toneLUT("midtones", 0.5, false);
+        const pair = async (a, b, n = 15) => { const ta = [], tb = []; for (let i = 0; i < n; i++) { for (const [f, t] of i % 2 ? [[b, tb], [a, ta]] : [[a, ta], [b, tb]]) { const s = performance.now(); f(); t.push(performance.now() - s); } } return { rust: median(ta), twin: median(tb) }; };
+        out.rows = {};
+        for (const side of [402, 1002]) {
+            for (const [kind, src] of [["smooth", smooth(side)], ["noise", noise(side * side * 4, side)]]) {
+                out.rows[`tone_${side}_${kind}`] = await pair(() => K.toneRGBA(src, lut, true), () => S.toneRGBA(src, lut, true));
+                out.rows[`sponge_${side}_${kind}`] = await pair(() => K.spongeRGBA(src, 0.5, true, true), () => S.spongeRGBA(src, 0.5, true, true));
+                out.rows[`desaturate_${side}_${kind}`] = await pair(() => K.spongeRGBA(src, 0.5, false, true), () => S.spongeRGBA(src, 0.5, false, true));
+            }
+        }
+        const I = smooth(4000), L0 = S.blurRGBA(I, 4000, 4000, 2);
+        out.rows.split_16mp = await pair(() => K.freqSplit(I, L0.slice()), () => S.freqSplit(I, L0.slice()), 5);
+        out.rows.slice_16mp = await pair(() => L0.slice(), () => L0.slice(), 5);
+        out.pxCalls = await pxc(true);
     """,
     "match_loop_4096": """
         const W = 4096, H = 4096, d = noise(W * H * 4, 5);
@@ -639,12 +666,23 @@ FREQSEP = r"""
             const side = Math.min(ARGS.side, ed.width, ed.height);
             const x = ARGS.x != null ? ARGS.x : Math.floor((ed.width - side) / 2), y = ARGS.y != null ? ARGS.y : Math.floor((ed.height - side) / 2);
             await run("select_rect", { doc, x, y, w: side, h: side });
+            // K27: the window's px instance before and after (a 16 MP separation grows it to about 640 MB and releases it),
+            // and with the split's clocks on the milliseconds of each Rust export (px.js pxTimed; null in a build without)
+            const KX = await import('./editor/px/kernels.js');
+            const timedWas = typeof KX.pxTimed === "function" ? KX.pxTimed() : null;
+            if (timedWas !== null) KX.pxTimed(true);
+            const inst = () => (typeof E.pxInstances === "function" ? E.pxInstances() : null);
+            out.instBefore = inst();
             takeMarks(); await pxc(true);
-            const r = await timed(() => run("frequency_separation", { doc, radius: ARGS.radius }));
-            out.wall = r1(r.wall);
-            out.blocked = r1(r.blocked);
-            out.box = r.value && r.value.box; out.radius = r.value && r.value.radius;
+            try {
+                const r = await timed(() => run("frequency_separation", { doc, radius: ARGS.radius }));
+                out.wall = r1(r.wall);
+                out.blocked = r1(r.blocked);
+                out.box = r.value && r.value.box; out.radius = r.value && r.value.radius;
+            } finally { if (timedWas !== null) KX.pxTimed(timedWas); }
+            out.instAfter = inst();
             out.marks = marksOf(takeMarks());
+            out.pxMs = typeof KX.pxLaps === "function" ? Object.fromEntries(Object.entries(KX.pxLaps().ms).map(([k, v]) => [k, r1(v)])) : null;
             out.pxCalls = await pxc(true);
         } finally { await closeDoc(doc); }
 """

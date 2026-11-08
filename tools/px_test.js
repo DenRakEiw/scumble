@@ -41,7 +41,7 @@ function check(name, ok, detail = "") {
 // The case groups in main()'s order (a group in both the reference part and the per-build loop runs in both)
 const GROUPS = ["twinSelfTest", "mip", "edt", "flood", "composite", "matchTwin", "smudgeTwin", "poissonTwin", "png", "compositeSha",
     "blendFixture", "blendGlsl", "tierC", "relightBench", "relightStripe", "counter", "split", "route", "trap", "lifecycle", "sel",
-    "pngFilter", "job", "mask", "dab", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "memory"];
+    "pngFilter", "retouchRoute", "job", "mask", "dab", "tone", "freq", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "memory"];
 const ONLY = (() => {
     const names = (process.env.PX_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
     if (!names.length) return null;
@@ -563,6 +563,247 @@ async function dabCases(px, label) {
     const t3 = performance.now(); S.sharpenRGBA(dab, 448, 448, 8, 1);
     const t4 = performance.now();
     console.log(`       a 448 x 448 dab, r 8: blur ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)}; sharpen ${label} ${(t3 - t2).toFixed(1)} ms, twin ${(t4 - t3).toFixed(1)}`);
+}
+
+// ---- K27: the tone brush, the sponge, frequency separation's split ------------------------------------------------
+
+/** Straight RGBA8 of `n` pixels (a Uint8ClampedArray, as the brushes read it) of one kind (`retouchPixels`). */
+function retouchPixels(n, seed, kind) {
+    let s = seed >>> 0;
+    const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s >>> 24; };
+    // the channel values at the formulas' edges: 0 (black, mn 0), 1, 2, the middle, 254, 255 (mx 255)
+    const EDGE = [0, 1, 2, 3, 63, 64, 127, 128, 129, 191, 253, 254, 255];
+    const ALPHA = [0, 1, 2, 127, 128, 254, 255];
+    const d = new Uint8ClampedArray(n * 4);
+    for (let i = 0; i < n; i++) {
+        let r = rnd(), g = rnd(), b = rnd(), a = rnd();
+        if (kind === "edges") { r = EDGE[rnd() % EDGE.length]; g = EDGE[rnd() % EDGE.length]; b = EDGE[rnd() % EDGE.length]; a = ALPHA[rnd() % ALPHA.length]; }
+        else if (kind === "grey") { g = r; b = rnd() < 128 ? r : (r + 1) & 255; }   // grey (a no-op for the sponge) and a level off it
+        else if (kind === "dark") { r >>= 5; g >>= 5; b >>= 5; }   // black and near-black (the protect path's v 0, a floor's speck)
+        else if (kind === "bright") { r = 255 - (r >> 5); g = 255 - (g >> 5); b = 255 - (b >> 5); }   // near white: lim at 255
+        else if (kind === "vivid") { const k = rnd() % 3; r = k === 0 ? 255 - (r >> 4) : r >> 4; g = k === 1 ? 255 - (g >> 4) : g >> 4; b = k === 2 ? 255 - (b >> 4) : b >> 4; }
+        if (kind === "holes") a = rnd() < 90 ? 0 : 255;
+        else if (kind === "faint") a = rnd() < 180 ? 0 : 1 + rnd() % 12;
+        else if (kind !== "edges") a = rnd() < 30 ? 0 : rnd() < 128 ? 255 : a;
+        d[i * 4] = r; d[i * 4 + 1] = g; d[i * 4 + 2] = b; d[i * 4 + 3] = a;
+    }
+    return d;
+}
+
+const RETOUCH_KINDS = ["noise", "edges", "grey", "dark", "bright", "vivid", "holes", "faint"];
+// pixel counts: 1 up past the lanes a later build may add, and a 400 px brush's box (450 x 450)
+const RETOUCH_SIZES = [1, 2, 3, 4, 5, 7, 8, 15, 16, 17, 33, 64, 255, 1000, 4097, 450 * 450];
+
+/** Every (r, g, b) of a grid of the formulas' edge values, opaque, then the same at alphas 0, 1 and 128 (the sponge's lim and the protect path's v, exhaustively). */
+function retouchGrid() {
+    const V = [0, 1, 2, 3, 4, 31, 63, 64, 100, 127, 128, 129, 150, 191, 200, 252, 253, 254, 255];
+    const n = V.length ** 3, d = new Uint8ClampedArray(n * 4 * 4);
+    let i = 0;
+    for (const a of [255, 0, 1, 128]) for (const r of V) for (const g of V) for (const b of V) { d[i++] = r; d[i++] = g; d[i++] = b; d[i++] = a; }
+    return d;
+}
+
+/**
+ * The tone brush's table (tone_rgba) and the sponge (sponge_rgba) against inpaint_stroke.js, byte for byte (K27): every
+ * kind of picture at pixel counts from 1 to a 400 px brush's box, the grid of edge values, the tables of every range and
+ * exposure (dodge and burn) and the extremes (all 0, all 255, a floor of 255 over 0s, decreasing, random, longer than
+ * 256, clamped), protect on and off; the sponge's amounts in and out of 0..1 and not numbers, saturate and desaturate,
+ * vibrance on, off and left out. The refusals the caller turns into the twin.
+ */
+async function toneCases(px, label) {
+    const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_stroke.js")).href);
+    const twin = { toneRGBA: S.toneRGBA, spongeRGBA: S.spongeRGBA };
+    const pics = [];
+    RETOUCH_KINDS.forEach((kind, k) => RETOUCH_SIZES.forEach((n, j) => { if (n < 4097 || j % 3 === k % 3) pics.push([`${kind} ${n} px`, retouchPixels(n, n * 31 + k * 7 + 1, kind)]); }));
+    pics.push(["the grid", retouchGrid()]);
+    const lut = (f) => Uint8Array.from({ length: 256 }, (_, i) => f(i));
+    let rs = 77;
+    const rnd = () => { rs = (Math.imul(rs, 1664525) + 1013904223) >>> 0; return rs >>> 24; };
+    const luts = [["identity", lut((i) => i)], ["all 0", lut(() => 0)], ["all 255", lut(() => 255)], ["a floor of 255 over 0s", lut((i) => (i ? 0 : 255))],
+        ["0 then 255", lut((i) => (i ? 255 : 0))], ["decreasing", lut((i) => 255 - i)], ["random", lut(() => rnd())], ["floor 200 random", lut((i) => (i ? rnd() : 200))],
+        ["300 bytes", Uint8Array.from({ length: 300 }, (_, i) => (i * 7 + 3) & 255)], ["clamped", Uint8ClampedArray.from({ length: 256 }, (_, i) => (i * 3) >> 1)]];
+    for (const range of ["shadows", "midtones", "highlights"]) for (const e of [0, 0.37, 0.5, 1]) for (const burn of [false, true]) luts.push([`${range} ${e}${burn ? " burn" : ""}`, S.toneLUT(range, e, burn)]);
+    const tone = [];
+    pics.forEach(([tag, src], i) => luts.forEach(([name, l], j) => {
+        // every table on the grid and the small pictures; on the large ones a few, so the run stays short
+        if (src.length <= 4 * 4097 || tag === "the grid" ? true : (i + j) % 9 === 0) for (const protect of [false, true]) tone.push({ tag: `${tag}, ${name}${protect ? ", protect" : ""}`, args: [src, l, protect] });
+    }));
+    tone.push({ tag: "protect left out", args: [pics[1][1], luts[6][1]] }, { tag: "protect 1 (truthy)", args: [pics[1][1], luts[6][1], 1] }, { tag: "protect \"\" (falsy)", args: [pics[1][1], luts[6][1], ""] },
+        { tag: "protect \"yes\" (truthy, not a number)", args: [pics[1][1], luts[6][1], "yes"] });
+    twinCheck({ name: "tone_rgba", title: "tone_rgba equals inpaint_stroke.js toneRGBA byte for byte", builds: [[label, px]], twin, call: (k, a) => k.toneRGBA(...a), cases: tone });
+    const sponge = [];
+    const amounts = [0, 0.05, 0.37, 0.5, 0.6, 1, -1, 2, NaN, "0.6", undefined, null];
+    pics.forEach(([tag, src], i) => amounts.forEach((amount, j) => {
+        if (!(src.length <= 4 * 4097 || tag === "the grid" || (i + j) % 7 === 0)) return;
+        for (const [sat, vib] of [[true, true], [true, false], [false, true], [true, undefined]]) {
+            if (tag !== "the grid" && (i + j + (sat ? 1 : 0) + (vib ? 2 : 0)) % 3) continue;
+            sponge.push({ tag: `${tag}, amount ${String(amount)}${sat ? " saturate" : " desaturate"}${vib === undefined ? "" : vib ? " vibrance" : " flat"}`, args: vib === undefined ? [src, amount, sat] : [src, amount, sat, vib] });
+        }
+    }));
+    sponge.push({ tag: "saturate left out", args: [pics[1][1], 0.5] }, { tag: "saturate 1 (truthy), vibrance 0 (falsy)", args: [pics[1][1], 0.8, 1, 0] },
+        { tag: "saturate \"yes\", vibrance \"\" (truthiness, not numbers)", args: [pics[1][1], 0.8, "yes", ""] });
+    twinCheck({ name: "sponge_rgba", title: "sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte", builds: [[label, px]], twin, call: (k, a) => k.spongeRGBA(...a), cases: sponge });
+    const id = luts[0][1], src8 = new Uint8ClampedArray(8);
+    const refused = [px.toneRGBA(new Uint8ClampedArray(7), id), px.toneRGBA(new Uint8ClampedArray(0), id), px.toneRGBA(new Int8Array(8), id), px.toneRGBA([1, 2, 3, 4], id),
+        px.toneRGBA(src8, id.subarray(0, 255)), px.toneRGBA(src8, new Int8Array(256)), px.toneRGBA(src8, Array.from(id)), px.toneRGBA(src8, null),
+        px.spongeRGBA(new Uint8ClampedArray(6), 0.5), px.spongeRGBA(new Uint8ClampedArray(0), 0.5, true), px.spongeRGBA(new Uint16Array(8), 0.5)];
+    check(`${label} tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)`, refused.every((v) => v === null), refused.map((v) => (v === null ? "null" : v.length)).join(", "));
+    // a 1000 px brush's box at 1:1 (1002 x 1002): what one dab's filter costs (explains only, section 1.1 rule 5)
+    const dab = retouchPixels(1002 * 1002, 1002, "noise"), hl = S.toneLUT("midtones", 0.5, false);
+    const med = benchMedians([
+        ["tone rust", () => px.toneRGBA(dab, hl, true)], ["tone twin", () => S.toneRGBA(dab, hl, true)],
+        ["sponge rust", () => px.spongeRGBA(dab, 0.5, true, true)], ["sponge twin", () => S.spongeRGBA(dab, 0.5, true, true)],
+    ], { warm: 1, rounds: 5 });
+    console.log(`       a 1002 x 1002 dab: tone (protect) ${label} ${med["tone rust"].toFixed(1)} ms, twin ${med["tone twin"].toFixed(1)}; sponge (saturate, vibrance) ${label} ${med["sponge rust"].toFixed(1)} ms, twin ${med["sponge twin"].toFixed(1)}`);
+}
+
+/**
+ * Frequency separation's split (freq_split) and the whole separation in one arena (px.js `freqSeparate`: blur_rgba and
+ * freq_split) against inpaint_stroke.js (`freqSplit`, and `blurRGBA` then `freqSplit`), byte for byte (K27): every
+ * (I, L) pair of bytes, random pictures and blurs of every kind at pixel counts from 1 up, the separation at sizes 1 x 1
+ * to a 400 px box with radii 0 to 200 (2.5, NaN and -3 as the twin rounds them); L + 2H - 255 = I wherever the twin says
+ * so; the refusals.
+ */
+async function freqCases(px, label) {
+    const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_stroke.js")).href);
+    const twin = {
+        freqSplit: (I, L) => { const high = S.freqSplit(I, L); return { low: L, high }; },
+        freqSeparate: (I, w, h, r) => { const low = S.blurRGBA(I, w, h, r); return { low, high: S.freqSplit(I, low) }; },
+    };
+    const build = { freqSplit: (I, L) => { const high = px.freqSplit(I, L); return high && { low: L, high }; }, freqSeparate: (I, w, h, r) => px.freqSeparate(I, w, h, r) };
+    // every pair of values: I = v and L = l in each colour channel (three channels, three offsets of the pair), alphas cycling
+    const pairs = 65536, I0 = new Uint8ClampedArray(pairs * 4), L0 = new Uint8ClampedArray(pairs * 4);
+    for (let p = 0; p < pairs; p++) {
+        const v = p >> 8, l = p & 255;
+        for (let c = 0; c < 3; c++) { I0[p * 4 + c] = (v + c * 85) & 255; L0[p * 4 + c] = (l + c * 85) & 255; }
+        I0[p * 4 + 3] = (p * 7) & 255; L0[p * 4 + 3] = (p * 13) & 255;
+    }
+    const split = [{ tag: "every (I, L) pair", args: [I0, L0] }];
+    RETOUCH_KINDS.forEach((kind, k) => RETOUCH_SIZES.forEach((n) => {
+        const I = retouchPixels(n, n * 17 + k, kind), L = retouchPixels(n, n * 19 + k + 5, k % 2 ? "bright" : kind);
+        split.push({ tag: `${kind} ${n} px`, args: [I, L] });
+    }));
+    twinCheck({ name: "freq_split", title: "freq_split equals inpaint_stroke.js freqSplit byte for byte (L in place and H)", builds: [[label, build]], twin, call: (k, [I, L]) => k.freqSplit(I, L), cases: split });
+    // the twin's identity: L + 2H - 255 = I in every colour channel (the separation gives the picture back)
+    {
+        const L = L0.slice(), H = S.freqSplit(I0, L);
+        let bad = -1;
+        for (let i = 0; i < I0.length && bad < 0; i++) if ((i & 3) !== 3 && L[i] + 2 * H[i] - 255 !== I0[i]) bad = i;
+        check("js freqSplit gives the picture back: L + 2H - 255 = I for every (I, L) pair", bad < 0, bad < 0 ? "" : `at ${bad}`);
+    }
+    const sep = [];
+    for (const [w, h] of [[1, 1], [2, 3], [3, 2], [5, 4], [7, 9], [16, 16], [33, 17], [64, 48], [131, 77]]) {
+        for (const kind of ["noise", "edges", "holes", "faint", "bright"]) {
+            const I = retouchPixels(w * h, w * 977 + h * 13 + kind.length, kind);
+            for (const r of [0, 1, 2, 8, 40, 200]) sep.push({ tag: `${kind} ${w}x${h} r ${r}`, args: [I, w, h, r] });
+        }
+    }
+    const box = retouchPixels(450 * 450, 4501, "noise");
+    sep.push({ tag: "a 400 px box 450x450 r 8", args: [box, 450, 450, 8] }, { tag: "the same r 40", args: [box, 450, 450, 40] }, { tag: "r 2.5 (rounded as the twin)", args: [box, 450, 450, 2.5] },
+        { tag: "r NaN (no pass)", args: [retouchPixels(63, 3, "edges"), 9, 7, NaN] }, { tag: "r -3", args: [retouchPixels(63, 4, "edges"), 9, 7, -3] });
+    twinCheck({ name: "freq_separate", title: "freqSeparate (blur_rgba and freq_split in one arena) equals blurRGBA then freqSplit byte for byte", builds: [[label, build]], twin, call: (k, a) => k.freqSeparate(...a), cases: sep });
+    const I8 = new Uint8ClampedArray(16), L8 = new Uint8ClampedArray(16);
+    const refused = [px.freqSplit(new Uint8ClampedArray(7), new Uint8ClampedArray(7)), px.freqSplit(I8, new Uint8ClampedArray(12)), px.freqSplit(I8, new Int8Array(16)), px.freqSplit(new Uint8ClampedArray(0), new Uint8ClampedArray(0)),
+        px.freqSeparate(I8, 2, 3, 1), px.freqSeparate(I8, 2.5, 2, 1), px.freqSeparate(new Uint8ClampedArray(0), 0, 4, 1), px.freqSeparate(I8, 2, 2, 2 ** 31), px.freqSeparate(new Int8Array(16), 2, 2, 1)];
+    const untouched = L8.every((v) => v === 0);
+    px.freqSplit(I8, L8.subarray(0, 12));
+    check(`${label} freq_split / freqSeparate refuse what is not whole pixels of bytes, a blur of another length, a size that is not the picture's and a radius past 2^30 (null: the twin runs), and leave L as it was`,
+        refused.every((v) => v === null) && untouched && L8.every((v) => v === 0), refused.map((v) => (v === null ? "null" : "a result")).join(", "));
+    // a 1024 x 1024 separation and its split alone (explains only)
+    const big = retouchPixels(1024 * 1024, 1024, "noise"), bl = S.blurRGBA(big, 1024, 1024, 8);
+    const med = benchMedians([
+        ["split rust", () => px.freqSplit(big, bl.slice())], ["split twin", () => S.freqSplit(big, bl.slice())],
+        ["separate rust", () => px.freqSeparate(big, 1024, 1024, 8)], ["separate k26", () => { const L = px.blurRGBA(big, 1024, 1024, 8); S.freqSplit(big, L); }],
+    ], { warm: 1, rounds: 3 });
+    console.log(`       1024 x 1024: the split ${label} ${med["split rust"].toFixed(1)} ms (with its copies), twin ${med["split twin"].toFixed(1)}; the separation r 8 in one arena ${med["separate rust"].toFixed(1)} ms, K26's way (Rust blur, the twin's split) ${med["separate k26"].toFixed(1)}`);
+}
+
+/**
+ * kernels.js' wrappers of K27 (toneRGBA, spongeRGBA, freqSplit, freqSeparate): the routes "js" and "rust" give the same
+ * bytes, Rust's calls are counted and the twins' never; a refusal and a trap fall back to the twin with the same bytes
+ * (a trapped split leaves L for the twin as it was); the separation runs in one call only with both its routes on Rust.
+ */
+async function retouchRouteCases(js) {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (u, ...rest) => {   // kernels.js fetches ./px.wasm; Node's fetch reads no file: URL
+        const s = String(u && u.href ? u.href : u);
+        return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+    };
+    let K = null;
+    try {
+        K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        await K.kernelsReady();
+    } finally { globalThis.fetch = realFetch; }
+    const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_stroke.js")).href);
+    for (const r of ["dabTone", "dabSponge", "freqSplit"]) if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, r)) { check(`kernels.js has the ${r} route`, false); return; }
+    const warned = [], realWarn = console.warn;
+    console.warn = (...a) => { warned.push(a.map(String).join(" ")); };
+    K.setKernels("rust");
+    try {
+        const w = 97, h = 61, I = retouchPixels(w * h, 9, "noise"), lut = S.toneLUT("shadows", 0.6, false);
+        const want = {
+            tone: S.toneRGBA(I, lut, true), sponge: S.spongeRGBA(I, 0.7, true, true),
+            low: S.blurRGBA(I, w, h, 3), blur: null, high: null,
+        };
+        want.blur = want.low.slice();
+        want.high = S.freqSplit(I, want.low);
+        const all = () => {
+            const L = want.blur.slice(), high = K.freqSplit(I, L), sep = K.freqSeparate(I, w, h, 3);
+            return { tone: K.toneRGBA(I, lut, true), sponge: K.spongeRGBA(I, 0.7, true, true), low: L, high, sepLow: sep.low, sepHigh: sep.high };
+        };
+        const same = (o) => eqBytes(o.tone, want.tone) && eqBytes(o.sponge, want.sponge) && eqBytes(o.low, want.low) && eqBytes(o.high, want.high) && eqBytes(o.sepLow, want.low) && eqBytes(o.sepHigh, want.high);
+        K.pxCalls(true);
+        const rust = all(), cr = K.pxCalls(true);
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur"]) K.setRoute(r, "js");
+        const twin = all(), cj = K.pxCalls(true);
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur"]) K.setRoute(r, null);
+        check("kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate: the routes rust and js give the twins' bytes; Rust's calls counted (the separation one blur_rgba and one freq_split), the twins' never",
+            same(rust) && same(twin) && cr.tone_rgba === 1 && cr.sponge_rgba === 1 && cr.freq_split === 2 && cr.blur_rgba === 1 && !cj.tone_rgba && !cj.sponge_rgba && !cj.freq_split && !cj.blur_rgba,
+            `rust ${JSON.stringify(cr)}, js ${JSON.stringify(cj)}`);
+        // the separation with one of its routes on the twin: the other half still Rust, the same bytes
+        K.setRoute("freqSplit", "js");
+        let a = K.freqSeparate(I, w, h, 3), ca = K.pxCalls(true);
+        K.setRoute("freqSplit", null); K.setRoute("dabBlur", "js");
+        let b = K.freqSeparate(I, w, h, 3), cb = K.pxCalls(true);
+        K.setRoute("dabBlur", null);
+        check("kernels.js freqSeparate with one route on the twin: the blur or the split alone in Rust, the same bytes",
+            eqBytes(a.low, want.low) && eqBytes(a.high, want.high) && eqBytes(b.low, want.low) && eqBytes(b.high, want.high)
+            && ca.blur_rgba === 1 && !ca.freq_split && cb.freq_split === 1 && !cb.blur_rgba, `${JSON.stringify(ca)} ${JSON.stringify(cb)}`);
+        // refused by Rust: the twin's bytes
+        const odd = I.subarray(0, 4 * 7 + 2), short = lut.subarray(0, 200);
+        const rt = K.toneRGBA(I, short, true), rs = K.spongeRGBA(odd, 0.7, true), rr = K.freqSeparate(I, w, h - 1, 3);
+        check("kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's): the twin's bytes",
+            eqBytes(rt, S.toneRGBA(I, short, true)) && eqBytes(rs, S.spongeRGBA(odd, 0.7, true)) && (() => { const l = S.blurRGBA(I, w, h - 1, 3); const hh = S.freqSplit(I, l); return eqBytes(rr.low, l) && eqBytes(rr.high, hh); })());
+        // a trap in each: the twin's bytes, the instance replaced, the next call Rust again
+        const trapIn2 = (p) => p.exports.mip_half(-16, 256, 256, 0);
+        let ok = true, detail = "";
+        for (const [name, method, callIt, check1] of [
+            ["tone", "toneRGBA", () => K.toneRGBA(I, lut, true), (o) => eqBytes(o, want.tone)],
+            ["sponge", "spongeRGBA", () => K.spongeRGBA(I, 0.7, true, true), (o) => eqBytes(o, want.sponge)],
+            ["split", "freqSplit", () => { const L = want.blur.slice(); const hh = K.freqSplit(I, L); return { L, hh }; }, (o) => eqBytes(o.L, want.low) && eqBytes(o.hh, want.high)],
+            ["separate", "freqSeparate", () => K.freqSeparate(I, w, h, 3), (o) => eqBytes(o.low, want.low) && eqBytes(o.high, want.high)],
+        ]) {
+            const p = K.rustPx(), i0 = K.pxInstances();
+            // the split traps after its kernel wrote L in wasm memory, before the copy out (the caller's L untouched)
+            p[method] = method === "freqSplit"
+                ? function (src, low) { const n = src.length, a = this.job; const ps = this._in(a, src, n), pl = this._in(a, low, n), ph = a.take(n); this.exports.freq_split(ps, pl, ph, n); return trapIn2(this); }
+                : function () { return trapIn2(this); };
+            const got = callIt(), after = K.rustPx(), i1 = K.pxInstances();
+            if (!(check1(got) && p.trapped instanceof WebAssembly.RuntimeError && after !== p && i1.trap === i0.trap + 1)) { ok = false; detail = `${name}: ${JSON.stringify(i1)}`; }
+        }
+        check("kernels.js K27 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
+        // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
+        const i0 = K.pxInstances();
+        K.setRoute("releaseMB", 0);
+        try { K.freqSeparate(I, w, h, 3); } finally { K.setRoute("releaseMB", null); }
+        const i1 = K.pxInstances();
+        check("kernels.js freqSeparate releases an instance grown past releaseMB (release +1)", i1.release === i0.release + 1, JSON.stringify(i1));
+    } finally {
+        console.warn = realWarn;
+        kernelsBack(K);
+    }
+    check("the K27 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate/.test(w)).length === 4, warned.join(" | "));
+    void js;
 }
 
 /** The edge and map kernels (range_max, docs/PLAN_WASM.md #1) against their twin. */
@@ -3823,6 +4064,7 @@ async function main() {
     await group("lifecycle", () => lifecycleCases(js));
     await group("sel", async () => selCases(js, simdPx, scalarPx, raster, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href)));
     await group("pngFilter", () => pngFilterCases(js, simdPx, scalarPx));
+    await group("retouchRoute", () => retouchRouteCases(js));
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));
@@ -3832,6 +4074,8 @@ async function main() {
         await group("job", () => jobCases(px, label, raster));
         await group("mask", () => maskCases(px, label, js));
         await group("dab", () => dabCases(px, label));
+        await group("tone", () => toneCases(px, label));
+        await group("freq", () => freqCases(px, label));
         await group("edge", () => edgeCases(px, label, js));
         await group("relight", () => relightCases(px, label, js));
         await group("pngRead", () => pngReadCases(px, label, js));

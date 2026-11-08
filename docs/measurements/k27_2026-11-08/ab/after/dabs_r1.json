@@ -1,0 +1,69 @@
+{
+ "dabs_k27": {
+  "visibility": "visible",
+  "focus": true,
+  "rows": {
+   "tone_402_smooth": {
+    "rust": 0.86,
+    "twin": 0.97
+   },
+   "sponge_402_smooth": {
+    "rust": 1.22,
+    "twin": 2.34
+   },
+   "desaturate_402_smooth": {
+    "rust": 0.92,
+    "twin": 1.25
+   },
+   "tone_402_noise": {
+    "rust": 0.88,
+    "twin": 1.61
+   },
+   "sponge_402_noise": {
+    "rust": 1.18,
+    "twin": 2.88
+   },
+   "desaturate_402_noise": {
+    "rust": 0.87,
+    "twin": 1.73
+   },
+   "tone_1002_smooth": {
+    "rust": 5.24,
+    "twin": 6.5
+   },
+   "sponge_1002_smooth": {
+    "rust": 7.34,
+    "twin": 8.16
+   },
+   "desaturate_1002_smooth": {
+    "rust": 5.31,
+    "twin": 6.14
+   },
+   "tone_1002_noise": {
+    "rust": 5.29,
+    "twin": 9.97
+   },
+   "sponge_1002_noise": {
+    "rust": 7.25,
+    "twin": 17.77
+   },
+   "desaturate_1002_noise": {
+    "rust": 5.61,
+    "twin": 11.53
+   },
+   "split_16mp": {
+    "rust": 37.53,
+    "twin": 141.72
+   },
+   "slice_16mp": {
+    "rust": 6.85,
+    "twin": 7.11
+   }
+  },
+  "pxCalls": {
+   "freq_split": 5,
+   "sponge_rgba": 120,
+   "tone_rgba": 60
+  }
+ }
+}

@@ -1,0 +1,5 @@
+lint rc=0 7s 
+types rc=0 5s 
+editor rc=0 163s PASS
+brush rc=124 420s RESULT FAIL (reader)
+SOME FAILED

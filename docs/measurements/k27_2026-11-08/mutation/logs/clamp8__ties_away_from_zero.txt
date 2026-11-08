@@ -1,0 +1,31 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 172523 bytes, sha256 6758a7339188dd8c
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 147065 bytes, sha256 9282d697b77681bf
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.98s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.40s
+$ node tools/px_test.js  (rc 1, 3 s, PX_ONLY=tone,dab)
+FAIL rust simd blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)  noise 131x77 r 8: out[21327] is 129, the twin has 128
+FAIL rust simd sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  noise 2x3 r 1 amount 0.5: out[5] is 151, the twin has 150
+FAIL rust simd tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)  noise 1 px, shadows 0.5, protect: out[0] is 95, the twin has 94
+FAIL rust simd sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte (1881 cases, each also at an odd offset)  noise 3 px, amount 0.5 saturate flat: out[6] is 181, the twin has 180
+FAIL rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)  noise 131x77 r 8: out[21327] is 129, the twin has 128
+FAIL rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  noise 2x3 r 1 amount 0.5: out[5] is 151, the twin has 150
+FAIL rust scalar tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)  noise 1 px, shadows 0.5, protect: out[0] is 95, the twin has 94
+FAIL rust scalar sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte (1881 cases, each also at an odd offset)  noise 3 px, amount 0.5 saturate flat: out[6] is 181, the twin has 180
+FAIL (8) (only: dab, tone; PX_ONLY, not the full test)
+FAIL rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)  noise 2x3 r 1 amount 0.5: out[5] is 151, the twin has 150
+ok   rust scalar blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust scalar 8.5 ms, twin 13.1; sharpen rust scalar 13.7 ms, twin 18.5
+FAIL rust scalar tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)  noise 1 px, shadows 0.5, protect: out[0] is 95, the twin has 94
+FAIL rust scalar sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte (1881 cases, each also at an odd offset)  noise 3 px, amount 0.5 saturate flat: out[6] is 181, the twin has 180
+ok   rust scalar tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)  null, null, null, null, null, null, null, null, null, null, null
+       a 1002 x 1002 dab: tone (protect) rust scalar 10.6 ms, twin 9.8; sponge (saturate, vibrance) rust scalar 20.9 ms, twin 22.6
+FAIL (8) (only: dab, tone; PX_ONLY, not the full test)
+(node:54592) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/k27/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

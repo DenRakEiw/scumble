@@ -1,0 +1,2 @@
+editor rc=0 3s PASS (only: blur_and_sharpen_modes_soften_and_crisp_an_edge, dodge_burn_and_sponge_through_the_real_handlers, frequency_separation_gives_the_picture_back_on_every_path; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS

@@ -17,7 +17,7 @@ import { FILTERS, FILTER_IDS, filterDefaults, scaleFilterParams, applyFilter, ma
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces, runShader, glToCanvas } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA } from "./px/kernels.js";
+import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA, toneRGBA, spongeRGBA, freqSeparate } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds, selModeOf, selectionGco, tilesSource, bytesSource, rectSource } from "./inpaint_raster.js";
 import { GLCompositor, BLEND_FN_GLSL } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
@@ -25,7 +25,7 @@ import { INTERACTIVE, NORMAL, EXPORT, CancelledError } from "./inpaint_pool.js";
 import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
 import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
-import { pressureCurve, Stabiliser, toneLUT, toneRGBA, spongeRGBA } from "./inpaint_stroke.js";
+import { pressureCurve, Stabiliser, toneLUT } from "./inpaint_stroke.js";
 import { TipPicker, noteRecentTip } from "./inpaint_tippicker.js";
 import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
@@ -15368,23 +15368,15 @@ class InpaintEditor {
         if (!(w > 0 && h > 0)) { this.setStatus("The selection is empty."); return null; }
         if (w * h > FREQ_MAX_PX) { this.setStatus(`Frequency separation works on up to ${Math.round(FREQ_MAX_PX / 1e6)} MP (this is ${Math.round(w * h / 1e5) / 10} MP): select the area first, a face or a patch of skin.`, "warn"); return null; }
         const r = radius > 0 ? Math.max(1, Math.min(200, Math.round(radius))) : Math.max(2, Math.round(Math.min(this.width, this.height) * 0.004));
-        markStep("freqsep", "start", { w, h, radius: r });   // the K0b harness (docs/PLAN_WASM_BUILD.md §4.9): read, blur, split, written
+        markStep("freqsep", "start", { w, h, radius: r });   // the K0b harness (docs/PLAN_WASM_BUILD.md §4.9): read, split (the blur in it since K27), written
         this.setStatus(`Frequency separation (${r} px) ...`);
         const src = await this.readBoxBytes(box, { forRun: true });
         const I = new Uint8ClampedArray(w * h * 4);
         I.set(src.data.subarray ? src.data.subarray(0, w * h * 4) : src.data);
         markStep("freqsep", "read");
-        const L = blurRGBA(I, w, h, r), Hi = new Uint8ClampedArray(w * h * 4);
-        markStep("freqsep", "blur");
-        for (let i = 0; i < I.length; i += 4) {
-            for (let c = 0; c < 3; c++) {
-                const v = I[i + c], l = L[i + c], t = v - l + 255;
-                let hv = t >> 1;
-                if (t & 1) { if (l < 255) L[i + c] = l + 1; else { L[i + c] = 254; hv += 1; } }
-                Hi[i + c] = hv;
-            }
-            L[i + 3] = I[i + 3]; Hi[i + 3] = I[i + 3];
-        }
+        // the blur and the split (px/kernels.js `freqSeparate`, K26 + K27: Rust in one arena, the twins in
+        // inpaint_stroke.js on the routes "js"), L and Hi copied out of wasm memory before the layers are written
+        const { low: L, high: Hi } = freqSeparate(I, w, h, r);
         markStep("freqsep", "split");
         this.pushUndo({ kind: "layers", label: "Frequency separation" });
         const make = (bytes, name, blend) => {

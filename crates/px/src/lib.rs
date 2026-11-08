@@ -44,11 +44,11 @@ fn align_for(bytes: usize) -> usize {
 }
 
 /// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
-/// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes);
+/// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    22
+    23
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -192,6 +192,42 @@ pub unsafe extern "C" fn sharpen_rgba(src: *const u8, out: *mut u8, scratch: *mu
     let n4 = w * h * 4;
     let (a, b, sums) = dab_scratch(scratch, w, h);
     stroke::sharpen_rgba(slice::from_raw_parts(src, n4), slice::from_raw_parts_mut(out, n4), a, b, sums, w, h, r, amount);
+    1
+}
+
+// ---- the tone brush, the sponge, frequency separation's split (K27) --------------------------------------------------
+
+/// `n` bytes of RGBA8 a kernel below takes: at least one pixel, whole pixels, and its pointers set.
+fn rgba_len(n: usize, ptrs: &[usize]) -> bool {
+    n > 0 && n % 4 == 0 && ptrs.iter().all(|&p| p != 0)
+}
+
+/// `toneRGBA(src, lut, protect)` of `inpaint_stroke.js` from `src` into `out` (`n` bytes each, every byte of `out`
+/// written), `lut` 256 bytes (the stroke's table, copied in with each call), `protect` 0 or 1. 1 done, 0 refused (`n`
+/// not a positive multiple of 4, a null pointer).
+#[no_mangle]
+pub unsafe extern "C" fn tone_rgba(src: *const u8, out: *mut u8, n: usize, lut: *const u8, protect: u32) -> u32 {
+    if !rgba_len(n, &[src as usize, out as usize, lut as usize]) { return 0; }
+    let lut = &*(lut as *const [u8; 256]);
+    stroke::tone_rgba(slice::from_raw_parts(src, n), slice::from_raw_parts_mut(out, n), lut, protect != 0);
+    1
+}
+
+/// `spongeRGBA(src, amount, saturate, vibrance)` of `inpaint_stroke.js` from `src` into `out` (as `tone_rgba`); `k` the
+/// amount as the twin clamps it (0..1), `flags` bit 0 saturate, bit 1 vibrance. 1 done, 0 refused.
+#[no_mangle]
+pub unsafe extern "C" fn sponge_rgba(src: *const u8, out: *mut u8, n: usize, k: f64, flags: u32) -> u32 {
+    if !rgba_len(n, &[src as usize, out as usize]) { return 0; }
+    stroke::sponge_rgba(slice::from_raw_parts(src, n), slice::from_raw_parts_mut(out, n), k, flags & 1 != 0, flags & 2 != 0);
+    1
+}
+
+/// Frequency separation's split (`freqSplit` of `inpaint_stroke.js`): `src` the picture, `low` its blur (changed in
+/// place), `high` the detail out, `n` bytes each (three separate blocks). 1 done, 0 refused.
+#[no_mangle]
+pub unsafe extern "C" fn freq_split(src: *const u8, low: *mut u8, high: *mut u8, n: usize) -> u32 {
+    if !rgba_len(n, &[src as usize, low as usize, high as usize]) { return 0; }
+    stroke::freq_split(slice::from_raw_parts(src, n), slice::from_raw_parts_mut(low, n), slice::from_raw_parts_mut(high, n));
     1
 }
 

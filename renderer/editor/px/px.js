@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 22;
+export const PX_ABI = 23;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -103,6 +103,12 @@ function lapOut(t, bytes) {
     LAPS.copyOut += clock() - t;
     LAPS.copyOutMB += bytes / MB;
 }
+
+/** Whether `v` is an array of bytes as the twins read them: a Uint8Array (a Buffer too) or a Uint8ClampedArray. */
+const isBytes = (v) => v instanceof Uint8Array || v instanceof Uint8ClampedArray;
+
+/** The bytes of RGBA8 a per-pixel kernel takes from `src` (K27): its length when it is bytes of whole pixels, else 0. */
+const rgbaBytes = (src) => (isBytes(src) && src.length > 0 && src.length % 4 === 0 ? src.length : 0);
 
 /** `Px.alloc` found no room: the memory cannot grow any further. kernels.js replaces the instance and runs the twin. */
 export class PxOutOfMemory extends Error {
@@ -390,6 +396,75 @@ export class Px {
             const ps = this._in(a, src, n), po = a.take(n), pt = a.take(bytes);
             const ok = sharpen ? this.exports.sharpen_rgba(ps, po, pt, w, h, ri, amount) : this.exports.blur_rgba(ps, po, pt, w, h, ri);
             return ok === 1 ? this._out(Uint8ClampedArray, po, n, null) : null;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * `toneRGBA(src, lut, protect)` of inpaint_stroke.js (K27): the stroke's 256-byte table copied in with each call
+     * (never resident: a stroke makes a fresh one); a new Uint8ClampedArray. Null when the kernel does not take the call
+     * (not whole bytes, no whole pixel, a table not of bytes or shorter than 256): the caller runs the twin then.
+     */
+    toneRGBA(src, lut, protect = false) {
+        const n = rgbaBytes(src);
+        if (!n || !isBytes(lut) || lut.length < 256) return null;
+        const a = this.job;
+        try {
+            const ps = this._in(a, src, n), pl = this._in(a, lut, 256), po = a.take(n);
+            return this.exports.tone_rgba(ps, po, n, pl, protect ? 1 : 0) === 1 ? this._out(Uint8ClampedArray, po, n, null) : null;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * `spongeRGBA(src, amount, saturate, vibrance)` of inpaint_stroke.js (K27), as `toneRGBA`: the amount clamped here as
+     * the twin clamps it (`+amount || 0` into 0..1), the two switches by the twin's truthiness.
+     */
+    spongeRGBA(src, amount, saturate = false, vibrance = true) {
+        const k = Math.max(0, Math.min(1, +amount || 0));
+        const n = rgbaBytes(src);
+        if (!n) return null;
+        const a = this.job;
+        try {
+            const ps = this._in(a, src, n), po = a.take(n);
+            return this.exports.sponge_rgba(ps, po, n, k, (saturate ? 1 : 0) | (vibrance ? 2 : 0)) === 1 ? this._out(Uint8ClampedArray, po, n, null) : null;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Frequency separation's split, `freqSplit(I, L)` of inpaint_stroke.js (K27): `low` (as long as `src`) written in
+     * place, the detail returned (a new Uint8ClampedArray). Null as `toneRGBA`, and for a `low` of another length or not
+     * of bytes; `low` is only written once the kernel is done.
+     */
+    freqSplit(src, low) {
+        const n = rgbaBytes(src);
+        if (!n || !isBytes(low) || low.length !== n) return null;
+        const a = this.job;
+        try {
+            const ps = this._in(a, src, n), pl = this._in(a, low, n), ph = a.take(n);
+            if (this.exports.freq_split(ps, pl, ph, n) !== 1) return null;
+            const high = this._out(Uint8ClampedArray, ph, n, null);
+            this._out(Uint8Array, pl, n, new Uint8Array(low.buffer, low.byteOffset, n));
+            return high;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Frequency separation in one go (K27): `blurRGBA(src, w, h, r)` and `freqSplit` on it in one arena, so the blur never
+     * leaves wasm memory and the detail lands in the blur's scratch (no more memory than the blur alone: about 640 MB
+     * at 16 MP); `{ low, high }`, two new Uint8ClampedArrays, copied out before anything else runs. Null as `blurRGBA`,
+     * and for a `src` not exactly w x h pixels.
+     */
+    freqSeparate(src, w, h, r) {
+        const n = w * h * 4;
+        r = Math.max(0, Math.round(r));
+        const ri = r > 0 ? r : 0;   // NaN: no pass, as the twin's `r > 0`
+        if (!(Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0) || ri > 0x3fffffff || rgbaBytes(src) !== n) return null;
+        const bytes = this.exports.dab_scratch_bytes(w, h) >>> 0;   // two f32 planes: more than the n bytes of the detail
+        if (!bytes) return null;
+        const a = this.job;
+        try {
+            const ps = this._in(a, src, n), po = a.take(n), pt = a.take(bytes);
+            if (this.exports.blur_rgba(ps, po, pt, w, h, ri) !== 1 || this.exports.freq_split(ps, po, pt, n) !== 1) return null;
+            return { low: this._out(Uint8ClampedArray, po, n, null), high: this._out(Uint8ClampedArray, pt, n, null) };
         } finally { this._reset(a); }
     }
 
