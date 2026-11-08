@@ -9052,8 +9052,10 @@ try {
         ed.lastLiquify = null;
         IE.pxCalls(true); IE.jobTimings(true);
         const g = await stroke(pts, o);
+        const winCalls = IE.pxCalls(true);
         const pxCalls = {
-            win: IE.pxCalls(true).liquify_block || 0,
+            win: winCalls.liquify_block || 0,
+            preview: winCalls.liquify_preview || 0,
             pool: IE.jobTimings(true).filter((j) => j && j.op === "liquify").reduce((n, j) => n + ((j.pxCalls && j.pxCalls.liquify_block) || 0), 0),
         };
         const r = refCheck(layer, what);
@@ -9201,7 +9203,53 @@ try {
             throw new Error("K28: the liquifyBlock route js ran Rust or differed from Rust's bytes: " + JSON.stringify(k28));
         }
     }
-    out.here = { keys: h2.keys, mid: mid2, undo: u2, pool, poolStats: h3.stats, split, splitStats: h4.stats, hereStats: h2.stats, k28 };
+    // K29 (docs/PLAN_WASM_BUILD.md §4.9): liquify_preview runs on win.px with the window kept in px.alloc memory,
+    // refreshes win.data when the route switches mid-stroke after wasm memory grows, and frees win.ptr on pointer up,
+    // Escape, tool switch (5b), tab close (12), and an error
+    const rustPreview = IE.kernels !== "js" && (IE.routes || {}).liquifyPreview !== "js";
+    let k29 = { rustPreview, herePreviews: h2.pxCalls.preview };
+    if (rustPreview) {
+        let wUp = null, upPtr0 = 0, twinCalls = -1, rustCallAfter = -1, twinViewFresh = false, scrSame = false;
+        await ed.undoStep();
+        try {
+            const gPrev = await stroke(pts2, { mid: async (p) => {
+                wUp = p.liqWin;
+                upPtr0 = wUp && wUp.px ? wUp.ptr : 0;
+                if (wUp && wUp.px) wUp.px.memory.grow(1);
+                IE.pxCalls(true);
+                IE.setRoute("liquifyPreview", "js");
+                ed._strokeViewSig = null; ed.sceneSig = null; drawNow();
+                twinCalls = IE.pxCalls(true).liquify_preview || 0;
+                twinViewFresh = !!(wUp && wUp.px && wUp.data.buffer === wUp.px.memory.buffer && wUp.data.byteLength === wUp.bytes);
+                const scrTw = fnv(ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data);
+                IE.setRoute("liquifyPreview", null);
+                ed._strokeViewSig = null; ed.sceneSig = null; drawNow();
+                rustCallAfter = IE.pxCalls(true).liquify_preview || 0;
+                const scrRs = fnv(ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data);
+                scrSame = scrTw === scrRs;
+            } });
+            k29.up = { hadPtr: upPtr0 > 0, freed: !!(wUp && wUp.ptr === 0 && wUp.px === null && !gPrev.p.liqWin), twinCalls, rustCallAfter, twinViewFresh, scrSame };
+        } finally {
+            IE.setRoute("liquifyPreview", null);
+        }
+        pid++; send("pointerdown", 515, 560); send("pointermove", 515, 568); drawNow();
+        const pEsc = ed.pointer, wEsc = pEsc && pEsc.liqWin, escPtr0 = wEsc ? wEsc.ptr : 0;
+        ed.root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        k29.esc = { hadPtr: escPtr0 > 0, freed: !!(wEsc && wEsc.ptr === 0 && wEsc.px === null && ed.pointer === null && !pEsc.liqWin), same: digest(L) === dHere && fieldKey() === cHere };
+        pid++; send("pointerdown", 515, 560); send("pointermove", 515, 568); drawNow();
+        const pErr = ed.pointer, wErr = pErr && pErr.liqWin, errPtr0 = wErr ? wErr.ptr : 0, dab0 = pErr.liq.field.dab;
+        let errCaught = false;
+        pErr.liq.field.dab = () => { throw new Error("k29 boom"); };
+        try { ed.onPointerMove(ev("pointermove", 515, 576)); } catch (_) { errCaught = true; } finally { pErr.liq.field.dab = dab0; }
+        k29.err = { hadPtr: errPtr0 > 0, caught: errCaught, freed: !!(wErr && wErr.ptr === 0 && wErr.px === null && ed.pointer === null && !pErr.liqWin), same: digest(L) === dHere && fieldKey() === cHere };
+        if (h2.pxCalls.preview !== pts2.length - 1 || !k29.up.hadPtr || !k29.up.freed || k29.up.twinCalls !== 0 || k29.up.rustCallAfter !== 1 || !k29.up.twinViewFresh || !k29.up.scrSame) {
+            throw new Error("K29: liquify_preview or mid-stroke route switch / pointerup free failed: " + JSON.stringify(k29));
+        }
+        if (!k29.esc.hadPtr || !k29.esc.freed || !k29.esc.same || !k29.err.hadPtr || !k29.err.caught || !k29.err.freed || !k29.err.same) {
+            throw new Error("K29: Escape or error during a liquify drag did not free the window and restore the field: " + JSON.stringify(k29));
+        }
+    }
+    out.here = { keys: h2.keys, mid: mid2, undo: u2, pool, poolStats: h3.stats, split, splitStats: h4.stats, hereStats: h2.stats, k28, k29 };
     if (!mid2 || !u2.same || !u2.cells) throw new Error("the second push: the layer changed during it, or its undo did not give the layer and the field back: " + JSON.stringify(out.here));
     if (!pool.bytes || !pool.cells) throw new Error("the pool's bake is not the one made here: " + JSON.stringify(out.here));
     if (!split.bytes || !split.cells || !(h4.stats && h4.stats.splits > 0)) throw new Error("the bake split into small blocks is not the same, or did not split: " + JSON.stringify(out.here));
@@ -9290,8 +9338,9 @@ try {
             rel5b = liq5b.orig.release;
             liq5b.orig.release = function (...a) { if (!k5b.released) k5b.released = { steps: ed.undo.length - n5b, keyDone: !!k5b.key }; return rel5b.apply(this, a); };
             want5b = bakeRect(0, 0, W, H);
+            const w5b = p.liqWin, ptr5b = w5b ? w5b.ptr : 0;
             ed.root.dispatchEvent(new KeyboardEvent("keydown", { key: "p", bubbles: true, cancelable: true }));
-            k5b.key = { tool: ed.tool, ended: ed.liq === null, pointer: ed.pointer === p, released: !!k5b.released };
+            k5b.key = { tool: ed.tool, ended: ed.liq === null, pointer: ed.pointer === p, released: !!k5b.released, winFreed: !p.liqWin && (!rustPreview || (ptr5b > 0 && w5b.ptr === 0 && w5b.px === null)) };
         } });
         const got5b = L.px.readRect(0, 0, W, H).data;
         let off5b = 0;
@@ -9301,7 +9350,7 @@ try {
         if (liq5b && rel5b) delete liq5b.orig.release;
     }
     out.toolkey = k5b;
-    if (!k5b.session || !k5b.key || k5b.key.tool !== "paint" || !k5b.key.ended || !k5b.key.pointer || k5b.key.released) throw new Error("a tool key during a liquify drag did not end the session with the stroke still running: " + JSON.stringify(k5b));
+    if (!k5b.session || !k5b.key || k5b.key.tool !== "paint" || !k5b.key.ended || !k5b.key.pointer || k5b.key.released || !k5b.key.winFreed) throw new Error("a tool key during a liquify drag did not end the session with the stroke still running: " + JSON.stringify(k5b));
     if (k5b.kind !== "liquify" || k5b.steps !== 1 || k5b.label !== "Liquify: push" || k5b.off || !k5b.sessionAfter || !k5b.pointerAfter) throw new Error("a stroke whose session a tool key ended did not land as the bake of its source: " + JSON.stringify(k5b));
     if (!k5b.released || k5b.released.steps !== 1 || !k5b.released.keyDone) throw new Error("the ended session's source was not let go after the landing: " + JSON.stringify(k5b));
     ed.setTool("liquify"); ed.setBrushSize(100);
@@ -9417,14 +9466,15 @@ try {
     const n12 = ed.undo.length, d12 = digest(L2);
     const g12 = await stroke(line([1000, 1100], [952, 1100], 6), { hold: true });
     const pend = ed.liquifyPending;
+    const w12 = g12.p.liqWin, ptr12 = w12 ? w12.ptr : 0;
     const o12 = { held: g12.held, pending: !!pend };
     ed.close();
-    Object.assign(o12, { pointer: ed.pointer === null, same: digest(L2) === d12, steps: ed.undo.length - n12, session: ed.liq === null });
+    Object.assign(o12, { pointer: ed.pointer === null, same: digest(L2) === d12, steps: ed.undo.length - n12, session: ed.liq === null, winFreed: !g12.p.liqWin && (!rustPreview || (ptr12 > 0 && w12.ptr === 0 && w12.px === null)) });
     if (pend) await pend;
     await wait(50);
     Object.assign(o12, { sameAfter: digest(L2) === d12, stepsAfter: ed.undo.length - n12 });
     out.close = o12;
-    if (!o12.held || !o12.pending || !o12.pointer || !o12.same || o12.steps || !o12.session || !o12.sameAfter || o12.stepsAfter) throw new Error("closing the editor during a held bake landed something: " + JSON.stringify(o12));
+    if (!o12.held || !o12.pending || !o12.pointer || !o12.same || o12.steps || !o12.session || !o12.winFreed || !o12.sameAfter || o12.stepsAfter) throw new Error("closing the editor during a held bake landed something: " + JSON.stringify(o12));
 } finally {
     IE.liquifySyncMax = keep.sync; IE.liquifyBlockMax = keep.block; IE.liquifyRateMs = keep.rate;
     if (LPproto && toCanvas0) LPproto.toCanvas = toCanvas0;

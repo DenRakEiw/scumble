@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__liquifyDrop_does_not_free_liqui-ed --offline --tiles on editor  (rc 1, 18 s, SCUMBLE_EDITOR_ONLY=liquify_bakes_each_stroke_from_the_session_source)
+editor rc=1 2s FAIL (only: liquify_bakes_each_stroke_from_the_session_source; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

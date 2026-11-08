@@ -320,3 +320,206 @@ pub fn liquify(
     }
     count
 }
+
+/// Liquify's live-stroke preview kernel (`previewBlock` in `renderer/editor/inpaint_liquify.js`, K29): writes `bw` x
+/// `bh` RGBA8 pixels into `out` whose centres lie at layer positions `(ox + (i + 0.5) * inv, oy + (j + 0.5) * inv)`,
+/// sampling the displaced position bilinearly (premultiplied) from the level-`level` window `win` (`ww` x `wh` pixels
+/// at `(wx0, wy0)`) through the dense field nodes `nodes` (`nw` nodes a row from `(nx0, ny0)` at grid step `s` on a
+/// `lw` x `lh` layer). Returns 1 when done, 0 when the arguments lie outside the kernel's contract.
+#[allow(clippy::too_many_arguments)]
+pub fn liquify_preview(
+    win: &[u8],
+    ww: usize,
+    wh: usize,
+    wx0: i32,
+    wy0: i32,
+    level: u32,
+    lw: usize,
+    lh: usize,
+    s: u32,
+    nodes: &[i32],
+    nw: usize,
+    nx0: i32,
+    ny0: i32,
+    ox: f64,
+    oy: f64,
+    inv: f64,
+    out: &mut [u8],
+    bw: usize,
+    bh: usize,
+) -> u32 {
+    if !matches!(s, 1 | 2 | 4 | 8)
+        || ww == 0
+        || wh == 0
+        || lw == 0
+        || lh == 0
+        || bw == 0
+        || bh == 0
+        || nw < 2
+        || level > 16
+        || !(inv > 0.0)
+        || !ox.is_finite()
+        || !oy.is_finite()
+        || !inv.is_finite()
+    {
+        return 0;
+    }
+    let Some(need_win) = ww.checked_mul(wh).and_then(|n| n.checked_mul(4)) else { return 0 };
+    let Some(need_out) = bw.checked_mul(bh).and_then(|n| n.checked_mul(4)) else { return 0 };
+    let Some(row_nodes) = nw.checked_mul(2) else { return 0 };
+    if win.len() < need_win || out.len() < need_out || nodes.len() < row_nodes * 2 {
+        return 0;
+    }
+    let nh = nodes.len() / row_nodes;
+    let ls = s.trailing_zeros();
+    let s_f = s as f64;
+    let xmax = ((((lw - 1) >> ls) + 1) as f64) * s_f;
+    let ymax = ((((lh - 1) >> ls) + 1) as f64) * s_f;
+    let w_f = lw as f64;
+    let h_f = lh as f64;
+    let mut ni_min = i32::MAX;
+    let mut ni_max = i32::MIN;
+    for i in 0..bw {
+        let cx = ox + (i as f64 + 0.5) * inv;
+        if cx >= 0.0 && cx < w_f {
+            let x = (cx - 0.5).clamp(0.0, xmax);
+            let ni = (x / s_f).floor() as i32;
+            if ni < ni_min {
+                ni_min = ni;
+            }
+            if ni > ni_max {
+                ni_max = ni;
+            }
+        }
+    }
+    let mut nj_min = i32::MAX;
+    let mut nj_max = i32::MIN;
+    for j in 0..bh {
+        let cy = oy + (j as f64 + 0.5) * inv;
+        if cy >= 0.0 && cy < h_f {
+            let y = (cy - 0.5).clamp(0.0, ymax);
+            let nj = (y / s_f).floor() as i32;
+            if nj < nj_min {
+                nj_min = nj;
+            }
+            if nj > nj_max {
+                nj_max = nj;
+            }
+        }
+    }
+    if ni_min <= ni_max && nj_min <= nj_max {
+        let Some(gx0) = ni_min.checked_sub(nx0) else { return 0 };
+        let Some(gx1) = ni_max.checked_sub(nx0) else { return 0 };
+        let Some(gy0) = nj_min.checked_sub(ny0) else { return 0 };
+        let Some(gy1) = nj_max.checked_sub(ny0) else { return 0 };
+        if gx0 < 0 || gy0 < 0 || (gx1 as usize) + 1 >= nw || (gy1 as usize) + 1 >= nh {
+            return 0;
+        }
+    }
+    let l2 = (1u32 << level) as f64;
+    let wx0_f = wx0 as f64;
+    let wy0_f = wy0 as f64;
+    let ww_max = ww as i64 - 1;
+    let wh_max = wh as i64 - 1;
+    for j in 0..bh {
+        let cy = oy + (j as f64 + 0.5) * inv;
+        let row_out = j * bw * 4;
+        if cy < 0.0 || cy >= h_f {
+            out[row_out..row_out + bw * 4].fill(0);
+            continue;
+        }
+        let y = (cy - 0.5).clamp(0.0, ymax);
+        let gy = y / s_f;
+        let nj_f = gy.floor();
+        let fy_n = gy - nj_f;
+        let ey_n = 1.0 - fy_n;
+        let r0 = ((nj_f as i32 - ny0) as usize) * row_nodes;
+        let r1 = r0 + row_nodes;
+        let mut o = row_out;
+        for i in 0..bw {
+            let cx = ox + (i as f64 + 0.5) * inv;
+            if cx < 0.0 || cx >= w_f {
+                // SAFETY: o + 4 <= need_out <= out.len()
+                unsafe {
+                    out.get_unchecked_mut(o..o + 4).fill(0);
+                }
+                o += 4;
+                continue;
+            }
+            let x = (cx - 0.5).clamp(0.0, xmax);
+            let gx = x / s_f;
+            let ni_f = gx.floor();
+            let fx_n = gx - ni_f;
+            let ex_n = 1.0 - fx_n;
+            let col = ((ni_f as i32 - nx0) as usize) * 2;
+            let a = r0 + col;
+            let b = r1 + col;
+            let n00 = ex_n * ey_n;
+            let n10 = fx_n * ey_n;
+            let n01 = ex_n * fy_n;
+            let n11 = fx_n * fy_n;
+            // SAFETY: ni_min..=ni_max and nj_min..=nj_max were checked against nx0..nx0+nw-1 and ny0..ny0+nh-1
+            let (d0, d1) = unsafe {
+                let d0 = n00 * (*nodes.get_unchecked(a) as f64)
+                    + n10 * (*nodes.get_unchecked(a + 2) as f64)
+                    + n01 * (*nodes.get_unchecked(b) as f64)
+                    + n11 * (*nodes.get_unchecked(b + 2) as f64);
+                let d1 = n00 * (*nodes.get_unchecked(a + 1) as f64)
+                    + n10 * (*nodes.get_unchecked(a + 3) as f64)
+                    + n01 * (*nodes.get_unchecked(b + 1) as f64)
+                    + n11 * (*nodes.get_unchecked(b + 3) as f64);
+                (d0, d1)
+            };
+            let sx = (cx + d0 / 256.0) / l2 - 0.5 - wx0_f;
+            let sy = (cy + d1 / 256.0) / l2 - 0.5 - wy0_f;
+            let x0_f = sx.floor();
+            let y0_f = sy.floor();
+            let fx = sx - x0_f;
+            let fy = sy - y0_f;
+            let ix0 = x0_f as i64;
+            let iy0 = y0_f as i64;
+            let x0 = clamp_index(ix0, ww_max);
+            let x1 = clamp_index(ix0 + 1, ww_max);
+            let y0 = clamp_index(iy0, wh_max);
+            let y1 = clamp_index(iy0 + 1, wh_max);
+            let q00 = (y0 * ww + x0) * 4;
+            let q10 = (y0 * ww + x1) * 4;
+            let q01 = (y1 * ww + x0) * 4;
+            let q11 = (y1 * ww + x1) * 4;
+            // SAFETY: x0, x1 < ww and y0, y1 < wh, so q..+4 <= need_win <= win.len(); o + 4 <= need_out <= out.len()
+            unsafe {
+                let dst = out.get_unchecked_mut(o..o + 4);
+                let w00 = (1.0 - fx) * (1.0 - fy) * (*win.get_unchecked(q00 + 3) as f64);
+                let w10 = fx * (1.0 - fy) * (*win.get_unchecked(q10 + 3) as f64);
+                let w01 = (1.0 - fx) * fy * (*win.get_unchecked(q01 + 3) as f64);
+                let w11 = fx * fy * (*win.get_unchecked(q11 + 3) as f64);
+                let a_sum = w00 + w10 + w01 + w11;
+                if a_sum < 0.5 {
+                    dst.fill(0);
+                } else {
+                    dst[0] = ((w00 * (*win.get_unchecked(q00) as f64)
+                        + w10 * (*win.get_unchecked(q10) as f64)
+                        + w01 * (*win.get_unchecked(q01) as f64)
+                        + w11 * (*win.get_unchecked(q11) as f64))
+                        / a_sum
+                        + 0.5) as i32 as u8;
+                    dst[1] = ((w00 * (*win.get_unchecked(q00 + 1) as f64)
+                        + w10 * (*win.get_unchecked(q10 + 1) as f64)
+                        + w01 * (*win.get_unchecked(q01 + 1) as f64)
+                        + w11 * (*win.get_unchecked(q11 + 1) as f64))
+                        / a_sum
+                        + 0.5) as i32 as u8;
+                    dst[2] = ((w00 * (*win.get_unchecked(q00 + 2) as f64)
+                        + w10 * (*win.get_unchecked(q10 + 2) as f64)
+                        + w01 * (*win.get_unchecked(q01 + 2) as f64)
+                        + w11 * (*win.get_unchecked(q11 + 2) as f64))
+                        / a_sum
+                        + 0.5) as i32 as u8;
+                    dst[3] = (a_sum + 0.5) as i32 as u8;
+                }
+            }
+            o += 4;
+        }
+    }
+    1
+}

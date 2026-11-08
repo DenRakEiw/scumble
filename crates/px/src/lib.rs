@@ -45,11 +45,12 @@ fn align_for(bytes: usize) -> usize {
 
 /// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
-/// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32);
+/// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
+/// 26: liquify_preview);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    25
+    26
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -428,6 +429,55 @@ pub unsafe extern "C" fn liquify_block(
     let rt = if rt.is_null() { None } else { Some(slice::from_raw_parts(rt, 65536)) };
     let mut out = resample::Out { data: slice::from_raw_parts_mut(out, need_out), x0: x0 as i64, y0: y0 as i64, w: vw, h: vh };
     resample::liquify(&block, nodes, nw, nx0, ny0, s, weights, rt, &mut out)
+}
+
+/// Liquify's live-stroke preview kernel (`previewBlock` in `renderer/editor/inpaint_liquify.js`, K29): `bw` x `bh`
+/// RGBA8 pixels into `out` whose centres lie at `(ox + (i + 0.5) * inv, oy + (j + 0.5) * inv)`, sampled bilinearly
+/// (premultiplied) from the level-`level` window `win` (`ww` x `wh` at `(wx0, wy0)`) through the dense field nodes
+/// `nodes` (`nodes_len` i32, `nw` nodes a row from `(nx0, ny0)` at grid step `s` on a `lw` x `lh` layer). Returns 1
+/// when done, 0 when the arguments lie outside the kernel's contract.
+#[no_mangle]
+pub unsafe extern "C" fn liquify_preview(
+    win: *const u8,
+    ww: u32,
+    wh: u32,
+    wx0: i32,
+    wy0: i32,
+    level: u32,
+    lw: u32,
+    lh: u32,
+    s: u32,
+    nodes: *const i32,
+    nodes_len: u32,
+    nw: u32,
+    nx0: i32,
+    ny0: i32,
+    ox: f64,
+    oy: f64,
+    inv: f64,
+    out: *mut u8,
+    bw: u32,
+    bh: u32,
+) -> u32 {
+    let (ww, wh, lw, lh, nw, nodes_len, bw, bh) = (
+        ww as usize,
+        wh as usize,
+        lw as usize,
+        lh as usize,
+        nw as usize,
+        nodes_len as usize,
+        bw as usize,
+        bh as usize,
+    );
+    if ww == 0 || wh == 0 || lw == 0 || lh == 0 || bw == 0 || bh == 0 || nw < 2 || level > 16 || !matches!(s, 1 | 2 | 4 | 8) || win.is_null() || nodes.is_null() || out.is_null() {
+        return 0;
+    }
+    let Some(need_win) = ww.checked_mul(wh).and_then(|n| n.checked_mul(4)) else { return 0 };
+    let Some(need_out) = bw.checked_mul(bh).and_then(|n| n.checked_mul(4)) else { return 0 };
+    let win = slice::from_raw_parts(win, need_win);
+    let nodes = slice::from_raw_parts(nodes, nodes_len);
+    let out = slice::from_raw_parts_mut(out, need_out);
+    resample::liquify_preview(win, ww, wh, wx0, wy0, level, lw, lh, s, nodes, nw, nx0, ny0, ox, oy, inv, out, bw, bh)
 }
 
 // ---- composite --------------------------------------------------------------------------

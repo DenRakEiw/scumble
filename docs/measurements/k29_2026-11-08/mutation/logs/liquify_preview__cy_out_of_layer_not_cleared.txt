@@ -1,0 +1,25 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 185279 bytes, sha256 165c5e5829f8b754
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 154776 bytes, sha256 b05ba82da02299a5
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.43s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.56s
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=liquify)
+FAIL rust simd liquify_preview (rust simd) equals its twin byte for byte (80 cases, each also at an odd offset)  s=1 opaque L=0 inv=1 ox=-4 oy=-3 alloc=true: out[16] is 13, the twin has 0
+FAIL rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)  s=1 opaque L=0 inv=1 ox=-4 oy=-3 alloc=true: out[16] is 13, the twin has 0
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+FAIL rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)  s=1 opaque L=0 inv=1 ox=-4 oy=-3 alloc=true: out[16] is 13, the twin has 0
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+(node:57992) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/9e1a0dae-37ec-43ac-be0a-853f32a4d3f6/scratch/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

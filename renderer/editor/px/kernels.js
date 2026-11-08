@@ -26,7 +26,7 @@
 import * as J from "./kernels_js.js";
 import { loadPx, Px, PxOutOfMemory, pxLaps } from "./px.js";
 import { resampleBlock as resampleBlockJS, resampleTable } from "../inpaint_resample.js";
-import { liquifyBlock as liquifyBlockJS } from "../inpaint_liquify.js";
+import { liquifyBlock as liquifyBlockJS, previewBlock as previewBlockJS } from "../inpaint_liquify.js";
 // the retouch brushes' twins live with the brushes (K26, K27; inpaint_stroke.js imports nothing, so no cycle)
 import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin, toneRGBA as toneRGBATwin, spongeRGBA as spongeRGBATwin, freqSplit as freqSplitTwin } from "../inpaint_stroke.js";
 
@@ -47,10 +47,11 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * at once (K12). `dabBlur` (K26): `blurRGBA` and `sharpenRGBA`, the blur and sharpen brushes and frequency separation's
  * blur, "js" for the twins in inpaint_stroke.js. `dabTone`, `dabSponge` and `freqSplit` (K27): `toneRGBA` (the dodge and
  * burn brush), `spongeRGBA` (saturate, desaturate) and frequency separation's split, the same way. `liquifyBlock`
- * (K28): Liquify's bake kernel (`inpaint_liquify.js` `liquifyBlock`). `stitchMask` (K32): the mask kernels of
+ * (K28) and `liquifyPreview` (K29): Liquify's bake and live-stroke preview kernels (`inpaint_liquify.js`
+ * `liquifyBlock`, `previewBlock`). `stitchMask` (K32): the mask kernels of
  * stitch.js (`alphaToMask`, `maskMaxClamp`, `maskOneMinus`, `erodeMask`, `maskToRgba`, `maskBoundsF32`).
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", stitchMask: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -335,6 +336,67 @@ export function liquifyBlock(block, bw, bh, bx, by, nodes, nw, nx0, ny0, s, rt, 
         finally { touched(); }
     }
     return liquifyBlockJS(block, bw, bh, bx, by, nodes, nw, nx0, ny0, s, rt, out, off, stride, X0, Y0, vw, vh);
+}
+
+/**
+ * Allocate the buffer of a Liquify stroke's preview window (`inpaint_canvas.js` `liquifyWindow`, K29): in `px.alloc`
+ * memory when the `liquifyPreview` route uses Rust (`{ px, ptr, bytes, data }` with `data` zeroed over wasm memory),
+ * else a plain `Uint8Array`. Paired with `freeLiquifyWindow` on every way a stroke ends.
+ */
+export function allocLiquifyWindow(w, h) {
+    const bytes = w * h * 4;
+    if (!(w > 0 && h > 0 && Number.isSafeInteger(bytes))) return { px: null, ptr: 0, bytes: 0, data: new Uint8Array(0) };
+    const p = rustPx("liquifyPreview");
+    if (p) {
+        let ptr = 0;
+        try {
+            ptr = p.alloc(bytes);
+            const data = p.u8().subarray(ptr, ptr + bytes);
+            data.fill(0);
+            return { px: p, ptr, bytes, data };
+        } catch (err) {
+            if (ptr && !p.trapped) try { p.free(ptr, bytes); } catch { /* ignore */ }
+            if (!recovered(p, err, "liquify_preview")) throw err;
+        } finally {
+            touched();
+        }
+    }
+    return { px: null, ptr: 0, bytes, data: new Uint8Array(bytes) };
+}
+
+/** Release a Liquify preview window allocated by `allocLiquifyWindow` (safe to call more than once). */
+export function freeLiquifyWindow(win) {
+    if (!win || !win.ptr) {
+        if (win) { win.px = null; win.ptr = 0; }
+        return;
+    }
+    const p = win.px, ptr = win.ptr, bytes = win.bytes;
+    win.px = null;
+    win.ptr = 0;
+    if (!p || p.trapped) return;
+    try { p.free(ptr, bytes); }
+    catch (err) { if (!recovered(p, err, "liquify_preview")) throw err; }
+    finally { if (p === PX) touched(); }
+}
+
+/**
+ * Liquify's live-stroke preview (`inpaint_liquify.js` `previewBlock`, K29): runs on `win.px` (never `rustPx()`, so a
+ * pause that trims `PX` mid-stroke or a stroke that started on JS stays on the window's own buffer); if the mode or
+ * route switches to JS mid-stroke after `win.px` grew its memory, refreshes `win.data` before running the twin.
+ */
+export function liquifyPreview(win, field, ox, oy, inv, out, bw, bh) {
+    const p = win && win.px;
+    if (p && win.ptr && !p.trapped && MODE === "rust" && route("liquifyPreview") !== "js") {
+        try {
+            if (p.liquifyPreview(win, field, ox, oy, inv, out, bw, bh)) return out;
+        } catch (err) {
+            if (!recovered(p, err, "liquify_preview")) throw err;
+        } finally {
+            if (p === PX) touched();
+        }
+    }
+    previewBlockJS(win, field, ox, oy, inv, out, bw, bh);
+    return out;
 }
 
 export function mipHalf(src, sw, sh, dst = null) {

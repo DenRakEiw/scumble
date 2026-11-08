@@ -1,0 +1,4 @@
+lint rc=0 9s 
+types rc=0 4s 
+editor rc=0 4s PASS (only: liquify_bakes_each_stroke_from_the_session_source; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS
