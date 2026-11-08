@@ -495,6 +495,373 @@ EVERY_MODE_NATIVE_OR_EMULATED = """
 })()
 """
 
+# A plain filter layer stands for the picture on every path (the screen, flattenToCanvas on both
+# backends, the plain PNG export, and an export with a Size row), so on a see-through document it
+# replaces its input instead of compositing F(I) over I. Opaque documents and non-plain filter
+# layers (a mask, an opacity, a blend mode, a limit view, or a clip) keep their exact bytes from
+# base 2068af87.
+SEE_THROUGH_FILTERS = """
+(async () => {
+    const shell = await import("./shell.js");
+    const { host } = await import("./editor/host.js");
+    const W = 256, H = 256;
+    const before = window.editor;
+    const ed = shell.newDocument();
+    shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 200));
+    ed.resizeCanvas();
+    const { Layer: LayerPixels, Mask: MaskPixels } = ed.pixels;
+    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const sha256 = async (u8) => {
+        const buf = await crypto.subtle.digest("SHA-256", u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength));
+        return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    };
+    const clearCaches = () => {
+        for (const l of ed.layers) { l._fcache = null; l._fcacheView = null; l._fcacheSample = null; l._fxCache = null; l._fxCacheView = null; }
+        ed.flatCache = null;
+        ed.sceneSig = null;
+    };
+    const flatBytes = (forRun = true, chainOff = false) => {
+        ed.filterChainOff = chainOff;
+        clearCaches();
+        const c = ed.flattenToCanvas({ forRun });
+        ed.filterChainOff = false;
+        return c.getContext("2d").getImageData(0, 0, W, H).data;
+    };
+    const screenBytes = (chainOff = false) => {
+        ed.filterChainOff = chainOff;
+        clearCaches();
+        const c = mk(W, H), ctx = c.getContext("2d");
+        const prev = ed.viewPass;
+        ed.viewPass = { x: 0, y: 0, w: W, h: H, sx: 1, sy: 1, screen: true };
+        try { ed.drawComposite(ctx, {}); } finally { ed.viewPass = prev; ed.filterChainOff = false; }
+        return ctx.getImageData(0, 0, W, H).data;
+    };
+    const decodeBlob = async (blob, w = W, h = H) => {
+        const bmp = await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+        const c = mk(w, h), ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(bmp, 0, 0);
+        bmp.close();
+        return ctx.getImageData(0, 0, w, h).data;
+    };
+    const pngBytes = async () => {
+        clearCaches();
+        const r = await ed.encodeComposite({ forRun: true }, {});
+        if (r && r.blob) return decodeBlob(r.blob, W, H);
+        const c = await host.exportCanvas(ed, "png");
+        return c.getContext("2d").getImageData(0, 0, W, H).data;
+    };
+    const sizeBytes = async (chainOff = false) => {
+        ed.filterChainOff = chainOff;
+        clearCaches();
+        host.setExportSize(ed, { width: 128, height: 128 });
+        try {
+            const c = await host.exportCanvas(ed, "png");
+            return c.getContext("2d").getImageData(0, 0, 128, 128).data;
+        } finally {
+            host.setExportSize(ed, { percent: 100 });
+            ed.filterChainOff = false;
+        }
+    };
+    const diffMax = (a, b) => {
+        if (!a || !b || a.length !== b.length) return 999;
+        let m = 0;
+        for (let i = 0; i < a.length; i++) {
+            const d = Math.abs(a[i] - b[i]);
+            if (d > m) m = d;
+        }
+        return m;
+    };
+    const pxAt = (d, x, y, w = W) => { const i = (y * w + x) * 4; return [d[i], d[i + 1], d[i + 2], d[i + 3]]; };
+    const eqPx = (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+    const problems = [];
+    const check = (name, ok, detail) => { if (!ok) problems.push(name + (detail !== undefined ? " (" + JSON.stringify(detail) + ")" : "")); };
+
+    // 1. Half-transparent base (edges at alpha 128, centre at alpha 255).
+    // Edge channels [120, 40, 20] (bw luma 62) and [40, 120, 80] (bw luma 92) are even integers 2p with p <= 63,
+    // which are exact fixed points of both Canvas 2D's 8-bit premultiply and straight RGBA8.
+    const seeBase = mk(W, H);
+    {
+        const ctx = seeBase.getContext("2d");
+        const img = ctx.createImageData(W, H), d = img.data;
+        for (let y = 0; y < H; y++) {
+            const inY = y >= 64 && y < 192;
+            for (let x = 0; x < W; x++) {
+                const inX = x >= 64 && x < 192;
+                const i = (y * W + x) * 4;
+                if (inX && inY) {
+                    if (x < 128) { d[i] = 60; d[i + 1] = 120; d[i + 2] = 200; d[i + 3] = 255; }
+                    else { d[i] = 200; d[i + 1] = 140; d[i + 2] = 60; d[i + 3] = 255; }
+                } else {
+                    if (x < 128) { d[i] = 120; d[i + 1] = 40; d[i + 2] = 20; d[i + 3] = 128; }
+                    else { d[i] = 40; d[i + 1] = 120; d[i + 2] = 80; d[i + 3] = 128; }
+                }
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+    }
+    Object.defineProperty(seeBase, "naturalWidth", { value: W });
+    Object.defineProperty(seeBase, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "see_base.png", subfolder: "inpaint_canvas", type: "input" }, seeBase, { keepLayers: false });
+    await ed.mipsSettled();
+
+    const baseFlat = flatBytes(true, false);
+    const baseSize = await sizeBytes(false);
+    check("base edge alpha 128", eqPx(pxAt(baseFlat, 16, 16), [120, 40, 20, 128]) && eqPx(pxAt(baseFlat, 240, 16), [40, 120, 80, 128]));
+
+    // 1a. Identity curves layer: screen, flattenToCanvas, plain PNG export, and Size-row export equal unfiltered base
+    const fxCurves = ed.addFilterLayer("curves");
+    ed.markFilterChanged(fxCurves);
+    const curScreen = screenBytes(false), curScreenOff = screenBytes(true);
+    const curFlat = flatBytes(true, false), curFlatOff = flatBytes(true, true);
+    const curPng = await pngBytes();
+    const curSize = await sizeBytes(false), curSizeOff = await sizeBytes(true);
+    check("identity curves screen == base", diffMax(curScreen, baseFlat) === 0 && diffMax(curScreenOff, baseFlat) === 0, { on: diffMax(curScreen, baseFlat), off: diffMax(curScreenOff, baseFlat) });
+    check("identity curves flatten == base", diffMax(curFlat, baseFlat) === 0 && diffMax(curFlatOff, baseFlat) === 0, { on: diffMax(curFlat, baseFlat), off: diffMax(curFlatOff, baseFlat) });
+    check("identity curves png == base", diffMax(curPng, baseFlat) === 0, diffMax(curPng, baseFlat));
+    check("identity curves size == baseSize", diffMax(curSize, baseSize) === 0 && diffMax(curSizeOff, baseSize) === 0 && pxAt(curSize, 8, 8, 128)[3] === 128, { on: diffMax(curSize, baseSize), off: diffMax(curSizeOff, baseSize), edge: pxAt(curSize, 8, 8, 128) });
+    ed.removeLayer(fxCurves.id);
+
+    // 1b. Black & white layer: all paths give the same bytes, pure grey at alpha 128 on the edges
+    const fxBw = ed.addFilterLayer("bw");
+    ed.markFilterChanged(fxBw);
+    const bwScreen = screenBytes(false), bwScreenOff = screenBytes(true);
+    const bwFlat = flatBytes(true, false), bwFlatOff = flatBytes(true, true);
+    const bwPng = await pngBytes();
+    const bwSize = await sizeBytes(false), bwSizeOff = await sizeBytes(true);
+    check("bw paths agree byte-for-byte", diffMax(bwScreen, bwFlat) === 0 && diffMax(bwScreenOff, bwFlat) === 0 && diffMax(bwFlatOff, bwFlat) === 0 && diffMax(bwPng, bwFlat) === 0, {
+        screen: diffMax(bwScreen, bwFlat), screenOff: diffMax(bwScreenOff, bwFlat), flatOff: diffMax(bwFlatOff, bwFlat), png: diffMax(bwPng, bwFlat),
+    });
+    check("bw edge pure grey alpha 128", eqPx(pxAt(bwFlat, 16, 16), [62, 62, 62, 128]) && eqPx(pxAt(bwFlat, 240, 16), [92, 92, 92, 128]), {
+        left: pxAt(bwFlat, 16, 16), right: pxAt(bwFlat, 240, 16),
+    });
+    check("bw size export agrees and keeps edge pure grey alpha 128", diffMax(bwSize, bwSizeOff) === 0 && eqPx(pxAt(bwSize, 8, 8, 128), [62, 62, 62, 128]) && eqPx(pxAt(bwSize, 120, 8, 128), [92, 92, 92, 128]), {
+        diff: diffMax(bwSize, bwSizeOff), left: pxAt(bwSize, 8, 8, 128), right: pxAt(bwSize, 120, 8, 128),
+    });
+
+    // 1c. Two-filter case that chains (bw + invert) and two-filter case that does not chain (filterChainOff + sharpen)
+    const fxInv = ed.addFilterLayer("invert");
+    ed.markFilterChanged(fxInv);
+    const chScreen = screenBytes(false), chScreenOff = screenBytes(true);
+    const chFlat = flatBytes(true, false), chFlatOff = flatBytes(true, true);
+    const chPng = await pngBytes();
+    const chSize = await sizeBytes(false), chSizeOff = await sizeBytes(true);
+    check("chained bw+invert paths agree byte-for-byte", diffMax(chScreen, chFlat) === 0 && diffMax(chScreenOff, chFlat) === 0 && diffMax(chFlatOff, chFlat) === 0 && diffMax(chPng, chFlat) === 0 && diffMax(chSize, chSizeOff) === 0, {
+        screen: diffMax(chScreen, chFlat), screenOff: diffMax(chScreenOff, chFlat), flatOff: diffMax(chFlatOff, chFlat), png: diffMax(chPng, chFlat), size: diffMax(chSize, chSizeOff),
+    });
+    check("chained bw+invert edge alpha 128", eqPx(pxAt(chFlat, 16, 16), [193, 193, 193, 128]) && eqPx(pxAt(chFlat, 240, 16), [163, 163, 163, 128]) && eqPx(pxAt(chPng, 16, 16), [193, 193, 193, 128]) && eqPx(pxAt(chSize, 8, 8, 128), [193, 193, 193, 128]), {
+        left: pxAt(chFlat, 16, 16), right: pxAt(chFlat, 240, 16), pngLeft: pxAt(chPng, 16, 16), sizeLeft: pxAt(chSize, 8, 8, 128),
+    });
+    ed.removeLayer(fxInv.id);
+
+    // Non-chaining stack 1: bw + sharpen + invert (sharpen breaks programBand on tiles so readBand runs; filterChainOff breaks GPU chain on canvas)
+    const fxSharp = ed.addFilterLayer("sharpen");
+    fxSharp.params = { ...fxSharp.params, amount: 80, radius: 1.5, threshold: 0 };
+    ed.markFilterChanged(fxSharp);
+    const fxInv2 = ed.addFilterLayer("invert");
+    ed.markFilterChanged(fxInv2);
+    const ncFlat = flatBytes(true, false), ncFlatOff = flatBytes(true, true);
+    const ncScreen = screenBytes(false), ncPng = await pngBytes();
+    check("unchained bw+sharpen+invert paths agree", diffMax(ncFlat, ncFlatOff) === 0 && diffMax(ncScreen, ncFlat) === 0 && diffMax(ncPng, ncFlat) <= 2, {
+        flatOff: diffMax(ncFlat, ncFlatOff), screen: diffMax(ncScreen, ncFlat), png: diffMax(ncPng, ncFlat),
+    });
+    check("unchained bw+sharpen+invert edge alpha 128", eqPx(pxAt(ncFlat, 16, 16), [193, 193, 193, 128]) && eqPx(pxAt(ncFlat, 240, 16), [163, 163, 163, 128]) && eqPx(pxAt(ncFlatOff, 16, 16), [193, 193, 193, 128]), {
+        left: pxAt(ncFlat, 16, 16), right: pxAt(ncFlat, 240, 16), leftOff: pxAt(ncFlatOff, 16, 16),
+    });
+    ed.removeLayer(fxInv2.id);
+    ed.removeLayer(fxSharp.id);
+
+    // Non-chaining stack 2: plain bw (chains onto chain.surface because nextIsFilterLayer is true) followed by a masked
+    // invert (plain=false, so applyFilterLayer calls flushFilterChain(ctx, chain) without clearing ctx at the end).
+    // On the left half (where the mask is 0), ctx holds purely what flushFilterChain drew.
+    const fxMaskedInv = ed.addFilterLayer("invert");
+    {
+        const mc = mk(W, H), mx = mc.getContext("2d");
+        const mimg = mx.createImageData(W, H), md = mimg.data;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                md[i] = 255; md[i + 1] = 255; md[i + 2] = 255; md[i + 3] = x < 128 ? 0 : 255;
+            }
+        }
+        mx.putImageData(mimg, 0, 0);
+        fxMaskedInv.maskPx = MaskPixels.fromCanvas(mc);
+        ed.markMaskChanged(fxMaskedInv);
+    }
+    await ed.mipsSettled();
+    const flChainOn = flatBytes(true, false), flChainOff = flatBytes(true, true);
+    const flScreen = screenBytes(false), flPng = await pngBytes();
+    check("flushFilterChain before masked filter agrees across all paths", diffMax(flChainOn, flChainOff) === 0 && diffMax(flScreen, flChainOn) === 0 && diffMax(flPng, flChainOn) === 0, {
+        off: diffMax(flChainOn, flChainOff), screen: diffMax(flScreen, flChainOn), png: diffMax(flPng, flChainOn),
+    });
+    check("flushFilterChain left half keeps pure grey alpha 128", eqPx(pxAt(flChainOn, 16, 16), [62, 62, 62, 128]), pxAt(flChainOn, 16, 16));
+    ed.removeLayer(fxMaskedInv.id);
+
+    // 1d. Plain filter with params.limit (limitOver = !plain mixes input where w=0 instead of zeroing alpha before clearRect)
+    fxBw.params = { ...fxBw.params, limit: { source: "luma", lo: 0.3, hi: 1.0, fLo: 0, fHi: 0 } };
+    ed.markFilterChanged(fxBw);
+    const limFlat = flatBytes(true, false), limFlatOff = flatBytes(true, true);
+    const limScreen = screenBytes(false), limPng = await pngBytes();
+    check("limited plain bw agrees across all paths", diffMax(limFlat, limFlatOff) === 0 && diffMax(limScreen, limFlat) === 0 && diffMax(limPng, limFlat) === 0, {
+        off: diffMax(limFlat, limFlatOff), screen: diffMax(limScreen, limFlat), png: diffMax(limPng, limFlat),
+    });
+    check("limited plain bw keeps unfiltered edge where w=0 and filtered edge where w=1", eqPx(pxAt(limFlat, 16, 16), [120, 40, 20, 128]) && eqPx(pxAt(limFlat, 240, 16), [92, 92, 92, 128]), {
+        w0: pxAt(limFlat, 16, 16), w1: pxAt(limFlat, 240, 16),
+    });
+
+    // And a plain filter with a missing depth map (limitMissing: hands input back, must not clear ctx onto itself)
+    ed.maps = {};
+    fxBw.params = { ...fxBw.params, limit: { source: "depth", lo: 0.2, hi: 0.8, fLo: 0, fHi: 0 } };
+    ed.markFilterChanged(fxBw);
+    const missFlat = flatBytes(true, false), missFlatOff = flatBytes(true, true);
+    check("missing-depth plain filter leaves base untouched", diffMax(missFlat, baseFlat) === 0 && diffMax(missFlatOff, baseFlat) === 0, {
+        on: diffMax(missFlat, baseFlat), off: diffMax(missFlatOff, baseFlat),
+    });
+    ed.removeLayer(fxBw.id);
+
+    // 2. Non-plain filter layers (mask, opacity, blend mode, limitView, clip) checked byte-for-byte against frozen base 2068af87
+    const halfBase = mk(W, H);
+    {
+        const ctx = halfBase.getContext("2d");
+        const img = ctx.createImageData(W, H), d = img.data;
+        for (let y = 0; y < H; y++) {
+            const inY = y >= 64 && y < 192;
+            for (let x = 0; x < W; x++) {
+                const inX = x >= 64 && x < 192;
+                const i = (y * W + x) * 4;
+                if (inX && inY) {
+                    if (x < 128) { d[i] = 60; d[i + 1] = 120; d[i + 2] = 200; d[i + 3] = 255; }
+                    else { d[i] = 200; d[i + 1] = 140; d[i + 2] = 60; d[i + 3] = 255; }
+                } else {
+                    if (x < 128) { d[i] = 201; d[i + 1] = 60; d[i + 2] = 40; d[i + 3] = 128; }
+                    else { d[i] = 80; d[i + 1] = 199; d[i + 2] = 120; d[i + 3] = 128; }
+                }
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+    }
+    Object.defineProperty(halfBase, "naturalWidth", { value: W });
+    Object.defineProperty(halfBase, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "half_base.png", subfolder: "inpaint_canvas", type: "input" }, halfBase, { keepLayers: false });
+    await ed.mipsSettled();
+    const fxM = ed.addFilterLayer("bw");
+    {
+        const mc = mk(W, H), mx = mc.getContext("2d");
+        const mimg = mx.createImageData(W, H), md = mimg.data;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                md[i] = 255; md[i + 1] = 255; md[i + 2] = 255; md[i + 3] = x < 128 ? 0 : 255;
+            }
+        }
+        mx.putImageData(mimg, 0, 0);
+        fxM.maskPx = MaskPixels.fromCanvas(mc);
+        ed.markMaskChanged(fxM);
+    }
+    await ed.mipsSettled();
+    const maskHash = await sha256(flatBytes(true, false));
+    check("frozen non-plain mask matches 2068af87", maskHash === "8007aefef32c622927f8f28de783b5a0c2ff5f16185de157b7618e4e12d7ef4f", maskHash);
+    ed.removeLayer(fxM.id);
+
+    const fxOp = ed.addFilterLayer("bw");
+    fxOp.opacity = 0.5;
+    ed.markFilterChanged(fxOp);
+    const opHash = await sha256(flatBytes(true, false));
+    check("frozen non-plain opacity matches 2068af87", opHash === "e05bb2abc946ccd66b0d47b738a5731898ce5988af4de8ed7ba098f86551d863", opHash);
+    ed.removeLayer(fxOp.id);
+
+    const fxBl = ed.addFilterLayer("bw");
+    fxBl.blend = "multiply";
+    ed.markFilterChanged(fxBl);
+    const blHash = await sha256(flatBytes(true, false));
+    check("frozen non-plain blend matches 2068af87", blHash === "c29c232efa0b22383ece0f2483e3db1d9b257eaf7d66a7b558a0f3c1931c8efc", blHash);
+    ed.removeLayer(fxBl.id);
+
+    const fxLv = ed.addFilterLayer("bw");
+    fxLv.params = { ...fxLv.params, limit: { source: "luma", lo: 0.5, hi: 1.0, fLo: 0, fHi: 0 } };
+    ed.maskView = { id: fxLv.id, mode: "effect" };
+    ed.markFilterChanged(fxLv);
+    const lvHash = await sha256(screenBytes(false));
+    ed.maskView = null;
+    check("frozen non-plain limitView matches 2068af87", lvHash === "2a8e8d080370d156d555c6d451ba9bb6e43e6c6d6b7fb96b276df7500d6a62b1", lvHash);
+    ed.removeLayer(fxLv.id);
+
+    const clipBaseC = mk(192, 192);
+    {
+        const cx = clipBaseC.getContext("2d");
+        const cimg = cx.createImageData(192, 192), cd = cimg.data;
+        for (let i = 0; i < cd.length; i += 4) {
+            cd[i] = 120; cd[i + 1] = 80; cd[i + 2] = 199; cd[i + 3] = 128;
+        }
+        cx.putImageData(cimg, 0, 0);
+    }
+    const clipBaseLayer = ed.addLayer({ name: "clip-base", kind: "paint", px: LayerPixels.fromCanvas(clipBaseC), x: 32, y: 32, w: 192, h: 192, dirty: true });
+    const fxCl = ed.addFilterLayer("bw");
+    fxCl.clip = true;
+    ed.markFilterChanged(fxCl);
+    await ed.mipsSettled();
+    const clHash = await sha256(flatBytes(true, false));
+    check("frozen non-plain clip matches 2068af87", clHash === "4aca64654377c048bfe1ec26d20d57cdea9125cd348aefe885e38a46265c3e27", clHash);
+    ed.removeLayer(fxCl.id);
+    ed.removeLayer(clipBaseLayer.id);
+
+    // 3. Opaque document checked byte-for-byte against frozen base 2068af87
+    const opaqueBase = mk(W, H);
+    {
+        const ctx = opaqueBase.getContext("2d");
+        const img = ctx.createImageData(W, H), d = img.data;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                d[i] = (x * 3 + y * 5) & 255;
+                d[i + 1] = (x * 7 + 40) & 255;
+                d[i + 2] = (y * 11 + 90) & 255;
+                d[i + 3] = 255;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+    }
+    Object.defineProperty(opaqueBase, "naturalWidth", { value: W });
+    Object.defineProperty(opaqueBase, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "opaque_base.png", subfolder: "inpaint_canvas", type: "input" }, opaqueBase, { keepLayers: false });
+    await ed.mipsSettled();
+
+    const opBaseH = await sha256(flatBytes(true, false));
+    check("frozen opaque base matches 2068af87", opBaseH === "068674f7a924486deacb2c9ce958a63ed94e5be903024dba696641eb7cb4032b", opBaseH);
+    const fxOC = ed.addFilterLayer("curves");
+    ed.markFilterChanged(fxOC);
+    const opCurH = await sha256(flatBytes(true, false));
+    check("frozen opaque curves matches 2068af87", opCurH === "068674f7a924486deacb2c9ce958a63ed94e5be903024dba696641eb7cb4032b", opCurH);
+    ed.removeLayer(fxOC.id);
+
+    const fxOBw = ed.addFilterLayer("bw");
+    ed.markFilterChanged(fxOBw);
+    const opBwH = await sha256(flatBytes(true, false));
+    check("frozen opaque bw matches 2068af87", opBwH === "11eed704af0cb278c72c7eac8994f9e1f2bcc5e6550da3beff3d1822683f76c6", opBwH);
+    const fxOInv = ed.addFilterLayer("invert");
+    ed.markFilterChanged(fxOInv);
+    const opChH = await sha256(flatBytes(true, false));
+    const opUnchH = await sha256(flatBytes(true, true));
+    check("frozen opaque chained+unchained matches 2068af87", opChH === "fa53ed91b30a605292b9c896b69dfbf20f155b75beeea3888f8295164872168b" && opUnchH === "fa53ed91b30a605292b9c896b69dfbf20f155b75beeea3888f8295164872168b", { opChH, opUnchH });
+    ed.removeLayer(fxOInv.id);
+
+    const fxOSh = ed.addFilterLayer("sharpen");
+    fxOSh.params = { ...fxOSh.params, amount: 80, radius: 1.5, threshold: 0 };
+    ed.markFilterChanged(fxOSh);
+    const fxOInv2 = ed.addFilterLayer("invert");
+    ed.markFilterChanged(fxOInv2);
+    const opMidH = await sha256(flatBytes(true, false));
+    check("frozen opaque bw+sharpen+invert matches 2068af87", opMidH === "216770c1edbdd99893b15c31c20cdccc950185faad5c255b4a6ac33552a32af5", opMidH);
+    ed.removeLayer(fxOInv2.id);
+    ed.removeLayer(fxOSh.id);
+    ed.removeLayer(fxOBw.id);
+
+    shell.closeDocument(ed, { force: true });
+    if (before) shell.activate(before);
+    return { tiles: !!ed.tileMode, problems };
+})()
+"""
+
 
 def compare(a_png, b_png):
     """Max and mean absolute difference per channel between two PNGs of the same size."""
@@ -673,6 +1040,14 @@ async def run(c, args):
                 print(f"[FAIL] {line}: " + "; ".join(problems))
             else:
                 print(f"[ok] {line}")
+        # plain filter layers on see-through documents replace their input on every path, and opaque / non-plain
+        # filter layers match the frozen references from base 2068af87
+        stf = await c.eval(SEE_THROUGH_FILTERS, timeout=300)
+        if stf.get("problems"):
+            ok = False
+            print(f"[FAIL] see_through_filters ({'tiles' if stf.get('tiles') else 'canvas'}): " + "; ".join(stf["problems"]))
+        else:
+            print(f"[ok] see_through_filters ({'tiles' if stf.get('tiles') else 'canvas'}): plain filters replace input on all paths (alpha 128); opaque and non-plain match frozen 2068af87")
     finally:
         await c.eval(CLOSE)
     print("PASS" if ok else "FAIL")

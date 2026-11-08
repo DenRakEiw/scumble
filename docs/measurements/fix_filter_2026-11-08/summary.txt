@@ -1,0 +1,36 @@
+fix-filter (docs/research/review_full_2026-11-07/verified.json "filters/filter-layer-over-its-own-input"):
+a plain filter layer stands for the picture on every path. In renderer/editor/inpaint_canvas.js:
+  1. filteredCanvas(layer, below, forRun, preview, keepSurface = false, plain = keepSurface):
+     info.limitOver = !plain (a plain filter layer with params.limit mixes the input back in where w = 0,
+     matching the chained and band paths, instead of zeroing alpha before ctx.clearRect);
+     if (info.limitMissing && canvas === input && !(keepSurface && isGLSurface(canvas))) canvas = null.
+  2. applyFilterLayer: passes plain to filteredCanvas; returns null if (!out || (plain && out === ctx.canvas));
+     calls if (plain) ctx.clearRect(rx, ry, rw, rh) before ctx.drawImage(src, rx, ry, rw, rh).
+  3. flushFilterChain: calls ctx.clearRect(chain.x, chain.y, chain.w, chain.h) before drawSurfaceTo / drawImage.
+
+1. 15000 x 10000 exportperf (exportperf:15000x10000,--filter=film.look)
+   measure_exportperf.sh, 2026-11-08 18:32-18:39, busy lock held per round, port 9627 (--offline, --tiles on),
+   before = clean tree at 2068af87, after = worktree (ag-fix-filter), 3 alternating rounds (r1: before/after,
+   r2: after/before, r3: before/after). Raw JSON in exportperf/{before,after}_r{1,2,3}.json.
+
+   Metric (ms / blocked ms)       before r1 / r2 / r3                  after r1 / r2 / r3                   median before -> after
+   composite_bands (238.5 MB)     7633 (337) / 6000 (156) / 6157 (195) 6248 (170) / 5786 (160) / 5917 (146) 6157 (195) -> 5917 (160) ms
+   composite_canvas (292.9 MB)   13956 (6966)/13003 (6585)/13472 (6966)12490 (6627)/11686 (5298)/13649 (6778)13472 (6966)->12490 (6627) ms
+   layer_from_tiles (0.6 MB)       415 (6)   /  367 (6)   /  368 (6)    363 (6)   /  312 (6)   /  364 (6)    368 (6)   ->  363 (6)   ms
+   layer_canvas (2.7 MB)          2480 (317) / 1547 (336) / 3447 (362) 2819 (258) / 1729 (293) / 1913 (272) 2480 (317) -> 1913 (272) ms
+   psd (612.6 MB)                 9133 (417) / 8267 (330) / 8733 (408) 8189 (368) / 8524 (351) / 9321 (769) 8733 (408) -> 8524 (368) ms
+   psd_masked (620.5 MB)          9867 (1221)/ 8730 (229) / 8794 (326) 9025 (345) /10050 (1033)/ 8382 (295) 8794 (326) -> 9025 (345) ms
+
+2. Mutation round (tools/mutation_round.py, docs/measurements/fix_filter_2026-11-08/mutants.py)
+   8 mutants (4 changed sites x 2 backends: --tiles on and --tiles off) against the composite gate:
+   - orig: build 9 s, both wasm builds identical to checkout's: True; full px_test green (113 s);
+     composite gate green on tiles (26 s) and canvas (25 s).
+   - applyFilterLayer clear reversed (tiles=on):        KILLED by composite (see_through_filters: identity curves screen/flatten/size max diff 64)
+   - applyFilterLayer clear reversed (tiles=off):       KILLED by composite (see_through_filters: identity curves screen/flatten/png/size max diff 64)
+   - flushFilterChain clear reversed (tiles=on):        KILLED by composite (see_through_filters: flushFilterChain before masked filter max diff 64, alpha 192)
+   - flushFilterChain clear reversed (tiles=off):       KILLED by composite (see_through_filters: flushFilterChain before masked filter max diff 64, alpha 192)
+   - filteredCanvas limitOver=!keepSurface (tiles=on):  KILLED by composite (see_through_filters: limited plain bw w=0 erased to [0,0,0,0], max diff 128)
+   - filteredCanvas limitOver=!keepSurface (tiles=off): KILLED by composite (see_through_filters: limited plain bw w=0 erased to [0,0,0,0])
+   - limitMissing self-clear guard reversed (tiles=on): KILLED by composite (see_through_filters: missing-depth plain filter max diff 255)
+   - limitMissing self-clear guard reversed (tiles=off):KILLED by composite (see_through_filters: missing-depth plain filter max diff 255)
+   8 killed (0 on re-check), 0 survived.

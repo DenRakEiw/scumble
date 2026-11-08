@@ -1,0 +1,27 @@
+[18:21:00] gpu: 27207 MiB, 100 %
+lock: held by 'fix-docs D1 gates 43940 2026-11-08T18:20:26.7065398+01:00', waiting
+lock: taken after 660 s
+[18:32:01] lock taken (fix-filter measuring (before r1) 59444 2026-11-08T18:21:00)
+[18:33:16] before r1: rc=0
+lock: released
+lock: taken after 0 s
+[18:33:16] lock taken (fix-filter measuring (after r1) 12196 2026-11-08T18:33:16)
+[18:34:30] after r1: rc=0
+lock: released
+lock: taken after 0 s
+[18:34:31] lock taken (fix-filter measuring (after r2) 28044 2026-11-08T18:34:31)
+[18:35:39] after r2: rc=0
+lock: released
+lock: taken after 0 s
+[18:35:40] lock taken (fix-filter measuring (before r2) 5488 2026-11-08T18:35:39)
+[18:36:48] before r2: rc=0
+lock: released
+lock: taken after 0 s
+[18:36:48] lock taken (fix-filter measuring (before r3) 31284 2026-11-08T18:36:48)
+[18:37:58] before r3: rc=0
+lock: released
+lock: taken after 0 s
+[18:37:58] lock taken (fix-filter measuring (after r3) 31860 2026-11-08T18:37:58)
+[18:39:06] after r3: rc=0
+lock: released
+[18:39:07] done

@@ -15858,7 +15858,7 @@ class InpaintEditor {
      * stages inside one filter (the film look is colour, halation and grain) always chain on
      * the GPU, which is where most of the canvas round trips were.
      */
-    filteredCanvas(layer, below, forRun, preview, keepSurface = false) {
+    filteredCanvas(layer, below, forRun, preview, keepSurface = false, plain = keepSurface) {
         const vp = this.viewPass;
         const key = this.filterKey(layer, below, forRun, preview, vp);
         const slot = vp ? (vp.sample ? "_fcacheSample" : "_fcacheView") : "_fcache";
@@ -15895,10 +15895,10 @@ class InpaintEditor {
             site: "filteredCanvas",
         });
         // A limit's weight goes into the result's alpha whenever the result is drawn over the picture (a
-        // blend mode, an opacity, a mask, or source-over): where the limit is 0 the layer then shows
-        // nothing, like its painted mask. Only a result that becomes the chain's own surface (the next
-        // filter layer reads it as the picture) has to stay opaque and mixes the input back in instead.
-        info.limitOver = !keepSurface;
+        // blend mode, an opacity, a mask, or a clip): where the limit is 0 the layer then shows nothing,
+        // like its painted mask. A plain filter layer stands for the picture (whether it stays a surface
+        // for the next filter layer or replaces the canvas below it) and mixes the input back in instead.
+        info.limitOver = !plain;
         beginScope();
         try { canvas = applyFilter(layer.filter, input, layer.params, info); }
         catch (err) { console.error(err); }
@@ -15907,7 +15907,7 @@ class InpaintEditor {
         // says so; the Limit row reads the flag). Drawn over the picture that is nothing; only as the
         // chain's surface it is the picture.
         layer.limitMissing = !!info.limitMissing;
-        if (info.limitMissing && canvas === input && !keepSurface) canvas = null;
+        if (info.limitMissing && canvas === input && !(keepSurface && isGLSurface(canvas))) canvas = null;
         if (isGLSurface(canvas)) {
             if (keepSurface) return canvas;                    // the next filter layer reads the texture
             const flat = surfaceToCanvas(canvas);
@@ -16504,7 +16504,7 @@ class InpaintEditor {
         const limitView = this.effectViewOf(layer, forRun);
         const plain = !limitView && !this.liveMask(layer) && layer.opacity >= 1 && (!layer.blend || layer.blend === "normal") && !preview && !clip && !this.isFillLayer(layer);
         const keepSurface = plain && more && !this.filterChainOff && glChainUsable(ctx.canvas.width, ctx.canvas.height);
-        const out = this.filteredCanvas(layer, chain ? chain.surface : ctx.canvas, forRun, preview, keepSurface);
+        const out = this.filteredCanvas(layer, chain ? chain.surface : ctx.canvas, forRun, preview, keepSurface, plain);
         const rx = vp ? vp.x : 0, ry = vp ? vp.y : 0;
         const rw = vp ? vp.w : this.width, rh = vp ? vp.h : this.height;
         if (isGLSurface(out)) {
@@ -16512,7 +16512,7 @@ class InpaintEditor {
             return { surface: out, x: rx, y: ry, w: rw, h: rh };
         }
         chain = this.flushFilterChain(ctx, chain);   // the result goes onto the canvas, so the composite has to be there
-        if (!out) return null;
+        if (!out || (plain && out === ctx.canvas)) return null;
         let src = out;
         if (this.liveMask(layer)) {
             if (!this.filterMaskCanvas || this.filterMaskCanvas.width !== out.width || this.filterMaskCanvas.height !== out.height) this.filterMaskCanvas = makeCanvas(out.width, out.height);
@@ -16585,6 +16585,7 @@ class InpaintEditor {
             }
             ctx.globalAlpha = limitView ? 1 : layer.opacity;
             ctx.globalCompositeOperation = limitView ? "source-over" : canvasOp(layer.blend);
+            if (plain) ctx.clearRect(rx, ry, rw, rh);
             ctx.drawImage(src, rx, ry, rw, rh);
             ctx.globalAlpha = 1;
             ctx.globalCompositeOperation = "source-over";
@@ -16599,6 +16600,7 @@ class InpaintEditor {
         if (!chain) return null;
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
+        ctx.clearRect(chain.x, chain.y, chain.w, chain.h);
         if (!drawSurfaceTo(ctx, chain.surface, chain.x, chain.y, chain.w, chain.h)) {
             const flat = surfaceToCanvas(chain.surface);
             if (flat) ctx.drawImage(flat, chain.x, chain.y, chain.w, chain.h);
