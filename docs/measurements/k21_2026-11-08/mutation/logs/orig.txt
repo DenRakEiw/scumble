@@ -45,3 +45,16 @@ ALL PASS
 $ bash tools/run_gates.sh mut-orig-edges-on --offline --tiles on edges  (rc 0, 31 s)
 edges rc=0 15s PASS
 ALL PASS
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 170600 bytes, sha256 a1e363ce6360e748
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 147368 bytes, sha256 d16710c7102e8ba9
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.84s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.12s

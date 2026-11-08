@@ -226,4 +226,24 @@ MUTANTS = [
         "killed",
         {"gates": ["selection"]},
     ),
+    (
+        "inpaint_canvas.js: canvas path picture span cut to compute-with-edge instead of compute inside oMin..oMax",
+        IC,
+        [(
+            "                                        if (rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, jobInvert) === \"compute\") {\n                                            if (minTx === -1) minTx = tx;\n                                            maxTx = tx;\n                                        }",
+            "                                        if (stats.edge[idx] === 1 && rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, jobInvert) === \"compute\") {\n                                            if (minTx === -1) minTx = tx;\n                                            maxTx = tx;\n                                        }",
+        )],
+        "killed",
+        {"gates": ["selection"], "tiles": "off"},
+    ),
+    (
+        "inpaint_canvas.js: scratchCtx.clearRect dropped before drawImage",
+        IC,
+        [(
+            "                                scratchCtx.clearRect(0, 0, bw, bh);\n                                scratchCtx.drawImage(regCanvas, 0, 0);",
+            "                                scratchCtx.drawImage(regCanvas, 0, 0);",
+        )],
+        "killed",
+        {"gates": ["selection"]},
+    ),
 ]

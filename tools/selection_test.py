@@ -432,15 +432,18 @@ if (ed.tileMode) {
     }
     const rustExt = edExt.sel.readRect(0, 0, 2048, 256).data.slice();
 
-    // Replay with mapTileStats route 'js' and compare byte-for-byte
+    // Replay with mapTileStats route 'js' (fresh map.data so RMAX_CACHE recomputes via the twin) and compare byte-for-byte
     const E = edExt.constructor;
-    edExt.maps.depth._tileStats = null;
+    edExt.maps.depth.data = edExt.maps.depth.data.slice();
     E.setRoute("mapTileStats", "js");
+    E.pxCalls(true);
     try {
         await edExt.selectRange(extLim, "replace");
+        const jsStatsCalls = E.pxCalls(true).map_tile_stats || 0;
+        if (jsStatsCalls !== 0) throw new Error("K21-L3 mapTileStats route 'js' called map_tile_stats " + jsStatsCalls + " times");
     } finally {
         E.setRoute("mapTileStats", null);
-        edExt.maps.depth._tileStats = null;
+        edExt.maps.depth.data = edExt.maps.depth.data.slice();
     }
     const jsExt = edExt.sel.readRect(0, 0, 2048, 256).data;
     for (let i = 3; i < rustExt.length; i += 4) {
@@ -487,6 +490,78 @@ if (ed.tileMode) {
             const gotA = rustExt[(y * 2048 + x) * 4 + 3];
             if (gotA !== refA) {
                 throw new Error(`K21-L3 frozen base mismatch at (${x}, ${y}): got ${gotA}, expected ${refA}`);
+            }
+        }
+    }
+
+    // K21-R2: 2-row document (2048 x 512) with opaque row 0 and a transparent hole [256, 256, 512, 512] in row 1,
+    // tested with both equal row spans (1024 wide on both rows) and differing row spans (1024 on row 0, 512 on row 1).
+    await run("extend_canvas", { doc: dExt.id, bottom: 256 });
+    const mh2 = 32;
+    const depthEq = new Uint16Array(mw * mh2);
+    const depthDiff = new Uint16Array(mw * mh2);
+    const guideData2 = new Uint8Array(mw * mh2 * 4);
+    for (let y = 0; y < mh2; y++) {
+        const srcY = y <= 16 ? Math.min(15, y) : (y & 15);
+        for (let x = 0; x < mw; x++) {
+            const i = y * mw + x;
+            const baseVal = depth[srcY * mw + x];
+            depthEq[i] = baseVal;
+            depthDiff[i] = (y >= 14 && x >= 35) ? ((x & 1) ? 10000 : 17000) : baseVal;
+            const si = (srcY * mw + x) * 4;
+            guideData2[i * 4] = guideData[si];
+            guideData2[i * 4 + 1] = guideData[si + 1];
+            guideData2[i * 4 + 2] = guideData[si + 2];
+            guideData2[i * 4 + 3] = 255;
+        }
+    }
+    // Cut a transparent hole at [256, 256, 512, 512] in row 1
+    edExt.basePx.drawInto([256, 256, 512, 512], (ctx) => ctx.clearRect(256, 256, 256, 256));
+    for (const l of edExt.layers) {
+        if (l.px) {
+            l.px.drawInto([256, 256, 512, 512], (ctx) => ctx.clearRect(256, 256, 256, 256));
+            edExt.markLayerChanged(l);
+        }
+    }
+    edExt.renderLayers();
+    edExt.draw();
+    if (edExt.mipsSettled) await edExt.mipsSettled();
+
+    // (a) Equal spans on row 0 and row 1 ([256..1280] on both; scratchCanvas is not resized between rows)
+    await edExt.setMap("depth", makeMap("depth", mw, mh2, depthEq, [1024, 0, 0, 512, 0, 0], { snap: { strength: 50 } }, guideData2));
+    await edExt.selectRange(extLim, "replace");
+    const selEqRow0 = edExt.sel.readRect(0, 0, 2048, 256).data;
+    for (let i = 3; i < rustExt.length; i += 4) {
+        if (selEqRow0[i] !== rustExt[i]) throw new Error("K21-R2 opaque row 0 changed at byte " + i);
+    }
+    const selEqHole = edExt.sel.readRect(256, 256, 256, 256).data.slice();
+
+    // (b) Differing spans on row 0 ([256..1280]) and row 1 ([256..768], since tx >= 3 on row 1 is empty)
+    await edExt.setMap("depth", makeMap("depth", mw, mh2, depthDiff, [1024, 0, 0, 512, 0, 0], { snap: { strength: 50 } }, guideData2));
+    const diffBoxes = [];
+    edExt.sampleRegionSettled = function(kind, box, ...rest) {
+        if (kind === "image" && Array.isArray(box)) diffBoxes.push(box.slice());
+        return origSample(kind, box, ...rest);
+    };
+    try {
+        await edExt.selectRange(extLim, "replace");
+    } finally {
+        edExt.sampleRegionSettled = origSample;
+    }
+    if (diffBoxes.length !== 2 || diffBoxes[0][2] - diffBoxes[0][0] === diffBoxes[1][2] - diffBoxes[1][0]) {
+        throw new Error("K21-R2 expected differing row spans, got " + JSON.stringify(diffBoxes));
+    }
+    const selDiffHole = edExt.sel.readRect(256, 256, 256, 256).data;
+    const mapObj2 = { data: depthEq, w: mw, h: mh2 };
+    for (let y = 0; y < 256; y++) {
+        const my = (256 + y + 0.5) * xf[3] + xf[5];
+        for (let x = 0; x < 256; x++) {
+            const mx = (256 + x + 0.5) * xf[0] + xf[4];
+            const vHole = snapField(mapObj2, guideData2, mx, my, 0, 0, 0, sigmaR, tau);
+            const refA = Math.round(255 * rangeWeight(vHole, extLim));
+            const idx = (y * 256 + x) * 4 + 3;
+            if (selEqHole[idx] !== refA || selDiffHole[idx] !== refA) {
+                throw new Error(`K21-R2 transparent hole mismatch at (${256 + x}, ${256 + y}): eq=${selEqHole[idx]}, diff=${selDiffHole[idx]}, ref=${refA}`);
             }
         }
     }

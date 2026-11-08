@@ -1,0 +1,116 @@
+{
+  "tiles": {
+    "tileMode": true,
+    "row256": {
+      "256x256_vs_512x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "256x256_vs_768x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "256x256_vs_1024x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "512x256_vs_1024x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "768x256_vs_1024x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      }
+    },
+    "row128": {
+      "256x128_vs_768x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "512x128_vs_768x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "256x128_vs_1024x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "512x128_vs_1024x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "768x128_vs_1024x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      }
+    }
+  },
+  "canvas": {
+    "tileMode": false,
+    "row256": {
+      "256x256_vs_512x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "256x256_vs_768x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "256x256_vs_1024x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "512x256_vs_1024x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "768x256_vs_1024x256": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      }
+    },
+    "row128": {
+      "256x128_vs_768x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "512x128_vs_768x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "256x128_vs_1024x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "512x128_vs_1024x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      },
+      "768x128_vs_1024x128": {
+        "diffPixels": 0,
+        "diffChannels": 0,
+        "maxDelta": 0
+      }
+    }
+  }
+}

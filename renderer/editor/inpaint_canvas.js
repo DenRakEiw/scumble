@@ -7589,6 +7589,7 @@ class InpaintEditor {
                                     scratchCanvas.width = bw;
                                     scratchCanvas.height = bh;
                                 }
+                                scratchCtx.clearRect(0, 0, bw, bh);
                                 scratchCtx.drawImage(regCanvas, 0, 0);
                                 const imgData = scratchCtx.getImageData(0, 0, bw, bh);
 
@@ -7825,6 +7826,7 @@ class InpaintEditor {
                                     scratchCanvas.width = picW;
                                     scratchCanvas.height = bh;
                                 }
+                                scratchCtx.clearRect(0, 0, picW, bh);
                                 scratchCtx.drawImage(regCanvas, 0, 0);
                                 picData = scratchCtx.getImageData(0, 0, picW, bh).data;
                             }

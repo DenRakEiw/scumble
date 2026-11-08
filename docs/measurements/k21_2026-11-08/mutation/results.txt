@@ -21,3 +21,9 @@ KILLED   inpaint_canvas.js: picture span not cut to compute-class tiles inside o
 KILLED   inpaint_canvas.js: picture span cut to compute-with-edge instead of compute inside oMin..oMax: red: the selection gate ([FAIL] range_select_depth_cases: JS exception: Error: K21-L3 extended snap picture box mismatch: [[512,0,1280,256]]); builds None; 18 s (the selection gate 18 s); expected killed
 restored copy: every mutated file back: True; rebuilt, both builds identical to the checkout's: True; green: the full px_test
 mutants: 18 killed (0 of them only on the re-check), 1 survived of 19; 0 not as expected; 336 s for the mutants
+== K21 (map_tile_stats, rangeTileClass, rangeRowBookkeeping, cut picture span) mutation round 2026-11-08 10:33 on C:\Users\schoeneberg\AppData\Local\Temp\k21_mut_tree (tools/mutation_round.py; 2 mutants, port 9613, re-check gates selection, edges)
+orig skipped (names given without 'orig'): the verdicts lean on an earlier orig run of this tree
+KILLED   inpaint_canvas.js: canvas path picture span cut to compute-with-edge instead of compute inside oMin..oMax: red: the selection gate ([FAIL] range_select_depth_cases: JS exception: Error: K21-L3 extended snap picture box mismatch: [[512,0,1280,256]]); builds None; 18 s (the selection gate 18 s); expected killed
+KILLED   inpaint_canvas.js: scratchCtx.clearRect dropped before drawImage: red: the selection gate ([FAIL] range_select_depth_cases: JS exception: Error: K21-R2 transparent hole mismatch at (320, 256): eq=0, diff=255, ref=255); builds None; 19 s (the selection gate 19 s); expected killed
+restored copy: every mutated file back: True; green: the full px_test
+mutants: 2 killed (0 of them only on the re-check), 0 survived of 2; 0 not as expected; 115 s for the mutants

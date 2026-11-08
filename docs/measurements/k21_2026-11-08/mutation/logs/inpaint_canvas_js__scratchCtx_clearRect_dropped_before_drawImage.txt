@@ -1,0 +1,9 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__scratchCtx_clearRect_dropped_be-selection --offline --tiles on selection  (rc 1, 19 s)
+selection rc=1 3s FAIL
+SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__scratchCtx_clearRect_dropped_be-selection --offline --tiles on selection  (rc 1, 18 s)
+selection rc=1 3s FAIL
+SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__scratchCtx_clearRect_dropped_be-selection --offline --tiles on selection  (rc 1, 19 s)
+selection rc=1 3s FAIL
+SOME FAILED
