@@ -22,12 +22,21 @@ a plain filter layer stands for the picture on every path. In renderer/editor/in
      (measured maxRamp = 1, maxOutside = 0 against frozen 2068af87 hash deec60b1d3b8... on the 256x256 opaque base).
   4. applyFilterLayer: uses Math.round(layer.opacity * 255) === 255 in plain; restricts rx, ry, rw, rh and
      this.viewPass = fvp to the document box when vp reaches past the document on a non-fill filter layer;
-     passes plain to filteredCanvas; returns null if (!out || (plain && out === ctx.canvas));
-     calls if (plain) ctx.clearRect(rx, ry, rw, rh) before ctx.drawImage(src, rx, ry, rw, rh).
+     flushes chain onto ctx before a fill layer when margin is true (if (chain && margin && this.isFillLayer(layer))
+     chain = this.flushFilterChain(ctx, chain)) so fillApply and any Limit on the fill read the full-view canvas;
+     passes mvp = { ...(fvp || vp), sx, sy } to drawTilesInto / drawStrokeInto on a filter layer's tile mask so a
+     live mask stroke clipped to a selection uses the cropped document pass origin; passes plain to filteredCanvas;
+     returns null if (!out || (plain && out === ctx.canvas)); calls if (plain) ctx.clearRect(rx, ry, rw, rh) before
+     ctx.drawImage(src, rx, ry, rw, rh).
+     Accepted screen-margin trade-offs:
+     - On a zoomed-out screen, under a non-fill filter layer, the document's outermost screen pixel is opaque
+       (the replicated rim; exports never have a margin).
+     - A layer hanging off the document now shows unfiltered on the pasteboard at Fit view, where before the filter
+       covered it.
   5. drawSurfaceTo(ctx, surface, dx, dy, dw, dh, clear = false) & flushFilterChain:
      drawSurfaceTo clears (dx, dy, dw, dh) only inside readSurface's callback on the first piece after
      blitFramebuffer succeeds, and flushFilterChain's fallback clears only inside if (flat), so a lost/replaced
-     WebGL context never wipes the canvas below to transparent black.
+     WebGL context or failed blit never wipes the canvas below to transparent black.
   6. Frozen 2068af87 references: freeze_base.py, frozen_off.json (--no-tiles), and frozen_on.json (--tiles).
 
 1. 15000 x 10000 exportperf (exportperf:15000x10000,--filter=film.look)
@@ -44,9 +53,10 @@ a plain filter layer stands for the picture on every path. In renderer/editor/in
    psd_masked (620.5 MB)          9867 (1221)/ 8730 (229) / 8794 (326) 9025 (345) /10050 (1033)/ 8382 (295) 8794 (326) -> 9025 (345) ms
 
 2. Mutation round (tools/mutation_round.py, docs/measurements/fix_filter_2026-11-08/mutants.py)
-   14 mutants (7 changed sites x 2 backends: --tiles on and --tiles off) against the composite gate:
-   - orig: build 15 s, both wasm builds identical to checkout's: True; full px_test green (128 s);
-     composite gate green on tiles (37 s) and canvas (25 s).
+   21 mutants (all changed sites across renderer/editor/inpaint_canvas.js and renderer/editor/inpaint_filters_gl.js
+   on --tiles on and --tiles off) against the composite gate:
+   - orig: build 1 s, both wasm builds identical to checkout's: True; full px_test green (110 s);
+     composite gate green on tiles (28 s) and canvas (25 s).
    - applyFilterLayer clear reversed (tiles=on):               KILLED by composite (see_through_filters: identity curves screen/flatten/size max diff 64)
    - applyFilterLayer clear reversed (tiles=off):              KILLED by composite (see_through_filters: identity curves screen/flatten/png/size max diff 64)
    - flushFilterChain clear reversed (tiles=on):               KILLED by composite (see_through_filters: flushFilterChain before masked filter max diff 64, alpha 192)
@@ -61,4 +71,11 @@ a plain filter layer stands for the picture on every path. In renderer/editor/in
    - filterKey limit plain omitted (tiles=off):                KILLED by composite (see_through_filters: limited filter cache at opacity 0.5 -> 1.0 max diff 128)
    - applyFilterLayer view margin crop disabled (tiles=on):    KILLED by composite (see_through_filters: opaque glass with view margin & drawViewComposite minDocA 0)
    - applyFilterLayer view margin crop disabled (tiles=off):   KILLED by composite (see_through_filters: opaque glass with view margin & drawViewComposite minDocA 0)
-   14 killed (0 on re-check), 0 survived.
+   - flushFilterChain fallback clear before null check (tiles=on):  KILLED by composite (see_through_filters: flushFilterChain preserves ctx when surface readback fails)
+   - flushFilterChain fallback clear before null check (tiles=off): KILLED by composite (see_through_filters: flushFilterChain preserves ctx when surface readback fails)
+   - drawSurfaceTo clear before readSurface blit (tiles=on):   KILLED by composite (see_through_filters: flushFilterChain preserves ctx when surface readback fails)
+   - drawSurfaceTo clear before readSurface blit (tiles=off):  KILLED by composite (see_through_filters: flushFilterChain preserves ctx when surface readback fails)
+   - applyFilterLayer fill after cropped chain flush disabled (tiles=on):  KILLED by composite (see_through_filters: zoomed-out linear gradient after bw vsNoFilter 219)
+   - applyFilterLayer fill after cropped chain flush disabled (tiles=off): KILLED by composite (see_through_filters: zoomed-out linear gradient after bw vsNoFilter 219)
+   - applyFilterLayer mask stroke mvp uses uncropped vp (tiles=on): KILLED by composite (see_through_filters: zoomed-out live mask stroke with selection cropDiff 247)
+   21 killed (0 on re-check), 0 survived.

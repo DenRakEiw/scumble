@@ -14,6 +14,7 @@ GATES = ["composite"]
 TILES = "on"
 
 IC = "renderer/editor/inpaint_canvas.js"
+FG = "renderer/editor/inpaint_filters_gl.js"
 KILL_ON = {"gates": ["composite"], "tiles": "on"}
 KILL_OFF = {"gates": ["composite"], "tiles": "off"}
 
@@ -66,6 +67,34 @@ VIEW_MARGIN_CROP = [
     )
 ]
 
+FLUSH_FALLBACK_GUARD = [
+    (
+        '        if (!drawSurfaceTo(ctx, chain.surface, chain.x, chain.y, chain.w, chain.h, true)) {\n            const flat = surfaceToCanvas(chain.surface);\n            if (flat) {\n                ctx.clearRect(chain.x, chain.y, chain.w, chain.h);\n                ctx.drawImage(flat, chain.x, chain.y, chain.w, chain.h);\n            }\n        }',
+        '        if (!drawSurfaceTo(ctx, chain.surface, chain.x, chain.y, chain.w, chain.h, true)) {\n            const flat = surfaceToCanvas(chain.surface);\n            ctx.clearRect(chain.x, chain.y, chain.w, chain.h);\n            if (flat) ctx.drawImage(flat, chain.x, chain.y, chain.w, chain.h);\n        }',
+    )
+]
+
+DRAW_SURFACE_CLEAR_BEFORE_BLIT = [
+    (
+        "    let first = clear;\n    return readSurface(g, s, (x0, y0, w, h) => {\n        if (first) { ctx.clearRect(dx, dy, dw, dh); first = false; }",
+        "    if (clear) ctx.clearRect(dx, dy, dw, dh);\n    return readSurface(g, s, (x0, y0, w, h) => {",
+    )
+]
+
+FILL_AFTER_CROPPED_CHAIN_FLUSH = [
+    (
+        "        if (chain && margin && this.isFillLayer(layer)) chain = this.flushFilterChain(ctx, chain);",
+        "        if (false && chain && margin && this.isFillLayer(layer)) chain = this.flushFilterChain(ctx, chain);",
+    )
+]
+
+MASK_STROKE_MVP_MARGIN = [
+    (
+        "                const sx = m.width / rw, sy = m.height / rh;\n                const mvp = { ...(fvp || vp), sx, sy };",
+        "                const sx = m.width / rw, sy = m.height / rh;\n                const mvp = { ...vp, sx, sy };",
+    )
+]
+
 MUTANTS = [
     ("applyFilterLayer clear reversed (tiles=on)", IC, APPLY_CLEAR, "killed", KILL_ON),
     ("applyFilterLayer clear reversed (tiles=off)", IC, APPLY_CLEAR, "killed", KILL_OFF),
@@ -81,4 +110,11 @@ MUTANTS = [
     ("filterKey limit plain omitted (tiles=off)", IC, FILTER_KEY_PLAIN, "killed", KILL_OFF),
     ("applyFilterLayer view margin crop disabled (tiles=on)", IC, VIEW_MARGIN_CROP, "killed", KILL_ON),
     ("applyFilterLayer view margin crop disabled (tiles=off)", IC, VIEW_MARGIN_CROP, "killed", KILL_OFF),
+    ("flushFilterChain fallback clear before null check (tiles=on)", IC, FLUSH_FALLBACK_GUARD, "killed", KILL_ON),
+    ("flushFilterChain fallback clear before null check (tiles=off)", IC, FLUSH_FALLBACK_GUARD, "killed", KILL_OFF),
+    ("drawSurfaceTo clear before readSurface blit (tiles=on)", FG, DRAW_SURFACE_CLEAR_BEFORE_BLIT, "killed", KILL_ON),
+    ("drawSurfaceTo clear before readSurface blit (tiles=off)", FG, DRAW_SURFACE_CLEAR_BEFORE_BLIT, "killed", KILL_OFF),
+    ("applyFilterLayer fill after cropped chain flush disabled (tiles=on)", IC, FILL_AFTER_CROPPED_CHAIN_FLUSH, "killed", KILL_ON),
+    ("applyFilterLayer fill after cropped chain flush disabled (tiles=off)", IC, FILL_AFTER_CROPPED_CHAIN_FLUSH, "killed", KILL_OFF),
+    ("applyFilterLayer mask stroke mvp uses uncropped vp (tiles=on)", IC, MASK_STROKE_MVP_MARGIN, "killed", KILL_ON),
 ]

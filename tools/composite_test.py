@@ -753,19 +753,29 @@ SEE_THROUGH_FILTERS = """
     });
     ed.removeLayer(fxNoop.id);
 
-    // 1g. flushFilterChain preserves ctx when a surface from a lost/replaced GL context fails to blit or read back
+    // 1g. flushFilterChain preserves ctx when a real GLSurface fails to blit or read back
     {
+        const { glContext, isGLSurface } = await import("./editor/inpaint_filters_gl.js");
         const gc = mk(16, 16), gctx = gc.getContext("2d");
         const gimg = gctx.createImageData(16, 16), gd = gimg.data;
         for (let i = 0; i < gd.length; i += 4) { gd[i] = 120; gd[i + 1] = 40; gd[i + 2] = 20; gd[i + 3] = 128; }
         gctx.putImageData(gimg, 0, 0);
-        const staleChain = { surface: { __glSurface: true, width: 16, height: 16, gen: -1 }, x: 0, y: 0, w: 16, h: 16 };
-        ed.flushFilterChain(gctx, staleChain);
+        const fxSurf = ed.addFilterLayer("bw");
+        const realSurf = ed.filteredCanvas(fxSurf, gc, true, false, true, true);
+        ed.removeLayer(fxSurf.id);
+        const surfOk = isGLSurface(realSurf);
+        const g = glContext();
+        const origGetError = g.gl.getError;
+        g.gl.getError = () => g.gl.INVALID_OPERATION;
+        try {
+            ed.flushFilterChain(gctx, { surface: realSurf, x: 0, y: 0, w: 16, h: 16 });
+        } finally {
+            g.gl.getError = origGetError;
+        }
         const afterBlit = pxAt(gctx.getImageData(0, 0, 16, 16).data, 8, 8, 16);
-        ed.filterChainOff = true;
-        try { ed.flushFilterChain(gctx, staleChain); } finally { ed.filterChainOff = false; }
-        const afterFallback = pxAt(gctx.getImageData(0, 0, 16, 16).data, 8, 8, 16);
-        check("flushFilterChain preserves ctx when surface readback fails", eqPx(afterBlit, [120, 40, 20, 128]) && eqPx(afterFallback, [120, 40, 20, 128]), { afterBlit, afterFallback });
+        check("flushFilterChain preserves ctx when surface readback fails",
+            surfOk && eqPx(afterBlit, [120, 40, 20, 128]),
+            { surfOk, afterBlit });
     }
 
     // 1h. Real drawViewComposite at view.scale = 0.5 and after pan on see-through base
@@ -1063,6 +1073,129 @@ SEE_THROUGH_FILTERS = """
         } finally {
             ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
             ed.removeLayer(fxGlass.id);
+        }
+    }
+
+    // 3c. Fill layer after a cropped GPU filter chain at a zoomed-out margin view (with and without a Limit on the fill)
+    {
+        const greyBase = mk(W, H);
+        {
+            const ctx = greyBase.getContext("2d");
+            const img = ctx.createImageData(W, H), d = img.data;
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    const i = (y * W + x) * 4;
+                    const v = (x * 3 + y * 5) & 255;
+                    d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255;
+                }
+            }
+            ctx.putImageData(img, 0, 0);
+        }
+        Object.defineProperty(greyBase, "naturalWidth", { value: W });
+        Object.defineProperty(greyBase, "naturalHeight", { value: H });
+        await ed.setBase({ filename: "grey_base.png", subfolder: "inpaint_canvas", type: "input" }, greyBase, { keepLayers: false });
+        await ed.mipsSettled();
+
+        const prevScale = ed.view.scale, prevX = ed.view.x, prevY = ed.view.y;
+        const fxBwBelow = ed.addFilterLayer("bw");
+        const fxGrad = ed.addFilterLayer("gradient");
+        fxGrad.params = { ...fxGrad.params, shape: "linear", from: "#ff2040", from_opacity: 100, to: "#2060ff", to_opacity: 100, angle: 25, scale: 100, x: 50, y: 50 };
+        try {
+            ed.view.scale = 0.5; ed.view.x = 40; ed.view.y = 30;
+            const docCrop = (chainOff = false) => {
+                ed.filterChainOff = chainOff;
+                clearCaches();
+                ed.hover = null;
+                try { ed.draw(); } finally { ed.filterChainOff = false; }
+                return ed.canvas.getContext("2d").getImageData(42, 32, 124, 124).data;
+            };
+            fxBwBelow.visible = false;
+            ed.markFilterChanged(fxBwBelow);
+            ed.markFilterChanged(fxGrad);
+            const gradNoFilter = docCrop(false);
+            fxBwBelow.visible = true;
+            ed.markFilterChanged(fxBwBelow);
+            ed.markFilterChanged(fxGrad);
+            const gradAfterBw = docCrop(false);
+            const gradAfterBwOff = docCrop(true);
+            const span = diffMax(pxAt(gradNoFilter, 4, 62, 124), pxAt(gradNoFilter, 120, 62, 124));
+            check("zoomed-out linear gradient after bw (GPU chain on) matches gradient with no filter below",
+                span > 100 && diffMax(gradAfterBw, gradNoFilter) <= 1 && diffMax(gradAfterBw, gradAfterBwOff) <= 1,
+                { span, vsNoFilter: diffMax(gradAfterBw, gradNoFilter), vsOff: diffMax(gradAfterBw, gradAfterBwOff) });
+
+            // Variant with a Limit on the fill layer
+            fxGrad.params = { ...fxGrad.params, limit: { source: "luma", lo: 0.25, hi: 0.75, fLo: 0.1, fHi: 0.1 } };
+            fxBwBelow.visible = false;
+            ed.markFilterChanged(fxBwBelow);
+            ed.markFilterChanged(fxGrad);
+            const limGradNoFilter = docCrop(false);
+            fxBwBelow.visible = true;
+            ed.markFilterChanged(fxBwBelow);
+            ed.markFilterChanged(fxGrad);
+            const limGradAfterBw = docCrop(false);
+            const limGradAfterBwOff = docCrop(true);
+            check("zoomed-out limited linear gradient after bw (GPU chain on) matches limited gradient with no filter below",
+                diffMax(limGradAfterBw, limGradNoFilter) <= 1 && diffMax(limGradAfterBw, limGradAfterBwOff) <= 1,
+                { vsNoFilter: diffMax(limGradAfterBw, limGradNoFilter), vsOff: diffMax(limGradAfterBw, limGradAfterBwOff) });
+        } finally {
+            ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
+            ed.removeLayer(fxGrad.id);
+            ed.removeLayer(fxBwBelow.id);
+        }
+    }
+
+    // 3d. Live mask stroke preview with an active selection at a zoomed-out margin view matches the committed mask
+    {
+        await ed.setBase({ filename: "opaque_base.png", subfolder: "inpaint_canvas", type: "input" }, opaqueBase, { keepLayers: false });
+        await ed.mipsSettled();
+        const prevScale = ed.view.scale, prevX = ed.view.x, prevY = ed.view.y;
+        const fxMs = ed.addFilterLayer("invert");
+        fxMs.maskPx = MaskPixels.empty(W, H);
+        fxMs.maskOff = false;
+        fxMs.maskEdit = true;
+        ed.activeLayerId = fxMs.id;
+        ed.markMaskChanged(fxMs);
+        ed.selectRectangle([80, 80, 176, 176], "replace");
+        ed.brushSize = 48; ed.hardness = 1; ed.brushOpacity = 1;
+        try {
+            ed.view.scale = 0.5; ed.view.x = 40; ed.view.y = 30;
+            clearCaches();
+            ed.hover = null;
+            ed.draw();
+            const beforePx = pxAt(ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data, 104, 94, ed.canvas.width);
+            const p = {
+                kind: "maskpaint",
+                layer: fxMs,
+                stroke: ed.newStrokeBuffer(fxMs.maskPx),
+                clip: ed.strokeClip(fxMs, fxMs.maskPx),
+                erase: false,
+                white: true,
+                last: [128, 128],
+                pressure: 1,
+            };
+            ed.pointer = p;
+            ed.layerDab(p, 128, 128, 128, 128);
+            ed.hover = null; ed.sceneSig = null; ed.draw();
+            const duringCrop = ed.sceneCanvas.getContext("2d").getImageData(42, 32, 124, 124).data;
+            const duringPx = pxAt(ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data, 104, 94, ed.canvas.width);
+            const box = ed.strokeRect(p, fxMs.maskPx);
+            ed.commitStroke(p);
+            ed.pointer = null;
+            ed.markMaskChanged(fxMs, box);
+            ed.releaseStrokeScratch();
+            await ed.mipsSettled();
+            clearCaches();
+            ed.hover = null; ed.draw();
+            const afterCrop = ed.sceneCanvas.getContext("2d").getImageData(42, 32, 124, 124).data;
+            const afterPx = pxAt(ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data, 104, 94, ed.canvas.width);
+            check("zoomed-out live mask stroke with selection matches committed mask",
+                !!p.clip && diffMax(duringPx, beforePx) > 100 && diffMax(duringCrop, afterCrop) <= 2 && diffMax(duringPx, afterPx) <= 2,
+                { clip: !!p.clip, reach: diffMax(duringPx, beforePx), cropDiff: diffMax(duringCrop, afterCrop), duringPx, afterPx });
+        } finally {
+            ed.pointer = null;
+            ed.clearSelection();
+            ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
+            ed.removeLayer(fxMs.id);
         }
     }
 

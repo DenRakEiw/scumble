@@ -16546,6 +16546,7 @@ class InpaintEditor {
             rw = bw / sx; rh = bh / sy;
             fvp = { ...vp, x: rx, y: ry, w: rw, h: rh, crop: { bx0, by0, bw, bh, ix0, iy0, iw: ix1 - ix0, ih: iy1 - iy0 } };
         }
+        if (chain && margin && this.isFillLayer(layer)) chain = this.flushFilterChain(ctx, chain);
         const keepSurface = plain && more && !this.filterChainOff && glChainUsable(fvp && fvp.crop ? fvp.crop.bw : ctx.canvas.width, fvp && fvp.crop ? fvp.crop.bh : ctx.canvas.height);
         let out;
         this.viewPass = fvp;
@@ -16579,7 +16580,7 @@ class InpaintEditor {
                 // the mask's display mirror (572 MB at 15000 x 10000, synced per written tile) and a sub-rectangle draw of
                 // it per pass; the stroke a full-size live preview filled from that mirror.
                 const sx = m.width / rw, sy = m.height / rh;
-                const mvp = { ...vp, sx, sy };
+                const mvp = { ...(fvp || vp), sx, sy };
                 const whole = { x: 0, y: 0, w: this.width, h: this.height };
                 mctx.save();
                 try {

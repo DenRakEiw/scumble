@@ -1,17 +1,11 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 15 s)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 1 s)
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\fb28b288-5071-41c9-97c3-f2d13be9ef34\scratch\mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
 px.wasm: 206154 bytes, sha256 f421cac87c6fc2ab
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\fb28b288-5071-41c9-97c3-f2d13be9ef34\scratch\mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
 px_scalar.wasm: 165025 bytes, sha256 0aa7a4c355a41fe2
-   Compiling adler2 v2.0.1
-   Compiling miniz_oxide v0.8.9
-   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\fb28b288-5071-41c9-97c3-f2d13be9ef34\scratch\mut_tree\crates\px)
-    Finished `release` profile [optimized] target(s) in 7.57s
-   Compiling adler2 v2.0.1
-   Compiling miniz_oxide v0.8.9
-   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\fb28b288-5071-41c9-97c3-f2d13be9ef34\scratch\mut_tree\crates\px)
-    Finished `release` profile [optimized] target(s) in 7.37s
-$ node tools/px_test.js  (rc 0, 128 s)
+    Finished `release` profile [optimized] target(s) in 0.01s
+    Finished `release` profile [optimized] target(s) in 0.01s
+$ node tools/px_test.js  (rc 0, 110 s)
 PASS
 ok   rust scalar a large alloc grows memory  225312768 -> 493813760
 ok   rust scalar the old view is detached after growth
@@ -21,12 +15,12 @@ ok   rust scalar arena blocks do not overlap
 ok   rust scalar after a reset the job fits one kept chunk  chunks 1
 ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
 PASS
-(node:18800) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/fb28b288-5071-41c9-97c3-f2d13be9ef34/scratch/mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:21488) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/fb28b288-5071-41c9-97c3-f2d13be9ef34/scratch/mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\fb28b288-5071-41c9-97c3-f2d13be9ef34\scratch\mut_tree\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
-$ bash tools/run_gates.sh mut-orig-composite-on --offline --tiles on composite  (rc 0, 37 s)
-composite rc=0 14s PASS
+$ bash tools/run_gates.sh mut-orig-composite-on --offline --tiles on composite  (rc 0, 28 s)
+composite rc=0 9s PASS
 ALL PASS
 $ bash tools/run_gates.sh mut-orig-composite-off --offline --tiles off composite  (rc 0, 25 s)
 composite rc=0 8s PASS
