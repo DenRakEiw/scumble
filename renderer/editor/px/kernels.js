@@ -26,8 +26,8 @@
 import * as J from "./kernels_js.js";
 import { loadPx, Px, PxOutOfMemory, pxLaps } from "./px.js";
 import { resampleBlock as resampleBlockJS, resampleTable } from "../inpaint_resample.js";
-// the blur and sharpen brushes' twins live with the brushes (K26; inpaint_stroke.js imports nothing, so no cycle)
-import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin } from "../inpaint_stroke.js";
+// the retouch brushes' twins live with the brushes (K26, K27; inpaint_stroke.js imports nothing, so no cycle)
+import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin, toneRGBA as toneRGBATwin, spongeRGBA as spongeRGBATwin, freqSplit as freqSplitTwin } from "../inpaint_stroke.js";
 
 export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA } from "./kernels_js.js";
 // this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4), their clocks and the copies
@@ -44,9 +44,10 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * (inpaint_relight.js `marchOnPool`). `relightFeed` (K12b), read on the window too: how many stripes of all full marches
  * are posted to the pool at once (inpaint_relight.js `feedMarch`); absent, the pool's size + 1; 0 posts every stripe
  * at once (K12). `dabBlur` (K26): `blurRGBA` and `sharpenRGBA`, the blur and sharpen brushes and frequency separation's
- * blur, "js" for the twins in inpaint_stroke.js.
+ * blur, "js" for the twins in inpaint_stroke.js. `dabTone`, `dabSponge` and `freqSplit` (K27): `toneRGBA` (the dodge and
+ * burn brush), `spongeRGBA` (saturate, desaturate) and frequency separation's split, the same way.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -405,6 +406,62 @@ export function sharpenRGBA(src, w, h, r, amount = 1) {
         finally { releaseIfLarge(); }
     }
     return sharpenRGBATwin(src, w, h, r, amount);
+}
+
+/**
+ * The tone brush's table on straight RGBA8 (inpaint_stroke.js `toneRGBA`, K27); a new Uint8ClampedArray. The twin when
+ * the route `dabTone` says "js", when Rust refuses the call (px.js returns null) or after a trap.
+ */
+export function toneRGBA(src, lut, protect = false) {
+    const p = rustPx("dabTone");
+    if (p) {
+        try { const out = p.toneRGBA(src, lut, protect); if (out) return out; }
+        catch (err) { if (!recovered(p, err, "tone_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return toneRGBATwin(src, lut, protect);
+}
+
+/** The sponge (inpaint_stroke.js `spongeRGBA`, K27) on the route `dabSponge`, as `toneRGBA`. */
+export function spongeRGBA(src, amount, saturate = false, vibrance = true) {
+    const p = rustPx("dabSponge");
+    if (p) {
+        try { const out = p.spongeRGBA(src, amount, saturate, vibrance); if (out) return out; }
+        catch (err) { if (!recovered(p, err, "sponge_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return spongeRGBATwin(src, amount, saturate, vibrance);
+}
+
+/**
+ * Frequency separation's split (inpaint_stroke.js `freqSplit`, K27) on the route `freqSplit`: `L` written in place, the
+ * detail returned. Rust writes `L` only once its kernel is done, so a trap leaves it for the twin as it was.
+ */
+export function freqSplit(I, L) {
+    const p = rustPx("freqSplit");
+    if (p) {
+        try { const out = p.freqSplit(I, L); if (out) return out; }
+        catch (err) { if (!recovered(p, err, "freq_split")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return freqSplitTwin(I, L);
+}
+
+/**
+ * Frequency separation (InpaintEditor.frequencySeparation, K26 + K27): `{ low, high }` of the picture `I` (w x h straight
+ * RGBA8), its blur of radius `r` and the detail. With both routes on Rust (`dabBlur`, `freqSplit`) one call in one arena
+ * (px.js `freqSeparate`: the blur never leaves wasm memory; about 640 MB at 16 MP, released after); otherwise, or when
+ * Rust refuses or traps, `blurRGBA` and `freqSplit` above, each on its own route: the same bytes every way.
+ */
+export function freqSeparate(I, w, h, r) {
+    const p = rustPx("dabBlur") && rustPx("freqSplit");
+    if (p) {
+        try { const out = p.freqSeparate(I, w, h, r); if (out) return out; }
+        catch (err) { if (!recovered(p, err, "freq_separate")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    const low = blurRGBA(I, w, h, r);
+    return { low, high: freqSplit(I, low) };
 }
 
 /** Box blurs of up to three radii over a float mask (the passes of stitch.js' gaussian); a new Float32Array. */

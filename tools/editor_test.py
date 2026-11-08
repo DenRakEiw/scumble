@@ -10336,26 +10336,30 @@ try {
     await ed.setBase({ filename: "freqsep_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
     const pic = ed.basePx.readRect(0, 0, W, H).data.slice();
     const n0 = ed.layers.length;
-    // K26: with the dabBlur route on Rust the low layer's blur runs blur_rgba
+    // K26 + K27: with the dabBlur and freqSplit routes on Rust the low layer's blur runs blur_rgba and the split
+    // freq_split (px/kernels.js freqSeparate, one call)
     const EC = ed.constructor;
-    const rustDab = EC.kernels !== "js" && (EC.routes || {}).dabBlur !== "js";
+    const rustDab = EC.kernels !== "js" && (EC.routes || {}).dabBlur !== "js" && (EC.routes || {}).freqSplit !== "js";
     EC.pxCalls(true);
     const r = await run("frequency_separation", { doc: d.id, radius: 6 });
-    out.blurRgba = EC.pxCalls(true).blur_rgba || 0;
+    const c0 = EC.pxCalls(true);
+    out.blurRgba = c0.blur_rgba || 0; out.freqSplit = c0.freq_split || 0;
     if (rustDab && !(out.blurRgba > 0)) throw new Error("frequency separation's blur ran no blur_rgba with the route on rust");
+    if (rustDab && !(out.freqSplit > 0)) throw new Error("frequency separation's split ran no freq_split with the route on rust");
     if (rustDab) {
-        // the same separation on the twins (the route "js", after an undo): the same low layer
-        const lowOf = (id) => { const l = ed.layers.find((x) => x.id === id); return l && l.px.readRect(0, 0, W, H).data.slice(); };
-        const rustLow = lowOf(r.low);
+        // the same separation on the twins (the routes "js", after an undo): the same low and high layers
+        const bytesOf = (id) => { const l = ed.layers.find((x) => x.id === id); return l && l.px.readRect(0, 0, W, H).data.slice(); };
+        const rustLow = bytesOf(r.low), rustHigh = bytesOf(r.high);
         await ed.undoStep();
-        EC.setRoute("dabBlur", "js");
+        EC.setRoute("dabBlur", "js"); EC.setRoute("freqSplit", "js");
         let r2;
-        try { r2 = await run("frequency_separation", { doc: d.id, radius: 6 }); } finally { EC.setRoute("dabBlur", null); }
-        out.twinBlurRgba = EC.pxCalls(true).blur_rgba || 0;
-        const twinLow = lowOf(r2.low);
-        let differ = 0; for (let i = 0; i < rustLow.length; i++) if (rustLow[i] !== twinLow[i]) differ++;
+        try { r2 = await run("frequency_separation", { doc: d.id, radius: 6 }); } finally { EC.setRoute("dabBlur", null); EC.setRoute("freqSplit", null); }
+        const c1 = EC.pxCalls(true);
+        out.twinBlurRgba = c1.blur_rgba || 0; out.twinFreqSplit = c1.freq_split || 0;
+        const twinLow = bytesOf(r2.low), twinHigh = bytesOf(r2.high);
+        let differ = 0; for (let i = 0; i < rustLow.length; i++) if (rustLow[i] !== twinLow[i] || rustHigh[i] !== twinHigh[i]) differ++;
         out.twinDiffer = differ;
-        if (out.twinBlurRgba !== 0 || differ) throw new Error("frequency separation on the twins: blur_rgba " + out.twinBlurRgba + ", " + differ + " bytes differ");
+        if (out.twinBlurRgba !== 0 || out.twinFreqSplit !== 0 || differ) throw new Error("frequency separation on the twins: blur_rgba " + out.twinBlurRgba + ", freq_split " + out.twinFreqSplit + ", " + differ + " bytes differ");
         r.low = r2.low; r.high = r2.high;
     }
     const low = ed.layers.find((l) => l.id === r.low), high = ed.layers.find((l) => l.id === r.high);
@@ -10431,6 +10435,27 @@ try {
     const stroke = (x, y0, y1, alt) => { pid++; ed.canvas.dispatchEvent(ev("pointerdown", x, y0, alt)); for (let i = 1; i <= 12; i++) ed.canvas.dispatchEvent(ev("pointermove", x, y0 + (y1 - y0) * i / 12, alt)); ed.canvas.dispatchEvent(ev("pointerup", x, y1, alt)); };
     const px = (l, x, y) => Array.from(l.px.readRect(x, y, 1, 1).data);
     const label = () => ed.undoList().slice(-1)[0].label;
+    // K27 (docs/PLAN_WASM_BUILD.md §4.9): with the dabTone / dabSponge routes on Rust the dabs run tone_rgba / sponge_rgba,
+    // and the same stroke again on the twins (the route "js", after an undo) gives the same bytes
+    const EC = ed.constructor;
+    const rustOn = (route) => EC.kernels !== "js" && (EC.routes || {})[route] !== "js";
+    out.k27 = {};
+    const replay = async (tag, route, exp, box, again) => {
+        const calls = EC.pxCalls(true)[exp] || 0;
+        out.k27[tag] = { calls };
+        if (!rustOn(route)) return;
+        if (!(calls > 0)) throw new Error("the " + tag + " dabs ran no " + exp + " with the route on rust");
+        const area = () => L.px.readRect(box[0], box[1], box[2], box[3]).data.slice();
+        const rust = area();
+        await ed.undoStep();
+        EC.setRoute(route, "js");
+        try { again(); } finally { EC.setRoute(route, null); }
+        const twinCalls = EC.pxCalls(true)[exp] || 0, twin = area();
+        let differ = 0; for (let i = 0; i < rust.length; i++) if (rust[i] !== twin[i]) differ++;
+        Object.assign(out.k27[tag], { twinCalls, differ, label: label() });
+        if (twinCalls !== 0) throw new Error("the route js still ran " + exp);
+        if (differ) throw new Error("the " + tag + " on the twins differs from Rust's in " + differ + " bytes");
+    };
     ed.setTool("tone");
     if (ed.tool !== "tone") throw new Error("setTool(tone) left the tool at " + ed.tool);
     ed.brushSize = 40; ed.hardness = 1;
@@ -10438,12 +10463,14 @@ try {
     Object.assign(ed.toneOpts, { mode: "dodge", range: "midtones", exposure: 50, protect: false, sample: "layer" });
     const lut = ed.toneStroke().lut;
     const v0 = px(L, 200, 100)[0];
+    EC.pxCalls(true);
     stroke(200, 20, 180);
     const v1 = px(L, 200, 100)[0];
     out.dodge = { v0, v1, want: lut[v0], label: label(), away: px(L, 600, 100)[0] };
     if (Math.abs(v1 - lut[v0]) > 1) throw new Error("one dodge stroke did not lay its curve down once: " + JSON.stringify(out.dodge));
     if (out.dodge.label !== "Dodge") throw new Error("the undo step is labelled " + out.dodge.label);
     if (out.dodge.away !== Math.round(600 * 255 / 799)) throw new Error("the dodge reached x 600: " + out.dodge.away);
+    await replay("dodge", "dabTone", "tone_rgba", [140, 0, 120, 200], () => stroke(200, 20, 180));
     stroke(200, 20, 180);
     out.dodge.again = px(L, 200, 100)[0];
     if (Math.abs(out.dodge.again - lut[v1]) > 1) throw new Error("a second stroke did not go further: " + JSON.stringify(out.dodge));
@@ -10466,10 +10493,12 @@ try {
     // 3. Protect tones: highlights dodge at 100 % on the warm band keeps its 4 : 2 : 1
     Object.assign(ed.toneOpts, { mode: "dodge", range: "highlights", exposure: 100, protect: true });
     const hl = ed.toneStroke().lut, k = hl[200] / 200;
+    EC.pxCalls(true);
     stroke(100, 220, 380);
     const w = px(L, 100, 300);
     out.protect = { got: w, want: [200, 100, 50].map((c) => Math.round(c * k)) };
     if (w.slice(0, 3).some((c, i) => Math.abs(c - out.protect.want[i]) > 1)) throw new Error("Protect tones did not scale the three alike: " + JSON.stringify(out.protect));
+    await replay("protect", "dabTone", "tone_rgba", [60, 200, 80, 200], () => stroke(100, 220, 380));
     Object.assign(ed.toneOpts, { protect: false });
     stroke(160, 220, 380);
     const pc = px(L, 160, 300);
@@ -10478,15 +10507,19 @@ try {
     if (!(pc[1] - w[1] >= 3)) throw new Error("per channel and protect gave the same green: " + pc + " / " + w);
     // 4. the sponge: desaturate 100 % gives the luma, saturate widens without clipping
     Object.assign(ed.toneOpts, { mode: "desaturate", exposure: 100 });
+    EC.pxCalls(true);
     stroke(300, 220, 380);
     const g = px(L, 300, 300), yl = (77 * 200 + 150 * 100 + 29 * 50 + 128) >> 8;
     out.desaturate = { g, y: yl, label: label() };
     if (g.slice(0, 3).some((c) => Math.abs(c - yl) > 1) || out.desaturate.label !== "Desaturate") throw new Error("desaturate 100 % did not give the luma: " + JSON.stringify(out.desaturate));
+    await replay("desaturate", "dabSponge", "sponge_rgba", [260, 200, 80, 200], () => stroke(300, 220, 380));
     Object.assign(ed.toneOpts, { mode: "saturate", exposure: 60, vibrance: true });
+    EC.pxCalls(true);
     stroke(500, 220, 380);
     const s = px(L, 500, 300);
     out.saturate = s;
     if (!(s[0] > 200 && s[2] < 50 && s[0] < 255 && s[0] - s[2] > 150)) throw new Error("saturate did not widen the band: " + s);
+    await replay("saturate", "dabSponge", "sponge_rgba", [460, 200, 80, 200], () => stroke(500, 220, 380));
     // 5. the undo takes the last stroke back
     await ed.undoStep();
     if (px(L, 500, 300).slice(0, 3).join() !== "200,100,50") throw new Error("the undo did not bring the band back: " + px(L, 500, 300));
