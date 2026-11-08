@@ -138,7 +138,7 @@ export function activate(scumble) {
         p.frame = frameOf(p, doc.width, doc.height);
         delete p.orient;
         const r = renderFor(doc, model, p);
-        const layerName = name || (ref.filename || LAYER_NAME).replace(/\.(glb|gltf)$/i, "").replace(/ \(\d+\)$/, "") || LAYER_NAME;   // the store's "(1)" suffix is not a name
+        const layerName = name || (ref.filename || LAYER_NAME).replace(/\.(glb|gltf)$/i, "").replace(/(?:_[0-9a-f]{8}| \(\d+\))$/i, "") || LAYER_NAME;   // the store's hash or "(1)" suffix is not a name
         let layer;
         if (existing) {
             doc.setPixels(layerId, imageDataOf(r.canvas));

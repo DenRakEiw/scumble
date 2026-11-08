@@ -20,6 +20,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -27,6 +28,7 @@ const { spawnSync } = require("node:child_process");
 
 const ROOT = path.join(__dirname, "..");
 const doc = require(path.join(ROOT, "electron", "main", "docfile.js"));
+const { FileMirror, contentName, isHashName } = require(path.join(ROOT, "electron", "main", "files.js"));
 
 const BIG = process.argv.includes("--big");
 let failed = 0;
@@ -494,6 +496,145 @@ function listTree(dir) {
             const argv = documentArgs(["--flag", "x.png", target, path.join(scratch, "nope.scumble")], scratch);
             assert(argv.length === 1 && argv[0] === target, "documentArgs " + JSON.stringify(argv));
             return "target kept; 2 selection fields dropped; argv found 1 of 4";
+        });
+        await check("content_addressed_names_and_ensure_on_server", async () => {
+            const M = mirror("FM");
+            const serverFiles = new Map();   // "type/subfolder/filename" -> Buffer
+            const uploads = [];              // recorded upload requests on the fake server
+            const srv = http.createServer(async (req, res) => {
+                const u = new URL(req.url, "http://127.0.0.1");
+                if (u.pathname === "/view" && (req.method === "HEAD" || req.method === "GET")) {
+                    const k = `${u.searchParams.get("type") || "input"}/${u.searchParams.get("subfolder") || ""}/${u.searchParams.get("filename") || ""}`;
+                    const b = serverFiles.get(k);
+                    if (!b) { res.writeHead(404); res.end(); return; }
+                    res.writeHead(200, { "Content-Type": "image/png", "Content-Length": String(b.length) });
+                    res.end(req.method === "HEAD" ? undefined : b);
+                    return;
+                }
+                const chunks = [];
+                for await (const ch of req) chunks.push(ch);
+                const raw = Buffer.concat(chunks);
+                if (u.pathname === "/upload/image" && req.method === "POST") {
+                    const form = await new Request("http://127.0.0.1" + req.url, { method: "POST", headers: req.headers, body: raw }).formData();
+                    const f = form.get("image");
+                    const name = f.name;
+                    const subfolder = String(form.get("subfolder") || "");
+                    const type = String(form.get("type") || "input");
+                    const overwrite = form.get("overwrite");
+                    const bytes = Buffer.from(await f.arrayBuffer());
+                    uploads.push({ route: "/upload/image", name, subfolder, type, overwrite, size: bytes.length });
+                    serverFiles.set(`${type}/${subfolder}/${name}`, bytes);
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ name, subfolder, type }));
+                    return;
+                }
+                if (u.pathname === "/inpaint_canvas/upload" && req.method === "POST") {
+                    const name = u.searchParams.get("filename") || "";
+                    const subfolder = u.searchParams.get("subfolder") || "";
+                    const type = u.searchParams.get("type") || "input";
+                    const overwrite = u.searchParams.get("overwrite");
+                    uploads.push({ route: "/inpaint_canvas/upload", name, subfolder, type, overwrite, size: raw.length });
+                    serverFiles.set(`${type}/${subfolder}/${name}`, raw);
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ name, subfolder, type, size: raw.length }));
+                    return;
+                }
+                res.writeHead(404); res.end();
+            });
+            await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+            try {
+                const port = srv.address().port;
+                assert(port !== 8188, "fake server must never use 8188");
+                const baseUrl = `http://127.0.0.1:${port}`;
+                const comfy = {
+                    url: baseUrl,
+                    status: { state: "connected" },
+                    fetch: (rel, init) => fetch(baseUrl + rel, init),
+                };
+                const fm = new FileMirror(comfy, { root: M });
+                const mkUploadReq = (filename, buf, overwrite) => {
+                    const fd = new FormData();
+                    fd.append("image", new File([buf], filename, { type: "image/png" }));
+                    fd.append("subfolder", "inpaint_canvas");
+                    fd.append("type", "input");
+                    if (overwrite !== undefined) fd.append("overwrite", overwrite ? "true" : "false");
+                    return new Request("http://scumble/comfy/upload/image", { method: "POST", body: fd });
+                };
+                const mkRawReq = (filename, buf, overwrite) => {
+                    const q = new URLSearchParams({ filename, subfolder: "inpaint_canvas", type: "input", overwrite: overwrite ? "true" : "false" });
+                    return [new Request("http://scumble/comfy/inpaint_canvas/upload?" + q, { method: "POST", body: buf }), "?" + q.toString()];
+                };
+                const bytesA = rnd(256, 11);
+                const bytesB = rnd(384, 22);
+                const hashA = crypto.createHash("sha256").update(bytesA).digest("hex").slice(0, 8);
+                const hashB = crypto.createHash("sha256").update(bytesB).digest("hex").slice(0, 8);
+                assert(hashA !== hashB, "distinct test buffers must have distinct 8-hex hashes");
+
+                // 1. Same bytes -> same name (stem_<hash8>.ext), one file in the mirror
+                const u1 = await (await fm.handleUpload(mkUploadReq("image.png", bytesA, false))).json();
+                const u2 = await (await fm.handleUpload(mkUploadReq("image.png", bytesA, false))).json();
+                const [rawReqA, rawSearchA] = mkRawReq("image.png", bytesA, false);
+                const u2Raw = await (await fm.handleRawUpload(rawReqA, rawSearchA)).json();
+                assert(u1.name === `image_${hashA}.png`, `expected image_${hashA}.png, got ${u1.name}`);
+                assert(u2.name === u1.name && u2Raw.name === u1.name, `same bytes must give same name: ${u1.name} vs ${u2.name} vs ${u2Raw.name}`);
+                assert(contentName(u1.name, bytesA) === u1.name, "already-hashed stem must not double-append hash");
+
+                // 2. Different bytes with the same stem -> different names
+                const u3 = await (await fm.handleUpload(mkUploadReq("image.png", bytesB, false))).json();
+                assert(u3.name === `image_${hashB}.png` && u3.name !== u1.name, `different bytes must give different names: ${u1.name} vs ${u3.name}`);
+                const dirEntries = fs.readdirSync(path.join(M, "input", "inpaint_canvas")).sort();
+                assert(same(dirEntries, [u1.name, u3.name].sort()), "mirror holds exactly the two content-addressed files: " + JSON.stringify(dirEntries));
+
+                // 3. overwrite:true uploads keep their given name on purpose
+                const layerName = "n1_layer_1a2b3c4d5e6f.png";
+                const uLayer = await (await fm.handleUpload(mkUploadReq(layerName, bytesA, true))).json();
+                assert(uLayer.name === layerName, `overwrite:true must keep name: ${uLayer.name}`);
+                const [rawLayerReq, rawLayerSearch] = mkRawReq(layerName, bytesB, true);
+                const uLayerRaw = await (await fm.handleRawUpload(rawLayerReq, rawLayerSearch)).json();
+                assert(uLayerRaw.name === layerName && fs.readFileSync(path.join(M, "input", "inpaint_canvas", layerName)).equals(bytesB), "overwrite:true raw upload must keep name and replace bytes");
+
+                // 4. A name with no extension or with odd characters
+                const uNoExt = await (await fm.handleUpload(mkUploadReq("readme", bytesA, false))).json();
+                assert(uNoExt.name === `readme_${hashA}` && isHashName(uNoExt.name), `no-extension name: ${uNoExt.name}`);
+                const uOdd = await (await fm.handleUpload(mkUploadReq("my photo (1) [final]#2!?.PNG", bytesA, false))).json();
+                assert(uOdd.name === `my_photo__1___final__2_${hashA}.png` && isHashName(uOdd.name), `odd-char name: ${uOdd.name}`);
+                const [rawOddReq, rawOddSearch] = mkRawReq("...___.png", bytesB, false);
+                const uEmptyStem = await (await fm.handleRawUpload(rawOddReq, rawOddSearch)).json();
+                assert(uEmptyStem.name === `image_${hashB}.png`, `empty sanitized stem falls back to image: ${uEmptyStem.name}`);
+
+                // 5. A non-hash name is never forwarded with overwrite=true (both multipart and large routes)
+                assert(!isHashName("plain.png") && !isHashName("photo (1).png") && isHashName(u1.name) && isHashName(layerName), "isHashName classification");
+                uploads.length = 0;
+                await fm.pushToServer("input", "inpaint_canvas", "plain.png", bytesA, "image/png");
+                await fm.pushLargeToServer("input", "inpaint_canvas", "plain_large.png", bytesA);
+                await fm.pushToServer("input", "inpaint_canvas", u1.name, bytesA, "image/png");
+                await fm.pushLargeToServer("input", "inpaint_canvas", layerName, bytesA);
+                assert(uploads.length === 4, "4 push calls recorded");
+                assert(uploads[0].name === "plain.png" && uploads[0].overwrite !== "true", `non-hash multipart must not send overwrite=true: ${ JSON.stringify(uploads[0]) }`);
+                assert(uploads[1].name === "plain_large.png" && uploads[1].overwrite === "false", `non-hash large must send overwrite=false: ${ JSON.stringify(uploads[1]) }`);
+                assert(uploads[2].name === u1.name && uploads[2].overwrite === "true", `hash8 multipart sends overwrite=true: ${ JSON.stringify(uploads[2]) }`);
+                assert(uploads[3].name === layerName && uploads[3].overwrite === "true", `hash12 large sends overwrite=true: ${ JSON.stringify(uploads[3]) }`);
+
+                // 6. ensureOnServer on an old plain name: no-op when Content-Length matches, re-uploads on a mismatch
+                const plainRef = { filename: "legacy.png", subfolder: "inpaint_canvas", type: "input" };
+                put(M, plainRef, bytesA);
+                serverFiles.set("input/inpaint_canvas/legacy.png", Buffer.from(bytesA));
+                fm.known.clear();
+                uploads.length = 0;
+                const repMatch = await fm.ensureOnServer([plainRef]);
+                assert(repMatch.checked === 1 && repMatch.uploaded.length === 0 && repMatch.missing.length === 0 && uploads.length === 0, "matching Content-Length must be a no-op: " + JSON.stringify(repMatch));
+
+                // Now server holds a different-sized file under the same plain name
+                serverFiles.set("input/inpaint_canvas/legacy.png", bytesB);
+                fm.known.clear();
+                uploads.length = 0;
+                const repMismatch = await fm.ensureOnServer([plainRef]);
+                assert(repMismatch.checked === 1 && same(repMismatch.uploaded, ["input/inpaint_canvas/legacy.png"]) && uploads.length === 1, "mismatched Content-Length must re-upload: " + JSON.stringify(repMismatch));
+                assert(uploads[0].name === "legacy.png" && uploads[0].overwrite !== "true" && uploads[0].size === bytesA.length, "re-upload of plain name must send mirror bytes without overwrite=true: " + JSON.stringify(uploads[0]));
+                return `${u1.name}, ${u3.name}, ${uNoExt.name}, ${uOdd.name}; plain overwrite=off, size-check noop+reupload`;
+            } finally {
+                await new Promise((r) => srv.close(r));
+            }
         });
         if (BIG) {
             await check("a_real_zip64_file_above_4_GiB", async () => {

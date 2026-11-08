@@ -56,7 +56,7 @@ export class Document {
     get height() { return this.editor.height || 0; }
     get loaded() { return !!this.editor.base; }
     get active() { return host.isActive(this.editor); }
-    get name() { const r = this.editor.base && this.editor.base.ref; return r ? String(r.filename || "image").replace(/\.[a-z0-9]+$/i, "") : "Untitled"; }
+    get name() { const r = this.editor.base && this.editor.base.ref; return r ? String(r.filename || "image").replace(/\.[a-z0-9]+$/i, "").replace(/_[0-9a-f]{8}$/i, "") : "Untitled"; }
 
     /** The status bar; `kind` "error" / "warn" (red, five blinks), "info" (plain) or left out (the text decides). */
     status(text, kind) { this.editor.setStatus(String(text), statusKindArg(kind)); }

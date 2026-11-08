@@ -5963,7 +5963,7 @@ export const host = {
     documentName(ed) {
         if (ed && ed.docFile && ed.docFile.name) return String(ed.docFile.name).replace(/\.scumble$/i, "");
         if (!ed || !ed.base || !ed.base.ref) return "Untitled";
-        return String(ed.base.ref.filename || "image").replace(/\.[a-z0-9]+$/i, "");
+        return String(ed.base.ref.filename || "image").replace(/\.[a-z0-9]+$/i, "").replace(/_[0-9a-f]{8}$/i, "");
     },
 
     /**

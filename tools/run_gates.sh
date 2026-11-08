@@ -75,7 +75,7 @@ if curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null; then
 fi
 
 needs_app=0
-for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document|portable|mcpb|cli) ;; *) needs_app=1 ;; esac; done
+for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document|document:*|portable|mcpb|cli) ;; *) needs_app=1 ;; esac; done
 TILEARG=""
 case "$TILES" in
   on) export SCUMBLE_TILES=1; TILEARG="--tiles" ;;
@@ -136,6 +136,7 @@ for g in "$@"; do
     # .scumble documents (docs/PLAN_DOCUMENTS.md D5): like quit, it starts, kills and ends its own instances (port +17,
     # profiles under $OUT/document); runs tools/document_test.js first
     document) timeout 1500 python tools/document_test.py ${EXE:+--exe "$EXE"} --out "$OUT/document" > "$OUT/document.log" 2>&1; rc=$? ;;
+    document:*) timeout 600 python tools/document_test.py ${EXE:+--exe "$EXE"} --only "${g#document:}" --out "$OUT/document" > "$OUT/document.log" 2>&1; rc=$? ;;
     # the portable copy (docs/PLAN_0_1_42.md P3): exe only; it stages its own copies under $OUT/portable and starts them
     # WITHOUT --user-data-dir (ports +19, +20, A's inspector +21), so it refuses without --exe and while any Scumble.exe
     # runs: run it alone or beside gates that start no runner app (lint, types, quit, document)
