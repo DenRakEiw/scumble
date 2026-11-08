@@ -666,6 +666,142 @@ console.log("  [ok] combineRows updates pixels and clears zero alpha");
     console.log(`  [ok] K11: TileMaskPixels.invert on the routes js and rust equals the per-pixel model (mask_invert ${invCalls.rust} calls on rust, 0 on js), frozen clones preserved, cached extents and bounds exact`);
 }
 
+// ---------------------------------------------------------------------------
+// 14. K9: floodShape (outKind = 1, cells) -> 64 KB alpha tiles -> combine, and growMaskBounds cells cut
+// ---------------------------------------------------------------------------
+{
+    const K = await import("../renderer/editor/px/kernels.js");
+    const { growMaskBounds } = rasterMod;
+    const W = 601, H = 501, cols = Math.ceil(W / 256), rows = Math.ceil(H / 256);
+    const rgba = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 4;
+        // Region A: a disc in tile (0,0) only; Region B: an L-band whose bounds [180,120,560,380] span all 6 tiles but leave tile (2,0) empty
+        const inDisc = (x - 90) * (x - 90) + (y - 90) * (y - 90) <= 55 * 55;
+        const inBand = ((x >= 180 && x < 420 && y >= 120 && y < 380) || (x >= 180 && x < 560 && y >= 280 && y < 380)) && ((x + y) % 7 !== 0);
+        rgba[o] = inDisc ? 220 : inBand ? 40 : 12;
+        rgba[o + 1] = inDisc ? 50 : inBand ? 180 : 15;
+        rgba[o + 2] = inDisc ? 60 : inBand ? 90 : 20;
+        rgba[o + 3] = 255;
+    }
+    const cutAlphaTiles = (d, sx, sy, tol, contiguous) =>
+        K.floodShape(d, W, H, sx, sy, tol, contiguous, null, 0xff0000, (view, count, bounds, cells) => {
+            assert.ok(view instanceof Uint8Array && view.length === W * H, "outKind = 1 view is a W * H Uint8Array");
+            assert.ok(cells instanceof Uint8Array && cells.length === cols * rows, "cells is a cols * rows Uint8Array");
+            if (!bounds) return { tiles: [], count: 0, bounds: null, cells: new Uint8Array(cells) };
+            const tiles = [];
+            const tx0 = bounds[0] >> 8, ty0 = bounds[1] >> 8;
+            const tx1 = (bounds[2] - 1) >> 8, ty1 = (bounds[3] - 1) >> 8;
+            for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+                if (!cells[ty * cols + tx]) continue;
+                const x0 = tx * 256, y0 = ty * 256, cw = Math.min(256, W - x0), ch = Math.min(256, H - y0);
+                const out = new Uint8Array(256 * 256);
+                for (let r = 0; r < ch; r++) {
+                    const s = (y0 + r) * W + x0;
+                    out.set(view.subarray(s, s + cw), r * 256);
+                }
+                tiles.push({ tx, ty, alpha: out.buffer });
+            }
+            return { tiles, count, bounds, cells: new Uint8Array(cells) };
+        }, 1);
+
+    const assertSameBytes = (a, b, label) => {
+        assert.equal(a.length, b.length, `${label}: length`);
+        for (let i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) {
+                const p = i >> 2, x = p % W, y = (p / W) | 0;
+                assert.fail(`${label}: mismatch at (${x},${y}) ch ${i & 3}: got ${a[i]}, want ${b[i]}`);
+            }
+        }
+    };
+    let wandChecks = 0;
+    for (const floodRoute of ["js", "rust"]) for (const combineRoute of ["js", "rust"]) {
+        K.setKernels("rust");
+        K.setRoute("flood", floodRoute);
+        K.setRoute("selCombine", combineRoute);
+        for (const [sx, sy, tol, contig] of [[90, 90, 10, true], [250, 200, 15, true], [250, 200, 15, false]]) {
+            K.pxCalls(true);
+            const cut = cutAlphaTiles(rgba, sx, sy, tol, contig);
+            const fc = K.pxCalls(true).flood_shape || 0;
+            assert.equal(fc, floodRoute === "rust" ? 1 : 0, `flood route ${floodRoute} flood_shape calls`);
+            assert.ok(cut.tiles.length > 0 && cut.tiles.length < cols * rows, `occupied cells cut (${cut.tiles.length} of ${cols * rows})`);
+            for (const t of cut.tiles) assert.equal(t.alpha.byteLength, 65536, "each cut wand tile is a 64 KB alpha buffer");
+            // Reference full-frame RGBA floodShape (outKind = 4)
+            const refRGBA = K.floodShape(rgba, W, H, sx, sy, tol, contig, null, 0xff0000, (v) => new Uint8Array(v), 4);
+            for (const mode of SEL_MODES) {
+                const mk = new TileMaskPixels(W, H);
+                const ref = new TileMaskPixels(W, H);
+                // Seed with an initial selection covering tile (0,0) and part of (1,0)
+                mk.fill([20, 20, 320, 220], "#ff0000");
+                ref.fill([20, 20, 320, 220], "#ff0000");
+                mk.combine(tilesSource(cut.tiles, [0, 0], cut.bounds), mode);
+                const alphaBytes = new Uint8Array(W * H);
+                for (let p = 0; p < W * H; p++) alphaBytes[p] = refRGBA[p * 4 + 3];
+                ref.combine(bytesSource(alphaBytes, 0, 0, W, H), mode);
+                assertSameBytes(mk.readRect(0, 0, W, H).data, ref.readRect(0, 0, W, H).data, `${floodRoute}/${combineRoute} ${mode}: pixels`);
+                assert.deepEqual(mk.bounds(), ref.bounds(), `${floodRoute}/${combineRoute} ${mode}: bounds`);
+                wandChecks++;
+            }
+        }
+    }
+    K.setRoute("flood", null);
+    K.setRoute("selCombine", null);
+
+    // K9 growMaskBounds cells cut (0 empty, 1 changed, 2 unchanged)
+    let growChecks = 0;
+    for (const kernMode of ["js", "rust"]) {
+        K.setKernels(kernMode);
+        for (const n of [8, -8]) {
+            const mk = new TileMaskPixels(W, H);
+            // Fill a 300 x 300 block so tile (0,0) [0..256, 0..256] is 100% selected before and after grow(+8) and shrink(-8)
+            mk.fill([0, 0, 300, 300], "#ff0000");
+            const data = mk.readRect(0, 0, W, H).data;
+            const refData = data.slice();
+            const cells = new Uint8Array(cols * rows);
+            const bounds = growMaskBounds(data, W, H, n, { cells });
+            const refBounds = growMaskBounds(refData, W, H, n);
+            assert.equal(cells[0], 2, `${kernMode} n=${n}: interior tile (0,0) is marked 2 (occupied & unchanged)`);
+            assert.equal(cells[2], 0, `${kernMode} n=${n}: far tile (2,0) is marked 0 (empty)`);
+            assert.equal(cells[1], 1, `${kernMode} n=${n}: boundary tile (1,0) is marked 1 (occupied & changed)`);
+            // Apply the K9 selectionOverTiles delta cut to mk
+            const old = new Set(mk.tileKeys());
+            const tiles = [];
+            for (let ty = 0; ty < rows; ty++) for (let tx = 0; tx < cols; tx++) {
+                const c = cells[ty * cols + tx];
+                if (c === 2) continue;
+                const key = (ty << 16) | tx;
+                if (!c) {
+                    if (old.has(key)) tiles.push({ tx, ty, empty: true });
+                    continue;
+                }
+                const x0 = tx * 256, y0 = ty * 256, cw = Math.min(256, W - x0), ch = Math.min(256, H - y0);
+                const out = new Uint8ClampedArray(256 * 256 * 4);
+                for (let r = 0; r < ch; r++) {
+                    const s = ((y0 + r) * W + x0) * 4;
+                    out.set(data.subarray(s, s + cw * 4), r * 256 * 4);
+                }
+                tiles.push({ tx, ty, data: out.buffer });
+            }
+            // Tile (0,0) was skipped (c === 2), so tiles does not include (0,0)
+            assert.equal(tiles.some((t) => t.tx === 0 && t.ty === 0), false, `${kernMode} n=${n}: unchanged tile (0,0) not recut`);
+            for (const t of tiles) {
+                const X = t.tx * 256, Y = t.ty * 256, tw = Math.min(256, W - X), th = Math.min(256, H - Y);
+                if (t.empty) { mk.clear([X, Y, X + tw, Y + th]); continue; }
+                const d = new Uint8ClampedArray(t.data);
+                for (let i = 0; i < d.length; i += 4) if (!d[i + 3]) { d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; }
+                mk.writable(t.tx, t.ty, true, true).data.set(d);
+            }
+            for (let i = 0; i < refData.length; i += 4) if (!refData[i + 3]) { refData[i] = 0; refData[i + 1] = 0; refData[i + 2] = 0; }
+            assertSameBytes(mk.readRect(0, 0, W, H).data, refData, `${kernMode} n=${n}: grown/shrunk TileMaskPixels matches full-frame growMaskBounds`);
+            assert.deepEqual(mk.bounds(), bounds, `${kernMode} n=${n}: TileMaskPixels bounds match growMaskBounds`);
+            assert.deepEqual(mk.bounds(), refBounds, `${kernMode} n=${n}: TileMaskPixels bounds match refBounds`);
+            growChecks++;
+        }
+    }
+    K.setKernels("js");
+    console.log(`  [ok] K9: floodShape outKind = 1 + cells 64 KB alpha tiles (${wandChecks} combines) and growMaskBounds cells cut (${growChecks} runs, skipping unchanged interior tiles) match full-frame reference`);
+}
+
     console.log("ALL TESTS PASSED!");
 }
 

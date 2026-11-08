@@ -2086,9 +2086,10 @@ async function counterCases(simd) {
 
 const LAP_KEYS = ["copyIn", "copyInMB", "copyInSharedMB", "copyOut", "copyOutMB", "alloc", "grewMB"];
 const lapsZero = (l) => LAP_KEYS.every((k) => l[k] === 0);
-/** What a flood job's `use` makes of the shape: a copy (the view is valid only inside the call), the count, the bounds. */
-const shapeOf = (view, n, bounds) => ({ bytes: new Uint8Array(view), n, bounds });
-const sameShape = (a, b) => !!a && !!b && eqBytes(a.bytes, b.bytes) && a.n === b.n && JSON.stringify(a.bounds) === JSON.stringify(b.bounds);
+/** What a flood job's `use` makes of the shape: a copy (the view is valid only inside the call), the count, the bounds, the cells. */
+const shapeOf = (view, n, bounds, cells) => ({ bytes: new Uint8Array(view), n, bounds, cells: cells ? new Uint8Array(cells) : null });
+const sameShape = (a, b) => !!a && !!b && eqBytes(a.bytes, b.bytes) && a.n === b.n && JSON.stringify(a.bounds) === JSON.stringify(b.bounds)
+    && (!a.cells && !b.cells || !!a.cells && !!b.cells && eqBytes(a.cells, b.cells));
 /** A source pointer below 0 sends mip_half out of bounds: a trap, as a corrupted instance would give. */
 const trapIn = (px) => px.exports.mip_half(-16, 256, 256, 0);
 
@@ -2285,8 +2286,13 @@ async function routeCases(js, simd, scalar, raster) {
         }
         twinCheck({
             name: "flood_shape", builds: [["rust simd", simd], ["rust scalar", scalar]], twin: js, cases,
-            title: "flood_shape equals its twin floodShape byte for byte, with the count and the bounds (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds)",
+            title: "flood_shape equals its twin floodShape byte for byte, with the count, the bounds and the cells (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds)",
             call: (k, [d, w, h, sx, sy, tol, contiguous, sel]) => k.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf),
+        });
+        twinCheck({
+            name: "flood_shape (outKind = 1)", builds: [["rust simd", simd], ["rust scalar", scalar]], twin: js, cases,
+            title: "flood_shape at outKind = 1 equals its twin floodShape byte for byte (w * h alpha bytes), with the count, the bounds and the cells",
+            call: (k, [d, w, h, sx, sy, tol, contiguous, sel]) => k.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf, 1),
         });
         let ok = true, detail = "", n = 0;
         for (const c of cases) {
@@ -2305,21 +2311,23 @@ async function routeCases(js, simd, scalar, raster) {
         ok = true; detail = ""; n = 0;
         for (const c of some) {
             const [d, w, h, sx, sy, tol, contiguous, sel] = c.args;
-            const want = js.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf);
-            for (const [rt, rust] of [["rust", 1], ["js", 0], [w * h, 1], [w * h + 1, 0]]) {
-                K.setRoute("flood", rt);
-                K.pxCalls(true);
-                let uses = 0;
-                const got = K.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, (v, cnt, bounds) => { uses++; return shapeOf(v, cnt, bounds); });
-                const ran = K.pxCalls().flood_shape || 0;
-                n++;
-                if (!sameShape(got, want) || uses !== 1 || ran !== rust) {
-                    ok = false; detail = `${c.tag} route ${rt}: ${ran ? "rust" : "the twin"} ran, use called ${uses}x${sameShape(got, want) ? "" : ", another shape"}`;
+            for (const outKind of [4, 1]) {
+                const want = js.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf, outKind);
+                for (const [rt, rust] of [["rust", 1], ["js", 0], [w * h, 1], [w * h + 1, 0]]) {
+                    K.setRoute("flood", rt);
+                    K.pxCalls(true);
+                    let uses = 0;
+                    const got = K.floodShape(d, w, h, sx, sy, tol, contiguous, sel, 0x123456, (v, cnt, bounds, cells) => { uses++; return shapeOf(v, cnt, bounds, cells); }, outKind);
+                    const ran = K.pxCalls().flood_shape || 0;
+                    n++;
+                    if (!sameShape(got, want) || got.bytes.length !== (outKind === 1 ? w * h : w * h * 4) || uses !== 1 || ran !== rust) {
+                        ok = false; detail = `${c.tag} outKind ${outKind} route ${rt}: ${ran ? "rust" : "the twin"} ran, use called ${uses}x${sameShape(got, want) ? "" : ", another shape"}`;
+                    }
                 }
             }
         }
         K.setRoute("flood", null);
-        check(`kernels.js floodShape under the flood route: "rust" and a size at or below the picture's run Rust, "js" and a size above it the twin; the same shape, use called once (${n} runs)`, ok, detail);
+        check(`kernels.js floodShape under the flood route (outKind 4 and 1): "rust" and a size at or below the picture's run Rust, "js" and a size above it the twin; the same shape and cells, use called once (${n} runs)`, ok, detail);
         ok = true; detail = ""; n = 0;
         for (const c of some) {
             const [d, w, h, sx, sy, tol, contiguous] = c.args;
@@ -2395,14 +2403,14 @@ async function trapCases(js, simd, raster) {
         const floodOk = eqBytes(mask, js.floodScan(fdata, fw, fh, 10, 10, 32, true)) && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
         const sel = new Uint8Array(fw * fh * 4), blob = blobs(fw, fh, 4, 4);
         for (let i = 0; i < fw * fh; i++) { sel[i * 4] = 255; sel[i * 4 + 3] = blob[i] ? 255 : 0; }
-        const ref = sel.slice();
-        raster.growMask(ref, fw, fh, 3);
+        const ref = sel.slice(), refCells = new Uint8Array(((fw + 255) >> 8) * ((fh + 255) >> 8));
+        raster.growMask(ref, fw, fh, 3, { cells: refCells });
         const refBounds = raster.maskBounds(ref, fw, fh);
         p = K.rustPx(); i0 = K.pxInstances();
         p.growMask = function () { return trapIn(this); };   // traps before it writes the selection, as Px.growMask would
-        const grown = sel.slice(), gb = raster.growMaskBounds(grown, fw, fh, 3);
-        check("inpaint_raster.js after a trap: floodMask gives floodScan's mask, growMaskBounds the JS growMask's selection and bounds (the selection grown once); each replaces the instance",
-            floodOk && eqBytes(grown, ref) && JSON.stringify(gb) === JSON.stringify(refBounds) && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1,
+        const grown = sel.slice(), grownCells = new Uint8Array(refCells.length), gb = raster.growMaskBounds(grown, fw, fh, 3, { cells: grownCells });
+        check("inpaint_raster.js after a trap: floodMask gives floodScan's mask, growMaskBounds the JS growMask's selection, bounds and cells (the selection grown once); each replaces the instance",
+            floodOk && eqBytes(grown, ref) && eqBytes(grownCells, refCells) && JSON.stringify(gb) === JSON.stringify(refBounds) && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1,
             `flood ${floodOk}, bounds ${gb} vs ${refBounds} ${firstDiff(grown, ref)}`);
 
         // a plain error, and out of memory
@@ -2475,13 +2483,17 @@ async function trapCases(js, simd, raster) {
 
         // floodShape's use runs once
         const fargs = [fdata, fw, fh, 10, 10, 32, true, null, 0x123456];
-        const wantShape = js.floodShape(...fargs, shapeOf);
+        const wantShape = js.floodShape(...fargs, shapeOf), wantAlphaShape = js.floodShape(...fargs, shapeOf, 1);
         let uses = 0;
-        const counted = (v, cnt, bounds) => { uses++; return shapeOf(v, cnt, bounds); };
+        const counted = (v, cnt, bounds, cells) => { uses++; return shapeOf(v, cnt, bounds, cells); };
         p = K.rustPx(); i0 = K.pxInstances();
         p.floodShape = function () { return trapIn(this); };
         const viaTwin = K.floodShape(...fargs, counted);
-        const before = sameShape(viaTwin, wantShape) && uses === 1 && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
+        const before4 = sameShape(viaTwin, wantShape) && uses === 1 && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
+        p = K.rustPx(); i0 = K.pxInstances(); uses = 0;
+        p.floodShape = function () { return trapIn(this); };
+        const viaTwin1 = K.floodShape(...fargs, counted, 1);
+        const before = before4 && sameShape(viaTwin1, wantAlphaShape) && uses === 1 && K.rustPx() !== p && K.pxInstances().trap === i0.trap + 1;
         p = K.rustPx(); i0 = K.pxInstances(); uses = 0;
         p.floodShape = function (...a) { const r = P.Px.prototype.floodShape.apply(this, a); trapIn(this); return r; };
         let ea = null;
@@ -2567,46 +2579,83 @@ async function lifecycleCases(js) {
 /** The whole-job kernels (grow_mask, flood_shape) against the editor's JS for the same jobs. */
 async function jobCases(px, label, raster) {
     let ok = true, detail = "";
-    const selection = (w, h, seed, empty = false) => {
-        const f = empty ? new Uint8Array(w * h) : blobs(w, h, seed, 4), d = new Uint8Array(w * h * 4);
+    const selection = (w, h, seed, empty = false, fullBlock = false) => {
+        const f = (empty || fullBlock) ? new Uint8Array(w * h) : blobs(w, h, seed, 4), d = new Uint8Array(w * h * 4);
         for (let i = 0; i < w * h; i++) { d[i * 4] = 255; d[i * 4 + 3] = f[i] ? (seed & 1 ? 255 : 200) : (i % 7 ? 0 : 90); }
+        if (fullBlock) {
+            const bw = Math.min(w, 300), bh = Math.min(h, 300), a = seed & 1 ? 255 : 200;
+            for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+                const o = (y * w + x) * 4;
+                d[o] = 255; d[o + 1] = 0; d[o + 2] = 0; d[o + 3] = a;
+            }
+        }
         return d;
     };
-    for (const [w, h, seed, n, empty] of [[1, 1, 1, 3, false], [64, 64, 2, 5, false], [300, 200, 3, -4, false], [257, 129, 4, 16, false], [120, 90, 5, -40, false], [80, 60, 6, 2, true], [400, 300, 7, 1, false]]) {
-        const src = selection(w, h, seed, empty);
-        const a = src.slice();
-        raster.growMask(a, w, h, n);
+    const seenCellKinds = new Set();
+    for (const [w, h, seed, n, empty, fullBlock] of [
+        [1, 1, 1, 3, false, false], [64, 64, 2, 5, false, false], [300, 200, 3, -4, false, false],
+        [257, 129, 4, 16, false, false], [120, 90, 5, -40, false, false], [80, 60, 6, 2, true, false],
+        [400, 300, 7, 1, false, false], [600, 520, 9, 8, false, true], [600, 520, 11, -8, false, true],
+        [600, 520, 8, 8, false, true],
+    ]) {
+        const src = selection(w, h, seed, empty, fullBlock);
+        const cols = (w + 255) >> 8, rows = (h + 255) >> 8;
+        const a = src.slice(), ca = new Uint8Array(cols * rows);
+        raster.growMask(a, w, h, n, { cells: ca });
         const ab = raster.maskBounds(a, w, h);
-        const b = src.slice(), bb = px.growMask(b, w, h, n);
-        if (!eqBytes(a, b) || JSON.stringify(ab) !== JSON.stringify(bb)) { ok = false; detail = `${w}x${h} n ${n} ${firstDiff(a, b) || `bounds ${ab} vs ${bb}`}`; }
+        const b = src.slice(), cb = new Uint8Array(cols * rows), bb = px.growMask(b, w, h, n, cb);
+        const wantCells = new Uint8Array(cols * rows);
+        for (let ty = 0; ty < rows; ty++) for (let tx = 0; tx < cols; tx++) {
+            const x0 = tx * 256, y0 = ty * 256, x1 = Math.min(x0 + 256, w), y1 = Math.min(y0 + 256, h);
+            let count = 0, changed = false;
+            for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+                const o = (y * w + x) * 4;
+                if (b[o + 3] > 0) count++;
+                if (b[o] !== src[o] || b[o + 1] !== src[o + 1] || b[o + 2] !== src[o + 2] || b[o + 3] !== src[o + 3]) changed = true;
+            }
+            const kind = count === 0 ? 0 : changed ? 1 : 2;
+            wantCells[ty * cols + tx] = kind;
+            seenCellKinds.add(kind);
+        }
+        if (!eqBytes(a, b) || JSON.stringify(ab) !== JSON.stringify(bb) || !eqBytes(ca, cb) || !eqBytes(cb, wantCells)) {
+            ok = false; detail = `${w}x${h} n ${n} ${firstDiff(a, b) || firstDiff(ca, cb) || firstDiff(cb, wantCells) || `bounds ${ab} vs ${bb}`}`;
+        }
     }
-    check(`${label} grow_mask equals growMask + maskBounds (grow, shrink, empty, partial alpha)`, ok, detail);
+    if (!seenCellKinds.has(0) || !seenCellKinds.has(1) || !seenCellKinds.has(2)) {
+        ok = false; detail = detail || `missing cell kinds: saw ${[...seenCellKinds].join(",")}`;
+    }
+    check(`${label} grow_mask equals growMask + maskBounds + cells (0 empty, 1 changed, 2 unchanged; grow, shrink, empty, partial alpha)`, ok, detail);
 
     ok = true; detail = "";
     for (const [w, h, seed] of [[1, 1, 1], [97, 61, 2], [256, 256, 3], [640, 480, 5]]) {
         const data = regions(w, h, seed), r = rng(seed + 9);
+        const cols = (w + 255) >> 8, rows = (h + 255) >> 8;
         for (let k = 0; k < 6; k++) {
             const sx = r() * w | 0, sy = r() * h | 0, tol = [0, 8, 32, 80, 255, 12][k], contiguous = k % 2 === 0;
             const sel = k % 3 ? selection(w, h, seed + k) : null;
             const mask = raster.floodMask(data, w, h, sx, sy, tol, contiguous);
             if (sel) for (let p = 0; p < w * h; p++) if (sel[p * 4 + 3] < 128) mask[p] = 0;
-            const want = new Uint8Array(w * h * 4);
+            const want = new Uint8Array(w * h * 4), wantAlpha = new Uint8Array(w * h), wantCells = new Uint8Array(cols * rows);
             let count = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
             for (let p = 0; p < w * h; p++) {
                 if (!mask[p]) continue;
                 want.set([18, 52, 86, 255], p * 4);
+                wantAlpha[p] = 255;
                 count++;
                 const x = p % w, y = (p / w) | 0;
+                wantCells[(y >> 8) * cols + (x >> 8)] = 1;
                 x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = y;
             }
             const wantBounds = x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
-            const got = px.floodShape(data, w, h, sx, sy, tol, contiguous, sel, 0x123456, (view, n, bounds) => ({ bytes: new Uint8Array(view), n, bounds }));
-            if (!eqBytes(got.bytes, want) || got.n !== count || JSON.stringify(got.bounds) !== JSON.stringify(wantBounds)) {
-                ok = false; detail = `${w}x${h} seed ${sx},${sy} tol ${tol} ${contiguous} sel ${!!sel} ${firstDiff(got.bytes, want) || `count ${got.n} vs ${count}, bounds ${got.bounds} vs ${wantBounds}`}`;
+            const got4 = px.floodShape(data, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf);
+            const got1 = px.floodShape(data, w, h, sx, sy, tol, contiguous, sel, 0x123456, shapeOf, 1);
+            if (!eqBytes(got4.bytes, want) || got4.n !== count || JSON.stringify(got4.bounds) !== JSON.stringify(wantBounds) || !eqBytes(got4.cells, wantCells)
+                || !eqBytes(got1.bytes, wantAlpha) || got1.n !== count || JSON.stringify(got1.bounds) !== JSON.stringify(wantBounds) || !eqBytes(got1.cells, wantCells)) {
+                ok = false; detail = `${w}x${h} seed ${sx},${sy} tol ${tol} ${contiguous} sel ${!!sel} ${firstDiff(got4.bytes, want) || firstDiff(got1.bytes, wantAlpha) || firstDiff(got4.cells, wantCells) || firstDiff(got1.cells, wantCells) || `count ${got4.n}/${got1.n} vs ${count}, bounds ${got4.bounds}/${got1.bounds} vs ${wantBounds}`}`;
             }
         }
     }
-    check(`${label} flood_shape equals floodMask, the selection clip, the count, the bounds and the shape`, ok, detail);
+    check(`${label} flood_shape (out_kind 4 and 1) equals floodMask, the selection clip, the count, the bounds, the cells and the shape`, ok, detail);
 }
 
 async function floodCases(ref, label, js, raster) {

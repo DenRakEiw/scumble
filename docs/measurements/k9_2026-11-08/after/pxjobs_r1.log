@@ -1,0 +1,37 @@
+-- 15000x10000 (150.0 MP), 1 rounds ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  grow             kernel js    518.1  rust    456.7  (1.13x) | worker job js    730.7  rust    536.6  (1.36x) | wall js    780.1  rust    563.0  (1.39x)  27.9 MP in 1 jobs
+                   parts js/rust: kernel 0.0/456.7  edt 287.2/0.0  bounds 49.8/0.0  feature 34.9/0.0  write 96.7/0.0  read 88.4/70.3  resultBounds 49.5/0.0
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs grow_mask 1
+                   split js/rust: job 731.1/536.7  copyIn 0.0/15.0 (0.0/110.2 MB, shared 0.0/4.0 MB)  copyOut 0.0/6.9 (0.0/107.6 MB)  alloc 0.0/0.5  grew MB 0.0/106.3  bytes0 MB 2/2 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {} rust {grow_mask 434.2, mip_chain 0.3}  first js {} rust {}  queue 0.1/0.0  trip 732.2/537.4  workers 1/1
+                   round 0 first js {} rust {grow_mask 434.2}
+  shrink           kernel js    816.4  rust    225.5  (3.62x) | worker job js    969.6  rust    287.6  (3.37x) | wall js   1013.8  rust    327.3  (3.10x)  27.9 MP in 1 jobs
+                   parts js/rust: kernel 0.0/225.5  edt 326.8/0.0  bounds 53.2/0.0  feature 40.1/0.0  write 127.5/0.0  read 63.7/52.1  resultBounds 268.8/0.0
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs grow_mask 1
+                   split js/rust: job 969.6/287.7  copyIn 0.0/6.1 (0.0/110.2 MB, shared 0.0/4.0 MB)  copyOut 0.0/6.5 (0.0/107.6 MB)  alloc 0.0/0.0  grew MB 0.0/0.0  bytes0 MB 2/225 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 1, idle 0, trap 0, oom 0}  kernel js {} rust {grow_mask 213.1, mip_chain 0.3}  first js {} rust {}  queue 0.0/0.0  trip 970.2/288.2  workers 1/1
+  wand_band        kernel js   1881.7  rust    964.4  (1.95x) | worker job js   3151.3  rust    990.8  (3.18x) | wall js   5682.1  rust   1931.4  (2.94x)  152.8 MP in 2 jobs
+                   parts js/rust: flood 767.7/840.9  read 1269.5/26.0  clip 0.0/0.0  bounds 267.2/0.0  shape 846.7/123.4
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 71.3/51.7  read 36.2/26.0  flood 16.2/24.6  clip 0.0/0.0  bounds 5.1/-  shape 13.6/0.9 | box job js/rust: 150.00/150.00 MP, ran js/rust: total 3080.1/939.1  read 1233.3/0.0  flood 751.5/816.3  clip 0.0/0.0  bounds 262.1/-  shape 833.1/122.5
+                   px calls js: window none; jobs none | rust: window mip_chain 16, sel_combine 1564; jobs flood_shape 2
+                   split js/rust: job 3151.8/991.3  copyIn 0.0/178.6 (0.0/787.5 MB, shared 0.0/682.5 MB)  copyOut 0.0/54.8 (0.0/378.8 MB)  alloc 0.0/7.2  grew MB 0.0/656.9  bytes0 MB 1/32 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 1, idle 0, trap 0, oom 0}  kernel js {} rust {flood_shape 672.8, mip_chain 0.5, sel_combine 35.0}  first js {} rust {}  queue 0.0/0.0  trip 0.0/942.1  workers 0/1
+                   round 0 first js {} rust {flood_shape 650.8, sel_combine 0.2}
+  wand_object      kernel js     31.0  rust      7.5  (4.12x) | worker job js     81.3  rust     34.3  (2.37x) | wall js    205.0  rust    122.8  (1.67x)  3.1 MP in 2 jobs
+                   parts js/rust: flood 7.5/6.3  read 50.2/26.6  clip 0.0/0.0  bounds 14.0/0.0  shape 9.4/1.2
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 59.1/31.4  read 37.5/26.6  flood 1.4/3.6  clip 0.0/0.0  bounds 13.1/-  shape 7.1/1.1 | box job js/rust: 0.30/0.59 MP, ran js/rust: total 22.2/2.9  read 12.8/0.0  flood 6.1/2.7  clip 0.0/0.0  bounds 1.0/-  shape 2.3/0.1
+                   px calls js: window none; jobs none | rust: window mip_chain 9, sel_combine 9; jobs flood_shape 2
+                   split js/rust: job 81.5/34.3  copyIn 0.0/1.8 (0.0/15.7 MB, shared 0.0/4.5 MB)  copyOut 0.0/0.8 (0.0/3.0 MB)  alloc 0.0/0.1  grew MB 0.0/2.3  bytes0 MB 1/17 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {} rust {flood_shape 4.7, mip_chain 0.2, sel_combine 0.2}  first js {} rust {}  queue 0.0/0.0  trip 0.0/3.1  workers 0/1
+  wand_add         kernel js   2917.7  rust   1172.3  (2.49x) | worker job js   3476.2  rust   1211.9  (2.87x) | wall js   4977.3  rust   2007.7  (2.48x)  152.8 MP in 2 jobs
+                   parts js/rust: flood 1775.7/813.8  read 558.4/39.1  clip 0.0/0.0  bounds 266.0/0.0  shape 876.0/358.5
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 62.0/55.3  read 7.7/39.1  flood 29.8/15.1  clip 0.0/0.0  bounds 8.8/-  shape 15.6/1.0 | box job js/rust: 150.00/150.00 MP, ran js/rust: total 3414.2/1156.7  read 550.7/0.0  flood 1745.9/798.7  clip 0.0/0.0  bounds 257.2/-  shape 860.4/357.5
+                   px calls js: window none; jobs none | rust: window mip_chain 16, sel_combine 1564; jobs flood_shape 2
+                   split js/rust: job 3476.3/1212.2  copyIn 0.0/183.3 (0.0/787.5 MB, shared 0.0/682.5 MB)  copyOut 0.0/91.0 (0.0/392.3 MB)  alloc 0.0/7.4  grew MB 0.0/643.8  bytes0 MB 17/35 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 1, idle 0, trap 0, oom 0}  kernel js {} rust {flood_shape 648.6, mip_chain 0.6, sel_combine 48.2}  first js {} rust {}  queue 0.0/0.0  trip 0.0/1161.5  workers 0/1
+  invert           kernel js    192.9  rust    114.9  (1.68x) | wall js    234.3  rust    146.4  (1.60x)
+                   parts js/rust: invert 192.9/114.9
+                   px calls js: window none; jobs - | rust: window mask_invert 425, mip_chain 16; jobs -
+                   split js/rust: job 0.0/0.0  copyIn 0.0/10.1 (0.0/110.2 MB, shared 0.0/110.2 MB)  copyOut 0.0/2.9 (0.0/21.3 MB)  alloc 0.0/0.0  grew MB 0.0/0.0  bytes0 MB 0/0 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {} rust {mask_invert 6.9, mip_chain 0.8}  first js {} rust {}  queue 0.0/0.0  trip 0.0/0.0  workers 0/0
+                   round 0 first js {} rust {mask_invert 0.2}
+  instances renewed over the rows: {release 3, idle 0, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 10 threads read: 0
+
+PASS

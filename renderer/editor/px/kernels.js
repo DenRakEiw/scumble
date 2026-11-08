@@ -791,16 +791,16 @@ export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias
  * The flood job (px.js `floodShape`, kernels_js.js its twin): routed by `flood` at the picture's w * h pixels. `use`
  * runs at most once: an error after it ran (or thrown by it) is rethrown, never answered by the twin a second time.
  */
-export function floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use) {
+export function floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use, outKind = 4) {
     const p = rustPx("flood", w * h);
     if (p) {
         let used = false;
-        const once = (v, n, b) => { used = true; return use(v, n, b); };
-        try { return p.floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, once); }
+        const once = (v, n, b, c) => { used = true; return use(v, n, b, c); };
+        try { return p.floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, once, outKind); }
         catch (err) { if (used || !recovered(p, err, "flood_shape")) throw err; }
         finally { releaseIfLarge(); }
     }
-    return J.floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use);
+    return J.floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use, outKind);
 }
 
 /**

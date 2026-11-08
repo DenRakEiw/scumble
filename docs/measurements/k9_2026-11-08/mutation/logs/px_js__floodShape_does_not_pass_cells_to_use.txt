@@ -1,0 +1,18 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=relightBench,route,trap,job)
+FAIL rust simd flood_shape equals its twin floodShape byte for byte, with the count, the bounds and the cells (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds) (72 cases, each also at an odd offset)  1x1 seed 0,0 tol 0 contiguous sel none: out.cells: a typed array against null
+FAIL rust scalar flood_shape equals its twin floodShape byte for byte, with the count, the bounds and the cells (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds) (72 cases, each also at an odd offset)  1x1 seed 0,0 tol 0 contiguous sel none: out.cells: a typed array against null
+FAIL rust simd flood_shape at outKind = 1 equals its twin floodShape byte for byte (w * h alpha bytes), with the count, the bounds and the cells (72 cases, each also at an odd offset)  1x1 seed 0,0 tol 0 contiguous sel none: out.cells: a typed array against null
+FAIL rust scalar flood_shape at outKind = 1 equals its twin floodShape byte for byte (w * h alpha bytes), with the count, the bounds and the cells (72 cases, each also at an odd offset)  1x1 seed 0,0 tol 0 contiguous sel none: out.cells: a typed array against null
+FAIL kernels.js floodShape under the flood route (outKind 4 and 1): "rust" and a size at or below the picture's run Rust, "js" and a size above it the twin; the same shape and cells, use called once (120 runs)  640x480 seed 0,105 tol 32 anywhere sel none outKind 1 route 307200: rust ran, use called 1x, another shape
+ok   rust simd module reports its SIMD flag
+ok   rust simd grow_mask equals growMask + maskBounds + cells (0 empty, 1 changed, 2 unchanged; grow, shrink, empty, partial alpha)
+(node:51068) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Temp/scumble-mut-f/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Temp\scumble-mut-f\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TypeError: Cannot read properties of null (reading 'length')
+    at eqBytes (C:\Temp\scumble-mut-f\tools\px_test.js:193:29)
+    at jobCases (C:\Temp\scumble-mut-f\tools\px_test.js:2652:130)
+    at C:\Temp\scumble-mut-f\tools\px_test.js:5645:34
+    at group (C:\Temp\scumble-mut-f\tools\px_test.js:65:11)
+    at main (C:\Temp\scumble-mut-f\tools\px_test.js:5645:15)

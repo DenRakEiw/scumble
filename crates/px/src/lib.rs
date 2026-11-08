@@ -48,11 +48,11 @@ fn align_for(bytes: usize) -> usize {
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
-/// 30: edgefit_shrink, warp_rgba, warp_coverage);
+/// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    30
+    31
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -430,16 +430,28 @@ pub unsafe extern "C" fn flood(
 
 // ---- whole jobs -------------------------------------------------------------------------
 
-/// `growMask` plus the bounds of its result over the selection `d` (w × h RGBA8, in place); `bounds` (4 i32) is
-/// written when the result is not empty. Returns 1 when something is selected, else 0.
+/// `growMask` plus the bounds and 256² cell occupancy (`cells`, or 0 for none) of its result over the selection `d`
+/// (w × h RGBA8, in place); `bounds` (4 i32) is written when the result is not empty. Returns 1 when something is
+/// selected, else 0.
 #[no_mangle]
-pub unsafe extern "C" fn grow_mask(d: *mut u8, w: usize, h: usize, n: i32, bounds: *mut i32) -> i32 {
-    jobs::grow_mask(slice::from_raw_parts_mut(d, w * h * 4), w, h, n, slice::from_raw_parts_mut(bounds, 4))
+pub unsafe extern "C" fn grow_mask(d: *mut u8, w: usize, h: usize, n: i32, bounds: *mut i32, cells: *mut u8) -> i32 {
+    let n_cells = ((w + 255) >> 8) * ((h + 255) >> 8);
+    jobs::grow_mask(
+        slice::from_raw_parts_mut(d, w * h * 4),
+        w,
+        h,
+        n,
+        slice::from_raw_parts_mut(bounds, 4),
+        if cells.is_null() || n_cells == 0 { None } else { Some(slice::from_raw_parts_mut(cells, n_cells)) },
+    )
 }
 
-/// The flood job: the region around (sx, sy) of `rgba`, clipped to `sel` (0 for none), drawn over `rgba` in the colour
-/// `rgb` (0xRRGGBB); `info` (5 i32) gets count and bounds. Returns 0, or -1 when the stack was too small.
+/// The flood job: the region around (sx, sy) of `rgba`, clipped to `sel` (0 for none), drawn over `rgba` as 255 / 0
+/// alpha bytes (`out_kind == 1`, first `w * h` bytes) or in the colour `rgb` (0xRRGGBB, `out_kind == 4`, `w * h * 4`
+/// bytes); `info` (5 i32) gets count and bounds, `cells` (`((w + 255) >> 8) * ((h + 255) >> 8)` u8, or 0 for none)
+/// gets 1 per occupied 256² cell and 0 per empty one. Returns 0, or -1 when the stack was too small.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn flood_shape(
     rgba: *mut u8,
     w: usize,
@@ -450,10 +462,13 @@ pub unsafe extern "C" fn flood_shape(
     contiguous: u32,
     sel: *const u8,
     rgb: u32,
+    out_kind: u32,
     stack: *mut u32,
     stack_pairs: usize,
     info: *mut i32,
+    cells: *mut u8,
 ) -> i32 {
+    let n_cells = ((w + 255) >> 8) * ((h + 255) >> 8);
     jobs::flood_shape(
         slice::from_raw_parts_mut(rgba, w * h * 4),
         w,
@@ -464,8 +479,10 @@ pub unsafe extern "C" fn flood_shape(
         contiguous != 0,
         if sel.is_null() { None } else { Some(slice::from_raw_parts(sel, w * h * 4)) },
         [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8],
+        out_kind,
         slice::from_raw_parts_mut(stack, stack_pairs * 2),
         slice::from_raw_parts_mut(info, 5),
+        if cells.is_null() || n_cells == 0 { None } else { Some(slice::from_raw_parts_mut(cells, n_cells)) },
     )
 }
 

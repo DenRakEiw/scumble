@@ -1,0 +1,32 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 8 s)
+    Finished `release` profile [optimized] target(s) in 4.06s
+   Compiling px v0.1.0 (C:\Temp\scumble-mut-f\crates\px)
+warning: unused variable: `row_c`
+   --> src\jobs.rs:229:17
+    |
+229 |             let row_c = (y >> 8) * cols;
+    |                 ^^^^^ help: if this is intentional, prefix it with an underscore: `_row_c`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 3.52s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=relightBench,route,trap,job)
+FAIL rust simd flood_shape equals its twin floodShape byte for byte, with the count, the bounds and the cells (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds) (72 cases, each also at an odd offset)  1x1 seed 0,0 tol 0 contiguous sel none: out.cells[0] is 0, the twin has 1
+FAIL rust scalar flood_shape equals its twin floodShape byte for byte, with the count, the bounds and the cells (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds) (72 cases, each also at an odd offset)  1x1 seed 0,0 tol 0 contiguous sel none: out.cells[0] is 0, the twin has 1
+FAIL kernels.js floodShape under the flood route (outKind 4 and 1): "rust" and a size at or below the picture's run Rust, "js" and a size above it the twin; the same shape and cells, use called once (120 runs)  640x480 seed 0,105 tol 32 anywhere sel none outKind 4 route 307200: rust ran, use called 1x, another shape
+FAIL rust simd flood_shape (out_kind 4 and 1) equals floodMask, the selection clip, the count, the bounds, the cells and the shape  640x480 seed 257,202 tol 12 false sel true at 0: 0 vs 1
+FAIL rust scalar flood_shape (out_kind 4 and 1) equals floodMask, the selection clip, the count, the bounds, the cells and the shape  640x480 seed 257,202 tol 12 false sel true at 0: 0 vs 1
+FAIL (5) (only: relightBench, route, trap, job; PX_ONLY, not the full test)
+ok   a recovery warns once per cause and kernel  dilate_mask oom, dilate_mask trap, flood trap, flood_shape trap, grow_mask trap
+ok   rust simd module reports its SIMD flag
+ok   rust simd grow_mask equals growMask + maskBounds + cells (0 empty, 1 changed, 2 unchanged; grow, shrink, empty, partial alpha)
+FAIL rust simd flood_shape (out_kind 4 and 1) equals floodMask, the selection clip, the count, the bounds, the cells and the shape  640x480 seed 257,202 tol 12 false sel true at 0: 0 vs 1
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar grow_mask equals growMask + maskBounds + cells (0 empty, 1 changed, 2 unchanged; grow, shrink, empty, partial alpha)
+FAIL rust scalar flood_shape (out_kind 4 and 1) equals floodMask, the selection clip, the count, the bounds, the cells and the shape  640x480 seed 257,202 tol 12 false sel true at 0: 0 vs 1
+FAIL (5) (only: relightBench, route, trap, job; PX_ONLY, not the full test)
+(node:45584) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Temp/scumble-mut-f/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Temp\scumble-mut-f\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

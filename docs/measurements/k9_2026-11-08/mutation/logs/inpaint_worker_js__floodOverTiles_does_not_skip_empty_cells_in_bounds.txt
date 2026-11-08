@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_worker_js__floodOverTiles_does_not_skip_em-ed --offline --tiles on editor  (rc 1, 21 s, SCUMBLE_EDITOR_ONLY=the_flood_over_tiles_is_the_flood_over_canvases)
+editor rc=1 4s FAIL (only: the_flood_over_tiles_is_the_flood_over_canvases; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

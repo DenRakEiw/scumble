@@ -795,9 +795,12 @@ async function selectionOverTiles(msg) {
     let data = new Uint8ClampedArray(W * H * 4);
     storeRows(msg.sel, X0, W, Y0, H, data);
     const ms = { op: "selection", kind: msg.kind, kernels: kernelsInUse(), pixels: W * H, tiles: true, read: now() - t0 };
-    let bounds;
+    const cols = (W + 255) >> 8, rows = (H + 255) >> 8;
+    let bounds, cells = null;
     if (msg.kind === "grow") {
-        bounds = growMaskBounds(data, W, H, msg.n, { ms });
+        cells = new Uint8Array(cols * rows);
+        bounds = growMaskBounds(data, W, H, msg.n, { ms, cells });
+        if (ms.kernel === undefined) cells = null;
     } else if (msg.kind === "feather") {
         const c = new OffscreenCanvas(W, H);
         c.getContext("2d").putImageData(new ImageData(data, W, H), 0, 0);
@@ -813,26 +816,32 @@ async function selectionOverTiles(msg) {
     } else throw new Error("unknown selection job " + msg.kind);
     const tc = now();
     const tiles = [], transfer = [];
-    const d32 = new Uint32Array(data.buffer, data.byteOffset, W * H);
+    const d32 = cells ? null : new Uint32Array(data.buffer, data.byteOffset, W * H);
     const sx = msg.sel.x | 0, sy = msg.sel.y | 0;
     for (let ty = 0; ty * TILE < H; ty++) for (let tx = 0; tx * TILE < W; tx++) {
         const x0 = tx * TILE, y0 = ty * TILE, bw = Math.min(TILE, W - x0), bh = Math.min(TILE, H - y0);
         const row = msg.sel.tiles[(Y0 + y0 - sy) >> 8];
         const name = row ? row[(X0 + x0 - sx) >> 8] : null;
-        const ob = name ? tileBytes(name).bytes : null;
-        const old = ob ? new Uint32Array(ob.buffer, ob.byteOffset, TILE * TILE) : null;
-        // whole pixels as words (little endian: the alpha is the top byte)
-        let any = false, changed = false;
-        for (let yy = 0; yy < bh && !(any && changed); yy++) {
-            const o = (y0 + yy) * W + x0, so = yy * TILE;
-            for (let i = 0; i < bw; i++) {
-                const v = d32[o + i];
-                if (v >>> 24) any = true;
-                if (v !== (old ? old[so + i] : 0)) changed = true;
+        if (cells) {
+            const c = cells[ty * cols + tx];
+            if (c === 2) continue;
+            if (!c) { if (name) tiles.push({ tx, ty, empty: true }); continue; }
+        } else {
+            const ob = name ? tileBytes(name).bytes : null;
+            const old = ob ? new Uint32Array(ob.buffer, ob.byteOffset, TILE * TILE) : null;
+            // whole pixels as words (little endian: the alpha is the top byte)
+            let any = false, changed = false;
+            for (let yy = 0; yy < bh && !(any && changed); yy++) {
+                const o = (y0 + yy) * W + x0, so = yy * TILE;
+                for (let i = 0; i < bw; i++) {
+                    const v = d32[o + i];
+                    if (v >>> 24) any = true;
+                    if (v !== (old ? old[so + i] : 0)) changed = true;
+                }
             }
+            if (!changed) continue;
+            if (!any) { tiles.push({ tx, ty, empty: true }); continue; }
         }
-        if (!changed) continue;
-        if (!any) { tiles.push({ tx, ty, empty: true }); continue; }
         const out = new Uint8ClampedArray(TILE * TILE * 4);
         for (let yy = 0; yy < bh; yy++) { const o = ((y0 + yy) * W + x0) * 4; out.set(data.subarray(o, o + bw * 4), yy * TILE * 4); }
         tiles.push({ tx, ty, data: out.buffer });
@@ -906,8 +915,8 @@ async function flood(msg) {
  * The flood over a picture the pool composited from tiles (`stack_into`), B item 2: `sab` holds the box's RGBA8, `w` x
  * `h`; `sel` is the selection as a store (the bucket's clip), read here from its tiles. No canvas on the way in. The
  * shape goes back as a bitmap (the bucket draws it into a layer), or with `out: "tiles"` as the tiles of the box that
- * hold any of it, `[{ tx, ty, data }]` of 256 x 256 RGBA8 each (the box starts on the tile grid, so they are the
- * selection's own tiles): the wand writes them into the mask without a canvas on the way out either.
+ * hold any of it, `[{ tx, ty, alpha }]` of 256 x 256 alpha bytes each (the box starts on the tile grid, so they are the
+ * selection's own tiles, K9): the wand writes them into the mask without a canvas on the way out either.
  *
  * The kernel is kernels.js `floodShape`, so the `flood` route chooses Rust or the twin on the users' JS loop over the
  * same read (docs/PLAN_WASM_K1.md §0.1); only a thread without the Rust kernels refuses the stacks, as before.
@@ -924,9 +933,10 @@ async function floodOverTiles(msg) {
     if (msg.sel) { sel = new Uint8Array(W * H * 4); storeRows(msg.sel, msg.x0 | 0, W, msg.y0 | 0, H, sel); }
     lap("clip");
     const [r, g, b] = hexToRgb(msg.color || "#ff0000");
-    const res = floodShape(data, W, H, msg.x, msg.y, msg.tolerance === undefined ? 32 : msg.tolerance, msg.contiguous !== false, sel, (r << 16) | (g << 8) | b, (view, count, bounds) => {
+    const wantTiles = msg.out === "tiles";
+    const res = floodShape(data, W, H, msg.x, msg.y, msg.tolerance === undefined ? 32 : msg.tolerance, msg.contiguous !== false, sel, (r << 16) | (g << 8) | b, (view, count, bounds, cells) => {
         lap("flood");
-        if (msg.out !== "tiles") {
+        if (!wantTiles) {
             const shape = new OffscreenCanvas(W, H);
             shape.getContext("2d").putImageData(new ImageData(view, W, H), 0, 0);
             lap("shape");
@@ -934,23 +944,22 @@ async function floodOverTiles(msg) {
         }
         const tiles = [];
         if (bounds) {
+            const cols = (W + 255) >> 8;
             for (let ty = bounds[1] >> 8; ty * TILE < bounds[3]; ty++) for (let tx = bounds[0] >> 8; tx * TILE < bounds[2]; tx++) {
+                if (!cells[ty * cols + tx]) continue;
                 const x0 = tx * TILE, y0 = ty * TILE, bw = Math.min(TILE, W - x0), bh = Math.min(TILE, H - y0);
-                let any = false;
-                for (let yy = 0; yy < bh && !any; yy++) { const o = ((y0 + yy) * W + x0) * 4 + 3; for (let xx = 0; xx < bw; xx++) if (view[o + xx * 4]) { any = true; break; } }
-                if (!any) continue;
-                const out = new Uint8ClampedArray(TILE * TILE * 4);
-                for (let yy = 0; yy < bh; yy++) { const o = ((y0 + yy) * W + x0) * 4; out.set(view.subarray(o, o + bw * 4), yy * TILE * 4); }
-                tiles.push({ tx, ty, data: out.buffer });
+                const out = new Uint8Array(TILE * TILE);
+                for (let yy = 0; yy < bh; yy++) { const o = (y0 + yy) * W + x0; out.set(view.subarray(o, o + bw), yy * TILE); }
+                tiles.push({ tx, ty, alpha: out.buffer });
             }
         }
         lap("shape");
         return { count, bounds, tiles };
-    });
+    }, wantTiles ? 1 : 4);
     const bb = res.bounds;
     const touches = bb ? { l: bb[0] === 0, t: bb[1] === 0, r: bb[2] === W, b: bb[3] === H } : null;
     ms.total = now() - t0;
-    if (res.tiles) return { tiles: res.tiles, count: res.count, bounds: bb, touches, transfer: res.tiles.map((x) => x.data), timing: ms };
+    if (res.tiles) return { tiles: res.tiles, count: res.count, bounds: bb, touches, transfer: res.tiles.map((x) => x.alpha), timing: ms };
     return { bitmap: res.bitmap, count: res.count, bounds: bb, touches, timing: ms };
 }
 

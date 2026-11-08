@@ -376,28 +376,56 @@ export function floodScan(data, W, H, sx, sy, tolerance = 32, contiguous = true)
 
 /**
  * `Px.floodShape`'s twin (px.js; jobs.rs `flood_shape`) on `floodScan`: the region around (sx, sy) clipped to `sel`
- * (RGBA8 of the same size, selected where alpha >= 128, or null), drawn as `rgb` (0xRRGGBB), opaque where the region
- * is and transparent black elsewhere. `use(view, count, bounds)` gets the shape, its pixels and its bounds
- * [x0, y0, x1, y1] (right and bottom exclusive, null when empty), and its result is returned. The shape is a new
+ * (RGBA8 of the same size, selected where alpha >= 128, or null), drawn as 255 / 0 alpha bytes when `outKind === 1`
+ * (`Uint8Array` of `w * h`) or as `rgb` (0xRRGGBB), opaque where the region is and transparent black elsewhere
+ * (`Uint8ClampedArray` of `w * h * 4`). `use(view, count, bounds, cells)` gets the shape, its pixels, its bounds
+ * [x0, y0, x1, y1] (right and bottom exclusive, null when empty) and its 256² cell occupancy (`Uint8Array` of
+ * `((w + 255) >> 8) * ((h + 255) >> 8)` bytes, 1 occupied, 0 empty), and its result is returned. The shape is a new
  * array: Rust draws over its own copy in wasm memory, while the caller's `rgba` may be a view over the job's
  * SharedArrayBuffer, which an ImageData refuses.
  */
-export function floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use) {
+export function floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use, outKind = 4) {
     const mask = floodScan(rgba, w, h, sx | 0, sy | 0, Math.max(0, tolerance | 0), contiguous);
-    const out = new Uint8ClampedArray(w * h * 4);
     const s = sel ? bytesOf(sel) : null;
+    const cols = (w + 255) >> 8, rows = (h + 255) >> 8;
+    const cells = new Uint8Array(cols * rows);
+    let count = 0, x0 = w, y0 = h, x1 = 0, y1 = 0;
+    if (outKind === 1) {
+        const out = new Uint8Array(w * h);
+        for (let y = 0, p = 0; y < h; y++) {
+            let first = -1, last = 0;
+            const rowC = (y >> 8) * cols;
+            for (let x = 0; x < w; x++, p++) {
+                if (!mask[p] || (s !== null && s[p * 4 + 3] < 128)) continue;
+                out[p] = 255;
+                cells[rowC + (x >> 8)] = 1;
+                count++;
+                if (first < 0) first = x;
+                last = x;
+            }
+            if (first >= 0) {
+                if (first < x0) x0 = first;
+                if (last + 1 > x1) x1 = last + 1;
+                if (y < y0) y0 = y;
+                y1 = y + 1;
+            }
+        }
+        return use(out, count, count > 0 ? [x0, y0, x1, y1] : null, cells);
+    }
+    const out = new Uint8ClampedArray(w * h * 4);
     rgb >>>= 0;
     const r = (rgb >>> 16) & 255, g = (rgb >>> 8) & 255, b = rgb & 255;
     // a word per pixel where the byte order allows it (the array is new, so it starts on a word)
     const words = LITTLE ? new Uint32Array(out.buffer, 0, w * h) : null;
     const word = ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
-    let count = 0, x0 = w, y0 = h, x1 = 0, y1 = 0;
     for (let y = 0, p = 0; y < h; y++) {
         let first = -1, last = 0;
+        const rowC = (y >> 8) * cols;
         for (let x = 0; x < w; x++, p++) {
             if (!mask[p] || (s !== null && s[p * 4 + 3] < 128)) continue;
             if (words !== null) words[p] = word;
             else { const o = p * 4; out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255; }
+            cells[rowC + (x >> 8)] = 1;
             count++;
             if (first < 0) first = x;
             last = x;
@@ -409,7 +437,7 @@ export function floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, 
             y1 = y + 1;
         }
     }
-    return use(out, count, count > 0 ? [x0, y0, x1, y1] : null);
+    return use(out, count, count > 0 ? [x0, y0, x1, y1] : null, cells);
 }
 
 // ---- composite ---------------------------------------------------------------------------------

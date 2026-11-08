@@ -1,0 +1,73 @@
+[17:29:11] after: 0117ba14 + working tree, px.wasm a41919750bce2075, px_scalar.wasm ac99651178ff1fd3
+[17:29:11] before: /c/Temp/scumble-before-f, px.wasm f421cac87c6fc2ab
+[17:29:11] gpu: 27350 MiB, 99 %; comfy 8188: 200
+lock: taken after 0 s
+[17:29:11] lock: taken (K9 measuring (after check) 28356 2026-11-08T17:29:11) for after check
+[17:29:21] after check: px_jobs --check --only wand_band,wand_object,wand_add,grow,shrink,invert 15000x10000
+[17:30:48] after check: px_jobs --check rc=0
+closed
+lock: released
+[17:30:52] == round 1
+lock: taken after 0 s
+[17:30:53] lock: taken (K9 measuring (before r1) 23612 2026-11-08T17:30:53) for before r1
+[17:31:04] before r1: px_jobs 15000x10000
+[17:31:34] before r1: px_jobs rc=0
+[17:31:35] before r1: native_test 15000x10000
+[17:31:46] before r1: native_test rc=0
+[17:31:46] before r1: perf_test 15000x10000
+[17:33:01] before r1: perf_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[17:33:05] lock: taken (K9 measuring (after r1) 36344 2026-11-08T17:33:05) for after r1
+[17:33:14] after r1: px_jobs 15000x10000
+[17:33:42] after r1: px_jobs rc=0
+[17:33:42] after r1: native_test 15000x10000
+[17:33:52] after r1: native_test rc=0
+[17:33:52] after r1: perf_test 15000x10000
+[17:35:07] after r1: perf_test rc=0
+closed
+lock: released
+[17:35:12] == round 2
+lock: taken after 0 s
+[17:35:12] lock: taken (K9 measuring (after r2) 32392 2026-11-08T17:35:12) for after r2
+[17:35:22] after r2: px_jobs 15000x10000
+[17:35:49] after r2: px_jobs rc=0
+[17:35:49] after r2: native_test 15000x10000
+[17:36:00] after r2: native_test rc=0
+[17:36:00] after r2: perf_test 15000x10000
+[17:37:14] after r2: perf_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[17:37:18] lock: taken (K9 measuring (before r2) 25064 2026-11-08T17:37:18) for before r2
+[17:37:27] before r2: px_jobs 15000x10000
+[17:37:59] before r2: px_jobs rc=0
+[17:37:59] before r2: native_test 15000x10000
+[17:38:10] before r2: native_test rc=0
+[17:38:10] before r2: perf_test 15000x10000
+[17:39:29] before r2: perf_test rc=0
+closed
+lock: released
+[17:39:34] == round 3
+lock: taken after 0 s
+[17:39:34] lock: taken (K9 measuring (before r3) 5836 2026-11-08T17:39:34) for before r3
+[17:39:43] before r3: px_jobs 15000x10000
+[17:40:11] before r3: px_jobs rc=0
+[17:40:12] before r3: native_test 15000x10000
+[17:40:24] before r3: native_test rc=0
+[17:40:24] before r3: perf_test 15000x10000
+[17:41:36] before r3: perf_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[17:41:41] lock: taken (K9 measuring (after r3) 58268 2026-11-08T17:41:41) for after r3
+[17:41:50] after r3: px_jobs 15000x10000
+[17:42:19] after r3: px_jobs rc=0
+[17:42:19] after r3: native_test 15000x10000
+[17:42:29] after r3: native_test rc=0
+[17:42:29] after r3: perf_test 15000x10000
+[17:43:45] after r3: perf_test rc=0
+closed
+lock: released
+[17:43:49] done
