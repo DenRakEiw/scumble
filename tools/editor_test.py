@@ -6895,9 +6895,18 @@ const script = async () => {
     ed.clearSelection();
     return out;
 };
-const seen = [];
+const seen = [], tileShapes = [];
 const oOver = ed.floodOverTiles.bind(ed);
-ed.floodOverTiles = async (...a) => { const r = await oOver(...a); seen.push(r ? (r.tiles ? "tiles" : "bitmap") : "none"); return r; };
+ed.floodOverTiles = async (...a) => {
+    const r = await oOver(...a);
+    seen.push(r ? (r.tiles ? "tiles" : "bitmap") : "none");
+    if (r && r.tiles) {
+        const b = r.bounds;
+        const boxCells = b ? (((b[2] - 1) >> 8) - (b[0] >> 8) + 1) * (((b[3] - 1) >> 8) - (b[1] >> 8) + 1) : 0;
+        tileShapes.push({ n: r.tiles.length, boxCells, alpha64k: r.tiles.every((t) => t.alpha instanceof ArrayBuffer && t.alpha.byteLength === 65536 && !t.data) });
+    }
+    return r;
+};
 let over, canvases;
 try {
     over = await script();
@@ -6907,6 +6916,9 @@ try {
     if (seen.length !== n) throw new Error("with stacks off the flood still ran over tiles");
 } finally { E.stacks = true; delete ed.floodOverTiles; }
 if (!seen.includes("tiles") || !seen.includes("bitmap") || seen.includes("none")) throw new Error("the floods over tiles answered " + JSON.stringify(seen));
+if (!tileShapes.length || tileShapes.some((s) => !s.alpha64k) || !(tileShapes[0].n > 0 && tileShapes[0].n < tileShapes[0].boxCells)) {
+    throw new Error("K9 wand tiles must be 64 KB alpha buffers and skip empty cells in bounds: " + JSON.stringify(tileShapes));
+}
 for (const k of Object.keys(canvases)) if (JSON.stringify(over[k]) !== JSON.stringify(canvases[k])) throw new Error(k + ": over tiles " + JSON.stringify(over[k]) + ", over canvases " + JSON.stringify(canvases[k]));
 if (!over.replace[1] || !over.layer[1]) throw new Error("nothing was selected: " + JSON.stringify(over));
 // B item 7: the patch in a blend mode (flat opaque colours, so the two composites are far inside the tolerance of each
@@ -7021,13 +7033,19 @@ for (const k of ["grow", "shrink", "undo", "feather"]) {
         if (alphaWorst > 8 || colourWorst > 8) throw new Error("feather over tiles differs from the canvases: " + JSON.stringify(out[k]));
     } else if (d.bytes) throw new Error(k + " over tiles differs from the canvases: " + JSON.stringify(d));
 }
-// an unchanged tile is not written: growing a large rectangle leaves its inner tiles alone
-ed.clearUndo(); ed.sel.clear(); ed.sel.fill([0, 0, 2048, 2048], "#ff0000"); ed.markSelectionChanged(); ed.getBounds();
+// an unchanged tile is not written: growing a large rectangle leaves its inner tiles alone; shrinking an island clears its tile
+ed.clearUndo(); ed.sel.clear(); ed.sel.fill([0, 0, 2048, 2048], "#ff0000"); ed.sel.fill([2400, 1600, 2406, 1606], "#ff0000"); ed.markSelectionChanged(); ed.getBounds();
 seen.length = 0;
 ed.selectionOverTiles = async (...a) => { const r = await oOver(...a); seen.push(r ? r.tiles : -1); return r; };
-try { await ed.growSelection(8); } finally { delete ed.selectionOverTiles; }
+try {
+    await ed.growSelection(8);
+    await ed.growSelection(-16);
+} finally { delete ed.selectionOverTiles; }
 out.changedTiles = seen[0];
-if (!(seen[0] > 0 && seen[0] <= 20)) throw new Error("growing a 2048 px square by 8 wrote " + seen[0] + " tiles (its edge is 17 tiles)");
+if (!(seen[0] > 0 && seen[0] <= 21)) throw new Error("growing a 2048 px square + 6 px island by 8 wrote " + seen[0] + " tiles (their edges are 18 tiles)");
+if (ed.sel.readRect(2400, 1600, 6, 6).data[3] !== 0 || ed.sel.readRect(100, 100, 1, 1).data[3] !== 255) {
+    throw new Error("shrinking by 16 did not clear the emptied island tile or lost the inner tile");
+}
 ed.clearUndo(); ed.clearSelection();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return out;

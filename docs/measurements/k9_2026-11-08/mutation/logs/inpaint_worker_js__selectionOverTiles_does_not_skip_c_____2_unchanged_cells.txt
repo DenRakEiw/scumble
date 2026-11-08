@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_worker_js__selectionOverTiles_does_not_ski-ed --offline --tiles on editor  (rc 1, 21 s, SCUMBLE_EDITOR_ONLY=grow_shrink_and_feather_over_tiles_are_the_canvases)
+editor rc=1 4s FAIL (only: grow_shrink_and_feather_over_tiles_are_the_canvases; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

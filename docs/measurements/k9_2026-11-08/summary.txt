@@ -1,0 +1,96 @@
+K9 measurement summary (2026-11-08)
+===================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.3 K9):
+- `flood_shape` in `crates/px/src/jobs.rs` (exported from `crates/px/src/lib.rs`, ABI 31, wrapped in
+  `renderer/editor/px/px.js` `Px.floodShape`, JS twin in `renderer/editor/px/kernels_js.js` `floodShape`, routed in
+  `renderer/editor/px/kernels.js` `floodShape`) takes `out_kind: u32` (`1` or `4`) and `cells: Option<&mut [u8]>`
+  (`((w + 255) >> 8) * ((h + 255) >> 8)` bytes, one per `256²` cell):
+  - `out_kind == 1` (the wand's alpha-tile cut): writes `255` / `0` alpha bytes in place into `rgba[..w * h]` (`view`
+    is a `Uint8Array(w * h)`), avoiding 4-byte RGBA writes and 4-byte tile strides.
+  - `out_kind == 4` (the bucket's bitmap): writes `[r, g, b, 255]` / `[0, 0, 0, 0]` into `rgba[..w * h * 4]` (`view`
+    is a `Uint8ClampedArray(w * h * 4)`), as before.
+  - Both paths populate `cells` (`1` for an occupied `256²` cell, `0` for an empty cell) and pass `cells` as the 4th
+    argument to `use(view, count, bounds, cells)`.
+- `floodOverTiles` in `renderer/editor/inpaint_worker.js` calls `floodShape(..., use, wantTiles ? 1 : 4)`. When
+  `wantTiles` (`msg.out === "tiles"`, the wand), it skips empty cells in O(1) (`if (!cells[ty * cols + tx]) continue;`)
+  and cuts occupied cells directly from the 1-byte `view` into 64 KB `{ tx, ty, alpha: out.buffer }` tiles (transferred
+  via `res.tiles.map((x) => x.alpha)`), which `tilesSource` already reads at `kind: 1` (`SEL_ALPHA`).
+- `grow_mask` in `crates/px/src/jobs.rs` (and `growMask` / `growMaskBounds` in `renderer/editor/inpaint_raster.js`,
+  `Px.growMask` in `renderer/editor/px/px.js`) clears only the outer margins around `bx0..bx1, by0..by1` instead of
+  clearing `bx0..bx1, by0..by1` twice, and when `cells` is given, populates each `256²` cell with `0` (empty),
+  `1` (occupied and changed from `d`), or `2` (occupied and all `cw * ch` pixels in the cell are unchanged from `d`).
+- `selectionOverTiles` in `renderer/editor/inpaint_worker.js` passes `cells` to `growMaskBounds` on the `"grow"` path:
+  unchanged occupied cells (`c === 2`) are skipped in O(1), empty cells (`c === 0`) emit `{ tx, ty, empty: true }` only
+  when an old tile existed (`if (name)`), and changed occupied cells (`c === 1`) are cut without re-reading the arena or
+  comparing every pixel in JS.
+
+Builds (`python tools/build_px.py --check`):
+- `renderer/editor/px/px.wasm`:        208,569 bytes  sha256 a41919750bce2075
+- `renderer/editor/px/px_scalar.wasm`: 167,451 bytes  sha256 ac99651178ff1fd3
+
+15000 x 10000 before (`0117ba14`) vs after (`K9`), 3 alternating rounds on port 9619 (`w1_lock.py` held per batch):
+row                                                         before (0117ba14)               after (K9)
+  px_jobs wand_band (js) wall                          5727.8 [5257.3-5961.1]   5511.8 [5032.4-5682.1]   n=3/3
+  px_jobs wand_band (js) shape ms                         848.4 [796.4-868.9]      823.3 [791.9-846.7]   n=3/3
+  px_jobs wand_band (rust) wall                        1914.4 [1840.9-2203.5]   1747.4 [1626.3-1931.4]   n=3/3  (1.10x)
+  px_jobs wand_band (rust) shape ms                       284.1 [280.3-300.4]       123.4 [99.6-146.1]   n=3/3  (2.30x)
+  px_jobs wand_band (rust) combine ms                     168.7 [155.3-195.3]      124.5 [119.4-133.8]   n=3/3  (1.35x)
+  px_jobs wand_object (js) wall                           192.6 [165.8-216.3]      161.1 [153.5-205.0]   n=3/3
+  px_jobs wand_object (js) shape ms                             8.4 [6.9-8.4]            6.8 [6.7-9.4]   n=3/3
+  px_jobs wand_object (rust) wall                         154.6 [110.5-227.6]      122.8 [113.7-259.1]   n=3/3  (1.26x)
+  px_jobs wand_object (rust) shape ms                           2.7 [2.5-3.0]            1.4 [1.2-7.3]   n=3/3  (1.93x)
+  px_jobs wand_object (rust) combine ms                         0.7 [0.7-1.0]            0.6 [0.5-0.7]   n=3/3
+  px_jobs wand_add (js) wall                           5199.5 [4794.7-5885.3]   4338.3 [4271.6-4977.3]   n=3/3
+  px_jobs wand_add (js) shape ms                          909.5 [806.3-971.6]      827.7 [783.7-876.0]   n=3/3
+  px_jobs wand_add (rust) wall                         2036.8 [1899.9-2216.8]   1721.4 [1707.0-2007.7]   n=3/3  (1.18x)
+  px_jobs wand_add (rust) shape ms                        413.9 [292.0-447.3]      196.8 [106.7-358.5]   n=3/3  (2.10x)
+  px_jobs wand_add (rust) combine ms                      184.4 [157.1-201.1]      150.1 [145.0-175.3]   n=3/3  (1.23x)
+  px_jobs grow (js) wall                                  739.6 [693.0-829.0]      780.1 [677.8-858.9]   n=3/3
+  px_jobs grow (js) cut ms                                   98.4 [88.7-98.5]       121.5 [70.2-123.9]   n=3/3
+  px_jobs grow (rust) wall                                611.8 [567.8-702.8]      511.2 [505.8-563.0]   n=3/3  (1.20x)
+  px_jobs grow (rust) cut ms                                97.6 [93.6-115.6]           9.5 [6.8-10.9]   n=3/3  (10.27x)
+  px_jobs grow (rust) kernel ms                           400.3 [376.0-461.1]      408.0 [399.0-456.7]   n=3/3
+  px_jobs shrink (js) wall                              1001.4 [932.8-1156.8]    1013.8 [960.4-1128.3]   n=3/3
+  px_jobs shrink (js) cut ms                               119.5 [66.6-162.0]        89.4 [71.8-110.5]   n=3/3
+  px_jobs shrink (rust) wall                              392.9 [379.2-523.9]      331.6 [327.3-340.1]   n=3/3  (1.18x)
+  px_jobs shrink (rust) cut ms                              77.2 [74.8-109.5]            9.1 [7.0-9.6]   n=3/3  (8.48x)
+  px_jobs shrink (rust) kernel ms                         206.3 [195.0-298.9]      222.0 [217.7-225.5]   n=3/3
+  px_jobs invert (js) wall                                209.9 [196.5-237.5]      203.9 [181.5-234.3]   n=3/3
+  px_jobs invert (rust) wall                              165.3 [124.9-183.5]        98.9 [97.7-146.4]   n=3/3
+  native grow_16 wall                                     400.0 [368.0-402.0]      364.0 [318.0-420.0]   n=3/3  (1.10x)
+  native grow_16 blocked                                     37.0 [36.0-37.0]         38.0 [32.0-40.0]   n=3/3
+  native shrink_16 wall                                   479.0 [445.0-482.0]      347.0 [315.0-369.0]   n=3/3  (1.38x)
+  native shrink_16 blocked                                   28.0 [25.0-33.0]         25.0 [24.0-28.0]   n=3/3
+  native wand_whole_picture wall                         999.0 [941.0-1066.0]      828.0 [752.0-830.0]   n=3/3  (1.21x)
+  native wand_whole_picture blocked                         85.0 [71.0-138.0]         71.0 [69.0-73.0]   n=3/3  (1.20x)
+  native wand_whole_add wall                            1063.0 [998.0-1150.0]      828.0 [808.0-927.0]   n=3/3  (1.28x)
+  native wand_whole_add blocked                           124.0 [115.0-139.0]        95.0 [91.0-130.0]   n=3/3  (1.31x)
+  native wand_one_disc wall                                  76.0 [75.0-85.0]         72.0 [70.0-84.0]   n=3/3
+  native wand_one_disc blocked                               39.0 [37.0-40.0]         38.0 [37.0-50.0]   n=3/3
+  perf grow +16 blocked                                   125.0 [115.0-125.0]      133.0 [110.0-137.0]   n=3/3
+  perf grow +16 wall                                      497.0 [484.0-622.0]      459.0 [398.0-498.0]   n=3/3
+  perf shrink -16 blocked                                    52.0 [45.0-52.0]         62.0 [54.0-64.0]   n=3/3
+  perf shrink -16 wall                                    483.0 [412.0-486.0]      430.0 [401.0-505.0]   n=3/3
+  perf invert blocked                                     230.0 [222.0-231.0]      232.0 [190.0-269.0]   n=3/3
+  perf invert wall                                        221.0 [216.0-225.0]      226.0 [186.0-261.0]   n=3/3
+  perf magic wand (whole-image band) blocked              488.0 [370.0-576.0]      374.0 [348.0-397.0]   n=3/3  (1.30x)
+  perf magic wand (whole-image band) wall              8971.0 [8920.0-9533.0]   8559.0 [8438.0-9452.0]   n=3/3
+  perf magic wand (an object) blocked                     233.0 [198.0-240.0]      230.0 [186.0-252.0]   n=3/3
+  perf magic wand (an object) wall                        436.0 [292.0-446.0]      420.0 [276.0-452.0]   n=3/3
+
+Pins & byte-equality:
+- `px_jobs.py --check --only wand_band,wand_object,wand_add,grow,shrink,invert` (`2048x1152` and `15000x10000`):
+  `same bytes` on all rows, 0 traps / OOMs across all 10 threads.
+- `px_test.js` (`route`, `trap`, `job` on `simd`, `scalar`, and `js`), `combine_test.js` (`K9`), `editor_test.py`
+  (`the_flood_over_tiles_is_the_flood_over_canvases`, `grow_shrink_and_feather_over_tiles_are_the_canvases`): PASS.
+
+Mutation round (`docs/measurements/k9_2026-11-08/mutation/results.txt`):
+- 18 mutants across `jobs.rs`, `px.js`, `kernels_js.js`, `kernels.js`, `inpaint_raster.js`, `inpaint_worker.js`:
+  18 killed on their focused sets, 0 survived, 0 unexpected.
+
+Gates (`lint types selection pixels editor` on both backends + `pxjobs` on tiles + `node_test.py`):
+- `k9-tiles`:  lint 8s, types 6s, selection 13s, pixels 11s, editor 171s -> ALL PASS
+- `k9-canvas`: lint 9s, types 6s, selection 5s, pixels 12s, editor 146s -> ALL PASS
+- `pxjobs` (tiles): 158s -> PASS
+- `node_test.py`: PASS

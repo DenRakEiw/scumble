@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 30;
+export const PX_ABI = 31;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -659,15 +659,18 @@ export class Px {
     }
 
     /**
-     * `growMask` and `maskBounds` of the result in one call: the selection `d` (RGBA8) grown or shrunk in place.
-     * Returns the result's bounds [x0, y0, x1, y1] or null.
+     * `growMask` and `maskBounds` of the result in one call: the selection `d` (RGBA8) grown or shrunk in place;
+     * `cells` (optional Uint8Array of `((w + 255) >> 8) * ((h + 255) >> 8)` bytes) gets each 256² cell's state
+     * (0 empty, 1 occupied and changed, 2 occupied and unchanged). Returns the result's bounds [x0, y0, x1, y1] or null.
      */
-    growMask(d, w, h, n) {
+    growMask(d, w, h, n, cells = null) {
         const a = this.job, bytes = w * h * 4;
+        const nCells = cells ? ((w + 255) >> 8) * ((h + 255) >> 8) : 0;
         try {
-            const pd = this._in(a, d, bytes), pb = a.take(16);
-            const any = this.exports.grow_mask(pd, w, h, n, pb);
+            const pd = this._in(a, d, bytes), pb = a.take(16), pc = nCells > 0 ? a.take(nCells) : 0;
+            const any = this.exports.grow_mask(pd, w, h, n, pb, pc);
             this._out(Uint8Array, pd, bytes, new Uint8Array(d.buffer, d.byteOffset, bytes));
+            if (cells && nCells > 0) this._out(Uint8Array, pc, nCells, new Uint8Array(cells.buffer, cells.byteOffset, nCells));
             if (!any) return null;
             const b = this.view(Int32Array, pb, 4);
             return [b[0], b[1], b[2], b[3]];
@@ -675,23 +678,29 @@ export class Px {
     }
 
     /**
-     * The flood job: the region around (sx, sy) clipped to `sel` (RGBA8 or null), drawn as the colour `rgb`
-     * (0xRRGGBB). `use(view, count, bounds)` gets the shape as a Uint8ClampedArray over wasm memory (valid only inside
-     * the call: an ImageData over it goes to putImageData without a copy) and its result is returned.
+     * The flood job: the region around (sx, sy) clipped to `sel` (RGBA8 or null), drawn as 255 / 0 alpha bytes when
+     * `outKind === 1` (`Uint8Array` of `w * h`) or as the colour `rgb` (0xRRGGBB) otherwise (`Uint8ClampedArray` of
+     * `w * h * 4`). `use(view, count, bounds, cells)` gets the shape and the 256² cell occupancy (`Uint8Array` of
+     * `((w + 255) >> 8) * ((h + 255) >> 8)` bytes, 1 occupied, 0 empty) as views over wasm memory (valid only inside
+     * the call: an ImageData over `view` goes to putImageData without a copy) and its result is returned.
      */
-    floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use) {
-        const a = this.job, bytes = w * h * 4;
-        let pairs = Math.max(4096, (w * h) >> 4);
+    floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use, outKind = 4) {
+        const a = this.job, n = w * h, bytes = n * 4;
+        const nCells = ((w + 255) >> 8) * ((h + 255) >> 8);
+        const kind = outKind === 1 ? 1 : 4;
+        let pairs = Math.max(4096, n >> 4);
         try {
-            const pr = this._in(a, rgba, bytes), ps = sel ? this._in(a, sel, bytes) : 0, pi = a.take(20);
+            const pr = this._in(a, rgba, bytes), ps = sel ? this._in(a, sel, bytes) : 0, pi = a.take(20), pc = a.take(nCells);
             for (;;) {
                 const pst = a.take(pairs * 8);
-                if (this.exports.flood_shape(pr, w, h, sx | 0, sy | 0, Math.max(0, tolerance | 0), contiguous ? 1 : 0, ps, rgb >>> 0, pst, pairs, pi) >= 0) break;
+                if (this.exports.flood_shape(pr, w, h, sx | 0, sy | 0, Math.max(0, tolerance | 0), contiguous ? 1 : 0, ps, rgb >>> 0, kind, pst, pairs, pi, pc) >= 0) break;
                 pairs *= 2;
             }
             const info = this.view(Int32Array, pi, 5);
             const bounds = info[3] < 0 ? null : [info[1], info[2], info[3], info[4]];
-            return use(new Uint8ClampedArray(this.memory.buffer, pr, bytes), info[0], bounds);
+            const view = kind === 1 ? new Uint8Array(this.memory.buffer, pr, n) : new Uint8ClampedArray(this.memory.buffer, pr, bytes);
+            const cells = new Uint8Array(this.memory.buffer, pc, nCells);
+            return use(view, info[0], bounds, cells);
         } finally { this._reset(a); }
     }
 

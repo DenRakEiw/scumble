@@ -33,10 +33,17 @@ fn fill_red_clear(d: &mut [u8]) {
 }
 
 /// `growMask` and the `maskBounds` of its result (inpaint_raster.js) in one call: the selection `d` (w × h RGBA8)
-/// grown (n > 0) or shrunk (n < 0) by |n| pixels in place, hard edged. `bounds` gets the result's bounds; returns 1
+/// grown (n > 0) or shrunk (n < 0) by |n| pixels in place, hard edged. `bounds` gets the result's bounds; `cells`
+/// (when given, `((w + 255) >> 8) * ((h + 255) >> 8)` bytes, one per 256² cell) gets 0 for an empty cell, 1 for an
+/// occupied cell whose pixels changed, 2 for an occupied cell whose pixels are all unchanged from `d`. Returns 1
 /// when something is selected afterwards, else 0.
-pub fn grow_mask(d: &mut [u8], w: usize, h: usize, n: i32, bounds: &mut [i32]) -> i32 {
+pub fn grow_mask(d: &mut [u8], w: usize, h: usize, n: i32, bounds: &mut [i32], mut cells: Option<&mut [u8]>) -> i32 {
     let d = &mut d[..w * h * 4];
+    let cols = (w + 255) >> 8;
+    let rows = (h + 255) >> 8;
+    if let Some(c) = cells.as_deref_mut() {
+        c[..cols * rows].fill(0);
+    }
     let grow = n > 0;
     let r = n.unsigned_abs() as usize;
     let Some(b) = alpha_bounds(d, w, h) else {
@@ -63,37 +70,78 @@ pub fn grow_mask(d: &mut [u8], w: usize, h: usize, n: i32, bounds: &mut [i32]) -
     let scratch_bytes = unsafe { core::slice::from_raw_parts_mut(scratch.as_mut_ptr() as *mut u8, scratch.len() * 8) };
     edt::dist_transform(&feature, bw, bh, &mut dist, scratch_bytes);
     drop(feature);
-    fill_red_clear(d);
+    fill_red_clear(&mut d[..by0 * w * 4]);
+    fill_red_clear(&mut d[by1 * w * 4..]);
     let r2 = (r * r) as f64;
     let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0usize, 0usize);
     let mut any = false;
+    let mut same = if cells.is_some() { vec![0u32; cols * rows] } else { Vec::new() };
     for y in 0..bh {
+        let row_y = by0 + y;
+        let row_start = row_y * w * 4;
+        fill_red_clear(&mut d[row_start..row_start + bx0 * 4]);
+        fill_red_clear(&mut d[row_start + bx1 * 4..row_start + w * 4]);
         let drow = &dist[y * bw..(y + 1) * bw];
-        let out = &mut d[((by0 + y) * w + bx0) * 4..((by0 + y) * w + bx1) * 4];
+        let out = &mut d[row_start + bx0 * 4..row_start + bx1 * 4];
         let mut first = usize::MAX;
         let mut last = 0usize;
-        for (x, (&v, p)) in drow.iter().zip(out.chunks_exact_mut(4)).enumerate() {
-            let inside = if grow { (v as f64) <= r2 } else { (v as f64) > r2 };
-            if inside {
-                p[3] = 255;
-                if first == usize::MAX {
-                    first = x;
+        let row_c = (row_y >> 8) * cols;
+        if let Some(c) = cells.as_deref_mut() {
+            for (x, (&v, p)) in drow.iter().zip(out.chunks_exact_mut(4)).enumerate() {
+                let inside = if grow { (v as f64) <= r2 } else { (v as f64) > r2 };
+                let want = [255, 0, 0, if inside { 255 } else { 0 }];
+                let ci = row_c + ((bx0 + x) >> 8);
+                if p == want {
+                    same[ci] += 1;
+                } else {
+                    p.copy_from_slice(&want);
                 }
-                last = x;
+                if inside {
+                    c[ci] = 1;
+                    if first == usize::MAX {
+                        first = x;
+                    }
+                    last = x;
+                }
+            }
+        } else {
+            for (x, (&v, p)) in drow.iter().zip(out.chunks_exact_mut(4)).enumerate() {
+                let inside = if grow { (v as f64) <= r2 } else { (v as f64) > r2 };
+                p.copy_from_slice(&[255, 0, 0, if inside { 255 } else { 0 }]);
+                if inside {
+                    if first == usize::MAX {
+                        first = x;
+                    }
+                    last = x;
+                }
             }
         }
         if first != usize::MAX {
             any = true;
             x0 = x0.min(bx0 + first);
             x1 = x1.max(bx0 + last + 1);
-            if by0 + y < y0 {
-                y0 = by0 + y;
+            if row_y < y0 {
+                y0 = row_y;
             }
-            y1 = by0 + y + 1;
+            y1 = row_y + 1;
         }
     }
     if !any {
         return 0;
+    }
+    if let Some(c) = cells.as_deref_mut() {
+        for ty in 0..rows {
+            let ch = (h - ty * 256).min(256);
+            for tx in 0..cols {
+                let ci = ty * cols + tx;
+                if c[ci] != 0 {
+                    let cw = (w - tx * 256).min(256);
+                    if same[ci] as usize == cw * ch {
+                        c[ci] = 2;
+                    }
+                }
+            }
+        }
     }
     bounds[..4].copy_from_slice(&[x0 as i32, y0 as i32, x1 as i32, y1 as i32]);
     1
@@ -101,9 +149,12 @@ pub fn grow_mask(d: &mut [u8], w: usize, h: usize, n: i32, bounds: &mut [i32]) -
 
 /// The worker's flood job (inpaint_worker.js `flood`) after its read: the region of pixels similar to (sx, sy) in
 /// `rgba`, clipped to `sel` (RGBA8 of the same size, selected where alpha >= 128) when given, drawn over `rgba` itself
-/// as `color` (opaque where the region is, transparent black elsewhere): the picture is not needed afterwards, and a
-/// second picture-sized buffer would be 600 MB more wasm memory at 15k. `info` gets [count, x0, y0, x1, y1]
-/// (right and bottom exclusive, x1 = -1 when empty). Returns 0, or -1 when the span stack was too small.
+/// as 255 / 0 bytes in `rgba[..w * h]` when `out_kind == 1` (the wand's alpha-tile cut, K9) or as `color` (opaque
+/// where the region is, transparent black elsewhere) in `rgba[..w * h * 4]` otherwise: the picture is not needed
+/// afterwards, and a second picture-sized buffer would be 600 MB more wasm memory at 15k. `info` gets
+/// `[count, x0, y0, x1, y1]` (right and bottom exclusive, `x1 = -1` when empty); `cells` (when given,
+/// `((w + 255) >> 8) * ((h + 255) >> 8)` bytes, one per 256² cell) gets 1 for an occupied cell and 0 for an empty one.
+/// Returns 0, or -1 when the span stack was too small.
 #[allow(clippy::too_many_arguments)]
 pub fn flood_shape(
     rgba: &mut [u8],
@@ -115,8 +166,10 @@ pub fn flood_shape(
     contiguous: bool,
     sel: Option<&[u8]>,
     color: [u8; 3],
+    out_kind: u32,
     stack: &mut [u32],
     info: &mut [i32],
+    mut cells: Option<&mut [u8]>,
 ) -> i32 {
     let n = w * h;
     let mut mask = vec![0u8; n];
@@ -130,32 +183,73 @@ pub fn flood_shape(
             }
         }
     }
-    let out = &mut rgba[..n * 4];
-    let px = [color[0], color[1], color[2], 255];
+    let cols = (w + 255) >> 8;
+    let rows = (h + 255) >> 8;
+    if let Some(c) = cells.as_deref_mut() {
+        c[..cols * rows].fill(0);
+    }
     let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0usize, 0usize);
     let mut count = 0usize;
-    for (y, (mrow, orow)) in mask.chunks_exact(w).zip(out.chunks_exact_mut(w * 4)).enumerate() {
-        let mut first = usize::MAX;
-        let mut last = 0usize;
-        for (x, (&m, o)) in mrow.iter().zip(orow.chunks_exact_mut(4)).enumerate() {
-            if m != 0 {
-                o.copy_from_slice(&px);
-                count += 1;
-                if first == usize::MAX {
-                    first = x;
+    if out_kind == 1 {
+        let out = &mut rgba[..n];
+        for (y, (mrow, orow)) in mask.chunks_exact(w).zip(out.chunks_exact_mut(w)).enumerate() {
+            let mut first = usize::MAX;
+            let mut last = 0usize;
+            let row_c = (y >> 8) * cols;
+            for (x, (&m, o)) in mrow.iter().zip(orow.iter_mut()).enumerate() {
+                if m != 0 {
+                    *o = 255;
+                    count += 1;
+                    if let Some(c) = cells.as_deref_mut() {
+                        c[row_c + (x >> 8)] = 1;
+                    }
+                    if first == usize::MAX {
+                        first = x;
+                    }
+                    last = x;
+                } else {
+                    *o = 0;
                 }
-                last = x;
-            } else {
-                o.copy_from_slice(&[0, 0, 0, 0]);
+            }
+            if first != usize::MAX {
+                x0 = x0.min(first);
+                x1 = x1.max(last + 1);
+                if y < y0 {
+                    y0 = y;
+                }
+                y1 = y + 1;
             }
         }
-        if first != usize::MAX {
-            x0 = x0.min(first);
-            x1 = x1.max(last + 1);
-            if y < y0 {
-                y0 = y;
+    } else {
+        let out = &mut rgba[..n * 4];
+        let px = [color[0], color[1], color[2], 255];
+        for (y, (mrow, orow)) in mask.chunks_exact(w).zip(out.chunks_exact_mut(w * 4)).enumerate() {
+            let mut first = usize::MAX;
+            let mut last = 0usize;
+            let row_c = (y >> 8) * cols;
+            for (x, (&m, o)) in mrow.iter().zip(orow.chunks_exact_mut(4)).enumerate() {
+                if m != 0 {
+                    o.copy_from_slice(&px);
+                    count += 1;
+                    if let Some(c) = cells.as_deref_mut() {
+                        c[row_c + (x >> 8)] = 1;
+                    }
+                    if first == usize::MAX {
+                        first = x;
+                    }
+                    last = x;
+                } else {
+                    o.copy_from_slice(&[0, 0, 0, 0]);
+                }
             }
-            y1 = y + 1;
+            if first != usize::MAX {
+                x0 = x0.min(first);
+                x1 = x1.max(last + 1);
+                if y < y0 {
+                    y0 = y;
+                }
+                y1 = y + 1;
+            }
         }
     }
     info[0] = count as i32;
