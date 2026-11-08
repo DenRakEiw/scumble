@@ -1,0 +1,43 @@
+(node:45584) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-m/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-m\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PX_ONLY: only the groups sel run (a filtered run, not the full test)
+ok   js selCombine's twin equals combineRows and a plain extent scan (448 cases)
+ok   js on an unaligned tile (its bytes path) selCombine's twin equals combineRows and a plain extent scan (448 cases)
+ok   rust simd sel_combine equals its twin byte for byte (448 cases, each also at an odd offset)
+ok   rust scalar sel_combine equals its twin byte for byte (448 cases, each also at an odd offset)
+ok   js sel_combine gives the same at an odd offset
+ok   sel_combine on a new tile gives what it gives on a transparent one (both builds)
+ok   selCombine refuses mode 4 on the twin and both builds  3 of 3 threw
+ok   selCombine refuses kind 3 on the twin and both builds  3 of 3 threw
+ok   selCombine refuses a stride below bw on the twin and both builds  3 of 3 threw
+ok   selCombine refuses a source too short on the twin and both builds  3 of 3 threw
+ok   selCombine refuses bw above the tile on the twin and both builds  3 of 3 threw
+ok   selCombine refuses a source view shorter than its region (a longer buffer) on the twin and both builds  3 of 3 threw
+ok   selCombine refuses a tile view shorter than the tile (a longer buffer) on the twin and both builds  3 of 3 threw
+ok   selCombine with no pixel to combine and no source buffer answers the kept tile's extent on all three  [0,0,256,256] | [0,0,256,256] | [0,0,256,256] | [0,0,256,256] | [0,0,256,256] | [0,0,256,256]
+ok   alphaAny says whether a source region covers anything (448 cases)
+ok   kernels.js selCombine gives the same on the routes js and rust, write at most once (392 tiles)
+ok   the selCombine route js makes no missing tile from a source that covers nothing (23 such tiles)  0 written
+ok   the selCombine route rust calls sel_combine for every tile, js never  js 0, rust 392 of 392
+ok   js maskInvert's twin equals a per-pixel 255 - a invert and a plain extent scan (35 cases)
+ok   js on an unaligned tile (its bytes path) maskInvert's twin equals a per-pixel 255 - a invert and a plain extent scan (35 cases)
+ok   rust simd mask_invert equals its twin byte for byte (35 cases, each also at an odd offset)
+ok   rust scalar mask_invert equals its twin byte for byte (35 cases, each also at an odd offset)
+ok   js mask_invert gives the same at an odd offset
+ok   maskInvert refuses bw above the tile on the twin and both builds  3 of 3 threw
+ok   maskInvert refuses bh above the tile on the twin and both builds  3 of 3 threw
+ok   maskInvert refuses a tile view shorter than the tile (a longer buffer) on the twin and both builds  3 of 3 threw
+ok   maskInvert refuses a null tile on the twin and both builds  3 of 3 threw
+ok   kernels.js maskInvert gives the same on the routes js and rust, write(true) only when non-empty on rust (35 tiles)
+ok   the maskInvert route rust skips write() when the inverted tile is empty (11 such tiles)  0 written
+ok   the maskInvert route rust calls mask_invert for every tile, js never  js 0, rust 35 of 35
+ok   TileMaskPixels.writable(tx, ty, true, whole) skips the frozen tile copy when whole is true and copies when false  whole=0, partial=200
+ok   TileMaskPixels.invert on js and rust routes matches, drops newly-empty tiles, keeps fresh extents, and preserves frozen clones
+       sel_combine one 256² tile, replace from RGBA: twin 0.351, simd 0.039, scalar 0.308 ms (median of 200)
+       sel_combine one 256² tile, add from alpha: twin 0.217, simd 0.039, scalar 0.243 ms (median of 200)
+       mask_invert one 256² tile: twin 0.090, simd 0.028, scalar 0.077 ms (median of 200)
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: sel; PX_ONLY, not the full test)

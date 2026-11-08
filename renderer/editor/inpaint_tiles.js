@@ -36,7 +36,7 @@
 
 import { CANVAS_MAX_PIXELS, CANVAS_MAX_SIDE } from "./inpaint_sizelimit.js";
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN } from "./inpaint_pixels.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, resampleBlock, liquifyBlock, selCombine, SEL_NONE, SEL_ALPHA, SEL_FULL } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, resampleBlock, liquifyBlock, selCombine, maskInvert, SEL_NONE, SEL_ALPHA, SEL_FULL } from "./px/kernels.js";
 import { allocTileBytes, isShared } from "./inpaint_arena.js";
 import { canvasRoundTrip, resampleOptions, resampleStore, toFixed, preimage } from "./inpaint_resample.js";
 import { liquifyStore, liquifyBox } from "./inpaint_liquify.js";
@@ -91,7 +91,7 @@ let STROKE_SCRATCH = null;         // compositeStroke's tile, kept
 // drawing the old mask.
 let pixelSeq = 0;
 
-function newTile() {
+function newTile(zero = true) {
     const t = {
         data: null,                                // allocTileBytes below: an arena slot, or its own ArrayBuffer
         version: ++tileSeq,
@@ -108,7 +108,7 @@ function newTile() {
         arenaChunk: -1, arenaSlot: -1,             // where `data` lives when the arena holds it (inpaint_arena.js)
     };
     // either way the bytes start on a page (§B3, 4K aliasing)
-    t.data = allocTileBytes(t);
+    t.data = allocTileBytes(t, zero);
     return t;
 }
 
@@ -964,21 +964,26 @@ const tiled = (Base) => class extends Base {
 
     // -- tiles --
 
-    /** The tile at (tx, ty), made writable: allocated when missing (with `create`), copied when shared. */
-    writable(tx, ty, create = true) {
+    /**
+     * The tile at (tx, ty), made writable: allocated when missing (with `create`), copied when shared. When `whole` is
+     * true the caller overwrites every byte of `t.data` right away (wasm `_out` or a full-tile `w.fill`), so a frozen
+     * tile is not copied into the new slot first and a reused arena slot is not zeroed first (K5, K11,
+     * docs/PLAN_WASM_BUILD.md §4.3, §7 K5).
+     */
+    writable(tx, ty, create = true, whole = false) {
         this._guard();
         const key = (ty << 16) | tx;
         let t = this._tiles.get(key);
         if (!t) {
             if (!create) return null;
-            t = newTile();
+            t = newTile(!whole);
             this._tiles.set(key, t);
         } else if (t.frozen > 0) {
             // the copy first: at the renderer's memory limit newTile throws (PixelMemoryError, inpaint_arena.js), and a
             // count taken down before that would let the next write go into the tile the other holders still read
-            const c = newTile();
+            const c = newTile(!whole);
             t.frozen--;
-            c.data.set(t.data);
+            if (!whole) c.data.set(t.data);
             // the original's chains as the copy's stale picture until its own are built (C6 b): read, never written
             // (`mipsOwn` false), because the other holders of the original read the same buffers. The original gives
             // up owning them too: its last holder writes into it in place, and a rebuild into the buffer the copy reads
@@ -2559,41 +2564,41 @@ export class TileMaskPixels extends tiled(MaskPixels) {
         const cols = Math.ceil(this._w / TILE_SIZE), rows = Math.ceil(this._h / TILE_SIZE);
         // the channels clamped and rounded as a tile's bytes store them, as combine() takes them
         const [cr, cg, cb] = Uint8ClampedArray.of(color[0], color[1], color[2]);
-        // the colour without alpha and at full alpha, as words (little-endian: R is the low byte)
-        const RGB = ((cb << 16) | (cg << 8) | cr) >>> 0;
-        const SEL = (0xFF000000 | RGB) >>> 0;
+        const rgb = ((cr << 16) | (cg << 8) | cb) >>> 0;
+        // the colour at full alpha, as a word (little-endian: R is the low byte)
+        const SEL = (0xFF000000 | (cb << 16) | (cg << 8) | cr) >>> 0;
         for (let ty = 0; ty < rows; ty++) {
             const bh = Math.min(TILE_SIZE, this._h - (ty << 8));
             for (let tx = 0; tx < cols; tx++) {
                 const key = (ty << 16) | tx;
                 const bw = Math.min(TILE_SIZE, this._w - (tx << 8));
                 const had = this._tiles.get(key);
-                const t = this.writable(tx, ty);
                 if (!had && LITTLE) {
                     // nothing was selected here, so all of it is now: one fill, no reading
+                    const whole = bw === TILE_SIZE && bh === TILE_SIZE;
+                    const t = this.writable(tx, ty, true, whole);
                     const w = u32Of(t);
                     if (bw === TILE_SIZE) w.fill(SEL, 0, bh * TILE_SIZE);
                     else for (let y = 0; y < bh; y++) w.fill(SEL, y * TILE_SIZE, y * TILE_SIZE + bw);
-                } else if (LITTLE) {
-                    const w = u32Of(t);
-                    for (let y = 0; y < bh; y++) {
-                        let o = y * TILE_SIZE;
-                        for (let x = 0; x < bw; x++, o++) {
-                            const a = 255 - (w[o] >>> 24);
-                            // a pixel the invert leaves fully transparent carries no colour: a canvas
-                            // stores premultiplied and un-premultiplies such a pixel to 0, 0, 0, and the
-                            // two backends have to agree byte for byte (tools/pixels_test.js)
-                            w[o] = a ? ((a << 24) | RGB) >>> 0 : 0;
-                        }
-                    }
-                } else {
-                    const d = t.data;
-                    for (let y = 0; y < bh; y++) {
-                        let o = y * TILE_SIZE * 4;
-                        for (let x = 0; x < bw; x++, o += 4) {
-                            const a = 255 - d[o + 3];
-                            d[o] = a ? cr : 0; d[o + 1] = a ? cg : 0; d[o + 2] = a ? cb : 0; d[o + 3] = a;
-                        }
+                    t.ext = [0, 0, bw, bh];
+                    t.extVersion = t.version;
+                    continue;
+                }
+                if (LITTLE) {
+                    let t = null;
+                    const ext = maskInvert(had.data, (whole) => (t = this.writable(tx, ty, true, whole && TILE_SIZE === 256)).data, bw, bh, rgb, TILE_SIZE);
+                    if (!ext) { this._dropTile(key); continue; }
+                    t.ext = ext;
+                    t.extVersion = t.version;
+                    continue;
+                }
+                const t = this.writable(tx, ty);
+                const d = t.data;
+                for (let y = 0; y < bh; y++) {
+                    let o = y * TILE_SIZE * 4;
+                    for (let x = 0; x < bw; x++, o += 4) {
+                        const a = 255 - d[o + 3];
+                        d[o] = a ? cr : 0; d[o + 1] = a ? cg : 0; d[o + 2] = a ? cb : 0; d[o + 3] = a;
                     }
                 }
                 if (tileEmpty(t)) this._dropTile(key);
@@ -2667,18 +2672,19 @@ export class TileMaskPixels extends tiled(MaskPixels) {
 
                 if (v.kind === SEL_FULL && m <= 1 && LITTLE) {
                     // replace or add under full coverage: the colour at 255 wherever the image is, one fill
-                    const t = this.writable(tx, ty);
+                    const whole = bw === TILE_SIZE && bh === TILE_SIZE;
+                    const t = this.writable(tx, ty, true, whole);
                     const w = u32Of(t);
                     if (bw === TILE_SIZE) w.fill(SEL, 0, bh * TILE_SIZE);
                     else for (let y = 0; y < bh; y++) w.fill(SEL, y * TILE_SIZE, y * TILE_SIZE + bw);
                     // a new tile is 0 beyond the image; a kept one may hold pixels there (its extent is then found later)
-                    const ext = !had ? [0, 0, bw, bh] : (bw === TILE_SIZE && bh === TILE_SIZE ? [0, 0, TILE_SIZE, TILE_SIZE] : null);
+                    const ext = !had ? [0, 0, bw, bh] : (whole ? [0, 0, TILE_SIZE, TILE_SIZE] : null);
                     if (ext) { t.ext = ext; t.extVersion = t.version; }
                     continue;
                 }
 
                 let t = null;
-                const ext = selCombine(had ? had.data : null, () => (t = this.writable(tx, ty)).data,
+                const ext = selCombine(had ? had.data : null, (whole) => (t = this.writable(tx, ty, true, whole && TILE_SIZE === 256)).data,
                     v.data, v.off, v.stride, v.kind, bw, bh, m, rgb, TILE_SIZE);
                 if (!ext) { this._dropTile(key); continue; }
                 t.ext = ext;

@@ -1997,6 +1997,73 @@ export function selCombine(dst, size, src, off, stride, kind, bw, bh, mode, rgb)
     return y0 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
 }
 
+function invertRefused(tile, size, bw, bh) {
+    if (!Number.isInteger(size) || size <= 0 || size > 4096) return true;
+    if (!Number.isInteger(bw) || !Number.isInteger(bh) || bw < 0 || bh < 0 || bw > size || bh > size) return true;
+    return !tile || tile.length < size * size * 4;
+}
+
+/**
+ * One `size`² tile of the selection (`tile`, RGBA8 in place) inverted in its `bw` x `bh` corner (`rgb` 0xRRGGBB;
+ * K11, docs/PLAN_WASM_BUILD.md §4.3). Returns the tile's extent [x0, y0, x1, y1] afterwards, or null when it holds no
+ * pixel. Rust twin: crates/px/src/sel.rs `mask_invert` (`px.js` `maskInvert`).
+ */
+export function maskInvert(tile, size, bw, bh, rgb) {
+    if (invertRefused(tile, size, bw, bh)) {
+        throw new Error(`px: mask_invert refused a tile of ${size} (${bw} x ${bh})`);
+    }
+    const d8 = bytesOf(tile);
+    const r = (rgb >>> 16) & 255, g = (rgb >>> 8) & 255, b = rgb & 255;
+    let x0 = size, y0 = -1, x1 = -1, y1 = -1;
+    const words = LITTLE && (d8.byteOffset & 3) === 0;
+    const d32 = words ? new Uint32Array(d8.buffer, d8.byteOffset, size * size) : null;
+    const RGB = ((b << 16) | (g << 8) | r) >>> 0;
+    for (let y = 0; y < size; y++) {
+        let first = -1, last = -1, from = 0;
+        if (y < bh && bw > 0) {
+            from = bw;
+            if (words) {
+                const row = y * size;
+                for (let x = 0, o = row; x < bw; x++, o++) {
+                    const a = 255 - (d32[o] >>> 24);
+                    if (a) {
+                        d32[o] = ((a << 24) | RGB) >>> 0;
+                        if (first < 0) first = x;
+                        last = x;
+                    } else d32[o] = 0;
+                }
+            } else {
+                for (let x = 0, o = y * size * 4; x < bw; x++, o += 4) {
+                    const a = 255 - d8[o + 3];
+                    if (a) {
+                        d8[o] = r; d8[o + 1] = g; d8[o + 2] = b; d8[o + 3] = a;
+                        if (first < 0) first = x;
+                        last = x;
+                    } else {
+                        d8[o] = 0; d8[o + 1] = 0; d8[o + 2] = 0; d8[o + 3] = 0;
+                    }
+                }
+            }
+        }
+        const at = y * size * 4 + 3;
+        let x = from;
+        while (x < size && !d8[at + x * 4]) x++;
+        if (x < size) {
+            if (first < 0) first = x;
+            let e = size - 1;
+            while (e > x && !d8[at + e * 4]) e--;
+            last = e;
+        }
+        if (first >= 0) {
+            if (y0 < 0) y0 = y;
+            y1 = y;
+            if (first < x0) x0 = first;
+            if (last > x1) x1 = last;
+        }
+    }
+    return y0 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+}
+
 /**
  * Per-tile minimum, maximum, and edge flag over a depth map (`map` and optional `rmax`, `mw` x `mh` u16) for a
  * `W` x `H` document in `tile`² tiles (K21, docs/PLAN_WASM_BUILD.md §4.8). Rust twin: crates/px/src/range.rs

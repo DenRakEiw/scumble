@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 28;
+export const PX_ABI = 29;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -703,7 +703,28 @@ export class Px {
             if (r === 2) throw new Error(`px: sel_combine refused a tile of ${size} (${bw} x ${bh}, kind ${kind}, mode ${mode})`);
             if (!r) return null;
             const e = this.view(Int32Array, pe, 4), ext = [e[0], e[1], e[2], e[3]];
-            const into = write();
+            const into = write(true);
+            this._out(Uint8Array, pd, n, new Uint8Array(into.buffer, into.byteOffset, n));
+            return ext;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * One `size`² tile of the selection inverted in the `bw` x `bh` corner (kernels_js.js `maskInvert`, the same bytes
+     * and extent; K11, docs/PLAN_WASM_BUILD.md §4.3). `tile` is the tile's RGBA8 as it is, read and never written here.
+     * Returns the extent [x0, y0, x1, y1] of the inverted tile, or null when it holds no pixel; only then is
+     * `write(true)` called, once, for the bytes the whole inverted tile is copied into.
+     */
+    maskInvert(tile, size, bw, bh, rgb, write) {
+        const a = this.job, n = size * size * 4;
+        if (!tile || !(tile.length >= n)) throw new Error("px: mask_invert: a tile too small");
+        try {
+            const pd = this._in(a, tile, n), pe = a.take(16);
+            const r = this.exports.mask_invert(pd, size, bw, bh, rgb >>> 0, pe);
+            if (r === 2) throw new Error(`px: mask_invert refused a tile of ${size} (${bw} x ${bh})`);
+            if (!r) return null;
+            const e = this.view(Int32Array, pe, 4), ext = [e[0], e[1], e[2], e[3]];
+            const into = write(true);
             this._out(Uint8Array, pd, n, new Uint8Array(into.buffer, into.byteOffset, n));
             return ext;
         } finally { this._reset(a); }

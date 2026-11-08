@@ -52,7 +52,7 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * stitch.js (`alphaToMask`, `maskMaxClamp`, `maskOneMinus`, `erodeMask`, `maskToRgba`, `maskBoundsF32`).
  * `colorMatch` and `blendAlpha` (K33): `colorMatchRgba` and `blendAlpha` of stitch.js.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -773,7 +773,7 @@ export function floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, 
 export function selCombine(dst, write, src, off, stride, kind, bw, bh, mode, rgb, size = 256) {
     const p = rustPx("selCombine");
     let wrote = false;
-    const once = () => { wrote = true; return write(); };
+    const once = (whole) => { wrote = true; return write(whole); };
     if (p) {
         try { return p.selCombine(dst, size, src, off, stride, kind, bw, bh, mode, rgb, once); }
         catch (err) { if (wrote || !recovered(p, err, "sel_combine")) throw err; }
@@ -782,6 +782,26 @@ export function selCombine(dst, write, src, off, stride, kind, bw, bh, mode, rgb
     // a missing tile is made only when the source covers something it keeps: replace and add keep the source's alpha
     if (!dst && (mode >= 2 || !J.alphaAny(src, off, stride, kind, bw, bh))) return null;
     return J.selCombine(once(), size, src, off, stride, kind, bw, bh, mode, rgb);
+}
+
+/**
+ * One tile of the selection inverted in its `bw` x `bh` corner (inpaint_tiles.js `TileMaskPixels.invert`;
+ * kernels_js.js `maskInvert` and its Rust twin px.js `maskInvert`, routed by `maskInvert`, K11). `tile` is the tile's
+ * bytes as they are. `write(whole)` makes the tile writable and returns its bytes: on the Rust route it is called with
+ * `true` only when the inverted tile holds a pixel (the whole tile is then copied out over it, so a frozen tile skips
+ * its prior copy); on the JS twin route it is called before the in-place invert and may then answer null (the caller
+ * drops the tile). Returns the inverted tile's extent [x0, y0, x1, y1] or null when it holds no pixel.
+ */
+export function maskInvert(tile, write, bw, bh, rgb, size = 256) {
+    const p = rustPx("maskInvert");
+    let wrote = false;
+    const once = (whole) => { wrote = true; return write(whole); };
+    if (p) {
+        try { return p.maskInvert(tile, size, bw, bh, rgb, once); }
+        catch (err) { if (wrote || !recovered(p, err, "mask_invert")) throw err; }
+        finally { touched(); }
+    }
+    return J.maskInvert(once(), size, bw, bh, rgb);
 }
 
 /**

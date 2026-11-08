@@ -557,6 +557,115 @@ console.log("  [ok] combineRows updates pixels and clears zero alpha");
     console.log(`  [ok] K5: TileMaskPixels.combine on the routes js and rust equals the per-pixel model (${checked} combines; sel_combine ${calls.rust} calls on rust, 0 on js), cached extents and bounds exact`);
 }
 
+// ---------------------------------------------------------------------------
+// 13. K11: TileMaskPixels.invert on both routes of maskInvert and deferred writable copy
+// ---------------------------------------------------------------------------
+{
+    const K = await import("../renderer/editor/px/kernels.js");
+    const W = 540, H = 530;   // 3 x 3 tiles, with 28 px right and 18 px bottom partial edge tiles
+    const invModel = (m, color = [255, 0, 0]) => {
+        const [cr, cg, cb] = Uint8ClampedArray.of(color[0], color[1], color[2]);
+        for (let i = 0; i < m.length; i += 4) {
+            const a = 255 - m[i + 3];
+            if (a) { m[i] = cr; m[i + 1] = cg; m[i + 2] = cb; m[i + 3] = a; }
+            else { m[i] = 0; m[i + 1] = 0; m[i + 2] = 0; m[i + 3] = 0; }
+        }
+    };
+    const modelBounds = (m) => {
+        let x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            if (!m[(y * W + x) * 4 + 3]) continue;
+            if (x < x0) x0 = x;
+            if (y < y0) y0 = y;
+            if (x > x1) x1 = x;
+            if (y > y1) y1 = y;
+        }
+        return x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+    };
+    const soft = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        soft[y * W + x] = (x >= 256 && x < 512 && y >= 256 && y < 512) ? 255
+            : (x < 256 && y < 256) ? 0
+            : ((x * 13 + y * 29) % 256);
+    }
+
+    const invCalls = { js: 0, rust: 0 };
+    for (const route of ["js", "rust"]) {
+        K.setKernels("rust");
+        K.setRoute("maskInvert", route);
+        for (const color of [[255, 0, 0], [255, 255, 255], [12.4, 300, -5]]) {
+            const mk = new TileMaskPixels(W, H);
+            const mod = new Uint8ClampedArray(W * H * 4);
+            // 1) empty -> full
+            K.pxCalls(true);
+            mk.invert(color);
+            invModel(mod, color);
+            assert.equal(K.pxCalls(true).mask_invert || 0, 0, `${route}: empty invert has no existing tiles to call mask_invert on`);
+            assert.deepEqual(Array.from(mk.readRect(0, 0, W, H).data), Array.from(mod), `${route}: empty -> full pixels`);
+            assert.deepEqual(mk.bounds(), modelBounds(mod), `${route}: empty -> full bounds`);
+            for (const key of mk.tileKeys()) {
+                const t = mk.tileAt(key & 0xFFFF, key >>> 16);
+                assert.equal(t.extVersion, t.version, `${route}: empty -> full tile ${key} fresh extent`);
+            }
+            // 2) full (frozen via clone, as pushUndo before invertSelectionNow does) -> empty
+            const snapFull = mk.clone();
+            const fullBytes = mk.readRect(0, 0, W, H).data.slice();
+            let writablesOnFull = 0;
+            const origWritable = mk.writable;
+            mk.writable = function (...a) { writablesOnFull++; return origWritable.apply(this, a); };
+            K.pxCalls(true);
+            mk.invert(color);
+            mk.writable = origWritable;
+            invModel(mod, color);
+            const cFull = K.pxCalls(true).mask_invert || 0;
+            invCalls[route] += cFull;
+            assert.equal(cFull, route === "rust" ? 9 : 0, `${route}: full -> empty mask_invert calls`);
+            if (route === "rust") assert.equal(writablesOnFull, 0, "rust route skips writable() when an inverted tile becomes empty");
+            assert.equal(mk.tileKeys().length, 0, `${route}: full -> empty drops all tiles`);
+            assert.equal(mk.bounds(), null, `${route}: full -> empty bounds`);
+            assert.deepEqual(Array.from(snapFull.readRect(0, 0, W, H).data), Array.from(fullBytes), `${route}: frozen clone intact after full -> empty`);
+
+            // 3) mixed soft + full + empty tiles (frozen via clone) -> inverted, then inverted back
+            mk.combine(bytesSource(soft, 0, 0, W, H), "replace", color);
+            mod.set(mk.readRect(0, 0, W, H).data);
+            const snapMixed = mk.clone();
+            const mixedBytes = mod.slice();
+            const hadCount = mk.tileKeys().length;
+            let wholeArgs = [];
+            mk.writable = function (tx, ty, create = true, whole = false) {
+                wholeArgs.push({ tx, ty, whole: !!whole });
+                return origWritable.call(this, tx, ty, create, whole);
+            };
+            K.pxCalls(true);
+            mk.invert(color);
+            mk.writable = origWritable;
+            invModel(mod, color);
+            const cMixed = K.pxCalls(true).mask_invert || 0;
+            invCalls[route] += cMixed;
+            assert.equal(cMixed, route === "rust" ? hadCount : 0, `${route}: mixed mask_invert calls`);
+            if (route === "rust") {
+                // tile (1, 1) was all 255 so it was dropped without calling writable; interior tiles (0, 0), (1, 0), (0, 1) had whole=true
+                assert.equal(wholeArgs.some((w) => w.tx === 1 && w.ty === 1), false, "rust route did not call writable on tile (1,1) that inverted to empty");
+                for (const w of wholeArgs) {
+                    if (w.tx > 0 && w.tx < 2 && w.ty < 2) assert.equal(w.whole, true, `rust route passed whole=true on existing interior tile (${w.tx},${w.ty})`);
+                }
+            }
+            assert.deepEqual(Array.from(mk.readRect(0, 0, W, H).data), Array.from(mod), `${route}: mixed invert pixels`);
+            assert.deepEqual(mk.bounds(), modelBounds(mod), `${route}: mixed invert bounds`);
+            assert.deepEqual(Array.from(snapMixed.readRect(0, 0, W, H).data), Array.from(mixedBytes), `${route}: frozen clone intact after mixed invert`);
+            for (const key of mk.tileKeys()) {
+                const t = mk.tileAt(key & 0xFFFF, key >>> 16);
+                assert.equal(t.extVersion, t.version, `${route}: mixed invert tile ${key} fresh extent`);
+            }
+        }
+    }
+    K.setRoute("maskInvert", null);
+    K.setKernels("js");
+    assert.equal(invCalls.js, 0, "the maskInvert route js called mask_invert");
+    assert.ok(invCalls.rust > 0, "the maskInvert route rust never called mask_invert");
+    console.log(`  [ok] K11: TileMaskPixels.invert on the routes js and rust equals the per-pixel model (mask_invert ${invCalls.rust} calls on rust, 0 on js), frozen clones preserved, cached extents and bounds exact`);
+}
+
     console.log("ALL TESTS PASSED!");
 }
 

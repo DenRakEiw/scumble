@@ -4962,19 +4962,43 @@ await rect();
     if (edge < 20 || edge > 235) throw new Error("the feathered edge is not soft: " + JSON.stringify(out.feather));
     if (beyond !== 0 || far !== 0) throw new Error("feather reached past its halo: " + JSON.stringify(out.feather));
 }
-// invert: 255 - the alpha it had, everywhere
+// invert: 255 - the alpha it had, everywhere, and K11's maskInvert route (Rust on the default route in tileMode, JS twin on "js")
 await rect();
 {
+    const E = ed.constructor;
     const before = ed.sel.readRect(0, 0, W, H).data.slice();
+    const hadTiles = ed.tileMode ? ed.sel.tileKeys().length : 0;
+    E.pxCalls(true);
     await ed.invertSelection();
-    const got = ed.sel.readRect(0, 0, W, H).data;
+    const rustCalls = E.pxCalls(true).mask_invert || 0;
+    const got = ed.sel.readRect(0, 0, W, H).data.slice();
     let worst = 0, n = 0;
     for (let i = 3; i < got.length; i += 4) { const q = Math.abs(got[i] - (255 - before[i])); if (q) { n++; if (q > worst) worst = q; } }
-    out.invert = { worst, differing: n, inside: alphaAt(900, 700), outside: alphaAt(3500, 2500), bounds: ed.getBounds() };
+    out.invert = { worst, differing: n, inside: alphaAt(900, 700), outside: alphaAt(3500, 2500), bounds: ed.getBounds(), rustCalls, hadTiles };
     if (worst > 1) throw new Error("invert is not 255 - the alpha it had: " + JSON.stringify(out.invert));
     if (out.invert.inside !== 0 || out.invert.outside !== 255) throw new Error("invert did not swap inside and outside: " + JSON.stringify(out.invert));
     const b = ed.getBounds();
     if (!b || b[0] !== 0 || b[1] !== 0 || b[2] !== W || b[3] !== H) throw new Error("the inverted selection's bounds are not the picture: " + JSON.stringify(out.invert));
+    if (ed.tileMode && rustCalls !== hadTiles) throw new Error("invert in tileMode called mask_invert " + rustCalls + " times, wanted " + hadTiles);
+    if (!ed.tileMode && rustCalls !== 0) throw new Error("invert on canvas called mask_invert " + rustCalls + " times");
+    if (ed.tileMode) {
+        // undo restores the frozen clone, then the "js" route of maskInvert gives the exact same bytes with 0 wasm calls
+        await ed.undoStep();
+        const restored = ed.sel.readRect(0, 0, W, H).data;
+        for (let i = 0; i < before.length; i++) if (restored[i] !== before[i]) throw new Error("undo after invert altered byte " + i);
+        E.setRoute("maskInvert", "js");
+        let jsCalls = 0, gotJs;
+        try {
+            E.pxCalls(true);
+            await ed.invertSelection();
+            jsCalls = E.pxCalls(true).mask_invert || 0;
+            gotJs = ed.sel.readRect(0, 0, W, H).data;
+        } finally {
+            E.setRoute("maskInvert", null);
+        }
+        if (jsCalls !== 0) throw new Error("maskInvert=js called mask_invert " + jsCalls + " times");
+        for (let i = 0; i < got.length; i++) if (gotJs[i] !== got[i]) throw new Error("maskInvert=js differs from rust at byte " + i);
+    }
 }
 await run("close_document", { doc: d.id, force: true });
 return out;

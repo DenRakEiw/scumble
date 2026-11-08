@@ -4623,6 +4623,14 @@ async function selCases(js, simd, scalar, raster, K) {
         return;
     }
     K.setKernels("rust");
+    if (!K.rustPx()) {
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (u, ...rest) => {
+            const s = String(u && u.href ? u.href : u);
+            return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+        };
+        try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+    }
     const routed = (r) => {
         K.setRoute("selCombine", r);
         K.pxCalls(true);
@@ -4657,6 +4665,200 @@ async function selCases(js, simd, scalar, raster, K) {
     K.setRoute("selCombine", null);
     K.setKernels("js");
 
+    // ---- K11: mask_invert (docs/PLAN_WASM_BUILD.md §4.3) ----
+    const invTileOf = (state, bw, bh) => {
+        const t = new Uint8Array(N);
+        if (state === "zero") return t;
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+            const o = (y * S + x) * 4;
+            const inside = x < bw && y < bh;
+            if (state === "full") {
+                if (inside) { t[o] = 255; t[o + 3] = 255; }
+            } else if (state === "fullAndBeyond") {
+                if (inside) { t[o] = 255; t[o + 3] = 255; }
+                else if (x === bw + 1 && y === 0) { t[o] = 255; t[o + 3] = 128; }
+            } else if (state === "beyond") {
+                if (!inside && rnd() < 0.05) { t[o] = byte(0); t[o + 1] = byte(0); t[o + 2] = byte(0); t[o + 3] = byte(0); }
+            } else {
+                const a = rnd() < 0.25 ? 0 : rnd() < 0.25 ? 255 : byte(0);
+                t[o] = byte(0); t[o + 1] = byte(0); t[o + 2] = byte(0); t[o + 3] = a;
+            }
+        }
+        return t;
+    };
+    const invCases = [];
+    for (const [bw, bh] of parts) for (const state of ["zero", "full", "fullAndBeyond", "random", "beyond"]) {
+        const rgb = invCases.length % 3 === 0 ? 0xff0000 : invCases.length % 3 === 1 ? 0xffffff : 0x2389da;
+        invCases.push({ tag: `invert ${bw}x${bh} ${state} 0x${rgb.toString(16)}`, args: [invTileOf(state, bw, bh), bw, bh, rgb] });
+    }
+    const callInv = (k, [tile, bw, bh, rgb]) => {
+        if (typeof k.alloc === "function") {
+            const out = new Uint8Array(N);
+            let writes = 0, wholeArg = null;
+            const ext = k.maskInvert(tile, S, bw, bh, rgb, (whole) => { writes++; wholeArg = whole; return out; });
+            if (writes !== (ext ? 1 : 0) || (ext && wholeArg !== true)) {
+                throw new Error(`write(${wholeArg}) called ${writes} times for an extent ${JSON.stringify(ext)}`);
+            }
+            return { ext, bytes: ext ? out : null };
+        }
+        const t = new Uint8Array(tile);
+        const ext = k.maskInvert(t, S, bw, bh, rgb);
+        return { ext, bytes: ext ? t : null };
+    };
+    reference.maskInvert = (t, size, bw, bh, rgb) => {
+        const r = (rgb >>> 16) & 255, g = (rgb >>> 8) & 255, b = rgb & 255;
+        for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+            const o = (y * size + x) * 4;
+            const a = 255 - t[o + 3];
+            if (a) { t[o] = r; t[o + 1] = g; t[o + 2] = b; t[o + 3] = a; }
+            else { t[o] = 0; t[o + 1] = 0; t[o + 2] = 0; t[o + 3] = 0; }
+        }
+        let x0 = size, y0 = -1, x1 = -1, y1 = -1;
+        for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+            if (!t[(y * size + x) * 4 + 3]) continue;
+            if (y0 < 0) y0 = y;
+            y1 = y;
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+        }
+        return y0 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+    };
+    jsOdd.maskInvert = (t, ...rest) => {
+        const v = new Uint8Array(t.length + 1).subarray(1);
+        v.set(t);
+        const ext = js.maskInvert(v, ...rest);
+        t.set(v);
+        return ext;
+    };
+    twinCheck({ name: "mask_invert", title: "maskInvert's twin equals a per-pixel 255 - a invert and a plain extent scan", builds: [["js", js], ["js on an unaligned tile (its bytes path)", jsOdd]], twin: reference, call: callInv, cases: invCases, shift: false });
+    twinCheck({ name: "mask_invert", builds: [["rust simd", simd], ["rust scalar", scalar]], twin: js, call: callInv, cases: invCases, shift: [0, 1] });
+
+    const invRefusals = [
+        ["bw above the tile", [new Uint8Array(N), 257, 4, 0]],
+        ["bh above the tile", [new Uint8Array(N), 4, 257, 0]],
+        ["a tile view shorter than the tile (a longer buffer)", [new Uint8Array(new ArrayBuffer(N + 64), 0, N - 4), 4, 4, 0]],
+        ["a null tile", [null, 4, 4, 0]],
+    ];
+    for (const [what, args] of invRefusals) {
+        let threw = 0;
+        for (const k of [js, simd, scalar]) { try { callInv(k, args); } catch { threw++; } }
+        check(`maskInvert refuses ${what} on the twin and both builds`, threw === 3, `${threw} of 3 threw`);
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, "maskInvert")) {
+        check("kernels.js has the maskInvert route", false);
+        return;
+    }
+    K.setKernels("rust");
+    const routedInv = (r) => {
+        K.setRoute("maskInvert", r);
+        K.pxCalls(true);
+        const out = [];
+        for (const c of invCases) {
+            const [tile, bw, bh, rgb] = c.args;
+            const target = new Uint8Array(tile);
+            let writes = 0, wholeArg = null;
+            const ext = K.maskInvert(new Uint8Array(tile), (whole) => { writes++; wholeArg = whole; return target; }, bw, bh, rgb, S);
+            out.push({ ext, writes, whole: wholeArg, bytes: ext ? target : null });
+        }
+        return { out, calls: K.pxCalls(true).mask_invert || 0 };
+    };
+    const invViaJs = routedInv("js"), invViaRust = routedInv("rust");
+    let invRouteOk = invViaJs.out.length === invViaRust.out.length, invRouteDetail = "";
+    for (let i = 0; invRouteOk && i < invViaJs.out.length; i++) {
+        const a = invViaJs.out[i], b = invViaRust.out[i];
+        if (JSON.stringify(a.ext) !== JSON.stringify(b.ext) || (a.bytes && !eqBytes(a.bytes, b.bytes)) || a.writes !== 1 || b.writes !== (b.ext ? 1 : 0) || (b.ext && b.whole !== true)) {
+            invRouteOk = false;
+            invRouteDetail = `case ${i}: js ${JSON.stringify(a.ext)} (${a.writes} writes), rust ${JSON.stringify(b.ext)} (${b.writes} writes, whole=${b.whole})`;
+        }
+    }
+    check(`kernels.js maskInvert gives the same on the routes js and rust, write(true) only when non-empty on rust (${invViaJs.out.length} tiles)`, invRouteOk, invRouteDetail);
+    const invEmpty = invViaRust.out.filter((o) => !o.ext);
+    check(`the maskInvert route rust skips write() when the inverted tile is empty (${invEmpty.length} such tiles)`,
+        invEmpty.length > 0 && invEmpty.every((o) => o.writes === 0), `${invEmpty.filter((o) => o.writes).length} written`);
+    check("the maskInvert route rust calls mask_invert for every tile, js never",
+        invViaJs.calls === 0 && invViaRust.calls === invViaRust.out.length, `js ${invViaJs.calls}, rust ${invViaRust.calls} of ${invViaRust.out.length}`);
+    {
+        const { TileMaskPixels } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_tiles.js")).href);
+        // writable(..., whole=true) on a frozen tile skips copying the frozen tile's bytes into the new slot, while whole=false copies them
+        const m0 = new TileMaskPixels(256, 256);
+        const t0 = m0.writable(0, 0);
+        t0.data[0] = 255; t0.data[3] = 200;
+        const m0Clone = m0.clone();
+        const tWhole = m0.writable(0, 0, true, true);
+        const wholeSkippedCopy = tWhole.data[3] === 0 && m0Clone.tileAt(0, 0).data[3] === 200;
+        const m1 = new TileMaskPixels(256, 256);
+        const t1 = m1.writable(0, 0);
+        t1.data[0] = 255; t1.data[3] = 200;
+        const m1Clone = m1.clone();
+        const tPartial = m1.writable(0, 0, true, false);
+        const partialCopied = tPartial.data[3] === 200 && m1Clone.tileAt(0, 0).data[3] === 200;
+        check("TileMaskPixels.writable(tx, ty, true, whole) skips the frozen tile copy when whole is true and copies when false",
+            wholeSkippedCopy && partialCopied, `whole=${tWhole.data[3]}, partial=${tPartial.data[3]}`);
+
+        // TileMaskPixels.invert on both routes of maskInvert (empty -> full -> empty, and partial soft + full tiles)
+        const W = 300, H = 270;
+        let tmOk = true, tmDetail = "";
+        const refData = {};
+        for (const route of ["js", "rust"]) {
+            K.setKernels("rust");
+            K.setRoute("maskInvert", route);
+            const mk = new TileMaskPixels(W, H);
+            mk.invert([255, 0, 0]);
+            if (mk.tileKeys().length !== 4 || JSON.stringify(mk.bounds()) !== JSON.stringify([0, 0, W, H])) {
+                tmOk = false; tmDetail = `${route} empty->full bounds ${JSON.stringify(mk.bounds())}`; break;
+            }
+            for (const key of mk.tileKeys()) {
+                const t = mk.tileAt(key & 0xFFFF, key >>> 16);
+                if (t.extVersion !== t.version) { tmOk = false; tmDetail = `${route} empty->full missing ext on ${key}`; break; }
+            }
+            const snapFull = mk.clone();
+            let fullWrites = 0;
+            const origW = mk.writable;
+            mk.writable = function (...a) { fullWrites++; return origW.apply(this, a); };
+            K.pxCalls(true);
+            mk.invert([255, 0, 0]);
+            mk.writable = origW;
+            const cFull = K.pxCalls(true).mask_invert || 0;
+            if (mk.tileKeys().length !== 0 || mk.bounds() !== null || cFull !== (route === "rust" ? 4 : 0) || (route === "rust" && fullWrites !== 0) || JSON.stringify(snapFull.bounds()) !== JSON.stringify([0, 0, W, H])) {
+                tmOk = false; tmDetail = `${route} full->empty keys=${mk.tileKeys().length} calls=${cFull} writes=${fullWrites}`; break;
+            }
+            // partial soft tile at (0,0), full tile at (1,0), absent tiles at row 1
+            const tSoft = mk.writable(0, 0);
+            tSoft.data[3] = 100; tSoft.data[0] = 255;
+            const tFullEdge = mk.writable(1, 0);
+            for (let y = 0; y < 256; y++) for (let x = 0; x < 44; x++) {
+                const o = (y * 256 + x) * 4;
+                tFullEdge.data[o] = 255; tFullEdge.data[o + 3] = 255;
+            }
+            const snapMix = mk.clone();
+            const mixBefore0 = snapMix.tileAt(0, 0).data.slice();
+            const mixBefore1 = snapMix.tileAt(1, 0).data.slice();
+            K.pxCalls(true);
+            mk.invert([12.4, 300, -5]);
+            const cMix = K.pxCalls(true).mask_invert || 0;
+            if (cMix !== (route === "rust" ? 2 : 0) || mk.tileKeys().length !== 3 || mk.tileAt(1, 0) !== null) {
+                tmOk = false; tmDetail = `${route} mix calls=${cMix} keys=${mk.tileKeys().length}`; break;
+            }
+            for (const key of mk.tileKeys()) {
+                const t = mk.tileAt(key & 0xFFFF, key >>> 16);
+                if (t.extVersion !== t.version) { tmOk = false; tmDetail = `${route} mix missing ext on ${key}`; break; }
+            }
+            if (!eqBytes(snapMix.tileAt(0, 0).data, mixBefore0) || !eqBytes(snapMix.tileAt(1, 0).data, mixBefore1)) {
+                tmOk = false; tmDetail = `${route} mix altered frozen clone`; break;
+            }
+            const outTiles = new Uint8Array(3 * N);
+            outTiles.set(mk.tileAt(0, 0).data, 0);
+            outTiles.set(mk.tileAt(0, 1).data, N);
+            outTiles.set(mk.tileAt(1, 1).data, 2 * N);
+            refData[route] = outTiles;
+        }
+        if (tmOk && !eqBytes(refData.js, refData.rust)) { tmOk = false; tmDetail = "js vs rust bytes differ"; }
+        check("TileMaskPixels.invert on js and rust routes matches, drops newly-empty tiles, keeps fresh extents, and preserves frozen clones", tmOk, tmDetail);
+    }
+    K.setRoute("maskInvert", null);
+    K.setKernels("js");
+
     if (process.env.PX_BENCH) {
         // one tile, replace from RGBA (the wand's case) and add from alpha (the range's): the twin in place, Rust with
         // its copies in and out; explains only (docs/PLAN_WASM_BUILD.md §1.1 rule 5)
@@ -4670,6 +4872,16 @@ async function selCases(js, simd, scalar, raster, K) {
             ];
             const med = benchMedians(rows, { rounds: 200 });
             console.log(`       sel_combine one 256² tile, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(3)}`).join(", ")} ms (median of 200)`);
+        }
+        {
+            const t = new Uint8Array(N), out = new Uint8Array(N);
+            const rows = [
+                ["twin", () => { t.set(tile); js.maskInvert(t, S, S, S, 0xff0000); }],
+                ["simd", () => simd.maskInvert(tile, S, S, S, 0xff0000, () => out)],
+                ["scalar", () => scalar.maskInvert(tile, S, S, S, 0xff0000, () => out)],
+            ];
+            const med = benchMedians(rows, { rounds: 200 });
+            console.log(`       mask_invert one 256² tile: ${rows.map(([n]) => `${n} ${med[n].toFixed(3)}`).join(", ")} ms (median of 200)`);
         }
     }
 }

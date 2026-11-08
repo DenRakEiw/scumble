@@ -47,11 +47,11 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
-/// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats);
+/// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    28
+    29
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -703,6 +703,17 @@ pub unsafe extern "C" fn sel_combine(dst: *mut u8, size: usize, src: *const u8, 
     }
     let src = if need == 0 { &[][..] } else { slice::from_raw_parts(src, need) };
     sel::sel_combine(slice::from_raw_parts_mut(dst, size * size * 4), size, src, src_stride, src_kind, bw, bh, mode, rgb, slice::from_raw_parts_mut(ext, 4))
+}
+
+/// One `size`² RGBA8 tile of the selection inverted in the `bw` x `bh` corner (`tile` in place, `rgb` 0xRRGGBB;
+/// K11, docs/PLAN_WASM_BUILD.md §4.3). Returns 1 with [x0, y0, x1, y1] in `ext` (4 i32s) when the tile holds a pixel
+/// afterwards, 0 when it holds none (`ext` not written), 2 when refused.
+#[no_mangle]
+pub unsafe extern "C" fn mask_invert(tile: *mut u8, size: usize, bw: usize, bh: usize, rgb: u32, ext: *mut i32) -> u32 {
+    if tile.is_null() || ext.is_null() || size == 0 || size > 4096 {
+        return sel::REFUSED;
+    }
+    sel::mask_invert(slice::from_raw_parts_mut(tile, size * size * 4), size, bw, bh, rgb, slice::from_raw_parts_mut(ext, 4))
 }
 
 // ---- range selection & limits (PLAN_WASM_BUILD.md §4.8, K21) --------------------------------------------------------
