@@ -9,7 +9,7 @@ Scope (docs/PLAN_WASM_BUILD.md §4.2 K6, §5 row 19):
   `unfilter_rows`.
 - No ABI change (`ABI = 31`); no route (`pngUnfilterRows` always calls `rustPx()` when mode is `"rust"`).
 - `renderer/editor/px/px_scalar.wasm` is byte-for-byte unchanged (`167,451 bytes`, sha256 `ac99651178ff1fd3`).
-- `renderer/editor/px/px.wasm`: `208,177 bytes`, sha256 `2208b82f6775478a` (before: `207,492 bytes`, sha256
+- `renderer/editor/px/px.wasm`: `208,177 bytes`, sha256 `2208b82f6775478a` (before: `208,569 bytes`, sha256
   `a41919750bce2075`).
 
 1. Node & Electron-as-Node kernel benchmarks (`docs/measurements/k6_2026-11-08/node/`)
@@ -49,7 +49,8 @@ band       bpp  ch  filter                              before   after  scalar  
 
 2. 15,000 x 10,000 PNG open before (`5419c95a`) vs after (`K6`), 3 alternating rounds on port 9621 (`w1_lock.py` held)
 ----------------------------------------------------------------------------------------------------------------------
-All 6 runs (3 before, 3 after) ran on fresh offline instances with `"focused": true` (`notcounted/` empty).
+All 6 runs (3 before, 3 after) ran on fresh offline instances with `"focused": true` (`notcounted/` empty). The GPU was at
+`100%` utilization (`26,023-29,857 MiB`, `comfy 8188: 200`) throughout all 3 rounds (`chain.log`).
 
 row                                           before (5419c95a)           after (K6)                  before / after (medians)
 build_the_file encodeMs                       1,943.0 [1,638.0-2,463.0]   1,886.0 [1,763.0-2,257.0]   1.03x
@@ -75,9 +76,14 @@ open_again png_read parse                     1.2 [1.0-1.6]               1.0 [1
 open_again worker png_unfilter_rows calls     40.0 [40.0-40.0]            40.0 [40.0-40.0]            1.00x
 
 Observations:
-- `png_read unfilter` drops from `1,101.6 [1,083.1-1,161.4] ms` to `502.1 [499.1-573.2] ms` in `open_the_file` (2.19x,
-  saving ~600 ms) and from `1,098.8 [1,078.7-1,185.6] ms` to `474.5 [469.8-596.2] ms` in `open_again` (2.32x, saving
-  ~624 ms), with non-overlapping 3-run ranges.
+- Both whole-operation walls (`open_the_file wall`: `3,935.0 [3,538.0-3,946.0]` vs `3,000.0 [2,899.0-4,688.0] ms`;
+  `open_again wall`: `3,285.0 [3,085.0-3,821.0]` vs `2,913.0 [2,263.0-4,267.0] ms`) are **ties** with overlapping ranges
+  and one round in three lost (`r3` after spiked to `4,688 ms` / `4,267 ms` while the GPU was at 100%); `open_again longest block`
+  is `0.78x` (`51.0 [47.0-96.0]` vs `65.0 [60.0-85.0] ms`, inside the before spread).
+- **K6 stays by `docs/PLAN_WASM_BUILD.md` §1.1 rule 2 on the kernel rows**: `png_read unfilter` drops from
+  `1,101.6 [1,083.1-1,161.4] ms` to `502.1 [499.1-573.2] ms` in `open_the_file` (2.19x, saving ~600 ms) and from
+  `1,098.8 [1,078.7-1,185.6] ms` to `474.5 [469.8-596.2] ms` in `open_again` (2.32x, saving ~624 ms), with non-overlapping
+  3-run ranges.
 - Because `readPng` drains `DecompressionStream` while unfiltering each 256-row band, cutting `unfilter` by ~600 ms
   reduces `png_read write` (feed back-pressure) by the same ~630-660 ms (`2,419.7 -> 1,789.4 ms` and `2,327.9 ->
   1,666.4 ms`) and `png_read kernel` by ~630-660 ms (`2,489.4 [2,433.6-2,648.8] -> 1,859.0 [1,786.6-2,210.5] ms`, 1.34x,

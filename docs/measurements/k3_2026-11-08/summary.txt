@@ -6,20 +6,23 @@ Scope (docs/PLAN_WASM_BUILD.md §4.3 K3, §5 row 15):
   slice-by-16, zero external dependencies), `pub fn crc32(src: &[u8], start: u32) -> u32`, and
   `pub fn chunk_frame(buf: &mut [u8], data_len: usize, kind: u32) -> u32` (writes `data_len` BE to `buf[0..4]`, `kind` BE
   to `buf[4..8]`, `crc = crc32(&buf[4..8 + data_len], 0)` BE to `buf[8 + data_len..12 + data_len]`, returns `crc`).
-- `crates/px/src/lib.rs`: bumped `px_abi_version()` to `32` (`32: crc32, png_chunk_frame`); exported `crc32` (with
-  null/zero-len guard returning `start`) and `png_chunk_frame` (with null guard returning `0`).
-- `renderer/editor/px/px.wasm`: `225,516 bytes`, sha256 `af9167aeab2bc319` (before: `208,177 bytes`, sha256
+- `crates/px/src/lib.rs`: bumped `px_abi_version()` to `32` (`32: crc32, png_chunk_frame`, renumbered to `34` when merged
+  into `wasm-kernels` at `dceec4d2`); exported `crc32` (with null/zero-len guard returning `start`) and `png_chunk_frame`
+  (with null guard returning `0`).
+- `renderer/editor/px/px.wasm`: `225,516 bytes`, sha256 `af9167aeab2bc319` on `44495d21` (before: `208,177 bytes`, sha256
   `2208b82f6775478a`).
-- `renderer/editor/px/px_scalar.wasm`: `184,788 bytes`, sha256 `b7cd2fd78ddfbcf3` (before: `167,451 bytes`, sha256
-  `ac99651178ff1fd3`).
+- `renderer/editor/px/px_scalar.wasm`: `184,788 bytes`, sha256 `b7cd2fd78ddfbcf3` on `44495d21` (before: `167,451 bytes`,
+  sha256 `ac99651178ff1fd3`).
 - `renderer/editor/px/kernels_js.js`: moved byte-wise `CRC_TABLE` and `crc32(bytes, start = 0)` here as the JS twin, plus
   `pngChunkFrame(buf, dataLen, kind)` twin.
-- `renderer/editor/px/px.js`: bumped `PX_ABI = 32`; added `crc32` and `pngChunkFrame` methods; updated `Px.prototype.pngPart`
-  to allocate `po = a.take(cap + 12)`, deflate into `po + 8`, call `this.exports.png_chunk_frame(po, written, 0x49444154) >>> 0`
-  (timed under `lap("chunk")`), copy out `chunk = this.u8().slice(po, po + written + 12)` once, set
-  `bytes = chunk.subarray(8, 8 + written)`, and return `{ bytes, adler, raw: n, chunk, crc }`.
+- `renderer/editor/px/px.js`: bumped `PX_ABI` (`32` on `44495d21`, `34` on `dceec4d2`); added `crc32` and `pngChunkFrame`
+  methods; updated `Px.prototype.pngPart` to allocate `po = a.take(cap + 12)`, deflate into `po + 8`, call
+  `this.exports.png_chunk_frame(po, written, 0x49444154) >>> 0` (timed under `lap("chunk")`), copy out
+  `chunk = this.u8().slice(po, po + written + 12)` once, set `bytes = chunk.subarray(8, 8 + written)`, and return
+  `{ bytes, adler, raw: n, chunk, crc }`.
 - `renderer/editor/px/kernels.js`: added `crc32: "kernelSize"` to `ROUTE_KINDS` and `crc32: 64` to `DEFAULT_ROUTES`
-  (crossover measured at 64 B, where Rust slice-by-16 including JS->wasm copy-in is already 2.29x-2.53x faster than JS).
+  (64 B is about a tie decided by the kernel row: `0.075-0.100 vs 0.028-0.074 us` at `16-48 B`, `0.093-0.138 vs 0.156-0.235 us`
+  at `64-128 B` with JIT warm-up jitter in the JS column, `4.97x` at `64 KB`, and `4.26x` on `w0_bench crc32_64mb`).
 - `renderer/editor/inpaint_png.js`: kept `export function crc32(bytes, crc = 0)` at line 30 routing through `kernels.js`;
   added `export function crc32Combine(crc1, crc2, len2)` (GF(2) matrix method via precomputed 32x32 operators `CRC_POW2`);
   updated `PngStreamWriter.finish()` to fold each worker part's `r.crc` via `crc32Combine(crc, r.crc >>> 0, c.byteLength - 8)`
@@ -33,6 +36,10 @@ Scope (docs/PLAN_WASM_BUILD.md §4.3 K3, §5 row 15):
 
 1. Node & Electron-as-Node kernel benchmarks (`docs/measurements/k3_2026-11-08/node/`)
 --------------------------------------------------------------------------------------
+Note: `chain.log` recorded `rc=1` for `node_bench.mjs` at `21:05` (due to a helper-method typo `simd._Scratch(cap)` in
+section 2 of `node_bench.mjs` before the Electron rounds); `node/node_bench.*` and `node/electron_bench.*` are a standalone
+re-run outside the chain after fixing that line to `simd.job.take(cap)`.
+
 a) CRC-32 size sweep (including JS -> wasm copy-in, Electron V8 `node/electron_bench.log`):
 size          simd (us)   scalar (us)       js (us)   simd/js   simd ms/MB   js ms/MB
       16 B        0.097         0.099         0.028     0.29x            -          -
@@ -49,6 +56,10 @@ size          simd (us)   scalar (us)       js (us)   simd/js   simd ms/MB   js 
  1048576 B      342.938       344.133      1663.403     4.85x        0.343      1.663
 67108864 B    29919.600     29145.900    111498.600     3.73x        0.467      1.742
 
+Note on 64 B crossover: the JS column at 64-128 B (`0.235, 0.156, 0.218 us`) is not strictly monotone (a V8 JIT warm-up
+artefact across the rotating micro-iterations), so 64 B is about a tie decided by the kernel row (`4.97x` at 64 KB and
+`4.26x` on `w0_bench crc32_64mb`), keeping `< 64 B` headers (`PNG_SIG`, `IHDR`, 4-byte chunk lengths) in JS.
+
 b) IDAT chunk framing + CRC (`png_chunk_frame` in wasm vs legacy JS `pngChunk`, Electron V8):
 payload          before (JS pngChunk)   after (wasm png_chunk_frame + slice)   speedup
 256 KB IDAT                  0.540 ms                               0.152 ms     3.55x
@@ -63,7 +74,8 @@ c) ORA PNG entry CRC (`crc32Combine` fold across 40 parts, 150 MB PNG vs full-fi
 2. 15,000 x 10,000 PNG & ORA export before (`ad148e2e`) vs after (`K3`), 3 alternating rounds on port 9621 (`w1_lock.py` held)
 ------------------------------------------------------------------------------------------------------------------------------
 All 6 `native_test.py` runs (3 before, 3 after) and all 3 `w0_bench.py --rows=crc32_64mb` runs executed on fresh offline
-instances with `"focused": true` (`notcounted/` empty).
+instances with `"focused": true` (`notcounted/` empty). The GPU was at `99-100%` utilization (`25,740-28,894 MiB`,
+`comfy 8188: 200`) throughout all rounds (`chain.log`).
 
 row                                      before (ad148e2e)           after (K3)                  before / after (medians)
 build_the_file encodeMs                  1,657.0 [1,507.0-1,769.0]   1,902.0 [1,631.0-2,128.0]   0.87x
@@ -107,16 +119,21 @@ export_ora window crc32 calls            -                           1.0 [1.0-1.
 - `crc32_64mb` speedup:     `4.26x [4.18x-4.32x]`
 
 Observations:
-- `export_png png_part chunk` drops from `899.8 [857.4-999.0] ms` to `99.5 [98.1-118.6] ms` (9.04x faster, saving ~800 ms
-  of worker time across 79 parts), reducing `export_png wall` from `1,585.0 [1,352.0-1,588.0] ms` to
-  `1,231.0 [1,152.0-1,507.0] ms` (1.29x faster, `-354 ms`).
-- `export_ora png_part chunk` drops from `1,628.7 [1,392.0-1,660.6] ms` to `213.7 [194.2-265.5] ms` (7.62x faster, saving
-  ~1,415 ms of worker time across 237 parts).
-- `export_ora crc jobs` drops from `6` to `1` (only `Thumbnails/thumbnail.png` runs a worker `crc` job; `"mimetype"`,
-  `"stack.xml"`, the two layer PNGs, and `mergedimage.png` all carry their precomputed CRC-32 directly into
-  `OraBandWriter._add`), cutting `export_ora crc kernel` from `1,426.8 [1,393.1-1,608.9] ms` to `5.0 [4.1-5.5] ms`
-  (285.36x faster, saving ~1,422 ms) and reducing `export_ora wall` from `3,615.0 [3,576.0-3,995.0] ms` to
-  `2,526.0 [2,303.0-3,089.0] ms` (1.43x faster, `-1,089 ms`, non-overlapping 3-run ranges).
+- `export_ora` wins both on whole-operation wall (`3,615.0 [3,576.0-3,995.0] ms` -> `2,526.0 [2,303.0-3,089.0] ms`, 1.43x,
+  `-1,089 ms`, non-overlapping 3-run ranges) and on its kernel rows: `export_ora png_part chunk` drops from
+  `1,628.7 [1,392.0-1,660.6] ms` to `213.7 [194.2-265.5] ms` (7.62x, saving ~1,415 ms of worker time across 237 parts),
+  `export_ora crc jobs` drops from `6` to `1` (thumbnail only), and `export_ora crc kernel` drops from
+  `1,426.8 [1,393.1-1,608.9] ms` to `5.0 [4.1-5.5] ms` (285.36x, saving ~1,422 ms).
+- `export_png wall` (`1,585.0 [1,352.0-1,588.0] ms` vs `1,231.0 [1,152.0-1,507.0] ms`) has a median difference of 354 ms,
+  which is inside the after arm's 355 ms spread (`[1,152-1,507] ms`, overlapping `[1,352-1,588] ms`; round pairs:
+  `r1: 1,585 vs 1,507 = 1.05x`, `r2: 1,588 vs 1,152 = 1.38x`, `r3: 1,352 vs 1,231 = 1.10x`). Thus `export_png` wall is a
+  tie and **stays by `docs/PLAN_WASM_BUILD.md` §1.1 rule 2 on the kernel rows**: `export_png png_part chunk` drops from
+  `899.8 [857.4-999.0] ms` to `99.5 [98.1-118.6] ms` (9.04x, saving ~800 ms across 79 parts, non-overlapping ranges) and
+  `w0_bench crc32_64mb` wins by `4.26x [4.18x-4.32x]`.
+- Background load noise while the GPU was at 99-100% shifted rows that K3 did not touch: `export_png png_part`
+  `filter/deflate/adler/compose` and `export_ora png_part` `filter/deflate/adler` moved by `1.10x-1.16x` with overlapping
+  ranges, and `build_the_file encodeMs` moved by `0.87x` (`1,657.0 [1,507.0-1,769.0]` vs `1,902.0 [1,631.0-2,128.0] ms`,
+  overlapping ranges; `build_the_file` uses `canvas.toBlob("image/png")`, which does not call `px`).
 
 3. Unit & property checks (`tools/px_test.js` group `pngPart`)
 --------------------------------------------------------------
@@ -125,8 +142,9 @@ Observations:
   - 303-case `twinCheck` for `crc32` across lengths `0..67`, `128..65537`, all 256 byte values in every slice-by-16 lane
     `0..15` and remainder, non-zero `start`, odd `byteOffset`, and cross-check against Node `zlib.crc32`.
   - Continuation across arbitrary splits (`0..257` bytes).
-  - `crc32Combine` property checks across zero/negative lengths, powers of 2 (`1 << 0` .. `1 << 17`), and all split points
-    `0..260`.
+  - `crc32Combine` property checks across zero/negative lengths, powers of 2 up to 16 MB (`1 << 0` .. `1 << 24`, covering
+    bits 0..24), `~7.7 MB` (`7,700,000` B, the size of a 15k part), and all split points `0..260`, checked against
+    `zlib.crc32`.
   - 84-case `twinCheck` for `png_chunk_frame` against `pngChunk` and `js.pngChunkFrame`.
   - `inpaint_png.crc32` route cut-off check (`< 64` B stays in JS, `>= 64` B routes to Rust, `setRoute("crc32", "js")`
     forces JS).
@@ -135,9 +153,9 @@ Observations:
 
 4. Mutation round (`docs/measurements/k3_2026-11-08/mutation/summary.txt`)
 --------------------------------------------------------------------------
-- 20 targeted mutants across `crates/px/src/png.rs` (10), `renderer/editor/inpaint_png.js` (6), and
-  `renderer/editor/px/px.js` (4):
-  - **20 killed**, **0 survived**, **0 unexpected**.
+- 21 targeted mutants across `crates/px/src/png.rs` (14), `renderer/editor/inpaint_png.js` (6, including `M21_combine_loop_b17`
+  stopping `crc32Combine` at `b < 17`), and `renderer/editor/px/px.js` (1):
+  - **21 killed**, **0 survived**, **0 unexpected**.
 
 5. Gates (`F:/canvas/.claude/worktrees/ag-chain-p/dist/gates/gates/`)
 ---------------------------------------------------------------------
