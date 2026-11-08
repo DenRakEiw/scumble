@@ -1,0 +1,26 @@
+-- 2048x1152 (2.4 MP), 1 rounds, checking bytes ...
+Traceback (most recent call last):
+  File "F:\canvas\.claude\worktrees\agent-a069cbd45d8f07ff7\tools\px_jobs.py", line 1274, in <module>
+    asyncio.run(main())
+  File "C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "F:\canvas\.claude\worktrees\agent-a069cbd45d8f07ff7\tools\px_jobs.py", line 1270, in main
+    sys.exit(await session(run))
+             ^^^^^^^^^^^^^^^^^^
+  File "F:\canvas\.claude\worktrees\agent-a069cbd45d8f07ff7\tools\cdp.py", line 98, in session
+    return await fn(c)
+           ^^^^^^^^^^^
+  File "F:\canvas\.claude\worktrees\agent-a069cbd45d8f07ff7\tools\px_jobs.py", line 1252, in run
+    result = json.loads(await c.eval(body, timeout=3600))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\canvas\.claude\worktrees\agent-a069cbd45d8f07ff7\tools\cdp.py", line 72, in eval
+    raise RuntimeError("JS exception: " + str(desc))
+RuntimeError: JS exception: Error: phase R measures the tile engine: start the app with tiles on
+    at <anonymous>:27:29

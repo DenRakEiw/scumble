@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__no_split-ed --offline --tiles on editor  (rc 1, 17 s, SCUMBLE_EDITOR_ONLY=frequency_separation_gives_the_picture_back_on_every_path)
+editor rc=1 2s FAIL (only: frequency_separation_gives_the_picture_back_on_every_path; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

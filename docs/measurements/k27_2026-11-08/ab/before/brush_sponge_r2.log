@@ -1,0 +1,8 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+sponge (cold) | Saturate | layer | 200 | fit | 156.5 | 32.7 | 21 | 14.8 | 16.4 | 1.4 | 59.1 | 211 | 4.8 | 5.5 | 0 | 0 | 11571 | mip_chain 32, smudge_dab 86
+sponge | Saturate | layer | 400 | fit | 156.5 | 17.6 | 39.6 | 31 | 33.4 | 2.1 | 59.5 | 1099 | 5.2 | 6 | 0 | 0 | 11557 | mip_chain 279, smudge_dab 242
+sponge | Saturate | layer | 1000 | fit | 156.5 | 63.6 | 110.1 | 87.4 | 101.9 | 2.8 | 176.4 | 2886 | 7.4 | 7.5 | 0 | 0 | 11655 | mip_chain 480, smudge_dab 122
+sponge | Saturate | layer | 400 | 1:1 | 18 | 43.5 | 10.3 | 8.9 | 9.9 | 1.6 | 57.1 | 461 | 8 | 8.2 | 0 | 0 | 11692 | smudge_dab 62
+sponge | Saturate | layer | 1000 | 1:1 | 18 | 76.4 | 58.9 | 52 | 63.6 | 9.6 | 139.1 | 1860 | 15.3 | 15.7 | 0 | 0 | 11567 | mip_chain 41, smudge_dab 62
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["sponge"], "SIZES": [400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 6098}}
+rc=0

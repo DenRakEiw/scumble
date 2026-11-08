@@ -1,0 +1,27 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 5 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 172428 bytes, sha256 12184e1badec84fc
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 147000 bytes, sha256 d6b01715c80e432e
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.84s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.33s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=freq)
+FAIL rust simd freq_split equals inpaint_stroke.js freqSplit byte for byte (L in place and H) (129 cases, each also at an odd offset)  edges 7 px: out.high[21] is 0, the twin has 1
+FAIL rust simd freqSeparate (blur_rgba and freq_split in one arena) equals blurRGBA then freqSplit byte for byte (275 cases, each also at an odd offset)  bright 2x3 r 0: out.high[18] is 127, the twin has 128
+FAIL rust scalar freq_split equals inpaint_stroke.js freqSplit byte for byte (L in place and H) (129 cases, each also at an odd offset)  every (I, L) pair: out.high[681] is 42, the twin has 43
+FAIL rust scalar freqSeparate (blur_rgba and freq_split in one arena) equals blurRGBA then freqSplit byte for byte (275 cases, each also at an odd offset)  edges 2x3 r 0: out.high[2] is 127, the twin has 128
+FAIL (4) (only: freq; PX_ONLY, not the full test)
+       1024 x 1024: the split rust simd 2.3 ms (with its copies), twin 14.8; the separation r 8 in one arena 21.1 ms, K26's way (Rust blur, the twin's split) 34.7
+ok   rust scalar module reports its SIMD flag
+FAIL rust scalar freq_split equals inpaint_stroke.js freqSplit byte for byte (L in place and H) (129 cases, each also at an odd offset)  every (I, L) pair: out.high[681] is 42, the twin has 43
+ok   js freqSplit gives the picture back: L + 2H - 255 = I for every (I, L) pair
+FAIL rust scalar freqSeparate (blur_rgba and freq_split in one arena) equals blurRGBA then freqSplit byte for byte (275 cases, each also at an odd offset)  edges 2x3 r 0: out.high[2] is 127, the twin has 128
+ok   rust scalar freq_split / freqSeparate refuse what is not whole pixels of bytes, a blur of another length, a size that is not the picture's and a radius past 2^30 (null: the twin runs), and leave L as it was  null, null, null, null, null, null, null, null, null
+       1024 x 1024: the split rust scalar 5.0 ms (with its copies), twin 14.8; the separation r 8 in one arena 39.6 ms, K26's way (Rust blur, the twin's split) 49.5
+FAIL (4) (only: freq; PX_ONLY, not the full test)
+(node:55644) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/k27/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

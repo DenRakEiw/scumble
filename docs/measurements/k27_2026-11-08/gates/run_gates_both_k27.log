@@ -1,0 +1,36 @@
+side by side: lint types editor brush (tiles on 9605, canvas on 9606, the canvas side 25 s later)
+[tiles] lint rc=0 7s 
+[tiles] types rc=0 5s 
+[canvas] lint rc=0 9s 
+[canvas] types rc=0 5s 
+[canvas] editor rc=0 135s PASS
+[tiles] editor rc=0 163s PASS
+[canvas] brush rc=124 420s RESULT FAIL (reader)
+[tiles] brush rc=124 420s RESULT FAIL (reader)
+[canvas] SOME FAILED
+[tiles] SOME FAILED
+one after the other (they cannot share the machine): pxjobs
+[tiles-serial] pxjobs rc=0 105s PASS
+[tiles-serial] ALL PASS
+[canvas-serial] pxjobs rc=1 1s 
+[canvas-serial] SOME FAILED
+== k27-tiles (rc 1, 611 s): /f/canvas/.claude/worktrees/agent-a069cbd45d8f07ff7/dist/gates/gates/k27-tiles/summary.txt
+   lint rc=0 7s 
+   types rc=0 5s 
+   editor rc=0 163s PASS
+   brush rc=124 420s RESULT FAIL (reader)
+   SOME FAILED
+== k27-canvas (rc 1, 585 s): /f/canvas/.claude/worktrees/agent-a069cbd45d8f07ff7/dist/gates/gates/k27-canvas/summary.txt
+   lint rc=0 9s 
+   types rc=0 5s 
+   editor rc=0 135s PASS
+   brush rc=124 420s RESULT FAIL (reader)
+   SOME FAILED
+== k27-tiles-serial (rc 0, 121 s): /f/canvas/.claude/worktrees/agent-a069cbd45d8f07ff7/dist/gates/gates/k27-tiles-serial/summary.txt
+   pxjobs rc=0 105s PASS
+   ALL PASS
+== k27-canvas-serial (rc 1, 17 s): /f/canvas/.claude/worktrees/agent-a069cbd45d8f07ff7/dist/gates/gates/k27-canvas-serial/summary.txt
+   pxjobs rc=1 1s 
+   SOME FAILED
+wall time 749 s
+SOME FAILED

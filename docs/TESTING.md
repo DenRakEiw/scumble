@@ -212,6 +212,16 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `kernels.js` is collected (the first load's promise used to keep the first one); its WeakRef is read and the
   collector run in separate jobs, since a deref keeps its target alive to the end of its job.
   `docs/measurements/k4_2026-11-07/`, `docs/measurements/k26_2026-11-07/`.
+  K27 (the tone brush's `tone_rgba`, the sponge's `sponge_rgba`, frequency separation's `freq_split` and px.js
+  `freqSeparate`, ABI 23): px_test's groups `tone` (about 7,800 tone and 1,900 sponge cases on both builds against
+  `inpaint_stroke.js`: eight kinds of picture from 1 pixel to a 400 px brush's box, a grid of every combination of
+  nineteen edge values at four alphas, the tables of every range and exposure and their extremes, the sponge's amounts
+  in and out of 0..1 and not numbers, the switches by truthiness), `freq` (every (I, L) pair of bytes, the separation in
+  one arena against `blurRGBA` then `freqSplit`) and `retouchRoute` (kernels.js: the routes `dabTone`, `dabSponge`,
+  `freqSplit`, a refusal and a trap fall back with the twins' bytes, the separation releases its instance). The
+  `editor` gate's tone / sponge step replays a dodge, a protected dodge, a desaturate and a saturate stroke on the
+  route "js" after an undo, and frequency separation on both routes "js"; 0 bytes allowed to differ.
+  `w0_bench.py --rows=dabs_k27` times the filters against the twins in the app. `docs/measurements/k27_2026-11-08/`.
   `docs/measurements/w1_2026-11-06/w1_identity.js --old <the px.wasm before W1> file.png ...` re-filters real PNGs in
   the app's parts of 128 rows on the new SIMD build, the scalar build, the old SIMD build and the JS twin and compares
   every line (and, for a file Scumble wrote, the file's own lines); the old build is
@@ -863,6 +873,13 @@ ruled out side by side.
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-11-08 (`wasm-kernels`, K27, `run_gates_both.sh k27` and `k27-brush`): the `brush` gate's node reader
+  (`tools/brush_test.js`) printed every check and `RESULT PASS` and then never exited, so the gate ran out of its 420 s
+  with "RESULT FAIL (reader)" before its in-app part: both sides in the first run, the canvas side in the rerun (the
+  hung `node` held 831 MB at 0.3 s of CPU, blocked, until it was stopped). Run by hand (with and without the output
+  folder) it exits at once, and the gate alone on the canvas backend (`k27-brush-canvas-alone`) passed in 15 s, as the
+  tiles side of the rerun did. The reader reads Photoshop's own .abr files and `F:/boris.abr`; not ruled out: two
+  readers of those files at the same moment. Run `brush` alone when it fails side by side.
 - 2026-11-07 (`wasm-kernels`, the merge of H1, `run_gates_both.sh mergeh1`): `layered_test.py`
   `crafted_files_are_refused_on_both_routes` failed on tiles with "crafted_bomb.ora (window): the renderer grew by 203
   MB" (its limit is 200 MB above where the step began) while the canvas side ran beside it; every file was refused in

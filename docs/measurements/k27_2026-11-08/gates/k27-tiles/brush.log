@@ -1,0 +1,18 @@
+== reader (node)
+PASS v1: {"tips":["? 32x32 @0.3","? 24x12 @0.15","? 16x4 @0"]}
+PASS v2: {"tips":["Ring 32x32 @0.3","Bar 24x12 @0.15","Ramp 16x4 @0"]}
+PASS v6.1: {"tips":["Ring Brush 32x32 @0.3","Bar Brush 24x12 @0.15","Bar Brush (dual) 16x4 @0.5"]}
+PASS v6.2: {"tips":["Ring Brush 32x32 @0.3","Bar Brush 24x12 @0.15","Bar Brush (dual) 16x4 @0.5"]}
+PASS unknown version: ".abr version 3.1 is not one this reader knows (1, 2, 6 and 10 are)"
+PASS only computed: "only computed (round) tips in this file, 1 of them; the editor's own round dab covers those"
+PASS real Default Brushes.abr: {"version":"6.2","tips":18,"named":18,"computed":10,"presets":28,"ms":9,"warnings":[]}
+PASS real Legacy Brushes.abr: {"version":"10.2","tips":214,"named":214,"computed":208,"presets":471,"ms":17,"warnings":[]}
+PASS real Converted Legacy Tool Presets.abr: {"version":"10.2","tips":36,"named":36,"computed":109,"presets":144,"ms":14,"warnings":[]}
+PASS real boris.abr: {"version":"6.2","tips":109,"named":109,"computed":15,"presets":187,"ms":227,"warnings":[]}
+wrote F:\canvas\.claude\worktrees\agent-a069cbd45d8f07ff7\dist\gates\tmp\k27-tiles\scumble_brush_test\synthetic_v6.abr
+RESULT PASS
+(node:47072) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/agent-a069cbd45d8f07ff7/renderer/editor/inpaint_brushes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\agent-a069cbd45d8f07ff7\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+RESULT FAIL (reader)

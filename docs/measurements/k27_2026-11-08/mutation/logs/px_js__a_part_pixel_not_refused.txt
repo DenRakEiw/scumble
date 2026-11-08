@@ -1,0 +1,31 @@
+$ node tools/px_test.js  (rc 0, 2 s, PX_ONLY=tone)
+PASS (only: tone; PX_ONLY, not the full test)
+ok   rust simd tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)  null, null, null, null, null, null, null, null, null, null, null
+       a 1002 x 1002 dab: tone (protect) rust simd 5.3 ms, twin 9.4; sponge (saturate, vibrance) rust simd 7.1 ms, twin 21.6
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)
+ok   rust scalar sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte (1881 cases, each also at an odd offset)
+ok   rust scalar tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)  null, null, null, null, null, null, null, null, null, null, null
+       a 1002 x 1002 dab: tone (protect) rust scalar 5.4 ms, twin 9.5; sponge (saturate, vibrance) rust scalar 15.5 ms, twin 21.8
+PASS (only: tone; PX_ONLY, not the full test)
+(node:49764) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/k27/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 73 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+PASS
+(node:22772) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/k27/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-px_js__a_part_pixel_not_refused-full-editor --offline --tiles on editor  (rc 0, 182 s)
+editor rc=0 166s PASS
+ALL PASS

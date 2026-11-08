@@ -1,0 +1,40 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 171403 bytes, sha256 0ded8c176bab2d51
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 147000 bytes, sha256 bb56d142303ccc24
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.04s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.45s
+$ node tools/px_test.js  (rc 0, 2 s, PX_ONLY=tone)
+PASS (only: tone; PX_ONLY, not the full test)
+ok   rust simd tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)  null, null, null, null, null, null, null, null, null, null, null
+       a 1002 x 1002 dab: tone (protect) rust simd 5.5 ms, twin 9.8; sponge (saturate, vibrance) rust simd 7.5 ms, twin 22.8
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)
+ok   rust scalar sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte (1881 cases, each also at an odd offset)
+ok   rust scalar tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)  null, null, null, null, null, null, null, null, null, null, null
+       a 1002 x 1002 dab: tone (protect) rust scalar 5.6 ms, twin 9.8; sponge (saturate, vibrance) rust scalar 15.8 ms, twin 22.4
+PASS (only: tone; PX_ONLY, not the full test)
+(node:43636) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/k27/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 76 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+PASS
+(node:35156) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/k27/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-sponge_lanes__steps_of_32_bytes-full-editor --offline --tiles on editor  (rc 0, 180 s)
+editor rc=0 165s PASS
+ALL PASS

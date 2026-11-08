@@ -1,0 +1,25 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 172415 bytes, sha256 895b2135c823f890
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 146987 bytes, sha256 f919dc8212fc8ba5
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.04s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.43s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=tone)
+FAIL rust simd tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)  noise 1 px, identity, protect: out[2] is 185, the twin has 186
+FAIL rust scalar tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)  noise 1 px, identity, protect: out[2] is 185, the twin has 186
+FAIL (2) (only: tone; PX_ONLY, not the full test)
+ok   rust simd tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)  null, null, null, null, null, null, null, null, null, null, null
+       a 1002 x 1002 dab: tone (protect) rust simd 5.4 ms, twin 9.5; sponge (saturate, vibrance) rust simd 7.3 ms, twin 22.1
+ok   rust scalar module reports its SIMD flag
+FAIL rust scalar tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)  noise 1 px, identity, protect: out[2] is 185, the twin has 186
+ok   rust scalar sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte (1881 cases, each also at an odd offset)
+ok   rust scalar tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)  null, null, null, null, null, null, null, null, null, null, null
+       a 1002 x 1002 dab: tone (protect) rust scalar 5.5 ms, twin 9.8; sponge (saturate, vibrance) rust scalar 16.0 ms, twin 23.8
+FAIL (2) (only: tone; PX_ONLY, not the full test)
+(node:28616) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/9a199ca2a3624e76/982bb566-0e71-4449-a74a-9b75f8d48835/scratchpad/k27/tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\982bb566-0e71-4449-a74a-9b75f8d48835\scratchpad\k27\tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

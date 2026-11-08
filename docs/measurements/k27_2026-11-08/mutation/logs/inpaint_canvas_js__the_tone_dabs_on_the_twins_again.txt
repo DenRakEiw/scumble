@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__the_tone_dabs_on_the_twins_agai-ed --offline --tiles on editor  (rc 1, 17 s, SCUMBLE_EDITOR_ONLY=dodge_burn_and_sponge_through_the_real_handlers)
+editor rc=1 1s FAIL (only: dodge_burn_and_sponge_through_the_real_handlers; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

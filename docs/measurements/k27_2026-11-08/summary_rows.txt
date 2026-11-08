@@ -1,0 +1,72 @@
+row                                                                    before                    after
+  sponge 400 px fit move                                     31.0 [28.7-31.6]         22.1 [21.3-22.7]   n=3/3
+  sponge 400 px fit dab                                      28.9 [26.7-29.3]         20.1 [19.3-20.7]   n=3/3
+  sponge 400 px fit blocked max                              59.5 [57.9-59.5]         45.7 [43.0-48.5]   n=3/3
+  sponge 400 px fit px calls                               ['smudge_dab 242'] ['smudge_dab 242, sponge_rgba 121']
+  sponge 1000 px fit move                                    87.4 [83.0-90.5]         66.6 [66.4-69.8]   n=3/3
+  sponge 1000 px fit dab                                     84.1 [80.3-87.6]         63.8 [63.8-67.1]   n=3/3
+  sponge 1000 px fit blocked max                          176.4 [165.7-178.0]      153.6 [147.5-155.9]   n=3/3
+  sponge 1000 px fit px calls                              ['smudge_dab 122'] ['smudge_dab 122, sponge_rgba 61']
+  sponge 400 px 1:1 move                                        8.9 [8.3-9.1]            7.0 [6.3-7.1]   n=3/3
+  sponge 400 px 1:1 dab                                         7.2 [6.9-7.4]            5.3 [4.9-5.4]   n=3/3
+  sponge 400 px 1:1 blocked max                              57.1 [56.6-57.3]         53.1 [46.9-55.5]   n=3/3
+  sponge 400 px 1:1 px calls                                ['smudge_dab 62'] ['smudge_dab 62, sponge_rgba 31']
+  sponge 1000 px 1:1 move                                    52.0 [49.8-52.4]         42.2 [41.4-43.9]   n=3/3
+  sponge 1000 px 1:1 dab                                     42.4 [41.2-43.1]         33.2 [32.7-34.4]   n=3/3
+  sponge 1000 px 1:1 blocked max                          135.3 [130.6-139.1]      110.0 [109.6-113.4]   n=3/3
+  sponge 1000 px 1:1 px calls                               ['smudge_dab 62'] ['smudge_dab 62, sponge_rgba 31']
+  tone 400 px fit move                                       22.9 [22.4-23.3]         19.9 [19.7-22.3]   n=3/3
+  tone 400 px fit dab                                        21.0 [20.5-21.2]         17.9 [17.8-19.6]   n=3/3
+  tone 400 px fit blocked max                                50.6 [48.5-52.7]         44.5 [43.0-48.1]   n=3/3
+  tone 400 px fit px calls                                 ['smudge_dab 242'] ['smudge_dab 242, tone_rgba 121']
+  tone 1000 px fit move                                      69.0 [65.4-70.5]         63.6 [63.4-66.2]   n=3/3
+  tone 1000 px fit dab                                       66.3 [62.8-67.5]         60.8 [60.5-62.4]   n=3/3
+  tone 1000 px fit blocked max                            153.7 [146.8-164.1]      139.9 [136.1-146.6]   n=3/3
+  tone 1000 px fit px calls                                ['smudge_dab 122'] ['smudge_dab 122, tone_rgba 61']
+  tone 400 px 1:1 move                                          6.9 [6.8-7.3]            6.4 [6.2-6.9]   n=3/3
+  tone 400 px 1:1 dab                                           5.3 [5.3-5.5]            4.9 [4.8-4.9]   n=3/3
+  tone 400 px 1:1 blocked max                                53.9 [52.8-55.4]         49.7 [49.4-49.8]   n=3/3
+  tone 400 px 1:1 px calls                                  ['smudge_dab 62'] ['smudge_dab 62, tone_rgba 31']
+  tone 1000 px 1:1 move                                      43.1 [42.0-43.3]         39.5 [38.9-41.3]   n=3/3
+  tone 1000 px 1:1 dab                                       33.5 [32.6-33.6]         30.6 [30.3-32.0]   n=3/3
+  tone 1000 px 1:1 blocked max                            111.6 [110.3-112.8]      103.9 [101.3-111.2]   n=3/3
+  tone 1000 px 1:1 px calls                                 ['smudge_dab 62'] ['smudge_dab 62, tone_rgba 31']
+  freqsep 4000^2 r 40 wall                              1032.9 [979.7-1070.1]      715.8 [699.3-788.6]   n=3/3
+  freqsep 4000^2 r 40 blocked                           1020.7 [962.4-1054.1]      701.8 [688.1-773.7]   n=3/3
+  freqsep  its read                                          30.6 [27.5-33.9]         28.8 [23.8-30.3]   n=3/3
+  freqsep  its blur                                       701.1 [652.8-713.2]                        -   n=3/0
+  freqsep  its split                                      210.9 [204.6-220.7]      618.5 [606.1-685.6]   n=3/3
+  freqsep  its written                                       90.9 [89.5-99.8]         67.2 [66.6-70.5]   n=3/3
+  freqsep  its blur + split                               912.0 [857.4-933.9]      618.5 [606.1-685.6]   n=3/3
+  freqsep  blur_rgba (kernel)                             680.7 [634.5-693.9]      579.6 [568.5-621.2]   n=3/3
+  freqsep  window instance MB after                             2.1 [2.1-2.1]            2.1 [2.1-2.1]   n=3/3
+  freqsep  window releases during it                            1.0 [1.0-1.0]            1.0 [1.0-1.0]   n=3/3
+  freqsep  freq_split (kernel)                                              -         11.6 [11.2-38.1]   n=0/3
+  kernel tone_402_smooth rust                                               -            0.9 [0.9-0.9]   n=0/3
+  kernel tone_402_smooth twin                                               -            1.0 [1.0-1.0]   n=0/3
+  kernel sponge_402_smooth rust                                             -            1.2 [1.2-1.2]   n=0/3
+  kernel sponge_402_smooth twin                                             -            2.4 [2.3-2.4]   n=0/3
+  kernel desaturate_402_smooth rust                                         -            0.9 [0.9-0.9]   n=0/3
+  kernel desaturate_402_smooth twin                                         -            1.3 [1.2-1.3]   n=0/3
+  kernel tone_402_noise rust                                                -            0.9 [0.9-0.9]   n=0/3
+  kernel tone_402_noise twin                                                -            1.7 [1.6-1.7]   n=0/3
+  kernel sponge_402_noise rust                                              -            1.2 [1.2-1.3]   n=0/3
+  kernel sponge_402_noise twin                                              -            3.0 [2.9-3.1]   n=0/3
+  kernel desaturate_402_noise rust                                          -            0.9 [0.9-0.9]   n=0/3
+  kernel desaturate_402_noise twin                                          -            1.9 [1.7-1.9]   n=0/3
+  kernel tone_1002_smooth rust                                              -            5.4 [5.2-5.5]   n=0/3
+  kernel tone_1002_smooth twin                                              -            6.7 [6.5-6.8]   n=0/3
+  kernel sponge_1002_smooth rust                                            -            7.8 [7.3-7.8]   n=0/3
+  kernel sponge_1002_smooth twin                                            -            8.7 [8.2-8.8]   n=0/3
+  kernel desaturate_1002_smooth rust                                        -            5.9 [5.3-6.1]   n=0/3
+  kernel desaturate_1002_smooth twin                                        -            6.7 [6.1-7.7]   n=0/3
+  kernel tone_1002_noise rust                                               -            5.8 [5.3-5.8]   n=0/3
+  kernel tone_1002_noise twin                                               -         10.8 [10.0-10.8]   n=0/3
+  kernel sponge_1002_noise rust                                             -            7.7 [7.2-7.8]   n=0/3
+  kernel sponge_1002_noise twin                                             -         19.1 [17.8-19.1]   n=0/3
+  kernel desaturate_1002_noise rust                                         -            5.8 [5.6-5.8]   n=0/3
+  kernel desaturate_1002_noise twin                                         -         11.8 [11.5-11.9]   n=0/3
+  kernel split_16mp rust                                                    -         38.7 [37.5-41.0]   n=0/3
+  kernel split_16mp twin                                                    -      141.7 [139.9-149.0]   n=0/3
+  kernel slice_16mp rust                                                    -            7.0 [6.8-7.1]   n=0/3
+  kernel slice_16mp twin                                                    -            7.0 [6.8-7.1]   n=0/3

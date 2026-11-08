@@ -628,7 +628,8 @@ async function toneCases(px, label) {
         // every table on the grid and the small pictures; on the large ones a few, so the run stays short
         if (src.length <= 4 * 4097 || tag === "the grid" ? true : (i + j) % 9 === 0) for (const protect of [false, true]) tone.push({ tag: `${tag}, ${name}${protect ? ", protect" : ""}`, args: [src, l, protect] });
     }));
-    tone.push({ tag: "protect left out", args: [pics[1][1], luts[6][1]] }, { tag: "protect 1 (truthy)", args: [pics[1][1], luts[6][1], 1] }, { tag: "protect \"\" (falsy)", args: [pics[1][1], luts[6][1], ""] });
+    tone.push({ tag: "protect left out", args: [pics[1][1], luts[6][1]] }, { tag: "protect 1 (truthy)", args: [pics[1][1], luts[6][1], 1] }, { tag: "protect \"\" (falsy)", args: [pics[1][1], luts[6][1], ""] },
+        { tag: "protect \"yes\" (truthy, not a number)", args: [pics[1][1], luts[6][1], "yes"] });
     twinCheck({ name: "tone_rgba", title: "tone_rgba equals inpaint_stroke.js toneRGBA byte for byte", builds: [[label, px]], twin, call: (k, a) => k.toneRGBA(...a), cases: tone });
     const sponge = [];
     const amounts = [0, 0.05, 0.37, 0.5, 0.6, 1, -1, 2, NaN, "0.6", undefined, null];
@@ -639,7 +640,8 @@ async function toneCases(px, label) {
             sponge.push({ tag: `${tag}, amount ${String(amount)}${sat ? " saturate" : " desaturate"}${vib === undefined ? "" : vib ? " vibrance" : " flat"}`, args: vib === undefined ? [src, amount, sat] : [src, amount, sat, vib] });
         }
     }));
-    sponge.push({ tag: "saturate left out", args: [pics[1][1], 0.5] }, { tag: "saturate 1 (truthy), vibrance 0 (falsy)", args: [pics[1][1], 0.8, 1, 0] });
+    sponge.push({ tag: "saturate left out", args: [pics[1][1], 0.5] }, { tag: "saturate 1 (truthy), vibrance 0 (falsy)", args: [pics[1][1], 0.8, 1, 0] },
+        { tag: "saturate \"yes\", vibrance \"\" (truthiness, not numbers)", args: [pics[1][1], 0.8, "yes", ""] });
     twinCheck({ name: "sponge_rgba", title: "sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte", builds: [[label, px]], twin, call: (k, a) => k.spongeRGBA(...a), cases: sponge });
     const id = luts[0][1], src8 = new Uint8ClampedArray(8);
     const refused = [px.toneRGBA(new Uint8ClampedArray(7), id), px.toneRGBA(new Uint8ClampedArray(0), id), px.toneRGBA(new Int8Array(8), id), px.toneRGBA([1, 2, 3, 4], id),

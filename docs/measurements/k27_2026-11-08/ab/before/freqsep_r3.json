@@ -1,0 +1,88 @@
+{
+ "freqsep_4000": {
+  "visibility": "visible",
+  "focus": true,
+  "load": 1597.2,
+  "picture": "F:/canvas/dist/daily/adobe_15000x10000.jpg",
+  "size": [
+   15000,
+   10000
+  ],
+  "instBefore": {
+   "serial": 1,
+   "bytes": 2228224,
+   "pending": false,
+   "holds": 0,
+   "release": 0,
+   "idle": 0,
+   "trap": 0,
+   "oom": 0,
+   "sync": 0,
+   "async": 0
+  },
+  "wall": 1070.1,
+  "blocked": 1054.1,
+  "box": [
+   5500,
+   3000,
+   9500,
+   7000
+  ],
+  "radius": 40,
+  "instAfter": {
+   "serial": 2,
+   "bytes": 2228224,
+   "pending": false,
+   "holds": 0,
+   "release": 1,
+   "idle": 0,
+   "trap": 0,
+   "oom": 0,
+   "sync": 1,
+   "async": 0
+  },
+  "marks": [
+   {
+    "op": "freqsep",
+    "total": 1069.2,
+    "steps": [
+     {
+      "step": "start",
+      "ms": 0,
+      "w": 4000,
+      "h": 4000,
+      "radius": 40
+     },
+     {
+      "step": "read",
+      "ms": 33.9
+     },
+     {
+      "step": "blur",
+      "ms": 713.2
+     },
+     {
+      "step": "split",
+      "ms": 220.7
+     },
+     {
+      "step": "written",
+      "ms": 99.8
+     },
+     {
+      "step": "done",
+      "ms": 1.7
+     }
+    ]
+   }
+  ],
+  "pxMs": {
+   "blur_rgba": 693.9,
+   "mip_chain": 0.6
+  },
+  "pxCalls": {
+   "blur_rgba": 1,
+   "mip_chain": 16
+  }
+ }
+}
