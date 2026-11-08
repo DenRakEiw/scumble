@@ -1879,6 +1879,23 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K30 (2026-11-08): liquify's dab on dense arrays (the Antigravity B chain), Stop 6's numbers
+
+By the same chain on `1979e8d` (`647f758`, the review's findings fixed in `59636b1`), merged `e2aa0ec`, no Rust and no ABI
+change; `docs/measurements/k30_2026-11-08/`. `inpaint_liquify.js` `liquifyDabNodes` (dense node arrays), `thawPlane`,
+`LiquifyField.dab(..., kernel)` with `_writeDense` and a reused `_dabSrc` (`nodes(..., out)`), the default through
+`InpaintEditor.liquifyDabKernel`; a restore that meets no cell returns null before the gather (as the Map path's
+`!count`). The review's parity lens found nothing against the Map-based dab. Its findings were about the numbers and two
+tests: the report left out the rows where the dense arm lost (`push 1:1 size 1000` land 34 -> 81 ms, blockedMax 16 -> 67):
+a landing split and the rows in swapped order show one deferred V8 major GC after the 15k document's setup that the Map
+path's allocations (about 160 MB in a stroke) used to trigger one row earlier; in swapped order both arms hit it equally
+(75.8 against 72.8 ms), so it moved and did not grow. At 15k: `push fit size 1000` dab 13.7 -> 6.7 ms, its land 77 -> 45, `push 1:1
+size 1000` dab 3.4 -> 1.8, `shrink held` tick 2.8 -> 1.7. Mutation 29 of 29 killed.
+**Stop 6:** `dabLaps` in Electron: the kernel is 93-95 % of an advected 1000 px dab (1.64 of 1.8 ms; 6.23 of 6.7 ms across the
+four sub-dabs of a move at fit), the gather and the write 0.08-0.15 ms per sub-dab, and `nodes()` can fill wasm memory
+directly (as K29's window), so K31 needs no 1 MB of extra copies; a 2-3x kernel would save about 0.8-1.1 ms per sub-dab (inferred
+from K28 / K29's 1.5-1.9x and SIMD). The user decides K31.
+
 ### K34 (2026-11-08): the edge fit's shrink and warps in Rust (the Antigravity E chain)
 
 By the same chain as K32 and K33 on `da4ba5e` (`e9aa179`, the review's findings fixed in `c16aa38`), merged `8928d7d` with the
