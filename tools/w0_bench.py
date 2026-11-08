@@ -160,15 +160,19 @@ ROWS = {
     """,
     "stitch_masks_2048": """
         const S = await import('./editor/stitch.js');
+        const K = await import('./editor/px/kernels.js');
         const w = 2048, h = 2048, n = w * h;
         const mk = () => { const d = new Float32Array(n); for (let i = 0; i < n; i++) d[i] = ((i % w) > 512 && (i % w) < 1536 && i > n / 4 && i < 3 * n / 4) ? 1 : 0; return { data: d, w, h }; };
+        await pxc(true);
         out.gauss = await time(() => S.gaussBlur(mk(), 8), 3);
         out.dilate = await time(() => S.dilate(mk(), 8), 3);
-        // the per-pixel JS around them (stitch.js maskMax + maskClamp, copied: they are not exported)
         const a = mk(), b = mk();
-        out.max_clamp = await time(() => { const o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = Math.max(a.data[i], b.data[i]); for (let i = 0; i < n; i++) o[i] = Math.min(1, Math.max(0, o[i])); return o; }, 3);
+        out.max_clamp = await time(() => typeof K.maskMaxClamp === "function"
+            ? K.maskMaxClamp(a.data, b.data, true)
+            : (() => { const o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = Math.max(a.data[i], b.data[i]); for (let i = 0; i < n; i++) o[i] = Math.min(1, Math.max(0, o[i])); return o; })(), 3);
         out.mk = await time(() => mk(), 3);
-        out.note = "gaussBlur and dilate run Rust (box_blurs, dilate_mask) and include the mask's build (mk, also timed); max_clamp is the JS loop of denoiseMask";
+        out.pxCalls = await pxc(true);
+        out.note = "gaussBlur, dilate and max_clamp run through kernels.js (box_blurs, dilate_mask, mask_max_clamp); gauss and dilate include mk (also timed)";
     """,
     "box_blurs_k4": """
         // K4 (docs/PLAN_WASM_BUILD.md): box_blurs through kernels.js (Rust) and its twin at the sizes its callers use, and

@@ -27,6 +27,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { spawnSync } = require("node:child_process");
 const { pathToFileURL, fileURLToPath } = require("node:url");
 
 const ROOT = path.dirname(__dirname);
@@ -475,7 +476,7 @@ async function pngReadCases(px, label, js) {
     console.log(`       256 rows of 15,000 RGB pixels, Paeth: ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)} ms`);
 }
 
-/** The float masks of a provider run (dilate_mask, box_blurs) against their twins: the same floats, bit for bit. */
+/** The float masks of a provider run (dilate_mask, box_blurs, and K32's six mask kernels) against their twins: bit for bit. */
 async function maskCases(px, label, js) {
     const mask = (w, h, seed) => {
         let s = seed >>> 0;
@@ -511,6 +512,208 @@ async function maskCases(px, label, js) {
         cases: masks.flatMap(([m, w, h]) => [[1, 1, 1], [0, 1, 2], [3, 3, 4], [17, 18, 18], [200, 200, 201], [0, 0, 0]].map((radii) => ({ tag: `box blurs ${w}x${h} ${radii}`, args: [m, w, h, radii] })))
             .concat(small.flatMap(([m, w, h]) => [[1], [2, 0, 3], [7, 7, 8]].map((radii) => ({ tag: `box blurs ${w}x${h} ${radii}`, args: [m, w, h, radii] })))),
     });
+
+    // K32: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32
+    const allAlpha = new Uint8Array(256 * 4);
+    for (let i = 0; i < 256; i++) {
+        allAlpha[i * 4] = (i * 73) & 255;
+        allAlpha[i * 4 + 1] = (255 - i) & 255;
+        allAlpha[i * 4 + 2] = (i * 19 + 5) & 255;
+        allAlpha[i * 4 + 3] = i;
+    }
+    const alphaCases = [
+        { tag: "all 256 alphas", args: [allAlpha, false] },
+        { tag: "all 256 alphas into out", args: [allAlpha, true] },
+        ...[1, 2, 3, 4, 5, 7, 16, 17, 259].map((n) => ({ tag: `${n} pixels`, args: [randomRGBA(n, 1, n * 41), n % 2 === 0] })),
+    ];
+    twinCheck({
+        name: "alpha_to_mask", title: "alpha_to_mask equals its twin bit for bit", builds: [[label, px]], twin: js,
+        call: (k, [rgba, into]) => k.alphaToMask(rgba, into ? new Float32Array(rgba.length >>> 2) : null),
+        cases: alphaCases,
+    });
+
+    // Edge floats for mask_max_clamp, mask_one_minus and mask_to_rgba: placed at both SIMD lanes and the scalar tail
+    const fFromBits = (bits) => {
+        const u = Uint32Array.from(bits);
+        return new Float32Array(u.buffer);
+    };
+    const edgeVals = (() => {
+        const special = fFromBits([
+            0x00000000, 0x80000000, 0x3f800000, 0xbf800000, 0x3f000000, 0x3eff_ffff, 0x3f00_0001,
+            0x7f800000, 0xff800000, 0x7fc00000, 0xffc00000, 0x7fc01234, 0xffc01234, 0x7f800001,
+            0x00000001, 0x80000001, 0x33800001, 0x3f7f_ffff, 0x3f80_0001,
+        ]);
+        const out = new Float32Array(special.length * 2 + 520);
+        out.set(special, 0);
+        // Repeat specials at an odd offset so they land in the scalar tail when length % 4 !== 0
+        out.set(special, out.length - special.length);
+        for (let i = 0; i < 256; i++) {
+            out[special.length + i * 2] = i / 255;
+            out[special.length + i * 2 + 1] = (i + 0.5) / 255;
+        }
+        return out;
+    })();
+    const pairA = new Float32Array(edgeVals.length), pairB = new Float32Array(edgeVals.length);
+    for (let i = 0; i < edgeVals.length; i++) {
+        pairA[i] = edgeVals[i];
+        pairB[i] = edgeVals[(i * 7 + 3) % edgeVals.length];
+    }
+    // Explicit signed-zero and NaN pairings at lanes 0..3 and scalar tail 4..7
+    const zeroNaNA = fFromBits([0x00000000, 0x80000000, 0x80000000, 0x00000000, 0x7fc00000, 0x3f000000, 0x7fc01234]);
+    const zeroNaNB = fFromBits([0x80000000, 0x00000000, 0x80000000, 0x00000000, 0x3f000000, 0x7fc00000, 0xffc05678]);
+    const mcCases = [];
+    for (const [tag, a, b] of [
+        ["zeros and NaNs (7)", zeroNaNA, zeroNaNB],
+        ["edge pairs", pairA, pairB],
+        ["edge pairs reversed", pairB, pairA],
+        ["1 float", edgeVals.subarray(0, 1), pairB.subarray(0, 1)],
+        ["2 floats", edgeVals.subarray(0, 2), pairB.subarray(0, 2)],
+        ["3 floats", edgeVals.subarray(0, 3), pairB.subarray(0, 3)],
+        ["5 floats", edgeVals.subarray(0, 5), pairB.subarray(0, 5)],
+        ["131x77 mask", masks[4][0], mask(131, 77, 999)],
+    ]) {
+        for (const hasB of [true, false]) {
+            for (const clamp of [false, true]) {
+                for (const inPlace of [false, true]) {
+                    mcCases.push({ tag: `${tag} b=${hasB} clamp=${clamp} inPlace=${inPlace}`, args: [a, hasB ? b : null, clamp, inPlace] });
+                }
+            }
+        }
+    }
+    twinCheck({
+        name: "mask_max_clamp", title: "mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place)", builds: [[label, px]], twin: js,
+        call: (k, [a, b, clamp, inPlace]) => k.maskMaxClamp(a, b, clamp, inPlace ? a : null),
+        cases: mcCases,
+    });
+
+    const omCases = [
+        { tag: "edge values", args: [edgeVals, false] },
+        { tag: "edge values in-place", args: [edgeVals, true] },
+        { tag: "zeros and NaNs (7)", args: [zeroNaNA, false] },
+        ...[1, 2, 3, 4, 5, 7, 16, 19].map((n) => ({ tag: `${n} floats`, args: [edgeVals.subarray(0, n), n % 2 === 1] })),
+        { tag: "131x77 mask", args: [masks[4][0], false] },
+    ];
+    twinCheck({
+        name: "mask_one_minus", title: "mask_one_minus equals its twin bit for bit", builds: [[label, px]], twin: js,
+        call: (k, [m, inPlace]) => k.maskOneMinus(m, inPlace ? m : null),
+        cases: omCases,
+    });
+
+    // Direct export checks when dst !== src (Px methods pass pa as both src and dst to save arena memory)
+    {
+        const n = zeroNaNA.length, bytes = n * 4;
+        const pa = px.alloc(bytes), pb = px.alloc(bytes), po = px.alloc(bytes);
+        px.put(pa, zeroNaNA); px.put(pb, zeroNaNB);
+        px.exports.mask_max_clamp(pa, pb, po, n, 1);
+        const gotMc = px.get(Float32Array, po, n);
+        const wantMc = js.maskMaxClamp(zeroNaNA, zeroNaNB, true);
+        px.exports.mask_one_minus(pa, po, n);
+        const gotOm = px.get(Float32Array, po, n);
+        const wantOm = js.maskOneMinus(zeroNaNA);
+        px.free(pa, bytes); px.free(pb, bytes); px.free(po, bytes);
+        check(`${label} mask_max_clamp and mask_one_minus with separate dst pointer equal their twins`,
+            !twinDiff(gotMc, wantMc, [], {}) && !twinDiff(gotOm, wantOm, [], {}));
+    }
+
+    twinCheck({
+        name: "erode_mask", title: "erode_mask equals its twin bit for bit", builds: [[label, px]], twin: js,
+        call: (k, [m, w, h, r]) => k.erodeMask(m, w, h, r),
+        cases: masks.concat(small.slice(0, 5)).flatMap(([m, w, h]) => [0, 1, 2, 5, 40, 500].map((r) => ({ tag: `erode ${w}x${h} by ${r}`, args: [m, w, h, r] }))),
+    });
+
+    const rgbaCases = [];
+    for (const mode of [0, 1, 2]) {
+        for (const [tag, m] of [
+            ["edge values", edgeVals],
+            ["zeros and NaNs (7)", zeroNaNA],
+            ["1 float", edgeVals.subarray(4, 5)],
+            ["2 floats", edgeVals.subarray(4, 6)],
+            ["3 floats", edgeVals.subarray(4, 7)],
+            ["5 floats", edgeVals.subarray(4, 9)],
+            ["64x64 mask", masks[3][0]],
+        ]) {
+            for (const into of [false, true]) {
+                rgbaCases.push({ tag: `mode ${mode} ${tag} into=${into}`, args: [m, mode, into] });
+            }
+        }
+    }
+    twinCheck({
+        name: "mask_to_rgba", title: "mask_to_rgba equals its twin byte for byte (white, luminance, alpha)", builds: [[label, px]], twin: js,
+        call: (k, [m, mode, into]) => k.maskToRgba(m, mode, into ? new Uint8ClampedArray(m.length * 4) : null),
+        cases: rgbaCases,
+    });
+
+    const boundsCases = [
+        { tag: "empty 7x5", args: [new Float32Array(35), 7, 5] },
+        { tag: "exactly 0.5 everywhere 7x5", args: [new Float32Array(35).fill(0.5), 7, 5] },
+        { tag: "NaN and negative 7x5", args: [Float32Array.from({ length: 35 }, (_, i) => (i % 2 ? NaN : -1)), 7, 5] },
+        { tag: "full 7x5", args: [new Float32Array(35).fill(1), 7, 5] },
+        { tag: "zero width", args: [new Float32Array(0), 0, 5] },
+        { tag: "zero height", args: [new Float32Array(0), 5, 0] },
+        ...masks.map(([m, w, h]) => ({ tag: `mask ${w}x${h}`, args: [m, w, h] })),
+    ];
+    // Single-pixel and two-pixel masks across every x in a 10x3 mask (covers SIMD blocks 0..4, 4..8, and tail 8..10)
+    const bw = 10, bh = 3, aboveHalf = fFromBits([0x3f00_0001])[0];
+    for (let y = 0; y < bh; y++) {
+        for (let x0 = 0; x0 < bw; x0++) {
+            const single = new Float32Array(bw * bh).fill(0.5);
+            single[y * bw + x0] = aboveHalf;
+            boundsCases.push({ tag: `single 10x3 at ${x0},${y}`, args: [single, bw, bh] });
+            for (let x1 = x0 + 1; x1 < bw; x1++) {
+                const pair = new Float32Array(bw * bh).fill(0.5);
+                pair[y * bw + x0] = aboveHalf;
+                pair[y * bw + x1] = 1.0;
+                boundsCases.push({ tag: `pair 10x3 at ${x0}..${x1} row ${y}`, args: [pair, bw, bh] });
+            }
+        }
+    }
+    twinCheck({
+        name: "mask_bounds_f32", title: "mask_bounds_f32 equals its twin", builds: [[label, px]], twin: js,
+        call: (k, [m, w, h]) => k.maskBoundsF32(m, w, h),
+        cases: boundsCases,
+    });
+
+    if (label === "rust simd") {
+        const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        try {
+            K.setKernels("rust");
+            if (!K.rustPx()) {
+                const realFetch = globalThis.fetch;
+                globalThis.fetch = async (u, ...rest) => {
+                    const s = String(u && u.href ? u.href : u);
+                    return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+                };
+                try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+            }
+            const rgba = randomRGBA(19, 7, 301), w = 19, h = 7;
+            const runAll = () => {
+                const m = K.alphaToMask(rgba);
+                const mc = K.maskMaxClamp(m, pairB.subarray(0, w * h), true);
+                const om = K.maskOneMinus(mc);
+                const er = K.erodeMask(om, w, h, 2);
+                const r0 = K.maskToRgba(er, 0), r1 = K.maskToRgba(er, 1), r2 = K.maskToRgba(er, 2);
+                const b = K.maskBoundsF32(er, w, h);
+                return { m, mc, om, er, r0, r1, r2, b };
+            };
+            K.setRoute("stitchMask", "rust");
+            K.pxCalls(true);
+            const rustOut = runAll(), rustCalls = K.pxCalls(true);
+            K.setRoute("stitchMask", "js");
+            const jsOut = runAll(), jsCalls = K.pxCalls(true);
+            K.setRoute("stitchMask", null);
+            const exports6 = ["alpha_to_mask", "mask_max_clamp", "mask_one_minus", "erode_mask", "mask_to_rgba", "mask_bounds_f32"];
+            const countsOk = exports6.every((e) => (rustCalls[e] || 0) > 0 && !jsCalls[e]) && rustCalls.mask_to_rgba === 3;
+            const diff = twinDiff(rustOut, jsOut, [], {});
+            check("kernels.js stitchMask route switches all six K32 mask kernels between Rust and the twins with identical outputs",
+                countsOk && !diff, diff || JSON.stringify({ rustCalls, jsCalls }));
+        } finally {
+            kernelsBack(K);
+        }
+        const stRun = spawnSync(process.execPath, [path.join(ROOT, "tools", "stitch_test.js")], { encoding: "utf-8" });
+        const stFail = ((stRun.stdout || "") + (stRun.stderr || "")).split(/\r?\n/).find((l) => l.startsWith("[FAIL]"));
+        check("stitch_test.js vs 29f6749 loops", stRun.status === 0 && !stFail, stFail || `rc=${stRun.status}`);
+    }
+
     const big = mask(1492, 1492, 9);
     const t0 = performance.now(); px.dilateMask(big, 1492, 1492, 47);
     const t1 = performance.now(); js.dilateMask(big, 1492, 1492, 47);
@@ -518,6 +721,22 @@ async function maskCases(px, label, js) {
     const t3 = performance.now(); js.boxBlurs(big, 1492, 1492, [19, 20, 20]);
     const t4 = performance.now();
     console.log(`       1492 x 1492: dilate ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)}; three box blurs ${label} ${(t3 - t2).toFixed(1)} ms, twin ${(t4 - t3).toFixed(1)}`);
+    if (process.env.PX_BENCH) {
+        const bigB = mask(1492, 1492, 10), bigRgba = js.maskToRgba(big, 0);
+        const rows = [
+            ["alpha_to_mask", (k) => k.alphaToMask(bigRgba)],
+            ["mask_max_clamp", (k) => k.maskMaxClamp(big, bigB, true)],
+            ["mask_one_minus", (k) => k.maskOneMinus(big)],
+            ["erode_mask", (k) => k.erodeMask(big, 1492, 1492, 47)],
+            ["mask_to_rgba", (k) => k.maskToRgba(big, 1)],
+            ["mask_bounds_f32", (k) => k.maskBoundsF32(big, 1492, 1492)],
+        ];
+        const parts = rows.map(([n, fn]) => {
+            const m = benchMedians([[label, () => fn(px)], ["twin", () => fn(js)]]);
+            return `${n} ${label} ${m[label].toFixed(2)} ms, twin ${m.twin.toFixed(2)}`;
+        });
+        console.log(`       1492 x 1492 K32 masks: ${parts.join("; ")}`);
+    }
 }
 
 /**

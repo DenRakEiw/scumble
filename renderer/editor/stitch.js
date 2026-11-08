@@ -15,7 +15,7 @@
 // Navier-Stokes inpainting (it behaves like "blur"). Alignment uses an affine Lucas-Kanade
 // fit on the edge ring (edgefit.js).
 
-import { dilateMask, boxBlurs, kernelsMode, routeOverrides } from "./px/kernels.js";
+import { alphaToMask, maskMaxClamp, maskOneMinus, dilateMask, erodeMask, maskToRgba, maskBoundsF32, boxBlurs, kernelsMode, routeOverrides } from "./px/kernels.js";
 import { fitLayerRGBA, warpRGBA, warpCoverage } from "./edgefit.js";
 
 const MIN_AUTO_CROP = 512;
@@ -118,28 +118,19 @@ function regionOf(editor, x, y, w, h) {
 }
 
 /** The alpha channel of ImageData (a readRect of the selection, say) as a 0..1 mask. */
-function maskFromAlpha(img) {
+export function maskFromAlpha(img) {
     const t0 = lapStart();
-    const w = img.width, h = img.height, d = img.data;
-    const m = maskOf(w, h);
-    for (let i = 0, j = 3; i < w * h; i++, j += 4) m.data[i] = d[j] / 255;
+    const w = img.width, h = img.height;
+    const m = { data: alphaToMask(img.data), w, h };
     lapEnd("maskFromAlpha", t0);
     return m;
 }
 
-function maskMax(a, b) {
+export function maskMaxClamped(a, b) {
     const t0 = lapStart();
-    const o = maskOf(a.w, a.h);
-    for (let i = 0; i < o.data.length; i++) o.data[i] = Math.max(a.data[i], b.data[i]);
+    const data = maskMaxClamp(a.data, b.data, true, a === b ? null : a.data);
     lapEnd("maskMax", t0);
-    return o;
-}
-
-function maskClamp(m) {
-    const t0 = lapStart();
-    for (let i = 0; i < m.data.length; i++) m.data[i] = Math.min(1, Math.max(0, m.data[i]));
-    lapEnd("maskClamp", t0);
-    return m;
+    return { data, w: a.w, h: a.h };
 }
 
 /** Square dilation by px (max filter, separable). */
@@ -152,18 +143,13 @@ export function dilate(m, px) {
     return out;
 }
 
-// laps: "erode" is its two `1 - x` loops; the max filter between them is "dilate"'s
-function erode(m, px) {
+export function erode(m, px) {
+    px = Math.floor(px);
     if (px <= 0) return m;
-    let t0 = lapStart();
-    const inv = maskOf(m.w, m.h);
-    for (let i = 0; i < inv.data.length; i++) inv.data[i] = 1 - m.data[i];
+    const t0 = lapStart();
+    const out = { data: erodeMask(m.data, m.w, m.h, px), w: m.w, h: m.h };
     lapEnd("erode", t0);
-    const d = dilate(inv, px);
-    t0 = lapStart();
-    for (let i = 0; i < d.data.length; i++) d.data[i] = 1 - d.data[i];
-    lapEnd("erode", t0);
-    return d;
+    return out;
 }
 
 /** Gaussian blur with standard deviation sigma (three box blurs), clamped edges like PIL's. */
@@ -184,18 +170,18 @@ export function gaussBlur(m, sigma) {
 }
 
 /** Selection -> dilate(grow) -> blur(feather / 2.5); always opaque inside the selection. */
-function denoiseMask(sel, grow, feather) {
+export function denoiseMask(sel, grow, feather) {
     let m = dilate(sel, grow);
     m = gaussBlur(m, feather / 2.5);
-    return maskClamp(maskMax(m, sel));
+    return maskMaxClamped(m, sel);
 }
 
 /** Denoise mask -> erode(blend / 2) -> blur(blend / 2.5); opaque inside the selection. */
-function compositeMask(sel, grow, feather, blend) {
+export function compositeMask(sel, grow, feather, blend) {
     let m = denoiseMask(sel, grow, feather);
     m = erode(m, Math.floor(blend / 2));
     m = gaussBlur(m, blend / 2.5);
-    return maskClamp(maskMax(m, sel));
+    return maskMaxClamped(m, sel);
 }
 
 /** The part w x h at (x0, y0) of a mask, in image coordinates; outside a window mask (`selectionWindow`) it is 0. */
@@ -269,23 +255,18 @@ function resizeMask(m, w, h) {
 }
 
 /** Mask as a canvas: white with alpha = value (usable both as luminance and as alpha). */
-function maskToCanvas(m, { luminance = false } = {}) {
+export function maskToCanvas(m, { luminance = false } = {}) {
     const t0 = lapStart();
     const c = makeCanvas(m.w, m.h);
     const ctx = c.getContext("2d");
     const img = ctx.createImageData(m.w, m.h);
-    const d = img.data;
-    for (let i = 0, j = 0; i < m.data.length; i++, j += 4) {
-        const v = Math.round(Math.min(1, Math.max(0, m.data[i])) * 255);
-        if (luminance) { d[j] = v; d[j + 1] = v; d[j + 2] = v; d[j + 3] = 255; }
-        else { d[j] = 255; d[j + 1] = 255; d[j + 2] = 255; d[j + 3] = v; }
-    }
+    maskToRgba(m.data, luminance ? 1 : 0, img.data);
     ctx.putImageData(img, 0, 0);
     lapEnd("maskToCanvas", t0);
     return c;
 }
 
-function selectionBbox(m, padding) {
+export function selectionBbox(m, padding) {
     if (m.bounds) {
         // a stand-in that carries the selection's bounds ([x0, y0, x1, y1], x1 and y1 exclusive) instead of its mask
         // (planFrame): the same box, read from the editor's cached bounds
@@ -294,23 +275,17 @@ function selectionBbox(m, padding) {
     }
     const { w, h } = m;
     const ox = m.ox | 0, oy = m.oy | 0, W = m.fullW || w, H = m.fullH || h;
-    let x0 = w, y0 = h, x1 = -1, y1 = -1;
     const t0 = lapStart();
-    for (let y = 0; y < h; y++) {
-        const row = y * w;
-        for (let x = 0; x < w; x++) {
-            if (m.data[row + x] > 0.5) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-        }
-    }
+    const b = maskBoundsF32(m.data, w, h);
     lapEnd("selectionBbox", t0);
-    if (x1 < 0) return { has: false, x0: 0, y0: 0, x1: W, y1: H };
-    return { has: true, x0: Math.max(0, ox + x0 - padding), y0: Math.max(0, oy + y0 - padding), x1: Math.min(W, ox + x1 + 1 + padding), y1: Math.min(H, oy + y1 + 1 + padding) };
+    if (!b) return { has: false, x0: 0, y0: 0, x1: W, y1: H };
+    return { has: true, x0: Math.max(0, ox + b[0] - padding), y0: Math.max(0, oy + b[1] - padding), x1: Math.min(W, ox + b[2] + padding), y1: Math.min(H, oy + b[3] + padding) };
 }
 
 // ---- fill modes ---------------------------------------------------------------------------
 
 /** Fill the selected area of an RGB(A) crop before it goes to the model (nodes.py _fill_masked). */
-function fillMasked(crop, fillMask, mode) {
+export function fillMasked(crop, fillMask, mode) {
     if (!mode || mode === "none") return crop;
     const w = crop.width, h = crop.height;
     const ctx = crop.getContext("2d");
@@ -326,7 +301,7 @@ function fillMasked(crop, fillMask, mode) {
         return crop;
     }
     const soft = gaussBlur(hard, 4);
-    for (let i = 0; i < soft.data.length; i++) soft.data[i] = Math.max(Math.min(1, soft.data[i]), hard.data[i]);
+    maskMaxClamp(soft.data, hard.data, true, soft.data);
     if (mode === "neutral") {
         let r = 0, g = 0, b = 0, n = 0;
         for (let i = 0, j = 0; i < w * h; i++, j += 4) if (!hard.data[i]) { r += d[j]; g += d[j + 1]; b += d[j + 2]; n++; }
@@ -340,8 +315,7 @@ function fillMasked(crop, fillMask, mode) {
     }
     // blur / border: smear the surroundings into the hole with a normalized convolution
     const sigma = Math.max(8, 0.05 * Math.max(w, h));
-    const inv = maskOf(w, h);
-    for (let i = 0; i < w * h; i++) inv.data[i] = 1 - hard.data[i];
+    const inv = { data: maskOneMinus(hard.data), w, h };
     const den = gaussBlur(inv, sigma);
     const chans = [0, 1, 2].map((c) => {
         const m = maskOf(w, h);
@@ -601,13 +575,12 @@ export function prepareCrop(editor, params, limits, opts = {}) {
 }
 
 /** RGBA mask with alpha 0 where the model should repaint (OpenAI's convention). */
-function alphaMask(m) {
+export function alphaMask(m) {
     const t0 = lapStart();
     const c = makeCanvas(m.w, m.h);
     const ctx = c.getContext("2d");
     const img = ctx.createImageData(m.w, m.h);
-    const d = img.data;
-    for (let i = 0, j = 0; i < m.data.length; i++, j += 4) { d[j] = 0; d[j + 1] = 0; d[j + 2] = 0; d[j + 3] = m.data[i] > 0.5 ? 0 : 255; }
+    maskToRgba(m.data, 2, img.data);
     ctx.putImageData(img, 0, 0);
     lapEnd("alphaMask", t0);
     return c;
@@ -727,8 +700,7 @@ export function finishPixels(info, sel, resultImage, region, laps = null) {
     // the statistics would read the transparent pixels' black, and the asset was never meant
     // to sit on the backdrop the region shows.
     if (info.color_match && region && !info.keepAlpha) {
-        const keep = maskOf(w, h);
-        for (let i = 0; i < keep.data.length; i++) keep.data[i] = 1 - blend.data[i];
+        const keep = { data: maskOneMinus(blend.data), w, h };
         patch = lap("colorMatch", () => colorMatch(patch, region, keep));
     }
 

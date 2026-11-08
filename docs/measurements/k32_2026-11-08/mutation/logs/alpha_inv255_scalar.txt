@@ -1,0 +1,24 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 174888 bytes, sha256 28ee3e02cb9cef37
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 148326 bytes, sha256 6836de3ed379cc6b
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.63s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.92s
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=mask)
+FAIL rust scalar alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)  all 256 alphas: out[3] is 0.011764707043766975 (0x3c40c0c2), the twin has 0.0117647061124444 (0x3c40c0c1)
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 23.9 ms, twin 47.9; three box blurs rust scalar 17.8 ms, twin 23.0
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+(node:57240) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/cf08cea4-66f3-4c19-a3be-ed2784ff8190/scratch/mut_tree_k32/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

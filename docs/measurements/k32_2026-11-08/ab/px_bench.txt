@@ -1,0 +1,39 @@
+(node:23416) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-e/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-e\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PX_ONLY: only the groups mask run (a filtered run, not the full test)
+ok   rust simd module reports its SIMD flag
+ok   rust simd dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   js dilate_mask gives the same at an odd offset
+ok   rust simd box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   js box_blurs gives the same at an odd offset
+ok   rust simd alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   js alpha_to_mask gives the same at an odd offset
+ok   rust simd mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+ok   js mask_max_clamp gives the same at an odd offset
+ok   rust simd mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   js mask_one_minus gives the same at an odd offset
+ok   rust simd mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust simd erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   js erode_mask gives the same at an odd offset
+ok   rust simd mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   js mask_to_rgba gives the same at an odd offset
+ok   rust simd mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   js mask_bounds_f32 gives the same at an odd offset
+ok   kernels.js stitchMask route switches all six K32 mask kernels between Rust and the twins with identical outputs  {"rustCalls":{"alpha_to_mask":1,"erode_mask":1,"mask_bounds_f32":1,"mask_max_clamp":1,"mask_one_minus":1,"mask_to_rgba":3},"jsCalls":{}}
+       1492 x 1492: dilate rust simd 20.8 ms, twin 46.6; three box blurs rust simd 11.4 ms, twin 23.0
+       1492 x 1492 K32 masks: alpha_to_mask rust simd 2.55 ms, twin 3.52; mask_max_clamp rust simd 3.13 ms, twin 5.17; mask_one_minus rust simd 1.75 ms, twin 2.10; erode_mask rust simd 18.12 ms, twin 47.26; mask_to_rgba rust simd 4.78 ms, twin 6.60; mask_bounds_f32 rust simd 0.48 ms, twin 2.73
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   rust scalar alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 22.9 ms, twin 46.4; three box blurs rust scalar 18.3 ms, twin 24.4
+       1492 x 1492 K32 masks: alpha_to_mask rust scalar 3.37 ms, twin 3.50; mask_max_clamp rust scalar 6.84 ms, twin 5.68; mask_one_minus rust scalar 1.88 ms, twin 2.15; erode_mask rust scalar 20.35 ms, twin 45.85; mask_to_rgba rust scalar 4.46 ms, twin 6.22; mask_bounds_f32 rust scalar 0.52 ms, twin 2.71
+PASS (only: mask; PX_ONLY, not the full test)

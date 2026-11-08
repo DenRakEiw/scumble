@@ -1,0 +1,105 @@
+lock: taken after 0 s
+[05:04:56] lock: taken (K32 measuring (chain-e, port 9615) 32332 2026-11-08T05:04:56) and /f/canvas/.claude/coord/machine_busy.lock written
+[05:04:56] after: 29f6749 + working tree, px.wasm 174924 B (b44b05efa837b086), px_scalar.wasm 148341 B
+[05:04:56] before: /c/Users/schoeneberg/.gemini/antigravity/brain/cf08cea4-66f3-4c19-a3be-ed2784ff8190/scratch/before_tree_k32, px.wasm 168058 B (5ed9fb4b74c13eed), px_scalar.wasm 145445 B
+[05:04:56] == round 1
+[05:05:09] before r1: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:05:46] w0 rc=0
+closed
+[05:06:02] before r1: native_test 15000x10000 --no-profile provider_crop
+[05:06:10] native rc=0
+closed
+[05:06:26] after r1: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:07:01] w0 rc=0
+closed
+[05:07:17] after r1: native_test 15000x10000 --no-profile provider_crop
+[05:07:25] native rc=0
+closed
+[05:07:29] == round 2
+[05:07:40] after r2: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:08:14] w0 rc=0
+closed
+[05:08:30] after r2: native_test 15000x10000 --no-profile provider_crop
+[05:08:37] native rc=0
+closed
+[05:08:53] before r2: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:09:27] w0 rc=0
+closed
+[05:09:43] before r2: native_test 15000x10000 --no-profile provider_crop
+[05:09:51] native rc=0
+closed
+[05:09:56] == round 3
+[05:10:06] before r3: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:10:42] w0 rc=0
+closed
+[05:10:57] before r3: native_test 15000x10000 --no-profile provider_crop
+[05:11:06] native rc=0
+closed
+[05:11:21] after r3: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:11:53] w0 rc=0
+closed
+[05:12:08] after r3: native_test 15000x10000 --no-profile provider_crop
+[05:12:16] native rc=0
+closed
+[05:12:20] px_bench: PX_BENCH=1 PX_ONLY=mask node tools/px_test.js
+[05:12:23] done
+lock: released
+no instance on 9615 Cannot connect to host 127.0.0.1:9615 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+lock: held by 'K28 measuring 49852 2026-11-08T05:41:54', waiting
+lock: taken after 30 s
+[05:44:31] lock: taken (K32 measuring (chain-e, port 9615) 19444 2026-11-08T05:44:01) and /f/canvas/.claude/coord/machine_busy.lock written
+[05:44:31] after: 15e2009 + working tree, px.wasm 174924 B (b44b05efa837b086), px_scalar.wasm 148341 B
+[05:44:31] before: /c/Users/schoeneberg/.gemini/antigravity/brain/cf08cea4-66f3-4c19-a3be-ed2784ff8190/scratch/before_tree_k32, px.wasm 168058 B (5ed9fb4b74c13eed), px_scalar.wasm 145445 B
+[05:44:31] == round 1
+[05:44:42] before r1: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[05:44:42] native_warm rc=1
+closed
+[05:44:57] after r1: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[05:44:58] native_warm rc=1
+closed
+[05:45:02] == round 2
+[05:45:13] after r2: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[05:45:14] native_warm rc=1
+closed
+[05:45:29] before r2: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[05:45:29] native_warm rc=1
+closed
+[05:45:34] == round 3
+[05:45:44] before r3: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[05:45:45] native_warm rc=1
+closed
+[05:46:00] after r3: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[05:46:00] native_warm rc=1
+closed
+[05:46:05] done
+lock: released
+no instance on 9615 Cannot connect to host 127.0.0.1:9615 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+lock: held by 'K21 measuring (before r1) 31348 2026-11-08T05:46:16', waiting
+lock: taken after 1020 s
+[06:03:37] lock: taken (K32 measuring (chain-e, port 9615) 29748 2026-11-08T05:46:37) and /f/canvas/.claude/coord/machine_busy.lock written
+[06:03:37] after: 15e2009 + working tree, px.wasm 174924 B (b44b05efa837b086), px_scalar.wasm 148341 B
+[06:03:37] before: /c/Users/schoeneberg/.gemini/antigravity/brain/cf08cea4-66f3-4c19-a3be-ed2784ff8190/scratch/before_tree_k32, px.wasm 168058 B (5ed9fb4b74c13eed), px_scalar.wasm 145445 B
+[06:03:37] == round 1
+[06:03:48] before r1: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[06:03:56] native_warm rc=0
+closed
+[06:04:11] after r1: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[06:04:19] native_warm rc=0
+closed
+[06:04:24] == round 2
+[06:04:34] after r2: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[06:04:43] native_warm rc=0
+closed
+[06:04:58] before r2: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[06:05:06] native_warm rc=0
+closed
+[06:05:11] == round 3
+[06:05:21] before r3: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[06:05:30] native_warm rc=0
+closed
+[06:05:45] after r3: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[06:05:53] native_warm rc=0
+closed
+[06:05:57] done
+lock: released
+no instance on 9615 Cannot connect to host 127.0.0.1:9615 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

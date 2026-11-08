@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 24;
+export const PX_ABI = 25;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -351,6 +351,36 @@ export class Px {
         } finally { this._reset(a); }
     }
 
+    /** The alpha channel of RGBA8 `rgba` as a 0..1 Float32Array (`out` when given, else a new one). */
+    alphaToMask(rgba, out = null) {
+        const a = this.job, n = rgba.length >>> 2;
+        try {
+            const pr = this._in(a, rgba, n * 4), po = a.take(n * 4);
+            this.exports.alpha_to_mask(pr, po, n);
+            return this._out(Float32Array, po, n, out);
+        } finally { this._reset(a); }
+    }
+
+    /** `Math.max(a[i], b[i])` (when `b` is given) and/or `Math.min(1, Math.max(0, x))` (`clamp`) into `out` (or a new Float32Array). */
+    maskMaxClamp(a, b = null, clamp = false, out = null) {
+        const ar = this.job, n = a.length;
+        try {
+            const pa = this._in(ar, a, n * 4), pb = b ? this._in(ar, b, n * 4) : 0;
+            this.exports.mask_max_clamp(pa, pb, pa, n, clamp ? 1 : 0);
+            return this._out(Float32Array, pa, n, out);
+        } finally { this._reset(ar); }
+    }
+
+    /** `1 - src[i]` for every float of `src`, into `out` (or a new Float32Array). */
+    maskOneMinus(src, out = null) {
+        const a = this.job, n = src.length;
+        try {
+            const ps = this._in(a, src, n * 4);
+            this.exports.mask_one_minus(ps, ps, n);
+            return this._out(Float32Array, ps, n, out);
+        } finally { this._reset(a); }
+    }
+
     /** Square dilation of a w x h Float32Array by r pixels; a new array. */
     dilateMask(data, w, h, r) {
         const a = this.job, n = w * h;
@@ -358,6 +388,38 @@ export class Px {
             const pd = this._in(a, data, n * 4);
             this.exports.dilate_mask(pd, w, h, r);
             return this._out(Float32Array, pd, n, null);
+        } finally { this._reset(a); }
+    }
+
+    /** Square erosion of a w x h Float32Array by r pixels (`1 - dilate(1 - m, r)`); a new array. */
+    erodeMask(data, w, h, r) {
+        const a = this.job, n = w * h;
+        try {
+            const pd = this._in(a, data, n * 4);
+            this.exports.erode_mask(pd, w, h, r);
+            return this._out(Float32Array, pd, n, null);
+        } finally { this._reset(a); }
+    }
+
+    /** A 0..1 Float32Array `src` as RGBA8 (`mode` 0 white, 1 luminance, 2 alpha) into `out` (or a new Uint8ClampedArray). */
+    maskToRgba(src, mode = 0, out = null) {
+        const a = this.job, n = src.length;
+        try {
+            const ps = this._in(a, src, n * 4), po = a.take(n * 4);
+            this.exports.mask_to_rgba(ps, po, n, mode | 0);
+            return this._out(Uint8ClampedArray, po, n * 4, out);
+        } finally { this._reset(a); }
+    }
+
+    /** Bounding box `[x0, y0, x1, y1]` (right and bottom exclusive) of `src` (`w` x `h` Float32Array) where `> 0.5`, or null. */
+    maskBoundsF32(src, w, h) {
+        const a = this.job, n = w * h;
+        if (!(n > 0)) return null;
+        try {
+            const ps = this._in(a, src, n * 4), pb = a.take(16);
+            if (!this.exports.mask_bounds_f32(ps, w, h, pb)) return null;
+            const b = this.view(Int32Array, pb, 4);
+            return [b[0], b[1], b[2], b[3]];
         } finally { this._reset(a); }
     }
 

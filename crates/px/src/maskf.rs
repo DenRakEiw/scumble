@@ -1,13 +1,159 @@
-//! The float masks of a provider run (`renderer/editor/stitch.js`): a square dilation and the box blurs of its
-//! gaussian, as whole jobs over one `f32` buffer of w × h values in 0..1.
+//! The float masks of a provider run (`renderer/editor/stitch.js`): a square dilation, erosion and the box blurs of its
+//! gaussian, plus the per-pixel conversions, clamping and bounding box around them, over `f32` buffers of w × h values.
 //!
-//! Both give the floats of their JS twins (`dilateMask`, `boxBlurs` in `kernels_js.js`) bit for bit. The dilation is
+//! Every kernel gives the floats or bytes of its JS twin (`kernels_js.js`) bit for bit. The dilation is
 //! a maximum, which no order of evaluation changes; the blur keeps the twin's running sums in f64, added and
 //! subtracted in the twin's order.
 
 #[inline(always)]
 fn fmax(a: f32, b: f32) -> f32 {
     if a > b { a } else { b }
+}
+
+/// `Math.max(a, b)` in a Float32Array: NaN (either side) gives V8's quiet NaN (`0xffc0_0000`), and `+0.0` beats `-0.0`.
+#[inline(always)]
+fn js_max(a: f32, b: f32) -> f32 {
+    if a.is_nan() || b.is_nan() {
+        f32::from_bits(0xffc0_0000)
+    } else if a == 0.0 && b == 0.0 {
+        f32::from_bits(a.to_bits() & b.to_bits())
+    } else if a > b {
+        a
+    } else {
+        b
+    }
+}
+
+/// `Math.min(1, Math.max(0, v))` in a Float32Array: NaN gives `0xffc0_0000`, `<= 0` (including `-0.0`) gives `+0.0`.
+#[inline(always)]
+fn js_clamp01(v: f32) -> f32 {
+    if v.is_nan() {
+        f32::from_bits(0xffc0_0000)
+    } else if !(v > 0.0) {
+        0.0
+    } else if v > 1.0 {
+        1.0
+    } else {
+        v
+    }
+}
+
+#[inline(always)]
+fn mask_byte(x: f32) -> u8 {
+    let c = if x > 0.0 { x.min(1.0) as f64 } else { 0.0 };
+    (c * 255.0 + 0.5) as u8
+}
+
+/// The alpha byte of each RGBA8 pixel divided by 255 in f64 and rounded to f32 (`stitch.js` `maskFromAlpha`).
+pub fn alpha_to_mask(rgba: &[u8], dst: &mut [f32]) {
+    let n = dst.len().min(rgba.len() / 4);
+    let done = lanes::alpha_to_mask(&rgba[..n * 4], &mut dst[..n]);
+    for i in done..n {
+        dst[i] = (rgba[i * 4 + 3] as f64 / 255.0) as f32;
+    }
+}
+
+/// `Math.max(dst[i], b[i])` (when `b` is `Some`) and/or `Math.min(1, Math.max(0, x))` (when `clamp` is true), in place on `dst`.
+pub fn mask_max_clamp(dst: &mut [f32], b: Option<&[f32]>, clamp: bool) {
+    let n = match b {
+        Some(b) => dst.len().min(b.len()),
+        None => dst.len(),
+    };
+    let done = lanes::mask_max_clamp(&mut dst[..n], b.map(|s| &s[..n]), clamp);
+    match (b, clamp) {
+        (Some(b), true) => {
+            for i in done..n {
+                dst[i] = js_clamp01(js_max(dst[i], b[i]));
+            }
+        }
+        (Some(b), false) => {
+            for i in done..n {
+                dst[i] = js_max(dst[i], b[i]);
+            }
+        }
+        (None, true) => {
+            for i in done..n {
+                dst[i] = js_clamp01(dst[i]);
+            }
+        }
+        (None, false) => {}
+    }
+}
+
+/// `1.0 - data[i]` in place for every float of `data`.
+pub fn mask_one_minus(data: &mut [f32]) {
+    let done = lanes::mask_one_minus(data);
+    for x in &mut data[done..] {
+        *x = 1.0 - *x;
+    }
+}
+
+/// Square erosion by `r` pixels in place: `1 - dilate(1 - m, r)` in f32 (`1 - (1 - x)` is not always `x` in f32).
+pub fn erode(data: &mut [f32], w: usize, h: usize, r: usize) {
+    if r == 0 || w == 0 || h == 0 {
+        return;
+    }
+    let n = w * h;
+    mask_one_minus(&mut data[..n]);
+    dilate(&mut data[..n], w, h, r);
+    mask_one_minus(&mut data[..n]);
+}
+
+/// A float mask `src` as RGBA8 bytes `dst` (`n * 4` bytes): `mode` 0 white `[255, 255, 255, v]`,
+/// 1 luminance `[v, v, v, 255]`, 2 alpha `[0, 0, 0, src[i] > 0.5 ? 0 : 255]`.
+pub fn mask_to_rgba(src: &[f32], dst: &mut [u8], mode: u32) {
+    let n = src.len().min(dst.len() / 4);
+    let done = lanes::mask_to_rgba(&src[..n], &mut dst[..n * 4], mode);
+    let tail_s = &src[done..n];
+    let tail_d = &mut dst[done * 4..n * 4];
+    match mode {
+        2 => {
+            for (&x, p) in tail_s.iter().zip(tail_d.chunks_exact_mut(4)) {
+                let a = if x > 0.5 { 0 } else { 255 };
+                p.copy_from_slice(&[0, 0, 0, a]);
+            }
+        }
+        1 => {
+            for (&x, p) in tail_s.iter().zip(tail_d.chunks_exact_mut(4)) {
+                let v = mask_byte(x);
+                p.copy_from_slice(&[v, v, v, 255]);
+            }
+        }
+        _ => {
+            for (&x, p) in tail_s.iter().zip(tail_d.chunks_exact_mut(4)) {
+                let v = mask_byte(x);
+                p.copy_from_slice(&[255, 255, 255, v]);
+            }
+        }
+    }
+}
+
+/// Bounding box `[x0, y0, x1, y1]` (right and bottom exclusive) of the pixels of `data` (w x h) with `v > 0.5`
+/// written into `bounds` (4 i32). Returns 1 when any pixel was > 0.5, else 0.
+pub fn mask_bounds_f32(data: &[f32], w: usize, h: usize, bounds: &mut [i32]) -> i32 {
+    if w == 0 || h == 0 || data.len() < w * h {
+        return 0;
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0usize, 0usize);
+    let mut any = false;
+    for (y, row) in data[..w * h].chunks_exact(w).enumerate() {
+        let Some((first, last)) = lanes::row_bounds(row) else { continue };
+        any = true;
+        x0 = x0.min(first);
+        x1 = x1.max(last + 1);
+        if y < y0 {
+            y0 = y;
+        }
+        y1 = y + 1;
+    }
+    if !any {
+        return 0;
+    }
+    bounds[0] = x0 as i32;
+    bounds[1] = y0 as i32;
+    bounds[2] = x1 as i32;
+    bounds[3] = y1 as i32;
+    1
 }
 
 /// The window of i, clamped to the line. It is shorter than a block at both ends of the line, and then it may lie in
@@ -208,6 +354,33 @@ mod lanes {
     pub fn col_line(_: &mut [f32], _: &mut [f64], _: &[f32], _: &[f32], _: Norm) -> usize {
         0
     }
+
+    #[inline(always)]
+    pub fn alpha_to_mask(_: &[u8], _: &mut [f32]) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    pub fn mask_max_clamp(_: &mut [f32], _: Option<&[f32]>, _: bool) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    pub fn mask_one_minus(_: &mut [f32]) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    pub fn mask_to_rgba(_: &[f32], _: &mut [u8], _: u32) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    pub fn row_bounds(row: &[f32]) -> Option<(usize, usize)> {
+        let first = row.iter().position(|&v| v > 0.5)?;
+        let last = first + row[first..].iter().rposition(|&v| v > 0.5).unwrap_or(0);
+        Some((first, last))
+    }
 }
 
 #[cfg(target_feature = "simd128")]
@@ -231,6 +404,187 @@ mod lanes {
     #[inline(always)]
     fn pack(lo: v128, hi: v128) -> v128 {
         i64x2_shuffle::<0, 2>(f32x4_demote_f64x2_zero(lo), f32x4_demote_f64x2_zero(hi))
+    }
+
+    /// `f32x4_max` / `f32x4_min` canonicalise a NaN lane to `0x7fc0_0000`; V8's `Math.max` / `Math.min` writes `0xffc0_0000`.
+    #[inline(always)]
+    fn nan_sign(m: v128) -> v128 {
+        v128_or(m, v128_and(f32x4_ne(m, m), u32x4_splat(0x8000_0000)))
+    }
+
+    pub fn alpha_to_mask(rgba: &[u8], dst: &mut [f32]) -> usize {
+        let n4 = dst.len().min(rgba.len() / 4) / 4 * 4;
+        let (s, d) = (rgba.as_ptr(), dst.as_mut_ptr());
+        let v255 = f64x2_splat(255.0);
+        unsafe {
+            let mut i = 0;
+            while i < n4 {
+                let q = f32x4_convert_u32x4(u32x4_shr(v128_load(s.add(i * 4) as *const v128), 24));
+                let lo = f64x2_div(f64x2_promote_low_f32x4(q), v255);
+                let hi = f64x2_div(high(q), v255);
+                v128_store(d.add(i) as *mut v128, pack(lo, hi));
+                i += 4;
+            }
+        }
+        n4
+    }
+
+    pub fn mask_max_clamp(dst: &mut [f32], b: Option<&[f32]>, clamp: bool) -> usize {
+        let n = match b {
+            Some(b) => dst.len().min(b.len()),
+            None => dst.len(),
+        };
+        let n4 = n / 4 * 4;
+        let d = dst.as_mut_ptr();
+        let (zero, one) = (f32x4_splat(0.0), f32x4_splat(1.0));
+        unsafe {
+            match (b, clamp) {
+                (Some(b), true) => {
+                    let bp = b.as_ptr();
+                    let mut i = 0;
+                    while i < n4 {
+                        let qa = v128_load(d.add(i) as *const v128);
+                        let qb = v128_load(bp.add(i) as *const v128);
+                        let m = f32x4_min(one, f32x4_max(zero, f32x4_max(qa, qb)));
+                        v128_store(d.add(i) as *mut v128, nan_sign(m));
+                        i += 4;
+                    }
+                }
+                (Some(b), false) => {
+                    let bp = b.as_ptr();
+                    let mut i = 0;
+                    while i < n4 {
+                        let qa = v128_load(d.add(i) as *const v128);
+                        let qb = v128_load(bp.add(i) as *const v128);
+                        let m = f32x4_max(qa, qb);
+                        v128_store(d.add(i) as *mut v128, nan_sign(m));
+                        i += 4;
+                    }
+                }
+                (None, true) => {
+                    let mut i = 0;
+                    while i < n4 {
+                        let qa = v128_load(d.add(i) as *const v128);
+                        let m = f32x4_min(one, f32x4_max(zero, qa));
+                        v128_store(d.add(i) as *mut v128, nan_sign(m));
+                        i += 4;
+                    }
+                }
+                (None, false) => return n,
+            }
+        }
+        n4
+    }
+
+    pub fn mask_one_minus(data: &mut [f32]) -> usize {
+        let n4 = data.len() / 4 * 4;
+        let d = data.as_mut_ptr();
+        let one = f32x4_splat(1.0);
+        unsafe {
+            let mut i = 0;
+            while i < n4 {
+                let q = v128_load(d.add(i) as *const v128);
+                v128_store(d.add(i) as *mut v128, f32x4_sub(one, q));
+                i += 4;
+            }
+        }
+        n4
+    }
+
+    pub fn mask_to_rgba(src: &[f32], dst: &mut [u8], mode: u32) -> usize {
+        let n4 = src.len().min(dst.len() / 4) / 4 * 4;
+        let (s, d) = (src.as_ptr(), dst.as_mut_ptr());
+        unsafe {
+            if mode == 2 {
+                let half = f32x4_splat(0.5);
+                let opaque = u32x4_splat(0xff00_0000);
+                let mut i = 0;
+                while i < n4 {
+                    let q = v128_load(s.add(i) as *const v128);
+                    let px = v128_andnot(opaque, f32x4_gt(q, half));
+                    v128_store(d.add(i * 4) as *mut v128, px);
+                    i += 4;
+                }
+            } else {
+                let (zero, one) = (f32x4_splat(0.0), f32x4_splat(1.0));
+                let (v255, vhalf) = (f64x2_splat(255.0), f64x2_splat(0.5));
+                let (rgb_scale, a_hi) = (u32x4_splat(0x0001_0101), u32x4_splat(0xff00_0000));
+                let rgb_white = u32x4_splat(0x00ff_ffff);
+                let mut i = 0;
+                while i < n4 {
+                    let q = f32x4_pmin(one, f32x4_pmax(zero, v128_load(s.add(i) as *const v128)));
+                    let lo = i32x4_trunc_sat_f64x2_zero(f64x2_add(f64x2_mul(f64x2_promote_low_f32x4(q), v255), vhalf));
+                    let hi = i32x4_trunc_sat_f64x2_zero(f64x2_add(f64x2_mul(high(q), v255), vhalf));
+                    let v = i64x2_shuffle::<0, 2>(lo, hi);
+                    let px = if mode == 1 {
+                        v128_or(u32x4_mul(v, rgb_scale), a_hi)
+                    } else {
+                        v128_or(u32x4_shl(v, 24), rgb_white)
+                    };
+                    v128_store(d.add(i * 4) as *mut v128, px);
+                    i += 4;
+                }
+            }
+        }
+        n4
+    }
+
+    pub fn row_bounds(row: &[f32]) -> Option<(usize, usize)> {
+        let n = row.len();
+        let n4 = n / 4 * 4;
+        let p = row.as_ptr();
+        let half = f32x4_splat(0.5);
+        let mut i = 0;
+        let mut first = None;
+        unsafe {
+            while i < n4 {
+                let q = v128_load(p.add(i) as *const v128);
+                if v128_any_true(f32x4_gt(q, half)) {
+                    for k in i..i + 4 {
+                        if *p.add(k) > 0.5 {
+                            first = Some(k);
+                            break;
+                        }
+                    }
+                    break;
+                }
+                i += 4;
+            }
+        }
+        if first.is_none() {
+            for k in n4..n {
+                if row[k] > 0.5 {
+                    first = Some(k);
+                    break;
+                }
+            }
+        }
+        let first = first?;
+        for k in (n4.max(first)..n).rev() {
+            if row[k] > 0.5 {
+                return Some((first, k));
+            }
+        }
+        let mut j = n4;
+        unsafe {
+            while j >= first + 4 {
+                j -= 4;
+                let q = v128_load(p.add(j) as *const v128);
+                if v128_any_true(f32x4_gt(q, half)) {
+                    for k in (j..j + 4).rev() {
+                        if *p.add(k) > 0.5 {
+                            return Some((first, k));
+                        }
+                    }
+                }
+            }
+        }
+        for k in (first..j).rev() {
+            if row[k] > 0.5 {
+                return Some((first, k));
+            }
+        }
+        Some((first, first))
     }
 
     /// The rows the lanes take: for one channel two rows at once (one f64 lane each), the last row of an odd height

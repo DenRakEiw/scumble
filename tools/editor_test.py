@@ -12206,6 +12206,10 @@ host.shell.activate(ed);
 await run("load_image", { path: "F:/canvas/docs/images/social-preview.png", doc: d.id });
 await run("select_rect", { x: 300, y: 380, width: 520, height: 260, doc: d.id });
 const st = await import("./editor/stitch.js");
+const EC = ed.constructor;
+const rustMask = EC.kernels !== "js" && (EC.routes || {}).stitchMask !== "js";
+const exports6 = ["alpha_to_mask", "mask_max_clamp", "mask_one_minus", "erode_mask", "mask_to_rgba", "mask_bounds_f32"];
+EC.pxCalls(true);
 const prep = st.prepareCrop(ed, host.nodeParams, { mode: "crop" }, { crop: { fill: "none", withOriginal: false }, references: false });
 const info = prep.info, sel = prep.sel;
 const [, by, , bh] = info.bbox;
@@ -12218,14 +12222,35 @@ const g = ans.getContext("2d");
 g.fillStyle = "#000"; g.fillRect(0, 0, ans.width, ans.height);
 g.drawImage(c, 0, dy);
 const fin = st.finishResult(ed, info, sel, ans);
+const calls = EC.pxCalls(true);
+if (rustMask && !exports6.every((e) => (calls[e] || 0) > 0)) throw new Error("the K32 mask exports did not all run: " + JSON.stringify(calls));
 if (!fin.align || !fin.align.aligned) throw new Error("the fit did not align the moved answer: " + JSON.stringify(fin.align));
 const pd = fin.patch.getContext("2d").getImageData(0, 0, fin.w, fin.h).data;
 const alphaRow = (y) => { let m = 0; for (let x = Math.round(fin.w * 0.3); x < Math.round(fin.w * 0.7); x++) m = Math.max(m, pd[(y * fin.w + x) * 4 + 3]); return m; };
 const last = alphaRow(fin.h - 1), inside = alphaRow(Math.round(fin.h * 0.75));
 if (inside < 250) throw new Error("the selection's middle lost its answer: alpha " + inside);
 if (last > 8) throw new Error("the crop's last row shows the repeated edge: alpha " + last + " (align " + JSON.stringify(fin.align) + ")");
+if (rustMask) {
+    const bytesOf = (cv) => cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+    const sameBytes = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+    EC.setRoute("stitchMask", "js");
+    let prepJs, finJs, twinCalls;
+    try {
+        EC.pxCalls(true);
+        prepJs = st.prepareCrop(ed, host.nodeParams, { mode: "crop" }, { crop: { fill: "none", withOriginal: false }, references: false });
+        finJs = st.finishResult(ed, prepJs.info, prepJs.sel, ans);
+        twinCalls = EC.pxCalls(true);
+    } finally {
+        EC.setRoute("stitchMask", null);
+    }
+    if (exports6.some((e) => (twinCalls[e] || 0) > 0)) throw new Error("the stitchMask route js still ran a mask export: " + JSON.stringify(twinCalls));
+    if (!sameBytes(bytesOf(prep.crop), bytesOf(prepJs.crop)) || !sameBytes(bytesOf(prep.mask), bytesOf(prepJs.mask))
+        || !sameBytes(bytesOf(prep.maskAlpha), bytesOf(prepJs.maskAlpha)) || !sameBytes(pd, bytesOf(finJs.patch))) {
+        throw new Error("the stitchMask route js differs from rust in crop, mask, maskAlpha or stitched patch");
+    }
+}
 await run("close_document", { doc: d.id, force: true });
-return { align: fin.align, lastRowAlpha: last, insideAlpha: inside, k };
+return { align: fin.align, lastRowAlpha: last, insideAlpha: inside, k, calls };
 """),
     ("select_by_text_sends_the_inputs_the_node_requires", """
 // issue DenRakEiw/scumble#7 (2026-10-19): comfyui-rmbg's SAM3Segment now requires model_name, and the helper prompt

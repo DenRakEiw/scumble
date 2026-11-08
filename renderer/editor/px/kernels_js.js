@@ -982,6 +982,86 @@ export async function deflate(bytes) {
 
 // ---- float masks of a provider run (stitch.js) -------------------------------------------------------------------
 
+/** The alpha channel of RGBA8 bytes `rgba` as a 0..1 Float32Array (`out` when given, else a new one; `stitch.js` `maskFromAlpha`). */
+export function alphaToMask(rgba, out = null) {
+    const n = rgba.length >>> 2;
+    const dst = out || new Float32Array(n);
+    for (let i = 0, j = 3; i < n; i++, j += 4) dst[i] = rgba[j] / 255;
+    return dst;
+}
+
+/**
+ * Element-wise `Math.max(a[i], b[i])` (when `b` is given) and/or `Math.min(1, Math.max(0, x))` (when `clamp` is true)
+ * into `out` (allocated when absent; may be `a`, never `b`).
+ */
+export function maskMaxClamp(a, b = null, clamp = false, out = null) {
+    const n = a.length;
+    const dst = out || new Float32Array(n);
+    if (b && clamp) {
+        for (let i = 0; i < n; i++) dst[i] = Math.min(1, Math.max(0, Math.max(a[i], b[i])));
+    } else if (b) {
+        for (let i = 0; i < n; i++) dst[i] = Math.max(a[i], b[i]);
+    } else if (clamp) {
+        for (let i = 0; i < n; i++) dst[i] = Math.min(1, Math.max(0, a[i]));
+    } else if (dst !== a) {
+        dst.set(a);
+    }
+    return dst;
+}
+
+/** `1 - src[i]` for every float of `src`, into `out` (allocated when absent; may be `src`). */
+export function maskOneMinus(src, out = null) {
+    const n = src.length;
+    const dst = out || new Float32Array(n);
+    for (let i = 0; i < n; i++) dst[i] = 1 - src[i];
+    return dst;
+}
+
+/**
+ * A 0..1 float mask `src` as RGBA8 bytes (`out` when given, else a new `Uint8ClampedArray`):
+ * `mode` 0 white `[255, 255, 255, v]`, 1 luminance `[v, v, v, 255]` (`v = Math.round(clamp01(x) * 255)`,
+ * `stitch.js` `maskToCanvas`), 2 alpha `[0, 0, 0, x > 0.5 ? 0 : 255]` (`stitch.js` `alphaMask`).
+ */
+export function maskToRgba(src, mode = 0, out = null) {
+    const n = src.length;
+    const dst = out || new Uint8ClampedArray(n * 4);
+    if (mode === 2) {
+        for (let i = 0, j = 0; i < n; i++, j += 4) {
+            dst[j] = 0; dst[j + 1] = 0; dst[j + 2] = 0; dst[j + 3] = src[i] > 0.5 ? 0 : 255;
+        }
+    } else if (mode === 1) {
+        for (let i = 0, j = 0; i < n; i++, j += 4) {
+            const v = Math.round(Math.min(1, Math.max(0, src[i])) * 255);
+            dst[j] = v; dst[j + 1] = v; dst[j + 2] = v; dst[j + 3] = 255;
+        }
+    } else {
+        for (let i = 0, j = 0; i < n; i++, j += 4) {
+            const v = Math.round(Math.min(1, Math.max(0, src[i])) * 255);
+            dst[j] = 255; dst[j + 1] = 255; dst[j + 2] = 255; dst[j + 3] = v;
+        }
+    }
+    return dst;
+}
+
+/**
+ * Bounding box `[x0, y0, x1, y1]` (right and bottom exclusive) of the pixels of a `w` x `h` float mask `src` with
+ * `src[y * w + x] > 0.5`, or `null` when none are (`stitch.js` `selectionBbox`).
+ */
+export function maskBoundsF32(src, w, h) {
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) {
+        const row = y * w;
+        for (let x = 0; x < w; x++) {
+            if (!(src[row + x] > 0.5)) continue;
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            y1 = y;
+        }
+    }
+    return x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+}
+
 /**
  * The running maximum of every row over [x - r, x + r] (clamped to the row), never below 0: a monotonic queue of
  * indices, so a pixel costs the same whatever the radius (a loop over the radius took 1.9 s of a run's crop,
@@ -1022,6 +1102,14 @@ export function dilateMask(data, w, h, r) {
     maxRows(b, a, h, w, r, idx);
     transpose(a, b, h, w);
     return b;
+}
+
+/** Square erosion of a w x h float mask by r pixels (`1 - dilate(1 - m, r)` in f32); a new Float32Array. */
+export function erodeMask(data, w, h, r) {
+    if (r <= 0 || w <= 0 || h <= 0) return Float32Array.from(data);
+    const inv = maskOneMinus(data);
+    const d = dilateMask(inv, w, h, r);
+    return maskOneMinus(d, d);
 }
 
 /** One box blur pass of radius r along rows (clamped edges). */

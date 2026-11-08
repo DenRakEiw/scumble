@@ -1,0 +1,33 @@
+$ bash tools/run_gates.sh mut-stitch_keep_not_inverted-ed --offline --tiles on editor  (rc 1, 17 s, SCUMBLE_EDITOR_ONLY=an_aligned_answer_shows_no_repeated_edge)
+editor rc=1 2s FAIL (only: an_aligned_answer_shows_no_repeated_edge; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=mask)
+FAIL stitch_test.js (maskFromAlpha, maskMaxClamped, erode, maskToCanvas, alphaMask, selectionBbox, fillMasked, finishPixels colour-match vs 29f6749 loops)  [FAIL] [js] finishPixels colour-match 3 x 97: byte 0 is 50, was 40
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 22.4 ms, twin 44.6; three box blurs rust scalar 18.3 ms, twin 24.5
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+(node:44932) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/cf08cea4-66f3-4c19-a3be-ed2784ff8190/scratch/mut_tree_k32/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=mask)
+FAIL stitch_test.js vs 29f6749 loops  [FAIL] [js] finishPixels colour-match 3 x 97: byte 0 is 50, was 40
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 28.5 ms, twin 45.4; three box blurs rust scalar 18.1 ms, twin 31.2
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+(node:54320) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/cf08cea4-66f3-4c19-a3be-ed2784ff8190/scratch/mut_tree_k32/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

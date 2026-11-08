@@ -1,0 +1,38 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 0 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 174924 bytes, sha256 b44b05efa837b086
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 148341 bytes, sha256 dcbe2ea533ccc91a
+    Finished `release` profile [optimized] target(s) in 0.01s
+    Finished `release` profile [optimized] target(s) in 0.01s
+$ node tools/px_test.js  (rc 0, 101 s)
+PASS
+ok   rust scalar a large alloc grows memory  229048320 -> 497549312
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2204639232
+PASS
+(node:46520) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/cf08cea4-66f3-4c19-a3be-ed2784ff8190/scratch/mut_tree_k32/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=mask)
+PASS (only: mask; PX_ONLY, not the full test)
+ok   rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 28.9 ms, twin 54.6; three box blurs rust scalar 21.3 ms, twin 24.4
+PASS (only: mask; PX_ONLY, not the full test)
+(node:54724) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/cf08cea4-66f3-4c19-a3be-ed2784ff8190/scratch/mut_tree_k32/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\cf08cea4-66f3-4c19-a3be-ed2784ff8190\scratch\mut_tree_k32\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-ed0-on --offline --tiles on editor  (rc 0, 18 s, SCUMBLE_EDITOR_ONLY=an_aligned_answer_shows_no_repeated_edge)
+editor rc=0 2s PASS (only: an_aligned_answer_shows_no_repeated_edge; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS
