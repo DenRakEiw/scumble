@@ -2096,7 +2096,7 @@ export const host = {
 
     /** True when this run asked the model for a transparent background. */
     wantsTransparent(params) {
-        return String((params || {}).background || "").toLowerCase() === "transparent";
+        return String((params || {}).background || "").trim().toLowerCase() === "transparent";   // as ark.js reads it
     },
 
     // ---- @img tokens at send time (docs/PLAN_REFS.md C3) ------------------------------------
