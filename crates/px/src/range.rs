@@ -1,4 +1,4 @@
-//! Depth map tile statistics and tile evaluation for range selection (`docs/PLAN_WASM_BUILD.md` §4.8, K21 & K22).
+//! Depth map tile statistics and tile evaluation for range selection (`docs/PLAN_WASM_BUILD.md` §4.8, K21, K22 & K23).
 //!
 //! - `map_tile_stats` (K21): maps each tile's four corners into the depth map via the 6-element affine transform
 //!   `m0..m5`, expands the bounding box by the 2-texel snap halo, clamps to `[0, mw - 1] × [0, mh - 1]` for the tile's
@@ -7,6 +7,9 @@
 //! - `range_tiles_depth` (K22): evaluates the `"compute"`-class tiles (`classes[tx] == 2`) of one document tile row
 //!   `ty` over the `wh`-row window `[wy0, wy0 + wh)` of `map` (and optional `guide` + `pic` for joint-bilateral edge
 //!   snapping), in `f64` in the twin's operation order with `js_round` per lane.
+//! - `range_tiles_rgba` (K23): evaluates one document tile row `ty` (`[ry0, ry1)` within `[ty * tile, min((ty + 1) * tile, h))`)
+//!   over the `(ry1 - ry0)`-row RGBA8 slice of that tile row for `"luma"` (`mode == 0`, three 256-entry `f64` product
+//!   tables) or `"color"` (`mode == 1`, opponent colour similarity with one `exp` per pixel).
 
 #[cfg(target_feature = "simd128")]
 use core::arch::wasm32::*;
@@ -424,7 +427,15 @@ fn sstep_f64x2(a: f64, b: f64, x_v: v128) -> v128 {
         return v128_and(f64x2_ge(x_v, b_v), one_v);
     }
     let a_v = f64x2_splat(a);
+    let le_a = f64x2_le(x_v, a_v);
+    if i64x2_all_true(le_a) {
+        return zero_v;
+    }
     let b_v = f64x2_splat(b);
+    let ge_b = f64x2_ge(x_v, b_v);
+    if i64x2_all_true(ge_b) {
+        return one_v;
+    }
     let denom_v = f64x2_splat(b - a);
     let t_v = f64x2_div(f64x2_sub(x_v, a_v), denom_v);
     let eps_v = f64x2_splat(1e-14);
@@ -432,8 +443,8 @@ fn sstep_f64x2(a: f64, b: f64, x_v: v128) -> v128 {
     let three_v = f64x2_splat(3.0);
     let two_v = f64x2_splat(2.0);
     let poly_v = f64x2_mul(f64x2_mul(t_v, t_v), f64x2_sub(three_v, f64x2_mul(two_v, t_v)));
-    let ge_hi = v128_or(f64x2_ge(x_v, b_v), f64x2_ge(t_v, one_minus_eps_v));
-    let le_lo = v128_or(f64x2_le(x_v, a_v), f64x2_le(t_v, eps_v));
+    let ge_hi = v128_or(ge_b, f64x2_ge(t_v, one_minus_eps_v));
+    let le_lo = v128_or(le_a, f64x2_le(t_v, eps_v));
     v128_bitselect(zero_v, v128_bitselect(one_v, poly_v, ge_hi), le_lo)
 }
 
@@ -777,4 +788,337 @@ pub fn range_tiles_depth(
 
     1
 }
+
+/// Evaluates one document tile row `ty` over the `(ry1 - ry0)`-row RGBA8 slice `rgba` (`w * (ry1 - ry0) * 4` bytes)
+/// for `"luma"` (`mode == 0`) or `"color"` (`mode == 1`).
+/// `params`: `[lo, hi, f_lo, f_hi, ref_l, ref_a, ref_b, tol]`.
+/// `flags`: bit 0 = `limit.invert`, bit 1 = `job_invert`.
+#[allow(clippy::too_many_arguments)]
+pub fn range_tiles_rgba(
+    rgba: &[u8],
+    w: usize,
+    h: usize,
+    ty: usize,
+    ry0: usize,
+    ry1: usize,
+    tile: usize,
+    mode: u32,
+    params: &[f64; 8],
+    flags: u32,
+    alpha_out: &mut [u8],
+    status_out: &mut [u8],
+    info_out: &mut [f64],
+) -> u32 {
+    let tile_y0 = ty.saturating_mul(tile);
+    let tile_y1 = tile_y0.saturating_add(tile).min(h);
+    if ry0 >= ry1 || ry0 < tile_y0 || ry1 > tile_y1 || mode > 1 {
+        return 0;
+    }
+    let rows = ry1 - ry0;
+    let Some(need_bytes) = rows.checked_mul(w).and_then(|n| n.checked_mul(4)) else {
+        return 0;
+    };
+    if rgba.len() < need_bytes {
+        return 0;
+    }
+
+    let cols = status_out.len();
+    let tile_bytes = tile * tile;
+    let lo = params[0];
+    let hi = params[1];
+    let f_lo = params[2];
+    let f_hi = params[3];
+    let ref_l = params[4];
+    let ref_a = params[5];
+    let ref_b = params[6];
+    let tol = params[7];
+    let limit_invert = (flags & 1) != 0;
+    let job_invert = (flags & 2) != 0;
+
+    let mut luma_r = [0.0f64; 256];
+    let mut luma_g = [0.0f64; 256];
+    let mut luma_b = [0.0f64; 256];
+    let mut inv255 = [0.0f64; 256];
+    let mut opp_r = [0.0f64; 256];
+    let mut opp_g = [0.0f64; 256];
+    let mut opp_b = [0.0f64; 256];
+    let s = 0.04 + (if tol == 0.0 { 0.0 } else { tol / 100.0 }).max(0.0).min(1.0) * 0.6;
+    let two_s2 = 2.0 * s * s;
+
+    if mode == 0 {
+        for i in 0..256 {
+            let x = i as f64;
+            luma_r[i] = 0.299 * x;
+            luma_g[i] = 0.587 * x;
+            luma_b[i] = 0.114 * x;
+        }
+    } else {
+        for i in 0..256 {
+            let u = (i as f64) / 255.0;
+            inv255[i] = u;
+            opp_r[i] = 0.299 * u;
+            opp_g[i] = 0.587 * u;
+            opp_b[i] = 0.114 * u;
+        }
+    }
+
+    let mut alpha_sum: u64 = 0;
+    let mut b_x0: usize = usize::MAX;
+    let mut b_y0: usize = usize::MAX;
+    let mut b_x1: usize = 0;
+    let mut b_y1: usize = 0;
+    let mut slot: usize = 0;
+
+    let py_start = ry0 - tile_y0;
+    let py_end = ry1 - tile_y0;
+    let vh = tile_y1.saturating_sub(tile_y0);
+
+    for tx in 0..cols {
+        let tile_x0 = tx * tile;
+        let tile_x1 = (tile_x0 + tile).min(w);
+        let vw = tile_x1.saturating_sub(tile_x0);
+        if vw == 0 {
+            status_out[tx] = 0;
+            continue;
+        }
+
+        let buf = &mut alpha_out[slot * tile_bytes..(slot + 1) * tile_bytes];
+        let mut zeros: usize = 0;
+        let mut fulls: usize = 0;
+        let mut t_min_x: usize = tile;
+        let mut t_min_y: usize = tile;
+        let mut t_max_x: usize = 0;
+        let mut t_max_y: usize = 0;
+        let mut any_nonzero = false;
+
+        if py_start > 0 {
+            buf[..py_start * tile].fill(0);
+            zeros += py_start * tile;
+        }
+        if py_end < tile {
+            buf[py_end * tile..tile_bytes].fill(0);
+            zeros += (tile - py_end) * tile;
+        }
+
+        for py in py_start..py_end {
+            let y_rel = (tile_y0 + py) - ry0;
+            let row_rgba = &rgba[(y_rel * w + tile_x0) * 4..(y_rel * w + tile_x1) * 4];
+            let row_buf = &mut buf[py * tile..(py + 1) * tile];
+            if vw < tile {
+                row_buf[vw..tile].fill(0);
+                zeros += tile - vw;
+            }
+
+            let mut px = 0usize;
+            if mode == 0 {
+                #[cfg(target_feature = "simd128")]
+                {
+                    let div255_v = f64x2_splat(255.0);
+                    while px + 2 <= vw {
+                        let off0 = px * 4;
+                        let off1 = (px + 1) * 4;
+                        let s0 = luma_r[row_rgba[off0] as usize]
+                            + luma_g[row_rgba[off0 + 1] as usize]
+                            + luma_b[row_rgba[off0 + 2] as usize];
+                        let s1 = luma_r[row_rgba[off1] as usize]
+                            + luma_g[row_rgba[off1 + 1] as usize]
+                            + luma_b[row_rgba[off1 + 2] as usize];
+                        let val_v = f64x2_div(f64x2(s0, s1), div255_v);
+                        let (a0, a1) = weight_to_alpha_f64x2(val_v, lo, hi, f_lo, f_hi, limit_invert, job_invert);
+                        for (lane, a) in [(px, a0), (px + 1, a1)] {
+                            row_buf[lane] = a;
+                            alpha_sum += a as u64;
+                            if a == 0 {
+                                zeros += 1;
+                            } else {
+                                any_nonzero = true;
+                                if a == 255 {
+                                    fulls += 1;
+                                }
+                                if lane < t_min_x {
+                                    t_min_x = lane;
+                                }
+                                if lane > t_max_x {
+                                    t_max_x = lane;
+                                }
+                                if py < t_min_y {
+                                    t_min_y = py;
+                                }
+                                if py > t_max_y {
+                                    t_max_y = py;
+                                }
+                            }
+                        }
+                        px += 2;
+                    }
+                }
+                while px < vw {
+                    let off = px * 4;
+                    let v = (luma_r[row_rgba[off] as usize]
+                        + luma_g[row_rgba[off + 1] as usize]
+                        + luma_b[row_rgba[off + 2] as usize])
+                        / 255.0;
+                    let a = weight_to_alpha(v, lo, hi, f_lo, f_hi, limit_invert, job_invert);
+                    row_buf[px] = a;
+                    alpha_sum += a as u64;
+                    if a == 0 {
+                        zeros += 1;
+                    } else {
+                        any_nonzero = true;
+                        if a == 255 {
+                            fulls += 1;
+                        }
+                        if px < t_min_x {
+                            t_min_x = px;
+                        }
+                        if px > t_max_x {
+                            t_max_x = px;
+                        }
+                        if py < t_min_y {
+                            t_min_y = py;
+                        }
+                        if py > t_max_y {
+                            t_max_y = py;
+                        }
+                    }
+                    px += 1;
+                }
+            } else {
+                #[cfg(target_feature = "simd128")]
+                {
+                    let ref_l_v = f64x2_splat(ref_l);
+                    let ref_a_v = f64x2_splat(ref_a);
+                    let ref_b_v = f64x2_splat(ref_b);
+                    let four_v = f64x2_splat(4.0);
+                    let two_s2_v = f64x2_splat(two_s2);
+                    while px + 2 <= vw {
+                        let off0 = px * 4;
+                        let off1 = (px + 1) * 4;
+                        let rb0 = row_rgba[off0] as usize;
+                        let gb0 = row_rgba[off0 + 1] as usize;
+                        let bb0 = row_rgba[off0 + 2] as usize;
+                        let rb1 = row_rgba[off1] as usize;
+                        let gb1 = row_rgba[off1 + 1] as usize;
+                        let bb1 = row_rgba[off1 + 2] as usize;
+
+                        let l0 = opp_r[rb0] + opp_g[gb0] + opp_b[bb0];
+                        let l1 = opp_r[rb1] + opp_g[gb1] + opp_b[bb1];
+                        let l_v = f64x2(l0, l1);
+                        let r_v = f64x2(inv255[rb0], inv255[rb1]);
+                        let b_v = f64x2(inv255[bb0], inv255[bb1]);
+
+                        let d0_v = f64x2_sub(l_v, ref_l_v);
+                        let d1_v = f64x2_sub(f64x2_sub(r_v, l_v), ref_a_v);
+                        let d2_v = f64x2_sub(f64x2_sub(b_v, l_v), ref_b_v);
+                        let dd_v = f64x2_add(
+                            f64x2_mul(d0_v, d0_v),
+                            f64x2_mul(four_v, f64x2_add(f64x2_mul(d1_v, d1_v), f64x2_mul(d2_v, d2_v))),
+                        );
+                        let arg_v = f64x2_div(f64x2_neg(dd_v), two_s2_v);
+                        let v0 = f64x2_extract_lane::<0>(arg_v).exp();
+                        let v1 = f64x2_extract_lane::<1>(arg_v).exp();
+                        let val_v = f64x2(v0, v1);
+                        let (a0, a1) = weight_to_alpha_f64x2(val_v, lo, hi, f_lo, f_hi, limit_invert, job_invert);
+                        for (lane, a) in [(px, a0), (px + 1, a1)] {
+                            row_buf[lane] = a;
+                            alpha_sum += a as u64;
+                            if a == 0 {
+                                zeros += 1;
+                            } else {
+                                any_nonzero = true;
+                                if a == 255 {
+                                    fulls += 1;
+                                }
+                                if lane < t_min_x {
+                                    t_min_x = lane;
+                                }
+                                if lane > t_max_x {
+                                    t_max_x = lane;
+                                }
+                                if py < t_min_y {
+                                    t_min_y = py;
+                                }
+                                if py > t_max_y {
+                                    t_max_y = py;
+                                }
+                            }
+                        }
+                        px += 2;
+                    }
+                }
+                while px < vw {
+                    let off = px * 4;
+                    let rb = row_rgba[off] as usize;
+                    let gb = row_rgba[off + 1] as usize;
+                    let bb = row_rgba[off + 2] as usize;
+                    let l = opp_r[rb] + opp_g[gb] + opp_b[bb];
+                    let r = inv255[rb];
+                    let b = inv255[bb];
+                    let d0 = l - ref_l;
+                    let d1 = (r - l) - ref_a;
+                    let d2 = (b - l) - ref_b;
+                    let dd = d0 * d0 + 4.0 * (d1 * d1 + d2 * d2);
+                    let v = (-dd / two_s2).exp();
+                    let a = weight_to_alpha(v, lo, hi, f_lo, f_hi, limit_invert, job_invert);
+                    row_buf[px] = a;
+                    alpha_sum += a as u64;
+                    if a == 0 {
+                        zeros += 1;
+                    } else {
+                        any_nonzero = true;
+                        if a == 255 {
+                            fulls += 1;
+                        }
+                        if px < t_min_x {
+                            t_min_x = px;
+                        }
+                        if px > t_max_x {
+                            t_max_x = px;
+                        }
+                        if py < t_min_y {
+                            t_min_y = py;
+                        }
+                        if py > t_max_y {
+                            t_max_y = py;
+                        }
+                    }
+                    px += 1;
+                }
+            }
+        }
+
+        if zeros == tile_bytes || !any_nonzero {
+            status_out[tx] = 0;
+        } else if fulls == tile_bytes && vw == tile && vh == tile {
+            status_out[tx] = 2;
+            b_x0 = b_x0.min(tile_x0);
+            b_y0 = b_y0.min(tile_y0);
+            b_x1 = b_x1.max(tile_x0 + tile);
+            b_y1 = b_y1.max(tile_y0 + tile);
+        } else {
+            status_out[tx] = 1;
+            slot += 1;
+            b_x0 = b_x0.min(tile_x0 + t_min_x);
+            b_y0 = b_y0.min(tile_y0 + t_min_y);
+            b_x1 = b_x1.max(tile_x0 + t_max_x + 1);
+            b_y1 = b_y1.max(tile_y0 + t_max_y + 1);
+        }
+    }
+
+    info_out[0] = alpha_sum as f64;
+    if b_x0 <= b_x1 && b_x0 != usize::MAX {
+        info_out[1] = b_x0 as f64;
+        info_out[2] = b_y0 as f64;
+        info_out[3] = b_x1 as f64;
+        info_out[4] = b_y1 as f64;
+    } else {
+        info_out[1] = -1.0;
+        info_out[2] = -1.0;
+        info_out[3] = -1.0;
+        info_out[4] = -1.0;
+    }
+
+    1
+}
+
 

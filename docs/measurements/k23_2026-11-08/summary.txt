@@ -1,0 +1,114 @@
+K23 measurement summary (2026-11-08)
+====================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.8 K23):
+- `range_tiles_rgba` in `crates/px/src/range.rs` (SIMD128 `f64x2` + scalar), exported from `crates/px/src/lib.rs`
+  (ABI 32), wrapped in `renderer/editor/px/px.js` (`Px.rangeTilesRgba`, copying only one tile row `[ry0..ry1)` =
+  `(ry1 - ry0) * W * 4` bytes, at most 15.4 MB at 15,000 x 256, never the 61.4 MB 1024-row band), JS twin in
+  `renderer/editor/px/kernels_js.js` (`rangeTilesRgba`, using three 256-entry `Float64Array` product tables for luma and
+  `libmExp(-dd / twoS2)` for colour similarity so the twin and both wasm builds agree bit-for-bit in both Node and
+  Electron 44 V8 15.2), routed in `renderer/editor/px/kernels.js` under `"rangeLuma"` (`mode === 0`) and `"rangeColor"`
+  (`mode === 1`).
+- Also added `i64x2_all_true(le_a)` and `i64x2_all_true(ge_b)` early exits to `sstep_f64x2` in `crates/px/src/range.rs`,
+  skipping the `f64x2_div` and cubic polynomial whenever both lanes lie outside the feather transition `[a, b]` (speeding
+  up both `range_tiles_rgba` and `range_tiles_depth` with identical bits).
+- `rangeSelectJob` (`source === "luma" || source === "color"`) in `renderer/editor/inpaint_worker.js` loops over the band's
+  tile rows `ty = startTileY .. endTileY` and delegates each tile row to `rangeTilesRgba(buf, W, H, ty, y0, y1, rowLimit, invert, TILE)`.
+- Route decisions by measurement (§1.1, 3 fresh-instance runs with `--rounds 3` per `tools/ab_median.py`):
+  - `--ab rangeLuma=js:rust` (`after/ab_luma_r1..3.jsonl`): `verdict: rust` (`1102.7 ms` vs `1893.4 ms` wall, lower by
+    `790.7 ms` > spread `392.8 ms`; worker job `1033.6 ms` vs `2545.3 ms`).
+  - `--ab rangeColor=js:rust` (`after/ab_color_r1..3.jsonl`): `verdict: rust` (`1976.6 ms` vs `3542.6 ms` wall, lower by
+    `1566.1 ms` > spread `368.4 ms`; worker job `2893.4 ms` vs `6487.6 ms`).
+  Both `rangeLuma` and `rangeColor` stay on Rust (`DEFAULT_ROUTES` carries no entry for either, documented above
+  `DEFAULT_ROUTES` in `renderer/editor/px/kernels.js`).
+
+Builds (`python tools/build_px.py --check`):
+- `renderer/editor/px/px.wasm`:        224,797 bytes  sha256 848235909bef4b5c
+- `renderer/editor/px/px_scalar.wasm`: 177,695 bytes  sha256 cc934b3f3c3fb179
+
+Node & Electron unit & kernel benchmarks (`PX_BENCH=1 PX_ONLY=range node tools/px_test.js`):
+- `range_tiles_rgba 15000x256 row, luma (59 tiles)`:   twin 66.98 ms, simd 28.94 ms (2.31x), scalar 33.81 ms (median of 9)
+- `range_tiles_rgba 15000x256 row, colour (59 tiles)`: twin 188.77 ms, simd 84.45 ms (2.24x), scalar 105.26 ms (median of 9)
+- 37 deterministic/property cases for `range_tiles_rgba` (luma & colour across non-multiple-of-256 shapes, partial `[y0..y1)`
+  inside a tile row, multi-tile bands, `#rgb` / `#rrggbb` / missing-hex colour parsing, `tol` 0/30/40/100/-10/150 clamping, all 4
+  `(limit.invert, jobInvert)` combinations, exact even-half rounding `40.5 -> 41`, hard-step `1e-12` tolerance, `sstep` `1e-14`
+  clamps, and the K23 colour `libmExp` tie case `pixel=(98,119,128)` vs `#808080` at `tol=10, lo=0.21358439201215637` where
+  `libmExp(x) = 0.21358439201115637` gives a full tile `alphaSum=16711680` while Electron 44 V8 15.2 `Math.exp(x) =
+  0.21358439201115634` gives an empty tile `alphaSum=0`) + engine-independent `Math.exp` spy on colour `js.rangeTilesRgba` +
+  dirty arena out-of-bounds top/bottom/right zeroing + 1-tile-row copy spy on a 1024-row band (`copiedRgbaBytes = 307200` vs
+  `fullBand = 1228800`) + 12 invalid-arg refusals + raw mode/row bounds refusal + `K.rangeTilesRgba` `rangeLuma` and `rangeColor`
+  route switching + trap & OOM recovery in `retouchRoute`: PASS on twin, simd, scalar in both Node and `ELECTRON_RUN_AS_NODE=1`
+  (Electron 44 V8 15.2).
+
+15000 x 10000 before (`13d32fa8`) vs after (`K23`), 3 alternating rounds on port 9613 (`w1_lock.py` held per batch):
+row                                                         before (13d32fa8)              after (K23)
+  range_luma (js) wall                                 3984.9 [3954.7-4633.6]   3964.5 [3953.1-4240.3]   n=3/3
+  range_luma (js) worker job                           2117.0 [1792.6-2557.5]   1843.0 [1768.4-2046.3]   n=3/3
+  range_luma (js) split.copyIn                                  0.0 [0.0-0.0]            0.0 [0.0-0.0]   n=3/3
+  range_luma (js) window px calls                                    ['none']                 ['none']
+  range_luma (js) worker px calls                                    ['none']                 ['none']
+  range_color (js) wall                                5582.3 [5127.0-6093.9]   5197.5 [4670.4-5581.8]   n=3/3
+  range_color (js) worker job                          6616.1 [5928.2-7096.0]   6353.0 [5365.8-7012.2]   n=3/3
+  range_color (js) split.copyIn                                 0.0 [0.0-0.0]            0.0 [0.0-0.0]   n=3/3
+  range_color (js) window px calls                                   ['none']                 ['none']
+  range_color (js) worker px calls                                   ['none']                 ['none']
+  range_luma (rust) wall                               1636.6 [1464.6-1898.3]   1224.4 [1083.6-1255.0]   n=3/3  (1.34x)
+  range_luma (rust) worker job                         1947.5 [1716.1-2015.5]     978.2 [974.2-1063.3]   n=3/3  (1.99x)
+  range_luma (rust) split.copyIn                          374.0 [351.2-432.9]      513.9 [485.8-521.0]   n=3/3
+  range_luma (rust) window px calls                  ['mip_chain 112, sel_combine 530', 'mip_chain 128, sel_combine 530', 'mip_chain 80, sel_combine 530'] ['mip_chain 112, sel_combine 530', 'mip_chain 80, sel_combine 530']
+  range_luma (rust) worker px calls                     ['composite_tile 39'] ['composite_tile 39, range_tiles_rgba 40']
+  range_color (rust) wall                              3137.6 [2508.1-3215.8]   1785.7 [1782.2-1918.9]   n=3/3  (1.76x)
+  range_color (rust) worker job                        5256.9 [4074.1-5439.2]   2566.6 [2539.8-2802.9]   n=3/3  (2.05x)
+  range_color (rust) split.copyIn                         357.5 [349.8-420.8]      611.6 [572.0-630.6]   n=3/3
+  range_color (rust) window px calls                 ['mip_chain 15, sel_combine 14'] ['mip_chain 15, sel_combine 14']
+  range_color (rust) worker px calls                    ['composite_tile 39'] ['composite_tile 39, range_tiles_rgba 40']
+  selection_test 15k luma wall                         1346.5 [1312.1-1404.5]      832.4 [760.6-989.8]   n=3/3  (1.62x)
+  range_luma (rust) split.range_tiles_rgba                                  -      863.7 [860.8-939.3]   n=0/3
+  range_color (rust) split.range_tiles_rgba                                 -   2477.5 [2446.7-2715.6]   n=0/3
+
+`tools/ab_median.py` verdicts at 15000 x 10000 (3 fresh-instance runs with `--rounds 3` per route):
+1. `--ab rangeLuma=js:rust` (`after/ab_luma_r1..3.jsonl`):
+   - `range_luma`: js `1950.4 1557.6 1893.4` (median `1893.4`, spread `392.8`) vs rust `1144.1 968.7 1102.7`
+     (median `1102.7`, spread `175.4`); round 0 (cold) js `1888.0` / rust `1102.7`; kernel row js `2545.3` / rust `1033.6` ms;
+     split: js jobs `0.0 + copyIn 374.0`, rust jobs `927.4 + copyIn 493.8` ->
+     `verdict: rust (its median lower by 790.7, beyond the spread 392.8)`.
+2. `--ab rangeColor=js:rust` (`after/ab_color_r1..3.jsonl`):
+   - `range_color`: js `3717.8 3432.0 3542.6` (median `3542.6`, spread `285.9`) vs rust `1671.7 2040.1 1976.6`
+     (median `1976.6`, spread `368.4`); round 0 (cold) js `3796.1` / rust `1971.8`; kernel row js `6487.6` / rust `2893.4` ms;
+     split: js jobs `0.0 + copyIn 341.9`, rust jobs `2801.5 + copyIn 621.8` ->
+     `verdict: rust (its median lower by 1566.1, beyond the spread 368.4)`.
+3. `kernels=js:rust` (`after/pxjobs_r1..3.jsonl`):
+   - `range_luma`: js `3953.1 4240.3 3964.5` (median `3964.5`, spread `287.2`) vs rust `1224.4 1255.0 1083.6`
+     (median `1224.4`, spread `171.4`); kernel row js `1843.0` / rust `978.2` ms ->
+     `verdict: rust (its median lower by 2740.1, beyond the spread 287.2)`.
+   - `range_color`: js `5581.8 4670.4 5197.5` (median `5197.5`, spread `911.4`) vs rust `1918.9 1785.7 1782.2`
+     (median `1785.7`, spread `136.7`); kernel row js `6353.0` / rust `2566.6` ms ->
+     `verdict: rust (its median lower by 3411.8, beyond the spread 911.4)`.
+
+Pins & byte-equality:
+- `px_jobs.py --check 2048x1152 --only range_luma,range_color` (`after/pxjobs_check.log`): `same bytes` on both rows,
+  `window release: sync`, 0 traps / OOMs across all 7 threads (`range_luma` kernel `4.77x`, wall `2.84x`; `range_color`
+  kernel `2.37x`, wall `2.13x`).
+- `selection_test.py` `range_select_luma_color_cases` + `range_select_15k_luma_case` (`after/selection_r1..3.log`):
+  asserts `range_tiles_rgba === 2` on 1600x400 luma and colour and byte-for-byte equality between `"rust"` and `"js"`
+  routes; 15k luma wall `832.4 [760.6-989.8] ms` (`2360` partial tiles, `range_tiles_rgba 40`).
+
+Mutation round (`docs/measurements/k23_2026-11-08/mutation/results.txt`, 19 mutants):
+- `19 killed (0 of them only on the re-check), 0 survived of 19; 0 not as expected`
+- Covers `range.rs` (`luma_r` 0.299, `opp_g` 0.587, colour `s` formula, opponent chroma weight `4.0` in SIMD and scalar,
+  top `py_start > 0` / bottom `py_end < tile` / right `vw < tile` out-of-bounds zeroing, `mode > 1` & `ry0..ry1` row
+  bounds guard, `fulls == tile_bytes` full-tile check, and `sstep_f64x2` `i64x2_all_true(le_a)` / `i64x2_all_true(ge_b)`
+  early returns), `px.js` (1-tile-row copy vs full band copy, `jobInvert` flag bit, `#rgb` 3-char hex expansion),
+  `kernels_js.js` (colour `libmExp` vs `Math.exp`, luma product table `/ 255` vs `/ 256`, `twoS2 = 2 * s * s`), and
+  `kernels.js` (`rangeColor` vs `rangeLuma` route selection, trap recovery).
+
+Gates:
+- `k23-tiles` (port 9613, `--tiles on --offline`): `lint` (11 s), `types` (10 s), `selection` (19 s), `edges` (18 s),
+  `limit` (11 s), `maps` (5 s), `pixels` (14 s), `editor` (189 s) — ALL PASS.
+- `k23-canvas` (port 9614, `--tiles off --offline`): `lint` (15 s), `types` (12 s), `selection` (10 s), `edges` (34 s),
+  `limit` (14 s), `maps` (8 s), `pixels` (18 s), `editor` (161 s) — ALL PASS.
+- `k23-pxjobs` (port 9613, `--tiles on --offline`): `pxjobs` (154 s) — PASS.
+- `node tools/px_test.js` (full suite) — PASS.
+- `ELECTRON_RUN_AS_NODE=1 PX_ONLY=range,retouchRoute ./node_modules/electron/dist/electron.exe tools/px_test.js` — PASS.
+- `node tools/weights_test.js` (15/15) — PASS.
+- `python tools/build_px.py --check` (`px.wasm` 224,797 B `848235909bef4b5c`, `px_scalar.wasm` 177,695 B `cc934b3f3c3fb179`) — identical.

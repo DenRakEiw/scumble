@@ -48,11 +48,11 @@ fn align_for(bytes: usize) -> usize {
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
-/// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: range_tiles_depth);
+/// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: range_tiles_depth; 32: range_tiles_rgba);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    31
+    32
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -989,5 +989,80 @@ pub unsafe extern "C" fn range_tiles_depth(
         info_slice,
     )
 }
+
+/// Evaluates one document tile row `ty` (`[ry0, ry1)` within `[ty * tile, min((ty + 1) * tile, h))`) over the
+/// `(ry1 - ry0)`-row RGBA8 slice `rgba` (`w * (ry1 - ry0) * 4` bytes) for `"luma"` (`mode == 0`) or `"color"`
+/// (`mode == 1`).
+/// `params` holds 8 `f64`s: `[lo, hi, f_lo, f_hi, ref_l, ref_a, ref_b, tol]`.
+/// `flags`: bit 0 = `limit.invert`, bit 1 = `job_invert`.
+/// Writes each partial tile's `tile * tile` alpha bytes sequentially into `alpha_out`, writes per-column status into
+/// `status_out` (`0` = empty, `1` = partial in next slot of `alpha_out`, `2` = full), and writes
+/// `[alpha_sum, b_x0, b_y0, b_x1, b_y1]` into `info_out` (`b_x0 = -1.0` when no tile has non-zero alpha).
+/// Returns `1` on success, `0` when refused.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn range_tiles_rgba(
+    rgba: *const u8,
+    w: usize,
+    h: usize,
+    ty: usize,
+    ry0: usize,
+    ry1: usize,
+    tile: usize,
+    mode: u32,
+    params: *const f64,
+    flags: u32,
+    alpha_out: *mut u8,
+    status_out: *mut u8,
+    info_out: *mut f64,
+) -> u32 {
+    if rgba.is_null()
+        || params.is_null()
+        || alpha_out.is_null()
+        || status_out.is_null()
+        || info_out.is_null()
+        || w == 0
+        || h == 0
+        || tile == 0
+        || tile > 4096
+        || ry0 >= ry1
+    {
+        return 0;
+    }
+    let rows = ry1 - ry0;
+    let Some(rgba_len) = rows.checked_mul(w).and_then(|n| n.checked_mul(4)) else { return 0 };
+    let Some(tile_bytes) = tile.checked_mul(tile) else { return 0 };
+    let cols = (w - 1) / tile + 1;
+    let Some(alpha_len) = cols.checked_mul(tile_bytes) else { return 0 };
+
+    let p_slice = slice::from_raw_parts(params, 8);
+    if p_slice.iter().any(|x| !x.is_finite()) {
+        return 0;
+    }
+    let mut p = [0.0f64; 8];
+    p.copy_from_slice(p_slice);
+
+    let rgba_slice = slice::from_raw_parts(rgba, rgba_len);
+    let alpha_slice = slice::from_raw_parts_mut(alpha_out, alpha_len);
+    let status_slice = slice::from_raw_parts_mut(status_out, cols);
+    let info_slice = slice::from_raw_parts_mut(info_out, 5);
+
+    range::range_tiles_rgba(
+        rgba_slice,
+        w,
+        h,
+        ty,
+        ry0,
+        ry1,
+        tile,
+        mode,
+        &p,
+        flags,
+        alpha_slice,
+        status_slice,
+        info_slice,
+    )
+}
+
 
 

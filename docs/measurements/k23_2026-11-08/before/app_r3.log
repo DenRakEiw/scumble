@@ -1,0 +1,4 @@
+
+
+DevTools listening on ws://127.0.0.1:9613/devtools/browser/30df4317-746b-4d17-96df-980759bf2238
+[46772:1108/184424.433:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 2 rejected by interface blink.mojom.Widget

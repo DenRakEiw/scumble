@@ -53,9 +53,10 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * `colorMatch` and `blendAlpha` (K33): `colorMatchRgba` and `blendAlpha` of stitch.js. `edgefit`, `edgefitShrink`,
  * `warpRgba` and `warpCoverage` (K34): `edgefitShrink`, `warpRgba` and `warpCoverage` of edgefit.js. `mapTileStats`
  * (K21), `rangeDepth` and `rangeDepthSnap` (K22): `mapTileStats` and `rangeTilesDepth` (plain bilinear tiles and
- * joint-bilateral snapped tiles).
+ * joint-bilateral snapped tiles). `rangeLuma` and `rangeColor` (K23): `rangeTilesRgba` (luminance and colour-similarity
+ * range selection over an RGBA8 band).
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -67,6 +68,10 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // 2013.5 ms; before/after on Rust 223.4 -> 172.1 ms wall) and rangeDepthSnap=js:rust on range_depth_snap (1174.4 vs
 // 1385.3 ms wall; worker job 1802.2 vs 3541.1 ms, while the window's pre-job picture read is 912-1136 ms independent
 // of the route).
+// No rangeLuma or rangeColor entry (K23, docs/measurements/k23_2026-11-08/summary.txt): at 15000x10000 Rust won
+// rangeLuma=js:rust on range_luma (1102.7 vs 1893.4 ms wall, lower by 790.7 > spread 392.8; worker job 1033.6 vs
+// 2545.3 ms; before/after on Rust 1636.6 -> 1224.4 ms wall) and rangeColor=js:rust on range_color (1976.6 vs 3542.6 ms
+// wall, lower by 1566.1 > spread 368.4; worker job 2893.4 vs 6487.6 ms; before/after on Rust 3137.6 -> 1785.7 ms wall).
 const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16 });
 
 const TAKES = { kernel: '"js" or "rust"', kernelSize: '"js", "rust" or a number of pixels >= 0', mb: "a number of MB >= 0 or Infinity", count: "a whole number >= 0" };
@@ -948,4 +953,24 @@ export function rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert
     }
     return { tiles, bounds, alphaSum: (rPlain.alphaSum || 0) + (rSnap.alphaSum || 0) };
 }
+
+/**
+ * Evaluates one document tile row `ty` (`[y0, y1)` clipped to `[ty * tile, min((ty + 1) * tile, H))`) over a
+ * `(y1 - y0)`-row RGBA8 band `rgba` for `"luma"` (routed by `rangeLuma`) or `"color"` (routed by `rangeColor`) range
+ * selection (K23, docs/PLAN_WASM_BUILD.md §4.8).
+ */
+export function rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, tile = 256) {
+    const isColor = limit && (limit.source === "color" || (limit.source !== "luma" && limit.color != null));
+    const p = rustPx(isColor ? "rangeColor" : "rangeLuma");
+    if (p) {
+        try {
+            const out = p.rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert, tile);
+            if (out) return out;
+        } catch (err) {
+            if (!recovered(p, err, "range_tiles_rgba")) throw err;
+        } finally { releaseIfLarge(); }
+    }
+    return J.rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert, tile);
+}
+
 

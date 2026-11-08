@@ -1,0 +1,13 @@
+-- 15000x10000 (150.0 MP), 3 rounds ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  arms: the "js" column rangeColor=js, the "rust" column rangeColor=rust
+  range_color      kernel js   6512.0  rust   2526.5  (2.58x) | worker job js   6512.0  rust   2526.5  (2.58x) | wall js   3717.8  rust   1671.7  (2.22x)  15 partial tiles in 10 jobs, the picture in stack_into jobs js 40 / rust 40, selectRange's ms js 3717.6 / rust 1671.4
+                   parts js/rust: ms 6512.0/2526.5  stack_into.kernel 2389.6/2851.4
+                   marks js/rust: held 0.7/0.8  combined 3715.9/1669.6  done 1.1/1.1  total 3717.6/1671.4; read 672.2/794.6  combine 2.3/1.5  (rust: source "color", mode "replace", snap false, program false, bands 10, tiles 15, pct 0)
+                   px calls js: window mip_chain 15, sel_combine 14; jobs composite_tile 39 | rust: window mip_chain 15, sel_combine 14; jobs composite_tile 39, range_tiles_rgba 40
+                   split js/rust: job 8935.3/5324.1  copyIn 386.3/598.5 (1147.2/1719.4 MB, shared 575.0/1147.2 MB)  copyOut 153.3/184.5 (576.0/576.9 MB)  alloc 0.0/0.0  grew MB 0.0/0.0  bytes0 MB 32/32 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {composite_tile 459.9, mip_chain 0.5, sel_combine 0.5} rust {composite_tile 572.6, mip_chain 0.4, range_tiles_rgba 2428.0, sel_combine 0.4}  first js {} rust {}  queue 0.4/0.4  trip 8962.4/5367.4  workers 8/8
+  instances renewed over the rows: {release 0, idle 0, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 10 threads read: 0
+
+PASS

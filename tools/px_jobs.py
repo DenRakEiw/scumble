@@ -170,6 +170,8 @@ BODY = """
     const SELK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "selCombine"));
     const INVK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "maskInvert"));
     const RNGDK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "rangeDepth"));
+    const RNGLK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "rangeLuma"));
+    const RNGCK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "rangeColor"));
     const COMBINE = { ms: 0, n: 0 }, INVERT = { ms: 0, n: 0 };
     const combine0 = T.TileMaskPixels.prototype.combine, invert0 = T.TileMaskPixels.prototype.invert;
     const timedCombine = function (...a) {
@@ -785,6 +787,14 @@ BODY = """
             if (rd === "rust" && rs === "rust" && n !== (row.jobs || 0)) bad.push(`rangeDepth=rust, rangeDepthSnap=rust: the jobs called range_tiles_depth ${n} times, for ${row.jobs || 0} jobs`);
             if ((rd === "rust" || rs === "rust") && !n && (row.jobs || 0) > 0) bad.push(`rangeDepth=${rd}, rangeDepthSnap=${rs}: the jobs called range_tiles_depth 0 times`);
         }
+        if (RNGLK && row.job === "range_luma") {
+            const r = routeOf("rangeLuma"), n = jobs.range_tiles_rgba || 0, want = r === "rust" ? Math.ceil(H / 256) : 0;
+            if (n !== want) bad.push(`rangeLuma=${r}: the jobs called range_tiles_rgba ${n} times, for ${want} tile rows`);
+        }
+        if (RNGCK && row.job === "range_color") {
+            const r = routeOf("rangeColor"), n = jobs.range_tiles_rgba || 0, want = r === "rust" ? Math.ceil(H / 256) : 0;
+            if (n !== want) bad.push(`rangeColor=${r}: the jobs called range_tiles_rgba ${n} times, for ${want} tile rows`);
+        }
         if (row.floodPx) {
             const r = routeOf("flood");
             const want = r === "js" ? 0 : r === "rust" ? row.floodPx.length : row.floodPx.filter((n) => n >= r).length;
@@ -961,7 +971,7 @@ PIXEL_WORK = ["kernel", "edt", "bounds", "feature", "write", "resultBounds"]
 KERNEL = {"mips_direct": ["kernel"], "mips_whole": ["kernel"], "band": ["kernel"], "grow": PIXEL_WORK, "shrink": PIXEL_WORK,
           "wand_band": ["flood", "clip", "bounds", "shape"], "wand_object": ["flood", "clip", "bounds", "shape"],
           "wand_add": ["flood", "clip", "bounds", "shape"], "invert": ["invert"],
-          "range_depth": ["ms"], "range_depth_snap": ["ms"], "range_luma": [], "range_color": [],
+          "range_depth": ["ms"], "range_depth_snap": ["ms"], "range_luma": ["ms"], "range_color": ["ms"],
           "depth_guide": [], "fill_limit": []}
 # the "worker job" column: the job's whole time where it is not `total` or `kernel`; None where the row posts no job
 WORKER = {"invert": None, "fill_limit": None, "depth_guide": "total",

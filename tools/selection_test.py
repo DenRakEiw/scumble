@@ -624,7 +624,11 @@ await wait(100);
 const at = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
 
 // Case 6: luma on 16 grey stripes 0, 17, ..., 255; lo .4 hi .6 -> stripes 102, 119, 136, 153 -> 255; others 0
-await ed.selectRange({ source: "luma", lo: 0.4, hi: 0.6, fLo: 0, fHi: 0 }, "replace");
+const E = ed.constructor;
+const { perf: lumaPerfRust } = await rangeTimed(E, () => ed.selectRange({ source: "luma", lo: 0.4, hi: 0.6, fLo: 0, fHi: 0 }, "replace"));
+if (ed.tileMode && (!lumaPerfRust.jobCalls || lumaPerfRust.jobCalls.range_tiles_rgba !== 2)) {
+    throw new Error("K23 case 6: expected range_tiles_rgba === 2 on 1600x400, got " + JSON.stringify(lumaPerfRust.jobCalls));
+}
 const selectedStripes = [];
 for (let k = 0; k < 16; k++) {
     const val = at(k * 100 + 50, 200);
@@ -633,6 +637,31 @@ for (let k = 0; k < 16; k++) {
         throw new Error(`case 6: stripe ${k} (${k * 17}) expected ${expected}, got ${val}`);
     }
     if (val === 255) selectedStripes.push(k * 17);
+}
+// K23 luma feathered rust vs js route byte-for-byte check
+if (ed.tileMode) {
+    const lumaFeathered = { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.15, fHi: 0.15 };
+    const { perf: lumaFPerfRust } = await rangeTimed(E, () => ed.selectRange(lumaFeathered, "replace"));
+    if (!lumaFPerfRust.jobCalls || lumaFPerfRust.jobCalls.range_tiles_rgba !== 2) {
+        throw new Error("K23 luma feathered: expected range_tiles_rgba === 2, got " + JSON.stringify(lumaFPerfRust.jobCalls));
+    }
+    const lumaRustBytes = ed.sel.readRect(0, 0, 1600, 400).data.slice();
+    E.setRoute("rangeLuma", "js");
+    let lumaFPerfJs;
+    try {
+        ({ perf: lumaFPerfJs } = await rangeTimed(E, () => ed.selectRange(lumaFeathered, "replace")));
+    } finally {
+        E.setRoute("rangeLuma", null);
+    }
+    if (lumaFPerfJs.jobCalls && lumaFPerfJs.jobCalls.range_tiles_rgba) {
+        throw new Error("K23 luma js route: expected 0 range_tiles_rgba calls, got " + JSON.stringify(lumaFPerfJs.jobCalls));
+    }
+    const lumaJsBytes = ed.sel.readRect(0, 0, 1600, 400).data;
+    for (let i = 3; i < lumaRustBytes.length; i += 4) {
+        if (lumaRustBytes[i] !== lumaJsBytes[i]) {
+            throw new Error(`K23 luma rust vs js mismatch at byte ${i}: ${lumaRustBytes[i]} vs ${lumaJsBytes[i]}`);
+        }
+    }
 }
 
 // Case 7: colour #ff0000 tol 20 lo .5 hi 1 over red / green / blue patches -> red 255; green and blue 0
@@ -648,13 +677,42 @@ ed.draw();
 if (ed.mipsSettled) await ed.mipsSettled();
 await wait(100);
 
-await ed.selectRange({ source: "color", color: "#ff0000", tol: 20, lo: 0.5, hi: 1.0, fLo: 0, fHi: 0 }, "replace");
+const { perf: colorPerfRust } = await rangeTimed(E, () => ed.selectRange({ source: "color", color: "#ff0000", tol: 20, lo: 0.5, hi: 1.0, fLo: 0, fHi: 0 }, "replace"));
+if (ed.tileMode && (!colorPerfRust.jobCalls || colorPerfRust.jobCalls.range_tiles_rgba !== 2)) {
+    throw new Error("K23 case 7: expected range_tiles_rgba === 2 on 1600x400, got " + JSON.stringify(colorPerfRust.jobCalls));
+}
 const redVal = at(200, 200);
 const greenVal = at(600, 200);
 const blueVal = at(1000, 200);
 if (redVal !== 255) throw new Error("case 7: red patch not 255: " + redVal);
 if (greenVal !== 0) throw new Error("case 7: green patch not 0: " + greenVal);
 if (blueVal !== 0) throw new Error("case 7: blue patch not 0: " + blueVal);
+
+// K23 colour feathered rust vs js route byte-for-byte check
+if (ed.tileMode) {
+    const colorFeathered = { source: "color", color: "#c04020", tol: 40, lo: 0.15, hi: 0.9, fLo: 0.15, fHi: 0.1 };
+    const { perf: colorFPerfRust } = await rangeTimed(E, () => ed.selectRange(colorFeathered, "replace"));
+    if (!colorFPerfRust.jobCalls || colorFPerfRust.jobCalls.range_tiles_rgba !== 2) {
+        throw new Error("K23 color feathered: expected range_tiles_rgba === 2, got " + JSON.stringify(colorFPerfRust.jobCalls));
+    }
+    const colorRustBytes = ed.sel.readRect(0, 0, 1600, 400).data.slice();
+    E.setRoute("rangeColor", "js");
+    let colorFPerfJs;
+    try {
+        ({ perf: colorFPerfJs } = await rangeTimed(E, () => ed.selectRange(colorFeathered, "replace")));
+    } finally {
+        E.setRoute("rangeColor", null);
+    }
+    if (colorFPerfJs.jobCalls && colorFPerfJs.jobCalls.range_tiles_rgba) {
+        throw new Error("K23 color js route: expected 0 range_tiles_rgba calls, got " + JSON.stringify(colorFPerfJs.jobCalls));
+    }
+    const colorJsBytes = ed.sel.readRect(0, 0, 1600, 400).data;
+    for (let i = 3; i < colorRustBytes.length; i += 4) {
+        if (colorRustBytes[i] !== colorJsBytes[i]) {
+            throw new Error(`K23 color rust vs js mismatch at byte ${i}: ${colorRustBytes[i]} vs ${colorJsBytes[i]}`);
+        }
+    }
+}
 
 // Case 8: the same picture with a levels-to-black filter layer on top, luma lo .5 -> nothing selected (it reads the shown picture)
 const fl = await run("add_filter", { doc: window.__selDoc, type: "fill" });

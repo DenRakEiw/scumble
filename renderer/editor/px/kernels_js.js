@@ -2533,4 +2533,163 @@ export function rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert
     return { tiles, bounds, alphaSum };
 }
 
+const RANGE_LUMA_R = new Float64Array(256);
+const RANGE_LUMA_G = new Float64Array(256);
+const RANGE_LUMA_B = new Float64Array(256);
+const RANGE_INV255 = new Float64Array(256);
+const RANGE_OPP_R = new Float64Array(256);
+const RANGE_OPP_G = new Float64Array(256);
+const RANGE_OPP_B = new Float64Array(256);
+for (let i = 0; i < 256; i++) {
+    RANGE_LUMA_R[i] = 0.299 * i;
+    RANGE_LUMA_G[i] = 0.587 * i;
+    RANGE_LUMA_B[i] = 0.114 * i;
+    const u = i / 255;
+    RANGE_INV255[i] = u;
+    RANGE_OPP_R[i] = 0.299 * u;
+    RANGE_OPP_G[i] = 0.587 * u;
+    RANGE_OPP_B[i] = 0.114 * u;
+}
+
+function rangeHexToRgb01(hex) {
+    if (!hex || typeof hex !== "string") return [1, 1, 1];
+    const clean = hex.replace(/^#/, "");
+    if (clean.length === 6) {
+        return [
+            parseInt(clean.slice(0, 2), 16) / 255,
+            parseInt(clean.slice(2, 4), 16) / 255,
+            parseInt(clean.slice(4, 6), 16) / 255,
+        ];
+    }
+    if (clean.length === 3) {
+        return [
+            parseInt(clean[0] + clean[0], 16) / 255,
+            parseInt(clean[1] + clean[1], 16) / 255,
+            parseInt(clean[2] + clean[2], 16) / 255,
+        ];
+    }
+    return [1, 1, 1];
+}
+
+/**
+ * Evaluates one document tile row `ty` (`[y0, y1)` clipped to `[ty * tile, min((ty + 1) * tile, H))`) over a
+ * `(y1 - y0)`-row RGBA8 band `rgba` (`W * (y1 - y0) * 4` bytes) for `"luma"` (three 256-entry `f64` product tables)
+ * or `"color"` (opponent colour similarity with `libmExp`) range selection (K23, docs/PLAN_WASM_BUILD.md §4.8).
+ * Rust twin: crates/px/src/range.rs `range_tiles_rgba` (`px.js` `rangeTilesRgba`).
+ */
+export function rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, tile = 256) {
+    if (!rgba || !limit || !(W > 0) || !(H > 0) || !(tile > 0 && tile <= 4096) || !(ty >= 0) || !(y0 >= 0) || !(y0 < y1) || !(y1 <= H)) {
+        throw new Error("rangeTilesRgba: bad arguments");
+    }
+    const u8 = bytesOf(rgba);
+    if (!u8 || u8.length < (y1 - y0) * W * 4) throw new Error("rangeTilesRgba: short rgba");
+
+    const isColor = limit.source === "color" || (limit.source !== "luma" && limit.color != null);
+    const lo = limit.lo == null ? 0 : +limit.lo;
+    const hi = limit.hi == null ? 0 : +limit.hi;
+    const fLo = limit.fLo == null ? 0 : +limit.fLo;
+    const fHi = limit.fHi == null ? 0 : +limit.fHi;
+    const tol = limit.tol == null ? 30 : +limit.tol;
+    const limitInvert = !!limit.invert;
+    const jobInvert = !!invert;
+    let refL = 0, refA = 0, refB = 0;
+    if (isColor) {
+        const [r, g, b] = rangeHexToRgb01(limit.color || "#ffffff");
+        refL = 0.299 * r + 0.587 * g + 0.114 * b;
+        refA = r - refL;
+        refB = b - refL;
+    }
+    if (![lo, hi, fLo, fHi, refL, refA, refB, tol].every(Number.isFinite)) {
+        throw new Error("rangeTilesRgba: non-finite parameters");
+    }
+
+    const tileY0 = ty * tile;
+    const tileY1 = Math.min(tileY0 + tile, H);
+    const ry0 = Math.max(tileY0, y0);
+    const ry1 = Math.min(tileY1, y1);
+    if (!(ry0 < ry1)) {
+        return { tiles: [], bounds: null, alphaSum: 0 };
+    }
+
+    const s = 0.04 + Math.max(0, Math.min(1, (tol || 0) / 100)) * 0.6;
+    const twoS2 = 2 * s * s;
+
+    const cols = Math.ceil(W / tile);
+    const tiles = [];
+    let bX0 = Infinity, bY0 = Infinity, bX1 = -Infinity, bY1 = -Infinity;
+    let alphaSum = 0;
+
+    for (let tx = 0; tx < cols; tx++) {
+        const tileX0 = tx * tile;
+        const tileX1 = Math.min(tileX0 + tile, W);
+        const alpha = new Uint8Array(tile * tile);
+        let zeros = 0, fulls = 0;
+        let tMinX = tile, tMinY = tile, tMaxX = -1, tMaxY = -1;
+
+        for (let py = 0; py < tile; py++) {
+            const y = tileY0 + py;
+            if (y < y0 || y >= y1 || y >= H) {
+                zeros += tile;
+                continue;
+            }
+            const pyOffset = py * tile;
+            const rowOffset = (y - y0) * W;
+            for (let px = 0; px < tile; px++) {
+                const x = tileX0 + px;
+                if (x >= W) {
+                    zeros++;
+                    continue;
+                }
+                const offset = (rowOffset + x) * 4;
+                const rb = u8[offset];
+                const gb = u8[offset + 1];
+                const bb = u8[offset + 2];
+                let v;
+                if (!isColor) {
+                    v = (RANGE_LUMA_R[rb] + RANGE_LUMA_G[gb] + RANGE_LUMA_B[bb]) / 255;
+                } else {
+                    const L = RANGE_OPP_R[rb] + RANGE_OPP_G[gb] + RANGE_OPP_B[bb];
+                    const d0 = L - refL;
+                    const d1 = (RANGE_INV255[rb] - L) - refA;
+                    const d2 = (RANGE_INV255[bb] - L) - refB;
+                    const dd = d0 * d0 + 4 * (d1 * d1 + d2 * d2);
+                    v = libmExp(-dd / twoS2);
+                }
+                const w = rangeWeightScalar(v, lo, hi, fLo, fHi, limitInvert);
+                const a = Math.round(255 * (jobInvert ? 1 - w : w));
+                alpha[pyOffset + px] = a;
+                alphaSum += a;
+                if (a === 0) {
+                    zeros++;
+                } else {
+                    if (a === 255) fulls++;
+                    if (px < tMinX) tMinX = px;
+                    if (px > tMaxX) tMaxX = px;
+                    if (py < tMinY) tMinY = py;
+                    if (py > tMaxY) tMaxY = py;
+                }
+            }
+        }
+
+        if (zeros === tile * tile) continue;
+        if (fulls === tile * tile && (tileX1 - tileX0) === tile && (tileY1 - tileY0) === tile) {
+            tiles.push({ tx, ty, full: true });
+            bX0 = Math.min(bX0, tileX0);
+            bY0 = Math.min(bY0, tileY0);
+            bX1 = Math.max(bX1, tileX0 + tile);
+            bY1 = Math.max(bY1, tileY0 + tile);
+        } else {
+            tiles.push({ tx, ty, alpha: alpha.buffer });
+            bX0 = Math.min(bX0, tileX0 + tMinX);
+            bY0 = Math.min(bY0, tileY0 + tMinY);
+            bX1 = Math.max(bX1, tileX0 + tMaxX + 1);
+            bY1 = Math.max(bY1, tileY0 + tMaxY + 1);
+        }
+    }
+
+    const bounds = Number.isFinite(bX0) ? [bX0, bY0, bX1, bY1] : null;
+    return { tiles, bounds, alphaSum };
+}
+
+
 

@@ -1393,12 +1393,18 @@ async function retouchRouteCases(js) {
         const rtdCls = new Uint8Array([2, 2]);
         const rtdSnap = [0.05, 0.02];
         want.rtd = js.rangeTilesDepth(rtdMap, 16, 16, rtdXf, 512, 256, 0, 0, 256, rtdLim, false, rtdSnap, rtdGuide, rtdPic, rtdCls, 256);
+        const rtrLumaLim = { source: "luma", lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const rtrColorLim = { source: "color", color: "#5080a0", tol: 30, invert: false };
+        want.rtrLuma = js.rangeTilesRgba(I, w, h, 0, 0, h, rtrLumaLim, false, 256);
+        want.rtrColor = js.rangeTilesRgba(I, w, h, 0, 0, h, rtrColorLim, false, 256);
         K.setRoute("edgefit", "rust");
         K.setRoute("edgefitShrink", "rust");
         K.setRoute("warpRgba", "rust");
         K.setRoute("warpCoverage", "rust");
         K.setRoute("rangeDepth", "rust");
         K.setRoute("rangeDepthSnap", "rust");
+        K.setRoute("rangeLuma", "rust");
+        K.setRoute("rangeColor", "rust");
         const trapIn2 = (p) => p.exports.mip_half(-16, 256, 256, 0);
         let ok = true, detail = "";
         for (const [name, method, callIt, check1] of [
@@ -1429,6 +1435,8 @@ async function retouchRouteCases(js) {
                     K.setRoute("rangeDepthSnap", "rust");
                 }
             }, (o) => !twinDiff(o, want.rtd)],
+            ["rangeTilesRgbaLuma", "rangeTilesRgba", () => K.rangeTilesRgba(I, w, h, 0, 0, h, rtrLumaLim, false, 256), (o) => !twinDiff(o, want.rtrLuma)],
+            ["rangeTilesRgbaColor", "rangeTilesRgba", () => K.rangeTilesRgba(I, w, h, 0, 0, h, rtrColorLim, false, 256), (o) => !twinDiff(o, want.rtrColor)],
         ]) {
             const p = K.rustPx(), i0 = K.pxInstances();
             // the split traps after its kernel wrote L in wasm memory, before the copy out (the caller's L untouched)
@@ -1448,7 +1456,17 @@ async function retouchRouteCases(js) {
                 detail = `rangeTilesDepthOom: ${JSON.stringify(i1)}`;
             }
         }
-        check("kernels.js K27 / K28 / K29 / K34 / K22 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
+        {
+            const p = K.rustPx(), i0 = K.pxInstances();
+            p.rangeTilesRgba = function () { return this.alloc(0xffff0000); };
+            const got = K.rangeTilesRgba(I, w, h, 0, 0, h, rtrLumaLim, false, 256);
+            const after = K.rustPx(), i1 = K.pxInstances();
+            if (!(!twinDiff(got, want.rtrLuma) && after !== p && i1.oom === i0.oom + 1)) {
+                ok = false;
+                detail = `rangeTilesRgbaOom: ${JSON.stringify(i1)}`;
+            }
+        }
+        check("kernels.js K27 / K28 / K29 / K34 / K22 / K23 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
         // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
         const i0 = K.pxInstances();
         K.setRoute("releaseMB", 0);
@@ -1459,7 +1477,7 @@ async function retouchRouteCases(js) {
         console.warn = realWarn;
         kernelsBack(K);
     }
-    check("the K27 / K28 / K29 / K34 / K22 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|edgefit_shrink|warp_rgba|warp_coverage|range_tiles_depth/.test(w)).length === 11, warned.join(" | "));
+    check("the K27 / K28 / K29 / K34 / K22 / K23 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|edgefit_shrink|warp_rgba|warp_coverage|range_tiles_depth|range_tiles_rgba/.test(w)).length === 13, warned.join(" | "));
     void js;
 }
 
@@ -5090,7 +5108,7 @@ async function selCases(js, simd, scalar, raster, K) {
 async function rangeCases(js, simd, scalar, resample, K) {
     const weights = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_weights.js")).href);
     const edges = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_edges.js")).href);
-    const { u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping } = weights;
+    const { LUMA, opp, hexToRgb, u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping } = weights;
     const { snapField, snapParams, SNAP_TAU } = edges;
 
     let seed = 0x4b3231;
@@ -5982,6 +6000,420 @@ async function rangeCases(js, simd, scalar, resample, K) {
         }
     }
 
+    // ---- K23: range_tiles_rgba (luma & colour, docs/PLAN_WASM_BUILD.md §4.8) -------------------------------------------
+
+    const refRangeTilesRgba = (rgba, W, H, ty, y0, y1, limit, jobInvert = false, tile = 256) => {
+        const u8 = rgba instanceof Uint8Array
+            ? rgba
+            : new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength);
+        const isColor = limit.source === "color" || (limit.source !== "luma" && limit.color != null);
+        let ref = null, twoS2 = 1;
+        if (isColor) {
+            const [r0, g0, b0] = hexToRgb(limit.color || "#ffffff");
+            ref = opp(r0, g0, b0);
+            const tol = Number(limit.tol ?? 30);
+            const s = 0.04 + Math.max(0, Math.min(1, (tol || 0) / 100)) * 0.6;
+            twoS2 = 2 * s * s;
+        }
+        const limDesc = {
+            lo: Number(limit.lo ?? 0),
+            hi: Number(limit.hi ?? 0),
+            fLo: Number(limit.fLo || 0),
+            fHi: Number(limit.fHi || 0),
+            invert: Boolean(limit.invert),
+        };
+        const inv = Boolean(jobInvert);
+        const cols = Math.ceil(W / tile);
+        const tileY0 = ty * tile;
+        const tileY1 = Math.min(tileY0 + tile, H);
+        const ry0 = Math.max(tileY0, y0);
+        const ry1 = Math.min(tileY1, y1);
+        const pyStart = ry0 - tileY0;
+        const pyEnd = ry1 - tileY0;
+        const tiles = [];
+        let bX0 = Infinity, bY0 = Infinity, bX1 = -Infinity, bY1 = -Infinity;
+        let alphaSum = 0;
+
+        for (let tx = 0; tx < cols; tx++) {
+            const tileX0 = tx * tile;
+            const tileX1 = Math.min(tileX0 + tile, W);
+            const vw = Math.max(0, tileX1 - tileX0);
+            if (vw === 0 || pyStart >= pyEnd) continue;
+
+            const buf = new Uint8Array(tile * tile);
+            let anyNonZero = false;
+            let allFull = vw === tile && pyStart === 0 && pyEnd === tile;
+            let tileSum = 0;
+            let tX0 = Infinity, tY0 = Infinity, tX1 = -Infinity, tY1 = -Infinity;
+
+            for (let py = pyStart; py < pyEnd; py++) {
+                const gy = tileY0 + py;
+                const rowBase = ((gy - y0) * W + tileX0) * 4;
+                const dstRow = py * tile;
+                for (let px = 0; px < vw; px++) {
+                    const idx = rowBase + px * 4;
+                    const R = u8[idx], G = u8[idx + 1], B = u8[idx + 2];
+                    let v;
+                    if (isColor) {
+                        const r = R / 255, g = G / 255, b = B / 255;
+                        const L = (LUMA[0] * R) / 255 + (LUMA[1] * G) / 255 + (LUMA[2] * B) / 255;
+                        const d0 = L - ref[0];
+                        const d1 = (r - L) - ref[1];
+                        const d2 = (b - L) - ref[2];
+                        const dd = d0 * d0 + 4 * (d1 * d1 + d2 * d2);
+                        v = js.libmExp(-dd / twoS2);
+                    } else {
+                        v = (LUMA[0] * R + LUMA[1] * G + LUMA[2] * B) / 255;
+                    }
+                    let w = rangeWeight(v, limDesc);
+                    if (inv) w = 1 - w;
+                    const a = Math.min(255, Math.max(0, Math.round(w * 255)));
+                    if (a > 0) {
+                        buf[dstRow + px] = a;
+                        anyNonZero = true;
+                        tileSum += a;
+                        const gx = tileX0 + px;
+                        if (gx < tX0) tX0 = gx;
+                        if (gy < tY0) tY0 = gy;
+                        if (gx + 1 > tX1) tX1 = gx + 1;
+                        if (gy + 1 > tY1) tY1 = gy + 1;
+                        if (a < 255) allFull = false;
+                    } else {
+                        allFull = false;
+                    }
+                }
+            }
+
+            if (anyNonZero) {
+                alphaSum += tileSum;
+                if (tX0 < bX0) bX0 = tX0;
+                if (tY0 < bY0) bY0 = tY0;
+                if (tX1 > bX1) bX1 = tX1;
+                if (tY1 > bY1) bY1 = tY1;
+                if (allFull) tiles.push({ tx, ty, full: true });
+                else tiles.push({ tx, ty, alpha: buf.buffer });
+            }
+        }
+
+        const bounds = Number.isFinite(bX0) ? [bX0, bY0, bX1, bY1] : null;
+        return { tiles, bounds, alphaSum };
+    };
+
+    const makeRgbaBand = (W, rows, kind) => {
+        const u8 = new Uint8Array(W * rows * 4);
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < W; x++) {
+                const idx = (y * W + x) * 4;
+                if (kind === "ramp") {
+                    const t = Math.round(((x + y * 0.5) / Math.max(1, W + rows * 0.5)) * 255);
+                    u8[idx] = t;
+                    u8[idx + 1] = Math.min(255, Math.max(0, 255 - t));
+                    u8[idx + 2] = (x * 3 + y * 5) & 255;
+                    u8[idx + 3] = 255;
+                } else if (kind === "stripes") {
+                    const tx = Math.floor(x / 256);
+                    if (tx % 3 === 0) {
+                        u8[idx] = 255; u8[idx + 1] = 255; u8[idx + 2] = 255; u8[idx + 3] = 255;
+                    } else if (tx % 3 === 1) {
+                        u8[idx] = 0; u8[idx + 1] = 0; u8[idx + 2] = 0; u8[idx + 3] = 255;
+                    } else {
+                        u8[idx] = (x * 13 + y * 7) & 255;
+                        u8[idx + 1] = (x * 29 + y * 11) & 255;
+                        u8[idx + 2] = (x * 43 + y * 19) & 255;
+                        u8[idx + 3] = 255;
+                    }
+                } else {
+                    u8[idx] = Math.floor(rnd() * 256);
+                    u8[idx + 1] = Math.floor(rnd() * 256);
+                    u8[idx + 2] = Math.floor(rnd() * 256);
+                    u8[idx + 3] = 255;
+                }
+            }
+        }
+        return u8;
+    };
+
+    const rgbaCases = [];
+    for (const [W, H, ty, y0, y1, kind] of [
+        [1, 1, 0, 0, 1, "random"],
+        [13, 9, 0, 0, 9, "ramp"],
+        [256, 256, 0, 0, 256, "stripes"],
+        [257, 255, 0, 0, 255, "random"],
+        [513, 257, 0, 0, 257, "stripes"],
+        [513, 257, 1, 0, 257, "ramp"],
+        [600, 300, 0, 10, 200, "ramp"],    // partial [y0..y1) inside tile row 0 (pyStart > 0, pyEnd < 256)
+        [600, 600, 1, 100, 500, "stripes"], // multi-tile band y0=100..500, ty=1 (ry0=256..500)
+        [800, 550, 2, 0, 550, "random"],   // partial bottom row ty=2 (512..550) and partial right col (vw=32)
+    ]) {
+        const band = makeRgbaBand(W, y1 - y0, kind);
+        rgbaCases.push({
+            tag: `luma ${W}x${H} ty=${ty} [${y0}..${y1}) ${kind}`,
+            args: [band, W, H, ty, y0, y1, { source: "luma", lo: 0.2, hi: 0.8, fLo: 0.08, fHi: 0.08, invert: false }, false, 256],
+        });
+        rgbaCases.push({
+            tag: `color #5080a0 tol=30 ${W}x${H} ty=${ty} [${y0}..${y1}) ${kind}`,
+            args: [band, W, H, ty, y0, y1, { source: "color", color: "#5080a0", tol: 30, lo: 0.25, hi: 1.0, fLo: 0.1, fHi: 0.05, invert: false }, false, 256],
+        });
+    }
+
+    // Colour hex parsing (#rgb 3-char, #rrggbb, missing color fallback to white) & tol clamping (0, 100, -10, 150)
+    {
+        const W = 260, H = 64;
+        const band = makeRgbaBand(W, H, "ramp");
+        for (const [tag, lim, jobInv] of [
+            ["#rgb 3-char hex tol=40", { source: "color", color: "#48c", tol: 40, lo: 0.1, hi: 0.9, fLo: 0.05, fHi: 0.05, invert: false }, false],
+            ["#rrggbb 6-char hex tol=0", { source: "color", color: "#4488cc", tol: 0, lo: 0.01, hi: 0.9, fLo: 0.01, fHi: 0.05, invert: false }, false],
+            ["limit.color property tol=100", { source: "color", color: "#20a060", tol: 100, lo: 0.3, hi: 0.85, fLo: 0.1, fHi: 0.1, invert: true }, false],
+            ["missing hex fallback tol=-10", { source: "color", tol: -10, lo: 0.2, hi: 1.0, fLo: 0.05, fHi: 0, invert: false }, true],
+            ["tol=150 clamped to 100", { source: "color", color: "#ff8000", tol: 150, lo: 0.4, hi: 0.95, fLo: 0.1, fHi: 0.05, invert: false }, false],
+            ["luma invert matrix (true, true)", { source: "luma", lo: 0.25, hi: 0.75, fLo: 0.1, fHi: 0.1, invert: true }, true],
+            ["luma invert matrix (true, false)", { source: "luma", lo: 0.25, hi: 0.75, fLo: 0.1, fHi: 0.1, invert: true }, false],
+            ["luma invert matrix (false, true)", { source: "luma", lo: 0.25, hi: 0.75, fLo: 0.1, fHi: 0.1, invert: false }, true],
+        ]) {
+            rgbaCases.push({
+                tag: `rgba variant ${tag}`,
+                args: [band, W, H, 0, 0, H, lim, jobInv, 256],
+            });
+        }
+        const out3 = simd.rangeTilesRgba(band, W, H, 0, 0, H, { source: "color", color: "#48c", tol: 40, lo: 0.1, hi: 0.9, fLo: 0.05, fHi: 0.05, invert: false }, false, 256);
+        const out6 = simd.rangeTilesRgba(band, W, H, 0, 0, H, { source: "color", color: "#4488cc", tol: 40, lo: 0.1, hi: 0.9, fLo: 0.05, fHi: 0.05, invert: false }, false, 256);
+        check("range_tiles_rgba expands 3-char #48c identically to #4488cc with non-empty alpha",
+            out3.alphaSum > 0 && !twinDiff(out3, out6), `alphaSum=${out3.alphaSum}`);
+    }
+
+    // Exact boundary cases for range_tiles_rgba:
+    // 1. All-255 full-tile shortcut vs 1 non-255 pixel
+    // 2. Hard-step 1e-12 tolerance around lo and hi
+    // 3. sstep 1e-14 endpoint clamp
+    // 4. Exact half-way rounding (w * 255 = 40.5 -> 41)
+    // 5. Colour libmExp vs Math.exp tie case (color="#808080", tol=10, pixel=(98,119,128), lo=0.21358439201215637)
+    {
+        const W = 256, H = 256;
+        const gray128 = new Uint8Array(W * H * 4).fill(128);
+        const vLuma128 = (0.299 * 128 + 0.587 * 128 + 0.114 * 128) / 255;
+
+        // Exact half-way: w = 40.5 / 255 -> 41
+        const wTarget = 40.5 / 255;
+        let lo = 0, hi = 1;
+        for (let iter = 0; iter < 80; iter++) {
+            const mid = 0.5 * (lo + hi);
+            if (mid * mid * (3 - 2 * mid) < wTarget) lo = mid;
+            else hi = mid;
+        }
+        const tHalf = 0.5 * (lo + hi);
+        const fLoHalf = 0.25;
+        const loHalf = vLuma128 + fLoHalf * (1 - tHalf);
+        const limHalf = { source: "luma", lo: loHalf, hi: 1.0, fLo: fLoHalf, fHi: 0, invert: false };
+        rgbaCases.push({
+            tag: "luma exact half-way 40.5 -> 41",
+            args: [gray128, W, H, 0, 0, H, limHalf, false, 256],
+        });
+        const rHalf = simd.rangeTilesRgba(gray128, W, H, 0, 0, H, limHalf, false, 256);
+        check("range_tiles_rgba rounds w*255 = 40.5 away from zero to 41 (not ties-to-even 40)",
+            new Uint8Array(rHalf.tiles[0].alpha)[0] === 41, `got ${new Uint8Array(rHalf.tiles[0].alpha)[0]}`);
+
+        // Hard-step 1e-12 boundary around vLuma128
+        for (const [delta, wantByte] of [[-2e-12, 255], [-0.5e-12, 255], [0.5e-12, 255], [2e-12, 0]]) {
+            const limTol = { source: "luma", lo: vLuma128 + delta, hi: 1.0, fLo: 0, fHi: 0, invert: false };
+            rgbaCases.push({
+                tag: `luma hard-step lo=v+${delta}`,
+                args: [gray128, W, H, 0, 0, H, limTol, false, 256],
+            });
+            const rTol = simd.rangeTilesRgba(gray128, W, H, 0, 0, H, limTol, false, 256);
+            check(`range_tiles_rgba hard-step tolerance at delta=${delta} gives byte ${wantByte}`,
+                rTol.alphaSum === wantByte * W * H, `got alphaSum=${rTol.alphaSum}, want ${wantByte * W * H}`);
+        }
+
+        // sstep 1e-14 endpoint clamp
+        for (const frac of [0.5e-14, 2e-14, 0.5, 1 - 2e-14, 1 - 0.5e-14]) {
+            const fLo = 0.1;
+            const limSstep = { source: "luma", lo: vLuma128 + fLo * (1 - frac), hi: 1.0, fLo, fHi: 0, invert: false };
+            rgbaCases.push({
+                tag: `luma sstep clamp frac=${frac}`,
+                args: [gray128, W, H, 0, 0, H, limSstep, false, 256],
+            });
+        }
+
+        // Colour libmExp vs Math.exp tie case: pixel (98, 119, 128) against #808080 at tol=10 has
+        // libmExp(x) = 0.21358439201115637 vs Electron 44 Math.exp(x) = 0.21358439201115634;
+        // at hard-step lo = 0.21358439201215637 (lo - 1e-12 === 0.21358439201115637), libmExp gives 255 (full tile)
+        // whereas Electron 44 Math.exp gives 0 (empty tile).
+        const colTiePic = new Uint8Array(256 * 256 * 4);
+        for (let i = 0; i < colTiePic.length; i += 4) {
+            colTiePic[i] = 98;
+            colTiePic[i + 1] = 119;
+            colTiePic[i + 2] = 128;
+            colTiePic[i + 3] = 255;
+        }
+        const limColTie = { source: "color", color: "#808080", tol: 10, lo: 0.21358439201215637, hi: 1.0, fLo: 0, fHi: 0, invert: false };
+        rgbaCases.push({
+            tag: "K23 colour libmExp tie case (pixel 98,119,128 vs #808080 tol=10)",
+            args: [colTiePic, 256, 256, 0, 0, 256, limColTie, false, 256],
+        });
+        for (const [bName, k] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+            const outTie = k.rangeTilesRgba(colTiePic, 256, 256, 0, 0, 256, limColTie, false, 256);
+            check(`range_tiles_rgba K23 colour libmExp tie case gives full tile (alphaSum=${255 * 65536}) on ${bName}`,
+                outTie.alphaSum === 255 * 65536 && outTie.tiles.length === 1 && outTie.tiles[0].full === true,
+                JSON.stringify(outTie));
+        }
+
+        // Engine-independent spy: js.rangeTilesRgba in colour mode must call libmExp, never Math.exp
+        const origMathExp = Math.exp;
+        let mathExpCalls = 0;
+        Math.exp = (v) => { mathExpCalls++; return origMathExp(v); };
+        try {
+            js.rangeTilesRgba(colTiePic, 256, 256, 0, 0, 256, limColTie, false, 256);
+        } finally {
+            Math.exp = origMathExp;
+        }
+        check("js rangeTilesRgba colour call uses libmExp (0 Math.exp calls)", mathExpCalls === 0, `mathExpCalls=${mathExpCalls}`);
+    }
+
+    let refRgbaOk = true, refRgbaDetail = "";
+    for (const c of rgbaCases) {
+        const got = js.rangeTilesRgba(...c.args), want = refRangeTilesRgba(...c.args);
+        const d = twinDiff(got, want, [], {});
+        if (d) { refRgbaOk = false; refRgbaDetail = `${c.tag}: ${d}`; break; }
+    }
+    check(`js rangeTilesRgba equals the plain reference (${rgbaCases.length} cases)`, refRgbaOk, refRgbaDetail);
+
+    twinCheck({
+        name: "range_tiles_rgba",
+        builds: [["rust simd", simd], ["rust scalar", scalar]],
+        twin: js,
+        call: (k, args) => k.rangeTilesRgba(...args),
+        cases: rgbaCases,
+    });
+
+    // Dirty wasm arena out-of-bounds zeroing check (top pyStart > 0, bottom pyEnd < tile, right vw < tile)
+    // and 1-tile-row copy spy on a 1024-row band (never copying the whole band)
+    {
+        const W = 300, H = 300;
+        const band = makeRgbaBand(W, 200, "ramp"); // y0 = 20..220 inside ty = 0 (0..256): pyStart = 20, pyEnd = 220, vw on tx=1 is 44
+        const limLuma = { source: "luma", lo: 0.15, hi: 0.85, fLo: 0.1, fHi: 0.1, invert: false };
+        const limCol = { source: "color", color: "#6080a0", tol: 40, lo: 0.15, hi: 0.9, fLo: 0.1, fHi: 0.1, invert: false };
+        let padOk = true, padDetail = "";
+        for (const [bName, px] of [["simd", simd], ["scalar", scalar]]) {
+            for (const lim of [limLuma, limCol]) {
+                const a = px.job;
+                try {
+                    const p = a.take(512 * 1024);
+                    px.u8().fill(0xde, p, p + 512 * 1024);
+                } finally { px._reset(a); }
+                const got = px.rangeTilesRgba(band, W, H, 0, 20, 220, lim, false, 256);
+                const want = js.rangeTilesRgba(band, W, H, 0, 20, 220, lim, false, 256);
+                const d = twinDiff(got, want, [], {});
+                if (d) { padOk = false; padDetail = `${bName} ${lim.source}: ${d}`; break; }
+                for (const t of got.tiles) {
+                    if (!t.alpha) continue;
+                    const u = new Uint8Array(t.alpha);
+                    const vw = Math.min(256, W - t.tx * 256);
+                    for (let y = 0; y < 256 && padOk; y++) {
+                        for (let x = 0; x < 256; x++) {
+                            if ((y < 20 || y >= 220 || x >= vw) && u[y * 256 + x] !== 0) {
+                                padOk = false;
+                                padDetail = `${bName} ${lim.source} tile (${t.tx},${t.ty}) non-zero pad at (${x},${y}): ${u[y * 256 + x]}`;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        check("range_tiles_rgba zeroes out-of-bounds top, bottom, and right rows/columns in dirty wasm arena", padOk, padDetail);
+
+        // 1-tile-row copy check: on a 1024-row band (W = 300, H = 1024, y0 = 0, y1 = 1024), calling rangeTilesRgba for ty = 2
+        // copies only 256 rows (W * 256 * 4 bytes = 1/4 of the band) into the wasm arena, never the 1024-row band.
+        const band1024 = makeRgbaBand(300, 1024, "ramp");
+        let copiedRgbaBytes = 0;
+        const origIn = simd._in;
+        simd._in = function (arena, src, bytes) {
+            if (src.buffer === band1024.buffer) copiedRgbaBytes = bytes;
+            return origIn.call(this, arena, src, bytes);
+        };
+        try {
+            const gotRow = simd.rangeTilesRgba(band1024, 300, 1024, 2, 0, 1024, limLuma, false, 256);
+            const wantRow = js.rangeTilesRgba(band1024, 300, 1024, 2, 0, 1024, limLuma, false, 256);
+            check("px.js rangeTilesRgba copies only one tile row (256 rows) from a 1024-row band into the wasm arena",
+                !twinDiff(gotRow, wantRow) && copiedRgbaBytes === 300 * 256 * 4,
+                `copiedRgbaBytes=${copiedRgbaBytes} want=${300 * 256 * 4} fullBand=${band1024.byteLength}`);
+        } finally {
+            simd._in = origIn;
+        }
+    }
+
+    // Refusal checks for rangeTilesRgba and raw export range_tiles_rgba
+    {
+        const rgba = new Uint8Array(64 * 64 * 4);
+        const limL = { source: "luma", lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const badRgbaArgs = [
+            ["null rgba", [null, 64, 64, 0, 0, 64, limL, false, 256]],
+            ["short rgba", [new Uint8Array(100), 64, 64, 0, 0, 64, limL, false, 256]],
+            ["zero W", [rgba, 0, 64, 0, 0, 64, limL, false, 256]],
+            ["zero H", [rgba, 64, 0, 0, 0, 64, limL, false, 256]],
+            ["zero tile", [rgba, 64, 64, 0, 0, 64, limL, false, 0]],
+            ["tile > 4096", [rgba, 64, 64, 0, 0, 64, limL, false, 4097]],
+            ["negative ty", [rgba, 64, 64, -1, 0, 64, limL, false, 256]],
+            ["y0 >= y1", [rgba, 64, 64, 0, 32, 32, limL, false, 256]],
+            ["y1 > H", [rgba, 64, 64, 0, 0, 65, limL, false, 256]],
+            ["null limit", [rgba, 64, 64, 0, 0, 64, null, false, 256]],
+            ["NaN lo", [rgba, 64, 64, 0, 0, 64, { source: "luma", lo: NaN, hi: 0.8 }, false, 256]],
+            ["NaN tol", [rgba, 64, 64, 0, 0, 64, { source: "color", color: "#ffffff", tol: NaN, lo: 0.2, hi: 0.8 }, false, 256]],
+        ];
+        for (const [what, args] of badRgbaArgs) {
+            let threw = 0;
+            for (const k of [js, simd, scalar]) {
+                try { k.rangeTilesRgba(...args); } catch { threw++; }
+            }
+            check(`rangeTilesRgba refuses ${what} on twin and both builds`, threw === 3, `${threw}/3 threw`);
+        }
+        // Raw export returns 0 when mode > 1 or [ry0..ry1) falls outside the tile row
+        const a = simd.job;
+        try {
+            const pRgba = simd._in(a, rgba, rgba.byteLength);
+            const pParams = a.take(8 * 8);
+            const pAlpha = a.take(65536), pStatus = a.take(1), pInfo = a.take(5 * 8);
+            const badMode = simd.exports.range_tiles_rgba(pRgba, 64, 64, 0, 0, 64, 256, 2, pParams, 0, pAlpha, pStatus, pInfo);
+            const badRow = simd.exports.range_tiles_rgba(pRgba, 64, 300, 1, 256, 320, 256, 0, pParams, 0, pAlpha, pStatus, pInfo);
+            check("raw range_tiles_rgba returns 0 on invalid mode or out-of-row [ry0..ry1)", badMode === 0 && badRow === 0, `badMode=${badMode} badRow=${badRow}`);
+        } finally { simd._reset(a); }
+    }
+
+    // Route check on K.rangeTilesRgba (rangeLuma & rangeColor)
+    {
+        K.setKernels("rust");
+        const W = 600, H = 256;
+        const band = makeRgbaBand(W, H, "stripes");
+        const limLuma = { source: "luma", lo: 0.2, hi: 0.8, fLo: 0.08, fHi: 0.08, invert: false };
+        const limColor = { source: "color", color: "#5080a0", tol: 30, lo: 0.2, hi: 0.9, fLo: 0.08, fHi: 0.08, invert: false };
+
+        K.setRoute("rangeLuma", "js");
+        K.pxCalls(true);
+        const lumaJs = K.rangeTilesRgba(band, W, H, 0, 0, H, limLuma, false, 256);
+        const lumaJsCalls = K.pxCalls(true).range_tiles_rgba || 0;
+
+        K.setRoute("rangeLuma", "rust");
+        const lumaRust = K.rangeTilesRgba(band, W, H, 0, 0, H, limLuma, false, 256);
+        const lumaRustCalls = K.pxCalls(true).range_tiles_rgba || 0;
+        K.setRoute("rangeLuma", null);
+
+        K.setRoute("rangeColor", "js");
+        K.pxCalls(true);
+        const colorJs = K.rangeTilesRgba(band, W, H, 0, 0, H, limColor, false, 256);
+        const colorJsCalls = K.pxCalls(true).range_tiles_rgba || 0;
+
+        K.setRoute("rangeColor", "rust");
+        const colorRust = K.rangeTilesRgba(band, W, H, 0, 0, H, limColor, false, 256);
+        const colorRustCalls = K.pxCalls(true).range_tiles_rgba || 0;
+        K.setRoute("rangeColor", null);
+        K.setKernels("js");
+
+        check("kernels.js rangeTilesRgba routes rangeLuma and rangeColor between twin (0 calls) and rust (1 call) with identical output",
+            !twinDiff(lumaRust, lumaJs) && !twinDiff(colorRust, colorJs)
+            && lumaJsCalls === 0 && lumaRustCalls === 1 && colorJsCalls === 0 && colorRustCalls === 1,
+            `luma=${lumaJsCalls}/${lumaRustCalls} color=${colorJsCalls}/${colorRustCalls}`);
+    }
+
     if (process.env.PX_BENCH) {
         const mw = 4096, mh = 2731, W = 15000, H = 10000;
         const { map, rmax } = makeMapPair(mw, mh, "ramp");
@@ -6015,6 +6447,27 @@ async function rangeCases(js, simd, scalar, resample, K) {
             ];
             const med = benchMedians(rows, { rounds: 9 });
             console.log(`       range_tiles_depth 15000x256 row, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 9)`);
+        }
+        const rgbaRow = new Uint8Array(W * 256 * 4);
+        for (let i = 0; i < rgbaRow.length; i += 4) {
+            rgbaRow[i] = (i * 13) & 255;
+            rgbaRow[i + 1] = (i * 29) & 255;
+            rgbaRow[i + 2] = (i * 47) & 255;
+            rgbaRow[i + 3] = 255;
+        }
+        const limLumaBench = { source: "luma", lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const limColorBench = { source: "color", color: "#5080a0", tol: 30, lo: 0.25, hi: 1.0, fLo: 0.1, fHi: 0, invert: false };
+        for (const [what, limB] of [
+            ["luma (59 tiles)", limLumaBench],
+            ["colour (59 tiles)", limColorBench],
+        ]) {
+            const rows = [
+                ["twin", () => js.rangeTilesRgba(rgbaRow, W, H, ty, y0, y1, limB, false, 256)],
+                ["simd", () => simd.rangeTilesRgba(rgbaRow, W, H, ty, y0, y1, limB, false, 256)],
+                ["scalar", () => scalar.rangeTilesRgba(rgbaRow, W, H, ty, y0, y1, limB, false, 256)],
+            ];
+            const med = benchMedians(rows, { rounds: 9 });
+            console.log(`       range_tiles_rgba 15000x256 row, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 9)`);
         }
     }
 }

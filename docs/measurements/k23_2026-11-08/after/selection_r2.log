@@ -1,0 +1,11 @@
+[ok] node selection_test.js passed
+[ok] node selection_test.js passed
+[ok] setup: {"doc": 2, "width": 800, "height": 600, "tiles": true}
+[ok] range_select_luma_color_cases: {"selectedStripes": [102, 119, 136, 153], "redVal": 255, "greenVal": 0, "blueVal": 0, "emptyBounds": true}
+[ok] range_select_15k_luma_case: {"ms": 988.3, "tiles": 2360, "flattenCount": 0}
+  range luma 15000x10000: selectRange 988.3 ms (wall 989.8 ms), 2360 partial tiles
+   range_select jobs: 10, summed {"ms": 969.4, "tiles": 2360, "gen": 0}; the picture in 40 stack_into jobs, kernel 776.5 ms summed
+   px calls: window mip_chain 32, sel_combine 98; range_select jobs range_tiles_rgba 40; stack_into jobs none
+   marks range: held 4.6, combined 941.9, done 41.9 | total 988.4 ms  (source "luma", mode "replace", snap false, program false, readMs 575.5, combineMs 172.9, bands 10, ms 988.3, tiles 2360, pct 100)
+[ok] cleanup: "ok"
+PASS

@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 31;
+export const PX_ABI = 32;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -30,6 +30,27 @@ const storedCap = (n) => n + Math.ceil(n / 31744) * 5 + 64;
 function lapper(laps) {
     let t = clock();
     return (key) => { const t1 = clock(); laps[key] = (laps[key] || 0) + (t1 - t); t = t1; };
+}
+
+/** Parses `#rrggbb` or `#rgb` into `[r, g, b]` in `0..1` (`inpaint_weights.js` `hexToRgb`). */
+function rangeHexToRgb01(hex) {
+    if (!hex || typeof hex !== "string") return [1, 1, 1];
+    const clean = hex.replace(/^#/, "");
+    if (clean.length === 6) {
+        return [
+            parseInt(clean.slice(0, 2), 16) / 255,
+            parseInt(clean.slice(2, 4), 16) / 255,
+            parseInt(clean.slice(4, 6), 16) / 255,
+        ];
+    }
+    if (clean.length === 3) {
+        return [
+            parseInt(clean[0] + clean[0], 16) / 255,
+            parseInt(clean[1] + clean[1], 16) / 255,
+            parseInt(clean[2] + clean[2], 16) / 255,
+        ];
+    }
+    return [1, 1, 1];
 }
 
 // ---- call counters (docs/PLAN_WASM_BUILD.md §3.4) --------------------------------------------------------------------
@@ -1191,6 +1212,99 @@ export class Px {
                 } else if (s === 1) {
                     const at = pAlpha + slot * tileBytes;
                     tiles.push({ tx, ty, alpha: u8.slice(at, at + tileBytes).buffer });
+                    slot++;
+                }
+            }
+            if (TIMED) lapOut(t, slot * tileBytes + cols + 40);
+            const bounds = info[1] >= 0 ? [info[1], info[2], info[3], info[4]] : null;
+            return { tiles, bounds, alphaSum: info[0] };
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Evaluates one document tile row `ty` (`[y0, y1)` clipped to `[ty * tile, min((ty + 1) * tile, H))`) over a
+     * `(y1 - y0)`-row RGBA8 band `rgba` (`W * (y1 - y0) * 4` bytes) for `"luma"` or `"color"` range selection (K23,
+     * docs/PLAN_WASM_BUILD.md §4.8). Copies only the single tile row's `[ry0, ry1)` RGBA8 slice (`(ry1 - ry0) * W * 4`
+     * bytes, at most 15.4 MB at 15000 x 256, never the 61.4 MB band) into wasm memory and slices each partial tile out.
+     * Returns `{ tiles, bounds, alphaSum }`.
+     */
+    rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, tile = 256) {
+        if (!rgba || !limit || !(W > 0) || !(H > 0) || !(tile > 0 && tile <= 4096) || !(ty >= 0) || !(y0 >= 0) || !(y0 < y1) || !(y1 <= H)) {
+            throw new Error("rangeTilesRgba: bad arguments");
+        }
+        const u8 = rgba instanceof Uint8Array
+            ? rgba
+            : (rgba.buffer instanceof ArrayBuffer || (SAB && rgba.buffer instanceof SAB))
+                ? new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength)
+                : (rgba instanceof ArrayBuffer || (SAB && rgba instanceof SAB))
+                    ? new Uint8Array(rgba)
+                    : null;
+        if (!u8 || u8.length < (y1 - y0) * W * 4) throw new Error("rangeTilesRgba: short rgba");
+
+        const isColor = limit.source === "color" || (limit.source !== "luma" && limit.color != null);
+        const lo = limit.lo == null ? 0 : +limit.lo;
+        const hi = limit.hi == null ? 0 : +limit.hi;
+        const fLo = limit.fLo == null ? 0 : +limit.fLo;
+        const fHi = limit.fHi == null ? 0 : +limit.fHi;
+        const tol = limit.tol == null ? 30 : +limit.tol;
+        let refL = 0, refA = 0, refB = 0;
+        if (isColor) {
+            const [r, g, b] = rangeHexToRgb01(limit.color || "#ffffff");
+            refL = 0.299 * r + 0.587 * g + 0.114 * b;
+            refA = r - refL;
+            refB = b - refL;
+        }
+        if (![lo, hi, fLo, fHi, refL, refA, refB, tol].every(Number.isFinite)) {
+            throw new Error("rangeTilesRgba: non-finite parameters");
+        }
+
+        const tileY0 = ty * tile;
+        const tileY1 = Math.min(tileY0 + tile, H);
+        const ry0 = Math.max(tileY0, y0);
+        const ry1 = Math.min(tileY1, y1);
+        if (!(ry0 < ry1)) {
+            return { tiles: [], bounds: null, alphaSum: 0 };
+        }
+
+        const cols = Math.ceil(W / tile);
+        const tileBytes = tile * tile;
+        const rowStart = (ry0 - y0) * W * 4;
+        const rowBytes = (ry1 - ry0) * W * 4;
+        const rowSlice = u8.subarray(rowStart, rowStart + rowBytes);
+        const mode = isColor ? 1 : 0;
+        const flags = (limit.invert ? 1 : 0) | (invert ? 2 : 0);
+
+        const a = this.job;
+        try {
+            const pRgba = this._in(a, rowSlice, rowBytes);
+            const pParams = a.take(8 * 8);
+            const pv = this.view(Float64Array, pParams, 8);
+            pv[0] = lo; pv[1] = hi; pv[2] = fLo; pv[3] = fHi;
+            pv[4] = refL; pv[5] = refA; pv[6] = refB; pv[7] = tol;
+            const pAlpha = a.take(cols * tileBytes);
+            const pStatus = a.take(cols);
+            const pInfo = a.take(5 * 8);
+
+            const ok = this.exports.range_tiles_rgba(
+                pRgba, W, H, ty, ry0, ry1, tile,
+                mode, pParams, flags,
+                pAlpha, pStatus, pInfo
+            );
+            if (!ok) throw new Error("range_tiles_rgba: refused");
+
+            const t = TIMED ? clock() : 0;
+            const st = this.view(Uint8Array, pStatus, cols);
+            const info = this.view(Float64Array, pInfo, 5);
+            const mem = this.u8();
+            const tiles = [];
+            let slot = 0;
+            for (let tx = 0; tx < cols; tx++) {
+                const s = st[tx];
+                if (s === 2) {
+                    tiles.push({ tx, ty, full: true });
+                } else if (s === 1) {
+                    const at = pAlpha + slot * tileBytes;
+                    tiles.push({ tx, ty, alpha: mem.slice(at, at + tileBytes).buffer });
                     slot++;
                 }
             }
