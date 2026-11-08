@@ -439,11 +439,26 @@ function sameBbox(a, b) {
                 const cutInfo = { ...info, keepAlpha: true };
                 const finCut = S.finishPixels(cutInfo, m, cutCv, regCv);
                 check(`[${mode}] finishPixels keepAlpha ${w} x ${h}`, sameBytes(finCut.patch._data, finishPixelsRef(cutInfo, m, cutBytes, regBytes, EF)));
-                // Direct colorMatch checks: total < 64 (untouched), total == 64, total > 64
+                // Direct colorMatch checks: select-all-shaped blend (total == 0 < 64), total == 63.5 < 64, total == 64, total > 64
+                const wtSelectAll = { data: new Float32Array(w * h), w, h }; // blend = 1 everywhere -> keep = 1 - blend = 0, total = 0 < 64
+                K.pxCalls(true);
+                const cmSelAll = S.colorMatch(resCv, regCv, wtSelectAll);
+                const cmSelAllCalls = K.pxCalls().color_match_rgba || 0;
+                check(`[${mode}] colorMatch select-all skip (total < 64, no px call) ${w} x ${h}`,
+                    cmSelAll !== resCv ? "returned new canvas when total < 64" : cmSelAllCalls !== 0 ? `expected 0 color_match_rgba calls, got ${cmSelAllCalls}` : sameBytes(cmSelAll._data, resBytes));
+                const selAll = { data: new Float32Array(w * h).fill(1), w, h };
+                K.pxCalls(true);
+                const finSelAll = S.finishPixels(info, selAll, resCv, regCv);
+                const finSelAllCmCalls = K.pxCalls().color_match_rgba || 0;
+                check(`[${mode}] finishPixels select-all skip (total < 64, no color_match_rgba call) ${w} x ${h}`,
+                    finSelAllCmCalls !== 0 ? `expected 0 color_match_rgba calls, got ${finSelAllCmCalls}` : sameBytes(finSelAll.patch._data, finishPixelsRef(info, selAll, resBytes, regBytes, EF)));
                 const wt63 = { data: new Float32Array(w * h), w, h };
                 wt63.data.fill(0.5, 0, 127); // sum = 63.5 < 64
+                K.pxCalls(true);
                 const cmLow = S.colorMatch(resCv, regCv, wt63);
-                check(`[${mode}] colorMatch untouched below 64 ${w} x ${h}`, cmLow === resCv ? sameBytes(cmLow._data, resBytes) : "returned new canvas when total < 64");
+                const cmLowCalls = K.pxCalls().color_match_rgba || 0;
+                check(`[${mode}] colorMatch untouched below 64 ${w} x ${h}`,
+                    cmLow !== resCv ? "returned new canvas when total < 64" : cmLowCalls !== 0 ? `expected 0 color_match_rgba calls, got ${cmLowCalls}` : sameBytes(cmLow._data, resBytes));
                 const wt64 = { data: new Float32Array(w * h), w, h };
                 wt64.data.fill(0.5, 0, 128); // sum = 64.0
                 for (let i = 128; i < Math.min(w * h, 160); i++) wt64.data[i] = i % 2 ? -0.5 : 0; // <= 0 weights ignored

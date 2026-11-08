@@ -167,6 +167,13 @@ MUTANTS = [
         KILL_MASK,
     ),
     (
+        "stitch_color_match_early_guard",
+        "renderer/editor/stitch.js",
+        [("    if (total < 64) return patch;", "    // if (total < 64) return patch;")],
+        "killed: stitch.js colorMatch must return patch before getImageData and colorMatchRgba when total < 64",
+        KILL_MASK,
+    ),
+    (
         "stitch_color_match_skip",
         "renderer/editor/stitch.js",
         [("    if (!colorMatchRgba(pd.data, rd, weight.data)) return patch;", "    if (colorMatchRgba(pd.data, rd, weight.data)) return patch;")],

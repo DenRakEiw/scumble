@@ -45,3 +45,16 @@ ALL PASS
 $ bash tools/run_gates.sh mut-orig-ed0-on --offline --tiles on editor  (rc 0, 17 s, SCUMBLE_EDITOR_ONLY=an_aligned_answer_shows_no_repeated_edge)
 editor rc=0 2s PASS (only: an_aligned_answer_shows_no_repeated_edge; SCUMBLE_EDITOR_ONLY, not the full gate)
 ALL PASS
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k33\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 188285 bytes, sha256 ae1c88b53a5d28cf
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k33\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 155461 bytes, sha256 2aea5a7cef5fdd9c
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (F:\scumble_mut_k33\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.93s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (F:\scumble_mut_k33\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.28s

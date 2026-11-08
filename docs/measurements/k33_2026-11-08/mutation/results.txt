@@ -27,3 +27,8 @@ KILLED   cm_scale_clamp_hi: red: px_test (only: mask) (3 failing lines; first: F
 KILLED   ba_simd_replace_clamp: red: px_test (only: mask) (2 failing lines; first: FAIL rust simd blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)  edgeVals ke); builds {'px.wasm': 'a9ec16dd3d5e', 'px_scalar.wasm': '2aea5a7cef5f'}; 9 s (build 7 s, px_test 2 s); expected killed: SIMD blend_alpha keep_alpha=false must clamp mask values above 1.0 to 1.0
 restored copy: every mutated file back: True; rebuilt, both builds identical to the checkout's: True; green: the full px_test
 mutants: 3 killed (0 of them only on the re-check), 0 survived of 3; 0 not as expected; 153 s for the mutants
+== K33 (color_match_rgba, blend_alpha, routes, stitch.js call sites) mutation round 2026-11-08 09:00 on F:\scumble_mut_k33 (tools/mutation_round.py; 1 mutants, port 9615, re-check gates editor)
+orig skipped (names given without 'orig'): the verdicts lean on an earlier orig run of this tree
+KILLED   stitch_color_match_early_guard: red: px_test (only: mask) (2 failing lines; first: FAIL stitch_test.js vs 29f6749 loops  [FAIL] [rust] colorMatch select-all skip (total < 64, no px call) 3 x 97: expected 0 color_match_rgba calls, got); builds None; 2 s (px_test 2 s); expected killed: stitch.js colorMatch must return patch before getImageData and colorMatchRgba when total < 64
+restored copy: every mutated file back: True; green: the full px_test
+mutants: 1 killed (0 of them only on the re-check), 0 survived of 1; 0 not as expected; 85 s for the mutants

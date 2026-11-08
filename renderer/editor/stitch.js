@@ -592,6 +592,9 @@ function blurMask(m, radius) { return radius > 0 ? gaussBlur(m, radius) : m; }
 
 /** Weighted per-channel mean / std match of the patch to the reference (nodes.py _color_match). */
 export function colorMatch(patch, region, weight) {
+    let total = 0;
+    for (const v of weight.data) total += Math.min(1, Math.max(0, v));
+    if (total < 64) return patch;
     const w = patch.width, h = patch.height;
     const pd = patch.getContext("2d").getImageData(0, 0, w, h);
     const rd = region.getContext("2d").getImageData(0, 0, w, h).data;
