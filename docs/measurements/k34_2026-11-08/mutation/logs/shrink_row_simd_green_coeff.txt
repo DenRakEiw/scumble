@@ -1,0 +1,27 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 8 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 198871 bytes, sha256 537276ac9c6f42d5
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir F:\scumble_mut_k34\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 159923 bytes, sha256 1c49a33979823ce5
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.24s
+   Compiling px v0.1.0 (F:\scumble_mut_k34\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.44s
+$ node tools/px_test.js  (rc 1, 5 s, PX_ONLY=mask)
+FAIL rust simd edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)  5x1 -> 5x1 (1:1 SIMD + scalar tail): out.gray[0] is 0.5809804201126099 (0x3f14bb22), the twin has 0.5872666835784912 (0x3f16571c)
+FAIL kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs  out.es0.gray[19] is 0.4966000020503998 (0x3efe425b), the twin has 0.49920785427093506 (0x3eff982c)
+FAIL stitch_test.js vs 29f6749 loops  [FAIL] [rust] shrinkRGBA 1:1 7 x 3: index 1 is 0.2675490081310272, was 0.26955294609069824
+FAIL edgefit_test.js in js and rust modes  FAIL [rust] shift (7.4, -5.2) and scale 1.04: fitLayerRGBA equals [js]  {"aligned":true,"scale":[1.04,1.04],"shift":[-7,-18.4],"shear":0,"matrix":[1.0400005142503599,-0.0000012258503990596622,-7.013898200480016,0.00004596259157493217,1.0399652783900393,-18.415359998581458],"before":35.56,"after":9.92}
+FAIL (4) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+ok   rust scalar edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   rust scalar warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (59 cases, each also at an odd offset)
+ok   rust scalar warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (64 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 22.6 ms, twin 44.1; three box blurs rust scalar 19.3 ms, twin 26.3
+FAIL (4) (only: mask; PX_ONLY, not the full test)
+(node:59924) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/scumble_mut_k34/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k34\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

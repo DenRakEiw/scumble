@@ -1,0 +1,58 @@
+(node:59396) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-e/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-e\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PX_ONLY: only the groups mask run (a filtered run, not the full test)
+ok   rust simd module reports its SIMD flag
+ok   rust simd dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   js dilate_mask gives the same at an odd offset
+ok   rust simd box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   js box_blurs gives the same at an odd offset
+ok   rust simd alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   js alpha_to_mask gives the same at an odd offset
+ok   rust simd mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+ok   js mask_max_clamp gives the same at an odd offset
+ok   rust simd mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   js mask_one_minus gives the same at an odd offset
+ok   rust simd mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust simd erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   js erode_mask gives the same at an odd offset
+ok   rust simd mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   js mask_to_rgba gives the same at an odd offset
+ok   rust simd mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   js mask_bounds_f32 gives the same at an odd offset
+ok   rust simd color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   js color_match_rgba gives the same at an odd offset
+ok   rust simd blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   js blend_alpha gives the same at an odd offset
+ok   rust simd blend_alpha with separate dst pointer equals its twin
+ok   rust simd edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   js edgefit_shrink gives the same at an odd offset
+ok   rust simd warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (59 cases, each also at an odd offset)
+ok   js warp_rgba gives the same at an odd offset
+ok   rust simd warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (64 cases, each also at an odd offset)
+ok   js warp_coverage gives the same at an odd offset
+ok   kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs  {"rustCalls":{"alpha_to_mask":1,"blend_alpha":2,"color_match_rgba":1,"edgefit_shrink":2,"erode_mask":1,"mask_bounds_f32":1,"mask_max_clamp":1,"mask_one_minus":1,"mask_to_rgba":3,"warp_coverage":1,"warp_rgba":1},"jsCalls":{},"subJsCalls":{}}
+ok   stitch_test.js vs 29f6749 loops  rc=0
+ok   edgefit_test.js in js and rust modes  rc=0
+       1492 x 1492: dilate rust simd 18.9 ms, twin 44.4; three box blurs rust simd 11.7 ms, twin 22.0
+       1492 x 1492 K32+K33+K34 masks: alpha_to_mask rust simd 2.45 ms, twin 3.65; mask_max_clamp rust simd 2.97 ms, twin 5.33; mask_one_minus rust simd 1.28 ms, twin 1.99; erode_mask rust simd 15.95 ms, twin 44.18; mask_to_rgba rust simd 4.05 ms, twin 6.49; mask_bounds_f32 rust simd 0.39 ms, twin 2.62; color_match_rgba rust simd 17.70 ms, twin 36.85; blend_alpha rust simd 3.95 ms, twin 5.41; edgefit_shrink rust simd 4.18 ms, twin 19.76; warp_rgba rust simd 43.91 ms, twin 51.79; warp_coverage rust simd 3.66 ms, twin 4.39
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   rust scalar alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+ok   rust scalar edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   rust scalar warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (59 cases, each also at an odd offset)
+ok   rust scalar warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (64 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 21.9 ms, twin 40.7; three box blurs rust scalar 16.6 ms, twin 21.5
+       1492 x 1492 K32+K33+K34 masks: alpha_to_mask rust scalar 3.24 ms, twin 2.95; mask_max_clamp rust scalar 6.23 ms, twin 4.89; mask_one_minus rust scalar 1.61 ms, twin 1.92; erode_mask rust scalar 19.63 ms, twin 42.72; mask_to_rgba rust scalar 4.17 ms, twin 6.17; mask_bounds_f32 rust scalar 0.45 ms, twin 2.61; color_match_rgba rust scalar 17.59 ms, twin 38.36; blend_alpha rust scalar 6.34 ms, twin 5.55; edgefit_shrink rust scalar 7.71 ms, twin 19.02; warp_rgba rust scalar 38.24 ms, twin 53.20; warp_coverage rust scalar 11.64 ms, twin 4.51
+PASS (only: mask; PX_ONLY, not the full test)

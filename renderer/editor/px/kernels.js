@@ -49,9 +49,10 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * burn brush), `spongeRGBA` (saturate, desaturate) and frequency separation's split, the same way. `liquifyBlock`
  * (K28): Liquify's bake kernel (`inpaint_liquify.js` `liquifyBlock`). `stitchMask` (K32): the mask kernels of
  * stitch.js (`alphaToMask`, `maskMaxClamp`, `maskOneMinus`, `erodeMask`, `maskToRgba`, `maskBoundsF32`).
- * `colorMatch` and `blendAlpha` (K33): `colorMatchRgba` and `blendAlpha` of stitch.js.
+ * `colorMatch` and `blendAlpha` (K33): `colorMatchRgba` and `blendAlpha` of stitch.js. `edgefit`, `edgefitShrink`,
+ * `warpRgba` and `warpCoverage` (K34): `edgefitShrink`, `warpRgba` and `warpCoverage` of edgefit.js.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -486,6 +487,41 @@ export function blendAlpha(rgba, mask, keepAlpha = false, out = null) {
         finally { releaseIfLarge(); }
     }
     return J.blendAlpha(rgba, mask, keepAlpha, out);
+}
+
+/** Area-average shrink of straight-alpha RGBA8 `rgba` (`w * h * 4` bytes) to `{ gray, alpha }` (`tw * th` Float32Arrays; edgefit.js `shrinkRGBA`, K34). */
+export function edgefitShrink(rgba, w, h, tw, th, grayOut = null, alphaOut = null) {
+    const p = rustPx("edgefit") && rustPx("edgefitShrink");
+    if (p) {
+        try { return p.edgefitShrink(rgba, w, h, tw, th, grayOut, alphaOut); }
+        catch (err) { if (!recovered(p, err, "edgefit_shrink")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.edgefitShrink(rgba, w, h, tw, th, grayOut, alphaOut);
+}
+export { edgefitShrink as shrinkRGBA };
+
+/** Bilinear inverse-affine warp of RGBA8 `src` (`w * h * 4` bytes) through `m` (`[a00, a01, tx, a10, a11, ty]`; edgefit.js `warpRGBA`, K34). */
+export function warpRgba(src, w, h, m, out = null) {
+    const p = rustPx("edgefit") && rustPx("warpRgba");
+    if (p) {
+        try { return p.warpRgba(src, w, h, m, out); }
+        catch (err) { if (!recovered(p, err, "warp_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.warpRgba(src, w, h, m, out);
+}
+export { warpRgba as warpRGBA };
+
+/** Per-pixel source-bounds coverage mask (`w * h` Float32Array) for `m` (`[a00, a01, tx, a10, a11, ty]`; edgefit.js `warpCoverage`, K34). */
+export function warpCoverage(w, h, m, out = null) {
+    const p = rustPx("edgefit") && rustPx("warpCoverage");
+    if (p) {
+        try { return p.warpCoverage(w, h, m, out); }
+        catch (err) { if (!recovered(p, err, "warp_coverage")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.warpCoverage(w, h, m, out);
 }
 
 /**

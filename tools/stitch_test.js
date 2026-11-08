@@ -267,6 +267,72 @@ function colorMatchRef(patchBytes, regionBytes, w, h, weight) {
     return p;
 }
 
+function shrinkPlaneRef(src, w, h, tw, th) {
+    if (tw === w && th === h) return Float32Array.from(src);
+    const out = new Float32Array(tw * th);
+    const fx = w / tw, fy = h / th;
+    for (let y = 0; y < th; y++) {
+        const y0 = Math.floor(y * fy), y1 = Math.max(y0 + 1, Math.min(h, Math.floor((y + 1) * fy)));
+        for (let x = 0; x < tw; x++) {
+            const x0 = Math.floor(x * fx), x1 = Math.max(x0 + 1, Math.min(w, Math.floor((x + 1) * fx)));
+            let s = 0;
+            for (let yy = y0; yy < y1; yy++) { const row = yy * w; for (let xx = x0; xx < x1; xx++) s += src[row + xx]; }
+            out[y * tw + x] = s / ((y1 - y0) * (x1 - x0));
+        }
+    }
+    return out;
+}
+
+function shrinkRGBARef(rgba, w, h, tw, th) {
+    const n = w * h, g = new Float32Array(n), a = new Float32Array(n);
+    for (let i = 0, j = 0; i < n; i++, j += 4) {
+        const al = rgba[j + 3] / 255;
+        a[i] = al;
+        g[i] = al * (0.299 * rgba[j] + 0.587 * rgba[j + 1] + 0.114 * rgba[j + 2]) / 255;
+    }
+    const gs = shrinkPlaneRef(g, w, h, tw, th), as = shrinkPlaneRef(a, w, h, tw, th);
+    for (let i = 0; i < gs.length; i++) gs[i] = as[i] > 1e-4 ? gs[i] / as[i] : 0;
+    return { gray: gs, alpha: as };
+}
+
+function fitLayerRGBARef({ baseRGBA, layerRGBA, w, h, fullW = w, fullH = h, ringWidth = 0 }, EF) {
+    const s = EF.workScale(fullW, fullH);
+    const tw = Math.max(1, Math.round(fullW * s)), th = Math.max(1, Math.round(fullH * s));
+    let base, lay;
+    if (w === tw && h === th) { base = EF.grayOf(baseRGBA); lay = { gray: EF.grayOf(layerRGBA), alpha: EF.alphaOf(layerRGBA) }; }
+    else { base = shrinkRGBARef(baseRGBA, w, h, tw, th).gray; lay = shrinkRGBARef(layerRGBA, w, h, tw, th); }
+    const valid = new Uint8Array(tw * th);
+    for (let i = 0; i < valid.length; i++) valid[i] = lay.alpha[i] >= 0.25 ? 1 : 0;
+    const width = ringWidth || Math.max(6, Math.round(0.06 * Math.min(tw, th)));
+    const ring = EF.edgeRing(lay.alpha, tw, th, width);
+    return EF.fitEdges({ base, layer: lay.gray, ring, valid, w: tw, h: th, fullW, fullH });
+}
+
+function warpRGBARef(src, w, h, [a00, a01, tx, a10, a11, ty]) {
+    const out = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let X = a00 * x + a01 * y + tx, Y = a10 * x + a11 * y + ty;
+        X = Math.min(w - 1, Math.max(0, X)); Y = Math.min(h - 1, Math.max(0, Y));
+        const x0 = Math.min(w - 2, X | 0), y0 = Math.min(h - 2, Y | 0);
+        const fx = w > 1 ? X - x0 : 0, fy = h > 1 ? Y - y0 : 0;
+        const j = (Math.max(0, y0) * w + Math.max(0, x0)) * 4, dx = w > 1 ? 4 : 0, dy = h > 1 ? w * 4 : 0, o = (y * w + x) * 4;
+        for (let c = 0; c < 4; c++) {
+            out[o + c] = (src[j + c] * (1 - fx) + src[j + dx + c] * fx) * (1 - fy) + (src[j + dy + c] * (1 - fx) + src[j + dy + dx + c] * fx) * fy;
+        }
+    }
+    return out;
+}
+
+function warpCoverageRef(w, h, [a00, a01, tx, a10, a11, ty]) {
+    const out = new Float32Array(w * h);
+    for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++) {
+        const X = a00 * x + a01 * y + tx, Y = a10 * x + a11 * y + ty;
+        const d = Math.min(X, w - 1 - X, Y, h - 1 - Y) + 1;
+        out[i] = d >= 1 ? 1 : d <= 0 ? 0 : d;
+    }
+    return out;
+}
+
 function finishPixelsRef(info, sel, resultBytes, regionBytes, EF = null) {
     const [x, y, w, h] = info.bbox;
     const width = info.width, height = info.height;
@@ -284,10 +350,10 @@ function finishPixelsRef(info, sel, resultBytes, regionBytes, EF = null) {
         for (let i = 0, j = 3; i < w * h; i++, j += 4) {
             layRGBA[j] = Math.round(Math.min(1, Math.max(0, blend.data[i])) * 255);
         }
-        const r = EF.fitLayerRGBA({ baseRGBA: regionBytes, layerRGBA: layRGBA, w, h });
+        const r = fitLayerRGBARef({ baseRGBA: regionBytes, layerRGBA: layRGBA, w, h }, EF);
         if (r.aligned && r.matrix) {
-            pd = EF.warpRGBA(pd, w, h, r.matrix);
-            const cov = EF.warpCoverage(w, h, r.matrix);
+            pd = warpRGBARef(pd, w, h, r.matrix);
+            const cov = warpCoverageRef(w, h, r.matrix);
             for (let i = 0; i < cov.length; i++) blend.data[i] *= cov[i];
         }
     }
@@ -397,6 +463,14 @@ function sameBbox(a, b) {
                 c._data.set(rgba);
                 check(`[${mode}] fillMasked ${fillMode} ${w} x ${h}`, sameBytes(S.fillMasked(c, m, fillMode)._data, fillMaskedRef(rgba, w, h, m, fillMode)));
             }
+            const shSame = EF.shrinkRGBA(rgba, w, h, w, h), shSameRef = shrinkRGBARef(rgba, w, h, w, h);
+            check(`[${mode}] shrinkRGBA 1:1 ${w} x ${h}`, sameFloats(shSame.gray, shSameRef.gray) || sameFloats(shSame.alpha, shSameRef.alpha));
+            const tw = Math.max(1, (w + 1) >> 1), th = Math.max(1, (h + 1) >> 1);
+            const shDown = EF.shrinkRGBA(rgba, w, h, tw, th), shDownRef = shrinkRGBARef(rgba, w, h, tw, th);
+            check(`[${mode}] shrinkRGBA ${w} x ${h} -> ${tw} x ${th}`, sameFloats(shDown.gray, shDownRef.gray) || sameFloats(shDown.alpha, shDownRef.alpha));
+            const warpM = [1.02, -0.01, 1.35, 0.015, 0.98, -0.75];
+            check(`[${mode}] warpRGBA ${w} x ${h}`, sameBytes(EF.warpRGBA(rgba, w, h, warpM), warpRGBARef(rgba, w, h, warpM)));
+            check(`[${mode}] warpCoverage ${w} x ${h}`, sameFloats(EF.warpCoverage(w, h, warpM), warpCoverageRef(w, h, warpM)));
             if (w * h >= 256) {
                 const resBytes = new Uint8ClampedArray(w * h * 4);
                 const regBytes = new Uint8ClampedArray(w * h * 4);
@@ -468,34 +542,42 @@ function sameBbox(a, b) {
                 const cmFull = S.colorMatch(resCv, regCv, wtFull);
                 check(`[${mode}] colorMatch with out-of-range weights ${w} x ${h}`, sameBytes(cmFull._data, colorMatchRef(resBytes, regBytes, w, h, wtFull)));
                 if (w > 64 && h > 64) {
-                    // Aligned finishPixels: base has a soft pattern, result is shifted by (+2, +1) with non-255 alpha
-                    const baseB = new Uint8ClampedArray(w * h * 4);
-                    const shiftB = new Uint8ClampedArray(w * h * 4);
-                    const pat = (px, py) => {
-                        const v0 = Math.round(128 + 80 * Math.sin(px * 0.15) * Math.cos(py * 0.15));
-                        const v1 = Math.round(128 + 70 * Math.cos(px * 0.11 - py * 0.09));
-                        const v2 = Math.round(128 + 60 * Math.sin((px + py) * 0.12));
-                        return [v0, v1, v2];
-                    };
-                    for (let py = 0; py < h; py++) {
-                        for (let px = 0; px < w; px++) {
-                            const idx = (py * w + px) * 4;
-                            const [r0, g0, b0] = pat(px, py);
-                            baseB[idx] = r0; baseB[idx + 1] = g0; baseB[idx + 2] = b0; baseB[idx + 3] = 255;
-                            const [r1, g1, b1] = pat(px - 1.5, py - 1.0);
-                            shiftB[idx] = Math.min(255, r1 + 15);
-                            shiftB[idx + 1] = Math.max(0, g1 - 10);
-                            shiftB[idx + 2] = b1;
-                            shiftB[idx + 3] = 180; // < 255 so alignCopy's keepAlpha=false vs true differs!
+                    // Aligned finishPixels: base has a soft pattern, result is shifted by (+1.5, +1.0) with non-255 alpha
+                    for (const [aw, ah] of [[w, h], ...(w === 300 ? [[540, 380]] : [])]) {
+                        const am = aw === w ? m : mask(aw, ah, aw * 31 + ah);
+                        const baseB = new Uint8ClampedArray(aw * ah * 4);
+                        const shiftB = new Uint8ClampedArray(aw * ah * 4);
+                        const pat = (px, py) => {
+                            const v0 = Math.round(128 + 80 * Math.sin(px * 0.15) * Math.cos(py * 0.15));
+                            const v1 = Math.round(128 + 70 * Math.cos(px * 0.11 - py * 0.09));
+                            const v2 = Math.round(128 + 60 * Math.sin((px + py) * 0.12));
+                            return [v0, v1, v2];
+                        };
+                        for (let py = 0; py < ah; py++) {
+                            for (let px = 0; px < aw; px++) {
+                                const idx = (py * aw + px) * 4;
+                                const [r0, g0, b0] = pat(px, py);
+                                baseB[idx] = r0; baseB[idx + 1] = g0; baseB[idx + 2] = b0; baseB[idx + 3] = 255;
+                                const [r1, g1, b1] = pat(px - 1.5, py - 1.0);
+                                shiftB[idx] = Math.min(255, r1 + 15);
+                                shiftB[idx + 1] = Math.max(0, g1 - 10);
+                                shiftB[idx + 2] = b1;
+                                shiftB[idx + 3] = 180; // < 255 so alignCopy's keepAlpha=false vs true differs!
+                            }
                         }
+                        const bCv = new globalThis.OffscreenCanvas(aw, ah); bCv._data.set(baseB);
+                        const sCv = new globalThis.OffscreenCanvas(aw, ah); sCv._data.set(shiftB);
+                        const alignInfo = { ...info, bbox: [0, 0, aw, ah], width: aw, height: ah, emitted: [aw, ah], align: true, color_match: true, keepAlpha: false };
+                        K.pxCalls(true);
+                        const finAlign = S.finishPixels(alignInfo, am, sCv, bCv);
+                        const alignCalls = K.pxCalls(true);
+                        const wantShrink = mode === "rust" && (aw > 512 || ah > 512) ? 2 : 0, wantWarp = mode === "rust" ? 1 : 0;
+                        const callsErr = (alignCalls.edgefit_shrink || 0) !== wantShrink || (alignCalls.warp_rgba || 0) !== wantWarp || (alignCalls.warp_coverage || 0) !== wantWarp
+                            ? `unexpected edgefit calls ${JSON.stringify(alignCalls)}` : null;
+                        const wantAlign = finishPixelsRef(alignInfo, am, shiftB, baseB, EF);
+                        check(`[${mode}] finishPixels align + colour-match ${aw} x ${ah} (aligned=${finAlign.align.aligned})`,
+                            !finAlign.align.aligned ? `expected aligned=true, got ${finAlign.align.reason}` : callsErr || sameBytes(finAlign.patch._data, wantAlign));
                     }
-                    const bCv = new globalThis.OffscreenCanvas(w, h); bCv._data.set(baseB);
-                    const sCv = new globalThis.OffscreenCanvas(w, h); sCv._data.set(shiftB);
-                    const alignInfo = { ...info, align: true, color_match: true, keepAlpha: false };
-                    const finAlign = S.finishPixels(alignInfo, m, sCv, bCv);
-                    const wantAlign = finishPixelsRef(alignInfo, m, shiftB, baseB, EF);
-                    check(`[${mode}] finishPixels align + colour-match ${w} x ${h} (aligned=${finAlign.align.aligned})`,
-                        !finAlign.align.aligned ? `expected aligned=true, got ${finAlign.align.reason}` : sameBytes(finAlign.patch._data, wantAlign));
                 }
             }
         }

@@ -7,8 +7,9 @@
 // area and fits beyond the node's limits (`_align_patch`: 8 % scale, 5 % shift) refuse; an unshifted layer finds no gain.
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
-const { pathToFileURL } = require("node:url");
+const { fileURLToPath, pathToFileURL } = require("node:url");
 
 const ROOT = path.dirname(__dirname);
 
@@ -73,72 +74,114 @@ function makeLayer(F, base, W, H, M, { drift = 10, other = null } = {}) {
     return lay;
 }
 
+function sameBytes(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+}
+
+function sameFloats(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return false;
+    return true;
+}
+
 (async () => {
+    const K = await import(pathToFileURL(path.join(ROOT, "renderer/editor/px/kernels.js")).href);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (u, ...rest) => {
+        const s = String(u && u.href ? u.href : u);
+        return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+    };
+    try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
     const F = await import(pathToFileURL(path.join(ROOT, "renderer/editor/edgefit.js")).href);
     const W = 800, H = 600;
     const base = texture(W, H, 7), other = texture(W, H, 99);
+    const jsResults = {};
 
-    // the warp itself: a whole-pixel shift moves bytes exactly
-    {
-        const out = F.warpRGBA(base, W, H, [1, 0, 3, 0, 1, -2]);
-        let same = true;
-        for (let y = 2; y < H && same; y++) for (let x = 0; x < W - 3; x++) { const i = (y * W + x) * 4, j = ((y - 2) * W + x + 3) * 4; if (out[i] !== base[j]) { same = false; break; } }
-        check("warpRGBA: a whole-pixel shift is a byte shift", same);
-        // what it read past the source's edge is said by warpCoverage: the 3 right columns and the 2 top rows of this
-        // shift read outside (warpRGBA repeats the edge there), everything else inside
-        const cov = F.warpCoverage(W, H, [1, 0, 3, 0, 1, -2]);
-        let ok = true, outside = 0;
-        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-            const want = x >= W - 3 || y < 2 ? 0 : 1, got = cov[y * W + x];
-            if (got !== want) ok = false;
-            if (!got) outside++;
+    for (const mode of ["js", "rust"]) {
+        K.setKernels(mode);
+        check(`[${mode}] kernels.js mode active`, K.kernelsInUse() === mode, `got ${K.kernelsInUse()}`);
+
+        // the warp itself: a whole-pixel shift moves bytes exactly
+        {
+            K.pxCalls(true);
+            const out = F.warpRGBA(base, W, H, [1, 0, 3, 0, 1, -2]);
+            const callsW = K.pxCalls(true);
+            let same = true;
+            for (let y = 2; y < H && same; y++) for (let x = 0; x < W - 3; x++) { const i = (y * W + x) * 4, j = ((y - 2) * W + x + 3) * 4; if (out[i] !== base[j]) { same = false; break; } }
+            const wantCallsW = mode === "rust" ? 1 : 0;
+            check(`[${mode}] warpRGBA: a whole-pixel shift is a byte shift`, same && (callsW.warp_rgba || 0) === wantCallsW, `calls=${callsW.warp_rgba || 0}`);
+            if (mode === "js") jsResults.warpShift = out;
+            else check("[rust] warpRGBA equals [js] byte for byte", sameBytes(out, jsResults.warpShift));
+
+            // what it read past the source's edge is said by warpCoverage: the 3 right columns and the 2 top rows of this
+            // shift read outside (warpRGBA repeats the edge there), everything else inside
+            K.pxCalls(true);
+            const cov = F.warpCoverage(W, H, [1, 0, 3, 0, 1, -2]);
+            const callsC = K.pxCalls(true);
+            let ok = true, outside = 0;
+            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                const want = x >= W - 3 || y < 2 ? 0 : 1, got = cov[y * W + x];
+                if (got !== want) ok = false;
+                if (!got) outside++;
+            }
+            const wantCallsC = mode === "rust" ? 1 : 0;
+            check(`[${mode}] warpCoverage: 0 where the warp reads outside the source, 1 inside`, ok && outside === 3 * H + 2 * W - 6 && (callsC.warp_coverage || 0) === wantCallsC, `outside ${outside}, calls=${callsC.warp_coverage || 0}`);
+            if (mode === "js") jsResults.covShift = cov;
+            else check("[rust] warpCoverage equals [js] float for float", sameFloats(cov, jsResults.covShift));
+
+            const half = F.warpCoverage(4, 4, [1, 0, 0.5, 0, 1, 0]);
+            check(`[${mode}] warpCoverage: a ramp past the last pixel centre (0.5 px past it reads half)`, Math.abs(half[3] - 0.5) < 1e-6 && half[2] === 1, JSON.stringify(Array.from(half.slice(0, 4))));
         }
-        check("warpCoverage: 0 where the warp reads outside the source, 1 inside", ok && outside === 3 * H + 2 * W - 6, `outside ${outside}`);
-        const half = F.warpCoverage(4, 4, [1, 0, 0.5, 0, 1, 0]);
-        check("warpCoverage: a ramp past the last pixel centre (0.5 px past it reads half)", Math.abs(half[3] - 0.5) < 1e-6 && half[2] === 1, JSON.stringify(Array.from(half.slice(0, 4))));
-    }
 
-    const cases = [
-        ["shift (7.4, -5.2) and scale 1.04", about(W * 0.45, H * 0.55, 1.04, 1.04, 7.4, -5.2)],
-        ["scale 0.96 / 0.97, shift (-3, 4)", about(W / 2, H / 2, 0.96, 0.97, -3, 4)],
-        ["shift only (2.6, 1.3)", about(0, 0, 1, 1, 2.6, 1.3)],
-    ];
-    for (const [name, Mt] of cases) {
-        const lay = makeLayer(F, base, W, H, Mt, { other });
-        const t0 = Date.now();
-        const r = F.fitLayerRGBA({ baseRGBA: base, layerRGBA: lay, w: W, h: H });
-        const ms = Date.now() - t0;
-        const err = r.matrix ? cornerError(r.matrix, Mt, W, H) : Infinity;
-        check(`${name}: aligned within a pixel`, r.aligned && err <= 1, `err ${err.toFixed(3)} px, scale ${r.scale}, shift ${r.shift}, ${r.before} -> ${r.after}, ${ms} ms${r.reason ? ", " + r.reason : ""}`);
-    }
+        const cases = [
+            ["shift (7.4, -5.2) and scale 1.04", about(W * 0.45, H * 0.55, 1.04, 1.04, 7.4, -5.2)],
+            ["scale 0.96 / 0.97, shift (-3, 4)", about(W / 2, H / 2, 0.96, 0.97, -3, 4)],
+            ["shift only (2.6, 1.3)", about(0, 0, 1, 1, 2.6, 1.3)],
+        ];
+        for (const [name, Mt] of cases) {
+            const lay = makeLayer(F, base, W, H, Mt, { other });
+            K.pxCalls(true);
+            const t0 = Date.now();
+            const r = F.fitLayerRGBA({ baseRGBA: base, layerRGBA: lay, w: W, h: H });
+            const ms = Date.now() - t0;
+            const callsS = K.pxCalls(true).edgefit_shrink || 0;
+            const err = r.matrix ? cornerError(r.matrix, Mt, W, H) : Infinity;
+            const wantCallsS = mode === "rust" ? 2 : 0;
+            check(`[${mode}] ${name}: aligned within a pixel`, r.aligned && err <= 1 && callsS === wantCallsS, `err ${err.toFixed(3)} px, scale ${r.scale}, shift ${r.shift}, ${r.before} -> ${r.after}, ${ms} ms, shrinkCalls=${callsS}${r.reason ? ", " + r.reason : ""}`);
+            if (mode === "js") jsResults[name] = JSON.stringify(r);
+            else check(`[rust] ${name}: fitLayerRGBA equals [js]`, JSON.stringify(r) === jsResults[name], JSON.stringify(r));
+        }
 
-    // the same picture: nothing to gain
-    {
-        const lay = makeLayer(F, base, W, H, [1, 0, 0, 0, 1, 0], { drift: 0, other });
-        const r = F.fitLayerRGBA({ baseRGBA: base, layerRGBA: lay, w: W, h: H });
-        check("an unshifted layer is not moved", !r.aligned && r.reason === "no gain", `${r.reason}, shift ${r.shift}`);
-    }
+        // the same picture: nothing to gain
+        {
+            const lay = makeLayer(F, base, W, H, [1, 0, 0, 0, 1, 0], { drift: 0, other });
+            const r = F.fitLayerRGBA({ baseRGBA: base, layerRGBA: lay, w: W, h: H });
+            check(`[${mode}] an unshifted layer is not moved`, !r.aligned && r.reason === "no gain", `${r.reason}, shift ${r.shift}`);
+        }
 
-    // a flat area refuses
-    {
-        const r0 = rng(3), flat = new Uint8ClampedArray(W * H * 4);
-        for (let i = 0; i < flat.length; i += 4) { const v = 128 + Math.floor(r0() * 5) - 2; flat[i] = flat[i + 1] = flat[i + 2] = v; flat[i + 3] = 255; }
-        const lay = makeLayer(F, flat, W, H, about(W / 2, H / 2, 1.03, 1.03, 6, 3));
-        const r = F.fitLayerRGBA({ baseRGBA: flat, layerRGBA: lay, w: W, h: H });
-        check("a flat area refuses", !r.aligned && r.reason === "flat area", r.reason);
-    }
+        // a flat area refuses
+        {
+            const r0 = rng(3), flat = new Uint8ClampedArray(W * H * 4);
+            for (let i = 0; i < flat.length; i += 4) { const v = 128 + Math.floor(r0() * 5) - 2; flat[i] = flat[i + 1] = flat[i + 2] = v; flat[i + 3] = 255; }
+            const lay = makeLayer(F, flat, W, H, about(W / 2, H / 2, 1.03, 1.03, 6, 3));
+            const r = F.fitLayerRGBA({ baseRGBA: flat, layerRGBA: lay, w: W, h: H });
+            check(`[${mode}] a flat area refuses`, !r.aligned && r.reason === "flat area", r.reason);
+        }
 
-    // too large: beyond 5 % shift, beyond 8 % scale
-    for (const [name, Mt] of [["a shift of 9 % refuses", about(0, 0, 1, 1, 72, 10)], ["a scale of 1.15 refuses", about(W / 2, H / 2, 1.15, 1.15, 0, 0)]]) {
-        const lay = makeLayer(F, base, W, H, Mt, { other });
-        const r = F.fitLayerRGBA({ baseRGBA: base, layerRGBA: lay, w: W, h: H });
-        check(name, !r.aligned, `${r.reason}, scale ${r.scale}, shift ${r.shift}`);
-    }
+        // too large: beyond 5 % shift, beyond 8 % scale
+        for (const [name, Mt] of [["a shift of 9 % refuses", about(0, 0, 1, 1, 72, 10)], ["a scale of 1.15 refuses", about(W / 2, H / 2, 1.15, 1.15, 0, 0)]]) {
+            const lay = makeLayer(F, base, W, H, Mt, { other });
+            const r = F.fitLayerRGBA({ baseRGBA: base, layerRGBA: lay, w: W, h: H });
+            check(`[${mode}] ${name}`, !r.aligned, `${r.reason}, scale ${r.scale}, shift ${r.shift}`);
+        }
 
-    // a ring too small to fit on
-    {
-        const tiny = F.fitEdges({ base: new Float32Array(100 * 100), layer: new Float32Array(100 * 100), ring: new Uint8Array(100 * 100), w: 100, h: 100 });
-        check("an empty ring refuses", !tiny.aligned && tiny.reason === "ring too small", tiny.reason);
+        // a ring too small to fit on
+        {
+            const tiny = F.fitEdges({ base: new Float32Array(100 * 100), layer: new Float32Array(100 * 100), ring: new Uint8Array(100 * 100), w: 100, h: 100 });
+            check(`[${mode}] an empty ring refuses`, !tiny.aligned && tiny.reason === "ring too small", tiny.reason);
+        }
     }
 
     console.log(failures ? `${failures} FAILED` : "all ok");

@@ -810,6 +810,117 @@ async function maskCases(px, label, js) {
             !twinDiff(got0, want0, [], {}) && !twinDiff(got1, want1, [], {}));
     }
 
+    const esCases = [];
+    {
+        // All 256 alpha values 0..255 with non-zero RGB (exercises f32 alpha store vs f64 alpha luma weight in 1:1 and shrunk)
+        const rgba256 = new Uint8ClampedArray(16 * 16 * 4);
+        for (let i = 0; i < 256; i++) {
+            rgba256[i * 4] = (i * 73 + 19) & 255;
+            rgba256[i * 4 + 1] = (i * 151 + 43) & 255;
+            rgba256[i * 4 + 2] = (i * 199 + 107) & 255;
+            rgba256[i * 4 + 3] = i;
+        }
+        // Boundary around as[i] > 1e-4:
+        // 1 pixel of alpha=1 in a 40-pixel box -> mean alpha = (1/255)/40 = 0.0000980392 <= 1e-4 -> gray = 0
+        // 1 pixel of alpha=1 in a 39-pixel box -> mean alpha = (1/255)/39 = 0.000100553 > 1e-4 -> gray = 255
+        const rgbaBox40 = new Uint8ClampedArray(80 * 4);
+        rgbaBox40[0] = 255; rgbaBox40[1] = 255; rgbaBox40[2] = 255; rgbaBox40[3] = 1; // first 40px box has 1/40 of 1/255 <= 1e-4
+        rgbaBox40[40 * 4] = 255; rgbaBox40[40 * 4 + 1] = 255; rgbaBox40[40 * 4 + 2] = 255; rgbaBox40[40 * 4 + 3] = 1;
+        rgbaBox40[41 * 4] = 255; rgbaBox40[41 * 4 + 1] = 255; rgbaBox40[41 * 4 + 2] = 255; rgbaBox40[41 * 4 + 3] = 1; // second 40px box has 2/40 of 1/255 > 1e-4
+        const rgbaBox39 = new Uint8ClampedArray(78 * 4);
+        rgbaBox39[0] = 255; rgbaBox39[1] = 255; rgbaBox39[2] = 255; rgbaBox39[3] = 1; // first 39px box has 1/39 of 1/255 > 1e-4
+        esCases.push(
+            { tag: "1x1 -> 1x1", args: [randomRGBA(1, 1, 830), 1, 1, 1, 1, false] },
+            { tag: "5x1 -> 5x1 (1:1 SIMD + scalar tail)", args: [randomRGBA(5, 1, 831), 5, 1, 5, 1, false] },
+            { tag: "5x1 -> 2x1", args: [randomRGBA(5, 1, 831), 5, 1, 2, 1, true] },
+            { tag: "16x16 -> 16x16 all 256 alphas", args: [rgba256, 16, 16, 16, 16, false] },
+            { tag: "16x16 -> 5x5 all 256 alphas", args: [rgba256, 16, 16, 5, 5, true] },
+            { tag: "80x1 -> 2x1 1e-4 alpha floor boundary (<= 1e-4 vs > 1e-4)", args: [rgbaBox40, 80, 1, 2, 1, false] },
+            { tag: "78x1 -> 2x1 1e-4 alpha floor boundary (1/39 of 1/255 > 1e-4)", args: [rgbaBox39, 78, 1, 2, 1, false] },
+            { tag: "7x3 -> 7x3", args: [randomRGBA(7, 3, 832), 7, 3, 7, 3, true] },
+            { tag: "7x3 -> 3x2", args: [randomRGBA(7, 3, 832), 7, 3, 3, 2, false] },
+            { tag: "7x3 -> 7x2 (tw===w, th<h)", args: [randomRGBA(7, 3, 832), 7, 3, 7, 2, false] },
+            { tag: "3x5 -> 5x3 (upsize clamp x1=max(x0+1,...))", args: [randomRGBA(3, 5, 833), 3, 5, 5, 3, false] },
+            { tag: "64x64 -> 25x25", args: [randomRGBA(64, 64, 834), 64, 64, 25, 25, false] },
+            { tag: "131x77 -> 37x23", args: [randomRGBA(131, 77, 835), 131, 77, 37, 23, true] },
+            { tag: "300x211 -> 64x45", args: [randomRGBA(300, 211, 836), 300, 211, 64, 45, false] },
+        );
+    }
+    twinCheck({
+        name: "edgefit_shrink", title: "edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor)", builds: [[label, px]], twin: js,
+        call: (k, [rgba, w, h, tw, th, useOut]) => k.edgefitShrink(rgba, w, h, tw, th,
+            useOut ? new Float32Array(tw * th) : null, useOut ? new Float32Array(tw * th) : null),
+        cases: esCases,
+    });
+
+    const wrCases = [];
+    {
+        // Adjacent pixels differing by 1 across all 0..255 so a 0.5 shift hits exact half-way ties-to-even in Uint8ClampedArray
+        const rgbaTies = new Uint8ClampedArray(257 * 2 * 4);
+        for (let y = 0; y < 2; y++) {
+            for (let x = 0; x < 257; x++) {
+                const i = (y * 257 + x) * 4, v = Math.min(255, x);
+                rgbaTies[i] = v;
+                rgbaTies[i + 1] = 255 - v;
+                rgbaTies[i + 2] = y === 0 ? v : Math.min(255, v + 1);
+                rgbaTies[i + 3] = (v * 3 + y) & 255;
+            }
+        }
+        const mats = [
+            ["identity", [1, 0, 0, 0, 1, 0]],
+            ["whole shift (2, -1)", [1, 0, 2, 0, 1, -1]],
+            ["half shift (0.5, 0)", [1, 0, 0.5, 0, 1, 0]],
+            ["half shift (0, 0.5)", [1, 0, 0, 0, 1, 0.5]],
+            ["half shift (0.5, 0.5)", [1, 0, 0.5, 0, 1, 0.5]],
+            ["affine scale+shear+shift", [1.03, -0.02, 1.37, 0.015, 0.97, -0.83]],
+            ["flip/negative", [-1, 0, 6, 0, -1, 2]],
+            ["far out-of-bounds", [1, 0, -100, 0, 1, 100]],
+            ["NaN and +-Infinity", [NaN, 0, 0, 0, 1, Infinity]],
+        ];
+        for (const [w, h, seed] of [[1, 1, 840], [1, 5, 841], [5, 1, 842], [2, 2, 843], [7, 3, 844], [19, 11, 845]]) {
+            const src = randomRGBA(w, h, seed);
+            for (const [mTag, m] of mats) {
+                wrCases.push({ tag: `${w}x${h} ${mTag}`, args: [src, w, h, m, (w + h) % 2 === 0] });
+            }
+        }
+        wrCases.push(
+            { tag: "257x2 half-x ties-to-even", args: [rgbaTies, 257, 2, [1, 0, 0.5, 0, 1, 0], false] },
+            { tag: "257x2 half-y ties-to-even", args: [rgbaTies, 257, 2, [1, 0, 0, 0, 1, 0.5], true] },
+            { tag: "257x2 quarter-xy ties-to-even", args: [rgbaTies, 257, 2, [1, 0, 0.5, 0, 1, 0.5], false] },
+            { tag: "64x64 affine", args: [randomRGBA(64, 64, 846), 64, 64, [1.02, -0.015, -2.3, 0.012, 0.985, 3.1], false] },
+            { tag: "131x77 affine", args: [randomRGBA(131, 77, 847), 131, 77, [0.97, 0.02, 4.15, -0.018, 1.03, -2.75], true] },
+        );
+    }
+    twinCheck({
+        name: "warp_rgba", title: "warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf)", builds: [[label, px]], twin: js,
+        call: (k, [src, w, h, m, useOut]) => k.warpRgba(src, w, h, m, useOut ? new Uint8ClampedArray(w * h * 4) : null),
+        cases: wrCases,
+    });
+
+    const wcCases = [];
+    {
+        const mats = [
+            ["identity", [1, 0, 0, 0, 1, 0]],
+            ["whole shift (3, -2)", [1, 0, 3, 0, 1, -2]],
+            ["half ramp (0.5, -0.5)", [1, 0, 0.5, 0, 1, -0.5]],
+            ["fractional ramp (-0.25, 0.75)", [1, 0, -0.25, 0, 1, 0.75]],
+            ["exact boundary -1.0 (d==0 -> +0.0)", [1, 0, -1, 0, 1, -1]],
+            ["affine scale+shear+shift", [1.04, -0.02, -0.65, 0.025, 0.96, 0.72]],
+            ["far outside", [1, 0, 500, 0, 1, -500]],
+            ["NaN and +-Infinity", [NaN, 0, 0, 0, 1, -Infinity]],
+        ];
+        for (const [w, h] of [[1, 1], [1, 5], [5, 1], [4, 4], [7, 3], [19, 11], [64, 64], [131, 77]]) {
+            for (const [mTag, m] of mats) {
+                wcCases.push({ tag: `${w}x${h} ${mTag}`, args: [w, h, m, (w + h) % 2 === 1] });
+            }
+        }
+    }
+    twinCheck({
+        name: "warp_coverage", title: "warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf)", builds: [[label, px]], twin: js,
+        call: (k, [w, h, m, useOut]) => k.warpCoverage(w, h, m, useOut ? new Float32Array(w * h) : null),
+        cases: wcCases,
+    });
+
     if (label === "rust simd") {
         const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
         try {
@@ -824,6 +935,7 @@ async function maskCases(px, label, js) {
             }
             const rgba = randomRGBA(19, 7, 301), refRgba = randomRGBA(19, 7, 302), w = 19, h = 7;
             const wt = new Float32Array(w * h).fill(0.75);
+            const warpM = [1.02, -0.01, 0.75, 0.015, 0.98, -0.5];
             const runAll = () => {
                 const m = K.alphaToMask(rgba);
                 const mc = K.maskMaxClamp(m, pairB.subarray(0, w * h), true);
@@ -835,32 +947,61 @@ async function maskCases(px, label, js) {
                 const cmOk = K.colorMatchRgba(cmPatch, refRgba, wt);
                 const ba0 = K.blendAlpha(rgba, er, false);
                 const ba1 = K.blendAlpha(rgba, er, true);
-                return { m, mc, om, er, r0, r1, r2, b, cmOk, cmPatch, ba0, ba1 };
+                const es0 = K.edgefitShrink(rgba, w, h, w, h);
+                const es1 = K.edgefitShrink(rgba, w, h, 9, 4);
+                const wr = K.warpRgba(rgba, w, h, warpM);
+                const wc = K.warpCoverage(w, h, warpM);
+                return { m, mc, om, er, r0, r1, r2, b, cmOk, cmPatch, ba0, ba1, es0, es1, wr, wc };
             };
             K.setRoute("stitchMask", "rust");
             K.setRoute("colorMatch", "rust");
             K.setRoute("blendAlpha", "rust");
+            K.setRoute("edgefit", "rust");
             K.pxCalls(true);
             const rustOut = runAll(), rustCalls = K.pxCalls(true);
             K.setRoute("stitchMask", "js");
             K.setRoute("colorMatch", "js");
             K.setRoute("blendAlpha", "js");
+            K.setRoute("edgefit", "js");
             const jsOut = runAll(), jsCalls = K.pxCalls(true);
+            // Also check individual sub-routes edgefitShrink, warpRgba, warpCoverage
+            K.setRoute("edgefit", "rust");
+            K.setRoute("edgefitShrink", "js");
+            K.setRoute("warpRgba", "js");
+            K.setRoute("warpCoverage", "js");
+            const subJsOut = {
+                es0: K.edgefitShrink(rgba, w, h, w, h),
+                es1: K.edgefitShrink(rgba, w, h, 9, 4),
+                wr: K.warpRgba(rgba, w, h, warpM),
+                wc: K.warpCoverage(w, h, warpM),
+            };
+            const subJsCalls = K.pxCalls(true);
             K.setRoute("stitchMask", null);
             K.setRoute("colorMatch", null);
             K.setRoute("blendAlpha", null);
-            const exportsAll = ["alpha_to_mask", "mask_max_clamp", "mask_one_minus", "erode_mask", "mask_to_rgba", "mask_bounds_f32", "color_match_rgba", "blend_alpha"];
-            const countsOk = exportsAll.every((e) => (rustCalls[e] || 0) > 0 && !jsCalls[e])
-                && rustCalls.mask_to_rgba === 3 && rustCalls.color_match_rgba === 1 && rustCalls.blend_alpha === 2;
-            const diff = twinDiff(rustOut, jsOut, [], {});
-            check("kernels.js stitchMask, colorMatch and blendAlpha routes switch K32+K33 kernels between Rust and the twins with identical outputs",
-                countsOk && !diff, diff || JSON.stringify({ rustCalls, jsCalls }));
+            K.setRoute("edgefit", null);
+            K.setRoute("edgefitShrink", null);
+            K.setRoute("warpRgba", null);
+            K.setRoute("warpCoverage", null);
+            const exportsAll = [
+                "alpha_to_mask", "mask_max_clamp", "mask_one_minus", "erode_mask", "mask_to_rgba", "mask_bounds_f32",
+                "color_match_rgba", "blend_alpha", "edgefit_shrink", "warp_rgba", "warp_coverage",
+            ];
+            const countsOk = exportsAll.every((e) => (rustCalls[e] || 0) > 0 && !jsCalls[e] && !subJsCalls[e])
+                && rustCalls.mask_to_rgba === 3 && rustCalls.color_match_rgba === 1 && rustCalls.blend_alpha === 2
+                && rustCalls.edgefit_shrink === 2 && rustCalls.warp_rgba === 1 && rustCalls.warp_coverage === 1;
+            const diff = twinDiff(rustOut, jsOut, [], {}) || twinDiff({ es0: rustOut.es0, es1: rustOut.es1, wr: rustOut.wr, wc: rustOut.wc }, subJsOut, [], {});
+            check("kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs",
+                countsOk && !diff, diff || JSON.stringify({ rustCalls, jsCalls, subJsCalls }));
         } finally {
             kernelsBack(K);
         }
         const stRun = spawnSync(process.execPath, [path.join(ROOT, "tools", "stitch_test.js")], { encoding: "utf-8" });
         const stFail = ((stRun.stdout || "") + (stRun.stderr || "")).split(/\r?\n/).find((l) => l.startsWith("[FAIL]"));
         check("stitch_test.js vs 29f6749 loops", stRun.status === 0 && !stFail, stFail || `rc=${stRun.status}`);
+        const efRun = spawnSync(process.execPath, [path.join(ROOT, "tools", "edgefit_test.js")], { encoding: "utf-8" });
+        const efFail = ((efRun.stdout || "") + (efRun.stderr || "")).split(/\r?\n/).find((l) => l.startsWith("FAIL"));
+        check("edgefit_test.js in js and rust modes", efRun.status === 0 && !efFail, efFail || `rc=${efRun.status}`);
     }
 
     const big = mask(1492, 1492, 9);
@@ -872,6 +1013,7 @@ async function maskCases(px, label, js) {
     console.log(`       1492 x 1492: dilate ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)}; three box blurs ${label} ${(t3 - t2).toFixed(1)} ms, twin ${(t4 - t3).toFixed(1)}`);
     if (process.env.PX_BENCH) {
         const bigB = mask(1492, 1492, 10), bigRgba = js.maskToRgba(big, 0), bigRef = js.maskToRgba(bigB, 0);
+        const warpM = [1.02, -0.01, 2.5, 0.012, 0.985, -1.75];
         const rows = [
             ["alpha_to_mask", (k) => k.alphaToMask(bigRgba)],
             ["mask_max_clamp", (k) => k.maskMaxClamp(big, bigB, true)],
@@ -881,12 +1023,15 @@ async function maskCases(px, label, js) {
             ["mask_bounds_f32", (k) => k.maskBoundsF32(big, 1492, 1492)],
             ["color_match_rgba", (k) => k.colorMatchRgba(bigRgba, bigRef, big)],
             ["blend_alpha", (k) => k.blendAlpha(bigRgba, big, true, bigRgba)],
+            ["edgefit_shrink", (k) => k.edgefitShrink(bigRgba, 1492, 1492, 512, 512)],
+            ["warp_rgba", (k) => k.warpRgba(bigRgba, 1492, 1492, warpM)],
+            ["warp_coverage", (k) => k.warpCoverage(1492, 1492, warpM)],
         ];
         const parts = rows.map(([n, fn]) => {
             const m = benchMedians([[label, () => fn(px)], ["twin", () => fn(js)]]);
             return `${n} ${label} ${m[label].toFixed(2)} ms, twin ${m.twin.toFixed(2)}`;
         });
-        console.log(`       1492 x 1492 K32+K33 masks: ${parts.join("; ")}`);
+        console.log(`       1492 x 1492 K32+K33+K34 masks: ${parts.join("; ")}`);
     }
 }
 

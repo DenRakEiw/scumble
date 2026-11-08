@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 26;
+export const PX_ABI = 27;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -442,6 +442,39 @@ export class Px {
             const pr = this._in(a, rgba, n * 4), pm = this._in(a, mask, n * 4);
             this.exports.blend_alpha(pr, pm, pr, n, keepAlpha ? 1 : 0);
             return this._out(Uint8ClampedArray, pr, n * 4, out);
+        } finally { this._reset(a); }
+    }
+
+    /** Area-average shrink of straight-alpha RGBA8 `rgba` (`w * h * 4` bytes) to `{ gray, alpha }` (`tw * th` Float32Arrays, `edgefit.js` `shrinkRGBA`). */
+    edgefitShrink(rgba, w, h, tw, th, grayOut = null, alphaOut = null) {
+        const a = this.job, nIn = w * h * 4, nOut = tw * th;
+        if (!(nIn > 0 && nOut > 0)) return { gray: grayOut || new Float32Array(0), alpha: alphaOut || new Float32Array(0) };
+        try {
+            const pr = this._in(a, rgba, nIn), pg = a.take(nOut * 4), pa = a.take(nOut * 4);
+            this.exports.edgefit_shrink(pr, w, h, tw, th, pg, pa);
+            return { gray: this._out(Float32Array, pg, nOut, grayOut), alpha: this._out(Float32Array, pa, nOut, alphaOut) };
+        } finally { this._reset(a); }
+    }
+
+    /** Bilinear inverse-affine warp of RGBA8 `src` (`w * h * 4` bytes) through `m` (`[a00, a01, tx, a10, a11, ty]`, `edgefit.js` `warpRGBA`). */
+    warpRgba(src, w, h, m, out = null) {
+        const a = this.job, n = w * h * 4;
+        if (!(n > 0)) return out || new Uint8ClampedArray(0);
+        try {
+            const ps = this._in(a, src, n), po = a.take(n);
+            this.exports.warp_rgba(ps, po, w, h, m[0], m[1], m[2], m[3], m[4], m[5]);
+            return this._out(Uint8ClampedArray, po, n, out);
+        } finally { this._reset(a); }
+    }
+
+    /** Per-pixel source-bounds coverage mask (`w * h` Float32Array) for `m` (`[a00, a01, tx, a10, a11, ty]`, `edgefit.js` `warpCoverage`). */
+    warpCoverage(w, h, m, out = null) {
+        const a = this.job, n = w * h;
+        if (!(n > 0)) return out || new Float32Array(0);
+        try {
+            const po = a.take(n * 4);
+            this.exports.warp_coverage(po, w, h, m[0], m[1], m[2], m[3], m[4], m[5]);
+            return this._out(Float32Array, po, n, out);
         } finally { this._reset(a); }
     }
 
