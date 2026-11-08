@@ -1879,6 +1879,15 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K31 (2026-11-08): liquify's dab in Rust, the swirl on the JS twin (the Antigravity B chain)
+
+By the same chain as K28-K30 on `2068af87` (`60e85e4b`, the review's findings fixed in `d243e947`), merged `d711f8f2` with the ABI renumbered 31 -> 32 and
+both builds rebuilt; `docs/measurements/k31_2026-11-08/`. `crates/px/src/resample.rs` `liquify_dab` (simd128 and scalar), `Px.liquifyDab` gathering the
+nodes directly into wasm memory (all arena blocks taken before the view) and scattering from a wasm view, route `liquifyDab`. Push, grow, shrink and restore matched the
+twin on every test, near ties included. **The swirl modes stay on the twin:** the wasm's libm `cos` / `sin` differ from V8's by 1 ulp on the swirl's domain (sin on 9,424 of 5 M angles and cos on 783
+under Electron's V8 15.2, cos on 1,658 under Node's V8 13.6), and on a constructed input it reaches a node (dy 2424 against 2423), so §4.9's rule applies. The agent's first "10 M nodes, 0 differences" could not see it (Int32
+rounding hides a last bit unless it crosses a boundary). At 15k against the K30 twin: `push fit size 1000` dab 8.1 -> 5.2 ms a move (kernel lap 7.35 -> 4.57), `push 1:1 size 1000` 2.1 -> 1.5, `shrink held` tick 1.9 -> 1.3, restore on a pushed area 1.3 -> 0.9. `push 1:1 size 1000` blockedMax 67.8 -> 94.4 ms beyond the spread, land a tie, the cause inferred.
+
 ### K9 (2026-11-08): the wand's alpha tiles and the grow / shrink cut by cell (the Antigravity F chain)
 
 By a Gemini agent in Antigravity (`.claude/coord/chain-f/`) on `0117ba14` (`07963ae8`), merged `5c95eb98`, ABI 31 (the next free
