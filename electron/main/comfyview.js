@@ -13,8 +13,8 @@
 // the window (§2.5): nothing retries by itself, Reload tries again.
 "use strict";
 
-const { BaseWindow, WebContentsView, session, ipcMain, dialog } = require("electron");
-const { CLOUD_URL, popupAction, navigationAllowed, permissionAllowed } = require("./comfyhosts");
+const { app, BaseWindow, WebContentsView, session, ipcMain, dialog } = require("electron");
+const { CLOUD_URL, popupAction, navigationAllowed, permissionAllowed, mediaKinds, mediaKey, mediaDecision, mediaCheckAllowed, mediaQuestion } = require("./comfyhosts");
 const { openHttp } = require("./links");
 
 const BAR_H = 36;
@@ -26,6 +26,8 @@ const READY_MS = 120000;
 const READY_MS_OFFLINE = 20000;
 const READY_STEP_MS = 400;
 const MAX_GRAPH = 20 * 1024 * 1024;   // the page's graph, as JSON text, at most (§2.2)
+// how long the bar may take to say it shows a question (askInBar) before the native box asks instead, as main.js askWindow
+const ASK_SHOWN_MS = 1000;
 
 // What the page answers is untrusted data (§2.2): only these fields are read, as booleans or a short string
 const READY_JS = `(() => { const a = window.app; return { app: !!a, graph: !!(a && a.graph), api: !!(a && typeof a.loadApiJson === "function"),
@@ -37,19 +39,24 @@ const READ_JS = `(async () => { try { const p = await window.app.graphToPrompt()
     catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
 
 /**
- * The session's permission answers (comfyhosts.js permissionAllowed): camera, microphone, location, MIDI, the device
- * APIs and the hand-over of a non-web scheme to the OS ("openExternal") denied for the page and its sign-in windows
- * (ComfyUI's core Webcam Capture and Record Audio nodes get no device here), the rest granted as Electron's default
- * does. Set once per session
- * (the partition outlives the window); the request handler answers what a page asks for, the check handler what it
- * looks up (navigator.permissions.query, a device list), the device handler a HID / serial / USB grant.
+ * The session's permission answers (comfyhosts.js permissionAllowed): location, MIDI, the device APIs and the
+ * hand-over of a non-web scheme to the OS ("openExternal") denied for the page and its sign-in windows, the rest
+ * granted as Electron's default does. Camera and microphone ("media") go to `view` (ComfyView.mediaRequest /
+ * mediaCheck): the page's main frame on the shown origin asks the user (the user, 2026-11-08), anything else is denied.
+ * Set once per session (the partition outlives the window); the request handler answers what a page asks for, the
+ * check handler what it looks up (navigator.permissions.query, a device list), the device handler a HID / serial /
+ * USB grant.
  */
 const guarded = new WeakSet();
-function guardPermissions(ses) {
+function guardPermissions(ses, view) {
     if (!ses || guarded.has(ses)) return;
     guarded.add(ses);
-    ses.setPermissionRequestHandler((_wc, permission, callback) => callback(permissionAllowed(permission)));
-    ses.setPermissionCheckHandler((_wc, permission) => permissionAllowed(permission));
+    ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+        if (permission !== "media" || !view) { callback(permissionAllowed(permission)); return; }
+        view.mediaRequest(wc, details || {}).then((ok) => callback(ok === true), () => callback(false));
+    });
+    ses.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => (permission === "media" && view
+        ? view.mediaCheck(wc, requestingOrigin, details || {}) : permissionAllowed(permission)));
     ses.setDevicePermissionHandler(() => false);
 }
 
@@ -189,6 +196,13 @@ class ComfyView {
         this.loaded = null;     // the id of the recipe the page was given last
         this.kind = "comfy";    // what the window shows: "comfy" (My ComfyUI) or "cloud" (Comfy Cloud, V4)
         this.children = new Set();   // Comfy Cloud's sign-in windows, closed with this one
+        // camera / microphone (mediaRequest): the user's answers for this run of Scumble (comfyhosts.js mediaKey ->
+        // true / false), kept across the window's closes and never written to a setting; one question at a time
+        this.mediaAnswers = new Map();
+        this.mediaTurn = Promise.resolve();
+        // the questions the bar shows (askInBar): id -> { shown, answer, gone }; the bar covers the window meanwhile
+        this.asks = new Map();
+        this.askSeq = 0;
         this.installIpc();
     }
 
@@ -203,6 +217,92 @@ class ComfyView {
         ipcMain.handle("comfyview:settings", (e) => { if (!fromBar(e)) refuse(); this.openSettings(); return true; });
         ipcMain.handle("comfyview:target", (e, kind) => { if (!fromBar(e)) refuse(); this.setTarget(kind); return this.state(); });
         ipcMain.handle("comfyview:save", (e, opts) => { if (!fromBar(e)) refuse(); const o = opts || {}; return this.save({ asNew: !!o.asNew, name: typeof o.name === "string" ? o.name.slice(0, 200) : "" }); });
+        // the bar's dialog (askInBar): it shows a question at once, answers it later; from the bar alone
+        ipcMain.on("comfyview:asked", (e, id) => { const w = fromBar(e) && this.asks.get(id); if (w) w.shown(); });
+        ipcMain.on("comfyview:answer", (e, r) => { const w = fromBar(e) && r && this.asks.get(r.id); if (w) w.answer(Math.max(0, Math.round(+r.index || 0))); });
+    }
+
+    /** Whether `wc` is the page view's own webContents (not a sign-in window, which shares the partition). */
+    isPage(wc) {
+        return !!(this.isOpen && this.page && wc && !wc.isDestroyed() && !this.page.webContents.isDestroyed() && wc.id === this.page.webContents.id);
+    }
+
+    /** The mediaDecision of a request or a check, against what the window shows now and the answers so far. */
+    mediaArgs(wc, origin, isMainFrame, kinds) {
+        return { fromPage: this.isPage(wc), isMainFrame, origin, shownOrigin: this.shown.origin, kinds, answers: this.mediaAnswers };
+    }
+
+    /**
+     * A camera / microphone request of the page (guardPermissions): granted when every kind it names was allowed for
+     * its origin, denied when one was denied or the request is not the page's main frame on the shown origin, else
+     * asked in the bar (one question at a time; a request that waited is decided again on the answers it waited for).
+     * An answer is kept for the run; a question the window closed on answers nothing and is asked again next time.
+     */
+    mediaRequest(wc, details) {
+        const kinds = mediaKinds(details.mediaTypes);
+        const origin = details.securityOrigin || details.requestingUrl;
+        const decide = () => mediaDecision(this.mediaArgs(wc, origin, details.isMainFrame, kinds));
+        const first = decide();
+        if (first.action !== "ask") return Promise.resolve(first.action === "grant");
+        const turn = this.mediaTurn.then(async () => {
+            const d = decide();
+            if (d.action !== "ask") return d.action === "grant";
+            const i = await this.askInBar(mediaQuestion({ origin: d.origin, cloud: this.kind === "cloud", kinds: d.ask }));
+            if (i == null) return false;
+            for (const k of d.ask) this.mediaAnswers.set(mediaKey(d.origin, k), i === 0);
+            console.log(`comfyview: ${d.ask.join(" and ")} ${i === 0 ? "allowed" : "denied"} for ${d.origin} for this session`);
+            return decide().action === "grant";
+        });
+        this.mediaTurn = turn.catch(() => false);
+        return turn;
+    }
+
+    /** The check handler's media answer: yes only for the page's main frame on the shown origin and a kind allowed. */
+    mediaCheck(wc, requestingOrigin, details) {
+        return mediaCheckAllowed(this.mediaArgs(wc, details.securityOrigin || requestingOrigin || details.requestingUrl, details.isMainFrame, mediaKinds(details.mediaType)));
+    }
+
+    /**
+     * A question in this window's own dialog (renderer/dialogs.js in the bar, which covers the window while it is
+     * open): `spec` as dialogs.js ask() takes it. Resolves with the index of the button pressed, or null when the
+     * window closed first. When the bar does not say within ASK_SHOWN_MS that it shows the question, the native box
+     * asks instead, parented to this window (a --no-comfy start, whose page is always a test's stub, answers null:
+     * no native box holds a gate).
+     */
+    askInBar(spec) {
+        if (!this.isOpen || !this.bar || this.bar.webContents.isDestroyed()) return Promise.resolve(null);
+        const id = ++this.askSeq;
+        const cancel = spec.cancelId != null ? spec.cancelId : spec.buttons.length - 1;
+        return new Promise((resolve) => {
+            let settled = false;
+            let timer = null;
+            const end = (v) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                this.asks.delete(id);
+                this.layout();
+                if (this.isOpen && this.phase === "page" && this.page && !this.page.webContents.isDestroyed()) this.page.webContents.focus();
+                resolve(v);
+            };
+            const fallBack = () => {
+                if (settled) return;
+                this.asks.delete(id);
+                this.layout();
+                if (this.bar && !this.bar.webContents.isDestroyed()) this.bar.webContents.send("comfyview:dismiss", id);
+                if (!this.isOpen || this.offline) { end(null); return; }
+                const focus = spec.focusId != null ? spec.focusId : spec.defaultId || 0;
+                dialog.showMessageBox(this.win, {
+                    type: "question", noLink: true, buttons: spec.buttons, defaultId: focus, cancelId: cancel,
+                    title: spec.title || "ComfyUI", message: spec.message || spec.title || "", detail: spec.detail || undefined,
+                }).then(({ response }) => end(this.isOpen ? response : null), () => end(null));
+            };
+            timer = setTimeout(fallBack, ASK_SHOWN_MS);
+            this.asks.set(id, { shown: () => clearTimeout(timer), answer: end, gone: () => end(null) });
+            this.layout();      // the bar over the whole window, so the dialog has room
+            this.bar.webContents.focus();
+            this.bar.webContents.send("comfyview:ask", { id, spec });
+        });
     }
 
     /**
@@ -287,7 +387,7 @@ class ComfyView {
         // no menu here (Windows, Linux), and neither view takes the application menu's shortcuts (macOS keeps its
         // global menu): ComfyUI's own Ctrl+S, Ctrl+Z and Ctrl+Enter reach the page, never Scumble's Save or Reload
         this.dropMenu();
-        guardPermissions(this.session());   // before the page's first load
+        guardPermissions(this.session(), this);   // before the page's first load
         const bar = new WebContentsView({ webPreferences: { preload: this.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false } });
         const page = new WebContentsView({ webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false } });
         this.bar = bar;
@@ -382,6 +482,7 @@ class ComfyView {
             this.settings.set({ comfyView: { ...cur, bounds: win.getNormalBounds(), maximized: win.isMaximized() } });
         });
         win.on("closed", () => {
+            for (const w of Array.from(this.asks.values())) w.gone();   // a question the window closed on answers nothing
             for (const c of this.children) { try { if (!c.isDestroyed()) c.close(); } catch (_) { /* gone */ } }
             this.children.clear();
             for (const v of [bar, page]) { try { if (!v.webContents.isDestroyed()) v.webContents.close(); } catch (_) { /* gone */ } }
@@ -571,12 +672,15 @@ class ComfyView {
         this.sendState();
     }
 
-    /** The bar is a strip over the page while there is one; otherwise its start page fills the window. */
+    /**
+     * The bar is a strip over the page while there is one; otherwise its start page fills the window, and so does the
+     * bar while it shows a question (askInBar).
+     */
     layout() {
         if (!this.isOpen || !this.bar) return;
         const { width, height } = this.win.getContentBounds();
         const withPage = this.phase === "page" || this.phase === "loading";
-        this.bar.setBounds({ x: 0, y: 0, width, height: withPage ? BAR_H : height });
+        this.bar.setBounds({ x: 0, y: 0, width, height: withPage && !this.asks.size ? BAR_H : height });
         this.page.setBounds({ x: 0, y: BAR_H, width, height: Math.max(0, height - BAR_H) });
         this.page.setVisible(withPage);
     }
@@ -609,7 +713,11 @@ class ComfyView {
             bounds: open ? this.win.getBounds() : null,
             title: open ? this.win.getTitle() : "",
             page: open ? { url: this.page.webContents.getURL(), visible: this.phase === "page" || this.phase === "loading" } : null,
-            bar: open ? { url: this.bar.webContents.getURL() } : null,
+            bar: open ? { url: this.bar.webContents.getURL(), height: this.bar.getBounds().height } : null,
+            // the questions the bar shows, and whether this start has Chromium's fake camera and microphone (the
+            // comfyview gate allows a camera only then, so no real device opens)
+            asking: this.asks.size,
+            fakeMedia: !!(app && app.commandLine && app.commandLine.hasSwitch("use-fake-device-for-media-stream")),
         };
     }
 }

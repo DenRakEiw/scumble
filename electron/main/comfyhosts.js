@@ -49,12 +49,13 @@ function navigationAllowed(url, origin, target) {
 
 // The permissions the page (and its sign-in windows) never gets, in Electron's names (H1, docs/PLAN_WASM_BUILD.md §7
 // "The user's answers after K4"): the page runs every node pack's JavaScript, and Electron grants whatever a page asks
-// for unless the session says otherwise. Camera and microphone ("media"; a screen capture needs a handler of its own,
-// which is not set, so it fails anyway), location, MIDI, the device APIs (HID, serial, USB), and "openExternal": a
+// for unless the session says otherwise. Camera and microphone ("media", unless the user allows it: mediaDecision; a
+// screen capture needs a handler of its own, which is not set, so it fails anyway), location, MIDI, the device APIs
+// (HID, serial, USB), and "openExternal": a
 // frame or a sign-in window navigating to a scheme the system handles (mailto:, ms-*, search-ms: ...) would hand it
 // to the OS, past links.js, which lets only http(s) out. Everything else stays as before (granted): ComfyUI's page
-// keeps its clipboard, fullscreen and notifications. Denying "media" also means ComfyUI's own core nodes Webcam Capture
-// and Record Audio get no camera or microphone in this window (docs/MANUAL.md says so: they need ComfyUI in a browser).
+// keeps its clipboard, fullscreen and notifications. "media" stays in the set as the answer to anything mediaDecision
+// (below) does not decide: since 2026-11-08 the page's own camera and microphone requests ask the user instead.
 const DENIED_PERMISSIONS = new Set(["media", "geolocation", "midi", "midiSysex", "hid", "serial", "usb", "openExternal"]);
 
 /** Whether the ComfyUI window's session grants `permission` (an Electron permission name). */
@@ -62,4 +63,78 @@ function permissionAllowed(permission) {
     return !DENIED_PERMISSIONS.has(String(permission));
 }
 
-module.exports = { CLOUD_URL, CLOUD_AUTH_HOSTS, cloudAuthUrl, popupAction, navigationAllowed, DENIED_PERMISSIONS, permissionAllowed };
+// Camera and microphone ask instead (the user, 2026-11-08: "ja, machen wir so"): ComfyUI's own core nodes Webcam
+// Capture and Record Audio need getUserMedia, and granting it silently would be worse than a browser, since every node
+// pack's JavaScript runs in that page. So only the main frame of the page view itself (not a subframe, not a sign-in
+// window), on the origin the window shows (the ComfyUI of Settings › ComfyUI, or Comfy Cloud's page when that is the
+// target), is asked, once per origin and kind for the session; the answer lives in memory (comfyview.js), never in a
+// setting. A kind answered no stays no until Scumble quits; one answered yes is granted without a second question.
+const MEDIA_KINDS = { video: "camera", audio: "microphone" };
+
+/** The origin of an http(s) URL or origin string (Electron's securityOrigin ends in "/"), or "". */
+function webOrigin(url) {
+    try { const u = new URL(String(url)); return /^https?:$/.test(u.protocol) ? u.origin : ""; } catch (_) { return ""; }
+}
+
+/**
+ * The kinds ("camera", "microphone") a media request's `mediaTypes` or a check's `mediaType` names, in that order; []
+ * for none and for any type that is neither video nor audio (Electron's "unknown"), which is refused.
+ */
+function mediaKinds(types) {
+    const list = Array.isArray(types) ? types : types == null ? [] : [types];
+    const out = new Set();
+    for (const t of list) {
+        const k = MEDIA_KINDS[String(t)];
+        if (!k) return [];
+        out.add(k);
+    }
+    return ["camera", "microphone"].filter((k) => out.has(k));
+}
+
+/** The memory's key of one origin's one kind. */
+function mediaKey(origin, kind) {
+    return `${webOrigin(origin)} ${kind}`;
+}
+
+/**
+ * What the ComfyUI window's session answers a camera / microphone request: { action: "deny" | "grant" | "ask", ask:
+ * the kinds still unanswered, origin }. `fromPage` says the request comes from the window's page view (not a sign-in
+ * window); `isMainFrame` from its main frame; `origin` the requesting frame's origin; `shownOrigin` the origin the window
+ * shows; `kinds` mediaKinds' answer; `answers` a Map of mediaKey -> true / false.
+ */
+function mediaDecision({ fromPage, isMainFrame, origin, shownOrigin, kinds, answers }) {
+    const o = webOrigin(origin);
+    const deny = { action: "deny", ask: [], origin: o };
+    if (!fromPage || isMainFrame !== true || !o || o !== webOrigin(shownOrigin) || !Array.isArray(kinds) || !kinds.length) return deny;
+    const said = (k) => (answers && typeof answers.get === "function" ? answers.get(mediaKey(o, k)) : undefined);
+    if (kinds.some((k) => said(k) === false)) return deny;
+    const ask = kinds.filter((k) => said(k) !== true);
+    return ask.length ? { action: "ask", ask, origin: o } : { action: "grant", ask: [], origin: o };
+}
+
+/** The check handler's answer (navigator.permissions.query, the device list's labels): yes only for a kind allowed. */
+function mediaCheckAllowed(args) {
+    return mediaDecision(args).action === "grant";
+}
+
+/**
+ * The question, as renderer/dialogs.js's ask() takes it: Allow / Deny, the focus and Enter on Deny (it opens unasked,
+ * while the user may be typing in ComfyUI), Escape denies.
+ */
+function mediaQuestion({ origin, cloud, kinds }) {
+    let host = "";
+    try { host = new URL(String(origin)).host; } catch (_) { /* none */ }
+    const what = kinds.length > 1 ? "your camera and microphone" : `your ${kinds[0] || "camera"}`;
+    const who = cloud ? "Comfy Cloud" : `ComfyUI at ${host}`;
+    return {
+        title: kinds.length > 1 ? "Camera and microphone" : kinds[0] === "microphone" ? "Microphone" : "Camera",
+        message: `${who} wants to use ${what}. Allow it for this session?`,
+        detail: "ComfyUI's Webcam Capture and Record Audio nodes ask for it. The page runs the JavaScript of every node pack on that server, so allow it only when you use such a node. Scumble keeps your answer until it quits and asks again after a restart.",
+        buttons: ["Allow", "Deny"], defaultId: 0, cancelId: 1, focusId: 1,
+    };
+}
+
+module.exports = {
+    CLOUD_URL, CLOUD_AUTH_HOSTS, cloudAuthUrl, popupAction, navigationAllowed, DENIED_PERMISSIONS, permissionAllowed,
+    webOrigin, mediaKinds, mediaKey, mediaDecision, mediaCheckAllowed, mediaQuestion,
+};

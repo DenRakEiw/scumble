@@ -7,8 +7,13 @@ opener passes a stub's URL):
 - with no target the window shows the bar's start page and loads nothing; a second open brings the same window to
   the front; its bounds come back after a close;
 - on the stub the page loads in its own process and has no window.scumble, no window.comfybar and no require; a
-  navigation away from the stub's origin and a window.open are refused; its session denies camera, microphone,
-  location and MIDI (looked up and asked for) and grants notifications and the clipboard (H1);
+  navigation away from the stub's origin and a window.open are refused; its session denies location and MIDI (looked
+  up and asked for), camera and microphone while nothing is allowed (looked up), and grants notifications and the
+  clipboard (H1);
+- camera and microphone (the user, 2026-11-08): a request of the page's main frame asks in the bar's own dialog (the
+  bar over the window), once per kind for the run: Deny stays refused, Allow grants that kind (Chromium's fake camera:
+  the step needs --use-fake-device-for-media-stream, which tools/run_gates.sh passes), neither is asked again, also in
+  a reopened window; a same-origin and a cross-origin frame are refused without a question;
 - Ctrl+S in the page reaches the page and no menu command of Scumble's, also after Scumble's menu was built again;
 - the auth of Settings › ComfyUI reaches the page and its websocket: basic, bearer and a custom header; a wrong
   password ends on the start page with the 401 (no prompt, no loop); a server that does not answer says so;
@@ -73,16 +78,36 @@ ws.onopen = () => { document.title = 'open'; };
 ws.onclose = (e) => { if (document.title !== 'open') document.title = 'closed ' + e.code; };
 </script><p>stub ComfyUI</p>"""
 
-# H1: what the page gets of the permissions it looks up or asks for (camera / microphone only asked once looked up denied)
+# H1: what the page gets of the permissions it looks up or asks for. Camera and microphone are looked up only here: a
+# request asks the user since 2026-11-08 (the media step drives that question); location is asked for, and refused
 PERMS_JS = """(async () => {
     const q = async (name) => { try { return (await navigator.permissions.query({ name })).state; } catch (e) { return 'error ' + e.name; } };
     const out = {};
     for (const n of ['geolocation', 'camera', 'microphone', 'midi', 'notifications', 'clipboard-write']) out[n] = await q(n);
-    out.mic = out.microphone === 'denied' ? await navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => { s.getTracks().forEach((t) => t.stop()); return 'granted'; }, (e) => e.name) : 'not asked';
+    out.geo = out.geolocation === 'denied' ? await new Promise((r) => navigator.geolocation.getCurrentPosition(() => r('granted'), (e) => r('code ' + e.code), { timeout: 5000 })) : 'not asked';
     out.midiAccess = await navigator.requestMIDIAccess().then(() => 'granted', (e) => e.name);
     out.notify = await Notification.requestPermission();
     return out;
 })()"""
+
+# the media step: a getUserMedia of the page, its answer kept in window.__gum (the question it raises is answered in
+# the bar meanwhile); a frame page (/frame) asks for the camera on its load and posts its answer to the page
+GUM_JS = """(() => { window.__gum = null; navigator.mediaDevices.getUserMedia(%s).then((s) => { s.getTracks().forEach((t) => t.stop()); window.__gum = 'granted'; },
+    (e) => { window.__gum = e.name; }); return 1; })()"""
+FRAME_PAGE = """<!doctype html><title>frame</title><script>
+navigator.mediaDevices.getUserMedia({ video: true }).then((s) => { s.getTracks().forEach((t) => t.stop()); parent.postMessage({ gum: 'granted' }, '*'); },
+  (e) => parent.postMessage({ gum: e.name }, '*'));
+</script>"""
+FRAME_JS = """(() => { window.__frame = null; if (!window.__frameListen) { window.__frameListen = true; addEventListener('message', (e) => { if (e.data && e.data.gum) window.__frame = e.data.gum; }); }
+    document.querySelectorAll('iframe').forEach((f) => f.remove());
+    const f = document.createElement('iframe'); f.allow = 'camera; microphone'; f.src = %s; document.body.appendChild(f); return 1; })()"""
+# the bar's open question (renderer/dialogs.js in comfybar.html): its texts, or null; and a press on one of its buttons
+BAR_DIALOG_JS = """(() => { const d = document.querySelector('dialog.sc-dialog[open]'); if (!d) return null; const r = d.querySelector('div').shadowRoot;
+    const t = (s) => (r.querySelector(s) || {}).textContent || '';
+    return { title: t('.title'), message: t('.message'), detail: t('.detail'), buttons: Array.from(r.querySelectorAll('button')).map((b) => b.textContent),
+      focused: (r.activeElement || {}).textContent || '', h: innerHeight }; })()"""
+BAR_PRESS_JS = """(() => { const d = document.querySelector('dialog.sc-dialog[open]'); if (!d) return false;
+    const b = Array.from(d.querySelector('div').shadowRoot.querySelectorAll('button')).find((x) => x.textContent === %s); if (!b) return false; b.click(); return true; })()"""
 
 # a fake ComfyUI frontend for V2: window.app records the graph it is given ("throw": its load fails)
 FAKE_APP = """<script>
@@ -142,6 +167,7 @@ class Stub:
         app = web.Application()
         app.router.add_get("/ws", self.ws)
         app.router.add_get("/", self.page)
+        app.router.add_get("/frame", lambda r: web.Response(text=FRAME_PAGE, content_type="text/html"))
         app.router.add_get("/favicon.ico", lambda r: web.Response(status=404))
         app.router.add_get("/object_info", lambda r: web.json_response({}))
         self.runner = web.AppRunner(app)
@@ -273,7 +299,7 @@ class Gate:
             raise Exception("the page left the stub: " + json.dumps(g))
         p = g["perms"]
         want = {"geolocation": "denied", "camera": "denied", "microphone": "denied", "midi": "denied", "notifications": "granted",
-                "clipboard-write": "granted", "mic": "NotAllowedError", "notify": "granted"}
+                "clipboard-write": "granted", "geo": "code 1", "notify": "granted"}
         bad = {k: p.get(k) for k, v in want.items() if p.get(k) != v}
         # a refused MIDI request: NotAllowedError (older Chromium: SecurityError), never granted
         if p.get("midiAccess") not in ("NotAllowedError", "SecurityError"):
@@ -281,6 +307,134 @@ class Gate:
         if bad:
             raise Exception("the page's permissions: " + json.dumps(bad) + " in " + json.dumps(p))
         return g
+
+    async def media(self):
+        """Camera and microphone ask instead of deny (the user, 2026-11-08; comfyview.js mediaRequest): the page's
+        main frame on the shown origin gets a question in the bar's own dialog (the bar over the whole window), once
+        per kind; Deny stays NotAllowedError and is not asked again, Allow grants that kind (Chromium's fake camera:
+        the step refuses an instance without the switch) and is not asked again; a request that names a denied kind is
+        refused without a question; a same-origin and a cross-origin frame are refused without one, the camera allowed
+        or not; geolocation stays denied (the page step)."""
+        self.stub.mode = "none"
+        await self.set_auth({"type": "none"}, "")
+        await self.close()
+        i = await self.open_and_wait(self.stub.url)
+        if i["phase"] != "page":
+            raise Exception("the stub did not load: " + json.dumps(i))
+        if not i.get("fakeMedia"):
+            raise Exception("the instance has the real camera and microphone: start it with --use-fake-device-for-media-stream (tools/run_gates.sh does), or the Allow would open a real device")
+        other = Stub()
+        await other.start()
+        host = self.stub.url.split("//", 1)[1]
+        out = {}
+        try:
+            hp, hb = await target(self.stub.url), await target("comfybar.html")
+            if not hp or not hb:
+                raise Exception("no page or bar target")
+            async with aiohttp.ClientSession() as s:
+                async with s.ws_connect(hp[0]["webSocketDebuggerUrl"], max_msg_size=64 * 1024 * 1024) as wp, \
+                        s.ws_connect(hb[0]["webSocketDebuggerUrl"], max_msg_size=64 * 1024 * 1024) as wb:
+                    pc, bc = Cdp(wp), Cdp(wb)
+
+                    async def question(ms):
+                        t0 = asyncio.get_event_loop().time()
+                        while asyncio.get_event_loop().time() - t0 < ms / 1000:
+                            q = await bc.eval(BAR_DIALOG_JS)
+                            if q:
+                                return q
+                            await asyncio.sleep(0.1)
+                        return None
+
+                    async def answer_of(key, ms=8000):
+                        t0 = asyncio.get_event_loop().time()
+                        while asyncio.get_event_loop().time() - t0 < ms / 1000:
+                            v = await pc.eval(key)
+                            if v:
+                                return v
+                            await asyncio.sleep(0.1)
+                        return None
+
+                    async def gum(name, constraints, press, shot=None):
+                        """One request of the page's main frame; `press` the bar's button, or None: no question may come."""
+                        await pc.eval(GUM_JS % json.dumps(constraints))
+                        q = await question(5000 if press else 1500)
+                        if press is None:
+                            if q:
+                                await bc.eval(BAR_PRESS_JS % json.dumps("Deny"))
+                                raise Exception(f"{name}: a question came where none may: " + json.dumps(q))
+                            got = await answer_of("window.__gum")
+                            out[name] = {"asked": False, "got": got}
+                            return got
+                        if not q:
+                            raise Exception(f"{name}: no question in the bar")
+                        during = await self.js("return await window.scumble.comfyView.info()")
+                        if shot:
+                            await bc.screenshot(os.path.join(self.out, shot))
+                        if not await bc.eval(BAR_PRESS_JS % json.dumps(press)):
+                            raise Exception(f"{name}: no {press} button: " + json.dumps(q))
+                        got = await answer_of("window.__gum")
+                        after = await self.js("const t0 = Date.now(); for (;;) { const i = await window.scumble.comfyView.info(); if (!i.asking || Date.now() - t0 > 3000) return i; await wait(100); }")
+                        out[name] = {"asked": True, "question": q, "got": got, "barDuring": during["bar"]["height"], "barAfter": after["bar"]["height"], "askingAfter": after["asking"]}
+                        if q["buttons"] != ["Allow", "Deny"] or q["focused"] != "Deny" or host not in q["message"] or "for this session" not in q["message"]:
+                            raise Exception(f"{name}: the question: " + json.dumps(q))
+                        if during["asking"] != 1 or during["bar"]["height"] < 200 or q["h"] < 200:
+                            raise Exception(f"{name}: the bar does not cover the window while it asks: " + json.dumps({"bar": during["bar"], "inner": q["h"]}))
+                        if after["asking"] or after["bar"]["height"] > 40:
+                            raise Exception(f"{name}: the bar did not go back to its strip: " + json.dumps(after["bar"]))
+                        return got
+
+                    async def frame(name, url):
+                        await pc.eval(FRAME_JS % json.dumps(url))
+                        q = await question(2500)
+                        if q:
+                            await bc.eval(BAR_PRESS_JS % json.dumps("Deny"))
+                            raise Exception(f"{name}: a frame's request raised a question: " + json.dumps(q))
+                        got = await answer_of("window.__frame")
+                        out[name] = got
+                        if got != "NotAllowedError":
+                            raise Exception(f"{name}: the frame's camera answered {got}")
+
+                    look = lambda: pc.eval("(async () => { const q = async (n) => (await navigator.permissions.query({ name: n })).state; return { camera: await q('camera'), microphone: await q('microphone') }; })()")
+                    out["before"] = await look()
+                    if out["before"] != {"camera": "denied", "microphone": "denied"}:
+                        raise Exception("looked up before any answer: " + json.dumps(out["before"]))
+                    if await gum("mic denied", {"audio": True}, "Deny", shot="media_question.png") != "NotAllowedError":
+                        raise Exception("a microphone answered Deny: " + json.dumps(out["mic denied"]))
+                    if "microphone" not in out["mic denied"]["question"]["message"] or "camera" in out["mic denied"]["question"]["message"]:
+                        raise Exception("the question does not name the microphone alone: " + json.dumps(out["mic denied"]["question"]))
+                    if await gum("mic again", {"audio": True}, None) != "NotAllowedError":
+                        raise Exception("the denied microphone, asked again: " + json.dumps(out["mic again"]))
+                    if await gum("camera allowed", {"video": True}, "Allow") != "granted":
+                        raise Exception("a camera answered Allow: " + json.dumps(out["camera allowed"]))
+                    if await gum("camera again", {"video": True}, None) != "granted":
+                        raise Exception("the allowed camera, asked again: " + json.dumps(out["camera again"]))
+                    if await gum("both", {"video": True, "audio": True}, None) != "NotAllowedError":
+                        raise Exception("camera and the denied microphone together: " + json.dumps(out["both"]))
+                    out["after"] = await look()
+                    if out["after"] != {"camera": "granted", "microphone": "denied"}:
+                        raise Exception("looked up after the answers: " + json.dumps(out["after"]))
+                    await frame("same-origin frame", self.stub.url + "/frame")
+                    await frame("cross-origin frame", other.url + "/frame")
+        finally:
+            await other.runner.cleanup()
+        # the answers are the app's for this run: a reopened window asks nothing again
+        await self.close()
+        i2 = await self.open_and_wait(self.stub.url)
+        if i2["phase"] != "page":
+            raise Exception("the stub did not load again: " + json.dumps(i2))
+        async def again(c):
+            await c.eval(GUM_JS % json.dumps({"video": True}))
+            for _ in range(80):
+                v = await c.eval("window.__gum")
+                if v:
+                    return v
+                await asyncio.sleep(0.1)
+            return None
+        out["reopened camera"] = await on_target(self.stub.url, again)
+        if out["reopened camera"] != "granted" or (await self.js("return (await window.scumble.comfyView.info()).asking")):
+            raise Exception("the reopened window's camera: " + json.dumps(out["reopened camera"]))
+        await self.close()
+        return out
 
     async def keys(self):
         # The keys go in through DevTools; an occluded window (the gate runs behind other windows) gets them only with
@@ -826,6 +980,7 @@ async def main():
             await g.close()
             await g.step("no target: the start page, nothing loaded, one window, bounds kept", g.no_target)
             await g.step("the stub page: no app API, stays on its origin", g.page)
+            await g.step("camera and microphone: the page asks in the bar's dialog, once per kind; frames and denied kinds refused unasked", g.media)
             await g.step("Ctrl+S reaches the page, not Scumble's menu", g.keys)
             await g.step("basic auth on the page and /ws", lambda: g.auth("basic", {"type": "basic", "user": "user"}))
             await g.step("bearer on the page and /ws", lambda: g.auth("bearer", {"type": "bearer"}))

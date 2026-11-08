@@ -60,4 +60,7 @@
     $("cb-target").addEventListener("change", () => bar.setTarget($("cb-target").value).then(show, () => {}));
     bar.onState(show);
     bar.state().then(show, () => {});
+    // main's questions (comfyview.js askInBar: the page's camera / microphone) in the app's own dialog; main lays the
+    // bar over the whole window first, so the dialog has room
+    import("./dialogs.js").then((d) => d.listen(bar.dialog), (err) => console.warn("comfybar: no dialogs", err));
 })();

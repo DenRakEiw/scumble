@@ -16,4 +16,11 @@ contextBridge.exposeInMainWorld("comfybar", {
     save: (opts) => ipcRenderer.invoke("comfyview:save", opts || {}),
     // Settings › ComfyUI in the main window
     openSettings: () => ipcRenderer.invoke("comfyview:settings"),
+    // main's questions in this window (comfyview.js askInBar; renderer/dialogs.js listen): the page's camera / microphone
+    dialog: {
+        onAsk: (cb) => { const h = (_e, m) => cb(m); ipcRenderer.on("comfyview:ask", h); return () => ipcRenderer.removeListener("comfyview:ask", h); },
+        onDismiss: (cb) => { const h = (_e, id) => cb(id); ipcRenderer.on("comfyview:dismiss", h); return () => ipcRenderer.removeListener("comfyview:dismiss", h); },
+        shown: (id) => ipcRenderer.send("comfyview:asked", id),
+        answer: (id, index) => ipcRenderer.send("comfyview:answer", { id, index }),
+    },
 });
