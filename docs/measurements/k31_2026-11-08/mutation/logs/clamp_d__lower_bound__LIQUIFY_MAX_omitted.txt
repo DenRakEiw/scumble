@@ -63,3 +63,28 @@ FAIL (2) (only: liquify; PX_ONLY, not the full test)
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_tree_k31\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 9 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 216469 bytes, sha256 3b4084ce2b33d9a6
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 175281 bytes, sha256 9b14749856b412f0
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 5.16s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.39s
+$ node tools/px_test.js  (rc 1, 5 s, PX_ONLY=liquify)
+FAIL rust simd liquify_dab (rust simd) equals its twin byte for byte (124 cases, each also at an odd offset)  s=1 push clamp_d saturation: out.out[1] is -4194429, the twin has -4194304
+FAIL rust scalar liquify_dab (rust scalar) equals its twin byte for byte (124 cases, each also at an odd offset)  s=1 push clamp_d saturation: out.out[1] is -4194429, the twin has -4194304
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL rust scalar liquify_dab (rust scalar) equals its twin byte for byte (124 cases, each also at an odd offset)  s=1 push clamp_d saturation: out.out[1] is -4194429, the twin has -4194304
+ok   js liquify_dab (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8
+ok   rust scalar liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 3342336, sameBox=true, sameNodes=true
+ok   rust scalar liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+(node:30032) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/F--canvas/k31_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

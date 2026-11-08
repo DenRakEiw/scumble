@@ -1271,7 +1271,7 @@ async function retouchRouteCases(js) {
         const pWant = new Uint8Array(10 * 9 * 4);
         L.previewBlock({ data: pWinSrc, w: 16, h: 16, x0: 0, y0: 0, L: 1 }, pField, -2.5, 1.25, 1.5, pWant, 10, 9);
         const fDabWantField = pField.copy();
-        const fDabWantBox = fDabWantField.dab("swirlcw", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, null);
+        const fDabWantBox = fDabWantField.dab("grow", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, null);
         const fDabWantNodes = fDabWantField.nodes(0, 0, fDabWantField.ni + 1, fDabWantField.nj + 1);
         const want = {
             tone: S.toneRGBA(I, lut, true), sponge: S.spongeRGBA(I, 0.7, true, true),
@@ -1289,7 +1289,7 @@ async function retouchRouteCases(js) {
             const prev = new Uint8Array(10 * 9 * 4);
             K.liquifyPreview(win, pField, -2.5, 1.25, 1.5, prev, 10, 9);
             const fDab = pField.copy();
-            const dabBoxGot = fDab.dab("swirlcw", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, K.liquifyDab);
+            const dabBoxGot = fDab.dab("grow", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, K.liquifyDab);
             const dabSame = JSON.stringify(dabBoxGot) === JSON.stringify(fDabWantBox) && eqBytes(fDab.nodes(0, 0, fDab.ni + 1, fDab.nj + 1), fDabWantNodes);
             const hadPtr = !!win.ptr, px0 = win.px, ptr0 = win.ptr, bytes0 = win.bytes;
             K.freeLiquifyWindow(win);
@@ -1311,6 +1311,23 @@ async function retouchRouteCases(js) {
         check("kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock / liquifyPreview / liquifyDab: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never",
             same(rust) && rust.hadPtr && same(twin) && !twin.hadPtr && cr.tone_rgba === 1 && cr.sponge_rgba === 1 && cr.freq_split === 2 && cr.blur_rgba === 1 && cr.liquify_block === 1 && cr.liquify_preview === 1 && cr.liquify_dab === 1 && !cj.tone_rgba && !cj.sponge_rgba && !cj.freq_split && !cj.blur_rgba && !cj.liquify_block && !cj.liquify_preview && !cj.liquify_dab,
             `rust ${JSON.stringify(cr)}, js ${JSON.stringify(cj)}`);
+        // K31 (PLAN_WASM_BUILD.md §4.9): swirlcw and swirlccw route through liquifyDabNodes (0 liquify_dab calls)
+        // because wasm libm cos/sin differ from V8 Math.cos/Math.sin by 1 ULP on the swirl domain
+        {
+            K.pxCalls(true);
+            const fSwCw = pField.copy(), fSwCwWant = pField.copy();
+            fSwCw.dab("swirlcw", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, K.liquifyDab);
+            fSwCwWant.dab("swirlcw", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, null);
+            const fSwTie = new L.LiquifyField(2000, 2000, 1), fSwTieWant = new L.LiquifyField(2000, 2000, 1);
+            fSwTie.dab("swirlccw", 1198.6129226787184, 1000, 700, 0.8, 0.6, null, null, null, K.liquifyDab);
+            fSwTieWant.dab("swirlccw", 1198.6129226787184, 1000, 700, 0.8, 0.6, null, null, null, null);
+            const cSw = K.pxCalls(true);
+            const swCwSame = eqBytes(fSwCw.nodes(0, 0, fSwCw.ni + 1, fSwCw.nj + 1), fSwCwWant.nodes(0, 0, fSwCwWant.ni + 1, fSwCwWant.nj + 1));
+            const swTieDy = fSwTie.node(1500, 1000)[1], swTieWantDy = process.versions.electron ? 2423 : fSwTieWant.node(1500, 1000)[1];
+            check("kernels.js K31: swirlcw and swirlccw route to liquifyDabNodes (0 liquify_dab calls) and match the V8 sin/cos tie at node (1500, 1000)",
+                !cSw.liquify_dab && swCwSame && swTieDy === swTieWantDy,
+                `calls=${JSON.stringify(cSw)} swCwSame=${swCwSame} swTieDy=${swTieDy} want=${swTieWantDy}`);
+        }
         // K29: liquifyPreview runs on win.px (never rustPx(), so an idle drop mid-stroke still uses win.px), and
         // refreshes win.data when the mode or route switches mid-stroke after win.px grew its memory
         {
@@ -1413,7 +1430,7 @@ async function retouchRouteCases(js) {
             }, (o) => eqBytes(o, pWant)],
             ["dab", "liquifyDab", () => {
                 const f = pField.copy();
-                const b = f.dab("swirlcw", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, K.liquifyDab);
+                const b = f.dab("grow", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, K.liquifyDab);
                 return { f, b };
             }, (o) => JSON.stringify(o.b) === JSON.stringify(fDabWantBox) && eqBytes(o.f.nodes(0, 0, o.f.ni + 1, o.f.nj + 1), fDabWantNodes)],
             ["edgefitShrink", "edgefitShrink", () => K.edgefitShrink(I, w, h, 32, 20), (o) => eqFloats(o.gray, want.es.gray) && eqFloats(o.alpha, want.es.alpha)],

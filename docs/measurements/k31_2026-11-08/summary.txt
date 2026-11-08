@@ -1,8 +1,8 @@
 K31 of docs/PLAN_WASM_BUILD.md (2026-11-08): the Rust dense dab kernel liquify_dab (crates/px/src/resample.rs and
 crates/px/src/lib.rs, Px.prototype.liquifyDab in renderer/editor/px/px.js, and liquifyDab in renderer/editor/px/kernels.js
 routed by ROUTE_KINDS.liquifyDab = "kernel", called from LiquifyField.prototype.dab in renderer/editor/inpaint_liquify.js),
-with the dense JS twin liquifyDabNodes as its fallback and reference (Map-based dab = dense JS twin = Rust liquify_dab,
-three-way equal). ABI 31.
+with the dense JS twin liquifyDabNodes as its fallback and reference (Map-based dab = dense JS twin = Rust liquify_dab on
+push, grow, shrink, and restore, three-way equal; swirlcw and swirlccw routed to liquifyDabNodes). ABI 31.
 
 In LiquifyField.prototype.dab, this._dabSh = sh is recorded and the LiquifyField instance itself is passed as src (and
 before as out) to the kernel. Px.prototype.liquifyDab allocates all arena blocks (ps, po, psel, pfrz, pbox) before taking
@@ -10,9 +10,12 @@ any typed-array view of wasm memory (so arena growth on a fresh or idle-trimmed 
 place via field.nodes(si0, sj0, sw, sh, sView), runs exports.liquify_dab (using wasm32 simd128 f64x2 for the 4-neighbour
 bilinear displacement sample + 256*n + 0.5 floor on advected modes and f64x2_trunc on restore), and scatters changed rows
 directly from this.view(Int32Array, po, need) via field._writeDense(..., before, restore). Standalone Int32Array src/out
-callers are also supported. Swirl cos/sin parity between Rust wasm32 f64::cos / f64::sin and V8 Math.cos / Math.sin was
-verified across 10,000,000 random swirl nodes in both Node V8 (13.6.233.17-node.50) and Electron V8 (15.2.124.19-electron.0)
-with 0 differences on both SIMD and scalar builds.
+callers are also supported. On swirlcw and swirlccw, wasm libm cos / sin bits differ from V8 Math.cos / Math.sin by 1 ULP
+on the swirl domain (9,424 of 5 M sin angles and 783 of 5 M cos angles under Electron V8 15.2; 1,658 of 5 M cos angles
+under Node V8 13.6), reaching an integer node value on a near-tie input in Electron (new LiquifyField(2000, 2000, 1).dab(
+"swirlccw", 1198.6129226787184, 1000, 700, 0.8, 0.6, null, null, null, kernel) -> node (1500, 1000) dy = 2424 in Rust vs
+2423 in the twin), so per §4.9 ("swirl modes routed to the twin if any bit differs") kernels.js liquifyDab sends swirlcw and
+swirlccw to liquifyDabNodes before rustPx("liquifyDab"), while push, grow, shrink, and restore run in Rust.
 
 Before = ROUTES {"liquifyDab":"js"} (the K30 dense JS twin liquifyDabNodes, while liquify_block and liquify_preview stay on
 their default Rust routes); after = ROUTES {"liquifyDab":"rust"} (Rust liquify_dab in px.wasm, routed by liquifyDab in
@@ -57,21 +60,25 @@ Ties, overlapping rows, and landing blockedMax:
     0.85 [0.82-0.93] -> 0.50 [0.49-0.58] ms (1.70x, beyond the spread), while dab p95/worst has overlapping spreads
     (2.3 [1.9-2.6] -> 3.1 [1.8-4.1] ms, caused by _writeDense cloning the 9 touched undo cells on move 1 of the stroke).
   - Landing (land, upSync, commit, blockedMax) does not call liquify_dab (it runs liquify_block on the worker pool): land,
-    upSync, and commit spreads overlap on every row. On row 4 (push 1:1 size 1000), both arms hit the single deferred V8
-    Major Mark-Compact GC after the 15k document setup while awaiting the worker pool (heapMB0 288.4 vs 287.4 MB -> heapMB1
-    303.2 vs 302.4 MB; upSync 2.9 [2.3-3.5] vs 3.1 [3.0-3.8] ms, commit 17.8 [16.7-24.3] vs 19.8 [16.5-24.3] ms, total land
-    108.1 [98.8-115.4] vs 111.5 [93.7-112.8] ms overlapping, blockedMax 67.8 [65.8-75.9] vs 94.4 [79.8-97.2] ms).
+    upSync, and commit spreads overlap on every row. On row 4 (push 1:1 size 1000), blockedMax loses beyond its spread
+    (67.8 [65.8-75.9] -> 94.4 [79.8-97.2] ms) while land ties at 108.1 [98.8-115.4] -> 111.5 [93.7-112.8] ms (upSync
+    2.9 [2.3-3.5] -> 3.1 [3.0-3.8] ms, commit 17.8 [16.7-24.3] -> 19.8 [16.5-24.3] ms; inferred from K30's swapped-view
+    measurement and from heapMB0 288.4 vs 287.4 MB -> heapMB1 303.2 vs 302.4 MB to be the single deferred V8 Major
+    Mark-Compact GC after the 15k document setup running while awaiting the worker pool).
 
 Verdict for K31: Rust wins on every non-empty dab p50, tick p50, kernel-lap p50, and post-idle-trim pause row (cutting
 1000 px push dab p50 from 8.1 -> 5.2 ms at fit and 2.1 -> 1.5 ms at 1:1, held shrink tick p50 from 1.9 -> 1.3 ms, pushed
 restore dab p50 from 1.3 -> 0.9 ms with kernel lap 0.85 -> 0.50 ms, and post-2s-idle-trim dab from 3.0 -> 2.3 ms / midDab
-from 2.6 -> 1.7 ms). Together with K30, 1000 px push dab p50 on 15000 x 10000 fell from 13.7 ms -> 5.2 ms at fit (2.63x)
-and 3.4 ms -> 1.5 ms at 1:1 (2.27x), and held shrink tick p50 fell from 2.8 ms -> 1.3 ms (2.15x). Route: liquifyDab defaults
-to "rust" (ROUTE_KINDS liquifyDab = "kernel" with no override in DEFAULT_ROUTES).
+from 2.6 -> 1.7 ms; on push 1:1 size 1000, landing blockedMax is 67.8 [65.8-75.9] -> 94.4 [79.8-97.2] ms beyond the spread
+while land ties at 108.1 [98.8-115.4] -> 111.5 [93.7-112.8] ms, inferred from K30's swapped-view run as the deferred V8
+Major GC while awaiting the worker pool). Together with K30, 1000 px push dab p50 on 15000 x 10000 fell from 13.7 ms -> 5.2 ms
+at fit (2.63x) and 3.4 ms -> 1.5 ms at 1:1 (2.27x), and held shrink tick p50 fell from 2.8 ms -> 1.3 ms (2.15x). Route:
+liquifyDab defaults to "rust" (ROUTE_KINDS liquifyDab = "kernel" with no override in DEFAULT_ROUTES; swirlcw and swirlccw
+routed to liquifyDabNodes in kernels.js).
 
 Gates (gates/, --offline, ports 9617 / 9618): k31-tiles (--tiles on: lint types pixels brush editor) ALL PASS; k31-canvas
 (--tiles off: lint types pixels brush editor) ALL PASS.
 
 Mutation round (mutation/, tools/mutation_round.py on a copy tree; the untouched copy green on the full px_test, the editor
-gate and every focused set, both builds identical to the checkout's): 28 of 28 killed (0 on the re-check), 0 survived; 0 not
+gate and every focused set, both builds identical to the checkout's): 29 of 29 killed (0 on the re-check), 0 survived; 0 not
 as expected; the restored copy rebuilt identical and green on the full px_test.

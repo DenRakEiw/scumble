@@ -402,8 +402,15 @@ export function liquifyPreview(win, field, ox, oy, inv, out, bw, bh) {
     return out;
 }
 
-/** Liquify's dense dab kernel (`inpaint_liquify.js` `liquifyDabNodes`, K30 / K31): Rust once loaded, the same nodes either way. */
+/** Liquify's dense dab kernel (`inpaint_liquify.js` `liquifyDabNodes`, K30 / K31): Rust once loaded on `push`/`grow`/`shrink`/`restore`, the same nodes either way. */
 export function liquifyDab(mode, src, sw, si0, sj0, s, ni, nj, cx, cy, r, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, out, box) {
+    // PLAN_WASM_BUILD.md §4.9 / §1.1 rule 4: on swirlcw and swirlccw, wasm libm cos/sin differ from V8 Math.cos/Math.sin
+    // by 1 ULP on the swirl domain (9,424 / 5 M sin and 783 / 5 M cos in Electron V8 15.2; 1,658 / 5 M cos in Node V8 13.6,
+    // reaching dy = 2424 vs 2423 at node (1500, 1000) on LiquifyField(2000, 2000, 1).dab("swirlccw", 1198.6129226787184, 1000, 700, 0.8, 0.6)),
+    // so swirl modes route to the JS twin liquifyDabNodes while push, grow, shrink and restore run in Rust.
+    if (mode === "swirlcw" || mode === "swirlccw") {
+        return liquifyDabNodes(mode, src, sw, si0, sj0, s, ni, nj, cx, cy, r, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, out, box);
+    }
     const p = rustPx("liquifyDab");
     if (p) {
         try {

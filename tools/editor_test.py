@@ -9317,11 +9317,11 @@ try {
         }
     }
     // K30/K31 (docs/PLAN_WASM_BUILD.md §4.9): InpaintEditor.liquifyDabKernel defaults to K.liquifyDab (routed to Rust
-    // liquify_dab, falling back to dense JS twin liquifyDabNodes on route "js"), and setting it to null (Map-based dab)
-    // gives the exact same field cells and baked bytes (three-way equal)
+    // liquify_dab on push/grow/shrink/restore, routing swirlcw/swirlccw and route "js" to dense JS twin liquifyDabNodes),
+    // and setting it to null (Map-based dab) gives the exact same field cells and baked bytes (three-way equal)
     const dabK0 = IE.liquifyDabKernel;
     const rustDab = IE.kernels !== "js" && (IE.routes || {}).liquifyDab !== "js";
-    const k30 = { defaultIsDense: dabK0 === K.liquifyDab, rustDab, hereDabCalls: h2.pxCalls.dab, twinDabCalls: 0, twinSame: true, mapSame: false };
+    const k30 = { defaultIsDense: dabK0 === K.liquifyDab, rustDab, hereDabCalls: h2.pxCalls.dab, twinDabCalls: 0, twinSame: true, mapSame: false, swirlDabCalls: 0, swirlTieDy: 0 };
     await ed.undoStep();
     try {
         if (rustDab) {
@@ -9332,6 +9332,11 @@ try {
             await ed.undoStep();
             IE.setRoute("liquifyDab", null);
         }
+        IE.pxCalls(true);
+        const fSw = new LQ.LiquifyField(2000, 2000, 1);
+        fSw.dab("swirlccw", 1198.6129226787184, 1000, 700, 0.8, 0.6, null, null, null, K.liquifyDab);
+        k30.swirlDabCalls = IE.pxCalls(true).liquify_dab || 0;
+        k30.swirlTieDy = fSw.node(1500, 1000)[1];
         IE.liquifyDabKernel = null;
         const hMap = await landed("the second push on the Map-based dab", L, pts2, { where: "here" });
         k30.mapSame = !hMap.pxCalls.dab && digest(L) === dHere && fieldKey() === cHere;
@@ -9339,7 +9344,7 @@ try {
         IE.setRoute("liquifyDab", null);
         IE.liquifyDabKernel = dabK0;
     }
-    if (!k30.defaultIsDense || !k30.mapSame || (rustDab && (!(k30.hereDabCalls > 0) || k30.twinDabCalls !== 0 || !k30.twinSame))) {
+    if (!k30.defaultIsDense || !k30.mapSame || k30.swirlDabCalls !== 0 || k30.swirlTieDy !== 2423 || (rustDab && (!(k30.hereDabCalls > 0) || k30.twinDabCalls !== 0 || !k30.twinSame))) {
         throw new Error("K30/K31: Rust liquify_dab, dense liquifyDabNodes and Map-based dab differed: " + JSON.stringify(k30));
     }
     out.here = { keys: h2.keys, mid: mid2, undo: u2, pool, poolStats: h3.stats, split, splitStats: h4.stats, hereStats: h2.stats, k28, k29, k30 };
