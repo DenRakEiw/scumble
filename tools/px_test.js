@@ -985,10 +985,16 @@ async function retouchRouteCases(js) {
             const win = { data: wa.data, w: 16, h: 16, x0: 0, y0: 0, L: 1, px: wa.px, ptr: wa.ptr, bytes: wa.bytes };
             const prev = new Uint8Array(10 * 9 * 4);
             K.liquifyPreview(win, pField, -2.5, 1.25, 1.5, prev, 10, 9);
-            const hadPtr = !!win.ptr;
+            const hadPtr = !!win.ptr, px0 = win.px, ptr0 = win.ptr, bytes0 = win.bytes;
             K.freeLiquifyWindow(win);
             K.freeLiquifyWindow(win);
-            return { tone: K.toneRGBA(I, lut, true), sponge: K.spongeRGBA(I, 0.7, true, true), low, high, sepLow: sep.low, sepHigh: sep.high, liq, liqCount, prev, hadPtr, freed: !win.ptr && !win.px };
+            let reused = true;
+            if (hadPtr) {
+                const probe = px0.alloc(bytes0);
+                px0.free(probe, bytes0);
+                reused = probe === ptr0;
+            }
+            return { tone: K.toneRGBA(I, lut, true), sponge: K.spongeRGBA(I, 0.7, true, true), low, high, sepLow: sep.low, sepHigh: sep.high, liq, liqCount, prev, hadPtr, freed: !win.ptr && !win.px && reused };
         };
         const same = (o) => eqBytes(o.tone, want.tone) && eqBytes(o.sponge, want.sponge) && eqBytes(o.low, want.low) && eqBytes(o.high, want.high) && eqBytes(o.sepLow, want.low) && eqBytes(o.sepHigh, want.high) && eqBytes(o.liq, lWant) && o.liqCount === lWantCount && eqBytes(o.prev, pWant) && o.freed;
         K.pxCalls(true);
@@ -1033,12 +1039,23 @@ async function retouchRouteCases(js) {
             const outDirectTwin = new Uint8Array(10 * 9 * 4);
             L.previewBlock(win, pField, -2.5, 1.25, 1.5, outDirectTwin, 10, 9);
             K.freeLiquifyWindow(win);
-            check("kernels.js K29: liquifyPreview runs on win.px after dropPx, and the twin refreshes a detached win.data on a mid-stroke mode switch",
+            // K29-L2: allocLiquifyWindow and freeLiquifyWindow reuse the same wasm block without growing memory
+            const wFirst = K.allocLiquifyWindow(512, 512);
+            const cycPx = wFirst.px, cycPtr = wFirst.ptr, cycBytes0 = cycPx.byteLength;
+            K.freeLiquifyWindow(wFirst);
+            let cycSame = cycPtr > 0;
+            for (let k = 0; k < 8; k++) {
+                const wk = K.allocLiquifyWindow(512, 512);
+                if (wk.px !== cycPx || wk.ptr !== cycPtr || cycPx.byteLength !== cycBytes0) cycSame = false;
+                K.freeLiquifyWindow(wk);
+            }
+            check("kernels.js K29: liquifyPreview runs on win.px after dropPx, freeLiquifyWindow returns the block to the allocator, and the twin refreshes a detached win.data on a mid-stroke mode switch",
                 p0 !== p1 && cDrop.liquify_preview === 1 && eqBytes(outDropped, pWant)
                 && detached0 && eqBytes(outGrownRust, pWant)
                 && detached && eqBytes(outSwitchRoute, pWant)
-                && detached2 && eqBytes(outDirectTwin, pWant),
-                `cDrop=${JSON.stringify(cDrop)} detached=${detached0},${detached},${detached2}`);
+                && detached2 && eqBytes(outDirectTwin, pWant)
+                && cycSame,
+                `cDrop=${JSON.stringify(cDrop)} detached=${detached0},${detached},${detached2} cycSame=${cycSame}`);
         }
         // the separation with one of its routes on the twin: the other half still Rust, the same bytes
         K.setRoute("freqSplit", "js");

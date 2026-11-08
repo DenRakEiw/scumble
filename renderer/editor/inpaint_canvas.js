@@ -11031,7 +11031,8 @@ class InpaintEditor {
         const x = ix - layer.x - 0.5, y = iy - layer.y - 0.5;
         const p = this.pointer = { kind: "liquify", layer, liq, mode, before: new Map(liq.field.cells), made, last: [ix, iy], at: [x, y], travel: 0,
             pressure, stab: this.newStabiliser(ix, iy, pressure), thaw: this.liquifyThaw(liq), strokeBox: null, dirtyView: null, tick: null, liqWin: null,
-            freeze: mode === "freeze" || mode === "thaw" ? this.liquifyFreezeOf(layer, true) : null };
+            freeze: mode === "freeze" || mode === "thaw" ? this.liquifyFreezeOf(layer, true) : null,
+            freezeBefore: mode === "freeze" || mode === "thaw" ? new Map() : null };
         try {
             if (p.freeze) { this.liquifyFreezeDab(p, x, y); this.drawSoon(); return; }
             if (mode !== "push") {
@@ -11258,6 +11259,14 @@ class InpaintEditor {
         if (p.tick) { clearInterval(p.tick); p.tick = null; }
         this.freeLiquifyWindow(p);
         liq.field = new LiquifyField(liq.field.w, liq.field.h, liq.s, new Map(p.before));
+        if (p.freeze && p.freezeBefore && p.freezeBefore.size) {
+            for (const [k, old] of p.freezeBefore) {
+                if (old) p.freeze.cells.set(k, old);
+                else p.freeze.cells.delete(k);
+            }
+            if (!p.freeze.cells.size && this.liqFreezes) this.liqFreezes.delete(p.layer.id);
+            else this.liquifyVeilDirty(p.freeze, null);
+        }
         if (p.made) {
             this.releaseSnapshot(p.made);
             if (this.layers.includes(p.layer)) {
@@ -11349,10 +11358,12 @@ class InpaintEditor {
                 if (!(w > 0)) continue;
                 const key = ((j >> sh) << 16) | (i >> sh);
                 let c = fr.cells.get(key);
-                if (!c) { if (!freeze) continue; c = new Uint8Array(n * n); fr.cells.set(key, c); }
-                const o = (j & m) * n + (i & m), old = c[o];
+                if (!c && !freeze) continue;
+                const o = (j & m) * n + (i & m), old = c ? c[o] : 0;
                 const v = freeze ? Math.max(old, Math.round(255 * w)) : Math.floor(old * (1 - w));
                 if (v === old) continue;
+                if (p.freezeBefore && !p.freezeBefore.has(key)) p.freezeBefore.set(key, c ? c.slice() : null);
+                if (!c) { c = new Uint8Array(n * n); fr.cells.set(key, c); }
                 c[o] = v; touched.add(key);
                 if (i < bi0) bi0 = i; if (i > bi1) bi1 = i; if (j < bj0) bj0 = j; if (j > bj1) bj1 = j;
             }
@@ -11454,7 +11465,8 @@ class InpaintEditor {
         const x0 = lim(Math.floor(vp.x - layer.x - M), W), x1 = lim(Math.ceil(vp.x + vp.w - layer.x + M), W);
         const y0 = lim(Math.floor(vp.y - layer.y - M), H), y1 = lim(Math.ceil(vp.y + vp.h - layer.y + M), H);
         const lx0 = x0 >> L, ly0 = y0 >> L, w = Math.max(1, ((x1 + f - 1) >> L) - lx0), h = Math.max(1, ((y1 + f - 1) >> L) - ly0);
-        const alloc = allocLiquifyWindow(w, h), data = alloc.data;
+        const alloc = allocLiquifyWindow(w, h);
+        const view = () => (alloc.px ? alloc.px.u8().subarray(alloc.ptr, alloc.ptr + alloc.bytes) : alloc.data);
         try {
             if (isTilePixels(liq.orig)) {
                 const side = 256 >> L;
@@ -11462,6 +11474,7 @@ class InpaintEditor {
                     for (let tx = Math.floor(lx0 / side); tx <= Math.floor((lx0 + w - 1) / side); tx++) {
                         const lb = liq.orig._levelBytes(tx, ty, L);
                         if (!lb || !lb.data) continue;
+                        const data = view();
                         const a0 = Math.max(lx0, tx * side), a1 = Math.min(lx0 + w, tx * side + side);
                         const b0 = Math.max(ly0, ty * side), b1 = Math.min(ly0 + h, ty * side + side);
                         for (let b = b0; b < b1; b++) {
@@ -11473,6 +11486,7 @@ class InpaintEditor {
             } else {
                 // the canvas backend: read once, averaged down to the level (premultiplied)
                 const d = liq.orig.readRect(lx0 * f, ly0 * f, w * f, h * f).data, rw = w * f;
+                const data = view();
                 if (!L) data.set(d);
                 else {
                     for (let b = 0; b < h; b++) {
@@ -11491,6 +11505,7 @@ class InpaintEditor {
             freeLiquifyWindow(alloc);
             throw err;
         }
+        const data = view();
         p.liqWin = { sig, data, w, h, x0: lx0, y0: ly0, L, px: alloc.px, ptr: alloc.ptr, bytes: alloc.bytes };
         return p.liqWin;
     }

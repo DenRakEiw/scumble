@@ -11,3 +11,29 @@ TypeError: Cannot perform Construct on a detached ArrayBuffer
     at retouchRouteCases (C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\tools\px_test.js:1020:15)
     at async group (C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\tools\px_test.js:65:5)
     at async main (C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\tools\px_test.js:4554:5)
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=retouchRoute)
+(node:31988) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TypeError: Cannot perform Construct on a detached ArrayBuffer
+    at new Uint8Array (<anonymous>)
+    at Px._in (file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/px/px.js:260:21)
+    at Px.liquifyPreview (file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/px/px.js:801:31)
+    at Module.liquifyPreview (file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/px/kernels.js:391:19)
+    at retouchRouteCases (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\tools\px_test.js:1026:15)
+    at async group (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\tools\px_test.js:65:5)
+    at async main (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\tools\px_test.js:4571:5)
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=retouchRoute)
+(node:6064) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TypeError: Cannot perform Construct on a detached ArrayBuffer
+    at new Uint8Array (<anonymous>)
+    at Px._in (file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/px/px.js:260:21)
+    at Px.liquifyPreview (file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/px/px.js:801:31)
+    at Module.liquifyPreview (file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/px/kernels.js:391:19)
+    at retouchRouteCases (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\tools\px_test.js:1026:15)
+    at async group (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\tools\px_test.js:65:5)
+    at async main (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\tools\px_test.js:4571:5)

@@ -40,8 +40,10 @@ LIQ = {"px": ["liquify"]}
 ROUTE = {"px": ["retouchRoute"]}
 LIQ_ROUTE = {"px": ["liquify", "retouchRoute"]}
 STEP = "liquify_bakes_each_stroke_from_the_session_source"
+FREEZE_STEP = "liquify_freeze_holds_what_it_covers"
 CALL = {"px": ["retouchRoute"], "editor": [STEP]}
 STEP_TILES = {"editor": [STEP]}
+FREEZE_TILES = {"editor": [FREEZE_STEP]}
 
 MUTANTS = [
     # ---- resample::liquify_preview
@@ -71,9 +73,12 @@ MUTANTS = [
     # ---- kernels.js, inpaint_liquify.js and inpaint_canvas.js
     ("kernels.js: allocLiquifyWindow never uses px.alloc", KJ, [("    const p = rustPx(\"liquifyPreview\");", "    const p = null;")], "killed", CALL),
     ("kernels.js: freeLiquifyWindow does not clear win.ptr", KJ, [("    win.px = null;\n    win.ptr = 0;", "    win.px = null;")], "killed", CALL),
+    ("kernels.js: freeLiquifyWindow drops p.free(ptr, bytes)", KJ, [("    try { p.free(ptr, bytes); }", "    try { }")], "killed", CALL),
     ("kernels.js: liquifyPreview uses rustPx instead of win.px", KJ, [("    const p = win && win.px;", "    const p = rustPx(\"liquifyPreview\");")], "killed", ROUTE),
     ("kernels.js: liquifyPreview ignores route", KJ, [("    if (p && win.ptr && !p.trapped && MODE === \"rust\" && route(\"liquifyPreview\") !== \"js\") {", "    if (p && win.ptr && !p.trapped && MODE === \"rust\") {")], "killed", CALL),
     ("inpaint_liquify.js: previewBlock does not refresh detached win.data", IL, [("    if (win.px && win.ptr && (!win.data || win.data.buffer !== win.px.memory.buffer)) {\n        win.data = new Uint8Array(win.px.memory.buffer, win.ptr, win.w * win.h * 4);\n    }", "    if (false) {}")], "killed", CALL),
+    ("inpaint_canvas.js: liquifyWindow holds initial alloc.data view across _levelBytes", IC, [("        const view = () => (alloc.px ? alloc.px.u8().subarray(alloc.ptr, alloc.ptr + alloc.bytes) : alloc.data);", "        const view = () => alloc.data;")], "killed", STEP_TILES),
     ("inpaint_canvas.js: liquifyCommit does not free liquifyWindow", IC, [("        if (liq.ended) liq.orig.release();\n        this.freeLiquifyWindow(p);", "        if (liq.ended) liq.orig.release();")], "killed", STEP_TILES),
     ("inpaint_canvas.js: liquifyDrop does not free liquifyWindow", IC, [("        if (p.tick) { clearInterval(p.tick); p.tick = null; }\n        this.freeLiquifyWindow(p);", "        if (p.tick) { clearInterval(p.tick); p.tick = null; }")], "killed", STEP_TILES),
+    ("inpaint_canvas.js: liquifyDrop does not restore freezeBefore on Escape", IC, [("        if (p.freeze && p.freezeBefore && p.freezeBefore.size) {", "        if (false && p.freeze && p.freezeBefore && p.freezeBefore.size) {")], "killed", FREEZE_TILES),
 ]

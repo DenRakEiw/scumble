@@ -73,3 +73,231 @@ ALL PASS
 $ bash tools/run_gates.sh mut-orig-ed0-on --offline --tiles on editor  (rc 0, 20 s, SCUMBLE_EDITOR_ONLY=liquify_bakes_each_stroke_from_the_session_source)
 editor rc=0 4s PASS (only: liquify_bakes_each_stroke_from_the_session_source; SCUMBLE_EDITOR_ONLY, not the full gate)
 ALL PASS
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 7 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 185376 bytes, sha256 1d59f47a72adbaae
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 154871 bytes, sha256 ea450c243ce17eb5
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.97s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.22s
+$ node tools/px_test.js  (rc 0, 101 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:41504) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=liquify)
+PASS (only: liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+PASS (only: liquify; PX_ONLY, not the full test)
+(node:32380) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=liquify,retouchRoute)
+PASS (only: retouchRoute, liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+PASS (only: retouchRoute, liquify; PX_ONLY, not the full test)
+(node:32128) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 0 s, PX_ONLY=retouchRoute)
+PASS (only: retouchRoute; PX_ONLY, not the full test)
+ok   kernels.js freqSeparate with one route on the twin: the blur or the split alone in Rust, the same bytes  {"blur_rgba":1,"liquify_preview":1} {"freq_split":1}
+ok   kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's, a plain array of nodes, an unheld window): the twin's bytes
+ok   kernels.js K27 / K28 / K29 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)
+ok   kernels.js freqSeparate releases an instance grown past releaseMB (release +1)  {"serial":9,"bytes":1114112,"pending":false,"holds":0,"release":1,"idle":1,"trap":6,"oom":0,"sync":8,"async":0}
+ok   the K27 / K28 / K29 wrappers' traps warned once per kernel  Inpaint Canvas: the Rust pixel kernel tone_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel sponge_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_split failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_separate failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel liquify_block failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel liquify_preview failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: retouchRoute; PX_ONLY, not the full test)
+(node:41668) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-editor-on --offline --tiles on editor  (rc 1, 149 s)
+editor rc=1 132s FAIL
+SOME FAILED
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 8 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 185376 bytes, sha256 1d59f47a72adbaae
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 154871 bytes, sha256 ea450c243ce17eb5
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.07s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.36s
+$ node tools/px_test.js  (rc 0, 88 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:56376) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=liquify)
+PASS (only: liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+PASS (only: liquify; PX_ONLY, not the full test)
+(node:32576) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=liquify,retouchRoute)
+PASS (only: retouchRoute, liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+PASS (only: retouchRoute, liquify; PX_ONLY, not the full test)
+(node:44352) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 0 s, PX_ONLY=retouchRoute)
+PASS (only: retouchRoute; PX_ONLY, not the full test)
+ok   kernels.js freqSeparate with one route on the twin: the blur or the split alone in Rust, the same bytes  {"blur_rgba":1,"liquify_preview":1} {"freq_split":1}
+ok   kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's, a plain array of nodes, an unheld window): the twin's bytes
+ok   kernels.js K27 / K28 / K29 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)
+ok   kernels.js freqSeparate releases an instance grown past releaseMB (release +1)  {"serial":9,"bytes":1114112,"pending":false,"holds":0,"release":1,"idle":1,"trap":6,"oom":0,"sync":8,"async":0}
+ok   the K27 / K28 / K29 wrappers' traps warned once per kernel  Inpaint Canvas: the Rust pixel kernel tone_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel sponge_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_split failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_separate failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel liquify_block failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel liquify_preview failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: retouchRoute; PX_ONLY, not the full test)
+(node:57060) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-editor-on --offline --tiles on editor  (rc 0, 173 s)
+editor rc=0 156s PASS
+ALL PASS
+$ bash tools/run_gates.sh mut-orig-ed1-on --offline --tiles on editor  (rc 0, 19 s, SCUMBLE_EDITOR_ONLY=liquify_bakes_each_stroke_from_the_session_source)
+editor rc=0 3s PASS (only: liquify_bakes_each_stroke_from_the_session_source; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS
+$ bash tools/run_gates.sh mut-orig-ed1-on --offline --tiles on editor  (rc 0, 17 s, SCUMBLE_EDITOR_ONLY=liquify_freeze_holds_what_it_covers)
+editor rc=0 2s PASS (only: liquify_freeze_holds_what_it_covers; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 8 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 185376 bytes, sha256 1d59f47a72adbaae
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 154871 bytes, sha256 ea450c243ce17eb5
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.56s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.57s
+$ node tools/px_test.js  (rc 0, 82 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:30984) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 0 s, PX_ONLY=liquify)
+PASS (only: liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+PASS (only: liquify; PX_ONLY, not the full test)
+(node:9172) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=liquify,retouchRoute)
+PASS (only: retouchRoute, liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+PASS (only: retouchRoute, liquify; PX_ONLY, not the full test)
+(node:55716) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 0 s, PX_ONLY=retouchRoute)
+PASS (only: retouchRoute; PX_ONLY, not the full test)
+ok   kernels.js freqSeparate with one route on the twin: the blur or the split alone in Rust, the same bytes  {"blur_rgba":1,"liquify_preview":1} {"freq_split":1}
+ok   kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's, a plain array of nodes, an unheld window): the twin's bytes
+ok   kernels.js K27 / K28 / K29 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)
+ok   kernels.js freqSeparate releases an instance grown past releaseMB (release +1)  {"serial":9,"bytes":1114112,"pending":false,"holds":0,"release":1,"idle":1,"trap":6,"oom":0,"sync":8,"async":0}
+ok   the K27 / K28 / K29 wrappers' traps warned once per kernel  Inpaint Canvas: the Rust pixel kernel tone_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel sponge_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_split failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_separate failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel liquify_block failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel liquify_preview failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: retouchRoute; PX_ONLY, not the full test)
+(node:41644) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-editor-on --offline --tiles on editor  (rc 0, 179 s)
+editor rc=0 162s PASS
+ALL PASS
+$ bash tools/run_gates.sh mut-orig-ed1-on --offline --tiles on editor  (rc 0, 20 s, SCUMBLE_EDITOR_ONLY=liquify_bakes_each_stroke_from_the_session_source)
+editor rc=0 4s PASS (only: liquify_bakes_each_stroke_from_the_session_source; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS
+$ bash tools/run_gates.sh mut-orig-ed1-on --offline --tiles on editor  (rc 0, 17 s, SCUMBLE_EDITOR_ONLY=liquify_freeze_holds_what_it_covers)
+editor rc=0 2s PASS (only: liquify_freeze_holds_what_it_covers; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS

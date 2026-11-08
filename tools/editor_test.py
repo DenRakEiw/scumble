@@ -8919,6 +8919,7 @@ return out;
 // stroke whose tiles were written meanwhile; a picture above 4 MP (grid step 2); a close
 // during a held bake lands nothing; no whole-picture read through the presses, moves, draws and releases
 const LQ = await import("./editor/inpaint_liquify.js");
+const K = await import("./editor/px/kernels.js");
 const P = await import("./editor/inpaint_pixels.js");
 const d = await run("new_document");
 const ed = ednow(d.id);
@@ -9207,15 +9208,25 @@ try {
     // refreshes win.data when the route switches mid-stroke after wasm memory grows, and frees win.ptr on pointer up,
     // Escape, tool switch (5b), tab close (12), and an error
     const rustPreview = IE.kernels !== "js" && (IE.routes || {}).liquifyPreview !== "js";
+    const wasFreed = (w, p, px0, ptr0, bytes0) => {
+        if (!w || w.ptr !== 0 || w.px !== null || (p && p.liqWin)) return false;
+        if (!px0 || !ptr0 || !bytes0) return false;
+        const probe = px0.alloc(bytes0);
+        px0.free(probe, bytes0);
+        return probe === ptr0;
+    };
     let k29 = { rustPreview, herePreviews: h2.pxCalls.preview };
     if (rustPreview) {
-        let wUp = null, upPtr0 = 0, twinCalls = -1, rustCallAfter = -1, twinViewFresh = false, scrSame = false;
+        let wUp = null, upPx0 = null, upPtr0 = 0, upBytes0 = 0, twinCalls = -1, rustCallAfter = -1, twinViewFresh = false, scrSame = false;
+        let detachL1Same = false, detachL0Same = false;
         await ed.undoStep();
         try {
             const gPrev = await stroke(pts2, { mid: async (p) => {
                 wUp = p.liqWin;
+                upPx0 = wUp ? wUp.px : null;
                 upPtr0 = wUp && wUp.px ? wUp.ptr : 0;
-                if (wUp && wUp.px) wUp.px.memory.grow(1);
+                upBytes0 = wUp ? wUp.bytes : 0;
+                if (wUp && wUp.px) { const g = wUp.px.alloc(8 * 1024 * 1024); wUp.px.free(g, 8 * 1024 * 1024); }
                 IE.pxCalls(true);
                 IE.setRoute("liquifyPreview", "js");
                 ed._strokeViewSig = null; ed.sceneSig = null; drawNow();
@@ -9228,22 +9239,53 @@ try {
                 const scrRs = fnv(ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data);
                 scrSame = scrTw === scrRs;
             } });
-            k29.up = { hadPtr: upPtr0 > 0, freed: !!(wUp && wUp.ptr === 0 && wUp.px === null && !gPrev.p.liqWin), twinCalls, rustCallAfter, twinViewFresh, scrSame };
+            k29.up = { hadPtr: upPtr0 > 0, freed: wasFreed(wUp, gPrev.p, upPx0, upPtr0, upBytes0), twinCalls, rustCallAfter, twinViewFresh, scrSame };
         } finally {
             IE.setRoute("liquifyPreview", null);
         }
         pid++; send("pointerdown", 515, 560); send("pointermove", 515, 568); drawNow();
-        const pEsc = ed.pointer, wEsc = pEsc && pEsc.liqWin, escPtr0 = wEsc ? wEsc.ptr : 0;
+        const pEsc = ed.pointer, wEsc = pEsc && pEsc.liqWin, escPx0 = wEsc ? wEsc.px : null, escPtr0 = wEsc ? wEsc.ptr : 0, escBytes0 = wEsc ? wEsc.bytes : 0;
+        // K29-fill-detach: after dropPx("idle"), building a window at L >= 1 over unchained tiles or at L = 0 over an
+        // edge tile (W=1200, H=800 are not multiples of 256) grows PX's job arena mid-fill and must not write into a
+        // detached ArrayBuffer
+        {
+            const clearTileCaches = (orig) => {
+                if (!orig || !orig._tiles) return;
+                for (const t of orig._tiles.values()) { t.mips = null; t.mipsVersion = -1; t.edge = null; }
+            };
+            const cmpWindowAfterDrop = (vp, ox, oy, inv) => {
+                IE.setRoute("liquifyPreview", "js");
+                ed.freeLiquifyWindow(pEsc);
+                const wJ = ed.liquifyWindow(pEsc, vp);
+                const want = new Uint8ClampedArray(80 * 60 * 4);
+                K.liquifyPreview(wJ, pEsc.liq.field, ox, oy, inv, want, 80, 60);
+                ed.freeLiquifyWindow(pEsc);
+                IE.setRoute("liquifyPreview", null);
+                clearTileCaches(pEsc.liq.orig);
+                K.dropPx("idle");
+                const wR = ed.liquifyWindow(pEsc, vp);
+                const attachedAfterFill = !!(wR.px && wR.data.buffer === wR.px.memory.buffer && wR.data.byteLength === wR.bytes);
+                const got = new Uint8ClampedArray(80 * 60 * 4);
+                K.liquifyPreview(wR, pEsc.liq.field, ox, oy, inv, got, 80, 60);
+                const ok = attachedAfterFill && fnv(got) === fnv(want);
+                ed.freeLiquifyWindow(pEsc);
+                return ok;
+            };
+            detachL1Same = cmpWindowAfterDrop({ x: 0, y: 0, w: W, h: H, sx: 0.37, sy: 0.37, screen: true }, 480, 540, 1 / 0.37);
+            detachL0Same = cmpWindowAfterDrop({ x: 900, y: 500, w: 300, h: 300, sx: 1, sy: 1, screen: true }, 920, 520, 1);
+            ed._strokeViewSig = null; ed.sceneSig = null; drawNow();
+        }
+        const wEsc2 = pEsc.liqWin, escPx2 = wEsc2 ? wEsc2.px : null, escPtr2 = wEsc2 ? wEsc2.ptr : 0, escBytes2 = wEsc2 ? wEsc2.bytes : 0;
         ed.root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
-        k29.esc = { hadPtr: escPtr0 > 0, freed: !!(wEsc && wEsc.ptr === 0 && wEsc.px === null && ed.pointer === null && !pEsc.liqWin), same: digest(L) === dHere && fieldKey() === cHere };
+        k29.esc = { hadPtr: escPtr0 > 0 && escPtr2 > 0, freed: ed.pointer === null && wasFreed(wEsc2, pEsc, escPx2, escPtr2, escBytes2), same: digest(L) === dHere && fieldKey() === cHere, detachL1Same, detachL0Same };
         pid++; send("pointerdown", 515, 560); send("pointermove", 515, 568); drawNow();
-        const pErr = ed.pointer, wErr = pErr && pErr.liqWin, errPtr0 = wErr ? wErr.ptr : 0, dab0 = pErr.liq.field.dab;
+        const pErr = ed.pointer, wErr = pErr && pErr.liqWin, errPx0 = wErr ? wErr.px : null, errPtr0 = wErr ? wErr.ptr : 0, errBytes0 = wErr ? wErr.bytes : 0, dab0 = pErr.liq.field.dab;
         let errCaught = false;
         pErr.liq.field.dab = () => { throw new Error("k29 boom"); };
         try { ed.onPointerMove(ev("pointermove", 515, 576)); } catch (_) { errCaught = true; } finally { pErr.liq.field.dab = dab0; }
-        k29.err = { hadPtr: errPtr0 > 0, caught: errCaught, freed: !!(wErr && wErr.ptr === 0 && wErr.px === null && ed.pointer === null && !pErr.liqWin), same: digest(L) === dHere && fieldKey() === cHere };
-        if (h2.pxCalls.preview !== pts2.length - 1 || !k29.up.hadPtr || !k29.up.freed || k29.up.twinCalls !== 0 || k29.up.rustCallAfter !== 1 || !k29.up.twinViewFresh || !k29.up.scrSame) {
-            throw new Error("K29: liquify_preview or mid-stroke route switch / pointerup free failed: " + JSON.stringify(k29));
+        k29.err = { hadPtr: errPtr0 > 0, caught: errCaught, freed: ed.pointer === null && wasFreed(wErr, pErr, errPx0, errPtr0, errBytes0), same: digest(L) === dHere && fieldKey() === cHere };
+        if (h2.pxCalls.preview !== pts2.length - 1 || !k29.up.hadPtr || !k29.up.freed || k29.up.twinCalls !== 0 || k29.up.rustCallAfter !== 1 || !k29.up.twinViewFresh || !k29.up.scrSame || !k29.esc.detachL1Same || !k29.esc.detachL0Same) {
+            throw new Error("K29: liquify_preview or mid-stroke route switch / pointerup free / fill detach failed: " + JSON.stringify(k29));
         }
         if (!k29.esc.hadPtr || !k29.esc.freed || !k29.esc.same || !k29.err.hadPtr || !k29.err.caught || !k29.err.freed || !k29.err.same) {
             throw new Error("K29: Escape or error during a liquify drag did not free the window and restore the field: " + JSON.stringify(k29));
@@ -9338,9 +9380,9 @@ try {
             rel5b = liq5b.orig.release;
             liq5b.orig.release = function (...a) { if (!k5b.released) k5b.released = { steps: ed.undo.length - n5b, keyDone: !!k5b.key }; return rel5b.apply(this, a); };
             want5b = bakeRect(0, 0, W, H);
-            const w5b = p.liqWin, ptr5b = w5b ? w5b.ptr : 0;
+            const w5b = p.liqWin, px5b = w5b ? w5b.px : null, ptr5b = w5b ? w5b.ptr : 0, bytes5b = w5b ? w5b.bytes : 0;
             ed.root.dispatchEvent(new KeyboardEvent("keydown", { key: "p", bubbles: true, cancelable: true }));
-            k5b.key = { tool: ed.tool, ended: ed.liq === null, pointer: ed.pointer === p, released: !!k5b.released, winFreed: !p.liqWin && (!rustPreview || (ptr5b > 0 && w5b.ptr === 0 && w5b.px === null)) };
+            k5b.key = { tool: ed.tool, ended: ed.liq === null, pointer: ed.pointer === p, released: !!k5b.released, winFreed: !p.liqWin && (!rustPreview || wasFreed(w5b, p, px5b, ptr5b, bytes5b)) };
         } });
         const got5b = L.px.readRect(0, 0, W, H).data;
         let off5b = 0;
@@ -9466,10 +9508,10 @@ try {
     const n12 = ed.undo.length, d12 = digest(L2);
     const g12 = await stroke(line([1000, 1100], [952, 1100], 6), { hold: true });
     const pend = ed.liquifyPending;
-    const w12 = g12.p.liqWin, ptr12 = w12 ? w12.ptr : 0;
+    const w12 = g12.p.liqWin, px12 = w12 ? w12.px : null, ptr12 = w12 ? w12.ptr : 0, bytes12 = w12 ? w12.bytes : 0;
     const o12 = { held: g12.held, pending: !!pend };
     ed.close();
-    Object.assign(o12, { pointer: ed.pointer === null, same: digest(L2) === d12, steps: ed.undo.length - n12, session: ed.liq === null, winFreed: !g12.p.liqWin && (!rustPreview || (ptr12 > 0 && w12.ptr === 0 && w12.px === null)) });
+    Object.assign(o12, { pointer: ed.pointer === null, same: digest(L2) === d12, steps: ed.undo.length - n12, session: ed.liq === null, winFreed: !g12.p.liqWin && (!rustPreview || wasFreed(w12, g12.p, px12, ptr12, bytes12)) });
     if (pend) await pend;
     await wait(50);
     Object.assign(o12, { sameAfter: digest(L2) === d12, stepsAfter: ed.undo.length - n12 });
@@ -9790,11 +9832,21 @@ try {
     if (out.restoreAll.steps !== 1 || out.restoreAll.label !== "Liquify: restore all" || !out.restoreAll.kept || !out.restoreAll.moved || !out.restoreAll.back)
         throw new Error("Restore all under a freeze: " + JSON.stringify(out.restoreAll));
 
-    // 5. the freeze survives a tool switch (and a new session)
+    // 5. the freeze survives a tool switch (and a new session), and Escape during a freeze or thaw drag restores the freeze
+    pid++; send("pointerdown", 300, 150); send("pointermove", 360, 150);
+    const midFreeze = nodeAt(fr, 300, 150);
+    ed.root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    send("pointerup", 360, 150);
+    const afterFreezeEsc = nodeAt(fr, 300, 150);
+    pid++; send("pointerdown", 300, 400, { altKey: true }); send("pointermove", 360, 400, { altKey: true });
+    const midThaw = nodeAt(fr, 300, 400);
+    ed.root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    send("pointerup", 360, 400);
+    const afterThawEsc = nodeAt(fr, 300, 400);
     const cells = fr.cells.size;
     ed.setTool("lasso"); ed.setTool("liquify");
-    out.toolSwitch = { same: ed.liquifyFreezeOf(L) === fr, cells: fr.cells.size === cells };
-    if (!out.toolSwitch.same || !out.toolSwitch.cells) throw new Error("a tool switch lost the freeze: " + JSON.stringify(out.toolSwitch));
+    out.toolSwitch = { same: ed.liquifyFreezeOf(L) === fr, cells: fr.cells.size === cells, escFreeze: [midFreeze, afterFreezeEsc], escThaw: [midThaw, afterThawEsc] };
+    if (!out.toolSwitch.same || !out.toolSwitch.cells || midFreeze !== 255 || afterFreezeEsc !== 0 || midThaw !== 0 || afterThawEsc !== 255) throw new Error("a tool switch or Escape lost/kept the freeze: " + JSON.stringify(out.toolSwitch));
 
     // 6. the veil: drawn with the tool and Show freeze, not without; one canvas at a node a pixel, red at half the freeze
     fr.drawn = 0; ed.draw();

@@ -1,0 +1,6 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__liquifyDrop_does_not_restore_fr-ed --offline --tiles on editor  (rc 1, 17 s, SCUMBLE_EDITOR_ONLY=liquify_freeze_holds_what_it_covers)
+editor rc=1 2s FAIL (only: liquify_freeze_holds_what_it_covers; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__liquifyDrop_does_not_restore_fr-ed --offline --tiles on editor  (rc 1, 17 s, SCUMBLE_EDITOR_ONLY=liquify_freeze_holds_what_it_covers)
+editor rc=1 1s FAIL (only: liquify_freeze_holds_what_it_covers; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

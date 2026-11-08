@@ -23,3 +23,53 @@ FAIL (2) (only: liquify; PX_ONLY, not the full test)
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 185373 bytes, sha256 3d9eaf0278d45c5a
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 154868 bytes, sha256 597644537762115b
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.34s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.64s
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=liquify)
+FAIL rust simd liquify_preview (rust simd) equals its twin byte for byte (80 cases, each also at an odd offset)  s=1 opaque L=0 inv=1 ox=-4 oy=-3 alloc=true: out[436] is 243, the twin has 13
+FAIL rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)  s=1 opaque L=0 inv=1 ox=-4 oy=-3 alloc=true: out[436] is 243, the twin has 13
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+FAIL rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)  s=1 opaque L=0 inv=1 ox=-4 oy=-3 alloc=true: out[436] is 243, the twin has 13
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+(node:51664) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 185373 bytes, sha256 3d9eaf0278d45c5a
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 154868 bytes, sha256 597644537762115b
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.98s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.46s
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=liquify)
+FAIL rust simd liquify_preview (rust simd) equals its twin byte for byte (80 cases, each also at an odd offset)  s=1 opaque L=0 inv=1 ox=-4 oy=-3 alloc=true: out[436] is 243, the twin has 13
+FAIL rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)  s=1 opaque L=0 inv=1 ox=-4 oy=-3 alloc=true: out[436] is 243, the twin has 13
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+FAIL rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)  s=1 opaque L=0 inv=1 ox=-4 oy=-3 alloc=true: out[436] is 243, the twin has 13
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+(node:46300) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
