@@ -154,10 +154,12 @@ code.
   `providers/PRV-1` (fal, Replicate, WaveSpeed give up a paid job on one failed status read or download), `documents/D1`
   (uploads matched on ComfyUI by file name only: content-addressed names would change file naming), and
   `filters/filter-layer-over-its-own-input` (on half-transparent pictures the screen and the canvas export composite a
-  filter over its own input: changes pixels, say the effect first); every should open. **Not started:** K27 (the
-  weekly limit was 87 % at 17:00, the loop stopped at a committed state). **Questions for the user, collected:** the
-  ComfyUI window now denies camera and microphone, so ComfyUI's Webcam Capture and Record Audio nodes need a browser
-  (keep, or grant media to a local ComfyUI only?); item 58: should the panels' one-shot picks average too, should MCP
+  filter over its own input: changes pixels, say the effect first); every should open. **K27 started 2026-11-08** by
+  an agent (the user: "mach dann mit K27 weiter"; the weekly limit 88 %, reset 10:00). **The user's answers
+  (2026-11-08):** camera and microphone in the ComfyUI window **ask instead of deny** (Scumble's own dialog, once per
+  session, only for the main frame of the ComfyUI target the user set; the rest of H1's list stays denied; built by an
+  agent beside K27), and U1's §6 answers **stay** (5 minutes idle, LaMa separate, two deaths fall back to main) with
+  **a status line when the fallback happens** (the same agent). **Questions for the user, still open:** item 58: should the panels' one-shot picks average too, should MCP
   set the Size; item 57: a grain preset's name after its size scaled, a status word when a value hits min / max; item
   59: reference / control layers as snap targets (included), a shorter guide line; item 69: clean the local store after
   a run, a wait step for ComfyUI's connect, a user's window appearing during a run; H1: ids made safe vs settings stored
