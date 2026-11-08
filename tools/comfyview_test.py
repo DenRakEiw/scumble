@@ -105,7 +105,7 @@ FRAME_JS = """(() => { window.__frame = null; if (!window.__frameListen) { windo
 BAR_DIALOG_JS = """(() => { const d = document.querySelector('dialog.sc-dialog[open]'); if (!d) return null; const r = d.querySelector('div').shadowRoot;
     const t = (s) => (r.querySelector(s) || {}).textContent || '';
     return { title: t('.title'), message: t('.message'), detail: t('.detail'), buttons: Array.from(r.querySelectorAll('button')).map((b) => b.textContent),
-      focused: (r.activeElement || {}).textContent || '', h: innerHeight }; })()"""
+      focused: (r.activeElement || {}).textContent || '', h: innerHeight, vis: document.visibilityState }; })()"""
 BAR_PRESS_JS = """(() => { const d = document.querySelector('dialog.sc-dialog[open]'); if (!d) return false;
     const b = Array.from(d.querySelector('div').shadowRoot.querySelectorAll('button')).find((x) => x.textContent === %s); if (!b) return false; b.click(); return true; })()"""
 
@@ -367,6 +367,14 @@ class Gate:
                             return got
                         if not q:
                             raise Exception(f"{name}: no question in the bar")
+                        # the bar's new size reaches its page with the next rendering update; Chromium sends none to a
+                        # hidden page, and an occluded window (a gate behind other windows) is hidden: there the size
+                        # lands when the window is seen, so only main's bounds are judged then
+                        t0 = asyncio.get_event_loop().time()
+                        while q and q["h"] < 200 and q.get("vis") == "visible" and asyncio.get_event_loop().time() - t0 < 3:
+                            await asyncio.sleep(0.1)
+                            q = await bc.eval(BAR_DIALOG_JS) or q
+                        q["hWaitMs"] = round((asyncio.get_event_loop().time() - t0) * 1000)
                         during = await self.js("return await window.scumble.comfyView.info()")
                         if shot:
                             await bc.screenshot(os.path.join(self.out, shot))
@@ -377,7 +385,7 @@ class Gate:
                         out[name] = {"asked": True, "question": q, "got": got, "barDuring": during["bar"]["height"], "barAfter": after["bar"]["height"], "askingAfter": after["asking"]}
                         if q["buttons"] != ["Allow", "Deny"] or q["focused"] != "Deny" or host not in q["message"] or "for this session" not in q["message"]:
                             raise Exception(f"{name}: the question: " + json.dumps(q))
-                        if during["asking"] != 1 or during["bar"]["height"] < 200 or q["h"] < 200:
+                        if during["asking"] != 1 or during["bar"]["height"] < 200 or (q["h"] < 200 and q.get("vis") == "visible"):
                             raise Exception(f"{name}: the bar does not cover the window while it asks: " + json.dumps({"bar": during["bar"], "inner": q["h"]}))
                         if after["asking"] or after["bar"]["height"] > 40:
                             raise Exception(f"{name}: the bar did not go back to its strip: " + json.dumps(after["bar"]))

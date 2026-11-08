@@ -61,6 +61,21 @@
     bar.onState(show);
     bar.state().then(show, () => {});
     // main's questions (comfyview.js askInBar: the page's camera / microphone) in the app's own dialog; main lays the
-    // bar over the whole window first, so the dialog has room
-    import("./dialogs.js").then((d) => d.listen(bar.dialog), (err) => console.warn("comfybar: no dialogs", err));
+    // bar over the whole window first, and a question waits for that size to reach this page (at most 500 ms, well
+    // inside main's 1 s), so it never opens in the 36 px strip
+    const roomy = () => new Promise((resolve) => {
+        if (innerHeight > 60) { resolve(); return; }
+        let timer = null;
+        const done = () => { removeEventListener("resize", check); clearTimeout(timer); resolve(); };
+        const check = () => { if (innerHeight > 60) done(); };
+        addEventListener("resize", check);
+        timer = setTimeout(done, 500);
+    });
+    const asks = bar.dialog && {
+        onAsk: (cb) => bar.dialog.onAsk((m) => { roomy().then(() => cb(m)); }),
+        onDismiss: (cb) => bar.dialog.onDismiss(cb),
+        shown: (id) => bar.dialog.shown(id),
+        answer: (id, index) => bar.dialog.answer(id, index),
+    };
+    import("./dialogs.js").then((d) => d.listen(asks), (err) => console.warn("comfybar: no dialogs", err));
 })();
