@@ -1879,6 +1879,30 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K21 (2026-11-08): the limit's map tile stats in Rust, a tile class per tile (the Antigravity M chain)
+
+By a Gemini agent in Antigravity (`.claude/coord/chain-m/`) on `29f6749` (`308ca8a`, two review rounds' findings fixed in
+`8d131f9` and `392bada`), merged `376f254` with the ABI renumbered 23 -> 28 and both builds rebuilt;
+`docs/measurements/k21_2026-11-08/`. `crates/px/src/range.rs` `map_tile_stats` (min, max and the edge flag per document
+tile, SIMD and scalar; the wrapper copies only the map rows of one tile row), twin in `kernels_js.js`, route
+`mapTileStats`; `inpaint_weights.js` `rangeTileClass` (0 empty, 1 full, 2 compute) and `rangeRowBookkeeping`;
+`edgeTiles` delegates to it; `selectRange` books full tiles without a job, skips rows with no compute tile and cuts the
+picture read to the compute tiles inside the old span; `rangeSelectJob` works only the compute tiles.
+The first review found two changes of selected pixels (both reproduced on the branch's modules): the edge flag's window
+clamped on both sides, so a tile beyond the map after an Extend or a Straighten read the border and was flagged (now
+the flag needs the unclamped window to meet the map, so the old flags come back exactly), and a span bounded by flagged
+compute tiles, which put a compute tile of the old span on the bilinear path where snapField's k need not be 0 (range
+exactly 1311 against thresh 1310.7; now the span's ends come from the old flags over all tiles). `edges_test.js` holds a frozen copy of
+the base's one-sided `edgeTiles`. The second review confirmed both fixes and found the picture read's leftovers: the
+scratch canvas is reused without a clear (the base too), so under alpha < 255 the row above shows through and the cut
+box changes when it gets cleared. **The user's word (2026-11-08): clear it**, `clearRect` before the draw on both paths:
+bytes change against the base on see-through composites only (edge snap, feathered limit), opaque ones stay byte for
+byte (tested). A measurement showed the smaller box does not change `sampleRegionSettled`'s bytes under a half-transparent layer
+(`sample_region_box_size.json`, 256 x 256 against 1024 wide, both backends: 0 differing). The js replay in the test ran on the
+cached Rust stats (fixed: fresh map data, 0 `map_tile_stats` calls asserted). Mutation 20 of 21 killed, 1 equivalent.
+At 15k (three alternating rounds; measured before the review's span fix, so the snap row's span may be a little
+larger now): select by depth 602 -> 268 ms, its pool work 4,309 -> 1,719 ms; with edge snap 2,333 -> 1,302 ms.
+
 ### K29 (2026-11-08): liquify's preview in Rust, its window in wasm memory (the Antigravity B chain)
 
 By the same chain as K28 on `21b53a3` (`f38f26e`, the review's findings fixed in `32c4f12`), merged with the ABI
