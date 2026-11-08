@@ -1879,6 +1879,15 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K9 (2026-11-08): the wand's alpha tiles and the grow / shrink cut by cell (the Antigravity F chain)
+
+By a Gemini agent in Antigravity (`.claude/coord/chain-f/`) on `0117ba14` (`07963ae8`), merged `5c95eb98`, ABI 31 (the next free
+number); `docs/measurements/k9_2026-11-08/`. `crates/px/src/jobs.rs` `flood_shape` with `out_kind` (1 alpha byte or 4 RGBA) and `cells`,
+`grow_mask` recording per 256^2 cell empty / changed / unchanged and clearing only the margins; `inpaint_worker.js` `floodOverTiles` cuts only occupied
+cells into 64 KB alpha tiles for `selCombine` (kind 1), `selectionOverTiles` skips unchanged cells. The review's byte lens found no
+difference. Two small points went with K36: the JS route fills `cells` it then discards (about +45 ms on its write lap, the fallback only), and px_test no
+longer reaches the no-cells branch. At 15k: the wand over the whole picture 999 -> 828 ms, grow 612 -> 511 (its cut 98 -> 9.5), shrink 16 px 479 -> 347.
+
 ### K30 (2026-11-08): liquify's dab on dense arrays (the Antigravity B chain), Stop 6's numbers
 
 By the same chain on `1979e8d` (`647f758`, the review's findings fixed in `59636b1`), merged `e2aa0ec`, no Rust and no ABI
