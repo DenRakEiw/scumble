@@ -1186,7 +1186,12 @@ against a connected instance). `quit` and `quit:<W>x<H>` start and close their o
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and
 forwards every upload of every gate to its input folder; use `--offline` for everything but `smoke`. Run a change on both backends (`--tiles on` and `--tiles off`); a release also runs against
-`dist/win-unpacked/Scumble.exe` with `--exe`, each run on its own profile.
+`dist/win-unpacked/Scumble.exe` with `--exe`, each run on its own profile. **Both backends side by side:**
+`bash tools/run_gates_both.sh <label> [--ports T,C,...] [--lock PATH] [--shards N] --offline <gates>`; `--shards 2` with
+four ports runs the `editor` gate as consecutive groups on separate instances (203 -> 130 s for both backends, every step
+exactly once, `tools/editor_shards.py`; since 2026-11-08): for iterating only, **the full sequential run before a merge
+or a release** (a sharded run misses cumulative effects: memory growth, Chromium's acceleration latch, late caps;
+`docs/TESTING.md` "The editor gate in shards").
 
 Known flakes: `docs/TESTING.md` "Known flakes". **Re-run a failing gate before believing it** when its step is listed
 there; add a new flake there, with the date and what was ruled out.
