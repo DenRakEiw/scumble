@@ -1,0 +1,581 @@
+{
+ "built": 5219,
+ "s": 4,
+ "tiles": true,
+ "kernels": "rust",
+ "kernelsInUse": "rust",
+ "routes": {
+  "liquifyDab": "js"
+ },
+ "dabKernel": "dense",
+ "undoMB": 149.2,
+ "rows": [
+  {
+   "row": "push fit size 200",
+   "travel": 3130,
+   "press": 63.7,
+   "window": 10.6,
+   "dab": {
+    "p50": 1.4,
+    "p95": 6.5,
+    "worst": 6.5
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0.07,
+     "p95": 0.23,
+     "worst": 0.23
+    },
+    "kernel": {
+     "p50": 1.15,
+     "p95": 2.67,
+     "worst": 2.67
+    },
+    "write": {
+     "p50": 0.07,
+     "p95": 2.44,
+     "worst": 2.44
+    }
+   },
+   "frame": {
+    "p50": 0.3,
+    "p95": 12,
+    "worst": 12
+   },
+   "preview": {
+    "p50": 0.1,
+    "p95": 11.2,
+    "worst": 11.2
+   },
+   "land": 34.6,
+   "blockedMax": 12.9,
+   "landSplit": {
+    "upSync": 8.5,
+    "commit": 9.1,
+    "heapMB0": 238.7,
+    "heapMB1": 238.7
+   },
+   "tiles": 48,
+   "where": "pool",
+   "stats": {
+    "blocks": 28,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 5,
+    "local": 0
+   },
+   "fieldMB": 0.9,
+   "stepMB": 0,
+   "pxCalls": {
+    "liquify_preview": 21,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "rust",
+     "tiles": 28,
+     "total": 66.1,
+     "pxCalls": {
+      "liquify_block": 28
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push fit size 1000",
+   "travel": 3130,
+   "press": 1.3,
+   "window": 9.1,
+   "dab": {
+    "p50": 7.2,
+    "p95": 8.5,
+    "worst": 8.5
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0.19,
+     "p95": 0.37,
+     "worst": 0.37
+    },
+    "kernel": {
+     "p50": 6.68,
+     "p95": 7.65,
+     "worst": 7.65
+    },
+    "write": {
+     "p50": 0.27,
+     "p95": 0.83,
+     "worst": 0.83
+    }
+   },
+   "frame": {
+    "p50": 1.1,
+    "p95": 10.3,
+    "worst": 10.3
+   },
+   "preview": {
+    "p50": 0.9,
+    "p95": 10,
+    "worst": 10
+   },
+   "land": 50.6,
+   "blockedMax": 11.5,
+   "landSplit": {
+    "upSync": 4.6,
+    "commit": 9.4,
+    "heapMB0": 259.2,
+    "heapMB1": 287.2
+   },
+   "tiles": 113,
+   "where": "pool",
+   "stats": {
+    "blocks": 86,
+    "splits": 0,
+    "maxBlock": 396489,
+    "pool": 9,
+    "local": 0
+   },
+   "fieldMB": 3.6,
+   "stepMB": 28.3,
+   "pxCalls": {
+    "liquify_preview": 20,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 9,
+     "kernels": "rust",
+     "tiles": 86,
+     "total": 181.9,
+     "pxCalls": {
+      "liquify_block": 86
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 200",
+   "travel": 1080,
+   "press": 34.6,
+   "window": 16.7,
+   "dab": {
+    "p50": 0.2,
+    "p95": 0.3,
+    "worst": 2.5
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0.01,
+     "p95": 0.03,
+     "worst": 2.28
+    },
+    "kernel": {
+     "p50": 0.14,
+     "p95": 0.16,
+     "worst": 0.17
+    },
+    "write": {
+     "p50": 0.01,
+     "p95": 0.03,
+     "worst": 0.11
+    }
+   },
+   "frame": {
+    "p50": 1.7,
+    "p95": 2,
+    "worst": 18.7
+   },
+   "preview": {
+    "p50": 1.6,
+    "p95": 1.8,
+    "worst": 18.3
+   },
+   "land": 15.7,
+   "blockedMax": 8.8,
+   "landSplit": {
+    "upSync": 1.4,
+    "commit": 5.7,
+    "heapMB0": 272.8,
+    "heapMB1": 272.8
+   },
+   "tiles": 23,
+   "where": "pool",
+   "stats": {
+    "blocks": 13,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 3,
+    "local": 0
+   },
+   "fieldMB": 4,
+   "stepMB": 5.8,
+   "pxCalls": {
+    "liquify_preview": 57,
+    "mip_chain": 13
+   },
+   "jobs": {
+    "liquify": {
+     "n": 3,
+     "kernels": "rust",
+     "tiles": 13,
+     "total": 16.8,
+     "pxCalls": {
+      "liquify_block": 13
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 1000",
+   "travel": 1080,
+   "press": 28.7,
+   "window": 39.7,
+   "dab": {
+    "p50": 2,
+    "p95": 2.6,
+    "worst": 3
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0.1,
+     "p95": 0.17,
+     "worst": 0.25
+    },
+    "kernel": {
+     "p50": 1.67,
+     "p95": 2.09,
+     "worst": 2.26
+    },
+    "write": {
+     "p50": 0.09,
+     "p95": 0.34,
+     "worst": 0.51
+    }
+   },
+   "frame": {
+    "p50": 9.9,
+    "p95": 12.4,
+    "worst": 49.3
+   },
+   "preview": {
+    "p50": 9.6,
+    "p95": 12,
+    "worst": 48.9
+   },
+   "land": 98.8,
+   "blockedMax": 65.8,
+   "landSplit": {
+    "upSync": 3.5,
+    "commit": 16.7,
+    "heapMB0": 288.4,
+    "heapMB1": 303.3
+   },
+   "tiles": 61,
+   "where": "pool",
+   "stats": {
+    "blocks": 45,
+    "splits": 0,
+    "maxBlock": 321264,
+    "pool": 6,
+    "local": 0
+   },
+   "fieldMB": 5.4,
+   "stepMB": 15.3,
+   "pxCalls": {
+    "liquify_preview": 60,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 6,
+     "kernels": "rust",
+     "tiles": 45,
+     "total": 86.6,
+     "pxCalls": {
+      "liquify_block": 45
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 13,
+     "kernel": 1.2,
+     "pxCalls": {
+      "mip_chain": 13
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "shrink held 150 ticks size 1000",
+   "tick": {
+    "p50": 1.8,
+    "p95": 2.3,
+    "worst": 2.9
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0.04,
+     "p95": 0.09,
+     "worst": 0.37
+    },
+    "kernel": {
+     "p50": 1.73,
+     "p95": 2.02,
+     "worst": 2.38
+    },
+    "write": {
+     "p50": 0.05,
+     "p95": 0.12,
+     "worst": 0.27
+    }
+   },
+   "land": 28.9,
+   "blockedMax": 22.2,
+   "landSplit": {
+    "upSync": 3.1,
+    "commit": 8.9,
+    "heapMB0": 246.9,
+    "heapMB1": 246.9
+   },
+   "tiles": 33,
+   "where": "pool",
+   "stats": {
+    "blocks": 25,
+    "splits": 1,
+    "maxBlock": 908208,
+    "pool": 5,
+    "local": 0
+   },
+   "maxReachPx": 691.6,
+   "fieldMB": 6.1,
+   "pxCalls": {
+    "liquify_preview": 3,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "rust",
+     "tiles": 22,
+     "total": 44.1,
+     "pxCalls": {
+      "liquify_block": 25
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 42,
+     "kernel": 3.5,
+     "pxCalls": {
+      "mip_chain": 42
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "restore 1:1 size 1000 pushed",
+   "travel": 1000,
+   "press": 49.1,
+   "window": 25,
+   "dab": {
+    "p50": 1.4,
+    "p95": 2.3,
+    "worst": 2.3
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0.11,
+     "p95": 0.55,
+     "worst": 0.55
+    },
+    "kernel": {
+     "p50": 0.93,
+     "p95": 1.49,
+     "worst": 1.49
+    },
+    "write": {
+     "p50": 0.19,
+     "p95": 0.38,
+     "worst": 0.38
+    }
+   },
+   "frame": {
+    "p50": 9.8,
+    "p95": 10.8,
+    "worst": 10.8
+   },
+   "preview": {
+    "p50": 9.5,
+    "p95": 10.5,
+    "worst": 10.5
+   },
+   "land": 35.7,
+   "blockedMax": 16.1,
+   "landSplit": {
+    "upSync": 5.1,
+    "commit": 13.3,
+    "heapMB0": 301.5,
+    "heapMB1": 301.5
+   },
+   "tiles": 59,
+   "where": "pool",
+   "stats": {
+    "blocks": 44,
+    "splits": 0,
+    "maxBlock": 162526,
+    "pool": 6,
+    "local": 0
+   },
+   "fieldMB": 6.1,
+   "pxCalls": {
+    "liquify_preview": 21,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 6,
+     "kernels": "rust",
+     "tiles": 44,
+     "total": 74.5,
+     "pxCalls": {
+      "liquify_block": 44
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "restore all",
+   "ms": 7.8,
+   "blockedMax": 7.8,
+   "tiles": 278,
+   "where": "pool",
+   "fieldMB": 0,
+   "pxCalls": {},
+   "jobs": {}
+  },
+  {
+   "row": "restore 1:1 size 1000 empty",
+   "travel": 1000,
+   "press": 11.6,
+   "window": 0,
+   "dab": {
+    "p50": 0,
+    "p95": 0.1,
+    "worst": 0.1
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "kernel": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "write": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    }
+   },
+   "frame": {
+    "p50": 0,
+    "p95": 0,
+    "worst": 0
+   },
+   "preview": {
+    "p50": 0,
+    "p95": 0,
+    "worst": 0
+   },
+   "land": 1.1,
+   "blockedMax": 1.1,
+   "landSplit": {
+    "upSync": 1.1,
+    "commit": 0,
+    "heapMB0": 291.6,
+    "heapMB1": 291.6
+   },
+   "tiles": 278,
+   "where": "pool",
+   "stats": {
+    "blocks": 0,
+    "splits": 0,
+    "maxBlock": 0,
+    "pool": 0,
+    "local": 0
+   },
+   "fieldMB": 0,
+   "pxCalls": {},
+   "jobs": {}
+  },
+  {
+   "row": "pause 2s 1:1 size 1000",
+   "pxMB0": 148.8,
+   "pxMBTrimmed": 1.1,
+   "idleTrimmed": 1,
+   "pxMBGrown": 54.6,
+   "press": 11.3,
+   "window": 24.8,
+   "dab": 3,
+   "dabLaps": {
+    "nodes": 0.09,
+    "kernel": 2.02,
+    "write": 0.8
+   },
+   "frame": 34.9,
+   "preview": 34.6,
+   "midIdleTrimmed": 1,
+   "midWindow": 0,
+   "midDab": 3.2,
+   "midDabLaps": {
+    "nodes": 0.12,
+    "kernel": 2.72,
+    "write": 0.15
+   },
+   "midFrame": 9.2,
+   "midPreview": 8.8,
+   "land": 21.9,
+   "pxCalls": {
+    "liquify_preview": 2,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "rust",
+     "tiles": 22,
+     "total": 30.5,
+     "pxCalls": {
+      "liquify_block": 22
+     },
+     "gen": 0
+    }
+   }
+  }
+ ],
+ "table": [
+  "{\"row\":\"push fit size 200\",\"travel\":3130,\"press\":63.7,\"window\":10.6,\"dab\":{\"p50\":1.4,\"p95\":6.5,\"worst\":6.5},\"dabLaps\":{\"nodes\":{\"p50\":0.07,\"p95\":0.23,\"worst\":0.23},\"kernel\":{\"p50\":1.15,\"p95\":2.67,\"worst\":2.67},\"write\":{\"p50\":0.07,\"p95\":2.44,\"worst\":2.44}},\"frame\":{\"p50\":0.3,\"p95\":12,\"worst\":12},\"preview\":{\"p50\":0.1,\"p95\":11.2,\"worst\":11.2},\"land\":34.6,\"blockedMax\":12.9,\"landSplit\":{\"upSync\":8.5,\"commit\":9.1,\"heapMB0\":238.7,\"heapMB1\":238.7},\"tiles\":48,\"where\":\"pool\",\"stats\":{\"blocks\":28,\"splits\":0,\"maxBlock\":119497,\"pool\":5,\"local\":0},\"fieldMB\":0.9,\"stepMB\":0,\"pxCalls\":{\"liquify_preview\":21,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":28,\"total\":66.1,\"pxCalls\":{\"liquify_block\":28},\"gen\":0}}}",
+  "{\"row\":\"push fit size 1000\",\"travel\":3130,\"press\":1.3,\"window\":9.1,\"dab\":{\"p50\":7.2,\"p95\":8.5,\"worst\":8.5},\"dabLaps\":{\"nodes\":{\"p50\":0.19,\"p95\":0.37,\"worst\":0.37},\"kernel\":{\"p50\":6.68,\"p95\":7.65,\"worst\":7.65},\"write\":{\"p50\":0.27,\"p95\":0.83,\"worst\":0.83}},\"frame\":{\"p50\":1.1,\"p95\":10.3,\"worst\":10.3},\"preview\":{\"p50\":0.9,\"p95\":10,\"worst\":10},\"land\":50.6,\"blockedMax\":11.5,\"landSplit\":{\"upSync\":4.6,\"commit\":9.4,\"heapMB0\":259.2,\"heapMB1\":287.2},\"tiles\":113,\"where\":\"pool\",\"stats\":{\"blocks\":86,\"splits\":0,\"maxBlock\":396489,\"pool\":9,\"local\":0},\"fieldMB\":3.6,\"stepMB\":28.3,\"pxCalls\":{\"liquify_preview\":20,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":9,\"kernels\":\"rust\",\"tiles\":86,\"total\":181.9,\"pxCalls\":{\"liquify_block\":86},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 200\",\"travel\":1080,\"press\":34.6,\"window\":16.7,\"dab\":{\"p50\":0.2,\"p95\":0.3,\"worst\":2.5},\"dabLaps\":{\"nodes\":{\"p50\":0.01,\"p95\":0.03,\"worst\":2.28},\"kernel\":{\"p50\":0.14,\"p95\":0.16,\"worst\":0.17},\"write\":{\"p50\":0.01,\"p95\":0.03,\"worst\":0.11}},\"frame\":{\"p50\":1.7,\"p95\":2,\"worst\":18.7},\"preview\":{\"p50\":1.6,\"p95\":1.8,\"worst\":18.3},\"land\":15.7,\"blockedMax\":8.8,\"landSplit\":{\"upSync\":1.4,\"commit\":5.7,\"heapMB0\":272.8,\"heapMB1\":272.8},\"tiles\":23,\"where\":\"pool\",\"stats\":{\"blocks\":13,\"splits\":0,\"maxBlock\":119497,\"pool\":3,\"local\":0},\"fieldMB\":4,\"stepMB\":5.8,\"pxCalls\":{\"liquify_preview\":57,\"mip_chain\":13},\"jobs\":{\"liquify\":{\"n\":3,\"kernels\":\"rust\",\"tiles\":13,\"total\":16.8,\"pxCalls\":{\"liquify_block\":13},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 1000\",\"travel\":1080,\"press\":28.7,\"window\":39.7,\"dab\":{\"p50\":2,\"p95\":2.6,\"worst\":3},\"dabLaps\":{\"nodes\":{\"p50\":0.1,\"p95\":0.17,\"worst\":0.25},\"kernel\":{\"p50\":1.67,\"p95\":2.09,\"worst\":2.26},\"write\":{\"p50\":0.09,\"p95\":0.34,\"worst\":0.51}},\"frame\":{\"p50\":9.9,\"p95\":12.4,\"worst\":49.3},\"preview\":{\"p50\":9.6,\"p95\":12,\"worst\":48.9},\"land\":98.8,\"blockedMax\":65.8,\"landSplit\":{\"upSync\":3.5,\"commit\":16.7,\"heapMB0\":288.4,\"heapMB1\":303.3},\"tiles\":61,\"where\":\"pool\",\"stats\":{\"blocks\":45,\"splits\":0,\"maxBlock\":321264,\"pool\":6,\"local\":0},\"fieldMB\":5.4,\"stepMB\":15.3,\"pxCalls\":{\"liquify_preview\":60,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":6,\"kernels\":\"rust\",\"tiles\":45,\"total\":86.6,\"pxCalls\":{\"liquify_block\":45},\"gen\":0},\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":13,\"kernel\":1.2,\"pxCalls\":{\"mip_chain\":13},\"gen\":0}}}",
+  "{\"row\":\"shrink held 150 ticks size 1000\",\"tick\":{\"p50\":1.8,\"p95\":2.3,\"worst\":2.9},\"dabLaps\":{\"nodes\":{\"p50\":0.04,\"p95\":0.09,\"worst\":0.37},\"kernel\":{\"p50\":1.73,\"p95\":2.02,\"worst\":2.38},\"write\":{\"p50\":0.05,\"p95\":0.12,\"worst\":0.27}},\"land\":28.9,\"blockedMax\":22.2,\"landSplit\":{\"upSync\":3.1,\"commit\":8.9,\"heapMB0\":246.9,\"heapMB1\":246.9},\"tiles\":33,\"where\":\"pool\",\"stats\":{\"blocks\":25,\"splits\":1,\"maxBlock\":908208,\"pool\":5,\"local\":0},\"maxReachPx\":691.6,\"fieldMB\":6.1,\"pxCalls\":{\"liquify_preview\":3,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":44.1,\"pxCalls\":{\"liquify_block\":25},\"gen\":0},\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":42,\"kernel\":3.5,\"pxCalls\":{\"mip_chain\":42},\"gen\":0}}}",
+  "{\"row\":\"restore 1:1 size 1000 pushed\",\"travel\":1000,\"press\":49.1,\"window\":25,\"dab\":{\"p50\":1.4,\"p95\":2.3,\"worst\":2.3},\"dabLaps\":{\"nodes\":{\"p50\":0.11,\"p95\":0.55,\"worst\":0.55},\"kernel\":{\"p50\":0.93,\"p95\":1.49,\"worst\":1.49},\"write\":{\"p50\":0.19,\"p95\":0.38,\"worst\":0.38}},\"frame\":{\"p50\":9.8,\"p95\":10.8,\"worst\":10.8},\"preview\":{\"p50\":9.5,\"p95\":10.5,\"worst\":10.5},\"land\":35.7,\"blockedMax\":16.1,\"landSplit\":{\"upSync\":5.1,\"commit\":13.3,\"heapMB0\":301.5,\"heapMB1\":301.5},\"tiles\":59,\"where\":\"pool\",\"stats\":{\"blocks\":44,\"splits\":0,\"maxBlock\":162526,\"pool\":6,\"local\":0},\"fieldMB\":6.1,\"pxCalls\":{\"liquify_preview\":21,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":6,\"kernels\":\"rust\",\"tiles\":44,\"total\":74.5,\"pxCalls\":{\"liquify_block\":44},\"gen\":0}}}",
+  "{\"row\":\"restore all\",\"ms\":7.8,\"blockedMax\":7.8,\"tiles\":278,\"where\":\"pool\",\"fieldMB\":0,\"pxCalls\":{},\"jobs\":{}}",
+  "{\"row\":\"restore 1:1 size 1000 empty\",\"travel\":1000,\"press\":11.6,\"window\":0,\"dab\":{\"p50\":0,\"p95\":0.1,\"worst\":0.1},\"dabLaps\":{\"nodes\":{\"p50\":0,\"p95\":0,\"worst\":0},\"kernel\":{\"p50\":0,\"p95\":0,\"worst\":0},\"write\":{\"p50\":0,\"p95\":0,\"worst\":0}},\"frame\":{\"p50\":0,\"p95\":0,\"worst\":0},\"preview\":{\"p50\":0,\"p95\":0,\"worst\":0},\"land\":1.1,\"blockedMax\":1.1,\"landSplit\":{\"upSync\":1.1,\"commit\":0,\"heapMB0\":291.6,\"heapMB1\":291.6},\"tiles\":278,\"where\":\"pool\",\"stats\":{\"blocks\":0,\"splits\":0,\"maxBlock\":0,\"pool\":0,\"local\":0},\"fieldMB\":0,\"pxCalls\":{},\"jobs\":{}}",
+  "{\"row\":\"pause 2s 1:1 size 1000\",\"pxMB0\":148.8,\"pxMBTrimmed\":1.1,\"idleTrimmed\":1,\"pxMBGrown\":54.6,\"press\":11.3,\"window\":24.8,\"dab\":3,\"dabLaps\":{\"nodes\":0.09,\"kernel\":2.02,\"write\":0.8},\"frame\":34.9,\"preview\":34.6,\"midIdleTrimmed\":1,\"midWindow\":0,\"midDab\":3.2,\"midDabLaps\":{\"nodes\":0.12,\"kernel\":2.72,\"write\":0.15},\"midFrame\":9.2,\"midPreview\":8.8,\"land\":21.9,\"pxCalls\":{\"liquify_preview\":2,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":30.5,\"pxCalls\":{\"liquify_block\":22},\"gen\":0}}}"
+ ]
+}

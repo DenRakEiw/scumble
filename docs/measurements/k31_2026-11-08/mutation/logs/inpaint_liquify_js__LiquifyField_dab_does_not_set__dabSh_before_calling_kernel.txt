@@ -1,0 +1,41 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=liquify,retouchRoute)
+FAIL kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock / liquifyPreview / liquifyDab: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never  rust {"blur_rgba":1,"freq_split":2,"liquify_block":1,"liquify_preview":1,"sponge_rgba":1,"tone_rgba":1}, js {}
+FAIL kernels.js K27 / K28 / K29 / K31 / K34 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)  dab: {"serial":9,"bytes":1114112,"pending":false,"holds":0,"release":0,"idle":1,"trap":7,"oom":0,"sync":8,"async":0}
+FAIL rust simd liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8  s=1 q=1 grow: box [343,22,540,246] vs null vs null
+FAIL rust simd liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 1114112, sameBox=true, sameNodes=true
+FAIL rust scalar liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8  s=1 q=1 grow: box [343,22,540,246] vs null vs null
+FAIL rust scalar liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 1114112, sameBox=true, sameNodes=true
+FAIL (6) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+ok   rust scalar liquify_dab (rust scalar) equals its twin byte for byte (120 cases, each also at an odd offset)
+ok   js liquify_dab (rust scalar) gives the same at an odd offset
+FAIL rust scalar liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8  s=1 q=1 grow: box [343,22,540,246] vs null vs null
+FAIL rust scalar liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 1114112, sameBox=true, sameNodes=true
+ok   rust scalar liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+FAIL (6) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+(node:17516) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/9e1a0dae-37ec-43ac-be0a-853f32a4d3f6/scratch/mut_tree_k31/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_tree_k31\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=liquify,retouchRoute)
+FAIL kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock / liquifyPreview / liquifyDab: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never  rust {"blur_rgba":1,"freq_split":2,"liquify_block":1,"liquify_preview":1,"sponge_rgba":1,"tone_rgba":1}, js {}
+FAIL kernels.js K31: swirlcw and swirlccw route to liquifyDabNodes (0 liquify_dab calls) and match the V8 sin/cos tie at node (1500, 1000)  calls={} swCwSame=false swTieDy=0 want=2424
+FAIL kernels.js K27 / K28 / K29 / K31 / K34 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)  dab: {"serial":9,"bytes":1114112,"pending":false,"holds":0,"release":0,"idle":1,"trap":7,"oom":0,"sync":8,"async":0}
+FAIL rust simd liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8  s=1 q=1 grow: box [343,22,540,246] vs null vs null
+FAIL rust simd liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 1114112, sameBox=true, sameNodes=true
+FAIL rust scalar liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8  s=1 q=1 grow: box [343,22,540,246] vs null vs null
+FAIL rust scalar liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 1114112, sameBox=true, sameNodes=true
+FAIL (7) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+ok   rust scalar liquify_dab (rust scalar) equals its twin byte for byte (124 cases, each also at an odd offset)
+ok   js liquify_dab (rust scalar) gives the same at an odd offset
+FAIL rust scalar liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8  s=1 q=1 grow: box [343,22,540,246] vs null vs null
+FAIL rust scalar liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 1114112, sameBox=true, sameNodes=true
+ok   rust scalar liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+FAIL (7) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+(node:22416) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/F--canvas/k31_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

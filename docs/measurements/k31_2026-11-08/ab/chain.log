@@ -1,0 +1,26 @@
+lock: taken after 0 s
+[16:41:31] lock: taken (K31 measuring 33248 2026-11-08T16:41:31)
+[16:41:31] tree: /f/canvas/.claude/worktrees/ag-chain-b at 2068af87, px.wasm aedf8a8cc6156cab, px_scalar.wasm e0ae2570e346d725
+[16:41:31] == round 1
+[16:41:43] before r1: liquify_perf DAB=dense ROUTES.liquifyDab=js
+[16:42:02] {"built": 5981, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyDab": "js"}, "dabKernel": "dense", "undoMB": 149.2} rc=0 
+closed
+[16:42:17] after r1: liquify_perf DAB=dense ROUTES.liquifyDab=rust
+[16:42:36] {"built": 6011, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyDab": "rust"}, "dabKernel": "dense", "undoMB": 149.2} rc=0 
+closed
+[16:42:41] == round 2
+[16:42:51] after r2: liquify_perf DAB=dense ROUTES.liquifyDab=rust
+[16:43:10] {"built": 6064, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyDab": "rust"}, "dabKernel": "dense", "undoMB": 149.2} rc=0 
+closed
+[16:43:25] before r2: liquify_perf DAB=dense ROUTES.liquifyDab=js
+[16:43:44] {"built": 5541, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyDab": "js"}, "dabKernel": "dense", "undoMB": 149.2} rc=0 
+closed
+[16:43:48] == round 3
+[16:43:59] before r3: liquify_perf DAB=dense ROUTES.liquifyDab=js
+[16:44:17] {"built": 5219, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyDab": "js"}, "dabKernel": "dense", "undoMB": 149.2} rc=0 
+closed
+[16:44:32] after r3: liquify_perf DAB=dense ROUTES.liquifyDab=rust
+[16:44:49] {"built": 5231, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {"liquifyDab": "rust"}, "dabKernel": "dense", "undoMB": 149.2} rc=0 
+closed
+[16:44:54] done
+lock: released

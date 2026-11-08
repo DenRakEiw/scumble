@@ -1,0 +1,50 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 8 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_tree_k31\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 216389 bytes, sha256 f4cc82349d670d47
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_tree_k31\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 175201 bytes, sha256 7d278cfc7c0e680a
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_tree_k31\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.35s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_tree_k31\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.29s
+$ node tools/px_test.js  (rc 1, 4 s, PX_ONLY=liquify)
+FAIL rust simd liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,16,null]
+FAIL rust scalar liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,16,null]
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+ok   rust scalar liquify_dab (rust scalar) equals its twin byte for byte (120 cases, each also at an odd offset)
+ok   js liquify_dab (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8
+ok   rust scalar liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 3342336, sameBox=true, sameNodes=true
+FAIL rust scalar liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,16,null]
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+(node:22420) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/9e1a0dae-37ec-43ac-be0a-853f32a4d3f6/scratch/mut_tree_k31/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_tree_k31\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 9 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 216389 bytes, sha256 f4cc82349d670d47
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 175201 bytes, sha256 7d278cfc7c0e680a
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.95s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.37s
+$ node tools/px_test.js  (rc 1, 4 s, PX_ONLY=liquify)
+FAIL rust simd liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,16,null]
+FAIL rust scalar liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,16,null]
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+ok   rust scalar liquify_dab (rust scalar) equals its twin byte for byte (124 cases, each also at an odd offset)
+ok   js liquify_dab (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8
+ok   rust scalar liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 3342336, sameBox=true, sameNodes=true
+FAIL rust scalar liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,16,null]
+FAIL (2) (only: liquify; PX_ONLY, not the full test)
+(node:12196) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/claude/F--canvas/k31_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\claude\F--canvas\k31_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

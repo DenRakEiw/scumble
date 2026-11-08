@@ -9099,6 +9099,7 @@ try {
         const pxCalls = {
             win: winCalls.liquify_block || 0,
             preview: winCalls.liquify_preview || 0,
+            dab: winCalls.liquify_dab || 0,
             pool: IE.jobTimings(true).filter((j) => j && j.op === "liquify").reduce((n, j) => n + ((j.pxCalls && j.pxCalls.liquify_block) || 0), 0),
         };
         const r = refCheck(layer, what);
@@ -9333,19 +9334,37 @@ try {
             throw new Error("K29: Escape or error during a liquify drag did not free the window and restore the field: " + JSON.stringify(k29));
         }
     }
-    // K30 (docs/PLAN_WASM_BUILD.md §4.9): InpaintEditor.liquifyDabKernel defaults to K.liquifyDab (dense twin),
-    // and setting it to null (Map-based dab) gives the exact same field cells and baked bytes
+    // K30/K31 (docs/PLAN_WASM_BUILD.md §4.9): InpaintEditor.liquifyDabKernel defaults to K.liquifyDab (routed to Rust
+    // liquify_dab on push/grow/shrink/restore, routing swirlcw/swirlccw and route "js" to dense JS twin liquifyDabNodes),
+    // and setting it to null (Map-based dab) gives the exact same field cells and baked bytes (three-way equal)
     const dabK0 = IE.liquifyDabKernel;
-    const k30 = { defaultIsDense: dabK0 === K.liquifyDab, mapSame: false };
+    const rustDab = IE.kernels !== "js" && (IE.routes || {}).liquifyDab !== "js";
+    const k30 = { defaultIsDense: dabK0 === K.liquifyDab, rustDab, hereDabCalls: h2.pxCalls.dab, twinDabCalls: 0, twinSame: true, mapSame: false, swirlDabCalls: 0, swirlTieDy: 0 };
     await ed.undoStep();
     try {
+        if (rustDab) {
+            IE.setRoute("liquifyDab", "js");
+            const hjDab = await landed("the second push on the dense JS dab twin", L, pts2, { where: "here" });
+            k30.twinDabCalls = hjDab.pxCalls.dab;
+            k30.twinSame = digest(L) === dHere && fieldKey() === cHere;
+            await ed.undoStep();
+            IE.setRoute("liquifyDab", null);
+        }
+        IE.pxCalls(true);
+        const fSw = new LQ.LiquifyField(2000, 2000, 1);
+        fSw.dab("swirlccw", 1198.6129226787184, 1000, 700, 0.8, 0.6, null, null, null, K.liquifyDab);
+        k30.swirlDabCalls = IE.pxCalls(true).liquify_dab || 0;
+        k30.swirlTieDy = fSw.node(1500, 1000)[1];
         IE.liquifyDabKernel = null;
-        await landed("the second push on the Map-based dab", L, pts2, { where: "here" });
-        k30.mapSame = digest(L) === dHere && fieldKey() === cHere;
+        const hMap = await landed("the second push on the Map-based dab", L, pts2, { where: "here" });
+        k30.mapSame = !hMap.pxCalls.dab && digest(L) === dHere && fieldKey() === cHere;
     } finally {
+        IE.setRoute("liquifyDab", null);
         IE.liquifyDabKernel = dabK0;
     }
-    if (!k30.defaultIsDense || !k30.mapSame) throw new Error("K30: dense liquifyDab and Map-based dab differed: " + JSON.stringify(k30));
+    if (!k30.defaultIsDense || !k30.mapSame || k30.swirlDabCalls !== 0 || k30.swirlTieDy !== 2423 || (rustDab && (!(k30.hereDabCalls > 0) || k30.twinDabCalls !== 0 || !k30.twinSame))) {
+        throw new Error("K30/K31: Rust liquify_dab, dense liquifyDabNodes and Map-based dab differed: " + JSON.stringify(k30));
+    }
     out.here = { keys: h2.keys, mid: mid2, undo: u2, pool, poolStats: h3.stats, split, splitStats: h4.stats, hereStats: h2.stats, k28, k29, k30 };
     if (!mid2 || !u2.same || !u2.cells) throw new Error("the second push: the layer changed during it, or its undo did not give the layer and the field back: " + JSON.stringify(out.here));
     if (!pool.bytes || !pool.cells) throw new Error("the pool's bake is not the one made here: " + JSON.stringify(out.here));
@@ -9875,35 +9894,59 @@ try {
     out.thawedMoves = { moved: dig(L.px, 585, 385, 30, 30) !== thawed0, left: dig(L.px, 150, 375, 250, 50) === left0 };
     if (!out.thawedMoves.moved || !out.thawedMoves.left) throw new Error("after the thaw: " + JSON.stringify(out.thawedMoves));
 
-    // 3b (K30): with both a selection and the freeze band active, the dense twin (liquifyThaw.planes) and the Map-based dab
-    // produce the exact same field cells and layer bytes
+    // 3b (K30/K31): with both a selection and the freeze band active, Rust liquify_dab, the dense twin (liquifyThaw.planes)
+    // and the Map-based dab produce the exact same field cells and layer bytes
     {
         const dab0 = IE.liquifyDabKernel;
+        const rustDab = IE.kernels !== "js" && (IE.routes || {}).liquifyDab !== "js";
         const cellsKey = (cells) => Array.from(cells.keys()).sort((a, b) => a - b).map((k) => { const c = cells.get(k); return k + ":" + fnv(new Uint8Array(c.buffer, c.byteOffset, c.byteLength)); }).join(",");
         const dBefore = dig(L.px, 0, 0, W, H);
-        let dDense = "", cDense = "", dMap = "", cMap = "";
+        let dDefault = "", cDefault = "", dTwin = "", cTwin = "", dMap = "", cMap = "", rustCalls = 0, twinCalls = 0;
         ed.sel.fill([480, 330, 740, 470], "#ff0000");
         ed.markSelectionChanged();
         ed.getBounds();
         mode("push", 220, 0.45);
         try {
+            IE.pxCalls(true);
             await drag([500, 360], [680, 430], 10);
-            dDense = dig(L.px, 0, 0, W, H);
-            cDense = cellsKey(ed.liq.field.cells);
+            rustCalls = IE.pxCalls(true).liquify_dab || 0;
+            dDefault = dig(L.px, 0, 0, W, H);
+            cDefault = cellsKey(ed.liq.field.cells);
             await ed.undoStep();
+            if (rustDab) {
+                IE.setRoute("liquifyDab", "js");
+                IE.pxCalls(true);
+                await drag([500, 360], [680, 430], 10);
+                twinCalls = IE.pxCalls(true).liquify_dab || 0;
+                dTwin = dig(L.px, 0, 0, W, H);
+                cTwin = cellsKey(ed.liq.field.cells);
+                await ed.undoStep();
+                IE.setRoute("liquifyDab", null);
+            } else {
+                dTwin = dDefault;
+                cTwin = cDefault;
+            }
             IE.liquifyDabKernel = null;
             await drag([500, 360], [680, 430], 10);
             dMap = dig(L.px, 0, 0, W, H);
             cMap = cellsKey(ed.liq.field.cells);
             await ed.undoStep();
         } finally {
+            IE.setRoute("liquifyDab", null);
             IE.liquifyDabKernel = dab0;
             ed.sel.clear();
             ed.markSelectionChanged();
             ed.getBounds();
         }
-        out.k30SelFreeze = { sameBytes: dDense === dMap, sameCells: cDense === cMap, moved: dDense !== dBefore };
-        if (!out.k30SelFreeze.sameBytes || !out.k30SelFreeze.sameCells || !out.k30SelFreeze.moved) throw new Error("K30 selection + freeze thaw planes differed from Map-based dab: " + JSON.stringify(out.k30SelFreeze));
+        out.k30SelFreeze = {
+            rustDab, rustCalls, twinCalls,
+            sameBytes: dDefault === dTwin && dDefault === dMap,
+            sameCells: cDefault === cTwin && cDefault === cMap,
+            moved: dDefault !== dBefore,
+        };
+        if (!out.k30SelFreeze.sameBytes || !out.k30SelFreeze.sameCells || !out.k30SelFreeze.moved || (rustDab && (!(rustCalls > 0) || twinCalls !== 0))) {
+            throw new Error("K30/K31 selection + freeze thaw planes differed across Rust / dense twin / Map-based dab: " + JSON.stringify(out.k30SelFreeze));
+        }
     }
 
     // 4. freeze the moved part again, then Restore all: it keeps its move, the rest comes back to the source
