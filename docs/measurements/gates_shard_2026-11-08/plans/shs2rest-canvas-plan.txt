@@ -1,0 +1,7 @@
+editor in 2 groups (canvas): the times of 125 of 125 steps from 3 log(s) of canvas runs, the newest F:/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates\shfail-canvas-editor2\editor.log
+  kept together: copy_paste_a_layer_into_another_tab .. duplicate_button_in_the_layer_row
+  kept together: pixel_backend_is_the_one_the_flag_chose .. editing_on_the_flags_backend_in_pixels_and_on_screen
+  kept together: pixels_nothing_draws_get_no_display_mirror .. the_screen_draws_no_cpu_mirror_and_stale_textures_leave
+  kept together: undo_history_lists_three_edits_as_labelled_rows .. undo_history_commands_match_the_list
+  group 1: steps 1-49, 49 steps, about 77 s
+  group 2: steps 50-125, 76 steps, about 77 s

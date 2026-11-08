@@ -1,0 +1,14 @@
+side by side: editor (tiles on 9611, canvas on 9612, the canvas side 25 s later)
+[canvas] editor rc=0 151s PASS
+[canvas] ALL PASS
+[tiles] editor rc=0 187s PASS
+[tiles] ALL PASS
+== shbase-tiles (rc 0, 203 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shbase-tiles/summary.txt
+   editor rc=0 187s PASS
+   ALL PASS
+== shbase-canvas (rc 0, 168 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shbase-canvas/summary.txt
+   editor rc=0 151s PASS
+   ALL PASS
+wall time 203 s
+BOTH PASS
+rc=0 wall=204 s

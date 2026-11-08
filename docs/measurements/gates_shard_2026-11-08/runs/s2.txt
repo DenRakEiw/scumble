@@ -1,0 +1,44 @@
+[tiles-editor] editor in 2 groups (tiles): the times of 125 of 125 steps from 1 log(s) of tiles runs, the newest F:/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates\shbase-tiles\editor.log
+[tiles-editor]   kept together: copy_paste_a_layer_into_another_tab .. duplicate_button_in_the_layer_row
+[tiles-editor]   kept together: pixel_backend_is_the_one_the_flag_chose .. editing_on_the_flags_backend_in_pixels_and_on_screen
+[tiles-editor]   kept together: pixels_nothing_draws_get_no_display_mirror .. the_screen_draws_no_cpu_mirror_and_stale_textures_leave
+[tiles-editor]   kept together: undo_history_lists_three_edits_as_labelled_rows .. undo_history_commands_match_the_list
+[tiles-editor]   group 1: steps 1-51, 51 steps, about 92 s
+[tiles-editor]   group 2: steps 52-125, 74 steps, about 92 s
+[canvas-editor] editor in 2 groups (canvas): the times of 125 of 125 steps from 1 log(s) of canvas runs, the newest F:/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates\shbase-canvas\editor.log
+[canvas-editor]   kept together: copy_paste_a_layer_into_another_tab .. duplicate_button_in_the_layer_row
+[canvas-editor]   kept together: pixel_backend_is_the_one_the_flag_chose .. editing_on_the_flags_backend_in_pixels_and_on_screen
+[canvas-editor]   kept together: pixels_nothing_draws_get_no_display_mirror .. the_screen_draws_no_cpu_mirror_and_stale_textures_leave
+[canvas-editor]   kept together: undo_history_lists_three_edits_as_labelled_rows .. undo_history_commands_match_the_list
+[canvas-editor]   group 1: steps 1-50, 50 steps, about 73 s
+[canvas-editor]   group 2: steps 51-125, 75 steps, about 77 s
+side by side: 4 runs (the editor in 2 groups per backend) on ports 9611 9612 9619 9620, each start 10 s after the one before
+[tiles-editor1] editor rc=0 88s PASS (shard 1/2: 51 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate)
+[canvas-editor1] editor rc=0 81s PASS (shard 1/2: 50 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate)
+[tiles-editor1] ALL PASS
+[canvas-editor1] ALL PASS
+[canvas-editor2] editor rc=0 78s PASS (shard 2/2: 75 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate)
+[tiles-editor2] editor rc=0 91s PASS (shard 2/2: 74 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate)
+[canvas-editor2] ALL PASS
+[tiles-editor2] ALL PASS
+== shs2-tiles-editor (rc 0, 127 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shs2-tiles-editor/summary.txt
+   editor rc=0 2 shards (each run from start to close: 105 s, 107 s) PASS (editor in 2 shards on tiles: all 127 steps ran, 125 of them exactly once and the first step and the cleanup in every shard; the steps' time per shard 88 s, 91 s)
+   ALL PASS
+== shs2-tiles-editor1 (rc 0, 105 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shs2-tiles-editor1/summary.txt
+   editor rc=0 88s PASS (shard 1/2: 51 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate)
+   ALL PASS
+== shs2-tiles-editor2 (rc 0, 107 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shs2-tiles-editor2/summary.txt
+   editor rc=0 91s PASS (shard 2/2: 74 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate)
+   ALL PASS
+== shs2-canvas-editor (rc 0, 114 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shs2-canvas-editor/summary.txt
+   editor rc=0 2 shards (each run from start to close: 97 s, 94 s) PASS (editor in 2 shards on canvas: all 127 steps ran, 125 of them exactly once and the first step and the cleanup in every shard; the steps' time per shard 80 s, 77 s)
+   ALL PASS
+== shs2-canvas-editor1 (rc 0, 97 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shs2-canvas-editor1/summary.txt
+   editor rc=0 81s PASS (shard 1/2: 50 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate)
+   ALL PASS
+== shs2-canvas-editor2 (rc 0, 94 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shs2-canvas-editor2/summary.txt
+   editor rc=0 78s PASS (shard 2/2: 75 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate)
+   ALL PASS
+wall time 130 s
+BOTH PASS
+rc=0 wall=130 s

@@ -1,0 +1,84 @@
+[tiles-editor] editor in 2 groups (tiles): the times of 125 of 125 steps from 2 log(s) of tiles runs, the newest F:/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates\shs2rest-tiles-editor2\editor.log
+[tiles-editor]   kept together: copy_paste_a_layer_into_another_tab .. duplicate_button_in_the_layer_row
+[tiles-editor]   kept together: pixel_backend_is_the_one_the_flag_chose .. editing_on_the_flags_backend_in_pixels_and_on_screen
+[tiles-editor]   kept together: pixels_nothing_draws_get_no_display_mirror .. the_screen_draws_no_cpu_mirror_and_stale_textures_leave
+[tiles-editor]   kept together: undo_history_lists_three_edits_as_labelled_rows .. undo_history_commands_match_the_list
+[tiles-editor]   group 1: steps 1-50, 50 steps, about 79 s
+[tiles-editor]   group 2: steps 51-125, 75 steps, about 82 s
+[canvas-editor] editor in 2 groups (canvas): the times of 125 of 125 steps from 2 log(s) of canvas runs, the newest F:/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates\shs2rest-canvas-editor2\editor.log
+[canvas-editor]   kept together: copy_paste_a_layer_into_another_tab .. duplicate_button_in_the_layer_row
+[canvas-editor]   kept together: pixel_backend_is_the_one_the_flag_chose .. editing_on_the_flags_backend_in_pixels_and_on_screen
+[canvas-editor]   kept together: pixels_nothing_draws_get_no_display_mirror .. the_screen_draws_no_cpu_mirror_and_stale_textures_leave
+[canvas-editor]   kept together: undo_history_lists_three_edits_as_labelled_rows .. undo_history_commands_match_the_list
+[canvas-editor]   group 1: steps 1-49, 49 steps, about 75 s
+[canvas-editor]   group 2: steps 50-125, 76 steps, about 75 s
+side by side: 4 runs (the editor in 2 groups per backend) on ports 9611 9612 9619 9620, each start 10 s after the one before
+[tiles-editor1] editor rc=0 82s PASS (shard 1/2: 50 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)
+[canvas-editor2] editor rc=1 53s FAIL (shard 2/2: 76 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)
+[tiles-editor1] ALL PASS
+[canvas-editor1] editor rc=0 78s PASS (shard 1/2: 49 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)
+[tiles-editor2] editor rc=1 68s FAIL (shard 2/2: 75 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)
+[canvas-editor2] SOME FAILED
+[canvas-editor1] ALL PASS
+[tiles-editor2] SOME FAILED
+== shfail2-tiles-editor (rc 1, 105 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shfail2-tiles-editor/summary.txt
+   editor rc=1 2 shards (each run from start to close: 98 s, 85 s) FAIL (editor in 2 shards on tiles: 30 problem(s); the steps' time per shard 81 s, 67 s)
+   [FAIL] group 2: [FAIL] the_whole_document_turns_and_flips_with_everything_on_it: SCUMBLE_EDITOR_FAIL_STEP: a deliberate failure after the step passed [1.4 s]
+   [FAIL] group 2: the verdict is "FAIL (shard 2/2: 75 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)" (F:/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shfail2-tiles-editor2/editor.log)
+   [FAIL] group 2 did not run 27 planned step(s), from the_whole_document_turns_and_flips_with_everything_on_it on
+   [FAIL] MISSING: the_whole_document_turns_and_flips_with_everything_on_it ran in no group
+   [FAIL] MISSING: guides_and_saved_selections_follow_crop_extend_resize ran in no group
+   [FAIL] MISSING: filter_sizes_in_pixels_follow_a_resize ran in no group
+   [FAIL] MISSING: a_text_layer_keeps_its_free_angle ran in no group
+   [FAIL] MISSING: the_document_straightens_and_crops_in_one_step ran in no group
+   [FAIL] MISSING: the_canvas_frame_waits_for_enter ran in no group
+   [FAIL] MISSING: ctrl_enter_waits_for_the_api_run ran in no group
+   [FAIL] MISSING: a_geometry_undo_waits_for_a_job ran in no group
+   [FAIL] MISSING: prompt_field_is_the_textarea_for_every_reader ran in no group
+   [FAIL] MISSING: prompt_field_types_deletes_and_moves_over_chips ran in no group
+   [FAIL] MISSING: prompt_field_undo_redo_paste_and_copy ran in no group
+   [FAIL] MISSING: prompt_field_leaves_a_composition_alone ran in no group
+   [FAIL] MISSING: prompt_field_keeps_the_editor_keys ran in no group
+   [FAIL] MISSING: ref_picker_opens_on_at_and_inserts ran in no group
+   [FAIL] MISSING: ref_picker_adds_a_reference_in_place ran in no group
+   [FAIL] MISSING: ref_bar_hover_and_swap ran in no group
+   [FAIL] MISSING: ref_picker_keeps_what_stood_there ran in no group
+   SOME FAILED
+== shfail2-tiles-editor1 (rc 0, 98 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shfail2-tiles-editor1/summary.txt
+   editor rc=0 82s PASS (shard 1/2: 50 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)
+   ALL PASS
+== shfail2-tiles-editor2 (rc 1, 85 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shfail2-tiles-editor2/summary.txt
+   editor rc=1 68s FAIL (shard 2/2: 75 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)
+   SOME FAILED
+== shfail2-canvas-editor (rc 1, 94 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shfail2-canvas-editor/summary.txt
+   editor rc=1 2 shards (each run from start to close: 94 s, 69 s) FAIL (editor in 2 shards on canvas: 30 problem(s); the steps' time per shard 77 s, 52 s)
+   [FAIL] group 2: [FAIL] the_whole_document_turns_and_flips_with_everything_on_it: SCUMBLE_EDITOR_FAIL_STEP: a deliberate failure after the step passed [1.3 s]
+   [FAIL] group 2: the verdict is "FAIL (shard 2/2: 76 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)" (F:/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shfail2-canvas-editor2/editor.log)
+   [FAIL] group 2 did not run 27 planned step(s), from the_whole_document_turns_and_flips_with_everything_on_it on
+   [FAIL] MISSING: the_whole_document_turns_and_flips_with_everything_on_it ran in no group
+   [FAIL] MISSING: guides_and_saved_selections_follow_crop_extend_resize ran in no group
+   [FAIL] MISSING: filter_sizes_in_pixels_follow_a_resize ran in no group
+   [FAIL] MISSING: a_text_layer_keeps_its_free_angle ran in no group
+   [FAIL] MISSING: the_document_straightens_and_crops_in_one_step ran in no group
+   [FAIL] MISSING: the_canvas_frame_waits_for_enter ran in no group
+   [FAIL] MISSING: ctrl_enter_waits_for_the_api_run ran in no group
+   [FAIL] MISSING: a_geometry_undo_waits_for_a_job ran in no group
+   [FAIL] MISSING: prompt_field_is_the_textarea_for_every_reader ran in no group
+   [FAIL] MISSING: prompt_field_types_deletes_and_moves_over_chips ran in no group
+   [FAIL] MISSING: prompt_field_undo_redo_paste_and_copy ran in no group
+   [FAIL] MISSING: prompt_field_leaves_a_composition_alone ran in no group
+   [FAIL] MISSING: prompt_field_keeps_the_editor_keys ran in no group
+   [FAIL] MISSING: ref_picker_opens_on_at_and_inserts ran in no group
+   [FAIL] MISSING: ref_picker_adds_a_reference_in_place ran in no group
+   [FAIL] MISSING: ref_bar_hover_and_swap ran in no group
+   [FAIL] MISSING: ref_picker_keeps_what_stood_there ran in no group
+   SOME FAILED
+== shfail2-canvas-editor1 (rc 0, 94 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shfail2-canvas-editor1/summary.txt
+   editor rc=0 78s PASS (shard 1/2: 49 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)
+   ALL PASS
+== shfail2-canvas-editor2 (rc 1, 69 s): /f/canvas/.claude/worktrees/agent-a4619c62a95da9485/dist/gates/gates/shfail2-canvas-editor2/summary.txt
+   editor rc=1 53s FAIL (shard 2/2: 76 of 127 steps; SCUMBLE_EDITOR_ONLY, the sharded run's check decides the gate) (the_whole_document_turns_and_flips_with_everything_on_it made to fail on purpose)
+   SOME FAILED
+wall time 106 s
+SOME FAILED
+rc=1 wall=106 s
