@@ -1,0 +1,81 @@
+K11 measurement summary (2026-11-08)
+====================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.3 K11, §7 K5, Stop 3):
+- `mask_invert` in `crates/px/src/sel.rs` (SIMD128 `i32x4_sub(u32x4_splat(255), u32x4_shr(v, 24))` + scalar tail +
+  `rest_of_row` extent scan), exported from `crates/px/src/lib.rs` (ABI 29), wrapped in `renderer/editor/px/px.js`
+  (`Px.maskInvert`), JS twin in `renderer/editor/px/kernels_js.js` (`maskInvert`), routed as `"kernel"` in
+  `renderer/editor/px/kernels.js` (`maskInvert`, default `"rust"`).
+- `TileMaskPixels.prototype.invert` in `renderer/editor/inpaint_tiles.js` calls `maskInvert` on every existing tile
+  (when `LITTLE`), dropping tiles whose inverted extent is `null` without calling `writable` on the Rust route and
+  storing `t.ext = ext; t.extVersion = t.version;` on every kept tile (both the kernel path and the `!had` fill path),
+  so `bounds()` after `invert()` does not scan the tiles again.
+- Deferred `writable(tx, ty, create = true, whole = false)` copy (`renderer/editor/inpaint_tiles.js` and
+  `allocTileBytes(owner, zero = true)` in `renderer/editor/inpaint_arena.js`): when `whole` is true (the caller
+  overwrites all `SLOT_BYTES = 262,144` bytes in the same synchronous step via wasm `_out` or a full-tile `w.fill`),
+  `writable` skips `c.data.set(t.data)` on frozen tiles (`t.frozen > 0`) and `allocTileBytes` skips `bytes.fill(0)` on
+  reused arena slots. Used by both `TileMaskPixels.invert` and `TileMaskPixels.combine` (`selCombine` and full-tile
+  `SEL_FULL` fills).
+
+Builds (`python tools/build_px.py --check`):
+- `renderer/editor/px/px.wasm`:        195,338 bytes  sha256 e927bfa9e0326a17
+- `renderer/editor/px/px_scalar.wasm`: 160,560 bytes  sha256 e40a763b397b582c
+
+Node unit & kernel benchmarks (`PX_BENCH=1 PX_ONLY=sel node tools/px_test.js`):
+- `mask_invert` one `256²` tile: twin 0.159 ms, simd 0.044 ms (3.61x), scalar 0.133 ms (median of 200)
+- `sel_combine` one `256²` tile, replace from RGBA: twin 0.365 ms, simd 0.040 ms, scalar 0.310 ms (median of 200)
+- `sel_combine` one `256²` tile, add from alpha:    twin 0.245 ms, simd 0.048 ms, scalar 0.290 ms (median of 200)
+- 35 deterministic/property cases + odd-offset views + refusals + route checks + `TileMaskPixels.invert` / `writable`:
+  PASS on twin, simd, scalar.
+
+A/B route verdict (`tools/ab_median.py` on 3 runs of `--split --ab maskInvert=js:rust --only invert,wand_object 15000x10000`):
+- `invert`:
+  - `js`:   per run `144.9 137.9 140.1` | median `140.1 ms` | spread `6.9 ms` | kernel row `121.5 ms`
+  - `rust`: per run `128.2 105.0  98.8` | median `105.0 ms` | spread `29.4 ms` | kernel row `86.2 ms`
+  - `split` (`mask_invert`): `js` window `0.0 + copyIn 0.3 ms` | `rust` window `5.6 + copyIn 8.2 ms`
+  - Verdict: `rust` (`its median lower by 35.0, beyond the spread 29.4`; kernel row `86.2 ms` vs `121.5 ms`).
+- `wand_object`:
+  - Verdict: `not touched by the route` (`the window's invert ran 0 times in both arms; maskInvert cannot change it`).
+- Route decision: `maskInvert` stays on `"rust"` (absent from `DEFAULT_ROUTES` in `renderer/editor/px/kernels.js`).
+
+15000 x 10000 before (`dfe2f35`) vs after (`K11`), 3 alternating rounds on port 9613 (`w1_lock.py` held per batch):
+row                                                          before (dfe2f35)              after (K11)
+  px_jobs invert (js) wall                                200.6 [192.2-204.4]      153.1 [144.2-158.8]   n=3/3  (1.31x)
+  px_jobs invert (js) invert ms                           151.0 [145.8-158.4]      131.9 [124.2-139.1]   n=3/3
+  px_jobs invert (rust) wall                              201.3 [200.0-215.2]       100.0 [99.8-110.9]   n=3/3  (2.01x)
+  px_jobs invert (rust) invert ms                         155.2 [150.8-155.4]         81.9 [81.7-91.5]   n=3/3  (1.89x)
+  px_jobs invert (rust) window kernel ms                        0.6 [0.5-0.6]            6.3 [6.2-6.4]   n=3/3
+  px_jobs invert (rust) window copyIn ms                        0.3 [0.3-0.4]            7.9 [7.8-8.1]   n=3/3
+  px_jobs invert (rust) window px calls                      ['mip_chain 16'] ['mask_invert 425, mip_chain 16']
+  px_jobs wand_object (rust) wall                         114.1 [113.7-123.7]      113.2 [111.5-117.5]   n=3/3
+  px_jobs wand_object (rust) combine ms                         1.0 [0.9-1.0]            0.5 [0.5-0.6]   n=3/3  (2.00x)
+  px_jobs wand_band (rust) wall                        1517.2 [1502.6-1543.9]   1407.3 [1383.8-1506.7]   n=3/3
+  px_jobs wand_band (rust) combine ms                     129.7 [120.6-131.6]      117.6 [112.9-117.7]   n=3/3
+  px_jobs wand_add (rust) wall                         1390.1 [1377.7-1426.2]   1436.0 [1384.8-1443.0]   n=3/3
+  px_jobs wand_add (rust) combine ms                      126.5 [125.7-133.7]      131.3 [128.1-145.0]   n=3/3
+  native invert wall                                      228.0 [216.0-246.0]      128.0 [122.0-143.0]   n=3/3  (1.78x)
+  native invert blocked                                   228.0 [216.0-246.0]      128.0 [122.0-143.0]   n=3/3  (1.78x)
+  native invert window px calls                              ['mip_chain 16'] ['mask_invert 425, mip_chain 16']
+  native wand_whole_picture wall                          761.0 [759.0-800.0]      746.0 [746.0-748.0]   n=3/3
+  native wand_whole_picture blocked                          75.0 [73.0-78.0]         64.0 [53.0-65.0]   n=3/3  (1.17x)
+  native wand_whole_add wall                              791.0 [782.0-827.0]      785.0 [756.0-796.0]   n=3/3
+  native wand_whole_add blocked                             98.0 [95.0-101.0]         79.0 [71.0-92.0]   n=3/3  (1.24x)
+  native wand_one_disc wall                                  71.0 [69.0-75.0]         79.0 [67.0-81.0]   n=3/3
+  native wand_one_disc blocked                               29.0 [28.0-32.0]         29.0 [28.0-39.0]   n=3/3
+
+Pins & byte-equality:
+- `px_jobs.py --check --ab maskInvert=js:rust --only invert,wand_object` (`2048x1152` and `15000x10000`):
+  `same bytes` on all rows, 0 traps / OOMs across all 10 threads.
+- `editor_test.py` (`grow_feather_and_invert_are_the_answers_a_whole_image_run_gives`): asserts `mask_invert` ran
+  `hadTiles` times on tiles (0 on canvas), undo restores the frozen clone byte-for-byte, and `maskInvert=js` produces
+  identical bytes with 0 `mask_invert` calls.
+
+Mutation round (`docs/measurements/k11_2026-11-08/mutation/results.txt`):
+- 17 mutants across `sel.rs`, `px.js`, `kernels_js.js`, `kernels.js`, `inpaint_tiles.js`:
+  15 killed, 2 survived (expected equivalents: `sel.rs` SIMD loop bypassed to scalar tail; `kernels_js.js` word path
+  bypassed to byte path), 0 unexpected.
+
+Gates (`lint types selection pixels editor` on both backends + `pxjobs` on tiles):
+- `k11-tiles`:  lint 8s, types 6s, selection 13s, pixels 10s, editor 162s -> ALL PASS
+- `k11-canvas`: lint 9s, types 5s, selection 6s, pixels 10s, editor 139s -> ALL PASS
+- `pxjobs` (tiles): 108s -> PASS

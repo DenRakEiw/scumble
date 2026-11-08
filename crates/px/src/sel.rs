@@ -1,7 +1,7 @@
-//! The selection's combine (docs/PLAN_WASM_BUILD.md §4.3, K5): one tile of the selection, `size`² RGBA8 with straight
-//! alpha, combined with an alpha source under a mode, the maths of `combineRows` (renderer/editor/inpaint_raster.js), and
-//! the tile's extent found on the way, as `tileExtent` (renderer/editor/inpaint_tiles.js) finds it, so `bounds()` need
-//! not scan the tile again.
+//! The selection's combine and invert (docs/PLAN_WASM_BUILD.md §4.3, K5, K11): one tile of the selection, `size`²
+//! RGBA8 with straight alpha, combined with an alpha source under a mode or inverted in `255 - a`, the maths of
+//! `combineRows` (renderer/editor/inpaint_raster.js), and the tile's extent found on the way, as `tileExtent`
+//! (renderer/editor/inpaint_tiles.js) finds it, so `bounds()` need not scan the tile again.
 //!
 //!   replace    a = s
 //!   add        a = d + s - mul255(d, s)
@@ -131,6 +131,87 @@ pub fn sel_combine(dst: &mut [u8], size: usize, src: &[u8], stride: usize, kind:
     1
 }
 
+/// Inverts the `bw` x `bh` corner of `tile` (`size`² RGBA8, in place) in the colour `rgb` (0xRRGGBB): each pixel's
+/// alpha becomes `255 - a`, with colour `rgb` when `a > 0` and `0, 0, 0, 0` when `a == 0`; pixels outside `bw` x `bh`
+/// are kept and read for the extent. Returns 1 when the tile holds a pixel afterwards, with its extent [x0, y0, x1, y1]
+/// in `ext`; 0 when it holds none (`ext` not written); REFUSED for arguments out of range.
+pub fn mask_invert(tile: &mut [u8], size: usize, bw: usize, bh: usize, rgb: u32, ext: &mut [i32]) -> u32 {
+    if bw > size || bh > size || ext.len() < 4 {
+        return REFUSED;
+    }
+    let bytes = match size.checked_mul(size).and_then(|n| n.checked_mul(4)) {
+        Some(n) if n <= tile.len() => n,
+        _ => return REFUSED,
+    };
+    let tile = &mut tile[..bytes];
+    let (r, g, b) = (((rgb >> 16) & 255) as u8, ((rgb >> 8) & 255) as u8, (rgb & 255) as u8);
+    let colour = (r as u32) | ((g as u32) << 8) | ((b as u32) << 16);
+    let (mut x0, mut y0, mut x1, mut y1) = (size, usize::MAX, 0usize, 0usize);
+    let mut any = false;
+    for y in 0..size {
+        let row = &mut tile[y * size * 4..(y + 1) * size * 4];
+        let mut first = usize::MAX;
+        let mut last = 0usize;
+        let from = if y < bh && bw > 0 {
+            let (done, f, l) = simd::invert_row(row, bw, colour);
+            if f != usize::MAX {
+                first = f;
+                last = l;
+            }
+            scalar_invert_row(row, done, bw, (r, g, b), &mut first, &mut last);
+            bw
+        } else {
+            0
+        };
+        rest_of_row(row, from, size, &mut first, &mut last);
+        if first != usize::MAX {
+            any = true;
+            if y0 == usize::MAX {
+                y0 = y;
+            }
+            y1 = y;
+            if first < x0 {
+                x0 = first;
+            }
+            if last > x1 {
+                x1 = last;
+            }
+        }
+    }
+    if !any {
+        return 0;
+    }
+    ext[0] = x0 as i32;
+    ext[1] = y0 as i32;
+    ext[2] = (x1 + 1) as i32;
+    ext[3] = (y1 + 1) as i32;
+    1
+}
+
+/// Pixels `from` to `to` of a row inverted one at a time (the scalar build's whole row, the SIMD build's last few).
+#[inline(always)]
+fn scalar_invert_row(row: &mut [u8], from: usize, to: usize, (r, g, b): (u8, u8, u8), first: &mut usize, last: &mut usize) {
+    for x in from..to {
+        let o = x * 4;
+        let a = 255 - (row[o + 3] as u32);
+        if a != 0 {
+            row[o] = r;
+            row[o + 1] = g;
+            row[o + 2] = b;
+            row[o + 3] = a as u8;
+            if *first == usize::MAX {
+                *first = x;
+            }
+            *last = x;
+        } else {
+            row[o] = 0;
+            row[o + 1] = 0;
+            row[o + 2] = 0;
+            row[o + 3] = 0;
+        }
+    }
+}
+
 /// Pixels `from` to `to` of a row one at a time (the scalar build's whole row, the SIMD build's last few).
 #[inline(always)]
 fn scalar_row(row: &mut [u8], s: &[u8], kind: u32, m: u32, fresh: bool, from: usize, to: usize, (r, g, b): (u8, u8, u8), first: &mut usize, last: &mut usize) {
@@ -186,6 +267,11 @@ mod simd {
     /// No lanes in the scalar build: nothing done, no pixel found.
     #[inline(always)]
     pub fn row(_: &mut [u8], _: &[u8], _: u32, _: u32, _: bool, _: usize, _: u32) -> (usize, usize, usize) {
+        (0, usize::MAX, 0)
+    }
+
+    #[inline(always)]
+    pub fn invert_row(_: &mut [u8], _: usize, _: u32) -> (usize, usize, usize) {
         (0, usize::MAX, 0)
     }
 }
@@ -274,6 +360,40 @@ mod simd {
                 last = x + (31 - bits.leading_zeros()) as usize;
             }
             x += 4;
+        }
+        (n4, first, last)
+    }
+
+    /// The first `n / 4 * 4` pixels of a row inverted, four pixels a lane group (one u32 lane each): returns the
+    /// pixels done and the first and last pixel with alpha among them (usize::MAX, 0 when none).
+    #[inline(always)]
+    pub fn invert_row(row: &mut [u8], n: usize, colour: u32) -> (usize, usize, usize) {
+        let n4 = n / 4 * 4;
+        if n4 == 0 {
+            return (0, usize::MAX, 0);
+        }
+        let d = row.as_mut_ptr();
+        let c = u32x4_splat(colour);
+        let ff = u32x4_splat(255);
+        let zero = u32x4_splat(0);
+        let (mut first, mut last) = (usize::MAX, 0usize);
+        let mut x = 0;
+        // `row` holds `size` >= n pixels, checked by the caller
+        unsafe {
+            while x < n4 {
+                let p = d.add(x * 4) as *mut v128;
+                let a = i32x4_sub(ff, u32x4_shr(v128_load(p), 24));
+                let covered = i32x4_ne(a, zero);
+                v128_store(p, v128_and(v128_or(i32x4_shl(a, 24), c), covered));
+                let bits = i32x4_bitmask(covered) as u32;
+                if bits != 0 {
+                    if first == usize::MAX {
+                        first = x + bits.trailing_zeros() as usize;
+                    }
+                    last = x + (31 - bits.leading_zeros()) as usize;
+                }
+                x += 4;
+            }
         }
         (n4, first, last)
     }

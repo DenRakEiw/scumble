@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_tiles_js__invert_in_editor_bypasses_maskIn-ed --offline --tiles on editor  (rc 1, 17 s, SCUMBLE_EDITOR_ONLY=grow_feather_and_invert_are_the_answers_a_whole_image_run_gives)
+editor rc=1 2s FAIL (only: grow_feather_and_invert_are_the_answers_a_whole_image_run_gives; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

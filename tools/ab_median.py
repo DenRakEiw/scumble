@@ -69,10 +69,11 @@ if [a for a in args if a.startswith("-")] or not PATHS:
 ARMS = ("js", "rust")
 # the exports a route sends to the twin (px/kernels.js: `rustPx("flood", size)` in floodShape and floodMask,
 # `rustPx("mips")` in mipHalf, mipChain and clampExtend); a route not named here counts every export
-ROUTE_EXPORTS = {"flood": ("flood_shape", "flood"), "mips": ("mip_chain", "clamp_extend", "mip_half"), "selCombine": ("sel_combine",)}
+ROUTE_EXPORTS = {"flood": ("flood_shape", "flood"), "mips": ("mip_chain", "clamp_extend", "mip_half"), "selCombine": ("sel_combine",), "maskInvert": ("mask_invert",)}
 # a route whose kernel works on the window, not in a job: its kernel row is a row field of its own (px_jobs.py times the
-# window's TileMaskPixels.combine per row as `combine`, K5), in place of px_jobs.py's KERNEL columns
-ROUTE_KERNEL = {"selCombine": ["combine"]}
+# window's TileMaskPixels.combine per row as `combine`, K5, and TileMaskPixels.invert as `invert`, K11), in place of
+# px_jobs.py's KERNEL columns
+ROUTE_KERNEL = {"selCombine": ["combine"], "maskInvert": ["invert"]}
 
 
 def kernel_table():
@@ -296,10 +297,11 @@ def report_size(size, runs):
         kj, kr = js["kernel"], rs["kernel"]
         v, why = verdict(js["median"], rs["median"], spread, kj, kr)
         if route in ROUTE_KERNEL:
-            # a route whose kernel is the window's combine: a row that never combined in either arm is not its business
+            # a route whose kernel is the window's combine or invert: a row that never called it in either arm is not its business
+            count_key = f"{ROUTE_KERNEL[route][0]}N"
             mine = [x for lbl, _, _ in kept for x in rows_of[lbl] if x.get("job") == job]
-            if mine and all("combineN" in x for x in mine) and not any(num(x.get("combineN")) for x in mine):
-                v, why = "not touched by the route", f"the window's combine ran 0 times in both arms; {route} cannot change it"
+            if mine and all(count_key in x for x in mine) and not any(num(x.get(count_key)) for x in mine):
+                v, why = "not touched by the route", f"the window's {ROUTE_KERNEL[route][0]} ran 0 times in both arms; {route} cannot change it"
         print(f"  {job}")
         for arm in ARMS:
             a = per[arm]

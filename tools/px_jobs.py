@@ -168,11 +168,16 @@ BODY = """
     // kernel row (tools/ab_median.py); the method is wrapped first thing in the rounds' try, put back in its finally
     const KM = await import("./editor/px/kernels.js");
     const SELK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "selCombine"));
-    const COMBINE = { ms: 0, n: 0 };
-    const combine0 = T.TileMaskPixels.prototype.combine;
+    const INVK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "maskInvert"));
+    const COMBINE = { ms: 0, n: 0 }, INVERT = { ms: 0, n: 0 };
+    const combine0 = T.TileMaskPixels.prototype.combine, invert0 = T.TileMaskPixels.prototype.invert;
     const timedCombine = function (...a) {
         const t = performance.now();
         try { return combine0.apply(this, a); } finally { COMBINE.ms += performance.now() - t; COMBINE.n++; }
+    };
+    const timedInvert = function (...a) {
+        const t = performance.now();
+        try { return invert0.apply(this, a); } finally { INVERT.ms += performance.now() - t; INVERT.n++; }
     };
     window.__pxjobs = "document";
     const ed = shell.newDocument();
@@ -600,11 +605,11 @@ BODY = """
     const op = async (kernels, fn, want, { marks = null, sel = true } = {}) => {
         useArm(kernels);
         const r0 = await rowStart();
-        COMBINE.ms = 0; COMBINE.n = 0;
+        COMBINE.ms = 0; COMBINE.n = 0; INVERT.ms = 0; INVERT.n = 0;
         const t0 = performance.now();
         await fn();
         const wall = performance.now() - t0;
-        const combined = { combine: COMBINE.ms, combineN: COMBINE.n };
+        const combined = { combine: COMBINE.ms, combineN: COMBINE.n, invert: INVERT.ms, invertN: INVERT.n };
         const { ws, onWindow } = rowEnd(r0);
         const ops = want === null ? [] : [].concat(want);
         const timings = ofGen(E.jobTimings(true), r0.gen).filter((t) => ops.includes(t.op));
@@ -764,6 +769,11 @@ BODY = """
             if (r === "js" && n) bad.push(`selCombine=js: the window called sel_combine ${n} times`);
             if (r === "rust" && !n && /^(wand_|range_)/.test(row.job)) bad.push("selCombine=rust: the window called sel_combine 0 times");
         }
+        if (INVK && (row.invertN || 0) > 0) {
+            const r = routeOf("maskInvert"), n = win.mask_invert || 0;
+            if (r === "js" && n) bad.push(`maskInvert=js: the window called mask_invert ${n} times`);
+            if (r === "rust" && !n && row.job === "invert") bad.push("maskInvert=rust: the window called mask_invert 0 times");
+        }
         if (row.floodPx) {
             const r = routeOf("flood");
             const want = r === "js" ? 0 : r === "rust" ? row.floodPx.length : row.floodPx.filter((n) => n >= r).length;
@@ -837,6 +847,7 @@ BODY = """
     // finally puts every one of them back, takes the trap watch off and closes the run's tab, whatever a row threw
     try {
         T.TileMaskPixels.prototype.combine = timedCombine;
+        T.TileMaskPixels.prototype.invert = timedInvert;
         if (traps) await traps.take(true);
         if (has("pxTimed")) E.pxTimed(SPLITS);
         for (const [n, v] of SETS) {
@@ -901,6 +912,7 @@ BODY = """
         if (has("pxTimed")) E.pxTimed(false);
         if (traps) traps.unwatch();
         T.TileMaskPixels.prototype.combine = combine0;
+        T.TileMaskPixels.prototype.invert = invert0;
         shell.closeDocument(ed, { force: true });
     }
     return JSON.stringify({
@@ -920,7 +932,7 @@ PARTS = {
     "wand_band": ["flood", "read", "clip", "bounds", "shape"],
     "wand_object": ["flood", "read", "clip", "bounds", "shape"],
     "wand_add": ["flood", "read", "clip", "bounds", "shape"],
-    "invert": [],
+    "invert": ["invert"],
     # range_select's `ms` is the job's own time; a luma or colour row reads the picture through stack_into jobs
     "range_depth": ["ms"],
     "range_depth_snap": ["ms", "rmax", "edges"],
@@ -932,12 +944,12 @@ PARTS = {
 # the pixel work a kernel set does after the job has read its pixels: with Rust the grow job is one call ("kernel"),
 # the flood job one call ("flood") between reading the selection ("clip") and drawing the shape ("shape")
 PIXEL_WORK = ["kernel", "edt", "bounds", "feature", "write", "resultBounds"]
-# No kernel column where no part of the row is a kernel's own: invert and the range rows (range_select is the same JS in
+# No kernel column where no part of the row is a kernel's own: the range rows (range_select is the same JS in
 # both sets, measured 2026-10-23: no px call in its jobs; its time is the "worker job" column), depth_guide (one part,
 # `total`, the worker job column) and fill_limit (limitAlphaRows has no Rust kernel yet: its parts line).
 KERNEL = {"mips_direct": ["kernel"], "mips_whole": ["kernel"], "band": ["kernel"], "grow": PIXEL_WORK, "shrink": PIXEL_WORK,
           "wand_band": ["flood", "clip", "bounds", "shape"], "wand_object": ["flood", "clip", "bounds", "shape"],
-          "wand_add": ["flood", "clip", "bounds", "shape"], "invert": [],
+          "wand_add": ["flood", "clip", "bounds", "shape"], "invert": ["invert"],
           "range_depth": [], "range_depth_snap": [], "range_luma": [], "range_color": [],
           "depth_guide": [], "fill_limit": []}
 # the "worker job" column: the job's whole time where it is not `total` or `kernel`; None where the row posts no job

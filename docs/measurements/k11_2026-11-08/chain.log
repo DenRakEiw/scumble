@@ -1,0 +1,71 @@
+[11:56:33] after: dfe2f35 + working tree, px.wasm e927bfa9e0326a17, px_scalar.wasm e40a763b397b582c
+[11:56:33] before: C:/Users/schoeneberg/.gemini/antigravity/brain/fe85b6cf-fa72-4712-92ea-d919cd2f73df/scratch/before_k11, px.wasm 1b29fa8a7635f22a
+[11:56:33] gpu: 3651 MiB, 2 %; comfy 8188: 200
+lock: taken after 0 s
+[11:56:33] lock: taken (K11 measuring (px_test sel bench) 49860 2026-11-08T11:56:33) for px_test sel bench
+[11:56:37] px_test sel bench rc=0
+lock: released
+lock: taken after 0 s
+[11:56:37] lock: taken (K11 measuring (after check) 10556 2026-11-08T11:56:37) for after check
+[11:56:46] after check: px_jobs --check --ab maskInvert=js:rust
+[11:56:57] after check: px_jobs --check rc=0
+closed
+lock: released
+[11:57:01] == round 1
+lock: taken after 0 s
+[11:57:01] lock: taken (K11 measuring (before r1) 51884 2026-11-08T11:57:01) for before r1
+[11:57:11] before r1: px_jobs 15000x10000
+[11:57:55] before r1: px_jobs rc=0
+[11:57:55] before r1: native_test 15000x10000
+[11:58:05] before r1: native_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:58:08] lock: taken (K11 measuring (after r1) 44364 2026-11-08T11:58:08) for after r1
+[11:58:17] after r1: px_jobs 15000x10000
+[11:58:58] after r1: px_jobs rc=0
+[11:58:58] after r1: px_jobs A/B maskInvert=js:rust 15000x10000
+[11:59:08] after r1: px_jobs A/B rc=0
+[11:59:08] after r1: native_test 15000x10000
+[11:59:17] after r1: native_test rc=0
+closed
+lock: released
+[11:59:21] == round 2
+lock: taken after 0 s
+[11:59:21] lock: taken (K11 measuring (after r2) 33708 2026-11-08T11:59:21) for after r2
+[11:59:30] after r2: px_jobs 15000x10000
+[12:00:11] after r2: px_jobs rc=0
+[12:00:12] after r2: px_jobs A/B maskInvert=js:rust 15000x10000
+[12:00:20] after r2: px_jobs A/B rc=0
+[12:00:20] after r2: native_test 15000x10000
+[12:00:30] after r2: native_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[12:00:34] lock: taken (K11 measuring (before r2) 49912 2026-11-08T12:00:34) for before r2
+[12:00:42] before r2: px_jobs 15000x10000
+[12:01:24] before r2: px_jobs rc=0
+[12:01:24] before r2: native_test 15000x10000
+[12:01:33] before r2: native_test rc=0
+closed
+lock: released
+[12:01:37] == round 3
+lock: taken after 0 s
+[12:01:37] lock: taken (K11 measuring (before r3) 43092 2026-11-08T12:01:37) for before r3
+[12:01:46] before r3: px_jobs 15000x10000
+[12:02:27] before r3: px_jobs rc=0
+[12:02:27] before r3: native_test 15000x10000
+[12:02:37] before r3: native_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[12:02:41] lock: taken (K11 measuring (after r3) 49508 2026-11-08T12:02:41) for after r3
+[12:02:49] after r3: px_jobs 15000x10000
+[12:03:29] after r3: px_jobs rc=0
+[12:03:29] after r3: px_jobs A/B maskInvert=js:rust 15000x10000
+[12:03:38] after r3: px_jobs A/B rc=0
+[12:03:38] after r3: native_test 15000x10000
+[12:03:48] after r3: native_test rc=0
+closed
+lock: released
+[12:03:51] done

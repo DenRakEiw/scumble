@@ -1,0 +1,28 @@
+$ node tools/px_test.js  (rc 0, 4 s, PX_ONLY=sel)
+PASS (only: sel; PX_ONLY, not the full test)
+ok   kernels.js maskInvert gives the same on the routes js and rust, write(true) only when non-empty on rust (35 tiles)
+ok   the maskInvert route rust skips write() when the inverted tile is empty (11 such tiles)  0 written
+ok   the maskInvert route rust calls mask_invert for every tile, js never  js 0, rust 35 of 35
+ok   TileMaskPixels.writable(tx, ty, true, whole) skips the frozen tile copy when whole is true and copies when false  whole=0, partial=200
+ok   TileMaskPixels.invert on js and rust routes matches, drops newly-empty tiles, keeps fresh extents, and preserves frozen clones
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: sel; PX_ONLY, not the full test)
+(node:59760) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/fe85b6cf-fa72-4712-92ea-d919cd2f73df/scratch/mut_k11_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\fe85b6cf-fa72-4712-92ea-d919cd2f73df\scratch\mut_k11_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 83 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:23308) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/fe85b6cf-fa72-4712-92ea-d919cd2f73df/scratch/mut_k11_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\fe85b6cf-fa72-4712-92ea-d919cd2f73df\scratch\mut_k11_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

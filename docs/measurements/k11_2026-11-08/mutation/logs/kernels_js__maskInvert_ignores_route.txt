@@ -1,0 +1,17 @@
+$ node tools/px_test.js  (rc 1, 4 s, PX_ONLY=sel)
+FAIL kernels.js maskInvert gives the same on the routes js and rust, write(true) only when non-empty on rust (35 tiles)  case 1: js null (0 writes), rust null (0 writes, whole=null)
+FAIL the maskInvert route rust calls mask_invert for every tile, js never  js 35, rust 35 of 35
+FAIL TileMaskPixels.invert on js and rust routes matches, drops newly-empty tiles, keeps fresh extents, and preserves frozen clones  js full->empty keys=0 calls=4 writes=0
+FAIL (3) (only: sel; PX_ONLY, not the full test)
+FAIL kernels.js maskInvert gives the same on the routes js and rust, write(true) only when non-empty on rust (35 tiles)  case 1: js null (0 writes), rust null (0 writes, whole=null)
+ok   the maskInvert route rust skips write() when the inverted tile is empty (11 such tiles)  0 written
+FAIL the maskInvert route rust calls mask_invert for every tile, js never  js 35, rust 35 of 35
+ok   TileMaskPixels.writable(tx, ty, true, whole) skips the frozen tile copy when whole is true and copies when false  whole=0, partial=200
+FAIL TileMaskPixels.invert on js and rust routes matches, drops newly-empty tiles, keeps fresh extents, and preserves frozen clones  js full->empty keys=0 calls=4 writes=0
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (3) (only: sel; PX_ONLY, not the full test)
+(node:31960) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/fe85b6cf-fa72-4712-92ea-d919cd2f73df/scratch/mut_k11_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\fe85b6cf-fa72-4712-92ea-d919cd2f73df\scratch\mut_k11_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

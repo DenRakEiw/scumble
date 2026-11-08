@@ -1,0 +1,17 @@
+-- 15000x10000 (150.0 MP), 3 rounds ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  arms: the "js" column maskInvert=js, the "rust" column maskInvert=rust
+  wand_object      kernel js      5.2  rust      5.4  (0.96x) | worker job js     18.1  rust     13.6  (1.34x) | wall js     26.1  rust     20.5  (1.27x)  3.4 MP in 2 jobs
+                   parts js/rust: flood 3.5/4.2  read 12.9/8.6  clip 0.0/0.0  shape 1.7/1.3
+                   coarse job js/rust: 2.80/2.80 MP, ran rust/rust: total 15.3/11.1  read 12.9/8.6  flood 1.9/2.0  clip 0.0/0.0  shape 0.5/0.6 | box job js/rust: 0.59/0.59 MP, ran rust/rust: total 2.8/2.5  read 0.0/0.0  flood 1.6/2.1  clip 0.0/0.0  shape 1.2/0.8
+                   px calls js: window mip_chain 9, sel_combine 9; jobs flood_shape 2 | rust: window mip_chain 9, sel_combine 9; jobs flood_shape 2
+                   split js/rust: job 18.2/13.6  copyIn 1.1/1.1 (17.4/17.4 MB, shared 4.5/4.5 MB)  copyOut 0.2/0.4 (3.0/3.0 MB)  alloc 0.0/0.0  grew MB 0.0/0.0  bytes0 MB 17/17 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {flood_shape 2.9, mip_chain 0.2, sel_combine 0.2} rust {flood_shape 3.3, mip_chain 0.2, sel_combine 0.2}  first js {} rust {}  queue 0.0/0.0  trip 2.9/2.7  workers 1/1
+  invert           kernel js    121.5  rust     80.2  (1.52x) | wall js    140.1  rust     98.8  (1.42x)
+                   parts js/rust: invert 121.5/80.2
+                   px calls js: window mip_chain 16; jobs - | rust: window mask_invert 425, mip_chain 16; jobs -
+                   split js/rust: job 0.0/0.0  copyIn 0.3/8.2 (4.0/110.2 MB, shared 4.0/110.2 MB)  copyOut 0.4/2.5 (1.3/21.3 MB)  alloc 0.0/0.0  grew MB 0.0/0.0  bytes0 MB 0/0 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {mip_chain 0.5} rust {mask_invert 5.6, mip_chain 0.6}  first js {} rust {}  queue 0.0/0.0  trip 0.0/0.0  workers 0/0
+  instances renewed over the rows: {release 0, idle 0, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 10 threads read: 0
+
+PASS
