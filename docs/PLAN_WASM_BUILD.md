@@ -1879,6 +1879,15 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K36 (2026-11-08): a stroke's commit on the tiles in Rust (the Antigravity F chain)
+
+By the same chain as K9 on `5419c95a` (`bef18ff5`, the review's points in `df3b750c`, K9's two points in `21accab7`), merged `49e48575` with the ABI renumbered 32 -> 33 and both
+builds rebuilt; `docs/measurements/k36_2026-11-08/`. `crates/px/src/composite.rs` `masked_tile` (`composite_masked_tile`: per 256-pixel chunk the active span where src alpha and mask are
+above 0, premultiply, composite and unpremultiply there, inactive pixels restored byte for byte; outcome unchanged / written / empty / refused), twin in `kernels_js.js`,
+route `compositeMaskedTile`, `compositeStroke` in `inpaint_tiles.js` on it. The review's byte lens found no difference. At 15k: `compositeStroke` over 24 frozen tiles, paint 9.60 -> 5.03 ms, clipped 10.50 -> 6.01, erase
+9.46 -> 6.10; the whole-operation row `stroke_and_release` (3 tiles) **ties** (wall 372 -> 419, spreads overlap), so Rust stays by §1.1 rule 2 on the strictly faster kernel row. All-byte hashes
+of the 24 tiles are equal across the base, rust and js (an earlier hash sampled only pixels the stroke never paints).
+
 ### K31 (2026-11-08): liquify's dab in Rust, the swirl on the JS twin (the Antigravity B chain)
 
 By the same chain as K28-K30 on `2068af87` (`60e85e4b`, the review's findings fixed in `d243e947`), merged `d711f8f2` with the ABI renumbered 31 -> 32 and
