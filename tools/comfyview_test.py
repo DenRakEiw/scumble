@@ -52,7 +52,8 @@ writes are put back at the end whatever happens.
 
     python tools/comfyview_test.py [out_dir]
 
-Start the app first, offline: ./node_modules/.bin/electron . --remote-debugging-port=9555 --no-comfy
+Start the app first, offline: ./node_modules/.bin/electron . --remote-debugging-port=9555 --no-comfy --use-fake-device-for-media-stream
+(the fake camera and microphone: the media step refuses an instance without them; tools/run_gates.sh passes the switch)
 """
 import asyncio
 import base64
@@ -105,9 +106,16 @@ FRAME_JS = """(() => { window.__frame = null; if (!window.__frameListen) { windo
 BAR_DIALOG_JS = """(() => { const d = document.querySelector('dialog.sc-dialog[open]'); if (!d) return null; const r = d.querySelector('div').shadowRoot;
     const t = (s) => (r.querySelector(s) || {}).textContent || '';
     return { title: t('.title'), message: t('.message'), detail: t('.detail'), buttons: Array.from(r.querySelectorAll('button')).map((b) => b.textContent),
-      focused: (r.activeElement || {}).textContent || '', h: innerHeight, vis: document.visibilityState }; })()"""
-BAR_PRESS_JS = """(() => { const d = document.querySelector('dialog.sc-dialog[open]'); if (!d) return false;
+      focused: (r.activeElement || {}).textContent || '', primary: Array.from(r.querySelectorAll('button.primary')).map((b) => b.textContent),
+      guarded: d.dataset.guarded === '1', h: innerHeight, vis: document.visibilityState }; })()"""
+# a press once the question's click guard is over (dialogs.js guardMs: at most 3 s here)
+BAR_PRESS_JS = """(async () => { const d = document.querySelector('dialog.sc-dialog[open]'); if (!d) return false;
+    for (let k = 0; k < 60 && d.dataset.guarded === '1'; k++) await new Promise((r) => setTimeout(r, 50));
     const b = Array.from(d.querySelector('div').shadowRoot.querySelectorAll('button')).find((x) => x.textContent === %s); if (!b) return false; b.click(); return true; })()"""
+# the lure's click: Allow clicked and Enter pressed while the guard holds (in one go, so it is inside the guard)
+BAR_EARLY_JS = """(() => { const d = document.querySelector('dialog.sc-dialog[open]'); if (!d) return 'no dialog'; if (d.dataset.guarded !== '1') return 'late';
+    const r = d.querySelector('div').shadowRoot; Array.from(r.querySelectorAll('button')).find((x) => x.textContent === 'Allow').click();
+    d.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return 'pressed'; })()"""
 
 # a fake ComfyUI frontend for V2: window.app records the graph it is given ("throw": its load fails)
 FAKE_APP = """<script>
@@ -354,10 +362,19 @@ class Gate:
                             await asyncio.sleep(0.1)
                         return None
 
-                    async def gum(name, constraints, press, shot=None):
-                        """One request of the page's main frame; `press` the bar's button, or None: no question may come."""
+                    async def gum(name, constraints, press, shot=None, lure=False):
+                        """One request of the page's main frame; `press` the bar's button, or None: no question may come.
+                        `lure`: Allow clicked and Enter pressed at once, inside the click guard, must not answer."""
                         await pc.eval(GUM_JS % json.dumps(constraints))
                         q = await question(5000 if press else 1500)
+                        if q and lure:
+                            early = await bc.eval(BAR_EARLY_JS)
+                            await asyncio.sleep(0.15)
+                            still = await bc.eval("!!document.querySelector('dialog.sc-dialog[open]')")
+                            ans = await pc.eval("window.__gum")
+                            out[name + " lure"] = {"press": early, "stillOpen": still, "answer": ans}
+                            if early != "pressed" or not still or ans:
+                                raise Exception(f"{name}: a click and Enter inside the guard: " + json.dumps(out[name + " lure"]))
                         if press is None:
                             if q:
                                 await bc.eval(BAR_PRESS_JS % json.dumps("Deny"))
@@ -383,7 +400,7 @@ class Gate:
                         got = await answer_of("window.__gum")
                         after = await self.js("const t0 = Date.now(); for (;;) { const i = await window.scumble.comfyView.info(); if (!i.asking || Date.now() - t0 > 3000) return i; await wait(100); }")
                         out[name] = {"asked": True, "question": q, "got": got, "barDuring": during["bar"]["height"], "barAfter": after["bar"]["height"], "askingAfter": after["asking"]}
-                        if q["buttons"] != ["Allow", "Deny"] or q["focused"] != "Deny" or host not in q["message"] or "for this session" not in q["message"]:
+                        if q["buttons"] != ["Allow", "Deny"] or q["focused"] != "Deny" or "Allow" in q["primary"] or host not in q["message"] or "for this session" not in q["message"]:
                             raise Exception(f"{name}: the question: " + json.dumps(q))
                         if during["asking"] != 1 or during["bar"]["height"] < 200 or (q["h"] < 200 and q.get("vis") == "visible"):
                             raise Exception(f"{name}: the bar does not cover the window while it asks: " + json.dumps({"bar": during["bar"], "inner": q["h"]}))
@@ -406,7 +423,7 @@ class Gate:
                     out["before"] = await look()
                     if out["before"] != {"camera": "denied", "microphone": "denied"}:
                         raise Exception("looked up before any answer: " + json.dumps(out["before"]))
-                    if await gum("mic denied", {"audio": True}, "Deny", shot="media_question.png") != "NotAllowedError":
+                    if await gum("mic denied", {"audio": True}, "Deny", shot="media_question.png", lure=True) != "NotAllowedError":
                         raise Exception("a microphone answered Deny: " + json.dumps(out["mic denied"]))
                     if "microphone" not in out["mic denied"]["question"]["message"] or "camera" in out["mic denied"]["question"]["message"]:
                         raise Exception("the question does not name the microphone alone: " + json.dumps(out["mic denied"]["question"]))
@@ -988,8 +1005,8 @@ async def main():
             await g.close()
             await g.step("no target: the start page, nothing loaded, one window, bounds kept", g.no_target)
             await g.step("the stub page: no app API, stays on its origin", g.page)
-            await g.step("camera and microphone: the page asks in the bar's dialog, once per kind; frames and denied kinds refused unasked", g.media)
             await g.step("Ctrl+S reaches the page, not Scumble's menu", g.keys)
+            await g.step("camera and microphone: the page asks in the bar's dialog, once per kind; frames and denied kinds refused unasked", g.media)
             await g.step("basic auth on the page and /ws", lambda: g.auth("basic", {"type": "basic", "user": "user"}))
             await g.step("bearer on the page and /ws", lambda: g.auth("bearer", {"type": "bearer"}))
             await g.step("a custom header on the page and /ws", lambda: g.auth("header", {"type": "header", "header": "X-Pod-Token"}))

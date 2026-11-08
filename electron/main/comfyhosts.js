@@ -70,6 +70,7 @@ function permissionAllowed(permission) {
 // target), is asked, once per origin and kind for the session; the answer lives in memory (comfyview.js), never in a
 // setting. A kind answered no stays no until Scumble quits; one answered yes is granted without a second question.
 const MEDIA_KINDS = { video: "camera", audio: "microphone" };
+const MEDIA_GUARD_MS = 500;   // the question takes no click, Enter or Space this long after it opened (mediaQuestion)
 
 /** The origin of an http(s) URL or origin string (Electron's securityOrigin ends in "/"), or "". */
 function webOrigin(url) {
@@ -118,8 +119,10 @@ function mediaCheckAllowed(args) {
 }
 
 /**
- * The question, as renderer/dialogs.js's ask() takes it: Allow / Deny, the focus and Enter on Deny (it opens unasked,
- * while the user may be typing in ComfyUI), Escape denies.
+ * The question, as renderer/dialogs.js's ask() takes it: Allow / Deny with Deny the default, the focus, Enter's and
+ * Escape's answer (it opens unasked, while the user may be typing in ComfyUI), and no answer by a click, Enter or
+ * Space for its first 500 ms (`guardMs`): the page's getUserMedia needs no click, so node-pack JavaScript could put a
+ * lure under where Allow appears and ask on the first click of a double click.
  */
 function mediaQuestion({ origin, cloud, kinds }) {
     let host = "";
@@ -130,11 +133,11 @@ function mediaQuestion({ origin, cloud, kinds }) {
         title: kinds.length > 1 ? "Camera and microphone" : kinds[0] === "microphone" ? "Microphone" : "Camera",
         message: `${who} wants to use ${what}. Allow it for this session?`,
         detail: "ComfyUI's Webcam Capture and Record Audio nodes ask for it. The page runs the JavaScript of every node pack on that server, so allow it only when you use such a node. Scumble keeps your answer until it quits and asks again after a restart.",
-        buttons: ["Allow", "Deny"], defaultId: 0, cancelId: 1, focusId: 1,
+        buttons: ["Allow", "Deny"], defaultId: 1, cancelId: 1, focusId: 1, guardMs: MEDIA_GUARD_MS,
     };
 }
 
 module.exports = {
     CLOUD_URL, CLOUD_AUTH_HOSTS, cloudAuthUrl, popupAction, navigationAllowed, DENIED_PERMISSIONS, permissionAllowed,
-    webOrigin, mediaKinds, mediaKey, mediaDecision, mediaCheckAllowed, mediaQuestion,
+    webOrigin, mediaKinds, mediaKey, mediaDecision, mediaCheckAllowed, mediaQuestion, MEDIA_GUARD_MS,
 };

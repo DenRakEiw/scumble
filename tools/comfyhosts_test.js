@@ -3,7 +3,7 @@
 // The gate comfyview runs it first.
 "use strict";
 
-const { cloudAuthUrl, popupAction, navigationAllowed, permissionAllowed, DENIED_PERMISSIONS, CLOUD_URL, mediaKinds, mediaKey, mediaDecision, mediaCheckAllowed, mediaQuestion } = require("../electron/main/comfyhosts.js");
+const { cloudAuthUrl, popupAction, navigationAllowed, permissionAllowed, DENIED_PERMISSIONS, CLOUD_URL, mediaKinds, mediaKey, mediaDecision, mediaCheckAllowed, mediaQuestion, MEDIA_GUARD_MS } = require("../electron/main/comfyhosts.js");
 
 const results = [];
 function check(what, ok, detail) {
@@ -59,9 +59,11 @@ const dc = mediaDecision(page({ origin: CLOUD_URL + "/", shownOrigin: CLOUD_URL 
 check("Comfy Cloud's own page is asked when it is the target", dc.action === "ask" && dc.origin === CLOUD_URL && JSON.stringify(dc.ask) === '["microphone"]', JSON.stringify(dc));
 const qm = mediaQuestion({ origin: shown, cloud: false, kinds: ["microphone"] });
 const qb = mediaQuestion({ origin: CLOUD_URL, cloud: true, kinds: ["camera", "microphone"] });
-check("the question: who, what, for this session; Allow / Deny with the focus on Deny, Escape denies",
+check("the question: who, what, for this session; Allow / Deny with Deny the default, the focus and Escape's answer",
     qm.message === "ComfyUI at 127.0.0.1:8188 wants to use your microphone. Allow it for this session?" && qb.message === "Comfy Cloud wants to use your camera and microphone. Allow it for this session?"
-    && JSON.stringify(qm.buttons) === '["Allow","Deny"]' && qm.focusId === 1 && qm.cancelId === 1 && /restart/.test(qm.detail), qm.message + " / " + qb.message);
+    && JSON.stringify(qm.buttons) === '["Allow","Deny"]' && qm.defaultId === 1 && qm.focusId === 1 && qm.cancelId === 1 && /restart/.test(qm.detail), qm.message + " / " + qb.message);
+check("the question takes no click, Enter or Space for its first 500 ms (a lure under Allow: getUserMedia needs no click)",
+    qm.guardMs === MEDIA_GUARD_MS && MEDIA_GUARD_MS >= 500 && qb.guardMs === MEDIA_GUARD_MS, String(qm.guardMs));
 check("media stays in the denied table: anything mediaDecision does not decide is refused", !permissionAllowed("media"));
 
 const failed = results.filter((x) => !x).length;

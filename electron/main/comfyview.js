@@ -388,7 +388,9 @@ class ComfyView {
         // global menu): ComfyUI's own Ctrl+S, Ctrl+Z and Ctrl+Enter reach the page, never Scumble's Save or Reload
         this.dropMenu();
         guardPermissions(this.session(), this);   // before the page's first load
-        const bar = new WebContentsView({ webPreferences: { preload: this.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false } });
+        // the bar keeps its timers in a window behind others (backgroundThrottling off): a question's wait for room and
+        // its click guard (askInBar) run on time there too; the bar has no other timers
+        const bar = new WebContentsView({ webPreferences: { preload: this.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, backgroundThrottling: false } });
         const page = new WebContentsView({ webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false } });
         this.bar = bar;
         this.page = page;
