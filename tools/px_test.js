@@ -1255,7 +1255,7 @@ async function retouchRouteCases(js) {
     } finally { globalThis.fetch = realFetch; }
     const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_stroke.js")).href);
     const L = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_liquify.js")).href);
-    for (const r of ["dabTone", "dabSponge", "freqSplit", "liquifyBlock", "liquifyPreview"]) if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, r)) { check(`kernels.js has the ${r} route`, false); return; }
+    for (const r of ["dabTone", "dabSponge", "freqSplit", "liquifyBlock", "liquifyPreview", "liquifyDab"]) if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, r)) { check(`kernels.js has the ${r} route`, false); return; }
     const warned = [], realWarn = console.warn;
     console.warn = (...a) => { warned.push(a.map(String).join(" ")); };
     K.setKernels("rust");
@@ -1270,6 +1270,9 @@ async function retouchRouteCases(js) {
         const pWinSrc = I.subarray(0, 16 * 16 * 4);
         const pWant = new Uint8Array(10 * 9 * 4);
         L.previewBlock({ data: pWinSrc, w: 16, h: 16, x0: 0, y0: 0, L: 1 }, pField, -2.5, 1.25, 1.5, pWant, 10, 9);
+        const fDabWantField = pField.copy();
+        const fDabWantBox = fDabWantField.dab("swirlcw", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, null);
+        const fDabWantNodes = fDabWantField.nodes(0, 0, fDabWantField.ni + 1, fDabWantField.nj + 1);
         const want = {
             tone: S.toneRGBA(I, lut, true), sponge: S.spongeRGBA(I, 0.7, true, true),
             low: S.blurRGBA(I, w, h, 3), blur: null, high: null,
@@ -1285,10 +1288,9 @@ async function retouchRouteCases(js) {
             const win = { data: wa.data, w: 16, h: 16, x0: 0, y0: 0, L: 1, px: wa.px, ptr: wa.ptr, bytes: wa.bytes };
             const prev = new Uint8Array(10 * 9 * 4);
             K.liquifyPreview(win, pField, -2.5, 1.25, 1.5, prev, 10, 9);
-            const fDab = pField.copy(), fWant = pField.copy();
+            const fDab = pField.copy();
             const dabBoxGot = fDab.dab("swirlcw", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, K.liquifyDab);
-            const dabBoxWant = fWant.dab("swirlcw", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, null);
-            const dabSame = JSON.stringify(dabBoxGot) === JSON.stringify(dabBoxWant) && eqBytes(fDab.nodes(0, 0, fDab.ni + 1, fDab.nj + 1), fWant.nodes(0, 0, fWant.ni + 1, fWant.nj + 1));
+            const dabSame = JSON.stringify(dabBoxGot) === JSON.stringify(fDabWantBox) && eqBytes(fDab.nodes(0, 0, fDab.ni + 1, fDab.nj + 1), fDabWantNodes);
             const hadPtr = !!win.ptr, px0 = win.px, ptr0 = win.ptr, bytes0 = win.bytes;
             K.freeLiquifyWindow(win);
             K.freeLiquifyWindow(win);
@@ -1303,11 +1305,11 @@ async function retouchRouteCases(js) {
         const same = (o) => eqBytes(o.tone, want.tone) && eqBytes(o.sponge, want.sponge) && eqBytes(o.low, want.low) && eqBytes(o.high, want.high) && eqBytes(o.sepLow, want.low) && eqBytes(o.sepHigh, want.high) && eqBytes(o.liq, lWant) && o.liqCount === lWantCount && eqBytes(o.prev, pWant) && o.dabSame && o.freed;
         K.pxCalls(true);
         const rust = all(), cr = K.pxCalls(true);
-        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview"]) K.setRoute(r, "js");
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview", "liquifyDab"]) K.setRoute(r, "js");
         const twin = all(), cj = K.pxCalls(true);
-        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview"]) K.setRoute(r, null);
-        check("kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock / liquifyPreview: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never",
-            same(rust) && rust.hadPtr && same(twin) && !twin.hadPtr && cr.tone_rgba === 1 && cr.sponge_rgba === 1 && cr.freq_split === 2 && cr.blur_rgba === 1 && cr.liquify_block === 1 && cr.liquify_preview === 1 && !cj.tone_rgba && !cj.sponge_rgba && !cj.freq_split && !cj.blur_rgba && !cj.liquify_block && !cj.liquify_preview,
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview", "liquifyDab"]) K.setRoute(r, null);
+        check("kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock / liquifyPreview / liquifyDab: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never",
+            same(rust) && rust.hadPtr && same(twin) && !twin.hadPtr && cr.tone_rgba === 1 && cr.sponge_rgba === 1 && cr.freq_split === 2 && cr.blur_rgba === 1 && cr.liquify_block === 1 && cr.liquify_preview === 1 && cr.liquify_dab === 1 && !cj.tone_rgba && !cj.sponge_rgba && !cj.freq_split && !cj.blur_rgba && !cj.liquify_block && !cj.liquify_preview && !cj.liquify_dab,
             `rust ${JSON.stringify(cr)}, js ${JSON.stringify(cj)}`);
         // K29: liquifyPreview runs on win.px (never rustPx(), so an idle drop mid-stroke still uses win.px), and
         // refreshes win.data when the mode or route switches mid-stroke after win.px grew its memory
@@ -1372,11 +1374,15 @@ async function retouchRouteCases(js) {
             && ca.blur_rgba === 1 && !ca.freq_split && cb.freq_split === 1 && !cb.blur_rgba, `${JSON.stringify(ca)} ${JSON.stringify(cb)}`);
         // refused by Rust: the twin's bytes
         const odd = I.subarray(0, 4 * 7 + 2), short = lut.subarray(0, 200), rlOut = new Uint8Array(8 * 8 * 4), rpOut = new Uint8Array(10 * 9 * 4);
+        const rdOut = new Int32Array(3 * 3 * 2), rdBox = new Int32Array(4), rdWantOut = new Int32Array(3 * 3 * 2), rdWantBox = new Int32Array(4);
+        const rdWant = L.liquifyDabNodes("push", lNodes, 5, 0, 0, 2, 16, 16, 4, 4, 6, 0.5, 0.8, 1, -1, null, null, 0, 0, 3, 3, rdWantOut, rdWantBox);
         const rt = K.toneRGBA(I, short, true), rs = K.spongeRGBA(odd, 0.7, true), rr = K.freqSeparate(I, w, h - 1, 3);
         const rl = K.liquifyBlock(I, 16, 16, 0, 0, Array.from(lNodes), 5, 0, 0, 2, null, rlOut, 0, 32, 0, 0, 8, 8);
         K.liquifyPreview({ data: pWinSrc, w: 16, h: 16, x0: 0, y0: 0, L: 1, px: {}, ptr: 0 }, pField, -2.5, 1.25, 1.5, rpOut, 10, 9);
+        const rd = K.liquifyDab("push", Array.from(lNodes), 5, 0, 0, 2, 16, 16, 4, 4, 6, 0.5, 0.8, 1, -1, null, null, 0, 0, 3, 3, rdOut, rdBox);
         check("kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's, a plain array of nodes, an unheld window): the twin's bytes",
             eqBytes(rt, S.toneRGBA(I, short, true)) && eqBytes(rs, S.spongeRGBA(odd, 0.7, true)) && eqBytes(rlOut, lWant) && rl === lWantCount && eqBytes(rpOut, pWant)
+            && rd === rdWant && eqBytes(rdOut, rdWantOut) && eqBytes(rdBox, rdWantBox)
             && (() => { const l = S.blurRGBA(I, w, h - 1, 3); const hh = S.freqSplit(I, l); return eqBytes(rr.low, l) && eqBytes(rr.high, hh); })());
         // a trap in each: the twin's bytes, the instance replaced, the next call Rust again
         const eqFloats = (a, b) => eqBytes(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), new Uint8Array(b.buffer, b.byteOffset, b.byteLength));
@@ -1405,6 +1411,11 @@ async function retouchRouteCases(js) {
                 K.freeLiquifyWindow(win);
                 return out;
             }, (o) => eqBytes(o, pWant)],
+            ["dab", "liquifyDab", () => {
+                const f = pField.copy();
+                const b = f.dab("swirlcw", 16, 16, 10, 0.4, 0.75, null, null, pField.cells, K.liquifyDab);
+                return { f, b };
+            }, (o) => JSON.stringify(o.b) === JSON.stringify(fDabWantBox) && eqBytes(o.f.nodes(0, 0, o.f.ni + 1, o.f.nj + 1), fDabWantNodes)],
             ["edgefitShrink", "edgefitShrink", () => K.edgefitShrink(I, w, h, 32, 20), (o) => eqFloats(o.gray, want.es.gray) && eqFloats(o.alpha, want.es.alpha)],
             ["warpRgba", "warpRgba", () => K.warpRgba(I, w, h, warpM), (o) => eqBytes(o, want.wr)],
             ["warpCoverage", "warpCoverage", () => K.warpCoverage(w, h, warpM), (o) => eqFloats(o, want.wc)],
@@ -1417,7 +1428,7 @@ async function retouchRouteCases(js) {
             const got = callIt(), after = K.rustPx(), i1 = K.pxInstances();
             if (!(check1(got) && p.trapped instanceof WebAssembly.RuntimeError && after !== p && i1.trap === i0.trap + 1)) { ok = false; detail = `${name}: ${JSON.stringify(i1)}`; }
         }
-        check("kernels.js K27 / K28 / K29 / K34 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
+        check("kernels.js K27 / K28 / K29 / K31 / K34 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
         // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
         const i0 = K.pxInstances();
         K.setRoute("releaseMB", 0);
@@ -1428,7 +1439,7 @@ async function retouchRouteCases(js) {
         console.warn = realWarn;
         kernelsBack(K);
     }
-    check("the K27 / K28 / K29 / K34 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|edgefit_shrink|warp_rgba|warp_coverage/.test(w)).length === 9, warned.join(" | "));
+    check("the K27 / K28 / K29 / K31 / K34 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|liquify_dab|edgefit_shrink|warp_rgba|warp_coverage/.test(w)).length === 10, warned.join(" | "));
     void js;
 }
 
@@ -4632,8 +4643,225 @@ async function liquifyCases(px, label, L, R) {
         && px.liquifyPreview(okWin, { w: 32, h: 32, s: 2, ni: 1, nj: 1, nodes: (_x, _y, nw, nh) => new Int32Array(nw * nh * 2) }, 4, 0, 1, okOut, 4, 4) === false
         && px.liquifyPreview(okWin, okField, 0, 0, 1, okOut.subarray(0, 12), 4, 4) === false);
 
+    // K31: liquify_dab against liquifyDabNodes across all 6 modes, s=1..8, odd/even ow, sel/freeze planes,
+    // saturation at +-LIQUIFY_MAX, border clamping at 0..xmax / 0..ymax, and changed=0 windows
+    const dabCases = [];
+    for (const s of [1, 2, 4, 8]) {
+        const r = rng(500 + s), ni = 24, nj = 20, sw = 20, sh = 18, si0 = 2, sj0 = 1;
+        const baseSrc = new Int32Array(sw * sh * 2);
+        for (let k = 0; k < baseSrc.length; k++) {
+            const u = r();
+            baseSrc[k] = u < 0.15 ? 0 : u < 0.25 ? L.LIQUIFY_MAX - 20 : u < 0.35 ? -L.LIQUIFY_MAX + 20 : Math.round((r() - 0.5) * 8000);
+        }
+        const satSrc = new Int32Array(sw * sh * 2);
+        for (let k = 0; k < satSrc.length; k += 2) {
+            satSrc[k] = L.LIQUIFY_MAX - 10;
+            satSrc[k + 1] = -L.LIQUIFY_MAX + 10;
+        }
+        dabCases.push({
+            tag: `s=${s} push clamp_d saturation`,
+            args: ["push", satSrc, sw, si0, sj0, s, ni, nj, (si0 + 6) * s, (sj0 + 6) * s, 5 * s, 0.5, 1.0, -2 * s, 2 * s, null, null, si0 + 3, sj0 + 3, 6, 6, new Int32Array(6 * 6 * 2), new Int32Array(4)],
+        });
+        for (const mode of L.LIQUIFY_MODES) {
+            for (const [ow, oh, i0, j0, h, amount, planeKind] of [
+                [1, 3, si0 + 4, sj0 + 3, 0, 0.9, "none"],
+                [2, 4, si0 + 3, sj0 + 2, 0.35, 0.75, "sel"],
+                [5, 5, si0 + 2, sj0 + 2, 0.8, 1.0, "freeze"],
+                [9, 7, si0 + 3, sj0 + 3, 0.5, 0.6, "both"],
+                [6, 5, si0 + 4, sj0 + 4, 1.0, 0.85, "frozenAll"],
+            ]) {
+                const n = ow * oh;
+                let sel = null, freeze = null;
+                if (planeKind === "sel" || planeKind === "both") {
+                    sel = new Uint8Array(n);
+                    for (let k = 0; k < n; k++) sel[k] = k % 5 === 0 ? 0 : k % 5 === 1 ? 255 : (1 + ((k * 53) % 254));
+                }
+                if (planeKind === "freeze" || planeKind === "both") {
+                    freeze = new Uint8Array(n);
+                    for (let k = 0; k < n; k++) freeze[k] = k % 7 === 0 ? 255 : k % 7 === 1 ? 0 : (1 + ((k * 71) % 254));
+                }
+                if (planeKind === "frozenAll") {
+                    freeze = new Uint8Array(n).fill(255);
+                }
+                const cx = (i0 + ow * 0.45) * s + 0.375, cy = (j0 + oh * 0.52) * s - 0.25;
+                const rad = Math.max(ow, oh) * s * 0.65;
+                const dxStep = mode === "push" ? 0.85 * s : 0, dyStep = mode === "push" ? -0.65 * s : 0;
+                const outInit = new Int32Array(n * 2).fill(0x5a5a);
+                const boxInit = new Int32Array([-9, -8, -7, -6]);
+                dabCases.push({
+                    tag: `s=${s} ${mode} ${ow}x${oh} h=${h} plane=${planeKind}`,
+                    args: [mode, baseSrc, sw, si0, sj0, s, ni, nj, cx, cy, rad, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, outInit, boxInit],
+                });
+            }
+        }
+    }
+    const callDab = (k, [mode, src, sw, si0, sj0, s, ni, nj, cx, cy, rad, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, out, box]) => {
+        const count = k.liquifyDab(mode, src, sw, si0, sj0, s, ni, nj, cx, cy, rad, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, out, box);
+        if (count === null) throw new Error("liquifyDab refused a valid case");
+        return { count, out, box };
+    };
+    twinCheck({ name: `liquify_dab (${label})`, builds: [[label, px]], twin: { liquifyDab: L.liquifyDabNodes }, call: callDab, cases: dabCases, shift: true });
+
+    // Three-way LiquifyField.dab parity on both builds: Map-based dab = dense JS twin (liquifyDabNodes) = Rust (px.liquifyDab)
+    let badDab = "";
+    const rustDabFn = (...a) => px.liquifyDab(...a);
+    for (const s of [1, 2, 4, 8]) {
+        const W = 540, H = 380, n = 256 / s, sh = Math.log2(n) | 0, m = n - 1, r = rng(400 + s);
+        const selCells = new Map(), frCells = new Map();
+        const tw = Math.ceil((Math.ceil(W / s) + 1) / n), th = Math.ceil((Math.ceil(H / s) + 1) / n);
+        for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) {
+            if (r() < 0.75) {
+                const c = new Uint8Array(n * n);
+                for (let k = 0; k < c.length; k++) c[k] = r() < 0.2 ? 0 : r() < 0.5 ? 255 : 1 + Math.floor(r() * 254);
+                selCells.set((ty << 16) | tx, c);
+            }
+            if (r() < 0.75) {
+                const c = new Uint8Array(n * n);
+                for (let k = 0; k < c.length; k++) c[k] = r() < 0.3 ? 0 : r() < 0.5 ? 255 : 1 + Math.floor(r() * 254);
+                frCells.set((ty << 16) | tx, c);
+            }
+        }
+        const selByte = (i, j) => { const c = selCells.get(((j >> sh) << 16) | (i >> sh)); return c ? c[(j & m) * n + (i & m)] : 0; };
+        const frByte = (i, j) => { const c = frCells.get(((j >> sh) << 16) | (i >> sh)); return c ? c[(j & m) * n + (i & m)] : 0; };
+        const selFn = (i, j) => selByte(i, j) / 255;
+        selFn.planes = (i0, j0, ow, oh) => ({ sel: L.thawPlane((tx, ty) => selCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh), freeze: null });
+        const frFn = (i, j) => 1 - frByte(i, j) / 255;
+        frFn.planes = (i0, j0, ow, oh) => ({ sel: null, freeze: L.thawPlane((tx, ty) => frCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh) });
+        const bothFn = (i, j) => {
+            const sv = selByte(i, j);
+            if (!sv) return 0;
+            const fv = frByte(i, j);
+            return fv === 255 ? 0 : (sv / 255) * (1 - fv / 255);
+        };
+        bothFn.planes = (i0, j0, ow, oh) => ({
+            sel: L.thawPlane((tx, ty) => selCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh),
+            freeze: L.thawPlane((tx, ty) => frCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh),
+        });
+        const thaws = [null, selFn, frFn, bothFn];
+        const fMap = new L.LiquifyField(W, H, s), fDense = new L.LiquifyField(W, H, s), fRust = new L.LiquifyField(W, H, s);
+        let beforeMap = new Map(), beforeDense = new Map(), beforeRust = new Map(), snapDense = new Map(), snapRust = new Map();
+        const reseedBefore = () => {
+            beforeMap = new Map(fMap.cells);
+            beforeDense = new Map(fDense.cells);
+            beforeRust = new Map(fRust.cells);
+            snapDense = new Map([...beforeDense].map(([k, c]) => [k, c.slice()]));
+            snapRust = new Map([...beforeRust].map(([k, c]) => [k, c.slice()]));
+        };
+        for (let q = 0; q < 120 && !badDab; q++) {
+            if (q % 15 === 0) reseedBefore();
+            const mode = L.LIQUIFY_MODES[q % 6];
+            const cx = -30 + r() * (W + 60), cy = -30 + r() * (H + 60);
+            const rad = 4 + r() * 140, h = q % 11 === 0 ? 1 : r() * 0.9;
+            const amount = (q % 13 === 0 ? -1 : 1) * (0.05 + r() * 0.95);
+            const delta = [Math.cos(q) * 0.25 * rad, Math.sin(q) * 0.25 * rad];
+            const thaw = thaws[q % 4];
+            const b1 = fMap.dab(mode, cx, cy, rad, h, amount, delta, thaw, beforeMap, null);
+            const b2 = fDense.dab(mode, cx, cy, rad, h, amount, delta, thaw, beforeDense, L.liquifyDabNodes);
+            const b3 = fRust.dab(mode, cx, cy, rad, h, amount, delta, thaw, beforeRust, rustDabFn);
+            if (JSON.stringify(b1) !== JSON.stringify(b2) || JSON.stringify(b1) !== JSON.stringify(b3)) {
+                badDab = `s=${s} q=${q} ${mode}: box ${JSON.stringify(b1)} vs ${JSON.stringify(b2)} vs ${JSON.stringify(b3)}`;
+                break;
+            }
+            if (fMap.cells.size !== fDense.cells.size || fMap.cells.size !== fRust.cells.size) {
+                badDab = `s=${s} q=${q} ${mode}: size ${fMap.cells.size} vs ${fDense.cells.size} vs ${fRust.cells.size}`;
+                break;
+            }
+            for (const [k, c1] of fMap.cells) {
+                const c2 = fDense.cells.get(k), c3 = fRust.cells.get(k);
+                if (!c2 || !c3) { badDab = `s=${s} q=${q} ${mode}: missing cell ${k}`; break; }
+                for (let i = 0; i < c1.length; i++) {
+                    if (c1[i] !== c2[i] || c1[i] !== c3[i]) { badDab = `s=${s} q=${q} ${mode}: cell ${k}[${i}] ${c1[i]} vs ${c2[i]} vs ${c3[i]}`; break; }
+                }
+                if (badDab) break;
+                const sh1 = c1 === beforeMap.get(k), sh2 = c2 === beforeDense.get(k), sh3 = c3 === beforeRust.get(k);
+                if (sh1 !== sh2 || sh1 !== sh3) { badDab = `s=${s} q=${q} ${mode}: before sharing mismatch on cell ${k}`; break; }
+            }
+            for (const [k, c] of beforeDense) {
+                const o = snapDense.get(k);
+                for (let i = 0; i < c.length; i++) if (c[i] !== o[i]) { badDab = `s=${s} q=${q} ${mode}: beforeDense cell ${k} mutated`; break; }
+            }
+            for (const [k, c] of beforeRust) {
+                const o = snapRust.get(k);
+                for (let i = 0; i < c.length; i++) if (c[i] !== o[i]) { badDab = `s=${s} q=${q} ${mode}: beforeRust cell ${k} mutated`; break; }
+            }
+        }
+        if (!badDab) {
+            const fPlainDense = fDense.copy(), fPlainRust = fRust.copy();
+            const bPlain1 = fMap.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, null);
+            const bPlain2 = fPlainDense.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, L.liquifyDabNodes);
+            const bPlain3 = fPlainRust.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, rustDabFn);
+            const nPlain1 = fMap.nodes(0, 0, fMap.ni + 2, fMap.nj + 2), nPlain2 = fPlainDense.nodes(0, 0, fPlainDense.ni + 2, fPlainDense.nj + 2), nPlain3 = fPlainRust.nodes(0, 0, fPlainRust.ni + 2, fPlainRust.nj + 2);
+            let plainDiff = JSON.stringify(bPlain1) !== JSON.stringify(bPlain2) || JSON.stringify(bPlain1) !== JSON.stringify(bPlain3) || !eqBytes(nPlain1, nPlain2) || !eqBytes(nPlain1, nPlain3);
+            if (plainDiff) badDab = `s=${s} plain thaw mismatch`;
+            const dirtyOut = new Int32Array((fDense.ni + 2) * (fDense.nj + 2) * 2).fill(999);
+            const reusedNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2, dirtyOut);
+            const freshNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2);
+            for (let i = 0; i < freshNodes.length && !badDab; i++) if (reusedNodes[i] !== freshNodes[i]) badDab = `s=${s} nodes(..., out) dirty at ${i}`;
+            for (let q = 0; q < 200 && (!fDense.empty || !fRust.empty); q++) {
+                fDense.dab("restore", W / 2, H / 2, W + H, 0.9, 1, null, null, null, L.liquifyDabNodes);
+                fRust.dab("restore", W / 2, H / 2, W + H, 0.9, 1, null, null, null, rustDabFn);
+            }
+            if (!fDense.empty || !fRust.empty) badDab = `s=${s} restore did not prune all cells (dense=${fDense.cells.size}, rust=${fRust.cells.size})`;
+            let restoreCalls = 0;
+            const countKernel = (...a) => { restoreCalls++; return px.liquifyDab(...a); };
+            if (fRust.dab("restore", 100, 100, 40, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} empty restore called kernel`;
+            fRust.dab("push", 30, 30, 15, 0.5, 0.8, [4, 4], null, null, rustDabFn);
+            if (fRust.dab("restore", W - 15, H - 15, 15, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} untouched-cell restore called kernel`;
+        }
+    }
+    check(`${label} liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8`, !badDab, badDab);
+
+    // K31 arena growth on a fresh Px instance: taking po / psel / pfrz / pbox after ps exceeds the first 1 MB arena chunk
+    // and grows wasm memory before field.nodes fills sView in place, without detaching sView
+    {
+        const fresh = new px.constructor(new WebAssembly.Instance(px.module, {}), px.module);
+        const bytes0 = fresh.byteLength;
+        const fFresh = new L.LiquifyField(2000, 2000, 4), fWant = new L.LiquifyField(2000, 2000, 4);
+        fFresh.dab("push", 900, 900, 300, 0.5, 0.8, [12, -9], null, null, null);
+        fWant.dab("push", 900, 900, 300, 0.5, 0.8, [12, -9], null, null, null);
+        const bigThaw = (i, j) => (((i + j) & 3) ? 0.75 : 1);
+        bigThaw.planes = (_i0, _j0, ow, oh) => ({
+            sel: new Uint8Array(ow * oh).fill(210),
+            freeze: new Uint8Array(ow * oh).fill(35),
+        });
+        const bFresh = fFresh.dab("swirlcw", 1000, 1000, 500, 0.45, 0.9, null, bigThaw, new Map(fFresh.cells), (...a) => fresh.liquifyDab(...a));
+        const bWant = fWant.dab("swirlcw", 1000, 1000, 500, 0.45, 0.9, null, bigThaw, new Map(fWant.cells), L.liquifyDabNodes);
+        const grew = fresh.byteLength > bytes0;
+        const sameBox = JSON.stringify(bFresh) === JSON.stringify(bWant);
+        const sameNodes = eqBytes(fFresh.nodes(0, 0, fFresh.ni + 1, fFresh.nj + 1), fWant.nodes(0, 0, fWant.ni + 1, fWant.nj + 1));
+        check(`${label} liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view`,
+            grew && sameBox && sameNodes, `bytes ${bytes0} -> ${fresh.byteLength}, sameBox=${sameBox}, sameNodes=${sameNodes}`);
+    }
+
+    // Refusals on px.liquifyDab and raw exports.liquify_dab
+    {
+        const src = new Int32Array(6 * 6 * 2), out = new Int32Array(4 * 4 * 2).fill(77), box = new Int32Array(4).fill(-5);
+        const rPx = [
+            px.liquifyDab("bogus", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 3, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 0, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 0, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 0, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 0, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 0, 0, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, NaN, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 0, 4, out, box),
+            px.liquifyDab("push", src, 6, 1, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 6, 4, out, box),
+            px.liquifyDab("push", src.subarray(0, 10), 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, new Uint8Array(3), null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, new Uint8Array(3), 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out.subarray(0, 4), box),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, out, new Int32Array(2)),
+            px.liquifyDab("push", src, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, -100, 0, null, null, 0, 0, 4, 4, out, box),
+            px.liquifyDab("push", { _dabSh: 6, nodes: () => new Int32Array(4) }, 6, 0, 0, 1, 5, 5, 2, 2, 4, 0.5, 1, 1, 1, null, null, 0, 0, 4, 4, null, box),
+        ];
+        check(`${label} liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing`,
+            rPx.every((c) => c === null) && out.every((v) => v === 77) && box.every((v) => v === -5), JSON.stringify(rPx));
+    }
+
     if (label === "rust simd") {
-        // K30: thawPlane, liquifyDabNodes and dab(..., liquifyDabNodes) equal the Map-based dab bit for bit
+        // K30: thawPlane and liquifyDabNodes standalone refusal checks
         let badThaw = "";
         for (const s of [1, 2, 4, 8]) {
             const n = 256 / s, sh = Math.log2(n) | 0, m = n - 1, r = rng(300 + s);
@@ -4656,93 +4884,6 @@ async function liquifyCases(px, label, L, R) {
             if (L.thawPlane(cellOf, n, sh, 0, 0, 0, 5).length !== 0 || L.thawPlane(cellOf, n, sh, 0, 0, 5, 0).length !== 0) badThaw = `s=${s} non-empty on 0 size`;
         }
         check("thawPlane (K30): extracts byte planes across present and missing cells at s = 1, 2, 4, 8", !badThaw, badThaw);
-
-        let badDab = "";
-        for (const s of [1, 2, 4, 8]) {
-            const W = 540, H = 380, n = 256 / s, sh = Math.log2(n) | 0, m = n - 1, r = rng(400 + s);
-            const selCells = new Map(), frCells = new Map();
-            const tw = Math.ceil((Math.ceil(W / s) + 1) / n), th = Math.ceil((Math.ceil(H / s) + 1) / n);
-            for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) {
-                if (r() < 0.75) {
-                    const c = new Uint8Array(n * n);
-                    for (let k = 0; k < c.length; k++) c[k] = r() < 0.2 ? 0 : r() < 0.5 ? 255 : 1 + Math.floor(r() * 254);
-                    selCells.set((ty << 16) | tx, c);
-                }
-                if (r() < 0.75) {
-                    const c = new Uint8Array(n * n);
-                    for (let k = 0; k < c.length; k++) c[k] = r() < 0.3 ? 0 : r() < 0.5 ? 255 : 1 + Math.floor(r() * 254);
-                    frCells.set((ty << 16) | tx, c);
-                }
-            }
-            const selByte = (i, j) => { const c = selCells.get(((j >> sh) << 16) | (i >> sh)); return c ? c[(j & m) * n + (i & m)] : 0; };
-            const frByte = (i, j) => { const c = frCells.get(((j >> sh) << 16) | (i >> sh)); return c ? c[(j & m) * n + (i & m)] : 0; };
-            const selFn = (i, j) => selByte(i, j) / 255;
-            selFn.planes = (i0, j0, ow, oh) => ({ sel: L.thawPlane((tx, ty) => selCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh), freeze: null });
-            const frFn = (i, j) => 1 - frByte(i, j) / 255;
-            frFn.planes = (i0, j0, ow, oh) => ({ sel: null, freeze: L.thawPlane((tx, ty) => frCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh) });
-            const bothFn = (i, j) => {
-                const sv = selByte(i, j);
-                if (!sv) return 0;
-                const fv = frByte(i, j);
-                return fv === 255 ? 0 : (sv / 255) * (1 - fv / 255);
-            };
-            bothFn.planes = (i0, j0, ow, oh) => ({
-                sel: L.thawPlane((tx, ty) => selCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh),
-                freeze: L.thawPlane((tx, ty) => frCells.get((ty << 16) | tx), n, sh, i0, j0, ow, oh),
-            });
-            const thaws = [null, selFn, frFn, bothFn];
-            const fMap = new L.LiquifyField(W, H, s), fDense = new L.LiquifyField(W, H, s);
-            let beforeMap = new Map(), beforeDense = new Map(), snapDense = new Map();
-            const reseedBefore = () => {
-                beforeMap = new Map(fMap.cells);
-                beforeDense = new Map(fDense.cells);
-                snapDense = new Map([...beforeDense].map(([k, c]) => [k, c.slice()]));
-            };
-            for (let q = 0; q < 120 && !badDab; q++) {
-                if (q % 15 === 0) reseedBefore();
-                const mode = L.LIQUIFY_MODES[q % 6];
-                const cx = -30 + r() * (W + 60), cy = -30 + r() * (H + 60);
-                const rad = 4 + r() * 140, h = q % 11 === 0 ? 1 : r() * 0.9;
-                const amount = (q % 13 === 0 ? -1 : 1) * (0.05 + r() * 0.95);
-                const delta = [Math.cos(q) * 0.25 * rad, Math.sin(q) * 0.25 * rad];
-                const thaw = thaws[q % 4];
-                const b1 = fMap.dab(mode, cx, cy, rad, h, amount, delta, thaw, beforeMap, null);
-                const b2 = fDense.dab(mode, cx, cy, rad, h, amount, delta, thaw, beforeDense, L.liquifyDabNodes);
-                if (JSON.stringify(b1) !== JSON.stringify(b2)) { badDab = `s=${s} q=${q} ${mode}: box ${JSON.stringify(b1)} vs ${JSON.stringify(b2)}`; break; }
-                if (fMap.cells.size !== fDense.cells.size) { badDab = `s=${s} q=${q} ${mode}: size ${fMap.cells.size} vs ${fDense.cells.size}`; break; }
-                for (const [k, c1] of fMap.cells) {
-                    const c2 = fDense.cells.get(k);
-                    if (!c2) { badDab = `s=${s} q=${q} ${mode}: missing cell ${k}`; break; }
-                    for (let i = 0; i < c1.length; i++) if (c1[i] !== c2[i]) { badDab = `s=${s} q=${q} ${mode}: cell ${k}[${i}] ${c1[i]} vs ${c2[i]}`; break; }
-                    if ((c1 === beforeMap.get(k)) !== (c2 === beforeDense.get(k))) { badDab = `s=${s} q=${q} ${mode}: before sharing mismatch on cell ${k}`; break; }
-                }
-                for (const [k, c] of beforeDense) {
-                    const o = snapDense.get(k);
-                    for (let i = 0; i < c.length; i++) if (c[i] !== o[i]) { badDab = `s=${s} q=${q} ${mode}: beforeDense cell ${k} mutated`; break; }
-                }
-            }
-            if (!badDab) {
-                const fPlain = fDense.copy();
-                const bPlain1 = fMap.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, null);
-                const bPlain2 = fPlain.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, L.liquifyDabNodes);
-                const nPlain1 = fMap.nodes(0, 0, fMap.ni + 2, fMap.nj + 2), nPlain2 = fPlain.nodes(0, 0, fPlain.ni + 2, fPlain.nj + 2);
-                let plainDiff = JSON.stringify(bPlain1) !== JSON.stringify(bPlain2) || nPlain1.length !== nPlain2.length;
-                for (let i = 0; i < nPlain1.length && !plainDiff; i++) if (nPlain1[i] !== nPlain2[i]) plainDiff = true;
-                if (plainDiff) badDab = `s=${s} plain thaw mismatch`;
-                const dirtyOut = new Int32Array((fDense.ni + 2) * (fDense.nj + 2) * 2).fill(999);
-                const reusedNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2, dirtyOut);
-                const freshNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2);
-                for (let i = 0; i < freshNodes.length && !badDab; i++) if (reusedNodes[i] !== freshNodes[i]) badDab = `s=${s} nodes(..., out) dirty at ${i}`;
-                for (let q = 0; q < 200 && !fDense.empty; q++) fDense.dab("restore", W / 2, H / 2, W + H, 0.9, 1, null, null, null, L.liquifyDabNodes);
-                if (!fDense.empty) badDab = `s=${s} restore did not prune all cells (${fDense.cells.size} left)`;
-                let restoreCalls = 0;
-                const countKernel = (...a) => { restoreCalls++; return L.liquifyDabNodes(...a); };
-                if (fDense.dab("restore", 100, 100, 40, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} empty restore called kernel`;
-                fDense.dab("push", 30, 30, 15, 0.5, 0.8, [4, 4], null, null, L.liquifyDabNodes);
-                if (fDense.dab("restore", W - 15, H - 15, 15, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} untouched-cell restore called kernel`;
-            }
-        }
-        check("liquifyDabNodes (K30): dense twin equals Map-based dab bit for bit across all 6 modes, s = 1..8, selection/freeze thaw planes, before sharing and restore pruning", !badDab, badDab);
 
         const src = new Int32Array(6 * 6 * 2), out = new Int32Array(4 * 4 * 2), box = new Int32Array(4);
         out.fill(77);

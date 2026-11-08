@@ -523,3 +523,349 @@ pub fn liquify_preview(
     }
     1
 }
+
+const LIQUIFY_MAX: i32 = 16384 * 256;
+pub const DAB_REFUSED: u32 = u32::MAX;
+
+#[inline]
+fn clamp_d(v: i64) -> i32 {
+    if v > LIQUIFY_MAX as i64 {
+        LIQUIFY_MAX
+    } else if v < -(LIQUIFY_MAX as i64) {
+        -LIQUIFY_MAX
+    } else {
+        v as i32
+    }
+}
+
+/// Liquify's dense dab kernel (`inpaint_liquify.js` `liquifyDabNodes`, K31; `docs/PLAN_WASM_BUILD.md` §4.9).
+/// `mode`: 0 push, 1 grow, 2 shrink, 3 swirlcw, 4 swirlccw, 5 restore.
+/// Over the node box `i0..(i0 + ow - 1)`, `j0..(j0 + oh - 1)` (inclusive), reads the pre-dab field from `src`
+/// (`sw` x `sh` dense `(dx, dy)` nodes from `(si0, sj0)` in 1/256 px), weighs by `sel` (alpha 0..255) and `freeze`
+/// (0..255, weighed by `1 - freeze / 255`) when given (`ow` x `oh` bytes each), writes the resulting `ow` x `oh`
+/// nodes to `out` (`ow * oh * 2` `i32`s) and `[bi0, bj0, bi1, bj1]` to `box_out` (when at least one node changed),
+/// and returns how many nodes changed (`0..=ow*oh`), or `DAB_REFUSED` (`u32::MAX`) when the arguments lie outside
+/// the contract.
+#[allow(clippy::too_many_arguments)]
+pub fn liquify_dab(
+    mode: u32,
+    src: &[i32],
+    sw: usize,
+    sh: usize,
+    si0: i32,
+    sj0: i32,
+    s: u32,
+    ni: usize,
+    nj: usize,
+    cx: f64,
+    cy: f64,
+    r: f64,
+    h: f64,
+    amount: f64,
+    dx_step: f64,
+    dy_step: f64,
+    sel: Option<&[u8]>,
+    freeze: Option<&[u8]>,
+    i0: i32,
+    j0: i32,
+    ow: usize,
+    oh: usize,
+    out: &mut [i32],
+    box_out: &mut [i32],
+) -> u32 {
+    if mode > 5
+        || !matches!(s, 1 | 2 | 4 | 8)
+        || sw == 0
+        || sh == 0
+        || ow == 0
+        || oh == 0
+        || ni == 0
+        || nj == 0
+        || !(r > 0.0)
+        || !(amount > 0.0)
+        || !cx.is_finite()
+        || !cy.is_finite()
+        || !r.is_finite()
+        || !h.is_finite()
+        || !amount.is_finite()
+        || !dx_step.is_finite()
+        || !dy_step.is_finite()
+    {
+        return DAB_REFUSED;
+    }
+    let Some(src_need) = sw.checked_mul(sh).and_then(|n| n.checked_mul(2)) else {
+        return DAB_REFUSED;
+    };
+    let Some(plane_len) = ow.checked_mul(oh) else {
+        return DAB_REFUSED;
+    };
+    let Some(out_need) = plane_len.checked_mul(2) else {
+        return DAB_REFUSED;
+    };
+    if src.len() < src_need || out.len() < out_need || box_out.len() < 4 {
+        return DAB_REFUSED;
+    }
+    if let Some(s_plane) = sel {
+        if s_plane.len() < plane_len {
+            return DAB_REFUSED;
+        }
+    }
+    if let Some(f_plane) = freeze {
+        if f_plane.len() < plane_len {
+            return DAB_REFUSED;
+        }
+    }
+    let Ok(ow_i32) = i32::try_from(ow) else {
+        return DAB_REFUSED;
+    };
+    let Ok(oh_i32) = i32::try_from(oh) else {
+        return DAB_REFUSED;
+    };
+    let Some(i1) = i0.checked_add(ow_i32 - 1) else {
+        return DAB_REFUSED;
+    };
+    let Some(j1) = j0.checked_add(oh_i32 - 1) else {
+        return DAB_REFUSED;
+    };
+    if i0 < 0 || j0 < 0 || i0 < si0 || j0 < sj0 {
+        return DAB_REFUSED;
+    }
+    let Some(di1) = i1.checked_sub(si0) else {
+        return DAB_REFUSED;
+    };
+    let Some(dj1) = j1.checked_sub(sj0) else {
+        return DAB_REFUSED;
+    };
+    if (di1 as usize) >= sw || (dj1 as usize) >= sh {
+        return DAB_REFUSED;
+    }
+    if mode == 0 && dx_step == 0.0 && dy_step == 0.0 {
+        return 0;
+    }
+
+    let h = if h <= 0.0 {
+        0.0
+    } else if h > 0.8 {
+        0.8
+    } else {
+        h
+    };
+    let s_f = s as f64;
+    let xmax = (ni as f64) * s_f;
+    let ymax = (nj as f64) * s_f;
+    let grow = if mode == 1 {
+        -1.0
+    } else if mode == 2 {
+        1.0
+    } else {
+        0.0
+    };
+    let turn = if mode == 3 {
+        -1.0
+    } else if mode == 4 {
+        1.0
+    } else {
+        0.0
+    };
+    let mut count = 0u32;
+    let mut bi0 = i32::MAX;
+    let mut bj0 = i32::MAX;
+    let mut bi1 = i32::MIN;
+    let mut bj1 = i32::MIN;
+
+    for row in 0..oh {
+        let j = j0 + row as i32;
+        let dy = (j as f64) * s_f - cy;
+        let mut so = (((j - sj0) as usize) * sw + ((i0 - si0) as usize)) * 2;
+        let mut q = row * ow;
+        for col in 0..ow {
+            let i = i0 + col as i32;
+            let o = q * 2;
+            // SAFETY: i0..=i1 and j0..=j1 were checked against si0..si0+sw and sj0..sj0+sh
+            let (ox, oy) = unsafe { (*src.get_unchecked(so), *src.get_unchecked(so + 1)) };
+            let dx = (i as f64) * s_f - cx;
+            let t = (dx * dx + dy * dy).sqrt() / r;
+            if !(t < 1.0) {
+                // SAFETY: o + 1 < out_need <= out.len()
+                unsafe {
+                    *out.get_unchecked_mut(o) = ox;
+                    *out.get_unchecked_mut(o + 1) = oy;
+                }
+                so += 2;
+                q += 1;
+                continue;
+            }
+            let falloff = if t <= h {
+                1.0
+            } else {
+                let u = (t - h) / (1.0 - h);
+                let v = 1.0 - u * u;
+                v * v
+            };
+            let mut w = amount * falloff;
+            if w > 0.0 {
+                // SAFETY: q < plane_len <= sel.len(), freeze.len()
+                unsafe {
+                    match (sel, freeze) {
+                        (Some(s_plane), Some(f_plane)) => {
+                            w *= (*s_plane.get_unchecked(q) as f64 / 255.0)
+                                * (1.0 - *f_plane.get_unchecked(q) as f64 / 255.0);
+                        }
+                        (Some(s_plane), None) => {
+                            w *= *s_plane.get_unchecked(q) as f64 / 255.0;
+                        }
+                        (None, Some(f_plane)) => {
+                            w *= 1.0 - *f_plane.get_unchecked(q) as f64 / 255.0;
+                        }
+                        (None, None) => {}
+                    }
+                }
+            }
+            if !(w > 0.0) {
+                // SAFETY: o + 1 < out_need <= out.len()
+                unsafe {
+                    *out.get_unchecked_mut(o) = ox;
+                    *out.get_unchecked_mut(o + 1) = oy;
+                }
+                so += 2;
+                q += 1;
+                continue;
+            }
+            let (vx, vy) = if mode == 5 {
+                let f = 1.0 - w * 0.15;
+                #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+                {
+                    use core::arch::wasm32::*;
+                    let p = f64x2_trunc(f64x2_mul(f64x2(ox as f64, oy as f64), f64x2_splat(f)));
+                    (f64x2_extract_lane::<0>(p) as i32, f64x2_extract_lane::<1>(p) as i32)
+                }
+                #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+                {
+                    (((ox as f64) * f).trunc() as i32, ((oy as f64) * f).trunc() as i32)
+                }
+            } else {
+                let (nx, ny) = if mode == 0 {
+                    (-w * dx_step, -w * dy_step)
+                } else if grow != 0.0 {
+                    let g = grow * w * 0.04;
+                    (g * dx, g * dy)
+                } else {
+                    let a = turn * w * 3.0 * core::f64::consts::PI / 180.0;
+                    let c = a.cos();
+                    let sn = a.sin();
+                    (dx * c - dy * sn - dx, dx * sn + dy * c - dy)
+                };
+                let mut x = (i as f64) * s_f + nx;
+                let mut y = (j as f64) * s_f + ny;
+                if x < 0.0 {
+                    x = 0.0;
+                } else if x > xmax {
+                    x = xmax;
+                }
+                if y < 0.0 {
+                    y = 0.0;
+                } else if y > ymax {
+                    y = ymax;
+                }
+                let gx = x / s_f;
+                let gy = y / s_f;
+                let si_f = gx.floor();
+                let sj_f = gy.floor();
+                let si = si_f as i32;
+                let sj = sj_f as i32;
+                if si < si0
+                    || sj < sj0
+                    || (si - si0) as usize + 1 >= sw
+                    || (sj - sj0) as usize + 1 >= sh
+                {
+                    return DAB_REFUSED;
+                }
+                let fx = gx - si_f;
+                let fy = gy - sj_f;
+                let ex = 1.0 - fx;
+                let ey = 1.0 - fy;
+                let o00 = (((sj - sj0) as usize) * sw + ((si - si0) as usize)) * 2;
+                let o10 = o00 + 2;
+                let o01 = o00 + sw * 2;
+                let o11 = o01 + 2;
+                #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+                unsafe {
+                    use core::arch::wasm32::*;
+                    let w00 = f64x2_splat(ex * ey);
+                    let w10 = f64x2_splat(fx * ey);
+                    let w01 = f64x2_splat(ex * fy);
+                    let w11 = f64x2_splat(fx * fy);
+                    let s00 = f64x2(*src.get_unchecked(o00) as f64, *src.get_unchecked(o00 + 1) as f64);
+                    let s10 = f64x2(*src.get_unchecked(o10) as f64, *src.get_unchecked(o10 + 1) as f64);
+                    let s01 = f64x2(*src.get_unchecked(o01) as f64, *src.get_unchecked(o01 + 1) as f64);
+                    let s11 = f64x2(*src.get_unchecked(o11) as f64, *src.get_unchecked(o11 + 1) as f64);
+                    let d = f64x2_add(
+                        f64x2_add(
+                            f64x2_add(f64x2_mul(w00, s00), f64x2_mul(w10, s10)),
+                            f64x2_mul(w01, s01),
+                        ),
+                        f64x2_mul(w11, s11),
+                    );
+                    let v = f64x2_floor(f64x2_add(
+                        f64x2_add(f64x2_mul(f64x2(nx, ny), f64x2_splat(256.0)), d),
+                        f64x2_splat(0.5),
+                    ));
+                    (
+                        clamp_d(f64x2_extract_lane::<0>(v) as i64),
+                        clamp_d(f64x2_extract_lane::<1>(v) as i64),
+                    )
+                }
+                #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+                unsafe {
+                    let w00 = ex * ey;
+                    let w10 = fx * ey;
+                    let w01 = ex * fy;
+                    let w11 = fx * fy;
+                    let d0 = w00 * (*src.get_unchecked(o00) as f64)
+                        + w10 * (*src.get_unchecked(o10) as f64)
+                        + w01 * (*src.get_unchecked(o01) as f64)
+                        + w11 * (*src.get_unchecked(o11) as f64);
+                    let d1 = w00 * (*src.get_unchecked(o00 + 1) as f64)
+                        + w10 * (*src.get_unchecked(o10 + 1) as f64)
+                        + w01 * (*src.get_unchecked(o01 + 1) as f64)
+                        + w11 * (*src.get_unchecked(o11 + 1) as f64);
+                    (
+                        clamp_d((nx * 256.0 + d0 + 0.5).floor() as i64),
+                        clamp_d((ny * 256.0 + d1 + 0.5).floor() as i64),
+                    )
+                }
+            };
+            // SAFETY: o + 1 < out_need <= out.len()
+            unsafe {
+                *out.get_unchecked_mut(o) = vx;
+                *out.get_unchecked_mut(o + 1) = vy;
+            }
+            so += 2;
+            q += 1;
+            if vx == ox && vy == oy {
+                continue;
+            }
+            count += 1;
+            if i < bi0 {
+                bi0 = i;
+            }
+            if i > bi1 {
+                bi1 = i;
+            }
+            if j < bj0 {
+                bj0 = j;
+            }
+            if j > bj1 {
+                bj1 = j;
+            }
+        }
+    }
+    if count > 0 {
+        box_out[0] = bi0;
+        box_out[1] = bj0;
+        box_out[2] = bi1;
+        box_out[3] = bj1;
+    }
+    count
+}
+

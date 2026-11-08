@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 30;
+export const PX_ABI = 31;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -106,6 +106,8 @@ function lapOut(t, bytes) {
 
 /** Whether `v` is an array of bytes as the twins read them: a Uint8Array (a Buffer too) or a Uint8ClampedArray. */
 const isBytes = (v) => v instanceof Uint8Array || v instanceof Uint8ClampedArray;
+
+const LIQUIFY_MODE_ID = { push: 0, grow: 1, shrink: 2, swirlcw: 3, swirlccw: 4, restore: 5 };
 
 /** The bytes of RGBA8 a per-pixel kernel takes from `src` (K27): its length when it is bytes of whole pixels, else 0. */
 const rgbaBytes = (src) => (isBytes(src) && src.length > 0 && src.length % 4 === 0 ? src.length : 0);
@@ -881,6 +883,75 @@ export class Px {
             if (!ok) return false;
             this._out(Uint8Array, po, outBytes, new Uint8Array(out.buffer, out.byteOffset, outBytes));
             return true;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * `liquifyDabNodes` of inpaint_liquify.js (the same arguments and nodes, K31): when `src` is a `LiquifyField`
+     * (`LiquifyField.dab`), `field.nodes` fills the arena's input block in wasm memory directly (after every arena block
+     * is taken, so no view is held across an allocation) and `field._writeDense` scatters the changed rows directly from
+     * a view of the arena's output block; when `src` and `out` are `Int32Array`s (standalone calls), copies in and out.
+     * Returns the changed node count (`0..ow*oh`), or `null` when the arguments lie outside the kernel's contract.
+     */
+    liquifyDab(mode, src, sw, si0, sj0, s, ni, nj, cx, cy, r, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, out, box) {
+        const modeId = LIQUIFY_MODE_ID[mode];
+        if (modeId === undefined) return null;
+        if (!(s === 1 || s === 2 || s === 4 || s === 8)) return null;
+        if (!(sw > 0 && ow > 0 && oh > 0 && ni > 0 && nj > 0 && r > 0 && amount > 0)) return null;
+        const hVal = Math.min(0.8, Math.max(0, +h || 0));
+        const dx = modeId === 0 ? +dxStep : 0, dy = modeId === 0 ? +dyStep : 0;
+        if (modeId === 0 && !(dx || dy)) return null;
+        if (!(Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(r) && Number.isFinite(hVal) && Number.isFinite(amount) && Number.isFinite(dx) && Number.isFinite(dy))) return null;
+        if (!(box instanceof Int32Array) || box.length < 4) return null;
+        const i1 = i0 + ow - 1, j1 = j0 + oh - 1, restore = modeId === 5;
+        if (i0 < 0 || j0 < 0 || i0 < si0 || j0 < sj0 || i1 - si0 >= sw) return null;
+        const planeBytes = ow * oh, need = planeBytes * 2;
+        if ((sel && (!isBytes(sel) || sel.byteLength < planeBytes)) || (freeze && (!isBytes(freeze) || freeze.byteLength < planeBytes))) return null;
+        if (src && typeof src.nodes === "function") {
+            const field = src, sh = field._dabSh | 0, before = out && typeof out.get === "function" ? out : null;
+            if (!(sh > 0 && j1 - sj0 < sh && (restore || (i1 - si0 + 1 < sw && j1 - sj0 + 1 < sh)))) return null;
+            const sNeed = sw * sh * 2, a = this.job;
+            try {
+                const ps = a.take(sNeed * 4), po = a.take(need * 4);
+                const psel = sel ? this._in(a, sel, planeBytes) : 0;
+                const pfrz = freeze ? this._in(a, freeze, planeBytes) : 0;
+                const pbox = a.take(16);
+                const sView = this.view(Int32Array, ps, sNeed), tIn = TIMED ? clock() : 0;
+                const got = field.nodes(si0, sj0, sw, sh, sView);
+                if (!(got instanceof Int32Array) || got.length < sNeed) return null;
+                if (got.buffer !== this.memory.buffer || got.byteOffset !== ps) sView.set(got.subarray(0, sNeed));
+                if (TIMED) lapIn(tIn, sNeed * 4, null);
+                const count = this.exports.liquify_dab(modeId, ps, sw, sh, si0, sj0, s, ni, nj, cx, cy, r, hVal, amount, dx, dy, psel, pfrz, i0, j0, ow, oh, po, pbox) >>> 0;
+                if (count === 0xffffffff) return null;
+                if (count > 0) {
+                    const b = this.view(Int32Array, pbox, 4);
+                    box[0] = b[0]; box[1] = b[1]; box[2] = b[2]; box[3] = b[3];
+                    if (typeof field._writeDense === "function") {
+                        const tOut = TIMED ? clock() : 0;
+                        field._writeDense(this.view(Int32Array, po, need), i0, j0, ow, b[0], b[1], b[2], b[3], before, restore);
+                        if (TIMED) lapOut(tOut, (b[2] - b[0] + 1) * (b[3] - b[1] + 1) * 8);
+                    }
+                }
+                return count;
+            } finally { this._reset(a); }
+        }
+        if (!(src instanceof Int32Array) || !(out instanceof Int32Array) || out.length < need) return null;
+        const sh = Math.floor(src.length / (sw * 2));
+        if (!(j1 - sj0 < sh && (restore || (i1 - si0 + 1 < sw && j1 - sj0 + 1 < sh)))) return null;
+        const sNeed = sw * sh * 2, a = this.job;
+        try {
+            const ps = this._in(a, src, sNeed * 4), po = a.take(need * 4);
+            const psel = sel ? this._in(a, sel, planeBytes) : 0;
+            const pfrz = freeze ? this._in(a, freeze, planeBytes) : 0;
+            const pbox = a.take(16);
+            const count = this.exports.liquify_dab(modeId, ps, sw, sh, si0, sj0, s, ni, nj, cx, cy, r, hVal, amount, dx, dy, psel, pfrz, i0, j0, ow, oh, po, pbox) >>> 0;
+            if (count === 0xffffffff) return null;
+            this._out(Int32Array, po, need, out.length === need ? out : out.subarray(0, need));
+            if (count > 0) {
+                const b = this.view(Int32Array, pbox, 4);
+                box[0] = b[0]; box[1] = b[1]; box[2] = b[2]; box[3] = b[3];
+            }
+            return count;
         } finally { this._reset(a); }
     }
 

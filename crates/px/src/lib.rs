@@ -48,11 +48,11 @@ fn align_for(bytes: usize) -> usize {
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
-/// 30: edgefit_shrink, warp_rgba, warp_coverage);
+/// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: liquify_dab);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    30
+    31
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -870,4 +870,91 @@ pub unsafe extern "C" fn map_tile_stats(
         slice::from_raw_parts_mut(edge_out, cols),
     )
 }
+
+/// Liquify's dense dab kernel (`inpaint_liquify.js` `liquifyDabNodes`, K31; `docs/PLAN_WASM_BUILD.md` §4.9).
+/// `mode`: 0 push, 1 grow, 2 shrink, 3 swirlcw, 4 swirlccw, 5 restore.
+/// `src`: `sw * sh * 2` `i32`s of pre-dab `(dx, dy)` nodes from `(si0, sj0)`.
+/// `sel` / `freeze`: optional `ow * oh` `u8` thaw/freeze planes (null when absent).
+/// Writes `ow * oh * 2` `i32`s to `out` and `[bi0, bj0, bi1, bj1]` to `box_out` (when at least one node changed),
+/// returning the changed node count (`0..=ow*oh`), or `u32::MAX` (`0xffff_ffff`) when the arguments are refused.
+#[no_mangle]
+pub unsafe extern "C" fn liquify_dab(
+    mode: u32,
+    src: *const i32,
+    sw: usize,
+    sh: usize,
+    si0: i32,
+    sj0: i32,
+    s: u32,
+    ni: usize,
+    nj: usize,
+    cx: f64,
+    cy: f64,
+    r: f64,
+    h: f64,
+    amount: f64,
+    dx_step: f64,
+    dy_step: f64,
+    sel: *const u8,
+    freeze: *const u8,
+    i0: i32,
+    j0: i32,
+    ow: usize,
+    oh: usize,
+    out: *mut i32,
+    box_out: *mut i32,
+) -> u32 {
+    if src.is_null() || out.is_null() || box_out.is_null() {
+        return resample::DAB_REFUSED;
+    }
+    let Some(src_len) = sw.checked_mul(sh).and_then(|n| n.checked_mul(2)) else {
+        return resample::DAB_REFUSED;
+    };
+    let Some(plane_len) = ow.checked_mul(oh) else {
+        return resample::DAB_REFUSED;
+    };
+    let Some(out_len) = plane_len.checked_mul(2) else {
+        return resample::DAB_REFUSED;
+    };
+    if src_len == 0 || out_len == 0 {
+        return resample::DAB_REFUSED;
+    }
+    let sel_slice = if sel.is_null() {
+        None
+    } else {
+        Some(slice::from_raw_parts(sel, plane_len))
+    };
+    let freeze_slice = if freeze.is_null() {
+        None
+    } else {
+        Some(slice::from_raw_parts(freeze, plane_len))
+    };
+    resample::liquify_dab(
+        mode,
+        slice::from_raw_parts(src, src_len),
+        sw,
+        sh,
+        si0,
+        sj0,
+        s,
+        ni,
+        nj,
+        cx,
+        cy,
+        r,
+        h,
+        amount,
+        dx_step,
+        dy_step,
+        sel_slice,
+        freeze_slice,
+        i0,
+        j0,
+        ow,
+        oh,
+        slice::from_raw_parts_mut(out, out_len),
+        slice::from_raw_parts_mut(box_out, 4),
+    )
+}
+
 

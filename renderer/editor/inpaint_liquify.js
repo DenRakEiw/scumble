@@ -138,6 +138,19 @@ export function liquifyDabNodes(mode, src, sw, si0, sj0, s, ni, nj, cx, cy, r, h
     if (!restore && !push && !grow && !turn) throw new Error(`Inpaint Canvas: no liquify mode "${mode}"`);
     if (!(ow > 0) || !(oh > 0) || !(r > 0) || !(amount > 0)) return 0;
     if (push && !(dxStep || dyStep)) return 0;
+    if (src && typeof src.nodes === "function") {
+        const field = src, sh = field._dabSh | 0, before = out && typeof out.get === "function" ? out : null;
+        if (!(sh > 0 && box && box.length >= 4)) return 0;
+        const sNeed = sw * sh * 2, need = ow * oh * 2;
+        const srcBuf = field._dabSrc && field._dabSrc.length >= sNeed ? field._dabSrc : (field._dabSrc = new Int32Array(sNeed));
+        const sArr = field.nodes(si0, sj0, sw, sh, srcBuf);
+        const oArr = field._dabOut && field._dabOut.length >= need ? field._dabOut.subarray(0, need) : (field._dabOut = new Int32Array(need));
+        const count = liquifyDabNodes(mode, sArr, sw, si0, sj0, s, ni, nj, cx, cy, r, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, oArr, box);
+        if (count > 0 && typeof field._writeDense === "function") {
+            field._writeDense(oArr, i0, j0, ow, box[0], box[1], box[2], box[3], before, restore);
+        }
+        return count;
+    }
     const i1 = i0 + ow - 1, j1 = j0 + oh - 1, xmax = ni * s, ymax = nj * s;
     if (!src || !out || !box || box.length < 4 || out.length < ow * oh * 2) return 0;
     if (i0 < si0 || j0 < sj0 || i1 - si0 >= sw || src.length < ((j1 - sj0) * sw + (i1 - si0) + 1) * 2) return 0;
@@ -376,21 +389,16 @@ export class LiquifyField {
                 }
                 if (!any) return null;
             }
-            const sNeed = sw * sh * 2;
-            const srcBuf = this._dabSrc && this._dabSrc.length >= sNeed ? this._dabSrc : (this._dabSrc = new Int32Array(sNeed));
-            const src = this.nodes(si0, sj0, sw, sh, srcBuf);
             let sel = null, freeze = null;
             if (thaw) {
                 if (typeof thaw.planes === "function") ({ sel, freeze } = thaw.planes(i0, j0, ow, oh));
                 else if (thaw instanceof Uint8Array) sel = thaw;
                 else { sel = thaw.sel || null; freeze = thaw.freeze || null; }
             }
-            const need = ow * oh * 2;
-            const out = this._dabOut && this._dabOut.length >= need ? this._dabOut.subarray(0, need) : (this._dabOut = new Int32Array(need));
             const box = this._dabBox || (this._dabBox = new Int32Array(4));
-            const count = kernel(mode, src, sw, si0, sj0, s, this.ni, this.nj, cx, cy, r, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, out, box);
+            this._dabSh = sh;
+            const count = kernel(mode, this, sw, si0, sj0, s, this.ni, this.nj, cx, cy, r, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, before, box);
             if (!count) return null;
-            this._writeDense(out, i0, j0, ow, box[0], box[1], box[2], box[3], before, restore);
             return this._pixelBox(box[0], box[1], box[2], box[3]);
         }
         const rd = this.reader || (this.reader = fieldReader(this));

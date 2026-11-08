@@ -102,7 +102,13 @@
     if (P.DAB === "map") IE.liquifyDabKernel = null;
     else if (P.DAB === "dense") IE.liquifyDabKernel = K.liquifyDab;
     const baseDabKernel = IE.liquifyDabKernel;
-    if (baseDabKernel) IE.liquifyDabKernel = (...a) => { const t = performance.now(); try { return baseDabKernel(...a); } finally { kernelMs += performance.now() - t; } };
+    if (baseDabKernel) {
+        IE.liquifyDabKernel = (...a) => {
+            const n0 = nodesMs, w0 = writeMs, t = performance.now();
+            try { return baseDabKernel(...a); }
+            finally { kernelMs += (performance.now() - t) - (nodesMs - n0) - (writeMs - w0); }
+        };
+    }
     const route = { kernels: IE.kernels, kernelsInUse: K.kernelsInUse(), routes: K.routeOverrides(), dabKernel: IE.liquifyDabKernel ? "dense" : "map" };
     const rows = [], tiles = ed.tileMode;
     let undoMB = null, s = null;
