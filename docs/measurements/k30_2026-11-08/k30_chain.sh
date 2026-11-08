@@ -55,4 +55,13 @@ for R in $ROUNDS; do
         one before map "$R"
     fi
 done
+log "== swapped view order check (VIEWS: 1:1 then fit)"
+for pair in "before:map" "after:dense"; do
+    arm="${pair%%:*}"; dab="${pair##*:}"; d="$OUTDIR/$arm"
+    start "$d/profile" "$d/app_swap.log"
+    log "$arm swap: liquify_perf DAB=$dab VIEWS=[1:1,fit]"
+    (cd "$d/run" && SCUMBLE_CDP_PORT=$PORT PYTHONIOENCODING=utf-8 timeout 1500 python "$ROOT/tools/brush_perf.py" "{\"DAB\":\"$dab\",\"VIEWS\":[\"1:1\",\"fit\"]}" liquify_perf.js > "../swap.log" 2>&1; echo "rc=$?" >> "../swap.log"; mv brush_perf.out.json "../swap.json" 2>/dev/null)
+    log "$(tail -2 "$d/swap.log" | tr '\n' ' ')"
+    stop "$d/profile"
+done
 log "done"

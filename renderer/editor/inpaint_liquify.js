@@ -220,8 +220,11 @@ export class LiquifyField {
     }
 
     /** The nodes (i0.., j0..), nw x nh, as one dense Int32Array (dx, dy interleaved), zero where no cell holds them. */
-    nodes(i0, j0, nw, nh) {
-        const a = new Int32Array(nw * nh * 2), n = this.n, sh = 8 - this.ls;
+    nodes(i0, j0, nw, nh, out = null) {
+        const len = nw * nh * 2, n = this.n, sh = 8 - this.ls;
+        let a;
+        if (out && out.length >= len) { a = out.subarray(0, len); a.fill(0); }
+        else a = new Int32Array(len);
         const cx0 = Math.max(0, i0 >> sh), cx1 = (i0 + nw - 1) >> sh, cy0 = Math.max(0, j0 >> sh), cy1 = (j0 + nh - 1) >> sh;
         for (let cy = cy0; cy <= cy1; cy++) {
             for (let cx = cx0; cx <= cx1; cx++) {
@@ -364,8 +367,18 @@ export class LiquifyField {
                 sj0 = Math.max(0, Math.floor((j0 * s - padY) / s));
                 sw = Math.min(this.ni, Math.floor((i1 * s + padX) / s)) + 1 - si0 + 1;
                 sh = Math.min(this.nj, Math.floor((j1 * s + padY) / s)) + 1 - sj0 + 1;
+            } else {
+                if (!this.cells.size) return null;
+                const csh = 8 - this.ls, cx0 = i0 >> csh, cx1 = i1 >> csh, cy0 = j0 >> csh, cy1 = j1 >> csh;
+                let any = false;
+                for (let cy = cy0; cy <= cy1 && !any; cy++) {
+                    for (let cx = cx0; cx <= cx1; cx++) if (this.cells.has((cy << 16) | cx)) { any = true; break; }
+                }
+                if (!any) return null;
             }
-            const src = this.nodes(si0, sj0, sw, sh);
+            const sNeed = sw * sh * 2;
+            const srcBuf = this._dabSrc && this._dabSrc.length >= sNeed ? this._dabSrc : (this._dabSrc = new Int32Array(sNeed));
+            const src = this.nodes(si0, sj0, sw, sh, srcBuf);
             let sel = null, freeze = null;
             if (thaw) {
                 if (typeof thaw.planes === "function") ({ sel, freeze } = thaw.planes(i0, j0, ow, oh));

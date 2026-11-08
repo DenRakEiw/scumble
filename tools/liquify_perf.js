@@ -12,6 +12,7 @@
         VIEWS: ["fit", "1:1"],
         MOVES: 60,                       // pointer moves per push at 1:1 (15 image px each at dpr 1.25)
         MOVES_FIT: 20,                   // at fit (a move there is about 200 image px: 4,000 px of travel)
+        RESTORE_MOVES: 20,               // pointer moves per restore brush row at 1:1 (50 image px each at size 1000)
         MOVE_CSS: 12,                    // CSS px per move
         SHRINK_TICKS: 150,               // about 5 s of the 33 ms timer, as ticks
         KERNELS: "rust",                 // InpaintEditor.kernels for the run ("js": the twins in the window and in every job), put back after it
@@ -21,10 +22,13 @@
     }, window.__bp || {});
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const r1 = (v) => (v == null ? null : +v.toFixed(1));
+    const r2 = (v) => (v == null ? null : +v.toFixed(2));
     const stat = (a) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); return { p50: r1(s[Math.floor(s.length / 2)]), p95: r1(s[Math.min(s.length - 1, Math.floor(s.length * 0.95))]), worst: r1(s[s.length - 1]) }; };
+    const stat2 = (a) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); return { p50: r2(s[Math.floor(s.length / 2)]), p95: r2(s[Math.min(s.length - 1, Math.floor(s.length * 0.95))]), worst: r2(s[s.length - 1]) }; };
     const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
     const shell = await import("./shell.js");
     const K = await import("./editor/px/kernels.js");   // the window's own module (the same URL inpaint_canvas.js imports)
+    const L = await import("./editor/inpaint_liquify.js");
     const probe = () => {
         let last = performance.now(), max = 0, stop = false;
         const tick = () => { if (stop) return; const now = performance.now(); if (now - last > max) max = now - last; last = now; setTimeout(tick, 0); };
@@ -88,10 +92,17 @@
     // the route for the run: the window's kernels and every job's (inpaint_jobs.js posts the mode with each job);
     // kernelsInUse says "js" too while the window's px.wasm has not loaded
     const kernels0 = IE.kernels, routes0 = K.routeOverrides(), rate0 = IE.liquifyRateMs, dab0 = IE.liquifyDabKernel;
+    const FProto = L.LiquifyField.prototype, nodes0 = FProto.nodes, writeDense0 = FProto._writeDense, write0 = FProto._write;
+    let nodesMs = 0, kernelMs = 0, writeMs = 0;
+    FProto.nodes = function (...a) { const t = performance.now(); try { return nodes0.apply(this, a); } finally { nodesMs += performance.now() - t; } };
+    FProto._writeDense = function (...a) { const t = performance.now(); try { return writeDense0.apply(this, a); } finally { writeMs += performance.now() - t; } };
+    FProto._write = function (...a) { const t = performance.now(); try { return write0.apply(this, a); } finally { writeMs += performance.now() - t; } };
     IE.kernels = P.KERNELS;
     if (P.ROUTES && typeof P.ROUTES === "object") for (const [k, v] of Object.entries(P.ROUTES)) K.setRoute(k, v);
     if (P.DAB === "map") IE.liquifyDabKernel = null;
     else if (P.DAB === "dense") IE.liquifyDabKernel = K.liquifyDab;
+    const baseDabKernel = IE.liquifyDabKernel;
+    if (baseDabKernel) IE.liquifyDabKernel = (...a) => { const t = performance.now(); try { return baseDabKernel(...a); } finally { kernelMs += performance.now() - t; } };
     const route = { kernels: IE.kernels, kernelsInUse: K.kernelsInUse(), routes: K.routeOverrides(), dabKernel: IE.liquifyDabKernel ? "dense" : "map" };
     const rows = [], tiles = ed.tileMode;
     let undoMB = null, s = null;
@@ -110,11 +121,14 @@
         const ev = (type, ix, iy) => new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse",
             pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1, ...client(ix, iy) });
         const send = (type, ix, iy) => ed.canvas.dispatchEvent(ev(type, ix, iy));
-        // the preview's own share of a draw
+        // the preview's own share of a draw, the window's build, and the landing's commit
         let previewMs = 0;
         { const f = ed.drawLiquifyInto; ed.drawLiquifyInto = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { previewMs += performance.now() - t; } }; }
         let windowMs = 0;
         { const f = ed.liquifyWindow; ed.liquifyWindow = function (p, vp) { const had = p.liqWin; const t = performance.now(); const r = f.call(this, p, vp); if (p.liqWin !== had) windowMs += performance.now() - t; return r; }; }
+        let commitMs = 0;
+        { const f = ed.liquifyCommit; ed.liquifyCommit = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { commitMs += performance.now() - t; } }; }
+        const heapMB = () => (performance.memory ? r1(performance.memory.usedJSHeapSize / 1048576) : null);
         const view = (kind, cx, cy) => {
             if (kind === "fit") ed.fitView();
             else { ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false; ed.view.x = ed.canvas.width / 2 - cx; ed.view.y = ed.canvas.height / 2 - cy; }
@@ -142,26 +156,34 @@
                 send("pointerdown", cx, cy);
                 const press = performance.now() - t;
                 const step = P.MOVE_CSS * dpr / ed.view.scale;
-                const dab = [], frame = [], prev = [], moves = vk === "fit" ? P.MOVES_FIT : P.MOVES;
+                const dab = [], dabNodes = [], dabKernel = [], dabWrite = [], frame = [], prev = [], moves = vk === "fit" ? P.MOVES_FIT : P.MOVES;
                 for (let i = 1; i <= moves; i++) {
+                    nodesMs = 0; kernelMs = 0; writeMs = 0;
                     t = performance.now();
                     send("pointermove", cx + i * step, cy + i * step * 0.3);
                     dab.push(performance.now() - t);
+                    dabNodes.push(nodesMs); dabKernel.push(kernelMs); dabWrite.push(writeMs);
                     previewMs = 0;
                     t = performance.now();
                     ed.draw();
                     frame.push(performance.now() - t);
                     prev.push(previewMs);
                 }
+                commitMs = 0;
+                const heapMB0 = heapMB();
                 const stop = probe();
                 t = performance.now();
                 send("pointerup", cx + moves * step, cy + moves * step * 0.3);
+                const upSync = performance.now() - t;
                 if (ed.liquifyPending) await ed.liquifyPending;
                 const land = performance.now() - t;
                 const blocked = stop();
-                const L = ed.lastLiquify || {};
-                rows.push({ row: `push ${vk} size ${size}`, travel: Math.round(moves * step), press: r1(press), window: r1(windowMs), dab: stat(dab), frame: stat(frame), preview: stat(prev),
-                    land: r1(land), blockedMax: blocked, tiles: L.tiles, where: L.where, stats: L.stats, fieldMB: r1(cellBytes() / 1048576), stepMB: r1(((ed.undo[ed.undo.length - 1] || {}).bytes || 0) / 1048576), ...calls() });
+                const heapMB1 = heapMB();
+                const Lq = ed.lastLiquify || {};
+                rows.push({ row: `push ${vk} size ${size}`, travel: Math.round(moves * step), press: r1(press), window: r1(windowMs), dab: stat(dab),
+                    dabLaps: { nodes: stat2(dabNodes), kernel: stat2(dabKernel), write: stat2(dabWrite) }, frame: stat(frame), preview: stat(prev),
+                    land: r1(land), blockedMax: blocked, landSplit: { upSync: r1(upSync), commit: r1(commitMs), heapMB0, heapMB1 },
+                    tiles: Lq.tiles, where: Lq.where, stats: Lq.stats, fieldMB: r1(cellBytes() / 1048576), stepMB: r1(((ed.undo[ed.undo.length - 1] || {}).bytes || 0) / 1048576), ...calls() });
                 await wait(200);
             }
         }
@@ -174,17 +196,75 @@
             pid++;
             resetCalls();
             send("pointerdown", cx, cy);
-            const ticks = [];
-            for (let i = 0; i < P.SHRINK_TICKS; i++) { const t = performance.now(); ed.liquifyTick(); ticks.push(performance.now() - t); }
+            const ticks = [], tickNodes = [], tickKernel = [], tickWrite = [];
+            for (let i = 0; i < P.SHRINK_TICKS; i++) {
+                nodesMs = 0; kernelMs = 0; writeMs = 0;
+                const t = performance.now();
+                ed.liquifyTick();
+                ticks.push(performance.now() - t);
+                tickNodes.push(nodesMs); tickKernel.push(kernelMs); tickWrite.push(writeMs);
+            }
+            commitMs = 0;
+            const heapMB0 = heapMB();
             const stop = probe();
             const t = performance.now();
             send("pointerup", cx, cy);
+            const upSync = performance.now() - t;
             if (ed.liquifyPending) await ed.liquifyPending;
             const land = performance.now() - t;
-            const L = ed.lastLiquify || {};
-            rows.push({ row: `shrink held ${P.SHRINK_TICKS} ticks size 1000`, tick: stat(ticks), land: r1(land), blockedMax: stop(), tiles: L.tiles, where: L.where, stats: L.stats,
-                maxReachPx: ed.liq ? r1(ed.liq.field.maxReach()) : null, fieldMB: r1(cellBytes() / 1048576), ...calls() });
+            const blocked = stop();
+            const heapMB1 = heapMB();
+            const Lq = ed.lastLiquify || {};
+            rows.push({ row: `shrink held ${P.SHRINK_TICKS} ticks size 1000`, tick: stat(ticks),
+                dabLaps: { nodes: stat2(tickNodes), kernel: stat2(tickKernel), write: stat2(tickWrite) },
+                land: r1(land), blockedMax: blocked, landSplit: { upSync: r1(upSync), commit: r1(commitMs), heapMB0, heapMB1 },
+                tiles: Lq.tiles, where: Lq.where, stats: Lq.stats, maxReachPx: ed.liq ? r1(ed.liq.field.maxReach()) : null, fieldMB: r1(cellBytes() / 1048576), ...calls() });
         }
+        // ---- 7b: a restore brush at 1:1 size 1000 over the pushed area (K30-INT-5) ----
+        const runRestoreBrush = async (label) => {
+            const cx = Math.round(W * 2500 / 15000), cy = Math.round(H * 7000 / 10000);
+            view("1:1", cx, cy);
+            await ed.mipsSettled();
+            ed.brushSize = 1000;
+            ed.liquifyOpts.mode = "restore";
+            pid++;
+            previewMs = 0; windowMs = 0;
+            resetCalls();
+            let t = performance.now();
+            send("pointerdown", cx, cy);
+            const press = performance.now() - t;
+            const rStep = Math.max(P.MOVE_CSS * dpr / ed.view.scale, 0.1 * ed.brushSize / 2);
+            const dab = [], dabNodes = [], dabKernel = [], dabWrite = [], frame = [], prev = [], moves = P.RESTORE_MOVES;
+            for (let i = 1; i <= moves; i++) {
+                nodesMs = 0; kernelMs = 0; writeMs = 0;
+                t = performance.now();
+                send("pointermove", cx + i * rStep, cy + i * rStep * 0.3);
+                dab.push(performance.now() - t);
+                dabNodes.push(nodesMs); dabKernel.push(kernelMs); dabWrite.push(writeMs);
+                previewMs = 0;
+                t = performance.now();
+                ed.draw();
+                frame.push(performance.now() - t);
+                prev.push(previewMs);
+            }
+            commitMs = 0;
+            const heapMB0 = heapMB();
+            const stop = probe();
+            t = performance.now();
+            send("pointerup", cx + moves * rStep, cy + moves * rStep * 0.3);
+            const upSync = performance.now() - t;
+            if (ed.liquifyPending) await ed.liquifyPending;
+            const land = performance.now() - t;
+            const blocked = stop();
+            const heapMB1 = heapMB();
+            const Lq = ed.lastLiquify || {};
+            rows.push({ row: label, travel: Math.round(moves * rStep), press: r1(press), window: r1(windowMs), dab: stat(dab),
+                dabLaps: { nodes: stat2(dabNodes), kernel: stat2(dabKernel), write: stat2(dabWrite) }, frame: stat(frame), preview: stat(prev),
+                land: r1(land), blockedMax: blocked, landSplit: { upSync: r1(upSync), commit: r1(commitMs), heapMB0, heapMB1 },
+                tiles: Lq.tiles, where: Lq.where, stats: Lq.stats, fieldMB: r1(cellBytes() / 1048576), ...calls() });
+            await wait(200);
+        };
+        await runRestoreBrush("restore 1:1 size 1000 pushed");
         // ---- 5: Restore all over the session ----
         {
             resetCalls();
@@ -192,9 +272,11 @@
             const t = performance.now();
             ed.liquifyRestoreAll();
             if (ed.liquifyPending) await ed.liquifyPending;
-            const L = ed.lastLiquify || {};
-            rows.push({ row: "restore all", ms: r1(performance.now() - t), blockedMax: stop(), tiles: L.tiles, where: L.where, fieldMB: r1(cellBytes() / 1048576), ...calls() });
+            const Lq = ed.lastLiquify || {};
+            rows.push({ row: "restore all", ms: r1(performance.now() - t), blockedMax: stop(), tiles: Lq.tiles, where: Lq.where, fieldMB: r1(cellBytes() / 1048576), ...calls() });
         }
+        // ---- 5b: a restore brush at 1:1 size 1000 over an empty area (K30-INT-5) ----
+        await runRestoreBrush("restore 1:1 size 1000 empty");
         undoMB = r1(ed.undoBytes / 1048576);
         s = ed.liq ? ed.liq.s : null;
         // ---- 8: a dab after a 2 s pause at 1:1 size 1000 (docs/PLAN_WASM_BUILD.md §7 row 40, K:138-139) ----
@@ -222,9 +304,11 @@
             let t = performance.now();
             send("pointerdown", cx, cy);
             const press = performance.now() - t;
+            nodesMs = 0; kernelMs = 0; writeMs = 0;
             t = performance.now();
             send("pointermove", cx + step, cy + step * 0.3);
             const dab = performance.now() - t;
+            const dabLaps1 = { nodes: r2(nodesMs), kernel: r2(kernelMs), write: r2(writeMs) };
             t = performance.now();
             ed.draw();
             const frame = performance.now() - t, prev1 = previewMs, win1 = windowMs;
@@ -233,9 +317,11 @@
             await wait(4100);
             const inst3 = K.pxInstances(), midIdleTrimmed = inst3.idle - inst2.idle;
             previewMs = 0; windowMs = 0;
+            nodesMs = 0; kernelMs = 0; writeMs = 0;
             t = performance.now();
             send("pointermove", cx + 2 * step, cy + 2 * step * 0.3);
             const midDab = performance.now() - t;
+            const midDabLaps = { nodes: r2(nodesMs), kernel: r2(kernelMs), write: r2(writeMs) };
             t = performance.now();
             ed.draw();
             const midFrame = performance.now() - t, midPrev = previewMs, midWin = windowMs;
@@ -244,11 +330,14 @@
             if (ed.liquifyPending) await ed.liquifyPending;
             const land = performance.now() - t;
             rows.push({
-                row: "pause 2s 1:1 size 1000", pxMB0, pxMBTrimmed, idleTrimmed, pxMBGrown, press: r1(press), window: r1(win1), dab: r1(dab), frame: r1(frame), preview: r1(prev1),
-                midIdleTrimmed, midWindow: r1(midWin), midDab: r1(midDab), midFrame: r1(midFrame), midPreview: r1(midPrev), land: r1(land), ...calls(),
+                row: "pause 2s 1:1 size 1000", pxMB0, pxMBTrimmed, idleTrimmed, pxMBGrown, press: r1(press), window: r1(win1), dab: r1(dab), dabLaps: dabLaps1, frame: r1(frame), preview: r1(prev1),
+                midIdleTrimmed, midWindow: r1(midWin), midDab: r1(midDab), midDabLaps, midFrame: r1(midFrame), midPreview: r1(midPrev), land: r1(land), ...calls(),
             });
         }
     } finally {
+        FProto.nodes = nodes0;
+        FProto._writeDense = writeDense0;
+        FProto._write = write0;
         IE.kernels = kernels0;   // "js" left behind would put every later run of the instance on the twins
         K.adoptRoutes(routes0);
         IE.liquifyRateMs = rate0;

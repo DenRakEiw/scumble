@@ -282,6 +282,42 @@ MUTANTS = [
         PX_LIQ,
     ),
     (
+        "nodes_out_fill_zero",
+        "renderer/editor/inpaint_liquify.js",
+        [
+            (
+                "if (out && out.length >= len) { a = out.subarray(0, len); a.fill(0); }",
+                "if (out && out.length >= len) { a = out.subarray(0, len); }",
+            )
+        ],
+        "killed",
+        PX_LIQ,
+    ),
+    (
+        "dab_kernel_plain_thaw_guard",
+        "renderer/editor/inpaint_liquify.js",
+        [
+            (
+                "if (kernel && (!thaw || typeof thaw.planes === \"function\" || typeof thaw === \"object\")) {",
+                "if (kernel) {",
+            )
+        ],
+        "killed",
+        PX_LIQ,
+    ),
+    (
+        "dab_restore_empty_cells_guard",
+        "renderer/editor/inpaint_liquify.js",
+        [
+            (
+                "if (!any) return null;",
+                "if (false && !any) return null;",
+            )
+        ],
+        "killed",
+        PX_LIQ,
+    ),
+    (
         "kernels_liquify_dab_route",
         "renderer/editor/px/kernels.js",
         [

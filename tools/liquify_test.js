@@ -808,14 +808,27 @@ async function main() {
                     for (let i = 0; i < c.length; i++) if (c[i] !== o[i]) { badDab = `s=${s} q=${q} ${mode}: beforeDense cell ${k} mutated`; break; }
                 }
             }
-            // full restore with kernel prunes every cell back to empty, and a plain thaw function without .planes falls back cleanly
+            // full restore with kernel prunes every cell back to empty, a plain thaw function without .planes falls back cleanly,
+            // nodes(..., out) zeros the reused slice, and restore over untouched cells skips the dense gather and kernel
             if (!badDab) {
                 const fPlain = fDense.copy();
                 const bPlain1 = fMap.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, null);
                 const bPlain2 = fPlain.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, L.liquifyDabNodes);
-                if (JSON.stringify(bPlain1) !== JSON.stringify(bPlain2)) badDab = `s=${s} plain thaw box mismatch`;
+                const nPlain1 = fMap.nodes(0, 0, fMap.ni + 2, fMap.nj + 2), nPlain2 = fPlain.nodes(0, 0, fPlain.ni + 2, fPlain.nj + 2);
+                let plainDiff = JSON.stringify(bPlain1) !== JSON.stringify(bPlain2) || nPlain1.length !== nPlain2.length;
+                for (let i = 0; i < nPlain1.length && !plainDiff; i++) if (nPlain1[i] !== nPlain2[i]) plainDiff = true;
+                if (plainDiff) badDab = `s=${s} plain thaw mismatch`;
+                const dirtyOut = new Int32Array((fDense.ni + 2) * (fDense.nj + 2) * 2).fill(999);
+                const reusedNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2, dirtyOut);
+                const freshNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2);
+                for (let i = 0; i < freshNodes.length && !badDab; i++) if (reusedNodes[i] !== freshNodes[i]) badDab = `s=${s} nodes(..., out) dirty at ${i}`;
                 for (let q = 0; q < 200 && !fDense.empty; q++) fDense.dab("restore", W / 2, H / 2, W + H, 0.9, 1, null, null, null, L.liquifyDabNodes);
                 if (!fDense.empty) badDab = `s=${s} restore did not prune all cells (${fDense.cells.size} left)`;
+                let restoreCalls = 0;
+                const countKernel = (...a) => { restoreCalls++; return L.liquifyDabNodes(...a); };
+                if (fDense.dab("restore", 100, 100, 40, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} empty restore called kernel`;
+                fDense.dab("push", 30, 30, 15, 0.5, 0.8, [4, 4], null, null, L.liquifyDabNodes);
+                if (fDense.dab("restore", W - 15, H - 15, 15, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} untouched-cell restore called kernel`;
             }
         }
         check("liquifyDabNodes (K30): dense twin equals Map-based dab bit for bit across all 6 modes, s = 1..8, selection/freeze thaw planes, before sharing and restore pruning", !badDab, badDab);

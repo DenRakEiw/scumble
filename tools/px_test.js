@@ -1106,7 +1106,7 @@ async function retouchRouteCases(js) {
     } finally { globalThis.fetch = realFetch; }
     const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_stroke.js")).href);
     const L = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_liquify.js")).href);
-    for (const r of ["dabTone", "dabSponge", "freqSplit", "liquifyBlock", "liquifyPreview", "liquifyDab"]) if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, r)) { check(`kernels.js has the ${r} route`, false); return; }
+    for (const r of ["dabTone", "dabSponge", "freqSplit", "liquifyBlock", "liquifyPreview"]) if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, r)) { check(`kernels.js has the ${r} route`, false); return; }
     const warned = [], realWarn = console.warn;
     console.warn = (...a) => { warned.push(a.map(String).join(" ")); };
     K.setKernels("rust");
@@ -1154,9 +1154,9 @@ async function retouchRouteCases(js) {
         const same = (o) => eqBytes(o.tone, want.tone) && eqBytes(o.sponge, want.sponge) && eqBytes(o.low, want.low) && eqBytes(o.high, want.high) && eqBytes(o.sepLow, want.low) && eqBytes(o.sepHigh, want.high) && eqBytes(o.liq, lWant) && o.liqCount === lWantCount && eqBytes(o.prev, pWant) && o.dabSame && o.freed;
         K.pxCalls(true);
         const rust = all(), cr = K.pxCalls(true);
-        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview", "liquifyDab"]) K.setRoute(r, "js");
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview"]) K.setRoute(r, "js");
         const twin = all(), cj = K.pxCalls(true);
-        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview", "liquifyDab"]) K.setRoute(r, null);
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview"]) K.setRoute(r, null);
         check("kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock / liquifyPreview: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never",
             same(rust) && rust.hadPtr && same(twin) && !twin.hadPtr && cr.tone_rgba === 1 && cr.sponge_rgba === 1 && cr.freq_split === 2 && cr.blur_rgba === 1 && cr.liquify_block === 1 && cr.liquify_preview === 1 && !cj.tone_rgba && !cj.sponge_rgba && !cj.freq_split && !cj.blur_rgba && !cj.liquify_block && !cj.liquify_preview,
             `rust ${JSON.stringify(cr)}, js ${JSON.stringify(cj)}`);
@@ -4564,9 +4564,21 @@ async function liquifyCases(px, label, L, R) {
                 const fPlain = fDense.copy();
                 const bPlain1 = fMap.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, null);
                 const bPlain2 = fPlain.dab("push", 200, 150, 45, 0.4, 0.7, [5, -3], (i, j) => ((i + j) & 1 ? 0.5 : 0), null, L.liquifyDabNodes);
-                if (JSON.stringify(bPlain1) !== JSON.stringify(bPlain2)) badDab = `s=${s} plain thaw box mismatch`;
+                const nPlain1 = fMap.nodes(0, 0, fMap.ni + 2, fMap.nj + 2), nPlain2 = fPlain.nodes(0, 0, fPlain.ni + 2, fPlain.nj + 2);
+                let plainDiff = JSON.stringify(bPlain1) !== JSON.stringify(bPlain2) || nPlain1.length !== nPlain2.length;
+                for (let i = 0; i < nPlain1.length && !plainDiff; i++) if (nPlain1[i] !== nPlain2[i]) plainDiff = true;
+                if (plainDiff) badDab = `s=${s} plain thaw mismatch`;
+                const dirtyOut = new Int32Array((fDense.ni + 2) * (fDense.nj + 2) * 2).fill(999);
+                const reusedNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2, dirtyOut);
+                const freshNodes = fDense.nodes(0, 0, fDense.ni + 2, fDense.nj + 2);
+                for (let i = 0; i < freshNodes.length && !badDab; i++) if (reusedNodes[i] !== freshNodes[i]) badDab = `s=${s} nodes(..., out) dirty at ${i}`;
                 for (let q = 0; q < 200 && !fDense.empty; q++) fDense.dab("restore", W / 2, H / 2, W + H, 0.9, 1, null, null, null, L.liquifyDabNodes);
                 if (!fDense.empty) badDab = `s=${s} restore did not prune all cells (${fDense.cells.size} left)`;
+                let restoreCalls = 0;
+                const countKernel = (...a) => { restoreCalls++; return L.liquifyDabNodes(...a); };
+                if (fDense.dab("restore", 100, 100, 40, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} empty restore called kernel`;
+                fDense.dab("push", 30, 30, 15, 0.5, 0.8, [4, 4], null, null, L.liquifyDabNodes);
+                if (fDense.dab("restore", W - 15, H - 15, 15, 0.5, 1, null, null, null, countKernel) !== null || restoreCalls !== 0) badDab = `s=${s} untouched-cell restore called kernel`;
             }
         }
         check("liquifyDabNodes (K30): dense twin equals Map-based dab bit for bit across all 6 modes, s = 1..8, selection/freeze thaw planes, before sharing and restore pruning", !badDab, badDab);

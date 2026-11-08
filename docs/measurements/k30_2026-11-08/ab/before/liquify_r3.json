@@ -1,35 +1,58 @@
 {
- "built": 5311,
+ "built": 4887,
  "s": 4,
  "tiles": true,
  "kernels": "rust",
  "kernelsInUse": "rust",
  "routes": {},
  "dabKernel": "map",
- "undoMB": 133.1,
+ "undoMB": 149.2,
  "rows": [
   {
    "row": "push fit size 200",
    "travel": 3130,
-   "press": 56.8,
-   "window": 11.2,
+   "press": 82,
+   "window": 14.5,
    "dab": {
-    "p50": 2.5,
-    "p95": 7.9,
-    "worst": 7.9
+    "p50": 2.4,
+    "p95": 8,
+    "worst": 8
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "kernel": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "write": {
+     "p50": 0.17,
+     "p95": 0.46,
+     "worst": 0.46
+    }
    },
    "frame": {
-    "p50": 0.2,
-    "p95": 12.5,
-    "worst": 12.5
+    "p50": 0.3,
+    "p95": 15.9,
+    "worst": 15.9
    },
    "preview": {
-    "p50": 0.1,
-    "p95": 11.8,
-    "worst": 11.8
+    "p50": 0.2,
+    "p95": 15.2,
+    "worst": 15.2
    },
-   "land": 31.2,
-   "blockedMax": 13.3,
+   "land": 33.1,
+   "blockedMax": 13.2,
+   "landSplit": {
+    "upSync": 9.2,
+    "commit": 8.8,
+    "heapMB0": 250.1,
+    "heapMB1": 250.1
+   },
    "tiles": 48,
    "where": "pool",
    "stats": {
@@ -50,7 +73,7 @@
      "n": 5,
      "kernels": "rust",
      "tiles": 28,
-     "total": 56.6,
+     "total": 62.9,
      "pxCalls": {
       "liquify_block": 28
      },
@@ -61,25 +84,48 @@
   {
    "row": "push fit size 1000",
    "travel": 3130,
-   "press": 1.3,
-   "window": 9.8,
+   "press": 1,
+   "window": 8.4,
    "dab": {
-    "p50": 14.3,
-    "p95": 15.5,
-    "worst": 15.5
+    "p50": 13.7,
+    "p95": 15.1,
+    "worst": 15.1
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "kernel": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "write": {
+     "p50": 1.02,
+     "p95": 1.19,
+     "worst": 1.19
+    }
    },
    "frame": {
-    "p50": 1.2,
-    "p95": 10.9,
-    "worst": 10.9
+    "p50": 0.9,
+    "p95": 9.4,
+    "worst": 9.4
    },
    "preview": {
-    "p50": 0.9,
-    "p95": 10.7,
-    "worst": 10.7
+    "p50": 0.8,
+    "p95": 9.2,
+    "worst": 9.2
    },
-   "land": 86,
-   "blockedMax": 64.6,
+   "land": 76.7,
+   "blockedMax": 57.4,
+   "landSplit": {
+    "upSync": 4.6,
+    "commit": 9.7,
+    "heapMB0": 272.2,
+    "heapMB1": 303.1
+   },
    "tiles": 113,
    "where": "pool",
    "stats": {
@@ -100,7 +146,7 @@
      "n": 9,
      "kernels": "rust",
      "tiles": 86,
-     "total": 197.8,
+     "total": 162.1,
      "pxCalls": {
       "liquify_block": 86
      },
@@ -111,25 +157,48 @@
   {
    "row": "push 1:1 size 200",
    "travel": 1080,
-   "press": 31.8,
-   "window": 21.4,
+   "press": 36.5,
+   "window": 18,
    "dab": {
     "p50": 0.3,
-    "p95": 0.5,
-    "worst": 0.5
+    "p95": 0.3,
+    "worst": 0.4
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "kernel": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "write": {
+     "p50": 0.02,
+     "p95": 0.03,
+     "worst": 0.04
+    }
    },
    "frame": {
     "p50": 1.5,
-    "p95": 1.8,
-    "worst": 23.3
+    "p95": 1.7,
+    "worst": 19.9
    },
    "preview": {
-    "p50": 1.5,
-    "p95": 1.7,
-    "worst": 23
+    "p50": 1.4,
+    "p95": 1.5,
+    "worst": 19.5
    },
-   "land": 16.1,
-   "blockedMax": 8.2,
+   "land": 18.5,
+   "blockedMax": 14.1,
+   "landSplit": {
+    "upSync": 1.3,
+    "commit": 9.3,
+    "heapMB0": 283.3,
+    "heapMB1": 283.3
+   },
    "tiles": 23,
    "where": "pool",
    "stats": {
@@ -150,7 +219,7 @@
      "n": 3,
      "kernels": "rust",
      "tiles": 13,
-     "total": 15.6,
+     "total": 14.1,
      "pxCalls": {
       "liquify_block": 13
      },
@@ -161,25 +230,48 @@
   {
    "row": "push 1:1 size 1000",
    "travel": 1080,
-   "press": 30,
-   "window": 39.1,
+   "press": 29.9,
+   "window": 30.5,
    "dab": {
-    "p50": 3.5,
-    "p95": 3.9,
-    "worst": 6.7
+    "p50": 3.4,
+    "p95": 4,
+    "worst": 6.5
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "kernel": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "write": {
+     "p50": 0.26,
+     "p95": 0.3,
+     "worst": 0.38
+    }
    },
    "frame": {
-    "p50": 9.5,
-    "p95": 10.8,
-    "worst": 49.4
+    "p50": 8.9,
+    "p95": 11.2,
+    "worst": 39.5
    },
    "preview": {
-    "p50": 9.2,
-    "p95": 10.6,
-    "worst": 49
+    "p50": 8.7,
+    "p95": 10.9,
+    "worst": 39.2
    },
-   "land": 35.2,
-   "blockedMax": 20,
+   "land": 35.6,
+   "blockedMax": 18.5,
+   "landSplit": {
+    "upSync": 2,
+    "commit": 15.4,
+    "heapMB0": 325.3,
+    "heapMB1": 325.3
+   },
    "tiles": 61,
    "where": "pool",
    "stats": {
@@ -200,7 +292,7 @@
      "n": 1,
      "kernels": "rust",
      "tiles": 13,
-     "kernel": 1.1,
+     "kernel": 1.3,
      "pxCalls": {
       "mip_chain": 13
      },
@@ -210,7 +302,7 @@
      "n": 6,
      "kernels": "rust",
      "tiles": 45,
-     "total": 73.9,
+     "total": 80,
      "pxCalls": {
       "liquify_block": 45
      },
@@ -221,12 +313,35 @@
   {
    "row": "shrink held 150 ticks size 1000",
    "tick": {
-    "p50": 2.9,
-    "p95": 3.3,
-    "worst": 3.6
+    "p50": 2.8,
+    "p95": 3,
+    "worst": 3.8
    },
-   "land": 22.9,
-   "blockedMax": 16.9,
+   "dabLaps": {
+    "nodes": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "kernel": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "write": {
+     "p50": 0.24,
+     "p95": 0.25,
+     "worst": 0.3
+    }
+   },
+   "land": 21.6,
+   "blockedMax": 16.7,
+   "landSplit": {
+    "upSync": 2.5,
+    "commit": 5.4,
+    "heapMB0": 280.4,
+    "heapMB1": 280.4
+   },
    "tiles": 33,
    "where": "pool",
    "stats": {
@@ -247,7 +362,7 @@
      "n": 5,
      "kernels": "rust",
      "tiles": 22,
-     "total": 43.4,
+     "total": 38.8,
      "pxCalls": {
       "liquify_block": 25
      },
@@ -266,11 +381,141 @@
    }
   },
   {
+   "row": "restore 1:1 size 1000 pushed",
+   "travel": 1000,
+   "press": 49.5,
+   "window": 24.6,
+   "dab": {
+    "p50": 1.4,
+    "p95": 2.3,
+    "worst": 2.3
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "kernel": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "write": {
+     "p50": 0.31,
+     "p95": 0.64,
+     "worst": 0.64
+    }
+   },
+   "frame": {
+    "p50": 7.6,
+    "p95": 12.3,
+    "worst": 12.3
+   },
+   "preview": {
+    "p50": 7.5,
+    "p95": 9.7,
+    "worst": 9.7
+   },
+   "land": 29,
+   "blockedMax": 11.6,
+   "landSplit": {
+    "upSync": 2,
+    "commit": 10.8,
+    "heapMB0": 333.6,
+    "heapMB1": 333.6
+   },
+   "tiles": 59,
+   "where": "pool",
+   "stats": {
+    "blocks": 44,
+    "splits": 0,
+    "maxBlock": 162526,
+    "pool": 6,
+    "local": 0
+   },
+   "fieldMB": 6.1,
+   "pxCalls": {
+    "liquify_preview": 21,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 6,
+     "kernels": "rust",
+     "tiles": 44,
+     "total": 66.4,
+     "pxCalls": {
+      "liquify_block": 44
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
    "row": "restore all",
-   "ms": 4.9,
-   "blockedMax": 4.9,
+   "ms": 7.5,
+   "blockedMax": 7.5,
    "tiles": 278,
    "where": "pool",
+   "fieldMB": 0,
+   "pxCalls": {},
+   "jobs": {}
+  },
+  {
+   "row": "restore 1:1 size 1000 empty",
+   "travel": 1000,
+   "press": 10.6,
+   "window": 0,
+   "dab": {
+    "p50": 0.5,
+    "p95": 0.9,
+    "worst": 0.9
+   },
+   "dabLaps": {
+    "nodes": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "kernel": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    },
+    "write": {
+     "p50": 0,
+     "p95": 0,
+     "worst": 0
+    }
+   },
+   "frame": {
+    "p50": 0,
+    "p95": 0,
+    "worst": 0
+   },
+   "preview": {
+    "p50": 0,
+    "p95": 0,
+    "worst": 0
+   },
+   "land": 0.5,
+   "blockedMax": 0.5,
+   "landSplit": {
+    "upSync": 0.5,
+    "commit": 0,
+    "heapMB0": 350,
+    "heapMB1": 350
+   },
+   "tiles": 278,
+   "where": "pool",
+   "stats": {
+    "blocks": 0,
+    "splits": 0,
+    "maxBlock": 0,
+    "pool": 0,
+    "local": 0
+   },
    "fieldMB": 0,
    "pxCalls": {},
    "jobs": {}
@@ -281,17 +526,27 @@
    "pxMBTrimmed": 1.1,
    "idleTrimmed": 1,
    "pxMBGrown": 54.6,
-   "press": 9.9,
-   "window": 22.6,
-   "dab": 3.8,
-   "frame": 32.6,
-   "preview": 32.3,
+   "press": 10.4,
+   "window": 18,
+   "dab": 4,
+   "dabLaps": {
+    "nodes": 0,
+    "kernel": 0,
+    "write": 0.56
+   },
+   "frame": 27.5,
+   "preview": 27.2,
    "midIdleTrimmed": 1,
    "midWindow": 0,
-   "midDab": 3.3,
-   "midFrame": 9.6,
-   "midPreview": 9.2,
-   "land": 17.8,
+   "midDab": 3.5,
+   "midDabLaps": {
+    "nodes": 0,
+    "kernel": 0,
+    "write": 0.28
+   },
+   "midFrame": 8.7,
+   "midPreview": 8.4,
+   "land": 21,
    "pxCalls": {
     "liquify_preview": 2,
     "mip_chain": 16
@@ -301,7 +556,7 @@
      "n": 5,
      "kernels": "rust",
      "tiles": 22,
-     "total": 32.1,
+     "total": 30.1,
      "pxCalls": {
       "liquify_block": 22
      },
@@ -311,12 +566,14 @@
   }
  ],
  "table": [
-  "{\"row\":\"push fit size 200\",\"travel\":3130,\"press\":56.8,\"window\":11.2,\"dab\":{\"p50\":2.5,\"p95\":7.9,\"worst\":7.9},\"frame\":{\"p50\":0.2,\"p95\":12.5,\"worst\":12.5},\"preview\":{\"p50\":0.1,\"p95\":11.8,\"worst\":11.8},\"land\":31.2,\"blockedMax\":13.3,\"tiles\":48,\"where\":\"pool\",\"stats\":{\"blocks\":28,\"splits\":0,\"maxBlock\":119497,\"pool\":5,\"local\":0},\"fieldMB\":0.9,\"stepMB\":0,\"pxCalls\":{\"liquify_preview\":21,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":28,\"total\":56.6,\"pxCalls\":{\"liquify_block\":28},\"gen\":0}}}",
-  "{\"row\":\"push fit size 1000\",\"travel\":3130,\"press\":1.3,\"window\":9.8,\"dab\":{\"p50\":14.3,\"p95\":15.5,\"worst\":15.5},\"frame\":{\"p50\":1.2,\"p95\":10.9,\"worst\":10.9},\"preview\":{\"p50\":0.9,\"p95\":10.7,\"worst\":10.7},\"land\":86,\"blockedMax\":64.6,\"tiles\":113,\"where\":\"pool\",\"stats\":{\"blocks\":86,\"splits\":0,\"maxBlock\":396489,\"pool\":9,\"local\":0},\"fieldMB\":3.6,\"stepMB\":28.3,\"pxCalls\":{\"liquify_preview\":20,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":9,\"kernels\":\"rust\",\"tiles\":86,\"total\":197.8,\"pxCalls\":{\"liquify_block\":86},\"gen\":0}}}",
-  "{\"row\":\"push 1:1 size 200\",\"travel\":1080,\"press\":31.8,\"window\":21.4,\"dab\":{\"p50\":0.3,\"p95\":0.5,\"worst\":0.5},\"frame\":{\"p50\":1.5,\"p95\":1.8,\"worst\":23.3},\"preview\":{\"p50\":1.5,\"p95\":1.7,\"worst\":23},\"land\":16.1,\"blockedMax\":8.2,\"tiles\":23,\"where\":\"pool\",\"stats\":{\"blocks\":13,\"splits\":0,\"maxBlock\":119497,\"pool\":3,\"local\":0},\"fieldMB\":4,\"stepMB\":5.8,\"pxCalls\":{\"liquify_preview\":57,\"mip_chain\":13},\"jobs\":{\"liquify\":{\"n\":3,\"kernels\":\"rust\",\"tiles\":13,\"total\":15.6,\"pxCalls\":{\"liquify_block\":13},\"gen\":0}}}",
-  "{\"row\":\"push 1:1 size 1000\",\"travel\":1080,\"press\":30,\"window\":39.1,\"dab\":{\"p50\":3.5,\"p95\":3.9,\"worst\":6.7},\"frame\":{\"p50\":9.5,\"p95\":10.8,\"worst\":49.4},\"preview\":{\"p50\":9.2,\"p95\":10.6,\"worst\":49},\"land\":35.2,\"blockedMax\":20,\"tiles\":61,\"where\":\"pool\",\"stats\":{\"blocks\":45,\"splits\":0,\"maxBlock\":321264,\"pool\":6,\"local\":0},\"fieldMB\":5.4,\"stepMB\":15.3,\"pxCalls\":{\"liquify_preview\":60,\"mip_chain\":16},\"jobs\":{\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":13,\"kernel\":1.1,\"pxCalls\":{\"mip_chain\":13},\"gen\":0},\"liquify\":{\"n\":6,\"kernels\":\"rust\",\"tiles\":45,\"total\":73.9,\"pxCalls\":{\"liquify_block\":45},\"gen\":0}}}",
-  "{\"row\":\"shrink held 150 ticks size 1000\",\"tick\":{\"p50\":2.9,\"p95\":3.3,\"worst\":3.6},\"land\":22.9,\"blockedMax\":16.9,\"tiles\":33,\"where\":\"pool\",\"stats\":{\"blocks\":25,\"splits\":1,\"maxBlock\":908208,\"pool\":5,\"local\":0},\"maxReachPx\":691.6,\"fieldMB\":6.1,\"pxCalls\":{\"liquify_preview\":2,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":43.4,\"pxCalls\":{\"liquify_block\":25},\"gen\":0},\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":42,\"kernel\":4.9,\"pxCalls\":{\"mip_chain\":42},\"gen\":0}}}",
-  "{\"row\":\"restore all\",\"ms\":4.9,\"blockedMax\":4.9,\"tiles\":278,\"where\":\"pool\",\"fieldMB\":0,\"pxCalls\":{},\"jobs\":{}}",
-  "{\"row\":\"pause 2s 1:1 size 1000\",\"pxMB0\":148.8,\"pxMBTrimmed\":1.1,\"idleTrimmed\":1,\"pxMBGrown\":54.6,\"press\":9.9,\"window\":22.6,\"dab\":3.8,\"frame\":32.6,\"preview\":32.3,\"midIdleTrimmed\":1,\"midWindow\":0,\"midDab\":3.3,\"midFrame\":9.6,\"midPreview\":9.2,\"land\":17.8,\"pxCalls\":{\"liquify_preview\":2,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":32.1,\"pxCalls\":{\"liquify_block\":22},\"gen\":0}}}"
+  "{\"row\":\"push fit size 200\",\"travel\":3130,\"press\":82,\"window\":14.5,\"dab\":{\"p50\":2.4,\"p95\":8,\"worst\":8},\"dabLaps\":{\"nodes\":{\"p50\":0,\"p95\":0,\"worst\":0},\"kernel\":{\"p50\":0,\"p95\":0,\"worst\":0},\"write\":{\"p50\":0.17,\"p95\":0.46,\"worst\":0.46}},\"frame\":{\"p50\":0.3,\"p95\":15.9,\"worst\":15.9},\"preview\":{\"p50\":0.2,\"p95\":15.2,\"worst\":15.2},\"land\":33.1,\"blockedMax\":13.2,\"landSplit\":{\"upSync\":9.2,\"commit\":8.8,\"heapMB0\":250.1,\"heapMB1\":250.1},\"tiles\":48,\"where\":\"pool\",\"stats\":{\"blocks\":28,\"splits\":0,\"maxBlock\":119497,\"pool\":5,\"local\":0},\"fieldMB\":0.9,\"stepMB\":0,\"pxCalls\":{\"liquify_preview\":21,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":28,\"total\":62.9,\"pxCalls\":{\"liquify_block\":28},\"gen\":0}}}",
+  "{\"row\":\"push fit size 1000\",\"travel\":3130,\"press\":1,\"window\":8.4,\"dab\":{\"p50\":13.7,\"p95\":15.1,\"worst\":15.1},\"dabLaps\":{\"nodes\":{\"p50\":0,\"p95\":0,\"worst\":0},\"kernel\":{\"p50\":0,\"p95\":0,\"worst\":0},\"write\":{\"p50\":1.02,\"p95\":1.19,\"worst\":1.19}},\"frame\":{\"p50\":0.9,\"p95\":9.4,\"worst\":9.4},\"preview\":{\"p50\":0.8,\"p95\":9.2,\"worst\":9.2},\"land\":76.7,\"blockedMax\":57.4,\"landSplit\":{\"upSync\":4.6,\"commit\":9.7,\"heapMB0\":272.2,\"heapMB1\":303.1},\"tiles\":113,\"where\":\"pool\",\"stats\":{\"blocks\":86,\"splits\":0,\"maxBlock\":396489,\"pool\":9,\"local\":0},\"fieldMB\":3.6,\"stepMB\":28.3,\"pxCalls\":{\"liquify_preview\":20,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":9,\"kernels\":\"rust\",\"tiles\":86,\"total\":162.1,\"pxCalls\":{\"liquify_block\":86},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 200\",\"travel\":1080,\"press\":36.5,\"window\":18,\"dab\":{\"p50\":0.3,\"p95\":0.3,\"worst\":0.4},\"dabLaps\":{\"nodes\":{\"p50\":0,\"p95\":0,\"worst\":0},\"kernel\":{\"p50\":0,\"p95\":0,\"worst\":0},\"write\":{\"p50\":0.02,\"p95\":0.03,\"worst\":0.04}},\"frame\":{\"p50\":1.5,\"p95\":1.7,\"worst\":19.9},\"preview\":{\"p50\":1.4,\"p95\":1.5,\"worst\":19.5},\"land\":18.5,\"blockedMax\":14.1,\"landSplit\":{\"upSync\":1.3,\"commit\":9.3,\"heapMB0\":283.3,\"heapMB1\":283.3},\"tiles\":23,\"where\":\"pool\",\"stats\":{\"blocks\":13,\"splits\":0,\"maxBlock\":119497,\"pool\":3,\"local\":0},\"fieldMB\":4,\"stepMB\":5.8,\"pxCalls\":{\"liquify_preview\":57,\"mip_chain\":13},\"jobs\":{\"liquify\":{\"n\":3,\"kernels\":\"rust\",\"tiles\":13,\"total\":14.1,\"pxCalls\":{\"liquify_block\":13},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 1000\",\"travel\":1080,\"press\":29.9,\"window\":30.5,\"dab\":{\"p50\":3.4,\"p95\":4,\"worst\":6.5},\"dabLaps\":{\"nodes\":{\"p50\":0,\"p95\":0,\"worst\":0},\"kernel\":{\"p50\":0,\"p95\":0,\"worst\":0},\"write\":{\"p50\":0.26,\"p95\":0.3,\"worst\":0.38}},\"frame\":{\"p50\":8.9,\"p95\":11.2,\"worst\":39.5},\"preview\":{\"p50\":8.7,\"p95\":10.9,\"worst\":39.2},\"land\":35.6,\"blockedMax\":18.5,\"landSplit\":{\"upSync\":2,\"commit\":15.4,\"heapMB0\":325.3,\"heapMB1\":325.3},\"tiles\":61,\"where\":\"pool\",\"stats\":{\"blocks\":45,\"splits\":0,\"maxBlock\":321264,\"pool\":6,\"local\":0},\"fieldMB\":5.4,\"stepMB\":15.3,\"pxCalls\":{\"liquify_preview\":60,\"mip_chain\":16},\"jobs\":{\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":13,\"kernel\":1.3,\"pxCalls\":{\"mip_chain\":13},\"gen\":0},\"liquify\":{\"n\":6,\"kernels\":\"rust\",\"tiles\":45,\"total\":80,\"pxCalls\":{\"liquify_block\":45},\"gen\":0}}}",
+  "{\"row\":\"shrink held 150 ticks size 1000\",\"tick\":{\"p50\":2.8,\"p95\":3,\"worst\":3.8},\"dabLaps\":{\"nodes\":{\"p50\":0,\"p95\":0,\"worst\":0},\"kernel\":{\"p50\":0,\"p95\":0,\"worst\":0},\"write\":{\"p50\":0.24,\"p95\":0.25,\"worst\":0.3}},\"land\":21.6,\"blockedMax\":16.7,\"landSplit\":{\"upSync\":2.5,\"commit\":5.4,\"heapMB0\":280.4,\"heapMB1\":280.4},\"tiles\":33,\"where\":\"pool\",\"stats\":{\"blocks\":25,\"splits\":1,\"maxBlock\":908208,\"pool\":5,\"local\":0},\"maxReachPx\":691.6,\"fieldMB\":6.1,\"pxCalls\":{\"liquify_preview\":2,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":38.8,\"pxCalls\":{\"liquify_block\":25},\"gen\":0},\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":42,\"kernel\":4.9,\"pxCalls\":{\"mip_chain\":42},\"gen\":0}}}",
+  "{\"row\":\"restore 1:1 size 1000 pushed\",\"travel\":1000,\"press\":49.5,\"window\":24.6,\"dab\":{\"p50\":1.4,\"p95\":2.3,\"worst\":2.3},\"dabLaps\":{\"nodes\":{\"p50\":0,\"p95\":0,\"worst\":0},\"kernel\":{\"p50\":0,\"p95\":0,\"worst\":0},\"write\":{\"p50\":0.31,\"p95\":0.64,\"worst\":0.64}},\"frame\":{\"p50\":7.6,\"p95\":12.3,\"worst\":12.3},\"preview\":{\"p50\":7.5,\"p95\":9.7,\"worst\":9.7},\"land\":29,\"blockedMax\":11.6,\"landSplit\":{\"upSync\":2,\"commit\":10.8,\"heapMB0\":333.6,\"heapMB1\":333.6},\"tiles\":59,\"where\":\"pool\",\"stats\":{\"blocks\":44,\"splits\":0,\"maxBlock\":162526,\"pool\":6,\"local\":0},\"fieldMB\":6.1,\"pxCalls\":{\"liquify_preview\":21,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":6,\"kernels\":\"rust\",\"tiles\":44,\"total\":66.4,\"pxCalls\":{\"liquify_block\":44},\"gen\":0}}}",
+  "{\"row\":\"restore all\",\"ms\":7.5,\"blockedMax\":7.5,\"tiles\":278,\"where\":\"pool\",\"fieldMB\":0,\"pxCalls\":{},\"jobs\":{}}",
+  "{\"row\":\"restore 1:1 size 1000 empty\",\"travel\":1000,\"press\":10.6,\"window\":0,\"dab\":{\"p50\":0.5,\"p95\":0.9,\"worst\":0.9},\"dabLaps\":{\"nodes\":{\"p50\":0,\"p95\":0,\"worst\":0},\"kernel\":{\"p50\":0,\"p95\":0,\"worst\":0},\"write\":{\"p50\":0,\"p95\":0,\"worst\":0}},\"frame\":{\"p50\":0,\"p95\":0,\"worst\":0},\"preview\":{\"p50\":0,\"p95\":0,\"worst\":0},\"land\":0.5,\"blockedMax\":0.5,\"landSplit\":{\"upSync\":0.5,\"commit\":0,\"heapMB0\":350,\"heapMB1\":350},\"tiles\":278,\"where\":\"pool\",\"stats\":{\"blocks\":0,\"splits\":0,\"maxBlock\":0,\"pool\":0,\"local\":0},\"fieldMB\":0,\"pxCalls\":{},\"jobs\":{}}",
+  "{\"row\":\"pause 2s 1:1 size 1000\",\"pxMB0\":148.8,\"pxMBTrimmed\":1.1,\"idleTrimmed\":1,\"pxMBGrown\":54.6,\"press\":10.4,\"window\":18,\"dab\":4,\"dabLaps\":{\"nodes\":0,\"kernel\":0,\"write\":0.56},\"frame\":27.5,\"preview\":27.2,\"midIdleTrimmed\":1,\"midWindow\":0,\"midDab\":3.5,\"midDabLaps\":{\"nodes\":0,\"kernel\":0,\"write\":0.28},\"midFrame\":8.7,\"midPreview\":8.4,\"land\":21,\"pxCalls\":{\"liquify_preview\":2,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":30.1,\"pxCalls\":{\"liquify_block\":22},\"gen\":0}}}"
  ]
 }

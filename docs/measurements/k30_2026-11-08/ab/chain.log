@@ -1,26 +1,33 @@
 lock: taken after 0 s
-[11:36:52] lock: taken (K30 measuring 8620 2026-11-08T11:36:52)
-[11:36:52] tree: /f/canvas/.claude/worktrees/ag-chain-b at 1979e8d, px.wasm 0689be10d5c51f1e, px_scalar.wasm 06ad2dac1ed8cad6
-[11:36:52] == round 1
-[11:37:03] before r1: liquify_perf DAB=map
-[11:37:22] {"built": 6837, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "map", "undoMB": 133.1} rc=0 
+[13:07:13] lock: taken (K30 measuring 41824 2026-11-08T13:07:13)
+[13:07:13] tree: /f/canvas/.claude/worktrees/ag-chain-b at 647f758, px.wasm 0689be10d5c51f1e, px_scalar.wasm 06ad2dac1ed8cad6
+[13:07:13] == round 1
+[13:07:24] before r1: liquify_perf DAB=map
+[13:07:41] {"built": 5053, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "map", "undoMB": 149.2} rc=0 
 closed
-[11:37:37] after r1: liquify_perf DAB=dense
-[11:37:54] {"built": 5555, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "dense", "undoMB": 133.1} rc=0 
+[13:07:57] after r1: liquify_perf DAB=dense
+[13:08:13] {"built": 5156, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "dense", "undoMB": 149.2} rc=0 
 closed
-[11:37:59] == round 2
-[11:38:10] after r2: liquify_perf DAB=dense
-[11:38:26] {"built": 5342, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "dense", "undoMB": 133.1} rc=0 
+[13:08:18] == round 2
+[13:08:29] after r2: liquify_perf DAB=dense
+[13:08:46] {"built": 5199, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "dense", "undoMB": 149.2} rc=0 
 closed
-[11:38:42] before r2: liquify_perf DAB=map
-[11:38:59] {"built": 5478, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "map", "undoMB": 133.1} rc=0 
+[13:09:01] before r2: liquify_perf DAB=map
+[13:09:19] {"built": 5086, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "map", "undoMB": 149.2} rc=0 
 closed
-[11:39:04] == round 3
-[11:39:14] before r3: liquify_perf DAB=map
-[11:39:32] {"built": 5311, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "map", "undoMB": 133.1} rc=0 
+[13:09:23] == round 3
+[13:09:34] before r3: liquify_perf DAB=map
+[13:09:51] {"built": 4887, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "map", "undoMB": 149.2} rc=0 
 closed
-[11:39:47] after r3: liquify_perf DAB=dense
-[11:40:03] {"built": 5108, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "dense", "undoMB": 133.1} rc=0 
+[13:10:06] after r3: liquify_perf DAB=dense
+[13:10:23] {"built": 5043, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "dense", "undoMB": 149.2} rc=0 
 closed
-[11:40:08] done
+[13:10:28] == swapped view order check (VIEWS: 1:1 then fit)
+[13:10:39] before swap: liquify_perf DAB=map VIEWS=[1:1,fit]
+[13:10:56] {"built": 5139, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "map", "undoMB": 153.8} rc=0 
+closed
+[13:11:11] after swap: liquify_perf DAB=dense VIEWS=[1:1,fit]
+[13:11:28] {"built": 5014, "s": 4, "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "routes": {}, "dabKernel": "dense", "undoMB": 153.8} rc=0 
+closed
+[13:11:33] done
 lock: released
