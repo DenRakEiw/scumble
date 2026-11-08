@@ -12450,7 +12450,8 @@ async def run_all(c):
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     if "--list" in sys.argv[1:]:
-        # the step names in the order the gate runs them, one per line, no app needed (tools/editor_shards.py)
+        # the step names in the order the gate runs them, one per line (plain LF, for bash's read), no app needed
+        sys.stdout.reconfigure(newline="\n")
         for name, _ in STEPS:
             print(name)
         sys.exit(0)

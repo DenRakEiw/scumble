@@ -870,11 +870,13 @@ temp folder of its own: `<label>-tiles-editor1` .. `N`, the same for canvas. The
 run on each backend's own instance as before, minus the editor (`<label>-tiles`, `<label>-canvas`); the serial gates
 are unchanged. The runs share the ports given: a run waits for a free one, and each start comes S seconds after the
 one before (`--stagger`, default 10 with `--shards`; without `--shards` nothing changes, two ports, 25 s).
-`--lock PATH` makes every run wait (60 s polls) while a busy-lock file exists. Afterwards
-`<label>-tiles-editor/summary.txt` (and canvas) holds the gate's verdict for that backend: it passes only when every
-group passed **and** every step ran exactly once over all groups (the first step and the cleanup once in each group),
-each group exactly the steps it was planned with; a step missing, run twice, failed or run in another group is named
-(`check.txt`). Without `--shards` the script runs as before.
+`--lock PATH`: before each run starts, the script waits (60 s polls) while a busy-lock file exists, and the runs that
+waited then start one stagger apart. Afterwards `<label>-tiles-editor/summary.txt` (and canvas) holds the gate's
+verdict for that backend: it passes only when every group passed (its log's verdict **and** its run's exit code, so a
+group that printed PASS and then timed out or failed in its close is red, and a group with no `.rc` file is too),
+**and** every step ran exactly once over all groups (the first step and the cleanup once in each group), each group
+exactly the steps it was planned with and on the plan's backend (its log's `backend:` line); each problem is named
+with its group (`check.txt`). Without `--shards` the script runs as before.
 
 `tools/editor_shards.py` (no app) does the planning and the check: `units` prints the steps that must stay together,
 `plan N --backend tiles|canvas --logs DIR` the groups, `check PLAN LOG...` the verdict. The groups are runs of
@@ -888,8 +890,12 @@ functions and module strings they reach), and the two and everything between the
 four units: `copy_paste_a_layer_into_another_tab` .. `duplicate_button_in_the_layer_row` (`window.__t2`),
 `pixel_backend_is_the_one_the_flag_chose` .. `editing_on_the_flags_backend_in_pixels_and_on_screen` (`window.__tb`),
 `pixels_nothing_draws_get_no_display_mirror` .. `the_screen_draws_no_cpu_mirror_and_stale_textures_leave`
-(`window.__dc`, `__droppedPixels`, `__heldDisplay`) and the five Undo history steps (`window.__uh`, `__uhLayer`,
-`__uhOpen`). Read by hand besides: every other step opens a document of its own or starts with `new_canvas` on the test
+(`window.__dc`) and the five Undo history steps (`window.__uh`, `__uhLayer`, `__uhOpen`). The rule does not see a step
+that reads an earlier step's global and then resets it: `the_screen_draws_...` derefs `window.__droppedPixels` (and
+drops `__heldDisplay`) from `pixels_nothing_draws_...` and sets both to null, so `EXTRA_CHAINS` declares 61-63 as well,
+and `units` prints both reasons (counting every read-then-write instead would tie the ten prompt field and reference
+picker steps together, which each set `window.__pf` / `__pfPane` themselves before they read them). Read by hand
+besides: every other step opens a document of its own or starts with `new_canvas` on the test
 document, or reads only what the first step made (steps 1-9 and 14 use the test document as it is, and need no more
 than a picture of at least 400 x 300, 17, 18, 58 and 77 only bring it to the front or read its status; group 1 starts
 at step 1, as the full run does); the steps that change settings (`memory`, `tiles`, the recipe), localStorage (`ipc.pane`,
@@ -897,7 +903,8 @@ at step 1, as the full run does); the steps that change settings (`memory`, `til
 and reference picker steps each open and close their own document (`pfSetup` / `pfClose`); the cleanup closes only
 what exists. A dependency that no global shows goes into `EXTRA_CHAINS` in `tools/editor_shards.py`; a step that reads
 a global no earlier step writes stops the plan. `python tools/editor_shards.py selftest` checks the check against
-made-up logs (a step missing, twice, failed, a red verdict, a log short) and that no plan splits a unit.
+made-up logs (a step missing, twice, failed, a red verdict, a log short or not there, a group on the other backend or
+with no `backend:` line), that no plan splits a unit and that the declared chain holds 61-63.
 
 Measured 2026-11-08 (`docs/measurements/gates_shard_2026-11-08/`, `--offline editor`, other agents' instances on the
 machine): unsharded side by side 203 s wall (tiles 187 s, canvas 151 s); `--shards 2` on four ports 130 s (the groups

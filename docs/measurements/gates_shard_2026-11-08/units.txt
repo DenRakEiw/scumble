@@ -4,7 +4,9 @@ pixel_backend_is_the_one_the_flag_chose .. editing_on_the_flags_backend_in_pixel
     window.__tb: pixel_backend_is_the_one_the_flag_chose writes it, editing_on_the_flags_backend_in_pixels_and_on_screen reads it
 pixels_nothing_draws_get_no_display_mirror .. the_screen_draws_no_cpu_mirror_and_stale_textures_leave (steps 61-63)
     window.__dc: pixels_nothing_draws_get_no_display_mirror writes it, the_screen_draws_no_cpu_mirror_and_stale_textures_leave reads it
+    window.__droppedPixels / __heldDisplay: the first writes them, the second reads them (deref) and then sets them to null, a read-then-reset the rule does not count (window.__dc ties the two as well today)
 undo_history_lists_three_edits_as_labelled_rows .. undo_history_commands_match_the_list (steps 73-77)
     window.__uh: undo_history_lists_three_edits_as_labelled_rows writes it, undo_history_row_click_jumps_back_and_forward, undo_history_snapshot_restores_twice_and_is_undoable, undo_history_depth_trims_to_its_steps, undo_history_commands_match_the_list read it
     window.__uhLayer: undo_history_lists_three_edits_as_labelled_rows writes it, undo_history_row_click_jumps_back_and_forward, undo_history_snapshot_restores_twice_and_is_undoable, undo_history_depth_trims_to_its_steps, undo_history_commands_match_the_list read it
     window.__uhOpen: undo_history_lists_three_edits_as_labelled_rows writes it, undo_history_commands_match_the_list reads it
+declared: pixels_nothing_draws_get_no_display_mirror .. the_screen_draws_no_cpu_mirror_and_stale_textures_leave: window.__droppedPixels / __heldDisplay: the first writes them, the second reads them (deref) and then sets them to null, a read-then-reset the rule does not count (window.__dc ties the two as well today)

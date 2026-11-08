@@ -20,14 +20,16 @@ comma-separated, without the first step and the cleanup), the reasoning to stder
 writes it, and the two and every step between them form one unit that stays in one group (`window.__t2` of
 copy_paste_a_layer_into_another_tab, read by duplicate_button_in_the_layer_row, for example). Found by reading the steps'
 sources: a JS step's string, a Python step's functions and the module strings they use, nested code included. EXEMPT
-lists the globals every group has anyway; EXTRA_CHAINS takes a dependency that no global shows (none known on
-2026-11-08: the steps that change settings, localStorage or a recipe put them back, and every other step opens a document
-of its own or starts with new_canvas on the test document). The cleanup reads the documents of earlier steps but closes
-only those that exist, so it depends on none.
+lists the globals every group has anyway; EXTRA_CHAINS takes a dependency the rule does not show: a step that reads an
+earlier step's global and then resets it (61-63, window.__droppedPixels), or one that no global shows at all (none known
+on 2026-11-08: the steps that change settings, localStorage or a recipe put them back, and every other step opens a
+document of its own or starts with new_canvas on the test document). The cleanup reads the documents of earlier steps
+but closes only those that exist, so it depends on none.
 
 **check** reads each group's log and passes only when every group passed, every step of the gate ran exactly once over
-all groups (the first step and the cleanup once in each), and each group ran exactly the steps it was planned with; it
-names every step that is missing, ran twice, failed, or ran in another group than planned.
+all groups (the first step and the cleanup once in each), and each group ran exactly the steps it was planned with, on
+the plan's backend; it names every step that is missing, ran twice, failed, or ran in another group than planned, and
+every group on another backend or without a backend: line. (run_gates_both.sh adds each group's exit code.)
 """
 import glob
 import json
@@ -46,8 +48,15 @@ EXEMPT = {
     "__exportPath": "run_all sets it before the first step",
     "__host": "run_all", "__cmds": "run_all", "__log": "tools/cdp.py's console hook",
 }
-# (first step, last step, why): a dependency the globals do not show; the steps from first to last stay in one group
-EXTRA_CHAINS = []
+# (first step, last step, why): a dependency the rule in units() does not show; the steps from first to last stay in one
+# group. The rule links a read only to a global the reading step does not write itself, so a step that reads an earlier
+# step's global and then resets it is not found by it (counting every read-then-write would tie the prompt field steps
+# 108-117 together, which each set window.__pf / __pfPane themselves before they read them)
+EXTRA_CHAINS = [
+    ("pixels_nothing_draws_get_no_display_mirror", "the_screen_draws_no_cpu_mirror_and_stale_textures_leave",
+     "window.__droppedPixels / __heldDisplay: the first writes them, the second reads them (deref) and then sets them "
+     "to null, a read-then-reset the rule does not count (window.__dc ties the two as well today)"),
+]
 ALWAYS_LAST = "cleanup"
 
 OK = re.compile(r"^\[ok\] ([A-Za-z0-9_]+): .*?(?: \[(\d+(?:\.\d+)?) s\])?$")
@@ -308,6 +317,11 @@ def check(plan_obj, logs):
             problems.append("group %d: %s" % (g, line))
         if not log["verdict"] or not log["verdict"].startswith("PASS"):
             problems.append("group %d: the verdict is %s (%s)" % (g, json.dumps(log["verdict"]), path))
+        # every group on the plan's backend (only the group with pixel_backend_is_the_one_the_flag_chose checks the
+        # flag itself, and the runner's ports serve both backends)
+        if log["backend"] != plan_obj["backend"]:
+            problems.append("group %d ran on the %s backend, the plan is for %s (%s)" % (
+                g, log["backend"] or "unnamed (no backend: line)", plan_obj["backend"], path))
         ran = [nm for nm, _ in log["ok"]]
         for nm in ran:
             runs.setdefault(nm, []).append(g)
@@ -346,7 +360,7 @@ def selftest():
     p = plan(3, "tiles", None)
     names, G = p["all"], [g["steps"] for g in p["groups"]]
 
-    def logs(groups, bad=None):
+    def logs(groups, bad=None, backend=None):
         paths = []
         for k, g in enumerate(groups, 1):
             path = os.path.join(d, "g%d.log" % k)
@@ -358,7 +372,10 @@ def selftest():
                         f.write("[FAIL] %s: boom [1.0 s]\n" % s)
                         break
                     f.write("[ok] %s: {\"a\": 1} [1.5 s]\n" % s)
-                f.write("backend: tiles, 12.0 s in the steps\n%s\n" % verdict)
+                b = (backend or {}).get(k, "tiles")
+                if b:
+                    f.write("backend: %s, 12.0 s in the steps\n" % b)
+                f.write(verdict + "\n")
             paths.append(path)
         return paths
 
@@ -372,6 +389,8 @@ def selftest():
         ("a failed step", red(check(p, logs(G, {2: (G[1][3], "FAIL")}))[0], G[1][3] + ": boom")),
         ("a red verdict", red(check(p, logs(G, {3: (None, "FAIL")}))[0], "the verdict")),
         ("a log too few", red(check(p, logs(G)[:2])[0], "2 logs for 3 groups")),
+        ("a group on the other backend", red(check(p, logs(G, backend={2: "canvas"}))[0], "group 2 ran on the canvas backend")),
+        ("a group with no backend line", red(check(p, logs(G, backend={3: None}))[0], "group 3 ran on the unnamed")),
     ]
     paths = logs(G)
     os.remove(paths[1])
@@ -382,6 +401,9 @@ def selftest():
     where = {s: k for k, g in enumerate(G) for s in g}
     us = units()
     cases.append(("no unit is split", all(len({where[names[i]] for i in range(a, b + 1)}) == 1 for a, b, _ in us)))
+    cases.append(("61-63 held by the declared chain as well", any(
+        names[a] == "pixels_nothing_draws_get_no_display_mirror" and names[b] == "the_screen_draws_no_cpu_mirror_and_stale_textures_leave"
+        and any("read-then-reset" in w for w in why) for a, b, why in us)))
     cases.append(("the Undo history's steps are one unit", any(names[a] == "undo_history_lists_three_edits_as_labelled_rows"
                                                              and names[b] == "undo_history_commands_match_the_list" for a, b, _ in us)))
     for n in (2, 3, 4, 6):

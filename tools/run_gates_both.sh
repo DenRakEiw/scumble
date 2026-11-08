@@ -20,10 +20,11 @@
 # (<label>-tiles-editor/summary.txt). The other gates of the side-by-side part run on each backend's own instance as
 # before (<label>-tiles, <label>-canvas), minus the editor. The runs share the ports given (--ports with as many as
 # you like; a run waits for a free port), each start S seconds after the one before (default 10 with --shards).
-# --lock PATH: every run waits (60 s polls) while that busy-lock file exists before it starts its instance.
+# --lock PATH: before each run starts, the script waits (60 s polls) while that busy-lock file exists; the runs that
+# waited then start one stagger apart, as the others do.
 DIR="$(cd "$(dirname "$0")" && pwd)"
 LABEL="$1"; shift
-[ -n "$LABEL" ] || { sed -n '2,23p' "$0"; exit 2; }
+[ -n "$LABEL" ] || { sed -n '2,24p' "$0"; exit 2; }
 STAGGER=""; PORTS="9586,9587"; SHARDS=1; LOCK=""; PASS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -68,10 +69,6 @@ side() {
   rm -rf "$tmp"; mkdir -p "$tmp"
   local wtmp; wtmp="$(cygpath -w "$tmp" 2>/dev/null || echo "$tmp")"
   if [ -n "$only" ]; then export SCUMBLE_EDITOR_ONLY="$only" SCUMBLE_EDITOR_SHARD="$shard"; fi
-  if [ -n "$LOCK" ] && [ -e "$LOCK" ]; then
-    echo "[$name] waiting for the busy lock $LOCK"
-    while [ -e "$LOCK" ]; do sleep 60; done
-  fi
   local t0; t0=$(date +%s)
   TEMP="$wtmp" TMP="$wtmp" TMPDIR="$wtmp" SCUMBLE_CDP_PORT="$port" bash "$DIR/run_gates.sh" "$lab" --tiles "$tiles" "${PASS[@]}" "$@" 2>&1 \
     | sed -u "s/^/[$name] /"
@@ -80,11 +77,22 @@ side() {
   echo "$rc $(( t1 - t0 )) $t0 $t1" > "$SP/gates/$lab.rc"
 }
 
+# --lock: wait (60 s polls) while the busy lock exists; called before every run starts, by the code that starts it, so
+# runs that waited start one stagger apart again; exit 0 when it waited
+wait_lock() {
+  [ -n "$LOCK" ] && [ -e "$LOCK" ] || return 1
+  echo "waiting for the busy lock $LOCK"
+  while [ -e "$LOCK" ]; do sleep 60; done
+  return 0
+}
+
 labels=()
 if [ ${#PAR[@]} -gt 0 ] && [ "$SHARDS" -le 1 ]; then
   echo "side by side: ${PAR[*]} (tiles on $PT, canvas on $PC$( [ "$needs_app" = 1 ] && echo ", the canvas side ${STAGGER} s later"))"
+  wait_lock
   side tiles "$PT" on "" "" "${PAR[@]}" &
   [ "$needs_app" = 1 ] && sleep "$STAGGER"
+  wait_lock && [ "$needs_app" = 1 ] && sleep "$STAGGER"
   side canvas "$PC" off "" "" "${PAR[@]}" &
   wait
   labels+=("$LABEL-tiles" "$LABEL-canvas")
@@ -128,6 +136,9 @@ elif [ ${#PAR[@]} -gt 0 ]; then
       done
       [ -n "$port" ] || sleep 2
     done
+    # the busy lock first, then the stagger from the last start (after a wait the first run goes at once, the next
+    # ones one stagger apart)
+    wait_lock
     if [ "${J_APP[$j]}" = 1 ] && [ "$last" -gt 0 ]; then
       gap=$(( last + STAGGER - $(date +%s) )); [ "$gap" -gt 0 ] && sleep "$gap"
     fi
@@ -139,12 +150,15 @@ elif [ ${#PAR[@]} -gt 0 ]; then
   wait
   # each backend's editor: every group passed and every step ran exactly once
   for b in tiles canvas; do
-    E="$SP/gates/$LABEL-$b-editor"; logs=(); secs=(); t_first=""; t_last=""
+    E="$SP/gates/$LABEL-$b-editor"; logs=(); secs=(); t_first=""; t_last=""; bad_rc=()
     n=$(wc -l < "$E/groups.txt")
     for i in $(seq 1 "$n"); do
       logs+=("$SP/gates/$LABEL-$b-editor$i/editor.log")
-      s="?"; a=""; z=""
-      read -r _ s a z < "$SP/gates/$LABEL-$b-editor$i.rc" 2>/dev/null
+      r=""; s="?"; a=""; z=""
+      read -r r s a z < "$SP/gates/$LABEL-$b-editor$i.rc" 2>/dev/null
+      # a run that printed PASS can still end red (its timeout, a teardown): its exit code counts as well as its log
+      if [ -z "$r" ]; then bad_rc+=("[FAIL] shard $i ($LABEL-$b-editor$i): no exit code (its .rc file is missing)")
+      elif [ "$r" != 0 ]; then bad_rc+=("[FAIL] shard $i ($LABEL-$b-editor$i): run_gates.sh ended with exit code $r"); fi
       secs+=("$s s")
       if [ -n "$a" ]; then
         { [ -z "$t_first" ] || [ "$a" -lt "$t_first" ]; } && t_first="$a"
@@ -153,9 +167,14 @@ elif [ ${#PAR[@]} -gt 0 ]; then
     done
     verdict=$(python "$DIR/editor_shards.py" check "$E/plan.json" "${logs[@]}")
     rc=$?
-    echo "$verdict" > "$E/check.txt"
+    {
+      for x in "${bad_rc[@]}"; do echo "$x"; done
+      echo "$verdict"
+      if [ ${#bad_rc[@]} -gt 0 ] && [ "$rc" = 0 ]; then echo "FAIL (the logs' check passed, but ${#bad_rc[@]} shard run(s) ended red)"; fi
+    } > "$E/check.txt"
+    [ ${#bad_rc[@]} -gt 0 ] && rc=1
     w="${secs[*]}"
-    echo "editor rc=$rc $n shards (each run from start to close: ${w// s / s, }) $(echo "$verdict" | tail -1)" > "$E/summary.txt"
+    echo "editor rc=$rc $n shards (each run from start to close: ${w// s / s, }) $(tail -1 "$E/check.txt")" > "$E/summary.txt"
     [ "$rc" = 0 ] && echo "ALL PASS" >> "$E/summary.txt" || { grep -a "^\[FAIL\]" "$E/check.txt" | head -20 >> "$E/summary.txt"; echo "SOME FAILED" >> "$E/summary.txt"; }
     echo "$rc $([ -n "$t_first" ] && echo $(( t_last - t_first )) || echo "?")" > "$SP/gates/$LABEL-$b-editor.rc"
     labels+=("$LABEL-$b-editor")
@@ -164,8 +183,8 @@ elif [ ${#PAR[@]} -gt 0 ]; then
 fi
 if [ ${#SER[@]} -gt 0 ]; then
   echo "one after the other (they cannot share the machine): ${SER[*]}"
-  side tiles-serial "$PT" on "" "" "${SER[@]}"
-  side canvas-serial "$PC" off "" "" "${SER[@]}"
+  wait_lock; side tiles-serial "$PT" on "" "" "${SER[@]}"
+  wait_lock; side canvas-serial "$PC" off "" "" "${SER[@]}"
   labels+=("$LABEL-tiles-serial" "$LABEL-canvas-serial")
 fi
 
