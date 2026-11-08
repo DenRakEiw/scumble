@@ -5526,6 +5526,10 @@ async function rangeCases(js, simd, scalar, resample, K) {
             ["0xc02f23ec74980000", "0x3e87371c4b5fded4"],
             ["0xc02f4c9f23680000", "0x3e8570fda46cc79e"],
             ["0xbfe75e1287000000", "0x3fded5c1018b76a0"],
+            ["0x3fd62e42c0db798c", "0x3ff6a09e5088c315"],
+            ["0x3ff0a2b2b2848958", "0x4006a09f0988bd30"],
+            ["0x3eab83460044ab8d", "0x3ff00000dc1a35ec"],
+            ["0xbe1635143032007f", "0x3fefffffff4e575e"],
         ];
         const b = new ArrayBuffer(8), dv = new DataView(b);
         const f64FromBits = (hex) => { dv.setBigUint64(0, BigInt(hex), true); return dv.getFloat64(0, true); };
@@ -5797,6 +5801,17 @@ async function rangeCases(js, simd, scalar, resample, K) {
             }
         }
         check("range_tiles_depth K22-exp-band tie case gives 127 on the 128 odd-row pixels of column x=127 across twin, simd, and scalar", tieOk, tieDetail);
+
+        // Engine-independent spy: snapped js.rangeTilesDepth must call libmExp for both wSpatial and wColor, never Math.exp
+        const origMathExp = Math.exp;
+        let mathExpCalls = 0;
+        Math.exp = (v) => { mathExpCalls++; return origMathExp(v); };
+        try {
+            callRangeDepth(js, [mapEdge, guideEdge, picEdge, cls2, mw, mh, xf, W, H, 0, 0, 256, { lo: 0.35, hi: 0.55, fLo: 0.05, fHi: 0.05, invert: false }, false, picBox, [sigmaR, tau], 256]);
+        } finally {
+            Math.exp = origMathExp;
+        }
+        check("js rangeTilesDepth snapped call uses libmExp for both wSpatial and wColor (0 Math.exp calls)", mathExpCalls === 0, `mathExpCalls=${mathExpCalls}`);
     }
 
     let refDepthOk = true, refDepthDetail = "";

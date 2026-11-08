@@ -1,0 +1,15 @@
+$ node tools/px_test.js  (rc 1, 12 s, PX_ONLY=range)
+FAIL js libmExp matches frozen wasm libm::exp bit for bit (47 cases + NaN)  x=0x3eab83460044ab8d: got 0x3ff00000dc1a3002, want 0x3ff00000dc1a35ec
+FAIL (1) (only: range; PX_ONLY, not the full test)
+ok   rangeTilesDepth refuses NaN xf on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses null limit on twin and both builds  3/3 threw
+ok   raw range_tiles_depth returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  got 0
+ok   kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order  calls jj=0 rr=1 rj=1 jr=1 diffs=
+ok   px.js rangeTilesDepth bounds [wy0..wy1] over [minTx..maxTx] on a 90-degree turned map  copiedMapBytes=576 fullMapBytes=1536
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (1) (only: range; PX_ONLY, not the full test)
+(node:22364) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/ag_mut_k22_r2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22_r2\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

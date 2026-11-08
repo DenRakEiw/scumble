@@ -31,11 +31,15 @@ Node & Electron unit & kernel benchmarks (`PX_BENCH=1 PX_ONLY=range node tools/p
 - `range_tiles_depth 15000x256 row, plain bilinear (59 tiles)`: twin 122.90 ms, simd 77.98 ms (1.58x), scalar 68.54 ms (median of 9)
 - `range_tiles_depth 15000x256 row, snapped (59 edge tiles)`:   twin 272.57 ms, simd 125.48 ms (2.17x), scalar 125.30 ms (median of 9)
 - 106 deterministic/property cases (including the `K22-exp-band` `x = 127` tie case at `W = H = 256` where `libmExp(-1.53125)`
-  differs by 1 ulp from V8 15.2 `Math.exp`) + frozen 43-case `libmExp` bit-equality table + odd-offset views + exact
+  differs by 1 ulp from V8 15.2 `Math.exp`) + frozen 47-case `libmExp` bit-equality table + engine-independent `Math.exp` spy on
+  snapped `js.rangeTilesDepth` + odd-offset views + exact
   even-half rounding (`40.5 -> 41`) + hard-step `1e-12` tolerance + `sstep` `1e-14` clamps + `snapField` `den > 1e-6` +
   partial `pic` box + dirty arena out-of-bounds zeroing + 90-degree turned-map `[minTx..maxTx]` window bound + 11
   invalid-arg refusals + raw `wy0` refusal + `K.rangeTilesDepth` split-routing + unified/split trap & OOM recovery in
   `retouchRoute`: PASS on twin, simd, scalar in both Node and `ELECTRON_RUN_AS_NODE=1` (Electron 44 V8 15.2).
+  (Note: the canvas backend and the pool-off loop still call `snapField` with `Math.exp` in `inpaint_edges.js` /
+  `inpaint_canvas.js`, so with option (a) select by depth can differ by one level between the backends at an exact tie,
+  and those canvas/pool-off bytes can still move with an Electron upgrade.)
 
 15000 x 10000 before (`548c7f4`) vs after (`K22`), 3 alternating rounds on port 9613 (`w1_lock.py` held per batch):
 row                                                          before (548c7f4)              after (K22)
@@ -94,8 +98,8 @@ Pins & byte-equality:
   kernel `1.87x`, wall `1.44x`).
 
 Mutation round (`docs/measurements/k22_2026-11-08/mutation/results.txt`):
-- 18 mutants across `crates/px/src/range.rs`, `renderer/editor/px/px.js`, `renderer/editor/px/kernels_js.js`, and
-  `renderer/editor/px/kernels.js`: 18 killed (0 on re-check), 0 survived, 0 unexpected (371 s).
+- 25 mutants across `crates/px/src/range.rs`, `renderer/editor/px/px.js`, `renderer/editor/px/kernels_js.js`, and
+  `renderer/editor/px/kernels.js`: 25 killed (0 on re-check), 0 survived, 0 unexpected (451 s).
 
 Gates (`lint types selection edges limit maps pixels editor` on both backends + `pxjobs` on tiles):
 - `k22-fix-tiles`:  lint 9s, types 6s, selection 13s, edges 16s, limit 10s, maps 5s, pixels 12s, editor 203s, pxjobs 103s -> ALL PASS

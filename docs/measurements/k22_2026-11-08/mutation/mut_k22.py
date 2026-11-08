@@ -208,6 +208,76 @@ MUTANTS = [
         {"px": ["range"]},
     ),
     (
+        "kernels_js.js: libmExp hx > 0x3fd62e42 mutated to >=",
+        KJ,
+        [(
+            "    if (hx > 0x3fd62e42) {",
+            "    if (hx >= 0x3fd62e42) {",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "kernels_js.js: libmExp hx >= 0x3ff0a2b2 mutated to >",
+        KJ,
+        [(
+            "        if (hx >= 0x3ff0a2b2) {",
+            "        if (hx > 0x3ff0a2b2) {",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "kernels_js.js: libmExp 1+x threshold 0x3e300000 mutated to 0x3eb00000",
+        KJ,
+        [(
+            "    } else if (hx > 0x3e300000) {",
+            "    } else if (hx > 0x3eb00000) {",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "kernels_js.js: libmExp 1+x threshold 0x3e300000 mutated to 0x3d700000",
+        KJ,
+        [(
+            "    } else if (hx > 0x3e300000) {",
+            "    } else if (hx > 0x3d700000) {",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "kernels_js.js: rangeSnapField wSpatial back to Math.exp",
+        KJ,
+        [(
+            "            const wSpatial = libmExp(-0.5 * distSpatial2);",
+            "            const wSpatial = Math.exp(-0.5 * distSpatial2);",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "kernels_js.js: rangeSnapField wColor back to Math.exp",
+        KJ,
+        [(
+            "            const wColor = libmExp(-distColor2 * inv2SigmaR2);",
+            "            const wColor = Math.exp(-distColor2 * inv2SigmaR2);",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "kernels_js.js: rangeSnapField both wSpatial and wColor back to Math.exp",
+        KJ,
+        [(
+            "            const wSpatial = libmExp(-0.5 * distSpatial2);\n            const wColor = libmExp(-distColor2 * inv2SigmaR2);",
+            "            const wSpatial = Math.exp(-0.5 * distSpatial2);\n            const wColor = Math.exp(-distColor2 * inv2SigmaR2);",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
         "kernels.js: rangeTilesDepth split-route sort order reversed",
         KR,
         [(
