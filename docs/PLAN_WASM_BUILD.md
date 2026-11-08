@@ -1879,6 +1879,21 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K33 (2026-11-08): stitch's colour match and alpha writes in Rust (the Antigravity E chain)
+
+By the same chain on `cb9479d` (`dafad55`, the review's one finding fixed in `7883021`), merged `c10d6d3`, ABI 26 (no
+renumbering: it was the next free number); `docs/measurements/k33_2026-11-08/`. `crates/px/src/maskf.rs`
+`color_match_rgba` (the clamped total in f64 with the `< 64` guard, the weighted means and variances in f64, paired in
+`f64x2` lanes with each sum kept sequential, the variance floor `1e-6 * 255^2`, the scale clamp 0.5..2, ties to even as
+the old Uint8ClampedArray write) and `blend_alpha` (RGB copied, alpha `round(clamp01(m) * 255)` or `* src alpha` with
+`keep_alpha`); twins in `kernels_js.js`, routes `colorMatch` / `blendAlpha` (both rust); `stitch.js` `colorMatch`,
+`alignCopy`, `finalAlpha` wired. The review (two lenses, verified) read the scalar and simd128 paths against the old
+loops and fuzzed them (13,680 runs, NaN, +-Inf, signed zeros, subnormals, .5 ties, tails, in place): 0 bytes differed.
+Its one finding: the `< 64` guard had moved behind the two full-crop readbacks and the wasm copies (Select all + an
+edit model: about 1.2 GB read and 1.8 GB of wasm at 15k for a no-op); put back ahead of them, with a stitch_test case
+that counts no `color_match_rgba` call. Mutation 19 / 19 killed. At 2048 the worker's colour match 126 -> 50 ms, the
+worker's stitch 768 -> 666 ms; at 4096 2,679 -> 2,302 ms; a warmed 15k provider crop's finish 417 -> 367 ms.
+
 The order from here (2026-11-08): the M chain (K21, K11, K22, K23, K25) and the E chain (K32, K33, K34, K35 on its
 split) by Antigravity agents, the liquify part of the B chain (K28, K29, K30, *Stop 6*, K31) likewise once K27 is
 merged (`.claude/coord/`, each branch reviewed and merged by the Claude main loop, the ABI renumbered at merge); then
