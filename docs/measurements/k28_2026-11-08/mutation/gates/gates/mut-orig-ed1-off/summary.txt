@@ -1,0 +1,2 @@
+editor rc=0 3s PASS (only: liquify_bakes_each_stroke_from_the_session_source; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS

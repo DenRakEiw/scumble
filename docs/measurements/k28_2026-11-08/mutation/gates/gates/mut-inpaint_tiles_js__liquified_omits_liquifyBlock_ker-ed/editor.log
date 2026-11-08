@@ -1,0 +1,5 @@
+SCUMBLE_EDITOR_ONLY: 1 of 127 steps (a filtered run, not the full gate)
+[ok] new_dialog_has_two_boxes: {"labels": ["Model", "Provider", "Aspect", "Size class", "Width", "Height"], "focusedFirst": true, "tiedHeight": "2048", "size": [1440, 900], "models": true}
+[FAIL] liquify_bakes_each_stroke_from_the_session_source: JS exception: Error: K28: liquify_block call counts did not match the blocks baked: {"rustBake":true,"hereCalls":{"win":0,"pool":0},"poolCalls":{"win":0,"pool":5},"splitCalls":{"win":0,"pool":0},"twinHereCalls":{"win":0,"pool":0},"twinPoolCalls":{"win":0,"pool":0},"twinHereSame":true,"twinPoolSame":true}
+    at <anonymous>:297:19
+FAIL (only: liquify_bakes_each_stroke_from_the_session_source; SCUMBLE_EDITOR_ONLY, not the full gate)

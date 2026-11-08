@@ -15,6 +15,7 @@
         MOVE_CSS: 12,                    // CSS px per move
         SHRINK_TICKS: 150,               // about 5 s of the 33 ms timer, as ticks
         KERNELS: "rust",                 // InpaintEditor.kernels for the run ("js": the twins in the window and in every job), put back after it
+        ROUTES: null,                    // route overrides for the run (e.g. { liquifyBlock: "js" }), put back after it
         KEEP: false,                     // keep the document open after the run (closed by default, so runs can follow in one instance)
     }, window.__bp || {});
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -85,9 +86,10 @@
     const IE = ed.constructor, dpr = window.devicePixelRatio || 1;
     // the route for the run: the window's kernels and every job's (inpaint_jobs.js posts the mode with each job);
     // kernelsInUse says "js" too while the window's px.wasm has not loaded
-    const kernels0 = IE.kernels, rate0 = IE.liquifyRateMs;
+    const kernels0 = IE.kernels, routes0 = K.routeOverrides(), rate0 = IE.liquifyRateMs;
     IE.kernels = P.KERNELS;
-    const route = { kernels: IE.kernels, kernelsInUse: K.kernelsInUse() };
+    if (P.ROUTES && typeof P.ROUTES === "object") for (const [k, v] of Object.entries(P.ROUTES)) K.setRoute(k, v);
+    const route = { kernels: IE.kernels, kernelsInUse: K.kernelsInUse(), routes: K.routeOverrides() };
     const rows = [], tiles = ed.tileMode;
     let undoMB = null, s = null;
     try {
@@ -194,6 +196,7 @@
         s = ed.liq ? ed.liq.s : null;
     } finally {
         IE.kernels = kernels0;   // "js" left behind would put every later run of the instance on the twins
+        K.adoptRoutes(routes0);
         IE.liquifyRateMs = rate0;
         if (!P.KEEP) shell.closeDocument(ed, { force: true });
     }

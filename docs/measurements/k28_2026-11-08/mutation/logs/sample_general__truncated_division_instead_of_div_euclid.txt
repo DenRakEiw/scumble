@@ -1,0 +1,40 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 174891 bytes, sha256 19bd0ad30a2cde54
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 149463 bytes, sha256 6cfb856be01cbd12
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.32s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 2.69s
+$ node tools/px_test.js  (rc 0, 0 s, PX_ONLY=liquify)
+PASS (only: liquify; PX_ONLY, not the full test)
+ok   rust simd liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust simd liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+PASS (only: liquify; PX_ONLY, not the full test)
+(node:11628) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut-k28-tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 120 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:52972) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut-k28-tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut-k28-tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-sample_general__truncated_division_instead_of_div_-full-editor --offline --tiles on editor  (rc 0, 195 s)
+editor rc=0 179s PASS
+ALL PASS

@@ -1,0 +1,32 @@
+K28 of docs/PLAN_WASM_BUILD.md (2026-11-08): liquify's bake kernel (liquify_block in crates/px/src/resample.rs, sharing
+sample::<T>'s tap sums with resample_block; passed as liquifyStore's ninth argument in inpaint_worker.js,
+inpaint_tiles.js and inpaint_pixels.js), ABI 24.
+
+Before = ROUTES {"liquifyBlock":"js"} (the JS twin liquifyBlock in the window and in the pool, every other kernel left on
+its default Rust route); after = ROUTES {"liquifyBlock":"rust"} (Rust liquify_block, routed by liquifyBlock in
+renderer/editor/px/kernels.js). k28_chain.sh: three rounds on 15000 x 10000 (grid step 4), the arms alternating within
+each round (before first in rounds 1 and 3, after first in round 2), a fresh instance per arm, offline, tiles, port 9617,
+the window in front, the machine's busy lock held for the whole chain (taken 05:41:54, released 05:44:22). Medians over
+the rounds of each row's own figure, [min-max]; the full table in summary_rows.txt.
+
+The rows that decide (the stroke's landing wall time on release, ms, and the pool's summed liquify job time, ms):
+  push fit size 200        land  46.0 [41.9-46.0]   ->  32.2 [31.8-36.9]      beyond the spread (28 blocks, pool sum 111.7 [110.6-122.2] -> 62.7 [60.4-72.4])
+  push fit size 1000       land  88.7 [87.1-95.2]   ->  85.3 [80.5-92.6]      inside the spread -> tie rule: pool sum 332.4 [309.1-338.8] -> 180.8 [174.8-196.7] decides (86 blocks)
+  push 1:1 size 200        land  24.9 [19.2-26.2]   ->  20.0 [19.7-23.1]      inside the spread -> tie rule: pool sum  25.0 [23.8-29.2]   ->  15.6 [15.1-22.9] decides (13 blocks)
+  push 1:1 size 1000       land  47.8 [46.8-49.6]   ->  37.7 [36.4-38.3]      beyond the spread (45 blocks, pool sum 131.5 [128.7-134.8] ->  82.8 [82.7-83.8])
+  shrink held 150 ticks    land  28.9 [26.8-32.8]   ->  24.0 [22.5-26.2]      beyond the spread (25 blocks, pool sum  65.3 [62.2-83.1]   ->  42.7 [39.8-52.3])
+  restore all (0 blocks, all tiles shared, mip_chain stays on Rust in both arms): 5.9 [5.0-6.1] -> 5.6 [5.0-5.8] ms.
+  The dab and preview times during the drag are unchanged in K28 (they are K29-K31's work): push 1:1 size 1000 dab p50
+  3.5 -> 3.6 ms, preview p50 15.6 -> 15.6 ms; push fit size 1000 dab p50 14.3 -> 14.1 ms, preview p50 1.2 -> 1.2 ms.
+
+Verdict: Rust on every row; no route entry (liquifyBlock defaults to Rust).
+
+Gates (gates/, --offline, ports 9617 / 9618 side by side): k28-tiles and k28-canvas lint types pixels brush editor ALL
+PASS (354 s wall); k28-fix-tiles and k28-fix-canvas lint types editor (focused on liquify_bakes_each_stroke) ALL PASS.
+
+Mutation round (mutation/, tools/mutation_round.py on a copy tree; the untouched copy green on the full px_test, the
+editor gate and every focused set, both builds identical to the checkout's): 36 of 38 killed, 2 survivors both expected
+equivalent (resample::liquify's opaque fast path false takes the general path, whose (2 * sr + sa).div_euclid(2 * sa)
+equals (sr + HALF28) >> 28 when all alphas are 255; sample's truncated division equals div_euclid after clamp_byte
+because sa > 0 makes d > 0 and any negative dividend clamps to 0 either way); 0 not as expected; the restored copy
+rebuilt identical and green.

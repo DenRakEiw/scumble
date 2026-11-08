@@ -1,0 +1,37 @@
+row                                                                     before (js)             after (rust)
+  push fit size 200 land (ms)                                      46.0 [41.9-46.0]         32.2 [31.8-36.9]   n=3/3
+  push fit size 200 blockedMax (ms)                                13.1 [13.1-13.7]         12.6 [12.0-13.6]   n=3/3
+  push fit size 200 dab p50 (ms)                                      2.5 [2.5-2.6]            2.5 [2.4-2.5]   n=3/3
+  push fit size 200 preview p50 (ms)                                  0.1 [0.1-0.1]            0.1 [0.1-0.1]   n=3/3
+  push fit size 200 frame p50 (ms)                                    0.3 [0.2-0.3]            0.3 [0.2-0.3]   n=3/3
+  push fit size 200 pool job total sum (ms)                     111.7 [110.6-122.2]         62.7 [60.4-72.4]   n=3/3
+  push fit size 200 liquify_block calls (win/pool)                          ['0/0']                 ['0/28']
+  push fit size 1000 land (ms)                                     88.7 [87.1-95.2]         85.3 [80.5-92.6]   n=3/3
+  push fit size 1000 blockedMax (ms)                               65.4 [63.7-70.2]         64.1 [60.1-68.8]   n=3/3
+  push fit size 1000 dab p50 (ms)                                  14.3 [14.1-14.6]         14.1 [14.0-14.2]   n=3/3
+  push fit size 1000 preview p50 (ms)                                 1.2 [1.2-1.2]            1.2 [1.2-1.2]   n=3/3
+  push fit size 1000 frame p50 (ms)                                   1.4 [1.4-1.5]            1.4 [1.4-1.4]   n=3/3
+  push fit size 1000 pool job total sum (ms)                    332.4 [309.1-338.8]      180.8 [174.8-196.7]   n=3/3
+  push fit size 1000 liquify_block calls (win/pool)                         ['0/0']                 ['0/86']
+  push 1:1 size 200 land (ms)                                      24.9 [19.2-26.2]         20.0 [19.7-23.1]   n=3/3
+  push 1:1 size 200 blockedMax (ms)                                 11.9 [8.7-15.7]         11.4 [10.6-14.0]   n=3/3
+  push 1:1 size 200 dab p50 (ms)                                      0.3 [0.3-0.3]            0.3 [0.3-0.3]   n=3/3
+  push 1:1 size 200 preview p50 (ms)                                  2.8 [2.8-2.9]            2.9 [2.9-2.9]   n=3/3
+  push 1:1 size 200 frame p50 (ms)                                    2.9 [2.9-3.0]            3.0 [3.0-3.0]   n=3/3
+  push 1:1 size 200 pool job total sum (ms)                        25.0 [23.8-29.2]         15.6 [15.1-22.9]   n=3/3
+  push 1:1 size 200 liquify_block calls (win/pool)                          ['0/0']                 ['0/13']
+  push 1:1 size 1000 land (ms)                                     47.8 [46.8-49.6]         37.7 [36.4-38.3]   n=3/3
+  push 1:1 size 1000 blockedMax (ms)                               18.2 [17.6-19.5]         16.6 [15.9-20.4]   n=3/3
+  push 1:1 size 1000 dab p50 (ms)                                     3.5 [3.5-3.6]            3.6 [3.6-3.6]   n=3/3
+  push 1:1 size 1000 preview p50 (ms)                              15.6 [15.5-15.6]         15.6 [15.3-16.1]   n=3/3
+  push 1:1 size 1000 frame p50 (ms)                                15.8 [15.8-15.9]         15.9 [15.5-16.3]   n=3/3
+  push 1:1 size 1000 pool job total sum (ms)                    131.5 [128.7-134.8]         82.8 [82.7-83.8]   n=3/3
+  push 1:1 size 1000 liquify_block calls (win/pool)                         ['0/0']                 ['0/45']
+  shrink held 150 ticks size 1000 land (ms)                        28.9 [26.8-32.8]         24.0 [22.5-26.2]   n=3/3
+  shrink held 150 ticks size 1000 blockedMax (ms)                  11.7 [11.6-15.5]         16.8 [16.4-17.6]   n=3/3
+  shrink held 150 ticks size 1000 tick p50 (ms)                       3.2 [3.2-3.2]            3.2 [3.1-3.3]   n=3/3
+  shrink held 150 ticks size 1000 pool job total sum (ms)          65.3 [62.2-83.1]         42.7 [39.8-52.3]   n=3/3
+  shrink held 150 ticks size 1000 liquify_block calls (win/pool)                  ['0/0']                 ['0/25']
+  restore all wall (ms)                                               5.9 [5.0-6.1]            5.6 [5.0-5.8]   n=3/3
+  restore all blockedMax (ms)                                         5.9 [5.0-6.2]            5.7 [5.0-5.8]   n=3/3
+  restore all liquify_block calls (win/pool)                                ['0/0']                  ['0/0']

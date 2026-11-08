@@ -36,7 +36,7 @@
 
 import { CANVAS_MAX_PIXELS, CANVAS_MAX_SIDE } from "./inpaint_sizelimit.js";
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN } from "./inpaint_pixels.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, resampleBlock, selCombine, SEL_NONE, SEL_ALPHA, SEL_FULL } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, resampleBlock, liquifyBlock, selCombine, SEL_NONE, SEL_ALPHA, SEL_FULL } from "./px/kernels.js";
 import { allocTileBytes, isShared } from "./inpaint_arena.js";
 import { canvasRoundTrip, resampleOptions, resampleStore, toFixed, preimage } from "./inpaint_resample.js";
 import { liquifyStore, liquifyBox } from "./inpaint_liquify.js";
@@ -1917,7 +1917,7 @@ const tiled = (Base) => class extends Base {
             share: (tx, ty) => out.push({ key: (ty << 16) | tx, share: true }),
             tile: () => { cur = new Uint8Array(TILE_BYTES); return [cur, 0, TILE_SIZE * 4]; },
             done: (tx, ty, count) => out.push(count ? { key: (ty << 16) | tx, bytes: cur } : { key: (ty << 16) | tx, empty: true }),
-        }, blockMax);
+        }, blockMax, liquifyBlock);
         return out;
     }
 
