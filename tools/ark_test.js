@@ -1,5 +1,7 @@
-// The BytePlus ModelArk adapter (electron/main/providers/ark.js), its two recipe variants and its wiring in
-// providers/index.js and recipes.js, in plain Node, no Electron and no key:
+// The BytePlus ModelArk adapter (electron/main/providers/ark.js), its three recipe variants (Seedream 5.0 pro and lite,
+// and Seedream 5.5 in early access, section 8: the Background row, ten pictures, the range, the access hint; its facts
+// are BytePlus's preview docs as the user passed them on 2026-11-08) and its wiring in providers/index.js and
+// recipes.js, in plain Node, no Electron and no key:
 //   node tools/ark_test.js
 // A scripted fetch plays both ModelArk hosts and the loopback mock (POST /api/v3/images/generations) and a result
 // host for a url answer (GET /result/...); ctx.sleep records its waits instead of waiting. Every call of the whole
@@ -27,6 +29,7 @@ const AP = "https://ark.ap-southeast.bytepluses.com";   // Johor (ap-southeast-1
 const EU = "https://ark.eu-west.bytepluses.com";        // Dublin (eu-west-1)
 const PRO_ID = "dola-seedream-5-0-pro-260628";
 const LITE_ID = "seedream-5-0-260128";
+const ID_55 = "dola-seedream-5-5-261028";   // Seedream 5.5, early access (BytePlus's preview docs, 2026-11-08)
 const PRO_PIXELS = [921600, 4624220];      // [1280x720, 2048x2048x1.1025]
 const LITE_PIXELS = [3686400, 16777216];   // [2560x1440, 4096x4096]
 const ALL_CALLS = [];   // every call of every section, for the header check at the end
@@ -690,10 +693,13 @@ async function main() {
         let list;
         try { list = await recipes.list(RECIPES); } finally { fs.rmSync(empty, { recursive: true, force: true }); }
         const served = list.filter((r) => r.providers && r.providers.ark);
-        check("exactly the two Seedream 5.0 recipes carry an ark variant, both builtin", eq(served.map((r) => r.id).sort(), ["seedream_5_lite", "seedream_5_pro"]) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
+        check("exactly the two Seedream 5.0 recipes and Seedream 5.5 carry an ark variant, all builtin", eq(served.map((r) => r.id).sort(), ["seedream_5_5", "seedream_5_lite", "seedream_5_pro"]) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
+        // `only`: ModelArk is the recipe's one provider and its default (5.5, early access); else ark comes right after
+        // toapis and fal stays the default
         const want = {
-            seedream_5_pro: { model: PRO_ID, pixels: PRO_PIXELS, max_images: 10, regions: ["ap-southeast"], sizes: [1280, 1536, 2048] },
-            seedream_5_lite: { model: LITE_ID, pixels: LITE_PIXELS, max_images: 14, regions: ["ap-southeast", "eu-west"], sizes: [2560, 3072, 4096] },
+            seedream_5_pro: { model: PRO_ID, pixels: PRO_PIXELS, max_images: 10, regions: ["ap-southeast"], sizes: [1280, 1536, 2048], rows: [] },
+            seedream_5_lite: { model: LITE_ID, pixels: LITE_PIXELS, max_images: 14, regions: ["ap-southeast", "eu-west"], sizes: [2560, 3072, 4096], rows: ["region"] },
+            seedream_5_5: { model: ID_55, pixels: PRO_PIXELS, max_images: 10, regions: ["ap-southeast"], sizes: [1280, 1536, 2048], rows: ["background"], only: true },
         };
         const bad = [];
         let runs = 0;
@@ -703,8 +709,21 @@ async function main() {
             const v = r.providers.ark;
             const o = v.options || {};
             const ids = r.providerIds;
-            if (ids.indexOf("ark") !== ids.indexOf("toapis") + 1 || ids.indexOf("toapis") < 0) bad.push(`${r.id}: ark is not right after toapis (${ids.join(",")})`);
-            if (r.default !== "fal" || raw.default !== "fal") bad.push(`${r.id}: the default is ${r.default} (file ${raw.default}), not fal`);
+            if (w.only) {
+                if (!eq(ids, ["ark"])) bad.push(`${r.id}: providers ${ids.join(",")}, not ark alone`);
+                if (r.default !== "ark" || raw.default !== "ark") bad.push(`${r.id}: the default is ${r.default} (file ${raw.default}), not ark`);
+                if (o.background !== true || o.early_access !== true) bad.push(`${r.id}: options.background ${o.background}, early_access ${o.early_access}`);
+                const bg = (v.settings || []).find((st) => st.key === "background");
+                if (!bg || bg.label !== "Background" || !eq(bg.spec[0], ["auto", "transparent", "opaque"]) || bg.spec[1].default !== "auto") bad.push(`${r.id}: the Background row ${short(bg)}`);
+                if (!v.text || !eq((v.text.settings || []).map((st) => st.key), ["background"])) bad.push(`${r.id}: Generate new lacks the Background row (${short(v.text && v.text.settings)})`);
+                if (!/early access/i.test(String(r.description || "")) || !/Model activation/.test(String(r.description || "")) || !/allow-list/.test(String(r.description || ""))) bad.push(`${r.id}: the description does not say early access, Model activation and allow-list`);
+                if (!/early access/i.test(String(v.note || ""))) bad.push(`${r.id}: the note does not say early access`);
+            } else {
+                if (ids.indexOf("ark") !== ids.indexOf("toapis") + 1 || ids.indexOf("toapis") < 0) bad.push(`${r.id}: ark is not right after toapis (${ids.join(",")})`);
+                if (r.default !== "fal" || raw.default !== "fal") bad.push(`${r.id}: the default is ${r.default} (file ${raw.default}), not fal`);
+                if (o.background || o.early_access) bad.push(`${r.id}: options.background ${o.background}, early_access ${o.early_access}`);
+                if (!/Also on BytePlus ModelArk/.test(String(r.description || ""))) bad.push(`${r.id}: the description does not say Also on BytePlus ModelArk`);
+            }
             if (v.model !== w.model) bad.push(`${r.id}: model ${v.model}`);
             if (v.input !== "edit" || v.edit !== true) bad.push(`${r.id}: input ${v.input}, edit ${v.edit}`);
             if (!v.text || v.text.model !== w.model || !eq(v.text.sizes, w.sizes)) bad.push(`${r.id}: text ${JSON.stringify(v.text)}`);
@@ -722,10 +741,9 @@ async function main() {
             if (o.regions.length > 1) {
                 if (rows.length !== 1 || !eq(rows[0].spec[0], o.regions) || rows[0].spec[1].default !== o.regions[0] || rows[0].label !== "Region") bad.push(`${r.id}: the Region row ${JSON.stringify(rows)}`);
             } else if (rows.some((row) => row.spec[0].some((x) => !o.regions.includes(x)))) bad.push(`${r.id}: a Region row offers a region outside options.regions`);
-            if ((v.settings || []).some((st) => st.key !== "region")) bad.push(`${r.id}: a setting other than region`);
+            if (!eq((v.settings || []).map((st) => st.key), w.rows)) bad.push(`${r.id}: settings rows ${(v.settings || []).map((st) => st.key).join(",")}, not ${w.rows.join(",")}`);
             if (!/not run against the live API yet/.test(String(v.note || ""))) bad.push(`${r.id}: the note lacks the live-test sentence`);
-            if (!/Also on BytePlus ModelArk/.test(String(r.description || ""))) bad.push(`${r.id}: the description does not say Also on BytePlus ModelArk`);
-            // an edit with the Region row's default, and a text run, against the fake server
+            // an edit with each row's default (Region, Background auto: no field), and a text run, against the fake server
             const params = {};
             for (const st of v.settings || []) params[st.key] = st.spec[1].default;
             const [ew, eh] = dims(ark._size({ kind: "edit", width: 1600, height: 1200 }, o));
@@ -752,7 +770,7 @@ async function main() {
             }
             runs++;
         }
-        check("each ark variant: right after toapis, the default fal kept, its model id, input edit, the text shape and sizes, options.pixels = limits (pixels, minPixels, ratio 16, step 16), max_images, png, regions and the Region row, the notes; each builds an edit, a text request and one with two references, and reaches each region's host", !bad.length && runs === 2, bad.join("; ") || `${runs} variants`);
+        check("each ark variant: right after toapis with the default fal kept (5.5: ark alone and its default, the Background row, early access said), its model id, input edit, the text shape and sizes, options.pixels = limits (pixels, minPixels, ratio 16, step 16), max_images, png, regions and the Region row, the notes; each builds an edit, a text request and one with two references, and reaches each region's host", !bad.length && runs === 3, bad.join("; ") || `${runs} variants`);
 
         // providers/index.js: ark in PROVIDERS after openrouter, a text provider, and the app's context
         const idxPath = path.join(ROOT, "electron", "main", "providers", "index.js");
@@ -812,6 +830,111 @@ async function main() {
         check("index.edit without a stored key: refused before any call, naming ModelArk", !!x7.err && /No API key for BytePlus ModelArk/.test(x7.err) && x7.s.calls.length === 0, x7.err);
         currentKey = KEY;
         check("index.js logged no key", !JSON.stringify(logged).includes(KEY) && !JSON.stringify(logged).includes(REAL_KEY), `${logged.length} records`);
+    });
+
+    // ---- 8. Seedream 5.5 (early access): the Background row, the 10 pictures, the range, the access hint ----
+    await section("8. Seedream 5.5", async () => {
+        const v = variant("seedream_5_5");
+        const o = v.options;
+        const BG_KEYS = [...BODY_KEYS, "background"].sort();
+        const TEXT_BG_KEYS = [...TEXT_KEYS, "background"].sort();
+        const sent = [];   // every 5.5 body of this section, for the never-sent check
+        async function edit5(params, extra = {}, answers) {
+            const s = fakeServer(answers ? { answers } : {});
+            const err = await throws(async () => { s.out = await ark.edit(editReq(v, { params, ...extra }), ctxFor(s)); });
+            for (const p of s.posts) sent.push(p.body);
+            return { s, err, b: s.posts[0] && s.posts[0].body, out: s.out };
+        }
+        async function text5(params, extra = {}) {
+            const s = fakeServer();
+            const err = await throws(async () => { s.out = await ark.generate(textReq(v, { params, ...extra }), ctxFor(s)); });
+            for (const p of s.posts) sent.push(p.body);
+            return { s, err, b: s.posts[0] && s.posts[0].body, out: s.out };
+        }
+
+        const a = await edit5({ background: "auto" });
+        check("5.5 edit, Background Auto (the default): one POST, the seven fields and no background, model dola-seedream-5-5-261028, png, the crop alone", !a.err && a.s.calls.length === 1 && a.s.calls[0].url === BASE + PATH && !!a.b && eq(Object.keys(a.b).sort(), BODY_KEYS) && a.b.model === ID_55 && a.b.output_format === "png" && a.b.watermark === false && a.b.response_format === "b64_json" && a.b.size === "1536x1024" && picsOf(a.b).length === 1 && a.out.info.background === null, a.err || short(a.b && { ...a.b, image: picsOf(a.b).length }));
+        const a0 = await edit5({});
+        check("5.5 edit without a Background param: the same body as Auto", !a0.err && !!a0.b && eq(a0.b, a.b), a0.err || short(a0.b && Object.keys(a0.b)));
+
+        const tr = await edit5({ background: "transparent" }, {}, [(body) => json(200, { model: body.model, created: 1789000000, data: [{ b64_json: RESULT.toString("base64"), size: body.size, output_format: "png" }], usage: { generated_images: 1 } })]);
+        check("5.5 edit, Background Transparent: background transparent, output_format png, nothing else added", !tr.err && !!tr.b && eq(Object.keys(tr.b).sort(), BG_KEYS) && tr.b.background === "transparent" && tr.b.output_format === "png" && tr.b.model === ID_55, tr.err || short(tr.b && { ...tr.b, image: picsOf(tr.b).length }));
+        check("5.5 edit, Background Transparent: the answer read as image/png, info.background transparent", !tr.err && tr.out.mime === "image/png" && tr.out.bytes.equals(RESULT) && tr.out.info.background === "transparent", tr.err || short({ mime: tr.out && tr.out.mime, info: tr.out && tr.out.info }));
+        const op = await edit5({ background: "opaque" });
+        check("5.5 edit, Background Opaque: background opaque, png", !op.err && !!op.b && op.b.background === "opaque" && op.b.output_format === "png" && eq(Object.keys(op.b).sort(), BG_KEYS), op.err || short(op.b && Object.keys(op.b)));
+        const cs = await edit5({ background: " Transparent " });
+        check("5.5 edit: a Background value in another case or with spaces goes as its lower-case word", !cs.err && !!cs.b && cs.b.background === "transparent", cs.err || short(cs.b && cs.b.background));
+        const bad1 = await edit5({ background: "green" });
+        check("5.5 edit: an unknown Background is refused before any call, naming the three values", !!bad1.err && /Background "green" is none of auto, transparent, opaque/.test(bad1.err) && bad1.s.calls.length === 0, bad1.err);
+        const badText = await text5({ background: "checker" });
+        check("5.5 Generate new: an unknown Background is refused before any call too", !!badText.err && /Background "checker"/.test(badText.err) && badText.s.calls.length === 0, badText.err);
+
+        // a variant that does not declare background never sends it, whatever the params say
+        const pro = variant("seedream_5_pro");
+        const sp = fakeServer();
+        await ark.edit(editReq(pro, { params: { background: "transparent" } }), ctxFor(sp));
+        check("5.0 pro (no options.background): a background param stays home, the body as before", !!sp.posts[0] && !("background" in sp.posts[0].body) && eq(Object.keys(sp.posts[0].body).sort(), BODY_KEYS), short(sp.posts[0] && Object.keys(sp.posts[0].body)));
+        const spg = fakeServer();
+        await ark.edit(editReq(pro, { params: { background: "green" } }), ctxFor(spg));
+        check("5.0 pro: an unknown background param is not looked at (no refusal where the field never goes)", spg.posts.length === 1 && !("background" in spg.posts[0].body), short(spg.posts.map((p) => Object.keys(p.body))));
+        // transparent always goes as PNG, even on a variant that does not ask for png otherwise
+        const noPng = { ...o, png: false };
+        const bT = ark._body({ ...editReq(v), params: { background: "transparent" } }, noPng, []);
+        const bA = ark._body({ ...editReq(v), params: { background: "auto" } }, noPng, []);
+        const bO = ark._body({ ...editReq(v), params: { background: "opaque" } }, noPng, []);
+        check("a variant without png: transparent still sends output_format png, auto and opaque send none", bT.output_format === "png" && bT.background === "transparent" && !("output_format" in bA) && !("background" in bA) && !("output_format" in bO) && bO.background === "opaque", short({ bT: Object.keys(bT), bA: Object.keys(bA), bO: Object.keys(bO) }));
+        check("_background: null without options.background or for auto, the word otherwise", ark._background({ params: { background: "transparent" } }, {}) === null && ark._background({ params: {} }, o) === null && ark._background({ params: { background: "auto" } }, o) === null && ark._background({ params: { background: "OPAQUE" } }, o) === "opaque", "");
+
+        // Generate new with a transparent background, without and with references
+        const t1 = await text5({ background: "transparent" }, { aspect: "16:9", width: 1280, height: 720 });
+        check("5.5 Generate new, Background Transparent: the text body plus background, 1280x720 for 16:9 at 1280, png", !t1.err && !!t1.b && eq(Object.keys(t1.b).sort(), TEXT_BG_KEYS) && t1.b.background === "transparent" && t1.b.size === "1280x720" && t1.b.output_format === "png" && t1.b.model === ID_55 && t1.b.prompt === "a lighthouse at dusk", t1.err || short(t1.b));
+        const ten = Array.from({ length: 10 }, (_, i) => pngOf(640, 480, 70, "R" + i));
+        const t10 = await text5({ background: "transparent" }, { aspect: "1:1", width: 2048, height: 2048, references: ten });
+        check("5.5 Generate new with 10 references: all ten in image in order, the background, 2048x2048 (4.2 MP, inside the range)", !t10.err && !!t10.b && picsOf(t10.b).length === 10 && picsOf(t10.b).every((p, i) => tagOf(p.bytes) === "R" + i) && t10.b.background === "transparent" && t10.b.size === "2048x2048", t10.err || short(t10.b && { size: t10.b.size, pics: picsOf(t10.b).length }));
+        const t11 = await text5({}, { aspect: "1:1", width: 2048, height: 2048, references: [...ten, pngOf(640, 480, 70, "R10")] });
+        check("5.5 Generate new with 11 references: refused before any call, naming the 10", !!t11.err && /takes at most 10 reference pictures for a new image; this run has 11/.test(t11.err) && t11.s.calls.length === 0, t11.err);
+        const e10 = await edit5({ background: "auto" }, { references: ten.slice(0, 9) });
+        check("5.5 edit with the crop and 9 references (10 pictures): sent, the crop first", !e10.err && !!e10.b && picsOf(e10.b).length === 10 && tagOf(picsOf(e10.b)[0].bytes) === "CROP", e10.err || short(e10.b && picsOf(e10.b).length));
+        const e11 = await edit5({ background: "auto" }, { references: ten });
+        check("5.5 edit with the crop and 10 references (11 pictures): refused before any call", !!e11.err && /takes at most 10 pictures; this run has 11 \(the crop, 10 references\)/.test(e11.err) && e11.s.calls.length === 0, e11.err);
+        check("layout and textLayout of 5.5: max 10", ark.layout({ kind: "edit", references: [], options: o }).max === 10 && ark.textLayout({ kind: "text", references: [], options: o }).max === 10, "");
+
+        // the size: 5.5's pixel range [1280x720, 2048x2048x1.1025], 16 px steps, at most 16:1
+        const size = (w, h) => ark._size({ kind: "edit", width: w, height: h }, o);
+        const textSize = (aspect, w, h) => ark._size({ kind: "text", aspect, width: w, height: h }, o);
+        const big = dims(size(8000, 6000));
+        check("5.5 sizes: 512x512 grows to 960x960 (921,600 px), 8000x6000 shrinks under 4,624,220 px in its shape, 4000x100 goes at 3840x240, a crop inside goes as it is", size(512, 512) === "960x960" && big[0] * big[1] <= PRO_PIXELS[1] && big[0] * big[1] >= PRO_PIXELS[1] * 0.97 && Math.abs(big[0] / big[1] / (4 / 3) - 1) < 0.01 && size(4000, 100) === "3840x240" && size(1536, 1024) === "1536x1024", [size(512, 512), big.join("x"), size(4000, 100), size(1536, 1024)].join(", "));
+        check("5.5 Generate new sizes: 16:9 at 2048 is 2048x1152, 9:16 at 1280 is 720x1280, 21:9 at 1280 grows to the floor", textSize("16:9", 2048, 1152) === "2048x1152" && textSize("9:16", 720, 1280) === "720x1280" && (() => { const [w, h] = dims(textSize("21:9", 1280, 544)); return w * h >= PRO_PIXELS[0] && w * 9 === h * 21; })(), [textSize("16:9", 2048, 1152), textSize("9:16", 720, 1280), textSize("21:9", 1280, 544)].join(", "));
+
+        // the region: Johor only
+        const sj = fakeServer();
+        await ark.edit(editReq(v, { params: {} }), ctxFor(sj, { key: REAL_KEY, base: undefined }));
+        check("5.5 with a real key: https://ark.ap-southeast.bytepluses.com/api/v3/images/generations (Johor), info.region ap-southeast", sj.calls.length === 1 && sj.calls[0].url === AP + PATH && sj.calls[0].headers.authorization === "Bearer " + REAL_KEY, short(sj.calls.map((c) => c.url)));
+        const se = fakeServer();
+        const eEu = await throws(() => ark.edit(editReq(v, { params: { region: "eu-west" } }), ctxFor(se, { key: REAL_KEY, base: undefined })));
+        check("5.5 in eu-west: refused before any call (Johor only)", !!eEu && /not offered in the region "eu-west"/.test(eEu) && se.calls.length === 0, eEu);
+
+        // the access hint: a refusal that may mean the account is not let in says early access, others do not
+        const fail5 = async (status, code, message) => (await edit5({}, {}, [() => (code ? failure(status, code, message, {}, "NotFound") : new Response(message, { status }))])).err;
+        const notOpen = await fail5(404, "ModelNotOpen", "Your account mock has not activated the model dola-seedream-5-5-261028. Please activate the model service in the Ark Console. Request id: mock");
+        check("5.5 ModelNotOpen: not activated, then the early-access words, then the server's", !!notOpen && /^ModelArk dola-seedream-5-5-261028: the model is not activated: activate it under Model activation in the ModelArk console \(this model is in early access: BytePlus has to let the account in first, then activate it under Model activation in the ModelArk console\) - ModelNotOpen: Your account/.test(notOpen), notOpen);
+        const notFound = await fail5(404, "InvalidEndpointOrModel.NotFound", "The model or endpoint dola-seedream-5-5-261028 does not exist or you do not have access to it.");
+        check("5.5 InvalidEndpointOrModel.NotFound: no such model in this region, with the early-access words", !!notFound && /no such model in this region \(this model is in early access: BytePlus has to let the account in first/.test(notFound), notFound);
+        const denied = await fail5(403, "AccessDenied", "You do not have access to this model.");
+        check("5.5 a 403 of no known code: the early-access words lead", !!denied && /^ModelArk dola-seedream-5-5-261028: this model is in early access: BytePlus has to let the account in first.* - AccessDenied: You do not have access/.test(denied), denied);
+        const bare404 = await fail5(404, "", "not here");
+        check("5.5 a 404 without a code: not found, with the early-access words", !!bare404 && /not found \(this model is in early access/.test(bare404), bare404);
+        const viaId = await fail5(404, "InvalidEndpointOrModel.ModelIDAccessDisabled", "Accessing the model via Model ID is not allowed for your account.");
+        const quota = await fail5(429, "QuotaExceeded", "Your account has exhausted its free trial quota.");
+        check("5.5 refusals that say something else keep their words alone (the endpoint id, a quota)", !!viaId && /endpoint id/.test(viaId) && !/early access/.test(viaId) && !!quota && /a quota is used up/.test(quota) && !/early access/.test(quota), `${viaId} | ${quota}`);
+        const sp4 = fakeServer({ answers: [() => failure(404, "ModelNotOpen", "Your account mock has not activated the model.", {}, "NotFound")] });
+        const proNotOpen = await throws(() => ark.edit(editReq(pro), ctxFor(sp4)));
+        check("5.0 pro ModelNotOpen: no early-access words (not an early-access model)", !!proNotOpen && /not activated/.test(proNotOpen) && !/early access/.test(proNotOpen), proNotOpen);
+        check("_explain without where.early: the words as before", ark._explain(404, "ModelNotOpen", "m", {}) === "the model is not activated: activate it under Model activation in the ModelArk console - ModelNotOpen: m" && ark._explain(403, "AccessDenied", "m", {}) === "AccessDenied: m", ark._explain(404, "ModelNotOpen", "m", {}));
+
+        const NOT_55 = ["optimize_prompt_options", "layer_decomposition", "layer_decomposition_options", "sequential_image_generation", "sequential_image_generation_options", "stream", "seed", "n", "mask", "negative_prompt"];
+        const leaked = sent.filter((b) => NOT_55.some((k) => k in b));
+        check("no 5.5 body of this section carried optimize_prompt_options, layer_decomposition, sequential generation, stream, seed, n, a mask or a negative prompt", sent.length >= 12 && !leaked.length, leaked.length ? short(leaked.map((b) => Object.keys(b))) : `${sent.length} bodies`);
     });
 
     // ---- 7. the whole run: no header beyond the two, no key in any error ----

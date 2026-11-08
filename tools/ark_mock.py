@@ -8,7 +8,11 @@ hosts that the adapter accepts, through settings.ark.base, and the only one a "t
                                       picture back as data[0].b64_json; a text request (no `image`) gets a plain PNG
                                       of exactly the requested size "WxH". data[0].size is the requested size either
                                       way, data[0].output_format the requested one (jpeg without one), and usage
-                                      counts one generated image with output_tokens = W * H / 256.
+                                      counts one generated image with output_tokens = W * H / 256. With
+                                      `background: "transparent"` (Seedream 5.5) either kind gets an RGBA PNG of the
+                                      requested size: an opaque disc on a fully transparent ground; that background
+                                      with output_format jpeg, or a background that is none of auto / transparent /
+                                      opaque, is a 400 InvalidParameter.
 
 The answer's shape is the API reference's sample (docs.byteplus.com/en/docs/ModelArk/1541523), the error bodies are
 { error: { code, message, param, type } } with the codes and types of the error-code page (1299023). What the mock
@@ -37,8 +41,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PATH = "/api/v3/images/generations"
 PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
-# the "Image generation" table of docs.byteplus.com/en/docs/ModelArk/1330310 (2026-09-17), plus the lite alias it names
-MODELS = ["dola-seedream-5-0-pro-260628", "seedream-5-0-260128", "seedream-5-0-lite-260128", "seedream-4-5-251128", "seedream-4-0-250828"]
+# the "Image generation" table of docs.byteplus.com/en/docs/ModelArk/1330310 (2026-09-17), plus the lite alias it names,
+# and Seedream 5.5 (early access, BytePlus's preview docs as the user passed them on 2026-11-08)
+MODELS = ["dola-seedream-5-0-pro-260628", "seedream-5-0-260128", "seedream-5-0-lite-260128", "seedream-4-5-251128", "seedream-4-0-250828",
+          "dola-seedream-5-5-261028"]
+BACKGROUNDS = ("auto", "transparent", "opaque")
 SYNTHETIC = ["mock-quota", "mock-ipm", "mock-notopen"]
 REQUEST_ID = "021789000000000mock0000000000000000000000000000000000"
 
@@ -58,6 +65,34 @@ def png_bytes(w, h, rgb=(52, 110, 160)):
         return c + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
     return PNG_SIGNATURE + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
+
+
+def png_cutout(w, h, rgb=(200, 60, 40)):
+    """An RGBA PNG of w x h: an opaque disc of radius min(w, h) / 4 in the middle on a fully transparent ground (what a
+    transparent-background answer looks like)."""
+    cx, cy, r = w / 2.0, h / 2.0, min(w, h) / 4.0
+    clear = b"\x00\x00\x00\x00"
+    solid = bytes(rgb) + b"\xff"
+    z = zlib.compressobj(6)
+    parts = []
+    for y in range(h):
+        dy = (y + 0.5) - cy
+        if abs(dy) >= r:
+            row = clear * w
+        else:
+            half = (r * r - dy * dy) ** 0.5
+            x0 = max(0, min(w, int(round(cx - half))))
+            x1 = max(x0, min(w, int(round(cx + half))))
+            row = clear * x0 + solid * (x1 - x0) + clear * (w - x1)
+        parts.append(z.compress(b"\x00" + row))
+    parts.append(z.flush())
+    idat = b"".join(parts)
+
+    def chunk(kind, data):
+        c = struct.pack(">I", len(data)) + kind + data
+        return c + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    return PNG_SIGNATURE + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
 
 
 def png_size(data):
@@ -246,9 +281,20 @@ class Handler(BaseHTTPRequestHandler):
             if first:
                 self._send(429, error_body("ModelAccountIpmRateLimitExceeded", "IPM (Images Per Minute) limit of the model is exceeded. Request id: mock", "TooManyRequests"), headers={"Retry-After": "1"})
                 return
+        background = body.get("background")
+        if background is not None and background not in BACKGROUNDS:
+            self._send(400, error_body("InvalidParameter", f"the parameter `background` specified in the request is not valid: {background!r}. Request id: mock", "BadRequest"))
+            return
+        if background == "transparent" and body.get("output_format") == "jpeg":
+            # "If output_format is set to jpeg, the request returns an error" (the reference, transparent background)
+            self._send(400, error_body("InvalidParameter", "the parameter `output_format` must be png with a transparent background. Request id: mock", "BadRequest"))
+            return
         w, h = size
-        fmt = body.get("output_format") or "jpeg"
-        if refs:
+        fmt = body.get("output_format") or ("png" if background == "transparent" else "jpeg")
+        if background == "transparent":
+            # a cut-out of the requested size, edit or text request alike: an opaque disc on a transparent ground
+            b64 = base64.b64encode(png_cutout(w, h)).decode("ascii")
+        elif refs:
             # an edit: the first picture comes back as it went out (its own bytes, whatever the requested size)
             b64 = base64.b64encode(refs[0]["bytes"]).decode("ascii")
         else:

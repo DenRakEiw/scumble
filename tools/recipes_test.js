@@ -213,7 +213,7 @@ async function main() {
             flux2_pro: "image {n}", flux2_flex: "image {n}", flux2_max: "image {n}", flux2_klein: "image {n}",
             nano_banana_2: "image {n}", nano_banana_2_1: "image {n}", nano_banana_2_lite: "image {n}", nano_banana_pro: "image {n}", grok_imagine: "image {n}", reve: "image {n}",
             gpt_image_2: "Image {n}", gpt_image_2_5_flare: "Image {n}", gpt_image_2_5_sunburst: "Image {n}", gpt_image_2_6_flare: "Image {n}", gpt_image_2_6_sunburst: "Image {n}",
-            seedream_4_5: "Image {n}", seedream_5_lite: "Image {n}", seedream_5_pro: "Image {n}", qwen_image_edit: "Image {n}", hy_image_3_5: "Image {n}",
+            seedream_4_5: "Image {n}", seedream_5_lite: "Image {n}", seedream_5_pro: "Image {n}", seedream_5_5: "Image {n}", qwen_image_edit: "Image {n}", hy_image_3_5: "Image {n}",
             qwen_image_2_1: "<image{n}>", cloud_qwen_image_2_1_edit: "<image{n}>",
             // P-H3-Image (docs/PLAN_PH3.md): Pruna AI's and the node's <Picture 1>, <Picture 2> ...
             p_h3_image: "<Picture {n}>", cloud_p_h3_image: "<Picture {n}>",
@@ -274,6 +274,8 @@ async function main() {
             seedream_4_5: { magnific: { model: "text-to-image/seedream-v4-5-edit" } },
             seedream_5_lite: { toapis: {}, ark: {}, fal: { model: "fal-ai/bytedance/seedream/v5/lite/edit", options: { sizing: "image_size", pixels: [3686400, 16777216] } }, replicate: {}, wavespeed: { model: "bytedance/seedream-v5.0-lite/edit" }, openrouter: {}, comfyrouter: {}, magnific: { model: "text-to-image/seedream-v5-lite-edit" } },
             seedream_5_pro: { toapis: {}, ark: {}, fal: { model: "bytedance/seedream/v5/pro/edit", options: { sizing: "image_size", pixels: [1048576, 4194304] } }, wavespeed: { model: "bytedance/seedream-v5.0-pro/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/seedream-v5-pro-edit" } },
+            // Seedream 5.5 (early access): ModelArk alone, up to ten pictures for a new image as for an edit
+            seedream_5_5: { ark: {} },
             qwen_image_edit: { toapis: {}, comfyrouter: {}, oxen: {}, wavespeed: {} },
             qwen_image_2_1: { oxen: {} },
             hy_image_3_5: { comfypartner: {} },
@@ -313,7 +315,7 @@ async function main() {
             }
         }
         const stale = Object.entries(TEXT_REFS).flatMap(([id, rows]) => Object.keys(rows).map((pid) => `${id}/${pid}`)).filter((n) => !seen.has(n));
-        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 127, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
+        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 128, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
         check("every row of the table names a shipped provider variant", !stale.length, stale.join(", "));
         check("every text shape without text.refs is on the takes-none list", !none.length, none.join(", "));
         const noneStale = Object.entries(TAKES_NONE).flatMap(([id, pids]) => pids.map((pid) => `${id}/${pid}`)).filter((n) => { const [id, pid] = n.split("/"); const r = list.find((x) => x.id === id); return !r || !r.providers[pid] || !r.providers[pid].text || r.providers[pid].text.refs !== null; });

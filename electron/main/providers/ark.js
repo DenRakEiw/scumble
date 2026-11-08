@@ -1,10 +1,12 @@
 // BytePlus ModelArk: ByteDance's own API for the Seedream image models. Written from its API reference
 // (docs.byteplus.com/en/docs/ModelArk/1541523, updated 2026-09-10; the error codes 1299023, the model list 1330310,
-// the regions 2191806, the prices 1544106) on 2026-09-19; nothing here has run against the live API yet
-// (docs/RECIPES.md "BytePlus ModelArk" lists what only a real key can verify).
+// the regions 2191806, the prices 1544106) on 2026-09-19; Seedream 5.5 (dola-seedream-5-5-261028, early access) from
+// BytePlus's preview docs as the user passed them on 2026-11-08 (the public pages, read the same day, do not name it
+// yet); nothing here has run against the live API yet (docs/RECIPES.md "BytePlus ModelArk" lists what only a real key
+// can verify).
 //
 //   POST /api/v3/images/generations   JSON { model, prompt, image: [data URLs], size: "WxH", watermark: false,
-//                                     response_format: "b64_json", output_format: "png" }
+//                                     response_format: "b64_json", output_format: "png", background? }
 //                                     -> { model, created, data: [{ b64_json, size }], usage: { generated_images, ... } }
 //                                     or { error: { code, message, param, type } }
 //
@@ -17,10 +19,18 @@
 //
 // A recipe variant describes the model with `options`:
 //   pixels      [min, max] total pixels of the output ("Total pixels range" of method 2 on the reference page)
-//   max_images  how many pictures go in (5.0 pro 10, 5.0 lite 14)
-//   png         true where the model takes output_format (5.0 pro and lite; the default is jpeg)
+//   max_images  how many pictures go in (5.0 pro 10, 5.0 lite 14, 5.5 10)
+//   png         true where the model takes output_format (5.0 pro and lite, 5.5; the 5.0 default is jpeg)
+//   background  true where the variant's Background row (params.background: auto / transparent / opaque) goes out as
+//               `background` (5.5: text to image and image to image with up to 10 pictures). Auto sends nothing (the
+//               model's default), transparent always goes with output_format png. A variant without it never sends
+//               the field (5.0 pro documents it only for exactly one input picture with an alpha channel)
+//   early_access  true for a model BytePlus lets only some accounts call (5.5): a refusal that may mean the account
+//               is not let in says so
 //   regions     the Region row's values this model may use ("ap-southeast" Johor, "eu-west" Dublin); the first is
 //               the default
+// Not sent: optimize_prompt_options (its mode defaults to standard, the only one 5.5 takes; there is no "off"),
+// layer_decomposition (a feature of its own), sequential_image_generation, stream, seed.
 // Every picture must be no steeper than 16:1, more than 14 px a side, at most 30 MB and at most 36 MP; a picture over
 // 30 MB goes as JPEG when it has no transparent pixel, anything else out of range is refused before sending.
 //
@@ -88,14 +98,27 @@ function scrub(text, key) {
 
 const REGION_NAMES = { "ap-southeast": "Johor", "eu-west": "Dublin" };
 
+// a refusal an account outside a model's early access may get (the preview docs name no code of their own for it)
+const EARLY_ACCESS = "this model is in early access: BytePlus has to let the account in first, then activate it under Model activation in the ModelArk console";
+
 /**
  * What a failed answer means, by its error code (the error-code page) before its status, ahead of the server's
- * words. `where` ({ region, regions }) words the key hint: with a Region row it points there, with one region it
- * names it.
+ * words. `where` ({ region, regions, early }) words the key hint: with a Region row it points there, with one region
+ * it names it; `early` (a model in early access) adds the access hint to a refusal that may mean the account is not
+ * let in (not activated, no such model, a 403 or 404 of no known code).
  */
 function explain(status, code, message, where) {
-    const c = String(code || "");
     const w = where || {};
+    const why = explainWhy(status, code, w);
+    const c = String(code || "");
+    const notLetIn = c === "ModelNotOpen" || (c.startsWith("InvalidEndpointOrModel") && c !== "InvalidEndpointOrModel.ModelIDAccessDisabled")
+        || (status === 403 && !why) || (status === 404 && !c);
+    const words = w.early && notLetIn ? (why ? `${why} (${EARLY_ACCESS})` : EARLY_ACCESS) : why;
+    return words ? `${words} - ${c ? c + ": " : ""}${message}` : `${c ? c + ": " : ""}${message}`;
+}
+
+function explainWhy(status, code, w) {
+    const c = String(code || "");
     let why = null;
     if (c === "InvalidAccountStatus") why = "the BytePlus account's status blocks the call: see the ModelArk console or BytePlus support";
     else if (c === "AuthenticationError" || (status === 401 && !c)) {
@@ -121,7 +144,7 @@ function explain(status, code, message, where) {
     else if (status === 404) why = "not found";
     else if (status === 429) why = "rate limited";
     else if (status >= 500) why = "the service failed";
-    return why ? `${why} - ${c ? c + ": " : ""}${message}` : `${c ? c + ": " : ""}${message}`;
+    return why;
 }
 
 /** { code, message } of a failed answer ({ error: { code, message, param, type } }), else the text; the key taken out before any cut. */
@@ -265,9 +288,29 @@ function promptFor(req) {
     return instruction(req, req.kind === "text" ? textLayout(req) : layout(req), req.prompt);
 }
 
+const BACKGROUNDS = ["auto", "transparent", "opaque"];
+
+/**
+ * The `background` a run sends: null for a variant without options.background (whatever the params say) and for
+ * auto (the model's default); an unknown value is refused before any request.
+ */
+function backgroundFor(req, o) {
+    if (!o.background) return null;
+    const raw = (req.params || {}).background;
+    const v = raw == null || raw === "" ? "auto" : String(raw).trim().toLowerCase();
+    if (!BACKGROUNDS.includes(v)) throw new Error(`ModelArk ${req.model}: Background "${raw}" is none of ${BACKGROUNDS.join(", ")}.`);
+    return v === "auto" ? null : v;
+}
+
 function bodyFor(req, o, pics) {
     const body = { model: String(req.model || ""), prompt: promptFor(req), size: sizeFor(req, o), watermark: false, response_format: "b64_json" };
     if (o.png) body.output_format = "png";
+    const background = backgroundFor(req, o);
+    if (background) {
+        body.background = background;
+        // only PNG carries the alpha, and a transparent background with jpeg is an error
+        if (background === "transparent") body.output_format = "png";
+    }
     if (pics.length) body.image = pics.map((p) => `data:${p.mime};base64,${p.bytes.toString("base64")}`);
     return body;
 }
@@ -312,11 +355,12 @@ async function run(req, ctx) {
     req = { ...req, references: req.references || [] };
     if (req.kind === "text" && !String(req.prompt || "").trim()) throw new Error(`ModelArk ${model}: a new image needs a prompt.`);
     if (req.kind !== "text" && !req.image) throw new Error(`ModelArk ${model}: no crop to edit.`);
+    backgroundFor(req, o);   // an unknown Background is refused before the pictures are read
     // a text run's pictures are its references (none without: then the body is the text-to-image one as before)
     const pics = await picturesFor(req, o, ctx, model);
     const body = bodyFor(req, o, pics);
     const r = await post(ctx, where.host + PATH, body);
-    const at = { region: where.region, regions: o.regions };
+    const at = { region: where.region, regions: o.regions, early: !!o.early_access };
     if (!r.ok) {
         const f = await readFailure(r, ctx.key);
         throw new Error(scrub(`ModelArk ${model}: ${explain(r.status, f.code, f.message, at)}${r.waitSeconds ? `; try again in ${r.waitSeconds} s` : ""}`, ctx.key));
@@ -342,7 +386,7 @@ async function run(req, ctx) {
     const usage = j.usage || {};
     return {
         bytes, mime, seed: undefined,   // the body carries no seed
-        info: { model: j.model || model, region: where.region, size: body.size, answered: item.size || null, pictures: pics.map((x) => `${x.what} ${x.mime === "image/jpeg" ? "jpeg" : "png"}`), generated_images: usage.generated_images != null ? usage.generated_images : null },
+        info: { model: j.model || model, region: where.region, size: body.size, answered: item.size || null, background: body.background || null, pictures: pics.map((x) => `${x.what} ${x.mime === "image/jpeg" ? "jpeg" : "png"}`), generated_images: usage.generated_images != null ? usage.generated_images : null },
     };
 }
 
@@ -361,6 +405,7 @@ module.exports = {
     _body: bodyFor,
     _size: sizeFor,
     _pictures: picturesFor,
+    _background: backgroundFor,
     _explain: explain,
     REGIONS,
     MAX_PICTURE_BYTES,

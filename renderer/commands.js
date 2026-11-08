@@ -1551,7 +1551,7 @@ const COMMANDS = {
             aspect: P.str("aspect ratio like 16:9; used with resolution instead of width and height"),
             resolution: P.int("long side in pixels when aspect is given", { default: 1024 }),
             seed: P.int("seed; a new random one when left out"),
-            background: P.str("transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel", { enum: ["auto", "opaque", "transparent"] }),
+            background: P.str("transparent asks an API model that supports it (the OpenAI image models, Seedream 5.5 on ModelArk; list_recipes background says which) for a cut-out on a transparent ground; the base image then keeps its alpha channel", { enum: ["auto", "opaque", "transparent"] }),
             timeout: P.timeout(600),
         },
         async run(ed, a) {

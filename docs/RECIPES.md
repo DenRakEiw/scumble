@@ -840,10 +840,11 @@ picks the provider in Settings › Recipes (a select per row, remembered in
 (`default`) is the model's own API: Google for the Nano Banana family, OpenAI for GPT
 Image, Black Forest Labs for FLUX; ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud,
 OpenRouter and Oxen.ai carry most models as well. Seedream is the exception: its own API, BytePlus ModelArk, came
-later, and the two Seedream recipes keep fal as their `default` (see "BytePlus ModelArk" below). The order
+later, and the two Seedream 5.0 recipes keep fal as their `default` (see "BytePlus ModelArk" below); Seedream 5.5,
+in early access, runs on ModelArk alone, which is its `default`. The order
 of a recipe's `providers` is the order of its provider select, of Generate new and of `list_recipes`;
 ToAPIs comes first wherever it serves the model (see "ToAPIs" below), ModelArk right after it in the two
-Seedream recipes, OpenRouter after the older hosts (see "OpenRouter" below), then Comfy Router, Oxen.ai and
+Seedream 5.0 recipes, OpenRouter after the older hosts (see "OpenRouter" below), then Comfy Router, Oxen.ai and
 **Magnific last** where they serve the model (see "Magnific" below), and `default` stays the home provider.
 
 ```
@@ -928,7 +929,7 @@ gets more context instead of an answer of another shape), **GPT Image 2 2048 wit
 OpenAI partner node), **Seedream 5 on fal 4096 with a 4 MP budget for pro and a 16 MP one
 for lite** (its `image_size` is a free size with an area range, not a side limit),
 **Seedream on Comfy Cloud 2496 / 4992** (what the partner node fits it into), **Seedream on
-ModelArk 4096 in 16 px steps with the model's own pixel range as budget and floor** (pro 921,600 to
+ModelArk 4096 in 16 px steps with the model's own pixel range as budget and floor** (5.0 pro and 5.5 921,600 to
 4,624,220 px, lite 3,686,400 to 16,777,216; see "BytePlus ModelArk" below), **the OpenRouter
 variants of the three GPT recipes 2048 with neither budget nor floor** (OpenRouter takes no pixel
 size; see "OpenRouter" below), everything else the conservative default.
@@ -1225,8 +1226,13 @@ list `background`, read 2026-11-06; fal and Replicate are sent PNG); none of tha
 not wired for it: WaveSpeed's GPT routes have no `background` field, and fal's GPT Image 2 variant and Comfy Cloud may
 or may not pass it through, which is not verified. ModelArk documents a
 `background` for Seedream 5.0 pro, but "only for image-to-image generation with exactly one input image
-that has an alpha channel", which an inpaint crop is not; its variant does not carry the row. Add the row to a
-variant when you have a source. `tools/transparent_test.py` is the gate.
+that has an alpha channel", which an inpaint crop is not; its variant does not carry the row. **Seedream 5.5**
+(`seedream_5_5`, ModelArk only, early access) carries the row as *Background* with `auto` / `transparent` /
+`opaque`: BytePlus's preview docs give it for text to image and for image to image with up to 10 pictures, with
+`auto` as the default (see "Seedream 5.5" under "BytePlus ModelArk" below); its answers are PNG, and the
+Transparent asset template is offered for it too. That has not run live; the `ark` gate lands the mock's
+transparent PNG with its alpha. Add the row to a variant when you have a source. `tools/transparent_test.py` is the
+gate.
 
 ### Generating without an image (`text`)
 
@@ -1407,7 +1413,8 @@ adapter does; only the parameters `options.accepts` names; tiers and aspect pres
 `options`; `provider.ignore` with the hosts in China; see "OpenRouter" below), **ark** (BytePlus ModelArk,
 ByteDance's own API for Seedream: `POST /api/v3/images/generations` on the host of the *Region* row, one
 synchronous request with the pictures inline as data URLs and the image back as base64; always a pixel `size`
-in the crop's shape, `watermark: false`; no mask input; see "BytePlus ModelArk" below), **oxen** (Oxen.ai: `POST
+in the crop's shape, `watermark: false`; no mask input; Seedream 5.5's `background` from its Background row; see
+"BytePlus ModelArk" below), **oxen** (Oxen.ai: `POST
 /api/ai/images/edit` or `/images/generate`, one synchronous request built to each model's own schema, the pictures
 inline as data URLs and the image back as base64; GPT Image's selection as `mask_url`, Nano Banana's as a second
 picture; see "Oxen.ai" below), **magnific** (an
@@ -2428,7 +2435,8 @@ providers and the selected recipe back.
 ### BytePlus ModelArk (`ark`)
 
 BytePlus ModelArk is ByteDance's own API for its Seed models, Seedream among them. Scumble uses its Image
-generation API for two recipes, Seedream 5.0 pro and Seedream 5.0 lite. The adapter
+generation API for three recipes, Seedream 5.0 pro, Seedream 5.0 lite and Seedream 5.5 (early access, ModelArk
+only; see "Seedream 5.5" below). The adapter
 `electron/main/providers/ark.js` is written from the English pages under `docs.byteplus.com/en/docs/ModelArk/`,
 all read on 2026-09-19: the Image generation API reference (`1541523`, updated 2026-09-10), the error codes
 (`1299023`), the model list (`1330310`), region availability (`2191806`), pricing (`1544106`), the data processing
@@ -2449,6 +2457,7 @@ invalid one) showed the error shape.
   OpenRouter stays last. **The `default` stays fal**, although ModelArk is the model's own API. Nothing switches
   to ModelArk on its own. A recipe runs there when you pick it in the recipe's select, in Generate new or with
   `select_recipe(id, "ark")`. The two recipes' descriptions say "Also on BytePlus ModelArk (ByteDance's own API)."
+  `seedream_5_5` has `ark` as its one provider and its `default`.
 - **Generate new.** `ark` is in `TEXT_PROVIDERS`. A text run uses the edit variant's model id and sends no
   `image`, unless it carries reference layers (26f): then `image` holds them alone, the prompt ends with their
   sentence, and the text `size` stays.
@@ -2491,7 +2500,12 @@ model on the Model activation page, and then find its Model ID". A model that is
      Seedream.
    - `n`: there is no such field.
    - `sequential_image_generation`, `stream`, `optimize_prompt_options` and `layer_decomposition`.
-   - 5.0 pro's `background` (see "Transparent results" above).
+     `optimize_prompt_options` is an object whose `mode` defaults to `standard` (the reference: "standard mode,
+     which provides higher-quality output but takes longer"); `fast` is the other mode, which 5.0 lite, 5.0 flash and
+     4.5 do not take and 5.5 does not either (its preview docs). No mode turns the optimisation off, so a row would
+     offer nothing the default does not do.
+   - 5.0 pro's `background` (see "Transparent results" above). Seedream 5.5's goes from its Background row (see
+     "Seedream 5.5" below).
 2. The answer is `{ model, created, data: [{ b64_json, size }], usage: { generated_images, output_tokens, ... } }`.
    - The image is the first `data` entry with `b64_json`. If the service ignored `response_format` and sent a
      `url`, that URL is downloaded at once, without the key.
@@ -2723,16 +2737,60 @@ The docs state no free quota for images. The free-quota pages speak of tokens ("
 |---|---|---|---|---|---|---|---|
 | `seedream_5_pro` | `dola-seedream-5-0-pro-260628` | edit | none (Johor only) | 921,600 to 4,624,220 | 10, none steeper than 16:1 | 1280, 1536, 2048 | $0.045 up to 2.61 MP, $0.09 above; $0.003 a picture after the first |
 | `seedream_5_lite` | `seedream-5-0-260128` | edit | Region (`ap-southeast`, `eu-west`) | 3,686,400 to 16,777,216 | 14, none steeper than 16:1 | 2560, 3072, 4096 | $0.035 |
+| `seedream_5_5` (early access, ModelArk only) | `dola-seedream-5-5-261028` | edit | Background (`auto`, `transparent`, `opaque`; Johor only) | 921,600 to 4,624,220 | 10, none steeper than 16:1 | 1280, 1536, 2048 | not on the public price list |
 
 A variant's `options` describe the model:
 
 - `pixels`: `[min, max]`, the output's total-pixel range;
 - `max_images`: the picture count above;
 - `png`: send `output_format: "png"`;
+- `background`: the variant's *Background* row goes out as `background` (Seedream 5.5);
+- `early_access`: a refusal that may mean the account is not let in says so (Seedream 5.5);
 - `regions`: the *Region* values the model may use, the first being the default.
 
-Both variants carry `limits` of `{ max, step: 16, pixels, minPixels, ratio: 16 }` (`max` 4096 on pro, 7680 on
-lite) and a `note` that names where the pictures go.
+All three variants carry `limits` of `{ max, step: 16, pixels, minPixels, ratio: 16 }` (`max` 4096 on pro and 5.5,
+7680 on lite) and a `note` that names where the pictures go.
+
+**Seedream 5.5** (`recipes/seedream_5_5.json`, added 2026-11-08 on the user's word, on ModelArk only). BytePlus
+serves it in **early access**: its preview docs are "intended for customers who have gained early
+access to the Seedream 5.5 API". The adapter follows those docs as the user passed them; the public pages (the
+reference `1541523` updated 2026-11-05, the model list, the price list, the regions, all read 2026-11-08) do not
+name 5.5 yet, and the two preview pages on larkoffice.com need a login, so they were not read. What the variant
+takes from them:
+
+- the model id `dola-seedream-5-5-261028` on `POST https://ark.ap-southeast.bytepluses.com/api/v3/images/generations`
+  (Johor; no Region row, so `eu-west` is refused before any request);
+- `size` as a tier (`1K`, `1.5K`, `2K`, the default) or pixels `WxH` with 921,600 to 4,624,220 pixels and an aspect
+  between 1/16 and 16, the range of 5.0 pro; Scumble sends pixels, as for 5.0 (see "Sizes" above), with 5.0 pro's
+  `limits` and Generate-new sizes (1280, 1536, 2048);
+- up to **10** pictures (the crop, *Original* and the reference layers, or the references alone for Generate new);
+- `output_format` `png` (the new default) or `jpeg`; Scumble sends `png`;
+- **`background`** `auto` (the default), `transparent` or `opaque`, for text to image and image to image with up to
+  10 pictures. The variant's *Background* row (key `background`, default Auto) is the switch: Auto sends no field (the
+  model's default), Transparent and Opaque send their word, and Transparent always goes with `output_format: "png"`
+  (only PNG carries the alpha, and the 5.0 reference calls `jpeg` with it an error). An unknown value is refused
+  before any request. The row also makes Generate new's *transparent background* box and `generate_new`'s
+  `background` reach it (`list_recipes` says `background: true`);
+- `optimize_prompt_options` `{ mode: "standard" }` (`fast` is not taken by 5.5); not sent, since standard is the
+  default and there is no off (see "Not sent" above);
+- `layer_decomposition` (new in 5.5, up to 100 layers, `layer_decomposition_options: { max_images,
+  text_recognition }`): **not part of this recipe**; a feature of its own.
+
+**What a transparent answer does.** The run reads `background: "transparent"` from the row before the crop is made
+and sets `info.keepAlpha` (see "Transparent results" above). In `finishPixels` (`renderer/editor/stitch.js`) the
+answer's **own alpha is kept** and the selection's composite mask only multiplies it: inside the selection the
+result layer is exactly as transparent as the answer, outside it stays empty as always. Colour match and the edge fit
+are skipped for such a run (their statistics would read the transparent pixels), and the status line ends with "The
+layer is a cut-out on a transparent ground." or, when the answer had no transparent pixel, "The model returned no
+transparency, so the layer is opaque." A transparent Generate new gives a base with an alpha channel. Main passes the
+PNG bytes through untouched (the adapter reads PNG from the bytes), so nothing on the way drops the alpha.
+
+**Early access in the errors.** The preview docs name no error code for an account that is not let in, so the
+existing words stay and `options.early_access` adds one more sentence to every refusal that may mean that:
+`ModelNotOpen`, `InvalidEndpointOrModel...` (not `ModelIDAccessDisabled`), a 403 of no known code and a 404 without
+a code. Such a message reads "the model is not activated: activate it under Model activation in the ModelArk
+console (this model is in early access: BytePlus has to let the account in first, then activate it under Model
+activation in the ModelArk console) - ModelNotOpen: ...". The 5.0 variants never get that sentence.
 
 **Only a real key can verify** (written defensively, and listed here until a live run):
 
@@ -2753,7 +2811,10 @@ lite) and a `note` that names where the pictures go.
 - whether Seedream is a "Restricted Model" in the user's country;
 - whether `output_format: "png"` is honoured on 5.0 lite (the adapter reads the format from the bytes either way);
 - the shape of real errors on `/images/generations` beyond the 401 seen, and whether a 429 carries `Retry-After`;
-- whether an answer ever carries `data[].url` despite `b64_json` (the fallback download).
+- whether an answer ever carries `data[].url` despite `b64_json` (the fallback download);
+- for Seedream 5.5: that an early-access account reaches `dola-seedream-5-5-261028` by model id, which code an
+  account without early access gets, whether `background: "transparent"` on an inpaint crop answers a real cut-out
+  (and how the model decides what is subject), whether a pixel `size` is answered exactly, and its price.
 
 **Tests.** `tools/ark_mock.py` is the loopback stand-in (the pattern of `openrouter_mock.py`). It answers
 `POST /api/v3/images/generations`:
@@ -2762,15 +2823,19 @@ lite) and a `note` that names where the pictures go.
 - an edit echoes its first picture as `data[0].b64_json`;
 - a text request gets a plain PNG of exactly the requested `WxH`;
 - `data[0].size` is the requested size, `output_format` the requested one (`jpeg` without one), and `usage`
-  counts one generated image.
+  counts one generated image;
+- with `background: "transparent"` either kind gets an RGBA PNG of the requested size: an opaque disc on a fully
+  transparent ground.
 
 The mock refuses what the docs say the live API refuses:
 
 - a missing model or prompt (400 `MissingParameter`);
 - a size that is not `WxH` (400 `InvalidParameter`);
 - a picture that is not a base64 data URL with a lowercase type (400 `InvalidImageURL.InvalidFormat`);
-- an unknown model id (404 `InvalidEndpointOrModel.NotFound`). It knows the four Seedream ids of the model list
-  and the lite alias.
+- a `background` that is none of `auto` / `transparent` / `opaque`, and `transparent` with `output_format: "jpeg"`
+  (400 `InvalidParameter`);
+- an unknown model id (404 `InvalidEndpointOrModel.NotFound`). It knows the four Seedream ids of the model list,
+  the lite alias and Seedream 5.5's id.
 
 It has three synthetic models:
 
@@ -2780,10 +2845,10 @@ It has three synthetic models:
 
 The mock records every header of every request and keeps the decoded pictures of each image request.
 
-`node tools/ark_test.js` runs the adapter, its two recipe variants and its wiring in `providers/index.js` and
+`node tools/ark_test.js` runs the adapter, its three recipe variants and its wiring in `providers/index.js` and
 `recipes.js` in plain Node, without Electron and without a key. A scripted fetch plays both ModelArk hosts, the
 loopback mock and a result host for a `url` answer, and `ctx.sleep` records its waits instead of waiting. It has
-seven sections of checks:
+eight sections of checks (section 8 runs before the whole-run checks of 7):
 
 1. **An edit.** One POST whose headers are exactly `Authorization` and `Content-Type`, and a body of exactly the
    seven fields. The prompt's sentences for none, one and several references. The pictures decode to the crop
@@ -2806,13 +2871,22 @@ seven sections of checks:
    HTTP date). A wait past 60 s is not taken, and there is no third request. `QuotaExceeded`, `SetLimitExceeded`,
    a 500 and a network error are sent once. An error inside a 200 fails the run. A `url` answer is downloaded with
    no header at all.
-6. **The recipes** as `recipes.js` lists them. Only the two Seedream recipes carry `ark`, right after `toapis`
-   with fal kept as the default. Each variant's model, `options`, `limits`, Region row, text sizes, note and
+6. **The recipes** as `recipes.js` lists them. Only the two Seedream 5.0 recipes and Seedream 5.5 carry `ark`: the
+   5.0 ones right after `toapis` with fal kept as the default, 5.5 alone as its default with its Background row and
+   the early-access words in its description and note. Each variant's model, `options`, `limits`, Region row, text sizes, note and
    description are checked. Each variant builds an edit and a text request, and each of its regions reaches that
    region's host. `index.js` gets the key row after OpenRouter, the text provider, the stored key, `settings.ark.base`
    and the app's `toJpeg` / `opaque`.
 7. **The whole run.** No call carried a header beyond `Authorization` and `Content-Type`. The test key went only
    to the mock and the real key only to the two BytePlus hosts. Neither key appears in any error.
+8. **Seedream 5.5.** Background Auto (or none) sends the seven fields and no `background`; Transparent and Opaque
+   send their word, Transparent always with `png` (also on a variant without `png`); another case or spaces go as
+   the lower-case word, an unknown value is refused before any call, and a 5.0 variant never sends the field. A
+   transparent Generate new, ten references for a new image and the crop with nine references pass; eleven
+   pictures either way are refused. The pixel range, Johor only (`eu-west` refused). The early-access words on
+   `ModelNotOpen`, `InvalidEndpointOrModel.NotFound`, a 403 of no known code and a bare 404, not on the endpoint-id
+   refusal, a quota or 5.0 pro. No 5.5 body carries `optimize_prompt_options`, `layer_decomposition`, sequential
+   generation, `stream`, `seed`, `n`, a mask or a negative prompt.
 
 Gate `ark` (`tools/ark_test.py`) needs the instance started with `--offline`, since a result lands in the mirror
 and would be forwarded to a connected ComfyUI. It runs `tools/ark_test.js` first. Then it drives the app over CDP,
@@ -2820,8 +2894,9 @@ with `settings.ark.base` on the mock and a `test-` key, and refuses a profile th
 The steps:
 
 - **The lists before the key.** ToAPIs comes first in Settings › API providers. The ModelArk row has *get a key*
-  and its key link, and no *check balance*; `providers.balance("ark")` is refused. Only the two Seedream recipes
-  list `ark`, each right after `toapis`, with fal still their default. Their select reads "BytePlus ModelArk
+  and its key link, and no *check balance*; `providers.balance("ark")` is refused. Only the two Seedream 5.0
+  recipes and Seedream 5.5 list `ark`: the 5.0 ones each right after `toapis`, with fal still their default, 5.5
+  alone, as its default, with `background: true` in `list_recipes`. Their select reads "BytePlus ModelArk
   (Seedream) (no key)".
 - **The key stored.** The row and the select option change accordingly.
 - **An inpaint on Seedream 5.0 Lite.** One POST. The crop at the emitted size is `image[0]`, a PNG data URL.
@@ -2833,6 +2908,15 @@ The steps:
   the request still goes to the mock. It is then set back.
 - **An inpaint on Seedream 5.0 Pro.** Its own model id, no settings rows, and a size inside [921,600, 4,624,220].
 - **Generate new** at 16:9 and 2560: `2560x1440`, no picture, and a 2560 × 1440 base.
+- **Seedream 5.5, Background Auto.** Its own model id, the Background row as its one row (on Auto), a size inside
+  [921,600, 4,624,220], no `background` in the body, and the result layer opaque inside the selection (the run goes
+  without context and feather, so the layer is exactly the selection).
+- **Seedream 5.5, Background Transparent.** Set through `set_settings`, the row reaches the run: `background:
+  "transparent"` and `png` go out, the mock answers its disc, and the layer keeps that alpha (opaque in the middle,
+  0 beside the disc, 20 px inside the selection's edge); the status line says "cut-out on a transparent ground". The
+  row is then set back to Auto.
+- **Seedream 5.5, Generate new** with `background: "transparent"` at 16:9 and 1280: `1280x720` with `background`, and
+  a base transparent in the corner and opaque in the middle.
 - **The failures.**
   - `QuotaExceeded` appears in the error, the status line and the log without the key, and is sent once.
   - `ModelAccountIpmRateLimitExceeded` is sent once more after its `Retry-After`.
