@@ -1894,7 +1894,7 @@ size 1000` dab 3.4 -> 1.8, `shrink held` tick 2.8 -> 1.7. Mutation 29 of 29 kill
 **Stop 6:** `dabLaps` in Electron: the kernel is 93-95 % of an advected 1000 px dab (1.64 of 1.8 ms; 6.23 of 6.7 ms across the
 four sub-dabs of a move at fit), the gather and the write 0.08-0.15 ms per sub-dab, and `nodes()` can fill wasm memory
 directly (as K29's window), so K31 needs no 1 MB of extra copies; a 2-3x kernel would save about 0.8-1.1 ms per sub-dab (inferred
-from K28 / K29's 1.5-1.9x and SIMD). The user decides K31.
+from K28 / K29's 1.5-1.9x and SIMD). **The user's word (2026-11-08): build K31**, the route decided by its A/B.
 
 ### K34 (2026-11-08): the edge fit's shrink and warps in Rust (the Antigravity E chain)
 
