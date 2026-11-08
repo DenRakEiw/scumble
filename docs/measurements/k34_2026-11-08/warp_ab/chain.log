@@ -1,0 +1,36 @@
+[11:57:49] == round 1: acquiring busy lock
+lock: held by 'K11 measuring (before r1) 51884 2026-11-08T11:57:01', waiting
+lock: taken after 390 s
+[12:04:19] lock: taken (K34 warpRgba A/B r1 (chain-e, port 9615) 55396 2026-11-08T11:57:49)
+[12:04:30] warpRgba=js r1: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[12:05:00] w0 rc=0
+closed
+[12:05:15] warpRgba=rust r1: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[12:05:45] w0 rc=0
+closed
+lock: released
+[12:05:49] lock: released (K34 warpRgba A/B r1 (chain-e, port 9615) 55396 2026-11-08T11:57:49)
+[12:05:49] == round 2: acquiring busy lock
+lock: taken after 0 s
+[12:05:49] lock: taken (K34 warpRgba A/B r2 (chain-e, port 9615) 23312 2026-11-08T12:05:49)
+[12:06:00] warpRgba=rust r2: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[12:06:29] w0 rc=0
+closed
+[12:06:45] warpRgba=js r2: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[12:07:14] w0 rc=0
+closed
+lock: released
+[12:07:18] lock: released (K34 warpRgba A/B r2 (chain-e, port 9615) 23312 2026-11-08T12:05:49)
+[12:07:18] == round 3: acquiring busy lock
+lock: taken after 0 s
+[12:07:18] lock: taken (K34 warpRgba A/B r3 (chain-e, port 9615) 56656 2026-11-08T12:07:18)
+[12:07:29] warpRgba=js r3: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[12:07:59] w0 rc=0
+closed
+[12:08:14] warpRgba=rust r3: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[12:08:43] w0 rc=0
+closed
+lock: released
+[12:08:47] lock: released (K34 warpRgba A/B r3 (chain-e, port 9615) 56656 2026-11-08T12:07:18)
+[12:08:47] done
+no instance on 9615 Cannot connect to host 127.0.0.1:9615 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

@@ -1,0 +1,14 @@
+[ok] setup: {"size": [3000, 2000]}
+[ok] mode_max_reaches_the_provider_ceiling: {"crop": [512, 512], "emitted": [1440, 1440]}
+[ok] x2_and_x4_are_the_high_res_fix: {"crop": {"crop": [512, 512], "emitted": [512, 512]}, "x2": {"crop": [512, 512], "emitted": [1024, 1024]}, "x4": {"crop": [512, 512], "emitted": [1440, 1440]}}
+[ok] target_mode_keeps_the_node_number: {"emitted": [1024, 1024]}
+[ok] the_pixel_budget_holds: {"emitted": [3520, 2352], "pixels": 8279040}
+[ok] a_local_recipe_is_left_alone: {"limits": null, "emitted": [1024, 1024]}
+[ok] the_real_recipes_carry_their_ceiling: {"flux2_pro": [1440, 32, 0], "flux2_max": [1440, 32, 0], "flux1_fill": [1440, 32, 0], "gpt_image_2": [2048, 16, 8294400], "nano_banana_2": [2048, 16, 0], "seedream_5_pro": {"fal": [4096, 16, 4194304], "comfycloud": [2496, 2, 0]}}
+[ok] an_area_budget_beats_a_side_limit: {"emitted": [2464, 1680], "pixels": 4139520}
+[ok] aspects_widen_the_crop_to_a_preset: {"crop": [1042, 586], "without": [586, 586], "emitted": [2048, 1152], "aspect": "16:9"}
+[ok] aspects_that_cannot_be_reached_leave_the_crop: {"crop": [0, 0, 3000, 2000], "emitted": [2048, 1360]}
+[ok] a_text_only_recipe_refuses_generate: {"error": "Krea 2 on Loopback makes images from the prompt alone: use \"Generate new\", not Generate."}
+[ok] a_capped_run_still_stitches_back: {"region": [512, 512], "layer": [512, 512, 512, 512], "status": "Result 1 added (512 \u00d7 512 at 794, 544) \u00b7 Loopback via Loopback, 0 s"}
+[ok] cleanup: "ok"
+PASS

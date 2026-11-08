@@ -229,6 +229,191 @@ pub fn blend_alpha(rgba: &mut [u8], mask: &[f32], keep_alpha: bool) {
     }
 }
 
+#[inline(always)]
+fn shrink_row_full(rgba_row: &[u8], g_row: &mut [f32], a_row: &mut [f32]) {
+    let w = g_row.len().min(a_row.len()).min(rgba_row.len() / 4);
+    let done = lanes::shrink_row(&rgba_row[..w * 4], &mut g_row[..w], &mut a_row[..w]);
+    for x in done..w {
+        let j = x * 4;
+        let al = (rgba_row[j + 3] as f64) / 255.0;
+        a_row[x] = al as f32;
+        g_row[x] = ((al * ((0.299 * (rgba_row[j] as f64) + 0.587 * (rgba_row[j + 1] as f64)) + 0.114 * (rgba_row[j + 2] as f64))) / 255.0) as f32;
+    }
+}
+
+/// Fused area-average shrink of straight-alpha RGBA8 `rgba` (`w * h * 4` bytes) to `{ gray, alpha }` (`tw * th` f32
+/// each, `edgefit.js` `shrinkRGBA`). `a[i]` is stored as `f32` while `g[i]` multiplies by the unrounded `f64` alpha.
+pub fn edgefit_shrink(rgba: &[u8], w: usize, h: usize, tw: usize, th: usize, gray: &mut [f32], alpha: &mut [f32]) {
+    if w == 0 || h == 0 || tw == 0 || th == 0 {
+        return;
+    }
+    if tw == w && th == h {
+        for y in 0..h {
+            let row = y * w;
+            shrink_row_full(&rgba[row * 4..(row + w) * 4], &mut gray[row..row + w], &mut alpha[row..row + w]);
+            for i in row..row + w {
+                let a = alpha[i] as f64;
+                gray[i] = if a > 1e-4 { ((gray[i] as f64) / a) as f32 } else { 0.0 };
+            }
+        }
+        return;
+    }
+    let fx = (w as f64) / (tw as f64);
+    let fy = (h as f64) / (th as f64);
+    let mut x_bounds = Vec::with_capacity(tw);
+    for x in 0..tw {
+        let x0 = (((x as f64) * fx).floor() as usize).min(w - 1);
+        let x1 = (((x + 1) as f64) * fx).floor() as usize;
+        let x1 = x1.min(w).max(x0 + 1);
+        x_bounds.push((x0, x1));
+    }
+    let mut g_row = vec![0.0f32; w];
+    let mut a_row = vec![0.0f32; w];
+    let mut sg_acc = vec![0.0f64; tw];
+    let mut sa_acc = vec![0.0f64; tw];
+    let mut cached_yy = usize::MAX;
+    for y in 0..th {
+        let y0 = (((y as f64) * fy).floor() as usize).min(h - 1);
+        let y1 = (((y + 1) as f64) * fy).floor() as usize;
+        let y1 = y1.min(h).max(y0 + 1);
+        sg_acc.fill(0.0);
+        sa_acc.fill(0.0);
+        for yy in y0..y1 {
+            if yy != cached_yy {
+                let r = yy * w * 4;
+                shrink_row_full(&rgba[r..r + w * 4], &mut g_row, &mut a_row);
+                cached_yy = yy;
+            }
+            for x in 0..tw {
+                let (x0, x1) = x_bounds[x];
+                let mut sg = sg_acc[x];
+                let mut sa = sa_acc[x];
+                for xx in x0..x1 {
+                    sg += g_row[xx] as f64;
+                    sa += a_row[xx] as f64;
+                }
+                sg_acc[x] = sg;
+                sa_acc[x] = sa;
+            }
+        }
+        let dy = y1 - y0;
+        let out_row = y * tw;
+        for x in 0..tw {
+            let (x0, x1) = x_bounds[x];
+            let count = (dy * (x1 - x0)) as f64;
+            let gs = (sg_acc[x] / count) as f32;
+            let as_val = (sa_acc[x] / count) as f32;
+            alpha[out_row + x] = as_val;
+            gray[out_row + x] = if (as_val as f64) > 1e-4 {
+                ((gs as f64) / (as_val as f64)) as f32
+            } else {
+                0.0
+            };
+        }
+    }
+}
+
+#[inline(always)]
+fn js_clamp_coord(v: f64, hi: f64) -> f64 {
+    if v.is_nan() {
+        f64::NAN
+    } else if !(v > 0.0) {
+        0.0
+    } else if v > hi {
+        hi
+    } else {
+        v
+    }
+}
+
+#[inline(always)]
+fn js_or_zero(v: f64) -> i32 {
+    if !v.is_finite() { 0 } else { v as i32 }
+}
+
+/// Bilinear inverse-affine warp of RGBA8 `src` (`w * h * 4` bytes) into `dst` (`w * h * 4` bytes) under `m` (`edgefit.js` `warpRGBA`).
+pub fn warp_rgba(src: &[u8], dst: &mut [u8], w: usize, h: usize, m: [f64; 6]) {
+    if w == 0 || h == 0 {
+        return;
+    }
+    if lanes::warp_rgba(src, dst, w, h, m) {
+        return;
+    }
+    let [a00, a01, tx, a10, a11, ty] = m;
+    let cap_x = (w - 1) as f64;
+    let cap_y = (h - 1) as f64;
+    let max_x0 = (w as i32) - 2;
+    let max_y0 = (h as i32) - 2;
+    let dx = if w > 1 { 4 } else { 0 };
+    let dy = if h > 1 { w * 4 } else { 0 };
+    let mut o = 0;
+    for y in 0..h {
+        let ay_x = a01 * (y as f64);
+        let ay_y = a11 * (y as f64);
+        for x in 0..w {
+            let cap_xx = js_clamp_coord((a00 * (x as f64) + ay_x) + tx, cap_x);
+            let cap_yy = js_clamp_coord((a10 * (x as f64) + ay_y) + ty, cap_y);
+            let x0 = js_or_zero(cap_xx).min(max_x0);
+            let y0 = js_or_zero(cap_yy).min(max_y0);
+            let fx = if w > 1 { cap_xx - (x0 as f64) } else { 0.0 };
+            let fy = if h > 1 { cap_yy - (y0 as f64) } else { 0.0 };
+            let j = ((y0.max(0) as usize) * w + (x0.max(0) as usize)) * 4;
+            for c in 0..4 {
+                let t = (src[j + c] as f64) * (1.0 - fx) + (src[j + dx + c] as f64) * fx;
+                let b = (src[j + dy + c] as f64) * (1.0 - fx) + (src[j + dy + dx + c] as f64) * fx;
+                dst[o + c] = clamp8(t * (1.0 - fy) + b * fy);
+            }
+            o += 4;
+        }
+    }
+}
+
+#[inline(always)]
+fn js_min2_f64(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else if a == 0.0 && b == 0.0 {
+        f64::from_bits(a.to_bits() | b.to_bits())
+    } else if a < b {
+        a
+    } else {
+        b
+    }
+}
+
+/// Per-pixel source-bounds coverage mask (`w * h` f32 in `dst`, 1 inside, 1 px ramp to 0 outside) for `m` (`edgefit.js` `warpCoverage`).
+pub fn warp_coverage(dst: &mut [f32], w: usize, h: usize, m: [f64; 6]) {
+    if w == 0 || h == 0 {
+        return;
+    }
+    if lanes::warp_coverage(dst, w, h, m) {
+        return;
+    }
+    let [a00, a01, tx, a10, a11, ty] = m;
+    let cap_x = (w - 1) as f64;
+    let cap_y = (h - 1) as f64;
+    let mut i = 0;
+    for y in 0..h {
+        let ay_x = a01 * (y as f64);
+        let ay_y = a11 * (y as f64);
+        for x in 0..w {
+            let xx = (a00 * (x as f64) + ay_x) + tx;
+            let yy = (a10 * (x as f64) + ay_y) + ty;
+            let d = js_min2_f64(js_min2_f64(js_min2_f64(xx, cap_x - xx), yy), cap_y - yy) + 1.0;
+            dst[i] = if d.is_nan() {
+                f32::from_bits(0xffc0_0000)
+            } else if d >= 1.0 {
+                1.0
+            } else if d <= 0.0 {
+                0.0
+            } else {
+                d as f32
+            };
+            i += 1;
+        }
+    }
+}
+
 /// The window of i, clamped to the line. It is shorter than a block at both ends of the line, and then it may lie in
 /// one block: it starts the block (`g` of its end is the window) or it ends with the block or the line (`hh` of its start is).
 #[inline(always)]
@@ -498,6 +683,21 @@ mod lanes {
     #[inline(always)]
     pub fn blend_alpha(_: &mut [u8], _: &[f32], _: bool) -> usize {
         0
+    }
+
+    #[inline(always)]
+    pub fn shrink_row(_: &[u8], _: &mut [f32], _: &mut [f32]) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    pub fn warp_rgba(_: &[u8], _: &mut [u8], _: usize, _: usize, _: [f64; 6]) -> bool {
+        false
+    }
+
+    #[inline(always)]
+    pub fn warp_coverage(_: &mut [f32], _: usize, _: usize, _: [f64; 6]) -> bool {
+        false
     }
 }
 
@@ -819,6 +1019,178 @@ mod lanes {
             }
         }
         n4
+    }
+
+    #[inline(always)]
+    fn hi_i32_to_f64(v: v128) -> v128 {
+        f64x2_convert_low_i32x4(i32x4_shuffle::<2, 3, 2, 3>(v, v))
+    }
+
+    pub fn shrink_row(rgba_row: &[u8], g_row: &mut [f32], a_row: &mut [f32]) -> usize {
+        let n4 = g_row.len().min(a_row.len()).min(rgba_row.len() / 4) / 4 * 4;
+        let (s, gp, ap) = (rgba_row.as_ptr(), g_row.as_mut_ptr(), a_row.as_mut_ptr());
+        let v255 = f64x2_splat(255.0);
+        let (c_r, c_g, c_b) = (f64x2_splat(0.299), f64x2_splat(0.587), f64x2_splat(0.114));
+        let b8 = u32x4_splat(0xff);
+        let vzero = f32x4_splat(0.0);
+        unsafe {
+            let mut x = 0;
+            while x < n4 {
+                let px = v128_load(s.add(x * 4) as *const v128);
+                let a_u32 = u32x4_shr(px, 24);
+                if !v128_any_true(a_u32) {
+                    v128_store(ap.add(x) as *mut v128, vzero);
+                    v128_store(gp.add(x) as *mut v128, vzero);
+                } else {
+                    let r_u32 = v128_and(px, b8);
+                    let g_u32 = v128_and(u32x4_shr(px, 8), b8);
+                    let b_u32 = v128_and(u32x4_shr(px, 16), b8);
+                    let al_lo = f64x2_div(f64x2_convert_low_i32x4(a_u32), v255);
+                    let al_hi = f64x2_div(hi_i32_to_f64(a_u32), v255);
+                    let lum_lo = f64x2_add(
+                        f64x2_add(f64x2_mul(c_r, f64x2_convert_low_i32x4(r_u32)), f64x2_mul(c_g, f64x2_convert_low_i32x4(g_u32))),
+                        f64x2_mul(c_b, f64x2_convert_low_i32x4(b_u32)),
+                    );
+                    let lum_hi = f64x2_add(
+                        f64x2_add(f64x2_mul(c_r, hi_i32_to_f64(r_u32)), f64x2_mul(c_g, hi_i32_to_f64(g_u32))),
+                        f64x2_mul(c_b, hi_i32_to_f64(b_u32)),
+                    );
+                    let gr_lo = f64x2_div(f64x2_mul(al_lo, lum_lo), v255);
+                    let gr_hi = f64x2_div(f64x2_mul(al_hi, lum_hi), v255);
+                    v128_store(ap.add(x) as *mut v128, pack(al_lo, al_hi));
+                    v128_store(gp.add(x) as *mut v128, pack(gr_lo, gr_hi));
+                }
+                x += 4;
+            }
+        }
+        n4
+    }
+
+    pub fn warp_rgba(src: &[u8], dst: &mut [u8], w: usize, h: usize, m: [f64; 6]) -> bool {
+        if w < 2 || h < 2 || src.len() < w * h * 4 || dst.len() < w * h * 4 || !m.iter().all(|v| v.is_finite()) {
+            return false;
+        }
+        let [a00, a01, tx, a10, a11, ty] = m;
+        let cap_x = (w - 1) as f64;
+        let cap_y = (h - 1) as f64;
+        if !(a00.abs() * cap_x + a01.abs() * cap_y + tx.abs()).is_finite()
+            || !(a10.abs() * cap_x + a11.abs() * cap_y + ty.abs()).is_finite()
+        {
+            return false;
+        }
+        let max_x0 = (w - 2) as i32;
+        let max_y0 = (h - 2) as i32;
+        let dy = w * 4;
+        let (s, d) = (src.as_ptr(), dst.as_mut_ptr());
+        unsafe {
+            let va0 = f64x2(a00, a10);
+            let va1 = f64x2(a01, a11);
+            let vt = f64x2(tx, ty);
+            let vcap = f64x2(cap_x, cap_y);
+            let vzero = f64x2_splat(0.0);
+            let vone = f64x2_splat(1.0);
+            let vmax0 = i32x4(max_x0, max_y0, 0, 0);
+            let mut o = 0;
+            for y in 0..h {
+                let vay = f64x2_mul(va1, f64x2_splat(y as f64));
+                for x in 0..w {
+                    let raw = f64x2_add(f64x2_add(f64x2_mul(va0, f64x2_splat(x as f64)), vay), vt);
+                    let cl = f64x2_pmin(vcap, f64x2_pmax(vzero, raw));
+                    let xy0 = i32x4_min(i32x4_trunc_sat_f64x2_zero(cl), vmax0);
+                    let fxy = f64x2_sub(cl, f64x2_convert_low_i32x4(xy0));
+                    let vfx = i64x2_shuffle::<0, 0>(fxy, fxy);
+                    let vfy = i64x2_shuffle::<1, 1>(fxy, fxy);
+                    let v1fx = f64x2_sub(vone, vfx);
+                    let v1fy = f64x2_sub(vone, vfy);
+                    let x0 = u32x4_extract_lane::<0>(xy0) as usize;
+                    let y0 = u32x4_extract_lane::<1>(xy0) as usize;
+                    let j = (y0 * w + x0) * 4;
+                    let top8 = u16x8_extend_low_u8x16(v128_load64_zero(s.add(j) as *const u64));
+                    let bot8 = u16x8_extend_low_u8x16(v128_load64_zero(s.add(j + dy) as *const u64));
+                    let top32 = u32x4_extend_low_u16x8(top8);
+                    let top32_r = u32x4_extend_high_u16x8(top8);
+                    let bot32 = u32x4_extend_low_u16x8(bot8);
+                    let bot32_r = u32x4_extend_high_u16x8(bot8);
+                    let t_rg = f64x2_add(f64x2_mul(f64x2_convert_low_i32x4(top32), v1fx), f64x2_mul(f64x2_convert_low_i32x4(top32_r), vfx));
+                    let b_rg = f64x2_add(f64x2_mul(f64x2_convert_low_i32x4(bot32), v1fx), f64x2_mul(f64x2_convert_low_i32x4(bot32_r), vfx));
+                    let v_rg = f64x2_nearest(f64x2_add(f64x2_mul(t_rg, v1fy), f64x2_mul(b_rg, vfy)));
+                    let t_ba = f64x2_add(f64x2_mul(hi_i32_to_f64(top32), v1fx), f64x2_mul(hi_i32_to_f64(top32_r), vfx));
+                    let b_ba = f64x2_add(f64x2_mul(hi_i32_to_f64(bot32), v1fx), f64x2_mul(hi_i32_to_f64(bot32_r), vfx));
+                    let v_ba = f64x2_nearest(f64x2_add(f64x2_mul(t_ba, v1fy), f64x2_mul(b_ba, vfy)));
+                    let i_rg = i32x4_trunc_sat_f64x2_zero(v_rg);
+                    let i_ba = i32x4_trunc_sat_f64x2_zero(v_ba);
+                    let i_rgba = i64x2_shuffle::<0, 2>(i_rg, i_ba);
+                    let u16_rgba = i16x8_narrow_i32x4(i_rgba, i_rgba);
+                    let u8_rgba = u8x16_narrow_i16x8(u16_rgba, u16_rgba);
+                    v128_store32_lane::<0>(u8_rgba, d.add(o) as *mut u32);
+                    o += 4;
+                }
+            }
+        }
+        true
+    }
+
+    pub fn warp_coverage(dst: &mut [f32], w: usize, h: usize, m: [f64; 6]) -> bool {
+        if dst.len() < w * h || !m.iter().all(|v| v.is_finite()) {
+            return false;
+        }
+        let [a00, a01, tx, a10, a11, ty] = m;
+        let cap_x = (w - 1) as f64;
+        let cap_y = (h - 1) as f64;
+        if !(a00.abs() * cap_x + a01.abs() * cap_y + tx.abs() + cap_x + 1.0).is_finite()
+            || !(a10.abs() * cap_x + a11.abs() * cap_y + ty.abs() + cap_y + 1.0).is_finite()
+        {
+            return false;
+        }
+        let va00 = f64x2_splat(a00);
+        let va10 = f64x2_splat(a10);
+        let vtx = f64x2_splat(tx);
+        let vty = f64x2_splat(ty);
+        let vcap_x = f64x2_splat(cap_x);
+        let vcap_y = f64x2_splat(cap_y);
+        let vzero = f64x2_splat(0.0);
+        let vone = f64x2_splat(1.0);
+        let w4 = w / 4 * 4;
+        let d_ptr = dst.as_mut_ptr();
+        unsafe {
+            for y in 0..h {
+                let ay_x = a01 * (y as f64);
+                let ay_y = a11 * (y as f64);
+                let vay0 = f64x2_splat(ay_x);
+                let vay1 = f64x2_splat(ay_y);
+                let row = y * w;
+                let mut x = 0;
+                while x < w4 {
+                    let vx0 = f64x2(x as f64, (x + 1) as f64);
+                    let vx1 = f64x2((x + 2) as f64, (x + 3) as f64);
+                    let xx0 = f64x2_add(f64x2_add(f64x2_mul(va00, vx0), vay0), vtx);
+                    let yy0 = f64x2_add(f64x2_add(f64x2_mul(va10, vx0), vay1), vty);
+                    let xx1 = f64x2_add(f64x2_add(f64x2_mul(va00, vx1), vay0), vtx);
+                    let yy1 = f64x2_add(f64x2_add(f64x2_mul(va10, vx1), vay1), vty);
+                    let m0 = f64x2_pmin(f64x2_pmin(f64x2_pmin(xx0, f64x2_sub(vcap_x, xx0)), yy0), f64x2_sub(vcap_y, yy0));
+                    let m1 = f64x2_pmin(f64x2_pmin(f64x2_pmin(xx1, f64x2_sub(vcap_x, xx1)), yy1), f64x2_sub(vcap_y, yy1));
+                    let d0 = f64x2_add(m0, vone);
+                    let d1 = f64x2_add(m1, vone);
+                    let c0 = f64x2_pmin(vone, f64x2_pmax(vzero, d0));
+                    let c1 = f64x2_pmin(vone, f64x2_pmax(vzero, d1));
+                    v128_store(d_ptr.add(row + x) as *mut v128, pack(c0, c1));
+                    x += 4;
+                }
+                for x in w4..w {
+                    let xx = (a00 * (x as f64) + ay_x) + tx;
+                    let yy = (a10 * (x as f64) + ay_y) + ty;
+                    let d = xx.min(cap_x - xx).min(yy).min(cap_y - yy) + 1.0;
+                    *d_ptr.add(row + x) = (if d >= 1.0 {
+                        1.0
+                    } else if d <= 0.0 {
+                        0.0
+                    } else {
+                        d
+                    }) as f32;
+                }
+            }
+        }
+        true
     }
 
     /// The rows the lanes take: for one channel two rows at once (one f64 lane each), the last row of an odd height

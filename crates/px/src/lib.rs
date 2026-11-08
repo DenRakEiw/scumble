@@ -47,11 +47,12 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
 /// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: tone_rgba, sponge_rgba, freq_split;
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
-/// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert);
+/// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
+/// 30: edgefit_shrink, warp_rgba, warp_coverage);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    29
+    30
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -242,6 +243,76 @@ pub unsafe extern "C" fn blend_alpha(src: *const u8, mask: *const f32, dst: *mut
         core::ptr::copy(src, dst, n * 4);
     }
     maskf::blend_alpha(slice::from_raw_parts_mut(dst, n * 4), slice::from_raw_parts(mask, n), keep_alpha != 0);
+}
+
+/// Area-average shrink of straight-alpha RGBA8 `rgba` (`w * h * 4` bytes) to unpremultiplied grayscale `gray` and
+/// straight alpha `alpha` (`tw * th` f32 each, `edgefit.js` `shrinkRGBA`). `a[i]` is rounded to f32 before averaging
+/// while `g[i]` multiplies by the unrounded double alpha (`edgefit.js:65-67`).
+#[no_mangle]
+pub unsafe extern "C" fn edgefit_shrink(rgba: *const u8, w: usize, h: usize, tw: usize, th: usize, gray: *mut f32, alpha: *mut f32) {
+    if w == 0 || h == 0 || tw == 0 || th == 0 || rgba.is_null() || gray.is_null() || alpha.is_null() {
+        return;
+    }
+    let Some(src_bytes) = w.checked_mul(h).and_then(|n| n.checked_mul(4)) else { return };
+    let Some(dst_len) = tw.checked_mul(th) else { return };
+    maskf::edgefit_shrink(
+        slice::from_raw_parts(rgba, src_bytes),
+        w,
+        h,
+        tw,
+        th,
+        slice::from_raw_parts_mut(gray, dst_len),
+        slice::from_raw_parts_mut(alpha, dst_len),
+    );
+}
+
+/// Bilinear inverse-affine warp of RGBA8 `src` (`w * h * 4` bytes) into `dst` (`w * h * 4` bytes, must not alias `src`)
+/// under the 2x3 matrix `[a00, a01, tx, a10, a11, ty]` (`edgefit.js` `warpRGBA`).
+#[no_mangle]
+pub unsafe extern "C" fn warp_rgba(
+    src: *const u8,
+    dst: *mut u8,
+    w: usize,
+    h: usize,
+    a00: f64,
+    a01: f64,
+    tx: f64,
+    a10: f64,
+    a11: f64,
+    ty: f64,
+) {
+    if w == 0 || h == 0 || src.is_null() || dst.is_null() {
+        return;
+    }
+    let Some(bytes) = w.checked_mul(h).and_then(|n| n.checked_mul(4)) else { return };
+    maskf::warp_rgba(
+        slice::from_raw_parts(src, bytes),
+        slice::from_raw_parts_mut(dst, bytes),
+        w,
+        h,
+        [a00, a01, tx, a10, a11, ty],
+    );
+}
+
+/// Per-pixel source-bounds coverage mask (`w * h` f32 in `dst`, 1 inside, 1 px ramp to 0 outside) for the inverse
+/// affine matrix `[a00, a01, tx, a10, a11, ty]` (`edgefit.js` `warpCoverage`).
+#[no_mangle]
+pub unsafe extern "C" fn warp_coverage(
+    dst: *mut f32,
+    w: usize,
+    h: usize,
+    a00: f64,
+    a01: f64,
+    tx: f64,
+    a10: f64,
+    a11: f64,
+    ty: f64,
+) {
+    if w == 0 || h == 0 || dst.is_null() {
+        return;
+    }
+    let Some(n) = w.checked_mul(h) else { return };
+    maskf::warp_coverage(slice::from_raw_parts_mut(dst, n), w, h, [a00, a01, tx, a10, a11, ty]);
 }
 
 /// Box blurs of the radii `r0`, `r1`, `r2` (0: none), rows then columns each, in place with clamped edges.

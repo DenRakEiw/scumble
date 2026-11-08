@@ -1121,6 +1121,78 @@ export function blendAlpha(rgba, mask, keepAlpha = false, out = null) {
     return dst;
 }
 
+function shrinkPlane(src, w, h, tw, th, out = null) {
+    const dst = out || new Float32Array(tw * th);
+    if (tw === w && th === h) {
+        if (dst !== src) dst.set(src.subarray(0, tw * th));
+        return dst;
+    }
+    const fx = w / tw, fy = h / th;
+    for (let y = 0; y < th; y++) {
+        const y0 = Math.floor(y * fy), y1 = Math.max(y0 + 1, Math.min(h, Math.floor((y + 1) * fy)));
+        for (let x = 0; x < tw; x++) {
+            const x0 = Math.floor(x * fx), x1 = Math.max(x0 + 1, Math.min(w, Math.floor((x + 1) * fx)));
+            let s = 0;
+            for (let yy = y0; yy < y1; yy++) { const row = yy * w; for (let xx = x0; xx < x1; xx++) s += src[row + xx]; }
+            dst[y * tw + x] = s / ((y1 - y0) * (x1 - x0));
+        }
+    }
+    return dst;
+}
+
+/**
+ * Area-average shrink of straight-alpha RGBA8 `rgba` (`w * h * 4` bytes) to unpremultiplied grayscale `gray` and
+ * straight alpha `alpha` (`tw * th` Float32Arrays, `edgefit.js` `shrinkRGBA`). `a[i]` is rounded to f32 before
+ * averaging while `g[i]` multiplies by the unrounded double alpha (`edgefit.js:65-67`).
+ */
+export function edgefitShrink(rgba, w, h, tw, th, grayOut = null, alphaOut = null) {
+    const n = w * h, g = new Float32Array(n), a = new Float32Array(n);
+    for (let i = 0, j = 0; i < n; i++, j += 4) {
+        const al = rgba[j + 3] / 255;
+        a[i] = al;
+        g[i] = al * (0.299 * rgba[j] + 0.587 * rgba[j + 1] + 0.114 * rgba[j + 2]) / 255;
+    }
+    const gs = shrinkPlane(g, w, h, tw, th, grayOut), as = shrinkPlane(a, w, h, tw, th, alphaOut);
+    for (let i = 0; i < gs.length; i++) gs[i] = as[i] > 1e-4 ? gs[i] / as[i] : 0;
+    return { gray: gs, alpha: as };
+}
+
+/**
+ * Bilinear inverse-affine warp of RGBA8 `src` (`w * h * 4` bytes) through `m` (`[a00, a01, tx, a10, a11, ty]`,
+ * `edgefit.js` `warpRGBA`), into `out` (allocated as a `Uint8ClampedArray` when absent; must not alias `src`).
+ */
+export function warpRgba(src, w, h, m, out = null) {
+    const dst = out || new Uint8ClampedArray(w * h * 4);
+    const clamped = dst instanceof Uint8ClampedArray ? dst : new Uint8ClampedArray(dst.buffer, dst.byteOffset, w * h * 4);
+    const [a00, a01, tx, a10, a11, ty] = m;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let X = a00 * x + a01 * y + tx, Y = a10 * x + a11 * y + ty;
+        X = Math.min(w - 1, Math.max(0, X)); Y = Math.min(h - 1, Math.max(0, Y));
+        const x0 = Math.min(w - 2, X | 0), y0 = Math.min(h - 2, Y | 0);
+        const fx = w > 1 ? X - x0 : 0, fy = h > 1 ? Y - y0 : 0;
+        const j = (Math.max(0, y0) * w + Math.max(0, x0)) * 4, dx = w > 1 ? 4 : 0, dy = h > 1 ? w * 4 : 0, o = (y * w + x) * 4;
+        for (let c = 0; c < 4; c++) {
+            clamped[o + c] = (src[j + c] * (1 - fx) + src[j + dx + c] * fx) * (1 - fy) + (src[j + dy + c] * (1 - fx) + src[j + dy + dx + c] * fx) * fy;
+        }
+    }
+    return dst;
+}
+
+/**
+ * Per-pixel source-bounds coverage mask (`w * h` Float32Array, 1 inside, 1 px ramp to 0 outside) for `m`
+ * (`[a00, a01, tx, a10, a11, ty]`, `edgefit.js` `warpCoverage`).
+ */
+export function warpCoverage(w, h, m, out = null) {
+    const dst = out || new Float32Array(w * h);
+    const [a00, a01, tx, a10, a11, ty] = m;
+    for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++) {
+        const X = a00 * x + a01 * y + tx, Y = a10 * x + a11 * y + ty;
+        const d = Math.min(X, w - 1 - X, Y, h - 1 - Y) + 1;
+        dst[i] = d >= 1 ? 1 : d <= 0 ? 0 : d;
+    }
+    return dst;
+}
+
 /**
  * The running maximum of every row over [x - r, x + r] (clamped to the row), never below 0: a monotonic queue of
  * indices, so a pixel costs the same whatever the radius (a loop over the radius took 1.9 s of a run's crop,

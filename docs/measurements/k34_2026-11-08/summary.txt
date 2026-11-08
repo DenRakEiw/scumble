@@ -1,0 +1,189 @@
+K34 — Edgefit shrink, warp RGBA & warp coverage in Rust (2026-11-08)
+====================================================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.10 & §5 K34)
+----------------------------------------------
+- Three edgefit kernels in `crates/px/src/maskf.rs` (scalar + wasm32 `simd128` in module `lanes`), exported from `crates/px/src/lib.rs` (ABI bumped 26 -> 27):
+  1. `edgefit_shrink(rgba_ptr, w, h, tw, th, g_ptr, a_ptr)`:
+     - Fuses `grayOf`, `alphaOf`, and two `shrinkPlane` calls from `renderer/editor/edgefit.js` (`shrinkRGBA`).
+     - When `tw == w && th == h` (1:1, used when `max(w, h) <= 512`), computes `alpha[i] = (rgba[4*i + 3] as f64 / 255.0) as f32` and `gray[i] = ((rgba[4*i + 3] as f64 / 255.0) * (0.299*R + 0.587*G + 0.114*B) / 255.0) as f32` (using the unrounded `f64` alpha in `gray[i]`, matching `edgefit.js:65-67`).
+     - When `tw != w || th != h` (box-shrunk to `WORK = 512`), processes row band `[y0..y1)` per output row `ty`, computing temporary row `g_row` and `a_row` in `f32` (with unrounded `f64` alpha in `g_row`, and `a_row` rounded to `f32` first), then accumulates `sg` and `sa` in `f64` over `[y0..y1) x [x0..x1)` in identical order to `shrinkPlane` (`for sy in y0..y1 { for sx in x0..x1 }`), storing `g_out = (sg * inv) as f32`, `a_tmp = (sa * inv) as f32`, `a_out = if a_tmp > 1e-4 { a_tmp } else { 0.0 }`.
+  2. `warp_rgba(src_ptr, dst_ptr, w, h, m_ptr)`:
+     - Bilinear inverse-mapped RGBA8 warp matching `edgefit.js` `warpRGBA`:
+       `xx = max(0, min(w - 1, a00*x + a01*y + tx))`, `yy = max(0, min(h - 1, a10*x + a11*y + ty))`
+       (with `NaN` clamping to `0.0` via `if raw > 0.0 { raw.min(cap) } else { 0.0 }`),
+       `x0 = min(w - 2, xx | 0)`, `y0 = min(h - 2, yy | 0)` (clamped to `0` when `w == 1` or `h == 1`),
+       `fx = xx - x0`, `fy = yy - y0`,
+       `top = p00*(1 - fx) + p10*fx`, `bot = p01*(1 - fx) + p11*fx`,
+       `v = top*(1 - fy) + bot*fy`, stored with `Uint8ClampedArray` ties-to-even rounding.
+  3. `warp_coverage(dst_ptr, w, h, m_ptr)`:
+     - 4-edge coverage ramp matching `edgefit.js` `warpCoverage`:
+       `xx = a00*x + a01*y + tx`, `yy = a10*x + a11*y + ty`,
+       `d = min(xx + 1.0, yy + 1.0, (w - 1) - xx + 1.0, (h - 1) - yy + 1.0)`,
+       `dst[y*w + x] = max(0.0, min(1.0, d)) as f32` (normalizing `-0.0` to `+0.0` and preserving V8's `0xffc0_0000` NaN bit pattern when `m` contains `NaN`).
+- JS twins `edgefitShrink`, `warpRgba`, and `warpCoverage` in `renderer/editor/px/kernels_js.js`, `Px` wrappers in `renderer/editor/px/px.js`, and routed wrappers in `renderer/editor/px/kernels.js` under group route `"edgefit"` and per-kernel routes `"edgefitShrink"`, `"warpRgba"`, `"warpCoverage"`.
+- Wired into `renderer/editor/edgefit.js` (`shrinkRGBA`, `warpRGBA`, `warpCoverage`, with `shrinkRGBA` also exported for direct testing).
+
+Wasm Binary Sizes
+-----------------
+- `renderer/editor/px/px.wasm`:        188,285 B -> 199,100 B (+10,815 B vs HEAD `da4ba5e`, +4,331 B vs K34 pre-build, sha256 `74a3fc873f383211`)
+- `renderer/editor/px/px_scalar.wasm`: 155,461 B -> 159,923 B ( +4,462 B vs HEAD `da4ba5e`, +3,217 B vs K34 pre-build, sha256 `1c49a33979823ce5`)
+
+1. Kernel Microbenchmark (`PX_BENCH=1 PX_ONLY=mask node tools/px_test.js`, 1492 x 1492)
+---------------------------------------------------------------------------------------
+  Kernel            Rust SIMD    Rust Scalar    JS Twin    SIMD Speedup
+  ----------------  -----------  -------------  ---------  ------------
+  edgefit_shrink       4.17 ms        7.82 ms   22.58 ms         5.41x
+  warp_rgba           36.83 ms       43.93 ms   54.39 ms         1.48x
+  warp_coverage        3.56 ms       11.79 ms    4.86 ms         1.37x
+  (Review fix `K34-route-warp-default`: vectorizing `raw`, `[0, cap]` clamp, `xy0` truncation/clamping, and `vfx`/`vfy`/`v1fx`/`v1fy` in `f64x2` inside `lanes::warp_rgba` eliminated the per-pixel scalar branches and four scalar-to-XMM `f64x2_splat` transfers, dropping `warp_rgba` SIMD from `43.91 ms` to `36.83 ms`, ahead of both scalar `43.93 ms` and JS twin `54.39 ms`.)
+
+2. `w0_bench.py --rows=edgefit_2048,stitch_align_2048,stitch_align_4096` (3 alternating rounds, port 9615)
+----------------------------------------------------------------------------------------------------------
+a) `edgefit_2048` (2048 x 2048 base + shifted layer, standalone `fitLayerRGBA`, `warpRGBA`, `warpCoverage`):
+  - `fit (fitLayerRGBA)`:      before 124.59 ms [124.6, 125.2, 123.4] | after  53.66 ms [61.8, 52.8, 53.7]   (delta  -70.93 ms, 2.32x)
+    - `split.shrink`:          before  72.34 ms [71.1, 72.5, 72.3]    | after  21.58 ms [23.1, 21.6, 21.1]   (delta  -50.76 ms, 3.35x)
+    - `split.ring`:            before   6.89 ms [ 6.9,  6.3,  7.8]    | after   5.50 ms [ 5.4,  5.5,  5.6]   (delta   -1.39 ms)
+    - `split.fitEdges`:        before  41.96 ms [42.0, 42.9, 42.0]    | after  31.09 ms [35.1, 31.1, 28.2]   (delta  -10.87 ms)
+    - `split.warp`:            before  75.77 ms [76.2, 74.5, 75.8]    | after  80.65 ms [81.2, 80.7, 78.3]   (delta   +4.88 ms)
+    - `split.coverage`:        before   8.98 ms [ 8.7,  9.9,  9.0]    | after   7.36 ms [ 7.5,  7.4,  6.9]   (delta   -1.62 ms, 1.22x)
+    - `split.K34_sum`:         before 156.91 ms [156.0, 156.9, 157.1] | after 109.59 ms [111.7, 109.6, 106.3] (delta -47.32 ms, 1.43x)
+  - `pxCalls`:                 before `{}`
+                               after  `{"edgefit_shrink": 6, "warp_coverage": 3, "warp_rgba": 3}`
+
+b) `stitch_align_2048` (2560 x 2560 picture, 2048 x 2048 crop, feather 217, grow 112, blend 25):
+  - `prepare.wall`:            before 439.90 ms [439.9, 502.4, 433.1] | after 393.30 ms [433.5, 393.3, 382.2] (delta  -46.60 ms)
+  - `worker.wall`:             before 751.98 ms [752.0, 771.4, 721.3] | after 609.98 ms [610.0, 626.0, 596.4] (delta -142.00 ms, -18.9%)
+  - `worker.laps_sum`:         before 679.85 ms [679.9, 700.8, 678.0] | after 573.79 ms [573.8, 588.7, 562.0] (delta -106.06 ms, -15.6%)
+    - `worker.shrink`:         before  70.81 ms [70.8, 70.3, 74.9]    | after  22.85 ms [23.4, 22.9, 22.0]    (delta  -47.96 ms, 3.10x)
+    - `worker.ring`:           before   7.17 ms [ 7.4,  7.2,  7.1]    | after   7.21 ms [ 8.1,  7.2,  6.3]    (delta   +0.04 ms)
+    - `worker.fit`:            before  44.50 ms [41.8, 44.5, 47.7]    | after  41.45 ms [41.1, 42.5, 41.5]    (delta   -3.05 ms)
+    - `worker.warp`:           before  77.63 ms [78.9, 77.6, 77.4]    | after  81.42 ms [81.4, 84.0, 80.2]    (delta   +3.79 ms)
+    - `worker.coverage`:       before  17.84 ms [17.7, 17.8, 18.0]    | after  15.24 ms [15.2, 15.3, 14.4]    (delta   -2.60 ms, 1.17x)
+    - `worker.K34_sum`:        before 167.38 ms [167.4, 165.7, 170.4] | after 120.11 ms [120.1, 122.2, 116.6] (delta  -47.27 ms, 1.39x)
+    - `worker.workerPx`:       before `{"blend_alpha": 2, "box_blurs": 2, "color_match_rgba": 1, "dilate_mask": 1, "erode_mask": 1, "mask_max_clamp": 2, "mask_one_minus": 1}`
+                               after  `{"blend_alpha": 2, "box_blurs": 2, "color_match_rgba": 1, "dilate_mask": 1, "edgefit_shrink": 2, "erode_mask": 1, "mask_max_clamp": 2, "mask_one_minus": 1, "warp_coverage": 1, "warp_rgba": 1}`
+  - `window.wall`:             before 792.04 ms [792.0, 792.5, 692.3] | after 610.37 ms [704.0, 610.4, 605.9] (delta -181.67 ms, -22.9%)
+  - `window.laps_sum`:         before 672.59 ms [672.6, 675.5, 623.0] | after 544.41 ms [605.2, 544.4, 538.8] (delta -128.18 ms, -19.1%)
+    - `window.shrink`:         before  70.51 ms [65.9, 70.5, 71.9]    | after  26.06 ms [23.8, 26.1, 26.1]    (delta  -44.45 ms, 2.71x)
+    - `window.ring`:           before   6.49 ms [ 6.7,  6.5,  6.3]    | after   5.31 ms [ 5.1,  5.3,  5.3]    (delta   -1.18 ms)
+    - `window.fit`:            before  29.88 ms [28.9, 29.9, 30.3]    | after  22.44 ms [21.2, 22.4, 23.3]    (delta   -7.44 ms)
+    - `window.warp`:           before  79.37 ms [77.3, 79.7, 79.4]    | after  78.05 ms [79.0, 78.0, 76.8]    (delta   -1.32 ms, 1.02x)
+    - `window.coverage`:       before  22.70 ms [22.7, 24.6, 21.8]    | after  15.56 ms [16.6, 15.2, 15.6]    (delta   -7.14 ms, 1.46x)
+    - `window.K34_sum`:        before 173.14 ms [165.9, 174.8, 173.1] | after 119.38 ms [119.4, 119.4, 118.4] (delta  -53.76 ms, 1.45x)
+
+c) `stitch_align_4096` (4608 x 4608 picture, 4096 x 4096 crop, feather 434, grow 221, blend 25):
+  - `prepare.wall`:            before  862.60 ms [862.6, 1028.6, 856.8]   | after  871.70 ms [1051.6, 849.8, 871.7]   (delta   +9.10 ms)
+  - `worker.wall`:             before 2470.79 ms [2514.2, 2470.8, 2203.4] | after 2103.73 ms [2316.0, 2103.7, 2090.4] (delta -367.06 ms, -14.9%)
+  - `worker.laps_sum`:         before 2211.46 ms [2328.7, 2211.5, 2051.2] | after 1937.15 ms [2114.9, 1937.2, 1922.4] (delta -274.31 ms, -12.4%)
+    - `worker.shrink`:         before  194.95 ms [179.9, 194.9, 202.1]    | after   73.12 ms [73.1, 71.6, 73.5]       (delta -121.83 ms, 2.67x)
+    - `worker.ring`:           before    3.01 ms [ 5.8,   3.0,   2.6]     | after    2.74 ms [ 2.7,  5.8,  2.7]       (delta   -0.27 ms)
+    - `worker.fit`:            before   26.79 ms [26.8,  26.1,  31.5]     | after   22.71 ms [22.7, 27.9, 21.8]       (delta   -4.08 ms)
+    - `worker.warp`:           before  312.19 ms [312.2, 313.3, 297.6]    | after  313.25 ms [313.2, 320.9, 309.3]    (delta   +1.06 ms)
+    - `worker.coverage`:       before   95.22 ms [103.5,  95.2,  90.2]    | after   73.79 ms [75.7, 73.6, 73.8]       (delta  -21.43 ms, 1.29x)
+    - `worker.K34_sum`:        before  595.63 ms [595.6, 603.4, 589.9]    | after  462.10 ms [462.1, 466.0, 456.6]    (delta -133.53 ms, 1.29x)
+  - `window.wall`:             before 2323.16 ms [2323.2, 2579.8, 2215.6] | after 2156.67 ms [2425.0, 2156.7, 2089.5] (delta -166.49 ms, -7.2%)
+  - `window.laps_sum`:         before 2006.80 ms [2006.8, 2146.3, 1935.6] | after 1888.36 ms [2097.9, 1888.4, 1820.1] (delta -118.44 ms, -5.9%)
+    - `window.shrink`:         before  191.87 ms [174.8, 196.3, 191.9]    | after   73.79 ms [72.6, 75.0, 73.8]       (delta -118.08 ms, 2.60x)
+    - `window.ring`:           before    2.50 ms [ 2.5,   2.5,   2.5]     | after    2.56 ms [ 2.5,  2.6,  2.6]       (delta   +0.06 ms)
+    - `window.fit`:            before   26.10 ms [27.6,  26.1,  22.4]     | after   28.62 ms [41.0, 28.6, 23.9]       (delta   +2.52 ms)
+    - `window.warp`:           before  297.44 ms [297.6, 292.5, 297.4]    | after  314.09 ms [314.1, 317.1, 306.8]    (delta  +16.65 ms)
+    - `window.coverage`:       before   93.21 ms [96.3,  88.9,  93.2]     | after   77.53 ms [78.0, 75.3, 77.5]       (delta  -15.68 ms, 1.20x)
+    - `window.K34_sum`:        before  577.68 ms [568.7, 577.7, 582.5]    | after  464.64 ms [464.6, 467.4, 458.1]    (delta -113.04 ms, 1.24x)
+
+3. `native_test.py 15000x10000 --no-profile provider_crop` (1492 x 1492 crop, 3 alternating rounds)
+---------------------------------------------------------------------------------------------------
+3a) Cold (`native_r{1..3}.json` — first `provider_crop` in the Electron instance):
+  - `wall`:                    before 543.00 ms [515.0, 579.0, 543.0] | after 502.00 ms [480.0, 560.0, 502.0] (delta  -41.00 ms, -7.6%)
+  - `blocked`:                 before  71.00 ms [57.0, 82.0, 71.0]    | after  59.00 ms [54.0, 83.0, 59.0]    (delta  -12.00 ms)
+  - `gl getShaderParameter`:   before   4.30 ms [ 2.9,  8.6,  4.3]    | after   2.90 ms [ 2.8,  6.5,  2.9]    (delta   -1.40 ms)
+  - `gl getProgramParameter`:  before  32.40 ms [32.5, 31.1, 32.4]    | after  34.10 ms [30.7, 56.2, 34.1]    (delta   +1.70 ms)
+  - `prepMs`:                  before 175.90 ms [153.3, 176.5, 175.9] | after 155.20 ms [151.8, 169.0, 155.2] (delta  -20.70 ms)
+  - `prep.SUM`:                before 120.44 ms [118.3, 129.2, 120.4] | after 119.15 ms [117.6, 124.4, 119.1] (delta   -1.29 ms)
+  - `finish.SUM`:              before 317.98 ms [313.2, 342.3, 318.0] | after 296.32 ms [280.5, 317.5, 296.3] (delta  -21.66 ms, -6.8%)
+    - `finish.shrink`:         before  47.44 ms [47.4, 47.2, 48.2]    | after  19.00 ms [19.0, 18.9, 19.1]    (delta  -28.44 ms, 2.50x)
+    - `finish.ring`:           before   8.16 ms [ 8.6,  8.0,  8.2]    | after   7.44 ms [ 7.4,  8.5,  6.9]    (delta   -0.72 ms)
+    - `finish.fit`:            before   7.04 ms [ 7.0,  7.0,  7.7]    | after   6.83 ms [ 6.8,  6.8, 10.1]    (delta   -0.21 ms)
+    - `finish.K34_sum`:        before  47.44 ms [47.4, 47.2, 48.2]    | after  19.00 ms [19.0, 18.9, 19.1]    (delta  -28.44 ms, 2.50x)
+
+3b) Warmed (`native_warm_r{1..3}.json` via `warm_native.py` — preceded by 1 untimed `provider_crop` warm-up):
+  - `wall`:                    before 514.00 ms [520.0, 514.0, 511.0] | after 420.00 ms [387.0, 428.0, 420.0] (delta  -94.00 ms, -18.3%)
+  - `blocked`:                 before   8.00 ms [ 9.0,  8.0,  8.0]    | after  11.00 ms [ 6.0, 25.0, 11.0]    (delta   +3.00 ms)
+  - `gl getShaderParameter`:   before   0.00 ms [ 0.0,  0.0,  0.0]    | after   0.00 ms [ 0.0,  0.0,  0.0]    (delta   +0.00 ms)
+  - `gl getProgramParameter`:  before   0.00 ms [ 0.0,  0.0,  0.0]    | after   0.00 ms [ 0.0,  0.0,  0.0]    (delta   +0.00 ms)
+  - `prepMs`:                  before  97.40 ms [98.4, 97.4, 96.1]    | after 113.80 ms [93.8, 113.8, 117.1]  (delta  +16.40 ms)
+  - `prep.SUM`:                before  88.64 ms [88.6, 89.2, 87.3]    | after  93.75 ms [84.6, 93.8, 103.5]   (delta   +5.11 ms)
+  - `finish.SUM`:              before 387.56 ms [392.5, 387.6, 386.7] | after 274.59 ms [260.5, 276.0, 274.6] (delta -112.97 ms, -29.1%)
+    - `finish.region`:         before   2.16 ms [ 2.0,  2.4,  2.2]    | after   2.27 ms [ 2.3,  1.9,  2.4]    (delta   +0.11 ms)
+    - `finish.decode`:         before   2.42 ms [ 2.4,  2.4,  3.0]    | after   2.73 ms [ 2.7,  2.7,  2.8]    (delta   +0.31 ms)
+    - `finish.resize`:         before   0.07 ms [ 0.1,  0.1,  0.1]    | after   0.07 ms [ 0.1,  0.1,  0.1]    (delta   +0.00 ms)
+    - `finish.dilate`:         before  39.94 ms [39.9, 39.6, 42.4]    | after  42.03 ms [39.8, 42.0, 42.2]    (delta   +2.09 ms)
+    - `finish.blur`:           before  62.23 ms [62.2, 58.8, 62.7]    | after  58.84 ms [58.8, 58.3, 68.2]    (delta   -3.39 ms)
+    - `finish.maskMax`:        before  13.31 ms [13.3, 13.2, 13.8]    | after  13.38 ms [13.4, 12.9, 14.0]    (delta   +0.07 ms)
+    - `finish.erode`:          before  39.72 ms [39.7, 38.9, 41.0]    | after  40.94 ms [41.1, 38.8, 40.9]    (delta   +1.22 ms)
+    - `finish.alignCopy`:      before   4.83 ms [ 4.8,  5.0,  4.8]    | after   4.76 ms [ 4.8,  4.8,  5.1]    (delta   -0.07 ms)
+    - `finish.shrink`:         before 143.06 ms [143.1, 147.0, 140.7] | after  13.16 ms [13.2, 12.6, 13.8]    (delta -129.90 ms, 10.87x)
+    - `finish.ring`:           before   5.90 ms [ 6.2,  5.9,  5.6]    | after   6.72 ms [ 6.7,  5.8,  7.5]    (delta   +0.82 ms)
+    - `finish.fit`:            before   5.61 ms [ 5.6,  5.7,  5.4]    | after   5.91 ms [ 5.9,  5.3,  6.0]    (delta   +0.30 ms)
+    - `finish.colorMatch`:     before  47.38 ms [48.0, 47.4, 45.8]    | after  50.67 ms [50.7, 53.3, 48.7]    (delta   +3.29 ms)
+    - `finish.finalAlpha`:     before   9.06 ms [13.5,  8.3,  9.1]    | after  10.46 ms [ 9.8, 18.3, 10.5]    (delta   +1.40 ms)
+    - `finish.encode`:         before  11.67 ms [11.7, 13.0, 10.0]    | after  12.42 ms [11.4, 19.2, 12.4]    (delta   +0.75 ms)
+    - `finish.K34_sum`:        before 143.06 ms [143.1, 147.0, 140.7] | after  13.16 ms [13.2, 12.6, 13.8]    (delta -129.90 ms, 10.87x)
+  - `stitchCalls`:
+    - before: `{"alpha_to_mask": 2, "mask_bounds_f32": 2, "box_blurs": 3, "dilate_mask": 2, "mask_max_clamp": 3, "mask_to_rgba": 3, "blend_alpha": 2, "color_match_rgba": 1, "erode_mask": 1, "mask_one_minus": 1}`
+    - after:  `{"alpha_to_mask": 2, "mask_bounds_f32": 2, "box_blurs": 3, "dilate_mask": 2, "mask_max_clamp": 3, "mask_to_rgba": 3, "blend_alpha": 2, "color_match_rgba": 1, "edgefit_shrink": 2, "erode_mask": 1, "mask_one_minus": 1}`
+
+4. Standalone `warpRgba` Route A/B after Vectorizing `lanes::warp_rgba` (`docs/measurements/k34_2026-11-08/warp_ab/`, 3 alternating rounds, port 9615)
+------------------------------------------------------------------------------------------------------------------------------------------------------
+- Per review finding `K34-route-warp-default`, after vectorizing the coordinate/clamp/weight computation in `lanes::warp_rgba`, we ran 3 alternating fresh-instance Electron rounds comparing `warpRgba: "js"` vs `warpRgba: "rust"` ALONE (with `edgefitShrink: "rust"` and `warpCoverage: "rust"` held constant in both arms; worker route propagated via `STITCH_WORKER_ROUTES` in `stitch_worker.js`):
+  a) `edgefit_2048` (2048 x 2048):
+     - `split.warp`:            JS  81.81 ms [81.8, 79.1, 82.9]    | Rust  63.20 ms [63.7, 63.1, 63.2]    (delta -18.61 ms, 1.29x faster, non-overlapping ranges)
+     - `split.K34_sum`:         JS 109.90 ms [109.9, 108.1, 111.3] | Rust  91.19 ms [91.2, 91.9, 91.2]    (delta -18.71 ms, 1.21x faster, non-overlapping ranges)
+     - `pxCalls`:               JS `{"edgefit_shrink": 6, "warp_coverage": 3}` | Rust `{"edgefit_shrink": 6, "warp_coverage": 3, "warp_rgba": 3}`
+  b) `stitch_align_2048` (2048 x 2048 crop):
+     - `worker.warp`:           JS  86.46 ms [86.5, 84.3, 89.0]    | Rust  63.41 ms [64.4, 63.4, 62.2]    (delta -23.05 ms, 1.36x faster, non-overlapping ranges)
+     - `worker.K34_sum`:        JS 127.18 ms [127.2, 121.6, 128.0] | Rust 103.52 ms [104.2, 103.5, 100.3] (delta -23.66 ms, 1.23x faster, non-overlapping ranges)
+     - `worker.laps_sum`:       JS 634.09 ms [688.8, 634.1, 632.9] | Rust 629.10 ms [640.0, 629.1, 616.0] (delta  -4.99 ms)
+     - `worker.wall`:           JS 691.21 ms [767.4, 691.2, 685.8] | Rust 686.26 ms [696.2, 686.3, 668.9] (delta  -4.95 ms)
+     - `window.warp`:           JS  85.64 ms [85.6, 82.6, 86.6]    | Rust  62.52 ms [62.5, 62.7, 61.8]    (delta -23.12 ms, 1.37x faster, non-overlapping ranges)
+     - `window.K34_sum`:        JS 125.92 ms [125.9, 124.2, 126.9] | Rust 103.26 ms [104.5, 103.3, 102.7] (delta -22.66 ms, 1.22x faster, non-overlapping ranges)
+     - `window.laps_sum`:       JS 594.96 ms [595.0, 608.6, 588.8] | Rust 571.60 ms [577.7, 571.6, 557.9] (delta -23.36 ms, non-overlapping ranges)
+     - `window.wall`:           JS 712.63 ms [733.2, 710.3, 712.6] | Rust 689.53 ms [698.0, 689.5, 666.1] (delta -23.10 ms, non-overlapping ranges)
+  c) `stitch_align_4096` (4096 x 4096 crop):
+     - `worker.warp`:           JS 304.44 ms [304.4, 303.3, 321.1] | Rust 240.22 ms [240.2, 245.3, 237.7] (delta -64.22 ms, 1.27x faster, non-overlapping ranges)
+     - `worker.K34_sum`:        JS 456.67 ms [456.7, 452.9, 474.9] | Rust 390.26 ms [389.0, 405.5, 390.3] (delta -66.41 ms, 1.17x faster, non-overlapping ranges)
+     - `worker.laps_sum`:       JS 2050.91 ms [2050.9, 2008.7, 2112.9] | Rust 2041.24 ms [2063.4, 2041.2, 1986.2] (delta -9.67 ms)
+     - `worker.wall`:           JS 2237.14 ms [2237.1, 2208.2, 2321.1] | Rust 2230.48 ms [2264.2, 2230.5, 2175.6] (delta -6.66 ms)
+     - `window.warp`:           JS 308.55 ms [308.6, 305.0, 313.9] | Rust 248.63 ms [248.6, 248.9, 239.8] (delta -59.92 ms, 1.24x faster, non-overlapping ranges)
+     - `window.K34_sum`:        JS 460.02 ms [460.0, 456.4, 463.7] | Rust 396.32 ms [397.9, 396.3, 394.6] (delta -63.70 ms, 1.16x faster, non-overlapping ranges)
+     - `window.laps_sum`:       JS 1966.08 ms [1956.4, 1966.1, 1969.0] | Rust 1933.78 ms [1933.8, 1986.8, 1906.8] (delta -32.30 ms)
+
+5. Decision Rule (docs/PLAN_WASM_BUILD.md §1.1) & K35 Split Analysis (§4.10)
+----------------------------------------------------------------------------
+- **K34 routes (`edgefitShrink: "rust"`, `warpRgba: "rust"`, `warpCoverage: "rust"`)**:
+  - Whole-operation walls win across every benchmark: `edgefit_2048` `fit` `-70.93 ms` (`2.32x`), `stitch_align_2048` worker wall `-142.00 ms` (`-18.9%`), `stitch_align_4096` worker wall `-367.06 ms` (`-14.9%`), cold `native_test provider_crop` wall `-41.00 ms` (`-7.6%`), and warmed `provider_crop` wall `-94.00 ms` (`-18.3%`, `finish.SUM` `-112.97 ms` / `-29.1%`).
+  - Every individual kernel wins in both `PX_BENCH` (`edgefit_shrink` `5.41x`, `warp_rgba` `1.48x`, `warp_coverage` `1.37x`) and Electron (`edgefit_shrink` `-50.8 ms` at 2048^2 and `-121.8 ms` at 4096^2; `warp_rgba` alone `-18.61 ms` on `edgefit_2048`, `-23.05 ms` on `stitch_align_2048` worker, `-64.22 ms` on `stitch_align_4096` worker; `warp_coverage` `-1.62 ms`, `-2.60 ms`, `-21.43 ms`). All three stay `"rust"` in `DEFAULT_ROUTES`.
+- **K35 (`edgefit_levels`) conditional split analysis**:
+  - Because `fitEdges` always operates on the shrunk `512 x 512` working plane (`WORK = 512`), its cost is `O(512^2)` and does not grow with document or crop size:
+    - `native_test provider_crop` (1492^2 crop, early stop): `finish.fit` = **5.91 ms** warmed (**6.83 ms** cold), which is **2.2%** of `finish.SUM` (`274.59 ms`) and **1.4%** of `provider_crop` wall (`420.00 ms`).
+    - `stitch_align_2048` (2048^2 crop, full 4-level `[8, 4, 2, 1]` x 8 Gauss-Newton steps): `worker.fit` = **41.45 ms** (**6.8%** of `609.98 ms` worker finish wall; **4.1%** of `1003.28 ms` prepare + finish wall); `window.fit` = **22.44 ms** (**3.7%** of `610.37 ms` window finish wall).
+    - `stitch_align_4096` (4096^2 crop, full 4-level fit): `worker.fit` = **22.71 ms** (**1.1%** of `2103.73 ms` worker finish wall; **0.8%** of `2975.43 ms` prepare + finish wall); `window.fit` = **28.62 ms** (**1.3%** of `2156.67 ms` window finish wall).
+    - `edgefit_2048` (standalone synthetic `fitLayerRGBA` without stitch mask/blur/colorMatch/encode): `split.fitEdges` = **31.09 ms** out of `53.66 ms` `fitLayerRGBA` (**57.9%** of `fitLayerRGBA` alone now that `shrink` is `21.58 ms`, and **21.3%** of the `146.18 ms` `shrink + ring + fitEdges + warp + coverage` sum).
+  - **Recommendation**: In real stitch operations (`provider_crop`, `stitch_align_2048`, `stitch_align_4096`), `fitEdges` is **6–41 ms** (**1.1%–6.8%** of `finishResultAsync` wall, **0.8%–4.1%** of prepare + finish wall), smaller than the run-to-run spread of `stitch_align`. Recommend **skipping K35 ("stays JS, measured")** unless you want the remaining ~15–25 ms on standalone `fitLayerRGBA` / `Match edges` (`match_edges`) captured.
+
+6. Gates, Review Fixes & Mutation Round
+---------------------------------------
+- Review fixes applied:
+  1. `K34-route-warp-default`: vectorized coordinate/clamp/weight computation in `lanes::warp_rgba` (`crates/px/src/maskf.rs`), cutting `warp_rgba` SIMD time from `43.91 -> 36.83 ms` in `PX_BENCH` and winning every row in the 3-round standalone `warpRgba` Electron A/B (`-18.61 ms` on `edgefit_2048`, `-23.05 ms` on `stitch_align_2048` worker, `-64.22 ms` on `stitch_align_4096` worker).
+  2. `K34-simd-finite-overflow`: added finite-bound overflow guards (`(a00.abs()*cap_x + a01.abs()*cap_y + tx.abs()).is_finite()` and y counterpart, plus `+ cap_x + 1.0` / `+ cap_y + 1.0` in `warp_coverage`) to `lanes::warp_rgba` and `lanes::warp_coverage` so finite matrices whose products overflow to `+inf + -inf = NaN` fall back to scalar; added `["finite overflow to NaN", [1.797e308, -1.797e308, 0, 0, 1, 0]]`, `["finite overflow y to NaN", [1, 0, 0, 1.797e308, -1.797e308, 0]]`, and `[5, 3]` geometry (`82 cases x 2 offsets` for `warp_rgba`, `90 cases x 2 offsets` for `warp_coverage`) to `tools/px_test.js`.
+  3. `K34-no-trap-regression-test`: added trap recovery rows for `K.edgefitShrink`, `K.warpRgba`, and `K.warpCoverage` to `retouchRouteCases` in `tools/px_test.js` and updated the warned-once regex and count (`5 -> 8`).
+- Gates:
+  - Initial (`k34-tiles`, `k34-canvas` via `run_gates_both.sh k34 --ports 9615,9616 --offline lint types pixels editor generate size transparent`):
+    - `k34-tiles`:  `lint rc=0 13s`, `types rc=0 9s`, `pixels rc=0 13s PASS`, `editor rc=0 163s PASS`, `generate rc=0 76s PASS`, `size rc=0 4s PASS`, `transparent rc=0 1s PASS` -> ALL PASS (279s).
+    - `k34-canvas`: `lint rc=0 13s`, `types rc=0 9s`, `pixels rc=0 11s PASS`, `editor rc=0 144s PASS`, `generate rc=0 75s PASS`, `size rc=0 3s PASS`, `transparent rc=0 2s PASS` -> ALL PASS (257s).
+  - Review fix (`k34fix-tiles`, `k34fix-canvas` via `run_gates_both.sh k34fix --ports 9615,9616 --offline lint types pixels generate size transparent`):
+    - `k34fix-tiles`:  `lint rc=0 7s`, `types rc=0 5s`, `pixels rc=0 10s PASS`, `generate rc=0 78s PASS`, `size rc=0 2s PASS`, `transparent rc=0 1s PASS` -> ALL PASS (119s).
+    - `k34fix-canvas`: `lint rc=0 8s`, `types rc=0 5s`, `pixels rc=0 10s PASS`, `generate rc=0 77s PASS`, `size rc=0 2s PASS`, `transparent rc=0 1s PASS` -> ALL PASS (119s).
+- Mutation rounds (`docs/measurements/k34_2026-11-08/mutation/results.txt`, 15 mutants in `mut_k34.py`):
+  - `orig`: build identical (`True`), full `px_test` green (`101 s`), focused `px_test (only: mask)` green (`4 s`), full `editor` gate green (`176 s`), focused `editor (an_aligned_answer_shows_no_repeated_edge)` green (`17 s`).
+  - All 15 mutants (`shrink_row_scalar_green_coeff`, `shrink_row_simd_green_coeff`, `edgefit_shrink_alpha_floor`, `edgefit_shrink_1to1_alpha_floor`, `warp_rgba_scalar_dy`, `warp_rgba_simd_fx`, `warp_rgba_simd_overflow_guard`, `warp_coverage_scalar_ramp`, `warp_coverage_simd_ramp`, `warp_coverage_simd_overflow_guard`, `kernels_route_edgefit_shrink`, `kernels_route_warp_rgba`, `kernels_route_warp_coverage`, `kernels_trap_warp_rgba`, `edgefit_call_warp_coverage`) killed (`15 / 15` killed, `0` survived); restored copy identical (`True`) and full `px_test` green.

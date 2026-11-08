@@ -1,0 +1,74 @@
+[10:46:44] after: da4ba5e + working tree, px.wasm 198871 B (e7c752c4f02c0d85), px_scalar.wasm 159923 B
+[10:46:45] before: /f/scumble_before_k34, px.wasm 188285 B (ae1c88b53a5d28cf), px_scalar.wasm 155461 B
+[10:46:45] == round 1: acquiring busy lock
+lock: taken after 0 s
+[10:46:45] lock: taken (K34 measuring r1 (chain-e, port 9615) 41224 2026-11-08T10:46:45)
+[10:46:57] before r1: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[10:47:27] w0 rc=0
+closed
+[10:47:43] before r1: native_test 15000x10000 --no-profile provider_crop (cold)
+[10:47:49] native rc=0
+closed
+[10:48:04] before r1: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[10:48:12] native_warm rc=0
+closed
+[10:48:27] after r1: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[10:48:57] w0 rc=0
+closed
+[10:49:12] after r1: native_test 15000x10000 --no-profile provider_crop (cold)
+[10:49:18] native rc=0
+closed
+[10:49:34] after r1: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[10:49:41] native_warm rc=0
+closed
+lock: released
+[10:49:46] lock: released (K34 measuring r1 (chain-e, port 9615) 41224 2026-11-08T10:46:45)
+[10:49:46] == round 2: acquiring busy lock
+lock: taken after 0 s
+[10:49:46] lock: taken (K34 measuring r2 (chain-e, port 9615) 53416 2026-11-08T10:49:46)
+[10:49:56] after r2: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[10:50:24] w0 rc=0
+closed
+[10:50:39] after r2: native_test 15000x10000 --no-profile provider_crop (cold)
+[10:50:46] native rc=0
+closed
+[10:51:01] after r2: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[10:51:08] native_warm rc=0
+closed
+[10:51:24] before r2: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[10:51:55] w0 rc=0
+closed
+[10:52:10] before r2: native_test 15000x10000 --no-profile provider_crop (cold)
+[10:52:17] native rc=0
+closed
+[10:52:32] before r2: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[10:52:40] native_warm rc=0
+closed
+lock: released
+[10:52:44] lock: released (K34 measuring r2 (chain-e, port 9615) 53416 2026-11-08T10:49:46)
+[10:52:44] == round 3: acquiring busy lock
+lock: taken after 0 s
+[10:52:44] lock: taken (K34 measuring r3 (chain-e, port 9615) 29748 2026-11-08T10:52:44)
+[10:52:55] before r3: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[10:53:24] w0 rc=0
+closed
+[10:53:39] before r3: native_test 15000x10000 --no-profile provider_crop (cold)
+[10:53:46] native rc=0
+closed
+[10:54:01] before r3: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[10:54:09] native_warm rc=0
+closed
+[10:54:24] after r3: w0_bench edgefit_2048,stitch_align_2048,stitch_align_4096
+[10:54:51] w0 rc=0
+closed
+[10:55:06] after r3: native_test 15000x10000 --no-profile provider_crop (cold)
+[10:55:13] native rc=0
+closed
+[10:55:28] after r3: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[10:55:36] native_warm rc=0
+closed
+lock: released
+[10:55:40] lock: released (K34 measuring r3 (chain-e, port 9615) 29748 2026-11-08T10:52:44)
+[10:55:40] px_bench: PX_BENCH=1 PX_ONLY=mask node tools/px_test.js
+[10:55:49] done
+no instance on 9615 Cannot connect to host 127.0.0.1:9615 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
