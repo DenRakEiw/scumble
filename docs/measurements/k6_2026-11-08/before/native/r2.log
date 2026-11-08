@@ -1,0 +1,50 @@
+probes in
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1313, "encodeMs": 2463, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 3935 ms, longest block 662 ms
+   {"loadFileMs": 3784, "tiles": 2360, "compositorBefore": "not made", "compositorAfter": "made"}
+   main thread ms: idle 2512 | browser natives 608 | px kernels 3 | other JS 597 | GC 82 | (program) 376
+     natives: getProgramParameter 553, beat 11, getContext 8, texSubImage2D 7, getShaderParameter 7, walk 5, setTimeout 4, f 4
+     px kernels by function (self time): _in [px.js:258] 3
+     JS by file: inpaint_tiles.js 532, inpaint_compositor.js 30, inpaint_canvas.js 13, inpaint_arena.js 11, inpaint_pool.js 6, plugins.js 2, inpaint_status.js 1, inpaint_pixels.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1385] 315, normalizeBlock [inpaint_tiles.js:541] 150, put [inpaint_tiles.js:1153] 26, coarseSlot [inpaint_tiles.js:1238] 9, allocTileBytes [inpaint_arena.js:110] 9, _tileInstances [inpaint_compositor.js:697] 8, _slot [inpaint_compositor.js:649] 7, composite [inpaint_compositor.js:1026] 6
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   3     553.1 ms        0.0 MB
+     gl getShaderParameter                    6       7.7 ms        0.0 MB
+     gl texSubImage2D                      2360       5.0 ms        1.0 MB
+     worker postMessage (moved)             164       3.0 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.4 ms        0.0 MB
+     blob arrayBuffer                         8       0.6 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.6 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 2648.8, "parse": 1.4, "read": 73.8, "write": 2571.6, "wait": 1313.8, "copy": 103.3, "unfilter": 1161.4, "deliver": 15.9, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 1032.8, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+
+== open_again: wall 3821 ms, longest block 96 ms
+   {"loadFileMs": 3660, "tiles": 2360, "into": "a new tab", "compositorBefore": "not made", "compositorAfter": "made", "editors": 3}
+   main thread ms: idle 3201 | browser natives 90 | px kernels 1 | other JS 606 | GC 57 | (program) 326
+     natives: getBoundingClientRect 12, texSubImage2D 9, beat 9, setTimeout 8, getShaderParameter 6, getContext 6, getProgramParameter 5, f 5
+     px kernels by function (self time): _in [px.js:258] 1
+     JS by file: inpaint_tiles.js 550, inpaint_compositor.js 25, inpaint_canvas.js 12, inpaint_arena.js 6, host.js 4, inpaint_pool.js 3, shell.js 2, main.js 2
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1385] 357, normalizeBlock [inpaint_tiles.js:541] 126, put [inpaint_tiles.js:1153] 23, coarseSlot [inpaint_tiles.js:1238] 11, _upload [inpaint_compositor.js:847] 7, _slot [inpaint_compositor.js:649] 7, _stampAt [inpaint_tiles.js:1070] 7
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      4800      11.6 ms        9.7 MB
+     gl getShaderParameter                    6       7.9 ms        0.0 MB
+     gl bufferData                           34       3.9 ms        0.3 MB
+     gl getProgramParameter                   3       3.7 ms        0.0 MB
+     worker postMessage (moved)              92       2.3 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       2.1 ms        0.0 MB
+     2d drawImage >= 1 MP                    11       0.8 ms       92.0 MB
+     blob arrayBuffer                         8       0.7 ms        0.0 MB
+   worker png_read: 1 jobs, {"kernel": 2649.3, "parse": 1.6, "read": 81.9, "write": 2564.3, "wait": 1309.2, "copy": 111.5, "unfilter": 1185.6, "deliver": 20.1, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 803.2, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+[ok] close: {"closed": 2, "arena": {"slots": 4720, "chunks": 19, "allocated": 7080, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 1275068416, "freeSlots": 144}}
+
+== the same file opened twice in this instance
+   open_the_file  wall   3935 ms  block   662 ms  getProgramParameter   3 calls  553.1 ms  compileShader   6 calls   0.0 ms  (profile 553 ms)  compositor not made -> made  focused True
+   open_again     wall   3821 ms  block    96 ms  getProgramParameter   3 calls    3.7 ms  compileShader   6 calls   0.0 ms  (profile 5 ms)  compositor not made -> made  focused True
+
+RESULT measured

@@ -1,0 +1,153 @@
+{
+  "runtime": "electron",
+  "v8": "15.2.124.19-electron.0",
+  "crcSweep": [
+    {
+      "bytes": 16,
+      "simd_us": 0.097,
+      "scalar_us": 0.099,
+      "js_us": 0.028,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 0.29
+    },
+    {
+      "bytes": 32,
+      "simd_us": 0.075,
+      "scalar_us": 0.072,
+      "js_us": 0.052,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 0.69
+    },
+    {
+      "bytes": 48,
+      "simd_us": 0.1,
+      "scalar_us": 0.083,
+      "js_us": 0.074,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 0.74
+    },
+    {
+      "bytes": 64,
+      "simd_us": 0.093,
+      "scalar_us": 0.094,
+      "js_us": 0.235,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 2.53
+    },
+    {
+      "bytes": 96,
+      "simd_us": 0.104,
+      "scalar_us": 0.132,
+      "js_us": 0.156,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 1.5
+    },
+    {
+      "bytes": 128,
+      "simd_us": 0.138,
+      "scalar_us": 0.109,
+      "js_us": 0.218,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 1.58
+    },
+    {
+      "bytes": 256,
+      "simd_us": 0.168,
+      "scalar_us": 0.151,
+      "js_us": 1.036,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 6.17
+    },
+    {
+      "bytes": 1024,
+      "simd_us": 0.413,
+      "scalar_us": 0.42,
+      "js_us": 1.687,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 4.08
+    },
+    {
+      "bytes": 4096,
+      "simd_us": 1.416,
+      "scalar_us": 1.474,
+      "js_us": 16.283,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 11.5
+    },
+    {
+      "bytes": 65536,
+      "simd_us": 20.698,
+      "scalar_us": 20.496,
+      "js_us": 102.95,
+      "simd_ms_per_mb": 0.331,
+      "js_ms_per_mb": 1.647,
+      "speedup_vs_js": 4.97
+    },
+    {
+      "bytes": 262144,
+      "simd_us": 80.728,
+      "scalar_us": 80.777,
+      "js_us": 410.058,
+      "simd_ms_per_mb": 0.323,
+      "js_ms_per_mb": 1.64,
+      "speedup_vs_js": 5.08
+    },
+    {
+      "bytes": 1048576,
+      "simd_us": 342.938,
+      "scalar_us": 344.133,
+      "js_us": 1663.403,
+      "simd_ms_per_mb": 0.343,
+      "js_ms_per_mb": 1.663,
+      "speedup_vs_js": 4.85
+    },
+    {
+      "bytes": 67108864,
+      "simd_us": 29919.6,
+      "scalar_us": 29145.9,
+      "js_us": 111498.6,
+      "simd_ms_per_mb": 0.467,
+      "js_ms_per_mb": 1.742,
+      "speedup_vs_js": 3.73
+    }
+  ],
+  "chunkBench": [
+    {
+      "label": "256 KB IDAT",
+      "payload_bytes": 262144,
+      "before_js_pngChunk_ms": 0.54,
+      "after_wasm_chunk_frame_ms": 0.152,
+      "speedup": 3.55
+    },
+    {
+      "label": "1 MB IDAT",
+      "payload_bytes": 1048576,
+      "before_js_pngChunk_ms": 2.328,
+      "after_wasm_chunk_frame_ms": 0.611,
+      "speedup": 3.81
+    },
+    {
+      "label": "4 MB IDAT",
+      "payload_bytes": 4194304,
+      "before_js_pngChunk_ms": 10.672,
+      "after_wasm_chunk_frame_ms": 2.107,
+      "speedup": 5.07
+    }
+  ],
+  "combineRec": {
+    "total_mb": 150,
+    "parts": 40,
+    "combine_fold_ms": 0.0112,
+    "rust_full_crc_ms": 64.25,
+    "js_full_crc_ms": 260.56
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "runtime": "node",
+  "v8": "13.6.233.17-node.50",
+  "crcSweep": [
+    {
+      "bytes": 16,
+      "simd_us": 0.081,
+      "scalar_us": 0.113,
+      "js_us": 0.045,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 0.56
+    },
+    {
+      "bytes": 32,
+      "simd_us": 0.115,
+      "scalar_us": 0.113,
+      "js_us": 0.058,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 0.5
+    },
+    {
+      "bytes": 48,
+      "simd_us": 0.097,
+      "scalar_us": 0.089,
+      "js_us": 0.097,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 1
+    },
+    {
+      "bytes": 64,
+      "simd_us": 0.11,
+      "scalar_us": 0.108,
+      "js_us": 0.252,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 2.29
+    },
+    {
+      "bytes": 96,
+      "simd_us": 0.116,
+      "scalar_us": 0.14,
+      "js_us": 0.581,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 5.01
+    },
+    {
+      "bytes": 128,
+      "simd_us": 0.144,
+      "scalar_us": 0.146,
+      "js_us": 0.518,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 3.6
+    },
+    {
+      "bytes": 256,
+      "simd_us": 0.193,
+      "scalar_us": 0.168,
+      "js_us": 0.431,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 2.23
+    },
+    {
+      "bytes": 1024,
+      "simd_us": 0.473,
+      "scalar_us": 0.426,
+      "js_us": 1.72,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 3.64
+    },
+    {
+      "bytes": 4096,
+      "simd_us": 1.514,
+      "scalar_us": 1.627,
+      "js_us": 6.788,
+      "simd_ms_per_mb": null,
+      "js_ms_per_mb": null,
+      "speedup_vs_js": 4.48
+    },
+    {
+      "bytes": 65536,
+      "simd_us": 21.93,
+      "scalar_us": 22.62,
+      "js_us": 108.311,
+      "simd_ms_per_mb": 0.351,
+      "js_ms_per_mb": 1.733,
+      "speedup_vs_js": 4.94
+    },
+    {
+      "bytes": 262144,
+      "simd_us": 86.077,
+      "scalar_us": 85.433,
+      "js_us": 430.49,
+      "simd_ms_per_mb": 0.344,
+      "js_ms_per_mb": 1.722,
+      "speedup_vs_js": 5
+    },
+    {
+      "bytes": 1048576,
+      "simd_us": 400.743,
+      "scalar_us": 391.163,
+      "js_us": 1726.185,
+      "simd_ms_per_mb": 0.401,
+      "js_ms_per_mb": 1.726,
+      "speedup_vs_js": 4.31
+    },
+    {
+      "bytes": 67108864,
+      "simd_us": 29579.3,
+      "scalar_us": 29245.9,
+      "js_us": 281825.2,
+      "simd_ms_per_mb": 0.462,
+      "js_ms_per_mb": 4.404,
+      "speedup_vs_js": 9.53
+    }
+  ],
+  "chunkBench": [
+    {
+      "label": "256 KB IDAT",
+      "payload_bytes": 262144,
+      "before_js_pngChunk_ms": 0.522,
+      "after_wasm_chunk_frame_ms": 0.185,
+      "speedup": 2.82
+    },
+    {
+      "label": "1 MB IDAT",
+      "payload_bytes": 1048576,
+      "before_js_pngChunk_ms": 2.188,
+      "after_wasm_chunk_frame_ms": 0.604,
+      "speedup": 3.62
+    },
+    {
+      "label": "4 MB IDAT",
+      "payload_bytes": 4194304,
+      "before_js_pngChunk_ms": 7.817,
+      "after_wasm_chunk_frame_ms": 2.327,
+      "speedup": 3.36
+    }
+  ],
+  "combineRec": {
+    "total_mb": 150,
+    "parts": 40,
+    "combine_fold_ms": 0.0157,
+    "rust_full_crc_ms": 69.36,
+    "js_full_crc_ms": 261.99
+  }
+}

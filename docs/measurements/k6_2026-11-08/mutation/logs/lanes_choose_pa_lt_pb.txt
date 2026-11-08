@@ -1,0 +1,37 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 11 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k6_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 208199 bytes, sha256 0d70746552000c6b
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k6_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 167451 bytes, sha256 ac99651178ff1fd3
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k6_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.31s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k6_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.23s
+$ node tools/px_test.js  (rc 0, 0 s, PX_ONLY=pngRead)
+PASS (only: pngRead; PX_ONLY, not the full test)
+ok   rust simd png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)
+ok   rust simd png_unfilter_rows on rows of 1..67 px (and 128..257 px) with forced Paeth ties (ac=15513, bc=15064) equals its twin and reconstructs raw at even and odd offsets  ac=15513, bc=15064
+       256 rows of 15,000 RGB pixels, Paeth: rust simd 40.9 ms, twin 69.2 ms
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)
+ok   rust scalar png_unfilter_rows on rows of 1..67 px (and 128..257 px) with forced Paeth ties (ac=15513, bc=15064) equals its twin and reconstructs raw at even and odd offsets  ac=15513, bc=15064
+       256 rows of 15,000 RGB pixels, Paeth: rust scalar 33.0 ms, twin 49.2 ms
+PASS (only: pngRead; PX_ONLY, not the full test)
+(node:53560) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k6_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k6_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 127 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:45116) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k6_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k6_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

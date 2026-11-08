@@ -164,16 +164,16 @@ pub fn unfilter_rows(lines: &mut [u8], rows: usize, row_bytes: usize, bpp: usize
         let up: &[u8] = if y == 0 { &prev[..row_bytes] } else { &done[(y - 1) * stride + 1..y * stride] };
         match (ft, bpp) {
             (0, _) => {}
-            (2, _) => {
-                for i in 0..row_bytes { cur[i] = cur[i].wrapping_add(up[i]); }
-            }
+            #[cfg(target_feature = "simd128")] (2, _) => lanes::up_row(cur, up),
+            #[cfg(not(target_feature = "simd128"))] (2, _) => { for i in 0..row_bytes { cur[i] = cur[i].wrapping_add(up[i]); } }
+            //
             // a pixel at a time, its channels side by side: the dependency is on the pixel before, not the byte before
             (1, 3) => sub_px::<3>(cur),
             (1, 4) => sub_px::<4>(cur),
-            (3, 3) => avg_px::<3>(cur, up),
-            (3, 4) => avg_px::<4>(cur, up),
-            (4, 3) => paeth_px::<3>(cur, up),
-            (4, 4) => paeth_px::<4>(cur, up),
+            (3, 3) => row_avg::<3>(cur, up),
+            (3, 4) => row_avg::<4>(cur, up),
+            (4, 3) => row_paeth::<3>(cur, up),
+            (4, 4) => row_paeth::<4>(cur, up),
             (1, _) => {
                 for i in bpp..row_bytes { cur[i] = cur[i].wrapping_add(cur[i - bpp]); }
             }
@@ -222,6 +222,32 @@ pub fn lines_to_rgba(lines: &[u8], rows: usize, w: usize, channels: usize, out: 
 // is kept elsewhere and nothing is allocated. The first pixel (no left neighbour) and the bytes after the last whole
 // group go through the scalar code, a row narrower than the first pixel and one group through `filter_row` itself.
 // The scalar build is `filter_row`, unchanged: tools/px_test.js holds the two builds and the JS twin to the same bytes.
+
+#[cfg(not(target_feature = "simd128"))]
+#[inline(always)]
+fn row_avg<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    avg_px::<B>(cur, up)
+}
+
+#[cfg(not(target_feature = "simd128"))]
+#[inline(always)]
+fn row_paeth<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    paeth_px::<B>(cur, up)
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+fn row_avg<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    let _ = avg_px::<B>;
+    lanes::avg_px::<B>(cur, up)
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+fn row_paeth<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    let _ = paeth_px::<B>;
+    lanes::paeth_px::<B>(cur, up)
+}
 
 #[cfg(not(target_feature = "simd128"))]
 #[inline(always)]
@@ -391,4 +417,162 @@ mod lanes {
         let pc = i16x8_abs(i16x8_add(bc, ac));
         (v128_and(i16x8_le(pa, pb), i16x8_le(pa, pc)), i16x8_le(pb, pc))
     }
+
+    // ---- reading: Up in 16-byte groups, Average and Paeth per pixel across channels in i16x8 lanes (K6) -------------
+
+    /// Undo filter 2 (Up) 16 bytes at a time, the tail byte by byte.
+    pub fn up_row(cur: &mut [u8], up: &[u8]) {
+        let n = cur.len().min(up.len());
+        let end = n / 16 * 16;
+        let (c, u) = (cur.as_mut_ptr(), up.as_ptr());
+        let mut i = 0;
+        unsafe {
+            while i < end {
+                let x = v128_load(c.add(i) as *const v128);
+                let b = v128_load(u.add(i) as *const v128);
+                v128_store(c.add(i) as *mut v128, i8x16_add(x, b));
+                i += 16;
+            }
+        }
+        for i in end..n {
+            cur[i] = cur[i].wrapping_add(up[i]);
+        }
+    }
+
+    /// Undo filter 3 (Average) a pixel of `B` bytes (3 or 4) at a time, its channels side by side in i16x8 lanes.
+    pub fn avg_px<const B: usize>(cur: &mut [u8], up: &[u8]) {
+        let n = cur.len().min(up.len()) / B * B;
+        let (cp, up) = (cur.as_mut_ptr(), up.as_ptr());
+        let mut i = 0;
+        unsafe {
+            let mask = i16x8_splat(255);
+            let mut a = i16x8_splat(0);
+            while i < n {
+                let x = load_px::<B>(cp.add(i));
+                let b = load_px::<B>(up.add(i));
+                let pred = u16x8_shr(i16x8_add(a, b), 1);
+                a = v128_and(i16x8_add(x, pred), mask);
+                store_px::<B>(cp.add(i), a);
+                i += B;
+            }
+        }
+    }
+
+    /// Undo filter 4 (Paeth) a pixel of `B` bytes (3 or 4) at a time, its channels side by side in i16x8 lanes, the
+    /// predictor picked with `v128_bitselect` in the standard's tie order (a, then b, then c).
+    pub fn paeth_px<const B: usize>(cur: &mut [u8], up: &[u8]) {
+        let n = cur.len().min(up.len()) / B * B;
+        let (cp, up) = (cur.as_mut_ptr(), up.as_ptr());
+        let mut i = 0;
+        unsafe {
+            let mask = i16x8_splat(255);
+            let mut a = i16x8_splat(0);
+            let mut c = i16x8_splat(0);
+            while i < n {
+                let x = load_px::<B>(cp.add(i));
+                let b = load_px::<B>(up.add(i));
+                let (ma, mb) = choose(a, b, c);
+                let pred = v128_bitselect(a, v128_bitselect(b, c, mb), ma);
+                a = v128_and(i16x8_add(x, pred), mask);
+                c = b;
+                store_px::<B>(cp.add(i), a);
+                i += B;
+            }
+        }
+    }
+
+    /// A pixel of `B` bytes (3 or 4) widened into the low `B` i16 lanes (`0..255`).
+    #[inline(always)]
+    unsafe fn load_px<const B: usize>(p: *const u8) -> v128 {
+        if B == 4 {
+            u16x8_extend_low_u8x16(v128_load32_zero(p as *const u32))
+        } else {
+            let v = v128_load16_lane::<0>(u8x16_splat(0), p as *const u16);
+            u16x8_extend_low_u8x16(v128_load8_lane::<2>(v, p.add(2)))
+        }
+    }
+
+    /// The low `B` i16 lanes (`0..255`) narrowed and written as `B` bytes.
+    #[inline(always)]
+    unsafe fn store_px<const B: usize>(p: *mut u8, v: v128) {
+        let b = u8x16_narrow_i16x8(v, v);
+        if B == 4 {
+            v128_store32_lane::<0>(b, p as *mut u32);
+        } else {
+            v128_store16_lane::<0>(b, p as *mut u16);
+            v128_store8_lane::<2>(b, p.add(2));
+        }
+    }
 }
+
+/// IEEE 802.3 reflected CRC-32 (`0xEDB8_8320`) slice-by-16 lookup tables (`CRC_TABLE[0]` byte-wise, `CRC_TABLE[s]`
+/// shifted `s` bytes ahead). Built at compile time so `Cargo.lock` gains no dependency (`tools/build_px.py --locked`).
+const CRC_TABLE: [[u32; 256]; 16] = {
+    let mut t = [[0u32; 256]; 16];
+    let mut i = 0;
+    while i < 256 {
+        let mut c = i as u32;
+        let mut k = 0;
+        while k < 8 {
+            c = if c & 1 != 0 { (c >> 1) ^ 0xEDB8_8320 } else { c >> 1 };
+            k += 1;
+        }
+        t[0][i] = c;
+        i += 1;
+    }
+    let mut s = 1;
+    while s < 16 {
+        let mut i = 0;
+        while i < 256 {
+            let prev = t[s - 1][i];
+            t[s][i] = t[0][(prev & 0xFF) as usize] ^ (prev >> 8);
+            i += 1;
+        }
+        s += 1;
+    }
+    t
+};
+
+/// The CRC-32 of `src`, continued from `start` (0 for a new checksum), 16 bytes at a time through `CRC_TABLE`.
+pub fn crc32(src: &[u8], start: u32) -> u32 {
+    let mut c = !start;
+    let mut chunks = src.chunks_exact(16);
+    for b in &mut chunks {
+        let d0 = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) ^ c;
+        let d1 = u32::from_le_bytes([b[4], b[5], b[6], b[7]]);
+        let d2 = u32::from_le_bytes([b[8], b[9], b[10], b[11]]);
+        let d3 = u32::from_le_bytes([b[12], b[13], b[14], b[15]]);
+        c = CRC_TABLE[15][(d0 & 0xFF) as usize]
+            ^ CRC_TABLE[14][((d0 >> 8) & 0xFF) as usize]
+            ^ CRC_TABLE[13][((d0 >> 16) & 0xFF) as usize]
+            ^ CRC_TABLE[12][(d0 >> 24) as usize]
+            ^ CRC_TABLE[11][(d1 & 0xFF) as usize]
+            ^ CRC_TABLE[10][((d1 >> 8) & 0xFF) as usize]
+            ^ CRC_TABLE[9][((d1 >> 16) & 0xFF) as usize]
+            ^ CRC_TABLE[8][(d1 >> 24) as usize]
+            ^ CRC_TABLE[7][(d2 & 0xFF) as usize]
+            ^ CRC_TABLE[6][((d2 >> 8) & 0xFF) as usize]
+            ^ CRC_TABLE[5][((d2 >> 16) & 0xFF) as usize]
+            ^ CRC_TABLE[4][(d2 >> 24) as usize]
+            ^ CRC_TABLE[3][(d3 & 0xFF) as usize]
+            ^ CRC_TABLE[2][((d3 >> 8) & 0xFF) as usize]
+            ^ CRC_TABLE[1][((d3 >> 16) & 0xFF) as usize]
+            ^ CRC_TABLE[0][(d3 >> 24) as usize];
+    }
+    for &byte in chunks.remainder() {
+        c = CRC_TABLE[0][((c ^ byte as u32) & 0xFF) as usize] ^ (c >> 8);
+    }
+    !c
+}
+
+/// Frame `data_len` bytes already at `buf[8..8 + data_len]` as a PNG chunk of 4-byte `kind` (big-endian, e.g.
+/// `0x49444154` for `"IDAT"`): length and type in `buf[0..8]`, the chunk's CRC-32 over `buf[4..8 + data_len]` in
+/// `buf[8 + data_len..12 + data_len]`. Returns that CRC-32.
+pub fn chunk_frame(buf: &mut [u8], data_len: usize, kind: u32) -> u32 {
+    buf[0..4].copy_from_slice(&(data_len as u32).to_be_bytes());
+    buf[4..8].copy_from_slice(&kind.to_be_bytes());
+    let crc = crc32(&buf[4..8 + data_len], 0);
+    buf[8 + data_len..12 + data_len].copy_from_slice(&crc.to_be_bytes());
+    crc
+}
+

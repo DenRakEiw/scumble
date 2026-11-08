@@ -1,0 +1,114 @@
+K6 measurement summary (2026-11-08)
+===================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.2 K6, §5 row 19):
+- `crates/px/src/png.rs`: SIMD Up (`lanes::up_row`, 16 bytes at a time via `i8x16_add` + scalar tail), SIMD Average
+  (`lanes::avg_px::<3>` and `lanes::avg_px::<4>`, channels in `i16x8` lanes, `u16x8_shr(i16x8_add(a, b), 1)`), and
+  SIMD Paeth (`lanes::paeth_px::<3>` and `lanes::paeth_px::<4>`, channels in `i16x8` lanes, `i16x8_abs`, predictor
+  picked with `v128_bitselect` in the standard's tie order `a`, then `b`, then `c` via `lanes::choose`) inside
+  `unfilter_rows`.
+- No ABI change (`ABI = 31`); no route (`pngUnfilterRows` always calls `rustPx()` when mode is `"rust"`).
+- `renderer/editor/px/px_scalar.wasm` is byte-for-byte unchanged (`167,451 bytes`, sha256 `ac99651178ff1fd3`).
+- `renderer/editor/px/px.wasm`: `208,177 bytes`, sha256 `2208b82f6775478a` (before: `207,492 bytes`, sha256
+  `a41919750bce2075`).
+
+1. Node & Electron-as-Node kernel benchmarks (`docs/measurements/k6_2026-11-08/node/`)
+--------------------------------------------------------------------------------------
+Median ms across 11 runs (4,096 x 256) and 7 runs (15,000 x 256), including JS<->WASM boundary copies:
+
+Electron V8 (`node/electron_bench.log`):
+band       bpp  ch  filter                              before   after  scalar      js   after/before  vs scalar   vs js
+4096x256     3   0  Up (2)                                1.47    0.72    1.36    2.32          2.04x      1.89x   3.22x
+4096x256     3   0  Average (3)                           2.20    2.19    2.25    3.75          1.00x      1.03x   1.71x
+4096x256     3   0  Paeth (4)                             4.73    4.23    6.91   13.06          1.12x      1.63x   3.09x
+4096x256     3   0  Scumble mix (76% P, 23% A, 1% S)      4.10    3.88    6.33    9.95          1.06x      1.63x   2.56x
+4096x256     3   3  Up (2)                                2.25    1.24    2.26    5.54          1.81x      1.82x   4.47x
+4096x256     3   3  Average (3)                           3.23    2.89    2.85    6.70          1.12x      0.99x   2.32x
+4096x256     3   3  Paeth (4)                             5.68    4.84    7.58   14.92          1.17x      1.57x   3.08x
+4096x256     3   3  Scumble mix (76% P, 23% A, 1% S)      4.54    4.22    6.24   11.97          1.08x      1.48x   2.84x
+4096x256     4   0  Up (2)                                1.85    0.65    1.78    2.97          2.85x      2.74x   4.57x
+4096x256     4   0  Average (3)                           6.19    2.16    6.89    5.21          2.87x      3.19x   2.41x
+4096x256     4   0  Paeth (4)                             4.91    4.10    8.89   15.60          1.20x      2.17x   3.80x
+4096x256     4   0  Scumble mix (76% P, 23% A, 1% S)      5.12    3.51   10.33   15.55          1.46x      2.94x   4.43x
+4096x256     4   4  Up (2)                                3.01    1.08    3.34    5.08          2.79x      3.09x   4.70x
+4096x256     4   4  Average (3)                           6.99    2.60    8.00    7.88          2.69x      3.08x   3.03x
+4096x256     4   4  Paeth (4)                             5.42    4.54   11.81   20.19          1.19x      2.60x   4.45x
+4096x256     4   4  Scumble mix (76% P, 23% A, 1% S)      5.60    4.13   11.21   16.51          1.36x      2.71x   4.00x
+15000x256    3   0  Paeth (4)                            22.16   15.81   27.31   50.43          1.40x      1.73x   3.19x
+15000x256    3   0  Scumble mix (76% P, 23% A, 1% S)     17.88   14.18   25.32   39.64          1.26x      1.79x   2.80x
+15000x256    3   3  Up (2)                                9.63    6.21    9.07   22.95          1.55x      1.46x   3.70x
+15000x256    3   3  Average (3)                          12.55   11.27   13.11   33.89          1.11x      1.16x   3.01x
+15000x256    3   3  Paeth (4)                            24.50   17.84   31.63   54.08          1.37x      1.77x   3.03x
+15000x256    3   3  Scumble mix (76% P, 23% A, 1% S)     21.74   17.63   28.25   51.31          1.23x      1.60x   2.91x
+15000x256    4   0  Paeth (4)                            18.00   15.33   40.38   58.47          1.17x      2.63x   3.81x
+15000x256    4   0  Scumble mix (76% P, 23% A, 1% S)     18.62   12.81   36.63   51.95          1.45x      2.86x   4.06x
+15000x256    4   4  Up (2)                                9.28    4.00    9.31   17.10          2.32x      2.33x   4.28x
+15000x256    4   4  Average (3)                          24.92    9.23   28.47   23.41          2.70x      3.08x   2.54x
+15000x256    4   4  Paeth (4)                            19.29   17.00   42.04   57.62          1.13x      2.47x   3.39x
+15000x256    4   4  Scumble mix (76% P, 23% A, 1% S)     21.09   15.31   41.25   54.84          1.38x      2.69x   3.58x
+
+2. 15,000 x 10,000 PNG open before (`5419c95a`) vs after (`K6`), 3 alternating rounds on port 9621 (`w1_lock.py` held)
+----------------------------------------------------------------------------------------------------------------------
+All 6 runs (3 before, 3 after) ran on fresh offline instances with `"focused": true` (`notcounted/` empty).
+
+row                                           before (5419c95a)           after (K6)                  before / after (medians)
+build_the_file encodeMs                       1,943.0 [1,638.0-2,463.0]   1,886.0 [1,763.0-2,257.0]   1.03x
+open_the_file wall                            3,935.0 [3,538.0-3,946.0]   3,000.0 [2,899.0-4,688.0]   1.31x
+open_the_file longest block                   614.0 [545.0-662.0]         592.0 [551.0-696.0]         1.04x
+open_the_file png_read kernel                 2,489.4 [2,433.6-2,648.8]   1,859.0 [1,786.6-2,210.5]   1.34x
+open_the_file png_read unfilter               1,101.6 [1,083.1-1,161.4]   502.1 [499.1-573.2]         2.19x
+open_the_file png_read wait                   1,264.6 [1,212.3-1,313.8]   1,224.1 [1,149.7-1,462.5]   1.03x
+open_the_file png_read copy                   92.1 [86.9-103.3]           99.5 [91.1-119.4]           0.93x
+open_the_file png_read write                  2,419.7 [2,363.8-2,571.6]   1,789.4 [1,718.6-2,114.0]   1.35x
+open_the_file png_read read                   66.5 [66.5-73.8]            66.7 [64.6-91.5]            1.00x
+open_the_file png_read parse                  1.3 [1.1-1.4]               1.3 [1.1-2.1]               1.00x
+open_the_file worker png_unfilter_rows calls  40.0 [40.0-40.0]            40.0 [40.0-40.0]            1.00x
+open_again wall                               3,285.0 [3,085.0-3,821.0]   2,913.0 [2,263.0-4,267.0]   1.13x
+open_again longest block                      51.0 [47.0-96.0]            65.0 [60.0-85.0]            0.78x
+open_again png_read kernel                    2,395.5 [2,319.7-2,649.3]   1,734.0 [1,679.7-2,152.1]   1.38x
+open_again png_read unfilter                  1,098.8 [1,078.7-1,185.6]   474.5 [469.8-596.2]         2.32x
+open_again png_read wait                      1,164.0 [1,110.2-1,309.2]   1,128.4 [1,071.2-1,375.4]   1.03x
+open_again png_read copy                      93.5 [87.0-111.5]           88.3 [83.9-120.4]           1.06x
+open_again png_read write                     2,327.9 [2,247.0-2,564.3]   1,666.4 [1,617.8-2,052.9]   1.40x
+open_again png_read read                      70.3 [65.4-81.9]            65.4 [60.0-94.6]            1.07x
+open_again png_read parse                     1.2 [1.0-1.6]               1.0 [1.0-3.4]               1.20x
+open_again worker png_unfilter_rows calls     40.0 [40.0-40.0]            40.0 [40.0-40.0]            1.00x
+
+Observations:
+- `png_read unfilter` drops from `1,101.6 [1,083.1-1,161.4] ms` to `502.1 [499.1-573.2] ms` in `open_the_file` (2.19x,
+  saving ~600 ms) and from `1,098.8 [1,078.7-1,185.6] ms` to `474.5 [469.8-596.2] ms` in `open_again` (2.32x, saving
+  ~624 ms), with non-overlapping 3-run ranges.
+- Because `readPng` drains `DecompressionStream` while unfiltering each 256-row band, cutting `unfilter` by ~600 ms
+  reduces `png_read write` (feed back-pressure) by the same ~630-660 ms (`2,419.7 -> 1,789.4 ms` and `2,327.9 ->
+  1,666.4 ms`) and `png_read kernel` by ~630-660 ms (`2,489.4 [2,433.6-2,648.8] -> 1,859.0 [1,786.6-2,210.5] ms`, 1.34x,
+  and `2,395.5 [2,319.7-2,649.3] -> 1,734.0 [1,679.7-2,152.1] ms`, 1.38x, both with non-overlapping 3-run ranges).
+
+3. Unit & property checks (`tools/px_test.js` group `pngRead`)
+--------------------------------------------------------------
+- `png_unfilter_rows` tested on both builds (`rust simd`, `rust scalar`) against `js`:
+  - Existing 7 shapes across `bpp` 1, 2, 3, 4, 6, 8, `channels` 0, 3, 4, `prev` carried over, and unknown filter type 7.
+  - All widths `1..67` px (plus `128, 255, 256, 257` px) at `bpp` 3 and 4, `channels` 0 and `bpp`, at both even and odd
+    `byteOffset`, across all five filter types with 15,513 forced Paeth first ties (`pa == pc < pb` with `a != c`) and
+    15,064 forced Paeth second ties (`pb == pc < pa` with `b != c`), plus Average odd/even sums and Up across every
+    16-byte group and `0..15` tail length: PASS on `rust simd` and `rust scalar`.
+
+4. Mutation round (`docs/measurements/k6_2026-11-08/mutation/results.txt`)
+--------------------------------------------------------------------------
+- 18 mutants in `crates/px/src/png.rs` (`mut_k6.py`):
+  - **16 killed** on `px_test (only: pngRead)` (including `lanes_choose_pb_lt_pc`, the Paeth second-tie mutant, and
+    `lanes_choose_pa_lt_pc`, `lanes_paeth_b_before_a`, `lanes_paeth_c_not_updated`, `lanes_paeth_no_mask_255`,
+    `lanes_avg_rounded_up`, `lanes_avg_no_mask_255`, `lanes_avg_a_not_carried`, `lanes_load_px_b3_drop_byte2`,
+    `lanes_store_px_b3_drop_byte2`, `lanes_up_sub_instead_of_add`, `lanes_up_tail_dropped`, `dispatch_avg3_as_paeth3`,
+    `dispatch_paeth4_as_avg4`, `scalar_paeth_px_pb_lt_pc`, `scalar_avg_px_rounded_up`).
+  - **2 survived** (both expected equivalents: `lanes_up_end_one_group_less` where the dropped 16-byte group runs in the
+    scalar tail, and `lanes_choose_pa_lt_pb` where `pa == pb` with `a != b` implies `pc = 0 < pa`).
+  - **0 not as expected**.
+
+5. Gates (`F:/canvas/.claude/worktrees/ag-chain-p/dist/gates/gates/`)
+---------------------------------------------------------------------
+- `k6-core-tiles` (`--offline --tiles on`, port 9621): lint 16s, types 7s, pixels 16s, export 188s, layered 12s -> ALL PASS
+- `k6-core-canvas` (`--offline --tiles off`, port 9622): lint 11s, types 7s, pixels 16s, export 15s, layered 15s -> ALL PASS
+- `k6-ed-tiles` (`--offline --tiles on`, port 9621): editor 207s -> ALL PASS
+- `k6-ed-canvas` (`--offline --tiles off`, port 9622): editor 182s -> ALL PASS
+- `k6-tiles-serial` (`--offline --tiles on`, port 9621): pxjobs 157s -> ALL PASS
+

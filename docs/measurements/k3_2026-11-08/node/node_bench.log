@@ -1,0 +1,26 @@
+(node:41756) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-p/renderer/editor/px/px.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-p\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+=== 1. CRC-32 size sweep (including JS -> wasm copy-in) ===
+size=      16 B | simd=    0.081 us | scalar=    0.113 us | js=    0.045 us | simd/js=0.56x
+size=      32 B | simd=    0.115 us | scalar=    0.113 us | js=    0.058 us | simd/js=0.5x
+size=      48 B | simd=    0.097 us | scalar=    0.089 us | js=    0.097 us | simd/js=1x
+size=      64 B | simd=     0.11 us | scalar=    0.108 us | js=    0.252 us | simd/js=2.29x
+size=      96 B | simd=    0.116 us | scalar=     0.14 us | js=    0.581 us | simd/js=5.01x
+size=     128 B | simd=    0.144 us | scalar=    0.146 us | js=    0.518 us | simd/js=3.6x
+size=     256 B | simd=    0.193 us | scalar=    0.168 us | js=    0.431 us | simd/js=2.23x
+size=    1024 B | simd=    0.473 us | scalar=    0.426 us | js=     1.72 us | simd/js=3.64x
+size=    4096 B | simd=    1.514 us | scalar=    1.627 us | js=    6.788 us | simd/js=4.48x
+size=   65536 B | simd=    21.93 us | scalar=    22.62 us | js=  108.311 us | simd/js=4.94x (0.351 vs 1.733 ms/MB)
+size=  262144 B | simd=   86.077 us | scalar=   85.433 us | js=   430.49 us | simd/js=5x (0.344 vs 1.722 ms/MB)
+size= 1048576 B | simd=  400.743 us | scalar=  391.163 us | js= 1726.185 us | simd/js=4.31x (0.401 vs 1.726 ms/MB)
+size=67108864 B | simd=  29579.3 us | scalar=  29245.9 us | js= 281825.2 us | simd/js=9.53x (0.462 vs 4.404 ms/MB)
+
+=== 2. IDAT chunk framing + CRC (png_chunk_frame in wasm vs JS pngChunk) ===
+256 KB IDAT    | before (JS pngChunk):   0.522 ms | after (wasm png_chunk_frame + slice):   0.185 ms | 2.82x
+1 MB IDAT      | before (JS pngChunk):   2.188 ms | after (wasm png_chunk_frame + slice):   0.604 ms | 3.62x
+4 MB IDAT      | before (JS pngChunk):   7.817 ms | after (wasm png_chunk_frame + slice):   2.327 ms | 3.36x
+
+=== 3. ORA PNG entry CRC: crc32Combine fold (40 parts, 150 MB) vs full-file CRC-32 ===
+150 MB PNG (40 parts) | combineFold: 0.0157 ms | Rust full crc32: 69.36 ms | JS full crc32: 261.99 ms

@@ -1,0 +1,3 @@
+== crc32_64mb ...
+   {"visibility": "visible", "focus": true, "crc": {"median": 24.44, "max": 34.88, "n": 3}, "msPerMB": 0.382, "js": {"median": 105.51, "max": 106.78, "n": 3}, "jsMsPerMB": 1.649, "speedup": 4.32}
+RESULT
