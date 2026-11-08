@@ -359,7 +359,7 @@ async function fileFrom(a, fallbackName) {
     const r = await fetch(viewUrl(ref));
     if (!r.ok) throw new Error(`could not read ${ref.filename} (${r.status})`);
     const b = await r.blob();
-    return new File([b], a.name || fallbackName || ref.filename.replace(/_(?:[0-9a-f]{8}|[0-9a-f]{12})(?=\.[a-z0-9]+$|$)/i, ""), { type: b.type || "image/png" });
+    return new File([b], a.name || fallbackName || ref.filename.replace(/~[0-9a-f]{8,64}(?=\.[a-z0-9]+$|$)/i, ""), { type: b.type || "image/png" });
 }
 
 export function status(ed) {

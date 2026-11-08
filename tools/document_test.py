@@ -869,6 +869,13 @@ ed2 = host.editor;
 await settle(ed2);
 const baseRef2 = ed2.base.ref.filename;
 
+let edLook = shell.newDocument(); shell.activate(edLook);
+await must("load_image", { path: G.d1ImgLook });
+edLook = host.editor;
+await settle(edLook);
+const docNameLook = host.documentName(edLook);
+const baseRefLook = edLook.base.ref.filename;
+
 const saved = { connected: host.connected, objectInfo: host.objectInfo, queue: api.queuePrompt, recipe: host.recipe };
 const queued = [];
 try {
@@ -887,23 +894,29 @@ try {
     await host.queueGenerate(ed2);
     shell.activate(ed1);
     await must("add_image_layer", { doc: ed1.node.id, path: G.d1Img2, role: "reference" });
+    await must("add_image_layer", { doc: ed1.node.id, path: G.d1ImgLook, role: "reference" });
     await host.queueGenerate(ed1);
 } finally {
-    for (const e of [ed1, ed2]) if (e && e._localRuns) e._localRuns.clear();
+    for (const e of [ed1, ed2, edLook]) if (e && e._localRuns) e._localRuns.clear();
     host.connected = saved.connected; host.objectInfo = saved.objectInfo; api.queuePrompt = saved.queue;
     if (saved.recipe) host.setRecipe(saved.recipe);
 }
-const layerName1 = ed1.layers[0].name;
-const layerRef1 = ed1.layers[0].ref.filename;
-const pxRef1 = await pxInfo(ed1.layers[0].px);
+const lImg = ed1.layers.find((l) => l.name === "image") || ed1.layers[0];
+const lLook = ed1.layers.find((l) => l !== lImg) || ed1.layers[1];
+const layerName1 = lImg.name;
+const layerRef1 = lImg.ref.filename;
+const layerNameLook = lLook.name;
+const layerRefLook = lLook.ref.filename;
+const pxRef1 = await pxInfo(lImg.px);
 await host.saveDocument(ed1, { path: G.d1HashedPath });
+shell.closeDocument(edLook, { force: true });
 shell.closeDocument(ed2, { force: true });
 shell.closeDocument(ed1, { force: true });
 const st1 = queued[0] ? JSON.parse(queued[0].output["1"].inputs.canvas_state) : null;
 const st2 = queued[1] ? JSON.parse(queued[1].output["1"].inputs.canvas_state) : null;
 const st1Ref = queued[2] ? JSON.parse(queued[2].output["1"].inputs.canvas_state) : null;
 return {
-    docName1, layerName1, baseRef1, layerRef1, baseRef2, px1, pxRef1,
+    docName1, layerName1, docNameLook, layerNameLook, baseRef1, layerRef1, baseRef2, baseRefLook, layerRefLook, px1, pxRef1,
     sentImage: st1 && st1.base ? st1.base.filename : null,
     sentImage2: st2 && st2.base ? st2.base.filename : null,
     serRefs: (st1Ref && st1Ref.references || []).map((r) => r && r.filename),
@@ -916,16 +929,24 @@ const o = await host.openDocument(G.oldPlainPath);
 const ed = o.editor;
 await settle(ed);
 const baseRef = ed.base.ref.filename;
-const layerRef = ed.layers[0].ref.filename;
+const lRef = ed.layers.find((l) => l.ref && l.ref.filename === "ref.png") || ed.layers[0];
+const lLook = ed.layers.find((l) => l !== lRef) || ed.layers[1];
+const layerRef = lRef.ref.filename;
+const lookRef = lLook.ref.filename;
+const docNamePlainLook = host.documentName({ base: { ref: lLook.ref } });
 const pxBase = await pxInfo(ed.basePx);
-const pxLayer = await pxInfo(ed.layers[0].px);
-const saved = { connected: host.connected, objectInfo: host.objectInfo, queue: api.queuePrompt, recipe: host.recipe };
+const pxLayer = await pxInfo(lRef.px);
+const saved = { connected: host.connected, objectInfo: host.objectInfo, queue: api.queuePrompt, recipe: host.recipe, ensureRefs: host.ensureRefs };
 const queued = [];
-let ensureReport = null;
+const ensureReports = [];
 try {
     host.connected = true;
     host.objectInfo = {};
-    ensureReport = await window.scumble.comfy.ensure([ed.base.ref, ed.layers[0].ref]);
+    host.ensureRefs = async (refs) => {
+        const rep = await saved.ensureRefs.call(host, refs);
+        ensureReports.push(rep);
+        return rep;
+    };
     api.queuePrompt = async (n, body) => {
         const pid = "doc-d1-old-" + (queued.length + 1);
         queued.push(body);
@@ -934,12 +955,12 @@ try {
     const stub = { id: "comfy_d1_stub", kind: "comfy", name: "Comfy D1 stub", mode: "local", result: ["9", 0], canvas: "1", prompt: { "1": { class_type: "InpaintCanvas", inputs: {} } }, settings: [], needs: [] };
     host.setRecipe(stub);
     await host.queueGenerate(ed);
-    ed.layers[0].visible = false;
+    for (const l of ed.layers) l.visible = false;
     ed.uploaded = ed.makeUploaded();
     await host.queueGenerate(ed);
 } finally {
     if (ed && ed._localRuns) ed._localRuns.clear();
-    host.connected = saved.connected; host.objectInfo = saved.objectInfo; api.queuePrompt = saved.queue;
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; api.queuePrompt = saved.queue; host.ensureRefs = saved.ensureRefs;
     if (saved.recipe) host.setRecipe(saved.recipe);
     await window.scumble.comfy.disconnect();
 }
@@ -947,7 +968,7 @@ shell.closeDocument(ed, { force: true });
 const stWithRef = queued[0] ? JSON.parse(queued[0].output["1"].inputs.canvas_state) : null;
 const stBare = queued[1] ? JSON.parse(queued[1].output["1"].inputs.canvas_state) : null;
 return {
-    baseRef, layerRef, pxBase, pxLayer, ensureReport,
+    baseRef, layerRef, lookRef, docNamePlainLook, pxBase, pxLayer, ensureReports,
     sentImage: stBare && stBare.base ? stBare.base.filename : null,
     serBase: stBare && stBare.base ? stBare.base.filename : null,
     serRefs: (stWithRef && stWithRef.references || []).map((r) => r && r.filename),
@@ -1887,10 +1908,11 @@ class Gate:
 
     async def step_content_names(self, A, prof, docs, inp):
         """Step D1 (review 2026-11-07 documents/D1): two pictures both named image.png go up under different
-        content-addressed names stem_<hash8>.ext (and the same picture uploaded twice is one file), layer and document
-        names do not pick up the hash, and a local ComfyUI run sends the right one; an old document with plain names
-        opens and runs (ensureOnServer compares HEAD Content-Length against the mirror file's size, re-uploading without
-        overwrite=true on a mismatch and skipping on a match)."""
+        content-addressed names stem~<hash8>.ext (and the same picture uploaded twice is one file), layer and document
+        names do not pick up the hash (nor strip lookalike suffixes like IMG_20231005), and a local ComfyUI run sends the
+        right one; an old document with plain and lookalike names opens and runs against a ComfyUI server that renames
+        non-overwrite collisions to name (1).ext (ensureOnServer compares HEAD Content-Length against the mirror file's
+        size, re-uploads on a mismatch, and rewrites canvas_state to the server's name)."""
         t = time.time()
         problems = []
         d1_a, d1_b = os.path.join(inp, "d1_a"), os.path.join(inp, "d1_b")
@@ -1898,12 +1920,15 @@ class Gate:
         os.makedirs(d1_b, exist_ok=True)
         p1 = os.path.join(d1_a, "image.png")
         p2 = os.path.join(d1_b, "image.png")
+        p_look = os.path.join(d1_b, "IMG_20231005.png")
         b1 = png(320, 240, lambda x, y: (220, 40, (x + y) % 256))
         b2 = png(240, 180, lambda x, y: (30, 180, (x * 2 + y) % 256))
+        b_look = png(200, 160, lambda x, y: (120, (x + 50) % 256, 200))
         open(p1, "wb").write(b1)
         open(p2, "wb").write(b2)
-        h1, h2 = sha_bytes(b1)[:8], sha_bytes(b2)[:8]
-        want1, want2 = f"image_{h1}.png", f"image_{h2}.png"
+        open(p_look, "wb").write(b_look)
+        h1, h2, h_look = sha_bytes(b1)[:8], sha_bytes(b2)[:8], sha_bytes(b_look)[:8]
+        want1, want2, want_look = f"image~{h1}.png", f"image~{h2}.png", f"IMG_20231005~{h_look}.png"
 
         server_files = {"input/inpaint_canvas/image.png": b"other-client-image-png"}
         uploads = []
@@ -1946,9 +1971,20 @@ class Gate:
                     ftype = (await part.read()).decode("utf-8")
                 elif part.name == "overwrite":
                     overwrite = (await part.read()).decode("utf-8")
-            uploads.append({"name": fname, "subfolder": sub, "type": ftype, "overwrite": overwrite, "size": len(data)})
-            server_files[f"{ftype}/{sub}/{fname}"] = data
-            return web.json_response({"name": fname, "subfolder": sub, "type": ftype})
+            final_name = fname
+            k = f"{ftype}/{sub}/{final_name}"
+            if overwrite not in ("true", "1"):
+                stem, ext = os.path.splitext(fname)
+                i = 1
+                while k in server_files:
+                    if server_files[k] == data:
+                        break
+                    final_name = f"{stem} ({i}){ext}"
+                    k = f"{ftype}/{sub}/{final_name}"
+                    i += 1
+            server_files[k] = data
+            uploads.append({"name": fname, "final_name": final_name, "subfolder": sub, "type": ftype, "overwrite": overwrite, "size": len(data)})
+            return web.json_response({"name": final_name, "subfolder": sub, "type": ftype})
 
         wapp = web.Application()
         wapp.router.add_get("/system_stats", handle_stats)
@@ -1969,29 +2005,33 @@ class Gate:
             hashed_doc = os.path.join(docs, "d1_hashed.scumble")
             old_plain = os.path.join(docs, "old_plain.scumble")
             await A.setg(d1ServerUrl=f"http://127.0.0.1:{port}", d1Img1=self.fwd(p1), d1Img2=self.fwd(p2),
-                         d1HashedPath=self.fwd(hashed_doc), oldPlainPath=self.fwd(old_plain))
+                         d1ImgLook=self.fwd(p_look), d1HashedPath=self.fwd(hashed_doc), oldPlainPath=self.fwd(old_plain))
             u = await A.ev(CONTENT_NAMES_UPLOAD)
-            if u["baseRef1"] != want1 or u["layerRef1"] != want2:
-                problems.append(f"two image.png uploads got {u['baseRef1']} and {u['layerRef1']} (wanted {want1}, {want2})")
+            if u["baseRef1"] != want1 or u["layerRef1"] != want2 or u["baseRefLook"] != want_look or u["layerRefLook"] != want_look:
+                problems.append(f"uploads got {u['baseRef1']}, {u['layerRef1']}, {u['baseRefLook']} (wanted {want1}, {want2}, {want_look})")
             if u["baseRef2"] != want2:
                 problems.append(f"second upload of the same picture got {u['baseRef2']}, not {want2}")
-            if u["docName1"] != "image" or u["layerName1"] != "image":
-                problems.append(f"displayed names picked up the hash: docName={u['docName1']!r}, layerName={u['layerName1']!r}")
-            if u["sentImage"] != want1 or u["sentImage2"] != want2 or u["serRefs"] != [want2]:
+            if u["docName1"] != "image" or u["layerName1"] != "image" or u["docNameLook"] != "IMG_20231005" or u["layerNameLook"] != "IMG_20231005":
+                problems.append(f"displayed names wrong: docName1={u['docName1']!r}, layerName1={u['layerName1']!r}, docNameLook={u['docNameLook']!r}, layerNameLook={u['layerNameLook']!r}")
+            if u["sentImage"] != want1 or u["sentImage2"] != want2 or u["serRefs"] != [want2, want_look]:
                 problems.append(f"run sent {u['sentImage']!r}, {u['sentImage2']!r} (refs={u['serRefs']!r})")
+            if (server_files.get(f"input/inpaint_canvas/{u['sentImage']}") != b1
+                    or server_files.get(f"input/inpaint_canvas/{u['sentImage2']}") != b2
+                    or [server_files.get(f"input/inpaint_canvas/{r}") for r in u["serRefs"]] != [b2, b_look]):
+                problems.append("bytes on fake server under canvas_state names do not match mirror bytes")
             if server_files.get("input/inpaint_canvas/image.png") != b"other-client-image-png":
                 problems.append("another client's image.png on the server was overwritten")
             up_names = {x["name"]: x for x in uploads}
             if want1 not in up_names or want2 not in up_names or up_names[want1]["overwrite"] != "true" or up_names[want2]["overwrite"] != "true":
                 problems.append(f"hash uploads on server: {uploads}")
 
-            # Craft an old document with plain names (image.png, ref.png) from d1_hashed.scumble
+            # Craft an old document with plain names (image.png, ref.png, IMG_20231005.png) from d1_hashed.scumble
             pl = "files/input/inpaint_canvas/"
             with zipfile.ZipFile(hashed_doc) as z:
                 znames = [i.filename for i in z.infolist()]
                 zdata = {n: z.read(n) for n in znames}
             hdr = json.loads(zdata["scumble/document.json"])
-            ren = {want1: "image.png", want2: "ref.png"}
+            ren = {want1: "image.png", want2: "ref.png", want_look: "IMG_20231005.png"}
             hdr["document"] = rename_refs(hdr["document"], ren)
             for f in hdr.get("files", []):
                 for k, v in ren.items():
@@ -2008,31 +2048,39 @@ class Gate:
                     zi.compress_type = zipfile.ZIP_STORED
                     z.writestr(zi, zdata[n])
 
-            # Server has stale wrong-sized image.png (22 bytes != len(b1)) and matching-sized ref.png (len(b2))
+            # Server has stale wrong-sized image.png and IMG_20231005.png, and matching-sized ref.png (len(b2))
             server_files["input/inpaint_canvas/image.png"] = b"other-client-image-png"
+            server_files["input/inpaint_canvas/IMG_20231005.png"] = b"other-client-lookalike-png"
             server_files["input/inpaint_canvas/ref.png"] = b2
             uploads.clear()
             heads.clear()
 
             o = await A.ev(CONTENT_NAMES_OLD)
-            if o["baseRef"] != "image.png" or o["layerRef"] != "ref.png":
-                problems.append(f"old document refs changed: {o['baseRef']}, {o['layerRef']}")
+            if o["baseRef"] != "image.png" or o["layerRef"] != "ref.png" or o["lookRef"] != "IMG_20231005.png":
+                problems.append(f"old document refs changed: {o['baseRef']}, {o['layerRef']}, {o['lookRef']}")
+            if o["docNamePlainLook"] != "IMG_20231005":
+                problems.append(f"plain lookalike docName stripped _20231005: {o['docNamePlainLook']!r}")
             if o["pxBase"] != u["px1"] or o["pxLayer"] != u["pxRef1"]:
                 problems.append(f"old document pixels differ: {o['pxBase']} vs {u['px1']}, {o['pxLayer']} vs {u['pxRef1']}")
-            rep = o["ensureReport"] or {}
-            if rep.get("checked") != 2 or rep.get("uploaded") != ["input/inpaint_canvas/image.png"]:
-                problems.append(f"ensureOnServer report on old plain names: {rep}")
-            plain_ups = [x for x in uploads if x["name"] in ("image.png", "ref.png")]
-            if len(plain_ups) != 1 or plain_ups[0]["name"] != "image.png" or plain_ups[0]["overwrite"] == "true" or plain_ups[0]["size"] != len(b1):
-                problems.append(f"plain-name re-upload on size mismatch: {plain_ups} (all: {uploads})")
-            if o["sentImage"] != "image.png" or o["serBase"] != "image.png" or o["serRefs"] != ["ref.png"]:
+            plain_ups = [x for x in uploads if x["name"] in ("image.png", "ref.png", "IMG_20231005.png")]
+            if ({x["name"]: (x["final_name"], x["overwrite"], x["size"]) for x in plain_ups}
+                    != {"IMG_20231005.png": ("IMG_20231005 (1).png", None, len(b_look)),
+                        "image.png": ("image (1).png", None, len(b1))}):
+                problems.append(f"plain-name re-uploads on size mismatch: {plain_ups} (all: {uploads})")
+            if o["sentImage"] != "image (1).png" or o["serBase"] != "image (1).png" or o["serRefs"] != ["ref.png", "IMG_20231005 (1).png"]:
                 problems.append(f"old document run sent {o['sentImage']!r} (base={o['serBase']!r}, refs={o['serRefs']!r})")
+            if (server_files.get("input/inpaint_canvas/image.png") != b"other-client-image-png"
+                    or server_files.get("input/inpaint_canvas/IMG_20231005.png") != b"other-client-lookalike-png"):
+                problems.append("other client's plain or lookalike file on server was overwritten")
+            if (server_files.get(f"input/inpaint_canvas/{o['serBase']}") != b1
+                    or [server_files.get(f"input/inpaint_canvas/{r}") for r in o["serRefs"]] != [b2, b_look]):
+                problems.append(f"bytes on fake server under rewritten canvas_state names do not equal mirror's: base={o['serBase']!r}, refs={o['serRefs']!r}")
         finally:
             await runner.cleanup()
         self.step("same_named_uploads_get_content_hashes_and_old_plain_names_run", not problems,
                   "; ".join(problems[:6]) if problems else
-                  f"two image.png -> {want1} and {want2} (re-upload reused {want2}, layer/doc name 'image'), run sent {want1}; "
-                  f"old document with plain names image.png and ref.png opened and ran (size-mismatch image.png re-uploaded without overwrite, matching ref.png skipped)", t)
+                  f"two image.png -> {want1} and {want2} (re-upload reused {want2}, lookalike {want_look} kept 'IMG_20231005'), run sent {want1}; "
+                  f"old document with plain image.png, IMG_20231005.png and ref.png ran with server collisions renamed to 'image (1).png' and 'IMG_20231005 (1).png' in canvas_state", t)
 
     def finish(self):
         ok = bool(self.results) and all(self.results)
