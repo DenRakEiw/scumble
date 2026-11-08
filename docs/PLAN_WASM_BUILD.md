@@ -1879,6 +1879,25 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K34 (2026-11-08): the edge fit's shrink and warps in Rust (the Antigravity E chain)
+
+By the same chain as K32 and K33 on `da4ba5e` (`e9aa179`, the review's findings fixed in `c16aa38`), merged `8928d7d` with the
+ABI renumbered 27 -> 30 and both builds rebuilt; `docs/measurements/k34_2026-11-08/`. `crates/px/src/maskf.rs`
+`edgefit_shrink` (the gray's unrounded double alpha, `a` stored as f32, the band sums in f64), `warp_rgba` (bilinear,
+`Uint8ClampedArray`'s ties to even), `warp_coverage`; twins in `kernels_js.js`, routes `edgefit` (the group),
+`edgefitShrink`, `warpRgba`, `warpCoverage`; `edgefit.js` delegates. Two review rounds. The first fuzzed against the base:
+every realistic matrix bit for bit, but a FINITE matrix overflowing to +inf + -inf = NaN made the simd128 lanes differ from
+the scalar build (unreachable: `fitEdges` refuses such a matrix; both lanes now take the scalar path unless the sum of
+the absolutes is finite). The route: `warpRgba` first lost three rows, so the agent vectorized the lane's coordinates;
+alone against the twin through the route map it now wins every row (`stitch_align_2048` worker warp 86.5 -> 63.4 ms,
+4096 304 -> 240 ms, `edgefit_2048` 82 -> 63). The second round read the rewritten lane and fuzzed it: nothing. Mutation
+killed; trap rows added. Whole operation: `stitch_align_2048` worker 752 -> 610 ms, 4096 2,471 -> 2,104 ms, a warmed 15k
+provider crop 514 -> 420 ms.
+**K35** (`edgefit_levels`, conditional): the split shows `fitEdges` at 6-41 ms, 1.1-6.8 % of a stitch's wall and below its
+run-to-run spread, but 58 % of a standalone `fitLayerRGBA` (about 31 of 54 ms, *Match edges*). The agent recommends "stays
+JS, measured"; open for the user (the rule "Rust wherever the whole operation is faster, however little" against the plan's "only
+if a measurable share").
+
 ### K11 (2026-11-08): selection invert in Rust, the frozen tile's copy deferred (the Antigravity M chain)
 
 By the same chain on `dfe2f35` (`38284f4`), merged `29695d4`, ABI 29 (the next free number);
