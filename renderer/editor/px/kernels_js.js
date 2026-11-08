@@ -879,6 +879,103 @@ function blendOp(d, s, o, mask, px, op) {
     }
 }
 
+let MASKED_SCRATCH = null;
+
+function maskedTileRefused(dst, src, mask, px, write) {
+    if (!Number.isInteger(px) || px <= 0 || px > 4096 * 4096) return `refused ${px} pixels`;
+    const n = px * 4;
+    if (!src || !(src.length >= n)) return "a source too small";
+    if (dst && !(dst.length >= n)) return "a tile too small";
+    if (mask && !(mask.length >= px)) return "a mask too small";
+    if (typeof write !== "function") return "no write callback";
+    return "";
+}
+
+/**
+ * One tile of `px` pixels (`src` straight RGBA8, `op` an OPS number, `alpha` 0..255, optional `mask` of `px` coverage
+ * bytes) composited over `dst` (`px * 4` straight RGBA8 bytes, or null when the destination tile does not exist yet),
+ * keeping `dst` (or 0) untouched where `src` has alpha 0 or `mask` is 0 (`compositeStroke` in `inpaint_tiles.js`, K36).
+ * Returns 0 when no pixel changed, 1 when changed and non-empty (calling `write(true)` once for the buffer all `px * 4`
+ * bytes are copied into), 2 when changed and every pixel has alpha 0 afterwards. Rust twin: crates/px/src/composite.rs
+ * `masked_tile` (`px.js` `compositeMaskedTile`).
+ */
+export function compositeMaskedTile(dst, src, op, alpha, mask = null, px = 65536, write = null) {
+    const refused = maskedTileRefused(dst, src, mask, px, write);
+    if (refused) throw new Error("px: composite_masked_tile: " + refused);
+    op = (op | 0) & 255;
+    alpha = (alpha | 0) & 255;
+    if (!dst && op >= 1 && op <= 3) return 0;
+    const s8 = bytesOf(src);
+    const d8 = dst ? bytesOf(dst) : null;
+    const m8 = mask ? bytesOf(mask) : null;
+    let first = -1, last = -1;
+    if (m8) {
+        for (let i = 0; i < px; i++) {
+            if (m8[i] !== 0 && s8[i * 4 + 3] !== 0) { first = i; break; }
+        }
+        if (first < 0) return 0;
+        for (let i = px - 1; i >= first; i--) {
+            if (m8[i] !== 0 && s8[i * 4 + 3] !== 0) { last = i; break; }
+        }
+    } else {
+        for (let i = 0; i < px; i++) {
+            if (s8[i * 4 + 3] !== 0) { first = i; break; }
+        }
+        if (first < 0) return 0;
+        for (let i = px - 1; i >= first; i--) {
+            if (s8[i * 4 + 3] !== 0) { last = i; break; }
+        }
+    }
+    const span = last - first + 1, spanBytes = span * 4;
+    let scratch = MASKED_SCRATCH;
+    if (!scratch || scratch.length < spanBytes) {
+        scratch = MASKED_SCRATCH = new Uint8Array(Math.max(256 * 256 * 4, spanBytes));
+    }
+    const work = scratch.subarray(0, spanBytes);
+    if (d8) work.set(d8.subarray(first * 4, (last + 1) * 4));
+    else work.fill(0);
+    compositeTile(work, [s8.subarray(first * 4, (last + 1) * 4)], [op], [alpha], [m8 ? m8.subarray(first, last + 1) : null]);
+    let changed = false, nonEmpty = false;
+    for (let p = 0, i = first; p < span; p++, i++) {
+        const wo = p * 4, io = i * 4;
+        if (s8[io + 3] === 0 || (m8 !== null && m8[i] === 0)) {
+            if (d8) {
+                work[wo] = d8[io]; work[wo + 1] = d8[io + 1]; work[wo + 2] = d8[io + 2]; work[wo + 3] = d8[io + 3];
+            } else {
+                work[wo] = 0; work[wo + 1] = 0; work[wo + 2] = 0; work[wo + 3] = 0;
+            }
+        } else if (!changed) {
+            if (d8) {
+                if (work[wo] !== d8[io] || work[wo + 1] !== d8[io + 1] || work[wo + 2] !== d8[io + 2] || work[wo + 3] !== d8[io + 3]) changed = true;
+            } else if (work[wo] !== 0 || work[wo + 1] !== 0 || work[wo + 2] !== 0 || work[wo + 3] !== 0) {
+                changed = true;
+            }
+        }
+        if (!nonEmpty && work[wo + 3] !== 0) nonEmpty = true;
+    }
+    if (!changed) return 0;
+    if (!nonEmpty && d8) {
+        for (let i = 3, e = first * 4; i < e; i += 4) if (d8[i] !== 0) { nonEmpty = true; break; }
+        if (!nonEmpty) {
+            for (let i = (last + 1) * 4 + 3, e = px * 4; i < e; i += 4) if (d8[i] !== 0) { nonEmpty = true; break; }
+        }
+    }
+    if (!nonEmpty) return 2;
+    const out = bytesOf(write(true));
+    if (d8) {
+        if (out !== d8) {
+            if (first > 0) out.set(d8.subarray(0, first * 4), 0);
+            if (last + 1 < px) out.set(d8.subarray((last + 1) * 4, px * 4), (last + 1) * 4);
+        }
+        out.set(work, first * 4);
+    } else {
+        if (first > 0) out.fill(0, 0, first * 4);
+        out.set(work, first * 4);
+        if (last + 1 < px) out.fill(0, (last + 1) * 4, px * 4);
+    }
+    return 1;
+}
+
 // ---- colour match (B item 7 part 3) -----------------------------------------------------------
 
 /**

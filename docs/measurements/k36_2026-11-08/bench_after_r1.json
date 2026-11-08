@@ -1,0 +1,28 @@
+{
+  "rust": {
+    "paint_ms": 5.025,
+    "clipped_ms": 6.01,
+    "erase_ms": 6.895,
+    "paint_tiles": 24,
+    "erase_tiles": 16,
+    "base_hash": 2350680613,
+    "paint_hash": 1178011791,
+    "clipped_hash": 1299386662,
+    "erase_hash": 2968442365,
+    "calls": {
+      "composite_masked_tile": 648
+    }
+  },
+  "js": {
+    "paint_ms": 10.83,
+    "clipped_ms": 13.765,
+    "erase_ms": 13.18,
+    "paint_tiles": 24,
+    "erase_tiles": 16,
+    "base_hash": 2350680613,
+    "paint_hash": 1178011791,
+    "clipped_hash": 1299386662,
+    "erase_hash": 2968442365,
+    "calls": {}
+  }
+}

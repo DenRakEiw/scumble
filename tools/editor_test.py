@@ -7111,6 +7111,7 @@ return out;
 // does not reach are the same bytes; the rest within two levels of colour premultiplied by alpha; undo gives the layer
 // back byte for byte.
 if (!ednow(window.__t).tileMode) return { skipped: "the kernel commit is the tile engine's" };
+const K = await import("./editor/px/kernels.js");
 await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
 const ed = ednow(window.__t);
 host.shell.activate(ed);
@@ -7142,7 +7143,7 @@ try {
         ed.markSelectionChanged();
         ed.getBounds();
         const pair = [];
-        for (const kernel of [true, false]) {
+        for (const [kernel, rt] of [[true, "rust"], [false, "rust"], ...(c.clip ? [[true, "js"]] : [])]) {
             const l = ed.addPaintLayer();
             fill(l);
             // a clipped layer off the origin: the selection under a tile is read where the layer lies
@@ -7152,6 +7153,7 @@ try {
             ed.brushSize = 110; ed.hardness = 0.35; ed.eraseHardness = 0.35; ed.brushOpacity = c.opacity; ed.color = "#f0e020";
             const before = bytes(l).slice();
             E.strokeTiles = kernel;
+            K.setRoute("compositeMaskedTile", rt === "js" ? "js" : null);
             const p = { kind: "layerpaint", layer: l, stroke: ed.newStrokeBuffer(l.px), clip: c.clip ? ed.strokeClip(l, l.px) : null, erase: c.erase, last: path[0], pressure: 1, bounds: null };
             ed.pointer = p;
             ed.layerDab(p, path[0][0], path[0][1], path[0][0], path[0][1]);
@@ -7159,13 +7161,27 @@ try {
             const oc = l.px.compositeStroke;
             l.px.compositeStroke = function (...a) { calls++; return oc.apply(this, a); };
             let n0 = calls;
-            try { ed.commitStroke(p); } finally { delete l.px.compositeStroke; }
+            K.pxCalls(true);
+            try { ed.commitStroke(p); } finally { delete l.px.compositeStroke; K.setRoute("compositeMaskedTile", null); }
+            const kc = K.pxCalls(true);
             ed.pointer = null;
             if (kernel && calls === n0) throw new Error(c.name + ": the commit did not go through the kernel");
             if (!kernel && calls !== n0) throw new Error(c.name + ": with the switch off the commit still went through the kernel");
-            pair.push({ l, before, after: bytes(l).slice(), stroke: p.stroke });
+            if (kernel && rt === "rust" && (!(kc.composite_masked_tile > 0) || kc.composite_tile)) {
+                throw new Error(c.name + ": expected composite_masked_tile calls and no composite_tile calls, got " + JSON.stringify(kc));
+            }
+            if ((!kernel || rt === "js") && kc.composite_masked_tile) {
+                throw new Error(c.name + ": unexpected composite_masked_tile calls (" + rt + "): " + JSON.stringify(kc));
+            }
+            pair.push({ l, before, after: bytes(l).slice(), stroke: p.stroke, tileCount: l.px.tileCount });
         }
-        const [k, b] = pair;
+        const [k, b, j] = pair;
+        if (j) {
+            if (j.tileCount !== k.tileCount) throw new Error(c.name + ": js twin tileCount " + j.tileCount + " != rust " + k.tileCount);
+            for (let i = 0; i < k.after.length; i++) {
+                if (j.after[i] !== k.after[i]) throw new Error(c.name + ": js twin differed from rust at byte " + i + ": " + j.after[i] + " vs " + k.after[i]);
+            }
+        }
         let differ = 0, worst = 0, untouchedDiffer = 0, changed = 0;
         const reach = k.stroke.px;
         for (let y = 0; y < H; y++) {
@@ -7187,16 +7203,17 @@ try {
         if (untouchedDiffer) throw new Error(c.name + ": the kernel commit changed " + untouchedDiffer + " pixels the stroke does not reach");
         if (!(changed > 1000)) throw new Error(c.name + ": the stroke changed only " + changed + " pixels");
         if (worst > 2) throw new Error(c.name + ": the kernel commit is " + worst + " levels off the bands' on " + differ + " pixels");
-        // undo (the bands' stroke, then the kernel's) gives both layers back as they were, byte for byte
+        // undo (the twin's if present, the bands' stroke, then the kernel's) gives the layers back as they were, byte for byte
+        if (j) await ed.undoStep();
         await ed.undoStep(); await ed.undoStep();
-        for (const [what, q] of [["the kernel's", k], ["the bands'", b]]) {
+        for (const [what, q] of [["the kernel's", k], ["the bands'", b], ...(j ? [["the twin's", j]] : [])]) {
             const back = bytes(q.l);
             for (let i = 0; i < back.length; i++) if (back[i] !== q.before[i]) throw new Error(c.name + ": undo of " + what + " stroke left byte " + i + " at " + back[i] + ", was " + q.before[i]);
         }
         out[c.name] = { changed, differ, worst };
-        ed.removeLayer(k.l.id); ed.removeLayer(b.l.id);
+        ed.removeLayer(k.l.id); ed.removeLayer(b.l.id); if (j) ed.removeLayer(j.l.id);
     }
-} finally { E.strokeTiles = was; ed.pointer = null; }
+} finally { E.strokeTiles = was; K.setRoute("compositeMaskedTile", null); ed.pointer = null; }
 ed.clearUndo(); ed.sel.clear(); ed.markSelectionChanged();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return out;

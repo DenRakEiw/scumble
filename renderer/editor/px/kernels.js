@@ -53,8 +53,9 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * stitch.js (`alphaToMask`, `maskMaxClamp`, `maskOneMinus`, `erodeMask`, `maskToRgba`, `maskBoundsF32`).
  * `colorMatch` and `blendAlpha` (K33): `colorMatchRgba` and `blendAlpha` of stitch.js. `edgefit`, `edgefitShrink`,
  * `warpRgba` and `warpCoverage` (K34): `edgefitShrink`, `warpRgba` and `warpCoverage` of edgefit.js.
+ * `compositeMaskedTile` (K36): `compositeMaskedTile` of inpaint_tiles.js `compositeStroke`.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", compositeMaskedTile: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -708,6 +709,27 @@ export function compositeTile(dst, srcs, ops, alphas, masks = null) {
         finally { touched(); }
     }
     return J.compositeTile(dst, srcs, ops, alphas, masks);
+}
+
+/**
+ * One tile of `px` pixels (`src` straight RGBA8, `op` an OPS number, `alpha` 0..255, optional `mask` of `px` coverage
+ * bytes) composited over `dst` (`px * 4` straight RGBA8 bytes, or null when the destination tile does not exist yet),
+ * keeping `dst` (or 0) untouched where `src` has alpha 0 or `mask` is 0 (`inpaint_tiles.js` `compositeStroke`;
+ * `kernels_js.js` `compositeMaskedTile` and its Rust twin `px.js` `compositeMaskedTile`, routed by
+ * `compositeMaskedTile`, K36). `write(whole)` makes the tile writable and returns its bytes: called at most once, with
+ * `true`, and only when the tile changed and holds at least one pixel with alpha > 0 afterwards. Returns 0 when no
+ * pixel changed, 1 when changed and non-empty, 2 when changed and empty (the caller drops the tile).
+ */
+export function compositeMaskedTile(dst, write, src, op, alpha, mask = null, px = 65536) {
+    const p = rustPx("compositeMaskedTile");
+    let wrote = false;
+    const once = (whole) => { wrote = true; return write(whole); };
+    if (p) {
+        try { return p.compositeMaskedTile(dst, src, op, alpha, mask, px, once); }
+        catch (err) { if (wrote || !recovered(p, err, "composite_masked_tile")) throw err; }
+        finally { touched(); }
+    }
+    return J.compositeMaskedTile(dst, src, op, alpha, mask, px, once);
 }
 
 /** One smudge dab: `dst` (straight RGBA8) and `carry` (premultiplied u16) in place (PLAN_0_1_31 §4 step 3). */

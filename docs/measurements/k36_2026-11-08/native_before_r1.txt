@@ -1,0 +1,51 @@
+probes in
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1197, "encodeMs": 2139, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 4125 ms, longest block 637 ms
+   {"loadFileMs": 4026, "tiles": 2360, "compositorBefore": "not made", "compositorAfter": "made"}
+   main thread ms: idle 2838 | browser natives 612 | px kernels 3 | other JS 459 | GC 51 | (program) 361
+     natives: getProgramParameter 567, beat 10, setTimeout 6, getContext 6, getShaderParameter 5, texSubImage2D 3, __n1_postMessage 2, arrayBuffer 2
+     px kernels by function (self time): mipChain [px.js:303] 1, wasm-function[16] [wasm] 1, mipChain [kernels.js:420] 1
+     JS by file: inpaint_tiles.js 424, inpaint_canvas.js 10, inpaint_compositor.js 10, inpaint_arena.js 8, inpaint_resample.js 2, inpaint_pool.js 2, host.js 1, inpaint_jobs.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1385] 274, normalizeBlock [inpaint_tiles.js:541] 132, coarseSlot [inpaint_tiles.js:1238] 5
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   3     567.8 ms        0.0 MB
+     gl getShaderParameter                    6       5.6 ms        0.0 MB
+     gl texSubImage2D                      2360       3.3 ms        1.0 MB
+     worker postMessage (moved)             164       2.4 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.7 ms        0.0 MB
+     blob arrayBuffer                         8       0.7 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.3 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 2501.8, "parse": 1.4, "read": 74.6, "write": 2423.7, "wait": 1243.1, "copy": 91.9, "unfilter": 1113.7, "deliver": 13, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 676, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+
+== add_the_paint_layer: wall 911 ms, longest block 789 ms
+   {"tiles": 2301, "genMs": 76, "writeMs": 677, "addMs": 157}
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      5437       8.0 ms       10.6 MB
+     2d putImageData                       2286       2.3 ms        1.1 MB
+     worker postMessage (moved)              90       1.9 ms        0.0 MB
+     2d drawImage >= 1 MP                    14       0.6 ms      117.2 MB
+     2d drawImage < 1 MP                     20       0.2 ms       11.2 MB
+   worker mips: 18 jobs, {"kernel": 599.2, "gen": 0}  px: mip_chain 2340, clamp_extend 39
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2340, clamp_extend 39
+
+== stroke_and_release: wall 317 ms, longest block 317 ms
+   {"frame_median": 2.19, "frame_max": 70.16, "release": 13.9}
+   main thread ms: idle 76 | browser natives 271 | px kernels 1 | other JS 90 | GC 5 | (program) 45
+     natives: restore 208, putImageData 24, texSubImage2D 16, drawImage 13, getImageData 4, (anonymous) 2, f 1, uniform1i 1
+     px kernels by function (self time): wasm-function[42] [wasm] 1
+     JS by file: inpaint_tiles.js 64, inpaint_canvas.js 17, inpaint_compositor.js 8
+     JS by function (self time; a typed-array copy counts for the function that makes it): regionCanvas [inpaint_tiles.js:2229] 24, put [inpaint_tiles.js:1153] 23, drawTilesInto [inpaint_canvas.js:2446] 7, imageDataOf [inpaint_tiles.js:478] 5, composite [inpaint_compositor.js:1026] 5
+   boundaries (calls, ms inside the call, MB):
+     2d putImageData                        200      24.2 ms       70.8 MB
+     2d drawImage >= 1 MP                   363      11.6 ms     4684.8 MB
+     2d getImageData                        120       3.6 ms        1.4 MB
+   px calls, window: composite_tile 3
+   px calls, workers: -
+[ok] close: {"closed": 2, "arena": {"slots": 4667, "chunks": 19, "allocated": 7027, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 1275068416, "freeSlots": 197}}
+
+RESULT measured

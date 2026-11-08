@@ -1,0 +1,15 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=compositeSha)
+FAIL TileLayerPixels.compositeStroke on js and rust routes matches byte-for-byte, drops emptied tiles, and keeps unchanged tiles shared with frozen clones  js w=2,1 c=0,0; rust w=2,1 c=3,1
+FAIL (1) (only: compositeSha; PX_ONLY, not the full test)
+ok   compositeMaskedTile refuses missing write callback on twin and both builds  3/3 threw
+ok   raw composite_masked_tile returns 3 (REFUSED) on invalid pointers or pixel counts  [3,3,3,3,3]
+ok   kernels.js compositeMaskedTile gives the same on routes js (0 calls) and rust (200 calls), write(true) only when r === 1  js=0, rust=200
+ok   kernels.js compositeMaskedTile recovers from a trap via the twin, calls write once, and replaces the instance  r=1, writes=1, trap=1
+FAIL TileLayerPixels.compositeStroke on js and rust routes matches byte-for-byte, drops emptied tiles, and keeps unchanged tiles shared with frozen clones  js w=2,1 c=0,0; rust w=2,1 c=3,1
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (1) (only: compositeSha; PX_ONLY, not the full test)
+(node:20336) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/claude/F--canvas/mut_k36/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\claude\F--canvas\mut_k36\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

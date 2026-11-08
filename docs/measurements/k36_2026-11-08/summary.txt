@@ -1,0 +1,82 @@
+K36 measurement summary (2026-11-08)
+====================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.5 K36):
+- `composite_masked_tile` in `crates/px/src/composite.rs` (`masked_tile`, exported from `crates/px/src/lib.rs`, ABI 32,
+  wrapped in `renderer/editor/px/px.js` `Px.compositeMaskedTile`, JS twin in `renderer/editor/px/kernels_js.js`
+  `compositeMaskedTile`, routed in `renderer/editor/px/kernels.js` `compositeMaskedTile` by route `compositeMaskedTile`):
+  - Composites `src` (`px * 4` straight RGBA8 bytes) over `dst` (`px * 4` straight RGBA8 bytes, or `has_dst == 0` when
+    the destination tile does not exist yet and is taken as 0) under `op` (`0..=30`) and `alpha` (`0..255`) with
+    optional coverage `mask` (`px` bytes), keeping `dst` (or 0) untouched where `src` has alpha 0 or `mask` is 0.
+  - Processes in 256-pixel (`1024`-byte) chunks, finding each chunk's active 4-pixel-aligned span `(x0, x1)` via
+    `simd::active_span`, skipping inactive chunks/prefixes/suffixes without premultiplying/unpremultiplying untouched
+    pixels, running `begin` + `apply` + `end` on `x0..x1`, and restoring inactive pixels inside `x0..x1` from `orig`
+    while accumulating `changed` and `non_empty` via `simd::finish_masked` + scalar tail.
+  - Returns `UNCHANGED` (`0`) when no pixel changed, `WRITTEN` (`1`) when changed and at least one pixel has alpha > 0
+    afterwards (calling `write(true)` once to obtain the destination buffer and copy out the whole `px * 4` bytes),
+    `EMPTY` (`2`) when changed and every pixel has alpha 0 afterwards, or `REFUSED` (`3`) when arguments are out of
+    range.
+- `TileLayerPixels.compositeStroke` in `renderer/editor/inpaint_tiles.js` calls `compositeMaskedTile(old ? old.data :
+  null, (whole) => this.writable(tx, ty, true, whole && TILE_SIZE === 256).data, s.data, op, alpha, cov, TILE_SIZE *
+  TILE_SIZE)` instead of `compositeTile` on `STROKE_SCRATCH` + the 65,536-iteration JS loop:
+  - Unchanged tiles (`r === 0`) are never made writable (kept shared with any frozen undo clone).
+  - Emptied tiles (`r === 2`) are dropped (`_dropTile(key)`) without allocating or copying a writable tile.
+  - Written tiles (`r === 1`) call `writable(tx, ty, true, true)`, skipping the prior 256 KB copy of a frozen tile
+    before overwriting all `256² * 4` bytes.
+
+Builds (`python tools/build_px.py --check`):
+- `renderer/editor/px/px.wasm`:        213,244 bytes  sha256 be68d51eb28832a2
+- `renderer/editor/px/px_scalar.wasm`: 170,162 bytes  sha256 09940291941b6e0f
+
+Node microbenchmarks (`PX_BENCH=1 PX_ONLY=compositeSha node tools/px_test.js`, median of 200 rounds):
+- 256x256 full tile (op 0, alpha 200, mask):
+  - twin:   1.381 ms
+  - simd:   0.302 ms (4.57x speedup vs twin; cold first call 0.6 ms, compile 10.6 ms)
+  - scalar: 1.097 ms
+- 256x256 sparse 48x48 dab in tile (op 0, alpha 200, mask):
+  - twin:   0.211 ms
+  - simd:   0.039 ms (5.41x speedup vs twin)
+  - scalar: 0.076 ms
+
+15000 x 10000 before (`21accab7`) vs after (`K36`), 3 alternating rounds on port 9619 (`w1_lock.py` held per round):
+row                                                         before (21accab7)               after (K36)
+  compositeStroke 24 frozen tiles paint (rust) ms           9.60 [9.28-10.78]          5.03 [4.61-5.33]   n=3/3  (1.91x)
+  compositeStroke 24 frozen tiles paint (js twin) ms        9.60 [9.28-10.78]         10.83 [8.92-13.84]  n=3/3
+  compositeStroke 24 frozen tiles clipped (rust) ms        10.50 [9.97-12.18]          6.01 [5.33-6.34]   n=3/3  (1.75x)
+  compositeStroke 24 frozen tiles clipped (js twin) ms     10.50 [9.97-12.18]        13.77 [11.11-17.81]  n=3/3
+  compositeStroke 24 frozen tiles erase (rust) ms           9.46 [8.94-11.20]          6.10 [5.74-6.90]   n=3/3  (1.55x)
+  compositeStroke 24 frozen tiles erase (js twin) ms        9.46 [8.94-11.20]        13.18 [10.55-17.27]  n=3/3
+  native stroke_and_release (3 tiles + draw) wall ms      372.0 [317.0-640.0]       419.0 [347.0-456.0]   n=3/3  (tie, spreads overlap)
+  native stroke_and_release (3 tiles + draw) blocked ms   372.0 [317.0-640.0]       419.0 [347.0-456.0]   n=3/3  (tie, spreads overlap)
+  native stroke_and_release (3 tiles + draw) release ms      13.9 [11.5-35.8]            7.7 [6.9-18.7]   n=3/3  (tie, spreads overlap)
+
+Verdict (docs/PLAN_WASM_BUILD.md §1.1):
+- The felt whole-operation row (`stroke_and_release`, which touches 3 tiles out of 60 dab frames plus `ed.draw()`) ties
+  between `before` and `after` (`wall` 372.0 ms [317.0-640.0] vs 419.0 ms [347.0-456.0], `release` 13.9 ms [11.5-35.8]
+  vs 7.7 ms [6.9-18.7]; the spreads overlap).
+- Rust stays by §1.1 rule 2 (the tie rule) because the `compositeStroke` kernel row is strictly faster on Rust across
+  all three modes: paint `5.03 ms [4.61-5.33]` vs `9.60 ms [9.28-10.78]` before and `10.83 ms [8.92-13.84]` JS twin,
+  clipped paint `6.01 ms [5.33-6.34]` vs `10.50 ms [9.97-12.18]` before and `13.77 ms [11.11-17.81]` JS twin, and
+  erase `6.10 ms [5.74-6.90]` vs `9.46 ms [8.94-11.20]` before and `13.18 ms [10.55-17.27]` JS twin.
+
+Pins & byte-equality:
+- `px_test.js` (`compositeSha` on `simd`, `scalar`, and `js`: 200 cases x 2 offsets across all ops `0..=30`, opacities,
+  `dst` present / `null`, `mask` present / `null` / zero, sparse 65,536-px tiles, SIMD+tail active spans, outcomes `0`,
+  `1`, `2`, refusals `3`, route switching, trap recovery, and `TileLayerPixels.compositeStroke` including frozen clone
+  byte preservation): PASS (0 differences).
+- `editor_test.py` (`a_stroke_commits_through_the_kernel_on_tiles`): PASS (`composite_masked_tile > 0` on `"rust"`, `0`
+  on `"js"`, `!composite_tile`, byte-for-byte + `tileCount` identical between `"js"` and `"rust"` on paint and erase).
+- 15000 x 10000 24-tile benchmark all-byte FNV-1a hashes (`base_hash=2350680613`, `paint_hash=1178011791`,
+  `clipped_hash=1299386662`, `erase_hash=2968442365`, `paint_tiles=24`, `erase_tiles=16`): all four hashes are distinct
+  and identical across `before (21accab7)`, `after (rust)`, and `after (js)` in every round.
+
+Mutation round (`docs/measurements/k36_2026-11-08/mutation/results.txt`):
+- 18 mutants across `composite.rs`, `px.js`, `kernels_js.js`, `kernels.js`, and `inpaint_tiles.js`:
+  - Initial run: 16 killed, 1 survived (`simd::active_span` dropping scalar tail when `first_g < n4 && tail_active`),
+    which exposed a missing test case with both a SIMD group and the scalar tail active in the same chunk.
+  - Added SIMD+tail pair test cases (`px = 5, 7, 19, 255, 263, 513, 1031`) and frozen-clone byte check (`eqBytes(snapBytes, before)`)
+    to `tools/px_test.js` plus the `old.data` write mutant: `18/18` killed on `PX_ONLY=compositeSha`, 0 survived.
+
+Gates (`lint types pixels composite brush editor` on both backends):
+- `k36-tiles` (461s):  lint 23s, types 14s, pixels 25s, composite 16s, brush 19s, editor 342s -> ALL PASS
+- `k36-canvas` (289s): lint 18s, types 10s, pixels 25s, composite 9s, brush 16s, editor 187s -> ALL PASS

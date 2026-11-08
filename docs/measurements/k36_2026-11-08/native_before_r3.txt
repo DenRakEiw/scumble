@@ -1,0 +1,52 @@
+probes in
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1365, "encodeMs": 2651, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 5846 ms, longest block 729 ms
+   {"loadFileMs": 5659, "tiles": 2360, "compositorBefore": "not made", "compositorAfter": "made"}
+   main thread ms: idle 3918 | browser natives 733 | px kernels 2 | other JS 809 | GC 83 | (program) 518
+     natives: getProgramParameter 644, beat 17, setTimeout 17, f 10, getContext 10, texSubImage2D 10, getShaderParameter 8, now 4
+     px kernels by function (self time): _in [px.js:258] 1, wasm-function[16] [wasm] 1
+     JS by file: inpaint_tiles.js 716, inpaint_resample.js 39, inpaint_arena.js 18, inpaint_compositor.js 17, inpaint_canvas.js 13, inpaint_pool.js 6, host.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1385] 484, normalizeBlock [inpaint_tiles.js:541] 160, canvasRoundTrip [inpaint_resample.js:165] 39, put [inpaint_tiles.js:1153] 26, allocTileBytes [inpaint_arena.js:110] 17, coarseSlot [inpaint_tiles.js:1238] 7, tileWithGutter [inpaint_tiles.js:1123] 7, _stampAt [inpaint_tiles.js:1070] 6
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   3     642.7 ms        0.0 MB
+     gl texSubImage2D                      4280      11.4 ms        9.4 MB
+     gl getShaderParameter                    6       8.1 ms        0.0 MB
+     worker postMessage (moved)             164       2.6 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.9 ms        0.0 MB
+     blob arrayBuffer                         8       0.8 ms        0.0 MB
+     2d drawImage >= 1 MP                     8       0.5 ms       66.9 MB
+   worker png_read: 1 jobs, {"kernel": 3217.3, "parse": 1.6, "read": 111.1, "write": 3101, "wait": 1610.4, "copy": 130, "unfilter": 1403.6, "deliver": 32.5, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 1053.4, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+
+== add_the_paint_layer: wall 1150 ms, longest block 995 ms
+   {"tiles": 2301, "genMs": 93, "writeMs": 848, "addMs": 208}
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      5069       9.5 ms       10.0 MB
+     2d putImageData                       2286       2.5 ms        1.1 MB
+     worker postMessage (moved)              90       2.1 ms        0.0 MB
+     2d drawImage >= 1 MP                    14       0.6 ms      117.2 MB
+     2d drawImage < 1 MP                     20       0.2 ms       11.2 MB
+   worker mips: 18 jobs, {"kernel": 646.2, "gen": 0}  px: mip_chain 2340, clamp_extend 39
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2340, clamp_extend 39
+
+== stroke_and_release: wall 640 ms, longest block 640 ms
+   {"frame_median": 2.98, "frame_max": 94.19, "release": 35.8}
+   main thread ms: idle 75 | browser natives 568 | px kernels 6 | other JS 131 | GC 5 | (program) 65
+     natives: restore 485, putImageData 33, texSubImage2D 19, drawImage 16, getImageData 6, (anonymous) 3, f 3, clearRect 1
+     px kernels by function (self time): _in [px.js:258] 2, pxCalls [px.js:52] 1, wasm-function[42] [wasm] 1
+     JS by file: inpaint_tiles.js 103, inpaint_compositor.js 16, inpaint_canvas.js 11, plugins.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): put [inpaint_tiles.js:1153] 40, regionCanvas [inpaint_tiles.js:2229] 30, composite [inpaint_compositor.js:1026] 7, compositeStroke [inpaint_tiles.js:1421] 7
+   boundaries (calls, ms inside the call, MB):
+     2d putImageData                        200      35.2 ms       70.8 MB
+     2d drawImage >= 1 MP                   363      14.0 ms     4684.8 MB
+     2d getImageData                        120       6.4 ms        1.4 MB
+     gl texSubImage2D                        51       0.5 ms        0.8 MB
+   px calls, window: composite_tile 3
+   px calls, workers: -
+[ok] close: {"closed": 2, "arena": {"slots": 4667, "chunks": 19, "allocated": 7027, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 1275068416, "freeSlots": 197}}
+
+RESULT measured
