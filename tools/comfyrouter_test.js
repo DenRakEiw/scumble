@@ -618,6 +618,13 @@ async function main() {
         const s4 = fakeServer({ result: [() => json(200, { id: "x", status: "Ready", result: { sample: "http://evil.example/a.png" } })] });
         const e4 = await throws(() => R.generate(textReq(variant("flux2_pro")), ctxFor(s4)));
         check("an asset link that is not https (and not the test host) is not fetched", /does not fetch/.test(e4 || "") && s4.assets.length === 0, e4);
+        let dlTry = 0;
+        const s4b = fakeServer({ asset: () => (++dlTry < 3 ? new Response("gateway error", { status: 502 }) : new Response(ASSET, { status: 200, headers: { "content-type": "image/png" } })) });
+        const o4b = await R.generate(textReq(variant("flux2_pro")), ctxFor(s4b));
+        check("an asset download that fails twice is retried a third time and lands the picture, with one submit", s4b.submits.length === 1 && s4b.assets.length === 3 && tagOf(o4b.bytes) === "ASSET", short({ submits: s4b.submits.length, assets: s4b.assets.length }));
+        const s4c = fakeServer({ asset: () => new Response(`storage down ${KEY}`, { status: 503 }) });
+        const e4c = await throws(() => R.generate(textReq(variant("flux2_pro")), ctxFor(s4c)));
+        check("an asset download that fails all 3 times names the request id and says the job may still finish and be charged, without the key", s4c.submits.length === 1 && s4c.assets.length === 3 && (e4c || "").includes(RID) && /may still finish and be charged/.test(e4c || "") && !(e4c || "").includes(KEY), e4c);
         const e5 = await throws(() => R.edit(editReq(v, { model: "openai/../../x" }), ctxFor(fakeServer())));
         const e6 = await throws(() => R.edit(editReq(v, { model: "anthropic/claude-sonnet-5" }), ctxFor(fakeServer())));
         const e7 = await throws(() => R.edit(editReq(v, { model: "__proto__/x" }), ctxFor(fakeServer())));
@@ -1044,6 +1051,13 @@ async function main() {
         const s13 = fakeServer({ hy: [() => json(200, { choices: [{ delta: {} }], request_id: "x" })] });
         const e13 = await throws(() => partner.edit(req(), ctxFor(s13)));
         check("an answer without a picture says so", /answer holds no picture/.test(e13 || ""), e13);
+        let hyDlTry = 0;
+        const s13b = fakeServer({ asset: () => (++hyDlTry < 3 ? new Response("cdn 502", { status: 502 }) : new Response(ASSET, { status: 200, headers: { "content-type": "image/png" } })) });
+        const o13b = await partner.edit(req(), ctxFor(s13b));
+        check("Partner API: an asset download that fails twice is retried a third time and lands the picture, with one generation POST", s13b.hy.length === 1 && s13b.assets.length === 3 && tagOf(o13b.bytes) === "ASSET", short({ hy: s13b.hy.length, assets: s13b.assets.length }));
+        const s13c = fakeServer({ asset: () => new Response(`partner cdn 503 ${KEY}`, { status: 503 }) });
+        const e13c = await throws(() => partner.edit(req(), ctxFor(s13c)));
+        check("Partner API: an asset download that fails all 3 times names the request id (hy-1) and says the job may still finish and be charged, without the key", s13c.hy.length === 1 && s13c.assets.length === 3 && (e13c || "").includes("hy-1") && /may still finish and be charged/.test(e13c || "") && !(e13c || "").includes(KEY), e13c);
 
         const s14 = fakeServer();
         const e14 = await throws(() => partner.edit(req(), ctxFor(s14, { key: REAL_KEY })));

@@ -52,7 +52,7 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
-const { dataUri, b64, fetchImage, sleep: realSleep, fitPixels, closestAspect, closestSize, tierFor, seedOf, textShape, ideogramMask } = require("./util");
+const { dataUri, b64, downloadImage, sleep: realSleep, fitPixels, closestAspect, closestSize, tierFor, seedOf, textShape, ideogramMask } = require("./util");
 const { layoutOf, refRoles, countOf, instruction, labelParts } = require("./refs");
 const openai = require("./openai");
 const ark = require("./ark");
@@ -872,11 +872,12 @@ async function sync(ctx, comfy, modelId, body, waitMs) {
 // ---- runs ----------------------------------------------------------------------------------------------------
 
 /** A URL the answer names, fetched without the key: https, or the test mock's own host. */
-async function download(url, ctx, test, modelId) {
+async function download(url, ctx, test, modelId, requestId) {
+    const who = ctx.who || `Comfy Router ${modelId}`;
     const s = String(url || "");
     const ok = /^https:\/\//i.test(s) || /^data:image\//i.test(s) || (test && s.startsWith(test + "/"));
-    if (!ok) throw new Error(`${ctx.who || "Comfy Router " + modelId}: the answer points to "${s.slice(0, 80)}", which Scumble does not fetch.`);
-    return fetchImage(s, ctx.fetch);
+    if (!ok) throw new Error(`${who}: the answer points to "${s.slice(0, 80)}", which Scumble does not fetch.`);
+    return downloadImage(s, ctx, { who, id: requestId });
 }
 
 /** Whether bytes open like a PNG, a JPEG, a WebP or a GIF. */
@@ -942,7 +943,7 @@ async function run(req, ctx, kind) {
         throw new Error(scrub(`Comfy Router ${modelId}: ${why}`, ctx.key));
     }
     if (out.url && !out.bytes) {
-        const file = await download(out.url, ctx, test, modelId);
+        const file = await download(out.url, ctx, test, modelId, got.meta.request_id);
         out = { ...out, bytes: file.bytes, mime: file.mime };
     }
     const bytes = Buffer.from(out.bytes);

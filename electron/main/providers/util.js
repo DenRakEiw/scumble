@@ -18,22 +18,251 @@ async function fetchImage(url, fetchFn, headers = {}) {
         return { bytes, mime };
     }
     const r = await fetchFn(url, { headers });
-    if (!r.ok) throw new Error(`image download answered ${r.status}`);
-    return { bytes: Buffer.from(await r.arrayBuffer()), mime: r.headers.get("content-type") || "image/png" };
+    if (!r.ok) throw Object.assign(new Error(`image download answered ${r.status}`), { response: r });
+    return { bytes: Buffer.from(await r.arrayBuffer()), mime: (r.headers && typeof r.headers.get === "function" && r.headers.get("content-type")) || "image/png" };
 }
 
-async function readError(r) {
+function scrub(text, key) {
+    let s = String(text == null ? "" : text);
+    if (key && key.length >= 6) s = s.split(key).join("[key]");
+    return s;
+}
+
+async function readError(r, key) {
     let text = "";
     try { text = await r.text(); } catch (_) { text = ""; }
+    text = scrub(text, key);
     try {
         const j = JSON.parse(text);
         const msg = (j.error && (j.error.message || j.error)) || j.detail || j.message || j.status;
-        if (msg) return typeof msg === "string" ? msg : JSON.stringify(msg);
+        if (msg) return scrub(typeof msg === "string" ? msg : JSON.stringify(msg), key);
     } catch (_) { /* not JSON */ }
-    return text.slice(0, 300) || r.statusText || String(r.status);
+    return text.slice(0, 300) || (r && r.statusText) || String((r && r.status) || "");
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const RETRY_AFTER_MAX_MS = 60 * 1000;
+
+function retryAfterMs(r, fallback = 1000) {
+    const h = r && r.headers;
+    const v = h && (typeof h.get === "function" ? h.get("retry-after") : (h["retry-after"] ?? h["Retry-After"]));
+    if (v == null || v === "") return fallback;
+    const n = Number(v);
+    if (Number.isFinite(n)) {
+        const asked = n * 1000;
+        return asked > 0 ? Math.min(asked, RETRY_AFTER_MAX_MS) : fallback;
+    }
+    const at = Date.parse(v);
+    if (Number.isFinite(at)) {
+        const asked = at - Date.now();
+        return asked > 0 ? Math.min(asked, RETRY_AFTER_MAX_MS) : fallback;
+    }
+    return fallback;
+}
+
+function isTransientStatus(status) {
+    return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+const POLL_FAILURES_MAX = 5;
+const RESULT_TRIES = 3;
+
+const aborted = () => Object.assign(new Error("cancelled"), { name: "AbortError" });
+
+function isAbort(err, ctx) {
+    return !!(ctx && ctx.signal && ctx.signal.aborted) || !!(err && (err.name === "AbortError" || err.code === "ABORT_ERR"));
+}
+
+/** Wait `ms` through `ctx.sleep` (or `sleep`), ending at once on `ctx.signal` abort. */
+function pause(ms, ctx) {
+    const signal = ctx && ctx.signal;
+    if (signal && signal.aborted) return Promise.reject(aborted());
+    const sleepFn = (ctx && typeof ctx.sleep === "function") ? ctx.sleep : null;
+    if (!signal) return sleepFn ? Promise.resolve(sleepFn(ms)) : sleep(ms);
+    return new Promise((resolve, reject) => {
+        let timer = null;
+        const stop = () => {
+            if (timer) clearTimeout(timer);
+            reject(aborted());
+        };
+        signal.addEventListener("abort", stop, { once: true });
+        if (sleepFn) {
+            Promise.resolve().then(() => sleepFn(ms)).then(
+                () => {
+                    signal.removeEventListener("abort", stop);
+                    if (signal.aborted) reject(aborted());
+                    else resolve();
+                },
+                (err) => {
+                    signal.removeEventListener("abort", stop);
+                    reject(signal.aborted ? aborted() : err);
+                }
+            );
+        } else {
+            timer = setTimeout(() => {
+                signal.removeEventListener("abort", stop);
+                if (signal.aborted) reject(aborted());
+                else resolve();
+            }, ms);
+        }
+    });
+}
+
+async function callFetch(ctx, url, init) {
+    if (ctx && ctx.signal && ctx.signal.aborted) throw aborted();
+    const r = await (init === undefined ? ctx.fetch(url) : ctx.fetch(url, init));
+    if (ctx && ctx.signal && ctx.signal.aborted) throw aborted();
+    return r;
+}
+
+async function readBody(r) {
+    let text = "", json = null;
+    if (r && typeof r.text === "function") {
+        try { text = await r.text(); } catch (_) { text = ""; }
+        try { json = JSON.parse(text); } catch (_) { json = null; }
+    }
+    if (json == null && r && typeof r.json === "function" && typeof r.clone !== "function") {
+        try {
+            json = await r.json();
+            if (!text && json != null) text = JSON.stringify(json);
+        } catch (_) { json = null; }
+    }
+    return { json, text };
+}
+
+function errorText(r, text, json, key) {
+    const clean = scrub(text, key);
+    if (json && typeof json === "object") {
+        const msg = (json.error && (json.error.message || json.error)) || json.detail || json.message || json.status;
+        if (msg) return scrub(typeof msg === "string" ? msg : JSON.stringify(msg), key);
+    }
+    return clean.slice(0, 300) || (r && r.statusText) || String((r && r.status) || "error");
+}
+
+/**
+ * Downloads a finished job's picture (up to 3 tries, honouring Retry-After and Cancel). On failure, names the
+ * request id and says the job may still finish and be charged, with the key scrubbed.
+ */
+async function downloadImage(url, ctx, opts = {}) {
+    const { who = "Provider", id = "", headers } = opts;
+    const key = ctx && ctx.key;
+    const fetchFn = (u, init) => callFetch(ctx, u, init);
+    let last = "";
+    for (let attempt = 1; attempt <= RESULT_TRIES; attempt++) {
+        if (ctx && ctx.signal && ctx.signal.aborted) throw aborted();
+        try {
+            return await fetchImage(url, fetchFn, headers);
+        } catch (err) {
+            if (isAbort(err, ctx)) throw err;
+            last = scrub(String((err && err.message) || err), key);
+            if (attempt < RESULT_TRIES) {
+                const wait = err && err.response ? retryAfterMs(err.response, 1500 * attempt) : 1500 * attempt;
+                await pause(wait, ctx);
+            }
+        }
+    }
+    const tag = id ? ` (request ${id})` : "";
+    throw new Error(scrub(`${who}${tag}: the picture could not be downloaded (${last}); the job may still finish and be charged.`, key));
+}
+
+/**
+ * Polls a submitted job until `done(state)` is true (modelled on bfl.js): up to 5 failed status reads in a row
+ * (a thrown fetch, 408, 425, 429, 5xx, or a body that is not a status JSON object), reset by a good read, with a
+ * backoff on `ctx.sleep` and `Retry-After` (above 0, capped at 60 s) respected; other 4xx answers (such as
+ * 400/401/402/403/404/422) and provider-reported failures end at once; a Cancel stops at once; if `resultUrl` is
+ * given, the result JSON is tried up to 3 times.
+ */
+async function pollJob(ctx, opts) {
+    const {
+        who,
+        timeoutWho = who,
+        statusWho = `${who} status`,
+        resultWho = `${who} result`,
+        id = "",
+        waitMs,
+        initial,
+        url,
+        resultUrl,
+        headers = {},
+        delay = 1000,
+        parse,
+        done,
+    } = opts;
+    const key = ctx && ctx.key;
+    const tag = id ? ` (request ${id})` : "";
+    const t0 = Date.now();
+    let state = initial;
+    let misses = 0;
+    let nextWait = null;
+
+    while (!done(state)) {
+        const rem = waitMs - (Date.now() - t0);
+        if (rem <= 0) {
+            throw new Error(scrub(`${timeoutWho}: timed out after ${Math.round(waitMs / 60000)} minutes${tag}; the job may still finish and be charged.`, key));
+        }
+        const wait = nextWait != null ? nextWait : (typeof delay === "function" ? delay(state) : delay);
+        nextWait = null;
+        await pause(Math.min(wait, rem), ctx);
+        const pollUrl = typeof url === "function" ? url(state) : url;
+        let r;
+        try {
+            r = await callFetch(ctx, pollUrl, { headers });
+        } catch (err) {
+            if (isAbort(err, ctx)) throw err;
+            const why = scrub(String((err && err.message) || err), key);
+            if (++misses > POLL_FAILURES_MAX) {
+                throw new Error(scrub(`${who}${tag}: status poll failed (${why}); the job may still finish and be charged.`, key));
+            }
+            nextWait = 1000 * misses;
+            continue;
+        }
+        const { json, text } = await readBody(r);
+        const parsed = (!r.ok && isTransientStatus(r.status)) ? null : (parse ? parse(json, state) : (json && typeof json === "object" && !Array.isArray(json) ? json : null));
+        if (!r.ok || !parsed) {
+            const detail = errorText(r, text, json, key);
+            if (!r.ok && !isTransientStatus(r.status)) {
+                throw new Error(scrub(`${statusWho}${tag}: ${detail}`, key));
+            }
+            const why = !r.ok ? `HTTP ${r.status}${detail ? " " + detail : ""}` : `invalid status JSON${text ? ": " + scrub(text, key).slice(0, 200) : ""}`;
+            if (++misses > POLL_FAILURES_MAX) {
+                throw new Error(scrub(`${who}${tag}: status poll failed (${why}); the job may still finish and be charged.`, key));
+            }
+            nextWait = retryAfterMs(r, 1000 * misses);
+            continue;
+        }
+        misses = 0;
+        state = parsed;
+    }
+
+    if (!resultUrl) return state;
+
+    const resUrl = typeof resultUrl === "function" ? resultUrl(state) : resultUrl;
+    let last = "";
+    for (let attempt = 1; attempt <= RESULT_TRIES; attempt++) {
+        let r;
+        try {
+            r = await callFetch(ctx, resUrl, { headers });
+        } catch (err) {
+            if (isAbort(err, ctx)) throw err;
+            last = scrub(String((err && err.message) || err), key);
+            if (attempt < RESULT_TRIES) await pause(1500 * attempt, ctx);
+            continue;
+        }
+        const { json, text } = await readBody(r);
+        if (!r.ok && !isTransientStatus(r.status)) {
+            throw new Error(scrub(`${resultWho}${tag}: ${errorText(r, text, json, key)}`, key));
+        }
+        if (r.ok && json && typeof json === "object" && !Array.isArray(json)) {
+            return json;
+        }
+        const detail = errorText(r, text, json, key);
+        last = !r.ok ? `HTTP ${r.status}${detail ? " " + detail : ""}` : `invalid result JSON${text ? ": " + scrub(text, key).slice(0, 200) : ""}`;
+        if (attempt < RESULT_TRIES) await pause(retryAfterMs(r, 1500 * attempt), ctx);
+    }
+    throw new Error(scrub(`${who}${tag}: result could not be read (${last}); the job may still finish and be charged.`, key));
+}
+pollJob.download = downloadImage;
 
 /** Pick from `sizes` (["WxH", ...]) the one whose aspect is closest to w:h. */
 function closestSize(w, h, sizes) {
@@ -204,4 +433,4 @@ function noKeyText(label, stale) {
         : `No API key for ${label}. Add it under Settings › API providers.`;
 }
 
-module.exports = { dataUri, b64, fetchImage, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };
+module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, retryAfterMs, scrub, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };

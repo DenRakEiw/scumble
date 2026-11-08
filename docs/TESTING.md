@@ -761,6 +761,14 @@ Plain Node, from the repository's root:
   `X-API-Key` on the Partner API's, and `tools/comfyrouter_test.py` checks each header where it belongs.
 - The legacy Comfy Cloud path keeps its tests: `cloudgraph_test.js`, `upscale_test.js` and `nanobanana21_test.js` call
   the adapter without `cloudApi`, which is the legacy path.
+- `node -r ./tools/nonet.js tools/prv1_test.js` (run by the `comfyrouter` gate alongside `comfyrouter_test.js` under
+  `nonet.js`) pins the shared `pollJob` and `downloadImage` helpers (`electron/main/providers/util.js`) across `fal.js`
+  (`edit`, `upscale`, `relight`, `response_url`), `replicate.js`, `wavespeed.js`, `comfyrouter.js` and `comfypartner.js`:
+  up to 5 consecutive transient status-poll failures (`thrown fetch`, `408`, `425`, `429`, `5xx`, non-JSON body) reset by
+  a good read with `[1000..5000]` ms backoff and `Retry-After` (`> 0`, capped at `60` s) respected, 3-try result JSON and
+  picture download retries (`[1500, 3000]` ms backoff), immediate stop on Cancel / `AbortError`, definite 4xx and
+  provider-reported terminal states failing at once, fake-clock poll timeout clamping, single submit POST, and request-id
+  + key-scrubbed error messages.
 
 In the app: the gate `cloudjobs` (`tools/cloudjobs_test.py`; its own instances on port 9576 with profiles of their own
 and `--no-comfy`, against a loopback mock of the v2 job routes, nothing but loopback reached): a test key and the mock as
