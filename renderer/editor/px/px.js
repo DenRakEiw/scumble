@@ -740,7 +740,8 @@ export class Px {
     /**
      * Per-tile minimum, maximum, and edge flag over a depth map (`map` and optional `rmax`, `mw` x `mh` u16) for a
      * `W` x `H` document in `tile`² tiles (K21, docs/PLAN_WASM_BUILD.md §4.8). Copies only the map row window `[wy0..wy1]`
-     * that each document tile row `ty` can read, never the whole map at once.
+     * that each document tile row `ty` can read, never the whole map at once. `min` / `max` clamp the 2-texel window on
+     * both sides to `[0, mw - 1] x [0, mh - 1]`; `edge` is set only when the unclamped window meets the map.
      */
     mapTileStats(map, rmax, mw, mh, xf, W, H, thresh = 0, tile = 256) {
         if (!map || !(mw > 0) || !(mh > 0) || !(W > 0) || !(H > 0) || !(tile > 0) || !Array.isArray(xf) || xf.length < 6) {

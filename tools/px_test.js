@@ -3784,7 +3784,7 @@ async function selCases(js, simd, scalar, raster, K) {
 async function rangeCases(js, simd, scalar, resample, K) {
     const weights = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_weights.js")).href);
     const edges = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_edges.js")).href);
-    const { u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping, sstep } = weights;
+    const { u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping } = weights;
     const { snapField, snapParams, SNAP_TAU } = edges;
 
     let seed = 0x4b3231;
@@ -3814,7 +3814,17 @@ async function rangeCases(js, simd, scalar, resample, K) {
                         const v = map[my * mw + mx];
                         if (v < lo) lo = v;
                         if (v > hi) hi = v;
-                        if (!hasEdge && hasRmax && rmax[my * mw + mx] > thr) hasEdge = 1;
+                    }
+                }
+                if (hasRmax) {
+                    const eix0 = Math.max(0, Math.floor(mx0 - 2));
+                    const eiy0 = Math.max(0, Math.floor(my0 - 2));
+                    const eix1 = Math.min(mw - 1, Math.ceil(mx1 + 2));
+                    const eiy1 = Math.min(mh - 1, Math.ceil(my1 + 2));
+                    for (let my = eiy0; my <= eiy1 && !hasEdge; my++) {
+                        for (let mx = eix0; mx <= eix1; mx++) {
+                            if (rmax[my * mw + mx] > thr) { hasEdge = 1; break; }
+                        }
                     }
                 }
                 const idx = ty * cols + tx;
@@ -3857,6 +3867,7 @@ async function rangeCases(js, simd, scalar, resample, K) {
         ["rot90", [0, mh / W, -mw / H, 0, mw, 0]],
         ["rot270", [0, -mh / W, mw / H, 0, 0, mh]],
         ["rot17_shift", [0.23 * Math.cos(0.3), 0.23 * Math.sin(0.3), -0.21 * Math.sin(0.3), 0.21 * Math.cos(0.3), 17.5, -9.25]],
+        ["extend_2x", [2 * mw / W, 0, 0, 2 * mh / H, 0, 0]],
         ["outside_clamped", [0.1, 0, 0, 0.1, -500, mw + 500]],
     ];
 

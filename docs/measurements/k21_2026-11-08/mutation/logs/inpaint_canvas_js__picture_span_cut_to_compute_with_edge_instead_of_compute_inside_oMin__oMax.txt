@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__picture_span_cut_to_compute_wit-selection --offline --tiles on selection  (rc 1, 18 s)
+selection rc=1 2s FAIL
+SOME FAILED

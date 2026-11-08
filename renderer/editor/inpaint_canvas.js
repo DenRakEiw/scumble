@@ -44,7 +44,7 @@ import { promptPayload, selectionBoxIdOf } from "./boxes_model.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
 import { STALE_DIFF, GUIDE, RANGE_BAND_ROWS, WORK_MAX, modelSize, workSize, disparityRange } from "./inpaint_depth.js";
 import { packRG16, mapToJSON, mapFromJSON, fingerprint, fingerprintDiff, passToMap, makeMap, sampleMap, deriveMap, selectionOnMap, editMap } from "./inpaint_maps.js";
-import { SNAP_DEFAULT, SNAP_TAU, snapParams, snapField, rangeMax, edgeTiles, mapTileStats } from "./inpaint_edges.js";
+import { SNAP_DEFAULT, SNAP_TAU, snapParams, snapField, rangeMax, mapTileStats } from "./inpaint_edges.js";
 import { normalizeLimit, u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping, opp, colourSimilarity, hexToRgb as hexToRgb01, WEIGHTS_GLSL } from "./inpaint_weights.js";
 import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
@@ -7539,16 +7539,25 @@ class InpaintEditor {
                             const rowOffset = ty * tileCols;
                             const rowClasses = new Uint8Array(tileCols);
                             let hasCompute = false;
-                            let minTx = -1, maxTx = -1;
+                            let oMin = -1, oMax = -1;
                             for (let tx = 0; tx < tileCols; tx++) {
                                 const idx = rowOffset + tx;
+                                if (snapOn && stats.edge[idx] === 1) {
+                                    if (oMin === -1) oMin = tx;
+                                    oMax = tx;
+                                }
                                 const cls = rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, jobInvert);
                                 if (cls === "full") {
                                     rowClasses[tx] = 1;
                                 } else if (cls === "compute") {
                                     rowClasses[tx] = 2;
                                     hasCompute = true;
-                                    if (snapOn && stats.edge[idx] === 1) {
+                                }
+                            }
+                            let minTx = -1, maxTx = -1;
+                            if (oMin !== -1) {
+                                for (let tx = oMin; tx <= oMax; tx++) {
+                                    if (rowClasses[tx] === 2) {
                                         if (minTx === -1) minTx = tx;
                                         maxTx = tx;
                                     }
@@ -7779,11 +7788,17 @@ class InpaintEditor {
                             let minTx = -1, maxTx = -1;
                             if (snapOn) {
                                 const rowOffset = ty * tileCols;
+                                let oMin = -1, oMax = -1;
                                 for (let tx = 0; tx < tileCols; tx++) {
-                                    const idx = rowOffset + tx;
-                                    if (stats.edge[idx] === 1) {
-                                        const cls = rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, jobInvert);
-                                        if (cls === "compute") {
+                                    if (stats.edge[rowOffset + tx] === 1) {
+                                        if (oMin === -1) oMin = tx;
+                                        oMax = tx;
+                                    }
+                                }
+                                if (oMin !== -1) {
+                                    for (let tx = oMin; tx <= oMax; tx++) {
+                                        const idx = rowOffset + tx;
+                                        if (rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, jobInvert) === "compute") {
                                             if (minTx === -1) minTx = tx;
                                             maxTx = tx;
                                         }

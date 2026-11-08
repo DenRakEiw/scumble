@@ -1896,10 +1896,16 @@ export function mapTileStats(map, rmax, mw, mh, xf, W, H, thresh = 0, tile = 256
             const mx1 = Math.max(x00, x10, x01, x11);
             const my1 = Math.max(y00, y10, y01, y11);
 
-            const ix0 = Math.max(0, Math.min(mw - 1, Math.floor(mx0 - 2)));
-            const iy0 = Math.max(0, Math.min(mh - 1, Math.floor(my0 - 2)));
-            const ix1 = Math.max(0, Math.min(mw - 1, Math.ceil(mx1 + 2)));
-            const iy1 = Math.max(0, Math.min(mh - 1, Math.ceil(my1 + 2)));
+            const rx0 = Math.floor(mx0 - 2);
+            const ry0 = Math.floor(my0 - 2);
+            const rx1 = Math.ceil(mx1 + 2);
+            const ry1 = Math.ceil(my1 + 2);
+            const meetsMap = rx0 <= mw - 1 && rx1 >= 0 && ry0 <= mh - 1 && ry1 >= 0;
+
+            const ix0 = Math.max(0, Math.min(mw - 1, rx0));
+            const iy0 = Math.max(0, Math.min(mh - 1, ry0));
+            const ix1 = Math.max(0, Math.min(mw - 1, rx1));
+            const iy1 = Math.max(0, Math.min(mh - 1, ry1));
 
             let lo = 65535;
             let hi = 0;
@@ -1912,7 +1918,7 @@ export function mapTileStats(map, rmax, mw, mh, xf, W, H, thresh = 0, tile = 256
                     const v = map[idx];
                     if (v < lo) lo = v;
                     if (v > hi) hi = v;
-                    if (!hasEdge && hasRmax && rmax[idx] > thr) {
+                    if (meetsMap && !hasEdge && hasRmax && rmax[idx] > thr) {
                         hasEdge = 1;
                     }
                 }

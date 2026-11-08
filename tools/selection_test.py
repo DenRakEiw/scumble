@@ -372,6 +372,127 @@ if (ed.tileMode) {
     }
 }
 
+// K21-L3: select-by-depth after Extend with snap on, compared byte-for-byte with js route and class-free base span
+{
+    const { snapField, snapParams, rangeMax } = await import("./editor/inpaint_edges.js");
+    const { rangeWeight, u16Bilinear } = await import("./editor/inpaint_weights.js");
+    const dExt = await run("new_document");
+    await run("new_canvas", { doc: dExt.id, width: 1024, height: 256, color: "#0000ff" });
+    const edExt = ednow(dExt.id);
+    const mw = 64, mh = 16;
+    const depth = new Uint16Array(mw * mh);
+    const guideData = new Uint8Array(mw * mh * 4);
+    for (let y = 0; y < mh; y++) {
+        for (let x = 0; x < mw; x++) {
+            const i = y * mw + x;
+            if (x < 10) depth[i] = (x & 1) ? 10000 : 17000;
+            else if (x <= 18) depth[i] = 17000;
+            else if (x < 50) depth[i] = (x % 4 < 2) ? 17000 : 18311;
+            else depth[i] = (y & 1) ? 17000 : 24000;
+            const left = (x < 50) ? ((x % 4) < 2) : ((y & 1) === 0);
+            guideData[i * 4] = left ? 255 : 0;
+            guideData[i * 4 + 2] = left ? 0 : 255;
+            guideData[i * 4 + 3] = 255;
+        }
+    }
+    await edExt.setMap("depth", makeMap("depth", mw, mh, depth, [1024, 0, 0, 256, 0, 0], { snap: { strength: 50 } }, guideData));
+    await run("extend_canvas", { doc: dExt.id, right: 1024 });
+    const lExt = await run("add_paint_layer", { doc: dExt.id, name: "ext_guide" });
+    const layerExt = edExt.layers.find((x) => x.id === lExt.id);
+    layerExt.px.drawInto([0, 0, 2048, 256], (ctx) => {
+        ctx.fillStyle = "#0000ff";
+        ctx.fillRect(0, 0, 2048, 256);
+        ctx.fillStyle = "#ff0000";
+        for (let x = 0; x < 800; x += 16) {
+            if ((Math.floor(x / 16) % 4) < 2) ctx.fillRect(x, 0, 16, 256);
+        }
+        for (let y = 0; y < 256; y += 16) {
+            if ((Math.floor(y / 16) & 1) === 0) ctx.fillRect(800, y, 1248, 16);
+        }
+    });
+    edExt.markLayerChanged(layerExt);
+    edExt.renderLayers();
+    edExt.draw();
+    if (edExt.mipsSettled) await edExt.mipsSettled();
+
+    const extLim = { source: "depth", lo: 0.268780517307024, hi: 0.35, fLo: 0, fHi: 0 };
+    const sampledBoxes = [];
+    const origSample = edExt.sampleRegionSettled.bind(edExt);
+    edExt.sampleRegionSettled = function(kind, box, ...rest) {
+        if (kind === "image" && Array.isArray(box)) sampledBoxes.push(box.slice());
+        return origSample(kind, box, ...rest);
+    };
+    try {
+        await edExt.selectRange(extLim, "replace");
+    } finally {
+        edExt.sampleRegionSettled = origSample;
+    }
+    if (sampledBoxes.length !== 1 || sampledBoxes[0][0] !== 256 || sampledBoxes[0][2] !== 1280) {
+        throw new Error("K21-L3 extended snap picture box mismatch: " + JSON.stringify(sampledBoxes));
+    }
+    const rustExt = edExt.sel.readRect(0, 0, 2048, 256).data.slice();
+
+    // Replay with mapTileStats route 'js' and compare byte-for-byte
+    const E = edExt.constructor;
+    edExt.maps.depth._tileStats = null;
+    E.setRoute("mapTileStats", "js");
+    try {
+        await edExt.selectRange(extLim, "replace");
+    } finally {
+        E.setRoute("mapTileStats", null);
+        edExt.maps.depth._tileStats = null;
+    }
+    const jsExt = edExt.sel.readRect(0, 0, 2048, 256).data;
+    for (let i = 3; i < rustExt.length; i += 4) {
+        if (rustExt[i] !== jsExt[i]) throw new Error("K21-L3 js route differed at alpha byte " + i);
+    }
+
+    // Compare byte-for-byte with frozen base span logic (without tile classes)
+    const mapObj = { data: depth, w: mw, h: mh };
+    const rmax = rangeMax(mapObj);
+    const [sigmaR, tau] = snapParams(50);
+    const thresh = Math.round(tau * 65535);
+    const xf = [1 / 16, 0, 0, 1 / 16, 0, 0];
+    let oMin = -1, oMax = -1;
+    for (let tx = 0; tx < 8; tx++) {
+        const mx0 = tx * 256 * xf[0], mx1 = Math.min(2048, (tx + 1) * 256) * xf[0];
+        const ix0 = Math.max(0, Math.floor(mx0 - 2)), ix1 = Math.min(mw - 1, Math.ceil(mx1 + 2));
+        let hit = false;
+        for (let my = 0; my < mh && !hit; my++) {
+            for (let mx = ix0; mx <= ix1; mx++) {
+                if (rmax[my * mw + mx] > thresh) { hit = true; break; }
+            }
+        }
+        if (hit) {
+            if (oMin === -1) oMin = tx;
+            oMax = tx;
+        }
+    }
+    const baseMinX = oMin === -1 ? 0 : oMin * 256;
+    const baseMaxX = oMin === -1 ? 0 : Math.min(2048, (oMax + 1) * 256);
+    for (let y = 0; y < 256; y++) {
+        const py = y + 0.5;
+        const my = py * xf[3] + xf[5];
+        for (let x = 0; x < 2048; x++) {
+            const px = x + 0.5;
+            const mx = px * xf[0] + xf[4];
+            let v;
+            if (x >= baseMinX && x < baseMaxX) {
+                const left = (x < 800) ? ((Math.floor(x / 16) % 4) < 2) : ((Math.floor(y / 16) & 1) === 0);
+                v = snapField(mapObj, guideData, mx, my, left ? 1 : 0, 0, left ? 0 : 1, sigmaR, tau);
+            } else {
+                v = u16Bilinear(depth, mw, mh, mx, my);
+            }
+            const refA = Math.round(255 * rangeWeight(v, extLim));
+            const gotA = rustExt[(y * 2048 + x) * 4 + 3];
+            if (gotA !== refA) {
+                throw new Error(`K21-L3 frozen base mismatch at (${x}, ${y}): got ${gotA}, expected ${refA}`);
+            }
+        }
+    }
+    await run("close_document", { doc: dExt.id, force: true });
+}
+
 return { c1Vals, aCase2, aCase4, expectedSub };
 """),
     ("range_select_15k_tile_case", """

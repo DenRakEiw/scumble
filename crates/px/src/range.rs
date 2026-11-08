@@ -2,8 +2,8 @@
 //!
 //! For one row of document tiles `[0, y0, w, y1]`, `map_tile_stats` maps each tile's four corners into the depth map
 //! via the 6-element affine transform `m0..m5`, expands the bounding box by the 2-texel snap halo, clamps to
-//! `[0, mw - 1] × [0, mh - 1]`, and scans the window (shifted by `wy0`) for the tile's `u16` minimum, maximum, and
-//! whether any texel in `rmax` exceeds `thresh`.
+//! `[0, mw - 1] × [0, mh - 1]` for the tile's `u16` minimum and maximum, and sets the edge flag when the unclamped
+//! 2-texel window meets `[0, mw - 1] × [0, mh - 1]` and any texel in `rmax` within the window exceeds `thresh`.
 
 #[cfg(target_feature = "simd128")]
 use core::arch::wasm32::*;
@@ -57,10 +57,16 @@ pub fn map_tile_stats(
         let mx1 = x00.max(x10).max(x01).max(x11);
         let my1 = y00.max(y10).max(y01).max(y11);
 
-        let ix0 = (mx0 - 2.0).floor().max(0.0).min(max_x) as usize;
-        let iy0 = (my0 - 2.0).floor().max(0.0).min(max_y) as usize;
-        let ix1 = (mx1 + 2.0).ceil().max(0.0).min(max_x) as usize;
-        let iy1 = (my1 + 2.0).ceil().max(0.0).min(max_y) as usize;
+        let rx0 = (mx0 - 2.0).floor();
+        let ry0 = (my0 - 2.0).floor();
+        let rx1 = (mx1 + 2.0).ceil();
+        let ry1 = (my1 + 2.0).ceil();
+        let meets_map = rx0 <= max_x && rx1 >= 0.0 && ry0 <= max_y && ry1 >= 0.0;
+
+        let ix0 = rx0.max(0.0).min(max_x) as usize;
+        let iy0 = ry0.max(0.0).min(max_y) as usize;
+        let ix1 = rx1.max(0.0).min(max_x) as usize;
+        let iy1 = ry1.max(0.0).min(max_y) as usize;
 
         if iy0 < wy0 || iy1 >= wy1 {
             return 0;
@@ -80,7 +86,7 @@ pub fn map_tile_stats(
             if r_hi > hi {
                 hi = r_hi;
             }
-            if !has_edge {
+            if meets_map && !has_edge {
                 if let Some(rm) = rmax {
                     let rmax_slice = &rm[row_off + ix0..=row_off + ix1];
                     if row_has_edge(rmax_slice, thresh) {

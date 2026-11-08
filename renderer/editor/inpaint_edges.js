@@ -4,7 +4,6 @@
 
 import { u16Bilinear, sstep, rangeTileClass, rangeRowBookkeeping } from "./inpaint_weights.js";
 import { boxBlurs, rangeMax as rangeMaxKernel, mapTileStats as mapTileStatsKernel } from "./px/kernels.js";
-import { xfBox } from "./inpaint_resample.js";
 
 export { rangeTileClass, rangeRowBookkeeping };
 

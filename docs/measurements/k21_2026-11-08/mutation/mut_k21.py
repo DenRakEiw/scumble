@@ -36,8 +36,8 @@ MUTANTS = [
         "range.rs: halo 2 -> 1 on ix0/iy0",
         RG,
         [(
-            "        let ix0 = (mx0 - 2.0).floor().max(0.0).min(max_x) as usize;\n        let iy0 = (my0 - 2.0).floor().max(0.0).min(max_y) as usize;",
-            "        let ix0 = (mx0 - 1.0).floor().max(0.0).min(max_x) as usize;\n        let iy0 = (my0 - 1.0).floor().max(0.0).min(max_y) as usize;",
+            "        let rx0 = (mx0 - 2.0).floor();\n        let ry0 = (my0 - 2.0).floor();",
+            "        let rx0 = (mx0 - 1.0).floor();\n        let ry0 = (my0 - 1.0).floor();",
         )],
         "killed",
         {"px": ["range"]},
@@ -46,8 +46,18 @@ MUTANTS = [
         "range.rs: halo 2 -> 1 on ix1/iy1",
         RG,
         [(
-            "        let ix1 = (mx1 + 2.0).ceil().max(0.0).min(max_x) as usize;\n        let iy1 = (my1 + 2.0).ceil().max(0.0).min(max_y) as usize;",
-            "        let ix1 = (mx1 + 1.0).ceil().max(0.0).min(max_x) as usize;\n        let iy1 = (my1 + 1.0).ceil().max(0.0).min(max_y) as usize;",
+            "        let rx1 = (mx1 + 2.0).ceil();\n        let ry1 = (my1 + 2.0).ceil();",
+            "        let rx1 = (mx1 + 1.0).ceil();\n        let ry1 = (my1 + 1.0).ceil();",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "range.rs: meets_map check dropped (clamped edge window beyond map)",
+        RG,
+        [(
+            "            if meets_map && !has_edge {",
+            "            if !has_edge {",
         )],
         "killed",
         {"px": ["range"]},
@@ -197,13 +207,23 @@ MUTANTS = [
         {"gates": ["selection"]},
     ),
     (
-        "inpaint_canvas.js: picture span not cut to compute-class edge tiles",
+        "inpaint_canvas.js: picture span not cut to compute-class tiles inside oMin..oMax",
         IC,
         [(
-            "                            for (let tx = 0; tx < tileCols; tx++) {\n                                const idx = rowOffset + tx;\n                                const cls = rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, jobInvert);\n                                if (cls === \"full\") {\n                                    rowClasses[tx] = 1;\n                                } else if (cls === \"compute\") {\n                                    rowClasses[tx] = 2;\n                                    hasCompute = true;\n                                    if (snapOn && stats.edge[idx] === 1) {\n                                        if (minTx === -1) minTx = tx;\n                                        maxTx = tx;\n                                    }\n                                }\n                            }",
-            "                            for (let tx = 0; tx < tileCols; tx++) {\n                                const idx = rowOffset + tx;\n                                const cls = rangeTileClass(stats.min[idx] / 65535, stats.max[idx] / 65535, limit, jobInvert);\n                                if (snapOn && stats.edge[idx] === 1) {\n                                    if (minTx === -1) minTx = tx;\n                                    maxTx = tx;\n                                }\n                                if (cls === \"full\") {\n                                    rowClasses[tx] = 1;\n                                } else if (cls === \"compute\") {\n                                    rowClasses[tx] = 2;\n                                    hasCompute = true;\n                                }\n                            }",
+            "                                    if (rowClasses[tx] === 2) {\n                                        if (minTx === -1) minTx = tx;\n                                        maxTx = tx;\n                                    }",
+            "                                    if (true) {\n                                        if (minTx === -1) minTx = tx;\n                                        maxTx = tx;\n                                    }",
         )],
         "killed",
         {"gates": ["edges"]},
+    ),
+    (
+        "inpaint_canvas.js: picture span cut to compute-with-edge instead of compute inside oMin..oMax",
+        IC,
+        [(
+            "                                    if (rowClasses[tx] === 2) {\n                                        if (minTx === -1) minTx = tx;\n                                        maxTx = tx;\n                                    }",
+            "                                    if (rowClasses[tx] === 2 && stats.edge[rowOffset + tx] === 1) {\n                                        if (minTx === -1) minTx = tx;\n                                        maxTx = tx;\n                                    }",
+        )],
+        "killed",
+        {"gates": ["selection"]},
     ),
 ]
