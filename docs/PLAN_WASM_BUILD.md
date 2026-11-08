@@ -1879,6 +1879,12 @@ checked every kernel expression by expression against the old `stitch.js`; `tool
 At 15k a provider crop (warmed) 719 -> 617 ms, its prep 184 -> 126 ms; stitch at 2048 the clamp and max 109 -> 16 ms
 in the worker.
 
+### K6 and K3 (2026-11-08): SIMD unfilter, slice-by-16 CRC, the ORA entry CRC from the parts (the Antigravity P chain)
+
+By a Gemini agent in Antigravity (`.claude/coord/chain-p/`) on `5419c95a` (`ad148e2e` K6, `44495d21` K3), merged `dceec4d2` with the ABI renumbered 32 -> 34 and both builds rebuilt;
+`docs/measurements/k6_2026-11-08/`, `k3_2026-11-08/`. K6: simd128 Up, Average and Paeth in `png.rs` `png_unfilter_rows`. K3: `png.rs` `crc32` (slice-by-16, no dependency), `chunk_frame`, routes `crc32` (64 B and up), `pngPart` framing its IDAT in place, `crc32Combine` (zlib's GF(2) method) in `inpaint_png.js`, `PngStreamWriter.finish` folding the parts' CRCs so the ORA entry CRC needs no worker re-read. Review (two lenses, verified): no byte or CRC difference. K2 (`inflate_z`) is NOT in this merge: **Stop 2** measured native `DecompressionStream` faster or tied everywhere (a whole 15k PNG 1.46 s against 2.70 s, 8 workers 527 against 623 ms, 10,000 one-row strips a tie); the agent's K2 stays on `ag-chain-p`, pending the user's word.
+At 15k: the unfilter 1,102 -> 502 ms; the open's whole wall ties (spreads overlap, one round in three lost), so K6 stays by §1.1 rule 2 on the kernel row. A 15k ORA export 1.43x beyond the spread; a PNG export's wall is inside its spread (the chunk step saves about 100 ms of wall, inferred), so K3 stays by the same rule. Those rounds ran with the GPU at 100 % (the user's training).
+
 ### K36 (2026-11-08): a stroke's commit on the tiles in Rust (the Antigravity F chain)
 
 By the same chain as K9 on `5419c95a` (`bef18ff5`, the review's points in `df3b750c`, K9's two points in `21accab7`), merged `49e48575` with the ABI renumbered 32 -> 33 and both
