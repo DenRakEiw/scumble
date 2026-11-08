@@ -1106,7 +1106,7 @@ async function retouchRouteCases(js) {
     } finally { globalThis.fetch = realFetch; }
     const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_stroke.js")).href);
     const L = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_liquify.js")).href);
-    for (const r of ["dabTone", "dabSponge", "freqSplit", "liquifyBlock"]) if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, r)) { check(`kernels.js has the ${r} route`, false); return; }
+    for (const r of ["dabTone", "dabSponge", "freqSplit", "liquifyBlock", "liquifyPreview"]) if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, r)) { check(`kernels.js has the ${r} route`, false); return; }
     const warned = [], realWarn = console.warn;
     console.warn = (...a) => { warned.push(a.map(String).join(" ")); };
     K.setKernels("rust");
@@ -1116,6 +1116,11 @@ async function retouchRouteCases(js) {
         for (let i = 0; i < lNodes.length; i++) lNodes[i] = (i * 43) - 300;
         const lWant = new Uint8Array(8 * 8 * 4);
         const lWantCount = L.liquifyBlock(I, 16, 16, 0, 0, lNodes, 5, 0, 0, 2, null, lWant, 0, 32, 0, 0, 8, 8);
+        const pField = new L.LiquifyField(32, 32, 2);
+        pField.dab("push", 14, 14, 12, 0.5, 0.8, [5, -3], null, new Map());
+        const pWinSrc = I.subarray(0, 16 * 16 * 4);
+        const pWant = new Uint8Array(10 * 9 * 4);
+        L.previewBlock({ data: pWinSrc, w: 16, h: 16, x0: 0, y0: 0, L: 1 }, pField, -2.5, 1.25, 1.5, pWant, 10, 9);
         const want = {
             tone: S.toneRGBA(I, lut, true), sponge: S.spongeRGBA(I, 0.7, true, true),
             low: S.blurRGBA(I, w, h, 3), blur: null, high: null,
@@ -1126,17 +1131,83 @@ async function retouchRouteCases(js) {
             const low = want.blur.slice(), high = K.freqSplit(I, low), sep = K.freqSeparate(I, w, h, 3);
             const liq = new Uint8Array(8 * 8 * 4);
             const liqCount = K.liquifyBlock(I, 16, 16, 0, 0, lNodes, 5, 0, 0, 2, null, liq, 0, 32, 0, 0, 8, 8);
-            return { tone: K.toneRGBA(I, lut, true), sponge: K.spongeRGBA(I, 0.7, true, true), low, high, sepLow: sep.low, sepHigh: sep.high, liq, liqCount };
+            const wa = K.allocLiquifyWindow(16, 16);
+            wa.data.set(pWinSrc);
+            const win = { data: wa.data, w: 16, h: 16, x0: 0, y0: 0, L: 1, px: wa.px, ptr: wa.ptr, bytes: wa.bytes };
+            const prev = new Uint8Array(10 * 9 * 4);
+            K.liquifyPreview(win, pField, -2.5, 1.25, 1.5, prev, 10, 9);
+            const hadPtr = !!win.ptr, px0 = win.px, ptr0 = win.ptr, bytes0 = win.bytes;
+            K.freeLiquifyWindow(win);
+            K.freeLiquifyWindow(win);
+            let reused = true;
+            if (hadPtr) {
+                const probe = px0.alloc(bytes0);
+                px0.free(probe, bytes0);
+                reused = probe === ptr0;
+            }
+            return { tone: K.toneRGBA(I, lut, true), sponge: K.spongeRGBA(I, 0.7, true, true), low, high, sepLow: sep.low, sepHigh: sep.high, liq, liqCount, prev, hadPtr, freed: !win.ptr && !win.px && reused };
         };
-        const same = (o) => eqBytes(o.tone, want.tone) && eqBytes(o.sponge, want.sponge) && eqBytes(o.low, want.low) && eqBytes(o.high, want.high) && eqBytes(o.sepLow, want.low) && eqBytes(o.sepHigh, want.high) && eqBytes(o.liq, lWant) && o.liqCount === lWantCount;
+        const same = (o) => eqBytes(o.tone, want.tone) && eqBytes(o.sponge, want.sponge) && eqBytes(o.low, want.low) && eqBytes(o.high, want.high) && eqBytes(o.sepLow, want.low) && eqBytes(o.sepHigh, want.high) && eqBytes(o.liq, lWant) && o.liqCount === lWantCount && eqBytes(o.prev, pWant) && o.freed;
         K.pxCalls(true);
         const rust = all(), cr = K.pxCalls(true);
-        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock"]) K.setRoute(r, "js");
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview"]) K.setRoute(r, "js");
         const twin = all(), cj = K.pxCalls(true);
-        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock"]) K.setRoute(r, null);
-        check("kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never",
-            same(rust) && same(twin) && cr.tone_rgba === 1 && cr.sponge_rgba === 1 && cr.freq_split === 2 && cr.blur_rgba === 1 && cr.liquify_block === 1 && !cj.tone_rgba && !cj.sponge_rgba && !cj.freq_split && !cj.blur_rgba && !cj.liquify_block,
+        for (const r of ["dabTone", "dabSponge", "freqSplit", "dabBlur", "liquifyBlock", "liquifyPreview"]) K.setRoute(r, null);
+        check("kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock / liquifyPreview: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never",
+            same(rust) && rust.hadPtr && same(twin) && !twin.hadPtr && cr.tone_rgba === 1 && cr.sponge_rgba === 1 && cr.freq_split === 2 && cr.blur_rgba === 1 && cr.liquify_block === 1 && cr.liquify_preview === 1 && !cj.tone_rgba && !cj.sponge_rgba && !cj.freq_split && !cj.blur_rgba && !cj.liquify_block && !cj.liquify_preview,
             `rust ${JSON.stringify(cr)}, js ${JSON.stringify(cj)}`);
+        // K29: liquifyPreview runs on win.px (never rustPx(), so an idle drop mid-stroke still uses win.px), and
+        // refreshes win.data when the mode or route switches mid-stroke after win.px grew its memory
+        {
+            const wa = K.allocLiquifyWindow(16, 16);
+            wa.data.set(pWinSrc);
+            const win = { data: wa.data, w: 16, h: 16, x0: 0, y0: 0, L: 1, px: wa.px, ptr: wa.ptr, bytes: wa.bytes };
+            const p0 = win.px;
+            K.dropPx("idle");
+            const p1 = K.rustPx();
+            K.pxCalls(true);
+            const outDropped = new Uint8Array(10 * 9 * 4);
+            K.liquifyPreview(win, pField, -2.5, 1.25, 1.5, outDropped, 10, 9);
+            const cDrop = K.pxCalls(true);
+            // detach win.data by growing p0's memory: Rust still reads win.ptr in place and refreshes win.data
+            const big0 = p0.alloc(4 * 1024 * 1024);
+            p0.free(big0, 4 * 1024 * 1024);
+            const detached0 = win.data.byteLength === 0;
+            const outGrownRust = new Uint8Array(10 * 9 * 4);
+            K.liquifyPreview(win, pField, -2.5, 1.25, 1.5, outGrownRust, 10, 9);
+            // detach win.data again by growing p0's memory, then switch to JS mid-stroke
+            const big = p0.alloc(8 * 1024 * 1024);
+            p0.free(big, 8 * 1024 * 1024);
+            const detached = win.data.byteLength === 0;
+            K.setRoute("liquifyPreview", "js");
+            const outSwitchRoute = new Uint8Array(10 * 9 * 4);
+            K.liquifyPreview(win, pField, -2.5, 1.25, 1.5, outSwitchRoute, 10, 9);
+            K.setRoute("liquifyPreview", null);
+            // detach again and call previewBlock directly
+            const big2 = p0.alloc(16 * 1024 * 1024);
+            p0.free(big2, 16 * 1024 * 1024);
+            const detached2 = win.data.byteLength === 0;
+            const outDirectTwin = new Uint8Array(10 * 9 * 4);
+            L.previewBlock(win, pField, -2.5, 1.25, 1.5, outDirectTwin, 10, 9);
+            K.freeLiquifyWindow(win);
+            // K29-L2: allocLiquifyWindow and freeLiquifyWindow reuse the same wasm block without growing memory
+            const wFirst = K.allocLiquifyWindow(512, 512);
+            const cycPx = wFirst.px, cycPtr = wFirst.ptr, cycBytes0 = cycPx.byteLength;
+            K.freeLiquifyWindow(wFirst);
+            let cycSame = cycPtr > 0;
+            for (let k = 0; k < 8; k++) {
+                const wk = K.allocLiquifyWindow(512, 512);
+                if (wk.px !== cycPx || wk.ptr !== cycPtr || cycPx.byteLength !== cycBytes0) cycSame = false;
+                K.freeLiquifyWindow(wk);
+            }
+            check("kernels.js K29: liquifyPreview runs on win.px after dropPx, freeLiquifyWindow returns the block to the allocator, and the twin refreshes a detached win.data on a mid-stroke mode switch",
+                p0 !== p1 && cDrop.liquify_preview === 1 && eqBytes(outDropped, pWant)
+                && detached0 && eqBytes(outGrownRust, pWant)
+                && detached && eqBytes(outSwitchRoute, pWant)
+                && detached2 && eqBytes(outDirectTwin, pWant)
+                && cycSame,
+                `cDrop=${JSON.stringify(cDrop)} detached=${detached0},${detached},${detached2} cycSame=${cycSame}`);
+        }
         // the separation with one of its routes on the twin: the other half still Rust, the same bytes
         K.setRoute("freqSplit", "js");
         let a = K.freqSeparate(I, w, h, 3), ca = K.pxCalls(true);
@@ -1147,11 +1218,12 @@ async function retouchRouteCases(js) {
             eqBytes(a.low, want.low) && eqBytes(a.high, want.high) && eqBytes(b.low, want.low) && eqBytes(b.high, want.high)
             && ca.blur_rgba === 1 && !ca.freq_split && cb.freq_split === 1 && !cb.blur_rgba, `${JSON.stringify(ca)} ${JSON.stringify(cb)}`);
         // refused by Rust: the twin's bytes
-        const odd = I.subarray(0, 4 * 7 + 2), short = lut.subarray(0, 200), rlOut = new Uint8Array(8 * 8 * 4);
+        const odd = I.subarray(0, 4 * 7 + 2), short = lut.subarray(0, 200), rlOut = new Uint8Array(8 * 8 * 4), rpOut = new Uint8Array(10 * 9 * 4);
         const rt = K.toneRGBA(I, short, true), rs = K.spongeRGBA(odd, 0.7, true), rr = K.freqSeparate(I, w, h - 1, 3);
         const rl = K.liquifyBlock(I, 16, 16, 0, 0, Array.from(lNodes), 5, 0, 0, 2, null, rlOut, 0, 32, 0, 0, 8, 8);
-        check("kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's, a plain array of nodes): the twin's bytes",
-            eqBytes(rt, S.toneRGBA(I, short, true)) && eqBytes(rs, S.spongeRGBA(odd, 0.7, true)) && eqBytes(rlOut, lWant) && rl === lWantCount
+        K.liquifyPreview({ data: pWinSrc, w: 16, h: 16, x0: 0, y0: 0, L: 1, px: {}, ptr: 0 }, pField, -2.5, 1.25, 1.5, rpOut, 10, 9);
+        check("kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's, a plain array of nodes, an unheld window): the twin's bytes",
+            eqBytes(rt, S.toneRGBA(I, short, true)) && eqBytes(rs, S.spongeRGBA(odd, 0.7, true)) && eqBytes(rlOut, lWant) && rl === lWantCount && eqBytes(rpOut, pWant)
             && (() => { const l = S.blurRGBA(I, w, h - 1, 3); const hh = S.freqSplit(I, l); return eqBytes(rr.low, l) && eqBytes(rr.high, hh); })());
         // a trap in each: the twin's bytes, the instance replaced, the next call Rust again
         const trapIn2 = (p) => p.exports.mip_half(-16, 256, 256, 0);
@@ -1162,6 +1234,15 @@ async function retouchRouteCases(js) {
             ["split", "freqSplit", () => { const low = want.blur.slice(); const hh = K.freqSplit(I, low); return { low, hh }; }, (o) => eqBytes(o.low, want.low) && eqBytes(o.hh, want.high)],
             ["separate", "freqSeparate", () => K.freqSeparate(I, w, h, 3), (o) => eqBytes(o.low, want.low) && eqBytes(o.high, want.high)],
             ["liquify", "liquifyBlock", () => { const out = new Uint8Array(8 * 8 * 4); const c = K.liquifyBlock(I, 16, 16, 0, 0, lNodes, 5, 0, 0, 2, null, out, 0, 32, 0, 0, 8, 8); return { out, c }; }, (o) => eqBytes(o.out, lWant) && o.c === lWantCount],
+            ["preview", "liquifyPreview", () => {
+                const wa = K.allocLiquifyWindow(16, 16);
+                wa.data.set(pWinSrc);
+                const win = { data: wa.data, w: 16, h: 16, x0: 0, y0: 0, L: 1, px: wa.px, ptr: wa.ptr, bytes: wa.bytes };
+                const out = new Uint8Array(10 * 9 * 4);
+                K.liquifyPreview(win, pField, -2.5, 1.25, 1.5, out, 10, 9);
+                K.freeLiquifyWindow(win);
+                return out;
+            }, (o) => eqBytes(o, pWant)],
         ]) {
             const p = K.rustPx(), i0 = K.pxInstances();
             // the split traps after its kernel wrote L in wasm memory, before the copy out (the caller's L untouched)
@@ -1171,7 +1252,7 @@ async function retouchRouteCases(js) {
             const got = callIt(), after = K.rustPx(), i1 = K.pxInstances();
             if (!(check1(got) && p.trapped instanceof WebAssembly.RuntimeError && after !== p && i1.trap === i0.trap + 1)) { ok = false; detail = `${name}: ${JSON.stringify(i1)}`; }
         }
-        check("kernels.js K27 / K28 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
+        check("kernels.js K27 / K28 / K29 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1)", ok, detail);
         // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
         const i0 = K.pxInstances();
         K.setRoute("releaseMB", 0);
@@ -1182,7 +1263,7 @@ async function retouchRouteCases(js) {
         console.warn = realWarn;
         kernelsBack(K);
     }
-    check("the K27 / K28 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block/.test(w)).length === 5, warned.join(" | "));
+    check("the K27 / K28 / K29 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview/.test(w)).length === 6, warned.join(" | "));
     void js;
 }
 
@@ -4318,6 +4399,73 @@ async function liquifyCases(px, label, L, R) {
         && px.liquifyBlock(okBlock, 8, 8, 0, 0, okNodes.subarray(0, 10), 6, 0, 0, 1, null, okOut, 0, 16, 0, 0, 4, 4, weights) === null
         && px.liquifyBlock(okBlock, 8, 8, 0, 0, okNodes, 6, 1, 0, 1, null, okOut, 0, 16, 0, 0, 4, 4, weights) === null
         && px.liquifyBlock(okBlock, 8, 8, 0, 0, okNodes, 6, 0, 0, 1, null, okOut.subarray(0, 20), 0, 16, 0, 0, 4, 4, weights) === null);
+
+    // K29: liquify_preview against previewBlock across s=1..8, levels L=0..3, inv < 1 / = 1 / > 1, negative and
+    // out-of-layer margins, opaque / mixed / faint / zero windows, both held in px.alloc and plain
+    const previewCases = [];
+    for (const s of [1, 2, 4, 8]) {
+        const W = 96, H = 72;
+        const field = new L.LiquifyField(W, H, s);
+        const before = new Map();
+        field.dab("push", 28, 24, 30, 0.4, 0.85, [11, -7], null, before);
+        field.dab("grow", 64, 30, 28, 0.3, 0.9, null, null, before);
+        field.dab("swirlcw", 48, 50, 32, 0.2, 0.8, null, null, before);
+        for (const kind of ["opaque", "mixed", "faint", "zero"]) {
+            for (const [lv, inv, ox, oy, bw, bh, wx0, wy0] of [
+                [0, 1, -4, -3, 35, 29, 0, 0],
+                [0, 0.37, 10.25, 8.75, 31, 27, 4, 2],
+                [1, 1.75, -6.5, 4.5, 29, 25, -2, 1],
+                [2, 3.25, 40, -8, 23, 21, 5, 0],
+                [3, 1.25, 88, 60, 17, 15, 8, 4],
+            ]) {
+                const ww = Math.max(4, (W >> lv) + 6), wh = Math.max(4, (H >> lv) + 6);
+                const winData = makeBlock(ww, wh, kind);
+                const outInit = new Uint8Array(bw * bh * 4);
+                outInit.fill(0xa5);
+                const useAlloc = ((s + lv + bw) & 1) === 0;
+                previewCases.push({
+                    tag: `s=${s} ${kind} L=${lv} inv=${inv} ox=${ox} oy=${oy} alloc=${useAlloc}`,
+                    args: [winData, outInit, ww, wh, wx0, wy0, lv, field, ox, oy, inv, bw, bh, useAlloc],
+                });
+            }
+        }
+    }
+    const callPreview = (k, [winData, out, ww, wh, wx0, wy0, lv, field, ox, oy, inv, bw, bh, useAlloc]) => {
+        if (typeof k.alloc === "function") {
+            let ptr = 0;
+            try {
+                let win;
+                if (useAlloc) {
+                    ptr = k.alloc(winData.byteLength);
+                    const data = k.u8().subarray(ptr, ptr + winData.byteLength);
+                    data.set(winData);
+                    win = { data, w: ww, h: wh, x0: wx0, y0: wy0, L: lv, px: k, ptr, bytes: winData.byteLength };
+                } else {
+                    win = { data: winData, w: ww, h: wh, x0: wx0, y0: wy0, L: lv };
+                }
+                const ok = k.liquifyPreview(win, field, ox, oy, inv, out, bw, bh);
+                if (!ok) throw new Error("liquifyPreview refused a valid case");
+            } finally {
+                if (ptr) k.free(ptr, winData.byteLength);
+            }
+        } else {
+            L.previewBlock({ data: winData, w: ww, h: wh, x0: wx0, y0: wy0, L: lv }, field, ox, oy, inv, out, bw, bh);
+        }
+        return out;
+    };
+    twinCheck({ name: `liquify_preview (${label})`, builds: [[label, px]], twin: { previewBlock: L.previewBlock }, call: callPreview, cases: previewCases, shift: [0, 1] });
+
+    const okField = new L.LiquifyField(32, 32, 2);
+    const okWin = { data: okBlock, w: 8, h: 8, x0: 0, y0: 0, L: 0 };
+    check(`${label} liquifyPreview refuses invalid arguments and out-of-range node offsets`,
+        px.liquifyPreview(okWin, { w: 32, h: 32, s: 3, ni: 16, nj: 16, nodes: () => okNodes }, 0, 0, 1, okOut, 4, 4) === false
+        && px.liquifyPreview({ ...okWin, w: 0 }, okField, 0, 0, 1, okOut, 4, 4) === false
+        && px.liquifyPreview({ ...okWin, L: 17 }, okField, 0, 0, 1, okOut, 4, 4) === false
+        && px.liquifyPreview({ ...okWin, px: {}, ptr: 8 }, okField, 0, 0, 1, okOut, 4, 4) === false
+        && px.liquifyPreview(okWin, okField, 0, 0, 0, okOut, 4, 4) === false
+        && px.liquifyPreview(okWin, okField, NaN, 0, 1, okOut, 4, 4) === false
+        && px.liquifyPreview(okWin, { w: 32, h: 32, s: 2, ni: 1, nj: 1, nodes: (_x, _y, nw, nh) => new Int32Array(nw * nh * 2) }, 4, 0, 1, okOut, 4, 4) === false
+        && px.liquifyPreview(okWin, okField, 0, 0, 1, okOut.subarray(0, 12), 4, 4) === false);
 }
 
 // ---- K5: the selection's combine (docs/PLAN_WASM_BUILD.md §4.3) --------------------------------------------------------

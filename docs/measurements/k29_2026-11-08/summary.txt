@@ -1,0 +1,38 @@
+K29 of docs/PLAN_WASM_BUILD.md (2026-11-08): liquify's live-stroke preview kernel (liquify_preview in
+crates/px/src/resample.rs and crates/px/src/lib.rs, Px.prototype.liquifyPreview in renderer/editor/px/px.js, and
+allocLiquifyWindow / freeLiquifyWindow / liquifyPreview in renderer/editor/px/kernels.js, called from liquifyWindow,
+freeLiquifyWindow and drawLiquifyInto in renderer/editor/inpaint_canvas.js), with the stroke's window kept in px.alloc
+memory and freed on every way a stroke ends (pointer up, Escape, tool switch, tab close, an error). The kernel runs on
+win.px (never rustPx()), and the JS twin previewBlock refreshes win.data if win.px.memory grew before a mid-stroke mode
+or route switch. ABI 26.
+
+Before = ROUTES {"liquifyPreview":"js"} (the JS twin previewBlock with a plain Uint8Array window, every other kernel left
+on its default Rust route); after = ROUTES {"liquifyPreview":"rust"} (Rust liquify_preview with the window allocated in
+px.alloc memory, routed by liquifyPreview in renderer/editor/px/kernels.js). k29_chain.sh: three rounds on 15000 x 10000
+(grid step 4), the arms alternating within each round (before first in rounds 1 and 3, after first in round 2), a fresh
+instance per arm, offline, tiles, port 9617, the window in front, the machine's busy lock held for the whole chain
+(taken 07:35:50, released 07:39:08). Medians over the rounds of each row's own figure, [min-max]; the full table in
+summary_rows.txt.
+
+The rows that decide (the live stroke's window build, preview p50 / p95 / worst, and frame p50 / worst during the drag,
+plus the 2 s idle-trim pause row from PLAN_WASM_BUILD.md §7 row 40 / K:138-139, all in ms):
+  push fit size 200        window 11.5 [11.3-13.9] ->  9.5 [9.0-10.7]   preview p50  0.1 [0.1-0.2]  ->  0.2 [0.2-0.2]   worst 15.3 [12.9-16.0] -> 10.3 [9.8-11.5]   beyond the spread (21 calls)
+  push fit size 1000       window  9.6 [8.6-9.9]   ->  8.2 [8.0-13.9]   preview p50  1.2 [1.2-1.2]  ->  0.9 [0.9-0.9]   worst 10.9 [9.8-11.2]  ->  9.2 [8.9-14.8]   beyond the spread on p50 (20 calls)
+  push 1:1 size 200        window 25.4 [24.6-27.9] -> 18.9 [16.8-19.9]  preview p50  2.9 [2.9-3.0]  ->  1.5 [1.5-1.5]   p95   3.5 [3.3-4.3]    ->  1.7 [1.7-1.8]    worst 28.4 [27.8-30.8] -> 20.5 [18.4-21.5]   beyond the spread on every metric (57 calls)
+  push 1:1 size 1000       window 52.0 [50.0-52.5] -> 34.9 [34.9-39.9]  preview p50 15.9 [15.4-16.0] -> 10.1 [9.3-10.3]  p95  19.9 [18.5-22.3]  -> 13.1 [10.7-14.0]  worst 69.5 [67.4-69.7] -> 44.7 [44.3-49.3]   beyond the spread on every metric (60 calls)
+  pause 2s 1:1 size 1000 (between strokes after idle trim: 148.8 MB -> 1.1 MB -> 54.6 MB, idleTrimmed = 1):
+                           window 28.4 [28.4-29.2] -> 24.5 [22.5-25.1]  preview     46.1 [45.4-46.6] -> 34.2 [32.2-35.0]  frame 46.4 [45.9-47.0] -> 34.5 [32.5-35.4]  beyond the spread on every metric
+  pause 2s 1:1 size 1000 (mid-stroke after idle trim: PX trimmed to 1.1 MB while win.px holds the 53 MB window, midIdleTrimmed = 1):
+                           midWindow 0.0 -> 0.0                         midPreview  17.5 [17.3-17.9] ->  9.1 [9.1-9.1]    midFrame 17.9 [17.7-18.2] ->  9.5 [9.4-9.5]   beyond the spread (-48 %)
+  The dab times during the drag are unchanged in K29 (they are K30-K31's work): push 1:1 size 1000 dab p50 3.6 -> 3.7 ms;
+  push fit size 1000 dab p50 14.4 -> 14.5 ms.
+
+Verdict: Rust on every row; no route entry (liquifyPreview defaults to Rust).
+
+Gates (gates/, --offline, ports 9617 / 9618 side by side): k29-tiles, k29-tiles-brush and k29-canvas lint types pixels
+brush editor ALL PASS; k29-fix-tiles and k29-fix-canvas lint types editor (focused on
+liquify_bakes_each_stroke_from_the_session_source) ALL PASS.
+
+Mutation round (mutation/, tools/mutation_round.py on a copy tree; the untouched copy green on the full px_test, the
+editor gate and every focused set, both builds identical to the checkout's): 28 of 28 killed (0 of them only on the
+re-check), 0 survived, 0 not as expected; the restored copy rebuilt identical and green.

@@ -1,0 +1,48 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=liquify,retouchRoute)
+FAIL rust simd liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (2) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+FAIL rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (2) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+(node:45676) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/9e1a0dae-37ec-43ac-be0a-853f32a4d3f6/scratch/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\9e1a0dae-37ec-43ac-be0a-853f32a4d3f6\scratch\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=liquify,retouchRoute)
+FAIL rust simd liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (2) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+FAIL rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (2) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+(node:28572) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=liquify,retouchRoute)
+FAIL rust simd liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (2) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+FAIL rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+FAIL (2) (only: retouchRoute, liquify; PX_ONLY, not the full test)
+(node:55812) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k29/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k29\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

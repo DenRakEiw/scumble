@@ -17,7 +17,7 @@ import { FILTERS, FILTER_IDS, filterDefaults, scaleFilterParams, applyFilter, ma
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces, runShader, glToCanvas } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA, toneRGBA, spongeRGBA, freqSeparate } from "./px/kernels.js";
+import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA, toneRGBA, spongeRGBA, freqSeparate, allocLiquifyWindow, freeLiquifyWindow, liquifyPreview } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds, selModeOf, selectionGco, tilesSource, bytesSource, rectSource } from "./inpaint_raster.js";
 import { GLCompositor, BLEND_FN_GLSL } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
@@ -38,7 +38,7 @@ import { LAYERED_EXT, isPsd, isOra, readPsd, readOra, inflateAtMost } from "./in
 import { THEME } from "./inpaint_theme.js";
 import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap } from "./inpaint_resample.js";
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
-import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_liquify.js";
+import { LiquifyField, gridStep, liquifyFalloff } from "./inpaint_liquify.js";
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
 import { promptPayload, selectionBoxIdOf } from "./boxes_model.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
@@ -3157,6 +3157,7 @@ class InpaintEditor {
                     this.setRangePreview(null);
                 }
                 else if (this.pointer && this.pointer.kind === "patchdrag") { const p = this.pointer; this.pointer = null; this.patchDone(p); this.draw(); this.setStatus(`${p.tool === "contentmove" ? "Move" : "Patch"} cancelled.`); }
+                else if (this.pointer && this.pointer.kind === "liquify" && !this.pointer.healing) { const p = this.pointer; this.pointer = null; this.liquifyDrop(p, "Liquify cancelled."); }
                 else if (this.pending) this.cancelPending();
                 else if (this.polyPoints) { this.polyPoints = null; this.draw(); this.setStatus("Polygon cancelled."); }
                 else if (this.shapePoints) { this.cancelShape(); this.draw(); this.setStatus("Shape cancelled."); }
@@ -3589,6 +3590,7 @@ class InpaintEditor {
         if (this.pending && tool !== "transform") this.cancelPending();
         if (this.polyPoints && tool !== "polygon") this.polyPoints = null;
         if (this.shapePoints && tool !== "shape") this.cancelShape();
+        if (tool !== "liquify" && this.pointer && this.pointer.kind === "liquify") this.freeLiquifyWindow(this.pointer);
         if (this.liq && tool !== "liquify") this.endLiquify();
         const prevTool = this.tool;
         this.tool = tool;
@@ -3656,6 +3658,10 @@ class InpaintEditor {
                 this.cancelRange();
             } else if (this._rangeTint) {
                 this.setRangePreview(null);
+            } else if (this.pointer && this.pointer.kind === "liquify" && !this.pointer.healing) {
+                const p = this.pointer;
+                this.pointer = null;
+                this.liquifyDrop(p, "Liquify cancelled.");
             } else if (this.pending) {
                 this.cancelPending();
             } else if (this.tool === "lights" && this.isRelightActive()) {
@@ -6259,6 +6265,7 @@ class InpaintEditor {
         if (!this.width) return;
         // a heal stroke is held until its blend lands (`healBlend`): the next gesture waits for it
         if (this.pointer && this.pointer.healing) { this.setStatus(this.heldWord(this.pointer)); return; }
+        if (this.pointer && this.pointer.kind === "liquify") { const p = this.pointer; this.pointer = null; this.liquifyDrop(p, null); }
         // Chrome reports detail = 0 on pointer events, so double-clicks are detected here:
         // a second press within 400 ms and 8 css px of the previous one.
         const nowMs = performance.now();
@@ -6716,7 +6723,8 @@ class InpaintEditor {
                 if (q) { q.hx = ix - q.x; q.hy = iy - q.y; }
             }
         } else if (p.kind === "liquify") {
-            this.liquifyMove(p, this.strokePoints(p, e));
+            try { this.liquifyMove(p, this.strokePoints(p, e)); }
+            catch (err) { if (this.pointer === p) this.pointer = null; this.liquifyDrop(p, null); throw err; }
         } else if (p.kind === "smudge") {
             for (const [x, y, pr] of this.strokePoints(p, e)) {
                 p.pressure = pr;
@@ -10946,6 +10954,7 @@ class InpaintEditor {
             if (s.liqBytes) { s.bytes -= s.liqBytes; this.undoBytes -= s.liqBytes; s.liqBytes = 0; }
         }
         const p = this.pointer;
+        if (p && p.kind === "liquify") this.freeLiquifyWindow(p);
         if (p && p.kind === "liquify" && p.liq === liq) { liq.ended = true; return; }
         liq.orig.release();
     }
@@ -11022,13 +11031,20 @@ class InpaintEditor {
         const x = ix - layer.x - 0.5, y = iy - layer.y - 0.5;
         const p = this.pointer = { kind: "liquify", layer, liq, mode, before: new Map(liq.field.cells), made, last: [ix, iy], at: [x, y], travel: 0,
             pressure, stab: this.newStabiliser(ix, iy, pressure), thaw: this.liquifyThaw(liq), strokeBox: null, dirtyView: null, tick: null, liqWin: null,
-            freeze: mode === "freeze" || mode === "thaw" ? this.liquifyFreezeOf(layer, true) : null };
-        if (p.freeze) { this.liquifyFreezeDab(p, x, y); this.drawSoon(); return; }
-        if (mode !== "push") {
-            this.liquifyDab(p, x, y, null);
-            // they keep acting while the button is held still: a timer, never requestAnimationFrame (it stops in a hidden window)
-            const ms = InpaintEditor.liquifyRateMs;
-            if (ms > 0) p.tick = setInterval(() => { if (this.pointer === p && !p.healing) this.liquifyTick(); }, ms);
+            freeze: mode === "freeze" || mode === "thaw" ? this.liquifyFreezeOf(layer, true) : null,
+            freezeBefore: mode === "freeze" || mode === "thaw" ? new Map() : null };
+        try {
+            if (p.freeze) { this.liquifyFreezeDab(p, x, y); this.drawSoon(); return; }
+            if (mode !== "push") {
+                this.liquifyDab(p, x, y, null);
+                // they keep acting while the button is held still: a timer, never requestAnimationFrame (it stops in a hidden window)
+                const ms = InpaintEditor.liquifyRateMs;
+                if (ms > 0) p.tick = setInterval(() => { if (this.pointer === p && !p.healing) this.liquifyTick(); }, ms);
+            }
+        } catch (err) {
+            if (this.pointer === p) this.pointer = null;
+            this.liquifyDrop(p, null);
+            throw err;
         }
         this.drawSoon();
     }
@@ -11052,7 +11068,8 @@ class InpaintEditor {
     liquifyTick() {
         const p = this.pointer;
         if (!p || p.kind !== "liquify" || p.healing || p.mode === "push" || p.freeze) return;
-        this.liquifyDab(p, p.last[0] - p.layer.x - 0.5, p.last[1] - p.layer.y - 0.5, null);
+        try { this.liquifyDab(p, p.last[0] - p.layer.x - 0.5, p.last[1] - p.layer.y - 0.5, null); }
+        catch (err) { if (this.pointer === p) this.pointer = null; this.liquifyDrop(p, null); throw err; }
     }
 
     /**
@@ -11090,18 +11107,25 @@ class InpaintEditor {
     /** The release: the push's carried rest, then the landing. */
     liquifyRelease(p) {
         if (p.tick) { clearInterval(p.tick); p.tick = null; }
-        this.finishStroke(p);
-        if (p.freeze) {
-            // a thaw (or Alt) on the base's fresh copy froze nothing: the copy goes again, as for a stroke that lands nothing
-            if (p.made && !p.froze) { this.liquifyDrop(p, null); return; }
-            if (p.made) { this.pushUndoSnapshot(p.made, { label: "Liquify: copy of the base" }); this.renderLayers(); }
-            if (p.liq.ended) p.liq.orig.release();
-            this.draw();
-            return;
+        try {
+            this.finishStroke(p);
+            if (p.freeze) {
+                // a thaw (or Alt) on the base's fresh copy froze nothing: the copy goes again, as for a stroke that lands nothing
+                if (p.made && !p.froze) { this.liquifyDrop(p, null); return; }
+                if (p.made) { this.pushUndoSnapshot(p.made, { label: "Liquify: copy of the base" }); this.renderLayers(); }
+                if (p.liq.ended) p.liq.orig.release();
+                this.freeLiquifyWindow(p);
+                this.draw();
+                return;
+            }
+            if (p.mode === "push") this.liquifyPushTo(p, p.last[0] - p.layer.x - 0.5, p.last[1] - p.layer.y - 0.5, 4096);
+            const words = { push: "push", grow: "grow", shrink: "shrink", swirlcw: "swirl", swirlccw: "swirl", restore: "restore" };
+            this.liquifyLand(p, "Liquify: " + (words[p.mode] || p.mode));
+        } catch (err) {
+            this.freeLiquifyWindow(p);
+            if (!p.healing) this.liquifyDrop(p, null);
+            throw err;
         }
-        if (p.mode === "push") this.liquifyPushTo(p, p.last[0] - p.layer.x - 0.5, p.last[1] - p.layer.y - 0.5, 4096);
-        const words = { push: "push", grow: "grow", shrink: "shrink", swirlcw: "swirl", swirlccw: "swirl", restore: "restore" };
-        this.liquifyLand(p, "Liquify: " + (words[p.mode] || p.mode));
     }
 
     /** Restore all (the options bar's button): the session's field scaled back to zero (inside the selection), as one step. */
@@ -11150,7 +11174,7 @@ class InpaintEditor {
             let results = null;
             try { results = await liq.orig.liquifiedAsync(liq.s, nodes, opts); }
             catch (err) { console.warn("Inpaint Canvas: the liquify bake failed:", err); }
-            if (this.pointer !== p) return;   // the editor was closed meanwhile: the stroke was dropped there
+            if (this.pointer !== p) { this.freeLiquifyWindow(p); return; }   // the editor was closed meanwhile: the stroke was dropped there
             this.pointer = null;
             if (results) this.liquifyCommit(p, results, keys, "pool", t0, label, true);
             else this.liquifyDrop(p, "Liquify could not bake the stroke: nothing landed.");
@@ -11216,6 +11240,7 @@ class InpaintEditor {
         liq.stamp = clean ? px.version : -1;
         if (isTilePixels(px)) for (const key of keys) { const t = px.tileAt(key & 0xFFFF, key >>> 16); liq.landed.set(key, { tile: t, version: t ? t.version : -1 }); }
         if (liq.ended) liq.orig.release();
+        this.freeLiquifyWindow(p);
         this.releaseStrokeScratch();
         const ms = Math.round(performance.now() - t0);
         this.lastLiquify = { tiles: keys.size, box: [box[0] + layer.x, box[1] + layer.y, box[2] + layer.x, box[3] + layer.y], where, ms, stats: results.stats || null, s: liq.s };
@@ -11232,7 +11257,16 @@ class InpaintEditor {
     liquifyDrop(p, why) {
         const liq = p.liq;
         if (p.tick) { clearInterval(p.tick); p.tick = null; }
+        this.freeLiquifyWindow(p);
         liq.field = new LiquifyField(liq.field.w, liq.field.h, liq.s, new Map(p.before));
+        if (p.freeze && p.freezeBefore && p.freezeBefore.size) {
+            for (const [k, old] of p.freezeBefore) {
+                if (old) p.freeze.cells.set(k, old);
+                else p.freeze.cells.delete(k);
+            }
+            if (!p.freeze.cells.size && this.liqFreezes) this.liqFreezes.delete(p.layer.id);
+            else this.liquifyVeilDirty(p.freeze, null);
+        }
         if (p.made) {
             this.releaseSnapshot(p.made);
             if (this.layers.includes(p.layer)) {
@@ -11324,10 +11358,12 @@ class InpaintEditor {
                 if (!(w > 0)) continue;
                 const key = ((j >> sh) << 16) | (i >> sh);
                 let c = fr.cells.get(key);
-                if (!c) { if (!freeze) continue; c = new Uint8Array(n * n); fr.cells.set(key, c); }
-                const o = (j & m) * n + (i & m), old = c[o];
+                if (!c && !freeze) continue;
+                const o = (j & m) * n + (i & m), old = c ? c[o] : 0;
                 const v = freeze ? Math.max(old, Math.round(255 * w)) : Math.floor(old * (1 - w));
                 if (v === old) continue;
+                if (p.freezeBefore && !p.freezeBefore.has(key)) p.freezeBefore.set(key, c ? c.slice() : null);
+                if (!c) { c = new Uint8Array(n * n); fr.cells.set(key, c); }
                 c[o] = v; touched.add(key);
                 if (i < bi0) bi0 = i; if (i > bi1) bi1 = i; if (j < bj0) bj0 = j; if (j > bj1) bj1 = j;
             }
@@ -11406,6 +11442,14 @@ class InpaintEditor {
         return !!(p && p.kind === "liquify" && p.layer === layer && p.strokeBox);
     }
 
+    /** Release the stroke's window buffer (`liquifyWindow`), when it was allocated in wasm memory. */
+    freeLiquifyWindow(p) {
+        if (!p || !p.liqWin) return;
+        const win = p.liqWin;
+        p.liqWin = null;
+        freeLiquifyWindow(win);
+    }
+
     /**
      * The session's source at the view's level, over the view and a margin the field can reach, as one buffer: built once
      * per stroke (a pan or a zoom builds it again), so a frame samples an array, not the tiles.
@@ -11414,45 +11458,55 @@ class InpaintEditor {
         const L = Math.max(0, Math.min(MIP_LEVELS, Math.floor(Math.log2(1 / vp.sx) + 1e-9)));
         const sig = [vp.x, vp.y, vp.w, vp.h, vp.sx, L].join(",");
         if (p.liqWin && p.liqWin.sig === sig) return p.liqWin;
+        this.freeLiquifyWindow(p);
         const layer = p.layer, liq = p.liq, W = liq.field.w, H = liq.field.h, f = 1 << L;
         const M = Math.min(this.brushSize + liq.field.maxReach() + 64, 2048 * f);
         const lim = (v, hi) => Math.max(0, Math.min(hi, v));
         const x0 = lim(Math.floor(vp.x - layer.x - M), W), x1 = lim(Math.ceil(vp.x + vp.w - layer.x + M), W);
         const y0 = lim(Math.floor(vp.y - layer.y - M), H), y1 = lim(Math.ceil(vp.y + vp.h - layer.y + M), H);
         const lx0 = x0 >> L, ly0 = y0 >> L, w = Math.max(1, ((x1 + f - 1) >> L) - lx0), h = Math.max(1, ((y1 + f - 1) >> L) - ly0);
-        const data = new Uint8Array(w * h * 4);
-        if (isTilePixels(liq.orig)) {
-            const side = 256 >> L;
-            for (let ty = Math.floor(ly0 / side); ty <= Math.floor((ly0 + h - 1) / side); ty++) {
-                for (let tx = Math.floor(lx0 / side); tx <= Math.floor((lx0 + w - 1) / side); tx++) {
-                    const lb = liq.orig._levelBytes(tx, ty, L);
-                    if (!lb || !lb.data) continue;
-                    const a0 = Math.max(lx0, tx * side), a1 = Math.min(lx0 + w, tx * side + side);
-                    const b0 = Math.max(ly0, ty * side), b1 = Math.min(ly0 + h, ty * side + side);
-                    for (let b = b0; b < b1; b++) {
-                        const so = lb.off + ((b - ty * side) * side + (a0 - tx * side)) * 4;
-                        data.set(lb.data.subarray(so, so + (a1 - a0) * 4), ((b - ly0) * w + (a0 - lx0)) * 4);
-                    }
-                }
-            }
-        } else {
-            // the canvas backend: read once, averaged down to the level (premultiplied)
-            const d = liq.orig.readRect(lx0 * f, ly0 * f, w * f, h * f).data, rw = w * f;
-            if (!L) data.set(d);
-            else {
-                for (let b = 0; b < h; b++) {
-                    for (let a = 0; a < w; a++) {
-                        let A = 0, R = 0, G = 0, B = 0;
-                        for (let v = 0; v < f; v++) for (let u = 0, q = ((b * f + v) * rw + a * f) * 4; u < f; u++, q += 4) {
-                            const al = d[q + 3]; A += al; R += al * d[q]; G += al * d[q + 1]; B += al * d[q + 2];
+        const alloc = allocLiquifyWindow(w, h);
+        const view = () => (alloc.px ? alloc.px.u8().subarray(alloc.ptr, alloc.ptr + alloc.bytes) : alloc.data);
+        try {
+            if (isTilePixels(liq.orig)) {
+                const side = 256 >> L;
+                for (let ty = Math.floor(ly0 / side); ty <= Math.floor((ly0 + h - 1) / side); ty++) {
+                    for (let tx = Math.floor(lx0 / side); tx <= Math.floor((lx0 + w - 1) / side); tx++) {
+                        const lb = liq.orig._levelBytes(tx, ty, L);
+                        if (!lb || !lb.data) continue;
+                        const data = view();
+                        const a0 = Math.max(lx0, tx * side), a1 = Math.min(lx0 + w, tx * side + side);
+                        const b0 = Math.max(ly0, ty * side), b1 = Math.min(ly0 + h, ty * side + side);
+                        for (let b = b0; b < b1; b++) {
+                            const so = lb.off + ((b - ty * side) * side + (a0 - tx * side)) * 4;
+                            data.set(lb.data.subarray(so, so + (a1 - a0) * 4), ((b - ly0) * w + (a0 - lx0)) * 4);
                         }
-                        const o = (b * w + a) * 4;
-                        if (A) { data[o] = R / A + 0.5; data[o + 1] = G / A + 0.5; data[o + 2] = B / A + 0.5; data[o + 3] = A / (f * f) + 0.5; }
+                    }
+                }
+            } else {
+                // the canvas backend: read once, averaged down to the level (premultiplied)
+                const d = liq.orig.readRect(lx0 * f, ly0 * f, w * f, h * f).data, rw = w * f;
+                const data = view();
+                if (!L) data.set(d);
+                else {
+                    for (let b = 0; b < h; b++) {
+                        for (let a = 0; a < w; a++) {
+                            let A = 0, R = 0, G = 0, B = 0;
+                            for (let v = 0; v < f; v++) for (let u = 0, q = ((b * f + v) * rw + a * f) * 4; u < f; u++, q += 4) {
+                                const al = d[q + 3]; A += al; R += al * d[q]; G += al * d[q + 1]; B += al * d[q + 2];
+                            }
+                            const o = (b * w + a) * 4;
+                            if (A) { data[o] = R / A + 0.5; data[o + 1] = G / A + 0.5; data[o + 2] = B / A + 0.5; data[o + 3] = A / (f * f) + 0.5; }
+                        }
                     }
                 }
             }
+        } catch (err) {
+            freeLiquifyWindow(alloc);
+            throw err;
         }
-        p.liqWin = { sig, data, w, h, x0: lx0, y0: ly0, L };
+        const data = view();
+        p.liqWin = { sig, data, w, h, x0: lx0, y0: ly0, L, px: alloc.px, ptr: alloc.ptr, bytes: alloc.bytes };
         return p.liqWin;
     }
 
@@ -11463,31 +11517,36 @@ class InpaintEditor {
         const u0 = Math.max(dx0, Math.floor((sb[0] - vp.x) * vp.sx)), v0 = Math.max(dy0, Math.floor((sb[1] - vp.y) * vp.sy));
         const u1 = Math.min(dx1, Math.ceil((sb[2] - vp.x) * vp.sx)), v1 = Math.min(dy1, Math.ceil((sb[3] - vp.y) * vp.sy));
         if (u1 <= u0 || v1 <= v0) return;
-        const win = this.liquifyWindow(p, vp);
-        const bw = u1 - u0, bh = v1 - v0, ox = vp.x + u0 / vp.sx - layer.x, oy = vp.y + v0 / vp.sy - layer.y;
-        // a large box is sampled every f-th pixel and scaled up (a 1000 px brush at 1:1 took 57 ms a frame at full
-        // resolution, measured at 15000 x 10000): softer while the button is down, the landing is the bake's anyway
-        const f = Math.max(1, Math.ceil(Math.sqrt((bw * bh) / InpaintEditor.liquifyPreviewMax)));
-        if (f === 1) {
-            const img = new ImageData(bw, bh);
-            previewBlock(win, p.liq.field, ox, oy, 1 / vp.sx, img.data, bw, bh);
-            // putImageData ignores the transform and the clip: exactly these bytes, inside the part being redrawn
-            ctx.putImageData(img, u0, v0);
-            return;
+        try {
+            const win = this.liquifyWindow(p, vp);
+            const bw = u1 - u0, bh = v1 - v0, ox = vp.x + u0 / vp.sx - layer.x, oy = vp.y + v0 / vp.sy - layer.y;
+            // a large box is sampled every f-th pixel and scaled up (a 1000 px brush at 1:1 took 57 ms a frame at full
+            // resolution, measured at 15000 x 10000): softer while the button is down, the landing is the bake's anyway
+            const f = Math.max(1, Math.ceil(Math.sqrt((bw * bh) / InpaintEditor.liquifyPreviewMax)));
+            if (f === 1) {
+                const img = new ImageData(bw, bh);
+                liquifyPreview(win, p.liq.field, ox, oy, 1 / vp.sx, img.data, bw, bh);
+                // putImageData ignores the transform and the clip: exactly these bytes, inside the part being redrawn
+                ctx.putImageData(img, u0, v0);
+                return;
+            }
+            const sw = Math.ceil(bw / f), sh = Math.ceil(bh / f), img = new ImageData(sw, sh);
+            liquifyPreview(win, p.liq.field, ox, oy, f / vp.sx, img.data, sw, sh);
+            let c = this._liqPreview;
+            if (!c || c.width < sw || c.height < sh) { c = this._liqPreview = makeCanvas(Math.max(sw, c ? c.width : 0), Math.max(sh, c ? c.height : 0)); c._livePreview = true; }
+            c.getContext("2d").putImageData(img, 0, 0);
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = "source-over";
+            ctx.imageSmoothingEnabled = true;
+            ctx.clearRect(u0, v0, bw, bh);
+            ctx.drawImage(c, 0, 0, bw / f, bh / f, u0, v0, bw, bh);
+            ctx.restore();
+        } catch (err) {
+            this.freeLiquifyWindow(p);
+            throw err;
         }
-        const sw = Math.ceil(bw / f), sh = Math.ceil(bh / f), img = new ImageData(sw, sh);
-        previewBlock(win, p.liq.field, ox, oy, f / vp.sx, img.data, sw, sh);
-        let c = this._liqPreview;
-        if (!c || c.width < sw || c.height < sh) { c = this._liqPreview = makeCanvas(Math.max(sw, c ? c.width : 0), Math.max(sh, c ? c.height : 0)); c._livePreview = true; }
-        c.getContext("2d").putImageData(img, 0, 0);
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.globalAlpha = 1;
-        ctx.globalCompositeOperation = "source-over";
-        ctx.imageSmoothingEnabled = true;
-        ctx.clearRect(u0, v0, bw, bh);
-        ctx.drawImage(c, 0, 0, bw / f, bh / f, u0, v0, bw, bh);
-        ctx.restore();
     }
 
     /** The Remove model loaded while the user aims (about 9 s the first time), with a line in the status bar. */

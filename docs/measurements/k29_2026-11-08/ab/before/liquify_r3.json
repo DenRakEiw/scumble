@@ -1,0 +1,317 @@
+{
+ "built": 5579,
+ "s": 4,
+ "tiles": true,
+ "kernels": "rust",
+ "kernelsInUse": "rust",
+ "routes": {
+  "liquifyPreview": "js"
+ },
+ "undoMB": 133.1,
+ "rows": [
+  {
+   "row": "push fit size 200",
+   "travel": 3130,
+   "press": 60.4,
+   "window": 11.3,
+   "dab": {
+    "p50": 2.5,
+    "p95": 7.9,
+    "worst": 7.9
+   },
+   "frame": {
+    "p50": 0.2,
+    "p95": 13.8,
+    "worst": 13.8
+   },
+   "preview": {
+    "p50": 0.1,
+    "p95": 12.9,
+    "worst": 12.9
+   },
+   "land": 32.3,
+   "blockedMax": 12.6,
+   "tiles": 48,
+   "where": "pool",
+   "stats": {
+    "blocks": 28,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 5,
+    "local": 0
+   },
+   "fieldMB": 0.9,
+   "stepMB": 0,
+   "pxCalls": {
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "rust",
+     "tiles": 28,
+     "total": 60.7,
+     "pxCalls": {
+      "liquify_block": 28
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push fit size 1000",
+   "travel": 3130,
+   "press": 1.2,
+   "window": 9.6,
+   "dab": {
+    "p50": 14.4,
+    "p95": 16.9,
+    "worst": 16.9
+   },
+   "frame": {
+    "p50": 1.4,
+    "p95": 11.1,
+    "worst": 11.1
+   },
+   "preview": {
+    "p50": 1.2,
+    "p95": 10.9,
+    "worst": 10.9
+   },
+   "land": 84.4,
+   "blockedMax": 60.7,
+   "tiles": 113,
+   "where": "pool",
+   "stats": {
+    "blocks": 86,
+    "splits": 0,
+    "maxBlock": 396489,
+    "pool": 9,
+    "local": 0
+   },
+   "fieldMB": 3.6,
+   "stepMB": 28.3,
+   "pxCalls": {
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 9,
+     "kernels": "rust",
+     "tiles": 86,
+     "total": 184.4,
+     "pxCalls": {
+      "liquify_block": 86
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 200",
+   "travel": 1080,
+   "press": 31.9,
+   "window": 25.4,
+   "dab": {
+    "p50": 0.3,
+    "p95": 0.7,
+    "worst": 2.3
+   },
+   "frame": {
+    "p50": 3,
+    "p95": 3.4,
+    "worst": 28.8
+   },
+   "preview": {
+    "p50": 2.9,
+    "p95": 3.3,
+    "worst": 28.4
+   },
+   "land": 19.1,
+   "blockedMax": 10.8,
+   "tiles": 23,
+   "where": "pool",
+   "stats": {
+    "blocks": 13,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 3,
+    "local": 0
+   },
+   "fieldMB": 4,
+   "stepMB": 5.8,
+   "pxCalls": {
+    "mip_chain": 13
+   },
+   "jobs": {
+    "liquify": {
+     "n": 3,
+     "kernels": "rust",
+     "tiles": 13,
+     "total": 14.8,
+     "pxCalls": {
+      "liquify_block": 13
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 1000",
+   "travel": 1080,
+   "press": 30.3,
+   "window": 52.5,
+   "dab": {
+    "p50": 3.6,
+    "p95": 4,
+    "worst": 4.8
+   },
+   "frame": {
+    "p50": 16.3,
+    "p95": 18.8,
+    "worst": 70.1
+   },
+   "preview": {
+    "p50": 16,
+    "p95": 18.5,
+    "worst": 69.7
+   },
+   "land": 38.7,
+   "blockedMax": 17.7,
+   "tiles": 61,
+   "where": "pool",
+   "stats": {
+    "blocks": 45,
+    "splits": 0,
+    "maxBlock": 321264,
+    "pool": 6,
+    "local": 0
+   },
+   "fieldMB": 5.4,
+   "stepMB": 15.3,
+   "pxCalls": {
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 6,
+     "kernels": "rust",
+     "tiles": 45,
+     "total": 79.6,
+     "pxCalls": {
+      "liquify_block": 45
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 13,
+     "kernel": 1.1,
+     "pxCalls": {
+      "mip_chain": 13
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "shrink held 150 ticks size 1000",
+   "tick": {
+    "p50": 3.2,
+    "p95": 3.6,
+    "worst": 4.7
+   },
+   "land": 38.6,
+   "blockedMax": 32.4,
+   "tiles": 33,
+   "where": "pool",
+   "stats": {
+    "blocks": 25,
+    "splits": 1,
+    "maxBlock": 908208,
+    "pool": 5,
+    "local": 0
+   },
+   "maxReachPx": 691.6,
+   "fieldMB": 6.1,
+   "pxCalls": {
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "rust",
+     "tiles": 22,
+     "total": 46.4,
+     "pxCalls": {
+      "liquify_block": 25
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 42,
+     "kernel": 3.9,
+     "pxCalls": {
+      "mip_chain": 42
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "restore all",
+   "ms": 5.4,
+   "blockedMax": 5.4,
+   "tiles": 278,
+   "where": "pool",
+   "fieldMB": 0,
+   "pxCalls": {},
+   "jobs": {}
+  },
+  {
+   "row": "pause 2s 1:1 size 1000",
+   "pxMB0": 2.1,
+   "pxMBTrimmed": 2.1,
+   "idleTrimmed": 0,
+   "pxMBGrown": 2.1,
+   "press": 12,
+   "window": 28.4,
+   "dab": 4.2,
+   "frame": 46.4,
+   "preview": 46.1,
+   "midIdleTrimmed": 0,
+   "midWindow": 0,
+   "midDab": 3.8,
+   "midFrame": 17.7,
+   "midPreview": 17.3,
+   "land": 27.2,
+   "pxCalls": {
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "rust",
+     "tiles": 22,
+     "total": 38.3,
+     "pxCalls": {
+      "liquify_block": 22
+     },
+     "gen": 0
+    }
+   }
+  }
+ ],
+ "table": [
+  "{\"row\":\"push fit size 200\",\"travel\":3130,\"press\":60.4,\"window\":11.3,\"dab\":{\"p50\":2.5,\"p95\":7.9,\"worst\":7.9},\"frame\":{\"p50\":0.2,\"p95\":13.8,\"worst\":13.8},\"preview\":{\"p50\":0.1,\"p95\":12.9,\"worst\":12.9},\"land\":32.3,\"blockedMax\":12.6,\"tiles\":48,\"where\":\"pool\",\"stats\":{\"blocks\":28,\"splits\":0,\"maxBlock\":119497,\"pool\":5,\"local\":0},\"fieldMB\":0.9,\"stepMB\":0,\"pxCalls\":{\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":28,\"total\":60.7,\"pxCalls\":{\"liquify_block\":28},\"gen\":0}}}",
+  "{\"row\":\"push fit size 1000\",\"travel\":3130,\"press\":1.2,\"window\":9.6,\"dab\":{\"p50\":14.4,\"p95\":16.9,\"worst\":16.9},\"frame\":{\"p50\":1.4,\"p95\":11.1,\"worst\":11.1},\"preview\":{\"p50\":1.2,\"p95\":10.9,\"worst\":10.9},\"land\":84.4,\"blockedMax\":60.7,\"tiles\":113,\"where\":\"pool\",\"stats\":{\"blocks\":86,\"splits\":0,\"maxBlock\":396489,\"pool\":9,\"local\":0},\"fieldMB\":3.6,\"stepMB\":28.3,\"pxCalls\":{\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":9,\"kernels\":\"rust\",\"tiles\":86,\"total\":184.4,\"pxCalls\":{\"liquify_block\":86},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 200\",\"travel\":1080,\"press\":31.9,\"window\":25.4,\"dab\":{\"p50\":0.3,\"p95\":0.7,\"worst\":2.3},\"frame\":{\"p50\":3,\"p95\":3.4,\"worst\":28.8},\"preview\":{\"p50\":2.9,\"p95\":3.3,\"worst\":28.4},\"land\":19.1,\"blockedMax\":10.8,\"tiles\":23,\"where\":\"pool\",\"stats\":{\"blocks\":13,\"splits\":0,\"maxBlock\":119497,\"pool\":3,\"local\":0},\"fieldMB\":4,\"stepMB\":5.8,\"pxCalls\":{\"mip_chain\":13},\"jobs\":{\"liquify\":{\"n\":3,\"kernels\":\"rust\",\"tiles\":13,\"total\":14.8,\"pxCalls\":{\"liquify_block\":13},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 1000\",\"travel\":1080,\"press\":30.3,\"window\":52.5,\"dab\":{\"p50\":3.6,\"p95\":4,\"worst\":4.8},\"frame\":{\"p50\":16.3,\"p95\":18.8,\"worst\":70.1},\"preview\":{\"p50\":16,\"p95\":18.5,\"worst\":69.7},\"land\":38.7,\"blockedMax\":17.7,\"tiles\":61,\"where\":\"pool\",\"stats\":{\"blocks\":45,\"splits\":0,\"maxBlock\":321264,\"pool\":6,\"local\":0},\"fieldMB\":5.4,\"stepMB\":15.3,\"pxCalls\":{\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":6,\"kernels\":\"rust\",\"tiles\":45,\"total\":79.6,\"pxCalls\":{\"liquify_block\":45},\"gen\":0},\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":13,\"kernel\":1.1,\"pxCalls\":{\"mip_chain\":13},\"gen\":0}}}",
+  "{\"row\":\"shrink held 150 ticks size 1000\",\"tick\":{\"p50\":3.2,\"p95\":3.6,\"worst\":4.7},\"land\":38.6,\"blockedMax\":32.4,\"tiles\":33,\"where\":\"pool\",\"stats\":{\"blocks\":25,\"splits\":1,\"maxBlock\":908208,\"pool\":5,\"local\":0},\"maxReachPx\":691.6,\"fieldMB\":6.1,\"pxCalls\":{\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":46.4,\"pxCalls\":{\"liquify_block\":25},\"gen\":0},\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":42,\"kernel\":3.9,\"pxCalls\":{\"mip_chain\":42},\"gen\":0}}}",
+  "{\"row\":\"restore all\",\"ms\":5.4,\"blockedMax\":5.4,\"tiles\":278,\"where\":\"pool\",\"fieldMB\":0,\"pxCalls\":{},\"jobs\":{}}",
+  "{\"row\":\"pause 2s 1:1 size 1000\",\"pxMB0\":2.1,\"pxMBTrimmed\":2.1,\"idleTrimmed\":0,\"pxMBGrown\":2.1,\"press\":12,\"window\":28.4,\"dab\":4.2,\"frame\":46.4,\"preview\":46.1,\"midIdleTrimmed\":0,\"midWindow\":0,\"midDab\":3.8,\"midFrame\":17.7,\"midPreview\":17.3,\"land\":27.2,\"pxCalls\":{\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":38.3,\"pxCalls\":{\"liquify_block\":22},\"gen\":0}}}"
+ ]
+}

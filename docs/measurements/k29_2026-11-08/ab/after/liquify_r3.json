@@ -1,0 +1,323 @@
+{
+ "built": 5534,
+ "s": 4,
+ "tiles": true,
+ "kernels": "rust",
+ "kernelsInUse": "rust",
+ "routes": {
+  "liquifyPreview": "rust"
+ },
+ "undoMB": 133.1,
+ "rows": [
+  {
+   "row": "push fit size 200",
+   "travel": 3130,
+   "press": 60,
+   "window": 10.7,
+   "dab": {
+    "p50": 2.7,
+    "p95": 8.6,
+    "worst": 8.6
+   },
+   "frame": {
+    "p50": 0.4,
+    "p95": 12.4,
+    "worst": 12.4
+   },
+   "preview": {
+    "p50": 0.2,
+    "p95": 11.5,
+    "worst": 11.5
+   },
+   "land": 36.7,
+   "blockedMax": 13.6,
+   "tiles": 48,
+   "where": "pool",
+   "stats": {
+    "blocks": 28,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 5,
+    "local": 0
+   },
+   "fieldMB": 0.9,
+   "stepMB": 0,
+   "pxCalls": {
+    "liquify_preview": 21,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "rust",
+     "tiles": 28,
+     "total": 75,
+     "pxCalls": {
+      "liquify_block": 28
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push fit size 1000",
+   "travel": 3130,
+   "press": 1.2,
+   "window": 8,
+   "dab": {
+    "p50": 14.2,
+    "p95": 14.6,
+    "worst": 14.6
+   },
+   "frame": {
+    "p50": 1.1,
+    "p95": 9.2,
+    "worst": 9.2
+   },
+   "preview": {
+    "p50": 0.9,
+    "p95": 8.9,
+    "worst": 8.9
+   },
+   "land": 86.5,
+   "blockedMax": 65.8,
+   "tiles": 113,
+   "where": "pool",
+   "stats": {
+    "blocks": 86,
+    "splits": 0,
+    "maxBlock": 396489,
+    "pool": 9,
+    "local": 0
+   },
+   "fieldMB": 3.6,
+   "stepMB": 28.3,
+   "pxCalls": {
+    "liquify_preview": 20,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 9,
+     "kernels": "rust",
+     "tiles": 86,
+     "total": 181,
+     "pxCalls": {
+      "liquify_block": 86
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 200",
+   "travel": 1080,
+   "press": 39.1,
+   "window": 18.9,
+   "dab": {
+    "p50": 0.3,
+    "p95": 0.5,
+    "worst": 0.5
+   },
+   "frame": {
+    "p50": 1.6,
+    "p95": 1.9,
+    "worst": 20.9
+   },
+   "preview": {
+    "p50": 1.5,
+    "p95": 1.7,
+    "worst": 20.5
+   },
+   "land": 24.4,
+   "blockedMax": 17,
+   "tiles": 23,
+   "where": "pool",
+   "stats": {
+    "blocks": 13,
+    "splits": 0,
+    "maxBlock": 119497,
+    "pool": 3,
+    "local": 0
+   },
+   "fieldMB": 4,
+   "stepMB": 5.8,
+   "pxCalls": {
+    "liquify_preview": 57,
+    "mip_chain": 13
+   },
+   "jobs": {
+    "liquify": {
+     "n": 3,
+     "kernels": "rust",
+     "tiles": 13,
+     "total": 18.2,
+     "pxCalls": {
+      "liquify_block": 13
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "push 1:1 size 1000",
+   "travel": 1080,
+   "press": 34.9,
+   "window": 34.9,
+   "dab": {
+    "p50": 3.8,
+    "p95": 5.8,
+    "worst": 10.4
+   },
+   "frame": {
+    "p50": 10.6,
+    "p95": 13.5,
+    "worst": 45.1
+   },
+   "preview": {
+    "p50": 10.3,
+    "p95": 13.1,
+    "worst": 44.7
+   },
+   "land": 38.6,
+   "blockedMax": 16.8,
+   "tiles": 61,
+   "where": "pool",
+   "stats": {
+    "blocks": 45,
+    "splits": 0,
+    "maxBlock": 321264,
+    "pool": 6,
+    "local": 0
+   },
+   "fieldMB": 5.4,
+   "stepMB": 15.3,
+   "pxCalls": {
+    "liquify_preview": 60,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 13,
+     "kernel": 4.1,
+     "pxCalls": {
+      "mip_chain": 13
+     },
+     "gen": 0
+    },
+    "liquify": {
+     "n": 6,
+     "kernels": "rust",
+     "tiles": 45,
+     "total": 88.5,
+     "pxCalls": {
+      "liquify_block": 45
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "shrink held 150 ticks size 1000",
+   "tick": {
+    "p50": 3,
+    "p95": 3.3,
+    "worst": 3.6
+   },
+   "land": 35.2,
+   "blockedMax": 29.9,
+   "tiles": 33,
+   "where": "pool",
+   "stats": {
+    "blocks": 25,
+    "splits": 1,
+    "maxBlock": 908208,
+    "pool": 5,
+    "local": 0
+   },
+   "maxReachPx": 691.6,
+   "fieldMB": 6.1,
+   "pxCalls": {
+    "liquify_preview": 3,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "rust",
+     "tiles": 22,
+     "total": 41.5,
+     "pxCalls": {
+      "liquify_block": 25
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 42,
+     "kernel": 4.5,
+     "pxCalls": {
+      "mip_chain": 42
+     },
+     "gen": 0
+    }
+   }
+  },
+  {
+   "row": "restore all",
+   "ms": 5.8,
+   "blockedMax": 5.8,
+   "tiles": 278,
+   "where": "pool",
+   "fieldMB": 0,
+   "pxCalls": {},
+   "jobs": {}
+  },
+  {
+   "row": "pause 2s 1:1 size 1000",
+   "pxMB0": 148.8,
+   "pxMBTrimmed": 1.1,
+   "idleTrimmed": 1,
+   "pxMBGrown": 54.6,
+   "press": 13.7,
+   "window": 25.1,
+   "dab": 4,
+   "frame": 35.4,
+   "preview": 35,
+   "midIdleTrimmed": 1,
+   "midWindow": 0,
+   "midDab": 3.3,
+   "midFrame": 9.4,
+   "midPreview": 9.1,
+   "land": 22.9,
+   "pxCalls": {
+    "liquify_preview": 2,
+    "mip_chain": 16
+   },
+   "jobs": {
+    "liquify": {
+     "n": 5,
+     "kernels": "rust",
+     "tiles": 22,
+     "total": 32.2,
+     "pxCalls": {
+      "liquify_block": 22
+     },
+     "gen": 0
+    }
+   }
+  }
+ ],
+ "table": [
+  "{\"row\":\"push fit size 200\",\"travel\":3130,\"press\":60,\"window\":10.7,\"dab\":{\"p50\":2.7,\"p95\":8.6,\"worst\":8.6},\"frame\":{\"p50\":0.4,\"p95\":12.4,\"worst\":12.4},\"preview\":{\"p50\":0.2,\"p95\":11.5,\"worst\":11.5},\"land\":36.7,\"blockedMax\":13.6,\"tiles\":48,\"where\":\"pool\",\"stats\":{\"blocks\":28,\"splits\":0,\"maxBlock\":119497,\"pool\":5,\"local\":0},\"fieldMB\":0.9,\"stepMB\":0,\"pxCalls\":{\"liquify_preview\":21,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":28,\"total\":75,\"pxCalls\":{\"liquify_block\":28},\"gen\":0}}}",
+  "{\"row\":\"push fit size 1000\",\"travel\":3130,\"press\":1.2,\"window\":8,\"dab\":{\"p50\":14.2,\"p95\":14.6,\"worst\":14.6},\"frame\":{\"p50\":1.1,\"p95\":9.2,\"worst\":9.2},\"preview\":{\"p50\":0.9,\"p95\":8.9,\"worst\":8.9},\"land\":86.5,\"blockedMax\":65.8,\"tiles\":113,\"where\":\"pool\",\"stats\":{\"blocks\":86,\"splits\":0,\"maxBlock\":396489,\"pool\":9,\"local\":0},\"fieldMB\":3.6,\"stepMB\":28.3,\"pxCalls\":{\"liquify_preview\":20,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":9,\"kernels\":\"rust\",\"tiles\":86,\"total\":181,\"pxCalls\":{\"liquify_block\":86},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 200\",\"travel\":1080,\"press\":39.1,\"window\":18.9,\"dab\":{\"p50\":0.3,\"p95\":0.5,\"worst\":0.5},\"frame\":{\"p50\":1.6,\"p95\":1.9,\"worst\":20.9},\"preview\":{\"p50\":1.5,\"p95\":1.7,\"worst\":20.5},\"land\":24.4,\"blockedMax\":17,\"tiles\":23,\"where\":\"pool\",\"stats\":{\"blocks\":13,\"splits\":0,\"maxBlock\":119497,\"pool\":3,\"local\":0},\"fieldMB\":4,\"stepMB\":5.8,\"pxCalls\":{\"liquify_preview\":57,\"mip_chain\":13},\"jobs\":{\"liquify\":{\"n\":3,\"kernels\":\"rust\",\"tiles\":13,\"total\":18.2,\"pxCalls\":{\"liquify_block\":13},\"gen\":0}}}",
+  "{\"row\":\"push 1:1 size 1000\",\"travel\":1080,\"press\":34.9,\"window\":34.9,\"dab\":{\"p50\":3.8,\"p95\":5.8,\"worst\":10.4},\"frame\":{\"p50\":10.6,\"p95\":13.5,\"worst\":45.1},\"preview\":{\"p50\":10.3,\"p95\":13.1,\"worst\":44.7},\"land\":38.6,\"blockedMax\":16.8,\"tiles\":61,\"where\":\"pool\",\"stats\":{\"blocks\":45,\"splits\":0,\"maxBlock\":321264,\"pool\":6,\"local\":0},\"fieldMB\":5.4,\"stepMB\":15.3,\"pxCalls\":{\"liquify_preview\":60,\"mip_chain\":16},\"jobs\":{\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":13,\"kernel\":4.1,\"pxCalls\":{\"mip_chain\":13},\"gen\":0},\"liquify\":{\"n\":6,\"kernels\":\"rust\",\"tiles\":45,\"total\":88.5,\"pxCalls\":{\"liquify_block\":45},\"gen\":0}}}",
+  "{\"row\":\"shrink held 150 ticks size 1000\",\"tick\":{\"p50\":3,\"p95\":3.3,\"worst\":3.6},\"land\":35.2,\"blockedMax\":29.9,\"tiles\":33,\"where\":\"pool\",\"stats\":{\"blocks\":25,\"splits\":1,\"maxBlock\":908208,\"pool\":5,\"local\":0},\"maxReachPx\":691.6,\"fieldMB\":6.1,\"pxCalls\":{\"liquify_preview\":3,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":41.5,\"pxCalls\":{\"liquify_block\":25},\"gen\":0},\"mips\":{\"n\":1,\"kernels\":\"rust\",\"tiles\":42,\"kernel\":4.5,\"pxCalls\":{\"mip_chain\":42},\"gen\":0}}}",
+  "{\"row\":\"restore all\",\"ms\":5.8,\"blockedMax\":5.8,\"tiles\":278,\"where\":\"pool\",\"fieldMB\":0,\"pxCalls\":{},\"jobs\":{}}",
+  "{\"row\":\"pause 2s 1:1 size 1000\",\"pxMB0\":148.8,\"pxMBTrimmed\":1.1,\"idleTrimmed\":1,\"pxMBGrown\":54.6,\"press\":13.7,\"window\":25.1,\"dab\":4,\"frame\":35.4,\"preview\":35,\"midIdleTrimmed\":1,\"midWindow\":0,\"midDab\":3.3,\"midFrame\":9.4,\"midPreview\":9.1,\"land\":22.9,\"pxCalls\":{\"liquify_preview\":2,\"mip_chain\":16},\"jobs\":{\"liquify\":{\"n\":5,\"kernels\":\"rust\",\"tiles\":22,\"total\":32.2,\"pxCalls\":{\"liquify_block\":22},\"gen\":0}}}"
+ ]
+}

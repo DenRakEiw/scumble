@@ -520,6 +520,9 @@ export function liquifyStore(src, s, nodesOf, keys, clamp, rt, target, blockMax 
  * 0.5) inv) (continuous: pixel corners at integers). Positions outside the layer are transparent.
  */
 export function previewBlock(win, field, ox, oy, inv, out, bw, bh) {
+    if (win.px && win.ptr && (!win.data || win.data.buffer !== win.px.memory.buffer)) {
+        win.data = new Uint8Array(win.px.memory.buffer, win.ptr, win.w * win.h * 4);
+    }
     const rd = fieldReader(field);
     const D = [0, 0], L2 = 1 << win.L, data = win.data, ww = win.w, wh = win.h;
     const W = field.w, H = field.h;

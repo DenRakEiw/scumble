@@ -194,6 +194,57 @@
         }
         undoMB = r1(ed.undoBytes / 1048576);
         s = ed.liq ? ed.liq.s : null;
+        // ---- 8: a dab after a 2 s pause at 1:1 size 1000 (docs/PLAN_WASM_BUILD.md §7 row 40, K:138-139) ----
+        {
+            const cx = Math.round(W * 2500 / 15000), cy = Math.round(H * 7000 / 10000);
+            view("1:1", cx, cy);
+            await ed.mipsSettled();
+            ed.brushSize = 1000;
+            ed.liquifyOpts.mode = "push";
+            const step = P.MOVE_CSS * dpr / ed.view.scale;
+            // warm the 1:1 window (~69 MB in PX on the Rust route) so the 2 s idle wait starts from a warm window instance
+            pid++;
+            send("pointerdown", cx, cy);
+            send("pointermove", cx + step, cy + step * 0.3);
+            ed.draw();
+            send("pointerup", cx + step, cy + step * 0.3);
+            if (ed.liquifyPending) await ed.liquifyPending;
+            const inst0 = K.pxInstances(), pxMB0 = r1(inst0.bytes / 1048576);
+            // touched() marks an active 2 s timer and re-arms once at trimDue, so the idle trim lands within 2 * IDLE_MS (4 s)
+            await wait(4100);
+            const inst1 = K.pxInstances(), pxMBTrimmed = r1(inst1.bytes / 1048576), idleTrimmed = inst1.idle - inst0.idle;
+            pid++;
+            previewMs = 0; windowMs = 0;
+            resetCalls();
+            let t = performance.now();
+            send("pointerdown", cx, cy);
+            const press = performance.now() - t;
+            t = performance.now();
+            send("pointermove", cx + step, cy + step * 0.3);
+            const dab = performance.now() - t;
+            t = performance.now();
+            ed.draw();
+            const frame = performance.now() - t, prev1 = previewMs, win1 = windowMs;
+            const inst2 = K.pxInstances(), pxMBGrown = r1(inst2.bytes / 1048576);
+            // a pause mid-stroke while the window is held in win.px (even after PX itself trims for idle)
+            await wait(4100);
+            const inst3 = K.pxInstances(), midIdleTrimmed = inst3.idle - inst2.idle;
+            previewMs = 0; windowMs = 0;
+            t = performance.now();
+            send("pointermove", cx + 2 * step, cy + 2 * step * 0.3);
+            const midDab = performance.now() - t;
+            t = performance.now();
+            ed.draw();
+            const midFrame = performance.now() - t, midPrev = previewMs, midWin = windowMs;
+            t = performance.now();
+            send("pointerup", cx + 2 * step, cy + 2 * step * 0.3);
+            if (ed.liquifyPending) await ed.liquifyPending;
+            const land = performance.now() - t;
+            rows.push({
+                row: "pause 2s 1:1 size 1000", pxMB0, pxMBTrimmed, idleTrimmed, pxMBGrown, press: r1(press), window: r1(win1), dab: r1(dab), frame: r1(frame), preview: r1(prev1),
+                midIdleTrimmed, midWindow: r1(midWin), midDab: r1(midDab), midFrame: r1(midFrame), midPreview: r1(midPrev), land: r1(land), ...calls(),
+            });
+        }
     } finally {
         IE.kernels = kernels0;   // "js" left behind would put every later run of the instance on the twins
         K.adoptRoutes(routes0);

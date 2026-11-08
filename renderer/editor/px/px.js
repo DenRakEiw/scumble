@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 26;
+export const PX_ABI = 27;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -789,6 +789,44 @@ export class Px {
             else for (let j = 0; j < vh; j++) out.set(src.subarray(j * row, j * row + row), off + j * stride);
             if (TIMED) lapOut(t, n);
             return count;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * `previewBlock` of inpaint_liquify.js (the same arguments and bytes, K29): `win` (`{ px, ptr, data, w, h, x0, y0, L }`)
+     * is read where `px.alloc` put it (`win.ptr` on `this`, or copied from `win.data` when `win` is a plain buffer in
+     * tests); the field's dense nodes over the box are taken with `field.nodes` and `bw` x `bh` RGBA8 pixels are written
+     * into `out`. Returns `true` when done, `false` when the arguments lie outside the kernel's contract.
+     */
+    liquifyPreview(win, field, ox, oy, inv, out, bw, bh) {
+        if (!win || !field || !out) return false;
+        const s = field.s, ww = win.w, wh = win.h, lw = field.w, lh = field.h, L = win.L;
+        if (!(s === 1 || s === 2 || s === 4 || s === 8)) return false;
+        if (!(ww > 0 && wh > 0 && lw > 0 && lh > 0 && bw > 0 && bh > 0 && L >= 0 && L <= 16)) return false;
+        if (!(inv > 0 && Number.isFinite(ox) && Number.isFinite(oy) && Number.isFinite(inv))) return false;
+        const winBytes = ww * wh * 4, outBytes = bw * bh * 4;
+        if (out.byteLength < outBytes) return false;
+        const held = win.px === this && win.ptr > 0;
+        if (win.px && !held) return false;
+        if (held ? win.ptr + winBytes > this.byteLength : (!win.data || win.data.byteLength < winBytes)) return false;
+        const xmax = field.ni * s, ymax = field.nj * s;
+        const x0 = Math.max(0, Math.min(xmax, Math.max(0, ox + 0.5 * inv) - 0.5));
+        const x1 = Math.max(x0, Math.min(xmax, Math.min(lw, ox + (bw - 0.5) * inv) - 0.5));
+        const y0 = Math.max(0, Math.min(ymax, Math.max(0, oy + 0.5 * inv) - 0.5));
+        const y1 = Math.max(y0, Math.min(ymax, Math.min(lh, oy + (bh - 0.5) * inv) - 0.5));
+        const nx0 = Math.floor(x0 / s), nx1 = Math.floor(x1 / s) + 1, nw = nx1 - nx0 + 1;
+        const ny0 = Math.floor(y0 / s), ny1 = Math.floor(y1 / s) + 1, nh = ny1 - ny0 + 1;
+        const nodes = typeof field.nodes === "function" ? field.nodes(nx0, ny0, nw, nh) : null;
+        if (!(nodes instanceof Int32Array) || nodes.length < nw * nh * 2) return false;
+        const a = this.job;
+        try {
+            const pwin = held ? win.ptr : this._in(a, win.data, winBytes);
+            const pn = this._in(a, nodes, nodes.byteLength);
+            const po = a.take(outBytes);
+            const ok = this.exports.liquify_preview(pwin, ww, wh, win.x0 | 0, win.y0 | 0, L >>> 0, lw, lh, s, pn, nodes.length, nw, nx0, ny0, ox, oy, inv, po, bw, bh) >>> 0;
+            if (!ok) return false;
+            this._out(Uint8Array, po, outBytes, new Uint8Array(out.buffer, out.byteOffset, outBytes));
+            return true;
         } finally { this._reset(a); }
     }
 
