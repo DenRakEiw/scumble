@@ -541,7 +541,7 @@ async function maskCases(px, label, js) {
         const special = fFromBits([
             0x00000000, 0x80000000, 0x3f800000, 0xbf800000, 0x3f000000, 0x3eff_ffff, 0x3f00_0001,
             0x7f800000, 0xff800000, 0x7fc00000, 0xffc00000, 0x7fc01234, 0xffc01234, 0x7f800001,
-            0x00000001, 0x80000001, 0x33800001, 0x3f7f_ffff, 0x3f80_0001,
+            0x00000001, 0x80000001, 0x33800001, 0x3f7f_ffff, 0x3f80_0001, 0x3fc0_0000, 0x4000_0000, 0x4120_0000, 0xbfc0_0000,
         ]);
         const out = new Float32Array(special.length * 2 + 520);
         out.set(special, 0);
@@ -673,6 +673,143 @@ async function maskCases(px, label, js) {
         cases: boundsCases,
     });
 
+    // K33: color_match_rgba (f64 sequential stats, clamped total vs unclamped stats, ties-even u8) & blend_alpha
+    const cmCases = [];
+    {
+        const p64 = randomRGBA(64, 1, 801), r64 = randomRGBA(64, 1, 802);
+        const p128 = randomRGBA(128, 1, 803), r128 = randomRGBA(128, 1, 804);
+        // Below 64 threshold: 0, 63.5, 64 * (1 - 2^-24), and 63 pixels at weight 2.0 (clamped to 1.0 in total -> 63 < 64)
+        const wtZero = new Float32Array(64);
+        const wtNeg = new Float32Array(64).fill(-1);
+        const wt635 = new Float32Array(128); wt635.fill(0.5, 0, 127);
+        const wtBelow1Ulp = new Float32Array(64).fill(fFromBits([0x3f7f_ffff])[0]);
+        const wt63Over1 = new Float32Array(64); wt63Over1.fill(2.0, 0, 63);
+        // At and above 64 threshold: 64 * 1.0, 128 * 0.5, 64 * 2.0 (total=64, stats uses wt=2.0)
+        const wtExact64 = new Float32Array(64).fill(1.0);
+        const wtHalf128 = new Float32Array(128).fill(0.5);
+        for (let i = 0; i < 128; i += 16) wtHalf128[i] = i % 32 === 0 ? 0.0 : -0.0;
+        const wtHalf130 = new Float32Array(130).fill(0.5);
+        wtHalf130[0] = -0.75; wtHalf130[1] = 0.0;
+        const wt64Over1 = new Float32Array(65); wt64Over1.fill(2.5, 0, 64); wt64Over1[64] = -0.5;
+        cmCases.push(
+            { tag: "1 pixel (total < 64)", args: [p64.subarray(0, 4), r64.subarray(0, 4), new Float32Array([1.0])] },
+            { tag: "64 pixels weight 0", args: [p64, r64, wtZero] },
+            { tag: "64 pixels negative weight", args: [p64, r64, wtNeg] },
+            { tag: "128 pixels total 63.5", args: [p128, r128, wt635] },
+            { tag: "64 pixels 1 ULP below 1.0 (total < 64)", args: [p64, r64, wtBelow1Ulp] },
+            { tag: "63 pixels weight 2.0 (clamped total 63 < 64)", args: [p64, r64, wt63Over1] },
+            { tag: "64 pixels exact total 64", args: [p64, r64, wtExact64] },
+            { tag: "128 pixels with 0 and -0 (< 64)", args: [p128, r128, wtHalf128] },
+            { tag: "130 pixels exact total 64 with <=0", args: [randomRGBA(130, 1, 805), randomRGBA(130, 1, 806), wtHalf130] },
+            { tag: "65 pixels weight 2.5 (clamped total 64, unclamped stats)", args: [randomRGBA(65, 1, 807), randomRGBA(65, 1, 808), wt64Over1] },
+        );
+        // Ties-to-even across all 256 byte values: patch has two pixels per value v in 0..255 (mean=127.5),
+        // reference has two pixels at (64 + (v >> 1)) so scale = 0.5 exactly and (v - 127.5)*0.5 + r_mean hits halves
+        const nTies = 256, pTies = new Uint8ClampedArray(nTies * 4), rTies = new Uint8ClampedArray(nTies * 4);
+        const wtTies = new Float32Array(nTies).fill(1.0);
+        for (let i = 0; i < nTies; i++) {
+            pTies[i * 4] = i; pTies[i * 4 + 1] = 255 - i; pTies[i * 4 + 2] = (i * 3) & 255; pTies[i * 4 + 3] = i;
+            // Construct reference with exact 0.5 std on R, 2.0 clamp on G (flat patch or steep ref), 0.5 clamp on B (flat ref)
+            rTies[i * 4] = i < 128 ? 68 : 132;     // mean 100, std 32
+            rTies[i * 4 + 1] = i < 128 ? 0 : 255;  // high std -> hits 2.0 clamp when patch G is narrow
+            rTies[i * 4 + 2] = 120;                // zero variance -> hits 1e-6*255*255 floor & 0.5 scale clamp
+            rTies[i * 4 + 3] = 255 - i;
+        }
+        // Variance floor (1e-6 * 255 * 255 -> std floor 0.255) without hitting 0.5/2.0 clamps on R & B,
+        // and upper scale clamp 2.0 on G with non-zero (p - t_mean):
+        const nFloor = 257, pFlat = new Uint8ClampedArray(nFloor * 4), rFlat = new Uint8ClampedArray(nFloor * 4);
+        const wtFlat = new Float32Array(nFloor);
+        for (let i = 0; i < 256; i++) {
+            wtFlat[i] = 1.0;
+            // R: ref flat at 100 (std floor 0.255), patch has 40 pixels at 101 and 216 at 100 (std ~0.363) -> q ~0.702 in (0.5, 2.0)
+            pFlat[i * 4] = i < 40 ? 101 : 100;
+            rFlat[i * 4] = 100;
+            // G: patch std 10 (80 vs 100), ref std 127.5 (0 vs 255) -> q = 12.75, clamped to 2.0; (100 - 90) * 2.0 + 127.5 = 148
+            pFlat[i * 4 + 1] = i < 128 ? 80 : 100;
+            rFlat[i * 4 + 1] = i < 128 ? 0 : 255;
+            // B: patch flat at 100 (std floor 0.255), ref has 40 pixels at 101 and 216 at 100 (std ~0.363) -> q ~1.424 in (0.5, 2.0)
+            pFlat[i * 4 + 2] = 100;
+            rFlat[i * 4 + 2] = i < 40 ? 101 : 100;
+            pFlat[i * 4 + 3] = i;
+            rFlat[i * 4 + 3] = 255 - i;
+        }
+        // Pixel 256 has weight 0 (does not affect mean/variance) and p = 200 so (200 - 100) * scale sensitizes scale directly!
+        wtFlat[256] = 0.0;
+        pFlat[256 * 4] = 200; pFlat[256 * 4 + 1] = 110; pFlat[256 * 4 + 2] = 200; pFlat[256 * 4 + 3] = 77;
+        rFlat[256 * 4] = 100; rFlat[256 * 4 + 1] = 128; rFlat[256 * 4 + 2] = 100; rFlat[256 * 4 + 3] = 88;
+        // Also place all 0..255 values into R on a second 513-pixel array whose first 256 set mean=100, std=64 (wt=1)
+        // and whose remaining 257 (including scalar tail pixel 512) have wt=0 so they get transformed by (v - 100)*0.5 + 100 = 50 + 0.5*v!
+        const pHalf = new Uint8ClampedArray(513 * 4), rHalf = new Uint8ClampedArray(513 * 4), wtHalf = new Float32Array(513);
+        for (let i = 0; i < 256; i++) {
+            pHalf[i * 4] = i < 128 ? 36 : 164; pHalf[i * 4 + 1] = i < 128 ? 20 : 220; pHalf[i * 4 + 2] = i; pHalf[i * 4 + 3] = i;
+            rHalf[i * 4] = i < 128 ? 68 : 132; rHalf[i * 4 + 1] = i < 128 ? 10 : 250; rHalf[i * 4 + 2] = 100; rHalf[i * 4 + 3] = 255;
+            wtHalf[i] = 1.0;
+            const j = (256 + i) * 4;
+            pHalf[j] = i; pHalf[j + 1] = i; pHalf[j + 2] = i; pHalf[j + 3] = (i * 7) & 255;
+            wtHalf[256 + i] = 0.0;
+        }
+        pHalf[512 * 4] = 1; pHalf[512 * 4 + 1] = 3; pHalf[512 * 4 + 2] = 5; pHalf[512 * 4 + 3] = 99;
+        wtHalf[512] = 0.0;
+        const wtNaN = new Float32Array(68).fill(1.0); wtNaN[17] = NaN;
+        cmCases.push(
+            { tag: "256 pixels ties and clamps", args: [pTies, rTies, wtTies] },
+            { tag: "257 pixels flat variance floor and 2.0 clamp", args: [pFlat, rFlat, wtFlat] },
+            { tag: "513 pixels exact 0.5 scale ties-to-even on all 0..255", args: [pHalf, rHalf, wtHalf] },
+            { tag: "68 pixels with NaN weight", args: [randomRGBA(68, 1, 809), randomRGBA(68, 1, 810), wtNaN] },
+            { tag: "67 pixels random", args: [randomRGBA(67, 1, 811), randomRGBA(67, 1, 812), mask(67, 1, 813).map((v) => v * 1.4 - 0.2)] },
+            { tag: "131x77 mask weights", args: [randomRGBA(131, 77, 814), randomRGBA(131, 77, 815), masks[4][0]] },
+            { tag: "300x211 mask weights", args: [randomRGBA(300, 211, 816), randomRGBA(300, 211, 817), masks[5][0]] },
+        );
+    }
+    twinCheck({
+        name: "color_match_rgba", title: "color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even)", builds: [[label, px]], twin: js,
+        call: (k, [patch, ref, wt]) => ({ matched: k.colorMatchRgba(patch, ref, wt), patch }),
+        cases: cmCases,
+    });
+
+    const baCases = [];
+    {
+        // All 256 alphas paired with edge mask values and half-way mask fractions
+        const nEdge = edgeVals.length;
+        const rgbaEdge = new Uint8ClampedArray(nEdge * 4);
+        for (let i = 0; i < nEdge; i++) {
+            rgbaEdge[i * 4] = (i * 53 + 7) & 255;
+            rgbaEdge[i * 4 + 1] = (255 - (i & 255));
+            rgbaEdge[i * 4 + 2] = (i * 19 + 3) & 255;
+            rgbaEdge[i * 4 + 3] = i & 255;
+        }
+        for (const keep of [false, true]) {
+            for (const mode of ["new", "out", "inPlace"]) {
+                baCases.push(
+                    { tag: `edgeVals keep=${keep} ${mode}`, args: [rgbaEdge, edgeVals, keep, mode] },
+                    { tag: `zeros and NaNs (7) keep=${keep} ${mode}`, args: [rgbaEdge.subarray(0, 28), zeroNaNA, keep, mode] },
+                );
+            }
+            for (const n of [1, 2, 3, 4, 5, 7, 16, 19]) {
+                baCases.push({ tag: `${n} pixels keep=${keep}`, args: [rgbaEdge.subarray(0, n * 4), edgeVals.subarray(0, n), keep, n % 2 ? "new" : "inPlace"] });
+            }
+            baCases.push({ tag: `131x77 keep=${keep}`, args: [randomRGBA(131, 77, keep ? 821 : 820), masks[4][0], keep, "new"] });
+        }
+    }
+    twinCheck({
+        name: "blend_alpha", title: "blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0)", builds: [[label, px]], twin: js,
+        call: (k, [rgba, m, keep, mode]) => k.blendAlpha(rgba, m, keep, mode === "inPlace" ? rgba : mode === "out" ? new Uint8ClampedArray(rgba.length) : null),
+        cases: baCases,
+    });
+    // Direct export check for blend_alpha when dst !== src
+    {
+        const n = zeroNaNA.length, rgba = randomRGBA(n, 1, 825);
+        const ps = px.alloc(n * 4), pm = px.alloc(n * 4), po0 = px.alloc(n * 4), po1 = px.alloc(n * 4);
+        px.put(ps, rgba); px.put(pm, zeroNaNA);
+        px.exports.blend_alpha(ps, pm, po0, n, 0);
+        px.exports.blend_alpha(ps, pm, po1, n, 1);
+        const got0 = px.get(Uint8ClampedArray, po0, n * 4), want0 = js.blendAlpha(rgba, zeroNaNA, false);
+        const got1 = px.get(Uint8ClampedArray, po1, n * 4), want1 = js.blendAlpha(rgba, zeroNaNA, true);
+        px.free(ps, n * 4); px.free(pm, n * 4); px.free(po0, n * 4); px.free(po1, n * 4);
+        check(`${label} blend_alpha with separate dst pointer equals its twin`,
+            !twinDiff(got0, want0, [], {}) && !twinDiff(got1, want1, [], {}));
+    }
+
     if (label === "rust simd") {
         const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
         try {
@@ -685,7 +822,8 @@ async function maskCases(px, label, js) {
                 };
                 try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
             }
-            const rgba = randomRGBA(19, 7, 301), w = 19, h = 7;
+            const rgba = randomRGBA(19, 7, 301), refRgba = randomRGBA(19, 7, 302), w = 19, h = 7;
+            const wt = new Float32Array(w * h).fill(0.75);
             const runAll = () => {
                 const m = K.alphaToMask(rgba);
                 const mc = K.maskMaxClamp(m, pairB.subarray(0, w * h), true);
@@ -693,18 +831,29 @@ async function maskCases(px, label, js) {
                 const er = K.erodeMask(om, w, h, 2);
                 const r0 = K.maskToRgba(er, 0), r1 = K.maskToRgba(er, 1), r2 = K.maskToRgba(er, 2);
                 const b = K.maskBoundsF32(er, w, h);
-                return { m, mc, om, er, r0, r1, r2, b };
+                const cmPatch = rgba.slice();
+                const cmOk = K.colorMatchRgba(cmPatch, refRgba, wt);
+                const ba0 = K.blendAlpha(rgba, er, false);
+                const ba1 = K.blendAlpha(rgba, er, true);
+                return { m, mc, om, er, r0, r1, r2, b, cmOk, cmPatch, ba0, ba1 };
             };
             K.setRoute("stitchMask", "rust");
+            K.setRoute("colorMatch", "rust");
+            K.setRoute("blendAlpha", "rust");
             K.pxCalls(true);
             const rustOut = runAll(), rustCalls = K.pxCalls(true);
             K.setRoute("stitchMask", "js");
+            K.setRoute("colorMatch", "js");
+            K.setRoute("blendAlpha", "js");
             const jsOut = runAll(), jsCalls = K.pxCalls(true);
             K.setRoute("stitchMask", null);
-            const exports6 = ["alpha_to_mask", "mask_max_clamp", "mask_one_minus", "erode_mask", "mask_to_rgba", "mask_bounds_f32"];
-            const countsOk = exports6.every((e) => (rustCalls[e] || 0) > 0 && !jsCalls[e]) && rustCalls.mask_to_rgba === 3;
+            K.setRoute("colorMatch", null);
+            K.setRoute("blendAlpha", null);
+            const exportsAll = ["alpha_to_mask", "mask_max_clamp", "mask_one_minus", "erode_mask", "mask_to_rgba", "mask_bounds_f32", "color_match_rgba", "blend_alpha"];
+            const countsOk = exportsAll.every((e) => (rustCalls[e] || 0) > 0 && !jsCalls[e])
+                && rustCalls.mask_to_rgba === 3 && rustCalls.color_match_rgba === 1 && rustCalls.blend_alpha === 2;
             const diff = twinDiff(rustOut, jsOut, [], {});
-            check("kernels.js stitchMask route switches all six K32 mask kernels between Rust and the twins with identical outputs",
+            check("kernels.js stitchMask, colorMatch and blendAlpha routes switch K32+K33 kernels between Rust and the twins with identical outputs",
                 countsOk && !diff, diff || JSON.stringify({ rustCalls, jsCalls }));
         } finally {
             kernelsBack(K);
@@ -722,7 +871,7 @@ async function maskCases(px, label, js) {
     const t4 = performance.now();
     console.log(`       1492 x 1492: dilate ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)}; three box blurs ${label} ${(t3 - t2).toFixed(1)} ms, twin ${(t4 - t3).toFixed(1)}`);
     if (process.env.PX_BENCH) {
-        const bigB = mask(1492, 1492, 10), bigRgba = js.maskToRgba(big, 0);
+        const bigB = mask(1492, 1492, 10), bigRgba = js.maskToRgba(big, 0), bigRef = js.maskToRgba(bigB, 0);
         const rows = [
             ["alpha_to_mask", (k) => k.alphaToMask(bigRgba)],
             ["mask_max_clamp", (k) => k.maskMaxClamp(big, bigB, true)],
@@ -730,12 +879,14 @@ async function maskCases(px, label, js) {
             ["erode_mask", (k) => k.erodeMask(big, 1492, 1492, 47)],
             ["mask_to_rgba", (k) => k.maskToRgba(big, 1)],
             ["mask_bounds_f32", (k) => k.maskBoundsF32(big, 1492, 1492)],
+            ["color_match_rgba", (k) => k.colorMatchRgba(bigRgba, bigRef, big)],
+            ["blend_alpha", (k) => k.blendAlpha(bigRgba, big, true, bigRgba)],
         ];
         const parts = rows.map(([n, fn]) => {
             const m = benchMedians([[label, () => fn(px)], ["twin", () => fn(js)]]);
             return `${n} ${label} ${m[label].toFixed(2)} ms, twin ${m.twin.toFixed(2)}`;
         });
-        console.log(`       1492 x 1492 K32 masks: ${parts.join("; ")}`);
+        console.log(`       1492 x 1492 K32+K33 masks: ${parts.join("; ")}`);
     }
 }
 

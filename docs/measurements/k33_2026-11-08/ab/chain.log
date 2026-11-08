@@ -1,0 +1,130 @@
+[08:10:17] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:10:32] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:10:47] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:11:02] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:11:17] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:11:32] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:11:47] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:12:02] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:12:17] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:12:32] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:12:47] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:13:02] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:13:17] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:13:32] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:13:47] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:14:03] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:14:18] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:14:33] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:14:48] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:15:03] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:15:18] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:15:33] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:15:48] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:16:03] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:16:18] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:16:33] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:16:48] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:17:03] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:17:18] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:17:33] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:17:48] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:18:03] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:18:18] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:18:34] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:18:49] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:19:04] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:19:19] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:19:34] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:19:49] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:20:04] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:20:19] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:20:34] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:20:49] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:21:04] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:21:19] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:21:34] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:21:49] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:22:04] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:22:19] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:22:34] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:22:49] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:23:05] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:23:20] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:23:35] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:23:50] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:24:05] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:24:20] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:24:35] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:24:50] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:25:05] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:25:20] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:25:35] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:25:50] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:26:05] waiting for /f/canvas/.claude/coord/machine_busy.lock
+[08:26:20] waiting for /f/canvas/.claude/coord/machine_busy.lock
+lock: taken after 0 s
+[08:26:35] lock: taken (K33 measuring (chain-e, port 9615) 51788 2026-11-08T08:26:35) and /f/canvas/.claude/coord/machine_busy.lock written
+[08:26:36] after: cb9479d + working tree, px.wasm 188285 B (ae1c88b53a5d28cf), px_scalar.wasm 155461 B
+[08:26:36] before: /f/scumble_before_k33, px.wasm 182205 B (eeaf7a57c54f0a00), px_scalar.wasm 152807 B
+[08:26:36] == round 1
+[08:26:48] before r1: w0_bench stitch_align_2048,stitch_align_4096
+[08:27:20] w0 rc=0
+closed
+[08:27:35] before r1: native_test 15000x10000 --no-profile provider_crop (cold)
+[08:27:42] native rc=0
+closed
+[08:27:57] before r1: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[08:28:05] native_warm rc=0
+closed
+[08:28:20] after r1: w0_bench stitch_align_2048,stitch_align_4096
+[08:28:48] w0 rc=0
+closed
+[08:29:03] after r1: native_test 15000x10000 --no-profile provider_crop (cold)
+[08:29:10] native rc=0
+closed
+[08:29:26] after r1: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[08:29:34] native_warm rc=0
+closed
+[08:29:39] == round 2
+[08:29:49] after r2: w0_bench stitch_align_2048,stitch_align_4096
+[08:30:18] w0 rc=0
+closed
+[08:30:33] after r2: native_test 15000x10000 --no-profile provider_crop (cold)
+[08:30:40] native rc=0
+closed
+[08:30:55] after r2: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[08:31:03] native_warm rc=0
+closed
+[08:31:18] before r2: w0_bench stitch_align_2048,stitch_align_4096
+[08:31:48] w0 rc=0
+closed
+[08:32:03] before r2: native_test 15000x10000 --no-profile provider_crop (cold)
+[08:32:10] native rc=0
+closed
+[08:32:25] before r2: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[08:32:33] native_warm rc=0
+closed
+[08:32:37] == round 3
+[08:32:48] before r3: w0_bench stitch_align_2048,stitch_align_4096
+[08:33:20] w0 rc=0
+closed
+[08:33:35] before r3: native_test 15000x10000 --no-profile provider_crop (cold)
+[08:33:42] native rc=0
+closed
+[08:33:57] before r3: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[08:34:04] native_warm rc=0
+closed
+[08:34:20] after r3: w0_bench stitch_align_2048,stitch_align_4096
+[08:34:49] w0 rc=0
+closed
+[08:35:05] after r3: native_test 15000x10000 --no-profile provider_crop (cold)
+[08:35:11] native rc=0
+closed
+[08:35:27] after r3: warm_native 15000x10000 --no-profile provider_crop (warmed)
+[08:35:34] native_warm rc=0
+closed
+[08:35:39] px_bench: PX_BENCH=1 PX_ONLY=mask node tools/px_test.js
+[08:35:43] done
+lock: released
+no instance on 9615 Cannot connect to host 127.0.0.1:9615 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

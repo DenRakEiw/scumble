@@ -1,0 +1,37 @@
+probes in
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 971, "encodeMs": 1384, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 2928 ms, longest block 452 ms
+   {"loadFileMs": 2858, "tiles": 2360, "compositorBefore": "not made", "compositorAfter": "made"}
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   3     408.6 ms        0.0 MB
+     gl getShaderParameter                    6       4.3 ms        0.0 MB
+     gl texSubImage2D                      2360       1.6 ms        1.0 MB
+     worker postMessage (moved)             164       1.5 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.2 ms        0.0 MB
+     blob arrayBuffer                         8       0.5 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.2 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 1999.3, "parse": 0.6, "read": 44.8, "write": 1952.5, "wait": 1000.8, "copy": 45.1, "unfilter": 925, "deliver": 13.4, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 483.7, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+
+== provider_crop: wall 564 ms, longest block 80 ms
+   {"prepMs": 176.6, "bbox": [6754, 4254, 1492, 1492], "emitted": [1024, 1024], "window": [1024, 1024], "patch": [1492, 1492], "how": ["stack", "stack"]}
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   2      31.8 ms        0.0 MB
+     gl getShaderParameter                    4       8.4 ms        0.0 MB
+     createImageBitmap (until settled)        1       6.0 ms        0.0 MB
+     gl getError                             12       4.4 ms        0.0 MB
+     2d drawImage < 1 MP                     26       1.4 ms        1.2 MB
+     2d drawImage >= 1 MP                    55       0.6 ms      485.5 MB
+   worker stack_into: 14 jobs, {"kernel": 16.8, "gen": 0}
+   worker area_cells: 1 jobs, {"cells": 586250, "count": 3, "label": 3.3, "total": 6.3, "gen": 0}
+   px calls, window: -
+   px calls, workers: -
+   px calls, stitch worker: box_blurs 3, mask_max_clamp 3, mask_to_rgba 3, alpha_to_mask 2, blend_alpha 2, dilate_mask 2, mask_bounds_f32 2, color_match_rgba 1, erode_mask 1, mask_one_minus 1
+   stitch laps prep: selection 4.2, maskFromAlpha 3.5, selectionBbox 0.5, region 2.7, dilate 26.0, blur 18.0, maskMax 2.7, resize 1.0, maskToCanvas 10.4, alphaMask 1.0, encode 60.4 | sum 130.3 ms
+   stitch laps finish: region 2.1, decode 2.6, resize 0.1, dilate 45.3, blur 58.8, maskMax 13.3, erode 39.6, alignCopy 6.3, shrink 48.5, ring 8.1, fit 6.5, colorMatch 48.2, finalAlpha 22.4, encode 24.4 | sum 326.3 ms
+[ok] close: {"closed": 2, "arena": {"slots": 2385, "chunks": 10, "allocated": 4745, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 175}}
+
+RESULT measured

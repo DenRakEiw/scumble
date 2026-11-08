@@ -49,8 +49,9 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * burn brush), `spongeRGBA` (saturate, desaturate) and frequency separation's split, the same way. `liquifyBlock`
  * (K28): Liquify's bake kernel (`inpaint_liquify.js` `liquifyBlock`). `stitchMask` (K32): the mask kernels of
  * stitch.js (`alphaToMask`, `maskMaxClamp`, `maskOneMinus`, `erodeMask`, `maskToRgba`, `maskBoundsF32`).
+ * `colorMatch` and `blendAlpha` (K33): `colorMatchRgba` and `blendAlpha` of stitch.js.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", stitchMask: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -463,6 +464,28 @@ export function maskBoundsF32(src, w, h) {
         finally { releaseIfLarge(); }
     }
     return J.maskBoundsF32(src, w, h);
+}
+
+/** Matches the weighted RGB mean and standard deviation of `patch` (RGBA8, in place) to `reference` under `weight` (stitch.js `colorMatch`; K33). */
+export function colorMatchRgba(patch, reference, weight) {
+    const p = rustPx("colorMatch");
+    if (p) {
+        try { return p.colorMatchRgba(patch, reference, weight); }
+        catch (err) { if (!recovered(p, err, "color_match_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.colorMatchRgba(patch, reference, weight);
+}
+
+/** The alpha byte of each RGBA8 pixel of `rgba` replaced in `out` (or a new Uint8ClampedArray; may be `rgba`) by `Math.round(clamp01(mask[i]) * (keepAlpha ? rgba[i * 4 + 3] : 255))` (stitch.js; K33). */
+export function blendAlpha(rgba, mask, keepAlpha = false, out = null) {
+    const p = rustPx("blendAlpha");
+    if (p) {
+        try { return p.blendAlpha(rgba, mask, keepAlpha, out); }
+        catch (err) { if (!recovered(p, err, "blend_alpha")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.blendAlpha(rgba, mask, keepAlpha, out);
 }
 
 /**

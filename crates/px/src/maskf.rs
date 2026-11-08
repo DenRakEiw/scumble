@@ -5,6 +5,8 @@
 //! a maximum, which no order of evaluation changes; the blur keeps the twin's running sums in f64, added and
 //! subtracted in the twin's order.
 
+use crate::stroke::clamp8;
+
 #[inline(always)]
 fn fmax(a: f32, b: f32) -> f32 {
     if a > b { a } else { b }
@@ -154,6 +156,77 @@ pub fn mask_bounds_f32(data: &[f32], w: usize, h: usize, bounds: &mut [i32]) -> 
     bounds[2] = x1 as i32;
     bounds[3] = y1 as i32;
     1
+}
+
+/// Matches the weighted RGB mean and standard deviation of `patch` (`n * 4` RGBA8 bytes, in place) to `reference`
+/// (`n * 4` RGBA8 bytes) under `weight` (`n` f32, `stitch.js` `colorMatch`). Returns 0 when the clamped weight sum is
+/// below 64 (leaving `patch` untouched), else 1.
+pub fn color_match_rgba(patch: &mut [u8], reference: &[u8], weight: &[f32]) -> u32 {
+    let n = weight.len().min(patch.len() / 4).min(reference.len() / 4);
+    let mut total = 0.0f64;
+    for &w in &weight[..n] {
+        let cw = if w.is_nan() {
+            f64::NAN
+        } else if w > 0.0 {
+            w.min(1.0) as f64
+        } else {
+            0.0
+        };
+        total += cw;
+    }
+    if total < 64.0 {
+        return 0;
+    }
+    let (r_mean, r_v, t_mean, t_v) = lanes::color_match_stats(&patch[..n * 4], &reference[..n * 4], &weight[..n], total);
+    let floor = 1e-6 * 255.0 * 255.0;
+    let std_of = |v: f64| -> f64 {
+        let x = v / total;
+        if x.is_nan() {
+            f64::NAN
+        } else if x > floor {
+            x.sqrt()
+        } else {
+            floor.sqrt()
+        }
+    };
+    let mut scale = [0.0f64; 3];
+    for c in 0..3 {
+        let q = std_of(r_v[c]) / std_of(t_v[c]);
+        scale[c] = if q.is_nan() {
+            f64::NAN
+        } else if q < 0.5 {
+            0.5
+        } else if q > 2.0 {
+            2.0
+        } else {
+            q
+        };
+    }
+    let done = lanes::color_match_apply(&mut patch[..n * 4], &t_mean, &scale, &r_mean);
+    for p in patch[done * 4..n * 4].chunks_exact_mut(4) {
+        for c in 0..3 {
+            p[c] = clamp8((p[c] as f64 - t_mean[c]) * scale[c] + r_mean[c]);
+        }
+    }
+    1
+}
+
+/// The alpha byte of each pixel of `rgba` (`n * 4` bytes) set to `Math.round(clamp01(mask[i]) * (keep_alpha ? a : 255))`.
+pub fn blend_alpha(rgba: &mut [u8], mask: &[f32], keep_alpha: bool) {
+    let n = mask.len().min(rgba.len() / 4);
+    let done = lanes::blend_alpha(&mut rgba[..n * 4], &mask[..n], keep_alpha);
+    let tail_m = &mask[done..n];
+    let tail_d = &mut rgba[done * 4..n * 4];
+    if keep_alpha {
+        for (&x, p) in tail_m.iter().zip(tail_d.chunks_exact_mut(4)) {
+            let c = if x > 0.0 { x.min(1.0) as f64 } else { 0.0 };
+            p[3] = (c * (p[3] as f64) + 0.5) as u8;
+        }
+    } else {
+        for (&x, p) in tail_m.iter().zip(tail_d.chunks_exact_mut(4)) {
+            p[3] = mask_byte(x);
+        }
+    }
 }
 
 /// The window of i, clamped to the line. It is shorter than a block at both ends of the line, and then it may lie in
@@ -381,6 +454,51 @@ mod lanes {
         let last = first + row[first..].iter().rposition(|&v| v > 0.5).unwrap_or(0);
         Some((first, last))
     }
+
+    pub fn color_match_stats(patch: &[u8], reference: &[u8], weight: &[f32], total: f64) -> ([f64; 3], [f64; 3], [f64; 3], [f64; 3]) {
+        let stats = |d: &[u8]| -> ([f64; 3], [f64; 3]) {
+            let mut mean = [0.0f64; 3];
+            let mut v = [0.0f64; 3];
+            for (i, &wt) in weight.iter().enumerate() {
+                if wt <= 0.0 {
+                    continue;
+                }
+                let w = wt as f64;
+                let j = i * 4;
+                mean[0] += d[j] as f64 * w;
+                mean[1] += d[j + 1] as f64 * w;
+                mean[2] += d[j + 2] as f64 * w;
+            }
+            for m in &mut mean {
+                *m /= total;
+            }
+            for (i, &wt) in weight.iter().enumerate() {
+                if wt <= 0.0 {
+                    continue;
+                }
+                let w = wt as f64;
+                let j = i * 4;
+                for c in 0..3 {
+                    let dd = d[j + c] as f64 - mean[c];
+                    v[c] += dd * dd * w;
+                }
+            }
+            (mean, v)
+        };
+        let (r_mean, r_v) = stats(reference);
+        let (t_mean, t_v) = stats(patch);
+        (r_mean, r_v, t_mean, t_v)
+    }
+
+    #[inline(always)]
+    pub fn color_match_apply(_: &mut [u8], _: &[f64; 3], _: &[f64; 3], _: &[f64; 3]) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    pub fn blend_alpha(_: &mut [u8], _: &[f32], _: bool) -> usize {
+        0
+    }
 }
 
 #[cfg(target_feature = "simd128")]
@@ -585,6 +703,122 @@ mod lanes {
             }
         }
         Some((first, first))
+    }
+
+    pub fn color_match_stats(patch: &[u8], reference: &[u8], weight: &[f32], total: f64) -> ([f64; 3], [f64; 3], [f64; 3], [f64; 3]) {
+        let n = weight.len().min(patch.len() / 4).min(reference.len() / 4);
+        let (tp, rp, wp) = (patch.as_ptr(), reference.as_ptr(), weight.as_ptr());
+        unsafe {
+            let (mut m0, mut m1, mut m2) = (f64x2_splat(0.0), f64x2_splat(0.0), f64x2_splat(0.0));
+            for i in 0..n {
+                let wt = *wp.add(i);
+                if wt <= 0.0 {
+                    continue;
+                }
+                let vw = f64x2_splat(wt as f64);
+                let j = i * 4;
+                m0 = f64x2_add(m0, f64x2_mul(f64x2(*rp.add(j) as f64, *tp.add(j) as f64), vw));
+                m1 = f64x2_add(m1, f64x2_mul(f64x2(*rp.add(j + 1) as f64, *tp.add(j + 1) as f64), vw));
+                m2 = f64x2_add(m2, f64x2_mul(f64x2(*rp.add(j + 2) as f64, *tp.add(j + 2) as f64), vw));
+            }
+            let vtotal = f64x2_splat(total);
+            m0 = f64x2_div(m0, vtotal);
+            m1 = f64x2_div(m1, vtotal);
+            m2 = f64x2_div(m2, vtotal);
+            let (mut v0, mut v1, mut v2) = (f64x2_splat(0.0), f64x2_splat(0.0), f64x2_splat(0.0));
+            for i in 0..n {
+                let wt = *wp.add(i);
+                if wt <= 0.0 {
+                    continue;
+                }
+                let vw = f64x2_splat(wt as f64);
+                let j = i * 4;
+                let d0 = f64x2_sub(f64x2(*rp.add(j) as f64, *tp.add(j) as f64), m0);
+                let d1 = f64x2_sub(f64x2(*rp.add(j + 1) as f64, *tp.add(j + 1) as f64), m1);
+                let d2 = f64x2_sub(f64x2(*rp.add(j + 2) as f64, *tp.add(j + 2) as f64), m2);
+                v0 = f64x2_add(v0, f64x2_mul(f64x2_mul(d0, d0), vw));
+                v1 = f64x2_add(v1, f64x2_mul(f64x2_mul(d1, d1), vw));
+                v2 = f64x2_add(v2, f64x2_mul(f64x2_mul(d2, d2), vw));
+            }
+            (
+                [f64x2_extract_lane::<0>(m0), f64x2_extract_lane::<0>(m1), f64x2_extract_lane::<0>(m2)],
+                [f64x2_extract_lane::<0>(v0), f64x2_extract_lane::<0>(v1), f64x2_extract_lane::<0>(v2)],
+                [f64x2_extract_lane::<1>(m0), f64x2_extract_lane::<1>(m1), f64x2_extract_lane::<1>(m2)],
+                [f64x2_extract_lane::<1>(v0), f64x2_extract_lane::<1>(v1), f64x2_extract_lane::<1>(v2)],
+            )
+        }
+    }
+
+    pub fn color_match_apply(patch: &mut [u8], t_mean: &[f64; 3], scale: &[f64; 3], r_mean: &[f64; 3]) -> usize {
+        let n4 = (patch.len() / 4) / 4 * 4;
+        let d = patch.as_mut_ptr();
+        unsafe {
+            let (tm0, tm1, tm2) = (f64x2_splat(t_mean[0]), f64x2_splat(t_mean[1]), f64x2_splat(t_mean[2]));
+            let (sc0, sc1, sc2) = (f64x2_splat(scale[0]), f64x2_splat(scale[1]), f64x2_splat(scale[2]));
+            let (rm0, rm1, rm2) = (f64x2_splat(r_mean[0]), f64x2_splat(r_mean[1]), f64x2_splat(r_mean[2]));
+            let (zero, f255) = (f64x2_splat(0.0), f64x2_splat(255.0));
+            let b8 = u32x4_splat(0xff);
+            let a_mask = u32x4_splat(0xff00_0000);
+            let ch = |v: v128, tm: v128, sc: v128, rm: v128| -> v128 {
+                let lo = f64x2_convert_low_i32x4(v);
+                let hi = f64x2_convert_low_i32x4(i32x4_shuffle::<2, 3, 2, 3>(v, v));
+                let r_lo = f64x2_nearest(f64x2_add(f64x2_mul(f64x2_sub(lo, tm), sc), rm));
+                let r_hi = f64x2_nearest(f64x2_add(f64x2_mul(f64x2_sub(hi, tm), sc), rm));
+                let c_lo = i32x4_trunc_sat_f64x2_zero(f64x2_pmin(f255, f64x2_pmax(zero, r_lo)));
+                let c_hi = i32x4_trunc_sat_f64x2_zero(f64x2_pmin(f255, f64x2_pmax(zero, r_hi)));
+                i64x2_shuffle::<0, 2>(c_lo, c_hi)
+            };
+            let mut i = 0;
+            while i < n4 {
+                let px = v128_load(d.add(i * 4) as *const v128);
+                let r = ch(v128_and(px, b8), tm0, sc0, rm0);
+                let g = ch(v128_and(u32x4_shr(px, 8), b8), tm1, sc1, rm1);
+                let b = ch(v128_and(u32x4_shr(px, 16), b8), tm2, sc2, rm2);
+                let out = v128_or(v128_or(r, u32x4_shl(g, 8)), v128_or(u32x4_shl(b, 16), v128_and(px, a_mask)));
+                v128_store(d.add(i * 4) as *mut v128, out);
+                i += 4;
+            }
+        }
+        n4
+    }
+
+    pub fn blend_alpha(rgba: &mut [u8], mask: &[f32], keep_alpha: bool) -> usize {
+        let n4 = mask.len().min(rgba.len() / 4) / 4 * 4;
+        let (d, m) = (rgba.as_mut_ptr(), mask.as_ptr());
+        let (zero, one) = (f32x4_splat(0.0), f32x4_splat(1.0));
+        let vhalf = f64x2_splat(0.5);
+        let rgb_mask = u32x4_splat(0x00ff_ffff);
+        unsafe {
+            if keep_alpha {
+                let mut i = 0;
+                while i < n4 {
+                    let px = v128_load(d.add(i * 4) as *const v128);
+                    let q = f32x4_pmin(one, f32x4_pmax(zero, v128_load(m.add(i) as *const v128)));
+                    let a = f32x4_convert_u32x4(u32x4_shr(px, 24));
+                    let lo = i32x4_trunc_sat_f64x2_zero(f64x2_add(
+                        f64x2_mul(f64x2_promote_low_f32x4(q), f64x2_promote_low_f32x4(a)),
+                        vhalf,
+                    ));
+                    let hi = i32x4_trunc_sat_f64x2_zero(f64x2_add(f64x2_mul(high(q), high(a)), vhalf));
+                    let v = i64x2_shuffle::<0, 2>(lo, hi);
+                    v128_store(d.add(i * 4) as *mut v128, v128_or(v128_and(px, rgb_mask), u32x4_shl(v, 24)));
+                    i += 4;
+                }
+            } else {
+                let v255 = f64x2_splat(255.0);
+                let mut i = 0;
+                while i < n4 {
+                    let px = v128_load(d.add(i * 4) as *const v128);
+                    let q = f32x4_pmin(one, f32x4_pmax(zero, v128_load(m.add(i) as *const v128)));
+                    let lo = i32x4_trunc_sat_f64x2_zero(f64x2_add(f64x2_mul(f64x2_promote_low_f32x4(q), v255), vhalf));
+                    let hi = i32x4_trunc_sat_f64x2_zero(f64x2_add(f64x2_mul(high(q), v255), vhalf));
+                    let v = i64x2_shuffle::<0, 2>(lo, hi);
+                    v128_store(d.add(i * 4) as *mut v128, v128_or(v128_and(px, rgb_mask), u32x4_shl(v, 24)));
+                    i += 4;
+                }
+            }
+        }
+        n4
     }
 
     /// The rows the lanes take: for one channel two rows at once (one f64 lane each), the last row of an odd height

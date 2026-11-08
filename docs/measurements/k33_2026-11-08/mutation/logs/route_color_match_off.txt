@@ -1,0 +1,15 @@
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=mask)
+FAIL kernels.js stitchMask, colorMatch and blendAlpha routes switch K32+K33 kernels between Rust and the twins with identical outputs  {"rustCalls":{"alpha_to_mask":1,"blend_alpha":2,"erode_mask":1,"mask_bounds_f32":1,"mask_max_clamp":1,"mask_one_minus":1,"mask_to_rgba":3},"jsCalls":{}}
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+       1492 x 1492: dilate rust scalar 23.1 ms, twin 46.2; three box blurs rust scalar 19.9 ms, twin 23.0
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+(node:2332) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/scumble_mut_k33/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k33\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

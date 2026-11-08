@@ -1,0 +1,69 @@
+[ok] api_text_to_image: {"mode": "api", "size": [1024, 576], "corner": [20, 20, 20], "prompt": "a red vintage car"}
+[ok] aspect_free_size: {"size": [800, 600]}
+[ok] refuses_without_a_text_shape: {"error": "Loopback cannot make an image from the prompt alone for this model."}
+[ok] dialog_opens_and_computes_the_size: {"note": "864 \u00d7 1536 px", "modes": ["local", "api", "cloud"], "upsample": ["no language model (Settings \u203a API providers, or a local endpoint)"], "closed": true}
+[ok] prompt_templates: {"templates": ["edit-instruction", "photographic", "rich-scene", "tags", "transparent-asset"], "useOf": ["upsample", "generate", "generate", "generate", "both"]}
+[ok] upsample_references: {"pictures": [[512, 384], [512, 384]], "refused": "Upsampling needs every @img token to name a shown reference: \"jacket\" is hidden. Show or restore the layer, or take the token out.", "status": "Prompt upsampled for \"edit\" (10 words). Check the tokens: the rewrite dropped @im
+[ok] template_select_in_the_dialog: {"options": ["", "photographic", "rich-scene", "tags"]}
+[ok] new_with_a_preset_and_generate_new_on_it: {"opened": {"mode": "api", "recipe": "flux3", "provider": "bfl", "aspect": "7:5", "size": "4096", "note": "4096 \u00d7 2928 px", "aspects": 16, "classes": ["1k (1024 px)", "2k (2048 px)", "4k (4096 px)"], "line": ""}, "lines": {"opened": ["7:5", ""], "square": "The boxes were dra
+[ok] provider_markers_over_ipc: {"prompt": "the coat from Image 3", "refs": [{"ref": 1, "name": "Image 3"}], "refused": "Error invoking remote method 'provider:edit': Error: The prompt holds the refere", "names": ["Image 3", "Image 4"], "sent": 4}
+[ok] refs_in_an_empty_tab: {"size": [1024, 1024], "ref": "Lmw7ghvyn1", "refused": "no image loaded: use load_image or new_canvas first"}
+[ok] text_with_references: {"sent": "the jacket of image 2 on the person of image 1", "refs": 2, "kept": 2, "dropped": 1, "status": "Loopback answered after 0 s: a new 1024 \u00d7 576 base image. Named in the prompt: @img2 \u2192 image 2, @img1 \u2192 image 1. The reference layers stay, 1 other layer was r
+[ok] hidden_reference_not_sent: {"sent": 1, "kept": 2}
+[ok] refuses: {"cap": "Loopback (test) loopback takes at most 1 reference picture for a new image; this run has 2: hide reference layers.", "alone": "Loopback refs on Loopback makes new images from the prompt alone: take the @img tokens out, or pick a model that takes reference images for a ne
+[ok] local_refuses_before_the_wipe: {"token": "@img1 cannot be named: Comfy one slot reads the crop alone, its graph takes no reference picture. Take @img1 out.", "offline": "Not connected to ComfyUI."}
+[ok] local_keeps_refs: {"refs": 2, "box": [341, 256], "status": "New 1024 \u00d7 768 canvas. The reference layers stay. Load an image as a layer, paint, or select and generate."}
+[ok] dialog_field_and_bar: {"sent": ["image 1", "image 2"], "none": "This recipe sends no reference images"}
+[ok] cancel_a_waiting_run: {"early": "Cancelled before anything was sent to the provider: nothing runs or is charged.", "late": "Cancelled after 1.5 s: Scumble stopped waiting for Loopback (test), which may still finish the job and charge it.", "lateMs": 1502}
+[ok] a_results_prompt_is_the_clicks: {"prompt": "a hat like @img1", "refs": {"img1": "Lmw7ghxt81"}}
+[ok] dialog_escape_closes_the_picker_first: {"opened": {"picker": true, "dialog": true, "text": "@"}, "after_first": {"picker": false, "dialog": true, "text": "@"}, "chevron": {"menu": true, "dialog": true, "focus": "gen-aspect"}, "after_menu": {"picker": false, "dialog": true, "text": "on @img1 "}, "after_last": {"picker"
+[ok] dialog_upsample_refs: {"note": "5 words in 0.1 s. Check the tokens: the rewrite dropped @img2. Revert", "images": 0}
+[ok] the_realism_pass_recipe_queues_the_box_as_it_is: {"presets": ["L", "M"], "mine": {"shown": "mine", "row": "M"}, "sent": {"target_size": 0, "multiple_of": 2, "fill": "none", "withOriginal": false, "refine": false, "preset": "M", "style": "Cinematic", "intensity": 0.4}, "linux": "Realism Pass (Windows only, RTX only) runs only on
+[ok] the_picture_runner_answers: {"answer": {"bytes": 1837, "seconds": 0.304}, "pendingThenTimeout": 9503, "position": ["Realism Pass (Windows only, RTX only) waits for your ComfyUI (2 jobs ahead) ...", "Realism Pass (Windows only, RTX only) runs on your ComfyUI ..."], "missed": 18284}
+[ok] cancel_removes_only_its_own_prompt: {"old": "deleted only", "jobs": "one cancel by id"}
+[ok] the_preset_refusal_falls_back_once: {"presets": ["M", "Default"], "stored": {"style": "Natural", "intensity": 0.7, "preset": "Default", "timeout": 120}, "note": "Realism Pass (Windows only, RTX only): the runtime on your ComfyUI refused DLSS model preset M, so the pass uses Default", "second": "Realism Pass (Window
+[ok] alpha_comes_back: {"transparent": {"result": [95, 71], "upload": [96, 72], "half": [79, 164, 79, 255]}, "roundTrip": 0, "refusals": ["Realism Pass (Windows only, RTX only) runs only on a ComfyUI", "Realism Pass (Windows only, RTX only) needs at least 64 px a side; this is 40 \u00d7 40.", "Realism 
+[ok] the_whole_picture_lands_as_a_layer: {"sent": {"off": 0, "max": 0, "frac": 0}, "layer": [30, 200, 60, 255], "status": "Realism Pass (Windows only, RTX only) ran on your ComfyUI in 1 s: a new layer above the picture, under the filter layers.", "stack": ["picture", "Realism Pass (Windows only, RTX only)", "look", "ref
+[ok] an_unchanged_answer_says_so_in_red: {"unchanged": " went (the largest difference 0 of 255 levels), so DLSS 5 Neural Rendering seems not to run there. The layer shows the picture as it was (Ctrl+Z takes it back).", "kind": "warn", "changed": "Realism Pass (Windows only, RTX only) ran on your ComfyUI in 1 s: a new la
+[ok] a_reference_in_the_read_is_left_out: {"sent": {"off": 0, "max": 0, "frac": 0}, "withRef": {"off": 25466, "max": 255, "frac": 0.0829}, "stack": ["picture", "ref", "Realism Pass (Windows only, RTX only)"]}
+[ok] a_second_pass_stacks: {"sent": [[30, 200, 60, 255], [30, 200, 60, 255]], "stack": ["picture", "Realism Pass (Windows only, RTX only)", "Realism Pass (Windows only, RTX only)", "look", "ref"], "late": ["picture", "Realism Pass (Windows only, RTX only)", "Realism Pass (Windows only, RTX only)", "look", 
+[ok] the_whole_picture_keeps_its_alpha: {"sent": [[128, 128, 128, 255], [164, 114, 89, 255], [255, 255, 255, 255]], "layer": [[30, 200, 60, 255], [0, 255, 0, 128], [0, 0, 0, 0]]}
+[ok] refusals_send_nothing: {"linux": "Realism Pass (Windows only, RTX only) runs only on a ComfyUI on Windows; this one runs on linux.", "away": "Realism Pass (Windows only, RTX only) needs your own ComfyUI: connect it under Settings \u203a ComfyUI (Windows, an RTX 30, 40 or 50 card, the ComfyUI-DLSS5-Enha
+[ok] cancel_and_a_closed_tab_add_nothing: {"cancelled": "Realism Pass (Windows only, RTX only) cancelled.", "closed": 199, "deadline": 1532}
+[ok] generate_is_never_passed: {"generate": [255, 255, 255, 255], "generateNew": [20, 20, 20, 255], "timer": ["Loopback", "", "Loopback", ""]}
+[ok] the_runner_ends_at_its_deadline: {"deadline": {"ms": 1504, "message": "Realism Pass (Windows only, RTX only): no answer from your ComfyUI within 2 s; its job was taken off the queue."}, "refused": "a run is still going on this document"}
+[ok] an_api_run_during_a_pass_is_refused: {"during": {"generate": "A run is still going on this document: wait for it, or Cancel.", "status": "A run is still going on this document: wait for it, or Cancel.", "upscaleSelection": "A run is still going on this document: wait for it, or Cancel.", "upscaleDocument": "A run is
+[ok] an_api_run_holds_the_document_until_it_landed: {"generate": {"held": true, "row": 0, "busy": true, "pass": "Realism Pass (Windows only, RTX only): a run is still going on this document.", "again": "A run is still going on this document: wait for it, or Cancel."}, "upscale": true, "generateNew": true, "oneX": "At 1\u00d7 the w
+[ok] the_pass_at_2x_resizes_the_document_and_adds_the_layer: {"sent": {"off": 0, "max": 0, "frac": 0}, "status": "Realism Pass (Windows only, RTX only) ran on your ComfyUI in 1 s at 2\u00d7: 320 \u00d7 240 is now 640 \u00d7 480, every layer scaled along, and the pass is a new layer above ", "stack": ["picture", "Realism Pass (Windows only,
+[ok] the_pass_at_2x_keeps_the_alpha: {"inside": [30, 200, 60, 255], "band": [0, 255, 0, 128], "strip": [0, 0, 0, 0], "edge": [0, 255, 0, 96]}
+[ok] a_picture_past_the_cap_is_scaled_down_first: {"at3": [7680, 512], "at17": [7678, 167], "at2area": [7040, 3960], "note": "Realism Pass (Windows only, RTX only) scaled the picture down to 2560 \u00d7 170 first: its output is capped at 7680 \u00d7 4320 and 27.9 megapixels."}
+[ok] the_pass_above_1x_holds_the_document_and_its_landing: {"during": {"generate": "A run is still going on this document: wait for it, or Cancel.", "segment": "A run is still going on this document: wait for it, or Cancel.", "segPending": false, "undo": 0, "width": 400}, "atResize": {"rows": 0, "cancel": 0, "held": true}, "late": "Reali
+[ok] upscale_refusals_send_nothing: {"small": "Realism Pass (Windows only, RTX only) needs at least 64 px a side: at 3\u00d7 the 4600 \u00d7 100 picture would go at 2560 \u00d7 54 (its output is capped at 7680 \u00d7 4320 and 27.9 megapixels).", "factor": "Realism Pass (Windows only, RTX only) takes the factors 1, 
+[ok] the_status_rows_bar_follows_the_run: {"replay": "ok", "step": "50%", "timed": "Loopback test \u00b7 2 s"}
+[ok] a_cloud_runs_bar_follows_its_live_frames: {"frames": 4, "afterIdle": "Cloud test \u00b7 node 12/12 \u00b7 5 s", "afterCheck": "Cloud test \u00b7 node 12/12 \u00b7 6 s", "afterSocket": "Cloud test \u00b7 node 12/12 \u00b7 6 s", "checked": {"reads": 1, "busy": false}, "localGone": true}
+[ok] the_window_asks_for_comfy_cloud_results: {"first": "2 Comfy Cloud results opened in tabs of their own: comfy-clo", "asks": 7}
+[ok] a_klein_shape_error_names_the_text_encoder: {"klein2": "Flux.2 Klein failed in the sampler: the text encoder does not fit the model. Klein 9B takes the Qwen", "klein3": "FLUX 3 Image Klein failed in the sampler: the text encoder does not fit the model. It takes the Qwen", "command": {"secs": 0.518}}
+[ok] the_klein_upsampler_goes_only_when_it_can_run: {"on": "Prompt upsampled: \"Place a red ceramic mug on the wooden tab", "off": "ok"}
+[ok] p_h3_generate_new_is_text_to_image: {"edit": "put the hat of <Picture 2> on the person", "fresh": "Aspect ratio: 16:9\nRequest: a neon sign that says OPEN", "klein": "as before"}
+[ok] p_h3_refuses_an_empty_prompt: {"local": "refused", "blank": "refused", "command": "plain", "klein": "queued", "wavespeed": "refused", "wavespeed_new": "refused", "comfycloud": "refused", "comfycloud_new": "refused"}
+[ok] cleanup: "ok"
+  console error: Error: Realism Pass (Windows only, RTX only) runs only on a ComfyUI on Windows; this one runs on linux.
+    at Object.queueGenerate (scumble://app/editor/host.js:5417:36)
+    at InpaintEditor.generate (scumble://app/edit
+  console error: Error: Realism Pass (Windows only, RTX only) needs an RTX 30, 40 or 50 card on your ComfyUI's machine; it shows NVIDIA GeForce RTX 2080.
+    at Object.queueGenerate (scumble://app/editor/host.js:5417:36)
+    at InpaintEd
+  console error: Error: Realism Pass (Windows only, RTX only): your ComfyUI lacks its nodes (DLSS5Settings): install the ComfyUI-DLSS5-Enhancer node pack there (Help › Scumble help › Realism Pass (Windows only, RTX only)).
+    at Object.
+  console error: Error: Realism Pass (Windows only, RTX only) needs at least 64 px a side; this is 40 × 60.
+    at refusal (scumble://app/editor/inpaint_status.js:46:26)
+    at Object.queueGenerate (scumble://app/editor/host.js:5424:31)
+
+  console error: Error: Select an area first: Realism Pass (Windows only, RTX only) works on the selection's box (Select All for the whole picture).
+    at refusal (scumble://app/editor/inpaint_status.js:46:26)
+    at Object.queueGenerat
+  console error: Error: P-H3-Image needs a prompt: say what to change, or what to make on Generate new.
+    at refusal (scumble://app/editor/inpaint_status.js:46:26)
+    at Object.queueGenerate (scumble://app/editor/host.js:5412:28)
+    
+PASS

@@ -1,0 +1,4 @@
+lint rc=0 7s 
+types rc=0 5s 
+generate rc=0 77s PASS
+ALL PASS

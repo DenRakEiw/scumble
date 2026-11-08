@@ -1,0 +1,28 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 6 s)
+    Finished `release` profile [optimized] target(s) in 3.53s
+   Compiling px v0.1.0 (F:\scumble_mut_k33\crates\px)
+warning: unused import: `crate::stroke::clamp8`
+ --> src\maskf.rs:8:5
+  |
+8 | use crate::stroke::clamp8;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 2.67s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=mask)
+FAIL rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)  512 pixels exact 0.5 scale ties-to-even on all 0..255: out.patch[1028] is 51, the twin has 50
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+FAIL rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)  512 pixels exact 0.5 scale ties-to-even on all 0..255: out.patch[1028] is 51, the twin has 50
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+       1492 x 1492: dilate rust scalar 25.8 ms, twin 44.0; three box blurs rust scalar 18.0 ms, twin 22.5
+FAIL (1) (only: mask; PX_ONLY, not the full test)
+(node:46792) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/scumble_mut_k33/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\scumble_mut_k33\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
