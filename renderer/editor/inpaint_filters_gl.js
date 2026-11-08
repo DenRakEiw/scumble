@@ -622,12 +622,16 @@ export function surfaceToCanvas(s) {
 /** Whatever came out of the filter chain, as a canvas. */
 export function glToCanvas(v) { return isGLSurface(v) ? (surfaceToCanvas(v) || v) : v; }
 
-/** Draw a surface straight onto a 2D context (no intermediate canvas). */
-export function drawSurfaceTo(ctx, s, dx, dy, dw, dh) {
+/** Draw a surface straight onto a 2D context (no intermediate canvas); `clear`: clear the target rectangle before the first piece lands. */
+export function drawSurfaceTo(ctx, s, dx, dy, dw, dh, clear = false) {
     const g = context();
     if (!g || !isGLSurface(s) || s.gen !== g.gen) return false;
     const sx = dw / s.width, sy = dh / s.height;
-    return readSurface(g, s, (x0, y0, w, h) => ctx.drawImage(g.canvas, 0, 0, w, h, dx + x0 * sx, dy + y0 * sy, w * sx, h * sy));
+    let first = clear;
+    return readSurface(g, s, (x0, y0, w, h) => {
+        if (first) { ctx.clearRect(dx, dy, dw, dh); first = false; }
+        ctx.drawImage(g.canvas, 0, 0, w, h, dx + x0 * sx, dy + y0 * sy, w * sx, h * sy);
+    });
 }
 
 let G = null;          // the shared context, created on first use

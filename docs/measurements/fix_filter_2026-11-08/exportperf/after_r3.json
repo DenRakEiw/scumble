@@ -1,0 +1,53 @@
+{
+ "size": [
+  15000,
+  10000
+ ],
+ "filter": "film.look",
+ "composite_bands": {
+  "ms": 5917,
+  "blocked": 146,
+  "bands": 0,
+  "readMs": 0,
+  "MB": 238.6
+ },
+ "layer_from_tiles": {
+  "ms": 364,
+  "blocked": 6,
+  "MB": 0.6
+ },
+ "composite_canvas": {
+  "ms": 13649,
+  "blocked": 6778,
+  "MB": 293.2
+ },
+ "layer_canvas": {
+  "ms": 1913,
+  "blocked": 272,
+  "MB": 2.7
+ },
+ "psd": {
+  "ms": 9321,
+  "blocked": 769,
+  "MB": 612.5
+ },
+ "psd_masked": {
+  "ms": 8382,
+  "blocked": 295,
+  "MB": 620.4
+ },
+ "pool": {
+  "run": 1919,
+  "done": 1919,
+  "failed": 0,
+  "cancelled": 0,
+  "started": 8,
+  "lost": 0,
+  "stopped": 0,
+  "workers": 8,
+  "size": 8,
+  "pending": 0,
+  "off": false,
+  "arena": true
+ }
+}

@@ -495,6 +495,716 @@ EVERY_MODE_NATIVE_OR_EMULATED = """
 })()
 """
 
+# A plain filter layer stands for the picture on every path (the screen, flattenToCanvas on both
+# backends, the plain PNG export, and an export with a Size row), so on a see-through document it
+# replaces its input instead of compositing F(I) over I. Opaque documents and non-plain filter
+# layers (a mask, an opacity, a blend mode, a limit view, or a clip) keep their exact bytes from
+# base 2068af87.
+SEE_THROUGH_FILTERS = """
+(async () => {
+    const shell = await import("./shell.js");
+    const { host } = await import("./editor/host.js");
+    const W = 256, H = 256;
+    const before = window.editor;
+    const ed = shell.newDocument();
+    shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 200));
+    ed.resizeCanvas();
+    const { Layer: LayerPixels, Mask: MaskPixels } = ed.pixels;
+    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const sha256 = async (u8) => {
+        const buf = await crypto.subtle.digest("SHA-256", u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength));
+        return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    };
+    const clearCaches = () => {
+        for (const l of ed.layers) { l._fcache = null; l._fcacheView = null; l._fcacheSample = null; l._fxCache = null; l._fxCacheView = null; }
+        ed.flatCache = null;
+        ed.sceneSig = null;
+    };
+    const flatBytes = (forRun = true, chainOff = false) => {
+        ed.filterChainOff = chainOff;
+        clearCaches();
+        const c = ed.flattenToCanvas({ forRun });
+        ed.filterChainOff = false;
+        return c.getContext("2d").getImageData(0, 0, W, H).data;
+    };
+    const screenBytes = (chainOff = false) => {
+        ed.filterChainOff = chainOff;
+        clearCaches();
+        const c = mk(W, H), ctx = c.getContext("2d");
+        const prev = ed.viewPass;
+        ed.viewPass = { x: 0, y: 0, w: W, h: H, sx: 1, sy: 1, screen: true };
+        try { ed.drawComposite(ctx, {}); } finally { ed.viewPass = prev; ed.filterChainOff = false; }
+        return ctx.getImageData(0, 0, W, H).data;
+    };
+    const decodeBlob = async (blob, w = W, h = H) => {
+        const bmp = await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+        const c = mk(w, h), ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(bmp, 0, 0);
+        bmp.close();
+        return ctx.getImageData(0, 0, w, h).data;
+    };
+    const pngBytes = async () => {
+        clearCaches();
+        const r = await ed.encodeComposite({ forRun: true }, {});
+        if (r && r.blob) return decodeBlob(r.blob, W, H);
+        const c = await host.exportCanvas(ed, "png");
+        return c.getContext("2d").getImageData(0, 0, W, H).data;
+    };
+    const sizeBytes = async (chainOff = false) => {
+        ed.filterChainOff = chainOff;
+        clearCaches();
+        host.setExportSize(ed, { width: 128, height: 128 });
+        try {
+            const c = await host.exportCanvas(ed, "png");
+            return c.getContext("2d").getImageData(0, 0, 128, 128).data;
+        } finally {
+            host.setExportSize(ed, { percent: 100 });
+            ed.filterChainOff = false;
+        }
+    };
+    const diffMax = (a, b) => {
+        if (!a || !b || a.length !== b.length) return 999;
+        let m = 0;
+        for (let i = 0; i < a.length; i++) {
+            const d = Math.abs(a[i] - b[i]);
+            if (d > m) m = d;
+        }
+        return m;
+    };
+    const pxAt = (d, x, y, w = W) => { const i = (y * w + x) * 4; return [d[i], d[i + 1], d[i + 2], d[i + 3]]; };
+    const eqPx = (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+    const problems = [];
+    const check = (name, ok, detail) => { if (!ok) problems.push(name + (detail !== undefined ? " (" + JSON.stringify(detail) + ")" : "")); };
+
+    // 1. Half-transparent base (edges at alpha 128, centre at alpha 255).
+    // Edge channels [120, 40, 20] (bw luma 62) and [40, 120, 80] (bw luma 92) are even integers 2p with p <= 63,
+    // which are exact fixed points of both Canvas 2D's 8-bit premultiply and straight RGBA8.
+    const seeBase = mk(W, H);
+    {
+        const ctx = seeBase.getContext("2d");
+        const img = ctx.createImageData(W, H), d = img.data;
+        for (let y = 0; y < H; y++) {
+            const inY = y >= 64 && y < 192;
+            for (let x = 0; x < W; x++) {
+                const inX = x >= 64 && x < 192;
+                const i = (y * W + x) * 4;
+                if (inX && inY) {
+                    if (x < 128) { d[i] = 60; d[i + 1] = 120; d[i + 2] = 200; d[i + 3] = 255; }
+                    else { d[i] = 200; d[i + 1] = 140; d[i + 2] = 60; d[i + 3] = 255; }
+                } else {
+                    if (x < 128) { d[i] = 120; d[i + 1] = 40; d[i + 2] = 20; d[i + 3] = 128; }
+                    else { d[i] = 40; d[i + 1] = 120; d[i + 2] = 80; d[i + 3] = 128; }
+                }
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+    }
+    Object.defineProperty(seeBase, "naturalWidth", { value: W });
+    Object.defineProperty(seeBase, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "see_base.png", subfolder: "inpaint_canvas", type: "input" }, seeBase, { keepLayers: false });
+    await ed.mipsSettled();
+
+    const baseFlat = flatBytes(true, false);
+    const baseSize = await sizeBytes(false);
+    check("base edge alpha 128", eqPx(pxAt(baseFlat, 16, 16), [120, 40, 20, 128]) && eqPx(pxAt(baseFlat, 240, 16), [40, 120, 80, 128]));
+
+    // 1a. Identity curves layer: screen, flattenToCanvas, plain PNG export, and Size-row export equal unfiltered base
+    const fxCurves = ed.addFilterLayer("curves");
+    ed.markFilterChanged(fxCurves);
+    const curScreen = screenBytes(false), curScreenOff = screenBytes(true);
+    const curFlat = flatBytes(true, false), curFlatOff = flatBytes(true, true);
+    const curPng = await pngBytes();
+    const curSize = await sizeBytes(false), curSizeOff = await sizeBytes(true);
+    check("identity curves screen == base", diffMax(curScreen, baseFlat) === 0 && diffMax(curScreenOff, baseFlat) === 0, { on: diffMax(curScreen, baseFlat), off: diffMax(curScreenOff, baseFlat) });
+    check("identity curves flatten == base", diffMax(curFlat, baseFlat) === 0 && diffMax(curFlatOff, baseFlat) === 0, { on: diffMax(curFlat, baseFlat), off: diffMax(curFlatOff, baseFlat) });
+    check("identity curves png == base", diffMax(curPng, baseFlat) === 0, diffMax(curPng, baseFlat));
+    check("identity curves size == baseSize", diffMax(curSize, baseSize) === 0 && diffMax(curSizeOff, baseSize) === 0 && pxAt(curSize, 8, 8, 128)[3] === 128, { on: diffMax(curSize, baseSize), off: diffMax(curSizeOff, baseSize), edge: pxAt(curSize, 8, 8, 128) });
+    ed.removeLayer(fxCurves.id);
+
+    // 1b. Black & white layer: all paths give the same bytes, pure grey at alpha 128 on the edges
+    const fxBw = ed.addFilterLayer("bw");
+    ed.markFilterChanged(fxBw);
+    const bwScreen = screenBytes(false), bwScreenOff = screenBytes(true);
+    const bwFlat = flatBytes(true, false), bwFlatOff = flatBytes(true, true);
+    const bwPng = await pngBytes();
+    const bwSize = await sizeBytes(false), bwSizeOff = await sizeBytes(true);
+    check("bw paths agree byte-for-byte", diffMax(bwScreen, bwFlat) === 0 && diffMax(bwScreenOff, bwFlat) === 0 && diffMax(bwFlatOff, bwFlat) === 0 && diffMax(bwPng, bwFlat) === 0, {
+        screen: diffMax(bwScreen, bwFlat), screenOff: diffMax(bwScreenOff, bwFlat), flatOff: diffMax(bwFlatOff, bwFlat), png: diffMax(bwPng, bwFlat),
+    });
+    check("bw edge pure grey alpha 128", eqPx(pxAt(bwFlat, 16, 16), [62, 62, 62, 128]) && eqPx(pxAt(bwFlat, 240, 16), [92, 92, 92, 128]), {
+        left: pxAt(bwFlat, 16, 16), right: pxAt(bwFlat, 240, 16),
+    });
+    check("bw size export agrees and keeps edge pure grey alpha 128", diffMax(bwSize, bwSizeOff) === 0 && eqPx(pxAt(bwSize, 8, 8, 128), [62, 62, 62, 128]) && eqPx(pxAt(bwSize, 120, 8, 128), [92, 92, 92, 128]), {
+        diff: diffMax(bwSize, bwSizeOff), left: pxAt(bwSize, 8, 8, 128), right: pxAt(bwSize, 120, 8, 128),
+    });
+
+    // 1c. Two-filter case that chains (bw + invert) and two-filter case that does not chain (filterChainOff + sharpen)
+    const fxInv = ed.addFilterLayer("invert");
+    ed.markFilterChanged(fxInv);
+    const chScreen = screenBytes(false), chScreenOff = screenBytes(true);
+    const chFlat = flatBytes(true, false), chFlatOff = flatBytes(true, true);
+    const chPng = await pngBytes();
+    const chSize = await sizeBytes(false), chSizeOff = await sizeBytes(true);
+    check("chained bw+invert paths agree byte-for-byte", diffMax(chScreen, chFlat) === 0 && diffMax(chScreenOff, chFlat) === 0 && diffMax(chFlatOff, chFlat) === 0 && diffMax(chPng, chFlat) === 0 && diffMax(chSize, chSizeOff) === 0, {
+        screen: diffMax(chScreen, chFlat), screenOff: diffMax(chScreenOff, chFlat), flatOff: diffMax(chFlatOff, chFlat), png: diffMax(chPng, chFlat), size: diffMax(chSize, chSizeOff),
+    });
+    check("chained bw+invert edge alpha 128", eqPx(pxAt(chFlat, 16, 16), [193, 193, 193, 128]) && eqPx(pxAt(chFlat, 240, 16), [163, 163, 163, 128]) && eqPx(pxAt(chPng, 16, 16), [193, 193, 193, 128]) && eqPx(pxAt(chSize, 8, 8, 128), [193, 193, 193, 128]), {
+        left: pxAt(chFlat, 16, 16), right: pxAt(chFlat, 240, 16), pngLeft: pxAt(chPng, 16, 16), sizeLeft: pxAt(chSize, 8, 8, 128),
+    });
+    ed.removeLayer(fxInv.id);
+
+    // Non-chaining stack 1: bw + sharpen + invert (sharpen breaks programBand on tiles so readBand runs; filterChainOff breaks GPU chain on canvas)
+    const fxSharp = ed.addFilterLayer("sharpen");
+    fxSharp.params = { ...fxSharp.params, amount: 80, radius: 1.5, threshold: 0 };
+    ed.markFilterChanged(fxSharp);
+    const fxInv2 = ed.addFilterLayer("invert");
+    ed.markFilterChanged(fxInv2);
+    const ncFlat = flatBytes(true, false), ncFlatOff = flatBytes(true, true);
+    const ncScreen = screenBytes(false), ncPng = await pngBytes();
+    check("unchained bw+sharpen+invert paths agree", diffMax(ncFlat, ncFlatOff) === 0 && diffMax(ncScreen, ncFlat) === 0 && diffMax(ncPng, ncFlat) <= 2, {
+        flatOff: diffMax(ncFlat, ncFlatOff), screen: diffMax(ncScreen, ncFlat), png: diffMax(ncPng, ncFlat),
+    });
+    check("unchained bw+sharpen+invert edge alpha 128", eqPx(pxAt(ncFlat, 16, 16), [193, 193, 193, 128]) && eqPx(pxAt(ncFlat, 240, 16), [163, 163, 163, 128]) && eqPx(pxAt(ncFlatOff, 16, 16), [193, 193, 193, 128]), {
+        left: pxAt(ncFlat, 16, 16), right: pxAt(ncFlat, 240, 16), leftOff: pxAt(ncFlatOff, 16, 16),
+    });
+    ed.removeLayer(fxInv2.id);
+    ed.removeLayer(fxSharp.id);
+
+    // Non-chaining stack 2: plain bw (chains onto chain.surface because nextIsFilterLayer is true) followed by a masked
+    // invert (plain=false, so applyFilterLayer calls flushFilterChain(ctx, chain) without clearing ctx at the end).
+    // On the left half (where the mask is 0), ctx holds purely what flushFilterChain drew.
+    const fxMaskedInv = ed.addFilterLayer("invert");
+    {
+        const mc = mk(W, H), mx = mc.getContext("2d");
+        const mimg = mx.createImageData(W, H), md = mimg.data;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                md[i] = 255; md[i + 1] = 255; md[i + 2] = 255; md[i + 3] = x < 128 ? 0 : 255;
+            }
+        }
+        mx.putImageData(mimg, 0, 0);
+        fxMaskedInv.maskPx = MaskPixels.fromCanvas(mc);
+        ed.markMaskChanged(fxMaskedInv);
+    }
+    await ed.mipsSettled();
+    const flChainOn = flatBytes(true, false), flChainOff = flatBytes(true, true);
+    const flScreen = screenBytes(false), flPng = await pngBytes();
+    check("flushFilterChain before masked filter agrees across all paths", diffMax(flChainOn, flChainOff) === 0 && diffMax(flScreen, flChainOn) === 0 && diffMax(flPng, flChainOn) === 0, {
+        off: diffMax(flChainOn, flChainOff), screen: diffMax(flScreen, flChainOn), png: diffMax(flPng, flChainOn),
+    });
+    check("flushFilterChain left half keeps pure grey alpha 128", eqPx(pxAt(flChainOn, 16, 16), [62, 62, 62, 128]), pxAt(flChainOn, 16, 16));
+    ed.removeLayer(fxMaskedInv.id);
+
+    // 1d. Plain filter with params.limit (limitOver = !plain mixes input where w=0 instead of zeroing alpha before clearRect)
+    fxBw.params = { ...fxBw.params, limit: { source: "luma", lo: 0.3, hi: 1.0, fLo: 0, fHi: 0 } };
+    ed.markFilterChanged(fxBw);
+    const limFlat = flatBytes(true, false), limFlatOff = flatBytes(true, true);
+    const limScreen = screenBytes(false), limPng = await pngBytes();
+    check("limited plain bw agrees across all paths", diffMax(limFlat, limFlatOff) === 0 && diffMax(limScreen, limFlat) === 0 && diffMax(limPng, limFlat) === 0, {
+        off: diffMax(limFlat, limFlatOff), screen: diffMax(limScreen, limFlat), png: diffMax(limPng, limFlat),
+    });
+    check("limited plain bw keeps unfiltered edge where w=0 and filtered edge where w=1", eqPx(pxAt(limFlat, 16, 16), [120, 40, 20, 128]) && eqPx(pxAt(limFlat, 240, 16), [92, 92, 92, 128]), {
+        w0: pxAt(limFlat, 16, 16), w1: pxAt(limFlat, 240, 16),
+    });
+
+    // 1e. Filter cache keys on plain when limit is set: opacity 0.5 -> 1.0 and 1.0 -> 0.5 without compositeVersion bump
+    const renderScreenKeepCache = () => {
+        const c = mk(W, H), ctx = c.getContext("2d");
+        const prev = ed.viewPass;
+        ed.viewPass = { x: 0, y: 0, w: W, h: H, sx: 1, sy: 1, screen: true };
+        try { ed.drawComposite(ctx, {}); } finally { ed.viewPass = prev; }
+        return ctx.getImageData(0, 0, W, H).data;
+    };
+    fxBw.opacity = 0.5;
+    const limScreenHalfFresh = screenBytes(false);
+    fxBw.opacity = 1.0;
+    const limScreenOneFromCache = renderScreenKeepCache();
+    check("limited filter cache at opacity 0.5 -> 1.0 without version bump matches fresh", diffMax(limScreenOneFromCache, limScreen) === 0, diffMax(limScreenOneFromCache, limScreen));
+    fxBw.opacity = 0.5;
+    const limScreenHalfFromCache = renderScreenKeepCache();
+    check("limited filter cache at opacity 1.0 -> 0.5 without version bump matches fresh", diffMax(limScreenHalfFromCache, limScreenHalfFresh) === 0, diffMax(limScreenHalfFromCache, limScreenHalfFresh));
+    fxBw.opacity = 1.0;
+
+    // 1f. Split no-op guards:
+    // (i) plain filter with missing depth map (limitMissing=true, plain=true) AND at opacity 0.5 (limitMissing=true, plain=false)
+    ed.maps = {};
+    fxBw.params = { ...fxBw.params, limit: { source: "depth", lo: 0.2, hi: 0.8, fLo: 0, fHi: 0 } };
+    ed.markFilterChanged(fxBw);
+    const missFlat = flatBytes(true, false), missFlatOff = flatBytes(true, true);
+    check("missing-depth plain filter leaves base untouched", diffMax(missFlat, baseFlat) === 0 && diffMax(missFlatOff, baseFlat) === 0, {
+        on: diffMax(missFlat, baseFlat), off: diffMax(missFlatOff, baseFlat),
+    });
+    fxBw.opacity = 0.5;
+    ed.markFilterChanged(fxBw);
+    const missHalfFlat = flatBytes(true, false), missHalfScreen = screenBytes(false);
+    check("missing-depth non-plain filter (opacity 0.5) leaves base untouched", diffMax(missHalfFlat, baseFlat) === 0 && diffMax(missHalfScreen, baseFlat) === 0, {
+        flat: diffMax(missHalfFlat, baseFlat), screen: diffMax(missHalfScreen, baseFlat),
+    });
+    ed.removeLayer(fxBw.id);
+    // (ii) plain filter whose apply() returns input canvas unchanged (plain=true, limitMissing=false, out === ctx.canvas)
+    const fxNoop = ed.addFilterLayer("effects.chromatic_shift");
+    fxNoop.params = { ...fxNoop.params, amount: 0 };
+    ed.markFilterChanged(fxNoop);
+    const noopFlat = flatBytes(true, false), noopScreen = screenBytes(false);
+    check("no-op plain filter returning input canvas leaves base untouched", diffMax(noopFlat, baseFlat) === 0 && diffMax(noopScreen, baseFlat) === 0, {
+        flat: diffMax(noopFlat, baseFlat), screen: diffMax(noopScreen, baseFlat),
+    });
+    ed.removeLayer(fxNoop.id);
+
+    // 1g. flushFilterChain preserves ctx when a real GLSurface fails to blit or read back
+    {
+        const { glContext, isGLSurface } = await import("./editor/inpaint_filters_gl.js");
+        const gc = mk(16, 16), gctx = gc.getContext("2d");
+        const gimg = gctx.createImageData(16, 16), gd = gimg.data;
+        for (let i = 0; i < gd.length; i += 4) { gd[i] = 120; gd[i + 1] = 40; gd[i + 2] = 20; gd[i + 3] = 128; }
+        gctx.putImageData(gimg, 0, 0);
+        const fxSurf = ed.addFilterLayer("bw");
+        const realSurf = ed.filteredCanvas(fxSurf, gc, true, false, true, true);
+        ed.removeLayer(fxSurf.id);
+        const surfOk = isGLSurface(realSurf);
+        const g = glContext();
+        const origGetError = g.gl.getError;
+        g.gl.getError = () => g.gl.INVALID_OPERATION;
+        try {
+            ed.flushFilterChain(gctx, { surface: realSurf, x: 0, y: 0, w: 16, h: 16 });
+        } finally {
+            g.gl.getError = origGetError;
+        }
+        const afterBlit = pxAt(gctx.getImageData(0, 0, 16, 16).data, 8, 8, 16);
+        check("flushFilterChain preserves ctx when surface readback fails",
+            surfOk && eqPx(afterBlit, [120, 40, 20, 128]),
+            { surfOk, afterBlit });
+    }
+
+    // 1h. Real drawViewComposite at view.scale = 0.5 and after pan on see-through base
+    {
+        const fxViewBw = ed.addFilterLayer("bw");
+        ed.markFilterChanged(fxViewBw);
+        const prevScale = ed.view.scale, prevX = ed.view.x, prevY = ed.view.y;
+        try {
+            clearCaches();
+            ed.view.scale = 0.5; ed.view.x = 40; ed.view.y = 30;
+            ed.draw();
+            const d1 = ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+            const p1L = pxAt(d1, 48, 38, ed.canvas.width), p1R = pxAt(d1, 160, 38, ed.canvas.width);
+            ed.view.x = 64; ed.view.y = 48;
+            ed.draw();
+            const d2 = ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+            const p2L = pxAt(d2, 72, 56, ed.canvas.width), p2R = pxAt(d2, 184, 56, ed.canvas.width);
+            check("drawViewComposite at scale 0.5 and after pan keeps pure grey alpha 128",
+                eqPx(p1L, [62, 62, 62, 128]) && eqPx(p1R, [92, 92, 92, 128]) && eqPx(p2L, [62, 62, 62, 128]) && eqPx(p2R, [92, 92, 92, 128]),
+                { p1L, p1R, p2L, p2R });
+        } finally {
+            ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
+            ed.removeLayer(fxViewBw.id);
+        }
+    }
+
+    // 2. Non-plain filter layers (mask, opacity, blend mode, limitView, clip) checked byte-for-byte against frozen base 2068af87
+    const halfBase = mk(W, H);
+    {
+        const ctx = halfBase.getContext("2d");
+        const img = ctx.createImageData(W, H), d = img.data;
+        for (let y = 0; y < H; y++) {
+            const inY = y >= 64 && y < 192;
+            for (let x = 0; x < W; x++) {
+                const inX = x >= 64 && x < 192;
+                const i = (y * W + x) * 4;
+                if (inX && inY) {
+                    if (x < 128) { d[i] = 60; d[i + 1] = 120; d[i + 2] = 200; d[i + 3] = 255; }
+                    else { d[i] = 200; d[i + 1] = 140; d[i + 2] = 60; d[i + 3] = 255; }
+                } else {
+                    if (x < 128) { d[i] = 201; d[i + 1] = 60; d[i + 2] = 40; d[i + 3] = 128; }
+                    else { d[i] = 80; d[i + 1] = 199; d[i + 2] = 120; d[i + 3] = 128; }
+                }
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+    }
+    Object.defineProperty(halfBase, "naturalWidth", { value: W });
+    Object.defineProperty(halfBase, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "half_base.png", subfolder: "inpaint_canvas", type: "input" }, halfBase, { keepLayers: false });
+    await ed.mipsSettled();
+    const fxM = ed.addFilterLayer("bw");
+    {
+        const mc = mk(W, H), mx = mc.getContext("2d");
+        const mimg = mx.createImageData(W, H), md = mimg.data;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                md[i] = 255; md[i + 1] = 255; md[i + 2] = 255; md[i + 3] = x < 128 ? 0 : 255;
+            }
+        }
+        mx.putImageData(mimg, 0, 0);
+        fxM.maskPx = MaskPixels.fromCanvas(mc);
+        ed.markMaskChanged(fxM);
+    }
+    await ed.mipsSettled();
+    const maskHash = await sha256(flatBytes(true, false));
+    check("frozen non-plain mask matches 2068af87", maskHash === "8007aefef32c622927f8f28de783b5a0c2ff5f16185de157b7618e4e12d7ef4f", maskHash);
+    ed.removeLayer(fxM.id);
+
+    const fxOp = ed.addFilterLayer("bw");
+    fxOp.opacity = 0.5;
+    ed.markFilterChanged(fxOp);
+    const opHash = await sha256(flatBytes(true, false));
+    check("frozen non-plain opacity matches 2068af87", opHash === "e05bb2abc946ccd66b0d47b738a5731898ce5988af4de8ed7ba098f86551d863", opHash);
+    ed.removeLayer(fxOp.id);
+
+    const fxBl = ed.addFilterLayer("bw");
+    fxBl.blend = "multiply";
+    ed.markFilterChanged(fxBl);
+    const blHash = await sha256(flatBytes(true, false));
+    check("frozen non-plain blend matches 2068af87", blHash === "c29c232efa0b22383ece0f2483e3db1d9b257eaf7d66a7b558a0f3c1931c8efc", blHash);
+    ed.removeLayer(fxBl.id);
+
+    const fxLv = ed.addFilterLayer("bw");
+    fxLv.params = { ...fxLv.params, limit: { source: "luma", lo: 0.5, hi: 1.0, fLo: 0, fHi: 0 } };
+    ed.maskView = { id: fxLv.id, mode: "effect" };
+    ed.markFilterChanged(fxLv);
+    const lvHash = await sha256(screenBytes(false));
+    ed.maskView = null;
+    check("frozen non-plain limitView matches 2068af87", lvHash === "2a8e8d080370d156d555c6d451ba9bb6e43e6c6d6b7fb96b276df7500d6a62b1", lvHash);
+    ed.removeLayer(fxLv.id);
+
+    const clipBaseC = mk(192, 192);
+    {
+        const cx = clipBaseC.getContext("2d");
+        const cimg = cx.createImageData(192, 192), cd = cimg.data;
+        for (let i = 0; i < cd.length; i += 4) {
+            cd[i] = 120; cd[i + 1] = 80; cd[i + 2] = 199; cd[i + 3] = 128;
+        }
+        cx.putImageData(cimg, 0, 0);
+    }
+    const clipBaseLayer = ed.addLayer({ name: "clip-base", kind: "paint", px: LayerPixels.fromCanvas(clipBaseC), x: 32, y: 32, w: 192, h: 192, dirty: true });
+    const fxCl = ed.addFilterLayer("bw");
+    fxCl.clip = true;
+    ed.markFilterChanged(fxCl);
+    await ed.mipsSettled();
+    const clHash = await sha256(flatBytes(true, false));
+    check("frozen non-plain clip matches 2068af87", clHash === "4aca64654377c048bfe1ec26d20d57cdea9125cd348aefe885e38a46265c3e27", clHash);
+    ed.removeLayer(fxCl.id);
+    ed.removeLayer(clipBaseLayer.id);
+
+    // 3. Opaque document checked byte-for-byte against frozen base 2068af87
+    const opaqueBase = mk(W, H);
+    {
+        const ctx = opaqueBase.getContext("2d");
+        const img = ctx.createImageData(W, H), d = img.data;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                d[i] = (x * 3 + y * 5) & 255;
+                d[i + 1] = (x * 7 + 40) & 255;
+                d[i + 2] = (y * 11 + 90) & 255;
+                d[i + 3] = 255;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+    }
+    Object.defineProperty(opaqueBase, "naturalWidth", { value: W });
+    Object.defineProperty(opaqueBase, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "opaque_base.png", subfolder: "inpaint_canvas", type: "input" }, opaqueBase, { keepLayers: false });
+    await ed.mipsSettled();
+
+    const opBaseH = await sha256(flatBytes(true, false));
+    check("frozen opaque base matches 2068af87", opBaseH === "068674f7a924486deacb2c9ce958a63ed94e5be903024dba696641eb7cb4032b", opBaseH);
+    const fxOC = ed.addFilterLayer("curves");
+    ed.markFilterChanged(fxOC);
+    const opCurH = await sha256(flatBytes(true, false));
+    check("frozen opaque curves matches 2068af87", opCurH === "068674f7a924486deacb2c9ce958a63ed94e5be903024dba696641eb7cb4032b", opCurH);
+    ed.removeLayer(fxOC.id);
+
+    const fxOBw = ed.addFilterLayer("bw");
+    ed.markFilterChanged(fxOBw);
+    const opBwH = await sha256(flatBytes(true, false));
+    check("frozen opaque bw matches 2068af87", opBwH === "11eed704af0cb278c72c7eac8994f9e1f2bcc5e6550da3beff3d1822683f76c6", opBwH);
+    const fxOInv = ed.addFilterLayer("invert");
+    ed.markFilterChanged(fxOInv);
+    const opChH = await sha256(flatBytes(true, false));
+    const opUnchH = await sha256(flatBytes(true, true));
+    check("frozen opaque chained+unchained matches 2068af87", opChH === "fa53ed91b30a605292b9c896b69dfbf20f155b75beeea3888f8295164872168b" && opUnchH === "fa53ed91b30a605292b9c896b69dfbf20f155b75beeea3888f8295164872168b", { opChH, opUnchH });
+    ed.removeLayer(fxOInv.id);
+
+    const fxOSh = ed.addFilterLayer("sharpen");
+    fxOSh.params = { ...fxOSh.params, amount: 80, radius: 1.5, threshold: 0 };
+    ed.markFilterChanged(fxOSh);
+    const fxOInv2 = ed.addFilterLayer("invert");
+    ed.markFilterChanged(fxOInv2);
+    const opMidH = await sha256(flatBytes(true, false));
+    check("frozen opaque bw+sharpen+invert matches 2068af87", opMidH === "216770c1edbdd99893b15c31c20cdccc950185faad5c255b4a6ac33552a32af5", opMidH);
+    ed.removeLayer(fxOInv2.id);
+    ed.removeLayer(fxOSh.id);
+    ed.removeLayer(fxOBw.id);
+
+    // 3a. Opaque soft-limit case (last filter in stack, soft ramp 0 < w < 1 and outside w = 0 / w = 1) against frozen 2068af87
+    {
+        const fxOSoft = ed.addFilterLayer("bw");
+        fxOSoft.params = { ...fxOSoft.params, limit: { source: "luma", lo: 0.35, hi: 0.65, fLo: 0.2, fHi: 0.2 } };
+        ed.markFilterChanged(fxOSoft);
+        // Reconstruct 2068af87's two-round path (plain = false -> u_over = 1 + source-over onto opaqueBase) and verify its SHA-256 against frozen 2068af87
+        clearCaches();
+        const overC = ed.filteredCanvas(fxOSoft, opaqueBase, true, false, null, false);
+        const refC = mk(W, H), refCtx = refC.getContext("2d");
+        refCtx.drawImage(opaqueBase, 0, 0);
+        refCtx.drawImage(overC, 0, 0);
+        const ref2068 = refCtx.getImageData(0, 0, W, H).data;
+        const ref2068Hash = await sha256(ref2068);
+        check("frozen opaque soft-limit 2068af87 reference hash verified", ref2068Hash === "deec60b1d3b84105e22093b65061c5a557864c985b3b4a87663172b38ec464e6", ref2068Hash);
+
+        const softFlat = flatBytes(true, false), softFlatOff = flatBytes(true, true);
+        const softScreen = screenBytes(false), softPng = await pngBytes();
+        check("opaque soft-limit paths agree byte-for-byte",
+            diffMax(softFlat, softFlatOff) === 0 && diffMax(softScreen, softFlat) === 0 && diffMax(softPng, softFlat) === 0,
+            { flatOff: diffMax(softFlat, softFlatOff), screen: diffMax(softScreen, softFlat), png: diffMax(softPng, softFlat) });
+
+        // Compare every pixel of the 256x256 image against verified 2068af87 reference: 0 outside the ramp, <= 2 inside
+        const sstep = (a, b, x) => {
+            if (x <= a) return 0;
+            if (x >= b) return 1;
+            const t = (x - a) / (b - a);
+            return t * t * (3 - 2 * t);
+        };
+        const baseData = opaqueBase.getContext("2d").getImageData(0, 0, W, H).data;
+        let maxOutside = 0, maxRamp = 0, minAlpha = 255;
+        for (let i = 0; i < softFlat.length; i += 4) {
+            const v = (0.299 * baseData[i] + 0.587 * baseData[i + 1] + 0.114 * baseData[i + 2]) / 255;
+            const w = sstep(0.15, 0.35, v) * (1 - sstep(0.65, 0.85, v));
+            const d = Math.max(
+                Math.abs(softFlat[i] - ref2068[i]),
+                Math.abs(softFlat[i + 1] - ref2068[i + 1]),
+                Math.abs(softFlat[i + 2] - ref2068[i + 2]),
+                Math.abs(softFlat[i + 3] - ref2068[i + 3]),
+                Math.abs(softScreen[i] - ref2068[i]),
+                Math.abs(softScreen[i + 1] - ref2068[i + 1]),
+                Math.abs(softScreen[i + 2] - ref2068[i + 2]),
+                Math.abs(softScreen[i + 3] - ref2068[i + 3]),
+            );
+            if (w === 0 || w === 1) { if (d > maxOutside) maxOutside = d; }
+            else { if (d > maxRamp) maxRamp = d; }
+            if (softFlat[i + 3] < minAlpha) minAlpha = softFlat[i + 3];
+            if (softScreen[i + 3] < minAlpha) minAlpha = softScreen[i + 3];
+        }
+        check("opaque soft-limit matches 2068af87 (0 outside ramp, <= 2 inside ramp, alpha 255)",
+            maxOutside === 0 && maxRamp >= 1 && maxRamp <= 2 && minAlpha === 255,
+            { maxOutside, maxRamp, minAlpha });
+        ed.removeLayer(fxOSoft.id);
+    }
+
+    // 3b. View-margin crop and rim clamping on opaque base with effects.glass (amount 25):
+    // neither an explicit viewPass with margin nor a zoomed-out drawViewComposite (even at fractional zoom/pan)
+    // pulls transparent margin alpha < 255 into the document rim
+    {
+        const fxGlass = ed.addFilterLayer("effects.glass");
+        fxGlass.params = { ...fxGlass.params, amount: 25 };
+        ed.markFilterChanged(fxGlass);
+        const glassFlat = flatBytes(true, false);
+        for (const chainOff of [false, true]) {
+            ed.filterChainOff = chainOff;
+            clearCaches();
+            const pad = 32, vw = W + pad * 2, vh = H + pad * 2;
+            const vc = mk(vw, vh), vctx = vc.getContext("2d");
+            vctx.setTransform(1, 0, 0, 1, pad, pad);
+            const prevVp = ed.viewPass;
+            ed.viewPass = { x: -pad, y: -pad, w: vw, h: vh, sx: 1, sy: 1, screen: true };
+            try { ed.drawComposite(vctx, {}); } finally { ed.viewPass = prevVp; ed.filterChainOff = false; }
+            const vd = vctx.getImageData(0, 0, vw, vh).data;
+            let minDocA = 255, maxMarginA = 0, maxDocDiff = 0;
+            for (let y = 0; y < vh; y++) {
+                const inY = y >= pad && y < pad + H;
+                for (let x = 0; x < vw; x++) {
+                    const inX = x >= pad && x < pad + W;
+                    const vi = (y * vw + x) * 4;
+                    if (inX && inY) {
+                        if (vd[vi + 3] < minDocA) minDocA = vd[vi + 3];
+                        const fi = ((y - pad) * W + (x - pad)) * 4;
+                        for (let c = 0; c < 4; c++) {
+                            const d = Math.abs(vd[vi + c] - glassFlat[fi + c]);
+                            if (d > maxDocDiff) maxDocDiff = d;
+                        }
+                    } else if (vd[vi + 3] > maxMarginA) {
+                        maxMarginA = vd[vi + 3];
+                    }
+                }
+            }
+            check(`opaque glass with view margin (chainOff=${chainOff}) keeps doc alpha 255 and matches flatten`,
+                minDocA === 255 && maxMarginA === 0 && maxDocDiff === 0,
+                { minDocA, maxMarginA, maxDocDiff });
+        }
+        // Real zoomed-out drawViewComposite at integer and fractional zoom/pan
+        const prevScale = ed.view.scale, prevX = ed.view.x, prevY = ed.view.y;
+        try {
+            for (const [sc, vx, vy] of [[0.5, 40, 30], [0.47, 37.3, 29.7]]) {
+                clearCaches();
+                ed.view.scale = sc; ed.view.x = vx; ed.view.y = vy;
+                ed.draw();
+                const reg = ed._viewRegion || ed.viewportRegion();
+                const vcw = ed.viewCanvas.width, vch = ed.viewCanvas.height;
+                const sx = vcw / reg.w, sy = vch / reg.h;
+                const bx0 = Math.max(0, Math.floor(-reg.x * sx));
+                const by0 = Math.max(0, Math.floor(-reg.y * sy));
+                const bx1 = Math.min(vcw, Math.ceil((W - reg.x) * sx));
+                const by1 = Math.min(vch, Math.ceil((H - reg.y) * sy));
+                const vcd = ed.viewCanvas.getContext("2d").getImageData(0, 0, vcw, vch).data;
+                let minVcDocA = 255;
+                for (let y = by0; y < by1; y++) {
+                    for (let x = bx0; x < bx1; x++) {
+                        const a = vcd[(y * vcw + x) * 4 + 3];
+                        if (a < minVcDocA) minVcDocA = a;
+                    }
+                }
+                const cd = ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+                const cx0 = Math.max(0, Math.ceil(vx)), cy0 = Math.max(0, Math.ceil(vy));
+                const cx1 = Math.min(ed.canvas.width, Math.floor(vx + W * sc));
+                const cy1 = Math.min(ed.canvas.height, Math.floor(vy + H * sc));
+                let minCanvasDocA = 255;
+                for (let y = cy0; y < cy1; y++) {
+                    for (let x = cx0; x < cx1; x++) {
+                        const a = cd[(y * ed.canvas.width + x) * 4 + 3];
+                        if (a < minCanvasDocA) minCanvasDocA = a;
+                    }
+                }
+                check(`opaque glass drawViewComposite at scale=${sc} keeps alpha 255 on viewCanvas and canvas`,
+                    minVcDocA === 255 && minCanvasDocA === 255,
+                    { minVcDocA, minCanvasDocA, bx0, by0, bx1, by1 });
+            }
+        } finally {
+            ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
+            ed.removeLayer(fxGlass.id);
+        }
+    }
+
+    // 3c. Fill layer after a cropped GPU filter chain at a zoomed-out margin view (with and without a Limit on the fill)
+    {
+        const greyBase = mk(W, H);
+        {
+            const ctx = greyBase.getContext("2d");
+            const img = ctx.createImageData(W, H), d = img.data;
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    const i = (y * W + x) * 4;
+                    const v = (x * 3 + y * 5) & 255;
+                    d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255;
+                }
+            }
+            ctx.putImageData(img, 0, 0);
+        }
+        Object.defineProperty(greyBase, "naturalWidth", { value: W });
+        Object.defineProperty(greyBase, "naturalHeight", { value: H });
+        await ed.setBase({ filename: "grey_base.png", subfolder: "inpaint_canvas", type: "input" }, greyBase, { keepLayers: false });
+        await ed.mipsSettled();
+
+        const prevScale = ed.view.scale, prevX = ed.view.x, prevY = ed.view.y;
+        const fxBwBelow = ed.addFilterLayer("bw");
+        const fxGrad = ed.addFilterLayer("gradient");
+        fxGrad.params = { ...fxGrad.params, shape: "linear", from: "#ff2040", from_opacity: 100, to: "#2060ff", to_opacity: 100, angle: 25, scale: 100, x: 50, y: 50 };
+        try {
+            ed.view.scale = 0.5; ed.view.x = 40; ed.view.y = 30;
+            const docCrop = (chainOff = false) => {
+                ed.filterChainOff = chainOff;
+                clearCaches();
+                ed.hover = null;
+                try { ed.draw(); } finally { ed.filterChainOff = false; }
+                return ed.canvas.getContext("2d").getImageData(42, 32, 124, 124).data;
+            };
+            fxBwBelow.visible = false;
+            ed.markFilterChanged(fxBwBelow);
+            ed.markFilterChanged(fxGrad);
+            const gradNoFilter = docCrop(false);
+            fxBwBelow.visible = true;
+            ed.markFilterChanged(fxBwBelow);
+            ed.markFilterChanged(fxGrad);
+            const gradAfterBw = docCrop(false);
+            const gradAfterBwOff = docCrop(true);
+            const span = diffMax(pxAt(gradNoFilter, 4, 62, 124), pxAt(gradNoFilter, 120, 62, 124));
+            check("zoomed-out linear gradient after bw (GPU chain on) matches gradient with no filter below",
+                span > 100 && diffMax(gradAfterBw, gradNoFilter) <= 1 && diffMax(gradAfterBw, gradAfterBwOff) <= 1,
+                { span, vsNoFilter: diffMax(gradAfterBw, gradNoFilter), vsOff: diffMax(gradAfterBw, gradAfterBwOff) });
+
+            // Variant with a Limit on the fill layer
+            fxGrad.params = { ...fxGrad.params, limit: { source: "luma", lo: 0.25, hi: 0.75, fLo: 0.1, fHi: 0.1 } };
+            fxBwBelow.visible = false;
+            ed.markFilterChanged(fxBwBelow);
+            ed.markFilterChanged(fxGrad);
+            const limGradNoFilter = docCrop(false);
+            fxBwBelow.visible = true;
+            ed.markFilterChanged(fxBwBelow);
+            ed.markFilterChanged(fxGrad);
+            const limGradAfterBw = docCrop(false);
+            const limGradAfterBwOff = docCrop(true);
+            check("zoomed-out limited linear gradient after bw (GPU chain on) matches limited gradient with no filter below",
+                diffMax(limGradAfterBw, limGradNoFilter) <= 1 && diffMax(limGradAfterBw, limGradAfterBwOff) <= 1,
+                { vsNoFilter: diffMax(limGradAfterBw, limGradNoFilter), vsOff: diffMax(limGradAfterBw, limGradAfterBwOff) });
+        } finally {
+            ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
+            ed.removeLayer(fxGrad.id);
+            ed.removeLayer(fxBwBelow.id);
+        }
+    }
+
+    // 3d. Live mask stroke preview with an active selection at a zoomed-out margin view matches the committed mask
+    {
+        await ed.setBase({ filename: "opaque_base.png", subfolder: "inpaint_canvas", type: "input" }, opaqueBase, { keepLayers: false });
+        await ed.mipsSettled();
+        const prevScale = ed.view.scale, prevX = ed.view.x, prevY = ed.view.y;
+        const fxMs = ed.addFilterLayer("invert");
+        fxMs.maskPx = MaskPixels.empty(W, H);
+        fxMs.maskOff = false;
+        fxMs.maskEdit = true;
+        ed.activeLayerId = fxMs.id;
+        ed.markMaskChanged(fxMs);
+        ed.selectRectangle([80, 80, 176, 176], "replace");
+        ed.brushSize = 48; ed.hardness = 1; ed.brushOpacity = 1;
+        try {
+            ed.view.scale = 0.5; ed.view.x = 40; ed.view.y = 30;
+            clearCaches();
+            ed.hover = null;
+            ed.draw();
+            const beforePx = pxAt(ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data, 104, 94, ed.canvas.width);
+            const p = {
+                kind: "maskpaint",
+                layer: fxMs,
+                stroke: ed.newStrokeBuffer(fxMs.maskPx),
+                clip: ed.strokeClip(fxMs, fxMs.maskPx),
+                erase: false,
+                white: true,
+                last: [128, 128],
+                pressure: 1,
+            };
+            ed.pointer = p;
+            ed.layerDab(p, 128, 128, 128, 128);
+            ed.hover = null; ed.sceneSig = null; ed.draw();
+            const duringCrop = ed.sceneCanvas.getContext("2d").getImageData(42, 32, 124, 124).data;
+            const duringPx = pxAt(ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data, 104, 94, ed.canvas.width);
+            const box = ed.strokeRect(p, fxMs.maskPx);
+            ed.commitStroke(p);
+            ed.pointer = null;
+            ed.markMaskChanged(fxMs, box);
+            ed.releaseStrokeScratch();
+            await ed.mipsSettled();
+            clearCaches();
+            ed.hover = null; ed.draw();
+            const afterCrop = ed.sceneCanvas.getContext("2d").getImageData(42, 32, 124, 124).data;
+            const afterPx = pxAt(ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data, 104, 94, ed.canvas.width);
+            check("zoomed-out live mask stroke with selection matches committed mask",
+                !!p.clip && diffMax(duringPx, beforePx) > 100 && diffMax(duringCrop, afterCrop) <= 2 && diffMax(duringPx, afterPx) <= 2,
+                { clip: !!p.clip, reach: diffMax(duringPx, beforePx), cropDiff: diffMax(duringCrop, afterCrop), duringPx, afterPx });
+        } finally {
+            ed.pointer = null;
+            ed.clearSelection();
+            ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
+            ed.removeLayer(fxMs.id);
+        }
+    }
+
+    shell.closeDocument(ed, { force: true });
+    if (before) shell.activate(before);
+    return { tiles: !!ed.tileMode, problems };
+})()
+"""
+
 
 def compare(a_png, b_png):
     """Max and mean absolute difference per channel between two PNGs of the same size."""
@@ -673,6 +1383,14 @@ async def run(c, args):
                 print(f"[FAIL] {line}: " + "; ".join(problems))
             else:
                 print(f"[ok] {line}")
+        # plain filter layers on see-through documents replace their input on every path, and opaque / non-plain
+        # filter layers match the frozen references from base 2068af87
+        stf = await c.eval(SEE_THROUGH_FILTERS, timeout=300)
+        if stf.get("problems"):
+            ok = False
+            print(f"[FAIL] see_through_filters ({'tiles' if stf.get('tiles') else 'canvas'}): " + "; ".join(stf["problems"]))
+        else:
+            print(f"[ok] see_through_filters ({'tiles' if stf.get('tiles') else 'canvas'}): plain filters replace input on all paths (alpha 128); opaque and non-plain match frozen 2068af87")
     finally:
         await c.eval(CLOSE)
     print("PASS" if ok else "FAIL")

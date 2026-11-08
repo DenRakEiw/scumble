@@ -15798,7 +15798,7 @@ class InpaintEditor {
      * Cache key for a filtered canvas pass. Centralises key generation so call sites and future
      * map dependencies stay in sync. Produces the legacy string for layers without limit or maps.
      */
-    filterKey(layer, below, forRun, preview, vp = this.viewPass) {
+    filterKey(layer, below, forRun, preview, vp = this.viewPass, plain = false) {
         const baseKey = [
             layer.filter,
             layer.params,
@@ -15806,8 +15806,8 @@ class InpaintEditor {
             layer.plate && layer.plate.ref && layer.plate.ref.filename,
             !!forRun,
             !!preview,
-            below.width,
-            below.height,
+            vp && vp.crop ? vp.crop.bw : below.width,
+            vp && vp.crop ? vp.crop.bh : below.height,
             vp ? [vp.x, vp.y, vp.w, vp.h, vp.sx, vp.sy, !!(vp.screen || vp.display)] : 0,
         ];
         const readsMap = typeof this.mapsOf === "function" ? this.mapsOf(layer).length > 0 : (layer.params && layer.params.limit && (layer.params.limit.source === "depth" || layer.params.limit.source === "map"));
@@ -15816,6 +15816,7 @@ class InpaintEditor {
         }
         const isEffectView = this.effectViewOf(layer, forRun);
         if (isEffectView) baseKey.push(true);
+        if (layer.params && layer.params.limit) baseKey.push(!!plain);
         return JSON.stringify(baseKey);
     }
 
@@ -15864,6 +15865,28 @@ class InpaintEditor {
     }
 
     /**
+     * Crop `below` (a region-pass canvas that reaches past the document) to the document's pixel box `[bx0, by0, bw, bh]`,
+     * clamping any 1-pixel fractional rim from the strictly-inside box `[ix0, iy0, iw, ih]` so a filter that samples
+     * neighbours never reads the empty margin or a subpixel edge pixel.
+     */
+    cropFilterInput(below, { bx0, by0, bw, bh, ix0, iy0, iw, ih }) {
+        const doc = makeCanvas(bw, bh);
+        const dctx = doc.getContext("2d");
+        dctx.imageSmoothingEnabled = false;
+        if (iw > 0 && ih > 0) {
+            const ox = ix0 - bx0, oy = iy0 - by0;
+            dctx.drawImage(below, ix0, iy0, iw, ih, ox, oy, iw, ih);
+            if (ox > 0) dctx.drawImage(doc, ox, oy, 1, ih, 0, oy, ox, ih);
+            if (bw > ox + iw) dctx.drawImage(doc, ox + iw - 1, oy, 1, ih, ox + iw, oy, bw - ox - iw, ih);
+            if (oy > 0) dctx.drawImage(doc, 0, oy, bw, 1, 0, 0, bw, oy);
+            if (bh > oy + ih) dctx.drawImage(doc, 0, oy + ih - 1, bw, 1, 0, oy + ih, bw, bh - oy - ih);
+        } else {
+            dctx.drawImage(below, bx0, by0, bw, bh, 0, 0, bw, bh);
+        }
+        return doc;
+    }
+
+    /**
      * Filtered copy of `below` for a filter layer, cached until the composite or the parameters
      * change. `below` is the composite so far: a canvas, or the GPU surface the filter layer
      * before this one left behind. With `keepSurface` the result stays a surface for the next
@@ -15871,14 +15894,16 @@ class InpaintEditor {
      * stages inside one filter (the film look is colour, halation and grain) always chain on
      * the GPU, which is where most of the canvas round trips were.
      */
-    filteredCanvas(layer, below, forRun, preview, keepSurface = false) {
+    filteredCanvas(layer, below, forRun, preview, keepSurface = false, plain = keepSurface) {
         const vp = this.viewPass;
-        const key = this.filterKey(layer, below, forRun, preview, vp);
+        const key = this.filterKey(layer, below, forRun, preview, vp, plain);
         const slot = vp ? (vp.sample ? "_fcacheSample" : "_fcacheView") : "_fcache";
         const c = layer[slot];
         if (!keepSurface && c && c.version === this.compositeVersion && c.key === key) return c.canvas;
         let input = below, scale = vp ? vp.sx : 1;
-        if (preview) {
+        if (vp && vp.crop && !isGLSurface(below)) {
+            input = this.cropFilterInput(below, vp.crop);
+        } else if (preview) {
             const s = Math.min(1, 1024 / Math.max(below.width, below.height));
             if (s < 1) {
                 input = makeCanvas(Math.round(below.width * s), Math.round(below.height * s));
@@ -15908,10 +15933,10 @@ class InpaintEditor {
             site: "filteredCanvas",
         });
         // A limit's weight goes into the result's alpha whenever the result is drawn over the picture (a
-        // blend mode, an opacity, a mask, or source-over): where the limit is 0 the layer then shows
-        // nothing, like its painted mask. Only a result that becomes the chain's own surface (the next
-        // filter layer reads it as the picture) has to stay opaque and mixes the input back in instead.
-        info.limitOver = !keepSurface;
+        // blend mode, an opacity, a mask, or a clip): where the limit is 0 the layer then shows nothing,
+        // like its painted mask. A plain filter layer stands for the picture (whether it stays a surface
+        // for the next filter layer or replaces the canvas below it) and mixes the input back in instead.
+        info.limitOver = !plain;
         beginScope();
         try { canvas = applyFilter(layer.filter, input, layer.params, info); }
         catch (err) { console.error(err); }
@@ -15920,7 +15945,7 @@ class InpaintEditor {
         // says so; the Limit row reads the flag). Drawn over the picture that is nothing; only as the
         // chain's surface it is the picture.
         layer.limitMissing = !!info.limitMissing;
-        if (info.limitMissing && canvas === input && !keepSurface) canvas = null;
+        if (info.limitMissing && canvas === input && !(keepSurface && isGLSurface(canvas))) canvas = null;
         if (isGLSurface(canvas)) {
             if (keepSurface) return canvas;                    // the next filter layer reads the texture
             const flat = surfaceToCanvas(canvas);
@@ -16515,17 +16540,40 @@ class InpaintEditor {
         // mask, an opacity or a blend mode has to composite it onto the canvas.
         // a fill layer (`over`) goes over the picture as a layer does: its result never stands for the picture
         const limitView = this.effectViewOf(layer, forRun);
-        const plain = !limitView && !this.liveMask(layer) && layer.opacity >= 1 && (!layer.blend || layer.blend === "normal") && !preview && !clip && !this.isFillLayer(layer);
-        const keepSurface = plain && more && !this.filterChainOff && glChainUsable(ctx.canvas.width, ctx.canvas.height);
-        const out = this.filteredCanvas(layer, chain ? chain.surface : ctx.canvas, forRun, preview, keepSurface);
-        const rx = vp ? vp.x : 0, ry = vp ? vp.y : 0;
-        const rw = vp ? vp.w : this.width, rh = vp ? vp.h : this.height;
+        const plain = !limitView && !this.liveMask(layer) && Math.round(layer.opacity * 255) === 255 && (!layer.blend || layer.blend === "normal") && !preview && !clip && !this.isFillLayer(layer);
+        let rx = vp ? vp.x : 0, ry = vp ? vp.y : 0;
+        let rw = vp ? vp.w : this.width, rh = vp ? vp.h : this.height;
+        const margin = !!(vp && (rx < 0 || ry < 0 || rx + rw > this.width || ry + rh > this.height));
+        let fvp = vp;
+        if (margin && !this.isFillLayer(layer)) {
+            const W = ctx.canvas.width, H = ctx.canvas.height;
+            const sx = W / rw, sy = H / rh;
+            const dl = -rx * sx, dt = -ry * sy, dr = (this.width - rx) * sx, db = (this.height - ry) * sy;
+            const bx0 = Math.max(0, Math.floor(dl)), by0 = Math.max(0, Math.floor(dt));
+            const bx1 = Math.min(W, Math.ceil(dr)), by1 = Math.min(H, Math.ceil(db));
+            const bw = bx1 - bx0, bh = by1 - by0;
+            if (bw <= 0 || bh <= 0) return chain;
+            const ix0 = Math.max(bx0, Math.min(bx1, Math.ceil(dl))), iy0 = Math.max(by0, Math.min(by1, Math.ceil(dt)));
+            const ix1 = Math.min(bx1, Math.max(ix0, Math.floor(dr))), iy1 = Math.min(by1, Math.max(iy0, Math.floor(db)));
+            rx += bx0 / sx; ry += by0 / sy;
+            rw = bw / sx; rh = bh / sy;
+            fvp = { ...vp, x: rx, y: ry, w: rw, h: rh, crop: { bx0, by0, bw, bh, ix0, iy0, iw: ix1 - ix0, ih: iy1 - iy0 } };
+        }
+        if (chain && margin && this.isFillLayer(layer)) chain = this.flushFilterChain(ctx, chain);
+        const keepSurface = plain && more && !this.filterChainOff && glChainUsable(fvp && fvp.crop ? fvp.crop.bw : ctx.canvas.width, fvp && fvp.crop ? fvp.crop.bh : ctx.canvas.height);
+        let out;
+        this.viewPass = fvp;
+        try {
+            out = this.filteredCanvas(layer, chain ? chain.surface : ctx.canvas, forRun, preview, keepSurface, plain);
+        } finally {
+            this.viewPass = vp;
+        }
         if (isGLSurface(out)) {
             if (chain && out !== chain.surface) releaseSurface(chain.surface);
             return { surface: out, x: rx, y: ry, w: rw, h: rh };
         }
         chain = this.flushFilterChain(ctx, chain);   // the result goes onto the canvas, so the composite has to be there
-        if (!out) return null;
+        if (!out || (plain && out === ctx.canvas)) return null;
         let src = out;
         if (this.liveMask(layer)) {
             if (!this.filterMaskCanvas || this.filterMaskCanvas.width !== out.width || this.filterMaskCanvas.height !== out.height) this.filterMaskCanvas = makeCanvas(out.width, out.height);
@@ -16545,7 +16593,7 @@ class InpaintEditor {
                 // the mask's display mirror (572 MB at 15000 x 10000, synced per written tile) and a sub-rectangle draw of
                 // it per pass; the stroke a full-size live preview filled from that mirror.
                 const sx = m.width / rw, sy = m.height / rh;
-                const mvp = { ...vp, sx, sy };
+                const mvp = { ...(fvp || vp), sx, sy };
                 const whole = { x: 0, y: 0, w: this.width, h: this.height };
                 mctx.save();
                 try {
@@ -16589,7 +16637,7 @@ class InpaintEditor {
         // view is zoomed out (viewportRegion pads the visible area and clamps nothing), and the fill's bytes there are
         // its clamped ends, so a gradient painted the whole viewport (the user's screenshot, 2026-10-10). The draw is
         // clipped to the document; a filter leaves the transparent outside transparent by itself.
-        const clipDoc = vp && this.isFillLayer(layer) && (rx < 0 || ry < 0 || rx + rw > this.width || ry + rh > this.height);
+        const clipDoc = margin && this.isFillLayer(layer);
         if (clipDoc) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.width, this.height); ctx.clip(); }
         try {
             if (!limitView && (clip || EMULATED_BLENDS.has(layer.blend))) {
@@ -16598,6 +16646,7 @@ class InpaintEditor {
             }
             ctx.globalAlpha = limitView ? 1 : layer.opacity;
             ctx.globalCompositeOperation = limitView ? "source-over" : canvasOp(layer.blend);
+            if (plain) ctx.clearRect(rx, ry, rw, rh);
             ctx.drawImage(src, rx, ry, rw, rh);
             ctx.globalAlpha = 1;
             ctx.globalCompositeOperation = "source-over";
@@ -16612,9 +16661,12 @@ class InpaintEditor {
         if (!chain) return null;
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
-        if (!drawSurfaceTo(ctx, chain.surface, chain.x, chain.y, chain.w, chain.h)) {
+        if (!drawSurfaceTo(ctx, chain.surface, chain.x, chain.y, chain.w, chain.h, true)) {
             const flat = surfaceToCanvas(chain.surface);
-            if (flat) ctx.drawImage(flat, chain.x, chain.y, chain.w, chain.h);
+            if (flat) {
+                ctx.clearRect(chain.x, chain.y, chain.w, chain.h);
+                ctx.drawImage(flat, chain.x, chain.y, chain.w, chain.h);
+            }
         }
         releaseSurface(chain.surface);
         return null;
