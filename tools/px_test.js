@@ -466,6 +466,112 @@ async function pngReadCases(px, label, js) {
     const d1 = px.pngUnfilterRows(bad.slice(), 3, 8, 4, new Uint8Array(8)), d2 = js.pngUnfilterRows(bad.slice(), 3, 8, 4, new Uint8Array(8));
     if (d1 !== 1 || d2 !== 1) { ok = false; detail = `an unknown filter type stopped at ${d1} / ${d2}, not at line 1`; }
     check(`${label} png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)`, ok, detail);
+
+    // K6 (docs/PLAN_WASM_BUILD.md §4.2): rows of 1..67 px (and 128, 255, 256, 257 px) at bpp 3 and 4, with forced
+    // Paeth ties (first tie pa = pc < pb with a != c, second tie pb = pc < pa with b != c, triple tie a = b = c),
+    // odd and even Average sums (rounding floor((a + b) / 2)), Up across every 16-byte group and 0..15 tail length,
+    // wrapping byte sums >= 256, and odd-offset views.
+    let tieOk = true, tieDetail = "", acTies = 0, bcTies = 0;
+    const widths = [...Array.from({ length: 67 }, (_, i) => i + 1), 128, 255, 256, 257];
+    // When upRow alternates around 100 by d = b - c in {+20, -20, +12, -12}, choosing a = curRow[idx - bpp] as a
+    // function of (c, d) alone (never overwriting upRow) forces each Paeth regime at pixel x >= 1:
+    //   0: a = c - 2*d  -> pa = |d|, pb = 2|d|, pc = |d|   (first tie: pa == pc < pb, a != c, picks a)
+    //   1: a = c - d/2  -> pa = |d|, pb = |d|/2, pc = |d|/2 (second tie: pb == pc < pa, b != c, picks b)
+    //   2: a = c + 2*d  -> pa = |d|, pb = 2|d|, pc = 3|d|  (strictly picks a)
+    //   3: a = c - d/4  -> pa = |d|, pb = |d|/4, pc = 3|d|/4 (strictly picks b)
+    //   4: a = c - d    -> pa = |d|, pb = |d|, pc = 0      (strictly picks c)
+    for (const bpp of [3, 4]) {
+        for (const w of widths) {
+            const rowBytes = w * bpp, stride = rowBytes + 1, rows = 7;
+            const prev0 = new Uint8Array(rowBytes);
+            const raw = new Uint8Array(rows * rowBytes);
+            for (let i = 0; i < rowBytes; i++) prev0[i] = (i * 29 + w * 7 + bpp) & 255;
+            // Rows 0..3 use filter types 0..3; rows 4..6 use filter 4 (Paeth):
+            //   row 3 (Average): alternates 100+k and 116+k (d = +-16)
+            //   row 4 (Paeth, first tie):  a = c - 2*d -> 68+k and 148+k (pa = 16, pb = 32, pc = 16; picks a over c)
+            //   row 5 (Paeth, second tie): a = c - d/2 -> 28+k and 188+k (pa = 80, pb = 40, pc = 40; picks b over c)
+            //   row 6 (Paeth, mixed):      a in {c - d/2, c - d/4, c - d, c} (second tie, strict b, strict c, strict a)
+            for (let y = 0; y < rows; y++) {
+                const upRow = y === 0 ? prev0 : raw.subarray((y - 1) * rowBytes, y * rowBytes);
+                const curRow = raw.subarray(y * rowBytes, (y + 1) * rowBytes);
+                if (y === 3) {
+                    for (let x = 0; x < w; x++) {
+                        for (let k = 0; k < bpp; k++) {
+                            curRow[x * bpp + k] = ((x & 1) ? 116 : 100) + k * 3 + (x === 0 ? (w & 1) : 0);
+                        }
+                    }
+                } else if (y >= 4) {
+                    for (let x = 1; x < w; x++) {
+                        for (let k = 0; k < bpp; k++) {
+                            const idx = x * bpp + k;
+                            const cVal = upRow[idx - bpp], bVal = upRow[idx], d = bVal - cVal;
+                            const mode = y === 4 ? 0 : y === 5 ? 1 : (x + k + w) & 3;
+                            curRow[idx - bpp] = mode === 0 ? cVal - 2 * d : mode === 1 ? cVal - (d >> 1) : mode === 2 ? cVal - (d >> 2) : mode === 3 ? cVal - d : cVal;
+                        }
+                    }
+                    for (let k = 0; k < bpp; k++) {
+                        curRow[(w - 1) * bpp + k] = (211 + w * 19 + y * 31 + k * 53) & 255;
+                    }
+                } else {
+                    for (let i = 0; i < rowBytes; i++) curRow[i] = (rnd() + i * 17 + y * 59) & 255;
+                }
+            }
+            // Encode `raw` into filtered `lines` using the exact PNG filter definitions (0..4, then 4 on rows 5 and 6)
+            const lines = new Uint8Array(rows * stride);
+            for (let y = 0; y < rows; y++) {
+                const ft = y < 5 ? y : 4;
+                lines[y * stride] = ft;
+                const upRow = y === 0 ? prev0 : raw.subarray((y - 1) * rowBytes, y * rowBytes);
+                const curRow = raw.subarray(y * rowBytes, (y + 1) * rowBytes);
+                for (let i = 0; i < rowBytes; i++) {
+                    const a = i >= bpp ? curRow[i - bpp] : 0;
+                    const b = upRow[i];
+                    const c = i >= bpp ? upRow[i - bpp] : 0;
+                    if (ft === 4 && w <= 67) {
+                        const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
+                        if (pa === pc && pa < pb && a !== c) acTies++;
+                        if (pb === pc && pa > pb && b !== c) bcTies++;
+                    }
+                    const pred = ft === 0 ? 0 : ft === 1 ? a : ft === 2 ? b : ft === 3 ? (a + b) >> 1 : paeth(a, b, c);
+                    lines[y * stride + 1 + i] = (curRow[i] - pred) & 255;
+                }
+            }
+            for (const channels of [0, bpp]) {
+                for (const odd of [0, 1]) {
+                    const run = (k) => {
+                        const lBuf = new Uint8Array(lines.length + odd); lBuf.set(lines, odd);
+                        const lView = lBuf.subarray(odd, odd + lines.length);
+                        const pBuf = new Uint8Array(rowBytes + odd); pBuf.set(prev0, odd);
+                        const pView = pBuf.subarray(odd, odd + rowBytes);
+                        const oBuf = channels ? new Uint8ClampedArray(rows * w * 4 + odd) : null;
+                        const oView = channels ? oBuf.subarray(odd, odd + rows * w * 4) : null;
+                        const done = k.pngUnfilterRows(lView, rows, rowBytes, bpp, pView, channels ? { w, channels, out: oView } : null);
+                        return { done, out: channels ? oView : lView, prev: pView };
+                    };
+                    const got = run(px), want = run(js);
+                    if (got.done !== rows || want.done !== rows || !eqBytes(got.out, want.out) || !eqBytes(got.prev, want.prev)) {
+                        if (tieOk) {
+                            tieOk = false;
+                            tieDetail = `w=${w}, bpp=${bpp}, channels=${channels}, odd=${odd}: done ${got.done}/${want.done}, ${firstDiff(got.out, want.out)}`;
+                        }
+                    }
+                    if (!channels && odd === 0 && tieOk) {
+                        for (let y = 0; y < rows; y++) {
+                            const uRow = got.out.subarray(y * stride + 1, (y + 1) * stride);
+                            const rRow = raw.subarray(y * rowBytes, (y + 1) * rowBytes);
+                            if (!eqBytes(uRow, rRow)) {
+                                tieOk = false;
+                                tieDetail = `w=${w}, bpp=${bpp}, row ${y} did not reconstruct raw: ${firstDiff(uRow, rRow)}`;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    check(`${label} png_unfilter_rows on rows of 1..67 px (and 128..257 px) with forced Paeth ties (ac=${acTies}, bc=${bcTies}) equals its twin and reconstructs raw at even and odd offsets`,
+        tieOk && acTies > 500 && bcTies > 500, tieDetail || `ac=${acTies}, bc=${bcTies}`);
     const W = 15000, R = 256, big = new Uint8Array(R * (W * 3 + 1));
     for (let i = 0; i < big.length; i++) big[i] = (i * 7) & 255;
     for (let y = 0; y < R; y++) big[y * (W * 3 + 1)] = 4;

@@ -1,0 +1,32 @@
+(node:24236) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-p/renderer/editor/px/px.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-p\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+4096x256   bpp=3 ch=0 Up (2)                            | before   1.47 | after   0.72 | scalar   1.36 | js   2.32 | after/before 2.04x | vs scalar 1.89x | vs js 3.22x
+4096x256   bpp=3 ch=0 Average (3)                       | before    2.2 | after   2.19 | scalar   2.25 | js   3.75 | after/before 1x | vs scalar 1.03x | vs js 1.71x
+4096x256   bpp=3 ch=0 Paeth (4)                         | before   4.73 | after   4.23 | scalar   6.91 | js  13.06 | after/before 1.12x | vs scalar 1.63x | vs js 3.09x
+4096x256   bpp=3 ch=0 Scumble mix (76% P, 23% A, 1% S)  | before    4.1 | after   3.88 | scalar   6.33 | js   9.95 | after/before 1.06x | vs scalar 1.63x | vs js 2.56x
+4096x256   bpp=3 ch=3 Up (2)                            | before   2.25 | after   1.24 | scalar   2.26 | js   5.54 | after/before 1.81x | vs scalar 1.82x | vs js 4.47x
+4096x256   bpp=3 ch=3 Average (3)                       | before   3.23 | after   2.89 | scalar   2.85 | js    6.7 | after/before 1.12x | vs scalar 0.99x | vs js 2.32x
+4096x256   bpp=3 ch=3 Paeth (4)                         | before   5.68 | after   4.84 | scalar   7.58 | js  14.92 | after/before 1.17x | vs scalar 1.57x | vs js 3.08x
+4096x256   bpp=3 ch=3 Scumble mix (76% P, 23% A, 1% S)  | before   4.54 | after   4.22 | scalar   6.24 | js  11.97 | after/before 1.08x | vs scalar 1.48x | vs js 2.84x
+4096x256   bpp=4 ch=0 Up (2)                            | before   1.85 | after   0.65 | scalar   1.78 | js   2.97 | after/before 2.85x | vs scalar 2.74x | vs js 4.57x
+4096x256   bpp=4 ch=0 Average (3)                       | before   6.19 | after   2.16 | scalar   6.89 | js   5.21 | after/before 2.87x | vs scalar 3.19x | vs js 2.41x
+4096x256   bpp=4 ch=0 Paeth (4)                         | before   4.91 | after    4.1 | scalar   8.89 | js   15.6 | after/before 1.2x | vs scalar 2.17x | vs js 3.8x
+4096x256   bpp=4 ch=0 Scumble mix (76% P, 23% A, 1% S)  | before   5.12 | after   3.51 | scalar  10.33 | js  15.55 | after/before 1.46x | vs scalar 2.94x | vs js 4.43x
+4096x256   bpp=4 ch=4 Up (2)                            | before   3.01 | after   1.08 | scalar   3.34 | js   5.08 | after/before 2.79x | vs scalar 3.09x | vs js 4.7x
+4096x256   bpp=4 ch=4 Average (3)                       | before   6.99 | after    2.6 | scalar      8 | js   7.88 | after/before 2.69x | vs scalar 3.08x | vs js 3.03x
+4096x256   bpp=4 ch=4 Paeth (4)                         | before   5.42 | after   4.54 | scalar  11.81 | js  20.19 | after/before 1.19x | vs scalar 2.6x | vs js 4.45x
+4096x256   bpp=4 ch=4 Scumble mix (76% P, 23% A, 1% S)  | before    5.6 | after   4.13 | scalar  11.21 | js  16.51 | after/before 1.36x | vs scalar 2.71x | vs js 4x
+15000x256  bpp=3 ch=0 Paeth (4)                         | before  22.16 | after  15.81 | scalar  27.31 | js  50.43 | after/before 1.4x | vs scalar 1.73x | vs js 3.19x
+15000x256  bpp=3 ch=0 Scumble mix (76% P, 23% A, 1% S)  | before  17.88 | after  14.18 | scalar  25.32 | js  39.64 | after/before 1.26x | vs scalar 1.79x | vs js 2.8x
+15000x256  bpp=3 ch=3 Up (2)                            | before   9.63 | after   6.21 | scalar   9.07 | js  22.95 | after/before 1.55x | vs scalar 1.46x | vs js 3.7x
+15000x256  bpp=3 ch=3 Average (3)                       | before  12.55 | after  11.27 | scalar  13.11 | js  33.89 | after/before 1.11x | vs scalar 1.16x | vs js 3.01x
+15000x256  bpp=3 ch=3 Paeth (4)                         | before   24.5 | after  17.84 | scalar  31.63 | js  54.08 | after/before 1.37x | vs scalar 1.77x | vs js 3.03x
+15000x256  bpp=3 ch=3 Scumble mix (76% P, 23% A, 1% S)  | before  21.74 | after  17.63 | scalar  28.25 | js  51.31 | after/before 1.23x | vs scalar 1.6x | vs js 2.91x
+15000x256  bpp=4 ch=0 Paeth (4)                         | before     18 | after  15.33 | scalar  40.38 | js  58.47 | after/before 1.17x | vs scalar 2.63x | vs js 3.81x
+15000x256  bpp=4 ch=0 Scumble mix (76% P, 23% A, 1% S)  | before  18.62 | after  12.81 | scalar  36.63 | js  51.95 | after/before 1.45x | vs scalar 2.86x | vs js 4.06x
+15000x256  bpp=4 ch=4 Up (2)                            | before   9.28 | after      4 | scalar   9.31 | js   17.1 | after/before 2.32x | vs scalar 2.33x | vs js 4.28x
+15000x256  bpp=4 ch=4 Average (3)                       | before  24.92 | after   9.23 | scalar  28.47 | js  23.41 | after/before 2.7x | vs scalar 3.08x | vs js 2.54x
+15000x256  bpp=4 ch=4 Paeth (4)                         | before  19.29 | after     17 | scalar  42.04 | js  57.62 | after/before 1.13x | vs scalar 2.47x | vs js 3.39x
+15000x256  bpp=4 ch=4 Scumble mix (76% P, 23% A, 1% S)  | before  21.09 | after  15.31 | scalar  41.25 | js  54.84 | after/before 1.38x | vs scalar 2.69x | vs js 3.58x

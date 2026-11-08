@@ -1,0 +1,40 @@
+lock: taken after 0 s
+[20:07:39] lock: taken (K6 measuring (chain-p) 9208 2026-11-08T20:07:38)
+[20:07:40] branch ag-chain-p-2 at 5419c95a; port 9621
+[20:07:41] before px.wasm a41919750bce2075; after px.wasm 2208b82f6775478a; px_scalar.wasm ac99651178ff1fd3
+[20:07:42] gpu: 26023 MiB, 100 %; comfy 8188: 200
+[20:07:43] node kernel bench
+[20:08:00] rc=0
+[20:08:00] electron-as-node kernel bench
+[20:08:15] rc=0
+[20:08:15] == round 1
+[20:08:15] native before r1 (try 1, px.wasm a41919750bce)
+[20:08:16] gpu: 26259 MiB, 100 %; comfy 8188: 200
+[20:08:36] rc=0
+closed
+[20:08:41] native after r1 (try 1, px.wasm 2208b82f6775)
+[20:08:42] gpu: 26584 MiB, 100 %; comfy 8188: 200
+[20:09:00] rc=0
+closed
+[20:09:04] == round 2
+[20:09:04] native after r2 (try 1, px.wasm 2208b82f6775)
+[20:09:04] gpu: 28726 MiB, 100 %; comfy 8188: 200
+[20:09:22] rc=0
+closed
+[20:09:30] native before r2 (try 1, px.wasm a41919750bce)
+[20:09:31] gpu: 29573 MiB, 100 %; comfy 8188: 200
+[20:09:53] rc=0
+closed
+[20:09:57] == round 3
+[20:09:57] native before r3 (try 1, px.wasm a41919750bce)
+[20:09:57] gpu: 29857 MiB, 100 %; comfy 8188: 200
+[20:10:15] rc=0
+closed
+[20:10:21] native after r3 (try 1, px.wasm 2208b82f6775)
+[20:10:23] gpu: 29367 MiB, 100 %; comfy 8188: 200
+[20:10:46] rc=0
+closed
+[20:10:54] gpu: 28818 MiB, 100 %; comfy 8188: 200
+[20:10:54] done
+no instance on 9621 Cannot connect to host 127.0.0.1:9621 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+lock: released

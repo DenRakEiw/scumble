@@ -1,0 +1,29 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 10 s)
+warning: unused variable: `mask`
+   --> src\png.rs:468:17
+    |
+468 |             let mask = i16x8_splat(255);
+    |                 ^^^^ help: if this is intentional, prefix it with an underscore: `_mask`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 5.39s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k6_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.83s
+$ node tools/px_test.js  (rc 1, 0 s, PX_ONLY=pngRead)
+FAIL rust simd png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)  64 px of 4 bytes, channels 4, item 5
+FAIL rust simd png_unfilter_rows on rows of 1..67 px (and 128..257 px) with forced Paeth ties (ac=15513, bc=15064) equals its twin and reconstructs raw at even and odd offsets  w=1, bpp=3, channels=0, odd=0: done 7/7, at 17: 255 vs 98
+FAIL (2) (only: pngRead; PX_ONLY, not the full test)
+FAIL rust simd png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)  64 px of 4 bytes, channels 4, item 5
+FAIL rust simd png_unfilter_rows on rows of 1..67 px (and 128..257 px) with forced Paeth ties (ac=15513, bc=15064) equals its twin and reconstructs raw at even and odd offsets  w=1, bpp=3, channels=0, odd=0: done 7/7, at 17: 255 vs 98
+       256 rows of 15,000 RGB pixels, Paeth: rust simd 20.5 ms, twin 45.7 ms
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)
+ok   rust scalar png_unfilter_rows on rows of 1..67 px (and 128..257 px) with forced Paeth ties (ac=15513, bc=15064) equals its twin and reconstructs raw at even and odd offsets  ac=15513, bc=15064
+       256 rows of 15,000 RGB pixels, Paeth: rust scalar 30.8 ms, twin 50.4 ms
+FAIL (2) (only: pngRead; PX_ONLY, not the full test)
+(node:8820) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/mut_k6_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\mut_k6_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

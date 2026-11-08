@@ -164,16 +164,16 @@ pub fn unfilter_rows(lines: &mut [u8], rows: usize, row_bytes: usize, bpp: usize
         let up: &[u8] = if y == 0 { &prev[..row_bytes] } else { &done[(y - 1) * stride + 1..y * stride] };
         match (ft, bpp) {
             (0, _) => {}
-            (2, _) => {
-                for i in 0..row_bytes { cur[i] = cur[i].wrapping_add(up[i]); }
-            }
+            #[cfg(target_feature = "simd128")] (2, _) => lanes::up_row(cur, up),
+            #[cfg(not(target_feature = "simd128"))] (2, _) => { for i in 0..row_bytes { cur[i] = cur[i].wrapping_add(up[i]); } }
+            //
             // a pixel at a time, its channels side by side: the dependency is on the pixel before, not the byte before
             (1, 3) => sub_px::<3>(cur),
             (1, 4) => sub_px::<4>(cur),
-            (3, 3) => avg_px::<3>(cur, up),
-            (3, 4) => avg_px::<4>(cur, up),
-            (4, 3) => paeth_px::<3>(cur, up),
-            (4, 4) => paeth_px::<4>(cur, up),
+            (3, 3) => row_avg::<3>(cur, up),
+            (3, 4) => row_avg::<4>(cur, up),
+            (4, 3) => row_paeth::<3>(cur, up),
+            (4, 4) => row_paeth::<4>(cur, up),
             (1, _) => {
                 for i in bpp..row_bytes { cur[i] = cur[i].wrapping_add(cur[i - bpp]); }
             }
@@ -222,6 +222,32 @@ pub fn lines_to_rgba(lines: &[u8], rows: usize, w: usize, channels: usize, out: 
 // is kept elsewhere and nothing is allocated. The first pixel (no left neighbour) and the bytes after the last whole
 // group go through the scalar code, a row narrower than the first pixel and one group through `filter_row` itself.
 // The scalar build is `filter_row`, unchanged: tools/px_test.js holds the two builds and the JS twin to the same bytes.
+
+#[cfg(not(target_feature = "simd128"))]
+#[inline(always)]
+fn row_avg<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    avg_px::<B>(cur, up)
+}
+
+#[cfg(not(target_feature = "simd128"))]
+#[inline(always)]
+fn row_paeth<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    paeth_px::<B>(cur, up)
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+fn row_avg<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    let _ = avg_px::<B>;
+    lanes::avg_px::<B>(cur, up)
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+fn row_paeth<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    let _ = paeth_px::<B>;
+    lanes::paeth_px::<B>(cur, up)
+}
 
 #[cfg(not(target_feature = "simd128"))]
 #[inline(always)]
@@ -390,5 +416,91 @@ mod lanes {
         let pb = i16x8_abs(ac);
         let pc = i16x8_abs(i16x8_add(bc, ac));
         (v128_and(i16x8_le(pa, pb), i16x8_le(pa, pc)), i16x8_le(pb, pc))
+    }
+
+    // ---- reading: Up in 16-byte groups, Average and Paeth per pixel across channels in i16x8 lanes (K6) -------------
+
+    /// Undo filter 2 (Up) 16 bytes at a time, the tail byte by byte.
+    pub fn up_row(cur: &mut [u8], up: &[u8]) {
+        let n = cur.len().min(up.len());
+        let end = n / 16 * 16;
+        let (c, u) = (cur.as_mut_ptr(), up.as_ptr());
+        let mut i = 0;
+        unsafe {
+            while i < end {
+                let x = v128_load(c.add(i) as *const v128);
+                let b = v128_load(u.add(i) as *const v128);
+                v128_store(c.add(i) as *mut v128, i8x16_add(x, b));
+                i += 16;
+            }
+        }
+        for i in end..n {
+            cur[i] = cur[i].wrapping_add(up[i]);
+        }
+    }
+
+    /// Undo filter 3 (Average) a pixel of `B` bytes (3 or 4) at a time, its channels side by side in i16x8 lanes.
+    pub fn avg_px<const B: usize>(cur: &mut [u8], up: &[u8]) {
+        let n = cur.len().min(up.len()) / B * B;
+        let (cp, up) = (cur.as_mut_ptr(), up.as_ptr());
+        let mut i = 0;
+        unsafe {
+            let mask = i16x8_splat(255);
+            let mut a = i16x8_splat(0);
+            while i < n {
+                let x = load_px::<B>(cp.add(i));
+                let b = load_px::<B>(up.add(i));
+                let pred = u16x8_shr(i16x8_add(a, b), 1);
+                a = v128_and(i16x8_add(x, pred), mask);
+                store_px::<B>(cp.add(i), a);
+                i += B;
+            }
+        }
+    }
+
+    /// Undo filter 4 (Paeth) a pixel of `B` bytes (3 or 4) at a time, its channels side by side in i16x8 lanes, the
+    /// predictor picked with `v128_bitselect` in the standard's tie order (a, then b, then c).
+    pub fn paeth_px<const B: usize>(cur: &mut [u8], up: &[u8]) {
+        let n = cur.len().min(up.len()) / B * B;
+        let (cp, up) = (cur.as_mut_ptr(), up.as_ptr());
+        let mut i = 0;
+        unsafe {
+            let mask = i16x8_splat(255);
+            let mut a = i16x8_splat(0);
+            let mut c = i16x8_splat(0);
+            while i < n {
+                let x = load_px::<B>(cp.add(i));
+                let b = load_px::<B>(up.add(i));
+                let (ma, mb) = choose(a, b, c);
+                let pred = v128_bitselect(a, v128_bitselect(b, c, mb), ma);
+                a = v128_and(i16x8_add(x, pred), mask);
+                c = b;
+                store_px::<B>(cp.add(i), a);
+                i += B;
+            }
+        }
+    }
+
+    /// A pixel of `B` bytes (3 or 4) widened into the low `B` i16 lanes (`0..255`).
+    #[inline(always)]
+    unsafe fn load_px<const B: usize>(p: *const u8) -> v128 {
+        if B == 4 {
+            u16x8_extend_low_u8x16(v128_load32_zero(p as *const u32))
+        } else {
+            let v = v128_load16_lane::<0>(u8x16_splat(0), p as *const u16);
+            u16x8_extend_low_u8x16(v128_load8_lane::<2>(v, p.add(2)))
+        }
+    }
+
+    /// The low `B` i16 lanes (`0..255`) narrowed and written as `B` bytes.
+    #[inline(always)]
+    unsafe fn store_px<const B: usize>(p: *mut u8, v: v128) {
+        let b = u8x16_narrow_i16x8(v, v);
+        if B == 4 {
+            v128_store32_lane::<0>(b, p as *mut u32);
+        } else {
+            v128_store16_lane::<0>(b, p as *mut u16);
+            v128_store8_lane::<2>(b, p.add(2));
+        }
     }
 }
