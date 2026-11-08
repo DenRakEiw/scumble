@@ -664,6 +664,100 @@ console.log("  [ok] combineRows updates pixels and clears zero alpha");
     assert.equal(invCalls.js, 0, "the maskInvert route js called mask_invert");
     assert.ok(invCalls.rust > 0, "the maskInvert route rust never called mask_invert");
     console.log(`  [ok] K11: TileMaskPixels.invert on the routes js and rust equals the per-pixel model (mask_invert ${invCalls.rust} calls on rust, 0 on js), frozen clones preserved, cached extents and bounds exact`);
+
+    // (a) writable spy on a fresh invert() of a 300 x 270 mask and on combine's SEL_FULL fill:
+    // tile [0,0] (256 x 256) gets whole = true; partial edge tiles [1,0] (44 x 256), [0,1] (256 x 14), [1,1] (44 x 14) get whole = false
+    const W3 = 300, H3 = 270;
+    const spyWhole = (apply) => {
+        const mk = new TileMaskPixels(W3, H3);
+        const origW = mk.writable;
+        const calls = [];
+        mk.writable = function (tx, ty, create = true, whole = false) {
+            calls.push({ tx, ty, whole: !!whole });
+            return origW.call(this, tx, ty, create, whole);
+        };
+        apply(mk);
+        mk.writable = origW;
+        return calls;
+    };
+    const wantWhole = [
+        { tx: 0, ty: 0, whole: true },
+        { tx: 1, ty: 0, whole: false },
+        { tx: 0, ty: 1, whole: false },
+        { tx: 1, ty: 1, whole: false },
+    ];
+    assert.deepEqual(spyWhole((mk) => mk.invert()), wantWhole, "fresh invert() of 300 x 270 passes whole=true only on [0,0] and false on [1,0], [0,1], [1,1]");
+    assert.deepEqual(spyWhole((mk) => mk.combine(rectSource([0, 0, W3, H3]), "replace")), wantWhole, "combine SEL_FULL replace of 300 x 270 passes whole=true only on [0,0] and false on [1,0], [0,1], [1,1]");
+    assert.deepEqual(spyWhole((mk) => mk.combine(rectSource([0, 0, W3, H3]), "add")), wantWhole, "combine SEL_FULL add of 300 x 270 passes whole=true only on [0,0] and false on [1,0], [0,1], [1,1]");
+
+    // (b) a partial edge tile holding a pixel beyond the image (alpha 77), frozen by clone(), then a full-coverage
+    // combine(rectSource([0, 0, W, H]), "replace"), asserting the beyond-image byte stays 77
+    {
+        const mk = new TileMaskPixels(W3, H3);
+        const o10 = (5 * 256 + 100) * 4;    // x=100 >= bw=44 in [1,0]
+        const o01 = (100 * 256 + 5) * 4;    // y=100 >= bh=14 in [0,1]
+        const o11 = (100 * 256 + 100) * 4;  // x=100 >= bw=44, y=100 >= bh=14 in [1,1]
+        const t10 = mk.writable(1, 0); t10.data[o10] = 255; t10.data[o10 + 3] = 77;
+        const t01 = mk.writable(0, 1); t01.data[o01] = 255; t01.data[o01 + 3] = 77;
+        const t11 = mk.writable(1, 1); t11.data[o11] = 255; t11.data[o11 + 3] = 77;
+        const snap = mk.clone();
+        mk.combine(rectSource([0, 0, W3, H3]), "replace");
+        assert.equal(mk.tileAt(1, 0).data[o10 + 3], 77, "beyond-image pixel in frozen partial tile [1,0] stays 77 after full-coverage replace");
+        assert.equal(mk.tileAt(0, 1).data[o01 + 3], 77, "beyond-image pixel in frozen partial tile [0,1] stays 77 after full-coverage replace");
+        assert.equal(mk.tileAt(1, 1).data[o11 + 3], 77, "beyond-image pixel in frozen partial tile [1,1] stays 77 after full-coverage replace");
+        assert.equal(mk.tileAt(1, 0).data[3], 255, "in-image pixel in [1,0] is filled to 255");
+        assert.equal(snap.tileAt(1, 0).data[3], 0, "frozen clone's in-image pixel in [1,0] stays 0");
+        assert.equal(snap.tileAt(1, 0).data[o10 + 3], 77, "frozen clone's beyond-image pixel in [1,0] stays 77");
+    }
+
+    // (c) arena reused slot zeroing (inpaint_arena.js `if (zero) bytes.fill(0)`): a reused slot is zeroed when zero=true
+    // (fresh partial edge tiles) and skipped when zero=false (whole-tile overwrite)
+    {
+        const arenaMod = await import("../renderer/editor/inpaint_arena.js");
+        const { allocTileBytes, setArenaEnabled } = arenaMod;
+        const origCOI = Object.getOwnPropertyDescriptor(globalThis, "crossOriginIsolated");
+        const OrigFR = globalThis.FinalizationRegistry;
+        let releaseCb = null;
+        const registered = [];
+        globalThis.FinalizationRegistry = class {
+            constructor(cb) { releaseCb = cb; }
+            register(_target, held) { registered.push(held); }
+        };
+        Object.defineProperty(globalThis, "crossOriginIsolated", { value: true, configurable: true, writable: true });
+        setArenaEnabled(true);
+        try {
+            // Allocate 4 slots, fill them with 99, and release them back to the arena's free stack so used_[slot] === 1
+            for (let i = 0; i < 4; i++) {
+                const b = allocTileBytes({}, true);
+                b.fill(99);
+            }
+            assert.equal( typeof releaseCb, "function", "arena registered its FinalizationRegistry release callback");
+            while (registered.length) releaseCb(registered.pop());
+
+            // zero = false skips zeroing a reused slot; zero = true zeroes it
+            const bKeep = allocTileBytes({}, false);
+            const bZero = allocTileBytes({}, true);
+            assert.equal(bKeep[0], 99, "allocTileBytes(owner, false) skips zeroing a reused arena slot");
+            assert.equal(bZero[0], 0, "allocTileBytes(owner, true) zeroes a reused arena slot (first byte)");
+            assert.equal(bZero[bZero.length - 1], 0, "allocTileBytes(owner, true) zeroes a reused arena slot (last byte)");
+            bZero.fill(99);
+            while (registered.length) releaseCb(registered.pop());
+
+            // Fresh invert() of 300 x 270 on dirty reused arena slots: partial edge tiles [1,0], [0,1], [1,1] must be zeroed beyond bw x bh
+            const mkArena = new TileMaskPixels(W3, H3);
+            mkArena.invert();
+            assert.equal(mkArena.tileAt(1, 0).data[(5 * 256 + 100) * 4 + 3], 0, "fresh invert() on reused arena slot zeroes [1,0] beyond bw");
+            assert.equal(mkArena.tileAt(0, 1).data[(100 * 256 + 5) * 4 + 3], 0, "fresh invert() on reused arena slot zeroes [0,1] beyond bh");
+            assert.equal(mkArena.tileAt(1, 1).data[(100 * 256 + 100) * 4 + 3], 0, "fresh invert() on reused arena slot zeroes [1,1] beyond bw x bh");
+            while (registered.length) releaseCb(registered.pop());
+        } finally {
+            setArenaEnabled(false);
+            globalThis.FinalizationRegistry = OrigFR;
+            if (origCOI) Object.defineProperty(globalThis, "crossOriginIsolated", origCOI);
+            else delete globalThis.crossOriginIsolated;
+        }
+    }
+    console.log("  [ok] K11: whole guard on fresh invert() and combine SEL_FULL fill, frozen partial edge tile beyond-image preservation, and arena reused-slot zero guard");
 }
 
     console.log("ALL TESTS PASSED!");

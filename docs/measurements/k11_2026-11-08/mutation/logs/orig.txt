@@ -42,3 +42,16 @@ To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gem
 $ bash tools/run_gates.sh mut-orig-ed0-on --offline --tiles on editor  (rc 0, 18 s, SCUMBLE_EDITOR_ONLY=grow_feather_and_invert_are_the_answers_a_whole_image_run_gives)
 editor rc=0 2s PASS (only: grow_feather_and_invert_are_the_answers_a_whole_image_run_gives; SCUMBLE_EDITOR_ONLY, not the full gate)
 ALL PASS
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 8 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\fe85b6cf-fa72-4712-92ea-d919cd2f73df\scratch\mut_k11_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 206154 bytes, sha256 f421cac87c6fc2ab
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\fe85b6cf-fa72-4712-92ea-d919cd2f73df\scratch\mut_k11_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 165025 bytes, sha256 0aa7a4c355a41fe2
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\fe85b6cf-fa72-4712-92ea-d919cd2f73df\scratch\mut_k11_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.31s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\fe85b6cf-fa72-4712-92ea-d919cd2f73df\scratch\mut_k11_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.44s

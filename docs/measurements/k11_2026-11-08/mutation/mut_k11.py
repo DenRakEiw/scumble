@@ -26,6 +26,7 @@ SR = "crates/px/src/sel.rs"
 PJ = "renderer/editor/px/px.js"
 KJS = "renderer/editor/px/kernels_js.js"
 KJ = "renderer/editor/px/kernels.js"
+IA = "renderer/editor/inpaint_arena.js"
 IT = "renderer/editor/inpaint_tiles.js"
 
 MUTANTS = [
@@ -209,5 +210,35 @@ MUTANTS = [
         )],
         "killed",
         {"editor": ["grow_feather_and_invert_are_the_answers_a_whole_image_run_gives"]},
+    ),
+    (
+        "inpaint_tiles.js: invert fresh-tile whole guard mutated to true",
+        IT,
+        [(
+            "                    // nothing was selected here, so all of it is now: one fill, no reading\n                    const whole = bw === TILE_SIZE && bh === TILE_SIZE;",
+            "                    // nothing was selected here, so all of it is now: one fill, no reading\n                    const whole = true;",
+        )],
+        "killed: combine_test §13 writable spy and arena reused-slot edge-tile check",
+        {"px": ["sel"]},
+    ),
+    (
+        "inpaint_tiles.js: combine SEL_FULL whole guard mutated to true",
+        IT,
+        [(
+            "                    // replace or add under full coverage: the colour at 255 wherever the image is, one fill\n                    const whole = bw === TILE_SIZE && bh === TILE_SIZE;",
+            "                    // replace or add under full coverage: the colour at 255 wherever the image is, one fill\n                    const whole = true;",
+        )],
+        "killed: combine_test §13 writable spy and frozen partial edge tile beyond-image check",
+        {"px": ["sel"]},
+    ),
+    (
+        "inpaint_arena.js: allocTileBytes skips zeroing reused slot when zero is true",
+        IA,
+        [(
+            "    if (c.used_[slot]) { if (zero) bytes.fill(0); c.used_[slot] = 0; }",
+            "    if (c.used_[slot]) { if (false && zero) bytes.fill(0); c.used_[slot] = 0; }",
+        )],
+        "killed: combine_test §13 arena reused-slot zero guard",
+        {"px": ["sel"]},
     ),
 ]

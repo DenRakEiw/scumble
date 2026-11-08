@@ -5019,6 +5019,9 @@ async function selCases(js, simd, scalar, raster, K) {
     }
     K.setRoute("maskInvert", null);
     K.setKernels("js");
+    const cbRun = spawnSync(process.execPath, [path.join(ROOT, "tools", "combine_test.js")], { encoding: "utf-8" });
+    const cbFail = ((cbRun.stdout || "") + (cbRun.stderr || "")).split(/\r?\n/).find((l) => /AssertionError|\[FAIL\]|^FAIL/.test(l));
+    check("combine_test.js in js and rust modes", cbRun.status === 0 && !cbFail, cbFail || `rc=${cbRun.status}`);
 
     if (process.env.PX_BENCH) {
         // one tile, replace from RGBA (the wand's case) and add from alpha (the range's): the twin in place, Rust with
