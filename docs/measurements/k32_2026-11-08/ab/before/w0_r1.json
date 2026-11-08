@@ -1,0 +1,319 @@
+{
+ "stitch_masks_2048": {
+  "visibility": "visible",
+  "focus": true,
+  "gauss": {
+   "median": 35.78,
+   "max": 57.37,
+   "n": 3
+  },
+  "dilate": {
+   "median": 52.49,
+   "max": 62.3,
+   "n": 3
+  },
+  "max_clamp": {
+   "median": 11.08,
+   "max": 15.22,
+   "n": 3
+  },
+  "mk": {
+   "median": 5.78,
+   "max": 5.88,
+   "n": 3
+  },
+  "pxCalls": {
+   "box_blurs": 3,
+   "dilate_mask": 3
+  },
+  "note": "gaussBlur, dilate and max_clamp run through kernels.js (box_blurs, dilate_mask, mask_max_clamp); gauss and dilate include mk (also timed)"
+ },
+ "stitch_align_2048": {
+  "visibility": "visible",
+  "focus": true,
+  "picture": [
+   2560,
+   2560
+  ],
+  "prepare": {
+   "wall": 561.3,
+   "blocked": 8.9,
+   "how": "stack",
+   "laps": {
+    "selection": 7.51,
+    "maskFromAlpha": 14.3,
+    "selectionBbox": 23.83,
+    "region": 196.42,
+    "dilate": 38.47,
+    "blur": 26.48,
+    "maskMax": 9.5,
+    "maskClamp": 7.05,
+    "maskToCanvas": 24.14,
+    "alphaMask": 20.78,
+    "encode": 149.19
+   },
+   "workerPx": {
+    "box_blurs": 1,
+    "dilate_mask": 1
+   },
+   "windowPx": {}
+  },
+  "bbox": [
+   256,
+   256,
+   2048,
+   2048
+  ],
+  "emitted": [
+   2048,
+   2048
+  ],
+  "info": {
+   "align": true,
+   "color_match": true,
+   "auto_feather": true,
+   "feather": 217,
+   "grow": 112,
+   "blend": 25,
+   "paste": "selection"
+  },
+  "answer_MB": 4.6,
+  "worker": {
+   "wall": 933.13,
+   "walls": [
+    832.5,
+    1162.3,
+    933.1
+   ],
+   "blocked": 6.04,
+   "laps": {
+    "region": 3.88,
+    "decode": 49.01,
+    "resize": 0.14,
+    "dilate": 99.1,
+    "blur": 78.88,
+    "maskMax": 70.58,
+    "maskClamp": 48.03,
+    "erode": 18.51,
+    "alignCopy": 14.34,
+    "shrink": 77.51,
+    "ring": 10.01,
+    "fit": 47.52,
+    "warp": 86.05,
+    "coverage": 20.29,
+    "colorMatch": 128.15,
+    "finalAlpha": 18.15,
+    "encode": 83.78
+   },
+   "laps_sum": 885.59,
+   "rest": 53.28,
+   "how": "stack",
+   "align": {
+    "aligned": true,
+    "scale": [
+     1.01,
+     1.01
+    ],
+    "shift": [
+     -7.3,
+     -8.3
+    ]
+   },
+   "workerPx": {
+    "box_blurs": 2,
+    "dilate_mask": 2
+   },
+   "windowPx": {}
+  },
+  "window": {
+   "wall": 997.03,
+   "walls": [
+    997,
+    1055.8,
+    907
+   ],
+   "blocked": 902.65,
+   "laps": {
+    "decode": 9.59,
+    "region": 0.31,
+    "resize": 0.06,
+    "dilate": 101.36,
+    "blur": 93.94,
+    "maskMax": 25.85,
+    "maskClamp": 19.31,
+    "erode": 19.01,
+    "alignCopy": 14.76,
+    "shrink": 92.28,
+    "ring": 11.78,
+    "fit": 50.05,
+    "warp": 87.97,
+    "coverage": 21.54,
+    "colorMatch": 141.32,
+    "finalAlpha": 15.91,
+    "encode": 92.36
+   },
+   "laps_sum": 890.88,
+   "rest": 77.18,
+   "how": "window",
+   "align": {
+    "aligned": true,
+    "scale": [
+     1.01,
+     1.01
+    ],
+    "shift": [
+     -7.3,
+     -8.3
+    ]
+   },
+   "windowPx": {
+    "box_blurs": 2,
+    "dilate_mask": 2
+   }
+  }
+ },
+ "stitch_align_4096": {
+  "visibility": "visible",
+  "focus": true,
+  "picture": [
+   4608,
+   4608
+  ],
+  "prepare": {
+   "wall": 1211.6,
+   "blocked": 18.8,
+   "how": "stack",
+   "laps": {
+    "selection": 18.36,
+    "maskFromAlpha": 15.27,
+    "selectionBbox": 42.25,
+    "region": 11.22,
+    "dilate": 157.02,
+    "blur": 120.46,
+    "maskMax": 30.68,
+    "maskClamp": 32.79,
+    "maskToCanvas": 112.89,
+    "alphaMask": 95.96,
+    "encode": 548.62
+   },
+   "workerPx": {
+    "box_blurs": 1,
+    "dilate_mask": 1
+   },
+   "windowPx": {}
+  },
+  "bbox": [
+   256,
+   256,
+   4096,
+   4096
+  ],
+  "emitted": [
+   4096,
+   4096
+  ],
+  "info": {
+   "align": true,
+   "color_match": true,
+   "auto_feather": true,
+   "feather": 434,
+   "grow": 221,
+   "blend": 25,
+   "paste": "selection"
+  },
+  "answer_MB": 18.6,
+  "worker": {
+   "wall": 3486.82,
+   "walls": [
+    3839.8,
+    2914.9,
+    3486.8
+   ],
+   "blocked": 8.49,
+   "laps": {
+    "region": 12.13,
+    "decode": 191.93,
+    "resize": 0.2,
+    "dilate": 352.15,
+    "blur": 301.45,
+    "maskMax": 81.31,
+    "maskClamp": 57.48,
+    "erode": 68.26,
+    "alignCopy": 70.48,
+    "shrink": 266.09,
+    "ring": 9.93,
+    "fit": 34.24,
+    "warp": 349.77,
+    "coverage": 106.86,
+    "colorMatch": 764.88,
+    "finalAlpha": 75.14,
+    "encode": 314.93
+   },
+   "laps_sum": 3286.09,
+   "rest": 209.26,
+   "how": "stack",
+   "align": {
+    "aligned": true,
+    "scale": [
+     1.01,
+     1.01
+    ],
+    "shift": [
+     -17.5,
+     -18.5
+    ]
+   },
+   "workerPx": {
+    "box_blurs": 2,
+    "dilate_mask": 2
+   },
+   "windowPx": {}
+  },
+  "window": {
+   "wall": 3347.04,
+   "walls": [
+    3645.8,
+    3047.2,
+    3347
+   ],
+   "blocked": 2998.03,
+   "laps": {
+    "decode": 26.15,
+    "region": 0.79,
+    "resize": 0.18,
+    "dilate": 363.31,
+    "blur": 265.64,
+    "maskMax": 91.67,
+    "maskClamp": 62.08,
+    "erode": 56.82,
+    "alignCopy": 74.59,
+    "shrink": 217.38,
+    "ring": 2.87,
+    "fit": 32.83,
+    "warp": 373.09,
+    "coverage": 70.49,
+    "colorMatch": 733.22,
+    "finalAlpha": 76.26,
+    "encode": 351.99
+   },
+   "laps_sum": 3020.62,
+   "rest": 336.57,
+   "how": "window",
+   "align": {
+    "aligned": true,
+    "scale": [
+     1.01,
+     1.01
+    ],
+    "shift": [
+     -17.5,
+     -18.5
+    ]
+   },
+   "windowPx": {
+    "box_blurs": 2,
+    "dilate_mask": 2
+   }
+  }
+ }
+}

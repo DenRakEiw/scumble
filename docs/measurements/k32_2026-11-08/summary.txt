@@ -1,0 +1,109 @@
+K32 — Stitch worker laps split & mask kernels in Rust (2026-11-08)
+==================================================================
+
+Scope (docs/PLAN_WASM_BUILD.md §6 K32)
+--------------------------------------
+- Six mask kernels in `crates/px/src/maskf.rs` (scalar + wasm32 `simd128` in module `lanes`), exported from `crates/px/src/lib.rs` (ABI bumped 22 -> 23):
+  1. `alpha_to_mask(rgba_ptr, dst_ptr, n)`: `((rgba[4*i + 3] as f64) / 255.0) as f32` (SIMD promotes 4 u8 alphas to two `f64x2`, divides by `255.0`, demotes and packs to `f32x4`).
+  2. `mask_max_clamp(a_ptr, b_ptr, dst_ptr, n, clamp)`: `Math.max(a[i], b[i])` with optional `Math.min(1, Math.max(0, v))` (`out` may alias `a`, never `b`). Matches V8 `Math.max` / `Math.min` NaN (`0xffc00000`) and signed-zero (`Math.max(-0.0, +0.0) = +0.0`, `Math.max(0, -0.0) = +0.0`) bit-for-bit in both scalar and SIMD.
+  3. `mask_one_minus(src_ptr, dst_ptr, n)`: `1.0 - src[i]` in `f32` (in-place when `dst == src`).
+  4. `erode_mask(ptr, w, h, r)`: `mask_one_minus` -> `dilate` -> `mask_one_minus` in one wasm call, preserving `1 - (1 - x) != x` in `f32`.
+  5. `mask_to_rgba(mask_ptr, dst_ptr, n, mode)`:
+     - mode 0 (white): `(255, 255, 255, round(clamp01(m[i]) * 255))`
+     - mode 1 (luminance): `(v, v, v, 255)` with `v = round(clamp01(m[i]) * 255)`
+     - mode 2 (alphaMask): clears `dst[4*i..4*i+4]` to `(0, 0, 0, 0)` where `m[i] > 0.5`, else sets `dst[4*i+3] = 255`.
+  6. `mask_bounds_f32(mask_ptr, w, h, out_ptr)` -> `u32` (1 if any `m > 0.5`, writing `[x0, y0, x1, y1]` with exclusive `x1, y1`; 0 if empty).
+- JS twins in `renderer/editor/px/kernels_js.js`, `Px` wrappers in `renderer/editor/px/px.js`, and routed wrappers in `renderer/editor/px/kernels.js` under route `"stitchMask"` (`ROUTE_KINDS.stitchMask = "kernel"`).
+- Wired into `renderer/editor/stitch.js` (`maskFromAlpha`, `maskMaxClamped`, `erode`, `maskToCanvas`, `selectionBbox`, `alphaMask`, `fillMasked`, `finishPixels`).
+
+Wasm Binary Sizes
+-----------------
+- `renderer/editor/px/px.wasm`:        168,058 B -> 174,924 B (+6,866 B, sha256 `b44b05efa837b086`)
+- `renderer/editor/px/px_scalar.wasm`: 145,445 B -> 148,341 B (+2,896 B, sha256 `dcbe2ea533cc0438`)
+
+1. Kernel Microbenchmark (`PX_BENCH=1 PX_ONLY=mask node tools/px_test.js`, 1492 x 1492)
+---------------------------------------------------------------------------------------
+  Kernel            Rust SIMD    Rust Scalar    JS Twin    SIMD Speedup
+  ----------------  -----------  -------------  ---------  ------------
+  alpha_to_mask        2.55 ms        3.37 ms    3.52 ms         1.38x
+  mask_max_clamp       3.13 ms        6.84 ms    5.17 ms         1.65x
+  mask_one_minus       1.75 ms        1.88 ms    2.10 ms         1.20x
+  erode_mask          18.12 ms       20.35 ms   47.26 ms         2.61x
+  mask_to_rgba         4.78 ms        4.46 ms    6.60 ms         1.38x
+  mask_bounds_f32      0.48 ms        0.52 ms    2.73 ms         5.69x
+
+2. `w0_bench.py --rows=stitch_masks_2048,stitch_align_2048,stitch_align_4096` (3 alternating rounds, port 9615)
+---------------------------------------------------------------------------------------------------------------
+a) `stitch_masks_2048` (2048 x 2048, 3 calls per round):
+  - `gauss`:      before  35.78 ms [35.8, 34.1, 41.9] | after  34.02 ms [44.9, 34.0, 32.3] (delta  -1.76 ms)
+  - `dilate`:     before  47.15 ms [52.5, 39.6, 47.1] | after  40.67 ms [46.0, 40.7, 39.8] (delta  -6.48 ms)
+  - `max_clamp`:  before  13.18 ms [11.1, 14.2, 13.2] | after   7.13 ms [ 9.3,  7.1,  6.7] (delta  -6.05 ms, -45.9%)
+  - `mk`:         before   5.58 ms [ 5.8,  5.6,  5.6] | after   7.63 ms [ 9.0,  7.6,  5.0] (delta  +2.05 ms)
+  - `pxCalls`:    before `{"box_blurs": 3, "dilate_mask": 3}` -> after `{"box_blurs": 3, "dilate_mask": 3, "mask_max_clamp": 3}`
+
+b) `stitch_align_2048` (2560 x 2560 picture, 2048 x 2048 crop, feather 217, grow 112, blend 25):
+  - `prepare.wall`:         before 503.40 ms [561.3, 450.3, 503.4] | after 426.30 ms [519.9, 426.3, 394.6] (delta -77.10 ms, -15.3%)
+    - `prep.maskFromAlpha`: before  13.48 ms [14.3, 13.5, 13.5]    | after  16.18 ms [18.9, 16.2, 15.2]    (delta  +2.70 ms, includes first wasm grow in worker)
+    - `prep.selectionBbox`: before  23.83 ms [23.8, 24.8, 23.2]    | after   6.46 ms [ 6.7,  6.5,  5.7]    (delta -17.37 ms, 3.69x)
+    - `prep.dilate`:        before  38.73 ms [38.5, 38.7, 41.0]    | after  33.80 ms [39.1, 33.0, 33.8]    (delta  -4.93 ms)
+    - `prep.blur`:          before  24.80 ms [26.5, 24.0, 24.8]    | after  27.44 ms [27.4, 29.0, 24.9]    (delta  +2.64 ms)
+    - `prep.maskMax`:       before   8.94 ms [ 9.5,  8.9,  8.7]    | after   5.32 ms [ 5.3,  6.8,  5.3]    (delta  -3.62 ms, 1.68x)
+    - `prep.maskToCanvas`:  before  24.14 ms [24.1, 22.7, 26.9]    | after  17.63 ms [17.6, 21.3, 15.5]    (delta  -6.51 ms)
+    - `prep.alphaMask`:     before  20.75 ms [20.8, 20.2, 20.8]    | after  10.57 ms [12.7, 10.6, 10.1]    (delta -10.18 ms, 1.96x)
+    - `prep.workerPx`:      before `{"box_blurs": 1, "dilate_mask": 1}` -> after `{"alpha_to_mask": 1, "mask_bounds_f32": 2, "box_blurs": 1, "dilate_mask": 1, "mask_max_clamp": 1, "mask_to_rgba": 2}`
+  - `worker.wall`:          before 874.38 ms [933.1, 874.4, 873.3] | after 785.43 ms [872.8, 785.4, 761.0] (delta -88.95 ms, -10.2%)
+  - `worker.laps_sum`:      before 834.22 ms [885.6, 834.2, 822.4] | after 743.23 ms [820.2, 743.2, 710.7] (delta -90.99 ms, -10.9%)
+    - `worker.dilate`:      before  98.59 ms [99.1, 90.3, 98.6]    | after  47.56 ms [50.6, 47.6, 45.3]    (delta -51.03 ms; note: before included erode's inner dilate)
+    - `worker.erode`:       before  17.50 ms [18.5, 16.2, 17.5]    | after  59.72 ms [59.7, 62.1, 49.0]    (delta +42.22 ms; combined dilate+erode: 116.09 -> 107.28 ms, -8.81 ms)
+    - `worker.maskMax`:     before  63.59 ms [70.6, 63.6, 27.8]    | after  16.47 ms [17.7, 16.5, 15.6]    (delta -47.12 ms, 3.86x)
+    - `worker.workerPx`:    before `{"box_blurs": 2, "dilate_mask": 2}` -> after `{"box_blurs": 2, "dilate_mask": 1, "erode_mask": 1, "mask_max_clamp": 2, "mask_one_minus": 1}`
+  - `window.wall`:          before 964.57 ms [997.0, 964.6, 931.7] | after 910.17 ms [999.0, 910.2, 792.5] (delta -54.40 ms, -5.6%)
+  - `window.laps_sum`:      before 887.24 ms [890.9, 887.2, 820.5] | after 813.66 ms [889.4, 813.7, 705.7] (delta -73.58 ms, -8.3%)
+    - `window.dilate+erode`:before 118.21 ms (99.41 + 18.80)       | after 121.52 ms (61.05 + 60.47)       (delta  +3.31 ms)
+    - `window.maskMax`:     before  26.28 ms [25.9, 29.9, 26.3]    | after  16.62 ms [17.4, 16.6, 15.4]    (delta  -9.66 ms, 1.58x)
+
+c) `stitch_align_4096` (4608 x 4608 picture, 4096 x 4096 crop, feather 434, grow 221, blend 25):
+  - `prepare.wall`:         before 1141.60 ms [1211.6, 1141.6, 1056.3] | after 1040.10 ms [1077.7, 1040.1, 887.8] (delta -101.50 ms, -8.9%)
+    - `prep.selectionBbox`: before   42.25 ms [42.2, 46.6, 41.3]       | after    4.19 ms [ 4.2,  7.8,  4.2]       (delta  -38.06 ms, 10.08x)
+    - `prep.maskMax`:       before   33.13 ms [30.7, 33.1, 35.2]       | after   23.55 ms [23.9, 23.6, 20.3]       (delta   -9.58 ms, 1.41x)
+    - `prep.maskToCanvas`:  before   89.07 ms [112.9, 89.1, 87.2]      | after   66.27 ms [66.3, 69.4, 58.9]       (delta  -22.80 ms, 1.34x)
+    - `prep.alphaMask`:     before   84.03 ms [96.0, 84.0, 66.7]       | after   42.29 ms [42.3, 46.2, 37.9]       (delta  -41.74 ms, 1.99x)
+  - `worker.wall`:          before 3036.31 ms [3486.8, 3036.3, 3034.1] | after 2962.09 ms [2962.1, 3109.1, 2830.0] (delta  -74.22 ms, -2.4%)
+  - `worker.laps_sum`:      before 2855.04 ms [3286.1, 2855.0, 2836.9] | after 2791.75 ms [2791.8, 2926.6, 2664.2] (delta  -63.29 ms)
+    - `worker.dilate+erode`:before  367.55 ms (306.01 + 61.54)         | after  346.90 ms (176.96 + 169.94)        (delta  -20.65 ms)
+    - `worker.maskMax`:     before   73.27 ms [81.3, 72.9, 73.3]       | after   52.95 ms [64.0, 53.0, 52.8]       (delta  -20.32 ms, 1.38x)
+  - `window.wall`:          before 3056.99 ms [3347.0, 2992.1, 3057.0] | after 2965.28 ms [3048.9, 2965.3, 2833.6] (delta  -91.71 ms, -3.0%)
+  - `window.laps_sum`:      before 2742.16 ms [3020.6, 2684.0, 2742.2] | after 2645.87 ms [2724.7, 2645.9, 2556.7] (delta  -96.29 ms)
+    - `window.dilate+erode`:before  396.67 ms (339.85 + 56.82)         | after  370.20 ms (185.91 + 184.29)        (delta  -26.47 ms)
+    - `window.maskMax`:     before   91.67 ms [91.7, 87.0, 102.4]      | after   55.58 ms [55.6, 61.5, 52.0]       (delta  -36.09 ms, 1.65x)
+
+3. `native_test.py 15000x10000 --no-profile provider_crop` (1492 x 1492 crop, 3 alternating rounds)
+---------------------------------------------------------------------------------------------------
+  - `wall`:                before 765.00 ms [725.0, 765.0, 828.0] | after 644.00 ms [646.0, 643.0, 644.0] (delta -121.00 ms, -15.8%)
+  - `prepMs`:              before 224.30 ms [224.3, 253.5, 220.9] | after 180.80 ms [180.1, 185.4, 180.8] (delta  -43.50 ms, -19.4%)
+  - `prep.SUM`:            before 169.18 ms [169.2, 182.0, 163.1] | after 137.41 ms [137.4, 142.8, 133.1] (delta  -31.77 ms, -18.8%)
+    - `prep.maskFromAlpha`:before   6.21 ms [ 5.3,  6.2, 11.8]    | after   3.98 ms [ 4.1,  4.0,  3.9]    (delta   -2.23 ms, 1.56x)
+    - `prep.selectionBbox`:before   4.99 ms [ 4.9,  5.0,  5.6]    | after   0.61 ms [ 0.6,  0.5,  1.4]    (delta   -4.38 ms, 8.18x)
+    - `prep.maskMax`:      before   5.11 ms [ 4.6,  5.1,  6.0]    | after   3.09 ms [ 3.5,  3.1,  3.1]    (delta   -2.02 ms, 1.65x)
+    - `prep.maskToCanvas`: before  19.67 ms [19.8, 19.4, 19.7]    | after  11.20 ms [11.1, 11.3, 11.2]    (delta   -8.47 ms, 1.76x)
+    - `prep.alphaMask`:    before   4.52 ms [ 4.5,  4.6,  4.5]    | after   1.19 ms [ 1.3,  1.1,  1.2]    (delta   -3.33 ms, 3.80x)
+  - `finish.SUM`:          before 451.44 ms [438.3, 451.4, 528.5] | after 376.30 ms [375.0, 386.2, 376.3] (delta  -75.14 ms, -16.6%)
+    - `finish.dilate+erode`:before 118.76 ms (101.79 + 16.97)     | after  93.52 ms (49.11 + 44.41)       (delta  -25.24 ms, 1.27x)
+    - `finish.maskMax`:    before  24.91 ms [24.9, 23.6, 25.2]    | after  14.50 ms [14.5, 15.5, 14.0]    (delta  -10.41 ms, 1.72x)
+  - `stitchCalls`:
+    - before: `{"box_blurs": 3, "dilate_mask": 3}`
+    - after:  `{"alpha_to_mask": 2, "mask_bounds_f32": 2, "box_blurs": 3, "dilate_mask": 2, "mask_max_clamp": 3, "mask_to_rgba": 3, "erode_mask": 1, "mask_one_minus": 1}`
+
+4. Decision Rule
+----------------
+All six K32 mask kernels win both in microbenchmarks and on the end-to-end stitch benchmarks (`w0_bench` and `native_test provider_crop`). Route `"stitchMask"` stays `"rust"` in `DEFAULT_ROUTES`.
+
+5. Gates & Mutation Round
+-------------------------
+- Gates (`run_gates_both.sh k32 --ports 9615,9616 --offline`):
+  - `k32-tiles`:  `lint rc=0 9s`, `types rc=0 5s`, `pixels rc=0 10s PASS`, `editor rc=0 170s PASS`, `generate rc=0 79s PASS`, `size rc=0 2s PASS`, `transparent rc=0 1s PASS` -> ALL PASS.
+  - `k32-canvas`: `lint rc=0 9s`, `types rc=0 6s`, `pixels rc=0 12s PASS`, `editor rc=0 145s PASS`, `generate rc=0 77s PASS`, `size rc=0 3s PASS`, `transparent rc=0 1s PASS` -> ALL PASS.
+  - `node_test.py --node dist/gates/nodecopy`: PASS (all 37 node steps pass; `build_node.py` static check notes a pre-existing `host.referencedFileKeys` match in a comment of `inpaint_canvas.js` from commit `63b93c9` on `wasm-kernels`).
+- Mutation round (`docs/measurements/k32_2026-11-08/mutation/results.txt`):
+  - `orig`: build identical (`True`), full `px_test` green, focused `px_test (only: mask)` green, focused `editor (an_aligned_answer_shows_no_repeated_edge)` green.
+  - `17 killed (0 of them only on the re-check), 0 survived of 17; 0 not as expected; 242 s`.

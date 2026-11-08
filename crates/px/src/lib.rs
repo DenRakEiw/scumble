@@ -44,11 +44,12 @@ fn align_for(bytes: usize) -> usize {
 }
 
 /// Bumped whenever an export changes its signature or learns a new op (20: height_normals, shadow_march height convention;
-/// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes);
+/// 21: sel_combine; 22: blur_rgba, sharpen_rgba, dab_scratch_bytes; 23: alpha_to_mask, mask_max_clamp, mask_one_minus,
+/// erode_mask, mask_to_rgba, mask_bounds_f32);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    22
+    23
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -142,10 +143,75 @@ pub unsafe extern "C" fn png_unfilter_rows(lines: *mut u8, rows: usize, row_byte
 
 // ---- float masks (a provider run's crop and stitch) --------------------------------------
 
+/// The alpha channel of `n` RGBA8 pixels (`rgba`, `n * 4` bytes) as a 0..1 float mask (`dst`, `n` f32):
+/// `((rgba[i * 4 + 3] as f64) / 255.0) as f32`.
+#[no_mangle]
+pub unsafe extern "C" fn alpha_to_mask(rgba: *const u8, dst: *mut f32, n: usize) {
+    if n == 0 || rgba.is_null() || dst.is_null() {
+        return;
+    }
+    maskf::alpha_to_mask(slice::from_raw_parts(rgba, n * 4), slice::from_raw_parts_mut(dst, n));
+}
+
+/// Element-wise `Math.max(a[i], b[i])` (when `b` is not null) and/or `Math.min(1, Math.max(0, x))` (when `clamp != 0`)
+/// over `n` floats into `dst`. `dst` may alias `a`, never `b`.
+#[no_mangle]
+pub unsafe extern "C" fn mask_max_clamp(a: *const f32, b: *const f32, dst: *mut f32, n: usize, clamp: u32) {
+    if n == 0 || a.is_null() || dst.is_null() {
+        return;
+    }
+    if a != dst as *const f32 {
+        core::ptr::copy(a, dst, n);
+    }
+    let b = if b.is_null() { None } else { Some(slice::from_raw_parts(b, n)) };
+    maskf::mask_max_clamp(slice::from_raw_parts_mut(dst, n), b, clamp != 0);
+}
+
+/// `1.0 - src[i]` for `n` floats into `dst` (`dst` may alias `src`).
+#[no_mangle]
+pub unsafe extern "C" fn mask_one_minus(src: *const f32, dst: *mut f32, n: usize) {
+    if n == 0 || src.is_null() || dst.is_null() {
+        return;
+    }
+    if src != dst as *const f32 {
+        core::ptr::copy(src, dst, n);
+    }
+    maskf::mask_one_minus(slice::from_raw_parts_mut(dst, n));
+}
+
 /// Square dilation of a w x h mask of f32 by `r` pixels, in place, never below 0 (a whole job: it allocates its scratch).
 #[no_mangle]
 pub unsafe extern "C" fn dilate_mask(data: *mut f32, w: usize, h: usize, r: usize) {
     maskf::dilate(slice::from_raw_parts_mut(data, w * h), w, h, r);
+}
+
+/// Square erosion of a w x h mask of f32 by `r` pixels, in place (`1 - dilate(1 - m, r)` in f32).
+#[no_mangle]
+pub unsafe extern "C" fn erode_mask(data: *mut f32, w: usize, h: usize, r: usize) {
+    if w == 0 || h == 0 || data.is_null() {
+        return;
+    }
+    maskf::erode(slice::from_raw_parts_mut(data, w * h), w, h, r);
+}
+
+/// A float mask `src` (`n` f32) as RGBA8 bytes `dst` (`n * 4` bytes): `mode` 0 white `[255, 255, 255, v]`,
+/// 1 luminance `[v, v, v, 255]`, 2 alpha `[0, 0, 0, src[i] > 0.5 ? 0 : 255]`.
+#[no_mangle]
+pub unsafe extern "C" fn mask_to_rgba(src: *const f32, dst: *mut u8, n: usize, mode: u32) {
+    if n == 0 || src.is_null() || dst.is_null() {
+        return;
+    }
+    maskf::mask_to_rgba(slice::from_raw_parts(src, n), slice::from_raw_parts_mut(dst, n * 4), mode);
+}
+
+/// Bounding box `[x0, y0, x1, y1]` (right and bottom exclusive, 4 i32 at `bounds`) of the pixels of `src` (`w` x `h` f32)
+/// with `src[i] > 0.5`. Returns 1 when not empty, else 0.
+#[no_mangle]
+pub unsafe extern "C" fn mask_bounds_f32(src: *const f32, w: usize, h: usize, bounds: *mut i32) -> i32 {
+    if w == 0 || h == 0 || src.is_null() || bounds.is_null() {
+        return 0;
+    }
+    maskf::mask_bounds_f32(slice::from_raw_parts(src, w * h), w, h, slice::from_raw_parts_mut(bounds, 4))
 }
 
 /// Box blurs of the radii `r0`, `r1`, `r2` (0: none), rows then columns each, in place with clamped edges.

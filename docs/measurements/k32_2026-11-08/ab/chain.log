@@ -1,0 +1,47 @@
+lock: taken after 0 s
+[05:04:56] lock: taken (K32 measuring (chain-e, port 9615) 32332 2026-11-08T05:04:56) and /f/canvas/.claude/coord/machine_busy.lock written
+[05:04:56] after: 29f6749 + working tree, px.wasm 174924 B (b44b05efa837b086), px_scalar.wasm 148341 B
+[05:04:56] before: /c/Users/schoeneberg/.gemini/antigravity/brain/cf08cea4-66f3-4c19-a3be-ed2784ff8190/scratch/before_tree_k32, px.wasm 168058 B (5ed9fb4b74c13eed), px_scalar.wasm 145445 B
+[05:04:56] == round 1
+[05:05:09] before r1: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:05:46] w0 rc=0
+closed
+[05:06:02] before r1: native_test 15000x10000 --no-profile provider_crop
+[05:06:10] native rc=0
+closed
+[05:06:26] after r1: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:07:01] w0 rc=0
+closed
+[05:07:17] after r1: native_test 15000x10000 --no-profile provider_crop
+[05:07:25] native rc=0
+closed
+[05:07:29] == round 2
+[05:07:40] after r2: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:08:14] w0 rc=0
+closed
+[05:08:30] after r2: native_test 15000x10000 --no-profile provider_crop
+[05:08:37] native rc=0
+closed
+[05:08:53] before r2: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:09:27] w0 rc=0
+closed
+[05:09:43] before r2: native_test 15000x10000 --no-profile provider_crop
+[05:09:51] native rc=0
+closed
+[05:09:56] == round 3
+[05:10:06] before r3: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:10:42] w0 rc=0
+closed
+[05:10:57] before r3: native_test 15000x10000 --no-profile provider_crop
+[05:11:06] native rc=0
+closed
+[05:11:21] after r3: w0_bench stitch_masks_2048,stitch_align_2048,stitch_align_4096
+[05:11:53] w0 rc=0
+closed
+[05:12:08] after r3: native_test 15000x10000 --no-profile provider_crop
+[05:12:16] native rc=0
+closed
+[05:12:20] px_bench: PX_BENCH=1 PX_ONLY=mask node tools/px_test.js
+[05:12:23] done
+lock: released
+no instance on 9615 Cannot connect to host 127.0.0.1:9615 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

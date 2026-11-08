@@ -1,0 +1,8 @@
+lint rc=0 9s 
+types rc=0 6s 
+pixels rc=0 12s PASS
+editor rc=0 145s PASS
+generate rc=0 77s PASS
+size rc=0 3s PASS
+transparent rc=0 1s PASS
+ALL PASS

@@ -44,9 +44,10 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * (inpaint_relight.js `marchOnPool`). `relightFeed` (K12b), read on the window too: how many stripes of all full marches
  * are posted to the pool at once (inpaint_relight.js `feedMarch`); absent, the pool's size + 1; 0 posts every stripe
  * at once (K12). `dabBlur` (K26): `blurRGBA` and `sharpenRGBA`, the blur and sharpen brushes and frequency separation's
- * blur, "js" for the twins in inpaint_stroke.js.
+ * blur, "js" for the twins in inpaint_stroke.js. `stitchMask` (K32): the mask kernels of stitch.js (`alphaToMask`,
+ * `maskMaxClamp`, `maskOneMinus`, `erodeMask`, `maskToRgba`, `maskBoundsF32`).
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", stitchMask: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -370,6 +371,39 @@ export function pngUnfilterRows(lines, rows, rowBytes, bpp, prev, rgba = null) {
     return J.pngUnfilterRows(lines, rows, rowBytes, bpp, prev, rgba);
 }
 
+/** The alpha channel of RGBA8 `rgba` as a 0..1 Float32Array (a provider run's masks, stitch.js; K32). */
+export function alphaToMask(rgba, out = null) {
+    const p = rustPx("stitchMask");
+    if (p) {
+        try { return p.alphaToMask(rgba, out); }
+        catch (err) { if (!recovered(p, err, "alpha_to_mask")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.alphaToMask(rgba, out);
+}
+
+/** Element-wise `Math.max(a[i], b[i])` and/or `Math.min(1, Math.max(0, x))` into `out` (stitch.js; K32). */
+export function maskMaxClamp(a, b = null, clamp = false, out = null) {
+    const p = rustPx("stitchMask");
+    if (p) {
+        try { return p.maskMaxClamp(a, b, clamp, out); }
+        catch (err) { if (!recovered(p, err, "mask_max_clamp")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.maskMaxClamp(a, b, clamp, out);
+}
+
+/** `1 - src[i]` for every float of `src`, into `out` (stitch.js; K32). */
+export function maskOneMinus(src, out = null) {
+    const p = rustPx("stitchMask");
+    if (p) {
+        try { return p.maskOneMinus(src, out); }
+        catch (err) { if (!recovered(p, err, "mask_one_minus")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.maskOneMinus(src, out);
+}
+
 /** Square dilation of a float mask by r pixels (a provider run's masks, stitch.js); a new Float32Array. */
 export function dilateMask(data, w, h, r) {
     const p = rustPx();
@@ -379,6 +413,39 @@ export function dilateMask(data, w, h, r) {
         finally { releaseIfLarge(); }
     }
     return J.dilateMask(data, w, h, r);
+}
+
+/** Square erosion of a float mask by r pixels (`1 - dilate(1 - m, r)`, stitch.js; K32); a new Float32Array. */
+export function erodeMask(data, w, h, r) {
+    const p = rustPx("stitchMask");
+    if (p) {
+        try { return p.erodeMask(data, w, h, r); }
+        catch (err) { if (!recovered(p, err, "erode_mask")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.erodeMask(data, w, h, r);
+}
+
+/** A 0..1 float mask `src` as RGBA8 (`mode` 0 white, 1 luminance, 2 alpha) into `out` (stitch.js; K32). */
+export function maskToRgba(src, mode = 0, out = null) {
+    const p = rustPx("stitchMask");
+    if (p) {
+        try { return p.maskToRgba(src, mode, out); }
+        catch (err) { if (!recovered(p, err, "mask_to_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.maskToRgba(src, mode, out);
+}
+
+/** Bounding box `[x0, y0, x1, y1]` (right and bottom exclusive) of `src` (`w` x `h` Float32Array) where `> 0.5`, or null (stitch.js; K32). */
+export function maskBoundsF32(src, w, h) {
+    const p = rustPx("stitchMask");
+    if (p) {
+        try { return p.maskBoundsF32(src, w, h); }
+        catch (err) { if (!recovered(p, err, "mask_bounds_f32")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.maskBoundsF32(src, w, h);
 }
 
 /**
