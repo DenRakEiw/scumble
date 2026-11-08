@@ -9291,7 +9291,20 @@ try {
             throw new Error("K29: Escape or error during a liquify drag did not free the window and restore the field: " + JSON.stringify(k29));
         }
     }
-    out.here = { keys: h2.keys, mid: mid2, undo: u2, pool, poolStats: h3.stats, split, splitStats: h4.stats, hereStats: h2.stats, k28, k29 };
+    // K30 (docs/PLAN_WASM_BUILD.md §4.9): InpaintEditor.liquifyDabKernel defaults to K.liquifyDab (dense twin),
+    // and setting it to null (Map-based dab) gives the exact same field cells and baked bytes
+    const dabK0 = IE.liquifyDabKernel;
+    const k30 = { defaultIsDense: dabK0 === K.liquifyDab, mapSame: false };
+    await ed.undoStep();
+    try {
+        IE.liquifyDabKernel = null;
+        await landed("the second push on the Map-based dab", L, pts2, { where: "here" });
+        k30.mapSame = digest(L) === dHere && fieldKey() === cHere;
+    } finally {
+        IE.liquifyDabKernel = dabK0;
+    }
+    if (!k30.defaultIsDense || !k30.mapSame) throw new Error("K30: dense liquifyDab and Map-based dab differed: " + JSON.stringify(k30));
+    out.here = { keys: h2.keys, mid: mid2, undo: u2, pool, poolStats: h3.stats, split, splitStats: h4.stats, hereStats: h2.stats, k28, k29, k30 };
     if (!mid2 || !u2.same || !u2.cells) throw new Error("the second push: the layer changed during it, or its undo did not give the layer and the field back: " + JSON.stringify(out.here));
     if (!pool.bytes || !pool.cells) throw new Error("the pool's bake is not the one made here: " + JSON.stringify(out.here));
     if (!split.bytes || !split.cells || !(h4.stats && h4.stats.splits > 0)) throw new Error("the bake split into small blocks is not the same, or did not split: " + JSON.stringify(out.here));
@@ -9819,6 +9832,37 @@ try {
     await drag([540, 400], [660, 400], 12);
     out.thawedMoves = { moved: dig(L.px, 585, 385, 30, 30) !== thawed0, left: dig(L.px, 150, 375, 250, 50) === left0 };
     if (!out.thawedMoves.moved || !out.thawedMoves.left) throw new Error("after the thaw: " + JSON.stringify(out.thawedMoves));
+
+    // 3b (K30): with both a selection and the freeze band active, the dense twin (liquifyThaw.planes) and the Map-based dab
+    // produce the exact same field cells and layer bytes
+    {
+        const dab0 = IE.liquifyDabKernel;
+        const cellsKey = (cells) => Array.from(cells.keys()).sort((a, b) => a - b).map((k) => { const c = cells.get(k); return k + ":" + fnv(new Uint8Array(c.buffer, c.byteOffset, c.byteLength)); }).join(",");
+        const dBefore = dig(L.px, 0, 0, W, H);
+        let dDense = "", cDense = "", dMap = "", cMap = "";
+        ed.sel.fill([480, 330, 740, 470], "#ff0000");
+        ed.markSelectionChanged();
+        ed.getBounds();
+        mode("push", 220, 0.45);
+        try {
+            await drag([500, 360], [680, 430], 10);
+            dDense = dig(L.px, 0, 0, W, H);
+            cDense = cellsKey(ed.liq.field.cells);
+            await ed.undoStep();
+            IE.liquifyDabKernel = null;
+            await drag([500, 360], [680, 430], 10);
+            dMap = dig(L.px, 0, 0, W, H);
+            cMap = cellsKey(ed.liq.field.cells);
+            await ed.undoStep();
+        } finally {
+            IE.liquifyDabKernel = dab0;
+            ed.sel.clear();
+            ed.markSelectionChanged();
+            ed.getBounds();
+        }
+        out.k30SelFreeze = { sameBytes: dDense === dMap, sameCells: cDense === cMap, moved: dDense !== dBefore };
+        if (!out.k30SelFreeze.sameBytes || !out.k30SelFreeze.sameCells || !out.k30SelFreeze.moved) throw new Error("K30 selection + freeze thaw planes differed from Map-based dab: " + JSON.stringify(out.k30SelFreeze));
+    }
 
     // 4. freeze the moved part again, then Restore all: it keeps its move, the rest comes back to the source
     mode("freeze", 100, 0.8);

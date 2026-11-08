@@ -1,0 +1,4 @@
+pixels rc=0 12s PASS
+brush rc=0 15s RESULT PASS
+editor rc=0 156s PASS
+ALL PASS

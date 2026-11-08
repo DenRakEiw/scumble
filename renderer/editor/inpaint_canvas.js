@@ -17,7 +17,7 @@ import { FILTERS, FILTER_IDS, filterDefaults, scaleFilterParams, applyFilter, ma
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces, runShader, glToCanvas } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA, toneRGBA, spongeRGBA, freqSeparate, allocLiquifyWindow, freeLiquifyWindow, liquifyPreview } from "./px/kernels.js";
+import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA, toneRGBA, spongeRGBA, freqSeparate, allocLiquifyWindow, freeLiquifyWindow, liquifyPreview, liquifyDab } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds, selModeOf, selectionGco, tilesSource, bytesSource, rectSource } from "./inpaint_raster.js";
 import { GLCompositor, BLEND_FN_GLSL } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
@@ -38,7 +38,7 @@ import { LAYERED_EXT, isPsd, isOra, readPsd, readOra, inflateAtMost } from "./in
 import { THEME } from "./inpaint_theme.js";
 import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap } from "./inpaint_resample.js";
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
-import { LiquifyField, gridStep, liquifyFalloff } from "./inpaint_liquify.js";
+import { LiquifyField, gridStep, liquifyFalloff, thawPlane } from "./inpaint_liquify.js";
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
 import { promptPayload, selectionBoxIdOf } from "./boxes_model.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
@@ -10974,13 +10974,20 @@ class InpaintEditor {
         const fr = this.liquifyFreezeOf(liq.layer), sel = this.getBounds() ? this.liquifySelThaw(liq) : null;
         if (!fr || !fr.cells.size) return sel;
         const n = fr.n, sh = 8 - fr.ls, m = n - 1;
+        const fCell = (key) => fr.cells.get(key) || null;
         let lk = -1, lc = null;
         const free = (i, j) => {
             const key = ((j >> sh) << 16) | (i >> sh);
-            if (key !== lk) { lk = key; lc = fr.cells.get(key) || null; }
+            if (key !== lk) { lk = key; lc = fCell(key); }
             return lc ? 1 - lc[(j & m) * n + (i & m)] / 255 : 1;
         };
-        return sel ? (i, j) => sel(i, j) * free(i, j) : free;
+        if (!sel) {
+            free.planes = (i0, j0, ow, oh) => ({ sel: null, freeze: thawPlane(fCell, n, sh, i0, j0, ow, oh) });
+            return free;
+        }
+        const both = (i, j) => sel(i, j) * free(i, j);
+        both.planes = (i0, j0, ow, oh) => ({ sel: sel.planes(i0, j0, ow, oh).sel, freeze: thawPlane(fCell, n, sh, i0, j0, ow, oh) });
+        return both;
     }
 
     /** The selection's part of `liquifyThaw`. */
@@ -11000,11 +11007,13 @@ class InpaintEditor {
             return c;
         };
         let lk = -1, lc = null;
-        return (i, j) => {
+        const fn = (i, j) => {
             const key = ((j >> sh) << 16) | (i >> sh);
             if (key !== lk) { lk = key; lc = cellOf(key); }
             return lc[(j & m) * n + (i & m)] / 255;
         };
+        fn.planes = (i0, j0, ow, oh) => ({ sel: thawPlane(cellOf, n, sh, i0, j0, ow, oh), freeze: null });
+        return fn;
     }
 
     /** The press: the session, the stroke, and the first dab of the modes that act where they are held. */
@@ -11054,7 +11063,7 @@ class InpaintEditor {
         if (p.freeze) { this.liquifyFreezeDab(p, x, y); return; }
         const liq = p.liq, r = Math.max(2 * liq.s, this.brushSize / 2);
         const amount = Math.min(1, ((this.liquifyOpts ? this.liquifyOpts.strength : 50) / 100) * (p.pressure || 1));
-        const box = liq.field.dab(delta ? "push" : p.mode, x, y, r, this.activeHardness(), amount, delta, p.thaw, p.before);
+        const box = liq.field.dab(delta ? "push" : p.mode, x, y, r, this.activeHardness(), amount, delta, p.thaw, p.before, InpaintEditor.liquifyDabKernel);
         if (!box) return;
         const L = p.layer, b = [box[0] + L.x, box[1] + L.y, box[2] + L.x, box[3] + L.y];
         const grow = (a) => (!a ? b.slice() : [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]);
@@ -17925,6 +17934,9 @@ class InpaintEditor {
 
     /** Grow, shrink, swirl and restore dab this often (ms) while the button is held still; 0 turns the timer off (tests). */
     static liquifyRateMs = 33;
+
+    /** The dense dab kernel `liquifyDab` passes to `LiquifyField.dab` (K30; `null` forces the Map-based reference loop). */
+    static liquifyDabKernel = liquifyDab;
 
     /** Liquify's preview of a box larger than this many pixels is computed at a coarser resolution and scaled up. */
     static liquifyPreviewMax = 256 * 1024;

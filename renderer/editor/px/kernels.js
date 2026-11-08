@@ -26,7 +26,7 @@
 import * as J from "./kernels_js.js";
 import { loadPx, Px, PxOutOfMemory, pxLaps } from "./px.js";
 import { resampleBlock as resampleBlockJS, resampleTable } from "../inpaint_resample.js";
-import { liquifyBlock as liquifyBlockJS, previewBlock as previewBlockJS } from "../inpaint_liquify.js";
+import { liquifyBlock as liquifyBlockJS, previewBlock as previewBlockJS, liquifyDabNodes } from "../inpaint_liquify.js";
 // the retouch brushes' twins live with the brushes (K26, K27; inpaint_stroke.js imports nothing, so no cycle)
 import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin, toneRGBA as toneRGBATwin, spongeRGBA as spongeRGBATwin, freqSplit as freqSplitTwin } from "../inpaint_stroke.js";
 
@@ -47,12 +47,12 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * at once (K12). `dabBlur` (K26): `blurRGBA` and `sharpenRGBA`, the blur and sharpen brushes and frequency separation's
  * blur, "js" for the twins in inpaint_stroke.js. `dabTone`, `dabSponge` and `freqSplit` (K27): `toneRGBA` (the dodge and
  * burn brush), `spongeRGBA` (saturate, desaturate) and frequency separation's split, the same way. `liquifyBlock`
- * (K28) and `liquifyPreview` (K29): Liquify's bake and live-stroke preview kernels (`inpaint_liquify.js`
- * `liquifyBlock`, `previewBlock`). `stitchMask` (K32): the mask kernels of
+ * (K28), `liquifyPreview` (K29) and `liquifyDab` (K30): Liquify's bake, live-stroke preview and dense dab kernels
+ * (`inpaint_liquify.js` `liquifyBlock`, `previewBlock`, `liquifyDabNodes`). `stitchMask` (K32): the mask kernels of
  * stitch.js (`alphaToMask`, `maskMaxClamp`, `maskOneMinus`, `erodeMask`, `maskToRgba`, `maskBoundsF32`).
  * `colorMatch` and `blendAlpha` (K33): `colorMatchRgba` and `blendAlpha` of stitch.js.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -398,6 +398,11 @@ export function liquifyPreview(win, field, ox, oy, inv, out, bw, bh) {
     }
     previewBlockJS(win, field, ox, oy, inv, out, bw, bh);
     return out;
+}
+
+/** Liquify's dense dab kernel (`inpaint_liquify.js` `liquifyDabNodes`, K30; Stop 6 decides K31's Rust export). */
+export function liquifyDab(mode, src, sw, si0, sj0, s, ni, nj, cx, cy, r, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, out, box) {
+    return liquifyDabNodes(mode, src, sw, si0, sj0, s, ni, nj, cx, cy, r, h, amount, dxStep, dyStep, sel, freeze, i0, j0, ow, oh, out, box);
 }
 
 export function mipHalf(src, sw, sh, dst = null) {

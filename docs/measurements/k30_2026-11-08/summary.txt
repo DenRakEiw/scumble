@@ -1,0 +1,42 @@
+K30 of docs/PLAN_WASM_BUILD.md (2026-11-08): the dense JS twin liquifyDabNodes with LiquifyField.prototype.dab(..., kernel),
+_writeDense, and thawPlane (inpaint_liquify.js, kernels.js, inpaint_canvas.js); no wasm changes (ABI stays 27).
+
+Before = DAB "map" (InpaintEditor.liquifyDabKernel = null, the Map-based LiquifyField.prototype.dab, while IE.kernels stays
+"rust" so liquify_block and liquify_preview run on Rust); after = DAB "dense" (InpaintEditor.liquifyDabKernel = K.liquifyDab,
+calling liquifyDabNodes over a dense pre-dab node box from this.nodes(si0, sj0, sw, sh) with dense byte thaw/freeze planes
+from thawPlane, reusing this._dabOut / this._dabBox, and writing changed cells back row-by-row via _writeDense).
+k30_chain.sh: three rounds on 15000 x 10000 (grid step 4), the arms alternating within each round (before first in rounds 1
+and 3, after first in round 2), a fresh instance per arm, offline, tiles, port 9617, the window in front, the machine's busy
+lock held for the whole chain (taken 11:36:52, released 11:40:08). Medians over the rounds of each row's own figure,
+[min-max]; the full table in summary_rows.txt.
+
+The rows that decide (the dab wall time per pointermove and the tick wall time per held-mode tick, ms):
+  push fit size 200        dab p50   2.6 [2.5-2.6]   ->   1.4 [1.4-1.4]   (p95  7.9 [7.3-8.6]  ->  5.9 [5.7-6.2])   beyond the spread
+  push fit size 1000       dab p50  14.2 [14.0-14.3] ->   7.3 [7.2-7.3]   (p95 15.1 [14.7-15.5] -> 7.7 [7.6-7.9])   beyond the spread (4 sub-dabs/move: ~1.8 ms/dab)
+  push 1:1 size 200        dab p50   0.3 [0.3-0.3]   ->   0.2 [0.2-0.2]   (p95  0.4 [0.4-0.5]  ->  0.3 [0.2-0.3])   beyond the spread
+  push 1:1 size 1000       dab p50   3.5 [3.5-3.5]   ->   1.8 [1.8-1.8]   (p95  3.8 [3.8-3.9]  ->  1.9 [1.9-2.1])   beyond the spread (worst 6.7 [4.1-6.9] -> 2.4 [2.2-2.5])
+  shrink held 150 ticks    tick p50  2.9 [2.9-2.9]   ->   1.7 [1.7-1.8]   (p95  3.2 [3.2-3.3]  ->  2.1 [2.0-2.3])   beyond the spread (worst 3.6 [3.5-3.7] -> 2.3 [2.3-2.5])
+  pause 2s 1:1 size 1000   dab       3.8 [3.7-3.9]   ->   2.4 [2.3-2.5]   (midDab 3.4 [3.3-5.8] -> 2.3 [2.0-2.4])   beyond the spread
+
+Verdict for K30: the dense twin wins on every dab and tick row (~1.9x-2.0x faster, cutting 1000 px dab p50 from 14.2 -> 7.3 ms
+at fit and 3.5 -> 1.8 ms at 1:1, and held shrink tick p50 from 2.9 -> 1.7 ms).
+
+Stop 6 analysis and recommendation (whether K31 Rust liquify_dab is worth building):
+  - K30's dense JS twin already reaches the plan's §4.9 target ("dab 20.6 -> 6-8 ms"): push fit size 1000 (which runs 4
+    sub-dabs per pointermove) is down to 7.3 ms p50 (7.7 ms p95), and a single 1000 px dab at s = 4 (251 x 251 = 63,001
+    nodes) is down to 1.7-1.8 ms p50 (push 1:1 size 1000: 1.8 ms; shrink held tick: 1.7 ms), including this.nodes(si0, sj0,
+    sw, sh) gather and this._writeDense(...) cell scatter.
+  - Because this.nodes(...) gather and _writeDense(...) cell scatter stay in JS either way, and a Rust liquify_dab would add
+    wasm copy-in of src (~512 KB) and copy-out of out (~504 KB) per sub-dab, the remaining ceiling for K31 is at most ~0.4-0.5
+    ms per 1000 px dab (~1.5-2.0 ms across the 4 sub-dabs at fit, where the whole frame + dab is already 8.2 ms, well under a
+    16.6 ms 60 Hz frame), while K31 also carries the swirl sin/cos domain parity risk.
+  - Recommendation for Stop 6: skip K31 and keep liquifyDab on the dense JS twin liquifyDabNodes ("stays JS, measured", as
+    Stop 6 anticipated: "it may win back most of the Map cost"). The K.liquifyDab seam and ROUTE_KINDS.liquifyDab are in place
+    if the user prefers to build K31 anyway.
+
+Gates (gates/, --offline, ports 9617 / 9618): k30-on (--tiles on: lint types pixels brush editor) ALL PASS; k30-off
+(--tiles off: pixels brush editor) ALL PASS.
+
+Mutation round (mutation/, tools/mutation_round.py on a copy tree; the untouched copy green on the full px_test, the editor
+gate and every focused set, both builds identical to the checkout's): 26 of 26 killed (0 on the re-check), 0 survived; 0 not
+as expected; the restored copy green on the full px_test.
