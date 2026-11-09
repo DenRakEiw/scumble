@@ -1,0 +1,5 @@
+  e2e 2000x2000 rust: {"wall_med": 42.5, "walls": [74.1, 41.1, 42.5], "blocked_med": 42.5, "blocked_max": 74.1, "rescans": 0, "bounds": [280, 280, 1720, 1720], "pxCalls": {"grow_mask": 1}, "releaseDelta": 0, "wasmMB": 27.44}
+  e2e 2000x2000 js: {"wall_med": 63, "walls": [62.5, 63, 90.6], "blocked_med": 63, "blocked_max": 90.6, "rescans": 0, "bounds": [280, 280, 1720, 1720], "pxCalls": {"dist_transform": 1}, "releaseDelta": 0, "wasmMB": 27.44}
+  e2e 7500x5000 rust: {"wall_med": 319.8, "walls": [356.2, 319.8, 301.3], "blocked_med": 319.8, "blocked_max": 356.2, "rescans": 0, "bounds": [1105, 730, 6395, 4270], "pxCalls": {"grow_mask": 1, "mip_chain": 16}, "releaseDelta": 1, "wasmMB": 2.13}
+  e2e 7500x5000 js: {"wall_med": 421.7, "walls": [412.7, 421.7, 428.1], "blocked_med": 421.7, "blocked_max": 428.1, "rescans": 0, "bounds": [1105, 730, 6395, 4270], "pxCalls": {"dist_transform": 1, "mip_chain": 16}, "releaseDelta": 0, "wasmMB": 234.75}
+RESULT PASS

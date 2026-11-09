@@ -2809,6 +2809,14 @@ async function splitCases(simd, js) {
 async function routeCases(js, simd, scalar, raster) {
     const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
     K.setKernels("rust");
+    if (!K.rustPx()) {
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (u, ...rest) => {
+            const s = String(u && u.href ? u.href : u);
+            return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+        };
+        try { K.dropPx(); await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+    }
     const p = K.rustPx(), base = K.kernelRoutes();   // the defaults: a measured flood or mips default may be among them
     try {
         const throws = (fn, re) => { try { fn(); return false; } catch (e) { return re.test(String(e && e.message)); } };
@@ -2933,6 +2941,45 @@ async function routeCases(js, simd, scalar, raster) {
         }
         K.setRoute("flood", null);
         check(`inpaint_raster.js floodMask under the flood route: the Rust flood at or above the route's size and for "rust", floodScan below it and for "js"; the same mask (${n} runs)`, ok, detail);
+
+        // K39: inpaint_raster.js growMaskBounds under the growMask route ("rust" vs "js" vs setKernels("js"), including non-zero byteOffset subarrays)
+        ok = K.ROUTE_KINDS.growMask === "kernel"; detail = ok ? "" : `ROUTE_KINDS.growMask=${K.ROUTE_KINDS.growMask}`; n = 0;
+        for (const [w, h, seed, step, empty] of [[96, 72, 1, 5, false], [128, 96, 2, -4, false], [48, 36, 3, -40, false], [40, 30, 4, 3, true]]) {
+            const cols = (w + 255) >> 8, rows = (h + 255) >> 8;
+            const src = selOf(w, h, seed, empty ? "empty" : "partial");
+            for (let i = 0; i < w * h; i++) src[i * 4] = 255;
+            const want = src.slice(), wantCells = new Uint8Array(cols * rows);
+            raster.growMask(want, w, h, step, { cells: wantCells });
+            const wantBounds = raster.maskBounds(want, w, h);
+            for (const [mode, rt, wantGrow, wantDist] of [
+                ["rust", null, 1, 0],
+                ["rust", "rust", 1, 0],
+                ["rust", "js", 0, empty ? 0 : 1],
+                ["js", "rust", 0, 0],
+            ]) {
+                K.setKernels(mode);
+                K.setRoute("growMask", rt);
+                const pad = new Uint8ClampedArray(64 + src.length + 64);
+                pad.fill(0x5a);
+                const sub = pad.subarray(64, 64 + src.length);
+                sub.set(src);
+                const cells = new Uint8Array(cols * rows), ms = {};
+                K.pxCalls(true);
+                const gotBounds = raster.growMaskBounds(sub, w, h, step, { ms, cells });
+                const calls = K.pxCalls(true);
+                const guardOk = pad.subarray(0, 64).every((b) => b === 0x5a) && pad.subarray(64 + src.length).every((b) => b === 0x5a);
+                const msOk = wantGrow ? typeof ms.kernel === "number" && !("resultBounds" in ms) : typeof ms.resultBounds === "number" && !("kernel" in ms);
+                n++;
+                if (!eqBytes(sub, want) || !eqBytes(cells, wantCells) || JSON.stringify(gotBounds) !== JSON.stringify(wantBounds)
+                    || (calls.grow_mask || 0) !== wantGrow || (calls.dist_transform || 0) !== wantDist || !guardOk || !msOk) {
+                    ok = false;
+                    detail = `${w}x${h} step ${step} mode ${mode} route ${rt}: calls=${JSON.stringify(calls)} bounds=${JSON.stringify(gotBounds)} vs ${JSON.stringify(wantBounds)} guard=${guardOk} ms=${JSON.stringify(ms)} ${firstDiff(sub, want) || firstDiff(cells, wantCells)}`;
+                }
+            }
+        }
+        K.setKernels("rust");
+        K.setRoute("growMask", null);
+        check(`K39 inpaint_raster.js growMaskBounds under the growMask route: "rust" and default run grow_mask, "js" runs growMask + maskBounds, setKernels("js") runs pure JS; identical pixels, bounds and cells on non-zero byteOffset subarrays (${n} runs)`, ok, detail);
     } finally { kernelsBack(K); }
 }
 
