@@ -1,0 +1,188 @@
+K25 measurement summary (2026-11-09)
+====================================
+
+Behaviour change: Layered exports (PSD, ORA, `fillLayerCanvas`, `fillLayerRows`) containing a depth-limited fill layer
+now snap the fill layer's alpha to `map.guide` (the base picture's guide colours) instead of the fill layer's own
+colours when edge snap is enabled, changing exported fill-layer alpha bytes toward the screen's `limitStage`.
+
+Scope (docs/PLAN_WASM_BUILD.md §4.8 K25):
+- `limit_alpha_rows` in `crates/px/src/range.rs` (SIMD128 `f64x2` + scalar, sharing `range_weight_f64x2`, `snap_field`,
+  `u16_bilinear`, `range_weight`, and `js_round_byte`), exported from `crates/px/src/lib.rs` (ABI 37), wrapped in
+  `renderer/editor/px/px.js` (`Px.limitAlphaRows`, chunking into at most 256 rows per wasm call and copying only that
+  chunk's `subRgba` (`<= 15.36 MB` at 15,000 x 256) and `[wy0..wy1]` row window of `map` and `guide`—clamping to the
+  full `[0..mh - 1]` map height when extreme affine coefficients produce non-finite corner `ryMin`/`ryMax`—and setting
+  `err.doneRows = cy` on a partial-chunk failure), JS twin in `renderer/editor/px/kernels_js.js` (`limitAlphaRows`,
+  using `rangeSnapField` with `libmExp` so twin and both wasm builds match bit-for-bit across Node and Electron 44 V8
+  15.2), routed in `renderer/editor/px/kernels.js` under `"limitAlphaRows"` (resuming from `err.doneRows` on a mid-call
+  OOM/trap so completed chunks are not re-multiplied).
+- `limitAlphaRows` in `renderer/editor/inpaint_limit.js` normalizes with `normalizeStoredLimit(limit)` (preserving
+  `c17c6367` so a stored limit never throws on export), checks that `[lim.lo, lim.hi, lim.fLo, lim.fHi, sigmaR, tau]`
+  and all 8 transformed band-corner coordinates are finite before calling `limitAlphaRowsKernel(rgba, map.data, map.w,
+  map.h, m, x0, y0, w, h, lim, snap, gRaw, col)`, and otherwise falls back to the non-throwing JS loop. When `col` is
+  null and `map.guide` is present, both the kernel and the fallback loop sample the snap reference colour from
+  `map.guide` at `Math.floor(mx), Math.floor(my)` (clamped to `[0, mw - 1] x [0, mh - 1]`) instead of `rgba`'s own fill
+  colour.
+- `tools/px_jobs.py`: `fill_limit` `routeRan` asserts `win.limit_alpha_rows === row.bands` on `"rust"` and `0` on `"js"`,
+  and `KERNEL["fill_limit"] = ["limit"]`.
+- `tools/ab_median.py`: `ROUTE_EXPORTS["limitAlphaRows"] = ("limit_alpha_rows",)`.
+- Route decision by measurement (§1.1, 3 runs with `--rounds 3` per `tools/ab_median.py`):
+  - `--ab limitAlphaRows=js:rust` (`after/ab_r1..3.jsonl`): `verdict: rust` (`6213.3 ms` vs `10880.1 ms` wall, lower by
+    `4666.9 ms` > spread `1447.3 ms`; kernel row `6092.4 ms` vs `10728.2 ms`).
+  - Both `px_jobs.py`'s `fill_limit` job and `export_test.py --perf --fill-limit` measure the snapped path (`snap = 50`
+    with `map.guide`); the plain bilinear path (`sigmaR === 0` or no `guide`) is covered by the same `"limitAlphaRows"`
+    route and was measured at the kernel row in `PX_BENCH` (`105.26 ms` twin vs `88.56 ms` simd / `91.13 ms` scalar on a
+    `15000 x 256` band, `1.19x`).
+  `limitAlphaRows` stays on Rust (`DEFAULT_ROUTES` carries no entry for `limitAlphaRows`, documented above
+  `DEFAULT_ROUTES` in `renderer/editor/px/kernels.js`).
+
+Builds (`python tools/build_px.py --check`):
+- `renderer/editor/px/px.wasm`:        267,316 bytes  sha256 c2d0e953dc71a518
+- `renderer/editor/px/px_scalar.wasm`: 216,646 bytes  sha256 58683a21023ba5aa
+
+Node & Electron unit & kernel benchmarks (`PX_BENCH=1 PX_ONLY=range node tools/px_test.js`, `after/px_test_range_bench.txt`):
+- `limit_alpha_rows 15000x256 row, plain bilinear (15000x256)`: twin 105.26 ms, simd 88.56 ms (1.19x), scalar 91.13 ms (median of 9)
+- `limit_alpha_rows 15000x256 row, snapped (15000x256)`:        twin 379.04 ms, simd 193.95 ms (1.95x), scalar 184.90 ms (median of 9)
+- 74 deterministic/property cases for `limit_alpha_rows` across twin, simd, and scalar (each also at an odd byte offset):
+  7 shapes (`1x1` up to `96x550` 3-chunk bands), 10 affine transforms (`upright`, `offset`, `rot90`, `rot180`, `rot270`,
+  `hflip`, `vflip`, `turn3deg`, `turn37deg`, `zoomed`), all 4 reference-colour modes (`0`: plain bilinear, `1`: snap
+  with `guide` and `col = null`, `2`: snap with explicit `col`, `3`: snap with `col === rgba`), input alphas
+  `[0, 1, 128, 254, 255]` with RGB preservation check, exact even-half rounding (`255 * w === 40.5 -> 41` and
+  `81 * 0.5 === 40.5 -> 41`), hard-step `1e-12` tolerance, `sstep` `1e-14` clamps, `wSum <= 1e-12` bilinear fallback,
+  K22-exp-band tie case on column `x = 127` + `Math.exp` spy (`0` native `Math.exp` calls on twin), 256-row chunking and
+  `[wy0..wy1]` window spy (`chunkCalls = 3`, `maxRgbaBytes = 65536`, `maxMapBytes = 2048/3840`), `inpaint_limit.js`
+  snapped `map.guide` vs uniform `col` / no-guide check (`guide = [255, 0]` vs `uniformCol = 0`, `noGuide = 0`),
+  non-finite stored-limit and overflowing-`xf` safety checks (`mapBadSnap`, `mapOverflowXf`, and `simd.limitAlphaRows`
+  with `[-Inf, +Inf]` corner `my` range), 15 invalid-input refusals across twin/simd/scalar, raw `[iy0..iy1]` window
+  bounds refusal (`okValid = 1`, `okOutLo = 0`, `okOutHi = 0`), `K.limitAlphaRows` route switching (`jsCalls = 0`,
+  `rustCalls = 1`), and trap + real `p.limitAlphaRows` partial-chunk OOM recovery in `retouchRoute` (failing on the
+  second `rgba` chunk copy inside `p.limitAlphaRows` so `px.js` sets `err.doneRows = 256` and `kernels.js` resumes on
+  rows `256..599`): PASS in both Node and `ELECTRON_RUN_AS_NODE=1` (Electron 44 V8 15.2, `after/px_test_electron.txt`).
+
+15000 x 10000 before (`3fd8bda7`) vs after (`K25`), 3 alternating rounds on port 9613 (`w1_lock.py` held per round):
+1. `tools/px_jobs.py 15000x10000 --only fill_limit` (`before/pxjobs_r1..3.jsonl` vs `after/pxjobs_r1..3.jsonl`):
+row                                                         before (3fd8bda7)              after (K25)
+  fill_limit (js) wall                                12060.5 [11758.4-12282.8]   10332.0 [9243.1-10474.1]   n=3/3
+  fill_limit (js) part.fill                                 138.9 [130.6-159.4]        152.1 [141.7-159.0]   n=3/3
+  fill_limit (js) part.limit                          11907.8 [11620.8-12116.5]   10165.4 [9094.8-10306.8]   n=3/3
+  fill_limit (js) window px calls                                      ['none']                   ['none']
+  fill_limit (rust) wall                              11829.1 [11667.8-12442.8]     6036.1 [5871.3-6250.2]   n=3/3  (1.96x)
+  fill_limit (rust) part.fill                               137.7 [120.5-152.8]        119.5 [118.4-144.9]   n=3/3
+  fill_limit (rust) part.limit                        11708.6 [11530.1-12290.0]     5891.2 [5752.9-6130.7]   n=3/3  (1.99x)
+  fill_limit (rust) split.copyIn                                  0.0 [0.0-0.0]          39.1 [38.3-49.5]    n=3/3
+  fill_limit (rust) split.copyOut                                 0.0 [0.0-0.0]          32.6 [31.2-40.2]    n=3/3
+  fill_limit (rust) split.limit_alpha_rows                                    -     5789.2 [5678.3-6052.0]   n=0/3
+  fill_limit (rust) window px calls                                    ['none']    ['limit_alpha_rows 40']
+
+2. `tools/export_test.py --perf 15000x10000 --fill-limit` (`before/export_r1..3.json` vs `after/export_r1..3.json`):
+row                                                         before (3fd8bda7)              after (K25)
+  fill_limit_rows ms                                  11178.0 [10382.0-12233.0]     6209.0 [6186.0-6229.0]   n=3/3  (1.80x)
+  fill_limit_rows fill                                    113.0 [111.0-130.0]          136.0 [126.0-140.0]   n=3/3
+  fill_limit_rows limit                               11048.0 [10270.0-12120.0]     6073.0 [6060.0-6088.0]   n=3/3  (1.82x)
+  psd_fill_limit ms                                   16665.0 [13622.0-17661.0]    9919.0 [9449.0-11139.0]   n=3/3  (1.68x)
+  psd_fill_limit blocked                                  403.0 [286.0-492.0]          207.0 [192.0-338.0]   n=3/3
+  psd_fill_limit fillRowsMs                           12141.0 [10130.0-12616.0]     6496.0 [6217.0-6508.0]   n=3/3  (1.87x)
+  psd_fill_limit MB                                       221.6 [221.5-221.6]          221.5 [221.5-221.5]   n=3/3
+  composite_bands ms (untouched)                        6299.0 [1629.0-8898.0]      1263.0 [1198.0-1814.0]   n=3/3
+  layer_from_tiles ms (untouched)                          345.0 [287.0-353.0]         270.0 [268.0-312.0]   n=3/3
+  composite_canvas ms (untouched)                      7698.0 [7446.0-27814.0]      6514.0 [6014.0-8519.0]   n=3/3
+  layer_canvas ms (untouched)                           2415.0 [2262.0-4523.0]      2730.0 [2428.0-2939.0]   n=3/3
+  psd ms (untouched)                                    2913.0 [2365.0-2931.0]      2223.0 [2206.0-3022.0]   n=3/3
+  psd_masked ms (untouched)                             2834.0 [2593.0-3595.0]      2735.0 [2515.0-3161.0]   n=3/3
+- Note on `export_r1..3.json` provenance and untouched-row drift:
+  - The 6 runs were collected in alternating order (`before/export_r1` at `03:17`, `after/export_r1` at `03:20`,
+    `before/export_r2` at `03:22`, `after/export_r2` at `03:25`, `before/export_r3` at `03:27`, `after/export_r3` at
+    `03:29`, alongside `pxjobs_r1..3.jsonl`); all 6 `.json` files carry a `03:51:06` mtime because PowerShell
+    `Out-File -Encoding utf8`'s UTF-8 BOM was stripped in place before committing so `tools/compare_perf.py` could parse
+    them with `encoding="utf-8"`.
+  - In `export_test.py --perf`, `composite_bands` runs first on a fresh 15,000 x 10,000 document and absorbed cold tile
+    / GPU readback spikes on `before` rounds 1 and 2 (`8898 ms`, `6299 ms`, then `1629 ms` on round 3 vs `1814`, `1198`,
+    `1263 ms` on `after`), and the non-`limitAlphaRows` remainder of `psd_fill_limit` (`psd_fill_limit ms - fillRowsMs`,
+    which is PSD RLE/pack + blob assembly) drifted from `4049 ms` median (`[3492-5045] ms`) on `before` to `3423 ms`
+    (`[3232-4631] ms`) on `after` (`-626 ms`). Because `psd_fill_limit ms` (`16665 -> 9919 ms`, `1.68x`) includes that
+    `-626 ms` non-kernel drift, the clean `limitAlphaRows` speedups are `psd_fill_limit fillRowsMs` (`12141 -> 6496 ms`,
+    `1.87x`), `fill_limit_rows` (`11178 -> 6209 ms`, `1.80x`; `limit` part `11048 -> 6073 ms`, `1.82x`), `px_jobs
+    fill_limit` (`11829.1 -> 6036.1 ms`, `1.96x`; `limit` part `11708.6 -> 5891.2 ms`, `1.99x`), and `--ab
+    limitAlphaRows=js:rust` (`10880.1 -> 6213.3 ms`, `1.75x`).
+
+`tools/ab_median.py` verdicts at 15000 x 10000:
+1. `--ab limitAlphaRows=js:rust` (`after/ab_r1..3.jsonl`, 3 runs with `--rounds 3`):
+   - `fill_limit`: js `10880.1 10549.7 11997.0` (median `10880.1`, spread `1447.3`) vs rust `6298.5 5675.5 6213.3`
+     (median `6213.3`, spread `623.0`); round 0 (cold) js `10664.1` / rust `6471.3`; kernel row js `10728.2` / rust
+     `6092.4` ms (`limit`); split: rust `window 6013.7 + copyIn 40.6` ->
+     `verdict: rust (its median lower by 4666.9, beyond the spread 1447.3)`.
+2. `kernels=js:rust` (`after/pxjobs_r1..3.jsonl`, 3 alternating rounds):
+   - `fill_limit`: js `10332.0 10474.1 9243.1` (median `10332.0`, spread `1231.0`) vs rust `6036.1 6250.2 5871.3`
+     (median `6036.1`, spread `378.9`); kernel row js `10165.4` / rust `5891.2` ms (`limit`) ->
+     `verdict: rust (its median lower by 4295.9, beyond the spread 1231.0)`.
+
+Pins, byte-equality, and screen vs export snap (`tools/limit_test.js` & `tools/limit_test.py`):
+- `px_jobs.py --check 2048x1152 --only fill_limit` (`after/pxjobs_check.log`): `same bytes`, `window release: sync`,
+  0 traps / OOMs across all 7 threads (`fill_limit` kernel `1.60x`, wall `1.59x`, `limit_alpha_rows 5`).
+- `tools/limit_test.js` section 9 & 10:
+  - Stored depth limits with non-finite fields (`"bad"`, `Infinity`) never throw in `limitAlphaRows`.
+  - On the `120 x 20` snapped fixture (`30 x 10` map = `4` px/texel, `snap.strength = 50`) with a texel-aligned colour
+    edge (`x = 60`, texel boundary `15`), `limitAlphaRows` (`col = null`) matches `limitStageCPU` byte-for-byte
+    (`maxDiff = 0`), reducing edge errors across the step to `20` vs `40` with uniform fill colour and `60` unsnapped
+    (`snap.strength = 0`).
+  - On the `120 x 20` sub-texel / mixed-guide case where the colour step (`30` -> `210` RGB) lies at `x = 62` inside
+    map texel `15` (`guideSubData` texel `15` = `(120, 50, 120)`), `limitAlphaRows` steps at the texel boundary `x = 64`
+    while `limitStageCPU` (which samples full-resolution `pic` at each pixel) steps at `x = 62`: `maxDiffOutsideTexel` is
+    `0` outside texel `15` (`x < 60` or `x >= 64`), and inside texel `15` the `maxDiffSubTexel = 255` difference is
+    confined to the `2`-px sub-texel band `x = 62..63` (`bandWidth = 2 <= 4` px = 1 map texel).
+- `tools/limit_test.py` `R2-S5 f` (`f1..f4b`, `1200 x 800` snapped fixture at `snap.strength = 50`, logged in
+  `after/k25_r1_tiles_limit.log` and `after/k25_r1_canvas_limit.log`):
+  - `f1`: `fillLayerCanvas` calls `limit_alpha_rows === 4` (`ceil(800 / 256)`) on `"rust"`.
+  - `f2`: `fillLayerRows` `"rust"` and `"js"` routes match byte-for-byte (`rustJsDiff = 0`, `callsRustRoute = 4`,
+    `callsJsRoute = 0`).
+  - `f3a` & `f3`: PSD layered export uses `exportLayeredBands("psd")` on tiles (`psdViaBands = true`) and Case 7's
+    `exportLayerStack("psd")` + `buildLayered("psd", ...)` path on canvas (`psdViaBands = false`), and the parsed PSD
+    fill layer alpha matches `fillLayerRows` byte-for-byte on both backends (`psdDiff = 0`).
+  - `f4` (texel-aligned edge at `x = 600` on `300 x 200` map, clean and 3%-noisy guide):
+    `maxDiffCleanCpu = 0`, `maxDiffCleanGl = 0`, `maxDiffNoisyCpu = 0`, `maxDiffNoisyGl = 0`, `over2PctNoisyCpu = 0`,
+    `over2PctNoisyGl = 0`, `errsExp50 = 0` vs `errsExp0 = 1800`.
+  - `f4b` (sub-texel edge at `x = 602` inside mixed guide texel `150` of `300 x 200` map + smooth `x = 596..604` ramp at
+    the 15k map ratio `328 x 218` for `1200 x 800` = `3.6585` px/texel, matching `15000 / 4096 = 3.6621`):
+    - Up to 4096 px on the long side (`workSize(w, h, 4096)` in `inpaint_DepthMap.js` / `inpaint_maps.js`), the depth map
+      is 1:1 with the picture (`mw = w, mh = h`), so `map.guide` at `floor(mx), floor(my)` equals the picture pixel RGB.
+    - Above 4096 px on the long side (`4096 x 2731` map at `15000 x 10000` = `3.662` px/texel) or whenever `mw < w`,
+      `map.guide` is a smoothed map-resolution downscale sampled at `floor(mx), floor(my)` while screen `limitStage`
+      samples full-resolution `u_pic` at each pixel. On the sub-texel hard step (`x = 602` inside mixed texel `150`), the
+      difference is `0` outside texel `150` (`maxDiffOutsideTexelCpu = 0`, `maxDiffOutsideTexelGl = 0`) and `255` across
+      the `2`-px sub-texel band `x = 602..603` (`subBandWidthPx = 2 <= 4` px = 1 map texel, `over2PctSubTexelCpu =
+      0.1667%`, `over2PctSubTexelGl = 0.1667%`). On the smooth transition ramp at the `3.66` px/texel 15k ratio,
+      piecewise-constant `floor(mx)` guide sampling differs from screen by at most `maxDiffSmoothCpu = 22`
+      (`maxDiffSmoothGl = 22`, `over2PctSmoothCpu = 0.3333%`, `over2PctSmoothGl = 0.3333%`).
+  - Logged `[info] snapExport` lines:
+    - `after/k25_r1_tiles_limit.log`:
+      `[info] snapExport: {"expCalls50": 4, "callsRustRoute": 4, "callsJsRoute": 0, "rustJsDiff": 0, "psdDiff": 0, "psdViaBands": true, "maxDiffCleanCpu": 0, "maxDiffCleanGl": 0, "maxDiffNoisyCpu": 0, "maxDiffNoisyGl": 0, "over2PctNoisyCpu": 0, "over2PctNoisyGl": 0, "errsExp50": 0, "errsExp0": 1800, "maxDiffSubTexelCpu": 255, "maxDiffSubTexelGl": 255, "maxDiffOutsideTexelCpu": 0, "maxDiffOutsideTexelGl": 0, "subBandWidthPx": 2, "over2PctSubTexelCpu": 0.1667, "over2PctSubTexelGl": 0.1667, "maxDiffSmoothCpu": 22, "maxDiffSmoothGl": 22, "over2PctSmoothCpu": 0.3333, "over2PctSmoothGl": 0.3333}`
+    - `after/k25_r1_canvas_limit.log`:
+      `[info] snapExport: {"expCalls50": 4, "callsRustRoute": 4, "callsJsRoute": 0, "rustJsDiff": 0, "psdDiff": 0, "psdViaBands": false, "maxDiffCleanCpu": 0, "maxDiffCleanGl": 0, "maxDiffNoisyCpu": 0, "maxDiffNoisyGl": 0, "over2PctNoisyCpu": 0, "over2PctNoisyGl": 0, "errsExp50": 0, "errsExp0": 1800, "maxDiffSubTexelCpu": 255, "maxDiffSubTexelGl": 255, "maxDiffOutsideTexelCpu": 0, "maxDiffOutsideTexelGl": 0, "subBandWidthPx": 2, "over2PctSubTexelCpu": 0.1667, "over2PctSubTexelGl": 0.1667, "maxDiffSmoothCpu": 22, "maxDiffSmoothGl": 22, "over2PctSmoothCpu": 0.3333, "over2PctSmoothGl": 0.3333}`
+
+Mutation round (`docs/measurements/k25_2026-11-09/mutation/results.txt`, 22 mutants):
+- All 22/22 mutants killed on their focused kill sets (`0 survived`, `0 on re-check`), including:
+  - `px.js: limitAlphaRows err.doneRows = cy tag dropped on partial-chunk failure` -> killed on `px_test (only:
+    retouchRoute)` via the real `p.limitAlphaRows` second-chunk OOM test.
+  - `inpaint_limit.js: limitAlphaRows normalizeStoredLimit reverted to strict normalizeLimit` (with `normalizeLimit`
+    imported) -> killed on `px_test (only: range)` (`FAIL inpaint_limit.js limitAlphaRows never throws on stored depth
+    limits with non-finite fields`).
+  - `inpaint_limit.js: limitAlphaRows finite parameter & corner-y guard dropped (throws on stored NaN limit or
+    overflowing xf)` -> killed on `px_test (only: range)` (`FAIL inpaint_limit.js limitAlphaRows never throws on stored
+    depth limits with non-finite fields`).
+  - `inpaint_limit.js: limitAlphaRows col=null reverted to passing rgba as snap reference colour (old K25 bug)` ->
+    focused kill set `{"gates": ["limit"]}` alone kills it in both `node tools/limit_test.js` (`maxDiff = 166 !== 0`) and
+    `tools/limit_test.py` `R2-S5 f4` (`maxDiffCleanCpu = 255`, `maxDiffCleanGl = 255`, `errsExp50 = 1800`, `errsExp0 =
+    1800`) and `R2-S5 f4b` (`maxDiffSubTexelCpu = 174`, `subBandWidthPx = 1`, `maxDiffSmoothCpu = 32`).
+
+Gates (on tip, archived in `docs/measurements/k25_2026-11-09/after/k25_r1_*`):
+- `k25-r1-tiles` (port 9613, `--tiles on --offline`, `after/k25_r1_tiles_summary.txt`): `lint` (10 s), `types` (6 s),
+  `selection` (12 s), `edges` (15 s), `limit` (13 s), `maps` (4 s), `pixels` (11 s), `editor` (167 s), `export` (142 s),
+  `layered` (10 s) — ALL PASS (409 s).
+- `k25-r1-canvas` (port 9614, `--tiles off --offline`, `after/k25_r1_canvas_summary.txt`): `lint` (9 s), `types` (7 s),
+  `selection` (7 s), `edges` (24 s), `limit` (13 s), `maps` (5 s), `pixels` (12 s), `editor` (139 s), `export` (11 s),
+  `layered` (10 s) — ALL PASS (256 s).
+- `k25-r1-extra` (port 9613, `--tiles on --offline`, `after/k25_r1_extra_summary.txt`): `pxjobs` (113 s), `nodecopy`
+  (18 s) — ALL PASS.
+- `node tools/px_test.js` (full suite) — PASS.
+- `ELECTRON_RUN_AS_NODE=1 PX_ONLY=range,retouchRoute ./node_modules/electron/dist/electron.exe tools/px_test.js` — PASS.
+- `node tools/limit_test.js` & `node tools/weights_test.js` — PASS.
+- `python tools/build_px.py --check` (`px.wasm` 267,316 B `c2d0e953dc71a518`, `px_scalar.wasm` 216,646 B `58683a21023ba5aa`) — identical.

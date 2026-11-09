@@ -23,6 +23,7 @@ mod composite;
 mod edges;
 mod edt;
 mod flood;
+mod guided;
 mod jobs;
 mod maskf;
 mod mip;
@@ -35,6 +36,7 @@ mod resample;
 mod sel;
 mod smudge;
 mod stroke;
+mod tiff;
 
 /// dlmalloc hands out a page start plus its 8-byte header, while a JS ArrayBuffer of tile
 /// size starts on a page. A copy between the two then has its destination 8 bytes past the
@@ -49,11 +51,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes; 41: pngPartFromPtr / compose in wasm memory; 42: shadow_march_f64);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    37
+    42
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -873,6 +875,48 @@ pub unsafe extern "C" fn shadow_march(
     );
 }
 
+/// Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13, docs/PLAN_WASM_BUILD.md §4.4).
+/// `taps_xyz` holds `taps * 3` `f64` per-tap constants (`[tapX[t], tapY[t], tapZ[t]]`).
+/// Output is u8 visibility (0=shadow, 255=lit) for rows `[row0 .. row0 + rows]`.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn shadow_march_f64(
+    depth: *const u16,
+    w: usize,
+    h: usize,
+    scale: f64,
+    is_sun: u32,
+    taps_xyz: *const f64,
+    taps: u32,
+    steps: u32,
+    z_bias: f64,
+    row0: usize,
+    rows: usize,
+    out: *mut u8,
+) {
+    if depth.is_null() || taps_xyz.is_null() || out.is_null() || taps == 0 || taps > 16 {
+        return;
+    }
+    let Some((band_rows, n_depth, n_out)) = relight::march_lens(w, h, row0, rows) else {
+        return;
+    };
+    let n_taps = taps as usize;
+    relight::shadow_march_f64(
+        slice::from_raw_parts(depth, n_depth),
+        w,
+        h,
+        scale,
+        is_sun != 0,
+        slice::from_raw_parts(taps_xyz, n_taps * 3),
+        n_taps,
+        steps as usize,
+        z_bias,
+        row0,
+        band_rows,
+        slice::from_raw_parts_mut(out, n_out),
+    );
+}
+
 
 
 // ---- the selection (PLAN_WASM_BUILD.md §4.3, K5) ----------------------------------------------------------------------
@@ -1274,3 +1318,200 @@ pub unsafe extern "C" fn range_tiles_rgba(
     )
 }
 
+/// Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes (`len` bytes at `src`)
+/// into `out` (`need` bytes), stopping as soon as `need` bytes are written (`renderer/editor/inpaint_tiff.js`
+/// `unpackStrip`, K16). Returns `need as isize`, or `< 0` on error (`-1` bad arguments/compression, `-2` truncated,
+/// `-3` old-style LZW, `-4` LZW code before literal, `-5` LZW code beyond table).
+#[no_mangle]
+pub unsafe extern "C" fn tiff_unpack(compression: u32, src: *const u8, len: usize, out: *mut u8, need: usize) -> isize {
+    if !(compression == 1 || compression == 5 || compression == 32773)
+        || len > isize::MAX as usize
+        || need > isize::MAX as usize
+        || (len > 0 && src.is_null())
+        || (need > 0 && out.is_null())
+    {
+        return tiff::ERR_BAD_ARGS;
+    }
+    if need == 0 {
+        return 0;
+    }
+    let src_slice = if len == 0 { &[][..] } else { slice::from_raw_parts(src, len) };
+    let out_slice = slice::from_raw_parts_mut(out, need);
+    tiff::unpack(compression, src_slice, out_slice)
+}
+
+
+/// Multiplies the alpha channel of `rgba` (`w * h * 4` RGBA8 bytes, in place) by the depth limit weight over a
+/// `wh`-row window of `map` (and optional `guide`) starting at map row `wy0` (`inpaint_limit.js` `limitAlphaRows`, K25).
+/// When `sigma_r > 0` and `guide` is non-null, edge snap takes its reference colour from `col` (`w * h * 4` RGBA8 bytes)
+/// when `col` is non-null (`col == rgba` reads `rgba`'s RGB in place), or from `guide` sampled at `floor(mx), floor(my)`
+/// when `col` is null.
+/// `params` holds 12 `f64`s: `[m0, m1, m2, m3, m4, m5, lo, hi, f_lo, f_hi, sigma_r, tau]`.
+/// `flags`: bit 0 = `limit.invert`.
+/// Returns `1` on success, `0` when refused.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn limit_alpha_rows(
+    rgba: *mut u8,
+    col: *const u8,
+    map: *const u16,
+    guide: *const u8,
+    mw: usize,
+    mh: usize,
+    wy0: usize,
+    wh: usize,
+    x0: i32,
+    y0: i32,
+    w: usize,
+    h: usize,
+    params: *const f64,
+    flags: u32,
+) -> u32 {
+    if rgba.is_null()
+        || map.is_null()
+        || params.is_null()
+        || mw == 0
+        || mh == 0
+        || wh == 0
+        || wy0 >= mh
+        || wy0.saturating_add(wh) > mh
+        || w == 0
+        || h == 0
+    {
+        return 0;
+    }
+    let Some(win_len) = wh.checked_mul(mw) else { return 0 };
+    let Some(rgba_len) = w.checked_mul(h).and_then(|n| n.checked_mul(4)) else { return 0 };
+
+    let p_slice = slice::from_raw_parts(params, 12);
+    if p_slice.iter().any(|x| !x.is_finite()) {
+        return 0;
+    }
+    let mut p = [0.0f64; 12];
+    p.copy_from_slice(p_slice);
+
+    let col_from_rgba = col == rgba as *const u8;
+    let col_slice = if col.is_null() || col_from_rgba {
+        None
+    } else {
+        Some(slice::from_raw_parts(col, rgba_len))
+    };
+    let map_slice = slice::from_raw_parts(map, win_len);
+    let guide_slice = if guide.is_null() {
+        None
+    } else {
+        let Some(guide_len) = win_len.checked_mul(4) else { return 0 };
+        Some(slice::from_raw_parts(guide, guide_len))
+    };
+    let rgba_slice = slice::from_raw_parts_mut(rgba, rgba_len);
+
+    range::limit_alpha_rows(
+        rgba_slice,
+        col_slice,
+        col_from_rgba,
+        map_slice,
+        guide_slice,
+        mw,
+        mh,
+        wy0,
+        wh,
+        x0,
+        y0,
+        w,
+        h,
+        &p,
+        flags,
+    )
+}
+
+// ---- depth map guided filter (K24) ---------------------------------------------------------
+
+/// Scratch bytes `guided_far` needs for a `rw x rh` raw disparity map and `gw x gh` working guide (8-aligned at its
+/// start); `0` when any dimension is `0` or the size does not fit.
+#[no_mangle]
+pub extern "C" fn guided_far_scratch_bytes(rw: usize, rh: usize, gw: usize, gh: usize) -> usize {
+    guided::scratch_bytes(rw, rh, gw, gh).unwrap_or(0)
+}
+
+/// `guidedFar({ raw, rw, rh, grey, gw, gh, r, eps, lo, hi }, boxBlurs)` of `inpaint_depth.js`: normalises and inverts
+/// `raw` (`rw * rh` `f32`) by `[lo, hi]`, bilinearly resizes to `gw * gh` when `(rw, rh) != (gw, gh)`, runs the
+/// He et al. guided filter against `grey` (`gw * gh` `u8`) with working radius `Math.max(1, Math.round(r * (gw / rw)))`
+/// and `eps`, and writes `gw * gh` `u16` values into `out`. `scratch` holds `guided_far_scratch_bytes(rw, rh, gw, gh)`
+/// bytes. Returns `1` on success, `0` when refused.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn guided_far(
+    raw: *const f32,
+    rw: usize,
+    rh: usize,
+    grey: *const u8,
+    gw: usize,
+    gh: usize,
+    r: f64,
+    eps: f64,
+    lo: f64,
+    hi: f64,
+    out: *mut u16,
+    scratch: *mut u8,
+) -> u32 {
+    if raw.is_null()
+        || grey.is_null()
+        || out.is_null()
+        || scratch.is_null()
+        || !eps.is_finite()
+        || !(eps > 0.0)
+        || !lo.is_finite()
+        || !hi.is_finite()
+    {
+        return 0;
+    }
+    if guided::scratch_bytes(rw, rh, gw, gh).is_none() {
+        return 0;
+    }
+    let Some(r_work) = guided::work_radius(r, rw, gw) else {
+        return 0;
+    };
+    let n_raw = rw * rh;
+    let n_work = gw * gh;
+    let n_tmp = n_work.max(n_raw);
+
+    let sums_ptr = scratch as *mut f64;
+    let f32_ptr = scratch.add(gw * 8) as *mut f32;
+    let u32_ptr = f32_ptr.add(5 * n_work + n_tmp + gw) as *mut u32;
+
+    let sums = slice::from_raw_parts_mut(sums_ptr, gw);
+    let plane_i = slice::from_raw_parts_mut(f32_ptr, n_work);
+    let plane_p = slice::from_raw_parts_mut(f32_ptr.add(n_work), n_work);
+    let plane_mi = slice::from_raw_parts_mut(f32_ptr.add(2 * n_work), n_work);
+    let plane_ip = slice::from_raw_parts_mut(f32_ptr.add(3 * n_work), n_work);
+    let plane_ii = slice::from_raw_parts_mut(f32_ptr.add(4 * n_work), n_work);
+    let tmp = slice::from_raw_parts_mut(f32_ptr.add(5 * n_work), n_tmp);
+    let wx = slice::from_raw_parts_mut(f32_ptr.add(5 * n_work + n_tmp), gw);
+    let x0 = slice::from_raw_parts_mut(u32_ptr, gw);
+    let x1 = slice::from_raw_parts_mut(u32_ptr.add(gw), gw);
+
+    guided::guided_far(
+        slice::from_raw_parts(raw, n_raw),
+        rw,
+        rh,
+        slice::from_raw_parts(grey, n_work),
+        gw,
+        gh,
+        r_work,
+        eps,
+        lo,
+        hi,
+        slice::from_raw_parts_mut(out, n_work),
+        sums,
+        plane_i,
+        plane_p,
+        plane_mi,
+        plane_ip,
+        plane_ii,
+        tmp,
+        wx,
+        x0,
+        x1,
+    );
+    1
+}

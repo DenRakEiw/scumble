@@ -1,0 +1,136 @@
+# OpenRouter APIs — Krea: K3 Edit (krea/k3-edit)
+
+Guide for calling every confirmed OpenRouter API that serves `krea/k3-edit`.
+
+Model page: https://openrouter.ai/krea/k3-edit
+Create an API key: https://openrouter.ai/settings/keys
+
+## Pricing
+
+Standard-variant prices for `krea/k3-edit`, per provider, in the unit each provider bills (tokens, images, seconds of video, or characters of audio). Pay-as-you-go with no markup on the provider's price.
+
+- Krea: from $0.015/image (plus 2 more; see the model page for the full price list)
+
+Full price table, including other variants and per-request charges: https://openrouter.ai/krea/k3-edit
+How OpenRouter prices requests: https://openrouter.ai/pricing
+
+## EU in-region routing
+
+`krea/k3-edit` is not currently available through EU in-region routing.
+
+Docs: https://openrouter.ai/docs/guides/features/in-region-routing
+
+## Authentication
+
+Send this header with every request:
+
+- Authorization: Bearer $OPENROUTER_API_KEY
+
+## Image API
+
+Generate images with `krea/k3-edit` through OpenRouter's Image API.
+
+Docs: https://openrouter.ai/docs/guides/overview/multimodal/image-generation
+Model discovery API: https://openrouter.ai/api/v1/images/models
+Endpoints (krea/k3-edit-20260914): https://openrouter.ai/api/v1/images/models/krea/k3-edit-20260914/endpoints
+
+### Endpoint
+
+POST https://openrouter.ai/api/v1/images
+
+Headers:
+- Content-Type: application/json
+
+### Request fields (krea/k3-edit)
+
+- model: string (required) — `"krea/k3-edit"`
+- prompt: string (required) — text description of the desired image
+- resolution: "1K" | "2K" (optional) — resolution tier; concrete pixel dimensions are derived per provider
+- aspect_ratio: "1:1" | "4:3" | "3:2" | "16:9" | "4:5" | "2:3" | "9:16" (optional) — aspect ratio of the generated image
+- input_references: array of up to 8 image references (optional) — reference images for image-to-image, as `{ "type": "image_url", "image_url": { "url": "…" } }` entries; the url is an https URL or a base64 data URL
+- seed: integer (optional) — sample deterministically; determinism is not guaranteed for every provider
+
+These are the generation parameters this model accepts between its providers; an
+unlisted value is rejected, and a listed one can still be refused by whichever provider
+serves the call. `provider` (routing preferences) is accepted on every request.
+
+### Response
+
+```json
+{
+  "created": 1748372400,
+  "data": [{ "b64_json": "<base64 image bytes>", "media_type": "image/png" }],
+  "usage": { "prompt_tokens": 0, "completion_tokens": 4175, "total_tokens": 4175, "cost": 0.04 }
+}
+```
+
+Base64-decode `data[i].b64_json` and write the bytes to a file; `media_type` gives the extension.
+`usage.cost` is the USD charge for the call.
+
+### Examples
+
+#### Image to Image
+
+```bash
+curl -X POST https://openrouter.ai/api/v1/images \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "krea/k3-edit",
+  "prompt": "Change the neon sign to a bright electric blue neon, and let its cool glow tint the facade and the reflections on the pavement below, while keeping the interior'\''s warm lamp lighting unchanged so the windows still glow cozy and golden. Add gentle falling snow: a light dusting on the awning ledge, the potted plants, the bicycle seat, and the sidewalk, with fine snowflakes visible in the air against the dusk sky. Keep the composition and everything else exactly the same. The sign must still read exactly '\''OpenRouter'\''.",
+  "n": 1,
+  "aspect_ratio": "16:9",
+  "resolution": "2K",
+  "input_references": [
+    {
+      "type": "image_url",
+      "image_url": {
+        "url": "https://model-assets.openrouter.ai/model-examples/krea/k3-edit-20260914/20fd10ad-2bd2-462c-9bd8-98c4b927a150/input-0.jpg"
+      }
+    }
+  ]
+}'
+```
+
+#### Image to Image 2
+
+```bash
+curl -X POST https://openrouter.ai/api/v1/images \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "krea/k3-edit",
+  "prompt": "Change the neon sign to a bright electric blue neon, and let its cool glow tint the facade and the reflections on the pavement below, while keeping the interior'\''s warm lamp lighting unchanged so the windows still glow cozy and golden. Add gentle falling snow: a light dusting on the awning ledge, the potted plants, the bicycle seat, and the sidewalk, with fine snowflakes visible in the air against the dusk sky. Keep the composition and everything else exactly the same. The sign must still read exactly '\''OpenRouter'\''.",
+  "n": 1,
+  "aspect_ratio": "16:9",
+  "resolution": "2K",
+  "input_references": [
+    {
+      "type": "image_url",
+      "image_url": {
+        "url": "https://model-assets.openrouter.ai/model-examples/krea/k3-edit-20260914/fe2319c7-2754-4334-b597-6da0e3cbc74d/input-0.jpg"
+      }
+    }
+  ]
+}'
+```
+
+### Error differences
+
+- 413 — request body too large
+
+## Errors
+
+Failures return `{"error": {"code": <number>, "message": <string>}}` with the HTTP status:
+
+- 400 — malformed request or an unsupported parameter
+- 401 — missing or invalid API key
+- 402 — insufficient credits
+- 403 — spend limit reached, key disabled, or access blocked
+- 404 — unknown model or no provider can serve the request
+- 429 — rate limited; retry with backoff
+- 502 — the operation failed upstream; failed generations are not billed
+
+---
+
+Canonical version of this document: https://openrouter.ai/krea/k3-edit/llms.txt

@@ -133,23 +133,28 @@ ABI: 37 (px.wasm 261,098 B; px_scalar.wasm 212,115 B — unchanged from K7)
 8. Mutation Round & Gate Verification
 ------------------------------------------------------------------------------------
   Mutation round (docs/measurements/k8_2026-11-09/mutation/results.txt):
-    12 killed (0 of them only on the re-check), 0 survived of 12; 0 not as expected
-    orig: build_px.py --check True, px_test.js True (152 s), editor (--tiles on) True (184 s)
-  Kernel unit tests (tools/px_test.js):
+    20 killed (0 of them only on the re-check), 0 survived of 20; 0 not as expected (539 s)
+    orig: build_px.py --check True (16 s), px_test.js True (288 s), px_test pngPart True (3 s),
+          editor (--tiles on) True (209 s), editor 1-step True (26 s)
+  Kernel unit tests (tools/px_test.js, post-merge with wasm-kernels 044b84c3, ABI 42):
     PX_ONLY=pngPart node tools/px_test.js: PASS
     PX_ONLY=pngPart ELECTRON_RUN_AS_NODE=1 electron tools/px_test.js: PASS
     node tools/px_test.js: PASS
     ELECTRON_RUN_AS_NODE=1 electron tools/px_test.js: PASS
   Gates (dist/gates/gates/, --offline, ports 9621 / 9622):
-    k8-gates-tiles (--tiles on): export rc=0 134s PASS, docux rc=0 20s PASS, pixels rc=0 11s PASS -> ALL PASS
-    k8-gates-canvas (--tiles off): export rc=0 11s PASS, docux rc=0 23s PASS, pixels rc=0 11s PASS -> ALL PASS
-    k8-gates-tiles-serial (--tiles on): document rc=0 49s PASS -> ALL PASS
-    k8-gates-canvas-serial (--tiles off): document rc=0 44s PASS -> ALL PASS
-    k8-editor-canvas (--tiles off): editor rc=0 136s PASS -> ALL PASS
-    k8-editor-tiles (--tiles on): editor rc=0 166s PASS, huge:20000x15000 rc=0 100s PASS -> ALL PASS
-    k8-step (--tiles on, SCUMBLE_EDITOR_ONLY=2 PNG steps): editor rc=0 2s PASS -> ALL PASS
-    k8-huge-node (--tiles on): nodecopy rc=0 19s PASS, huge:30000x20000 rc=1 201s FAIL -> SOME FAILED
-      (at 30000x20000, step 9 a_matched_layer_a_film_look_and_what_is_refused had L1 diff 11 < 12 at
-       tools/huge_test.py:266: 80,74,96,255 vs 75,72,92,255, cascading into step 11 because removeLayer at
-       line 280 was skipped; the 6-step 30k open/restore run in after/huge_open_restore.log and the full
-       12-step default huge:20000x15000 gate in k8-editor-tiles both passed)
+    Pre-merge (K8):
+      k8-gates-tiles (--tiles on): export rc=0 134s PASS, docux rc=0 20s PASS, pixels rc=0 11s PASS -> ALL PASS
+      k8-gates-canvas (--tiles off): export rc=0 11s PASS, docux rc=0 23s PASS, pixels rc=0 11s PASS -> ALL PASS
+      k8-gates-tiles-serial (--tiles on): document rc=0 49s PASS -> ALL PASS
+      k8-gates-canvas-serial (--tiles off): document rc=0 44s PASS -> ALL PASS
+      k8-editor-canvas (--tiles off): editor rc=0 136s PASS -> ALL PASS
+      k8-editor-tiles (--tiles on): editor rc=0 166s PASS, huge:20000x15000 rc=0 100s PASS -> ALL PASS
+      k8-step (--tiles on, SCUMBLE_EDITOR_ONLY=2 PNG steps): editor rc=0 2s PASS -> ALL PASS
+      k8-huge-node (--tiles on): nodecopy rc=0 19s PASS, huge:30000x20000 rc=1 201s FAIL -> SOME FAILED
+        (see Section 7 above for K8-T1 root cause and 30000x20000 before/after probe)
+    Post-merge with wasm-kernels (044b84c3):
+      k8-merged-tiles (--tiles on): lint rc=0 15s, types rc=0 13s, editor rc=0 186s PASS, pixels rc=0 11s PASS -> ALL PASS
+      k8-merged-canvas (--tiles off): lint rc=0 14s, types rc=0 12s, editor rc=0 151s PASS, pixels rc=0 14s PASS -> ALL PASS
+      k8-merged-doc-tiff-tiles (--tiles on): document rc=0 59s PASS, tiff rc=0 18s PASS -> ALL PASS
+      k8-merged-doc-tiff-canvas (--tiles off): document rc=0 53s PASS, tiff rc=0 13s PASS -> ALL PASS
+      k8-merged-nodecopy (--tiles on): nodecopy rc=0 46s PASS -> ALL PASS

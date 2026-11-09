@@ -583,6 +583,68 @@ JS = r"""
     const mapStd = await ed7.computeDepthMap({ recompute: true, detail: "standard" });
     check("R2-S7 standard run made 1 call", depthCalls.length === 1, { calls: depthCalls.length });
 
+    // K24: computeDepthMap guidedFar route ("rust" vs "js" vs inpaint_depth.js reference)
+    {
+        const { guidedFar: guidedFarRef, disparityRange: dispRangeRef, GUIDE } = await import("./editor/inpaint_depth.js");
+        const { boxBlurs: boxBlursRef } = await import("./editor/px/kernels_js.js");
+        const E = ed7.constructor;
+        E.kernels = "rust";
+        E.setRoute("guidedFar", "rust");
+        E.jobTimings(true);
+        depthCalls.length = 0;
+        const mapRust = await ed7.computeDepthMap({ recompute: true, detail: "standard" });
+        const timingsRust = E.jobTimings(true).filter((t) => t.op === "depth_guide");
+        const rustCalls = timingsRust.reduce((s, t) => s + ((t.pxCalls && t.pxCalls.guided_far) || 0), 0);
+        const rustData = new Uint16Array(mapRust.data);
+        const rustGuide = new Uint8ClampedArray(mapRust.guide);
+        const rustLo = mapRust.meta.lo, rustHi = mapRust.meta.hi;
+
+        E.setRoute("guidedFar", "js");
+        E.jobTimings(true);
+        depthCalls.length = 0;
+        const mapJs = await ed7.computeDepthMap({ recompute: true, detail: "standard" });
+        const timingsJs = E.jobTimings(true).filter((t) => t.op === "depth_guide");
+        const jsCalls = timingsJs.reduce((s, t) => s + ((t.pxCalls && t.pxCalls.guided_far) || 0), 0);
+        const jsData = new Uint16Array(mapJs.data);
+        const jsGuide = new Uint8ClampedArray(mapJs.guide);
+        const jsLo = mapJs.meta.lo, jsHi = mapJs.meta.hi;
+        E.setRoute("guidedFar", null);
+
+        const refGuideInp = await host.depthInput(ed7, mapRust.w, mapRust.h);
+        const refGuide = refGuideInp.image;
+        const refGrey = new Uint8Array(mapRust.w * mapRust.h);
+        for (let i = 0, j = 0; j < refGrey.length; i += 4, j++) {
+            refGrey[j] = Math.round(refGuide[i] * 0.299 + refGuide[i + 1] * 0.587 + refGuide[i + 2] * 0.114);
+        }
+        const refBounds = dispRangeRef(mapRust.meta.raw, 0.005, 0.995);
+        const refData = guidedFarRef({
+            raw: mapRust.meta.raw,
+            rw: mapRust.meta.rw,
+            rh: mapRust.meta.rh,
+            grey: refGrey,
+            gw: mapRust.w,
+            gh: mapRust.h,
+            r: GUIDE.r,
+            eps: GUIDE.eps,
+            lo: refBounds.lo,
+            hi: refBounds.hi,
+        }, boxBlursRef);
+
+        let dataSame = jsData.length === rustData.length && refData.length === rustData.length;
+        for (let i = 0; dataSame && i < rustData.length; i++) {
+            if (jsData[i] !== rustData[i] || refData[i] !== rustData[i]) dataSame = false;
+        }
+        let guideSame = jsGuide.length === rustGuide.length && refGuide.length === rustGuide.length;
+        for (let i = 0; guideSame && i < rustGuide.length; i++) {
+            if (jsGuide[i] !== rustGuide[i] || refGuide[i] !== rustGuide[i]) guideSame = false;
+        }
+        const metaSame = Object.is(jsLo, rustLo) && Object.is(jsHi, rustHi)
+            && Object.is(refBounds.lo, rustLo) && Object.is(refBounds.hi, rustHi);
+        check("K24: computeDepthMap guidedFar route calls guided_far once on rust and 0 on js with byte-equal data, guide, and lo/hi",
+            rustCalls === 1 && jsCalls === 0 && dataSame && guideSame && metaSame,
+            { rustCalls, jsCalls, dataSame, guideSame, metaSame });
+    }
+
     // 2. Fine run (4 + 1 calls, 1 input shape, progress 1..4)
     depthCalls.length = 0;
     const progressFine = [];
@@ -806,6 +868,42 @@ JS = r"""
     // 4. Undo restores previous map object
     await ed11.undoStep();
     check("R2-S11: undo restores previous map object", ed11.maps.depth === mapNorm);
+
+    // 5. K24: depth_from_layer guidedFar route ("rust" vs "js")
+    {
+        const E = ed11.constructor;
+        E.kernels = "rust";
+        E.setRoute("guidedFar", "rust");
+        E.jobTimings(true);
+        await commands.run("depth_from_layer", { doc: ed11.node.id, layer: rampLayer.id, invert: false });
+        const timingsRust = E.jobTimings(true).filter((t) => t.op === "depth_guide");
+        const rustCalls = timingsRust.reduce((s, t) => s + ((t.pxCalls && t.pxCalls.guided_far) || 0), 0);
+        const mapRust = ed11.maps.depth;
+        const rustData = new Uint16Array(mapRust.data);
+        const rustGuide = new Uint8ClampedArray(mapRust.guide);
+        const rustLo = mapRust.meta.lo, rustHi = mapRust.meta.hi;
+
+        E.setRoute("guidedFar", "js");
+        E.jobTimings(true);
+        await commands.run("depth_from_layer", { doc: ed11.node.id, layer: rampLayer.id, invert: false });
+        const timingsJs = E.jobTimings(true).filter((t) => t.op === "depth_guide");
+        const jsCalls = timingsJs.reduce((s, t) => s + ((t.pxCalls && t.pxCalls.guided_far) || 0), 0);
+        const mapJs = ed11.maps.depth;
+        E.setRoute("guidedFar", null);
+
+        const refGuideInp = await host.pictureInput(ed11, mapRust.w, mapRust.h, { skipFilters: true, background: "#808080" });
+        const refGuide = refGuideInp.image;
+        let dataSame = mapJs.data.length === rustData.length;
+        for (let i = 0; dataSame && i < rustData.length; i++) if (mapJs.data[i] !== rustData[i]) dataSame = false;
+        let guideSame = mapJs.guide.length === rustGuide.length && refGuide.length === rustGuide.length;
+        for (let i = 0; guideSame && i < rustGuide.length; i++) {
+            if (mapJs.guide[i] !== rustGuide[i] || refGuide[i] !== rustGuide[i]) guideSame = false;
+        }
+        const metaSame = Object.is(mapJs.meta.lo, rustLo) && Object.is(mapJs.meta.hi, rustHi);
+        check("K24: depth_from_layer guidedFar route calls guided_far once on rust and 0 on js with byte-equal data, guide, and lo/hi",
+            rustCalls === 1 && jsCalls === 0 && dataSame && guideSame && metaSame,
+            { rustCalls, jsCalls, dataSame, guideSame, metaSame });
+    }
 
     shell.closeDocument && shell.closeDocument(ed11, { force: true });
 

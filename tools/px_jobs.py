@@ -172,6 +172,8 @@ BODY = """
     const RNGDK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "rangeDepth"));
     const RNGLK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "rangeLuma"));
     const RNGCK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "rangeColor"));
+    const LIMK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "limitAlphaRows"));
+    const GUIDK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "guidedFar"));
     const COMBINE = { ms: 0, n: 0 }, INVERT = { ms: 0, n: 0 };
     const combine0 = T.TileMaskPixels.prototype.combine, invert0 = T.TileMaskPixels.prototype.invert;
     const timedCombine = function (...a) {
@@ -317,7 +319,7 @@ BODY = """
     // the default strength. The depth a slope from far at the top left to near at the bottom right, the base's discs
     // standing nearer than the slope around them: a range cuts a band across the picture with the discs as holes, and
     // the discs' rims are the edges snap works on.
-    if (["range_depth", "range_depth_snap", "depth_guide", "fill_limit"].some(wanted)) {
+    if (["range_depth", "range_depth_snap", "depth_guide", "depth_guide_model", "fill_limit"].some(wanted)) {
         const DEP = await import("./editor/inpaint_depth.js");
         const [gw, gh] = DEP.workSize(W, H);
         const sx = gw / W, sy = gh / H;
@@ -669,9 +671,46 @@ BODY = """
         const keep = ed.maps && ed.maps.depth;
         let map = null;
         const out = await op(kernels, async () => { map = await ed.depthFromLayer(paint); }, "depth_guide", { sel: false });
-        if (CHECK) out.digest = map ? await hex(new Uint8Array(map.data.slice().buffer)) : null;
+        if (CHECK) {
+            out.digest = map ? await hex(new Uint8Array(map.data.slice().buffer)) : null;
+            out.guideDigest = map && map.guide ? await hex(new Uint8Array(map.guide.slice().buffer)) : null;
+        }
         if (keep) await ed.setMap("depth", keep);
         return out;
+    };
+    const depthGuideModelRow = async (kernels) => {
+        const keep = ed.maps && ed.maps.depth;
+        const origDepthModel = host.depthModel.bind(host);
+        const origHelperCall = host.helperCall.bind(host);
+        host.depthModel = () => ({ id: "da2_small", label: "Depth Anything V2 Small" });
+        host.helperCall = async (helper, req) => {
+            if (helper === "depth") {
+                const mw = req.width, mh = req.height, img = req.image;
+                const depth = new Float32Array(mw * mh);
+                let min = Infinity, max = -Infinity;
+                for (let i = 0; i < mw * mh; i++) {
+                    const v = (img[i * 4] * 0.6 + img[i * 4 + 1] * 0.3 + img[i * 4 + 2] * 0.1) * (1 / 255) * 7.5;
+                    depth[i] = v;
+                    if (v < min) min = v;
+                    if (v > max) max = v;
+                }
+                return { depth, min, max, runMs: 0, provider: "standin" };
+            }
+            return origHelperCall(helper, req);
+        };
+        let map = null;
+        try {
+            const out = await op(kernels, async () => { map = await ed.computeDepthMap({ recompute: true, detail: "standard" }); }, "depth_guide", { sel: false });
+            if (CHECK) {
+                out.digest = map ? await hex(new Uint8Array(map.data.slice().buffer)) : null;
+                out.guideDigest = map && map.guide ? await hex(new Uint8Array(map.guide.slice().buffer)) : null;
+            }
+            return out;
+        } finally {
+            host.depthModel = origDepthModel;
+            host.helperCall = origHelperCall;
+            if (keep) await ed.setMap("depth", keep);
+        }
     };
     // a fill layer with a depth limit as the layered export reads it (`fillLayerRows`, inpaint_canvas.js): per band of
     // 256 rows (bandRows' default) the fill's pixels, then `limitAlphaRows` over them, the map snapped at the default
@@ -795,6 +834,14 @@ BODY = """
             const r = routeOf("rangeColor"), n = jobs.range_tiles_rgba || 0, want = r === "rust" ? Math.ceil(H / 256) : 0;
             if (n !== want) bad.push(`rangeColor=${r}: the jobs called range_tiles_rgba ${n} times, for ${want} tile rows`);
         }
+        if (LIMK && row.job === "fill_limit") {
+            const r = routeOf("limitAlphaRows"), n = win.limit_alpha_rows || 0, want = r === "rust" ? (row.bands || 0) : 0;
+            if (n !== want) bad.push(`limitAlphaRows=${r}: the window called limit_alpha_rows ${n} times, for ${want} of the row's ${row.bands || 0} bands`);
+        }
+        if (GUIDK && (row.job === "depth_guide" || row.job === "depth_guide_model")) {
+            const r = routeOf("guidedFar"), n = jobs.guided_far || 0, want = r === "rust" ? 1 : 0;
+            if (n !== want) bad.push(`guidedFar=${r}: the jobs called guided_far ${n} times, for ${want}`);
+        }
         if (row.floodPx) {
             const r = routeOf("flood");
             const want = r === "js" ? 0 : r === "rust" ? row.floodPx.length : row.floodPx.filter((n) => n >= r).length;
@@ -908,6 +955,7 @@ BODY = """
                 ed.clearUndo();
                 for (const job of ["range_depth", "range_depth_snap", "range_luma", "range_color"]) await step(job, k, round, () => rangeRow(k, job));
                 await step("depth_guide", k, round, () => depthGuideRow(k));
+                await step("depth_guide_model", k, round, () => depthGuideModelRow(k));
                 await step("fill_limit", k, round, () => fillLimitRow(k));
                 ed.clearUndo();
             }
@@ -960,6 +1008,7 @@ PARTS = {
     "range_luma": ["ms", "stack_into.kernel"],
     "range_color": ["ms", "stack_into.kernel"],
     "depth_guide": ["total"],
+    "depth_guide_model": ["total"],
     "fill_limit": ["fill", "limit"],
 }
 # the pixel work a kernel set does after the job has read its pixels: with Rust the grow job is one call ("kernel"),
@@ -972,9 +1021,9 @@ KERNEL = {"mips_direct": ["kernel"], "mips_whole": ["kernel"], "band": ["kernel"
           "wand_band": ["flood", "clip", "bounds", "shape"], "wand_object": ["flood", "clip", "bounds", "shape"],
           "wand_add": ["flood", "clip", "bounds", "shape"], "invert": ["invert"],
           "range_depth": ["ms"], "range_depth_snap": ["ms"], "range_luma": ["ms"], "range_color": ["ms"],
-          "depth_guide": [], "fill_limit": []}
+          "depth_guide": ["total"], "depth_guide_model": ["total"], "fill_limit": ["limit"]}
 # the "worker job" column: the job's whole time where it is not `total` or `kernel`; None where the row posts no job
-WORKER = {"invert": None, "fill_limit": None, "depth_guide": "total",
+WORKER = {"invert": None, "fill_limit": None, "depth_guide": "total", "depth_guide_model": "total",
           "range_depth": "ms", "range_depth_snap": "ms", "range_luma": "ms", "range_color": "ms"}
 # K1's flood ladder: the wand's parts, one row per square that fits (the body's LADDER)
 for _s in (256, 512, 1024, 2048, 4096, 8192):
@@ -1154,8 +1203,14 @@ def report(result, check):
         if not js or not rs:
             continue
         if check and job != "mips_whole":   # no bytes of its own: the chains land in the tile store
-            digests = {r.get("digest") for r in js + rs}
-            same = len(digests) == 1 and None not in digests
+            digests = {
+                f"{r.get('digest')}:{r.get('guideDigest')}" if "guideDigest" in r else r.get("digest")
+                for r in js + rs
+            }
+            same = len(digests) == 1 and all(
+                r.get("digest") is not None and ("guideDigest" not in r or r.get("guideDigest") is not None)
+                for r in js + rs
+            )
             bad += 0 if same else 1
             print(f"  {job:16s} {'same bytes' if same else 'DIFFERENT BYTES ' + str(sorted(d or '-' for d in digests))}")
         kj = sum(med(js, k) for k in KERNEL[job])
@@ -1183,7 +1238,7 @@ def report(result, check):
                 extra += f", {med(js, 'edgeTiles'):.0f} edge tiles"
         elif job == "invert":
             extra = ""
-        elif job == "depth_guide":
+        elif job in ("depth_guide", "depth_guide_model"):
             extra = f"  {med(js, 'jobs'):.0f} jobs"
         elif job == "fill_limit":
             extra = f"  {med(js, 'bands'):.0f} bands of 256 rows"

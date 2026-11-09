@@ -1,0 +1,564 @@
+{
+  "id": "krea_3",
+  "kind": "provider",
+  "name": "Krea 3 Edit",
+  "family": "Krea",
+  "refs": {
+    "name": "image {n}"
+  },
+  "description": "Krea's image editor (October 2026): it plans the edit from your instruction and repaints the whole crop, up to eight pictures in all. No mask input: the stitch keeps the selection. Also on WaveSpeedAI. Also on OpenRouter. Also on Replicate. Also on Comfy Cloud. Also on Comfy Router. Also on Oxen.ai. Adapters written from the providers' docs, not run against the live API yet.",
+  "default": "fal",
+  "providers": {
+    "fal": {
+      "model": "krea/v3/edit",
+      "input": "edit",
+      "refs": {
+        "name": "<image-{n}>"
+      },
+      "options": {
+        "sizing": "pixels",
+        "pixels": {
+          "step": 16,
+          "max": 3200,
+          "minPixels": 65536,
+          "maxPixels": 4220160
+        },
+        "max_images": 8,
+        "omit": [
+          "num_images"
+        ],
+        "text_values": {
+          "reasoning_level": {
+            "ultra": "high"
+          }
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "reasoning_level",
+          "label": "Planning",
+          "spec": [
+            [
+              "medium",
+              "high",
+              "ultra"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "min": 256,
+        "max": 3200,
+        "step": 16,
+        "pixels": 4220160
+      },
+      "text": {
+        "model": "krea/v3/text-to-image",
+        "sizes": [
+          1024,
+          1536,
+          2048
+        ],
+        "refs": {
+          "model": "krea/v3/edit"
+        }
+      },
+      "note": "Instruction edit of the crop plus the reference layers (at most eight pictures with the crop and the Original), no mask input: the stitch keeps the selection. Written from fal's schema (read 2026-11-09), not run against the live API yet. The pictures go inline (data URIs) to fal. The answer is the crop's own size in multiples of 16: 256 to 3200 px an edge, at most 4,220,160 pixels. Planning is how much the model reasons about the edit before it renders (medium is fal's default; ultra takes longest and a new image from the prompt alone goes as high). Name a reference in the prompt with @img1: it goes out as <image-2> and so on, as fal's page calls the pictures. fal bills $0.025 per megapixel for the output plus each picture the model reads (a reference larger than the output counts at the output's size)."
+    },
+    "wavespeed": {
+      "model": "krea/v3/edit",
+      "input": "edit",
+      "refs": {
+        "name": "<image-{n}>"
+      },
+      "options": {
+        "size": "star",
+        "max_side": 4096,
+        "max_images": 8,
+        "model_row": true
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "reasoning_level",
+          "label": "Planning",
+          "spec": [
+            [
+              "low",
+              "medium"
+            ],
+            {
+              "default": "low"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "model",
+          "label": "Model",
+          "spec": [
+            [
+              "berry",
+              "jam"
+            ],
+            {
+              "default": "berry"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "min": 256,
+        "max": 4096,
+        "step": 16,
+        "pixels": 4194304
+      },
+      "text": {
+        "model": "krea/v3/text-to-image",
+        "sizes": [
+          1024,
+          1536,
+          2048
+        ],
+        "refs": {
+          "model": "krea/v3/edit"
+        }
+      },
+      "note": "Instruction edit of the crop plus the reference layers (at most eight pictures with the crop and the Original), no mask input: the stitch keeps the selection. Written from WaveSpeed's docs (read 2026-11-09), not run against the live API yet. The crop is uploaded to WaveSpeed's media store first. The answer is the crop's own size as W*H in multiples of 16: 256 to 4096 px an edge, about 4 MP at most. Planning is how much the model reasons about the edit before it renders (low is WaveSpeed's default). Model: Berry favours quality, Jam speed; a negative prompt applies to Berry only. Name a reference in the prompt with @img1: it goes out as <image-2> and so on, as WaveSpeed's page calls the pictures."
+    },
+    "replicate": {
+      "model": "krea/krea-3",
+      "input": "edit",
+      "fields": {
+        "images": "images"
+      },
+      "options": {
+        "max_images": 8,
+        "edit_aspect": "preset_or_auto",
+        "ratios": [
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1k",
+              "2k"
+            ],
+            {
+              "default": "2k"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "thinking_mode",
+          "label": "Planning",
+          "spec": [
+            [
+              "fast",
+              "high"
+            ],
+            {
+              "default": "fast"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "min": 256,
+        "max": 2048,
+        "step": 16,
+        "pixels": 4194304,
+        "aspects": [
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ]
+      },
+      "text": {
+        "sizes": [
+          2048
+        ],
+        "fixed": {
+          "aspect_ratio": "match_input_image"
+        },
+        "aspects": [
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ],
+        "refs": {}
+      },
+      "note": "Runs on Replicate (Krea's official model there); not run against the live API yet (written from Replicate's schema, read 2026-11-09). Instruction edit of the crop plus the reference layers (at most eight pictures), no mask input: the stitch keeps the selection. It takes ten aspect presets: the crop's context is widened to the nearest one the picture can give, and that preset goes with the request so the answer lines up (else auto, and an answer of another shape is centre-cropped). Resolution sets the answer's size class; Planning high plans complex edits more carefully, slower and dearer (fast is the model's default). Replicate's page says to refer to pictures by what they show; @img1 goes out as image 2 and so on, the wording Comfy's node for this model uses."
+    },
+    "comfycloud": {
+      "model": "Krea 3",
+      "input": "edit",
+      "options": {
+        "node": "Krea3ImageNode"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "model.resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1K",
+              "2K"
+            ],
+            {
+              "default": "2K"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "model.thinking_mode",
+          "label": "Planning",
+          "spec": [
+            [
+              "fast",
+              "high",
+              "ultra"
+            ],
+            {
+              "default": "fast"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "min": 256,
+        "max": 2048,
+        "step": 16,
+        "pixels": 4194304,
+        "aspects": [
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ]
+      },
+      "text": {
+        "model": "Krea 3",
+        "sizes": [
+          2048
+        ],
+        "aspects": [
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ],
+        "refs": {}
+      },
+      "note": "Runs Krea's Partner Node on Comfy Cloud (paid plan, credits). Instruction edit of the crop plus the reference layers (at most eight pictures), no mask input: the stitch keeps the selection (the node's own precise edit stays off). It takes ten aspect presets: the crop's context is widened to the nearest one the picture can give, and that preset goes with the job. Written from the node's spec as Comfy Cloud listed it on 2026-11-09, not run against the live API yet. Planning: fast is the node's default and recommended, high plans complex edits in more detail, ultra makes several candidates and returns the best (always 2K; a new image from the prompt alone goes as high). The node's price badge: 1K fast about $0.043, high $0.072; 2K fast about $0.086, high $0.114; ultra about $0.37; each picture $0.029 more (up to $0.10 at 2K)."
+    },
+    "openrouter": {
+      "model": "krea/k3-edit",
+      "input": "edit",
+      "options": {
+        "accepts": [
+          "resolution",
+          "aspect_ratio",
+          "seed"
+        ],
+        "edit_aspect": "preset_or_none",
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:2",
+          "16:9",
+          "4:5",
+          "2:3",
+          "9:16"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048
+        },
+        "max_images": 8,
+        "passthrough": {
+          "krea": [
+            "thinking_mode"
+          ]
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "thinking_mode",
+          "label": "Planning",
+          "spec": [
+            [
+              "fast",
+              "high"
+            ],
+            {
+              "default": "fast"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "min": 256,
+        "max": 2048,
+        "step": 16,
+        "pixels": 4194304,
+        "aspects": [
+          "1:1",
+          "4:3",
+          "3:2",
+          "16:9",
+          "4:5",
+          "2:3",
+          "9:16"
+        ]
+      },
+      "text": false,
+      "note": "Runs on OpenRouter (one key for many models) as K3 Edit; the adapter has run against the live API with GPT Image 2.5, this model not yet (written from its endpoint list, read 2026-11-09). The pictures go inline in the request to OpenRouter, which passes them to Krea. Instruction edit of the crop plus the reference layers (at most eight pictures), no mask input: the stitch keeps the selection. It takes seven aspect presets only: the crop's context is widened to the nearest one the picture can give, and that preset goes with the request so the answer lines up (a crop that cannot be widened goes without one and an answer of another shape is centre-cropped). It needs at least one picture, so it does not make new images. Resolution auto takes the smallest tier that covers the crop. Planning goes to Krea as a passthrough parameter (provider.options.krea). OpenRouter lists per image: 1K $0.03 output and $0.02 each input picture, 2K $0.06 and $0.07, Planning high $0.02 a request more."
+    },
+    "comfyrouter": {
+      "model": "krea/krea-3",
+      "input": "edit",
+      "options": {
+        "max_images": 8,
+        "ratios": [
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ],
+        "tiers": {
+          "1k": 1024,
+          "2k": 2048
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1k",
+              "2k"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "thinking_mode",
+          "label": "Planning",
+          "spec": [
+            [
+              "fast",
+              "high",
+              "ultra"
+            ],
+            {
+              "default": "fast"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "model",
+          "label": "Model",
+          "spec": [
+            [
+              "berry",
+              "jam"
+            ],
+            {
+              "default": "berry"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "min": 256,
+        "max": 2048,
+        "step": 16,
+        "pixels": 4194304,
+        "aspects": [
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ]
+      },
+      "text": {
+        "sizes": [
+          1024,
+          2048
+        ],
+        "refs": {}
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. Written from the Router's schema, read 2026-11-09. Each picture is first uploaded to Krea's asset store through Comfy (the route the schema names, as ComfyUI's own node does), and Comfy passes them to Krea. Instruction edit of the crop plus the reference layers (at most eight pictures), no mask input: the stitch keeps the selection. It takes ten aspect presets: the crop's context is widened to the nearest one the picture can give, and that preset goes with the request. Resolution auto takes the smallest tier that covers the crop. Planning ultra always goes as 2k, and a new image from the prompt alone goes as high. Model: Berry favours quality, Jam speed."
+    },
+    "oxen": {
+      "model": "krea-3",
+      "input": "edit",
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "resolution",
+          "thinking_level",
+          "seed"
+        ],
+        "edit_aspect": "preset_or_auto",
+        "ratios": [
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ],
+        "tiers": {
+          "1k": 1024,
+          "2k": 2048
+        },
+        "max_images": 8
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1k",
+              "2k"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "thinking_level",
+          "label": "Planning",
+          "spec": [
+            [
+              "fast",
+              "high"
+            ],
+            {
+              "default": "fast"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "min": 256,
+        "max": 2048,
+        "step": 16,
+        "pixels": 4194304,
+        "aspects": [
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ]
+      },
+      "text": {
+        "sizes": [
+          1024,
+          2048
+        ],
+        "refs": {}
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-11-09). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account. Instruction edit of the crop plus the reference layers (at most eight pictures), no mask input: the stitch keeps the selection. It takes ten aspect presets: the crop's context is widened to the nearest one the picture can give, and that preset goes with the request (else auto, and an answer of another shape is centre-cropped). Resolution auto takes the smallest tier that covers the crop. Oxen's list price per image: 1K fast $0.039, high $0.065; 2K fast $0.078, high $0.104; $0.07 each input picture at 2K (2026-11-09)."
+    }
+  }
+}

@@ -1,0 +1,64 @@
+[06:31:31] after: 3fd8bda7 + working tree, px.wasm 821c3ed44ddc7661, px_scalar.wasm 97d648ca01cadbf2
+[06:31:32] before: /c/Users/schoeneberg/AppData/Local/Temp/k24_before_tree, px.wasm 7e99b55f37ff69ff
+[06:31:33] gpu: 18604 MiB, 16 %; comfy 8188: 200
+lock: held by 'main loop gates mergefm1 71072 2026-11-09T06:30:11', waiting
+lock: taken after 2160 s
+[07:07:34] lock: taken (K24 measuring (px_test guided bench) 61060 2026-11-09T06:31:33) for px_test guided bench
+[07:07:58] px_test guided bench rc=0
+lock: released
+lock: taken after 0 s
+[07:07:58] lock: taken (K24 measuring (before check 2048x1152) 32264 2026-11-09T07:07:58) for before check 2048x1152
+[07:08:16] before check 2048x1152 rc=0
+closed
+lock: released
+lock: taken after 0 s
+[07:08:19] lock: taken (K24 measuring (after check 2048x1152) 65304 2026-11-09T07:08:19) for after check 2048x1152
+[07:08:36] after check 2048x1152 rc=0
+closed
+lock: released
+[07:08:40] == round 1
+lock: taken after 0 s
+[07:08:40] lock: taken (K24 measuring (before r1) 34844 2026-11-09T07:08:40) for before r1
+[07:08:49] before r1: px_jobs 15000x10000
+[07:09:02] before r1: px_jobs rc=0
+closed
+lock: released
+lock: taken after 0 s
+[07:09:06] lock: taken (K24 measuring (after r1) 24056 2026-11-09T07:09:06) for after r1
+[07:09:15] after r1: px_jobs 15000x10000
+[07:09:28] after r1: px_jobs rc=0
+[07:09:28] after r1: px_jobs --ab guidedFar=js:rust 15000x10000
+[07:09:50] after r1: px_jobs ab_guided rc=0
+closed
+lock: released
+[07:09:55] == round 2
+lock: taken after 0 s
+[07:09:55] lock: taken (K24 measuring (after r2) 68732 2026-11-09T07:09:55) for after r2
+[07:10:04] after r2: px_jobs 15000x10000
+[07:10:16] after r2: px_jobs rc=0
+[07:10:16] after r2: px_jobs --ab guidedFar=js:rust 15000x10000
+[07:10:38] after r2: px_jobs ab_guided rc=0
+closed
+lock: released
+lock: taken after 0 s
+[07:10:42] lock: taken (K24 measuring (before r2) 43756 2026-11-09T07:10:42) for before r2
+[07:10:51] before r2: px_jobs 15000x10000
+[07:11:04] before r2: px_jobs rc=0
+closed
+lock: released
+[07:11:09] == round 3
+lock: taken after 0 s
+[07:11:09] lock: taken (K24 measuring (before r3) 23884 2026-11-09T07:11:09) for before r3
+[07:11:19] before r3: px_jobs 15000x10000
+[07:11:31] before r3: px_jobs rc=0
+closed
+lock: released
+lock: taken after 0 s
+[07:11:35] lock: taken (K24 measuring (after r3) 28164 2026-11-09T07:11:35) for after r3
+[07:11:44] after r3: px_jobs 15000x10000
+[07:11:57] after r3: px_jobs rc=0
+[07:11:57] after r3: px_jobs --ab guidedFar=js:rust 15000x10000
+[07:12:17] after r3: px_jobs ab_guided rc=0
+closed
+lock: released
+[07:12:21] done

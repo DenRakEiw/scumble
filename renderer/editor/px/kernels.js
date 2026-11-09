@@ -30,7 +30,7 @@ import { liquifyBlock as liquifyBlockJS, previewBlock as previewBlockJS, liquify
 // the retouch brushes' twins live with the brushes (K26, K27; inpaint_stroke.js imports nothing, so no cycle)
 import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin, toneRGBA as toneRGBATwin, spongeRGBA as spongeRGBATwin, freqSplit as freqSplitTwin } from "../inpaint_stroke.js";
 
-export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA } from "./kernels_js.js";
+export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, TIFF_JS } from "./kernels_js.js";
 // this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4), their clocks and the copies
 // around them (docs/PLAN_WASM_K1.md §1.1); they survive a new instance
 export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
@@ -55,10 +55,12 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * `warpRgba` and `warpCoverage` (K34): `edgefitShrink`, `warpRgba` and `warpCoverage` of edgefit.js. `mapTileStats`
  * (K21), `rangeDepth` and `rangeDepthSnap` (K22): `mapTileStats` and `rangeTilesDepth` (plain bilinear tiles and
  * joint-bilateral snapped tiles). `rangeLuma` and `rangeColor` (K23): `rangeTilesRgba` (luminance and colour-similarity
- * range selection over an RGBA8 band).
+ * range selection over an RGBA8 band). `limitAlphaRows` (K25): `limitAlphaRows` (fill layer depth limit alpha on PSD/ORA
+ * export). `guidedFar` (K24): `guidedFar` of `inpaint_depth.js` (the depth map's guided filter).
  * `compositeMaskedTile` (K36): `compositeMaskedTile` of inpaint_tiles.js `compositeStroke`.
+ * `composeTiles` and `composeStack` (K10b): pointer gather into wasm memory for tile-store and stack `png_part` jobs.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -74,6 +76,11 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // rangeLuma=js:rust on range_luma (1102.7 vs 1893.4 ms wall, lower by 790.7 > spread 392.8; worker job 1033.6 vs
 // 2545.3 ms; before/after on Rust 1636.6 -> 1224.4 ms wall) and rangeColor=js:rust on range_color (1976.6 vs 3542.6 ms
 // wall, lower by 1566.1 > spread 368.4; worker job 2893.4 vs 6487.6 ms; before/after on Rust 3137.6 -> 1785.7 ms wall).
+// No limitAlphaRows entry (K25, docs/measurements/k25_2026-11-09/summary.txt): at 15000x10000 Rust won
+// limitAlphaRows=js:rust on fill_limit (snapped path: 6213.3 vs 10880.1 ms wall, lower by 4666.9 > spread 1447.3;
+// kernel row 6092.4 vs 10728.2 ms; before/after on Rust 11829.1 -> 6036.1 ms wall, 1.96x; export_test fill_limit_rows
+// 11178 -> 6209 ms, 1.80x, psd_fill_limit fillRowsMs 12141 -> 6496 ms, 1.87x; plain bilinear path measured at the
+// kernel row only, PX_BENCH 15000x256: twin 100.16 vs simd 85.98 / scalar 88.06 ms, 1.16x).
 // crc32 64 (K3, docs/measurements/k3_2026-11-08/summary.txt): 64 B is about a tie decided by the kernel row (Electron V8
 // size sweep: 0.075-0.100 vs 0.028-0.074 us at 16-48 B, 0.093-0.138 vs 0.156-0.235 us at 64-128 B, 1.50-2.53x; 4.97x at
 // 64 KB; 4.26x on w0_bench crc32_64mb); smaller headers (PNG signature, IHDR, 4-byte chunk lengths) stay in JS.
@@ -881,19 +888,40 @@ export function heightNormals(depth, w, h, scale, sigma, out = null) {
     return J.heightNormals(depth, w, h, scale, sigma, out);
 }
 
+const MARCH_MAX = 0x40000000;
+
+function marchGuardOk(w, h, scale, light, radius, bias) {
+    if (!Number.isInteger(w) || !Number.isInteger(h) || !(w > 0 && h > 0 && w < MARCH_MAX && h < MARCH_MAX)) return false;
+    if (!light || light.length < 4) return false;
+    for (const v of [scale, light[0], light[1], light[2], light[3], radius ?? 0, bias ?? 0]) {
+        const n = Number(v);
+        if (!Number.isFinite(n) || !(Math.abs(n) < MARCH_MAX)) return false;
+    }
+    if (Number(bias ?? 0) < 0) return false;
+    return true;
+}
+
 /**
  * Marches shadow rays through u16 depth height field. A full-size `out` takes rows row0.. at row0 * w (both kernels), so
- * the stripes of one march write into one buffer (K12). `key` names the depth map's data for the Rust sun's resident copy
- * (px.js `_slot`): the stripes of one march on one worker copy it once; the twin reads `depth` where it lies.
+ * the stripes of one march write into one buffer (K12). `key` names the depth map's data for the Rust march's resident copy
+ * (px.js `_slot`): the stripes of one march on one worker copy it once; the twin reads `depth` where it lies. Non-finite
+ * lights or coordinates `>= 2^30` fall back to the twin (K13).
  */
 export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null, key = null) {
-    if (light && light[3] !== 1) {
+    if (!marchGuardOk(w, h, scale, light, radius, bias)) {
         return J.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out);
     }
-    const p = rustPx();
+    const p = rustPx("shadowMarch", w * h);
     if (p) {
-        try { return p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key); }
-        catch (err) { if (!recovered(p, err, "shadow_march")) throw err; }
+        const isSun = Number(light[3]) === 1;
+        const exp = isSun ? "shadow_march" : "shadow_march_f64";
+        try {
+            const res = isSun
+                ? p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key)
+                : p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key);
+            if (res) return res;
+        }
+        catch (err) { if (!recovered(p, err, exp)) throw err; }
         finally { releaseIfLarge(); }
     }
     return J.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out);
@@ -1079,4 +1107,64 @@ export function rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, ti
     return J.rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert, tile);
 }
 
+/**
+ * Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes `src` into `out`
+ * (`need` bytes, allocated when absent), stopping as soon as `need` bytes are written (`inpaint_tiff.js`
+ * `unpackStrip`, K16, docs/PLAN_WASM_BUILD.md §4.6).
+ */
+export function tiffUnpack(compression, src, need, out = null, name = "strip") {
+    const p = rustPx();
+    if (p) {
+        try { return p.tiffUnpack(compression, src, need, out, name); }
+        catch (err) { if (!recovered(p, err, "tiff_unpack")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.tiffUnpack(compression, src, need, out, name);
+}
+
+
+/**
+ * Multiplies the alpha channel of `rgba` (`w * h * 4` RGBA8 bytes, in place) by the depth limit weight over `map`
+ * (`mw` x `mh` u16, affine transform `xf`) and optional joint-bilateral snap (`snap = [sigmaR, tau]`, `guide`,
+ * optional `col` reference RGBA8) in chunks of at most 256 rows (K25, docs/PLAN_WASM_BUILD.md §4.8), routed by
+ * `limitAlphaRows`.
+ */
+export function limitAlphaRows(rgba, map, mw, mh, xf, x0, y0, w, h, limit, snap = null, guide = null, col = null) {
+    const p = rustPx("limitAlphaRows");
+    let done = 0;
+    if (p) {
+        try {
+            return p.limitAlphaRows(rgba, map, mw, mh, xf, x0, y0, w, h, limit, snap, guide, col);
+        } catch (err) {
+            if (!recovered(p, err, "limit_alpha_rows")) throw err;
+            done = (err && typeof err === "object" && err.doneRows > 0) ? err.doneRows : 0;
+        } finally { releaseIfLarge(); }
+    }
+    if (done > 0 && done < h) {
+        const off = done * w * 4;
+        const subRgba = new Uint8Array(rgba.buffer, rgba.byteOffset + off, (h - done) * w * 4);
+        const subCol = col ? new Uint8Array(col.buffer, col.byteOffset + off, (h - done) * w * 4) : null;
+        J.limitAlphaRows(subRgba, map, mw, mh, xf, x0, y0 + done, w, h - done, limit, snap, guide, subCol);
+        return rgba;
+    }
+    return J.limitAlphaRows(rgba, map, mw, mh, xf, x0, y0, w, h, limit, snap, guide, col);
+}
+
+/**
+ * The depth map's guided filter (`inpaint_depth.js` `guidedFar`, K24), routed by `guidedFar`. Accepts either an options
+ * object `{ raw, rw, rh, grey, gw, gh, r, eps, lo, hi }` (with optional `out` as the second argument) or positional
+ * `(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null)`.
+ */
+export function guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null) {
+    const p = rustPx("guidedFar");
+    if (p) {
+        try {
+            const res = p.guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out);
+            if (res) return res;
+        } catch (err) {
+            if (!recovered(p, err, "guided_far")) throw err;
+        } finally { releaseIfLarge(); }
+    }
+    return J.guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out);
+}
 

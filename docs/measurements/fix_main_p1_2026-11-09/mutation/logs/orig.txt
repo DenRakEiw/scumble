@@ -1,0 +1,60 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 18 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 259180 bytes, sha256 7e99b55f37ff69ff
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 210462 bytes, sha256 03ddfff981982e19
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\crates\px)
+    Finished `release` profile [optimized] target(s) in 7.56s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\crates\px)
+    Finished `release` profile [optimized] target(s) in 8.37s
+$ node tools/px_test.js  (rc 0, 152 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:57592) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/9fc4d50e-bfa2-4c90-90c8-15334025ac5b/scratch/mut_tree_p1_r2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-quit-on --offline --tiles on quit  (rc 0, 43 s)
+quit rc=0 35s PASS
+ALL PASS
+$ bash tools/run_gates.sh mut-orig-document-on --offline --tiles on document  (rc 0, 85 s)
+document rc=0 76s PASS
+ALL PASS
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 2 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 259180 bytes, sha256 7e99b55f37ff69ff
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 210462 bytes, sha256 03ddfff981982e19
+    Finished `release` profile [optimized] target(s) in 0.02s
+    Finished `release` profile [optimized] target(s) in 0.02s
+$ node tools/px_test.js  (rc 0, 160 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:56844) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/9fc4d50e-bfa2-4c90-90c8-15334025ac5b/scratch/mut_tree_p1_r2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-document-on --offline --tiles on document  (rc 0, 85 s)
+document rc=0 77s PASS
+ALL PASS
+$ bash tools/run_gates.sh mut-orig-quit-on --offline --tiles on quit  (rc 0, 42 s)
+quit rc=0 34s PASS
+ALL PASS

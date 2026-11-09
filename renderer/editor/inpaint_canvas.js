@@ -42,7 +42,7 @@ import { LiquifyField, gridStep, liquifyFalloff, thawPlane } from "./inpaint_liq
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
 import { promptPayload, selectionBoxIdOf } from "./boxes_model.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
-import { STALE_DIFF, GUIDE, RANGE_BAND_ROWS, WORK_MAX, modelSize, workSize, disparityRange } from "./inpaint_depth.js";
+import { STALE_DIFF, GUIDE, RANGE_BAND_ROWS, WORK_MAX, modelSize, workSize } from "./inpaint_depth.js";
 import { packRG16, mapToJSON, mapFromJSON, fingerprint, fingerprintDiff, passToMap, makeMap, sampleMap, deriveMap, selectionOnMap, editMap } from "./inpaint_maps.js";
 import { SNAP_DEFAULT, SNAP_TAU, snapParams, snapField, rangeMax, mapTileStats } from "./inpaint_edges.js";
 import { normalizeLimit, normalizeStoredLimit, u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping, opp, colourSimilarity, hexToRgb as hexToRgb01, WEIGHTS_GLSL } from "./inpaint_weights.js";
@@ -11980,28 +11980,48 @@ class InpaintEditor {
         if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
         const o = this.fillOpts || { tolerance: 32, contiguous: true, sample: "image" };
         const t0 = performance.now();
-        const r = await this.floodRegion(x, y, { tolerance: o.tolerance, contiguous: o.contiguous, sample: o.sample, color: this.color, clip: true });
+        const color = this.color, opacity = this.brushOpacity, alphaLocked = !!(layer && layer.alphaLock);
+        const tiles = this.tileMode && InpaintEditor.bucketTiles !== false && !(alphaLocked && opacity >= 1)
+            && (!layer || (isTilePixels(layer.px) && typeof layer.px.compositeFill === "function" && layer.px.width === layer.w && layer.px.height === layer.h && layer.x === Math.round(layer.x) && layer.y === Math.round(layer.y)));
+        const r = await this.floodRegion(x, y, { tolerance: o.tolerance, contiguous: o.contiguous, sample: o.sample, color, clip: true, tiles });
         const fill = r.shape, n = r.count;
         if (!n) { if (r.close) fill.close(); this.setStatus("Nothing to fill here (outside the selection?)."); return; }
         if (!layer) layer = this.addPaintLayer();
         // the undo step is a copy of the box the fill can touch, in the layer's own pixels
         const target = layer.px;
+        if (r.tiles && (!isTilePixels(target) || typeof target.compositeFill !== "function" || target.width !== layer.w || target.height !== layer.h || layer.x !== Math.round(layer.x) || layer.y !== Math.round(layer.y))) {
+            if (r.close) fill.close();
+            this.setStatus("The layer changed while filling; nothing was filled.");
+            return;
+        }
         const sx = target.width / layer.w, sy = target.height / layer.h;
-        const lx = (r.x - layer.x) * sx, ly = (r.y - layer.y) * sy, lw = r.w * sx, lh = r.h * sy;
+        const [rx, ry, rw, rh] = r.tiles && r.bounds ? [r.bounds[0], r.bounds[1], r.bounds[2] - r.bounds[0], r.bounds[3] - r.bounds[1]] : [r.x, r.y, r.w, r.h];
+        const lx = (rx - layer.x) * sx, ly = (ry - layer.y) * sy, lw = rw * sx, lh = rh * sy;
         this.pushUndoSnapshot(this.snapshotRect(layer, { x: lx, y: ly, w: lw, h: lh }), { label: "Bucket fill" });
         // the fill is r.w x r.h at (r.x, r.y), scaled into the layer's pixels: it covers the box, nothing outside
         const box = [Math.floor(lx), Math.floor(ly), Math.ceil(lx + lw), Math.ceil(ly + lh)];
-        const opacity = this.brushOpacity, op = layer.alphaLock ? "source-atop" : "source-over";
-        target.drawInto(box, (ctx) => {
-            ctx.globalAlpha = opacity;
-            ctx.globalCompositeOperation = op;
-            ctx.scale(sx, sy);   // composed on drawInto's transform, never set over it (PLAN_BCE §C1 rule 12)
-            ctx.drawImage(fill, r.x - layer.x, r.y - layer.y);
-        });
+        const op = layer.alphaLock ? "source-atop" : "source-over";
+        let memErr = null;
+        if (r.tiles) {
+            try {
+                target.compositeFill(r.tiles, color, OPS[op], Math.round(Math.max(0, Math.min(1, opacity)) * 255), [r.x - layer.x, r.y - layer.y]);
+            } catch (err) {
+                if (!err || err.name !== "PixelMemoryError") throw err;
+                memErr = err;
+            }
+        } else {
+            target.drawInto(box, (ctx) => {
+                ctx.globalAlpha = opacity;
+                ctx.globalCompositeOperation = op;
+                ctx.scale(sx, sy);   // composed on drawInto's transform, never set over it (PLAN_BCE §C1 rule 12)
+                ctx.drawImage(fill, r.x - layer.x, r.y - layer.y);
+            });
+        }
         if (r.close) fill.close();
         this.markLayerChanged(layer, box);
         this.draw();
-        this.setStatus(`Filled ${n.toLocaleString()} px on ${layer.name} (${Math.round(performance.now() - t0)} ms).`);
+        if (memErr) this.setStatus(memErr.message, failKind(memErr));
+        else this.setStatus(`Filled ${n.toLocaleString()} px on ${layer.name} (${Math.round(performance.now() - t0)} ms).`);
     }
 
     /**
@@ -13391,28 +13411,22 @@ class InpaintEditor {
                     };
                 }
 
-                const { lo, hi } = disparityRange(rawDepth, 0.005, 0.995);
                 const [gw, gh] = workSize(W, H, WORK_MAX);
                 const guide = await host.depthInput(this, gw, gh);
-                const grey = new Uint8Array(gw * gh);
-                const gd = guide.image;
-                for (let i = 0, j = 0; i < gd.length; i += 4, j++) {
-                    grey[j] = Math.round(gd[i] * 0.299 + gd[i + 1] * 0.587 + gd[i + 2] * 0.114);
-                }
                 this.setStatus("Refining depth map with guided filter ...");
                 const poolRes = await editorPool().run("depth_guide", {
                     raw: rawDepth,
                     rw,
                     rh,
-                    grey,
+                    gd: guide.image,
                     gw,
                     gh,
                     r: GUIDE.r,
                     eps: GUIDE.eps,
-                    lo,
-                    hi,
-                }, [grey.buffer], { priority: INTERACTIVE });
+                }, [guide.image.buffer], { priority: INTERACTIVE });
                 const u16 = new Uint16Array(poolRes.u16);
+                const gd = new Uint8ClampedArray(poolRes.gd);
+                const { lo, hi } = poolRes;
                 // main answers the model's own time as runMs (and the whole call as seconds)
                 const modelMs = res.runMs != null ? res.runMs : (res.seconds != null ? res.seconds * 1000 : 0);
                 const snapStrength = edges != null ? Math.max(0, Math.min(100, Math.round(+edges))) : SNAP_DEFAULT;
@@ -13505,26 +13519,21 @@ class InpaintEditor {
         }
 
         const guide = await host.pictureInput(this, gw, gh, { skipFilters: true, background: "#808080" });
-        const gd = guide.image;
-        const grey = new Uint8Array(gw * gh);
-        for (let i = 0, j = 0; i < gd.length; i += 4, j++) {
-            grey[j] = Math.round(gd[i] * 0.299 + gd[i + 1] * 0.587 + gd[i + 2] * 0.114);
-        }
-
         this.setStatus("Refining depth map with guided filter ...");
         const poolRes = await editorPool().run("depth_guide", {
             raw: rawDepth,
             rw: gw,
             rh: gh,
-            grey,
+            gd: guide.image,
             gw,
             gh,
             r: GUIDE.r,
             eps: GUIDE.eps,
             lo: 0,
             hi: 1,
-        }, [grey.buffer], { priority: INTERACTIVE });
+        }, [guide.image.buffer], { priority: INTERACTIVE });
         const u16 = new Uint16Array(poolRes.u16);
+        const gd = new Uint8ClampedArray(poolRes.gd);
 
         const fpInp = await host.pictureInput(this, 64, 64, { skipFilters: true, background: "#808080" });
         const fp = fingerprint(fpInp.image, 64, 64);

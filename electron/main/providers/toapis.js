@@ -99,7 +99,7 @@ function explain(status, message) {
 }
 
 async function failure(r, key) {
-    return scrub(explain(r.status, await readError(r)), key);
+    return scrub(explain(r.status, await readError(r, key)), key);
 }
 
 function retryAfterMs(r, fallback = 10000) {
@@ -111,19 +111,45 @@ function retryAfterMs(r, fallback = 10000) {
     return Number.isFinite(at) ? Math.max(0, Math.min(120000, at - Date.now())) : fallback;
 }
 
+const BAD_PATH_PART = new Set(["__proto__", "constructor", "prototype"]);
+const PATH_PART = /^[A-Za-z0-9_]+$/;
+
+function splitPath(key) {
+    const parts = String(key || "").split(".");
+    if (!parts.length || parts.some((p) => !p || BAD_PATH_PART.has(p) || !PATH_PART.test(p))) {
+        throw new Error(`ToAPIs: invalid parameter path "${key}"; nothing was sent.`);
+    }
+    return parts;
+}
+
 /** obj["a.b.c"] = v as obj.a.b.c = v. */
 function setPath(obj, key, value) {
-    const parts = String(key).split(".");
+    const parts = splitPath(key);
     let o = obj;
     for (let i = 0; i < parts.length - 1; i++) {
-        if (!o[parts[i]] || typeof o[parts[i]] !== "object" || Array.isArray(o[parts[i]])) o[parts[i]] = {};
-        o = o[parts[i]];
+        const k = parts[i];
+        if (!Object.hasOwn(o, k) || !o[k] || typeof o[k] !== "object" || Array.isArray(o[k])) o[k] = {};
+        o = o[k];
     }
     o[parts[parts.length - 1]] = value;
 }
 
 function getPath(obj, key) {
-    return String(key).split(".").reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), obj);
+    return splitPath(key).reduce((o, k) => (o && typeof o === "object" && Object.hasOwn(o, k) ? o[k] : undefined), obj);
+}
+
+function checkPaths(req, ch) {
+    const p = req.params || {};
+    const drop = new Set(["channel", "random_seed", "model", "n", "prompt", ...(ch.drop || [])]);
+    for (const [k, v] of Object.entries(p)) {
+        if (drop.has(k) || v === "" || v == null || v === "auto") continue;
+        if (k === "background" && ch.transparent_only && String(v).toLowerCase() !== "transparent") continue;
+        splitPath(k);
+    }
+    if (ch.images) splitPath(ch.images);
+    if (ch.tier_key) splitPath(ch.tier_key);
+    if (ch.seed) splitPath(ch.seed);
+    if (ch.negative) splitPath(ch.negative);
 }
 
 /** The channel a run takes: the variant's options with the chosen Channel row value's overrides on top. */
@@ -308,6 +334,7 @@ async function upload(ctx, file) {
 
 /** The generation request's JSON body (uploads done by `uploadAll`, which gives { images: [url], mask: url }). */
 function bodyFor(req, ch, urls, sz) {
+    checkPaths(req, ch);
     const p = req.params || {};
     const body = { model: ch.model, prompt: req.prompt || "", n: 1 };
     const drop = new Set(["channel", "random_seed", "model", "n", "prompt", ...(ch.drop || [])]);
@@ -448,6 +475,7 @@ async function run(req, ctx) {
     // ctx.sleep and ctx.random are injectable so tools/toapis_test.js runs a poll in milliseconds
     ctx = { ...ctx, sleep: ctx.sleep || realSleep, random: ctx.random || Math.random, log: ctx.log || (() => {}) };
     const ch = channelOf(req);
+    checkPaths(req, ch);
     const stamp = Date.now().toString(36);
     const files = await prepareFiles(req, ctx, ch, stamp);
     const sz = sizeFor(req, ch);

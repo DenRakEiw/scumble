@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-autosave_no_retry-quit --offline --tiles on quit  (rc 1, 9 s)
+quit rc=1 2s FAIL
+SOME FAILED

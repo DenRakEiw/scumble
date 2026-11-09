@@ -1,0 +1,15 @@
+[FAIL] node: [ok] autosave_saves_and_loads_whole: autosave.json
+[ok] a_windowed_start_keeps_the_last_session: no picture in the last session; generation 1 keeps the one before
+[ok] a_restore_that_writes_the_state_back_is_no_new_session: the same as generation 1
+[ok] a_crash_sets_the_state_aside: 1 2 docs 1 with pictures; 2 2 docs 2 with pictures; crash 1 docs 1 with pictures; crash.1 1 docs 1 with pictures
+[ok] the_generations_name_their_mirror_files: 10 keys
+[FAIL] stores_fsync_retry_busy_and_keep_damaged_files: Error: EBUSY |     at fs.renameSync (C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1\tools\quit_test.js:171:73) |     at writeAll (C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1\electron\main\keys.js:65:8)
+[ok] a_close_waits_for_the_save: 42 ms
+[ok] a_save_that_hangs_or_fails_still_lets_the_window_close: timeout and error both close; reset saves again
+[ok] a_crashing_window_is_reloaded_then_safe_then_left: reload > safe > stop
+[ok] main_prevents_a_close_until_the_window_saved: agent, guard, prevent, local uploads, flush, re-check, close; reload saves first
+[ok] an_update_installs_only_after_the_save: save, then install
+[ok] a_crashed_window_is_reloaded_and_a_windowed_start_rotates: reload, rotate, prune
+[ok] the_window_answers_the_save_and_a_safe_start_restores_nothing: onFlush, startMode, restore holds the autosave, one upload pass at a time
+FAIL
+FAIL

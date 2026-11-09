@@ -1,0 +1,20 @@
+PX_ONLY: only the groups tiff run (a filtered run, not the full test)
+ok   inpaint_tiff.js exports unpackStrip and TIFF_JS.unpackStrip, re-exported by kernels_js.js and kernels.js
+ok   rust simd tiff_unpack equals its twin byte for byte (21 cases, each also at an odd offset)
+ok   rust scalar tiff_unpack equals its twin byte for byte (21 cases, each also at an odd offset)
+ok   js tiff_unpack gives the same at an odd offset
+ok   tiff_unpack: all 21 cases match their reference payloads (including hand-derived mid-code and mid-run stops)
+ok   tiff_unpack (twin): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (simd): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (scalar): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (simd): negative error codes (-1..-5) and messages match the JS twin
+ok   tiff_unpack (scalar): negative error codes (-1..-5) and messages match the JS twin
+ok   tiff_unpack fuzz (random, 9..12-bit & full-4096 bit-flipped, and every-prefix sweep): 0 traps, identical bytes or error codes across twin, simd and scalar
+ok   kernels.js tiffUnpack dispatches between JS twin (0 calls) and Rust (1 call) with identical bytes, and recovers from a trap  jsCalls=0 rustCalls=1 recReplaced=true
+ok   inpaint_tiff.js readTiff: 1-byte first LZW piece keeps byte[0] when byte[0] === byte[1] and still refuses old-style LZW
+ok   inpaint_tiff.js readTiff: StripRows.open and TileRows.tile stop at `need` / `want` when damaged LZW bytes follow
+       tiff_unpack (LZW 1 MB strip): twin 4.95, simd 1.60, scalar 1.74 ms (median of 15)
+       tiff_unpack (PackBits 1 MB strip): twin 1.40, simd 0.32, scalar 0.27 ms (median of 15)
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: tiff; PX_ONLY, not the full test)
