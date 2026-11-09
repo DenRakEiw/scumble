@@ -1,0 +1,20 @@
+{
+ "freqsep_15k": {
+  "visibility": "visible",
+  "focus": true,
+  "load_jpg": 1658,
+  "size": [
+   15000,
+   10000
+  ],
+  "png_export": 1339,
+  "png_open": 1934,
+  "freqsep_16mp": 819,
+  "freqsep_result": [
+   "low",
+   "high",
+   "radius",
+   "box"
+  ]
+ }
+}

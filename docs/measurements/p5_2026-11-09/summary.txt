@@ -1,0 +1,78 @@
+P5 (Independent PNG Part Starts) + Question 6.5 (Parallel Upload While Decoding)
+====================================================================================
+Date: 2026-11-09
+Base: wasm-kernels 9a5f1681
+ABI: 42
+  before (9a5f1681): px.wasm 279,003 B (sha256 aeb476777e971bbd); px_scalar.wasm 225,584 B (sha256 920cb56151a5a0fc)
+  after  (P5)      : px.wasm 278,242 B (sha256 7923cd0278a8c0cb, -761 B); px_scalar.wasm 225,743 B (sha256 203a16365f2ec7e7, +159 B)
+
+1. native_test.py 15000x10000 (3 alternating rounds, offline, tiles on, focused)
+------------------------------------------------------------------------------------
+  build_the_file.encodeMs  before: 1525.0 ms [1391.0..1580.0] (runs: 1525.0, 1391.0, 1580.0)
+                           after : 1578.0 ms [1381.0..1800.0] (runs: 1800.0, 1578.0, 1381.0)  (0.97x)
+  build_the_file.MB        before: 275.8 MB [275.8..275.8] (runs: 275.8, 275.8, 275.8)
+                           after : 275.9 MB [275.9..275.9] (runs: 275.9, 275.9, 275.9)
+  open_the_file.wall       before: 1766.0 ms [1749.0..2010.0] (runs: 1766.0, 1749.0, 2010.0)
+                           after : 1196.0 ms [1195.0..1231.0] (runs: 1195.0, 1231.0, 1196.0)  (1.48x)
+  open_the_file.loadFileMs before: 1684.0 ms [1679.0..1936.0] (runs: 1684.0, 1679.0, 1936.0)
+                           after : 1132.0 ms [1131.0..1137.0] (runs: 1132.0, 1137.0, 1131.0)  (1.49x)
+  open_the_file.blocked    before: 501.0 ms [480.0..535.0] (runs: 535.0, 501.0, 480.0) | after: 475.0 ms [459.0..484.0] (runs: 459.0, 484.0, 475.0)
+  open_again.wall          before: 1426.0 ms [1413.0..1506.0] (runs: 1413.0, 1506.0, 1426.0)
+                           after : 854.0 ms [822.0..1117.0] (runs: 822.0, 1117.0, 854.0)  (1.67x)
+  open_again.loadFileMs    before: 1312.0 ms [1236.0..1401.0] (runs: 1236.0, 1401.0, 1312.0)
+                           after : 739.0 ms [726.0..1011.0] (runs: 726.0, 1011.0, 739.0)  (1.78x)
+  open_again.blocked       before: 58.0 ms [57.0..118.0] (runs: 118.0, 57.0, 58.0) | after: 46.0 ms [45.0..53.0] (runs: 53.0, 45.0, 46.0)
+  export_png.wall          before: 1007.0 ms [966.0..1032.0] (runs: 1007.0, 966.0, 1032.0)
+                           after : 952.0 ms [948.0..1024.0] (runs: 948.0, 1024.0, 952.0)  (1.06x)
+  export_png.blocked       before: 76.0 ms [72.0..90.0] (runs: 72.0, 76.0, 90.0) | after: 64.0 ms [63.0..67.0] (runs: 63.0, 67.0, 64.0)
+  export_png.MB            before: 235.1 MB [235.1..235.1] (runs: 235.1, 235.1, 235.1)
+                           after : 235.2 MB [235.2..235.2] (runs: 235.2, 235.2, 235.2)
+  export_ora.wall          before: 2040.0 ms [2032.0..2073.0] (runs: 2032.0, 2040.0, 2073.0)
+                           after : 1997.0 ms [1977.0..2038.0] (runs: 1977.0, 2038.0, 1997.0)  (1.02x)
+  export_ora.blocked       before: 43.0 ms [41.0..44.0] (runs: 43.0, 41.0, 44.0) | after: 43.0 ms [41.0..44.0] (runs: 41.0, 44.0, 43.0)
+  export_ora.MB            before: 511.6 MB [511.6..511.6] (runs: 511.6, 511.6, 511.6)
+                           after : 511.7 MB [511.7..511.7] (runs: 511.7, 511.7, 511.7)
+  open_the_file  jobs (before r3): {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 289214595, "rows": 10000, "kernel": 1901.9, "read": 292.8, "inflate": 1373.1, "copyIn": 40.4, "decode": 152.1, "copyOut": 1.3, "gen": 0, "pxCalls": {"png_part_decode": 79}}, "png_part_finish": {"jobs": 78, "pixels": 147915000, "rows": 9861, "kernel": 527.5, "copyIn": 42.7, "finish": 364.2, "copyOut": 84.4, "gen": 0, "pxCalls": {"png_part_finish": 78}}, "mips": {"jobs": 19, "tiles": 2344, "kernel": 491.7, "gen": 0, "pxCalls": {"clamp_extend": 98, "mip_chain": 2442}}}
+  open_the_file  jobs (after  r3): {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 289299973, "rows": 10000, "kernel": 3090.6, "read": 520.5, "inflate": 1594.5, "copyIn": 44.1, "decode": 735.5, "copyOut": 142.2, "gen": 0, "pxCalls": {"png_part_decode": 79}}, "mips": {"jobs": 19, "tiles": 2344, "kernel": 390.9, "gen": 0, "pxCalls": {"clamp_extend": 98, "mip_chain": 2442}}}
+  open_again     jobs (before r3): {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 289214595, "rows": 10000, "kernel": 1872, "read": 299.4, "inflate": 1350.4, "copyIn": 37.8, "decode": 145.1, "copyOut": 1.5, "gen": 0, "pxCalls": {"png_part_decode": 79}}, "png_part_finish": {"jobs": 78, "pixels": 147915000, "rows": 9861, "kernel": 547.3, "copyIn": 42.6, "finish": 360.4, "copyOut": 106, "gen": 0, "pxCalls": {"png_part_finish": 78}}, "mips": {"jobs": 19, "tiles": 2344, "kernel": 454.4, "gen": 0, "pxCalls": {"clamp_extend": 98, "mip_chain": 2442}}}
+  open_again     jobs (after  r3): {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 289299973, "rows": 10000, "kernel": 2773, "read": 605.5, "inflate": 1385.4, "copyIn": 46.6, "decode": 557.4, "copyOut": 129.3, "gen": 0, "pxCalls": {"png_part_decode": 79}}, "mips": {"jobs": 19, "tiles": 2344, "kernel": 530.8, "gen": 0, "pxCalls": {"clamp_extend": 98, "mip_chain": 2442}}}
+  export_png     jobs (before r3): {"png_part": {"jobs": 79, "composeWasm": 79, "pixels": 150000000, "kernel": 7339.8, "compose": 953.8, "rows": 953.8, "prev": 9.2, "filter": 271.9, "adler": 154.5, "deflate": 5799.4, "chunk": 93, "copyOut": 49.3, "gen": 0, "pxCalls": {"adler32": 79, "composite_tile": 156, "deflate_part": 79, "png_chunk_frame": 79, "png_filter_rows": 79}}}
+  export_png     jobs (after  r3): {"png_part": {"jobs": 79, "composeWasm": 79, "pixels": 150000000, "kernel": 6864, "compose": 964.1, "rows": 964.1, "prev": 0, "filter": 260.5, "adler": 145.4, "deflate": 5358.6, "chunk": 88.7, "copyOut": 39.1, "gen": 0, "pxCalls": {"adler32": 79, "composite_tile": 78, "deflate_part": 79, "png_chunk_frame": 79, "png_filter_rows": 79}}}
+  export_ora     jobs (before r3): {"png_part": {"jobs": 237, "composeWasm": 237, "pixels": 450000000, "kernel": 15242.1, "compose": 630.6, "rows": 1093.6, "prev": 14, "filter": 803.6, "adler": 453.4, "deflate": 12586.9, "chunk": 201.2, "copyOut": 78.8, "gen": 0, "pxCalls": {"adler32": 237, "deflate_part": 237, "png_chunk_frame": 237, "png_filter_rows": 237, "composite_tile": 156}}, "crc": {"jobs": 1, "read": 3.6, "crc": 0.1, "kernel": 3.7, "bytes": 47643, "gen": 0, "pxCalls": {"crc32": 1}}}
+  export_ora     jobs (after  r3): {"png_part": {"jobs": 237, "composeWasm": 237, "pixels": 450000000, "kernel": 14650.3, "compose": 581.8, "rows": 1083.8, "prev": 0.3, "filter": 784, "adler": 458.4, "deflate": 12043.9, "chunk": 193, "copyOut": 79, "gen": 0, "pxCalls": {"adler32": 237, "deflate_part": 237, "png_chunk_frame": 237, "png_filter_rows": 237, "composite_tile": 78}}, "crc": {"jobs": 1, "read": 4.6, "crc": 0.2, "kernel": 4.8, "bytes": 47643, "gen": 0, "pxCalls": {"crc32": 1}}}
+  memory (before r3 close): {"closed": 2, "arena": {"slots": 4661, "chunks": 20, "allocated": 9381, "freed": 4720, "droppedChunks": 17, "refused": 0, "failed": 0, "enabled": true, "bytes": 1342177280, "freeSlots": 459}}
+  memory (after  r3 close): {"closed": 2, "arena": {"slots": 4661, "chunks": 20, "allocated": 9381, "freed": 4720, "droppedChunks": 17, "refused": 0, "failed": 0, "enabled": true, "bytes": 1342177280, "freeSlots": 459}}
+
+2. w0_bench.py --rows=freqsep_15k (15,000 x 10,000 photograph adobe_15000x10000.jpg, 3 rounds)
+------------------------------------------------------------------------------------
+  load_jpg                 before: 1658.0 ms [1614.0..1663.0] (runs: 1614.0, 1663.0, 1658.0)
+                           after : 1528.0 ms [1517.0..1581.0] (runs: 1528.0, 1517.0, 1581.0)  (1.09x)
+  png_export               before: 1472.0 ms [1339.0..1496.0] (runs: 1472.0, 1496.0, 1339.0)
+                           after : 1287.0 ms [1273.0..1342.0] (runs: 1273.0, 1287.0, 1342.0)  (1.14x)
+  png_open                 before: 1934.0 ms [1764.0..1947.0] (runs: 1947.0, 1764.0, 1934.0)
+                           after : 1081.0 ms [1017.0..1192.0] (runs: 1017.0, 1081.0, 1192.0)  (1.79x)
+  freqsep_16mp             before: 827.0 ms [819.0..833.0] (runs: 833.0, 827.0, 819.0)
+                           after : 806.0 ms [799.0..821.0] (runs: 799.0, 806.0, 821.0)  (1.03x)
+
+3. Mutation Round (docs/measurements/p5_2026-11-09/mutation/results.txt)
+------------------------------------------------------------------------------------
+  == P5 (PNG parts that start independent: None/Sub on row 0) + Question 6.5 (parallel upload while decoding in loadFile and addImageLayers) mutation round 2026-11-09 12:58 on C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5 (tools/mutation_round.py; 15 mutants, port 9621, re-check gates editor)
+  orig (the untouched copy): build 1 s, both builds identical to the checkout's: True; green: the full px_test 284 s; green: px_test (only: pngFilter) 1 s; green: px_test (only: pngPart) 3 s; green: the editor gate 193 s; green: the editor gate (only: 1 step) 27 s; 509 s
+  KILLED   png_scalar_allow_up_without_prev: red: px_test (only: pngFilter) (3 failing lines; first: FAIL rust simd png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)  random 2 px x 3: out[0] is 3, the twin has 1); builds {'px.wasm': '9269d0de280f', 'px_scalar.wasm': '920cb56151a5'}; 13 s (build 11 s, px_test 2 s); expected killed: scalar filter_row allows Up/Average/Paeth on row 0 when up is None
+  KILLED   png_lanes_allow_up_without_prev: red: px_test (only: pngFilter) (2 failing lines; first: FAIL rust simd png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)  random 5 px x 3: out[0] is 3, the twin has 1); builds {'px.wasm': '480a1ef82018', 'px_scalar.wasm': '203a16365f2e'}; 14 s (build 12 s, px_test 2 s); expected killed: SIMD lanes::filter_row allows Up/Average/Paeth on row 0 when UP is false
+  KILLED   png_lanes_never_sub_without_prev: red: px_test (only: pngFilter) (2 failing lines; first: FAIL rust simd png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)  random 5 px x 3: out[0] is 0, the twin has 1); builds {'px.wasm': '7df272a550cd', 'px_scalar.wasm': '203a16365f2e'}; 10 s (build 8 s, px_test 1 s); expected killed: off-by-one 1..1u8 in lanes::filter_row never picks Sub (1) when UP is false
+  KILLED   js_allow_up_without_prev: red: px_test (only: pngFilter) (4 failing lines; first: FAIL js pngFilterRows equals the reference (1032 cases)  random 2 px x 3: at 0: 3 vs 1 (row0=3)); builds None; 1 s (px_test 1 s); expected killed: JS twin pngFilterRows allows Up/Average/Paeth on row 0 when prev is null
+  KILLED   bands_write_png_need_prev_true: red: px_test (only: pngPart) (2 failing lines; first: FAIL P5 writePng + bandRows writes independent parts (prev=null, firstFilter in {0, 1}, needsPrev=false, 0 png_part_finish jobs)  prevs=[null,{},{}] f); builds None; 3 s (px_test 3 s); expected killed: writePng passes needPrev=true to source.part so non-first parts depend on the row above
+  KILLED   worker_png_part_ptr_need_prev_true: red: px_test (only: pngPart) (3 failing lines; first: FAIL inpaint_worker.js pngPart under composeTiles and composeStack routes: composeWasm=1 on rust, composeWasm=0 on js, row 0 filter in {0, 1}, identic); builds None; 3 s (px_test 3 s); expected killed: worker pngPart wasm-gather path passes needPrev=true to partPtrOf
+  KILLED   worker_png_part_js_gather_prev: red: px_test (only: pngPart) (3 failing lines; first: FAIL inpaint_worker.js pngPart under composeTiles and composeStack routes: composeWasm=1 on rust, composeWasm=0 on js, row 0 filter in {0, 1}, identic); builds None; 3 s (px_test 3 s); expected killed: worker pngPart JS-gather fallback gathers the row above for stack and tile parts
+  KILLED   canvas_load_upload_before_check_base_size: red: the editor gate (only: 1 step) ([FAIL] a_scumble_png_opens_through_the_parted_reader: JS exception: Error: checkBaseSize before uploadBlob failed: uploadCalls=1 loadStatus=70000 × 1000 px is above what a document can hold (65.535 px); builds None; 25 s (the editor gate 24 s); expected killed: loadFile starts uploadBlob before checkBaseSize
+  KILLED   canvas_layer_upload_before_check_base_size: red: the editor gate (only: 1 step) ([FAIL] a_scumble_png_opens_through_the_parted_reader: JS exception: Error: checkBaseSize before uploadBlob failed: uploadCalls=1 loadStatus=70000 × 1000 px is above what a document can hold (65.535 px); builds None; 26 s (the editor gate 26 s); expected killed: addImageLayers starts uploadBlob before checkBaseSize
+  KILLED   canvas_load_sequential_upload_then_decode: red: the editor gate (only: 1 step) ([FAIL] a_scumble_png_opens_through_the_parted_reader: JS exception: Error: parallel loadFile failed: readsWhileUploadHeld=0); builds None; 27 s (the editor gate 27 s); expected killed: loadFile awaits uploadBlob before starting pixelsOffThread instead of running in parallel
+  KILLED   canvas_layer_sequential_upload_then_decode: red: the editor gate (only: 1 step) ([FAIL] a_scumble_png_opens_through_the_parted_reader: JS exception: Error: parallel addImageLayers failed: readsWhileUploadHeld=0 layers=0/0); builds None; 28 s (the editor gate 28 s); expected killed: addImageLayers awaits uploadBlob before starting pixelsOffThread instead of running in parallel
+  KILLED   canvas_load_no_release_on_upload_reject: red: the editor gate (only: 1 step) ([FAIL] a_scumble_png_opens_through_the_parted_reader: JS exception: Error: upload rejection cleanup in loadFile: heldAtUploadReject=30/30 leakedAfter=30 status=simulated upload failure in loadFile); builds None; 21 s (the editor gate 21 s); expected killed: loadFile leaks decoded TileLayerPixels when uploadBlob rejects after pixelsOffThread resolves
+  KILLED   canvas_layer_no_release_on_upload_reject: red: the editor gate (only: 1 step) ([FAIL] a_scumble_png_opens_through_the_parted_reader: JS exception: Error: upload rejection cleanup in addImageLayers: heldAtUploadReject=30/30 leakedAfter=30 status=simulated upload failure in addIma); builds None; 28 s (the editor gate 28 s); expected killed: addImageLayers leaks decoded TileLayerPixels when uploadBlob rejects after pixelsOffThread resolves
+  KILLED   canvas_load_no_catch_on_up: red: the editor gate (only: 1 step) ([FAIL] a_scumble_png_opens_through_the_parted_reader: JS exception: Error: unhandledrejection fired in loadFile: ["late upload rejection in loadFile"]); builds None; 28 s (the editor gate 28 s); expected killed: loadFile leaves uploadBlob rejection unhandled when pixelsOffThread throws first
+  KILLED   canvas_layer_no_catch_on_up: red: the editor gate (only: 1 step) ([FAIL] a_scumble_png_opens_through_the_parted_reader: JS exception: Error: unhandledrejection fired in addImageLayers: ["late upload rejection in addImageLayers"]); builds None; 21 s (the editor gate 21 s); expected killed: addImageLayers leaves uploadBlob rejection unhandled when pixelsOffThread throws first
+  restored copy: every mutated file back: True; rebuilt, both builds identical to the checkout's: True; green: the full px_test
+  mutants: 15 killed (0 of them only on the re-check), 0 survived of 15; 0 not as expected; 536 s for the mutants
+

@@ -17336,11 +17336,21 @@ class InpaintEditor {
                     ({ px } = await pixelsFromTiff(file, this.pixels.Layer));
                 } else {
                     const ext = await storedExt(file);
+                    const big = this.tileMode ? (await hugePngSize(file)) || (await imageFileSize(file)) : null;
+                    if (big) this.checkBaseSize(big.width, big.height);
                     this.setStatus(`Uploading ${file.name || "image"} ...`);
                     const stem = (file.name || "image").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
-                    ref = await uploadBlob(file, stem + ext, { overwrite: false });
-                    // a large file is decoded in a pool worker (`pixelsOffThread`), a small one through an <img>
-                    px = (this.tileMode ? await pixelsOffThread(file, this.pixels.Layer) : null) || this.pixels.Layer.fromImage(await loadImageEl(viewUrl(ref)));
+                    const up = uploadBlob(file, stem + ext, { overwrite: false });
+                    up.catch(() => {});
+                    try {
+                        // a large file is decoded in a pool worker (`pixelsOffThread`) while it uploads, a small one through an <img>
+                        if (big) px = await pixelsOffThread(file, this.pixels.Layer);
+                        ref = await up;
+                    } catch (err) {
+                        if (px) px.release();
+                        throw err;
+                    }
+                    if (!px) px = this.pixels.Layer.fromImage(await loadImageEl(viewUrl(ref)));
                 }
                 const nw = px.width, nh = px.height;
                 // Shown at a third of the canvas, cascaded from the top left; the file itself stays the reference.
@@ -18911,15 +18921,23 @@ class InpaintEditor {
                 file = await rasterizeSvg(file, target);
             }
             const ext = await storedExt(file);
-            this.setStatus("Uploading " + (file.name || "image") + " ...");
-            const stem = (file.name || "pasted").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
-            const ref = await uploadBlob(file, stem + ext, { overwrite: false });
             // E5: a PNG larger than any canvas is decoded as a stream into tiles (the browser's decoder has nowhere to put
             // it); any other large file is decoded in a pool worker, so the window never holds the whole picture
             const big = this.tileMode ? (await hugePngSize(file)) || (await imageFileSize(file)) : null;
             if (big) this.checkBaseSize(big.width, big.height);
             if (later()) return;
-            const px = big ? await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); }) : null;
+            this.setStatus("Uploading " + (file.name || "image") + " ...");
+            const stem = (file.name || "pasted").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
+            const up = uploadBlob(file, stem + ext, { overwrite: false });
+            up.catch(() => {});
+            let px = null, ref = null;
+            try {
+                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });
+                ref = await up;
+            } catch (err) {
+                if (px) px.release();
+                throw err;
+            }
             if (later()) { if (px) px.release(); return; }
             if (px) {
                 await this.setBasePixels(ref, px, { keepLayers: false });

@@ -5925,6 +5925,46 @@ async function partDecodeCases(px, label, png, zlib, js) {
                 && eqBytes(assembled, wantAssembled),
                 `maxWindow=${maxWindowSeen} finishPriorities=${JSON.stringify(finishPriorities)} landed=${JSON.stringify(landedOrder)} diff=${firstDiff(assembled, wantAssembled)}`);
 
+            // P5: writePng + bandRows produces parts that start independent (prev=null, firstFilter in {0, 1}, needsPrev=false, 0 finish jobs)
+            const bandsMod = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_bands.js")).href);
+            const p5H = 520, p5Src = randomRGBA(pw, p5H, 912);
+            // Make row 256 identical to row 255 so Up (filter 2) would have cost 0 if allowed on part 1's first row
+            p5Src.copyWithin(256 * pw * 4, 255 * pw * 4, 256 * pw * 4);
+            const p5Prevs = [], p5Filters = [];
+            const p5Blob = await bandsMod.writePng(
+                bandsMod.bandRows(pw, p5H, (y0, y1) => p5Src.subarray(y0 * pw * 4, y1 * pw * 4), 256),
+                (_op, a) => {
+                    p5Prevs.push(a.prev);
+                    const p = px.pngPart(new Uint8Array(a.rgba), a.w, a.rows, a.prev ? new Uint8Array(a.prev) : null, a.level, a.last);
+                    return { chunk: p.chunk.buffer, adler: p.adler, raw: p.raw, crc: p.crc };
+                }
+            );
+            const p5Layout = await png.pngPartsOf(p5Blob);
+            finishPriorities.length = 0;
+            const p5Assembled = new Uint8Array(p5H * pw * 4);
+            await png.readPngParts(p5Blob, {
+                layout: p5Layout,
+                pool: {
+                    size: 4,
+                    cancel: () => {},
+                    async run(op, args, _transfer, opts = {}) {
+                        const r = await mockPool.run(op, args, _transfer, opts);
+                        if (op === "png_part_read") p5Filters.push({ firstFilter: r.firstFilter, needsPrev: r.needsPrev });
+                        return r;
+                    },
+                },
+                rt: rtCanvas,
+                onRows: (rgba, y0) => { p5Assembled.set(rgba, y0 * pw * 4); },
+            });
+            const { out: wantP5 } = refApplyRt(p5Src, rtCanvas);
+            check(`P5 writePng + bandRows writes independent parts (prev=null, firstFilter in {0, 1}, needsPrev=false, 0 png_part_finish jobs)`,
+                p5Prevs.length >= 2 && p5Prevs.every((p) => p === null)
+                && p5Filters.length === p5Prevs.length
+                && p5Filters.every((f) => (f.firstFilter === 0 || f.firstFilter === 1) && f.needsPrev === false)
+                && finishPriorities.length === 0
+                && eqBytes(p5Assembled, wantP5),
+                `prevs=${JSON.stringify(p5Prevs)} filters=${JSON.stringify(p5Filters)} finishes=${finishPriorities.length}`);
+
             // Adler-32 mismatch, under-height, over-height, and part error cancel the pool group and reject
             cancelledGroups = [];
             let adlerThrew = false;
@@ -6657,7 +6697,7 @@ async function composeWasmPartCases(px, label, png, zlib) {
     // 3. Route overrides (composeTiles, composeStack), arena reset & releaseMB, and gather/kernel trap/OOM fallback in worker pngPart(msg)
     if (label === "rust simd") {
         const tileMsg = {
-            w: 256, rows: 32, r0: 0, level: 2, last: true,
+            w: 256, rows: 32, r0: 16, level: 2, last: true,
             tiles: [makeTile(301)], prevTiles: [makeTile(302)],
         };
         const stackMsg = {
@@ -6709,12 +6749,15 @@ async function composeWasmPartCases(px, label, png, zlib) {
             const sJs = await W.pngPart(stackMsg);
             K.setRoute("composeStack", null);
 
+            const tLines = new Uint8Array(zlib.inflateRawSync(new Uint8Array(tRust.chunk, 8, tRust.chunk.byteLength - 12)));
+            const sLines = new Uint8Array(zlib.inflateRawSync(new Uint8Array(sRust.chunk, 8, sRust.chunk.byteLength - 12)));
             const routeOk = tRust.timing.composeWasm === 1 && tJs.timing.composeWasm === 0
                 && sRust.timing.composeWasm === 1 && sJs.timing.composeWasm === 0
+                && tLines[0] <= 1 && sLines[0] <= 1
                 && tRust.adler === tJs.adler && tRust.crc === tJs.crc && eqBytes(new Uint8Array(tRust.chunk), new Uint8Array(tJs.chunk))
                 && sRust.adler === sJs.adler && sRust.crc === sJs.crc && eqBytes(new Uint8Array(sRust.chunk), new Uint8Array(sJs.chunk));
-            check("inpaint_worker.js pngPart under composeTiles and composeStack routes: composeWasm=1 on rust, composeWasm=0 on js, identical IDAT chunks",
-                routeOk, `tRust=${tRust.timing.composeWasm} tJs=${tJs.timing.composeWasm} sRust=${sRust.timing.composeWasm} sJs=${sJs.timing.composeWasm}`);
+            check("inpaint_worker.js pngPart under composeTiles and composeStack routes: composeWasm=1 on rust, composeWasm=0 on js, row 0 filter in {0, 1}, identical IDAT chunks",
+                routeOk, `tRust=${tRust.timing.composeWasm} tJs=${tJs.timing.composeWasm} sRust=${sRust.timing.composeWasm} sJs=${sJs.timing.composeWasm} row0=${tLines[0]}/${sLines[0]}`);
 
             // Simulated OOM and trap both inside the gather (p0.job.take) and inside pngPartFromPtr: recovered() replaces
             // the instance and falls back to p.pngPart
@@ -6826,12 +6869,13 @@ function pngFilterCases(js, simdPx, scalarPx) {
                 if (pb === pc && pa > pb && b !== cc) ptie.bc++;
                 [x, x - a, x - b, x - ((a + b) >> 1), x - paeth(a, b, cc)].forEach((v, t) => { v &= 255; sums[t] += v < 128 ? v : 256 - v; });
             }
-            const min = Math.min(...sums), best = sums.indexOf(min);
+            const candSums = y > 0 || prev ? sums : sums.slice(0, 2);
+            const min = Math.min(...candSums), best = candSums.indexOf(min);
             wins[best]++;
-            if (sums.filter((v) => v === min).length > 1) tieWins[best]++;
+            if (candSums.filter((v) => v === min).length > 1) tieWins[best]++;
         }
         const got = js.pngFilterRows(src, w, rows, prev), want = reference.pngFilterRows(src, w, rows, prev);
-        if (refOk && !eqBytes(got, want)) { refOk = false; refDetail = `${c.tag}: ${firstDiff(got, want)}`; }
+        if (refOk && (!eqBytes(got, want) || (!prev && got[0] > 1))) { refOk = false; refDetail = `${c.tag}: ${firstDiff(got, want)} (row0=${got[0]})`; }
         if (backOk && !eqBytes(unfilter(simdPx.pngFilterRows(src, w, rows, prev), w, rows, prev), src)) { backOk = false; backDetail = c.tag; }
     }
     check(`js pngFilterRows equals the reference (${cases.length} cases)`, refOk, refDetail);
@@ -7097,7 +7141,7 @@ const reference = {
         const n = w * 4, out = new Uint8Array(rows * (n + 1));
         for (let y = 0; y < rows; y++) {
             const row = rgba.subarray(y * n, y * n + n), up = y ? rgba.subarray((y - 1) * n, y * n) : prev || new Uint8Array(n);
-            const cands = [0, 1, 2, 3, 4].map((t) => Uint8Array.from(row, (x, i) => {
+            const cands = (y > 0 || prev ? [0, 1, 2, 3, 4] : [0, 1]).map((t) => Uint8Array.from(row, (x, i) => {
                 const a = i >= 4 ? row[i - 4] : 0, b = up[i], c = i >= 4 ? up[i - 4] : 0;
                 return (x - [0, a, b, (a + b) >> 1, paeth(a, b, c)][t]) & 255;
             }));

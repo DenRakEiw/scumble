@@ -1,0 +1,6 @@
+$ bash tools/run_gates.sh mut-canvas_load_sequential_upload_then_decode-ed --offline --tiles on editor  (rc 1, 203 s, SCUMBLE_EDITOR_ONLY=a_scumble_png_opens_through_the_parted_reader)
+editor rc=1 183s FAIL (only: a_scumble_png_opens_through_the_parted_reader; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED
+$ bash tools/run_gates.sh mut-canvas_load_sequential_upload_then_decode-ed --offline --tiles on editor  (rc 1, 27 s, SCUMBLE_EDITOR_ONLY=a_scumble_png_opens_through_the_parted_reader)
+editor rc=1 7s FAIL (only: a_scumble_png_opens_through_the_parted_reader; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED

@@ -85,7 +85,7 @@ fn filter_row(row: &[u8], up: Option<&[u8]>, out: &mut [u8]) {
         sums[4] += cost(x.wrapping_sub(paeth(a, b, c)));
     }
     let mut best = 0u8;
-    for t in 1..5u8 {
+    for t in 1..if up.is_some() { 5u8 } else { 2u8 } {
         if sums[t as usize] < sums[best as usize] {
             best = t;
         }
@@ -316,7 +316,7 @@ mod lanes {
             o[i] = filtered(4, x, a, b, c);
         }
         let mut best = 0u8;
-        for t in 1..5u8 {
+        for t in 1..if UP { 5u8 } else { 2u8 } {
             if tot[t as usize] < tot[best as usize] {
                 best = t;
             }

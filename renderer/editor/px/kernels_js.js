@@ -1039,9 +1039,11 @@ export function pngFilterRows(rgba, w, rows, prev = null, out = new Uint8Array(r
         }
         let best = 0, min = s0;
         if (s1 < min) { best = 1; min = s1; }
-        if (s2 < min) { best = 2; min = s2; }
-        if (s3 < min) { best = 3; min = s3; }
-        if (s4 < min) { best = 4; min = s4; }
+        if (y > 0 || prev) {
+            if (s2 < min) { best = 2; min = s2; }
+            if (s3 < min) { best = 3; min = s3; }
+            if (s4 < min) { best = 4; min = s4; }
+        }
         const o = y * (n + 1);
         out[o] = best;
         for (let i = 0; i < n; i++) {
