@@ -1,0 +1,2 @@
+document rc=1 5s FAIL
+SOME FAILED

@@ -1,0 +1,6 @@
+$ bash tools/run_gates.sh mut-launch_five_sec_kill-mcpb --offline --tiles on mcpb  (rc 1, 29 s)
+mcpb rc=1 22s 
+SOME FAILED
+$ bash tools/run_gates.sh mut-launch_five_sec_kill-mcpb --offline --tiles on mcpb  (rc 1, 27 s)
+mcpb rc=1 22s 
+SOME FAILED

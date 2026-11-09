@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-sweep_drops_missing_dir_enoent-document --offline --tiles on document  (rc 1, 10 s)
+document rc=1 7s FAIL
+SOME FAILED

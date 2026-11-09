@@ -1,0 +1,6 @@
+$ bash tools/run_gates.sh mut-relay_sig_kills_child-mcpb --offline --tiles on mcpb  (rc 1, 13 s)
+mcpb rc=1 10s 
+SOME FAILED
+$ bash tools/run_gates.sh mut-relay_sig_kills_child-mcpb --offline --tiles on mcpb  (rc 1, 20 s)
+mcpb rc=1 15s 
+SOME FAILED

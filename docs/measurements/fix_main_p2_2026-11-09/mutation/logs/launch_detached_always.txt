@@ -1,0 +1,6 @@
+$ bash tools/run_gates.sh mut-launch_detached_always-mcpb --offline --tiles on mcpb  (rc 1, 30 s)
+mcpb rc=1 25s 
+SOME FAILED
+$ bash tools/run_gates.sh mut-launch_detached_always-mcpb --offline --tiles on mcpb  (rc 1, 27 s)
+mcpb rc=1 24s 
+SOME FAILED

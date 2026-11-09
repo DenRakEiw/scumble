@@ -25,6 +25,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -93,6 +94,97 @@ def raw_check():
     if p.stdout[:1] != b"{":
         raise RuntimeError(f"stdout does not start with a JSON message: {p.stdout[:40]!r}")
     return f"{len(p.stdout)} bytes, starts with {chr(p.stdout[0])!r}"
+
+
+def headless_flush_check():
+    """MAIN-1: closing stdin on a headless MCP session started via launch.js lets flushBeforeQuit finish (> 5 s)."""
+    flush_profile = os.path.join(OUT, "headless_flush_profile")
+    shutil.rmtree(flush_profile, ignore_errors=True)
+    os.makedirs(flush_profile, exist_ok=True)
+    ref_img = os.path.join(ROOT, "tools", "refs", "composite_full.png")
+    if STORE:
+        cmd = [EXE] + _store["args"] + ["--", f"--user-data-dir={flush_profile}", "--no-comfy", "--mcp"]
+        env = {**os.environ, **_store["env"]}
+    else:
+        cmd = [EXE, LAUNCHER, f"--user-data-dir={flush_profile}", "--no-comfy", "--mcp"]
+        env = {**os.environ, "ELECTRON_RUN_AS_NODE": "1"}
+    p = subprocess.Popen(cmd, cwd=ROOT, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        def rpc(msg_id, method, params=None):
+            req = {"jsonrpc": "2.0", "id": msg_id, "method": method}
+            if params is not None:
+                req["params"] = params
+            p.stdin.write((json.dumps(req) + "\n").encode("utf-8"))
+            p.stdin.flush()
+            while True:
+                line = p.stdout.readline()
+                if not line:
+                    raise RuntimeError(f"EOF waiting for {method} (id={msg_id})")
+                msg = json.loads(line.decode("utf-8"))
+                if msg.get("id") == msg_id:
+                    if "error" in msg:
+                        raise RuntimeError(f"RPC error on {method}: {msg['error']}")
+                    return msg["result"]
+
+        def tool_call(msg_id, name, arguments=None):
+            res = rpc(msg_id, "tools/call", {"name": name, "arguments": arguments or {}})
+            if res.get("isError"):
+                raise RuntimeError(f"tool {name} failed: {res}")
+            text = "\n".join(c.get("text", "") for c in res.get("content", []) if c.get("type") == "text")
+            return json.loads(text) if text else res
+
+        rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "flush_test", "version": "1.0"}})
+        p.stdin.write((json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n").encode("utf-8"))
+        p.stdin.flush()
+        ping = tool_call(2, "ping")
+        if ping.get("mcp", {}).get("mode") != "headless":
+            raise RuntimeError(f"expected headless mode, got {ping}")
+        doc_id = tool_call(3, "new_document")["id"]
+        tool_call(4, "load_image", {"path": ref_img, "doc": doc_id})
+        tool_call(5, "resize_image", {"width": 7500, "height": 5000, "doc": doc_id})
+        c0 = tool_call(6, "copy_to_layer", {"merged": True, "name": "Copy0", "doc": doc_id})
+        lid = (c0.get("layer") or c0)["id"]
+        copies = 22
+        for i in range(1, copies):
+            tool_call(10 + i, "duplicate_layer", {"layer": lid, "name": f"Copy{i}", "doc": doc_id})
+        t0 = time.time()
+        p.stdin.close()
+        rc = p.wait(timeout=90)
+        dt = time.time() - t0
+    finally:
+        if p.poll() is None:
+            p.kill()
+    try:
+        if rc != 0:
+            err = (p.stderr.read() if p.stderr else b"").decode("utf-8", errors="replace")[-400:]
+            raise RuntimeError(f"headless MCP launcher exited {rc} after {dt:.2f}s: {err}")
+        if dt <= 5.0:
+            raise RuntimeError(f"expected flush after stdin EOF to take > 5.0s, took {dt:.2f}s")
+        autosave_path = os.path.join(flush_profile, "autosave.json")
+        if not os.path.isfile(autosave_path):
+            raise RuntimeError("autosave.json missing after headless MCP quit")
+        with open(autosave_path, "r", encoding="utf-8") as fh:
+            raw_auto = json.load(fh)
+        bundle = json.loads(raw_auto["state"]) if isinstance(raw_auto.get("state"), str) else raw_auto
+        doc_entry = next((d for d in (bundle.get("docs") or []) if d.get("id") == doc_id), None)
+        if not doc_entry:
+            raise RuntimeError(f"doc {doc_id} missing from autosave.json")
+        state = json.loads(doc_entry["state"]) if isinstance(doc_entry.get("state"), str) else doc_entry.get("state", {})
+        layers = state.get("layers") or []
+        canvas_dir = os.path.join(flush_profile, "files", "input", "inpaint_canvas")
+        def ref_name(r):
+            return r.get("filename") if isinstance(r, dict) else r
+        saved = [
+            ref_name(l.get("ref")) for l in layers
+            if str(l.get("name") or "").startswith("Copy")
+            and ref_name(l.get("ref"))
+            and os.path.isfile(os.path.join(canvas_dir, ref_name(l.get("ref"))))
+        ]
+        if len(saved) != copies:
+            raise RuntimeError(f"only {len(saved)}/{copies} dirty layers flushed to disk (dt={dt:.2f}s)")
+        return f"{len(saved)}/{copies} dirty 7500x5000 layers flushed in {dt:.1f}s (rc={rc})"
+    finally:
+        shutil.rmtree(flush_profile, ignore_errors=True)
 
 # the profile the app runs on holds the image: the one --user-data-dir names, else the default profile
 TEST_IMAGE = os.path.join(USER_DATA or os.path.join(os.environ.get("APPDATA", os.path.expanduser("~/.config")), "Scumble"), "files", "input", "inpaint_canvas", "test_base.png")
@@ -180,6 +272,7 @@ async def main():
         raise RuntimeError("tools/local_test.js: " + (lt.stdout + lt.stderr)[-800:])
     report["local"] = f"{lt.stdout.count('[ok]')} checks"
     report["raw"] = raw_check()
+    report["flush"] = headless_flush_check()
     async with stdio_client(SERVER) as (read, write):
         async with ClientSession(read, write) as session:
             init = await session.initialize()

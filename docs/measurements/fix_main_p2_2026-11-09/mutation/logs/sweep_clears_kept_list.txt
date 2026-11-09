@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-sweep_clears_kept_list-document --offline --tiles on document  (rc 1, 8 s)
+document rc=1 5s FAIL
+SOME FAILED

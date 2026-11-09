@@ -230,7 +230,7 @@ function main() {
 function relay(p) {
     let child;
     try {
-        child = spawn(p.command, p.args, { env: { ...process.env, ...p.env }, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+        child = spawn(p.command, p.args, { env: { ...process.env, ...p.env }, stdio: ["pipe", "pipe", "pipe"], windowsHide: true, detached: true });
     } catch (e) {
         process.stderr.write(`scumble-mcpb: cannot start ${p.command}: ${e.message}\n`);
         process.exit(1);
@@ -244,7 +244,6 @@ function relay(p) {
         if (ending) return;
         ending = true;
         try { child.stdin.end(); } catch (_) { /* gone */ }
-        setTimeout(() => { try { child.kill(); } catch (_) { /* gone */ } }, 5000).unref();
     };
     process.stdin.on("data", (c) => { try { child.stdin.write(c); } catch (_) { /* gone */ } });
     process.stdin.on("end", clientGone);
@@ -252,8 +251,7 @@ function relay(p) {
     process.stdin.on("error", clientGone);
     process.stdin.resume();
     child.on("exit", (code, signal) => process.exit(code === null || code === undefined ? (signal ? 1 : 0) : code));
-    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { try { child.kill(); } catch (_) { /* gone */ } });
-    process.on("exit", () => { try { child.kill(); } catch (_) { /* gone */ } });
+    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, clientGone);
 }
 
 module.exports = { find, plan, isSet, isStorePath, folderOfUninstall, missingText, fallbackServer, parseArgs, defaultDeps, relay, STORE_LAUNCH, UNINSTALL_GUID, UNINSTALL_KEY, LAUNCHER };

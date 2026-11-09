@@ -1,0 +1,26 @@
+
+
+DevTools listening on ws://127.0.0.1:9654/devtools/browser/560334ae-334a-4f66-b67b-abcaca5884d8
+[63888:1109/201029.216:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 6 rejected by interface blink.mojom.WidgetHost
+[63888:1109/201029.216:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 7 rejected by interface blink.mojom.WidgetHost
+[63888:1109/201029.216:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 2 rejected by interface blink.mojom.Widget
+Error occurred in handler for 'documents:open': Error: made by a newer Scumble (9.9.9) in a form this version cannot read; update Scumble to open it
+    at checkHeader (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\docfile.js:270:43)
+    at Object.openDocument (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\docfile.js:708:23)
+    at async C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\documents.js:224:23
+    at async Documents.run (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\documents.js:154:20)
+    at async C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\main.js:1164:23
+    at async Session.<anonymous> (node:electron/js2c/browser_init:2:123634)
+server renamed IMG_20231005.png to IMG_20231005 (1).png
+server renamed image.png to image (1).png
+server renamed image.png to image (1).png
+Error occurred in handler for 'documents:write': Error: the save was cancelled
+    at failure (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\docfile.js:399:45)
+    at check (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\docfile.js:455:63)
+    at Object.writeDocument (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\docfile.js:483:25)
+    at async C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\documents.js:207:23
+    at async Documents.run (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\documents.js:154:20)
+    at async C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\main.js:1158:19
+    at async Session.<anonymous> (node:electron/js2c/browser_init:2:123634) {
+  code: 'ABORT_ERR'
+}

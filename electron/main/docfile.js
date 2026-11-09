@@ -379,12 +379,17 @@ function unregisterTemp(registry, p) { if (registry) writeList(registry, readLis
 
 /** At a start: delete the temporary files a killed save left (only the listed ones, only with the temp pattern). */
 function sweepTemps(registry) {
-    const removed = [];
+    const removed = [], kept = [];
     for (const p of readList(registry)) {
         if (!TEMP_RE.test(p)) continue;
-        try { fs.unlinkSync(p); removed.push(p); } catch (_) { /* gone already */ }
+        try {
+            fs.unlinkSync(p);
+            removed.push(p);
+        } catch (err) {
+            if (!err || err.code !== "ENOENT" || !fs.existsSync(path.dirname(p))) kept.push(p);
+        }
     }
-    try { writeList(registry, []); } catch (_) { /* a read-only profile: nothing to keep either */ }
+    try { writeList(registry, kept); } catch (_) { /* a read-only profile: nothing to keep either */ }
     return removed;
 }
 
@@ -422,6 +427,9 @@ async function renameRetry(from, to, { tries = 20, delay = 100, rename = fsp.ren
 async function writeDocument({ target, header, thumbnail = null, files = [], registry = null, signal = null, onProgress = null, fault = null, ops = {} }) {
     const t0 = Date.now();
     const dir = path.dirname(target);
+    let st = null;
+    try { st = await fsp.stat(target); } catch (_) { /* a new file */ }
+    if (st && !(st.mode & 0o200)) throw failure(`${path.basename(target)} is read-only`, "EPERM");
     const headerBuf = Buffer.from(JSON.stringify(header), "utf8");
     if (headerBuf.length > MAX_HEADER) throw failure(`the document's description is ${Math.round(headerBuf.length / 1048576)} MB, more than a .scumble file takes (64 MB)`);
     const entries = [
@@ -628,9 +636,9 @@ async function crcOfFile(p) {
     }
 }
 
-/** An entry copied to `dest` through `<dest>.importing-<pid>`, its CRC checked on the way. */
+/** An entry copied to `dest` through `<dest>.importing-<pid>-<seq>`, its CRC checked on the way. */
 async function copyEntry(fh, en, dest, check) {
-    const tmp = `${dest}.importing-${process.pid}`;
+    const tmp = `${dest}.importing-${process.pid}-${++tempSeq}`;
     await fsp.mkdir(path.dirname(dest), { recursive: true });
     const out = await fsp.open(tmp, "w");
     try {
@@ -665,11 +673,27 @@ function freeName(dir, filename) {
     return name;
 }
 
+async function withImportLock(locks, key, fn) {
+    if (!locks) return fn();
+    const prev = locks.get(key) || Promise.resolve();
+    let release;
+    const next = new Promise((r) => { release = r; });
+    const chain = prev.then(() => next, () => next);
+    locks.set(key, chain);
+    try {
+        await prev.catch(() => {});
+        return await fn();
+    } finally {
+        release();
+        if (locks.get(key) === chain) locks.delete(key);
+    }
+}
+
 /**
  * Open a .scumble file into the mirror at `mirrorRoot`. Returns { header, notes, imported, reused, renamed, thumbnail }
  * with the refs in header.document and header.plugins renamed where a file had to be imported under a free name.
  */
-async function openDocument({ file, mirrorRoot, signal = null, onProgress = null }) {
+async function openDocument({ file, mirrorRoot, signal = null, onProgress = null, importLocks = null, onKey = null }) {
     const check = () => { if (signal && signal.aborted) throw failure("the open was cancelled", "ABORT_ERR"); };
     const fh = await fsp.open(file, "r");
     try {
@@ -715,19 +739,35 @@ async function openDocument({ file, mirrorRoot, signal = null, onProgress = null
         const imported = [], reused = [], renamed = new Map();
         for (const { ref, en } of listed) {
             check();
+            const k = keyOf(ref);
+            if (onKey) onKey(k);
             const dest = mirrorPath(mirrorRoot, ref.type, ref.subfolder, ref.filename);
-            let st = null;
-            try { st = await fsp.stat(dest); } catch (_) { st = null; }
-            if (st && st.size === en.size && (await crcOfFile(dest)) === en.crc) { reused.push(keyOf(ref)); }
-            else if (st) {
-                const name = freeName(path.dirname(dest), ref.filename);
-                await copyEntry(fh, en, path.join(path.dirname(dest), name), check);
-                renamed.set(keyOf(ref), name);
-                imported.push(keyOf({ ...ref, filename: name }));
-            } else {
-                await copyEntry(fh, en, dest, check);
-                imported.push(keyOf(ref));
-            }
+            await withImportLock(importLocks, k, async () => {
+                check();
+                let st = null;
+                try { st = await fsp.stat(dest); } catch (_) { st = null; }
+                if (st && st.size === en.size && (await crcOfFile(dest)) === en.crc) { reused.push(k); }
+                else if (st) {
+                    for (;;) {
+                        const name = freeName(path.dirname(dest), ref.filename);
+                        const kFree = keyOf({ ...ref, filename: name });
+                        const destFree = path.join(path.dirname(dest), name);
+                        const placed = await withImportLock(importLocks, kFree, async () => {
+                            check();
+                            if (fs.existsSync(destFree)) return false;
+                            if (onKey) onKey(kFree);
+                            await copyEntry(fh, en, destFree, check);
+                            renamed.set(k, name);
+                            imported.push(kFree);
+                            return true;
+                        });
+                        if (placed) break;
+                    }
+                } else {
+                    await copyEntry(fh, en, dest, check);
+                    imported.push(k);
+                }
+            });
             done += en.size;
             if (onProgress) onProgress({ done, total });
         }
