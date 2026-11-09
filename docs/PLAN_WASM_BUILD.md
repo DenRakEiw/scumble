@@ -1887,6 +1887,50 @@ Every recommendation taken (the user: "alles so wie deine empfehlung").
 - **Question 6.2 (K25): the export follows the screen.** A fill layer's depth limit with edge snap takes its reference colour from the picture (`map.guide`, the layer's own pixels only without a guide) instead of the fill's own colour; the strength stays the screen's `snapParams(map.meta?.snap?.strength)`. A byte change of layered exports holding such a layer, toward the screen. It matches the screen up to 4096 px on the long side, above that within one map texel (about 3.66 px at 15k, K25's review), as long as the picture below is still the one the depth map was made from. `docs/BUGS.md` has the entry. Only the depth limit is concerned: a fill layer takes no other limit (`commands.js` refuses it, the panel does not offer it).
 - **Question 6.4:** **K37 yes**, kept only where the tile route measures faster on the felt 15k operation, with a size threshold if small fills lose; at most one level against Skia at opacity below 1. **K38 yes** (the `matchCanvas` fallback toward the GPU's formula, at most one level). **The TIFF quirk is fixed** in both twin and Rust at K15 (sub-byte palette files with alpha, whose alpha is left at 0..15 today).
 
+### K37 (2026-11-09): the bucket over tiles
+
+On `3fd8bda7` (ABI 36, merged with `wasm-kernels` `e39b8d03` at ABI 39); full tier (the bucket's pixel path on tile
+layers, §4.11 & §7). `docs/measurements/k37_2026-11-09/` (`measure_k37.py`, `round_0.json`..`round_2.json`, `summary.txt`,
+`mutants_k37.py`, `mutation/`).
+- **Built (wasm unchanged):** `inpaint_tiles.js` `fillTile(color)` (a cached 256 x 256 solid RGBA8 tile) and
+  `TileLayerPixels.prototype.compositeFill(tiles, color, op, alpha, at = [0, 0])`: composites a flood's 256 x 256 alpha
+  tiles (`[{ tx, ty, alpha }]` from K9's `floodOverTiles`) in place through `compositeMaskedTile` (K36), directly at
+  `(ft.tx + (ox >> 8), ft.ty + (oy >> 8))` when `at` is 256-aligned and through `tilesSource(tiles, [ox, oy])` when `at`
+  is off-grid, clamping partial right/bottom edge tiles on a copy of the mask, skipping missing tiles when `op !== 0`
+  (`source-atop`), and dropping emptied tiles (`r === 2`). `inpaint_canvas.js` `bucketFill` captures `color` and
+  `brushOpacity` before `await floodRegion`, passes `tiles: true` when `this.tileMode && InpaintEditor.bucketTiles !== false`
+  and `!(alphaLocked && opacity >= 1)` and the target layer is (or will be) tile pixels at scale 1 with a whole-pixel
+  offset, re-verifies 1:1 scale and whole-pixel offset after the `await` (aborting with a status message if the layer
+  changed during the flood), takes `r.bounds` for the undo snapshot rect and dirty box, and composites `r.tiles` through
+  `target.compositeFill` (catching `PixelMemoryError` so `markLayerChanged` and `draw` still run for any tiles written).
+  At full opacity the bytes equal the canvas path (the alpha-locked fill at full opacity stays on the canvas path); at
+  opacity below 1, partially blended pixels differ from Skia by at most one premultiplied level.
+- **Tests:** `node tools/px_test.js` and `ELECTRON_RUN_AS_NODE=1 electron tools/px_test.js` PASS
+  (`TileLayerPixels.compositeFill` in `compositeSha`: grid-aligned, off-grid, and bottom-edge fills, literal colour bytes,
+  right and bottom edge clamping, frozen clone sharing, `"js"` vs `"rust"` byte-exact). `editor` gate
+  `the_flood_over_tiles_is_the_flood_over_canvases` (every wand and bucket flood over tiles returns `"tiles"` with 64 KB
+  alpha buffers) and `the_bucket_fills_through_the_kernel_on_tiles` (12 comparative cases covering full/partial opacity,
+  alpha lock, off-grid selection clipping, 4-edge layer crossing, no-active-layer creation, and scaled/fractional-offset
+  fallbacks against `InpaintEditor.bucketTiles = false`, `"js"` vs `"rust"` 0 bytes differ, undo 0 bytes differ, plus 3
+  mid-flood colour/geometry race checks). Gates `--offline` (`run_gates_both.sh k37`, `k37-fix`, and `k37-merge`
+  `--shards 2 --ports 9619,9620`): `lint`, `types`, `nodecopy`, `pixels`, `composite`, `selection`, `brush`, `editor`
+  (2 shards per backend, 128 steps) BOTH PASS.
+- **Before -> after** (`summary.txt`: three Latin-square rounds on fresh instances, 15000 x 10000, `--tiles --no-comfy`,
+  busy lock held; `before` = in-tree `InpaintEditor.bucketTiles = false` switch running `drawInto` -> `_scratchDraw`
+  readback of the flood box), median [min-max]: `bucket_fill` (58.3M px across 1,045 tiles) wall 2,682.3 [2,581.3-2,756.3]
+  -> 1,337.0 [1,288.8-1,392.9] ms (2.01x faster), longest window block 1,441.7 [1,439.5-1,555.0] -> 209.9 [205.7-210.6] ms
+  (6.87x shorter), `2d getImageData` 1,062.8 ms (572.2 MB, 12 calls) -> 0 ms (0 MB), `2d putImageData` 647.0 MB -> 75.7 MB;
+  `bucket_one_disc` (441.5k px, 15 tiles) wall 39.0 [36.6-103.3] -> 28.1 [25.7-98.0] ms, block 16.2 [15.7-60.4] ->
+  9.8 [9.3-62.0] ms; `bucket_sel_1000` wall 36.7 -> 29.4 ms, block 15.4 -> 11.0 ms; `bucket_sel_256` wall 33.1 ->
+  24.8 ms, block 14.8 -> 5.7 ms; `bucket_sel_64` (4,096 px, 1 tile) wall 34.9 -> 24.9 ms, block 12.2 -> 5.5 ms. Every
+  row's FNV-1a hash (including full-picture `2564466665` on `bucket_fill`) matches across `before`, `rust`, and `js`.
+  Isolated `compositeFill` on 1,045 tiles: Rust SIMD 192.70 [188.44-201.03] ms vs JS twin 620.31 [619.64-621.45] ms
+  (3.22x faster). No size threshold needed because `before` reads back the entire flood box in `_scratchDraw` even on a
+  64 x 64 selection.
+- **The mutation round** (`mutants_k37.py`, `mutation/results.txt`): **15 of 15 killed** on their focused kill sets
+  (`compositeSha` and `the_bucket_fills_through_the_kernel_on_tiles`), 0 survived.
+```
+
 ### K13 (2026-11-09): relight's scalar f64 shadow march and hoisted tap constants (the Antigravity L chain)
 
 By a Gemini agent in Antigravity (`.claude/coord/chain-l/`) on `3fd8bda7` (`7dbc030f`, merged with `wasm-kernels` `92d29245` at `96d4a33f`), ABI 40 -> 41 (36 -> 37 on `3fd8bda7`);

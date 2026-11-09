@@ -3855,9 +3855,86 @@ async function compositeShaCases(js, simd, scalar) {
                 eqBytes(stJs.bytes, stRust.bytes) && eqBytes(stJs.snapBytes, stRust.snapBytes)
                 && eqBytes(stJs.snapBytes, stJs.before) && eqBytes(stRust.snapBytes, stRust.before)
                 && stJs.w1 === 2 && stRust.w1 === 2 && stJs.w2 === 1 && stRust.w2 === 1
-                && stJs.c1 === 0 && stJs.c2 === 0 && stRust.c1 === 3 && stRust.c2 === 1
+                && stJs.c1 === 0 && stJs.c2 === 0 && stJs.c1 === 0 && stRust.c1 === 3 && stRust.c2 === 1
                 && stJs.shared01 && stRust.shared01 && stJs.dropped10 && stRust.dropped10 && stJs.created11 && stRust.created11,
                 `js w=${stJs.w1},${stJs.w2} c=${stJs.c1},${stJs.c2}; rust w=${stRust.w1},${stRust.w2} c=${stRust.c1},${stRust.c2}`);
+
+            // TileLayerPixels.compositeFill (K37): grid-aligned, off-grid offset, partial edge clamping, frozen clone preservation
+            const buildAndFill = (rt) => {
+                K.setRoute("compositeMaskedTile", rt);
+                const layer = new TileLayerPixels(300, 300); // 2x2 tiles, right/bottom edge at 300 (< 512)
+                const t00 = layer.writable(0, 0);
+                for (let i = 0; i < t00.data.length; i += 4) { t00.data[i] = 20; t00.data[i + 1] = 60; t00.data[i + 2] = 100; t00.data[i + 3] = 200; }
+                const t01 = layer.writable(0, 1);
+                t01.data[0] = 15; t01.data[1] = 25; t01.data[2] = 35; t01.data[3] = 255;
+                const snap = layer.clone();
+                const before = packTiles(snap).slice();
+
+                // Grid-aligned fill at [0, 0] with source-over (op = 0, alpha = 255):
+                // (0,0) partial mask, (1,0) full 255 mask (clamped to x < 44 because w = 300), (0,1) all-0 mask (unchanged)
+                const a00 = new Uint8Array(65536);
+                for (let p = 0; p < 500; p++) a00[p] = 255;
+                const a10 = new Uint8Array(65536).fill(255);
+                const a01 = new Uint8Array(65536);
+                const tiles1 = [
+                    { tx: 0, ty: 0, alpha: a00.buffer },
+                    { tx: 1, ty: 0, alpha: a10.buffer },
+                    { tx: 0, ty: 1, alpha: a01.buffer },
+                ];
+                K.pxCalls(true);
+                const w1 = layer.compositeFill(tiles1, "#e08020", 0, 255, [0, 0]);
+                const c1 = K.pxCalls(true).composite_masked_tile || 0;
+                const d00 = layer.tileAt(0, 0).data;
+                const colorOk = d00[0] === 0xe0 && d00[1] === 0x80 && d00[2] === 0x20 && d00[3] === 255;
+
+                // Off-grid fill at [37, 19] with source-atop (op = 2, alpha = 180):
+                // reaches (0,0) and (1,0) where existing pixels exist, skips (1,1) which is empty
+                const aOff = new Uint8Array(65536).fill(255);
+                K.pxCalls(true);
+                const w2 = layer.compositeFill([{ tx: 0, ty: 0, alpha: aOff.buffer }], "#40c090", 2, 180, [37, 19]);
+                const c2 = K.pxCalls(true).composite_masked_tile || 0;
+                const shared01 = layer.tileAt(0, 1) === snap.tileAt(0, 1);
+
+                // Grid-aligned fill at [0, 256] (dty = 1) onto bottom edge tile (0,1), clamping y >= 44 (bh = 44)
+                const aBottom = new Uint8Array(65536).fill(255);
+                const w3 = layer.compositeFill([{ tx: 0, ty: 0, alpha: aBottom.buffer }], "#2060e0", 0, 255, [0, 256]);
+
+                // Verify right edge tile (1,0) has 0 outside x < 44 and bottom edge tile (0,1) has 0 outside y < 44
+                const t10After = layer.tileAt(1, 0), t01After = layer.tileAt(0, 1);
+                let edgeClean = colorOk && w3 === 1 && !!t10After && !!t01After && a10[200] === 255 && aBottom[50 * 256] === 255
+                    && t01After.data[0] === 0x20 && t01After.data[1] === 0x60 && t01After.data[2] === 0xe0 && t01After.data[3] === 255;
+                if (t10After && edgeClean) {
+                    for (let y = 0; y < 256 && edgeClean; y++) {
+                        for (let x = 44; x < 256; x++) {
+                            if (t10After.data[(y * 256 + x) * 4 + 3] !== 0) { edgeClean = false; break; }
+                        }
+                    }
+                }
+                if (t01After && edgeClean) {
+                    for (let y = 44; y < 256 && edgeClean; y++) {
+                        for (let x = 0; x < 256; x++) {
+                            if (t01After.data[(y * 256 + x) * 4 + 3] !== 0) { edgeClean = false; break; }
+                        }
+                    }
+                }
+                return {
+                    bytes: packTiles(layer),
+                    snapBytes: packTiles(snap),
+                    before,
+                    w1, w2, c1, c2,
+                    shared01,
+                    empty11: layer.tileAt(1, 1) === null,
+                    edgeClean,
+                };
+            };
+            const flJs = buildAndFill("js"), flRust = buildAndFill("rust");
+            check("TileLayerPixels.compositeFill on js and rust routes matches byte-for-byte, clamps partial edge tiles, and keeps unchanged frozen tiles shared",
+                eqBytes(flJs.bytes, flRust.bytes) && eqBytes(flJs.snapBytes, flRust.snapBytes)
+                && eqBytes(flJs.snapBytes, flJs.before) && eqBytes(flRust.snapBytes, flRust.before)
+                && flJs.w1 === 2 && flRust.w1 === 2 && flJs.w2 === 2 && flRust.w2 === 2
+                && flJs.c1 === 0 && flJs.c2 === 0 && flRust.c1 === 3 && flRust.c2 === 3
+                && flJs.shared01 && flRust.shared01 && flJs.empty11 && flRust.empty11 && flJs.edgeClean && flRust.edgeClean,
+                `js w=${flJs.w1},${flJs.w2} c=${flJs.c1},${flJs.c2}; rust w=${flRust.w1},${flRust.w2} c=${flRust.c1},${flRust.c2} edge=${flRust.edgeClean}`);
         } finally {
             kernelsBack(K);
             K.setKernels(prevMode);
