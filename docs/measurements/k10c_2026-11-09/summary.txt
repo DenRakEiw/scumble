@@ -6,12 +6,12 @@ Scope (docs/PLAN_WASM_BUILD.md §4.4 K10c, §5 row 44; docs/PLAN_WASM_K10.md):
   - Added `pub fn clip_coverage(cov: &mut [u8], base_mask: Option<&[u8]>, alpha: u8, own: Option<&[u8]>)` (`:691-715`) and SIMD128 `simd::clip_coverage` (`:1207-1229`, 16 bytes at a time via `v128_load`, `simd::mul255`, `v128_store`).
   - Added `lowbias32` / `hash32` (`:718-730`), `pub fn dissolve_rows(src: &mut [u8], w: usize, rows: usize, x0: i32, y0: i32, alpha: u8, mask: Option<&[u8]>, seed: u32)` (`:736-775`), and SIMD128 `simd::dissolve_row` (`:1237-1293`, 4 pixels at a time in `u32x4` lanes with exact 32-bit `mul255_u32` and `lowbias32` / `hash32`, branchless `v128_bitselect` preserving `src_a == 0` RGB untouched and `c_val == 255` short-circuit).
 - `crates/px/src/lib.rs`:
-  - Bumped `px_abi_version()` (`:57-59`) from `41` to `42` (`44` after merging `0740aeab`).
+  - Bumped `px_abi_version()` (`:57-59`) from `41` to `42` (`44` after merging `wasm-kernels`).
   - Exported `#[no_mangle] pub unsafe extern "C" fn clip_coverage(cov: *mut u8, px: usize, base_mask: *const u8, alpha: u8, own: *const u8)` (`:657-671`) and `#[no_mangle] pub unsafe extern "C" fn dissolve_rows(src: *mut u8, w: usize, rows: usize, x0: i32, y0: i32, alpha: u8, mask: *const u8, seed: u32)` (`:677-695`).
-- `renderer/editor/px/px.wasm`: `279,969 bytes` (`+2,438 B` over `277,531 B` at `3359cb0f`), sha256 `193dd3adf6a169e512a38ffa1b966d6dd35a2c38c7aa112f888fd3bfef7ad502` (before at `3359cb0f`: sha256 `d3d4567365549b492ec51fc18ed22fac1afeb4104953d78366cafae387f7ae32`; after merging `0740aeab`: `292,035 bytes`, `+2,437 B` over `289,598 B` at `0740aeab`, sha256 `2fe6852bee094e0a00a7052ba34243bb5c60bf746983862f2685a27739488580`).
-- `renderer/editor/px/px_scalar.wasm`: `225,508 bytes` (`+1,396 B` over `224,112 B` at `3359cb0f`), sha256 `71e5311ccaec73ece687121f562d2ee8400f78d432b3b73abddb8f927512d6a8` (before at `3359cb0f`: sha256 `e23e1ca9bd65303dda5ef6f9eada9d09da6b6ef39ccbf6d1862b951d3097bca7`; after merging `0740aeab`: `233,225 bytes`, `+1,395 B` over `231,830 B` at `0740aeab`, sha256 `7429d824a673cc0d1b976b74caebdf0ca46a0479ca60e2a4aa9b6aa84bf9bd0d`).
+- `renderer/editor/px/px.wasm`: `279,969 bytes` (`+2,438 B` over `277,531 B` at `3359cb0f`), sha256 `193dd3adf6a169e512a38ffa1b966d6dd35a2c38c7aa112f888fd3bfef7ad502` (before at `3359cb0f`: sha256 `d3d4567365549b492ec51fc18ed22fac1afeb4104953d78366cafae387f7ae32`; after merging `0d14b9eb` / `ad291b4b`: `291,274 bytes`, `+2,437 B` over `288,837 B` at `0d14b9eb`, sha256 `e35da0b473c7fdf9985b6012d8cb3f35ca4d215edb034ea0b7abb4f256f1d0e7`).
+- `renderer/editor/px/px_scalar.wasm`: `225,508 bytes` (`+1,396 B` over `224,112 B` at `3359cb0f`), sha256 `71e5311ccaec73ece687121f562d2ee8400f78d432b3b73abddb8f927512d6a8` (before at `3359cb0f`: sha256 `e23e1ca9bd65303dda5ef6f9eada9d09da6b6ef39ccbf6d1862b951d3097bca7`; after merging `0d14b9eb` / `ad291b4b`: `233,384 bytes`, `+1,395 B` over `231,989 B` at `0d14b9eb`, sha256 `bbd719d5ec34c80da3949fd3078e8e3ff3aa8f883f515d6f68425dbab96117c3`).
 - `renderer/editor/px/px.js`:
-  - Bumped `export const PX_ABI = 42;` (`:16`; `44` at `:18` after merging `0740aeab`).
+  - Bumped `export const PX_ABI = 42;` (`:16`; `44` at `:18` after merging `wasm-kernels`).
   - Added `Px.prototype.psdPackRowsFromPtr(a, pr, w, rows)` (`:1088-1099`, `:1164-1175` after merge) and refactored `psdPackRows` (`:1081-1086`, `:1152-1158` after merge) to delegate to `psdPackRowsFromPtr`.
 - `renderer/editor/px/kernels.js`:
   - Added `clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel"` to `ROUTE_KINDS` (`:65`, `:68` after merge). All four win their 15,000 x 10,000 deciding rows, so none is added to `DEFAULT_ROUTES`.
@@ -177,7 +177,7 @@ Route Decisions (`docs/PLAN_WASM_BUILD.md` §1.1 & `docs/PLAN_WASM_K10.md` §9.3
 
 3. Unit & Parity Suites (`tools/px_test.js` & `tools/boxstack_test.js`)
 -----------------------------------------------------------------------
-- `node tools/px_test.js` & `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe tools/px_test.js`: PASS (`composeWasmPartCases` on both `rust simd` and `rust scalar` covering sections 1-3 including `2g` under `dissolveRows=js` (`:5912-5931`, `:6799-6818` after merge) and K10c sections `4a-4d` (`:6086-6496`, `:6973-7383` after merge, including a clipped + dissolved layer in `4c` and `4d`), plus worker `psdPart` / `stackInto` / `stackPoints` checks `5a-5c` (`:6517-6646`, `:7404-7533` after merge, including `5b` band offset verification against whole-box `rowsOfStack`) on `rust simd`).
+- `node tools/px_test.js` & `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe tools/px_test.js`: PASS (`composeWasmPartCases` on both `rust simd` and `rust scalar` covering sections 1-3 including `2g` under `dissolveRows=js` (`:5912-5931`, `:6821-6859` after merge) and K10c sections `4a-4d` (`:6086-6496`, `:7016-7426` after merge, including a clipped + dissolved layer in `4c` and `4d`), plus worker `psdPart` / `stackInto` / `stackPoints` checks `5a-5c` (`:6517-6646`, `:7447-7576` after merge, including `5b` band offset verification against whole-box `rowsOfStack`) on `rust simd`).
 - `node tools/boxstack_test.js`: PASS (`:137-269`, `compositeBox` clipped and dissolve layer cases against both `rowsOfStack` and frozen hand-computed 4x2 byte arrays).
 
 4. Mutation Round (`docs/measurements/k10c_2026-11-09/mutation/summary.txt`)
@@ -196,3 +196,11 @@ Command:
 - `k10c-tiff-tiles` (`--offline --tiles on`, port 9629): tiff 17s -> ALL PASS
 - `k10c-tiff-canvas` (`--offline --tiles off`, port 9630): tiff 11s -> ALL PASS
 - `k10c-serial` (`--offline --tiles on`, port 9629): pxjobs 115s, nodecopy 29s -> ALL PASS
+- Post-merge (`wasm-kernels` merged):
+  - `k10c-m1-both-tiles` (`--offline --tiles on`, port 9629): lint 10s, types 7s, export 139s, layered 10s, pixels 9s -> ALL PASS
+  - `k10c-m1-both-canvas` (`--offline --tiles off`, port 9630): lint 12s, types 13s, export 14s, layered 11s, pixels 14s -> ALL PASS
+  - `k10c-m1-both-tiles-editor` (`--offline --tiles on`, 2 shards: `k10c-m1-both-tiles-editor1` 84s, `k10c-m1-both-tiles-editor2` 106s; all 131 steps ran): editor rc=0 -> ALL PASS
+  - `k10c-m1-both-canvas-editor` (`--offline --tiles off`, 2 shards: `k10c-m1-both-canvas-editor1` 83s, `k10c-m1-both-canvas-editor2` 76s; all 131 steps ran): editor rc=0 -> ALL PASS
+  - `k10c-m1-tiff-tiles` (`--offline --tiles on`, port 9629): tiff 25s -> ALL PASS
+  - `k10c-m1-tiff-canvas` (`--offline --tiles off`, port 9630): tiff 23s -> ALL PASS
+  - `k10c-m1-serial` (`--offline --tiles on`, port 9629): pxjobs 121s, nodecopy 34s -> ALL PASS
