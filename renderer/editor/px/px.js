@@ -1452,12 +1452,12 @@ export class Px {
      */
     tiffUnpack(compression, src, need, out = null, name = "strip") {
         if (need instanceof Uint8Array) { out = need; need = out.byteLength; }
-        if (!(compression === 1 || compression === 5 || compression === 32773) || !src || typeof src.byteLength !== "number" || !Number.isInteger(need) || need < 0) {
+        if (!(compression === 1 || compression === 5 || compression === 32773) || !ArrayBuffer.isView(src) || !Number.isInteger(need) || need < 0) {
             throw tiffUnpackError(-1, name);
         }
         let dst = null;
         if (out != null) {
-            if (!out || typeof out.byteLength !== "number" || out.byteLength < need) throw tiffUnpackError(-1, name);
+            if (!ArrayBuffer.isView(out) || out.byteLength < need) throw tiffUnpackError(-1, name);
             dst = out instanceof Uint8Array ? out : new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
         }
         const a = this.job, len = src.byteLength;

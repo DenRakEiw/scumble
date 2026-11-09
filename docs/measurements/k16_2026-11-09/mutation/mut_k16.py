@@ -176,7 +176,7 @@ MUTANTS = [
             "                if (head < 0) { head = chunk[0]; if (chunk.length < 2) return new Uint8Array(0); }\n                const second = head === chunk[0] && chunk.length >= 2 ? chunk[1] : chunk[0];\n                if (head === 0 && (second & 1)) throw tiffError(\"this TIFF uses the old-style LZW of before TIFF 6, which is not read; save it again with LZW or ZIP compression\", -3);\n                checked = true;\n                if (chunk[0] !== head || chunk.length < 2) { acc = head; nbits = 8; }",
         )],
         "killed",
-        {"px": ["tiff"]},
+        {"gates": ["tiff"]},
     ),
     (
         "inpaint_tiff.js: lzwDecoder stop at need (if (left <= 0) ended = true) dropped",
@@ -199,6 +199,26 @@ MUTANTS = [
         {"px": ["tiff"]},
     ),
     (
+        "inpaint_tiff.js: packBitsDecoder lit = 0 instead of lit -= n across piece break",
+        IT,
+        [(
+            "                    lit -= n; left -= n; i += n;",
+            "                    lit = 0; left -= n; i += n;",
+        )],
+        "killed",
+        {"gates": ["tiff"]},
+    ),
+    (
+        "inpaint_tiff.js: packBitsDecoder loses rep at piece break",
+        IT,
+        [(
+            "            return out.take();\n        },\n        end() { return new Uint8Array(0); },",
+            "            rep = -1; return out.take();\n        },\n        end() { return new Uint8Array(0); },",
+        )],
+        "killed",
+        {"gates": ["tiff"]},
+    ),
+    (
         "inpaint_tiff.js: StripRows.open omits this.need in unpacked() call",
         IT,
         [(
@@ -206,7 +226,7 @@ MUTANTS = [
             "        this.it = unpacked(this.src, L.offsets[k], L.counts[k], this.info.compression, `strip ${k + 1}`);",
         )],
         "killed",
-        {"px": ["tiff"]},
+        {"gates": ["tiff"]},
     ),
     (
         "inpaint_tiff.js: TileRows.tile omits want in unpacked() call",
@@ -216,7 +236,7 @@ MUTANTS = [
             "        const it = unpacked(this.src, L.offsets[k], L.counts[k], this.info.compression, `tile ${k + 1}`);",
         )],
         "killed",
-        {"px": ["tiff"]},
+        {"gates": ["tiff"]},
     ),
     (
         "inpaint_tiff.js: unpackStrip does not throw truncated when decoded.length < need",
@@ -224,6 +244,26 @@ MUTANTS = [
         [(
             "    const decoded = dec.push(bytes);\n    if (decoded.length < need) throw truncated(`${name} holds fewer bytes than its rows`);",
             "    const decoded = dec.push(bytes);",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "inpaint_tiff.js: unpackStrip ignores caller-supplied out buffer",
+        IT,
+        [(
+            "    if (out == null) {\n        dst = new Uint8Array(need);",
+            "    if (true) {\n        dst = new Uint8Array(need);",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "inpaint_tiff.js: unpackStrip accepts bare ArrayBuffer as src",
+        IT,
+        [(
+            "    if (!(compression === 1 || compression === 5 || compression === 32773) || !ArrayBuffer.isView(src) || !Number.isInteger(need) || need < 0) {",
+            "    if (!(compression === 1 || compression === 5 || compression === 32773) || !src || typeof src.byteLength !== \"number\" || !Number.isInteger(need) || need < 0) {",
         )],
         "killed",
         {"px": ["tiff"]},
@@ -245,6 +285,16 @@ MUTANTS = [
         [(
             "            this._out(Uint8Array, po, need, dst ? (dst.length === need ? dst : dst.subarray(0, need)) : (dst = new Uint8Array(need)));",
             "            dst = this._out(Uint8Array, po, need, null);",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "px.js: tiffUnpack accepts bare ArrayBuffer as src",
+        PJ,
+        [(
+            "        if (!(compression === 1 || compression === 5 || compression === 32773) || !ArrayBuffer.isView(src) || !Number.isInteger(need) || need < 0) {",
+            "        if (!(compression === 1 || compression === 5 || compression === 32773) || !src || typeof src.byteLength !== \"number\" || !Number.isInteger(need) || need < 0) {",
         )],
         "killed",
         {"px": ["tiff"]},

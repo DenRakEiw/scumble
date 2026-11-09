@@ -58,7 +58,7 @@ wrote px/kernels.js
 wrote px/px.js
 copied px/px.wasm
 copied fonts 35 files
-recorded build 9613614cd223d51a in DEVELOPMENT.md
+recorded build 171a905ce1ba0fa7 in DEVELOPMENT.md
 ok: 61 modules parse and resolve, 64 host members answered by both hosts
 ok: 61 modules parse and resolve, 64 host members answered by both hosts
 [ok] extension registered  inpaint.InpaintCanvas

@@ -379,7 +379,7 @@ function lzwDecoder(need = Infinity) {
  */
 export function unpackStrip(compression, src, need, out = null, name = "strip") {
     if (need instanceof Uint8Array) { out = need; need = out.byteLength; }
-    if (!(compression === 1 || compression === 5 || compression === 32773) || !src || typeof src.byteLength !== "number" || !Number.isInteger(need) || need < 0) {
+    if (!(compression === 1 || compression === 5 || compression === 32773) || !ArrayBuffer.isView(src) || !Number.isInteger(need) || need < 0) {
         throw tiffError(`unsupported TIFF strip unpack (compression ${compression}, need ${need})`, -1);
     }
     const bytes = src instanceof Uint8Array ? src : new Uint8Array(src.buffer, src.byteOffset, src.byteLength);
@@ -387,8 +387,8 @@ export function unpackStrip(compression, src, need, out = null, name = "strip") 
     if (out == null) {
         dst = new Uint8Array(need);
     } else {
-        if (!out || typeof out.byteLength !== "number" || out.byteLength < need) {
-            throw tiffError(`output buffer (${out ? out.byteLength : 0} bytes) is smaller than need (${need})`, -1);
+        if (!ArrayBuffer.isView(out) || out.byteLength < need) {
+            throw tiffError(`output buffer (${out && typeof out.byteLength === "number" ? out.byteLength : 0} bytes) is smaller than need (${need})`, -1);
         }
         dst = out instanceof Uint8Array ? out : new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
     }

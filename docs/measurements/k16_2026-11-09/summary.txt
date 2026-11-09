@@ -2,7 +2,7 @@ K16 measurement summary (2026-11-09)
 ====================================
 
 Behaviour changes on damaged or odd files:
-- A strip or tile that has damaged LZW or PackBits bytes after the uncompressed bytes its rows or tile height need is now read instead of refused, because both `tiff_unpack` and `unpacked()` stop decoding as soon as `need` output bytes have been produced.
+- An LZW strip or tile with a damaged code past `need`, inside the blob piece that completes `need`, was refused and now opens (whether trailing LZW damage refused a file before depended on where the pieces broke, as later pieces were already ignored because `StripRows` and `TileRows` closed at `need`; `packBitsDecoder` has no refusal path so PackBits behaves as before, stopping at `need` with the same pixels).
 - An LZW strip or tile whose stream yields a 1-byte first chunk `[b]` followed by a chunk of two or more bytes starting with the same byte `b` now keeps that first byte and checks the second byte for old-style LZW, instead of dropping the first byte and testing the third byte.
 
 Scope (docs/PLAN_WASM_BUILD.md §4.6 K16 + brief overrides at 3fd8bda7):
@@ -10,35 +10,36 @@ Scope (docs/PLAN_WASM_BUILD.md §4.6 K16 + brief overrides at 3fd8bda7):
   - `tiff_unpack(compression: u32, src: *const u8, len: usize, out: *mut u8, need: usize) -> isize`
   - Unpacks one TIFF strip or tile of `need` bytes for `compression` `1` (none), `5` (LZW, 9..12-bit MSB-first codes, 24 KB tables on the stack: `prefix: [u16; 4096]`, `suffix: [u8; 4096]`, `first: [u8; 4096]`, `len: [u16; 4096]`), and `32773` (PackBits).
   - Deflate (`8` / `32946`) stays on native `DecompressionStream` (Stop 2 went to native inflate; `tiff_unpack` returns `-1` for unsupported compression).
-  - Panic-free on arbitrary/corrupt inputs; stops as soon as `need` bytes are written (`return need as isize`) and returns negative error codes on corrupt or truncated input (`-1` bad args/compression, `-2` truncated before `need` bytes, `-3` old-style LZW, `-4` LZW code before first literal after clear, `-5` LZW code beyond table).
+  - Panic-free by reading (table indices masked to `0xFFF`, `next` capped at `4096`, `width` in `9..=12`, all slices bounds-checked) and backed by the fuzz and prefix-sweep runs below; stops as soon as `need` bytes are written (`return need as isize`) and returns negative error codes on corrupt or truncated input (`-1` bad args/compression, `-2` truncated before `need` bytes, `-3` old-style LZW, `-4` LZW code before first literal after clear, `-5` LZW code beyond table).
 - `renderer/editor/inpaint_tiff.js`:
-  - Fixed the 1-byte first-piece bug in `lzwDecoder(need = Infinity)`: tracks `firstByte === -1` and `secondByte === -1` across `push()` chunks before checking `firstByte === 0 && (secondByte & 1) !== 0`.
+  - Fixed the 1-byte first-piece bug in `lzwDecoder(need = Infinity)`: `head` (`-1` initially) stores `chunk[0]` only when the first non-empty `push()` chunk has `chunk.length < 2`; on the next chunk `head >= 0` uses `head` as the first byte and `chunk[0]` as the second byte (seeding `acc = head; nbits = 8`), instead of testing `head === chunk[0]`.
   - Added `need` stopping to `packBitsDecoder(need = Infinity)`, `lzwDecoder(need = Infinity)`, and `unpacked(src, off, count, compression, name, need = Infinity)`, passing `this.need` from `StripRows.open` and `want` from `TileRows.tile`.
-  - Added `unpackStrip(compression, src, need, out = null, name = "strip")` and `TIFF_JS = Object.freeze({ unpackStrip })`.
+  - Added `unpackStrip(compression, src, need, out = null, name = "strip")` and `TIFF_JS = Object.freeze({ unpackStrip })`, validating `ArrayBuffer.isView(src)` (and `ArrayBuffer.isView(out)` when `out != null`).
 - `renderer/editor/px/px.js`, `renderer/editor/px/kernels_js.js`, `renderer/editor/px/kernels.js`:
-  - Bumped `PX_ABI = 37`, added `Px.prototype.tiffUnpack` and `tiffUnpackError(code, name)`, re-exported `unpackStrip` / `TIFF_JS` / `tiffUnpack` with trap recovery and `releaseIfLarge()`.
-  - K16 is §1.4's kernel tier (its app call site is K17's `readTiffBand`).
+  - Bumped `PX_ABI = 37`, added `Px.prototype.tiffUnpack` (validating `ArrayBuffer.isView(src)` and `ArrayBuffer.isView(out)`) and `tiffUnpackError(code, name)`, re-exported `unpackStrip` / `TIFF_JS` / `tiffUnpack` with trap recovery and `releaseIfLarge()`.
+  - K16 is §1.4's kernel tier (its app call site is K17's `readTiffBand`; no route entry, app gate step, `pxjobs`, or 15k rows at K16 per brief override).
 
 Builds (`python tools/build_px.py --check`):
 - `renderer/editor/px/px.wasm`:        262,027 bytes  sha256 93cc852f2a93c288
 - `renderer/editor/px/px_scalar.wasm`: 213,278 bytes  sha256 ee5912ffc000892e
 
 Kernel benchmark (`PX_ONLY=tiff PX_BENCH=1 node tools/px_test.js`, median of 15 on 1 MB strip):
-- `tiff_unpack` (LZW 1 MB strip):      twin 7.31 ms, simd 2.72 ms (2.69x), scalar 2.88 ms (2.54x)
-- `tiff_unpack` (PackBits 1 MB strip): twin 1.31 ms, simd 0.22 ms (5.95x), scalar 0.19 ms (6.89x)
+- `tiff_unpack` (LZW 1 MB strip):      twin 4.95 ms, simd 1.60 ms (3.09x), scalar 1.74 ms (2.84x)
+- `tiff_unpack` (PackBits 1 MB strip): twin 1.40 ms, simd 0.32 ms (4.38x), scalar 0.27 ms (5.19x)
 
 Tests & byte-equality:
-- `node tools/tiff_test.js`: 74 of 74 checks passed (including `unpackStrip` / `TIFF_JS`, 1-byte first-piece LZW regression test, and `StripRows`/`TileRows` stopping at `need` on trailing damaged LZW codes).
-- `node tools/px_test.js`: all groups passed (`tiff` group: 14 byte-exact twin cases on both `px.wasm` and `px_scalar.wasm` at even and odd offsets, caller-supplied `out` view bounds check, negative error codes `-1..-5` and raw pointer checks, 200 random/bit-flipped LZW & PackBits streams with 0 traps, `kernels.js` dispatch & trap recovery).
+- `node tools/tiff_test.js`: 80 of 80 checks passed (including `expectRead` of an LZW strip stopped mid-4-byte code and PackBits strips stopped mid-literal and mid-repeat run, streamed piece-break sweeps across every byte `k`, `[b0],[b1],rest`, width change + Clear, and all 1-byte chunks for both PackBits and LZW, 1-byte first-piece LZW regression test, and `StripRows`/`TileRows` stopping at `need` on trailing damaged LZW codes).
+- `node tools/px_test.js` (and under Electron `ELECTRON_RUN_AS_NODE=1`): all groups passed (`tiff` group: 21 byte-exact twin cases on both `px.wasm` and `px_scalar.wasm` at even and odd offsets, all 21 verified against their reference `want` payloads including hand-derived mid-code and mid-run stops, caller-supplied `out` view bounds check on `twin`, `simd`, and `scalar` for both 4-arg and 3-arg `Uint8Array` overload, negative error codes `-1..-5` including bare `ArrayBuffer` refusal and raw pointer checks, 240-trial random + 9..12-bit & full-4096-table bit-flipped fuzz + 2,102-step every-prefix sweep with 0 traps, `kernels.js` dispatch & trap recovery).
 
 Mutation round (`docs/measurements/k16_2026-11-09/mutation/results.txt`):
-- 23 mutants across `crates/px/src/tiff.rs`, `renderer/editor/inpaint_tiff.js`, `renderer/editor/px/px.js`, `renderer/editor/px/kernels_js.js`, and `renderer/editor/px/kernels.js`:
-  23 killed on focused test sets (`PX_ONLY=tiff node tools/px_test.js`, `node tools/tiff_test.js`), 0 survived, 0 unexpected.
-- One initial survivor (`inpaint_tiff.js: packBitsDecoder stop at need (left > 0) dropped`) exposed that `dst.set(decoded.subarray(0, need))` in `unpackStrip` masked decoders returning `> need` bytes; tightened `unpackStrip` to `dst.subarray(0, need).set(decoded)`, killing the mutant in 1s.
+- 28 mutants in one unified run across `crates/px/src/tiff.rs` (12), `crates/px/src/lib.rs` (2), `renderer/editor/inpaint_tiff.js` (10), `renderer/editor/px/px.js` (3), and `renderer/editor/px/kernels.js` (1):
+  28 killed, 0 survived, 0 unexpected.
+  - 23 killed by `px_test (only: tiff)` (`PX_ONLY=tiff node tools/px_test.js`).
+  - 5 streamed-decoder / live-reader mutants in `renderer/editor/inpaint_tiff.js` (`lzwDecoder 1-byte first-piece`, `packBitsDecoder lit = 0 across piece break`, `packBitsDecoder loses rep at piece break`, `StripRows.open omits this.need`, `TileRows.tile omits want`) killed by `the tiff gate` (`node tools/tiff_test.js`).
 
 Gates (`lint types` on both backends, `tiff` sequentially on tiles then canvas, `nodecopy` on tiles):
-- `k16-tiles` (port 9633):       lint rc=0 30s, types rc=0 17s -> ALL PASS
-- `k16-canvas` (port 9634):      lint rc=0 30s, types rc=0 16s -> ALL PASS
-- `k16-tiff-tiles` (port 9633):  tiff rc=0 23s -> ALL PASS
-- `k16-tiff-canvas` (port 9634): tiff rc=0 21s -> ALL PASS
-- `k16-nodecopy` (port 9633):    nodecopy rc=0 109s -> ALL PASS
+- `k16-tiles` (port 9633):       lint rc=0 13s, types rc=0 25s -> ALL PASS
+- `k16-canvas` (port 9634):      lint rc=0 14s, types rc=0 25s -> ALL PASS
+- `k16-tiff-tiles` (port 9633):  tiff rc=0 31s -> ALL PASS
+- `k16-tiff-canvas` (port 9634): tiff rc=0 28s -> ALL PASS
+- `k16-nodecopy` (port 9633):    nodecopy rc=0 86s -> ALL PASS
