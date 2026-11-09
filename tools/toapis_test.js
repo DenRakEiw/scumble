@@ -400,6 +400,9 @@ async function main() {
         const s2 = fakeServer({ submits: [() => new Response(JSON.stringify({ error: { code: 401, message: "Invalid token " + KEY, type: "authentication_error" } }), { status: 401 })] });
         const e2 = await throws(() => toapis.edit(editReq(v), ctxFor(s2)));
         check("a refused key reads key refused, and the key never appears in the message", !!e2 && /key refused/.test(e2) && !e2.includes(KEY), e2);
+        const s2b = fakeServer({ submits: [() => new Response("x".repeat(294) + KEY + " tail", { status: 401, headers: { "content-type": "text/plain" } })] });
+        const e2b = await throws(() => toapis.edit(editReq(v), ctxFor(s2b)));
+        check("a key straddling readError's cut is scrubbed inside readError before cutting", !!e2b && e2b.includes("[key]") && !e2b.includes(KEY.slice(0, 6)), e2b);
         const s3 = fakeServer();
         const bal = await toapis.balance(ctxFor(s3));
         check("balance: remain_credits / 200 in USD, the key on the call", bal.usd === 10.5 && bal.credits === 2100 && bal.unlimited === false && s3.calls[0].url === "https://toapis.com/v1/balance" && s3.calls[0].headers.Authorization === "Bearer " + KEY, JSON.stringify(bal));

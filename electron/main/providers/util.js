@@ -28,16 +28,22 @@ function scrub(text, key) {
     return s;
 }
 
+function jsonError(j, key) {
+    if (!j || typeof j !== "object") return "";
+    const msg = (j.error && (j.error.message || j.error)) || j.detail || j.message || j.status;
+    if (!msg) return "";
+    const raw = typeof msg === "string" ? msg : JSON.stringify(msg, (k, v) => (k === "input" ? undefined : v));
+    return scrub(raw, key).slice(0, 500);
+}
+
 async function readError(r, key) {
     let text = "";
     try { text = await r.text(); } catch (_) { text = ""; }
-    text = scrub(text, key);
     try {
-        const j = JSON.parse(text);
-        const msg = (j.error && (j.error.message || j.error)) || j.detail || j.message || j.status;
-        if (msg) return scrub(typeof msg === "string" ? msg : JSON.stringify(msg), key);
+        const fromJson = jsonError(JSON.parse(text), key);
+        if (fromJson) return fromJson;
     } catch (_) { /* not JSON */ }
-    return text.slice(0, 300) || (r && r.statusText) || String((r && r.status) || "");
+    return scrub(text, key).slice(0, 300) || (r && r.statusText) || String((r && r.status) || "");
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -132,12 +138,9 @@ async function readBody(r) {
 }
 
 function errorText(r, text, json, key) {
-    const clean = scrub(text, key);
-    if (json && typeof json === "object") {
-        const msg = (json.error && (json.error.message || json.error)) || json.detail || json.message || json.status;
-        if (msg) return scrub(typeof msg === "string" ? msg : JSON.stringify(msg), key);
-    }
-    return clean.slice(0, 300) || (r && r.statusText) || String((r && r.status) || "error");
+    const fromJson = jsonError(json, key);
+    if (fromJson) return fromJson;
+    return scrub(text, key).slice(0, 300) || (r && r.statusText) || String((r && r.status) || "error");
 }
 
 /**
@@ -433,4 +436,4 @@ function noKeyText(label, stale) {
         : `No API key for ${label}. Add it under Settings › API providers.`;
 }
 
-module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, retryAfterMs, scrub, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };
+module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };

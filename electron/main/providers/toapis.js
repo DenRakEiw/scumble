@@ -99,7 +99,7 @@ function explain(status, message) {
 }
 
 async function failure(r, key) {
-    return scrub(explain(r.status, await readError(r)), key);
+    return scrub(explain(r.status, await readError(r, key)), key);
 }
 
 function retryAfterMs(r, fallback = 10000) {

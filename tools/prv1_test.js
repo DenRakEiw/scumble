@@ -7,6 +7,7 @@
 
 const path = require("node:path");
 const PROV = path.join(__dirname, "..", "electron", "main", "providers");
+const util = require(path.join(PROV, "util.js"));
 const fal = require(path.join(PROV, "fal.js"));
 const replicate = require(path.join(PROV, "replicate.js"));
 const wavespeed = require(path.join(PROV, "wavespeed.js"));
@@ -793,6 +794,41 @@ async function main() {
                 /cancelled|aborted/i.test(err || "") && elapsed < 500 && g.calls.hy === 1 && g.calls.download === 1 && g.calls.afterAbort === 0,
                 `err=${err} elapsed=${elapsed}ms calls=${JSON.stringify(g.calls)}`);
         }
+    });
+
+    await section("util.js: readError & errorText strip input fields, scrub before 500-char cut (PRV-5)", async () => {
+        const key = KEYS[0];
+        const hugeUri = "data:image/png;base64," + "A".repeat(20000);
+        const detail422 = {
+            detail: [{
+                type: "value_error",
+                loc: ["body", "image_url"],
+                input: hugeUri,
+                msg: `Image decode failed (${key})`,
+            }],
+        };
+        const r422 = json(422, detail422);
+        const fromRead = await util.readError(r422, key);
+        const fromText = util.errorText(r422, JSON.stringify(detail422), detail422, key);
+        check("readError strips 'input' field from 422 detail array, keeps msg/loc, scrubs key, and stays <= 500 chars",
+            fromRead.includes("Image decode failed ([key])") && fromRead.includes("image_url") && !fromRead.includes("base64") && !fromRead.includes(key) && fromRead.length <= 500,
+            `len=${fromRead.length} out=${fromRead}`);
+        check("errorText strips 'input' field from 422 detail array identically to readError",
+            fromText === fromRead,
+            `len=${fromText.length} out=${fromText}`);
+
+        // Long JSON error string (>500 chars) with key straddling the 500-char cut boundary
+        const straddle = "x".repeat(492) + key + "y".repeat(200);
+        const bodyLong = { error: { message: straddle } };
+        const rLong = json(400, bodyLong);
+        const outRead = await util.readError(rLong, key);
+        const outText = util.errorText(rLong, JSON.stringify(bodyLong), bodyLong, key);
+        check("readError cuts JSON error message to 500 chars after scrubbing key straddling the 500-char cut",
+            outRead.length === 500 && outRead.includes("[key]") && !outRead.includes(key.slice(0, 6)),
+            `len=${outRead.length} tail=${outRead.slice(485)}`);
+        check("errorText cuts JSON error message to 500 chars after scrubbing key straddling the 500-char cut",
+            outText === outRead,
+            `len=${outText.length} tail=${outText.slice(485)}`);
     });
 
     await section("no key leaked in any error", async () => {
