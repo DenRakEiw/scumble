@@ -88,7 +88,7 @@ function releaseHeadlines(info) {
     const out = [];
     for (const { html } of notesList(info)) {
         for (const item of topItems(html)) {
-            if (out.length >= 30) break;
+            if (out.length >= 60) break;
             const own = item.split(/<(?:ul|ol)\b/i)[0];
             const lead = /^\s*(?:<p[^>]*>\s*)?<strong[^>]*>([\s\S]*?)<\/strong>/i.exec(own);
             const t = lead ? inline(lead[1]) : sentence(inline(own));

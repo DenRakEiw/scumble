@@ -150,7 +150,8 @@ function inputFor(req) {
         if (input.enable_prompt_expansion !== undefined) input.enable_prompt_expansion = flux3.switchOf(input.enable_prompt_expansion, "Prompt expansion");
     }
     // an edit route takes no negative prompt on an edit run, and a text run with references goes to that route
-    if (req.negative && input.negative_prompt === undefined && req.kind !== "edit" && !withRefs) input.negative_prompt = req.negative;
+    // (options.edit_negative: a route whose edit does take one, Krea 3)
+    if (req.negative && input.negative_prompt === undefined && ((req.options && req.options.edit_negative) || (req.kind !== "edit" && !withRefs))) input.negative_prompt = req.negative;
     // endpoints that validate their input strictly (Recraft V4, Krea 2) reject the fields
     // every other fal model takes; a variant names them in options.omit
     for (const k of (req.options && req.options.omit) || []) delete input[k];

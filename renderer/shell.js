@@ -3292,9 +3292,11 @@ try {
 // set aside as an earlier state, and this start does not try it a third time
 let startMode = "normal";
 try { startMode = await window.scumble.state.startMode(); } catch (_) { /* an older main */ }
+// the tips first and on their own: an autosave that cannot be read must not leave the library empty, or the next tip
+// change would write that empty list over the stored tips
+try { await host.loadBrushTips(); } catch (err) { console.warn("brush tips", err); }
 try {
     const saved = startMode === "safe" ? null : await window.scumble.state.load();
-    await host.loadBrushTips();
     if (saved) await host.restore(saved);
 } catch (err) {
     console.warn("no autosaved state", err);

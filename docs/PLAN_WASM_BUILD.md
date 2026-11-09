@@ -1864,7 +1864,7 @@ By a Gemini agent in Antigravity (`.claude/coord/chain-b/`) on `7de75d7` (`c6bbb
 `inpaint_pixels.js`. Tests: px_test `liquify` (96 twin cases on both builds, colour under alpha 0 since the review),
 `retouchRoute`, the editor's liquify step (call counts, the js route replayed after an undo). Before -> after at 15k
 (three rounds, only the `liquifyBlock` route switched): the pool's liquify jobs about 1.7-1.9x faster on every row (a
-1000 px push at fit 350 -> 199 ms summed), a 200 px push at 1:1 lands 31 -> 19 ms. Mutation round in its folder.
+1000 px push at fit 350 -> 199 ms summed), a 200 px push at 1:1 lands 24.9 [19.2-26.2] -> 20.0 [19.7-23.1] ms, inside the spread (the tie rule). Mutation round in its folder.
 
 ### K32 (2026-11-08): stitch's mask kernels in Rust (the Antigravity E chain)
 

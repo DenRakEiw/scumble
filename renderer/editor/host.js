@@ -2482,7 +2482,7 @@ export const host = {
             // the answer decoded and stitched in the stitch worker, the region (for a colour match) from the tile workers
             const fin = await finishResultAsync(editor, info, sel, res.bytes, res.mime, area);
             const { blob, align } = fin;
-            const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+            const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
             const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
             editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
             const cutout = info.keepAlpha ? fin.cutout : false;
@@ -2669,7 +2669,7 @@ export const host = {
                 const info = prep.info;
                 const [x, y, w, h] = info.bbox;
                 const fin = await finishResultAsync(editor, info, prep.sel, res.bytes, res.mime);
-                const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+                const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
                 const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
                 // the prompt the upscale sent, its tokens already written as layer names
                 const via = viaLine(r, label, res.seconds);
@@ -3018,7 +3018,7 @@ export const host = {
     async loadBrushTips() {
         if (!window.scumble || !window.scumble.brushes) return this.brushLibrary;
         let stored = [];
-        try { stored = await window.scumble.brushes.list(); } catch (err) { console.warn("brush tips not loaded", err); return this.brushLibrary; }
+        try { stored = await window.scumble.brushes.list(); } catch (err) { console.warn("brush tips not loaded", err); this.brushTipsUnread = true; return this.brushLibrary; }
         for (const t of stored) {
             try {
                 const img = await new Promise((resolve, reject) => {
@@ -3054,6 +3054,8 @@ export const host = {
     /** Persist the library (new tips as PNG, the index always) and refresh the other tabs' selects. */
     async saveBrushTips(from) {
         if (!window.scumble || !window.scumble.brushes) return null;
+        // the stored list was not read this session: saving this library would delete every stored tip (brushes.js save)
+        if (this.brushTipsUnread) { console.warn("brush tips: the stored list was not read, nothing is saved"); return null; }
         const tips = [];
         for (const t of this.brushLibrary) {
             let png = null;
