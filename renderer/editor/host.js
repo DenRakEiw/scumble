@@ -2482,7 +2482,7 @@ export const host = {
             // the answer decoded and stitched in the stitch worker, the region (for a colour match) from the tile workers
             const fin = await finishResultAsync(editor, info, sel, res.bytes, res.mime, area);
             const { blob, align } = fin;
-            const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+            const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
             const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
             editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
             const cutout = info.keepAlpha ? fin.cutout : false;
@@ -2669,7 +2669,7 @@ export const host = {
                 const info = prep.info;
                 const [x, y, w, h] = info.bbox;
                 const fin = await finishResultAsync(editor, info, prep.sel, res.bytes, res.mime);
-                const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+                const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
                 const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
                 // the prompt the upscale sent, its tokens already written as layer names
                 const via = viaLine(r, label, res.seconds);
