@@ -1,0 +1,25 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 14 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 216829 bytes, sha256 ed0182e2621ebce5
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 173402 bytes, sha256 392ace8fac99aabb
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.44s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px)
+    Finished `release` profile [optimized] target(s) in 7.10s
+$ node tools/px_test.js  (rc 1, 14 s, PX_ONLY=range)
+FAIL rust simd range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)  depth 16x12->600x300 ty=0 rot17_shift snap=true inv=true/false: out.tiles[0].alpha[144] is 1, the twin has 0
+FAIL rust scalar range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)  depth 16x12->600x300 ty=0 rot17_shift snap=true inv=true/false: out.tiles[0].alpha[144] is 1, the twin has 0
+FAIL (2) (only: range; PX_ONLY, not the full test)
+ok   rangeTilesDepth refuses NaN xf on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses null limit on twin and both builds  3/3 threw
+ok   raw range_tiles_depth returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  got 0
+ok   kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order  calls jj=0 rr=1 rj=1 jr=1 diffs=
+ok   px.js rangeTilesDepth bounds [wy0..wy1] over [minTx..maxTx] on a 90-degree turned map  copiedMapBytes=576 fullMapBytes=1536
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (2) (only: range; PX_ONLY, not the full test)
+(node:58836) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/ag_mut_k22/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

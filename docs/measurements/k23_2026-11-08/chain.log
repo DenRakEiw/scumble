@@ -1,0 +1,119 @@
+[18:23:10] after: 13d32fa8 + working tree, px.wasm ba09907d4338caf0, px_scalar.wasm 6f17a81cd040abca
+[18:23:10] before: /c/Users/schoeneberg/AppData/Local/Temp/ag_k23_before, px.wasm 0e3f9a9c1d477ce8
+[18:23:10] gpu: 29051 MiB, 99 %; comfy 8188: 200
+lock: held by 'fix-docs D1 gates 43940 2026-11-08T18:20:26.7065398+01:00', waiting
+lock: taken after 960 s
+[18:39:11] lock: taken (K23 measuring (px_test range bench) 55060 2026-11-08T18:23:11) for px_test range bench
+[18:39:42] px_test range bench rc=0
+lock: released
+lock: taken after 0 s
+[18:39:43] lock: taken (K23 measuring (after check 2048x1152) 30588 2026-11-08T18:39:43) for after check 2048x1152
+[18:39:59] after check 2048x1152 rc=0
+closed
+lock: released
+[18:40:03] == round 1
+lock: taken after 0 s
+[18:40:03] lock: taken (K23 measuring (before r1) 60460 2026-11-08T18:40:03) for before r1
+[18:40:13] before r1: px_jobs 15000x10000
+[18:40:39] before r1: px_jobs rc=0
+[18:40:39] before r1: selection_test 15000x10000
+[18:40:45] before r1: selection_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[18:40:49] lock: taken (K23 measuring (after r1) 5948 2026-11-08T18:40:49) for after r1
+[18:40:58] after r1: px_jobs 15000x10000
+[18:41:20] after r1: px_jobs rc=0
+[18:41:21] after r1: px_jobs --ab rangeLuma=js:rust 15000x10000
+[18:41:40] after r1: px_jobs ab_luma rc=0
+[18:41:41] after r1: px_jobs --ab rangeColor=js:rust 15000x10000
+[18:42:05] after r1: px_jobs ab_color rc=0
+[18:42:06] after r1: selection_test 15000x10000
+[18:42:06] after r1: selection_test rc=1
+closed
+lock: released
+[18:42:10] == round 2
+lock: taken after 0 s
+[18:42:11] lock: taken (K23 measuring (after r2) 34944 2026-11-08T18:42:11) for after r2
+[18:42:21] after r2: px_jobs 15000x10000
+[18:42:44] after r2: px_jobs rc=0
+[18:42:44] after r2: px_jobs --ab rangeLuma=js:rust 15000x10000
+[18:43:02] after r2: px_jobs ab_luma rc=0
+[18:43:02] after r2: px_jobs --ab rangeColor=js:rust 15000x10000
+[18:43:29] after r2: px_jobs ab_color rc=0
+[18:43:29] after r2: selection_test 15000x10000
+[18:43:31] after r2: selection_test rc=1
+closed
+lock: released
+lock: taken after 0 s
+[18:43:35] lock: taken (K23 measuring (before r2) 12268 2026-11-08T18:43:35) for before r2
+[18:43:43] before r2: px_jobs 15000x10000
+[18:44:08] before r2: px_jobs rc=0
+[18:44:08] before r2: selection_test 15000x10000
+[18:44:15] before r2: selection_test rc=0
+closed
+lock: released
+[18:44:20] == round 3
+lock: taken after 0 s
+[18:44:21] lock: taken (K23 measuring (before r3) 33796 2026-11-08T18:44:20) for before r3
+[18:44:30] before r3: px_jobs 15000x10000
+[18:44:51] before r3: px_jobs rc=0
+[18:44:51] before r3: selection_test 15000x10000
+[18:44:56] before r3: selection_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[18:45:02] lock: taken (K23 measuring (after r3) 5208 2026-11-08T18:45:02) for after r3
+[18:45:12] after r3: px_jobs 15000x10000
+[18:45:34] after r3: px_jobs rc=0
+[18:45:34] after r3: px_jobs --ab rangeLuma=js:rust 15000x10000
+[18:45:54] after r3: px_jobs ab_luma rc=0
+[18:45:55] after r3: px_jobs --ab rangeColor=js:rust 15000x10000
+[18:46:23] after r3: px_jobs ab_color rc=0
+[18:46:23] after r3: selection_test 15000x10000
+[18:46:24] after r3: selection_test rc=1
+closed
+lock: released
+[18:46:28] done
+[18:48:04] after: 13d32fa8 + working tree, px.wasm ba09907d4338caf0, px_scalar.wasm 6f17a81cd040abca
+[18:48:05] before: /c/Users/schoeneberg/AppData/Local/Temp/ag_k23_before, px.wasm 0e3f9a9c1d477ce8
+[18:48:05] gpu: 27149 MiB, 100 %; comfy 8188: 200
+lock: held by 'fix-docs D1 editor-tiles 46368 2026-11-08T18:46:29', waiting
+lock: taken after 540 s
+[18:57:05] lock: taken (K23 measuring (after sel r1) 42672 2026-11-08T18:48:05) for after sel r1
+[18:57:06] after r1: selection_test 15000x10000
+[18:57:09] after r1: selection_test rc=1
+lock: released
+lock: taken after 0 s
+[18:57:10] lock: taken (K23 measuring (after sel r2) 43508 2026-11-08T18:57:10) for after sel r2
+[18:57:10] after r2: selection_test 15000x10000
+[18:57:14] after r2: selection_test rc=1
+lock: released
+lock: taken after 0 s
+[18:57:14] lock: taken (K23 measuring (after sel r3) 57516 2026-11-08T18:57:14) for after sel r3
+[18:57:15] after r3: selection_test 15000x10000
+[18:57:17] after r3: selection_test rc=1
+lock: released
+[18:57:18] done sel
+[18:58:05] after: 13d32fa8 + working tree, px.wasm ba09907d4338caf0, px_scalar.wasm 6f17a81cd040abca
+[18:58:05] before: /c/Users/schoeneberg/AppData/Local/Temp/ag_k23_before, px.wasm 0e3f9a9c1d477ce8
+[18:58:06] gpu: 27259 MiB, 100 %; comfy 8188: 200
+lock: taken after 0 s
+[18:58:06] lock: taken (K23 measuring (after sel r1) 10472 2026-11-08T18:58:06) for after sel r1
+[18:58:15] after r1: selection_test 15000x10000
+[18:58:20] after r1: selection_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[18:58:25] lock: taken (K23 measuring (after sel r2) 51856 2026-11-08T18:58:25) for after sel r2
+[18:58:34] after r2: selection_test 15000x10000
+[18:58:41] after r2: selection_test rc=0
+closed
+lock: released
+lock: taken after 0 s
+[18:58:46] lock: taken (K23 measuring (after sel r3) 56556 2026-11-08T18:58:45) for after sel r3
+[18:58:55] after r3: selection_test 15000x10000
+[18:59:01] after r3: selection_test rc=0
+closed
+lock: released
+[18:59:05] done sel

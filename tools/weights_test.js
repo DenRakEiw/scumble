@@ -179,6 +179,28 @@ async function main() {
         const colDef = normalizeLimit({ source: "color", lo: 0.1, hi: 0.9 });
         assert.equal(colDef.color, "#ffffff");
         assert.equal(colDef.tol, 30);
+
+        // 3-char #rgb hex accepted
+        const col3 = normalizeLimit({ source: "color", lo: 0.1, hi: 0.9, color: "#48c", tol: 20 });
+        assert.equal(col3.color, "#48c");
+
+        // Invalid color and non-numeric lo, hi, fLo, fHi, tol refused with readable message
+        for (const badColor of ["red", "#xyz", "#12345", 123, ""]) {
+            assert.throws(() => {
+                normalizeLimit({ source: "color", lo: 0.1, hi: 0.9, color: badColor });
+            }, /limit\.color must be #rgb or #rrggbb/);
+        }
+        for (const [field, badObj] of [
+            ["lo", { source: "luma", lo: "abc", hi: 0.8 }],
+            ["hi", { source: "luma", lo: 0.2, hi: NaN }],
+            ["fLo", { source: "depth", lo: 0.2, hi: 0.8, fLo: "nope" }],
+            ["fHi", { source: "depth", lo: 0.2, hi: 0.8, fHi: Infinity }],
+            ["tol", { source: "color", lo: 0.2, hi: 0.8, color: "#ffffff", tol: "wide" }],
+        ]) {
+            assert.throws(() => {
+                normalizeLimit(badObj);
+            }, new RegExp(`limit\\.${field} must be a finite number`));
+        }
     });
 
     // ---------------------------------------------------------------------------
@@ -362,9 +384,9 @@ async function main() {
     // 10. rangeSelectJob for source "luma" matches direct limitWeight loop byte for byte
     // ---------------------------------------------------------------------------
     test("rangeSelectJob: luma worker band matches per-pixel limitWeight loop", () => {
-        const W = 400, H = 200;
-        const buf = new Uint8Array(W * 100 * 4);
-        for (let y = 0; y < 100; y++) {
+        const W = 400, H = 600;
+        const buf = new Uint8Array(W * H * 4);
+        for (let y = 0; y < H; y++) {
             for (let x = 0; x < W; x++) {
                 const idx = (y * W + x) * 4;
                 buf[idx] = (x * 7) & 255;
@@ -375,17 +397,19 @@ async function main() {
         }
         const limit = { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1, invert: false };
         const job = rangeSelectJob({
-            W, H, y0: 0, y1: 100,
+            W, H, y0: 0, y1: H,
             source: "luma",
             limit,
             invert: false,
             sab: buf.buffer,
         });
 
-        const src = tilesSource(job.tiles, [0, 0], [0, 0, W, 100]);
-        const actual = src.read(0, 0, W, 100);
+        const src = tilesSource(job.tiles, [0, 0], [0, 0, W, H]);
+        const actual = src.read(0, 0, W, H);
+        let wantAlphaSum = 0;
+        let bX0 = Infinity, bY0 = Infinity, bX1 = -Infinity, bY1 = -Infinity;
 
-        for (let y = 0; y < 100; y++) {
+        for (let y = 0; y < H; y++) {
             for (let x = 0; x < W; x++) {
                 const idx = (y * W + x) * 4;
                 const r = buf[idx] / 255, g = buf[idx + 1] / 255, b = buf[idx + 2] / 255;
@@ -395,17 +419,26 @@ async function main() {
                 if (act !== expected) {
                     throw new Error(`luma mismatch at (${x}, ${y}): actual ${act} !== expected ${expected}`);
                 }
+                if (expected > 0) {
+                    wantAlphaSum += expected;
+                    if (x < bX0) bX0 = x;
+                    if (y < bY0) bY0 = y;
+                    if (x + 1 > bX1) bX1 = x + 1;
+                    if (y + 1 > bY1) bY1 = y + 1;
+                }
             }
         }
+        assert.equal(job.alphaSum, wantAlphaSum, "luma multi-row job.alphaSum must match per-pixel sum");
+        assert.deepEqual(job.bounds, [bX0, bY0, bX1, bY1], "luma multi-row job.bounds must match per-pixel union");
     });
 
     // ---------------------------------------------------------------------------
     // 11. rangeSelectJob for source "color" matches direct limitWeight loop byte for byte
     // ---------------------------------------------------------------------------
     test("rangeSelectJob: color worker band matches per-pixel limitWeight loop", () => {
-        const W = 400, H = 200;
-        const buf = new Uint8Array(W * 100 * 4);
-        for (let y = 0; y < 100; y++) {
+        const W = 400, H = 600;
+        const buf = new Uint8Array(W * H * 4);
+        for (let y = 0; y < H; y++) {
             for (let x = 0; x < W; x++) {
                 const idx = (y * W + x) * 4;
                 buf[idx] = (x * 13) & 255;
@@ -416,17 +449,19 @@ async function main() {
         }
         const limit = { source: "color", color: "#e03020", tol: 25, lo: 0.2, hi: 0.8, fLo: 0.1, fHi: 0.1, invert: false };
         const job = rangeSelectJob({
-            W, H, y0: 0, y1: 100,
+            W, H, y0: 0, y1: H,
             source: "color",
             limit,
             invert: false,
             sab: buf.buffer,
         });
 
-        const src = tilesSource(job.tiles, [0, 0], [0, 0, W, 100]);
-        const actual = src.read(0, 0, W, 100);
+        const src = tilesSource(job.tiles, [0, 0], [0, 0, W, H]);
+        const actual = src.read(0, 0, W, H);
+        let wantAlphaSum = 0;
+        let bX0 = Infinity, bY0 = Infinity, bX1 = -Infinity, bY1 = -Infinity;
 
-        for (let y = 0; y < 100; y++) {
+        for (let y = 0; y < H; y++) {
             for (let x = 0; x < W; x++) {
                 const idx = (y * W + x) * 4;
                 const r = buf[idx] / 255, g = buf[idx + 1] / 255, b = buf[idx + 2] / 255;
@@ -436,8 +471,17 @@ async function main() {
                 if (act !== expected) {
                     throw new Error(`color mismatch at (${x}, ${y}): actual ${act} !== expected ${expected}`);
                 }
+                if (expected > 0) {
+                    wantAlphaSum += expected;
+                    if (x < bX0) bX0 = x;
+                    if (y < bY0) bY0 = y;
+                    if (x + 1 > bX1) bX1 = x + 1;
+                    if (y + 1 > bY1) bY1 = y + 1;
+                }
             }
         }
+        assert.equal(job.alphaSum, wantAlphaSum, "color multi-row job.alphaSum must match per-pixel sum");
+        assert.deepEqual(job.bounds, [bX0, bY0, bX1, bY1], "color multi-row job.bounds must match per-pixel union");
     });
 
     // ---------------------------------------------------------------------------

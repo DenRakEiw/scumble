@@ -252,24 +252,38 @@ export function normalizeLimit(v) {
         throw new Error("limit.source must be depth, luma or color");
     }
 
-    let lo = Math.max(0, Math.min(1, Number(v.lo ?? 0)));
-    let hi = Math.max(0, Math.min(1, Number(v.hi ?? 1)));
+    const numField = (name, val, def) => {
+        if (val == null) return def;
+        const n = typeof val === "number" ? val : (typeof val === "string" && val.trim() !== "" ? Number(val) : NaN);
+        if (!Number.isFinite(n)) throw new Error(`limit.${name} must be a finite number (got ${JSON.stringify(val)})`);
+        return n;
+    };
+
+    let lo = Math.max(0, Math.min(1, numField("lo", v.lo, 0)));
+    let hi = Math.max(0, Math.min(1, numField("hi", v.hi, 1)));
     if (lo > hi) {
         const tmp = lo;
         lo = hi;
         hi = tmp;
     }
 
-    const fLo = Math.max(0, Math.min(1, Number(v.fLo ?? 0)));
-    const fHi = Math.max(0, Math.min(1, Number(v.fHi ?? 0)));
+    const fLo = Math.max(0, Math.min(1, numField("fLo", v.fLo, 0)));
+    const fHi = Math.max(0, Math.min(1, numField("fHi", v.fHi, 0)));
     const invert = !!v.invert;
 
     /** @type {Limit} */
     const res = { source, lo, hi, fLo, fHi, invert };
 
     if (source === "color") {
-        res.color = typeof v.color === "string" ? v.color : "#ffffff";
-        res.tol = Math.max(0, Math.min(100, Number(v.tol ?? 30)));
+        if (v.color != null) {
+            if (typeof v.color !== "string" || !/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.color)) {
+                throw new Error(`limit.color must be #rgb or #rrggbb (got ${JSON.stringify(v.color)})`);
+            }
+            res.color = v.color;
+        } else {
+            res.color = "#ffffff";
+        }
+        res.tol = Math.max(0, Math.min(100, numField("tol", v.tol, 30)));
     }
 
     return res;

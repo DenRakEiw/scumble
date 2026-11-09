@@ -1,0 +1,26 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 15 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 216754 bytes, sha256 f306aeb08b75b3ce
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 173367 bytes, sha256 e4cb47beab723bb5
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.39s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px)
+    Finished `release` profile [optimized] target(s) in 7.75s
+$ node tools/px_test.js  (rc 1, 12 s, PX_ONLY=range)
+FAIL range_tiles_depth rounds exact even-half 40.5 up to 41 (JS Math.round, not ties-to-even 40)  got 40
+FAIL rust simd range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)  exact even-half 255 * w === 40.5 (Math.round -> 41 vs ties-to-even -> 40): out.tiles[0].alpha[0] is 40, the twin has 41
+FAIL rust scalar range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)  exact even-half 255 * w === 40.5 (Math.round -> 41 vs ties-to-even -> 40): out.tiles[0].alpha[0] is 40, the twin has 41
+FAIL (3) (only: range; PX_ONLY, not the full test)
+ok   rangeTilesDepth refuses NaN xf on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses null limit on twin and both builds  3/3 threw
+ok   raw range_tiles_depth returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  got 0
+ok   kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order  calls jj=0 rr=1 rj=1 jr=1 diffs=
+ok   px.js rangeTilesDepth bounds [wy0..wy1] over [minTx..maxTx] on a 90-degree turned map  copiedMapBytes=576 fullMapBytes=1536
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (3) (only: range; PX_ONLY, not the full test)
+(node:45784) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/ag_mut_k22/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 34;
+export const PX_ABI = 36;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -30,6 +30,27 @@ const storedCap = (n) => n + Math.ceil(n / 31744) * 5 + 64;
 function lapper(laps) {
     let t = clock();
     return (key) => { const t1 = clock(); laps[key] = (laps[key] || 0) + (t1 - t); t = t1; };
+}
+
+/** Parses `#rrggbb` or `#rgb` into `[r, g, b]` in `0..1` (`inpaint_weights.js` `hexToRgb`). */
+function rangeHexToRgb01(hex) {
+    if (!hex || typeof hex !== "string") return [1, 1, 1];
+    const clean = hex.replace(/^#/, "");
+    if (clean.length === 6) {
+        return [
+            parseInt(clean.slice(0, 2), 16) / 255,
+            parseInt(clean.slice(2, 4), 16) / 255,
+            parseInt(clean.slice(4, 6), 16) / 255,
+        ];
+    }
+    if (clean.length === 3) {
+        return [
+            parseInt(clean[0] + clean[0], 16) / 255,
+            parseInt(clean[1] + clean[1], 16) / 255,
+            parseInt(clean[2] + clean[2], 16) / 255,
+        ];
+    }
+    return [1, 1, 1];
 }
 
 // ---- call counters (docs/PLAN_WASM_BUILD.md §3.4) --------------------------------------------------------------------
@@ -1206,6 +1227,222 @@ export class Px {
             } finally { this._reset(a); }
         }
         return { min, max, edge, cols, rows };
+    }
+
+    /**
+     * Evaluates the `"compute"`-class tiles (`classes[tx] === 2` or `"compute"`, or every column when `classes` is
+     * null) of one document tile row `ty` (`[y0, y1)` clipped to `[ty * tile, min((ty + 1) * tile, H))`) over a depth
+     * map (`map`, `mw` x `mh` u16, affine transform `xf`) and optional joint-bilateral snap (`snap = [sigmaR, tau]`,
+     * `guide`, `pic`) (K22, docs/PLAN_WASM_BUILD.md §4.8). Copies only the map/guide row window `[wy0..wy1]` that tile
+     * row `ty` can read, and slices each partial tile out of wasm memory. Returns `{ tiles, bounds, alphaSum }`, or
+     * `null` when the arguments lie outside the kernel's contract (the wrapper then runs the JS twin).
+     */
+    rangeTilesDepth(map, mw, mh, xf, W, H, ty, y0, y1, limit, invert = false, snap = null, guide = null, pic = null, classes = null, tile = 256) {
+        if (!map || !limit || !(mw > 0) || !(mh > 0) || !(W > 0) || !(H > 0) || !(tile > 0 && tile <= 4096) || !(ty >= 0) || !(y0 < y1) || !Array.isArray(xf) || xf.length < 6) {
+            throw new Error("rangeTilesDepth: bad arguments");
+        }
+        const [m0, m1, m2, m3, m4, m5] = xf;
+        const lo = +limit.lo || 0, hi = +limit.hi || 0, fLo = +limit.fLo || 0, fHi = +limit.fHi || 0;
+        const sigmaR = Array.isArray(snap) && snap.length >= 2 ? +snap[0] || 0 : 0;
+        const tau = Array.isArray(snap) && snap.length >= 2 ? +snap[1] || 0 : 0;
+        if (![m0, m1, m2, m3, m4, m5, lo, hi, fLo, fHi, sigmaR, tau].every(Number.isFinite)) {
+            throw new Error("rangeTilesDepth: non-finite parameters");
+        }
+        if (map.length < mw * mh) throw new Error("rangeTilesDepth: short map");
+
+        const cols = Math.ceil(W / tile);
+        if (classes && classes.length < cols) throw new Error("rangeTilesDepth: short classes");
+        const clsBytes = new Uint8Array(cols);
+        let nCompute = 0, minTx = cols, maxTx = -1;
+        for (let tx = 0; tx < cols; tx++) {
+            const c = classes ? classes[tx] : 2;
+            if (c === 2 || c === "compute") {
+                clsBytes[tx] = 2;
+                if (tx < minTx) minTx = tx;
+                maxTx = tx;
+                nCompute++;
+            }
+        }
+        const tileY0 = ty * tile;
+        const tileY1 = Math.min(tileY0 + tile, H);
+        const ry0 = Math.max(tileY0, y0);
+        const ry1 = Math.min(tileY1, y1);
+
+        let gBytes = null;
+        if (guide) {
+            const gd = guide.data || guide;
+            const gw = guide.w != null ? guide.w | 0 : mw;
+            const gh = guide.h != null ? guide.h | 0 : mh;
+            if (!gd || gw !== mw || gh !== mh) throw new Error("rangeTilesDepth: bad guide");
+            gBytes = gd instanceof Uint8Array ? gd : new Uint8Array(gd.buffer, gd.byteOffset, gd.byteLength);
+            if (gBytes.length < mw * mh * 4) throw new Error("rangeTilesDepth: short guide");
+        }
+        let pBytes = null, picX0 = 0, picY0 = 0, picW = 0, picH = 0;
+        if (pic && pic.data && (pic.w | 0) > 0 && (pic.h | 0) > 0) {
+            if ((pic.x0 | 0) < 0 || (pic.y0 | 0) < 0) throw new Error("rangeTilesDepth: bad pic origin");
+            picX0 = pic.x0 | 0;
+            picY0 = pic.y0 | 0;
+            picW = pic.w | 0;
+            picH = pic.h | 0;
+            const pd = pic.data;
+            pBytes = pd instanceof Uint8Array ? pd : new Uint8Array(pd.buffer, pd.byteOffset, pd.byteLength);
+            if (pBytes.length < picW * picH * 4) throw new Error("rangeTilesDepth: short pic");
+        }
+        if (nCompute === 0 || !(ry0 < ry1)) {
+            return { tiles: [], bounds: null, alphaSum: 0 };
+        }
+        const snapOn = sigmaR > 0 && gBytes !== null && pBytes !== null;
+
+        const rx0 = minTx * tile;
+        const rx1 = Math.min((maxTx + 1) * tile, W);
+        const ry00 = m1 * rx0 + m3 * ry0 + m5;
+        const ry10 = m1 * rx1 + m3 * ry0 + m5;
+        const ry01 = m1 * rx0 + m3 * ry1 + m5;
+        const ry11 = m1 * rx1 + m3 * ry1 + m5;
+        const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11) - 2)));
+        const wy1 = Math.max(0, Math.min(mh - 1, Math.ceil(Math.max(ry00, ry10, ry01, ry11) + 2)));
+        const wh = wy1 - wy0 + 1;
+        const wLen = wh * mw;
+        const wStart = wy0 * mw;
+        const tileBytes = tile * tile;
+        const flags = (limit.invert ? 1 : 0) | (invert ? 2 : 0);
+
+        const a = this.job;
+        try {
+            const pm = this._in(a, map.subarray(wStart, wStart + wLen), wLen * 2);
+            const pg = snapOn ? this._in(a, gBytes.subarray(wStart * 4, (wStart + wLen) * 4), wLen * 4) : 0;
+            const pp = snapOn ? this._in(a, pBytes.subarray(0, picW * picH * 4), picW * picH * 4) : 0;
+            const pCls = this._in(a, clsBytes, cols);
+            const pParams = a.take(12 * 8);
+            const pv = this.view(Float64Array, pParams, 12);
+            pv[0] = m0; pv[1] = m1; pv[2] = m2; pv[3] = m3; pv[4] = m4; pv[5] = m5;
+            pv[6] = lo; pv[7] = hi; pv[8] = fLo; pv[9] = fHi; pv[10] = snapOn ? sigmaR : 0; pv[11] = tau;
+            const pAlpha = a.take(nCompute * tileBytes);
+            const pStatus = a.take(cols);
+            const pInfo = a.take(5 * 8);
+
+            const ok = this.exports.range_tiles_depth(
+                pm, pg, pp, mw, mh, wy0, wh,
+                picX0, picY0, picW, picH,
+                W, H, ty, y0, y1, tile,
+                pCls, pParams, flags,
+                pAlpha, pStatus, pInfo
+            );
+            if (!ok) throw new Error("range_tiles_depth: refused");
+
+            const t = TIMED ? clock() : 0;
+            const st = this.view(Uint8Array, pStatus, cols);
+            const info = this.view(Float64Array, pInfo, 5);
+            const u8 = this.u8();
+            const tiles = [];
+            let slot = 0;
+            for (let tx = 0; tx < cols; tx++) {
+                const s = st[tx];
+                if (s === 2) {
+                    tiles.push({ tx, ty, full: true });
+                } else if (s === 1) {
+                    const at = pAlpha + slot * tileBytes;
+                    tiles.push({ tx, ty, alpha: u8.slice(at, at + tileBytes).buffer });
+                    slot++;
+                }
+            }
+            if (TIMED) lapOut(t, slot * tileBytes + cols + 40);
+            const bounds = info[1] >= 0 ? [info[1], info[2], info[3], info[4]] : null;
+            return { tiles, bounds, alphaSum: info[0] };
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Evaluates one document tile row `ty` (`[y0, y1)` clipped to `[ty * tile, min((ty + 1) * tile, H))`) over a
+     * `(y1 - y0)`-row RGBA8 band `rgba` (`W * (y1 - y0) * 4` bytes) for `"luma"` or `"color"` range selection (K23,
+     * docs/PLAN_WASM_BUILD.md §4.8). Copies only the single tile row's `[ry0, ry1)` RGBA8 slice (`(ry1 - ry0) * W * 4`
+     * bytes, at most 15.4 MB at 15000 x 256, never the 61.4 MB band) into wasm memory and slices each partial tile out.
+     * Returns `{ tiles, bounds, alphaSum }`.
+     */
+    rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, tile = 256) {
+        if (!rgba || !limit || !(W > 0) || !(H > 0) || !(tile > 0 && tile <= 4096) || !(ty >= 0) || !(y0 >= 0) || !(y0 < y1) || !(y1 <= H)) {
+            throw new Error("rangeTilesRgba: bad arguments");
+        }
+        const u8 = rgba instanceof Uint8Array
+            ? rgba
+            : (rgba.buffer instanceof ArrayBuffer || (SAB && rgba.buffer instanceof SAB))
+                ? new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength)
+                : (rgba instanceof ArrayBuffer || (SAB && rgba instanceof SAB))
+                    ? new Uint8Array(rgba)
+                    : null;
+        if (!u8 || u8.length < (y1 - y0) * W * 4) throw new Error("rangeTilesRgba: short rgba");
+
+        const isColor = limit.source === "color" || (limit.source !== "luma" && limit.color != null);
+        const lo = limit.lo == null ? 0 : +limit.lo;
+        const hi = limit.hi == null ? 0 : +limit.hi;
+        const fLo = limit.fLo == null ? 0 : +limit.fLo;
+        const fHi = limit.fHi == null ? 0 : +limit.fHi;
+        const tol = limit.tol == null ? 30 : +limit.tol;
+        let refL = 0, refA = 0, refB = 0;
+        if (isColor) {
+            const [r, g, b] = rangeHexToRgb01(limit.color || "#ffffff");
+            refL = 0.299 * r + 0.587 * g + 0.114 * b;
+            refA = r - refL;
+            refB = b - refL;
+        }
+        if (![lo, hi, fLo, fHi, refL, refA, refB, tol].every(Number.isFinite)) {
+            throw new Error("rangeTilesRgba: non-finite parameters");
+        }
+
+        const tileY0 = ty * tile;
+        const tileY1 = Math.min(tileY0 + tile, H);
+        const ry0 = Math.max(tileY0, y0);
+        const ry1 = Math.min(tileY1, y1);
+        if (!(ry0 < ry1)) {
+            return { tiles: [], bounds: null, alphaSum: 0 };
+        }
+
+        const cols = Math.ceil(W / tile);
+        const tileBytes = tile * tile;
+        const rowStart = (ry0 - y0) * W * 4;
+        const rowBytes = (ry1 - ry0) * W * 4;
+        const rowSlice = u8.subarray(rowStart, rowStart + rowBytes);
+        const mode = isColor ? 1 : 0;
+        const flags = (limit.invert ? 1 : 0) | (invert ? 2 : 0);
+
+        const a = this.job;
+        try {
+            const pRgba = this._in(a, rowSlice, rowBytes);
+            const pParams = a.take(8 * 8);
+            const pv = this.view(Float64Array, pParams, 8);
+            pv[0] = lo; pv[1] = hi; pv[2] = fLo; pv[3] = fHi;
+            pv[4] = refL; pv[5] = refA; pv[6] = refB; pv[7] = tol;
+            const pAlpha = a.take(cols * tileBytes);
+            const pStatus = a.take(cols);
+            const pInfo = a.take(5 * 8);
+
+            const ok = this.exports.range_tiles_rgba(
+                pRgba, W, H, ty, ry0, ry1, tile,
+                mode, pParams, flags,
+                pAlpha, pStatus, pInfo
+            );
+            if (!ok) throw new Error("range_tiles_rgba: refused");
+
+            const t = TIMED ? clock() : 0;
+            const st = this.view(Uint8Array, pStatus, cols);
+            const info = this.view(Float64Array, pInfo, 5);
+            const mem = this.u8();
+            const tiles = [];
+            let slot = 0;
+            for (let tx = 0; tx < cols; tx++) {
+                const s = st[tx];
+                if (s === 2) {
+                    tiles.push({ tx, ty, full: true });
+                } else if (s === 1) {
+                    const at = pAlpha + slot * tileBytes;
+                    tiles.push({ tx, ty, alpha: mem.slice(at, at + tileBytes).buffer });
+                    slot++;
+                }
+            }
+            if (TIMED) lapOut(t, slot * tileBytes + cols + 40);
+            const bounds = info[1] >= 0 ? [info[1], info[2], info[3], info[4]] : null;
+            return { tiles, bounds, alphaSum: info[0] };
+        } finally { this._reset(a); }
     }
 }
 

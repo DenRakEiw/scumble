@@ -1,0 +1,17 @@
+-- 15000x10000 (150.0 MP), 1 rounds ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  range_depth      kernel js   1808.1  rust    945.6  (1.91x) | worker job js   1808.1  rust    945.6  (1.91x) | wall js    356.9  rust    167.8  (2.13x)  1719 partial tiles in 40 jobs, selectRange's ms js 356.8 / rust 167.7
+                   parts js/rust: ms 1808.1/945.6
+                   marks js/rust: edges 21.6/0.3  posted 0.7/0.4  combined 325.3/160.3  done 9.3/6.8  total 356.9/167.8; read 0.0/0.0  combine 227.0/94.3  (rust: source "depth", mode "replace", snap false, pictureTiles 0, jobs 40, tiles 1719, pct 57)
+                   px calls js: window none; jobs none | rust: window mip_chain 32, sel_combine 699; jobs range_tiles_depth 40
+                   split js/rust: job 1808.8/946.1  copyIn 0.0/6.1 (0.0/74.2 MB, shared 0.0/31.2 MB)  copyOut 0.0/33.1 (0.0/221.1 MB)  alloc 0.0/0.0  grew MB 0.0/1.1  bytes0 MB 22/22 (window 45/1)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {} rust {mip_chain 1.2, range_tiles_depth 936.0, sel_combine 19.3}  first js {} rust {}  queue 5641.7/2531.2  trip 2407.8/1121.2  workers 8/8
+  range_depth_snap kernel js   3084.2  rust   1708.4  (1.81x) | worker job js   3084.2  rust   1708.4  (1.81x) | wall js   1677.2  rust   1101.9  (1.52x)  1718 partial tiles in 40 jobs, selectRange's ms js 1677.1 / rust 1101.4, 513 edge tiles
+                   parts js/rust: ms 3084.2/1708.4  rmax 156.9/72.7  edges 29.4/6.0
+                   marks js/rust: edges 1.3/0.8  posted 1195.1/870.7  combined 475.5/218.0  done 5.3/12.0  total 1677.2/1101.5; read 1193.2/869.1  combine 229.6/101.4  (rust: source "depth", mode "replace", snap true, pictureTiles 652, jobs 40, tiles 1718, pct 57)
+                   px calls js: window none; jobs none | rust: window mip_chain 64, sel_combine 698; jobs range_tiles_depth 40
+                   split js/rust: job 3084.9/1709.1  copyIn 0.0/41.3 (0.0/285.6 MB, shared 0.0/242.6 MB)  copyOut 0.0/43.6 (0.0/223.5 MB)  alloc 0.0/0.5  grew MB 0.0/9.8  bytes0 MB 22/22 (window 45/45)  renewed js {release 0, idle 1, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {} rust {mip_chain 3.1, range_tiles_depth 1653.0, sel_combine 20.0}  first js {} rust {}  queue 22273.6/14455.4  trip 11839.0/7799.4  workers 8/8
+  instances renewed over the rows: {release 0, idle 1, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 10 threads read: 0
+
+PASS

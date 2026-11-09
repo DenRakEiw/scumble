@@ -1,0 +1,30 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 17 s)
+warning: unused variable: `half_v`
+   --> src\range.rs:621:21
+    |
+621 |                 let half_v = f64x2_splat(0.5);
+    |                     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_half_v`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 8.55s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\crates\px)
+    Finished `release` profile [optimized] target(s) in 7.82s
+$ node tools/px_test.js  (rc 1, 12 s, PX_ONLY=range)
+FAIL rust simd range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)  depth 7x5->13x9 ty=0 hflip snap=false inv=false/false: out.tiles[0].alpha[3] is 0, the twin has 92
+FAIL rust scalar range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)  depth 7x5->13x9 ty=0 hflip snap=false inv=false/false: out.tiles[0].alpha[3] is 0, the twin has 92
+FAIL range_tiles_depth zeroes out-of-bounds right and bottom columns/rows in dirty wasm arena  simd: out.tiles[0].alpha[0] is 219, the twin has 215
+FAIL kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order  calls jj=0 rr=1 rj=1 jr=1 diffs=out.tiles[0].alpha[222] is 1, the twin has 0
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TypeError: Cannot read properties of undefined (reading 'find')
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:239:32)
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:230:16)
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:260:43)
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:254:59)
+    at twinDiff (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:260:43)
+    at rangeCases (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:5963:18)
+    at async group (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:65:5)
+    at async main (C:\Users\schoeneberg\AppData\Local\Temp\ag_mut_k22\tools\px_test.js:6051:5)
