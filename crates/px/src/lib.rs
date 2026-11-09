@@ -51,11 +51,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes; 41: pngPartFromPtr / compose in wasm memory; 42: shadow_march_f64);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes; 41: pngPartFromPtr / compose in wasm memory; 42: shadow_march_f64; 43: remove f32 shadow_march);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    42
+    43
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -838,44 +838,7 @@ pub unsafe extern "C" fn height_normals(
     );
 }
 
-/// Marches shadow rays through u16 depth height field.
-/// Output is u8 visibility (0=shadow, 255=lit) for rows [row0 .. row0 + rows].
-#[no_mangle]
-pub unsafe extern "C" fn shadow_march(
-    depth: *const u16,
-    w: usize,
-    h: usize,
-    scale: f32,
-    light: *const f32,
-    radius: f32,
-    taps: u32,
-    steps: u32,
-    bias: f32,
-    row0: usize,
-    rows: usize,
-    out: *mut u8,
-) {
-    if depth.is_null() || light.is_null() || out.is_null() || w == 0 || h == 0 || row0 >= h {
-        return;
-    }
-    let band_rows = rows.min(h - row0);
-    relight::shadow_march(
-        slice::from_raw_parts(depth, w * h),
-        w,
-        h,
-        scale,
-        slice::from_raw_parts(light, 4),
-        radius,
-        taps,
-        steps,
-        bias,
-        row0,
-        band_rows,
-        slice::from_raw_parts_mut(out, w * band_rows),
-    );
-}
-
-/// Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13, docs/PLAN_WASM_BUILD.md §4.4).
+/// Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13-K14, docs/PLAN_WASM_BUILD.md §4.4-4.5).
 /// `taps_xyz` holds `taps * 3` `f64` per-tap constants (`[tapX[t], tapY[t], tapZ[t]]`).
 /// Output is u8 visibility (0=shadow, 255=lit) for rows `[row0 .. row0 + rows]`.
 #[no_mangle]

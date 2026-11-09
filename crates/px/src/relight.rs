@@ -1,25 +1,5 @@
-//! Relight kernels (PLAN_RELIGHT_BUILD.md sec 4.3): height_normals and shadow_march.
+//! Relight kernels (PLAN_RELIGHT_BUILD.md sec 4.3, PLAN_WASM_BUILD.md sec 4.4-4.5): height_normals and shadow_march_f64.
 //! Pure ASCII, no external dependencies outside crates/px.
-
-/// Precomputed 16-tap Vogel disc points in unit circle.
-pub const VOGEL_16: [[f32; 2]; 16] = [
-    [0.17677670, 0.00000000],   // tap 0
-    [-0.22577219, 0.20682582],  // tap 1
-    [0.03455805, -0.39377118],  // tap 2
-    [0.28457122, 0.37117276],   // tap 3
-    [-0.52222319, -0.09237393], // tap 4
-    [0.49469539, -0.31468471],  // tap 5
-    [-0.16546593, 0.61552500],  // tap 6
-    [-0.31556147, -0.60759440], // tap 7
-    [0.68464216, 0.25003022],   // tap 8
-    [-0.71225609, 0.29400896],  // tap 9
-    [0.34335450, -0.73372862],  // tap 10
-    [0.25373024, 0.80893199],   // tap 11
-    [-0.76474589, -0.44318588], // tap 12
-    [0.89713398, -0.19723239],  // tap 13
-    [-0.54750691, 0.77877223],  // tap 14
-    [-0.12648677, -0.97608970], // tap 15
-];
 
 /// Three box radii approximating Gaussian blur (Peter Kovesi's method).
 pub fn gauss_radii(sigma: f32) -> [usize; 3] {
@@ -97,132 +77,6 @@ pub fn height_normals(
     }
 }
 
-/// Marches shadow rays through u16 depth height field.
-/// Output is u8 visibility (0=shadow, 255=lit) for rows [row0 .. row0 + rows].
-pub fn shadow_march(
-    depth: &[u16],
-    w: usize,
-    h: usize,
-    scale: f32,
-    light: &[f32],
-    radius: f32,
-    taps: u32,
-    steps: u32,
-    bias: f32,
-    row0: usize,
-    rows: usize,
-    out: &mut [u8],
-) {
-    if w == 0 || h == 0 || row0 >= h {
-        return;
-    }
-    let band_rows = rows.min(h - row0);
-    let lx = light[0];
-    let ly = light[1];
-    let lz = light[2];
-    let kind = light[3] as i32;
-
-    let n_taps = (taps as usize).clamp(1, 16);
-    let n_steps = (steps as usize).clamp(1, 64);
-    let r = radius.max(0.0);
-    let z_bias = bias.max(0.0);
-    let long_side = (w.max(h)) as f32;
-    let sun_dist = long_side * 1.5;
-    let inv65535 = scale / 65535.0;
-
-    let (norm_lx, norm_ly, norm_lz) = if kind == 1 {
-        let l_len = (lx * lx + ly * ly + lz * lz).sqrt();
-        let inv_l = if l_len > 0.0 { 1.0 / l_len } else { 1.0 };
-        (lx * inv_l, ly * inv_l, lz * inv_l)
-    } else {
-        (0.0, 0.0, 0.0)
-    };
-
-    for r_idx in 0..band_rows {
-        let y = row0 + r_idx;
-        let row_offset = y * w;
-        let out_offset = r_idx * w;
-
-        for x in 0..w {
-            let z0 = (65535.0 - depth[row_offset + x] as f32) * inv65535;
-            let px = x as f32;
-            let py = y as f32;
-            let pz = z0 + z_bias;
-            let mut lit_count = 0u32;
-
-            for t in 0..n_taps {
-                let tap = VOGEL_16[t];
-                let (tx, ty, tz) = if kind == 1 {
-                    let jx = tap[0] * (r / long_side);
-                    let jy = tap[1] * (r / long_side);
-                    let dir_x = norm_lx + jx;
-                    let dir_y = norm_ly + jy;
-                    let dir_z = norm_lz;
-                    let d_len = (dir_x * dir_x + dir_y * dir_y + dir_z * dir_z).sqrt();
-                    let d_len = if d_len > 0.0 { d_len } else { 1.0 };
-                    (
-                        px + (dir_x / d_len) * sun_dist,
-                        py + (dir_y / d_len) * sun_dist,
-                        pz + (dir_z / d_len) * sun_dist,
-                    )
-                } else {
-                    (
-                        lx + tap[0] * r,
-                        ly + tap[1] * r,
-                        lz,
-                    )
-                };
-
-                let rdx = tx - px;
-                let rdy = ty - py;
-                let rdz = tz - pz;
-                let mut blocked = false;
-
-                let inv_steps = 1.0 / (n_steps as f32);
-                let step_x = rdx * inv_steps;
-                let step_y = rdy * inv_steps;
-                let step_z = rdz * inv_steps;
-                let mut sx = px + step_x;
-                let mut sy = py + step_y;
-                let mut sz = pz + step_z;
-
-                for _ in 1..=n_steps {
-                    if rdz >= 0.0 && sz > scale {
-                        break;
-                    }
-
-                    let cx = sx + 0.5;
-                    let cy = sy + 0.5;
-                    if cx < 0.0 || cy < 0.0 {
-                        break;
-                    }
-                    let ix = cx as usize;
-                    let iy = cy as usize;
-                    if ix >= w || iy >= h {
-                        break;
-                    }
-
-                    let map_z = (65535.0 - depth[iy * w + ix] as f32) * inv65535;
-                    if map_z > sz + z_bias {
-                        blocked = true;
-                        break;
-                    }
-
-                    sx += step_x;
-                    sy += step_y;
-                    sz += step_z;
-                }
-
-                if !blocked {
-                    lit_count += 1;
-                }
-            }
-
-            out[out_offset + x] = ((lit_count as f32 / n_taps as f32) * 255.0).round().clamp(0.0, 255.0) as u8;
-        }
-    }
-}
-
 /// Validates dimensions and row bounds for `shadow_march_f64` and returns `(band_rows, n_depth, n_out)`.
 #[inline]
 pub fn march_lens(w: usize, h: usize, row0: usize, rows: usize) -> Option<(usize, usize, usize)> {
@@ -235,7 +89,84 @@ pub fn march_lens(w: usize, h: usize, row0: usize, rows: usize) -> Option<(usize
     Some((band_rows, n_depth, n_out))
 }
 
-/// Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13, docs/PLAN_WASM_BUILD.md §4.4).
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn march_pixel_scalar(
+    depth: &[u16],
+    wf: f64,
+    scale: f64,
+    inv65535: f64,
+    inv_steps: f64,
+    z_bias: f64,
+    is_sun: bool,
+    tap_x: &[f64; 16],
+    tap_z: &[f64; 16],
+    iy_rows: &[[usize; 64]; 16],
+    max_steps: &[usize; 16],
+    taps: usize,
+    taps_f: f64,
+    row_offset: usize,
+    x: usize,
+) -> u8 {
+    let px = x as f64;
+    let d0 = unsafe { *depth.get_unchecked(row_offset + x) } as f64;
+    let z0 = (65535.0 - d0) * inv65535;
+    let pz = z0 + z_bias;
+    let mut lit_count = 0u32;
+
+    for t in 0..taps {
+        let cx_t = unsafe { *tap_x.get_unchecked(t) };
+        let cz_t = unsafe { *tap_z.get_unchecked(t) };
+        let (tx, tz) = if is_sun {
+            (px + cx_t, pz + cz_t)
+        } else {
+            (cx_t, cz_t)
+        };
+
+        let rdx = tx - px;
+        let rdz = tz - pz;
+        let mut blocked = false;
+
+        let step_x = rdx * inv_steps;
+        let step_z = rdz * inv_steps;
+        let mut sx = px + step_x;
+        let mut sz = pz + step_z;
+        let valid_steps = unsafe { *max_steps.get_unchecked(t) };
+        let iy_row_t = unsafe { iy_rows.get_unchecked(t) };
+
+        for s in 0..valid_steps {
+            if rdz >= 0.0 && sz > scale {
+                break;
+            }
+
+            let cx = sx + 0.5;
+            if cx < 0.0 || cx >= wf {
+                break;
+            }
+            let ix = unsafe { cx.to_int_unchecked::<usize>() };
+            let iy_row = unsafe { *iy_row_t.get_unchecked(s) };
+
+            let d = unsafe { *depth.get_unchecked(iy_row + ix) } as f64;
+            let map_z = (65535.0 - d) * inv65535;
+            if map_z > sz + z_bias {
+                blocked = true;
+                break;
+            }
+
+            sx += step_x;
+            sz += step_z;
+        }
+
+        if !blocked {
+            lit_count += 1;
+        }
+    }
+
+    let v = (((lit_count as f64) / taps_f) * 255.0 + 0.5).floor();
+    unsafe { v.to_int_unchecked::<u8>() }
+}
+
+/// Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13 / K14, docs/PLAN_WASM_BUILD.md §4.5).
 /// `taps_xyz` holds `taps * 3` `f64`s (`[tapX[t], tapY[t], tapZ[t]]` for `t in 0..taps`) precomputed on the JS side
 /// from `relightVogel`. Output is u8 visibility (0=shadow, 255=lit) for rows `[row0 .. row0 + rows]`.
 #[allow(clippy::too_many_arguments)]
@@ -288,74 +219,191 @@ pub fn shadow_march_f64(
         tap_z[t] = taps_xyz[t3 + 2];
     }
 
-    for r_idx in 0..band_rows {
-        let y = row0 + r_idx;
-        let py = y as f64;
-        let row_offset = y * w;
-        let out_offset = r_idx * w;
+    let mut iy_rows = [[0usize; 64]; 16];
+    let mut max_steps = [0usize; 16];
 
-        for x in 0..w {
-            let px = x as f64;
-            let d0 = unsafe { *depth.get_unchecked(row_offset + x) } as f64;
-            let z0 = (65535.0 - d0) * inv65535;
-            let pz = z0 + z_bias;
-            let mut lit_count = 0u32;
+    #[cfg(target_feature = "simd128")]
+    {
+        use core::arch::wasm32::*;
+
+        let v_65535 = f64x2_splat(65535.0);
+        let v_inv65535 = f64x2_splat(inv65535);
+        let v_z_bias = f64x2_splat(z_bias);
+        let v_inv_steps = f64x2_splat(inv_steps);
+        let v_scale = f64x2_splat(scale);
+        let v_inf = f64x2_splat(f64::INFINITY);
+        let v_zero = f64x2_splat(0.0);
+        let v_half = f64x2_splat(0.5);
+        let v_one = f64x2_splat(1.0);
+        let v_two = f64x2_splat(2.0);
+        let v_wf = f64x2_splat(wf);
+        let v_taps = f64x2_splat(taps_f);
+        let v_255 = f64x2_splat(255.0);
+
+        let mut v_tap_x = [v_zero; 16];
+        let mut v_tap_z = [v_zero; 16];
+        for t in 0..taps {
+            v_tap_x[t] = f64x2_splat(tap_x[t]);
+            v_tap_z[t] = f64x2_splat(tap_z[t]);
+        }
+
+        let pairs = w & !1;
+        for r_idx in 0..band_rows {
+            let y = row0 + r_idx;
+            let py = y as f64;
+            let row_offset = y * w;
+            let out_offset = r_idx * w;
 
             for t in 0..taps {
-                let cx_t = unsafe { *tap_x.get_unchecked(t) };
                 let cy_t = unsafe { *tap_y.get_unchecked(t) };
-                let cz_t = unsafe { *tap_z.get_unchecked(t) };
-                let (tx, ty, tz) = if is_sun {
-                    (px + cx_t, py + cy_t, pz + cz_t)
-                } else {
-                    (cx_t, cy_t, cz_t)
-                };
-
-                let rdx = tx - px;
+                let ty = if is_sun { py + cy_t } else { cy_t };
                 let rdy = ty - py;
-                let rdz = tz - pz;
-                let mut blocked = false;
-
-                let step_x = rdx * inv_steps;
                 let step_y = rdy * inv_steps;
-                let step_z = rdz * inv_steps;
-                let mut sx = px + step_x;
                 let mut sy = py + step_y;
-                let mut sz = pz + step_z;
-
-                for _ in 1..=steps {
-                    if rdz >= 0.0 && sz > scale {
-                        break;
-                    }
-
-                    let cx = sx + 0.5;
+                let mut valid = 0usize;
+                for s in 0..steps {
                     let cy = sy + 0.5;
-                    if cx < 0.0 || cy < 0.0 || cx >= wf || cy >= hf {
+                    if cy < 0.0 || cy >= hf {
                         break;
                     }
-                    let ix = unsafe { cx.to_int_unchecked::<usize>() };
                     let iy = unsafe { cy.to_int_unchecked::<usize>() };
-
-                    let d = unsafe { *depth.get_unchecked(iy * w + ix) } as f64;
-                    let map_z = (65535.0 - d) * inv65535;
-                    if map_z > sz + z_bias {
-                        blocked = true;
-                        break;
-                    }
-
-                    sx += step_x;
+                    iy_rows[t][s] = iy * w;
+                    valid += 1;
                     sy += step_y;
-                    sz += step_z;
                 }
-
-                if !blocked {
-                    lit_count += 1;
-                }
+                max_steps[t] = valid;
             }
 
-            let v = (((lit_count as f64) / taps_f) * 255.0 + 0.5).floor();
-            unsafe {
-                *out.get_unchecked_mut(out_offset + x) = v.to_int_unchecked::<u8>();
+            let mut x = 0usize;
+            let mut px = f64x2(0.0, 1.0);
+            while x < pairs {
+                let d0_u16 = unsafe {
+                    v128_load32_zero(depth.as_ptr().add(row_offset + x) as *const u32)
+                };
+                let d0 = f64x2_convert_low_i32x4(u32x4_extend_low_u16x8(d0_u16));
+                let z0 = f64x2_mul(f64x2_sub(v_65535, d0), v_inv65535);
+                let pz = f64x2_add(z0, v_z_bias);
+                let mut lit_f = v_zero;
+
+                for t in 0..taps {
+                    let valid_steps = unsafe { *max_steps.get_unchecked(t) };
+                    if valid_steps == 0 {
+                        lit_f = f64x2_add(lit_f, v_one);
+                        continue;
+                    }
+                    let iy_row_t = unsafe { iy_rows.get_unchecked(t) };
+                    let v_cx_t = unsafe { *v_tap_x.get_unchecked(t) };
+                    let v_cz_t = unsafe { *v_tap_z.get_unchecked(t) };
+                    let (tx, tz) = if is_sun {
+                        (f64x2_add(px, v_cx_t), f64x2_add(pz, v_cz_t))
+                    } else {
+                        (v_cx_t, v_cz_t)
+                    };
+
+                    let rdx = f64x2_sub(tx, px);
+                    let rdz = f64x2_sub(tz, pz);
+                    let v_sky_limit = v128_bitselect(v_scale, v_inf, f64x2_ge(rdz, v_zero));
+
+                    let step_x = f64x2_mul(rdx, v_inv_steps);
+                    let step_z = f64x2_mul(rdz, v_inv_steps);
+                    let mut sx = f64x2_add(px, step_x);
+                    let mut sz = f64x2_add(pz, step_z);
+
+                    let mut active = i64x2_splat(-1);
+                    let mut blocked = v_zero;
+
+                    for s in 0..valid_steps {
+                        let exit_sky = f64x2_gt(sz, v_sky_limit);
+                        let cx = f64x2_add(sx, v_half);
+                        let in_x = v128_and(f64x2_ge(cx, v_zero), f64x2_lt(cx, v_wf));
+                        active = v128_and(v128_andnot(active, exit_sky), in_x);
+                        if !v128_any_true(active) {
+                            break;
+                        }
+
+                        let iy_row = unsafe { *iy_row_t.get_unchecked(s) };
+                        let ix_vec = i32x4_trunc_sat_f64x2_zero(v128_and(cx, in_x));
+                        let ix_pair = u64x2_extract_lane::<0>(ix_vec);
+                        let ix0 = ix_pair as usize;
+                        let ix1 = (ix_pair >> 32) as usize;
+                        let d_u16 = unsafe {
+                            let p = depth.as_ptr().add(iy_row);
+                            let v0 = v128_load16_lane::<0>(v_zero, p.add(ix0) as *const u16);
+                            v128_load16_lane::<2>(v0, p.add(ix1) as *const u16)
+                        };
+                        let d = f64x2_convert_low_i32x4(d_u16);
+
+                        let map_z = f64x2_mul(f64x2_sub(v_65535, d), v_inv65535);
+                        let hit = f64x2_gt(map_z, f64x2_add(sz, v_z_bias));
+                        blocked = v128_or(blocked, v128_and(active, hit));
+                        active = v128_andnot(active, hit);
+                        if !v128_any_true(active) {
+                            break;
+                        }
+
+                        sx = f64x2_add(sx, step_x);
+                        sz = f64x2_add(sz, step_z);
+                    }
+
+                    lit_f = f64x2_add(lit_f, v128_andnot(v_one, blocked));
+                }
+
+                let v = f64x2_floor(f64x2_add(f64x2_mul(f64x2_div(lit_f, v_taps), v_255), v_half));
+                let v_u32 = i32x4_trunc_sat_f64x2_zero(v);
+                unsafe {
+                    *out.get_unchecked_mut(out_offset + x) = u32x4_extract_lane::<0>(v_u32) as u8;
+                    *out.get_unchecked_mut(out_offset + x + 1) = u32x4_extract_lane::<1>(v_u32) as u8;
+                }
+                x += 2;
+                px = f64x2_add(px, v_two);
+            }
+
+            if pairs < w {
+                unsafe {
+                    *out.get_unchecked_mut(out_offset + pairs) = march_pixel_scalar(
+                        depth, wf, scale, inv65535, inv_steps, z_bias, is_sun, &tap_x, &tap_z, &iy_rows, &max_steps,
+                        taps, taps_f, row_offset, pairs,
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_feature = "simd128"))]
+    {
+        for r_idx in 0..band_rows {
+            let y = row0 + r_idx;
+            let py = y as f64;
+            let row_offset = y * w;
+            let out_offset = r_idx * w;
+
+            for t in 0..taps {
+                let cy_t = unsafe { *tap_y.get_unchecked(t) };
+                let ty = if is_sun { py + cy_t } else { cy_t };
+                let rdy = ty - py;
+                let step_y = rdy * inv_steps;
+                let mut sy = py + step_y;
+                let mut valid = 0usize;
+                for s in 0..steps {
+                    let cy = sy + 0.5;
+                    if cy < 0.0 || cy >= hf {
+                        break;
+                    }
+                    let iy = unsafe { cy.to_int_unchecked::<usize>() };
+                    iy_rows[t][s] = iy * w;
+                    valid += 1;
+                    sy += step_y;
+                }
+                max_steps[t] = valid;
+            }
+
+            for x in 0..w {
+                unsafe {
+                    *out.get_unchecked_mut(out_offset + x) = march_pixel_scalar(
+                        depth, wf, scale, inv65535, inv_steps, z_bias, is_sun, &tap_x, &tap_z, &iy_rows, &max_steps,
+                        taps, taps_f, row_offset, x,
+                    );
+                }
             }
         }
     }

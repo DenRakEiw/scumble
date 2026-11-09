@@ -1,0 +1,5 @@
+lint rc=0 9s 
+types rc=0 6s 
+relight rc=0 31s PASS
+pixels rc=0 11s PASS
+ALL PASS

@@ -81,6 +81,13 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // kernel row 6092.4 vs 10728.2 ms; before/after on Rust 11829.1 -> 6036.1 ms wall, 1.96x; export_test fill_limit_rows
 // 11178 -> 6209 ms, 1.80x, psd_fill_limit fillRowsMs 12141 -> 6496 ms, 1.87x; plain bilinear path measured at the
 // kernel row only, PX_BENCH 15000x256: twin 100.16 vs simd 85.98 / scalar 88.06 ms, 1.16x).
+// No shadowMarch entry (K14, docs/measurements/k14_2026-11-09/summary.txt): at 15000x10000 (map 4096x2731) f64x2
+// shadow_march_f64 won over the hoisted f64 twin (shadowMarch: "js") and before (K13 scalar f64 on point/spot, f32
+// shadow_march on sun) on relight_one landed (599 [570-608] vs 681 [650-709] vs 748 [748-753] ms; one-job 3530 vs
+// 3595 vs 4894 ms), relight_three landed (1094 [1052-1101] vs 1144 [1015-1212] vs 1625 [1624-1730] ms; one-job 3572 vs
+// 3863 vs 5216 ms; stripes 1074 vs 1123 vs 1417 ms), relight_sun landed (182 [172-192] vs 286 [250-309] vs 527
+// [506-575] ms; one-job 851 vs 1075 vs 1586 ms; stripes 175 vs 193 vs 296 ms), relight_nodraw (535 vs 561 vs 778 ms),
+// and relight_draw (526 vs 546 vs 812 ms).
 // crc32 64 (K3, docs/measurements/k3_2026-11-08/summary.txt): 64 B is about a tie decided by the kernel row (Electron V8
 // size sweep: 0.075-0.100 vs 0.028-0.074 us at 16-48 B, 0.093-0.138 vs 0.156-0.235 us at 64-128 B, 1.50-2.53x; 4.97x at
 // 64 KB; 4.26x on w0_bench crc32_64mb); smaller headers (PNG signature, IHDR, 4-byte chunk lengths) stay in JS.
@@ -913,15 +920,11 @@ export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias
     }
     const p = rustPx("shadowMarch", w * h);
     if (p) {
-        const isSun = Number(light[3]) === 1;
-        const exp = isSun ? "shadow_march" : "shadow_march_f64";
         try {
-            const res = isSun
-                ? p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key)
-                : p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key);
+            const res = p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key);
             if (res) return res;
         }
-        catch (err) { if (!recovered(p, err, exp)) throw err; }
+        catch (err) { if (!recovered(p, err, "shadow_march_f64")) throw err; }
         finally { releaseIfLarge(); }
     }
     return J.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out);
