@@ -661,7 +661,7 @@ export class Px {
      * Precomputes the per-tap constants `[tapX, tapY, tapZ]` in `f64` from `relightVogel` and passes them to
      * `shadow_march_f64`. Returns `null` when the arguments lie outside the kernel's contract.
      */
-    shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null, key = null) {
+    shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0 = 0, rows = h - row0, out = null, key = null) {
         if (!(depth instanceof Uint16Array) || !Number.isInteger(w) || !Number.isInteger(h) || !(w > 0 && h > 0 && w < 0x40000000 && h < 0x40000000)) return null;
         const n = w * h;
         if (depth.length < n) return null;
@@ -674,7 +674,7 @@ export class Px {
         const kind = Number(light[3]) || 0;
         const rad = Number(radius ?? 0);
         const b = Number(bias ?? 0);
-        if (![Number(scale), Number(light[0]), Number(light[1]), Number(light[2]), Number(light[3]), rad, b].every((v) => Number.isFinite(v) && Math.abs(v) < 0x40000000)) return null;
+        if (![Number(scale), Number(light[0]), Number(light[1]), Number(light[2]), Number(light[3]), rad, b].every((v) => Number.isFinite(v) && Math.abs(v) < 0x40000000) || b < 0) return null;
         const bandRows = Math.min(rows, h - row0);
         const nOut = w * bandRows;
         if (out !== null && (!(out instanceof Uint8Array) || out.length < (out.length >= n && row0 > 0 ? (row0 + bandRows) * w : nOut))) return null;

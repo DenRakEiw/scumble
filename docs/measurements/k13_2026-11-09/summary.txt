@@ -3,9 +3,9 @@ unchanged), and `marchGuardOk` sending non-finite lights/parameters or coordinat
 
 Base: `3fd8bda7` (`wasm-kernels`), ABI 36 -> 37.
 - `before px.wasm` (`git cat-file blob 3fd8bda7:renderer/editor/px/px.wasm`): 259,180 bytes, sha256 `7e99b55f37ff69ff` (`7e99b55f37ff69ffdfb0b8e5f78e01b234fc3a96759eda4b1870832e934f65a5`)
-- `after  px.wasm`: 260,758 bytes, sha256 `c633b80fbee79614` (`c633b80fbee7961411caba864783c7042fce5b2c8b6ff828e91dd048d9eea4f5`)
+- `after  px.wasm`: 260,822 bytes, sha256 `dc88b74a17649e7a` (`dc88b74a17649e7a086e6cd12b26e1e07204b02503055241e475683530b369bb`)
 - `before px_scalar.wasm` (`git cat-file blob 3fd8bda7:renderer/editor/px/px_scalar.wasm`): 210,462 bytes, sha256 `03ddfff981982e19` (`03ddfff981982e1953df1099a2c3a9a600a0aba581ac58192e38c28fdf0f781d`)
-- `after  px_scalar.wasm`: 212,040 bytes, sha256 `7b7f92f13ade53fe` (`7b7f92f13ade53fed79a09580af22a878482d13b8902e5abb4eff8f76ea51562`)
+- `after  px_scalar.wasm`: 212,088 bytes, sha256 `b7abe4612b235fbc` (`b7abe4612b235fbcbc79448a5c23336268a8af08029e74bf53afe0145878800b`)
 
 The folders in `docs/measurements/k13_2026-11-09/`:
 - `before/perf/r1..3.{json,log}`: a tree exported at `3fd8bda7` via `git archive`, three fresh Electron instances on port
@@ -27,29 +27,29 @@ Machine during the 15k runs (`chain.log`):
   17,546-20,118 MiB (2-32 %) during r2 (queue 0 running), 10,056-29,325 MiB (3-100 %) during r3 (queue 0 running).
 
 Built (ABI 37):
-- `renderer/editor/px/kernels_js.js`: exported `relightVogel(n)` (was module-private `vogel(n)`). In `shadowMarch`, hoisted
-  `invSteps = 1.0 / nSteps` and the per-tap `Float64Array` arrays `tapX`, `tapY`, `tapZ` outside the `row0..endRow` pixel
-  loop: for `kind === 1` (sun), `(normLx + disc[t][0] * rRad) / dLen * sunDist` (and `y`, `z`); for `kind !== 1` (point/spot),
+- `renderer/editor/px/kernels_js.js` (lines 1964–1974, 1993–2110): exported `relightVogel(n)` (was module-private `vogel(n)`). In `shadowMarch`, hoisted
+  `invSteps = 1.0 / nSteps` and the per-tap `Float64Array` arrays `tapX`, `tapY`, `tapZ` outside the `0..bandRows` pixel
+  loop: for `kind === 1` (sun), `(dirX / dLen) * sunDist` (and `y`, `z`); for `kind !== 1` (point/spot),
   `lx + disc[t][0] * r` (and `ly + disc[t][1] * r`, `lz`). Inside the pixel loop, kept `tx = px + tapX[t]`,
   `rdx = tx - px`, `stepX = rdx * invSteps` per pixel so the hoisted twin is 100 % byte-identical to the pre-hoist reference
   (folding `rdx` to `tapX[t]` for a sun changes bits on rounding ties).
-- `crates/px/src/relight.rs` and `crates/px/src/lib.rs`: bumped `PX_ABI` 36 -> 37; added `relight::shadow_march_f64` and
-  the `#[no_mangle] pub unsafe extern "C" fn shadow_march_f64(depth: *const u16, w: u32, h: u32, scale: f64, is_sun: u32,
-  taps_xyz: *const f64, taps: u32, steps: u32, z_bias: f64, row0: u32, rows: u32, out: *mut u8)` export. Refuses `w == 0`,
+- `crates/px/src/relight.rs` (lines 230–360) and `crates/px/src/lib.rs` (lines 55–57, 821–876): bumped `px_abi_version()` 36 -> 37; added `relight::shadow_march_f64` and
+  the `#[no_mangle] pub unsafe extern "C" fn shadow_march_f64(depth: *const u16, w: usize, h: usize, scale: f64, is_sun: u32,
+  taps_xyz: *const f64, taps: u32, steps: u32, z_bias: f64, row0: usize, rows: usize, out: *mut u8)` export. Refuses `w == 0`,
   `h == 0`, `w >= 0x4000_0000`, `h >= 0x4000_0000`, `row0 >= h`, `rows == 0`, `taps == 0`, `taps > 16`, `steps == 0`,
-  `steps > 64`, non-finite `scale` / `z_bias` / `taps_xyz`, or `z_bias < 0.0` without touching `out`. Marches in `f64` in
+  `steps > 64`, `w.checked_mul(h)` / `w.checked_mul(band_rows)` overflow, non-finite `scale` / `z_bias` / `taps_xyz`, or `z_bias < 0.0` without touching `out`. Marches in `f64` in
   the twin's exact operation order (`inv65535 = scale / 65535.0`, `inv_steps = 1.0 / (steps as f64)`, per-pixel
   `tx = px + cx_t`, `rdx = tx - px`, `step_x = rdx * inv_steps`, `sx = px + step_x`, float bounds check
   `cx < 0.0 || cy < 0.0 || cx >= wf || cy >= hf` before `cx.to_int_unchecked::<usize>()` and `get_unchecked`).
-- `renderer/editor/px/px.js`: bumped `PX_ABI = 37`, imported `relightVogel` from `./kernels_js.js`, added
+- `renderer/editor/px/px.js` (lines 14, 16, 664–729): bumped `PX_ABI = 37`, imported `relightVogel` from `./kernels_js.js`, added
   `Px.prototype.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0 = 0, rows = h - row0, out = null,
-  key = null)`. Validates arguments, computes the `nTaps * 3` `f64` tap constants in V8 with the twin's exact formulas,
-  uses `this._slot("relight_depth", String(key), depth, n * 2)` when `key` is given, and calls `this.e.shadow_march_f64`.
-- `renderer/editor/px/kernels.js`: added `shadowMarch: "kernelSize"` to `ROUTE_KINDS`; added `MARCH_MAX = 0x40000000` and
+  key = null)`. Validates arguments (including `b < 0` and `< 0x40000000`), computes the `nTaps * 3` `f64` tap constants in V8 with the twin's exact formulas,
+  uses `this._slot("relight_depth", String(key), depth, n * 2)` when `key` is given, and calls `this.exports.shadow_march_f64`.
+- `renderer/editor/px/kernels.js` (lines 61, 846–857, 865–883): added `shadowMarch: "kernelSize"` to `ROUTE_KINDS`; added `MARCH_MAX = 0x40000000` and
   `marchGuardOk(w, h, scale, light, radius, bias)` returning `false` on non-finite values, `bias < 0`, or coordinates/scale/
-  radius/bias `>= 2^30`; updated `shadowMarch` to check `route("shadowMarch", w * h) && marchGuardOk(...)` and route
-  `light[3] === 1` to `p.shadowMarch` (`f32`) and `light[3] !== 1` to `p.shadowMarchF64` (`f64`).
-- `renderer/editor/inpaint_worker.js`: updated `relightShadowJob` so `timing.kernels` inspects `pxCalls()` for
+  radius/bias `>= 2^30`; updated `shadowMarch` to check `marchGuardOk(...)` and `rustPx("shadowMarch", w * h)` and route
+  `Number(light[3]) === 1` to `p.shadowMarch` (`f32`) and `Number(light[3]) !== 1` to `p.shadowMarchF64` (`f64`).
+- `renderer/editor/inpaint_worker.js` (lines 1302–1319): updated `relightShadowJob` so `timing.kernels` inspects `c0 = pxCalls()` and `c1 = pxCalls()` for
   `shadow_march` or `shadow_march_f64` after `shadowMarch(...)` and reports `"rust"` or `"js"` according to what ran.
 
 Explaining microbenchmarks (`px_bench.txt`, `PX_ONLY=relightBench,relight PX_BENCH=large` at `4096 x 2731`, 4 taps, 32 steps):
@@ -163,37 +163,37 @@ The route at K13:
 
 Tests and gates:
 - `node tools/px_test.js` (full suite): PASS.
-  - `relight`: 65 byte-exact `twinCheck` cases on both `px.wasm` (simd) and `px_scalar.wasm` (scalar), each also at an odd
-    byteOffset (including `512 x 341` and `1024 x 682` for point, spot, and sun; taps 1 / 3 / 4 / 16; steps 1 / 16 / 32 / 64;
+  - `relight` (lines 1755–1989): 115 byte-exact `twinCheck` cases on both `px.wasm` (simd) and `px_scalar.wasm` (scalar), each also at an odd
+    byteOffset (including `96 x 64`, `512 x 341`, and `1024 x 682` for point, spot, and sun; taps 1 / 3 / 4 / 16; steps 1 / 16 / 32 / 64;
     light on a pixel, below the surface, off the map; sun straight up and grazing; non-integer `ensureRelightMaps`-style
-    `[mx, my, mz]`, `scaleZ`, `radius`, `bias`; surgical boundary cases for `map_z == sz + z_bias`, `rdz < 0 && sz > scale`,
-    `cx == 0.0`, `s == steps`, and sun `(px + tapX[t]) - px` rounding tie); pre-hoist reference vs hoisted `js.shadowMarch`
-    (65 cases, 0 bytes differ); refusal checks on `shadowMarchF64` and raw `shadow_march_f64`; resident `_slot("relight_depth", ...)`
-    check.
-  - `relightStripe`: 694 stripe cases across the twin, both Rust builds (`f32` and `f64`), and `kernels.js`; resident depth
+    `[mx, my, mz]`, `scale`, `radius`, `bias`, with non-trivial `hasZero && hasLit` check on `512 x 341` and `1024 x 682`; surgical boundary cases for `map_z == sz + z_bias`, `rdz < 0 && sz > scale`,
+    `cx == 0.0`, `cy == 0.0`, `cx == wf`, `cy == hf`, `s == steps`, and sun `(px + tapX[t]) - px` rounding tie); pre-hoist reference vs hoisted `js.shadowMarch`
+    (115 cases, 0 bytes differ); refusal checks on `shadowMarchF64` and raw `shadow_march_f64` (including `w >= 2^30`, `h >= 2^30`, `radius >= 2^30`, `bias >= 2^30`, `bias < 0`); resident `_slot("relight_depth", ...)`
+    check across 4 stripes (`slotCopied === 1` and byte-identical to a single full-height call).
+  - `relightStripe` (lines 2195–2314): 770 stripe cases across the twin, both Rust builds (`f32` and `f64` at both `512 x 341` and `1024 x 682`), and `kernels.js`; resident depth
     slot copy count check for both `f32` and `f64`.
-  - `relightBench`: routed `shadowMarch` check (`kind 0` -> `shadow_march_f64` byte-identical to twin, `kind 1` ->
-    `shadow_march` byte-identical to `p.shadowMarch`); `marchGuardOk` check (non-finite lights/params, negative bias, and
+  - `relightBench` (lines 2069–2181): routed `shadowMarch` check (`kind 0` -> `shadow_march_f64` byte-identical to twin, `kind 1` ->
+    `shadow_march` byte-identical to `p.shadowMarch`); `marchGuardOk` check (non-finite lights/params, `bias < 0`, and
     coordinates/scale/radius/bias `>= 2^30` sent to the twin with 0 wasm calls); `shadowMarch` route (`"js"`, pixel
     threshold, `"rust"`) check.
 - `ELECTRON_RUN_AS_NODE=1 F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`:
   - With `PX_ONLY=relightBench,relightStripe,relight` and `PX_ONLY=relightBench,relight PX_BENCH=large`: PASS (all checks
-    green; 0 bytes differ between Electron V8's `js.shadowMarch` and both wasm builds across all 65 cases).
+    green; 0 bytes differ between Electron V8's `js.shadowMarch` and both wasm builds across all 115 cases).
   - Unfiltered full `px_test.js` under `ELECTRON_RUN_AS_NODE=1`: 5 checks in K32's `mask_max_clamp` fail because Electron
     V8 produces quiet NaN `0xffffffff` where Rust and Node V8 produce `0xffc00000` (`out[9] is NaN (0xffc00000), the twin
     has NaN (0xffffffff)`); every other group in `px_test.js` passes.
 - Gates on both backends (`bash tools/run_gates_both.sh k13-gates --ports 9631,9632 --lock F:/canvas/dist/gates/busy.lock --offline lint types relight pixels nodecopy`):
-  - `k13-gates-tiles`: `lint` PASS (23 s), `types` PASS (18 s), `relight` PASS (39 s, 39 node + 315 in-app checks, case
-    `nk (point)` asserts `shadow_march_f64` ran, `nk (sun)` asserts `shadow_march` ran), `pixels` PASS (22 s).
-  - `k13-gates-canvas`: `lint` PASS (19 s), `types` PASS (24 s), `relight` PASS (43 s, 39 node + 314 in-app checks),
-    `pixels` PASS (19 s).
-  - `k13-gates-tiles-serial`: `nodecopy` PASS (89 s).
-  - `k13-gates-canvas-serial`: `nodecopy` PASS (96 s).
-- `python tools/build_px.py --check`: identical on both `px.wasm` (260,758 B) and `px_scalar.wasm` (212,040 B).
+  - `k13-gates-tiles`: `lint` PASS (9 s), `types` PASS (6 s), `relight` PASS (32 s, 39 node + 315 in-app checks, case
+    `nk (point)` asserts `t.kernels === "rust"` and `shadow_march_f64` ran, `nk (sun)` asserts `t.kernels === "rust"` and `shadow_march` ran), `pixels` PASS (11 s).
+  - `k13-gates-canvas`: `lint` PASS (8 s), `types` PASS (7 s), `relight` PASS (31 s, 39 node + 314 in-app checks),
+    `pixels` PASS (10 s).
+  - `k13-gates-tiles-serial`: `nodecopy` PASS (18 s).
+  - `k13-gates-canvas-serial`: `nodecopy` PASS (16 s).
+- `python tools/build_px.py --check`: identical on both `px.wasm` (260,822 B) and `px_scalar.wasm` (212,088 B).
 - `python tools/build_node.py --check`: exits 0, only "differs" lines (no new module added).
 - Mutation round (`docs/measurements/k13_2026-11-09/mutation/mut_k13.py`, `results.txt`):
-  7 of 7 mutants killed on their focused `px` kill sets (`relight_f64_drop_rdz_nonneg`, `relight_f64_flip_mapz_gt_ge`,
-  `relight_f64_steps_off_by_one`, `relight_f64_bounds_le_zero`, `kernels_js_hoist_fold_sun_rdx`, `px_js_ignore_slot_key`,
+  8 of 8 mutants killed on their focused `px` kill sets (`relight_f64_drop_rdz_nonneg`, `relight_f64_flip_mapz_gt_ge`,
+  `relight_f64_steps_off_by_one`, `relight_f64_bounds_le_zero`, `relight_f64_bounds_gt_wf`, `kernels_js_hoist_fold_sun_rdx`, `px_js_ignore_slot_key`,
   `kernels_js_drop_march_guard`), 0 survived, 0 only on the re-check; restored copy identical and green on the full `px_test`.
   (On an earlier 1-mutant trial of `kernels_js_hoist_fold_sun_rdx`, the sun tie test had `ly = 0` so the ray stepped along
   row `y = 0` where all pixels had `d = 0`; changing `ly = 2` so step 1 samples `(9, 1)` vs `(8, 1)` killed the mutant in 1 s.)

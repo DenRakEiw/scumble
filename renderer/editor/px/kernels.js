@@ -852,6 +852,7 @@ function marchGuardOk(w, h, scale, light, radius, bias) {
         const n = Number(v);
         if (!Number.isFinite(n) || !(Math.abs(n) < MARCH_MAX)) return false;
     }
+    if (Number(bias ?? 0) < 0) return false;
     return true;
 }
 

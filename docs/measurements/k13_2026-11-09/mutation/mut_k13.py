@@ -64,6 +64,18 @@ MUTANTS = [
         {"px": ["relight"]},
     ),
     (
+        "relight_f64_bounds_gt_wf",
+        "crates/px/src/relight.rs",
+        [
+            (
+                "                    if cx < 0.0 || cy < 0.0 || cx >= wf || cy >= hf {",
+                "                    if cx < 0.0 || cy < 0.0 || cx > wf || cy >= hf {",
+            )
+        ],
+        "killed by 16x4 cx == wf boundary out-of-bounds in relightCases",
+        {"px": ["relight"]},
+    ),
+    (
         "kernels_js_hoist_fold_sun_rdx",
         "renderer/editor/px/kernels_js.js",
         [

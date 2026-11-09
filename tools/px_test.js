@@ -1842,41 +1842,72 @@ async function relightCases(px, label, js) {
         // 2. rdz < 0 && sz > scale (pz = 60 > scale 50, tz = 0 -> rdz = -60 < 0, blocked at later steps)
         const dRdzNeg = new Uint16Array(16 * 4).fill(0);
         f64Cases.push({ tag: "16x4 rdz < 0 with sz > scale", args: [dRdzNeg, 16, 4, 50, [15, 2, 0, 0], 0, 1, 32, 10, 0, 4] });
-        // 3. cx == 0.0 boundary (sx = -0.5 -> cx = 0.0 hits wall at x = 0) and s == steps final-step wall at x = 8
+        // 3. cx == 0.0, cy == 0.0, cx == wf, cy == hf boundaries and s == steps final-step wall at x = 8
         const dWall = new Uint16Array(16 * 4).fill(65535);
         for (let y = 0; y < 4; y++) { dWall[y * 16 + 0] = 0; dWall[y * 16 + 8] = 0; }
         f64Cases.push({ tag: "16x4 cx == 0.0 boundary wall", args: [dWall, 16, 4, 50, [-0.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 cx == wf boundary out-of-bounds", args: [dWall, 16, 4, 50, [15.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
         f64Cases.push({ tag: "16x4 final step s == steps wall", args: [dWall, 16, 4, 50, [8, 2, 10, 0], 0, 1, 8, 0.5, 0, 4] });
+        const dWallY = new Uint16Array(16 * 4).fill(65535);
+        for (let x = 0; x < 16; x++) dWallY[0 * 16 + x] = 0;
+        f64Cases.push({ tag: "16x4 cy == 0.0 boundary wall", args: [dWallY, 16, 4, 50, [8, -0.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 cy == hf boundary out-of-bounds", args: [dWallY, 16, 4, 50, [0, 3.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
         // 4. sun (px + tapX[t]) - px vs tapX[t] rounding tie at (px=9, py=0): step 1 samples (9, 1) vs (8, 1)
         const dSunTie = new Uint16Array(16 * 4).fill(65535);
         dSunTie[1 * 16 + 9] = 0;
         f64Cases.push({ tag: "16x4 sun tx - px rounding tie", args: [dSunTie, 16, 4, 50, [-1.000000000000002, 2, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 4] });
     }
+    const { lightToMap, defaultLight } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
+    let nonTrivialOk = true, nonTrivialDetail = "";
     for (const [w, h, combos] of [
         [96, 64, [[1, 1], [1, 16], [3, 16], [4, 32], [16, 64]]],
-        [256, 170, [[1, 16], [4, 32]]],
+        [512, 341, [[1, 1], [1, 16], [3, 16], [4, 32], [16, 64]]],
+        [1024, 682, [[1, 16], [4, 32]]],
     ]) {
-        const d = smoothDepth(w, h), long = Math.max(w, h), scale = 0.5 * long, radius = 0.3 * 0.05 * long, bias = 0.005 * scale;
-        const lights = [
-            ["point", [w * 0.3, h * 0.35, scale * 0.6, 0]],
-            ["spot", [w * 0.65, h * 0.12, scale * 1.2, 2]],
-            ["on-pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.6, 0]],
+        const d = smoothDepth(w, h), map = { data: d, w, h }, long = Math.max(w, h), scale = 0.5 * long, radius = 0.3 * 0.05 * long, bias = 0.005 * scale;
+        const lights = [];
+        for (const [type, fx, fy, dist] of [["point", 0.30, 0.35, -30], ["spot", 0.65, 0.12, -60], ["sun", 0.15, 0.20, -30]]) {
+            const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
+            lights.push([type, [lm.mx, lm.my, lm.mz, type === "sun" ? 1 : 0]]);
+        }
+        lights.push(
+            ["on-pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.85, 0]],
             ["below-surface", [w * 0.5, h * 0.5, scale * 0.05, 0]],
             ["off-map", [-0.4 * w, 1.3 * h, scale * 0.8, 0]],
             ["sun-up", [0, 0, 1, 1]],
             ["sun-grazing", [1, 0.25, 0.02, 1]],
-        ];
+        );
         for (const [taps, steps] of combos) {
             for (const [lname, light] of lights) {
-                f64Cases.push({ tag: `${w}x${h} ${lname} t=${taps} s=${steps}`, args: [d, w, h, scale, light, radius, taps, steps, bias, 0, h] });
+                const tag = `${w}x${h} ${lname} t=${taps} s=${steps}`;
+                const args = [d, w, h, scale, light, radius, taps, steps, bias, 0, h];
+                f64Cases.push({ tag, args });
+                if (w >= 512 && taps === 4 && steps === 32) {
+                    const out = px.shadowMarchF64(...args);
+                    let hasZero = false, hasLit = false;
+                    for (let i = 0; i < out.length; i++) {
+                        if (out[i] === 0) hasZero = true;
+                        else hasLit = true;
+                        if (hasZero && hasLit) break;
+                    }
+                    const wantOk = lname === "below-surface" ? (hasZero && !hasLit)
+                        : lname === "sun-up" ? (!hasZero && hasLit)
+                        : (hasZero && hasLit);
+                    if (!wantOk && nonTrivialOk) { nonTrivialOk = false; nonTrivialDetail = `${tag}: hasZero=${hasZero} hasLit=${hasLit}`; }
+                }
             }
         }
     }
+    check(`${label} smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)`, nonTrivialOk, nonTrivialDetail);
 
     let hoistOk = true, hoistDetail = "";
     for (const c of f64Cases) {
-        const got = js.shadowMarch(...c.args), want = refShadowMarchPreHoist(...c.args);
-        if (!eqBytes(got, want)) { hoistOk = false; hoistDetail = c.tag; break; }
+        let pair = hoistRefCache.get(c.tag);
+        if (!pair) {
+            pair = [js.shadowMarch(...c.args), refShadowMarchPreHoist(...c.args)];
+            hoistRefCache.set(c.tag, pair);
+        }
+        if (!eqBytes(pair[0], pair[1])) { hoistOk = false; hoistDetail = c.tag; break; }
     }
     check(`${label} hoisted js.shadowMarch equals pre-hoist reference byte for byte (${f64Cases.length} cases)`, hoistOk, hoistDetail);
 
@@ -1898,6 +1929,7 @@ async function relightCases(px, label, js) {
             ["w=0", [d, 0, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
             ["h=0", [d, 16, 0, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
             ["w>=2^30", [d, 0x40000000, 1, 50, goodLight, 2, 4, 16, 0.5, 0, 1]],
+            ["h>=2^30", [d, 1, 0x40000000, 50, goodLight, 2, 4, 16, 0.5, 0, 1]],
             ["row0<0", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, -1, 16]],
             ["row0>=h", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, 16, 1]],
             ["rows<=0", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 0]],
@@ -1906,6 +1938,9 @@ async function relightCases(px, label, js) {
             ["Inf scale", [d, 16, 16, Infinity, goodLight, 2, 4, 16, 0.5, 0, 16]],
             ["coord >= 2^30", [d, 16, 16, 50, [0x40000000, 8, 50, 0], 2, 4, 16, 0.5, 0, 16]],
             ["coord <= -2^30", [d, 16, 16, 50, [-0x40000000, 8, 50, 0], 2, 4, 16, 0.5, 0, 16]],
+            ["radius >= 2^30", [d, 16, 16, 50, goodLight, 0x40000000, 4, 16, 0.5, 0, 16]],
+            ["bias >= 2^30", [d, 16, 16, 50, goodLight, 2, 4, 16, 0x40000000, 0, 16]],
+            ["bias < 0", [d, 16, 16, 50, goodLight, 2, 4, 16, -1, 0, 16]],
             ["short out", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16, new Uint8Array(10)]],
         ];
         let refusedOk = true, refusedDetail = "";
@@ -1931,7 +1966,7 @@ async function relightCases(px, label, js) {
         } finally { px._reset(a); }
         check(`${label} shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out`, refusedOk, refusedDetail);
 
-        // Resident depth slot check on px.shadowMarchF64
+        // Resident depth slot check on px.shadowMarchF64 across 4 stripes
         const dSlot = genMap(64, 48, 77);
         const outSlot = new Uint8Array(64 * 48);
         let slotCopied = 0;
@@ -1941,17 +1976,24 @@ async function relightCases(px, label, js) {
             return origPut.call(this, ptr, data);
         };
         try {
-            px.shadowMarchF64(dSlot, 64, 48, 50, goodLight, 2, 4, 16, 0.5, 0, 24, outSlot, "slot:k13:1");
-            px.shadowMarchF64(dSlot, 64, 48, 50, goodLight, 2, 4, 16, 0.5, 24, 24, outSlot, "slot:k13:1");
+            for (const r0 of [0, 12, 24, 36]) {
+                px.shadowMarchF64(dSlot, 64, 48, 50, goodLight, 2, 4, 16, 0.5, r0, 12, outSlot, "slot:k13:1");
+            }
         } finally {
             px.put = origPut;
         }
-        check(`${label} shadowMarchF64 with a key copies the depth map into its resident slot once across stripes`, slotCopied === 1, `slotCopied=${slotCopied}`);
+        const wantFull = px.shadowMarchF64(dSlot, 64, 48, 50, goodLight, 2, 4, 16, 0.5);
+        check(`${label} shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call`,
+            slotCopied === 1 && eqBytes(outSlot, wantFull), `slotCopied=${slotCopied}`);
     }
 }
 
+const hoistRefCache = new Map();
+const smoothDepthCache = new Map();
 /** A smooth depth map (0 near, 65535 far): a ground plane receding upwards, three soft objects, slow waves. */
 function smoothDepth(w, h) {
+    const key = `${w}x${h}`;
+    if (smoothDepthCache.has(key)) return smoothDepthCache.get(key).slice();
     const d = new Uint16Array(w * h), L = Math.max(w, h);
     const bumps = [[0.30, 0.62, 0.16, 0.42], [0.68, 0.55, 0.10, 0.35], [0.52, 0.80, 0.07, 0.25]];   // cx, cy, r, height
     for (let y = 0; y < h; y++) {
@@ -1966,7 +2008,8 @@ function smoothDepth(w, h) {
             d[y * w + x] = Math.max(0, Math.min(65535, Math.round(far * 65535)));
         }
     }
-    return d;
+    smoothDepthCache.set(key, d);
+    return d.slice();
 }
 
 // ---- PX_BENCH rows (docs/PLAN_WASM_BUILD.md §3.4) -----------------------------------------------
@@ -2099,6 +2142,9 @@ async function relightBench(js, simd) {
             ["ly <= -2^30", 30, [20, -0x40000000, 30, 0], 2, 0.2],
             ["lz >= 2^30 (sun)", 30, [0, 0, 0x40000000, 1], 2, 0.2],
             ["scale >= 2^30", 0x40000000, goodLight, 2, 0.2],
+            ["radius >= 2^30", 30, goodLight, 0x40000000, 0.2],
+            ["bias >= 2^30", 30, goodLight, 2, 0x40000000],
+            ["bias < 0", 30, goodLight, 2, -0.001],
             ["NaN radius", 30, goodLight, NaN, 0.2],
             ["Inf bias", 30, goodLight, 2, Infinity],
         ]) {
@@ -2206,7 +2252,7 @@ async function relightStripeCases(js, simd, scalar) {
             const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
             lights.push([type, [lm.mx, lm.my, lm.mz, type === "sun" ? 1 : 0]]);
         }
-        lights.push(["a point on a pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.6, 0]]);
+        lights.push(["a point on a pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.85, 0]]);
         lights.push(["a point below the surface", [w * 0.5, h * 0.5, scale * 0.05, 0]]);
         lights.push(["a point off the map", [-0.4 * w, 1.3 * h, scale * 0.8, 0]]);
         lights.push(["the sun straight up", [0, 0, 1, 1]]);
@@ -2214,17 +2260,16 @@ async function relightStripeCases(js, simd, scalar) {
         for (const [taps, steps] of combos) {
             for (const [name, light] of lights) {
                 const a = { scale, light, radius: 0.3 * 0.05 * long, taps, steps, bias: 0.005 * scale };
+                const wantJs = one(js, sab, w, h, a, false);
+                const wantSimd32 = light[3] === 1 ? one(simd, sab, w, h, a, false) : null;
+                const wantScalar32 = light[3] === 1 ? one(scalar, sab, w, h, a, false) : null;
                 const impls = light[3] === 1
-                    ? (w === 512
-                        ? [["rust simd (f32)", simd, "k:sun", false], ["rust scalar (f32)", scalar, "k:sun", false], ["rust simd (f64)", simd, "k:sun64", true], ["rust scalar (f64)", scalar, "k:sun64", true], ["kernels.js (a worker's route)", K, "k:sun", false]]
-                        : [["rust simd (f32)", simd, "k:sun", false], ["kernels.js (a worker's route)", K, "k:sun", false]])
-                    : (w === 512
-                        ? [["twin", js, null, false], ["rust simd (f64)", simd, "k:pt", true], ["rust scalar (f64)", scalar, "k:pt", true], ["kernels.js (a worker's route)", K, "k:pt", false]]
-                        : [["twin", js, null, false], ["kernels.js (a worker's route)", K, "k:pt", false]]);
+                    ? [["rust simd (f32)", simd, "k:sun", false], ["rust scalar (f32)", scalar, "k:sun", false], ["rust simd (f64)", simd, "k:sun64", true], ["rust scalar (f64)", scalar, "k:sun64", true], ["kernels.js (a worker's route)", K, "k:sun", false]]
+                    : [["twin", js, null, false], ["rust simd (f64)", simd, "k:pt", true], ["rust scalar (f64)", scalar, "k:pt", true], ["kernels.js (a worker's route)", K, "k:pt", false]];
                 for (const [iname, impl, key, f64] of impls) {
                     const want = iname.startsWith("kernels")
-                        ? (light[3] === 1 ? one(simd, sab, w, h, a, false) : one(js, sab, w, h, a, false))
-                        : (f64 ? one(js, sab, w, h, a, false) : one(impl, sab, w, h, a, false));
+                        ? (light[3] === 1 ? wantSimd32 : wantJs)
+                        : (f64 || impl === js ? wantJs : (impl === simd ? wantSimd32 : wantScalar32));
                     for (const S of counts) {
                         cases++;
                         const got = striped(impl, sab, w, h, a, S, key ? `${key}:${w}x${h}` : null, f64);

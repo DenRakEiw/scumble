@@ -1,2 +1,2 @@
-nodecopy rc=0 96s PASS
+nodecopy rc=0 16s PASS
 ALL PASS

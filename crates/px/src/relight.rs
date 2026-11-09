@@ -257,8 +257,14 @@ pub fn shadow_march_f64(
     {
         return;
     }
+    let Some(n_depth) = w.checked_mul(h) else {
+        return;
+    };
     let band_rows = rows.min(h - row0);
-    if depth.len() < w * h || taps_xyz.len() < taps * 3 || out.len() < w * band_rows {
+    let Some(n_out) = w.checked_mul(band_rows) else {
+        return;
+    };
+    if depth.len() < n_depth || taps_xyz.len() < taps * 3 || out.len() < n_out {
         return;
     }
     if taps_xyz[..taps * 3].iter().any(|x| !x.is_finite()) {

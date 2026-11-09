@@ -29,7 +29,7 @@ F:\canvas\.claude\worktrees\ag-chain-l\tools\pixels_test.js
   21:10  warning  'pixelsCases' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
 
 F:\canvas\.claude\worktrees\ag-chain-l\tools\px_test.js
-  3541:75  warning  'm16' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3616:75  warning  'm16' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
 
 F:\canvas\.claude\worktrees\ag-chain-l\tools\rangebar_test.js
   413:13  warning  'previewCalled' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars

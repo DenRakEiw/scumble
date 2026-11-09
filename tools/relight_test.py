@@ -2327,7 +2327,7 @@ JS = r"""
                     && jobs.every((t) => t.rows < kMh), jobs.map((t) => [t.row0, t.rows]).slice(0, 8));
                 const wantExport = type === "sun" ? "shadow_march" : "shadow_march_f64";
                 check(`nk (${type}): its stripes ran Rust (${wantExport})`, jobs.length > 0
-                    && jobs.every((t) => !!(t.pxCalls && t.pxCalls[wantExport])), jobs.map((t) => t.pxCalls).slice(0, 3));
+                    && jobs.every((t) => t.kernels === "rust" && !!(t.pxCalls && t.pxCalls[wantExport])), jobs.map((t) => [t.kernels, t.pxCalls]).slice(0, 3));
                 check(`nk (${type}): the channel holds the bytes of one call for the last key`, channelDiff() === 0, { diff: channelDiff() });
                 check(`nk (${type}): nothing in flight afterwards`, docK.relightMarching() === 0 && pool.pending === 0, { marching: docK.relightMarching(), pending: pool.pending });
             }
