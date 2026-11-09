@@ -10,33 +10,50 @@ const path = require("node:path");
 const { app, safeStorage } = require("electron");
 
 const FILE = "secrets.json";
+const READ_FAIL_COOLDOWN_MS = 2000;
+let readFailUntil = 0;
+let damagedNotice = null;
 
 function file() {
     return path.join(app.getPath("userData"), FILE);
 }
 
-function retrying(op) {
+function retrying(op, tries = 4) {
     for (let i = 0; ; i++) {
         try { return op(); } catch (err) {
-            if (i >= 4 || !/^(EPERM|EBUSY|EACCES)$/.test(String(err && err.code))) throw err;
+            if (i >= tries || !/^(EPERM|EBUSY|EACCES)$/.test(String(err && err.code))) throw err;
             Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * (i + 1));
         }
     }
 }
 
+function setAsideDamaged(p) {
+    let dest = p + ".damaged";
+    for (let i = 1; fs.existsSync(dest); i++) dest = `${p}.damaged.${i}`;
+    try {
+        retrying(() => fs.renameSync(p, dest));
+        return path.basename(dest);
+    } catch (_) {
+        return null;
+    }
+}
+
 function readAll(forWrite = false) {
     const p = file();
+    const cooling = readFailUntil > Date.now();
     let raw;
     try {
-        raw = retrying(() => fs.readFileSync(p, "utf8"));
+        raw = retrying(() => fs.readFileSync(p, "utf8"), cooling ? 0 : 4);
+        readFailUntil = 0;
     } catch (err) {
         if (err && err.code === "ENOENT") {
-            if (forWrite && fs.existsSync(p + ".damaged")) {
-                throw new Error("secrets.json is damaged (set aside as secrets.json.damaged); refusing to overwrite stored keys.");
-            }
+            readFailUntil = 0;
             return {};
         }
-        console.warn("secrets read:", p, err.message);
+        if (!cooling) {
+            readFailUntil = Date.now() + READ_FAIL_COOLDOWN_MS;
+            console.warn("secrets read:", p, err.message);
+        }
         if (forWrite) throw err;
         return {};
     }
@@ -46,8 +63,12 @@ function readAll(forWrite = false) {
         return parsed;
     } catch (err) {
         console.warn("secrets damaged:", p, err.message);
-        try { retrying(() => fs.renameSync(p, p + ".damaged")); } catch (_) { /* keep as-is */ }
-        if (forWrite) throw new Error("secrets.json is damaged (set aside as secrets.json.damaged); refusing to overwrite stored keys.");
+        const aside = setAsideDamaged(p);
+        if (aside) {
+            damagedNotice = `Your stored API keys were damaged and reset; the old file is kept as ${aside}, and keys must be entered again.`;
+            return {};
+        }
+        if (forWrite) throw new Error("secrets.json is damaged and could not be set aside; refusing to overwrite stored keys.");
         return {};
     }
 }
@@ -55,12 +76,20 @@ function readAll(forWrite = false) {
 function writeAll(data) {
     fs.mkdirSync(app.getPath("userData"), { recursive: true });
     const tmp = file() + ".tmp";
+    const buf = Buffer.from(JSON.stringify(data, null, 2) + "\n", "utf8");
     const fd = fs.openSync(tmp, "w");
+    let ok = false;
     try {
-        fs.writeSync(fd, JSON.stringify(data, null, 2) + "\n", null, "utf8");
+        for (let off = 0; off < buf.length; ) {
+            const n = fs.writeSync(fd, buf, off, buf.length - off);
+            if (!(n > 0)) throw Object.assign(new Error("short write"), { code: "EIO" });
+            off += n;
+        }
         fs.fsyncSync(fd);
+        ok = true;
     } finally {
-        fs.closeSync(fd);
+        try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+        if (!ok) { try { fs.unlinkSync(tmp); } catch (_) { /* ignore */ } }
     }
     retrying(() => fs.renameSync(tmp, file()));
 }
@@ -102,9 +131,17 @@ function set(name, value) {
 
 function clear(name) {
     const all = readAll(true);
-    delete all[name];
-    writeAll(all);
+    if (name in all) {
+        delete all[name];
+        writeAll(all);
+    }
     return describe(name);
+}
+
+function takeDamagedNotice() {
+    const n = damagedNotice;
+    damagedNotice = null;
+    return n;
 }
 
 /**
@@ -129,4 +166,4 @@ function list() {
     return { backend: backend(), available: available(), keys: out };
 }
 
-module.exports = { get, set, clear, describe, list, available, backend };
+module.exports = { get, set, clear, describe, list, available, backend, takeDamagedNotice };

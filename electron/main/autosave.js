@@ -23,45 +23,87 @@ const GENERATIONS = [
     { id: "crash.1", file: "autosave.crash.1.json", label: "set aside after an earlier crash" },
 ];
 
-function retrying(op) {
+const READ_FAIL_COOLDOWN_MS = 2000;
+const readFailUntil = new Map();
+const unreadableCurrent = new Set();
+
+function retrying(op, tries = 4) {
     for (let i = 0; ; i++) {
         try { return op(); } catch (err) {
-            if (i >= 4 || !/^(EPERM|EBUSY|EACCES)$/.test(String(err && err.code))) throw err;
+            if (i >= tries || !/^(EPERM|EBUSY|EACCES)$/.test(String(err && err.code))) throw err;
             Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * (i + 1));
         }
     }
 }
 
-function readJson(file) {
+function setAsideDamaged(file) {
+    let dest = file + ".damaged";
+    for (let i = 1; fs.existsSync(dest); i++) dest = `${file}.damaged.${i}`;
+    try {
+        retrying(() => fs.renameSync(file, dest));
+        return path.basename(dest);
+    } catch (_) {
+        return null;
+    }
+}
+
+function readState(file) {
+    const key = path.resolve(file);
+    const isCurrent = path.basename(key) === FILE;
+    const cooling = (readFailUntil.get(key) || 0) > Date.now();
     let raw;
     try {
-        raw = retrying(() => fs.readFileSync(file, "utf8"));
+        raw = retrying(() => fs.readFileSync(file, "utf8"), cooling ? 0 : 4);
+        readFailUntil.delete(key);
     } catch (err) {
-        if (err && err.code === "ENOENT") return null;
-        console.warn("autosave read:", file, err.message);
-        return null;
+        if (err && err.code === "ENOENT") {
+            readFailUntil.delete(key);
+            if (isCurrent) unreadableCurrent.delete(key);
+            return { status: "missing", data: null };
+        }
+        if (!cooling) {
+            readFailUntil.set(key, Date.now() + READ_FAIL_COOLDOWN_MS);
+            console.warn("autosave read:", file, err.message);
+        }
+        if (isCurrent) unreadableCurrent.add(key);
+        return { status: "error", data: null, error: err };
     }
     try {
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
-        return parsed;
+        if (isCurrent) unreadableCurrent.delete(key);
+        return { status: "ok", data: parsed };
     } catch (err) {
         console.warn("autosave damaged:", file, err.message);
-        try { retrying(() => fs.renameSync(file, file + ".damaged")); } catch (_) { /* keep as-is */ }
-        return null;
+        const aside = setAsideDamaged(file);
+        if (aside && isCurrent) unreadableCurrent.delete(key);
+        else if (!aside && isCurrent) unreadableCurrent.add(key);
+        return { status: "damaged", data: null, aside };
     }
+}
+
+function readJson(file) {
+    return readState(file).data;
 }
 
 /** Write `value` as JSON to `file` whole: a temporary file first, flushed to disk and renamed over the old one. */
 function writeJson(file, value) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = file + ".tmp";
+    const buf = Buffer.from(JSON.stringify(value) + "\n", "utf8");
     const fd = fs.openSync(tmp, "w");
+    let ok = false;
     try {
-        fs.writeSync(fd, JSON.stringify(value) + "\n", null, "utf8");
+        for (let off = 0; off < buf.length; ) {
+            const n = fs.writeSync(fd, buf, off, buf.length - off);
+            if (!(n > 0)) throw Object.assign(new Error("short write"), { code: "EIO" });
+            off += n;
+        }
         fs.fsyncSync(fd);
+        ok = true;
     } finally {
-        fs.closeSync(fd);
+        try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+        if (!ok) { try { fs.unlinkSync(tmp); } catch (_) { /* ignore */ } }
     }
     retrying(() => fs.renameSync(tmp, file));
 }
@@ -75,12 +117,25 @@ function fileOf(dir, gen) {
 
 /** The state string of the current autosave (gen omitted) or of a generation ("1", "2", "crash"); null when none. */
 function load(dir, gen) {
-    const s = readJson(fileOf(dir, gen));
+    const r = readState(fileOf(dir, gen));
+    if (r.status === "error") throw r.error;
+    const s = r.data;
     return s && typeof s.state === "string" ? s.state : null;
 }
 
 function save(dir, state) {
-    writeJson(path.join(dir, FILE), { state: String(state || ""), time: Date.now() });
+    const cur = path.join(dir, FILE);
+    const key = path.resolve(cur);
+    if (unreadableCurrent.has(key) && fs.existsSync(cur)) {
+        rotate(dir);
+        if (unreadableCurrent.has(key) && fs.existsSync(cur)) {
+            const aside = setAsideDamaged(cur);
+            if (!aside) throw new Error("autosave.json is unreadable and could not be set aside");
+            unreadableCurrent.delete(key);
+        }
+    }
+    writeJson(cur, { state: String(state || ""), time: Date.now() });
+    unreadableCurrent.delete(key);
 }
 
 /** The mirror keys a state string names, sorted and joined: two states with the same files hold the same pictures. */
@@ -125,9 +180,13 @@ function summary(state) {
  */
 function rotate(dir) {
     const cur = path.join(dir, FILE), one = path.join(dir, GENERATIONS[0].file), two = path.join(dir, GENERATIONS[1].file);
-    const now = readJson(cur);
+    const nowRes = readState(cur);
+    if (nowRes.status === "error") return { rotated: false, why: "autosave unreadable" };
+    const now = nowRes.data;
     if (!now || typeof now.state !== "string") return { rotated: false, why: "no autosave" };
-    const prev = readJson(one);
+    const prevRes = readState(one);
+    if (prevRes.status === "error") return { rotated: false, why: "generation 1 unreadable" };
+    const prev = prevRes.data;
     if (prev && sameState(prev.state, now.state)) return { rotated: false, why: "the same as generation 1" };
     if (!summary(now.state).pictures && prev && summary(prev.state).pictures) {
         // an empty session never pushes out one with pictures (a start whose restore failed and was closed again)
@@ -148,7 +207,9 @@ function setAside(dir) {
     if (!now || typeof now.state !== "string") return false;
     if (!summary(now.state).pictures) return false;
     const crash = path.join(dir, GENERATIONS[2].file), older = path.join(dir, GENERATIONS[3].file);
-    const prev = readJson(crash);
+    const prevRes = readState(crash);
+    if (prevRes.status === "error") return false;
+    const prev = prevRes.data;
     if (prev && typeof prev.state === "string" && sameState(prev.state, now.state)) return false;
     if (prev) retrying(() => fs.renameSync(crash, older));
     writeJson(crash, { ...now, setAside: Date.now() });
@@ -181,7 +242,9 @@ function walkRefs(v, keys) {
 function referencedKeys(dir) {
     const keys = new Set();
     for (const g of GENERATIONS) {
-        const s = readJson(path.join(dir, g.file));
+        const r = readState(path.join(dir, g.file));
+        if (r.status === "error") throw r.error;
+        const s = r.data;
         if (!s || typeof s.state !== "string") continue;
         let bundle = null;
         try { bundle = JSON.parse(s.state); } catch (_) { continue; }

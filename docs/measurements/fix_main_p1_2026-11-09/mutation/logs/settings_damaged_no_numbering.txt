@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-settings_damaged_no_numbering-quit --offline --tiles on quit  (rc 1, 6 s)
+quit rc=1 3s FAIL
+SOME FAILED

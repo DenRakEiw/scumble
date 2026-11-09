@@ -694,7 +694,9 @@ function listTree(dir) {
                 assert(uFont.name === "MyFont.ttf" && uploads[0].overwrite === "true" && uploads[0].finalName === "MyFont.ttf" && serverFiles.get("input/inpaint_canvas/fonts/MyFont.ttf").equals(bytesB), "overwrite:true font upload must replace server copy in place");
 
                 // 3b. D8: files.mirrorPath enforces the same reserved-device and trailing dot/space rules as doc.mirrorPath;
-                // overwrite:true uploads with a device name (e.g. aux.ttf) or trailing space/dot map to a safe name instead of 400
+                // overwrite:true uploads with a device name (e.g. aux.ttf) or trailing space/dot map to a safe name instead of 400;
+                // collision with an existing aux_.ttf steps to a content-hashed name; existing mirror files and server views
+                // with older names (aux.png, subfolder aux) still read and ensureOnServer without 400
                 for (const badName of ["aux.ttf", "con.png", "lpt1.cube", "font.ttf ", "font.ttf."]) {
                     let threwMirror = false;
                     try { fileMirrorPath("input", "inpaint_canvas/fonts", badName, M); } catch (_) { threwMirror = true; }
@@ -709,11 +711,29 @@ function listTree(dir) {
                 assert(resAuxFont.status === 200, `overwrite:true upload of aux.ttf must succeed (got ${resAuxFont.status})`);
                 const uAuxFont = await resAuxFont.json();
                 assert(uAuxFont.name === "aux_.ttf" && fs.readFileSync(doc.mirrorPath(M, uAuxFont.type, uAuxFont.subfolder, uAuxFont.name)).equals(bytesA), `aux.ttf must map to aux_.ttf accepted by doc.mirrorPath: ${JSON.stringify(uAuxFont)}`);
+                // Collision: aux_.ttf holds bytesA; uploading aux.ttf with bytesB must not overwrite aux_.ttf
+                const resAuxCollision = await fm.handleUpload(mkUploadReq("aux.ttf", bytesB, true, "inpaint_canvas/fonts"));
+                const uAuxCollision = await resAuxCollision.json();
+                assert(uAuxCollision.name === `aux~${hashB}.ttf` && fs.readFileSync(doc.mirrorPath(M, "input", "inpaint_canvas/fonts", "aux_.ttf")).equals(bytesA) && fs.readFileSync(doc.mirrorPath(M, "input", "inpaint_canvas/fonts", uAuxCollision.name)).equals(bytesB), `collision on mapped aux_.ttf must use contentName: ${JSON.stringify(uAuxCollision)}`);
                 const [rawConReq, rawConSearch] = mkRawReq("con.png ", bytesB, true);
                 const resConRaw = await fm.handleRawUpload(rawConReq, rawConSearch);
                 assert(resConRaw.status === 200, `overwrite:true raw upload of 'con.png ' must succeed (got ${resConRaw.status})`);
                 const uConRaw = await resConRaw.json();
                 assert(uConRaw.name === "con_.png" && fs.readFileSync(doc.mirrorPath(M, uConRaw.type, uConRaw.subfolder, uConRaw.name)).equals(bytesB), `con.png  must map to con_.png accepted by doc.mirrorPath: ${JSON.stringify(uConRaw)}`);
+                fs.unlinkSync(doc.mirrorPath(M, uConRaw.type, uConRaw.subfolder, uConRaw.name));
+                // Read-side compatibility for 0.1.52 mirror names and server outputs under reserved subfolder names
+                const legacyAuxPath = path.join(M, "input", "inpaint_canvas", "aux.png");
+                fs.writeFileSync(legacyAuxPath, bytesA);
+                const viewHeadAux = await fm.handleView("?filename=aux.png&subfolder=inpaint_canvas&type=input", { head: true });
+                const viewGetAux = await fm.handleView("?filename=aux.png&subfolder=inpaint_canvas&type=input");
+                assert(viewHeadAux.status === 200 && viewGetAux.status === 200 && Buffer.from(await viewGetAux.arrayBuffer()).equals(bytesA), "handleView must serve an existing aux.png from an older mirror");
+                fm.known.clear();
+                const ensureAux = await fm.ensureOnServer([{ filename: "aux.png", subfolder: "inpaint_canvas", type: "input" }]);
+                assert(ensureAux.uploaded.includes("input/inpaint_canvas/aux.png") && ensureAux.missing.length === 0, "ensureOnServer must find and upload an existing aux.png: " + JSON.stringify(ensureAux));
+                fs.unlinkSync(legacyAuxPath);
+                serverFiles.set("output/aux/server_out.png", bytesB);
+                const viewServerAuxSub = await fm.handleView("?filename=server_out.png&subfolder=aux&type=output");
+                assert(viewServerAuxSub.status === 200 && Buffer.from(await viewServerAuxSub.arrayBuffer()).equals(bytesB) && !fs.existsSync(path.join(M, "output", "aux", "server_out.png")), "handleView must proxy server output under subfolder aux without writing a refused mirror path");
 
                 // 4. No extension, odd characters, lookalike names, and long 250-char stems
                 const uNoExt = await (await fm.handleUpload(mkUploadReq("readme", bytesA, false))).json();

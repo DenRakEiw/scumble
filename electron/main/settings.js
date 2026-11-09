@@ -63,30 +63,50 @@ const DEFAULTS = {
     comfyView: null,   // the ComfyUI window (electron/main/comfyview.js): { bounds, maximized, target: "comfy" | "cloud" }
 };
 
+const READ_FAIL_COOLDOWN_MS = 2000;
+let readFailUntil = 0;
+let damagedNotice = null;
+
 function file(name) {
     return path.join(app.getPath("userData"), name);
 }
 
-function retrying(op) {
+function retrying(op, tries = 4) {
     for (let i = 0; ; i++) {
         try { return op(); } catch (err) {
-            if (i >= 4 || !/^(EPERM|EBUSY|EACCES)$/.test(String(err && err.code))) throw err;
+            if (i >= tries || !/^(EPERM|EBUSY|EACCES)$/.test(String(err && err.code))) throw err;
             Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * (i + 1));
         }
     }
 }
 
+function setAsideDamaged(p) {
+    let dest = p + ".damaged";
+    for (let i = 1; fs.existsSync(dest); i++) dest = `${p}.damaged.${i}`;
+    try {
+        retrying(() => fs.renameSync(p, dest));
+        return path.basename(dest);
+    } catch (_) {
+        return null;
+    }
+}
+
 function readJson(name, fallback) {
     const p = file(name);
+    const cooling = readFailUntil > Date.now();
     let raw;
     try {
-        raw = retrying(() => fs.readFileSync(p, "utf8"));
+        raw = retrying(() => fs.readFileSync(p, "utf8"), cooling ? 0 : 4);
+        readFailUntil = 0;
     } catch (err) {
         if (err && err.code === "ENOENT") {
-            if (fs.existsSync(p + ".damaged")) return { ok: false, data: fallback };
+            readFailUntil = 0;
             return { ok: true, data: fallback };
         }
-        console.warn("settings read:", p, err.message);
+        if (!cooling) {
+            readFailUntil = Date.now() + READ_FAIL_COOLDOWN_MS;
+            console.warn("settings read:", p, err.message);
+        }
         return { ok: false, data: fallback };
     }
     try {
@@ -95,7 +115,11 @@ function readJson(name, fallback) {
         return { ok: true, data: parsed };
     } catch (err) {
         console.warn("settings damaged:", p, err.message);
-        try { retrying(() => fs.renameSync(p, p + ".damaged")); } catch (_) { /* keep as-is */ }
+        const aside = setAsideDamaged(p);
+        if (aside) {
+            damagedNotice = `Your settings were damaged and reset to defaults; the old file is kept as ${aside}.`;
+            return { ok: true, data: fallback };
+        }
         return { ok: false, data: fallback };
     }
 }
@@ -103,12 +127,20 @@ function readJson(name, fallback) {
 function writeJson(name, value) {
     fs.mkdirSync(app.getPath("userData"), { recursive: true });
     const tmp = file(name + ".tmp");
+    const buf = Buffer.from(JSON.stringify(value, null, 2) + "\n", "utf8");
     const fd = fs.openSync(tmp, "w");
+    let ok = false;
     try {
-        fs.writeSync(fd, JSON.stringify(value, null, 2) + "\n", null, "utf8");
+        for (let off = 0; off < buf.length; ) {
+            const n = fs.writeSync(fd, buf, off, buf.length - off);
+            if (!(n > 0)) throw Object.assign(new Error("short write"), { code: "EIO" });
+            off += n;
+        }
         fs.fsyncSync(fd);
+        ok = true;
     } finally {
-        fs.closeSync(fd);
+        try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+        if (!ok) { try { fs.unlinkSync(tmp); } catch (_) { /* ignore */ } }
     }
     retrying(() => fs.renameSync(tmp, file(name)));
 }
@@ -116,6 +148,7 @@ function writeJson(name, value) {
 let cache = null;
 let loaded = false;
 let pending = {};
+let inSet = false;
 
 /** The relight defaults the store before F3 wrote with every pick (77da63f..4192a6a; lora_strength 1 is 77da63f's 1.0). */
 const PRE_F3_RELIGHT = {
@@ -139,18 +172,33 @@ function get() {
             }
             stored.relight = flat;
         }
+        const hadPending = Object.keys(pending).length > 0;
         cache = { ...DEFAULTS, ...stored, ...pending };
-        if (ok) { loaded = true; pending = {}; }
+        if (ok) {
+            loaded = true;
+            pending = {};
+            if (hadPending && !inSet) {
+                try { writeJson("settings.json", cache); } catch (err) { console.warn("settings write:", err.message); }
+            }
+        }
     }
     return cache;
 }
 
 function set(patch) {
-    if (!loaded) pending = { ...pending, ...(patch || {}) };
-    const base = get();
+    inSet = true;
+    let base;
+    try { base = get(); } finally { inSet = false; }
     cache = { ...base, ...(patch || {}) };
     if (loaded) writeJson("settings.json", cache);
+    else pending = { ...pending, ...(patch || {}) };
     return cache;
+}
+
+function takeDamagedNotice() {
+    const n = damagedNotice;
+    damagedNotice = null;
+    return n;
 }
 
 /** The editor's autosave bundle of the last session (a string, or null), or of an earlier generation (autosave.js). */
@@ -162,4 +210,4 @@ function saveState(state) {
     autosave.save(app.getPath("userData"), state);
 }
 
-module.exports = { get, set, loadState, saveState, DEFAULTS };
+module.exports = { get, set, loadState, saveState, takeDamagedNotice, DEFAULTS };
