@@ -1,0 +1,224 @@
+
+=== 15000 x 10000 tiff_test.py --size (6 variants, 1 variant/instance, 3 alternating rounds, median [min-max] ms) ===
+row                                 before (0740aeab)               after (K17)                     before / after (medians)
+own exportMs                        1,718.0 [1,557.0-1,737.0]       1,604.0 [1,521.0-1,907.0]       1.07x
+own fileMB                          178.0 [178.0-178.0]             178.0 [178.0-178.0]             1.00x
+own exportSteps encoded             1,102.0 [982.0-1,158.0]         1,002.0 [907.0-1,338.0]         1.10x
+own exportSteps saved               578.0 [574.0-616.0]             601.0 [568.0-613.0]             0.96x
+own exportSteps total               1,717.0 [1,557.0-1,737.0]       1,603.0 [1,521.0-1,906.0]       1.07x
+own export tiff_part jobs           79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own export tiff_part composeWasm    79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own export tiff_part kernel         8,290.9 [7,276.0-8,830.3]       7,547.2 [6,438.7-10,366.8]      1.10x
+own export tiff_part rows           197.3 [188.9-204.2]             187.9 [183.9-271.5]             1.05x
+own export tiff_part predict        94.4 [64.9-95.7]                71.3 [48.4-85.4]                1.32x
+own export tiff_part deflate        7,974.9 [6,979.0-8,494.4]       7,259.4 [6,045.3-10,098.0]      1.10x
+own openMs                          3,148.0 [3,127.0-3,220.0]       3,003.0 [2,987.0-3,090.0]       1.05x
+own openSteps info                  3.0 [2.0-5.0]                   3.0 [2.0-6.0]                   1.00x
+own openSteps pixels                1,348.0 [1,335.0-1,386.0]       1,317.0 [1,301.0-1,326.0]       1.02x
+own openSteps stored                1,200.0 [1,126.0-1,209.0]       1,098.0 [1,090.0-1,194.0]       1.09x
+own openSteps base                  24.0 [23.0-27.0]                22.0 [22.0-26.0]                1.09x
+own openSteps total                 2,573.0 [2,539.0-2,576.0]       2,433.0 [2,427.0-2,547.0]       1.06x
+own tiff_read parse                 2.2 [2.1-3.0]                   2.1 [1.8-2.7]                   1.05x
+own tiff_read wait                  868.3 [856.7-886.0]             935.8 [931.2-941.8]             0.93x
+own tiff_read decode                0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+own tiff_read copy                  94.3 [93.0-98.3]                92.9 [87.2-93.2]                1.02x
+own tiff_read unpredict             112.9 [112.0-115.8]             111.6 [110.4-112.6]             1.01x
+own tiff_read convert               128.1 [127.1-128.9]             129.2 [123.5-129.9]             0.99x
+own tiff_read deliver               3.0 [2.5-3.1]                   3.5 [2.4-4.3]                   0.86x
+own tiff_read kernel                1,343.9 [1,331.5-1,380.8]       1,313.9 [1,297.0-1,321.8]       1.02x
+own tiff_read bands                 40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+own tiff_read pieces                9,324.0 [9,321.0-9,326.0]       9,301.0 [9,301.0-9,301.0]       1.00x
+own open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own open png_part kernel            5,798.1 [5,431.9-5,885.1]       5,354.2 [5,222.9-5,752.2]       1.08x
+own open png_part rows              194.5 [186.4-206.8]             169.7 [165.9-175.2]             1.15x
+own open png_part filter            685.5 [640.6-763.8]             687.3 [673.2-804.8]             1.00x
+own open png_part adler             150.4 [142.8-151.4]             138.5 [133.3-152.4]             1.09x
+own open png_part deflate           4,659.0 [4,318.3-4,706.8]       4,145.5 [4,141.6-4,646.9]       1.12x
+lzw openMs                          11,826.0 [11,576.0-12,701.0]    5,696.0 [5,422.0-6,048.0]       2.08x
+lzw openSteps info                  3.0 [3.0-3.0]                   3.0 [2.0-11.0]                  1.00x
+lzw openSteps pixels                9,041.0 [9,032.0-9,895.0]       3,077.0 [2,924.0-3,235.0]       2.94x
+lzw openSteps stored                1,151.0 [1,105.0-1,286.0]       1,173.0 [1,064.0-1,280.0]       0.98x
+lzw openSteps base                  468.0 [445.0-482.0]             442.0 [425.0-482.0]             1.06x
+lzw openSteps total                 10,812.0 [10,585.0-11,517.0]    4,695.0 [4,416.0-5,008.0]       2.30x
+lzw tiff_read parse                 2.2 [2.1-2.5]                   2.5 [2.5-2.8]                   0.88x
+lzw tiff_read wait                  1,379.3 [1,375.2-1,700.8]       212.7 [196.4-246.6]             6.48x
+lzw tiff_read decode                6,303.3 [6,290.1-6,545.7]       2,506.5 [2,400.0-2,614.5]       2.51x
+lzw tiff_read copy                  67.8 [67.1-71.5]                0.0 [0.0-0.0]                   
+lzw tiff_read unpredict             0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+lzw tiff_read convert               219.8 [216.7-223.8]             229.0 [225.7-250.1]             0.96x
+lzw tiff_read deliver               3.2 [3.1-3.3]                   32.7 [32.4-38.2]                0.10x
+lzw tiff_read kernel                9,012.6 [9,003.1-9,861.9]       3,011.6 [2,888.6-3,185.5]       2.99x
+lzw tiff_read bands                 40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+lzw tiff_read pieces                10,000.0 [10,000.0-10,000.0]    40.0 [40.0-40.0]                250.00x
+lzw open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part kernel            4,842.6 [4,724.3-4,854.3]       5,027.2 [4,591.9-5,097.8]       0.96x
+lzw open png_part rows              160.9 [155.1-165.5]             179.1 [162.0-179.8]             0.90x
+lzw open png_part filter            234.8 [231.0-236.6]             248.2 [224.6-253.5]             0.95x
+lzw open png_part adler             143.0 [142.9-145.6]             148.4 [137.2-150.6]             0.96x
+lzw open png_part deflate           4,215.0 [4,101.1-4,216.7]       4,357.7 [3,981.0-4,417.9]       0.97x
+packbits openMs                     5,967.0 [5,901.0-6,891.0]       3,622.0 [3,411.0-3,776.0]       1.65x
+packbits openSteps info             15.0 [3.0-15.0]                 2.0 [2.0-15.0]                  7.50x
+packbits openSteps pixels           3,253.0 [3,104.0-3,735.0]       691.0 [662.0-692.0]             4.71x
+packbits openSteps stored           1,119.0 [1,039.0-1,153.0]       1,133.0 [1,078.0-1,283.0]       0.99x
+packbits openSteps base             449.0 [440.0-449.0]             456.0 [450.0-458.0]             0.98x
+packbits openSteps total            4,747.0 [4,687.0-5,340.0]       2,285.0 [2,204.0-2,433.0]       2.08x
+packbits tiff_read parse            2.3 [2.3-2.4]                   2.4 [2.2-2.8]                   0.96x
+packbits tiff_read wait             1,604.6 [1,556.5-1,831.3]       243.8 [217.9-250.0]             6.58x
+packbits tiff_read decode           191.9 [164.4-249.7]             115.8 [110.5-119.0]             1.66x
+packbits tiff_read copy             71.6 [68.2-74.9]                0.0 [0.0-0.0]                   
+packbits tiff_read unpredict        0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+packbits tiff_read convert          226.1 [220.5-226.2]             238.6 [235.1-245.6]             0.95x
+packbits tiff_read deliver          3.8 [3.3-4.0]                   3.4 [3.1-4.6]                   1.12x
+packbits tiff_read kernel           3,220.5 [3,073.3-3,693.6]       655.3 [624.2-658.2]             4.91x
+packbits tiff_read bands            40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+packbits tiff_read pieces           10,000.0 [10,000.0-10,000.0]    40.0 [40.0-40.0]                250.00x
+packbits open png_part jobs         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part composeWasm  79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part kernel       4,629.1 [4,627.0-5,228.5]       4,811.8 [4,772.1-5,394.9]       0.96x
+packbits open png_part rows         157.1 [154.1-181.7]             207.9 [160.9-219.5]             0.76x
+packbits open png_part filter       228.0 [224.6-246.6]             249.0 [232.3-252.9]             0.92x
+packbits open png_part adler        136.1 [136.0-148.8]             145.7 [140.9-159.1]             0.93x
+packbits open png_part deflate      4,023.5 [4,020.3-4,553.9]       4,116.4 [4,083.7-4,722.4]       0.98x
+zlib1 openMs                        4,157.0 [4,049.0-4,244.0]       3,991.0 [3,943.0-4,186.0]       1.04x
+zlib1 openSteps info                2.0 [1.0-3.0]                   1.0 [1.0-2.0]                   2.00x
+zlib1 openSteps pixels              1,568.0 [1,566.0-1,623.0]       1,593.0 [1,591.0-1,598.0]       0.98x
+zlib1 openSteps stored              1,263.0 [1,233.0-1,284.0]       1,135.0 [1,132.0-1,288.0]       1.11x
+zlib1 openSteps base                481.0 [469.0-496.0]             459.0 [443.0-487.0]             1.05x
+zlib1 openSteps total               3,300.0 [3,284.0-3,405.0]       3,190.0 [3,172.0-3,367.0]       1.03x
+zlib1 tiff_read parse               1.3 [1.3-1.4]                   1.3 [1.3-1.6]                   1.00x
+zlib1 tiff_read wait                1,135.1 [1,109.8-1,164.6]       1,131.8 [1,126.0-1,140.2]       1.00x
+zlib1 tiff_read decode              0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+zlib1 tiff_read copy                75.6 [72.4-75.8]                73.6 [73.3-75.6]                1.03x
+zlib1 tiff_read unpredict           0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+zlib1 tiff_read convert             248.0 [227.8-250.4]             247.5 [242.2-249.5]             1.00x
+zlib1 tiff_read deliver             15.5 [9.3-23.0]                 20.5 [13.2-20.9]                0.76x
+zlib1 tiff_read kernel              1,534.9 [1,523.7-1,581.7]       1,552.4 [1,551.4-1,562.9]       0.99x
+zlib1 tiff_read bands               40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+zlib1 tiff_read pieces              6,932.0 [6,932.0-6,933.0]       6,932.0 [6,932.0-6,933.0]       1.00x
+zlib1 open png_part jobs            79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+zlib1 open png_part composeWasm     79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+zlib1 open png_part kernel          5,699.8 [5,685.1-6,035.1]       5,045.6 [4,760.4-5,133.6]       1.13x
+zlib1 open png_part rows            199.0 [187.2-221.9]             184.3 [166.7-184.6]             1.08x
+zlib1 open png_part filter          270.2 [267.9-275.3]             244.1 [234.8-247.3]             1.11x
+zlib1 open png_part adler           170.3 [165.5-178.7]             149.3 [143.1-150.9]             1.14x
+zlib1 open png_part deflate         4,943.2 [4,941.2-5,283.6]       4,369.6 [4,125.6-4,459.4]       1.13x
+raw openMs                          3,289.0 [3,257.0-3,323.0]       3,460.0 [3,416.0-3,533.0]       0.95x
+raw openSteps info                  2.0 [1.0-2.0]                   1.0 [1.0-13.0]                  2.00x
+raw openSteps pixels                515.0 [488.0-524.0]             529.0 [529.0-544.0]             0.97x
+raw openSteps stored                1,109.0 [1,079.0-1,119.0]       1,232.0 [1,153.0-1,293.0]       0.90x
+raw openSteps base                  440.0 [438.0-459.0]             464.0 [441.0-466.0]             0.95x
+raw openSteps total                 2,074.0 [2,008.0-2,095.0]       2,203.0 [2,148.0-2,316.0]       0.94x
+raw tiff_read parse                 1.5 [1.2-1.7]                   1.4 [1.3-1.7]                   1.07x
+raw tiff_read wait                  98.1 [93.2-108.1]               104.2 [101.6-121.5]             0.94x
+raw tiff_read decode                0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+raw tiff_read copy                  61.4 [60.9-65.9]                64.9 [63.2-68.9]                0.95x
+raw tiff_read unpredict             0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+raw tiff_read convert               243.5 [234.4-255.5]             249.9 [242.3-263.5]             0.97x
+raw tiff_read deliver               18.4 [14.8-18.9]                17.5 [16.8-19.9]                1.05x
+raw tiff_read kernel                482.6 [455.4-484.0]             494.4 [480.8-506.7]             0.98x
+raw tiff_read bands                 40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+raw tiff_read pieces                330.0 [327.0-505.0]             413.0 [370.0-414.0]             0.80x
+raw open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw open png_part kernel            4,671.5 [4,669.4-4,753.0]       5,214.4 [4,735.0-5,533.8]       0.90x
+raw open png_part rows              196.8 [159.6-199.3]             203.3 [164.0-211.0]             0.97x
+raw open png_part filter            228.5 [225.5-237.9]             246.3 [242.7-265.0]             0.93x
+raw open png_part adler             138.3 [137.8-139.0]             147.7 [143.3-166.6]             0.94x
+raw open png_part deflate           4,058.3 [4,006.1-4,095.5]       4,559.4 [4,045.9-4,795.2]       0.89x
+noise exportMs                      4,722.0 [3,796.0-5,290.0]       4,932.0 [3,858.0-5,584.0]       0.96x
+noise fileMB                        491.0 [491.0-491.0]             491.0 [491.0-491.0]             1.00x
+noise exportSteps encoded           3,162.0 [2,180.0-3,766.0]       3,419.0 [2,284.0-4,014.0]       0.92x
+noise exportSteps saved             1,559.0 [1,524.0-1,615.0]       1,569.0 [1,512.0-1,574.0]       0.99x
+noise exportSteps total             4,721.0 [3,795.0-5,290.0]       4,932.0 [3,858.0-5,584.0]       0.96x
+noise export tiff_part jobs         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise export tiff_part composeWasm  79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise export tiff_part kernel       24,138.2 [16,457.6-28,926.8]    26,241.6 [17,120.6-30,882.3]    0.92x
+noise export tiff_part rows         184.7 [182.2-213.0]             191.4 [188.2-207.8]             0.96x
+noise export tiff_part predict      86.7 [78.6-95.0]                46.5 [36.8-107.5]               1.86x
+noise export tiff_part deflate      23,803.7 [16,070.1-28,584.0]    25,915.8 [16,747.9-30,578.2]    0.92x
+noise openMs                        6,726.0 [6,512.0-7,200.0]       6,701.0 [6,658.0-7,060.0]       1.00x
+noise openSteps info                3.0 [2.0-18.0]                  18.0 [2.0-19.0]                 0.17x
+noise openSteps pixels              1,919.0 [1,875.0-2,023.0]       1,880.0 [1,863.0-1,887.0]       1.02x
+noise openSteps stored              3,294.0 [3,215.0-3,505.0]       3,319.0 [3,295.0-3,471.0]       0.99x
+noise openSteps base                25.0 [25.0-26.0]                26.0 [25.0-28.0]                0.96x
+noise openSteps total               5,242.0 [5,117.0-5,571.0]       5,225.0 [5,204.0-5,403.0]       1.00x
+noise tiff_read parse               2.4 [2.0-15.6]                  2.8 [2.4-14.9]                  0.86x
+noise tiff_read wait                1,361.7 [1,337.6-1,413.5]       1,474.2 [1,472.5-1,480.2]       0.92x
+noise tiff_read decode              0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+noise tiff_read copy                93.1 [87.6-107.6]               87.6 [87.4-92.2]                1.06x
+noise tiff_read unpredict           113.0 [109.2-118.2]             112.6 [111.1-114.3]             1.00x
+noise tiff_read convert             127.8 [124.5-140.8]             126.6 [124.6-132.7]             1.01x
+noise tiff_read deliver             5.7 [5.2-5.9]                   6.3 [3.6-7.0]                   0.90x
+noise tiff_read kernel              1,916.0 [1,858.4-2,019.3]       1,877.2 [1,860.4-1,886.3]       1.02x
+noise tiff_read bands               40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+noise tiff_read pieces              9,446.0 [9,441.0-9,446.0]       9,415.0 [9,415.0-9,415.0]       1.00x
+noise open png_part jobs            79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise open png_part composeWasm     79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise open png_part kernel          17,121.7 [16,221.5-17,895.5]    17,372.7 [16,689.9-17,463.2]    0.99x
+noise open png_part rows            162.9 [162.0-203.6]             172.5 [169.1-186.2]             0.94x
+noise open png_part filter          689.7 [681.7-737.1]             740.4 [701.9-774.3]             0.93x
+noise open png_part adler           143.3 [142.5-143.4]             152.1 [142.4-152.7]             0.94x
+noise open png_part deflate         15,876.2 [14,974.9-16,530.3]    16,019.2 [15,393.9-16,127.0]    0.99x
+
+=== 15000 x 10000 isolated tiffUnpack route A/B on K17 readTiffBand (lzw & packbits, 3 alternating rounds, median [min-max] ms) ===
+row                                 unpack_js (twin)                unpack_rust (wasm)              unpack_js / unpack_rust (medians)
+lzw openMs                          10,541.0 [10,493.0-10,595.0]    5,684.0 [5,619.0-5,775.0]       1.85x
+lzw openSteps info                  10.0 [2.0-10.0]                 3.0 [2.0-3.0]                   3.33x
+lzw openSteps pixels                7,888.0 [7,728.0-7,940.0]       3,060.0 [3,057.0-3,063.0]       2.58x
+lzw openSteps stored                1,159.0 [1,105.0-1,396.0]       1,137.0 [1,111.0-1,196.0]       1.02x
+lzw openSteps base                  457.0 [455.0-483.0]             456.0 [449.0-477.0]             1.00x
+lzw openSteps total                 9,564.0 [9,478.0-9,590.0]       4,648.0 [4,633.0-4,734.0]       2.06x
+lzw tiff_read parse                 2.3 [2.2-2.3]                   2.2 [2.0-3.3]                   1.05x
+lzw tiff_read wait                  182.0 [178.6-190.4]             210.4 [210.2-215.0]             0.87x
+lzw tiff_read decode                7,396.3 [7,226.9-7,425.8]       2,514.2 [2,482.8-2,525.4]       2.94x
+lzw tiff_read copy                  0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+lzw tiff_read unpredict             0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+lzw tiff_read convert               234.0 [229.2-243.2]             227.6 [226.2-232.2]             1.03x
+lzw tiff_read deliver               24.9 [22.7-27.2]                33.8 [33.1-36.8]                0.74x
+lzw tiff_read kernel                7,857.4 [7,679.3-7,910.4]       3,028.8 [2,990.5-3,034.3]       2.59x
+lzw tiff_read bands                 40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+lzw tiff_read pieces                40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+lzw open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part kernel            5,120.4 [4,895.2-5,156.6]       4,853.4 [4,764.0-4,961.3]       1.06x
+lzw open png_part rows              171.9 [168.3-179.8]             172.4 [160.6-178.6]             1.00x
+lzw open png_part filter            246.6 [241.9-247.2]             238.8 [232.3-241.0]             1.03x
+lzw open png_part adler             150.7 [145.2-152.2]             144.0 [143.4-147.1]             1.05x
+lzw open png_part deflate           4,457.2 [4,242.0-4,481.7]       4,204.3 [4,117.0-4,321.0]       1.06x
+packbits openMs                     3,684.0 [3,638.0-3,686.0]       3,416.0 [3,327.0-3,635.0]       1.08x
+packbits openSteps info             3.0 [2.0-3.0]                   14.0 [2.0-14.0]                 0.21x
+packbits openSteps pixels           836.0 [812.0-864.0]             646.0 [638.0-667.0]             1.29x
+packbits openSteps stored           1,107.0 [1,099.0-1,127.0]       1,074.0 [1,058.0-1,261.0]       1.03x
+packbits openSteps base             445.0 [443.0-515.0]             463.0 [450.0-480.0]             0.96x
+packbits openSteps total            2,417.0 [2,412.0-2,429.0]       2,196.0 [2,160.0-2,411.0]       1.10x
+packbits tiff_read parse            2.3 [2.2-2.6]                   2.5 [2.1-2.8]                   0.92x
+packbits tiff_read wait             245.1 [232.1-273.8]             225.4 [218.0-231.4]             1.09x
+packbits tiff_read decode           297.0 [280.8-298.1]             110.3 [110.1-112.7]             2.69x
+packbits tiff_read copy             0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+packbits tiff_read unpredict        0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+packbits tiff_read convert          233.4 [223.2-235.6]             229.4 [217.2-237.9]             1.02x
+packbits tiff_read deliver          3.4 [3.1-4.0]                   3.6 [3.2-4.5]                   0.94x
+packbits tiff_read kernel           796.8 [777.2-831.5]             608.4 [605.3-632.5]             1.31x
+packbits tiff_read bands            40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+packbits tiff_read pieces           40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+packbits open png_part jobs         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part composeWasm  79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part kernel       4,817.0 [4,636.1-4,855.3]       4,721.4 [4,696.7-4,765.7]       1.02x
+packbits open png_part rows         198.2 [190.2-202.1]             201.4 [192.7-222.7]             0.98x
+packbits open png_part filter       235.6 [233.5-254.5]             235.1 [232.0-236.2]             1.00x
+packbits open png_part adler        140.0 [136.9-149.9]             140.1 [138.4-144.1]             1.00x
+packbits open png_part deflate      4,117.3 [3,983.2-4,191.2]       4,050.5 [4,039.9-4,072.4]       1.02x
+
+=== 15000 x 10000 w0_bench.py tiff_rows_256 (3 alternating rounds, median [min-max] ms) ===
+row                      before (0740aeab)               after (K17)                     before / after (medians)
+tiff_rows_256 wall       1,288.0 [1,280.0-1,306.4]       1,245.8 [1,175.8-1,305.7]       1.03x
+tiff_rows_256 parse      1.7 [1.6-2.1]                   1.5 [1.2-1.8]                   1.13x
+tiff_rows_256 wait       829.7 [825.0-852.1]             881.8 [840.6-928.5]             0.94x
+tiff_rows_256 decode     0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+tiff_rows_256 copy       88.9 [88.3-90.1]                87.2 [80.2-91.8]                1.02x
+tiff_rows_256 unpredict  110.5 [108.0-110.6]             109.1 [103.0-113.6]             1.01x
+tiff_rows_256 convert    125.8 [125.4-126.2]             123.3 [116.7-127.0]             1.02x
+tiff_rows_256 deliver    2.1 [2.0-2.2]                   2.5 [2.1-2.6]                   0.81x
+tiff_rows_256 kernel     1,287.8 [1,279.8-1,306.2]       1,245.4 [1,175.6-1,305.5]       1.03x

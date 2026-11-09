@@ -106,12 +106,13 @@ let activeKernels = null;
 let kernelSuffix = "";
 
 /** Read a whole picture through readTiff, recording every callback. */
-async function readAll(T, blob, rowsPerBand, kernels = activeKernels) {
+async function readAll(T, blob, rowsPerBand, kernels = activeKernels, extraOpts = null) {
     const events = [], bands = [];
     let header = null, headerCalls = 0;
     const opts = {
         onHeader(i) { headerCalls++; header = i; events.push("header"); },
         onRows(rgba, y0, rows) { bands.push({ rgba, y0, rows }); events.push("rows"); },
+        ...(extraOpts || {}),
     };
     if (rowsPerBand) opts.rowsPerBand = rowsPerBand;
     if (kernels) opts.kernels = kernels;
@@ -704,11 +705,13 @@ console.log(JSON.stringify(out));
             problems.push(`strip starts ${Array.from(stripBytes.subarray(0, 3))}, expected 0, 0, odd`);
         }
         try {
-            const r = await readAll(T, oneByteFirstBlob(bytes), 256);
-            const a = assemble(r, w, h, 256);
-            problems.push(...a.problems);
-            const d = pixelDiff(a.img, want, w);
-            if (d) problems.push(d);
+            for (const extraOpts of [null, { streamed: true }]) {
+                const r = await readAll(T, oneByteFirstBlob(bytes), 256, activeKernels, extraOpts);
+                const a = assemble(r, w, h, 256);
+                problems.push(...a.problems);
+                const d = pixelDiff(a.img, want, w);
+                if (d) problems.push(d);
+            }
         } catch (err) { problems.push("threw " + errText(err)); }
         check("LZW 1-byte first piece with byte[0] === byte[1] === 0 and odd byte[2] is decoded without dropping byte[0] or false old-LZW refusal",
             !problems.length, problems.join(" | "));
@@ -876,7 +879,7 @@ console.log(JSON.stringify(out));
         ];
         for (const [label, cutsFn] of pbSchedules) {
             try {
-                const r = await readAll(T, splitBlob(tiffPbSplit, cutsFn), 256);
+                const r = await readAll(T, splitBlob(tiffPbSplit, cutsFn), 256, activeKernels, { streamed: true });
                 const a = assemble(r, wPb, hPb, 256);
                 if (a.problems.length) pbSplitProblems.push(`${label}: ${a.problems.join("; ")}`);
                 else {
@@ -949,7 +952,7 @@ console.log(JSON.stringify(out));
         ];
         for (const [label, cutsFn] of lzwSchedules) {
             try {
-                const r = await readAll(T, splitBlob(tiffLzwSplit, cutsFn), 256);
+                const r = await readAll(T, splitBlob(tiffLzwSplit, cutsFn), 256, activeKernels, { streamed: true });
                 const a = assemble(r, wLzw, hLzw, 256);
                 if (a.problems.length) lzwSplitProblems.push(`${label}: ${a.problems.join("; ")}`);
                 else {
@@ -1081,6 +1084,298 @@ console.log(JSON.stringify(out));
         ];
         const { bytes: asciiCmBytes } = buildTiff([{ tags: asciiTags, data: [new Uint8Array([0xAA])] }]);
         await expectRefusal(T, "palette TIFF with ASCII ColorMap (tag 320 type 2)", asciiCmBytes, /without its colour map/i);
+    }
+
+    // -- K17: tiled Predictor-2 (8-bit and 16-bit, LE and BE, chunky and planar, codecs 1/5/8/32773) with w % tw !== 0 --
+    {
+        const w = 37, h = 29, tw = 16, tl = 16, tilesAcross = 3, tilesDown = 2;
+        const packBitsRow = (row) => {
+            const out = [];
+            let i = 0;
+            while (i < row.length) {
+                const chunk = Math.min(128, row.length - i);
+                out.push(chunk - 1, ...row.subarray(i, i + chunk));
+                i += chunk;
+            }
+            return Uint8Array.from(out);
+        };
+        const encodeSeg = (raw, comp) => {
+            if (comp === 1) return raw;
+            if (comp === 5) return lzwEncode(raw).bytes;
+            if (comp === 8 || comp === 32946) return new Uint8Array(zlib.deflateSync(Buffer.from(raw)));
+            if (comp === 32773) return packBitsRow(raw);
+            throw new Error("comp " + comp);
+        };
+        const buildTiledPred2 = ({ bits, spp, le, planar, comp, seed }) => {
+            const r = rng(seed);
+            const samples = bits === 16 ? new Uint16Array(w * h * spp) : new Uint8Array(w * h * spp);
+            const mask = bits === 16 ? 0xFFFF : 0xFF;
+            for (let i = 0; i < samples.length; i++) samples[i] = r() & mask;
+            const planes = planar === 2 ? spp : 1;
+            const per = planar === 2 ? 1 : spp;
+            const segs = [];
+            for (let p = 0; p < planes; p++) {
+                for (let ty = 0; ty < tilesDown; ty++) {
+                    for (let tx = 0; tx < tilesAcross; tx++) {
+                        const tileS = bits === 16 ? new Uint16Array(tw * tl * per) : new Uint8Array(tw * tl * per);
+                        for (let ry = 0; ry < tl; ry++) {
+                            const y = ty * tl + ry;
+                            for (let rx = 0; rx < tw; rx++) {
+                                const x = tx * tw + rx;
+                                const dst = (ry * tw + rx) * per;
+                                if (x < w && y < h) {
+                                    const src = (y * w + x) * spp;
+                                    if (planar === 2) tileS[dst] = samples[src + p];
+                                    else for (let c = 0; c < spp; c++) tileS[dst + c] = samples[src + c];
+                                } else {
+                                    // Non-zero deterministic padding in right/bottom tile overhang to catch copyCols/rowsInBand bugs
+                                    for (let c = 0; c < per; c++) tileS[dst + c] = ((rx * 31 + ry * 17 + c * 13 + tx * 7) & mask);
+                                }
+                            }
+                        }
+                        const diff = hdiff(tileS, tw, per, tl, bits);
+                        segs.push(encodeSeg(sampleBytes(diff, bits, le), comp));
+                    }
+                }
+            }
+            const tags = [
+                [254, 4, [0]], [256, 4, [w]], [257, 4, [h]], [258, 3, Array(spp).fill(bits)],
+                [259, 3, [comp]], [262, 3, [2]], [277, 3, [spp]],
+                [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [planar]],
+                [296, 3, [2]], [317, 3, [2]], [322, 4, [tw]], [323, 4, [tl]],
+            ];
+            if (spp === 4) tags.push([338, 3, [2]]);
+            const { bytes } = buildTiff([{ tags, data: segs, offTag: 324, cntTag: 325 }], { le });
+            const want = expectRgba(w * h, (i) => {
+                const o = i * spp;
+                const conv = bits === 16 ? to8 : (v) => v;
+                return [conv(samples[o]), conv(samples[o + 1]), conv(samples[o + 2]), spp === 4 ? conv(samples[o + 3]) : 255];
+            });
+            return { bytes, samples, want };
+        };
+
+        const tiledConfigs = [
+            { label: "8-bit RGBA chunky LZW LE", bits: 8, spp: 4, le: true, planar: 1, comp: 5, seed: 801 },
+            { label: "8-bit RGB planar PackBits LE", bits: 8, spp: 3, le: true, planar: 2, comp: 32773, seed: 802 },
+            { label: "8-bit RGBA chunky uncompressed BE", bits: 8, spp: 4, le: false, planar: 1, comp: 1, seed: 803 },
+            { label: "16-bit RGBA chunky Deflate LE", bits: 16, spp: 4, le: true, planar: 1, comp: 8, seed: 804, cross: true },
+            { label: "16-bit RGB chunky LZW BE", bits: 16, spp: 3, le: false, planar: 1, comp: 5, seed: 805 },
+            { label: "16-bit RGBA planar PackBits LE", bits: 16, spp: 4, le: true, planar: 2, comp: 32773, seed: 806 },
+            { label: "16-bit RGB planar Deflate-old BE", bits: 16, spp: 3, le: false, planar: 2, comp: 32946, seed: 807 },
+        ];
+        for (const cfg of tiledConfigs) {
+            const { bytes, samples, want } = buildTiledPred2(cfg);
+            if (cfg.cross) crossCheck("tiled_pred2_16_rgba", bytes, samples, 16, h, w, cfg.spp, "tifffile");
+            await expectRead(
+                T,
+                `tiled Predictor-2 (${cfg.label}, ${w}x${h}, tile ${tw}x${tl})`,
+                bytes, w, h, want,
+                { info: { bits: cfg.bits, samples: cfg.spp, photometric: 2, compression: cfg.comp, predictor: 2, planar: cfg.planar, tiled: true, alpha: cfg.spp === 4 ? "straight" : "none" } },
+            );
+            // Also verify direct tiffPlan + readTiffBand and streamed TileRows agree byte-for-byte
+            const blob = new Blob([bytes]);
+            const plan = await T.tiffPlan(blob, { rowsPerBand: 16 });
+            const bandProblems = [];
+            if (plan.streamed || plan.bands.length !== 2 || plan.bandRows !== 16) {
+                bandProblems.push(`unexpected plan: streamed=${plan.streamed} bands=${plan.bands.length} bandRows=${plan.bandRows}`);
+            }
+            const directImg = new Uint8Array(w * h * 4);
+            for (const b of plan.bands) {
+                const sub = directImg.subarray(b.y0 * w * 4, (b.y0 + b.rows) * w * 4);
+                const got = await T.readTiffBand(blob, plan, b, { kernels: activeKernels, out: sub });
+                if (got !== sub) bandProblems.push(`readTiffBand did not return supplied out buffer on band ${b.index}`);
+            }
+            const dDirect = pixelDiff(directImg, want, w);
+            if (dDirect) bandProblems.push("direct readTiffBand: " + dDirect);
+            const rStream = await readAll(T, blob, 16, activeKernels, { streamed: true });
+            const aStream = assemble(rStream, w, h, 16);
+            bandProblems.push(...aStream.problems.map((p) => "streamed: " + p));
+            const dStream = pixelDiff(aStream.img, want, w);
+            if (dStream) bandProblems.push("streamed: " + dStream);
+            if (bandProblems.length) {
+                check(`tiled Predictor-2 (${cfg.label}) direct readTiffBand + streamed${kernelSuffix}`, false, bandProblems.join(" | "));
+            }
+        }
+
+        // Prove that unpredicting across the assembled row width `w` instead of per-tile `tw` corrupts tile boundary x = 16, 32
+        {
+            const { bytes, want } = buildTiledPred2(tiledConfigs[0]);
+            const blob = new Blob([bytes]);
+            const plan = await T.tiffPlan(blob, { rowsPerBand: 16 });
+            const wrongSpec = { ...plan.spec, info: { ...plan.spec.info, predictor: 1 } };
+            const rawAssembled = await T.readTiffBand(blob, { ...wrongSpec, ...plan.bands[0] }, { kernels: activeKernels });
+            T.unpredict(rawAssembled, plan.bands[0].rows, w * 4, w, 4, 8, true);
+            const diffAtTileBoundary = pixelDiff(rawAssembled, want.subarray(0, plan.bands[0].rows * w * 4), w);
+            check(`tiled Predictor-2 per-tile unpredict differs from wrong whole-row unpredict at tile column boundary${kernelSuffix}`,
+                !!diffAtTileBoundary && /pixel \(16, 0\)/.test(diffAtTileBoundary),
+                diffAtTileBoundary || "unexpectedly matched");
+        }
+    }
+
+    // -- K17: the RGBA-size rule (TIFF_BAND_BYTES = 64 MiB) and contiguous band slicing --
+    {
+        // 1) RGBA-size rule boundary: a 1-strip 1-bit bilevel file of 4096 x 4096 is 2 MiB raw and 64 MiB exact RGBA (streamed: false);
+        //    a 1-strip 1-bit bilevel file of 4096 x 4097 is 2 MiB raw and 64.015625 MiB RGBA (streamed: true).
+        const w = 4096, rowBytes = w >> 3; // 512 bytes/row
+        const build1BitSingleStrip = (h) => {
+            const strip = new Uint8Array(rowBytes * h);
+            // Set first, middle, and last row sentinel bits so we can verify decoded pixels cheaply
+            strip[0] = 0b10100101;
+            strip[(h >> 1) * rowBytes + 255] = 0b01011010;
+            strip[(h - 1) * rowBytes + (rowBytes - 1)] = 0b11000011;
+            const tags = imageTags({ w, h, bits: 1, spp: 1, photometric: 1, compression: 1, rps: h });
+            return buildTiff([{ tags, data: [strip] }]).bytes;
+        };
+        const bytesExact64M = build1BitSingleStrip(4096);
+        const bytesOver64M = build1BitSingleStrip(4097);
+        const planExact = await T.tiffPlan(new Blob([bytesExact64M]));
+        const planOver = await T.tiffPlan(new Blob([bytesOver64M]));
+        const planForced = await T.tiffPlan(new Blob([bytesExact64M]), { streamed: true });
+
+        // Also test a 1-tile 1-bit tiled file of 4096 x 4097 with tile 4096 x 4112 (unitRows = 4097 > 4096 -> streamed: true)
+        const tiledOverTags = [
+            [254, 4, [0]], [256, 4, [4096]], [257, 4, [4097]], [258, 3, [1]], [259, 3, [1]], [262, 3, [1]],
+            [277, 3, [1]], [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [1]], [296, 3, [2]],
+            [322, 4, [4096]], [323, 4, [4112]],
+        ];
+        const { bytes: bytesTiledOver } = buildTiff([{ tags: tiledOverTags, data: [new Uint8Array(512 * 4112)], offTag: 324, cntTag: 325 }]);
+        const planTiledOver = await T.tiffPlan(new Blob([bytesTiledOver]));
+
+        // Multi-strip file where caller asks for rowsPerBand = 8192 (> maxRows = 4096): tiffPlan caps bandRows to 4096
+        const multiStrips = Array.from({ length: 6 }, () => new Uint8Array(512 * 1024));
+        const { bytes: bytesMulti } = buildTiff([{ tags: imageTags({ w: 4096, h: 6000, bits: 1, spp: 1, photometric: 1, compression: 1, rps: 1024 }), data: multiStrips }]);
+        const planMulti = await T.tiffPlan(new Blob([bytesMulti]), { rowsPerBand: 8192 });
+
+        // Verify readTiff decodes both the exact-64MiB band file and the over-64MiB streamed file accurately
+        let exactBands = 0, exactFirstPx = -1, exactLastPx = -1;
+        await T.readTiff(new Blob([bytesExact64M]), {
+            rowsPerBand: 4096,
+            kernels: activeKernels,
+            onRows(rgba, y0, rows) {
+                exactBands++;
+                if (y0 === 0) exactFirstPx = rgba[0];
+                if (y0 + rows === 4096) exactLastPx = rgba[(rows * w - 1) * 4];
+            },
+        });
+        let overBands = 0, overFirstPx = -1, overLastPx = -1, overTotalRows = 0;
+        await T.readTiff(new Blob([bytesOver64M]), {
+            rowsPerBand: 1024,
+            kernels: activeKernels,
+            onRows(rgba, y0, rows) {
+                overBands++;
+                overTotalRows += rows;
+                if (y0 === 0) overFirstPx = rgba[0];
+                if (y0 + rows === 4097) overLastPx = rgba[(rows * w - 1) * 4];
+            },
+        });
+
+        const rgbaRuleOk = T.TIFF_BAND_BYTES === 64 * 1048576
+            && bytesExact64M.byteLength < 3 * 1048576 && bytesOver64M.byteLength < 3 * 1048576
+            && planExact.streamed === false && planExact.bandRows === 4096 && planExact.bands.length === 1 && planExact.bands[0].rows === 4096
+            && planOver.streamed === true && planOver.bandRows === 0 && planOver.bands.length === 0
+            && planForced.streamed === true && planForced.bandRows === 0 && planForced.bands.length === 0
+            && planTiledOver.streamed === true && planTiledOver.bandRows === 0 && planTiledOver.bands.length === 0
+            && planMulti.streamed === false && planMulti.bandRows === 4096 && planMulti.bands.length === 2
+            && planMulti.bands[0].rows === 4096 && planMulti.bands[1].rows === 1904
+            && exactBands === 1 && exactFirstPx === 255 && exactLastPx === 255
+            && overBands === 5 && overTotalRows === 4097 && overFirstPx === 255 && overLastPx === 255;
+        check(`tiffPlan and readTiff enforce the 64 MiB RGBA-size rule (TIFF_BAND_BYTES) on 1-bit strips and tiles${kernelSuffix}`,
+            rgbaRuleOk,
+            `exact=${JSON.stringify({ s: planExact.streamed, r: planExact.bandRows, b: exactBands })} over=${JSON.stringify({ s: planOver.streamed, r: planOver.bandRows, b: overBands, rows: overTotalRows })} multi=${JSON.stringify({ s: planMulti.streamed, r: planMulti.bandRows, n: planMulti.bands.length })}`);
+
+        // 2) One blob.slice().arrayBuffer() per contiguous band (even with 1-byte word-alignment padding between strips/tiles),
+        //    and one slice per contiguous run when segments are separated by > 65536 bytes.
+        const countingBlob = (u8) => {
+            const slices = [];
+            let streams = 0;
+            return {
+                slices,
+                get streams() { return streams; },
+                size: u8.byteLength,
+                slice(start = 0, end = u8.byteLength) {
+                    const sub = u8.subarray(start, end);
+                    return {
+                        async arrayBuffer() {
+                            slices.push([start, end]);
+                            return sub.slice().buffer;
+                        },
+                        stream() {
+                            streams++;
+                            return new Blob([sub]).stream();
+                        },
+                    };
+                },
+            };
+        };
+        // 5 strips of odd length (w=5, rps=1, spp=3 -> 15 bytes/strip -> 1-byte pad between every strip in buildTiff)
+        const wOdd = 5, hOdd = 5, sppOdd = 3;
+        const sOdd = new Uint8Array(wOdd * hOdd * sppOdd);
+        for (let i = 0; i < sOdd.length; i++) sOdd[i] = (i * 23 + 11) & 255;
+        const wantOdd = expectRgba(wOdd * hOdd, (i) => [sOdd[i * 3], sOdd[i * 3 + 1], sOdd[i * 3 + 2], 255]);
+        const oddStrips = strips(sOdd, wOdd, hOdd, sppOdd, 8, true, 1);
+        const { bytes: bytesOdd } = buildTiff([{ tags: imageTags({ w: wOdd, h: hOdd, bits: 8, spp: sppOdd, photometric: 2, compression: 1, rps: 1 }), data: oddStrips }]);
+        const planOdd = await T.tiffPlan(new Blob([bytesOdd]), { rowsPerBand: 2 });
+        const cbOdd = countingBlob(bytesOdd);
+        const gotOdd = new Uint8Array(wOdd * hOdd * 4);
+        for (const b of planOdd.bands) {
+            const part = await T.readTiffBand(cbOdd, planOdd, b.index, { kernels: activeKernels });
+            gotOdd.set(part, b.y0 * wOdd * 4);
+        }
+
+        // Non-contiguous band: insert a 70,000-byte gap between strip 0 and strip 1 in the same 2-row band
+        const gap = 70000;
+        const bytesGap = new Uint8Array(bytesOdd.length + gap);
+        bytesGap.set(bytesOdd, 0);
+        const movedOff1 = planOdd.bands[0].offsets[1] + gap;
+        bytesGap.set(oddStrips[1], movedOff1 - gap < bytesOdd.length ? movedOff1 : 0);
+        // Copy strip 1 payload to movedOff1
+        bytesGap.set(oddStrips[1], movedOff1);
+        const gapBand = {
+            ...planOdd.bands[0],
+            offsets: [planOdd.bands[0].offsets[0], movedOff1],
+            counts: [...planOdd.bands[0].counts],
+        };
+        const cbGap = countingBlob(bytesGap);
+        const gotGapBand0 = await T.readTiffBand(cbGap, { plan: planOdd, band: gapBand, kernels: activeKernels });
+
+        // Also test Deflate (compression 8 and 32946) with extra bytes after `need` in readTiffBand (early DecompressionStream cancel)
+        // and refusal on truncated Deflate stream / out-of-bounds offset / empty segment
+        const extraDeflateRaw = new Uint8Array(wOdd * 2 * sppOdd + 4096);
+        extraDeflateRaw.set(sOdd.subarray(0, wOdd * 2 * sppOdd), 0);
+        extraDeflateRaw.fill(0x7E, wOdd * 2 * sppOdd);
+        const defWithExtra = new Uint8Array(zlib.deflateSync(Buffer.from(extraDeflateRaw)));
+        const { bytes: bytesDefExtra } = buildTiff([{ tags: imageTags({ w: wOdd, h: 2, bits: 8, spp: sppOdd, photometric: 2, compression: 32946, rps: 2 }), data: [defWithExtra] }]);
+        const planDefExtra = await T.tiffPlan(new Blob([bytesDefExtra]));
+        const gotDefExtra = await T.readTiffBand(new Blob([bytesDefExtra]), planDefExtra, 0, { kernels: activeKernels });
+
+        const shortDeflate = new Uint8Array(zlib.deflateSync(Buffer.from(sOdd.subarray(0, 5))));
+        const { bytes: bytesDefShort } = buildTiff([{ tags: imageTags({ w: wOdd, h: 2, bits: 8, spp: sppOdd, photometric: 2, compression: 8, rps: 2 }), data: [shortDeflate] }]);
+        const planDefShort = await T.tiffPlan(new Blob([bytesDefShort]));
+        let errDefShort = null, errOob = null, errEmpty = null, errNoSpec = null;
+        try { await T.readTiffBand(new Blob([bytesDefShort]), planDefShort, 0, { kernels: activeKernels }); } catch (e) { errDefShort = e; }
+        try {
+            await T.readTiffBand(new Blob([bytesOdd]), planOdd, { ...planOdd.bands[0], offsets: [bytesOdd.length + 10, planOdd.bands[0].offsets[1]] });
+        } catch (e) { errOob = e; }
+        try {
+            await T.readTiffBand(new Blob([bytesOdd]), planOdd, { ...planOdd.bands[0], counts: [0, planOdd.bands[0].counts[1]] });
+        } catch (e) { errEmpty = e; }
+        try { await T.readTiffBand(new Blob([bytesOdd]), null); } catch (e) { errNoSpec = e; }
+
+        const sliceAndBandOk = planOdd.bands.length === 3
+            && cbOdd.slices.length === 3 && cbOdd.streams === 0
+            && cbOdd.slices[0][0] === planOdd.bands[0].offsets[0]
+            && cbOdd.slices[0][1] === planOdd.bands[0].offsets[1] + planOdd.bands[0].counts[1]
+            && !pixelDiff(gotOdd, wantOdd, wOdd)
+            && cbGap.slices.length === 2
+            && !pixelDiff(gotGapBand0, wantOdd.subarray(0, wOdd * 2 * 4), wOdd)
+            && !pixelDiff(gotDefExtra, wantOdd.subarray(0, wOdd * 2 * 4), wOdd)
+            && !!errDefShort && /fewer bytes than its rows/i.test(errText(errDefShort))
+            && !!errOob && /lies past the end of the file/i.test(errText(errOob))
+            && !!errEmpty && /fewer bytes than its rows|truncated/i.test(errText(errEmpty))
+            && !!errNoSpec && /invalid plan or band/i.test(errText(errNoSpec));
+        check(`readTiffBand reads each contiguous band in a single blob.slice().arrayBuffer(), handles >64KB segment gaps, cancels deflate at need, and refuses damaged bands${kernelSuffix}`,
+            sliceAndBandOk,
+            `oddSlices=${JSON.stringify(cbOdd.slices)} gapSlices=${JSON.stringify(cbGap.slices)} errShort=${errText(errDefShort)} errOob=${errText(errOob)} errEmpty=${errText(errEmpty)}`);
     }
 }
 
@@ -1362,7 +1657,8 @@ async function writerCases(T, K = null) {
         console.log("FAIL");
         process.exit(1);
     }
-    const missing = ["isTiff", "tiffInfo", "readTiff", "unpackStrip", "unpredict", "predictRgba", "toRgba", "paletteLut", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
+    const missing = ["isTiff", "tiffInfo", "tiffPlan", "readTiffBand", "readTiff", "unpackStrip", "unpredict", "predictRgba", "toRgba", "paletteLut", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
+    if (T.TIFF_BAND_BYTES !== 64 * 1048576) missing.push("TIFF_BAND_BYTES");
     const tiffJsOk = T.TIFF_JS && Object.isFrozen(T.TIFF_JS)
         && T.TIFF_JS.unpackStrip === T.unpackStrip
         && T.TIFF_JS.unpredict === T.unpredict
@@ -1370,7 +1666,7 @@ async function writerCases(T, K = null) {
         && T.TIFF_JS.toRgba === T.toRgba
         && T.TIFF_JS.paletteLut === T.paletteLut;
     if (!tiffJsOk) missing.push("TIFF_JS");
-    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, readTiff, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, TIFF_JS, tiffStripRows, tiffPart, TiffStreamWriter")) {
+    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, tiffPlan, readTiffBand, TIFF_BAND_BYTES, readTiff, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, TIFF_JS, tiffStripRows, tiffPart, TiffStreamWriter")) {
         console.log("FAIL");
         process.exit(1);
     }
@@ -1394,7 +1690,7 @@ async function writerCases(T, K = null) {
     }
     const jsCalls = K.pxCalls(true);
     check("pass 1 (kernels: null) ran 0 Rust TIFF kernel calls",
-        !jsCalls.tiff_unpredict && !jsCalls.tiff_to_rgba && !jsCalls.tiff_predict_rgba,
+        !jsCalls.tiff_unpack && !jsCalls.tiff_unpredict && !jsCalls.tiff_to_rgba && !jsCalls.tiff_predict_rgba,
         JSON.stringify(jsCalls));
 
     // Pass 2: kernels: K.tiffKernels() (Rust wasm)
@@ -1405,8 +1701,8 @@ async function writerCases(T, K = null) {
         try { await fn(T); } catch (err) { check(what, false, "stopped: " + (err && err.stack ? err.stack.split("\n").slice(0, 3).join(" / ") : errText(err))); }
     }
     const rustCalls = K.pxCalls(true);
-    check("pass 2 (kernels: tiffKernels()) ran Rust tiff_unpredict, tiff_to_rgba, tiff_predict_rgba, adler32 and deflate_part",
-        rustCalls.tiff_unpredict > 0 && rustCalls.tiff_to_rgba > 0 && rustCalls.tiff_predict_rgba > 0 && rustCalls.adler32 > 0 && rustCalls.deflate_part > 0,
+    check("pass 2 (kernels: tiffKernels()) ran Rust tiff_unpack, tiff_unpredict, tiff_to_rgba, tiff_predict_rgba, adler32 and deflate_part",
+        rustCalls.tiff_unpack > 0 && rustCalls.tiff_unpredict > 0 && rustCalls.tiff_to_rgba > 0 && rustCalls.tiff_predict_rgba > 0 && rustCalls.adler32 > 0 && rustCalls.deflate_part > 0,
         JSON.stringify(rustCalls));
 
     const ok = results.length > 0 && results.every(Boolean);

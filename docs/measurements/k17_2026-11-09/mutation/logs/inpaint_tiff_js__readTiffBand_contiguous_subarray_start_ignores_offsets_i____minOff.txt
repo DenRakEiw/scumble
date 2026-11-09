@@ -1,0 +1,13 @@
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=tiff)
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Error: the file ends early (it is truncated, or not a TIFF): tile 2 holds fewer bytes than its rows
+    at tiffError (file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_k17_mut/renderer/editor/inpaint_tiff.js:35:46)
+    at truncated (file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_k17_mut/renderer/editor/inpaint_tiff.js:36:34)
+    at Object.unpackStrip (file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_k17_mut/renderer/editor/inpaint_tiff.js:403:38)
+    at Module.readTiffBand (file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_k17_mut/renderer/editor/inpaint_tiff.js:1037:31)
+    at async tiffCases (C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\tools\px_test.js:11440:34)
+    at async group (C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\tools\px_test.js:65:5)
+    at async main (C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\tools\px_test.js:11988:5) {
+  code: -2
+}

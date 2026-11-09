@@ -1,0 +1,292 @@
+K17 measurement summary (2026-11-09)
+====================================
+
+Behaviour change (`rules.md` report checklist (a)):
+- No user-visible output bytes or error refusals change: opening a multi-strip or tiled TIFF whose strip or tile height fits within 64 MiB of RGBA (`rows * width * 4 <= 67,108,864`) now reads each band in one contiguous `blob.slice(...).arrayBuffer()` and decodes uncompressed, LZW, and PackBits strips or tiles through `unpackStrip` (`tiff_unpack` in Rust wasm by default), roughly halving 15,000 x 10,000 LZW (`11.8 s -> 5.7 s`) and PackBits (`6.0 s -> 3.6 s`) open times while producing identical RGBA8 pixels and identical refusals on damaged or truncated files.
+
+Scope (`docs/PLAN_WASM_BUILD.md` §4.6 K17, §5 row 34; `brief.md` item 3 & lines 42-44):
+- No `.rs` changes (`PX_ABI = 43` unchanged from `0740aeab`; `tiff_unpack`, `tiff_unpredict`, and `tiff_to_rgba` were built in K16 and K15):
+  - `renderer/editor/px/px.wasm`:
+    - before (`git cat-file -s 0740aeab:renderer/editor/px/px.wasm` / `git cat-file blob 0740aeab:renderer/editor/px/px.wasm`): `289,598 bytes`, sha256 `35174f9eb470bffd6ea98e4c09f9c74175748e1c20e90b7c893cb922e81f9e5a`
+    - after: `289,598 bytes`, sha256 `35174f9eb470bffd6ea98e4c09f9c74175748e1c20e90b7c893cb922e81f9e5a`
+  - `renderer/editor/px/px_scalar.wasm`:
+    - before (`git cat-file -s 0740aeab:renderer/editor/px/px_scalar.wasm` / `git cat-file blob 0740aeab:renderer/editor/px/px_scalar.wasm`): `231,830 bytes`, sha256 `c6e7dc74f7b2b9cbfa567c76f7bc1764cf70dd9ad5f70bcddb5ea17ed153c414`
+    - after: `231,830 bytes`, sha256 `c6e7dc74f7b2b9cbfa567c76f7bc1764cf70dd9ad5f70bcddb5ea17ed153c414`
+- `renderer/editor/inpaint_tiff.js` (kept free of imports):
+  - Exported `TIFF_BAND_BYTES = 64 * 1048576` (`:758`) and `tiffPlan(blob, opts = {})` (`:766-835`): parses the header and directories once (`parse(blob)`), decides `streamed` and the band height from the band's RGBA bytes (`maxRows = Math.floor(TIFF_BAND_BYTES / (W * 4))`, `streamed = !!forceStreamed || unitRows > maxRows`, `:778-779`) rather than raw strip size, precomputes `pal` (`paletteLut`) when `photometric === 3` (`:780`), and slices `offsets` and `counts` per band (`plan.bands[i]`, `:805-829`) alongside the shared `plan.spec` (`:781-795`).
+  - Added `inflateInto(rawSlice, dst, need, name, tiled, sp)` (`:839-886`, `INFLATE_FEED_SLICE = 1048576` at `:837`): keeps one native `DecompressionStream("deflate")` per strip or tile (`compression = 8` or `32946`), writes `rawSlice` directly in-process via `ds.writable.getWriter()` (avoiding worker-to-browser `new Blob([rawSlice])` Mojo IPC), cancels `reader` as soon as `got >= need` (`:867-871`), wraps corrupt-stream errors with `${name} of the TIFF is damaged or cut off (...)` (`:879`, `:883`), and refuses short streams (`got < need`) with `truncated(...)` (`:885`).
+  - Exported `readTiffBand(blob, planOrBand, bandOrOpts = null, maybeOpts = null)` (`:895-1106`): validates all segment bounds against `blob.size` (`:968-974`), reads the band's segments in a single `blob.slice(minOff, maxEnd).arrayBuffer()` whenever `maxEnd - minOff <= sumCounts + 65536` (`:979-990`, or one `blob.slice(runStart, runEnd).arrayBuffer()` per contiguous run within `65536` B for non-contiguous planes/segments, `:991-1012`), decodes codecs `1` / `5` / `32773` via `K.unpackStrip` (`:1037`, `:1073`) and codecs `8` / `32946` via `inflateInto` (`:1034`, `:1070`), runs `K.unpredict(tileBuf, tl, tileRow, tw, perPixel, info.bits, P.le)` per tile before scattering into `planeBuf` on tiled files (`:1040-1051`, never one unpredict across assembled rows) and `K.unpredict(planeBuf, rows, rowBytes, info.width, perPixel, info.bits, P.le)` on striped files (`:1077-1081`), detaches temporary `rawBuffers` via `ab.transfer(0)` in `finally` (`:1085-1089`), and converts to RGBA8 via `K.toRgba` (`:1093-1103`).
+  - Updated `readTiff` (`:1120-1172`): calls `tiffPlan(blob, { rowsPerBand, spent: sp, streamed })` (`:1123`), runs the sequential `readTiffBand` loop when `!plan.streamed` (`:1127-1148`, slicing sub-strip `rowsPerBand` callbacks when `b.rows > band` at `:1136-1145`), and falls back to `StripRows` / `TileRows` when `plan.streamed` (`:1149-1171`).
+- `renderer/editor/px/kernels_js.js`:
+  - Re-exported `tiffPlan`, `readTiffBand`, and `TIFF_BAND_BYTES` from `../inpaint_tiff.js` (`:18-20`).
+- `renderer/editor/px/kernels.js`:
+  - Added `tiffUnpack: "kernel"` to `ROUTE_KINDS` (`:66`), documented the K17 route A/B verdict above `DEFAULT_ROUTES` (`:90-95`, no `tiffUnpack` override), and wired `export function tiffUnpack` (`:1124-1132`) through `rustPx("tiffUnpack")` with `recovered(p, err, "tiff_unpack")` fallback to `J.tiffUnpack` and `releaseIfLarge()` in `finally` (already included in `TIFF_RUST` / `tiffKernels()` at `:1199-1214`).
+- `tools/px_test.js`, `tools/tiff_test.js`, `tools/tiff_test.py`:
+  - `tools/px_test.js`: added `tiffUnpack` route switching & trap recovery (`:10439-10472`), 1-byte LZW piece & `need` stops across `StripRows`, `TileRows`, and `readTiffBand` (`:10533-10576`), `tiffKernels()` `tiff_unpack` coverage (`:11198-11270`, `:11321`), and `4e` (`:11325-11576`: 8/16-bit tiled Predictor-2 per-tile unpredict, 1 `blob.slice().arrayBuffer()` per contiguous band, `4096x4096` vs `4096x4097` 1-bit 64 MiB RGBA-size boundary, `forceStreamed`, multi-strip `wantRows` cap, planar contiguous & out-of-order contiguous 1-slice coalescing, `>64KB` gap 2-slice splitting, `readPlanarStreams === 0`, sub-strip `rowsPerBand < rps` slicing, and truncated & damaged deflate refusals).
+  - `tools/tiff_test.js`: re-verified streaming split-piece sweeps with `{ streamed: true }` (`:882`, `:955`) as well as default band decoding, added 7 tiled Predictor-2 configurations (`8/16`-bit, `LE/BE`, chunky/planar, codecs `1/5/8/32773/32946`, `37x29` with `16x16` tiles, `:1089-1198`) plus direct proof that whole-row unpredict corrupts tile column boundary `(16, 0)` (`:1200-1212`), tested the `4096x4096` vs `4096x4097` 1-bit RGBA-size rule on strips and tiles (`:1215-1285`), tested contiguous / `>64KB`-gap `blob.slice().arrayBuffer()` counting, deflate early cancel at `need`, and short/OOB/empty refusals (`:1286-1379`), and asserted `pxCalls.tiff_unpack > 0` in pass 2 (`:1703-1706`; `202 of 202` checks).
+  - `tools/tiff_test.py`: asserted `pxCalls.tiff_unpack > 0` on codecs `1`, `5`, `32773` in `OPEN_ONE` (`:158-162`) and `opens_every_accepted_fixture` (`:839-842`), and replayed `rgb8_lzw_pred` under `"js"` routes (`tiffUnpack`, `tiffUnpredict`, `tiffToRgba`) asserting `0` Rust calls and byte-identical pixels (`:163-188`).
+
+1. Node & Electron-as-Node kernel micro-benchmarks (`docs/measurements/k17_2026-11-09/node/`)
+---------------------------------------------------------------------------------------------
+Commands:
+  PX_ONLY=tiff PX_BENCH=1 node tools/px_test.js > docs/measurements/k17_2026-11-09/node/node_px_test.log 2>&1
+  ELECTRON_RUN_AS_NODE=1 PX_ONLY=tiff PX_BENCH=1 ./node_modules/electron/dist/electron.exe tools/px_test.js > docs/measurements/k17_2026-11-09/node/electron_px_test.log 2>&1
+
+Medians of 15 warm iterations (`15000 x 16` band = `960 KB` RGBA8 / `720 KB` RGB8; `1 MB` strip for `tiff_unpack`):
+kernel                                        Node twin   Node simd   Node scalar   Electron twin   Electron simd   Electron scalar
+tiff_unpack (LZW 1 MB strip)                  5.14 ms     1.79 ms     1.65 ms       5.16 ms         1.63 ms         1.54 ms
+tiff_unpack (PackBits 1 MB strip)             1.01 ms     0.16 ms     0.15 ms       0.90 ms         0.11 ms         0.11 ms
+tiff_unpredict RGBA8 15000x16                 0.73 ms     0.12 ms     0.42 ms       1.56 ms         0.12 ms         0.48 ms
+tiff_unpredict RGB8 15000x16                  0.53 ms     0.24 ms     0.41 ms       1.00 ms         0.22 ms         0.41 ms
+tiff_predict_rgba 15000x16                    0.58 ms     0.05 ms     0.38 ms       0.59 ms         0.05 ms         0.36 ms
+tiff_to_rgba RGB8->RGBA8 15000x16             1.35 ms     0.23 ms     0.22 ms       1.11 ms         0.23 ms         0.22 ms
+tiff_to_rgba RGBA8 premul->straight 15000x16  2.74 ms     1.47 ms     1.49 ms       2.87 ms         1.34 ms         1.35 ms
+
+2. 15,000 x 10,000 before (`0740aeab`) vs after (`K17`), 3 alternating rounds on port 9633 (`w1_lock.py` held per batch)
+------------------------------------------------------------------------------------------------------------------------
+Commands:
+  SCUMBLE_CDP_PORT=9633 bash docs/measurements/k17_2026-11-09/k17_chain.sh
+  python docs/measurements/k17_2026-11-09/summarize.py > docs/measurements/k17_2026-11-09/summary_rows.txt
+
+All 54 Electron app runs (36 `tiff_test.py --size 15000x10000 --variant <v>` before/after runs across all 6 variants,
+12 `tiff_test.py --size 15000x10000 --variant <v>` isolated `tiffUnpack` route A/B runs across `lzw` and `packbits`,
+and 6 `w0_bench.py --rows=tiff_rows_256` before/after runs, each on a fresh offline `--tiles on` Electron instance)
+completed on `try 1` with `rc=0`, `"focused": true` / `"focus": true` (`notcounted/` empty), and `w1_lock.py` held for
+every single batch (`chain.log`). GPU load stayed idle throughout (`0-7%` utilization, `3,898-5,345 MiB` VRAM).
+
+a) `tiff_test.py --size 15000x10000` (6 variants, 1 variant/instance, 3 alternating rounds, median [min-max] ms):
+row                                 before (0740aeab)               after (K17)                     before / after (medians) & notes
+own exportMs                        1,718.0 [1,557.0-1,737.0]       1,604.0 [1,521.0-1,907.0]       1.07x (tie; spreads overlap; export untouched)
+own fileMB                          178.0 [178.0-178.0]             178.0 [178.0-178.0]             1.00x
+own exportSteps encoded             1,102.0 [982.0-1,158.0]         1,002.0 [907.0-1,338.0]         1.10x (tie; spreads overlap)
+own exportSteps saved               578.0 [574.0-616.0]             601.0 [568.0-613.0]             0.96x (tie; spreads overlap)
+own exportSteps total               1,717.0 [1,557.0-1,737.0]       1,603.0 [1,521.0-1,906.0]       1.07x (tie; spreads overlap)
+own export tiff_part jobs           79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own export tiff_part composeWasm    79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own export tiff_part kernel         8,290.9 [7,276.0-8,830.3]       7,547.2 [6,438.7-10,366.8]      1.10x (tie; spreads overlap; untouched)
+own export tiff_part rows           197.3 [188.9-204.2]             187.9 [183.9-271.5]             1.05x
+own export tiff_part predict        94.4 [64.9-95.7]                71.3 [48.4-85.4]                1.32x
+own export tiff_part deflate        7,974.9 [6,979.0-8,494.4]       7,259.4 [6,045.3-10,098.0]      1.10x
+own openMs                          3,148.0 [3,127.0-3,220.0]       3,003.0 [2,987.0-3,090.0]       1.05x (non-overlapping; faster in 3/3 pairs)
+own openSteps info                  3.0 [2.0-5.0]                   3.0 [2.0-6.0]                   1.00x
+own openSteps pixels                1,348.0 [1,335.0-1,386.0]       1,317.0 [1,301.0-1,326.0]       1.02x (non-overlapping; faster in 3/3 pairs)
+own openSteps stored                1,200.0 [1,126.0-1,209.0]       1,098.0 [1,090.0-1,194.0]       1.09x (spreads overlap)
+own openSteps base                  24.0 [23.0-27.0]                22.0 [22.0-26.0]                1.09x
+own openSteps total                 2,573.0 [2,539.0-2,576.0]       2,433.0 [2,427.0-2,547.0]       1.06x
+own tiff_read parse                 2.2 [2.1-3.0]                   2.1 [1.8-2.7]                   1.05x
+own tiff_read wait                  868.3 [856.7-886.0]             935.8 [931.2-941.8]             0.93x (+67.5 ms: includes 40 blob.slice().arrayBuffer() reads; StripRows pipe overhead drops ~97 ms so kernel is -30 ms)
+own tiff_read decode                0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+own tiff_read copy                  94.3 [93.0-98.3]                92.9 [87.2-93.2]                1.02x
+own tiff_read unpredict             112.9 [112.0-115.8]             111.6 [110.4-112.6]             1.01x
+own tiff_read convert               128.1 [127.1-128.9]             129.2 [123.5-129.9]             0.99x
+own tiff_read deliver               3.0 [2.5-3.1]                   3.5 [2.4-4.3]                   0.86x
+own tiff_read kernel                1,343.9 [1,331.5-1,380.8]       1,313.9 [1,297.0-1,321.8]       1.02x (non-overlapping; faster in 3/3 pairs)
+own tiff_read bands                 40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+own tiff_read pieces                9,324.0 [9,321.0-9,326.0]       9,301.0 [9,301.0-9,301.0]       1.00x (40 band slices + 9,261 deflate chunks)
+own open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own open png_part kernel            5,798.1 [5,431.9-5,885.1]       5,354.2 [5,222.9-5,752.2]       1.08x
+own open png_part rows              194.5 [186.4-206.8]             169.7 [165.9-175.2]             1.15x
+own open png_part filter            685.5 [640.6-763.8]             687.3 [673.2-804.8]             1.00x
+own open png_part adler             150.4 [142.8-151.4]             138.5 [133.3-152.4]             1.09x
+own open png_part deflate           4,659.0 [4,318.3-4,706.8]       4,145.5 [4,141.6-4,646.9]       1.12x
+lzw openMs                          11,826.0 [11,576.0-12,701.0]    5,696.0 [5,422.0-6,048.0]       2.08x (non-overlapping; faster in 3/3 pairs; -6,130 ms)
+lzw openSteps info                  3.0 [3.0-3.0]                   3.0 [2.0-11.0]                  1.00x
+lzw openSteps pixels                9,041.0 [9,032.0-9,895.0]       3,077.0 [2,924.0-3,235.0]       2.94x (non-overlapping; faster in 3/3 pairs)
+lzw openSteps stored                1,151.0 [1,105.0-1,286.0]       1,173.0 [1,064.0-1,280.0]       0.98x (tie; spreads overlap)
+lzw openSteps base                  468.0 [445.0-482.0]             442.0 [425.0-482.0]             1.06x
+lzw openSteps total                 10,812.0 [10,585.0-11,517.0]    4,695.0 [4,416.0-5,008.0]       2.30x (non-overlapping)
+lzw tiff_read parse                 2.2 [2.1-2.5]                   2.5 [2.5-2.8]                   0.88x
+lzw tiff_read wait                  1,379.3 [1,375.2-1,700.8]       212.7 [196.4-246.6]             6.48x (non-overlapping; 10,000 stream readers -> 40 band slices)
+lzw tiff_read decode                6,303.3 [6,290.1-6,545.7]       2,506.5 [2,400.0-2,614.5]       2.51x (non-overlapping; streaming JS LZW -> Rust tiff_unpack)
+lzw tiff_read copy                  67.8 [67.1-71.5]                0.0 [0.0-0.0]                   (eliminated: unpackStrip writes directly into planeBuf)
+lzw tiff_read unpredict             0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+lzw tiff_read convert               219.8 [216.7-223.8]             229.0 [225.7-250.1]             0.96x
+lzw tiff_read deliver               3.2 [3.1-3.3]                   32.7 [32.4-38.2]                0.10x (+29.5 ms: 40 x 15 MB postMessage transfers arrive 3x closer together)
+lzw tiff_read kernel                9,012.6 [9,003.1-9,861.9]       3,011.6 [2,888.6-3,185.5]       2.99x (non-overlapping; faster in 3/3 pairs)
+lzw tiff_read bands                 40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+lzw tiff_read pieces                10,000.0 [10,000.0-10,000.0]    40.0 [40.0-40.0]                250.00x
+lzw open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part kernel            4,842.6 [4,724.3-4,854.3]       5,027.2 [4,591.9-5,097.8]       0.96x (tie; spreads overlap)
+lzw open png_part rows              160.9 [155.1-165.5]             179.1 [162.0-179.8]             0.90x
+lzw open png_part filter            234.8 [231.0-236.6]             248.2 [224.6-253.5]             0.95x
+lzw open png_part adler             143.0 [142.9-145.6]             148.4 [137.2-150.6]             0.96x
+lzw open png_part deflate           4,215.0 [4,101.1-4,216.7]       4,357.7 [3,981.0-4,417.9]       0.97x (tie; spreads overlap)
+packbits openMs                     5,967.0 [5,901.0-6,891.0]       3,622.0 [3,411.0-3,776.0]       1.65x (non-overlapping; faster in 3/3 pairs; -2,345 ms)
+packbits openSteps info             15.0 [3.0-15.0]                 2.0 [2.0-15.0]                  7.50x
+packbits openSteps pixels           3,253.0 [3,104.0-3,735.0]       691.0 [662.0-692.0]             4.71x (non-overlapping; faster in 3/3 pairs)
+packbits openSteps stored           1,119.0 [1,039.0-1,153.0]       1,133.0 [1,078.0-1,283.0]       0.99x (tie; spreads overlap)
+packbits openSteps base             449.0 [440.0-449.0]             456.0 [450.0-458.0]             0.98x
+packbits openSteps total            4,747.0 [4,687.0-5,340.0]       2,285.0 [2,204.0-2,433.0]       2.08x (non-overlapping)
+packbits tiff_read parse            2.3 [2.3-2.4]                   2.4 [2.2-2.8]                   0.96x
+packbits tiff_read wait             1,604.6 [1,556.5-1,831.3]       243.8 [217.9-250.0]             6.58x (non-overlapping; 10,000 stream readers -> 40 band slices)
+packbits tiff_read decode           191.9 [164.4-249.7]             115.8 [110.5-119.0]             1.66x (non-overlapping; streaming JS PackBits -> Rust tiff_unpack)
+packbits tiff_read copy             71.6 [68.2-74.9]                0.0 [0.0-0.0]                   (eliminated: unpackStrip writes directly into planeBuf)
+packbits tiff_read unpredict        0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+packbits tiff_read convert          226.1 [220.5-226.2]             238.6 [235.1-245.6]             0.95x
+packbits tiff_read deliver          3.8 [3.3-4.0]                   3.4 [3.1-4.6]                   1.12x
+packbits tiff_read kernel           3,220.5 [3,073.3-3,693.6]       655.3 [624.2-658.2]             4.91x (non-overlapping; faster in 3/3 pairs)
+packbits tiff_read bands            40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+packbits tiff_read pieces           10,000.0 [10,000.0-10,000.0]    40.0 [40.0-40.0]                250.00x
+packbits open png_part jobs         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part composeWasm  79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part kernel       4,629.1 [4,627.0-5,228.5]       4,811.8 [4,772.1-5,394.9]       0.96x (tie; spreads overlap)
+packbits open png_part rows         198.2 [190.2-202.1]             207.9 [160.9-219.5]             0.76x
+packbits open png_part filter       228.0 [224.6-246.6]             249.0 [232.3-252.9]             0.92x
+packbits open png_part adler        136.1 [136.0-148.8]             145.7 [140.9-159.1]             0.93x
+packbits open png_part deflate      4,023.5 [4,020.3-4,553.9]       4,116.4 [4,083.7-4,722.4]       0.98x (tie; spreads overlap)
+zlib1 openMs                        4,157.0 [4,049.0-4,244.0]       3,991.0 [3,943.0-4,186.0]       1.04x (tie; spreads overlap; 1-strip 600 MB RGBA -> plan.streamed=true)
+zlib1 openSteps info                2.0 [1.0-3.0]                   1.0 [1.0-2.0]                   2.00x
+zlib1 openSteps pixels              1,568.0 [1,566.0-1,623.0]       1,593.0 [1,591.0-1,598.0]       0.98x (tie; spreads overlap; same StripRows path)
+zlib1 openSteps stored              1,263.0 [1,233.0-1,284.0]       1,135.0 [1,132.0-1,288.0]       1.11x
+zlib1 openSteps base                481.0 [469.0-496.0]             459.0 [443.0-487.0]             1.05x
+zlib1 openSteps total               3,300.0 [3,284.0-3,405.0]       3,190.0 [3,172.0-3,367.0]       1.03x
+zlib1 tiff_read parse               1.3 [1.3-1.4]                   1.3 [1.3-1.6]                   1.00x
+zlib1 tiff_read wait                1,135.1 [1,109.8-1,164.6]       1,131.8 [1,126.0-1,140.2]       1.00x
+zlib1 tiff_read decode              0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+zlib1 tiff_read copy                75.6 [72.4-75.8]                73.6 [73.3-75.6]                1.03x
+zlib1 tiff_read unpredict           0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+zlib1 tiff_read convert             248.0 [227.8-250.4]             247.5 [242.2-249.5]             1.00x
+zlib1 tiff_read deliver             15.5 [9.3-23.0]                 20.5 [13.2-20.9]                0.76x
+zlib1 tiff_read kernel              1,534.9 [1,523.7-1,581.7]       1,552.4 [1,551.4-1,562.9]       0.99x (tie; spreads overlap)
+zlib1 tiff_read bands               40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+zlib1 tiff_read pieces              6,932.0 [6,932.0-6,933.0]       6,932.0 [6,932.0-6,933.0]       1.00x
+zlib1 open png_part jobs            79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+zlib1 open png_part composeWasm     79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+zlib1 open png_part kernel          5,699.8 [5,685.1-6,035.1]       5,045.6 [4,760.4-5,133.6]       1.13x
+zlib1 open png_part rows            199.0 [187.2-221.9]             184.3 [166.7-184.6]             1.08x
+zlib1 open png_part filter          270.2 [267.9-275.3]             244.1 [234.8-247.3]             1.11x
+zlib1 open png_part adler           170.3 [165.5-178.7]             149.3 [143.1-150.9]             1.14x
+zlib1 open png_part deflate         4,943.2 [4,941.2-5,283.6]       4,369.6 [4,125.6-4,459.4]       1.13x
+raw openMs                          3,289.0 [3,257.0-3,323.0]       3,460.0 [3,416.0-3,533.0]       0.95x (after slower in 3/3 pairs by +171 ms median; see root-cause note below)
+raw openSteps info                  2.0 [1.0-2.0]                   1.0 [1.0-13.0]                  2.00x
+raw openSteps pixels                515.0 [488.0-524.0]             529.0 [529.0-544.0]             0.97x (+14 ms; plan.streamed=true runs identical StripRows loop)
+raw openSteps stored                1,109.0 [1,079.0-1,119.0]       1,232.0 [1,153.0-1,293.0]       0.90x (+123 ms in untouched png_part tile-store deflate)
+raw openSteps base                  440.0 [438.0-459.0]             464.0 [441.0-466.0]             0.95x (+24 ms)
+raw openSteps total                 2,074.0 [2,008.0-2,095.0]       2,203.0 [2,148.0-2,316.0]       0.94x
+raw tiff_read parse                 1.5 [1.2-1.7]                   1.4 [1.3-1.7]                   1.07x
+raw tiff_read wait                  98.1 [93.2-108.1]               104.2 [101.6-121.5]             0.94x (tie; spreads overlap)
+raw tiff_read decode                0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+raw tiff_read copy                  61.4 [60.9-65.9]                64.9 [63.2-68.9]                0.95x (tie; spreads overlap)
+raw tiff_read unpredict             0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+raw tiff_read convert               243.5 [234.4-255.5]             249.9 [242.3-263.5]             0.97x (tie; spreads overlap)
+raw tiff_read deliver               18.4 [14.8-18.9]                17.5 [16.8-19.9]                1.05x
+raw tiff_read kernel                482.6 [455.4-484.0]             494.4 [480.8-506.7]             0.98x (tie; spreads overlap: 480.8 <= 484.0)
+raw tiff_read bands                 40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+raw tiff_read pieces                330.0 [327.0-505.0]             413.0 [370.0-414.0]             0.80x
+raw open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw open png_part kernel            4,671.5 [4,669.4-4,753.0]       5,214.4 [4,735.0-5,533.8]       0.90x (untouched png_part deflate variance: 4,058.3 -> 4,559.4 ms)
+raw open png_part rows              196.8 [159.6-199.3]             203.3 [164.0-211.0]             0.97x
+raw open png_part filter            228.5 [225.5-237.9]             246.3 [242.7-265.0]             0.93x
+raw open png_part adler             138.3 [137.8-139.0]             147.7 [143.3-166.6]             0.94x
+raw open png_part deflate           4,058.3 [4,006.1-4,095.5]       4,559.4 [4,045.9-4,795.2]       0.89x
+noise exportMs                      4,722.0 [3,796.0-5,290.0]       4,932.0 [3,858.0-5,584.0]       0.96x (tie; spreads overlap; export untouched)
+noise fileMB                        491.0 [491.0-491.0]             491.0 [491.0-491.0]             1.00x
+noise exportSteps encoded           3,162.0 [2,180.0-3,766.0]       3,419.0 [2,284.0-4,014.0]       0.92x (tie; spreads overlap)
+noise exportSteps saved             1,559.0 [1,524.0-1,615.0]       1,569.0 [1,512.0-1,574.0]       0.99x
+noise exportSteps total             4,721.0 [3,795.0-5,290.0]       4,932.0 [3,858.0-5,584.0]       0.96x (tie; spreads overlap)
+noise export tiff_part jobs         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise export tiff_part composeWasm  79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise export tiff_part kernel       24,138.2 [16,457.6-28,926.8]    26,241.6 [17,120.6-30,882.3]    0.92x (tie; spreads overlap; untouched)
+noise export tiff_part rows         184.7 [182.2-213.0]             191.4 [188.2-207.8]             0.96x
+noise export tiff_part predict      86.7 [78.6-95.0]                46.5 [36.8-107.5]               1.86x
+noise export tiff_part deflate      23,803.7 [16,070.1-28,584.0]    25,915.8 [16,747.9-30,578.2]    0.92x
+noise openMs                        6,726.0 [6,512.0-7,200.0]       6,701.0 [6,658.0-7,060.0]       1.00x (tie; spreads overlap; after faster in 1/3 pairs; 50% stored png_part)
+noise openSteps info                3.0 [2.0-18.0]                  18.0 [2.0-19.0]                 0.17x
+noise openSteps pixels              1,919.0 [1,875.0-2,023.0]       1,880.0 [1,863.0-1,887.0]       1.02x (after faster in 3/3 pairs: 2023->1880, 1875->1863, 1919->1887)
+noise openSteps stored              3,294.0 [3,215.0-3,505.0]       3,319.0 [3,295.0-3,471.0]       0.99x (tie; spreads overlap)
+noise openSteps base                25.0 [25.0-26.0]                26.0 [25.0-28.0]                0.96x
+noise openSteps total               5,242.0 [5,117.0-5,571.0]       5,225.0 [5,204.0-5,403.0]       1.00x (tie; spreads overlap)
+noise tiff_read parse               2.4 [2.0-15.6]                  2.8 [2.4-14.9]                  0.86x
+noise tiff_read wait                1,361.7 [1,337.6-1,413.5]       1,474.2 [1,472.5-1,480.2]       0.92x (+112.5 ms: includes 40 blob.slice().arrayBuffer() reads of 491 MB; pipe overhead drops ~151 ms so kernel is -38.8 ms)
+noise tiff_read decode              0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+noise tiff_read copy                93.1 [87.6-107.6]               87.6 [87.4-92.2]                1.06x
+noise tiff_read unpredict           113.0 [109.2-118.2]             112.6 [111.1-114.3]             1.00x
+noise tiff_read convert             127.8 [124.5-140.8]             126.6 [124.6-132.7]             1.01x
+noise tiff_read deliver             5.7 [5.2-5.9]                   6.3 [3.6-7.0]                   0.90x
+noise tiff_read kernel              1,916.0 [1,858.4-2,019.3]       1,877.2 [1,860.4-1,886.3]       1.02x (spreads overlap; faster in 2/3 pairs, +2.0 ms in r2)
+noise tiff_read bands               40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+noise tiff_read pieces              9,446.0 [9,441.0-9,446.0]       9,415.0 [9,415.0-9,415.0]       1.00x
+noise open png_part jobs            79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise open png_part composeWasm     79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise open png_part kernel          17,121.7 [16,221.5-17,895.5]    17,372.7 [16,689.9-17,463.2]    0.99x (tie; spreads overlap)
+noise open png_part rows            162.9 [162.0-203.6]             172.5 [169.1-186.2]             0.94x
+noise open png_part filter          689.7 [681.7-737.1]             740.4 [701.9-774.3]             0.93x
+noise open png_part adler           143.3 [142.5-143.4]             152.1 [142.4-152.7]             0.94x
+noise open png_part deflate         15,876.2 [14,974.9-16,530.3]    16,019.2 [15,393.9-16,127.0]    0.99x
+
+Root-cause notes on ties and rows where `after` had higher numbers:
+- `raw openMs` (`3,289.0 [3,257.0-3,323.0] -> 3,460.0 [3,416.0-3,533.0]` ms, `+171.0` ms): `adobe_15000x10000_raw.tif` is a single 10,000-row strip (`10,000 * 15,000 * 4 = 600,000,000` RGBA bytes > `TIFF_BAND_BYTES`), so `tiffPlan` sets `plan.streamed = true` and `readTiff` runs the unchanged `StripRows` fallback (`tiff_read kernel`: `482.6 [455.4-484.0] -> 494.4 [480.8-506.7]` ms, overlapping `+11.8` ms). Of the `+171.0` ms median difference in `openMs`, `+123.0` ms (`1,109.0 -> 1,232.0` ms) is in `openSteps stored` (`open png_part deflate`: `4,058.3 -> 4,559.4` ms, untouched tile-store PNG compression) and `+24.0` ms is in `openSteps base` (`440.0 -> 464.0` ms).
+- `own` and `noise` `tiff_read wait` (`868.3 -> 935.8` ms and `1,361.7 -> 1,474.2` ms): in `readTiffBand`, `sp.wait` sums both the contiguous `blob.slice().arrayBuffer()` read and `DecompressionStream("deflate")` `reader.read()`. An initial prototype that piped `new Blob([rawSlice]).stream()` into `DecompressionStream` regressed `own` / `noise` / `w0_bench` by `+276..+627` ms due to worker-to-browser BlobRegistry Mojo IPC; replacing that with direct in-process `ds.writable.getWriter()` writes (`INFLATE_FEED_SLICE = 1 MiB`) and `ab.transfer(0)` eliminated the regression completely, making total `tiff_read kernel` and `openSteps pixels` faster than `before` in `3/3` pairs on both `own` (`1,348 -> 1,317` ms) and `noise` (`1,919 -> 1,880` ms).
+
+b) Isolated `tiffUnpack` route A/B on K17's `readTiffBand` (`unpack_js` twin vs `unpack_rust` wasm, 3 alternating rounds, median [min-max] ms):
+(`unpack_js` sets `DEFAULT_ROUTES` `tiffUnpack: "js"` on the K17 tree so both arms use `tiffPlan` + `readTiffBand` with 40 contiguous band slices and Rust `tiff_unpredict` / `tiff_to_rgba`, isolating `tiff_unpack` vs `TIFF_JS.unpackStrip`.)
+row                                 unpack_js (twin)                unpack_rust (wasm)              unpack_js / unpack_rust (medians) & notes
+lzw openMs                          10,541.0 [10,493.0-10,595.0]    5,684.0 [5,619.0-5,775.0]       1.85x (non-overlapping; Rust faster in 3/3 pairs by 4,857 ms)
+lzw openSteps info                  10.0 [2.0-10.0]                 3.0 [2.0-3.0]                   3.33x
+lzw openSteps pixels                7,888.0 [7,728.0-7,940.0]       3,060.0 [3,057.0-3,063.0]       2.58x (non-overlapping; Rust faster in 3/3 pairs)
+lzw openSteps stored                1,159.0 [1,105.0-1,396.0]       1,137.0 [1,111.0-1,196.0]       1.02x
+lzw openSteps base                  457.0 [455.0-483.0]             456.0 [449.0-477.0]             1.00x
+lzw openSteps total                 9,564.0 [9,478.0-9,590.0]       4,648.0 [4,633.0-4,734.0]       2.06x (non-overlapping)
+lzw tiff_read wait                  182.0 [178.6-190.4]             210.4 [210.2-215.0]             0.87x
+lzw tiff_read decode                7,396.3 [7,226.9-7,425.8]       2,514.2 [2,482.8-2,525.4]       2.94x (non-overlapping)
+lzw tiff_read convert               234.0 [229.2-243.2]             227.6 [226.2-232.2]             1.03x
+lzw tiff_read deliver               24.9 [22.7-27.2]                33.8 [33.1-36.8]                0.74x
+lzw tiff_read kernel                7,857.4 [7,679.3-7,910.4]       3,028.8 [2,990.5-3,034.3]       2.59x (non-overlapping)
+lzw tiff_read bands / pieces        40.0 / 40.0                     40.0 / 40.0                     1.00x
+packbits openMs                     3,684.0 [3,638.0-3,686.0]       3,416.0 [3,327.0-3,635.0]       1.08x (non-overlapping: 3,635.0 < 3,638.0; Rust faster in 3/3 pairs)
+packbits openSteps info             3.0 [2.0-3.0]                   14.0 [2.0-14.0]                 0.21x
+packbits openSteps pixels           836.0 [812.0-864.0]             646.0 [638.0-667.0]             1.29x (non-overlapping; Rust faster in 3/3 pairs)
+packbits openSteps stored           1,107.0 [1,099.0-1,127.0]       1,074.0 [1,058.0-1,261.0]       1.03x
+packbits openSteps base             445.0 [443.0-515.0]             463.0 [450.0-480.0]             0.96x
+packbits openSteps total            2,417.0 [2,412.0-2,429.0]       2,196.0 [2,160.0-2,411.0]       1.10x (non-overlapping)
+packbits tiff_read wait             245.1 [232.1-273.8]             225.4 [218.0-231.4]             1.09x
+packbits tiff_read decode           297.0 [280.8-298.1]             110.3 [110.1-112.7]             2.69x (non-overlapping)
+packbits tiff_read convert          233.4 [223.2-235.6]             229.4 [217.2-237.9]             1.02x
+packbits tiff_read deliver          3.4 [3.1-4.0]                   3.6 [3.2-4.5]                   0.94x
+packbits tiff_read kernel           796.8 [777.2-831.5]             608.4 [605.3-632.5]             1.31x (non-overlapping)
+packbits tiff_read bands / pieces   40.0 / 40.0                     40.0 / 40.0                     1.00x
+
+Route decision (`docs/PLAN_WASM_BUILD.md` §1.1):
+- Rust wins `tiffUnpack=js:rust` non-overlapping at the whole-operation `openMs` row (as well as `openSteps pixels`, `tiff_read kernel`, and `tiff_read decode`) on both `lzw` (`5,684.0` vs `10,541.0` ms, `1.85x`) and `packbits` (`3,416.0` vs `3,684.0` ms, `1.08x`), so `DEFAULT_ROUTES` in `renderer/editor/px/kernels.js` keeps `tiffUnpack` on `"rust"` with no override entry.
+
+c) `w0_bench.py --rows=tiff_rows_256` (`15,000 x 10,000`, RGBA8 Deflate Predictor-2, 40 bands, 3 alternating rounds, median [min-max] ms):
+row                      before (0740aeab)               after (K17)                     before / after (medians) & notes
+tiff_rows_256 wall       1,288.0 [1,280.0-1,306.4]       1,245.8 [1,175.8-1,305.7]       1.03x (tie / slight win; spreads overlap; after faster in 2/3 pairs)
+tiff_rows_256 parse      1.7 [1.6-2.1]                   1.5 [1.2-1.8]                   1.13x
+tiff_rows_256 wait       829.7 [825.0-852.1]             881.8 [840.6-928.5]             0.94x (includes 40 band blob.slice().arrayBuffer() reads)
+tiff_rows_256 decode     0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+tiff_rows_256 copy       88.9 [88.3-90.1]                87.2 [80.2-91.8]                1.02x
+tiff_rows_256 unpredict  110.5 [108.0-110.6]             109.1 [103.0-113.6]             1.01x
+tiff_rows_256 convert    125.8 [125.4-126.2]             123.3 [116.7-127.0]             1.02x
+tiff_rows_256 deliver    2.1 [2.0-2.2]                   2.5 [2.1-2.6]                   0.81x
+tiff_rows_256 kernel     1,287.8 [1,279.8-1,306.2]       1,245.4 [1,175.6-1,305.5]       1.03x
+
+3. Mutation round (`docs/measurements/k17_2026-11-09/mutation/`)
+----------------------------------------------------------------
+Commands:
+  python tools/mutation_round.py make "$TEMP/scumble_k17_mut" docs/measurements/k17_2026-11-09/mutation/mut_k17.py
+  python tools/mutation_round.py run "$TEMP/scumble_k17_mut" docs/measurements/k17_2026-11-09/mutation docs/measurements/k17_2026-11-09/mutation/mut_k17.py --port 9633
+
+Result (`results.txt`):
+- `orig`: `build 19 s, both builds identical to the checkout's: True; green: the full px_test 253 s; green: px_test (only: tiff) 2 s`
+- `18 killed (0 of them only on the re-check), 0 survived of 18; 0 not as expected; 281 s for the mutants`
+- `restored copy: every mutated file back: True; green: the full px_test`
+
+4. Unit, Build & Parity Suites (`tools/tiff_test.js` & `tools/px_test.js`)
+--------------------------------------------------------------------------
+- `node tools/tiff_test.js`: **202 / 202 checks PASS** (Pass 1 with `kernels: null` asserting `0` Rust calls; Pass 2 with `kernels: K.tiffKernels()` asserting `{"adler32":18,"deflate_part":18,"tiff_predict_rgba":11,"tiff_to_rgba":913,"tiff_unpack":501,"tiff_unpredict":673}`).
+- `node tools/px_test.js`: **ALL PASS** (full suite green on both `orig` and `restored` in `mutation/results.txt`, `253 s`).
+- `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe tools/px_test.js`: **ALL PASS** (full suite green under Electron's V8).
+- `python tools/build_px.py --check`: `px.wasm: 289598 bytes, identical`; `px_scalar.wasm: 231830 bytes, identical`.
+- `python tools/build_node.py --check`: only expected `PROBLEM node js/... differs` lines.
+
+5. Gates (`dist/gates/gates/`, 0 failures, 0 reruns)
+----------------------------------------------------
+- `k17-tiles` (`--offline --tiles on`, port 9633): `lint rc=0 23s`, `types rc=0 16s` -> `ALL PASS`
+- `k17-canvas` (`--offline --tiles off`, port 9634): `lint rc=0 23s`, `types rc=0 16s` -> `ALL PASS`
+- `k17-tiff-tiles` (`--offline --tiles on`, port 9633): `tiff rc=0 15s PASS` -> `ALL PASS`
+- `k17-tiff-canvas` (`--offline --tiles off`, port 9634): `tiff rc=0 25s PASS` -> `ALL PASS`
+- `k17-pxjobs` (`--offline --tiles on`, port 9633): `pxjobs rc=0 111s PASS`, `nodecopy rc=0 50s PASS` -> `ALL PASS`

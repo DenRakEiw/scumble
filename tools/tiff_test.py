@@ -155,6 +155,37 @@ try {
     const problems = [];
     if (!c.ok) problems.push(says(c));
     if (jt.length !== 1 || jt[0].kernels !== "rust") problems.push("tiff_read timing: " + JSON.stringify(jt));
+    if (F.info && (F.info.compression === 1 || F.info.compression === 5 || F.info.compression === 32773)) {
+        if (!jt[0] || !jt[0].pxCalls || !jt[0].pxCalls.tiff_unpack) {
+            problems.push("missing tiff_unpack in pxCalls: " + JSON.stringify(jt[0] && jt[0].pxCalls));
+        }
+    }
+    if (F.name === "rgb8_lzw_pred") {
+        const d2 = await run("new_document");
+        const ed2 = ednow(d2.id);
+        host.shell.activate(ed2);
+        E.setRoute("tiffUnpack", "js");
+        E.setRoute("tiffUnpredict", "js");
+        E.setRoute("tiffToRgba", "js");
+        E.jobTimings(true);
+        try {
+            await run("load_image", { doc: d2.id, path: F.path });
+            const jtJs = E.jobTimings(true).filter((t) => t.op === "tiff_read");
+            if (jtJs.length !== 1 || (jtJs[0].pxCalls && (jtJs[0].pxCalls.tiff_unpack || jtJs[0].pxCalls.tiff_unpredict || jtJs[0].pxCalls.tiff_to_rgba))) {
+                problems.push("rgb8_lzw_pred js route timing: " + JSON.stringify(jtJs));
+            }
+            const jsData = ed2.basePx.readRect(0, 0, F.width, F.height).data;
+            if (jsData.length !== got.length || jsData.some((v, i) => v !== got[i])) {
+                problems.push("rgb8_lzw_pred rust vs js route pixels differ");
+            }
+        } finally {
+            E.setRoute("tiffUnpack", null);
+            E.setRoute("tiffUnpredict", null);
+            E.setRoute("tiffToRgba", null);
+            await run("close_document", { doc: d2.id });
+            host.shell.activate(ed);
+        }
+    }
     const missing = F.notes.filter((n) => !status.toLowerCase().includes(n.toLowerCase()));
     if (missing.length) problems.push(`the status line does not mention ${missing.join(", ")}: "${status}"`);
     if (isTifRef(ed.base && ed.base.ref)) problems.push("the base is stored as the TIFF itself: " + ed.base.ref.filename);
@@ -805,7 +836,7 @@ async def run_all(c):
                 print("  %s: %s" % (e["name"], json.dumps({k: r[k] for k in ("worstSoft", "worstRaw", "rawOff", "soft", "status")}, ensure_ascii=False)), flush=True)
         except Exception as err:  # noqa: BLE001
             bad.append("%s: %s" % (e["name"], str(err)[:500]))
-    for req in ("tiff_unpredict", "tiff_to_rgba"):
+    for req in ("tiff_unpack", "tiff_unpredict", "tiff_to_rgba"):
         if not open_calls.get(req):
             bad.append("missing %s in tiff_read pxCalls: %s" % (req, json.dumps(open_calls)))
     ok = report(not bad, "opens_every_accepted_fixture", " || ".join(bad) if bad else {"fixtures": len(good), **worst, "pxCalls": open_calls}) and ok

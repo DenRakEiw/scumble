@@ -1,0 +1,342 @@
+[19:35:55] exporting clean before tree at 0740aeab to /f/canvas/.claude/worktrees/.tmp_k17_before_2382101 and unpack_js tree to /f/canvas/.claude/worktrees/.tmp_k17_jsunpack_2382101
+[19:36:09] branch ag-chain-t at 0740aeab; base 0740aeab; port 9633
+[19:36:10] before px.wasm 35174f9eb470bffd; after px.wasm 35174f9eb470bffd; after px_scalar.wasm c6e7dc74f7b2b9cb
+[19:36:10] gpu: 8350 MiB, 4 %; comfy 8188: 200
+lock: held by 'main loop K40 bisect 8689d490 63720 2026-11-09T19:33:00', waiting
+lock: taken after 1080 s
+[19:54:11] lock: taken (K17 node_bench (chain-t) 49972 2026-11-09T19:36:10)
+[19:54:12] node px_test tiff bench
+[19:54:14] rc=0
+[19:54:14] electron-as-node px_test tiff bench
+[19:54:17] rc=0
+lock: released
+lock: taken after 0 s
+[19:54:24] lock: taken (K17 tiffperf own r1 (chain-t) 23260 2026-11-09T19:54:21)
+[19:54:24] == tiffperf own round 1
+[19:54:26] tiffperf before own r1 (try 1, px.wasm 35174f9eb470)
+[19:54:28] gpu: 3938 MiB, 1 %; comfy 8188: 200
+[19:54:47] rc=0
+closed
+[19:54:51] tiffperf after own r1 (try 1, px.wasm 35174f9eb470)
+[19:54:52] gpu: 3935 MiB, 0 %; comfy 8188: 200
+[19:55:07] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[19:55:13] lock: taken (K17 tiffperf lzw r1 (chain-t) 61408 2026-11-09T19:55:13)
+[19:55:13] == tiffperf lzw round 1
+[19:55:13] tiffperf before lzw r1 (try 1, px.wasm 35174f9eb470)
+[19:55:13] gpu: 3931 MiB, 0 %; comfy 8188: 200
+[19:55:35] rc=0
+closed
+[19:55:42] tiffperf after lzw r1 (try 1, px.wasm 35174f9eb470)
+[19:55:46] gpu: 3924 MiB, 0 %; comfy 8188: 200
+[19:56:04] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[19:56:13] lock: taken (K17 tiffperf packbits r1 (chain-t) 55144 2026-11-09T19:56:12)
+[19:56:13] == tiffperf packbits round 1
+[19:56:15] tiffperf before packbits r1 (try 1, px.wasm 35174f9eb470)
+[19:56:16] gpu: 3930 MiB, 0 %; comfy 8188: 200
+[19:56:29] rc=0
+closed
+[19:56:34] tiffperf after packbits r1 (try 1, px.wasm 35174f9eb470)
+[19:56:35] gpu: 3938 MiB, 0 %; comfy 8188: 200
+[19:56:47] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[19:56:56] lock: taken (K17 tiffperf zlib1 r1 (chain-t) 55088 2026-11-09T19:56:56)
+[19:56:57] == tiffperf zlib1 round 1
+[19:56:59] tiffperf before zlib1 r1 (try 1, px.wasm 35174f9eb470)
+[19:57:00] gpu: 3963 MiB, 0 %; comfy 8188: 200
+[19:57:16] rc=0
+closed
+[19:57:24] tiffperf after zlib1 r1 (try 1, px.wasm 35174f9eb470)
+[19:57:26] gpu: 3958 MiB, 1 %; comfy 8188: 200
+[19:57:41] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[19:57:48] lock: taken (K17 tiffperf raw r1 (chain-t) 59440 2026-11-09T19:57:48)
+[19:57:49] == tiffperf raw round 1
+[19:57:49] tiffperf before raw r1 (try 1, px.wasm 35174f9eb470)
+[19:57:49] gpu: 3934 MiB, 0 %; comfy 8188: 200
+[19:58:00] rc=0
+closed
+[19:58:05] tiffperf after raw r1 (try 1, px.wasm 35174f9eb470)
+[19:58:05] gpu: 3934 MiB, 0 %; comfy 8188: 200
+[19:58:19] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[19:58:28] lock: taken (K17 tiffperf noise r1 (chain-t) 44108 2026-11-09T19:58:27)
+[19:58:28] == tiffperf noise round 1
+[19:58:30] tiffperf before noise r1 (try 1, px.wasm 35174f9eb470)
+[19:58:33] gpu: 3925 MiB, 0 %; comfy 8188: 200
+[19:59:00] rc=0
+closed
+[19:59:06] tiffperf after noise r1 (try 1, px.wasm 35174f9eb470)
+[19:59:09] gpu: 5345 MiB, 5 %; comfy 8188: 200
+[19:59:35] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[19:59:41] lock: taken (K17 tiffperf own r2 (chain-t) 48716 2026-11-09T19:59:41)
+[19:59:41] == tiffperf own round 2
+[19:59:41] tiffperf after own r2 (try 1, px.wasm 35174f9eb470)
+[19:59:42] gpu: 4991 MiB, 7 %; comfy 8188: 200
+[19:59:58] rc=0
+closed
+[20:00:08] tiffperf before own r2 (try 1, px.wasm 35174f9eb470)
+[20:00:10] gpu: 3912 MiB, 0 %; comfy 8188: 200
+[20:00:28] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:00:38] lock: taken (K17 tiffperf lzw r2 (chain-t) 25664 2026-11-09T20:00:37)
+[20:00:38] == tiffperf lzw round 2
+[20:00:41] tiffperf after lzw r2 (try 1, px.wasm 35174f9eb470)
+[20:00:43] gpu: 3943 MiB, 0 %; comfy 8188: 200
+[20:00:57] rc=0
+closed
+[20:01:01] tiffperf before lzw r2 (try 1, px.wasm 35174f9eb470)
+[20:01:01] gpu: 3936 MiB, 0 %; comfy 8188: 200
+[20:01:21] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:01:29] lock: taken (K17 tiffperf packbits r2 (chain-t) 56044 2026-11-09T20:01:29)
+[20:01:29] == tiffperf packbits round 2
+[20:01:31] tiffperf after packbits r2 (try 1, px.wasm 35174f9eb470)
+[20:01:32] gpu: 3950 MiB, 0 %; comfy 8188: 200
+[20:01:47] rc=0
+closed
+[20:01:53] tiffperf before packbits r2 (try 1, px.wasm 35174f9eb470)
+[20:01:55] gpu: 3916 MiB, 1 %; comfy 8188: 200
+[20:02:12] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:02:18] lock: taken (K17 tiffperf zlib1 r2 (chain-t) 24356 2026-11-09T20:02:18)
+[20:02:18] == tiffperf zlib1 round 2
+[20:02:18] tiffperf after zlib1 r2 (try 1, px.wasm 35174f9eb470)
+[20:02:20] gpu: 3931 MiB, 0 %; comfy 8188: 200
+[20:02:31] rc=0
+closed
+[20:02:40] tiffperf before zlib1 r2 (try 1, px.wasm 35174f9eb470)
+[20:02:42] gpu: 3928 MiB, 3 %; comfy 8188: 200
+[20:02:55] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:03:04] lock: taken (K17 tiffperf raw r2 (chain-t) 32016 2026-11-09T20:03:03)
+[20:03:04] == tiffperf raw round 2
+[20:03:06] tiffperf after raw r2 (try 1, px.wasm 35174f9eb470)
+[20:03:07] gpu: 3951 MiB, 0 %; comfy 8188: 200
+[20:03:20] rc=0
+closed
+[20:03:26] tiffperf before raw r2 (try 1, px.wasm 35174f9eb470)
+[20:03:27] gpu: 3937 MiB, 0 %; comfy 8188: 200
+[20:03:39] rc=0
+closed
+lock: released
+lock: held by 'main loop K40 bisect d711f8f2 16608 2026-11-09T19:54:43', waiting
+lock: taken after 210 s
+[20:07:16] lock: taken (K17 tiffperf noise r2 (chain-t) 50660 2026-11-09T20:03:45)
+[20:07:17] == tiffperf noise round 2
+[20:07:19] tiffperf after noise r2 (try 1, px.wasm 35174f9eb470)
+[20:07:22] gpu: 3878 MiB, 0 %; comfy 8188: 200
+[20:07:48] rc=0
+closed
+[20:07:51] tiffperf before noise r2 (try 1, px.wasm 35174f9eb470)
+[20:07:52] gpu: 3929 MiB, 0 %; comfy 8188: 200
+[20:08:17] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:08:26] lock: taken (K17 tiffperf own r3 (chain-t) 69864 2026-11-09T20:08:25)
+[20:08:27] == tiffperf own round 3
+[20:08:27] tiffperf before own r3 (try 1, px.wasm 35174f9eb470)
+[20:08:29] gpu: 3935 MiB, 0 %; comfy 8188: 200
+[20:08:47] rc=0
+closed
+[20:08:53] tiffperf after own r3 (try 1, px.wasm 35174f9eb470)
+[20:08:55] gpu: 3934 MiB, 0 %; comfy 8188: 200
+[20:09:10] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:09:17] lock: taken (K17 tiffperf lzw r3 (chain-t) 52216 2026-11-09T20:09:17)
+[20:09:17] == tiffperf lzw round 3
+[20:09:19] tiffperf before lzw r3 (try 1, px.wasm 35174f9eb470)
+[20:09:20] gpu: 3925 MiB, 0 %; comfy 8188: 200
+[20:09:40] rc=0
+closed
+[20:09:45] tiffperf after lzw r3 (try 1, px.wasm 35174f9eb470)
+[20:09:48] gpu: 3916 MiB, 0 %; comfy 8188: 200
+[20:10:03] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:10:12] lock: taken (K17 tiffperf packbits r3 (chain-t) 10436 2026-11-09T20:10:12)
+[20:10:13] == tiffperf packbits round 3
+[20:10:15] tiffperf before packbits r3 (try 1, px.wasm 35174f9eb470)
+[20:10:17] gpu: 3932 MiB, 0 %; comfy 8188: 200
+[20:10:33] rc=0
+closed
+[20:10:38] tiffperf after packbits r3 (try 1, px.wasm 35174f9eb470)
+[20:10:38] gpu: 4585 MiB, 5 %; comfy 8188: 200
+[20:10:50] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:10:56] lock: taken (K17 tiffperf zlib1 r3 (chain-t) 38580 2026-11-09T20:10:56)
+[20:10:56] == tiffperf zlib1 round 3
+[20:10:57] tiffperf before zlib1 r3 (try 1, px.wasm 35174f9eb470)
+[20:10:58] gpu: 3930 MiB, 2 %; comfy 8188: 200
+[20:11:12] rc=0
+closed
+[20:11:21] tiffperf after zlib1 r3 (try 1, px.wasm 35174f9eb470)
+[20:11:23] gpu: 3898 MiB, 0 %; comfy 8188: 200
+[20:11:37] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:11:47] lock: taken (K17 tiffperf raw r3 (chain-t) 48816 2026-11-09T20:11:46)
+[20:11:48] == tiffperf raw round 3
+[20:11:49] tiffperf before raw r3 (try 1, px.wasm 35174f9eb470)
+[20:11:51] gpu: 3923 MiB, 0 %; comfy 8188: 200
+[20:12:04] rc=0
+closed
+[20:12:07] tiffperf after raw r3 (try 1, px.wasm 35174f9eb470)
+[20:12:07] gpu: 3930 MiB, 3 %; comfy 8188: 200
+[20:12:18] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:12:25] lock: taken (K17 tiffperf noise r3 (chain-t) 29812 2026-11-09T20:12:24)
+[20:12:25] == tiffperf noise round 3
+[20:12:25] tiffperf before noise r3 (try 1, px.wasm 35174f9eb470)
+[20:12:25] gpu: 3925 MiB, 0 %; comfy 8188: 200
+[20:12:52] rc=0
+closed
+[20:12:59] tiffperf after noise r3 (try 1, px.wasm 35174f9eb470)
+[20:13:01] gpu: 3927 MiB, 0 %; comfy 8188: 200
+[20:13:27] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:13:36] lock: taken (K17 tiffUnpack route A/B lzw r1 (chain-t) 34240 2026-11-09T20:13:35)
+[20:13:37] == tiffUnpack route A/B lzw round 1
+[20:13:37] tiffperf unpack_js lzw r1 (try 1, px.wasm 35174f9eb470)
+[20:13:38] gpu: 3934 MiB, 0 %; comfy 8188: 200
+[20:13:58] rc=0
+closed
+[20:14:04] tiffperf unpack_rust lzw r1 (try 1, px.wasm 35174f9eb470)
+[20:14:05] gpu: 3927 MiB, 1 %; comfy 8188: 200
+[20:14:21] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:14:32] lock: taken (K17 tiffUnpack route A/B packbits r1 (chain-t) 3916 2026-11-09T20:14:31)
+[20:14:32] == tiffUnpack route A/B packbits round 1
+[20:14:34] tiffperf unpack_js packbits r1 (try 1, px.wasm 35174f9eb470)
+[20:14:36] gpu: 3939 MiB, 0 %; comfy 8188: 200
+[20:14:51] rc=0
+closed
+[20:14:55] tiffperf unpack_rust packbits r1 (try 1, px.wasm 35174f9eb470)
+[20:14:55] gpu: 3934 MiB, 0 %; comfy 8188: 200
+[20:15:06] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:15:14] lock: taken (K17 tiffUnpack route A/B lzw r2 (chain-t) 64516 2026-11-09T20:15:13)
+[20:15:14] == tiffUnpack route A/B lzw round 2
+[20:15:15] tiffperf unpack_rust lzw r2 (try 1, px.wasm 35174f9eb470)
+[20:15:17] gpu: 3951 MiB, 1 %; comfy 8188: 200
+[20:15:34] rc=0
+closed
+[20:15:41] tiffperf unpack_js lzw r2 (try 1, px.wasm 35174f9eb470)
+[20:15:42] gpu: 3953 MiB, 0 %; comfy 8188: 200
+[20:16:03] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:16:10] lock: taken (K17 tiffUnpack route A/B packbits r2 (chain-t) 21292 2026-11-09T20:16:10)
+[20:16:10] == tiffUnpack route A/B packbits round 2
+[20:16:10] tiffperf unpack_rust packbits r2 (try 1, px.wasm 35174f9eb470)
+[20:16:10] gpu: 3936 MiB, 0 %; comfy 8188: 200
+[20:16:22] rc=0
+closed
+[20:16:28] tiffperf unpack_js packbits r2 (try 1, px.wasm 35174f9eb470)
+[20:16:28] gpu: 3936 MiB, 3 %; comfy 8188: 200
+[20:16:43] rc=0
+closed
+lock: released
+lock: held by 'main loop K40 bisect b3fe5cf5 26496 2026-11-09T20:07:19', waiting
+lock: taken after 630 s
+[20:27:23] lock: taken (K17 tiffUnpack route A/B lzw r3 (chain-t) 21240 2026-11-09T20:16:52)
+[20:27:23] == tiffUnpack route A/B lzw round 3
+[20:27:26] tiffperf unpack_js lzw r3 (try 1, px.wasm 35174f9eb470)
+[20:27:28] gpu: 4005 MiB, 0 %; comfy 8188: 200
+[20:27:47] rc=0
+closed
+[20:27:55] tiffperf unpack_rust lzw r3 (try 1, px.wasm 35174f9eb470)
+[20:27:57] gpu: 4187 MiB, 2 %; comfy 8188: 200
+[20:28:12] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:28:20] lock: taken (K17 tiffUnpack route A/B packbits r3 (chain-t) 70864 2026-11-09T20:28:20)
+[20:28:21] == tiffUnpack route A/B packbits round 3
+[20:28:22] tiffperf unpack_js packbits r3 (try 1, px.wasm 35174f9eb470)
+[20:28:23] gpu: 4184 MiB, 0 %; comfy 8188: 200
+[20:28:37] rc=0
+closed
+[20:28:44] tiffperf unpack_rust packbits r3 (try 1, px.wasm 35174f9eb470)
+[20:28:46] gpu: 4180 MiB, 1 %; comfy 8188: 200
+[20:28:59] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:29:10] lock: taken (K17 w0_bench tiff_rows_256 r1 (chain-t) 70448 2026-11-09T20:29:09)
+[20:29:10] == w0_bench tiff_rows_256 round 1
+[20:29:12] w0_bench tiff_rows_256 before r1 (try 1)
+[20:29:14] gpu: 4182 MiB, 0 %; comfy 8188: 200
+[20:29:29] rc=0
+closed
+[20:29:34] w0_bench tiff_rows_256 after r1 (try 1)
+[20:29:35] gpu: 4189 MiB, 0 %; comfy 8188: 200
+[20:29:48] rc=0
+closed
+lock: released
+lock: held by 'main loop K40 bisect 8a176c76 62868 2026-11-09T20:27:24', waiting
+lock: taken after 450 s
+[20:37:26] lock: taken (K17 w0_bench tiff_rows_256 r2 (chain-t) 69184 2026-11-09T20:29:56)
+[20:37:27] == w0_bench tiff_rows_256 round 2
+[20:37:27] w0_bench tiff_rows_256 after r2 (try 1)
+[20:37:28] gpu: 4189 MiB, 1 %; comfy 8188: 200
+[20:37:43] rc=0
+closed
+[20:37:48] w0_bench tiff_rows_256 before r2 (try 1)
+[20:37:51] gpu: 4232 MiB, 0 %; comfy 8188: 200
+[20:38:07] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[20:38:15] lock: taken (K17 w0_bench tiff_rows_256 r3 (chain-t) 63340 2026-11-09T20:38:15)
+[20:38:16] == w0_bench tiff_rows_256 round 3
+[20:38:18] w0_bench tiff_rows_256 before r3 (try 1)
+[20:38:20] gpu: 4212 MiB, 1 %; comfy 8188: 200
+[20:38:36] rc=0
+closed
+[20:38:43] w0_bench tiff_rows_256 after r3 (try 1)
+[20:38:43] gpu: 4189 MiB, 1 %; comfy 8188: 200
+[20:38:56] rc=0
+closed
+lock: released
+[20:39:02] gpu: 4200 MiB, 0 %; comfy 8188: 200
+[20:39:02] done
+no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
