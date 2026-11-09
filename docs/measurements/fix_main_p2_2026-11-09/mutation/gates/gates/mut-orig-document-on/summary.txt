@@ -1,0 +1,2 @@
+document rc=0 63s PASS
+ALL PASS

@@ -403,6 +403,18 @@ function listTree(dir) {
             await tryCase("full disk", { fault: { enospcAt: 250000 } });
             const ac = new AbortController();
             await tryCase("cancel", { signal: ac.signal, onProgress: ({ done }) => { if (done > 100000) ac.abort(); } });
+            // D9: read-only target fails before writing temp or calling renameRetry
+            let roRenameCalls = 0;
+            fs.chmodSync(target, 0o444);
+            try {
+                let roErr = null;
+                try { await save(mirror("F"), target, { registry, opts: { ops: { rename: async () => { roRenameCalls++; } } } }); } catch (e) { roErr = e; }
+                assert(roErr && roErr.code === "EPERM" && roErr.message === "keep.scumble is read-only", `read-only target must fail with 'keep.scumble is read-only' (got ${roErr && roErr.message})`);
+                assert(roRenameCalls === 0 && !temps().length && JSON.parse(fs.readFileSync(registry, "utf8")).length === 0, "read-only target must fail before temp write/rename");
+                out.push("read-only: " + roErr.message);
+            } finally {
+                fs.chmodSync(target, 0o666);
+            }
             let busy = 0;
             const held = async () => { busy++; const e = new Error("busy"); e.code = "EBUSY"; throw e; };
             await tryCase("held for good", { ops: { rename: held } });
@@ -417,13 +429,32 @@ function listTree(dir) {
         await check("the_sweep_deletes_only_listed_temporary_files", () => {
             const registry = path.join(scratch, "sweep.json");
             const left = path.join(scratch, "x.scumble.saving-123-4"), mine = path.join(scratch, "x.scumble"), odd = path.join(scratch, "notes.txt");
-            for (const p of [left, mine, odd]) fs.writeFileSync(p, "x");
-            fs.writeFileSync(registry, JSON.stringify([left, mine, odd, path.join(scratch, "gone.saving-1-1")]));
-            const removed = doc.sweepTemps(registry);
+            const lockedTemp = path.join(scratch, "locked.scumble.saving-222-1");
+            const missingDirTemp = path.join(scratch, "unmounted_drive", "usb.png.saving-333-1");
+            for (const p of [left, mine, odd, lockedTemp]) fs.writeFileSync(p, "x");
+            fs.writeFileSync(registry, JSON.stringify([left, mine, odd, path.join(scratch, "gone.saving-1-1"), lockedTemp, missingDirTemp]));
+            const origUnlinkSync = fs.unlinkSync;
+            let blockLocked = true;
+            fs.unlinkSync = function (p, ...rest) {
+                if (blockLocked && p === lockedTemp) throw Object.assign(new Error("EBUSY"), { code: "EBUSY" });
+                return origUnlinkSync.call(this, p, ...rest);
+            };
+            let removed;
+            try {
+                removed = doc.sweepTemps(registry);
+            } finally {
+                fs.unlinkSync = origUnlinkSync;
+            }
             assert(removed.length === 1 && removed[0] === left, "removed " + JSON.stringify(removed));
-            assert(fs.existsSync(mine) && fs.existsSync(odd) && !fs.existsSync(left), "the sweep deleted a file that is no temporary");
-            assert(JSON.parse(fs.readFileSync(registry, "utf8")).length === 0, "the list was not emptied");
-            return "1 of 4 listed paths";
+            assert(fs.existsSync(mine) && fs.existsSync(odd) && !fs.existsSync(left) && fs.existsSync(lockedTemp), "the sweep deleted a file that is no temporary or was locked");
+            const keptAfterFirst = JSON.parse(fs.readFileSync(registry, "utf8"));
+            assert(same(keptAfterFirst, [lockedTemp, missingDirTemp]), "D10: non-ENOENT unlink failure and missing-folder temp must stay in registry: " + JSON.stringify(keptAfterFirst));
+            blockLocked = false;
+            fs.mkdirSync(path.dirname(missingDirTemp), { recursive: true });
+            fs.writeFileSync(missingDirTemp, "x");
+            const removedSecond = doc.sweepTemps(registry);
+            assert(same(removedSecond, [lockedTemp, missingDirTemp]) && JSON.parse(fs.readFileSync(registry, "utf8")).length === 0, "second sweep removes previously locked and missing-folder temps: " + JSON.stringify(removedSecond));
+            return "1 of 6 on first sweep, 2 kept and swept on retry";
         });
         await check("isScumble_knows_the_file_by_its_first_bytes", () => {
             const head = fs.readFileSync(file).subarray(0, 64);
@@ -497,6 +528,143 @@ function listTree(dir) {
             const argv = documentArgs(["--flag", "x.png", target, path.join(scratch, "nope.scumble")], scratch);
             assert(argv.length === 1 && argv[0] === target, "documentArgs " + JSON.stringify(argv));
             return "target kept; 2 selection fields dropped; argv found 1 of 4";
+        });
+        await check("concurrent_opens_serialise_shared_imports_and_use_unique_temp_names", async () => {
+            const MA = mirror("D6A"), MB = mirror("D6B"), MOut = mirror("D6Out");
+            const fA = fixture(MA), fB = fixture(MB);
+            // Share identical bytes for base (photo.png), keep different bytes for layer (n3_layer_1a2b3c.png)
+            put(MB, fB.refs.base, fs.readFileSync(fA.paths.base));
+            const diffLayerBytes = rnd(120000, 99);
+            put(MB, fB.refs.layer, diffLayerBytes);
+            const docA = path.join(scratch, "d6_a.scumble");
+            const docB = path.join(scratch, "d6_b.scumble");
+            await new Documents({ mirrorRoot: MA }).write({ reqId: "wa", path: docA, document: fA.document, plugins: fA.plugins });
+            await new Documents({ mirrorRoot: MB }).write({ reqId: "wb", path: docB, document: fB.document, plugins: fB.plugins });
+
+            const importingNames = [];
+            const seenKeepKeys = new Set();
+            const svc = new Documents({ mirrorRoot: MOut });
+            const origFspOpen = fsp.open;
+            fsp.open = async function (p, flags, ...rest) {
+                if (typeof p === "string" && p.includes(".importing-")) {
+                    importingNames.push(path.basename(p));
+                    for (const k of svc.keepKeys()) seenKeepKeys.add(k);
+                    await new Promise((r) => setTimeout(r, 25));
+                }
+                return origFspOpen.call(this, p, flags, ...rest);
+            };
+            let oA, oB;
+            try {
+                [oA, oB] = await Promise.all([
+                    svc.open({ reqId: "oa", path: docA }),
+                    svc.open({ reqId: "ob", path: docB }),
+                ]);
+            } finally {
+                fsp.open = origFspOpen;
+            }
+            assert(importingNames.length > 0 && importingNames.every((n) => /\.importing-\d+-\d+$/.test(n)), "D6: copyEntry must use unique .importing-<pid>-<seq> temp names: " + JSON.stringify(importingNames));
+            assert(new Set(importingNames).size === importingNames.length, "D6: every copyEntry call must get a distinct temp name: " + JSON.stringify(importingNames));
+            const baseImports = importingNames.filter((n) => n.startsWith("photo.png.importing-"));
+            assert(baseImports.length === 1, "D6: per-key import serialisation must import shared identical photo.png once and reuse it in the second open: " + JSON.stringify(baseImports));
+            assert(seenKeepKeys.has("input/inpaint_canvas/photo.png") && seenKeepKeys.has("input/inpaint_canvas/n3_layer_1a2b3c (1).png"), "D6: keepKeys during open must include original and freeName keys: " + JSON.stringify(Array.from(seenKeepKeys)));
+            const layerNameA = oA.document.layers[0].ref.filename;
+            const layerNameB = oB.document.layers[0].ref.filename;
+            assert(layerNameA !== layerNameB && [layerNameA, layerNameB].sort().join(",") === "n3_layer_1a2b3c (1).png,n3_layer_1a2b3c.png", `D6: colliding layer with different bytes must be renamed in one open: ${layerNameA} vs ${layerNameB}`);
+            assert(fs.readFileSync(doc.mirrorPath(MOut, "input", "inpaint_canvas", layerNameA)).equals(fs.readFileSync(fA.paths.layer)), "docA layer bytes intact");
+            assert(fs.readFileSync(doc.mirrorPath(MOut, "input", "inpaint_canvas", layerNameB)).equals(diffLayerBytes), "docB layer bytes intact");
+
+            // D6 freeName race: docC has photo.png (collides with existing photo.png in MOut -> freeName picks "photo (1).png")
+            // while docD literally carries "photo (1).png" with different bytes and is mid-import (before rename)
+            const MC = mirror("D6C"), MD = mirror("D6D");
+            const fC = fixture(MC), fD = fixture(MD);
+            const bytesC = rnd(110000, 77);
+            const bytesD = rnd(115000, 88);
+            put(MC, fC.refs.base, bytesC);
+            fD.refs.base.filename = "photo (1).png";
+            fD.document.base = { ref: { ...fD.refs.base } };
+            put(MD, fD.refs.base, bytesD);
+            const docC = path.join(scratch, "d6_c.scumble");
+            const docD = path.join(scratch, "d6_d.scumble");
+            await new Documents({ mirrorRoot: MC }).write({ reqId: "wc", path: docC, document: fC.document, plugins: fC.plugins });
+            await new Documents({ mirrorRoot: MD }).write({ reqId: "wd", path: docD, document: fD.document, plugins: fD.plugins });
+            let delayedLiteral = false;
+            fsp.open = async function (p, flags, ...rest) {
+                const fh = await origFspOpen.call(this, p, flags, ...rest);
+                if (!delayedLiteral && typeof p === "string" && path.basename(p).startsWith("photo (1).png.importing-")) {
+                    delayedLiteral = true;
+                    await new Promise((r) => setTimeout(r, 40));
+                }
+                return fh;
+            };
+            let oC, oD;
+            try {
+                [oC, oD] = await Promise.all([
+                    new Promise((r) => setTimeout(r, 10)).then(() => svc.open({ reqId: "oc", path: docC })),
+                    svc.open({ reqId: "od", path: docD }),
+                ]);
+            } finally {
+                fsp.open = origFspOpen;
+            }
+            const baseC = oC.document.base.ref.filename;
+            const baseD = oD.document.base.ref.filename;
+            assert(baseC === "photo (2).png" && baseD === "photo (1).png", `D6: freeName import and literal 'photo (1).png' import must not overwrite each other: ${baseC} vs ${baseD}`);
+            assert(fs.readFileSync(doc.mirrorPath(MOut, "input", "inpaint_canvas", baseC)).equals(bytesC), "docC base bytes intact");
+            assert(fs.readFileSync(doc.mirrorPath(MOut, "input", "inpaint_canvas", baseD)).equals(bytesD), "docD base bytes intact");
+
+            // D6 self-deadlock guard: dest exists at fsp.stat with same size & different bytes, then disappears during crcOfFile
+            // so freeName returns ref.filename (kFree === k). Must not re-enter withImportLock(importLocks, kFree) or record identity rename.
+            const ME = mirror("D6E");
+            put(ME, { type: "input", subfolder: "inpaint_canvas", filename: "photo.png" }, rnd(bytesC.length, 55));
+            const destE = doc.mirrorPath(ME, "input", "inpaint_canvas", "photo.png");
+            let unlinkedDuringCrc = false;
+            fsp.open = async function (p, flags, ...rest) {
+                const fh = await origFspOpen.call(this, p, flags, ...rest);
+                if (!unlinkedDuringCrc && p === destE && flags === "r") {
+                    unlinkedDuringCrc = true;
+                    fs.unlinkSync(destE);
+                }
+                return fh;
+            };
+            let oE;
+            try {
+                const svcE = new Documents({ mirrorRoot: ME });
+                let timerE;
+                oE = await Promise.race([
+                    svcE.open({ reqId: "oe", path: docC }).finally(() => clearTimeout(timerE)),
+                    new Promise((_, rej) => { timerE = setTimeout(() => rej(new Error("self-deadlock when dest disappears before freeName (kFree === k)")), 1500); }),
+                ]);
+            } finally {
+                fsp.open = origFspOpen;
+            }
+            assert(unlinkedDuringCrc, "D6: unlinked dest during crcOfFile");
+            assert(oE.document.base.ref.filename === "photo.png", "D6: freeName returned original filename when dest vanished: " + oE.document.base.ref.filename);
+            assert(Object.keys(oE.renamed).length === 0, "D6: must not record identity rename when kFree === k: " + JSON.stringify(oE.renamed));
+            assert(fs.readFileSync(destE).equals(bytesC), "D6: imported bytes written to original dest when dest vanished");
+
+            // D6 in main.js: execute the real documents:open handler from main.js on existing vs missing req.path
+            const mainSrc = fs.readFileSync(path.join(ROOT, "electron", "main", "main.js"), "utf8");
+            const mOpen = mainSrc.match(/ipcMain\.handle\("documents:open",\s*(async\s*\(_e,\s*req\)\s*=>\s*\{[\s\S]*?\n    \})\);/);
+            assert(mOpen, "documents:open handler found in main.js");
+            const dropped = [], added = [];
+            let openErr = null;
+            const runOpenHandler = new Function("documents", "addRecent", "dropRecent", "fs", "path", `return (${mOpen[1]});`)(
+                { open: async () => { throw openErr; } },
+                (p) => added.push(p),
+                (p) => dropped.push(p),
+                fs,
+                path
+            );
+            // 1) ENOENT while req.path exists on disk (inner import ENOENT): must NOT drop from Open Recent or rewrite message
+            openErr = Object.assign(new Error("ENOENT: inner import temp"), { code: "ENOENT" });
+            let gotExistingErr = null;
+            try { await runOpenHandler(null, { path: docA }); } catch (e) { gotExistingErr = e; }
+            assert(gotExistingErr === openErr && dropped.length === 0, "D6: ENOENT when req.path exists must not drop from Open Recent or rewrite error");
+            // 2) ENOENT when req.path is actually gone from disk: drops from Open Recent and rewrites message
+            const goneDoc = path.join(scratch, "gone_doc.scumble");
+            let gotGoneErr = null;
+            try { await runOpenHandler(null, { path: goneDoc }); } catch (e) { gotGoneErr = e; }
+            assert(gotGoneErr && /gone_doc\.scumble is not there any more/.test(gotGoneErr.message) && dropped.length === 1 && dropped[0] === goneDoc, "D6: ENOENT when req.path is missing must drop from Open Recent and say 'is not there any more'");
+            return `${importingNames.length} unique .importing-<pid>-<seq> temps; shared base imported once; colliding layer -> ${layerNameA} / ${layerNameB}; freeName vs literal -> ${baseC} / ${baseD}`;
         });
         await check("content_addressed_names_and_ensure_on_server", async () => {
             const M = mirror("FM");

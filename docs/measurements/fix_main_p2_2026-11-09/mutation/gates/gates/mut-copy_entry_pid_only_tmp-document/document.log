@@ -1,0 +1,12 @@
+[FAIL] node: png.importing-60476","n3_layer_1a2b3c.png.importing-60476","n3_lmask_9f8e7d.png.importing-60476","n3_layer_1a2b3c (1).png.importing-60476","My Font.ttf.importing-60476","n3_lmask_9f8e7d (1).png.importing-60476","result_00001_.png.importing-60476","My Font (1).ttf.importing-60476","cube.glb.importing-60476","result_00001_ (1).png.importing-60476","cube (1).glb.importing-60476"] |     at assert (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\tools\document_test.js:48:50) |     at C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\tools\document_test.js:565:13
+[ok] content_addressed_names_and_ensure_on_server: image~0bed7f18.png, image~428da393.png, readme~0bed7f18, my_photo__1___final__2~0bed7f18.png; collision+size-check+rename verified
+FAIL(node:60476) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_mut_fix_main_p2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+server renamed plain.png to plain (1).png
+server renamed legacy.png to legacy (1).png
+server renamed IMG_20231005.jpg to IMG_20231005 (1).jpg
+server renamed large_legacy.png to large_legacy (1).png
+
+FAIL
