@@ -1,0 +1,44 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 23 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\k37_mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 259180 bytes, sha256 7e99b55f37ff69ff
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\k37_mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 210462 bytes, sha256 03ddfff981982e19
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\k37_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 11.71s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\k37_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 8.53s
+$ node tools/px_test.js  (rc 0, 154 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2210279424
+PASS
+(node:69732) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/k37_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\k37_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=compositeSha)
+PASS (only: compositeSha; PX_ONLY, not the full test)
+ok   raw composite_masked_tile returns 3 (REFUSED) on invalid pointers or pixel counts  [3,3,3,3,3]
+ok   kernels.js compositeMaskedTile gives the same on routes js (0 calls) and rust (200 calls), write(true) only when r === 1  js=0, rust=200
+ok   kernels.js compositeMaskedTile recovers from a trap via the twin, calls write once, and replaces the instance  r=1, writes=1, trap=1
+ok   TileLayerPixels.compositeStroke on js and rust routes matches byte-for-byte, drops emptied tiles, and keeps unchanged tiles shared with frozen clones  js w=2,1 c=0,0; rust w=2,1 c=3,1
+ok   TileLayerPixels.compositeFill on js and rust routes matches byte-for-byte, clamps partial edge tiles, and keeps unchanged frozen tiles shared  js w=2,2 c=0,0; rust w=2,2 c=3,3 edge=true
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: compositeSha; PX_ONLY, not the full test)
+(node:58396) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/k37_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\k37_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-ed0-on --offline --tiles on editor  (rc 0, 44 s, SCUMBLE_EDITOR_ONLY=the_bucket_fills_through_the_kernel_on_tiles)
+editor rc=0 12s PASS (only: the_bucket_fills_through_the_kernel_on_tiles; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS

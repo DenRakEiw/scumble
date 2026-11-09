@@ -6915,9 +6915,9 @@ try {
     canvases = await script();
     if (seen.length !== n) throw new Error("with stacks off the flood still ran over tiles");
 } finally { E.stacks = true; delete ed.floodOverTiles; }
-if (!seen.includes("tiles") || !seen.includes("bitmap") || seen.includes("none")) throw new Error("the floods over tiles answered " + JSON.stringify(seen));
-if (!tileShapes.length || tileShapes.some((s) => !s.alpha64k) || !(tileShapes[0].n > 0 && tileShapes[0].n < tileShapes[0].boxCells)) {
-    throw new Error("K9 wand tiles must be 64 KB alpha buffers and skip empty cells in bounds: " + JSON.stringify(tileShapes));
+if (!seen.length || seen.some((s) => s !== "tiles")) throw new Error("the floods over tiles answered " + JSON.stringify(seen));
+if (tileShapes.length !== seen.length || tileShapes.some((s) => !s.alpha64k) || !(tileShapes[0].n > 0 && tileShapes[0].n < tileShapes[0].boxCells)) {
+    throw new Error("K9/K37 flood tiles must be 64 KB alpha buffers and skip empty cells in bounds: " + JSON.stringify(tileShapes));
 }
 for (const k of Object.keys(canvases)) if (JSON.stringify(over[k]) !== JSON.stringify(canvases[k])) throw new Error(k + ": over tiles " + JSON.stringify(over[k]) + ", over canvases " + JSON.stringify(canvases[k]));
 if (!over.replace[1] || !over.layer[1]) throw new Error("nothing was selected: " + JSON.stringify(over));
@@ -7214,6 +7214,143 @@ try {
         ed.removeLayer(k.l.id); ed.removeLayer(b.l.id); if (j) ed.removeLayer(j.l.id);
     }
 } finally { E.strokeTiles = was; K.setRoute("compositeMaskedTile", null); ed.pointer = null; }
+ed.clearUndo(); ed.sel.clear(); ed.markSelectionChanged();
+await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+return out;
+"""),
+    ("the_bucket_fills_through_the_kernel_on_tiles", """
+// K37 (docs/PLAN_WASM_BUILD.md §4.11): on a tile layer at scale 1 with a whole offset, bucketFill requests 64 KB alpha
+// tiles from the flood job (`tiles: true`, K9) and composites them in the fill colour through `compositeFill` ->
+// `compositeMaskedTile` (K36) without an OffscreenCanvas, ImageBitmap or `_scratchDraw` readback. At full opacity the
+// bytes equal the canvas path (`InpaintEditor.bucketTiles = false`), including with alpha lock over semi-transparent
+// pixels and on a layer shifted off the tile grid; below full opacity partially blended pixels are within one level of
+// Skia, untouched pixels are unchanged, the Rust and JS routes agree byte for byte, and undo restores the layer.
+if (!ednow(window.__t).tileMode) return { skipped: "the kernel bucket fill is the tile engine's" };
+const K = await import("./editor/px/kernels.js");
+await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor, W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H), bx = base.getContext("2d");
+bx.fillStyle = "#f0f0e8"; bx.fillRect(0, 0, W, H);
+bx.fillStyle = "#2050c0"; bx.fillRect(200, 150, 1800, 1200);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "bucket_tiles.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+await ed.mipsSettled();
+const seedLayer = (l) => l.px.drawInto(null, (x) => {
+    x.fillStyle = "#3060c0"; x.fillRect(100, 100, 1100, 900);
+    x.fillStyle = "rgba(200,90,40,0.55)"; x.fillRect(700, 400, 1200, 900);
+    const g = x.createRadialGradient(1500, 600, 40, 1500, 600, 450); g.addColorStop(0, "rgba(40,200,90,0.9)"); g.addColorStop(1, "rgba(40,200,90,0)");
+    x.fillStyle = g; x.fillRect(1050, 150, 900, 900);
+});
+const bytes = (l) => l.px.readRect(0, 0, l.px.width, l.px.height).data;
+const cases = [
+    { name: "full", opacity: 1, clip: false, lock: false, tol: 0 },
+    { name: "full, alpha locked", opacity: 1, clip: false, lock: true, tol: 0 },
+    { name: "full, clipped off-grid", opacity: 1, clip: true, lock: false, tol: 0 },
+    { name: "opacity", opacity: 0.6, clip: false, lock: false, tol: 1 },
+    { name: "opacity, alpha locked", opacity: 0.75, clip: false, lock: true, tol: 1 },
+    { name: "opacity, clipped off-grid", opacity: 0.65, clip: true, lock: false, tol: 1 },
+];
+const out = {};
+let calls = 0, scratchCalls = 0;
+const was = E.bucketTiles;
+try {
+    ed.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
+    for (const c of cases) {
+        ed.sel.clear();
+        if (c.clip) {
+            ed.sel.fill([450, 250, 1650, 1050], "#ff0000");
+            ed.markSelectionChanged([450, 250, 1650, 1050]);
+        } else {
+            ed.markSelectionChanged();
+        }
+        ed.getBounds();
+        const pair = [];
+        for (const [kernel, rt] of [[true, "rust"], [false, "rust"], [true, "js"]]) {
+            const l = ed.addPaintLayer();
+            seedLayer(l);
+            if (c.clip) { l.x = 137; l.y = 61; }
+            l.alphaLock = c.lock;
+            l.visible = false; // sample "image" floods the base's blue rectangle identically on every run
+            ed.activeLayerId = l.id;
+            ed.brushOpacity = c.opacity; ed.color = "#e08020";
+            const before = bytes(l).slice();
+            E.bucketTiles = kernel;
+            K.setRoute("compositeMaskedTile", rt === "js" ? "js" : null);
+            const oc = l.px.compositeFill, os = l.px._scratchDraw;
+            l.px.compositeFill = function (...a) { calls++; return oc.apply(this, a); };
+            l.px._scratchDraw = function (...a) { scratchCalls++; return os.apply(this, a); };
+            const n0 = calls, s0 = scratchCalls;
+            K.pxCalls(true);
+            try { await ed.bucketFill(600, 500); } finally {
+                delete l.px.compositeFill; delete l.px._scratchDraw;
+                K.setRoute("compositeMaskedTile", null);
+            }
+            const kc = K.pxCalls(true);
+            if (kernel && (calls === n0 || scratchCalls !== s0)) {
+                throw new Error(c.name + ": the tile bucket fill did not go through compositeFill alone (calls=" + (calls - n0) + ", scratch=" + (scratchCalls - s0) + ")");
+            }
+            if (!kernel && (calls !== n0 || scratchCalls === s0)) {
+                throw new Error(c.name + ": with bucketTiles=false the fill did not take _scratchDraw");
+            }
+            if (kernel && rt === "rust" && !(kc.composite_masked_tile > 0)) {
+                throw new Error(c.name + ": expected composite_masked_tile calls on rust route, got " + JSON.stringify(kc));
+            }
+            if ((!kernel || rt === "js") && kc.composite_masked_tile) {
+                throw new Error(c.name + ": unexpected composite_masked_tile calls (" + rt + "): " + JSON.stringify(kc));
+            }
+            pair.push({ l, before, after: bytes(l).slice(), tileCount: l.px.tileCount });
+        }
+        const [k, b, j] = pair;
+        if (j.tileCount !== k.tileCount) throw new Error(c.name + ": js twin tileCount " + j.tileCount + " != rust " + k.tileCount);
+        for (let i = 0; i < k.after.length; i++) {
+            if (j.after[i] !== k.after[i]) throw new Error(c.name + ": js twin differed from rust at byte " + i + ": " + j.after[i] + " vs " + k.after[i]);
+        }
+        const rx0 = (c.clip ? 450 : 200) - k.l.x, ry0 = (c.clip ? 250 : 150) - k.l.y;
+        const rx1 = (c.clip ? 1650 : 2000) - k.l.x, ry1 = (c.clip ? 1050 : 1350) - k.l.y;
+        let differ = 0, worst = 0, untouchedDiffer = 0, changed = 0, firstDiff = null;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                const inFill = x >= rx0 && x < rx1 && y >= ry0 && y < ry1;
+                if (!inFill) {
+                    for (let q = 0; q < 4; q++) if (k.after[i + q] !== k.before[i + q]) { untouchedDiffer++; break; }
+                    continue;
+                }
+                if (k.after[i] !== k.before[i] || k.after[i + 3] !== k.before[i + 3]) changed++;
+                const ka = k.after[i + 3], ba = b.after[i + 3], da = k.before[i + 3];
+                const exact = c.opacity === 1 && (!c.lock || da === 0 || da === 255);
+                const tol = exact ? 0 : 1;
+                let d = Math.abs(ka - ba);
+                for (let q = 0; q < 3; q++) {
+                    d = Math.max(d, exact
+                        ? Math.abs(k.after[i + q] - b.after[i + q])
+                        : Math.abs(Math.round(k.after[i + q] * ka / 255) - Math.round(b.after[i + q] * ba / 255)));
+                }
+                if (d) {
+                    differ++;
+                    if (d > worst) worst = d;
+                    if (d > tol && !firstDiff) {
+                        firstDiff = { x, y, d, tol, before: Array.from(k.before.subarray(i, i + 4)), k: Array.from(k.after.subarray(i, i + 4)), b: Array.from(b.after.subarray(i, i + 4)) };
+                    }
+                }
+            }
+        }
+        if (untouchedDiffer) throw new Error(c.name + ": the kernel bucket fill changed " + untouchedDiffer + " pixels outside the flooded region");
+        if (!(changed > 100000)) throw new Error(c.name + ": the fill changed only " + changed + " pixels");
+        if (firstDiff) throw new Error(c.name + ": the kernel bucket fill is " + worst + " levels off the canvas path on " + differ + " pixels: " + JSON.stringify(firstDiff));
+        await ed.undoStep(); await ed.undoStep(); await ed.undoStep();
+        for (const [what, q] of [["the kernel's", k], ["the canvas'", b], ["the twin's", j]]) {
+            const back = bytes(q.l);
+            for (let i = 0; i < back.length; i++) if (back[i] !== q.before[i]) throw new Error(c.name + ": undo of " + what + " fill left byte " + i + " at " + back[i] + ", was " + q.before[i]);
+        }
+        out[c.name] = { changed, differ, worst };
+        ed.removeLayer(k.l.id); ed.removeLayer(b.l.id); ed.removeLayer(j.l.id);
+    }
+} finally { E.bucketTiles = was; K.setRoute("compositeMaskedTile", null); }
 ed.clearUndo(); ed.sel.clear(); ed.markSelectionChanged();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return out;

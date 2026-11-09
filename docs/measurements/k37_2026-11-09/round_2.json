@@ -1,0 +1,636 @@
+{
+  "round": 2,
+  "rows": {
+    "bucket_fill": {
+      "before": {
+        "wall": 3858.7,
+        "wallSettled": 4016,
+        "blocked": 2209.1,
+        "blockedSettled": 2213.3,
+        "filled": 58302622,
+        "hash": null,
+        "getImageData": {
+          "n": 12,
+          "ms": 1666.2,
+          "MB": 572.2
+        },
+        "putImageData": {
+          "n": 3207,
+          "ms": 159.5,
+          "MB": 647
+        },
+        "windowPx": {
+          "mip_chain": 16
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 39,
+          "mip_chain": 1029
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 152795520,
+          "read": 43.9,
+          "clip": 0,
+          "flood": 714.3,
+          "shape": 217.3,
+          "total": 976.2,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "rust": {
+        "wall": 1723.7,
+        "wallSettled": 1761.1,
+        "blocked": 239.9,
+        "blockedSettled": 243.8,
+        "filled": 58302622,
+        "hash": null,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 906,
+          "ms": 24.7,
+          "MB": 75.7
+        },
+        "windowPx": {
+          "composite_masked_tile": 1045,
+          "mip_chain": 16
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 39,
+          "mip_chain": 1029
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 152795520,
+          "read": 41.7,
+          "clip": 0,
+          "flood": 784.6,
+          "shape": 77.5,
+          "total": 904.2,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "js": {
+        "wall": 2200.8,
+        "wallSettled": 2265.2,
+        "blocked": 835.3,
+        "blockedSettled": 839,
+        "filled": 58302622,
+        "hash": null,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 906,
+          "ms": 24.2,
+          "MB": 75.7
+        },
+        "windowPx": {
+          "mip_chain": 16
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 39,
+          "mip_chain": 1029
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 152795520,
+          "read": 22.1,
+          "clip": 0,
+          "flood": 720.4,
+          "shape": 94.8,
+          "total": 837.6,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      }
+    },
+    "bucket_one_disc": {
+      "before": {
+        "wall": 137,
+        "wallSettled": 137,
+        "blocked": 77.1,
+        "blockedSettled": 77.1,
+        "filled": 441530,
+        "hash": 536316862,
+        "getImageData": {
+          "n": 2,
+          "ms": 13.5,
+          "MB": 4
+        },
+        "putImageData": {
+          "n": 19,
+          "ms": 23.6,
+          "MB": 77.8
+        },
+        "windowPx": {
+          "mip_chain": 15
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 18.5,
+          "clip": 0,
+          "flood": 9.4,
+          "shape": 1.7,
+          "total": 29.7,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "rust": {
+        "wall": 33.7,
+        "wallSettled": 33.7,
+        "blocked": 9.2,
+        "blockedSettled": 9.2,
+        "filled": 441530,
+        "hash": 536316862,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 15,
+          "ms": 0,
+          "MB": 0.2
+        },
+        "windowPx": {
+          "composite_masked_tile": 15,
+          "mip_chain": 15
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 13,
+          "clip": 0,
+          "flood": 6.5,
+          "shape": 1.2,
+          "total": 20.8,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "js": {
+        "wall": 42.1,
+        "wallSettled": 42.1,
+        "blocked": 15.9,
+        "blockedSettled": 15.9,
+        "filled": 441530,
+        "hash": 536316862,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 15,
+          "ms": 0.1,
+          "MB": 0.2
+        },
+        "windowPx": {
+          "mip_chain": 15
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 14.8,
+          "clip": 0,
+          "flood": 6,
+          "shape": 1.7,
+          "total": 22.6,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      }
+    },
+    "bucket_sel_1000": {
+      "before": {
+        "wall": 48.3,
+        "wallSettled": 48.3,
+        "blocked": 25.5,
+        "blockedSettled": 25.5,
+        "filled": 441530,
+        "hash": 361814974,
+        "getImageData": {
+          "n": 2,
+          "ms": 13.3,
+          "MB": 4
+        },
+        "putImageData": {
+          "n": 32,
+          "ms": 0.9,
+          "MB": 4.2
+        },
+        "windowPx": {
+          "mip_chain": 15
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 8.3,
+          "clip": 1,
+          "flood": 8.2,
+          "shape": 0.9,
+          "total": 18.6,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "rust": {
+        "wall": 39.2,
+        "wallSettled": 39.2,
+        "blocked": 11.3,
+        "blockedSettled": 11.3,
+        "filled": 441530,
+        "hash": 361814974,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 15,
+          "ms": 0.1,
+          "MB": 0.2
+        },
+        "windowPx": {
+          "composite_masked_tile": 15,
+          "mip_chain": 15
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 12.9,
+          "clip": 1.8,
+          "flood": 8.4,
+          "shape": 0.9,
+          "total": 24,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "js": {
+        "wall": 44.7,
+        "wallSettled": 44.7,
+        "blocked": 13.4,
+        "blockedSettled": 13.4,
+        "filled": 441530,
+        "hash": 361814974,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 15,
+          "ms": 0,
+          "MB": 0.2
+        },
+        "windowPx": {
+          "mip_chain": 15
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 13.9,
+          "clip": 2.9,
+          "flood": 8.4,
+          "shape": 1.1,
+          "total": 26.4,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      }
+    },
+    "bucket_sel_256": {
+      "before": {
+        "wall": 45.5,
+        "wallSettled": 45.5,
+        "blocked": 15.7,
+        "blockedSettled": 15.7,
+        "filled": 65536,
+        "hash": 2435952197,
+        "getImageData": {
+          "n": 2,
+          "ms": 8.7,
+          "MB": 4
+        },
+        "putImageData": {
+          "n": 32,
+          "ms": 0.6,
+          "MB": 4.2
+        },
+        "windowPx": {
+          "mip_chain": 4
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 13.4,
+          "clip": 0.6,
+          "flood": 7.3,
+          "shape": 1.4,
+          "total": 22.8,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "rust": {
+        "wall": 30.8,
+        "wallSettled": 30.8,
+        "blocked": 7.5,
+        "blockedSettled": 7.5,
+        "filled": 65536,
+        "hash": 2435952197,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 4,
+          "ms": 0,
+          "MB": 0.1
+        },
+        "windowPx": {
+          "composite_masked_tile": 4,
+          "mip_chain": 4
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 10.2,
+          "clip": 0.3,
+          "flood": 7.3,
+          "shape": 0.8,
+          "total": 18.7,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "js": {
+        "wall": 29.7,
+        "wallSettled": 29.7,
+        "blocked": 7.4,
+        "blockedSettled": 7.4,
+        "filled": 65536,
+        "hash": 2435952197,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 4,
+          "ms": 0,
+          "MB": 0.1
+        },
+        "windowPx": {
+          "mip_chain": 4
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 9.6,
+          "clip": 0.3,
+          "flood": 7.2,
+          "shape": 0.8,
+          "total": 18,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      }
+    },
+    "bucket_sel_64": {
+      "before": {
+        "wall": 50,
+        "wallSettled": 50,
+        "blocked": 17.7,
+        "blockedSettled": 17.7,
+        "filled": 4096,
+        "hash": 1565236229,
+        "getImageData": {
+          "n": 2,
+          "ms": 8.5,
+          "MB": 4
+        },
+        "putImageData": {
+          "n": 21,
+          "ms": 1.1,
+          "MB": 4.1
+        },
+        "windowPx": {
+          "mip_chain": 4
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 12.9,
+          "clip": 0.4,
+          "flood": 9.9,
+          "shape": 1.3,
+          "total": 24.6,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "rust": {
+        "wall": 34,
+        "wallSettled": 34,
+        "blocked": 7.7,
+        "blockedSettled": 7.7,
+        "filled": 4096,
+        "hash": 1565236229,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 4,
+          "ms": 0,
+          "MB": 0.1
+        },
+        "windowPx": {
+          "composite_masked_tile": 4,
+          "mip_chain": 4
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 12.8,
+          "clip": 0.4,
+          "flood": 7.2,
+          "shape": 1.1,
+          "total": 21.4,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      },
+      "js": {
+        "wall": 32.7,
+        "wallSettled": 32.7,
+        "blocked": 5,
+        "blockedSettled": 5,
+        "filled": 4096,
+        "hash": 1565236229,
+        "getImageData": {
+          "n": 0,
+          "ms": 0,
+          "MB": 0
+        },
+        "putImageData": {
+          "n": 4,
+          "ms": 0,
+          "MB": 0.1
+        },
+        "windowPx": {
+          "mip_chain": 4
+        },
+        "workerPx": {
+          "flood_shape": 2,
+          "composite_tile": 4
+        },
+        "floodJob": {
+          "jobs": 2,
+          "pixels": 3844096,
+          "read": 10.7,
+          "clip": 0.7,
+          "flood": 8,
+          "shape": 1.3,
+          "total": 20.7,
+          "gen": 0,
+          "pxCalls": {
+            "flood_shape": 2
+          }
+        },
+        "focused": true
+      }
+    }
+  },
+  "compositeFillOnly": {
+    "band_949_tiles": {
+      "tiles": 1045,
+      "rust": {
+        "ms": 264.4,
+        "written": 1045,
+        "composite_masked_tile": 1045
+      },
+      "js": {
+        "ms": 730.3,
+        "written": 1045,
+        "composite_masked_tile": 0
+      }
+    },
+    "disc_tiles": {
+      "tiles": 15,
+      "rust": {
+        "ms": 2.1,
+        "written": 15,
+        "composite_masked_tile": 15
+      },
+      "js": {
+        "ms": 7.73,
+        "written": 15,
+        "composite_masked_tile": 0
+      }
+    }
+  }
+}
