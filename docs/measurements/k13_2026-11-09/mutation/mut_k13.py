@@ -76,6 +76,42 @@ MUTANTS = [
         {"px": ["relight"]},
     ),
     (
+        "relight_f64_bounds_cy_le_zero",
+        "crates/px/src/relight.rs",
+        [
+            (
+                "                    if cx < 0.0 || cy < 0.0 || cx >= wf || cy >= hf {",
+                "                    if cx < 0.0 || cy <= 0.0 || cx >= wf || cy >= hf {",
+            )
+        ],
+        "killed by 16x4 cy == 0.0 boundary wall in relightCases",
+        {"px": ["relight"]},
+    ),
+    (
+        "relight_f64_bounds_cy_gt_hf",
+        "crates/px/src/relight.rs",
+        [
+            (
+                "                    if cx < 0.0 || cy < 0.0 || cx >= wf || cy >= hf {",
+                "                    if cx < 0.0 || cy < 0.0 || cx >= wf || cy > hf {",
+            )
+        ],
+        "killed by 16x4 cy == hf boundary out-of-bounds in relightCases",
+        {"px": ["relight"]},
+    ),
+    (
+        "relight_f64_unchecked_mul",
+        "crates/px/src/relight.rs",
+        [
+            (
+                "    let n_depth = w.checked_mul(h)?;".replace("\r\n", "\n"),
+                "    let n_depth = Some(w.wrapping_mul(h))?;",
+            )
+        ],
+        "killed by raw shadow_march_f64 w=65536, h=65536 overflow refusal check in relightCases",
+        {"px": ["relight"]},
+    ),
+    (
         "kernels_js_hoist_fold_sun_rdx",
         "renderer/editor/px/kernels_js.js",
         [
@@ -109,6 +145,18 @@ MUTANTS = [
             )
         ],
         "killed by K.shadowMarch guard check in relightBench",
+        {"px": ["relightBench"]},
+    ),
+    (
+        "kernels_js_drop_bias_neg_guard",
+        "renderer/editor/px/kernels.js",
+        [
+            (
+                "    if (Number(bias ?? 0) < 0) return false;\n    return true;",
+                "    return true;",
+            )
+        ],
+        "killed by K.shadowMarch sun bias < 0 guard check in relightBench",
         {"px": ["relightBench"]},
     ),
 ]

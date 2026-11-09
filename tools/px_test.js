@@ -1862,7 +1862,7 @@ async function relightCases(px, label, js) {
     for (const [w, h, combos] of [
         [96, 64, [[1, 1], [1, 16], [3, 16], [4, 32], [16, 64]]],
         [512, 341, [[1, 1], [1, 16], [3, 16], [4, 32], [16, 64]]],
-        [1024, 682, [[1, 16], [4, 32]]],
+        [1024, 682, [[1, 16], [3, 1], [4, 32], [16, 64]]],
     ]) {
         const d = smoothDepth(w, h), map = { data: d, w, h }, long = Math.max(w, h), scale = 0.5 * long, radius = 0.3 * 0.05 * long, bias = 0.005 * scale;
         const lights = [];
@@ -1950,18 +1950,33 @@ async function relightCases(px, label, js) {
         }
         const a = px.job;
         try {
-            const pd = px._in(a, d, d.byteLength), pt = a.take(24), po = a.take(256);
-            px.u8().fill(0xab, po, po + 256);
+            const pd = px._in(a, d, d.byteLength), pt = a.take(24), po = a.take(65536);
+            px.u8().fill(0xab, po, po + 65536);
             px.view(Float64Array, pt, 3).set([8, 8, 50]);
             px.exports.shadow_march_f64(0, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, 0, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, 0);
+            px.exports.shadow_march_f64(pd, 0, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 0, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 0x40000000, 1, 50, 0, pt, 1, 16, 0.5, 0, 1, po);
+            px.exports.shadow_march_f64(pd, 1, 0x40000000, 50, 0, pt, 1, 16, 0.5, 0, 1, po);
+            px.exports.shadow_march_f64(pd, 65536, 65536, 50, 0, pt, 1, 16, 0.5, 0, 1, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 16, 1, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 0, po);
             px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 0, 16, 0.5, 0, 16, po);
             px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 17, 16, 0.5, 0, 16, po);
             px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 0, 0.5, 0, 16, po);
             px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 65, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, NaN, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, Infinity, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, NaN, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, Infinity, 0, 16, po);
             px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, -0.5, 0, 16, po);
             px.view(Float64Array, pt, 3).set([NaN, 8, 50]);
             px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
-            const untouched = px.view(Uint8Array, po, 256).every((b) => b === 0xab);
+            px.view(Float64Array, pt, 3).set([8, Infinity, 50]);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            const untouched = px.view(Uint8Array, po, 65536).every((b) => b === 0xab);
             if (!untouched) { refusedOk = false; refusedDetail = "raw export wrote to out on invalid call"; }
         } finally { px._reset(a); }
         check(`${label} shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out`, refusedOk, refusedDetail);
@@ -2131,25 +2146,35 @@ async function relightBench(js, simd) {
     // K13 guard and route checks on K.shadowMarch
     {
         const w = 64, h = 48, d = smoothDepth(w, h);
-        const goodLight = [20, 15, 30, 0];
+        const goodLight = [20, 15, 30, 0], sunLight = [0, 0, 1, 1];
         K.pxCalls(true);
         let guardOk = true, guardDetail = "";
-        for (const [what, scale, light, radius, bias] of [
-            ["NaN lx", 30, [NaN, 15, 30, 0], 2, 0.2],
-            ["Inf ly", 30, [20, Infinity, 30, 0], 2, 0.2],
-            ["-Inf lz", 30, [20, 15, -Infinity, 1], 2, 0.2],
-            ["lx >= 2^30", 30, [0x40000000, 15, 30, 0], 2, 0.2],
-            ["ly <= -2^30", 30, [20, -0x40000000, 30, 0], 2, 0.2],
-            ["lz >= 2^30 (sun)", 30, [0, 0, 0x40000000, 1], 2, 0.2],
-            ["scale >= 2^30", 0x40000000, goodLight, 2, 0.2],
-            ["radius >= 2^30", 30, goodLight, 0x40000000, 0.2],
-            ["bias >= 2^30", 30, goodLight, 2, 0x40000000],
-            ["bias < 0", 30, goodLight, 2, -0.001],
-            ["NaN radius", 30, goodLight, NaN, 0.2],
-            ["Inf bias", 30, goodLight, 2, Infinity],
+        for (const [what, gw, gh, scale, light, radius, bias, rows] of [
+            ["w=0 (sun)", 0, h, 30, sunLight, 2, 0.2, h],
+            ["h=0 (sun)", w, 0, 30, sunLight, 2, 0.2, 0],
+            ["w>=2^30 (sun)", 0x40000000, 1, 30, sunLight, 2, 0.2, 0],
+            ["h>=2^30 (sun)", 1, 0x40000000, 30, sunLight, 2, 0.2, 0],
+            ["NaN lx", w, h, 30, [NaN, 15, 30, 0], 2, 0.2, h],
+            ["Inf ly", w, h, 30, [20, Infinity, 30, 0], 2, 0.2, h],
+            ["-Inf lz (sun)", w, h, 30, [20, 15, -Infinity, 1], 2, 0.2, h],
+            ["lx >= 2^30", w, h, 30, [0x40000000, 15, 30, 0], 2, 0.2, h],
+            ["ly <= -2^30", w, h, 30, [20, -0x40000000, 30, 0], 2, 0.2, h],
+            ["lz >= 2^30 (sun)", w, h, 30, [0, 0, 0x40000000, 1], 2, 0.2, h],
+            ["scale >= 2^30 (point)", w, h, 0x40000000, goodLight, 2, 0.2, h],
+            ["scale >= 2^30 (sun)", w, h, 0x40000000, sunLight, 2, 0.2, h],
+            ["radius >= 2^30 (point)", w, h, 30, goodLight, 0x40000000, 0.2, h],
+            ["radius >= 2^30 (sun)", w, h, 30, sunLight, 0x40000000, 0.2, h],
+            ["bias >= 2^30 (point)", w, h, 30, goodLight, 2, 0x40000000, h],
+            ["bias >= 2^30 (sun)", w, h, 30, sunLight, 2, 0x40000000, h],
+            ["bias < 0 (point)", w, h, 30, goodLight, 2, -0.001, h],
+            ["bias < 0 (sun)", w, h, 30, sunLight, 2, -0.001, h],
+            ["NaN radius (point)", w, h, 30, goodLight, NaN, 0.2, h],
+            ["NaN radius (sun)", w, h, 30, sunLight, NaN, 0.2, h],
+            ["Inf bias (point)", w, h, 30, goodLight, 2, Infinity, h],
+            ["Inf bias (sun)", w, h, 30, sunLight, 2, Infinity, h],
         ]) {
-            const got = K.shadowMarch(d, w, h, scale, light, radius, 4, 16, bias, 0, h);
-            const want = js.shadowMarch(d, w, h, scale, light, radius, 4, 16, bias, 0, h);
+            const got = K.shadowMarch(d, gw, gh, scale, light, radius, 4, 16, bias, 0, rows);
+            const want = js.shadowMarch(d, gw, gh, scale, light, radius, 4, 16, bias, 0, rows);
             const calls = K.pxCalls(true);
             if (!eqBytes(got, want) || Object.keys(calls).length !== 0) {
                 guardOk = false;

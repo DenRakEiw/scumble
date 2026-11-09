@@ -223,6 +223,18 @@ pub fn shadow_march(
     }
 }
 
+/// Validates dimensions and row bounds for `shadow_march_f64` and returns `(band_rows, n_depth, n_out)`.
+#[inline]
+pub fn march_lens(w: usize, h: usize, row0: usize, rows: usize) -> Option<(usize, usize, usize)> {
+    if w == 0 || h == 0 || w >= 0x4000_0000 || h >= 0x4000_0000 || row0 >= h || rows == 0 {
+        return None;
+    }
+    let band_rows = rows.min(h - row0);
+    let n_depth = w.checked_mul(h)?;
+    let n_out = w.checked_mul(band_rows)?;
+    Some((band_rows, n_depth, n_out))
+}
+
 /// Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13, docs/PLAN_WASM_BUILD.md §4.4).
 /// `taps_xyz` holds `taps * 3` `f64`s (`[tapX[t], tapY[t], tapZ[t]]` for `t in 0..taps`) precomputed on the JS side
 /// from `relightVogel`. Output is u8 visibility (0=shadow, 255=lit) for rows `[row0 .. row0 + rows]`.
@@ -241,13 +253,10 @@ pub fn shadow_march_f64(
     rows: usize,
     out: &mut [u8],
 ) {
-    if w == 0
-        || h == 0
-        || w >= 0x4000_0000
-        || h >= 0x4000_0000
-        || row0 >= h
-        || rows == 0
-        || taps == 0
+    let Some((band_rows, n_depth, n_out)) = march_lens(w, h, row0, rows) else {
+        return;
+    };
+    if taps == 0
         || taps > 16
         || steps == 0
         || steps > 64
@@ -257,13 +266,6 @@ pub fn shadow_march_f64(
     {
         return;
     }
-    let Some(n_depth) = w.checked_mul(h) else {
-        return;
-    };
-    let band_rows = rows.min(h - row0);
-    let Some(n_out) = w.checked_mul(band_rows) else {
-        return;
-    };
     if depth.len() < n_depth || taps_xyz.len() < taps * 3 || out.len() < n_out {
         return;
     }

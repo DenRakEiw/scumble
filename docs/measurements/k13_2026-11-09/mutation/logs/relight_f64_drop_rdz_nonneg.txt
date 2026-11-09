@@ -1,25 +1,25 @@
 $ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 9 s)
-> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\bdbc76a6-8acd-4133-ba15-5b6b31263204\scratch\mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
-px.wasm: 260636 bytes, sha256 95d99a99cd5917fb
-> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\bdbc76a6-8acd-4133-ba15-5b6b31263204\scratch\mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
-px_scalar.wasm: 211902 bytes, sha256 c7374fcfb15eede8
-   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\bdbc76a6-8acd-4133-ba15-5b6b31263204\scratch\mut_tree\crates\px)
-    Finished `release` profile [optimized] target(s) in 4.52s
-   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\bdbc76a6-8acd-4133-ba15-5b6b31263204\scratch\mut_tree\crates\px)
-    Finished `release` profile [optimized] target(s) in 3.98s
-$ node tools/px_test.js  (rc 1, 18 s, PX_ONLY=relight)
-FAIL rust simd shadow_march_f64 equals its twin byte for byte (115 cases, each also at an odd offset)  128x128 16-tap point: out[3] is 255, the twin has 64
-FAIL rust scalar shadow_march_f64 equals its twin byte for byte (115 cases, each also at an odd offset)  128x128 16-tap point: out[3] is 255, the twin has 64
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k13\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 260466 bytes, sha256 61c52207340b33d5
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k13\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 211748 bytes, sha256 3f7a203655ee2287
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k13\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.79s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k13\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.47s
+$ node tools/px_test.js  (rc 1, 78 s, PX_ONLY=relight)
+FAIL rust simd shadow_march_f64 equals its twin byte for byte (131 cases, each also at an odd offset)  128x128 16-tap point: out[3] is 255, the twin has 64
+FAIL rust scalar shadow_march_f64 equals its twin byte for byte (131 cases, each also at an odd offset)  128x128 16-tap point: out[3] is 255, the twin has 64
 FAIL (2) (only: relight; PX_ONLY, not the full test)
 ok   rust scalar height_normals equals its twin within 1 level
 ok   rust scalar shadow_march equals its twin within 1 level
 ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
-ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (115 cases)
-FAIL rust scalar shadow_march_f64 equals its twin byte for byte (115 cases, each also at an odd offset)  128x128 16-tap point: out[3] is 255, the twin has 64
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (131 cases)
+FAIL rust scalar shadow_march_f64 equals its twin byte for byte (131 cases, each also at an odd offset)  128x128 16-tap point: out[3] is 255, the twin has 64
 ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
 ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
 FAIL (2) (only: relight; PX_ONLY, not the full test)
-(node:50668) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/bdbc76a6-8acd-4133-ba15-5b6b31263204/scratch/mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:62144) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_mut_k13/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
-To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\bdbc76a6-8acd-4133-ba15-5b6b31263204\scratch\mut_tree\package.json.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k13\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)

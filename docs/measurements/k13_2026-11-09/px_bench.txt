@@ -1,33 +1,66 @@
-﻿=== node tools/px_test.js (PX_ONLY=relightBench,relight PX_BENCH=large) ===
-node : (node:30488) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
-file:///F:/canvas/.claude/worktrees/ag-chain-l/renderer/editor/blend_modes.js is not specified and it doesn't parse as 
-CommonJS.
-In Zeile:12 Zeichen:1
-+ node tools/px_test.js 2>&1 | Out-File -Append -Encoding utf8 docs\mea ...
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: ((node:30488) [M...se as CommonJS.:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
+=== Node (node tools/px_test.js, PX_ONLY=relightBench,relight PX_BENCH=large) ===
+PX_ONLY: only the groups relightBench, relight run (a filtered run, not the full test)
+ok   kernels.js loads px.wasm (SIMD) as in a worker
+       1024 x 1024: height_normals routed (rust) 29.1 ms, twin 58.3 ms; simd cold first call 46.0 ms (compile 1.1 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march point routed (rust_f64) 357.9 ms, twin 294.3 ms, simd_f64 362.4 ms, simd_f32 369.3 ms (twin / simd_f64 0.81); cold first call 542.6 ms (compile 1.2 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 384.7 ms, twin 306.9 ms, simd_f64 381.6 ms, simd_f32 379.0 ms (twin / simd_f64 0.80); cold first call 683.7 ms (compile 1.9 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 151.4 ms, twin 114.9 ms, simd_f64 123.4 ms, simd_f32 149.7 ms (twin / simd_f64 0.93); cold first call 273.5 ms (compile 1.0 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march point routed (rust_f64) 31.6 ms, twin 26.9 ms, simd_f64 30.3 ms, simd_f32 34.0 ms (twin / simd_f64 0.89); cold first call 57.1 ms (compile 1.0 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march spot routed (rust_f64) 32.9 ms, twin 29.5 ms, simd_f64 34.4 ms, simd_f32 35.2 ms (twin / simd_f64 0.86); cold first call 63.2 ms (compile 2.8 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march sun routed (rust_f32) 16.5 ms, twin 11.9 ms, simd_f64 11.7 ms, simd_f32 17.1 ms (twin / simd_f64 1.02); cold first call 29.3 ms (compile 3.4 ms)
+       2048 x 1365: height_normals routed (rust) 91.2 ms, twin 168.5 ms; simd cold first call 126.0 ms (compile 1.4 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march point routed (rust_f64) 948.6 ms, twin 783.5 ms, simd_f64 967.2 ms, simd_f32 929.8 ms (twin / simd_f64 0.81); cold first call 1773.2 ms (compile 2.0 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 1084.0 ms, twin 839.2 ms, simd_f64 1052.5 ms, simd_f32 1016.9 ms (twin / simd_f64 0.80); cold first call 1878.4 ms (compile 1.0 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 339.9 ms, twin 238.9 ms, simd_f64 282.5 ms, simd_f32 336.9 ms (twin / simd_f64 0.85); cold first call 588.6 ms (compile 2.0 ms)
+       4096 x 2731: height_normals routed (rust) 327.1 ms, twin 591.3 ms; simd cold first call 492.3 ms (compile 4.4 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march point routed (rust_f64) 3808.3 ms, twin 2963.2 ms, simd_f64 3673.2 ms, simd_f32 3766.8 ms (twin / simd_f64 0.81); cold first call 6323.9 ms (compile 3.4 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 4157.2 ms, twin 3206.6 ms, simd_f64 4119.8 ms, simd_f32 4287.6 ms (twin / simd_f64 0.78); cold first call 6865.1 ms (compile 1.3 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 1891.5 ms, twin 1478.1 ms, simd_f64 1549.8 ms, simd_f32 1911.9 ms (twin / simd_f64 0.95); cold first call 2395.7 ms (compile 1.8 ms)
+ok   shadow_march as routed: kind 0 (point, spot) runs shadow_march_f64 (byte-identical to the twin), kind 1 (sun) runs shadow_march (byte for byte)
+ok   K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)
+ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes  js={} below={} at={"shadow_march_f64":1}
+ok   kernels.js back on the JS kernels for the later cases
+ok   rust simd module reports its SIMD flag
+ok   rust simd height_normals equals its twin within 1 level
+ok   rust simd shadow_march equals its twin within 1 level
+ok   rust simd smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
+ok   rust simd hoisted js.shadowMarch equals pre-hoist reference byte for byte (131 cases)
+ok   rust simd shadow_march_f64 equals its twin byte for byte (131 cases, each also at an odd offset)
+ok   js shadow_march_f64 gives the same at an odd offset
+ok   rust simd shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
+ok   rust simd shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar height_normals equals its twin within 1 level
+ok   rust scalar shadow_march equals its twin within 1 level
+ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (131 cases)
+ok   rust scalar shadow_march_f64 equals its twin byte for byte (131 cases, each also at an odd offset)
+ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
+ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
+PASS (only: relightBench, relight; PX_ONLY, not the full test)
+(node:5800) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-l/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-l\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
+
+=== Electron V8 (ELECTRON_RUN_AS_NODE=1 electron.exe tools/px_test.js, PX_ONLY=relightBench,relight PX_BENCH=large) ===
 PX_ONLY: only the groups relightBench, relight run (a filtered run, not the full test)
 ok   kernels.js loads px.wasm (SIMD) as in a worker
-       1024 x 1024: height_normals routed (rust) 27.4 ms, twin 49.8 ms; simd cold first call 42.1 ms (compile 1.3 ms)
-       1024 x 1024 (4 taps, 32 steps): shadow_march point routed (rust_f64) 387.8 ms, twin 331.7 ms, simd_f64 397.1 ms, simd_f32 404.2 ms (twin / simd_f64 0.84); cold first call 516.6 ms (compile 0.9 ms)
-       1024 x 1024 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 445.1 ms, twin 376.0 ms, simd_f64 436.2 ms, simd_f32 453.3 ms (twin / simd_f64 0.86); cold first call 730.5 ms (compile 1.9 ms)
-       1024 x 1024 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 175.8 ms, twin 123.7 ms, simd_f64 140.0 ms, simd_f32 176.1 ms (twin / simd_f64 0.88); cold first call 315.4 ms (compile 2.2 ms)
-       1024 x 682 quick (1 taps, 16 steps): shadow_march point routed (rust_f64) 38.0 ms, twin 31.2 ms, simd_f64 35.6 ms, simd_f32 37.1 ms (twin / simd_f64 0.88); cold first call 74.3 ms (compile 1.3 ms)
-       1024 x 682 quick (1 taps, 16 steps): shadow_march spot routed (rust_f64) 40.6 ms, twin 34.4 ms, simd_f64 39.4 ms, simd_f32 39.7 ms (twin / simd_f64 0.87); cold first call 80.0 ms (compile 1.2 ms)
-       1024 x 682 quick (1 taps, 16 steps): shadow_march sun routed (rust_f32) 19.6 ms, twin 14.2 ms, simd_f64 13.7 ms, simd_f32 19.3 ms (twin / simd_f64 1.03); cold first call 33.1 ms (compile 2.0 ms)
-       2048 x 1365: height_normals routed (rust) 97.6 ms, twin 201.0 ms; simd cold first call 144.2 ms (compile 1.9 ms)
-       2048 x 1365 (4 taps, 32 steps): shadow_march point routed (rust_f64) 898.8 ms, twin 682.9 ms, simd_f64 896.5 ms, simd_f32 847.0 ms (twin / simd_f64 0.76); cold first call 1841.1 ms (compile 2.2 ms)
-       2048 x 1365 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 987.1 ms, twin 762.5 ms, simd_f64 967.9 ms, simd_f32 965.0 ms (twin / simd_f64 0.79); cold first call 1743.2 ms (compile 1.4 ms)
-       2048 x 1365 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 348.5 ms, twin 236.3 ms, simd_f64 274.6 ms, simd_f32 337.2 ms (twin / simd_f64 0.86); cold first call 662.3 ms (compile 1.0 ms)
-       4096 x 2731: height_normals routed (rust) 343.9 ms, twin 598.0 ms; simd cold first call 546.3 ms (compile 1.9 ms)
-       4096 x 2731 (4 taps, 32 steps): shadow_march point routed (rust_f64) 3690.9 ms, twin 2852.3 ms, simd_f64 3642.9 ms, simd_f32 3684.2 ms (twin / simd_f64 0.78); cold first call 7072.7 ms (compile 2.6 ms)
-       4096 x 2731 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 4903.1 ms, twin 3871.7 ms, simd_f64 4505.1 ms, simd_f32 5119.1 ms (twin / simd_f64 0.86); cold first call 6956.6 ms (compile 1.4 ms)
-       4096 x 2731 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 1432.1 ms, twin 998.7 ms, simd_f64 1135.9 ms, simd_f32 1431.7 ms (twin / simd_f64 0.88); cold first call 3608.7 ms (compile 3.1 ms)
+       1024 x 1024: height_normals routed (rust) 27.5 ms, twin 51.5 ms; simd cold first call 42.8 ms (compile 0.9 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march point routed (rust_f64) 358.4 ms, twin 265.1 ms, simd_f64 355.2 ms, simd_f32 368.4 ms (twin / simd_f64 0.75); cold first call 577.1 ms (compile 2.0 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 375.1 ms, twin 272.1 ms, simd_f64 381.6 ms, simd_f32 399.9 ms (twin / simd_f64 0.71); cold first call 737.7 ms (compile 1.2 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 181.5 ms, twin 149.7 ms, simd_f64 140.8 ms, simd_f32 182.1 ms (twin / simd_f64 1.06); cold first call 294.0 ms (compile 2.7 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march point routed (rust_f64) 35.5 ms, twin 28.5 ms, simd_f64 34.8 ms, simd_f32 39.6 ms (twin / simd_f64 0.82); cold first call 68.9 ms (compile 1.2 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march spot routed (rust_f64) 41.7 ms, twin 33.2 ms, simd_f64 38.6 ms, simd_f32 40.7 ms (twin / simd_f64 0.86); cold first call 59.4 ms (compile 2.6 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march sun routed (rust_f32) 16.3 ms, twin 13.0 ms, simd_f64 11.0 ms, simd_f32 16.3 ms (twin / simd_f64 1.18); cold first call 36.2 ms (compile 1.0 ms)
+       2048 x 1365: height_normals routed (rust) 78.5 ms, twin 178.9 ms; simd cold first call 127.8 ms (compile 1.0 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march point routed (rust_f64) 848.8 ms, twin 635.1 ms, simd_f64 849.3 ms, simd_f32 902.9 ms (twin / simd_f64 0.75); cold first call 1579.5 ms (compile 1.3 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 949.2 ms, twin 711.0 ms, simd_f64 949.2 ms, simd_f32 975.3 ms (twin / simd_f64 0.75); cold first call 1621.4 ms (compile 1.0 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 341.9 ms, twin 224.1 ms, simd_f64 255.8 ms, simd_f32 345.1 ms (twin / simd_f64 0.88); cold first call 521.2 ms (compile 2.2 ms)
+       4096 x 2731: height_normals routed (rust) 314.7 ms, twin 678.7 ms; simd cold first call 449.1 ms (compile 2.0 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march point routed (rust_f64) 3733.8 ms, twin 3145.8 ms, simd_f64 4753.5 ms, simd_f32 4230.0 ms (twin / simd_f64 0.66); cold first call 7440.2 ms (compile 2.4 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 5355.3 ms, twin 4743.2 ms, simd_f64 5609.4 ms, simd_f32 5768.6 ms (twin / simd_f64 0.85); cold first call 9676.1 ms (compile 2.6 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 1507.7 ms, twin 1004.2 ms, simd_f64 1196.8 ms, simd_f32 1456.2 ms (twin / simd_f64 0.84); cold first call 2387.2 ms (compile 2.7 ms)
 ok   shadow_march as routed: kind 0 (point, spot) runs shadow_march_f64 (byte-identical to the twin), kind 1 (sun) runs shadow_march (byte for byte)
 ok   K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)
 ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes  js={} below={} at={"shadow_march_f64":1}
@@ -35,66 +68,22 @@ ok   kernels.js back on the JS kernels for the later cases
 ok   rust simd module reports its SIMD flag
 ok   rust simd height_normals equals its twin within 1 level
 ok   rust simd shadow_march equals its twin within 1 level
-ok   rust simd hoisted js.shadowMarch equals pre-hoist reference byte for byte (65 cases)
-ok   rust simd shadow_march_f64 equals its twin byte for byte (65 cases, each also at an odd offset)
+ok   rust simd smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
+ok   rust simd hoisted js.shadowMarch equals pre-hoist reference byte for byte (131 cases)
+ok   rust simd shadow_march_f64 equals its twin byte for byte (131 cases, each also at an odd offset)
 ok   js shadow_march_f64 gives the same at an odd offset
 ok   rust simd shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
-ok   rust simd shadowMarchF64 with a key copies the depth map into its resident slot once across stripes  slotCopied=1
+ok   rust simd shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
 ok   rust scalar module reports its SIMD flag
 ok   rust scalar height_normals equals its twin within 1 level
 ok   rust scalar shadow_march equals its twin within 1 level
-ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (65 cases)
-ok   rust scalar shadow_march_f64 equals its twin byte for byte (65 cases, each also at an odd offset)
+ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (131 cases)
+ok   rust scalar shadow_march_f64 equals its twin byte for byte (131 cases, each also at an odd offset)
 ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
-ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across stripes  slotCopied=1
+ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
 PASS (only: relightBench, relight; PX_ONLY, not the full test)
-=== ELECTRON_RUN_AS_NODE=1 F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js (PX_ONLY=relightBench,relight PX_BENCH=large) ===
-electron.exe : (node:46756) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
-file:///F:/canvas/.claude/worktrees/ag-chain-l/renderer/editor/blend_modes.js is not specified and it doesn't parse as 
-CommonJS.
-In Zeile:15 Zeichen:1
-+ & F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js  ...
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: ((node:46756) [M...se as CommonJS.:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
+(node:59920) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-l/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-l\package.json.
 (Use `electron --trace-warnings ...` to show where the warning was created)
-PX_ONLY: only the groups relightBench, relight run (a filtered run, not the full test)
-ok   kernels.js loads px.wasm (SIMD) as in a worker
-       1024 x 1024: height_normals routed (rust) 30.6 ms, twin 56.3 ms; simd cold first call 44.8 ms (compile 1.2 ms)
-       1024 x 1024 (4 taps, 32 steps): shadow_march point routed (rust_f64) 509.9 ms, twin 475.7 ms, simd_f64 512.0 ms, simd_f32 555.9 ms (twin / simd_f64 0.93); cold first call 563.9 ms (compile 1.1 ms)
-       1024 x 1024 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 565.6 ms, twin 480.8 ms, simd_f64 540.7 ms, simd_f32 606.6 ms (twin / simd_f64 0.89); cold first call 1097.3 ms (compile 1.3 ms)
-       1024 x 1024 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 205.2 ms, twin 155.4 ms, simd_f64 142.5 ms, simd_f32 215.7 ms (twin / simd_f64 1.09); cold first call 350.7 ms (compile 1.3 ms)
-       1024 x 682 quick (1 taps, 16 steps): shadow_march point routed (rust_f64) 44.2 ms, twin 44.8 ms, simd_f64 41.7 ms, simd_f32 48.8 ms (twin / simd_f64 1.07); cold first call 93.6 ms (compile 1.2 ms)
-       1024 x 682 quick (1 taps, 16 steps): shadow_march spot routed (rust_f64) 41.4 ms, twin 40.9 ms, simd_f64 48.5 ms, simd_f32 45.6 ms (twin / simd_f64 0.84); cold first call 83.1 ms (compile 2.4 ms)
-       1024 x 682 quick (1 taps, 16 steps): shadow_march sun routed (rust_f32) 24.5 ms, twin 22.5 ms, simd_f64 17.0 ms, simd_f32 23.1 ms (twin / simd_f64 1.32); cold first call 35.6 ms (compile 1.1 ms)
-       2048 x 1365: height_normals routed (rust) 118.3 ms, twin 233.0 ms; simd cold first call 181.5 ms (compile 1.1 ms)
-       2048 x 1365 (4 taps, 32 steps): shadow_march point routed (rust_f64) 1197.8 ms, twin 1064.8 ms, simd_f64 1202.4 ms, simd_f32 1348.9 ms (twin / simd_f64 0.89); cold first call 2482.4 ms (compile 1.3 ms)
-       2048 x 1365 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 1187.1 ms, twin 910.0 ms, simd_f64 1063.7 ms, simd_f32 1222.4 ms (twin / simd_f64 0.86); cold first call 1857.1 ms (compile 1.1 ms)
-       2048 x 1365 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 365.6 ms, twin 271.1 ms, simd_f64 274.3 ms, simd_f32 366.8 ms (twin / simd_f64 0.99); cold first call 831.4 ms (compile 2.6 ms)
-       4096 x 2731: height_normals routed (rust) 320.7 ms, twin 685.1 ms; simd cold first call 478.6 ms (compile 0.9 ms)
-       4096 x 2731 (4 taps, 32 steps): shadow_march point routed (rust_f64) 3783.0 ms, twin 2836.8 ms, simd_f64 3592.3 ms, simd_f32 3962.5 ms (twin / simd_f64 0.79); cold first call 6675.6 ms (compile 2.3 ms)
-       4096 x 2731 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 4182.3 ms, twin 3102.3 ms, simd_f64 4106.1 ms, simd_f32 4109.7 ms (twin / simd_f64 0.76); cold first call 7324.7 ms (compile 1.3 ms)
-       4096 x 2731 (4 taps, 32 steps): shadow_march sun routed (rust_f32) 1489.5 ms, twin 1065.1 ms, simd_f64 1313.4 ms, simd_f32 1969.7 ms (twin / simd_f64 0.81); cold first call 2598.9 ms (compile 1.6 ms)
-ok   shadow_march as routed: kind 0 (point, spot) runs shadow_march_f64 (byte-identical to the twin), kind 1 (sun) runs shadow_march (byte for byte)
-ok   K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)
-ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes  js={} below={} at={"shadow_march_f64":1}
-ok   kernels.js back on the JS kernels for the later cases
-ok   rust simd module reports its SIMD flag
-ok   rust simd height_normals equals its twin within 1 level
-ok   rust simd shadow_march equals its twin within 1 level
-ok   rust simd hoisted js.shadowMarch equals pre-hoist reference byte for byte (65 cases)
-ok   rust simd shadow_march_f64 equals its twin byte for byte (65 cases, each also at an odd offset)
-ok   js shadow_march_f64 gives the same at an odd offset
-ok   rust simd shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
-ok   rust simd shadowMarchF64 with a key copies the depth map into its resident slot once across stripes  slotCopied=1
-ok   rust scalar module reports its SIMD flag
-ok   rust scalar height_normals equals its twin within 1 level
-ok   rust scalar shadow_march equals its twin within 1 level
-ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (65 cases)
-ok   rust scalar shadow_march_f64 equals its twin byte for byte (65 cases, each also at an odd offset)
-ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
-ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across stripes  slotCopied=1
-PASS (only: relightBench, relight; PX_ONLY, not the full test)
