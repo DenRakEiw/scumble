@@ -7678,6 +7678,13 @@ async function guidedCases(js, simd, scalar, K) {
             tag: "bounds q=0.5 half-way u16 tie (32767.5 -> 32768)",
             args: [halfRaw, w, h, grey, w, h, 2, 1e-3, 0.0, 1.0],
         });
+        const longRaw = new Float32Array(w * h + 16);
+        longRaw.set(raw);
+        for (let i = 0; i < 16; i++) longRaw[w * h + i] = (i & 1) ? 500 : -500;
+        cases.push({
+            tag: "bounds auto disparityRange with raw longer than rw*rh",
+            args: [longRaw, w, h, grey, w, h, 2, 1e-3, undefined, undefined],
+        });
     }
 
     // 3. Resized (upscaled, downscaled where rw*rh > gw*gh, mixed aspect, fractional r * (gw / rw) near half-integers, wx f32 vs f64 tie)

@@ -1467,7 +1467,7 @@ export class Px {
         if (raw.length < nRaw || grey.length < nWork) return null;
         if (out !== null && (!(out instanceof Uint16Array) || out.length < nWork)) return null;
         if (lo == null || hi == null) {
-            const bounds = disparityRange(raw.length === nRaw ? raw : raw.subarray(0, nRaw));
+            const bounds = disparityRange(raw);
             if (lo == null) lo = bounds.lo;
             if (hi == null) hi = bounds.hi;
         }

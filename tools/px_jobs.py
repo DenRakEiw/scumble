@@ -1198,8 +1198,14 @@ def report(result, check):
         if not js or not rs:
             continue
         if check and job != "mips_whole":   # no bytes of its own: the chains land in the tile store
-            digests = {r.get("digest") for r in js + rs}
-            same = len(digests) == 1 and None not in digests
+            digests = {
+                f"{r.get('digest')}:{r.get('guideDigest')}" if "guideDigest" in r else r.get("digest")
+                for r in js + rs
+            }
+            same = len(digests) == 1 and all(
+                r.get("digest") is not None and ("guideDigest" not in r or r.get("guideDigest") is not None)
+                for r in js + rs
+            )
             bad += 0 if same else 1
             print(f"  {job:16s} {'same bytes' if same else 'DIFFERENT BYTES ' + str(sorted(d or '-' for d in digests))}")
         kj = sum(med(js, k) for k in KERNEL[job])

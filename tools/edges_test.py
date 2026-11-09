@@ -610,9 +610,11 @@ JS = r"""
         const jsLo = mapJs.meta.lo, jsHi = mapJs.meta.hi;
         E.setRoute("guidedFar", null);
 
+        const refGuideInp = await host.depthInput(ed7, mapRust.w, mapRust.h);
+        const refGuide = refGuideInp.image;
         const refGrey = new Uint8Array(mapRust.w * mapRust.h);
         for (let i = 0, j = 0; j < refGrey.length; i += 4, j++) {
-            refGrey[j] = Math.round(rustGuide[i] * 0.299 + rustGuide[i + 1] * 0.587 + rustGuide[i + 2] * 0.114);
+            refGrey[j] = Math.round(refGuide[i] * 0.299 + refGuide[i + 1] * 0.587 + refGuide[i + 2] * 0.114);
         }
         const refBounds = dispRangeRef(mapRust.meta.raw, 0.005, 0.995);
         const refData = guidedFarRef({
@@ -632,9 +634,9 @@ JS = r"""
         for (let i = 0; dataSame && i < rustData.length; i++) {
             if (jsData[i] !== rustData[i] || refData[i] !== rustData[i]) dataSame = false;
         }
-        let guideSame = jsGuide.length === rustGuide.length;
+        let guideSame = jsGuide.length === rustGuide.length && refGuide.length === rustGuide.length;
         for (let i = 0; guideSame && i < rustGuide.length; i++) {
-            if (jsGuide[i] !== rustGuide[i]) guideSame = false;
+            if (jsGuide[i] !== rustGuide[i] || refGuide[i] !== rustGuide[i]) guideSame = false;
         }
         const metaSame = Object.is(jsLo, rustLo) && Object.is(jsHi, rustHi)
             && Object.is(refBounds.lo, rustLo) && Object.is(refBounds.hi, rustHi);
@@ -889,10 +891,14 @@ JS = r"""
         const mapJs = ed11.maps.depth;
         E.setRoute("guidedFar", null);
 
+        const refGuideInp = await host.pictureInput(ed11, mapRust.w, mapRust.h, { skipFilters: true, background: "#808080" });
+        const refGuide = refGuideInp.image;
         let dataSame = mapJs.data.length === rustData.length;
         for (let i = 0; dataSame && i < rustData.length; i++) if (mapJs.data[i] !== rustData[i]) dataSame = false;
-        let guideSame = mapJs.guide.length === rustGuide.length;
-        for (let i = 0; guideSame && i < rustGuide.length; i++) if (mapJs.guide[i] !== rustGuide[i]) guideSame = false;
+        let guideSame = mapJs.guide.length === rustGuide.length && refGuide.length === rustGuide.length;
+        for (let i = 0; guideSame && i < rustGuide.length; i++) {
+            if (mapJs.guide[i] !== rustGuide[i] || refGuide[i] !== rustGuide[i]) guideSame = false;
+        }
         const metaSame = Object.is(mapJs.meta.lo, rustLo) && Object.is(mapJs.meta.hi, rustHi);
         check("K24: depth_from_layer guidedFar route calls guided_far once on rust and 0 on js with byte-equal data, guide, and lo/hi",
             rustCalls === 1 && jsCalls === 0 && dataSame && guideSame && metaSame,

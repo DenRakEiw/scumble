@@ -27,6 +27,7 @@ PJ = "renderer/editor/px/px.js"
 KJ = "renderer/editor/px/kernels_js.js"
 KR = "renderer/editor/px/kernels.js"
 WK = "renderer/editor/inpaint_worker.js"
+CV = "renderer/editor/inpaint_canvas.js"
 
 MUTANTS = [
     # ---- guided.rs: precision & algorithmic invariants (brief.md points 18 & 37)
@@ -170,13 +171,23 @@ MUTANTS = [
         "killed",
         {"px": ["guided"]},
     ),
-    # ---- px.js, kernels_js.js, kernels.js, inpaint_worker.js
+    # ---- px.js, kernels_js.js, kernels.js, inpaint_worker.js, inpaint_canvas.js
     (
         "px.js: guidedFar disparityRange fallback when lo or hi is null dropped",
         PJ,
         [(
-            "        if (lo == null || hi == null) {\n            const bounds = disparityRange(raw.length === nRaw ? raw : raw.subarray(0, nRaw));\n            if (lo == null) lo = bounds.lo;\n            if (hi == null) hi = bounds.hi;\n        }",
+            "        if (lo == null || hi == null) {\n            const bounds = disparityRange(raw);\n            if (lo == null) lo = bounds.lo;\n            if (hi == null) hi = bounds.hi;\n        }",
             "        if (lo == null) lo = 0;\n        if (hi == null) hi = 1;",
+        )],
+        "killed",
+        {"px": ["guided"]},
+    ),
+    (
+        "px.js: guidedFar disparityRange called on raw.subarray(0, nRaw) instead of whole raw",
+        PJ,
+        [(
+            "        if (lo == null || hi == null) {\n            const bounds = disparityRange(raw);\n            if (lo == null) lo = bounds.lo;\n            if (hi == null) hi = bounds.hi;\n        }",
+            "        if (lo == null || hi == null) {\n            const bounds = disparityRange(raw.subarray(0, nRaw));\n            if (lo == null) lo = bounds.lo;\n            if (hi == null) hi = bounds.hi;\n        }",
         )],
         "killed",
         {"px": ["guided"]},
@@ -192,11 +203,41 @@ MUTANTS = [
         {"px": ["guided"]},
     ),
     (
+        "px.js: guidedFar short grey.length < nWork guard dropped",
+        PJ,
+        [(
+            "        if (raw.length < nRaw || grey.length < nWork) return null;",
+            "        if (raw.length < nRaw) return null;",
+        )],
+        "killed",
+        {"px": ["guided"]},
+    ),
+    (
+        "px.js: guidedFar caller-supplied out buffer ignored",
+        PJ,
+        [(
+            "            return ok === 1 ? this._out(Uint16Array, pOut, nWork, out) : null;",
+            "            return ok === 1 ? this._out(Uint16Array, pOut, nWork, null) : null;",
+        )],
+        "killed",
+        {"px": ["guided"]},
+    ),
+    (
         "kernels_js.js: guidedFar caller-supplied out buffer ignored",
         KJ,
         [(
             "    if (out) {\n        out.set(res);\n        return out;\n    }",
             "    void out;",
+        )],
+        "killed",
+        {"px": ["guided"]},
+    ),
+    (
+        "kernels_js.js: guidedFar returns zeroed Uint16Array instead of guidedFarDepth",
+        KJ,
+        [(
+            "    const res = guidedFarDepth(msg, boxBlurs);",
+            "    const res = new Uint16Array(msg.gw * msg.gh);",
         )],
         "killed",
         {"px": ["guided"]},
@@ -232,11 +273,47 @@ MUTANTS = [
         {"gates": ["edges"]},
     ),
     (
+        "inpaint_worker.js: depthGuide grey Math.round dropped",
+        WK,
+        [(
+            "        for (let i = 0, j = 0; j < n; i += 4, j++) {\n            grey[j] = Math.round(bytes[i] * 0.299 + bytes[i + 1] * 0.587 + bytes[i + 2] * 0.114);\n        }",
+            "        for (let i = 0, j = 0; j < n; i += 4, j++) {\n            grey[j] = bytes[i] * 0.299 + bytes[i + 1] * 0.587 + bytes[i + 2] * 0.114;\n        }",
+        )],
+        "killed",
+        {"gates": ["edges"]},
+    ),
+    (
         "inpaint_worker.js: depthGuide disparityRange(raw, 0.005, 0.995) omitted when lo or hi is null",
         WK,
         [(
             "    if (lo == null || hi == null) {\n        const bounds = disparityRange(raw, 0.005, 0.995);\n        if (lo == null) lo = bounds.lo;\n        if (hi == null) hi = bounds.hi;\n    }",
             "    if (lo == null) lo = 0;\n    if (hi == null) hi = 1;",
+        )],
+        "killed",
+        {"gates": ["edges"]},
+    ),
+    (
+        "inpaint_worker.js: depthGuide bypasses routed guidedFar and calls inpaint_depth.js guidedFar directly",
+        WK,
+        [
+            (
+                "import { disparityRange } from \"./inpaint_depth.js\";",
+                "import { disparityRange, guidedFar as guidedFarJS } from \"./inpaint_depth.js\";",
+            ),
+            (
+                "    const u16 = guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi);",
+                "    const u16 = guidedFarJS({ raw, rw, rh, grey, gw, gh, r, eps, lo, hi }, boxBlurs);",
+            ),
+        ],
+        "killed",
+        {"gates": ["edges"]},
+    ),
+    (
+        "inpaint_canvas.js: depthFromLayer poolRes.gd replaced with zeroed Uint8ClampedArray",
+        CV,
+        [(
+            "        const u16 = new Uint16Array(poolRes.u16);\n        const gd = new Uint8ClampedArray(poolRes.gd);\n\n        const fpInp = await host.pictureInput(this, 64, 64, { skipFilters: true, background: \"#808080\" });",
+            "        const u16 = new Uint16Array(poolRes.u16);\n        const gd = new Uint8ClampedArray(poolRes.gd.byteLength);\n\n        const fpInp = await host.pictureInput(this, 64, 64, { skipFilters: true, background: \"#808080\" });",
         )],
         "killed",
         {"gates": ["edges"]},
