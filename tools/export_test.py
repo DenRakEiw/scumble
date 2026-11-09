@@ -1100,6 +1100,138 @@ if (!psd) throw new Error("no PSD of the document with filters");
 await run("close_document", { doc: d.id, force: true });
 return out;
 """),
+    ("compose_in_wasm_memory_matches_js_gather", """
+// K10b (docs/PLAN_WASM_K10.md §9.3): tile-store and stack PNG parts composed in wasm memory (`composeTiles`,
+// `composeStack`) report `timing.composeWasm === 1` on default routes and produce byte-identical PNG files with
+// `timing.composeWasm === 0` when routed to `"js"`.
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const E = Editor(ed);
+const W = 804, H = 604;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const paint = (c, hue) => {
+    const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, c.width, c.height);
+    g.addColorStop(0, `hsla(${hue},75%,50%,0.85)`);
+    g.addColorStop(1, `hsla(${(hue + 110) % 360},70%,30%,0.95)`);
+    x.fillStyle = g;
+    x.fillRect(0, 0, c.width, c.height);
+    return c;
+};
+const base = paint(mk(W, H), 195);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "k10b_routes.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const L = ed.pixels.Layer, M = ed.pixels.Mask;
+const lw0 = 524, lh0 = 420;
+// (1) Offset layer with soft alpha and mask (also serves as clip base)
+{
+    const w = lw0, h = lh0;
+    const m = mk(w, h), mx = m.getContext("2d");
+    const g = mx.createRadialGradient(w / 2, h / 2, 20, w / 2, h / 2, w / 2);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    mx.fillStyle = g;
+    mx.fillRect(0, 0, w, h);
+    const l = ed.addLayer({ name: "OffsetBase", kind: "paint", px: L.fromCanvas(paint(mk(w, h), 35)), x: 120, y: 80, w, h, dirty: false });
+    l.opacity = 0.75;
+    l.blend = "multiply";
+    l.maskPx = M.fromCanvas(m);
+    l.maskDirty = false;
+}
+// (2) Clipped layer with its own mask
+{
+    const w = 480, h = 380;
+    const m = mk(w, h), mx = m.getContext("2d");
+    mx.fillStyle = "rgba(255,255,255,0.8)";
+    mx.fillRect(20, 20, w - 40, h - 40);
+    const l = ed.addLayer({ name: "Clipped", kind: "paint", px: L.fromCanvas(paint(mk(w, h), 140)), x: 140, y: 90, w, h, dirty: false });
+    l.clip = true;
+    l.opacity = 0.85;
+    l.maskPx = M.fromCanvas(m);
+    l.maskDirty = false;
+}
+// (3) Dissolve layer
+{
+    const w = 500, h = 360;
+    const l = ed.addLayer({ name: "Dissolve", kind: "paint", px: L.fromCanvas(paint(mk(w, h), 280)), x: 60, y: 140, w, h, dirty: false });
+    l.blend = "dissolve";
+    l.opacity = 0.65;
+}
+// (4) Colour-matched layer
+{
+    const w = 400, h = 300;
+    const l = ed.addLayer({ name: "Matched", kind: "result", px: L.fromCanvas(paint(mk(w, h), 15)), x: 200, y: 120, w, h, dirty: false });
+    l.match = { strength: 80, source: "surroundings" };
+    l.dirty = false;
+    ed.markMatchChanged(l);
+}
+ed.renderLayers(); ed.fitView(); ed.draw();
+await ed.mipsSettled();
+while (E.parts.pool().pending > 0) await wait(20);
+const isTileJob = (t) => t.op === "png_part" && (t.pixels === lw0 * 256 || t.pixels === lw0 * (lh0 - 256));
+const isStackJob = (t) => t.op === "png_part" && (t.pixels === W * 256 || t.pixels === W * (H - 512));
+try {
+    E.jobTimings(true);
+    const tileRust = await E.parts.encodeTilePixels(ed.layers[0].px, { hash: true });
+    const tileRustJobs = E.jobTimings(true).filter(isTileJob);
+    if (!tileRustJobs.length || !tileRustJobs.every((t) => t.composeWasm === 1)) {
+        throw new Error("composeTiles=rust did not set composeWasm=1 on all png_part jobs: " + JSON.stringify(tileRustJobs));
+    }
+
+    E.jobTimings(true);
+    const stackRust = await ed.encodeComposite({ forRun: true }, { hash: true });
+    const stackRustJobs = E.jobTimings(true).filter(isStackJob);
+    if (!stackRustJobs.length || !stackRustJobs.every((t) => t.composeWasm === 1)) {
+        throw new Error("composeStack=rust did not set composeWasm=1 on all png_part jobs: " + JSON.stringify(stackRustJobs));
+    }
+
+    E.setRoute("composeTiles", "js");
+    E.setRoute("composeStack", "js");
+
+    E.jobTimings(true);
+    const tileJs = await E.parts.encodeTilePixels(ed.layers[0].px, { hash: true });
+    const tileJsJobs = E.jobTimings(true).filter(isTileJob);
+    if (!tileJsJobs.length || !tileJsJobs.every((t) => t.composeWasm === 0)) {
+        throw new Error("composeTiles=js did not set composeWasm=0 on all png_part jobs: " + JSON.stringify(tileJsJobs));
+    }
+
+    E.jobTimings(true);
+    const stackJs = await ed.encodeComposite({ forRun: true }, { hash: true });
+    const stackJsJobs = E.jobTimings(true).filter(isStackJob);
+    if (!stackJsJobs.length || !stackJsJobs.every((t) => t.composeWasm === 0)) {
+        throw new Error("composeStack=js did not set composeWasm=0 on all png_part jobs: " + JSON.stringify(stackJsJobs));
+    }
+
+    const tileBytesRust = new Uint8Array(await tileRust.blob.arrayBuffer());
+    const tileBytesJs = new Uint8Array(await tileJs.blob.arrayBuffer());
+    const tileDiff = diff(tileBytesRust, tileBytesJs, lw0);
+    if (tileDiff.bytes || tileRust.hash !== tileJs.hash) {
+        throw new Error("composeTiles rust vs js PNG bytes differ: " + JSON.stringify({ tileDiff, rustHash: tileRust.hash, jsHash: tileJs.hash }));
+    }
+
+    const stackBytesRust = new Uint8Array(await stackRust.blob.arrayBuffer());
+    const stackBytesJs = new Uint8Array(await stackJs.blob.arrayBuffer());
+    const stackDiff = diff(stackBytesRust, stackBytesJs, W);
+    if (stackDiff.bytes || stackRust.hash !== stackJs.hash) {
+        throw new Error("composeStack rust vs js PNG bytes differ: " + JSON.stringify({ stackDiff, rustHash: stackRust.hash, jsHash: stackJs.hash }));
+    }
+
+    return {
+        tileParts: tileRustJobs.length,
+        stackParts: stackRustJobs.length,
+        tileBytes: tileBytesRust.length,
+        stackBytes: stackBytesRust.length,
+        tileHash: tileRust.hash,
+        stackHash: stackRust.hash,
+    };
+} finally {
+    E.setRoute("composeTiles", null);
+    E.setRoute("composeStack", null);
+    await run("close_document", { doc: d.id, force: true });
+}
+"""),
     ("close", """
 const id = window.__ex;
 window.__exRef = null;
@@ -1187,6 +1319,10 @@ const d = await run("new_document");
 const ed = ednow(d.id);
 host.shell.activate(ed);
 const E = Editor(ed);
+const ROUTES = __ROUTES__ || {};
+const setRoutes = [];
+for (const [k, v] of Object.entries(ROUTES)) { E.setRoute(k, v === "inf" ? Infinity : v); setRoutes.push(k); }
+try {
 const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 const L = ed.pixels.Layer;
 {
@@ -1236,6 +1372,7 @@ if (mapW > 0 && mapH > 0) {
 ed.renderLayers(); ed.fitView(); ed.draw();
 await ed.mipsSettled();
 const timed = async (fn) => {
+    E.jobTimings(true);
     let held = 0, last = performance.now(), on = true;
     const beat = () => { const n = performance.now(); held = Math.max(held, n - last); last = n; if (on) setTimeout(beat, 0); };
     setTimeout(beat, 0);
@@ -1243,27 +1380,34 @@ const timed = async (fn) => {
     const r = await fn();
     on = false;
     held = Math.max(held, performance.now() - last);   // a call that never yields is one block
-    return { ms: Math.round(performance.now() - t0), blocked: Math.round(held), r };
+    const jobs = {};
+    for (const t of E.jobTimings(true)) {
+        const key = t.op + (t.kind ? ":" + t.kind : "");
+        const j = jobs[key] || (jobs[key] = { jobs: 0 });
+        j.jobs++;
+        for (const [k, v] of Object.entries(t)) if (typeof v === "number") j[k] = +((j[k] || 0) + v).toFixed(1);
+    }
+    return { ms: Math.round(performance.now() - t0), blocked: Math.round(held), r, jobs };
 };
-const out = { size: [W, H], filter: __FILTER__, ...(__LIMIT__ ? { limit: __LIMIT__ } : {}) };
+const out = { size: [W, H], filter: __FILTER__, ...(__LIMIT__ ? { limit: __LIMIT__ } : {}), focused: document.hasFocus() };
 let readMs = 0, bands = 0;
 const readBand = ed.readBand.bind(ed);
 ed.readBand = (...args) => { const t = performance.now(); try { return readBand(...args); } finally { readMs += performance.now() - t; bands++; } };
 const a = await timed(() => ed.encodeComposite({ forRun: true }, {}));
 delete ed.readBand;
-out.composite_bands = { ms: a.ms, blocked: a.blocked, bands, readMs: Math.round(readMs), MB: a.r ? +(a.r.blob.size / 1048576).toFixed(1) : null };
+out.composite_bands = { ms: a.ms, blocked: a.blocked, bands, readMs: Math.round(readMs), MB: a.r ? +(a.r.blob.size / 1048576).toFixed(1) : null, jobs: a.jobs };
 const b = await timed(() => E.parts.encodeTilePixels(ed.layers[0].px, { hash: true }));
-out.layer_from_tiles = { ms: b.ms, blocked: b.blocked, MB: b.r ? +(b.r.blob.size / 1048576).toFixed(1) : null };
+out.layer_from_tiles = { ms: b.ms, blocked: b.blocked, MB: b.r ? +(b.r.blob.size / 1048576).toFixed(1) : null, jobs: b.jobs };
 if (W * H <= 268435456) {
     const c = await timed(async () => { const flat = ed.flattenToCanvas({ forRun: true }); const r = await E.parts.encodeCanvas(flat, { hash: true }); flat.width = 1; flat.height = 1; return r; });
-    out.composite_canvas = { ms: c.ms, blocked: c.blocked, MB: +(c.r.blob.size / 1048576).toFixed(1) };
+    out.composite_canvas = { ms: c.ms, blocked: c.blocked, MB: +(c.r.blob.size / 1048576).toFixed(1), jobs: c.jobs };
     const e = await timed(async () => { const cv = ed.layers[0].px.toCanvas(); const r = await E.parts.encodeCanvas(cv, { hash: true }); cv.width = 1; cv.height = 1; return r; });
-    out.layer_canvas = { ms: e.ms, blocked: e.blocked, MB: +(e.r.blob.size / 1048576).toFixed(1) };
+    out.layer_canvas = { ms: e.ms, blocked: e.blocked, MB: +(e.r.blob.size / 1048576).toFixed(1), jobs: e.jobs };
 }
 // 3e (docs/PLAN_0_1_31.md): the PSD from the tiles, then with a full-size mask on one layer (one channel more, packed
 // from the mask's own tiles)
 const ps = await timed(() => ed.exportLayeredBands("psd"));
-out.psd = { ms: ps.ms, blocked: ps.blocked, MB: ps.r ? +(ps.r.blob.size / 1048576).toFixed(1) : null };
+out.psd = { ms: ps.ms, blocked: ps.blocked, MB: ps.r ? +(ps.r.blob.size / 1048576).toFixed(1) : null, jobs: ps.jobs };
 {
     const c = mk(W, H), x = c.getContext("2d");
     const g = x.createRadialGradient(W / 2, H / 2, H / 8, W / 2, H / 2, H / 1.6);
@@ -1276,7 +1420,7 @@ out.psd = { ms: ps.ms, blocked: ps.blocked, MB: ps.r ? +(ps.r.blob.size / 104857
     await ed.mipsSettled();
 }
 const pm = await timed(() => ed.exportLayeredBands("psd"));
-out.psd_masked = { ms: pm.ms, blocked: pm.blocked, MB: pm.r ? +(pm.r.blob.size / 1048576).toFixed(1) : null };
+out.psd_masked = { ms: pm.ms, blocked: pm.blocked, MB: pm.r ? +(pm.r.blob.size / 1048576).toFixed(1) : null, jobs: pm.jobs };
 // --fill-limit (docs/PLAN_WASM_BUILD.md K0b): a fill layer with a depth limit on top, whose rows the layered export reads
 // through limitAlphaRows (fillLayerRows, inpaint_canvas.js; the rows above never ran it). The depth map is the
 // document's when an option above made one (a ramp without a guide: no snap), else one as the app keeps it: at the
@@ -1343,6 +1487,9 @@ if (fillLimit) {
 out.pool = E.parts.pool().stats();
 await run("close_document", { doc: d.id, force: true });
 return out;
+} finally {
+    for (const k of setRoutes) { try { E.setRoute(k, null); } catch (_) { /* ignore */ } }
+}
 """
 
 PRE = """(async () => {
@@ -1562,6 +1709,28 @@ async def run_all(c):
             fp = (fill_arg.split("=", 1)[1] if "=" in fill_arg else "0.3:0.6:0.05:0.05").split(":")
             fill_obj = {"source": "depth", "lo": float(fp[0]), "hi": float(fp[1]), "fLo": float(fp[2]), "fHi": float(fp[3]),
                         "invert": len(fp) > 4 and fp[4] in ("inv", "true", "1")}
+        routes_obj = {}
+        argv = sys.argv[1:]
+        i = 0
+        while i < len(argv):
+            a = argv[i]
+            kv = None
+            if a == "--set" and i + 1 < len(argv):
+                kv = argv[i + 1]
+                i += 2
+            elif a.startswith("--set="):
+                kv = a.split("=", 1)[1]
+                i += 1
+            else:
+                i += 1
+                continue
+            rk, _, rv = kv.partition("=")
+            rv_l = rv.strip().lower()
+            if rv_l in ("js", "rust", "inf"):
+                routes_obj[rk.strip()] = rv_l
+            else:
+                fv = float(rv_l)
+                routes_obj[rk.strip()] = int(fv) if fv.is_integer() else fv
         perf_js = (PERF.replace("__W__", w)
                        .replace("__H__", h)
                        .replace("__FILTER__", json.dumps(filter_id))
@@ -1570,7 +1739,9 @@ async def run_all(c):
                        .replace("__MAP_W__", str(map_w))
                        .replace("__MAP_H__", str(map_h))
                        .replace("__BLEND__", json.dumps(blend_id))
-                       .replace("__FILL_LIMIT__", json.dumps(fill_obj)))
+                       .replace("__FILL_LIMIT__", json.dumps(fill_obj))
+                       .replace("__ROUTES__", json.dumps(routes_obj)))
+        await c.call("Page.bringToFront")
         res = await c.eval(PRE % (HELPERS, perf_js), timeout=1800)
         print(json.dumps(res, indent=1))
         return True

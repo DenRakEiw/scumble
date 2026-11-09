@@ -1,0 +1,172 @@
+K10b measurement summary (2026-11-09)
+=====================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.4 K10b, §5 row 44; docs/PLAN_WASM_K10.md):
+- `crates/px/src/lib.rs`: bumped `px_abi_version()` (`:55-57`) from `36` to `37`.
+- `renderer/editor/px/px.wasm`: `259,180 bytes`, sha256 `3f240c7a80d2f983` (before at `3fd8bda7`: `259,180 bytes`, sha256 `7e99b55f37ff69ff`).
+- `renderer/editor/px/px_scalar.wasm`: `210,462 bytes`, sha256 `0f3fe6c4448b871e` (before at `3fd8bda7`: `210,462 bytes`, sha256 `03ddfff981982e19`).
+- `renderer/editor/px/px.js`: bumped `export const PX_ABI = 37;` (`:14`); added `Px.prototype.pngPartFromPtr(a, pr, w, rows, pp, level, last, laps = null)` (`:1173-1198`) which filters (`png_filter_rows`), computes Adler-32 (`adler32`), deflates (`deflate_part`), and frames the IDAT chunk (`png_chunk_frame`) directly from linear memory pointers `(pr, pp)` in caller-owned arena `a` without copying `rgba` or `prev` in from JS.
+- `renderer/editor/px/kernels.js`: added `composeTiles: "kernel"` and `composeStack: "kernel"` to `ROUTE_KINDS` (`:62`). Both win their 15,000 x 10,000 deciding rows, so neither is added to `DEFAULT_ROUTES`.
+- `renderer/editor/inpaint_worker.js`:
+  - Imported `route` from `./px/kernels.js` (`:66`).
+  - Exported `rowsOfTiles`, `storeRows`, `rowsOfStack`, `stackInto`, `stackPoints`, `pngPart`, `psdPart` for direct parity testing in Node (`tools/px_test.js`).
+  - Added and exported `tilesRowsToWasm(p, msg, above = false, ptr)` (`:227-251`), `storeRowsToWasm(p, store, X0, W, Y0, n, ptr, alphaOnly = false)` (`:289-319`), `stackRowsToWasm(p, a, msg, above = false, into = null)` (`:394-521`), and `partPtrOf(p, a, msg, needPrev = false)` (`:646-674`).
+  - Updated `pngPart(msg)` (`:680-734`) to take the pointer path (`partPtrOf` + `p.pngPartFromPtr`) when `!msg.rgba && route(routeName) !== "js"` (`routeName = msg.stack ? "composeStack" : "composeTiles"`), resetting `p._reset(a)` and calling `releaseIfLarge()` in `finally` before recording `kernel: now() - t0` and `composeWasm: 1`, and falling back to the JS-gather + `p.pngPart` arm (`composeWasm: 0`) on `"js"` route or after `recovered(p, err, "png_part")`.
+
+1. Node & Electron-as-Node kernel micro-benchmarks (`docs/measurements/k10b_2026-11-09/node/`)
+----------------------------------------------------------------------------------------------
+Command:
+  node docs/measurements/k10b_2026-11-09/node_bench.mjs docs/measurements/k10b_2026-11-09/node/node_bench.json
+  ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe docs/measurements/k10b_2026-11-09/node_bench.mjs docs/measurements/k10b_2026-11-09/node/electron_bench.json
+
+Electron V8 15.2 (`electron 44.2.0`, 7 warm iterations per arm, 15,000 x 256 part = 15.36 MB raw):
+part                          arm (route)         wall med [min-max] ms   kernel med ms   copyIn MB   copyOut MB   CRC / Adler
+tile_part_15000x256           before (js)         52.79 [49.76-56.20]     52.76           14.71       1.11         4293229461 / 2671750286
+tile_part_15000x256           after (rust)        49.19 [46.95-49.94]     49.18           14.71       1.11         4293229461 / 2671750286 (1.07x)
+stack_part_15000x256 (base+2) before (js)         105.99 [102.15-108.25]  105.98          77.20       30.50        3855470221 / 3643592432
+stack_part_15000x256 (base+2) after (rust)        89.29 [87.11-95.48]     89.28           47.79       1.08         3855470221 / 3643592432 (1.19x)
+
+Node V8 13.6 (`node v24.18.0`, 7 warm iterations per arm, `node/node_bench.json`):
+- `tile_part_15000x256`: `60.59 [57.78-65.44] ms` -> `51.02 [48.17-53.26] ms` (`1.19x`, non-overlapping).
+- `stack_part_15000x256`: `115.28 [112.78-117.75] ms` -> `88.64 [87.06-91.09] ms` (`1.30x`, non-overlapping; `copyInMB` `77.20 -> 47.79 MB`, `copyOutMB` `30.50 -> 1.08 MB`).
+
+2. 15,000 x 10,000 before (`3fd8bda7`) vs after (`K10b`), 3 alternating rounds on port 9629 (`w1_lock.py` held per batch)
+-------------------------------------------------------------------------------------------------------------------------
+Command:
+  SCUMBLE_CDP_PORT=9629 bash docs/measurements/k10b_2026-11-09/k10b_chain.sh
+  python docs/measurements/k10b_2026-11-09/summarize.py
+
+All 18 app runs (6 `native_test.py`, 6 `export_test.py --perf`, 6 `tiff_test.py --size`) and both `px_probe.py --retention`
+runs executed on fresh offline Electron instances with `"focused": true` (`notcounted/` empty). GPU utilization was `0-7%`
+(`18,050-19,675 MiB`) throughout all rounds (`chain.log`).
+
+a) `native_test.py 15000x10000` (3 alternating rounds, median [min-max] ms):
+row                                             before (3fd8bda7)             after (K10b)                  before / after
+build_the_file encodeMs                         1,409.0 [1,317.0-1,814.0]     1,309.0 [1,284.0-1,331.0]     1.08x
+open_the_file wall                              2,521.0 [2,520.0-2,720.0]     2,525.0 [2,523.0-2,604.0]     1.00x
+open_the_file longest block                     479.0 [476.0-511.0]           469.0 [456.0-487.0]           1.02x
+add_the_paint_layer wall                        648.0 [637.0-659.0]           648.0 [637.0-653.0]           1.00x
+add_the_paint_layer longest block               570.0 [559.0-580.0]           572.0 [559.0-574.0]           1.00x
+wand_whole_picture wall                         1,253.0 [1,245.0-1,320.0]     1,273.0 [1,270.0-1,294.0]     0.98x (untouched in K10b)
+wand_whole_picture longest block                100.0 [96.0-106.0]            93.0 [89.0-106.0]             1.08x
+wand_whole_picture stack_into kernel            2,155.5 [2,129.3-2,281.6]     2,315.2 [2,297.6-2,342.4]     0.93x (untouched in K10b)
+export_png wall                                 1,010.0 [990.0-1,015.0]       869.0 [868.0-899.0]           1.16x (non-overlapping)
+export_png longest block                        36.0 [35.0-36.0]              32.0 [32.0-35.0]              1.12x
+export_png png_part jobs                        79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+export_png png_part composeWasm                 -                             79.0 [79.0-79.0]
+export_png png_part kernel                      7,475.4 [7,359.9-7,511.8]     6,514.7 [6,401.0-6,692.5]     1.15x (non-overlapping)
+export_png png_part compose                     1,213.0 [1,183.6-1,217.4]     609.6 [607.0-613.7]           1.99x (non-overlapping)
+export_png png_part rows                        1,213.0 [1,183.6-1,217.4]     609.6 [607.0-613.7]           1.99x (non-overlapping)
+export_png png_part prev                        11.0 [10.6-11.8]              9.3 [9.1-11.2]                1.18x
+export_png png_part filter                      266.9 [258.6-268.6]           253.0 [251.9-259.6]           1.05x
+export_png png_part deflate                     5,646.5 [5,535.3-5,709.4]     5,365.4 [5,255.4-5,533.6]     1.05x
+export_png png_part adler                       153.0 [149.6-153.0]           151.3 [147.3-156.1]           1.01x
+export_png png_part chunk                       90.2 [89.8-92.3]              87.0 [87.0-90.5]              1.04x
+export_png png_part copyIn                      41.4 [39.1-42.7]              -
+export_png png_part copyOut                     51.5 [48.9-53.8]              35.3 [34.7-35.4]              1.46x (non-overlapping)
+export_psd wall                                 1,202.0 [1,112.0-1,279.0]     1,190.0 [1,124.0-1,300.0]     1.01x (untouched in K10b)
+export_psd longest block                        74.0 [70.0-76.0]              72.0 [68.0-87.0]              1.03x
+export_psd psd_part kernel                      7,674.5 [7,218.1-8,215.2]     7,490.9 [7,219.7-8,639.8]     1.02x (untouched in K10b)
+export_ora wall                                 2,255.0 [2,204.0-2,329.0]     1,997.0 [1,977.0-2,090.0]     1.13x (non-overlapping)
+export_ora longest block                        40.0 [40.0-41.0]              42.0 [40.0-45.0]              0.95x
+export_ora png_part jobs                        237.0 [237.0-237.0]           237.0 [237.0-237.0]           1.00x
+export_ora png_part composeWasm                 -                             237.0 [237.0-237.0]
+export_ora png_part kernel                      16,653.5 [16,210.9-17,225.2]  14,715.5 [14,611.2-15,399.4]  1.13x (non-overlapping)
+export_ora png_part compose                     1,231.2 [1,201.5-1,312.8]     577.0 [568.6-622.3]           2.13x (non-overlapping)
+export_ora png_part rows                        2,295.5 [2,139.5-2,330.0]     1,057.2 [1,020.7-1,131.3]     2.17x (non-overlapping)
+export_ora png_part prev                        20.9 [20.7-21.0]              14.6 [13.4-14.7]              1.43x (non-overlapping)
+export_ora png_part copyIn                      133.0 [122.3-135.0]           -
+export_ora png_part copyOut                     112.9 [111.4-120.0]           76.4 [76.3-77.1]              1.48x (non-overlapping)
+open_psd wall                                   6,466.0 [6,417.0-6,527.0]     6,231.0 [6,167.0-6,333.0]     1.04x (non-overlapping)
+open_psd longest block                          60.0 [57.0-72.0]              61.0 [60.0-74.0]              0.98x
+open_psd png_part jobs                          79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+open_psd png_part composeWasm                   -                             79.0 [79.0-79.0]
+open_psd png_part kernel                        6,500.9 [6,463.2-6,615.6]     6,352.4 [6,147.1-6,383.6]     1.02x (non-overlapping)
+open_psd png_part rows                          385.1 [378.4-385.2]           195.8 [182.5-196.9]           1.97x (non-overlapping)
+open_psd png_part copyIn                        44.9 [43.3-46.2]              -
+open_psd png_part copyOut                       46.5 [43.0-52.7]              39.9 [39.0-41.0]              1.17x (non-overlapping)
+open_ora wall                                   4,845.0 [4,827.0-5,262.0]     4,986.0 [4,910.0-5,167.0]     0.97x (tie; spreads overlap)
+open_ora longest block                          706.0 [699.0-708.0]           709.0 [685.0-712.0]           1.00x
+open_ora png_part jobs                          79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+open_ora png_part composeWasm                   -                             79.0 [79.0-79.0]
+open_ora png_part kernel                        6,550.5 [6,306.2-6,635.7]     6,300.7 [6,039.6-6,406.0]     1.04x
+open_ora png_part rows                          402.6 [381.5-453.2]           192.0 [163.7-207.7]           2.10x (non-overlapping)
+open_ora png_part copyIn                        45.6 [45.1-47.0]              -
+open_ora png_part copyOut                       52.6 [50.3-62.6]              44.0 [43.0-49.6]              1.20x (non-overlapping)
+match_export_png wall                           1,058.0 [1,035.0-1,121.0]     894.0 [869.0-1,178.0]         1.18x (spreads overlap)
+match_export_png longest block                  34.0 [32.0-40.0]              33.0 [29.0-35.0]              1.03x
+match_export_png png_part jobs                  102.0 [101.0-109.0]           96.0 [93.0-100.0]             1.06x
+match_export_png png_part composeWasm           -                             96.0 [93.0-100.0]
+match_export_png png_part kernel                7,824.4 [7,751.4-8,339.5]     6,637.6 [6,494.5-8,911.7]     1.18x
+match_export_png png_part compose               1,535.6 [1,396.6-1,582.5]     797.7 [742.9-851.8]           1.93x (non-overlapping)
+match_export_png png_part rows                  1,739.1 [1,557.0-1,760.6]     829.7 [776.0-899.4]           2.10x (non-overlapping)
+match_export_png png_part prev                  17.8 [15.8-41.2]              10.9 [10.1-12.1]              1.63x (non-overlapping)
+match_export_png worker match_pixels calls      55.0 [55.0-55.0]              55.0 [55.0-55.0]              1.00x
+
+b) `export_test.py --perf 15000x10000` (3 alternating rounds, median [min-max] ms):
+row                                               before (3fd8bda7)             after (K10b)                  before / after
+exportperf composite_bands wall                   1,071.0 [987.0-1,114.0]       1,049.0 [996.0-1,063.0]       1.02x (region pass; msg.rgba)
+exportperf composite_bands longest block          108.0 [95.0-154.0]            97.0 [91.0-101.0]             1.11x
+exportperf composite_bands png_part kernel        1,748.2 [1,647.6-2,599.0]     1,821.5 [1,695.3-1,903.8]     0.96x (untouched; msg.rgba)
+exportperf layer_from_tiles wall                  265.0 [255.0-273.0]           200.0 [192.0-232.0]           1.32x (non-overlapping)
+exportperf layer_from_tiles longest block         6.0 [5.0-6.0]                 6.0 [5.0-6.0]                 1.00x
+exportperf layer_from_tiles png_part jobs         79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+exportperf layer_from_tiles png_part composeWasm  -                             79.0 [79.0-79.0]
+exportperf layer_from_tiles png_part kernel       1,949.5 [1,871.2-2,013.4]     1,488.0 [1,435.8-1,743.7]     1.31x (non-overlapping)
+exportperf layer_from_tiles png_part rows         538.8 [490.7-554.6]           258.5 [191.4-318.1]           2.08x (non-overlapping)
+exportperf layer_from_tiles png_part prev         10.1 [5.5-26.1]               3.1 [2.6-5.6]                 3.26x
+exportperf layer_from_tiles png_part copyIn       42.0 [40.3-49.1]              -
+exportperf layer_from_tiles png_part copyOut      16.0 [12.6-16.5]              0.2 [0.0-0.3]                 80.00x (non-overlapping)
+exportperf psd wall                               1,891.0 [1,814.0-1,985.0]     1,825.0 [1,803.0-2,002.0]     1.04x (untouched in K10b)
+exportperf psd_masked wall                        2,146.0 [2,073.0-2,192.0]     2,056.0 [2,049.0-2,086.0]     1.04x (untouched in K10b)
+
+c) `tiff_test.py --size 15000x10000 --variant noise,own` (3 alternating rounds, median [min-max] ms):
+row                                       before (3fd8bda7)             after (K10b)                  before / after
+tiffperf noise exportMs                   4,902.0 [4,077.0-5,516.0]     4,326.0 [4,303.0-5,884.0]     1.13x
+tiffperf noise openMs                     7,710.0 [7,478.0-7,838.0]     7,616.0 [7,557.0-8,275.0]     1.01x (tie; spreads overlap)
+tiffperf noise openSteps stored           3,343.0 [3,336.0-3,463.0]     3,435.0 [3,381.0-3,709.0]     0.97x (tie; spreads overlap)
+tiffperf noise open png_part jobs         79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+tiffperf noise open png_part composeWasm  -                             79.0 [79.0-79.0]
+tiffperf noise open png_part kernel       16,733.2 [16,581.2-17,028.0]  17,033.5 [16,473.9-17,207.7]  0.98x (tie; deflate is 15.3-15.7s)
+tiffperf noise open png_part rows         367.9 [336.9-371.2]           187.6 [186.3-191.4]           1.96x (non-overlapping)
+tiffperf noise open png_part copyIn       42.7 [42.4-45.9]              -
+tiffperf noise open png_part copyOut      72.2 [65.5-73.3]              66.7 [66.4-68.1]              1.08x
+tiffperf own exportMs                     1,417.0 [1,411.0-1,427.0]     1,460.0 [1,424.0-1,504.0]     0.97x (untouched tiff_part)
+tiffperf own openMs                       4,100.0 [3,974.0-4,207.0]     4,004.0 [3,990.0-4,093.0]     1.02x (tie; spreads overlap)
+tiffperf own openSteps stored             1,211.0 [1,137.0-1,304.0]     1,196.0 [1,188.0-1,201.0]     1.01x (tie; spreads overlap)
+tiffperf own open png_part jobs           79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+tiffperf own open png_part composeWasm    -                             79.0 [79.0-79.0]
+tiffperf own open png_part kernel         5,816.9 [5,371.3-6,009.9]     5,288.5 [5,263.2-5,418.3]     1.10x
+tiffperf own open png_part rows           432.9 [390.5-458.5]           199.0 [192.2-211.3]           2.18x (non-overlapping)
+tiffperf own open png_part copyIn         49.8 [43.6-53.1]              -
+tiffperf own open png_part copyOut        38.3 [35.0-43.1]              29.1 [27.6-30.4]              1.32x (non-overlapping)
+
+d) `px_probe.py --retention 15000x10000` (`docs/measurements/k10b_2026-11-09/retention/px_probe.jsonl`):
+- `composeStack=js`:   `exportMs = 695.4 ms`, `MB = 11.94`, `workersMaxAfterMB = 37.12 MiB` (`38,928,384 B`), `workersMaxLaterMB = 1.06 MiB` (`1,114,112 B`), `totalAfterMB = 288.19 MiB`, `totalLaterMB = 11.69 MiB`, `releases = 0`, `idles = 8`, `focused = true`.
+- `composeStack=rust`: `exportMs = 440.6 ms` (`1.58x`), `MB = 11.94`, `workersMaxAfterMB = 42.25 MiB` (`44,302,336 B`, within the `(L + 3)` band budget and far below `releaseMB = 256`), `workersMaxLaterMB = 1.06 MiB` (`1,114,112 B` after the idle trim, below `keepMB = 16`), `totalAfterMB = 297.19 MiB`, `totalLaterMB = 11.69 MiB`, `releases = 0`, `idles = 8`, `focused = true`.
+
+Route Decisions (`docs/PLAN_WASM_BUILD.md` §1.1 & `docs/PLAN_WASM_K10.md` §9.3):
+- `composeStack`: wins beyond the 3-run spread on `export_png wall` (`1,010.0 [990.0-1,015.0]` -> `869.0 [868.0-899.0] ms`, `1.16x`), `export_png png_part kernel` (`7,475.4` -> `6,514.7 ms`, `1.15x`), `export_png png_part compose` (`1,213.0` -> `609.6 ms`, `1.99x`), and `match_export_png png_part compose` (`1,535.6` -> `797.7 ms`, `1.93x`). Default remains `"rust"` (no `DEFAULT_ROUTES` entry).
+- `composeTiles`: wins beyond the 3-run spread on `exportperf layer_from_tiles wall` (`265.0 [255.0-273.0]` -> `200.0 [192.0-232.0] ms`, `1.32x`) and `png_part kernel` (`1,949.5` -> `1,488.0 ms`, `1.31x`), `export_ora wall` (`2,255.0 [2,204.0-2,329.0]` -> `1,997.0 [1,977.0-2,090.0] ms`, `1.13x`) and `png_part kernel` (`16,653.5` -> `14,715.5 ms`, `1.13x`), `open_psd wall` (`6,466.0 [6,417.0-6,527.0]` -> `6,231.0 [6,167.0-6,333.0] ms`, `1.04x`) and `png_part kernel` (`6,500.9` -> `6,352.4 ms`, `1.02x`), and `png_part rows` across every store row (`open_psd` `1.97x`, `open_ora` `2.10x`, `tiffperf noise` `1.96x`, `tiffperf own` `2.18x`, all non-overlapping). On `open_ora` (`4,845 -> 4,986 ms`) and `tiffperf` `stored` (`noise` `3,343 -> 3,435 ms`, `own` `1,211 -> 1,196 ms`) where whole-operation spreads overlap, the kernel / `rows` laps decide in favour of Rust per §1.1 rule 2. Default remains `"rust"` (no `DEFAULT_ROUTES` entry).
+
+3. Unit & Parity Suites (`tools/px_test.js` & `tools/boxstack_test.js`)
+-----------------------------------------------------------------------
+- `node tools/px_test.js`: PASS (`composeWasmPartCases` on both `rust simd` and `rust scalar` covering cases 1, 2a, 2b, 2c, 2d, 2e, 2f, 2g, 2h, and 3).
+- `node tools/boxstack_test.js`: PASS.
+
+4. Mutation Round (`docs/measurements/k10b_2026-11-09/mutation/summary.txt`)
+----------------------------------------------------------------------------
+Command:
+  python docs/measurements/k10b_2026-11-09/mutation/mut_k10b.py
+- 15 targeted mutants across `renderer/editor/inpaint_worker.js` (12, including all 7 K10b plan mutants) and `renderer/editor/px/px.js` (3):
+  - **15 killed**, **0 survived**, **0 unexpected** (47.9s).
+
+5. Gates (`dist/gates/gates/`)
+------------------------------
+- `k10b-both-tiles` (`--offline --tiles on`, port 9629): lint 26s, types 22s, export 185s, layered 14s, composite 13s, pixels 20s, clip 11s, blendmodes 19s -> ALL PASS
+- `k10b-both-canvas` (`--offline --tiles off`, port 9630): lint 24s, types 12s, export 24s, layered 17s, composite 17s, pixels 20s, clip 9s, blendmodes 21s -> ALL PASS
+- `k10b-both-tiles-serial` (`--offline --tiles on`, port 9629): document 79s -> ALL PASS
+- `k10b-both-canvas-serial` (`--offline --tiles off`, port 9630): document 71s -> ALL PASS
+- `k10b-tiff-tiles` (`--offline --tiles on`, port 9629): tiff 24s -> ALL PASS
+- `k10b-tiff-canvas` (`--offline --tiles off`, port 9630): tiff 25s -> ALL PASS
+- `k10b-serial` (`--offline --tiles on`, port 9629): pxjobs 147s, nodecopy 72s -> ALL PASS

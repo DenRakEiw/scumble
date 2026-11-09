@@ -49,11 +49,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: pngPartFromPtr / compose in wasm memory);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    36
+    37
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.

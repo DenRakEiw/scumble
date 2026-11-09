@@ -1,0 +1,160 @@
+{
+  "target": "K10b (tilesRowsToWasm, storeRowsToWasm, stackRowsToWasm, partPtrOf, pngPartFromPtr, pngPart)",
+  "total": 15,
+  "killed": 15,
+  "survived": 0,
+  "unexpected_survivors": 0,
+  "seconds": 47.9,
+  "mutants": [
+    {
+      "id": "M01_empty_layer_counted",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 2.92,
+      "detail": "FAIL rust simd stackRowsToWasm (2b): layers with no tiles in the band are skipped without running composite_tile on the base  2b non-overlapping layers: band=at 0: 0 vs 123 above=at 0: 204 vs 200 part=at 2: 88 vs 131",
+      "note": "K10b mutant 1: drop if (!storeRowsToWasm(...)) continue so an empty layer is counted over a soft-alpha base"
+    },
+    {
+      "id": "M02_drop_count_gt_0_guard",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.08,
+      "detail": "FAIL rust simd stackRowsToWasm (2a): empty layers [] preserves soft-alpha and A=0 RGB base bytes verbatim  2a empty layers: band=at 0: 204 vs 200 above=at 4: 204 vs 200 part=at 2: 161 vs 203",
+      "note": "K10b mutant 2: remove count > 0 guard before composite_tile so layers: [] calls composite_tile"
+    },
+    {
+      "id": "M03_prev_tiles_r0_zero",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 2.87,
+      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 2 (y=256, n=40): adler 471529818/2100783519 crc 1762984175/1777253057 laps={\"filter\":0.02250000000003638,\"adler\":0.014699999999947977,\"deflate\":0.6975999999999658,\"chunk\":0.019099999999980355,\"copyOut\":0.026299999999991996} at 3: 238 vs 234",
+      "note": "K10b mutant 3: change r0 = TILE - 1 on msg.prevTiles branch to r0 = 0"
+    },
+    {
+      "id": "M04_ignore_store_offset_sx",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.07,
+      "detail": "FAIL rust simd stackRowsToWasm (2b): layers with no tiles in the band are skipped without running composite_tile on the base  2b non-overlapping layers: band=at 0: 157 vs 123 above=at 0: 202 vs 200 part=at 2: 110 vs 131",
+      "note": "K10b mutant 4: ignore store.x in storeRowsToWasm"
+    },
+    {
+      "id": "M05_reuse_pcov_across_clipped_layers",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.47,
+      "detail": "FAIL rust simd stackRowsToWasm (2f): two clipped layers over a clip base with holes and c.mask keep independent coverage buffers  2f two clipped layers: band=at 49: 106 vs 85 above=at 40: 209 vs 204 part=at 3: 1 vs 160",
+      "note": "K10b mutant 5: reuse a single pcov buffer across clipped layers instead of allocating per clipped layer"
+    },
+    {
+      "id": "M06a_skip_clip_coverage",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.75,
+      "detail": "FAIL rust simd stackRowsToWasm (2f): two clipped layers over a clip base with holes and c.mask keep independent coverage buffers  2f two clipped layers: band=at 40: 197 vs 223 above=at 40: 122 vs 204 part=at 2: 191 vs 189",
+      "note": "K10b mutant 6a: skip clipCoverage call in stackRowsToWasm"
+    },
+    {
+      "id": "M06b_dissolve_shift_16",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.62,
+      "detail": "FAIL rust simd stackRowsToWasm (2g): dissolve layer (partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack  2g dissolve opaque + partial: band=at 12: 204 vs 90 above=ok part=at 2: 143 vs 202",
+      "note": "K10b mutant 6b: mutate >>> 24 to >>> 16 in stackRowsToWasm inline JS dissolve loop"
+    },
+    {
+      "id": "M07_stale_mem_view_across_take",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 1.77,
+      "detail": "TypeError: Cannot perform %TypedArray%.prototype.fill on a detached ArrayBuffer",
+      "note": "K10b mutant 7: hold p.u8() before the layer loop and use it after a.take across memory.grow"
+    },
+    {
+      "id": "M08_dissolve_drop_cval_255_guard",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.03,
+      "detail": "FAIL rust simd stackRowsToWasm (2g): dissolve layer (partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack  2g dissolve opaque + partial: band=at 668: 151 vs 134 above=ok part=at 2: 201 vs 202",
+      "note": "Drop cVal === 255 short-circuit in stackRowsToWasm dissolve loop (drops pixels where hash32 >>> 24 === 255)"
+    },
+    {
+      "id": "M09_match_pixels_skip",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.04,
+      "detail": "FAIL rust simd stackRowsToWasm (2e): 10-float match_pixels layer between blend layers equals rowsOfStack  2e color-matched layer: band=at 64: 185 vs 181 above=at 64: 93 vs 89 part=at 3: 200 vs 212",
+      "note": "Skip match_pixels call in stackRowsToWasm"
+    },
+    {
+      "id": "M10_partptrof_stack_skip_above",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 4.27,
+      "detail": "FAIL rust simd stackRowsToWasm (2a): empty layers [] preserves soft-alpha and A=0 RGB base bytes verbatim  2a empty layers: band=ok above=ok part=at 2: 204 vs 203",
+      "note": "Skip above-row stackRowsToWasm pass in partPtrOf when msg.y > 0"
+    },
+    {
+      "id": "M11_pngpart_composewasm_flag_0",
+      "file": "renderer/editor/inpaint_worker.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.49,
+      "detail": "FAIL inpaint_worker.js pngPart under composeTiles and composeStack routes: composeWasm=1 on rust, composeWasm=0 on js, identical IDAT chunks  tRust=0 tJs=0 sRust=0 sJs=0",
+      "note": "Report composeWasm: 0 instead of 1 on the pointer path in pngPart"
+    },
+    {
+      "id": "M12_pngpartfromptr_ignore_pp",
+      "file": "renderer/editor/px/px.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.21,
+      "detail": "FAIL rust simd pngPart level 1: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189550",
+      "note": "Pass pp = 0 instead of pp to png_filter_rows in pngPartFromPtr"
+    },
+    {
+      "id": "M13_pngpartfromptr_bytes_offset_0",
+      "file": "renderer/editor/px/px.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.09,
+      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 0 (y=0, n=60): adler 1489876665/1489876665 crc 1446107084/1446107084 laps={\"filter\":0.06379999999990105,\"adler\":0.024700000000166256,\"deflate\":1.0506000000000313,\"chunk\":0.02529999999978827,\"copyOut\":0.049100000000180444} ",
+      "note": "Slice bytes from offset 0 instead of 8 in pngPartFromPtr"
+    },
+    {
+      "id": "M14_pngpartfromptr_zero_adler",
+      "file": "renderer/editor/px/px.js",
+      "status": "killed",
+      "expect": "killed",
+      "unexpected": false,
+      "seconds": 3.23,
+      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 0 (y=0, n=60): adler 0/1489876665 crc 1446107084/1446107084 laps={\"filter\":0.06290000000012697,\"adler\":0.0029999999999290594,\"deflate\":1.373700000000099,\"chunk\":0.05929999999989377,\"copyOut\":0.11400000000003274} ",
+      "note": "Return adler = 0 in pngPartFromPtr"
+    }
+  ]
+}

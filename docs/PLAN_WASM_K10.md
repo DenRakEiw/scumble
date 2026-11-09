@@ -955,7 +955,7 @@ Per `brief.md` and `docs/PLAN_WASM_BUILD.md` §4.4, both K10b and K10c run:
   - `exportperf:15000x10000` (limit / fill): `composite_bands` `1,586 / 1,658 ms`, `layer_from_tiles` `830 / 799 ms`, `psd / psd_masked` `2,161 / 2,422 ms` (limit) and `2,086 / 2,460 ms` (fill).
   - `tiffperf:15000x10000`: `open noise` `8,713 ms` (`8,513–9,566`, `stored` `4,612 ms`), `open own` `4,907 ms` (`stored` `2,025 ms`).
 - **A/B Measurement Protocol (`docs/PLAN_WASM_BUILD.md` §1.1 & `brief.md`)**:
-  - Acquire the busy lock (`F:\canvas\.claude\coord\locks\busy.md`) before any timing run.
+  - Acquire the busy lock (`python docs/measurements/w1_2026-11-06/w1_lock.py acquire "<who>"` / `release <token>`) per batch before any timing run.
   - Export a clean `before` tree at the session's base commit (`git archive` to a sibling temp directory with `node_modules` junctioned) and run **three alternating before / after rounds (`r1`, `r2`, `r3`)** with a fresh Electron instance per round on port `9629` (`--offline`), recording all raw logs and `summary.txt` under `docs/measurements/<session>_<date>/`.
   - In addition, add `--set NAME=V` (calling `InpaintEditor.setRoute(name, value)` in the window, as `px_probe.py` does) to `tools/native_test.py` and `tools/export_test.py` so individual routes (`composeTiles`, `composeStack`, `psdPartWasm`, `stackIntoWasm`, `clipCoverage`, `dissolveRows`) can be toggled in-session if a before/after row needs per-route isolation.
 - **K10b Deciding Commands (`15000x10000`, 3 alternating before/after rounds)**:
@@ -976,3 +976,35 @@ Per `brief.md` and `docs/PLAN_WASM_BUILD.md` §4.4, both K10b and K10c run:
 - **Tie & Loss Decision Rule (`docs/PLAN_WASM_BUILD.md` §1.1 rule 2)**:
   - When a whole-operation wall-time row ties (difference within the run spread), **the tie is decided by the summed `timing.kernel` row** for that job (`png_part` `timing.kernel` for `export_png` / `export_ora` / `stored`, `psd_part` `timing.kernel` for `export_psd`, `stack_into` `timing.kernel` for `wand_whole_picture` / `match_wand` / `filter_wand`), where both arms include arena reset and `releaseIfLarge()` inside `timing.kernel`.
   - If any of `composeTiles`, `composeStack`, `psdPartWasm`, `stackIntoWasm`, `clipCoverage`, or `dissolveRows` loses (or ties on both wall time and `timing.kernel`), its route entry in `DEFAULT_ROUTES` (`renderer/editor/px/kernels.js:80`) is set to `"js"` with a comment citing the deciding row and run date.
+
+---
+
+## 10. As Built — K10b (2026-11-09)
+
+See `docs/measurements/k10b_2026-11-09/` (`k10b_chain.sh`, `summarize.py`, `summary.txt`, `summary_rows.txt`, `node_bench.mjs`, `before/`, `after/`, `retention/`, `node/`, `mutation/`).
+
+- **Built (ABI 37 on branch `ag-chain-c` off `3fd8bda7`)**:
+  - `crates/px/src/lib.rs`: bumped `px_abi_version()` (`:55-57`) from `36` to `37`. `px.wasm` (`259,180 B`, sha256 `3f240c7a80d2f983`; before at `3fd8bda7`: `259,180 B`, sha256 `7e99b55f37ff69ff`) and `px_scalar.wasm` (`210,462 B`, sha256 `0f3fe6c4448b871e`; before at `3fd8bda7`: `210,462 B`, sha256 `03ddfff981982e19`) rebuilt and verified with `python tools/build_px.py --check`.
+  - `renderer/editor/px/px.js`: bumped `PX_ABI = 37` (`:14`); added `Px.prototype.pngPartFromPtr(a, pr, w, rows, pp, level, last, laps = null)` (`:1173-1198`).
+  - `renderer/editor/px/kernels.js`: added `composeTiles: "kernel"` and `composeStack: "kernel"` to `ROUTE_KINDS` (`:62`).
+  - `renderer/editor/inpaint_worker.js`: added and exported `tilesRowsToWasm`, `storeRowsToWasm`, `stackRowsToWasm`, and `partPtrOf`; exported `rowsOfTiles`, `storeRows`, `rowsOfStack`, `stackInto`, `stackPoints`, `pngPart`, `psdPart`; routed `pngPart(msg)` (`:680-734`) through `partPtrOf` + `p.pngPartFromPtr` when `!msg.rgba && route(routeName) !== "js"`, with `composeWasm: 1` on the pointer path and `composeWasm: 0` on `"js"` / trap recovery (`recovered(p, err, "png_part")`).
+- **Tests & Mutation**:
+  - `node tools/px_test.js` (`composeWasmPartCases` on both `simdPx` and `scalarPx`, cases 1, 2a–2h, 3) and `node tools/boxstack_test.js`: PASS.
+  - `tools/export_test.py` (`compose_in_wasm_memory_matches_js_gather`): PASS on tiles and canvas (`k10b-both`, `k10b-tiff-tiles`, `k10b-tiff-canvas`, `k10b-serial`).
+  - Mutation (`docs/measurements/k10b_2026-11-09/mutation/mut_k10b.py`): 15/15 mutants killed, 0 survived (47.9s).
+- **15,000 × 10,000 A/B Summary (3 alternating rounds, fresh offline instances, focused, busy lock held per batch)**:
+  - `native_test.py`:
+    - `export_png`: wall `1,010.0 [990.0-1,015.0]` -> `869.0 [868.0-899.0] ms` (`1.16x`, non-overlapping); `png_part kernel` `7,475.4 [7,359.9-7,511.8]` -> `6,514.7 [6,401.0-6,692.5] ms` (`1.15x`, non-overlapping); `png_part compose` `1,213.0 [1,183.6-1,217.4]` -> `609.6 [607.0-613.7] ms` (`1.99x`, non-overlapping).
+    - `export_ora`: wall `2,255.0 [2,204.0-2,329.0]` -> `1,997.0 [1,977.0-2,090.0] ms` (`1.13x`, non-overlapping); `png_part kernel` `16,653.5 [16,210.9-17,225.2]` -> `14,715.5 [14,611.2-15,399.4] ms` (`1.13x`, non-overlapping); `png_part rows` `2,295.5 [2,139.5-2,330.0]` -> `1,057.2 [1,020.7-1,131.3] ms` (`2.17x`, non-overlapping).
+    - `open_psd`: wall `6,466.0 [6,417.0-6,527.0]` -> `6,231.0 [6,167.0-6,333.0] ms` (`1.04x`, non-overlapping); `png_part kernel` `6,500.9 [6,463.2-6,615.6]` -> `6,352.4 [6,147.1-6,383.6] ms` (`1.02x`, non-overlapping); `png_part rows` `385.1 [378.4-385.2]` -> `195.8 [182.5-196.9] ms` (`1.97x`, non-overlapping).
+    - `open_ora`: wall `4,845.0 [4,827.0-5,262.0]` vs `4,986.0 [4,910.0-5,167.0] ms` (`0.97x`, spreads overlap); `png_part kernel` `6,550.5 [6,306.2-6,635.7]` -> `6,300.7 [6,039.6-6,406.0] ms` (`1.04x`); `png_part rows` `402.6 [381.5-453.2]` -> `192.0 [163.7-207.7] ms` (`2.10x`, non-overlapping).
+    - `match_export_png`: wall `1,058.0 [1,035.0-1,121.0]` -> `894.0 [869.0-1,178.0] ms` (`1.18x`, spreads overlap); `png_part compose` `1,535.6 [1,396.6-1,582.5]` -> `797.7 [742.9-851.8] ms` (`1.93x`, non-overlapping); `png_part rows` `1,739.1 [1,557.0-1,760.6]` -> `829.7 [776.0-899.4] ms` (`2.10x`, non-overlapping).
+  - `export_test.py --perf`:
+    - `layer_from_tiles`: wall `265.0 [255.0-273.0]` -> `200.0 [192.0-232.0] ms` (`1.32x`, non-overlapping); `png_part kernel` `1,949.5 [1,871.2-2,013.4]` -> `1,488.0 [1,435.8-1,743.7] ms` (`1.31x`, non-overlapping); `png_part rows` `538.8 [490.7-554.6]` -> `258.5 [191.4-318.1] ms` (`2.08x`, non-overlapping).
+  - `tiff_test.py --size 15000x10000 --variant noise,own`:
+    - `own`: `openMs` `4,100.0 [3,974.0-4,207.0]` -> `4,004.0 [3,990.0-4,093.0] ms` (`1.02x`); `openSteps stored` `1,211.0 [1,137.0-1,304.0]` -> `1,196.0 [1,188.0-1,201.0] ms` (`1.01x`); `open png_part kernel` `5,816.9 [5,371.3-6,009.9]` -> `5,288.5 [5,263.2-5,418.3] ms` (`1.10x`); `open png_part rows` `432.9 [390.5-458.5]` -> `199.0 [192.2-211.3] ms` (`2.18x`, non-overlapping).
+    - `noise`: `openMs` `7,710.0 [7,478.0-7,838.0]` -> `7,616.0 [7,557.0-8,275.0] ms` (`1.01x`); `openSteps stored` `3,343.0 [3,336.0-3,463.0]` -> `3,435.0 [3,381.0-3,709.0] ms` (`0.97x`, spreads overlap); `open png_part rows` `367.9 [336.9-371.2]` -> `187.6 [186.3-191.4] ms` (`1.96x`, non-overlapping).
+  - `px_probe.py --retention 15000x10000`:
+    - `composeStack=js` (`695.4 ms`, `after` max `37.12 MiB`, `later` max `1.06 MiB`, `releases = 0`) vs `composeStack=rust` (`440.6 ms`, `1.58x`, `after` max `42.25 MiB`, `later` max `1.06 MiB`, `releases = 0`).
+  - Both `composeTiles` and `composeStack` win their deciding rows; neither is added to `DEFAULT_ROUTES`.
+

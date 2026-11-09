@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 36;
+export const PX_ABI = 37;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -1168,6 +1168,33 @@ export class Px {
                 cap *= 2;
             }
         } finally { this._reset(a); }
+    }
+
+    pngPartFromPtr(a, pr, w, rows, pp, level, last, laps = null) {
+        const n = rows * (1 + 4 * w);
+        const lap = laps ? lapper(laps) : null;
+        const pf = a.take(n);
+        this.exports.png_filter_rows(pr, w, rows, pp, pf);
+        if (lap) lap("filter");
+        const adler = this.exports.adler32(pf, n, 1) >>> 0;
+        if (lap) lap("adler");
+        let cap = storedCap(n);
+        for (;;) {
+            const po = a.take(cap + 12);
+            const written = this.exports.deflate_part(pf, n, level, last ? 1 : 0, po + 8, cap);
+            if (lap) lap("deflate");
+            if (written >= 0) {
+                const crc = this.exports.png_chunk_frame(po, written, 0x49444154) >>> 0;
+                if (lap) lap("chunk");
+                const t = TIMED ? clock() : 0;
+                const chunk = this.u8().slice(po, po + written + 12);
+                const bytes = chunk.subarray(8, 8 + written);
+                if (TIMED) lapOut(t, written + 12);
+                if (lap) lap("copyOut");
+                return { bytes, adler, raw: n, chunk, crc };
+            }
+            cap *= 2;
+        }
     }
 
     /**

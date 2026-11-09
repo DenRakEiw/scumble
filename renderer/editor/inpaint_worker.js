@@ -63,7 +63,7 @@ import { liquifyStore } from "./inpaint_liquify.js";
 import { guidedFar } from "./inpaint_depth.js";
 import { rangeRowBookkeeping } from "./inpaint_weights.js";
 import { fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, route, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba } from "./px/kernels.js";
 import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
@@ -202,7 +202,7 @@ function poissonJob(msg) {
  * for one that does not exist: transparent). With `above`, the single row above them instead (the PNG filter's `prev`):
  * row `r0 - 1` of the same tiles, or the last row of `prevTiles`, or null for the picture's first row.
  */
-function rowsOfTiles(msg, above = false) {
+export function rowsOfTiles(msg, above = false) {
     let tiles = msg.tiles, r0 = msg.r0 | 0, rows = msg.rows;
     if (above) {
         if (r0 > 0) { r0--; rows = 1; } else if (msg.prevTiles) { tiles = msg.prevTiles; r0 = TILE - 1; rows = 1; } else return null;
@@ -222,12 +222,41 @@ function rowsOfTiles(msg, above = false) {
 }
 
 /**
+ * The same tile rows gathered directly into wasm memory at `ptr` (K10b, docs/PLAN_WASM_K10.md §5.1).
+ * Returns false only when `above` is true at the picture's top row (`r0 === 0 && !msg.prevTiles`).
+ */
+export function tilesRowsToWasm(p, msg, above, ptr) {
+    let tiles = msg.tiles, r0 = msg.r0 | 0, rows = msg.rows;
+    if (above) {
+        if (r0 > 0) { r0--; rows = 1; }
+        else if (msg.prevTiles) { tiles = msg.prevTiles; r0 = TILE - 1; rows = 1; }
+        else return false;
+    }
+    const w = msg.w, timed = pxTimed();
+    const mem = p.u8();
+    mem.fill(0, ptr, ptr + w * rows * 4);
+    for (let tx = 0; tx * TILE < w; tx++) {
+        const t = tiles[tx];
+        if (!t) continue;
+        const { bytes, shared } = tileBytes(t);
+        const n = Math.min(TILE, w - tx * TILE) * 4;
+        const c0 = timed ? now() : 0;
+        for (let y = 0; y < rows; y++) {
+            const so = (r0 + y) * TILE * 4;
+            mem.set(bytes.subarray(so, so + n), ptr + (y * w + tx * TILE) * 4);
+        }
+        if (timed) pxLapAdd("copyIn", now() - c0, n * rows, shared);
+    }
+    return true;
+}
+
+/**
  * The rows `Y0` to `Y0 + n` of the image out of one store of a stack: `{ x, y, w, h, tiles }`, its pixels at (x, y) of
  * the image, `tiles[lty]` the names of its tile row `lty` from the left (as `rowsOfTiles` takes them). Into `out`, `W`
  * pixels wide from the image's column `X0`: RGBA8, or with `alphaOnly` one byte a pixel, the alpha. False when no tile
  * of the store lies there.
  */
-function storeRows(store, X0, W, Y0, n, out, alphaOnly = false) {
+export function storeRows(store, X0, W, Y0, n, out, alphaOnly = false) {
     const sx = store.x | 0, sy = store.y | 0;
     const y0 = Math.max(Y0, sy), y1 = Math.min(Y0 + n, sy + store.h);
     const x0 = Math.max(X0, sx), x1 = Math.min(X0 + W, sx + store.w);
@@ -254,6 +283,42 @@ function storeRows(store, X0, W, Y0, n, out, alphaOnly = false) {
 }
 
 /**
+ * The same store rows gathered directly into wasm memory at `ptr` (K10b, docs/PLAN_WASM_K10.md §5.2).
+ * Returns false when no tile of the store lies in the requested row/column window.
+ */
+export function storeRowsToWasm(p, store, X0, W, Y0, n, ptr, alphaOnly = false) {
+    const sx = store.x | 0, sy = store.y | 0;
+    const y0 = Math.max(Y0, sy), y1 = Math.min(Y0 + n, sy + store.h);
+    const x0 = Math.max(X0, sx), x1 = Math.min(X0 + W, sx + store.w);
+    if (y1 <= y0 || x1 <= x0) return false;
+    const mem = p.u8(), timed = pxTimed();
+    let any = false;
+    for (let lty = (y0 - sy) >> 8; lty * TILE < y1 - sy; lty++) {
+        const names = store.tiles[lty];
+        if (!names) continue;
+        const ry0 = Math.max(y0, sy + lty * TILE), ry1 = Math.min(y1, sy + (lty + 1) * TILE);
+        for (let ltx = (x0 - sx) >> 8; ltx * TILE < x1 - sx; ltx++) {
+            const t = names[ltx];
+            if (!t) continue;
+            const { bytes, shared } = tileBytes(t);
+            const cx0 = Math.max(x0, sx + ltx * TILE), cx1 = Math.min(x1, sx + (ltx + 1) * TILE), k = cx1 - cx0;
+            any = true;
+            const c0 = timed ? now() : 0;
+            for (let Y = ry0; Y < ry1; Y++) {
+                const so = ((Y - sy - lty * TILE) * TILE + (cx0 - sx - ltx * TILE)) * 4, o = (Y - Y0) * W + cx0 - X0;
+                if (alphaOnly) {
+                    for (let i = 0; i < k; i++) mem[ptr + o + i] = bytes[so + i * 4 + 3];
+                } else {
+                    mem.set(bytes.subarray(so, so + k * 4), ptr + o * 4);
+                }
+            }
+            if (timed) pxLapAdd("copyIn", now() - c0, (ry1 - ry0) * k * (alphaOnly ? 1 : 4), shared);
+        }
+    }
+    return any;
+}
+
+/**
  * Rows of a plain stack composited here, from the tiles where they lie (docs/PLAN_BCE.md §3b, B item 1): `stack` is
  * `{ base, layers: [{ x, y, w, h, tiles, alpha, op, mask }] }`, every store as `storeRows` takes it, a layer drawn
  * source-over or in its blend mode (`op`, the kernel's number; B item 7) at `alpha` (0..255) through its mask's alpha (a store on the layer's own grid; where the mask has no
@@ -266,7 +331,7 @@ function storeRows(store, X0, W, Y0, n, out, alphaOnly = false) {
  * `match` (the ten floats of a colour match, B item 7 part 3) is matched here, on its copy of the rows, before it
  * is composited.
  */
-function rowsOfStack(msg, above = false, into = null) {
+export function rowsOfStack(msg, above = false, into = null) {
     let Y0 = msg.y | 0, n = msg.rows;
     if (above) { if (Y0 <= 0) return null; Y0--; n = 1; }
     const W = msg.w, X0 = msg.x0 | 0, st = msg.stack;
@@ -323,11 +388,144 @@ function rowsOfStack(msg, above = false, into = null) {
 }
 
 /**
+ * The same stack band gathered and composited directly in wasm memory `a` (`p.job`) (K10b, docs/PLAN_WASM_K10.md §5.2).
+ * Returns the destination pointer `pd` in linear memory, or `0` when `above` is true at `y <= 0`.
+ */
+export function stackRowsToWasm(p, a, msg, above = false, into = null) {
+    let Y0 = msg.y | 0, n = msg.rows;
+    if (above) {
+        if (Y0 <= 0) return 0;
+        Y0--;
+        n = 1;
+    }
+    const W = msg.w, X0 = msg.x0 | 0, st = msg.stack;
+    const px = W * n, byteLen = px * 4, timed = pxTimed();
+    const pd = a.take(byteLen);
+    if (st.base) {
+        p.u8().fill(0, pd, pd + byteLen);
+        storeRowsToWasm(p, st.base, X0, W, Y0, n, pd, false);
+    } else if (into && !msg.clear) {
+        const c0 = timed ? now() : 0;
+        p.u8().set(into, pd);
+        if (timed) pxLapAdd("copyIn", now() - c0, byteLen, true);
+    } else {
+        p.u8().fill(0, pd, pd + byteLen);
+    }
+    const maxL = st.layers.length;
+    const srcPtrs = new Uint32Array(maxL);
+    const maskPtrs = new Uint32Array(maxL);
+    const opsArr = new Uint8Array(maxL);
+    const alphasArr = new Uint8Array(maxL);
+    let count = 0, scratchSrc = 0;
+    for (const l of st.layers) {
+        const psrc = scratchSrc || a.take(byteLen);
+        if (l.sab) {
+            scratchSrc = 0;
+            const sabView = new Uint8Array(l.sab, (Y0 - (msg.y0 | 0)) * W * 4, byteLen);
+            const c0 = timed ? now() : 0;
+            p.u8().set(sabView, psrc);
+            if (timed) pxLapAdd("copyIn", now() - c0, byteLen, true);
+        } else {
+            p.u8().fill(0, psrc, psrc + byteLen);
+            if (!storeRowsToWasm(p, l, X0, W, Y0, n, psrc, false)) {
+                scratchSrc = psrc;
+                continue;
+            }
+            scratchSrc = 0;
+            if (l.match) {
+                const pp = a.take(40, 4);
+                const f = p.view(Float32Array, pp, 10);
+                for (let i = 0; i < 10; i++) f[i] = l.match[i];
+                p.exports.match_pixels(psrc, px, pp);
+            }
+        }
+        let pm = 0;
+        if (l.mask) {
+            pm = a.take(px);
+            p.u8().fill(0, pm, pm + px);
+            storeRowsToWasm(p, { x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, X0, W, Y0, n, pm, true);
+        }
+        if (l.clip) {
+            const c = l.clip;
+            const pcov = a.take(px);
+            p.u8().fill(0, pcov, pcov + px);
+            storeRowsToWasm(p, c, X0, W, Y0, n, pcov, true);
+            let pbm = 0;
+            if (c.mask) {
+                pbm = a.take(px);
+                p.u8().fill(0, pbm, pbm + px);
+                storeRowsToWasm(p, { x: c.x, y: c.y, w: c.w, h: c.h, tiles: c.mask }, X0, W, Y0, n, pbm, true);
+            }
+            if (p.exports.clip_coverage && route("clipCoverage") !== "js") {
+                p.exports.clip_coverage(pcov, px, pbm, c.alpha, pm);
+            } else {
+                const covView = p.view(Uint8Array, pcov, px);
+                const bmView = pbm ? p.view(Uint8Array, pbm, px) : null;
+                const ownView = pm ? p.view(Uint8Array, pm, px) : null;
+                clipCoverage(covView, bmView, c.alpha, ownView);
+            }
+            pm = pcov;
+        }
+        if (l.dissolve != null) {
+            if (p.exports.dissolve_rows && route("dissolveRows") !== "js") {
+                p.exports.dissolve_rows(psrc, W, n, X0, Y0, l.alpha, pm, l.dissolve >>> 0);
+            } else {
+                const srcView = p.view(Uint8Array, psrc, byteLen);
+                const mView = pm ? p.view(Uint8Array, pm, px) : null;
+                for (let r = 0; r < n; r++) {
+                    const imgY = Y0 + r;
+                    for (let c = 0; c < W; c++) {
+                        const imgX = X0 + c;
+                        const o = r * W + c, idx = o * 4;
+                        const srcA = srcView[idx + 3];
+                        if (srcA === 0) continue;
+                        const m = mView ? mView[o] : 255;
+                        const cVal = mul255(mul255(srcA, l.alpha), m);
+                        const keep = (cVal === 255) || ((hash32(imgX, imgY, l.dissolve) >>> 24) < cVal);
+                        if (keep) {
+                            srcView[idx + 3] = 255;
+                        } else {
+                            srcView[idx] = 0;
+                            srcView[idx + 1] = 0;
+                            srcView[idx + 2] = 0;
+                            srcView[idx + 3] = 0;
+                        }
+                    }
+                }
+            }
+            srcPtrs[count] = psrc;
+            alphasArr[count] = 255;
+            maskPtrs[count] = 0;
+            opsArr[count] = 0;
+            count++;
+        } else {
+            srcPtrs[count] = psrc;
+            alphasArr[count] = l.alpha;
+            maskPtrs[count] = pm;
+            opsArr[count] = l.op | 0;
+            count++;
+        }
+    }
+    if (count > 0) {
+        const psrcs = a.take(count * 4, 4);
+        const pmasks = a.take(count * 4, 4);
+        const pops = a.take(count, 4);
+        const palphas = a.take(count, 4);
+        p.view(Uint32Array, psrcs, count).set(srcPtrs.subarray(0, count));
+        p.view(Uint32Array, pmasks, count).set(maskPtrs.subarray(0, count));
+        p.view(Uint8Array, pops, count).set(opsArr.subarray(0, count));
+        p.view(Uint8Array, palphas, count).set(alphasArr.subarray(0, count));
+        p.exports.composite_tile(pd, px, count, psrcs, pops, palphas, pmasks);
+    }
+    return pd;
+}
+
+/**
  * Rows of a stack composited into a shared buffer (B item 2: the picture a flood reads, put together by the pool):
  * `sab` holds `w` x `h` RGBA8 of the box at (`x0`, `y0`) of the image, zeroed (or `clear` asks this job to zero its
  * rows first); this job fills the rows `y` to `y + rows`.
  */
-async function stackInto(msg) {
+export async function stackInto(msg) {
     const t0 = now();
     const at = ((msg.y | 0) - (msg.y0 | 0)) * msg.w * 4;
     const into = new Uint8Array(msg.sab, at, msg.w * msg.rows * 4);
@@ -377,7 +575,7 @@ function gatherStore(store, xs, ys, out, alphaOnly = false, clip = null) {
  * samples, and the layer's own samples with its mask folded into the alpha. A sample outside a store is transparent.
  * The composite is pointwise, so the composite of the samples is the samples of the composite.
  */
-async function stackPoints(msg) {
+export async function stackPoints(msg) {
     const t0 = now();
     const xs = new Int32Array(msg.xs), ys = new Int32Array(msg.ys), nx = xs.length, ny = ys.length, n = nx * ny;
     const clip = msg.image ? { w: msg.image[0], h: msg.image[1] } : null;
@@ -442,28 +640,104 @@ function partRowsOf(msg) {
 }
 
 /**
+ * The rows of a part job in wasm memory `a` (`p.job`), plus the optional `above` row for `png_part` (K10b,
+ * docs/PLAN_WASM_K10.md §5.2).
+ */
+export function partPtrOf(p, a, msg, needPrev = false) {
+    const byteLen = msg.w * msg.rows * 4;
+    let pr = 0, pp = 0;
+    if (msg.rgba) {
+        pr = p._in(a, new Uint8Array(msg.rgba, 0, byteLen), byteLen);
+        const tc = now();
+        if (needPrev && msg.prev) {
+            const prevBytes = new Uint8Array(msg.prev, 0, msg.w * 4);
+            pp = p._in(a, prevBytes, prevBytes.byteLength);
+        }
+        return { pr, pp, tc, tp: now() };
+    }
+    if (msg.stack) {
+        pr = stackRowsToWasm(p, a, msg, false, null);
+        const tc = now();
+        if (needPrev && (msg.y | 0) > 0) {
+            pp = stackRowsToWasm(p, a, msg, true, null);
+        }
+        return { pr, pp, tc, tp: now() };
+    }
+    pr = a.take(byteLen);
+    tilesRowsToWasm(p, msg, false, pr);
+    const tc = now();
+    if (needPrev && ((msg.r0 | 0) > 0 || msg.prevTiles)) {
+        const cand = a.take(msg.w * 4);
+        if (tilesRowsToWasm(p, msg, true, cand)) pp = cand;
+    }
+    return { pr, pp, tc, tp: now() };
+}
+
+/**
  * One part of a PNG's pixels (inpaint_png.js, docs/PLAN_BCE.md §E2): rows as bytes (`rgba`, `prev`) or as tiles
  * (`tiles`, `prevTiles`, `r0`), filtered and deflated by the Rust kernel, as a finished IDAT chunk.
  */
-async function pngPart(msg) {
-    const p = rustPx();
+export async function pngPart(msg) {
+    let p = rustPx();
     if (!p) throw new Error(NO_PARTS);
     const t0 = now();
+    const level = msg.level === undefined ? PNG_LEVEL : msg.level;
+    const laps = {};   // copyIn, filter, adler, deflate, chunk, copyOut (px.js pngPart / pngPartFromPtr)
+    const routeName = msg.stack ? "composeStack" : "composeTiles";
+    if (!msg.rgba && route(routeName) !== "js") {
+        const a = p.job;
+        let r = null, tc = 0, tp = 0;
+        try {
+            const ptrs = partPtrOf(p, a, msg, true);
+            tc = ptrs.tc;
+            tp = ptrs.tp;
+            r = p.pngPartFromPtr(a, ptrs.pr, msg.w, msg.rows, ptrs.pp, level, !!msg.last, laps);
+        } catch (err) {
+            if (!recovered(p, err, "png_part")) throw err;
+        } finally {
+            p._reset(a);
+            releaseIfLarge();
+        }
+        if (r) {
+            return {
+                chunk: r.chunk.buffer, adler: r.adler, raw: r.raw, crc: r.crc,
+                transfer: [r.chunk.buffer],
+                timing: {
+                    op: "png_part", kernels: "rust", composeWasm: 1,
+                    pixels: msg.w * msg.rows, kernel: now() - t0,
+                    compose: msg.stack ? tc - t0 : 0, rows: tc - t0, prev: tp - tc, ...laps,
+                },
+            };
+        }
+        p = rustPx();
+        if (!p) {
+            await pxSettled();
+            p = rustPx();
+        }
+        if (!p) throw new Error(NO_PARTS);
+    }
     const rgba = partRowsOf(msg);
     const tc = now();
     const prev = msg.rgba ? (msg.prev ? new Uint8Array(msg.prev, 0, msg.w * 4) : null) : msg.stack ? rowsOfStack(msg, true) : rowsOfTiles(msg, true);
     const tp = now();
-    const laps = {};   // copyIn, filter, adler, deflate, chunk, copyOut (px.js pngPart)
-    const r = p.pngPart(rgba, msg.w, msg.rows, prev, msg.level === undefined ? PNG_LEVEL : msg.level, !!msg.last, laps);
+    const r = p.pngPart(rgba, msg.w, msg.rows, prev, level, !!msg.last, laps);
     releaseIfLarge();
-    return { chunk: r.chunk.buffer, adler: r.adler, raw: r.raw, crc: r.crc, transfer: [r.chunk.buffer], timing: { op: "png_part", kernels: "rust", pixels: msg.w * msg.rows, kernel: now() - t0, compose: msg.stack ? tc - t0 : 0, rows: tc - t0, prev: tp - tc, ...laps } };
+    return {
+        chunk: r.chunk.buffer, adler: r.adler, raw: r.raw, crc: r.crc,
+        transfer: [r.chunk.buffer],
+        timing: {
+            op: "png_part", kernels: "rust", composeWasm: 0,
+            pixels: msg.w * msg.rows, kernel: now() - t0,
+            compose: msg.stack ? tc - t0 : 0, rows: tc - t0, prev: tp - tc, ...laps,
+        },
+    };
 }
 
 /**
  * One part of a PSD's channel data (docs/PLAN_BCE.md §E4): rows as bytes or as tiles (as `png_part` takes them),
  * PackBits per channel. `channels`: [{ lens, data }] for R, G, B, A, transferred.
  */
-async function psdPart(msg) {
+export async function psdPart(msg) {
     const t0 = now();
     const rgba = partRowsOf(msg);
     const t1 = now();

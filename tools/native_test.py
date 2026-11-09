@@ -98,6 +98,28 @@ if "--out" in ARGS:
     i = ARGS.index("--out")
     OUT_ARG = ARGS[i + 1]
     del ARGS[i:i + 2]
+ROUTES = {}
+while "--set" in ARGS:
+    i = ARGS.index("--set")
+    kv = ARGS[i + 1]
+    del ARGS[i:i + 2]
+    rk, _, rv = kv.partition("=")
+    rv_l = rv.strip().lower()
+    if rv_l in ("js", "rust", "inf"):
+        ROUTES[rk.strip()] = rv_l
+    else:
+        fv = float(rv_l)
+        ROUTES[rk.strip()] = int(fv) if fv.is_integer() else fv
+for a in list(ARGS):
+    if a.startswith("--set="):
+        ARGS.remove(a)
+        rk, _, rv = a.split("=", 1)[1].partition("=")
+        rv_l = rv.strip().lower()
+        if rv_l in ("js", "rust", "inf"):
+            ROUTES[rk.strip()] = rv_l
+        else:
+            fv = float(rv_l)
+            ROUTES[rk.strip()] = int(fv) if fv.is_integer() else fv
 KEEP = "--keep" in ARGS   # keep the save rows' files (deleted at the end otherwise)
 SIZE = next((a for a in ARGS if "x" in a.lower() and a[0].isdigit()), "15000x10000")
 ONLY = [a for a in ARGS if not a[0].isdigit() and not a.startswith("-")]
@@ -1001,6 +1023,10 @@ async def run_rows(c, w, h, files, results):
         report(name, r, prof)
         if "--js" in ARGS and name == "build_the_file":   # the JS twins in every thread, for an A/B of a kernel on its row
             print(await c.eval("(async () => { const E = (await import('./editor/inpaint_canvas.js')).InpaintEditor || window.editor.constructor; E.kernels = 'js'; return 'kernels: ' + E.kernels; })()"))
+        if ROUTES and name == "build_the_file":
+            print(await c.eval(f"(async () => {{ const E = (await import('./editor/inpaint_canvas.js')).InpaintEditor || window.editor.constructor; const r = {json.dumps(ROUTES)}; for (const [k, v] of Object.entries(r)) E.setRoute(k, v === 'inf' ? Infinity : v); return 'routes: ' + JSON.stringify(r); }})()"))
+        if ROUTES and name == "close":
+            await c.eval(f"(async () => {{ const E = (await import('./editor/inpaint_canvas.js')).InpaintEditor || window.editor.constructor; for (const k of {json.dumps(list(ROUTES.keys()))}) {{ try {{ E.setRoute(k, null); }} catch (_) {{}} }} return 1; }})()")
         results["rows"][name] = {"row": r, "profile": prof}
         if not (isinstance(r, dict) and (r.get("error") or r.get("skipped"))):
             ran.add(name)
