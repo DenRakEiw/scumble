@@ -2,7 +2,8 @@ K17 measurement summary (2026-11-09)
 ====================================
 
 Behaviour change (`rules.md` report checklist (a)):
-- No user-visible output bytes or error refusals change: opening a multi-strip or tiled TIFF whose strip or tile height fits within 64 MiB of RGBA (`rows * width * 4 <= 67,108,864`) now reads each band in one contiguous `blob.slice(...).arrayBuffer()` and decodes uncompressed, LZW, and PackBits strips or tiles through `unpackStrip` (`tiff_unpack` in Rust wasm by default), roughly halving 15,000 x 10,000 LZW (`11.8 s -> 5.7 s`) and PackBits (`6.0 s -> 3.6 s`) open times while producing identical RGBA8 pixels and identical refusals on damaged or truncated files.
+- When opening a tiled TIFF with uncompressed, LZW, or PackBits compression whose tile height fits within 64 MiB of RGBA, a tile that decodes to fewer bytes than its rows is now refused with `tile N holds fewer bytes than its rows` rather than `tile N holds <got> of <want> bytes`.
+- When opening a multi-strip or multi-tile TIFF whose band fits within 64 MiB of RGBA, every strip or tile range in the band is now checked against the file size before decoding the band, so a later strip or tile in that band that lies past the end of the file is reported (`strip/tile M lies past the end of the file`) ahead of an earlier strip or tile that is short or damaged inside the file.
 
 Scope (`docs/PLAN_WASM_BUILD.md` §4.6 K17, §5 row 34; `brief.md` item 3 & lines 42-44):
 - No `.rs` changes (`PX_ABI = 43` unchanged from `0740aeab`; `tiff_unpack`, `tiff_unpredict`, and `tiff_to_rgba` were built in K16 and K15):
@@ -132,7 +133,7 @@ packbits tiff_read pieces           10,000.0 [10,000.0-10,000.0]    40.0 [40.0-4
 packbits open png_part jobs         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
 packbits open png_part composeWasm  79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
 packbits open png_part kernel       4,629.1 [4,627.0-5,228.5]       4,811.8 [4,772.1-5,394.9]       0.96x (tie; spreads overlap)
-packbits open png_part rows         198.2 [190.2-202.1]             207.9 [160.9-219.5]             0.76x
+packbits open png_part rows         157.1 [154.1-181.7]             207.9 [160.9-219.5]             0.76x
 packbits open png_part filter       228.0 [224.6-246.6]             249.0 [232.3-252.9]             0.92x
 packbits open png_part adler        136.1 [136.0-148.8]             145.7 [140.9-159.1]             0.93x
 packbits open png_part deflate      4,023.5 [4,020.3-4,553.9]       4,116.4 [4,083.7-4,722.4]       0.98x (tie; spreads overlap)

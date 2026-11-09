@@ -11551,24 +11551,33 @@ async function tiffCases(js, simd, scalar, K, T) {
             const wantSpRow0 = Uint8Array.from([100, 50, 25, 200, 110, 70, 55, 240]);
             const wantSpRow1 = Uint8Array.from([5, 15, 25, 250, 6, 17, 28, 254]);
 
-            // Truncated and damaged deflate streams in readTiffBand refuse
+            // Truncated and damaged deflate streams, short tile, and upfront band EOF check in readTiffBand refuse
             const shortZ = new Uint8Array(require("node:zlib").deflateSync(Buffer.from([1, 2, 3])));
             const tiffShortZ = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [8]], [262, 3, [2]], [277, 3, [3]], [278, 4, [2]]], [shortZ]);
             const planShortZ = await js.tiffPlan(new Blob([tiffShortZ]));
-            let shortZErr = null, badZErr = null;
+            let shortZErr = null, badZErr = null, shortTileErr = null, bandEofErr = null;
             try { await js.readTiffBand(new Blob([tiffShortZ]), planShortZ, 0); } catch (e) { shortZErr = e; }
             const tiffBadZ = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [8]], [262, 3, [2]], [277, 3, [3]], [278, 4, [2]]], [Uint8Array.from([0x78, 0x9C, 0xFF, 0xFF, 0xFF])]);
             const planBadZ = await js.tiffPlan(new Blob([tiffBadZ]));
             try { await js.readTiffBand(new Blob([tiffBadZ]), planBadZ, 0); } catch (e) { badZErr = e; }
+            const tiffShortTile = mkTiff([[256, 4, [16]], [257, 4, [16]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [322, 4, [16]], [323, 4, [16]]], [new Uint8Array(10)], 324, 325);
+            K.setKernels("rust");
+            try { await T.readTiff(new Blob([tiffShortTile]), { kernels: K.tiffKernels() }); } catch (e) { shortTileErr = e; }
+            const tiffTwoStrip = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [new Uint8Array(2), new Uint8Array(6)]);
+            new DataView(tiffTwoStrip.buffer).setUint32(tiffTwoStrip.length - 12, tiffTwoStrip.length + 10, true);
+            try { await T.readTiff(new Blob([tiffTwoStrip]), { rowsPerBand: 2, kernels: K.tiffKernels() }); } catch (e) { bandEofErr = e; }
+            K.setKernels("js");
 
             const extraBandChecksOk = singleBandSlices === 1 && eqBytes(gotPlanar, wantPlanar)
-                && readPlanarStreams === 0 && readPlanarAb >= 2 && gotReadPlanar.length === 24
+                && readPlanarStreams === 0 && readPlanarAb >= 2 && eqBytes(Uint8Array.from(gotReadPlanar), wantPlanar)
                 && reorderedSlices === 1 && eqBytes(gotReordered, wantPlanar)
                 && gapSlices === 2 && eqBytes(gotGap, wantPlanar)
                 && subRows.length === 2 && subRows[0].r === 1 && subRows[1].r === 1
                 && eqBytes(subRows[0].rgba, wantSpRow0) && eqBytes(subRows[1].rgba, wantSpRow1)
                 && !!shortZErr && /fewer bytes than its rows/i.test(shortZErr.message)
-                && !!badZErr && /damaged or cut off/i.test(badZErr.message);
+                && !!badZErr && /damaged or cut off/i.test(badZErr.message)
+                && !!shortTileErr && /tile 1 holds fewer bytes than its rows/i.test(shortTileErr.message)
+                && !!bandEofErr && /strip 2 lies past the end of the file/i.test(bandEofErr.message);
 
             check("inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, 1 blob.slice().arrayBuffer() per contiguous band, and 64 MiB RGBA-size rule",
                 tiledPredOk && rgbaRuleOk && extraBandChecksOk,
