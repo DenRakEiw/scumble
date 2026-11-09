@@ -179,8 +179,10 @@ JS_SETUP_AND_RUN = r"""(async () => {
         K.setRoute("compositeMaskedTile", null);
         if (ed.undo.length) await run("undo", { doc: window.__n1doc, steps: ed.undo.length });
         ed.clearUndo();
+        ed.renderLayers();
         ed.draw();
         await ed.mipsSettled();
+        await wait(200);
 
         return {
             wall: +wall.toFixed(1),
@@ -198,9 +200,9 @@ JS_SETUP_AND_RUN = r"""(async () => {
         };
     };
 
-    const arms = roundIdx % 2 === 0 ? ["before", "rust", "js"] : ["js", "rust", "before"];
+    const arms = [["before", "rust", "js"], ["rust", "js", "before"], ["js", "before", "rust"]][roundIdx % 3];
     const scenarios = [
-        ["bucket_fill", GRAD[0], GRAD[1], null, null],
+        ["bucket_fill", GRAD[0], GRAD[1], null, [0, 0, W, H]],
         ["bucket_one_disc", DISC[0], DISC[1], null, [768, 768, 1792, 1792]],
         ["bucket_sel_1000", DISC[0], DISC[1], [750, 750, 1750, 1750], [750, 750, 1750, 1750]],
         ["bucket_sel_256", DISC[0], DISC[1], [1122, 1122, 1378, 1378], [1024, 1024, 1536, 1536]],
@@ -264,11 +266,13 @@ def fmt_med(vals, fmt=".1f"):
 def summarize(out_dir):
     rounds = [json.load(open(os.path.join(out_dir, f"round_{r}.json"), encoding="utf-8")) for r in range(3)]
     lines = [
-        "K37 15000 x 10000 A/B Measurement Summary (3 alternating fresh-instance rounds, --tiles --no-comfy)",
-        "===================================================================================================",
-        "Byte effect: At full opacity the bytes equal the canvas path (except partially blended pixels under",
-        "alphaLock / source-atop where 0 < da < 255); at opacity below 1 partially blended pixels differ by",
-        "at most one premultiplied level against Skia.",
+        "K37 15000 x 10000 A/B Measurement Summary (3 rotating fresh-instance rounds, --tiles --no-comfy)",
+        "================================================================================================",
+        "Byte effect: At full opacity the bytes equal the canvas path (alpha-locked fills at full opacity stay",
+        "on the canvas path); at opacity below 1 partially blended pixels differ by at most one premultiplied",
+        "level against Skia.",
+        "Note on before arm: measured in-tree via InpaintEditor.bucketTiles = false (which takes the base's",
+        "exact canvas drawInto -> _scratchDraw path).",
         "",
         "1. End-to-End bucketFill Operations on 15000 x 10000 Paint Layer (medians [min-max] across 3 rounds)",
         "----------------------------------------------------------------------------------------------------",
@@ -277,7 +281,7 @@ def summarize(out_dir):
         filled = rounds[0]["rows"][row]["rust"]["filled"]
         lines.append(f"\nRow: {row} (filled = {filled:,} px)")
         for arm, desc in (
-            ("before", "before (canvas _scratchDraw + writeLayerCanvas + PNG maskDataUrl)"),
+            ("before", "before (InpaintEditor.bucketTiles = false: drawInto -> _scratchDraw readback of the flood box)"),
             ("rust", "after  (tiles: floodOverTiles + compositeFill -> rust SIMD compositeMaskedTile)"),
             ("js", "twin   (tiles: floodOverTiles + compositeFill -> JS twin compositeMaskedTile)"),
         ):
@@ -287,10 +291,10 @@ def summarize(out_dir):
             sblks = [r["rows"][row][arm]["blockedSettled"] for r in rounds]
             g_ms = [r["rows"][row][arm]["getImageData"]["ms"] for r in rounds]
             g_mb = [r["rows"][row][arm]["getImageData"]["MB"] for r in rounds]
-            g_n = rounds[0]["rows"][row][arm]["getImageData"]["n"]
+            g_n = int(statistics.median([r["rows"][row][arm]["getImageData"]["n"] for r in rounds]))
             p_ms = [r["rows"][row][arm]["putImageData"]["ms"] for r in rounds]
             p_mb = [r["rows"][row][arm]["putImageData"]["MB"] for r in rounds]
-            p_n = rounds[0]["rows"][row][arm]["putImageData"]["n"]
+            p_n = int(statistics.median([r["rows"][row][arm]["putImageData"]["n"] for r in rounds]))
             ftot = [r["rows"][row][arm]["floodJob"]["total"] for r in rounds]
             fshp = [r["rows"][row][arm]["floodJob"]["shape"] for r in rounds]
             hashes = [r["rows"][row][arm]["hash"] for r in rounds]
@@ -298,8 +302,8 @@ def summarize(out_dir):
             lines.append(f"  {desc}")
             lines.append(f"    wall:          {fmt_med(walls)} ms   | longest block:          {fmt_med(blks)} ms")
             lines.append(f"    settled wall:  {fmt_med(swalls)} ms   | settled longest block:  {fmt_med(sblks)} ms")
-            lines.append(f"    2d getImageData: {g_n:4d} calls, {fmt_med(g_ms)} ms, {g_mb[0]:.1f} MB")
-            lines.append(f"    2d putImageData: {p_n:4d} calls, {fmt_med(p_ms)} ms, {p_mb[0]:.1f} MB")
+            lines.append(f"    2d getImageData: {g_n:4d} calls, {fmt_med(g_ms)} ms, {fmt_med(g_mb)} MB")
+            lines.append(f"    2d putImageData: {p_n:4d} calls, {fmt_med(p_ms)} ms, {fmt_med(p_mb)} MB")
             lines.append(f"    worker floodJob: total {fmt_med(ftot)} ms (shape {fmt_med(fshp)} ms)")
             lines.append(f"    window pxCalls:  {json.dumps(wpx)}   | patch FNV-1a: {hashes[0]}")
     lines.extend([

@@ -3490,14 +3490,27 @@ async function compositeShaCases(js, simd, scalar) {
                 K.pxCalls(true);
                 const w2 = layer.compositeFill([{ tx: 0, ty: 0, alpha: aOff.buffer }], "#40c090", 2, 180, [37, 19]);
                 const c2 = K.pxCalls(true).composite_masked_tile || 0;
+                const shared01 = layer.tileAt(0, 1) === snap.tileAt(0, 1);
 
-                // Verify edge tile (1,0) has 0 outside x < 44 (256 + 44 = 300) and input a10 was not mutated
-                const t10After = layer.tileAt(1, 0);
-                let edgeClean = colorOk && !!t10After && a10[200] === 255;
-                if (t10After) {
+                // Grid-aligned fill at [0, 256] (dty = 1) onto bottom edge tile (0,1), clamping y >= 44 (bh = 44)
+                const aBottom = new Uint8Array(65536).fill(255);
+                const w3 = layer.compositeFill([{ tx: 0, ty: 0, alpha: aBottom.buffer }], "#2060e0", 0, 255, [0, 256]);
+
+                // Verify right edge tile (1,0) has 0 outside x < 44 and bottom edge tile (0,1) has 0 outside y < 44
+                const t10After = layer.tileAt(1, 0), t01After = layer.tileAt(0, 1);
+                let edgeClean = colorOk && w3 === 1 && !!t10After && !!t01After && a10[200] === 255 && aBottom[50 * 256] === 255
+                    && t01After.data[0] === 0x20 && t01After.data[1] === 0x60 && t01After.data[2] === 0xe0 && t01After.data[3] === 255;
+                if (t10After && edgeClean) {
                     for (let y = 0; y < 256 && edgeClean; y++) {
                         for (let x = 44; x < 256; x++) {
                             if (t10After.data[(y * 256 + x) * 4 + 3] !== 0) { edgeClean = false; break; }
+                        }
+                    }
+                }
+                if (t01After && edgeClean) {
+                    for (let y = 44; y < 256 && edgeClean; y++) {
+                        for (let x = 0; x < 256; x++) {
+                            if (t01After.data[(y * 256 + x) * 4 + 3] !== 0) { edgeClean = false; break; }
                         }
                     }
                 }
@@ -3506,7 +3519,7 @@ async function compositeShaCases(js, simd, scalar) {
                     snapBytes: packTiles(snap),
                     before,
                     w1, w2, c1, c2,
-                    shared01: layer.tileAt(0, 1) === snap.tileAt(0, 1),
+                    shared01,
                     empty11: layer.tileAt(1, 1) === null,
                     edgeClean,
                 };

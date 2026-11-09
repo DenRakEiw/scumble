@@ -3,20 +3,20 @@
   "rows": {
     "bucket_fill": {
       "before": {
-        "wall": 5182.9,
-        "wallSettled": 5451.5,
-        "blocked": 2615.4,
-        "blockedSettled": 2619.2,
+        "wall": 2756.3,
+        "wallSettled": 2815.2,
+        "blocked": 1439.5,
+        "blockedSettled": 1441.1,
         "filled": 58302622,
-        "hash": null,
+        "hash": 2564466665,
         "getImageData": {
           "n": 12,
-          "ms": 1868.6,
+          "ms": 1062.8,
           "MB": 572.2
         },
         "putImageData": {
           "n": 3207,
-          "ms": 256.5,
+          "ms": 142.3,
           "MB": 647
         },
         "windowPx": {
@@ -30,11 +30,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 152795520,
-          "read": 79.7,
+          "read": 52.9,
           "clip": 0,
-          "flood": 1366.9,
-          "shape": 361.2,
-          "total": 1808.4,
+          "flood": 578.5,
+          "shape": 196.9,
+          "total": 829,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -43,12 +43,12 @@
         "focused": true
       },
       "rust": {
-        "wall": 1708.4,
-        "wallSettled": 1761.4,
-        "blocked": 250.4,
-        "blockedSettled": 254,
+        "wall": 1288.8,
+        "wallSettled": 1308.8,
+        "blocked": 205.7,
+        "blockedSettled": 208,
         "filled": 58302622,
-        "hash": null,
+        "hash": 2564466665,
         "getImageData": {
           "n": 0,
           "ms": 0,
@@ -56,7 +56,7 @@
         },
         "putImageData": {
           "n": 906,
-          "ms": 30.4,
+          "ms": 18.1,
           "MB": 75.7
         },
         "windowPx": {
@@ -71,11 +71,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 152795520,
-          "read": 48.1,
+          "read": 18.3,
           "clip": 0,
-          "flood": 675.3,
-          "shape": 91,
-          "total": 815.1,
+          "flood": 580.2,
+          "shape": 57.1,
+          "total": 656,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -84,12 +84,12 @@
         "focused": true
       },
       "js": {
-        "wall": 2059.4,
-        "wallSettled": 2103.5,
-        "blocked": 840.5,
-        "blockedSettled": 842.8,
+        "wall": 1768.6,
+        "wallSettled": 1800,
+        "blocked": 644.7,
+        "blockedSettled": 646.4,
         "filled": 58302622,
-        "hash": null,
+        "hash": 2564466665,
         "getImageData": {
           "n": 0,
           "ms": 0,
@@ -97,7 +97,7 @@
         },
         "putImageData": {
           "n": 906,
-          "ms": 21.8,
+          "ms": 19.8,
           "MB": 75.7
         },
         "windowPx": {
@@ -111,11 +111,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 152795520,
-          "read": 15.1,
+          "read": 10.5,
           "clip": 0,
-          "flood": 659.3,
-          "shape": 109.3,
-          "total": 784.2,
+          "flood": 593,
+          "shape": 72.1,
+          "total": 676,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -126,20 +126,20 @@
     },
     "bucket_one_disc": {
       "before": {
-        "wall": 139.2,
-        "wallSettled": 139.2,
-        "blocked": 71,
-        "blockedSettled": 71,
+        "wall": 103.3,
+        "wallSettled": 103.3,
+        "blocked": 60.4,
+        "blockedSettled": 60.4,
         "filled": 441530,
         "hash": 536316862,
         "getImageData": {
           "n": 2,
-          "ms": 17.3,
+          "ms": 9.3,
           "MB": 4
         },
         "putImageData": {
           "n": 19,
-          "ms": 21.6,
+          "ms": 19.2,
           "MB": 77.8
         },
         "windowPx": {
@@ -152,11 +152,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 21.5,
+          "read": 13.1,
           "clip": 0,
-          "flood": 10.6,
-          "shape": 2,
-          "total": 34.3,
+          "flood": 7.5,
+          "shape": 1.2,
+          "total": 21.9,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -165,10 +165,10 @@
         "focused": true
       },
       "rust": {
-        "wall": 36.7,
-        "wallSettled": 36.7,
-        "blocked": 11.7,
-        "blockedSettled": 11.8,
+        "wall": 28.1,
+        "wallSettled": 28.1,
+        "blocked": 9.8,
+        "blockedSettled": 18.2,
         "filled": 441530,
         "hash": 536316862,
         "getImageData": {
@@ -178,7 +178,7 @@
         },
         "putImageData": {
           "n": 15,
-          "ms": 0.1,
+          "ms": 0,
           "MB": 0.2
         },
         "windowPx": {
@@ -192,11 +192,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 13.6,
+          "read": 7.3,
           "clip": 0,
-          "flood": 6.1,
-          "shape": 1.6,
-          "total": 21.3,
+          "flood": 6,
+          "shape": 1.4,
+          "total": 14.8,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -205,10 +205,10 @@
         "focused": true
       },
       "js": {
-        "wall": 40.4,
-        "wallSettled": 40.4,
-        "blocked": 16.6,
-        "blockedSettled": 16.6,
+        "wall": 29.9,
+        "wallSettled": 29.9,
+        "blocked": 11.5,
+        "blockedSettled": 17.6,
         "filled": 441530,
         "hash": 536316862,
         "getImageData": {
@@ -231,11 +231,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 13.3,
+          "read": 7.6,
           "clip": 0,
-          "flood": 6.3,
-          "shape": 1.2,
-          "total": 20.8,
+          "flood": 5.6,
+          "shape": 1,
+          "total": 14.2,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -246,20 +246,20 @@
     },
     "bucket_sel_1000": {
       "before": {
-        "wall": 59.9,
-        "wallSettled": 59.9,
-        "blocked": 19.5,
-        "blockedSettled": 19.5,
+        "wall": 35.8,
+        "wallSettled": 35.8,
+        "blocked": 15.4,
+        "blockedSettled": 21.7,
         "filled": 441530,
         "hash": 361814974,
         "getImageData": {
           "n": 2,
-          "ms": 8.7,
+          "ms": 6.9,
           "MB": 4
         },
         "putImageData": {
           "n": 32,
-          "ms": 0.7,
+          "ms": 0.4,
           "MB": 4.2
         },
         "windowPx": {
@@ -272,11 +272,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 13.9,
-          "clip": 4,
-          "flood": 10,
-          "shape": 2.2,
-          "total": 30.3,
+          "read": 7.4,
+          "clip": 0.9,
+          "flood": 6.9,
+          "shape": 0.9,
+          "total": 16.2,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -285,10 +285,10 @@
         "focused": true
       },
       "rust": {
-        "wall": 41.7,
-        "wallSettled": 41.7,
-        "blocked": 12,
-        "blockedSettled": 12,
+        "wall": 30.1,
+        "wallSettled": 30.1,
+        "blocked": 12.2,
+        "blockedSettled": 17.8,
         "filled": 441530,
         "hash": 361814974,
         "getImageData": {
@@ -298,7 +298,7 @@
         },
         "putImageData": {
           "n": 15,
-          "ms": 0.1,
+          "ms": 0,
           "MB": 0.2
         },
         "windowPx": {
@@ -312,11 +312,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 14,
-          "clip": 1.7,
-          "flood": 7.4,
-          "shape": 1.2,
-          "total": 24.3,
+          "read": 8.1,
+          "clip": 1.1,
+          "flood": 6.5,
+          "shape": 0.9,
+          "total": 16.7,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -325,10 +325,10 @@
         "focused": true
       },
       "js": {
-        "wall": 42.3,
-        "wallSettled": 42.3,
-        "blocked": 12.5,
-        "blockedSettled": 12.5,
+        "wall": 37,
+        "wallSettled": 37,
+        "blocked": 13.6,
+        "blockedSettled": 19.4,
         "filled": 441530,
         "hash": 361814974,
         "getImageData": {
@@ -351,11 +351,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 10.5,
+          "read": 8.2,
           "clip": 1.4,
-          "flood": 8,
-          "shape": 0.8,
-          "total": 20.7,
+          "flood": 6.8,
+          "shape": 1.2,
+          "total": 17.7,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -366,20 +366,20 @@
     },
     "bucket_sel_256": {
       "before": {
-        "wall": 46.2,
-        "wallSettled": 46.2,
-        "blocked": 16.6,
-        "blockedSettled": 16.6,
+        "wall": 33.1,
+        "wallSettled": 33.1,
+        "blocked": 15.7,
+        "blockedSettled": 22.5,
         "filled": 65536,
         "hash": 2435952197,
         "getImageData": {
           "n": 2,
-          "ms": 7.2,
+          "ms": 6.7,
           "MB": 4
         },
         "putImageData": {
           "n": 32,
-          "ms": 0.9,
+          "ms": 0.4,
           "MB": 4.2
         },
         "windowPx": {
@@ -392,11 +392,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 12.3,
-          "clip": 0.4,
-          "flood": 9.7,
-          "shape": 1,
-          "total": 23.5,
+          "read": 7.8,
+          "clip": 0.3,
+          "flood": 6.4,
+          "shape": 0.8,
+          "total": 15.4,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -405,10 +405,10 @@
         "focused": true
       },
       "rust": {
-        "wall": 33,
-        "wallSettled": 33,
-        "blocked": 5.5,
-        "blockedSettled": 5.5,
+        "wall": 24.6,
+        "wallSettled": 24.6,
+        "blocked": 5.7,
+        "blockedSettled": 11.1,
         "filled": 65536,
         "hash": 2435952197,
         "getImageData": {
@@ -432,11 +432,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 12.4,
-          "clip": 0.7,
-          "flood": 8,
+          "read": 8,
+          "clip": 0.5,
+          "flood": 6.3,
           "shape": 0.8,
-          "total": 22.1,
+          "total": 15.7,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -445,10 +445,10 @@
         "focused": true
       },
       "js": {
-        "wall": 42.2,
-        "wallSettled": 42.2,
-        "blocked": 6.8,
-        "blockedSettled": 6.8,
+        "wall": 26,
+        "wallSettled": 26,
+        "blocked": 9,
+        "blockedSettled": 14.6,
         "filled": 65536,
         "hash": 2435952197,
         "getImageData": {
@@ -471,11 +471,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 16.2,
-          "clip": 0.4,
-          "flood": 8.4,
-          "shape": 0.8,
-          "total": 25.8,
+          "read": 7.8,
+          "clip": 0.3,
+          "flood": 6.3,
+          "shape": 0.7,
+          "total": 15,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -486,20 +486,20 @@
     },
     "bucket_sel_64": {
       "before": {
-        "wall": 50.3,
-        "wallSettled": 50.3,
-        "blocked": 16.4,
-        "blockedSettled": 16.4,
+        "wall": 33.1,
+        "wallSettled": 33.1,
+        "blocked": 12,
+        "blockedSettled": 17.6,
         "filled": 4096,
         "hash": 1565236229,
         "getImageData": {
           "n": 2,
-          "ms": 10.1,
+          "ms": 6.6,
           "MB": 4
         },
         "putImageData": {
           "n": 21,
-          "ms": 0.7,
+          "ms": 0.4,
           "MB": 4.1
         },
         "windowPx": {
@@ -512,11 +512,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 13.9,
-          "clip": 1.3,
-          "flood": 8.6,
-          "shape": 1.2,
-          "total": 25.1,
+          "read": 7.8,
+          "clip": 0.3,
+          "flood": 6.5,
+          "shape": 1,
+          "total": 15.7,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -525,10 +525,10 @@
         "focused": true
       },
       "rust": {
-        "wall": 33.7,
-        "wallSettled": 33.7,
-        "blocked": 5.8,
-        "blockedSettled": 5.8,
+        "wall": 27.5,
+        "wallSettled": 27.5,
+        "blocked": 5.5,
+        "blockedSettled": 12.3,
         "filled": 4096,
         "hash": 1565236229,
         "getImageData": {
@@ -552,11 +552,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 12.6,
-          "clip": 0.6,
-          "flood": 6.8,
-          "shape": 0.9,
-          "total": 20.9,
+          "read": 8.1,
+          "clip": 0.5,
+          "flood": 7.4,
+          "shape": 0.8,
+          "total": 16.9,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -565,10 +565,10 @@
         "focused": true
       },
       "js": {
-        "wall": 35,
-        "wallSettled": 35,
-        "blocked": 9.8,
-        "blockedSettled": 9.8,
+        "wall": 24.2,
+        "wallSettled": 24.2,
+        "blocked": 5.5,
+        "blockedSettled": 10.3,
         "filled": 4096,
         "hash": 1565236229,
         "getImageData": {
@@ -591,11 +591,11 @@
         "floodJob": {
           "jobs": 2,
           "pixels": 3844096,
-          "read": 12,
-          "clip": 0.5,
-          "flood": 7.7,
-          "shape": 0.7,
-          "total": 20.9,
+          "read": 7.4,
+          "clip": 0.4,
+          "flood": 6.5,
+          "shape": 0.8,
+          "total": 15.2,
           "gen": 0,
           "pxCalls": {
             "flood_shape": 2
@@ -609,12 +609,12 @@
     "band_949_tiles": {
       "tiles": 1045,
       "rust": {
-        "ms": 223.29,
+        "ms": 201.03,
         "written": 1045,
         "composite_masked_tile": 1045
       },
       "js": {
-        "ms": 684.19,
+        "ms": 620.31,
         "written": 1045,
         "composite_masked_tile": 0
       }
@@ -622,12 +622,12 @@
     "disc_tiles": {
       "tiles": 15,
       "rust": {
-        "ms": 2.68,
+        "ms": 1.86,
         "written": 15,
         "composite_masked_tile": 15
       },
       "js": {
-        "ms": 7.55,
+        "ms": 6.54,
         "written": 15,
         "composite_masked_tile": 0
       }

@@ -11950,23 +11950,35 @@ class InpaintEditor {
         if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
         const o = this.fillOpts || { tolerance: 32, contiguous: true, sample: "image" };
         const t0 = performance.now();
-        const tiles = this.tileMode && InpaintEditor.bucketTiles !== false
+        const color = this.color, opacity = this.brushOpacity, alphaLocked = !!(layer && layer.alphaLock);
+        const tiles = this.tileMode && InpaintEditor.bucketTiles !== false && !(alphaLocked && opacity >= 1)
             && (!layer || (isTilePixels(layer.px) && typeof layer.px.compositeFill === "function" && layer.px.width === layer.w && layer.px.height === layer.h && layer.x === Math.round(layer.x) && layer.y === Math.round(layer.y)));
-        const r = await this.floodRegion(x, y, { tolerance: o.tolerance, contiguous: o.contiguous, sample: o.sample, color: this.color, clip: true, tiles });
+        const r = await this.floodRegion(x, y, { tolerance: o.tolerance, contiguous: o.contiguous, sample: o.sample, color, clip: true, tiles });
         const fill = r.shape, n = r.count;
         if (!n) { if (r.close) fill.close(); this.setStatus("Nothing to fill here (outside the selection?)."); return; }
         if (!layer) layer = this.addPaintLayer();
         // the undo step is a copy of the box the fill can touch, in the layer's own pixels
         const target = layer.px;
+        if (r.tiles && (!isTilePixels(target) || typeof target.compositeFill !== "function" || target.width !== layer.w || target.height !== layer.h || layer.x !== Math.round(layer.x) || layer.y !== Math.round(layer.y))) {
+            if (r.close) fill.close();
+            this.setStatus("The layer changed while filling; nothing was filled.");
+            return;
+        }
         const sx = target.width / layer.w, sy = target.height / layer.h;
         const [rx, ry, rw, rh] = r.tiles && r.bounds ? [r.bounds[0], r.bounds[1], r.bounds[2] - r.bounds[0], r.bounds[3] - r.bounds[1]] : [r.x, r.y, r.w, r.h];
         const lx = (rx - layer.x) * sx, ly = (ry - layer.y) * sy, lw = rw * sx, lh = rh * sy;
         this.pushUndoSnapshot(this.snapshotRect(layer, { x: lx, y: ly, w: lw, h: lh }), { label: "Bucket fill" });
         // the fill is r.w x r.h at (r.x, r.y), scaled into the layer's pixels: it covers the box, nothing outside
         const box = [Math.floor(lx), Math.floor(ly), Math.ceil(lx + lw), Math.ceil(ly + lh)];
-        const opacity = this.brushOpacity, op = layer.alphaLock ? "source-atop" : "source-over";
-        if (r.tiles && isTilePixels(target) && typeof target.compositeFill === "function") {
-            target.compositeFill(r.tiles, this.color, OPS[op], Math.round(Math.max(0, Math.min(1, opacity)) * 255), [r.x - layer.x, r.y - layer.y]);
+        const op = layer.alphaLock ? "source-atop" : "source-over";
+        let memErr = null;
+        if (r.tiles) {
+            try {
+                target.compositeFill(r.tiles, color, OPS[op], Math.round(Math.max(0, Math.min(1, opacity)) * 255), [r.x - layer.x, r.y - layer.y]);
+            } catch (err) {
+                if (!err || err.name !== "PixelMemoryError") throw err;
+                memErr = err;
+            }
         } else {
             target.drawInto(box, (ctx) => {
                 ctx.globalAlpha = opacity;
@@ -11978,7 +11990,8 @@ class InpaintEditor {
         if (r.close) fill.close();
         this.markLayerChanged(layer, box);
         this.draw();
-        this.setStatus(`Filled ${n.toLocaleString()} px on ${layer.name} (${Math.round(performance.now() - t0)} ms).`);
+        if (memErr) this.setStatus(memErr.message, failKind(memErr));
+        else this.setStatus(`Filled ${n.toLocaleString()} px on ${layer.name} (${Math.round(performance.now() - t0)} ms).`);
     }
 
     /**

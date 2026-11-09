@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-bucket_fill_guard_int_y-ed --offline --tiles on editor  (rc 1, 23 s, SCUMBLE_EDITOR_ONLY=the_bucket_fills_through_the_kernel_on_tiles)
+editor rc=1 6s FAIL (only: the_bucket_fills_through_the_kernel_on_tiles; SCUMBLE_EDITOR_ONLY, not the full gate)
+SOME FAILED
