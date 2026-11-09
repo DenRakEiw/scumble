@@ -637,6 +637,121 @@ console.log(JSON.stringify(out));
         const { bytes } = buildTiff([{ tags: imageTags({ w, h, bits: 8, spp: 3, photometric: 2, compression: 5, rps: h }), data: [enc.bytes] }]);
         if (check("old-style LZW strip starts 00 01", starts, Array.from(enc.bytes.subarray(0, 4)).map((b) => b.toString(16).padStart(2, "0")).join(" "))) await expectRefusal(T, "old-style LZW is refused", bytes, /old-style LZW/i);
     }
+
+    // -- K16: LZW 1-byte first piece when byte[0] === byte[1] (and byte[0] === 0, byte[1] === 0, byte[2] odd) --
+    {
+        // Pack 9-bit MSB-first codes directly (without initial Clear 256) so byte[0] === 0, byte[1] === 0, byte[2] & 1 === 1:
+        // c0 = 0 (9 bits: 0_00000000), c1 = 0 (9 bits: 0_00000000), c2 = 8 (9 bits: 0_00001000, c2 >> 3 = 1) ->
+        // bits 0..7 = 0x00, bits 8..15 = 0x00, bits 16..23 = 0b00_000001 = 0x01!
+        const w = 2, h = 1, spp = 3;
+        const s = Uint8Array.from([0, 0, 8, 10, 20, 30]);
+        const out = [];
+        let acc = 0, nacc = 0;
+        const put = (code, width) => {
+            acc = (acc << width) | code;
+            nacc += width;
+            while (nacc >= 8) { nacc -= 8; out.push((acc >>> nacc) & 255); }
+            acc &= (1 << nacc) - 1;
+        };
+        for (const b of s) put(b, 9);
+        put(257, 9);
+        if (nacc) out.push((acc << (8 - nacc)) & 255);
+        const stripBytes = Uint8Array.from(out);
+        const { bytes } = buildTiff([{ tags: imageTags({ w, h, bits: 8, spp, photometric: 2, compression: 5, rps: 1 }), data: [stripBytes] }]);
+        const want = expectRgba(w * h, (i) => [s[i * 3], s[i * 3 + 1], s[i * 3 + 2], 255]);
+
+        // Wrap Blob so .slice(off, end).stream() yields a 1-byte first chunk [b0] followed by the rest [b1, b2, ...]
+        const oneByteFirstBlob = (u8) => ({
+            size: u8.byteLength,
+            slice(start, end) {
+                const sub = u8.subarray(start, end);
+                return {
+                    async arrayBuffer() { return sub.slice().buffer; },
+                    stream() {
+                        let step = 0;
+                        return new ReadableStream({
+                            pull(controller) {
+                                if (step === 0 && sub.length > 1) { step = 1; controller.enqueue(sub.subarray(0, 1)); }
+                                else if (step <= 1 && sub.length > 0) { step = 2; controller.enqueue(sub.length > 1 ? sub.subarray(1) : sub); }
+                                else controller.close();
+                            },
+                        });
+                    },
+                };
+            },
+        });
+        const problems = [];
+        if (!(stripBytes[0] === 0x00 && stripBytes[1] === 0x00 && (stripBytes[2] & 1) === 1)) {
+            problems.push(`strip starts ${Array.from(stripBytes.subarray(0, 3))}, expected 0, 0, odd`);
+        }
+        try {
+            const r = await readAll(T, oneByteFirstBlob(bytes), 256);
+            const a = assemble(r, w, h, 256);
+            problems.push(...a.problems);
+            const d = pixelDiff(a.img, want, w);
+            if (d) problems.push(d);
+        } catch (err) { problems.push("threw " + errText(err)); }
+        check("LZW 1-byte first piece with byte[0] === byte[1] === 0 and odd byte[2] is decoded without dropping byte[0] or false old-LZW refusal",
+            !problems.length, problems.join(" | "));
+    }
+
+    // -- K16: live decoders (StripRows and TileRows) and unpackStrip stop at `need`, ignoring damaged trailing bytes --
+    {
+        const w = 16, h = 4, spp = 3;
+        const s = new Uint8Array(w * h * spp);
+        for (let i = 0; i < s.length; i++) s[i] = (i * 19 + 7) & 255;
+        const want = expectRgba(w * h, (i) => [s[i * 3], s[i * 3 + 1], s[i * 3 + 2], 255]);
+
+        // Build an LZW stream for `s` and append a damaged 9-bit code (511, beyond table) right after the last literal
+        const out = [];
+        let acc = 0, nacc = 0;
+        const put = (code, width) => {
+            acc = (acc << width) | code;
+            nacc += width;
+            while (nacc >= 8) { nacc -= 8; out.push((acc >>> nacc) & 255); }
+            acc &= (1 << nacc) - 1;
+        };
+        put(256, 9);
+        for (const b of s) put(b, 9);
+        put(511, 9);   // damaged code beyond table after `need` bytes
+        if (nacc) out.push((acc << (8 - nacc)) & 255);
+        const lzwTrailingBad = Uint8Array.from(out);
+
+        // Stripped TIFF with trailing damaged LZW code after `need`
+        const { bytes: stripTiff } = buildTiff([{ tags: imageTags({ w, h, bits: 8, spp, photometric: 2, compression: 5, rps: h }), data: [lzwTrailingBad] }]);
+        await expectRead(T, "LZW strip with damaged code after `need` stops at `need`", stripTiff, w, h, want, { info: { compression: 5 } });
+
+        // Tiled TIFF (16x16 tile covering 16x4 image, padded to 16 rows) with trailing damaged LZW code after tile `want`
+        const tileSamples = new Uint8Array(16 * 16 * spp);
+        tileSamples.set(s);
+        let tAcc = 0, tNacc = 0;
+        const tOut = [];
+        const tPut = (code, width) => {
+            tAcc = (tAcc << width) | code;
+            tNacc += width;
+            while (tNacc >= 8) { tNacc -= 8; tOut.push((tAcc >>> tNacc) & 255); }
+            tAcc &= (1 << tNacc) - 1;
+        };
+        tPut(256, 9);
+        for (let i = 0; i < 200; i++) tPut(tileSamples[i], 9);
+        tPut(256, 9);
+        for (let i = 200; i < 400; i++) tPut(tileSamples[i], 9);
+        tPut(256, 9);
+        for (let i = 400; i < 600; i++) tPut(tileSamples[i], 9);
+        tPut(256, 9);
+        for (let i = 600; i < tileSamples.length; i++) tPut(tileSamples[i], 9);
+        tPut(511, 9);   // damaged code beyond table after tile `want` bytes
+        if (tNacc) tOut.push((tAcc << (8 - tNacc)) & 255);
+        const tileTags = [[254, 4, [0]], [256, 4, [w]], [257, 4, [h]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]],
+            [277, 3, [3]], [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [1]], [296, 3, [2]], [322, 4, [16]], [323, 4, [16]]];
+        const { bytes: tileTiff } = buildTiff([{ tags: tileTags, data: [Uint8Array.from(tOut)], offTag: 324, cntTag: 325 }]);
+        await expectRead(T, "LZW tile with damaged code after `want` stops at `want`", tileTiff, w, h, want, { info: { compression: 5, tiled: true } });
+
+        // Direct unpackStrip / TIFF_JS check
+        const unpacked = T.unpackStrip(5, lzwTrailingBad, s.length);
+        check("unpackStrip (TIFF_JS.unpackStrip) stops at `need` on LZW and matches expected bytes",
+            T.TIFF_JS && T.TIFF_JS.unpackStrip === T.unpackStrip && bytesEqual(unpacked, s));
+    }
 }
 
 /** A picture of W x H with gradients, noise and a soft alpha from 0 to 255. */
@@ -888,8 +1003,9 @@ async function writerCases(T) {
         console.log("FAIL");
         process.exit(1);
     }
-    const missing = ["isTiff", "tiffInfo", "readTiff", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
-    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, readTiff, tiffStripRows, tiffPart, TiffStreamWriter")) {
+    const missing = ["isTiff", "tiffInfo", "readTiff", "unpackStrip", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
+    if (!T.TIFF_JS || T.TIFF_JS.unpackStrip !== T.unpackStrip) missing.push("TIFF_JS");
+    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, readTiff, unpackStrip, TIFF_JS, tiffStripRows, tiffPart, TiffStreamWriter")) {
         console.log("FAIL");
         process.exit(1);
     }

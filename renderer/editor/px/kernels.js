@@ -30,7 +30,7 @@ import { liquifyBlock as liquifyBlockJS, previewBlock as previewBlockJS, liquify
 // the retouch brushes' twins live with the brushes (K26, K27; inpaint_stroke.js imports nothing, so no cycle)
 import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin, toneRGBA as toneRGBATwin, spongeRGBA as spongeRGBATwin, freqSplit as freqSplitTwin } from "../inpaint_stroke.js";
 
-export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA } from "./kernels_js.js";
+export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, TIFF_JS } from "./kernels_js.js";
 // this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4), their clocks and the copies
 // around them (docs/PLAN_WASM_K1.md §1.1); they survive a new instance
 export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
@@ -1040,5 +1040,21 @@ export function rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, ti
     }
     return J.rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert, tile);
 }
+
+/**
+ * Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes `src` into `out`
+ * (`need` bytes, allocated when absent), stopping as soon as `need` bytes are written (`inpaint_tiff.js`
+ * `unpackStrip`, K16, docs/PLAN_WASM_BUILD.md §4.6).
+ */
+export function tiffUnpack(compression, src, need, out = null, name = "strip") {
+    const p = rustPx();
+    if (p) {
+        try { return p.tiffUnpack(compression, src, need, out, name); }
+        catch (err) { if (!recovered(p, err, "tiff_unpack")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.tiffUnpack(compression, src, need, out, name);
+}
+
 
 

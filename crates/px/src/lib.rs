@@ -35,6 +35,7 @@ mod resample;
 mod sel;
 mod smudge;
 mod stroke;
+mod tiff;
 
 /// dlmalloc hands out a page start plus its 8-byte header, while a JS ArrayBuffer of tile
 /// size starts on a page. A copy between the two then has its destination 8 bytes past the
@@ -49,11 +50,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: tiff_unpack);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    36
+    37
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -1213,4 +1214,27 @@ pub unsafe extern "C" fn range_tiles_rgba(
         info_slice,
     )
 }
+
+/// Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes (`len` bytes at `src`)
+/// into `out` (`need` bytes), stopping as soon as `need` bytes are written (`renderer/editor/inpaint_tiff.js`
+/// `unpackStrip`, K16). Returns `need as isize`, or `< 0` on error (`-1` bad arguments/compression, `-2` truncated,
+/// `-3` old-style LZW, `-4` LZW code before literal, `-5` LZW code beyond table).
+#[no_mangle]
+pub unsafe extern "C" fn tiff_unpack(compression: u32, src: *const u8, len: usize, out: *mut u8, need: usize) -> isize {
+    if !(compression == 1 || compression == 5 || compression == 32773)
+        || len > isize::MAX as usize
+        || need > isize::MAX as usize
+        || (len > 0 && src.is_null())
+        || (need > 0 && out.is_null())
+    {
+        return tiff::ERR_BAD_ARGS;
+    }
+    if need == 0 {
+        return 0;
+    }
+    let src_slice = if len == 0 { &[][..] } else { slice::from_raw_parts(src, len) };
+    let out_slice = slice::from_raw_parts_mut(out, need);
+    tiff::unpack(compression, src_slice, out_slice)
+}
+
 

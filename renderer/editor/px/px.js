@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 36;
+export const PX_ABI = 37;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -1444,6 +1444,46 @@ export class Px {
             return { tiles, bounds, alphaSum: info[0] };
         } finally { this._reset(a); }
     }
+
+    /**
+     * Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes `src` into `out`
+     * (`need` bytes, allocated when absent), stopping as soon as `need` bytes are written (`inpaint_tiff.js`
+     * `unpackStrip`, K16). Throws the reader's refusal on truncated or damaged streams.
+     */
+    tiffUnpack(compression, src, need, out = null, name = "strip") {
+        if (need instanceof Uint8Array) { out = need; need = out.byteLength; }
+        if (!(compression === 1 || compression === 5 || compression === 32773) || !src || typeof src.byteLength !== "number" || !Number.isInteger(need) || need < 0) {
+            throw tiffUnpackError(-1, name);
+        }
+        let dst = null;
+        if (out != null) {
+            if (!out || typeof out.byteLength !== "number" || out.byteLength < need) throw tiffUnpackError(-1, name);
+            dst = out instanceof Uint8Array ? out : new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+        }
+        const a = this.job, len = src.byteLength;
+        try {
+            const ps = len > 0 ? this._in(a, src, len) : 0, po = need > 0 ? a.take(need) : 0;
+            const rc = this.exports.tiff_unpack(compression, ps, len, po, need) | 0;
+            if (rc < 0) throw tiffUnpackError(rc, name);
+            if (need === 0) return out || new Uint8Array(0);
+            this._out(Uint8Array, po, need, dst ? (dst.length === need ? dst : dst.subarray(0, need)) : (dst = new Uint8Array(need)));
+            return out || dst;
+        } finally { this._reset(a); }
+    }
+}
+
+const TIFF_TRUNCATED = "the file ends early (it is truncated, or not a TIFF)";
+
+function tiffUnpackError(code, name = "strip") {
+    let msg;
+    if (code === -2) msg = `${TIFF_TRUNCATED}: ${name} holds fewer bytes than its rows`;
+    else if (code === -3) msg = "this TIFF uses the old-style LZW of before TIFF 6, which is not read; save it again with LZW or ZIP compression";
+    else if (code === -4) msg = "damaged LZW data in the TIFF (a code before any literal)";
+    else if (code === -5) msg = "damaged LZW data in the TIFF (a code beyond the table)";
+    else msg = `unsupported TIFF strip unpack (code ${code})`;
+    const err = new Error(msg);
+    err.code = code;
+    return err;
 }
 
 /**
