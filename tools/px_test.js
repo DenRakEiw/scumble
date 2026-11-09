@@ -7339,9 +7339,20 @@ async function rangeCases(js, simd, scalar, resample, K) {
                 JSON.stringify(outOpp));
         }
 
-        // Multi-tile-row rangeSelectJob alphaSum and bounds union check (3 tile rows: ty=0,1,2)
+        // Multi-tile-row rangeSelectJob alphaSum and bounds union check (3 tile rows: ty=0,1,2;
+        // clear left/right margins on the last tile row ty=2 so its [bX0..bX1] is strictly narrower than ty=0)
         const wJob = 300, hJob = 600;
         const jobBand = makeRgbaBand(wJob, hJob, "ramp");
+        for (let y = 512; y < hJob; y++) {
+            for (let x = 0; x < wJob; x++) {
+                if (x < 60 || x >= 240) {
+                    const idx = (y * wJob + x) * 4;
+                    jobBand[idx] = 0;
+                    jobBand[idx + 1] = 0;
+                    jobBand[idx + 2] = 0;
+                }
+            }
+        }
         for (const [srcKind, limJ] of [
             ["luma", { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1, invert: false }],
             ["color", { source: "color", color: "#5080a0", tol: 30, lo: 0.25, hi: 0.9, fLo: 0.1, fHi: 0.05, invert: false }],

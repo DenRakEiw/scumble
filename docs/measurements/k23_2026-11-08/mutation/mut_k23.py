@@ -259,6 +259,16 @@ MUTANTS = [
         {"px": ["range"]},
     ),
     (
+        "inpaint_worker.js: rangeSelectJob luma/color bX0 = Math.min(bX0, res.bounds[0]) mutated to bX0 = res.bounds[0]",
+        WK,
+        [(
+            "            if (res.bounds) {\n                bX0 = Math.min(bX0, res.bounds[0]);\n                bY0 = Math.min(bY0, res.bounds[1]);",
+            "            if (res.bounds) {\n                bX0 = res.bounds[0];\n                bY0 = Math.min(bY0, res.bounds[1]);",
+        )],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
         "inpaint_weights.js: normalizeLimit #rgb / #rrggbb hex validation dropped",
         WT,
         [(

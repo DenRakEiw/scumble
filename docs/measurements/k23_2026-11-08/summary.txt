@@ -98,28 +98,36 @@ Pins & byte-equality:
 - `px_jobs.py --check 2048x1152 --only range_luma,range_color` (`after/pxjobs_check.log`): `same bytes` on both rows,
   `window release: sync`, 0 traps / OOMs across all 7 threads (`range_luma` kernel `4.77x`, wall `2.84x`; `range_color`
   kernel `2.37x`, wall `2.13x`).
-- `selection_test.py` `range_select_luma_color_cases` + `range_select_15k_luma_case` (`after/selection_r1..3.log`):
-  asserts `range_tiles_rgba === 2` on 1600x400 luma and colour, byte-for-byte equality between `"rust"` and `"js"`
-  routes, and readable refusals on invalid `color` (`"red"`, `"#xyz"`) and non-numeric `lo/hi/fLo/fHi/tol` on both
-  backends; 15k luma wall `832.4 [760.6-989.8] ms` (`2360` partial tiles, `range_tiles_rgba 40`).
+- `selection_test.py` `range_select_luma_color_cases` + `range_select_15k_luma_case`:
+  - `after/selection_r1..3.log`: asserts `range_tiles_rgba === 2` on 1600x400 luma and colour and byte-for-byte equality
+    between `"rust"` and `"js"` routes; 15k luma wall `832.4 [760.6-989.8] ms` (`2360` partial tiles, `range_tiles_rgba 40`).
+  - `k23-r1-tiles` & `k23-r1-canvas` (`dist/gates/20261108_205737_k23-r1-*`): additionally asserts readable refusals on
+    invalid `color` (`"red"`, `"#xyz"`) and non-numeric `lo/hi/fLo/fHi/tol` on both `tiles` and `canvas` backends.
 
-Mutation round (`docs/measurements/k23_2026-11-08/mutation/results.txt`, 23 mutants):
-- `23 killed (0 of them only on the re-check), 0 survived of 23; 0 not as expected`
+Mutation round (`docs/measurements/k23_2026-11-08/mutation/results.txt`, 24 mutants):
+- `24 killed (0 of them only on the re-check), 0 survived of 24; 0 not as expected`
 - Covers `range.rs` (`luma_r` 0.299, `opp_g` 0.587, colour `s` formula, opponent chroma weight `4.0` in SIMD and scalar,
   top `py_start > 0` / bottom `py_end < tile` / right `vw < tile` out-of-bounds zeroing, `mode > 1` & `ry0..ry1` row
   bounds guard, `fulls == tile_bytes` full-tile check, and `sstep_f64x2` `i64x2_all_true(le_a)` / `i64x2_all_true(ge_b)`
   early returns), `px.js` (1-tile-row copy vs full band copy, `jobInvert` flag bit, `#rgb` 3-char hex expansion),
   `kernels_js.js` (colour `libmExp` vs `Math.exp`, luma product table `/ 255` vs `/ 256`, `twoS2 = 2 * s * s`, and
   `RANGE_OPP_R[i] = 0.299 * u` vs `(0.299 * i) / 255` order of operations), `kernels.js` (`rangeColor` vs `rangeLuma`
-  route selection, trap recovery), `inpaint_worker.js` (`rangeSelectJob` multi-row `alphaSum += res.alphaSum` and
-  `bY0 = Math.min(bY0, res.bounds[1])` union), and `inpaint_weights.js` (`normalizeLimit` `#rgb` / `#rrggbb` validation).
+  route selection, trap recovery), `inpaint_worker.js` (`rangeSelectJob` multi-row `alphaSum += res.alphaSum`,
+  `bX0 = Math.min(bX0, res.bounds[0])`, and `bY0 = Math.min(bY0, res.bounds[1])` union), and `inpaint_weights.js`
+  (`normalizeLimit` `#rgb` / `#rrggbb` validation).
 
 Gates:
-- `k23-tiles` (port 9613, `--tiles on --offline`): `lint` (11 s), `types` (10 s), `selection` (19 s), `edges` (18 s),
-  `limit` (11 s), `maps` (5 s), `pixels` (14 s), `editor` (189 s) — ALL PASS.
-- `k23-canvas` (port 9614, `--tiles off --offline`): `lint` (15 s), `types` (12 s), `selection` (10 s), `edges` (34 s),
-  `limit` (14 s), `maps` (8 s), `pixels` (18 s), `editor` (161 s) — ALL PASS.
-- `k23-pxjobs` (port 9613, `--tiles on --offline`): `pxjobs` (154 s) — PASS.
+- Initial run (`d6b12802`):
+  - `k23-tiles` (port 9613, `--tiles on --offline`): `lint` (11 s), `types` (10 s), `selection` (19 s), `edges` (18 s),
+    `limit` (11 s), `maps` (5 s), `pixels` (14 s), `editor` (189 s) — ALL PASS.
+  - `k23-canvas` (port 9614, `--tiles off --offline`): `lint` (15 s), `types` (12 s), `selection` (10 s), `edges` (34 s),
+    `limit` (14 s), `maps` (8 s), `pixels` (18 s), `editor` (161 s) — ALL PASS.
+  - `k23-pxjobs` (port 9613, `--tiles on --offline`): `pxjobs` (154 s) — PASS.
+- Post-review-fix run (`2a99ac6a`, `k23-r1` via `tools/run_gates_both.sh`):
+  - `k23-r1-tiles` (port 9613, `--tiles on --offline`, 308 s): `lint` (15 s), `types` (10 s), `selection` (15 s),
+    `edges` (16 s), `limit` (14 s), `maps` (7 s), `pixels` (16 s), `editor` (194 s) — ALL PASS.
+  - `k23-r1-canvas` (port 9614, `--tiles off --offline`, 281 s): `lint` (14 s), `types` (7 s), `selection` (6 s),
+    `edges` (29 s), `limit` (12 s), `maps` (5 s), `pixels` (14 s), `editor` (172 s) — ALL PASS.
 - `node tools/px_test.js` (full suite) — PASS.
 - `ELECTRON_RUN_AS_NODE=1 PX_ONLY=range,retouchRoute ./node_modules/electron/dist/electron.exe tools/px_test.js` — PASS.
 - `node tools/weights_test.js` (15/15) — PASS.
