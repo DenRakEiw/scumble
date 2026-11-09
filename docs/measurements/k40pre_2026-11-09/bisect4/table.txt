@@ -1,0 +1,2 @@
+dd3699db | pan 3.1 2.6 2.8 | composite 257.7 91.1 88.5 | fit-masked 3.2 2.8 3.0 | D1 in the CHANGELOG and the review's status (merged gates me
+dceec4d2 | pan 2.9 2.8 2.5 | composite 248.5 227.2 91.0 | fit-masked 3.3 2.8 3.1 | Merge K6 and K3 (SIMD PNG unfilter; slice-by-16 crc32, png_c
