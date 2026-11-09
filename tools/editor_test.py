@@ -7103,6 +7103,173 @@ ed.clearUndo();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return out;
 """),
+    ("a_scumble_png_opens_through_the_parted_reader", """
+// K8 (docs/PLAN_WASM_BUILD.md §4.2, P4): a PNG written in parts by Scumble (`pngPartsOf`) is decoded in parallel across
+// the pool (`png_part_read` + `png_part_finish` at INTERACTIVE priority) and lands through `putCanvasRows`, with the
+// part Adlers combined against the 4-byte tail IDAT. Tested on a tile-encoded PNG (odd size 1503 x 1109, half-transparent
+// pixels), a band-source PNG with parts above 256 rows (3003 x 1109 at rows = 2048 -> 698-row and 411-row parts that
+// cross tile rows and start mid-tile), a browser-encoded 1-IDAT PNG (`pngPartsOf` returns null after <= 49 B), fallback
+// to `png_read` when a part fails, and Electron worker rejection of shared-window, corrupt, truncated, and IHDR-cap parts.
+if (!ednow(window.__t).tileMode) return { skipped: "the parted reader fills tiles" };
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor, PNG = await import("./editor/inpaint_png.js");
+const hex = async (u8) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", u8))).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+const was = E.pngStreamFrom;
+const out = {};
+try {
+    E.pngStreamFrom = 1000000;
+    const pool = E.parts.pool(), oRun = pool.run.bind(pool);
+
+    // 1. Tile-encoded Scumble PNG at non-multiple-of-256 size (1503 x 1109, 5 parts of 256, 256, 256, 256, 85 rows)
+    const W = 1503, H = 1109;
+    await run("new_canvas", { width: W, height: H, doc: window.__t });
+    ed.basePx.drawInto(null, (x) => {
+        const g = x.createLinearGradient(0, 0, W, H);
+        g.addColorStop(0, "#d05020"); g.addColorStop(0.5, "#20b090"); g.addColorStop(1, "#3040e0");
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+        x.clearRect(180, 120, 310, 220);
+        x.fillStyle = "rgba(240,220,30,0.42)"; x.fillRect(620, 210, 540, 560);
+        x.fillStyle = "rgba(20,190,110,0.33)"; x.fillRect(210, 160, 140, 130);
+    });
+    const wantTileHash = await hex(ed.basePx.readRect(0, 0, W, H).data);
+    const tileEnc = await E.parts.encodeTilePixels(ed.basePx, { texts: { Software: "Scumble" } });
+    const tileLayout = await E.parts.pngPartsOf(tileEnc.blob);
+    if (!tileLayout || tileLayout.parts.length !== 5 || tileLayout.width !== W || tileLayout.height !== H) {
+        throw new Error("tile-encoded PNG layout mismatch: " + JSON.stringify(tileLayout));
+    }
+    let partReads = 0, partFinishes = 0, finishPrios = [], pngReads = 0;
+    pool.run = (op, args, tr, opts) => {
+        if (op === "png_part_read") partReads++;
+        else if (op === "png_part_finish") { partFinishes++; finishPrios.push(opts && opts.priority); }
+        else if (op === "png_read") pngReads++;
+        return oRun(op, args, tr, opts);
+    };
+    try {
+        await ed.loadFile(new File([tileEnc.blob], "parted_tile.png", { type: "image/png" }));
+        if (partReads !== 5 || pngReads !== 0) {
+            throw new Error(`tile parted open: partReads=${partReads} pngReads=${pngReads} status=${ed.status}`);
+        }
+        if (finishPrios.some((p) => p !== 0)) {
+            throw new Error("png_part_finish did not run at INTERACTIVE priority 0: " + JSON.stringify(finishPrios));
+        }
+        out.tileParted = await hex(ed.basePx.readRect(0, 0, W, H).data);
+        if (out.tileParted !== wantTileHash) {
+            throw new Error(`tile parted hash ${out.tileParted} != source ${wantTileHash}`);
+        }
+        out.tileParts = { reads: partReads, finishes: partFinishes };
+    } finally { pool.run = oRun; }
+
+    // 2. Band-source Scumble PNG with parts above 256 rows (3003 x 1109 at rows = 2048 -> 698-row and 411-row parts)
+    const BW = 3003, BH = 1109;
+    await run("new_canvas", { width: BW, height: BH, doc: window.__t });
+    ed.basePx.drawInto(null, (x) => {
+        const g = x.createLinearGradient(0, 0, BW, BH);
+        g.addColorStop(0, "#9020c0"); g.addColorStop(0.5, "#40d060"); g.addColorStop(1, "#f08010");
+        x.fillStyle = g; x.fillRect(0, 0, BW, BH);
+        x.clearRect(400, 250, 500, 350);
+        x.fillStyle = "rgba(80,140,250,0.47)"; x.fillRect(350, 200, 1200, 700);
+    });
+    const wantBandHash = await hex(ed.basePx.readRect(0, 0, BW, BH).data);
+    const bandEnc = await E.parts.encodeBands(BW, BH, (y0, y1) => ed.basePx.readRect(0, y0, BW, y1 - y0).data, {
+        rows: 2048, chunks: [PNG.SRGB_CHUNK], texts: { Software: "Scumble" },
+    });
+    const bandLayout = await E.parts.pngPartsOf(bandEnc.blob);
+    if (!bandLayout || bandLayout.parts.length !== 2) {
+        throw new Error("band-encoded PNG expected 2 parts (>256 rows each): " + JSON.stringify(bandLayout));
+    }
+    const bandDecodedRows = [];
+    partReads = 0; pngReads = 0;
+    pool.run = async (op, args, tr, opts) => {
+        if (op === "png_part_read") {
+            partReads++;
+            const r = await oRun(op, args, tr, opts);
+            bandDecodedRows.push(r.rows);
+            return r;
+        }
+        if (op === "png_read") pngReads++;
+        return oRun(op, args, tr, opts);
+    };
+    try {
+        await ed.loadFile(new File([bandEnc.blob], "parted_band.png", { type: "image/png" }));
+        const sortedRows = [...bandDecodedRows].sort((a, b) => b - a);
+        if (partReads !== 2 || pngReads !== 0 || sortedRows[0] !== 698 || sortedRows[1] !== 411) {
+            throw new Error(`band parted open: partReads=${partReads} pngReads=${pngReads} rows=${JSON.stringify(bandDecodedRows)}`);
+        }
+        out.bandParted = await hex(ed.basePx.readRect(0, 0, BW, BH).data);
+        if (out.bandParted !== wantBandHash) {
+            throw new Error(`band parted hash ${out.bandParted} != source ${wantBandHash}`);
+        }
+        out.bandRows = bandDecodedRows;
+    } finally { pool.run = oRun; }
+
+    // 3. Browser-encoded 1-IDAT PNG: pngPartsOf returns null after <= 49 B and loadFile uses png_read
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(ed.basePx.readRect(0, 0, W, H).data), W, H), 0, 0);
+    const plainBlob = await new Promise((r) => c.toBlob(r, "image/png"));
+    c.width = 1; c.height = 1;
+    let slicedBytes = 0;
+    const countedPlain = {
+        get size() { return plainBlob.size; },
+        slice(a, b) {
+            const s = Math.max(0, a | 0), e = Math.min(plainBlob.size, b == null ? plainBlob.size : (b | 0));
+            slicedBytes += Math.max(0, e - s);
+            return plainBlob.slice(a, b);
+        },
+    };
+    const plainLayout = await E.parts.pngPartsOf(countedPlain);
+    if (plainLayout !== null || !(slicedBytes >= 33 && slicedBytes <= 49)) {
+        throw new Error(`plain PNG layout=${JSON.stringify(plainLayout)} slicedBytes=${slicedBytes}`);
+    }
+    out.plainSlicedBytes = slicedBytes;
+
+    // 4. Fallback to png_read when a part fails: cancels the group, releases partial pixels, and decodes via png_read
+    let fallbackPngReads = 0, failOnce = true;
+    pool.run = (op, args, tr, opts) => {
+        if (op === "png_part_read" && failOnce && !args.first) {
+            failOnce = false;
+            return Promise.reject(new Error("simulated part failure"));
+        }
+        if (op === "png_read") fallbackPngReads++;
+        return oRun(op, args, tr, opts);
+    };
+    try {
+        await ed.loadFile(new File([tileEnc.blob], "parted_fallback.png", { type: "image/png" }));
+        const fbHash = await hex(ed.basePx.readRect(0, 0, W, H).data);
+        if (fallbackPngReads !== 1 || fbHash !== wantTileHash) {
+            throw new Error(`fallback failed: fallbackPngReads=${fallbackPngReads} fbHash=${fbHash} want=${wantTileHash}`);
+        }
+        out.fallbackOk = true;
+    } finally { pool.run = oRun; }
+
+    // 5. Electron worker tests of png_part_read (Chromium's native DecompressionStream("deflate-raw")):
+    //    - shared-window part (LZ77 distance referencing before the part's start)
+    //    - corrupt deflate bytes
+    //    - truncated deflate stream
+    //    - IHDR height bound (h * (1 + 4 * w) smaller than png_part_lines_cap(w))
+    const sharedWindowPart = new Blob([new Uint8Array([27, 132, 113, 50, 90, 6, 140, 150, 1, 163, 101, 0, 29, 195, 13, 0])]);
+    const corruptPart = new Blob([new Uint8Array([0xff, 0xff, 0xff, 0xff, 0x01])]);
+    const validFirstSlice = tileEnc.blob.slice(tileLayout.parts[0].off, tileLayout.parts[0].off + tileLayout.parts[0].len);
+    const truncPart = validFirstSlice.slice(0, validFirstSlice.size >> 1);
+    const workerRejects = async (jobArgs) => {
+        try { await pool.run("png_part_read", jobArgs); return false; } catch (_) { return true; }
+    };
+    const [sharedRej, corruptRej, truncRej, ihdrCapRej] = await Promise.all([
+        workerRejects({ blob: sharedWindowPart, w: 64, h: 4, first: false, last: true }),
+        workerRejects({ blob: corruptPart, w: 64, h: 4, first: true, last: false }),
+        workerRejects({ blob: truncPart, w: W, h: H, first: true, last: false }),
+        // validFirstSlice has 256 rows, but IHDR h = 10 bounds inflation to 10 * (1 + 4 * W)
+        workerRejects({ blob: validFirstSlice, w: W, h: 10, first: true, last: false }),
+    ]);
+    if (!sharedRej || !corruptRej || !truncRej || !ihdrCapRej) {
+        throw new Error(`Electron worker refusal check failed: shared=${sharedRej} corrupt=${corruptRej} trunc=${truncRej} ihdrCap=${ihdrCapRej}`);
+    }
+    out.workerRefusals = { sharedRej, corruptRej, truncRej, ihdrCapRej };
+} finally { E.pngStreamFrom = was; }
+ed.clearUndo();
+await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+return out;
+"""),
     ("a_stroke_commits_through_the_kernel_on_tiles", """
 // docs/BUGS.md "Releasing an erase stroke is its own stutter": on tiles a stroke is committed a tile at a time through
 // the compositing kernel (`commitStrokeTiles` -> `compositeStroke`), not band by band through canvases (0.29 s of

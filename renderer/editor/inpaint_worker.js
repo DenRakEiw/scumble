@@ -63,7 +63,7 @@ import { liquifyStore } from "./inpaint_liquify.js";
 import { guidedFar } from "./inpaint_depth.js";
 import { rangeRowBookkeeping } from "./inpaint_weights.js";
 import { fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, pngPartLinesCap, pngPartDecode, pngPartFinish } from "./px/kernels.js";
 import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
@@ -683,6 +683,117 @@ async function pngRead(msg) {
     return { width: info.width, height: info.height, texts: info.texts, header, timing: { op: "png_read", kernels: kernelsInUse(), pixels: info.width * info.height, kernel: now() - t0, ...info.spent } };   // readPng's split: parse, read, write, wait, copy, unfilter, deliver
 }
 
+const PART_INFLATE_SLICE = 65536;
+const PART_TAIL_0300 = new Uint8Array([0x03, 0x00]);
+
+/**
+ * Inflate one PNG part's `blob` slice through `DecompressionStream("deflate-raw")`, appending `03 00` to non-last
+ * parts only (K8, docs/PLAN_WASM_BUILD.md §4.2), capped at `cap` output bytes so a crafted part cannot inflate without
+ * limit.
+ */
+async function inflatePartAtMost(blob, last, cap) {
+    const t0 = now();
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const t1 = now();
+    const ds = new DecompressionStream("deflate-raw");
+    const writer = ds.writable.getWriter(), reader = ds.readable.getReader();
+    let fedErr = null, stop = false;
+    const feed = (async () => {
+        try {
+            for (let i = 0; i < bytes.length && !stop; i += PART_INFLATE_SLICE) {
+                await writer.write(bytes.subarray(i, i + PART_INFLATE_SLICE));
+            }
+            if (!last && !stop) await writer.write(PART_TAIL_0300);
+            if (!stop) await writer.close();
+        } catch (err) { if (!stop) fedErr = err; }
+    })();
+    const parts = [];
+    let n = 0;
+    try {
+        for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            n += value.byteLength;
+            if (n > cap) {
+                stop = true;
+                reader.cancel().catch(() => {});
+                const err = new Error(`the PNG part unpacks to more than ${cap} bytes`);
+                err.tooLarge = true;
+                throw err;
+            }
+            parts.push(value);
+        }
+    } catch (err) {
+        if (!stop) { stop = true; reader.cancel().catch(() => {}); }
+        throw err;
+    } finally {
+        try { if (typeof bytes.buffer.transfer === "function") bytes.buffer.transfer(0); } catch (_) { /* ignore */ }
+    }
+    await feed;
+    if (fedErr) throw fedErr;
+    let lines;
+    if (parts.length === 1 && parts[0].byteOffset === 0 && parts[0].byteLength === parts[0].buffer.byteLength) {
+        lines = parts[0];
+    } else {
+        lines = new Uint8Array(n);
+        for (let i = 0, o = 0; i < parts.length; o += parts[i].byteLength, i++) lines.set(parts[i], o);
+    }
+    const t2 = now();
+    return { lines, inBytes: bytes.byteLength, readMs: t1 - t0, inflateMs: t2 - t1 };
+}
+
+/**
+ * Inflate and decode one part of a Scumble parted PNG (K8, docs/PLAN_WASM_BUILD.md §4.2). Bounded by both IHDR (`h`)
+ * and `pngPartLinesCap(w)`. When row 0 needs the previous part's last row and `prev` is not yet known, returns
+ * `needsPrev: true` with `lines` transferred back so `png_part_finish` can finish it at `INTERACTIVE` priority once
+ * `prev` arrives.
+ */
+async function pngPartRead(msg) {
+    const t0 = now();
+    const w = msg.w | 0, h = msg.h | 0, last = !!msg.last;
+    if (!(w > 0)) throw new Error("png_part_read: invalid width");
+    const stride = 1 + w * 4;
+    const pCap = pngPartLinesCap(w);
+    const hCap = msg.h !== undefined ? (h > 0 ? h * stride : 0) : pCap;
+    const cap = Math.min(pCap, hCap);
+    if (!(cap >= stride)) throw new Error("png_part_read: zero line cap");
+    const { lines, inBytes, readMs, inflateMs } = await inflatePartAtMost(msg.blob, last, cap);
+    const prev = msg.prev
+        ? (msg.prev instanceof Uint8Array ? msg.prev : new Uint8Array(msg.prev, 0, w * 4))
+        : msg.first ? new Uint8Array(w * 4) : null;
+    const rt = residentRt(msg.rt ? (msg.rt instanceof Uint8Array ? msg.rt : new Uint8Array(msg.rt)) : null);
+    const laps = {};
+    const r = pngPartDecode(lines, w, prev, rt, null, laps);
+    if (!r || r.code < 0) {
+        try { if (typeof lines.buffer.transfer === "function") lines.buffer.transfer(0); } catch (_) { /* ignore */ }
+        throw new Error("png_part_read: corrupt part (" + (r ? r.code : "null") + ")");
+    }
+    const timing = { op: "png_part_read", kernels: kernelsInUse(), pixels: w * r.rows, bytes: inBytes, rows: r.rows, kernel: now() - t0, read: readMs, inflate: inflateMs, ...laps };
+    if (r.needsPrev) {
+        return { rows: r.rows, adler: r.adler, firstFilter: r.firstFilter, opaque: false, needsPrev: true, lines: lines.buffer, transfer: [lines.buffer], timing };
+    }
+    try { if (typeof lines.buffer.transfer === "function") lines.buffer.transfer(0); } catch (_) { /* ignore */ }
+    return { rows: r.rows, adler: r.adler, firstFilter: r.firstFilter, opaque: r.opaque, needsPrev: false, rgba: r.out.buffer, prev: r.prev.buffer, transfer: [r.out.buffer, r.prev.buffer], timing };
+}
+
+/**
+ * Finish a PNG part whose `png_part_read` answered `needsPrev: true`, once the previous part's last unfiltered row
+ * (`prev`) is ready (K8, docs/PLAN_WASM_BUILD.md §4.2).
+ */
+function pngPartFinishJob(msg) {
+    const t0 = now();
+    const w = msg.w | 0, rows = msg.rows | 0;
+    const lines = msg.lines instanceof Uint8Array ? msg.lines : new Uint8Array(msg.lines);
+    const prev = msg.prev instanceof Uint8Array ? msg.prev : new Uint8Array(msg.prev, 0, w * 4);
+    const rt = residentRt(msg.rt ? (msg.rt instanceof Uint8Array ? msg.rt : new Uint8Array(msg.rt)) : null);
+    const laps = {};
+    const r = pngPartFinish(lines, rows, w, prev, rt, null, laps);
+    try { if (typeof lines.buffer.transfer === "function") lines.buffer.transfer(0); } catch (_) { /* ignore */ }
+    if (!r || r.code < 0) throw new Error("png_part_finish: corrupt part (" + (r ? r.code : "null") + ")");
+    const timing = { op: "png_part_finish", kernels: kernelsInUse(), pixels: w * r.rows, rows: r.rows, kernel: now() - t0, ...laps };
+    return { rows: r.rows, firstFilter: r.firstFilter, opaque: r.opaque, rgba: r.out.buffer, prev: r.prev.buffer, transfer: [r.out.buffer, r.prev.buffer], timing };
+}
+
 /**
  * An image file decoded by the browser in this worker and read back band by band, like `png_read` (`progress` messages
  * `{ header }`, then `{ rgba, y0, rows }` transferred). The window's way was an <img> drawn in strips into a CPU scratch
@@ -969,12 +1080,17 @@ async function floodOverTiles(msg) {
 // its identity, so one copy is kept for as long as the bytes are the same
 let RESAMPLE_RT = null;
 
+function residentRt(rt) {
+    if (!rt) return null;
+    if (RESAMPLE_RT && RESAMPLE_RT.length === rt.length && RESAMPLE_RT.every((v, i) => v === rt[i])) return RESAMPLE_RT;
+    RESAMPLE_RT = rt;
+    return rt;
+}
+
 function resampleJob(msg) {
     const t0 = now();
     const { src, outW, outH, o, ty } = msg;
-    let rt = msg.rt;
-    if (rt && RESAMPLE_RT && RESAMPLE_RT.length === rt.length && RESAMPLE_RT.every((v, i) => v === rt[i])) rt = RESAMPLE_RT;
-    else RESAMPLE_RT = rt;
+    const rt = residentRt(msg.rt);
     const views = new Map();
     const view = (t) => {
         const k = t.data ? t : t.chunk * 65536 + t.slot;
@@ -1375,6 +1491,8 @@ async function run(msg) {
     if (msg.op === "band") return band(msg);
     if (msg.op === "poisson") return poissonJob(msg);
     if (msg.op === "png_part") return pngPart(msg);
+    if (msg.op === "png_part_read") return pngPartRead(msg);
+    if (msg.op === "png_part_finish") return pngPartFinishJob(msg);
     if (msg.op === "stack_into") return stackInto(msg);
     if (msg.op === "stack_points") return stackPoints(msg);
     if (msg.op === "hash") return hashJob(msg);

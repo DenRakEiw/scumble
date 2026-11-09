@@ -839,7 +839,10 @@ export function pngPartDecode(lines, w, prev = null, rt = null, out = null, laps
         catch (err) { if (!recovered(p, err, "png_part_decode")) throw err; }
         finally { releaseIfLarge(); }
     }
-    return J.pngPartDecode(lines, w, prev, rt, out);
+    const t0 = laps && typeof performance !== "undefined" ? performance.now() : 0;
+    const r = J.pngPartDecode(lines, w, prev, rt, out);
+    if (laps && typeof performance !== "undefined") laps.decode = performance.now() - t0;
+    return r;
 }
 
 /** Finish a part whose `pngPartDecode` answered `needsPrev: true` once `prev` arrives (K7, docs/PLAN_WASM_BUILD.md §4.2). */
@@ -850,7 +853,10 @@ export function pngPartFinish(lines, rows, w, prev, rt = null, out = null, laps 
         catch (err) { if (!recovered(p, err, "png_part_finish")) throw err; }
         finally { releaseIfLarge(); }
     }
-    return J.pngPartFinish(lines, rows, w, prev, rt, out);
+    const t0 = laps && typeof performance !== "undefined" ? performance.now() : 0;
+    const r = J.pngPartFinish(lines, rows, w, prev, rt, out);
+    if (laps && typeof performance !== "undefined") laps.finish = performance.now() - t0;
+    return r;
 }
 
 /** Computes max - min over each texel's 4x4 block of a w x h Uint16Array. */

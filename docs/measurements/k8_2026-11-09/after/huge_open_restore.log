@@ -1,0 +1,7 @@
+[ok] write_the_png_from_tiles: {"size": [30000, 20000], "MP": 600, "fillMs": 5612, "encodeMs": 4798, "encodeBlocked": 140, "MB": 1100.7, "arena": {"slots": 9322, "chunks": 37, "allocated": 9322, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 2483027968, "freeSlots": 150}}
+[ok] open_through_the_stream_reader: {"ms": 5606, "blocked": 542, "tiles": 9322, "status": "30000 \u00d7 20000"}
+[ok] the_screen_pan_zoom_and_a_stroke: {"pan_fit": [0.3, 8.2], "pan_1to1": [0.1, 1.4], "zoom": [0.1, 1.8], "stroke_frame": [2.1, 70.1], "stroke_release": 7.3, "layer_tiles": 6}
+[ok] the_state_for_the_autosave: {"ms": 1119, "blocked": 102, "layers": 1, "selection": "data:image/png;base64,iVBORw0KGgoAAAANSU", "bytes": 10139}
+[ok] a_restore_from_the_state: {"ms": 6740, "blocked": 149}
+[ok] close: {"closed": 2, "arena": {"slots": 18674, "chunks": 73, "allocated": 27996, "freed": 9322, "droppedChunks": 36, "refused": 0, "failed": 0, "enabled": true, "bytes": 4898947072, "freeSlots": 14}}
+PASS

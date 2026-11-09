@@ -1,0 +1,15 @@
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=pngPart)
+FAIL pngPartsOf refuses 19 invalid or colour-managed layouts  gAMA before IDAT returned {"width":64,"height":20,"bitDepth":8,"colorType":6,"parts":[{"off":71,"len":24}],"adler":66051,"texts":{}}
+FAIL (1) (only: pngPart; PX_ONLY, not the full test)
+ok   rust scalar js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and refAdler32 (160 decode + 48 finish cases)
+ok   rust scalar png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)
+ok   rust scalar png_part_finish equals its twin byte for byte (48 cases, each also at an odd offset)
+ok   rust scalar pngPartDecode and pngPartFinish write into a given Uint8ClampedArray view without touching guard bytes
+ok   rust scalar png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) without mutating caller buffers
+ok   rust scalar png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)
+ok   rust scalar multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and refAdler32
+FAIL (1) (only: pngPart; PX_ONLY, not the full test)
+(node:70464) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k8-mutation-tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k8-mutation-tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

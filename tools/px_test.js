@@ -5181,14 +5181,17 @@ async function partDecodeCases(px, label, png, zlib, js) {
         });
         const part0Len = Buffer.concat(chunks).length;
         await new Promise((resolve) => {
-            def.end(pattern, resolve); // identical bytes -> LZ77 back-reference into part 0!
+            def.on("end", resolve);
+            def.end(pattern); // identical bytes -> LZ77 back-reference into part 0!
         });
         const sharedPart1 = new Uint8Array(Buffer.concat(chunks).subarray(part0Len));
         let sharedRejected = false;
-        try {
-            await inflateRawPart(sharedPart1, true);
-        } catch {
-            sharedRejected = true;
+        if (sharedPart1.length > 0) {
+            try {
+                await inflateRawPart(sharedPart1, true);
+            } catch {
+                sharedRejected = true;
+            }
         }
         let corruptRejected = false;
         try {
@@ -5264,7 +5267,219 @@ async function partDecodeCases(px, label, png, zlib, js) {
             K.setKernels(prevMode);
         }
 
-        // 7. PX_BENCH: 15,000 x 139 standard 8 MB part (copyIn vs decode vs copyOut)
+        // 7. K8: pngPartsOf layout check (33-49 bytes on non-parted files) and readPngParts parallel pool orchestration
+        {
+            const countBlob = (blob) => {
+                let bytesRead = 0;
+                return {
+                    get size() { return blob.size; },
+                    slice(a, b) {
+                        const s = Math.max(0, a | 0), e = Math.min(blob.size, b == null ? blob.size : (b | 0));
+                        bytesRead += Math.max(0, e - s);
+                        return blob.slice(a, b);
+                    },
+                    get bytesRead() { return bytesRead; },
+                };
+            };
+            const pw = 64, partHeights = [4, 3, 5, 2, 6, 4], pH = partHeights.reduce((a, b) => a + b, 0);
+            const pSrc = randomRGBA(pw, pH, 9601, { opaque: false });
+            const writer = new png.PngStreamWriter(pw, pH, {
+                chunks: [png.SRGB_CHUNK],
+                texts: { Software: "Scumble" },
+                run: (args) => {
+                    const r = px.pngPart(new Uint8Array(args.rgba), args.w, args.rows, args.prev ? new Uint8Array(args.prev) : null, args.level, args.last);
+                    return { chunk: r.chunk.buffer, adler: r.adler, raw: r.raw, crc: r.crc };
+                },
+            });
+            const partMeta = [];
+            let py0 = 0;
+            for (let i = 0; i < partHeights.length; i++) {
+                const r = partHeights[i];
+                const wantPrev = i === 1 || i === 2 || i === 4;
+                if (wantPrev) {
+                    // Copy the row above into row 0 of this part so Up (filter 2) has zero residual and wins
+                    pSrc.copyWithin(py0 * pw * 4, (py0 - 1) * pw * 4, py0 * pw * 4);
+                } else {
+                    // Repeat pixel 0 across row 0 of this part so Sub (filter 1) has zero residual for x = 1..pw-1 and wins
+                    const p0Off = py0 * pw * 4;
+                    pSrc[p0Off] = (100 + i * 31) & 255;
+                    pSrc[p0Off + 1] = (150 + i * 17) & 255;
+                    pSrc[p0Off + 2] = (200 + i * 43) & 255;
+                    pSrc[p0Off + 3] = 250;
+                    for (let x = 1; x < pw; x++) pSrc.copyWithin(p0Off + x * 4, p0Off, p0Off + 4);
+                }
+                const prev = py0 > 0 ? pSrc.slice((py0 - 1) * pw * 4, py0 * pw * 4).buffer : null;
+                writer.add(r, { rgba: pSrc.slice(py0 * pw * 4, (py0 + r) * pw * 4).buffer, prev });
+                partMeta.push({ y0: py0, rows: r, wantPrev });
+                py0 += r;
+            }
+            const partedBlob = await writer.finish();
+            const layout = await png.pngPartsOf(partedBlob);
+            check(`pngPartsOf parses a Scumble parted PNG with sRGB and tEXt (${partHeights.length} parts, ${pw}x${pH})`,
+                !!layout && layout.width === pw && layout.height === pH && layout.parts.length === partHeights.length
+                && layout.parts.every((p) => p.off > 33 && p.len > 0) && layout.texts.Software === "Scumble",
+                JSON.stringify(layout));
+
+            // Browser-style single-IDAT PNG without sRGB (41 bytes read) and with sRGB (49 bytes read), plus non-RGBA IHDR (33 bytes read)
+            const srgbChunkBytes = png.pngChunk(...png.SRGB_CHUNK);
+            const singleNoSrgb = countBlob(new Blob([
+                new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+                png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 6, 0, 0, 0])),
+                png.pngChunk("IDAT", zlib.deflateSync(new Uint8Array(20 * (1 + 64 * 4)))),
+                png.pngChunk("IEND", new Uint8Array(0)),
+            ]));
+            const singleWithSrgb = countBlob(new Blob([
+                new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+                png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 6, 0, 0, 0])),
+                srgbChunkBytes,
+                png.pngChunk("IDAT", zlib.deflateSync(new Uint8Array(20 * (1 + 64 * 4)))),
+                png.pngChunk("IEND", new Uint8Array(0)),
+            ]));
+            const rgbOnly = countBlob(new Blob([
+                new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+                png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 2, 0, 0, 0])),
+                png.pngChunk("IDAT", new Uint8Array([0x78, 0x9C])),
+                png.pngChunk("IDAT", new Uint8Array(16)),
+                png.pngChunk("IDAT", new Uint8Array(4)),
+                png.pngChunk("IEND", new Uint8Array(0)),
+            ]));
+            const rNoSrgb = await png.pngPartsOf(singleNoSrgb);
+            const rWithSrgb = await png.pngPartsOf(singleWithSrgb);
+            const rRgb = await png.pngPartsOf(rgbOnly);
+            check(`pngPartsOf rejects non-parted and non-RGBA PNGs after 33-49 bytes (33 B for RGB IHDR, 41 B for single IDAT, 49 B with sRGB)`,
+                rNoSrgb === null && singleNoSrgb.bytesRead === 41
+                && rWithSrgb === null && singleWithSrgb.bytesRead === 49
+                && rRgb === null && rgbOnly.bytesRead === 33,
+                `rgb=${rgbOnly.bytesRead} noSrgb=${singleNoSrgb.bytesRead} withSrgb=${singleWithSrgb.bytesRead}`);
+
+            // Refusal cases for pngPartsOf: colour chunks, bad 2-byte zlib header, 0 part IDATs, bad tail IDAT, trailing bytes after IEND
+            const ihdrRgba = png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 6, 0, 0, 0]));
+            const sig = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+            const idat2 = png.pngChunk("IDAT", new Uint8Array([0x78, 0x9C]));
+            const idatPart = png.pngChunk("IDAT", new Uint8Array(24));
+            const idat4 = png.pngChunk("IDAT", new Uint8Array([0, 1, 2, 3]));
+            const iend = png.pngChunk("IEND", new Uint8Array(0));
+            const textChunk = png.pngChunk("tEXt", new TextEncoder().encode("a\0b"));
+            const badBlobs = [
+                ["null", null],
+                ["short (<57 B)", new Blob([sig, ihdrRgba])],
+                ["16-bit RGBA", new Blob([sig, png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 16, 6, 0, 0, 0])), idat2, idatPart, idat4, iend])],
+                ["interlaced", new Blob([sig, png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 6, 0, 0, 1])), idat2, idatPart, idat4, iend])],
+                ["gAMA before IDAT", new Blob([sig, ihdrRgba, png.pngChunk("gAMA", new Uint8Array([0, 0, 0xB1, 0x8F])), idat2, idatPart, idat4, iend])],
+                ["iCCP before IDAT", new Blob([sig, ihdrRgba, png.pngChunk("iCCP", new Uint8Array(12)), idat2, idatPart, idat4, iend])],
+                ["cHRM before IDAT", new Blob([sig, ihdrRgba, png.pngChunk("cHRM", new Uint8Array(32)), idat2, idatPart, idat4, iend])],
+                ["cICP before IDAT", new Blob([sig, ihdrRgba, png.pngChunk("cICP", new Uint8Array(4)), idat2, idatPart, idat4, iend])],
+                ["bad zlib header (FCHECK)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x78, 0x00])), idatPart, idat4, iend])],
+                ["bad zlib header (FDICT)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x78, 0xBB])), idatPart, idat4, iend])],
+                ["bad zlib header (CM!=8)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x79, 0x98])), idatPart, idat4, iend])],
+                ["0 part IDATs (only 2-B + 4-B)", new Blob([sig, ihdrRgba, idat2, idat4, iend])],
+                ["5-B tail IDAT", new Blob([sig, ihdrRgba, idat2, idatPart, png.pngChunk("IDAT", new Uint8Array(5)), iend])],
+                ["0-B IDAT in middle", new Blob([sig, ihdrRgba, idat2, png.pngChunk("IDAT", new Uint8Array(0)), idat4, iend])],
+                ["tEXt between IDATs", new Blob([sig, ihdrRgba, idat2, idatPart, textChunk, idat4, iend])],
+                ["extra IDAT after 4-B tail", new Blob([sig, ihdrRgba, idat2, idatPart, idat4, idatPart, iend])],
+                ["gAMA after 4-B tail", new Blob([sig, ihdrRgba, idat2, idatPart, idat4, png.pngChunk("gAMA", new Uint8Array(4)), iend])],
+                ["non-empty IEND", new Blob([sig, ihdrRgba, idat2, idatPart, idat4, png.pngChunk("IEND", new Uint8Array(1))])],
+                ["trailing bytes after IEND", new Blob([sig, ihdrRgba, idat2, idatPart, idat4, iend, new Uint8Array([0])])],
+            ];
+            let badOk = true, badDetail = "";
+            for (const [tag, b] of badBlobs) {
+                const got = await png.pngPartsOf(b);
+                if (got !== null) { badOk = false; badDetail = `${tag} returned ${JSON.stringify(got)}`; break; }
+            }
+            check(`pngPartsOf refuses ${badBlobs.length} invalid or colour-managed layouts`, badOk, badDetail);
+
+            // readPngParts: mock pool with size = 2, verifying window cap (pool.size + 2 = 4), INTERACTIVE priority on finish,
+            // out-of-order decode completion, scanline-order onRows landing, and Adler-32 / row-count / cancellation guards
+            let cancelledGroups = [], finishPriorities = [], inFlightReads = 0, maxWindowSeen = 0;
+            const mockPool = {
+                size: 2,
+                cancel: (g) => { cancelledGroups.push(g); },
+                async run(op, args, _transfer, opts = {}) {
+                    if (op === "png_part_read") {
+                        inFlightReads++;
+                        maxWindowSeen = Math.max(maxWindowSeen, inFlightReads);
+                        // Stagger resolution so odd parts finish before even parts (out-of-order completion)
+                        await new Promise((r) => setTimeout(r, args.first ? 8 : 2));
+                        inFlightReads--;
+                        const raw = new Uint8Array(await args.blob.arrayBuffer());
+                        const zbuf = args.last ? raw : Buffer.concat([raw, Buffer.from([0x03, 0x00])]);
+                        const lines = new Uint8Array(zlib.inflateRawSync(zbuf));
+                        const p0 = args.first ? new Uint8Array(args.w * 4) : (args.prev ? new Uint8Array(args.prev) : null);
+                        const d = px.pngPartDecode(lines, args.w, p0, args.rt);
+                        if (d.code < 0) throw new Error(`png_part_decode code ${d.code}`);
+                        return {
+                            rows: d.code, adler: d.adler, raw: lines.byteLength,
+                            needsPrev: d.needsPrev, firstFilter: d.firstFilter, opaque: d.opaque,
+                            rgba: d.out ? d.out.buffer : null,
+                            lines: d.needsPrev ? lines.buffer : null,
+                            prev: d.prev ? d.prev.buffer : null,
+                        };
+                    }
+                    if (op === "png_part_finish") {
+                        finishPriorities.push(opts.priority);
+                        const f = px.pngPartFinish(new Uint8Array(args.lines), args.rows, args.w, new Uint8Array(args.prev), args.rt);
+                        if (f.code < 0) throw new Error(`png_part_finish code ${f.code}`);
+                        return {
+                            rows: f.code, firstFilter: f.firstFilter, opaque: f.opaque,
+                            rgba: f.out.buffer, prev: f.prev.buffer,
+                        };
+                    }
+                    throw new Error("unexpected op " + op);
+                },
+            };
+            const assembled = new Uint8Array(pH * pw * 4);
+            const landedOrder = [];
+            let headerSeen = null;
+            const res = await png.readPngParts(partedBlob, {
+                layout,
+                pool: mockPool,
+                rt: rtCanvas,
+                onHeader: (h) => { headerSeen = h; },
+                onRows: (rgba, y0, rows) => {
+                    landedOrder.push([y0, rows]);
+                    landedParts++;
+                    assembled.set(rgba, y0 * pw * 4);
+                },
+            });
+            const { out: wantAssembled } = refApplyRt(pSrc, rtCanvas);
+            check(`readPngParts decodes ${partHeights.length} parts in parallel (2 needing finish at INTERACTIVE priority 0, 1 receiving prev at launch, window <= pool.size + 2) and lands exact rows in scanline order`,
+                !!headerSeen && headerSeen.width === pw && headerSeen.height === pH
+                && res.parts === partHeights.length
+                && maxWindowSeen === mockPool.size + 2
+                && finishPriorities.length === 2 && finishPriorities.every((p) => p === 0)
+                && landedOrder.length === partHeights.length
+                && landedOrder.every(([y0, r], i) => y0 === partMeta[i].y0 && r === partMeta[i].rows)
+                && eqBytes(assembled, wantAssembled),
+                `maxWindow=${maxWindowSeen} finishPriorities=${JSON.stringify(finishPriorities)} landed=${JSON.stringify(landedOrder)} diff=${firstDiff(assembled, wantAssembled)}`);
+
+            // Adler-32 mismatch, row-count mismatch, and part error cancel the pool group and reject
+            cancelledGroups = [];
+            let adlerThrew = false;
+            try {
+                await png.readPngParts(partedBlob, {
+                    layout: { ...layout, adler: (layout.adler ^ 1) >>> 0 },
+                    pool: mockPool,
+                    rt: rtCanvas,
+                });
+            } catch (e) {
+                adlerThrew = /Adler-32/.test(String(e.message || e));
+            }
+            let heightThrew = false;
+            try {
+                await png.readPngParts(partedBlob, {
+                    layout: { ...layout, height: pH + 1 },
+                    pool: mockPool,
+                    rt: rtCanvas,
+                });
+            } catch (e) {
+                heightThrew = /rows/.test(String(e.message || e));
+            }
+            check(`readPngParts rejects on combined Adler-32 mismatch or row-count mismatch and cancels the pool group`,
+                adlerThrew && heightThrew && cancelledGroups.length === 2,
+                `adlerThrew=${adlerThrew} heightThrew=${heightThrew} cancelled=${cancelledGroups.length}`);
+        }
+
+        // 8. PX_BENCH: 15,000 x 139 standard 8 MB part (copyIn vs decode vs copyOut)
         if (process.env.PX_BENCH) {
             const bw = 15000, brows = 139, browBytes = bw * 4;
             const bsrc = randomRGBA(bw, brows, 9701, { opaque: false });
@@ -5275,7 +5490,6 @@ async function partDecodeCases(px, label, png, zlib, js) {
             const pWork = bprev.slice();
             // Warm up resident rtCanvas
             px.pngPartDecode(blinesSub.subarray(0, browBytes + 1), bw, pWork, rtCanvas);
-            const laps = { copyIn: 0, decode: 0, copyOut: 0 };
             const rounds = 15;
             const simdTimes = [], twinTimes = [];
             const copyInTimes = [], decodeTimes = [], copyOutTimes = [];
