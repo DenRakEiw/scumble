@@ -553,7 +553,18 @@ async function main() {
     assert.strictEqual(buf4[3], 255, "band pixel 0 (image pixel 2) should have alpha 255");
     assert.strictEqual(buf4[7], 0, "band pixel 1 (image pixel 3) should have alpha 0");
 
-    console.log("     [ok] inpaint_limit.js limitAlphaRows math and band offsets verified");
+    // Test 5: Stored depth limits with non-finite fields never throw on export
+    for (const badLim of [
+        { source: "depth", lo: "bad", hi: 0.8 },
+        { source: "depth", lo: 0.2, hi: "bad" },
+        { source: "depth", lo: 0.2, hi: 0.8, fLo: "bad" },
+        { source: "depth", lo: 0.2, hi: 0.8, fHi: Infinity },
+    ]) {
+        const bufBad = new Uint8Array(4 * 4).fill(200);
+        assert.doesNotThrow(() => limitAlphaRows(bufBad, 0, 0, 4, 1, badLim, map4));
+    }
+
+    console.log("     [ok] inpaint_limit.js limitAlphaRows math, band offsets, and stored-limit safety verified");
 
     // -------------------------------------------------------------------------
     // 10. R2-S5: Edge snap in limit stage (LIMIT_SHADER uniforms & snapField CPU)
@@ -654,6 +665,92 @@ async function main() {
     }
     assert.ok(errs50 <= Math.ceil(errs0 / 3), `snap 50 edge errors (${errs50}) <= 1/3 of snap 0 errors (${errs0})`);
     console.log(`     [ok] snap 50 error reduction: ${errs50} vs ${errs0} (<= 1/3 threshold met)`);
+
+    // Verify limitAlphaRows on a solid fill layer with testMapSnap50 (col = null -> samples map.guide)
+    // matches limitStageCPU's snapped weights (out50) byte for byte across all Ws x Hs pixels
+    const fillRows50 = new Uint8Array(Ws * Hs * 4);
+    for (let i = 0; i < fillRows50.length; i += 4) {
+        fillRows50[i] = 128; fillRows50[i + 1] = 128; fillRows50[i + 2] = 128; fillRows50[i + 3] = 255;
+    }
+    const fillRowsUniformCol = new Uint8Array(fillRows50);
+    limitAlphaRows(fillRows50, 0, 0, Ws, Hs, limDepth, testMapSnap50);
+    limitAlphaRows(fillRowsUniformCol, 0, 0, Ws, Hs, limDepth, testMapSnap50, fillRowsUniformCol);
+    let maxScreenVsExportDiff = 0;
+    let errsUniformCol = 0;
+    for (let y = 0; y < Hs; y++) {
+        for (let x = 0; x < Ws; x++) {
+            const idx = (y * Ws + x) * 4;
+            const d = Math.abs(fillRows50[idx + 3] - out50[idx]);
+            if (d > maxScreenVsExportDiff) maxScreenVsExportDiff = d;
+            if (x >= 56 && x <= 64) {
+                const gt = x < 60 ? 255 : 0;
+                if (Math.abs(fillRowsUniformCol[idx + 3] - gt) > 64) errsUniformCol++;
+            }
+        }
+    }
+    assert.strictEqual(maxScreenVsExportDiff, 0, `limitAlphaRows snapped alpha matches limitStageCPU byte-for-byte (maxDiff=${maxScreenVsExportDiff})`);
+    assert.ok(errs50 < errsUniformCol, `snapped map.guide alpha errors (${errs50}) < uniform-fill col errors (${errsUniformCol})`);
+    console.log(`     [ok] limitAlphaRows snapped alpha matches limitStageCPU on texel-aligned edge (maxDiff=${maxScreenVsExportDiff}, edge errors ${errs50} vs ${errsUniformCol} uniform-col / ${errs0} unsnapped)`);
+
+    // Sub-texel edge & mixed guide case (120 x 20 picture, 30 x 10 map = 4 px/texel, edge at x = 62 inside texel 15):
+    // guide texel 15 is the 50/50 downscale mean (120, 50, 120) of red (200, 40, 40) and blue (40, 60, 200).
+    // Outside texel 15 (x < 60 or x >= 64) export and screen match at 0; inside texel 15 (columns 62..63) screen
+    // references blue while export references the mixed texel at floor(mx)=15, differing by up to 255 levels across
+    // a 2-px band (<= 4 px = 1 map texel).
+    const srcSubData = new Uint8ClampedArray(Ws * Hs * 4);
+    for (let y = 0; y < Hs; y++) {
+        for (let x = 0; x < Ws; x++) {
+            const idx = (y * Ws + x) * 4;
+            const isRed = x < 62;
+            srcSubData[idx] = isRed ? 200 : 40;
+            srcSubData[idx + 1] = isRed ? 40 : 60;
+            srcSubData[idx + 2] = isRed ? 40 : 200;
+            srcSubData[idx + 3] = 255;
+        }
+    }
+    const guideSubData = new Uint8ClampedArray(guideData);
+    for (let y = 0; y < Mh; y++) {
+        const idx = (y * Mw + 15) * 4;
+        guideSubData[idx] = 120; guideSubData[idx + 1] = 50; guideSubData[idx + 2] = 120; guideSubData[idx + 3] = 255;
+    }
+    const mapSubSnap50 = makeMap("depth", Mw, Mh, mapU16, [Ws, 0, 0, Hs, 0, 0], { snap: { strength: 50 } }, guideSubData);
+    mapSubSnap50.guide = guideSubData;
+    let outSub50 = null;
+    {
+        const fakeSrcSub = { width: Ws, height: Hs, getContext: () => ({ getImageData: () => ({ data: srcSubData }) }) };
+        const fakeOutSub = { width: Ws, height: Hs, getContext: () => ({ getImageData: () => ({ data: srcSubData }) }) };
+        const fakeResSub = {
+            width: Ws, height: Hs,
+            getContext: () => ({
+                createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+                putImageData: (img) => { outSub50 = img.data; },
+            }),
+        };
+        const orig = document.createElement;
+        document.createElement = (tag) => (tag === "canvas" ? fakeResSub : orig(tag));
+        try {
+            limitStageCPU(fakeSrcSub, fakeOutSub, limDepth, { maps: { depth: mapSubSnap50 }, limitView: true });
+        } finally {
+            document.createElement = orig;
+        }
+    }
+    const fillSub50 = new Uint8Array(Ws * Hs * 4).fill(255);
+    limitAlphaRows(fillSub50, 0, 0, Ws, Hs, limDepth, mapSubSnap50);
+    let maxDiffSubTexel = 0, maxDiffOutsideTexel = 0;
+    const diffCols = new Set();
+    for (let y = 0; y < Hs; y++) {
+        for (let x = 0; x < Ws; x++) {
+            const idx = (y * Ws + x) * 4;
+            const d = Math.abs(fillSub50[idx + 3] - outSub50[idx]);
+            if (d > maxDiffSubTexel) maxDiffSubTexel = d;
+            if (d > 2) diffCols.add(x);
+            if ((x < 60 || x >= 64) && d > maxDiffOutsideTexel) maxDiffOutsideTexel = d;
+        }
+    }
+    assert.strictEqual(maxDiffOutsideTexel, 0, `outside the 1-texel band [60..63] export matches screen at 0 (got ${maxDiffOutsideTexel})`);
+    assert.strictEqual(maxDiffSubTexel, 255, `sub-texel edge inside mixed texel 15 reaches maxDiff=255 (got ${maxDiffSubTexel})`);
+    assert.ok(diffCols.size > 0 && diffCols.size <= Ws / Mw, `sub-texel difference is confined to <= 1 map texel (${diffCols.size} <= ${Ws / Mw} px)`);
+    console.log(`     [ok] sub-texel mixed-guide edge (x=62 in texel 15): maxDiff=${maxDiffSubTexel}, bandWidth=${diffCols.size}px (<= 1 texel = ${Ws / Mw}px), outsideTexelMaxDiff=${maxDiffOutsideTexel}`);
 
     console.log("ALL LIMIT TESTS PASSED!");
 }

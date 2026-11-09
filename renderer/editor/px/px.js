@@ -13,7 +13,7 @@
 
 import { disparityRange } from "../inpaint_depth.js";
 
-export const PX_ABI = 37;
+export const PX_ABI = 40;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -1173,6 +1173,88 @@ export class Px {
     }
 
     /**
+     * Byte capacity of `lines` for a standard `PART_BYTES` (`8 MB`) part of a `w`-wide 8-bit RGBA PNG
+     * (`partRows(w) * (1 + 4 * w)`), or 0 when `w <= 0` (K7, docs/PLAN_WASM_BUILD.md §4.2).
+     */
+    pngPartLinesCap(w) {
+        if (!Number.isInteger(w) || w <= 0 || w > 0x3fffffff) return 0;
+        return this.exports.png_part_lines_cap(w) >>> 0;
+    }
+
+    /**
+     * Decode one inflated part (`lines`, a whole number of `1 + 4 * w`-byte scanlines) of a `w`-wide 8-bit RGBA PNG
+     * (K7, docs/PLAN_WASM_BUILD.md §4.2). When `rt` (the 65,536-byte CPU-canvas round-trip table) is given it stays
+     * resident in this instance (`_resident`). `laps` (optional) records `copyIn`, `decode`, `copyOut` in ms.
+     */
+    pngPartDecode(lines, w, prev = null, rt = null, out = null, laps = null) {
+        if (!lines || !Number.isInteger(w) || w <= 0 || w > 0x3fffffff) return { code: -4 };
+        const lLen = lines.byteLength;
+        const rowBytes = w * 4, stride = rowBytes + 1;
+        if (lLen === 0 || lLen % stride !== 0) return { code: -4 };
+        if (prev != null && prev.byteLength < rowBytes) return { code: -4 };
+        if (rt != null && rt.byteLength < 65536) return { code: -4 };
+        const rows = lLen / stride;
+        const outBytes = rows * rowBytes;
+        if (out != null && out.byteLength < outBytes) return { code: -4 };
+        const a = this.job, lap = laps ? lapper(laps) : null;
+        try {
+            const prt = rt ? this._resident(rt) : 0;
+            const pl = this._in(a, lines, lLen);
+            const pp = prev ? this._in(a, prev, rowBytes) : 0;
+            const po = a.take(outBytes), pi = a.take(20);
+            if (lap) lap("copyIn");
+            const code = this.exports.png_part_decode(pl, lLen, w, pp, prt, po, pi);
+            if (lap) lap("decode");
+            if (code < 0) return { code };
+            const info = this.view(Uint32Array, pi, 5);
+            const adler = info[1] >>> 0, firstFilter = info[2] >>> 0, opaque = info[3] === 1, needsPrev = info[4] === 1;
+            if (needsPrev) {
+                if (lap) lap("copyOut");
+                return { code, rows, adler, firstFilter, opaque: false, needsPrev: true, out: null, prev: null };
+            }
+            const dst = this._out(Uint8Array, po, outBytes, out);
+            const lastRow = prev
+                ? this._out(Uint8Array, pp, rowBytes, prev)
+                : this._out(Uint8Array, pl + (rows - 1) * stride + 1, rowBytes, null);
+            if (lap) lap("copyOut");
+            return { code, rows, adler, firstFilter, opaque, needsPrev: false, out: dst, prev: lastRow };
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Finish a part whose `pngPartDecode` answered `needsPrev: true` once `prev` (`4 * w` unfiltered bytes from the
+     * row above) is ready (K7, docs/PLAN_WASM_BUILD.md §4.2). `laps` (optional) records `copyIn`, `finish`, `copyOut`.
+     */
+    pngPartFinish(lines, rows, w, prev, rt = null, out = null, laps = null) {
+        if (!lines || !prev || !Number.isInteger(w) || w <= 0 || w > 0x3fffffff || !Number.isInteger(rows) || rows <= 0) {
+            return { code: -4 };
+        }
+        const lLen = lines.byteLength;
+        const rowBytes = w * 4, stride = rowBytes + 1;
+        if (lLen !== rows * stride || prev.byteLength < rowBytes) return { code: -4 };
+        if (rt != null && rt.byteLength < 65536) return { code: -4 };
+        const outBytes = rows * rowBytes;
+        if (out != null && out.byteLength < outBytes) return { code: -4 };
+        const a = this.job, lap = laps ? lapper(laps) : null;
+        try {
+            const prt = rt ? this._resident(rt) : 0;
+            const pl = this._in(a, lines, lLen);
+            const pp = this._in(a, prev, rowBytes);
+            const po = a.take(outBytes), pi = a.take(20);
+            if (lap) lap("copyIn");
+            const code = this.exports.png_part_finish(pl, rows, w, pp, prt, po, pi);
+            if (lap) lap("finish");
+            if (code < 0) return { code };
+            const info = this.view(Uint32Array, pi, 5);
+            const firstFilter = info[2] >>> 0, opaque = info[3] === 1;
+            const dst = this._out(Uint8Array, po, outBytes, out);
+            this._out(Uint8Array, pp, rowBytes, prev);
+            if (lap) lap("copyOut");
+            return { code, rows, firstFilter, opaque, needsPrev: false, out: dst, prev };
+        } finally { this._reset(a); }
+    }
+
+    /**
      * Per-tile minimum, maximum, and edge flag over a depth map (`map` and optional `rmax`, `mw` x `mh` u16) for a
      * `W` x `H` document in `tile`² tiles (K21, docs/PLAN_WASM_BUILD.md §4.8). Copies only the map row window `[wy0..wy1]`
      * that each document tile row `ty` can read, never the whole map at once. `min` / `max` clamp the 2-texel window on
@@ -1203,8 +1285,10 @@ export class Px {
             const ry10 = m1 * W + m3 * y0 + m5;
             const ry01 = m1 * 0 + m3 * y1 + m5;
             const ry11 = m1 * W + m3 * y1 + m5;
-            const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11) - 2)));
-            const wy1 = Math.max(0, Math.min(mh - 1, Math.ceil(Math.max(ry00, ry10, ry01, ry11) + 2)));
+            const ryMin = Math.min(ry00, ry10, ry01, ry11);
+            const ryMax = Math.max(ry00, ry10, ry01, ry11);
+            const wy0 = Number.isFinite(ryMin) ? Math.max(0, Math.min(mh - 1, Math.floor(ryMin - 2))) : 0;
+            const wy1 = Number.isFinite(ryMax) ? Math.max(0, Math.min(mh - 1, Math.ceil(ryMax + 2))) : mh - 1;
             const wh = wy1 - wy0 + 1;
             const wLen = wh * mw;
             const wStart = wy0 * mw;
@@ -1448,6 +1532,152 @@ export class Px {
     }
 
     /**
+     * Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes `src` into `out`
+     * (`need` bytes, allocated when absent), stopping as soon as `need` bytes are written (`inpaint_tiff.js`
+     * `unpackStrip`, K16). Throws the reader's refusal on truncated or damaged streams.
+     */
+    tiffUnpack(compression, src, need, out = null, name = "strip") {
+        if (need instanceof Uint8Array) { out = need; need = out.byteLength; }
+        if (!(compression === 1 || compression === 5 || compression === 32773) || !ArrayBuffer.isView(src) || !Number.isInteger(need) || need < 0) {
+            throw tiffUnpackError(-1, name);
+        }
+        let dst = null;
+        if (out != null) {
+            if (!ArrayBuffer.isView(out) || out.byteLength < need) throw tiffUnpackError(-1, name);
+            dst = out instanceof Uint8Array ? out : new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+        }
+        const a = this.job, len = src.byteLength;
+        try {
+            const ps = len > 0 ? this._in(a, src, len) : 0, po = need > 0 ? a.take(need) : 0;
+            const rc = this.exports.tiff_unpack(compression, ps, len, po, need) | 0;
+            if (rc < 0) throw tiffUnpackError(rc, name);
+            if (need === 0) return out || new Uint8Array(0);
+            this._out(Uint8Array, po, need, dst ? (dst.length === need ? dst : dst.subarray(0, need)) : (dst = new Uint8Array(need)));
+            return out || dst;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Multiplies the alpha channel of `rgba` (`w * h * 4` RGBA8 bytes, in place) by the depth limit weight over `map`
+     * (`mw` x `mh` u16, affine transform `xf`) and optional joint-bilateral snap (`snap = [sigmaR, tau]`, `guide`,
+     * optional `col` reference RGBA8) in chunks of at most 256 rows (K25, docs/PLAN_WASM_BUILD.md §4.8).
+     * When `col` is null and `guide` is given, the snap reference colour is sampled from `guide` at `(mx, my)`.
+     */
+    limitAlphaRows(rgba, map, mw, mh, xf, x0, y0, w, h, limit, snap = null, guide = null, col = null) {
+        if (!rgba || !(map instanceof Uint16Array) || !limit || !(mw > 0) || !(mh > 0) || !Number.isInteger(w) || !Number.isInteger(h) || w < 0 || h < 0 || !Number.isInteger(x0) || !Number.isInteger(y0) || (!Array.isArray(xf) && !ArrayBuffer.isView(xf)) || xf.length < 6) {
+            throw new Error("limitAlphaRows: bad arguments");
+        }
+        if (map.length < mw * mh) throw new Error("limitAlphaRows: short map");
+        const u8 = rgba instanceof Uint8Array || rgba instanceof Uint8ClampedArray
+            ? new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength)
+            : (rgba.buffer instanceof ArrayBuffer || (SAB && rgba.buffer instanceof SAB))
+                ? new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength)
+                : (rgba instanceof ArrayBuffer || (SAB && rgba instanceof SAB))
+                    ? new Uint8Array(rgba)
+                    : null;
+        const needBytes = w * h * 4;
+        if (!u8 || u8.length < needBytes) throw new Error("limitAlphaRows: short rgba");
+
+        let cBytes = null;
+        if (col != null) {
+            cBytes = col instanceof Uint8Array || col instanceof Uint8ClampedArray
+                ? new Uint8Array(col.buffer, col.byteOffset, col.byteLength)
+                : (col.buffer instanceof ArrayBuffer || (SAB && col.buffer instanceof SAB))
+                    ? new Uint8Array(col.buffer, col.byteOffset, col.byteLength)
+                    : (col instanceof ArrayBuffer || (SAB && col instanceof SAB))
+                        ? new Uint8Array(col)
+                        : null;
+            if (!cBytes || cBytes.length < needBytes) throw new Error("limitAlphaRows: short col");
+        }
+
+        const m0 = +xf[0], m1 = +xf[1], m2 = +xf[2], m3 = +xf[3], m4 = +xf[4], m5 = +xf[5];
+        const lo = limit.lo == null ? 0 : +limit.lo;
+        const hi = limit.hi == null ? 1 : +limit.hi;
+        const fLo = limit.fLo == null ? 0 : +limit.fLo;
+        const fHi = limit.fHi == null ? 0 : +limit.fHi;
+        let sigmaR = 0, tau = 0;
+        if (snap != null) {
+            if ((!Array.isArray(snap) && !ArrayBuffer.isView(snap)) || snap.length < 2) {
+                throw new Error("limitAlphaRows: snap must have 2 elements");
+            }
+            sigmaR = snap[0] == null ? 0 : +snap[0];
+            tau = snap[1] == null ? 0 : +snap[1];
+        }
+        if (![m0, m1, m2, m3, m4, m5, lo, hi, fLo, fHi, sigmaR, tau].every(Number.isFinite)) {
+            throw new Error("limitAlphaRows: non-finite parameters");
+        }
+
+        let gBytes = null;
+        if (guide != null) {
+            const gRaw = guide.data || guide;
+            const gw = guide.w != null ? guide.w | 0 : mw;
+            const gh = guide.h != null ? guide.h | 0 : mh;
+            if (!gRaw || gw !== mw || gh !== mh) throw new Error("limitAlphaRows: bad guide");
+            gBytes = gRaw instanceof Uint8Array || gRaw instanceof Uint8ClampedArray
+                ? new Uint8Array(gRaw.buffer, gRaw.byteOffset, gRaw.byteLength)
+                : (gRaw.buffer instanceof ArrayBuffer || (SAB && gRaw.buffer instanceof SAB))
+                    ? new Uint8Array(gRaw.buffer, gRaw.byteOffset, gRaw.byteLength)
+                    : (gRaw instanceof ArrayBuffer || (SAB && gRaw instanceof SAB))
+                        ? new Uint8Array(gRaw)
+                        : null;
+            if (!gBytes || gBytes.length < mw * mh * 4) throw new Error("limitAlphaRows: short guide");
+        }
+        if (w === 0 || h === 0) return rgba;
+
+        const snapOn = !!(sigmaR > 0 && gBytes);
+        const colIsRgba = !!(cBytes && cBytes.buffer === u8.buffer && cBytes.byteOffset === u8.byteOffset);
+        const flags = limit.invert ? 1 : 0;
+        const rx0 = x0, rx1 = x0 + w;
+
+        for (let cy = 0; cy < h; cy += 256) {
+            const ch = Math.min(256, h - cy);
+            const cy0 = y0 + cy;
+            const cy1 = cy0 + ch;
+            const ry00 = m1 * rx0 + m3 * cy0 + m5;
+            const ry10 = m1 * rx1 + m3 * cy0 + m5;
+            const ry01 = m1 * rx0 + m3 * cy1 + m5;
+            const ry11 = m1 * rx1 + m3 * cy1 + m5;
+            const ryMin = Math.min(ry00, ry10, ry01, ry11);
+            const ryMax = Math.max(ry00, ry10, ry01, ry11);
+            const wy0 = Number.isFinite(ryMin) ? Math.max(0, Math.min(mh - 1, Math.floor(ryMin - 2))) : 0;
+            const wy1 = Number.isFinite(ryMax) ? Math.max(0, Math.min(mh - 1, Math.ceil(ryMax + 2))) : mh - 1;
+            const wh = wy1 - wy0 + 1;
+            const wLen = wh * mw;
+            const wStart = wy0 * mw;
+            const chunkOff = cy * w * 4;
+            const chunkBytes = ch * w * 4;
+            const subRgba = u8.subarray(chunkOff, chunkOff + chunkBytes);
+
+            const a = this.job;
+            try {
+                const pRgba = this._in(a, subRgba, chunkBytes);
+                const pCol = snapOn && cBytes
+                    ? (colIsRgba ? pRgba : this._in(a, cBytes.subarray(chunkOff, chunkOff + chunkBytes), chunkBytes))
+                    : 0;
+                const pm = this._in(a, map.subarray(wStart, wStart + wLen), wLen * 2);
+                const pg = snapOn ? this._in(a, gBytes.subarray(wStart * 4, (wStart + wLen) * 4), wLen * 4) : 0;
+                const pParams = a.take(12 * 8);
+                const pv = this.view(Float64Array, pParams, 12);
+                pv[0] = m0; pv[1] = m1; pv[2] = m2; pv[3] = m3; pv[4] = m4; pv[5] = m5;
+                pv[6] = lo; pv[7] = hi; pv[8] = fLo; pv[9] = fHi; pv[10] = snapOn ? sigmaR : 0; pv[11] = tau;
+
+                const ok = this.exports.limit_alpha_rows(
+                    pRgba, pCol, pm, pg,
+                    mw, mh, wy0, wh,
+                    x0, cy0, w, ch,
+                    pParams, flags
+                );
+                if (!ok) throw new Error("limit_alpha_rows: refused");
+                this._out(Uint8Array, pRgba, chunkBytes, subRgba);
+            } catch (err) {
+                if (cy > 0 && err && typeof err === "object") err.doneRows = cy;
+                throw err;
+            } finally { this._reset(a); }
+        }
+        return rgba;
+    }
+
+    /**
      * The depth map's guided filter (`inpaint_depth.js` `guidedFar`, K24): accepts either an options object
      * `{ raw, rw, rh, grey, gw, gh, r, eps, lo, hi }` (with optional `out` as the second argument) or positional
      * `(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null)`. Returns `out` (or a new `Uint16Array` of `gw * gh`),
@@ -1487,6 +1717,20 @@ export class Px {
             return ok === 1 ? this._out(Uint16Array, pOut, nWork, out) : null;
         } finally { this._reset(a); }
     }
+}
+
+const TIFF_TRUNCATED = "the file ends early (it is truncated, or not a TIFF)";
+
+function tiffUnpackError(code, name = "strip") {
+    let msg;
+    if (code === -2) msg = `${TIFF_TRUNCATED}: ${name} holds fewer bytes than its rows`;
+    else if (code === -3) msg = "this TIFF uses the old-style LZW of before TIFF 6, which is not read; save it again with LZW or ZIP compression";
+    else if (code === -4) msg = "damaged LZW data in the TIFF (a code before any literal)";
+    else if (code === -5) msg = "damaged LZW data in the TIFF (a code beyond the table)";
+    else msg = `unsupported TIFF strip unpack (code ${code})`;
+    const err = new Error(msg);
+    err.code = code;
+    return err;
 }
 
 /**

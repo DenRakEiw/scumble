@@ -36,6 +36,7 @@ mod resample;
 mod sel;
 mod smudge;
 mod stroke;
+mod tiff;
 
 /// dlmalloc hands out a page start plus its 8-byte header, while a JS ArrayBuffer of tile
 /// size starts on a page. A copy between the two then has its destination 8 bytes past the
@@ -50,11 +51,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: guided_far, guided_far_scratch_bytes);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    37
+    40
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -723,6 +724,66 @@ pub unsafe extern "C" fn png_chunk_frame(buf: *mut u8, data_len: usize, kind: u3
     png::chunk_frame(slice::from_raw_parts_mut(buf, data_len + 12), data_len, kind)
 }
 
+/// Byte capacity of `lines` for a standard `PART_BYTES` (`8 MB`) part of a `w`-wide 8-bit RGBA PNG
+/// (`partRows(w) * (1 + 4 * w)`), or 0 when `w == 0` or on overflow (K7, `docs/PLAN_WASM_BUILD.md` §4.2).
+#[no_mangle]
+pub extern "C" fn png_part_lines_cap(w: usize) -> usize {
+    png::part_lines_cap(w)
+}
+
+/// Decode one inflated part (`len` bytes at `lines`) of a `w`-wide 8-bit RGBA PNG (K7, `docs/PLAN_WASM_BUILD.md` §4.2).
+/// Writes `[rows, adler, first_filter, opaque, needs_prev]` to `info` (5 `u32`s) and returns `rows` (`> 0`),
+/// `-4` (`PART_NOT_LINES`), or `-5` (`PART_BAD_FILTER`).
+#[no_mangle]
+pub unsafe extern "C" fn png_part_decode(
+    lines: *mut u8,
+    len: usize,
+    w: usize,
+    prev: *mut u8,
+    rt: *const u8,
+    out: *mut u8,
+    info: *mut u32,
+) -> isize {
+    if lines.is_null() || info.is_null() {
+        return png::PART_NOT_LINES;
+    }
+    let row_bytes = w.saturating_mul(4);
+    let stride = row_bytes.saturating_add(1);
+    let rows = len / stride;
+    let lines_slice = slice::from_raw_parts_mut(lines, len);
+    let prev_slice = if prev.is_null() { None } else { Some(slice::from_raw_parts_mut(prev, row_bytes)) };
+    let rt_table = if rt.is_null() { None } else { Some(&*(rt as *const [u8; 65536])) };
+    let out_slice = if out.is_null() { None } else { Some(slice::from_raw_parts_mut(out, rows.saturating_mul(row_bytes))) };
+    let info_arr = &mut *(info as *mut [u32; 5]);
+    png::part_decode(lines_slice, w, prev_slice, rt_table, out_slice, info_arr)
+}
+
+/// Finish a part whose `png_part_decode` set `needs_prev = 1` once `prev` (`4 * w` bytes) is available
+/// (K7, `docs/PLAN_WASM_BUILD.md` §4.2). Writes `[rows, 0, first_filter, opaque, 0]` to `info` (5 `u32`s) and returns
+/// `rows` (`> 0`), `-4` (`PART_NOT_LINES`), or `-5` (`PART_BAD_FILTER`).
+#[no_mangle]
+pub unsafe extern "C" fn png_part_finish(
+    lines: *mut u8,
+    rows: usize,
+    w: usize,
+    prev: *mut u8,
+    rt: *const u8,
+    out: *mut u8,
+    info: *mut u32,
+) -> isize {
+    if lines.is_null() || prev.is_null() || out.is_null() || info.is_null() {
+        return png::PART_NOT_LINES;
+    }
+    let row_bytes = w.saturating_mul(4);
+    let stride = row_bytes.saturating_add(1);
+    let lines_slice = slice::from_raw_parts_mut(lines, rows.saturating_mul(stride));
+    let prev_slice = slice::from_raw_parts_mut(prev, row_bytes);
+    let rt_table = if rt.is_null() { None } else { Some(&*(rt as *const [u8; 65536])) };
+    let out_slice = slice::from_raw_parts_mut(out, rows.saturating_mul(row_bytes));
+    let info_arr = &mut *(info as *mut [u32; 5]);
+    png::part_finish(lines_slice, rows, w, prev_slice, rt_table, out_slice, info_arr)
+}
+
 // ---- PSD --------------------------------------------------------------------------------
 
 /// Bytes `psd_pack_rows` needs in `out` for `rows` rows of `w` pixels.
@@ -1215,6 +1276,112 @@ pub unsafe extern "C" fn range_tiles_rgba(
     )
 }
 
+/// Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes (`len` bytes at `src`)
+/// into `out` (`need` bytes), stopping as soon as `need` bytes are written (`renderer/editor/inpaint_tiff.js`
+/// `unpackStrip`, K16). Returns `need as isize`, or `< 0` on error (`-1` bad arguments/compression, `-2` truncated,
+/// `-3` old-style LZW, `-4` LZW code before literal, `-5` LZW code beyond table).
+#[no_mangle]
+pub unsafe extern "C" fn tiff_unpack(compression: u32, src: *const u8, len: usize, out: *mut u8, need: usize) -> isize {
+    if !(compression == 1 || compression == 5 || compression == 32773)
+        || len > isize::MAX as usize
+        || need > isize::MAX as usize
+        || (len > 0 && src.is_null())
+        || (need > 0 && out.is_null())
+    {
+        return tiff::ERR_BAD_ARGS;
+    }
+    if need == 0 {
+        return 0;
+    }
+    let src_slice = if len == 0 { &[][..] } else { slice::from_raw_parts(src, len) };
+    let out_slice = slice::from_raw_parts_mut(out, need);
+    tiff::unpack(compression, src_slice, out_slice)
+}
+
+
+/// Multiplies the alpha channel of `rgba` (`w * h * 4` RGBA8 bytes, in place) by the depth limit weight over a
+/// `wh`-row window of `map` (and optional `guide`) starting at map row `wy0` (`inpaint_limit.js` `limitAlphaRows`, K25).
+/// When `sigma_r > 0` and `guide` is non-null, edge snap takes its reference colour from `col` (`w * h * 4` RGBA8 bytes)
+/// when `col` is non-null (`col == rgba` reads `rgba`'s RGB in place), or from `guide` sampled at `floor(mx), floor(my)`
+/// when `col` is null.
+/// `params` holds 12 `f64`s: `[m0, m1, m2, m3, m4, m5, lo, hi, f_lo, f_hi, sigma_r, tau]`.
+/// `flags`: bit 0 = `limit.invert`.
+/// Returns `1` on success, `0` when refused.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn limit_alpha_rows(
+    rgba: *mut u8,
+    col: *const u8,
+    map: *const u16,
+    guide: *const u8,
+    mw: usize,
+    mh: usize,
+    wy0: usize,
+    wh: usize,
+    x0: i32,
+    y0: i32,
+    w: usize,
+    h: usize,
+    params: *const f64,
+    flags: u32,
+) -> u32 {
+    if rgba.is_null()
+        || map.is_null()
+        || params.is_null()
+        || mw == 0
+        || mh == 0
+        || wh == 0
+        || wy0 >= mh
+        || wy0.saturating_add(wh) > mh
+        || w == 0
+        || h == 0
+    {
+        return 0;
+    }
+    let Some(win_len) = wh.checked_mul(mw) else { return 0 };
+    let Some(rgba_len) = w.checked_mul(h).and_then(|n| n.checked_mul(4)) else { return 0 };
+
+    let p_slice = slice::from_raw_parts(params, 12);
+    if p_slice.iter().any(|x| !x.is_finite()) {
+        return 0;
+    }
+    let mut p = [0.0f64; 12];
+    p.copy_from_slice(p_slice);
+
+    let col_from_rgba = col == rgba as *const u8;
+    let col_slice = if col.is_null() || col_from_rgba {
+        None
+    } else {
+        Some(slice::from_raw_parts(col, rgba_len))
+    };
+    let map_slice = slice::from_raw_parts(map, win_len);
+    let guide_slice = if guide.is_null() {
+        None
+    } else {
+        let Some(guide_len) = win_len.checked_mul(4) else { return 0 };
+        Some(slice::from_raw_parts(guide, guide_len))
+    };
+    let rgba_slice = slice::from_raw_parts_mut(rgba, rgba_len);
+
+    range::limit_alpha_rows(
+        rgba_slice,
+        col_slice,
+        col_from_rgba,
+        map_slice,
+        guide_slice,
+        mw,
+        mh,
+        wy0,
+        wh,
+        x0,
+        y0,
+        w,
+        h,
+        &p,
+        flags,
+    )
+}
+
 // ---- depth map guided filter (K24) ---------------------------------------------------------
 
 /// Scratch bytes `guided_far` needs for a `rw x rh` raw disparity map and `gw x gh` working guide (8-aligned at its
@@ -1306,5 +1473,3 @@ pub unsafe extern "C" fn guided_far(
     );
     1
 }
-
-

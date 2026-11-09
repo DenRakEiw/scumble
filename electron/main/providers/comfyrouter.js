@@ -35,7 +35,10 @@
 //   freepik/*    Magnific Precision V2 (upscale): image (base64), scale_factor 2..16 -> data.generated[0] (a URL)
 //   ideogram/ideogram-4-5   Ideogram 4.5: an edit is Precise Edit (image, reference_images, mask black = edit, all
 //                data URLs; `image` selects the operation), a new image the prompt with a 1K / 2K size -> data[0].url
-//   xai/*, ideogram/ideogram-v4, krea/*   text to image only (the Router's schemas for them take no input picture)
+//   xai/*, ideogram/ideogram-v4, krea/krea-2*   text to image only (the Router's schemas for them take no input picture)
+//   krea/krea-3  Krea 3: prompt, resolution (required), thinking_mode, model, aspect_ratio, seed, image_urls -> result.urls.
+//                The pictures go up first to POST /proxy/krea/assets (multipart `file`, the key as X-API-Key; the Router's
+//                schema names its URLs as the ones always accepted, and a data URL as refused)
 //
 // A variant's `options` say what the model takes: max_images, max_bytes (per picture), pixels [min, max] (Seedream),
 // ratios (the aspect presets of the text-only models), tiers ({ "1K": 1024, .. }, Gemini's and Grok's size classes).
@@ -43,7 +46,7 @@
 // refs.instruction, numbered by that layout, so it names the pictures as the resolved markers do. A route whose layout
 // declares a drop (FLUX.1 Fill) sends the crop alone. textLayout(req) does the same for Generate new with reference
 // layers (26f): the same fields without the crop, the references numbered from 1, the edit cap as the reference cap
-// (the crop's slot becomes a reference slot); xai, ideogram and krea take no picture for a new image and declare the
+// (the crop's slot becomes a reference slot); xai, ideogram and Krea 2 take no picture for a new image and declare the
 // drop (Ideogram 4.5 would edit a picture it is given, so its new image is the prompt alone too).
 //
 // The host is api.comfy.org and never a URL from a recipe; settings.comfyrouter.base may name a loopback mock for
@@ -52,7 +55,7 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
-const { dataUri, b64, downloadImage, sleep: realSleep, fitPixels, closestAspect, closestSize, tierFor, seedOf, textShape, ideogramMask } = require("./util");
+const { dataUri, b64, downloadImage, sleep: realSleep, fitPixels, closestAspect, closestSize, editAspect, tierFor, seedOf, textShape, ideogramMask, readError } = require("./util");
 const { layoutOf, refRoles, countOf, instruction, labelParts } = require("./refs");
 const openai = require("./openai");
 const ark = require("./ark");
@@ -60,6 +63,11 @@ const flux3 = require("./flux3");
 
 /** The FLUX 3 Image model part on the Router (bfl/flux-3-image): flux3.js builds its body and reads its shape. */
 const FLUX3_MODEL = "flux-3-image";
+/** The Krea 3 model part on the Router (krea/krea-3), the one Krea model with an input picture, and its upload route. */
+const KREA3 = "krea-3";
+const KREA_ASSETS = "/proxy/krea/assets";
+const KREA3_SEEDS = 2147483648;       // the node's seed runs up to 2147483647
+const KREA3_NEGATIVE_MAX = 1024;      // the schema's maxLength
 
 const BASE = "https://api.comfy.org";
 const EDIT_WAIT_MS = 15 * 60 * 1000;
@@ -328,6 +336,59 @@ function ideogram45Text(req, o) {
     return body;
 }
 
+/**
+ * One picture of a Krea 3 run into Krea's asset store: the Router's schema takes image_urls and names this route as the
+ * one whose URLs "is always accepted" (others only in some environments, a data URL never). What ComfyUI's Krea3ImageNode
+ * sends (comfy_api_nodes/nodes_krea.py, read 2026-11-09): multipart `file` on api.comfy.org with the key, the answer's
+ * `image_url`.
+ */
+async function kreaAsset(ctx, pic, n, modelId) {
+    const test = testBase(ctx.base);
+    const fd = new FormData();
+    fd.append("file", new Blob([pic.bytes], { type: pic.mime }), `scumble-${Date.now()}-${n}.${pic.mime === "image/jpeg" ? "jpg" : "png"}`);
+    const r = await ctx.fetch((test || BASE) + KREA_ASSETS, { method: "POST", headers: { "X-API-Key": ctx.key }, body: fd });
+    if (!r.ok) throw new Error(scrub(`Comfy Router ${modelId}: the upload of the ${pic.what} failed: ${await readError(r, ctx.key)}`, ctx.key));
+    const j = (await r.json().catch(() => null)) || {};
+    const url = String(j.image_url || "");
+    if (!/^https:\/\//i.test(url) && !(test && url.startsWith(test + "/"))) throw new Error(scrub(`Comfy Router ${modelId}: the upload of the ${pic.what} answered no usable URL (${JSON.stringify(j).slice(0, 200)})`, ctx.key));
+    return url;
+}
+
+/**
+ * Krea 3's body (krea_krea-3.json): the instruction (a text run: the prompt and what its references are), `resolution`
+ * in lower case (the schema requires it: the row, on auto the smallest tier that covers the crop or the asked size),
+ * `thinking_mode` ("Ultra needs resolution 2k"; a new image from the prompt alone never goes as ultra, the node's rule),
+ * `model` Berry or Jam, the aspect: a text run's asked preset or the closest, an edit's preset the crop was widened to,
+ * else none ("omit for automatic framing"). The pictures go up last, so a body the checks refuse uploads nothing.
+ */
+async function krea3Body(req, o, pics, ctx) {
+    const p = req.params || {};
+    const text = req.kind === "text";
+    const modelId = String(req.model || "");
+    const tiers = o.tiers || { "1k": 1024, "2k": 2048 };
+    const body = { prompt: editPrompt(req, DIALECTS.krea.layout(req, o, KREA3)) };
+    let resolution = String(setting(p, "resolution") || tierFor(Math.max(+req.width || 0, +req.height || 0), tiers) || "2k").toLowerCase();
+    let thinking = setting(p, "thinking_mode") ? String(p.thinking_mode).toLowerCase() : null;
+    if (thinking === "ultra" && !pics.length) thinking = "high";
+    if (thinking === "ultra") resolution = "2k";
+    body.resolution = resolution;
+    if (thinking) body.thinking_mode = thinking;
+    if (setting(p, "model")) body.model = String(p.model);
+    const ratios = Array.isArray(o.ratios) ? o.ratios : [];
+    const aspect = text
+        ? (ratios.includes(req.aspect) ? req.aspect : ratios.length ? closestAspect(Math.max(1, +req.width || 1024), Math.max(1, +req.height || 1024), ratios) : null)
+        : editAspect(req, o).aspect;
+    if (aspect && aspect !== "auto") body.aspect_ratio = aspect;
+    if (req.seed != null && !p.random_seed) body.seed = (req.seed >>> 0) % KREA3_SEEDS;
+    if (String(req.negative || "").trim()) body.negative_prompt = String(req.negative).slice(0, KREA3_NEGATIVE_MAX);
+    if (pics.length) {
+        const urls = [];
+        for (let i = 0; i < pics.length; i++) urls.push(await kreaAsset(ctx, pics[i], i + 1, modelId));
+        body.image_urls = urls;
+    }
+    return body;
+}
+
 // ---- dialects ------------------------------------------------------------------------------------------------
 // Each: body(req, o, pics, model, ctx) -> JSON body; read(json, req, o, ctx, body) -> { bytes, mime, seed?, info? } or
 // { url } (fetched by the caller); layout(req, o, model) -> where body() puts each picture of an edit, and of a text
@@ -590,18 +651,27 @@ const DIALECTS = {
     },
 
     krea: {
-        edit: false,
-        body(req, o) {
+        // Krea 2 takes no input picture; Krea 3 edits, up to eight pictures (the Router's schema, krea_krea-3.json)
+        edit: (model) => model === KREA3,
+        // Krea 2 makes a new image from the prompt alone
+        layout(req, o, model) {
+            if (model !== KREA3) return layoutOf({ drops: NO_TEXT_REFS });
+            return layoutOf({ seq: inOrder(req, (k) => `image_urls[${k}]`), max: picturesMax(o) });
+        },
+        body(req, o, pics, model, ctx) {
+            if (model === KREA3) return krea3Body(req, o, pics, ctx);
             const p = req.params || {};
             const body = { prompt: String(req.prompt || ""), aspect_ratio: closestAspect(req.width || 1, req.height || 1, o.ratios || ["1:1"]), resolution: "1K" };
             if (setting(p, "creativity")) body.creativity = p.creativity;
             if (req.seed != null && !p.random_seed) body.seed = req.seed >>> 0;
             return body;
         },
-        read(j) {
+        read(j, req, o, ctx, body) {
             const urls = (j.result && j.result.urls) || [];
             const url = urls.find((x) => typeof x === "string" && x);
-            return url ? { url } : { refused: j.status || null };
+            if (!url) return { refused: j.status || null };
+            // Krea 3: an edit sent at a preset comes back in its shape, which the stitch stretches onto the crop
+            return req && req.kind !== "text" && body && body.aspect_ratio ? { url, info: { fit: "stretch" } } : { url };
         },
     },
 };

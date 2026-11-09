@@ -669,8 +669,8 @@ async function main() {
         let list;
         try { list = await recipes.list(RECIPES); } finally { fs.rmSync(empty, { recursive: true, force: true }); }
         const served = list.filter((r) => r.providers && r.providers.openrouter);
-        const want = ["flux2_flex", "flux2_max", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "gpt_image_2_6_flare", "gpt_image_2_6_sunburst", "grok_imagine", "krea_2", "nano_banana_2", "nano_banana_2_1", "nano_banana_2_lite", "nano_banana_pro", "recraft_v4", "seedream_5_lite", "seedream_5_pro"];
-        check("eighteen shipped recipes carry an openrouter variant, all of them builtin", eq(served.map((r) => r.id).sort(), want) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
+        const want = ["flux2_flex", "flux2_max", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "gpt_image_2_6_flare", "gpt_image_2_6_sunburst", "grok_imagine", "krea_2", "krea_3", "nano_banana_2", "nano_banana_2_1", "nano_banana_2_lite", "nano_banana_pro", "recraft_v4", "seedream_5_lite", "seedream_5_pro"];
+        check("nineteen shipped recipes carry an openrouter variant, all of them builtin", eq(served.map((r) => r.id).sort(), want) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
         const qwen = list.filter((r) => r.providers && r.providers.openrouter && /qwen/i.test(String(r.providers.openrouter.model || "")));
         check("no recipe has an openrouter variant with a Qwen model (Alibaba, the only host, has a datacentre in China)", qwen.length === 0, qwen.map((r) => r.id).join(", "));
         const bad = [];
@@ -686,8 +686,9 @@ async function main() {
             if (r.default !== raw.default) bad.push(r.id + ": the default moved from " + raw.default + " to " + r.default);
             if (r.default === "openrouter") bad.push(r.id + ": openrouter became the home provider");
             if (raw.providers.toapis && r.providerIds[0] !== "toapis") bad.push(r.id + ": toapis is not first");
-            if (!v.text || !v.text.model || !Array.isArray(v.text.sizes) || !v.text.sizes.length) bad.push(r.id + ": no text shape " + JSON.stringify(v.text));
-            else if (v.text.model !== v.model) bad.push(r.id + ": the text model " + v.text.model + " is not the edit model " + v.model);
+            // (Krea K3 Edit needs at least one picture, input_references 1 to 8: it has no Generate new)
+            if (r.id !== "krea_3" && (!v.text || !v.text.model || !Array.isArray(v.text.sizes) || !v.text.sizes.length)) bad.push(r.id + ": no text shape " + JSON.stringify(v.text));
+            else if (v.text && v.text.model !== v.model) bad.push(r.id + ": the text model " + v.text.model + " is not the edit model " + v.model);
             // a row may also go as a passthrough to the host (FLUX 3's safety_tolerance, B3)
             const passed = Object.values(o.passthrough || {}).flat();
             for (const st of v.settings || []) if (!accepts.includes(st.key) && !passed.includes(st.key)) bad.push(r.id + ": the setting " + st.key + " is neither in accepts nor a passthrough");
@@ -717,12 +718,14 @@ async function main() {
                 const extra = b ? Object.keys(b).filter((k) => !allowed(k, req.kind)) : ["no request"];
                 if (extra.length) bad.push(r.id + " edit: keys outside accepts: " + extra.join(","));
                 // an edit sends no aspect unless the variant asks for its preset (FLUX 3: edit_aspect, B3)
-                if (b && ("aspect_ratio" in b) !== (o.edit_aspect === "preset_or_auto")) bad.push(r.id + " edit: aspect_ratio " + b.aspect_ratio);
+                // ("preset_or_none", Krea K3 Edit: only a preset that fits the crop goes)
+                if (b && o.edit_aspect !== "preset_or_none" && ("aspect_ratio" in b) !== (o.edit_aspect === "preset_or_auto")) bad.push(r.id + " edit: aspect_ratio " + b.aspect_ratio);
                 if (b && accepts.includes("resolution") && !b.resolution) bad.push(r.id + " edit: no resolution");
                 if (b && refsOf(b).length !== (req.kind === "fill" ? 2 : 1)) bad.push(r.id + " edit: " + refsOf(b).length + " pictures");
                 if (b && b.model !== v.model) bad.push(r.id + " edit: model " + b.model);
                 edits++;
             }
+            if (!v.text) continue;   // Krea K3 Edit needs a picture: no Generate new
             const tparams = {};
             for (const st of v.text.settings || []) tparams[st.key] = st.spec[1].default;
             Object.assign(tparams, v.text.fixed || {});

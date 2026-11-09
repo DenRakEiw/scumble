@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-keys_no_short_write_loop-quit --offline --tiles on quit  (rc 1, 3 s)
+quit rc=1 1s FAIL
+SOME FAILED

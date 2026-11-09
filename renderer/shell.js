@@ -769,10 +769,14 @@ async function importRecipe(file) {
         const what = r.kind === "provider"
             ? `${ids.length} provider${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}`
             : `${r.mode}, ${Object.keys(r.prompt || {}).length} nodes, ${(r.settings || []).length} settings`;
-        ui.recipeNoteSet.textContent = `Imported "${r.name}" (${what})` + (r.notes && r.notes.length ? ": " + r.notes.join("; ") : ".");
+        const msg = `Imported "${r.name}" (${what})` + (r.notes && r.notes.length ? ": " + r.notes.join("; ") : ".");
+        ui.recipeNoteSet.textContent = msg;
+        if (!ui.settings.open && host.editor) host.editor.setStatus(msg, "info");
         return r;
     } catch (err) {
-        ui.recipeNoteSet.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "");
+        const msg = String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "");
+        ui.recipeNoteSet.textContent = msg;
+        if (!ui.settings.open && host.editor) host.editor.setStatus(msg, failKind(err));
         return null;
     }
 }

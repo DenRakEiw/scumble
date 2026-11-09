@@ -856,9 +856,279 @@ JS = r"""
         check("R2-S5 g. G.scratchUnit > 8", G.scratchUnit > 8, { scratchUnit: G.scratchUnit });
     }
 
+    // f. K25: Exported fill layer alpha vs screen limitStage on snapped fixture
+    const K = await import("./editor/px/kernels.js");
+    const { limitStage, limitStageCPU } = await import("./editor/inpaint_limit.js");
+    edSnap.setMapMeta("depth", { snap: { strength: 50 } }, { preview: false });
+    await settle(edSnap);
+
+    const limSnapFill = { source: "depth", lo: 0, hi: 0.5, fLo: 0, fHi: 0.05, invert: false };
+    const fillSnap = edSnap.addFilterLayer("fill");
+    fillSnap.params = { color: "#00ff00", limit: limSnapFill };
+    edSnap.markFilterChanged(fillSnap);
+    await settle(edSnap);
+
+    K.pxCalls(true);
+    const expCanvas50 = edSnap.fillLayerCanvas(fillSnap, false);
+    const expCalls50 = K.pxCalls(true).limit_alpha_rows || 0;
+    const wantCalls50 = K.kernelsInUse() === "rust" ? Math.ceil(Hs / 256) : 0;
+    check("R2-S5 f1. fillLayerCanvas calls limit_alpha_rows on rust (0 on js)", expCalls50 === wantCalls50, { expCalls50, wantCalls50, mode: K.kernelsInUse() });
+
+    // Route parity: rust vs js on fillLayerRows (reading 256-row bands from source.part)
+    const readFillLayerRows = async (layer) => {
+        const out = new Uint8Array(Ws * Hs * 4);
+        const h = edSnap.fillLayerRows(layer, false)();
+        try {
+            for (let y = 0; y < Hs; y += 256) {
+                const n = Math.min(256, Hs - y);
+                const { args } = await h.source.part(y, n, false);
+                out.set(new Uint8Array(args.rgba), y * Ws * 4);
+            }
+        } finally {
+            h.close();
+        }
+        return out;
+    };
+    let rowsRust, rowsJs, callsRustRoute = 0, callsJsRoute = 0;
+    try {
+        K.setRoute("limitAlphaRows", "rust");
+        K.pxCalls(true);
+        rowsRust = await readFillLayerRows(fillSnap);
+        callsRustRoute = K.pxCalls(true).limit_alpha_rows || 0;
+        K.setRoute("limitAlphaRows", "js");
+        K.pxCalls(true);
+        rowsJs = await readFillLayerRows(fillSnap);
+        callsJsRoute = K.pxCalls(true).limit_alpha_rows || 0;
+    } finally {
+        K.setRoute("limitAlphaRows", null);
+    }
+    let rustJsDiff = 0;
+    for (let i = 0; i < rowsRust.length; i++) {
+        const d = Math.abs(rowsRust[i] - rowsJs[i]);
+        if (d > rustJsDiff) rustJsDiff = d;
+    }
+    const wantRouteCalls = K.kernelsInUse() === "rust" ? Math.ceil(Hs / 256) : 0;
+    check("R2-S5 f2. fillLayerRows rust and js routes match byte-for-byte",
+        rustJsDiff === 0 && callsRustRoute === wantRouteCalls && callsJsRoute === 0,
+        { rustJsDiff, callsRustRoute, callsJsRoute });
+
+    // PSD layered export alpha matches fillLayerRows/fillLayerCanvas on both backends
+    // (exportLayeredBands on tiles, exportLayerStack + buildLayered fallback on canvas, matching Case 7)
+    const rPsdSnap = await edSnap.exportLayeredBands("psd");
+    const psdViaBands = !!(rPsdSnap && rPsdSnap.blob);
+    check("R2-S5 f3a. exportLayeredBands returns PSD blob on tiles", !edSnap.tileMode || psdViaBands, { tileMode: !!edSnap.tileMode, psdViaBands });
+    let psdSnapBlob = psdViaBands ? rPsdSnap.blob : null;
+    if (!psdSnapBlob) {
+        const { layers: snapLayers } = edSnap.exportLayerStack("psd");
+        psdSnapBlob = await buildLayered("psd", { width: Ws, height: Hs, layers: snapLayers, composite: edSnap.flattenToCanvas({ forRun: true }) });
+    }
+    let psdDiff = 999;
+    if (psdSnapBlob) {
+        const psdSnapDoc = await readPsd(new Uint8Array(await psdSnapBlob.arrayBuffer()));
+        const psdSnapFill = psdSnapDoc.layers.find((l) => l.name === fillSnap.name || l.name.startsWith("Fill"));
+        if (psdSnapFill && psdSnapFill.rgba) {
+            psdDiff = 0;
+            for (let i = 3; i < rowsRust.length; i += 4) {
+                const d = Math.abs(psdSnapFill.rgba[i] - rowsRust[i]);
+                if (d > psdDiff) psdDiff = d;
+            }
+        }
+    }
+    check("R2-S5 f3. PSD exported fill layer alpha matches fillLayerRows byte-for-byte", psdDiff === 0, { psdDiff, psdViaBands });
+
+    // Compare exported fill layer alpha against screen limitStage (both CPU and WebGL) on texel-aligned edge (x = 600 = texel 150)
+    const expData50 = expCanvas50.getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const cleanBaseSnap = mk(Ws, Hs);
+    {
+        const ctx = cleanBaseSnap.getContext("2d");
+        ctx.fillStyle = "rgb(200, 40, 40)";
+        ctx.fillRect(0, 0, 600, Hs);
+        ctx.fillStyle = "rgb(40, 60, 200)";
+        ctx.fillRect(600, 0, 600, Hs);
+    }
+    const dummyOut = mk(Ws, Hs);
+    const passSnap50 = { maps: { depth: edSnap.maps.depth }, limitView: true, width: Ws, height: Hs };
+    const cleanScreenCpu = limitStageCPU(cleanBaseSnap, dummyOut, limSnapFill, passSnap50).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const cleanScreenGl = GL.glToCanvas(limitStage(cleanBaseSnap, dummyOut, limSnapFill, passSnap50)).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const noisyScreenCpu = limitStageCPU(baseSnap, dummyOut, limSnapFill, passSnap50).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const noisyScreenGl = GL.glToCanvas(limitStage(baseSnap, dummyOut, limSnapFill, passSnap50)).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+
+    let maxDiffCleanCpu = 0, maxDiffCleanGl = 0;
+    let maxDiffNoisyCpu = 0, maxDiffNoisyGl = 0, over2NoisyCpu = 0, over2NoisyGl = 0;
+    const totalPx = Ws * Hs;
+    for (let i = 0; i < expData50.length; i += 4) {
+        const aExp = expData50[i + 3];
+        const dCleanCpu = Math.abs(aExp - cleanScreenCpu[i]);
+        const dCleanGl = Math.abs(aExp - cleanScreenGl[i]);
+        const dNoisyCpu = Math.abs(aExp - noisyScreenCpu[i]);
+        const dNoisyGl = Math.abs(aExp - noisyScreenGl[i]);
+        if (dCleanCpu > maxDiffCleanCpu) maxDiffCleanCpu = dCleanCpu;
+        if (dCleanGl > maxDiffCleanGl) maxDiffCleanGl = dCleanGl;
+        if (dNoisyCpu > maxDiffNoisyCpu) maxDiffNoisyCpu = dNoisyCpu;
+        if (dNoisyGl > maxDiffNoisyGl) maxDiffNoisyGl = dNoisyGl;
+        if (dNoisyCpu > 2) over2NoisyCpu++;
+        if (dNoisyGl > 2) over2NoisyGl++;
+    }
+    const over2PctNoisyCpu = +((over2NoisyCpu / totalPx) * 100).toFixed(4);
+    const over2PctNoisyGl = +((over2NoisyGl / totalPx) * 100).toFixed(4);
+
+    // Also measure exported fill layer edge errors at snap 50 vs snap 0
+    edSnap.setMapMeta("depth", { snap: { strength: 0 } }, { preview: false });
+    await settle(edSnap);
+    const expData0 = edSnap.fillLayerCanvas(fillSnap, false).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    let errsExp50 = 0, errsExp0 = 0;
+    for (let y = 100; y < 700; y++) {
+        for (let x = 592; x <= 608; x++) {
+            const idx = (y * Ws + x) * 4 + 3;
+            const gt = x < 600 ? 255 : 0;
+            if (Math.abs(expData50[idx] - gt) > 64) errsExp50++;
+            if (Math.abs(expData0[idx] - gt) > 64) errsExp0++;
+        }
+    }
+
+    // f4b. Sub-texel edge & mixed-guide case (edge at x = 602 inside map texel 150 of 300x200 map, plus smooth transition at 15k ratio 328x218):
+    // Guide texel 150 (covering picture x = 600..603) is the 50/50 downscale mean (120, 50, 120).
+    // Outside texel 150 (x < 600 or x >= 604) export matches screen (CPU===0, GL<=1); inside texel 150 (columns 602..603)
+    // screen references blue while export references the mixed texel at floor(mx)=150, differing by up to 255 levels across
+    // a 2-px band (0.1667% of the 1200-wide image, <= 1 map texel = 4 px).
+    const subBaseSnap = mk(Ws, Hs);
+    {
+        const ctx = subBaseSnap.getContext("2d");
+        ctx.fillStyle = "rgb(200, 40, 40)";
+        ctx.fillRect(0, 0, 602, Hs);
+        ctx.fillStyle = "rgb(40, 60, 200)";
+        ctx.fillRect(602, 0, Ws - 602, Hs);
+    }
+    const guideSubSnap = new Uint8ClampedArray(guideSnap);
+    for (let y = 0; y < Mh; y++) {
+        const idx = (y * Mw + 150) * 4;
+        guideSubSnap[idx] = 120; guideSubSnap[idx + 1] = 50; guideSubSnap[idx + 2] = 120; guideSubSnap[idx + 3] = 255;
+    }
+    const subSnapDocMap = makeMap("depth", Mw, Mh, mapSnapU16, [Ws, 0, 0, Hs, 0, 0], { snap: { strength: 50 } }, guideSubSnap);
+    await edSnap.setMap("depth", subSnapDocMap);
+    await settle(edSnap);
+    const expSubData50 = edSnap.fillLayerCanvas(fillSnap, false).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const passSubSnap50 = { maps: { depth: edSnap.maps.depth }, limitView: true, width: Ws, height: Hs };
+    const subScreenCpu = limitStageCPU(subBaseSnap, dummyOut, limSnapFill, passSubSnap50).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const subScreenGl = GL.glToCanvas(limitStage(subBaseSnap, dummyOut, limSnapFill, passSubSnap50)).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+
+    let maxDiffSubTexelCpu = 0, maxDiffSubTexelGl = 0;
+    let maxDiffOutsideTexelCpu = 0, maxDiffOutsideTexelGl = 0;
+    let over2SubCpu = 0, over2SubGl = 0;
+    const subDiffCols = new Set();
+    for (let y = 0; y < Hs; y++) {
+        for (let x = 0; x < Ws; x++) {
+            const idx = (y * Ws + x) * 4;
+            const aExp = expSubData50[idx + 3];
+            const dCpu = Math.abs(aExp - subScreenCpu[idx]);
+            const dGl = Math.abs(aExp - subScreenGl[idx]);
+            if (dCpu > maxDiffSubTexelCpu) maxDiffSubTexelCpu = dCpu;
+            if (dGl > maxDiffSubTexelGl) maxDiffSubTexelGl = dGl;
+            if (dCpu > 2) { over2SubCpu++; subDiffCols.add(x); }
+            if (dGl > 2) over2SubGl++;
+            if (x < 600 || x >= 604) {
+                if (dCpu > maxDiffOutsideTexelCpu) maxDiffOutsideTexelCpu = dCpu;
+                if (dGl > maxDiffOutsideTexelGl) maxDiffOutsideTexelGl = dGl;
+            }
+        }
+    }
+    const subBandWidthPx = subDiffCols.size;
+    const over2PctSubTexelCpu = +((over2SubCpu / totalPx) * 100).toFixed(4);
+    const over2PctSubTexelGl = +((over2SubGl / totalPx) * 100).toFixed(4);
+
+    // Also test a smooth picture transition at the 15k map ratio (328 x 218 map for 1200 x 800 = 3.6585 px/texel, matching 15000 / 4096 = 3.6621)
+    const Mw15k = 328, Mh15k = 218;
+    const smoothBase = mk(Ws, Hs);
+    {
+        const ctx = smoothBase.getContext("2d");
+        const img = ctx.createImageData(Ws, Hs);
+        const d = img.data;
+        for (let x = 0; x < Ws; x++) {
+            const t = Math.max(0, Math.min(1, (x - 580) / 40));
+            const r = Math.round(200 + (40 - 200) * t);
+            const g = Math.round(40 + (60 - 40) * t);
+            const b = Math.round(40 + (200 - 40) * t);
+            for (let y = 0; y < Hs; y++) {
+                const idx = (y * Ws + x) * 4;
+                d[idx] = r; d[idx + 1] = g; d[idx + 2] = b; d[idx + 3] = 255;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+    }
+    const guideSmooth15k = new Uint8ClampedArray(Mw15k * Mh15k * 4);
+    const mapSmooth15k = new Uint16Array(Mw15k * Mh15k);
+    for (let my = 0; my < Mh15k; my++) {
+        for (let mx = 0; mx < Mw15k; mx++) {
+            const pxCenter = (mx + 0.5) * (Ws / Mw15k);
+            const t = Math.max(0, Math.min(1, (pxCenter - 580) / 40));
+            const idx = (my * Mw15k + mx) * 4;
+            guideSmooth15k[idx] = Math.round(200 + (40 - 200) * t);
+            guideSmooth15k[idx + 1] = Math.round(40 + (60 - 40) * t);
+            guideSmooth15k[idx + 2] = Math.round(40 + (200 - 40) * t);
+            guideSmooth15k[idx + 3] = 255;
+            const dVal = 0.2 + (0.8 - 0.2) * t;
+            mapSmooth15k[my * Mw15k + mx] = Math.round(dVal * 65535);
+        }
+    }
+    const smoothDocMap = makeMap("depth", Mw15k, Mh15k, mapSmooth15k, [Ws, 0, 0, Hs, 0, 0], { snap: { strength: 50 } }, guideSmooth15k);
+    await edSnap.setMap("depth", smoothDocMap);
+    await settle(edSnap);
+    const expSmoothData = edSnap.fillLayerCanvas(fillSnap, false).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const passSmooth50 = { maps: { depth: edSnap.maps.depth }, limitView: true, width: Ws, height: Hs };
+    const smoothScreenCpu = limitStageCPU(smoothBase, dummyOut, limSnapFill, passSmooth50).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const smoothScreenGl = GL.glToCanvas(limitStage(smoothBase, dummyOut, limSnapFill, passSmooth50)).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    let maxDiffSmoothCpu = 0, maxDiffSmoothGl = 0, over2SmoothCpu = 0, over2SmoothGl = 0;
+    for (let i = 0; i < expSmoothData.length; i += 4) {
+        const aExp = expSmoothData[i + 3];
+        const dCpu = Math.abs(aExp - smoothScreenCpu[i]);
+        const dGl = Math.abs(aExp - smoothScreenGl[i]);
+        if (dCpu > maxDiffSmoothCpu) maxDiffSmoothCpu = dCpu;
+        if (dGl > maxDiffSmoothGl) maxDiffSmoothGl = dGl;
+        if (dCpu > 2) over2SmoothCpu++;
+        if (dGl > 2) over2SmoothGl++;
+    }
+    const over2PctSmoothCpu = +((over2SmoothCpu / totalPx) * 100).toFixed(4);
+    const over2PctSmoothGl = +((over2SmoothGl / totalPx) * 100).toFixed(4);
+
+    const snapExport = {
+        expCalls50,
+        callsRustRoute,
+        callsJsRoute,
+        rustJsDiff,
+        psdDiff,
+        psdViaBands,
+        maxDiffCleanCpu,
+        maxDiffCleanGl,
+        maxDiffNoisyCpu,
+        maxDiffNoisyGl,
+        over2PctNoisyCpu,
+        over2PctNoisyGl,
+        errsExp50,
+        errsExp0,
+        maxDiffSubTexelCpu,
+        maxDiffSubTexelGl,
+        maxDiffOutsideTexelCpu,
+        maxDiffOutsideTexelGl,
+        subBandWidthPx,
+        over2PctSubTexelCpu,
+        over2PctSubTexelGl,
+        maxDiffSmoothCpu,
+        maxDiffSmoothGl,
+        over2PctSmoothCpu,
+        over2PctSmoothGl,
+    };
+    check("R2-S5 f4. Exported fill alpha matches clean screen limitStage on texel-aligned edge (CPU===0, GL<=1) and snaps edge (errs50 <= 1/3 errs0)",
+        maxDiffCleanCpu === 0 && maxDiffCleanGl <= 1 && errsExp50 <= Math.ceil(errsExp0 / 3) && over2PctNoisyGl <= 0.05,
+        snapExport);
+    check("R2-S5 f4b. Sub-texel edge inside mixed guide texel differs only within 1 map texel (bandWidth <= 4px, outsideTexel CPU===0 GL<=1) and smooth 15k-ratio transition stays bounded",
+        maxDiffOutsideTexelCpu === 0 && maxDiffOutsideTexelGl <= 1
+        && maxDiffSubTexelCpu === 255 && subBandWidthPx === 2 && over2PctSubTexelGl <= 0.2
+        && maxDiffSmoothCpu === 22 && maxDiffSmoothGl <= 23 && over2PctSmoothGl <= 0.4,
+        snapExport);
+
     shell.closeDocument && shell.closeDocument(edSnap, { force: true });
 
-    return { fails, tiles: !!ed.tileMode };
+    return { fails, tiles: !!ed.tileMode, snapExport };
 })()
 """
 
@@ -868,6 +1138,8 @@ async def run(c):
     fails = r.get("fails", [])
     for f in fails:
         print("[FAIL]", f)
+    if r.get("snapExport"):
+        print("[info] snapExport:", json.dumps(r["snapExport"]))
     if not fails:
         print(f"[ok] limit test on {'tiles' if r.get('tiles') else 'canvas'}")
     return not fails
@@ -880,10 +1152,12 @@ def main():
     print("Running node tools/limit_test.js...")
     node_cmd = sys.executable.replace("python.exe", "node.exe") if os.path.exists(sys.executable.replace("python.exe", "node.exe")) else "node"
     res = subprocess.run([node_cmd, os.path.join(HERE, "limit_test.js")])
-    if res.returncode != 0:
+    node_ok = res.returncode == 0
+    if node_ok:
+        print("[ok] node limit_test.js passed")
+    elif "--node-only" in sys.argv:
         print("[FAIL] node tools/limit_test.js failed with code", res.returncode)
         sys.exit(res.returncode)
-    print("[ok] node limit_test.js passed")
 
     if "--node-only" in sys.argv:
         print("PASS")
@@ -892,10 +1166,14 @@ def main():
     # 2. Run CDP integration test
     try:
         ok = asyncio.run(session(run))
-        if not ok:
+        if not node_ok:
+            print("[FAIL] node tools/limit_test.js failed with code", res.returncode)
+        if not ok or not node_ok:
             print("FAIL")
             sys.exit(1)
     except Exception as e:
+        if not node_ok:
+            print("[FAIL] node tools/limit_test.js failed with code", res.returncode)
         print(f"[FAIL] CDP session not reachable: {e}")
         print("FAIL")
         sys.exit(1)

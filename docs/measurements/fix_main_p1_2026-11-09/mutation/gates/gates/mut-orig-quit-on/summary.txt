@@ -1,0 +1,2 @@
+quit rc=0 34s PASS
+ALL PASS

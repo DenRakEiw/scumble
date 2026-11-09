@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-settings_no_fsync-quit --offline --tiles on quit  (rc 1, 12 s)
+quit rc=1 6s FAIL
+SOME FAILED

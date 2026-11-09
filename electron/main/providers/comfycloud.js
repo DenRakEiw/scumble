@@ -41,7 +41,7 @@
 
 const { randomUUID } = require("node:crypto");
 const path = require("node:path");
-const { readError, sleep, num, closestAspect } = require("./util");
+const { readError, sleep, num, closestAspect, editAspect } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://cloud.comfy.org";
@@ -68,6 +68,15 @@ const GEMINI_AR = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:
 // `model.complexity` (low / medium / high, the node's default high), which the node's other models do not have
 const GPT26 = /gpt-image-2\.6/;
 const GPT_COMPLEXITY = ["low", "medium", "high"];
+
+// Krea 3 on Krea3ImageNode (its spec read on Comfy Cloud on 2026-11-09, tools/refs/comfy_cloud/nodes/Krea3ImageNode.json;
+// comfy_api_nodes/nodes_krea.py of the user's ComfyUI v0.44.0): one model in a dynamic combo, every other input dotted
+// under it, the pictures in an autogrow list named image_0 .. image_7 (a TemplatePrefix counts from 0: _io.py, and
+// Comfy's template api_krea3_image_edit wires model.images.image_0). Also a new image when no picture is connected;
+// "ultra" needs a picture and the node takes a seed up to 2147483647.
+const KREA3_ASPECTS = ["1:1", "4:5", "3:4", "2:3", "9:16", "5:4", "4:3", "3:2", "16:9", "21:9"];
+const KREA3_IMAGE = "model.images.image_";
+const KREA3_SEEDS = 2147483648;
 
 // How each partner node is wired. `g` is the graph builder: g.crop / g.refs are [node id, 0]
 // image links, g.mask() a MASK link (null without a mask), g.set(key, value) writes an input.
@@ -113,6 +122,17 @@ const SHAPES = {
         g.set("model.width", w); g.set("model.height", h);
         g.images("model.images.image_", [g.crop, ...g.refs]);
     },
+    // an edit the crop and the references, a new image (no crop) its references alone or none; the Settings rows
+    // (model.resolution, model.thinking_mode) overwrite the defaults set here, the node requires every one of them
+    Krea3ImageNode(g, v) {
+        g.set("model", v.model); g.set("model.prompt", v.prompt);
+        g.set("model.resolution", "2K"); g.set("model.thinking_mode", "fast"); g.set("model.precise_edit", false);
+        g.set("model.seed", v.seed % KREA3_SEEDS);
+        g.set("model.aspect_ratio", g.crop
+            ? editAspect(v, { ratios: KREA3_ASPECTS }).aspect
+            : (KREA3_ASPECTS.includes(v.aspect) ? v.aspect : closestAspect(Math.max(1, +v.width || 1024), Math.max(1, +v.height || 1024), KREA3_ASPECTS)));
+        g.images(KREA3_IMAGE, g.crop ? [g.crop, ...g.refs] : g.refs, 0);
+    },
     FluxProFillNode(g, v) {
         const m = g.mask();
         if (!m) throw new Error("Flux.1 Fill on Comfy Cloud needs a selection mask.");
@@ -154,6 +174,7 @@ const NODE_PICTURES = {
     ByteDanceSeedreamNodeV3: (model) => (/lite/i.test(String(model || "")) ? 14 : 10),
     Flux2ImageNode: 8,
     QwenImageEditApi: 3,
+    Krea3ImageNode: 8,
 };
 const picturesOf = (node, model) => (typeof NODE_PICTURES[node] === "function" ? NODE_PICTURES[node](model) : NODE_PICTURES[node]);
 
@@ -196,7 +217,20 @@ const LAYOUTS = {
     RecraftCreativeUpscaleNode: () => cropOnly("image"),
     RTXVideoSuperResolution: () => cropOnly("images"),
     QwenImageEditApi: (req) => list("QwenImageEditApi", req),
+    Krea3ImageNode: (req) => layoutOf({ seq: [["crop", `${KREA3_IMAGE}0`], ...refRoles(req).map(([role, i]) => [role, `${KREA3_IMAGE}${i + 1}`, i])], max: picturesOf("Krea3ImageNode", req.model) }),
 };
+
+// The partner nodes that make a new image themselves (Generate new without a graph of its own): where its references go
+const TEXT_NODES = {
+    Krea3ImageNode: (req) => layoutOf({ seq: refRoles(req).map(([role, i]) => [role, `${KREA3_IMAGE}${i}`, i]), max: picturesOf("Krea3ImageNode", req.model) }),
+};
+const textNode = (req) => (req.options && !req.options.graph && Object.prototype.hasOwnProperty.call(TEXT_NODES, String(req.options.node || "")) ? String(req.options.node) : null);
+
+/** Where the references of a new image go: a partner node that makes one takes them, any other route the prompt alone. */
+function textLayout(req) {
+    const node = textNode(req);
+    return node ? TEXT_NODES[node](req) : layoutOf({ drops: "Comfy Cloud makes a new image from the prompt alone: reference images are left out" });
+}
 
 /** Magnific's nodes take 2x, 4x, 8x or 16x. */
 function magnificFactor(f) {
@@ -241,6 +275,10 @@ const AFTER_PARAMS = {
         if (!GPT26.test(String(v.model || ""))) { delete inputs["model.complexity"]; return; }
         const c = String(inputs["model.complexity"] || "").toLowerCase();
         inputs["model.complexity"] = GPT_COMPLEXITY.includes(c) ? c : "high";
+    },
+    // the node refuses "ultra" with no picture connected: a new image from the prompt alone goes as "high"
+    Krea3ImageNode(inputs) {
+        if (inputs["model.thinking_mode"] === "ultra" && !Object.keys(inputs).some((k) => k.startsWith(KREA3_IMAGE))) inputs["model.thinking_mode"] = "high";
     },
 };
 
@@ -600,18 +638,20 @@ async function buildDetached(req, ctx) {
 async function buildGraph(req, ctx, node) {
     if (req.options && req.options.graph) return buildDetached(req, ctx);
     // the layout first: it refuses what the node cannot take (no node, Fill without a mask) before any upload
-    const lay = layout(req);
+    const text = req.kind === "text";
+    const lay = text ? textLayout(req) : layout(req);
     const max = +lay.max > 0 ? +lay.max : null, count = countOf(lay);
     // index.js refuses a run past the node's count before this; the check keeps a direct call from uploading one
     if (max != null && count > max) throw new Error(`Comfy Cloud ${node} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${count}: hide reference layers or turn Original off.`);
-    const vals = { prompt: req.prompt || "", negative: req.negative || "", model: req.model, seed: req.seed != null && !req.params.random_seed ? (req.seed >>> 0) : Math.floor(Math.random() * 2147483647), width: req.width, height: req.height, factor: req.factor, image: req.image };
+    const vals = { prompt: req.prompt || "", negative: req.negative || "", model: req.model, seed: req.seed != null && !req.params.random_seed ? (req.seed >>> 0) : Math.floor(Math.random() * 2147483647), width: req.width, height: req.height, factor: req.factor, image: req.image, aspect: req.aspect || null, cropAspect: req.cropAspect || null };
     // what a node refuses by its own numbers, before any upload (its SHAPE checks the same as it wires them)
     if (BEFORE_UPLOAD[node]) BEFORE_UPLOAD[node](vals);
     const stamp = Date.now().toString(36);
     const graph = {};
     let n = 0;
     const load = (file) => { const id = String(++n); graph[id] = { class_type: "LoadImage", inputs: { image: file } }; return [id, 0]; };
-    const crop = load(await put(ctx, req.image, `scumble-${stamp}-crop.png`));
+    // a new image has no crop (a partner node that makes one: textLayout)
+    const crop = text ? null : load(await put(ctx, req.image, `scumble-${stamp}-crop.png`));
     // the references the node wires, in the order its image list takes them; one it does not wire is never uploaded
     const refs = [];
     for (const p of lay.pictures.filter((x) => x.ref != null && x.n != null).sort((a, b) => a.n - b.n)) {
@@ -624,7 +664,8 @@ async function buildGraph(req, ctx, node) {
     const g = {
         crop, refs,
         set(k, v) { if (v !== undefined) partner.inputs[k] = v; },
-        images(prefix, links) { links.forEach((l, i) => { partner.inputs[prefix + (i + 1)] = l; }); },
+        // `first`: the slot number of the first picture (an autogrow by prefix counts from 0, a named list from 1)
+        images(prefix, links, first = 1) { links.forEach((l, i) => { partner.inputs[prefix + (i + first)] = l; }); },
         mask() {
             if (!uploadedMask || (req.kind === "edit" && !(req.options && req.options.mask))) return null;
             if (!maskLink) {
@@ -720,12 +761,15 @@ module.exports = {
     keyHint: "API key from platform.comfy.org (Comfy Cloud needs a paid plan; Comfy Router and the Partner API run on the same key with credits only)",
     edit(req, ctx) { return runOn(req, ctx, EDIT_WAIT_MS); },
     relight(req, ctx) { return runOn(req, ctx, EDIT_WAIT_MS); },
-    // Generate new: only a Comfy Cloud recipe's own text-to-image graph (V6 step 5); the partner nodes take no text run
+    // Generate new: a Comfy Cloud recipe's own text-to-image graph (V6 step 5), or a partner node that makes new images
+    // itself (TEXT_NODES: Krea 3, its references alone in the image list); the other partner nodes take no text run
     generate(req, ctx) {
-        if (!(req.options && req.options.graph)) return Promise.reject(new Error("Comfy Cloud makes a new image only through a Comfy Cloud recipe's own graph; pick another provider for this model."));
-        return runOn({ ...req, image: null, mask: null, references: [] }, ctx, EDIT_WAIT_MS);
+        const graph = !!(req.options && req.options.graph);
+        if (!graph && !textNode(req)) return Promise.reject(new Error("Comfy Cloud makes a new image only through a Comfy Cloud recipe's own graph; pick another provider for this model."));
+        return runOn({ ...req, image: null, mask: null, references: graph ? [] : req.references || [] }, ctx, EDIT_WAIT_MS);
     },
     layout,
+    textLayout,
     upscale(req, ctx) {
         if (!req.image) return Promise.reject(new Error("Comfy Cloud: no picture to upscale."));
         return runOn({ ...req, references: [], mask: null }, ctx, UPSCALE_WAIT_MS);

@@ -1,0 +1,3 @@
+pxjobs rc=0 113s PASS
+nodecopy rc=0 18s PASS
+ALL PASS

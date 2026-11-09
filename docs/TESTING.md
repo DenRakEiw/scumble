@@ -605,6 +605,12 @@ or models: two local HTTP servers as two hosts, a fetch stub for huggingface.co 
 sha256, the resume cases, sets in their own folder, the overall progress, the free-disk and terms refusals, the
 CorridorKey placeholder, `tools/ck2_catalogue.js`) and `node tools/scan_test.js` (the set's names at small sizes).
 
+Krea 3 Edit (`recipes/krea_3.json`, docs/RECIPES.md "Krea 3 Edit"): `node tools/krea3_test.js` (plain Node, run by the
+`recipes` gate; a scripted fetch plays each of the seven hosts) holds every request to the host's saved schema or field
+list in `docs/research/krea3_2026-11-09/` and `tools/refs/`: the pictures, the sizes and aspect presets, each route's
+planning row, Comfy Router's upload to `/proxy/krea/assets`, the `image_0` slots of the Comfy Cloud node. Light tier: no
+live run.
+
 Ideogram 4.5 (`recipes/ideogram_4_5.json`, `electron/main/providers/replicate.js`, `util.js` `ideogramMask`,
 `docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com and
 api.wavespeed.ai, 149 checks; 67 of them Replicate's, I1) pins
@@ -962,6 +968,21 @@ sequential gate (`run_gates_both.sh` without `--shards`, or `run_gates.sh`) befo
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-11-09 (`ag-fix-prov`, `run_gates_both.sh fix-prov` and `fix-prov-openrouter-rerun`..`rerun3`): `openrouter_test.py`
+  `an_edit_variant_sends_no_mask` failed 3 of 6 runs (`no result arrived: OpenRouter answered after 0 s.`, tiles in
+  `fix-prov`, canvas in `rerun`, tiles in `rerun2`, both green in `rerun3`). Ruled out: `fix-prov`'s provider changes
+  (`openrouter.js` was untouched, and `util.js` `jsonError`/`errorText`/`askStop` only run on error or cancel, whereas
+  the mock returned HTTP 200 and the status bar read `OpenRouter answered after 0 s.`). Cause: `host.js:2485` names each
+  provider result with 1-second resolution (`n${editor.node.id}_result_${stamp}.png`), `openrouter_mock.py` returns the
+  exact same PNG bytes for `edit_on_a_shipped_variant` and `an_edit_variant_sends_no_mask`, and since `documents/D1`
+  (`b3fe5cf5`) `storeMirrorFile` (`overwrite: false` in `electron/main/files.js`) deduplicates by content hash
+  (`contentName`, `stem~<hash>.png`) instead of `freeName` (`stem (1).png`); when both steps finish in the same UTC
+  second on node 1, `/upload/image` returns the identical `filename` and `inpaint_canvas.js:19303`
+  (`this.seenResults.has(key)`) drops the second result. In the same gate run (`fix-prov`), `generate` after
+  `comfyrouter recipes` failed `dialog_opens_and_computes_the_size` (`size note wrong: 576 × 1024 px`) on both backends
+  and passed when run without `comfyrouter` before `recipes` (`fix-prov-gen-rerun`): `comfyrouter_test.py:270` leaves
+  `#shell-recipe.value = "gpt_image_2"` on a fresh profile, which `recipes_test.py` saves as `window.__prev` and
+  restores at cleanup instead of `"flux2_klein_local"`.
 - 2026-11-08 (`wasm-kernels`, K27, `run_gates_both.sh k27` and `k27-brush`): the `brush` gate's node reader
   (`tools/brush_test.js`) printed every check and `RESULT PASS` and then never exited, so the gate ran out of its 420 s
   with "RESULT FAIL (reader)" before its in-app part: both sides in the first run, the canvas side in the rerun (the

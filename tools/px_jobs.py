@@ -172,6 +172,7 @@ BODY = """
     const RNGDK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "rangeDepth"));
     const RNGLK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "rangeLuma"));
     const RNGCK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "rangeColor"));
+    const LIMK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "limitAlphaRows"));
     const GUIDK = !!(KM.ROUTE_KINDS && Object.prototype.hasOwnProperty.call(KM.ROUTE_KINDS, "guidedFar"));
     const COMBINE = { ms: 0, n: 0 }, INVERT = { ms: 0, n: 0 };
     const combine0 = T.TileMaskPixels.prototype.combine, invert0 = T.TileMaskPixels.prototype.invert;
@@ -833,6 +834,10 @@ BODY = """
             const r = routeOf("rangeColor"), n = jobs.range_tiles_rgba || 0, want = r === "rust" ? Math.ceil(H / 256) : 0;
             if (n !== want) bad.push(`rangeColor=${r}: the jobs called range_tiles_rgba ${n} times, for ${want} tile rows`);
         }
+        if (LIMK && row.job === "fill_limit") {
+            const r = routeOf("limitAlphaRows"), n = win.limit_alpha_rows || 0, want = r === "rust" ? (row.bands || 0) : 0;
+            if (n !== want) bad.push(`limitAlphaRows=${r}: the window called limit_alpha_rows ${n} times, for ${want} of the row's ${row.bands || 0} bands`);
+        }
         if (GUIDK && (row.job === "depth_guide" || row.job === "depth_guide_model")) {
             const r = routeOf("guidedFar"), n = jobs.guided_far || 0, want = r === "rust" ? 1 : 0;
             if (n !== want) bad.push(`guidedFar=${r}: the jobs called guided_far ${n} times, for ${want}`);
@@ -1016,7 +1021,7 @@ KERNEL = {"mips_direct": ["kernel"], "mips_whole": ["kernel"], "band": ["kernel"
           "wand_band": ["flood", "clip", "bounds", "shape"], "wand_object": ["flood", "clip", "bounds", "shape"],
           "wand_add": ["flood", "clip", "bounds", "shape"], "invert": ["invert"],
           "range_depth": ["ms"], "range_depth_snap": ["ms"], "range_luma": ["ms"], "range_color": ["ms"],
-          "depth_guide": ["total"], "depth_guide_model": ["total"], "fill_limit": []}
+          "depth_guide": ["total"], "depth_guide_model": ["total"], "fill_limit": ["limit"]}
 # the "worker job" column: the job's whole time where it is not `total` or `kernel`; None where the row posts no job
 WORKER = {"invert": None, "fill_limit": None, "depth_guide": "total", "depth_guide_model": "total",
           "range_depth": "ms", "range_depth_snap": "ms", "range_luma": "ms", "range_color": "ms"}

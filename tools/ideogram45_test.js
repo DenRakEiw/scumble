@@ -462,7 +462,7 @@ async function main() {
         const badRamp = notInverted(y.input.mask, W, H, RAMP);
         check("a grey ramp: 128 and above black, below white (x = 31 at 124 white, x = 32 at 128 black)", !y.err && badRamp === null && eq(pixel(y.input.mask, 31, 0), [255, 255, 255, 255]) && eq(pixel(y.input.mask, 32, 0), [0, 0, 0, 255]), y.err || badRamp);
         check("the answer: the downloaded picture, the model and the prediction id in info, no info.mask for a partial selection", !x.err && Buffer.compare(Buffer.from(x.out.bytes), RESULT) === 0 && x.out.mime === "image/png" && x.out.info.model === EDIT_MODEL && x.out.info.id === "pred1" && !("mask" in x.out.info), x.err || short(x.out && x.out.info));
-        check("the POST carries the token, JSON and Prefer: wait=30; the download carries no token", x.post.headers.authorization === "Bearer " + KEY && x.post.headers["content-type"] === "application/json" && x.post.headers.prefer === "wait=30" && x.s.gets.length === 1 && !("authorization" in x.s.gets[0].headers), short([x.post.headers, x.s.gets[0] && x.s.gets[0].headers]));
+        check("the POST carries the token and JSON (no Prefer wait header, so urls.cancel is at hand from the start); the download carries no token", x.post.headers.authorization === "Bearer " + KEY && x.post.headers["content-type"] === "application/json" && !("prefer" in x.post.headers) && x.s.gets.length === 1 && !("authorization" in x.s.gets[0].headers), short([x.post.headers, x.s.gets[0] && x.s.gets[0].headers]));
     });
 
     // ---- 2. a selection over the whole crop, and one with nothing to edit ----
