@@ -8,8 +8,8 @@
  * worker made it (length, type, data, CRC), an IDAT with the Adler-32 of all the filtered bytes (the parts' own sums
  * joined by `adlerCombine`), IEND. The file is a Blob of those pieces.
  *
- * A part's rows come either as bytes (`{ rgba, prev }`, a band the editor composited) or as the tiles that hold them
- * (`{ tiles, prevTiles }`, named by arena slot or as copies), which a worker reads where they lie.
+ * A part's rows come either as bytes (`{ rgba, prev }`, a band with an optional row above) or as the tiles that hold
+ * them (`{ tiles }`, named by arena slot or as copies; `png_part` starts each tile or stack part independent, P5).
  *
  * Without the Rust kernels in the workers a part fails with `NO_PARTS`, and the caller keeps its canvas path.
  */
@@ -176,9 +176,9 @@ export class PngStreamWriter {
     }
 
     /**
-     * The next `rows` rows. `source`: `{ rgba: ArrayBuffer, prev: ArrayBuffer | null }` (both transferred; `prev` the row
-     * above, which the writer does not keep) or `{ tiles, prevTiles, x0, r0 }` (see `png_part`). Parts must be added in
-     * the order of their rows; they finish in any.
+     * The next `rows` rows. `source`: `{ rgba: ArrayBuffer, prev: ArrayBuffer | null }` (both transferred; `prev` an
+     * explicit row above, which the writer does not keep) or `{ tiles, x0, r0 }` (see `png_part`; `prevTiles` is
+     * ignored since parts start with None or Sub, P5). Parts must be added in the order of their rows; they finish in any.
      */
     add(rows, source, transfer = []) {
         if (this.failed) throw this.failed;

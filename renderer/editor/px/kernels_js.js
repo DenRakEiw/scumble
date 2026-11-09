@@ -1014,7 +1014,7 @@ export function matchPixels(rgba, params) {
  * `rows` rows of RGBA8 (`w` wide) filtered into `out` (rows × (1 + 4w) bytes): per row the
  * filter byte of None / Sub / Up / Average / Paeth with the smallest sum of absolute signed
  * values (libpng's heuristic, ties to the lower type), then the filtered row. `prev` is the
- * row above the first one, or null for zeros.
+ * row above the first one; when `prev` is null the first row picks only None or Sub (P5).
  */
 export function pngFilterRows(rgba, w, rows, prev = null, out = new Uint8Array(rows * (1 + 4 * w))) {
     rgba = bytesOf(rgba);

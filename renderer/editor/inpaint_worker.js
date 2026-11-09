@@ -674,8 +674,8 @@ export function partPtrOf(p, a, msg, needPrev = false) {
 }
 
 /**
- * One part of a PNG's pixels (inpaint_png.js, docs/PLAN_BCE.md §E2): rows as bytes (`rgba`, `prev`) or as tiles
- * (`tiles`, `prevTiles`, `r0`), filtered and deflated by the Rust kernel, as a finished IDAT chunk.
+ * One part of a PNG's pixels (inpaint_png.js, docs/PLAN_BCE.md §E2): rows as bytes (`rgba`, optional `prev`) or as
+ * tiles/stack (`tiles`, `r0`, or `stack`; `prevTiles` is ignored so parts start with None or Sub, P5), as an IDAT chunk.
  */
 export async function pngPart(msg) {
     let p = rustPx();

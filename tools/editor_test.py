@@ -1713,6 +1713,8 @@ def parted_png_step(body):
             slots_after = await c.eval("(async () => (await import('./editor/inpaint_arena.js')).arenaStats().slots)()")
             if slots_after <= slots_before:
                 break
+        # In the full editor gate 8 slots from earlier steps are freed when section 8 clears undo (1461 -> 1453),
+        # so up to 8 slots of headroom exists here; section 8(c) also checks heldCreatedTiles() === 0 directly.
         if slots_after > slots_before:
             raise Exception("arena slots after parted PNG step (%d) > before (%d)" % (slots_after, slots_before))
         out["arenaSlots"] = [slots_before, slots_after]
@@ -7282,9 +7284,10 @@ try {
     } finally { pool.run = oRun; }
 
     // 3. Round-trip table (`rt`) seam: a parted PNG built from raw straight RGBA bytes that are NOT fixed points of
-    //    `canvasRoundTrip()` (including `(200, 100, 50, 3)` at row 0 of part 0 and row 256 of part 1, where part 1 and
-    //    part 2 start with Paeth/Average and go through `png_part_finish`), opened via `readPngParts`, `png_read`, and
-    //    the image route.
+    //    `canvasRoundTrip()` (including `(200, 100, 50, 3)` at row 0 of part 0 and row 256 of part 1; `encodeBands`
+    //    starts each part with None or Sub so `partFinishes === 0`, while the legacy file written below with explicit
+    //    `prev` starts parts 1 and 2 with Paeth/Average and goes through `png_part_finish`), opened via `readPngParts`,
+    //    `png_read`, and the image route.
     const RW = 1503, RH = 700;
     const rawRgba = new Uint8Array(RW * RH * 4);
     for (let y = 0; y < RH; y++) {
@@ -7343,9 +7346,10 @@ try {
         await ed.loadFile(new File([legacyBlob], "parted_rt_legacy.png", { type: "image/png" }));
         const legacyTimings = E.jobTimings(true);
         const legacyFinishes = legacyTimings.filter((j) => j && j.op === "png_part_finish");
+        const legacyFinishCalls = legacyFinishes.reduce((n, j) => n + ((j.pxCalls && j.pxCalls.png_part_finish) || 0), 0);
         const legacyHash = await hex(ed.basePx.readRect(0, 0, RW, RH).data);
-        if (partReads !== 3 || !(partFinishes >= 2) || pngReads !== 0 || finishPrios.some((p) => p !== 0) || legacyHash !== rtPartedHash || !legacyFinishes.every((j) => typeof j.finish === "number")) {
-            throw new Error(`legacy pre-P5 rt parted open: partReads=${partReads} partFinishes=${partFinishes} prios=${JSON.stringify(finishPrios)} hash=${legacyHash}/${rtPartedHash}`);
+        if (partReads !== 3 || !(partFinishes >= 2) || pngReads !== 0 || finishPrios.some((p) => p !== 0) || legacyHash !== rtPartedHash || !legacyFinishes.every((j) => typeof j.finish === "number") || (rustPart && legacyFinishCalls !== partFinishes)) {
+            throw new Error(`legacy pre-P5 rt parted open: partReads=${partReads} partFinishes=${partFinishes} finishCalls=${legacyFinishCalls} prios=${JSON.stringify(finishPrios)} hash=${legacyHash}/${rtPartedHash}`);
         }
         E.kernels = "js";
         try {
@@ -7354,9 +7358,10 @@ try {
             await ed.loadFile(new File([legacyBlob], "parted_rt_legacy_js.png", { type: "image/png" }));
             const jsLegacyTimings = E.jobTimings(true);
             const jsLegacyFinishes = jsLegacyTimings.filter((j) => j && j.op === "png_part_finish");
+            const jsLegacyFinishCalls = jsLegacyFinishes.reduce((n, j) => n + ((j.pxCalls && j.pxCalls.png_part_finish) || 0), 0);
             const jsLegacyHash = await hex(ed.basePx.readRect(0, 0, RW, RH).data);
-            if (partReads !== 3 || !(partFinishes >= 2) || pngReads !== 0 || jsLegacyHash !== rtPartedHash || !jsLegacyFinishes.every((j) => typeof j.finish === "number")) {
-                throw new Error(`JS legacy pre-P5 rt parted open: partReads=${partReads} partFinishes=${partFinishes} hash=${jsLegacyHash}/${rtPartedHash}`);
+            if (partReads !== 3 || !(partFinishes >= 2) || pngReads !== 0 || finishPrios.some((p) => p !== 0) || jsLegacyFinishCalls !== 0 || jsLegacyHash !== rtPartedHash || !jsLegacyFinishes.every((j) => typeof j.finish === "number")) {
+                throw new Error(`JS legacy pre-P5 rt parted open: partReads=${partReads} partFinishes=${partFinishes} finishCalls=${jsLegacyFinishCalls} prios=${JSON.stringify(finishPrios)} hash=${jsLegacyHash}/${rtPartedHash}`);
             }
         } finally { E.kernels = keepKernels; }
     } finally { pool.run = oRun; }
@@ -7541,21 +7546,25 @@ try {
 
         // (b) Parallel overlap: hold upload until all 5 png_part_read jobs complete in both loadFile and addImageLayers
         for (const mode of ["loadFile", "addImageLayers"]) {
-            let readsDone = 0, releaseUpload = null, readsWhileUploadHeld = 0, uploadHeld = true;
+            let readsDone = 0, releaseUpload = null, readsWhileUploadHeld = 0, uploadEntered = false, uploadHeld = true, statusAfterDecode = "";
             const uploadGate = new Promise((r) => { releaseUpload = r; });
             pool.run = async (op, args, tr, opts) => {
                 const r = await oRun(op, args, tr, opts);
                 if (op === "png_part_read") {
                     readsDone++;
                     if (readsDone === 5) {
-                        if (uploadHeld) readsWhileUploadHeld = readsDone;
-                        releaseUpload();
+                        if (uploadEntered && uploadHeld) readsWhileUploadHeld = readsDone;
+                        setTimeout(() => {
+                            statusAfterDecode = ed.status;
+                            releaseUpload();
+                        }, 20);
                     }
                 }
                 return r;
             };
             api.fetchApi = async (url, opts) => {
                 if (String(url).startsWith("/upload/image")) {
+                    uploadEntered = true;
                     await Promise.race([uploadGate, new Promise((r) => setTimeout(r, 1500))]);
                     uploadHeld = false;
                 }
@@ -7564,8 +7573,8 @@ try {
             const f = new File([tileEnc.blob], `parallel_${mode}.png`, { type: "image/png" });
             if (mode === "loadFile") {
                 await ed.loadFile(f);
-                if (readsWhileUploadHeld !== 5 || (await hex(ed.basePx.readRect(0, 0, W, H).data)) !== wantTileHash) {
-                    throw new Error(`parallel loadFile failed: readsWhileUploadHeld=${readsWhileUploadHeld}`);
+                if (readsWhileUploadHeld !== 5 || statusAfterDecode !== "Uploading parallel_loadFile.png ..." || (await hex(ed.basePx.readRect(0, 0, W, H).data)) !== wantTileHash) {
+                    throw new Error(`parallel loadFile failed: readsWhileUploadHeld=${readsWhileUploadHeld} statusAfterDecode=${statusAfterDecode}`);
                 }
             } else {
                 const n0 = ed.layers.length;
@@ -7583,7 +7592,7 @@ try {
             api.fetchApi = oFetchApi;
         }
 
-        // (c) Upload rejection after decode resolves releases the decoded TileLayerPixels in both loadFile and addImageLayers
+        // (c) Upload rejection after decode resolves (and stale open before upload resolves) releases the decoded TileLayerPixels
         ed.pixels.Layer.empty = (w, h) => {
             const p = oEmpty(w, h);
             createdLayers.push(p);
@@ -7616,6 +7625,30 @@ try {
                 if (!(heldAtUploadReject >= cleanTiles) || leakedAfter !== 0 || ed.layers.length !== n0 || !new RegExp(`simulated upload failure in ${mode}`).test(ed.status)) {
                     throw new Error(`upload rejection cleanup in ${mode}: heldAtUploadReject=${heldAtUploadReject}/${cleanTiles} leakedAfter=${leakedAfter} status=${ed.status}`);
                 }
+            }
+            // Stale loadFile releases decoded tiles immediately when decode finishes, before upload resolves
+            createdLayers.length = 0;
+            let staleReads = 0, releaseStaleUpload = null, heldWhileUploadPending = -1;
+            const staleUploadGate = new Promise((r) => { releaseStaleUpload = r; });
+            pool.run = async (op, args, tr, opts) => {
+                const r = await oRun(op, args, tr, opts);
+                if (op === "png_part_read" && ++staleReads === 5) {
+                    ed._openToken = (ed._openToken || 0) + 1;
+                    setTimeout(() => {
+                        heldWhileUploadPending = heldCreatedTiles();
+                        releaseStaleUpload();
+                    }, 25);
+                }
+                return r;
+            };
+            api.fetchApi = async (url, opts) => {
+                if (String(url).startsWith("/upload/image")) await staleUploadGate;
+                return oFetchApi(url, opts);
+            };
+            await ed.loadFile(new File([tileEnc.blob], "stale_load.png", { type: "image/png" }));
+            await staleUploadGate;
+            if (heldWhileUploadPending !== 0) {
+                throw new Error(`stale loadFile held decoded tiles while upload pending: held=${heldWhileUploadPending}`);
             }
         } finally {
             ed.pixels.Layer.empty = oEmpty;

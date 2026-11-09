@@ -6,6 +6,7 @@ WORKING = [
     "renderer/editor/px/px_scalar.wasm",
     "renderer/editor/px/kernels_js.js",
     "renderer/editor/inpaint_bands.js",
+    "renderer/editor/inpaint_png.js",
     "renderer/editor/inpaint_worker.js",
     "renderer/editor/inpaint_canvas.js",
     "tools/px_test.js",
@@ -133,8 +134,8 @@ MUTANTS = [
         "renderer/editor/inpaint_canvas.js",
         [
             (
-                '                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                ref = await up;',
-                '                ref = await up;\n                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });',
+                '                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                if (later()) { if (px) px.release(); return; }\n                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");\n                ref = await up;',
+                '                ref = await up;\n                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                if (later()) { if (px) px.release(); return; }',
             )
         ],
         "killed: loadFile awaits uploadBlob before starting pixelsOffThread instead of running in parallel",
@@ -153,12 +154,60 @@ MUTANTS = [
         ED_KILL,
     ),
     (
+        "canvas_load_sequential_decode_then_upload",
+        "renderer/editor/inpaint_canvas.js",
+        [
+            (
+                '            const up = uploadBlob(file, stem + ext, { overwrite: false });\n            up.catch(() => {});\n            let px = null, ref = null;\n            try {\n                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                if (later()) { if (px) px.release(); return; }\n                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");\n                ref = await up;',
+                '            let px = null, ref = null;\n            try {\n                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                if (later()) { if (px) px.release(); return; }\n                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");\n                const up = uploadBlob(file, stem + ext, { overwrite: false });\n                ref = await up;',
+            )
+        ],
+        "killed: loadFile awaits pixelsOffThread before starting uploadBlob instead of running in parallel",
+        ED_KILL,
+    ),
+    (
+        "canvas_layer_sequential_decode_then_upload",
+        "renderer/editor/inpaint_canvas.js",
+        [
+            (
+                "                    const up = uploadBlob(file, stem + ext, { overwrite: false });\n                    up.catch(() => {});\n                    try {\n                        // a large file is decoded in a pool worker (`pixelsOffThread`) while it uploads, a small one through an <img>\n                        if (big) px = await pixelsOffThread(file, this.pixels.Layer);\n                        ref = await up;",
+                "                    try {\n                        // a large file is decoded in a pool worker (`pixelsOffThread`) while it uploads, a small one through an <img>\n                        if (big) px = await pixelsOffThread(file, this.pixels.Layer);\n                        const up = uploadBlob(file, stem + ext, { overwrite: false });\n                        ref = await up;",
+            )
+        ],
+        "killed: addImageLayers awaits pixelsOffThread before starting uploadBlob instead of running in parallel",
+        ED_KILL,
+    ),
+    (
+        "canvas_load_no_stale_release_before_upload",
+        "renderer/editor/inpaint_canvas.js",
+        [
+            (
+                '                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                if (later()) { if (px) px.release(); return; }\n                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");\n                ref = await up;',
+                '                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");\n                ref = await up;',
+            )
+        ],
+        "killed: stale loadFile holds decoded TileLayerPixels across await up instead of releasing immediately after decode",
+        ED_KILL,
+    ),
+    (
+        "canvas_load_no_status_reset_after_decode",
+        "renderer/editor/inpaint_canvas.js",
+        [
+            (
+                '                if (later()) { if (px) px.release(); return; }\n                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");\n                ref = await up;',
+                "                if (later()) { if (px) px.release(); return; }\n                ref = await up;",
+            )
+        ],
+        "killed: loadFile leaves status at Reading 100% while upload is still pending after decode finishes",
+        ED_KILL,
+    ),
+    (
         "canvas_load_no_release_on_upload_reject",
         "renderer/editor/inpaint_canvas.js",
         [
             (
-                '                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                ref = await up;\n            } catch (err) {\n                if (px) px.release();\n                throw err;\n            }',
-                '                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                ref = await up;\n            } catch (err) {\n                throw err;\n            }',
+                '                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                if (later()) { if (px) px.release(); return; }\n                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");\n                ref = await up;\n            } catch (err) {\n                if (px) px.release();\n                throw err;\n            }',
+                '                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });\n                if (later()) { if (px) px.release(); return; }\n                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");\n                ref = await up;\n            } catch (err) {\n                throw err;\n            }',
             )
         ],
         "killed: loadFile leaks decoded TileLayerPixels when uploadBlob rejects after pixelsOffThread resolves",

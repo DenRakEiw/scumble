@@ -1,13 +1,13 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 12 s)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 9 s)
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
 px.wasm: 279152 bytes, sha256 480a1ef82018ffde
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
 px_scalar.wasm: 225743 bytes, sha256 203a16365f2ec7e7
    Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
-    Finished `release` profile [optimized] target(s) in 5.95s
+    Finished `release` profile [optimized] target(s) in 5.14s
    Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
-    Finished `release` profile [optimized] target(s) in 3.97s
-$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=pngFilter)
+    Finished `release` profile [optimized] target(s) in 3.68s
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=pngFilter)
 FAIL rust simd png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)  random 5 px x 3: out[0] is 3, the twin has 1
 FAIL (1) (only: pngFilter; PX_ONLY, not the full test)
 ok   rust scalar png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)
@@ -18,7 +18,7 @@ ok   png_filter_rows cases, rows of 5 px or more: every filter wins rows, ties o
 ok   rust simd module reports its SIMD flag
 ok   rust scalar module reports its SIMD flag
 FAIL (1) (only: pngFilter; PX_ONLY, not the full test)
-(node:63752) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:32276) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)

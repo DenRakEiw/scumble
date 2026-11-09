@@ -18933,6 +18933,8 @@ class InpaintEditor {
             let px = null, ref = null;
             try {
                 if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });
+                if (later()) { if (px) px.release(); return; }
+                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");
                 ref = await up;
             } catch (err) {
                 if (px) px.release();
