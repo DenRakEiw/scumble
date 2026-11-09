@@ -1,0 +1,135 @@
+[07:51:40] exporting clean before tree at 3fd8bda7 to /f/canvas/.claude/worktrees/.tmp_k10b_before_1779386
+[07:51:43] branch ag-chain-c at 9bfd0c71; base 3fd8bda7; port 9629
+[07:51:43] before px.wasm 7e99b55f37ff69ff; after px.wasm 3f240c7a80d2f983; after px_scalar.wasm 0f3fe6c4448b871e
+[07:51:44] gpu: 19543 MiB, 5 %; comfy 8188: 200
+lock: held by 'main loop gates mergeprov 9172 2026-11-09T07:29:36', waiting
+lock: taken after 210 s
+[07:55:14] lock: taken (K10b node_bench (chain-c) 65528 2026-11-09T07:51:44)
+[07:55:14] node kernel bench
+[07:55:17] rc=0
+[07:55:18] electron-as-node kernel bench
+[07:55:20] rc=0
+lock: released
+lock: held by 'main loop mergeprov reruns 66224 2026-11-09T07:55:22', waiting
+lock: taken after 270 s
+[07:59:53] lock: taken (K10b native_test r1 (chain-c) 64356 2026-11-09T07:55:22)
+[07:59:53] == native_test round 1
+[07:59:53] native before r1 (try 1, px.wasm 7e99b55f37ff)
+[07:59:53] gpu: 18175 MiB, 2 %; comfy 8188: 200
+[08:00:29] rc=0
+closed
+[08:00:33] native after r1 (try 1, px.wasm 3f240c7a80d2)
+[08:00:35] gpu: 18644 MiB, 0 %; comfy 8188: 200
+[08:01:07] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[08:01:14] lock: taken (K10b native_test r2 (chain-c) 62912 2026-11-09T08:01:14)
+[08:01:14] == native_test round 2
+[08:01:15] native after r2 (try 1, px.wasm 3f240c7a80d2)
+[08:01:15] gpu: 18255 MiB, 0 %; comfy 8188: 200
+[08:01:48] rc=0
+closed
+[08:01:53] native before r2 (try 1, px.wasm 7e99b55f37ff)
+[08:01:54] gpu: 18400 MiB, 0 %; comfy 8188: 200
+[08:02:28] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[08:02:35] lock: taken (K10b native_test r3 (chain-c) 34696 2026-11-09T08:02:34)
+[08:02:35] == native_test round 3
+[08:02:35] native before r3 (try 1, px.wasm 7e99b55f37ff)
+[08:02:35] gpu: 18345 MiB, 3 %; comfy 8188: 200
+[08:03:09] rc=0
+closed
+[08:03:14] native after r3 (try 1, px.wasm 3f240c7a80d2)
+[08:03:14] gpu: 18237 MiB, 0 %; comfy 8188: 200
+[08:03:48] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[08:03:54] lock: taken (K10b exportperf r1 (chain-c) 59128 2026-11-09T08:03:54)
+[08:03:54] == exportperf round 1
+[08:03:54] exportperf before r1 (try 1)
+[08:03:55] gpu: 18319 MiB, 0 %; comfy 8188: 200
+[08:04:21] rc=0
+closed
+[08:04:26] exportperf after r1 (try 1)
+[08:04:26] gpu: 18210 MiB, 2 %; comfy 8188: 200
+[08:04:50] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[08:04:57] lock: taken (K10b exportperf r2 (chain-c) 67220 2026-11-09T08:04:57)
+[08:04:57] == exportperf round 2
+[08:04:57] exportperf after r2 (try 1)
+[08:04:58] gpu: 18243 MiB, 0 %; comfy 8188: 200
+[08:05:23] rc=0
+closed
+[08:05:28] exportperf before r2 (try 1)
+[08:05:29] gpu: 18323 MiB, 3 %; comfy 8188: 200
+[08:05:55] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[08:06:01] lock: taken (K10b exportperf r3 (chain-c) 10432 2026-11-09T08:06:01)
+[08:06:01] == exportperf round 3
+[08:06:01] exportperf before r3 (try 1)
+[08:06:01] gpu: 19675 MiB, 5 %; comfy 8188: 200
+[08:06:27] rc=0
+closed
+[08:06:31] exportperf after r3 (try 1)
+[08:06:31] gpu: 18741 MiB, 2 %; comfy 8188: 200
+[08:06:56] rc=0
+closed
+lock: released
+lock: held by 'K24 px_test guided bench 54112 2026-11-09T08:02:32', waiting
+lock: taken after 30 s
+[08:07:33] lock: taken (K10b tiffperf r1 (chain-c) 36444 2026-11-09T08:07:03)
+[08:07:33] == tiffperf round 1
+[08:07:33] tiffperf before r1 (try 1)
+[08:07:33] gpu: 18304 MiB, 2 %; comfy 8188: 200
+[08:08:13] rc=0
+closed
+[08:08:17] tiffperf after r1 (try 1)
+[08:08:18] gpu: 18636 MiB, 3 %; comfy 8188: 200
+[08:08:51] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[08:08:57] lock: taken (K10b tiffperf r2 (chain-c) 50256 2026-11-09T08:08:57)
+[08:08:57] == tiffperf round 2
+[08:08:57] tiffperf after r2 (try 1)
+[08:08:58] gpu: 18721 MiB, 2 %; comfy 8188: 200
+[08:09:28] rc=0
+closed
+[08:09:32] tiffperf before r2 (try 1)
+[08:09:33] gpu: 18686 MiB, 1 %; comfy 8188: 200
+[08:10:03] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[08:10:10] lock: taken (K10b tiffperf r3 (chain-c) 10640 2026-11-09T08:10:10)
+[08:10:10] == tiffperf round 3
+[08:10:10] tiffperf before r3 (try 1)
+[08:10:11] gpu: 18860 MiB, 1 %; comfy 8188: 200
+[08:10:42] rc=0
+closed
+[08:10:47] tiffperf after r3 (try 1)
+[08:10:48] gpu: 18863 MiB, 7 %; comfy 8188: 200
+[08:11:19] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[08:11:26] lock: taken (K10b retention (chain-c) 23932 2026-11-09T08:11:26)
+[08:11:26] == px_probe retention 15000x10000
+[08:11:26] retention composeStack=js
+[08:11:44] rc=0
+closed
+[08:11:48] retention composeStack=rust
+[08:12:06] rc=0
+closed
+lock: released
+[08:12:10] gpu: 18050 MiB, 0 %; comfy 8188: 200
+[08:12:10] done
+no instance on 9629 Cannot connect to host 127.0.0.1:9629 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

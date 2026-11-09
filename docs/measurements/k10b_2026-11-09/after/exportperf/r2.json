@@ -1,0 +1,135 @@
+{
+ "size": [
+  15000,
+  10000
+ ],
+ "filter": "levels",
+ "focused": true,
+ "composite_bands": {
+  "ms": 1049,
+  "blocked": 101,
+  "bands": 0,
+  "readMs": 0,
+  "MB": 11.3,
+  "jobs": {
+   "stack_into": {
+    "jobs": 40,
+    "pixels": 150000000,
+    "kernel": 4201.5,
+    "gen": 0
+   },
+   "png_part": {
+    "jobs": 78,
+    "composeWasm": 0,
+    "pixels": 150000000,
+    "kernel": 1903.8,
+    "compose": 0,
+    "rows": 0,
+    "prev": 0,
+    "copyIn": 71.7,
+    "filter": 339.4,
+    "adler": 156.6,
+    "deflate": 1268.1,
+    "chunk": 7.7,
+    "copyOut": 55.6,
+    "gen": 0
+   }
+  }
+ },
+ "layer_from_tiles": {
+  "ms": 232,
+  "blocked": 6,
+  "MB": 0.6,
+  "jobs": {
+   "png_part": {
+    "jobs": 79,
+    "composeWasm": 79,
+    "pixels": 150000000,
+    "kernel": 1743.7,
+    "compose": 0,
+    "rows": 318.1,
+    "prev": 5.6,
+    "filter": 286.5,
+    "adler": 166.3,
+    "deflate": 960.1,
+    "chunk": 0.3,
+    "copyOut": 0,
+    "gen": 0
+   }
+  }
+ },
+ "composite_canvas": {
+  "ms": 3824,
+  "blocked": 2298,
+  "MB": 36.9,
+  "jobs": {}
+ },
+ "layer_canvas": {
+  "ms": 1392,
+  "blocked": 164,
+  "MB": 2.7,
+  "jobs": {}
+ },
+ "psd": {
+  "ms": 1825,
+  "blocked": 179,
+  "MB": 225.7,
+  "jobs": {
+   "psd_part": {
+    "jobs": 394,
+    "pixels": 750000000,
+    "kernel": 5652.6,
+    "rows": 2747.3,
+    "pack": 2896.1,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "pixels": 150000000,
+    "kernel": 3913.2,
+    "gen": 0
+   }
+  }
+ },
+ "psd_masked": {
+  "ms": 2086,
+  "blocked": 139,
+  "MB": 243.2,
+  "jobs": {
+   "psd_part": {
+    "jobs": 473,
+    "pixels": 900000000,
+    "kernel": 6709.9,
+    "rows": 3325.5,
+    "pack": 3375.4,
+    "gen": 0
+   },
+   "mips": {
+    "jobs": 14,
+    "tiles": 1733,
+    "kernel": 399.8,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "pixels": 150000000,
+    "kernel": 4076.6,
+    "gen": 0
+   }
+  }
+ },
+ "pool": {
+  "run": 1232,
+  "done": 1232,
+  "failed": 0,
+  "cancelled": 0,
+  "started": 8,
+  "lost": 0,
+  "stopped": 0,
+  "workers": 8,
+  "size": 8,
+  "pending": 0,
+  "off": false,
+  "arena": true
+ }
+}

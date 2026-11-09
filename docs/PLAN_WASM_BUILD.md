@@ -1887,6 +1887,10 @@ Every recommendation taken (the user: "alles so wie deine empfehlung").
 - **Question 6.2 (K25): the export follows the screen.** A fill layer's depth limit with edge snap takes its reference colour from the picture (`map.guide`, the layer's own pixels only without a guide) instead of the fill's own colour; the strength stays the screen's `snapParams(map.meta?.snap?.strength)`. A byte change of layered exports holding such a layer, toward the screen. It matches the screen up to 4096 px on the long side, above that within one map texel (about 3.66 px at 15k, K25's review), as long as the picture below is still the one the depth map was made from. `docs/BUGS.md` has the entry. Only the depth limit is concerned: a fill layer takes no other limit (`commands.js` refuses it, the panel does not offer it).
 - **Question 6.4:** **K37 yes**, kept only where the tile route measures faster on the felt 15k operation, with a size threshold if small fills lose; at most one level against Skia at opacity below 1. **K38 yes** (the `matchCanvas` fallback toward the GPU's formula, at most one level). **The TIFF quirk is fixed** in both twin and Rust at K15 (sub-byte palette files with alpha, whose alpha is left at 0..15 today).
 
+### K10b (2026-11-09): PNG parts gathered, composited and deflated in WebAssembly memory (the Antigravity C chain)
+
+
+
 ### K24 (2026-11-09): the depth map's guided filter in Rust, grey and `disparityRange` in the worker job (the Antigravity G chain)
 
 By a Gemini agent in Antigravity (`.claude/coord/chain-g/`) on `3fd8bda7` (`ca994c05`, pre-review fixes in `03664a0f`, review fixes in `e965bcf2`, merged with `wasm-kernels` `e39b8d03` in `c09903f6`), ABI 40; `docs/measurements/k24_2026-11-09/` (`k24_chain.sh`, `summarize.py`, `summary.txt`, `chain.log`, `before/`, `after/`, `mutation/`).

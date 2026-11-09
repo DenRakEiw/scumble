@@ -4638,6 +4638,7 @@ async function pngPartCases(px, label, js) {
     check(`${label} pngPart of noise inflates back`, !!nout && nout.length === np.raw);
     await crcAndFrameCases(px, label, png, zlib, js);
     await noisePartCases(px, label, png, zlib);
+    await composeWasmPartCases(px, label, png, zlib);
     await partDecodeCases(px, label, png, zlib, js);
 }
 
@@ -5613,6 +5614,449 @@ async function noisePartCases(px, label, png, zlib) {
     let zout = null;
     try { zout = new Uint8Array(zlib.inflateSync(Buffer.from(z))); } catch (_) { /* reported below */ }
     check(`${label} zlib of a 2 MB noise strip inflates back, in one deflate_part call`, !!zout && eqBytes(zout, strip) && zc === 1, `${zc} calls`);
+}
+
+// K10b (docs/PLAN_WASM_K10.md §5, §9.1): tile gather (tilesRowsToWasm), store/stack gather (storeRowsToWasm,
+// stackRowsToWasm, partPtrOf) and pngPartFromPtr against rowsOfTiles, storeRows, rowsOfStack and Px.pngPart on both
+// SIMD and scalar builds, plus route overrides (composeTiles, composeStack) and trap/OOM fallback in worker pngPart.
+async function composeWasmPartCases(px, label, png, zlib) {
+    const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    const W = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_worker.js")).href);
+    const bands = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_bands.js")).href);
+    const { hash32 } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "blend_modes.js")).href);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (u, ...rest) => {
+        const s = String(u && u.href ? u.href : u);
+        return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+    };
+    try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+    K.setKernels("rust");
+
+    const TILE = 256, TILE_BYTES = TILE * TILE * 4;
+    const makeTile = (seed, fn = null) => {
+        const u8 = new Uint8Array(TILE_BYTES);
+        const r = rng(seed);
+        for (let y = 0; y < TILE; y++) {
+            for (let x = 0; x < TILE; x++) {
+                const o = (y * TILE + x) * 4;
+                if (fn) {
+                    fn(u8, o, x, y, r);
+                } else {
+                    u8[o] = ((r() * 256) | 0) ^ ((y * 7 + x) & 255);
+                    u8[o + 1] = ((r() * 256) | 0) ^ ((y * 13 + x * 3) & 255);
+                    u8[o + 2] = ((r() * 256) | 0) ^ ((y * 29 + x * 5) & 255);
+                    u8[o + 3] = (r() * 256) | 0;
+                }
+            }
+        }
+        return { data: u8.buffer };
+    };
+
+    const runPtrPngPart = (msg) => {
+        const a = px.job;
+        try {
+            const laps = {};
+            const ptrs = W.partPtrOf(px, a, msg, true);
+            const r = px.pngPartFromPtr(a, ptrs.pr, msg.w, msg.rows, ptrs.pp, msg.level ?? 2, !!msg.last, laps);
+            return { ...r, laps };
+        } finally {
+            px._reset(a);
+        }
+    };
+    const runJsPngPart = (msg) => {
+        const rgba = msg.rgba ? new Uint8Array(msg.rgba, 0, msg.w * msg.rows * 4) : msg.stack ? W.rowsOfStack(msg, false) : W.rowsOfTiles(msg, false);
+        const prev = msg.rgba ? (msg.prev ? new Uint8Array(msg.prev, 0, msg.w * 4) : null) : msg.stack ? W.rowsOfStack(msg, true) : W.rowsOfTiles(msg, true);
+        return px.pngPart(rgba, msg.w, msg.rows, prev, msg.level ?? 2, !!msg.last);
+    };
+    const samePngPart = (a, b) => a.adler === b.adler && a.raw === b.raw && a.crc === b.crc && eqBytes(a.bytes, b.bytes) && eqBytes(a.chunk, b.chunk);
+
+    // 1. Tile gather (tilesRowsToWasm + pngPartFromPtr vs rowsOfTiles + Px.pngPart) via tileRows(snap, true).part(y, n, true)
+    {
+        const w = 300, h = 350;
+        const row0 = [makeTile(101), null];   // sparse null tile in column 1 of row 0
+        const row1 = [makeTile(103), makeTile(102)];
+        // Make row 255 of row0[0] match row 0 of row1[0] (and differ from row 0 of row0[0]) so prevTiles r0 = TILE - 1
+        // makes Up filter win on y = 256 and directly kills a prevTiles r0 = 0 mutant on both SIMD and scalar
+        const r0u8 = new Uint8Array(row0[0].data);
+        const r1u8 = new Uint8Array(row1[0].data);
+        for (let i = 0; i < TILE * 4; i++) {
+            r0u8[i] = (i * 3 + 17) & 255;
+            const v = (255 - ((i * 7 + 53) & 255)) & 255;
+            r0u8[(TILE - 1) * TILE * 4 + i] = v;
+            r1u8[i] = v;
+        }
+        const snap = {
+            width: w,
+            height: h,
+            tileRowNames: (ty) => (ty === 0 ? row0 : ty === 1 ? row1 : [null, null]),
+        };
+        const source = bands.tileRows(snap, true);
+        // Parts covering: (a) ty === 0, r0 === 0, prevTiles: null; (b) mid-tile-row r0 > 0; (c) tile-row boundary ty === 1, r0 === 0 with prevTiles; (d) tail row
+        const spans = [[0, 60], [60, 196], [256, 40], [296, 54]];
+        let ok = true, detail = "";
+        const ptrParts = [], fullRows = new Uint8Array(w * h * 4);
+        P.pxTimed(true);
+        P.pxCalls(true);
+        try {
+            for (let i = 0; i < spans.length; i++) {
+                const [y, n] = spans[i];
+                const { args } = await source.part(y, n, true);
+                const msg = { ...args, w, rows: n, level: 2, last: i === spans.length - 1 };
+                const got = runPtrPngPart(msg);
+                const want = runJsPngPart(msg);
+                ptrParts.push(got);
+                fullRows.set(W.rowsOfTiles(msg, false), y * w * 4);
+                const hasLaps = ["filter", "adler", "deflate", "chunk", "copyOut"].every((k) => typeof got.laps[k] === "number");
+                if (!samePngPart(got, want) || !hasLaps) {
+                    ok = false;
+                    detail = `part ${i} (y=${y}, n=${n}): adler ${got.adler}/${want.adler} crc ${got.crc}/${want.crc} laps=${JSON.stringify(got.laps)} ${firstDiff(got.chunk, want.chunk)}`;
+                    break;
+                }
+            }
+            const laps = P.pxLaps();
+            if (!(laps.copyIn > 0 && laps.copyOut > 0 && laps.copyInMB > 0 && laps.copyOutMB > 0)) {
+                ok = false;
+                detail = detail || `expected timed copyIn/copyOut laps, got ${JSON.stringify(laps)}`;
+            }
+        } finally {
+            P.pxTimed(false);
+        }
+        if (ok) {
+            let adler = 1;
+            for (const p of ptrParts) adler = png.adlerCombine(adler, p.adler, p.raw);
+            const tail = Buffer.from([adler >>> 24, (adler >>> 16) & 255, (adler >>> 8) & 255, adler & 255]);
+            const stream = Buffer.concat([Buffer.from([0x78, 0x9C]), ...ptrParts.map((p) => Buffer.from(p.bytes)), tail]);
+            const inflated = new Uint8Array(zlib.inflateSync(stream));
+            const unfiltered = unfilter(inflated, w, h, null);
+            if (!eqBytes(unfiltered, fullRows)) {
+                ok = false;
+                detail = detail || `joined stream unfilter diff: ${firstDiff(unfiltered, fullRows)}`;
+            }
+        }
+        check(`${label} tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles`, ok, detail);
+    }
+
+    // 2. Stack gather (stackRowsToWasm + pngPartFromPtr vs rowsOfStack + Px.pngPart)
+    {
+        const Wd = 320, Hd = 520;
+        // Soft-alpha base with A = 10, A = 128, and non-zero RGB under A = 0 (detects unwanted begin/end premultiply round-trip)
+        const baseT00 = makeTile(201, (u8, o, x, y, r) => {
+            if ((x + y) % 5 === 0) {
+                u8[o] = 123; u8[o + 1] = 45; u8[o + 2] = 67; u8[o + 3] = 0;
+            } else if ((x + y) % 3 === 0) {
+                u8[o] = 200; u8[o + 1] = 100; u8[o + 2] = 50; u8[o + 3] = 10;
+            } else {
+                u8[o] = (r() * 256) | 0; u8[o + 1] = (r() * 256) | 0; u8[o + 2] = (r() * 256) | 0; u8[o + 3] = 128;
+            }
+        });
+        const baseT01 = makeTile(202);
+        const baseT10 = makeTile(203);
+        const baseT11 = makeTile(204);
+        const baseStore = {
+            x: 0, y: 0, w: Wd, h: Hd,
+            tiles: { 0: [baseT00, baseT01], 1: [baseT10, baseT11], 2: [makeTile(205), null] },
+        };
+
+        const checkStackCase = (caseName, msg) => {
+            const a = px.job;
+            let gotBand, gotAbove, gotPart, wantBand, wantAbove, wantPart;
+            // Dirty the arena's reusable first chunk and byte 0 of linear memory so any missing zero-fill (psrc, pm, pbm)
+            // or missing null check on pbm = 0 immediately corrupts the output.
+            const dirtyBytes = msg.w * msg.rows * 16;
+            const dirtyPtr = a.take(dirtyBytes);
+            px.u8().fill(0xDD, dirtyPtr, dirtyPtr + dirtyBytes);
+            px._reset(a);
+            const savedByte0 = px.u8()[0];
+            px.u8()[0] = 7;
+            try {
+                const pd = W.stackRowsToWasm(px, a, msg, false, null);
+                gotBand = px.u8().slice(pd, pd + msg.w * msg.rows * 4);
+                const pp = (msg.y | 0) > 0 ? W.stackRowsToWasm(px, a, msg, true, null) : 0;
+                gotAbove = pp ? px.u8().slice(pp, pp + msg.w * 4) : null;
+            } finally {
+                px.u8()[0] = savedByte0;
+                px._reset(a);
+            }
+            wantBand = W.rowsOfStack(msg, false, null);
+            wantAbove = W.rowsOfStack(msg, true, null);
+            gotPart = runPtrPngPart(msg);
+            wantPart = runJsPngPart(msg);
+            const bandEq = eqBytes(gotBand, wantBand);
+            const aboveEq = (gotAbove === null && wantAbove === null) || (!!gotAbove && !!wantAbove && eqBytes(gotAbove, wantAbove));
+            const partEq = samePngPart(gotPart, wantPart);
+            const ok = bandEq && aboveEq && partEq;
+            const detail = ok ? "" : `${caseName}: band=${bandEq ? "ok" : firstDiff(gotBand, wantBand)} above=${aboveEq ? "ok" : firstDiff(gotAbove || new Uint8Array(0), wantAbove || new Uint8Array(0))} part=${partEq ? "ok" : firstDiff(gotPart.chunk, wantPart.chunk)}`;
+            return { ok, detail };
+        };
+
+        // (2a) Empty layers: [] over soft-alpha / A=0 base
+        const r2a = checkStackCase("2a empty layers", {
+            w: Wd, rows: 48, y: 12, x0: 0, y0: 0, level: 2, last: true,
+            stack: { base: baseStore, layers: [] },
+        });
+        check(`${label} stackRowsToWasm (2a): empty layers [] preserves soft-alpha and A=0 RGB base bytes verbatim`, r2a.ok, r2a.detail);
+
+        // (2b) Layer present in stack.layers whose tiles do not overlap the band (storeRowsToWasm returns false -> continue)
+        const emptyOverlapLayers = [
+            { x: 0, y: 0, w: Wd, h: Hd, alpha: 200, op: 0, tiles: { 0: [null, null] } },
+            { x: 260, y: 0, w: 60, h: Hd, alpha: 180, op: 5, tiles: { 0: [makeTile(210)] } },   // outside W=256 when X0=0
+        ];
+        const r2b = checkStackCase("2b non-overlapping layers", {
+            w: 256, rows: 40, y: 10, x0: 0, y0: 0, level: 2, last: true,
+            stack: { base: baseStore, layers: emptyOverlapLayers },
+        });
+        check(`${label} stackRowsToWasm (2b): layers with no tiles in the band are skipped without running composite_tile on the base`, r2b.ok, r2b.detail);
+
+        // (2c) Layer starting at y = 256 (tiles only in ty = 1) and layer ending at y = 256 (tiles only in ty = 0), built via stackRows(w, h, stores).part(256, n, true)
+        const makeSnapStore = (x, y, w, h, rowMap, extra = {}) => ({
+            x, y, alpha: extra.alpha ?? 255, op: extra.op ?? 0,
+            match: extra.match || null, dissolve: extra.dissolve ?? null,
+            clip: extra.clip || null, mask: extra.mask || null,
+            snap: { width: w, height: h, tileRowNames: (ty) => rowMap[ty] || [] },
+        });
+        const stores2c = [
+            makeSnapStore(0, 0, Wd, Hd, baseStore.tiles),
+            makeSnapStore(0, 0, Wd, Hd, { 0: [makeTile(221), makeTile(222)] }, { alpha: 190, op: 0 }),   // ends at y = 256 (only in above row 255!)
+            makeSnapStore(0, 256, Wd, 256, { 0: [makeTile(223), makeTile(224)] }, { alpha: 210, op: 5 }), // starts at y = 256 (not in above row 255!)
+        ];
+        const sr2c = bands.stackRows(Wd, Hd, stores2c);
+        const part2c = await sr2c.part(256, 32, true);
+        const r2c = checkStackCase("2c part boundary y=256", { ...part2c.args, w: Wd, rows: 32, level: 2, last: false });
+        check(`${label} stackRowsToWasm (2c): separate above pass at part boundary y=256 with layers starting and ending at 256`, r2c.ok, r2c.detail);
+
+        // (2d) Offset and negative-offset layers (including an unmasked partial layer narrower than the band, and a layer
+        // mask with a null tile and a missing tile row under existing layer pixels) and non-zero x0 (x0: 128)
+        const maskTile1 = makeTile(231), maskTile2 = makeTile(232);
+        const r2d = checkStackCase("2d offset layers, partial unmasked layer, and mask holes at x0=128", {
+            w: 240, rows: 60, y: 120, x0: 128, y0: 0, level: 2, last: true,
+            stack: {
+                base: baseStore,
+                layers: [
+                    { x: 160, y: 130, w: 120, h: 35, alpha: 215, op: 0, tiles: { 0: [makeTile(238)] } },
+                    { x: 300, y: 140, w: 200, h: 200, alpha: 220, op: 0, tiles: { 0: [makeTile(233)] }, mask: { 0: [maskTile1] } },
+                    { x: -50, y: -30, w: 450, h: 300, alpha: 170, op: 6, tiles: { 0: [makeTile(234), makeTile(235)], 1: [makeTile(236), makeTile(237)] }, mask: { 0: [maskTile2, null] } },
+                ],
+            },
+        });
+        check(`${label} stackRowsToWasm (2d): positive/negative layer offsets, unmasked partial layer, and mask holes clip identically to storeRows`, r2d.ok, r2d.detail);
+
+        // (2e) Color-matched layer (10 floats: meanS[3], meanT[3], scale[3], k) between other blend layers
+        const matchFloats = [110.5, 95.2, 80.1, 130.0, 105.5, 90.0, 1.15, 0.92, 1.08, 0.85];
+        const r2e = checkStackCase("2e color-matched layer", {
+            w: Wd, rows: 40, y: 20, x0: 0, y0: 0, level: 2, last: false,
+            stack: {
+                base: baseStore,
+                layers: [
+                    { x: 0, y: 0, w: Wd, h: Hd, alpha: 200, op: 5, tiles: { 0: [makeTile(241), makeTile(242)] } },
+                    { x: 16, y: 8, w: 256, h: 256, alpha: 230, op: 0, match: matchFloats, tiles: { 0: [makeTile(243)] }, mask: { 0: [maskTile1] } },
+                    { x: 0, y: 0, w: Wd, h: Hd, alpha: 150, op: 7, tiles: { 0: [makeTile(244), makeTile(245)] } },
+                ],
+            },
+        });
+        check(`${label} stackRowsToWasm (2e): 10-float match_pixels layer between blend layers equals rowsOfStack`, r2e.ok, r2e.detail);
+
+        // (2f) Two layers clipped to the same masked clip base (with A=0 holes, soft-alpha ramp, and a null-tile hole in
+        // c.mask under existing clip base pixels), plus a layer clipped to an unmasked clip base (pbm = 0)
+        const clipBaseTile = makeTile(251, (u8, o, x, y) => {
+            u8[o] = 100; u8[o + 1] = 150; u8[o + 2] = 200;
+            u8[o + 3] = (x + y) % 4 === 0 ? 0 : ((x * 7 + y * 13) & 255);
+        });
+        const clipBaseMaskTile = makeTile(252, (u8, o, x, y) => {
+            u8[o + 3] = (x * 11 + y * 5) & 255;
+        });
+        const ownMaskA = makeTile(253, (u8, o, x, y) => { u8[o + 3] = (x * 3 + y * 17 + 40) & 255; });
+        const ownMaskB = makeTile(254, (u8, o, x, y) => { u8[o + 3] = (255 - ((x * 9 + y * 7) & 255)) & 255; });
+        const sharedClip = {
+            x: 10, y: 5, w: 512, h: 256, alpha: 185,
+            tiles: { 0: [clipBaseTile, makeTile(257)] },
+            mask: { 0: [clipBaseMaskTile, null] },
+        };
+        const unmaskedClip = {
+            x: 6, y: 4, w: 256, h: 256, alpha: 195,
+            tiles: { 0: [clipBaseTile] },
+        };
+        const r2f = checkStackCase("2f clipped layers (masked base with hole + unmasked base)", {
+            w: 320, rows: 48, y: 12, x0: 0, y0: 0, level: 2, last: true,
+            stack: {
+                base: baseStore,
+                layers: [
+                    { x: 0, y: 0, w: 512, h: 256, alpha: 240, op: 0, tiles: { 0: [makeTile(255), makeTile(258)] }, mask: { 0: [ownMaskA, null] }, clip: sharedClip },
+                    { x: 0, y: 0, w: 512, h: 256, alpha: 210, op: 5, tiles: { 0: [makeTile(256), makeTile(259)] }, mask: { 0: [null, ownMaskB] }, clip: sharedClip },
+                    { x: 0, y: 0, w: 256, h: 256, alpha: 225, op: 0, tiles: { 0: [makeTile(260)] }, mask: { 0: [ownMaskA] }, clip: unmaskedClip },
+                ],
+            },
+        });
+        check(`${label} stackRowsToWasm (2f): two clipped layers over a masked clip base (with c.mask hole) and a clipped layer over an unmasked clip base (pbm=0)`, r2f.ok, r2f.detail);
+
+        // (2g) Dissolve layer at y = 16 > 0 (so the above pass at y = 15 is non-null and compared directly) including
+        // partial coverage (0 < cVal < 255) and opaque cVal === 255 where (hash32 >>> 24) === 255
+        const dissolveSeed = 0x13579BDF;
+        let hitHash255 = false;
+        const dissolveTile = makeTile(261, (u8, o, x, y) => {
+            u8[o] = (x * 19 + 33) & 255;
+            u8[o + 1] = (y * 23 + 77) & 255;
+            u8[o + 2] = ((x + y) * 11) & 255;
+            const top = hash32(x, y, dissolveSeed) >>> 24;
+            if (top === 255 && y >= 15 && y < 64) {
+                hitHash255 = true;
+                u8[o + 3] = 255;   // cVal === 255 at a coordinate inside y = 15..63 where top hash byte is 255
+            } else if ((x + y) % 7 === 0) {
+                u8[o + 3] = 0;
+            } else {
+                u8[o + 3] = 1 + ((x * 5 + y * 9) % 254);
+            }
+        });
+        const r2gOpaque = checkStackCase("2g dissolve opaque + partial at y=16", {
+            w: 256, rows: 48, y: 16, x0: 0, y0: 0, level: 2, last: true,
+            stack: {
+                base: baseStore,
+                layers: [
+                    { x: 0, y: 0, w: 256, h: 256, alpha: 255, op: 0, dissolve: dissolveSeed, tiles: { 0: [dissolveTile] } },
+                    { x: 0, y: 0, w: 256, h: 256, alpha: 180, op: 0, dissolve: dissolveSeed ^ 0x55AA55AA, tiles: { 0: [makeTile(262)] }, mask: { 0: [ownMaskA] } },
+                ],
+            },
+        });
+        check(`${label} stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack`, hitHash255 && r2gOpaque.ok, r2gOpaque.detail || `hitHash255=${hitHash255}`);
+
+        // (2h) Fresh-instance memory.grow test at y = 12 > 0: > 2 MiB multi-layer band grows freshPx.memory.buffer and stays byte-identical on both band and above row
+        const freshPx = new P.Px(new WebAssembly.Instance(px.module, {}), px.module);
+        const buf0 = freshPx.memory.buffer;
+        const growMsg = {
+            w: 512, rows: 244, y: 12, x0: 0, y0: 0,
+            stack: {
+                base: { x: 0, y: 0, w: 512, h: 256, tiles: { 0: [makeTile(271), makeTile(272)] } },
+                layers: [
+                    { x: 0, y: 0, w: 512, h: 256, alpha: 220, op: 0, tiles: { 0: [makeTile(273), makeTile(274)] }, mask: { 0: [ownMaskA, ownMaskB] } },
+                    { x: 0, y: 0, w: 512, h: 256, alpha: 190, op: 5, match: matchFloats, tiles: { 0: [makeTile(275), makeTile(276)] }, clip: sharedClip },
+                    { x: 0, y: 0, w: 512, h: 256, alpha: 160, op: 6, dissolve: dissolveSeed, tiles: { 0: [makeTile(277), makeTile(278)] } },
+                ],
+            },
+        };
+        const fa = freshPx.job;
+        let freshOut, freshAbove;
+        try {
+            const pd = W.stackRowsToWasm(freshPx, fa, growMsg, false, null);
+            freshOut = freshPx.u8().slice(pd, pd + 512 * 244 * 4);
+            const pp = W.stackRowsToWasm(freshPx, fa, growMsg, true, null);
+            freshAbove = freshPx.u8().slice(pp, pp + 512 * 4);
+        } finally {
+            freshPx._reset(fa);
+        }
+        const grew = freshPx.memory.buffer !== buf0;
+        const wantGrow = W.rowsOfStack(growMsg, false, null);
+        const wantGrowAbove = W.rowsOfStack(growMsg, true, null);
+        check(`${label} stackRowsToWasm (2h): fresh instance grows memory.buffer mid-job and produces identical band and above-row bytes to rowsOfStack`,
+            grew && eqBytes(freshOut, wantGrow) && eqBytes(freshAbove, wantGrowAbove),
+            `grew=${grew} band=${firstDiff(freshOut, wantGrow)} above=${firstDiff(freshAbove, wantGrowAbove)}`);
+    }
+
+    // 3. Route overrides (composeTiles, composeStack), arena reset & releaseMB, and gather/kernel trap/OOM fallback in worker pngPart(msg)
+    if (label === "rust simd") {
+        const tileMsg = {
+            w: 256, rows: 32, r0: 0, level: 2, last: true,
+            tiles: [makeTile(301)], prevTiles: [makeTile(302)],
+        };
+        const stackMsg = {
+            w: 256, rows: 32, y: 16, x0: 0, y0: 0, level: 2, last: true,
+            stack: {
+                base: { x: 0, y: 0, w: 256, h: 256, tiles: { 0: [makeTile(303)] } },
+                layers: [{ x: 0, y: 0, w: 256, h: 256, alpha: 200, op: 5, tiles: { 0: [makeTile(304)] } }],
+            },
+        };
+        try {
+            const tRust = await W.pngPart(tileMsg);
+            const afterTileJobBytes = K.rustPx().job.jobBytes;
+            const afterTileChunks = K.rustPx().job.chunks.length;
+
+            const sRust = await W.pngPart(stackMsg);
+            const afterStack1JobBytes = K.rustPx().job.jobBytes;
+            const afterStack1Chunks = K.rustPx().job.chunks.length;
+            const memAfter1 = K.rustPx().memory.buffer.byteLength;
+            const chunkBytesAfter1 = K.rustPx().job.chunks[0] ? K.rustPx().job.chunks[0].bytes : 0;
+            for (let rep = 0; rep < 3; rep++) await W.pngPart(stackMsg);
+            const afterStack4JobBytes = K.rustPx().job.jobBytes;
+            const afterStack4Chunks = K.rustPx().job.chunks.length;
+            const memAfter4 = K.rustPx().memory.buffer.byteLength;
+            const chunkBytesAfter4 = K.rustPx().job.chunks[0] ? K.rustPx().job.chunks[0].bytes : 0;
+
+            let rel0, rel1;
+            K.setRoute("releaseMB", 0);
+            try {
+                rel0 = K.pxInstances().release;
+                await W.pngPart(stackMsg);
+                rel1 = K.pxInstances().release;
+            } finally {
+                K.setRoute("releaseMB", null);
+            }
+            const resetAndReleaseOk = afterTileJobBytes === 0 && afterTileChunks === 1
+                && afterStack1JobBytes === 0 && afterStack1Chunks === 1
+                && afterStack4JobBytes === 0 && afterStack4Chunks === 1
+                && memAfter4 === memAfter1 && chunkBytesAfter4 === chunkBytesAfter1
+                && rel1 === rel0 + 1;
+            check("inpaint_worker.js pngPart resets p.job after every part (jobBytes=0, 1 chunk, stable memory across repeated parts) and calls releaseIfLarge()",
+                resetAndReleaseOk,
+                `jobBytes=${afterTileJobBytes}/${afterStack1JobBytes}/${afterStack4JobBytes} chunks=${afterTileChunks}/${afterStack1Chunks}/${afterStack4Chunks} mem=${memAfter1}->${memAfter4} rel=${rel0}->${rel1}`);
+
+            K.setRoute("composeTiles", "js");
+            const tJs = await W.pngPart(tileMsg);
+            K.setRoute("composeTiles", null);
+
+            K.setRoute("composeStack", "js");
+            const sJs = await W.pngPart(stackMsg);
+            K.setRoute("composeStack", null);
+
+            const routeOk = tRust.timing.composeWasm === 1 && tJs.timing.composeWasm === 0
+                && sRust.timing.composeWasm === 1 && sJs.timing.composeWasm === 0
+                && tRust.adler === tJs.adler && tRust.crc === tJs.crc && eqBytes(new Uint8Array(tRust.chunk), new Uint8Array(tJs.chunk))
+                && sRust.adler === sJs.adler && sRust.crc === sJs.crc && eqBytes(new Uint8Array(sRust.chunk), new Uint8Array(sJs.chunk));
+            check("inpaint_worker.js pngPart under composeTiles and composeStack routes: composeWasm=1 on rust, composeWasm=0 on js, identical IDAT chunks",
+                routeOk, `tRust=${tRust.timing.composeWasm} tJs=${tJs.timing.composeWasm} sRust=${sRust.timing.composeWasm} sJs=${sJs.timing.composeWasm}`);
+
+            // Simulated OOM and trap both inside the gather (p0.job.take) and inside pngPartFromPtr: recovered() replaces
+            // the instance and falls back to p.pngPart
+            const realWarn = console.warn;
+            console.warn = () => {};
+            try {
+                let p0 = K.rustPx(), i0 = K.pxInstances();
+                p0.job.take = () => { throw new P.PxOutOfMemory(1024); };
+                const gOom = await W.pngPart(stackMsg);
+                let i1 = K.pxInstances();
+                const gatherOomOk = gOom.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.oom === i0.oom + 1
+                    && eqBytes(new Uint8Array(gOom.chunk), new Uint8Array(sRust.chunk));
+
+                p0 = K.rustPx(); i0 = K.pxInstances();
+                p0.job.take = () => trapIn(p0);
+                const gTrap = await W.pngPart(stackMsg);
+                i1 = K.pxInstances();
+                const gatherTrapOk = gTrap.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.trap === i0.trap + 1
+                    && eqBytes(new Uint8Array(gTrap.chunk), new Uint8Array(sRust.chunk));
+
+                p0 = K.rustPx(); i0 = K.pxInstances();
+                p0.pngPartFromPtr = () => { throw new P.PxOutOfMemory(1024); };
+                const sOom = await W.pngPart(stackMsg);
+                i1 = K.pxInstances();
+                const oomOk = sOom.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.oom === i0.oom + 1
+                    && eqBytes(new Uint8Array(sOom.chunk), new Uint8Array(sRust.chunk));
+
+                p0 = K.rustPx(); i0 = K.pxInstances();
+                p0.pngPartFromPtr = function () { return trapIn(this); };
+                const tTrap = await W.pngPart(tileMsg);
+                i1 = K.pxInstances();
+                const trapOk = tTrap.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.trap === i0.trap + 1
+                    && eqBytes(new Uint8Array(tTrap.chunk), new Uint8Array(tRust.chunk));
+
+                check("inpaint_worker.js pngPart recovers from OOM and wasm trap in both partPtrOf (job.take) and pngPartFromPtr, renews the instance, and produces identical bytes via fallback",
+                    gatherOomOk && gatherTrapOk && oomOk && trapOk,
+                    `gatherOomOk=${gatherOomOk} gatherTrapOk=${gatherTrapOk} oomOk=${oomOk} trapOk=${trapOk}`);
+            } finally {
+                console.warn = realWarn;
+            }
+        } finally {
+            K.setRoute("composeTiles", null);
+            K.setRoute("composeStack", null);
+        }
+    }
 }
 
 // W1 (docs/PLAN_WASM_BUILD.md §7): the writer's filter choice. The SIMD build adds the five filters' costs 16 bytes at a

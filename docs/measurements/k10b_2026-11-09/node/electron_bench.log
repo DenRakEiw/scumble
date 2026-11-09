@@ -1,0 +1,67 @@
+(node:68232) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-c/renderer/editor/px/kernels.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-c\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+{
+  "runtime": "electron 44.2.0 (v8 15.2.124.19-electron.0)",
+  "tile_part_15000x256": {
+    "before_js_gather": {
+      "label": "tile_part_15000x256",
+      "route": "js",
+      "composeWasm": 0,
+      "crc": 4293229461,
+      "adler": 2671750286,
+      "wallMed": 52.79,
+      "wallMin": 49.76,
+      "wallMax": 56.2,
+      "kernelMed": 52.76,
+      "copyInMB": 14.71,
+      "copyOutMB": 1.11
+    },
+    "after_wasm_compose": {
+      "label": "tile_part_15000x256",
+      "route": "rust",
+      "composeWasm": 1,
+      "crc": 4293229461,
+      "adler": 2671750286,
+      "wallMed": 49.19,
+      "wallMin": 46.95,
+      "wallMax": 49.94,
+      "kernelMed": 49.18,
+      "copyInMB": 14.71,
+      "copyOutMB": 1.11
+    },
+    "speedupWall": 1.07,
+    "speedupKernel": 1.07
+  },
+  "stack_part_15000x256": {
+    "before_js_gather": {
+      "label": "stack_part_15000x256",
+      "route": "js",
+      "composeWasm": 0,
+      "crc": 3855470221,
+      "adler": 3643592432,
+      "wallMed": 105.99,
+      "wallMin": 102.15,
+      "wallMax": 108.25,
+      "kernelMed": 105.98,
+      "copyInMB": 77.2,
+      "copyOutMB": 30.5
+    },
+    "after_wasm_compose": {
+      "label": "stack_part_15000x256",
+      "route": "rust",
+      "composeWasm": 1,
+      "crc": 3855470221,
+      "adler": 3643592432,
+      "wallMed": 89.29,
+      "wallMin": 87.11,
+      "wallMax": 95.48,
+      "kernelMed": 89.28,
+      "copyInMB": 47.79,
+      "copyOutMB": 1.08
+    },
+    "speedupWall": 1.19,
+    "speedupKernel": 1.19
+  }
+}
