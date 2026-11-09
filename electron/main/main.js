@@ -374,7 +374,8 @@ function createWindow() {
     win.on("close", (e) => {
         const b = win.getNormalBounds();
         // a full-screen window is not maximized: the canvas-only view remembers whether it was before
-        settings.set({ window: { ...b, maximized: viewFullScreen && win.isFullScreen() ? maximizedBeforeView : win.isMaximized() } });
+        try { settings.set({ window: { ...b, maximized: viewFullScreen && win.isFullScreen() ? maximizedBeforeView : win.isMaximized() } }); }
+        catch (err) { console.warn("window bounds:", err.message); }
         // while an agent drives the app, closing the window only hides it; the app ends
         // with the MCP session (or stays when a script still talks to the socket)
         if (agentMode) { e.preventDefault(); win.hide(); headless = true; if (comfyView) comfyView.close(); return; }
@@ -897,18 +898,26 @@ function recentDocuments() {
 }
 
 function addRecent(file) {
-    const list = recentDocuments().filter((r) => pathKey(r.path) !== pathKey(file));
-    list.unshift({ path: file, name: path.basename(file), time: Date.now() });
-    settings.set({ recentDocuments: list.slice(0, RECENT_MAX) });
-    // a portable copy leaves no jump list entry on the PC it runs on (docs/PLAN_0_1_42.md Q22)
-    if (!PORTABLE) { try { app.addRecentDocument(file); } catch (_) { /* the jump list shows it once the file type is registered */ } }
-    buildMenu();
+    try {
+        const list = recentDocuments().filter((r) => pathKey(r.path) !== pathKey(file));
+        list.unshift({ path: file, name: path.basename(file), time: Date.now() });
+        settings.set({ recentDocuments: list.slice(0, RECENT_MAX) });
+        // a portable copy leaves no jump list entry on the PC it runs on (docs/PLAN_0_1_42.md Q22)
+        if (!PORTABLE) { try { app.addRecentDocument(file); } catch (_) { /* the jump list shows it once the file type is registered */ } }
+        buildMenu();
+    } catch (err) {
+        console.warn("recent documents:", err.message);
+    }
 }
 
 function dropRecent(file) {
-    const list = recentDocuments();
-    const kept = list.filter((r) => pathKey(r.path) !== pathKey(file));
-    if (kept.length !== list.length) { settings.set({ recentDocuments: kept }); buildMenu(); }
+    try {
+        const list = recentDocuments();
+        const kept = list.filter((r) => pathKey(r.path) !== pathKey(file));
+        if (kept.length !== list.length) { settings.set({ recentDocuments: kept }); buildMenu(); }
+    } catch (err) {
+        console.warn("recent documents:", err.message);
+    }
 }
 
 /** File › Open Recent: the documents, then Clear Recently Opened. */
@@ -997,7 +1006,11 @@ async function connectComfy(conn) {
     if (conn && typeof conn === "object") {
         const auth = conn.auth && conn.auth.type && conn.auth.type !== "none" ? { type: conn.auth.type, user: conn.auth.user || "", header: conn.auth.header || "" } : { type: "none" };
         saved = settings.set({ comfy: { ...saved, url: conn.url || saved.url, auth } }).comfy;
-        if (typeof conn.secret === "string") keys.set(COMFY_SECRET, conn.secret);
+        if (typeof conn.secret === "string") {
+            if (conn.secret.trim() || keys.describe(COMFY_SECRET).set) {
+                try { keys.set(COMFY_SECRET, conn.secret); } catch (err) { if (conn.secret.trim()) throw err; console.warn("comfy secret clear:", err.message); }
+            }
+        }
     } else if (typeof conn === "string" && conn) {
         saved = settings.set({ comfy: { ...saved, url: conn } }).comfy;
     }
@@ -1086,11 +1099,23 @@ async function probeComfy(conn) {
 
 // ---- IPC -----------------------------------------------------------------------------
 
+function notifyDamagedStores() {
+    const notes = [
+        typeof settings.takeDamagedNotice === "function" ? settings.takeDamagedNotice() : null,
+        typeof keys.takeDamagedNotice === "function" ? keys.takeDamagedNotice() : null,
+    ].filter(Boolean);
+    if (!notes.length) return;
+    const message = notes.join(" ");
+    log.record({ level: "warn", source: "main", message });
+    send("helpers:notice", { kind: "warn", cause: "damaged-store", message });
+}
+
 function installIpc() {
     ipcMain.handle("settings:get", () => settings.get());
     // a write of `updates` may change the skipped version, which decides whether the downloaded one installs on quit
     ipcMain.handle("settings:set", (_e, patch) => {
         const s = settings.set(patch);
+        notifyDamagedStores();
         if (patch && patch.updates) updater.setSkip((s.updates || {}).skip);
         return s;
     });
@@ -1124,8 +1149,7 @@ function installIpc() {
         const a = args || {};
         // a document being saved or opened reads and writes mirror files that no state names yet
         if (documents.busy && !a.dryRun) throw new Error("A document is being saved or opened; clean up when that is done.");
-        let kept = [];
-        try { kept = autosave.referencedKeys(app.getPath("userData")); } catch (err) { console.warn("autosave: generations", err.message); }
+        const kept = autosave.referencedKeys(app.getPath("userData"));
         return mirror.prune({ ...a, keep: [...(Array.isArray(a.keep) ? a.keep : []), ...kept, ...documents.keepKeys()] });
     });
     // .scumble documents (electron/main/documents.js)
@@ -1181,10 +1205,10 @@ function installIpc() {
         url: comfy.url || (settings.get().comfy || {}).url || "", hostname: ownHostname(),
         dir: (settings.get().helpers || {}).dir || "", name: String(name || ""),
     }));
-    ipcMain.handle("keys:list", () => keys.list());
-    ipcMain.handle("keys:set", (_e, { name, value }) => keys.set(name, value));
-    ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));
-    ipcMain.handle("providers:list", () => providers.describeAll());
+    ipcMain.handle("keys:list", () => { const r = keys.list(); notifyDamagedStores(); return r; });
+    ipcMain.handle("keys:set", (_e, { name, value }) => { const r = keys.set(name, value); notifyDamagedStores(); return r; });
+    ipcMain.handle("keys:clear", (_e, name) => { const r = keys.clear(name); notifyDamagedStores(); return r; });
+    ipcMain.handle("providers:list", () => { const r = providers.describeAll(); notifyDamagedStores(); return r; });
     // a run's live progress (Comfy Cloud's events) goes back to the window that asked, for its status row's bar; a
     // Comfy Cloud run that keeps its job's note, or whose page went away before its picture came (a reload, a crash:
     // the note goes back then), tells the window to ask for the noted jobs (S6)

@@ -63,26 +63,92 @@ const DEFAULTS = {
     comfyView: null,   // the ComfyUI window (electron/main/comfyview.js): { bounds, maximized, target: "comfy" | "cloud" }
 };
 
+const READ_FAIL_COOLDOWN_MS = 2000;
+let readFailUntil = 0;
+let damagedNotice = null;
+
 function file(name) {
     return path.join(app.getPath("userData"), name);
 }
 
-function readJson(name, fallback) {
+function retrying(op, tries = 4) {
+    for (let i = 0; ; i++) {
+        try { return op(); } catch (err) {
+            if (i >= tries || !/^(EPERM|EBUSY|EACCES)$/.test(String(err && err.code))) throw err;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * (i + 1));
+        }
+    }
+}
+
+function setAsideDamaged(p) {
+    let dest = p + ".damaged";
+    for (let i = 1; fs.existsSync(dest); i++) dest = `${p}.damaged.${i}`;
     try {
-        return JSON.parse(fs.readFileSync(file(name), "utf8"));
+        retrying(() => fs.renameSync(p, dest));
+        return path.basename(dest);
     } catch (_) {
-        return fallback;
+        return null;
+    }
+}
+
+function readJson(name, fallback) {
+    const p = file(name);
+    const cooling = readFailUntil > Date.now();
+    let raw;
+    try {
+        raw = retrying(() => fs.readFileSync(p, "utf8"), cooling ? 0 : 4);
+        readFailUntil = 0;
+    } catch (err) {
+        if (err && err.code === "ENOENT") {
+            readFailUntil = 0;
+            return { ok: true, data: fallback };
+        }
+        if (!cooling) {
+            readFailUntil = Date.now() + READ_FAIL_COOLDOWN_MS;
+            console.warn("settings read:", p, err.message);
+        }
+        return { ok: false, data: fallback };
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+        return { ok: true, data: parsed };
+    } catch (err) {
+        console.warn("settings damaged:", p, err.message);
+        const aside = setAsideDamaged(p);
+        if (aside) {
+            damagedNotice = `Your settings were damaged and reset to defaults; the old file is kept as ${aside}.`;
+            return { ok: true, data: fallback };
+        }
+        return { ok: false, data: fallback };
     }
 }
 
 function writeJson(name, value) {
     fs.mkdirSync(app.getPath("userData"), { recursive: true });
     const tmp = file(name + ".tmp");
-    fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", "utf8");
-    fs.renameSync(tmp, file(name));
+    const buf = Buffer.from(JSON.stringify(value, null, 2) + "\n", "utf8");
+    const fd = fs.openSync(tmp, "w");
+    let ok = false;
+    try {
+        for (let off = 0; off < buf.length; ) {
+            const n = fs.writeSync(fd, buf, off, buf.length - off);
+            if (!(n > 0)) throw Object.assign(new Error("short write"), { code: "EIO" });
+            off += n;
+        }
+        fs.fsyncSync(fd);
+        ok = true;
+    } finally {
+        try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+        if (!ok) { try { fs.unlinkSync(tmp); } catch (_) { /* ignore */ } }
+    }
+    retrying(() => fs.renameSync(tmp, file(name)));
 }
 
 let cache = null;
+let loaded = false;
+let pending = {};
+let inSet = false;
 
 /** The relight defaults the store before F3 wrote with every pick (77da63f..4192a6a; lora_strength 1 is 77da63f's 1.0). */
 const PRE_F3_RELIGHT = {
@@ -91,8 +157,8 @@ const PRE_F3_RELIGHT = {
 };
 
 function get() {
-    if (!cache) {
-        const stored = readJson("settings.json", {});
+    if (!loaded) {
+        const { ok, data: stored } = readJson("settings.json", {});
         // 0.1.30 and 0.1.31 stored their default `embedRecipe: false` with every write (set() writes the whole object); it
         // counts as the user's only when the switch itself wrote it, which marks it (host.setEmbedRecipe, since 0.1.32)
         if (stored && stored.embedRecipe === false && !stored.embedRecipeChosen) delete stored.embedRecipe;
@@ -106,15 +172,33 @@ function get() {
             }
             stored.relight = flat;
         }
-        cache = { ...DEFAULTS, ...stored };
+        const hadPending = Object.keys(pending).length > 0;
+        cache = { ...DEFAULTS, ...stored, ...pending };
+        if (ok) {
+            loaded = true;
+            pending = {};
+            if (hadPending && !inSet) {
+                try { writeJson("settings.json", cache); } catch (err) { console.warn("settings write:", err.message); }
+            }
+        }
     }
     return cache;
 }
 
 function set(patch) {
-    cache = { ...get(), ...(patch || {}) };
-    writeJson("settings.json", cache);
+    inSet = true;
+    let base;
+    try { base = get(); } finally { inSet = false; }
+    cache = { ...base, ...(patch || {}) };
+    if (loaded) writeJson("settings.json", cache);
+    else pending = { ...pending, ...(patch || {}) };
     return cache;
+}
+
+function takeDamagedNotice() {
+    const n = damagedNotice;
+    damagedNotice = null;
+    return n;
 }
 
 /** The editor's autosave bundle of the last session (a string, or null), or of an earlier generation (autosave.js). */
@@ -126,4 +210,4 @@ function saveState(state) {
     autosave.save(app.getPath("userData"), state);
 }
 
-module.exports = { get, set, loadState, saveState, DEFAULTS };
+module.exports = { get, set, loadState, saveState, takeDamagedNotice, DEFAULTS };

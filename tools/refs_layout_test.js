@@ -337,6 +337,10 @@ async function capture(p, req, verb = "edit") {
             upload(name, (await formOf(init.body)).image);
             return json(200, { name, subfolder: "", type: "input" });
         }
+        if (at === "/proxy/krea/assets") {                                    // Comfy Router's Krea 3: multipart, a Krea URL back
+            const url2 = upload(`${u.origin}/krea/u${++k}.png`, (await formOf(init.body)).file);
+            return json(200, { id: "a" + k, image_url: url2, uploaded_at: "2026-11-09T10:00:00Z" });
+        }
         if (at === "/customers/storage") {                                    // the Comfy Partner API: a signed PUT
             const dl = `${u.origin}/dl/u${++k}.png`, put = `${u.origin}/put/u${k}`;
             shot.pending.set(put, dl);
@@ -1461,6 +1465,7 @@ async function main() {
                 openai: "https://api.openai.com/v1/images/edits", gemini: `https://generativelanguage.googleapis.com/v1beta/models/${req.model}:generateContent`,
                 openrouter: `${LOOP}/api/v1/images`, ark: `${LOOP}/api/v3/images/generations`, oxen: `${LOOP}/api/ai/images/edit`,
                 magnific: `${LOOP}/v1/ai/${req.model}`, comfyrouter: `${LOOP}/v2/models/${req.model}/requests`, comfypartner: `${LOOP}/proxy/tencent/v1/wand/hunyuan-image/v35-generation`,
+                comfycloud: "https://cloud.comfy.org/api/prompt",   // a partner node that makes a new image (Krea 3), on the legacy API
             };
             if (!(s.provider in ENDPOINT)) bad.push(`no endpoint known for ${s.provider}: add it to this test`);
             else if (url !== ENDPOINT[s.provider]) bad.push(`POSTs to ${url}, not ${ENDPOINT[s.provider]}`);
@@ -1495,7 +1500,7 @@ async function main() {
             (function shapeOf(v) {
                 if (v == null || typeof v !== "object" || Buffer.isBuffer(v) || v instanceof Uint8Array) return;
                 if (!Array.isArray(v) && typeof v.width === "number" && typeof v.height === "number") shape.push(["width x height", `${v.width}x${v.height}`]);
-                for (const [k, x] of Object.entries(v)) { if (/^(size|aspect_ratio|aspectRatio|image_size)$/.test(k)) shape.push([k, x]); else shapeOf(x); }
+                for (const [k, x] of Object.entries(v)) { if (/^(size|aspect_ratio|aspectRatio|image_size|model\.aspect_ratio)$/.test(k)) shape.push([k, x]); else shapeOf(x); }
             })(shot.request);
             // the asked pixels (1344 x 768), a size of the asked aspect picked from it (ModelArk), or the aspect by name
             // a route with an area range (`text.refs.options.pixels`, fal Seedream 5) gets the asked shape inside it
@@ -1513,7 +1518,7 @@ async function main() {
             if (NO_SHAPE.test(name)) { tally.noShape++; if (shape.length) bad.push(`on the no-shape list, yet it sends ${short(shape)}`); }
             else if (!shape.some(is169)) bad.push(`the asked 16:9 at 1344 x 768 is not in ${short(shape)}`);
             // the instruction sentence where the route writes one, the prompt as given where it does not
-            const SENTENCE = new Set(["gemini", "openrouter", "ark", "oxen", "magnific", "comfypartner", "comfyrouter:vertexai", "comfyrouter:byteplus", "comfyrouter:qwen"]);
+            const SENTENCE = new Set(["gemini", "openrouter", "ark", "oxen", "magnific", "comfypartner", "comfyrouter:vertexai", "comfyrouter:byteplus", "comfyrouter:qwen", "comfyrouter:krea"]);
             const sent = [...new Set(stringsWith(shot.request, req.prompt))];
             // a variant whose prompt goes as written (FLUX 3 on OpenRouter, options.prompt "as_written") writes none
             const writes = SENTENCE.has(key) && !(req.options && req.options.prompt === "as_written");

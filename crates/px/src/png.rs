@@ -155,13 +155,21 @@ fn paeth_px<const B: usize>(cur: &mut [u8], up: &[u8]) {
 /// (zeros at the top of the picture) and holds the last row afterwards, for the next call. The number of lines undone:
 /// `rows`, or the index of the line whose filter type is none of the five.
 pub fn unfilter_rows(lines: &mut [u8], rows: usize, row_bytes: usize, bpp: usize, prev: &mut [u8]) -> usize {
+    unfilter_rows_opt(lines, rows, row_bytes, bpp, Some(prev))
+}
+
+fn unfilter_rows_opt(lines: &mut [u8], rows: usize, row_bytes: usize, bpp: usize, prev: Option<&mut [u8]>) -> usize {
     let stride = row_bytes + 1;
+    let prev_ref: &[u8] = match prev.as_deref() {
+        Some(p) => &p[..row_bytes],
+        None => &[],
+    };
     for y in 0..rows {
         let (done, rest) = lines.split_at_mut(y * stride);
         let line = &mut rest[..stride];
         let ft = line[0];
         let cur = &mut line[1..];
-        let up: &[u8] = if y == 0 { &prev[..row_bytes] } else { &done[(y - 1) * stride + 1..y * stride] };
+        let up: &[u8] = if y == 0 { prev_ref } else { &done[(y - 1) * stride + 1..y * stride] };
         match (ft, bpp) {
             (0, _) => {}
             #[cfg(target_feature = "simd128")] (2, _) => lanes::up_row(cur, up),
@@ -189,8 +197,10 @@ pub fn unfilter_rows(lines: &mut [u8], rows: usize, row_bytes: usize, bpp: usize
         }
     }
     if rows > 0 {
-        let last = (rows - 1) * stride + 1;
-        prev[..row_bytes].copy_from_slice(&lines[last..last + row_bytes]);
+        if let Some(p) = prev {
+            let last = (rows - 1) * stride + 1;
+            p[..row_bytes].copy_from_slice(&lines[last..last + row_bytes]);
+        }
     }
     rows
 }
@@ -575,4 +585,130 @@ pub fn chunk_frame(buf: &mut [u8], data_len: usize, kind: u32) -> u32 {
     buf[8 + data_len..12 + data_len].copy_from_slice(&crc.to_be_bytes());
     crc
 }
+
+// ---- K7: one part of an 8-bit RGBA PNG (docs/PLAN_WASM_BUILD.md §4.2, §7 Stop 2) -----------------------------------
+
+/// Standard PNG part target size in uncompressed pixel bytes (`inpaint_png.js` `PART_BYTES`).
+pub const PART_BYTES: usize = 8 * 1048576;
+/// Maximum rows in one PNG part (`inpaint_program.js` `programRows` / `bandPlan.rows` -> `inpaint_bands.js`
+/// `bandSource` -> `bandRows` align -> `inpaint_png.js` `forParts` `partRows(width, align)`).
+pub const PART_MAX_ROWS: usize = 2048;
+/// `png_part_decode` / `png_part_finish`: `lines` is empty or not a whole number of `1 + 4 * w`-byte scanlines.
+pub const PART_NOT_LINES: isize = -4;
+/// `png_part_decode` / `png_part_finish`: a scanline's filter byte is not `0..=4`.
+pub const PART_BAD_FILTER: isize = -5;
+
+/// Byte capacity of `lines` for a standard `PART_BYTES` part of a `w`-wide 8-bit RGBA PNG (`partRows(w) * (1 + 4 * w)`).
+pub fn part_lines_cap(w: usize) -> usize {
+    let Some(row_bytes) = w.checked_mul(4) else { return 0 };
+    if row_bytes == 0 {
+        return 0;
+    }
+    let stride = row_bytes + 1;
+    let rows = (PART_BYTES / row_bytes).clamp(1, PART_MAX_ROWS);
+    rows * stride
+}
+
+/// Copy `rows` unfiltered RGBA8 scanlines (`1 + 4 * w` bytes each) from `lines` into `out` (`rows * 4 * w` bytes),
+/// applying the 65,536-byte CPU-canvas round-trip table `rt` (`t[(a << 8) | c]` for `a < 255`) when given.
+/// Returns `1` when every pixel has `a == 255`, `0` otherwise.
+pub fn lines_to_rgba_rt(lines: &[u8], rows: usize, w: usize, rt: Option<&[u8; 65536]>, out: &mut [u8]) -> u32 {
+    let row_bytes = w * 4;
+    let stride = row_bytes + 1;
+    for y in 0..rows {
+        let src = &lines[y * stride + 1..(y + 1) * stride];
+        let dst = &mut out[y * row_bytes..(y + 1) * row_bytes];
+        dst.copy_from_slice(src);
+    }
+    let mut opaque = 1u32;
+    let rgba = &mut out[..rows * row_bytes];
+    if let Some(t) = rt {
+        for px in rgba.chunks_exact_mut(4) {
+            let a = px[3] as usize;
+            if a < 255 {
+                opaque = 0;
+                let row = a << 8;
+                px[0] = t[row | px[0] as usize];
+                px[1] = t[row | px[1] as usize];
+                px[2] = t[row | px[2] as usize];
+            }
+        }
+    } else {
+        for px in rgba.chunks_exact(4) {
+            if px[3] < 255 {
+                opaque = 0;
+                break;
+            }
+        }
+    }
+    opaque
+}
+
+/// Decode one inflated part (`lines`, a whole number of `1 + 4 * w`-byte scanlines) of a `w`-wide 8-bit RGBA PNG (K7,
+/// `docs/PLAN_WASM_BUILD.md` §4.2). Writes `[rows, adler, first_filter, opaque, needs_prev]` to `info` and returns
+/// `rows` (`> 0`), `PART_NOT_LINES` (`-4`), or `PART_BAD_FILTER` (`-5`).
+pub fn part_decode(
+    lines: &mut [u8],
+    w: usize,
+    prev: Option<&mut [u8]>,
+    rt: Option<&[u8; 65536]>,
+    out: Option<&mut [u8]>,
+    info: &mut [u32; 5],
+) -> isize {
+    let Some(row_bytes) = w.checked_mul(4) else { return PART_NOT_LINES };
+    if row_bytes == 0 || lines.is_empty() {
+        return PART_NOT_LINES;
+    }
+    let stride = row_bytes + 1;
+    if lines.len() % stride != 0 {
+        return PART_NOT_LINES;
+    }
+    let rows = lines.len() / stride;
+    for y in 0..rows {
+        if lines[y * stride] > 4 {
+            return PART_BAD_FILTER;
+        }
+    }
+    let first_filter = lines[0] as u32;
+    let adler = adler32(lines, 1);
+    if prev.is_none() && first_filter >= 2 {
+        *info = [rows as u32, adler, first_filter, 0, 1];
+        return rows as isize;
+    }
+    let Some(dst) = out else { return PART_NOT_LINES };
+    unfilter_rows_opt(lines, rows, row_bytes, 4, prev);
+    let opaque = lines_to_rgba_rt(lines, rows, w, rt, dst);
+    *info = [rows as u32, adler, first_filter, opaque, 0];
+    rows as isize
+}
+
+/// Finish a part whose `part_decode` answered `needs_prev = 1` once `prev` (`4 * w` unfiltered bytes from the row
+/// above) is ready (K7, `docs/PLAN_WASM_BUILD.md` §4.2). Writes `[rows, 0, first_filter, opaque, 0]` to `info` and
+/// returns `rows` (`> 0`), `PART_NOT_LINES` (`-4`), or `PART_BAD_FILTER` (`-5`).
+pub fn part_finish(
+    lines: &mut [u8],
+    rows: usize,
+    w: usize,
+    prev: &mut [u8],
+    rt: Option<&[u8; 65536]>,
+    out: &mut [u8],
+    info: &mut [u32; 5],
+) -> isize {
+    let Some(row_bytes) = w.checked_mul(4) else { return PART_NOT_LINES };
+    if row_bytes == 0 || rows == 0 {
+        return PART_NOT_LINES;
+    }
+    let stride = row_bytes + 1;
+    for y in 0..rows {
+        if lines[y * stride] > 4 {
+            return PART_BAD_FILTER;
+        }
+    }
+    let first_filter = lines[0] as u32;
+    unfilter_rows(lines, rows, row_bytes, 4, prev);
+    let opaque = lines_to_rgba_rt(lines, rows, w, rt, out);
+    *info = [rows as u32, 0, first_filter, opaque, 0];
+    rows as isize
+}
+
 

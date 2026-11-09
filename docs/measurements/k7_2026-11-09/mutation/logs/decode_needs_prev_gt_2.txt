@@ -1,0 +1,28 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 13 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 261098 bytes, sha256 8b61ac640b63b5a1
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 212115 bytes, sha256 14ff9caff220e1dc
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px)
+    Finished `release` profile [optimized] target(s) in 5.67s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px)
+    Finished `release` profile [optimized] target(s) in 5.26s
+$ node tools/px_test.js  (rc 1, 3 s, PX_ONLY=pngPart)
+FAIL rust simd png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)  w=1 r=1 ft=2 nullPrev rt=canvas: out.needsPrev is false, the twin has true
+FAIL rust simd png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) on invalid inputs  raw decode null out when needs_prev=true succeeds: got -4, want 3
+FAIL kernels.js switches pngPartLinesCap, pngPartDecode, and pngPartFinish between Rust and the JS twin
+FAIL rust scalar png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)  w=1 r=1 ft=2 nullPrev rt=canvas: threw unreachable
+FAIL rust scalar png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) on invalid inputs  raw decode null out when needs_prev=true succeeds: got -4, want 3
+FAIL (5) (only: pngPart; PX_ONLY, not the full test)
+ok   rust scalar adler32 standard vector ("Wikipedia" -> 11E60398) and empty buffer
+ok   rust scalar js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and zlib.adler32 (160 decode + 48 finish cases)
+FAIL rust scalar png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)  w=1 r=1 ft=2 nullPrev rt=canvas: threw unreachable
+ok   rust scalar png_part_finish equals its twin byte for byte (48 cases, each also at an odd offset)
+ok   rust scalar pngPartDecode and pngPartFinish write into a given Uint8ClampedArray view without touching guard bytes
+FAIL rust scalar png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) on invalid inputs  raw decode null out when needs_prev=true succeeds: got -4, want 3
+ok   rust scalar multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and Adler-32
+FAIL (5) (only: pngPart; PX_ONLY, not the full test)
+(node:61236) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/143f6c41-8099-490a-b650-5fbc22040c8e/scratch/mut_tree_k7/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

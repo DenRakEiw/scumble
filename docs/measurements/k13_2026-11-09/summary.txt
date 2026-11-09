@@ -1,12 +1,14 @@
 K13 (docs/PLAN_WASM_BUILD.md §4.5, §5): `shadow_march_f64` scalar, per-tap constants in JS, the twin's hoist (bytes
 unchanged), and `marchGuardOk` sending non-finite lights/parameters or coordinates `>= 2^30` to the twin.
 
-Base: `3fd8bda7` (`wasm-kernels`), ABI 36 -> 37.
+Base: `3fd8bda7` (`wasm-kernels`, ABI 36 -> 37), merged with `wasm-kernels` at `92d29245` (ABI 40 -> 41).
 - `before px.wasm` (`git cat-file blob 3fd8bda7:renderer/editor/px/px.wasm`): 259,180 bytes, sha256 `7e99b55f37ff69ff` (`7e99b55f37ff69ffdfb0b8e5f78e01b234fc3a96759eda4b1870832e934f65a5`)
-- `after  px.wasm` (HEAD, deduplicated `relight::march_lens` guard): 260,652 bytes, sha256 `3d9bec873cda8745` (`3d9bec873cda8745c955338217d4682099e7605054e68d96598042d5a90a40bd`)
+- `after  px.wasm` (HEAD after merging `92d29245`, ABI 41): 279,003 bytes, sha256 `1641bd5c67921db4` (`1641bd5c67921db41de58597217f7a135a897673bc7142ee22012b4e276f3d7a`)
+  - pre-merge HEAD on `3fd8bda7` (`7dbc030f`, ABI 37, deduplicated `relight::march_lens` guard): 260,652 bytes, sha256 `3d9bec873cda8745` (`3d9bec873cda8745c955338217d4682099e7605054e68d96598042d5a90a40bd`)
   - 15k measurement run (`chain.log:1-2`, commit `f915c5ee`; identical inner march loop, entry guards before `march_lens` deduplication): 260,770 bytes, sha256 `c633b80fbee79614` (`c633b80fbee79614a06d6c3d0c95fd62865882274b542a08c5439977f0fb28e3`)
 - `before px_scalar.wasm` (`git cat-file blob 3fd8bda7:renderer/editor/px/px_scalar.wasm`): 210,462 bytes, sha256 `03ddfff981982e19` (`03ddfff981982e1953df1099a2c3a9a600a0aba581ac58192e38c28fdf0f781d`)
-- `after  px_scalar.wasm` (HEAD, deduplicated `relight::march_lens` guard): 211,934 bytes, sha256 `4c2310eab695466c` (`4c2310eab695466cbb75bae4e3568e87f9408f8256be4db146b30d8ea51bf23e`)
+- `after  px_scalar.wasm` (HEAD after merging `92d29245`, ABI 41): 225,584 bytes, sha256 `4ab3e3e738c13b6e` (`4ab3e3e738c13b6eb7799fa8cd7c6c16bf154fe79c6ad9abf66f0ce064c8d671`)
+  - pre-merge HEAD on `3fd8bda7` (`7dbc030f`, ABI 37, deduplicated `relight::march_lens` guard): 211,934 bytes, sha256 `4c2310eab695466c` (`4c2310eab695466cbb75bae4e3568e87f9408f8256be4db146b30d8ea51bf23e`)
   - 15k measurement run (`chain.log:1-2`, commit `f915c5ee`): 212,018 bytes, sha256 `7b7f92f13ade53fe` (`7b7f92f13ade53fe141f2771eb7bbbc8bc17f01a11c3a5009168bf4335982db0`)
 
 The folders and logs in `docs/measurements/k13_2026-11-09/`:
@@ -219,22 +221,23 @@ Tests and gates:
     coordinates/scale/radius/bias `>= 2^30` (0 wasm calls, identical bytes); `shadowMarch` route (`"js"`, pixel threshold,
     `"rust"`) check.
 - `ELECTRON_RUN_AS_NODE=1 F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`:
+  - Full unfiltered `px_test.js` after merging `wasm-kernels` (`92d29245`, ABI 41): PASS (`docs/measurements/k13_2026-11-09/electron_px_full.txt`).
   - With `PX_ONLY=relightBench,relightStripe,relight` (`docs/measurements/k13_2026-11-09/electron_px_relight.txt`) and
     `PX_ONLY=relightBench,relight PX_BENCH=large` (`docs/measurements/k13_2026-11-09/px_bench.txt`): PASS (all checks green;
     0 bytes differ between Electron V8's `js.shadowMarch` and both wasm builds across all 131 cases and 770 stripe cases).
-  - `PX_ONLY=mask` and unfiltered full `px_test.js` (`docs/measurements/k13_2026-11-09/electron_px_mask.txt`): on `3fd8bda7`
-    (before `1c974974` and `d23d5cc4` stopped comparing a NaN's bits in `mask_max_clamp` and `warp_coverage`) and on
-    `ag-chain-l`, `mask_max_clamp` / `warp_coverage` fail with `out[...] is NaN (0xffc00000), the twin has NaN (0xffffffff)`
-    under Electron V8, whereas on merged `F:/canvas` (`e39b8d03`, which includes `1c974974` and `d23d5cc4`), `PX_ONLY=mask`
-    exits 0. Every relight check and every other group in `px_test.js` passes under Electron V8.
+  - Pre-merge `PX_ONLY=mask` (`docs/measurements/k13_2026-11-09/electron_px_mask.txt`): on `3fd8bda7` (before `1c974974` and
+    `d23d5cc4` stopped comparing a NaN's bits in `mask_max_clamp` and `warp_coverage`) `mask_max_clamp` / `warp_coverage`
+    failed with `out[...] is NaN (0xffc00000), the twin has NaN (0xffffffff)` under Electron V8, and passed after merging
+    `wasm-kernels` (`92d29245`).
 - Gates on both backends (`bash tools/run_gates_both.sh k13-gates --ports 9631,9632 --lock F:/canvas/dist/gates/busy.lock --offline lint types relight pixels nodecopy`):
-  - `k13-gates-tiles`: `lint` PASS, `types` PASS, `relight` PASS (39 node + 315 in-app checks, case `nk (point)` asserts
-    `t.kernels === "rust"` and `shadow_march_f64` ran, `nk (sun)` asserts `t.kernels === "rust"` and `shadow_march` ran),
-    `pixels` PASS.
-  - `k13-gates-canvas`: `lint` PASS, `types` PASS, `relight` PASS (39 node + 314 in-app checks), `pixels` PASS.
-  - `k13-gates-tiles-serial`: `nodecopy` PASS.
-  - `k13-gates-canvas-serial`: `nodecopy` PASS.
-- `python tools/build_px.py --check`: identical on both `px.wasm` (260,652 B) and `px_scalar.wasm` (211,934 B).
+  - `k13-gates-tiles`: `lint` PASS (10 s), `types` PASS (7 s), `relight` PASS (32 s; 39 node + 315 in-app checks, case
+    `nk (point)` asserts `t.kernels === "rust"` and `shadow_march_f64` ran, `nk (sun)` asserts `t.kernels === "rust"` and
+    `shadow_march` ran), `pixels` PASS (11 s).
+  - `k13-gates-canvas`: `lint` PASS (11 s), `types` PASS (6 s), `relight` PASS (31 s; 39 node + 314 in-app checks),
+    `pixels` PASS (11 s).
+  - `k13-gates-tiles-serial`: `nodecopy` PASS (24 s).
+  - `k13-gates-canvas-serial`: `nodecopy` PASS (29 s).
+- `python tools/build_px.py --check`: identical on both `px.wasm` (279,003 B) and `px_scalar.wasm` (225,584 B).
 - `python tools/build_node.py --check`: exits 0, only "differs" lines (no new module added).
 - Mutation round (`docs/measurements/k13_2026-11-09/mutation/mut_k13.py`, `results.txt`):
   12 of 12 mutants killed on their focused `px` kill sets (`relight_f64_drop_rdz_nonneg`, `relight_f64_flip_mapz_gt_ge`,

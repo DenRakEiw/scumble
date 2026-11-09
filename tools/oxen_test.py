@@ -42,7 +42,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE_TEST = os.path.join(ROOT, "tools", "oxen_test.js")
 KEY = "test-oxen-gate-0123456789"
 REAL_KEY = "oxn_0123456789abcdefghijklmnopqrstuvwxyz"   # 40 characters; the real format is not documented
-RECIPES = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4", "krea_2",
+RECIPES = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4", "krea_2", "krea_3",
            "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_2_1", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro",
            "topaz_creative", "topaz_generative", "topaz_precision", "z_image_turbo"]
 CHAT = ["gemini-3-8-flash", "gpt-5-6-luna", "gemma-4-31b-it"]

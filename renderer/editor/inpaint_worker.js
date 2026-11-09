@@ -60,10 +60,10 @@ import { readTiff, tiffPart } from "./inpaint_tiff.js";
 import { readPsdStream, inflateAtMost } from "./inpaint_layered.js";
 import { resampleStore } from "./inpaint_resample.js";
 import { liquifyStore } from "./inpaint_liquify.js";
-import { guidedFar } from "./inpaint_depth.js";
+import { disparityRange } from "./inpaint_depth.js";
 import { rangeRowBookkeeping } from "./inpaint_weights.js";
 import { fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, guidedFar } from "./px/kernels.js";
 import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
@@ -1053,8 +1053,27 @@ function liquifyJob(msg) {
 
 function depthGuide(msg) {
     const t0 = now();
-    const u16 = guidedFar(msg, boxBlurs);
-    return { u16: u16.buffer, transfer: [u16.buffer], timing: { op: "depth_guide", total: now() - t0 } };
+    const raw = msg.raw instanceof Float32Array ? msg.raw : new Float32Array(msg.raw);
+    const { rw, rh, gw, gh, r, eps } = msg;
+    let { grey, gd, lo, hi } = msg;
+    let gdBuf = null;
+    if (!grey && gd) {
+        const bytes = gd instanceof Uint8Array || gd instanceof Uint8ClampedArray ? gd : new Uint8Array(gd);
+        gdBuf = bytes.buffer;
+        const n = gw * gh;
+        grey = new Uint8Array(n);
+        for (let i = 0, j = 0; j < n; i += 4, j++) {
+            grey[j] = Math.round(bytes[i] * 0.299 + bytes[i + 1] * 0.587 + bytes[i + 2] * 0.114);
+        }
+    }
+    if (lo == null || hi == null) {
+        const bounds = disparityRange(raw, 0.005, 0.995);
+        if (lo == null) lo = bounds.lo;
+        if (hi == null) hi = bounds.hi;
+    }
+    const u16 = guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi);
+    const transfer = gdBuf ? [u16.buffer, gdBuf] : [u16.buffer];
+    return { u16: u16.buffer, ...(gdBuf ? { gd: gdBuf } : {}), lo, hi, transfer, timing: { op: "depth_guide", total: now() - t0 } };
 }
 
 function depthFuse(msg) {

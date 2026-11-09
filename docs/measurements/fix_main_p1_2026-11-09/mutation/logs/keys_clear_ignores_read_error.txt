@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-keys_clear_ignores_read_error-quit --offline --tiles on quit  (rc 1, 6 s)
+quit rc=1 2s FAIL
+SOME FAILED

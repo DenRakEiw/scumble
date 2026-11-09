@@ -1,0 +1,48 @@
+[ok] node: {"checks": 80}
+backend: {"tiles": true, "from": "command line"}, local store: F:\canvas\dist\gates\profiles\k16-tiff-tiles\files
+  rgba8: {"worstSoft": 0, "worstRaw": 255, "rawOff": 3798, "soft": 2559, "status": "Opened rgba8.tif: 67 × 45."}
+  rgba16: {"worstSoft": 0, "worstRaw": 255, "rawOff": 3744, "soft": 2576, "status": "Opened rgba16.tif: 67 × 45; 16 bits per channel rounded to 8."}
+  rgba8_assoc: {"worstSoft": 0, "worstRaw": 1, "rawOff": 112, "soft": 2599, "status": "Opened rgba8_assoc.tif: 67 × 45."}
+  grey8_alpha: {"worstSoft": 0, "worstRaw": 255, "rawOff": 3813, "soft": 2585, "status": "Opened grey8_alpha.tif: 67 × 45."}
+  tiled32x48: {"worstSoft": 0, "worstRaw": 255, "rawOff": 3750, "soft": 2588, "status": "Opened tiled32x48.tif: 67 × 45."}
+  multipage: {"worstSoft": 0, "worstRaw": 0, "rawOff": 0, "soft": 0, "status": "Opened multipage.tif: 67 × 45; page 1 of 2 opened; the other pages are left out."}
+  orientation6: {"worstSoft": 0, "worstRaw": 0, "rawOff": 0, "soft": 0, "status": "Opened orientation6.tif: 67 × 45; the orientation tag (6) is not applied: the picture opens as stored."}
+  icc: {"worstSoft": 0, "worstRaw": 0, "rawOff": 0, "soft": 0, "status": "Opened icc.tif: 67 × 45; its colour profile is not applied."}
+  extra_unspecified: {"worstSoft": 0, "worstRaw": 0, "rawOff": 0, "soft": 0, "status": "Opened extra_unspecified.tif: 67 × 45; an extra channel left out."}
+[ok] opens_every_accepted_fixture: {"fixtures": 40, "worstSoft": 0, "worstRaw": 255, "rawOff": 15217}
+[ok] refuses_with_a_message: {"refused": ["cmyk: this TIFF is in CMYK colour; only RGB, grayscale and palette TIFF files are read (convert ", "jpeg: JPEG-compressed TIFF files are not read; save it with LZW or ZIP compression, or as a JPEG", "float32: this TIFF holds floating-point samples; only 8 and 16-bit integer TIFF files are read (con", "int16: this TIFF holds signed samples; only unsigned 8 and 16-bit TIFF files are read", "uint32: this TIFF has 32 bits per channel; only 8 and 16 are read (convert it to 16 bits)", "zstd: TIFF compression 50000 (Zstandard) is not read; save it with LZW or ZIP compression, or wi", "truncated: the file ends early (it is truncated, or not a TIFF): strip 10 lies past the end of the fi", "named .tif: {\"png\": \"not_tiff~92c44a02.png\", \"junk\": \"junk_named.tif is not a TIFF file, nor another picture Scumble reads\"}"], "kept": {"kept": "64 x 48", "message": "this TIFF is in CMYK colour; only RGB, grayscale and palette TIFF files are read (convert it to RGB)"}, "store": "checked"}
+[ok] adds_a_tiff_as_a_layer: {"layer": "rgba16", "size": "67 x 45", "soft": 2576, "worstSoft": 0, "worstRaw": 255, "ref": "n52_layer_5d9a812ca3ef.png", "status": "1 image layer added. Move or scale with T; the role select can turn it into a reference."}
+[ok] exports_tiff_and_reads_it_back: {"export": "Saved F:\\canvas\\.claude\\worktrees\\ag-chain-t\\dist\\gates\\tiff_fixtures\\x.tif (640 × 400, 227 kB, 13 ms).", "ms": 23, "tiles": true, "python": {"shape": [400, 640, 4], "compression": 8, "predictor": 2, "extrasamples": [2], "software": "Scumble", "png_alpha": {"zero": 3400, "soft": 228600, "full": 24000}, "vs_png": {"bytes_off": 0, "worst": 0}}, "reopened": {"soft": 232000, "worstSoft": 0, "worstRaw": 1, "rawOff": 9527, "status": "Opened x.tif: 640 × 400."}}
+[ok] exports_tiff_at_a_size: {"export": "Saved F:\\canvas\\.claude\\worktrees\\ag-chain-t\\dist\\gates\\tiff_fixtures\\x_50.tif (320 × 200, 63 kB, 14 ms).", "python": {"shape": [200, 320, 4], "compression": 8, "vs_png": {"bytes_off": 727, "worst": 1}}}
+[ok] a_tif_drop_opens: {"opened": "Opened dropped.tif: 67 × 45.", "layer": "layer", "status": "1 image layer added. Move or scale with T; the role select can turn it into a reference."}
+[ok] no_tiff_in_the_local_store: {"root": "F:\\canvas\\dist\\gates\\profiles\\k16-tiff-tiles\\files"}
+  console error: Error: this TIFF is in CMYK colour; only RGB, grayscale and palette TIFF files are read (convert it to RGB)
+    at parse (scumble://app/editor/inpaint_tiff.js:175:34)
+    at async tiffInfo (scumble://app/editor/inpaint_t
+  console error: Error: JPEG-compressed TIFF files are not read; save it with LZW or ZIP compression, or as a JPEG file
+    at parse (scumble://app/editor/inpaint_tiff.js:164:80)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.j
+  console error: Error: this TIFF holds floating-point samples; only 8 and 16-bit integer TIFF files are read (convert it to 16 bits)
+    at parse (scumble://app/editor/inpaint_tiff.js:168:36)
+    at async tiffInfo (scumble://app/editor/
+  console error: Error: this TIFF holds signed samples; only unsigned 8 and 16-bit TIFF files are read
+    at parse (scumble://app/editor/inpaint_tiff.js:169:36)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.js:257:13)
+    at 
+  console error: Error: this TIFF has 32 bits per channel; only 8 and 16 are read (convert it to 16 bits)
+    at parse (scumble://app/editor/inpaint_tiff.js:179:43)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.js:257:13)
+    
+  console error: Error: TIFF compression 50000 (Zstandard) is not read; save it with LZW or ZIP compression, or without
+    at parse (scumble://app/editor/inpaint_tiff.js:165:39)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.j
+  console error: Error: the file ends early (it is truncated, or not a TIFF): strip 10 lies past the end of the file
+    at WorkerPool._reply (scumble://app/editor/inpaint_pool.js:187:107)
+    at w.onmessage (scumble://app/editor/inpaint
+  console error: Error: this TIFF is in CMYK colour; only RGB, grayscale and palette TIFF files are read (convert it to RGB)
+    at parse (scumble://app/editor/inpaint_tiff.js:175:34)
+    at async tiffInfo (scumble://app/editor/inpaint_t
+  console error: Error: junk_named.tif is not a TIFF file, nor another picture Scumble reads
+    at storedExt (scumble://app/editor/inpaint_canvas.js:560:22)
+    at async InpaintEditor.loadFile (scumble://app/editor/inpaint_canvas.js:188
+PASS

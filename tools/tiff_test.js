@@ -637,6 +637,312 @@ console.log(JSON.stringify(out));
         const { bytes } = buildTiff([{ tags: imageTags({ w, h, bits: 8, spp: 3, photometric: 2, compression: 5, rps: h }), data: [enc.bytes] }]);
         if (check("old-style LZW strip starts 00 01", starts, Array.from(enc.bytes.subarray(0, 4)).map((b) => b.toString(16).padStart(2, "0")).join(" "))) await expectRefusal(T, "old-style LZW is refused", bytes, /old-style LZW/i);
     }
+
+    // -- K16: LZW 1-byte first piece when byte[0] === byte[1] (and byte[0] === 0, byte[1] === 0, byte[2] odd) --
+    {
+        // Pack 9-bit MSB-first codes directly (without initial Clear 256) so byte[0] === 0, byte[1] === 0, byte[2] & 1 === 1:
+        // c0 = 0 (9 bits: 0_00000000), c1 = 0 (9 bits: 0_00000000), c2 = 8 (9 bits: 0_00001000, c2 >> 3 = 1) ->
+        // bits 0..7 = 0x00, bits 8..15 = 0x00, bits 16..23 = 0b00_000001 = 0x01!
+        const w = 2, h = 1, spp = 3;
+        const s = Uint8Array.from([0, 0, 8, 10, 20, 30]);
+        const out = [];
+        let acc = 0, nacc = 0;
+        const put = (code, width) => {
+            acc = (acc << width) | code;
+            nacc += width;
+            while (nacc >= 8) { nacc -= 8; out.push((acc >>> nacc) & 255); }
+            acc &= (1 << nacc) - 1;
+        };
+        for (const b of s) put(b, 9);
+        put(257, 9);
+        if (nacc) out.push((acc << (8 - nacc)) & 255);
+        const stripBytes = Uint8Array.from(out);
+        const { bytes } = buildTiff([{ tags: imageTags({ w, h, bits: 8, spp, photometric: 2, compression: 5, rps: 1 }), data: [stripBytes] }]);
+        const want = expectRgba(w * h, (i) => [s[i * 3], s[i * 3 + 1], s[i * 3 + 2], 255]);
+
+        // Wrap Blob so .slice(off, end).stream() yields a 1-byte first chunk [b0] followed by the rest [b1, b2, ...]
+        const oneByteFirstBlob = (u8) => ({
+            size: u8.byteLength,
+            slice(start, end) {
+                const sub = u8.subarray(start, end);
+                return {
+                    async arrayBuffer() { return sub.slice().buffer; },
+                    stream() {
+                        let step = 0;
+                        return new ReadableStream({
+                            pull(controller) {
+                                if (step === 0 && sub.length > 1) { step = 1; controller.enqueue(sub.subarray(0, 1)); }
+                                else if (step <= 1 && sub.length > 0) { step = 2; controller.enqueue(sub.length > 1 ? sub.subarray(1) : sub); }
+                                else controller.close();
+                            },
+                        });
+                    },
+                };
+            },
+        });
+        const problems = [];
+        if (!(stripBytes[0] === 0x00 && stripBytes[1] === 0x00 && (stripBytes[2] & 1) === 1)) {
+            problems.push(`strip starts ${Array.from(stripBytes.subarray(0, 3))}, expected 0, 0, odd`);
+        }
+        try {
+            const r = await readAll(T, oneByteFirstBlob(bytes), 256);
+            const a = assemble(r, w, h, 256);
+            problems.push(...a.problems);
+            const d = pixelDiff(a.img, want, w);
+            if (d) problems.push(d);
+        } catch (err) { problems.push("threw " + errText(err)); }
+        check("LZW 1-byte first piece with byte[0] === byte[1] === 0 and odd byte[2] is decoded without dropping byte[0] or false old-LZW refusal",
+            !problems.length, problems.join(" | "));
+    }
+
+    // -- K16: live decoders (StripRows and TileRows) and unpackStrip stop at `need`, ignoring damaged trailing bytes --
+    {
+        const w = 16, h = 4, spp = 3;
+        const s = new Uint8Array(w * h * spp);
+        for (let i = 0; i < s.length; i++) s[i] = (i * 19 + 7) & 255;
+        const want = expectRgba(w * h, (i) => [s[i * 3], s[i * 3 + 1], s[i * 3 + 2], 255]);
+
+        // Build an LZW stream for `s` and append a damaged 9-bit code (511, beyond table) right after the last literal
+        const out = [];
+        let acc = 0, nacc = 0;
+        const put = (code, width) => {
+            acc = (acc << width) | code;
+            nacc += width;
+            while (nacc >= 8) { nacc -= 8; out.push((acc >>> nacc) & 255); }
+            acc &= (1 << nacc) - 1;
+        };
+        put(256, 9);
+        for (const b of s) put(b, 9);
+        put(511, 9);   // damaged code beyond table after `need` bytes
+        if (nacc) out.push((acc << (8 - nacc)) & 255);
+        const lzwTrailingBad = Uint8Array.from(out);
+
+        // Stripped TIFF with trailing damaged LZW code after `need`
+        const { bytes: stripTiff } = buildTiff([{ tags: imageTags({ w, h, bits: 8, spp, photometric: 2, compression: 5, rps: h }), data: [lzwTrailingBad] }]);
+        await expectRead(T, "LZW strip with damaged code after `need` stops at `need`", stripTiff, w, h, want, { info: { compression: 5 } });
+
+        // Tiled TIFF (16x16 tile covering 16x4 image, padded to 16 rows) with trailing damaged LZW code after tile `want`
+        const tileSamples = new Uint8Array(16 * 16 * spp);
+        tileSamples.set(s);
+        let tAcc = 0, tNacc = 0;
+        const tOut = [];
+        const tPut = (code, width) => {
+            tAcc = (tAcc << width) | code;
+            tNacc += width;
+            while (tNacc >= 8) { tNacc -= 8; tOut.push((tAcc >>> tNacc) & 255); }
+            tAcc &= (1 << tNacc) - 1;
+        };
+        tPut(256, 9);
+        for (let i = 0; i < 200; i++) tPut(tileSamples[i], 9);
+        tPut(256, 9);
+        for (let i = 200; i < 400; i++) tPut(tileSamples[i], 9);
+        tPut(256, 9);
+        for (let i = 400; i < 600; i++) tPut(tileSamples[i], 9);
+        tPut(256, 9);
+        for (let i = 600; i < tileSamples.length; i++) tPut(tileSamples[i], 9);
+        tPut(511, 9);   // damaged code beyond table after tile `want` bytes
+        if (tNacc) tOut.push((tAcc << (8 - tNacc)) & 255);
+        const tileTags = [[254, 4, [0]], [256, 4, [w]], [257, 4, [h]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]],
+            [277, 3, [3]], [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [1]], [296, 3, [2]], [322, 4, [16]], [323, 4, [16]]];
+        const { bytes: tileTiff } = buildTiff([{ tags: tileTags, data: [Uint8Array.from(tOut)], offTag: 324, cntTag: 325 }]);
+        await expectRead(T, "LZW tile with damaged code after `want` stops at `want`", tileTiff, w, h, want, { info: { compression: 5, tiled: true } });
+
+        // Direct unpackStrip / TIFF_JS check
+        const unpacked = T.unpackStrip(5, lzwTrailingBad, s.length);
+        check("unpackStrip (TIFF_JS.unpackStrip) stops at `need` on LZW and matches expected bytes",
+            T.TIFF_JS && T.TIFF_JS.unpackStrip === T.unpackStrip && bytesEqual(unpacked, s));
+    }
+
+    // -- K16 (T1): expectRead of LZW strip stopped mid-multi-byte code and PackBits strips stopped mid-literal and mid-repeat run --
+    {
+        // 1) LZW 4x2 RGB (need = 24 bytes): bytes 0..21 are literals, then a 4-byte table entry [110, 120, 130, 140]
+        // straddles `need = 24` (keeping [110, 120] and dropping [130, 140] from the extra row past `need`).
+        const w = 4, h = 2, spp = 3;
+        const prefix18 = Uint8Array.from([
+            110, 120, 130, 140,   // bytes 0..3: seeds table entries 258=[110,120], 259=[120,130], 260=[130,140]
+            110, 120, 130, 140,   // bytes 4..7: emitted as 258 ([110,120]) then 130 (adds 262=[110,120,130]) then 140
+            110, 120, 130, 140,   // bytes 8..11: emitted as 262 ([110,120,130]) then 140 (adds 264=[110,120,130,140])
+            15, 25, 35, 45, 55, 65, 75, 85, 95, 105, // bytes 12..21 (brings output length to 22)
+        ]);
+        // At byte 22, code 264 ([110, 120, 130, 140], length 4) emits 4 bytes (22..25), straddling need=24!
+        const wantBytes = new Uint8Array(24);
+        wantBytes.set(prefix18, 0);
+        wantBytes[22] = 110;
+        wantBytes[23] = 120;
+        const wantLzwMid = expectRgba(w * h, (i) => [wantBytes[i * 3], wantBytes[i * 3 + 1], wantBytes[i * 3 + 2], 255]);
+        const lzwPairs = [
+            [256, 9],
+            [110, 9], [120, 9], [130, 9], [140, 9], // 258=[110,120], 259=[120,130], 260=[130,140]
+            [258, 9], [130, 9], [140, 9],           // 261=[140,110], 262=[110,120,130], 263=[130,140]
+            [262, 9], [140, 9],                     // 264=[140,110], 265=[110,120,130,140]
+            [15, 9], [25, 9], [35, 9], [45, 9], [55, 9], [65, 9], [75, 9], [85, 9], [95, 9], [105, 9],
+            [265, 9],                               // 4-byte code [110, 120, 130, 140] straddling need=24!
+            [50, 9], [60, 9], [257, 9],
+        ];
+        const lzwOut = [];
+        let acc = 0, nacc = 0;
+        for (const [c, cw] of lzwPairs) {
+            acc = (acc << cw) | c;
+            nacc += cw;
+            while (nacc >= 8) { nacc -= 8; lzwOut.push((acc >>> nacc) & 255); }
+            acc &= (1 << nacc) - 1;
+        }
+        if (nacc) lzwOut.push((acc << (8 - nacc)) & 255);
+        const { bytes: tiffLzwMid } = buildTiff([{ tags: imageTags({ w, h, bits: 8, spp, photometric: 2, compression: 5, rps: h }), data: [Uint8Array.from(lzwOut)] }]);
+        await expectRead(T, "LZW strip with extra bytes past `need` where a 4-byte code straddles `need` keeps first `keep` bytes", tiffLzwMid, w, h, wantLzwMid, { info: { compression: 5 } });
+
+        // 2) PackBits 4x2 RGB with rps=1 (2 strips of 12 bytes each):
+        // Strip 0 stops mid-literal run (16 literal bytes encoded, need=12 keeps first 12);
+        // Strip 1 stops mid-repeat run (9 literals + repeat of 7x 201 = 16 bytes encoded, need=12 keeps 3 of the 7 repeats).
+        const pbStrip0 = Uint8Array.from([15, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 91, 92, 93, 94]);
+        const pbStrip1 = Uint8Array.from([8, 21, 22, 23, 24, 25, 26, 27, 28, 29, 257 - 7, 201]);
+        const pbWantBytes = Uint8Array.from([
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+            21, 22, 23, 24, 25, 26, 27, 28, 29, 201, 201, 201,
+        ]);
+        const wantPbMid = expectRgba(w * h, (i) => [pbWantBytes[i * 3], pbWantBytes[i * 3 + 1], pbWantBytes[i * 3 + 2], 255]);
+        const { bytes: tiffPbMid } = buildTiff([{ tags: imageTags({ w, h, bits: 8, spp, photometric: 2, compression: 32773, rps: 1 }), data: [pbStrip0, pbStrip1] }]);
+        await expectRead(T, "PackBits strips stopped mid-literal run and mid-repeat run match reference pixels", tiffPbMid, w, h, wantPbMid, { info: { compression: 32773 } });
+    }
+
+    // -- K16 (T2): piece boundaries across every byte k, [b0],[b1],rest, 1-byte pieces, and width transitions --
+    {
+        const splitBlob = (u8, cutsForLen) => ({
+            size: u8.byteLength,
+            slice(start, end) {
+                const sub = u8.subarray(start, end);
+                return {
+                    async arrayBuffer() { return sub.slice().buffer; },
+                    stream() {
+                        const cuts = cutsForLen(sub.length);
+                        let idx = 0, pos = 0;
+                        return new ReadableStream({
+                            pull(controller) {
+                                while (idx < cuts.length && cuts[idx] <= pos) idx++;
+                                if (pos >= sub.length) { controller.close(); return; }
+                                const next = idx < cuts.length ? Math.min(sub.length, cuts[idx++]) : sub.length;
+                                controller.enqueue(sub.subarray(pos, next));
+                                pos = next;
+                            },
+                        });
+                    },
+                };
+            },
+        });
+
+        // 1) PackBits strip (8x2 RGB, need=48): literal run, 128 no-op, repeat run, 128 no-op, literal run, repeat straddling need, and trailing bytes
+        const wPb = 8, hPb = 2, sppPb = 3;
+        const lit1 = Array.from({ length: 19 }, (_, i) => (i * 11 + 5) & 255);
+        const rep1 = Array.from({ length: 12 }, () => 0x77);
+        const lit2 = Array.from({ length: 15 }, (_, i) => (i * 23 + 9) & 255);
+        const pbRaw48 = Uint8Array.from([...lit1, ...rep1, ...lit2, 0x99, 0x99]);
+        const pbEncoded = Uint8Array.from([
+            lit1.length - 1, ...lit1,
+            128,
+            257 - 12, 0x77,
+            128,
+            lit2.length - 1, ...lit2,
+            257 - 6, 0x99,          // straddles need=48 after 2 bytes
+            2, 0xE1, 0xE2, 0xE3,    // trailing literal run after need
+        ]);
+        const wantPbSplit = expectRgba(wPb * hPb, (i) => [pbRaw48[i * 3], pbRaw48[i * 3 + 1], pbRaw48[i * 3 + 2], 255]);
+        const { bytes: tiffPbSplit } = buildTiff([{ tags: imageTags({ w: wPb, h: hPb, bits: 8, spp: sppPb, photometric: 2, compression: 32773, rps: hPb }), data: [pbEncoded] }]);
+        await expectRead(T, "PackBits strip (whole piece) before split-piece sweep", tiffPbSplit, wPb, hPb, wantPbSplit, { info: { compression: 32773 } });
+
+        const pbSplitProblems = [];
+        const pbSchedules = [
+            ["all-1-byte", (n) => Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 1)],
+            ["[b0],[b1],rest", () => [1, 2]],
+            ...Array.from({ length: pbEncoded.length - 1 }, (_, i) => [`cut@${i + 1}`, () => [i + 1]]),
+        ];
+        for (const [label, cutsFn] of pbSchedules) {
+            try {
+                const r = await readAll(T, splitBlob(tiffPbSplit, cutsFn), 256);
+                const a = assemble(r, wPb, hPb, 256);
+                if (a.problems.length) pbSplitProblems.push(`${label}: ${a.problems.join("; ")}`);
+                else {
+                    const d = pixelDiff(a.img, wantPbSplit, wPb);
+                    if (d) pbSplitProblems.push(`${label}: ${d}`);
+                }
+            } catch (err) { pbSplitProblems.push(`${label}: threw ${errText(err)}`); }
+            if (pbSplitProblems.length) break;
+        }
+        check(`PackBits streamed decoder across all ${pbSchedules.length} piece-break schedules (every byte k, [b0],[b1],rest, and all 1-byte chunks) matches whole-piece bytes`,
+            !pbSplitProblems.length, pbSplitProblems.join(" | "));
+
+        // 2) LZW strip (48x2 RGB, need=288): crosses 9 -> 10 bits (260 literals -> next reaches 517 at width 10),
+        // then Clear (256 at width 10 -> resets width to 9), then remaining 28 bytes (ending with a 2-byte code straddling need=288)
+        // followed by a damaged code (511, beyond table) in the same or later piece!
+        const wLzw = 48, hLzw = 2, sppLzw = 3;
+        const lzwRaw288 = new Uint8Array(wLzw * hLzw * sppLzw);
+        for (let i = 0; i < lzwRaw288.length; i++) lzwRaw288[i] = (i * 37 + (i >> 2) * 13 + 7) & 255;
+        // Set bytes 260, 261 = 42, 43 (after Clear, seeds 258 = [42, 43]), and bytes 286, 287 = 42, 43 (emitted as part of 3-byte code 260 = [42, 43, 99] straddling need=288!)
+        lzwRaw288[260] = 42; lzwRaw288[261] = 43; lzwRaw288[262] = 99;
+        lzwRaw288[263] = 42; lzwRaw288[264] = 43; lzwRaw288[265] = 99;
+        lzwRaw288[286] = 42; lzwRaw288[287] = 43;
+        const wantLzwSplit = expectRgba(wLzw * hLzw, (i) => [lzwRaw288[i * 3], lzwRaw288[i * 3 + 1], lzwRaw288[i * 3 + 2], 255]);
+
+        const pairs = [[256, 9]];
+        let width = 9, next = 258;
+        let bitPos9to10 = 0, bitPosClear = 0, totalBits = 9;
+        for (let i = 0; i < 260; i++) {
+            pairs.push([lzwRaw288[i], width]);
+            totalBits += width;
+            if (i > 0) {
+                next++;
+                if (next >= (1 << width) - 1 && width < 12) {
+                    width++;
+                    if (width === 10 && !bitPos9to10) bitPos9to10 = totalBits;
+                }
+            }
+        }
+        // Emit Clear at width 10, resetting to 9 bits
+        bitPosClear = totalBits;
+        pairs.push([256, width]);
+        totalBits += width;
+        width = 9; next = 258;
+        // After Clear: 42 (lit), 43 (lit -> 258=[42,43]), 99 (lit -> 259=[43,99]), 258 ([42,43] -> 260=[99,42]), 99 (lit -> 261=[42,43,99])
+        pairs.push([42, 9], [43, 9], [99, 9], [258, 9], [99, 9]); // emits 6 bytes (260..265)
+        for (let i = 266; i < 286; i++) pairs.push([lzwRaw288[i], 9]); // emits 20 bytes (266..285)
+        pairs.push([261, 9]); // 3-byte code [42, 43, 99] at bytes 286..288, straddling need=288!
+        pairs.push([511, 9]); // damaged code beyond table right after need!
+
+        const lzwSplitOut = [];
+        let lAcc = 0, lNacc = 0;
+        for (const [c, cw] of pairs) {
+            lAcc = (lAcc << cw) | c;
+            lNacc += cw;
+            while (lNacc >= 8) { lNacc -= 8; lzwSplitOut.push((lAcc >>> lNacc) & 255); }
+            lAcc &= (1 << lNacc) - 1;
+        }
+        if (lNacc) lzwSplitOut.push((lAcc << (8 - lNacc)) & 255);
+        const lzwSplitBytes = Uint8Array.from(lzwSplitOut);
+        const { bytes: tiffLzwSplit } = buildTiff([{ tags: imageTags({ w: wLzw, h: hLzw, bits: 8, spp: sppLzw, photometric: 2, compression: 5, rps: hLzw }), data: [lzwSplitBytes] }]);
+        await expectRead(T, "LZW strip (whole piece) crossing 9->10 bits, Clear, mid-code stop and damaged code after need", tiffLzwSplit, wLzw, hLzw, wantLzwSplit, { info: { compression: 5 } });
+
+        const byte9to10 = bitPos9to10 >> 3, byteClear = bitPosClear >> 3;
+        const lzwSplitProblems = [];
+        const lzwSchedules = [
+            ["all-1-byte", (n) => Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 1)],
+            ["[b0],[b1],rest", () => [1, 2]],
+            ["width-9to10-and-clear", () => [1, 2, byte9to10 - 1, byte9to10, byte9to10 + 1, byteClear - 1, byteClear, byteClear + 1]],
+            ...Array.from({ length: lzwSplitBytes.length - 1 }, (_, i) => [`cut@${i + 1}`, () => [i + 1]]),
+        ];
+        for (const [label, cutsFn] of lzwSchedules) {
+            try {
+                const r = await readAll(T, splitBlob(tiffLzwSplit, cutsFn), 256);
+                const a = assemble(r, wLzw, hLzw, 256);
+                if (a.problems.length) lzwSplitProblems.push(`${label}: ${a.problems.join("; ")}`);
+                else {
+                    const d = pixelDiff(a.img, wantLzwSplit, wLzw);
+                    if (d) lzwSplitProblems.push(`${label}: ${d}`);
+                }
+            } catch (err) { lzwSplitProblems.push(`${label}: threw ${errText(err)}`); }
+            if (lzwSplitProblems.length) break;
+        }
+        check(`LZW streamed decoder across all ${lzwSchedules.length} piece-break schedules (every byte k, [b0],[b1],rest, width change + Clear, and all 1-byte chunks) matches whole-piece bytes`,
+            !lzwSplitProblems.length, lzwSplitProblems.join(" | "));
+    }
 }
 
 /** A picture of W x H with gradients, noise and a soft alpha from 0 to 255. */
@@ -888,8 +1194,9 @@ async function writerCases(T) {
         console.log("FAIL");
         process.exit(1);
     }
-    const missing = ["isTiff", "tiffInfo", "readTiff", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
-    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, readTiff, tiffStripRows, tiffPart, TiffStreamWriter")) {
+    const missing = ["isTiff", "tiffInfo", "readTiff", "unpackStrip", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
+    if (!T.TIFF_JS || T.TIFF_JS.unpackStrip !== T.unpackStrip) missing.push("TIFF_JS");
+    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, readTiff, unpackStrip, TIFF_JS, tiffStripRows, tiffPart, TiffStreamWriter")) {
         console.log("FAIL");
         process.exit(1);
     }
