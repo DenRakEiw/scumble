@@ -1,0 +1,47 @@
+{
+ "tiff_rows_256": {
+  "visibility": "visible",
+  "focus": true,
+  "warm": true,
+  "wall": 1357.12,
+  "walls": [
+   1395.4,
+   1340.4,
+   1357.1
+  ],
+  "bands": 40,
+  "pieces": 9330,
+  "codec": "deflate",
+  "split": {
+   "parse": 1.62,
+   "wait": 871,
+   "decode": 0,
+   "copy": 97.06,
+   "unpredict": 112.58,
+   "convert": 129.88,
+   "deliver": 2.22,
+   "kernel": 1356.91
+  },
+  "per_band": {
+   "parse": 0.041,
+   "wait": 21.775,
+   "decode": 0,
+   "copy": 2.426,
+   "unpredict": 2.814,
+   "convert": 3.247,
+   "deliver": 0.056,
+   "kernel": 33.923
+  },
+  "missing": [],
+  "info": {
+   "width": 15000,
+   "height": 10000,
+   "bits": 8,
+   "samples": 4,
+   "compression": 8,
+   "predictor": 2,
+   "planar": 1,
+   "tiled": false
+  }
+ }
+}

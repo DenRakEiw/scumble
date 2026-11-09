@@ -15,9 +15,9 @@
 import { BLEND_OPS } from "../blend_modes.js";
 import { gaussRadii } from "../inpaint_edges.js";
 import { guidedFar as guidedFarDepth } from "../inpaint_depth.js";
-import { unpackStrip, TIFF_JS } from "../inpaint_tiff.js";
+import { unpackStrip, unpredict, predictRgba, toRgba, paletteLut, tiffPart, TIFF_JS } from "../inpaint_tiff.js";
 
-export { unpackStrip, unpackStrip as tiffUnpack, TIFF_JS };
+export { unpackStrip, unpackStrip as tiffUnpack, unpredict, unpredict as tiffUnpredict, predictRgba, predictRgba as tiffPredictRgba, toRgba, toRgba as tiffToRgba, paletteLut, tiffPart, TIFF_JS };
 
 export const OPS = Object.freeze({
     "source-over": 0,

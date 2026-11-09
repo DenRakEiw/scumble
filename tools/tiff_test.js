@@ -102,8 +102,11 @@ function bytesEqual(a, b) {
     return true;
 }
 
+let activeKernels = null;
+let kernelSuffix = "";
+
 /** Read a whole picture through readTiff, recording every callback. */
-async function readAll(T, blob, rowsPerBand) {
+async function readAll(T, blob, rowsPerBand, kernels = activeKernels) {
     const events = [], bands = [];
     let header = null, headerCalls = 0;
     const opts = {
@@ -111,6 +114,7 @@ async function readAll(T, blob, rowsPerBand) {
         onRows(rgba, y0, rows) { bands.push({ rgba, y0, rows }); events.push("rows"); },
     };
     if (rowsPerBand) opts.rowsPerBand = rowsPerBand;
+    if (kernels) opts.kernels = kernels;
     const info = await T.readTiff(blob, opts);
     return { info, header, headerCalls, bands, events };
 }
@@ -372,15 +376,19 @@ a = a.reshape(src.shape) if a.size == src.size else a
 print(json.dumps({"equal": bool(a.shape == src.shape and (a == src).all()), "shape": list(a.shape), "dtype": str(a.dtype)}))
 `;
 
+const crossChecked = new Set();
+
 /** Is the file the test built what it means to be? tifffile or Pillow decodes it against the samples. */
 function crossCheck(name, bytes, samples, bits, h, w, c, decoder) {
     const f = path.join(OUT, `built_${name}.tif`);
+    if (crossChecked.has(name)) return f;
     const raw = path.join(OUT, `built_${name}.raw`);
     fs.writeFileSync(f, bytes);
     const arr = bits === 16 ? new Uint16Array(samples) : new Uint8Array(samples);
     fs.writeFileSync(raw, Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength));
     const r = pyJson([path.join(OUT, "cross_check.py"), f, raw, bits === 16 ? "<u2" : "u1", String(h), String(w), String(c), decoder]);
     if (!r.equal) throw new Error(`the test's own ${name} file is not what it means to be (${decoder} reads ${JSON.stringify(r)})`);
+    crossChecked.add(name);
     return f;
 }
 
@@ -394,11 +402,15 @@ async function deflate(bytes) {
 // ---- the cases ------------------------------------------------------------------------------------------------
 
 async function fixtureCases(T) {
-    fs.mkdirSync(FIX, { recursive: true });
-    const t0 = Date.now();
-    const table = python([path.join(ROOT, "tools", "tiff_fixtures.py"), FIX], 900000);
-    const manifest = JSON.parse(fs.readFileSync(path.join(FIX, "manifest.json"), "utf-8"));
-    check("fixtures", manifest.length > 40 && /fixtures \(/.test(table), `${manifest.length} written by tools/tiff_fixtures.py in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    const manPath = path.join(FIX, "manifest.json");
+    if (!fs.existsSync(manPath)) {
+        fs.mkdirSync(FIX, { recursive: true });
+        const t0 = Date.now();
+        const table = python([path.join(ROOT, "tools", "tiff_fixtures.py"), FIX], 900000);
+        const manifest0 = JSON.parse(fs.readFileSync(manPath, "utf-8"));
+        check(`fixtures${kernelSuffix}`, manifest0.length > 40 && /fixtures \(/.test(table), `${manifest0.length} written by tools/tiff_fixtures.py in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    }
+    const manifest = JSON.parse(fs.readFileSync(manPath, "utf-8"));
     for (const e of manifest) {
         const bytes = fs.readFileSync(path.join(FIX, e.file));
         const blob = new Blob([bytes]);
@@ -406,7 +418,7 @@ async function fixtureCases(T) {
         const want = e.name !== "not_tiff";
         let isT;
         try { isT = T.isTiff(head); } catch (err) { isT = "threw " + errText(err); }
-        if (isT !== want) check(`isTiff ${e.name}`, false, `${short(isT)} instead of ${want}`);
+        if (isT !== want) check(`isTiff ${e.name}${kernelSuffix}`, false, `${short(isT)} instead of ${want}`);
         if (e.accept) await acceptedFixture(T, e, blob);
         else await refusedFixture(T, e, blob);
     }
@@ -431,13 +443,15 @@ async function acceptedFixture(T, e, blob) {
         for (const p of infoProblems(i, e, "tiffInfo")) problems.push(p);
     } catch (err) { problems.push(`tiffInfo threw ${errText(err)}`); }
     const uniq = [...new Set(problems)];
-    check(`reads ${e.name}`, !uniq.length, uniq.length ? uniq.slice(0, 5).join(" | ") : `${e.width} x ${e.height}, ${bandsSeen.join(" / ")} bands`);
+    check(`reads ${e.name}${kernelSuffix}`, !uniq.length, uniq.length ? uniq.slice(0, 5).join(" | ") : `${e.width} x ${e.height}, ${bandsSeen.join(" / ")} bands`);
 }
 
 async function refusedFixture(T, e, blob) {
     const re = new RegExp(e.error, e.error_flags || "");
     let rowsCalls = 0, err = null;
-    try { await T.readTiff(blob, { onRows: () => { rowsCalls++; } }); } catch (x) { err = x; }
+    const opts = { onRows: () => { rowsCalls++; } };
+    if (activeKernels) opts.kernels = activeKernels;
+    try { await T.readTiff(blob, opts); } catch (x) { err = x; }
     const problems = [];
     if (!err) problems.push("readTiff read it without an error");
     else {
@@ -451,7 +465,7 @@ async function refusedFixture(T, e, blob) {
         if (!ierr) problems.push("tiffInfo accepted it");
         else if (!re.test(errText(ierr))) problems.push(`tiffInfo says "${errText(ierr)}", not ${re}`);
     }
-    check(`refuses ${e.name}`, !problems.length, problems.length ? problems.join(" | ") : `"${errText(err)}"`);
+    check(`refuses ${e.name}${kernelSuffix}`, !problems.length, problems.length ? problems.join(" | ") : `"${errText(err)}"`);
 }
 
 /** A read of a byte-built file: pixels, notes and fields. */
@@ -469,13 +483,15 @@ async function expectRead(T, name, bytes, width, height, want, { notes = [], inf
         problems.push(...infoProblems(r.info, e, "readTiff"));
     }
     const uniq = [...new Set(problems)];
-    return check(name, !uniq.length, uniq.slice(0, 5).join(" | "));
+    return check(`${name}${kernelSuffix}`, !uniq.length, uniq.slice(0, 5).join(" | "));
 }
 
 async function expectRefusal(T, name, bytes, re) {
     let err = null;
-    try { await T.readTiff(new Blob([bytes]), { onRows: () => {} }); } catch (x) { err = x; }
-    return check(name, !!err && err instanceof Error && re.test(errText(err)), err ? `"${errText(err)}"` : "no error");
+    const opts = { onRows: () => {} };
+    if (activeKernels) opts.kernels = activeKernels;
+    try { await T.readTiff(new Blob([bytes]), opts); } catch (x) { err = x; }
+    return check(`${name}${kernelSuffix}`, !!err && err instanceof Error && re.test(errText(err)), err ? `"${errText(err)}"` : "no error");
 }
 
 async function builtCases(T) {
@@ -552,7 +568,7 @@ async function builtCases(T) {
     }
 
     // -- IFD loops: must end (a child process with a time limit), with an Error or the first page --
-    {
+    if (!activeKernels) {
         const w = 5, h = 4, spp = 3, r = rng(105);
         const page = () => { const s = new Uint8Array(w * h * spp); for (let i = 0; i < s.length; i++) s[i] = r() & 255; return s; };
         const s0 = page(), s1 = page();
@@ -940,8 +956,120 @@ console.log(JSON.stringify(out));
             } catch (err) { lzwSplitProblems.push(`${label}: threw ${errText(err)}`); }
             if (lzwSplitProblems.length) break;
         }
-        check(`LZW streamed decoder across all ${lzwSchedules.length} piece-break schedules (every byte k, [b0],[b1],rest, width change + Clear, and all 1-byte chunks) matches whole-piece bytes`,
+        check(`LZW streamed decoder across all ${lzwSchedules.length} piece-break schedules (every byte k, [b0],[b1],rest, width change + Clear, and all 1-byte chunks) matches whole-piece bytes${kernelSuffix}`,
             !lzwSplitProblems.length, lzwSplitProblems.join(" | "));
+    }
+
+    // -- K15 (Question 6.4): sub-byte palette + alpha at 1, 2 and 4 bits, chunky and planar, straight and premultiplied --
+    // Sample 0 (the palette index) stays raw in 0 .. 2^bits - 1 while sample 1 (alpha) is scaled by 255 / (2^bits - 1).
+    {
+        const w = 9, h = 4, rps = 2, spp = 2;
+        const packSubByteRow = (vals, bits) => {
+            const max = (1 << bits) - 1;
+            const out = new Uint8Array(Math.ceil((vals.length * bits) / 8));
+            for (let i = 0; i < vals.length; i++) {
+                const byteIdx = Math.floor((i * bits) / 8);
+                const shift = 8 - bits - ((i * bits) % 8);
+                out[byteIdx] |= (vals[i] & max) << shift;
+            }
+            return out;
+        };
+        const concatRows = (rows) => {
+            const len = rows.reduce((n, r) => n + r.length, 0);
+            const out = new Uint8Array(len);
+            let o = 0;
+            for (const r of rows) { out.set(r, o); o += r.length; }
+            return out;
+        };
+        for (const bits of [1, 2, 4]) {
+            const nEntries = 1 << bits, max = nEntries - 1, scale = 255 / max;
+            const r8 = new Uint8Array(nEntries), g8 = new Uint8Array(nEntries), b8 = new Uint8Array(nEntries);
+            const cm = new Array(3 * nEntries);
+            for (let idx = 0; idx < nEntries; idx++) {
+                r8[idx] = (idx * 73 + 29) & 255;
+                g8[idx] = (idx * 51 + 90) & 255;
+                b8[idx] = (idx * 97 + 140) & 255;
+                cm[idx] = r8[idx] * 257;
+                cm[nEntries + idx] = g8[idx] * 257;
+                cm[2 * nEntries + idx] = b8[idx] * 257;
+            }
+            const idxSamples = new Uint8Array(w * h);
+            const alphaSamples = new Uint8Array(w * h);
+            for (let p = 0; p < w * h; p++) {
+                if (bits <= 2) {
+                    idxSamples[p] = p % nEntries;
+                    alphaSamples[p] = Math.floor(p / nEntries) % nEntries;
+                } else {
+                    idxSamples[p] = p % 16;
+                    alphaSamples[p] = p < 16 ? p : ((p * 7 + 3) % 16);
+                }
+            }
+            for (const planar of [1, 2]) {
+                let data;
+                if (planar === 1) {
+                    data = [];
+                    for (let y0 = 0; y0 < h; y0 += rps) {
+                        const rows = [];
+                        for (let y = y0; y < Math.min(h, y0 + rps); y++) {
+                            const rowVals = [];
+                            for (let x = 0; x < w; x++) {
+                                const p = y * w + x;
+                                rowVals.push(idxSamples[p], alphaSamples[p]);
+                            }
+                            rows.push(packSubByteRow(rowVals, bits));
+                        }
+                        data.push(concatRows(rows));
+                    }
+                } else {
+                    const plane0 = [], plane1 = [];
+                    for (let y0 = 0; y0 < h; y0 += rps) {
+                        const r0 = [], r1 = [];
+                        for (let y = y0; y < Math.min(h, y0 + rps); y++) {
+                            const v0 = [], v1 = [];
+                            for (let x = 0; x < w; x++) {
+                                const p = y * w + x;
+                                v0.push(idxSamples[p]);
+                                v1.push(alphaSamples[p]);
+                            }
+                            r0.push(packSubByteRow(v0, bits));
+                            r1.push(packSubByteRow(v1, bits));
+                        }
+                        plane0.push(concatRows(r0));
+                        plane1.push(concatRows(r1));
+                    }
+                    data = [...plane0, ...plane1];
+                }
+                for (const extra of [2, 1]) {
+                    const alphaKind = extra === 2 ? "straight" : "premultiplied";
+                    const tags = [
+                        [254, 4, [0]], [256, 4, [w]], [257, 4, [h]], [258, 3, [bits, bits]], [259, 3, [1]], [262, 3, [3]],
+                        [277, 3, [2]], [278, 4, [rps]], [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [planar]],
+                        [296, 3, [2]], [320, 3, cm], [338, 3, [extra]],
+                    ];
+                    const { bytes } = buildTiff([{ tags, data }]);
+                    const want = expectRgba(w * h, (p) => {
+                        const idx = idxSamples[p];
+                        let r = r8[idx], g = g8[idx], b = b8[idx];
+                        const a = Math.round(alphaSamples[p] * scale);
+                        if (extra === 1) {
+                            if (a === 0) { r = 0; g = 0; b = 0; }
+                            else if (a < 255) {
+                                r = Math.min(255, Math.round((r * 255) / a));
+                                g = Math.min(255, Math.round((g * 255) / a));
+                                b = Math.min(255, Math.round((b * 255) / a));
+                            }
+                        }
+                        return [r, g, b, a];
+                    });
+                    await expectRead(
+                        T,
+                        `sub-byte palette + alpha (${bits}-bit, ${planar === 1 ? "chunky" : "planar"}, ${alphaKind})`,
+                        bytes, w, h, want,
+                        { info: { bits, samples: 2, photometric: 3, compression: 1, predictor: 1, planar, tiled: false, bigtiff: false, alpha: alphaKind } },
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -989,7 +1117,9 @@ out.update(pillow_mode=im.mode, pillow_equal=bool(im.mode == "RGBA" and b.shape 
 print(json.dumps(out))
 `;
 
-async function writerCases(T) {
+const writerChecked = new Map();
+
+async function writerCases(T, K = null) {
     fs.writeFileSync(path.join(OUT, "writer_check.py"), WRITER_PY);
 
     // -- tiffStripRows --
@@ -1002,19 +1132,21 @@ async function writerCases(T) {
             try { got = T.tiffStripRows(w); } catch (err) { got = "threw " + errText(err); }
             if (got !== want) wrong.push(`${w}: ${short(got)} instead of ${want}`);
         }
-        check("tiffStripRows", !wrong.length, wrong.join(", ") || "the largest power of two up to 256 within 8 MiB");
+        check(`tiffStripRows${kernelSuffix}`, !wrong.length, wrong.join(", ") || "the largest power of two up to 256 within 8 MiB");
     }
 
-    // -- tiffPart: one strip --
+    // -- tiffPart: one strip (and p.tiffStrip / K.tiffStrip byte-identical when Rust kernels are active) --
     {
         const w = 5, rows = 3, r = rng(201);
         const src = new Uint8Array(w * rows * 4);
         for (let i = 0; i < src.length; i++) src[i] = r() & 255;
         const keep = src.slice();
         const problems = [];
+        const p = K && K.rustPx ? K.rustPx() : null;
         for (const pred of [2, 1, undefined]) {
+            const args = pred === undefined ? { rgba: src, w, rows } : { rgba: src, w, rows, predictor: pred };
             let res;
-            try { res = await T.tiffPart(pred === undefined ? { rgba: src, w, rows } : { rgba: src, w, rows, predictor: pred }, deflate); } catch (err) { problems.push(`predictor ${pred}: threw ${errText(err)}`); continue; }
+            try { res = await T.tiffPart(args, deflate); } catch (err) { problems.push(`predictor ${pred}: threw ${errText(err)}`); continue; }
             if (!bytesEqual(src, keep)) problems.push(`predictor ${pred}: the input was changed`);
             if (!res || !(res.chunk instanceof ArrayBuffer)) { problems.push(`predictor ${pred}: chunk is ${res && res.chunk ? res.chunk.constructor.name : "missing"}, not an ArrayBuffer`); continue; }
             if (res.raw !== w * rows * 4) problems.push(`predictor ${pred}: raw ${res.raw}, not ${w * rows * 4}`);
@@ -1024,6 +1156,18 @@ async function writerCases(T) {
             try { inflated = new Uint8Array(zlib.inflateSync(Buffer.from(c))); } catch (err) { problems.push(`predictor ${pred}: the chunk is no zlib stream (${errText(err)})`); continue; }
             const want = (pred === 1) ? src : hdiff(src, w, 4, rows, 8);
             if (!bytesEqual(inflated, want)) problems.push(`predictor ${pred}: the inflated strip is not the ${pred === 1 ? "picture" : "differenced picture"}`);
+            if (p) {
+                const wantZlib = await T.tiffPart(args, (b) => p.zlib(b, 2));
+                const gotPx = p.tiffStrip(args, 2);
+                const gotK = await K.tiffStrip(args, 2);
+                if (!bytesEqual(src, keep)) problems.push(`predictor ${pred}: tiffStrip mutated input`);
+                if (!gotPx || gotPx.raw !== wantZlib.raw || !bytesEqual(new Uint8Array(gotPx.chunk), new Uint8Array(wantZlib.chunk))) {
+                    problems.push(`predictor ${pred}: p.tiffStrip differs from tiffPart(args, p.zlib)`);
+                }
+                if (!gotK || gotK.raw !== wantZlib.raw || !bytesEqual(new Uint8Array(gotK.chunk), new Uint8Array(wantZlib.chunk))) {
+                    problems.push(`predictor ${pred}: K.tiffStrip differs from tiffPart(args, p.zlib)`);
+                }
+            }
         }
         // an ArrayBuffer, and a view with a byteOffset
         try {
@@ -1034,8 +1178,16 @@ async function writerCases(T) {
             big.set(src, 20);
             const b = await T.tiffPart({ rgba: big.subarray(20, 20 + src.length), w, rows, predictor: 2 }, deflate);
             if (!bytesEqual(new Uint8Array(zlib.inflateSync(Buffer.from(new Uint8Array(b.chunk)))), hdiff(src, w, 4, rows, 8))) problems.push("a view with a byteOffset is not read as the view");
+            if (p) {
+                const aZ = await T.tiffPart({ rgba: src.slice().buffer, w, rows, predictor: 2 }, (buf) => p.zlib(buf, 2));
+                const aS = p.tiffStrip({ rgba: src.slice().buffer, w, rows, predictor: 2 }, 2);
+                const bS = p.tiffStrip({ rgba: big.subarray(20, 20 + src.length), w, rows, predictor: 2 }, 2);
+                if (!bytesEqual(new Uint8Array(aS.chunk), new Uint8Array(aZ.chunk)) || !bytesEqual(new Uint8Array(bS.chunk), new Uint8Array(aZ.chunk))) {
+                    problems.push("p.tiffStrip on ArrayBuffer or view with byteOffset differs from tiffPart(args, p.zlib)");
+                }
+            }
         } catch (err) { problems.push("threw " + errText(err)); }
-        check("tiffPart", !problems.length, problems.join(" | ") || "predictor 2 / 1 / default, ArrayBuffer and view sources");
+        check(`tiffPart${kernelSuffix}`, !problems.length, problems.join(" | ") || "predictor 2 / 1 / default, ArrayBuffer and view sources");
     }
 
     // -- TiffStreamWriter: the files --
@@ -1047,7 +1199,7 @@ async function writerCases(T) {
     for (const c of cases) {
         const { W, H } = c;
         const pred = c.predictor === undefined ? 2 : c.predictor;
-        const name = `TiffStreamWriter ${W} x ${H} predictor ${c.predictor === undefined ? "default (2)" : c.predictor}`;
+        const name = `TiffStreamWriter ${W} x ${H} predictor ${c.predictor === undefined ? "default (2)" : c.predictor}${kernelSuffix}`;
         const src = softPicture(W, H, c.seed);
         const problems = [];
         let blob = null, most = 0;
@@ -1063,7 +1215,7 @@ async function writerCases(T) {
                 try {
                     // the first of every three parts is the slowest, so parts finish out of order
                     await new Promise((res) => setTimeout(res, [18, 9, 1][k % 3]));
-                    return await T.tiffPart(args, deflate);
+                    return K ? await K.tiffStrip(args, 2) : await T.tiffPart(args, deflate);
                 } finally { inFlight--; }
             };
             const wr = c.predictor === undefined ? new T.TiffStreamWriter(W, H, { run, flights }) : new T.TiffStreamWriter(W, H, { run, flights, predictor: c.predictor });
@@ -1124,10 +1276,15 @@ async function writerCases(T) {
         } catch (err) { problems.push("readTiff threw " + errText(err)); }
         // read back by tifffile and Pillow
         try {
-            const f = path.join(OUT, `written_${W}x${H}_p${pred}.tif`), raw = path.join(OUT, `written_${W}x${H}_p${pred}.rgba`);
-            fs.writeFileSync(f, bytes);
-            fs.writeFileSync(raw, src);
-            const py = pyJson([path.join(OUT, "writer_check.py"), f, raw, String(W), String(H)]);
+            const key = `${W}x${H}_p${pred}${K ? "_rust" : "_js"}`;
+            let py = writerChecked.get(key);
+            if (!py) {
+                const f = path.join(OUT, `written_${W}x${H}_p${pred}.tif`), raw = path.join(OUT, `written_${W}x${H}_p${pred}.rgba`);
+                fs.writeFileSync(f, bytes);
+                fs.writeFileSync(raw, src);
+                py = pyJson([path.join(OUT, "writer_check.py"), f, raw, String(W), String(H)]);
+                writerChecked.set(key, py);
+            }
             const want = { tifffile_equal: true, pillow_equal: true, compression: 8, predictor: pred, extrasamples: [2], samples: 4, photometric: 2, byteorder: "<", bigtiff: false, pages: 1, software: "Scumble", xres: 72, yres: 72, unit: 2 };
             for (const [k, val] of Object.entries(want)) if (JSON.stringify(py[k]) !== JSON.stringify(val)) problems.push(`Python: ${k} is ${short(py[k])}, not ${short(val)}`);
         } catch (err) { problems.push("Python: " + errText(err)); }
@@ -1135,7 +1292,7 @@ async function writerCases(T) {
     }
 
     // -- the writer's refusals --
-    {
+    if (!K) {
         const problems = [];
         const run = (args) => T.tiffPart(args, deflate);
         const W = 1001, H = 777, R = T.tiffStripRows(W);
@@ -1165,7 +1322,7 @@ async function writerCases(T) {
     }
 
     // -- the 4 GiB check --
-    {
+    if (!K) {
         const problems = [];
         if (typeof T.TiffStreamWriter.check !== "function") problems.push("TiffStreamWriter.check is not a function");
         else {
@@ -1194,15 +1351,53 @@ async function writerCases(T) {
         console.log("FAIL");
         process.exit(1);
     }
-    const missing = ["isTiff", "tiffInfo", "readTiff", "unpackStrip", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
-    if (!T.TIFF_JS || T.TIFF_JS.unpackStrip !== T.unpackStrip) missing.push("TIFF_JS");
-    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, readTiff, unpackStrip, TIFF_JS, tiffStripRows, tiffPart, TiffStreamWriter")) {
+    const missing = ["isTiff", "tiffInfo", "readTiff", "unpackStrip", "unpredict", "predictRgba", "toRgba", "paletteLut", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
+    const tiffJsOk = T.TIFF_JS && Object.isFrozen(T.TIFF_JS)
+        && T.TIFF_JS.unpackStrip === T.unpackStrip
+        && T.TIFF_JS.unpredict === T.unpredict
+        && T.TIFF_JS.predictRgba === T.predictRgba
+        && T.TIFF_JS.toRgba === T.toRgba
+        && T.TIFF_JS.paletteLut === T.paletteLut;
+    if (!tiffJsOk) missing.push("TIFF_JS");
+    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, readTiff, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, TIFF_JS, tiffStripRows, tiffPart, TiffStreamWriter")) {
         console.log("FAIL");
         process.exit(1);
     }
-    for (const [what, fn] of [["fixtures", fixtureCases], ["byte-built files", builtCases], ["the writer", writerCases]]) {
+
+    const K = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "px", "kernels.js")).href);
+    const { fileURLToPath } = require("node:url");
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (u, ...rest) => {
+        const s = String(u && u.href ? u.href : u);
+        return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+    };
+    try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+    K.setKernels("rust");
+
+    // Pass 1: kernels: null (default TIFF_JS)
+    activeKernels = null;
+    kernelSuffix = "";
+    K.pxCalls(true);
+    for (const [what, fn] of [["fixtures", fixtureCases], ["byte-built files", builtCases], ["the writer", (mod) => writerCases(mod, null)]]) {
         try { await fn(T); } catch (err) { check(what, false, "stopped: " + (err && err.stack ? err.stack.split("\n").slice(0, 3).join(" / ") : errText(err))); }
     }
+    const jsCalls = K.pxCalls(true);
+    check("pass 1 (kernels: null) ran 0 Rust TIFF kernel calls",
+        !jsCalls.tiff_unpredict && !jsCalls.tiff_to_rgba && !jsCalls.tiff_predict_rgba,
+        JSON.stringify(jsCalls));
+
+    // Pass 2: kernels: K.tiffKernels() (Rust wasm)
+    activeKernels = K.tiffKernels();
+    kernelSuffix = " [rust]";
+    K.pxCalls(true);
+    for (const [what, fn] of [["fixtures (rust)", fixtureCases], ["byte-built files (rust)", builtCases], ["the writer (rust)", (mod) => writerCases(mod, K)]]) {
+        try { await fn(T); } catch (err) { check(what, false, "stopped: " + (err && err.stack ? err.stack.split("\n").slice(0, 3).join(" / ") : errText(err))); }
+    }
+    const rustCalls = K.pxCalls(true);
+    check("pass 2 (kernels: tiffKernels()) ran Rust tiff_unpredict, tiff_to_rgba, tiff_predict_rgba, adler32 and deflate_part",
+        rustCalls.tiff_unpredict > 0 && rustCalls.tiff_to_rgba > 0 && rustCalls.tiff_predict_rgba > 0 && rustCalls.adler32 > 0 && rustCalls.deflate_part > 0,
+        JSON.stringify(rustCalls));
+
     const ok = results.length > 0 && results.every(Boolean);
     if (ok && !KEEP) fs.rmSync(OUT, { recursive: true, force: true });
     else if (!ok) console.log(`files kept in ${OUT}`);

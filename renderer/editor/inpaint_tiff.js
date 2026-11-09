@@ -405,8 +405,6 @@ export function unpackStrip(compression, src, need, out = null, name = "strip") 
     return out || dst;
 }
 
-export const TIFF_JS = Object.freeze({ unpackStrip });
-
 /**
  * The pieces of a ReadableStream, and the stream cancelled when the caller stops early. Each await of the next piece
  * adds to `spent.wait` (the blob read, and for deflate the inflater too), each piece to `spent.pieces`.
@@ -471,19 +469,33 @@ async function* unpacked(src, off, count, compression, name, need = Infinity) {
 }
 
 /** Undo horizontal prediction (Predictor 2) on `rows` rows of `rowBytes`, `pixels` wide with `per` samples a pixel. */
-function unpredict(buf, rows, rowBytes, pixels, per, bits, le) {
+export function unpredict(buf, rows, rowBytes, pixels, per, bits, le = true) {
+    if (!ArrayBuffer.isView(buf)) throw new Error("tiff unpredict: buf must be an ArrayBufferView");
+    if (!Number.isInteger(rows) || !Number.isInteger(rowBytes) || !Number.isInteger(pixels) || !Number.isInteger(per)
+        || rows < 0 || rowBytes < 0 || pixels < 0 || per < 1 || (bits !== 8 && bits !== 16)) {
+        throw new Error(`tiff unpredict: invalid parameters (rows=${rows}, rowBytes=${rowBytes}, pixels=${pixels}, per=${per}, bits=${bits})`);
+    }
+    if (rows === 0 || pixels === 0) return buf;
+    const bps = bits >>> 3;
+    const active = pixels * per * bps;
+    if (rowBytes < active || buf.byteLength < (rows - 1) * rowBytes + active) {
+        throw new Error(`tiff unpredict: buffer (${buf.byteLength}) too short for ${rows} x ${rowBytes} (active ${active})`);
+    }
+    const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
     if (bits === 8) {
         for (let r = 0; r < rows; r++) {
             const o = r * rowBytes, end = o + pixels * per;
-            for (let i = o + per; i < end; i++) buf[i] = (buf[i] + buf[i - per]) & 255;
+            for (let i = o + per; i < end; i++) u8[i] = (u8[i] + u8[i - per]) & 255;
         }
     } else {
-        const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        const v = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+        const little = !!le;
         for (let r = 0; r < rows; r++) {
             const o = r * rowBytes;
-            for (let s = per; s < pixels * per; s++) v.setUint16(o + s * 2, (v.getUint16(o + s * 2, le) + v.getUint16(o + (s - per) * 2, le)) & 0xFFFF, le);
+            for (let s = per; s < pixels * per; s++) v.setUint16(o + s * 2, (v.getUint16(o + s * 2, little) + v.getUint16(o + (s - per) * 2, little)) & 0xFFFF, little);
         }
     }
+    return buf;
 }
 
 /**
@@ -524,7 +536,7 @@ class StripRows {
         }
         if (this.info.predictor === 2) {
             const t1 = clock();
-            unpredict(out, n, L.rowBytes, this.info.width, L.perPixel, this.info.bits, this.src.le);
+            (this.src.kernels || TIFF_JS).unpredict(out, n, L.rowBytes, this.info.width, L.perPixel, this.info.bits, this.src.le);
             sp.unpredict += clock() - t1;
         }
         return out;
@@ -559,7 +571,7 @@ class TileRows {
         if (got < want) throw truncated(`tile ${k + 1} holds ${got} of ${want} bytes`);
         if (this.info.predictor === 2) {
             const t1 = clock();
-            unpredict(buf, L.tl, tileRow, L.tw, L.perPixel, this.info.bits, this.src.le);
+            (this.src.kernels || TIFF_JS).unpredict(buf, L.tl, tileRow, L.tw, L.perPixel, this.info.bits, this.src.le);
             sp.unpredict += clock() - t1;
         }
         return { buf, tileRow };
@@ -599,71 +611,148 @@ class TileRows {
 const to8 = (v) => ((v * 2 + 257) / 514) | 0;
 
 /**
- * A band of rows (one buffer per plane) as RGBA8. Every sample first becomes 8 bits in pixel order (`s8`, palette
- * indices stay indices), then the colour kind turns it into RGBA.
+ * The 8-bit RGB colour map (`(1 << bits) * 3` bytes) from a TIFF `ColorMap` tag (`3 * (1 << bits)` u16 entries):
+ * by high byte as libtiff reads it, or low byte when every entry is below 256.
  */
-function converter(info, layout, le) {
-    const W = info.width, spp = info.samples, bits = info.bits, ph = info.photometric;
-    const base = ph === 2 ? 3 : 1;
-    const ai = info.alpha === "none" ? -1 : base;
-    const pre = info.alpha === "premultiplied";
-    const palette = ph === 3;
-    const cm = layout.colormap;
-    const levels = palette ? 1 << bits : 0;
-    const pal = palette ? new Uint8Array(levels * 3) : null;
-    // the colour map by its high byte, as libtiff reads it: exact for the v * 256 some writers store and the v * 257 of
-    // others; a map with every entry below 256 is taken as 8 bits already (libtiff's test for such writers)
-    const map8 = palette && cm.slice(0, 3 * levels).every((v) => v < 256) ? (v) => v : (v) => v >> 8;
-    if (palette) for (let i = 0; i < levels; i++) { pal[i * 3] = map8(cm[i]); pal[i * 3 + 1] = map8(cm[levels + i]); pal[i * 3 + 2] = map8(cm[2 * levels + i]); }
-    const scale = bits < 8 && !palette ? 255 / ((1 << bits) - 1) : 1;
-    const s8 = new Uint8Array(W * spp);
-    const planes = layout.planes, rowBytes = layout.rowBytes;
-    const view = (b) => new DataView(b.buffer, b.byteOffset, b.byteLength);
+export function paletteLut(cm, bits) {
+    const levels = 1 << bits;
+    if (!cm || cm.length < 3 * levels) throw new Error(`tiff paletteLut: colormap too short for ${bits} bits`);
+    const pal = new Uint8Array(levels * 3);
+    let all8 = true;
+    for (let i = 0; i < 3 * levels; i++) {
+        if (cm[i] >= 256) { all8 = false; break; }
+    }
+    for (let i = 0; i < levels; i++) {
+        pal[i * 3] = all8 ? cm[i] : cm[i] >> 8;
+        pal[i * 3 + 1] = all8 ? cm[levels + i] : cm[levels + i] >> 8;
+        pal[i * 3 + 2] = all8 ? cm[2 * levels + i] : cm[2 * levels + i] >> 8;
+    }
+    return pal;
+}
 
-    /** Row `r` of the band as 8-bit samples in pixel order. */
-    const samples = (bufs, r) => {
-        if (planes === 1 && bits === 8) return bufs[0].subarray(r * rowBytes, r * rowBytes + W * spp);
+/**
+ * Convert `n` rows (`bufs`: one buffer for chunky, or `samples` buffers for planar) to straight-alpha RGBA8 in `out`
+ * (or a fresh `Uint8Array(n * width * 4)`). Question 6.4 (K15): on sub-byte (`1, 2, 4`-bit) palette files with alpha,
+ * the palette index sample (`0`) stays raw (`0 .. 2^bits - 1`) while the alpha sample (`1`) is scaled by
+ * `255 / (2^bits - 1)` for both chunky and planar, straight and premultiplied.
+ */
+export function toRgba(bufs, n, out = null, spec = {}) {
+    if (!spec || typeof spec !== "object") throw new Error("tiff toRgba: spec is required");
+    const W = (spec.width ?? spec.w) | 0, spp = (spec.samples ?? spec.spp) | 0, bits = spec.bits | 0, ph = spec.photometric | 0;
+    const rows = n | 0;
+    const le = spec.le !== false && spec.le !== 0;
+    const alphaMode = spec.alpha === "premultiplied" || spec.alpha === 1 ? 1
+        : spec.alpha === "straight" || spec.alpha === 2 ? 2
+        : spec.alpha === "none" || spec.alpha === 0 || spec.alpha === undefined ? 0 : -1;
+    if (W <= 0 || rows <= 0 || (bits !== 1 && bits !== 2 && bits !== 4 && bits !== 8 && bits !== 16)
+        || (ph !== 0 && ph !== 1 && ph !== 2 && ph !== 3) || (ph === 2 && bits < 8) || alphaMode < 0) {
+        throw new Error(`tiff toRgba: invalid spec (W=${W}, rows=${rows}, bits=${bits}, ph=${ph}, alpha=${spec.alpha})`);
+    }
+    const base = ph === 2 ? 3 : 1;
+    const ai = alphaMode === 0 ? -1 : base;
+    const pre = alphaMode === 1;
+    const palette = ph === 3;
+    if (spp < base + (ai >= 0 ? 1 : 0)) throw new Error(`tiff toRgba: samples=${spp} too small for ph=${ph} alpha=${spec.alpha}`);
+    const planeList = Array.isArray(bufs) ? bufs : [bufs];
+    const planes = planeList.length;
+    if (planes !== 1 && planes !== spp) throw new Error(`tiff toRgba: planes=${planes} must be 1 or samples=${spp}`);
+    const perPlane = planes === 1 ? W * spp : W;
+    const minRowBytes = Math.ceil((perPlane * bits) / 8);
+    const rowBytes = spec.rowBytes ? (spec.rowBytes | 0) : minRowBytes;
+    if (rowBytes < minRowBytes) throw new Error(`tiff toRgba: rowBytes=${rowBytes} < ${minRowBytes}`);
+    const minPlaneBytes = (rows - 1) * rowBytes + minRowBytes;
+    const u8Planes = new Array(planes);
+    for (let p = 0; p < planes; p++) {
+        const b = planeList[p];
+        if (!ArrayBuffer.isView(b) || b.byteLength < minPlaneBytes) {
+            throw new Error(`tiff toRgba: plane ${p} too short (${b && b.byteLength} < ${minPlaneBytes})`);
+        }
+        u8Planes[p] = b instanceof Uint8Array ? b : new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+    }
+    let pal = null;
+    if (palette) {
+        const rawPal = spec.pal || (spec.colormap ? paletteLut(spec.colormap, bits) : null);
+        const needPal = (1 << bits) * 3;
+        if (!ArrayBuffer.isView(rawPal) || rawPal.byteLength < needPal) {
+            throw new Error(`tiff toRgba: pal too short for ${bits}-bit palette`);
+        }
+        pal = rawPal instanceof Uint8Array ? rawPal : new Uint8Array(rawPal.buffer, rawPal.byteOffset, rawPal.byteLength);
+    }
+    const needOut = rows * W * 4;
+    let dst;
+    if (out != null) {
+        if (!ArrayBuffer.isView(out) || out.byteLength < needOut) throw new Error(`tiff toRgba: out too short (${out && out.byteLength} < ${needOut})`);
+        dst = out instanceof Uint8Array ? out : new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+    } else {
+        dst = new Uint8Array(needOut);
+    }
+
+    // Fast path: chunky RGBA8 straight is a direct copy
+    if (planes === 1 && bits === 8 && ph === 2 && spp === 4 && alphaMode === 2) {
+        const b0 = u8Planes[0];
+        if (rowBytes === W * 4) dst.subarray(0, needOut).set(b0.subarray(0, needOut));
+        else for (let r = 0; r < rows; r++) dst.set(b0.subarray(r * rowBytes, r * rowBytes + W * 4), r * W * 4);
+        return out || dst;
+    }
+
+    const scale = bits < 8 ? 255 / ((1 << bits) - 1) : 1;
+    const s8 = planes === 1 && bits === 8 ? null : new Uint8Array(W * spp);
+    const views = bits === 16 ? u8Planes.map((b) => new DataView(b.buffer, b.byteOffset, b.byteLength)) : null;
+
+    const samples = (r) => {
+        if (planes === 1 && bits === 8) return u8Planes[0].subarray(r * rowBytes, r * rowBytes + W * spp);
         for (let p = 0; p < planes; p++) {
-            const b = bufs[p], o = r * rowBytes;
+            const b = u8Planes[p], o = r * rowBytes;
             const per = planes === 1 ? spp : 1, step = planes === 1 ? 1 : spp, off = planes === 1 ? 0 : p;
-            const n = W * per;
-            if (bits === 8) { for (let i = 0; i < n; i++) s8[off + i * step] = b[o + i]; }
-            else if (bits === 16) { const v = view(b); for (let i = 0; i < n; i++) s8[off + i * step] = to8(v.getUint16(o + i * 2, le)); }
+            const cnt = W * per;
+            if (bits === 8) { for (let i = 0; i < cnt; i++) s8[off + i * step] = b[o + i]; }
+            else if (bits === 16) { const v = views[p]; for (let i = 0; i < cnt; i++) s8[off + i * step] = to8(v.getUint16(o + i * 2, le)); }
             else {
                 const mask = (1 << bits) - 1, perByte = 8 / bits;
-                for (let i = 0; i < n; i++) {
+                for (let i = 0; i < cnt; i++) {
                     const byte = b[o + Math.floor(i / perByte)];
                     const raw = (byte >> (8 - bits - (i % perByte) * bits)) & mask;
-                    s8[off + i * step] = palette ? raw : Math.round(raw * scale);
+                    const isIdx = palette && (planes === 1 ? i % spp === 0 : p === 0);
+                    s8[off + i * step] = isIdx ? raw : Math.round(raw * scale);
                 }
             }
         }
         return s8;
     };
-    return (bufs, n, out) => {
-        for (let r = 0; r < n; r++) {
-            const s = samples(bufs, r);
-            let o = r * W * 4;
-            for (let x = 0, i = 0; x < W; x++, i += spp, o += 4) {
-                let R, G, B;
-                if (ph === 2) { R = s[i]; G = s[i + 1]; B = s[i + 2]; }
-                else if (palette) { const k = s[i] * 3; R = pal[k]; G = pal[k + 1]; B = pal[k + 2]; }
-                else { R = G = B = ph === 0 ? 255 - s[i] : s[i]; }
-                let A = 255;
-                if (ai >= 0) {
-                    A = s[i + ai];
-                    if (pre) {
-                        if (A === 0) { R = G = B = 0; }
-                        else if (A < 255) {
-                            const h = A >> 1;
-                            R = Math.min(255, Math.floor((R * 255 + h) / A)); G = Math.min(255, Math.floor((G * 255 + h) / A)); B = Math.min(255, Math.floor((B * 255 + h) / A));
-                        }
+
+    for (let r = 0; r < rows; r++) {
+        const s = samples(r);
+        let o = r * W * 4;
+        for (let x = 0, i = 0; x < W; x++, i += spp, o += 4) {
+            let R, G, B;
+            if (ph === 2) { R = s[i]; G = s[i + 1]; B = s[i + 2]; }
+            else if (palette) { const k = s[i] * 3; R = pal[k]; G = pal[k + 1]; B = pal[k + 2]; }
+            else { R = G = B = ph === 0 ? 255 - s[i] : s[i]; }
+            let A = 255;
+            if (ai >= 0) {
+                A = s[i + ai];
+                if (pre) {
+                    if (A === 0) { R = G = B = 0; }
+                    else if (A < 255) {
+                        const h = A >> 1;
+                        R = Math.min(255, Math.floor((R * 255 + h) / A)); G = Math.min(255, Math.floor((G * 255 + h) / A)); B = Math.min(255, Math.floor((B * 255 + h) / A));
                     }
                 }
-                out[o] = R; out[o + 1] = G; out[o + 2] = B; out[o + 3] = A;
             }
+            dst[o] = R; dst[o + 1] = G; dst[o + 2] = B; dst[o + 3] = A;
         }
-    };
+    }
+    return out || dst;
+}
+
+/**
+ * A band of rows (one buffer per plane) as RGBA8. Every sample first becomes 8 bits in pixel order (`s8`, palette
+ * indices stay indices), then the colour kind turns it into RGBA.
+ */
+function converter(info, layout, le, K = TIFF_JS) {
+    const pal = info.photometric === 3 ? paletteLut(layout.colormap, info.bits) : null;
+    const spec = { width: info.width, samples: info.samples, bits: info.bits, photometric: info.photometric, alpha: info.alpha, le, rowBytes: layout.rowBytes, pal };
+    return (bufs, n, out) => K.toRgba(bufs, n, out, spec);
 }
 
 /**
@@ -678,17 +767,19 @@ function converter(info, layout, le) {
  * included), `unpredict`, `convert` the rows made RGBA8, `deliver` inside `onRows`; the counts `bands` and `pieces`; and
  * `codec` ("none", "lzw", "packbits" or "deflate"). A planar file reads its planes concurrently, so their laps overlap.
  */
-export async function readTiff(blob, { onHeader = null, onRows, rowsPerBand = 256, spent = null } = {}) {
+export async function readTiff(blob, { onHeader = null, onRows, rowsPerBand = 256, spent = null, kernels = null } = {}) {
+    const K = kernels || TIFF_JS;
     const sp = Object.assign(spent || {}, { parse: 0, wait: 0, decode: 0, copy: 0, unpredict: 0, convert: 0, deliver: 0, bands: 0, pieces: 0 });
     const t0 = clock();
     const { src, info, layout } = await parse(blob);
     sp.parse = clock() - t0;
     sp.codec = CODEC[info.compression];
     src.spent = sp;
+    src.kernels = K;
     if (onHeader) await onHeader(info);
     const Rows = layout.tiled ? TileRows : StripRows;
     const planes = Array.from({ length: layout.planes }, (_, p) => new Rows(src, info, layout, p));
-    const convert = converter(info, layout, src.le);
+    const convert = converter(info, layout, src.le, K);
     const band = Math.max(1, rowsPerBand | 0);
     try {
         for (let y = 0; y < info.height; y += band) {
@@ -720,6 +811,23 @@ export function tiffStripRows(width) {
     return r;
 }
 
+/** Horizontal differencing (Predictor 2) in place on `rows` rows of `w`-wide RGBA8. */
+export function predictRgba(rgba, w, rows) {
+    if (!ArrayBuffer.isView(rgba)) throw new Error("tiff predictRgba: rgba must be an ArrayBufferView");
+    if (!Number.isInteger(w) || !Number.isInteger(rows) || w <= 0 || rows <= 0 || rgba.byteLength < w * rows * 4) {
+        throw new Error(`tiff predictRgba: invalid size (${w} x ${rows}, byteLength ${rgba && rgba.byteLength})`);
+    }
+    const row = w * 4;
+    const bytes = rgba instanceof Uint8Array ? rgba : new Uint8Array(rgba.buffer, rgba.byteOffset, w * rows * 4);
+    for (let r = 0; r < rows; r++) {
+        const o = r * row;
+        for (let i = o + row - 1; i >= o + 4; i--) bytes[i] = (bytes[i] - bytes[i - 4]) & 255;
+    }
+    return rgba;
+}
+
+export const TIFF_JS = Object.freeze({ unpackStrip, unpredict, predictRgba, toRgba, paletteLut });
+
 /**
  * One strip: `rows` rows of RGBA8 `w` wide, differenced horizontally (Predictor 2, on a copy) and compressed by
  * `deflate` (bytes -> a zlib stream). `{ chunk, raw }`. `laps` (optional): `predict` (the copy and the differencing)
@@ -727,16 +835,12 @@ export function tiffStripRows(width) {
  */
 export async function tiffPart({ rgba, w, rows, predictor = 2 }, deflate, laps = null) {
     const n = w * rows * 4;
-    const src = rgba instanceof Uint8Array ? rgba.subarray(0, n) : new Uint8Array(rgba, 0, n);
+    const src = rgba instanceof Uint8Array ? rgba.subarray(0, n) : ArrayBuffer.isView(rgba) ? new Uint8Array(rgba.buffer, rgba.byteOffset, n) : new Uint8Array(rgba, 0, n);
     let bytes = src;
     const t0 = clock();
     if (predictor === 2) {
         bytes = new Uint8Array(src);
-        const row = w * 4;
-        for (let r = 0; r < rows; r++) {
-            const o = r * row;
-            for (let i = o + row - 1; i >= o + 4; i--) bytes[i] = (bytes[i] - bytes[i - 4]) & 255;
-        }
+        predictRgba(bytes, w, rows);
     }
     const t1 = clock();
     const z = await deflate(bytes);
