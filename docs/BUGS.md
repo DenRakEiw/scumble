@@ -31,6 +31,14 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 
 ## Open
 
+### A fill layer's depth limit with edge snap sits elsewhere in a layered PSD / ORA export than on screen (found 2026-10-23, read; K25 fixes it, the user's answer of 2026-11-09)
+
+On screen the snap weighs the guide's pixels against the colour of the picture below (`inpaint_limit.js` `LIMIT_SHADER` `i.rgb`, `limitStageCPU` `iR`, `iG`, `iB`); `limitAlphaRows` passes the fill's own colour (`rgba[ptr]`), so the soft edge of the exported layer does not follow the picture as it does on screen. K25: the reference colour from `map.guide`, the layer's own pixels only without a guide. It then matches the screen as long as the picture below is still the one the depth map was made from. Only depth limits are concerned: a fill layer takes no other.
+
+### The Limit row's range bar keeps an old colour after the swatch changed it (found 2026-11-09, read by K23's review, not run; in 0.1.52 too)
+
+`buildRangeBar` copies the stored limit into `curRange` at mount (`inpaint_rangebar.js`), its `preview` and `commit` merge that copy over the layer's limit (`inpaint_canvas.js` `normalizeStoredLimit({ ...cur, ...r })`), and neither the swatch's handlers nor `refresh()` update it: a new colour from the swatch followed by a drag of the bar brings the old colour back until the row is rebuilt. The bar's own Pick updates the copy. Fix: update `curRange` when the swatch changes the colour, or hand `color` to preview and commit only after a Pick.
+
 ### A landed Generate result may not be one Ctrl+Z away, though `cancel_run` says it is (found 2026-11-07, read, not run; item 60's plan)
 
 Seen in the code only (`docs/PLAN_VARIANTS.md` §10 Q19): `addLayer` (`renderer/editor/inpaint_canvas.js`, the result's
