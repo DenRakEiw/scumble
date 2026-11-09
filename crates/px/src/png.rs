@@ -590,8 +590,9 @@ pub fn chunk_frame(buf: &mut [u8], data_len: usize, kind: u32) -> u32 {
 
 /// Standard PNG part target size in uncompressed pixel bytes (`inpaint_png.js` `PART_BYTES`).
 pub const PART_BYTES: usize = 8 * 1048576;
-/// Maximum rows in one standard PNG part (`inpaint_png.js` `PART_MAX_ROWS`).
-pub const PART_MAX_ROWS: usize = 256;
+/// Maximum rows in one PNG part (`inpaint_program.js` `programRows` / `bandPlan.rows` -> `inpaint_bands.js`
+/// `bandSource` -> `bandRows` align -> `inpaint_png.js` `forParts` `partRows(width, align)`).
+pub const PART_MAX_ROWS: usize = 2048;
 /// `png_part_decode` / `png_part_finish`: `lines` is empty or not a whole number of `1 + 4 * w`-byte scanlines.
 pub const PART_NOT_LINES: isize = -4;
 /// `png_part_decode` / `png_part_finish`: a scanline's filter byte is not `0..=4`.

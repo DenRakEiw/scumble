@@ -39,3 +39,16 @@ PASS (only: pngPart; PX_ONLY, not the full test)
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 17 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k7_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 261098 bytes, sha256 96e660547f663a57
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\mut_k7_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 212115 bytes, sha256 034ec2b6b5c74eee
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k7_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 9.51s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\mut_k7_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.50s

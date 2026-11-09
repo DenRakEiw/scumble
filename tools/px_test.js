@@ -4588,11 +4588,11 @@ async function pngPartCases(px, label, js) {
 // K7 (docs/PLAN_WASM_BUILD.md §4.2, §7 Stop 2): png_part_lines_cap, png_part_decode, and png_part_finish over the
 // filtered lines delivered by native DecompressionStream("deflate-raw").
 async function partDecodeCases(px, label, png, zlib, js) {
-    // 1. png_part_lines_cap / pngPartLinesCap across widths, clamp boundaries (8192/8193, 2097152/2097153), and overflow
-    const capWidths = [-5, 0, 1, 2, 16, 64, 255, 256, 257, 700, 4096, 8192, 8193, 15000, 1048576, 2097152, 2097153, 3_000_000, 0x3fffffff, 0x40000000];
+    // 1. png_part_lines_cap / pngPartLinesCap across widths, clamp boundaries (1024/1025, 2097152/2097153), and overflow
+    const capWidths = [-5, 0, 1, 2, 16, 64, 255, 256, 257, 700, 1024, 1025, 4096, 6000, 8192, 8193, 15000, 1048576, 2097152, 2097153, 3_000_000, 0x3fffffff, 0x40000000];
     let capOk = true, capDetail = "";
     for (const w of capWidths) {
-        const want = w > 0 && w <= 0x3fffffff ? Math.max(1, Math.min(256, Math.floor((8 * 1048576) / (4 * w)))) * (4 * w + 1) : 0;
+        const want = w > 0 && w <= 0x3fffffff ? Math.max(1, Math.min(2048, Math.floor((8 * 1048576) / (4 * w)))) * (4 * w + 1) : 0;
         const gotJ = js.pngPartLinesCap(w);
         const gotP = px.pngPartLinesCap(w);
         const gotE = w >= 0 ? (px.exports.png_part_lines_cap(w) >>> 0) : 0;
@@ -4724,7 +4724,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
                 });
             }
 
-            // Verify JS twin against independent reference + zlib.adler32
+            // Verify JS twin against independent reference + refAdler32
             if (refOk) {
                 const pCopy = prevRow.slice();
                 const lCopy = linesWithPrev.slice();
@@ -4763,7 +4763,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
             }
         }
     }
-    check(`${label} js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and zlib.adler32 (${decodeCases.length} decode + ${finishCases.length} finish cases)`,
+    check(`${label} js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and refAdler32 (${decodeCases.length} decode + ${finishCases.length} finish cases)`,
         refOk, refDetail);
 
     twinCheck({
@@ -4771,17 +4771,16 @@ async function partDecodeCases(px, label, png, zlib, js) {
         builds: [[label, px]],
         twin: js,
         call: (k, [lines, w, prev, rt]) => {
-            const p = prev ? prev.slice() : null;
-            const l = lines.slice();
-            const r = k.pngPartDecode(l, w, p, rt);
-            if (!eqBytes(l, lines)) throw new Error("caller lines mutated");
+            const lSnap = lines.slice();
+            const r = k.pngPartDecode(lines, w, prev, rt);
+            if (!eqBytes(lines, lSnap)) throw new Error("caller lines mutated");
             return {
                 code: r.code, rows: r.rows, adler: r.adler, firstFilter: r.firstFilter,
                 opaque: r.opaque, needsPrev: r.needsPrev, out: r.out, prev: r.prev,
             };
         },
         cases: decodeCases,
-        shift: [0, 1],
+        shift: [0, 2, 3],
     });
 
     twinCheck({
@@ -4789,17 +4788,16 @@ async function partDecodeCases(px, label, png, zlib, js) {
         builds: [[label, px]],
         twin: js,
         call: (k, [lines, rows, w, prev, rt]) => {
-            const p = prev.slice();
-            const l = lines.slice();
-            const r = k.pngPartFinish(l, rows, w, p, rt);
-            if (!eqBytes(l, lines)) throw new Error("caller lines mutated");
+            const lSnap = lines.slice();
+            const r = k.pngPartFinish(lines, rows, w, prev, rt);
+            if (!eqBytes(lines, lSnap)) throw new Error("caller lines mutated");
             return {
                 code: r.code, rows: r.rows, firstFilter: r.firstFilter,
-                opaque: r.opaque, needsPrev: r.needsPrev, out: r.out, prev: p,
+                opaque: r.opaque, needsPrev: r.needsPrev, out: r.out, prev: r.prev,
             };
         },
         cases: finishCases,
-        shift: [0, 1],
+        shift: [0, 3, 4],
     });
 
     // Caller-supplied out buffer (including Uint8ClampedArray view at an offset)
@@ -4821,72 +4819,100 @@ async function partDecodeCases(px, label, png, zlib, js) {
             && eqBytes(backingA, backingB) && backingB[0] === 0x5a && backingB[rows * rowBytes + 15] === 0x5a);
     }
 
-    // 3. Error codes: -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) on wrapper and raw exports
+    // 3. Error codes: -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) on wrapper and raw exports,
+    // verifying no byte of lines, prev, or out is mutated on any refusal, plus seeded refusal/decode fuzz
     {
         const w = 8, rows = 3, rowBytes = w * 4, stride = rowBytes + 1;
-        const goodLines = new Uint8Array(rows * stride);
-        const goodPrev = new Uint8Array(rowBytes);
-        const goodOut = new Uint8Array(rows * rowBytes);
+        const goodLines = new Uint8Array(rows * stride).fill(0x11);
+        for (let y = 0; y < rows; y++) goodLines[y * stride] = y % 5;
+        const goodPrev = new Uint8Array(rowBytes).fill(0x33);
+        const goodOut = new Uint8Array(rows * rowBytes).fill(0x77);
         let errOk = true, errDetail = "";
-        const expectCode = (what, gotJ, gotP, want) => {
+        const runRefusalDecode = (what, linesIn, wIn, prevIn, rtIn, outIn, want) => {
             if (!errOk) return;
+            const lSnap = linesIn ? linesIn.slice() : null;
+            const pSnap = prevIn ? prevIn.slice() : null;
+            const oSnap = outIn ? outIn.slice() : null;
+            const lJ = linesIn ? linesIn.slice() : null, lP = linesIn ? linesIn.slice() : null;
+            const pJ = prevIn ? prevIn.slice() : null, pP = prevIn ? prevIn.slice() : null;
+            const oJ = outIn ? outIn.slice() : null, oP = outIn ? outIn.slice() : null;
+            const gotJ = js.pngPartDecode(lJ, wIn, pJ, rtIn, oJ).code;
+            const gotP = px.pngPartDecode(lP, wIn, pP, rtIn, oP).code;
             if (gotJ !== want || gotP !== want) {
                 errOk = false;
-                errDetail = `${what}: js=${gotJ} px=${gotP} want=${want}`;
+                errDetail = `decode ${what}: js=${gotJ} px=${gotP} want=${want}`;
+                return;
+            }
+            if ((lSnap && (!eqBytes(lJ, lSnap) || !eqBytes(lP, lSnap)))
+                || (pSnap && (!eqBytes(pJ, pSnap) || !eqBytes(pP, pSnap)))
+                || (oSnap && (!eqBytes(oJ, oSnap) || !eqBytes(oP, oSnap)))) {
+                errOk = false;
+                errDetail = `decode ${what}: mutated caller lines/prev/out on refusal (${want})`;
+            }
+        };
+        const runRefusalFinish = (what, linesIn, rowsIn, wIn, prevIn, rtIn, outIn, want) => {
+            if (!errOk) return;
+            const lSnap = linesIn ? linesIn.slice() : null;
+            const pSnap = prevIn ? prevIn.slice() : null;
+            const oSnap = outIn ? outIn.slice() : null;
+            const lJ = linesIn ? linesIn.slice() : null, lP = linesIn ? linesIn.slice() : null;
+            const pJ = prevIn ? prevIn.slice() : null, pP = prevIn ? prevIn.slice() : null;
+            const oJ = outIn ? outIn.slice() : null, oP = outIn ? outIn.slice() : null;
+            const gotJ = js.pngPartFinish(lJ, rowsIn, wIn, pJ, rtIn, oJ).code;
+            const gotP = px.pngPartFinish(lP, rowsIn, wIn, pP, rtIn, oP).code;
+            if (gotJ !== want || gotP !== want) {
+                errOk = false;
+                errDetail = `finish ${what}: js=${gotJ} px=${gotP} want=${want}`;
+                return;
+            }
+            if ((lSnap && (!eqBytes(lJ, lSnap) || !eqBytes(lP, lSnap)))
+                || (pSnap && (!eqBytes(pJ, pSnap) || !eqBytes(pP, pSnap)))
+                || (oSnap && (!eqBytes(oJ, oSnap) || !eqBytes(oP, oSnap)))) {
+                errOk = false;
+                errDetail = `finish ${what}: mutated caller lines/prev/out on refusal (${want})`;
             }
         };
         const notLinesDecode = [
-            ["null lines", [null, w, goodPrev, null, null]],
-            ["w = 0", [goodLines, 0, goodPrev, null, null]],
-            ["w < 0", [goodLines, -4, goodPrev, null, null]],
-            ["w = 0x40000000", [goodLines, 0x40000000, goodPrev, null, null]],
-            ["empty lines", [new Uint8Array(0), w, goodPrev, null, null]],
-            ["len = stride - 1", [new Uint8Array(stride - 1), w, goodPrev, null, null]],
-            ["len = stride + 1", [new Uint8Array(stride + 1), w, goodPrev, null, null]],
-            ["len = 2*stride - 1", [new Uint8Array(2 * stride - 1), w, goodPrev, null, null]],
-            ["short prev", [goodLines, w, new Uint8Array(rowBytes - 1), null, null]],
-            ["short rt", [goodLines, w, goodPrev, new Uint8Array(65535), null]],
-            ["short out", [goodLines, w, goodPrev, null, new Uint8Array(rows * rowBytes - 1)]],
+            ["null lines", [null, w, goodPrev, null, goodOut]],
+            ["w = 0", [goodLines, 0, goodPrev, null, goodOut]],
+            ["w < 0", [goodLines, -4, goodPrev, null, goodOut]],
+            ["w = 0x40000000", [goodLines, 0x40000000, goodPrev, null, goodOut]],
+            ["empty lines", [new Uint8Array(0), w, goodPrev, null, goodOut]],
+            ["len = stride - 1", [new Uint8Array(stride - 1).fill(0x22), w, goodPrev, null, goodOut]],
+            ["len = stride + 1", [new Uint8Array(stride + 1).fill(0x22), w, goodPrev, null, goodOut]],
+            ["len = 2*stride - 1", [new Uint8Array(2 * stride - 1).fill(0x22), w, goodPrev, null, goodOut]],
+            ["short prev", [goodLines, w, new Uint8Array(rowBytes - 1).fill(0x33), null, goodOut]],
+            ["short rt", [goodLines, w, goodPrev, new Uint8Array(65535), goodOut]],
+            ["short out", [goodLines, w, goodPrev, null, new Uint8Array(rows * rowBytes - 1).fill(0x77)]],
         ];
         for (const [what, args] of notLinesDecode) {
-            expectCode(`decode ${what}`, js.pngPartDecode(...args).code, px.pngPartDecode(...args).code, -4);
+            runRefusalDecode(what, ...args, -4);
         }
         const notLinesFinish = [
-            ["null lines", [null, rows, w, goodPrev, null, null]],
-            ["null prev", [goodLines, rows, w, null, null, null]],
-            ["w = 0", [goodLines, rows, 0, goodPrev, null, null]],
-            ["w < 0", [goodLines, rows, -1, goodPrev, null, null]],
-            ["w = 0x40000000", [goodLines, rows, 0x40000000, goodPrev, null, null]],
-            ["rows = 0", [goodLines, 0, w, goodPrev, null, null]],
-            ["rows < 0", [goodLines, -1, w, goodPrev, null, null]],
-            ["lines length != rows * stride", [new Uint8Array((rows - 1) * stride), rows, w, goodPrev, null, null]],
-            ["short prev", [goodLines, rows, w, new Uint8Array(rowBytes - 1), null, null]],
-            ["short rt", [goodLines, rows, w, goodPrev, new Uint8Array(65535), null]],
-            ["short out", [goodLines, rows, w, goodPrev, null, new Uint8Array(rows * rowBytes - 1)]],
+            ["null lines", [null, rows, w, goodPrev, null, goodOut]],
+            ["null prev", [goodLines, rows, w, null, null, goodOut]],
+            ["w = 0", [goodLines, rows, 0, goodPrev, null, goodOut]],
+            ["w < 0", [goodLines, rows, -1, goodPrev, null, goodOut]],
+            ["w = 0x40000000", [goodLines, rows, 0x40000000, goodPrev, null, goodOut]],
+            ["rows = 0", [goodLines, 0, w, goodPrev, null, goodOut]],
+            ["rows < 0", [goodLines, -1, w, goodPrev, null, goodOut]],
+            ["lines length != rows * stride", [new Uint8Array((rows - 1) * stride).fill(0x22), rows, w, goodPrev, null, goodOut]],
+            ["short prev", [goodLines, rows, w, new Uint8Array(rowBytes - 1).fill(0x33), null, goodOut]],
+            ["short rt", [goodLines, rows, w, goodPrev, new Uint8Array(65535), goodOut]],
+            ["short out", [goodLines, rows, w, goodPrev, null, new Uint8Array(rows * rowBytes - 1).fill(0x77)]],
         ];
         for (const [what, args] of notLinesFinish) {
-            expectCode(`finish ${what}`, js.pngPartFinish(...args).code, px.pngPartFinish(...args).code, -4);
+            runRefusalFinish(what, ...args, -4);
         }
-        // Filter byte checks: 4 is valid, 5 and 255 on row 0, middle row, or last row return -5 (PART_BAD_FILTER)
+        // Filter byte checks: 4 is valid, 5..255 on row 0, middle row, or last row return -5 (PART_BAD_FILTER)
+        // and leave every byte of lines, prev (both JS and Px), and out (both JS and Px) untouched.
         for (const badRow of [0, 1, rows - 1]) {
             for (const badByte of [5, 6, 128, 255]) {
                 const bad = goodLines.slice();
                 bad[badRow * stride] = badByte;
-                const pJ = goodPrev.slice().fill(0x33), pP = goodPrev.slice().fill(0x33);
-                const oJ = goodOut.slice().fill(0x77), oP = goodOut.slice().fill(0x77);
-                expectCode(`decode bad filter ${badByte} row ${badRow}`,
-                    js.pngPartDecode(bad, w, pJ, null, oJ).code,
-                    px.pngPartDecode(bad, w, pP, null, oP).code, -5);
-                expectCode(`decode bad filter ${badByte} row ${badRow} (null prev)`,
-                    js.pngPartDecode(bad, w, null, null, null).code,
-                    px.pngPartDecode(bad, w, null, null, null).code, -5);
-                expectCode(`finish bad filter ${badByte} row ${badRow}`,
-                    js.pngPartFinish(bad, rows, w, pJ, null, oJ).code,
-                    px.pngPartFinish(bad, rows, w, pP, null, oP).code, -5);
-                if (errOk && (pP[0] !== 0x33 || oP[0] !== 0x77)) {
-                    errOk = false;
-                    errDetail = `bad filter mutated prev/out`;
-                }
+                runRefusalDecode(`bad filter ${badByte} row ${badRow}`, bad, w, goodPrev, null, goodOut, -5);
+                runRefusalDecode(`bad filter ${badByte} row ${badRow} (null prev)`, bad, w, null, null, null, -5);
+                runRefusalFinish(`bad filter ${badByte} row ${badRow}`, bad, rows, w, goodPrev, null, goodOut, -5);
             }
         }
         // Raw wasm export pointer/dimension checks
@@ -4925,8 +4951,122 @@ async function partDecodeCases(px, label, png, zlib, js) {
             px.free(po, rows * rowBytes);
             px.free(pi, 20);
         }
-        check(`${label} png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) on invalid inputs`,
+        check(`${label} png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) without mutating caller buffers`,
             errOk, errDetail);
+
+        // Seeded fuzz of length, w, rows, filter bytes, prev, and out (including inputs bad in both length/dims and filter bytes,
+        // pinning that -4 takes precedence over -5) across twin and wasm build
+        let fzSeed = 0x517cc1b7;
+        const fzNext = () => { fzSeed = (Math.imul(fzSeed, 1664525) + 1013904223) >>> 0; return fzSeed; };
+        const fzWidths = [-7, -1, 0, 1, 2, 3, 4, 5, 7, 8, 15, 16, 17, 33, 64, 0x40000000];
+        const fzRows = [-2, 0, 1, 2, 3, 4];
+        let fuzzOk = true, fuzzDetail = "";
+        for (let t = 0; t < 240 && fuzzOk; t++) {
+            const fw = fzWidths[fzNext() & 15];
+            const fr = fzRows[fzNext() % fzRows.length];
+            const validW = fw > 0 && fw <= 0x3fffffff;
+            const fRowBytes = validW ? fw * 4 : 16;
+            const fStride = validW ? fRowBytes + 1 : 17;
+            let fLen;
+            if (t % 4 === 2 && validW) {
+                // Force bad length/dims + bad filter simultaneously to pin -4 before -5
+                const badLens = [0, 1, fStride - 1, fStride + 1, 2 * fStride - 1];
+                fLen = badLens[fzNext() % badLens.length];
+            } else if (validW) {
+                const lenChoices = [0, 1, fStride - 1, fStride, fStride + 1, 2 * fStride - 1, 2 * fStride, 3 * fStride, fzNext() % (4 * fStride + 5)];
+                fLen = lenChoices[fzNext() % lenChoices.length];
+            } else {
+                fLen = [0, 1, 17, 34, 51][fzNext() % 5];
+            }
+            const fLines = new Uint8Array(fLen);
+            for (let i = 0; i < fLen; i++) fLines[i] = (fzNext() >>> 16) & 255;
+            if (fLen > 0 && validW) {
+                const nFullRows = Math.floor(fLen / fStride);
+                if (t % 4 === 0) {
+                    for (let y = 0; y < nFullRows; y++) fLines[y * fStride] = (fzNext() >>> 8) % 5;
+                } else if (t % 4 === 1 && nFullRows > 0) {
+                    for (let y = 0; y < nFullRows; y++) fLines[y * fStride] = (fzNext() >>> 8) % 5;
+                    const badY = fzNext() % nFullRows;
+                    fLines[badY * fStride] = 5 + ((fzNext() >>> 8) % 251);
+                } else if (t % 4 === 2) {
+                    fLines[0] = 5 + ((fzNext() >>> 8) % 251);
+                }
+            }
+            const prevMode = fzNext() % 3; // 0: null, 1: valid, 2: short
+            const fPrev = prevMode === 0 ? null : new Uint8Array(prevMode === 1 ? fRowBytes : Math.max(0, fRowBytes - 1));
+            if (fPrev) for (let i = 0; i < fPrev.length; i++) fPrev[i] = (fzNext() >>> 16) & 255;
+            const outMode = fzNext() % 3; // 0: null, 1: valid, 2: short
+            const estRows = validW && fLen > 0 && fLen % fStride === 0 ? fLen / fStride : Math.max(1, fr);
+            const fOut = outMode === 0 ? null : new Uint8Array(outMode === 1 ? estRows * fRowBytes : Math.max(0, estRows * fRowBytes - 1));
+            if (fOut) for (let i = 0; i < fOut.length; i++) fOut[i] = (fzNext() >>> 16) & 255;
+            const fRt = (fzNext() & 1) ? rtCanvas : null;
+
+            const lDJ = fLines.slice(), lDP = fLines.slice();
+            const pDJ = fPrev ? fPrev.slice() : null, pDP = fPrev ? fPrev.slice() : null;
+            const oDJ = fOut ? fOut.slice() : null, oDP = fOut ? fOut.slice() : null;
+            const dJ = js.pngPartDecode(lDJ, fw, pDJ, fRt, oDJ);
+            const dP = px.pngPartDecode(lDP, fw, pDP, fRt, oDP);
+            const shapeValidDecode = validW && fLen > 0 && fLen % fStride === 0
+                && (!fPrev || fPrev.length >= fRowBytes) && (!fOut || fOut.length >= (fLen / fStride) * fRowBytes);
+            if (dJ.code !== dP.code || (!shapeValidDecode && dJ.code !== -4)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz decode #${t} (w=${fw} len=${fLen}): js=${dJ.code} px=${dP.code} shapeValid=${shapeValidDecode}`;
+                break;
+            }
+            if (!eqBytes(lDJ, fLines) || !eqBytes(lDP, fLines)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz decode #${t}: lines mutated`;
+                break;
+            }
+            if (dJ.code < 0) {
+                if ((fPrev && (!eqBytes(pDJ, fPrev) || !eqBytes(pDP, fPrev)))
+                    || (fOut && (!eqBytes(oDJ, fOut) || !eqBytes(oDP, fOut)))) {
+                    fuzzOk = false;
+                    fuzzDetail = `fuzz decode #${t}: prev/out mutated on code ${dJ.code}`;
+                    break;
+                }
+            } else if (dJ.adler !== dP.adler || dJ.firstFilter !== dP.firstFilter || dJ.opaque !== dP.opaque
+                || dJ.needsPrev !== dP.needsPrev
+                || !eqBytes(dJ.out || new Uint8Array(0), dP.out || new Uint8Array(0))
+                || !eqBytes(dJ.prev || new Uint8Array(0), dP.prev || new Uint8Array(0))) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz decode #${t}: output mismatch on valid decode`;
+                break;
+            }
+
+            const lFJ = fLines.slice(), lFP = fLines.slice();
+            const pFJ = fPrev ? fPrev.slice() : null, pFP = fPrev ? fPrev.slice() : null;
+            const oFJ = fOut ? fOut.slice() : null, oFP = fOut ? fOut.slice() : null;
+            const fJ = js.pngPartFinish(lFJ, fr, fw, pFJ, fRt, oFJ);
+            const fP = px.pngPartFinish(lFP, fr, fw, pFP, fRt, oFP);
+            const shapeValidFinish = validW && fr > 0 && fLen === fr * fStride
+                && !!fPrev && fPrev.length >= fRowBytes && (!fOut || fOut.length >= fr * fRowBytes);
+            if (fJ.code !== fP.code || (!shapeValidFinish && fJ.code !== -4)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz finish #${t} (w=${fw} r=${fr} len=${fLen}): js=${fJ.code} px=${fP.code} shapeValid=${shapeValidFinish}`;
+                break;
+            }
+            if (!eqBytes(lFJ, fLines) || !eqBytes(lFP, fLines)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz finish #${t}: lines mutated`;
+                break;
+            }
+            if (fJ.code < 0) {
+                if ((fPrev && (!eqBytes(pFJ, fPrev) || !eqBytes(pFP, fPrev)))
+                    || (fOut && (!eqBytes(oFJ, fOut) || !eqBytes(oFP, fOut)))) {
+                    fuzzOk = false;
+                    fuzzDetail = `fuzz finish #${t}: prev/out mutated on code ${fJ.code}`;
+                    break;
+                }
+            } else if (fJ.firstFilter !== fP.firstFilter || fJ.opaque !== fP.opaque
+                || !eqBytes(fJ.out, fP.out) || !eqBytes(fJ.prev, fP.prev)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz finish #${t}: output mismatch on valid finish`;
+                break;
+            }
+        }
+        check(`${label} png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)`,
+            fuzzOk, fuzzDetail);
     }
 
     // 4. Multi-part end-to-end round-trip: pngPart -> native DecompressionStream("deflate-raw") (+ 03 00 on non-last) ->
@@ -4977,16 +5117,20 @@ async function partDecodeCases(px, label, png, zlib, js) {
             if (!d.opaque) allOpaque = false;
             assembled.set(d.out, ep.y0 * w * 4);
         }
-        const wantWholeAdler = encodedParts.reduce((acc, p) => png.adlerCombine(acc, p.adler, p.raw), 1);
+        const allInflated = new Uint8Array(inflatedLines.reduce((n, b) => n + b.length, 0));
+        let infOff = 0;
+        for (const b of inflatedLines) { allInflated.set(b, infOff); infOff += b.length; }
+        const wantWholeAdler = refAdler32(allInflated);
         const { out: wantAssembled, opaque: wantOpaque } = refApplyRt(src, rtCanvas);
-        check(`${label} multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and Adler-32`,
+        check(`${label} multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and refAdler32`,
             e2eOk && combinedAdler === wantWholeAdler && allOpaque === wantOpaque && eqBytes(assembled, wantAssembled)
             && decoded[0].opaque === true && decoded[2].opaque === false,
             e2eDetail || firstDiff(assembled, wantAssembled));
     }
 
-    // 5. Stop 2 native DecompressionStream("deflate-raw") refusal checks (shared LZ77 window across sync flushes,
-    // corrupt deflate bytes, and truncated parts are refused)
+    // 5. Stop 2 Node/runtime native DecompressionStream("deflate-raw") refusal checks (exercises the runtime's native
+    // stream on shared LZ77 window across sync flushes, corrupt deflate bytes, and truncated streams; reaches no K7 code
+    // when DecompressionStream throws)
     if (label === "rust simd") {
         const w = 64, rowBytes = w * 4, stride = rowBytes + 1;
         // Craft a 2-part stream using Node's zlib with a SHARED LZ77 sliding window across Z_SYNC_FLUSH so part 1
@@ -5020,7 +5164,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
         } catch {
             corruptRejected = true;
         }
-        // Truncated valid stream: either DecompressionStream throws or pngPartDecode refuses with PART_NOT_LINES (-4)
+        // Truncated valid stream: DecompressionStream throws before reaching K7
         const validPart = px.pngPart(randomRGBA(w, 4, 9500), w, 4, null, 2, false);
         let truncRefused = false;
         try {
@@ -5029,7 +5173,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
         } catch {
             truncRefused = true;
         }
-        check(`DecompressionStream("deflate-raw") + pngPartDecode refuses a part referencing before its start, corrupt deflate bytes, and truncated parts`,
+        check(`Node/runtime native DecompressionStream("deflate-raw") refuses a part referencing before its start, corrupt deflate bytes, and truncated parts`,
             sharedRejected && corruptRejected && truncRefused,
             `shared=${sharedRejected} corrupt=${corruptRejected} trunc=${truncRefused}`);
 

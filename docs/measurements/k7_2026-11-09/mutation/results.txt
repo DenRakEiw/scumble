@@ -20,3 +20,10 @@ KILLED   finish_filter_gt_5: red: px_test (only: pngPart) (3 failing lines; firs
 KILLED   js_needs_prev_gt_2: red: px_test (only: pngPart) (0 failing lines; first:     at async main (C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\tools\px_test.js:8210:9)); builds None; 3 s (px_test 3 s); expected killed
 restored copy: every mutated file back: True; rebuilt, both builds identical to the checkout's: True; green: the full px_test
 mutants: 18 killed (0 of them only on the re-check), 0 survived of 18; 0 not as expected; 386 s for the mutants
+== K7: png_part_lines_cap, png_part_decode, png_part_finish mutation round 2026-11-09 04:22 on C:\Users\schoeneberg\AppData\Local\Temp\mut_k7_tree (tools/mutation_round.py; 3 mutants, port 9621, re-check gates none)
+orig skipped (names given without 'orig'): the verdicts lean on an earlier orig run of this tree
+KILLED   cap_clamp_max_2047: red: px_test (only: pngPart) (3 failing lines; first: FAIL rust simd png_part_lines_cap equals partRows(w) * (1 + 4 * w) across clamp boundaries and overflow  w=1: js=10240 px=10235 exp=10235 want=10240); builds {'px.wasm': '64e57361c337', 'px_scalar.wasm': '9b3f6286ea8d'}; 13 s (build 11 s, px_test 3 s); expected killed
+KILLED   js_filter_check_after_unfilter: red: px_test (only: pngPart) (3 failing lines; first: FAIL rust simd png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) without mutating caller buffers  finish bad fil); builds None; 3 s (px_test 3 s); expected killed
+KILLED   px_decode_ignore_byte_offset: red: px_test (only: pngPart) (3 failing lines; first: FAIL rust simd png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)  w=1 r=1 ft=0 withPrev rt=custom at an odd offset); builds None; 3 s (px_test 3 s); expected killed
+restored copy: every mutated file back: True; rebuilt, both builds identical to the checkout's: True; green: the full px_test
+mutants: 3 killed (0 of them only on the re-check), 0 survived of 3; 0 not as expected; 177 s for the mutants

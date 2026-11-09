@@ -1481,7 +1481,7 @@ export function pngChunkFrame(buf, dataLen = buf.byteLength - 12, kind = 0x49444
 
 const ADLER_MOD = 65521;
 const PNG_PART_BYTES = 8 * 1048576;
-const PNG_PART_MAX_ROWS = 256;
+const PNG_PART_MAX_ROWS = 2048; // programRows / bandPlan.rows cap (inpaint_program.js / inpaint_bands.js)
 export const PART_NOT_LINES = -4, PART_BAD_FILTER = -5;
 
 /** Adler-32 of `bytes`, continued from `start` (1 for a new checksum). */
