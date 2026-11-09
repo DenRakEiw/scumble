@@ -1,17 +1,17 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 19 s)
-> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
-px.wasm: 289598 bytes, sha256 35174f9eb470bffd
-> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
-px_scalar.wasm: 231830 bytes, sha256 c6e7dc74f7b2b9cb
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 23 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 291274 bytes, sha256 e35da0b473c7fdf9
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 233384 bytes, sha256 bbd719d5ec34c80d
    Compiling adler2 v2.0.1
    Compiling miniz_oxide v0.8.9
-   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\crates\px)
-    Finished `release` profile [optimized] target(s) in 9.79s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\crates\px)
+    Finished `release` profile [optimized] target(s) in 10.79s
    Compiling adler2 v2.0.1
    Compiling miniz_oxide v0.8.9
-   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\crates\px)
-    Finished `release` profile [optimized] target(s) in 6.64s
-$ node tools/px_test.js  (rc 0, 253 s)
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\crates\px)
+    Finished `release` profile [optimized] target(s) in 9.54s
+$ node tools/px_test.js  (rc 0, 248 s)
 PASS
 ok   rust scalar the old view is detached after growth
 ok   rust scalar the fresh view sees the bytes written before growth
@@ -20,22 +20,25 @@ ok   rust scalar arena blocks do not overlap
 ok   rust scalar after a reset the job fits one kept chunk  chunks 1
 ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
 PASS
-(node:1304) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_k17_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:46244) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k17_mut2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
-To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\package.json.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
 Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance
-$ node tools/px_test.js  (rc 0, 2 s, PX_ONLY=tiff)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=tiff)
 PASS (only: tiff; PX_ONLY, not the full test)
 ok   inpaint_worker.js tiffPartJob: composeWasm=1 on tiles/stack, composeWasm=0 on rgba or js routes, resets p.job, calls releaseIfLarge(), and gives byte-identical strips to tiffPart(args, p.zlib)  tile=1 stack=1 rgba=0 jobBytes=0 rel=0->1
 ok   inpaint_worker.js tiffPartJob recovers from OOM and wasm traps in tiffStripFromPtr and tiffStrip, renews the instance, and falls back cleanly  oomPtr=true trapPtr=true trapRgba=true
 ok   kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels  tkMethodsMatch=true oldCalls=0 newCalls=4 callsRust={"tiff_predict_rgba":1,"tiff_to_rgba":1,"tiff_unpack":1,"tiff_unpredict":1} callsJs={} trapInPlaceOk=true
-ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1,"tiff_unpack":1}
-ok   inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, 1 blob.slice().arrayBuffer() per contiguous band, and 64 MiB RGBA-size rule  exact=false/4096 over=true/0 extra=true
+ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1}
+ok   inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules  exact=false/4096 over=true/0 hi=false/true zCancel=true rawSlice=12 lzwBig=true extra=true
 ok   rust simd module reports its SIMD flag
 ok   rust scalar module reports its SIMD flag
 PASS (only: tiff; PX_ONLY, not the full test)
-(node:51312) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_k17_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:70884) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k17_mut2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
-To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\package.json.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-tiff-on --offline --tiles on tiff  (rc 0, 34 s)
+tiff rc=0 13s PASS
+ALL PASS

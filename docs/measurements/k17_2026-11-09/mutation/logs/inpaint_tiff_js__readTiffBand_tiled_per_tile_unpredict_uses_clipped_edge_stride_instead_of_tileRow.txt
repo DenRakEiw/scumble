@@ -1,15 +1,15 @@
 $ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=tiff)
-FAIL inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, 1 blob.slice().arrayBuffer() per contiguous band, and 64 MiB RGBA-size rule  bits=8 bands=2 slices=2 jsEq=false rustEq=false calls={"tiff_to_rgba":2,"tiff_unpack":4,"tiff_unpredict":4}
+FAIL inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules  bits=8 bands=2 slices=2 jsEq=false rustEq=false calls={"tiff_to_rgba":2,"tiff_unpack":4,"tiff_unpredict":4}
 FAIL (1) (only: tiff; PX_ONLY, not the full test)
 ok   inpaint_worker.js tiffPartJob: composeWasm=1 on tiles/stack, composeWasm=0 on rgba or js routes, resets p.job, calls releaseIfLarge(), and gives byte-identical strips to tiffPart(args, p.zlib)  tile=1 stack=1 rgba=0 jobBytes=0 rel=0->1
 ok   inpaint_worker.js tiffPartJob recovers from OOM and wasm traps in tiffStripFromPtr and tiffStrip, renews the instance, and falls back cleanly  oomPtr=true trapPtr=true trapRgba=true
 ok   kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels  tkMethodsMatch=true oldCalls=0 newCalls=4 callsRust={"tiff_predict_rgba":1,"tiff_to_rgba":1,"tiff_unpack":1,"tiff_unpredict":1} callsJs={} trapInPlaceOk=true
-ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1,"tiff_unpack":1}
-FAIL inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, 1 blob.slice().arrayBuffer() per contiguous band, and 64 MiB RGBA-size rule  bits=8 bands=2 slices=2 jsEq=false rustEq=false calls={"tiff_to_rgba":2,"tiff_unpack":4,"tiff_unpredict":4}
+ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1}
+FAIL inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules  bits=8 bands=2 slices=2 jsEq=false rustEq=false calls={"tiff_to_rgba":2,"tiff_unpack":4,"tiff_unpredict":4}
 ok   rust simd module reports its SIMD flag
 ok   rust scalar module reports its SIMD flag
 FAIL (1) (only: tiff; PX_ONLY, not the full test)
-(node:49116) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_k17_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:58728) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k17_mut2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
-To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\package.json.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)

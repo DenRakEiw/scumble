@@ -1,4 +1,4 @@
-$ node tools/px_test.js  (rc 0, 256 s)
+$ node tools/px_test.js  (rc 0, 251 s)
 PASS
 ok   rust scalar the old view is detached after growth
 ok   rust scalar the fresh view sees the bytes written before growth
@@ -7,8 +7,8 @@ ok   rust scalar arena blocks do not overlap
 ok   rust scalar after a reset the job fits one kept chunk  chunks 1
 ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
 PASS
-(node:31640) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_k17_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:42876) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k17_mut2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
-To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_k17_mut\package.json.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
 Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance

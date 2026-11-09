@@ -775,8 +775,12 @@ export async function tiffPlan(blob, opts = {}) {
     const W = info.width, H = info.height;
     const unit = layout.tiled ? layout.tl : layout.rps;
     const unitRows = Math.min(unit, H);
-    const maxRows = Math.floor(TIFF_BAND_BYTES / (W * 4));
-    const streamed = !!forceStreamed || unitRows > maxRows;
+    const maxRgbaRows = Math.floor(TIFF_BAND_BYTES / (W * 4));
+    const rawRowBytes = layout.rowBytes * layout.planes;
+    const maxPlaneRows = rawRowBytes > 0 ? Math.floor((2 * TIFF_BAND_BYTES) / rawRowBytes) : maxRgbaRows;
+    const maxRows = Math.min(maxRgbaRows, maxPlaneRows);
+    const singleTileBytes = layout.tiled ? Math.ceil((layout.tw * layout.perPixel * info.bits) / 8) * layout.tl : 0;
+    let streamed = !!forceStreamed || unitRows > maxRows || singleTileBytes > 2 * TIFF_BAND_BYTES;
     const pal = info.photometric === 3 ? paletteLut(layout.colormap, info.bits) : null;
     const spec = {
         info,
@@ -823,6 +827,44 @@ export async function tiffPlan(blob, opts = {}) {
                     }
                 }
             }
+            const bandUnpacked = layout.tiled ? uCount * layout.across * singleTileBytes * layout.planes : rows * rawRowBytes;
+            let effSum = 0, minOff = Infinity, maxEnd = 0, allInFile = true;
+            const effCounts = new Array(counts.length);
+            for (let k = 0; k < counts.length; k++) {
+                const off = offsets[k], count = counts[k];
+                if (!(off >= 0) || !(count >= 0) || off + count > blob.size) { allInFile = false; break; }
+                const need = layout.tiled ? singleTileBytes : Math.min(layout.rps, rows - (k % segCount) * layout.rps) * layout.rowBytes;
+                const eff = info.compression === 1 ? Math.min(count, need) : count;
+                effCounts[k] = eff;
+                effSum += eff;
+                if (off < minOff) minOff = off;
+                if (off + eff > maxEnd) maxEnd = off + eff;
+            }
+            if (allInFile) {
+                let sliceBytes = 0;
+                if (maxEnd > minOff) {
+                    if (maxEnd - minOff <= effSum + 65536) {
+                        sliceBytes = maxEnd - minOff;
+                    } else {
+                        for (let i = 0; i < counts.length;) {
+                            const runStart = offsets[i];
+                            let runEnd = runStart + effCounts[i], j = i + 1;
+                            while (j < counts.length && offsets[j] >= runEnd && offsets[j] - runEnd <= 65536) {
+                                runEnd = Math.max(runEnd, offsets[j] + effCounts[j]);
+                                j++;
+                            }
+                            sliceBytes += runEnd - runStart;
+                            i = j;
+                        }
+                    }
+                }
+                if (Math.max(effSum, sliceBytes) > 4 * bandUnpacked + 1048576) {
+                    streamed = true;
+                    bands.length = 0;
+                    bandRows = 0;
+                    break;
+                }
+            }
             const b = { index: idx, y0, rows, first: u0, offsets, counts };
             Object.defineProperty(b, "plan", { value: spec, enumerable: false });
             bands.push(b);
@@ -839,11 +881,21 @@ const INFLATE_FEED_SLICE = 1048576;
 async function inflateInto(rawSlice, dst, need, name, tiled, sp) {
     const ds = new DecompressionStream("deflate");
     const writer = ds.writable.getWriter(), reader = ds.readable.getReader();
-    let got = 0, stop = false, fedErr = null;
+    let got = 0, stop = false, fedErr = null, wakeFeed = null;
+    const stopFeed = () => {
+        stop = true;
+        if (wakeFeed) { const w = wakeFeed; wakeFeed = null; w(); }
+    };
     const feed = (async () => {
         try {
             for (let i = 0; i < rawSlice.length && !stop; i += INFLATE_FEED_SLICE) {
                 await writer.write(rawSlice.subarray(i, i + INFLATE_FEED_SLICE));
+            }
+            if (!stop) {
+                await new Promise((r) => {
+                    const tid = setTimeout(() => { wakeFeed = null; r(); }, 0);
+                    wakeFeed = () => { clearTimeout(tid); r(); };
+                });
             }
             if (!stop) await writer.close();
         } catch (err) {
@@ -865,14 +917,14 @@ async function inflateInto(rawSlice, dst, need, name, tiled, sp) {
             }
             got += take;
             if (got >= need) {
-                stop = true;
+                stopFeed();
                 await reader.cancel().catch(() => {});
                 break;
             }
         }
     } catch (err) {
         if (!stop) {
-            stop = true;
+            stopFeed();
             await reader.cancel().catch(() => {});
         }
         await feed;
@@ -964,13 +1016,23 @@ export async function readTiffBand(blob, planOrBand, bandOrOpts = null, maybeOpt
         return info.tiled ? `tile ${k + 1}` : `strip ${k + 1}`;
     };
 
+    const rowBytes = P.rowBytes, perPixel = P.perPixel;
+    const tileWant = info.tiled ? Math.ceil((P.tw * perPixel * info.bits) / 8) * P.tl : 0;
+    const segNeed = (i) => {
+        if (info.tiled) return tileWant;
+        const s = i % segsPerPlane;
+        return Math.min(P.rps, rows - s * P.rps) * rowBytes;
+    };
+    const effCounts = new Array(totalSegs);
     let minOff = Infinity, maxEnd = 0, sumCounts = 0;
     for (let i = 0; i < totalSegs; i++) {
         const off = offsets[i], count = counts[i];
         if (!(off >= 0) || !(count >= 0) || off + count > blob.size) throw truncated(`${segName(i)} lies past the end of the file`);
+        const eff = info.compression === 1 ? Math.min(count, segNeed(i)) : count;
+        effCounts[i] = eff;
         if (off < minOff) minOff = off;
-        if (off + count > maxEnd) maxEnd = off + count;
-        sumCounts += count;
+        if (off + eff > maxEnd) maxEnd = off + eff;
+        sumCounts += eff;
     }
     const rawSlices = new Array(totalSegs);
     const rawBuffers = [];
@@ -984,16 +1046,16 @@ export async function readTiffBand(blob, planOrBand, bandOrOpts = null, maybeOpt
         rawBuffers.push(ab);
         const raw = new Uint8Array(ab);
         for (let i = 0; i < totalSegs; i++) {
-            const start = offsets[i] - minOff, end = start + counts[i];
+            const start = offsets[i] - minOff, end = start + effCounts[i];
             if (raw.length < end) throw truncated(`${segName(i)} lies past the end of the file`);
             rawSlices[i] = raw.subarray(start, end);
         }
     } else {
         for (let i = 0; i < totalSegs;) {
             const runStart = offsets[i];
-            let runEnd = runStart + counts[i], j = i + 1;
+            let runEnd = runStart + effCounts[i], j = i + 1;
             while (j < totalSegs && offsets[j] >= runEnd && offsets[j] - runEnd <= 65536) {
-                runEnd = Math.max(runEnd, offsets[j] + counts[j]);
+                runEnd = Math.max(runEnd, offsets[j] + effCounts[j]);
                 j++;
             }
             const tw = clock();
@@ -1003,7 +1065,7 @@ export async function readTiffBand(blob, planOrBand, bandOrOpts = null, maybeOpt
             rawBuffers.push(ab);
             const raw = new Uint8Array(ab);
             for (let k = i; k < j; k++) {
-                const start = offsets[k] - runStart, end = start + counts[k];
+                const start = offsets[k] - runStart, end = start + effCounts[k];
                 if (raw.length < end) throw truncated(`${segName(k)} lies past the end of the file`);
                 rawSlices[k] = raw.subarray(start, end);
             }
@@ -1011,7 +1073,6 @@ export async function readTiffBand(blob, planOrBand, bandOrOpts = null, maybeOpt
         }
     }
 
-    const rowBytes = P.rowBytes, perPixel = P.perPixel;
     const isDeflate = info.compression === 8 || info.compression === 32946;
     const bufs = new Array(planes);
     try {

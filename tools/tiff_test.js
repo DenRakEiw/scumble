@@ -452,16 +452,21 @@ async function acceptedFixture(T, e, blob) {
 
 async function refusedFixture(T, e, blob) {
     const re = new RegExp(e.error, e.error_flags || "");
-    let rowsCalls = 0, err = null;
-    const opts = { onRows: () => { rowsCalls++; } };
-    if (activeKernels) opts.kernels = activeKernels;
-    try { await T.readTiff(blob, opts); } catch (x) { err = x; }
     const problems = [];
-    if (!err) problems.push("readTiff read it without an error");
-    else {
-        if (!(err instanceof Error)) problems.push(`readTiff threw a ${typeof err}, not an Error`);
-        if (!re.test(errText(err))) problems.push(`the message "${errText(err)}" does not match ${re}`);
-        if (e.header && rowsCalls) problems.push(`${rowsCalls} onRows calls before the refusal`);
+    let lastErr = null;
+    for (const streamed of [false, true]) {
+        let rowsCalls = 0, err = null;
+        const opts = { streamed, onRows: () => { rowsCalls++; } };
+        if (activeKernels) opts.kernels = activeKernels;
+        try { await T.readTiff(blob, opts); } catch (x) { err = x; }
+        lastErr = err;
+        const tag = streamed ? "readTiff (streamed)" : "readTiff";
+        if (!err) problems.push(`${tag} read it without an error`);
+        else {
+            if (!(err instanceof Error)) problems.push(`${tag} threw a ${typeof err}, not an Error`);
+            if (!re.test(errText(err))) problems.push(`${tag}: the message "${errText(err)}" does not match ${re}`);
+            if (e.header && rowsCalls) problems.push(`${tag}: ${rowsCalls} onRows calls before the refusal`);
+        }
     }
     if (e.header) {
         let ierr = null;
@@ -469,7 +474,7 @@ async function refusedFixture(T, e, blob) {
         if (!ierr) problems.push("tiffInfo accepted it");
         else if (!re.test(errText(ierr))) problems.push(`tiffInfo says "${errText(ierr)}", not ${re}`);
     }
-    check(`refuses ${e.name}${kernelSuffix}`, !problems.length, problems.length ? problems.join(" | ") : `"${errText(err)}"`);
+    check(`refuses ${e.name}${kernelSuffix}`, !problems.length, problems.length ? problems.join(" | ") : `"${errText(lastErr)}"`);
 }
 
 /** A read of a byte-built file: pixels, notes and fields. */
@@ -491,11 +496,19 @@ async function expectRead(T, name, bytes, width, height, want, { notes = [], inf
 }
 
 async function expectRefusal(T, name, bytes, re) {
-    let err = null;
-    const opts = { onRows: () => {} };
-    if (activeKernels) opts.kernels = activeKernels;
-    try { await T.readTiff(new Blob([bytes]), opts); } catch (x) { err = x; }
-    return check(`${name}${kernelSuffix}`, !!err && err instanceof Error && re.test(errText(err)), err ? `"${errText(err)}"` : "no error");
+    const problems = [];
+    let lastErr = null;
+    for (const streamed of [false, true]) {
+        let err = null;
+        const opts = { streamed, onRows: () => {} };
+        if (activeKernels) opts.kernels = activeKernels;
+        try { await T.readTiff(new Blob([bytes]), opts); } catch (x) { err = x; }
+        lastErr = err;
+        const tag = streamed ? "streamed" : "band";
+        if (!err) problems.push(`${tag}: no error`);
+        else if (!(err instanceof Error) || !re.test(errText(err))) problems.push(`${tag}: "${errText(err)}"`);
+    }
+    return check(`${name}${kernelSuffix}`, !problems.length, problems.length ? problems.join(" | ") : `"${errText(lastErr)}"`);
 }
 
 async function builtCases(T) {
@@ -1269,6 +1282,31 @@ console.log(JSON.stringify(out));
             },
         });
 
+        // High-SamplesPerPixel raw-plane allocation bound (2 * TIFF_BAND_BYTES = 128 MiB):
+        // w=256, bits=16, spp=128 (photometric 1 + 127 ExtraSamples) -> rawRowBytes = 65,536 -> maxPlaneRows = 2,048 (while maxRgbaRows = 65,536).
+        const tinyDef = Uint8Array.from([0x78, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        const hiSppTags = (hh, tiledTl = 0) => {
+            const base = [
+                [254, 4, [0]], [256, 4, [256]], [257, 4, [hh]],
+                [258, 3, new Array(128).fill(16)], [259, 3, [8]], [262, 3, [1]],
+                [277, 3, [128]], [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [1]], [296, 3, [2]],
+                [338, 3, new Array(127).fill(0)],
+            ];
+            return tiledTl ? [...base, [322, 4, [256]], [323, 4, [tiledTl]]] : [...base, [278, 4, [hh]]];
+        };
+        const { bytes: bytesHiExact } = buildTiff([{ tags: hiSppTags(2048), data: [tinyDef] }]);
+        const { bytes: bytesHiOver } = buildTiff([{ tags: hiSppTags(2049), data: [tinyDef] }]);
+        const { bytes: bytesHiTileOver } = buildTiff([{ tags: hiSppTags(2064, 2064), data: [tinyDef], offTag: 324, cntTag: 325 }]);
+        const { bytes: bytesRgba16Band } = buildTiff([{
+            tags: [[254, 4, [0]], [256, 4, [4096]], [257, 4, [4096]], [258, 3, [16, 16, 16, 16]], [259, 3, [8]], [262, 3, [2]],
+                [277, 3, [4]], [278, 4, [256]], [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [1]], [296, 3, [2]], [338, 3, [2]]],
+            data: new Array(16).fill(tinyDef),
+        }]);
+        const planHiExact = await T.tiffPlan(new Blob([bytesHiExact]), { rowsPerBand: 2048 });
+        const planHiOver = await T.tiffPlan(new Blob([bytesHiOver]));
+        const planHiTileOver = await T.tiffPlan(new Blob([bytesHiTileOver]));
+        const planRgba16Band = await T.tiffPlan(new Blob([bytesRgba16Band]));
+
         const rgbaRuleOk = T.TIFF_BAND_BYTES === 64 * 1048576
             && bytesExact64M.byteLength < 3 * 1048576 && bytesOver64M.byteLength < 3 * 1048576
             && planExact.streamed === false && planExact.bandRows === 4096 && planExact.bands.length === 1 && planExact.bands[0].rows === 4096
@@ -1277,11 +1315,15 @@ console.log(JSON.stringify(out));
             && planTiledOver.streamed === true && planTiledOver.bandRows === 0 && planTiledOver.bands.length === 0
             && planMulti.streamed === false && planMulti.bandRows === 4096 && planMulti.bands.length === 2
             && planMulti.bands[0].rows === 4096 && planMulti.bands[1].rows === 1904
+            && planHiExact.streamed === false && planHiExact.bandRows === 2048
+            && planHiOver.streamed === true && planHiOver.bandRows === 0
+            && planHiTileOver.streamed === true && planHiTileOver.bandRows === 0
+            && planRgba16Band.streamed === false && planRgba16Band.bandRows === 256
             && exactBands === 1 && exactFirstPx === 255 && exactLastPx === 255
             && overBands === 5 && overTotalRows === 4097 && overFirstPx === 255 && overLastPx === 255;
-        check(`tiffPlan and readTiff enforce the 64 MiB RGBA-size rule (TIFF_BAND_BYTES) on 1-bit strips and tiles${kernelSuffix}`,
+        check(`tiffPlan and readTiff enforce the 64 MiB RGBA-size and 128 MiB raw-plane bounds on 1-bit and high-spp strips and tiles${kernelSuffix}`,
             rgbaRuleOk,
-            `exact=${JSON.stringify({ s: planExact.streamed, r: planExact.bandRows, b: exactBands })} over=${JSON.stringify({ s: planOver.streamed, r: planOver.bandRows, b: overBands, rows: overTotalRows })} multi=${JSON.stringify({ s: planMulti.streamed, r: planMulti.bandRows, n: planMulti.bands.length })}`);
+            `exact=${JSON.stringify({ s: planExact.streamed, r: planExact.bandRows, b: exactBands })} over=${JSON.stringify({ s: planOver.streamed, r: planOver.bandRows, b: overBands, rows: overTotalRows })} hiExact=${planHiExact.streamed} hiOver=${planHiOver.streamed}`);
 
         // 2) One blob.slice().arrayBuffer() per contiguous band (even with 1-byte word-alignment padding between strips/tiles),
         //    and one slice per contiguous run when segments are separated by > 65536 bytes.
@@ -1338,18 +1380,78 @@ console.log(JSON.stringify(out));
         const cbGap = countingBlob(bytesGap);
         const gotGapBand0 = await T.readTiffBand(cbGap, { plan: planOdd, band: gapBand, kernels: activeKernels });
 
-        // Also test Deflate (compression 8 and 32946) with extra bytes after `need` in readTiffBand (early DecompressionStream cancel)
-        // and refusal on truncated Deflate stream / out-of-bounds offset / empty segment
-        const extraDeflateRaw = new Uint8Array(wOdd * 2 * sppOdd + 4096);
-        extraDeflateRaw.set(sOdd.subarray(0, wOdd * 2 * sppOdd), 0);
-        extraDeflateRaw.fill(0x7E, wOdd * 2 * sppOdd);
-        const defWithExtra = new Uint8Array(zlib.deflateSync(Buffer.from(extraDeflateRaw)));
-        const { bytes: bytesDefExtra } = buildTiff([{ tags: imageTags({ w: wOdd, h: 2, bits: 8, spp: sppOdd, photometric: 2, compression: 32946, rps: 2 }), data: [defWithExtra] }]);
-        const planDefExtra = await T.tiffPlan(new Blob([bytesDefExtra]));
-        const gotDefExtra = await T.readTiffBand(new Blob([bytesDefExtra]), planDefExtra, 0, { kernels: activeKernels });
+        // Deflate early cancel (codes 8 and 32946, strip and tile): valid pixels + 256 KiB Z_SYNC_FLUSH tail + corrupt deflate bytes [0xff, ...]
+        // Fails with "damaged or cut off" if inflateInto does not cancel reader once `got >= need`.
+        const mkDamagedTailDeflate = (validBytes) => {
+            const flushed = zlib.deflateSync(Buffer.concat([Buffer.from(validBytes), Buffer.alloc(262144, 0x5A)]), {
+                finishFlush: zlib.constants.Z_SYNC_FLUSH,
+            });
+            return new Uint8Array(Buffer.concat([flushed, Buffer.from([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])]));
+        };
+        const defCancelStripRaw = sOdd.subarray(0, wOdd * 2 * sppOdd);
+        const defCancelStripSeg = mkDamagedTailDeflate(defCancelStripRaw);
+        const defCancelTileRaw = new Uint8Array(16 * 16 * 3);
+        for (let r = 0; r < 2; r++) defCancelTileRaw.set(sOdd.subarray(r * wOdd * 3, (r + 1) * wOdd * 3), r * 16 * 3);
+        const defCancelTileSeg = mkDamagedTailDeflate(defCancelTileRaw);
+        let defCancelOk = true;
+        for (const comp of [8, 32946]) {
+            const { bytes: bStrip } = buildTiff([{ tags: imageTags({ w: wOdd, h: 2, bits: 8, spp: sppOdd, photometric: 2, compression: comp, rps: 2 }), data: [defCancelStripSeg] }]);
+            const pStrip = await T.tiffPlan(new Blob([bStrip]));
+            const gStrip = await T.readTiffBand(new Blob([bStrip]), pStrip, 0, { kernels: activeKernels });
+            if (pixelDiff(gStrip, wantOdd.subarray(0, wOdd * 2 * 4), wOdd)) defCancelOk = false;
 
+            const tTags = [[254, 4, [0]], [256, 4, [wOdd]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [comp]], [262, 3, [2]],
+                [277, 3, [3]], [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [1]], [296, 3, [2]], [322, 4, [16]], [323, 4, [16]]];
+            const { bytes: bTile } = buildTiff([{ tags: tTags, data: [defCancelTileSeg], offTag: 324, cntTag: 325 }]);
+            const pTile = await T.tiffPlan(new Blob([bTile]));
+            const gTile = await T.readTiffBand(new Blob([bTile]), pTile, 0, { kernels: activeKernels });
+            if (pixelDiff(gTile, wantOdd.subarray(0, wOdd * 2 * 4), wOdd)) defCancelOk = false;
+        }
+
+        // Oversized in-file StripByteCounts (K17-raw-span-unbounded):
+        // - compression 1 clamps slice to need (stays on readTiffBand with bounded blob.slice)
+        // - compression 5 sets plan.streamed = true so StripRows streams it without buffering 2 MiB
+        const overPad = 2 * 1048576;
+        const { bytes: rawSmall } = buildTiff([{ tags: imageTags({ w: wOdd, h: 2, bits: 8, spp: sppOdd, photometric: 2, compression: 1, rps: 1 }), data: [oddStrips[0], oddStrips[1]] }]);
+        const rawOverFile = new Uint8Array(rawSmall.length + overPad);
+        rawOverFile.set(rawSmall, 0);
+        const rawTags = parseTiff(rawSmall).ifds[0];
+        const rawCntAt = rawTags.get(279).valueAt, rawOffAt = rawTags.get(273).valueAt;
+        const rawDv = new DataView(rawOverFile.buffer);
+        rawDv.setUint32(rawCntAt, rawOverFile.length - rawDv.getUint32(rawOffAt, true), true);
+        rawDv.setUint32(rawCntAt + 4, rawOverFile.length - rawDv.getUint32(rawOffAt + 4, true), true);
+        const planRawOver = await T.tiffPlan(new Blob([rawOverFile]));
+        const cbRawOver = countingBlob(rawOverFile);
+        const gotRawOver = await T.readTiffBand(cbRawOver, planRawOver, 0, { kernels: activeKernels });
+
+        const lzwS0 = lzwEncode(oddStrips[0]).bytes, lzwS1 = lzwEncode(oddStrips[1]).bytes;
+        const { bytes: lzwSmall } = buildTiff([{ tags: imageTags({ w: wOdd, h: 2, bits: 8, spp: sppOdd, photometric: 2, compression: 5, rps: 1 }), data: [lzwS0, lzwS1] }]);
+        const lzwOverFile = new Uint8Array(lzwSmall.length + overPad);
+        lzwOverFile.set(lzwSmall, 0);
+        const lzwTags = parseTiff(lzwSmall).ifds[0];
+        const lzwCntAt = lzwTags.get(279).valueAt, lzwOffAt = lzwTags.get(273).valueAt;
+        const lzwDv = new DataView(lzwOverFile.buffer);
+        lzwDv.setUint32(lzwCntAt, lzwOverFile.length - lzwDv.getUint32(lzwOffAt, true), true);
+        lzwDv.setUint32(lzwCntAt + 4, lzwOverFile.length - lzwDv.getUint32(lzwOffAt + 4, true), true);
+        const planLzwOver = await T.tiffPlan(new Blob([lzwOverFile]));
+        const gotLzwOver = new Uint8Array(wOdd * 2 * 4);
+        await T.readTiff(new Blob([lzwOverFile]), {
+            kernels: activeKernels,
+            onRows(rgba, y0) { gotLzwOver.set(rgba, y0 * wOdd * 4); },
+        });
+
+        // Short / damaged / past-EOF refusals on BOTH readTiffBand and streamed StripRows / TileRows
         const shortDeflate = new Uint8Array(zlib.deflateSync(Buffer.from(sOdd.subarray(0, 5))));
         const { bytes: bytesDefShort } = buildTiff([{ tags: imageTags({ w: wOdd, h: 2, bits: 8, spp: sppOdd, photometric: 2, compression: 8, rps: 2 }), data: [shortDeflate] }]);
+        const badDeflate = Uint8Array.from([0x78, 0x9C, 0xFF, 0xFF, 0xFF, 0xFF]);
+        const { bytes: bytesDefBad } = buildTiff([{ tags: imageTags({ w: wOdd, h: 2, bits: 8, spp: sppOdd, photometric: 2, compression: 8, rps: 2 }), data: [badDeflate] }]);
+        const shortTileTags = [[254, 4, [0]], [256, 4, [16]], [257, 4, [16]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]],
+            [277, 3, [3]], [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [1]], [296, 3, [2]], [322, 4, [16]], [323, 4, [16]]];
+        const { bytes: bytesTileShort } = buildTiff([{ tags: shortTileTags, data: [lzwEncode(new Uint8Array(10)).bytes], offTag: 324, cntTag: 325 }]);
+        await expectRefusal(T, "short Deflate strip is refused on band and streamed paths", bytesDefShort, /fewer bytes than its rows/i);
+        await expectRefusal(T, "damaged Deflate strip is refused on band and streamed paths", bytesDefBad, /damaged or cut off/i);
+        await expectRefusal(T, "short LZW tile is refused on band and streamed paths", bytesTileShort, /tile 1 holds/i);
+
         const planDefShort = await T.tiffPlan(new Blob([bytesDefShort]));
         let errDefShort = null, errOob = null, errEmpty = null, errNoSpec = null;
         try { await T.readTiffBand(new Blob([bytesDefShort]), planDefShort, 0, { kernels: activeKernels }); } catch (e) { errDefShort = e; }
@@ -1368,14 +1470,18 @@ console.log(JSON.stringify(out));
             && !pixelDiff(gotOdd, wantOdd, wOdd)
             && cbGap.slices.length === 2
             && !pixelDiff(gotGapBand0, wantOdd.subarray(0, wOdd * 2 * 4), wOdd)
-            && !pixelDiff(gotDefExtra, wantOdd.subarray(0, wOdd * 2 * 4), wOdd)
+            && defCancelOk
+            && planRawOver.streamed === false && cbRawOver.slices.length === 1 && (cbRawOver.slices[0][1] - cbRawOver.slices[0][0]) <= 64
+            && !pixelDiff(gotRawOver, wantOdd.subarray(0, wOdd * 2 * 4), wOdd)
+            && planLzwOver.streamed === true
+            && !pixelDiff(gotLzwOver, wantOdd.subarray(0, wOdd * 2 * 4), wOdd)
             && !!errDefShort && /fewer bytes than its rows/i.test(errText(errDefShort))
             && !!errOob && /lies past the end of the file/i.test(errText(errOob))
             && !!errEmpty && /fewer bytes than its rows|truncated/i.test(errText(errEmpty))
             && !!errNoSpec && /invalid plan or band/i.test(errText(errNoSpec));
-        check(`readTiffBand reads each contiguous band in a single blob.slice().arrayBuffer(), handles >64KB segment gaps, cancels deflate at need, and refuses damaged bands${kernelSuffix}`,
+        check(`readTiffBand reads each contiguous band in one bounded blob.slice().arrayBuffer(), handles >64KB segment gaps, cancels deflate before damaged tail, and refuses damaged bands${kernelSuffix}`,
             sliceAndBandOk,
-            `oddSlices=${JSON.stringify(cbOdd.slices)} gapSlices=${JSON.stringify(cbGap.slices)} errShort=${errText(errDefShort)} errOob=${errText(errOob)} errEmpty=${errText(errEmpty)}`);
+            `oddSlices=${JSON.stringify(cbOdd.slices)} rawOverSlice=${JSON.stringify(cbRawOver.slices)} defCancelOk=${defCancelOk} lzwOverStreamed=${planLzwOver.streamed}`);
     }
 }
 

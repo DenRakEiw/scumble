@@ -1,6 +1,6 @@
 """K17 mutation round config for tools/mutation_round.py (docs/PLAN_WASM_BUILD.md §4.6)."""
 
-TITLE = "K17 (tiffPlan, readTiffBand, TIFF_BAND_BYTES RGBA-size rule, per-tile unpredict, contiguous blob.slice, tiffUnpack route)"
+TITLE = "K17 (tiffPlan, readTiffBand, 64/128 MiB bounds, per-tile unpredict, bounded blob.slice, deflate cancel/macrotask, streamed refusals, tiffUnpack route)"
 
 WORKING = [
     "renderer/editor/inpaint_tiff.js",
@@ -18,7 +18,7 @@ IT = "renderer/editor/inpaint_tiff.js"
 KR = "renderer/editor/px/kernels.js"
 
 MUTANTS = [
-    # ---- renderer/editor/inpaint_tiff.js: tiffPlan & RGBA-size rule ----
+    # ---- renderer/editor/inpaint_tiff.js: tiffPlan & RGBA / raw-plane / span rules ----
     (
         "inpaint_tiff.js: TIFF_BAND_BYTES 64 * 1048576 mutated to 32 * 1048576",
         IT,
@@ -30,11 +30,21 @@ MUTANTS = [
         {"px": ["tiff"]},
     ),
     (
-        "inpaint_tiff.js: tiffPlan maxRows divides by W instead of W * 4 (raw width instead of RGBA stride)",
+        "inpaint_tiff.js: tiffPlan maxRgbaRows divides by W instead of W * 4 (raw width instead of RGBA stride)",
         IT,
         [(
-            "    const maxRows = Math.floor(TIFF_BAND_BYTES / (W * 4));",
-            "    const maxRows = Math.floor(TIFF_BAND_BYTES / W);",
+            "    const maxRgbaRows = Math.floor(TIFF_BAND_BYTES / (W * 4));",
+            "    const maxRgbaRows = Math.floor(TIFF_BAND_BYTES / W);",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "inpaint_tiff.js: tiffPlan ignores maxPlaneRows (2 * TIFF_BAND_BYTES raw-plane bound on high-spp files)",
+        IT,
+        [(
+            "    const maxRows = Math.min(maxRgbaRows, maxPlaneRows);",
+            "    const maxRows = maxRgbaRows;",
         )],
         "killed",
         {"px": ["tiff"]},
@@ -43,8 +53,8 @@ MUTANTS = [
         "inpaint_tiff.js: tiffPlan streamed boundary unitRows > maxRows mutated to unitRows >= maxRows",
         IT,
         [(
-            "    const streamed = !!forceStreamed || unitRows > maxRows;",
-            "    const streamed = !!forceStreamed || unitRows >= maxRows;",
+            "    let streamed = !!forceStreamed || unitRows > maxRows || singleTileBytes > 2 * TIFF_BAND_BYTES;",
+            "    let streamed = !!forceStreamed || unitRows >= maxRows || singleTileBytes > 2 * TIFF_BAND_BYTES;",
         )],
         "killed",
         {"px": ["tiff"]},
@@ -53,8 +63,8 @@ MUTANTS = [
         "inpaint_tiff.js: tiffPlan ignores forceStreamed option",
         IT,
         [(
-            "    const streamed = !!forceStreamed || unitRows > maxRows;",
-            "    const streamed = unitRows > maxRows;",
+            "    let streamed = !!forceStreamed || unitRows > maxRows || singleTileBytes > 2 * TIFF_BAND_BYTES;",
+            "    let streamed = unitRows > maxRows || singleTileBytes > 2 * TIFF_BAND_BYTES;",
         )],
         "killed",
         {"px": ["tiff"]},
@@ -79,7 +89,68 @@ MUTANTS = [
         "killed",
         {"px": ["tiff"]},
     ),
+    (
+        "inpaint_tiff.js: tiffPlan drops oversized compressed raw-span bound (K17-raw-span-unbounded)",
+        IT,
+        [(
+            "                if (Math.max(effSum, sliceBytes) > 4 * bandUnpacked + 1048576) {",
+            "                if (false && Math.max(effSum, sliceBytes) > 4 * bandUnpacked + 1048576) {",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    # ---- renderer/editor/inpaint_tiff.js: streamed StripRows / TileRows / unpacked refusals ----
+    (
+        "inpaint_tiff.js: unpacked drops upfront past-EOF segment check on streamed path",
+        IT,
+        [(
+            "    if (!(off >= 0) || !(count >= 0) || off + count > src.size) throw truncated(`${name} lies past the end of the file`);",
+            "    if (false) throw truncated(`${name} lies past the end of the file`);",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "inpaint_tiff.js: StripRows.read drops x.done short-strip refusal on streamed path",
+        IT,
+        [(
+            "                if (x.done) throw truncated(`strip ${this.plane * L.per + this.strip + 1} holds ${out.length - filled > 0 ? \"fewer bytes than its rows\" : \"\"}`.trim());",
+            "                if (x.done) break;",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "inpaint_tiff.js: TileRows.tile drops got < want short-tile refusal on streamed path",
+        IT,
+        [(
+            "        if (got < want) throw truncated(`tile ${k + 1} holds ${got} of ${want} bytes`);",
+            "        if (false && got < want) throw truncated(`tile ${k + 1} holds ${got} of ${want} bytes`);",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
     # ---- renderer/editor/inpaint_tiff.js: inflateInto & readTiffBand ----
+    (
+        "inpaint_tiff.js: inflateInto drops macrotask wait before writer.close() (K17-band-1, Chromium DecompressionStream)",
+        IT,
+        [(
+            "            if (!stop) {\n                await new Promise((r) => {\n                    const tid = setTimeout(() => { wakeFeed = null; r(); }, 0);\n                    wakeFeed = () => { clearTimeout(tid); r(); };\n                });\n            }",
+            "            if (false && !stop) {\n                await new Promise((r) => {\n                    const tid = setTimeout(() => { wakeFeed = null; r(); }, 0);\n                    wakeFeed = () => { clearTimeout(tid); r(); };\n                });\n            }",
+        )],
+        "killed",
+        {"gates": ["tiff"]},
+    ),
+    (
+        "inpaint_tiff.js: inflateInto drops got >= need early reader.cancel() (k17-deflate-cancel-test-vacuous)",
+        IT,
+        [(
+            "            if (got >= need) {\n                stopFeed();\n                await reader.cancel().catch(() => {});\n                break;\n            }",
+            "            if (false && got >= need) {\n                stopFeed();\n                await reader.cancel().catch(() => {});\n                break;\n            }",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
     (
         "inpaint_tiff.js: inflateInto skips got < need truncation check",
         IT,
@@ -101,6 +172,16 @@ MUTANTS = [
         {"px": ["tiff"]},
     ),
     (
+        "inpaint_tiff.js: readTiffBand skips clamping uncompressed count to segNeed(i) (K17-raw-span-unbounded)",
+        IT,
+        [(
+            "        const eff = info.compression === 1 ? Math.min(count, segNeed(i)) : count;",
+            "        const eff = count;",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
         "inpaint_tiff.js: readTiffBand contiguous check maxEnd - minOff <= sumCounts + 65536 mutated to < sumCounts (splits out-of-order contiguous strips)",
         IT,
         [(
@@ -114,8 +195,8 @@ MUTANTS = [
         "inpaint_tiff.js: readTiffBand contiguous subarray start ignores offsets[i] - minOff",
         IT,
         [(
-            "            const start = offsets[i] - minOff, end = start + counts[i];",
-            "            const start = 0, end = start + counts[i];",
+            "            const start = offsets[i] - minOff, end = start + effCounts[i];",
+            "            const start = 0, end = start + effCounts[i];",
         )],
         "killed",
         {"px": ["tiff"]},
@@ -196,8 +277,18 @@ MUTANTS = [
         "kernels.js: tiffUnpack calls rustPx() without 'tiffUnpack' route name",
         KR,
         [(
-            "export function tiffUnpack(compression, src, need, out = null, name = \"strip\") {\n    const p = rustPx(\"tiffUnpack\");",
-            "export function tiffUnpack(compression, src, need, out = null, name = \"strip\") {\n    const p = rustPx();",
+            "    if (compression !== 1) {\n        const p = rustPx(\"tiffUnpack\");",
+            "    if (compression !== 1) {\n        const p = rustPx();",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "kernels.js: tiffUnpack sends uncompressed (compression === 1) through wasm instead of keeping on JS copy",
+        KR,
+        [(
+            "    if (compression !== 1) {",
+            "    if (true || compression !== 1) {",
         )],
         "killed",
         {"px": ["tiff"]},

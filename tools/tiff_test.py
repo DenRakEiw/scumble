@@ -18,10 +18,13 @@ writes the fixtures of tools/tiff_fixtures.py to <dir>/fixtures), then the app:
 - exports_tiff_at_a_size: `export { format: "tiff", scale: 50 }` is half the size, and the PNG at 50 % its pixels.
 - a_tif_drop_opens: a TIFF dropped (a synthetic drop event with a File) on an empty tab opens it; a second one, with no
   type but a .tiff name, dropped on the open tab becomes a layer.
+- deflate_cut_adler_and_damaged_tail_open: >= 1 MiB decoded Deflate strips and tiles (codes 8 and 32946) whose Adler-32
+  is cut by 1 or 4 bytes, plus a Deflate strip with damaged bytes past a 256 KiB flushed tail, open cleanly via
+  readTiffBand / inflateInto in real Chromium with exact pixels.
 - no_tiff_in_the_local_store: no .tif or .tiff file came into the local store during the gate.
 
     python tools/tiff_test.py [--out DIR] [--no-node]
-    python tools/tiff_test.py --size 15000x10000 [--variant noise|own|lzw|packbits|zlib1|raw|all|a,b,...]
+    python tools/tiff_test.py --size 15000x10000 [--variant noise|own|lzw|packbits|raw_strips|zlib1|raw|all|a,b,...]
                               [--image PATH] [--out DIR]
         the 15k measurement alone (not in the default run; docs/PLAN_WASM_BUILD.md 4.6 and K0a), one variant or several:
         noise           (the default: W0's tiffperf row, unchanged) a noise picture of --size (a PNG written here, like
@@ -31,9 +34,10 @@ writes the fixtures of tools/tiff_fixtures.py to <dir>/fixtures), then the app:
                         rows compared
         lzw, packbits   Pillow writes the photo (decoded by Pillow, RGB) as LZW / PackBits (its default strips: one row
                         per strip at 15000 px)
+        raw_strips      tifffile writes it uncompressed in 16-row strips (625 strips at 10000 px, on readTiffBand)
         zlib1           tifffile writes it with zlib in one strip, no predictor
-        raw             tifffile writes it uncompressed
-        The four third-party files are written once into DIR and reused (the time and size printed when written), with
+        raw             tifffile writes it uncompressed (one strip)
+        The five third-party files are written once into DIR and reused (the time and size printed when written), with
         <stem>_rows16.json beside them: the SHA-256 of the 16 measured rows of the decoded photo as RGBA. Each open
         reports its wall (settled with mipsSettled), the window's tiff_open marks as durations (InpaintEditor.stepMarks),
         the tiff_read worker timing (every field, InpaintEditor.jobTimings) and the other jobs of the open; noise and own
@@ -69,8 +73,8 @@ GATES = os.environ.get("SCUMBLE_GATES", os.path.join(ROOT, "dist", "gates"))
 OUT = os.path.abspath(opt("--out", os.path.join(GATES, "tiff_fixtures")))
 FIX = os.path.join(OUT, "fixtures")
 SIZE = opt("--size")
-VARIANTS = ("noise", "own", "lzw", "packbits", "zlib1", "raw")   # the order of --variant all
-THIRD = ("lzw", "packbits", "zlib1", "raw")                      # written here from the photo, not by the app
+VARIANTS = ("noise", "own", "lzw", "packbits", "raw_strips", "zlib1", "raw")   # the order of --variant all
+THIRD = ("lzw", "packbits", "raw_strips", "zlib1", "raw")                      # written here from the photo, not by the app
 VARIANT = opt("--variant", "noise")
 IMAGE = os.path.abspath(opt("--image", os.path.join(ROOT, "dist", "daily", "adobe_15000x10000.jpg")))
 
@@ -155,9 +159,14 @@ try {
     const problems = [];
     if (!c.ok) problems.push(says(c));
     if (jt.length !== 1 || jt[0].kernels !== "rust") problems.push("tiff_read timing: " + JSON.stringify(jt));
-    if (F.info && (F.info.compression === 1 || F.info.compression === 5 || F.info.compression === 32773)) {
+    if (F.info && (F.info.compression === 5 || F.info.compression === 32773)) {
         if (!jt[0] || !jt[0].pxCalls || !jt[0].pxCalls.tiff_unpack) {
             problems.push("missing tiff_unpack in pxCalls: " + JSON.stringify(jt[0] && jt[0].pxCalls));
+        }
+    }
+    if (F.info && F.info.compression === 1) {
+        if (jt[0] && jt[0].pxCalls && jt[0].pxCalls.tiff_unpack) {
+            problems.push("unexpected wasm tiff_unpack on uncompressed TIFF: " + JSON.stringify(jt[0].pxCalls));
         }
     }
     if (F.name === "rgb8_lzw_pred") {
@@ -650,6 +659,111 @@ def tiff_tags(path):
         return {"compression": int(p.compression), "predictor": int(p.predictor), "strips": len(p.dataoffsets), "rowsperstrip": int(p.rowsperstrip), "shape": list(p.shape)}
 
 
+def _build_rgb8_deflate_tiff(w, h, comp, seg, tiled=None):
+    """Minimal little-endian RGB8 single-strip or single-tile Deflate TIFF carrying raw compressed bytes `seg`."""
+    import struct
+    pad = b"\x00" if (len(seg) & 1) else b""
+    ifd_at = 8 + len(seg) + len(pad)
+    tags = [
+        (256, 4, [w]),
+        (257, 4, [h]),
+        (258, 3, [8, 8, 8]),
+        (259, 3, [comp]),
+        (262, 3, [2]),
+        (277, 3, [3]),
+        (284, 3, [1]),
+    ]
+    if tiled:
+        tw, tl = tiled
+        tags.extend([(322, 4, [tw]), (323, 4, [tl]), (324, 4, [8]), (325, 4, [len(seg)])])
+    else:
+        tags.extend([(273, 4, [8]), (278, 4, [h]), (279, 4, [len(seg)])])
+    tags.sort(key=lambda t: t[0])
+    extra_at = ifd_at + 2 + 12 * len(tags) + 4
+    entries = [struct.pack("<H", len(tags))]
+    extras = []
+    for tag, typ, vals in tags:
+        fmt = "<" + ("H" if typ == 3 else "I") * len(vals)
+        raw_val = struct.pack(fmt, *vals)
+        if len(raw_val) <= 4:
+            val_field = raw_val.ljust(4, b"\x00")
+        else:
+            if extra_at & 1:
+                extras.append(b"\x00")
+                extra_at += 1
+            val_field = struct.pack("<I", extra_at)
+            extras.append(raw_val)
+            extra_at += len(raw_val)
+        entries.append(struct.pack("<HHI", tag, typ, len(vals)) + val_field)
+    entries.append(b"\x00\x00\x00\x00")
+    return b"II*\x00" + struct.pack("<I", ifd_at) + seg + pad + b"".join(entries) + b"".join(extras)
+
+
+def deflate_cut_adler_cases():
+    """Build >= 1 MiB decoded Deflate TIFFs with Adler-32 cut by 1..4 bytes (K17-band-1) and damaged post-need tail."""
+    import zlib
+    import numpy as np
+    os.makedirs(OUT, exist_ok=True)
+    w, h = 1024, 360   # 1,105,920 decoded RGB8 bytes (> 1 MiB; RGBA 1.41 MiB << 64 MiB -> readTiffBand / inflateInto)
+    xs = np.arange(w, dtype=np.uint8)[None, :]
+    ys = np.arange(h, dtype=np.uint8)[:, None]
+    grad = np.empty((h, w, 3), dtype=np.uint8)
+    grad[..., 0] = xs
+    grad[..., 1] = ys
+    grad[..., 2] = (xs.astype(np.uint16) + ys.astype(np.uint16)).astype(np.uint8)
+    grad_rgba = np.dstack([grad, np.full((h, w), 255, dtype=np.uint8)])
+    grad_exp = os.path.join(OUT, "k17_grad_1m.rgba")
+    with open(grad_exp, "wb") as f:
+        f.write(grad_rgba.tobytes())
+    grad_z = zlib.compress(grad.tobytes(), 6)
+
+    tl = 368
+    tile_rgb = np.zeros((tl, w, 3), dtype=np.uint8)
+    tile_rgb[:h] = grad
+    tile_z = zlib.compress(tile_rgb.tobytes(), 6)
+
+    rng = np.random.default_rng(17)
+    noise = rng.integers(0, 256, size=(h, w, 3), dtype=np.uint8)
+    noise_rgba = np.dstack([noise, np.full((h, w), 255, dtype=np.uint8)])
+    noise_exp = os.path.join(OUT, "k17_noise_1m.rgba")
+    with open(noise_exp, "wb") as f:
+        f.write(noise_rgba.tobytes())
+    noise_z = zlib.compress(noise.tobytes(), 1)
+
+    sw, sh = 64, 32
+    small = grad[:sh, :sw].copy()
+    small_rgba = grad_rgba[:sh, :sw].copy()
+    small_exp = os.path.join(OUT, "k17_small_tail.rgba")
+    with open(small_exp, "wb") as f:
+        f.write(small_rgba.tobytes())
+    co = zlib.compressobj(6)
+    tail_z = co.compress(small.tobytes() + b"\x5a" * 262144) + co.flush(zlib.Z_SYNC_FLUSH) + b"\xff" * 8
+
+    specs = [
+        ("grad_1m_c8_cut1", w, h, 8, grad_z[:-1], None, grad_exp),
+        ("grad_1m_c32946_cut4", w, h, 32946, grad_z[:-4], None, grad_exp),
+        ("grad_1m_tile_c8_cut4", w, h, 8, tile_z[:-4], (w, tl), grad_exp),
+        ("noise_1m_c8_cut1", w, h, 8, noise_z[:-1], None, noise_exp),
+        ("noise_1m_c32946_cut4", w, h, 32946, noise_z[:-4], None, noise_exp),
+        ("damaged_tail_256k_c8", sw, sh, 8, tail_z, None, small_exp),
+    ]
+    out = []
+    for name, cw, ch, comp, seg, tiled, exp_path in specs:
+        tif_path = os.path.join(OUT, "k17_%s.tif" % name)
+        with open(tif_path, "wb") as f:
+            f.write(_build_rgb8_deflate_tiff(cw, ch, comp, seg, tiled=tiled))
+        out.append({
+            "name": name,
+            "path": tif_path.replace("\\", "/"),
+            "expect": exp_path.replace("\\", "/"),
+            "width": cw,
+            "height": ch,
+            "notes": [],
+            "info": {"compression": comp, "tiled": bool(tiled)},
+        })
+    return out
+
+
 def measured_rows(h):
     """The 16 rows the measurement compares (the page's Math.min(H - 1, Math.floor(k * (H - 1) / 15)))."""
     return [min(h - 1, (k * (h - 1)) // 15) for k in range(16)]
@@ -695,6 +809,8 @@ def photo_files(names):
             if pim is None:
                 pim = Image.fromarray(arr)   # no info: the JPEG's ICC profile stays out of the file
             pim.save(part, format="TIFF", compression="tiff_lzw" if n == "lzw" else "packbits")
+        elif n == "raw_strips":
+            tifffile.imwrite(part, arr, photometric="rgb", rowsperstrip=16, metadata=None)
         elif n == "zlib1":
             tifffile.imwrite(part, arr, photometric="rgb", compression="zlib", rowsperstrip=h, predictor=False, metadata=None)
         else:
@@ -912,6 +1028,19 @@ async def run_all(c):
             ok = report(True, "a_tif_drop_opens", r) and ok
     except Exception as err:  # noqa: BLE001
         ok = report(False, "a_tif_drop_opens", str(err)) and ok
+
+    # -- deflate_cut_adler_and_damaged_tail_open (K17-band-1, real Chromium DecompressionStream) --
+    cut_good, cut_bad = [], []
+    try:
+        for e in deflate_cut_adler_cases():
+            try:
+                r = await js(c, OPEN_ONE, timeout=600, F=json.dumps(e))
+                cut_good.append(r["name"])
+            except Exception as err:  # noqa: BLE001
+                cut_bad.append("%s: %s" % (e["name"], str(err)[:400]))
+    except Exception as err:  # noqa: BLE001
+        cut_bad.append("building cases: %s" % str(err)[:400])
+    ok = report(not cut_bad, "deflate_cut_adler_and_damaged_tail_open", " || ".join(cut_bad) if cut_bad else {"opened": cut_good}) and ok
 
     # -- no_tiff_in_the_local_store --
     if store:

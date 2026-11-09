@@ -5,11 +5,11 @@
 #
 # Runs under the machine's busy lock (docs/measurements/w1_2026-11-06/w1_lock.py, acquired and released per batch):
 #   1. Node and Electron-as-Node kernel micro-benchmarks (`PX_ONLY=tiff PX_BENCH=1 node tools/px_test.js`).
-#   2. Three alternating rounds (r1..r3) of `tiff_test.py --size 15000x10000 --variant <v>` for each of the 6 variants
-#      (`own`, `lzw`, `packbits`, `zlib1`, `raw`, `noise`), one variant per fresh offline Electron instance (`--tiles on`)
+#   2. Three alternating rounds (r1..r3) of `tiff_test.py --size 15000x10000 --variant <v>` for each of the 7 variants
+#      (`own`, `lzw`, `packbits`, `raw_strips`, `zlib1`, `raw`, `noise`), one variant per fresh offline Electron instance (`--tiles on`)
 #      with focus retry, comparing clean `before` tree at base `0740aeab` vs `after` tree (K17).
 #   3. Three alternating rounds (r1..r3) of isolated `tiffUnpack` route A/B (`unpack_js` vs `unpack_rust`, both on K17's
-#      `readTiffBand`) for `lzw` and `packbits`, one variant per fresh offline Electron instance (`--tiles on`).
+#      `readTiffBand`) for `lzw`, `packbits`, and `raw_strips`, one variant per fresh offline Electron instance (`--tiles on`).
 #   4. Three alternating rounds (r1..r3) of `w0_bench.py --rows=tiff_rows_256` (`before` vs `after`), each on a fresh
 #      offline Electron instance with focus retry.
 set -u
@@ -29,6 +29,7 @@ mkdir -p "$HERE/before/tiffperf" "$HERE/after/tiffperf" \
 
 BEFORE_TREE="$(dirname "$ROOT")/.tmp_k17_before_$$"
 JS_UNPACK_TREE="$(dirname "$ROOT")/.tmp_k17_jsunpack_$$"
+RUST_UNPACK_TREE="$(dirname "$ROOT")/.tmp_k17_rustunpack_$$"
 TIFF_OUT="$(dirname "$ROOT")/.tmp_k17_tiff_$$"
 PHOTO="$MAIN_REPO/dist/daily/adobe_15000x10000.jpg"
 W0_FILES="$MAIN_REPO/dist/w0_files"
@@ -65,18 +66,21 @@ release_lock() {
 cleanup() {
     SCUMBLE_CDP_PORT="$PORT" python "$ROOT/tools/close_app.py" >> "$HERE/chain.log" 2>&1 || true
     release_lock
-    python -c "import os, sys; p = sys.argv[1]; os.path.lexists(p) and os.rmdir(p)" "$BEFORE_TREE/node_modules" 2>/dev/null || true
-    python -c "import os, sys; p = sys.argv[1]; os.path.lexists(p) and os.rmdir(p)" "$JS_UNPACK_TREE/node_modules" 2>/dev/null || true
-    rm -rf "$BEFORE_TREE" "$JS_UNPACK_TREE" "$TIFF_OUT" "$HERE"/profile_* 2>/dev/null || true
+    for d in "$BEFORE_TREE" "$JS_UNPACK_TREE" "$RUST_UNPACK_TREE"; do
+        python -c "import os, sys; p = sys.argv[1]; os.path.lexists(p) and os.rmdir(p)" "$d/node_modules" 2>/dev/null || true
+    done
+    rm -rf "$BEFORE_TREE" "$JS_UNPACK_TREE" "$RUST_UNPACK_TREE" "$TIFF_OUT" "$HERE"/profile_* 2>/dev/null || true
 }
 trap cleanup EXIT
 
-log "exporting clean before tree at $BASE_SHA to $BEFORE_TREE and unpack_js tree to $JS_UNPACK_TREE"
-mkdir -p "$BEFORE_TREE" "$JS_UNPACK_TREE" "$TIFF_OUT"
+log "exporting clean before tree at $BASE_SHA to $BEFORE_TREE and unpack A/B trees to $JS_UNPACK_TREE / $RUST_UNPACK_TREE"
+mkdir -p "$BEFORE_TREE" "$JS_UNPACK_TREE" "$RUST_UNPACK_TREE" "$TIFF_OUT"
 git -C "$ROOT" archive "$BASE_SHA" | tar -x -C "$BEFORE_TREE"
 git -C "$ROOT" archive HEAD | tar -x -C "$JS_UNPACK_TREE"
+git -C "$ROOT" archive HEAD | tar -x -C "$RUST_UNPACK_TREE"
 for rel in renderer/editor/inpaint_tiff.js renderer/editor/px/kernels_js.js renderer/editor/px/kernels.js; do
     cp "$ROOT/$rel" "$JS_UNPACK_TREE/$rel"
+    cp "$ROOT/$rel" "$RUST_UNPACK_TREE/$rel"
 done
 python - "$JS_UNPACK_TREE/renderer/editor/px/kernels.js" <<'PY'
 import sys
@@ -87,13 +91,23 @@ new = 'const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16, crc32:
 assert s.count(old) == 1, "DEFAULT_ROUTES target not unique"
 open(p, "w", encoding="utf-8", newline="\n").write(s.replace(old, new, 1))
 PY
+python - "$RUST_UNPACK_TREE/renderer/editor/px/kernels.js" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+old = "    if (compression !== 1) {\n        const p = rustPx(\"tiffUnpack\");"
+new = "    if (true) {\n        const p = rustPx(\"tiffUnpack\");"
+assert s.count(old) == 1, "tiffUnpack compression !== 1 guard not unique"
+open(p, "w", encoding="utf-8", newline="\n").write(s.replace(old, new, 1))
+PY
 
-python -c "import os, sys, _winapi; _winapi.CreateJunction(os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2]))" "$MAIN_REPO/node_modules" "$BEFORE_TREE/node_modules"
-python -c "import os, sys, _winapi; _winapi.CreateJunction(os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2]))" "$MAIN_REPO/node_modules" "$JS_UNPACK_TREE/node_modules"
-if [ ! -f "$BEFORE_TREE/node_modules/electron/dist/electron.exe" ] || [ ! -f "$JS_UNPACK_TREE/node_modules/electron/dist/electron.exe" ]; then
-    log "ERROR: electron.exe missing in scratch tree"
-    exit 1
-fi
+for d in "$BEFORE_TREE" "$JS_UNPACK_TREE" "$RUST_UNPACK_TREE"; do
+    python -c "import os, sys, _winapi; _winapi.CreateJunction(os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2]))" "$MAIN_REPO/node_modules" "$d/node_modules"
+    if [ ! -f "$d/node_modules/electron/dist/electron.exe" ]; then
+        log "ERROR: electron.exe missing in scratch tree $d"
+        exit 1
+    fi
+done
 
 for f in adobe_15000x10000_lzw.tif adobe_15000x10000_packbits.tif adobe_15000x10000_zlib1.tif adobe_15000x10000_raw.tif adobe_15000x10000_rows16.json noise_15000x10000.png; do
     if [ -f "$TIFF_SRC/$f" ]; then
@@ -128,6 +142,7 @@ tree_for_arm() {
     case "$1" in
         before) echo "$BEFORE_TREE" ;;
         unpack_js) echo "$JS_UNPACK_TREE" ;;
+        unpack_rust) echo "$RUST_UNPACK_TREE" ;;
         *) echo "$ROOT" ;;
     esac
 }
@@ -169,7 +184,7 @@ run_tiffperf_variant() {
 }
 
 for R in 1 2 3; do
-    for V in own lzw packbits zlib1 raw noise; do
+    for V in own lzw packbits raw_strips zlib1 raw noise; do
         acquire_lock "K17 tiffperf $V r$R (chain-t)"
         log "== tiffperf $V round $R"
         if [ $((R % 2)) -eq 1 ]; then
@@ -184,9 +199,10 @@ for R in 1 2 3; do
     done
 done
 
-# 3. Isolated tiffUnpack route A/B (unpack_js vs unpack_rust on K17's readTiffBand) on lzw and packbits
+# 3. Isolated tiffUnpack route A/B (unpack_js vs unpack_rust on K17's readTiffBand) on lzw, packbits, and raw_strips
+# (for raw_strips, unpack_rust removes the `if (compression !== 1)` guard so codec 1 runs through wasm p.tiffUnpack)
 for R in 1 2 3; do
-    for V in lzw packbits; do
+    for V in lzw packbits raw_strips; do
         acquire_lock "K17 tiffUnpack route A/B $V r$R (chain-t)"
         log "== tiffUnpack route A/B $V round $R"
         if [ $((R % 2)) -eq 1 ]; then

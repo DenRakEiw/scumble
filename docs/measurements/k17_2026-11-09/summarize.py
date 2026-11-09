@@ -1,11 +1,11 @@
-"""Summarize K17's 3-round alternating 15000 x 10000 runs (tiffperf 6 variants, tiffUnpack route A/B, w0_bench tiff_rows_256)."""
+"""Summarize K17's 3-round alternating 15000 x 10000 runs (tiffperf 7 variants, tiffUnpack route A/B, w0_bench tiff_rows_256)."""
 import glob
 import json
 import os
 import statistics
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ALL_VARIANTS = ("own", "lzw", "packbits", "zlib1", "raw", "noise")
+ALL_VARIANTS = ("own", "lzw", "packbits", "raw_strips", "zlib1", "raw", "noise")
 
 
 def med(vals):
@@ -95,16 +95,16 @@ def main():
     b_tp = gather_tiffperf("before")
     a_tp = gather_tiffperf("after")
     print_table(
-        "15000 x 10000 tiff_test.py --size (6 variants, 1 variant/instance, 3 alternating rounds, median [min-max] ms)",
+        "15000 x 10000 tiff_test.py --size (7 variants, 1 variant/instance, 3 alternating rounds, median [min-max] ms)",
         "before (0740aeab)",
         "after (K17)",
         b_tp,
         a_tp,
     )
-    js_ab = gather_tiffperf("unpack_js", ("lzw", "packbits"))
-    rs_ab = gather_tiffperf("unpack_rust", ("lzw", "packbits"))
+    js_ab = gather_tiffperf("unpack_js", ("lzw", "packbits", "raw_strips"))
+    rs_ab = gather_tiffperf("unpack_rust", ("lzw", "packbits", "raw_strips"))
     print_table(
-        "15000 x 10000 isolated tiffUnpack route A/B on K17 readTiffBand (lzw & packbits, 3 alternating rounds, median [min-max] ms)",
+        "15000 x 10000 isolated tiffUnpack route A/B on K17 readTiffBand (lzw, packbits & raw_strips, 3 alternating rounds, median [min-max] ms)",
         "unpack_js (twin)",
         "unpack_rust (wasm)",
         js_ab,

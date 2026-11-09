@@ -340,3 +340,168 @@ lock: released
 [20:39:02] gpu: 4200 MiB, 0 %; comfy 8188: 200
 [20:39:02] done
 no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+[23:25:44] K17R-1 raw_strips & PX_BENCH setup
+lock: held by 'main loop gates merge-k14 57312 2026-11-09T23:25:42', waiting
+lock: taken after 630 s
+[23:36:35] lock: taken (K17R1 node_bench (chain-t) 6904 2026-11-09T23:26:04)
+[23:36:37] node px_test tiff bench
+[23:36:39] rc=1
+[23:36:41] electron-as-node px_test tiff bench
+[23:36:44] rc=1
+lock: released
+lock: taken after 0 s
+[23:36:52] lock: taken (K17R1 tiffUnpack route A/B raw_strips r1 (chain-t) 31184 2026-11-09T23:36:50)
+[23:36:53] == tiffUnpack route A/B raw_strips round 1
+[23:36:54] tiffperf unpack_js raw_strips r1 (try 1)
+[23:37:00] gpu: 4230 MiB, 3 %; comfy 8188: 200
+[23:37:19] rc=0
+closed
+[23:37:27] tiffperf unpack_rust raw_strips r1 (try 1)
+[23:37:30] gpu: 4306 MiB, 3 %; comfy 8188: 200
+[23:37:45] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:37:53] lock: taken (K17R1 tiffUnpack route A/B raw_strips r2 (chain-t) 32888 2026-11-09T23:37:53)
+[23:37:53] == tiffUnpack route A/B raw_strips round 2
+[23:37:54] tiffperf unpack_rust raw_strips r2 (try 1)
+[23:37:55] gpu: 4300 MiB, 0 %; comfy 8188: 200
+[23:38:08] rc=0
+closed
+[23:38:17] tiffperf unpack_js raw_strips r2 (try 1)
+[23:38:20] gpu: 4325 MiB, 3 %; comfy 8188: 200
+[23:38:39] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:38:52] lock: taken (K17R1 tiffUnpack route A/B raw_strips r3 (chain-t) 58740 2026-11-09T23:38:51)
+[23:38:53] == tiffUnpack route A/B raw_strips round 3
+[23:38:54] tiffperf unpack_js raw_strips r3 (try 1)
+[23:38:56] gpu: 4330 MiB, 0 %; comfy 8188: 200
+[23:39:13] rc=0
+closed
+[23:39:22] tiffperf unpack_rust raw_strips r3 (try 1)
+[23:39:24] gpu: 4334 MiB, 0 %; comfy 8188: 200
+[23:39:40] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:39:48] lock: taken (K17R1 tiffperf raw_strips r1 (chain-t) 43332 2026-11-09T23:39:48)
+[23:39:48] == tiffperf raw_strips round 1
+[23:39:48] tiffperf before raw_strips r1 (try 1)
+[23:39:49] gpu: 4292 MiB, 0 %; comfy 8188: 200
+[23:40:04] rc=0
+closed
+[23:40:12] tiffperf after raw_strips r1 (try 1)
+[23:40:14] gpu: 4263 MiB, 0 %; comfy 8188: 200
+[23:40:35] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:40:48] lock: taken (K17R1 tiffperf raw_strips r2 (chain-t) 52500 2026-11-09T23:40:47)
+[23:40:49] == tiffperf raw_strips round 2
+[23:40:50] tiffperf after raw_strips r2 (try 1)
+[23:40:52] gpu: 4314 MiB, 1 %; comfy 8188: 200
+[23:41:10] rc=0
+closed
+[23:41:16] tiffperf before raw_strips r2 (try 1)
+[23:41:20] gpu: 4249 MiB, 0 %; comfy 8188: 200
+[23:41:37] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:41:46] lock: taken (K17R1 tiffperf raw_strips r3 (chain-t) 59784 2026-11-09T23:41:45)
+[23:41:46] == tiffperf raw_strips round 3
+[23:41:46] tiffperf before raw_strips r3 (try 1)
+[23:41:47] gpu: 4305 MiB, 1 %; comfy 8188: 200
+[23:41:58] rc=0
+closed
+[23:42:04] tiffperf after raw_strips r3 (try 1)
+[23:42:07] gpu: 4282 MiB, 0 %; comfy 8188: 200
+[23:42:24] rc=0
+closed
+lock: released
+[23:42:37] K17R-1 raw_strips & PX_BENCH complete
+no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+[23:45:38] K17R-1 raw_strips & PX_BENCH setup
+lock: taken after 0 s
+[23:46:06] lock: taken (K17R1 node_bench (chain-t) 31924 2026-11-09T23:46:03)
+[23:46:07] node px_test tiff bench
+[23:46:09] rc=0
+[23:46:10] electron-as-node px_test tiff bench
+[23:46:14] rc=0
+lock: released
+lock: taken after 0 s
+[23:46:20] lock: taken (K17R1 tiffUnpack route A/B raw_strips r1 (chain-t) 60820 2026-11-09T23:46:19)
+[23:46:20] == tiffUnpack route A/B raw_strips round 1
+[23:46:22] tiffperf unpack_js raw_strips r1 (try 1)
+[23:46:25] gpu: 4305 MiB, 0 %; comfy 8188: 200
+[23:46:43] rc=0
+closed
+[23:46:53] tiffperf unpack_rust raw_strips r1 (try 1)
+[23:46:56] gpu: 4338 MiB, 1 %; comfy 8188: 200
+[23:47:12] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:47:23] lock: taken (K17R1 tiffUnpack route A/B raw_strips r2 (chain-t) 53268 2026-11-09T23:47:22)
+[23:47:23] == tiffUnpack route A/B raw_strips round 2
+[23:47:24] tiffperf unpack_rust raw_strips r2 (try 1)
+[23:47:26] gpu: 4309 MiB, 0 %; comfy 8188: 200
+[23:47:39] rc=0
+closed
+[23:47:43] tiffperf unpack_js raw_strips r2 (try 1)
+[23:47:44] gpu: 4294 MiB, 0 %; comfy 8188: 200
+[23:47:58] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:48:12] lock: taken (K17R1 tiffUnpack route A/B raw_strips r3 (chain-t) 9448 2026-11-09T23:48:10)
+[23:48:13] == tiffUnpack route A/B raw_strips round 3
+[23:48:14] tiffperf unpack_js raw_strips r3 (try 1)
+[23:48:18] gpu: 4352 MiB, 1 %; comfy 8188: 200
+[23:48:38] rc=0
+closed
+[23:48:49] tiffperf unpack_rust raw_strips r3 (try 1)
+[23:48:53] gpu: 4314 MiB, 0 %; comfy 8188: 200
+[23:49:10] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:49:22] lock: taken (K17R1 tiffperf raw_strips r1 (chain-t) 27916 2026-11-09T23:49:20)
+[23:49:23] == tiffperf raw_strips round 1
+[23:49:23] tiffperf before raw_strips r1 (try 1)
+[23:49:27] gpu: 4253 MiB, 0 %; comfy 8188: 200
+[23:49:42] rc=0
+closed
+[23:49:48] tiffperf after raw_strips r1 (try 1)
+[23:49:48] gpu: 4312 MiB, 1 %; comfy 8188: 200
+[23:50:02] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:50:15] lock: taken (K17R1 tiffperf raw_strips r2 (chain-t) 33636 2026-11-09T23:50:14)
+[23:50:16] == tiffperf raw_strips round 2
+[23:50:17] tiffperf after raw_strips r2 (try 1)
+[23:50:21] gpu: 4294 MiB, 3 %; comfy 8188: 200
+[23:50:38] rc=0
+closed
+[23:50:47] tiffperf before raw_strips r2 (try 1)
+[23:50:52] gpu: 4284 MiB, 0 %; comfy 8188: 200
+[23:51:07] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[23:51:21] lock: taken (K17R1 tiffperf raw_strips r3 (chain-t) 52296 2026-11-09T23:51:19)
+[23:51:22] == tiffperf raw_strips round 3
+[23:51:23] tiffperf before raw_strips r3 (try 1)
+[23:51:26] gpu: 4271 MiB, 3 %; comfy 8188: 200
+[23:51:44] rc=0
+closed
+[23:51:50] tiffperf after raw_strips r3 (try 1)
+[23:51:50] gpu: 4307 MiB, 0 %; comfy 8188: 200
+[23:52:03] rc=0
+closed
+lock: released
+[23:52:16] K17R-1 raw_strips & PX_BENCH complete
+no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

@@ -90,11 +90,14 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // size sweep: 0.075-0.100 vs 0.028-0.074 us at 16-48 B, 0.093-0.138 vs 0.156-0.235 us at 64-128 B, 1.50-2.53x; 4.97x at
 // 64 KB; 4.26x on w0_bench crc32_64mb); smaller headers (PNG signature, IHDR, 4-byte chunk lengths) stay in JS.
 // No tiffUnpack entry (K17, docs/measurements/k17_2026-11-09/summary.txt): at 15000x10000 Rust won tiffUnpack=js:rust
-// non-overlapping on readTiffBand for both lzw (openMs 5684.0 [5619.0-5775.0] vs 10541.0 [10493.0-10595.0] ms, 1.85x;
+// non-overlapping on readTiffBand for LZW (openMs 5684.0 [5619.0-5775.0] vs 10541.0 [10493.0-10595.0] ms, 1.85x;
 // tiff_read kernel 3028.8 vs 7857.4 ms, 2.59x; decode 2514.2 vs 7396.3 ms, 2.94x; before/after 0740aeab -> K17 openMs
-// 11826.0 -> 5696.0 ms, 2.08x) and packbits (openMs 3416.0 [3327.0-3635.0] vs 3684.0 [3638.0-3686.0] ms, 1.08x;
+// 11826.0 -> 5696.0 ms, 2.08x) and PackBits (openMs 3416.0 [3327.0-3635.0] vs 3684.0 [3638.0-3686.0] ms, 1.08x;
 // tiff_read kernel 608.4 vs 796.8 ms, 1.31x; decode 110.3 vs 297.0 ms, 2.69x; before/after openMs 5967.0 -> 3622.0 ms,
-// 1.65x).
+// 1.65x). Uncompressed (compression === 1) is guarded in tiffUnpack to stay on J.tiffUnpack (one dst.set vs 3 copies
+// across wasm: raw_strips 625-strip decode 66.6 [66.4-72.3] vs 91.9 [89.2-98.5] ms non-overlapping, 1.38x; PX_BENCH 1 MB
+// strip 0.02 vs 0.05 ms; before/after raw_strips openMs 3622.0 -> 3523.0 ms, 1.03x, openSteps pixels 858.0 -> 613.0 ms,
+// 1.40x).
 const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16, crc32: 64 });
 
 const TAKES = { kernel: '"js" or "rust"', kernelSize: '"js", "rust" or a number of pixels >= 0', mb: "a number of MB >= 0 or Infinity", count: "a whole number >= 0" };
@@ -1121,14 +1124,17 @@ export function rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, ti
 /**
  * Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes `src` into `out`
  * (`need` bytes, allocated when absent), stopping as soon as `need` bytes are written (`inpaint_tiff.js`
- * `unpackStrip`, K16, K17, `docs/PLAN_WASM_BUILD.md` §4.6), routed by `tiffUnpack`.
+ * `unpackStrip`, K16, K17, `docs/PLAN_WASM_BUILD.md` §4.6). LZW and PackBits are routed by `tiffUnpack`;
+ * uncompressed (`1`) stays on the JS copy (`dst.set`) to avoid copying `src` in and `out` back across wasm.
  */
 export function tiffUnpack(compression, src, need, out = null, name = "strip") {
-    const p = rustPx("tiffUnpack");
-    if (p) {
-        try { return p.tiffUnpack(compression, src, need, out, name); }
-        catch (err) { if (!recovered(p, err, "tiff_unpack")) throw err; }
-        finally { releaseIfLarge(); }
+    if (compression !== 1) {
+        const p = rustPx("tiffUnpack");
+        if (p) {
+            try { return p.tiffUnpack(compression, src, need, out, name); }
+            catch (err) { if (!recovered(p, err, "tiff_unpack")) throw err; }
+            finally { releaseIfLarge(); }
+        }
     }
     return J.tiffUnpack(compression, src, need, out, name);
 }
