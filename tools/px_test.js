@@ -9491,7 +9491,7 @@ async function tiffCases(js, simd, scalar, K, T) {
         const baseLzw9 = lzwEncodeTiff(pKwKwK.subarray(0, 256));
         const baseLzwWidths = lzwEncodeTiff(pWidths);                     // 9 -> 10 -> 11 -> 12-bit widths + Clear resets
         const baseLzwFull = lzwEncodeTiff(pFull4096, { clearAt: 0 });     // 9 -> 12-bit widths, fills table to 4096 and stays at 4096
-        const baseLzwSweep = lzwEncodeTiff(pWidths.subarray(0, 2600));    // crosses 9 -> 10 -> 11 -> 12-bit widths (~2100 bytes)
+        const baseLzwSweep = lzwEncodeTiff(pWidths.subarray(0, 2600));    // crosses 9 -> 10 -> 11 -> 12-bit widths (3475 bytes, 3476 prefixes 0..3475)
         const basePb = packBitsEncode(pKwKwK.subarray(0, 256));
         let fuzzFails = 0, fuzzDetail = "";
         const runOne = (fn) => {
@@ -9546,7 +9546,7 @@ async function tiffCases(js, simd, scalar, K, T) {
             checkTrial(`sweep-${k}`, 5, baseLzwSweep.subarray(0, k), 2600);
         }
         check("tiff_unpack fuzz (random, 9..12-bit & full-4096 bit-flipped, and every-prefix sweep): 0 traps, identical bytes or error codes across twin, simd and scalar",
-            fuzzFails === 0, fuzzDetail);
+            fuzzFails === 0 && baseLzwSweep.length > 0, fuzzDetail || `sweepLen=${baseLzwSweep.length} (${baseLzwSweep.length + 1} prefixes)`);
     }
 
     // kernels.js wrapper check
