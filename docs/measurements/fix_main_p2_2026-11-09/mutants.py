@@ -64,6 +64,16 @@ MUTANTS = [
         "killed: mcpb_test checks SIGTERM on launch.js (--run) still kills the child",
         {"gates": ["mcpb"]},
     ),
+    (
+        "launch_sig_noop_mcp",
+        "electron/main/mcp/launch.js",
+        [(
+            'for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { if (SERVES) clientGone(); else { try { child.kill(); } catch { /* gone */ } } });',
+            'for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { if (!SERVES) { try { child.kill(); } catch { /* gone */ } } });',
+        )],
+        "killed: mcpb_test checks SIGTERM on launch.js (--mcp) calls clientGone rather than ignoring the signal",
+        {"gates": ["mcpb"]},
+    ),
     # ---- mcpb/server/index.js (MAIN-1) ----------------------------------------------------------------------
     (
         "relay_not_detached",
@@ -93,6 +103,16 @@ MUTANTS = [
             '    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { try { child.kill(); } catch (_) { /* gone */ } });',
         )],
         "killed: mcpb_test checks SIGTERM on relay calls clientGone instead of killing child",
+        {"gates": ["mcpb"]},
+    ),
+    (
+        "relay_sig_noop",
+        "mcpb/server/index.js",
+        [(
+            '    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, clientGone);',
+            '    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => {});',
+        )],
+        "killed: mcpb_test checks SIGTERM on relay calls clientGone rather than ignoring the signal",
         {"gates": ["mcpb"]},
     ),
     # ---- electron/main/docfile.js (D9, D10, D6) -------------------------------------------------------------
@@ -170,10 +190,30 @@ MUTANTS = [
         "open_no_freename_lock",
         "electron/main/docfile.js",
         [(
-            "                        const placed = await withImportLock(importLocks, kFree, async () => {",
-            "                        const placed = await (async () => {",
+            "                        const placed = kFree === k ? await place() : await withImportLock(importLocks, kFree, place);",
+            "                        const placed = kFree === k ? await place() : await withImportLock(null, kFree, place);",
         )],
         "killed: document_test checks freeName import acquires import lock on kFree against concurrent literal import",
+        {"gates": ["document"]},
+    ),
+    (
+        "open_self_deadlock_kfree_eq_k",
+        "electron/main/docfile.js",
+        [(
+            "                        const placed = kFree === k ? await place() : await withImportLock(importLocks, kFree, place);",
+            "                        const placed = await withImportLock(importLocks, kFree, place);",
+        )],
+        "killed: document_test checks openDocument does not self-deadlock when dest vanishes before freeName (kFree === k)",
+        {"gates": ["document"]},
+    ),
+    (
+        "open_identity_rename_when_dest_gone",
+        "electron/main/docfile.js",
+        [(
+            "                            if (name !== ref.filename) renamed.set(k, name);",
+            "                            renamed.set(k, name);",
+        )],
+        "killed: document_test checks openDocument does not record an identity rename when freeName returns ref.filename",
         {"gates": ["document"]},
     ),
     (

@@ -1,9 +1,6 @@
 
 
-DevTools listening on ws://127.0.0.1:9654/devtools/browser/560334ae-334a-4f66-b67b-abcaca5884d8
-[63888:1109/201029.216:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 6 rejected by interface blink.mojom.WidgetHost
-[63888:1109/201029.216:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 7 rejected by interface blink.mojom.WidgetHost
-[63888:1109/201029.216:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 2 rejected by interface blink.mojom.Widget
+DevTools listening on ws://127.0.0.1:9654/devtools/browser/a7922165-6695-4363-84e6-7f9ffa6fa961
 Error occurred in handler for 'documents:open': Error: made by a newer Scumble (9.9.9) in a form this version cannot read; update Scumble to open it
     at checkHeader (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\docfile.js:270:43)
     at Object.openDocument (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\electron\main\docfile.js:708:23)

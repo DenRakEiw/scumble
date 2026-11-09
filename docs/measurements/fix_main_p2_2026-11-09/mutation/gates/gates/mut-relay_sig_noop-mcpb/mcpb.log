@@ -1,0 +1,18 @@
+[ok] the_staged_manifest_validates_with_the_version_and_the_tools
+[ok] the_store_code_in_the_starter_is_the_one_registration_js_writes
+[ok] the_uninstall_guid_is_electron_builders_uuid_v5_of_the_appid
+[ok] an_explicit_path_wins_and_searches_nothing
+[ok] an_explicit_path_that_is_not_there_is_reported_not_replaced
+[ok] an_empty_field_and_the_clients_placeholder_count_as_not_set
+[ok] the_installer_by_its_registry_key_then_the_default_folders
+[ok] the_store_alias_by_lstat_after_the_installer
+[ok] an_explicit_alias_or_version_folder_takes_the_store_route
+[ok] the_installer_form_is_the_registration_line
+[ok] the_store_form_is_the_registration_line_with_the_extra_args_after_the_dashes
+[ok] the_uninstall_string_gives_its_folder
+[ok] parse_args
+[ok] the_fallback_answers_the_protocol_with_one_tool_naming_the_missing_path
+[ok] the_fallback_says_nothing_was_found_when_the_search_is_empty
+[ok] where_prints_json_and_starts_nothing
+[FAIL] relay_and_launcher_let_mcp_child_flush_past_five_seconds_and_detach_serves_only: mcpb relay SIGTERM exit code: 2 instead of 0
+mcpb_test: 1 FAILED

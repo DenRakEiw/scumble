@@ -1,6 +1,3 @@
-$ bash tools/run_gates.sh mut-relay_not_detached-mcpb --offline --tiles on mcpb  (rc 1, 26 s)
+$ bash tools/run_gates.sh mut-relay_not_detached-mcpb --offline --tiles on mcpb  (rc 1, 25 s)
 mcpb rc=1 16s 
-SOME FAILED
-$ bash tools/run_gates.sh mut-relay_not_detached-mcpb --offline --tiles on mcpb  (rc 1, 17 s)
-mcpb rc=1 13s 
 SOME FAILED

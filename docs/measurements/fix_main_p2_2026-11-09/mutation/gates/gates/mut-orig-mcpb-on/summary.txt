@@ -1,2 +1,2 @@
-mcpb rc=0 26s 
+mcpb rc=0 24s 
 ALL PASS

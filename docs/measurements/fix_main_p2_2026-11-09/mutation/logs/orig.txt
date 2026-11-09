@@ -1,11 +1,17 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 1 s)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 23 s)
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
-px.wasm: 288837 bytes, sha256 98a2ff8e1059320e
+px.wasm: 291274 bytes, sha256 e35da0b473c7fdf9
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
-px_scalar.wasm: 231989 bytes, sha256 e38994087277d49e
-    Finished `release` profile [optimized] target(s) in 0.02s
-    Finished `release` profile [optimized] target(s) in 0.01s
-$ node tools/px_test.js  (rc 0, 252 s)
+px_scalar.wasm: 233384 bytes, sha256 bbd719d5ec34c80d
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\crates\px)
+    Finished `release` profile [optimized] target(s) in 10.99s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\crates\px)
+    Finished `release` profile [optimized] target(s) in 8.36s
+$ node tools/px_test.js  (rc 0, 336 s)
 PASS
 ok   rust scalar the old view is detached after growth
 ok   rust scalar the fresh view sees the bytes written before growth
@@ -14,14 +20,14 @@ ok   rust scalar arena blocks do not overlap
 ok   rust scalar after a reset the job fits one kept chunk  chunks 1
 ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
 PASS
-(node:9704) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_mut_fix_main_p2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:45340) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_mut_fix_main_p2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
 Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance
-$ bash tools/run_gates.sh mut-orig-mcpb-on --offline --tiles on mcpb  (rc 0, 30 s)
-mcpb rc=0 26s 
+$ bash tools/run_gates.sh mut-orig-mcpb-on --offline --tiles on mcpb  (rc 0, 29 s)
+mcpb rc=0 24s 
 ALL PASS
-$ bash tools/run_gates.sh mut-orig-document-on --offline --tiles on document  (rc 0, 73 s)
-document rc=0 67s PASS
+$ bash tools/run_gates.sh mut-orig-document-on --offline --tiles on document  (rc 0, 70 s)
+document rc=0 63s PASS
 ALL PASS

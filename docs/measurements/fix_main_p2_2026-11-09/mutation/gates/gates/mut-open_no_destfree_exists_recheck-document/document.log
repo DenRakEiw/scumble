@@ -1,8 +1,8 @@
 [FAIL] node:  already being saved; wait until that is done
 [ok] the_service_cancel_leaves_the_target_and_cleans_the_selection_fields: target kept; 2 selection fields dropped; argv found 1 of 4
 [FAIL] concurrent_opens_serialise_shared_imports_and_use_unique_temp_names: Error: D6: freeName import and literal 'photo (1).png' import must not overwrite each other: photo (1).png vs photo (1).png |     at assert (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\tools\document_test.js:48:50) |     at C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\tools\document_test.js:610:13
-[ok] content_addressed_names_and_ensure_on_server: image~0fadd67c.png, image~7a0b2ab8.png, readme~0fadd67c, my_photo__1___final__2~0fadd67c.png; collision+size-check+rename verified
-FAIL(node:65400) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_mut_fix_main_p2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+[ok] content_addressed_names_and_ensure_on_server: image~34c8307a.png, image~a7582d9d.png, readme~34c8307a, my_photo__1___final__2~34c8307a.png; collision+size-check+rename verified
+FAIL(node:50812) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_mut_fix_main_p2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)

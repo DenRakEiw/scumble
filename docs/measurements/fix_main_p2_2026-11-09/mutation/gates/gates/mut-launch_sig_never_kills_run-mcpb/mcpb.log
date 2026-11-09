@@ -14,5 +14,5 @@
 [ok] the_fallback_answers_the_protocol_with_one_tool_naming_the_missing_path
 [ok] the_fallback_says_nothing_was_found_when_the_search_is_empty
 [ok] where_prints_json_and_starts_nothing
-[FAIL] relay_and_launcher_let_mcp_child_flush_past_five_seconds_and_detach_serves_only: launch.js --run SIGTERM kills child without waiting for MCP flush: "flushed" instead of ""
+[FAIL] relay_and_launcher_let_mcp_child_flush_past_five_seconds_and_detach_serves_only: launch.js --run SIGTERM exit code: 0 instead of 1
 mcpb_test: 1 FAILED

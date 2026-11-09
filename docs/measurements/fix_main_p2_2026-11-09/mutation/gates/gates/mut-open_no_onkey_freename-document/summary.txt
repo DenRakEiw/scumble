@@ -1,2 +1,2 @@
-document rc=1 6s FAIL
+document rc=1 16s FAIL
 SOME FAILED

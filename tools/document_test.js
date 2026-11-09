@@ -611,6 +611,36 @@ function listTree(dir) {
             assert(fs.readFileSync(doc.mirrorPath(MOut, "input", "inpaint_canvas", baseC)).equals(bytesC), "docC base bytes intact");
             assert(fs.readFileSync(doc.mirrorPath(MOut, "input", "inpaint_canvas", baseD)).equals(bytesD), "docD base bytes intact");
 
+            // D6 self-deadlock guard: dest exists at fsp.stat with same size & different bytes, then disappears during crcOfFile
+            // so freeName returns ref.filename (kFree === k). Must not re-enter withImportLock(importLocks, kFree) or record identity rename.
+            const ME = mirror("D6E");
+            put(ME, { type: "input", subfolder: "inpaint_canvas", filename: "photo.png" }, rnd(bytesC.length, 55));
+            const destE = doc.mirrorPath(ME, "input", "inpaint_canvas", "photo.png");
+            let unlinkedDuringCrc = false;
+            fsp.open = async function (p, flags, ...rest) {
+                const fh = await origFspOpen.call(this, p, flags, ...rest);
+                if (!unlinkedDuringCrc && p === destE && flags === "r") {
+                    unlinkedDuringCrc = true;
+                    fs.unlinkSync(destE);
+                }
+                return fh;
+            };
+            let oE;
+            try {
+                const svcE = new Documents({ mirrorRoot: ME });
+                let timerE;
+                oE = await Promise.race([
+                    svcE.open({ reqId: "oe", path: docC }).finally(() => clearTimeout(timerE)),
+                    new Promise((_, rej) => { timerE = setTimeout(() => rej(new Error("self-deadlock when dest disappears before freeName (kFree === k)")), 1500); }),
+                ]);
+            } finally {
+                fsp.open = origFspOpen;
+            }
+            assert(unlinkedDuringCrc, "D6: unlinked dest during crcOfFile");
+            assert(oE.document.base.ref.filename === "photo.png", "D6: freeName returned original filename when dest vanished: " + oE.document.base.ref.filename);
+            assert(Object.keys(oE.renamed).length === 0, "D6: must not record identity rename when kFree === k: " + JSON.stringify(oE.renamed));
+            assert(fs.readFileSync(destE).equals(bytesC), "D6: imported bytes written to original dest when dest vanished");
+
             // D6 in main.js: execute the real documents:open handler from main.js on existing vs missing req.path
             const mainSrc = fs.readFileSync(path.join(ROOT, "electron", "main", "main.js"), "utf8");
             const mOpen = mainSrc.match(/ipcMain\.handle\("documents:open",\s*(async\s*\(_e,\s*req\)\s*=>\s*\{[\s\S]*?\n    \})\);/);

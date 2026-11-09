@@ -293,6 +293,7 @@ cp.spawn = function (cmd, args, opts) {
     fs.writeFileSync(mockChild, `"use strict";
 const fs = require("node:fs");
 const delay = Number(process.env.FLUSH_DELAY_MS || 5400);
+const idleExitMs = Number(process.env.IDLE_EXIT_MS || 25000);
 process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ready: true } }) + "\\n");
 process.stdin.resume();
 let closing = false;
@@ -305,7 +306,7 @@ process.stdin.on("end", () => {
         process.exit(0);
     }, delay);
 });
-setTimeout(() => process.exit(2), 25000).unref();
+setTimeout(() => { if (!closing) process.exit(2); }, idleExitMs).unref();
 `);
     function runWrapper(label, script, scriptArgs, envExtra, closeStdinAfterReady = true) {
         return new Promise((resolve, reject) => {
@@ -319,8 +320,9 @@ setTimeout(() => process.exit(2), 25000).unref();
                 ...envExtra,
             };
             const p = spawn(process.execPath, ["--require", preload, script, ...scriptArgs], { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
-            let out = "", err = "", settled = false, readySeen = false;
+            let out = "", err = "", settled = false, readySeen = false, childPoll = null;
             const cleanup = () => {
+                if (childPoll) { clearInterval(childPoll); childPoll = null; }
                 try {
                     const meta = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, "utf8")) : null;
                     if (meta && meta.pid) { try { process.kill(meta.pid); } catch (_) { /* gone */ } }
@@ -343,12 +345,25 @@ setTimeout(() => process.exit(2), 25000).unref();
                     if (closeStdinAfterReady) {
                         p.stdin.end();
                     } else {
-                        const fallbackMs = scriptArgs.includes("--run") ? 150 : 1000;
-                        setTimeout(() => { try { p.stdin.end(); } catch (_) { /* gone */ } }, fallbackMs).unref();
+                        // Close p.stdin only after the spawned child process has exited (ESRCH), unblocking
+                        // launch.js's Windows fd:0 pipe read without ever sending stdin EOF to a live child.
+                        childPoll = setInterval(() => {
+                            try {
+                                if (!fs.existsSync(metaFile)) return;
+                                const meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
+                                if (!meta || !meta.pid) return;
+                                try {
+                                    process.kill(meta.pid, 0);
+                                } catch (e) {
+                                    if (e && e.code === "ESRCH") {
+                                        clearInterval(childPoll);
+                                        childPoll = null;
+                                        try { p.stdin.end(); } catch (_) { /* gone */ }
+                                    }
+                                }
+                            } catch (_) { /* metaFile still writing */ }
+                        }, 25).unref();
                     }
-                }
-                if (!closeStdinAfterReady && out.includes('"flushed":true')) {
-                    try { p.stdin.end(); } catch (_) { /* gone */ }
                 }
             });
             p.stderr.on("data", (c) => { err += c.toString("utf8"); });
@@ -378,7 +393,7 @@ setTimeout(() => process.exit(2), 25000).unref();
         eq(rRelay.meta && rRelay.meta.detached, true, "mcpb relay spawns child with detached: true");
 
         // 2. mcpb/server/index.js relay on SIGTERM: calls clientGone (closes child stdin) instead of child.kill()
-        const rRelaySig = await runWrapper("relay-sig", STARTER, ["--scumble", process.execPath, "--launcher", mockChild], { FLUSH_DELAY_MS: "200", EMIT_SIGNAL_ON_READY: "SIGTERM" }, false);
+        const rRelaySig = await runWrapper("relay-sig", STARTER, ["--scumble", process.execPath, "--launcher", mockChild], { FLUSH_DELAY_MS: "200", IDLE_EXIT_MS: "1200", EMIT_SIGNAL_ON_READY: "SIGTERM" }, false);
         eq(rRelaySig.code, 0, "mcpb relay SIGTERM exit code");
         eq(rRelaySig.flushed, "flushed", "mcpb relay SIGTERM let child flush instead of killing");
 
@@ -389,13 +404,14 @@ setTimeout(() => process.exit(2), 25000).unref();
         eq(rLaunch.meta && rLaunch.meta.detached, true, "launch.js --mcp spawns child with detached: true");
 
         // 4. electron/main/mcp/launch.js (--mcp) on SIGTERM: calls clientGone instead of child.kill()
-        const rLaunchSig = await runWrapper("launch-sig", launchJs, ["--mcp"], { FLUSH_DELAY_MS: "200", EMIT_SIGNAL_ON_READY: "SIGTERM" }, false);
+        const rLaunchSig = await runWrapper("launch-sig", launchJs, ["--mcp"], { FLUSH_DELAY_MS: "200", IDLE_EXIT_MS: "1200", EMIT_SIGNAL_ON_READY: "SIGTERM" }, false);
         eq(rLaunchSig.code, 0, "launch.js --mcp SIGTERM exit code");
         eq(rLaunchSig.flushed, "flushed", "launch.js --mcp SIGTERM let child flush instead of killing");
 
         // 5. electron/main/mcp/launch.js (--run): SERVES is false -> detached: false and SIGTERM kills child immediately
-        const rRunSig = await runWrapper("launch-run-sig", launchJs, ["--run", "steps.json"], { FLUSH_DELAY_MS: "5000", EMIT_SIGNAL_ON_READY: "SIGTERM" }, false);
+        const rRunSig = await runWrapper("launch-run-sig", launchJs, ["--run", "steps.json"], { FLUSH_DELAY_MS: "600", IDLE_EXIT_MS: "1200", EMIT_SIGNAL_ON_READY: "SIGTERM" }, false);
         eq(rRunSig.meta && rRunSig.meta.detached, false, "launch.js --run spawns child with detached: false");
+        eq(rRunSig.code, 1, "launch.js --run SIGTERM exit code");
         eq(rRunSig.flushed, "", "launch.js --run SIGTERM kills child without waiting for MCP flush");
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });

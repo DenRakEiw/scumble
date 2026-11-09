@@ -97,7 +97,7 @@ def raw_check():
 
 
 def headless_flush_check():
-    """MAIN-1: closing stdin on a headless MCP session started via launch.js lets flushBeforeQuit finish (> 5 s)."""
+    """MAIN-1: closing stdin on a headless MCP session started via launch.js lets flushAll finish (> 5 s)."""
     flush_profile = os.path.join(OUT, "headless_flush_profile")
     shutil.rmtree(flush_profile, ignore_errors=True)
     os.makedirs(flush_profile, exist_ok=True)

@@ -1,2 +1,2 @@
-document rc=0 67s PASS
+document rc=0 63s PASS
 ALL PASS

@@ -752,15 +752,16 @@ async function openDocument({ file, mirrorRoot, signal = null, onProgress = null
                         const name = freeName(path.dirname(dest), ref.filename);
                         const kFree = keyOf({ ...ref, filename: name });
                         const destFree = path.join(path.dirname(dest), name);
-                        const placed = await withImportLock(importLocks, kFree, async () => {
+                        const place = async () => {
                             check();
                             if (fs.existsSync(destFree)) return false;
                             if (onKey) onKey(kFree);
                             await copyEntry(fh, en, destFree, check);
-                            renamed.set(k, name);
+                            if (name !== ref.filename) renamed.set(k, name);
                             imported.push(kFree);
                             return true;
-                        });
+                        };
+                        const placed = kFree === k ? await place() : await withImportLock(importLocks, kFree, place);
                         if (placed) break;
                     }
                 } else {
