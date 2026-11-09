@@ -674,8 +674,8 @@ export function partPtrOf(p, a, msg, needPrev = false) {
 }
 
 /**
- * One part of a PNG's pixels (inpaint_png.js, docs/PLAN_BCE.md §E2): rows as bytes (`rgba`, `prev`) or as tiles
- * (`tiles`, `prevTiles`, `r0`), filtered and deflated by the Rust kernel, as a finished IDAT chunk.
+ * One part of a PNG's pixels (inpaint_png.js, docs/PLAN_BCE.md §E2): rows as bytes (`rgba`, optional `prev`) or as
+ * tiles/stack (`tiles`, `r0`, or `stack`; `prevTiles` is ignored so parts start with None or Sub, P5), as an IDAT chunk.
  */
 export async function pngPart(msg) {
     let p = rustPx();
@@ -688,7 +688,7 @@ export async function pngPart(msg) {
         const a = p.job;
         let r = null, tc = 0, tp = 0;
         try {
-            const ptrs = partPtrOf(p, a, msg, true);
+            const ptrs = partPtrOf(p, a, msg, false);
             tc = ptrs.tc;
             tp = ptrs.tp;
             r = p.pngPartFromPtr(a, ptrs.pr, msg.w, msg.rows, ptrs.pp, level, !!msg.last, laps);
@@ -718,7 +718,7 @@ export async function pngPart(msg) {
     }
     const rgba = partRowsOf(msg);
     const tc = now();
-    const prev = msg.rgba ? (msg.prev ? new Uint8Array(msg.prev, 0, msg.w * 4) : null) : msg.stack ? rowsOfStack(msg, true) : rowsOfTiles(msg, true);
+    const prev = msg.rgba && msg.prev ? new Uint8Array(msg.prev, 0, msg.w * 4) : null;
     const tp = now();
     const r = p.pngPart(rgba, msg.w, msg.rows, prev, level, !!msg.last, laps);
     releaseIfLarge();

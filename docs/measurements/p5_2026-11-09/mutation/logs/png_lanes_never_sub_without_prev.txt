@@ -1,0 +1,24 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 8 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 277463 bytes, sha256 7df272a550cdd61c
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 225743 bytes, sha256 203a16365f2ec7e7
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.75s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
+    Finished `release` profile [optimized] target(s) in 3.52s
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=pngFilter)
+FAIL rust simd png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)  random 5 px x 3: out[0] is 0, the twin has 1
+FAIL (1) (only: pngFilter; PX_ONLY, not the full test)
+ok   rust scalar png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)
+ok   js png_filter_rows gives the same at an odd offset
+ok   rust simd png_filter_rows unfilters back to the input (1032 cases)
+       png_filter_rows cases, rows of 5 px or more: won by None 698, Sub 708, Up 543, Average 464, Paeth 353; won on a tied sum 325 / 17 / 42 / 4 / 0; Paeth ties a=b 737063 (a = b), a=c 13337, b=c 7408
+ok   png_filter_rows cases, rows of 5 px or more: every filter wins rows, ties of the sums are won by None, Sub, Up and Average, the Paeth predictor ties a over c and b over c  wins 698,708,543,464,353, tied 325,17,42,4,0, paeth {"ab":737063,"ac":13337,"bc":7408}
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (1) (only: pngFilter; PX_ONLY, not the full test)
+(node:63020) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
