@@ -1201,8 +1201,10 @@ export class Px {
             const ry10 = m1 * W + m3 * y0 + m5;
             const ry01 = m1 * 0 + m3 * y1 + m5;
             const ry11 = m1 * W + m3 * y1 + m5;
-            const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11) - 2)));
-            const wy1 = Math.max(0, Math.min(mh - 1, Math.ceil(Math.max(ry00, ry10, ry01, ry11) + 2)));
+            const ryMin = Math.min(ry00, ry10, ry01, ry11);
+            const ryMax = Math.max(ry00, ry10, ry01, ry11);
+            const wy0 = Number.isFinite(ryMin) ? Math.max(0, Math.min(mh - 1, Math.floor(ryMin - 2))) : 0;
+            const wy1 = Number.isFinite(ryMax) ? Math.max(0, Math.min(mh - 1, Math.ceil(ryMax + 2))) : mh - 1;
             const wh = wy1 - wy0 + 1;
             const wLen = wh * mw;
             const wStart = wy0 * mw;
@@ -1525,8 +1527,10 @@ export class Px {
             const ry10 = m1 * rx1 + m3 * cy0 + m5;
             const ry01 = m1 * rx0 + m3 * cy1 + m5;
             const ry11 = m1 * rx1 + m3 * cy1 + m5;
-            const wy0 = Math.max(0, Math.min(mh - 1, Math.floor(Math.min(ry00, ry10, ry01, ry11) - 2)));
-            const wy1 = Math.max(0, Math.min(mh - 1, Math.ceil(Math.max(ry00, ry10, ry01, ry11) + 2)));
+            const ryMin = Math.min(ry00, ry10, ry01, ry11);
+            const ryMax = Math.max(ry00, ry10, ry01, ry11);
+            const wy0 = Number.isFinite(ryMin) ? Math.max(0, Math.min(mh - 1, Math.floor(ryMin - 2))) : 0;
+            const wy1 = Number.isFinite(ryMax) ? Math.max(0, Math.min(mh - 1, Math.ceil(ryMax + 2))) : mh - 1;
             const wh = wy1 - wy0 + 1;
             const wLen = wh * mw;
             const wStart = wy0 * mw;

@@ -76,9 +76,10 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // 2545.3 ms; before/after on Rust 1636.6 -> 1224.4 ms wall) and rangeColor=js:rust on range_color (1976.6 vs 3542.6 ms
 // wall, lower by 1566.1 > spread 368.4; worker job 2893.4 vs 6487.6 ms; before/after on Rust 3137.6 -> 1785.7 ms wall).
 // No limitAlphaRows entry (K25, docs/measurements/k25_2026-11-09/summary.txt): at 15000x10000 Rust won
-// limitAlphaRows=js:rust on fill_limit (6213.3 vs 10880.1 ms wall, lower by 4666.9 > spread 1447.3; kernel row 6092.4
-// vs 10728.2 ms; before/after on Rust 11829.1 -> 6036.1 ms wall, 1.96x; export_test fill_limit_rows 11178 -> 6209 ms,
-// 1.80x, psd_fill_limit 16665 -> 9919 ms, 1.68x).
+// limitAlphaRows=js:rust on fill_limit (snapped path: 6213.3 vs 10880.1 ms wall, lower by 4666.9 > spread 1447.3;
+// kernel row 6092.4 vs 10728.2 ms; before/after on Rust 11829.1 -> 6036.1 ms wall, 1.96x; export_test fill_limit_rows
+// 11178 -> 6209 ms, 1.80x, psd_fill_limit fillRowsMs 12141 -> 6496 ms, 1.87x; plain bilinear path measured at the
+// kernel row only, PX_BENCH 15000x256: twin 100.16 vs simd 85.98 / scalar 88.06 ms, 1.16x).
 // crc32 64 (K3, docs/measurements/k3_2026-11-08/summary.txt): 64 B is about a tie decided by the kernel row (Electron V8
 // size sweep: 0.075-0.100 vs 0.028-0.074 us at 16-48 B, 0.093-0.138 vs 0.156-0.235 us at 64-128 B, 1.50-2.53x; 4.97x at
 // 64 KB; 4.26x on w0_bench crc32_64mb); smaller headers (PNG signature, IHDR, 4-byte chunk lengths) stay in JS.

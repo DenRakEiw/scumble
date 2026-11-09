@@ -150,6 +150,16 @@ MUTANTS = [
         "killed",
         {"px": ["range"]},
     ),
+    (
+        "px.js: limitAlphaRows err.doneRows = cy tag dropped on partial-chunk failure",
+        PJ,
+        [(
+            "            } catch (err) {\n                if (cy > 0 && err && typeof err === \"object\") err.doneRows = cy;\n                throw err;",
+            "            } catch (err) {\n                throw err;",
+        )],
+        "killed",
+        {"px": ["retouchRoute"]},
+    ),
     # ---- kernels_js.js: twin guide sampling, rounding, libmExp
     (
         "kernels_js.js: limitAlphaRows col=null guide sampling gx mutated from Math.floor(mx) to 0",
@@ -216,12 +226,28 @@ MUTANTS = [
     (
         "inpaint_limit.js: limitAlphaRows normalizeStoredLimit reverted to strict normalizeLimit (throws on stored non-finite fields)",
         LM,
+        [
+            (
+                "import { WEIGHTS_GLSL, normalizeStoredLimit, limitWeight, u16Bilinear, opp, hexToRgb } from \"./inpaint_weights.js\";",
+                "import { WEIGHTS_GLSL, normalizeLimit, normalizeStoredLimit, limitWeight, u16Bilinear, opp, hexToRgb } from \"./inpaint_weights.js\";",
+            ),
+            (
+                "export function limitAlphaRows(rgba, x0, y0, w, h, limit, map, col = null) {\n    if (!rgba || !limit || w <= 0 || h <= 0) return;\n    const lim = normalizeStoredLimit(limit);",
+                "export function limitAlphaRows(rgba, x0, y0, w, h, limit, map, col = null) {\n    if (!rgba || !limit || w <= 0 || h <= 0) return;\n    const lim = normalizeLimit(limit);",
+            ),
+        ],
+        "killed",
+        {"px": ["range"]},
+    ),
+    (
+        "inpaint_limit.js: limitAlphaRows finite parameter & corner-y guard dropped (throws on stored NaN limit or overflowing xf)",
+        LM,
         [(
-            "export function limitAlphaRows(rgba, x0, y0, w, h, limit, map, col = null) {\n    if (!rgba || !limit || w <= 0 || h <= 0) return;\n    const lim = normalizeStoredLimit(limit);",
-            "export function limitAlphaRows(rgba, x0, y0, w, h, limit, map, col = null) {\n    if (!rgba || !limit || w <= 0 || h <= 0) return;\n    const lim = normalizeLimit(limit);",
+            "        [\n            m[0] * x0 + m[2] * y0 + m[4],\n            m[0] * x1 + m[2] * y0 + m[4],\n            m[0] * x0 + m[2] * y1 + m[4],\n            m[0] * x1 + m[2] * y1 + m[4],\n            m[1] * x0 + m[3] * y0 + m[5],\n            m[1] * x1 + m[3] * y0 + m[5],\n            m[1] * x0 + m[3] * y1 + m[5],\n            m[1] * x1 + m[3] * y1 + m[5],\n        ].every(Number.isFinite) &&\n        [lim.lo, lim.hi, lim.fLo, lim.fHi, sigmaR, tau].every(Number.isFinite)",
+            "        true",
         )],
         "killed",
-        {"px": ["range"], "gates": ["limit"]},
+        {"px": ["range"]},
     ),
     (
         "inpaint_limit.js: limitAlphaRows col=null reverted to passing rgba as snap reference colour (old K25 bug)",
@@ -231,6 +257,6 @@ MUTANTS = [
             "        limitAlphaRowsKernel(rgba, map.data, map.w, map.h, m, x0, y0, w, h, lim, snap, gRaw, col || rgba);\n        return;",
         )],
         "killed",
-        {"px": ["range"], "gates": ["limit"]},
+        {"gates": ["limit"]},
     ),
 ]

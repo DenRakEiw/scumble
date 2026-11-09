@@ -101,8 +101,16 @@ Pins & byte-equality:
 - `selection_test.py` `range_select_luma_color_cases` + `range_select_15k_luma_case`:
   - `after/selection_r1..3.log`: asserts `range_tiles_rgba === 2` on 1600x400 luma and colour and byte-for-byte equality
     between `"rust"` and `"js"` routes; 15k luma wall `832.4 [760.6-989.8] ms` (`2360` partial tiles, `range_tiles_rgba 40`).
-  - `k23-r1-tiles` & `k23-r1-canvas` (`dist/gates/20261108_205737_k23-r1-*`): additionally asserts readable refusals on
-    invalid `color` (`"red"`, `"#xyz"`) and non-numeric `lo/hi/fLo/fHi/tol` on both `tiles` and `canvas` backends.
+  - `k23-r1-tiles` & `k23-r1-canvas` (`dist/gates/gates/k23-r1-{tiles,canvas}`, archived in
+    `after/k23_r1_{tiles,canvas}_{summary.txt,selection.log}`): additionally asserts readable refusals on invalid
+    `color` (`"red"`, `"#xyz"`) and non-numeric `lo/hi/fLo/fHi/tol` on both `tiles` and `canvas` backends:
+    - `after/k23_r1_tiles_selection.log`:
+      `[ok] range_select_luma_color_cases: {"selectedStripes": [102, 119, 136, 153], "redVal": 255, "greenVal": 0, "blueVal": 0, "emptyBounds": true}`
+      `[ok] range_select_15k_luma_case: {"ms": 779.3, "tiles": 2360, "flattenCount": 0}`
+      (`range_select jobs range_tiles_rgba 40`, `PASS`)
+    - `after/k23_r1_canvas_selection.log`:
+      `[ok] range_select_luma_color_cases: {"selectedStripes": [102, 119, 136, 153], "redVal": 255, "greenVal": 0, "blueVal": 0, "emptyBounds": true}`
+      (`PASS`)
 
 Mutation round (`docs/measurements/k23_2026-11-08/mutation/results.txt`, 24 mutants):
 - `24 killed (0 of them only on the re-check), 0 survived of 24; 0 not as expected`

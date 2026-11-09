@@ -1,5 +1,5 @@
 PX_ONLY: only the groups range run (a filtered run, not the full test)
-ok   map_tile_stats 2-texel halo reaches ?2 texels and thresh uses strict >  st500=1234..64321 e=1, st501 e=0
+ok   map_tile_stats 2-texel halo reaches ±2 texels and thresh uses strict >  st500=1234..64321 e=1, st501 e=0
 ok   js mapTileStats equals the plain reference (92 cases)
 ok   rust simd map_tile_stats equals its twin byte for byte (92 cases, each also at an odd offset)
 ok   rust scalar map_tile_stats equals its twin byte for byte (92 cases, each also at an odd offset)
@@ -96,14 +96,14 @@ ok   inpaint_limit.js limitAlphaRows never throws on stored depth limits with no
 ok   limit_alpha_rows refuses invalid inputs across twin, simd, and scalar
 ok   raw limit_alpha_rows returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  okValid=1 okOutLo=0 okOutHi=0
 ok   kernels.js limitAlphaRows routes between twin (0 calls) and rust (1 call) with identical output  jsCalls=0 rustCalls=1
-       map_tile_stats 4096x2731 -> 15000x10000 (depth only): twin 25.89, simd 4.97, scalar 15.72 ms (median of 15)
-       map_tile_stats 4096x2731 -> 15000x10000 (depth + rmax): twin 34.85, simd 7.00, scalar 24.47 ms (median of 15)
-       range_tiles_depth 15000x256 row, plain bilinear (59 tiles): twin 136.11, simd 77.89, scalar 81.42 ms (median of 9)
-       range_tiles_depth 15000x256 row, snapped (59 edge tiles): twin 323.13, simd 144.68, scalar 159.03 ms (median of 9)
-       range_tiles_rgba 15000x256 row, luma (59 tiles): twin 64.72, simd 32.96, scalar 35.74 ms (median of 9)
-       range_tiles_rgba 15000x256 row, colour (59 tiles): twin 161.32, simd 83.51, scalar 98.58 ms (median of 9)
-       limit_alpha_rows 15000x256 row, plain bilinear (15000x256): twin 100.16, simd 85.98, scalar 88.06 ms (median of 9)
-       limit_alpha_rows 15000x256 row, snapped (15000x256): twin 378.04, simd 190.24, scalar 198.02 ms (median of 9)
+       map_tile_stats 4096x2731 -> 15000x10000 (depth only): twin 29.40, simd 5.85, scalar 16.38 ms (median of 15)
+       map_tile_stats 4096x2731 -> 15000x10000 (depth + rmax): twin 45.58, simd 9.13, scalar 25.07 ms (median of 15)
+       range_tiles_depth 15000x256 row, plain bilinear (59 tiles): twin 168.15, simd 75.96, scalar 85.43 ms (median of 9)
+       range_tiles_depth 15000x256 row, snapped (59 edge tiles): twin 364.69, simd 173.33, scalar 171.19 ms (median of 9)
+       range_tiles_rgba 15000x256 row, luma (59 tiles): twin 71.46, simd 36.23, scalar 39.14 ms (median of 9)
+       range_tiles_rgba 15000x256 row, colour (59 tiles): twin 189.48, simd 89.93, scalar 109.50 ms (median of 9)
+       limit_alpha_rows 15000x256 row, plain bilinear (15000x256): twin 105.26, simd 88.56, scalar 91.13 ms (median of 9)
+       limit_alpha_rows 15000x256 row, snapped (15000x256): twin 379.04, simd 193.95, scalar 184.90 ms (median of 9)
 ok   rust simd module reports its SIMD flag
 ok   rust scalar module reports its SIMD flag
 PASS (only: range; PX_ONLY, not the full test)

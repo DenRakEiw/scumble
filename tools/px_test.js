@@ -1615,23 +1615,24 @@ async function retouchRouteCases(js) {
         }
         {
             // Multi-chunk OOM recovery on limitAlphaRows: chunk 0 (rows 0..256) succeeds on Rust, chunk 1 (rows 256..300)
-            // throws PxOutOfMemory; K.limitAlphaRows finishes only rows 256..300 on the twin without double-multiplying rows 0..256
+            // throws PxOutOfMemory inside the real p.limitAlphaRows (which sets err.doneRows = 256); K.limitAlphaRows
+            // finishes only rows 256..300 on the twin without double-multiplying rows 0..256.
             const p = K.rustPx(), i0 = K.pxInstances();
-            const origLimitAlpha = p.limitAlphaRows;
-            p.limitAlphaRows = function (rgba, map, mw, mh, xf, x0, y0, wArg, hArg, limit, snap, guide, col) {
-                origLimitAlpha.call(this, rgba.subarray(0, 256 * wArg * 4), map, mw, mh, xf, x0, y0, wArg, 256, limit, snap, guide, col);
-                try {
-                    this.alloc(0xffff0000);
-                } catch (err) {
-                    if (err && typeof err === "object") err.doneRows = 256;
-                    throw err;
+            const larBuf = larInit.slice();
+            const origIn = p._in;
+            let rgbaChunkCopies = 0;
+            p._in = function (arena, src, bytes) {
+                if (src && src.buffer === larBuf.buffer) {
+                    rgbaChunkCopies++;
+                    if (rgbaChunkCopies === 2) return this.alloc(0xffff0000);
                 }
+                return origIn.call(this, arena, src, bytes);
             };
-            const got = K.limitAlphaRows(larInit.slice(), rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null);
+            const got = K.limitAlphaRows(larBuf, rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null);
             const after = K.rustPx(), i1 = K.pxInstances();
-            if (!(eqBytes(got, want.lar) && after !== p && i1.oom === i0.oom + 1)) {
+            if (!(eqBytes(got, want.lar) && rgbaChunkCopies === 2 && after !== p && i1.oom === i0.oom + 1)) {
                 ok = false;
-                detail = `limitAlphaRowsOom: ${firstDiff(got, want.lar)} ${JSON.stringify(i1)}`;
+                detail = `limitAlphaRowsOom: copies=${rgbaChunkCopies} ${firstDiff(got, want.lar)} ${JSON.stringify(i1)}`;
             }
         }
         check("kernels.js K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
@@ -7883,22 +7884,35 @@ async function rangeCases(js, simd, scalar, resample, K) {
             && aLeftUniformCol === 0 && aLeftNoGuide === 0,
             `calls=${guideCalls}/${colCalls}/${noGuideCalls} guide=[${aLeftGuide},${aRightGuide}] uniformCol=${aLeftUniformCol} noGuide=${aLeftNoGuide}`);
 
-        // Stored depth limits with non-finite fields never throw on export
+        // Stored depth limits with non-finite fields, bad map.meta.snap.strength, or overflowing corner-y map transforms never throw on export
         let storedOk = true, storedDetail = "";
-        for (const badLim of [
-            { source: "depth", lo: "bad", hi: 0.8 },
-            { source: "depth", lo: 0.2, hi: "bad" },
-            { source: "depth", lo: 0.2, hi: 0.8, fLo: "bad" },
-            { source: "depth", lo: 0.2, hi: 0.8, fHi: Infinity },
-            { source: "depth", lo: 0.2, hi: 0.8, snap: { enabled: true, strength: "bad" } },
+        const mapBadSnap = makeMap("depth", mw, mh, mapData, [W, 0, 0, H, 0, 0], { snap: { strength: "bad" } }, guideData);
+        const mapOverflowXf = makeMap("depth", 4, 2048, new Uint16Array(4 * 2048).fill(32768), [1, 1, 0, 1e-302, 0, 0], { snap: { strength: 50 } }, new Uint8Array(4 * 2048 * 4).fill(128));
+        for (const [badLim, mObj, bx0, by0, bw, bh] of [
+            [{ source: "depth", lo: "bad", hi: 0.8 }, mapWithGuide, 0, 0, 16, 16],
+            [{ source: "depth", lo: 0.2, hi: "bad" }, mapWithGuide, 0, 0, 16, 16],
+            [{ source: "depth", lo: 0.2, hi: 0.8, fLo: "bad" }, mapWithGuide, 0, 0, 16, 16],
+            [{ source: "depth", lo: 0.2, hi: 0.8, fHi: Infinity }, mapWithGuide, 0, 0, 16, 16],
+            [limSnap, mapBadSnap, 0, 0, 16, 16],
+            [limSnap, mapOverflowXf, 0, 768, 1200, 256],
         ]) {
             try {
-                const buf = new Uint8Array(16 * 16 * 4).fill(200);
-                limitAlphaRowsHigh(buf, 0, 0, 16, 16, badLim, mapWithGuide);
+                const buf = new Uint8Array(bw * bh * 4).fill(200);
+                limitAlphaRowsHigh(buf, bx0, by0, bw, bh, badLim, mObj);
             } catch (err) {
                 storedOk = false;
-                storedDetail = `${JSON.stringify(badLim)} threw ${err}`;
+                storedDetail = `${JSON.stringify(badLim)} @(${bx0},${by0},${bw},${bh}) threw ${err}`;
                 break;
+            }
+        }
+        // Also verify px.js limitAlphaRows directly when corner ry00..ry11 overflows to -Inf + Inf = NaN
+        if (storedOk) {
+            try {
+                const buf = new Uint8Array(1200 * 4 * 4).fill(200);
+                simd.limitAlphaRows(buf, new Uint16Array(4 * 2048).fill(32768), 4, 2048, [1, -2.048e305, 0, 2.048e305, 0, 0], 0, 1022, 1200, 4, limSnap);
+            } catch (err) {
+                storedOk = false;
+                storedDetail = `px.limitAlphaRows corner-NaN threw ${err}`;
             }
         }
         K.setKernels("js");

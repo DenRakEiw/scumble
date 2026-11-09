@@ -226,6 +226,7 @@ export function limitAlphaRows(rgba, x0, y0, w, h, limit, map, col = null) {
     const gw = (map && map.guide && map.guide.w != null) ? (map.guide.w | 0) : (map ? map.w : 0);
     const gh = (map && map.guide && map.guide.h != null) ? (map.guide.h | 0) : (map ? map.h : 0);
 
+    const x1 = x0 + w, y1 = y0 + h;
     if (
         lim.source === "depth" &&
         map &&
@@ -241,6 +242,16 @@ export function limitAlphaRows(rgba, x0, y0, w, h, limit, map, col = null) {
         Array.isArray(m) &&
         m.length >= 6 &&
         m.every(Number.isFinite) &&
+        [
+            m[0] * x0 + m[2] * y0 + m[4],
+            m[0] * x1 + m[2] * y0 + m[4],
+            m[0] * x0 + m[2] * y1 + m[4],
+            m[0] * x1 + m[2] * y1 + m[4],
+            m[1] * x0 + m[3] * y0 + m[5],
+            m[1] * x1 + m[3] * y0 + m[5],
+            m[1] * x0 + m[3] * y1 + m[5],
+            m[1] * x1 + m[3] * y1 + m[5],
+        ].every(Number.isFinite) &&
         [lim.lo, lim.hi, lim.fLo, lim.fHi, sigmaR, tau].every(Number.isFinite)
     ) {
         limitAlphaRowsKernel(rgba, map.data, map.w, map.h, m, x0, y0, w, h, lim, snap, gRaw, col);
