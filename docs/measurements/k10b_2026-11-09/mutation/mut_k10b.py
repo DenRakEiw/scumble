@@ -150,6 +150,78 @@ MUTANTS = [
         "expect": "killed",
         "note": "Return adler = 0 in pngPartFromPtr",
     },
+    {
+        "id": "M15_drop_psrc_zero_fill",
+        "file": "renderer/editor/inpaint_worker.js",
+        "rust": False,
+        "find": "            p.u8().fill(0, psrc, psrc + byteLen);\n            if (!storeRowsToWasm(p, l, X0, W, Y0, n, psrc, false)) {",
+        "replace": "            if (!storeRowsToWasm(p, l, X0, W, Y0, n, psrc, false)) {",
+        "expect": "killed",
+        "note": "T1: remove p.u8().fill(0, psrc, psrc + byteLen) before storeRowsToWasm on a layer",
+    },
+    {
+        "id": "M16_drop_pm_zero_fill",
+        "file": "renderer/editor/inpaint_worker.js",
+        "rust": False,
+        "find": "        if (l.mask) {\n            pm = a.take(px);\n            p.u8().fill(0, pm, pm + px);\n            storeRowsToWasm(p, { x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, X0, W, Y0, n, pm, true);\n        }",
+        "replace": "        if (l.mask) {\n            pm = a.take(px);\n            storeRowsToWasm(p, { x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, X0, W, Y0, n, pm, true);\n        }",
+        "expect": "killed",
+        "note": "T2: remove p.u8().fill(0, pm, pm + px) before gathering l.mask with missing tiles",
+    },
+    {
+        "id": "M17_drop_pbm_zero_fill",
+        "file": "renderer/editor/inpaint_worker.js",
+        "rust": False,
+        "find": "            if (c.mask) {\n                pbm = a.take(px);\n                p.u8().fill(0, pbm, pbm + px);\n                storeRowsToWasm(p, { x: c.x, y: c.y, w: c.w, h: c.h, tiles: c.mask }, X0, W, Y0, n, pbm, true);\n            }",
+        "replace": "            if (c.mask) {\n                pbm = a.take(px);\n                storeRowsToWasm(p, { x: c.x, y: c.y, w: c.w, h: c.h, tiles: c.mask }, X0, W, Y0, n, pbm, true);\n            }",
+        "expect": "killed",
+        "note": "T2: remove p.u8().fill(0, pbm, pbm + px) before gathering c.mask with missing tiles",
+    },
+    {
+        "id": "M18_clip_bmview_without_null_check",
+        "file": "renderer/editor/inpaint_worker.js",
+        "rust": False,
+        "find": "                const bmView = pbm ? p.view(Uint8Array, pbm, px) : null;",
+        "replace": "                const bmView = p.view(Uint8Array, pbm, px);",
+        "expect": "killed",
+        "note": "T3: drop pbm ? ... : null check in stackRowsToWasm clipCoverage branch",
+    },
+    {
+        "id": "M19_dissolve_wrong_imgy_on_above",
+        "file": "renderer/editor/inpaint_worker.js",
+        "rust": False,
+        "find": "                for (let r = 0; r < n; r++) {\n                    const imgY = Y0 + r;",
+        "replace": "                for (let r = 0; r < n; r++) {\n                    const imgY = (msg.y | 0) + r;",
+        "expect": "killed",
+        "note": "T4: use (msg.y | 0) + r instead of Y0 + r in stackRowsToWasm dissolve loop (wrong on above pass)",
+    },
+    {
+        "id": "M20_partptrof_outside_try",
+        "file": "renderer/editor/inpaint_worker.js",
+        "rust": False,
+        "find": "        let r = null, tc = 0, tp = 0;\n        try {\n            const ptrs = partPtrOf(p, a, msg, true);",
+        "replace": "        let r = null, tc = 0, tp = 0;\n        const ptrs = partPtrOf(p, a, msg, true);\n        try {",
+        "expect": "killed",
+        "note": "K10B-MEMFAIL-1: move partPtrOf(p, a, msg, true) outside pngPart try block",
+    },
+    {
+        "id": "M21_pngpart_drop_reset",
+        "file": "renderer/editor/inpaint_worker.js",
+        "rust": False,
+        "find": "        } finally {\n            p._reset(a);\n            releaseIfLarge();\n        }",
+        "replace": "        } finally {\n            releaseIfLarge();\n        }",
+        "expect": "killed",
+        "note": "K10B-MEMFAIL-2 / T5: drop p._reset(a) from pngPart finally block",
+    },
+    {
+        "id": "M22_pngpart_drop_release_if_large",
+        "file": "renderer/editor/inpaint_worker.js",
+        "rust": False,
+        "find": "        } finally {\n            p._reset(a);\n            releaseIfLarge();\n        }",
+        "replace": "        } finally {\n            p._reset(a);\n        }",
+        "expect": "killed",
+        "note": "K10B-MEMFAIL-2 / T5: drop releaseIfLarge() from pngPart finally block",
+    },
 ]
 
 
@@ -187,7 +259,7 @@ def main():
             try:
                 ok_test, test_out = run_test()
                 status = "survived" if ok_test else "killed"
-                fails = [l for l in test_out.splitlines() if l.startswith("FAIL") or "Error:" in l]
+                fails = [l for l in test_out.splitlines() if l.startswith("FAIL") or "Error:" in l or "PxOutOfMemory:" in l]
                 detail = fails[0] if fails else "all checks passed"
             finally:
                 with open(p, "w", encoding="utf-8", newline="") as f:

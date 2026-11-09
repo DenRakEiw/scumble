@@ -1152,14 +1152,23 @@ const lw0 = 524, lh0 = 420;
     l.maskPx = M.fromCanvas(m);
     l.maskDirty = false;
 }
-// (3) Dissolve layer
+// (3) Unmasked clip base (pbm = 0) + clipped layer over it
+{
+    const w = 360, h = 280;
+    const cb = ed.addLayer({ name: "UnmaskedClipBase", kind: "paint", px: L.fromCanvas(paint(mk(w, h), 85)), x: 90, y: 110, w, h, dirty: false });
+    cb.opacity = 0.8;
+    const cl = ed.addLayer({ name: "ClippedToUnmasked", kind: "paint", px: L.fromCanvas(paint(mk(w, h), 220)), x: 100, y: 120, w, h, dirty: false });
+    cl.clip = true;
+    cl.opacity = 0.9;
+}
+// (4) Dissolve layer
 {
     const w = 500, h = 360;
     const l = ed.addLayer({ name: "Dissolve", kind: "paint", px: L.fromCanvas(paint(mk(w, h), 280)), x: 60, y: 140, w, h, dirty: false });
     l.blend = "dissolve";
     l.opacity = 0.65;
 }
-// (4) Colour-matched layer
+// (5) Colour-matched layer
 {
     const w = 400, h = 300;
     const l = ed.addLayer({ name: "Matched", kind: "result", px: L.fromCanvas(paint(mk(w, h), 15)), x: 200, y: 120, w, h, dirty: false });
@@ -1217,6 +1226,17 @@ try {
     if (stackDiff.bytes || stackRust.hash !== stackJs.hash) {
         throw new Error("composeStack rust vs js PNG bytes differ: " + JSON.stringify({ stackDiff, rustHash: stackRust.hash, jsHash: stackJs.hash }));
     }
+    if (tileBytesRust.length < 50000 || stackBytesRust.length < 100000) {
+        throw new Error("unexpectedly small PNG exports: " + JSON.stringify({ tileBytes: tileBytesRust.length, stackBytes: stackBytesRust.length }));
+    }
+    const bmp = await createImageBitmap(stackRust.blob);
+    const chk = mk(1, 1), chkx = chk.getContext("2d");
+    chkx.drawImage(bmp, W >> 1, H >> 1, 1, 1, 0, 0, 1, 1);
+    bmp.close();
+    const midPx = Array.from(chkx.getImageData(0, 0, 1, 1).data);
+    if (midPx[3] === 0 || (midPx[0] === 0 && midPx[1] === 0 && midPx[2] === 0)) {
+        throw new Error("decoded center pixel of stack PNG is empty: " + JSON.stringify(midPx));
+    }
 
     return {
         tileParts: tileRustJobs.length,
@@ -1225,6 +1245,7 @@ try {
         stackBytes: stackBytesRust.length,
         tileHash: tileRust.hash,
         stackHash: stackRust.hash,
+        midPx,
     };
 } finally {
     E.setRoute("composeTiles", null);
@@ -1310,7 +1331,8 @@ try {
 # python tools/export_test.py --perf 15000x10000: the timings of a large document (printed, not gated). Options:
 # --filter=<type> the filter layer (levels unless given; fill, gradient, film.look, any type FILTERS holds),
 # --filter-params=k:v+k:v, --limit=source:lo:hi:fLo:fHi[:inv] on that layer (a depth limit makes a ramp map of
-# --map=WxH, 4096x2731 unless given), --blend=<mode> on the paint layers, and --fill-limit[=lo:hi:fLo:fHi[:inv]]: a
+# --map=WxH, 4096x2731 unless given), --blend=<mode> on the paint layers, --set NAME=V (or --set=NAME=V) to override
+# route entries via E.setRoute, and --fill-limit[=lo:hi:fLo:fHi[:inv]]: a
 # fill layer with a depth limit on top and the rows `fill_limit_rows` (fillPixels and limitAlphaRows apart) and
 # `psd_fill_limit` (the PSD with it; `fillRowsMs` its rows' reads in the writer)
 PERF = """
@@ -1745,6 +1767,10 @@ async def run_all(c):
         res = await c.eval(PRE % (HELPERS, perf_js), timeout=1800)
         print(json.dumps(res, indent=1))
         return True
+    if any(a == "--set" or a.startswith("--set=") for a in sys.argv[1:]):
+        print("[FAIL] --set is only supported with --perf")
+        print("FAIL")
+        return False
     only = [a for a in sys.argv[1:] if not a.startswith("-")]
     folder = tempfile.mkdtemp(prefix="scumble-export-saves-")
     try:

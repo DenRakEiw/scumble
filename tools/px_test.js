@@ -5009,12 +5009,21 @@ async function composeWasmPartCases(px, label, png, zlib) {
         const checkStackCase = (caseName, msg) => {
             const a = px.job;
             let gotBand, gotAbove, gotPart, wantBand, wantAbove, wantPart;
+            // Dirty the arena's reusable first chunk and byte 0 of linear memory so any missing zero-fill (psrc, pm, pbm)
+            // or missing null check on pbm = 0 immediately corrupts the output.
+            const dirtyBytes = msg.w * msg.rows * 16;
+            const dirtyPtr = a.take(dirtyBytes);
+            px.u8().fill(0xDD, dirtyPtr, dirtyPtr + dirtyBytes);
+            px._reset(a);
+            const savedByte0 = px.u8()[0];
+            px.u8()[0] = 7;
             try {
                 const pd = W.stackRowsToWasm(px, a, msg, false, null);
                 gotBand = px.u8().slice(pd, pd + msg.w * msg.rows * 4);
                 const pp = (msg.y | 0) > 0 ? W.stackRowsToWasm(px, a, msg, true, null) : 0;
                 gotAbove = pp ? px.u8().slice(pp, pp + msg.w * 4) : null;
             } finally {
+                px.u8()[0] = savedByte0;
                 px._reset(a);
             }
             wantBand = W.rowsOfStack(msg, false, null);
@@ -5064,19 +5073,21 @@ async function composeWasmPartCases(px, label, png, zlib) {
         const r2c = checkStackCase("2c part boundary y=256", { ...part2c.args, w: Wd, rows: 32, level: 2, last: false });
         check(`${label} stackRowsToWasm (2c): separate above pass at part boundary y=256 with layers starting and ending at 256`, r2c.ok, r2c.detail);
 
-        // (2d) Offset and negative-offset layers (x: 300, y: 140 and x: -50, y: -30) and non-zero x0 (x0: 128)
+        // (2d) Offset and negative-offset layers (including an unmasked partial layer narrower than the band, and a layer
+        // mask with a null tile and a missing tile row under existing layer pixels) and non-zero x0 (x0: 128)
         const maskTile1 = makeTile(231), maskTile2 = makeTile(232);
-        const r2d = checkStackCase("2d offset layers and x0=128", {
+        const r2d = checkStackCase("2d offset layers, partial unmasked layer, and mask holes at x0=128", {
             w: 240, rows: 60, y: 120, x0: 128, y0: 0, level: 2, last: true,
             stack: {
                 base: baseStore,
                 layers: [
+                    { x: 160, y: 130, w: 120, h: 35, alpha: 215, op: 0, tiles: { 0: [makeTile(238)] } },
                     { x: 300, y: 140, w: 200, h: 200, alpha: 220, op: 0, tiles: { 0: [makeTile(233)] }, mask: { 0: [maskTile1] } },
-                    { x: -50, y: -30, w: 450, h: 300, alpha: 170, op: 6, tiles: { 0: [makeTile(234), makeTile(235)], 1: [makeTile(236), makeTile(237)] }, mask: { 0: [maskTile2, maskTile1], 1: [maskTile1, maskTile2] } },
+                    { x: -50, y: -30, w: 450, h: 300, alpha: 170, op: 6, tiles: { 0: [makeTile(234), makeTile(235)], 1: [makeTile(236), makeTile(237)] }, mask: { 0: [maskTile2, null] } },
                 ],
             },
         });
-        check(`${label} stackRowsToWasm (2d): positive/negative layer offsets and non-zero x0 clip identically to storeRows`, r2d.ok, r2d.detail);
+        check(`${label} stackRowsToWasm (2d): positive/negative layer offsets, unmasked partial layer, and mask holes clip identically to storeRows`, r2d.ok, r2d.detail);
 
         // (2e) Color-matched layer (10 floats: meanS[3], meanT[3], scale[3], k) between other blend layers
         const matchFloats = [110.5, 95.2, 80.1, 130.0, 105.5, 90.0, 1.15, 0.92, 1.08, 0.85];
@@ -5093,7 +5104,8 @@ async function composeWasmPartCases(px, label, png, zlib) {
         });
         check(`${label} stackRowsToWasm (2e): 10-float match_pixels layer between blend layers equals rowsOfStack`, r2e.ok, r2e.detail);
 
-        // (2f) Two layers clipped to the same clip base (with A=0 holes, soft-alpha ramp, and c.mask) and distinct own masks
+        // (2f) Two layers clipped to the same masked clip base (with A=0 holes, soft-alpha ramp, and a null-tile hole in
+        // c.mask under existing clip base pixels), plus a layer clipped to an unmasked clip base (pbm = 0)
         const clipBaseTile = makeTile(251, (u8, o, x, y) => {
             u8[o] = 100; u8[o + 1] = 150; u8[o + 2] = 200;
             u8[o + 3] = (x + y) % 4 === 0 ? 0 : ((x * 7 + y * 13) & 255);
@@ -5104,23 +5116,29 @@ async function composeWasmPartCases(px, label, png, zlib) {
         const ownMaskA = makeTile(253, (u8, o, x, y) => { u8[o + 3] = (x * 3 + y * 17 + 40) & 255; });
         const ownMaskB = makeTile(254, (u8, o, x, y) => { u8[o + 3] = (255 - ((x * 9 + y * 7) & 255)) & 255; });
         const sharedClip = {
-            x: 10, y: 5, w: 256, h: 256, alpha: 185,
-            tiles: { 0: [clipBaseTile] },
-            mask: { 0: [clipBaseMaskTile] },
+            x: 10, y: 5, w: 512, h: 256, alpha: 185,
+            tiles: { 0: [clipBaseTile, makeTile(257)] },
+            mask: { 0: [clipBaseMaskTile, null] },
         };
-        const r2f = checkStackCase("2f two clipped layers", {
-            w: 256, rows: 48, y: 12, x0: 0, y0: 0, level: 2, last: true,
+        const unmaskedClip = {
+            x: 6, y: 4, w: 256, h: 256, alpha: 195,
+            tiles: { 0: [clipBaseTile] },
+        };
+        const r2f = checkStackCase("2f clipped layers (masked base with hole + unmasked base)", {
+            w: 320, rows: 48, y: 12, x0: 0, y0: 0, level: 2, last: true,
             stack: {
                 base: baseStore,
                 layers: [
-                    { x: 0, y: 0, w: 256, h: 256, alpha: 240, op: 0, tiles: { 0: [makeTile(255)] }, mask: { 0: [ownMaskA] }, clip: sharedClip },
-                    { x: 0, y: 0, w: 256, h: 256, alpha: 210, op: 5, tiles: { 0: [makeTile(256)] }, mask: { 0: [ownMaskB] }, clip: sharedClip },
+                    { x: 0, y: 0, w: 512, h: 256, alpha: 240, op: 0, tiles: { 0: [makeTile(255), makeTile(258)] }, mask: { 0: [ownMaskA, null] }, clip: sharedClip },
+                    { x: 0, y: 0, w: 512, h: 256, alpha: 210, op: 5, tiles: { 0: [makeTile(256), makeTile(259)] }, mask: { 0: [null, ownMaskB] }, clip: sharedClip },
+                    { x: 0, y: 0, w: 256, h: 256, alpha: 225, op: 0, tiles: { 0: [makeTile(260)] }, mask: { 0: [ownMaskA] }, clip: unmaskedClip },
                 ],
             },
         });
-        check(`${label} stackRowsToWasm (2f): two clipped layers over a clip base with holes and c.mask keep independent coverage buffers`, r2f.ok, r2f.detail);
+        check(`${label} stackRowsToWasm (2f): two clipped layers over a masked clip base (with c.mask hole) and a clipped layer over an unmasked clip base (pbm=0)`, r2f.ok, r2f.detail);
 
-        // (2g) Dissolve layer including partial coverage (0 < cVal < 255) and opaque cVal === 255 where (hash32 >>> 24) === 255
+        // (2g) Dissolve layer at y = 16 > 0 (so the above pass at y = 15 is non-null and compared directly) including
+        // partial coverage (0 < cVal < 255) and opaque cVal === 255 where (hash32 >>> 24) === 255
         const dissolveSeed = 0x13579BDF;
         let hitHash255 = false;
         const dissolveTile = makeTile(261, (u8, o, x, y) => {
@@ -5128,17 +5146,17 @@ async function composeWasmPartCases(px, label, png, zlib) {
             u8[o + 1] = (y * 23 + 77) & 255;
             u8[o + 2] = ((x + y) * 11) & 255;
             const top = hash32(x, y, dissolveSeed) >>> 24;
-            if (top === 255) {
+            if (top === 255 && y >= 15 && y < 64) {
                 hitHash255 = true;
-                u8[o + 3] = 255;   // cVal === 255 at a coordinate where top hash byte is 255
+                u8[o + 3] = 255;   // cVal === 255 at a coordinate inside y = 15..63 where top hash byte is 255
             } else if ((x + y) % 7 === 0) {
                 u8[o + 3] = 0;
             } else {
                 u8[o + 3] = 1 + ((x * 5 + y * 9) % 254);
             }
         });
-        const r2gOpaque = checkStackCase("2g dissolve opaque + partial", {
-            w: 256, rows: 64, y: 0, x0: 0, y0: 0, level: 2, last: true,
+        const r2gOpaque = checkStackCase("2g dissolve opaque + partial at y=16", {
+            w: 256, rows: 48, y: 16, x0: 0, y0: 0, level: 2, last: true,
             stack: {
                 base: baseStore,
                 layers: [
@@ -5147,13 +5165,13 @@ async function composeWasmPartCases(px, label, png, zlib) {
                 ],
             },
         });
-        check(`${label} stackRowsToWasm (2g): dissolve layer (partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack`, hitHash255 && r2gOpaque.ok, r2gOpaque.detail || `hitHash255=${hitHash255}`);
+        check(`${label} stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack`, hitHash255 && r2gOpaque.ok, r2gOpaque.detail || `hitHash255=${hitHash255}`);
 
-        // (2h) Fresh-instance memory.grow test: > 2 MiB multi-layer band grows freshPx.memory.buffer and stays byte-identical
+        // (2h) Fresh-instance memory.grow test at y = 12 > 0: > 2 MiB multi-layer band grows freshPx.memory.buffer and stays byte-identical on both band and above row
         const freshPx = new P.Px(new WebAssembly.Instance(px.module, {}), px.module);
         const buf0 = freshPx.memory.buffer;
         const growMsg = {
-            w: 512, rows: 256, y: 0, x0: 0, y0: 0,
+            w: 512, rows: 244, y: 12, x0: 0, y0: 0,
             stack: {
                 base: { x: 0, y: 0, w: 512, h: 256, tiles: { 0: [makeTile(271), makeTile(272)] } },
                 layers: [
@@ -5164,20 +5182,24 @@ async function composeWasmPartCases(px, label, png, zlib) {
             },
         };
         const fa = freshPx.job;
-        let freshOut;
+        let freshOut, freshAbove;
         try {
             const pd = W.stackRowsToWasm(freshPx, fa, growMsg, false, null);
-            freshOut = freshPx.u8().slice(pd, pd + 512 * 256 * 4);
+            freshOut = freshPx.u8().slice(pd, pd + 512 * 244 * 4);
+            const pp = W.stackRowsToWasm(freshPx, fa, growMsg, true, null);
+            freshAbove = freshPx.u8().slice(pp, pp + 512 * 4);
         } finally {
             freshPx._reset(fa);
         }
         const grew = freshPx.memory.buffer !== buf0;
         const wantGrow = W.rowsOfStack(growMsg, false, null);
-        check(`${label} stackRowsToWasm (2h): fresh instance grows memory.buffer mid-job and produces identical bytes to rowsOfStack`,
-            grew && eqBytes(freshOut, wantGrow), `grew=${grew} ${firstDiff(freshOut, wantGrow)}`);
+        const wantGrowAbove = W.rowsOfStack(growMsg, true, null);
+        check(`${label} stackRowsToWasm (2h): fresh instance grows memory.buffer mid-job and produces identical band and above-row bytes to rowsOfStack`,
+            grew && eqBytes(freshOut, wantGrow) && eqBytes(freshAbove, wantGrowAbove),
+            `grew=${grew} band=${firstDiff(freshOut, wantGrow)} above=${firstDiff(freshAbove, wantGrowAbove)}`);
     }
 
-    // 3. Route overrides (composeTiles, composeStack) and trap/OOM fallback in worker pngPart(msg)
+    // 3. Route overrides (composeTiles, composeStack), arena reset & releaseMB, and gather/kernel trap/OOM fallback in worker pngPart(msg)
     if (label === "rust simd") {
         const tileMsg = {
             w: 256, rows: 32, r0: 0, level: 2, last: true,
@@ -5192,11 +5214,42 @@ async function composeWasmPartCases(px, label, png, zlib) {
         };
         try {
             const tRust = await W.pngPart(tileMsg);
+            const afterTileJobBytes = K.rustPx().job.jobBytes;
+            const afterTileChunks = K.rustPx().job.chunks.length;
+
+            const sRust = await W.pngPart(stackMsg);
+            const afterStack1JobBytes = K.rustPx().job.jobBytes;
+            const afterStack1Chunks = K.rustPx().job.chunks.length;
+            const memAfter1 = K.rustPx().memory.buffer.byteLength;
+            const chunkBytesAfter1 = K.rustPx().job.chunks[0] ? K.rustPx().job.chunks[0].bytes : 0;
+            for (let rep = 0; rep < 3; rep++) await W.pngPart(stackMsg);
+            const afterStack4JobBytes = K.rustPx().job.jobBytes;
+            const afterStack4Chunks = K.rustPx().job.chunks.length;
+            const memAfter4 = K.rustPx().memory.buffer.byteLength;
+            const chunkBytesAfter4 = K.rustPx().job.chunks[0] ? K.rustPx().job.chunks[0].bytes : 0;
+
+            let rel0, rel1;
+            K.setRoute("releaseMB", 0);
+            try {
+                rel0 = K.pxInstances().release;
+                await W.pngPart(stackMsg);
+                rel1 = K.pxInstances().release;
+            } finally {
+                K.setRoute("releaseMB", null);
+            }
+            const resetAndReleaseOk = afterTileJobBytes === 0 && afterTileChunks === 1
+                && afterStack1JobBytes === 0 && afterStack1Chunks === 1
+                && afterStack4JobBytes === 0 && afterStack4Chunks === 1
+                && memAfter4 === memAfter1 && chunkBytesAfter4 === chunkBytesAfter1
+                && rel1 === rel0 + 1;
+            check("inpaint_worker.js pngPart resets p.job after every part (jobBytes=0, 1 chunk, stable memory across repeated parts) and calls releaseIfLarge()",
+                resetAndReleaseOk,
+                `jobBytes=${afterTileJobBytes}/${afterStack1JobBytes}/${afterStack4JobBytes} chunks=${afterTileChunks}/${afterStack1Chunks}/${afterStack4Chunks} mem=${memAfter1}->${memAfter4} rel=${rel0}->${rel1}`);
+
             K.setRoute("composeTiles", "js");
             const tJs = await W.pngPart(tileMsg);
             K.setRoute("composeTiles", null);
 
-            const sRust = await W.pngPart(stackMsg);
             K.setRoute("composeStack", "js");
             const sJs = await W.pngPart(stackMsg);
             K.setRoute("composeStack", null);
@@ -5208,14 +5261,29 @@ async function composeWasmPartCases(px, label, png, zlib) {
             check("inpaint_worker.js pngPart under composeTiles and composeStack routes: composeWasm=1 on rust, composeWasm=0 on js, identical IDAT chunks",
                 routeOk, `tRust=${tRust.timing.composeWasm} tJs=${tJs.timing.composeWasm} sRust=${sRust.timing.composeWasm} sJs=${sJs.timing.composeWasm}`);
 
-            // Simulated OOM and trap on the pointer path: recovered() replaces the instance and falls back to p.pngPart
+            // Simulated OOM and trap both inside the gather (p0.job.take) and inside pngPartFromPtr: recovered() replaces
+            // the instance and falls back to p.pngPart
             const realWarn = console.warn;
             console.warn = () => {};
             try {
                 let p0 = K.rustPx(), i0 = K.pxInstances();
+                p0.job.take = () => { throw new P.PxOutOfMemory(1024); };
+                const gOom = await W.pngPart(stackMsg);
+                let i1 = K.pxInstances();
+                const gatherOomOk = gOom.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.oom === i0.oom + 1
+                    && eqBytes(new Uint8Array(gOom.chunk), new Uint8Array(sRust.chunk));
+
+                p0 = K.rustPx(); i0 = K.pxInstances();
+                p0.job.take = () => trapIn(p0);
+                const gTrap = await W.pngPart(stackMsg);
+                i1 = K.pxInstances();
+                const gatherTrapOk = gTrap.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.trap === i0.trap + 1
+                    && eqBytes(new Uint8Array(gTrap.chunk), new Uint8Array(sRust.chunk));
+
+                p0 = K.rustPx(); i0 = K.pxInstances();
                 p0.pngPartFromPtr = () => { throw new P.PxOutOfMemory(1024); };
                 const sOom = await W.pngPart(stackMsg);
-                let i1 = K.pxInstances();
+                i1 = K.pxInstances();
                 const oomOk = sOom.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.oom === i0.oom + 1
                     && eqBytes(new Uint8Array(sOom.chunk), new Uint8Array(sRust.chunk));
 
@@ -5226,8 +5294,9 @@ async function composeWasmPartCases(px, label, png, zlib) {
                 const trapOk = tTrap.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.trap === i0.trap + 1
                     && eqBytes(new Uint8Array(tTrap.chunk), new Uint8Array(tRust.chunk));
 
-                check("inpaint_worker.js pngPart recovers from OOM and wasm trap on the pointer path, renews the instance, and produces identical bytes via fallback",
-                    oomOk && trapOk, `oomOk=${oomOk} trapOk=${trapOk}`);
+                check("inpaint_worker.js pngPart recovers from OOM and wasm trap in both partPtrOf (job.take) and pngPartFromPtr, renews the instance, and produces identical bytes via fallback",
+                    gatherOomOk && gatherTrapOk && oomOk && trapOk,
+                    `gatherOomOk=${gatherOomOk} gatherTrapOk=${gatherTrapOk} oomOk=${oomOk} trapOk=${trapOk}`);
             } finally {
                 console.warn = realWarn;
             }

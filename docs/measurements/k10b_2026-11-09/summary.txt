@@ -47,9 +47,9 @@ open_the_file wall                              2,521.0 [2,520.0-2,720.0]     2,
 open_the_file longest block                     479.0 [476.0-511.0]           469.0 [456.0-487.0]           1.02x
 add_the_paint_layer wall                        648.0 [637.0-659.0]           648.0 [637.0-653.0]           1.00x
 add_the_paint_layer longest block               570.0 [559.0-580.0]           572.0 [559.0-574.0]           1.00x
-wand_whole_picture wall                         1,253.0 [1,245.0-1,320.0]     1,273.0 [1,270.0-1,294.0]     0.98x (untouched in K10b)
+wand_whole_picture wall                         1,253.0 [1,245.0-1,320.0]     1,273.0 [1,270.0-1,294.0]     0.98x (tie; spreads overlap, untouched in K10b)
 wand_whole_picture longest block                100.0 [96.0-106.0]            93.0 [89.0-106.0]             1.08x
-wand_whole_picture stack_into kernel            2,155.5 [2,129.3-2,281.6]     2,315.2 [2,297.6-2,342.4]     0.93x (untouched in K10b)
+wand_whole_picture stack_into kernel            2,155.5 [2,129.3-2,281.6]     2,315.2 [2,297.6-2,342.4]     0.93x (loss beyond spread, non-overlapping; stackInto/rowsOfStack untouched in K10b, cause unknown; K10c takes stackIntoWasm baseline from a fresh same-session A/B)
 export_png wall                                 1,010.0 [990.0-1,015.0]       869.0 [868.0-899.0]           1.16x (non-overlapping)
 export_png longest block                        36.0 [35.0-36.0]              32.0 [32.0-35.0]              1.12x
 export_png png_part jobs                        79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
@@ -147,7 +147,7 @@ d) `px_probe.py --retention 15000x10000` (`docs/measurements/k10b_2026-11-09/ret
 
 Route Decisions (`docs/PLAN_WASM_BUILD.md` §1.1 & `docs/PLAN_WASM_K10.md` §9.3):
 - `composeStack`: wins beyond the 3-run spread on `export_png wall` (`1,010.0 [990.0-1,015.0]` -> `869.0 [868.0-899.0] ms`, `1.16x`), `export_png png_part kernel` (`7,475.4` -> `6,514.7 ms`, `1.15x`), `export_png png_part compose` (`1,213.0` -> `609.6 ms`, `1.99x`), and `match_export_png png_part compose` (`1,535.6` -> `797.7 ms`, `1.93x`). Default remains `"rust"` (no `DEFAULT_ROUTES` entry).
-- `composeTiles`: wins beyond the 3-run spread on `exportperf layer_from_tiles wall` (`265.0 [255.0-273.0]` -> `200.0 [192.0-232.0] ms`, `1.32x`) and `png_part kernel` (`1,949.5` -> `1,488.0 ms`, `1.31x`), `export_ora wall` (`2,255.0 [2,204.0-2,329.0]` -> `1,997.0 [1,977.0-2,090.0] ms`, `1.13x`) and `png_part kernel` (`16,653.5` -> `14,715.5 ms`, `1.13x`), `open_psd wall` (`6,466.0 [6,417.0-6,527.0]` -> `6,231.0 [6,167.0-6,333.0] ms`, `1.04x`) and `png_part kernel` (`6,500.9` -> `6,352.4 ms`, `1.02x`), and `png_part rows` across every store row (`open_psd` `1.97x`, `open_ora` `2.10x`, `tiffperf noise` `1.96x`, `tiffperf own` `2.18x`, all non-overlapping). On `open_ora` (`4,845 -> 4,986 ms`) and `tiffperf` `stored` (`noise` `3,343 -> 3,435 ms`, `own` `1,211 -> 1,196 ms`) where whole-operation spreads overlap, the kernel / `rows` laps decide in favour of Rust per §1.1 rule 2. Default remains `"rust"` (no `DEFAULT_ROUTES` entry).
+- `composeTiles`: wins beyond the 3-run spread on its deciding rows (`exportperf layer_from_tiles wall` `265.0 [255.0-273.0]` -> `200.0 [192.0-232.0] ms`, `1.32x` and `png_part kernel` `1,949.5` -> `1,488.0 ms`, `1.31x`; `export_ora wall` `2,255.0 [2,204.0-2,329.0]` -> `1,997.0 [1,977.0-2,090.0] ms`, `1.13x` and `png_part kernel` `16,653.5` -> `14,715.5 ms`, `1.13x`; `open_psd wall` `6,466.0 [6,417.0-6,527.0]` -> `6,231.0 [6,167.0-6,333.0] ms`, `1.04x` and `png_part kernel` `6,500.9` -> `6,352.4 ms`, `1.02x`). On `open_ora` (`4,845 -> 4,986 ms`) and `tiffperf own` `stored` (`1,211 -> 1,196 ms`) where whole-operation spreads overlap, `png_part kernel` is faster (`6,550.5 -> 6,300.7 ms`, `1.04x`, and `5,816.9 -> 5,288.5 ms`, `1.10x`), passing §1.1 rule 2. `tiffperf noise` ties on wall (`7,710 -> 7,616 ms`, `stored` `3,343 -> 3,435 ms`) and does not pass the `timing.kernel` tie-breaker (`16,733.2 -> 17,033.5 ms`, `0.98x`, where deflate is `15.3-15.7 s` of it; only `png_part rows` is faster at `367.9 -> 187.6 ms`, `1.96x`), so `composeTiles` rests on its deciding rows (`layer_from_tiles`, `export_ora`, `open_psd`, `open_ora`). Default remains `"rust"` (no `DEFAULT_ROUTES` entry).
 
 3. Unit & Parity Suites (`tools/px_test.js` & `tools/boxstack_test.js`)
 -----------------------------------------------------------------------
@@ -158,8 +158,8 @@ Route Decisions (`docs/PLAN_WASM_BUILD.md` §1.1 & `docs/PLAN_WASM_K10.md` §9.3
 ----------------------------------------------------------------------------
 Command:
   python docs/measurements/k10b_2026-11-09/mutation/mut_k10b.py
-- 15 targeted mutants across `renderer/editor/inpaint_worker.js` (12, including all 7 K10b plan mutants) and `renderer/editor/px/px.js` (3):
-  - **15 killed**, **0 survived**, **0 unexpected** (36.0s).
+- 23 targeted mutants across `renderer/editor/inpaint_worker.js` (20) and `renderer/editor/px/px.js` (3):
+  - **23 killed**, **0 survived**, **0 unexpected**.
 
 5. Gates (`dist/gates/gates/`)
 ------------------------------
