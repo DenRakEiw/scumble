@@ -172,6 +172,27 @@ async function main() {
         await toapis.edit(editReq(g, { width: 2048, height: 1536, params: { channel: "standard", quality: "max" } }), ctxFor(s6));
         const b6 = s6.submits[0];
         check("gpt 2.5 standard: a preset ratio, the 2K tier, no quality", b6.model === "gpt-image-2.5-flare" && b6.size === "4:3" && b6.resolution === "2K" && !("quality" in b6), JSON.stringify(b6));
+
+        // review PRV-2: prototype-polluting segments (__proto__, constructor, prototype) are refused before any upload and in _body
+        for (const badKey of ["__proto__.polluted", "metadata.__proto__.polluted", "constructor.prototype.polluted", "prototype.polluted"]) {
+            const sBad = fakeServer();
+            const reqBad = editReq(v, { params: { [badKey]: "PUT" } });
+            const eRun = await throws(() => toapis.edit(reqBad, ctxFor(sBad)));
+            const eBody = await throws(() => toapis._body(reqBad, toapis._channel(reqBad), { images: [], mask: null }, { size: "1:1", tier: "1K" }));
+            check(`PRV-2: ${badKey} in params is refused before any upload ("nothing was sent") and in _body, leaving Object.prototype untouched`,
+                !!eRun && /nothing was sent/.test(eRun) && sBad.calls.length === 0 && sBad.uploads.length === 0
+                && !!eBody && /nothing was sent/.test(eBody)
+                && ({}).polluted === undefined && !Object.prototype.hasOwnProperty.call(Object.prototype, "polluted"),
+                JSON.stringify({ eRun, eBody, calls: sBad.calls.length }));
+        }
+        for (const optField of ["tier_key", "seed", "negative"]) {
+            const sOpt = fakeServer();
+            const reqOpt = editReq(v, { negative: "ugly", seed: 9, options: { ...v.options, [optField]: "__proto__.polluted" } });
+            const eOpt = await throws(() => toapis.edit(reqOpt, ctxFor(sOpt)));
+            check(`PRV-2: __proto__.polluted in options.${optField} is refused before any upload, leaving Object.prototype untouched`,
+                !!eOpt && /nothing was sent/.test(eOpt) && sOpt.calls.length === 0 && ({}).polluted === undefined,
+                eOpt);
+        }
     });
 
     // ---- 2b. caps: layout(req) and the builder read one cap, the chosen channel's, as +x > 0 (docs/PLAN_REFS.md 26a2) ----
