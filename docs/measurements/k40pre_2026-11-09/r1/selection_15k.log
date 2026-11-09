@@ -1,0 +1,17 @@
+F:\canvas\tools\selection_test.py:719: SyntaxWarning: invalid escape sequence '\.'
+  [{ source: "color", lo: 0.2, hi: 0.8, color: "red" }, /limit\.color must be #rgb or #rrggbb/],
+[ok] node selection_test.js passed
+[ok] node selection_test.js passed
+[ok] setup: {"doc": 2, "width": 800, "height": 600, "tiles": true}
+[ok] range_select_15k_tile_case: {"ms": 821.6, "tiles": 2301, "flattenCount": 0}
+  range depth 15000x10000: selectRange 821.6 ms (wall 822.4 ms), 2301 partial tiles
+   range_select jobs: 40, summed {"ms": 5367, "tiles": 2301, "gen": 0}
+   px calls: window map_tile_stats 40, mip_chain 48, sel_combine 2301; range_select jobs range_tiles_depth 40
+   marks range: edges 2.5, posted 0.6, combined 804.2, done 14.4 | total 821.7 ms  (source "depth", mode "replace", snap false, readMs 0, pictureTiles 0, jobs 40, combineMs 169.2, ms 821.6, tiles 2301, pct 50)
+[ok] range_select_15k_luma_case: {"ms": 627.3, "tiles": 2360, "flattenCount": 0}
+  range luma 15000x10000: selectRange 627.3 ms (wall 628.1 ms), 2360 partial tiles
+   range_select jobs: 10, summed {"ms": 846, "tiles": 2360, "gen": 0}; the picture in 40 stack_into jobs, kernel 425.4 ms summed
+   px calls: window mip_chain 16, sel_combine 98; range_select jobs range_tiles_rgba 40; stack_into jobs none
+   marks range: held 4.5, combined 607.6, done 15.3 | total 627.4 ms  (source "luma", mode "replace", snap false, program false, readMs 193.7, combineMs 109.9, bands 10, ms 627.3, tiles 2360, pct 100)
+[ok] cleanup: "ok"
+PASS

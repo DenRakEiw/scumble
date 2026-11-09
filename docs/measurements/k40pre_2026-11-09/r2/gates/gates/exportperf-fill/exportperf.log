@@ -1,0 +1,152 @@
+{
+ "size": [
+  15000,
+  10000
+ ],
+ "filter": "levels",
+ "focused": true,
+ "composite_bands": {
+  "ms": 1048,
+  "blocked": 96,
+  "bands": 0,
+  "readMs": 0,
+  "MB": 11.3,
+  "jobs": {
+   "stack_into": {
+    "jobs": 40,
+    "pixels": 150000000,
+    "kernel": 4353,
+    "gen": 0
+   },
+   "png_part": {
+    "jobs": 78,
+    "composeWasm": 0,
+    "pixels": 150000000,
+    "kernel": 1699,
+    "compose": 0,
+    "rows": 0,
+    "prev": 0,
+    "copyIn": 61.4,
+    "filter": 292,
+    "adler": 150.2,
+    "deflate": 1142.1,
+    "chunk": 7.4,
+    "copyOut": 43.4,
+    "gen": 0
+   }
+  }
+ },
+ "layer_from_tiles": {
+  "ms": 191,
+  "blocked": 6,
+  "MB": 0.6,
+  "jobs": {
+   "png_part": {
+    "jobs": 79,
+    "composeWasm": 79,
+    "pixels": 150000000,
+    "kernel": 1407,
+    "compose": 0,
+    "rows": 199.2,
+    "prev": 0,
+    "filter": 236.7,
+    "adler": 141.8,
+    "deflate": 822.7,
+    "chunk": 0.3,
+    "copyOut": 0.5,
+    "gen": 0
+   }
+  }
+ },
+ "composite_canvas": {
+  "ms": 3581,
+  "blocked": 2343,
+  "MB": 36.9,
+  "jobs": {}
+ },
+ "layer_canvas": {
+  "ms": 1394,
+  "blocked": 168,
+  "MB": 2.7,
+  "jobs": {}
+ },
+ "psd": {
+  "ms": 1909,
+  "blocked": 249,
+  "MB": 225.7,
+  "jobs": {
+   "psd_part": {
+    "jobs": 394,
+    "pixels": 750000000,
+    "kernel": 5768.1,
+    "rows": 2697.6,
+    "pack": 3060.1,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "pixels": 150000000,
+    "kernel": 3927.3,
+    "gen": 0
+   }
+  }
+ },
+ "psd_masked": {
+  "ms": 2151,
+  "blocked": 108,
+  "MB": 243.2,
+  "jobs": {
+   "psd_part": {
+    "jobs": 473,
+    "pixels": 900000000,
+    "kernel": 6838.2,
+    "rows": 3516.2,
+    "pack": 3312.6,
+    "gen": 0
+   },
+   "mips": {
+    "jobs": 14,
+    "tiles": 1733,
+    "kernel": 379.9,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "pixels": 150000000,
+    "kernel": 4371.6,
+    "gen": 0
+   }
+  }
+ },
+ "fill_limit_rows": {
+  "ms": 5621,
+  "fill": 117,
+  "limit": 5504,
+  "bands": 40,
+  "map": [
+   4096,
+   2731
+  ],
+  "snap": true
+ },
+ "psd_fill_limit": {
+  "ms": 8812,
+  "blocked": 179,
+  "MB": 221.5,
+  "fillRowsMs": 5749
+ },
+ "pool": {
+  "run": 2121,
+  "done": 2105,
+  "failed": 0,
+  "cancelled": 0,
+  "started": 8,
+  "lost": 0,
+  "stopped": 0,
+  "workers": 8,
+  "size": 8,
+  "pending": 16,
+  "off": false,
+  "arena": true
+ }
+}
