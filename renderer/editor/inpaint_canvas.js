@@ -42,7 +42,7 @@ import { LiquifyField, gridStep, liquifyFalloff, thawPlane } from "./inpaint_liq
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
 import { promptPayload, selectionBoxIdOf } from "./boxes_model.js";
 import { fitLayerRGBA, workScale } from "./edgefit.js";
-import { STALE_DIFF, GUIDE, RANGE_BAND_ROWS, WORK_MAX, modelSize, workSize, disparityRange } from "./inpaint_depth.js";
+import { STALE_DIFF, GUIDE, RANGE_BAND_ROWS, WORK_MAX, modelSize, workSize } from "./inpaint_depth.js";
 import { packRG16, mapToJSON, mapFromJSON, fingerprint, fingerprintDiff, passToMap, makeMap, sampleMap, deriveMap, selectionOnMap, editMap } from "./inpaint_maps.js";
 import { SNAP_DEFAULT, SNAP_TAU, snapParams, snapField, rangeMax, mapTileStats } from "./inpaint_edges.js";
 import { normalizeLimit, normalizeStoredLimit, u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping, opp, colourSimilarity, hexToRgb as hexToRgb01, WEIGHTS_GLSL } from "./inpaint_weights.js";
@@ -13361,28 +13361,22 @@ class InpaintEditor {
                     };
                 }
 
-                const { lo, hi } = disparityRange(rawDepth, 0.005, 0.995);
                 const [gw, gh] = workSize(W, H, WORK_MAX);
                 const guide = await host.depthInput(this, gw, gh);
-                const grey = new Uint8Array(gw * gh);
-                const gd = guide.image;
-                for (let i = 0, j = 0; i < gd.length; i += 4, j++) {
-                    grey[j] = Math.round(gd[i] * 0.299 + gd[i + 1] * 0.587 + gd[i + 2] * 0.114);
-                }
                 this.setStatus("Refining depth map with guided filter ...");
                 const poolRes = await editorPool().run("depth_guide", {
                     raw: rawDepth,
                     rw,
                     rh,
-                    grey,
+                    gd: guide.image,
                     gw,
                     gh,
                     r: GUIDE.r,
                     eps: GUIDE.eps,
-                    lo,
-                    hi,
-                }, [grey.buffer], { priority: INTERACTIVE });
+                }, [guide.image.buffer], { priority: INTERACTIVE });
                 const u16 = new Uint16Array(poolRes.u16);
+                const gd = new Uint8ClampedArray(poolRes.gd);
+                const { lo, hi } = poolRes;
                 // main answers the model's own time as runMs (and the whole call as seconds)
                 const modelMs = res.runMs != null ? res.runMs : (res.seconds != null ? res.seconds * 1000 : 0);
                 const snapStrength = edges != null ? Math.max(0, Math.min(100, Math.round(+edges))) : SNAP_DEFAULT;
@@ -13475,26 +13469,21 @@ class InpaintEditor {
         }
 
         const guide = await host.pictureInput(this, gw, gh, { skipFilters: true, background: "#808080" });
-        const gd = guide.image;
-        const grey = new Uint8Array(gw * gh);
-        for (let i = 0, j = 0; i < gd.length; i += 4, j++) {
-            grey[j] = Math.round(gd[i] * 0.299 + gd[i + 1] * 0.587 + gd[i + 2] * 0.114);
-        }
-
         this.setStatus("Refining depth map with guided filter ...");
         const poolRes = await editorPool().run("depth_guide", {
             raw: rawDepth,
             rw: gw,
             rh: gh,
-            grey,
+            gd: guide.image,
             gw,
             gh,
             r: GUIDE.r,
             eps: GUIDE.eps,
             lo: 0,
             hi: 1,
-        }, [grey.buffer], { priority: INTERACTIVE });
+        }, [guide.image.buffer], { priority: INTERACTIVE });
         const u16 = new Uint16Array(poolRes.u16);
+        const gd = new Uint8ClampedArray(poolRes.gd);
 
         const fpInp = await host.pictureInput(this, 64, 64, { skipFilters: true, background: "#808080" });
         const fp = fingerprint(fpInp.image, 64, 64);

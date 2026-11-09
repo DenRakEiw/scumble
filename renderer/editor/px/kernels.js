@@ -56,10 +56,10 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * (K21), `rangeDepth` and `rangeDepthSnap` (K22): `mapTileStats` and `rangeTilesDepth` (plain bilinear tiles and
  * joint-bilateral snapped tiles). `rangeLuma` and `rangeColor` (K23): `rangeTilesRgba` (luminance and colour-similarity
  * range selection over an RGBA8 band). `limitAlphaRows` (K25): `limitAlphaRows` (fill layer depth limit alpha on PSD/ORA
- * export).
+ * export). `guidedFar` (K24): `guidedFar` of `inpaint_depth.js` (the depth map's guided filter).
  * `compositeMaskedTile` (K36): `compositeMaskedTile` of inpaint_tiles.js `compositeStroke`.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -1122,4 +1122,21 @@ export function limitAlphaRows(rgba, map, mw, mh, xf, x0, y0, w, h, limit, snap 
     return J.limitAlphaRows(rgba, map, mw, mh, xf, x0, y0, w, h, limit, snap, guide, col);
 }
 
+/**
+ * The depth map's guided filter (`inpaint_depth.js` `guidedFar`, K24), routed by `guidedFar`. Accepts either an options
+ * object `{ raw, rw, rh, grey, gw, gh, r, eps, lo, hi }` (with optional `out` as the second argument) or positional
+ * `(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null)`.
+ */
+export function guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null) {
+    const p = rustPx("guidedFar");
+    if (p) {
+        try {
+            const res = p.guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out);
+            if (res) return res;
+        } catch (err) {
+            if (!recovered(p, err, "guided_far")) throw err;
+        } finally { releaseIfLarge(); }
+    }
+    return J.guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out);
+}
 

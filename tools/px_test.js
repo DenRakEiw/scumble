@@ -41,7 +41,7 @@ function check(name, ok, detail = "") {
 
 // The case groups in main()'s order (a group in both the reference part and the per-build loop runs in both)
 const GROUPS = ["twinSelfTest", "mip", "edt", "flood", "composite", "matchTwin", "smudgeTwin", "poissonTwin", "png", "compositeSha",
-    "blendFixture", "blendGlsl", "tierC", "relightBench", "relightStripe", "counter", "split", "route", "trap", "lifecycle", "sel", "range",
+    "blendFixture", "blendGlsl", "tierC", "relightBench", "relightStripe", "counter", "split", "route", "trap", "lifecycle", "sel", "range", "guided",
     "pngFilter", "retouchRoute", "tiff", "job", "mask", "dab", "tone", "freq", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "liquify", "memory"];
 const ONLY = (() => {
     const names = (process.env.PX_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -1545,6 +1545,11 @@ async function retouchRouteCases(js) {
         }
         const larXf = [16 / larW, 0, 0, 16 / larH, 0, 0];
         want.lar = js.limitAlphaRows(larInit.slice(), rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null);
+        const gfRaw = new Float32Array(16 * 12);
+        for (let i = 0; i < gfRaw.length; i++) gfRaw[i] = Math.sin(i * 0.25) * 10;
+        const gfGrey = new Uint8Array(32 * 24);
+        for (let i = 0; i < gfGrey.length; i++) gfGrey[i] = (i * 37) & 255;
+        want.gf = js.guidedFar(gfRaw, 16, 12, gfGrey, 32, 24, 2, 1e-3, -10, 10);
         K.setRoute("edgefit", "rust");
         K.setRoute("edgefitShrink", "rust");
         K.setRoute("warpRgba", "rust");
@@ -1554,6 +1559,7 @@ async function retouchRouteCases(js) {
         K.setRoute("rangeLuma", "rust");
         K.setRoute("rangeColor", "rust");
         K.setRoute("limitAlphaRows", "rust");
+        K.setRoute("guidedFar", "rust");
         const trapIn2 = (p) => p.exports.mip_half(-16, 256, 256, 0);
         let ok = true, detail = "";
         for (const [name, method, callIt, check1] of [
@@ -1592,6 +1598,7 @@ async function retouchRouteCases(js) {
             ["rangeTilesRgbaLuma", "rangeTilesRgba", () => K.rangeTilesRgba(I, w, h, 0, 0, h, rtrLumaLim, false, 256), (o) => !twinDiff(o, want.rtrLuma)],
             ["rangeTilesRgbaColor", "rangeTilesRgba", () => K.rangeTilesRgba(I, w, h, 0, 0, h, rtrColorLim, false, 256), (o) => !twinDiff(o, want.rtrColor)],
             ["limitAlphaRows", "limitAlphaRows", () => K.limitAlphaRows(larInit.slice(), rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null), (o) => eqBytes(o, want.lar)],
+            ["guidedFar", "guidedFar", () => K.guidedFar(gfRaw, 16, 12, gfGrey, 32, 24, 2, 1e-3, -10, 10), (o) => !twinDiff(o, want.gf)],
         ]) {
             const p = K.rustPx(), i0 = K.pxInstances();
             // the split traps after its kernel wrote L in wasm memory, before the copy out (the caller's L untouched)
@@ -1643,7 +1650,17 @@ async function retouchRouteCases(js) {
                 detail = `limitAlphaRowsOom: copies=${rgbaChunkCopies} ${firstDiff(got, want.lar)} ${JSON.stringify(i1)}`;
             }
         }
-        check("kernels.js K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
+        {
+            const p = K.rustPx(), i0 = K.pxInstances();
+            p.guidedFar = function () { return this.alloc(0xffff0000); };
+            const got = K.guidedFar(gfRaw, 16, 12, gfGrey, 32, 24, 2, 1e-3, -10, 10);
+            const after = K.rustPx(), i1 = K.pxInstances();
+            if (!(!twinDiff(got, want.gf) && after !== p && i1.oom === i0.oom + 1)) {
+                ok = false;
+                detail = `guidedFarOom: ${JSON.stringify(i1)}`;
+            }
+        }
+        check("kernels.js K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 / K24 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
         // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
         const i0 = K.pxInstances();
         K.setRoute("releaseMB", 0);
@@ -1654,7 +1671,7 @@ async function retouchRouteCases(js) {
         console.warn = realWarn;
         kernelsBack(K);
     }
-    check("the K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|liquify_dab|edgefit_shrink|warp_rgba|warp_coverage|range_tiles_depth|range_tiles_rgba|limit_alpha_rows/.test(w)).length === 16, warned.join(" | "));
+    check("the K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 / K24 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|liquify_dab|edgefit_shrink|warp_rgba|warp_coverage|range_tiles_depth|range_tiles_rgba|limit_alpha_rows|guided_far/.test(w)).length === 18, warned.join(" | "));
     void js;
 }
 
@@ -9236,6 +9253,319 @@ async function tiffCases(js, simd, scalar, K, T) {
     }
 }
 
+async function guidedCases(js, simd, scalar, K) {
+    const { guidedFar: guidedFarRef, bilinearResize: bilinearResizeRef } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_depth.js")).href);
+
+    function makeRaw(w, h, kind = "waves") {
+        const n = w * h;
+        const out = new Float32Array(n);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const i = y * w + x;
+                if (kind === "flat") out[i] = 3.25;
+                else if (kind === "ramp") out[i] = (x + y * w) / Math.max(1, n - 1);
+                else if (kind === "step") out[i] = x < (w >> 1) ? -5.0 : 12.0;
+                else if (kind === "extreme") out[i] = Math.sin(i * 1.234567) * 100;
+                else out[i] = Math.sin(x * 0.31 + y * 0.17) * 10 + Math.cos(i * 0.13) * 4;
+            }
+        }
+        return out;
+    }
+
+    function makeGrey(w, h, kind = "texture") {
+        const n = w * h;
+        const out = new Uint8Array(n);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const i = y * w + x;
+                if (kind === "flat") out[i] = 128;
+                else if (kind === "step") out[i] = x < (w >> 1) ? 20 : 235;
+                else if (kind === "allbytes") out[i] = i & 255;
+                else out[i] = (i * 131 + ((i * i * 17) % 251)) & 255;
+            }
+        }
+        return out;
+    }
+
+    const cases = [];
+    // 1. Same-size (rw === gw && rh === gh) across odd/small/medium dimensions, radii, eps, and lo/hi edge cases
+    for (const [w, h] of [[1, 1], [2, 2], [3, 5], [5, 3], [7, 9], [16, 3], [33, 17], [64, 48]]) {
+        const raw = makeRaw(w, h, "waves");
+        const grey = makeGrey(w, h, "allbytes");
+        for (const r of [0, 1, 2, 5, 12]) {
+            cases.push({
+                tag: `same ${w}x${h} r=${r}`,
+                args: [raw, w, h, grey, w, h, r, 1e-3, -15, 15],
+            });
+        }
+    }
+
+    // 2. lo/hi boundary cases: equal lo==hi, lo>hi, span == 1e-12 vs 1.0001e-12, clamping outside [lo, hi], omitted lo/hi, and q=0.5 half-way u16 tie
+    {
+        const w = 24, h = 18;
+        const raw = makeRaw(w, h, "waves");
+        const grey = makeGrey(w, h, "texture");
+        for (const [tag, lo, hi, eps] of [
+            ["lo==hi", 2.0, 2.0, 1e-3],
+            ["lo>hi", 5.0, -5.0, 1e-3],
+            ["span=1e-12", 0.0, 1e-12, 1e-3],
+            ["span=1.0001e-12", 0.0, 1.0001e-12, 1e-3],
+            ["tight clip", -2.0, 2.0, 1e-4],
+            ["eps=1e6", -15.0, 15.0, 1e6],
+            ["eps=1e-7", -15.0, 15.0, 1e-7],
+            ["auto disparityRange", undefined, undefined, 1e-3],
+        ]) {
+            cases.push({
+                tag: `bounds ${tag}`,
+                args: [raw, w, h, grey, w, h, 2, eps, lo, hi],
+            });
+        }
+        const halfRaw = new Float32Array(w * h).fill(0.5);
+        cases.push({
+            tag: "bounds q=0.5 half-way u16 tie (32767.5 -> 32768)",
+            args: [halfRaw, w, h, grey, w, h, 2, 1e-3, 0.0, 1.0],
+        });
+        const longRaw = new Float32Array(w * h + 16);
+        longRaw.set(raw);
+        for (let i = 0; i < 16; i++) longRaw[w * h + i] = (i & 1) ? 500 : -500;
+        cases.push({
+            tag: "bounds auto disparityRange with raw longer than rw*rh",
+            args: [longRaw, w, h, grey, w, h, 2, 1e-3, undefined, undefined],
+        });
+    }
+
+    // 3. Resized (upscaled, downscaled where rw*rh > gw*gh, mixed aspect, fractional r * (gw / rw) near half-integers, wx f32 vs f64 tie)
+    for (const [rw, rh, gw, gh, r, eps] of [
+        [1, 1, 4, 4, 2, 1e-3],
+        [3, 2, 9, 7, 2, 1e-3],
+        [14, 14, 35, 27, 2, 1e-3],
+        [28, 14, 64, 33, 2, 1e-4],
+        [98, 32, 150, 48, 2, 1e-4],
+        [64, 48, 128, 96, 2, 1e-5],
+        [32, 24, 11, 9, 2, 1e-3],
+        [64, 48, 19, 13, 3, 1e-4],
+        [32, 8, 12, 25, 2, 1e-3],
+        [8, 32, 25, 12, 2, 1e-3],
+        [4, 4, 4, 4, 1.5, 1e-3],
+        [4, 4, 4, 4, 1.4999999999999998, 1e-3],
+    ]) {
+        const raw = makeRaw(rw, rh, "waves");
+        const grey = makeGrey(gw, gh, "texture");
+        cases.push({
+            tag: `resize ${rw}x${rh}->${gw}x${gh} r=${r}`,
+            args: [raw, rw, rh, grey, gw, gh, r, eps, -12.345, 13.789],
+        });
+    }
+
+    // 4. Mutant-killing case for `b` using unrounded f64 `av` (vs f32 `a[i]`) and `I` using f64 `grey * (1 / 255)` stored as f32
+    {
+        const rw = 128, rh = 96, gw = 256, gh = 192;
+        const raw = makeRaw(rw, rh, "extreme");
+        const grey = makeGrey(gw, gh, "texture");
+        const lo = -100, hi = 100, r = 2, eps = 1e-3;
+        cases.push({
+            tag: `precision ${rw}x${rh}->${gw}x${gh} av & I`,
+            args: [raw, rw, rh, grey, gw, gh, r, eps, lo, hi],
+        });
+
+        // Verify this test image flips u16 outputs under both mutants (b using f32 a[i], and I using f32 1/255 or unrounded f64)
+        const refOut = guidedFarRef({ raw, rw, rh, grey, gw, gh, r, eps, lo, hi }, js.boxBlurs);
+        const nRaw = rw * rh, n = gw * gh;
+        const farF32 = new Float32Array(nRaw);
+        const invRange = 1 / (hi - lo);
+        for (let i = 0; i < nRaw; i++) {
+            let t = (raw[i] - lo) * invRange;
+            if (t < 0) t = 0; else if (t > 1) t = 1;
+            farF32[i] = 1 - t;
+        }
+        const p = bilinearResizeRef(farF32, rw, rh, gw, gh);
+        const rWork = Math.max(1, Math.round(r * (gw / rw)));
+
+        const runMutant = (kind) => {
+            const I = kind === "I_f64" ? new Float64Array(n) : new Float32Array(n);
+            const inv255 = kind === "I_f32" ? Math.fround(1 / 255) : 1 / 255;
+            for (let i = 0; i < n; i++) {
+                I[i] = kind === "I_f32" ? Math.fround(Math.fround(grey[i]) * inv255) : grey[i] * inv255;
+            }
+            const meanI = js.boxBlurs(new Float32Array(I), gw, gh, [rWork]);
+            const meanP = js.boxBlurs(p, gw, gh, [rWork]);
+            const Ip = new Float32Array(n), II = new Float32Array(n);
+            for (let i = 0; i < n; i++) {
+                const iv = I[i];
+                Ip[i] = iv * p[i];
+                II[i] = iv * iv;
+            }
+            const meanIp = js.boxBlurs(Ip, gw, gh, [rWork]);
+            const meanII = js.boxBlurs(II, gw, gh, [rWork]);
+            const a = new Float32Array(n), b = new Float32Array(n);
+            for (let i = 0; i < n; i++) {
+                const mi = meanI[i];
+                const covIp = meanIp[i] - mi * meanP[i];
+                const varI = meanII[i] - mi * mi;
+                const av = covIp / (varI + eps);
+                a[i] = av;
+                b[i] = meanP[i] - (kind === "b_ai" ? a[i] : av) * mi;
+            }
+            const meanA = js.boxBlurs(a, gw, gh, [rWork]);
+            const meanB = js.boxBlurs(b, gw, gh, [rWork]);
+            const q = new Float32Array(n);
+            for (let i = 0; i < n; i++) {
+                let v = meanA[i] * I[i] + meanB[i];
+                if (v < 0) v = 0; else if (v > 1) v = 1;
+                q[i] = v;
+            }
+            let flipped = 0;
+            for (let i = 0; i < n; i++) {
+                if (Math.round(q[i] * 65535) !== refOut[i]) flipped++;
+            }
+            return flipped;
+        };
+        const flipB = runMutant("b_ai");
+        const flipIf32 = runMutant("I_f32");
+        const flipIf64 = runMutant("I_f64");
+        check("guidedFar precision case flips u16s when b uses rounded a[i] or I uses f32 1/255 / unrounded f64",
+            flipB > 0 && flipIf32 > 0 && flipIf64 > 0,
+            `flipB=${flipB} flipIf32=${flipIf32} flipIf64=${flipIf64}`);
+    }
+
+    twinCheck({
+        name: "guided_far",
+        builds: [["rust simd", simd], ["rust scalar", scalar]],
+        twin: js,
+        call: (k, args) => k.guidedFar(...args),
+        cases,
+    });
+
+    // Object argument form and caller-supplied `out` buffer
+    {
+        const rw = 20, rh = 15, gw = 40, gh = 30;
+        const raw = makeRaw(rw, rh, "waves");
+        const grey = makeGrey(gw, gh, "texture");
+        const msg = { raw, rw, rh, grey, gw, gh, r: 2, eps: 1e-3, lo: -10, hi: 10 };
+        const want = guidedFarRef(msg, js.boxBlurs);
+        let objOk = true, objDetail = "";
+        for (const [bName, k] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+            const got1 = k.guidedFar(msg);
+            const outBuf = new Uint16Array(gw * gh);
+            const got2 = k.guidedFar(msg, outBuf);
+            const outBufPos = new Uint16Array(gw * gh);
+            const got3 = k.guidedFar(raw, rw, rh, grey, gw, gh, 2, 1e-3, -10, 10, outBufPos);
+            if (twinDiff(got1, want) || got2 !== outBuf || twinDiff(got2, want) || got3 !== outBufPos || twinDiff(got3, want)) {
+                objOk = false;
+                objDetail = bName;
+                break;
+            }
+        }
+        check("guidedFar accepts both options object and positional arguments with optional out Uint16Array", objOk, objDetail);
+    }
+
+    // Dirty wasm arena check
+    {
+        const rw = 19, rh = 13, gw = 37, gh = 29;
+        const raw = makeRaw(rw, rh, "waves");
+        const grey = makeGrey(gw, gh, "texture");
+        const want = js.guidedFar(raw, rw, rh, grey, gw, gh, 2, 1e-3, -10, 10);
+        let dirtyOk = true, dirtyDetail = "";
+        for (const [bName, px] of [["simd", simd], ["scalar", scalar]]) {
+            const a = px.job;
+            try {
+                const p = a.take(512 * 1024);
+                px.u8().fill(0xde, p, p + 512 * 1024);
+            } finally { px._reset(a); }
+            const got = px.guidedFar(raw, rw, rh, grey, gw, gh, 2, 1e-3, -10, 10);
+            const d = twinDiff(got, want);
+            if (d) { dirtyOk = false; dirtyDetail = `${bName}: ${d}`; break; }
+        }
+        check("guided_far writes every output u16 identically in a dirty wasm arena", dirtyOk, dirtyDetail);
+    }
+
+    // Refusal checks on Px.guidedFar and raw exports
+    {
+        const raw = new Float32Array(16 * 16);
+        const grey = new Uint8Array(32 * 32);
+        const badArgs = [
+            ["null raw", [null, 16, 16, grey, 32, 32, 2, 1e-3, 0, 1]],
+            ["short raw", [new Float32Array(10), 16, 16, grey, 32, 32, 2, 1e-3, 0, 1]],
+            ["null grey", [raw, 16, 16, null, 32, 32, 2, 1e-3, 0, 1]],
+            ["short grey", [raw, 16, 16, new Uint8Array(10), 32, 32, 2, 1e-3, 0, 1]],
+            ["zero rw", [raw, 0, 16, grey, 32, 32, 2, 1e-3, 0, 1]],
+            ["zero rh", [raw, 16, 0, grey, 32, 32, 2, 1e-3, 0, 1]],
+            ["zero gw", [raw, 16, 16, grey, 0, 32, 2, 1e-3, 0, 1]],
+            ["zero gh", [raw, 16, 16, grey, 32, 0, 2, 1e-3, 0, 1]],
+            ["fractional gw", [raw, 16, 16, grey, 31.5, 32, 2, 1e-3, 0, 1]],
+            ["eps <= 0", [raw, 16, 16, grey, 32, 32, 2, 0, 0, 1]],
+            ["negative eps", [raw, 16, 16, grey, 32, 32, 2, -1e-3, 0, 1]],
+            ["NaN eps", [raw, 16, 16, grey, 32, 32, 2, NaN, 0, 1]],
+            ["NaN r", [raw, 16, 16, grey, 32, 32, NaN, 1e-3, 0, 1]],
+            ["huge r", [raw, 16, 16, grey, 32, 32, 1e12, 1e-3, 0, 1]],
+            ["Infinity lo", [raw, 16, 16, grey, 32, 32, 2, 1e-3, Infinity, 1]],
+            ["NaN hi", [raw, 16, 16, grey, 32, 32, 2, 1e-3, 0, NaN]],
+            ["short out", [raw, 16, 16, grey, 32, 32, 2, 1e-3, 0, 1, new Uint16Array(10)]],
+        ];
+        for (const [what, args] of badArgs) {
+            const rSimd = simd.guidedFar(...args);
+            const rScal = scalar.guidedFar(...args);
+            check(`Px.guidedFar refuses ${what} on both builds (returns null)`, rSimd === null && rScal === null, `simd=${rSimd} scalar=${rScal}`);
+        }
+        const zScratch = simd.exports.guided_far_scratch_bytes(0, 16, 32, 32);
+        const ovScratch = simd.exports.guided_far_scratch_bytes(16, 16, 65536, 65536);
+        const nullCall = simd.exports.guided_far(0, 16, 16, 0, 32, 32, 2, 1e-3, 0, 1, 0, 0);
+        const zeroEpsCall = simd.exports.guided_far(8, 16, 16, 8, 32, 32, 2, 0, 0, 1, 8, 8);
+        check("raw guided_far_scratch_bytes and guided_far refuse zero, overflowing, null, or eps <= 0 inputs",
+            zScratch === 0 && ovScratch === 0 && nullCall === 0 && zeroEpsCall === 0,
+            `z=${zScratch} ov=${ovScratch} null=${nullCall} zeroEps=${zeroEpsCall}`);
+    }
+
+    // Route check on K.guidedFar
+    {
+        K.setKernels("rust");
+        if (!K.rustPx()) {
+            const realFetch = globalThis.fetch;
+            globalThis.fetch = async (u, ...rest) => {
+                const s = String(u && u.href ? u.href : u);
+                return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+            };
+            try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+        }
+        const rw = 24, rh = 18, gw = 48, gh = 36;
+        const raw = makeRaw(rw, rh, "waves");
+        const grey = makeGrey(gw, gh, "texture");
+
+        K.setRoute("guidedFar", "js");
+        K.pxCalls(true);
+        const outJs = K.guidedFar(raw, rw, rh, grey, gw, gh, 2, 1e-3, -10, 10);
+        const jsCalls = K.pxCalls(true).guided_far || 0;
+
+        K.setRoute("guidedFar", "rust");
+        const outRust = K.guidedFar(raw, rw, rh, grey, gw, gh, 2, 1e-3, -10, 10);
+        const rustCalls = K.pxCalls(true).guided_far || 0;
+        K.setRoute("guidedFar", null);
+        K.setKernels("js");
+
+        check("kernels.js guidedFar routes between twin (0 calls) and rust (1 call) with identical output",
+            !twinDiff(outRust, outJs) && jsCalls === 0 && rustCalls === 1,
+            `jsCalls=${jsCalls} rustCalls=${rustCalls}`);
+    }
+
+    if (process.env.PX_BENCH) {
+        const gw = 4096, gh = 2731;
+        const grey = makeGrey(gw, gh, "texture");
+        for (const [what, rw, rh] of [
+            ["model 784x518 -> 4096x2731", 784, 518],
+            ["layer 4096x2731 -> 4096x2731", gw, gh],
+        ]) {
+            const raw = makeRaw(rw, rh, "waves");
+            const rows = [
+                ["twin", () => js.guidedFar(raw, rw, rh, grey, gw, gh, 2, 1e-3, -14, 14)],
+                ["simd", () => simd.guidedFar(raw, rw, rh, grey, gw, gh, 2, 1e-3, -14, 14)],
+                ["scalar", () => scalar.guidedFar(raw, rw, rh, grey, gw, gh, 2, 1e-3, -14, 14)],
+            ];
+            const med = benchMedians(rows, { rounds: 5 });
+            console.log(`       guided_far ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 5)`);
+        }
+    }
+}
+
 async function main() {
     const { BLENDS } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "blend_modes.js")).href);
     for (const b of BLENDS) if (b.op >= 5) BLEND_NAMES[b.op - 5] = b.id;
@@ -9281,6 +9611,7 @@ async function main() {
     await group("lifecycle", () => lifecycleCases(js));
     await group("sel", async () => selCases(js, simdPx, scalarPx, raster, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href)));
     await group("range", async () => rangeCases(js, simdPx, scalarPx, resample, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href)));
+    await group("guided", async () => guidedCases(js, simdPx, scalarPx, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href)));
     await group("pngFilter", () => pngFilterCases(js, simdPx, scalarPx));
     await group("retouchRoute", () => retouchRouteCases(js));
     await group("tiff", async () => tiffCases(js, simdPx, scalarPx, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href), await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_tiff.js")).href)));

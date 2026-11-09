@@ -23,6 +23,7 @@ mod composite;
 mod edges;
 mod edt;
 mod flood;
+mod guided;
 mod jobs;
 mod maskf;
 mod mip;
@@ -50,11 +51,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    39
+    40
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -1381,3 +1382,94 @@ pub unsafe extern "C" fn limit_alpha_rows(
     )
 }
 
+// ---- depth map guided filter (K24) ---------------------------------------------------------
+
+/// Scratch bytes `guided_far` needs for a `rw x rh` raw disparity map and `gw x gh` working guide (8-aligned at its
+/// start); `0` when any dimension is `0` or the size does not fit.
+#[no_mangle]
+pub extern "C" fn guided_far_scratch_bytes(rw: usize, rh: usize, gw: usize, gh: usize) -> usize {
+    guided::scratch_bytes(rw, rh, gw, gh).unwrap_or(0)
+}
+
+/// `guidedFar({ raw, rw, rh, grey, gw, gh, r, eps, lo, hi }, boxBlurs)` of `inpaint_depth.js`: normalises and inverts
+/// `raw` (`rw * rh` `f32`) by `[lo, hi]`, bilinearly resizes to `gw * gh` when `(rw, rh) != (gw, gh)`, runs the
+/// He et al. guided filter against `grey` (`gw * gh` `u8`) with working radius `Math.max(1, Math.round(r * (gw / rw)))`
+/// and `eps`, and writes `gw * gh` `u16` values into `out`. `scratch` holds `guided_far_scratch_bytes(rw, rh, gw, gh)`
+/// bytes. Returns `1` on success, `0` when refused.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn guided_far(
+    raw: *const f32,
+    rw: usize,
+    rh: usize,
+    grey: *const u8,
+    gw: usize,
+    gh: usize,
+    r: f64,
+    eps: f64,
+    lo: f64,
+    hi: f64,
+    out: *mut u16,
+    scratch: *mut u8,
+) -> u32 {
+    if raw.is_null()
+        || grey.is_null()
+        || out.is_null()
+        || scratch.is_null()
+        || !eps.is_finite()
+        || !(eps > 0.0)
+        || !lo.is_finite()
+        || !hi.is_finite()
+    {
+        return 0;
+    }
+    if guided::scratch_bytes(rw, rh, gw, gh).is_none() {
+        return 0;
+    }
+    let Some(r_work) = guided::work_radius(r, rw, gw) else {
+        return 0;
+    };
+    let n_raw = rw * rh;
+    let n_work = gw * gh;
+    let n_tmp = n_work.max(n_raw);
+
+    let sums_ptr = scratch as *mut f64;
+    let f32_ptr = scratch.add(gw * 8) as *mut f32;
+    let u32_ptr = f32_ptr.add(5 * n_work + n_tmp + gw) as *mut u32;
+
+    let sums = slice::from_raw_parts_mut(sums_ptr, gw);
+    let plane_i = slice::from_raw_parts_mut(f32_ptr, n_work);
+    let plane_p = slice::from_raw_parts_mut(f32_ptr.add(n_work), n_work);
+    let plane_mi = slice::from_raw_parts_mut(f32_ptr.add(2 * n_work), n_work);
+    let plane_ip = slice::from_raw_parts_mut(f32_ptr.add(3 * n_work), n_work);
+    let plane_ii = slice::from_raw_parts_mut(f32_ptr.add(4 * n_work), n_work);
+    let tmp = slice::from_raw_parts_mut(f32_ptr.add(5 * n_work), n_tmp);
+    let wx = slice::from_raw_parts_mut(f32_ptr.add(5 * n_work + n_tmp), gw);
+    let x0 = slice::from_raw_parts_mut(u32_ptr, gw);
+    let x1 = slice::from_raw_parts_mut(u32_ptr.add(gw), gw);
+
+    guided::guided_far(
+        slice::from_raw_parts(raw, n_raw),
+        rw,
+        rh,
+        slice::from_raw_parts(grey, n_work),
+        gw,
+        gh,
+        r_work,
+        eps,
+        lo,
+        hi,
+        slice::from_raw_parts_mut(out, n_work),
+        sums,
+        plane_i,
+        plane_p,
+        plane_mi,
+        plane_ip,
+        plane_ii,
+        tmp,
+        wx,
+        x0,
+        x1,
+    );
+    1
+}

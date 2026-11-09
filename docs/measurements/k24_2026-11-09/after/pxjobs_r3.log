@@ -1,0 +1,16 @@
+-- 15000x10000 (150.0 MP), 1 rounds ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  depth_guide      kernel js    495.9  rust    334.3  (1.48x) | worker job js    495.9  rust    334.3  (1.48x) | wall js   1093.9  rust    978.7  (1.12x)  1 jobs
+                   parts js/rust: total 495.9/334.3
+                   px calls js: window none; jobs none | rust: window none; jobs guided_far 1
+                   split js/rust: job 496.0/334.3  copyIn 0.0/6.3 (0.0/53.3 MB, shared 0.0/0.0 MB)  copyOut 0.0/2.7 (0.0/21.3 MB)  alloc 0.0/2.0  grew MB 0.0/330.9  bytes0 MB 2/2 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 1, idle 0, trap 0, oom 0}  kernel js {} rust {guided_far 254.8}  first js {} rust {}  queue 0.1/0.3  trip 544.6/383.9  workers 1/1
+                   round 0 first js {} rust {guided_far 254.8}
+  depth_guide_model kernel js    602.3  rust    264.8  (2.27x) | worker job js    602.3  rust    264.8  (2.27x) | wall js   1228.8  rust    905.6  (1.36x)  1 jobs
+                   parts js/rust: total 602.3/264.8
+                   px calls js: window none; jobs none | rust: window none; jobs guided_far 1
+                   split js/rust: job 602.3/264.9  copyIn 0.0/1.5 (0.0/12.2 MB, shared 0.0/0.0 MB)  copyOut 0.0/2.8 (0.0/21.3 MB)  alloc 0.0/1.1  grew MB 0.0/289.8  bytes0 MB 2/1 (window 2/2)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 1, idle 0, trap 0, oom 0}  kernel js {} rust {guided_far 217.6}  first js {} rust {}  queue 0.3/0.4  trip 604.0/268.4  workers 1/1
+  instances renewed over the rows: {release 2, idle 0, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 10 threads read: 0
+
+PASS

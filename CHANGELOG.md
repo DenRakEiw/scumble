@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **A depth map is ready faster, with the same bytes.** The guided filter behind it and its preparation run off the window in Rust, for a depth map from Depth Anything V2 Small and from a layer.
 - **Krea 3 Edit**, on fal.ai, WaveSpeedAI, Replicate, Comfy Cloud, OpenRouter, Comfy Router and Oxen.ai, with up to eight pictures, a Planning setting and Generate new (not on OpenRouter). It repaints the whole crop and your selection limits what lands. Built from the providers' docs, not run against the live APIs yet.
 - **Cancel on fal.ai and Replicate now asks the provider to stop the job.** Before, Scumble only stopped waiting and the job ran on and was charged; a run that times out asks the same. If the provider does not answer within two seconds the line says the job may still finish.
 - **Importing a recipe no longer overwrites another one without saying so.** A workflow or a recipe without an id of its own gets a free name, and a recipe that does carry an id says whether it replaced one of yours or shadows a shipped one, in the status line when you import from the File menu too.
