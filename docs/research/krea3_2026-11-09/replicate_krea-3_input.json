@@ -1,0 +1,89 @@
+{
+  "type": "object",
+  "title": "Input",
+  "required": [
+    "prompt"
+  ],
+  "properties": {
+    "seed": {
+      "type": "integer",
+      "title": "Seed",
+      "x-order": 7,
+      "nullable": true,
+      "description": "Random seed. Reusing a seed does not guarantee identical results, because the prompt is expanded before generation."
+    },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uri"
+      },
+      "title": "Images",
+      "default": [],
+      "x-order": 1,
+      "description": "Up to 8 input images to edit or combine. Leave empty for text-to-image generation. When using several images, refer to each by what it shows in the prompt."
+    },
+    "prompt": {
+      "type": "string",
+      "title": "Prompt",
+      "x-order": 0,
+      "description": "Instruction describing the image to generate, or the edit to make. For edits, say what should change and what should stay the same."
+    },
+    "resolution": {
+      "enum": [
+        "1k",
+        "2k"
+      ],
+      "type": "string",
+      "title": "resolution",
+      "description": "Output resolution.",
+      "default": "2k",
+      "x-order": 3
+    },
+    "aspect_ratio": {
+      "enum": [
+        "auto",
+        "1:1",
+        "4:5",
+        "3:4",
+        "2:3",
+        "9:16",
+        "5:4",
+        "4:3",
+        "3:2",
+        "16:9",
+        "21:9"
+      ],
+      "type": "string",
+      "title": "aspect_ratio",
+      "description": "Aspect ratio of the output. 'auto' picks the framing from your input images and prompt.",
+      "default": "auto",
+      "x-order": 4
+    },
+    "regional_edit": {
+      "type": "boolean",
+      "title": "Regional Edit",
+      "default": false,
+      "x-order": 5,
+      "description": "Experimental. Change only the parts of the image that need to change and keep the rest unchanged. Needs at least one input image. Quality may be lower and generation slower than a regular edit."
+    },
+    "thinking_mode": {
+      "enum": [
+        "fast",
+        "high"
+      ],
+      "type": "string",
+      "title": "thinking_mode",
+      "description": "How much planning happens before generation. 'fast' is quicker and works for most requests. 'high' plans complex or multi-step edits more carefully, but is slower and costs more.",
+      "default": "fast",
+      "x-order": 2
+    },
+    "negative_prompt": {
+      "type": "string",
+      "title": "Negative Prompt",
+      "x-order": 6,
+      "nullable": true,
+      "description": "What to avoid in the output."
+    }
+  }
+}

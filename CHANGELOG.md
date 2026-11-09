@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Krea 3 Edit**, on fal.ai, WaveSpeedAI, Replicate, Comfy Cloud, OpenRouter, Comfy Router and Oxen.ai, with up to eight pictures, a Planning setting and Generate new (not on OpenRouter). It repaints the whole crop and your selection limits what lands. Built from the providers' docs, not run against the live APIs yet.
 - **Cancel on fal.ai and Replicate now asks the provider to stop the job.** Before, Scumble only stopped waiting and the job ran on and was charged; a run that times out asks the same. If the provider does not answer within two seconds the line says the job may still finish.
 - **Importing a recipe no longer overwrites another one without saying so.** A workflow or a recipe without an id of its own gets a free name, and a recipe that does carry an id says whether it replaced one of yours or shadows a shipped one, in the status line when you import from the File menu too.
 - **Long API errors stay readable.** An error answer no longer carries a whole picture back into the status line and the log, and a key inside one is removed before the text is cut.

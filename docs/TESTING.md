@@ -605,6 +605,12 @@ or models: two local HTTP servers as two hosts, a fetch stub for huggingface.co 
 sha256, the resume cases, sets in their own folder, the overall progress, the free-disk and terms refusals, the
 CorridorKey placeholder, `tools/ck2_catalogue.js`) and `node tools/scan_test.js` (the set's names at small sizes).
 
+Krea 3 Edit (`recipes/krea_3.json`, docs/RECIPES.md "Krea 3 Edit"): `node tools/krea3_test.js` (plain Node, run by the
+`recipes` gate; a scripted fetch plays each of the seven hosts) holds every request to the host's saved schema or field
+list in `docs/research/krea3_2026-11-09/` and `tools/refs/`: the pictures, the sizes and aspect presets, each route's
+planning row, Comfy Router's upload to `/proxy/krea/assets`, the `image_0` slots of the Comfy Cloud node. Light tier: no
+live run.
+
 Ideogram 4.5 (`recipes/ideogram_4_5.json`, `electron/main/providers/replicate.js`, `util.js` `ideogramMask`,
 `docs/PLAN_IDEOGRAM45.md`): `node tools/ideogram45_test.js` (plain Node, a scripted api.replicate.com and
 api.wavespeed.ai, 149 checks; 67 of them Replicate's, I1) pins

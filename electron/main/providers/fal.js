@@ -133,6 +133,13 @@ function inputFor(req) {
         if (withRefs && (k === "image_size" || k === "aspect_ratio") && input[k] !== undefined && auto(v)) continue;
         input[k] = v;
     }
+    // a value the text-to-image route does not take becomes the one the variant names for it (a new image gets the edit's
+    // Settings rows, host.providerParams; Krea 3's reasoning_level "ultra" is the edit route's)
+    if (req.kind === "text" && !withRefs) {
+        for (const [k, swap] of Object.entries((req.options && req.options.text_values) || {})) {
+            if (swap && typeof swap === "object" && input[k] != null && Object.prototype.hasOwnProperty.call(swap, String(input[k]))) input[k] = swap[String(input[k])];
+        }
+    }
     if (sizing === "flux3") {
         // the rows as FLUX 3's schema types them (an agent may give "3" or "on"); a safety that is no number goes as fal's 2
         if (input.safety_tolerance !== undefined) {

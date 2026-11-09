@@ -74,8 +74,14 @@ def node_step():
     gtail = g.stdout.strip()
     if g.returncode != 0 or not gtail.endswith("PASS"):
         raise Exception("tools/genpresets_test.js: " + (gtail + g.stderr)[-1500:])
+    # tools/krea3_test.js: Krea 3 Edit's request on each of its seven hosts, against their saved schemas
+    k = subprocess.run(["node", os.path.join(ROOT, "tools", "krea3_test.js")], cwd=ROOT,
+                       capture_output=True, text=True, encoding="utf-8", timeout=120)
+    ktail = k.stdout.strip()
+    if k.returncode != 0 or not ktail.endswith("PASS"):
+        raise Exception("tools/krea3_test.js: " + (ktail + k.stderr)[-1500:])
     last = lambda t: (t.splitlines()[-2:-1] or [""])[0]  # noqa: E731  the "N of M checks passed" line
-    return {"checks": tail.count("[ok]"), "comfyrefs_checks": ctail.count("[ok]"), "realism_checks": ptail.count("[ok]"), "genpresets_checks": gtail.count("[ok]"), "tails": [last(tail), last(ctail), last(ptail), last(gtail)]}
+    return {"checks": tail.count("[ok]"), "comfyrefs_checks": ctail.count("[ok]"), "realism_checks": ptail.count("[ok]"), "genpresets_checks": gtail.count("[ok]"), "krea3_checks": ktail.count("[ok]"), "tails": [last(tail), last(ctail), last(ptail), last(gtail), last(ktail)]}
 
 
 def write_files(dirname):

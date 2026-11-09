@@ -1,0 +1,15 @@
+{
+  "source": "Comfy Cloud's node catalog: get_node Krea3ImageNode with refresh on the user's account, catalog 2026-11-09T06:23Z, read and transcribed here (the inputs an API-format prompt sets, not the raw answer). The catalog's slot name model.images.item_1 is the catalog's own; the wire names are model.images.image_0 .. image_7: Comfy's template api_krea3_image_edit (read 2026-11-09, inputs model.images.image_0 and image_1) and comfy_api_nodes/nodes_krea.py with comfy_api/latest/_io.py of the user's ComfyUI v0.44.0 (TemplatePrefix, prefix image_, min 0, max 8, numbered from 0).",
+  "class": "Krea3ImageNode",
+  "display_name": "Krea 3 Image",
+  "inputs": {
+    "model": { "type": "COMBO", "required": true, "options": ["Krea 3"] },
+    "model.images.image_": { "type": "IMAGE", "autogrow": true, "first": 0, "max": 8 },
+    "model.prompt": { "type": "STRING", "required": true },
+    "model.aspect_ratio": { "type": "COMBO", "required": true, "default": "auto", "options": ["auto", "1:1", "4:5", "3:4", "2:3", "9:16", "5:4", "4:3", "3:2", "16:9", "21:9"] },
+    "model.resolution": { "type": "COMBO", "required": true, "default": "2K", "options": ["1K", "2K"] },
+    "model.thinking_mode": { "type": "COMBO", "required": true, "default": "fast", "options": ["fast", "high", "ultra"] },
+    "model.precise_edit": { "type": "BOOLEAN", "required": true, "default": false },
+    "model.seed": { "type": "INT", "required": true, "default": 42, "min": 0, "max": 2147483647 }
+  }
+}
