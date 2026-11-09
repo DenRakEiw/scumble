@@ -1,0 +1,14 @@
+[FAIL] node: lf-deadlock when dest disappears before freeName (kFree === k) |     at Timeout._onTimeout (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\tools\document_test.js:634:77) |     at listOnTimeout (node:internal/timers:605:17)
+[ok] content_addressed_names_and_ensure_on_server: image~a17af30f.png, image~d934b988.png, readme~a17af30f, my_photo__1___final__2~a17af30f.png; collision+size-check+rename verified
+FAIL(node:60476) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_mut_fix_main_p2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:60476) Warning: Closing file descriptor 3 on garbage collection
+(node:60476) [DEP0137] DeprecationWarning: Closing a FileHandle object on garbage collection is deprecated. Please close FileHandle objects explicitly using FileHandle.prototype.close(). In the future, an error will be thrown if a file descriptor is closed during garbage collection.
+server renamed plain.png to plain (1).png
+server renamed legacy.png to legacy (1).png
+server renamed IMG_20231005.jpg to IMG_20231005 (1).jpg
+server renamed large_legacy.png to large_legacy (1).png
+
+FAIL

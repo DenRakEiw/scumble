@@ -80,6 +80,7 @@ class Documents {
         this.fault = fault;
         this.jobs = new Map();      // reqId -> { kind, key, ctrl, keys, promise }
         this.locks = new Map();     // pathKey -> reqId
+        this.imports = new Map();   // mirrorKey -> Promise
         this.pending = [];          // paths to open once the window takes them (argv, a second start)
         this.waiters = [];
     }
@@ -220,7 +221,7 @@ class Documents {
     async open({ reqId, path: file } = {}) {
         if (typeof file !== "string" || !path.isAbsolute(file)) throw new Error("a document is opened from a full path");
         return this.run("open", reqId, file, async (job, progress) => {
-            const r = await docfile.openDocument({ file, mirrorRoot: this.mirrorRoot, signal: job.ctrl.signal, onProgress: progress });
+            const r = await docfile.openDocument({ file, mirrorRoot: this.mirrorRoot, signal: job.ctrl.signal, onProgress: progress, importLocks: this.imports, onKey: (k) => job.keys.add(k) });
             const h = r.header;
             const notes = [...r.notes];
             const document = cleanDocument(h.document, notes);

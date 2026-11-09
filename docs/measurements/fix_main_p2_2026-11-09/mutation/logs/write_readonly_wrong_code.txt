@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-write_readonly_wrong_code-document --offline --tiles on document  (rc 1, 21 s)
+document rc=1 13s FAIL
+SOME FAILED

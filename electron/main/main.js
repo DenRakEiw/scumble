@@ -1165,7 +1165,7 @@ function installIpc() {
             addRecent(r.path);
             return r;
         } catch (err) {
-            if (err && err.code === "ENOENT" && req && req.path) { dropRecent(req.path); throw new Error(`${path.basename(req.path)} is not there any more (moved or deleted); it left Open Recent`); }
+            if (err && err.code === "ENOENT" && req && req.path && !fs.existsSync(req.path)) { dropRecent(req.path); throw new Error(`${path.basename(req.path)} is not there any more (moved or deleted); it left Open Recent`); }
             throw err;
         }
     });

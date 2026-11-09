@@ -1,0 +1,52 @@
+
+F:\canvas\electron\main\assistant\policy.js
+  458:11  warning  'target' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+F:\canvas\electron\main\log.js
+  10:7  warning  'fs' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+F:\canvas\electron\main\main.js
+  8:39  warning  'net' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+F:\canvas\renderer\editor\inpaint_canvas.js
+   7035:19  warning  'filled' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  23455:36  warning  'vx' is assigned a value but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  23455:54  warning  'vy' is assigned a value but never used. Allowed unused vars must match /^_/u      no-unused-vars
+
+F:\canvas\renderer\editor\px\bench.js
+  193:15  warning  'rule' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  197:20  warning  'W' is assigned a value but never used. Allowed unused vars must match /^_/u     no-unused-vars
+
+F:\canvas\renderer\shell.js
+  124:5  warning  'lastProbe' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+F:\canvas\tools\assistant_test.js
+  1232:15  warning  'act' is assigned a value but never used. Allowed unused vars must match /^_/u          no-unused-vars
+  2149:15  warning  'chatAdapter' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  3792:24  warning  'events' is assigned a value but never used. Allowed unused vars must match /^_/u       no-unused-vars
+
+F:\canvas\tools\pixels_test.js
+  21:10  warning  'pixelsCases' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+F:\canvas\tools\px_test.js
+  3774:75  warning  'm16' is assigned a value but never used. Allowed unused vars must match /^_/u    no-unused-vars
+  7220:28  warning  'xTail' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+F:\canvas\tools\rangebar_test.js
+  413:13  warning  'previewCalled' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+  414:13  warning  'commitCalled' is assigned a value but never used. Allowed unused vars must match /^_/u   no-unused-vars
+
+F:\canvas\tools\scan_test.js
+  24:10  warning  'fmt' is defined but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+F:\canvas\tools\tiff_test.js
+  969:38  warning  'spp' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+F:\canvas\tools\weights_test.js
+  26:9  warning  'LUMA' is assigned a value but never used. Allowed unused vars must match /^_/u      no-unused-vars
+  27:9  warning  'sstep' is assigned a value but never used. Allowed unused vars must match /^_/u     no-unused-vars
+  29:9  warning  'opp' is assigned a value but never used. Allowed unused vars must match /^_/u       no-unused-vars
+  31:9  warning  'hexToRgb' is assigned a value but never used. Allowed unused vars must match /^_/u  no-unused-vars
+
+✖ 23 problems (0 errors, 23 warnings)
+

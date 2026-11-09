@@ -47,10 +47,11 @@ function resolveChild() {
 const [exe, args] = resolveChild();
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;                      // without this the child is a Node process too and the app never starts
+const SERVES = CHILD_ARGS.includes("--mcp");
 
 let child;
 try {
-    child = spawn(exe, args, { env, stdio: ["pipe", "pipe", "inherit"], windowsHide: true });
+    child = spawn(exe, args, { env, stdio: ["pipe", "pipe", "inherit"], windowsHide: true, detached: SERVES });
 } catch (e) {
     fail(`cannot start ${exe}: ${e.message}`);
 }
@@ -76,18 +77,16 @@ child.stdin.on("error", () => { /* the child went first; EPIPE is not news */ })
 stdin.on("data", (c) => { try { child.stdin.write(c); } catch { /* gone */ } });
 // the end of stdin is the MCP client going away; for --cmd and --run it is only the end of the input (`--run -` reads
 // its steps from it, a caller's closed stdin ends at once), and the child ends by itself when its work is done
-const SERVES = CHILD_ARGS.includes("--mcp");
 let ending = false;
 function clientGone() {
     if (ending) return;
     ending = true;
     try { child.stdin.end(); } catch { /* gone */ }
-    if (SERVES) setTimeout(() => { try { child.kill(); } catch { /* gone */ } }, 5000).unref();
 }
 stdin.on("end", clientGone);
 stdin.on("close", clientGone);
 stdin.on("error", clientGone);
 
 child.on("exit", (code, signal) => process.exit(code === null || code === undefined ? (signal ? 1 : 0) : code));
-for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { try { child.kill(); } catch { /* gone */ } });
-process.on("exit", () => { try { child.kill(); } catch { /* gone */ } });
+for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { if (SERVES) clientGone(); else { try { child.kill(); } catch { /* gone */ } } });
+if (!SERVES) process.on("exit", () => { try { child.kill(); } catch { /* gone */ } });

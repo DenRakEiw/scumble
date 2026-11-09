@@ -1,0 +1,10 @@
+GREEN (fixed electron/main/mcp/launch.js):
+22/22 dirty 7500x5000 layers flushed in 7.3s (rc=0)
+
+RED (HEAD electron/main/mcp/launch.js with 5 s kill):
+rc=1
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_fix_main_p2\tools\mcp_test.py", line 160, in headless_flush_check
+    raise RuntimeError(f"headless MCP launcher exited {rc} after {dt:.2f}s: {err}")
+RuntimeError: headless MCP launcher exited 1 after 5.06s:

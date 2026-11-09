@@ -261,6 +261,163 @@ check("where_prints_json_and_starts_nothing", () => {
     eq(JSON.parse(here.stdout).found.missing, "D:\\a\\Scumble.exe", "--scumble over the environment");
 });
 
+check("relay_and_launcher_let_mcp_child_flush_past_five_seconds_and_detach_serves_only", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-mcp-flush-"));
+    const preload = path.join(tmp, "preload.js");
+    const mockChild = path.join(tmp, "mock_child.js");
+    const launchJs = path.join(ROOT, "electron", "main", "mcp", "launch.js");
+    fs.writeFileSync(preload, `"use strict";
+const fs = require("node:fs");
+const cp = require("node:child_process");
+const Module = require("node:module");
+const origLoad = Module._load;
+Module._load = function (req, parent, isMain) {
+    if (req === "electron") return process.execPath;
+    return origLoad.apply(this, arguments);
+};
+const origSpawn = cp.spawn;
+cp.spawn = function (cmd, args, opts) {
+    const nextArgs = [process.env.MOCK_CHILD, ...(args || []).slice(1)];
+    const child = origSpawn.call(this, process.execPath, nextArgs, opts);
+    if (process.env.SPAWN_META) {
+        fs.writeFileSync(process.env.SPAWN_META, JSON.stringify({ cmd, args, detached: !!(opts && opts.detached), pid: child.pid }));
+    }
+    if (process.env.EMIT_SIGNAL_ON_READY) {
+        child.stdout.once("data", () => {
+            setTimeout(() => process.emit(process.env.EMIT_SIGNAL_ON_READY), 30);
+        });
+    }
+    return child;
+};
+`);
+    fs.writeFileSync(mockChild, `"use strict";
+const fs = require("node:fs");
+const delay = Number(process.env.FLUSH_DELAY_MS || 5400);
+const idleExitMs = Number(process.env.IDLE_EXIT_MS || 25000);
+process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ready: true } }) + "\\n");
+process.stdin.resume();
+let closing = false;
+process.stdin.on("end", () => {
+    if (closing) return;
+    closing = true;
+    setTimeout(() => {
+        if (process.env.FLUSH_MARKER) fs.writeFileSync(process.env.FLUSH_MARKER, "flushed");
+        process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: 2, result: { flushed: true } }) + "\\n");
+        process.exit(0);
+    }, delay);
+});
+setTimeout(() => { if (!closing) process.exit(2); }, idleExitMs).unref();
+`);
+    function runWrapper(label, script, scriptArgs, envExtra, closeStdinAfterReady = true) {
+        return new Promise((resolve, reject) => {
+            const metaFile = path.join(tmp, `meta-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+            const markerFile = path.join(tmp, `marker-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
+            const env = {
+                ...process.env,
+                MOCK_CHILD: mockChild,
+                SPAWN_META: metaFile,
+                FLUSH_MARKER: markerFile,
+                ...envExtra,
+            };
+            const p = spawn(process.execPath, ["--require", preload, script, ...scriptArgs], { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+            let out = "", err = "", settled = false, readySeen = false, childPoll = null;
+            const cleanup = () => {
+                if (childPoll) { clearInterval(childPoll); childPoll = null; }
+                try {
+                    const meta = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, "utf8")) : null;
+                    if (meta && meta.pid) { try { process.kill(meta.pid); } catch (_) { /* gone */ } }
+                } catch (_) { /* ignore */ }
+                try { p.kill(); } catch (_) { /* gone */ }
+                try { p.stdin.destroy(); } catch (_) { /* gone */ }
+                try { p.stdout.destroy(); } catch (_) { /* gone */ }
+                try { p.stderr.destroy(); } catch (_) { /* gone */ }
+            };
+            const timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(new Error(`timeout in ${label}; out=${JSON.stringify(out)} err=${JSON.stringify(err)}`));
+            }, 20000);
+            p.stdout.on("data", (c) => {
+                out += c.toString("utf8");
+                if (!readySeen && out.includes('"ready":true')) {
+                    readySeen = true;
+                    if (closeStdinAfterReady) {
+                        p.stdin.end();
+                    } else {
+                        // Close p.stdin only after the spawned child process has exited (ESRCH), unblocking
+                        // launch.js's Windows fd:0 pipe read without ever sending stdin EOF to a live child.
+                        childPoll = setInterval(() => {
+                            try {
+                                if (!fs.existsSync(metaFile)) return;
+                                const meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
+                                if (!meta || !meta.pid) return;
+                                try {
+                                    process.kill(meta.pid, 0);
+                                } catch (e) {
+                                    if (e && e.code === "ESRCH") {
+                                        clearInterval(childPoll);
+                                        childPoll = null;
+                                        try { p.stdin.end(); } catch (_) { /* gone */ }
+                                    }
+                                }
+                            } catch (_) { /* metaFile still writing */ }
+                        }, 25).unref();
+                    }
+                }
+            });
+            p.stderr.on("data", (c) => { err += c.toString("utf8"); });
+            p.on("error", (e) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                cleanup();
+                reject(e);
+            });
+            p.on("exit", (code) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                cleanup();
+                const meta = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, "utf8")) : null;
+                const flushed = fs.existsSync(markerFile) ? fs.readFileSync(markerFile, "utf8") : "";
+                resolve({ code, out, err, meta, flushed });
+            });
+        });
+    }
+    try {
+        // 1. mcpb/server/index.js relay: detached: true, waits > 5 s on stdin EOF
+        const rRelay = await runWrapper("relay-eof", STARTER, ["--scumble", process.execPath, "--launcher", mockChild], { FLUSH_DELAY_MS: "5400" }, true);
+        eq(rRelay.code, 0, "mcpb relay exit code after 5.4s flush: " + rRelay.err);
+        eq(rRelay.flushed, "flushed", "mcpb relay let child finish 5.4s flush");
+        eq(rRelay.meta && rRelay.meta.detached, true, "mcpb relay spawns child with detached: true");
+
+        // 2. mcpb/server/index.js relay on SIGTERM: calls clientGone (closes child stdin) instead of child.kill()
+        const rRelaySig = await runWrapper("relay-sig", STARTER, ["--scumble", process.execPath, "--launcher", mockChild], { FLUSH_DELAY_MS: "200", IDLE_EXIT_MS: "1200", EMIT_SIGNAL_ON_READY: "SIGTERM" }, false);
+        eq(rRelaySig.code, 0, "mcpb relay SIGTERM exit code");
+        eq(rRelaySig.flushed, "flushed", "mcpb relay SIGTERM let child flush instead of killing");
+
+        // 3. electron/main/mcp/launch.js (--mcp): detached: true, waits > 5 s on stdin EOF
+        const rLaunch = await runWrapper("launch-eof", launchJs, ["--mcp"], { FLUSH_DELAY_MS: "5400" }, true);
+        eq(rLaunch.code, 0, "launch.js --mcp exit code after 5.4s flush: " + rLaunch.err);
+        eq(rLaunch.flushed, "flushed", "launch.js --mcp let child finish 5.4s flush");
+        eq(rLaunch.meta && rLaunch.meta.detached, true, "launch.js --mcp spawns child with detached: true");
+
+        // 4. electron/main/mcp/launch.js (--mcp) on SIGTERM: calls clientGone instead of child.kill()
+        const rLaunchSig = await runWrapper("launch-sig", launchJs, ["--mcp"], { FLUSH_DELAY_MS: "200", IDLE_EXIT_MS: "1200", EMIT_SIGNAL_ON_READY: "SIGTERM" }, false);
+        eq(rLaunchSig.code, 0, "launch.js --mcp SIGTERM exit code");
+        eq(rLaunchSig.flushed, "flushed", "launch.js --mcp SIGTERM let child flush instead of killing");
+
+        // 5. electron/main/mcp/launch.js (--run): SERVES is false -> detached: false and SIGTERM kills child immediately
+        const rRunSig = await runWrapper("launch-run-sig", launchJs, ["--run", "steps.json"], { FLUSH_DELAY_MS: "600", IDLE_EXIT_MS: "1200", EMIT_SIGNAL_ON_READY: "SIGTERM" }, false);
+        eq(rRunSig.meta && rRunSig.meta.detached, false, "launch.js --run spawns child with detached: false");
+        eq(rRunSig.code, 1, "launch.js --run SIGTERM exit code");
+        eq(rRunSig.flushed, "", "launch.js --run SIGTERM kills child without waiting for MCP flush");
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+
 if (EXE) {
     check("a_real_start_through_the_starter_lists_the_tools_headless", async () => {
         ok(fs.existsSync(EXE), `${EXE} exists`);
