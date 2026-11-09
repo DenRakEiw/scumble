@@ -4610,7 +4610,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
             break;
         }
     }
-    check(`${label} png_part_lines_cap equals partRows(w) * (1 + 4 * w) across clamp boundaries and overflow`, capOk, capDetail);
+    check(`${label} png_part_lines_cap equals partRows(w, 2048) * (1 + 4 * w) across clamp boundaries and overflow`, capOk, capDetail);
 
     // 2. Round-trip tables: CPU-canvas 8-bit premultiply-unpremultiply table + distinct custom table
     const rtCanvas = new Uint8Array(65536);
@@ -4969,14 +4969,17 @@ async function partDecodeCases(px, label, png, zlib, js) {
         const fzWidths = [-7, -1, 0, 1, 2, 3, 4, 5, 7, 8, 15, 16, 17, 33, 64, 0x40000000];
         const fzRows = [-2, 0, 1, 2, 3, 4];
         let fuzzOk = true, fuzzDetail = "";
+        let decodeValidCount = 0, decodeBadFilterCount = 0, decodeNotLinesCount = 0;
+        let finishValidCount = 0, finishBadFilterCount = 0, finishNotLinesCount = 0;
         for (let t = 0; t < 240 && fuzzOk; t++) {
-            const fw = fzWidths[fzNext() & 15];
-            const fr = fzRows[fzNext() % fzRows.length];
+            const fw = (t % 4 <= 1) ? fzWidths[3 + (fzNext() % 12)] : fzWidths[fzNext() & 15];
             const validW = fw > 0 && fw <= 0x3fffffff;
             const fRowBytes = validW ? fw * 4 : 16;
             const fStride = validW ? fRowBytes + 1 : 17;
             let fLen;
-            if (t % 4 === 2 && validW) {
+            if (t % 4 <= 1 && validW) {
+                fLen = (1 + (fzNext() % 4)) * fStride;
+            } else if (t % 4 === 2 && validW) {
                 // Force bad length/dims + bad filter simultaneously to pin -4 before -5
                 const badLens = [0, 1, fStride - 1, fStride + 1, 2 * fStride - 1];
                 fLen = badLens[fzNext() % badLens.length];
@@ -4986,6 +4989,11 @@ async function partDecodeCases(px, label, png, zlib, js) {
             } else {
                 fLen = [0, 1, 17, 34, 51][fzNext() % 5];
             }
+            const wholeLines = validW && fLen > 0 && fLen % fStride === 0;
+            // In most rounds set fr = fLen / fStride when fLen is a whole number of lines; keep an independent fr only for mismatch rounds
+            const fr = (wholeLines && (t % 4 <= 1 || (fzNext() & 3) !== 0))
+                ? (fLen / fStride)
+                : fzRows[fzNext() % fzRows.length];
             const fLines = new Uint8Array(fLen);
             for (let i = 0; i < fLen; i++) fLines[i] = (fzNext() >>> 16) & 255;
             if (fLen > 0 && validW) {
@@ -5000,11 +5008,12 @@ async function partDecodeCases(px, label, png, zlib, js) {
                     fLines[0] = 5 + ((fzNext() >>> 8) % 251);
                 }
             }
-            const prevMode = fzNext() % 3; // 0: null, 1: valid, 2: short
+            // Force a full-length prev (and a null or full out) on t % 4 <= 1 so finish reaches both valid (> 0) and bad-filter (-5) paths
+            const prevMode = (t % 4 <= 1) ? 1 : (fzNext() % 3); // 0: null, 1: valid, 2: short
             const fPrev = prevMode === 0 ? null : new Uint8Array(prevMode === 1 ? fRowBytes : Math.max(0, fRowBytes - 1));
             if (fPrev) for (let i = 0; i < fPrev.length; i++) fPrev[i] = (fzNext() >>> 16) & 255;
-            const outMode = fzNext() % 3; // 0: null, 1: valid, 2: short
-            const estRows = validW && fLen > 0 && fLen % fStride === 0 ? fLen / fStride : Math.max(1, fr);
+            const outMode = (t % 4 <= 1) ? (fzNext() & 1) : (fzNext() % 3); // 0: null, 1: valid, 2: short
+            const estRows = wholeLines ? fLen / fStride : Math.max(1, fr);
             const fOut = outMode === 0 ? null : new Uint8Array(outMode === 1 ? estRows * fRowBytes : Math.max(0, estRows * fRowBytes - 1));
             if (fOut) for (let i = 0; i < fOut.length; i++) fOut[i] = (fzNext() >>> 16) & 255;
             const fRt = (fzNext() & 1) ? rtCanvas : null;
@@ -5014,7 +5023,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
             const oDJ = fOut ? fOut.slice() : null, oDP = fOut ? fOut.slice() : null;
             const dJ = js.pngPartDecode(lDJ, fw, pDJ, fRt, oDJ);
             const dP = px.pngPartDecode(lDP, fw, pDP, fRt, oDP);
-            const shapeValidDecode = validW && fLen > 0 && fLen % fStride === 0
+            const shapeValidDecode = wholeLines
                 && (!fPrev || fPrev.length >= fRowBytes) && (!fOut || fOut.length >= (fLen / fStride) * fRowBytes);
             if (dJ.code !== dP.code || (!shapeValidDecode && dJ.code !== -4)) {
                 fuzzOk = false;
@@ -5027,19 +5036,24 @@ async function partDecodeCases(px, label, png, zlib, js) {
                 break;
             }
             if (dJ.code < 0) {
+                if (dJ.code === -4) decodeNotLinesCount++;
+                else if (dJ.code === -5) decodeBadFilterCount++;
                 if ((fPrev && (!eqBytes(pDJ, fPrev) || !eqBytes(pDP, fPrev)))
                     || (fOut && (!eqBytes(oDJ, fOut) || !eqBytes(oDP, fOut)))) {
                     fuzzOk = false;
                     fuzzDetail = `fuzz decode #${t}: prev/out mutated on code ${dJ.code}`;
                     break;
                 }
-            } else if (dJ.adler !== dP.adler || dJ.firstFilter !== dP.firstFilter || dJ.opaque !== dP.opaque
-                || dJ.needsPrev !== dP.needsPrev
-                || !eqBytes(dJ.out || new Uint8Array(0), dP.out || new Uint8Array(0))
-                || !eqBytes(dJ.prev || new Uint8Array(0), dP.prev || new Uint8Array(0))) {
-                fuzzOk = false;
-                fuzzDetail = `fuzz decode #${t}: output mismatch on valid decode`;
-                break;
+            } else {
+                decodeValidCount++;
+                if (dJ.adler !== dP.adler || dJ.firstFilter !== dP.firstFilter || dJ.opaque !== dP.opaque
+                    || dJ.needsPrev !== dP.needsPrev
+                    || !eqBytes(dJ.out || new Uint8Array(0), dP.out || new Uint8Array(0))
+                    || !eqBytes(dJ.prev || new Uint8Array(0), dP.prev || new Uint8Array(0))) {
+                    fuzzOk = false;
+                    fuzzDetail = `fuzz decode #${t}: output mismatch on valid decode`;
+                    break;
+                }
             }
 
             const lFJ = fLines.slice(), lFP = fLines.slice();
@@ -5060,18 +5074,28 @@ async function partDecodeCases(px, label, png, zlib, js) {
                 break;
             }
             if (fJ.code < 0) {
+                if (fJ.code === -4) finishNotLinesCount++;
+                else if (fJ.code === -5) finishBadFilterCount++;
                 if ((fPrev && (!eqBytes(pFJ, fPrev) || !eqBytes(pFP, fPrev)))
                     || (fOut && (!eqBytes(oFJ, fOut) || !eqBytes(oFP, fOut)))) {
                     fuzzOk = false;
                     fuzzDetail = `fuzz finish #${t}: prev/out mutated on code ${fJ.code}`;
                     break;
                 }
-            } else if (fJ.firstFilter !== fP.firstFilter || fJ.opaque !== fP.opaque
-                || !eqBytes(fJ.out, fP.out) || !eqBytes(fJ.prev, fP.prev)) {
-                fuzzOk = false;
-                fuzzDetail = `fuzz finish #${t}: output mismatch on valid finish`;
-                break;
+            } else {
+                finishValidCount++;
+                if (fJ.firstFilter !== fP.firstFilter || fJ.opaque !== fP.opaque
+                    || !eqBytes(fJ.out, fP.out) || !eqBytes(fJ.prev, fP.prev)) {
+                    fuzzOk = false;
+                    fuzzDetail = `fuzz finish #${t}: output mismatch on valid finish`;
+                    break;
+                }
             }
+        }
+        if (fuzzOk && (decodeValidCount < 40 || decodeBadFilterCount < 40 || decodeNotLinesCount < 40
+            || finishValidCount < 40 || finishBadFilterCount < 40 || finishNotLinesCount < 40)) {
+            fuzzOk = false;
+            fuzzDetail = `fuzz coverage too low: decode=(ok:${decodeValidCount}, -5:${decodeBadFilterCount}, -4:${decodeNotLinesCount}) finish=(ok:${finishValidCount}, -5:${finishBadFilterCount}, -4:${finishNotLinesCount})`;
         }
         check(`${label} png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)`,
             fuzzOk, fuzzDetail);

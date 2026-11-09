@@ -590,15 +590,15 @@ pub fn chunk_frame(buf: &mut [u8], data_len: usize, kind: u32) -> u32 {
 
 /// Standard PNG part target size in uncompressed pixel bytes (`inpaint_png.js` `PART_BYTES`).
 pub const PART_BYTES: usize = 8 * 1048576;
-/// Maximum rows in one PNG part (`inpaint_program.js` `programRows` / `bandPlan.rows` -> `inpaint_bands.js`
-/// `bandSource` -> `bandRows` align -> `inpaint_png.js` `forParts` `partRows(width, align)`).
+/// Maximum rows in one PNG part (`inpaint_canvas.js` `programRows` / `bandPlan.rows` / `bandSource` ->
+/// `inpaint_bands.js` `bandRows` align / `forParts` -> `inpaint_png.js` `partRows(width, align)`).
 pub const PART_MAX_ROWS: usize = 2048;
 /// `png_part_decode` / `png_part_finish`: `lines` is empty or not a whole number of `1 + 4 * w`-byte scanlines.
 pub const PART_NOT_LINES: isize = -4;
 /// `png_part_decode` / `png_part_finish`: a scanline's filter byte is not `0..=4`.
 pub const PART_BAD_FILTER: isize = -5;
 
-/// Byte capacity of `lines` for a standard `PART_BYTES` part of a `w`-wide 8-bit RGBA PNG (`partRows(w) * (1 + 4 * w)`).
+/// Byte capacity of `lines` for a standard `PART_BYTES` part of a `w`-wide 8-bit RGBA PNG (`partRows(w, 2048) * (1 + 4 * w)`).
 pub fn part_lines_cap(w: usize) -> usize {
     let Some(row_bytes) = w.checked_mul(4) else { return 0 };
     if row_bytes == 0 {

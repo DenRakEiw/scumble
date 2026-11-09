@@ -1481,7 +1481,7 @@ export function pngChunkFrame(buf, dataLen = buf.byteLength - 12, kind = 0x49444
 
 const ADLER_MOD = 65521;
 const PNG_PART_BYTES = 8 * 1048576;
-const PNG_PART_MAX_ROWS = 2048; // programRows / bandPlan.rows cap (inpaint_program.js / inpaint_bands.js)
+const PNG_PART_MAX_ROWS = 2048; // programRows / bandPlan.rows / bandSource (inpaint_canvas.js) -> forParts (inpaint_bands.js)
 export const PART_NOT_LINES = -4, PART_BAD_FILTER = -5;
 
 /** Adler-32 of `bytes`, continued from `start` (1 for a new checksum). */
@@ -1502,7 +1502,7 @@ export function adler32(bytes, start = 1) {
 
 /**
  * Byte capacity of `lines` for a standard `PART_BYTES` (`8 MB`) part of a `w`-wide 8-bit RGBA PNG
- * (`partRows(w) * (1 + 4 * w)`), or 0 when `w <= 0` (K7, docs/PLAN_WASM_BUILD.md §4.2).
+ * (`partRows(w, 2048) * (1 + 4 * w)`), or 0 when `w <= 0` (K7, docs/PLAN_WASM_BUILD.md §4.2).
  */
 export function pngPartLinesCap(w) {
     if (!Number.isInteger(w) || w <= 0 || w > 0x3fffffff) return 0;

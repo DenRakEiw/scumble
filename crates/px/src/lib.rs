@@ -723,7 +723,7 @@ pub unsafe extern "C" fn png_chunk_frame(buf: *mut u8, data_len: usize, kind: u3
 }
 
 /// Byte capacity of `lines` for a standard `PART_BYTES` (`8 MB`) part of a `w`-wide 8-bit RGBA PNG
-/// (`partRows(w) * (1 + 4 * w)`), or 0 when `w == 0` or on overflow (K7, `docs/PLAN_WASM_BUILD.md` §4.2).
+/// (`partRows(w, 2048) * (1 + 4 * w)`), or 0 when `w == 0` or on overflow (K7, `docs/PLAN_WASM_BUILD.md` §4.2).
 #[no_mangle]
 pub extern "C" fn png_part_lines_cap(w: usize) -> usize {
     png::part_lines_cap(w)
