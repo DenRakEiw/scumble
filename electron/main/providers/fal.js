@@ -284,6 +284,7 @@ async function queued(model, input, ctx, waitMs) {
             }
         } else if (err && err.timedOut && !ended && cancelUrl && await askStop(cancelUrl, { host: "queue.fal.run", method: "PUT", auth: headers.Authorization })) {
             ctx.cancelAsked = true;
+            err.message = err.message.replace("the job may still finish and be charged.", "Scumble asked fal.ai to stop the job.");
         }
         throw err;
     }

@@ -1857,6 +1857,14 @@ function looksLikePrompt(obj) {
     return vals.length > 0 && vals.every((v) => v && typeof v === "object" && typeof v.class_type === "string");
 }
 
+async function userFileStems() {
+    try {
+        return new Set((await fsp.readdir(userDir())).filter((n) => /\.json$/i.test(n)).map((n) => n.slice(0, -5).toLowerCase()));
+    } catch (_) {
+        return new Set();
+    }
+}
+
 /**
  * Import a workflow file. `objectInfo` comes from the connected server (null when
  * offline: API-format files still work, UI-format files need the widget order).
@@ -1880,10 +1888,12 @@ async function importFile(file, objectInfo, opts) {
             if (!info) throw new Error("Reading a workflow saved from the ComfyUI UI needs the node definitions: store a Comfy Cloud key (or connect a ComfyUI), or export the workflow in API format.");
             output = fromWorkflow(wf, info, meta, { noCanvas: true }).prompt;
         }
-        const ids = (await list(builtinDir)).map((r) => r.id);
+        const ids = [...(await list(builtinDir)).map((r) => r.id), ...(await userFileStems())];
         let made;
         try { made = fromCloudGraph({ output, workflow: wf, name: stem0, ids, date: meta.date, promoted: wf ? promotedOf(wf) : [] }); }
         catch (err) { throw new Error(`This graph has no Inpaint Canvas node, and Scumble could not read it as a Comfy Cloud graph: ${err.message}`); }
+        const bump = /^_(\d+)$/.exec(made.id.slice(slug(stem0).length));
+        if (bump) made.name = `${made.name} ${bump[1]}`;
         const savedCloud = await save(made);
         const out = normalize({ ...made, file: path.basename(savedCloud), source: "user" });
         out.notes = [...(Array.isArray(out.notes) ? out.notes : []), `id ${out.id}`];
@@ -1907,23 +1917,26 @@ async function importFile(file, objectInfo, opts) {
     }
     const existing = await list(builtinDir);
     const byId = new Map(existing.map((r) => [r.id, r]));
+    const fileStems = await userFileStems();
     const stem = path.basename(file).replace(/\.json$/i, "");
-    const hasOwnId = !!(data && data.kind && typeof recipe.id === "string" && recipe.id.trim());
+    const rawId = data && data.kind && typeof recipe.id === "string" ? recipe.id.trim() : "";
+    const prev = rawId && slug(rawId) === rawId ? byId.get(rawId) : undefined;
+    const keepOwnId = !!(rawId && slug(rawId) === rawId && (prev || !fileStems.has(rawId.toLowerCase())));
     let idNote;
-    if (hasOwnId) {
-        recipe.id = slug(recipe.id);
-        const prev = byId.get(recipe.id);
+    if (keepOwnId) {
+        recipe.id = rawId;
         idNote = prev && prev.source === "user" ? `replaced your recipe ${recipe.id}`
             : prev && prev.source === "builtin" ? `shadows the shipped ${recipe.id}`
                 : `id ${recipe.id}`;
+        recipe.name = recipe.name || stem;
     } else {
-        const baseId = slug(stem);
+        const baseId = slug(rawId || stem);
         let id = baseId, n = 2;
-        while (byId.has(id) || id === "flux2_klein_local") id = `${baseId}_${n++}`;
+        while (byId.has(id) || id === "flux2_klein_local" || fileStems.has(id.toLowerCase())) id = `${baseId}_${n++}`;
         recipe.id = id;
         idNote = `id ${recipe.id}`;
+        recipe.name = recipe.name || (id === baseId ? stem : `${stem} ${n - 1}`);
     }
-    recipe.name = recipe.name || stem;
     const saved = await save(recipe);
     // the file keeps the shape it was written in; the caller gets the recipe as list() serves it
     const out = normalize({ ...recipe, file: path.basename(saved), source: "user" });

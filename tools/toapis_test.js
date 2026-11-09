@@ -193,6 +193,12 @@ async function main() {
                 !!eOpt && /nothing was sent/.test(eOpt) && sOpt.calls.length === 0 && ({}).polluted === undefined,
                 eOpt);
         }
+        const sFalsy = fakeServer();
+        await toapis.edit(editReq(v, { negative: "ugly", seed: 9, options: { ...v.options, negative: false, seed: "" } }), ctxFor(sFalsy));
+        const bFalsy = sFalsy.submits[0];
+        check("PRV-2: falsy options.negative (false) and options.seed (\"\") skip checkPaths without throwing and omit both fields from the body",
+            !!bFalsy && !("negative_prompt" in bFalsy) && !("seed" in bFalsy),
+            JSON.stringify(bFalsy));
     });
 
     // ---- 2b. caps: layout(req) and the builder read one cap, the chosen channel's, as +x > 0 (docs/PLAN_REFS.md 26a2) ----
@@ -542,6 +548,10 @@ async function main() {
         check("a plain answer keeps the image and has no note", e.calls.length === 1 && e.calls[0].image && e.res && e.res.note === "", JSON.stringify(e));
         const f = await scenario([[401, "Invalid token " + KEY]]);
         check("a 401 that echoes the key: one call, key refused, the key taken out", f.calls.length === 1 && !!f.err && /key refused/.test(f.err) && !f.err.includes(KEY), String(f.err));
+        const fBoundary = await scenario([[401, "x".repeat(492) + KEY + "y".repeat(200)]]);
+        check("a 401 that echoes the key across the 500-char jsonError cap: scrubbed before slicing so no prefix of the key leaks",
+            fBoundary.calls.length === 1 && !!fBoundary.err && !fBoundary.err.includes(KEY) && !fBoundary.err.includes(KEY.slice(0, 6)),
+            String(fBoundary.err));
         check("the key never appears in an upsampling error", ![a, b, c].some((x) => String(x.err).includes(KEY)), "");
     });
 

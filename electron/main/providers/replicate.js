@@ -188,7 +188,7 @@ module.exports = {
     async edit(req, ctx) {
         const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
         if (!model) throw new Error("Replicate recipe has no model (owner/name or owner/name:version).");
-        const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json", Prefer: "wait=30" };
+        const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" };
         const sent = {};
         const input = await inputFor(req, ctx, sent);
         let url, body;
@@ -219,7 +219,6 @@ module.exports = {
                     return { ...prev, ...j };
                 },
                 done: (p) => {
-                    if (p && p.urls && p.urls.cancel) cancelUrl = p.urls.cancel;
                     if (p.status === "succeeded") {
                         ended = true;
                         completed = true;
@@ -245,6 +244,7 @@ module.exports = {
                 }
             } else if (err && err.timedOut && !ended && cancelUrl && await askStop(cancelUrl, { host: "api.replicate.com", method: "POST", auth: headers.Authorization })) {
                 ctx.cancelAsked = true;
+                err.message = err.message.replace("the job may still finish and be charged.", "Scumble asked Replicate to stop the job.");
             }
             throw err;
         }

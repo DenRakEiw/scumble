@@ -192,12 +192,12 @@ async function main() {
         const afterWf = await recipes.list(RECIPES);
         const gotWf1 = afterWf.find((r) => r.id === "workflow");
         const gotWf2 = afterWf.find((r) => r.id === "workflow_2");
-        check("importing two workflow/prompt files named workflow.json gives workflow and workflow_2, and keeps the first in list()",
-            !!wf1 && wf1.id === "workflow" && Array.isArray(wf1.notes) && wf1.notes.includes("id workflow")
-            && !!wf2 && wf2.id === "workflow_2" && Array.isArray(wf2.notes) && wf2.notes.includes("id workflow_2")
+        check("importing two workflow/prompt files named workflow.json gives workflow (\"workflow\") and workflow_2 (\"workflow 2\"), and keeps the first in list()",
+            !!wf1 && wf1.id === "workflow" && wf1.name === "workflow" && Array.isArray(wf1.notes) && wf1.notes.includes("id workflow")
+            && !!wf2 && wf2.id === "workflow_2" && wf2.name === "workflow 2" && Array.isArray(wf2.notes) && wf2.notes.includes("id workflow_2")
             && !!gotWf1 && gotWf1.prompt["1"].inputs.padding === 32
             && !!gotWf2 && gotWf2.prompt["1"].inputs.padding === 64,
-            short({ wf1: wf1 && { id: wf1.id, notes: wf1.notes }, wf2: wf2 && { id: wf2.id, notes: wf2.notes } }));
+            short({ wf1: wf1 && { id: wf1.id, name: wf1.name, notes: wf1.notes }, wf2: wf2 && { id: wf2.id, name: wf2.name, notes: wf2.notes } }));
 
         const relightWf = await recipes.importFile(fileOf(dir, "relight.json", apiPrompt(48)), null);
         const noIdRecipe = await recipes.importFile(fileOf(dir, "flux2_pro.json", { kind: "provider", name: "No id", providers: { loopback: { model: "loopback-1" } } }), null);
@@ -206,12 +206,48 @@ async function main() {
         const userRelight2 = afterRel.find((r) => r.id === "relight_2");
         const shippedPro = afterRel.find((r) => r.id === "flux2_pro");
         const userPro2 = afterRel.find((r) => r.id === "flux2_pro_2");
-        check("importing a prompt or id-less recipe named after a shipped recipe (relight.json, flux2_pro.json) picks _2 and does not shadow the shipped recipe",
-            !!relightWf && relightWf.id === "relight_2" && Array.isArray(relightWf.notes) && relightWf.notes.includes("id relight_2")
-            && !!noIdRecipe && noIdRecipe.id === "flux2_pro_2" && Array.isArray(noIdRecipe.notes) && noIdRecipe.notes.includes("id flux2_pro_2")
+        check("importing a prompt or id-less recipe named after a shipped recipe (relight.json, flux2_pro.json) picks _2, numbers stem-derived names, and does not shadow the shipped recipe",
+            !!relightWf && relightWf.id === "relight_2" && relightWf.name === "relight 2" && Array.isArray(relightWf.notes) && relightWf.notes.includes("id relight_2")
+            && !!noIdRecipe && noIdRecipe.id === "flux2_pro_2" && noIdRecipe.name === "No id" && Array.isArray(noIdRecipe.notes) && noIdRecipe.notes.includes("id flux2_pro_2")
             && !!shippedRelight && shippedRelight.source === "builtin" && !!userRelight2 && userRelight2.source === "user"
             && !!shippedPro && shippedPro.source === "builtin" && !!userPro2 && userPro2.source === "user",
-            short({ relightWf: relightWf && relightWf.id, noIdRecipe: noIdRecipe && noIdRecipe.id, shippedRelight: shippedRelight && shippedRelight.source, shippedPro: shippedPro && shippedPro.source }));
+            short({ relightWf: relightWf && { id: relightWf.id, name: relightWf.name }, noIdRecipe: noIdRecipe && { id: noIdRecipe.id, name: noIdRecipe.name }, shippedRelight: shippedRelight && shippedRelight.source, shippedPro: shippedPro && shippedPro.source }));
+
+        // rec-fresh-id-ignores-file-names: a hand-named user file (custom_file.json with id my_flux) is not overwritten by custom_file.json workflow or id "custom_file"
+        fs.writeFileSync(path.join(recipes.userDir(), "custom_file.json"), JSON.stringify({ kind: "provider", id: "my_flux", name: "My Flux", providers: { loopback: { model: "loopback-1" } } }), "utf8");
+        const cfWf = await recipes.importFile(fileOf(dir, "custom_file.json", apiPrompt(16)), null);
+        const cfOwn = await recipes.importFile(fileOf(dir, "other.json", { kind: "provider", id: "custom_file", name: "Custom file", providers: { loopback: { model: "loopback-2" } } }), null);
+        const afterCf = await recipes.list(RECIPES);
+        check("a user file whose stem (custom_file.json) differs from its internal id (my_flux) is not overwritten when importing custom_file.json or id custom_file",
+            !!cfWf && cfWf.id === "custom_file_2" && !!cfOwn && cfOwn.id === "custom_file_3"
+            && !!afterCf.find((r) => r.id === "my_flux" && r.name === "My Flux")
+            && !!afterCf.find((r) => r.id === "custom_file_2") && !!afterCf.find((r) => r.id === "custom_file_3"),
+            short({ cfWf: cfWf && cfWf.id, cfOwn: cfOwn && cfOwn.id }));
+
+        // rec-own-id-slug-collapse-replaces: non-canonical explicit ids that slug to the same string get fresh ids instead of replacing each other
+        const slugA = await recipes.importFile(fileOf(dir, "slug_a.json", { kind: "provider", id: "My Custom Recipe!", name: "Slug A", providers: { loopback: { model: "loopback-1" } } }), null);
+        const slugB = await recipes.importFile(fileOf(dir, "slug_b.json", { kind: "provider", id: "MY-CUSTOM-RECIPE", name: "Slug B", providers: { loopback: { model: "loopback-2" } } }), null);
+        const afterSlug = await recipes.list(RECIPES);
+        check("two recipes with non-canonical explicit ids that slug to the same string get my_custom_recipe and my_custom_recipe_2 instead of overwriting",
+            !!slugA && slugA.id === "my_custom_recipe" && Array.isArray(slugA.notes) && slugA.notes.includes("id my_custom_recipe")
+            && !!slugB && slugB.id === "my_custom_recipe_2" && Array.isArray(slugB.notes) && slugB.notes.includes("id my_custom_recipe_2")
+            && !!afterSlug.find((r) => r.id === "my_custom_recipe" && r.name === "Slug A")
+            && !!afterSlug.find((r) => r.id === "my_custom_recipe_2" && r.name === "Slug B"),
+            short({ slugA: slugA && slugA.id, slugB: slugB && slugB.id }));
+
+        // T7: flux2_klein_local own-id shadows the shipped recipe, while an id-less flux2_klein_local.json gets flux2_klein_local_2
+        const kleinNoId = { kind: "comfy", ...rawFile("flux2_klein_local.json") };
+        delete kleinNoId.id;
+        const kleinFresh = await recipes.importFile(fileOf(dir, "flux2_klein_local.json", kleinNoId), null);
+        const kleinOwn = { kind: "comfy", ...rawFile("flux2_klein_local.json"), description: "custom klein" };
+        const kleinShadow = await recipes.importFile(fileOf(dir, "flux2_klein_local.json", kleinOwn), null);
+        const afterKlein = await recipes.list(RECIPES);
+        const gotKlein = afterKlein.filter((r) => r.id === "flux2_klein_local");
+        check("an id-less flux2_klein_local.json gets flux2_klein_local_2, while a copy with id flux2_klein_local shadows the shipped recipe",
+            !!kleinFresh && kleinFresh.id === "flux2_klein_local_2"
+            && !!kleinShadow && kleinShadow.id === "flux2_klein_local" && Array.isArray(kleinShadow.notes) && kleinShadow.notes.includes("shadows the shipped flux2_klein_local")
+            && gotKlein.length === 1 && gotKlein[0].source === "user" && gotKlein[0].description === "custom klein",
+            short({ kleinFresh: kleinFresh && kleinFresh.id, kleinShadow: kleinShadow && { id: kleinShadow.id, notes: kleinShadow.notes } }));
 
         // the old one-provider shape
         freshUserData();

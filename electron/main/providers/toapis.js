@@ -146,10 +146,10 @@ function checkPaths(req, ch) {
         if (k === "background" && ch.transparent_only && String(v).toLowerCase() !== "transparent") continue;
         splitPath(k);
     }
-    if (ch.images != null) splitPath(ch.images);
-    if (ch.tier_key != null) splitPath(ch.tier_key);
-    if (ch.seed != null) splitPath(ch.seed);
-    if (ch.negative != null) splitPath(ch.negative);
+    if (ch.images) splitPath(ch.images);
+    if (ch.tier_key) splitPath(ch.tier_key);
+    if (ch.seed) splitPath(ch.seed);
+    if (ch.negative) splitPath(ch.negative);
 }
 
 /** The channel a run takes: the variant's options with the chosen Channel row value's overrides on top. */

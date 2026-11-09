@@ -140,6 +140,7 @@ function makeReplicateRig({ id = "pred-rep-88", cancelUrl, submit, status = [], 
     const dlQ = [...download];
     const sleeps = [];
     const calls = { submit: 0, status: 0, download: 0, cancel: 0, afterAbort: 0 };
+    const submitCalls = [];
     const cancelCalls = [];
 
     async function fetch(url, init = {}) {
@@ -157,6 +158,7 @@ function makeReplicateRig({ id = "pred-rep-88", cancelUrl, submit, status = [], 
         }
         if (method === "POST") {
             calls.submit++;
+            submitCalls.push({ url: u, headers: init.headers || {} });
             if (submit) return submit();
             const urls = { get: `https://api.replicate.com/v1/predictions/${id}` };
             if (cancelHref) urls.cancel = cancelHref;
@@ -185,7 +187,7 @@ function makeReplicateRig({ id = "pred-rep-88", cancelUrl, submit, status = [], 
         log: () => {},
     };
     const req = { model: "black-forest-labs/flux-2-pro", kind: "edit", prompt: "a cat", image: PNG, references: [], width: 64, height: 64, seed: 11, params: {} };
-    return { KEY, id, calls, cancelCalls, sleeps, ctx, req, fetch };
+    return { KEY, id, calls, submitCalls, cancelCalls, sleeps, ctx, req, fetch };
 }
 
 // ---- 3. wavespeed.js (edit) ----
@@ -340,7 +342,7 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
                 && gCap.sleeps.every((ms) => ms <= 60000),
                 JSON.stringify(gCap.sleeps));
         }
-        // 6c. Fake-clock timeout clamps remaining wait and throws naming request id and saying job may still finish and be charged
+        // 6c. Fake-clock timeout clamps remaining wait, asks to stop if supported, and throws naming request id
         {
             const realNow = Date.now;
             let fakeNow = 1_000_000;
@@ -360,12 +362,35 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
                     fakeNow += ms;
                 };
                 const err = await throws(() => runFn(g.req, g.ctx));
-                const stopOk = g.calls.cancel === undefined || (g.calls.cancel === 1 && g.ctx.cancelAsked === true);
-                check(`${label}: poll timeout clamps sleep to remaining 5000 ms, sends stop if supported, and throws naming ${g.id} and saying job may still finish and be charged`,
+                const hasStop = g.calls.cancel !== undefined;
+                const stopOk = !hasStop || (g.calls.cancel === 1 && g.ctx.cancelAsked === true);
+                const msgOk = hasStop ? /Scumble asked (fal\.ai|Replicate) to stop the job\./.test(err || "") : /may still finish and be charged/.test(err || "");
+                check(`${label}: poll timeout clamps sleep to remaining 5000 ms, sends stop if supported, and throws naming ${g.id}`,
                     !!err && err.includes("timed out after 15 minutes") && err.includes(g.id)
-                    && /may still finish and be charged/.test(err) && !err.includes(g.KEY)
+                    && msgOk && !err.includes(g.KEY)
                     && g.sleeps.includes(5000) && !g.sleeps.includes(60000) && g.calls.submit === 1 && stopOk,
                     `${err} | sleeps=${JSON.stringify(g.sleeps)} calls=${JSON.stringify(g.calls)}`);
+                if (hasStop) {
+                    fakeNow = 1_000_000;
+                    const gFail = makeRig({
+                        status: [
+                            () => {
+                                fakeNow = 1_000_000 + 15 * 60 * 1000 - 5000;
+                                return html(429, `rate limited ${gFail.KEY}`, { "Retry-After": "60" });
+                            },
+                            () => statusPendingFn(),
+                        ],
+                        cancel: () => json(500, { error: "stop failed" }),
+                    });
+                    gFail.ctx.sleep = async (ms) => {
+                        gFail.sleeps.push(ms);
+                        fakeNow += ms;
+                    };
+                    const errFail = await throws(() => runFn(gFail.req, gFail.ctx));
+                    check(`${label}: poll timeout when stop returns 500 keeps 'the job may still finish and be charged' and leaves cancelAsked unset`,
+                        !!errFail && errFail.includes("timed out after 15 minutes") && /may still finish and be charged/.test(errFail) && gFail.calls.cancel === 1 && !gFail.ctx.cancelAsked,
+                        `${errFail} | calls=${JSON.stringify(gFail.calls)}`);
+                }
             } finally {
                 Date.now = realNow;
             }
@@ -875,8 +900,9 @@ async function main() {
             g.ctx.sleep = async () => { ac.abort(); };
             const err = await withGlobalFetch(g.fetch, () => throws(() => runFn(g.req, g.ctx)));
             const c = g.cancelCalls[0];
-            check(`${label}: Cancel while queued sends ${wantMethod} to ${wantHost} with auth & redirect=error, sets cancelAsked=true without reading body, POST counted once`,
-                /cancelled|aborted/i.test(err || "") && g.calls.submit === 1 && g.calls.cancel === 1 && g.ctx.cancelAsked === true && !g.ctx.jobDone && !bodyRead
+            const noPrefer = !g.submitCalls || !Object.keys((g.submitCalls[0] && g.submitCalls[0].headers) || {}).some((k) => k.toLowerCase() === "prefer");
+            check(`${label}: Cancel while queued sends ${wantMethod} to ${wantHost} with auth & redirect=error, sets cancelAsked=true without reading body, POST counted once (no Prefer wait header)`,
+                /cancelled|aborted/i.test(err || "") && g.calls.submit === 1 && g.calls.cancel === 1 && g.ctx.cancelAsked === true && !g.ctx.jobDone && !bodyRead && noPrefer
                 && c && c.method === wantMethod && new URL(c.url).hostname === wantHost && c.headers.Authorization === wantAuthPrefix + g.KEY && c.redirect === "error" && !!c.signal,
                 JSON.stringify({ err, calls: g.calls, cancelAsked: g.ctx.cancelAsked, c }));
 
@@ -910,10 +936,12 @@ async function main() {
                     JSON.stringify({ errSub, calls: gSub.calls }));
             }
 
-            // 4. Untrusted cancel_url / urls.cancel (http:, wrong host, or credentials) sends nothing
+            // 4. Untrusted cancel_url / urls.cancel (http:, wrong or lookalike host, or credentials) sends nothing
             for (const badUrl of [
                 `http://${wantHost}/v1/cancel`,
                 "https://evil.example/v1/cancel",
+                `https://${wantHost}.evil.example/v1/cancel`,
+                `https://x${wantHost}/v1/cancel`,
                 `https://user:pw@${wantHost}/v1/cancel`,
             ]) {
                 const acBad = new AbortController();
@@ -926,27 +954,29 @@ async function main() {
             }
         }
 
-        // 5. A stop fake that never answers ends the run within ~2 s without setting cancelAsked (tested in parallel for fal & Replicate)
+        // 5. A stop fake that never answers ends the run within ~2 s without setting cancelAsked, and a late rejection after the race is swallowed (tested in parallel for fal & Replicate)
         {
+            const lateRejectors = [];
             const runHangingCancel = async (makeRig, runFn) => {
                 const ac = new AbortController();
-                let rejectLate;
-                const g = makeRig({
-                    signal: ac.signal,
-                    cancel: () => new Promise((_, rej) => { rejectLate = rej; }),
-                });
+                const g = makeRig({ signal: ac.signal });
                 g.ctx.sleep = async () => { ac.abort(); };
                 const t0 = Date.now();
                 const err = await throws(() => runFn(g.req, g.ctx));
                 const elapsed = Date.now() - t0;
-                if (rejectLate) setTimeout(() => rejectLate(new Error("late cancel failure after 2s race")), 10);
                 return { err, elapsed, g };
             };
             const saved = globalThis.fetch;
             let falCalls = 0, repCalls = 0;
-            globalThis.fetch = (url, init) => {
-                if (String(url).includes("queue.fal.run")) { falCalls++; return new Promise(() => {}); }
-                if (String(url).includes("api.replicate.com")) { repCalls++; return new Promise(() => {}); }
+            globalThis.fetch = (url) => {
+                if (String(url).includes("queue.fal.run")) {
+                    falCalls++;
+                    return new Promise((_, rej) => { lateRejectors.push(rej); });
+                }
+                if (String(url).includes("api.replicate.com")) {
+                    repCalls++;
+                    return new Promise((_, rej) => { lateRejectors.push(rej); });
+                }
                 return Promise.reject(new Error("unexpected url " + url));
             };
             try {
@@ -954,10 +984,12 @@ async function main() {
                     runHangingCancel(makeFalRig, (r, c) => fal.edit(r, c)),
                     runHangingCancel(makeReplicateRig, (r, c) => replicate.edit(r, c)),
                 ]);
-                check(`fal.js: hanging stop request ends within ~2 s (${fRes.elapsed} ms) without cancelAsked`,
+                for (const rej of lateRejectors) rej(new Error("late cancel failure after 2s race"));
+                await new Promise((r) => setTimeout(r, 20));
+                check(`fal.js: hanging stop request ends within ~2 s (${fRes.elapsed} ms) without cancelAsked and swallows late rejection`,
                     /cancelled|aborted/i.test(fRes.err || "") && fRes.elapsed >= 1800 && fRes.elapsed < 2800 && falCalls === 1 && !fRes.g.ctx.cancelAsked,
                     `elapsed=${fRes.elapsed}ms falCalls=${falCalls}`);
-                check(`replicate.js: hanging stop request ends within ~2 s (${rRes.elapsed} ms) without cancelAsked`,
+                check(`replicate.js: hanging stop request ends within ~2 s (${rRes.elapsed} ms) without cancelAsked and swallows late rejection`,
                     /cancelled|aborted/i.test(rRes.err || "") && rRes.elapsed >= 1800 && rRes.elapsed < 2800 && repCalls === 1 && !rRes.g.ctx.cancelAsked,
                     `elapsed=${rRes.elapsed}ms repCalls=${repCalls}`);
             } finally {
