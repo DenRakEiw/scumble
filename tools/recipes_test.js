@@ -165,12 +165,53 @@ async function main() {
         check("the imported recipe obeys the slot rule too", !listed.filter((r) => r.source === "user").flatMap((r) => Object.entries(r.providers || {}).flatMap(([pid, pv]) => slotFaults(pv.settings, `${r.id}/${pid}`))).length);
 
         // a copy that keeps the shipped id shadows the shipped recipe, as a copy placed in the folder by hand does
+        check("a new recipe with its own id notes `id <id>`", Array.isArray(imported.notes) && imported.notes.includes("id flux2_flex_mine"), short(imported && imported.notes));
+        const mineAgain = { ...mine, description: "updated mine" };
+        const reimported = await recipes.importFile(fileOf(dir, "flux2_flex_mine.json", mineAgain), null);
+        check("re-importing a user recipe with its own id replaces it and notes `replaced your recipe <id>`",
+            !!reimported && reimported.id === "flux2_flex_mine" && reimported.description === "updated mine"
+            && Array.isArray(reimported.notes) && reimported.notes.includes("replaced your recipe flux2_flex_mine"),
+            short(reimported && { id: reimported.id, notes: reimported.notes }));
         const same = rawFile("flux2_flex.json");
         same.description = "my own";
-        await recipes.importFile(fileOf(dir, "flux2_flex.json", same), null);
+        const shadowed = await recipes.importFile(fileOf(dir, "flux2_flex.json", same), null);
         const after = await recipes.list(RECIPES);
         const flex = after.filter((r) => r.id === "flux2_flex");
-        check("a copy under the shipped id shadows the shipped recipe, and is served once", flex.length === 1 && flex[0].source === "user" && flex[0].description === "my own", `${flex.length} entries, source ${flex[0] && flex[0].source}`);
+        check("a copy under the shipped id shadows the shipped recipe, is served once, and notes `shadows the shipped <id>`",
+            flex.length === 1 && flex[0].source === "user" && flex[0].description === "my own"
+            && Array.isArray(shadowed.notes) && shadowed.notes.includes("shadows the shipped flux2_flex"),
+            `${flex.length} entries, source ${flex[0] && flex[0].source}, notes ${short(shadowed && shadowed.notes)}`);
+
+        // rec-import-overwrite: files whose id comes from the filename never overwrite an existing user recipe or shadow a shipped one
+        const apiPrompt = (pad) => ({
+            1: { class_type: "InpaintCanvas", inputs: { padding: pad, result_source_local: ["2", 0] } },
+            2: { class_type: "KSampler", inputs: {} },
+        });
+        const wf1 = await recipes.importFile(fileOf(dir, "workflow.json", apiPrompt(32)), null);
+        const wf2 = await recipes.importFile(fileOf(dir, "workflow.json", apiPrompt(64)), null);
+        const afterWf = await recipes.list(RECIPES);
+        const gotWf1 = afterWf.find((r) => r.id === "workflow");
+        const gotWf2 = afterWf.find((r) => r.id === "workflow_2");
+        check("importing two workflow/prompt files named workflow.json gives workflow and workflow_2, and keeps the first in list()",
+            !!wf1 && wf1.id === "workflow" && Array.isArray(wf1.notes) && wf1.notes.includes("id workflow")
+            && !!wf2 && wf2.id === "workflow_2" && Array.isArray(wf2.notes) && wf2.notes.includes("id workflow_2")
+            && !!gotWf1 && gotWf1.prompt["1"].inputs.padding === 32
+            && !!gotWf2 && gotWf2.prompt["1"].inputs.padding === 64,
+            short({ wf1: wf1 && { id: wf1.id, notes: wf1.notes }, wf2: wf2 && { id: wf2.id, notes: wf2.notes } }));
+
+        const relightWf = await recipes.importFile(fileOf(dir, "relight.json", apiPrompt(48)), null);
+        const noIdRecipe = await recipes.importFile(fileOf(dir, "flux2_pro.json", { kind: "provider", name: "No id", providers: { loopback: { model: "loopback-1" } } }), null);
+        const afterRel = await recipes.list(RECIPES);
+        const shippedRelight = afterRel.find((r) => r.id === "relight");
+        const userRelight2 = afterRel.find((r) => r.id === "relight_2");
+        const shippedPro = afterRel.find((r) => r.id === "flux2_pro");
+        const userPro2 = afterRel.find((r) => r.id === "flux2_pro_2");
+        check("importing a prompt or id-less recipe named after a shipped recipe (relight.json, flux2_pro.json) picks _2 and does not shadow the shipped recipe",
+            !!relightWf && relightWf.id === "relight_2" && Array.isArray(relightWf.notes) && relightWf.notes.includes("id relight_2")
+            && !!noIdRecipe && noIdRecipe.id === "flux2_pro_2" && Array.isArray(noIdRecipe.notes) && noIdRecipe.notes.includes("id flux2_pro_2")
+            && !!shippedRelight && shippedRelight.source === "builtin" && !!userRelight2 && userRelight2.source === "user"
+            && !!shippedPro && shippedPro.source === "builtin" && !!userPro2 && userPro2.source === "user",
+            short({ relightWf: relightWf && relightWf.id, noIdRecipe: noIdRecipe && noIdRecipe.id, shippedRelight: shippedRelight && shippedRelight.source, shippedPro: shippedPro && shippedPro.source }));
 
         // the old one-provider shape
         freshUserData();
