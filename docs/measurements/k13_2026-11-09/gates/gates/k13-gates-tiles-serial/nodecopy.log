@@ -1,0 +1,111 @@
+wrote inpaint_canvas.js
+wrote inpaint_filters.js
+wrote inpaint_filters_gl.js
+wrote inpaint_curves.js
+wrote inpaint_rangebar.js
+wrote inpaint_weights.js
+wrote inpaint_maps.js
+wrote inpaint_limit.js
+wrote inpaint_text.js
+wrote inpaint_raster.js
+wrote inpaint_export.js
+wrote inpaint_worker.js
+wrote inpaint_compositor.js
+wrote inpaint_brushes.js
+wrote inpaint_pixels.js
+wrote inpaint_resample.js
+wrote inpaint_tiles.js
+wrote inpaint_arena.js
+wrote inpaint_pool.js
+wrote inpaint_png.js
+wrote inpaint_bands.js
+wrote inpaint_boxstack.js
+wrote inpaint_stroke.js
+wrote inpaint_tippicker.js
+wrote inpaint_remove.js
+wrote inpaint_liquify.js
+wrote inpaint_jobs.js
+wrote inpaint_encode.js
+wrote inpaint_upload.js
+wrote inpaint_modal.js
+wrote inpaint_layered.js
+wrote inpaint_tiff.js
+wrote inpaint_theme.js
+wrote inpaint_depth.js
+wrote inpaint_edges.js
+wrote inpaint_depthfx.js
+wrote inpaint_haze.js
+wrote inpaint_grade.js
+wrote inpaint_wheels.js
+wrote inpaint_adjustments.js
+wrote inpaint_lensblur.js
+wrote inpaint_relight.js
+wrote edgefit.js
+wrote reftokens.js
+wrote prompt_field.js
+wrote blend_modes.js
+wrote inpaint_status.js
+wrote inpaint_progress.js
+wrote inpaint_sizelimit.js
+wrote inpaint_areas.js
+wrote boxes.js
+wrote boxes_format.js
+wrote boxes_tool.js
+wrote boxes_model.js
+wrote inpaint_boxes.js
+wrote px/kernels_js.js
+wrote px/kernels.js
+wrote px/px.js
+copied px/px.wasm
+copied fonts 35 files
+recorded build 4ab76938a04e76c4 in DEVELOPMENT.md
+ok: 61 modules parse and resolve, 64 host members answered by both hosts
+ok: 61 modules parse and resolve, 64 host members answered by both hosts
+[ok] extension registered  inpaint.InpaintCanvas
+[ok] node created with an editor
+[ok] editor opened as an overlay  ipc-modal
+[ok] overlay title shown
+[ok] close button shown
+[ok] node wording for the download button
+[ok] Esc hint
+[ok] base image set  640x400
+[ok] composite has the pixels  204,51,51,255
+[ok] settingTargets from the graph
+[ok] resultInputState from the graph
+[ok] widget value from the node
+[ok] export uploads into the output folder  output inpaint_canvas.png :: Saved output/inpaint_canvas.png (640 × 400, 7 kB, workflow embedded).
+[ok] closed
+[ok] the worker module in the page ignores window messages  1 message events in 500 ms
+[ok] canvas_state widget on the node
+[ok] a getValue ran while the state loaded
+[ok] 0.1.11 state restored  1400x900 img1,flt1,pnt1,txt1 :: 1400 × 900
+[ok] px / maskPx sizes: the pixels' own, the mask scaled to them  img1 300x150/300x150, flt1 1400x900/1400x900, pnt1 700x450/null, txt1 200x80/null
+[ok] layer and mask pixels
+[ok] getBounds of the restored selection (a document above 1 MP)  200,300,700,650
+[ok] saved selection restored  Saved rect
+[ok] prompt, negative, seed and guides restored  a node test / blurry / 1234 / 700
+[ok] composite: the layer mask hides, the filter mask limits the filter  base 58,170,119,255 / masked out 58,170,119,255 / shown 220,35,34,255 / filtered 116,204,167,255
+[ok] getValue gives back the same layers JSON  [{"blend":"normal","h":300,"id":"img1","kind":"image","mask":{"filename":"nt_img_mask.png","subfolder":"inpaint_canvas","type":"input"},"match":{"source":"underneath","strength":0.5},"name":"Masked image","opacity":1,"ref":{"filename":"nt_img.png","subfolder":"inpaint_canvas","type":"input"},"role":
+[ok] getValue gives back the selection and the saved selection  selection 175000 px 200,300,700,650
+[ok] bridge list_layers reply  {"id":"nt-1","client":"stub","ok":true,"node":7,"result":{"active":null,"layers":[{"id":"img1","name":"Masked image","kind":"image","role":"none","visible":true,"opacity":1,"blend":"normal","x":100,"y":120,"w":600,"h":300,"locked":false,"alpha_lock":false,"mask":true,"active":false,"match":{"strengt
+[ok] bridge screenshot what=layer reply: the layer's own pixels  {"id":"nt-2","client":"stub","ok":true,"node":7,"result":{"width":300,"height":150,"scale":1,"image_width":300,"image_height":150,"mime":"image/jpeg","data":"1812 chars"}} pixel 220,35,33,255
+[ok] bridge screenshot of the picture: the selection overlay and its outline  {"id":"nt-3","client":"stub","ok":true,"node":7,"result":{"width":700,"height":450,"scale":0.5,"image_width":1400,"image_height":900,"mime":"image/jpeg","data":"10112 chars"}} in 127,111,77,255 out 58,171,119,255 edge 169,118,195,255
+[ok] bridge get_state reply: the state without the selection PNGs  {"id":"nt-4","client":"stub","ok":true,"node":7,"result":{"width":1400,"height":900,"base":{"filename":"nt_base.png","subfolder":"inpaint_canvas","type":"input"},"prompt":"a node test","groups":[],"layers":[{"id":"img1","name":"Masked image","kind":"image","role":"none","blend":"normal","ref":{"file
+[ok] bridge error reply  {"id":"nt-5","client":"stub","ok":false,"node":7,"error":"no layer \"nope\" (layers: Masked image [img1], Masked filter [flt1], Paint [pnt1], Hello [txt1])"}
+[ok] Boxes: the switch's row shows, the tool column has the Boxes tool, the editor owns the boxes  row true tool true owner true
+[ok] Boxes: tool X draws a New box with the pointer, the first box turns the switch on  [{"id":"box_1","kind":"new","rect":[300,300,504,450],"src":null,"layer":null,"desc":"","text":null,"colour":0}] switch true label Boxes · 1 :: Box box_1 added: double-click it to describe it (or use the Boxes panel of the Generate pane). The Boxes switch under the prompt is on now: box_prompt carrie
+[ok] Boxes: one undo takes the drawn box back, a redo brings it  after undo 0, after redo 1
+[ok] Boxes: Delete removes the selected box, never pixels, the selection or a layer  boxes 0 layers 4/4 pixel 80,60,174,255 / 80,60,174,255
+[ok] Boxes: D duplicates the selected box and the tool stays  brass_lamp_1,brass_lamp_2 tool boxes
+[ok] Boxes: getValue keeps them in the workflow and setValue brings them back  brass_lamp_1,brass_lamp_2 rows 2
+[ok] Boxes: serializeForPrompt carries boxes, referenceIds and selectionBoxId  {"boxes":[{"id":"brass_lamp_1","kind":"new","rect":[300,300,500,450],"desc":"a brass lamp"},{"id":"brass_lamp_2","kind":"new","rect":[310,310,510,460],"desc":"a brass lamp"}],"referenceIds":[],"referenceLabels":[],"selectionBoxId":"node_test_1"}
+[ok] Boxes: a resize to half maps the boxes, its undo brings them back  300,300,500,450 -> 150,150,250,225 -> 300,300,500,450
+[ok] Boxes: with the switch off the prompt carries none of it  width,height,base,mask,hasSelection,control,prompt,layers,crop,gen,negative,settings,references,refs
+[ok] Boxes: the node shows box_prompt and elements after the settings  setting_1,box_prompt,elements
+[ok] Boxes: the queuePrompt wrapper maps box_prompt to slot 21 and elements to 22 (a setting stays)  {"p":["7",21],"e":["7",22],"s":["7",13]}
+[ok] Boxes: the tail remap finds a canvas inside a subgraph (92:7)  {"p":["92:7",21],"e":["92:7",22]}
+[ok] bridge boxes_clear / boxes_add / boxes_set / boxes_list  [{"id":"nt-6","client":"stub","ok":true,"node":7,"result":{"removed":2}},{"id":"red_scarf_1","kind":"new","rect":[100,100,300,200],"src":null,"layer":null,"desc":"a red scarf","text":null,"colour":0,"switched_on":true},{"id":"red_scarf_1","kind":"move","rect":[380,100,580,200],"src":[100,100,300,200
+[ok] bridge boxes_from_selection / boxes_remove and an error for an unknown box  [{"id":"brass_lamp_1","kind":"new","rect":[200,300,700,650],"src":null,"layer":null,"desc":"a brass lamp","text":null,"colour":1},{"removed":"red_scarf_1","count":1},"no box nope"]
+[ok] bridge boxes_set: text "" makes a Text box a plain New box, whose kind can then change  [{"id":"sale_1","kind":"new","rect":[50,50,150,100],"src":null,"layer":null,"desc":"red letters","text":"SALE","colour":0},{"id":"sale_1","kind":"new","rect":[50,50,150,100],"src":null,"layer":null,"desc":"red letters","text":null,"colour":0},{"id":"sale_1","kind":"keep","rect":[50,50,150,100],"src"
+[ok] bridge set_generation boxes and status carry the switch and the boxes  [{"mode":"local","seed":1234,"seed_random":false,"denoise":0.8,"refine":false,"boxes":false},{"switch":false,"count":1,"ids":["brass_lamp_1"]}]
+PASS

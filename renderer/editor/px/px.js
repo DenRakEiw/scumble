@@ -11,7 +11,9 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 36;
+import { relightVogel } from "./kernels_js.js";
+
+export const PX_ABI = 37;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -649,6 +651,78 @@ export class Px {
             if (out && out.length >= w * h && row0 > 0) {
                 const target = out.subarray(row0 * w, (row0 + bandRows) * w);
                 return this._out(Uint8Array, po, nOut, target);
+            }
+            return this._out(Uint8Array, po, nOut, out);
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13, docs/PLAN_WASM_BUILD.md §4.4).
+     * Precomputes the per-tap constants `[tapX, tapY, tapZ]` in `f64` from `relightVogel` and passes them to
+     * `shadow_march_f64`. Returns `null` when the arguments lie outside the kernel's contract.
+     */
+    shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null, key = null) {
+        if (!(depth instanceof Uint16Array) || !Number.isInteger(w) || !Number.isInteger(h) || !(w > 0 && h > 0 && w < 0x40000000 && h < 0x40000000)) return null;
+        const n = w * h;
+        if (depth.length < n) return null;
+        if (!Number.isInteger(row0) || !Number.isInteger(rows) || row0 < 0 || rows <= 0 || row0 >= h) return null;
+        if (!light || light.length < 4) return null;
+        const s = Number(scale) || 0;
+        const lx = Number(light[0]) || 0;
+        const ly = Number(light[1]) || 0;
+        const lz = Number(light[2]) || 0;
+        const kind = Number(light[3]) || 0;
+        const rad = Number(radius ?? 0);
+        const b = Number(bias ?? 0);
+        if (![Number(scale), Number(light[0]), Number(light[1]), Number(light[2]), Number(light[3]), rad, b].every((v) => Number.isFinite(v) && Math.abs(v) < 0x40000000)) return null;
+        const bandRows = Math.min(rows, h - row0);
+        const nOut = w * bandRows;
+        if (out !== null && (!(out instanceof Uint8Array) || out.length < (out.length >= n && row0 > 0 ? (row0 + bandRows) * w : nOut))) return null;
+
+        const nTaps = Math.max(1, Math.min(16, Number.isFinite(Number(taps)) ? Math.round(Number(taps)) : 4));
+        const nSteps = Math.max(1, Math.min(64, Number.isFinite(Number(steps)) ? Math.round(Number(steps)) : 32));
+        const r = Math.max(0, rad || 0);
+        const zBias = Math.max(0, b);
+        const disc = relightVogel(nTaps);
+        const longSide = Math.max(w, h);
+        const sunDist = longSide * 1.5;
+        const isSun = kind === 1 ? 1 : 0;
+
+        const a = this.job;
+        try {
+            const pd = key !== null && key !== undefined ? this._slot("relight_depth", String(key), depth, n * 2) : this._in(a, depth, n * 2);
+            const pt = a.take(nTaps * 24);
+            const po = a.take(nOut);
+            const tv = this.view(Float64Array, pt, nTaps * 3);
+            if (isSun) {
+                const lLen = Math.hypot(lx, ly, lz) || 1.0;
+                const normLx = lx / lLen;
+                const normLy = ly / lLen;
+                const normLz = lz / lLen;
+                for (let t = 0; t < nTaps; t++) {
+                    const jx = disc[t][0] * (r / longSide);
+                    const jy = disc[t][1] * (r / longSide);
+                    const dirX = normLx + jx;
+                    const dirY = normLy + jy;
+                    const dirZ = normLz;
+                    const dLen = Math.hypot(dirX, dirY, dirZ) || 1.0;
+                    const t3 = t * 3;
+                    tv[t3] = (dirX / dLen) * sunDist;
+                    tv[t3 + 1] = (dirY / dLen) * sunDist;
+                    tv[t3 + 2] = (dirZ / dLen) * sunDist;
+                }
+            } else {
+                for (let t = 0; t < nTaps; t++) {
+                    const t3 = t * 3;
+                    tv[t3] = lx + disc[t][0] * r;
+                    tv[t3 + 1] = ly + disc[t][1] * r;
+                    tv[t3 + 2] = lz;
+                }
+            }
+            this.exports.shadow_march_f64(pd, w, h, s, isSun, pt, nTaps, nSteps, zBias, row0, bandRows, po);
+            if (out && out.length >= n && row0 > 0) {
+                this._out(Uint8Array, po, nOut, out.subarray(row0 * w, (row0 + bandRows) * w));
+                return out;
             }
             return this._out(Uint8Array, po, nOut, out);
         } finally { this._reset(a); }

@@ -2325,8 +2325,9 @@ JS = r"""
                 check(`nk (${type}): each nudge's quick march landed (a superseded full march takes no quick one with it)`, quickLanded === 3, { quickLanded });
                 check(`nk (${type}): the march ran in stripes (more than one job, each fewer rows than the map)`, jobs.length >= 2 && jobs.some((t) => t.row0 > 0)
                     && jobs.every((t) => t.rows < kMh), jobs.map((t) => [t.row0, t.rows]).slice(0, 8));
-                check(`nk (${type}): its stripes ran ${type === "sun" ? "Rust" : "the twin"}`, jobs.length > 0
-                    && jobs.every((t) => (type === "sun") === !!(t.pxCalls && t.pxCalls.shadow_march)), jobs.map((t) => t.pxCalls).slice(0, 3));
+                const wantExport = type === "sun" ? "shadow_march" : "shadow_march_f64";
+                check(`nk (${type}): its stripes ran Rust (${wantExport})`, jobs.length > 0
+                    && jobs.every((t) => !!(t.pxCalls && t.pxCalls[wantExport])), jobs.map((t) => t.pxCalls).slice(0, 3));
                 check(`nk (${type}): the channel holds the bytes of one call for the last key`, channelDiff() === 0, { diff: channelDiff() });
                 check(`nk (${type}): nothing in flight afterwards`, docK.relightMarching() === 0 && pool.pending === 0, { marching: docK.relightMarching(), pending: pool.pending });
             }

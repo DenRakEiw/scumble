@@ -1,0 +1,62 @@
+[05:38:28] after: 3fd8bda7 + working tree (dirty: 10 files); px ABI ABI = 37; rounds: 1 2 3
+[05:38:28] after px.wasm c633b80fbee79614, px_scalar.wasm 7b7f92f13ade53fe
+[05:38:29] before: /tmp/scumble-k13-before (3fd8bda7), px.wasm 7e99b55f37ff69ff, px_scalar.wasm 03ddfff981982e19
+[05:38:29] == round 1
+lock: taken after 0 s
+[05:38:29] lock: taken (K13 measuring (before r1 (try 1)) 66304 2026-11-09T05:38:29)
+[05:38:30] perf-relight before r1 (try 1)
+[05:38:31] gpu: 17258 MiB, 0 %; comfy 8188: 200, queue 0 running, 0 pending
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 134s 
+ALL PASS
+[05:41:03] rc=0
+[05:41:05] gpu: 20547 MiB, 99 %; comfy 8188: 200, queue 1 running, 0 pending
+lock: released
+lock: taken after 0 s
+[05:41:05] lock: taken (K13 measuring (after r1 (try 1)) 55264 2026-11-09T05:41:05)
+[05:41:05] perf-relight after r1 (try 1)
+[05:41:07] gpu: 20232 MiB, 99 %; comfy 8188: 200, queue 1 running, 0 pending
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 178s 
+ALL PASS
+[05:44:34] rc=0
+[05:44:39] gpu: 18953 MiB, 0 %; comfy 8188: 200, queue 0 running, 0 pending
+lock: released
+[05:44:45] == round 2
+lock: taken after 0 s
+[05:44:50] lock: taken (K13 measuring (after r2 (try 1)) 66880 2026-11-09T05:44:47)
+[05:44:51] perf-relight after r2 (try 1)
+[05:44:57] gpu: 19652 MiB, 18 %; comfy 8188: 200, queue 0 running, 0 pending
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 142s 
+ALL PASS
+[05:47:50] rc=0
+[05:47:52] gpu: 19506 MiB, 32 %; comfy 8188: 200, queue 0 running, 0 pending
+lock: released
+lock: taken after 0 s
+[05:47:55] lock: taken (K13 measuring (before r2 (try 1)) 61072 2026-11-09T05:47:55)
+[05:47:56] perf-relight before r2 (try 1)
+[05:47:58] gpu: 17546 MiB, 2 %; comfy 8188: 200, queue 0 running, 0 pending
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 128s 
+ALL PASS
+[05:50:25] rc=0
+[05:50:26] gpu: 20118 MiB, 3 %; comfy 8188: 200, queue 0 running, 0 pending
+lock: released
+[05:50:27] == round 3
+lock: taken after 0 s
+[05:50:28] lock: taken (K13 measuring (before r3 (try 1)) 61880 2026-11-09T05:50:27)
+[05:50:28] perf-relight before r3 (try 1)
+[05:50:28] gpu: 20409 MiB, 3 %; comfy 8188: 200, queue 0 running, 0 pending
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 144s 
+ALL PASS
+[05:53:10] rc=0
+[05:53:14] gpu: 29325 MiB, 28 %; comfy 8188: 200, queue 0 running, 0 pending
+lock: released
+lock: held by 'main loop gates mergek16 49040 2026-11-09T05:53:19', waiting
+lock: taken after 600 s
+[06:03:24] lock: taken (K13 measuring (after r3 (try 1)) 65544 2026-11-09T05:53:23)
+[06:03:26] perf-relight after r3 (try 1)
+[06:03:32] gpu: 26786 MiB, 100 %; comfy 8188: 200, queue 0 running, 0 pending
+perf:15000x10000,--filter=relight,--map=4096x2731 rc=0 176s 
+ALL PASS
+[06:06:57] rc=0
+[06:06:57] gpu: 10056 MiB, 3 %; comfy 8188: 200, queue 0 running, 0 pending
+lock: released
+[06:06:58] done

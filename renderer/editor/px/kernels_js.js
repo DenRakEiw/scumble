@@ -1961,7 +1961,7 @@ export function heightNormals(depth, w, h, scale, sigma, out = null) {
  * @param {number} n
  * @returns {Array<[number, number]>}
  */
-function relightVogel(n) {
+export function relightVogel(n) {
     const N = 16;
     const ga = 2.39996323;
     const taps = [];
@@ -2007,13 +2007,33 @@ export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias
     const longSide = Math.max(w, h);
     const sunDist = longSide * 1.5;
     const inv65535 = scale / 65535.0;
+    const invSteps = 1.0 / nSteps;
 
-    let normLx = 0, normLy = 0, normLz = 0;
+    const tapX = new Float64Array(nTaps);
+    const tapY = new Float64Array(nTaps);
+    const tapZ = new Float64Array(nTaps);
     if (kind === 1) {
         const lLen = Math.hypot(lx, ly, lz) || 1.0;
-        normLx = lx / lLen;
-        normLy = ly / lLen;
-        normLz = lz / lLen;
+        const normLx = lx / lLen;
+        const normLy = ly / lLen;
+        const normLz = lz / lLen;
+        for (let t = 0; t < nTaps; t++) {
+            const jx = disc[t][0] * (r / longSide);
+            const jy = disc[t][1] * (r / longSide);
+            const dirX = normLx + jx;
+            const dirY = normLy + jy;
+            const dirZ = normLz;
+            const dLen = Math.hypot(dirX, dirY, dirZ) || 1.0;
+            tapX[t] = (dirX / dLen) * sunDist;
+            tapY[t] = (dirY / dLen) * sunDist;
+            tapZ[t] = (dirZ / dLen) * sunDist;
+        }
+    } else {
+        for (let t = 0; t < nTaps; t++) {
+            tapX[t] = lx + disc[t][0] * r;
+            tapY[t] = ly + disc[t][1] * r;
+            tapZ[t] = lz;
+        }
     }
 
     for (let rIdx = 0; rIdx < bandRows; rIdx++) {
@@ -2031,19 +2051,13 @@ export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias
             for (let t = 0; t < nTaps; t++) {
                 let tx, ty, tz;
                 if (kind === 1) {
-                    const jx = disc[t][0] * (r / longSide);
-                    const jy = disc[t][1] * (r / longSide);
-                    const dirX = normLx + jx;
-                    const dirY = normLy + jy;
-                    const dirZ = normLz;
-                    const dLen = Math.hypot(dirX, dirY, dirZ) || 1.0;
-                    tx = px + (dirX / dLen) * sunDist;
-                    ty = py + (dirY / dLen) * sunDist;
-                    tz = pz + (dirZ / dLen) * sunDist;
+                    tx = px + tapX[t];
+                    ty = py + tapY[t];
+                    tz = pz + tapZ[t];
                 } else {
-                    tx = lx + disc[t][0] * r;
-                    ty = ly + disc[t][1] * r;
-                    tz = lz;
+                    tx = tapX[t];
+                    ty = tapY[t];
+                    tz = tapZ[t];
                 }
 
                 const rdx = tx - px;
@@ -2051,7 +2065,6 @@ export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias
                 const rdz = tz - pz;
                 let blocked = false;
 
-                const invSteps = 1.0 / nSteps;
                 const stepX = rdx * invSteps;
                 const stepY = rdy * invSteps;
                 const stepZ = rdz * invSteps;

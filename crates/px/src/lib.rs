@@ -49,11 +49,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: shadow_march_f64);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    36
+    37
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -810,6 +810,68 @@ pub unsafe extern "C" fn shadow_march(
         row0,
         band_rows,
         slice::from_raw_parts_mut(out, w * band_rows),
+    );
+}
+
+/// Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13, docs/PLAN_WASM_BUILD.md §4.4).
+/// `taps_xyz` holds `taps * 3` `f64` per-tap constants (`[tapX[t], tapY[t], tapZ[t]]`).
+/// Output is u8 visibility (0=shadow, 255=lit) for rows `[row0 .. row0 + rows]`.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn shadow_march_f64(
+    depth: *const u16,
+    w: usize,
+    h: usize,
+    scale: f64,
+    is_sun: u32,
+    taps_xyz: *const f64,
+    taps: u32,
+    steps: u32,
+    z_bias: f64,
+    row0: usize,
+    rows: usize,
+    out: *mut u8,
+) {
+    if depth.is_null()
+        || taps_xyz.is_null()
+        || out.is_null()
+        || w == 0
+        || h == 0
+        || w >= 0x4000_0000
+        || h >= 0x4000_0000
+        || row0 >= h
+        || rows == 0
+        || taps == 0
+        || taps > 16
+        || steps == 0
+        || steps > 64
+        || !scale.is_finite()
+        || !z_bias.is_finite()
+        || z_bias < 0.0
+    {
+        return;
+    }
+    let Some(n_depth) = w.checked_mul(h) else { return };
+    let band_rows = rows.min(h - row0);
+    let Some(n_out) = w.checked_mul(band_rows) else { return };
+    let n_taps = taps as usize;
+    let taps_slice = slice::from_raw_parts(taps_xyz, n_taps * 3);
+    if taps_slice.iter().any(|x| !x.is_finite()) {
+        return;
+    }
+    relight::shadow_march_f64(
+        slice::from_raw_parts(depth, n_depth),
+        w,
+        h,
+        scale,
+        is_sun != 0,
+        taps_slice,
+        n_taps,
+        steps as usize,
+        z_bias,
+        row0,
+        band_rows,
+        slice::from_raw_parts_mut(out, n_out),
     );
 }
 

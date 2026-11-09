@@ -1751,6 +1751,203 @@ async function relightCases(px, label, js) {
         }
     }
     check(`${label} shadow_march equals its twin within 1 level`, okShadows, detailShadows);
+
+    // K13: verbatim pre-hoist reference to prove the twin's per-tap hoist changes 0 bytes, and twinCheck (0 levels)
+    // for shadow_march_f64 across all light kinds (0, 1, 2), taps, steps, stripes, and edge-case lights.
+    const refShadowMarchPreHoist = (depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null) => {
+        const bandRows = Math.min(rows, h - row0);
+        const dst = out || new Uint8Array(w * bandRows);
+        const lx = Number(light[0]) || 0, ly = Number(light[1]) || 0, lz = Number(light[2]) || 0, kind = Number(light[3]) || 0;
+        const nTaps = Math.max(1, Math.min(16, Number.isFinite(Number(taps)) ? Math.round(Number(taps)) : 4));
+        const nSteps = Math.max(1, Math.min(64, Number.isFinite(Number(steps)) ? Math.round(Number(steps)) : 32));
+        const r = Math.max(0, Number(radius) || 0);
+        const zBias = Math.max(0, Number.isFinite(Number(bias)) ? Number(bias) : 0);
+        const disc = js.relightVogel(nTaps);
+        const longSide = Math.max(w, h), sunDist = longSide * 1.5, inv65535 = scale / 65535.0;
+        let normLx = 0, normLy = 0, normLz = 0;
+        if (kind === 1) {
+            const lLen = Math.hypot(lx, ly, lz) || 1.0;
+            normLx = lx / lLen; normLy = ly / lLen; normLz = lz / lLen;
+        }
+        for (let rIdx = 0; rIdx < bandRows; rIdx++) {
+            const y = row0 + rIdx, rowOffset = y * w;
+            const outRowOffset = (dst.length >= w * h) ? y * w : rIdx * w;
+            for (let x = 0; x < w; x++) {
+                const z0 = (65535.0 - depth[rowOffset + x]) * inv65535;
+                const px0 = x, py0 = y, pz0 = z0 + zBias;
+                let litCount = 0;
+                for (let t = 0; t < nTaps; t++) {
+                    let tx, ty, tz;
+                    if (kind === 1) {
+                        const jx = disc[t][0] * (r / longSide), jy = disc[t][1] * (r / longSide);
+                        const dirX = normLx + jx, dirY = normLy + jy, dirZ = normLz;
+                        const dLen = Math.hypot(dirX, dirY, dirZ) || 1.0;
+                        tx = px0 + (dirX / dLen) * sunDist;
+                        ty = py0 + (dirY / dLen) * sunDist;
+                        tz = pz0 + (dirZ / dLen) * sunDist;
+                    } else {
+                        tx = lx + disc[t][0] * r;
+                        ty = ly + disc[t][1] * r;
+                        tz = lz;
+                    }
+                    const rdx = tx - px0, rdy = ty - py0, rdz = tz - pz0;
+                    let blocked = false;
+                    const invSteps = 1.0 / nSteps;
+                    const stepX = rdx * invSteps, stepY = rdy * invSteps, stepZ = rdz * invSteps;
+                    let sx = px0 + stepX, sy = py0 + stepY, sz = pz0 + stepZ;
+                    for (let s = 1; s <= nSteps; s++) {
+                        if (rdz >= 0 && sz > scale) break;
+                        const cx = sx + 0.5, cy = sy + 0.5;
+                        if (cx < 0 || cy < 0) break;
+                        const ix = cx | 0, iy = cy | 0;
+                        if (ix >= w || iy >= h) break;
+                        const mapZ = (65535.0 - depth[iy * w + ix]) * inv65535;
+                        if (mapZ > sz + zBias) { blocked = true; break; }
+                        sx += stepX; sy += stepY; sz += stepZ;
+                    }
+                    if (!blocked) litCount++;
+                }
+                dst[outRowOffset + x] = Math.round((litCount / nTaps) * 255);
+            }
+        }
+        return dst;
+    };
+
+    const f64Cases = [];
+    for (const [w, h, scale, light, radius, taps, steps, bias, row0, rows, tag] of [
+        [1, 1, 50, [0, 0, 100, 0], 0, 1, 1, 0, 0, 1, "1x1 point"],
+        [7, 3, 40, [3.5, 1.5, 30, 0], 2.5, 3, 16, 0.2, 0, 3, "7x3 point"],
+        [32, 32, 50, [16, 16, 100, 0], 0, 4, 16, 1.0, 0, 32, "32x32 point r=0"],
+        [64, 64, 50, [10, 10, 50, 0], 5, 4, 32, 0.5, 0, 64, "64x64 point r=5"],
+        [64, 64, 50, [-1, 0, 0.5, 1], 2, 4, 16, 1.0, 0, 64, "64x64 sun"],
+        [64, 64, 50, [0, 0, 0, 1], 2, 4, 16, 1.0, 0, 64, "64x64 zero-len sun"],
+        [64, 64, 50, [20, 40, 60, 2], 4, 4, 32, 0.5, 0, 64, "64x64 kind=2 spot"],
+        [77, 53, 50, [40, 25, 80, 0], 10, 8, 32, 1.0, 10, 20, "77x53 stripe row0=10"],
+        [77, 53, 50, [12.345678901234567, 34.567890123456789, 56.7890123456789, 0], 6.789, 16, 64, 0.123, 0, 53, "77x53 f64 precision point"],
+        [128, 128, 50, [20, 20, 40, 0], 15, 16, 32, 1.0, 0, 128, "128x128 16-tap point"],
+    ]) {
+        const m = genMap(w, h, w * 97 + h);
+        f64Cases.push({ tag, args: [m, w, h, scale, light, radius, taps, steps, bias, row0, rows] });
+    }
+    {
+        const W = 100, H = 20;
+        const depth = new Uint16Array(W * H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) depth[y * W + x] = x < 50 ? 10000 : 50000;
+        f64Cases.push({ tag: "100x20 step edge", args: [depth, W, H, 50, [60, 10, 100, 0], 0, 4, 32, 1.0, 0, H] });
+
+        // Surgical boundary cases for mutation kills:
+        // 1. map_z == sz + z_bias tie (32767 > 32767 is false)
+        const dTie = new Uint16Array(16 * 4).fill(32768);
+        f64Cases.push({ tag: "16x4 map_z == sz + z_bias tie", args: [dTie, 16, 4, 65535, [8, 2, 32767, 0], 0, 1, 16, 0, 0, 4] });
+        // 2. rdz < 0 && sz > scale (pz = 60 > scale 50, tz = 0 -> rdz = -60 < 0, blocked at later steps)
+        const dRdzNeg = new Uint16Array(16 * 4).fill(0);
+        f64Cases.push({ tag: "16x4 rdz < 0 with sz > scale", args: [dRdzNeg, 16, 4, 50, [15, 2, 0, 0], 0, 1, 32, 10, 0, 4] });
+        // 3. cx == 0.0 boundary (sx = -0.5 -> cx = 0.0 hits wall at x = 0) and s == steps final-step wall at x = 8
+        const dWall = new Uint16Array(16 * 4).fill(65535);
+        for (let y = 0; y < 4; y++) { dWall[y * 16 + 0] = 0; dWall[y * 16 + 8] = 0; }
+        f64Cases.push({ tag: "16x4 cx == 0.0 boundary wall", args: [dWall, 16, 4, 50, [-0.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 final step s == steps wall", args: [dWall, 16, 4, 50, [8, 2, 10, 0], 0, 1, 8, 0.5, 0, 4] });
+        // 4. sun (px + tapX[t]) - px vs tapX[t] rounding tie at (px=9, py=0): step 1 samples (9, 1) vs (8, 1)
+        const dSunTie = new Uint16Array(16 * 4).fill(65535);
+        dSunTie[1 * 16 + 9] = 0;
+        f64Cases.push({ tag: "16x4 sun tx - px rounding tie", args: [dSunTie, 16, 4, 50, [-1.000000000000002, 2, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 4] });
+    }
+    for (const [w, h, combos] of [
+        [96, 64, [[1, 1], [1, 16], [3, 16], [4, 32], [16, 64]]],
+        [256, 170, [[1, 16], [4, 32]]],
+    ]) {
+        const d = smoothDepth(w, h), long = Math.max(w, h), scale = 0.5 * long, radius = 0.3 * 0.05 * long, bias = 0.005 * scale;
+        const lights = [
+            ["point", [w * 0.3, h * 0.35, scale * 0.6, 0]],
+            ["spot", [w * 0.65, h * 0.12, scale * 1.2, 2]],
+            ["on-pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.6, 0]],
+            ["below-surface", [w * 0.5, h * 0.5, scale * 0.05, 0]],
+            ["off-map", [-0.4 * w, 1.3 * h, scale * 0.8, 0]],
+            ["sun-up", [0, 0, 1, 1]],
+            ["sun-grazing", [1, 0.25, 0.02, 1]],
+        ];
+        for (const [taps, steps] of combos) {
+            for (const [lname, light] of lights) {
+                f64Cases.push({ tag: `${w}x${h} ${lname} t=${taps} s=${steps}`, args: [d, w, h, scale, light, radius, taps, steps, bias, 0, h] });
+            }
+        }
+    }
+
+    let hoistOk = true, hoistDetail = "";
+    for (const c of f64Cases) {
+        const got = js.shadowMarch(...c.args), want = refShadowMarchPreHoist(...c.args);
+        if (!eqBytes(got, want)) { hoistOk = false; hoistDetail = c.tag; break; }
+    }
+    check(`${label} hoisted js.shadowMarch equals pre-hoist reference byte for byte (${f64Cases.length} cases)`, hoistOk, hoistDetail);
+
+    twinCheck({
+        name: "shadow_march_f64",
+        builds: [[label, px]],
+        twin: js,
+        call: (k, a) => (k === js ? k.shadowMarch(...a) : k.shadowMarchF64(...a)),
+        cases: f64Cases,
+    });
+
+    // Refusal checks on px.shadowMarchF64 and raw exports.shadow_march_f64
+    {
+        const d = genMap(16, 16, 42);
+        const goodLight = [8, 8, 50, 0];
+        const badCalls = [
+            ["non-Uint16Array depth", [new Uint8Array(256), 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["short depth", [new Uint16Array(100), 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["w=0", [d, 0, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["h=0", [d, 16, 0, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["w>=2^30", [d, 0x40000000, 1, 50, goodLight, 2, 4, 16, 0.5, 0, 1]],
+            ["row0<0", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, -1, 16]],
+            ["row0>=h", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, 16, 1]],
+            ["rows<=0", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 0]],
+            ["short light", [d, 16, 16, 50, [1, 2, 3], 2, 4, 16, 0.5, 0, 16]],
+            ["NaN light", [d, 16, 16, 50, [NaN, 8, 50, 0], 2, 4, 16, 0.5, 0, 16]],
+            ["Inf scale", [d, 16, 16, Infinity, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["coord >= 2^30", [d, 16, 16, 50, [0x40000000, 8, 50, 0], 2, 4, 16, 0.5, 0, 16]],
+            ["coord <= -2^30", [d, 16, 16, 50, [-0x40000000, 8, 50, 0], 2, 4, 16, 0.5, 0, 16]],
+            ["short out", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16, new Uint8Array(10)]],
+        ];
+        let refusedOk = true, refusedDetail = "";
+        for (const [what, args] of badCalls) {
+            const r = px.shadowMarchF64(...args);
+            if (r !== null) { refusedOk = false; refusedDetail = `${what} returned non-null`; break; }
+        }
+        const a = px.job;
+        try {
+            const pd = px._in(a, d, d.byteLength), pt = a.take(24), po = a.take(256);
+            px.u8().fill(0xab, po, po + 256);
+            px.view(Float64Array, pt, 3).set([8, 8, 50]);
+            px.exports.shadow_march_f64(0, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 0, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 17, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 0, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 65, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, -0.5, 0, 16, po);
+            px.view(Float64Array, pt, 3).set([NaN, 8, 50]);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            const untouched = px.view(Uint8Array, po, 256).every((b) => b === 0xab);
+            if (!untouched) { refusedOk = false; refusedDetail = "raw export wrote to out on invalid call"; }
+        } finally { px._reset(a); }
+        check(`${label} shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out`, refusedOk, refusedDetail);
+
+        // Resident depth slot check on px.shadowMarchF64
+        const dSlot = genMap(64, 48, 77);
+        const outSlot = new Uint8Array(64 * 48);
+        let slotCopied = 0;
+        const origPut = px.put;
+        px.put = function (ptr, data) {
+            if (data.byteLength === dSlot.byteLength) slotCopied++;
+            return origPut.call(this, ptr, data);
+        };
+        try {
+            px.shadowMarchF64(dSlot, 64, 48, 50, goodLight, 2, 4, 16, 0.5, 0, 24, outSlot, "slot:k13:1");
+            px.shadowMarchF64(dSlot, 64, 48, 50, goodLight, 2, 4, 16, 0.5, 24, 24, outSlot, "slot:k13:1");
+        } finally {
+            px.put = origPut;
+        }
+        check(`${label} shadowMarchF64 with a key copies the depth map into its resident slot once across stripes`, slotCopied === 1, `slotCopied=${slotCopied}`);
+    }
 }
 
 /** A smooth depth map (0 near, 65535 far): a ground plane receding upwards, three soft objects, slow waves. */
@@ -1840,9 +2037,10 @@ async function relightBench(js, simd) {
     check("kernels.js loads px.wasm (SIMD) as in a worker", !!routed && K.kernelsInUse() === "rust" && routed.simd === true);
     if (!routed) return;
     const { lightToMap, defaultLight } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
-    let rustCalls = 0;
-    const march = routed.shadowMarch;
-    routed.shadowMarch = function (...a) { rustCalls++; return march.apply(this, a); };
+    let f32Calls = 0, f64Calls = 0;
+    const marchF32 = routed.shadowMarch, marchF64 = routed.shadowMarchF64;
+    routed.shadowMarch = function (...a) { f32Calls++; return marchF32.apply(this, a); };
+    routed.shadowMarchF64 = function (...a) { f64Calls++; return marchF64.apply(this, a); };
     const { loadPx } = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
     const wasmBytes = fs.readFileSync(path.join(PX_DIR, "px.wasm"));
     const bench = !!process.env.PX_BENCH;
@@ -1864,23 +2062,75 @@ async function relightBench(js, simd) {
             const run = {
                 routed: () => K.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
                 twin: () => js.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
-                simd: () => simd.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
+                simd_f64: () => simd.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
+                simd_f32: () => simd.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
             };
-            const c0 = rustCalls;
+            const c32 = f32Calls, c64 = f64Calls;
             const out = run.routed();
-            const ran = rustCalls > c0 ? "rust" : "twin", want = name === "sun" ? "rust" : "twin";
-            if (ran !== want || !eqBytes(out, want === "rust" ? run.simd() : run.twin())) {
+            const ran = f64Calls > c64 ? "rust_f64" : f32Calls > c32 ? "rust_f32" : "twin";
+            const want = name === "sun" ? "rust_f32" : "rust_f64";
+            const wantBytes = want === "rust_f64" ? run.twin() : run.simd_f32();
+            if (ran !== want || !eqBytes(out, wantBytes) || (want === "rust_f64" && !eqBytes(out, run.simd_f64()))) {
                 ok = false; detail += `${detail ? "; " : ""}${tag} ${name}: ran ${ran}${ran === want ? ", other bytes" : ""}`;
             }
             if (!bench) continue;
-            const cold = await coldCall(loadPx, wasmBytes, (p) => p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h));
+            const cold = await coldCall(loadPx, wasmBytes, (p) => (name === "sun"
+                ? p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h)
+                : p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, 0, h)));
             const m = benchMedians(Object.entries(run));
-            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd ${m.simd.toFixed(1)} ms (twin / simd ${(m.twin / m.simd).toFixed(2)}); simd ${coldText(cold)}`);
+            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd_f64 ${m.simd_f64.toFixed(1)} ms, simd_f32 ${m.simd_f32.toFixed(1)} ms (twin / simd_f64 ${(m.twin / m.simd_f64).toFixed(2)}); ${coldText(cold)}`);
         }
     }
-    routed.shadowMarch = march;
+    routed.shadowMarch = marchF32;
+    routed.shadowMarchF64 = marchF64;
+    check("shadow_march as routed: kind 0 (point, spot) runs shadow_march_f64 (byte-identical to the twin), kind 1 (sun) runs shadow_march (byte for byte)", ok, detail);
+
+    // K13 guard and route checks on K.shadowMarch
+    {
+        const w = 64, h = 48, d = smoothDepth(w, h);
+        const goodLight = [20, 15, 30, 0];
+        K.pxCalls(true);
+        let guardOk = true, guardDetail = "";
+        for (const [what, scale, light, radius, bias] of [
+            ["NaN lx", 30, [NaN, 15, 30, 0], 2, 0.2],
+            ["Inf ly", 30, [20, Infinity, 30, 0], 2, 0.2],
+            ["-Inf lz", 30, [20, 15, -Infinity, 1], 2, 0.2],
+            ["lx >= 2^30", 30, [0x40000000, 15, 30, 0], 2, 0.2],
+            ["ly <= -2^30", 30, [20, -0x40000000, 30, 0], 2, 0.2],
+            ["lz >= 2^30 (sun)", 30, [0, 0, 0x40000000, 1], 2, 0.2],
+            ["scale >= 2^30", 0x40000000, goodLight, 2, 0.2],
+            ["NaN radius", 30, goodLight, NaN, 0.2],
+            ["Inf bias", 30, goodLight, 2, Infinity],
+        ]) {
+            const got = K.shadowMarch(d, w, h, scale, light, radius, 4, 16, bias, 0, h);
+            const want = js.shadowMarch(d, w, h, scale, light, radius, 4, 16, bias, 0, h);
+            const calls = K.pxCalls(true);
+            if (!eqBytes(got, want) || Object.keys(calls).length !== 0) {
+                guardOk = false;
+                guardDetail = `${what}: calls=${JSON.stringify(calls)}`;
+                break;
+            }
+        }
+        check("K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)", guardOk, guardDetail);
+
+        K.setRoute("shadowMarch", "js");
+        K.pxCalls(true);
+        const outJs = K.shadowMarch(d, w, h, 30, goodLight, 2, 4, 16, 0.2, 0, h);
+        const callsJs = K.pxCalls(true);
+        K.setRoute("shadowMarch", w * h + 1);
+        const outBelow = K.shadowMarch(d, w, h, 30, goodLight, 2, 4, 16, 0.2, 0, h);
+        const callsBelow = K.pxCalls(true);
+        K.setRoute("shadowMarch", w * h);
+        const outAt = K.shadowMarch(d, w, h, 30, goodLight, 2, 4, 16, 0.2, 0, h);
+        const callsAt = K.pxCalls(true);
+        K.setRoute("shadowMarch", null);
+        check("shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes",
+            eqBytes(outJs, outAt) && eqBytes(outBelow, outAt)
+            && !callsJs.shadow_march_f64 && !callsBelow.shadow_march_f64 && callsAt.shadow_march_f64 === 1,
+            `js=${JSON.stringify(callsJs)} below=${JSON.stringify(callsBelow)} at=${JSON.stringify(callsAt)}`);
+    }
+
     K.setKernels("js");   // kernels.js stays loaded for the process: the later cases (jobCases) compare against the editor's JS
-    check("shadow_march as routed: kind 0 (a point; ensureRelightMaps sends a spot as kind 0) runs the twin, kind 1 (a sun) the Rust build (byte for byte)", ok, detail);
     check("kernels.js back on the JS kernels for the later cases", K.kernelsInUse() === "js");
 }
 
@@ -1899,7 +2149,16 @@ async function relightBench(js, simd) {
 async function relightStripeCases(js, simd, scalar) {
     const RL = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
     const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
-    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);   // loaded by relightBench already
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (u, ...rest) => {
+        const s = String(u && u.href ? u.href : u);
+        return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+    };
+    let K = null;
+    try {
+        K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        await K.kernelsReady();
+    } finally { globalThis.fetch = realFetch; }
     const { lightToMap, defaultLight, stripePlan, marchOnPool } = RL;
     if (typeof stripePlan !== "function" || typeof marchOnPool !== "function") {
         check("inpaint_relight.js exports stripePlan and marchOnPool (K12)", false);
@@ -1925,15 +2184,16 @@ async function relightStripeCases(js, simd, scalar) {
     check("stripePlan covers every row once and in order, in stripes of 32 rows or more, never more than asked", ok, detail);
 
     // S stripes into one shared out against one call of the same kernel
-    const striped = (impl, depth, w, h, a, S, key) => {
+    const striped = (impl, depth, w, h, a, S, key, f64 = false) => {
         const out = new Uint8Array(new SharedArrayBuffer(w * h));
-        for (const [r0, rows] of stripePlan(h, S)) impl.shadowMarch(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, r0, rows, out, key);
+        const fn = f64 ? impl.shadowMarchF64.bind(impl) : impl.shadowMarch.bind(impl);
+        for (const [r0, rows] of stripePlan(h, S)) fn(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, r0, rows, out, key);
         return out;
     };
-    const one = (impl, depth, w, h, a) => impl.shadowMarch(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, 0, h);
+    const one = (impl, depth, w, h, a, f64 = false) => (f64 ? impl.shadowMarchF64 : impl.shadowMarch).call(impl, depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, 0, h);
     ok = true; detail = "";
     let cases = 0;
-    K.setKernels("rust");   // a worker's mode: the sun on Rust (relightBench left the twins in force)
+    K.setKernels("rust");   // a worker's mode: point/spot on shadow_march_f64, sun on shadow_march (relightBench left the twins in force)
     for (const [w, h, combos, counts] of [
         [512, 341, [[1, 16], [3, 1], [4, 32], [16, 64], [4, 64], [1, 1]], [2, 7, 10]],
         [1024, 682, [[1, 16], [4, 32]], [5, 21]],
@@ -1954,12 +2214,20 @@ async function relightStripeCases(js, simd, scalar) {
         for (const [taps, steps] of combos) {
             for (const [name, light] of lights) {
                 const a = { scale, light, radius: 0.3 * 0.05 * long, taps, steps, bias: 0.005 * scale };
-                const impls = light[3] === 1 ? [["rust simd", simd, "k:sun"], ["rust scalar", scalar, "k:sun"], ["kernels.js (a worker's route)", K, "k:sun"]] : [["twin", js, null]];
-                for (const [iname, impl, key] of impls) {
-                    const want = one(iname.startsWith("kernels") ? simd : impl, sab, w, h, a);
+                const impls = light[3] === 1
+                    ? (w === 512
+                        ? [["rust simd (f32)", simd, "k:sun", false], ["rust scalar (f32)", scalar, "k:sun", false], ["rust simd (f64)", simd, "k:sun64", true], ["rust scalar (f64)", scalar, "k:sun64", true], ["kernels.js (a worker's route)", K, "k:sun", false]]
+                        : [["rust simd (f32)", simd, "k:sun", false], ["kernels.js (a worker's route)", K, "k:sun", false]])
+                    : (w === 512
+                        ? [["twin", js, null, false], ["rust simd (f64)", simd, "k:pt", true], ["rust scalar (f64)", scalar, "k:pt", true], ["kernels.js (a worker's route)", K, "k:pt", false]]
+                        : [["twin", js, null, false], ["kernels.js (a worker's route)", K, "k:pt", false]]);
+                for (const [iname, impl, key, f64] of impls) {
+                    const want = iname.startsWith("kernels")
+                        ? (light[3] === 1 ? one(simd, sab, w, h, a, false) : one(js, sab, w, h, a, false))
+                        : (f64 ? one(js, sab, w, h, a, false) : one(impl, sab, w, h, a, false));
                     for (const S of counts) {
                         cases++;
-                        const got = striped(impl, sab, w, h, a, S, key ? `${key}:${w}x${h}` : null);
+                        const got = striped(impl, sab, w, h, a, S, key ? `${key}:${w}x${h}` : null, f64);
                         if (!eqBytes(got, want)) { ok = false; detail += `${detail ? "; " : ""}${w} x ${h} ${name} ${iname} taps ${taps} steps ${steps} in ${S}`; }
                     }
                 }
@@ -1967,7 +2235,7 @@ async function relightStripeCases(js, simd, scalar) {
         }
     }
     K.setKernels("js");
-    check(`shadow_march in stripes into one shared out equals one call: the twin (point, spot) and the Rust sun on both builds and through kernels.js (${cases} cases)`, ok, detail);
+    check(`shadow_march and shadow_march_f64 in stripes into one shared out equal one call: the twin, both Rust builds (f32 and f64), and through kernels.js (${cases} cases)`, ok, detail);
 
     // the one-slot resident depth copy, on an instance of its own: a key copies the map once over all stripes
     {
@@ -1975,9 +2243,10 @@ async function relightStripeCases(js, simd, scalar) {
         const fresh = new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);
         const d1 = smoothDepth(w, h), d2 = d1.map((v, i) => (i % 7 === 0 ? 65535 - v : v)), small = smoothDepth(256, 170);
         const a = { scale: 256, light: [0.3, -0.2, 0.9, 1], radius: 7.7, taps: 4, steps: 32, bias: 1.28 };
+        const aPt = { scale: 256, light: [150, 120, 180, 0], radius: 7.7, taps: 4, steps: 32, bias: 1.28 };
         const mb = (f) => { P.pxTimed(true); P.pxCalls(true); try { f(); return P.pxLaps().copyInMB; } finally { P.pxTimed(false); } };
         const depthMB = (n * 2) / 1048576;
-        let r1, r2, r3, r4;
+        let r1, r2, r3, r4, rf1, rf2, rf3, rf4;
         const keyed = mb(() => { r1 = striped(fresh, d1, w, h, a, 8, "map:1"); });
         const again = mb(() => { r2 = striped(fresh, d1, w, h, a, 8, "map:1"); });
         const plain = mb(() => { r3 = striped(fresh, d1, w, h, a, 8, null); });
@@ -1985,10 +2254,18 @@ async function relightStripeCases(js, simd, scalar) {
         const want1 = one(simd, d1, w, h, a), want2 = one(simd, d2, w, h, a);
         const r5 = striped(fresh, small, 256, 170, a, 4, "map:2");   // the same key on another size: copied again
         const want5 = one(simd, small, 256, 170, a);
-        check("the Rust sun's stripes with a key copy the depth map once (8 stripes), again none, without a key once a stripe",
-            keyed < 1.5 * depthMB && again < 0.01 && plain > 7.5 * depthMB, `${keyed.toFixed(2)} / ${again.toFixed(2)} / ${plain.toFixed(2)} MB, the map ${depthMB.toFixed(2)} MB`);
+        const keyedF64 = mb(() => { rf1 = striped(fresh, d1, w, h, aPt, 8, "map:f64:1", true); });
+        const againF64 = mb(() => { rf2 = striped(fresh, d1, w, h, aPt, 8, "map:f64:1", true); });
+        const plainF64 = mb(() => { rf3 = striped(fresh, d1, w, h, aPt, 8, null, true); });
+        const nextF64 = mb(() => { rf4 = striped(fresh, d2, w, h, aPt, 8, "map:f64:2", true); });
+        const wantF1 = one(js, d1, w, h, aPt), wantF2 = one(js, d2, w, h, aPt);
+        check("the Rust march's stripes (f32 and f64) with a key copy the depth map once (8 stripes), again none, without a key once a stripe",
+            keyed < 1.5 * depthMB && again < 0.01 && plain > 7.5 * depthMB
+            && keyedF64 < 1.5 * depthMB && againF64 < 0.01 && plainF64 > 7.5 * depthMB,
+            `f32 ${keyed.toFixed(2)}/${again.toFixed(2)}/${plain.toFixed(2)} MB, f64 ${keyedF64.toFixed(2)}/${againF64.toFixed(2)}/${plainF64.toFixed(2)} MB, map ${depthMB.toFixed(2)} MB`);
         check("a new key copies the new map and never answers from the old one; a key on another size copies again",
-            eqBytes(r1, want1) && eqBytes(r2, want1) && eqBytes(r3, want1) && eqBytes(r4, want2) && !eqBytes(want1, want2) && next > 0.9 * depthMB && eqBytes(r5, want5));
+            eqBytes(r1, want1) && eqBytes(r2, want1) && eqBytes(r3, want1) && eqBytes(r4, want2) && !eqBytes(want1, want2) && next > 0.9 * depthMB && eqBytes(r5, want5)
+            && eqBytes(rf1, wantF1) && eqBytes(rf2, wantF1) && eqBytes(rf3, wantF1) && eqBytes(rf4, wantF2) && nextF64 > 0.9 * depthMB);
     }
 
     // marchOnPool on a real WorkerPool: workers that answer relight_shadow as inpaint_worker.js does, a tick later

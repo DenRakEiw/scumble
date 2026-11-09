@@ -1,0 +1,55 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 11 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble-mut-k13\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 260758 bytes, sha256 c633b80fbee79614
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble-mut-k13\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 212040 bytes, sha256 7b7f92f13ade53fe
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble-mut-k13\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.03s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble-mut-k13\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.37s
+$ node tools/px_test.js  (rc 0, 155 s)
+PASS
+ok   rust scalar a large alloc grows memory  227737600 -> 496238592
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2208882688
+PASS
+(node:61524) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble-mut-k13/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble-mut-k13\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=relight)
+PASS (only: relight; PX_ONLY, not the full test)
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar height_normals equals its twin within 1 level
+ok   rust scalar shadow_march equals its twin within 1 level
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (65 cases)
+ok   rust scalar shadow_march_f64 equals its twin byte for byte (65 cases, each also at an odd offset)
+ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
+ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across stripes  slotCopied=1
+PASS (only: relight; PX_ONLY, not the full test)
+(node:51328) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble-mut-k13/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble-mut-k13\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=relightBench)
+PASS (only: relightBench; PX_ONLY, not the full test)
+ok   kernels.js loads px.wasm (SIMD) as in a worker
+ok   shadow_march as routed: kind 0 (point, spot) runs shadow_march_f64 (byte-identical to the twin), kind 1 (sun) runs shadow_march (byte for byte)
+ok   K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)
+ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes  js={} below={} at={"shadow_march_f64":1}
+ok   kernels.js back on the JS kernels for the later cases
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: relightBench; PX_ONLY, not the full test)
+(node:23500) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble-mut-k13/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble-mut-k13\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
