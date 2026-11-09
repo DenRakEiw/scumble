@@ -1,0 +1,77 @@
+[13:31:39] branch ag-chain-p-6 at 9a5f1681 (base 9a5f1681); port 9621
+[13:31:41] after  px.wasm 7923cd0278a8c0cb; px_scalar.wasm 203a16365f2ec7e7
+[13:31:43] before px.wasm aeb476777e971bbd; px_scalar.wasm 920cb56151a5a0fc
+[13:31:44] gpu: 20334 MiB, 4 %; comfy 8188: 200
+[13:31:45] == round 1
+lock: held by 'chain-l K14 r3 35424 2026-11-09T13:27:32', waiting
+lock: taken after 150 s
+[13:34:16] lock: taken (P5 native r1 (chain-p) 65516 2026-11-09T13:31:46)
+[13:34:21] native before r1 (try 1)
+[13:34:23] gpu: 18544 MiB, 1 %; comfy 8188: 200
+[13:34:48] rc=0
+closed
+[13:34:53] native after r1 (try 1)
+[13:34:54] gpu: 18927 MiB, 1 %; comfy 8188: 200
+[13:35:13] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[13:35:24] lock: taken (P5 bench r1 (chain-p) 51512 2026-11-09T13:35:22)
+[13:35:26] w0_bench freqsep_15k before r1 (try 1)
+[13:35:27] gpu: 18700 MiB, 0 %; comfy 8188: 200
+[13:35:49] rc=0
+closed
+[13:35:57] w0_bench freqsep_15k after r1 (try 1)
+[13:35:59] gpu: 18561 MiB, 1 %; comfy 8188: 200
+[13:36:18] rc=0
+closed
+lock: released
+[13:36:24] == round 2
+lock: taken after 0 s
+[13:36:25] lock: taken (P5 native r2 (chain-p) 7156 2026-11-09T13:36:25)
+[13:36:25] native after r2 (try 1)
+[13:36:25] gpu: 18575 MiB, 1 %; comfy 8188: 200
+[13:36:47] rc=0
+closed
+[13:36:56] native before r2 (try 1)
+[13:36:57] gpu: 18585 MiB, 3 %; comfy 8188: 200
+[13:37:21] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[13:37:29] lock: taken (P5 bench r2 (chain-p) 53632 2026-11-09T13:37:29)
+[13:37:29] w0_bench freqsep_15k after r2 (try 1)
+[13:37:29] gpu: 19137 MiB, 22 %; comfy 8188: 200
+[13:37:46] rc=0
+closed
+[13:37:52] w0_bench freqsep_15k before r2 (try 1)
+[13:37:52] gpu: 18860 MiB, 2 %; comfy 8188: 200
+[13:38:12] rc=0
+closed
+lock: released
+[13:38:23] == round 3
+lock: taken after 0 s
+[13:38:24] lock: taken (P5 native r3 (chain-p) 54688 2026-11-09T13:38:23)
+[13:38:26] native before r3 (try 1)
+[13:38:27] gpu: 18828 MiB, 2 %; comfy 8188: 200
+[13:38:51] rc=0
+closed
+[13:38:57] native after r3 (try 1)
+[13:38:57] gpu: 18807 MiB, 2 %; comfy 8188: 200
+[13:39:17] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[13:39:27] lock: taken (P5 bench r3 (chain-p) 9536 2026-11-09T13:39:26)
+[13:39:29] w0_bench freqsep_15k before r3 (try 1)
+[13:39:31] gpu: 18908 MiB, 1 %; comfy 8188: 200
+[13:39:53] rc=0
+closed
+[13:40:01] w0_bench freqsep_15k after r3 (try 1)
+[13:40:03] gpu: 19002 MiB, 1 %; comfy 8188: 200
+[13:40:23] rc=0
+closed
+lock: released
+[13:40:31] gpu: 18870 MiB, 1 %; comfy 8188: 200
+[13:40:31] done
+no instance on 9621 Cannot connect to host 127.0.0.1:9621 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

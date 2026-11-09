@@ -3,7 +3,7 @@
 //! `filter_rows` writes, for every row of RGBA8, one filter-type byte and the filtered row.
 //! The filter is the one of None, Sub, Up, Average, Paeth whose output has the smallest sum
 //! of absolute values when the bytes are read as signed (ties go to the lower type, the order
-//! libpng tries them in). The row above the first one is `prev`, or zeros.
+//! libpng tries them in). The row above row 0 is `prev`; without `prev`, row 0 picks None or Sub (P5).
 //!
 //! `deflate_part` compresses one part of a zlib stream as raw deflate. Every part but the last ends on a sync flush
 //! (an empty stored block, byte aligned), so parts compressed independently, in any order and on any thread, are one
@@ -85,7 +85,7 @@ fn filter_row(row: &[u8], up: Option<&[u8]>, out: &mut [u8]) {
         sums[4] += cost(x.wrapping_sub(paeth(a, b, c)));
     }
     let mut best = 0u8;
-    for t in 1..5u8 {
+    for t in 1..if up.is_some() { 5u8 } else { 2u8 } {
         if sums[t as usize] < sums[best as usize] {
             best = t;
         }
@@ -316,7 +316,7 @@ mod lanes {
             o[i] = filtered(4, x, a, b, c);
         }
         let mut best = 0u8;
-        for t in 1..5u8 {
+        for t in 1..if UP { 5u8 } else { 2u8 } {
             if tot[t as usize] < tot[best as usize] {
                 best = t;
             }
