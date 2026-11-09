@@ -224,6 +224,12 @@ function copyView(v, odd) {
  * The first difference between a build's output `got` and the twin's `want` that no rule allows ("" for none), the
  * allowed ones added to `counts` by rule name. Outputs: typed arrays, numbers, plain arrays and objects of them, null.
  */
+/**
+ * A NaN's sign and payload: `Math.max` and `Math.min` hand back either bit pattern depending on V8's tier (Electron 44,
+ * measured 2026-11-09: 0xffc00000 and 0xffffffff in one run), so a test of them can only ask that both sides are NaN.
+ */
+const NAN_BITS = { name: "a NaN's bits", allow: (got, want) => got !== got && want !== want };
+
 function twinDiff(got, want, rules, counts, at = "out") {
     if (want instanceof ArrayBuffer || got instanceof ArrayBuffer) {
         if (!(want instanceof ArrayBuffer) || !(got instanceof ArrayBuffer)) return `${at}: an ArrayBuffer against ${got instanceof ArrayBuffer ? String(want) : String(got)}`;
@@ -694,6 +700,7 @@ async function maskCases(px, label, js) {
         name: "mask_max_clamp", title: "mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place)", builds: [[label, px]], twin: js,
         call: (k, [a, b, clamp, inPlace]) => k.maskMaxClamp(a, b, clamp, inPlace ? a : null),
         cases: mcCases,
+        rules: [NAN_BITS],
     });
 
     const omCases = [
@@ -722,7 +729,7 @@ async function maskCases(px, label, js) {
         const wantOm = js.maskOneMinus(zeroNaNA);
         px.free(pa, bytes); px.free(pb, bytes); px.free(po, bytes);
         check(`${label} mask_max_clamp and mask_one_minus with separate dst pointer equal their twins`,
-            !twinDiff(gotMc, wantMc, [], {}) && !twinDiff(gotOm, wantOm, [], {}));
+            !twinDiff(gotMc, wantMc, [NAN_BITS], {}) && !twinDiff(gotOm, wantOm, [], {}));
     }
 
     twinCheck({
@@ -1104,7 +1111,7 @@ async function maskCases(px, label, js) {
             const countsOk = exportsAll.every((e) => (rustCalls[e] || 0) > 0 && !jsCalls[e] && !subJsCalls[e])
                 && rustCalls.mask_to_rgba === 3 && rustCalls.color_match_rgba === 1 && rustCalls.blend_alpha === 2
                 && rustCalls.edgefit_shrink === 2 && rustCalls.warp_rgba === 1 && rustCalls.warp_coverage === 1;
-            const diff = twinDiff(rustOut, jsOut, [], {}) || twinDiff({ es0: rustOut.es0, es1: rustOut.es1, wr: rustOut.wr, wc: rustOut.wc }, subJsOut, [], {});
+            const diff = twinDiff(rustOut, jsOut, [NAN_BITS], {}) || twinDiff({ es0: rustOut.es0, es1: rustOut.es1, wr: rustOut.wr, wc: rustOut.wc }, subJsOut, [], {});
             check("kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs",
                 countsOk && !diff, diff || JSON.stringify({ rustCalls, jsCalls, subJsCalls }));
         } finally {
