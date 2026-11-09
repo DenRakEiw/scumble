@@ -1,0 +1,81 @@
+K39 Measurement Summary (2026-11-09)
+====================================
+
+Session: K39 (`growSelectionNow` window fallback routed through `growMaskBounds`, `docs/PLAN_WASM_BUILD.md` §4.3, §5 `K39`)
+Base commit (`before`): 8555262c (`wasm-kernels` tip after K38, ABI 42)
+Wasm builds (unchanged at ABI 42):
+  px.wasm (SIMD128):   279,003 B, sha256 aeb476777e971bbd267ebe6b16be41a0e64110374a248d2bbb9b8feded7f2876
+  px_scalar.wasm:      225,584 B, sha256 920cb56151a5a0fc949f85adaeb027e19400d4466a579e56114ab26a6a9cb550
+
+Byte effect
+-----------
+Byte-for-byte identical (`0` changed pixels, identical selection bounds). When `this.selectionInWorker("grow", { n })` returns `null` (when `this.stacks` is false or the worker rejects), `growSelectionNow(n)` (`renderer/editor/inpaint_canvas.js:12748-12755`) now calls `bounds = growMaskBounds(img.data, W, H, n)` instead of `growMask(img.data, W, H, n)` and forwards the returned `bounds` to `this.markSelectionChanged(bounds, done && done.box)`.
+- Replaces the four-step JS `growMask` path (`maskBounds` + `feature` + `distTransform` + `write`) AND the subsequent `this.selectionBounds()` rescan inside `this.renderInfo()` (`rescans: 1 -> 0`) with a single `grow_mask` wasm call that writes the grown/shrunk alpha channel in place and returns its `[x0, y0, x1, y1]` bounds (`null` when empty).
+- `growMaskBounds` (`renderer/editor/inpaint_raster.js:180-182`) now queries `rustPx("growMask")` (`ROUTE_KINDS.growMask = "kernel"` in `renderer/editor/px/kernels.js:62-65`), so `setRoute("growMask", "js")` routes to `growMask(d, W, H, n, { ms })` + `maskBounds(d, W, H)` while keeping `markSelectionChanged(bounds, ...)` rescan-free (`rescans: 0`).
+- Calls `releaseIfLarge()` in `finally`, immediately replacing the window's wasm instance (`releaseDelta: 1`) when a large fallback call grows window wasm memory above `releaseMB` (`256 MiB` default).
+
+1. 3-Round Alternating Before / After — End-to-End `ed.growSelection(20)` Fallback (`measure_k39.py`)
+-----------------------------------------------------------------------------------------------------
+Command (`docs/measurements/k39_2026-11-09/k39_chain.sh`):
+  `python docs/measurements/k39_2026-11-09/measure_k39.py --mode={before,after}`
+Alternating order under `w1_lock.py` (port 9619, `--tiles`, `--no-comfy`, fresh instance per arm):
+  Round 1: before -> after
+  Round 2: after -> before
+  Round 3: before -> after
+Logs: `docs/measurements/k39_2026-11-09/ab/{before,after}/e2e_r{1,2,3}.json`
+
+a) `ed.growSelection(20)` window fallback at `2000 x 2000` (4.0 MP, 3 runs per round):
+| Round | Before wall med (ms) | Before walls (ms) | Before blk med / max (ms) | After `rust` wall med (ms) | After `rust` walls (ms) | After `rust` blk med / max (ms) | After `js` wall med (ms) | After `js` walls (ms) |
+| --- | ---: | --- | ---: | ---: | --- | ---: | ---: | --- |
+| r1 | 76.3 | 76.3, 54.0, 106.4 | 76.3 / 106.4 | 41.9 | 73.9, 41.9, 41.6 | 41.9 / 73.9 | 66.5 | 66.5, 62.0, 80.4 |
+| r2 | 76.7 | 76.7, 59.8, 108.9 | 76.7 / 108.9 | 42.5 | 74.1, 41.1, 42.5 | 42.5 / 74.1 | 63.0 | 62.5, 63.0, 90.6 |
+| r3 | 86.0 | 86.0, 62.5, 129.9 | 86.0 / 129.9 | 44.4 | 76.6, 40.7, 44.4 | 44.4 / 76.6 | 74.3 | 62.1, 75.4, 74.3 |
+| **Median** | **76.7** (76.3-86.0) | worst 129.9 | **76.7 / 129.9** | **42.5** (41.9-44.4) | worst 76.6 | **42.5 / 76.6** | **66.5** (63.0-74.3) | worst 90.6 |
+
+- At `2000 x 2000`: **76.7 ms -> 42.5 ms** (**1.80x** faster, -34.2 ms; `rescans: 1 -> 0`, `pxCalls`: `{"dist_transform": 1}` -> `{"grow_mask": 1}`).
+- Route A/B at `2000 x 2000`: `growMask=rust` (**42.5 ms**) vs `growMask=js` (**66.5 ms**), **1.56x** faster (-24.0 ms).
+
+b) `ed.growSelection(20)` window fallback at `7500 x 5000` (37.5 MP, 3 runs per round):
+| Round | Before wall med (ms) | Before walls (ms) | Before blk med / max (ms) | After `rust` wall med (ms) | After `rust` walls (ms) | After `rust` blk med / max (ms) | After `js` wall med (ms) | After `js` walls (ms) |
+| --- | ---: | --- | ---: | ---: | --- | ---: | ---: | --- |
+| r1 | 404.6 | 460.2, 349.5, 404.6 | 404.6 / 460.2 | 312.0 | 330.5, 305.3, 312.0 | 312.0 / 330.5 | 422.1 | 428.2, 422.1, 404.6 |
+| r2 | 413.1 | 447.6, 373.1, 413.1 | 413.1 / 447.6 | 319.8 | 356.2, 319.8, 301.3 | 319.8 / 356.2 | 421.7 | 412.7, 421.7, 428.1 |
+| r3 | 460.4 | 506.5, 399.6, 460.4 | 460.4 / 506.6 | 346.7 | 347.5, 346.7, 280.2 | 346.7 / 347.5 | 435.3 | 415.7, 457.9, 435.3 |
+| **Median** | **413.1** (404.6-460.4) | worst 506.5 | **413.1 / 506.6** | **319.8** (312.0-346.7) | worst 356.2 | **319.8 / 356.2** | **422.1** (421.7-435.3) | worst 457.9 |
+
+- At `7500 x 5000`: **413.1 ms -> 319.8 ms** (**1.29x** faster, -93.3 ms; every after `rust` round median 312.0-346.7 ms and worst wall 356.2 ms is below every before round median 404.6-460.4 ms).
+- Route A/B at `7500 x 5000`: `growMask=rust` (**319.8 ms**) vs `growMask=js` (**422.1 ms**), **1.32x** faster (-102.3 ms).
+- Window wasm memory at `7500 x 5000`: `releaseIfLarge()` replaces the window wasm instance immediately after `grow_mask` (`releaseDelta: 1`), leaving `wasmMB: 2.13 MiB` (after the 16 tile `mip_chain` calls) vs `101.69 MiB` on `before` (`releaseDelta: 0`).
+
+2. 3-Round Alternating `w0_bench.py --rows=grow_fallback_15k` Ladder (`37.5 MP`, `75.0 MP`, `150.0 MP`)
+-------------------------------------------------------------------------------------------------------
+Command: `python tools/w0_bench.py --rows=grow_fallback_15k` (`n = 20`, 3 runs per step)
+Logs: `docs/measurements/k39_2026-11-09/ab/{before,after}/w0_15k_r{1,2,3}.json`
+
+| Step | Arm | `growMask` med (ms) | `growMask` round meds (ms) | `growMask` worst (ms) | `growMask` parts (`bounds` / `feature` / `edt` / `write` ms) | `growMaskBounds` med (ms) | `growMaskBounds` round meds (ms) | `growMaskBounds` worst (ms) | `growMaskBounds` `kernel` (ms) | Speedup (`growMask / growMaskBounds`) |
+| --- | --- | ---: | --- | ---: | --- | ---: | --- | ---: | ---: | ---: |
+| `7500 x 5000` (37.5 MP) | before | **336.4** | 323.5-339.3 | 385.6 | 51.3 / 30.5 / 103.3 / 36.9 | **169.1** | 168.5-172.2 | 227.8 | 168.5 | **1.99x** (-167.3 ms) |
+| `7500 x 5000` (37.5 MP) | after | **327.8** | 325.6-333.0 | 358.5 | 48.9 / 28.6 / 101.7 / 35.0 | **169.3** | 168.2-169.8 | 215.8 | 169.2 | **1.94x** (-158.5 ms) |
+| `10607 x 7071` (75.0 MP) | before | **444.3** | 434.9-466.4 | 515.5 | 91.7 / 54.7 / 203.9 / 73.1 | **346.0** | 341.5-348.4 | 374.5 | 345.7 | **1.28x** (-98.3 ms) |
+| `10607 x 7071` (75.0 MP) | after | **446.9** | 416.2-450.1 | 519.0 | 87.5 / 55.6 / 195.7 / 70.5 | **334.6** | 327.1-357.6 | 358.4 | 334.3 | **1.34x** (-112.3 ms) |
+| `15000 x 10000` (150.0 MP) | before | **878.3** | 868.9-892.1 | 989.4 | 182.4 / 110.5 / 426.8 / 141.2 | **715.4** | 690.7-716.9 | 754.2 | 715.0 | **1.23x** (-162.9 ms) |
+| `15000 x 10000` (150.0 MP) | after | **825.9** | 823.5-850.0 | 858.4 | 169.4 / 114.1 / 403.4 / 139.8 | **652.2** | 651.3-713.4 | 726.9 | 651.8 | **1.27x** (-173.7 ms) |
+
+- Across all 6 ladder runs, `largest_ok` reached `[15000, 10000]` with `stopped: {}` and identical output bounds (`[1106, 730, 6394, 4270]` at 37.5 MP, `[1572, 1041, 9035, 6030]` at 75 MP, `[2231, 1480, 12769, 8520]` at 150 MP).
+- Route decision: `growMaskBounds` (`grow_mask` in Rust) beats `growMask` (`dist_transform` + JS `bounds`/`feature`/`write`) at every size (`2000 x 2000`, `7500 x 5000`, `10607 x 7071`, `15000 x 10000`) and across all 3 alternating rounds; `growMask` stays on Rust by default (no `DEFAULT_ROUTES.growMask` override).
+
+3. Node Route & Job Tests (`docs/measurements/k39_2026-11-09/ab/px_bench.txt`)
+------------------------------------------------------------------------------
+Command: `PX_ONLY=route,job node tools/px_test.js`
+  21 / 21 assertions PASS (including `K39 inpaint_raster.js growMaskBounds under the growMask route: "rust" and default run grow_mask, "js" runs growMask + maskBounds, setKernels("js") runs pure JS; identical pixels, bounds and cells on non-zero byteOffset subarrays (16 runs)`).
+
+4. Mutation Round (`docs/measurements/k39_2026-11-09/mutation/results.txt`)
+---------------------------------------------------------------------------
+Command: `python tools/mutation_round.py run <tree> docs/measurements/k39_2026-11-09/mutation docs/measurements/k39_2026-11-09/mutants_k39.py --port 9619`
+Result: **6 killed (0 of them only on the re-check), 0 survived of 6** (`0 not as expected`, `368 s`)
+  - `canvas_drop_returned_bounds`: KILLED (`the editor gate (only: 1 step)`, 24 s)
+  - `canvas_negate_grow_radius`: KILLED (`the editor gate (only: 1 step)`, 18 s)
+  - `canvas_skip_write_rect`: KILLED (`the editor gate (only: 1 step)`, 23 s)
+  - `raster_ignore_grow_mask_route`: KILLED (`px_test (only: route)`, 2 s)
+  - `raster_skip_release_if_large`: KILLED (`the editor gate (only: 1 step)`, 25 s)
+  - `raster_js_fallback_drop_bounds`: KILLED (`px_test (only: route)`, 2 s)

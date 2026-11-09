@@ -17,8 +17,8 @@ import { FILTERS, FILTER_IDS, filterDefaults, scaleFilterParams, applyFilter, ma
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces, runShader, glToCanvas } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA, toneRGBA, spongeRGBA, freqSeparate, allocLiquifyWindow, freeLiquifyWindow, liquifyPreview, liquifyDab } from "./px/kernels.js";
-import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds, selModeOf, selectionGco, tilesSource, bytesSource, rectSource } from "./inpaint_raster.js";
+import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA, toneRGBA, spongeRGBA, freqSeparate, allocLiquifyWindow, freeLiquifyWindow, liquifyPreview, liquifyDab, tiffKernels } from "./px/kernels.js";
+import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMaskBounds, invertMask, maskBounds, selModeOf, selectionGco, tilesSource, bytesSource, rectSource } from "./inpaint_raster.js";
 import { GLCompositor, BLEND_FN_GLSL } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { INTERACTIVE, NORMAL, EXPORT, CancelledError } from "./inpaint_pool.js";
@@ -589,7 +589,7 @@ async function pixelsFromTiff(blob, Cls, progress = null) {
                 onProgress: (m) => { if (m.header) header(m.header); else rows(new Uint8Array(m.rgba), m.y0, m.rows); },
             });
             info = r.info;
-        } else info = await readTiff(blob, { onHeader: header, onRows: rows });
+        } else info = await readTiff(blob, { onHeader: header, onRows: rows, kernels: tiffKernels() });
     } catch (err) {
         if (px) px.release();
         throw err;
@@ -12746,12 +12746,13 @@ class InpaintEditor {
         const grow = n > 0, r = Math.abs(n);
         this.pushUndo({ kind: "selection", label: grow ? "Grow selection" : "Shrink selection" });
         const done = await this.selectionInWorker("grow", { n }, { halo: r + 2 });
+        let bounds = done ? done.bounds : undefined;
         if (!done) {
             const img = this.sel.readRect(0, 0, W, H);
-            growMask(img.data, W, H, n);
+            bounds = growMaskBounds(img.data, W, H, n);
             this.sel.writeRect(img, 0, 0);
         }
-        this.markSelectionChanged(done ? done.bounds : undefined, done && done.box);
+        this.markSelectionChanged(bounds, done && done.box);
         this.draw();
         this.setStatus(`Selection ${grow ? "grown" : "shrunk"} by ${r}px.`);
     }

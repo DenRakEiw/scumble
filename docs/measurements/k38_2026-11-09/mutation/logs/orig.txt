@@ -1,0 +1,41 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 18 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir <mut_tree>\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 279003 bytes, sha256 aeb476777e971bbd
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir <mut_tree>\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 225584 bytes, sha256 920cb56151a5a0fc
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (<mut_tree>\crates\px)
+    Finished `release` profile [optimized] target(s) in 8.23s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (<mut_tree>\crates\px)
+    Finished `release` profile [optimized] target(s) in 7.42s
+$ node tools/px_test.js  (rc 0, 302 s)
+PASS
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
+PASS
+(node:23992) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_mut_k38/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\<mut_tree>\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance
+$ node tools/px_test.js  (rc 0, 2 s, PX_ONLY=match)
+PASS (only: match; PX_ONLY, not the full test)
+       a megapixel matched: rust simd 5.6 ms, twin 32.0
+ok   rust scalar module reports its SIMD flag
+ok   js matchPixels equals the rust scalar (random pixels and statistics, tails, k 0 to 1)
+ok   rust scalar matchPixels handles empty buffers and non-zero byteOffset Uint8ClampedArray subarrays in place
+ok   js matchPixels equals the rust scalar at the extremes of the statistics
+       a megapixel matched: rust scalar 21.6 ms, twin 31.0
+PASS (only: match; PX_ONLY, not the full test)
+(node:63456) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_mut_k38/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\<mut_tree>\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance

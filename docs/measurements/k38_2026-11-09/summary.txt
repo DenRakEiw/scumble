@@ -1,0 +1,76 @@
+K38 Measurement Summary (2026-11-09)
+====================================
+
+Session: K38 (`matchCanvas` CPU fallback in 4 MP chunks, `docs/PLAN_WASM_BUILD.md` §4.11, question 6.4)
+Base commit (`before`): 044b84c3 (`wasm-kernels` tip after K37, ABI 42)
+Wasm builds (unchanged at ABI 42):
+  px.wasm (SIMD128):   279,003 B, sha256 aeb476777e971bbd267ebe6b16be41a0e64110374a248d2bbb9b8feded7f2876
+  px_scalar.wasm:      225,584 B, sha256 920cb56151a5a0fc949f85adaeb027e19400d4466a579e56114ab26a6a9cb550
+
+Byte effect
+-----------
+When `applyMatchGL` returns `null` (no WebGL2 context or a canvas side above `glContext().max`), `matchCanvas(src, stats, strength)` (`renderer/editor/inpaint_filters.js:272-298`) now routes its pixel loop through `matchPixels` (`renderer/editor/px/kernels.js`) in 4 MP (`MATCH_CHUNK_BYTES = 16,777,216` B = `4,194,304` px) chunks in place on `ImageData.data`. Each non-transparent channel is computed in `f32` (`floor(clamp(v + (m - v) * k, 0, 255) + 0.5)`), matching the WebGL2 shader and the worker's `matchPixels`, and differs by at most 1 byte level (`<= 1`) from the pre-K38 `f64` `Uint8ClampedArray` ties-to-even loop. When WebGL2 handles the canvas (`applyMatchGL` returns a canvas), bytes are unchanged.
+
+1. 3-Round Alternating Before / After (`w0_bench.py --rows=match_fallback_16k`)
+-------------------------------------------------------------------------------
+Command (`docs/measurements/k38_2026-11-09/k38_chain.sh`):
+  `python tools/w0_bench.py --rows=match_fallback_16k,match_loop_4096` (4096 x 4096 = 16.8 MP)
+  `python tools/w0_bench.py --rows=match_fallback_16k --size=15000x10000` (15000 x 10000 = 150 MP)
+Alternating order under `w1_lock.py` (port 9619, `--tiles`, `--no-comfy`, fresh instance per arm):
+  Round 1: before -> after
+  Round 2: after -> before
+  Round 3: before -> after
+
+a) `match_fallback_16k` at 4096 x 4096 (16,777,216 px = 4 chunks of 4 MP):
+| Round | Before wall med (ms) | Before walls (ms) | Before blk (ms) | After wall med (ms) | After walls (ms) | After blk (ms) | After `pxCalls` |
+| --- | ---: | --- | ---: | ---: | --- | ---: | --- |
+| r1 | 244.53 | 247.4, 244.5, 242.3 | 244.53 | 152.38 | 161.8, 152.4, 143.7 | 152.38 | `match_pixels: 4` |
+| r2 | 275.07 | 272.2, 275.1, 298.2 | 275.07 | 157.83 | 173.3, 135.6, 157.8 | 157.82 | `match_pixels: 4` |
+| r3 | 263.00 | 277.9, 256.4, 263.0 | 263.00 | 161.23 | 161.2, 195.5, 139.9 | 161.22 | `match_pixels: 4` |
+| **Median** | **263.00** (244.5-275.1) | worst 298.2 | **263.00** (max 275.1) | **157.83** (152.4-161.2) | worst 195.5 | **157.82** (max 161.2) | `match_pixels: 4` |
+
+Result at 4096 x 4096: **263.00 ms -> 157.83 ms** (**1.67x** faster, -105.17 ms; every after wall 135.6-195.5 ms is below every before wall 242.3-298.2 ms).
+
+b) `match_fallback_16k` at 15000 x 10000 (150,000,000 px = 36 chunks of 4 MP):
+| Round | Before wall med (ms) | Before walls (ms) | Before blk (ms) | After wall med (ms) | After walls (ms) | After blk (ms) | After `pxCalls` |
+| --- | ---: | --- | ---: | ---: | --- | ---: | --- |
+| r1 | 2422.72 | 2436.2, 2326.8, 2422.7 | 2422.72 | 1578.75 | 1623.5, 1578.8, 1341.7 | 1578.75 | `match_pixels: 36` |
+| r2 | 2677.79 | 2659.8, 2677.8, 2703.3 | 2677.79 | 1591.06 | 1635.8, 1591.1, 1296.1 | 1591.07 | `match_pixels: 36` |
+| r3 | 2841.76 | 2611.8, 2841.8, 3054.8 | 2841.77 | 1658.64 | 1658.6, 1809.7, 1507.8 | 1658.64 | `match_pixels: 36` |
+| **Median** | **2677.79** (2422.7-2841.8) | worst 3054.8 | **2677.79** (max 2841.8) | **1591.06** (1578.8-1658.6) | worst 1809.7 | **1591.07** (max 1658.6) | `match_pixels: 36` |
+
+Result at 15000 x 10000: **2677.79 ms -> 1591.06 ms** (**1.68x** faster, -1086.73 ms; every after wall 1296.1-1809.7 ms is below every before wall 2326.8-3054.8 ms).
+
+2. Route A/B (`matchPixels=rust` vs `matchPixels=js`) & Step Breakdown (`measure_k38.py`)
+-----------------------------------------------------------------------------------------
+Logs: `docs/measurements/k38_2026-11-09/ab/after/ab_r{1,2,3}.json`
+
+| Size | Route | Wall med (ms) | Round medians (ms) | Worst wall (ms) | Blocked med / max (ms) | `drawImage + getImageData` (ms) | `matchPixels` chunks (ms) | `putImageData` (ms) | `wasmMB` | `pxCalls` |
+| --- | --- | ---: | --- | ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 4096 x 4096 (4 chunks) | `rust` (SIMD) | **130.7** | 123.0-146.7 | 348.3 | 130.8 / 348.4 | 30.3 | **82.2** | 3.6 | 18.19 | `match_pixels: 4` |
+| 4096 x 4096 (4 chunks) | `js` (twin) | **408.8** | 396.4-430.9 | 559.8 | 408.8 / 559.8 | 30.2 | **262.7** | 3.4 | 18.19 | `{}` |
+| 15000 x 10000 (36 chunks) | `rust` (SIMD) | **1352.8** | 1333.1-1462.3 | 1522.2 | 1352.8 / 1522.2 | 580.1 | **722.3** | 32.9 | 18.19 | `match_pixels: 36` |
+| 15000 x 10000 (36 chunks) | `js` (twin) | **2943.1** | 2781.1-2944.8 | 3002.8 | 2943.1 / 3002.9 | 425.4 | **2367.4** | 32.8 | 18.19 | `{}` |
+
+- On the chunk loop alone (`chunksMs`), Rust SIMD is **3.20x** faster than the JS twin at 4096 x 4096 (82.2 ms vs 262.7 ms) and **3.28x** faster at 15000 x 10000 (722.3 ms vs 2367.4 ms), and **2.68x** faster than the old `f64` loop (`match_loop_4096` median 220.6 ms vs 82.2 ms).
+- Across all 36 chunks at 15000 x 10000 (572.2 MiB of pixel data), the window's wasm instance stays at **18.19 MiB** (`release === 0`) and trims back to 1.06 MiB after `IDLE_MS` (2 s).
+- Route decision: Rust wins every size and round; `matchPixels` stays on Rust by default (no `DEFAULT_ROUTES.matchPixels` override).
+
+3. Node Kernel Benchmark (`docs/measurements/k38_2026-11-09/ab/px_bench.txt`)
+-----------------------------------------------------------------------------
+Command: `PX_ONLY=matchTwin,match node tools/px_test.js`
+  1 MP (`1,048,576` px) `matchPixels`: rust simd **5.0 ms**, twin **27.2 ms** (**5.44x** SIMD over twin); rust scalar **20.8 ms**, twin **27.1 ms**.
+
+4. Mutation Round (`docs/measurements/k38_2026-11-09/mutation/results.txt`)
+---------------------------------------------------------------------------
+Command: `python tools/mutation_round.py run <tree> docs/measurements/k38_2026-11-09/mutation docs/measurements/k38_2026-11-09/mutants_k38.py --port 9619`
+Result: **9 killed (0 only on re-check), 0 survived of 9**
+  - `match_params_swap_means`: KILLED (`px_test (only: match)`)
+  - `match_params_channel_order`: KILLED (`px_test (only: match)`)
+  - `match_strength_clamp_low`: KILLED (`px_test (only: match)`)
+  - `match_strength_clamp_high`: KILLED (`px_test (only: match)`)
+  - `match_chunk_single_only`: KILLED (`px_test (only: match)`)
+  - `match_chunk_zero_offset`: KILLED (`px_test (only: match)`)
+  - `match_chunk_unbounded`: KILLED (`px_test (only: match)`)
+  - `kernels_route_ignore`: KILLED (`px_test (only: match)`)
+  - `px_subarray_offset_drop`: KILLED (`px_test (only: match)`)

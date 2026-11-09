@@ -1,0 +1,163 @@
+0.1.53's exe gates, 2026-11-09, --offline, against dist/win-unpacked/Scumble.exe (the installer's layout, before dist:store).
+First pass built from 3350cffd, the reruns (rel53-exe-b, -c, huge2) from c6132ea6 (the only code change between them: result file names to the millisecond in host.js).
+== rel53-exe-tiles
+platform rc=0 27s PASS
+layered rc=0 10s PASS
+upscale rc=0 13s PASS
+log rc=0 9s RESULT PASS
+pixels rc=0 14s PASS
+editor rc=0 182s PASS
+composite rc=0 8s PASS
+commands rc=1 67s FAIL
+recipes rc=0 7s PASS
+llm rc=0 2s PASS
+export rc=0 156s PASS
+help rc=0 3s PASS
+generate rc=0 166s PASS
+transparent rc=0 1s PASS
+toapis rc=0 38s PASS
+openrouter rc=0 9s PASS
+ark rc=0 11s PASS
+comfyrouter rc=0 28s PASS
+skins rc=0 10s PASS
+magnific rc=0 39s PASS
+oxen rc=0 7s PASS
+assistant rc=0 36s PASS: 38 of 38 steps in 36 s
+docux rc=0 29s PASS: 5 of 5 steps in 27 s
+metadata rc=0 5s PASS
+tiff rc=0 12s PASS
+canvasonly rc=0 19s PASS
+glb rc=0 12s RESULT PASS
+film rc=0 18s RESULT PASS
+brush rc=0 15s RESULT PASS
+boxes rc=0 15s RESULT PASS
+comfyview rc=1 56s FAIL (26 of 27)
+fill rc=0 3s PASS
+clip rc=0 3s PASS
+groups rc=0 3s PASS
+blendmodes rc=0 12s PASS
+edges rc=0 18s PASS
+depthfx rc=0 6s PASS
+grading rc=0 6s PASS
+masks rc=0 5s PASS
+effects rc=0 4s PASS
+relight rc=0 34s PASS
+selection rc=0 12s PASS
+limit rc=0 9s PASS
+maps rc=0 4s PASS
+loras rc=0 4s PASS
+key rc=0 20s PASS
+areas rc=1 62s FAIL
+SOME FAILED
+== rel53-exe-tiles-serial
+mcp rc=0 17s PASS
+quit rc=0 22s PASS
+document rc=0 55s PASS
+pxjobs rc=0 119s PASS
+mcpb rc=0 5s 
+cloudjobs rc=0 17s PASS
+cli rc=0 16s PASS
+helpers rc=0 352s PASS
+ALL PASS
+== rel53-exe-canvas
+platform rc=0 7s PASS
+layered rc=0 9s PASS
+upscale rc=0 11s PASS
+log rc=0 10s RESULT PASS
+pixels rc=0 12s PASS
+editor rc=0 143s PASS
+composite rc=0 7s PASS
+commands rc=1 65s FAIL
+recipes rc=0 7s PASS
+llm rc=0 2s PASS
+export rc=0 10s PASS
+help rc=0 5s PASS
+generate rc=0 78s PASS
+transparent rc=0 1s PASS
+toapis rc=0 38s PASS
+openrouter rc=0 7s PASS
+ark rc=0 10s PASS
+comfyrouter rc=0 29s PASS
+skins rc=0 11s PASS
+magnific rc=0 38s PASS
+oxen rc=0 7s PASS
+assistant rc=0 31s PASS: 38 of 38 steps in 30 s
+docux rc=0 22s PASS: 5 of 5 steps in 22 s
+metadata rc=0 2s PASS
+tiff rc=0 11s PASS
+canvasonly rc=0 17s PASS
+glb rc=0 13s RESULT PASS
+film rc=0 16s RESULT PASS
+brush rc=124 421s RESULT FAIL (reader)
+boxes rc=1 65s RESULT FAIL
+comfyview rc=1 56s FAIL (26 of 27)
+fill rc=0 3s PASS
+clip rc=0 4s PASS
+groups rc=0 3s PASS
+blendmodes rc=0 11s PASS
+edges rc=0 26s PASS
+depthfx rc=0 7s PASS
+grading rc=0 7s PASS
+masks rc=0 2s PASS
+effects rc=0 4s PASS
+relight rc=0 33s PASS
+selection rc=0 6s PASS
+limit rc=0 8s PASS
+maps rc=0 4s PASS
+loras rc=0 5s PASS
+key rc=0 18s PASS
+areas rc=0 48s PASS
+SOME FAILED
+== rel53-exe-canvas-serial
+mcp rc=0 21s PASS
+quit rc=0 22s PASS
+document rc=0 45s PASS
+pxjobs rc=1 1s 
+mcpb rc=0 4s 
+cloudjobs rc=0 17s PASS
+cli rc=0 20s PASS
+helpers rc=0 341s PASS
+SOME FAILED
+== rel53-exe-b-tiles
+commands rc=0 29s PASS
+areas rc=0 47s PASS
+boxes rc=0 11s RESULT PASS
+generate rc=0 76s PASS
+openrouter rc=0 9s PASS
+comfyrouter rc=0 29s PASS
+brush rc=0 15s RESULT PASS
+comfyview rc=1 55s FAIL (25 of 27)
+SOME FAILED
+== rel53-exe-b-tiles-serial
+document rc=0 53s PASS
+ALL PASS
+== rel53-exe-b-canvas
+commands rc=0 27s PASS
+areas rc=0 48s PASS
+boxes rc=0 10s RESULT PASS
+generate rc=0 80s PASS
+openrouter rc=0 7s PASS
+comfyrouter rc=0 30s PASS
+brush rc=0 15s RESULT PASS
+comfyview rc=1 60s FAIL (26 of 27)
+SOME FAILED
+== rel53-exe-b-canvas-serial
+document rc=0 50s PASS
+ALL PASS
+== rel53-exe-c
+comfyview rc=0 59s PASS (27 of 27)
+ALL PASS
+== rel53-perf
+perf:15000x10000 rc=0 56s 
+exportperf:15000x10000 rc=0 20s 
+docperf:15000x10000 rc=0 32s PASS
+mem:15000x10000 rc=0 71s 
+huge:30000x20000 rc=1 146s FAIL
+SOME FAILED
+== rel53-huge
+an instance already listens on 9555, closing it
+huge:30000x20000 rc=1 17s 
+SOME FAILED
+== rel53-huge2
+huge:30000x20000 rc=0 206s PASS
+ALL PASS

@@ -15,7 +15,7 @@
 // before any upload.
 // `options` for a model with its own conventions (Ideogram 4.5): `mask: "black"` sends the mask inverted (black =
 // edit, util.js ideogramMask; none for a selection over the whole crop), `seed_max` holds the seed under the model's
-// cap, `negative: false` sends no negative prompt, `sizes` (["WxH", ...]) gives a text run `size` as the preset closest
+// cap, `negative: false` sends no negative prompt (`edit_negative: true`: an edit sends one too, Krea 3), `sizes` (["WxH", ...]) gives a text run `size` as the preset closest
 // to the asked shape instead of `aspect_ratio`, `text_values` ({ key: { value: replacement } }) swaps a Settings
 // value a text run's model does not take (Ideogram's "very_low" is an edit's only), and on a fill `max_ratio` refuses
 // a crop steeper than that and `max_bytes` holds each picture to that size (JPEG for an opaque one over it), both
@@ -145,7 +145,7 @@ async function inputFor(req, ctx, info = {}) {
         else if (req.aspect) input.aspect_ratio = req.aspect;
         else if (input.aspect_ratio === "match_input_image") input.aspect_ratio = closestAspect(req.width || 1024, req.height || 1024, TEXT_ASPECTS);
     }
-    if (req.negative && o.negative !== false && input.negative_prompt === undefined && req.kind !== "edit") input.negative_prompt = req.negative;
+    if (req.negative && o.negative !== false && input.negative_prompt === undefined && (req.kind !== "edit" || o.edit_negative)) input.negative_prompt = req.negative;
     for (const k of Array.isArray(o.omit) ? o.omit : []) delete input[k];
     return input;
 }

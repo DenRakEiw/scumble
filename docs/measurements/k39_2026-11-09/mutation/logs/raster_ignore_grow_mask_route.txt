@@ -1,0 +1,15 @@
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=route)
+FAIL K39 inpaint_raster.js growMaskBounds under the growMask route: "rust" and default run grow_mask, "js" runs growMask + maskBounds, setKernels("js") runs pure JS; identical pixels, bounds and cells on non-zero byteOffset subarrays (16 runs)  40x30 step 3 mode rust route js: calls={"grow_mask":1} bounds=null vs null guard=true ms={"kernel":0.002800000000206637} 
+FAIL (1) (only: route; PX_ONLY, not the full test)
+ok   js flood_shape (outKind = 1) gives the same at an odd offset
+ok   js floodScan (floodMask's loop) equals js flood (72 cases, also at tol 400 and -5: unclamped against clamped)
+ok   kernels.js floodShape under the flood route (outKind 4 and 1): "rust" and a size at or below the picture's run Rust, "js" and a size above it the twin; the same shape and cells, use called once (120 runs)
+ok   inpaint_raster.js floodMask under the flood route: the Rust flood at or above the route's size and for "rust", floodScan below it and for "js"; the same mask (60 runs)
+FAIL K39 inpaint_raster.js growMaskBounds under the growMask route: "rust" and default run grow_mask, "js" runs growMask + maskBounds, setKernels("js") runs pure JS; identical pixels, bounds and cells on non-zero byteOffset subarrays (16 runs)  40x30 step 3 mode rust route js: calls={"grow_mask":1} bounds=null vs null guard=true ms={"kernel":0.002800000000206637} 
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (1) (only: route; PX_ONLY, not the full test)
+(node:23028) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/k39_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\<mut_tree>\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
