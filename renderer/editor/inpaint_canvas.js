@@ -682,6 +682,10 @@ function canvasRows(canvas) {
 const HUGE_MAX_SIDE = 65535;
 const HUGE_MAX_PIXELS = 1024 * 1024 * 1024;
 
+function pngReaderUsable() {
+    return InpaintEditor.pngParts !== false && typeof Worker === "function" && !editorPool().off;
+}
+
 /** `{ width, height }` when `blob` is a PNG larger than any canvas (above 268 MP), else null. */
 async function hugePngSize(blob) {
     const h = pngHeader(new Uint8Array(await blob.slice(0, 33).arrayBuffer()));
@@ -692,7 +696,7 @@ async function hugePngSize(blob) {
     // a stream the window never waits. Only what the reader reads exactly as the browser shows it: 8 bits, not
     // interlaced, and no colour profile, gamma or chromaticities, which the browser applies and the reader does not.
     const from = InpaintEditor.pngStreamFrom;
-    if (!(from > 0) || h.width * h.height < from || h.bitDepth !== 8 || h.interlace || !partsUsable()) return null;
+    if (!(from > 0) || h.width * h.height < from || h.bitDepth !== 8 || h.interlace || !pngReaderUsable()) return null;
     return (await pngIsPlainSrgb(blob)) ? { width: h.width, height: h.height } : null;
 }
 
@@ -717,9 +721,9 @@ async function pngIsPlainSrgb(blob) {
  * message that names PNG.
  */
 async function pixelsFromPngStream(blob, Cls, progress = null) {
-    let px = null, W = 0, H = 0;
-    if (partsUsable()) {
-        const layout = await pngPartsOf(blob);
+    let px = null, W = 0, H = 0, layout = null;
+    if (pngReaderUsable()) {
+        layout = await pngPartsOf(blob);
         if (layout) {
             try {
                 await readPngParts(blob, {
@@ -752,6 +756,7 @@ async function pixelsFromPngStream(blob, Cls, progress = null) {
         });
     } catch (err) {
         if (px) px.release();
+        if (layout && err && typeof err === "object") err.partedRefused = true;
         throw err;
     }
     if (!px) throw new Error("the PNG gave no pixels");
@@ -807,7 +812,7 @@ async function pixelsOffThread(blob, Cls, progress = null) {
         try {
             return await pixelsFromPngStream(blob, Cls, progress);
         } catch (err) {
-            if (png.width * png.height > CANVAS_MAX_PIXELS) throw err;   // no <img> holds it
+            if ((err && err.partedRefused) || png.width * png.height > CANVAS_MAX_PIXELS) throw err;   // no <img> holds it, and a corrupt parted PNG is refused
             console.warn("Inpaint Canvas: the PNG could not be read as a stream, using an <img>:", (err && err.message) || err);
             return null;
         }

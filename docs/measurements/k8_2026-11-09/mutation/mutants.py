@@ -31,6 +31,20 @@ MUTANTS = [
         PX_KILL,
     ),
     (
+        "parts_of_skip_cm",
+        "renderer/editor/inpaint_png.js",
+        [("(cmf & 0x0f) !== 8", "false")],
+        "killed: pngPartsOf accepts a 2-byte header IDAT with CM != 8 and valid FCHECK",
+        PX_KILL,
+    ),
+    (
+        "parts_of_skip_cinfo",
+        "renderer/editor/inpaint_png.js",
+        [("(cmf >> 4) > 7", "false")],
+        "killed: pngPartsOf accepts a 2-byte header IDAT with CINFO > 7 and valid FCHECK",
+        PX_KILL,
+    ),
+    (
         "parts_of_skip_fcheck",
         "renderer/editor/inpaint_png.js",
         [("(((cmf << 8) | flg) % 31) !== 0", "false")],
@@ -63,6 +77,13 @@ MUTANTS = [
         "renderer/editor/inpaint_png.js",
         [("if ((adler >>> 0) !== (wantAdler >>> 0))", "if (false)")],
         "killed: readPngParts ignores combined Adler-32 mismatch against the 4-byte tail IDAT",
+        PX_KILL,
+    ),
+    (
+        "read_parts_skip_over_height_check",
+        "renderer/editor/inpaint_png.js",
+        [("y0 + cur.rows > height", "false")],
+        "killed: readPngParts delivers rows past IHDR height when parts exceed height",
         PX_KILL,
     ),
     (
@@ -101,6 +122,56 @@ MUTANTS = [
         "renderer/editor/inpaint_worker.js",
         [("const cap = Math.min(pCap, hCap);", "const cap = pCap;")],
         "killed: pngPartRead fails to bound part inflation by IHDR height * stride when smaller than pngPartLinesCap(w)",
+        ED_KILL,
+    ),
+    (
+        "worker_read_bytes_after_transfer",
+        "renderer/editor/inpaint_worker.js",
+        [
+            (
+                "return { lines, inBytes, readMs: t1 - t0, inflateMs: t2 - t1 };",
+                "return { lines, inBytes: bytes.byteLength, readMs: t1 - t0, inflateMs: t2 - t1 };",
+            )
+        ],
+        "killed: reading bytes.byteLength after transfer(0) reports timing.bytes = 0 on every png_part_read job",
+        ED_KILL,
+    ),
+    (
+        "worker_read_drop_rt",
+        "renderer/editor/inpaint_worker.js",
+        [
+            (
+                "const r = pngPartDecode(lines, w, prev, rt, null, laps);",
+                "const r = pngPartDecode(lines, w, prev, null, null, laps);",
+            )
+        ],
+        "killed: pngPartRead drops msg.rt so non-fixed-point straight RGBA bytes are not normalized in png_part_decode",
+        ED_KILL,
+    ),
+    (
+        "worker_finish_drop_rt",
+        "renderer/editor/inpaint_worker.js",
+        [
+            (
+                "const r = pngPartFinish(lines, rows, w, prev, rt, null, laps);",
+                "const r = pngPartFinish(lines, rows, w, prev, null, null, laps);",
+            )
+        ],
+        "killed: pngPartFinishJob drops msg.rt so non-fixed-point straight RGBA bytes are not normalized in png_part_finish",
+        ED_KILL,
+    ),
+    (
+        "canvas_rt_null",
+        "renderer/editor/inpaint_canvas.js",
+        [("rt: canvasRoundTrip(),", "rt: null,")],
+        "killed: pixelsFromPngStream passes rt: null to readPngParts, leaving non-fixed-point straight RGBA bytes un-normalized",
+        ED_KILL,
+    ),
+    (
+        "canvas_no_release_on_part_err",
+        "renderer/editor/inpaint_canvas.js",
+        [("if (px) { px.release(); px = null; }", "if (px) { px = null; }")],
+        "killed: pixelsFromPngStream fails to release partial TileLayerPixels when a later part fails after earlier parts landed",
         ED_KILL,
     ),
     (

@@ -42,6 +42,10 @@ ABI: 37 (px.wasm 261,098 B; px_scalar.wasm 212,115 B — unchanged from K7)
 
 3. document_perf.py 15000x10000 (4-layer .scumble document, 3 alternating rounds)
 ------------------------------------------------------------------------------------
+  Note (K8-T2): tools/document_perf.py writes its 15,000 x 10,000 base with Pillow as a
+  single-stream RGB PNG (Image.new("RGB"), colorType = 2, ~453 MB of the 457 MB archive).
+  pngPartsOf returns null after 33 bytes on colorType 2, so the base uses png_read in both
+  arms and only the 3 sparse Scumble-written paint layers take readPngParts; the row is a tie.
   loadMs                   before: 4214.0 ms [3872.0..4248.0] (runs: 3872.0, 4248.0, 4214.0)
                            after : 3902.0 ms [3809.0..4411.0] (runs: 3809.0, 3902.0, 4411.0)  (1.08x)
   saveMs                   before: 374.0 ms [342.0..446.0] (runs: 342.0, 374.0, 446.0)
@@ -98,15 +102,33 @@ ABI: 37 (px.wasm 261,098 B; px_scalar.wasm 212,115 B — unchanged from K7)
     sequential (now) : 1067 ms (runs: [1053.5, 1067, 1344.2])
     parallel (Q 6.5) : 881.5 ms (runs: [835.6, 980.3, 881.5]) -> saves 185.5 ms (1.21x)
 
-7. huge_test.py 30000x20000 (600 MP, 1,100.7 MB PNG)
+7. huge_test.py 30000x20000 (600 MP, 1,100.7 MB PNG — before vs after A/B & K8-T1 probe)
 ------------------------------------------------------------------------------------
-  [ok] write_the_png_from_tiles: {"size": [30000, 20000], "MP": 600, "fillMs": 5612, "encodeMs": 4798, "encodeBlocked": 140, "MB": 1100.7, "arena": {"slots": 9322, "chunks": 37, "allocated": 9322, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 2483027968, "freeSlots": 150}}
-  [ok] open_through_the_stream_reader: {"ms": 5606, "blocked": 542, "tiles": 9322, "status": "30000 \u00d7 20000"}
-  [ok] the_screen_pan_zoom_and_a_stroke: {"pan_fit": [0.3, 8.2], "pan_1to1": [0.1, 1.4], "zoom": [0.1, 1.8], "stroke_frame": [2.1, 70.1], "stroke_release": 7.3, "layer_tiles": 6}
-  [ok] the_state_for_the_autosave: {"ms": 1119, "blocked": 102, "layers": 1, "selection": "data:image/png;base64,iVBORw0KGgoAAAANSU", "bytes": 10139}
-  [ok] a_restore_from_the_state: {"ms": 6740, "blocked": 149}
-  [ok] close: {"closed": 2, "arena": {"slots": 18674, "chunks": 73, "allocated": 27996, "freed": 9322, "droppedChunks": 36, "refused": 0, "failed": 0, "enabled": true, "bytes": 4898947072, "freeSlots": 14}}
-  PASS
+  Direct A/B on 9fd93524 (before/huge_30k.json) vs K8 (after/huge_30k.json):
+    open_through_the_stream_reader: before = 8726 ms (blocked 496 ms) -> after = 5337 ms (blocked 543 ms)  (1.63x, -3389 ms)
+    a_restore_from_the_state      : before = 9770 ms (blocked  75 ms) -> after = 5814 ms (blocked 166 ms)  (1.68x, -3956 ms)
+    (Historical reference against W0b of 2026-10-23, not an A/B: 10913 ms open / 11859 ms restore.)
+  K8-T1 probe of step 9 (a_matched_layer_a_film_look_and_what_is_refused) at 30,000 x 20,000:
+    Note: tools/huge_test.py defaults to 30000 x 20000 (not 20000 x 15000).
+    resRaw at (8524, 5888): [132, 113, 123, 255] on both 9fd93524 and K8 (bit-identical)
+    sampledMatchStats     : meanS=[74.685, 78.897, 122.403], meanT=[128.125, 112.133, 128.125], scale=[0.517, 2, 0.965] on both (bit-identical)
+    before (9fd93524)     : base=[75, 72, 92, 255], sample=[78, 71, 98, 255], l1=10 < 12 -> FAIL (passedGate=false)
+    after  (K8 probe)     : base=[75, 72, 92, 255], sample=[87, 76, 102, 255], l1=26 >= 12 -> PASS (passedGate=true)
+    after  (k8-huge-node) : base=[75, 72, 92, 255], sample=[80, 74, 96, 255], l1=11 < 12 -> FAIL
+    Root cause: no commit regressed colour match or base pixels; addFilterLayer("film.look") seeds its
+    film-grain PRNG from layer.id = "L" + Date.now().toString(36) + layerCounter (inpaint_canvas.js:19210,
+    :15864). At 30000 x 20000, the single pixel (8524, 5888) sits near the midpoint (1024, 888) of the
+    2048 x 2048 Result gradient where its deterministic Portra-400 + 60% colour-matched value is ~14-18 L1
+    units from base [75, 72, 92], so a negative grain draw from Date.now() pushes the single-pixel L1 below
+    12 on both 9fd93524 (l1 = 10) and K8 (l1 = 11 in k8-huge-node, l1 = 26 in after/huge_30k.json).
+  Earlier 6-step run (after/huge_open_restore.log):
+    [ok] write_the_png_from_tiles: {"size": [30000, 20000], "MP": 600, "fillMs": 5612, "encodeMs": 4798, "encodeBlocked": 140, "MB": 1100.7, "arena": {"slots": 9322, "chunks": 37, "allocated": 9322, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 2483027968, "freeSlots": 150}}
+    [ok] open_through_the_stream_reader: {"ms": 5606, "blocked": 542, "tiles": 9322, "status": "30000 \u00d7 20000"}
+    [ok] the_screen_pan_zoom_and_a_stroke: {"pan_fit": [0.3, 8.2], "pan_1to1": [0.1, 1.4], "zoom": [0.1, 1.8], "stroke_frame": [2.1, 70.1], "stroke_release": 7.3, "layer_tiles": 6}
+    [ok] the_state_for_the_autosave: {"ms": 1119, "blocked": 102, "layers": 1, "selection": "data:image/png;base64,iVBORw0KGgoAAAANSU", "bytes": 10139}
+    [ok] a_restore_from_the_state: {"ms": 6740, "blocked": 149}
+    [ok] close: {"closed": 2, "arena": {"slots": 18674, "chunks": 73, "allocated": 27996, "freed": 9322, "droppedChunks": 36, "refused": 0, "failed": 0, "enabled": true, "bytes": 4898947072, "freeSlots": 14}}
+    PASS
 
 8. Mutation Round & Gate Verification
 ------------------------------------------------------------------------------------

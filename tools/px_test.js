@@ -5371,7 +5371,8 @@ async function partDecodeCases(px, label, png, zlib, js) {
                 ["cICP before IDAT", new Blob([sig, ihdrRgba, png.pngChunk("cICP", new Uint8Array(4)), idat2, idatPart, idat4, iend])],
                 ["bad zlib header (FCHECK)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x78, 0x00])), idatPart, idat4, iend])],
                 ["bad zlib header (FDICT)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x78, 0xBB])), idatPart, idat4, iend])],
-                ["bad zlib header (CM!=8)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x79, 0x98])), idatPart, idat4, iend])],
+                ["bad zlib header (CM!=8)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x79, 0x18])), idatPart, idat4, iend])],
+                ["bad zlib header (CINFO>7)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x88, 0x1C])), idatPart, idat4, iend])],
                 ["0 part IDATs (only 2-B + 4-B)", new Blob([sig, ihdrRgba, idat2, idat4, iend])],
                 ["5-B tail IDAT", new Blob([sig, ihdrRgba, idat2, idatPart, png.pngChunk("IDAT", new Uint8Array(5)), iend])],
                 ["0-B IDAT in middle", new Blob([sig, ihdrRgba, idat2, png.pngChunk("IDAT", new Uint8Array(0)), idat4, iend])],
@@ -5451,7 +5452,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
                 && eqBytes(assembled, wantAssembled),
                 `maxWindow=${maxWindowSeen} finishPriorities=${JSON.stringify(finishPriorities)} landed=${JSON.stringify(landedOrder)} diff=${firstDiff(assembled, wantAssembled)}`);
 
-            // Adler-32 mismatch, row-count mismatch, and part error cancel the pool group and reject
+            // Adler-32 mismatch, under-height, over-height, and part error cancel the pool group and reject
             cancelledGroups = [];
             let adlerThrew = false;
             try {
@@ -5473,9 +5474,50 @@ async function partDecodeCases(px, label, png, zlib, js) {
             } catch (e) {
                 heightThrew = /rows/.test(String(e.message || e));
             }
-            check(`readPngParts rejects on combined Adler-32 mismatch or row-count mismatch and cancels the pool group`,
-                adlerThrew && heightThrew && cancelledGroups.length === 2,
-                `adlerThrew=${adlerThrew} heightThrew=${heightThrew} cancelled=${cancelledGroups.length}`);
+            let overHeightThrew = false, rowsDelivered = 0;
+            try {
+                await png.readPngParts(partedBlob, {
+                    layout: { ...layout, height: pH - 1 },
+                    pool: mockPool,
+                    rt: rtCanvas,
+                    onRows: (_rgba, y0, r) => { rowsDelivered = y0 + r; },
+                });
+            } catch (e) {
+                overHeightThrew = /rows/.test(String(e.message || e));
+            }
+            let partErrThrew = false, partErrLaunched = 0, partErrCancels = [], partErrGroup = null;
+            const errPool = {
+                size: 1,
+                cancel: (g) => { partErrCancels.push(g); },
+                async run(op, args, tr, opts) {
+                    if (opts && opts.group) partErrGroup = opts.group;
+                    if (op === "png_part_read") {
+                        const idx = partErrLaunched++;
+                        if (idx === 1) {
+                            await new Promise((r) => setTimeout(r, 1));
+                            throw new Error("part 1 decode failed");
+                        }
+                        await new Promise((r) => setTimeout(r, 15));
+                    }
+                    return mockPool.run(op, args, tr, opts);
+                },
+            };
+            try {
+                await png.readPngParts(partedBlob, {
+                    layout,
+                    pool: errPool,
+                    rt: rtCanvas,
+                });
+            } catch (e) {
+                partErrThrew = /part 1 decode failed/.test(String(e.message || e));
+            }
+            check(`readPngParts rejects on combined Adler-32 mismatch, under/over row-count mismatch, or part error, and cancels the pool group`,
+                adlerThrew && heightThrew && overHeightThrew && rowsDelivered <= pH - 1
+                && cancelledGroups.length === 3
+                && partErrThrew && typeof partErrGroup === "symbol"
+                && partErrCancels.length >= 1 && partErrCancels.every((g) => g === partErrGroup)
+                && partErrLaunched < partHeights.length,
+                `adlerThrew=${adlerThrew} heightThrew=${heightThrew} overHeightThrew=${overHeightThrew} rowsDelivered=${rowsDelivered}/${pH - 1} cancelled=${cancelledGroups.length} partErrThrew=${partErrThrew} partErrCancels=${partErrCancels.length} partErrLaunched=${partErrLaunched}/${partHeights.length}`);
         }
 
         // 8. PX_BENCH: 15,000 x 139 standard 8 MB part (copyIn vs decode vs copyOut)

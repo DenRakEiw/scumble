@@ -694,6 +694,7 @@ const PART_TAIL_0300 = new Uint8Array([0x03, 0x00]);
 async function inflatePartAtMost(blob, last, cap) {
     const t0 = now();
     const bytes = new Uint8Array(await blob.arrayBuffer());
+    const inBytes = bytes.byteLength;
     const t1 = now();
     const ds = new DecompressionStream("deflate-raw");
     const writer = ds.writable.getWriter(), reader = ds.readable.getReader();
@@ -739,7 +740,7 @@ async function inflatePartAtMost(blob, last, cap) {
         for (let i = 0, o = 0; i < parts.length; o += parts[i].byteLength, i++) lines.set(parts[i], o);
     }
     const t2 = now();
-    return { lines, inBytes: bytes.byteLength, readMs: t1 - t0, inflateMs: t2 - t1 };
+    return { lines, inBytes, readMs: t1 - t0, inflateMs: t2 - t1 };
 }
 
 /**
