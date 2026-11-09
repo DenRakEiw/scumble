@@ -1,0 +1,16 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=tiff)
+FAIL rust simd tiff_unpredict equals its twin byte for byte (306 cases, each also at an odd offset)  unpredict 8b per=4 w=2 tight at an odd offset: out[7] is 176, the twin has 34
+FAIL rust scalar tiff_unpredict equals its twin byte for byte (306 cases, each also at an odd offset)  unpredict 8b per=4 w=2 tight at an odd offset: out[7] is 176, the twin has 34
+FAIL (2) (only: tiff; PX_ONLY, not the full test)
+ok   tiffStrip and tiffStripFromPtr (scalar): byte-identical to tiffPart(args, p.zlib) across predictors 2/1/default, levels 1/2/6, tiles and stack
+ok   inpaint_worker.js tiffPartJob: composeWasm=1 on tiles/stack, composeWasm=0 on rgba or js routes, resets p.job, calls releaseIfLarge(), and gives byte-identical strips to tiffPart(args, p.zlib)  tile=1 stack=1 rgba=0 jobBytes=0 rel=0->1
+ok   inpaint_worker.js tiffPartJob recovers from OOM and wasm traps in tiffStripFromPtr and tiffStrip, renews the instance, and falls back cleanly  oomPtr=true trapPtr=true trapRgba=true
+ok   kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels  tkMethodsMatch=true oldCalls=0 newCalls=3 callsRust={"tiff_predict_rgba":1,"tiff_to_rgba":1,"tiff_unpredict":1} callsJs={} trapInPlaceOk=true
+ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1}
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (2) (only: tiff; PX_ONLY, not the full test)
+(node:70992) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/scumble_mut_k15_3/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_k15_3\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

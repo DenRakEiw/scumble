@@ -1,0 +1,51 @@
+(node:45184) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-t/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-t\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+PX_ONLY: only the groups tiff run (a filtered run, not the full test)
+ok   inpaint_tiff.js exports unpackStrip and TIFF_JS.unpackStrip, re-exported by kernels_js.js and kernels.js
+ok   rust simd tiff_unpack equals its twin byte for byte (21 cases, each also at an odd offset)
+ok   rust scalar tiff_unpack equals its twin byte for byte (21 cases, each also at an odd offset)
+ok   js tiff_unpack gives the same at an odd offset
+ok   tiff_unpack: all 21 cases match their reference payloads (including hand-derived mid-code and mid-run stops)
+ok   tiff_unpack (twin): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (simd): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (scalar): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (simd): negative error codes (-1..-5) and messages match the JS twin
+ok   tiff_unpack (scalar): negative error codes (-1..-5) and messages match the JS twin
+ok   tiff_unpack fuzz (random, 9..12-bit & full-4096 bit-flipped, and every-prefix sweep): 0 traps, identical bytes or error codes across twin, simd and scalar  sweepLen=3475 (3476 prefixes)
+ok   kernels.js tiffUnpack dispatches between JS twin (0 calls) and Rust (1 call) with identical bytes, and recovers from a trap  jsCalls=0 rustCalls=1 recReplaced=true
+ok   inpaint_tiff.js readTiff: 1-byte first LZW piece keeps byte[0] when byte[0] === byte[1] and still refuses old-style LZW
+ok   inpaint_tiff.js readTiff: StripRows.open and TileRows.tile stop at `need` / `want` when damaged LZW bytes follow
+ok   rust simd tiff_unpredict equals its twin byte for byte (306 cases, each also at an odd offset)
+ok   rust scalar tiff_unpredict equals its twin byte for byte (306 cases, each also at an odd offset)
+ok   js tiff_unpredict gives the same at an odd offset
+ok   tiff_unpredict refuses invalid bits, per, rowBytes, and truncated buffers across twin, simd and scalar
+ok   rust simd tiff_predict_rgba equals its twin byte for byte (37 cases, each also at an odd offset)
+ok   rust scalar tiff_predict_rgba equals its twin byte for byte (37 cases, each also at an odd offset)
+ok   js tiff_predict_rgba gives the same at an odd offset
+ok   tiff_predict_rgba + tiff_unpredict round-trips back to the original RGBA bytes across all widths
+ok   tiff_predict_rgba refuses non-positive dimensions, short buffers, and null pointers
+ok   rust simd tiff_to_rgba equals its twin byte for byte (244 cases, each also at an odd offset)
+ok   rust scalar tiff_to_rgba equals its twin byte for byte (244 cases, each also at an odd offset)
+ok   js tiff_to_rgba gives the same at an odd offset
+ok   tiff_to_rgba exhaustive 65,536 (alpha, colour) premultiplied pairs (A=0 -> 0, A=255 -> pass, 0<A<255 rounded): 0 bytes differ across twin, simd and scalar
+ok   tiff_to_rgba exhaustive 65,536 16-bit values (LE and BE): 0 bytes differ across twin, simd and scalar
+ok   tiff_to_rgba writes into caller-supplied out view without touching surrounding bytes
+ok   tiff_to_rgba refuses invalid specs, short buffers, missing palette LUTs, and null pointers
+ok   tiffStrip and tiffStripFromPtr (simd): byte-identical to tiffPart(args, p.zlib) across predictors 2/1/default, levels 1/2/6, tiles and stack
+ok   tiffStrip and tiffStripFromPtr (scalar): byte-identical to tiffPart(args, p.zlib) across predictors 2/1/default, levels 1/2/6, tiles and stack
+ok   inpaint_worker.js tiffPartJob: composeWasm=1 on tiles/stack, composeWasm=0 on rgba or js routes, resets p.job, calls releaseIfLarge(), and gives byte-identical strips to tiffPart(args, p.zlib)  tile=1 stack=1 rgba=0 jobBytes=0 rel=0->1
+ok   inpaint_worker.js tiffPartJob recovers from OOM and wasm traps in tiffStripFromPtr and tiffStrip, renews the instance, and falls back cleanly  oomPtr=true trapPtr=true trapRgba=true
+ok   kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels  callsRust={"tiff_predict_rgba":1,"tiff_to_rgba":1,"tiff_unpredict":1} callsJs={} trapInPlaceOk=true
+ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1}
+       tiff_unpack (LZW 1 MB strip): twin 6.46, simd 1.88, scalar 1.83 ms (median of 15)
+       tiff_unpack (PackBits 1 MB strip): twin 1.35, simd 0.22, scalar 0.23 ms (median of 15)
+       tiff_unpredict RGBA8 15000x16: twin 0.96, simd 0.21, scalar 0.53 ms (median of 15)
+       tiff_unpredict RGB8 15000x16: twin 0.70, simd 0.27, scalar 0.48 ms (median of 15)
+       tiff_predict_rgba 15000x16: twin 0.75, simd 0.10, scalar 0.49 ms (median of 15)
+       tiff_to_rgba RGB8->RGBA8 15000x16: twin 2.46, simd 0.48, scalar 0.46 ms (median of 15)
+       tiff_to_rgba RGBA8 premul->straight 15000x16: twin 3.88, simd 2.06, scalar 1.93 ms (median of 15)
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: tiff; PX_ONLY, not the full test)

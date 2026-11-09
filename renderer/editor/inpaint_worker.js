@@ -63,7 +63,7 @@ import { liquifyStore } from "./inpaint_liquify.js";
 import { disparityRange } from "./inpaint_depth.js";
 import { rangeRowBookkeeping } from "./inpaint_weights.js";
 import { fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, guidedFar, route, pngPartLinesCap, pngPartDecode, pngPartFinish } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, guidedFar, route, pngPartLinesCap, pngPartDecode, pngPartFinish, tiffKernels } from "./px/kernels.js";
 import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
@@ -752,16 +752,79 @@ export async function psdPart(msg) {
  * One strip of a TIFF (inpaint_tiff.js `tiffPart`, docs/PLAN_0_1_29.md 3d): rows as bytes, a stack or tiles (as
  * `png_part` takes them), differenced and deflated into a zlib stream by the Rust kernels (the JS twin without them).
  */
-async function tiffPartJob(msg) {
+export async function tiffPartJob(msg) {
     const t0 = now();
+    const level = msg.level === undefined ? PNG_LEVEL : msg.level;
+    const laps = {};   // predict, deflate (px.js tiffStrip / tiffStripFromPtr, inpaint_tiff.js tiffPart)
+    let p = rustPx("tiffStripWasm") && rustPx("tiffPredict");
+    const composeRoute = msg.stack ? "composeStack" : "composeTiles";
+    if (p && !msg.rgba && route(composeRoute) !== "js") {
+        const a = p.job;
+        let r = null, tc = 0;
+        try {
+            const ptrs = partPtrOf(p, a, msg, false);
+            tc = ptrs.tc;
+            r = p.tiffStripFromPtr(a, ptrs.pr, msg.w, msg.rows, level, msg.predictor, laps);
+        } catch (err) {
+            delete laps.predict;
+            delete laps.deflate;
+            if (!recovered(p, err, "tiff_part")) throw err;
+        } finally {
+            p._reset(a);
+            releaseIfLarge();
+        }
+        if (r) {
+            return {
+                chunk: r.chunk, raw: r.raw, transfer: [r.chunk],
+                timing: {
+                    op: "tiff_part", kernels: kernelsInUse(), composeWasm: 1,
+                    pixels: msg.w * msg.rows, kernel: now() - t0,
+                    compose: msg.stack ? tc - t0 : 0, rows: tc - t0, ...laps,
+                },
+            };
+        }
+        p = rustPx("tiffStripWasm") && rustPx("tiffPredict");
+        if (!p) {
+            await pxSettled();
+            p = rustPx("tiffStripWasm") && rustPx("tiffPredict");
+        }
+    }
     const rgba = partRowsOf(msg);
     const t1 = now();
-    const p = rustPx();
-    const level = msg.level === undefined ? PNG_LEVEL : msg.level;
-    const laps = {};   // predict, deflate (inpaint_tiff.js tiffPart)
-    const r = await tiffPart({ rgba, w: msg.w, rows: msg.rows, predictor: msg.predictor }, (bytes) => (p ? p.zlib(bytes, level) : deflate(bytes)), laps);
+    if (p) {
+        let r = null;
+        try {
+            r = p.tiffStrip({ rgba, w: msg.w, rows: msg.rows, predictor: msg.predictor }, level, laps);
+        } catch (err) {
+            delete laps.predict;
+            delete laps.deflate;
+            if (!recovered(p, err, "tiff_part")) throw err;
+        } finally {
+            releaseIfLarge();
+        }
+        if (r) {
+            return {
+                chunk: r.chunk, raw: r.raw, transfer: [r.chunk],
+                timing: {
+                    op: "tiff_part", kernels: kernelsInUse(), composeWasm: 0,
+                    pixels: msg.w * msg.rows, kernel: now() - t0,
+                    compose: msg.stack ? t1 - t0 : 0, rows: t1 - t0, ...laps,
+                },
+            };
+        }
+        await pxSettled();
+    }
+    const pz = rustPx();
+    const r = await tiffPart({ rgba, w: msg.w, rows: msg.rows, predictor: msg.predictor }, (bytes) => (pz ? pz.zlib(bytes, level) : deflate(bytes)), laps);
     releaseIfLarge();
-    return { chunk: r.chunk, raw: r.raw, transfer: [r.chunk], timing: { op: "tiff_part", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0, rows: t1 - t0, ...laps } };
+    return {
+        chunk: r.chunk, raw: r.raw, transfer: [r.chunk],
+        timing: {
+            op: "tiff_part", kernels: kernelsInUse(), composeWasm: 0,
+            pixels: msg.w * msg.rows, kernel: now() - t0,
+            compose: msg.stack ? t1 - t0 : 0, rows: t1 - t0, ...laps,
+        },
+    };
 }
 
 /**
@@ -777,8 +840,10 @@ async function tiffRead(msg) {
         onHeader: (h) => { self.postMessage({ id: msg.id, progress: true, header: { width: h.width, height: h.height } }); },
         onRows: (rgba, y0, rows) => { self.postMessage({ id: msg.id, progress: true, rgba: rgba.buffer, y0, rows }, [rgba.buffer]); },
         spent,
+        kernels: tiffKernels(),
     });
-    return { info, timing: { op: "tiff_read", kernels: "js", pixels: info.width * info.height, kernel: now() - t0, ...spent } };
+    releaseIfLarge();
+    return { info, timing: { op: "tiff_read", kernels: kernelsInUse(), pixels: info.width * info.height, kernel: now() - t0, ...spent } };
 }
 
 /**

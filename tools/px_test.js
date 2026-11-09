@@ -10378,7 +10378,7 @@ async function tiffCases(js, simd, scalar, K, T) {
         const baseLzw9 = lzwEncodeTiff(pKwKwK.subarray(0, 256));
         const baseLzwWidths = lzwEncodeTiff(pWidths);                     // 9 -> 10 -> 11 -> 12-bit widths + Clear resets
         const baseLzwFull = lzwEncodeTiff(pFull4096, { clearAt: 0 });     // 9 -> 12-bit widths, fills table to 4096 and stays at 4096
-        const baseLzwSweep = lzwEncodeTiff(pWidths.subarray(0, 2600));    // crosses 9 -> 10 -> 11 -> 12-bit widths (~2100 bytes)
+        const baseLzwSweep = lzwEncodeTiff(pWidths.subarray(0, 2600));    // crosses 9 -> 10 -> 11 -> 12-bit widths (3475 bytes, 3476 prefixes 0..3475)
         const basePb = packBitsEncode(pKwKwK.subarray(0, 256));
         let fuzzFails = 0, fuzzDetail = "";
         const runOne = (fn) => {
@@ -10433,7 +10433,7 @@ async function tiffCases(js, simd, scalar, K, T) {
             checkTrial(`sweep-${k}`, 5, baseLzwSweep.subarray(0, k), 2600);
         }
         check("tiff_unpack fuzz (random, 9..12-bit & full-4096 bit-flipped, and every-prefix sweep): 0 traps, identical bytes or error codes across twin, simd and scalar",
-            fuzzFails === 0, fuzzDetail);
+            fuzzFails === 0 && baseLzwSweep.length > 0, fuzzDetail || `sweepLen=${baseLzwSweep.length} (${baseLzwSweep.length + 1} prefixes)`);
     }
 
     // kernels.js wrapper check
@@ -10567,6 +10567,746 @@ async function tiffCases(js, simd, scalar, K, T) {
             !!gotStrip && !!gotTile && eqBytes(gotStrip, gotTile) && gotStrip[0] === s2[0] && gotStrip[1] === s2[1] && gotStrip[2] === s2[2]);
     }
 
+    // ---- K15: tiff_unpredict, tiff_predict_rgba, tiff_to_rgba, tiffStrip, tiffStripFromPtr, tiffPartJob, tiffKernels ----
+
+    // 1. tiff_unpredict twinCheck on SIMD and scalar (8-bit per=1..5, 16-bit LE/BE per=1..5, padded rowBytes, wraparound, edge cases)
+    {
+        const unpredictCases = [];
+        const makeUnpredictBuf = (rows, rowBytes, seed) => {
+            const r = rng(seed);
+            const b = new Uint8Array(rows * rowBytes);
+            for (let i = 0; i < b.length; i++) b[i] = r() & 255;
+            return b;
+        };
+        // 8-bit per=4 (SIMD 4-pixel prefix sum + tail) across SIMD boundary widths and padded rows
+        for (const w of [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 1001]) {
+            const rows = w <= 33 ? 3 : 2;
+            const rbTight = w * 4;
+            unpredictCases.push({
+                tag: `unpredict 8b per=4 w=${w} tight`,
+                args: [makeUnpredictBuf(rows, rbTight, 1700 + w), rows, rbTight, w, 4, 8, true],
+            });
+            if (w <= 65) {
+                const rbPad = w * 4 + 7;
+                unpredictCases.push({
+                    tag: `unpredict 8b per=4 w=${w} pad=+7`,
+                    args: [makeUnpredictBuf(rows, rbPad, 1800 + w), rows, rbPad, w, 4, 8, true],
+                });
+            }
+        }
+        // 8-bit per=1 (SIMD 16-byte prefix sum + tail)
+        for (const w of [1, 2, 3, 7, 15, 16, 17, 31, 32, 33, 47, 48, 49, 64, 257]) {
+            const rows = 3;
+            unpredictCases.push({
+                tag: `unpredict 8b per=1 w=${w} tight`,
+                args: [makeUnpredictBuf(rows, w, 1900 + w), rows, w, w, 1, 8, true],
+            });
+            unpredictCases.push({
+                tag: `unpredict 8b per=1 w=${w} pad=+5`,
+                args: [makeUnpredictBuf(rows, w + 5, 2000 + w), rows, w + 5, w, 1, 8, true],
+            });
+        }
+        // 8-bit per=3 (RGB 3-byte register loop) and per=2, 5 (scalar loop)
+        for (const per of [2, 3, 5]) {
+            for (const w of [1, 2, 3, 4, 5, 8, 15, 16, 17, 32, 33, 129]) {
+                const rows = 2, rbTight = w * per, rbPad = w * per + 4;
+                unpredictCases.push({
+                    tag: `unpredict 8b per=${per} w=${w} tight`,
+                    args: [makeUnpredictBuf(rows, rbTight, 2100 + per * 100 + w), rows, rbTight, w, per, 8, true],
+                });
+                unpredictCases.push({
+                    tag: `unpredict 8b per=${per} w=${w} pad=+4`,
+                    args: [makeUnpredictBuf(rows, rbPad, 2200 + per * 100 + w), rows, rbPad, w, per, 8, true],
+                });
+            }
+        }
+        // 16-bit LE and BE across per=1..5, tight and padded, plus explicit 16-bit carry/wraparound edges
+        for (const le of [true, false]) {
+            for (const per of [1, 2, 3, 4, 5]) {
+                for (const w of [1, 2, 3, 4, 7, 16, 17, 33]) {
+                    const rows = 2, rbTight = w * per * 2, rbPad = rbTight + 6;
+                    unpredictCases.push({
+                        tag: `unpredict 16b ${le ? "LE" : "BE"} per=${per} w=${w} tight`,
+                        args: [makeUnpredictBuf(rows, rbTight, 3000 + (le ? 0 : 500) + per * 50 + w), rows, rbTight, w, per, 16, le],
+                    });
+                    unpredictCases.push({
+                        tag: `unpredict 16b ${le ? "LE" : "BE"} per=${per} w=${w} pad=+6`,
+                        args: [makeUnpredictBuf(rows, rbPad, 4000 + (le ? 0 : 500) + per * 50 + w), rows, rbPad, w, per, 16, le],
+                    });
+                }
+            }
+            // Explicit 16-bit wraparound: 0xFFFF + 1 -> 0x0000, 0x00FF + 1 -> 0x0100, 0x8000 + 0x8000 -> 0x0000
+            const edge16 = new Uint8Array(4 * 2);
+            const dv = new DataView(edge16.buffer);
+            [0xFFFF, 0x0001, 0x00FF, 0x8001].forEach((v, i) => dv.setUint16(i * 2, v, le));
+            unpredictCases.push({
+                tag: `unpredict 16b ${le ? "LE" : "BE"} wraparound`,
+                args: [edge16, 1, 8, 4, 1, 16, le],
+            });
+        }
+        // Edge cases: rows=0, pixels=0, pixels=1
+        unpredictCases.push(
+            { tag: "unpredict rows=0", args: [Uint8Array.from([1, 2, 3, 4]), 0, 4, 1, 4, 8, true] },
+            { tag: "unpredict pixels=0", args: [Uint8Array.from([1, 2, 3, 4]), 1, 4, 0, 4, 8, true] },
+            { tag: "unpredict pixels=1", args: [Uint8Array.from([10, 20, 30, 40]), 1, 4, 1, 4, 8, true] },
+        );
+        twinCheck({
+            name: "tiff_unpredict",
+            builds: [["rust simd", simd], ["rust scalar", scalar]],
+            twin: js,
+            call: (k, [src, rows, rowBytes, pixels, per, bits, le]) => k.tiffUnpredict(src, rows, rowBytes, pixels, per, bits, le),
+            cases: unpredictCases,
+        });
+
+        // Refusal checks on tiff_unpredict
+        const uRefBuf = new Uint8Array(32).fill(7);
+        const uBadCases = [
+            ["bits=4", [uRefBuf, 1, 16, 4, 4, 4, true]],
+            ["bits=0", [uRefBuf, 1, 16, 4, 4, 0, true]],
+            ["per=0", [uRefBuf, 1, 16, 4, 0, 8, true]],
+            ["per=-1", [uRefBuf, 1, 16, 4, -1, 8, true]],
+            ["rowBytes < stride (8b)", [uRefBuf, 1, 15, 4, 4, 8, true]],
+            ["rowBytes < stride (16b)", [uRefBuf, 1, 31, 4, 4, 16, true]],
+            ["buf shorter than rows*rowBytes", [uRefBuf.subarray(0, 15), 1, 16, 4, 4, 8, true]],
+            ["negative rows", [uRefBuf, -1, 16, 4, 4, 8, true]],
+            ["negative pixels", [uRefBuf, 1, 16, -1, 4, 8, true]],
+            ["non-Uint8Array", [new ArrayBuffer(32), 1, 16, 4, 4, 8, true]],
+        ];
+        const uBadProblems = [];
+        for (const [what, args] of uBadCases) {
+            for (const [bname, mod] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+                let threw = false;
+                try { mod.tiffUnpredict(...args); } catch (_) { threw = true; }
+                if (!threw) uBadProblems.push(`${bname} ${what}`);
+            }
+        }
+        for (const [bname, mod] of [["simd", simd], ["scalar", scalar]]) {
+            const ex = mod.exports;
+            if ((ex.tiff_unpredict(0, 16, 1, 16, 4, 4, 8, 1) | 0) !== -1
+                || (ex.tiff_unpredict(8, 16, 1, 16, 4, 4, 4, 1) | 0) !== -1
+                || (ex.tiff_unpredict(8, 16, 1, 16, 4, 0, 8, 1) | 0) !== -1
+                || (ex.tiff_unpredict(8, 16, 1, 15, 4, 4, 8, 1) | 0) !== -1
+                || (ex.tiff_unpredict(8, 15, 1, 16, 4, 4, 8, 1) | 0) !== -1
+                || (ex.tiff_unpredict(0, 0, 0, 16, 4, 4, 8, 1) | 0) !== 0) {
+                uBadProblems.push(`${bname} raw tiff_unpredict export validation`);
+            }
+        }
+        check("tiff_unpredict refuses invalid bits, per, rowBytes, and truncated buffers across twin, simd and scalar",
+            !uBadProblems.length, uBadProblems.join(", "));
+    }
+
+    // 2. tiff_predict_rgba twinCheck on SIMD and scalar + round-trip with tiff_unpredict
+    {
+        const predictCases = [];
+        const makeRgba = (w, rows, extra, seed) => {
+            const r = rng(seed);
+            const b = new Uint8Array(w * rows * 4 + extra);
+            for (let i = 0; i < b.length; i++) b[i] = r() & 255;
+            return b;
+        };
+        for (const w of [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 1001]) {
+            const rows = w <= 65 ? 3 : 2;
+            predictCases.push({
+                tag: `predict_rgba w=${w} rows=${rows}`,
+                args: [makeRgba(w, rows, 0, 5000 + w), w, rows],
+            });
+            if (w <= 33) {
+                predictCases.push({
+                    tag: `predict_rgba w=${w} rows=${rows} trailing=+9B`,
+                    args: [makeRgba(w, rows, 9, 5200 + w), w, rows],
+                });
+            }
+        }
+        // Underflow wraparound case: [255, 128, 1, 0,  0, 0, 0, 255] -> diff = [1, 128, 255, 255]
+        predictCases.push(
+            { tag: "predict_rgba wraparound", args: [Uint8Array.from([255, 128, 1, 0, 0, 0, 0, 255]), 2, 1] },
+        );
+        twinCheck({
+            name: "tiff_predict_rgba",
+            builds: [["rust simd", simd], ["rust scalar", scalar]],
+            twin: js,
+            call: (k, [src, w, rows]) => k.tiffPredictRgba(src, w, rows),
+            cases: predictCases,
+        });
+
+        // Round-trip: tiff_unpredict(tiff_predict_rgba(src)) === src across all widths
+        let rtOk = true, rtDetail = "";
+        for (const c of predictCases) {
+            const [src, w, rows] = c.args;
+            if (w <= 0 || rows <= 0) continue;
+            for (const [bname, mod] of [["simd", simd], ["scalar", scalar]]) {
+                const work = src.slice(0, w * rows * 4);
+                mod.tiffPredictRgba(work, w, rows);
+                mod.tiffUnpredict(work, rows, w * 4, w, 4, 8, true);
+                if (!eqBytes(work, src.subarray(0, w * rows * 4))) {
+                    rtOk = false;
+                    rtDetail = `${bname} ${c.tag}`;
+                    break;
+                }
+            }
+            if (!rtOk) break;
+        }
+        check("tiff_predict_rgba + tiff_unpredict round-trips back to the original RGBA bytes across all widths", rtOk, rtDetail);
+
+        // Refusal checks on tiff_predict_rgba
+        const pRefBuf = new Uint8Array(16);
+        const pBadCases = [
+            ["w=0", [pRefBuf, 0, 1]],
+            ["rows=0", [pRefBuf, 1, 0]],
+            ["negative w", [pRefBuf, -1, 1]],
+            ["negative rows", [pRefBuf, 1, -1]],
+            ["short rgba", [pRefBuf.subarray(0, 15), 2, 2]],
+            ["non-Uint8Array", [new ArrayBuffer(16), 2, 1]],
+        ];
+        const pBadProblems = [];
+        for (const [what, args] of pBadCases) {
+            for (const [bname, mod] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+                let threw = false;
+                try { mod.tiffPredictRgba(...args); } catch (_) { threw = true; }
+                if (!threw) pBadProblems.push(`${bname} ${what}`);
+            }
+        }
+        for (const [bname, mod] of [["simd", simd], ["scalar", scalar]]) {
+            const ex = mod.exports;
+            if ((ex.tiff_predict_rgba(0, 2, 1) | 0) !== -1
+                || (ex.tiff_predict_rgba(8, -1, 1) | 0) !== -1
+                || (ex.tiff_predict_rgba(8, 0, 1) | 0) !== -1
+                || (ex.tiff_predict_rgba(8, 1, 0) | 0) !== -1
+                || (ex.tiff_predict_rgba(8, 0x40000000, 2) | 0) !== -1) {
+                pBadProblems.push(`${bname} raw tiff_predict_rgba export validation`);
+            }
+        }
+        check("tiff_predict_rgba refuses non-positive dimensions, short buffers, and null pointers", !pBadProblems.length, pBadProblems.join(", "));
+    }
+
+    // 3. tiff_to_rgba twinCheck on SIMD and scalar across every converter branch, all 65,536 premultiplied pairs, all 65,536 16-bit values, and sub-byte palette + alpha
+    {
+        const toRgbaCases = [];
+        const makePlaneBufs = (planes, n, rowBytes, seed) => {
+            const r = rng(seed);
+            return Array.from({ length: planes }, () => {
+                const b = new Uint8Array(n * rowBytes);
+                for (let i = 0; i < b.length; i++) b[i] = r() & 255;
+                return b;
+            });
+        };
+        const makePalette = (bits, seed) => {
+            const r = rng(seed);
+            const entries = 1 << bits;
+            const cm = new Array(3 * entries);
+            for (let i = 0; i < cm.length; i++) cm[i] = r() & 0xFFFF;
+            return js.paletteLut(cm, bits);
+        };
+
+        let seedCounter = 6000;
+        // Sweep photometric (0, 1, 2, 3) x bits (1, 2, 4, 8, 16) x planar (chunky, planar) x alpha ("none", "straight", "premultiplied") x extra channels x padded rowBytes
+        for (const photometric of [0, 1, 2, 3]) {
+            const base = photometric === 2 ? 3 : 1;
+            const bitList = photometric === 2 ? [8, 16] : photometric === 3 ? [1, 2, 4, 8, 16] : [1, 2, 4, 8, 16];
+            for (const bits of bitList) {
+                const leList = bits === 16 ? [true, false] : [true];
+                const pal = photometric === 3 ? makePalette(bits, ++seedCounter) : null;
+                for (const le of leList) {
+                    for (const alpha of ["none", "straight", "premultiplied"]) {
+                        const extraChannels = bits === 8 && alpha === "straight" ? [0, 1] : [0];
+                        for (const extra of extraChannels) {
+                            const spp = base + (alpha === "none" ? 0 : 1) + extra;
+                            const planeModes = spp > 1 ? [1, spp] : [1];
+                            for (const planes of planeModes) {
+                                const w = bits < 8 ? 11 : 9, n = 3;
+                                const spw = planes === 1 ? w * spp : w;
+                                const minRb = Math.ceil((spw * bits) / 8);
+                                for (const pad of [0, 3]) {
+                                    const rowBytes = minRb + pad;
+                                    const bufs = makePlaneBufs(planes, n, rowBytes, ++seedCounter);
+                                    // Pass pal and every plane buffer at the top level of args so twinRun's argsFor shifts them to an odd byteOffset too.
+                                    toRgbaCases.push({
+                                        tag: `toRgba photo=${photometric} bits=${bits}${bits === 16 ? (le ? "LE" : "BE") : ""} spp=${spp} planes=${planes} alpha=${alpha} pad=${pad}`,
+                                        args: [n, { w, rowBytes, spp, bits, planes, le, photometric, alpha }, pal, ...bufs],
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Question 6.4 explicit cases: 1, 2, and 4-bit palette + alpha, chunky and planar, straight and premultiplied, covering every (idx, alpha) pair
+        for (const bits of [1, 2, 4]) {
+            const nEntries = 1 << bits, max = nEntries - 1;
+            const pal = new Uint8Array(nEntries * 3);
+            for (let i = 0; i < nEntries; i++) {
+                pal[i * 3] = (i * 73 + 29) & 255;
+                pal[i * 3 + 1] = (i * 51 + 90) & 255;
+                pal[i * 3 + 2] = (i * 97 + 140) & 255;
+            }
+            const totalPairs = nEntries * nEntries;
+            const w = nEntries * nEntries, n = 1;
+            const packVals = (vals) => {
+                const out = new Uint8Array(Math.ceil((vals.length * bits) / 8));
+                for (let i = 0; i < vals.length; i++) {
+                    const bIdx = Math.floor((i * bits) / 8);
+                    const shift = 8 - bits - ((i * bits) % 8);
+                    out[bIdx] |= (vals[i] & max) << shift;
+                }
+                return out;
+            };
+            const chunkyVals = [], p0Vals = [], p1Vals = [];
+            for (let idx = 0; idx < nEntries; idx++) {
+                for (let a = 0; a < nEntries; a++) {
+                    chunkyVals.push(idx, a);
+                    p0Vals.push(idx);
+                    p1Vals.push(a);
+                }
+            }
+            const chunkyBuf = packVals(chunkyVals);
+            const p0Buf = packVals(p0Vals), p1Buf = packVals(p1Vals);
+            for (const alpha of ["straight", "premultiplied"]) {
+                toRgbaCases.push({
+                    tag: `Q6.4exhaustive ${bits}b chunky ${alpha} (${totalPairs} pairs)`,
+                    args: [n, { w, rowBytes: chunkyBuf.length, spp: 2, bits, planes: 1, le: true, photometric: 3, alpha }, pal, chunkyBuf],
+                });
+                toRgbaCases.push({
+                    tag: `Q6.4exhaustive ${bits}b planar ${alpha} (${totalPairs} pairs)`,
+                    args: [n, { w, rowBytes: p0Buf.length, spp: 2, bits, planes: 2, le: true, photometric: 3, alpha }, pal, p0Buf, p1Buf],
+                });
+            }
+        }
+
+        twinCheck({
+            name: "tiff_to_rgba",
+            builds: [["rust simd", simd], ["rust scalar", scalar]],
+            twin: js,
+            call: (k, [n, spec, pal, ...bufs]) => k.tiffToRgba(bufs, n, null, { ...spec, pal }),
+            cases: toRgbaCases,
+        });
+
+        // Exhaustive 65,536 (alpha, colour) premultiplied pairs on chunky RGBA8 and planar Grey+Alpha8
+        {
+            const w = 256, n = 256, totalPx = w * n;
+            const chunky = new Uint8Array(totalPx * 4);
+            const pGrey = new Uint8Array(totalPx), pAlpha = new Uint8Array(totalPx);
+            for (let a = 0; a < 256; a++) {
+                for (let c = 0; c < 256; c++) {
+                    const p = a * 256 + c, o = p * 4;
+                    chunky[o] = c;
+                    chunky[o + 1] = 255 - c;
+                    chunky[o + 2] = (c * 7 + a * 3) & 255;
+                    chunky[o + 3] = a;
+                    pGrey[p] = c;
+                    pAlpha[p] = a;
+                }
+            }
+            const specChunky = { w, rowBytes: w * 4, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "premultiplied", pal: null };
+            const specPlanar = { w, rowBytes: w, spp: 2, bits: 8, planes: 2, le: true, photometric: 1, alpha: "premultiplied", pal: null };
+            const wantChunky = js.tiffToRgba([chunky], n, null, specChunky);
+            const wantPlanar = js.tiffToRgba([pGrey, pAlpha], n, null, specPlanar);
+            const gotSimdC = simd.tiffToRgba([chunky], n, null, specChunky);
+            const gotScalC = scalar.tiffToRgba([chunky], n, null, specChunky);
+            const gotSimdP = simd.tiffToRgba([pGrey, pAlpha], n, null, specPlanar);
+            const gotScalP = scalar.tiffToRgba([pGrey, pAlpha], n, null, specPlanar);
+            // Verify A=0 gives RGB=0,0,0 and A=255 gives RGB=C verbatim
+            let edgeOk = true;
+            for (let c = 0; c < 256; c++) {
+                const o0 = c * 4, o255 = (255 * 256 + c) * 4;
+                if (wantChunky[o0] !== 0 || wantChunky[o0 + 1] !== 0 || wantChunky[o0 + 2] !== 0 || wantChunky[o0 + 3] !== 0) edgeOk = false;
+                if (wantChunky[o255] !== c || wantChunky[o255 + 1] !== 255 - c || wantChunky[o255 + 3] !== 255) edgeOk = false;
+            }
+            check("tiff_to_rgba exhaustive 65,536 (alpha, colour) premultiplied pairs (A=0 -> 0, A=255 -> pass, 0<A<255 rounded): 0 bytes differ across twin, simd and scalar",
+                edgeOk && eqBytes(gotSimdC, wantChunky) && eqBytes(gotScalC, wantChunky) && eqBytes(gotSimdP, wantPlanar) && eqBytes(gotScalP, wantPlanar),
+                firstDiff(gotSimdC, wantChunky) || firstDiff(gotScalC, wantChunky) || firstDiff(gotSimdP, wantPlanar) || firstDiff(gotScalP, wantPlanar));
+        }
+
+        // Exhaustive 65,536 16-bit values (LE and BE)
+        {
+            const w = 256, n = 256, totalPx = w * n;
+            const bufLe = new Uint8Array(totalPx * 2), bufBe = new Uint8Array(totalPx * 2);
+            const dvLe = new DataView(bufLe.buffer), dvBe = new DataView(bufBe.buffer);
+            for (let v = 0; v < 65536; v++) {
+                dvLe.setUint16(v * 2, v, true);
+                dvBe.setUint16(v * 2, v, false);
+            }
+            const specLe = { w, rowBytes: w * 2, spp: 1, bits: 16, planes: 1, le: true, photometric: 1, alpha: "none", pal: null };
+            const specBe = { w, rowBytes: w * 2, spp: 1, bits: 16, planes: 1, le: false, photometric: 1, alpha: "none", pal: null };
+            const wantLe = js.tiffToRgba([bufLe], n, null, specLe);
+            const wantBe = js.tiffToRgba([bufBe], n, null, specBe);
+            const gotSimdLe = simd.tiffToRgba([bufLe], n, null, specLe);
+            const gotScalLe = scalar.tiffToRgba([bufLe], n, null, specLe);
+            const gotSimdBe = simd.tiffToRgba([bufBe], n, null, specBe);
+            const gotScalBe = scalar.tiffToRgba([bufBe], n, null, specBe);
+            check("tiff_to_rgba exhaustive 65,536 16-bit values (LE and BE): 0 bytes differ across twin, simd and scalar",
+                eqBytes(wantLe, wantBe) && eqBytes(gotSimdLe, wantLe) && eqBytes(gotScalLe, wantLe) && eqBytes(gotSimdBe, wantBe) && eqBytes(gotScalBe, wantBe),
+                firstDiff(gotSimdLe, wantLe) || firstDiff(gotSimdBe, wantBe));
+        }
+
+        // Caller-supplied `out` view with surrounding sentinel bytes
+        {
+            const w = 17, n = 3, src = new Uint8Array(w * n * 4);
+            for (let i = 0; i < src.length; i++) src[i] = (i * 29 + 11) & 255;
+            const spec = { w, rowBytes: w * 4, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "straight", pal: null };
+            let outOk = true;
+            for (const mod of [js, simd, scalar]) {
+                const backing = new Uint8Array(src.length + 20).fill(0xAA);
+                const sub = backing.subarray(7, 7 + src.length + 5);
+                const ret = mod.tiffToRgba([src], n, sub, spec);
+                if (ret !== sub || !eqBytes(sub.subarray(0, src.length), src)
+                    || !backing.subarray(0, 7).every((v) => v === 0xAA)
+                    || !backing.subarray(7 + src.length).every((v) => v === 0xAA)) {
+                    outOk = false;
+                }
+            }
+            check("tiff_to_rgba writes into caller-supplied out view without touching surrounding bytes", outOk);
+        }
+
+        // Refusal checks on tiff_to_rgba (and paletteLut string / NaN colormap edges, K15-read-1 & T3)
+        {
+            const validBuf = new Uint8Array(16 * 4);
+            const baseSpec = { w: 4, rowBytes: 16, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "straight", pal: null };
+            const badSpecs = [
+                ["invalid bits=3", [validBuf], 1, { ...baseSpec, bits: 3 }],
+                ["invalid photometric=4", [validBuf], 1, { ...baseSpec, photometric: 4 }],
+                ["invalid planes=3", [validBuf, validBuf, validBuf], 1, { ...baseSpec, planes: 3 }],
+                ["rowBytes < minRowBytes", [validBuf], 1, { ...baseSpec, rowBytes: 15 }],
+                ["short plane buffer", [validBuf.subarray(0, 15)], 1, baseSpec],
+                ["palette without pal", [validBuf], 1, { ...baseSpec, spp: 1, rowBytes: 4, photometric: 3, alpha: "none", pal: null }],
+                ["palette with string colormap", [validBuf], 1, { ...baseSpec, spp: 1, bits: 1, rowBytes: 1, photometric: 3, alpha: "none", pal: null, colormap: "abcdef" }],
+                ["negative w", [validBuf], 1, { ...baseSpec, w: -1 }],
+                ["negative rows", [validBuf], -1, baseSpec],
+            ];
+            const badProblems = [];
+            for (const [what, bufs, n, spec] of badSpecs) {
+                for (const [bname, mod] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+                    let threw = false;
+                    try { mod.tiffToRgba(bufs, n, null, spec); } catch (_) { threw = true; }
+                    if (!threw) badProblems.push(`${bname} ${what}`);
+                }
+            }
+            // K15-read-1: paletteLut refuses a string and treats NaN as !(v < 256) so all8=false (200 >> 8 === 0)
+            let strThrew = false;
+            try { js.paletteLut("abcdef", 1); } catch (_) { strThrew = true; }
+            const nanLut = js.paletteLut([200, NaN, 200, 200, 200, 200], 1);
+            if (!strThrew || nanLut[0] !== 0) badProblems.push("paletteLut string / NaN handling");
+
+            // T3: direct simd.exports and scalar.exports refusal calls covering every Rust guard and verifying unchanged output
+            for (const [bname, mod] of [["simd", simd], ["scalar", scalar]]) {
+                const ex = mod.exports;
+                const outPtr = 1024;
+                mod.u8().fill(0xA5, outPtr, outPtr + 16);
+                const rawBad = [
+                    ["null src", [0, 16, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["null out", [16, 16, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, 0, 16]],
+                    ["w=0", [16, 16, 1, 16, 0, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["rows=0", [16, 16, 1, 16, 4, 0, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["src_len one short", [16, 15, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["out_len one short", [16, 16, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 15]],
+                    ["null pal", [16, 4, 1, 4, 4, 1, 1, 8, 1, 3, 0, 0, 768, outPtr, 16]],
+                    ["pal_len one short", [16, 4, 1, 4, 4, 1, 1, 8, 1, 3, 0, 32, 767, outPtr, 16]],
+                    ["row_bytes < min", [16, 16, 1, 15, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["bits=3", [16, 16, 1, 16, 4, 1, 4, 3, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["photometric=4", [16, 16, 1, 16, 4, 1, 4, 8, 1, 4, 2, 0, 0, outPtr, 16]],
+                    ["photometric=2 bits=4", [16, 16, 1, 16, 4, 1, 4, 4, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["planes=3", [16, 48, 3, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["alpha_mode=3", [16, 16, 1, 16, 4, 1, 4, 8, 1, 2, 3, 0, 0, outPtr, 16]],
+                ];
+                for (const [rname, rargs] of rawBad) {
+                    if ((ex.tiff_to_rgba(...rargs) | 0) !== -1) badProblems.push(`${bname} raw ${rname}`);
+                }
+                if (!mod.u8().subarray(outPtr, outPtr + 16).every((v) => v === 0xA5)) {
+                    badProblems.push(`${bname} raw refusal modified outPtr`);
+                }
+            }
+            check("tiff_to_rgba refuses invalid specs, short buffers, missing palette LUTs, and null pointers", !badProblems.length, badProblems.join(", "));
+        }
+    }
+
+    // 4. tiffStrip, tiffStripFromPtr, tiffPartJob, tiffKernels, routes, and trap/OOM recovery
+    {
+        const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+        const W = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_worker.js")).href);
+        const bands = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_bands.js")).href);
+        const TILE = 256, TILE_BYTES = TILE * TILE * 4;
+        const makeTile = (seed) => {
+            const u8 = new Uint8Array(TILE_BYTES);
+            const r = rng(seed);
+            for (let i = 0; i < TILE_BYTES; i++) u8[i] = r() & 255;
+            return { data: u8.buffer };
+        };
+
+        // 4a. p.tiffStrip and p.tiffStripFromPtr on both simd and scalar vs T.tiffPart(args, (b) => p.zlib(b, level))
+        const row0 = [makeTile(701), null];
+        const row1 = [makeTile(702), makeTile(703)];
+        const snap = { width: 300, height: 320, tileRowNames: (ty) => (ty === 0 ? row0 : ty === 1 ? row1 : [null, null]) };
+        const tileSource = bands.tileRows(snap, true);
+        const partTile = await tileSource.part(176, 80, false);
+        const tileMsg = { ...partTile.args, w: 300, rows: 80, predictor: 2, level: 2 };
+        const tileRgba = W.rowsOfTiles(tileMsg, false);
+
+        const stackMsg = {
+            w: 280, rows: 48, y: 16, x0: 0, y0: 0, predictor: 2, level: 2,
+            stack: {
+                base: { x: 0, y: 0, w: 280, h: 256, tiles: { 0: [makeTile(704), makeTile(705)] } },
+                layers: [
+                    { x: 0, y: 0, w: 280, h: 256, alpha: 210, op: 5, tiles: { 0: [makeTile(706), makeTile(707)] } },
+                ],
+            },
+        };
+        const stackRgba = W.rowsOfStack(stackMsg, false);
+
+        for (const [bname, px] of [["simd", simd], ["scalar", scalar]]) {
+            let stripOk = true, stripDetail = "";
+            for (const pred of [2, 1, undefined]) {
+                for (const level of [1, 2, 6]) {
+                    const keep = tileRgba.slice();
+                    const args = pred === undefined ? { rgba: keep, w: 300, rows: 80 } : { rgba: keep, w: 300, rows: 80, predictor: pred };
+                    const want = await T.tiffPart(args, (b) => px.zlib(b, level));
+                    const got = px.tiffStrip(args, level);
+                    if (!eqBytes(keep, tileRgba) || got.raw !== want.raw || !eqBytes(new Uint8Array(got.chunk), new Uint8Array(want.chunk))) {
+                        stripOk = false;
+                        stripDetail = `tiffStrip pred=${pred} level=${level}`;
+                        break;
+                    }
+                    // Also test tiffStripFromPtr on tileMsg and stackMsg
+                    for (const [mName, msg, refRgba] of [["tiles", { ...tileMsg, predictor: pred, level }, tileRgba], ["stack", { ...stackMsg, predictor: pred, level }, stackRgba]]) {
+                        const a = px.job;
+                        let gotPtr;
+                        try {
+                            const laps = {};
+                            const ptrs = W.partPtrOf(px, a, msg, false);
+                            gotPtr = px.tiffStripFromPtr(a, ptrs.pr, msg.w, msg.rows, level, msg.predictor, laps);
+                            if (typeof laps.predict !== "number" || typeof laps.deflate !== "number") {
+                                stripOk = false;
+                                stripDetail = `tiffStripFromPtr laps missing on ${mName}`;
+                            }
+                        } finally {
+                            px._reset(a);
+                        }
+                        const wantPtr = await T.tiffPart(
+                            pred === undefined ? { rgba: refRgba, w: msg.w, rows: msg.rows } : { rgba: refRgba, w: msg.w, rows: msg.rows, predictor: pred },
+                            (b) => px.zlib(b, level),
+                        );
+                        if (gotPtr.raw !== wantPtr.raw || !eqBytes(new Uint8Array(gotPtr.chunk), new Uint8Array(wantPtr.chunk))) {
+                            stripOk = false;
+                            stripDetail = `tiffStripFromPtr ${mName} pred=${pred} level=${level}`;
+                            break;
+                        }
+                    }
+                    if (!stripOk) break;
+                }
+                if (!stripOk) break;
+            }
+            check(`tiffStrip and tiffStripFromPtr (${bname}): byte-identical to tiffPart(args, p.zlib) across predictors 2/1/default, levels 1/2/6, tiles and stack`,
+                stripOk, stripDetail);
+        }
+
+        // 4b. Worker tiffPartJob(msg): routes (composeTiles, composeStack, tiffStripWasm, tiffPredict), arena reset, releaseIfLarge, and trap/OOM fallback
+        K.setKernels("rust");
+        const rgbaMsg = { rgba: tileRgba.slice().buffer, w: 300, rows: 80, predictor: 2 };
+        const wantTileStrip = await T.tiffPart({ rgba: tileRgba, w: 300, rows: 80, predictor: 2 }, (b) => simd.zlib(b, 2));
+        const wantStackStrip = await T.tiffPart({ rgba: stackRgba, w: 280, rows: 48, predictor: 2 }, (b) => simd.zlib(b, 2));
+
+        const rTileRust = await W.tiffPartJob(tileMsg);
+        const jobBytesTile = K.rustPx().job.jobBytes;
+        const rStackRust = await W.tiffPartJob(stackMsg);
+        const jobBytesStack = K.rustPx().job.jobBytes;
+        const rRgbaRust = await W.tiffPartJob(rgbaMsg);
+        const jobBytesAfter = jobBytesTile + jobBytesStack + K.rustPx().job.jobBytes;
+        const chunksAfter = K.rustPx().job.chunks.length;
+
+        let rel0, rel1;
+        K.setRoute("releaseMB", 0);
+        try {
+            rel0 = K.pxInstances().release;
+            await W.tiffPartJob(stackMsg);
+            rel1 = K.pxInstances().release;
+        } finally {
+            K.setRoute("releaseMB", null);
+        }
+
+        K.setRoute("composeTiles", "js");
+        const rTileJsCompose = await W.tiffPartJob(tileMsg);
+        K.setRoute("composeTiles", null);
+
+        K.setRoute("composeStack", "js");
+        const rStackJsCompose = await W.tiffPartJob(stackMsg);
+        K.setRoute("composeStack", null);
+
+        K.setRoute("tiffStripWasm", "js");
+        const rTileJsStrip = await W.tiffPartJob(tileMsg);
+        K.setRoute("tiffStripWasm", null);
+
+        K.setRoute("tiffPredict", "js");
+        const rTileJsPred = await W.tiffPartJob(tileMsg);
+        K.setRoute("tiffPredict", null);
+
+        const workerRoutesOk = rTileRust.timing.composeWasm === 1 && rStackRust.timing.composeWasm === 1 && rRgbaRust.timing.composeWasm === 0
+            && rTileJsCompose.timing.composeWasm === 0 && rStackJsCompose.timing.composeWasm === 0
+            && rTileJsStrip.timing.composeWasm === 0 && rTileJsPred.timing.composeWasm === 0
+            && jobBytesAfter === 0 && chunksAfter === 1 && rel1 === rel0 + 1
+            && eqBytes(new Uint8Array(rTileRust.chunk), new Uint8Array(wantTileStrip.chunk))
+            && eqBytes(new Uint8Array(rRgbaRust.chunk), new Uint8Array(wantTileStrip.chunk))
+            && eqBytes(new Uint8Array(rTileJsCompose.chunk), new Uint8Array(wantTileStrip.chunk))
+            && eqBytes(new Uint8Array(rTileJsStrip.chunk), new Uint8Array(wantTileStrip.chunk))
+            && eqBytes(new Uint8Array(rTileJsPred.chunk), new Uint8Array(wantTileStrip.chunk))
+            && eqBytes(new Uint8Array(rStackRust.chunk), new Uint8Array(wantStackStrip.chunk))
+            && eqBytes(new Uint8Array(rStackJsCompose.chunk), new Uint8Array(wantStackStrip.chunk));
+        check("inpaint_worker.js tiffPartJob: composeWasm=1 on tiles/stack, composeWasm=0 on rgba or js routes, resets p.job, calls releaseIfLarge(), and gives byte-identical strips to tiffPart(args, p.zlib)",
+            workerRoutesOk,
+            `tile=${rTileRust.timing.composeWasm} stack=${rStackRust.timing.composeWasm} rgba=${rRgbaRust.timing.composeWasm} jobBytes=${jobBytesAfter} rel=${rel0}->${rel1}`);
+
+        // Simulated OOM and trap in tiffPartJob (both in partPtrOf/tiffStripFromPtr and in tiffStrip)
+        const realWarn = console.warn;
+        console.warn = () => {};
+        try {
+            let p0 = K.rustPx(), i0 = K.pxInstances();
+            p0.tiffStripFromPtr = () => { throw new P.PxOutOfMemory(1024); };
+            const sOom = await W.tiffPartJob(stackMsg);
+            let i1 = K.pxInstances();
+            const oomPtrOk = sOom.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.oom === i0.oom + 1
+                && eqBytes(new Uint8Array(sOom.chunk), new Uint8Array(wantStackStrip.chunk));
+
+            p0 = K.rustPx(); i0 = K.pxInstances();
+            p0.tiffStripFromPtr = function () { return trapIn(this); };
+            const tTrap = await W.tiffPartJob(tileMsg);
+            i1 = K.pxInstances();
+            const trapPtrOk = tTrap.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.trap === i0.trap + 1
+                && eqBytes(new Uint8Array(tTrap.chunk), new Uint8Array(wantTileStrip.chunk));
+
+            p0 = K.rustPx(); i0 = K.pxInstances();
+            p0.tiffStrip = function () { return trapIn(this); };
+            const rTrap = await W.tiffPartJob(rgbaMsg);
+            i1 = K.pxInstances();
+            const trapRgbaOk = rTrap.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.trap === i0.trap + 1
+                && rTrap.raw === wantTileStrip.raw
+                && eqBytes(new Uint8Array(rTrap.chunk), new Uint8Array(wantTileStrip.chunk));
+
+            check("inpaint_worker.js tiffPartJob recovers from OOM and wasm traps in tiffStripFromPtr and tiffStrip, renews the instance, and falls back cleanly",
+                oomPtrOk && trapPtrOk && trapRgbaOk,
+                `oomPtr=${oomPtrOk} trapPtr=${trapPtrOk} trapRgba=${trapRgbaOk}`);
+        } finally {
+            console.warn = realWarn;
+        }
+
+        // 4c. tiffKernels() per-call rustPx() lookup across instance replacement + route switching + in-place trap safety (T2)
+        const tk = K.tiffKernels();
+        const tkMethodsMatch = tk.unpredict === K.tiffUnpredict && tk.predictRgba === K.tiffPredictRgba && tk.toRgba === K.tiffToRgba && tk.unpackStrip === K.tiffUnpack;
+        const pBefore = K.rustPx();
+        let oldCalls = 0, newCalls = 0;
+        for (const m of ["tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
+            const orig = pBefore[m].bind(pBefore);
+            pBefore[m] = (...a) => { oldCalls++; return orig(...a); };
+        }
+        K.dropPx("idle");
+        const pAfter = K.rustPx();
+        for (const m of ["tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
+            const orig = pAfter[m].bind(pAfter);
+            pAfter[m] = (...a) => { newCalls++; return orig(...a); };
+        }
+        const sampleRgba = new Uint8Array(16 * 4);
+        for (let i = 0; i < sampleRgba.length; i++) sampleRgba[i] = (i * 19 + 5) & 255;
+        const spec4c = { w: 16, rowBytes: 64, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "straight", pal: null };
+
+        K.pxCalls(true);
+        const uRust = tk.unpredict(sampleRgba.slice(), 1, 64, 16, 4, 8, true);
+        const pRust = tk.predictRgba(sampleRgba.slice(), 16, 1);
+        const cRust = tk.toRgba([sampleRgba], 1, null, spec4c);
+        const callsRust = K.pxCalls(true);
+        const oldCallsAfterDrop = oldCalls, newCallsAfterDrop = newCalls;
+
+        for (const r of ["tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, "js");
+        const uJs = tk.unpredict(sampleRgba.slice(), 1, 64, 16, 4, 8, true);
+        const pJs = tk.predictRgba(sampleRgba.slice(), 16, 1);
+        const cJs = tk.toRgba([sampleRgba], 1, null, spec4c);
+        const callsJs = K.pxCalls(true);
+        for (const r of ["tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, null);
+
+        // In-place trap safety: when tiff_unpredict or tiff_predict_rgba traps in wasm, the caller's JS buffer was not
+        // mutated before the fallback twin runs, so the returned buffer matches the JS twin on the original input!
+        let trapInPlaceOk = true;
+        console.warn = () => {};
+        try {
+            let pCur = K.rustPx();
+            pCur.exports = { ...pCur.exports, tiff_unpredict: () => trapIn(pCur) };
+            const uBuf = sampleRgba.slice();
+            const uRec = tk.unpredict(uBuf, 1, 64, 16, 4, 8, true);
+            if (!eqBytes(uRec, uJs) || K.rustPx() === pCur) trapInPlaceOk = false;
+
+            pCur = K.rustPx();
+            pCur.exports = { ...pCur.exports, tiff_predict_rgba: () => trapIn(pCur) };
+            const pBuf = sampleRgba.slice();
+            const pRec = tk.predictRgba(pBuf, 16, 1);
+            if (!eqBytes(pRec, pJs) || K.rustPx() === pCur) trapInPlaceOk = false;
+
+            pCur = K.rustPx();
+            pCur.exports = { ...pCur.exports, tiff_to_rgba: () => trapIn(pCur) };
+            const cRec = tk.toRgba([sampleRgba], 1, null, spec4c);
+            if (!eqBytes(cRec, cJs) || K.rustPx() === pCur) trapInPlaceOk = false;
+        } finally {
+            console.warn = realWarn;
+        }
+        K.setKernels("js");
+        check("kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels",
+            tkMethodsMatch && pBefore !== pAfter && oldCallsAfterDrop === 0 && newCallsAfterDrop === 3
+            && callsRust.tiff_unpredict === 1 && callsRust.tiff_predict_rgba === 1 && callsRust.tiff_to_rgba === 1
+            && !callsJs.tiff_unpredict && !callsJs.tiff_predict_rgba && !callsJs.tiff_to_rgba
+            && eqBytes(uRust, uJs) && eqBytes(pRust, pJs) && eqBytes(cRust, cJs) && trapInPlaceOk,
+            `tkMethodsMatch=${tkMethodsMatch} oldCalls=${oldCallsAfterDrop} newCalls=${newCallsAfterDrop} callsRust=${JSON.stringify(callsRust)} callsJs=${JSON.stringify(callsJs)} trapInPlaceOk=${trapInPlaceOk}`);
+
+        // 4d. readTiff with kernels: null (converter + JS unpredict) vs kernels: K.tiffKernels() (Rust toRgba + unpredict)
+        // on a 2-bit palette + premultiplied alpha + predictor 2 TIFF (Question 6.4)
+        {
+            const u16le = (v) => [v & 255, (v >> 8) & 255];
+            const u32le = (v) => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+            // 2-bit palette + premultiplied alpha, 4x1: samples (idx=1, a=1->85), (idx=2, a=2->170), (idx=3, a=3->255), (idx=2, a=0->0)
+            // Packed into 2 bytes: [ (1<<6)|(1<<4)|(2<<2)|2 = 0x5A, (3<<6)|(3<<4)|(2<<2)|0 = 0xF8 ]
+            const strip = new Uint8Array([0x5A, 0xF8]);
+            const cmap = new Uint8Array(12 * 2);
+            // Palette entries for indices 0..3: R=[0, 30, 120, 200], G=[0, 60, 80, 100], B=[0, 85, 170, 50]
+            const cvals = [0, 30, 120, 200, 0, 60, 80, 100, 0, 85, 170, 50].map((v) => v * 257);
+            cvals.forEach((v, idx) => { cmap[idx * 2] = v & 255; cmap[idx * 2 + 1] = (v >> 8) & 255; });
+            // Build minimal TIFF with 11 tags at offset 8 (8 + 2 + 132 + 4 = 146), strip at 152, Bps at 156, Cmap at 160
+            const tif = new Uint8Array(200);
+            tif.set([0x49, 0x49, 42, 0, ...u32le(8)], 0);
+            const tags = [
+                [256, 3, 1, 4],       // Width = 4
+                [257, 3, 1, 1],       // Height = 1
+                [258, 3, 2, 2 | (2 << 16)], // BitsPerSample = [2, 2] inline (4 bytes)
+                [259, 3, 1, 1],       // Compression = 1
+                [262, 3, 1, 3],       // Photometric = 3 (palette)
+                [273, 4, 1, 152],     // StripOffsets = 152
+                [277, 3, 1, 2],       // SamplesPerPixel = 2
+                [278, 3, 1, 1],       // RowsPerStrip = 1
+                [279, 4, 1, 2],       // StripByteCounts = 2
+                [320, 3, 12, 160],    // ColorMap
+                [338, 3, 1, 1],       // ExtraSamples = [1] (premultiplied)
+            ];
+            tif.set(u16le(tags.length), 8);
+            tags.forEach(([t, ty, cnt, val], idx) => {
+                const o = 10 + idx * 12;
+                tif.set([...u16le(t), ...u16le(ty), ...u32le(cnt), ...(ty === 3 && cnt === 1 ? [...u16le(val), 0, 0] : u32le(val))], o);
+            });
+            tif.set(strip, 152);
+            tif.set([...u16le(2), ...u16le(2)], 156);
+            tif.set(cmap, 160);
+            let outNull = null, outRust = null;
+            await T.readTiff(new Blob([tif]), { kernels: null, onRows: (rgba) => { outNull = rgba.slice(); } });
+            K.setKernels("rust");
+            K.pxCalls(true);
+            await T.readTiff(new Blob([tif]), { kernels: K.tiffKernels(), onRows: (rgba) => { outRust = rgba.slice(); } });
+            const cPal = K.pxCalls(true);
+            K.setKernels("js");
+            // Expected:
+            // px 0: idx=1 -> (30,60,85), a=85 -> unpremul: (90,180,255,85)
+            // px 1: idx=2 -> (120,80,170), a=170 -> unpremul: (180,120,255,170)
+            // px 2: idx=3 -> (200,100,50), a=255 -> (200,100,50,255)
+            // px 3: idx=2 -> (120,80,170), a=0 -> (0,0,0,0)
+            const wantPal = new Uint8Array([90, 180, 255, 85, 180, 120, 255, 170, 200, 100, 50, 255, 0, 0, 0, 0]);
+            check("inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA",
+                eqBytes(outNull, wantPal) && eqBytes(outRust, wantPal) && cPal.tiff_to_rgba === 1,
+                `null=${Array.from(outNull || [])} rust=${Array.from(outRust || [])} calls=${JSON.stringify(cPal)}`);
+        }
+    }
+
     if (process.env.PX_BENCH) {
         const rawStrip = runPayload(1024 * 1024);
         const lzwStrip = lzwEncodeTiff(rawStrip);
@@ -10580,6 +11320,37 @@ async function tiffCases(js, simd, scalar, K, T) {
             ];
             const med = benchMedians(rows, { rounds: 15 });
             console.log(`       tiff_unpack (${what}): ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 15)`);
+        }
+        const bw = 15000, brows = 16;
+        const bRgba = randomRGBA(bw, brows, 9801);
+        const bRgb = new Uint8Array(bw * brows * 3);
+        for (let i = 0; i < bRgb.length; i++) bRgb[i] = bRgba[i];
+        const bOut = new Uint8Array(bw * brows * 4);
+        for (const [what, fnTwin, fnSimd, fnScalar] of [
+            ["tiff_unpredict RGBA8 15000x16",
+                () => js.tiffUnpredict(bRgba, brows, bw * 4, bw, 4, 8, true),
+                () => simd.tiffUnpredict(bRgba, brows, bw * 4, bw, 4, 8, true),
+                () => scalar.tiffUnpredict(bRgba, brows, bw * 4, bw, 4, 8, true)],
+            ["tiff_unpredict RGB8 15000x16",
+                () => js.tiffUnpredict(bRgb, brows, bw * 3, bw, 3, 8, true),
+                () => simd.tiffUnpredict(bRgb, brows, bw * 3, bw, 3, 8, true),
+                () => scalar.tiffUnpredict(bRgb, brows, bw * 3, bw, 3, 8, true)],
+            ["tiff_predict_rgba 15000x16",
+                () => js.tiffPredictRgba(bRgba, bw, brows),
+                () => simd.tiffPredictRgba(bRgba, bw, brows),
+                () => scalar.tiffPredictRgba(bRgba, bw, brows)],
+            ["tiff_to_rgba RGB8->RGBA8 15000x16",
+                () => js.tiffToRgba([bRgb], brows, bOut, { w: bw, rowBytes: bw * 3, spp: 3, bits: 8, planes: 1, le: true, photometric: 2, alpha: "none", pal: null }),
+                () => simd.tiffToRgba([bRgb], brows, bOut, { w: bw, rowBytes: bw * 3, spp: 3, bits: 8, planes: 1, le: true, photometric: 2, alpha: "none", pal: null }),
+                () => scalar.tiffToRgba([bRgb], brows, bOut, { w: bw, rowBytes: bw * 3, spp: 3, bits: 8, planes: 1, le: true, photometric: 2, alpha: "none", pal: null })],
+            ["tiff_to_rgba RGBA8 premul->straight 15000x16",
+                () => js.tiffToRgba([bRgba], brows, bOut, { w: bw, rowBytes: bw * 4, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "premultiplied", pal: null }),
+                () => simd.tiffToRgba([bRgba], brows, bOut, { w: bw, rowBytes: bw * 4, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "premultiplied", pal: null }),
+                () => scalar.tiffToRgba([bRgba], brows, bOut, { w: bw, rowBytes: bw * 4, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "premultiplied", pal: null })],
+        ]) {
+            const rows = [["twin", fnTwin], ["simd", fnSimd], ["scalar", fnScalar]];
+            const med = benchMedians(rows, { rounds: 15 });
+            console.log(`       ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 15)`);
         }
     }
 }

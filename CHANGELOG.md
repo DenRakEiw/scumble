@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **TIFF files open and save faster, and small palette TIFFs with transparency open correctly.** The predictor and the conversion to RGBA run in the Rust module. Palette TIFFs of 1, 2 or 4 bits with an alpha channel no longer open nearly transparent.
 - Grow and Shrink Selection are faster when they have to run on the window instead of the background workers (about 1.3 to 1.8 times), and large temporary memory is given back right after.
 - **Colour match without WebGL2 is faster.** The fallback that runs on the CPU, without WebGL2 or above the GPU's largest texture, goes through the Rust module in 4 MP pieces, about 1.7 times as fast at 15,000 x 10,000, and now rounds as the GPU path does.
 - Faster opening of large PNGs written by Scumble (and Scumble-written layers inside `.scumble` documents) by decoding their parts in parallel across the worker pool.

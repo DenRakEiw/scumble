@@ -1,0 +1,13 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=tiff)
+(Use `node --trace-warnings ...` to show where the warning was created)
+RuntimeError: memory access out of bounds
+    at wasm://wasm/001195fa:wasm-function[20]:0x49dd
+    at wasm://wasm/001195fa:wasm-function[82]:0x2818c
+    at out.<computed> [as mip_half] (file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_mut_k15/renderer/editor/px/px.js:172:40)
+    at trapIn (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k15\tools\px_test.js:2337:35)
+    at Object.tiff_unpredict (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k15\tools\px_test.js:10289:69)
+    at Px.tiffUnpredict (file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_mut_k15/renderer/editor/px/px.js:1609:37)
+    at Module.tiffUnpredict (file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_mut_k15/renderer/editor/px/kernels.js:1107:24)
+    at tiffCases (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k15\tools\px_test.js:10291:28)
+    at async group (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k15\tools\px_test.js:65:5)
+    at async main (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k15\tools\px_test.js:10779:5)

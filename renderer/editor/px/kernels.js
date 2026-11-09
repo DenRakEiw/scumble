@@ -30,7 +30,7 @@ import { liquifyBlock as liquifyBlockJS, previewBlock as previewBlockJS, liquify
 // the retouch brushes' twins live with the brushes (K26, K27; inpaint_stroke.js imports nothing, so no cycle)
 import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin, toneRGBA as toneRGBATwin, spongeRGBA as spongeRGBATwin, freqSplit as freqSplitTwin } from "../inpaint_stroke.js";
 
-export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, TIFF_JS } from "./kernels_js.js";
+export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, TIFF_JS } from "./kernels_js.js";
 // this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4), their clocks and the copies
 // around them (docs/PLAN_WASM_K1.md §1.1); they survive a new instance
 export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
@@ -60,9 +60,10 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * `compositeMaskedTile` (K36): `compositeMaskedTile` of inpaint_tiles.js `compositeStroke`.
  * `matchPixels` (K38): `matchPixels` of inpaint_filters.js `matchCanvas`, inpaint_boxstack.js and inpaint_worker.js.
  * `growMask` (K39): `growMaskBounds` of inpaint_raster.js (the selection grow / shrink job and window fallback).
- * `composeTiles` and `composeStack` (K10b): pointer gather into wasm memory for tile-store and stack `png_part` jobs.
+ * `composeTiles` and `composeStack` (K10b): pointer gather into wasm memory for tile-store and stack `png_part` / `tiff_part` jobs.
+ * `tiffUnpredict`, `tiffPredict`, `tiffToRgba`, and `tiffStripWasm` (K15): `tiffUnpredict`, `tiffPredictRgba`, `tiffToRgba`, and `tiffPartJob` / `tiffStrip` of `inpaint_tiff.js`.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", tiffUnpredict: "kernel", tiffPredict: "kernel", tiffToRgba: "kernel", tiffStripWasm: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -1122,6 +1123,88 @@ export function tiffUnpack(compression, src, need, out = null, name = "strip") {
         finally { releaseIfLarge(); }
     }
     return J.tiffUnpack(compression, src, need, out, name);
+}
+
+/**
+ * Undo horizontal differencing (Predictor 2) in place on `rows` rows of `rowBytes` stride, each `pixels` wide with
+ * `per` samples per pixel at `bits` (`8` or `16`) bits per sample (`inpaint_tiff.js` `unpredict`, K15,
+ * `docs/PLAN_WASM_BUILD.md` §4.6), routed by `tiffUnpredict`.
+ */
+export function tiffUnpredict(buf, rows, rowBytes, pixels, per, bits, le = true) {
+    const p = rustPx("tiffUnpredict");
+    if (p) {
+        try { return p.tiffUnpredict(buf, rows, rowBytes, pixels, per, bits, le); }
+        catch (err) { if (!recovered(p, err, "tiff_unpredict")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.tiffUnpredict(buf, rows, rowBytes, pixels, per, bits, le);
+}
+
+/**
+ * Horizontal differencing (Predictor 2) in place on `rows` rows of `w`-wide RGBA8 (`inpaint_tiff.js` `predictRgba`, K15),
+ * routed by `tiffPredict`.
+ */
+export function tiffPredictRgba(rgba, w, rows) {
+    const p = rustPx("tiffPredict");
+    if (p) {
+        try { return p.tiffPredictRgba(rgba, w, rows); }
+        catch (err) { if (!recovered(p, err, "tiff_predict_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.tiffPredictRgba(rgba, w, rows);
+}
+
+/**
+ * Convert `rows` rows (`bufs`: one buffer for chunky, or `samples` buffers for planar) to straight-alpha RGBA8 in `out`
+ * (or a fresh `Uint8Array(rows * width * 4)`; `inpaint_tiff.js` `toRgba`, K15), routed by `tiffToRgba`.
+ */
+export function tiffToRgba(bufs, rows, out = null, spec = {}) {
+    const p = rustPx("tiffToRgba");
+    if (p) {
+        try { return p.tiffToRgba(bufs, rows, out, spec); }
+        catch (err) { if (!recovered(p, err, "tiff_to_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.tiffToRgba(bufs, rows, out, spec);
+}
+
+/**
+ * One strip of a TIFF from `{ rgba, w, rows, predictor = 2 }` (or positional `(rgba, w, rows, level, predictor, laps)`),
+ * byte-identical to `tiffPart(args, (b) => p.zlib(b, level))` (`inpaint_tiff.js` `tiffPart`, K15), routed by
+ * `tiffStripWasm` and `tiffPredict`.
+ */
+export async function tiffStrip(rgbaOrArgs, wOrLevel = 2, rowsOrLaps = null, level = 2, predictor = 2, laps = null) {
+    const p = rustPx("tiffStripWasm") && rustPx("tiffPredict");
+    if (p) {
+        try { return p.tiffStrip(rgbaOrArgs, wOrLevel, rowsOrLaps, level, predictor, laps); }
+        catch (err) { if (!recovered(p, err, "tiff_part")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    let args = rgbaOrArgs, lvl = wOrLevel, lp = rowsOrLaps;
+    if (!rgbaOrArgs || typeof rgbaOrArgs !== "object" || ArrayBuffer.isView(rgbaOrArgs) || rgbaOrArgs instanceof ArrayBuffer) {
+        args = { rgba: rgbaOrArgs, w: wOrLevel, rows: rowsOrLaps, predictor };
+        lvl = level;
+        lp = laps;
+    }
+    const pz = rustPx();
+    return J.tiffPart(args, (bytes) => (pz ? pz.zlib(bytes, lvl) : J.deflate(bytes)), lp);
+}
+
+const TIFF_RUST = Object.freeze({
+    unpackStrip: tiffUnpack,
+    unpredict: tiffUnpredict,
+    predictRgba: tiffPredictRgba,
+    toRgba: tiffToRgba,
+    paletteLut: J.paletteLut,
+});
+
+/**
+ * The TIFF kernel set for `readTiff(..., { kernels: tiffKernels() })` (K15, `docs/PLAN_WASM_BUILD.md` §4.6).
+ * Each method looks up `rustPx(...)` per call so an instance swap (`releaseIfLarge` or trap recovery) mid-stream uses
+ * the new instance (or falls back to `TIFF_JS` when `setKernels("js")` or a route override is active).
+ */
+export function tiffKernels() {
+    return TIFF_RUST;
 }
 
 

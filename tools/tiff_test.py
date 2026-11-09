@@ -138,25 +138,29 @@ OPEN_ONE = r"""
 const F = __F__;
 const d = await run("new_document");
 const ed = ednow(d.id);
+const E = ed.constructor;
 host.shell.activate(ed);
 try {
+    E.jobTimings(true);
     let err = null;
     const t0 = performance.now();
     try { await run("load_image", { doc: d.id, path: F.path }); } catch (e) { err = String(e.message || e); }
     const ms = Math.round(performance.now() - t0);
     if (err) throw new Error("load_image: " + err);
+    const jt = E.jobTimings(true).filter((t) => t.op === "tiff_read");
     if (ed.width !== F.width || ed.height !== F.height) throw new Error(`opened as ${ed.width} x ${ed.height}`);
     const got = ed.basePx.readRect(0, 0, F.width, F.height).data;
     const c = compare(got, await readBytes(F.expect), F.width);
     const status = ed.status || "";
     const problems = [];
     if (!c.ok) problems.push(says(c));
+    if (jt.length !== 1 || jt[0].kernels !== "rust") problems.push("tiff_read timing: " + JSON.stringify(jt));
     const missing = F.notes.filter((n) => !status.toLowerCase().includes(n.toLowerCase()));
     if (missing.length) problems.push(`the status line does not mention ${missing.join(", ")}: "${status}"`);
     if (isTifRef(ed.base && ed.base.ref)) problems.push("the base is stored as the TIFF itself: " + ed.base.ref.filename);
     if (ed.undo && ed.undo.length) problems.push("opening left " + ed.undo.length + " undo steps");
     if (problems.length) throw new Error(problems.join(" | "));
-    return { name: F.name, ms, soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, rawOff: c.rawOff, ref: ed.base.ref.filename, status };
+    return { name: F.name, ms, soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, rawOff: c.rawOff, ref: ed.base.ref.filename, status, pxCalls: (jt[0] && jt[0].pxCalls) || {} };
 } finally { await run("close_document", { doc: d.id }); }
 """
 
@@ -217,14 +221,20 @@ LAYER = r"""
 const F = __F__;
 const d = await run("new_document");
 const ed = ednow(d.id);
+const E = ed.constructor;
 host.shell.activate(ed);
 try {
     await run("new_canvas", { doc: d.id, width: 200, height: 150 });
     const n = ed.layers.length;
+    E.jobTimings(true);
     const r = await run("add_image_layer", { doc: d.id, path: F.path });
+    const jt = E.jobTimings(true).filter((t) => t.op === "tiff_read");
     if (ed.layers.length !== n + 1) throw new Error(`${ed.layers.length - n} layers added: ${ed.status}`);
     const l = ed.layers[ed.layers.length - 1];
     const problems = [];
+    if (jt.length !== 1 || jt[0].kernels !== "rust" || !jt[0].pxCalls || !jt[0].pxCalls.tiff_unpredict || !jt[0].pxCalls.tiff_to_rgba) {
+        problems.push("layer tiff_read timing: " + JSON.stringify(jt));
+    }
     if (l.kind !== "image") problems.push("the layer is a " + l.kind);
     if (l.w !== F.width || l.h !== F.height || l.px.width !== F.width || l.px.height !== F.height) problems.push(`the layer is ${l.w} x ${l.h} (pixels ${l.px.width} x ${l.px.height}), not ${F.width} x ${F.height}`);
     const c = compare(l.px.readRect(0, 0, F.width, F.height).data, await readBytes(F.expect), F.width);
@@ -233,7 +243,7 @@ try {
     await ed.syncLayers();
     if (!l.ref || isTifRef(l.ref)) problems.push("after syncLayers the layer's file is " + JSON.stringify(l.ref));
     if (problems.length) throw new Error(problems.join(" | "));
-    return { layer: r.name || l.name, size: `${l.w} x ${l.h}`, soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, ref: l.ref.filename, status: ed.status };
+    return { layer: r.name || l.name, size: `${l.w} x ${l.h}`, soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, ref: l.ref.filename, status: ed.status, pxCalls: jt[0].pxCalls };
 } finally { await run("close_document", { doc: d.id }); }
 """
 
@@ -241,6 +251,7 @@ EXPORT_BUILD = r"""
 const d = await run("new_document");
 window.__tx = { doc: d.id };
 const ed = ednow(d.id);
+const E = ed.constructor;
 host.shell.activate(ed);
 const W = 640, H = 400;
 const c = document.createElement("canvas");
@@ -255,25 +266,84 @@ const mk = (w, h, draw) => { const k = document.createElement("canvas"); k.width
 ed.addLayer({ name: "Opaque", kind: "image", ref: null, px: mk(200, 120, (x) => { x.fillStyle = "#1a9c3e"; x.fillRect(0, 0, 200, 120); x.fillStyle = "#f0e010"; x.fillRect(40, 30, 60, 50); }), x: 50, y: 40, w: 200, h: 120, dirty: true });
 ed.addLayer({ name: "Half", kind: "image", ref: null, px: mk(300, 200, (x) => { x.fillStyle = "rgba(255, 255, 255, 0.5)"; x.fillRect(0, 0, 300, 200); x.fillStyle = "rgba(10, 10, 60, 0.8)"; x.beginPath(); x.arc(150, 100, 80, 0, Math.PI * 2); x.fill(); }), x: 300, y: 150, w: 300, h: 200, opacity: 0.5, dirty: true });
 ed.renderLayers && ed.renderLayers();
+E.jobTimings(true);
 const t0 = performance.now();
 const tif = await run("export", { doc: d.id, format: "tiff", path: __TIF__ });
 const tifMs = Math.round(performance.now() - t0);
+const rustParts = E.jobTimings(true).filter((t) => t.op === "tiff_part");
+const wantCompose = ed.tileMode ? 1 : 0;
+let predCalls = 0, defCalls = 0;
+for (const p of rustParts) {
+    predCalls += (p.pxCalls && p.pxCalls.tiff_predict_rgba) || 0;
+    defCalls += (p.pxCalls && p.pxCalls.deflate_part) || 0;
+}
+if (!rustParts.length || rustParts.some((p) => p.kernels !== "rust" || p.composeWasm !== wantCompose) || !predCalls || !defCalls) {
+    throw new Error("export tiff_part rust timing: " + JSON.stringify(rustParts));
+}
+// Replay export under the "js" route for tiffPredict and tiffStripWasm and assert identical file bytes
+let jsParts = [];
+E.setRoute("tiffPredict", "js");
+E.setRoute("tiffStripWasm", "js");
+E.jobTimings(true);
+try {
+    await run("export", { doc: d.id, format: "tiff", path: __TIFJS__ });
+    jsParts = E.jobTimings(true).filter((t) => t.op === "tiff_part");
+} finally {
+    E.setRoute("tiffPredict", null);
+    E.setRoute("tiffStripWasm", null);
+}
+if (!jsParts.length || jsParts.some((p) => p.composeWasm !== 0 || (p.pxCalls && p.pxCalls.tiff_predict_rgba))) {
+    throw new Error("export tiff_part js route timing: " + JSON.stringify(jsParts));
+}
+const bRust = await readBytes(__TIF__), bJs = await readBytes(__TIFJS__);
+if (bRust.length !== bJs.length || bRust.some((v, i) => v !== bJs[i])) {
+    throw new Error(`export tiff rust (${bRust.length} B) vs js route (${bJs.length} B) differ`);
+}
 const png = await run("export", { doc: d.id, format: "png", path: __PNG__ });
 const half = await run("export", { doc: d.id, format: "tiff", scale: 50, path: __TIF50__ });
 const halfPng = await run("export", { doc: d.id, format: "png", scale: 50, path: __PNG50__ });
-return { tiles: !!ed.tileMode, tif: tif.status, tifMs, png: png.status, half: half.status, halfPng: halfPng.status };
+return { tiles: !!ed.tileMode, tif: tif.status, tifMs, png: png.status, half: half.status, halfPng: halfPng.status, parts: rustParts.length, composeWasm: wantCompose, predCalls, defCalls, jsRouteBytesEqual: true };
 """
 
 EXPORT_REOPEN = r"""
 const d = await run("new_document");
 const ed = ednow(d.id);
+const E = ed.constructor;
 host.shell.activate(ed);
 try {
+    E.jobTimings(true);
     await run("load_image", { doc: d.id, path: __TIF__ });
+    const jt = E.jobTimings(true).filter((t) => t.op === "tiff_read");
+    if (jt.length !== 1 || jt[0].kernels !== "rust" || !jt[0].pxCalls || !jt[0].pxCalls.tiff_unpredict || !jt[0].pxCalls.tiff_to_rgba) {
+        throw new Error("reopen tiff_read rust timing: " + JSON.stringify(jt));
+    }
     if (ed.width !== 640 || ed.height !== 400) throw new Error(`reopened as ${ed.width} x ${ed.height}`);
-    const c = compare(ed.basePx.readRect(0, 0, 640, 400).data, await readBytes(__RGBA__), 640);
+    const rustData = ed.basePx.readRect(0, 0, 640, 400).data;
+    const c = compare(rustData, await readBytes(__RGBA__), 640);
     if (!c.ok) throw new Error("the reopened TIFF against the PNG: " + says(c));
-    return { soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, rawOff: c.rawOff, status: ed.status };
+    // Replay open under the "js" route for tiffUnpredict and tiffToRgba and assert identical pixels
+    const d2 = await run("new_document");
+    const ed2 = ednow(d2.id);
+    host.shell.activate(ed2);
+    E.setRoute("tiffUnpredict", "js");
+    E.setRoute("tiffToRgba", "js");
+    E.jobTimings(true);
+    try {
+        await run("load_image", { doc: d2.id, path: __TIF__ });
+        const jtJs = E.jobTimings(true).filter((t) => t.op === "tiff_read");
+        if (jtJs.length !== 1 || (jtJs[0].pxCalls && (jtJs[0].pxCalls.tiff_unpredict || jtJs[0].pxCalls.tiff_to_rgba))) {
+            throw new Error("reopen tiff_read js route timing: " + JSON.stringify(jtJs));
+        }
+        const jsData = ed2.basePx.readRect(0, 0, 640, 400).data;
+        if (jsData.length !== rustData.length || jsData.some((v, i) => v !== rustData[i])) {
+            throw new Error("reopen tiff rust vs js route pixels differ");
+        }
+    } finally {
+        E.setRoute("tiffUnpredict", null);
+        E.setRoute("tiffToRgba", null);
+        await run("close_document", { doc: d2.id });
+    }
+    return { soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, rawOff: c.rawOff, status: ed.status, pxCalls: jt[0].pxCalls, jsRouteEqual: true };
 } finally { await run("close_document", { doc: d.id }); }
 """
 
@@ -722,17 +792,23 @@ async def run_all(c):
     # -- opens_every_accepted_fixture --
     good, bad = [], []
     worst = {"worstSoft": 0, "worstRaw": 0, "rawOff": 0}
+    open_calls = {}
     for e in (x for x in entries if x["accept"]):
         try:
             r = await js(c, OPEN_ONE, timeout=600, F=json.dumps(e))
             good.append(r["name"])
+            for k, v in (r.get("pxCalls") or {}).items():
+                open_calls[k] = open_calls.get(k, 0) + v
             for k in worst:
                 worst[k] = max(worst[k], r[k]) if k != "rawOff" else worst[k] + r[k]
             if r["worstRaw"] or e["notes"]:
                 print("  %s: %s" % (e["name"], json.dumps({k: r[k] for k in ("worstSoft", "worstRaw", "rawOff", "soft", "status")}, ensure_ascii=False)), flush=True)
         except Exception as err:  # noqa: BLE001
             bad.append("%s: %s" % (e["name"], str(err)[:500]))
-    ok = report(not bad, "opens_every_accepted_fixture", " || ".join(bad) if bad else {"fixtures": len(good), **worst}) and ok
+    for req in ("tiff_unpredict", "tiff_to_rgba"):
+        if not open_calls.get(req):
+            bad.append("missing %s in tiff_read pxCalls: %s" % (req, json.dumps(open_calls)))
+    ok = report(not bad, "opens_every_accepted_fixture", " || ".join(bad) if bad else {"fixtures": len(good), **worst, "pxCalls": open_calls}) and ok
 
     # -- refuses_with_a_message --
     before = tiffs_in(store) if store else set()
@@ -771,7 +847,7 @@ async def run_all(c):
         ok = report(False, "adds_a_tiff_as_a_layer", str(err)) and ok
 
     # -- exports_tiff_and_reads_it_back, exports_tiff_at_a_size --
-    names = {"TIF": "x.tif", "PNG": "x.png", "TIF50": "x_50.tif", "PNG50": "x_50.png"}
+    names = {"TIF": "x.tif", "TIFJS": "x_js.tif", "PNG": "x.png", "TIF50": "x_50.tif", "PNG50": "x_50.png"}
     for f in names.values():
         try:
             os.remove(os.path.join(OUT, f))
@@ -784,7 +860,7 @@ async def run_all(c):
         half = [p for p in problems if "50 %" in p]
         if not full:
             reopened = await js(c, EXPORT_REOPEN, TIF=P("x.tif"), RGBA=P("x_tif.rgba"))
-            ok = report(True, "exports_tiff_and_reads_it_back", {"export": built["tif"], "ms": built["tifMs"], "tiles": built["tiles"], "python": {k: info[k] for k in ("shape", "compression", "predictor", "extrasamples", "software", "png_alpha", "vs_png") if k in info}, "reopened": reopened}) and ok
+            ok = report(True, "exports_tiff_and_reads_it_back", {"export": built["tif"], "ms": built["tifMs"], "tiles": built["tiles"], "composeWasm": built["composeWasm"], "predCalls": built["predCalls"], "defCalls": built["defCalls"], "jsRouteBytesEqual": built["jsRouteBytesEqual"], "python": {k: info[k] for k in ("shape", "compression", "predictor", "extrasamples", "software", "png_alpha", "vs_png") if k in info}, "reopened": reopened}) and ok
         else:
             ok = report(False, "exports_tiff_and_reads_it_back", " | ".join(full)) and ok
         ok = report(not half, "exports_tiff_at_a_size", " | ".join(half) if half else {"export": built["half"], "python": info.get("half")}) and ok
