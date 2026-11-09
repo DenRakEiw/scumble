@@ -4,8 +4,8 @@ K38 Measurement Summary (2026-11-09)
 Session: K38 (`matchCanvas` CPU fallback in 4 MP chunks, `docs/PLAN_WASM_BUILD.md` §4.11, question 6.4)
 Base commit (`before`): 044b84c3 (`wasm-kernels` tip after K37, ABI 42)
 Wasm builds (unchanged at ABI 42):
-  px.wasm (SIMD128):   279,003 B, sha256 aeb476777e971bbd96537b2390b2e13c01e4a0c1b4c2d50f3fb81617df2be76a
-  px_scalar.wasm:      225,584 B, sha256 d480c97e9b5c3413bb78f7ca02247353d37574c549c242bfca45c84fb8fbbe4c
+  px.wasm (SIMD128):   279,003 B, sha256 aeb476777e971bbd267ebe6b16be41a0e64110374a248d2bbb9b8feded7f2876
+  px_scalar.wasm:      225,584 B, sha256 920cb56151a5a0fc949f85adaeb027e19400d4466a579e56114ab26a6a9cb550
 
 Byte effect
 -----------
@@ -52,14 +52,14 @@ Logs: `docs/measurements/k38_2026-11-09/ab/after/ab_r{1,2,3}.json`
 | 15000 x 10000 (36 chunks) | `rust` (SIMD) | **1352.8** | 1333.1-1462.3 | 1522.2 | 1352.8 / 1522.2 | 580.1 | **722.3** | 32.9 | 18.19 | `match_pixels: 36` |
 | 15000 x 10000 (36 chunks) | `js` (twin) | **2943.1** | 2781.1-2944.8 | 3002.8 | 2943.1 / 3002.9 | 425.4 | **2367.4** | 32.8 | 18.19 | `{}` |
 
-- On the chunk loop alone (`chunksMs`), Rust SIMD is **3.20x** faster than the JS twin at 4096 x 4096 (82.2 ms vs 262.7 ms) and **3.28x** faster at 15000 x 10000 (722.3 ms vs 2367.4 ms), and **2.97x** faster than the old `f64` loop (`match_loop_4096` median 220.6 ms vs 82.2 ms).
+- On the chunk loop alone (`chunksMs`), Rust SIMD is **3.20x** faster than the JS twin at 4096 x 4096 (82.2 ms vs 262.7 ms) and **3.28x** faster at 15000 x 10000 (722.3 ms vs 2367.4 ms), and **2.68x** faster than the old `f64` loop (`match_loop_4096` median 220.6 ms vs 82.2 ms).
 - Across all 36 chunks at 15000 x 10000 (572.2 MiB of pixel data), the window's wasm instance stays at **18.19 MiB** (`release === 0`) and trims back to 1.06 MiB after `IDLE_MS` (2 s).
 - Route decision: Rust wins every size and round; `matchPixels` stays on Rust by default (no `DEFAULT_ROUTES.matchPixels` override).
 
 3. Node Kernel Benchmark (`docs/measurements/k38_2026-11-09/ab/px_bench.txt`)
 -----------------------------------------------------------------------------
 Command: `PX_ONLY=matchTwin,match node tools/px_test.js`
-  1 MP (`1,048,576` px) `matchPixels`: rust simd **5.0 ms**, rust scalar **20.8 ms**, JS twin **26.4 ms** (5.28x SIMD over twin).
+  1 MP (`1,048,576` px) `matchPixels`: rust simd **5.0 ms**, twin **27.2 ms** (**5.44x** SIMD over twin); rust scalar **20.8 ms**, twin **27.1 ms**.
 
 4. Mutation Round (`docs/measurements/k38_2026-11-09/mutation/results.txt`)
 ---------------------------------------------------------------------------
