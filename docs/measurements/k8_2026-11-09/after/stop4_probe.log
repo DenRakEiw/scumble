@@ -1,0 +1,355 @@
+{
+  "focused": true,
+  "visibility": "visible",
+  "n1_15k": {
+    "parts": 79,
+    "stdBytes": 289215646,
+    "p5Bytes": 289301024,
+    "stdMB": 275.82,
+    "p5MB": 275.9,
+    "deltaBytes": 85378,
+    "deltaPct": 0.03,
+    "stdFilters": {
+      "0": 0,
+      "1": 1,
+      "2": 0,
+      "3": 78,
+      "4": 0
+    },
+    "p5Filters": {
+      "0": 0,
+      "1": 79,
+      "2": 0,
+      "3": 0,
+      "4": 0
+    },
+    "stdNeedsPrev": 78,
+    "p5NeedsPrev": 0,
+    "adlerMatch": true,
+    "pixelDiffBytes": 0,
+    "readPngParts_std": {
+      "median": 701.1,
+      "min": 585.3,
+      "max": 733.6,
+      "runs": [
+        670.1,
+        733.6,
+        721.1,
+        585.3,
+        701.1
+      ]
+    },
+    "readPngParts_p5": {
+      "median": 574.3,
+      "min": 502.3,
+      "max": 652.9,
+      "runs": [
+        585.6,
+        502.3,
+        574.3,
+        554.1,
+        652.9
+      ]
+    },
+    "readPngParts_speedup": 1.22,
+    "stdJobs": {
+      "png_part_read": {
+        "jobs": 79,
+        "pixels": 150000000,
+        "bytes": 0,
+        "rows": 10000,
+        "kernel": 1949.4,
+        "read": 302.8,
+        "inflate": 1423.7,
+        "copyIn": 41.3,
+        "decode": 141.3,
+        "copyOut": 1.1,
+        "gen": 0
+      },
+      "png_part_finish": {
+        "jobs": 78,
+        "pixels": 147915000,
+        "rows": 9861,
+        "kernel": 523.5,
+        "copyIn": 43.7,
+        "finish": 360.1,
+        "copyOut": 85.7,
+        "gen": 0
+      }
+    },
+    "p5Jobs": {
+      "png_part_read": {
+        "jobs": 79,
+        "pixels": 150000000,
+        "bytes": 0,
+        "rows": 10000,
+        "kernel": 3111.9,
+        "read": 442.6,
+        "inflate": 1868.3,
+        "copyIn": 44.6,
+        "decode": 547.5,
+        "copyOut": 163,
+        "gen": 0
+      }
+    },
+    "loadFile_std": {
+      "median": 1467.4,
+      "min": 1392,
+      "max": 1901.1,
+      "runs": [
+        1901.1,
+        1392,
+        1467.4
+      ]
+    },
+    "loadFile_p5": {
+      "median": 1296.5,
+      "min": 1145.4,
+      "max": 1318.7,
+      "runs": [
+        1318.7,
+        1296.5,
+        1145.4
+      ]
+    },
+    "loadFile_speedup": 1.13,
+    "q65_uploadOnly": {
+      "median": 413.2,
+      "min": 366,
+      "max": 826.6,
+      "runs": [
+        413.2,
+        366,
+        826.6
+      ]
+    },
+    "q65_decodeOnly": {
+      "median": 715.8,
+      "min": 711.7,
+      "max": 790,
+      "runs": [
+        715.8,
+        711.7,
+        790
+      ]
+    },
+    "q65_sequential": {
+      "median": 1238.3,
+      "min": 1070.8,
+      "max": 1381.3,
+      "runs": [
+        1238.3,
+        1070.8,
+        1381.3
+      ]
+    },
+    "q65_parallel": {
+      "median": 897.6,
+      "min": 773.7,
+      "max": 1067.6,
+      "runs": [
+        773.7,
+        1067.6,
+        897.6
+      ]
+    },
+    "q65_savedMs": 340.7,
+    "q65_speedup": 1.38
+  },
+  "browser_15k": {
+    "MB": 88.66,
+    "encodeMs": 3052.3,
+    "pngPartsOf": null,
+    "bytesReadByPngPartsOf": 41,
+    "pixelsFromPngStream": {
+      "median": 1199.3,
+      "min": 1157.1,
+      "max": 1206.1,
+      "runs": [
+        1157.1,
+        1199.3,
+        1206.1
+      ]
+    },
+    "loadFile": {
+      "median": 1472.7,
+      "min": 1465.9,
+      "max": 1765.3,
+      "runs": [
+        1472.7,
+        1765.3,
+        1465.9
+      ]
+    },
+    "jobs": {
+      "png_read": {
+        "jobs": 1,
+        "pixels": 150000000,
+        "kernel": 1193.2,
+        "parse": 9.6,
+        "read": 18.5,
+        "write": 1164.2,
+        "wait": 907.7,
+        "copy": 49,
+        "unfilter": 205.6,
+        "deliver": 2.6,
+        "gen": 0
+      }
+    }
+  },
+  "photo_15k": {
+    "parts": 79,
+    "stdBytes": 184507863,
+    "p5Bytes": 184470220,
+    "stdMB": 175.96,
+    "p5MB": 175.92,
+    "deltaBytes": -37643,
+    "deltaPct": -0.02,
+    "stdFilters": {
+      "0": 0,
+      "1": 3,
+      "2": 0,
+      "3": 37,
+      "4": 39
+    },
+    "p5Filters": {
+      "0": 0,
+      "1": 79,
+      "2": 0,
+      "3": 0,
+      "4": 0
+    },
+    "stdNeedsPrev": 76,
+    "p5NeedsPrev": 0,
+    "adlerMatch": true,
+    "pixelDiffBytes": 0,
+    "readPngParts_std": {
+      "median": 822.9,
+      "min": 805,
+      "max": 881.2,
+      "runs": [
+        813.3,
+        822.9,
+        805,
+        881.2,
+        834.8
+      ]
+    },
+    "readPngParts_p5": {
+      "median": 573.5,
+      "min": 503.7,
+      "max": 602.1,
+      "runs": [
+        602.1,
+        565.8,
+        503.7,
+        577.8,
+        573.5
+      ]
+    },
+    "readPngParts_speedup": 1.43,
+    "stdJobs": {
+      "png_part_read": {
+        "jobs": 79,
+        "pixels": 150000000,
+        "bytes": 0,
+        "rows": 10000,
+        "kernel": 1539.1,
+        "read": 229.6,
+        "inflate": 1062.2,
+        "copyIn": 34.9,
+        "decode": 166.4,
+        "copyOut": 5.8,
+        "gen": 0
+      },
+      "png_part_finish": {
+        "jobs": 76,
+        "pixels": 143745000,
+        "rows": 9583,
+        "kernel": 708.7,
+        "copyIn": 37.5,
+        "finish": 540.1,
+        "copyOut": 87.6,
+        "gen": 0
+      }
+    },
+    "p5Jobs": {
+      "png_part_read": {
+        "jobs": 79,
+        "pixels": 150000000,
+        "bytes": 0,
+        "rows": 10000,
+        "kernel": 3119.9,
+        "read": 345.2,
+        "inflate": 1668.3,
+        "copyIn": 46.3,
+        "decode": 809.5,
+        "copyOut": 202.5,
+        "gen": 0
+      }
+    },
+    "loadFile_std": {
+      "median": 1288,
+      "min": 1267.4,
+      "max": 1327.5,
+      "runs": [
+        1267.4,
+        1327.5,
+        1288
+      ]
+    },
+    "loadFile_p5": {
+      "median": 986.5,
+      "min": 975,
+      "max": 1118.7,
+      "runs": [
+        986.5,
+        975,
+        1118.7
+      ]
+    },
+    "loadFile_speedup": 1.31,
+    "q65_uploadOnly": {
+      "median": 337.5,
+      "min": 290.4,
+      "max": 342.6,
+      "runs": [
+        342.6,
+        337.5,
+        290.4
+      ]
+    },
+    "q65_decodeOnly": {
+      "median": 833.7,
+      "min": 781,
+      "max": 919.3,
+      "runs": [
+        833.7,
+        781,
+        919.3
+      ]
+    },
+    "q65_sequential": {
+      "median": 1067,
+      "min": 1053.5,
+      "max": 1344.2,
+      "runs": [
+        1053.5,
+        1067,
+        1344.2
+      ]
+    },
+    "q65_parallel": {
+      "median": 881.5,
+      "min": 835.6,
+      "max": 980.3,
+      "runs": [
+        835.6,
+        980.3,
+        881.5
+      ]
+    },
+    "q65_savedMs": 185.5,
+    "q65_speedup": 1.21
+  }
+}

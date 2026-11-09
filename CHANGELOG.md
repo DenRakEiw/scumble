@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- Faster opening of large PNGs written by Scumble (and Scumble-written layers inside `.scumble` documents) by decoding their parts in parallel across the worker pool.
 - **The bucket fill on large pictures no longer stalls the window for its readbacks.** On tile layers the flooded area is composited straight into the tiles; at full opacity the pixels are the same as before, at lower opacity within one level.
 - **Faster PNG and ORA exports on large pictures, with the same files.** A 15,000 x 10,000 PNG takes about 0.87 s instead of 1.01, an ORA 2.0 s instead of 2.26: the pieces are now gathered, composited and packed directly in the Rust module's memory.
 - **A depth map is ready faster, with the same bytes.** The guided filter behind it and its preparation run off the window in Rust, for a depth map from Depth Anything V2 Small and from a layer.

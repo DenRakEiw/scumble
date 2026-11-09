@@ -1,0 +1,6 @@
+built: {"loadMs": 4248, "layers": 4, "map": null, "tiles": true}
+save: {"flushMs": 817, "saveMs": 374, "writeMs": 344, "bytes": 479102132, "entries": 7, "cleanSaveMs": 378, "cleanWriteMs": 356, "selBefore": {"x": 1000, "y": 800, "w": 6000, "h": 3000}, "selSaveMs": 652, "MB": 457, "MBps_write": 1328, "mainPrivateMB_before": 1922, "mainPrivateMB_peak": 1922}
+zipfile: testzip clean, mimetype first and stored: True, 0.3 s
+open: {"restoreMs": 4591, "openMs": 4622, "sameRefs": true, "dirty": false, "selAfter": {"x": 1000, "y": 800, "w": 6000, "h": 3000}}
+selection changed right before the save came back: True ({'x': 1000, 'y': 800, 'w': 6000, 'h': 3000} -> {'x': 1000, 'y': 800, 'w': 6000, 'h': 3000})
+PASS

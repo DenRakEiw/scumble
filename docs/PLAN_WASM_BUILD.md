@@ -1887,6 +1887,77 @@ Every recommendation taken (the user: "alles so wie deine empfehlung").
 - **Question 6.2 (K25): the export follows the screen.** A fill layer's depth limit with edge snap takes its reference colour from the picture (`map.guide`, the layer's own pixels only without a guide) instead of the fill's own colour; the strength stays the screen's `snapParams(map.meta?.snap?.strength)`. A byte change of layered exports holding such a layer, toward the screen. It matches the screen up to 4096 px on the long side, above that within one map texel (about 3.66 px at 15k, K25's review), as long as the picture below is still the one the depth map was made from. `docs/BUGS.md` has the entry. Only the depth limit is concerned: a fill layer takes no other limit (`commands.js` refuses it, the panel does not offer it).
 - **Question 6.4:** **K37 yes**, kept only where the tile route measures faster on the felt 15k operation, with a size threshold if small fills lose; at most one level against Skia at opacity below 1. **K38 yes** (the `matchCanvas` fallback toward the GPU's formula, at most one level). **The TIFF quirk is fixed** in both twin and Rust at K15 (sub-byte palette files with alpha, whose alpha is left at 0..15 today).
 
+### K8 (2026-11-09)
+
+The parted PNG reader in the app on route N (`DecompressionStream("deflate-raw")` per part + `px` `png_part_decode` /
+`png_part_finish` in the workers; `docs/measurements/k8_2026-11-09/`), plus the four NICE items from K7's re-check
+(`9fd93524`, `cb570a52`, `d663a3ba`, `8288274b`, `84800b0f`, no new wasm exports).
+- **Layout check and reader** (`inpaint_png.js`): `pngPartsOf(blob)` checks a PNG with 8-byte header slices (8-bit RGBA,
+  not interlaced, no `iCCP` / `gAMA` / `cHRM` / `cICP` before the first `IDAT`, the 2-byte zlib header `IDAT` with
+  `CM=8`, `CINFO<=7`, `FDICT=0` and `FCHECK`, at least one non-empty part `IDAT`, the 4-byte tail `IDAT` holding the
+  big-endian Adler-32, `IEND`; any other file returns `null` after 33–49 bytes, 41 bytes on a browser-encoded 1-`IDAT`
+  PNG). `readPngParts(blob, { pool, rt, onHeader, onRows, layout })` launches `png_part_read` jobs in order, at most
+  `pool.size + 2` ahead of the unfilter chain's head (`deliverHead`), passes `prev` at launch when the previous part has
+  already finished, runs `png_part_finish` at `INTERACTIVE` (`priority: 0`, `inpaint_pool.js:19`) so the serial chain
+  never waits behind queued decodes, delivers rows to `onRows` in scanline order (`px.putCanvasRows` in
+  `pixelsFromPngStream`, `inpaint_canvas.js:735`, detaching the buffer after landing), folds the part Adlers with
+  `adlerCombine` against the 4-byte tail `IDAT`, and on any error cancels the pool group, releases the partial
+  `TileLayerPixels` and falls back to `png_read` (and if `png_read` also rejects the damaged parted PNG, `pixelsOffThread`
+  rethrows the refusal rather than handing the corrupt file to `<img>`).
+- **Worker jobs and bounds** (`inpaint_worker.js`): `png_part_read` and `png_part_finish` bound every part's inflate by
+  both `pngPartLinesCap(w)` (`partRows(w, 2048) * (1 + 4 * w)`) and the IHDR bound `h * (1 + 4 * w)` (`inflatePartAtMost`
+  captures `inBytes` before `transfer(0)` and cancels the stream as soon as inflated bytes exceed `Math.min(cap, ihdrCap)`),
+  append `0x03, 0x00` to non-last parts only, and keep the 65,536-byte `rt` table resident in the worker (`residentRt`).
+  `kernels.js` records `laps.decode` and `laps.finish` on the JS twin fallbacks too, and `pngReaderUsable()` in
+  `inpaint_canvas.js` keeps the parted reader active when `InpaintEditor.kernels = "js"`.
+- **Measured at 15,000 x 10,000 and 30,000 x 20,000** (3 alternating rounds at 15k under the busy lock, fresh offline
+  instances, tiles on, focused; `docs/measurements/k8_2026-11-09/summary.txt`):
+  - `native_test.py`: `open_the_file` wall `2517 [2437..2581]` -> `1745 [1676..1747] ms` (`1.44x`, `-772 ms`;
+    `loadFileMs` `2454` -> `1657 ms`, `1.48x`; `blocked` `471` -> `477 ms`, `438 ms` of it the first-open WebGL shader
+    link); `open_again` wall `2043 [1974..2124]` -> `1377 [1228..1382] ms` (`1.48x`, `-666 ms`; `loadFileMs` `1971` ->
+    `1268 ms`, `1.55x`; `blocked` `40` -> `61 ms`); `export_png` (`1053` vs `1058 ms`) and `export_ora` (`2161` vs
+    `2246 ms`) unchanged; arena after `close` identical (`slots: 4661, chunks: 20, allocated: 9381, freed: 4720,
+    droppedChunks: 17, bytes: 1,342,177,280`).
+  - `w0_bench.py --rows=freqsep_15k` (`adobe_15000x10000.jpg`): `png_open` `2474 [2383..2513]` -> `1589 [1588..1612] ms`
+    (`1.56x`, `-885 ms`).
+  - `document_perf.py 15000x10000` (4-layer `.scumble` document; its `15,000 x 10,000` base is a Pillow single-stream RGB
+    PNG, `colorType = 2`, 453 MB of the 457 MB archive, which `pngPartsOf` refuses after 33 bytes so the base takes
+    `png_read` in both arms and only the 3 sparse Scumble-written paint layers take `readPngParts` — the row is a tie):
+    `loadMs` `4214 [3872..4248]` -> `3902 [3809..4411] ms` (`1.08x`), `restoreMs` `4591 [4312..4788]` ->
+    `4307 [4216..4486] ms` (`1.07x`), `openMs` `4685 [4622..4826]` -> `4649 [4263..4747] ms` (`1.01x`).
+  - Browser-encoded 15k 1-`IDAT` PNG (`88.66 MB`): `pngPartsOf` returns `null` after 41 bytes; `pixelsOffThread`
+    `1199.3 ms`, `loadFile + mips` `1472.7 ms`.
+  - `huge` (`20000x15000`, 300 MP, 550.4 MB): `open_through_the_stream_reader` `2571 ms` (`blocked: 43 ms`),
+    `a_restore_from_the_state` `3381 ms` (`blocked: 118 ms`). At `30000x20000` (600 MP, 1,100.7 MB, direct A/B on
+    `9fd93524` `before/huge_30k.json` vs K8 `after/huge_30k.json`): `open_through_the_stream_reader` `8726 ms`
+    (`blocked: 496 ms`) -> `5337 ms` (`blocked: 543 ms`, `1.63x`, `-3389 ms`), `a_restore_from_the_state` `9770 ms`
+    (`blocked: 75 ms`) -> `5814 ms` (`blocked: 166 ms`, `1.68x`, `-3956 ms`); in the 6-step `after/huge_open_restore.log`
+    run, `open_through_the_stream_reader` was `5606 ms` (`blocked: 542 ms`) and `a_restore_from_the_state` `6740 ms`
+    (`blocked: 149 ms`, against W0b of 2026-10-23, not an A/B: `10913 ms` open / `11859 ms` restore).
+- **For Stop 4** (`stop4_probe.py`, `.claude/coord/chain-p/questions.md`):
+  - **Question 6.1 (P5, independent part starts):** in standard K8, `78/78` non-first parts on `n1_15k` and `76/78` on
+    `photo_15k` start with `Average` or `Paeth`, running `76–78` serial `png_part_finish` jobs (`524–709 ms` summed
+    worker time). Filtering row 0 of each part with `None` or `Sub` only (`needsPrev = 0/78`, `0` finish jobs) changes
+    file size by `+0.030 %` (`+85 KB` on `275.82 MB`) on `n1_15k` and `-0.020 %` (`-37.6 KB` on `175.96 MB`) on
+    `photo_15k`, speeds up `readPngParts + putCanvasRows` from `701.1` to `574.3 ms` (`1.22x`, `-126.8 ms`) on `n1_15k`
+    and from `822.9` to `573.5 ms` (`1.43x`, `-249.4 ms`) on `photo_15k`, and speeds up `loadFile + mips` from `1467.4`
+    to `1296.5 ms` (`1.13x`, `-170.9 ms`) on `n1_15k` and from `1288.0` to `986.5 ms` (`1.31x`, `-301.5 ms`) on
+    `photo_15k`. Answered: YES (next session).
+  - **Question 6.5 (upload while decoding):** running `uploadBlob` in parallel with `pixelsOffThread` after
+    `checkBaseSize` saves `340.7 ms` (`1238.3` -> `897.6 ms`, `1.38x`) on `n1_15k` and `185.5 ms` (`1067.0` ->
+    `881.5 ms`, `1.21x`) on `photo_15k`. Answered: YES (next session).
+- **Tests and mutation:** `px_test.js` (`pngPartsOf` byte-read counts and 20 refused layouts with valid-FCHECK `CM != 8`
+  and `CINFO > 7`, `readPngParts` mock-pool schedule, priority `0`, window cap, under/over-height, Adler and part-error
+  cancellation, green under both Node and Electron); `editor_test.py` `a_scumble_png_opens_through_the_parted_reader`
+  (tile-encoded `1503 x 1109` PNG on both Rust and `E.kernels = "js"` routes with `pxCalls` and `timing.bytes > 0`
+  checked, band-source `3003 x 1109` PNG with `698`- and `411`-row parts above 256 rows, `rt` round-trip seam on
+  non-fixed-point straight RGBA bytes against `png_read` and image routes, browser 1-`IDAT` PNG, later-part failure
+  fallback after earlier parts' rows landed verifying `px.release()`, real damaged parted PNGs with corrupt middle
+  deflate and corrupt tail Adler-32 verifying refusal and arena slot return `[6, 6]` after GC, and Electron worker
+  rejections); 20/20 mutants killed (`docs/measurements/k8_2026-11-09/mutation/results.txt`); gates `lint types editor
+  document tiff pixels` on both backends, `export docux`, `huge:20000x15000`, `nodecopy`.
+```
+
 ### K37 (2026-11-09): the bucket over tiles
 
 On `3fd8bda7` (ABI 36, merged with `wasm-kernels` `e39b8d03` at ABI 39); full tier (the bucket's pixel path on tile

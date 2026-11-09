@@ -1,0 +1,160 @@
+K8 — Parted PNG Reader in the App (Route N: DecompressionStream('deflate-raw'))
+====================================================================================
+Date: 2026-11-09
+Branch: ag-chain-p-5 (forked from wasm-kernels d23d5cc4; baseline commit 9fd93524)
+ABI: 37 (px.wasm 261,098 B; px_scalar.wasm 212,115 B — unchanged from K7)
+
+1. native_test.py 15000x10000 (3 alternating rounds, offline, tiles on, focused)
+------------------------------------------------------------------------------------
+  build_the_file.encodeMs  before: 1350.0 ms [1320.0..1467.0] (runs: 1350.0, 1320.0, 1467.0)
+                           after : 1433.0 ms [1383.0..1444.0] (runs: 1433.0, 1383.0, 1444.0)  (0.94x)
+  open_the_file.wall       before: 2517.0 ms [2437.0..2581.0] (runs: 2581.0, 2517.0, 2437.0)
+                           after : 1745.0 ms [1676.0..1747.0] (runs: 1745.0, 1676.0, 1747.0)  (1.44x)
+  open_the_file.loadFileMs before: 2454.0 ms [2373.0..2517.0] (runs: 2517.0, 2454.0, 2373.0)
+                           after : 1657.0 ms [1608.0..1686.0] (runs: 1657.0, 1608.0, 1686.0)  (1.48x)
+  open_the_file.blocked    before: 471.0 ms [470.0..484.0] (runs: 484.0, 470.0, 471.0) | after: 477.0 ms [450.0..488.0] (runs: 488.0, 450.0, 477.0)
+  open_again.wall          before: 2043.0 ms [1974.0..2124.0] (runs: 2124.0, 2043.0, 1974.0)
+                           after : 1377.0 ms [1228.0..1382.0] (runs: 1377.0, 1228.0, 1382.0)  (1.48x)
+  open_again.loadFileMs    before: 1971.0 ms [1907.0..2030.0] (runs: 2030.0, 1971.0, 1907.0)
+                           after : 1268.0 ms [1111.0..1285.0] (runs: 1285.0, 1111.0, 1268.0)  (1.55x)
+  open_again.blocked       before: 40.0 ms [39.0..41.0] (runs: 41.0, 40.0, 39.0) | after: 61.0 ms [46.0..72.0] (runs: 46.0, 61.0, 72.0)
+  export_png.wall          before: 1053.0 ms [1030.0..1113.0] (runs: 1113.0, 1053.0, 1030.0)
+                           after : 1058.0 ms [985.0..1109.0] (runs: 1058.0, 985.0, 1109.0)  (1.00x)
+  export_ora.wall          before: 2161.0 ms [2142.0..2198.0] (runs: 2198.0, 2161.0, 2142.0)
+                           after : 2246.0 ms [2101.0..2322.0] (runs: 2246.0, 2101.0, 2322.0)  (0.96x)
+  open_the_file jobs (before r3): {"png_read": {"jobs": 1, "pixels": 150000000, "kernel": 1458.4, "parse": 0.7, "read": 44.5, "write": 1411.4, "wait": 998.8, "copy": 50.8, "unfilter": 379, "deliver": 7.4, "gen": 0, "pxCalls": {"png_unfilter_rows": 40}}, "mips": {"jobs": 19, "tiles": 2344, "kernel": 431.3, "gen": 0, "pxCalls": {"clamp_extend": 98, "mip_chain": 2442}}}
+  open_the_file jobs (after  r3): {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 0, "rows": 10000, "kernel": 2090.2, "read": 375.5, "inflate": 1449.5, "copyIn": 43.3, "decode": 173.5, "copyOut": 2, "gen": 0, "pxCalls": {"png_part_decode": 79}}, "png_part_finish": {"jobs": 78, "pixels": 147915000, "rows": 9861, "kernel": 536.5, "copyIn": 43.7, "finish": 372, "copyOut": 82.2, "gen": 0, "pxCalls": {"png_part_finish": 78}}, "mips": {"jobs": 19, "tiles": 2344, "kernel": 405.8, "gen": 0, "pxCalls": {"clamp_extend": 98, "mip_chain": 2442}}}
+  open_again    jobs (before r3): {"png_read": {"jobs": 1, "pixels": 150000000, "kernel": 1408.7, "parse": 0.7, "read": 44, "write": 1363.3, "wait": 964.8, "copy": 48, "unfilter": 369.7, "deliver": 9.6, "gen": 0, "pxCalls": {"png_unfilter_rows": 40}}, "mips": {"jobs": 19, "tiles": 2344, "kernel": 436.3, "gen": 0, "pxCalls": {"clamp_extend": 98, "mip_chain": 2442}}}
+  open_again    jobs (after  r3): {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 0, "rows": 10000, "kernel": 1812.5, "read": 322.6, "inflate": 1270.3, "copyIn": 37.2, "decode": 142.4, "copyOut": 1, "gen": 0, "pxCalls": {"png_part_decode": 79}}, "png_part_finish": {"jobs": 78, "pixels": 147915000, "rows": 9861, "kernel": 509.5, "copyIn": 40, "finish": 351.6, "copyOut": 81.4, "gen": 0, "pxCalls": {"png_part_finish": 78}}, "mips": {"jobs": 19, "tiles": 2344, "kernel": 461.2, "gen": 0, "pxCalls": {"clamp_extend": 98, "mip_chain": 2442}}}
+  memory (before r3 close): {"closed": 2, "arena": {"slots": 4661, "chunks": 20, "allocated": 9381, "freed": 4720, "droppedChunks": 17, "refused": 0, "failed": 0, "enabled": true, "bytes": 1342177280, "freeSlots": 459}}
+  memory (after  r3 close): {"closed": 2, "arena": {"slots": 4661, "chunks": 20, "allocated": 9381, "freed": 4720, "droppedChunks": 17, "refused": 0, "failed": 0, "enabled": true, "bytes": 1342177280, "freeSlots": 459}}
+
+2. w0_bench.py --rows=freqsep_15k (15,000 x 10,000 photograph adobe_15000x10000.jpg, 3 rounds)
+------------------------------------------------------------------------------------
+  load_jpg                 before: 1621.0 ms [1585.0..1650.0] (runs: 1621.0, 1650.0, 1585.0)
+                           after : 1548.0 ms [1489.0..1565.0] (runs: 1548.0, 1565.0, 1489.0)  (1.05x)
+  png_export               before: 1432.0 ms [1430.0..1452.0] (runs: 1430.0, 1432.0, 1452.0)
+                           after : 1336.0 ms [1319.0..1345.0] (runs: 1345.0, 1319.0, 1336.0)  (1.07x)
+  png_open                 before: 2474.0 ms [2383.0..2513.0] (runs: 2513.0, 2383.0, 2474.0)
+                           after : 1589.0 ms [1588.0..1612.0] (runs: 1589.0, 1588.0, 1612.0)  (1.56x)
+  freqsep_16mp             before: 845.0 ms [738.0..1333.0] (runs: 1333.0, 738.0, 845.0)
+                           after : 772.0 ms [760.0..809.0] (runs: 772.0, 760.0, 809.0)  (1.09x)
+
+3. document_perf.py 15000x10000 (4-layer .scumble document, 3 alternating rounds)
+------------------------------------------------------------------------------------
+  Note (K8-T2): tools/document_perf.py writes its 15,000 x 10,000 base with Pillow as a
+  single-stream RGB PNG (Image.new("RGB"), colorType = 2, ~453 MB of the 457 MB archive).
+  pngPartsOf returns null after 33 bytes on colorType 2, so the base uses png_read in both
+  arms and only the 3 sparse Scumble-written paint layers take readPngParts; the row is a tie.
+  loadMs                   before: 4214.0 ms [3872.0..4248.0] (runs: 3872.0, 4248.0, 4214.0)
+                           after : 3902.0 ms [3809.0..4411.0] (runs: 3809.0, 3902.0, 4411.0)  (1.08x)
+  saveMs                   before: 374.0 ms [342.0..446.0] (runs: 342.0, 374.0, 446.0)
+                           after : 373.0 ms [354.0..481.0] (runs: 373.0, 354.0, 481.0)  (1.00x)
+  restoreMs                before: 4591.0 ms [4312.0..4788.0] (runs: 4312.0, 4591.0, 4788.0)
+                           after : 4307.0 ms [4216.0..4486.0] (runs: 4216.0, 4307.0, 4486.0)  (1.07x)
+  openMs                   before: 4685.0 ms [4622.0..4826.0] (runs: 4685.0, 4622.0, 4826.0)
+                           after : 4649.0 ms [4263.0..4747.0] (runs: 4263.0, 4747.0, 4649.0)  (1.01x)
+
+4. Browser-Encoded 15,000 x 10,000 PNG Open (OffscreenCanvas -> single IDAT -> fallback to png_read)
+------------------------------------------------------------------------------------
+  Blob size: 88.66 MB; pngPartsOf: None after reading 41 bytes
+  pixelsOffThread    : 1199.3 ms (runs: [1157.1, 1199.3, 1206.1])
+  loadFile + mips    : 1472.7 ms (runs: [1472.7, 1765.3, 1465.9])
+  worker jobs        : {"png_read": {"jobs": 1, "pixels": 150000000, "kernel": 1193.2, "parse": 9.6, "read": 18.5, "write": 1164.2, "wait": 907.7, "copy": 49, "unfilter": 205.6, "deliver": 2.6, "gen": 0}}
+
+5. Stop 4 — Question 6.1 (P5: PNG parts that start independent) A/B
+------------------------------------------------------------------------------------
+  [Synthetic 15,000 x 10,000 (n1_15k)]
+    Parts: 79; Adler & pixel match: adlerMatch=True, pixelDiffBytes=0
+    Size : standard = 289,215,646 B (275.82 MB), P5 = 289,301,024 B (275.9 MB), delta = +85,378 B (+0.030%)
+    Row-0 filter census: standard = {"0": 0, "1": 1, "2": 0, "3": 78, "4": 0} (needs prev: 78/78); P5 = {"0": 0, "1": 79, "2": 0, "3": 0, "4": 0} (needs prev: 0/78)
+    readPngParts + putCanvasRows (5 alternating rounds):
+      standard (K8): 701.1 ms [585.3..733.6] (runs: [670.1, 733.6, 721.1, 585.3, 701.1])
+      P5 (indep.)  : 574.3 ms [502.3..652.9] (runs: [585.6, 502.3, 574.3, 554.1, 652.9]) -> 1.22x
+      std jobs     : {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 0, "rows": 10000, "kernel": 1949.4, "read": 302.8, "inflate": 1423.7, "copyIn": 41.3, "decode": 141.3, "copyOut": 1.1, "gen": 0}, "png_part_finish": {"jobs": 78, "pixels": 147915000, "rows": 9861, "kernel": 523.5, "copyIn": 43.7, "finish": 360.1, "copyOut": 85.7, "gen": 0}}
+      P5  jobs     : {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 0, "rows": 10000, "kernel": 3111.9, "read": 442.6, "inflate": 1868.3, "copyIn": 44.6, "decode": 547.5, "copyOut": 163, "gen": 0}}
+    ed.loadFile + mipsSettled (3 alternating rounds):
+      standard (K8): 1467.4 ms [1392..1901.1] (runs: [1901.1, 1392, 1467.4])
+      P5 (indep.)  : 1296.5 ms [1145.4..1318.7] (runs: [1318.7, 1296.5, 1145.4]) -> 1.13x
+  [Photograph 15,000 x 10,000 (adobe_15000x10000.jpg)]
+    Parts: 79; Adler & pixel match: adlerMatch=True, pixelDiffBytes=0
+    Size : standard = 184,507,863 B (175.96 MB), P5 = 184,470,220 B (175.92 MB), delta = -37,643 B (-0.020%)
+    Row-0 filter census: standard = {"0": 0, "1": 3, "2": 0, "3": 37, "4": 39} (needs prev: 76/78); P5 = {"0": 0, "1": 79, "2": 0, "3": 0, "4": 0} (needs prev: 0/78)
+    readPngParts + putCanvasRows (5 alternating rounds):
+      standard (K8): 822.9 ms [805..881.2] (runs: [813.3, 822.9, 805, 881.2, 834.8])
+      P5 (indep.)  : 573.5 ms [503.7..602.1] (runs: [602.1, 565.8, 503.7, 577.8, 573.5]) -> 1.43x
+      std jobs     : {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 0, "rows": 10000, "kernel": 1539.1, "read": 229.6, "inflate": 1062.2, "copyIn": 34.9, "decode": 166.4, "copyOut": 5.8, "gen": 0}, "png_part_finish": {"jobs": 76, "pixels": 143745000, "rows": 9583, "kernel": 708.7, "copyIn": 37.5, "finish": 540.1, "copyOut": 87.6, "gen": 0}}
+      P5  jobs     : {"png_part_read": {"jobs": 79, "pixels": 150000000, "bytes": 0, "rows": 10000, "kernel": 3119.9, "read": 345.2, "inflate": 1668.3, "copyIn": 46.3, "decode": 809.5, "copyOut": 202.5, "gen": 0}}
+    ed.loadFile + mipsSettled (3 alternating rounds):
+      standard (K8): 1288 ms [1267.4..1327.5] (runs: [1267.4, 1327.5, 1288])
+      P5 (indep.)  : 986.5 ms [975..1118.7] (runs: [986.5, 975, 1118.7]) -> 1.31x
+
+6. Stop 4 — Question 6.5 (Upload while decoding) A/B
+------------------------------------------------------------------------------------
+  [Synthetic 15,000 x 10,000 (275.8 MB)]
+    uploadBlob only  : 413.2 ms (runs: [413.2, 366, 826.6])
+    decode only      : 715.8 ms (runs: [715.8, 711.7, 790])
+    sequential (now) : 1238.3 ms (runs: [1238.3, 1070.8, 1381.3])
+    parallel (Q 6.5) : 897.6 ms (runs: [773.7, 1067.6, 897.6]) -> saves 340.7 ms (1.38x)
+  [Photograph 15,000 x 10,000 (172.0 MB)]
+    uploadBlob only  : 337.5 ms (runs: [342.6, 337.5, 290.4])
+    decode only      : 833.7 ms (runs: [833.7, 781, 919.3])
+    sequential (now) : 1067 ms (runs: [1053.5, 1067, 1344.2])
+    parallel (Q 6.5) : 881.5 ms (runs: [835.6, 980.3, 881.5]) -> saves 185.5 ms (1.21x)
+
+7. huge_test.py 30000x20000 (600 MP, 1,100.7 MB PNG — before vs after A/B & K8-T1 probe)
+------------------------------------------------------------------------------------
+  Direct A/B on 9fd93524 (before/huge_30k.json) vs K8 (after/huge_30k.json):
+    open_through_the_stream_reader: before = 8726 ms (blocked 496 ms) -> after = 5337 ms (blocked 543 ms)  (1.63x, -3389 ms)
+    a_restore_from_the_state      : before = 9770 ms (blocked  75 ms) -> after = 5814 ms (blocked 166 ms)  (1.68x, -3956 ms)
+    (Historical reference against W0b of 2026-10-23, not an A/B: 10913 ms open / 11859 ms restore.)
+  K8-T1 probe of step 9 (a_matched_layer_a_film_look_and_what_is_refused) at 30,000 x 20,000:
+    Note: tools/huge_test.py defaults to 30000 x 20000 (not 20000 x 15000).
+    resRaw at (8524, 5888): [132, 113, 123, 255] on both 9fd93524 and K8 (bit-identical)
+    sampledMatchStats     : meanS=[74.685, 78.897, 122.403], meanT=[128.125, 112.133, 128.125], scale=[0.517, 2, 0.965] on both (bit-identical)
+    before (9fd93524)     : base=[75, 72, 92, 255], sample=[78, 71, 98, 255], l1=10 < 12 -> FAIL (passedGate=false)
+    after  (K8 probe)     : base=[75, 72, 92, 255], sample=[87, 76, 102, 255], l1=26 >= 12 -> PASS (passedGate=true)
+    after  (k8-huge-node) : base=[75, 72, 92, 255], sample=[80, 74, 96, 255], l1=11 < 12 -> FAIL
+    Root cause: no commit regressed colour match or base pixels; addFilterLayer("film.look") seeds its
+    film-grain PRNG from layer.id = "L" + Date.now().toString(36) + layerCounter (inpaint_canvas.js:19210,
+    :15864). At 30000 x 20000, the single pixel (8524, 5888) sits near the midpoint (1024, 888) of the
+    2048 x 2048 Result gradient where its deterministic Portra-400 + 60% colour-matched value is ~14-18 L1
+    units from base [75, 72, 92], so a negative grain draw from Date.now() pushes the single-pixel L1 below
+    12 on both 9fd93524 (l1 = 10) and K8 (l1 = 11 in k8-huge-node, l1 = 26 in after/huge_30k.json).
+  Earlier 6-step run (after/huge_open_restore.log):
+    [ok] write_the_png_from_tiles: {"size": [30000, 20000], "MP": 600, "fillMs": 5612, "encodeMs": 4798, "encodeBlocked": 140, "MB": 1100.7, "arena": {"slots": 9322, "chunks": 37, "allocated": 9322, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 2483027968, "freeSlots": 150}}
+    [ok] open_through_the_stream_reader: {"ms": 5606, "blocked": 542, "tiles": 9322, "status": "30000 \u00d7 20000"}
+    [ok] the_screen_pan_zoom_and_a_stroke: {"pan_fit": [0.3, 8.2], "pan_1to1": [0.1, 1.4], "zoom": [0.1, 1.8], "stroke_frame": [2.1, 70.1], "stroke_release": 7.3, "layer_tiles": 6}
+    [ok] the_state_for_the_autosave: {"ms": 1119, "blocked": 102, "layers": 1, "selection": "data:image/png;base64,iVBORw0KGgoAAAANSU", "bytes": 10139}
+    [ok] a_restore_from_the_state: {"ms": 6740, "blocked": 149}
+    [ok] close: {"closed": 2, "arena": {"slots": 18674, "chunks": 73, "allocated": 27996, "freed": 9322, "droppedChunks": 36, "refused": 0, "failed": 0, "enabled": true, "bytes": 4898947072, "freeSlots": 14}}
+    PASS
+
+8. Mutation Round & Gate Verification
+------------------------------------------------------------------------------------
+  Mutation round (docs/measurements/k8_2026-11-09/mutation/results.txt):
+    20 killed (0 of them only on the re-check), 0 survived of 20; 0 not as expected (539 s)
+    orig: build_px.py --check True (16 s), px_test.js True (288 s), px_test pngPart True (3 s),
+          editor (--tiles on) True (209 s), editor 1-step True (26 s)
+  Kernel unit tests (tools/px_test.js, post-merge with wasm-kernels 044b84c3, ABI 42):
+    PX_ONLY=pngPart node tools/px_test.js: PASS
+    PX_ONLY=pngPart ELECTRON_RUN_AS_NODE=1 electron tools/px_test.js: PASS
+    node tools/px_test.js: PASS
+    ELECTRON_RUN_AS_NODE=1 electron tools/px_test.js: PASS
+  Gates (dist/gates/gates/, --offline, ports 9621 / 9622):
+    Pre-merge (K8):
+      k8-gates-tiles (--tiles on): export rc=0 134s PASS, docux rc=0 20s PASS, pixels rc=0 11s PASS -> ALL PASS
+      k8-gates-canvas (--tiles off): export rc=0 11s PASS, docux rc=0 23s PASS, pixels rc=0 11s PASS -> ALL PASS
+      k8-gates-tiles-serial (--tiles on): document rc=0 49s PASS -> ALL PASS
+      k8-gates-canvas-serial (--tiles off): document rc=0 44s PASS -> ALL PASS
+      k8-editor-canvas (--tiles off): editor rc=0 136s PASS -> ALL PASS
+      k8-editor-tiles (--tiles on): editor rc=0 166s PASS, huge:20000x15000 rc=0 100s PASS -> ALL PASS
+      k8-step (--tiles on, SCUMBLE_EDITOR_ONLY=2 PNG steps): editor rc=0 2s PASS -> ALL PASS
+      k8-huge-node (--tiles on): nodecopy rc=0 19s PASS, huge:30000x20000 rc=1 201s FAIL -> SOME FAILED
+        (see Section 7 above for K8-T1 root cause and 30000x20000 before/after probe)
+    Post-merge with wasm-kernels (044b84c3):
+      k8-merged-tiles (--tiles on): lint rc=0 15s, types rc=0 13s, editor rc=0 186s PASS, pixels rc=0 11s PASS -> ALL PASS
+      k8-merged-canvas (--tiles off): lint rc=0 14s, types rc=0 12s, editor rc=0 151s PASS, pixels rc=0 14s PASS -> ALL PASS
+      k8-merged-doc-tiff-tiles (--tiles on): document rc=0 59s PASS, tiff rc=0 18s PASS -> ALL PASS
+      k8-merged-doc-tiff-canvas (--tiles off): document rc=0 53s PASS, tiff rc=0 13s PASS -> ALL PASS
+      k8-merged-nodecopy (--tiles on): nodecopy rc=0 46s PASS -> ALL PASS

@@ -22,7 +22,7 @@ import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, 
 import { GLCompositor, BLEND_FN_GLSL } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { INTERACTIVE, NORMAL, EXPORT, CancelledError } from "./inpaint_pool.js";
-import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
+import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK, pngPartsOf, readPngParts } from "./inpaint_png.js";
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
 import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
 import { pressureCurve, Stabiliser, toneLUT } from "./inpaint_stroke.js";
@@ -36,7 +36,7 @@ import { encodeCanvas, canvasToBlob, partsUsable, partsRun, partsFlights, bandPa
 import { SUBFOLDER, uploadBlob, uploadCanvas, uploadPixels } from "./inpaint_upload.js";
 import { LAYERED_EXT, isPsd, isOra, readPsd, readOra, inflateAtMost } from "./inpaint_layered.js";
 import { THEME } from "./inpaint_theme.js";
-import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap } from "./inpaint_resample.js";
+import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap, canvasRoundTrip } from "./inpaint_resample.js";
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
 import { LiquifyField, gridStep, liquifyFalloff, thawPlane } from "./inpaint_liquify.js";
 import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
@@ -682,6 +682,10 @@ function canvasRows(canvas) {
 const HUGE_MAX_SIDE = 65535;
 const HUGE_MAX_PIXELS = 1024 * 1024 * 1024;
 
+function pngReaderUsable() {
+    return InpaintEditor.pngParts !== false && typeof Worker === "function" && !editorPool().off;
+}
+
 /** `{ width, height }` when `blob` is a PNG larger than any canvas (above 268 MP), else null. */
 async function hugePngSize(blob) {
     const h = pngHeader(new Uint8Array(await blob.slice(0, 33).arrayBuffer()));
@@ -692,7 +696,7 @@ async function hugePngSize(blob) {
     // a stream the window never waits. Only what the reader reads exactly as the browser shows it: 8 bits, not
     // interlaced, and no colour profile, gamma or chromaticities, which the browser applies and the reader does not.
     const from = InpaintEditor.pngStreamFrom;
-    if (!(from > 0) || h.width * h.height < from || h.bitDepth !== 8 || h.interlace || !partsUsable()) return null;
+    if (!(from > 0) || h.width * h.height < from || h.bitDepth !== 8 || h.interlace || !pngReaderUsable()) return null;
     return (await pngIsPlainSrgb(blob)) ? { width: h.width, height: h.height } : null;
 }
 
@@ -710,12 +714,37 @@ async function pngIsPlainSrgb(blob) {
 }
 
 /**
- * The pixels of a PNG file decoded as a stream by a pool worker (inpaint_png.js `readPng`), written into tile pixels
- * band by band: for a picture larger than any canvas. JPEG and WebP have no such reader; above 268 MP they are refused
- * where they are loaded, with a message that names PNG.
+ * The pixels of a PNG file decoded as a stream by a pool worker (inpaint_png.js `readPng`), or in parallel across the
+ * pool when the file was written in parts by Scumble (`pngPartsOf` + `readPngParts`, docs/PLAN_WASM_BUILD.md §4.2, K8),
+ * written into tile pixels band by band: for a picture larger than any canvas, or at least `InpaintEditor.pngStreamFrom`
+ * pixels on tiles. JPEG and WebP have no such reader; above 268 MP they are refused where they are loaded, with a
+ * message that names PNG.
  */
 async function pixelsFromPngStream(blob, Cls, progress = null) {
-    let px = null, W = 0, H = 0;
+    let px = null, W = 0, H = 0, layout = null;
+    if (pngReaderUsable()) {
+        layout = await pngPartsOf(blob);
+        if (layout) {
+            try {
+                await readPngParts(blob, {
+                    layout,
+                    pool: editorPool(),
+                    rt: canvasRoundTrip(),
+                    onHeader: (h) => { W = h.width; H = h.height; px = Cls.empty(W, H); },
+                    onRows: (rgba, y0, rows) => {
+                        px.putCanvasRows(rgba, W, 0, y0, rows);
+                        try { if (typeof rgba.buffer.transfer === "function") rgba.buffer.transfer(0); } catch (_) {}
+                        if (progress) progress((y0 + rows) / H);
+                    },
+                });
+                if (!px) throw new Error("the PNG gave no pixels");
+                return px;
+            } catch (err) {
+                if (px) { px.release(); px = null; }
+                console.warn("Inpaint Canvas: the PNG could not be read in parts, using png_read:", (err && err.message) || err);
+            }
+        }
+    }
     try {
         await editorPool().run("png_read", { blob }, [], {
             timeout: 600000,
@@ -727,6 +756,7 @@ async function pixelsFromPngStream(blob, Cls, progress = null) {
         });
     } catch (err) {
         if (px) px.release();
+        if (layout && err && typeof err === "object") err.partedRefused = true;
         throw err;
     }
     if (!px) throw new Error("the PNG gave no pixels");
@@ -782,7 +812,7 @@ async function pixelsOffThread(blob, Cls, progress = null) {
         try {
             return await pixelsFromPngStream(blob, Cls, progress);
         } catch (err) {
-            if (png.width * png.height > CANVAS_MAX_PIXELS) throw err;   // no <img> holds it
+            if ((err && err.partedRefused) || png.width * png.height > CANVAS_MAX_PIXELS) throw err;   // no <img> holds it, and a corrupt parted PNG is refused
             console.warn("Inpaint Canvas: the PNG could not be read as a stream, using an <img>:", (err && err.message) || err);
             return null;
         }
@@ -18013,9 +18043,9 @@ class InpaintEditor {
         return workerCall(op, args, transfer);
     }
 
-    /** The PNG writers of E2 and the pool, for tests and benchmarks (tools/export_test.py). */
+    /** The PNG writers of E2, the parted reader of K8 and the pool, for tests and benchmarks (tools/export_test.py, tools/editor_test.py). */
     static get parts() {
-        return { usable: partsUsable, encodeTilePixels, encodeBands, encodeCanvas, uploadPixels, buildLayered, pool: editorPool, pngRoute: hugePngSize, imageRoute: imageFileSize, offThread: pixelsOffThread };
+        return { usable: partsUsable, encodeTilePixels, encodeBands, encodeCanvas, uploadPixels, buildLayered, pool: editorPool, pngRoute: hugePngSize, imageRoute: imageFileSize, offThread: pixelsOffThread, pngPartsOf, readPngParts };
     }
 
     /** PNG files of at least this many pixels are opened through the stream reader when they need no colour management (0: only above the canvas limit). */

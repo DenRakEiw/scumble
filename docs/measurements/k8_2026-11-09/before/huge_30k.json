@@ -1,0 +1,130 @@
+{
+  "arm": "before",
+  "steps": {
+    "write_the_png_from_tiles": {
+      "size": [
+        30000,
+        20000
+      ],
+      "MP": 600,
+      "fillMs": 5845,
+      "encodeMs": 5101,
+      "encodeBlocked": 141,
+      "MB": 1100.7,
+      "arena": {
+        "slots": 9322,
+        "chunks": 37,
+        "allocated": 9322,
+        "freed": 0,
+        "droppedChunks": 0,
+        "refused": 0,
+        "failed": 0,
+        "enabled": true,
+        "bytes": 2483027968,
+        "freeSlots": 150
+      }
+    },
+    "open_through_the_stream_reader": {
+      "ms": 8726,
+      "blocked": 496,
+      "tiles": 9322,
+      "status": "30000 \u00d7 20000"
+    },
+    "the_screen_pan_zoom_and_a_stroke": {
+      "pan_fit": [
+        0.3,
+        8.6
+      ],
+      "pan_1to1": [
+        0.1,
+        1.3
+      ],
+      "zoom": [
+        0.1,
+        1.8
+      ],
+      "stroke_frame": [
+        2.2,
+        54.7
+      ],
+      "stroke_release": 8.1,
+      "layer_tiles": 6
+    },
+    "a_matched_layer_a_film_look_and_what_is_refused": {
+      "plan": {
+        "reach": 1085,
+        "rows": 2048,
+        "inexact": true
+      },
+      "filterUsed": "film.look",
+      "png": {
+        "ms": 141282,
+        "blocked": 16068,
+        "MB": 1194.6
+      },
+      "sample": [
+        78,
+        71,
+        98,
+        255
+      ],
+      "base": [
+        75,
+        72,
+        92,
+        255
+      ],
+      "l1": 10,
+      "passedGate": false,
+      "resRaw": [
+        132,
+        113,
+        123,
+        255
+      ],
+      "matchStats": {
+        "meanS": [
+          74.68517485119048,
+          78.89718191964286,
+          122.40308779761905
+        ],
+        "meanT": [
+          128.125,
+          112.13265991210938,
+          128.125
+        ],
+        "scale": [
+          0.5170185649908697,
+          2,
+          0.9645195462936182
+        ]
+      }
+    },
+    "the_state_for_the_autosave": {
+      "ms": 5,
+      "blocked": 5,
+      "layers": 1,
+      "selection": "data:image/png;base64,iVBORw0KGgoAAAANSU",
+      "bytes": 10139
+    },
+    "a_restore_from_the_state": {
+      "ms": 9770,
+      "blocked": 75
+    },
+    "close": {
+      "closed": 2,
+      "arena": {
+        "slots": 18738,
+        "chunks": 74,
+        "allocated": 28060,
+        "freed": 9322,
+        "droppedChunks": 36,
+        "refused": 0,
+        "failed": 0,
+        "enabled": true,
+        "bytes": 4966055936,
+        "freeSlots": 206
+      }
+    }
+  }
+}
