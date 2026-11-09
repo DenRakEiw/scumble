@@ -3,20 +3,20 @@ K10c measurement summary (2026-11-09)
 
 Scope (docs/PLAN_WASM_BUILD.md §4.4 K10c, §5 row 44; docs/PLAN_WASM_K10.md):
 - `crates/px/src/composite.rs`:
-  - Added `pub fn clip_coverage(cov: &mut [u8], base_mask: Option<&[u8]>, alpha: u8, own: Option<&[u8]>)` (`:287-332`) and SIMD128 `simd::clip_coverage` (`:786-828`, 16 bytes at a time via `v128_load`, `simd::mul255`, `v128_store`).
-  - Added `pub fn dissolve_rows(src: &mut [u8], w: usize, rows: usize, x0: i32, y0: i32, alpha: u8, mask: Option<&[u8]>, seed: u32)` (`:345-391`) and SIMD128 `simd::dissolve_row` (`:833-926`, 4 pixels at a time in `u32x4` lanes with exact 32-bit `mul255_u32` and `lowbias32` / `hash32`, branchless `v128_bitselect` preserving `src_a == 0` RGB untouched and `c_val == 255` short-circuit).
+  - Added `pub fn clip_coverage(cov: &mut [u8], base_mask: Option<&[u8]>, alpha: u8, own: Option<&[u8]>)` (`:691-715`) and SIMD128 `simd::clip_coverage` (`:1207-1229`, 16 bytes at a time via `v128_load`, `simd::mul255`, `v128_store`).
+  - Added `lowbias32` / `hash32` (`:718-730`), `pub fn dissolve_rows(src: &mut [u8], w: usize, rows: usize, x0: i32, y0: i32, alpha: u8, mask: Option<&[u8]>, seed: u32)` (`:736-775`), and SIMD128 `simd::dissolve_row` (`:1237-1293`, 4 pixels at a time in `u32x4` lanes with exact 32-bit `mul255_u32` and `lowbias32` / `hash32`, branchless `v128_bitselect` preserving `src_a == 0` RGB untouched and `c_val == 255` short-circuit).
 - `crates/px/src/lib.rs`:
   - Bumped `px_abi_version()` (`:57-59`) from `41` to `42`.
-  - Exported `#[no_mangle] pub unsafe extern "C" fn clip_coverage(cov: *mut u8, px: usize, base_mask: *const u8, alpha: u8, own: *const u8)` (`:575-597`) and `#[no_mangle] pub unsafe extern "C" fn dissolve_rows(src: *mut u8, w: usize, rows: usize, x0: i32, y0: i32, alpha: u8, mask: *const u8, seed: u32)` (`:607-626`).
-- `renderer/editor/px/px.wasm`: `279,969 bytes` (`+2,438 B` over `277,531 B` at `3359cb0f`), sha256 `193dd3adf6a169e5` (before at `3359cb0f`: sha256 `d3d4567365549b49`).
-- `renderer/editor/px/px_scalar.wasm`: `225,508 bytes` (`+1,396 B` over `224,112 B` at `3359cb0f`), sha256 `71e5311ccaec73ec` (before at `3359cb0f`: sha256 `76f434e70b79d47d`).
+  - Exported `#[no_mangle] pub unsafe extern "C" fn clip_coverage(cov: *mut u8, px: usize, base_mask: *const u8, alpha: u8, own: *const u8)` (`:657-671`) and `#[no_mangle] pub unsafe extern "C" fn dissolve_rows(src: *mut u8, w: usize, rows: usize, x0: i32, y0: i32, alpha: u8, mask: *const u8, seed: u32)` (`:677-695`).
+- `renderer/editor/px/px.wasm`: `279,969 bytes` (`+2,438 B` over `277,531 B` at `3359cb0f`), sha256 `193dd3adf6a169e512a38ffa1b966d6dd35a2c38c7aa112f888fd3bfef7ad502` (before at `3359cb0f`: sha256 `d3d4567365549b492ec51fc18ed22fac1afeb4104953d78366cafae387f7ae32`).
+- `renderer/editor/px/px_scalar.wasm`: `225,508 bytes` (`+1,396 B` over `224,112 B` at `3359cb0f`), sha256 `71e5311ccaec73ece687121f562d2ee8400f78d432b3b73abddb8f927512d6a8` (before at `3359cb0f`: sha256 `e23e1ca9bd65303dda5ef6f9eada9d09da6b6ef39ccbf6d1862b951d3097bca7`).
 - `renderer/editor/px/px.js`:
   - Bumped `export const PX_ABI = 42;` (`:16`).
   - Added `Px.prototype.psdPackRowsFromPtr(a, pr, w, rows)` (`:1088-1099`) and refactored `psdPackRows` (`:1081-1086`) to delegate to `psdPackRowsFromPtr`.
 - `renderer/editor/px/kernels.js`:
   - Added `clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel"` to `ROUTE_KINDS` (`:65`). All four win their 15,000 x 10,000 deciding rows, so none is added to `DEFAULT_ROUTES`.
 - `renderer/editor/inpaint_worker.js`:
-  - Updated `stackRowsToWasm` (`:394-521`) to call `p._call("clip_coverage", pcov, px, pbm, l.alpha, pm)` when `route("clipCoverage") !== "js"` (falling back to JS `mul255` over `p.u8` when `route("clipCoverage") === "js"`), and `p._call("dissolve_rows", pl, W, n, X0, Y0, l.alpha, pm, l.dissolve >>> 0)` when `route("dissolveRows") !== "js"` (falling back to JS `dissolveRows` over `p.u8` when `route("dissolveRows") === "js"`).
+  - Updated `stackRowsToWasm` (`:394-521`) to call `p.exports.clip_coverage(pcov, px, pbm, c.alpha, pm)` (`:460`) when `p.exports.clip_coverage && route("clipCoverage") !== "js"` (falling back to JS `clipCoverage(covView, bmView, c.alpha, ownView)` over `p.view(Uint8Array, ...)` at `:462-465` when `"js"`), and `p.exports.dissolve_rows(psrc, W, n, X0, Y0, l.alpha, pm, l.dissolve >>> 0)` (`:471`) when `p.exports.dissolve_rows && route("dissolveRows") !== "js"` (falling back to the inline JS dissolve loop over `srcView = p.view(Uint8Array, psrc, byteLen)` using `mul255` and `hash32` at `:473-494` when `"js"`).
   - Updated `stackInto(msg)` (`:528-563`) to take the wasm pointer path (`stackRowsToWasm(p, a, msg, false, into)` + `p.get(Uint8Array, pd, byteLen, into)`) when `p && msg.stack.layers.length > 0 && route("stackIntoWasm") !== "js"`, with `try / catch (err) { if (!recovered(p, err, "stack_into")) throw err; } finally { p._reset(a); }`, recording `composeWasm: 1` on the pointer path and `composeWasm: 0` on `"js"` / base-only (`layers: []`) / fallback.
   - Updated `psdPart(msg)` (`:769-815`) to take the wasm pointer path (`partPtrOf(p, a, msg, false)` + `p.psdPackRowsFromPtr(a, ptrs.pr, msg.w, msg.rows)`) when `p && !msg.rgba && route("psdPartWasm") !== "js"`, with `try / catch (err) { if (!recovered(p, err, "psd_part")) throw err; } finally { p._reset(a); releaseIfLarge(); }`, recording `composeWasm: 1` on the pointer path and `composeWasm: 0` on `"js"` / fallback.
 
@@ -159,7 +159,7 @@ exportperf_clipped psd_masked stack_into kernel            5,082.8 [4,971.6-5,09
 f) Retention (`docs/measurements/k10c_2026-11-09/retention/`):
 - `px_probe.py --retention 15000x10000` (`retention/px_probe.jsonl`):
   - `export_png`: `ms = 395.7`, `MB = 11.94`, `workersMaxAfterMB = 42.25 MiB` (`44,302,336 B`), `workersMaxLaterMB = 1.06 MiB` (`1,114,112 B`), `totalAfterMB = 297.19 MiB`, `totalLaterMB = 11.69 MiB`, `releases = 0`, `idles = 8`, `focused = true`.
-- `retention_psd_wand.py 15000x10000` (`retention/psd_wand_retention.jsonl`):
+- `retention_psd_wand.py 15000x10000` (`retention/psd_wand.jsonl`):
   - `export_psd` (`psdPartWasm=js`):   `ms = 882.0`, `MB = 207.55`, `workersMaxAfterMB = 23.00 MiB` (`24,117,248 B`), `workersMaxLaterMB = 1.06 MiB` (`1,114,112 B`), `totalAfterMB = 183.69 MiB`, `totalLaterMB = 11.69 MiB`, `releases = 0`, `idles = 8`, `focused = true`.
   - `export_psd` (`psdPartWasm=rust`): `ms = 673.9` (`1.31x`), `MB = 207.55`, `workersMaxAfterMB = 23.00 MiB` (`24,117,248 B`), `workersMaxLaterMB = 1.06 MiB` (`1,114,112 B`), `totalAfterMB = 183.69 MiB`, `totalLaterMB = 11.69 MiB`, `releases = 0`, `idles = 8`, `focused = true`.
   - `wand_whole_picture` (`stackIntoWasm=js`):   `ms = 1,876.9`, `workersMaxAfterMB = 31.50 MiB` (`33,030,144 B`), `workersMaxLaterMB = 2.12 MiB` (`2,228,224 B`), `totalAfterMB = 241.62 MiB`, `totalLaterMB = 12.75 MiB`, `releases = 1`, `idles = 8`, `focused = true`.
@@ -173,7 +173,7 @@ Route Decisions (`docs/PLAN_WASM_BUILD.md` §1.1 & `docs/PLAN_WASM_K10.md` §9.3
 
 3. Unit & Parity Suites (`tools/px_test.js` & `tools/boxstack_test.js`)
 -----------------------------------------------------------------------
-- `node tools/px_test.js`: PASS (`composeWasmPartCases` on both `rust simd` and `rust scalar` covering sections 1-3 and K10c sections `4a-4d`, plus SIMD vs scalar twin checks `5a-5c`).
+- `node tools/px_test.js`: PASS (`composeWasmPartCases` on both `rust simd` and `rust scalar` covering sections 1-3 and K10c sections `4a-4d` (`:6076-6459`), plus worker `psdPart` / `stackInto` / `stackPoints` checks `5a-5c` (`:6479-6606`) on `rust simd`).
 - `node tools/boxstack_test.js`: PASS (including `compositeBox` clipped and dissolve layer cases against both `rowsOfStack` and frozen hand-computed 4x2 byte arrays).
 
 4. Mutation Round (`docs/measurements/k10c_2026-11-09/mutation/summary.txt`)
