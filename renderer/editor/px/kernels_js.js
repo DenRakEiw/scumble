@@ -2990,5 +2990,103 @@ export function rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, ti
     return { tiles, bounds, alphaSum };
 }
 
+/**
+ * Multiplies the alpha channel of `rgba` (`w * h * 4` RGBA8 bytes, in place) by the depth limit weight over `map`
+ * (`mw` x `mh` u16, affine transform `xf`) and optional joint-bilateral snap (`snap = [sigmaR, tau]`, `guide`,
+ * optional `col` reference RGBA8) in chunks of at most 256 rows (K25, docs/PLAN_WASM_BUILD.md §4.8).
+ * When `col` is null and `guide` is given, the snap reference colour is sampled from `guide` at `(mx, my)`.
+ * Rust twin: crates/px/src/range.rs `limit_alpha_rows` (`px.js` `limitAlphaRows`).
+ */
+export function limitAlphaRows(rgba, map, mw, mh, xf, x0, y0, w, h, limit, snap = null, guide = null, col = null) {
+    if (!rgba || !(map instanceof Uint16Array) || !limit || !(mw > 0) || !(mh > 0) || !Number.isInteger(w) || !Number.isInteger(h) || w < 0 || h < 0 || !Number.isInteger(x0) || !Number.isInteger(y0) || (!Array.isArray(xf) && !ArrayBuffer.isView(xf)) || xf.length < 6) {
+        throw new Error("limitAlphaRows: bad arguments");
+    }
+    if (map.length < mw * mh) throw new Error("limitAlphaRows: short map");
+    const u8 = ArrayBuffer.isView(rgba)
+        ? bytesOf(rgba)
+        : (rgba instanceof ArrayBuffer ? new Uint8Array(rgba) : null);
+    const needBytes = w * h * 4;
+    if (!u8 || u8.length < needBytes) throw new Error("limitAlphaRows: short rgba");
+
+    let cBytes = null;
+    if (col != null) {
+        cBytes = ArrayBuffer.isView(col)
+            ? bytesOf(col)
+            : (col instanceof ArrayBuffer ? new Uint8Array(col) : null);
+        if (!cBytes || cBytes.length < needBytes) throw new Error("limitAlphaRows: short col");
+    }
+
+    const m0 = +xf[0], m1 = +xf[1], m2 = +xf[2], m3 = +xf[3], m4 = +xf[4], m5 = +xf[5];
+    const lo = limit.lo == null ? 0 : +limit.lo;
+    const hi = limit.hi == null ? 1 : +limit.hi;
+    const fLo = limit.fLo == null ? 0 : +limit.fLo;
+    const fHi = limit.fHi == null ? 0 : +limit.fHi;
+    const limitInvert = !!limit.invert;
+    let sigmaR = 0, tau = 0;
+    if (snap != null) {
+        if ((!Array.isArray(snap) && !ArrayBuffer.isView(snap)) || snap.length < 2) {
+            throw new Error("limitAlphaRows: snap must have 2 elements");
+        }
+        sigmaR = snap[0] == null ? 0 : +snap[0];
+        tau = snap[1] == null ? 0 : +snap[1];
+    }
+    if (![m0, m1, m2, m3, m4, m5, lo, hi, fLo, fHi, sigmaR, tau].every(Number.isFinite)) {
+        throw new Error("limitAlphaRows: non-finite parameters");
+    }
+
+    let gBytes = null;
+    if (guide != null) {
+        const gRaw = guide.data || guide;
+        const gw = guide.w != null ? guide.w | 0 : mw;
+        const gh = guide.h != null ? guide.h | 0 : mh;
+        if (!gRaw || gw !== mw || gh !== mh) throw new Error("limitAlphaRows: bad guide");
+        gBytes = ArrayBuffer.isView(gRaw)
+            ? bytesOf(gRaw)
+            : (gRaw instanceof ArrayBuffer ? new Uint8Array(gRaw) : null);
+        if (!gBytes || gBytes.length < mw * mh * 4) throw new Error("limitAlphaRows: short guide");
+    }
+    if (w === 0 || h === 0) return rgba;
+
+    const snapOn = !!(sigmaR > 0 && gBytes);
+    const maxX = mw - 1, maxY = mh - 1;
+
+    for (let cy = 0; cy < h; cy += 256) {
+        const ch = Math.min(256, h - cy);
+        for (let ry = 0; ry < ch; ry++) {
+            const y = cy + ry;
+            const py = y0 + y + 0.5;
+            let off = y * w * 4;
+            for (let x = 0; x < w; x++, off += 4) {
+                const px = x0 + x + 0.5;
+                const mx = m0 * px + m2 * py + m4;
+                const my = m1 * px + m3 * py + m5;
+                let mv;
+                if (snapOn) {
+                    let pr, pg, pb;
+                    if (cBytes) {
+                        pr = cBytes[off] / 255;
+                        pg = cBytes[off + 1] / 255;
+                        pb = cBytes[off + 2] / 255;
+                    } else {
+                        const gx = Math.max(0, Math.min(maxX, Math.floor(mx)));
+                        const gy = Math.max(0, Math.min(maxY, Math.floor(my)));
+                        const gOff = (gy * mw + gx) * 4;
+                        pr = gBytes[gOff] / 255;
+                        pg = gBytes[gOff + 1] / 255;
+                        pb = gBytes[gOff + 2] / 255;
+                    }
+                    mv = rangeSnapField(map, mw, mh, gBytes, mw, mh, mx, my, pr, pg, pb, sigmaR, tau);
+                } else {
+                    mv = rangeU16Bilinear(map, mw, mh, mx, my);
+                }
+                const v = Math.max(0, Math.min(1, mv));
+                const wVal = rangeWeightScalar(v, lo, hi, fLo, fHi, limitInvert);
+                u8[off + 3] = Math.max(0, Math.min(255, Math.round(u8[off + 3] * wVal)));
+            }
+        }
+    }
+    return rgba;
+}
+
 
 

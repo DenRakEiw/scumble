@@ -1,0 +1,11 @@
+lint rc=0 9s 
+types rc=0 7s 
+selection rc=0 7s PASS
+edges rc=0 24s PASS
+limit rc=0 13s PASS
+maps rc=0 5s PASS
+pixels rc=0 12s PASS
+editor rc=0 139s PASS
+export rc=0 11s PASS
+layered rc=0 10s PASS
+ALL PASS

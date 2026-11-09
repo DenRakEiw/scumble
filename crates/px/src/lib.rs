@@ -50,11 +50,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    38
+    39
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -1297,4 +1297,87 @@ pub unsafe extern "C" fn tiff_unpack(compression: u32, src: *const u8, len: usiz
     tiff::unpack(compression, src_slice, out_slice)
 }
 
+
+/// Multiplies the alpha channel of `rgba` (`w * h * 4` RGBA8 bytes, in place) by the depth limit weight over a
+/// `wh`-row window of `map` (and optional `guide`) starting at map row `wy0` (`inpaint_limit.js` `limitAlphaRows`, K25).
+/// When `sigma_r > 0` and `guide` is non-null, edge snap takes its reference colour from `col` (`w * h * 4` RGBA8 bytes)
+/// when `col` is non-null (`col == rgba` reads `rgba`'s RGB in place), or from `guide` sampled at `floor(mx), floor(my)`
+/// when `col` is null.
+/// `params` holds 12 `f64`s: `[m0, m1, m2, m3, m4, m5, lo, hi, f_lo, f_hi, sigma_r, tau]`.
+/// `flags`: bit 0 = `limit.invert`.
+/// Returns `1` on success, `0` when refused.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn limit_alpha_rows(
+    rgba: *mut u8,
+    col: *const u8,
+    map: *const u16,
+    guide: *const u8,
+    mw: usize,
+    mh: usize,
+    wy0: usize,
+    wh: usize,
+    x0: i32,
+    y0: i32,
+    w: usize,
+    h: usize,
+    params: *const f64,
+    flags: u32,
+) -> u32 {
+    if rgba.is_null()
+        || map.is_null()
+        || params.is_null()
+        || mw == 0
+        || mh == 0
+        || wh == 0
+        || wy0 >= mh
+        || wy0.saturating_add(wh) > mh
+        || w == 0
+        || h == 0
+    {
+        return 0;
+    }
+    let Some(win_len) = wh.checked_mul(mw) else { return 0 };
+    let Some(rgba_len) = w.checked_mul(h).and_then(|n| n.checked_mul(4)) else { return 0 };
+
+    let p_slice = slice::from_raw_parts(params, 12);
+    if p_slice.iter().any(|x| !x.is_finite()) {
+        return 0;
+    }
+    let mut p = [0.0f64; 12];
+    p.copy_from_slice(p_slice);
+
+    let col_from_rgba = col == rgba as *const u8;
+    let col_slice = if col.is_null() || col_from_rgba {
+        None
+    } else {
+        Some(slice::from_raw_parts(col, rgba_len))
+    };
+    let map_slice = slice::from_raw_parts(map, win_len);
+    let guide_slice = if guide.is_null() {
+        None
+    } else {
+        let Some(guide_len) = win_len.checked_mul(4) else { return 0 };
+        Some(slice::from_raw_parts(guide, guide_len))
+    };
+    let rgba_slice = slice::from_raw_parts_mut(rgba, rgba_len);
+
+    range::limit_alpha_rows(
+        rgba_slice,
+        col_slice,
+        col_from_rgba,
+        map_slice,
+        guide_slice,
+        mw,
+        mh,
+        wy0,
+        wh,
+        x0,
+        y0,
+        w,
+        h,
+        &p,
+        flags,
+    )
+}
 
