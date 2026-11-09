@@ -60,7 +60,7 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * `compositeMaskedTile` (K36): `compositeMaskedTile` of inpaint_tiles.js `compositeStroke`.
  * `composeTiles` and `composeStack` (K10b): pointer gather into wasm memory for tile-store and stack `png_part` jobs.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -882,19 +882,40 @@ export function heightNormals(depth, w, h, scale, sigma, out = null) {
     return J.heightNormals(depth, w, h, scale, sigma, out);
 }
 
+const MARCH_MAX = 0x40000000;
+
+function marchGuardOk(w, h, scale, light, radius, bias) {
+    if (!Number.isInteger(w) || !Number.isInteger(h) || !(w > 0 && h > 0 && w < MARCH_MAX && h < MARCH_MAX)) return false;
+    if (!light || light.length < 4) return false;
+    for (const v of [scale, light[0], light[1], light[2], light[3], radius ?? 0, bias ?? 0]) {
+        const n = Number(v);
+        if (!Number.isFinite(n) || !(Math.abs(n) < MARCH_MAX)) return false;
+    }
+    if (Number(bias ?? 0) < 0) return false;
+    return true;
+}
+
 /**
  * Marches shadow rays through u16 depth height field. A full-size `out` takes rows row0.. at row0 * w (both kernels), so
- * the stripes of one march write into one buffer (K12). `key` names the depth map's data for the Rust sun's resident copy
- * (px.js `_slot`): the stripes of one march on one worker copy it once; the twin reads `depth` where it lies.
+ * the stripes of one march write into one buffer (K12). `key` names the depth map's data for the Rust march's resident copy
+ * (px.js `_slot`): the stripes of one march on one worker copy it once; the twin reads `depth` where it lies. Non-finite
+ * lights or coordinates `>= 2^30` fall back to the twin (K13).
  */
 export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null, key = null) {
-    if (light && light[3] !== 1) {
+    if (!marchGuardOk(w, h, scale, light, radius, bias)) {
         return J.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out);
     }
-    const p = rustPx();
+    const p = rustPx("shadowMarch", w * h);
     if (p) {
-        try { return p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key); }
-        catch (err) { if (!recovered(p, err, "shadow_march")) throw err; }
+        const isSun = Number(light[3]) === 1;
+        const exp = isSun ? "shadow_march" : "shadow_march_f64";
+        try {
+            const res = isSun
+                ? p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key)
+                : p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key);
+            if (res) return res;
+        }
+        catch (err) { if (!recovered(p, err, exp)) throw err; }
         finally { releaseIfLarge(); }
     }
     return J.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out);

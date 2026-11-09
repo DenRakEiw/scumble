@@ -1596,7 +1596,12 @@ function relightShadowJob(msg) {
     const { depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key } = msg;
     const depthArr = depth instanceof Uint16Array ? depth : new Uint16Array(depth);
     const t0 = now(), n = Math.min(rows, h - row0);
-    const timing = () => ({ op: "relight_shadow", kernels: light && light[3] === 1 ? kernelsInUse() : "js", w, h, row0, rows: n, kernel: now() - t0 });
+    const c0 = pxCalls();
+    const timing = () => {
+        const c1 = pxCalls();
+        const ranRust = (c1.shadow_march || 0) > (c0.shadow_march || 0) || (c1.shadow_march_f64 || 0) > (c0.shadow_march_f64 || 0);
+        return { op: "relight_shadow", kernels: ranRust ? "rust" : "js", w, h, row0, rows: n, kernel: now() - t0 };
+    };
     if (out) {
         if (!(out instanceof Uint8Array) || out.length < w * h) throw new Error(`relight_shadow: out holds ${out && out.length} bytes, not ${w * h}`);
         shadowMarch(depthArr, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key ?? null);

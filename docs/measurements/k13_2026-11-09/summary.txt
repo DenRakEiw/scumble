@@ -1,0 +1,247 @@
+K13 (docs/PLAN_WASM_BUILD.md §4.5, §5): `shadow_march_f64` scalar, per-tap constants in JS, the twin's hoist (bytes
+unchanged), and `marchGuardOk` sending non-finite lights/parameters or coordinates `>= 2^30` to the twin.
+
+Base: `3fd8bda7` (`wasm-kernels`, ABI 36 -> 37), merged with `wasm-kernels` at `92d29245` (ABI 40 -> 41).
+- `before px.wasm` (`git cat-file blob 3fd8bda7:renderer/editor/px/px.wasm`): 259,180 bytes, sha256 `7e99b55f37ff69ff` (`7e99b55f37ff69ffdfb0b8e5f78e01b234fc3a96759eda4b1870832e934f65a5`)
+- `after  px.wasm` (HEAD after merging `92d29245`, ABI 41): 279,003 bytes, sha256 `1641bd5c67921db4` (`1641bd5c67921db41de58597217f7a135a897673bc7142ee22012b4e276f3d7a`)
+  - pre-merge HEAD on `3fd8bda7` (`7dbc030f`, ABI 37, deduplicated `relight::march_lens` guard): 260,652 bytes, sha256 `3d9bec873cda8745` (`3d9bec873cda8745c955338217d4682099e7605054e68d96598042d5a90a40bd`)
+  - 15k measurement run (`chain.log:1-2`, commit `f915c5ee`; identical inner march loop, entry guards before `march_lens` deduplication): 260,770 bytes, sha256 `c633b80fbee79614` (`c633b80fbee79614a06d6c3d0c95fd62865882274b542a08c5439977f0fb28e3`)
+- `before px_scalar.wasm` (`git cat-file blob 3fd8bda7:renderer/editor/px/px_scalar.wasm`): 210,462 bytes, sha256 `03ddfff981982e19` (`03ddfff981982e1953df1099a2c3a9a600a0aba581ac58192e38c28fdf0f781d`)
+- `after  px_scalar.wasm` (HEAD after merging `92d29245`, ABI 41): 225,584 bytes, sha256 `4ab3e3e738c13b6e` (`4ab3e3e738c13b6eb7799fa8cd7c6c16bf154fe79c6ad9abf66f0ce064c8d671`)
+  - pre-merge HEAD on `3fd8bda7` (`7dbc030f`, ABI 37, deduplicated `relight::march_lens` guard): 211,934 bytes, sha256 `4c2310eab695466c` (`4c2310eab695466cbb75bae4e3568e87f9408f8256be4db146b30d8ea51bf23e`)
+  - 15k measurement run (`chain.log:1-2`, commit `f915c5ee`): 212,018 bytes, sha256 `7b7f92f13ade53fe` (`7b7f92f13ade53fe141f2771eb7bbbc8bc17f01a11c3a5009168bf4335982db0`)
+
+The folders and logs in `docs/measurements/k13_2026-11-09/`:
+- `before/perf/r1..3.{json,log}`: a tree exported at `3fd8bda7` via `git archive`, three fresh Electron instances on port
+  9631 (`bash tools/run_gates.sh k13-before-r<R> --offline --tiles on "perf:15000x10000,--filter=relight,--map=4096x2731"`).
+- `after/perf/r1..3.{json,log}`: the K13 working tree (`f915c5ee` wasm `c633b80fbee79614`; all subsequent K13 commits touch
+  only entry guards outside the march loop), alternating with `before` within each round (`before/after` in r1,
+  `after/before` in r2, `before/after` in r3), under the busy lock (`../w1_2026-11-06/w1_lock.py`). All 6 runs exited
+  `rc=0` with `focus [[True, 'visible', True, 'visible']]`, 0 retries (`chain.log`).
+- `summary_rows.txt`: output of `python docs/measurements/k13_2026-11-09/summarize.py before after`.
+- `px_bench.txt`: output of `PX_ONLY=relightBench,relight PX_BENCH=large` under Node (`node tools/px_test.js`) and under
+  Electron's V8 (`ELECTRON_RUN_AS_NODE=1 F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`) on the final K13 tree.
+- `electron_px_relight.txt`: output of `ELECTRON_RUN_AS_NODE=1 PX_ONLY=relightBench,relightStripe,relight F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`.
+- `electron_px_mask.txt`: output of `ELECTRON_RUN_AS_NODE=1 PX_ONLY=mask` on exact base commit `3fd8bda7` (before `1c974974` /
+  `d23d5cc4`), on merged `F:/canvas` (`e39b8d03`, after `1c974974` / `d23d5cc4`), and on `ag-chain-l`, plus the unfiltered
+  `ELECTRON_RUN_AS_NODE=1 tools/px_test.js` summary lines, proving the `mask_max_clamp` / `warp_coverage` NaN-payload
+  bit differences under Electron V8 are inherited from `3fd8bda7`.
+- `gates/gates/k13-gates-{tiles,canvas,tiles-serial,canvas-serial}/`: logs and summaries of
+  `bash tools/run_gates_both.sh k13-gates --ports 9631,9632 --lock F:/canvas/dist/gates/busy.lock --offline lint types relight pixels nodecopy`.
+- `mutation/`: `mut_k13.py`, `results.txt`, and `logs/*.txt` from `tools/mutation_round.py` (12 mutants).
+
+Machine during the 15k runs (`chain.log`, per-run start -> end):
+- Lock: taken immediately (0 s wait) on `r1 before`, `r1 after`, `r2 after`, `r2 before`, and `r3 before`; waited 600 s
+  before `r3 after` while `main loop gates mergek16` held the lock.
+- GPU (`nvidia-smi`, start -> end of each run):
+  - `r1 before` (134 s): `17,258 MiB, 0 %` (ComfyUI 8188 queue 0) -> `20,547 MiB, 99 %` (ComfyUI 8188 queue 1 running)
+  - `r1 after`  (178 s): `20,232 MiB, 99 %` (ComfyUI 8188 queue 1 running) -> `18,953 MiB, 0 %` (ComfyUI 8188 queue 0)
+  - `r2 after`  (142 s): `19,652 MiB, 18 %` (ComfyUI 8188 queue 0) -> `19,506 MiB, 32 %` (ComfyUI 8188 queue 0)
+  - `r2 before` (128 s): `17,546 MiB, 2 %` (ComfyUI 8188 queue 0) -> `20,118 MiB, 3 %` (ComfyUI 8188 queue 0)
+  - `r3 before` (144 s): `20,409 MiB, 3 %` (ComfyUI 8188 queue 0) -> `29,325 MiB, 28 %` (ComfyUI 8188 queue 0)
+  - `r3 after`  (176 s): `26,786 MiB, 100 %` (ComfyUI 8188 queue 0) -> `10,056 MiB, 3 %` (ComfyUI 8188 queue 0)
+
+Built (ABI 37):
+- `renderer/editor/px/kernels_js.js` (lines 1964–1974, 1993–2110): added `export` to `relightVogel(n)` (was module-private
+  `function relightVogel(n)`). In `shadowMarch`, hoisted `invSteps = 1.0 / nSteps` and the per-tap `Float64Array` arrays
+  `tapX`, `tapY`, `tapZ` outside the `0..bandRows` pixel loop: for `kind === 1` (sun), `(dirX / dLen) * sunDist` (and `y`,
+  `z`); for `kind !== 1` (point/spot), `lx + disc[t][0] * r` (and `ly + disc[t][1] * r`, `lz`). Inside the pixel loop, kept
+  `tx = px + tapX[t]`, `rdx = tx - px`, `stepX = rdx * invSteps` per pixel so the hoisted twin is 100 % byte-identical to
+  the pre-hoist reference (folding `rdx` to `tapX[t]` for a sun changes bits on rounding ties).
+- `crates/px/src/relight.rs` (lines 226–362) and `crates/px/src/lib.rs` (lines 55–57, 819–855): bumped `px_abi_version()`
+  36 -> 37; added `relight::march_lens(w, h, row0, rows) -> Option<(usize, usize, usize)>`, `relight::shadow_march_f64`, and
+  the `#[no_mangle] pub unsafe extern "C" fn shadow_march_f64(depth: *const u16, w: usize, h: usize, scale: f64, is_sun: u32,
+  taps_xyz: *const f64, taps: u32, steps: u32, z_bias: f64, row0: usize, rows: usize, out: *mut u8)` export. Both `lib.rs`
+  and `relight.rs` validate dimensions and `checked_mul` bounds through `relight::march_lens`, and `relight::shadow_march_f64`
+  is the single source of truth for `steps == 0 || steps > 64 || !scale.is_finite() || !z_bias.is_finite() || z_bias < 0.0`
+  and non-finite `taps_xyz`, refusing invalid arguments without touching `out`. Marches in `f64` in the twin's exact operation
+  order (`inv65535 = scale / 65535.0`, `inv_steps = 1.0 / (steps as f64)`, per-pixel `tx = px + cx_t`, `rdx = tx - px`,
+  `step_x = rdx * inv_steps`, `sx = px + step_x`, float bounds check `cx < 0.0 || cy < 0.0 || cx >= wf || cy >= hf` before
+  `cx.to_int_unchecked::<usize>()` and `get_unchecked`).
+- `renderer/editor/px/px.js` (lines 14, 16, 664–729): bumped `PX_ABI = 37`, imported `relightVogel` from `./kernels_js.js`,
+  added `Px.prototype.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0 = 0, rows = h - row0,
+  out = null, key = null)`. Validates arguments (including `b < 0` and `< 0x40000000`), computes the `nTaps * 3` `f64` tap
+  constants in V8 with the twin's exact formulas, uses `this._slot("relight_depth", String(key), depth, n * 2)` when `key` is
+  given, and calls `this.exports.shadow_march_f64`.
+- `renderer/editor/px/kernels.js` (lines 61, 846–857, 865–883): added `shadowMarch: "kernelSize"` to `ROUTE_KINDS`; added
+  `MARCH_MAX = 0x40000000` and `marchGuardOk(w, h, scale, light, radius, bias)` returning `false` on invalid `w` / `h`,
+  non-finite values, `bias < 0`, or coordinates/scale/radius/bias `>= 2^30`; updated `shadowMarch` to check `marchGuardOk(...)`
+  and `rustPx("shadowMarch", w * h)` and route `Number(light[3]) === 1` to `p.shadowMarch` (`f32`) and `Number(light[3]) !== 1`
+  to `p.shadowMarchF64` (`f64`).
+- `renderer/editor/inpaint_worker.js` (lines 1302–1319): updated `relightShadowJob` so `timing.kernels` inspects `c0 = pxCalls()`
+  and `c1 = pxCalls()` for `shadow_march` or `shadow_march_f64` after `shadowMarch(...)` and reports `"rust"` or `"js"`
+  according to what ran.
+
+Explaining microbenchmarks (`px_bench.txt`, `PX_ONLY=relightBench,relight PX_BENCH=large` at `4096 x 2731`, 4 taps, 32 steps):
+- Node V8:
+  - point: routed (`rust_f64`) 3,808.3 ms, hoisted twin 2,963.2 ms, `simd_f64` 3,673.2 ms, `simd_f32` 3,766.8 ms (twin / `simd_f64` = 0.81; `routed / twin` = 1.29x, `simd_f64 / twin` = 1.24x)
+  - spot:  routed (`rust_f64`) 4,157.2 ms, hoisted twin 3,206.6 ms, `simd_f64` 4,119.8 ms, `simd_f32` 4,287.6 ms (twin / `simd_f64` = 0.78; `routed / twin` = 1.30x, `simd_f64 / twin` = 1.28x)
+  - sun:   routed (`rust_f32`) 1,891.5 ms, hoisted twin 1,478.1 ms, `simd_f64` 1,549.8 ms, `simd_f32` 1,911.9 ms (twin / `simd_f64` = 0.95)
+- Electron V8 (`ELECTRON_RUN_AS_NODE=1`):
+  - point: routed (`rust_f64`) 3,733.8 ms, hoisted twin 3,145.8 ms, `simd_f64` 4,753.5 ms, `simd_f32` 4,230.0 ms (twin / `simd_f64` = 0.66; `routed / twin` = 1.19x, `simd_f64 / twin` = 1.51x)
+  - spot:  routed (`rust_f64`) 5,355.3 ms, hoisted twin 4,743.2 ms, `simd_f64` 5,609.4 ms, `simd_f32` 5,768.6 ms (twin / `simd_f64` = 0.85; `routed / twin` = 1.13x, `simd_f64 / twin` = 1.18x)
+  - sun:   routed (`rust_f32`) 1,507.7 ms, hoisted twin 1,004.2 ms, `simd_f64` 1,196.8 ms, `simd_f32` 1,456.2 ms (twin / `simd_f64` = 0.84)
+Scalar `shadow_march_f64` processes 1 pixel per loop iteration in wasm (where `f64x2` SIMD lanes are K14's task): in
+`px_bench.txt` at `4096 x 2731`, `routed` (`rust_f64`) is 1.13x–1.30x slower than the hoisted V8 `f64` twin (`simd_f64`
+direct is 1.18x–1.51x slower), and in the 15k app rows below, point/spot marches are +25.7 % to +49.5 % (`1.26x`–`1.49x`)
+slower than `before`.
+
+15,000 x 10,000 before -> after (`summary_rows.txt`, map `4096 x 2731`, medians `[min-max]` of 3 rounds, ms):
+1. Chain rows (pinned in K12, before any relight march row):
+   - `whole_fit_gl` (`frame after a whole change, fit`): frame `29.8 [22.7-30.0] -> 31.5 [24.6-38.9]` (tie, spreads overlap),
+     mips settled `110 [100-132] -> 112 [94-150]` (tie), longest block `32.8 [28.9-34.2] -> 43.1 [41.9-46.0]` (+10.3 ms; runs
+     before any relight layer exists, during r1/r3 GPU activity).
+   - `whole_1to1_gl` (`frame after a whole change, 1:1`): frame `25.5 [25.2-31.8] -> 27.7 [22.4-38.6]` (tie, spreads overlap),
+     mips settled `136 [111-148] -> 118 [108-138]`, longest block `23.8 [23.2-31.8] -> 18.4 [13.1-28.8]`.
+   - `panel_flatten_sync` (`192 px picture, the old way [wall]`): `426 [406-524] -> 404 [384-484]` (tie).
+   - `panel_flatten_settled` (`192 px picture, settled [wall]`): frame `46.3 [37.8-53.4] -> 29.5 [23.3-73.9]`, settled
+     `156 [147-168] -> 154 [147-183]` (tie).
+   - `whole_1to1_lights` (`the frame with the lights overlay`): `471 [388-505] -> 544 [405-598]` (tie, spreads overlap:
+     `388-505` vs `405-598`; `whole_quiet` setup marches waited before it `1,696 [1,311-1,767] -> 1,885 [1,404-2,082]`).
+2. Point/spot march rows (`before` = pre-hoist JS twin, `after` = scalar `shadow_march_f64`):
+   - `relight_one` (`one light moved [blocked, landed]`):
+     - blocked: `82.4 [81.1-92.7] -> 84.3 [69.6-89.4]` (tie, spreads overlap)
+     - landed: `980 [942-1,025] -> 1,004 [852-1,100]` (tie, spreads overlap; slowest job `314 [284-321] -> 280 [230-298]`,
+       kernel summed `7,413 [7,053-7,680] -> 7,608 [6,336-8,454]`, parallel efficiency `0.604 [0.530-0.702] -> 0.779 [0.741-0.785]`).
+   - `relight_one_job` (`again, one job (stripes 0) [blocked, landed]`):
+     - blocked: `79.8 [71.7-92.1] -> 98 [77-111]` (spreads overlap)
+     - landed: `4,757 [4,367-5,313] -> 5,980 [5,326-6,939]` (**loses** by +1,223 ms / +25.7 %, outside spreads; kernel
+       `4,736 [4,346-5,291] -> 5,954 [5,307-6,908]`).
+   - `relight_one_rep` (`again, stripes [blocked, landed]`):
+     - blocked: `66.1 [63.2-74.8] -> 77.5 [67.5-78.0]` (spreads overlap)
+     - landed: `880 [708-955] -> 1,148 [817-1,204]` (loses by +268 ms on median, spreads overlap `817..955`; kernel summed
+       `6,449 [5,303-6,627] -> 8,896 [6,277-9,303]`).
+   - `relight_one_s64` (`again, 64 stripes [blocked, landed]`):
+     - blocked: `63.4 [57.3-67.0] -> 76.6 [63.0-79.6]` (spreads overlap)
+     - landed: `730 [663-746] -> 1,084 [854-1,116]` (**loses** by +354 ms / +48.5 %, outside spreads).
+   - `relight_one_nofeed` (`again, every stripe posted [blocked, landed]`):
+     - blocked: `73.9 [60.7-82.7] -> 79.1 [76.3-93.6]` (spreads overlap)
+     - landed: `685 [683-846] -> 1,015 [841-1,188]` (loses by +330 ms on median, spreads touch at `841..846`).
+   - `relight_three` (`three lights moved [blocked, landed]`):
+     - blocked: `69 [63-232] -> 86 [60-103]` (tie, spreads overlap; worst block `232 -> 103`)
+     - landed: `1,656 [1,368-1,803] -> 2,234 [1,998-2,334]` (**loses** by +578 ms / +34.9 %, outside spreads; kernel summed
+       `12,355 [10,724-12,726] -> 17,159 [15,519-18,197]`, slowest job `213 [191-234] -> 312 [278-348]`).
+   - `relight_three_job` (`again, one job a light [blocked, landed]`):
+     - blocked: `70.2 [67.7-83.6] -> 91.7 [90.7-93.1]` (**loses** by +21.5 ms, outside spreads)
+     - landed: `4,914 [4,662-5,743] -> 7,227 [5,891-7,626]` (**loses** by +2,313 ms / +47.1 %, outside spreads).
+   - `relight_three_rep` (`again, stripes [blocked, landed]`):
+     - blocked: `66.8 [65.0-73.0] -> 69 [67-116]` (spreads overlap)
+     - landed: `1,346 [1,291-1,799] -> 2,012 [1,916-2,298]` (**loses** by +666 ms / +49.5 %, outside spreads).
+   - `relight_three_s64` (`again, 64 stripes a light [blocked, landed]`):
+     - blocked: `75.4 [56.9-76.1] -> 69.7 [64.1-83.2]` (tie, spreads overlap)
+     - landed: `1,362 [1,260-1,770] -> 1,998 [1,735-2,316]` (loses by +636 ms on median, spreads overlap `1,735..1,770`).
+   - `relight_three_nofeed` (`again, every stripe posted [blocked, landed]`):
+     - blocked: `64.4 [63.7-73.9] -> 75.1 [73.3-97.7]` (spreads overlap)
+     - landed: `1,419 [1,370-1,682] -> 2,208 [1,852-2,243]` (**loses** by +789 ms, outside spreads).
+   - `relight_three_mv_nofeed` / `relight_three_mv_feed`:
+     - `moved, every stripe posted`: blocked `64.2 [53.5-82.5] -> 70.0 [60.5-90.0]`, landed `1,378 [1,362-1,853] -> 2,043 [1,821-2,380]`
+     - `moved, fed again`: blocked `78.6 [52.3-89.5] -> 62.5 [54.4-77.0]`, landed `1,578 [1,444-2,009] -> 2,163 [1,913-2,248]`.
+   - `relight_quick` (`a drag step's quick map [blocked, landed]`, map `1024 x 682`, 1 tap, 16 steps):
+     - blocked: `35.2 [33.5-56.4] -> 43.8 [41.0-49.1]` (tie, inside `before` spread)
+     - landed: `9.5 [7.7-38.2] -> 51.6 [49.0-74.7]` (**loses** by +42.1 ms, outside spreads). Sub-metrics in `summary_rows.txt`:
+       `relight_quick_first` (`first stripe a worker ms`) is only `2.1 [1.6-2.5] -> 3.3 [3.3-3.5]` ms (+1.2 ms for replacing
+       the `"relight_depth"` slot with the 1.4 MB quick depth map and running scalar wasm) and slowest stripe is `4.2 [3.3-4.6]
+       -> 4.3 [3.8-4.7]` ms, while `before` landed was bimodal (`7.7 / 38.2 / 9.5` ms across r1..r3 vs `after` `49.0 / 51.6 /
+       74.7` ms) and `relight_quick_rep` (`44.7 [6.8-57.9] -> 62.3 [8.0-63.4]` ms) exhibits the same ~7–8 ms vs ~45–63 ms step.
+       **Inferred** cause of the +42.1 ms landed jump: when the stripes take ~1.2 ms longer in `after`, the last stripe reply
+       arrives after the main thread's ~40 ms redraw/frame tick starts, deferring `landed` to the next tick rather than the
+       worker stripe time itself growing by 42 ms.
+     - `relight_quick_job` (`again, one job`): blocked `51.1 [45.1-58.8] -> 44.5 [39.5-56.1]`, landed `51.2 [45.2-68.6] -> 54.8 [54.3-58.7]` (tie, inside spreads).
+     - `relight_quick_rep` (`again, stripes`): blocked `42.2 [39.6-43.7] -> 54.0 [38.6-59.3]`, landed `44.7 [6.8-57.9] -> 62.3 [8.0-63.4]` (spreads overlap).
+   - `relight_pan` (`pan at 1:1 during a march [median, worst frame]`):
+     - median frame: `5.2 [4.8-5.7] -> 5.6 [5.1-5.9]` (tie, spreads overlap)
+     - worst frame: `7.4 [6.4-9.1] -> 8.1 [6.8-10.2]` (tie, spreads overlap)
+     - block: `100 [68-105] -> 94.0 [71.4-98.6]` (tie, spreads overlap)
+     - shadows landed: `705 [657-839] -> 1,144 [982-1,181]` (**loses** by +439 ms, outside spreads: primarily scalar
+       `shadow_march_f64` across the 8 stripes; a minor ~1–2 ms contribution is **inferred** from re-copying the 22.4 MB full
+       depth map into `"relight_depth"` on each worker after `relight_quick` replaced it).
+   - `relight_first` (`the first march after start [-, landed]`):
+     - landed: `3,719 [3,196-3,981] -> 4,201 [3,148-4,236]` (tie, spreads overlap `3,148..3,981`).
+   - `whole change 1:1` during a three-light march:
+     - no march: frame `41.3 [29.9-51.3] -> 34.7 [30.1-49.7]`, mips settled `100 [90-121] -> 118 [85-125]`, block `11.2 [10.2-14.7] -> 14.0 [10.1-19.5]` (all ties).
+     - during a three-light march (fed): frame `35.2 [35.0-37.7] -> 39.0 [34.4-40.5]`, mips settled `291 [215-292] -> 380 [323-386]` (**loses** by +89 ms, outside spreads: each stripe takes ~230 ms instead of ~155 ms, so INTERACTIVE mips wait longer for the running stripe on each worker), block `35.4 [6.9-42.1] -> 41.4 [10.3-41.7]` (tie).
+     - during a three-light march (every stripe posted): frame `42.5 [41.1-45.4] -> 41.2 [39.5-41.6]`, mips settled `236 [213-280] -> 361 [200-398]` (spreads overlap), block `19.9 [7.2-49.5] -> 14.3 [9.1-52.8]`.
+     - fed again: frame `37.8 [32.9-46.6] -> 38.8 [36.6-45.1]`, mips settled `225 [162-241] -> 354 [253-360]` (**loses** by +129 ms, outside spreads), block `17.7 [17.4-24.9] -> 15.5 [8.7-24.4]`.
+   - `8 NORMAL jobs` during a three-light march:
+     - 1 KB jobs (`during a three-light march [wait, answer]`): wait `120 [76-149] -> 178 [177-222]` (**loses** by +58 ms, outside spreads: waits for the release's second stripe, which is ~1.4x longer under scalar `shadow_march_f64`), one job a light `7.8 [7.7-9.1] -> 5.7 [4.9-13.3]`, every stripe posted `1,406 [1,356-1,487] -> 1,926 [1,844-2,138]`.
+     - ~60 ms jobs (`during a three-light march [first, last wait]`): first wait `107 [80-130] -> 199 [134-244]`, last wait `249 [181-265] -> 305 [203-390]` (spreads overlap `203..265`), one job a light `0 / 119 [118-134] -> 0.0 / 136 [108-144]`, every stripe posted `1,503 / 1,537 -> 1,831 / 1,839`.
+   - `relight_nodraw` (`a light moved, no redraw [blocked, landed]`):
+     - blocked: `66.0 [37.8-77.7] -> 45.2 [40.9-76.2]` (tie, spreads overlap)
+     - landed: `676 [632-856] -> 934 [928-1,080]` (**loses** by +258 ms, outside spreads); one job `4,216 [4,157-4,963] -> 5,767 [5,499-6,547]`.
+   - `relight_draw` (`a light moved, released [blocked, landed]`):
+     - blocked: `81 [68-108] -> 81.6 [78.3-87.3]` (tie, spreads overlap)
+     - landed: `881 [656-1,058] -> 1,051 [956-1,102]` (spreads overlap `956..1,058`, +170 ms on median); one job `4,531 [4,098-5,417] -> 5,363 [5,303-6,396]`.
+3. Sun rows (kind 1 stays on `f32` `shadow_march` in both `before` and `after`):
+   - `relight_sun` (`a light made a sun [blocked, landed]`):
+     - blocked: `66.7 [60.6-77.3] -> 74.4 [51.9-75.0]` (tie, spreads overlap)
+     - landed: `348 [312-372] -> 599 [545-669]` (**loses** by +251 ms on the first sun march only: `first stripe a worker ms`
+       is `54 [49-117] -> 337 [302-387]` across all 8 workers while `later ones` is `69.9 [68.2-74.7] -> 79 [66-102]`).
+       **Inferred** explanation (not directly instrumented inside V8/OS memory management): `relight_sun` runs immediately
+       after the 64 MB `relight_heavy_*` `crc` rows; in `before`, all preceding point/spot marches ran in JS and never
+       called wasm in the workers, whereas in `after` the workers ran heavy `shadow_march_f64` jobs before the 64 MB `crc`
+       jobs (note `kernels.js:65` puts raw `memory.grow` at ~0.07 ms/MB, so 22 MB of page allocation alone would be ~2 ms,
+       not 283 ms; the ~283 ms first-stripe cost across all 8 workers is **inferred** to come from worker V8/OS working-set
+       or tiering interaction after the `shadow_march_f64` + 64 MB `crc` sequence). Immediately on the next sun rows
+       (`relight_sun_job`, `relight_sun_rep`, `relight_sun_s64`, `relight_sun_nofeed`, `relight_sun_feed2`), `after` matches
+       or beats `before`:
+   - `relight_sun_job` (`again, one job (stripes 0)`): blocked `82.1 [80.4-84.9] -> 70.9 [68.9-78.5]`, landed `1,890 [1,733-2,011] -> 1,681 [1,676-2,057]` (tie, spreads overlap; median -209 ms).
+   - `relight_sun_rep` (`again, stripes`): blocked `74.8 [72.7-88.8] -> 68.1 [63.4-69.6]`, landed `323 [320-438] -> 394 [296-406]` (tie, spreads overlap; `first stripe a worker ms` back to `43.8 [42.1-46.7]` vs `76.5 [40.8-77.2]`).
+   - `relight_sun_s64` (`again, 64 stripes`): blocked `63.9 [53.0-76.9] -> 57.4 [51.6-60.3]`, landed `363 [318-464] -> 356 [308-421]` (tie).
+   - `relight_sun_nofeed` (`again, every stripe posted`): blocked `59.0 [56.1-73.3] -> 55.4 [55.0-57.4]`, landed `315 [302-373] -> 355 [340-391]` (tie, spreads overlap).
+   - `relight_sun_feed2` (`again, fed after the unfed one`): blocked `54.5 [53.3-80.4] -> 59.2 [54.5-85.3]`, landed `320 [299-471] -> 388 [289-458]` (tie, spreads overlap).
+
+The route at K13:
+- Per `brief.md` ("These points are facts of the code and override anything above or in the plan: K13 routes only point and
+  spot (`light[3] !== 1`) to `shadow_march_f64`. A sun (kind 1) stays on the f32 `shadow_march` until K14 and question 6.6...
+  At K13 make `relightShadowJob`'s `kernels` field say what ran, and change `relight_test.py` case nk's 'its stripes ran'
+  check to expect the new export for a point"), K13 routes point and spot (`light[3] !== 1`) to `shadow_march_f64` and keeps
+  sun (`light[3] === 1`) on `shadow_march`. K14 vectorizes `shadow_march_f64` with `f64x2` lanes and decides the final route
+  across `f64`, `f32`, and the hoisted twin.
+
+Tests and gates:
+- `node tools/px_test.js` (full suite): PASS (`docs/measurements/k13_2026-11-09/mutation/logs/orig.txt`).
+  - `relight` (lines 1755–2005): 131 byte-exact `twinCheck` cases on both `px.wasm` (simd) and `px_scalar.wasm` (scalar),
+    each also at an odd byteOffset (covering `96 x 64` and `512 x 341` at `[1, 1], [1, 16], [3, 16], [4, 32], [16, 64]` and
+    `1024 x 682` at `[1, 16], [3, 1], [4, 32], [16, 64]` across all 8 lights: `point`, `spot`, `sun`, `on-pixel`,
+    `below-surface`, `off-map`, `sun-up`, `sun-grazing`, with non-integer `ensureRelightMaps`-style `[mx, my, mz]`, `scale`,
+    `radius`, `bias`, and non-trivial `hasZero && hasLit` check on `512 x 341` and `1024 x 682`; plus surgical boundary cases
+    for `map_z == sz + z_bias`, `rdz < 0 && sz > scale`, `cx == 0.0`, `cy == 0.0`, `cx == wf`, `cy == hf`, `s == steps`, and
+    sun `(px + tapX[t]) - px` rounding tie); pre-hoist reference vs hoisted `js.shadowMarch` (131 cases, 0 bytes differ);
+    refusal checks on both `px.shadowMarchF64` and raw `px.exports.shadow_march_f64` (including `depth=0`, `taps_xyz=0`,
+    `out=0`, `w=0`, `h=0`, `w >= 2^30`, `h >= 2^30`, `w = h = 65536` `checked_mul` overflow, `row0 >= h`, `rows = 0`,
+    `taps = 0 / 17`, `steps = 0 / 65`, `NaN / Inf scale`, `NaN / Inf z_bias`, `z_bias < 0`, and `NaN / Inf` tap constants);
+    resident `_slot("relight_depth", ...)` check across 4 stripes (`slotCopied === 1` and byte-identical to a single
+    full-height call).
+  - `relightStripe` (lines 2220–2339): 770 stripe cases across the twin, both Rust builds (`f32` and `f64` at both
+    `512 x 341` and `1024 x 682`), and `kernels.js`; resident depth slot copy count check for both `f32` and `f64`.
+  - `relightBench` (lines 2084–2206): routed `shadowMarch` check (`kind 0` -> `shadow_march_f64` byte-identical to twin,
+    `kind 1` -> `shadow_march` byte-identical to `p.shadowMarch`); `marchGuardOk` check on both `goodLight` (point) and
+    `sunLight` (`[0, 0, 1, 1]`, where `p.shadowMarch` has no JS guard of its own so `marchGuardOk` in `kernels.js` is
+    isolated) covering `w = 0`, `h = 0`, `w >= 2^30`, `h >= 2^30`, non-finite lights/params, `bias < 0`, and
+    coordinates/scale/radius/bias `>= 2^30` (0 wasm calls, identical bytes); `shadowMarch` route (`"js"`, pixel threshold,
+    `"rust"`) check.
+- `ELECTRON_RUN_AS_NODE=1 F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`:
+  - Full unfiltered `px_test.js` after merging `wasm-kernels` (`92d29245`, ABI 41): PASS (`docs/measurements/k13_2026-11-09/electron_px_full.txt`).
+  - With `PX_ONLY=relightBench,relightStripe,relight` (`docs/measurements/k13_2026-11-09/electron_px_relight.txt`) and
+    `PX_ONLY=relightBench,relight PX_BENCH=large` (`docs/measurements/k13_2026-11-09/px_bench.txt`): PASS (all checks green;
+    0 bytes differ between Electron V8's `js.shadowMarch` and both wasm builds across all 131 cases and 770 stripe cases).
+  - Pre-merge `PX_ONLY=mask` (`docs/measurements/k13_2026-11-09/electron_px_mask.txt`): on `3fd8bda7` (before `1c974974` and
+    `d23d5cc4` stopped comparing a NaN's bits in `mask_max_clamp` and `warp_coverage`) `mask_max_clamp` / `warp_coverage`
+    failed with `out[...] is NaN (0xffc00000), the twin has NaN (0xffffffff)` under Electron V8, and passed after merging
+    `wasm-kernels` (`92d29245`).
+- Gates on both backends (`bash tools/run_gates_both.sh k13-gates --ports 9631,9632 --lock F:/canvas/dist/gates/busy.lock --offline lint types relight pixels nodecopy`):
+  - `k13-gates-tiles`: `lint` PASS (10 s), `types` PASS (7 s), `relight` PASS (32 s; 39 node + 315 in-app checks, case
+    `nk (point)` asserts `t.kernels === "rust"` and `shadow_march_f64` ran, `nk (sun)` asserts `t.kernels === "rust"` and
+    `shadow_march` ran), `pixels` PASS (11 s).
+  - `k13-gates-canvas`: `lint` PASS (11 s), `types` PASS (6 s), `relight` PASS (31 s; 39 node + 314 in-app checks),
+    `pixels` PASS (11 s).
+  - `k13-gates-tiles-serial`: `nodecopy` PASS (24 s).
+  - `k13-gates-canvas-serial`: `nodecopy` PASS (29 s).
+- `python tools/build_px.py --check`: identical on both `px.wasm` (279,003 B) and `px_scalar.wasm` (225,584 B).
+- `python tools/build_node.py --check`: exits 0, only "differs" lines (no new module added).
+- Mutation round (`docs/measurements/k13_2026-11-09/mutation/mut_k13.py`, `results.txt`):
+  12 of 12 mutants killed on their focused `px` kill sets (`relight_f64_drop_rdz_nonneg`, `relight_f64_flip_mapz_gt_ge`,
+  `relight_f64_steps_off_by_one`, `relight_f64_bounds_le_zero`, `relight_f64_bounds_gt_wf`, `relight_f64_bounds_cy_le_zero`,
+  `relight_f64_bounds_cy_gt_hf`, `relight_f64_unchecked_mul`, `kernels_js_hoist_fold_sun_rdx`, `px_js_ignore_slot_key`,
+  `kernels_js_drop_march_guard`, `kernels_js_drop_bias_neg_guard`), 0 survived, 0 only on the re-check; restored copy
+  identical and green on the full `px_test`.
