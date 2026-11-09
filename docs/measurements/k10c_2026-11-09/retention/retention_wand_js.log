@@ -1,0 +1,2 @@
+op=wand_whole_picture routes={"stackIntoWasm": "js"} opMs=1876.9 workersMaxAfterMB=31.50 workersMaxLaterMB=2.12 releases=1 focused=True
+PASS

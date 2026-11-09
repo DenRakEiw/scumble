@@ -1,0 +1,142 @@
+{
+ "size": [
+  15000,
+  10000
+ ],
+ "filter": "levels",
+ "focused": true,
+ "composite_bands": {
+  "ms": 994,
+  "blocked": 103,
+  "bands": 0,
+  "readMs": 0,
+  "MB": 11.3,
+  "jobs": {
+   "stack_into": {
+    "jobs": 40,
+    "composeWasm": 40,
+    "pixels": 150000000,
+    "kernel": 2913,
+    "gen": 0
+   },
+   "png_part": {
+    "jobs": 78,
+    "composeWasm": 0,
+    "pixels": 150000000,
+    "kernel": 1907.3,
+    "compose": 0,
+    "rows": 0,
+    "prev": 0,
+    "copyIn": 44.3,
+    "filter": 320.9,
+    "adler": 151.5,
+    "deflate": 1374.5,
+    "chunk": 7.3,
+    "copyOut": 7,
+    "gen": 0
+   }
+  }
+ },
+ "layer_from_tiles": {
+  "ms": 218,
+  "blocked": 6,
+  "MB": 0.6,
+  "jobs": {
+   "png_part": {
+    "jobs": 79,
+    "composeWasm": 79,
+    "pixels": 150000000,
+    "kernel": 1642.9,
+    "compose": 0,
+    "rows": 214.8,
+    "prev": 3.2,
+    "filter": 281.5,
+    "adler": 160.8,
+    "deflate": 975.6,
+    "chunk": 0.1,
+    "copyOut": 0.2,
+    "gen": 0
+   }
+  }
+ },
+ "composite_canvas": {
+  "ms": 3371,
+  "blocked": 2008,
+  "MB": 36.9,
+  "jobs": {}
+ },
+ "layer_canvas": {
+  "ms": 1295,
+  "blocked": 180,
+  "MB": 2.7,
+  "jobs": {}
+ },
+ "psd": {
+  "ms": 1495,
+  "blocked": 156,
+  "MB": 225.7,
+  "jobs": {
+   "psd_part": {
+    "jobs": 394,
+    "composeWasm": 316,
+    "pixels": 750000000,
+    "kernel": 3791.3,
+    "compose": 0,
+    "rows": 1388,
+    "pack": 2392.4,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "composeWasm": 40,
+    "pixels": 150000000,
+    "kernel": 2881.3,
+    "gen": 0
+   }
+  }
+ },
+ "psd_masked": {
+  "ms": 1681,
+  "blocked": 109,
+  "MB": 243.2,
+  "jobs": {
+   "psd_part": {
+    "jobs": 473,
+    "composeWasm": 395,
+    "pixels": 900000000,
+    "kernel": 3940,
+    "compose": 0,
+    "rows": 1551,
+    "pack": 2379.2,
+    "gen": 0
+   },
+   "mips": {
+    "jobs": 14,
+    "tiles": 1733,
+    "kernel": 326.3,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "composeWasm": 40,
+    "pixels": 150000000,
+    "kernel": 3279.7,
+    "gen": 0
+   }
+  }
+ },
+ "pool": {
+  "run": 1232,
+  "done": 1232,
+  "failed": 0,
+  "cancelled": 0,
+  "started": 8,
+  "lost": 0,
+  "stopped": 0,
+  "workers": 8,
+  "size": 8,
+  "pending": 0,
+  "off": false,
+  "arena": true
+ }
+}

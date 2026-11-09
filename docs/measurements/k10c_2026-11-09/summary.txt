@@ -1,0 +1,206 @@
+K10c measurement summary (2026-11-09)
+=====================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.4 K10c, §5 row 44; docs/PLAN_WASM_K10.md):
+- `crates/px/src/composite.rs`:
+  - Added `pub fn clip_coverage(cov: &mut [u8], base_mask: Option<&[u8]>, alpha: u8, own: Option<&[u8]>)` (`:691-715`) and SIMD128 `simd::clip_coverage` (`:1207-1229`, 16 bytes at a time via `v128_load`, `simd::mul255`, `v128_store`).
+  - Added `lowbias32` / `hash32` (`:718-730`), `pub fn dissolve_rows(src: &mut [u8], w: usize, rows: usize, x0: i32, y0: i32, alpha: u8, mask: Option<&[u8]>, seed: u32)` (`:736-775`), and SIMD128 `simd::dissolve_row` (`:1237-1293`, 4 pixels at a time in `u32x4` lanes with exact 32-bit `mul255_u32` and `lowbias32` / `hash32`, branchless `v128_bitselect` preserving `src_a == 0` RGB untouched and `c_val == 255` short-circuit).
+- `crates/px/src/lib.rs`:
+  - Bumped `px_abi_version()` (`:57-59`) from `41` to `42` (`44` after merging `wasm-kernels`).
+  - Exported `#[no_mangle] pub unsafe extern "C" fn clip_coverage(cov: *mut u8, px: usize, base_mask: *const u8, alpha: u8, own: *const u8)` (`:657-671`) and `#[no_mangle] pub unsafe extern "C" fn dissolve_rows(src: *mut u8, w: usize, rows: usize, x0: i32, y0: i32, alpha: u8, mask: *const u8, seed: u32)` (`:677-695`).
+- `renderer/editor/px/px.wasm`: `279,969 bytes` (`+2,438 B` over `277,531 B` at `3359cb0f`), sha256 `193dd3adf6a169e512a38ffa1b966d6dd35a2c38c7aa112f888fd3bfef7ad502` (before at `3359cb0f`: sha256 `d3d4567365549b492ec51fc18ed22fac1afeb4104953d78366cafae387f7ae32`; after merging `0d14b9eb` / `ad291b4b`: `291,274 bytes`, `+2,437 B` over `288,837 B` at `0d14b9eb`, sha256 `e35da0b473c7fdf9985b6012d8cb3f35ca4d215edb034ea0b7abb4f256f1d0e7`).
+- `renderer/editor/px/px_scalar.wasm`: `225,508 bytes` (`+1,396 B` over `224,112 B` at `3359cb0f`), sha256 `71e5311ccaec73ece687121f562d2ee8400f78d432b3b73abddb8f927512d6a8` (before at `3359cb0f`: sha256 `e23e1ca9bd65303dda5ef6f9eada9d09da6b6ef39ccbf6d1862b951d3097bca7`; after merging `0d14b9eb` / `ad291b4b`: `233,384 bytes`, `+1,395 B` over `231,989 B` at `0d14b9eb`, sha256 `bbd719d5ec34c80da3949fd3078e8e3ff3aa8f883f515d6f68425dbab96117c3`).
+- `renderer/editor/px/px.js`:
+  - Bumped `export const PX_ABI = 42;` (`:16`; `44` at `:18` after merging `wasm-kernels`).
+  - Added `Px.prototype.psdPackRowsFromPtr(a, pr, w, rows)` (`:1088-1099`, `:1164-1175` after merge) and refactored `psdPackRows` (`:1081-1086`, `:1152-1158` after merge) to delegate to `psdPackRowsFromPtr`.
+- `renderer/editor/px/kernels.js`:
+  - Added `clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel"` to `ROUTE_KINDS` (`:65`, `:68` after merge). All four win their 15,000 x 10,000 deciding rows, so none is added to `DEFAULT_ROUTES`.
+- `renderer/editor/inpaint_worker.js`:
+  - K10b's `stackRowsToWasm` wiring (`:459-466` calling `p.exports.clip_coverage(pcov, px, pbm, c.alpha, pm)` when `p.exports.clip_coverage && route("clipCoverage") !== "js"` with `"js"` fallback `clipCoverage(covView, bmView, c.alpha, ownView)`, and `:470-495` calling `p.exports.dissolve_rows(psrc, W, n, X0, Y0, l.alpha, pm, l.dissolve >>> 0)` when `p.exports.dissolve_rows && route("dissolveRows") !== "js"` with `"js"` fallback inline loop over `srcView = p.view(Uint8Array, psrc, byteLen)` using `mul255` and `hash32`) goes live once `clip_coverage` and `dissolve_rows` are exported by `crates/px/src/lib.rs`.
+  - Updated `stackInto(msg)` (`:528-563`) to take the wasm pointer path (`stackRowsToWasm(p, a, msg, false, into)` + `p.get(Uint8Array, pd, byteLen, into)`) when `p && msg.stack.layers.length > 0 && route("stackIntoWasm") !== "js"`, with `try / catch (err) { if (!recovered(p, err, "stack_into")) throw err; } finally { p._reset(a); }`, recording `composeWasm: 1` on the pointer path and `composeWasm: 0` on `"js"` / base-only (`layers: []`) / fallback.
+  - Updated `psdPart(msg)` (`:769-815`) to take the wasm pointer path (`partPtrOf(p, a, msg, false)` + `p.psdPackRowsFromPtr(a, ptrs.pr, msg.w, msg.rows)`) when `p && !msg.rgba && route("psdPartWasm") !== "js"`, with `try / catch (err) { if (!recovered(p, err, "psd_part")) throw err; } finally { p._reset(a); releaseIfLarge(); }`, recording `composeWasm: 1` on the pointer path and `composeWasm: 0` on `"js"` / fallback.
+
+1. Node & Electron-as-Node kernel micro-benchmarks (`docs/measurements/k10c_2026-11-09/node/`)
+----------------------------------------------------------------------------------------------
+Command:
+  node docs/measurements/k10c_2026-11-09/node_bench.mjs docs/measurements/k10c_2026-11-09/node/node_bench.json
+  ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe docs/measurements/k10c_2026-11-09/node_bench.mjs docs/measurements/k10c_2026-11-09/node/electron_bench.json
+
+a) Electron V8 15.2 (`electron 44.2.0`, 7 warm iterations per arm, 15,000 x 256 part = 15.36 MB raw):
+part / job                                   arm (route)             wall med [min-max] ms    kernel med ms   rows med ms   compose med ms   copyIn MB   copyOut MB
+psd_tile_part_15000x256                      psdPartWasm=js          24.46 [22.90-27.79]      24.45           5.79          0.00             29.30       14.65
+psd_tile_part_15000x256                      psdPartWasm=rust        19.34 [18.92-21.02]      19.34           2.46          0.00             14.65       14.65 (1.26x wall, 2.35x rows)
+psd_stack_part_15000x256 (clip+dissolve)     psdPartWasm=js          164.09 [161.36-168.42]   164.08          149.18        140.15           76.90       44.16
+psd_stack_part_15000x256 (clip+dissolve)     psdPartWasm=rust        87.34 [84.99-88.35]      87.32           73.24         64.32            58.59       14.86 (1.88x wall, 2.18x compose)
+stack_into_15000x256 (clip+dissolve)         stackIntoWasm=js        175.11 [170.39-177.26]   175.10          -             -                62.26       29.30
+stack_into_15000x256 (clip+dissolve)         stackIntoWasm=rust      90.50 [87.48-98.61]      90.50           -             -                58.59       14.65 (1.93x wall)
+stack_into_clip_coverage_15000x256           clipCoverage=js         117.89 [116.40-120.77]   117.88          -             -                43.95       14.65
+stack_into_clip_coverage_15000x256           clipCoverage=rust       79.77 [76.57-86.50]      79.76           -             -                43.95       14.65 (1.48x wall)
+stack_into_dissolve_rows_15000x256           dissolveRows=js         129.61 [126.94-132.33]   129.60          -             -                29.30       14.65
+stack_into_dissolve_rows_15000x256           dissolveRows=rust       103.46 [100.84-106.59]   103.45          -             -                29.30       14.65 (1.25x wall)
+
+b) Direct kernel micro-benchmarks (`15,000 x 256` = 3,840,000 pixels, 7 warm iterations):
+kernel                                       Engine           JS med [min-max] ms       Rust scalar med [min-max] ms   Rust SIMD med [min-max] ms     JS/SIMD     scalar/SIMD
+clip_coverage (base_mask + alpha + own)      Electron V8      18.321 [18.149-18.926]    12.355 [12.238-12.502]         0.999 [0.892-1.097]            18.35x      12.37x
+clip_coverage (base_mask + alpha + own)      Node V8          18.111 [17.902-23.385]    9.903 [9.811-10.156]           1.072 [0.996-1.158]            16.89x      9.24x
+dissolve_rows (alpha=180 + mask)             Electron V8      29.528 [29.406-30.088]    20.144 [19.994-20.386]         3.652 [3.516-3.798]            8.08x       5.52x
+dissolve_rows (alpha=180 + mask)             Node V8          26.783 [26.647-27.717]    19.299 [19.160-19.726]         3.460 [3.337-3.681]            7.74x       5.58x
+
+2. 15,000 x 10,000 before (`3359cb0f`) vs after (`K10c`), 3 alternating rounds on port 9629 (`w1_lock.py` held per batch)
+-------------------------------------------------------------------------------------------------------------------------
+Command:
+  SCUMBLE_CDP_PORT=9629 bash docs/measurements/k10c_2026-11-09/k10c_chain.sh
+  python docs/measurements/k10c_2026-11-09/summarize.py
+
+All 30 app runs across the 5 A/B batches (6 `native_test.py` Stack+Match, 6 `native_test.py` Filter band,
+6 `export_test.py --perf` default, 6 `export_test.py --perf --blend=dissolve`, 6 `export_test.py --perf --clipped`)
+and the retention probes (`px_probe.py --retention` and `retention_psd_wand.py`) executed on fresh offline Electron
+instances with `"focused": true` (`notcounted/` empty). GPU utilization and VRAM across the 34 `gpu:` lines in
+`chain.log` ranged over `0-18%` and `19,145-26,700 MiB` (`native_test` Stack+Match `0-5%` / `19,145-19,802 MiB`;
+`native_test` Filter band `1-4%` / `19,288-19,617 MiB`; `exportperf` default `0-3%` / `19,305-19,795 MiB`;
+`exportperf_dissolve` `1-18%` / `19,846-26,700 MiB`, with `r1 js` at `1% / 19,846 MiB` vs `r1 rust` at `13% / 26,436 MiB`,
+`r2 rust` at `18% / 26,700 MiB` vs `r2 js` at `10% / 25,132 MiB`, and `r3 js` at `13% / 22,479 MiB` vs `r3 rust` at
+`11% / 22,153 MiB`; `exportperf_clipped` `11-13%` / `22,145-22,195 MiB`; retention probes `11-12%` / `21,910-22,249 MiB`).
+
+a) `native_test.py 15000x10000` Stack + Match (`--skip=open_psd,open_ora,filter_export_png,filter_wand`, 3 alternating rounds, median [min-max] ms):
+row                                             before (3359cb0f)             after (K10c)                  before / after
+build_the_file encodeMs                         1,537.0 [1,443.0-1,565.0]     1,343.0 [1,334.0-1,511.0]     1.14x
+open_the_file wall                              2,853.0 [2,766.0-3,009.0]     2,718.0 [2,712.0-2,919.0]     1.05x
+open_the_file longest block                     526.0 [503.0-556.0]           501.0 [495.0-503.0]           1.05x
+add_the_paint_layer wall                        699.0 [695.0-770.0]           678.0 [667.0-724.0]           1.03x
+add_the_paint_layer longest block               611.0 [609.0-685.0]           602.0 [588.0-640.0]           1.01x
+wand_whole_picture wall                         1,417.0 [1,330.0-1,457.0]     1,243.0 [1,095.0-1,278.0]     1.14x (non-overlapping)
+wand_whole_picture longest block                112.0 [109.0-122.0]           95.0 [90.0-106.0]             1.18x (non-overlapping)
+wand_whole_picture stack_into jobs              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+wand_whole_picture stack_into composeWasm       -                             39.0 [39.0-39.0]              (39 bands with Paint 1; 1 base-only band outside Paint 1)
+wand_whole_picture stack_into kernel            2,440.5 [2,426.3-2,442.6]     1,841.4 [1,532.4-1,918.9]     1.33x (non-overlapping)
+export_png wall                                 1,023.0 [931.0-1,039.0]       922.0 [911.0-939.0]           1.11x
+export_png png_part kernel                      7,626.7 [6,915.0-7,694.6]     6,769.7 [6,708.6-6,921.5]     1.13x
+export_png png_part compose                     665.8 [640.7-713.3]           663.8 [576.7-664.4]           1.00x
+export_psd wall                                 1,296.0 [1,244.0-1,298.0]     1,012.0 [854.0-1,057.0]       1.28x (non-overlapping)
+export_psd longest block                        75.0 [73.0-79.0]              74.0 [68.0-79.0]              1.01x
+export_psd psd_part jobs                        237.0 [237.0-237.0]           237.0 [237.0-237.0]           1.00x
+export_psd psd_part composeWasm                 -                             237.0 [237.0-237.0]
+export_psd psd_part kernel                      8,287.7 [8,064.4-8,467.1]     6,545.2 [5,410.3-6,637.4]     1.27x (non-overlapping)
+export_psd psd_part compose                     -                             1,033.7 [798.8-1,044.0]
+export_psd psd_part rows                        3,421.4 [3,407.3-3,569.6]     1,844.7 [1,609.1-1,897.9]     1.85x (non-overlapping)
+export_psd psd_part pack                        4,872.2 [4,637.2-4,890.2]     4,640.2 [3,795.9-4,786.3]     1.05x
+export_ora wall                                 2,114.0 [2,047.0-2,289.0]     2,032.0 [1,989.0-2,055.0]     1.04x
+export_ora png_part kernel                      15,424.6 [15,077.7-16,957.6]  15,015.0 [14,660.4-15,171.4]  1.03x
+match_export_png wall                           938.0 [914.0-946.0]           962.0 [942.0-970.0]           0.98x (untouched in K10c)
+match_wand wall                                 1,134.0 [1,130.0-1,303.0]     1,090.0 [1,079.0-1,172.0]     1.04x (spreads overlap)
+match_wand stack_into jobs                      40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+match_wand stack_into composeWasm               -                             39.0 [39.0-39.0]
+match_wand stack_into kernel                    2,610.4 [2,550.8-3,366.2]     2,004.5 [1,825.9-2,008.5]     1.30x (non-overlapping; passes §1.1 rule 2)
+
+b) `native_test.py 15000x10000` Filter band (`--skip=wand_whole_picture,export_png,export_psd,export_ora,open_psd,open_ora,match_export_png,match_wand`, 3 alternating rounds, median [min-max] ms):
+row                                             before (3359cb0f)             after (K10c)                  before / after
+filter_export_png wall                          1,267.0 [1,214.0-1,347.0]     1,164.0 [1,083.0-1,301.0]     1.09x (spreads overlap)
+filter_export_png longest block                 103.0 [88.0-136.0]            88.0 [85.0-128.0]             1.17x
+filter_export_png stack_into jobs               40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+filter_export_png stack_into composeWasm        -                             39.0 [39.0-39.0]
+filter_export_png stack_into kernel             1,910.5 [1,652.5-2,023.7]     1,134.2 [1,037.0-1,265.7]     1.68x (non-overlapping; passes §1.1 rule 2)
+filter_wand wall                                1,506.0 [1,469.0-1,523.0]     1,519.0 [1,492.0-1,618.0]     0.99x (tie; spreads overlap)
+filter_wand longest block                       147.0 [142.0-156.0]           149.0 [145.0-164.0]           0.99x
+filter_wand stack_into jobs                     40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+filter_wand stack_into composeWasm              -                             39.0 [39.0-39.0]
+filter_wand stack_into kernel                   1,994.6 [1,974.1-1,997.6]     1,497.3 [1,400.3-1,622.0]     1.33x (non-overlapping; passes §1.1 rule 2)
+filter_wand program total                       500.3 [486.0-512.8]           484.8 [467.4-521.7]           1.03x
+
+c) `export_test.py --perf 15000x10000` default (3 alternating rounds, median [min-max] ms):
+row                                                before (3359cb0f)             after (K10c)                  before / after
+exportperf composite_bands wall                    1,189.0 [1,023.0-1,217.0]     1,014.0 [994.0-1,015.0]       1.17x (non-overlapping)
+exportperf composite_bands longest block           97.0 [84.0-160.0]             100.0 [78.0-103.0]            0.97x
+exportperf composite_bands stack_into jobs         40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf composite_bands stack_into composeWasm  -                             40.0 [40.0-40.0]
+exportperf composite_bands stack_into kernel       4,595.8 [4,004.9-4,759.8]     3,120.1 [2,913.0-3,318.8]     1.47x (non-overlapping)
+exportperf layer_from_tiles wall                   230.0 [191.0-230.0]           220.0 [218.0-221.0]           1.05x
+exportperf psd wall                                1,981.0 [1,782.0-2,012.0]     1,506.0 [1,495.0-1,532.0]     1.32x (non-overlapping)
+exportperf psd longest block                       189.0 [106.0-199.0]           156.0 [149.0-164.0]           1.21x
+exportperf psd psd_part jobs                       394.0 [394.0-394.0]           394.0 [394.0-394.0]           1.00x
+exportperf psd psd_part composeWasm                -                             316.0 [316.0-316.0]           (4 tile layers * 79 bands = 316; 78 merged program bands have msg.rgba)
+exportperf psd psd_part kernel                     6,283.1 [5,667.5-6,304.0]     3,807.7 [3,791.3-3,926.6]     1.65x (non-overlapping)
+exportperf psd psd_part rows                       2,941.4 [2,738.7-3,130.4]     1,320.2 [1,309.0-1,388.0]     2.23x (non-overlapping)
+exportperf psd psd_part pack                       3,162.8 [2,919.3-3,330.8]     2,487.6 [2,392.4-2,598.3]     1.27x (non-overlapping)
+exportperf psd stack_into jobs                     40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf psd stack_into composeWasm              -                             40.0 [40.0-40.0]
+exportperf psd stack_into kernel                   4,526.0 [4,317.5-4,823.8]     2,973.6 [2,881.3-3,197.1]     1.52x (non-overlapping)
+exportperf psd_masked wall                         2,283.0 [2,053.0-2,318.0]     1,681.0 [1,656.0-1,709.0]     1.36x (non-overlapping)
+exportperf psd_masked longest block                118.0 [102.0-139.0]           109.0 [99.0-113.0]            1.08x
+exportperf psd_masked psd_part jobs                473.0 [473.0-473.0]           473.0 [473.0-473.0]           1.00x
+exportperf psd_masked psd_part composeWasm         -                             395.0 [395.0-395.0]           (5 tile+mask stores * 79 bands = 395; 78 merged program bands have msg.rgba)
+exportperf psd_masked psd_part kernel              7,438.8 [6,685.4-7,626.8]     4,099.3 [3,940.0-4,420.1]     1.81x (non-overlapping)
+exportperf psd_masked psd_part rows                3,820.4 [3,403.8-3,895.0]     1,551.0 [1,528.6-1,672.3]     2.46x (non-overlapping)
+exportperf psd_masked psd_part pack                3,530.2 [3,272.5-3,796.6]     2,560.0 [2,379.2-2,737.3]     1.38x (non-overlapping)
+exportperf psd_masked stack_into jobs              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf psd_masked stack_into composeWasm       -                             40.0 [40.0-40.0]
+exportperf psd_masked stack_into kernel            4,918.5 [4,205.5-4,937.1]     3,279.7 [3,174.4-3,341.4]     1.50x (non-overlapping)
+
+d) `export_test.py --perf 15000x10000 --blend=dissolve` (`--set dissolveRows=js` vs `--set dissolveRows=rust`, 3 alternating rounds, median [min-max] ms):
+row                                                         dissolveRows=js               dissolveRows=rust             before / after
+exportperf_dissolve composite_bands wall                    1,874.0 [1,851.0-2,009.0]     1,403.0 [1,353.0-1,532.0]     1.34x (non-overlapping)
+exportperf_dissolve composite_bands stack_into composeWasm  40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_dissolve composite_bands stack_into kernel       7,272.7 [7,150.9-7,355.7]     3,200.5 [3,105.3-3,795.2]     2.27x (non-overlapping)
+exportperf_dissolve psd wall                                2,257.0 [1,977.0-2,344.0]     1,829.0 [1,599.0-1,854.0]     1.23x (non-overlapping)
+exportperf_dissolve psd stack_into composeWasm              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_dissolve psd stack_into kernel                   7,348.7 [7,043.5-8,004.2]     3,859.8 [3,633.8-4,058.2]     1.90x (non-overlapping)
+exportperf_dissolve psd_masked wall                         2,711.0 [2,423.0-2,792.0]     2,286.0 [1,949.0-2,392.0]     1.19x (non-overlapping)
+exportperf_dissolve psd_masked stack_into composeWasm       40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_dissolve psd_masked stack_into kernel            7,774.3 [7,357.9-8,396.2]     3,839.7 [3,508.5-3,968.0]     2.02x (non-overlapping)
+
+e) `export_test.py --perf 15000x10000 --clipped` (`--set clipCoverage=js` vs `--set clipCoverage=rust`, 3 alternating rounds, median [min-max] ms):
+row                                                        clipCoverage=js               clipCoverage=rust             before / after
+exportperf_clipped composite_bands wall                    1,224.0 [1,182.0-1,401.0]     1,096.0 [1,083.0-1,245.0]     1.12x (spreads overlap)
+exportperf_clipped composite_bands stack_into composeWasm  40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_clipped composite_bands stack_into kernel       4,711.3 [4,666.8-5,273.5]     4,159.7 [4,127.1-4,874.9]     1.13x (passes §1.1 rule 2)
+exportperf_clipped psd wall                                2,403.0 [1,977.0-3,092.0]     2,147.0 [2,118.0-2,832.0]     1.12x (spreads overlap)
+exportperf_clipped psd stack_into composeWasm              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_clipped psd stack_into kernel                   4,709.4 [4,627.4-5,049.7]     4,275.3 [4,076.4-5,026.2]     1.10x (passes §1.1 rule 2)
+exportperf_clipped psd_masked wall                         2,353.0 [2,141.0-3,285.0]     2,584.0 [2,356.0-2,811.0]     0.91x (tie; spreads overlap)
+exportperf_clipped psd_masked stack_into composeWasm       40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_clipped psd_masked stack_into kernel            5,082.8 [4,971.6-5,096.7]     4,557.1 [4,404.8-4,559.3]     1.12x (non-overlapping; passes §1.1 rule 2)
+
+f) Retention (`docs/measurements/k10c_2026-11-09/retention/`):
+- `px_probe.py --retention 15000x10000` (`retention/px_probe.jsonl`):
+  - `export_png`: `ms = 395.7`, `MB = 11.94`, `workersMaxAfterMB = 42.25 MiB` (`44,302,336 B`), `workersMaxLaterMB = 1.06 MiB` (`1,114,112 B`), `totalAfterMB = 297.19 MiB`, `totalLaterMB = 11.69 MiB`, `releases = 0`, `idles = 8`, `focused = true`.
+- `retention_psd_wand.py 15000x10000` (`retention/psd_wand.jsonl`):
+  - `export_psd` (`psdPartWasm=js`):   `ms = 882.0`, `MB = 207.55`, `workersMaxAfterMB = 23.00 MiB` (`24,117,248 B`), `workersMaxLaterMB = 1.06 MiB` (`1,114,112 B`), `totalAfterMB = 183.69 MiB`, `totalLaterMB = 11.69 MiB`, `releases = 0`, `idles = 8`, `focused = true`.
+  - `export_psd` (`psdPartWasm=rust`): `ms = 673.9` (`1.31x`), `MB = 207.55`, `workersMaxAfterMB = 23.00 MiB` (`24,117,248 B`), `workersMaxLaterMB = 1.06 MiB` (`1,114,112 B`), `totalAfterMB = 183.69 MiB`, `totalLaterMB = 11.69 MiB`, `releases = 0`, `idles = 8`, `focused = true`.
+  - `wand_whole_picture` (`stackIntoWasm=js`):   `ms = 1,876.9`, `workersMaxAfterMB = 31.50 MiB` (`33,030,144 B`), `workersMaxLaterMB = 2.12 MiB` (`2,228,224 B`), `totalAfterMB = 241.62 MiB`, `totalLaterMB = 12.75 MiB`, `releases = 1`, `idles = 8`, `focused = true`.
+  - `wand_whole_picture` (`stackIntoWasm=rust`): `ms = 1,409.7` (`1.33x`), `workersMaxAfterMB = 31.50 MiB` (`33,030,144 B`), `workersMaxLaterMB = 1.06 MiB` (`1,114,112 B`), `totalAfterMB = 241.62 MiB`, `totalLaterMB = 11.69 MiB`, `releases = 1`, `idles = 9`, `focused = true`.
+
+Route Decisions (`docs/PLAN_WASM_BUILD.md` §1.1 & `docs/PLAN_WASM_K10.md` §9.3):
+- `psdPartWasm`: wins beyond the 3-run spread on all three deciding rows (`native_test.py export_psd wall` `1,296.0 [1,244.0-1,298.0]` -> `1,012.0 [854.0-1,057.0] ms`, `1.28x`, `psd_part kernel` `8,287.7` -> `6,545.2 ms`, `1.27x`, `psd_part rows` `3,421.4` -> `1,844.7 ms`, `1.85x`; `exportperf psd wall` `1,981.0 [1,782.0-2,012.0]` -> `1,506.0 [1,495.0-1,532.0] ms`, `1.32x`, `psd_part kernel` `6,283.1` -> `3,807.7 ms`, `1.65x`, `psd_part rows` `2,941.4` -> `1,320.2 ms`, `2.23x`; `exportperf psd_masked wall` `2,283.0 [2,053.0-2,318.0]` -> `1,681.0 [1,656.0-1,709.0] ms`, `1.36x`, `psd_part kernel` `7,438.8` -> `4,099.3 ms`, `1.81x`, `psd_part rows` `3,820.4` -> `1,551.0 ms`, `2.46x`). Default remains `"rust"` (no `DEFAULT_ROUTES` entry).
+- `stackIntoWasm`: wins beyond the 3-run spread on `wand_whole_picture wall` (`1,417.0 [1,330.0-1,457.0]` -> `1,243.0 [1,095.0-1,278.0] ms`, `1.14x`; `stack_into kernel` `2,440.5 [2,426.3-2,442.6]` -> `1,841.4 [1,532.4-1,918.9] ms`, `1.33x`) and `exportperf composite_bands wall` (`1,189.0 [1,023.0-1,217.0]` -> `1,014.0 [994.0-1,015.0] ms`, `1.17x`; `stack_into kernel` `4,595.8 [4,004.9-4,759.8]` -> `3,120.1 [2,913.0-3,318.8] ms`, `1.47x`), as well as `exportperf psd stack_into kernel` (`4,526.0` -> `2,973.6 ms`, `1.52x`) and `exportperf psd_masked stack_into kernel` (`4,918.5` -> `3,279.7 ms`, `1.50x`). On `match_wand` (`1,134.0` -> `1,090.0 ms`, `1.04x`), `filter_export_png` (`1,267.0` -> `1,164.0 ms`, `1.09x`), and `filter_wand` (`1,506.0` -> `1,519.0 ms`, `0.99x`), where whole-operation spreads overlap, `stack_into kernel` wins non-overlapping on every row (`2,610.4` -> `2,004.5 ms`, `1.30x`; `1,910.5` -> `1,134.2 ms`, `1.68x`; `1,994.6` -> `1,497.3 ms`, `1.33x`), passing §1.1 rule 2. Default remains `"rust"` (no `DEFAULT_ROUTES` entry).
+- `dissolveRows`: wins beyond the 3-run spread on all three deciding rows (`exportperf_dissolve composite_bands wall` `1,874.0 [1,851.0-2,009.0]` -> `1,403.0 [1,353.0-1,532.0] ms`, `1.34x`, `stack_into kernel` `7,272.7 [7,150.9-7,355.7]` -> `3,200.5 [3,105.3-3,795.2] ms`, `2.27x`; `exportperf_dissolve psd wall` `2,257.0 [1,977.0-2,344.0]` -> `1,829.0 [1,599.0-1,854.0] ms`, `1.23x`, `stack_into kernel` `7,348.7` -> `3,859.8 ms`, `1.90x`; `exportperf_dissolve psd_masked wall` `2,711.0 [2,423.0-2,792.0]` -> `2,286.0 [1,949.0-2,392.0] ms`, `1.19x`, `stack_into kernel` `7,774.3` -> `3,839.7 ms`, `2.02x`). Default remains `"rust"` (no `DEFAULT_ROUTES` entry).
+- `clipCoverage`: on `exportperf_clipped` where whole-operation spreads overlap (`composite_bands wall` `1,224.0 [1,182.0-1,401.0]` -> `1,096.0 [1,083.0-1,245.0] ms`, `1.12x`; `psd wall` `2,403.0 [1,977.0-3,092.0]` -> `2,147.0 [2,118.0-2,832.0] ms`, `1.12x`; `psd_masked wall` `2,353.0 [2,141.0-3,285.0]` vs `2,584.0 [2,356.0-2,811.0] ms`), `stack_into kernel` is faster on every row (`composite_bands` `4,711.3 [4,666.8-5,273.5]` -> `4,159.7 [4,127.1-4,874.9] ms`, `1.13x`; `psd` `4,709.4 [4,627.4-5,049.7]` -> `4,275.3 [4,076.4-5,026.2] ms`, `1.10x`; `psd_masked` `5,082.8 [4,971.6-5,096.7]` -> `4,557.1 [4,404.8-4,559.3] ms`, `1.12x`, non-overlapping), passing §1.1 rule 2 (`stack_into` `clipCoverage` in Electron V8 is `117.88` -> `79.76 ms`, `1.48x`, and direct kernel is `18.321` -> `0.999 ms`, `18.35x`). Default remains `"rust"` (no `DEFAULT_ROUTES` entry).
+
+3. Unit & Parity Suites (`tools/px_test.js` & `tools/boxstack_test.js`)
+-----------------------------------------------------------------------
+- `node tools/px_test.js` & `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe tools/px_test.js`: PASS (`composeWasmPartCases` on both `rust simd` and `rust scalar` covering sections 1-3 including `2g` under `dissolveRows=js` (`:5912-5931`, `:6821-6859` after merge) and K10c sections `4a-4d` (`:6086-6496`, `:7016-7426` after merge, including a clipped + dissolved layer in `4c` and `4d`), plus worker `psdPart` / `stackInto` / `stackPoints` checks `5a-5c` (`:6517-6646`, `:7447-7576` after merge, including `5b` band offset verification against whole-box `rowsOfStack`) on `rust simd`).
+- `node tools/boxstack_test.js`: PASS (`:137-269`, `compositeBox` clipped and dissolve layer cases against both `rowsOfStack` and frozen hand-computed 4x2 byte arrays).
+
+4. Mutation Round (`docs/measurements/k10c_2026-11-09/mutation/summary.txt`)
+----------------------------------------------------------------------------
+Command:
+  python docs/measurements/k10c_2026-11-09/mutation/mut_k10c.py
+- 31 targeted mutants across `crates/px/src/composite.rs` (`R01`-`R06`), `renderer/editor/inpaint_raster.js` (`J01`-`J02`), `renderer/editor/blend_modes.js` (`J03`), `renderer/editor/inpaint_boxstack.js` (`J04`-`J06`), `renderer/editor/inpaint_worker.js` (`J07`-`J23`), and `renderer/editor/px/px.js` (`J24`-`J25`):
+  - **31 killed**, **0 survived**, **0 unexpected**.
+
+5. Gates (`dist/gates/gates/`)
+------------------------------
+- `k10c-both-tiles` (`--offline --tiles on`, port 9629): lint 17s, types 10s, export 158s, layered 10s, composite 8s, pixels 10s, clip 5s, blendmodes 10s -> ALL PASS
+- `k10c-both-canvas` (`--offline --tiles off`, port 9630): lint 13s, types 11s, export 13s, layered 13s, composite 7s, pixels 16s, clip 4s, blendmodes 12s -> ALL PASS
+- `k10c-both-tiles-serial` (`--offline --tiles on`, port 9629): document 54s -> ALL PASS
+- `k10c-both-canvas-serial` (`--offline --tiles off`, port 9630): document 52s -> ALL PASS
+- `k10c-tiff-tiles` (`--offline --tiles on`, port 9629): tiff 17s -> ALL PASS
+- `k10c-tiff-canvas` (`--offline --tiles off`, port 9630): tiff 11s -> ALL PASS
+- `k10c-serial` (`--offline --tiles on`, port 9629): pxjobs 115s, nodecopy 29s -> ALL PASS
+- Post-merge (`wasm-kernels` merged):
+  - `k10c-m1-both-tiles` (`--offline --tiles on`, port 9629): lint 10s, types 7s, export 139s, layered 10s, pixels 9s -> ALL PASS
+  - `k10c-m1-both-canvas` (`--offline --tiles off`, port 9630): lint 12s, types 13s, export 14s, layered 11s, pixels 14s -> ALL PASS
+  - `k10c-m1-both-tiles-editor` (`--offline --tiles on`, 2 shards: `k10c-m1-both-tiles-editor1` 84s, `k10c-m1-both-tiles-editor2` 106s; all 131 steps ran): editor rc=0 -> ALL PASS
+  - `k10c-m1-both-canvas-editor` (`--offline --tiles off`, 2 shards: `k10c-m1-both-canvas-editor1` 83s, `k10c-m1-both-canvas-editor2` 76s; all 131 steps ran): editor rc=0 -> ALL PASS
+  - `k10c-m1-tiff-tiles` (`--offline --tiles on`, port 9629): tiff 25s -> ALL PASS
+  - `k10c-m1-tiff-canvas` (`--offline --tiles off`, port 9630): tiff 23s -> ALL PASS
+  - `k10c-m1-serial` (`--offline --tiles on`, port 9629): pxjobs 121s, nodecopy 34s -> ALL PASS

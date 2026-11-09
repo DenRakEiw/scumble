@@ -1,0 +1,186 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 11 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 278242 bytes, sha256 7923cd0278a8c0cb
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 225743 bytes, sha256 203a16365f2ec7e7
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
+    Finished `release` profile [optimized] target(s) in 5.75s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.62s
+$ node tools/px_test.js  (rc 0, 322 s)
+PASS
+ok   rust scalar a large alloc grows memory  226099200 -> 494600192
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
+PASS
+(node:46520) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=pngFilter)
+PASS (only: pngFilter; PX_ONLY, not the full test)
+ok   rust scalar png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)
+ok   js png_filter_rows gives the same at an odd offset
+ok   rust simd png_filter_rows unfilters back to the input (1032 cases)
+       png_filter_rows cases, rows of 5 px or more: won by None 698, Sub 708, Up 543, Average 464, Paeth 353; won on a tied sum 325 / 17 / 42 / 4 / 0; Paeth ties a=b 737063 (a = b), a=c 13337, b=c 7408
+ok   png_filter_rows cases, rows of 5 px or more: every filter wins rows, ties of the sums are won by None, Sub, Up and Average, the Paeth predictor ties a over c and b over c  wins 698,708,543,464,353, tied 325,17,42,4,0, paeth {"ab":737063,"ac":13337,"bc":7408}
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: pngFilter; PX_ONLY, not the full test)
+(node:25460) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 3 s, PX_ONLY=pngPart)
+PASS (only: pngPart; PX_ONLY, not the full test)
+ok   rust scalar js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and refAdler32 (160 decode + 48 finish cases)
+ok   rust scalar png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)
+ok   rust scalar png_part_finish equals its twin byte for byte (48 cases, each also at an odd offset)
+ok   rust scalar pngPartDecode and pngPartFinish write into a given Uint8ClampedArray view without touching guard bytes
+ok   rust scalar png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) without mutating caller buffers
+ok   rust scalar png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)
+ok   rust scalar multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and refAdler32
+PASS (only: pngPart; PX_ONLY, not the full test)
+(node:35520) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-editor-on --offline --tiles on editor  (rc 1, 146 s)
+editor rc=1 128s FAIL
+SOME FAILED
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 12 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 278242 bytes, sha256 7923cd0278a8c0cb
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 225743 bytes, sha256 203a16365f2ec7e7
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
+    Finished `release` profile [optimized] target(s) in 5.68s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
+    Finished `release` profile [optimized] target(s) in 5.54s
+$ node tools/px_test.js  (rc 0, 258 s)
+PASS
+ok   rust scalar a large alloc grows memory  226099200 -> 494600192
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
+PASS
+(node:53132) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=pngFilter)
+PASS (only: pngFilter; PX_ONLY, not the full test)
+ok   rust scalar png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)
+ok   js png_filter_rows gives the same at an odd offset
+ok   rust simd png_filter_rows unfilters back to the input (1032 cases)
+       png_filter_rows cases, rows of 5 px or more: won by None 698, Sub 708, Up 543, Average 464, Paeth 353; won on a tied sum 325 / 17 / 42 / 4 / 0; Paeth ties a=b 737063 (a = b), a=c 13337, b=c 7408
+ok   png_filter_rows cases, rows of 5 px or more: every filter wins rows, ties of the sums are won by None, Sub, Up and Average, the Paeth predictor ties a over c and b over c  wins 698,708,543,464,353, tied 325,17,42,4,0, paeth {"ab":737063,"ac":13337,"bc":7408}
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: pngFilter; PX_ONLY, not the full test)
+(node:70004) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 3 s, PX_ONLY=pngPart)
+PASS (only: pngPart; PX_ONLY, not the full test)
+ok   rust scalar js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and refAdler32 (160 decode + 48 finish cases)
+ok   rust scalar png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)
+ok   rust scalar png_part_finish equals its twin byte for byte (48 cases, each also at an odd offset)
+ok   rust scalar pngPartDecode and pngPartFinish write into a given Uint8ClampedArray view without touching guard bytes
+ok   rust scalar png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) without mutating caller buffers
+ok   rust scalar png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)
+ok   rust scalar multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and refAdler32
+PASS (only: pngPart; PX_ONLY, not the full test)
+(node:63708) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-editor-on --offline --tiles on editor  (rc 1, 0 s)
+W i n d o w s - S u b s y s t e m   f � r   L i n u x   v e r f � g t   � b e r   k e i n e   i n s t a l l i e r t e n   D i s t r i b u t i o n e n . 
+ 
+ S i e   k � n n e n   d i e s   b e h e b e n ,   i n d e m   S i e   e i n e   D i s t r i b u t i o n   m i t   d e n   f o l g e n d e n   A n w e i s u n g e n   i n s t a l l i e r e n : 
+ 
+ 
+ 
+ " w s l . e x e   - - l i s t   - - o n l i n e '   z u m   A u f l i s t e n   v e r f � g b a r e r   D i s t r i b u t i o n e n   v e r w e n d e n 
+ 
+ u n d   " w s l . e x e   - - i n s t a l l   < D i s t r o > " . 
+ 
+ 
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 12 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 278242 bytes, sha256 7923cd0278a8c0cb
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 225743 bytes, sha256 203a16365f2ec7e7
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.97s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.91s
+$ node tools/px_test.js  (rc 0, 296 s)
+PASS
+ok   rust scalar a large alloc grows memory  226099200 -> 494600192
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
+PASS
+(node:32156) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 1 s, PX_ONLY=pngFilter)
+PASS (only: pngFilter; PX_ONLY, not the full test)
+ok   rust scalar png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)
+ok   js png_filter_rows gives the same at an odd offset
+ok   rust simd png_filter_rows unfilters back to the input (1032 cases)
+       png_filter_rows cases, rows of 5 px or more: won by None 698, Sub 708, Up 543, Average 464, Paeth 353; won on a tied sum 325 / 17 / 42 / 4 / 0; Paeth ties a=b 737063 (a = b), a=c 13337, b=c 7408
+ok   png_filter_rows cases, rows of 5 px or more: every filter wins rows, ties of the sums are won by None, Sub, Up and Average, the Paeth predictor ties a over c and b over c  wins 698,708,543,464,353, tied 325,17,42,4,0, paeth {"ab":737063,"ac":13337,"bc":7408}
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: pngFilter; PX_ONLY, not the full test)
+(node:50224) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node tools/px_test.js  (rc 0, 3 s, PX_ONLY=pngPart)
+PASS (only: pngPart; PX_ONLY, not the full test)
+ok   rust scalar js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and refAdler32 (160 decode + 48 finish cases)
+ok   rust scalar png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)
+ok   rust scalar png_part_finish equals its twin byte for byte (48 cases, each also at an odd offset)
+ok   rust scalar pngPartDecode and pngPartFinish write into a given Uint8ClampedArray view without touching guard bytes
+ok   rust scalar png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) without mutating caller buffers
+ok   rust scalar png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)
+ok   rust scalar multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and refAdler32
+PASS (only: pngPart; PX_ONLY, not the full test)
+(node:67968) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/mut_p5/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\mut_p5\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-editor-on --offline --tiles on editor  (rc 0, 185 s)
+editor rc=0 169s PASS
+ALL PASS
+$ bash tools/run_gates.sh mut-orig-ed0-on --offline --tiles on editor  (rc 0, 20 s, SCUMBLE_EDITOR_ONLY=a_scumble_png_opens_through_the_parted_reader)
+editor rc=0 4s PASS (only: a_scumble_png_opens_through_the_parted_reader; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS

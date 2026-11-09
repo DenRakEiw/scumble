@@ -31,6 +31,10 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 
 ## Open
 
+### Panning over a filter layer costs about 3 ms more per frame since the filter fix (found 2026-11-09, measured)
+
+At 15,000 x 10,000 `pan (60 frames)` went from about 2.8 ms to about 5.8 ms, and the same for a masked filter layer at fit, with `8d82004b` (the commit before it 2.9 / 2.8 / 2.5, it 5.7 / 6.4 / 6.4; `docs/measurements/k40pre_2026-11-09/bisect_findings.txt`). The likely mechanism (read, not measured apart): when the viewport reaches past the document, `filteredCanvas` goes through `cropFilterInput`, which makes a document-size canvas and draws into it on every frame. It stays far below a frame, and the fix itself is right; a reused scratch canvas could give the time back.
+
 ### A fill layer's depth limit with edge snap sits elsewhere in a layered PSD / ORA export than on screen (found 2026-10-23, read; fixed by K25 on 2026-11-09, the user's answer of the same day, for 0.1.53; the limit above 4096 px stays)
 
 On screen the snap weighs the guide's pixels against the colour of the picture below (`inpaint_limit.js` `LIMIT_SHADER` `i.rgb`, `limitStageCPU` `iR`, `iG`, `iB`); `limitAlphaRows` passes the fill's own colour (`rgba[ptr]`), so the soft edge of the exported layer does not follow the picture as it does on screen. K25: the reference colour from `map.guide`, the layer's own pixels only without a guide. It then matches the screen, within the limit at the end of this entry, as long as the picture below is still the one the depth map was made from. Only depth limits are concerned: a fill layer takes no other. Up to 4096 px on the long side the export and the screen agree exactly; above it (the depth map stops at 4096, about 3.66 picture pixels per map texel at 15,000) a hard colour edge can differ within a band one map texel wide, because `map.guide` is a downscale and is read at `floor(mx), floor(my)` while the screen reads the full picture for the centre pixel (`docs/measurements/k25_2026-11-09/summary.txt`).

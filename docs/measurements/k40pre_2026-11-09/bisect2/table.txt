@@ -1,0 +1,10 @@
+249d882 | pan 3.5 2.9 2.8 | composite 269.9 263.9 87.5 | fit-masked 3.2 3.2 3.0 | CLAUDE.md: item 48, Canva Craft as an image model (text to i
+7f9c0b1e | pan 2.6 2.7 2.7 | composite 227.1 87.3 231.2 | fit-masked 3.2 2.8 3.0 | LoRAs LR6 (item 50, issue #11): the MOSS Image Edit recipe o
+e0fbfddf | pan 3.9 3.2 2.6 | composite 278.0 94.0 86.5 | fit-masked 4.1 3.0 3.0 | Merge ck-refine (I6: keymatte.js, the matte refined against 
+0fcef6f2 | pan 3.0 2.7 2.8 | composite 97.1 95.9 90.1 | fit-masked 3.1 3.0 3.5 | server.json: 0.1.52 for the MCP Registry
+8689d490 | pan 2.6 2.8 2.7 | composite 268.6 260.3 91.1 | fit-masked 3.8 2.9 3.1 | CLAUDE.md: the six running agents and what the next session 
+e9ab0d33 | pan 3.1 2.8 3.0 | composite 246.1 274.5 92.6 | fit-masked 3.1 3.6 2.7 | R1 in the CHANGELOG and the review's README
+c10d6d3d | pan 2.7 2.7 2.8 | composite 106.4 230.9 245.2 | fit-masked 3.4 2.8 3.1 | Merge K33 (stitch's colour match and alpha writes in Rust: c
+d711f8f2 | pan 3.1 3.2 2.6 | composite 92.8 236.0 93.6 | fit-masked 3.1 2.7 3.6 | Merge K31 (liquify's dab in Rust for push, grow, shrink and 
+c270b711 | pan 6.6 5.6 5.7 | composite 91.8 93.9 88.2 | fit-masked 6.8 6.7 5.8 | K16 as built, its CHANGELOG line, and the hand-over of 2026-
+0d14b9eb | pan 5.5 5.2 5.5 | composite 92.4 88.0 220.6 | fit-masked 6.3 5.7 5.9 | Merge P5: PNG parts start independent, upload overlaps the d

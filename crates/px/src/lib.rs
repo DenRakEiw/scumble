@@ -51,11 +51,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes; 41: pngPartFromPtr / compose in wasm memory; 42: shadow_march_f64; 43: tiff_unpredict, tiff_predict_rgba, tiff_to_rgba);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes; 41: pngPartFromPtr / compose in wasm memory; 42: shadow_march_f64; 43: tiff_unpredict, tiff_predict_rgba, tiff_to_rgba; 44: clip_coverage, dissolve_rows);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    43
+    44
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -649,6 +649,49 @@ pub unsafe extern "C" fn composite_masked_tile(
     let src = slice::from_raw_parts(src, bytes);
     let mask = if mask.is_null() { None } else { Some(slice::from_raw_parts(mask, px)) };
     composite::masked_tile(dst, has_dst != 0, src, op, alpha, mask)
+}
+
+/// Multiplies `cov` (`px` bytes, in place) by `base_mask` (`px` bytes, or null), `alpha` (0..255), and `own` (`px`
+/// bytes, or null) in that order (`clipCoverage` in `renderer/editor/inpaint_raster.js`, K10c).
+#[no_mangle]
+pub unsafe extern "C" fn clip_coverage(
+    cov: *mut u8,
+    px: usize,
+    base_mask: *const u8,
+    alpha: u8,
+    own: *const u8,
+) {
+    if cov.is_null() || px == 0 {
+        return;
+    }
+    let cov = slice::from_raw_parts_mut(cov, px);
+    let base_mask = if base_mask.is_null() { None } else { Some(slice::from_raw_parts(base_mask, px)) };
+    let own = if own.is_null() { None } else { Some(slice::from_raw_parts(own, px)) };
+    composite::clip_coverage(cov, base_mask, alpha, own);
+}
+
+/// Dissolves `rows` rows (`w` pixels wide, `w * rows * 4` RGBA8 bytes at `src`, in place) at image origin `(x0, y0)`
+/// with layer `alpha` (0..255), optional coverage `mask` (`w * rows` bytes, or null), and `seed` (`inpaint_worker.js`
+/// `rowsOfStack` / `stackRowsToWasm`, K10c).
+#[no_mangle]
+pub unsafe extern "C" fn dissolve_rows(
+    src: *mut u8,
+    w: usize,
+    rows: usize,
+    x0: i32,
+    y0: i32,
+    alpha: u8,
+    mask: *const u8,
+    seed: u32,
+) {
+    if src.is_null() || w == 0 || rows == 0 {
+        return;
+    }
+    let Some(px) = w.checked_mul(rows) else { return };
+    let Some(bytes) = px.checked_mul(4) else { return };
+    let src = slice::from_raw_parts_mut(src, bytes);
+    let mask = if mask.is_null() { None } else { Some(slice::from_raw_parts(mask, px)) };
+    composite::dissolve_rows(src, w, rows, x0, y0, alpha, mask, seed);
 }
 
 /// One smudge dab over `n` pixels (docs/PLAN_0_1_31.md §4 step 3, `smudge.rs`): `dst` straight RGBA8 written where

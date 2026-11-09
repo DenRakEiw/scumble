@@ -1,0 +1,165 @@
+(node:46596) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-c/renderer/editor/px/kernels.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-c\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+{
+  "runtime": "electron 44.2.0 (v8 15.2.124.19-electron.0)",
+  "psd_tile_part_15000x256": {
+    "before_js_gather": {
+      "label": "psd_tile_part_15000x256",
+      "route": "js",
+      "composeWasm": 0,
+      "wallMed": 24.46,
+      "wallMin": 22.53,
+      "wallMax": 25.42,
+      "kernelMed": 24.46,
+      "composeMed": 0,
+      "rowsMed": 5.79,
+      "packMed": 17.28,
+      "copyInMB": 14.65,
+      "copyOutMB": 14.85
+    },
+    "after_wasm_compose": {
+      "label": "psd_tile_part_15000x256",
+      "route": "rust",
+      "composeWasm": 1,
+      "wallMed": 19.34,
+      "wallMin": 18.4,
+      "wallMax": 20.11,
+      "kernelMed": 19.34,
+      "composeMed": 0,
+      "rowsMed": 2.46,
+      "packMed": 16.09,
+      "copyInMB": 14.65,
+      "copyOutMB": 14.85
+    },
+    "speedupWall": 1.26,
+    "speedupKernel": 1.26
+  },
+  "psd_stack_part_15000x256": {
+    "before_js_gather": {
+      "label": "psd_stack_part_15000x256",
+      "route": "js",
+      "composeWasm": 0,
+      "wallMed": 164.09,
+      "wallMin": 149.09,
+      "wallMax": 170.88,
+      "kernelMed": 164.09,
+      "composeMed": 140.15,
+      "rowsMed": 140.15,
+      "packMed": 23.91,
+      "copyInMB": 76.9,
+      "copyOutMB": 44.16
+    },
+    "after_wasm_compose": {
+      "label": "psd_stack_part_15000x256",
+      "route": "rust",
+      "composeWasm": 1,
+      "wallMed": 87.34,
+      "wallMin": 84.57,
+      "wallMax": 89.13,
+      "kernelMed": 87.33,
+      "composeMed": 64.32,
+      "rowsMed": 64.32,
+      "packMed": 23.14,
+      "copyInMB": 58.59,
+      "copyOutMB": 14.86
+    },
+    "speedupWall": 1.88,
+    "speedupKernel": 1.88
+  },
+  "stack_into_15000x256": {
+    "before_js_gather": {
+      "label": "stack_into_15000x256",
+      "route": "js",
+      "composeWasm": 0,
+      "wallMed": 175.11,
+      "wallMin": 137.95,
+      "wallMax": 211.06,
+      "kernelMed": 175.09,
+      "copyInMB": 62.26,
+      "copyOutMB": 29.3
+    },
+    "after_wasm_compose": {
+      "label": "stack_into_15000x256",
+      "route": "rust",
+      "composeWasm": 1,
+      "wallMed": 90.5,
+      "wallMin": 65.35,
+      "wallMax": 105.52,
+      "kernelMed": 90.5,
+      "copyInMB": 58.59,
+      "copyOutMB": 14.65
+    },
+    "speedupWall": 1.93,
+    "speedupKernel": 1.93
+  },
+  "stack_into_clipCoverage_15000x256": {
+    "before_js_route": {
+      "label": "stack_into_clipCoverage_15000x256",
+      "route": "js",
+      "composeWasm": 1,
+      "wallMed": 117.89,
+      "wallMin": 77.33,
+      "wallMax": 129.05,
+      "kernelMed": 117.88,
+      "copyInMB": 58.59,
+      "copyOutMB": 14.65
+    },
+    "after_rust_route": {
+      "label": "stack_into_clipCoverage_15000x256",
+      "route": "rust",
+      "composeWasm": 1,
+      "wallMed": 79.77,
+      "wallMin": 64.92,
+      "wallMax": 104.55,
+      "kernelMed": 79.76,
+      "copyInMB": 58.59,
+      "copyOutMB": 14.65
+    },
+    "speedupWall": 1.48,
+    "speedupKernel": 1.48
+  },
+  "stack_into_dissolveRows_15000x256": {
+    "before_js_route": {
+      "label": "stack_into_dissolveRows_15000x256",
+      "route": "js",
+      "composeWasm": 1,
+      "wallMed": 129.61,
+      "wallMin": 101.9,
+      "wallMax": 153.48,
+      "kernelMed": 129.6,
+      "copyInMB": 58.59,
+      "copyOutMB": 14.65
+    },
+    "after_rust_route": {
+      "label": "stack_into_dissolveRows_15000x256",
+      "route": "rust",
+      "composeWasm": 1,
+      "wallMed": 103.46,
+      "wallMin": 80.69,
+      "wallMax": 106.51,
+      "kernelMed": 103.46,
+      "copyInMB": 58.59,
+      "copyOutMB": 14.65
+    },
+    "speedupWall": 1.25,
+    "speedupKernel": 1.25
+  },
+  "clip_coverage_direct_15000x256": {
+    "px": 3840000,
+    "jsMedMs": 18.321,
+    "simdMedMs": 0.999,
+    "scalarMedMs": 12.355,
+    "speedupSimdVsJs": 18.35,
+    "speedupSimdVsScalar": 12.37
+  },
+  "dissolve_rows_direct_15000x256": {
+    "px": 3840000,
+    "jsMedMs": 29.528,
+    "simdMedMs": 3.652,
+    "scalarMedMs": 20.144,
+    "speedupSimdVsJs": 8.08,
+    "speedupSimdVsScalar": 5.52
+  }
+}
