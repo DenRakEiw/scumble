@@ -1807,10 +1807,264 @@ async function relightCases(px, label, js) {
         }
     }
     check(`${label} shadow_march equals its twin within 1 level`, okShadows, detailShadows);
+
+    // K13: verbatim pre-hoist reference to prove the twin's per-tap hoist changes 0 bytes, and twinCheck (0 levels)
+    // for shadow_march_f64 across all light kinds (0, 1, 2), taps, steps, stripes, and edge-case lights.
+    const refShadowMarchPreHoist = (depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null) => {
+        const bandRows = Math.min(rows, h - row0);
+        const dst = out || new Uint8Array(w * bandRows);
+        const lx = Number(light[0]) || 0, ly = Number(light[1]) || 0, lz = Number(light[2]) || 0, kind = Number(light[3]) || 0;
+        const nTaps = Math.max(1, Math.min(16, Number.isFinite(Number(taps)) ? Math.round(Number(taps)) : 4));
+        const nSteps = Math.max(1, Math.min(64, Number.isFinite(Number(steps)) ? Math.round(Number(steps)) : 32));
+        const r = Math.max(0, Number(radius) || 0);
+        const zBias = Math.max(0, Number.isFinite(Number(bias)) ? Number(bias) : 0);
+        const disc = js.relightVogel(nTaps);
+        const longSide = Math.max(w, h), sunDist = longSide * 1.5, inv65535 = scale / 65535.0;
+        let normLx = 0, normLy = 0, normLz = 0;
+        if (kind === 1) {
+            const lLen = Math.hypot(lx, ly, lz) || 1.0;
+            normLx = lx / lLen; normLy = ly / lLen; normLz = lz / lLen;
+        }
+        for (let rIdx = 0; rIdx < bandRows; rIdx++) {
+            const y = row0 + rIdx, rowOffset = y * w;
+            const outRowOffset = (dst.length >= w * h) ? y * w : rIdx * w;
+            for (let x = 0; x < w; x++) {
+                const z0 = (65535.0 - depth[rowOffset + x]) * inv65535;
+                const px0 = x, py0 = y, pz0 = z0 + zBias;
+                let litCount = 0;
+                for (let t = 0; t < nTaps; t++) {
+                    let tx, ty, tz;
+                    if (kind === 1) {
+                        const jx = disc[t][0] * (r / longSide), jy = disc[t][1] * (r / longSide);
+                        const dirX = normLx + jx, dirY = normLy + jy, dirZ = normLz;
+                        const dLen = Math.hypot(dirX, dirY, dirZ) || 1.0;
+                        tx = px0 + (dirX / dLen) * sunDist;
+                        ty = py0 + (dirY / dLen) * sunDist;
+                        tz = pz0 + (dirZ / dLen) * sunDist;
+                    } else {
+                        tx = lx + disc[t][0] * r;
+                        ty = ly + disc[t][1] * r;
+                        tz = lz;
+                    }
+                    const rdx = tx - px0, rdy = ty - py0, rdz = tz - pz0;
+                    let blocked = false;
+                    const invSteps = 1.0 / nSteps;
+                    const stepX = rdx * invSteps, stepY = rdy * invSteps, stepZ = rdz * invSteps;
+                    let sx = px0 + stepX, sy = py0 + stepY, sz = pz0 + stepZ;
+                    for (let s = 1; s <= nSteps; s++) {
+                        if (rdz >= 0 && sz > scale) break;
+                        const cx = sx + 0.5, cy = sy + 0.5;
+                        if (cx < 0 || cy < 0) break;
+                        const ix = cx | 0, iy = cy | 0;
+                        if (ix >= w || iy >= h) break;
+                        const mapZ = (65535.0 - depth[iy * w + ix]) * inv65535;
+                        if (mapZ > sz + zBias) { blocked = true; break; }
+                        sx += stepX; sy += stepY; sz += stepZ;
+                    }
+                    if (!blocked) litCount++;
+                }
+                dst[outRowOffset + x] = Math.round((litCount / nTaps) * 255);
+            }
+        }
+        return dst;
+    };
+
+    const f64Cases = [];
+    for (const [w, h, scale, light, radius, taps, steps, bias, row0, rows, tag] of [
+        [1, 1, 50, [0, 0, 100, 0], 0, 1, 1, 0, 0, 1, "1x1 point"],
+        [7, 3, 40, [3.5, 1.5, 30, 0], 2.5, 3, 16, 0.2, 0, 3, "7x3 point"],
+        [32, 32, 50, [16, 16, 100, 0], 0, 4, 16, 1.0, 0, 32, "32x32 point r=0"],
+        [64, 64, 50, [10, 10, 50, 0], 5, 4, 32, 0.5, 0, 64, "64x64 point r=5"],
+        [64, 64, 50, [-1, 0, 0.5, 1], 2, 4, 16, 1.0, 0, 64, "64x64 sun"],
+        [64, 64, 50, [0, 0, 0, 1], 2, 4, 16, 1.0, 0, 64, "64x64 zero-len sun"],
+        [64, 64, 50, [20, 40, 60, 2], 4, 4, 32, 0.5, 0, 64, "64x64 kind=2 spot"],
+        [77, 53, 50, [40, 25, 80, 0], 10, 8, 32, 1.0, 10, 20, "77x53 stripe row0=10"],
+        [77, 53, 50, [12.345678901234567, 34.567890123456789, 56.7890123456789, 0], 6.789, 16, 64, 0.123, 0, 53, "77x53 f64 precision point"],
+        [128, 128, 50, [20, 20, 40, 0], 15, 16, 32, 1.0, 0, 128, "128x128 16-tap point"],
+    ]) {
+        const m = genMap(w, h, w * 97 + h);
+        f64Cases.push({ tag, args: [m, w, h, scale, light, radius, taps, steps, bias, row0, rows] });
+    }
+    {
+        const W = 100, H = 20;
+        const depth = new Uint16Array(W * H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) depth[y * W + x] = x < 50 ? 10000 : 50000;
+        f64Cases.push({ tag: "100x20 step edge", args: [depth, W, H, 50, [60, 10, 100, 0], 0, 4, 32, 1.0, 0, H] });
+
+        // Surgical boundary cases for mutation kills:
+        // 1. map_z == sz + z_bias tie (32767 > 32767 is false)
+        const dTie = new Uint16Array(16 * 4).fill(32768);
+        f64Cases.push({ tag: "16x4 map_z == sz + z_bias tie", args: [dTie, 16, 4, 65535, [8, 2, 32767, 0], 0, 1, 16, 0, 0, 4] });
+        // 2. rdz < 0 && sz > scale (pz = 60 > scale 50, tz = 0 -> rdz = -60 < 0, blocked at later steps)
+        const dRdzNeg = new Uint16Array(16 * 4).fill(0);
+        f64Cases.push({ tag: "16x4 rdz < 0 with sz > scale", args: [dRdzNeg, 16, 4, 50, [15, 2, 0, 0], 0, 1, 32, 10, 0, 4] });
+        // 3. cx == 0.0, cy == 0.0, cx == wf, cy == hf boundaries and s == steps final-step wall at x = 8
+        const dWall = new Uint16Array(16 * 4).fill(65535);
+        for (let y = 0; y < 4; y++) { dWall[y * 16 + 0] = 0; dWall[y * 16 + 8] = 0; }
+        f64Cases.push({ tag: "16x4 cx == 0.0 boundary wall", args: [dWall, 16, 4, 50, [-0.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 cx == wf boundary out-of-bounds", args: [dWall, 16, 4, 50, [15.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 final step s == steps wall", args: [dWall, 16, 4, 50, [8, 2, 10, 0], 0, 1, 8, 0.5, 0, 4] });
+        const dWallY = new Uint16Array(16 * 4).fill(65535);
+        for (let x = 0; x < 16; x++) dWallY[0 * 16 + x] = 0;
+        f64Cases.push({ tag: "16x4 cy == 0.0 boundary wall", args: [dWallY, 16, 4, 50, [8, -0.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 cy == hf boundary out-of-bounds", args: [dWallY, 16, 4, 50, [0, 3.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        // 4. sun (px + tapX[t]) - px vs tapX[t] rounding tie at (px=9, py=0): step 1 samples (9, 1) vs (8, 1)
+        const dSunTie = new Uint16Array(16 * 4).fill(65535);
+        dSunTie[1 * 16 + 9] = 0;
+        f64Cases.push({ tag: "16x4 sun tx - px rounding tie", args: [dSunTie, 16, 4, 50, [-1.000000000000002, 2, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 4] });
+    }
+    const { lightToMap, defaultLight } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
+    let nonTrivialOk = true, nonTrivialDetail = "";
+    for (const [w, h, combos] of [
+        [96, 64, [[1, 1], [1, 16], [3, 16], [4, 32], [16, 64]]],
+        [512, 341, [[1, 1], [1, 16], [3, 16], [4, 32], [16, 64]]],
+        [1024, 682, [[1, 16], [3, 1], [4, 32], [16, 64]]],
+    ]) {
+        const d = smoothDepth(w, h), map = { data: d, w, h }, long = Math.max(w, h), scale = 0.5 * long, radius = 0.3 * 0.05 * long, bias = 0.005 * scale;
+        const lights = [];
+        for (const [type, fx, fy, dist] of [["point", 0.30, 0.35, -30], ["spot", 0.65, 0.12, -60], ["sun", 0.15, 0.20, -30]]) {
+            const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
+            lights.push([type, [lm.mx, lm.my, lm.mz, type === "sun" ? 1 : 0]]);
+        }
+        lights.push(
+            ["on-pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.85, 0]],
+            ["below-surface", [w * 0.5, h * 0.5, scale * 0.05, 0]],
+            ["off-map", [-0.4 * w, 1.3 * h, scale * 0.8, 0]],
+            ["sun-up", [0, 0, 1, 1]],
+            ["sun-grazing", [1, 0.25, 0.02, 1]],
+        );
+        for (const [taps, steps] of combos) {
+            for (const [lname, light] of lights) {
+                const tag = `${w}x${h} ${lname} t=${taps} s=${steps}`;
+                const args = [d, w, h, scale, light, radius, taps, steps, bias, 0, h];
+                f64Cases.push({ tag, args });
+                if (w >= 512 && taps === 4 && steps === 32) {
+                    const out = px.shadowMarchF64(...args);
+                    let hasZero = false, hasLit = false;
+                    for (let i = 0; i < out.length; i++) {
+                        if (out[i] === 0) hasZero = true;
+                        else hasLit = true;
+                        if (hasZero && hasLit) break;
+                    }
+                    const wantOk = lname === "below-surface" ? (hasZero && !hasLit)
+                        : lname === "sun-up" ? (!hasZero && hasLit)
+                        : (hasZero && hasLit);
+                    if (!wantOk && nonTrivialOk) { nonTrivialOk = false; nonTrivialDetail = `${tag}: hasZero=${hasZero} hasLit=${hasLit}`; }
+                }
+            }
+        }
+    }
+    check(`${label} smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)`, nonTrivialOk, nonTrivialDetail);
+
+    let hoistOk = true, hoistDetail = "";
+    for (const c of f64Cases) {
+        let pair = hoistRefCache.get(c.tag);
+        if (!pair) {
+            pair = [js.shadowMarch(...c.args), refShadowMarchPreHoist(...c.args)];
+            hoistRefCache.set(c.tag, pair);
+        }
+        if (!eqBytes(pair[0], pair[1])) { hoistOk = false; hoistDetail = c.tag; break; }
+    }
+    check(`${label} hoisted js.shadowMarch equals pre-hoist reference byte for byte (${f64Cases.length} cases)`, hoistOk, hoistDetail);
+
+    twinCheck({
+        name: "shadow_march_f64",
+        builds: [[label, px]],
+        twin: js,
+        call: (k, a) => (k === js ? k.shadowMarch(...a) : k.shadowMarchF64(...a)),
+        cases: f64Cases,
+    });
+
+    // Refusal checks on px.shadowMarchF64 and raw exports.shadow_march_f64
+    {
+        const d = genMap(16, 16, 42);
+        const goodLight = [8, 8, 50, 0];
+        const badCalls = [
+            ["non-Uint16Array depth", [new Uint8Array(256), 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["short depth", [new Uint16Array(100), 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["w=0", [d, 0, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["h=0", [d, 16, 0, 50, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["w>=2^30", [d, 0x40000000, 1, 50, goodLight, 2, 4, 16, 0.5, 0, 1]],
+            ["h>=2^30", [d, 1, 0x40000000, 50, goodLight, 2, 4, 16, 0.5, 0, 1]],
+            ["row0<0", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, -1, 16]],
+            ["row0>=h", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, 16, 1]],
+            ["rows<=0", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 0]],
+            ["short light", [d, 16, 16, 50, [1, 2, 3], 2, 4, 16, 0.5, 0, 16]],
+            ["NaN light", [d, 16, 16, 50, [NaN, 8, 50, 0], 2, 4, 16, 0.5, 0, 16]],
+            ["Inf scale", [d, 16, 16, Infinity, goodLight, 2, 4, 16, 0.5, 0, 16]],
+            ["coord >= 2^30", [d, 16, 16, 50, [0x40000000, 8, 50, 0], 2, 4, 16, 0.5, 0, 16]],
+            ["coord <= -2^30", [d, 16, 16, 50, [-0x40000000, 8, 50, 0], 2, 4, 16, 0.5, 0, 16]],
+            ["radius >= 2^30", [d, 16, 16, 50, goodLight, 0x40000000, 4, 16, 0.5, 0, 16]],
+            ["bias >= 2^30", [d, 16, 16, 50, goodLight, 2, 4, 16, 0x40000000, 0, 16]],
+            ["bias < 0", [d, 16, 16, 50, goodLight, 2, 4, 16, -1, 0, 16]],
+            ["short out", [d, 16, 16, 50, goodLight, 2, 4, 16, 0.5, 0, 16, new Uint8Array(10)]],
+        ];
+        let refusedOk = true, refusedDetail = "";
+        for (const [what, args] of badCalls) {
+            const r = px.shadowMarchF64(...args);
+            if (r !== null) { refusedOk = false; refusedDetail = `${what} returned non-null`; break; }
+        }
+        const a = px.job;
+        try {
+            const pd = px._in(a, d, d.byteLength), pt = a.take(24), po = a.take(65536);
+            px.u8().fill(0xab, po, po + 65536);
+            px.view(Float64Array, pt, 3).set([8, 8, 50]);
+            px.exports.shadow_march_f64(0, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, 0, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, 0);
+            px.exports.shadow_march_f64(pd, 0, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 0, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 0x40000000, 1, 50, 0, pt, 1, 16, 0.5, 0, 1, po);
+            px.exports.shadow_march_f64(pd, 1, 0x40000000, 50, 0, pt, 1, 16, 0.5, 0, 1, po);
+            px.exports.shadow_march_f64(pd, 65536, 65536, 50, 0, pt, 1, 16, 0.5, 0, 1, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 16, 1, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 0, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 0, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 17, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 0, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 65, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, NaN, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, Infinity, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, NaN, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, Infinity, 0, 16, po);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, -0.5, 0, 16, po);
+            px.view(Float64Array, pt, 3).set([NaN, 8, 50]);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            px.view(Float64Array, pt, 3).set([8, Infinity, 50]);
+            px.exports.shadow_march_f64(pd, 16, 16, 50, 0, pt, 1, 16, 0.5, 0, 16, po);
+            const untouched = px.view(Uint8Array, po, 65536).every((b) => b === 0xab);
+            if (!untouched) { refusedOk = false; refusedDetail = "raw export wrote to out on invalid call"; }
+        } finally { px._reset(a); }
+        check(`${label} shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out`, refusedOk, refusedDetail);
+
+        // Resident depth slot check on px.shadowMarchF64 across 4 stripes
+        const dSlot = genMap(64, 48, 77);
+        const outSlot = new Uint8Array(64 * 48);
+        let slotCopied = 0;
+        const origPut = px.put;
+        px.put = function (ptr, data) {
+            if (data.byteLength === dSlot.byteLength) slotCopied++;
+            return origPut.call(this, ptr, data);
+        };
+        try {
+            for (const r0 of [0, 12, 24, 36]) {
+                px.shadowMarchF64(dSlot, 64, 48, 50, goodLight, 2, 4, 16, 0.5, r0, 12, outSlot, "slot:k13:1");
+            }
+        } finally {
+            px.put = origPut;
+        }
+        const wantFull = px.shadowMarchF64(dSlot, 64, 48, 50, goodLight, 2, 4, 16, 0.5);
+        check(`${label} shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call`,
+            slotCopied === 1 && eqBytes(outSlot, wantFull), `slotCopied=${slotCopied}`);
+    }
 }
 
+const hoistRefCache = new Map();
+const smoothDepthCache = new Map();
 /** A smooth depth map (0 near, 65535 far): a ground plane receding upwards, three soft objects, slow waves. */
 function smoothDepth(w, h) {
+    const key = `${w}x${h}`;
+    if (smoothDepthCache.has(key)) return smoothDepthCache.get(key).slice();
     const d = new Uint16Array(w * h), L = Math.max(w, h);
     const bumps = [[0.30, 0.62, 0.16, 0.42], [0.68, 0.55, 0.10, 0.35], [0.52, 0.80, 0.07, 0.25]];   // cx, cy, r, height
     for (let y = 0; y < h; y++) {
@@ -1825,7 +2079,8 @@ function smoothDepth(w, h) {
             d[y * w + x] = Math.max(0, Math.min(65535, Math.round(far * 65535)));
         }
     }
-    return d;
+    smoothDepthCache.set(key, d);
+    return d.slice();
 }
 
 // ---- PX_BENCH rows (docs/PLAN_WASM_BUILD.md §3.4) -----------------------------------------------
@@ -1896,9 +2151,10 @@ async function relightBench(js, simd) {
     check("kernels.js loads px.wasm (SIMD) as in a worker", !!routed && K.kernelsInUse() === "rust" && routed.simd === true);
     if (!routed) return;
     const { lightToMap, defaultLight } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
-    let rustCalls = 0;
-    const march = routed.shadowMarch;
-    routed.shadowMarch = function (...a) { rustCalls++; return march.apply(this, a); };
+    let f32Calls = 0, f64Calls = 0;
+    const marchF32 = routed.shadowMarch, marchF64 = routed.shadowMarchF64;
+    routed.shadowMarch = function (...a) { f32Calls++; return marchF32.apply(this, a); };
+    routed.shadowMarchF64 = function (...a) { f64Calls++; return marchF64.apply(this, a); };
     const { loadPx } = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
     const wasmBytes = fs.readFileSync(path.join(PX_DIR, "px.wasm"));
     const bench = !!process.env.PX_BENCH;
@@ -1920,23 +2176,88 @@ async function relightBench(js, simd) {
             const run = {
                 routed: () => K.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
                 twin: () => js.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
-                simd: () => simd.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
+                simd_f64: () => simd.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
+                simd_f32: () => simd.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
             };
-            const c0 = rustCalls;
+            const c32 = f32Calls, c64 = f64Calls;
             const out = run.routed();
-            const ran = rustCalls > c0 ? "rust" : "twin", want = name === "sun" ? "rust" : "twin";
-            if (ran !== want || !eqBytes(out, want === "rust" ? run.simd() : run.twin())) {
+            const ran = f64Calls > c64 ? "rust_f64" : f32Calls > c32 ? "rust_f32" : "twin";
+            const want = name === "sun" ? "rust_f32" : "rust_f64";
+            const wantBytes = want === "rust_f64" ? run.twin() : run.simd_f32();
+            if (ran !== want || !eqBytes(out, wantBytes) || (want === "rust_f64" && !eqBytes(out, run.simd_f64()))) {
                 ok = false; detail += `${detail ? "; " : ""}${tag} ${name}: ran ${ran}${ran === want ? ", other bytes" : ""}`;
             }
             if (!bench) continue;
-            const cold = await coldCall(loadPx, wasmBytes, (p) => p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h));
+            const cold = await coldCall(loadPx, wasmBytes, (p) => (name === "sun"
+                ? p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h)
+                : p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, 0, h)));
             const m = benchMedians(Object.entries(run));
-            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd ${m.simd.toFixed(1)} ms (twin / simd ${(m.twin / m.simd).toFixed(2)}); simd ${coldText(cold)}`);
+            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd_f64 ${m.simd_f64.toFixed(1)} ms, simd_f32 ${m.simd_f32.toFixed(1)} ms (twin / simd_f64 ${(m.twin / m.simd_f64).toFixed(2)}); ${coldText(cold)}`);
         }
     }
-    routed.shadowMarch = march;
+    routed.shadowMarch = marchF32;
+    routed.shadowMarchF64 = marchF64;
+    check("shadow_march as routed: kind 0 (point, spot) runs shadow_march_f64 (byte-identical to the twin), kind 1 (sun) runs shadow_march (byte for byte)", ok, detail);
+
+    // K13 guard and route checks on K.shadowMarch
+    {
+        const w = 64, h = 48, d = smoothDepth(w, h);
+        const goodLight = [20, 15, 30, 0], sunLight = [0, 0, 1, 1];
+        K.pxCalls(true);
+        let guardOk = true, guardDetail = "";
+        for (const [what, gw, gh, scale, light, radius, bias, rows] of [
+            ["w=0 (sun)", 0, h, 30, sunLight, 2, 0.2, h],
+            ["h=0 (sun)", w, 0, 30, sunLight, 2, 0.2, 0],
+            ["w>=2^30 (sun)", 0x40000000, 1, 30, sunLight, 2, 0.2, 0],
+            ["h>=2^30 (sun)", 1, 0x40000000, 30, sunLight, 2, 0.2, 0],
+            ["NaN lx", w, h, 30, [NaN, 15, 30, 0], 2, 0.2, h],
+            ["Inf ly", w, h, 30, [20, Infinity, 30, 0], 2, 0.2, h],
+            ["-Inf lz (sun)", w, h, 30, [20, 15, -Infinity, 1], 2, 0.2, h],
+            ["lx >= 2^30", w, h, 30, [0x40000000, 15, 30, 0], 2, 0.2, h],
+            ["ly <= -2^30", w, h, 30, [20, -0x40000000, 30, 0], 2, 0.2, h],
+            ["lz >= 2^30 (sun)", w, h, 30, [0, 0, 0x40000000, 1], 2, 0.2, h],
+            ["scale >= 2^30 (point)", w, h, 0x40000000, goodLight, 2, 0.2, h],
+            ["scale >= 2^30 (sun)", w, h, 0x40000000, sunLight, 2, 0.2, h],
+            ["radius >= 2^30 (point)", w, h, 30, goodLight, 0x40000000, 0.2, h],
+            ["radius >= 2^30 (sun)", w, h, 30, sunLight, 0x40000000, 0.2, h],
+            ["bias >= 2^30 (point)", w, h, 30, goodLight, 2, 0x40000000, h],
+            ["bias >= 2^30 (sun)", w, h, 30, sunLight, 2, 0x40000000, h],
+            ["bias < 0 (point)", w, h, 30, goodLight, 2, -0.001, h],
+            ["bias < 0 (sun)", w, h, 30, sunLight, 2, -0.001, h],
+            ["NaN radius (point)", w, h, 30, goodLight, NaN, 0.2, h],
+            ["NaN radius (sun)", w, h, 30, sunLight, NaN, 0.2, h],
+            ["Inf bias (point)", w, h, 30, goodLight, 2, Infinity, h],
+            ["Inf bias (sun)", w, h, 30, sunLight, 2, Infinity, h],
+        ]) {
+            const got = K.shadowMarch(d, gw, gh, scale, light, radius, 4, 16, bias, 0, rows);
+            const want = js.shadowMarch(d, gw, gh, scale, light, radius, 4, 16, bias, 0, rows);
+            const calls = K.pxCalls(true);
+            if (!eqBytes(got, want) || Object.keys(calls).length !== 0) {
+                guardOk = false;
+                guardDetail = `${what}: calls=${JSON.stringify(calls)}`;
+                break;
+            }
+        }
+        check("K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)", guardOk, guardDetail);
+
+        K.setRoute("shadowMarch", "js");
+        K.pxCalls(true);
+        const outJs = K.shadowMarch(d, w, h, 30, goodLight, 2, 4, 16, 0.2, 0, h);
+        const callsJs = K.pxCalls(true);
+        K.setRoute("shadowMarch", w * h + 1);
+        const outBelow = K.shadowMarch(d, w, h, 30, goodLight, 2, 4, 16, 0.2, 0, h);
+        const callsBelow = K.pxCalls(true);
+        K.setRoute("shadowMarch", w * h);
+        const outAt = K.shadowMarch(d, w, h, 30, goodLight, 2, 4, 16, 0.2, 0, h);
+        const callsAt = K.pxCalls(true);
+        K.setRoute("shadowMarch", null);
+        check("shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes",
+            eqBytes(outJs, outAt) && eqBytes(outBelow, outAt)
+            && !callsJs.shadow_march_f64 && !callsBelow.shadow_march_f64 && callsAt.shadow_march_f64 === 1,
+            `js=${JSON.stringify(callsJs)} below=${JSON.stringify(callsBelow)} at=${JSON.stringify(callsAt)}`);
+    }
+
     K.setKernels("js");   // kernels.js stays loaded for the process: the later cases (jobCases) compare against the editor's JS
-    check("shadow_march as routed: kind 0 (a point; ensureRelightMaps sends a spot as kind 0) runs the twin, kind 1 (a sun) the Rust build (byte for byte)", ok, detail);
     check("kernels.js back on the JS kernels for the later cases", K.kernelsInUse() === "js");
 }
 
@@ -1955,7 +2276,16 @@ async function relightBench(js, simd) {
 async function relightStripeCases(js, simd, scalar) {
     const RL = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
     const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
-    const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);   // loaded by relightBench already
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (u, ...rest) => {
+        const s = String(u && u.href ? u.href : u);
+        return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+    };
+    let K = null;
+    try {
+        K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        await K.kernelsReady();
+    } finally { globalThis.fetch = realFetch; }
     const { lightToMap, defaultLight, stripePlan, marchOnPool } = RL;
     if (typeof stripePlan !== "function" || typeof marchOnPool !== "function") {
         check("inpaint_relight.js exports stripePlan and marchOnPool (K12)", false);
@@ -1981,15 +2311,16 @@ async function relightStripeCases(js, simd, scalar) {
     check("stripePlan covers every row once and in order, in stripes of 32 rows or more, never more than asked", ok, detail);
 
     // S stripes into one shared out against one call of the same kernel
-    const striped = (impl, depth, w, h, a, S, key) => {
+    const striped = (impl, depth, w, h, a, S, key, f64 = false) => {
         const out = new Uint8Array(new SharedArrayBuffer(w * h));
-        for (const [r0, rows] of stripePlan(h, S)) impl.shadowMarch(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, r0, rows, out, key);
+        const fn = f64 ? impl.shadowMarchF64.bind(impl) : impl.shadowMarch.bind(impl);
+        for (const [r0, rows] of stripePlan(h, S)) fn(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, r0, rows, out, key);
         return out;
     };
-    const one = (impl, depth, w, h, a) => impl.shadowMarch(depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, 0, h);
+    const one = (impl, depth, w, h, a, f64 = false) => (f64 ? impl.shadowMarchF64 : impl.shadowMarch).call(impl, depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, 0, h);
     ok = true; detail = "";
     let cases = 0;
-    K.setKernels("rust");   // a worker's mode: the sun on Rust (relightBench left the twins in force)
+    K.setKernels("rust");   // a worker's mode: point/spot on shadow_march_f64, sun on shadow_march (relightBench left the twins in force)
     for (const [w, h, combos, counts] of [
         [512, 341, [[1, 16], [3, 1], [4, 32], [16, 64], [4, 64], [1, 1]], [2, 7, 10]],
         [1024, 682, [[1, 16], [4, 32]], [5, 21]],
@@ -2002,7 +2333,7 @@ async function relightStripeCases(js, simd, scalar) {
             const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
             lights.push([type, [lm.mx, lm.my, lm.mz, type === "sun" ? 1 : 0]]);
         }
-        lights.push(["a point on a pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.6, 0]]);
+        lights.push(["a point on a pixel", [Math.floor(w / 3), Math.floor(h / 2), scale * 0.85, 0]]);
         lights.push(["a point below the surface", [w * 0.5, h * 0.5, scale * 0.05, 0]]);
         lights.push(["a point off the map", [-0.4 * w, 1.3 * h, scale * 0.8, 0]]);
         lights.push(["the sun straight up", [0, 0, 1, 1]]);
@@ -2010,12 +2341,19 @@ async function relightStripeCases(js, simd, scalar) {
         for (const [taps, steps] of combos) {
             for (const [name, light] of lights) {
                 const a = { scale, light, radius: 0.3 * 0.05 * long, taps, steps, bias: 0.005 * scale };
-                const impls = light[3] === 1 ? [["rust simd", simd, "k:sun"], ["rust scalar", scalar, "k:sun"], ["kernels.js (a worker's route)", K, "k:sun"]] : [["twin", js, null]];
-                for (const [iname, impl, key] of impls) {
-                    const want = one(iname.startsWith("kernels") ? simd : impl, sab, w, h, a);
+                const wantJs = one(js, sab, w, h, a, false);
+                const wantSimd32 = light[3] === 1 ? one(simd, sab, w, h, a, false) : null;
+                const wantScalar32 = light[3] === 1 ? one(scalar, sab, w, h, a, false) : null;
+                const impls = light[3] === 1
+                    ? [["rust simd (f32)", simd, "k:sun", false], ["rust scalar (f32)", scalar, "k:sun", false], ["rust simd (f64)", simd, "k:sun64", true], ["rust scalar (f64)", scalar, "k:sun64", true], ["kernels.js (a worker's route)", K, "k:sun", false]]
+                    : [["twin", js, null, false], ["rust simd (f64)", simd, "k:pt", true], ["rust scalar (f64)", scalar, "k:pt", true], ["kernels.js (a worker's route)", K, "k:pt", false]];
+                for (const [iname, impl, key, f64] of impls) {
+                    const want = iname.startsWith("kernels")
+                        ? (light[3] === 1 ? wantSimd32 : wantJs)
+                        : (f64 || impl === js ? wantJs : (impl === simd ? wantSimd32 : wantScalar32));
                     for (const S of counts) {
                         cases++;
-                        const got = striped(impl, sab, w, h, a, S, key ? `${key}:${w}x${h}` : null);
+                        const got = striped(impl, sab, w, h, a, S, key ? `${key}:${w}x${h}` : null, f64);
                         if (!eqBytes(got, want)) { ok = false; detail += `${detail ? "; " : ""}${w} x ${h} ${name} ${iname} taps ${taps} steps ${steps} in ${S}`; }
                     }
                 }
@@ -2023,7 +2361,7 @@ async function relightStripeCases(js, simd, scalar) {
         }
     }
     K.setKernels("js");
-    check(`shadow_march in stripes into one shared out equals one call: the twin (point, spot) and the Rust sun on both builds and through kernels.js (${cases} cases)`, ok, detail);
+    check(`shadow_march and shadow_march_f64 in stripes into one shared out equal one call: the twin, both Rust builds (f32 and f64), and through kernels.js (${cases} cases)`, ok, detail);
 
     // the one-slot resident depth copy, on an instance of its own: a key copies the map once over all stripes
     {
@@ -2031,9 +2369,10 @@ async function relightStripeCases(js, simd, scalar) {
         const fresh = new P.Px(new WebAssembly.Instance(simd.module, {}), simd.module);
         const d1 = smoothDepth(w, h), d2 = d1.map((v, i) => (i % 7 === 0 ? 65535 - v : v)), small = smoothDepth(256, 170);
         const a = { scale: 256, light: [0.3, -0.2, 0.9, 1], radius: 7.7, taps: 4, steps: 32, bias: 1.28 };
+        const aPt = { scale: 256, light: [150, 120, 180, 0], radius: 7.7, taps: 4, steps: 32, bias: 1.28 };
         const mb = (f) => { P.pxTimed(true); P.pxCalls(true); try { f(); return P.pxLaps().copyInMB; } finally { P.pxTimed(false); } };
         const depthMB = (n * 2) / 1048576;
-        let r1, r2, r3, r4;
+        let r1, r2, r3, r4, rf1, rf2, rf3, rf4;
         const keyed = mb(() => { r1 = striped(fresh, d1, w, h, a, 8, "map:1"); });
         const again = mb(() => { r2 = striped(fresh, d1, w, h, a, 8, "map:1"); });
         const plain = mb(() => { r3 = striped(fresh, d1, w, h, a, 8, null); });
@@ -2041,10 +2380,18 @@ async function relightStripeCases(js, simd, scalar) {
         const want1 = one(simd, d1, w, h, a), want2 = one(simd, d2, w, h, a);
         const r5 = striped(fresh, small, 256, 170, a, 4, "map:2");   // the same key on another size: copied again
         const want5 = one(simd, small, 256, 170, a);
-        check("the Rust sun's stripes with a key copy the depth map once (8 stripes), again none, without a key once a stripe",
-            keyed < 1.5 * depthMB && again < 0.01 && plain > 7.5 * depthMB, `${keyed.toFixed(2)} / ${again.toFixed(2)} / ${plain.toFixed(2)} MB, the map ${depthMB.toFixed(2)} MB`);
+        const keyedF64 = mb(() => { rf1 = striped(fresh, d1, w, h, aPt, 8, "map:f64:1", true); });
+        const againF64 = mb(() => { rf2 = striped(fresh, d1, w, h, aPt, 8, "map:f64:1", true); });
+        const plainF64 = mb(() => { rf3 = striped(fresh, d1, w, h, aPt, 8, null, true); });
+        const nextF64 = mb(() => { rf4 = striped(fresh, d2, w, h, aPt, 8, "map:f64:2", true); });
+        const wantF1 = one(js, d1, w, h, aPt), wantF2 = one(js, d2, w, h, aPt);
+        check("the Rust march's stripes (f32 and f64) with a key copy the depth map once (8 stripes), again none, without a key once a stripe",
+            keyed < 1.5 * depthMB && again < 0.01 && plain > 7.5 * depthMB
+            && keyedF64 < 1.5 * depthMB && againF64 < 0.01 && plainF64 > 7.5 * depthMB,
+            `f32 ${keyed.toFixed(2)}/${again.toFixed(2)}/${plain.toFixed(2)} MB, f64 ${keyedF64.toFixed(2)}/${againF64.toFixed(2)}/${plainF64.toFixed(2)} MB, map ${depthMB.toFixed(2)} MB`);
         check("a new key copies the new map and never answers from the old one; a key on another size copies again",
-            eqBytes(r1, want1) && eqBytes(r2, want1) && eqBytes(r3, want1) && eqBytes(r4, want2) && !eqBytes(want1, want2) && next > 0.9 * depthMB && eqBytes(r5, want5));
+            eqBytes(r1, want1) && eqBytes(r2, want1) && eqBytes(r3, want1) && eqBytes(r4, want2) && !eqBytes(want1, want2) && next > 0.9 * depthMB && eqBytes(r5, want5)
+            && eqBytes(rf1, wantF1) && eqBytes(rf2, wantF1) && eqBytes(rf3, wantF1) && eqBytes(rf4, wantF2) && nextF64 > 0.9 * depthMB);
     }
 
     // marchOnPool on a real WorkerPool: workers that answer relight_shadow as inpaint_worker.js does, a tick later
@@ -3508,9 +3855,86 @@ async function compositeShaCases(js, simd, scalar) {
                 eqBytes(stJs.bytes, stRust.bytes) && eqBytes(stJs.snapBytes, stRust.snapBytes)
                 && eqBytes(stJs.snapBytes, stJs.before) && eqBytes(stRust.snapBytes, stRust.before)
                 && stJs.w1 === 2 && stRust.w1 === 2 && stJs.w2 === 1 && stRust.w2 === 1
-                && stJs.c1 === 0 && stJs.c2 === 0 && stRust.c1 === 3 && stRust.c2 === 1
+                && stJs.c1 === 0 && stJs.c2 === 0 && stJs.c1 === 0 && stRust.c1 === 3 && stRust.c2 === 1
                 && stJs.shared01 && stRust.shared01 && stJs.dropped10 && stRust.dropped10 && stJs.created11 && stRust.created11,
                 `js w=${stJs.w1},${stJs.w2} c=${stJs.c1},${stJs.c2}; rust w=${stRust.w1},${stRust.w2} c=${stRust.c1},${stRust.c2}`);
+
+            // TileLayerPixels.compositeFill (K37): grid-aligned, off-grid offset, partial edge clamping, frozen clone preservation
+            const buildAndFill = (rt) => {
+                K.setRoute("compositeMaskedTile", rt);
+                const layer = new TileLayerPixels(300, 300); // 2x2 tiles, right/bottom edge at 300 (< 512)
+                const t00 = layer.writable(0, 0);
+                for (let i = 0; i < t00.data.length; i += 4) { t00.data[i] = 20; t00.data[i + 1] = 60; t00.data[i + 2] = 100; t00.data[i + 3] = 200; }
+                const t01 = layer.writable(0, 1);
+                t01.data[0] = 15; t01.data[1] = 25; t01.data[2] = 35; t01.data[3] = 255;
+                const snap = layer.clone();
+                const before = packTiles(snap).slice();
+
+                // Grid-aligned fill at [0, 0] with source-over (op = 0, alpha = 255):
+                // (0,0) partial mask, (1,0) full 255 mask (clamped to x < 44 because w = 300), (0,1) all-0 mask (unchanged)
+                const a00 = new Uint8Array(65536);
+                for (let p = 0; p < 500; p++) a00[p] = 255;
+                const a10 = new Uint8Array(65536).fill(255);
+                const a01 = new Uint8Array(65536);
+                const tiles1 = [
+                    { tx: 0, ty: 0, alpha: a00.buffer },
+                    { tx: 1, ty: 0, alpha: a10.buffer },
+                    { tx: 0, ty: 1, alpha: a01.buffer },
+                ];
+                K.pxCalls(true);
+                const w1 = layer.compositeFill(tiles1, "#e08020", 0, 255, [0, 0]);
+                const c1 = K.pxCalls(true).composite_masked_tile || 0;
+                const d00 = layer.tileAt(0, 0).data;
+                const colorOk = d00[0] === 0xe0 && d00[1] === 0x80 && d00[2] === 0x20 && d00[3] === 255;
+
+                // Off-grid fill at [37, 19] with source-atop (op = 2, alpha = 180):
+                // reaches (0,0) and (1,0) where existing pixels exist, skips (1,1) which is empty
+                const aOff = new Uint8Array(65536).fill(255);
+                K.pxCalls(true);
+                const w2 = layer.compositeFill([{ tx: 0, ty: 0, alpha: aOff.buffer }], "#40c090", 2, 180, [37, 19]);
+                const c2 = K.pxCalls(true).composite_masked_tile || 0;
+                const shared01 = layer.tileAt(0, 1) === snap.tileAt(0, 1);
+
+                // Grid-aligned fill at [0, 256] (dty = 1) onto bottom edge tile (0,1), clamping y >= 44 (bh = 44)
+                const aBottom = new Uint8Array(65536).fill(255);
+                const w3 = layer.compositeFill([{ tx: 0, ty: 0, alpha: aBottom.buffer }], "#2060e0", 0, 255, [0, 256]);
+
+                // Verify right edge tile (1,0) has 0 outside x < 44 and bottom edge tile (0,1) has 0 outside y < 44
+                const t10After = layer.tileAt(1, 0), t01After = layer.tileAt(0, 1);
+                let edgeClean = colorOk && w3 === 1 && !!t10After && !!t01After && a10[200] === 255 && aBottom[50 * 256] === 255
+                    && t01After.data[0] === 0x20 && t01After.data[1] === 0x60 && t01After.data[2] === 0xe0 && t01After.data[3] === 255;
+                if (t10After && edgeClean) {
+                    for (let y = 0; y < 256 && edgeClean; y++) {
+                        for (let x = 44; x < 256; x++) {
+                            if (t10After.data[(y * 256 + x) * 4 + 3] !== 0) { edgeClean = false; break; }
+                        }
+                    }
+                }
+                if (t01After && edgeClean) {
+                    for (let y = 44; y < 256 && edgeClean; y++) {
+                        for (let x = 0; x < 256; x++) {
+                            if (t01After.data[(y * 256 + x) * 4 + 3] !== 0) { edgeClean = false; break; }
+                        }
+                    }
+                }
+                return {
+                    bytes: packTiles(layer),
+                    snapBytes: packTiles(snap),
+                    before,
+                    w1, w2, c1, c2,
+                    shared01,
+                    empty11: layer.tileAt(1, 1) === null,
+                    edgeClean,
+                };
+            };
+            const flJs = buildAndFill("js"), flRust = buildAndFill("rust");
+            check("TileLayerPixels.compositeFill on js and rust routes matches byte-for-byte, clamps partial edge tiles, and keeps unchanged frozen tiles shared",
+                eqBytes(flJs.bytes, flRust.bytes) && eqBytes(flJs.snapBytes, flRust.snapBytes)
+                && eqBytes(flJs.snapBytes, flJs.before) && eqBytes(flRust.snapBytes, flRust.before)
+                && flJs.w1 === 2 && flRust.w1 === 2 && flJs.w2 === 2 && flRust.w2 === 2
+                && flJs.c1 === 0 && flJs.c2 === 0 && flRust.c1 === 3 && flRust.c2 === 3
+                && flJs.shared01 && flRust.shared01 && flJs.empty11 && flRust.empty11 && flJs.edgeClean && flRust.edgeClean,
+                `js w=${flJs.w1},${flJs.w2} c=${flJs.c1},${flJs.c2}; rust w=${flRust.w1},${flRust.w2} c=${flRust.c1},${flRust.c2} edge=${flRust.edgeClean}`);
         } finally {
             kernelsBack(K);
             K.setKernels(prevMode);
@@ -3843,11 +4267,17 @@ async function matchTwinCases(js) {
     let clamped = true;
     for (let i = 0; i < hi.length; i += 4) if (src[i + 3] && src[i] > 60 && hi[i] !== 255) clamped = false;
     check(`js matchPixels clamps at 255`, clamped);
-    // the same bytes from a Uint8ClampedArray
+    // the same bytes from a Uint8ClampedArray, including a subarray at a non-zero byteOffset
     const clamp = (u) => new Uint8ClampedArray(u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength));
     const p5 = matchParams(5);
     const viaBytes = js.matchPixels(src.slice(), p5), viaClamped = js.matchPixels(clamp(src), p5);
     check(`js matchPixels gives the same bytes for Uint8ClampedArray input`, eqBytes(viaBytes, new Uint8Array(viaClamped.buffer)));
+    const fullClamped = clamp(src), subClamped = fullClamped.subarray(64, 512);
+    const retSub = js.matchPixels(subClamped, p5);
+    check(`js matchPixels on a Uint8ClampedArray subarray updates only that slice in place`,
+        retSub === subClamped && eqBytes(new Uint8Array(fullClamped.buffer, 0, 64), src.subarray(0, 64))
+        && eqBytes(new Uint8Array(fullClamped.buffer, 64, 448), viaBytes.subarray(64, 512))
+        && eqBytes(new Uint8Array(fullClamped.buffer, 512), src.subarray(512)));
 }
 
 /** The twin against a Rust build, bit for bit: random pixels and parameters, sizes with tails, every k. */
@@ -3863,6 +4293,18 @@ async function matchCases(px, label, js) {
         }
     }
     check(`js matchPixels equals the ${label} (random pixels and statistics, tails, k 0 to 1)`, ok, detail);
+    // empty and non-zero byteOffset Uint8ClampedArray subarrays
+    const pSub = matchParams(7), srcSub = pixelRow(256, 707);
+    const emptyU8 = new Uint8Array(0), emptyClamped = new Uint8ClampedArray(0);
+    const fullClamped = new Uint8ClampedArray(srcSub.buffer.slice(srcSub.byteOffset, srcSub.byteOffset + srcSub.byteLength));
+    const subClamped = fullClamped.subarray(64, 512);
+    const wantSub = js.matchPixels(srcSub.slice(64, 512), pSub);
+    const retSub = px.matchPixels(subClamped, pSub);
+    check(`${label} matchPixels handles empty buffers and non-zero byteOffset Uint8ClampedArray subarrays in place`,
+        px.matchPixels(emptyU8, pSub) === emptyU8 && px.matchPixels(emptyClamped, pSub) === emptyClamped
+        && retSub === subClamped && eqBytes(new Uint8Array(fullClamped.buffer, 0, 64), srcSub.subarray(0, 64))
+        && eqBytes(new Uint8Array(fullClamped.buffer, 64, 448), wantSub)
+        && eqBytes(new Uint8Array(fullClamped.buffer, 512), srcSub.subarray(512)));
     // the extremes: scale 2 and 0.5, means at the ends, k 1
     let okX = true, detailX = "";
     for (const p of [[255, 255, 255, 0, 0, 0, 2, 2, 2, 1], [0, 0, 0, 255, 255, 255, 0.5, 0.5, 0.5, 1], [128, 64, 32, 32, 64, 128, 1.999, 0.501, 1, 0.999], [127.5, 127.5, 127.5, 127.5, 127.5, 127.5, 1, 1, 1, 0.5]]) {
@@ -3871,6 +4313,125 @@ async function matchCases(px, label, js) {
         if (!eqBytes(a, b)) { okX = false; detailX = `${p} ${firstDiff(a, b)}`; }
     }
     check(`js matchPixels equals the ${label} at the extremes of the statistics`, okX, detailX);
+    if (/simd/.test(label)) {
+        // K38: matchCanvas CPU fallback in 4 MP chunks (inpaint_filters.js)
+        let K = null, F = null;
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (u, ...rest) => {
+            const s = String(u && u.href ? u.href : u);
+            return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+        };
+        try {
+            K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+            await K.kernelsReady();
+            F = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_filters.js")).href);
+        } finally { globalThis.fetch = realFetch; }
+        const prevMode = K.kernelsMode();
+        K.setKernels("rust");
+        const hadDoc = "document" in globalThis, prevDoc = globalThis.document;
+        const makeMockCanvas = (w = 1, h = 1, data = null) => {
+            const c = {
+                width: w,
+                height: h,
+                _data: data,
+                _putCount: 0,
+                getContext(kind) {
+                    if (kind === "webgl2") return null;
+                    return {
+                        drawImage(src) { c._data = new Uint8ClampedArray(src._data); },
+                        getImageData(_x, _y, cw, ch) {
+                            if (!c._data || c._data.length !== cw * ch * 4) c._data = new Uint8ClampedArray(cw * ch * 4);
+                            return { data: c._data, width: cw, height: ch };
+                        },
+                        putImageData(img) { c._data = new Uint8ClampedArray(img.data); c._putCount++; },
+                    };
+                },
+            };
+            return c;
+        };
+        globalThis.document = { createElement: () => makeMockCanvas() };
+        try {
+            check(`inpaint_filters.js MATCH_CHUNK_BYTES is 4 MP (16,777,216 bytes) and kernels.js has the matchPixels route`,
+                F.MATCH_CHUNK_BYTES === 4 * 1024 * 1024 * 4 && Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, "matchPixels"));
+            // 2048 x 4100 = 8,396,800 px = 2 full 4 MP chunks + 8,192 px tail (3 chunks total)
+            const W = 2048, H = 4100, totalPx = W * H;
+            const raw = new Uint8ClampedArray(totalPx * 4);
+            const tile = pixelRow(16384, 3801);
+            for (let off = 0; off < raw.length; off += tile.length) raw.set(tile.subarray(0, Math.min(tile.length, raw.length - off)), off);
+            // distinct values in each chunk and transparent pixels at chunk boundaries
+            raw[0] = 20; raw[1] = 110; raw[2] = 210; raw[3] = 255;
+            raw[F.MATCH_CHUNK_BYTES] = 210; raw[F.MATCH_CHUNK_BYTES + 1] = 40; raw[F.MATCH_CHUNK_BYTES + 2] = 130; raw[F.MATCH_CHUNK_BYTES + 3] = 255;
+            raw[F.MATCH_CHUNK_BYTES * 2] = 90; raw[F.MATCH_CHUNK_BYTES * 2 + 1] = 220; raw[F.MATCH_CHUNK_BYTES * 2 + 2] = 30; raw[F.MATCH_CHUNK_BYTES * 2 + 3] = 255;
+            raw[F.MATCH_CHUNK_BYTES - 4] = 77; raw[F.MATCH_CHUNK_BYTES - 3] = 88; raw[F.MATCH_CHUNK_BYTES - 2] = 99; raw[F.MATCH_CHUNK_BYTES - 1] = 0;
+            raw[F.MATCH_CHUNK_BYTES * 2 + 4] = 55; raw[F.MATCH_CHUNK_BYTES * 2 + 5] = 66; raw[F.MATCH_CHUNK_BYTES * 2 + 6] = 77; raw[F.MATCH_CHUNK_BYTES * 2 + 7] = 0;
+            const stats = { meanS: [135.25, 92.5, 168.75], meanT: [88.5, 142.25, 64.5], scale: [1.35, 0.72, 1.18] };
+            const strength = 0.65;
+            const params = new Float32Array([...stats.meanS, ...stats.meanT, ...stats.scale, strength]);
+            const wantSingle = js.matchPixels(new Uint8Array(raw.buffer.slice(0)), params);
+            const srcCv = makeMockCanvas(W, H, raw);
+            K.dropPx();
+            await K.pxSettled();
+            const inst0 = K.pxInstances();
+            K.setRoute("matchPixels", null);
+            K.pxCalls(true);
+            const outRust = F.matchCanvas(srcCv, stats, strength);
+            const callsRust = K.pxCalls(true).match_pixels || 0;
+            const memBytes = K.rustPx() ? K.rustPx().byteLength : 0;
+            const inst1 = K.pxInstances();
+            const rustBytes = new Uint8Array(outRust._data.buffer, outRust._data.byteOffset, outRust._data.byteLength);
+            check(`K38 matchCanvas CPU fallback runs match_pixels in 4 MP chunks (3 calls for 8.4 MP), keeps wasm memory within one chunk arena, and equals a single matchPixels call byte for byte`,
+                callsRust === 3 && outRust._putCount === 1 && memBytes > 0 && memBytes <= 19 * 1048576
+                && inst1.release === inst0.release && eqBytes(rustBytes, wantSingle) && !eqBytes(rustBytes, new Uint8Array(raw.buffer)),
+                `calls=${callsRust}, memMB=${(memBytes / 1048576).toFixed(2)}, diff=${firstDiff(rustBytes, wantSingle)}`);
+            // matchPixels="js" route gives 0 Rust calls and the exact same bytes across all 3 chunks
+            K.setRoute("matchPixels", "js");
+            let outJs, callsJs;
+            try {
+                K.pxCalls(true);
+                outJs = F.matchCanvas(srcCv, stats, strength);
+                callsJs = K.pxCalls(true).match_pixels || 0;
+            } finally { K.setRoute("matchPixels", null); }
+            const jsBytes = new Uint8Array(outJs._data.buffer, outJs._data.byteOffset, outJs._data.byteLength);
+            check(`K38 matchCanvas on route matchPixels=js runs 0 Rust calls and equals the Rust path byte for byte across all 3 chunks`,
+                callsJs === 0 && eqBytes(jsBytes, rustBytes), `callsJs=${callsJs}, diff=${firstDiff(jsBytes, rustBytes)}`);
+            // trap recovery on a chunk inside matchCanvas: chunk 0 traps before _out, twin recovers it, chunks 1 and 2 run on a replaced Rust instance
+            const pTrap = K.rustPx();
+            const tInst0 = K.pxInstances();
+            pTrap.matchPixels = () => {
+                const err = new WebAssembly.RuntimeError("simulated match_pixels trap");
+                pTrap.trapped = err;
+                throw err;
+            };
+            K.pxCalls(true);
+            const outTrap = F.matchCanvas(srcCv, stats, strength);
+            const callsTrap = K.pxCalls(true).match_pixels || 0;
+            const tInst1 = K.pxInstances();
+            const trapBytes = new Uint8Array(outTrap._data.buffer, outTrap._data.byteOffset, outTrap._data.byteLength);
+            check(`K38 matchCanvas recovers from a trap on chunk 0 via the twin and runs chunks 1..2 on a fresh Rust instance with identical bytes`,
+                callsTrap === 2 && K.rustPx() !== pTrap && tInst1.trap === tInst0.trap + 1 && eqBytes(trapBytes, wantSingle),
+                `callsTrap=${callsTrap}, trap=${tInst1.trap - tInst0.trap}, diff=${firstDiff(trapBytes, wantSingle)}`);
+            // within 1 level of matchDoubles on a slice spanning the chunk boundaries, and strength clamped to [0, 1]
+            const smallRaw = new Uint8ClampedArray(pixelRow(2048, 3802).buffer);
+            const smallCv = makeMockCanvas(64, 32, smallRaw);
+            const smallOut = F.matchCanvas(smallCv, stats, strength);
+            const smallDoubles = matchDoubles(new Uint8Array(smallRaw.buffer), params);
+            let worstD = 0;
+            for (let i = 0; i < smallDoubles.length; i++) worstD = Math.max(worstD, Math.abs(smallOut._data[i] - smallDoubles[i]));
+            const outNeg = F.matchCanvas(smallCv, stats, -0.5);
+            const outOne = F.matchCanvas(smallCv, stats, 1);
+            const outOver = F.matchCanvas(smallCv, stats, 1.8);
+            check(`K38 matchCanvas stays within 1 level of doubles and clamps strength to [0, 1]`,
+                worstD <= 1 && eqBytes(new Uint8Array(outNeg._data.buffer), new Uint8Array(smallRaw.buffer))
+                && eqBytes(new Uint8Array(outOver._data.buffer), new Uint8Array(outOne._data.buffer))
+                && !eqBytes(new Uint8Array(outOne._data.buffer), new Uint8Array(smallOut._data.buffer)),
+                `worstD=${worstD}`);
+        } finally {
+            K.setRoute("matchPixels", null);
+            K.setKernels(prevMode);
+            if (hadDoc) globalThis.document = prevDoc;
+            else delete globalThis.document;
+        }
+    }
     if (/rust/.test(label)) {
         const N = 1 << 20, srcT = pixelRow(N, 5, { opaque: true }), p = matchParams(2);
         const best = (k) => { let b = Infinity; for (let i = 0; i < 5; i++) { const w = srcT.slice(), t0 = performance.now(); k.matchPixels(w, p); b = Math.min(b, performance.now() - t0); } return b; };
@@ -4659,7 +5220,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
             break;
         }
     }
-    check(`${label} png_part_lines_cap equals partRows(w) * (1 + 4 * w) across clamp boundaries and overflow`, capOk, capDetail);
+    check(`${label} png_part_lines_cap equals partRows(w, 2048) * (1 + 4 * w) across clamp boundaries and overflow`, capOk, capDetail);
 
     // 2. Round-trip tables: CPU-canvas 8-bit premultiply-unpremultiply table + distinct custom table
     const rtCanvas = new Uint8Array(65536);
@@ -5018,14 +5579,17 @@ async function partDecodeCases(px, label, png, zlib, js) {
         const fzWidths = [-7, -1, 0, 1, 2, 3, 4, 5, 7, 8, 15, 16, 17, 33, 64, 0x40000000];
         const fzRows = [-2, 0, 1, 2, 3, 4];
         let fuzzOk = true, fuzzDetail = "";
+        let decodeValidCount = 0, decodeBadFilterCount = 0, decodeNotLinesCount = 0;
+        let finishValidCount = 0, finishBadFilterCount = 0, finishNotLinesCount = 0;
         for (let t = 0; t < 240 && fuzzOk; t++) {
-            const fw = fzWidths[fzNext() & 15];
-            const fr = fzRows[fzNext() % fzRows.length];
+            const fw = (t % 4 <= 1) ? fzWidths[3 + (fzNext() % 12)] : fzWidths[fzNext() & 15];
             const validW = fw > 0 && fw <= 0x3fffffff;
             const fRowBytes = validW ? fw * 4 : 16;
             const fStride = validW ? fRowBytes + 1 : 17;
             let fLen;
-            if (t % 4 === 2 && validW) {
+            if (t % 4 <= 1 && validW) {
+                fLen = (1 + (fzNext() % 4)) * fStride;
+            } else if (t % 4 === 2 && validW) {
                 // Force bad length/dims + bad filter simultaneously to pin -4 before -5
                 const badLens = [0, 1, fStride - 1, fStride + 1, 2 * fStride - 1];
                 fLen = badLens[fzNext() % badLens.length];
@@ -5035,6 +5599,11 @@ async function partDecodeCases(px, label, png, zlib, js) {
             } else {
                 fLen = [0, 1, 17, 34, 51][fzNext() % 5];
             }
+            const wholeLines = validW && fLen > 0 && fLen % fStride === 0;
+            // In most rounds set fr = fLen / fStride when fLen is a whole number of lines; keep an independent fr only for mismatch rounds
+            const fr = (wholeLines && (t % 4 <= 1 || (fzNext() & 3) !== 0))
+                ? (fLen / fStride)
+                : fzRows[fzNext() % fzRows.length];
             const fLines = new Uint8Array(fLen);
             for (let i = 0; i < fLen; i++) fLines[i] = (fzNext() >>> 16) & 255;
             if (fLen > 0 && validW) {
@@ -5049,11 +5618,12 @@ async function partDecodeCases(px, label, png, zlib, js) {
                     fLines[0] = 5 + ((fzNext() >>> 8) % 251);
                 }
             }
-            const prevMode = fzNext() % 3; // 0: null, 1: valid, 2: short
+            // Force a full-length prev (and a null or full out) on t % 4 <= 1 so finish reaches both valid (> 0) and bad-filter (-5) paths
+            const prevMode = (t % 4 <= 1) ? 1 : (fzNext() % 3); // 0: null, 1: valid, 2: short
             const fPrev = prevMode === 0 ? null : new Uint8Array(prevMode === 1 ? fRowBytes : Math.max(0, fRowBytes - 1));
             if (fPrev) for (let i = 0; i < fPrev.length; i++) fPrev[i] = (fzNext() >>> 16) & 255;
-            const outMode = fzNext() % 3; // 0: null, 1: valid, 2: short
-            const estRows = validW && fLen > 0 && fLen % fStride === 0 ? fLen / fStride : Math.max(1, fr);
+            const outMode = (t % 4 <= 1) ? (fzNext() & 1) : (fzNext() % 3); // 0: null, 1: valid, 2: short
+            const estRows = wholeLines ? fLen / fStride : Math.max(1, fr);
             const fOut = outMode === 0 ? null : new Uint8Array(outMode === 1 ? estRows * fRowBytes : Math.max(0, estRows * fRowBytes - 1));
             if (fOut) for (let i = 0; i < fOut.length; i++) fOut[i] = (fzNext() >>> 16) & 255;
             const fRt = (fzNext() & 1) ? rtCanvas : null;
@@ -5063,7 +5633,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
             const oDJ = fOut ? fOut.slice() : null, oDP = fOut ? fOut.slice() : null;
             const dJ = js.pngPartDecode(lDJ, fw, pDJ, fRt, oDJ);
             const dP = px.pngPartDecode(lDP, fw, pDP, fRt, oDP);
-            const shapeValidDecode = validW && fLen > 0 && fLen % fStride === 0
+            const shapeValidDecode = wholeLines
                 && (!fPrev || fPrev.length >= fRowBytes) && (!fOut || fOut.length >= (fLen / fStride) * fRowBytes);
             if (dJ.code !== dP.code || (!shapeValidDecode && dJ.code !== -4)) {
                 fuzzOk = false;
@@ -5076,19 +5646,24 @@ async function partDecodeCases(px, label, png, zlib, js) {
                 break;
             }
             if (dJ.code < 0) {
+                if (dJ.code === -4) decodeNotLinesCount++;
+                else if (dJ.code === -5) decodeBadFilterCount++;
                 if ((fPrev && (!eqBytes(pDJ, fPrev) || !eqBytes(pDP, fPrev)))
                     || (fOut && (!eqBytes(oDJ, fOut) || !eqBytes(oDP, fOut)))) {
                     fuzzOk = false;
                     fuzzDetail = `fuzz decode #${t}: prev/out mutated on code ${dJ.code}`;
                     break;
                 }
-            } else if (dJ.adler !== dP.adler || dJ.firstFilter !== dP.firstFilter || dJ.opaque !== dP.opaque
-                || dJ.needsPrev !== dP.needsPrev
-                || !eqBytes(dJ.out || new Uint8Array(0), dP.out || new Uint8Array(0))
-                || !eqBytes(dJ.prev || new Uint8Array(0), dP.prev || new Uint8Array(0))) {
-                fuzzOk = false;
-                fuzzDetail = `fuzz decode #${t}: output mismatch on valid decode`;
-                break;
+            } else {
+                decodeValidCount++;
+                if (dJ.adler !== dP.adler || dJ.firstFilter !== dP.firstFilter || dJ.opaque !== dP.opaque
+                    || dJ.needsPrev !== dP.needsPrev
+                    || !eqBytes(dJ.out || new Uint8Array(0), dP.out || new Uint8Array(0))
+                    || !eqBytes(dJ.prev || new Uint8Array(0), dP.prev || new Uint8Array(0))) {
+                    fuzzOk = false;
+                    fuzzDetail = `fuzz decode #${t}: output mismatch on valid decode`;
+                    break;
+                }
             }
 
             const lFJ = fLines.slice(), lFP = fLines.slice();
@@ -5109,18 +5684,28 @@ async function partDecodeCases(px, label, png, zlib, js) {
                 break;
             }
             if (fJ.code < 0) {
+                if (fJ.code === -4) finishNotLinesCount++;
+                else if (fJ.code === -5) finishBadFilterCount++;
                 if ((fPrev && (!eqBytes(pFJ, fPrev) || !eqBytes(pFP, fPrev)))
                     || (fOut && (!eqBytes(oFJ, fOut) || !eqBytes(oFP, fOut)))) {
                     fuzzOk = false;
                     fuzzDetail = `fuzz finish #${t}: prev/out mutated on code ${fJ.code}`;
                     break;
                 }
-            } else if (fJ.firstFilter !== fP.firstFilter || fJ.opaque !== fP.opaque
-                || !eqBytes(fJ.out, fP.out) || !eqBytes(fJ.prev, fP.prev)) {
-                fuzzOk = false;
-                fuzzDetail = `fuzz finish #${t}: output mismatch on valid finish`;
-                break;
+            } else {
+                finishValidCount++;
+                if (fJ.firstFilter !== fP.firstFilter || fJ.opaque !== fP.opaque
+                    || !eqBytes(fJ.out, fP.out) || !eqBytes(fJ.prev, fP.prev)) {
+                    fuzzOk = false;
+                    fuzzDetail = `fuzz finish #${t}: output mismatch on valid finish`;
+                    break;
+                }
             }
+        }
+        if (fuzzOk && (decodeValidCount < 40 || decodeBadFilterCount < 40 || decodeNotLinesCount < 40
+            || finishValidCount < 40 || finishBadFilterCount < 40 || finishNotLinesCount < 40)) {
+            fuzzOk = false;
+            fuzzDetail = `fuzz coverage too low: decode=(ok:${decodeValidCount}, -5:${decodeBadFilterCount}, -4:${decodeNotLinesCount}) finish=(ok:${finishValidCount}, -5:${finishBadFilterCount}, -4:${finishNotLinesCount})`;
         }
         check(`${label} png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)`,
             fuzzOk, fuzzDetail);
@@ -5206,14 +5791,17 @@ async function partDecodeCases(px, label, png, zlib, js) {
         });
         const part0Len = Buffer.concat(chunks).length;
         await new Promise((resolve) => {
-            def.end(pattern, resolve); // identical bytes -> LZ77 back-reference into part 0!
+            def.on("end", resolve);
+            def.end(pattern); // identical bytes -> LZ77 back-reference into part 0!
         });
         const sharedPart1 = new Uint8Array(Buffer.concat(chunks).subarray(part0Len));
         let sharedRejected = false;
-        try {
-            await inflateRawPart(sharedPart1, true);
-        } catch {
-            sharedRejected = true;
+        if (sharedPart1.length > 0) {
+            try {
+                await inflateRawPart(sharedPart1, true);
+            } catch {
+                sharedRejected = true;
+            }
         }
         let corruptRejected = false;
         try {
@@ -5289,7 +5877,260 @@ async function partDecodeCases(px, label, png, zlib, js) {
             K.setKernels(prevMode);
         }
 
-        // 7. PX_BENCH: 15,000 x 139 standard 8 MB part (copyIn vs decode vs copyOut)
+        // 7. K8: pngPartsOf layout check (33-49 bytes on non-parted files) and readPngParts parallel pool orchestration
+        {
+            const countBlob = (blob) => {
+                let bytesRead = 0;
+                return {
+                    get size() { return blob.size; },
+                    slice(a, b) {
+                        const s = Math.max(0, a | 0), e = Math.min(blob.size, b == null ? blob.size : (b | 0));
+                        bytesRead += Math.max(0, e - s);
+                        return blob.slice(a, b);
+                    },
+                    get bytesRead() { return bytesRead; },
+                };
+            };
+            const pw = 64, partHeights = [4, 3, 5, 2, 6, 4], pH = partHeights.reduce((a, b) => a + b, 0);
+            const pSrc = randomRGBA(pw, pH, 9601, { opaque: false });
+            const writer = new png.PngStreamWriter(pw, pH, {
+                chunks: [png.SRGB_CHUNK],
+                texts: { Software: "Scumble" },
+                run: (args) => {
+                    const r = px.pngPart(new Uint8Array(args.rgba), args.w, args.rows, args.prev ? new Uint8Array(args.prev) : null, args.level, args.last);
+                    return { chunk: r.chunk.buffer, adler: r.adler, raw: r.raw, crc: r.crc };
+                },
+            });
+            const partMeta = [];
+            let py0 = 0;
+            for (let i = 0; i < partHeights.length; i++) {
+                const r = partHeights[i];
+                const wantPrev = i === 1 || i === 2 || i === 4;
+                if (wantPrev) {
+                    // Copy the row above into row 0 of this part so Up (filter 2) has zero residual and wins
+                    pSrc.copyWithin(py0 * pw * 4, (py0 - 1) * pw * 4, py0 * pw * 4);
+                } else {
+                    // Repeat pixel 0 across row 0 of this part so Sub (filter 1) has zero residual for x = 1..pw-1 and wins
+                    const p0Off = py0 * pw * 4;
+                    pSrc[p0Off] = (100 + i * 31) & 255;
+                    pSrc[p0Off + 1] = (150 + i * 17) & 255;
+                    pSrc[p0Off + 2] = (200 + i * 43) & 255;
+                    pSrc[p0Off + 3] = 250;
+                    for (let x = 1; x < pw; x++) pSrc.copyWithin(p0Off + x * 4, p0Off, p0Off + 4);
+                }
+                const prev = py0 > 0 ? pSrc.slice((py0 - 1) * pw * 4, py0 * pw * 4).buffer : null;
+                writer.add(r, { rgba: pSrc.slice(py0 * pw * 4, (py0 + r) * pw * 4).buffer, prev });
+                partMeta.push({ y0: py0, rows: r, wantPrev });
+                py0 += r;
+            }
+            const partedBlob = await writer.finish();
+            const layout = await png.pngPartsOf(partedBlob);
+            check(`pngPartsOf parses a Scumble parted PNG with sRGB and tEXt (${partHeights.length} parts, ${pw}x${pH})`,
+                !!layout && layout.width === pw && layout.height === pH && layout.parts.length === partHeights.length
+                && layout.parts.every((p) => p.off > 33 && p.len > 0) && layout.texts.Software === "Scumble",
+                JSON.stringify(layout));
+
+            // Browser-style single-IDAT PNG without sRGB (41 bytes read) and with sRGB (49 bytes read), plus non-RGBA IHDR (33 bytes read)
+            const srgbChunkBytes = png.pngChunk(...png.SRGB_CHUNK);
+            const singleNoSrgb = countBlob(new Blob([
+                new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+                png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 6, 0, 0, 0])),
+                png.pngChunk("IDAT", zlib.deflateSync(new Uint8Array(20 * (1 + 64 * 4)))),
+                png.pngChunk("IEND", new Uint8Array(0)),
+            ]));
+            const singleWithSrgb = countBlob(new Blob([
+                new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+                png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 6, 0, 0, 0])),
+                srgbChunkBytes,
+                png.pngChunk("IDAT", zlib.deflateSync(new Uint8Array(20 * (1 + 64 * 4)))),
+                png.pngChunk("IEND", new Uint8Array(0)),
+            ]));
+            const rgbOnly = countBlob(new Blob([
+                new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+                png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 2, 0, 0, 0])),
+                png.pngChunk("IDAT", new Uint8Array([0x78, 0x9C])),
+                png.pngChunk("IDAT", new Uint8Array(16)),
+                png.pngChunk("IDAT", new Uint8Array(4)),
+                png.pngChunk("IEND", new Uint8Array(0)),
+            ]));
+            const rNoSrgb = await png.pngPartsOf(singleNoSrgb);
+            const rWithSrgb = await png.pngPartsOf(singleWithSrgb);
+            const rRgb = await png.pngPartsOf(rgbOnly);
+            check(`pngPartsOf rejects non-parted and non-RGBA PNGs after 33-49 bytes (33 B for RGB IHDR, 41 B for single IDAT, 49 B with sRGB)`,
+                rNoSrgb === null && singleNoSrgb.bytesRead === 41
+                && rWithSrgb === null && singleWithSrgb.bytesRead === 49
+                && rRgb === null && rgbOnly.bytesRead === 33,
+                `rgb=${rgbOnly.bytesRead} noSrgb=${singleNoSrgb.bytesRead} withSrgb=${singleWithSrgb.bytesRead}`);
+
+            // Refusal cases for pngPartsOf: colour chunks, bad 2-byte zlib header, 0 part IDATs, bad tail IDAT, trailing bytes after IEND
+            const ihdrRgba = png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 6, 0, 0, 0]));
+            const sig = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+            const idat2 = png.pngChunk("IDAT", new Uint8Array([0x78, 0x9C]));
+            const idatPart = png.pngChunk("IDAT", new Uint8Array(24));
+            const idat4 = png.pngChunk("IDAT", new Uint8Array([0, 1, 2, 3]));
+            const iend = png.pngChunk("IEND", new Uint8Array(0));
+            const textChunk = png.pngChunk("tEXt", new TextEncoder().encode("a\0b"));
+            const badBlobs = [
+                ["null", null],
+                ["short (<57 B)", new Blob([sig, ihdrRgba])],
+                ["16-bit RGBA", new Blob([sig, png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 16, 6, 0, 0, 0])), idat2, idatPart, idat4, iend])],
+                ["interlaced", new Blob([sig, png.pngChunk("IHDR", new Uint8Array([0, 0, 0, 64, 0, 0, 0, 20, 8, 6, 0, 0, 1])), idat2, idatPart, idat4, iend])],
+                ["gAMA before IDAT", new Blob([sig, ihdrRgba, png.pngChunk("gAMA", new Uint8Array([0, 0, 0xB1, 0x8F])), idat2, idatPart, idat4, iend])],
+                ["iCCP before IDAT", new Blob([sig, ihdrRgba, png.pngChunk("iCCP", new Uint8Array(12)), idat2, idatPart, idat4, iend])],
+                ["cHRM before IDAT", new Blob([sig, ihdrRgba, png.pngChunk("cHRM", new Uint8Array(32)), idat2, idatPart, idat4, iend])],
+                ["cICP before IDAT", new Blob([sig, ihdrRgba, png.pngChunk("cICP", new Uint8Array(4)), idat2, idatPart, idat4, iend])],
+                ["bad zlib header (FCHECK)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x78, 0x00])), idatPart, idat4, iend])],
+                ["bad zlib header (FDICT)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x78, 0xBB])), idatPart, idat4, iend])],
+                ["bad zlib header (CM!=8)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x79, 0x18])), idatPart, idat4, iend])],
+                ["bad zlib header (CINFO>7)", new Blob([sig, ihdrRgba, png.pngChunk("IDAT", new Uint8Array([0x88, 0x1C])), idatPart, idat4, iend])],
+                ["0 part IDATs (only 2-B + 4-B)", new Blob([sig, ihdrRgba, idat2, idat4, iend])],
+                ["5-B tail IDAT", new Blob([sig, ihdrRgba, idat2, idatPart, png.pngChunk("IDAT", new Uint8Array(5)), iend])],
+                ["0-B IDAT in middle", new Blob([sig, ihdrRgba, idat2, png.pngChunk("IDAT", new Uint8Array(0)), idat4, iend])],
+                ["tEXt between IDATs", new Blob([sig, ihdrRgba, idat2, idatPart, textChunk, idat4, iend])],
+                ["extra IDAT after 4-B tail", new Blob([sig, ihdrRgba, idat2, idatPart, idat4, idatPart, iend])],
+                ["gAMA after 4-B tail", new Blob([sig, ihdrRgba, idat2, idatPart, idat4, png.pngChunk("gAMA", new Uint8Array(4)), iend])],
+                ["non-empty IEND", new Blob([sig, ihdrRgba, idat2, idatPart, idat4, png.pngChunk("IEND", new Uint8Array(1))])],
+                ["trailing bytes after IEND", new Blob([sig, ihdrRgba, idat2, idatPart, idat4, iend, new Uint8Array([0])])],
+            ];
+            let badOk = true, badDetail = "";
+            for (const [tag, b] of badBlobs) {
+                const got = await png.pngPartsOf(b);
+                if (got !== null) { badOk = false; badDetail = `${tag} returned ${JSON.stringify(got)}`; break; }
+            }
+            check(`pngPartsOf refuses ${badBlobs.length} invalid or colour-managed layouts`, badOk, badDetail);
+
+            // readPngParts: mock pool with size = 2, verifying window cap (pool.size + 2 = 4), INTERACTIVE priority on finish,
+            // out-of-order decode completion, scanline-order onRows landing, and Adler-32 / row-count / cancellation guards
+            let cancelledGroups = [], finishPriorities = [], inFlightReads = 0, maxWindowSeen = 0;
+            const mockPool = {
+                size: 2,
+                cancel: (g) => { cancelledGroups.push(g); },
+                async run(op, args, _transfer, opts = {}) {
+                    if (op === "png_part_read") {
+                        inFlightReads++;
+                        maxWindowSeen = Math.max(maxWindowSeen, inFlightReads);
+                        // Stagger resolution so odd parts finish before even parts (out-of-order completion)
+                        await new Promise((r) => setTimeout(r, args.first ? 8 : 2));
+                        inFlightReads--;
+                        const raw = new Uint8Array(await args.blob.arrayBuffer());
+                        const zbuf = args.last ? raw : Buffer.concat([raw, Buffer.from([0x03, 0x00])]);
+                        const lines = new Uint8Array(zlib.inflateRawSync(zbuf));
+                        const p0 = args.first ? new Uint8Array(args.w * 4) : (args.prev ? new Uint8Array(args.prev) : null);
+                        const d = px.pngPartDecode(lines, args.w, p0, args.rt);
+                        if (d.code < 0) throw new Error(`png_part_decode code ${d.code}`);
+                        return {
+                            rows: d.code, adler: d.adler, raw: lines.byteLength,
+                            needsPrev: d.needsPrev, firstFilter: d.firstFilter, opaque: d.opaque,
+                            rgba: d.out ? d.out.buffer : null,
+                            lines: d.needsPrev ? lines.buffer : null,
+                            prev: d.prev ? d.prev.buffer : null,
+                        };
+                    }
+                    if (op === "png_part_finish") {
+                        finishPriorities.push(opts.priority);
+                        const f = px.pngPartFinish(new Uint8Array(args.lines), args.rows, args.w, new Uint8Array(args.prev), args.rt);
+                        if (f.code < 0) throw new Error(`png_part_finish code ${f.code}`);
+                        return {
+                            rows: f.code, firstFilter: f.firstFilter, opaque: f.opaque,
+                            rgba: f.out.buffer, prev: f.prev.buffer,
+                        };
+                    }
+                    throw new Error("unexpected op " + op);
+                },
+            };
+            const assembled = new Uint8Array(pH * pw * 4);
+            const landedOrder = [];
+            let headerSeen = null;
+            const res = await png.readPngParts(partedBlob, {
+                layout,
+                pool: mockPool,
+                rt: rtCanvas,
+                onHeader: (h) => { headerSeen = h; },
+                onRows: (rgba, y0, rows) => {
+                    landedOrder.push([y0, rows]);
+                    assembled.set(rgba, y0 * pw * 4);
+                },
+            });
+            const { out: wantAssembled } = refApplyRt(pSrc, rtCanvas);
+            check(`readPngParts decodes ${partHeights.length} parts in parallel (2 needing finish at INTERACTIVE priority 0, 1 receiving prev at launch, window <= pool.size + 2) and lands exact rows in scanline order`,
+                !!headerSeen && headerSeen.width === pw && headerSeen.height === pH
+                && res.parts === partHeights.length
+                && maxWindowSeen === mockPool.size + 2
+                && finishPriorities.length === 2 && finishPriorities.every((p) => p === 0)
+                && landedOrder.length === partHeights.length
+                && landedOrder.every(([y0, r], i) => y0 === partMeta[i].y0 && r === partMeta[i].rows)
+                && eqBytes(assembled, wantAssembled),
+                `maxWindow=${maxWindowSeen} finishPriorities=${JSON.stringify(finishPriorities)} landed=${JSON.stringify(landedOrder)} diff=${firstDiff(assembled, wantAssembled)}`);
+
+            // Adler-32 mismatch, under-height, over-height, and part error cancel the pool group and reject
+            cancelledGroups = [];
+            let adlerThrew = false;
+            try {
+                await png.readPngParts(partedBlob, {
+                    layout: { ...layout, adler: (layout.adler ^ 1) >>> 0 },
+                    pool: mockPool,
+                    rt: rtCanvas,
+                });
+            } catch (e) {
+                adlerThrew = /Adler-32/.test(String(e.message || e));
+            }
+            let heightThrew = false;
+            try {
+                await png.readPngParts(partedBlob, {
+                    layout: { ...layout, height: pH + 1 },
+                    pool: mockPool,
+                    rt: rtCanvas,
+                });
+            } catch (e) {
+                heightThrew = /rows/.test(String(e.message || e));
+            }
+            let overHeightThrew = false, rowsDelivered = 0;
+            try {
+                await png.readPngParts(partedBlob, {
+                    layout: { ...layout, height: pH - 1 },
+                    pool: mockPool,
+                    rt: rtCanvas,
+                    onRows: (_rgba, y0, r) => { rowsDelivered = y0 + r; },
+                });
+            } catch (e) {
+                overHeightThrew = /rows/.test(String(e.message || e));
+            }
+            let partErrThrew = false, partErrLaunched = 0, partErrCancels = [], partErrGroup = null;
+            const errPool = {
+                size: 1,
+                cancel: (g) => { partErrCancels.push(g); },
+                async run(op, args, tr, opts) {
+                    if (opts && opts.group) partErrGroup = opts.group;
+                    if (op === "png_part_read") {
+                        const idx = partErrLaunched++;
+                        if (idx === 1) {
+                            await new Promise((r) => setTimeout(r, 1));
+                            throw new Error("part 1 decode failed");
+                        }
+                        await new Promise((r) => setTimeout(r, 15));
+                    }
+                    return mockPool.run(op, args, tr, opts);
+                },
+            };
+            try {
+                await png.readPngParts(partedBlob, {
+                    layout,
+                    pool: errPool,
+                    rt: rtCanvas,
+                });
+            } catch (e) {
+                partErrThrew = /part 1 decode failed/.test(String(e.message || e));
+            }
+            check(`readPngParts rejects on combined Adler-32 mismatch, under/over row-count mismatch, or part error, and cancels the pool group`,
+                adlerThrew && heightThrew && overHeightThrew && rowsDelivered <= pH - 1
+                && cancelledGroups.length === 3
+                && partErrThrew && typeof partErrGroup === "symbol"
+                && partErrCancels.length >= 1 && partErrCancels.every((g) => g === partErrGroup)
+                && partErrLaunched < partHeights.length,
+                `adlerThrew=${adlerThrew} heightThrew=${heightThrew} overHeightThrew=${overHeightThrew} rowsDelivered=${rowsDelivered}/${pH - 1} cancelled=${cancelledGroups.length} partErrThrew=${partErrThrew} partErrCancels=${partErrCancels.length} partErrLaunched=${partErrLaunched}/${partHeights.length}`);
+        }
+
+        // 8. PX_BENCH: 15,000 x 139 standard 8 MB part (copyIn vs decode vs copyOut)
         if (process.env.PX_BENCH) {
             const bw = 15000, brows = 139, browBytes = bw * 4;
             const bsrc = randomRGBA(bw, brows, 9701, { opaque: false });
@@ -5300,7 +6141,6 @@ async function partDecodeCases(px, label, png, zlib, js) {
             const pWork = bprev.slice();
             // Warm up resident rtCanvas
             px.pngPartDecode(blinesSub.subarray(0, browBytes + 1), bw, pWork, rtCanvas);
-            const laps = { copyIn: 0, decode: 0, copyOut: 0 };
             const rounds = 15;
             const simdTimes = [], twinTimes = [];
             const copyInTimes = [], decodeTimes = [], copyOutTimes = [];

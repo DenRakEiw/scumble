@@ -1,0 +1,7 @@
+noise base: 453 MB in 8.8 s
+built: {"loadMs": 3872, "layers": 4, "map": null, "tiles": true}
+save: {"flushMs": 817, "saveMs": 342, "writeMs": 317, "bytes": 479102132, "entries": 7, "cleanSaveMs": 349, "cleanWriteMs": 317, "selBefore": {"x": 1000, "y": 800, "w": 6000, "h": 3000}, "selSaveMs": 707, "MB": 457, "MBps_write": 1441, "mainPrivateMB_before": 1464, "mainPrivateMB_peak": 1495}
+zipfile: testzip clean, mimetype first and stored: True, 0.3 s
+open: {"restoreMs": 4312, "openMs": 4685, "sameRefs": true, "dirty": false, "selAfter": {"x": 1000, "y": 800, "w": 6000, "h": 3000}}
+selection changed right before the save came back: True ({'x': 1000, 'y': 800, 'w': 6000, 'h': 3000} -> {'x': 1000, 'y': 800, 'w': 6000, 'h': 3000})
+PASS

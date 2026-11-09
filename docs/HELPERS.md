@@ -392,7 +392,7 @@ scaled to multiples of 14 at working resolution (the picture's size up to 4,096 
 Output: `predicted_depth` `[1, H, W]` float32 depth map (larger values = closer). The raw depth
 map is normalized by robust percentiles (0.5 % and 99.5 %) and refined with a guided filter on the
 image guide in worker threads (`depth_guide` job, `GUIDE = { r: 2, eps: 1e-3 }`). The refined
-16-bit depth is stored as a document map on `ed.maps.depth`. Runs on the main process thread
+16-bit depth is stored as a document map on `ed.maps.depth`. Runs in the helpers' process (on main's thread only after the fallback),
 via DirectML on Windows and CPU on Linux. Measured at the R1-S2 checkpoint (2026-10-08, `tools/depth_probe.py`,
 three pictures): the model 185-225 ms on DirectML (RTX 5090) and 480-725 ms on the CPU (24 threads) at its input
 size, the guided filter 410-640 ms at a 2,048 px working size (3.4 s at 4,096); the load was not timed.

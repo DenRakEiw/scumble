@@ -1,0 +1,52 @@
+== 15000x10000 (150 MP), 4 rounds
+round phase    rend MB  GPU MB  canvas n canvas MB comp MB pool MB undo MB pan ms  levels ms upload ms 
+-------------------------------------------------------------------------------------------------------
+0     start    10744    1476    0        0.0       16.8    313     0.0     -       -         0.04      
+-- round 1: building ...
+1     built    13180    1710    83       165       33.6    313     0.0     8.56    11.50     0.04      
+1     closed   11848    1504    83       157       16.8    313     0.0     -       -         0.04      
+1     gc       10809    1109    1        4.0       16.8    313     0.0     -       -         0.04      
+-- round 2: building ...
+2     built    13688    1565    84       169       33.6    313     0.0     8.89    16.18     0.06      
+2     closed   11699    1504    84       161       16.8    313     0.0     -       -         0.05      
+2     gc       10706    1104    2        8.0       16.8    313     0.0     -       -         0.05      
+-- round 3: building ...
+3     built    13674    1585    89       204       33.6    313     0.0     8.02    12.02     0.05      
+3     closed   11667    1588    89       195       16.8    313     0.0     -       -         0.04      
+3     gc       10680    1128    3        12.0      16.8    313     0.0     -       -         0.05      
+-- round 4: building ...
+4     built    13641    1710    90       208       33.6    313     0.0     8.31    12.14     0.04      
+4     closed   11657    1625    90       199       16.8    313     0.0     -       -         0.05      
+4     gc       10657    1146    4        16.0      16.8    313     0.0     -       -         0.05      
+4     free     10569    648     13       94.7      16.8    0.0     0.0     -       -         0.05      
+
+what is still live at the end
+  editors 1, canvases made 1716, collected 1703, live 13 (94.7 MB), zeroed 0
+    1888 x 1280  9.2 MB   cpuCanvas inpaint_tiles.js:523:24
+    1888 x 1280  9.2 MB   cpuCanvas inpaint_tiles.js:523:24
+    1888 x 1280  9.2 MB   cpuCanvas inpaint_tiles.js:523:24
+    1888 x 1280  9.2 MB   cpuCanvas inpaint_tiles.js:523:24
+    1888 x 1280  9.2 MB   cpuCanvas inpaint_tiles.js:523:24
+    1828 x 1206  8.4 MB   makeCanvas inpaint_canvas.js:865:24
+    1820 x 1198  8.3 MB   makeCanvas inpaint_canvas.js:865:24
+    1820 x 1198  8.3 MB   makeCanvas inpaint_canvas.js:865:24
+  listeners still on window / document, by the line that added them
+  live canvases by the line that made them
+       5     46.1 MB  cpuCanvas inpaint_tiles.js:523:24
+       3     25.0 MB  makeCanvas inpaint_canvas.js:865:24
+       4     16.0 MB  makeCanvas inpaint_filters.js:25:24
+       1      7.6 MB  makeCanvas inpaint_filters_gl.js:644:24
+  layers 1769 MB, pyramid 0.0 MB, scratch 708 MB, undo 0.0 MB (+0.0 MB held), objects 0.0 MB
+  of which tiles 2399 MB and display mirrors 0.0 MB (pixels on tiles)
+  compositor 0 textures 16.8 MB, pool 0.0 MB (+0.0 MB in scopes, 0 foreign)
+  blink images 2 live 68.7 MB of 69.9 MB
+
+targets (docs/PHASE6_PLAN.md §0)
+  GPU process back within 300 MB of the baseline: -828 MB  PASS
+  pan in the last round against the first: 8.56 -> 8.31 ms (-3 %)  PASS
+  levels tick in the last round against the first: 11.50 -> 12.14 ms (+6 %)  PASS
+  canvas upload in the last round against the first: 0.04 -> 0.04 ms (+0 %)  PASS
+
+console lines about WebGL, contexts and the memory watch
+  memory watch: GPU process 3951 MB over the 3072 MB limit; released 0 MB of caches in 1 background tab, GPU process now 3951 MB
+  memory watch: GPU process 3634 MB over the 3072 MB limit; released 0 MB of caches in 1 background tab, GPU process now 4276 MB

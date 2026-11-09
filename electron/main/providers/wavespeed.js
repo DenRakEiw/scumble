@@ -22,7 +22,7 @@
 // many pictures the image list takes, the crop included; a run with more is refused before any upload), `model_row`
 // (true: the Settings row keyed "model" goes out as the route's own `model` input, Krea 3's Berry or Jam).
 // `options` for a model with its own conventions (Ideogram 4.5): `mask: "black"` sends the mask inverted (black =
-// edit, util.js ideogramMask; none for a selection over the whole crop), `negative: false` sends no negative prompt,
+// edit, util.js ideogramMask; none for a selection over the whole crop), `negative: false` sends no negative prompt (`edit_negative: true`: an edit sends one too, Krea 3),
 // `accepts` (a text run: `text_accepts`, else `accepts`) lists the optional keys the route takes, and with a list
 // every other key but the prompt and the pictures stays home (seed, output_format, a Settings row the route lacks;
 // the schemas say additionalProperties false), `tiers` ({ "1k": 1024, ... }) gives a text run `resolution` by the
@@ -221,7 +221,7 @@ async function inputFor(req, ctx, info = {}) {
             if (tier) input.resolution = tier;
         }
     }
-    if (req.negative && input.negative_prompt === undefined && req.kind !== "edit" && o.negative !== false) input.negative_prompt = req.negative;
+    if (req.negative && input.negative_prompt === undefined && (req.kind !== "edit" || o.edit_negative) && o.negative !== false) input.negative_prompt = req.negative;
     if (input.output_format === undefined) input.output_format = "png";
     const allow = acceptsOf(req);
     if (allow) {

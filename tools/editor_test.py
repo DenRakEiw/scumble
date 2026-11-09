@@ -1688,6 +1688,38 @@ async def arena_step(c):
     return {"arena": True, "slots": [out["before"]["slots"], out["mid"]["slots"], res["slots"]], "chunks": [out["before"]["chunks"], out["mid"]["chunks"], res["chunks"]], "dropped": res["droppedChunks"] - out["before"]["droppedChunks"]}
 
 
+def parted_png_step(body):
+    async def step(c):
+        pre = await c.eval(PRE % """
+            const ed = ednow(window.__t);
+            if (!ed.tileMode) return null;
+            ed.clearUndo();
+            await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+            await ed.mipsSettled();
+            return 1;
+        """, timeout=60)
+        if pre is None:
+            return await c.eval(PRE % body, timeout=180)
+        slots_before = None
+        for _ in range(6):
+            await c.call("HeapProfiler.collectGarbage")
+            await asyncio.sleep(0.1)
+            slots_before = await c.eval("(async () => (await import('./editor/inpaint_arena.js')).arenaStats().slots)()")
+        out = await c.eval(PRE % body, timeout=180)
+        slots_after = None
+        for _ in range(12):
+            await c.call("HeapProfiler.collectGarbage")
+            await asyncio.sleep(0.15)
+            slots_after = await c.eval("(async () => (await import('./editor/inpaint_arena.js')).arenaStats().slots)()")
+            if slots_after <= slots_before:
+                break
+        if slots_after != slots_before:
+            raise Exception("arena slots after parted PNG step (%d) != before (%d)" % (slots_after, slots_before))
+        out["arenaSlots"] = [slots_before, slots_after]
+        return out
+    return step
+
+
 def image_fixtures():
     """Files the browser decodes with colour management, EXIF orientation, alpha or 16 bits (Pillow), in a temp folder."""
     import struct
@@ -6915,9 +6947,9 @@ try {
     canvases = await script();
     if (seen.length !== n) throw new Error("with stacks off the flood still ran over tiles");
 } finally { E.stacks = true; delete ed.floodOverTiles; }
-if (!seen.includes("tiles") || !seen.includes("bitmap") || seen.includes("none")) throw new Error("the floods over tiles answered " + JSON.stringify(seen));
-if (!tileShapes.length || tileShapes.some((s) => !s.alpha64k) || !(tileShapes[0].n > 0 && tileShapes[0].n < tileShapes[0].boxCells)) {
-    throw new Error("K9 wand tiles must be 64 KB alpha buffers and skip empty cells in bounds: " + JSON.stringify(tileShapes));
+if (!seen.length || seen.some((s) => s !== "tiles")) throw new Error("the floods over tiles answered " + JSON.stringify(seen));
+if (tileShapes.length !== seen.length || tileShapes.some((s) => !s.alpha64k) || !(tileShapes[0].n > 0 && tileShapes[0].n < tileShapes[0].boxCells)) {
+    throw new Error("K9/K37 flood tiles must be 64 KB alpha buffers and skip empty cells in bounds: " + JSON.stringify(tileShapes));
 }
 for (const k of Object.keys(canvases)) if (JSON.stringify(over[k]) !== JSON.stringify(canvases[k])) throw new Error(k + ": over tiles " + JSON.stringify(over[k]) + ", over canvases " + JSON.stringify(canvases[k]));
 if (!over.replace[1] || !over.layer[1]) throw new Error("nothing was selected: " + JSON.stringify(over));
@@ -7103,6 +7135,353 @@ ed.clearUndo();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return out;
 """),
+    ("a_scumble_png_opens_through_the_parted_reader", parted_png_step("""
+// K8 (docs/PLAN_WASM_BUILD.md §4.2, P4): a PNG written in parts by Scumble (`pngPartsOf`) is decoded in parallel across
+// the pool (`png_part_read` + `png_part_finish` at INTERACTIVE priority) and lands through `putCanvasRows`, with the
+// part Adlers combined against the 4-byte tail IDAT. Tested on:
+//   1. A tile-encoded PNG (odd size 1503 x 1109, half-transparent pixels) on both the Rust wasm path (`pxCalls`
+//      `png_part_decode == parts` and `png_part_finish == finishes`, `timing.bytes > 0`) and the JS twin route
+//      (`E.kernels = "js"`, 0 wasm calls, identical hash).
+//   2. A band-source PNG with parts above 256 rows (3003 x 1109 at rows = 2048 -> 698-row and 411-row parts that
+//      cross tile rows and start mid-tile).
+//   3. A parted PNG built from synthetic straight RGBA bytes with non-fixed-point `(c, a)` pairs (such as
+//      `(200, 100, 50, 3)`), verifying `canvasRoundTrip()` (`rt`) is applied in both `png_part_read` and
+//      `png_part_finish` and produces the exact same pixels as `png_read` and the image route.
+//   4. A browser-encoded 1-IDAT PNG (`pngPartsOf` returns null after <= 49 B).
+//   5. Fallback to `png_read` when a later part fails after earlier parts' rows have already landed in `px`,
+//      verifying `px.release()` drops all partial tiles so live tile count matches a clean open.
+//   6. Real damaged parted PNGs (corrupt deflate bytes in a middle part, and a corrupted 4-byte tail Adler-32)
+//      opened through `ed.loadFile`, verifying `readPngParts` -> `px.release()` -> `png_read` -> refusal leaves
+//      the existing document intact, reports the failure in `ed.status`, and retains 0 tiles from the failed opens.
+//   7. Direct Electron worker rejection of shared-window, corrupt, truncated, and IHDR-cap parts.
+if (!ednow(window.__t).tileMode) return { skipped: "the parted reader fills tiles" };
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor, PNG = await import("./editor/inpaint_png.js"), A = await import("./editor/inpaint_arena.js");
+const hex = async (u8) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", u8))).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+const was = E.pngStreamFrom, keepKernels = E.kernels;
+const out = {};
+try {
+    E.pngStreamFrom = 1000000;
+    const pool = E.parts.pool(), oRun = pool.run.bind(pool);
+    const rustPart = E.kernels !== "js" && (E.routes || {}).pngPart !== "js";
+
+    // 1. Tile-encoded Scumble PNG at non-multiple-of-256 size (1503 x 1109, 5 parts of 256, 256, 256, 256, 85 rows)
+    const W = 1503, H = 1109;
+    await run("new_canvas", { width: W, height: H, doc: window.__t });
+    ed.basePx.drawInto(null, (x) => {
+        const g = x.createLinearGradient(0, 0, W, H);
+        g.addColorStop(0, "#d05020"); g.addColorStop(0.5, "#20b090"); g.addColorStop(1, "#3040e0");
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+        x.clearRect(180, 120, 310, 220);
+        x.fillStyle = "rgba(240,220,30,0.42)"; x.fillRect(620, 210, 540, 560);
+        x.fillStyle = "rgba(20,190,110,0.33)"; x.fillRect(210, 160, 140, 130);
+    });
+    const wantTileHash = await hex(ed.basePx.readRect(0, 0, W, H).data);
+    const tileEnc = await E.parts.encodeTilePixels(ed.basePx, { texts: { Software: "Scumble" } });
+    const tileLayout = await E.parts.pngPartsOf(tileEnc.blob);
+    if (!tileLayout || tileLayout.parts.length !== 5 || tileLayout.width !== W || tileLayout.height !== H) {
+        throw new Error("tile-encoded PNG layout mismatch: " + JSON.stringify(tileLayout));
+    }
+    let partReads = 0, partFinishes = 0, finishPrios = [], pngReads = 0;
+    pool.run = (op, args, tr, opts) => {
+        if (op === "png_part_read") partReads++;
+        else if (op === "png_part_finish") { partFinishes++; finishPrios.push(opts && opts.priority); }
+        else if (op === "png_read") pngReads++;
+        return oRun(op, args, tr, opts);
+    };
+    try {
+        E.jobTimings(true);
+        await ed.loadFile(new File([tileEnc.blob], "parted_tile.png", { type: "image/png" }));
+        if (partReads !== 5 || !(partFinishes > 0) || pngReads !== 0) {
+            throw new Error(`tile parted open: partReads=${partReads} partFinishes=${partFinishes} pngReads=${pngReads} status=${ed.status}`);
+        }
+        if (finishPrios.some((p) => p !== 0)) {
+            throw new Error("png_part_finish did not run at INTERACTIVE priority 0: " + JSON.stringify(finishPrios));
+        }
+        const timings = E.jobTimings(true);
+        const readJobs = timings.filter((j) => j && j.op === "png_part_read");
+        const finishJobs = timings.filter((j) => j && j.op === "png_part_finish");
+        const decodeCalls = readJobs.reduce((n, j) => n + ((j.pxCalls && j.pxCalls.png_part_decode) || 0), 0);
+        const finishCalls = finishJobs.reduce((n, j) => n + ((j.pxCalls && j.pxCalls.png_part_finish) || 0), 0);
+        if (readJobs.length !== partReads || finishJobs.length !== partFinishes) {
+            throw new Error(`jobTimings count mismatch: readJobs=${readJobs.length}/${partReads} finishJobs=${finishJobs.length}/${partFinishes}`);
+        }
+        if (!readJobs.every((j) => j.bytes > 0 && typeof j.decode === "number") || !finishJobs.every((j) => typeof j.finish === "number")) {
+            throw new Error("png_part job timings missing bytes > 0 or decode/finish laps: " + JSON.stringify(timings));
+        }
+        if (rustPart && (decodeCalls !== partReads || finishCalls !== partFinishes)) {
+            throw new Error(`Rust pxCalls mismatch: decodeCalls=${decodeCalls}/${partReads} finishCalls=${finishCalls}/${partFinishes}`);
+        }
+        out.tileParted = await hex(ed.basePx.readRect(0, 0, W, H).data);
+        if (out.tileParted !== wantTileHash) {
+            throw new Error(`tile parted hash ${out.tileParted} != source ${wantTileHash}`);
+        }
+        out.tileParts = { reads: partReads, finishes: partFinishes, decodeCalls, finishCalls };
+
+        // Repeat on the JS twin route (E.kernels = "js"): 0 wasm calls, laps recorded, identical hash
+        E.kernels = "js";
+        try {
+            partReads = 0; partFinishes = 0; pngReads = 0;
+            E.jobTimings(true);
+            await ed.loadFile(new File([tileEnc.blob], "parted_tile_js.png", { type: "image/png" }));
+            const jsTimings = E.jobTimings(true);
+            const jsReadJobs = jsTimings.filter((j) => j && j.op === "png_part_read");
+            const jsFinishJobs = jsTimings.filter((j) => j && j.op === "png_part_finish");
+            const jsDecodeCalls = jsReadJobs.reduce((n, j) => n + ((j.pxCalls && j.pxCalls.png_part_decode) || 0), 0);
+            const jsFinishCalls = jsFinishJobs.reduce((n, j) => n + ((j.pxCalls && j.pxCalls.png_part_finish) || 0), 0);
+            const jsHash = await hex(ed.basePx.readRect(0, 0, W, H).data);
+            if (partReads !== 5 || !(partFinishes > 0) || pngReads !== 0 || jsDecodeCalls !== 0 || jsFinishCalls !== 0 || jsHash !== wantTileHash) {
+                throw new Error(`JS route mismatch: reads=${partReads} finishes=${partFinishes} jsDecodeCalls=${jsDecodeCalls} jsFinishCalls=${jsFinishCalls} jsHash=${jsHash} want=${wantTileHash}`);
+            }
+            if (!jsReadJobs.every((j) => j.bytes > 0 && typeof j.decode === "number") || !jsFinishJobs.every((j) => typeof j.finish === "number")) {
+                throw new Error("JS route job timings missing bytes > 0 or decode/finish laps: " + JSON.stringify(jsTimings));
+            }
+            out.jsRoute = { reads: partReads, finishes: partFinishes, decodeCalls: jsDecodeCalls, finishCalls: jsFinishCalls, hash: jsHash };
+        } finally { E.kernels = keepKernels; }
+    } finally { pool.run = oRun; }
+
+    // 2. Band-source Scumble PNG with parts above 256 rows (3003 x 1109 at rows = 2048 -> 698-row and 411-row parts)
+    const BW = 3003, BH = 1109;
+    await run("new_canvas", { width: BW, height: BH, doc: window.__t });
+    ed.basePx.drawInto(null, (x) => {
+        const g = x.createLinearGradient(0, 0, BW, BH);
+        g.addColorStop(0, "#9020c0"); g.addColorStop(0.5, "#40d060"); g.addColorStop(1, "#f08010");
+        x.fillStyle = g; x.fillRect(0, 0, BW, BH);
+        x.clearRect(400, 250, 500, 350);
+        x.fillStyle = "rgba(80,140,250,0.47)"; x.fillRect(350, 200, 1200, 700);
+    });
+    const wantBandHash = await hex(ed.basePx.readRect(0, 0, BW, BH).data);
+    const bandEnc = await E.parts.encodeBands(BW, BH, (y0, y1) => ed.basePx.readRect(0, y0, BW, y1 - y0).data, {
+        rows: 2048, chunks: [PNG.SRGB_CHUNK], texts: { Software: "Scumble" },
+    });
+    const bandLayout = await E.parts.pngPartsOf(bandEnc.blob);
+    if (!bandLayout || bandLayout.parts.length !== 2) {
+        throw new Error("band-encoded PNG expected 2 parts (>256 rows each): " + JSON.stringify(bandLayout));
+    }
+    const bandDecodedRows = [];
+    partReads = 0; pngReads = 0;
+    pool.run = async (op, args, tr, opts) => {
+        if (op === "png_part_read") {
+            partReads++;
+            const r = await oRun(op, args, tr, opts);
+            bandDecodedRows.push(r.rows);
+            return r;
+        }
+        if (op === "png_read") pngReads++;
+        return oRun(op, args, tr, opts);
+    };
+    try {
+        await ed.loadFile(new File([bandEnc.blob], "parted_band.png", { type: "image/png" }));
+        const sortedRows = [...bandDecodedRows].sort((a, b) => b - a);
+        if (partReads !== 2 || pngReads !== 0 || sortedRows[0] !== 698 || sortedRows[1] !== 411) {
+            throw new Error(`band parted open: partReads=${partReads} pngReads=${pngReads} rows=${JSON.stringify(bandDecodedRows)}`);
+        }
+        out.bandParted = await hex(ed.basePx.readRect(0, 0, BW, BH).data);
+        if (out.bandParted !== wantBandHash) {
+            throw new Error(`band parted hash ${out.bandParted} != source ${wantBandHash}`);
+        }
+        out.bandRows = bandDecodedRows;
+    } finally { pool.run = oRun; }
+
+    // 3. Round-trip table (`rt`) seam: a parted PNG built from raw straight RGBA bytes that are NOT fixed points of
+    //    `canvasRoundTrip()` (including `(200, 100, 50, 3)` at row 0 of part 0 and row 256 of part 1, where part 1 and
+    //    part 2 start with Paeth/Average and go through `png_part_finish`), opened via `readPngParts`, `png_read`, and
+    //    the image route.
+    const RW = 1503, RH = 700;
+    const rawRgba = new Uint8Array(RW * RH * 4);
+    for (let y = 0; y < RH; y++) {
+        const rowOff = y * RW * 4;
+        for (let x = 0; x < RW; x++) {
+            const o = rowOff + x * 4;
+            if (x === 0 && (y === 0 || y === 256 || y === 512)) {
+                rawRgba[o] = 200; rawRgba[o + 1] = 100; rawRgba[o + 2] = 50; rawRgba[o + 3] = 3;
+            } else {
+                rawRgba[o] = (200 + x * 37 + y) & 255;
+                rawRgba[o + 1] = (100 + x * 53 + y) & 255;
+                rawRgba[o + 2] = (50 + x * 71) & 255;
+                rawRgba[o + 3] = 1 + ((x * 5) % 15);
+            }
+        }
+    }
+    const rawRtHash = await hex(rawRgba);
+    const rtEnc = await E.parts.encodeBands(RW, RH, (y0, y1) => rawRgba.subarray(y0 * RW * 4, y1 * RW * 4), {
+        rows: 256, texts: { Software: "Scumble" },
+    });
+    partReads = 0; partFinishes = 0; pngReads = 0;
+    pool.run = (op, args, tr, opts) => {
+        if (op === "png_part_read") partReads++;
+        else if (op === "png_part_finish") partFinishes++;
+        else if (op === "png_read") pngReads++;
+        return oRun(op, args, tr, opts);
+    };
+    let rtPartedHash, rtPngReadHash, rtImageHash;
+    try {
+        await ed.loadFile(new File([rtEnc.blob], "parted_rt.png", { type: "image/png" }));
+        const landedRt = ed.basePx.readRect(0, 0, RW, RH).data;
+        rtPartedHash = await hex(landedRt);
+        const p0Sample = Array.from(landedRt.subarray(0, 4));
+        const p1Sample = Array.from(landedRt.subarray(256 * RW * 4, 256 * RW * 4 + 4));
+        if (partReads !== 3 || !(partFinishes >= 2) || pngReads !== 0) {
+            throw new Error(`rt parted open: partReads=${partReads} partFinishes=${partFinishes} pngReads=${pngReads}`);
+        }
+        if (rtPartedHash === rawRtHash || p0Sample[0] === 200 || p1Sample[0] === 200) {
+            throw new Error(`rt table was not applied: rtPartedHash=${rtPartedHash} rawRtHash=${rawRtHash} p0=${p0Sample} p1=${p1Sample}`);
+        }
+    } finally { pool.run = oRun; }
+    // Compare with png_read route (via fallback) and image route (E.pngStreamFrom above pixel count)
+    pngReads = 0;
+    pool.run = (op, args, tr, opts) => {
+        if (op === "png_part_read") return Promise.reject(new Error("force png_read"));
+        if (op === "png_read") pngReads++;
+        return oRun(op, args, tr, opts);
+    };
+    try {
+        await ed.loadFile(new File([rtEnc.blob], "parted_rt_pngread.png", { type: "image/png" }));
+        rtPngReadHash = await hex(ed.basePx.readRect(0, 0, RW, RH).data);
+        if (pngReads !== 1 || rtPngReadHash !== rtPartedHash) {
+            throw new Error(`rt png_read mismatch: pngReads=${pngReads} rtPngReadHash=${rtPngReadHash} rtPartedHash=${rtPartedHash}`);
+        }
+    } finally { pool.run = oRun; }
+    E.pngStreamFrom = 1000000000;
+    try {
+        await ed.loadFile(new File([rtEnc.blob], "parted_rt_image.png", { type: "image/png" }));
+        rtImageHash = await hex(ed.basePx.readRect(0, 0, RW, RH).data);
+        if (rtImageHash !== rtPartedHash) {
+            throw new Error(`rt image route mismatch: rtImageHash=${rtImageHash} rtPartedHash=${rtPartedHash}`);
+        }
+    } finally { E.pngStreamFrom = 1000000; }
+    out.rtSeam = { rawRtHash, rtPartedHash, rtPngReadHash, rtImageHash };
+
+    // 4. Browser-encoded 1-IDAT PNG: pngPartsOf returns null after <= 49 B and loadFile uses png_read
+    await ed.loadFile(new File([tileEnc.blob], "restore_tile.png", { type: "image/png" }));
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(ed.basePx.readRect(0, 0, W, H).data), W, H), 0, 0);
+    const plainBlob = await new Promise((r) => c.toBlob(r, "image/png"));
+    c.width = 1; c.height = 1;
+    let slicedBytes = 0;
+    const countedPlain = {
+        get size() { return plainBlob.size; },
+        slice(a, b) {
+            const s = Math.max(0, a | 0), e = Math.min(plainBlob.size, b == null ? plainBlob.size : (b | 0));
+            slicedBytes += Math.max(0, e - s);
+            return plainBlob.slice(a, b);
+        },
+    };
+    const plainLayout = await E.parts.pngPartsOf(countedPlain);
+    if (plainLayout !== null || !(slicedBytes >= 33 && slicedBytes <= 49)) {
+        throw new Error(`plain PNG layout=${JSON.stringify(plainLayout)} slicedBytes=${slicedBytes}`);
+    }
+    out.plainSlicedBytes = slicedBytes;
+
+    // 5. Fallback to png_read when a later part fails AFTER earlier parts' rows have already landed in `px`:
+    //    verifies `px.release()` drops the partial tiles from the aborted `readPngParts` so live tile use matches a
+    //    clean open (`cleanTiles === 30`), and `png_read` completes the open.
+    const cleanTiles = ed.basePx._tiles.size;
+    const oEmpty = ed.pixels.Layer.empty.bind(ed.pixels.Layer);
+    const createdLayers = [];
+    const heldCreatedTiles = () => createdLayers.reduce((n, p) => n + (p._tiles ? p._tiles.size : 0), 0);
+    ed.pixels.Layer.empty = (w, h) => {
+        const p = oEmpty(w, h);
+        createdLayers.push(p);
+        return p;
+    };
+    let fallbackPngReads = 0, failOnce = true, firstPartDone = null, heldBeforeReject = 0, arenaAllocBeforeReject = 0;
+    const arenaBeforeFallback = A.arenaStats().allocated;
+    pool.run = async (op, args, tr, opts) => {
+        if (op === "png_part_read") {
+            if (args.first) {
+                firstPartDone = oRun(op, args, tr, opts);
+                return firstPartDone;
+            }
+            if (args.last && failOnce) {
+                failOnce = false;
+                if (firstPartDone) await firstPartDone;
+                // Wait one macrotask so readPngParts's loop delivers part 0's 256 rows (6 tiles) to onRows -> putCanvasRows
+                await new Promise((r) => setTimeout(r, 25));
+                heldBeforeReject = heldCreatedTiles();
+                arenaAllocBeforeReject = A.arenaStats().allocated - arenaBeforeFallback;
+                throw new Error("simulated last-part failure after rows landed");
+            }
+        }
+        if (op === "png_read") fallbackPngReads++;
+        return oRun(op, args, tr, opts);
+    };
+    try {
+        await ed.loadFile(new File([tileEnc.blob], "parted_fallback.png", { type: "image/png" }));
+        const fbHash = await hex(ed.basePx.readRect(0, 0, W, H).data);
+        const heldAfterFallback = heldCreatedTiles();
+        const abortedLayerTiles = createdLayers[0] && createdLayers[0]._tiles ? createdLayers[0]._tiles.size : -1;
+        if (fallbackPngReads !== 1 || fbHash !== wantTileHash || !(heldBeforeReject >= 6) || !(arenaAllocBeforeReject >= 6) || abortedLayerTiles !== 0 || heldAfterFallback !== cleanTiles || ed.basePx._tiles.size !== cleanTiles) {
+            throw new Error(`fallback after rows landed failed: fallbackPngReads=${fallbackPngReads} fbHash=${fbHash} cleanTiles=${cleanTiles} heldBeforeReject=${heldBeforeReject} arenaAllocBeforeReject=${arenaAllocBeforeReject} abortedLayerTiles=${abortedLayerTiles} heldAfterFallback=${heldAfterFallback}`);
+        }
+        out.fallbackOk = { cleanTiles, heldBeforeReject, arenaAllocBeforeReject, abortedLayerTiles, heldAfterFallback };
+    } finally { pool.run = oRun; }
+
+    // 6. Real damaged parted PNGs through `ed.loadFile` (corrupt deflate bytes in middle part 2, and corrupted 4-byte
+    //    tail Adler-32): `readPngParts` fails -> `px.release()` -> `png_read` fails -> `px.release()` -> old document
+    //    stays intact, `ed.status` names the failure, and 0 tiles from the failed opens remain held.
+    const tileBytes = new Uint8Array(await tileEnc.blob.arrayBuffer());
+    const badMidBytes = tileBytes.slice();
+    badMidBytes.fill(0xff, tileLayout.parts[2].off, tileLayout.parts[2].off + Math.min(64, tileLayout.parts[2].len));
+    const badMidBlob = new Blob([badMidBytes], { type: "image/png" });
+    const badAdlerBytes = tileBytes.slice();
+    const lastPart = tileLayout.parts[tileLayout.parts.length - 1];
+    const tailDataOff = lastPart.off + lastPart.len + 12;
+    badAdlerBytes[tailDataOff] ^= 0xff;
+    const badAdlerBlob = new Blob([badAdlerBytes], { type: "image/png" });
+
+    try {
+        for (const [tag, badBlob, wantReads] of [["corrupt_middle_part", badMidBlob, 1], ["corrupt_tail_adler", badAdlerBlob, 5]]) {
+            createdLayers.length = 0;
+            partReads = 0; pngReads = 0;
+            pool.run = (op, args, tr, opts) => {
+                if (op === "png_part_read") partReads++;
+                else if (op === "png_read") pngReads++;
+                return oRun(op, args, tr, opts);
+            };
+            try {
+                await ed.loadFile(new File([badBlob], `${tag}.png`, { type: "image/png" }));
+            } finally { pool.run = oRun; }
+            const keptHash = await hex(ed.basePx.readRect(0, 0, W, H).data);
+            const leakedTiles = heldCreatedTiles();
+            const docTiles = ed.basePx._tiles.size;
+            if (!(partReads >= wantReads) || pngReads !== 1 || ed.width !== W || ed.height !== H || keptHash !== wantTileHash || !/corrupt|not valid|ended after|cannot close|incorrect|invalid|error/i.test(ed.status) || ed.status === `${W} × ${H}` || leakedTiles !== 0 || docTiles !== cleanTiles) {
+                throw new Error(`damaged file ${tag}: partReads=${partReads} pngReads=${pngReads} size=${ed.width}x${ed.height} keptHash=${keptHash} status=${ed.status} leakedTiles=${leakedTiles} docTiles=${docTiles}/${cleanTiles}`);
+            }
+        }
+    } finally { ed.pixels.Layer.empty = oEmpty; createdLayers.length = 0; }
+    out.damagedFilesRefused = { cleanTiles, status: ed.status };
+
+    // 7. Electron worker tests of png_part_read (Chromium's native DecompressionStream("deflate-raw")):
+    //    - shared-window part (LZ77 distance referencing before the part's start)
+    //    - corrupt deflate bytes
+    //    - truncated deflate stream
+    //    - IHDR height bound (h * (1 + 4 * w) smaller than png_part_lines_cap(w))
+    const sharedWindowPart = new Blob([new Uint8Array([27, 132, 113, 50, 90, 6, 140, 150, 1, 163, 101, 0, 29, 195, 13, 0])]);
+    const corruptPart = new Blob([new Uint8Array([0xff, 0xff, 0xff, 0xff, 0x01])]);
+    const validFirstSlice = tileEnc.blob.slice(tileLayout.parts[0].off, tileLayout.parts[0].off + tileLayout.parts[0].len);
+    const truncPart = validFirstSlice.slice(0, validFirstSlice.size >> 1);
+    const workerRejects = async (jobArgs) => {
+        try { await pool.run("png_part_read", jobArgs); return false; } catch (_) { return true; }
+    };
+    const [sharedRej, corruptRej, truncRej, ihdrCapRej] = await Promise.all([
+        workerRejects({ blob: sharedWindowPart, w: 64, h: 4, first: false, last: true }),
+        workerRejects({ blob: corruptPart, w: 64, h: 4, first: true, last: false }),
+        workerRejects({ blob: truncPart, w: W, h: H, first: true, last: false }),
+        // validFirstSlice has 256 rows, but IHDR h = 10 bounds inflation to 10 * (1 + 4 * W)
+        workerRejects({ blob: validFirstSlice, w: W, h: 10, first: true, last: false }),
+    ]);
+    if (!sharedRej || !corruptRej || !truncRej || !ihdrCapRej) {
+        throw new Error(`Electron worker refusal check failed: shared=${sharedRej} corrupt=${corruptRej} trunc=${truncRej} ihdrCap=${ihdrCapRej}`);
+    }
+    out.workerRefusals = { sharedRej, corruptRej, truncRej, ihdrCapRej };
+} finally { E.pngStreamFrom = was; E.kernels = keepKernels; }
+ed.clearUndo();
+await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+await ed.mipsSettled();
+return out;
+""")),
     ("a_stroke_commits_through_the_kernel_on_tiles", """
 // docs/BUGS.md "Releasing an erase stroke is its own stutter": on tiles a stroke is committed a tile at a time through
 // the compositing kernel (`commitStrokeTiles` -> `compositeStroke`), not band by band through canvases (0.29 s of
@@ -7214,6 +7593,316 @@ try {
         ed.removeLayer(k.l.id); ed.removeLayer(b.l.id); if (j) ed.removeLayer(j.l.id);
     }
 } finally { E.strokeTiles = was; K.setRoute("compositeMaskedTile", null); ed.pointer = null; }
+ed.clearUndo(); ed.sel.clear(); ed.markSelectionChanged();
+await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+return out;
+"""),
+    ("the_bucket_fills_through_the_kernel_on_tiles", """
+// K37 (docs/PLAN_WASM_BUILD.md §4.11): on an unlocked tile layer (or any tile layer below full opacity) at scale 1
+// with a whole offset, bucketFill requests 64 KB alpha tiles from the flood job (`tiles: true`, K9) and composites
+// them in the fill colour through `compositeFill` -> `compositeMaskedTile` (K36) without an OffscreenCanvas,
+// ImageBitmap or `_scratchDraw` readback. At full opacity the bytes equal the canvas path
+// (`InpaintEditor.bucketTiles = false`): an alpha-locked fill at full opacity and a scaled or fractional-offset layer
+// stay on the canvas path, while unlocked fills (including on a layer shifted off the tile grid, a flood crossing a
+// layer's right and bottom edges, or a click with no active layer) run through `compositeFill`; below full opacity
+// partially blended pixels are within one level of Skia, untouched pixels are unchanged, the Rust and JS routes agree
+// byte for byte, undo restores the layer, and mid-flood colour or geometry changes are handled safely.
+if (!ednow(window.__t).tileMode) return { skipped: "the kernel bucket fill is the tile engine's" };
+const K = await import("./editor/px/kernels.js");
+await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor, W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H), bx = base.getContext("2d");
+bx.fillStyle = "#f0f0e8"; bx.fillRect(0, 0, W, H);
+bx.fillStyle = "#2050c0"; bx.fillRect(200, 150, 1800, 1200);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "bucket_tiles.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+await ed.mipsSettled();
+const seedLayer = (l) => l.px.drawInto(null, (x) => {
+    x.fillStyle = "#3060c0"; x.fillRect(100, 100, 1100, 900);
+    x.fillStyle = "rgba(200,90,40,0.55)"; x.fillRect(700, 400, 1200, 900);
+    const g = x.createRadialGradient(1500, 600, 40, 1500, 600, 450); g.addColorStop(0, "rgba(40,200,90,0.9)"); g.addColorStop(1, "rgba(40,200,90,0)");
+    x.fillStyle = g; x.fillRect(1050, 150, 900, 900);
+});
+const bytes = (l) => l.px.readRect(0, 0, l.px.width, l.px.height).data;
+const cases = [
+    { name: "full", opacity: 1, clip: false, lock: false, tol: 0, expectTiles: true },
+    { name: "full, alpha locked", opacity: 1, clip: false, lock: true, tol: 0, expectTiles: false },
+    { name: "full, clipped off-grid", opacity: 1, clip: true, lock: false, tol: 0, expectTiles: true },
+    { name: "full, edge crossing", opacity: 1, clip: false, lock: false, tol: 0, expectTiles: true, small: [500, 300, 900, 700] },
+    { name: "opacity", opacity: 0.6, clip: false, lock: false, tol: 1, expectTiles: true },
+    { name: "opacity, alpha locked", opacity: 0.75, clip: false, lock: true, tol: 1, expectTiles: true },
+    { name: "opacity, clipped off-grid", opacity: 0.65, clip: true, lock: false, tol: 1, expectTiles: true },
+];
+const out = {};
+let calls = 0, scratchCalls = 0;
+const was = E.bucketTiles;
+try {
+    ed.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
+    for (const c of cases) {
+        ed.sel.clear();
+        if (c.clip) {
+            ed.sel.fill([450, 250, 1650, 1050], "#ff0000");
+            ed.markSelectionChanged([450, 250, 1650, 1050]);
+        } else {
+            ed.markSelectionChanged();
+        }
+        ed.getBounds();
+        const pair = [];
+        for (const [kernel, rt] of [[true, "rust"], [false, "rust"], [true, "js"]]) {
+            const l = ed.addPaintLayer();
+            if (c.small) {
+                l.px.release();
+                l.px = ed.pixels.Layer.empty(c.small[2], c.small[3]);
+                [l.x, l.y, l.w, l.h] = c.small;
+            }
+            seedLayer(l);
+            if (c.clip) { l.x = 137; l.y = 61; }
+            l.alphaLock = c.lock;
+            l.visible = false; // sample "image" floods the base's blue rectangle identically on every run
+            ed.activeLayerId = l.id;
+            ed.brushOpacity = c.opacity; ed.color = "#e08020";
+            const before = bytes(l).slice();
+            E.bucketTiles = kernel;
+            K.setRoute("compositeMaskedTile", rt === "js" ? "js" : null);
+            const oc = l.px.compositeFill, os = l.px._scratchDraw;
+            l.px.compositeFill = function (...a) { calls++; return oc.apply(this, a); };
+            l.px._scratchDraw = function (...a) { scratchCalls++; return os.apply(this, a); };
+            const n0 = calls, s0 = scratchCalls;
+            K.pxCalls(true);
+            try { await ed.bucketFill(600, 500); } finally {
+                delete l.px.compositeFill; delete l.px._scratchDraw;
+                K.setRoute("compositeMaskedTile", null);
+            }
+            const kc = K.pxCalls(true);
+            const tookTiles = kernel && c.expectTiles;
+            if (tookTiles && (calls === n0 || scratchCalls !== s0)) {
+                throw new Error(c.name + ": the tile bucket fill did not go through compositeFill alone (calls=" + (calls - n0) + ", scratch=" + (scratchCalls - s0) + ")");
+            }
+            if (!tookTiles && (calls !== n0 || scratchCalls === s0)) {
+                throw new Error(c.name + ": expected canvas _scratchDraw path (calls=" + (calls - n0) + ", scratch=" + (scratchCalls - s0) + ")");
+            }
+            if (tookTiles && rt === "rust" && !(kc.composite_masked_tile > 0)) {
+                throw new Error(c.name + ": expected composite_masked_tile calls on rust route, got " + JSON.stringify(kc));
+            }
+            if ((!tookTiles || rt === "js") && kc.composite_masked_tile) {
+                throw new Error(c.name + ": unexpected composite_masked_tile calls (" + rt + "): " + JSON.stringify(kc));
+            }
+            if (c.small && tookTiles) {
+                // Verify right edge tiles (tx=3, x >= 132) and bottom edge tiles (ty=2, y >= 188) have 0 alpha past the layer edge
+                for (let ty = 0; ty <= 2; ty++) {
+                    const rtTile = l.px.tileAt(3, ty);
+                    if (!rtTile) throw new Error(c.name + ": missing right edge tile (3," + ty + ")");
+                    for (let y = 0; y < 256; y++) for (let x = 132; x < 256; x++) {
+                        if (rtTile.data[(y * 256 + x) * 4 + 3] !== 0) throw new Error(c.name + ": right edge tile (3," + ty + ") not clamped at (" + x + "," + y + ")");
+                    }
+                }
+                for (let tx = 0; tx <= 3; tx++) {
+                    const btTile = l.px.tileAt(tx, 2);
+                    if (!btTile) throw new Error(c.name + ": missing bottom edge tile (" + tx + ",2)");
+                    for (let y = 188; y < 256; y++) for (let x = 0; x < 256; x++) {
+                        if (btTile.data[(y * 256 + x) * 4 + 3] !== 0) throw new Error(c.name + ": bottom edge tile (" + tx + ",2) not clamped at (" + x + "," + y + ")");
+                    }
+                }
+            }
+            pair.push({ l, before, after: bytes(l).slice(), tileCount: l.px.tileCount });
+        }
+        const [k, b, j] = pair;
+        if (j.tileCount !== k.tileCount) throw new Error(c.name + ": js twin tileCount " + j.tileCount + " != rust " + k.tileCount);
+        for (let i = 0; i < k.after.length; i++) {
+            if (j.after[i] !== k.after[i]) throw new Error(c.name + ": js twin differed from rust at byte " + i + ": " + j.after[i] + " vs " + k.after[i]);
+        }
+        const lw = k.l.px.width, lh = k.l.px.height;
+        const rx0 = Math.max(0, (c.clip ? 450 : 200) - k.l.x), ry0 = Math.max(0, (c.clip ? 250 : 150) - k.l.y);
+        const rx1 = Math.min(lw, (c.clip ? 1650 : 2000) - k.l.x), ry1 = Math.min(lh, (c.clip ? 1050 : 1350) - k.l.y);
+        const exact = c.tol === 0;
+        const tol = c.tol;
+        let differ = 0, worst = 0, untouchedDiffer = 0, changed = 0, firstDiff = null;
+        for (let y = 0; y < lh; y++) {
+            for (let x = 0; x < lw; x++) {
+                const i = (y * lw + x) * 4;
+                const inFill = x >= rx0 && x < rx1 && y >= ry0 && y < ry1;
+                if (!inFill) {
+                    for (let q = 0; q < 4; q++) if (k.after[i + q] !== k.before[i + q]) { untouchedDiffer++; break; }
+                    continue;
+                }
+                if (k.after[i] !== k.before[i] || k.after[i + 3] !== k.before[i + 3]) changed++;
+                const ka = k.after[i + 3], ba = b.after[i + 3];
+                let d = Math.abs(ka - ba);
+                for (let q = 0; q < 3; q++) {
+                    d = Math.max(d, exact
+                        ? Math.abs(k.after[i + q] - b.after[i + q])
+                        : Math.abs(Math.round(k.after[i + q] * ka / 255) - Math.round(b.after[i + q] * ba / 255)));
+                }
+                if (d) {
+                    differ++;
+                    if (d > worst) worst = d;
+                    if (d > tol && !firstDiff) {
+                        firstDiff = { x, y, d, tol, before: Array.from(k.before.subarray(i, i + 4)), k: Array.from(k.after.subarray(i, i + 4)), b: Array.from(b.after.subarray(i, i + 4)) };
+                    }
+                }
+            }
+        }
+        if (untouchedDiffer) throw new Error(c.name + ": the kernel bucket fill changed " + untouchedDiffer + " pixels outside the flooded region");
+        if (!(changed > 100000)) throw new Error(c.name + ": the fill changed only " + changed + " pixels");
+        if (firstDiff) throw new Error(c.name + ": the kernel bucket fill is " + worst + " levels off the canvas path on " + differ + " pixels: " + JSON.stringify(firstDiff));
+        await ed.undoStep(); await ed.undoStep(); await ed.undoStep();
+        for (const [what, q] of [["the kernel's", k], ["the canvas'", b], ["the twin's", j]]) {
+            const back = bytes(q.l);
+            for (let i = 0; i < back.length; i++) if (back[i] !== q.before[i]) throw new Error(c.name + ": undo of " + what + " fill left byte " + i + " at " + back[i] + ", was " + q.before[i]);
+        }
+        out[c.name] = { changed, differ, worst };
+        ed.removeLayer(k.l.id); ed.removeLayer(b.l.id); ed.removeLayer(j.l.id);
+    }
+
+    // Eligibility guards: scaled width, scaled height, fractional x, fractional y all stay on the canvas path
+    ed.sel.clear(); ed.markSelectionChanged(); ed.getBounds();
+    for (const [gName, mutate] of [
+        ["scaled width", (l) => { l.w = 1500; }],
+        ["scaled height", (l) => { l.h = 1000; }],
+        ["fractional x", (l) => { l.x = 10.5; }],
+        ["fractional y", (l) => { l.y = 10.5; }],
+    ]) {
+        const runs = [];
+        for (const kernel of [true, false]) {
+            const l = ed.addPaintLayer();
+            seedLayer(l);
+            mutate(l);
+            l.visible = false;
+            ed.activeLayerId = l.id;
+            ed.brushOpacity = 1; ed.color = "#e08020";
+            const before = bytes(l).slice();
+            E.bucketTiles = kernel;
+            const oc = l.px.compositeFill, os = l.px._scratchDraw;
+            l.px.compositeFill = function (...a) { calls++; return oc.apply(this, a); };
+            l.px._scratchDraw = function (...a) { scratchCalls++; return os.apply(this, a); };
+            const n0 = calls, s0 = scratchCalls;
+            K.pxCalls(true);
+            try { await ed.bucketFill(600, 500); } finally {
+                delete l.px.compositeFill; delete l.px._scratchDraw;
+            }
+            const kc = K.pxCalls(true);
+            if (calls !== n0 || scratchCalls === s0 || kc.composite_masked_tile) {
+                throw new Error(gName + ": non-qualifying layer must take canvas path (calls=" + (calls - n0) + ", scratch=" + (scratchCalls - s0) + ", kc=" + JSON.stringify(kc) + ")");
+            }
+            const after = bytes(l).slice();
+            let ch = 0;
+            for (let i = 0; i < after.length; i += 4) if (after[i] !== before[i] || after[i + 3] !== before[i + 3]) ch++;
+            if (!(ch > 100000)) throw new Error(gName + ": changed only " + ch + " pixels");
+            runs.push({ l, after });
+        }
+        for (let i = 0; i < runs[0].after.length; i++) {
+            if (runs[0].after[i] !== runs[1].after[i]) throw new Error(gName + ": byte " + i + " differed: " + runs[0].after[i] + " vs " + runs[1].after[i]);
+        }
+        ed.removeLayer(runs[0].l.id); ed.removeLayer(runs[1].l.id);
+        out[gName] = "canvas";
+    }
+
+    // No active layer: bucketFill creates the paint layer after the flood and composites through compositeFill
+    {
+        const runs = [];
+        for (const kernel of [true, false]) {
+            for (const l of ed.layers.filter((x) => x.kind === "paint")) ed.removeLayer(l.id);
+            ed.activeLayerId = null;
+            ed.brushOpacity = 1; ed.color = "#e08020";
+            E.bucketTiles = kernel;
+            K.pxCalls(true);
+            await ed.bucketFill(600, 500);
+            const kc = K.pxCalls(true);
+            const created = ed.activeLayer();
+            if (!created || created.kind !== "paint") throw new Error("no active layer: paint layer was not created");
+            if (kernel && !(kc.composite_masked_tile > 0)) throw new Error("no active layer: expected composite_masked_tile calls, got " + JSON.stringify(kc));
+            if (!kernel && kc.composite_masked_tile) throw new Error("no active layer: unexpected composite_masked_tile calls on canvas path");
+            const after = bytes(created).slice();
+            let ch = 0;
+            for (let i = 0; i < after.length; i += 4) if (after[i + 3] > 0) ch++;
+            if (ch !== 1800 * 1200) throw new Error("no active layer: expected 2160000 filled pixels, got " + ch);
+            runs.push({ l: created, after });
+        }
+        for (let i = 0; i < runs[0].after.length; i++) {
+            if (runs[0].after[i] !== runs[1].after[i]) throw new Error("no active layer: byte " + i + " differed: " + runs[0].after[i] + " vs " + runs[1].after[i]);
+        }
+        for (const r of runs) if (ed.layers.includes(r.l)) ed.removeLayer(r.l.id);
+        out["no active layer"] = "tiles";
+    }
+
+    // Race 1 (K37-callsite-1): colour changed during await floodRegion uses the click-time colour
+    {
+        const runs = [];
+        for (const kernel of [true, false]) {
+            const l = ed.addPaintLayer();
+            l.visible = false;
+            ed.activeLayerId = l.id;
+            ed.brushOpacity = 1; ed.color = "#e08020";
+            E.bucketTiles = kernel;
+            const origFlood = ed.floodRegion.bind(ed);
+            ed.floodRegion = async (...a) => {
+                const res = await origFlood(...a);
+                ed.color = "#10f040";
+                return res;
+            };
+            K.pxCalls(true);
+            try { await ed.bucketFill(600, 500); } finally { delete ed.floodRegion; }
+            const kc = K.pxCalls(true);
+            if (kernel && !(kc.composite_masked_tile > 0)) throw new Error("color_race: expected composite_masked_tile calls");
+            const after = bytes(l).slice();
+            const o = (500 * W + 600) * 4;
+            if (after[o] !== 0xe0 || after[o + 1] !== 0x80 || after[o + 2] !== 0x20 || after[o + 3] !== 255) {
+                throw new Error("color_race (" + kernel + "): filled pixel is " + Array.from(after.subarray(o, o + 4)) + ", expected [224,128,32,255]");
+            }
+            runs.push({ l, after });
+        }
+        for (let i = 0; i < runs[0].after.length; i++) {
+            if (runs[0].after[i] !== runs[1].after[i]) throw new Error("color_race: byte " + i + " differed");
+        }
+        ed.removeLayer(runs[0].l.id); ed.removeLayer(runs[1].l.id);
+        out.color_race = "ok";
+    }
+
+    // Race 2 (K37-tile-1): layer geometry changed during await floodRegion aborts before undo step or compositeFill
+    for (const [rName, mutate] of [
+        ["geometry_race_scale", (l) => { l.w = 1500; }],
+        ["geometry_race_offset", (l) => { l.x = 12.5; }],
+    ]) {
+        const l = ed.addPaintLayer();
+        seedLayer(l);
+        l.visible = false;
+        ed.activeLayerId = l.id;
+        ed.brushOpacity = 1; ed.color = "#e08020";
+        const before = bytes(l).slice();
+        ed.clearUndo();
+        const u0 = ed.undo.length;
+        E.bucketTiles = true;
+        const origFlood = ed.floodRegion.bind(ed);
+        ed.floodRegion = async (...a) => {
+            const res = await origFlood(...a);
+            mutate(l);
+            return res;
+        };
+        const oc = l.px.compositeFill;
+        l.px.compositeFill = function (...a) { calls++; return oc.apply(this, a); };
+        const n0 = calls;
+        K.pxCalls(true);
+        try { await ed.bucketFill(600, 500); } finally {
+            delete ed.floodRegion; delete l.px.compositeFill;
+        }
+        const kc = K.pxCalls(true);
+        if (calls !== n0 || kc.composite_masked_tile) throw new Error(rName + ": compositeFill ran after layer geometry changed");
+        if (ed.undo.length !== u0) throw new Error(rName + ": undo step was pushed despite geometry mismatch");
+        if (ed.status !== "The layer changed while filling; nothing was filled.") {
+            throw new Error(rName + ": unexpected status: " + ed.status);
+        }
+        const after = bytes(l);
+        for (let i = 0; i < after.length; i++) {
+            if (after[i] !== before[i]) throw new Error(rName + ": pixel byte " + i + " changed despite abort");
+        }
+        ed.removeLayer(l.id);
+        out[rName] = "aborted";
+    }
+} finally { E.bucketTiles = was; K.setRoute("compositeMaskedTile", null); }
 ed.clearUndo(); ed.sel.clear(); ed.markSelectionChanged();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return out;
@@ -12700,6 +13389,165 @@ if (!line.textContent.startsWith("The GPU process is using") || line.textContent
 dlg.close();
 out.line = line.textContent.slice(0, 90);
 return out;
+"""),
+    ("match_canvas_fallback_chunks_through_match_pixels", """
+// K38 (docs/PLAN_WASM_BUILD.md section 4.11): when applyMatchGL returns null (no WebGL2 or a canvas larger than the
+// context's max side), matchCanvas routes its pixel loop through matchPixels in 4 MP (16,777,216-byte) chunks in place on
+// ImageData.data's buffer, matching the GPU shader's f32 formula within at most 1 level of the pre-K38 f64 loop.
+await run("new_canvas", { width: 320, height: 240, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const F = await import("./editor/inpaint_filters.js");
+const GL = await import("./editor/inpaint_filters_gl.js");
+const K = await import("./editor/px/kernels.js");
+await K.kernelsReady();
+if (F.MATCH_CHUNK_BYTES !== 4 * 1024 * 1024 * 4) throw new Error("MATCH_CHUNK_BYTES is " + F.MATCH_CHUNK_BYTES);
+if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, "matchPixels")) throw new Error("ROUTE_KINDS has no matchPixels route");
+const W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H);
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#244870"); g.addColorStop(1, "#d89c54");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "match_k38.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const lc = mk(200, 150);
+{
+    const x = lc.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 200, 150); g.addColorStop(0, "#30c850"); g.addColorStop(1, "#c83088");
+    x.fillStyle = g; x.fillRect(0, 0, 200, 120);
+    x.clearRect(0, 120, 200, 30);
+}
+const L = ed.addLayer({ name: "Matched K38", kind: "result", px: ed.pixels.Layer.fromCanvas(lc), x: 40, y: 30, w: 200, h: 150, dirty: true });
+L.match = { strength: 65, source: "surroundings" };
+ed.markMatchChanged(L);
+const below = base;
+const srcLayerCv = ed.layerPixels(L, true);
+const srcRaw = srcLayerCv.getContext("2d").getImageData(0, 0, srcLayerCv.width, srcLayerCv.height).data;
+const st = ed.matchStats(L, below, null, srcLayerCv);
+if (!st) throw new Error("matchStats returned null");
+const strength = 0.65;
+// Verbatim pre-K38 f64 Uint8ClampedArray reference loop
+const refDoubles = new Uint8ClampedArray(srcRaw);
+{
+    const { meanS, meanT, scale } = st;
+    const k = Math.max(0, Math.min(1, strength));
+    for (let i = 0; i < refDoubles.length; i += 4) {
+        if (!refDoubles[i + 3]) continue;
+        for (let ch = 0; ch < 3; ch++) {
+            const v = (refDoubles[i + ch] - meanT[ch]) * scale[ch] + meanS[ch];
+            refDoubles[i + ch] = Math.max(0, Math.min(255, refDoubles[i + ch] + (v - refDoubles[i + ch]) * k));
+        }
+    }
+}
+const g = GL.glContext();
+const glCv = g ? GL.applyMatchGL(srcLayerCv, st, strength) : null;
+const glBytes = glCv ? glCv.getContext("2d").getImageData(0, 0, glCv.width, glCv.height).data : null;
+const wasMax = g ? g.max : 0;
+let rustBytes, jsBytes, layerCallsRust, layerCallsJs;
+try {
+    if (g) g.max = 16;
+    if (GL.applyMatchGL(srcLayerCv, st, strength) !== null) throw new Error("applyMatchGL did not refuse when g.max was lowered");
+    K.setRoute("matchPixels", null);
+    L._mcache = null;
+    K.pxCalls(true);
+    const cvRust = ed.layerMatchedPixels(L, below, null);
+    layerCallsRust = K.pxCalls(true).match_pixels || 0;
+    rustBytes = cvRust.getContext("2d").getImageData(0, 0, cvRust.width, cvRust.height).data;
+    K.setRoute("matchPixels", "js");
+    L._mcache = null;
+    K.pxCalls(true);
+    const cvJs = ed.layerMatchedPixels(L, below, null);
+    layerCallsJs = K.pxCalls(true).match_pixels || 0;
+    jsBytes = cvJs.getContext("2d").getImageData(0, 0, cvJs.width, cvJs.height).data;
+} finally {
+    K.setRoute("matchPixels", null);
+    if (g) g.max = wasMax;
+}
+if (layerCallsRust !== 1 || layerCallsJs !== 0) throw new Error(`layerMatchedPixels calls: rust=${layerCallsRust}, js=${layerCallsJs}`);
+let diffLayer = 0, worstVsDoubles = 0, worstVsGL = 0, movedMax = 0, alphaMoved = 0, clearMoved = 0;
+for (let i = 0; i < rustBytes.length; i++) {
+    if (rustBytes[i] !== jsBytes[i]) diffLayer++;
+    const dD = Math.abs(rustBytes[i] - refDoubles[i]);
+    if (dD > worstVsDoubles) worstVsDoubles = dD;
+    if (glBytes) {
+        const dG = Math.abs(rustBytes[i] - glBytes[i]);
+        if (dG > worstVsGL) worstVsGL = dG;
+    }
+    if ((i & 3) === 3) {
+        if (rustBytes[i] !== srcRaw[i]) alphaMoved++;
+    } else if (!srcRaw[i | 3]) {
+        if (rustBytes[i] !== srcRaw[i]) clearMoved++;
+    } else {
+        const mv = Math.abs(rustBytes[i] - srcRaw[i]);
+        if (mv > movedMax) movedMax = mv;
+    }
+}
+if (diffLayer !== 0 || worstVsDoubles > 1 || worstVsGL > 1 || movedMax < 20 || alphaMoved !== 0 || clearMoved !== 0) {
+    throw new Error("layer matchCanvas fallback check failed: " + JSON.stringify({ diffLayer, worstVsDoubles, worstVsGL, movedMax, alphaMoved, clearMoved }));
+}
+// Multi-chunk canvas (2048 x 4100 = 8,396,800 px = 2 full 4 MP chunks + 8,192 px tail = 3 chunks)
+const BW = 2048, BH = 4100;
+const bigSrc = mk(BW, BH);
+const bigCtx = bigSrc.getContext("2d");
+const bigImg = bigCtx.createImageData(BW, BH);
+const bd = bigImg.data;
+for (let i = 0; i < bd.length; i += 4) {
+    const p = i >>> 2;
+    if (p % 257 === 0) {
+        bd[i] = 0; bd[i + 1] = 0; bd[i + 2] = 0; bd[i + 3] = 0;
+    } else {
+        bd[i] = (p * 37 + 19) & 255;
+        bd[i + 1] = (p * 73 + 53) & 255;
+        bd[i + 2] = (p * 131 + 97) & 255;
+        bd[i + 3] = 255;
+    }
+}
+bigCtx.putImageData(bigImg, 0, 0);
+let bigCallsRust = 0, bigCallsJs = 0, bigMemMB = 0, bigReleases = 0, bigDiff = 0, chunkMoved = [0, 0, 0], bigClearMoved = 0;
+try {
+    if (g) g.max = 100;
+    K.dropPx();
+    await K.pxSettled();
+    const inst0 = K.pxInstances();
+    K.setRoute("matchPixels", null);
+    K.pxCalls(true);
+    let bigRustCv = F.matchCanvas(bigSrc, st, strength);
+    bigCallsRust = K.pxCalls(true).match_pixels || 0;
+    bigMemMB = K.rustPx() ? +(K.rustPx().byteLength / 1048576).toFixed(2) : 0;
+    bigReleases = K.pxInstances().release - inst0.release;
+    const bigRustData = bigRustCv.getContext("2d").getImageData(0, 0, BW, BH).data;
+    bigRustCv.width = 1; bigRustCv.height = 1; bigRustCv = null;
+    K.setRoute("matchPixels", "js");
+    K.pxCalls(true);
+    let bigJsCv = F.matchCanvas(bigSrc, st, strength);
+    bigCallsJs = K.pxCalls(true).match_pixels || 0;
+    const bigJsData = bigJsCv.getContext("2d").getImageData(0, 0, BW, BH).data;
+    bigJsCv.width = 1; bigJsCv.height = 1; bigJsCv = null;
+    for (let i = 0; i < bigRustData.length; i++) if (bigRustData[i] !== bigJsData[i]) bigDiff++;
+    for (let c = 0; c < 3; c++) {
+        const start = c * F.MATCH_CHUNK_BYTES, end = Math.min(bigRustData.length, start + 4096);
+        for (let i = start; i < end; i += 4) {
+            if (!bd[i + 3]) {
+                if (bigRustData[i] !== bd[i] || bigRustData[i + 1] !== bd[i + 1] || bigRustData[i + 2] !== bd[i + 2]) bigClearMoved++;
+            } else if (bigRustData[i] !== bd[i] || bigRustData[i + 1] !== bd[i + 1] || bigRustData[i + 2] !== bd[i + 2]) {
+                chunkMoved[c]++;
+            }
+        }
+    }
+} finally {
+    K.setRoute("matchPixels", null);
+    if (g) g.max = wasMax;
+    bigSrc.width = 1; bigSrc.height = 1;
+}
+await run("remove_layer", { layer: L.id, doc: window.__t });
+if (bigCallsRust !== 3 || bigCallsJs !== 0 || bigMemMB <= 0 || bigMemMB > 19 || bigReleases !== 0 || bigDiff !== 0 || chunkMoved.some((m) => m < 500) || bigClearMoved !== 0) {
+    throw new Error("multi-chunk matchCanvas fallback check failed: " + JSON.stringify({ bigCallsRust, bigCallsJs, bigMemMB, bigReleases, bigDiff, chunkMoved, bigClearMoved }));
+}
+return { layerCallsRust, worstVsDoubles, worstVsGL, bigCallsRust, bigMemMB, chunkMoved };
 """),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }

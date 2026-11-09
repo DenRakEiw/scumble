@@ -1,0 +1,133 @@
+{
+  "round": 3,
+  "sizes": {
+    "4096x4096": {
+      "rust": {
+        "size": [
+          4096,
+          4096
+        ],
+        "route": "rust",
+        "gl_refused": true,
+        "cpu": {
+          "median": 146.7,
+          "walls": [
+            348.3,
+            146.7,
+            127.6
+          ],
+          "blocked": 146.7,
+          "blockedMax": 348.4,
+          "worst": 348.3,
+          "n": 3
+        },
+        "pxCalls": {
+          "match_pixels": 4
+        },
+        "wasmMB": 18.19,
+        "split": {
+          "drawReadMs": 30.3,
+          "chunksMs": 82.2,
+          "putMs": 3.6,
+          "totalMs": 116.2,
+          "pxCalls": {
+            "match_pixels": 4
+          }
+        }
+      },
+      "js": {
+        "size": [
+          4096,
+          4096
+        ],
+        "route": "js",
+        "gl_refused": true,
+        "cpu": {
+          "median": 430.9,
+          "walls": [
+            444.2,
+            430.9,
+            303.8
+          ],
+          "blocked": 430.9,
+          "blockedMax": 444.2,
+          "worst": 444.2,
+          "n": 3
+        },
+        "pxCalls": {},
+        "wasmMB": 18.19,
+        "split": {
+          "drawReadMs": 30.2,
+          "chunksMs": 262.3,
+          "putMs": 3.7,
+          "totalMs": 296.1,
+          "pxCalls": {}
+        }
+      }
+    },
+    "15000x10000": {
+      "rust": {
+        "size": [
+          15000,
+          10000
+        ],
+        "route": "rust",
+        "gl_refused": true,
+        "cpu": {
+          "median": 1352.8,
+          "walls": [
+            1184,
+            1352.8,
+            1522.2
+          ],
+          "blocked": 1352.8,
+          "blockedMax": 1522.2,
+          "worst": 1522.2,
+          "n": 3
+        },
+        "pxCalls": {
+          "match_pixels": 36
+        },
+        "wasmMB": 18.19,
+        "split": {
+          "drawReadMs": 562.8,
+          "chunksMs": 714.8,
+          "putMs": 31.6,
+          "totalMs": 1309.2,
+          "pxCalls": {
+            "match_pixels": 36
+          }
+        }
+      },
+      "js": {
+        "size": [
+          15000,
+          10000
+        ],
+        "route": "js",
+        "gl_refused": true,
+        "cpu": {
+          "median": 2781.1,
+          "walls": [
+            2781.1,
+            2761.5,
+            2826.6
+          ],
+          "blocked": 2781.1,
+          "blockedMax": 2826.6,
+          "worst": 2826.6,
+          "n": 3
+        },
+        "pxCalls": {},
+        "wasmMB": 18.19,
+        "split": {
+          "drawReadMs": 411.9,
+          "chunksMs": 2367.4,
+          "putMs": 32.8,
+          "totalMs": 2812,
+          "pxCalls": {}
+        }
+      }
+    }
+  }
+}

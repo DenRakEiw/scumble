@@ -10,26 +10,26 @@ Scope (`docs/PLAN_WASM_BUILD.md` §4.6 K15, §5 row 32; `docs/PLAN_WASM_K10.md` 
   - Added `pub fn predict_rgba(rgba, w, rows) -> i32` (`:174-219`): horizontal differencing (`Predictor = 2`) in place for `w * rows * 4` RGBA8 bytes (reverse scan per row so each pixel reads its unpredicted left neighbour, with a `u8x16` SIMD reverse-difference path on `wasm32 + simd128`).
   - Added `pub fn to_rgba(src, src_len, planes, row_bytes, w, rows, spp, bits, le, photometric, alpha_mode, pal, pal_len, out, out_len) -> i32` (`:230-427`): every branch of `inpaint_tiff.js` `toRgba` (`photometric = 0` WhiteIsZero, `1` BlackIsZero, `2` RGB, `3` Palette; `bits = 1, 2, 4, 8, 16`; `le = false, true`; `planes = 1` chunky and `planes = spp` planar; `alpha_mode = 0` none, `1` premultiplied, `2` straight), including dedicated fast paths for chunky RGBA8 straight (`copy_from_slice`, `:307-317`), chunky RGB8 opaque (`:320-332`), and chunky RGBA8 premultiplied (`:335-356`). Unpremultiplying preserves the twin's exact branches (`A = 0 -> RGB 0`, `A = 255 -> pass`, `0 < A < 255 -> min(255, ((c * 255 + (a >> 1)) / a))`, no division by zero), 16-bit scaling at `:374` uses `((v * 2 + 257) / 514) as u8` (matching `inpaint_tiff.js:611` `to8`), and Question 6.4 (`:379-383` inside `sample8`) scales only the alpha sample of sub-byte (`1, 2, 4`-bit) palette+alpha files.
 - `crates/px/src/lib.rs`:
-  - Bumped `px_abi_version()` (`:57-59`) from `41` to `42`.
-  - Exported `tiff_unpredict` (`:1305-1318`), `tiff_predict_rgba` (`:1321-1324`), and `tiff_to_rgba` (`:1330-1365`).
-- `renderer/editor/px/px.wasm`: `288,126 bytes`, sha256 `7a9906e77da23a68` (before at `3359cb0f`: `277,531 bytes`, sha256 `d3d4567365549b49`).
-- `renderer/editor/px/px_scalar.wasm`: `230,358 bytes`, sha256 `ea1fbd34b8b9b3c3` (before at `3359cb0f`: `224,112 bytes`, sha256 `e23e1ca9bd65303d`).
+  - Bumped `px_abi_version()` (`:57-59`) from `41` to `42` on `3359cb0f`, and to `43` after merging `wasm-kernels` (`b51eedf0`).
+  - Exported `tiff_unpredict` (`:1351-1362`), `tiff_predict_rgba` (`:1367-1369`), and `tiff_to_rgba` (`:1376-1410`).
+- `renderer/editor/px/px.wasm`: `289,598 bytes`, sha256 `35174f9eb470bffd` after merging `wasm-kernels` at `b51eedf0` (`288,126 bytes`, sha256 `7a9906e77da23a68` on `3359cb0f`; before at `3359cb0f`: `277,531 bytes`, sha256 `d3d4567365549b49`).
+- `renderer/editor/px/px_scalar.wasm`: `231,830 bytes`, sha256 `c6e7dc74f7b2b9cb` after merging `wasm-kernels` at `b51eedf0` (`230,358 bytes`, sha256 `ea1fbd34b8b9b3c3` on `3359cb0f`; before at `3359cb0f`: `224,112 bytes`, sha256 `e23e1ca9bd65303d`).
 - `renderer/editor/inpaint_tiff.js` (kept free of imports):
   - Exported `unpredict(buf, rows, rowBytes, pixels, per, bits, le = true)` (`:472-499`), `paletteLut(cm, bits)` (`:617-631`, using `if (!(cm[i] < 256)) { all8 = false; break; }` and refusing string colormaps at `:238` and `:619` per `K15-read-1`), `toRgba(bufs, n, out = null, spec = {})` (`:639-746`), `predictRgba(rgba, w, rows)` (`:815-827`), and `TIFF_JS = Object.freeze({ unpackStrip, unpredict, predictRgba, toRgba, paletteLut })` (`:829`).
   - Applied Question 6.4 in `toRgba`'s `samples(r)` helper (`:715-716`): for sub-byte palette (`palette && bits < 8`), `const isIdx = palette && (planes === 1 ? i % spp === 0 : p === 0); s8[off + i * step] = isIdx ? raw : Math.round(raw * scale);` keeps the palette index sample raw and scales extra samples by `scale` (`255 / ((1 << bits) - 1)`).
   - Wired `readTiff` (`:770-801`) to accept `kernels = null` in options, setting `src.kernels = K` (`:778`, where `K = kernels || TIFF_JS`) so `StripRows.read` (`:539`) and `TileRows.tile` (`:574`) call `(this.src.kernels || TIFF_JS).unpredict(...)` and `converter` (`:752-756`) calls `K.toRgba(bufs, n, out, spec)`, while keeping `kernels: null` on the pure-JS `TIFF_JS`.
   - Updated `tiffPart` (`:836-853`) to call `predictRgba(bytes, w, rows)` when `predictor === 2`.
 - `renderer/editor/px/px.js`:
-  - Bumped `export const PX_ABI = 42;` (`:17`).
-  - Added `Px.prototype.tiffUnpredict` (`:1592-1614`), `Px.prototype.tiffPredictRgba` (`:1619-1635`), `Px.prototype.tiffToRgba` (`:1640-1703`), `Px.prototype.tiffStripFromPtr(a, pr, w, rows, level = 2, predictor = 2, laps = null)` (`:1711-1740`), and `Px.prototype.tiffStrip` (`:1746-1770`).
+  - Bumped `export const PX_ABI = 43;` (`:18`).
+  - Added `Px.prototype.tiffUnpredict` (`:1667-1689`), `Px.prototype.tiffPredictRgba` (`:1694-1709`), `Px.prototype.tiffToRgba` (`:1715-1778`), `Px.prototype.tiffStripFromPtr(a, pr, w, rows, level = 2, predictor = 2, laps = null)` (`:1786-1815`), and `Px.prototype.tiffStrip` (`:1821-1845`).
 - `renderer/editor/px/kernels_js.js`:
-  - Re-exported `unpredict`, `tiffUnpredict`, `predictRgba`, `tiffPredictRgba`, `toRgba`, `tiffToRgba`, `paletteLut`, `tiffPart`, and `TIFF_JS` from `../inpaint_tiff.js` (`:19-21`).
+  - Re-exported `unpredict`, `tiffUnpredict`, `predictRgba`, `tiffPredictRgba`, `toRgba`, `tiffToRgba`, `paletteLut`, `tiffPart`, and `TIFF_JS` from `../inpaint_tiff.js` (`:18-20`).
 - `renderer/editor/px/kernels.js`:
-  - Added `tiffUnpredict: "kernel"`, `tiffPredict: "kernel"`, `tiffToRgba: "kernel"`, and `tiffStripWasm: "kernel"` to `ROUTE_KINDS` (`:64-65`).
-  - Exported `tiffUnpredict` (`:1104-1112`), `tiffPredictRgba` (`:1118-1126`), `tiffToRgba` (`:1132-1140`), `tiffStrip` (`:1147-1162`), and `tiffKernels()` (`:1177-1179`), whose methods look up `rustPx(...)` per call so an instance swap (`releaseIfLarge` or trap recovery) mid-stream uses the new instance.
+  - Added `tiffUnpredict: "kernel"`, `tiffPredict: "kernel"`, `tiffToRgba: "kernel"`, and `tiffStripWasm: "kernel"` to `ROUTE_KINDS` (`:65`).
+  - Exported `tiffUnpredict` (`:1132-1140`), `tiffPredictRgba` (`:1146-1154`), `tiffToRgba` (`:1160-1168`), `tiffStrip` (`:1175-1190`), and `tiffKernels()` (`:1205-1207`), whose methods look up `rustPx(...)` per call so an instance swap (`releaseIfLarge` or trap recovery) mid-stream uses the new instance.
 - `renderer/editor/inpaint_worker.js`:
-  - Updated `tiffPartJob(msg)` (`:755-828`, exported for direct parity testing in `tools/px_test.js`) to take the pointer path (`partPtrOf` + `p.tiffStripFromPtr`, `composeWasm: 1`) when `!msg.rgba && route(composeRoute) !== "js"` (`:760-761`, where `composeRoute = msg.stack ? "composeStack" : "composeTiles"`) and `rustPx("tiffStripWasm") && rustPx("tiffPredict")` is active, resetting `p._reset(a)` and calling `releaseIfLarge()` in `finally`, and falling back to `p.tiffStrip` (`composeWasm: 0`) when `msg.rgba` is passed or `composeTiles` / `composeStack` is `"js"`, or to `tiffPart(..., p.zlib / deflate)` when `tiffStripWasm` or `tiffPredict` is `"js"` or after trap recovery.
-  - Updated `tiffRead(msg)` (`:835-847`) to pass `kernels: tiffKernels()` to `readTiff` and call `releaseIfLarge()`.
+  - Updated `tiffPartJob(msg)` (`:759-832`, exported for direct parity testing in `tools/px_test.js`) to take the pointer path (`partPtrOf` + `p.tiffStripFromPtr`, `composeWasm: 1`) when `!msg.rgba && route(composeRoute) !== "js"` (`:764-765`, where `composeRoute = msg.stack ? "composeStack" : "composeTiles"`) and `rustPx("tiffStripWasm") && rustPx("tiffPredict")` is active, resetting `p._reset(a)` and calling `releaseIfLarge()` in `finally`, and falling back to `p.tiffStrip` (`composeWasm: 0`) when `msg.rgba` is passed or `composeTiles` / `composeStack` is `"js"`, or to `tiffPart(..., p.zlib / deflate)` when `tiffStripWasm` or `tiffPredict` is `"js"` or after trap recovery.
+  - Updated `tiffRead(msg)` (`:839-851`) to pass `kernels: tiffKernels()` to `readTiff` and call `releaseIfLarge()`.
 - `renderer/editor/inpaint_canvas.js`:
   - Imported `tiffKernels` from `./px/kernels.js` (`:20`) and passed `kernels: tiffKernels()` in `pixelsFromTiff`'s unpooled fallback (`:592`).
 
@@ -252,3 +252,7 @@ Command:
 - `k15-tiff-tiles` (`--offline --tiles on`, port 9633): `tiff rc=0 10s PASS` -> `ALL PASS` (initial run failed in 8s on `missing tiff_unpack in tiff_read pxCalls` because `readTiff` uses streaming `unpacked()` until K17's `readTiffBand`; updated `tools/tiff_test.py` to assert `tiff_unpredict` and `tiff_to_rgba` on `tiff_read` for K15 and re-ran to `PASS`)
 - `k15-tiff-canvas` (`--offline --tiles off`, port 9634): `tiff rc=0 17s PASS` -> `ALL PASS` (re-ran after the same `tools/tiff_test.py` update)
 - `k15-pxjobs` (`--offline --tiles on`, port 9633): `pxjobs rc=0 110s PASS`, `nodecopy rc=0 37s PASS` -> `ALL PASS`
+- `k15r-tiles` (post-merge with `wasm-kernels` at `b51eedf0`, `--offline --tiles on`, port 9633): `lint rc=0 11s`, `types rc=0 5s`, `export rc=0 138s PASS`, `pixels rc=0 10s PASS` -> `ALL PASS`
+- `k15r-canvas` (post-merge with `wasm-kernels` at `b51eedf0`, `--offline --tiles off`, port 9634): `lint rc=0 11s`, `types rc=0 7s`, `export rc=0 11s PASS`, `pixels rc=0 11s PASS` -> `ALL PASS`
+- `k15r-tiff-tiles` (post-merge, `--offline --tiles on`, port 9633): `tiff rc=0 12s PASS` -> `ALL PASS`
+- `k15r-tiff-canvas` (post-merge, `--offline --tiles off`, port 9634): `tiff rc=0 12s PASS` -> `ALL PASS`

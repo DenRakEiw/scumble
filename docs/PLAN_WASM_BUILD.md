@@ -1864,7 +1864,7 @@ By a Gemini agent in Antigravity (`.claude/coord/chain-b/`) on `7de75d7` (`c6bbb
 `inpaint_pixels.js`. Tests: px_test `liquify` (96 twin cases on both builds, colour under alpha 0 since the review),
 `retouchRoute`, the editor's liquify step (call counts, the js route replayed after an undo). Before -> after at 15k
 (three rounds, only the `liquifyBlock` route switched): the pool's liquify jobs about 1.7-1.9x faster on every row (a
-1000 px push at fit 350 -> 199 ms summed), a 200 px push at 1:1 lands 31 -> 19 ms. Mutation round in its folder.
+1000 px push at fit 350 -> 199 ms summed), a 200 px push at 1:1 lands 24.9 [19.2-26.2] -> 20.0 [19.7-23.1] ms, inside the spread (the tie rule). Mutation round in its folder.
 
 ### K32 (2026-11-08): stitch's mask kernels in Rust (the Antigravity E chain)
 
@@ -1886,6 +1886,160 @@ Every recommendation taken (the user: "alles so wie deine empfehlung").
 - **Stop 2: the native inflate.** `DecompressionStream` won or tied every row (a whole 15k PNG 1.46 s against 2.70 s, 8 workers 527 against 623 ms, 10,000 one-row strips a tie). K2 (`ag-chain-p`) is not merged and `inflate_z` is not in the app. **K7** loses its inflate: the kernel takes the lines the native inflate delivered (the whole-line check, unfilter, RGBA, the round trip; codes -2 and -3 for the inflate drop out). **K8** takes route N. **K16** and **K20** inflate natively.
 - **Question 6.2 (K25): the export follows the screen.** A fill layer's depth limit with edge snap takes its reference colour from the picture (`map.guide`, the layer's own pixels only without a guide) instead of the fill's own colour; the strength stays the screen's `snapParams(map.meta?.snap?.strength)`. A byte change of layered exports holding such a layer, toward the screen. It matches the screen up to 4096 px on the long side, above that within one map texel (about 3.66 px at 15k, K25's review), as long as the picture below is still the one the depth map was made from. `docs/BUGS.md` has the entry. Only the depth limit is concerned: a fill layer takes no other limit (`commands.js` refuses it, the panel does not offer it).
 - **Question 6.4:** **K37 yes**, kept only where the tile route measures faster on the felt 15k operation, with a size threshold if small fills lose; at most one level against Skia at opacity below 1. **K38 yes** (the `matchCanvas` fallback toward the GPU's formula, at most one level). **The TIFF quirk is fixed** in both twin and Rust at K15 (sub-byte palette files with alpha, whose alpha is left at 0..15 today).
+
+### K38 (2026-11-09): `matchCanvas` CPU fallback in 4 MP chunks (§4.11, question 6.4)
+
+- **Byte effect:** Only when `applyMatchGL` returns `null` (no WebGL2 context or a canvas side above `glContext().max`), `matchCanvas` (`renderer/editor/inpaint_filters.js:274-298`) computes the colour match in `f32` (`floor(clamp(v + (m - v) * k, 0, 255) + 0.5)` via `matchPixels`, matching the WebGL2 shader and the worker's `matchPixels`) instead of `f64` with `Uint8ClampedArray` ties-to-even rounding, changing non-transparent pixels by at most 1 byte level (`<= 1`). With WebGL2 active, bytes are unchanged.
+- **Call site & route (`renderer/editor/inpaint_filters.js`, `renderer/editor/px/kernels.js`, `renderer/editor/px/px.js`):**
+  - `inpaint_filters.js` exports `MATCH_CHUNK_BYTES = 4 * 1024 * 1024 * 4` (`16,777,216` B = `4,194,304` px) and in `matchCanvas` walks `img.data` in `MATCH_CHUNK_BYTES` subarrays (`matchPixels(d.subarray(off, off + MATCH_CHUNK_BYTES), params)`), in place on `ImageData.data`'s buffer.
+  - `kernels.js` adds `matchPixels: "kernel"` to `ROUTE_KINDS` and routes `matchPixels` through `rustPx("matchPixels")`.
+  - `Px.prototype.matchPixels` (`px.js:369-380`) guards `!(px > 0)` and passes a `Uint8Array(rgba.buffer, rgba.byteOffset, px * 4)` view to `this._out` when `rgba` is a `Uint8ClampedArray` subarray.
+  - No `.rs` changes; ABI remains 42 (`px.wasm` 279,003 B, `px_scalar.wasm` 225,584 B).
+- **Measurements (`docs/measurements/k38_2026-11-09/`):**
+  - 3 alternating before/after rounds under `w1_lock.py` (`w0_bench.py --rows=match_fallback_16k`):
+    - `4096 x 4096` (16.8 MP, 4 chunks): **263.00 ms** (244.5–275.1, worst 298.2, blk 263.00) -> **157.83 ms** (152.4–161.2, worst 195.5, blk 157.82, `match_pixels: 4`), **1.67×** faster (-105.2 ms).
+    - `15000 x 10000` (150 MP, 36 chunks): **2677.79 ms** (2422.7–2841.8, worst 3054.8, blk 2677.79) -> **1591.06 ms** (1578.8–1658.6, worst 1809.7, blk 1591.07, `match_pixels: 36`), **1.68×** faster (-1086.7 ms).
+  - Route A/B (`measure_k38.py`, `matchPixels=rust` vs `matchPixels=js`): at `4096 x 4096`, **130.7 ms** (123.0–146.7, chunks 82.2 ms) vs **408.8 ms** (396.4–430.9, chunks 262.7 ms), **3.13×** (**3.20×** on chunks); at `15000 x 10000`, **1352.8 ms** (1333.1–1462.3, chunks 722.3 ms) vs **2943.1 ms** (2781.1–2944.8, chunks 2367.4 ms), **2.18×** (**3.28×** on chunks). Across all 36 chunks at `15000 x 10000`, the window's wasm instance stays at **18.19 MiB** (`release === 0`). Rust kept as default.
+- **Tests & mutation round:**
+  - `tools/px_test.js` (`matchTwin`, `match`): `Uint8ClampedArray` non-zero `byteOffset` subarrays, empty buffers, 3-chunk 8.4 MP `matchCanvas` parity on `"rust"` and `"js"`, memory bound (`<= 19 MiB`), trap recovery on chunk 0, `<= 1` level vs doubles, strength `[0, 1]` clamping.
+  - `tools/editor_test.py` (`match_canvas_fallback_chunks_through_match_pixels`): `layerMatchedPixels` and 3-chunk `matchCanvas` with `glContext().max` lowered on both backends.
+  - Mutation round (`mutants_k38.py`): **9/9 killed, 0 survived**.
+  - Gates (`k38-fix-tiles`, `k38-fix-canvas`): `lint types pixels composite editor` **ALL PASS** on both backends.
+```
+
+### K8 (2026-11-09)
+
+The parted PNG reader in the app on route N (`DecompressionStream("deflate-raw")` per part + `px` `png_part_decode` /
+`png_part_finish` in the workers; `docs/measurements/k8_2026-11-09/`), plus the four NICE items from K7's re-check
+(`9fd93524`, `cb570a52`, `d663a3ba`, `8288274b`, `84800b0f`, no new wasm exports).
+- **Layout check and reader** (`inpaint_png.js`): `pngPartsOf(blob)` checks a PNG with 8-byte header slices (8-bit RGBA,
+  not interlaced, no `iCCP` / `gAMA` / `cHRM` / `cICP` before the first `IDAT`, the 2-byte zlib header `IDAT` with
+  `CM=8`, `CINFO<=7`, `FDICT=0` and `FCHECK`, at least one non-empty part `IDAT`, the 4-byte tail `IDAT` holding the
+  big-endian Adler-32, `IEND`; any other file returns `null` after 33–49 bytes, 41 bytes on a browser-encoded 1-`IDAT`
+  PNG). `readPngParts(blob, { pool, rt, onHeader, onRows, layout })` launches `png_part_read` jobs in order, at most
+  `pool.size + 2` ahead of the unfilter chain's head (`deliverHead`), passes `prev` at launch when the previous part has
+  already finished, runs `png_part_finish` at `INTERACTIVE` (`priority: 0`, `inpaint_pool.js:19`) so the serial chain
+  never waits behind queued decodes, delivers rows to `onRows` in scanline order (`px.putCanvasRows` in
+  `pixelsFromPngStream`, `inpaint_canvas.js:735`, detaching the buffer after landing), folds the part Adlers with
+  `adlerCombine` against the 4-byte tail `IDAT`, and on any error cancels the pool group, releases the partial
+  `TileLayerPixels` and falls back to `png_read` (and if `png_read` also rejects the damaged parted PNG, `pixelsOffThread`
+  rethrows the refusal rather than handing the corrupt file to `<img>`).
+- **Worker jobs and bounds** (`inpaint_worker.js`): `png_part_read` and `png_part_finish` bound every part's inflate by
+  both `pngPartLinesCap(w)` (`partRows(w, 2048) * (1 + 4 * w)`) and the IHDR bound `h * (1 + 4 * w)` (`inflatePartAtMost`
+  captures `inBytes` before `transfer(0)` and cancels the stream as soon as inflated bytes exceed `Math.min(cap, ihdrCap)`),
+  append `0x03, 0x00` to non-last parts only, and keep the 65,536-byte `rt` table resident in the worker (`residentRt`).
+  `kernels.js` records `laps.decode` and `laps.finish` on the JS twin fallbacks too, and `pngReaderUsable()` in
+  `inpaint_canvas.js` keeps the parted reader active when `InpaintEditor.kernels = "js"`.
+- **Measured at 15,000 x 10,000 and 30,000 x 20,000** (3 alternating rounds at 15k under the busy lock, fresh offline
+  instances, tiles on, focused; `docs/measurements/k8_2026-11-09/summary.txt`):
+  - `native_test.py`: `open_the_file` wall `2517 [2437..2581]` -> `1745 [1676..1747] ms` (`1.44x`, `-772 ms`;
+    `loadFileMs` `2454` -> `1657 ms`, `1.48x`; `blocked` `471` -> `477 ms`, `438 ms` of it the first-open WebGL shader
+    link); `open_again` wall `2043 [1974..2124]` -> `1377 [1228..1382] ms` (`1.48x`, `-666 ms`; `loadFileMs` `1971` ->
+    `1268 ms`, `1.55x`; `blocked` `40` -> `61 ms`); `export_png` (`1053` vs `1058 ms`) and `export_ora` (`2161` vs
+    `2246 ms`) unchanged; arena after `close` identical (`slots: 4661, chunks: 20, allocated: 9381, freed: 4720,
+    droppedChunks: 17, bytes: 1,342,177,280`).
+  - `w0_bench.py --rows=freqsep_15k` (`adobe_15000x10000.jpg`): `png_open` `2474 [2383..2513]` -> `1589 [1588..1612] ms`
+    (`1.56x`, `-885 ms`).
+  - `document_perf.py 15000x10000` (4-layer `.scumble` document; its `15,000 x 10,000` base is a Pillow single-stream RGB
+    PNG, `colorType = 2`, 453 MB of the 457 MB archive, which `pngPartsOf` refuses after 33 bytes so the base takes
+    `png_read` in both arms and only the 3 sparse Scumble-written paint layers take `readPngParts` — the row is a tie):
+    `loadMs` `4214 [3872..4248]` -> `3902 [3809..4411] ms` (`1.08x`), `restoreMs` `4591 [4312..4788]` ->
+    `4307 [4216..4486] ms` (`1.07x`), `openMs` `4685 [4622..4826]` -> `4649 [4263..4747] ms` (`1.01x`).
+  - Browser-encoded 15k 1-`IDAT` PNG (`88.66 MB`): `pngPartsOf` returns `null` after 41 bytes; `pixelsOffThread`
+    `1199.3 ms`, `loadFile + mips` `1472.7 ms`.
+  - `huge` (`20000x15000`, 300 MP, 550.4 MB): `open_through_the_stream_reader` `2571 ms` (`blocked: 43 ms`),
+    `a_restore_from_the_state` `3381 ms` (`blocked: 118 ms`). At `30000x20000` (600 MP, 1,100.7 MB, direct A/B on
+    `9fd93524` `before/huge_30k.json` vs K8 `after/huge_30k.json`): `open_through_the_stream_reader` `8726 ms`
+    (`blocked: 496 ms`) -> `5337 ms` (`blocked: 543 ms`, `1.63x`, `-3389 ms`), `a_restore_from_the_state` `9770 ms`
+    (`blocked: 75 ms`) -> `5814 ms` (`blocked: 166 ms`, `1.68x`, `-3956 ms`); in the 6-step `after/huge_open_restore.log`
+    run, `open_through_the_stream_reader` was `5606 ms` (`blocked: 542 ms`) and `a_restore_from_the_state` `6740 ms`
+    (`blocked: 149 ms`, against W0b of 2026-10-23, not an A/B: `10913 ms` open / `11859 ms` restore).
+- **For Stop 4** (`stop4_probe.py`, `.claude/coord/chain-p/questions.md`):
+  - **Question 6.1 (P5, independent part starts):** in standard K8, `78/78` non-first parts on `n1_15k` and `76/78` on
+    `photo_15k` start with `Average` or `Paeth`, running `76–78` serial `png_part_finish` jobs (`524–709 ms` summed
+    worker time). Filtering row 0 of each part with `None` or `Sub` only (`needsPrev = 0/78`, `0` finish jobs) changes
+    file size by `+0.030 %` (`+85 KB` on `275.82 MB`) on `n1_15k` and `-0.020 %` (`-37.6 KB` on `175.96 MB`) on
+    `photo_15k`, speeds up `readPngParts + putCanvasRows` from `701.1` to `574.3 ms` (`1.22x`, `-126.8 ms`) on `n1_15k`
+    and from `822.9` to `573.5 ms` (`1.43x`, `-249.4 ms`) on `photo_15k`, and speeds up `loadFile + mips` from `1467.4`
+    to `1296.5 ms` (`1.13x`, `-170.9 ms`) on `n1_15k` and from `1288.0` to `986.5 ms` (`1.31x`, `-301.5 ms`) on
+    `photo_15k`. Answered: YES (next session).
+  - **Question 6.5 (upload while decoding):** running `uploadBlob` in parallel with `pixelsOffThread` after
+    `checkBaseSize` saves `340.7 ms` (`1238.3` -> `897.6 ms`, `1.38x`) on `n1_15k` and `185.5 ms` (`1067.0` ->
+    `881.5 ms`, `1.21x`) on `photo_15k`. Answered: YES (next session).
+- **Tests and mutation:** `px_test.js` (`pngPartsOf` byte-read counts and 20 refused layouts with valid-FCHECK `CM != 8`
+  and `CINFO > 7`, `readPngParts` mock-pool schedule, priority `0`, window cap, under/over-height, Adler and part-error
+  cancellation, green under both Node and Electron); `editor_test.py` `a_scumble_png_opens_through_the_parted_reader`
+  (tile-encoded `1503 x 1109` PNG on both Rust and `E.kernels = "js"` routes with `pxCalls` and `timing.bytes > 0`
+  checked, band-source `3003 x 1109` PNG with `698`- and `411`-row parts above 256 rows, `rt` round-trip seam on
+  non-fixed-point straight RGBA bytes against `png_read` and image routes, browser 1-`IDAT` PNG, later-part failure
+  fallback after earlier parts' rows landed verifying `px.release()`, real damaged parted PNGs with corrupt middle
+  deflate and corrupt tail Adler-32 verifying refusal and arena slot return `[6, 6]` after GC, and Electron worker
+  rejections); 20/20 mutants killed (`docs/measurements/k8_2026-11-09/mutation/results.txt`); gates `lint types editor
+  document tiff pixels` on both backends, `export docux`, `huge:20000x15000`, `nodecopy`.
+```
+
+### K37 (2026-11-09): the bucket over tiles
+
+On `3fd8bda7` (ABI 36, merged with `wasm-kernels` `e39b8d03` at ABI 39); full tier (the bucket's pixel path on tile
+layers, §4.11 & §7). `docs/measurements/k37_2026-11-09/` (`measure_k37.py`, `round_0.json`..`round_2.json`, `summary.txt`,
+`mutants_k37.py`, `mutation/`).
+- **Built (wasm unchanged):** `inpaint_tiles.js` `fillTile(color)` (a cached 256 x 256 solid RGBA8 tile) and
+  `TileLayerPixels.prototype.compositeFill(tiles, color, op, alpha, at = [0, 0])`: composites a flood's 256 x 256 alpha
+  tiles (`[{ tx, ty, alpha }]` from K9's `floodOverTiles`) in place through `compositeMaskedTile` (K36), directly at
+  `(ft.tx + (ox >> 8), ft.ty + (oy >> 8))` when `at` is 256-aligned and through `tilesSource(tiles, [ox, oy])` when `at`
+  is off-grid, clamping partial right/bottom edge tiles on a copy of the mask, skipping missing tiles when `op !== 0`
+  (`source-atop`), and dropping emptied tiles (`r === 2`). `inpaint_canvas.js` `bucketFill` captures `color` and
+  `brushOpacity` before `await floodRegion`, passes `tiles: true` when `this.tileMode && InpaintEditor.bucketTiles !== false`
+  and `!(alphaLocked && opacity >= 1)` and the target layer is (or will be) tile pixels at scale 1 with a whole-pixel
+  offset, re-verifies 1:1 scale and whole-pixel offset after the `await` (aborting with a status message if the layer
+  changed during the flood), takes `r.bounds` for the undo snapshot rect and dirty box, and composites `r.tiles` through
+  `target.compositeFill` (catching `PixelMemoryError` so `markLayerChanged` and `draw` still run for any tiles written).
+  At full opacity the bytes equal the canvas path (the alpha-locked fill at full opacity stays on the canvas path); at
+  opacity below 1, partially blended pixels differ from Skia by at most one premultiplied level.
+- **Tests:** `node tools/px_test.js` and `ELECTRON_RUN_AS_NODE=1 electron tools/px_test.js` PASS
+  (`TileLayerPixels.compositeFill` in `compositeSha`: grid-aligned, off-grid, and bottom-edge fills, literal colour bytes,
+  right and bottom edge clamping, frozen clone sharing, `"js"` vs `"rust"` byte-exact). `editor` gate
+  `the_flood_over_tiles_is_the_flood_over_canvases` (every wand and bucket flood over tiles returns `"tiles"` with 64 KB
+  alpha buffers) and `the_bucket_fills_through_the_kernel_on_tiles` (12 comparative cases covering full/partial opacity,
+  alpha lock, off-grid selection clipping, 4-edge layer crossing, no-active-layer creation, and scaled/fractional-offset
+  fallbacks against `InpaintEditor.bucketTiles = false`, `"js"` vs `"rust"` 0 bytes differ, undo 0 bytes differ, plus 3
+  mid-flood colour/geometry race checks). Gates `--offline` (`run_gates_both.sh k37`, `k37-fix`, and `k37-merge`
+  `--shards 2 --ports 9619,9620`): `lint`, `types`, `nodecopy`, `pixels`, `composite`, `selection`, `brush`, `editor`
+  (2 shards per backend, 128 steps) BOTH PASS.
+- **Before -> after** (`summary.txt`: three Latin-square rounds on fresh instances, 15000 x 10000, `--tiles --no-comfy`,
+  busy lock held; `before` = in-tree `InpaintEditor.bucketTiles = false` switch running `drawInto` -> `_scratchDraw`
+  readback of the flood box), median [min-max]: `bucket_fill` (58.3M px across 1,045 tiles) wall 2,682.3 [2,581.3-2,756.3]
+  -> 1,337.0 [1,288.8-1,392.9] ms (2.01x faster), longest window block 1,441.7 [1,439.5-1,555.0] -> 209.9 [205.7-210.6] ms
+  (6.87x shorter), `2d getImageData` 1,062.8 ms (572.2 MB, 12 calls) -> 0 ms (0 MB), `2d putImageData` 647.0 MB -> 75.7 MB;
+  `bucket_one_disc` (441.5k px, 15 tiles) wall 39.0 [36.6-103.3] -> 28.1 [25.7-98.0] ms, block 16.2 [15.7-60.4] ->
+  9.8 [9.3-62.0] ms; `bucket_sel_1000` wall 36.7 -> 29.4 ms, block 15.4 -> 11.0 ms; `bucket_sel_256` wall 33.1 ->
+  24.8 ms, block 14.8 -> 5.7 ms; `bucket_sel_64` (4,096 px, 1 tile) wall 34.9 -> 24.9 ms, block 12.2 -> 5.5 ms. Every
+  row's FNV-1a hash (including full-picture `2564466665` on `bucket_fill`) matches across `before`, `rust`, and `js`.
+  Isolated `compositeFill` on 1,045 tiles: Rust SIMD 192.70 [188.44-201.03] ms vs JS twin 620.31 [619.64-621.45] ms
+  (3.22x faster). No size threshold needed because `before` reads back the entire flood box in `_scratchDraw` even on a
+  64 x 64 selection.
+- **The mutation round** (`mutants_k37.py`, `mutation/results.txt`): **15 of 15 killed** on their focused kill sets
+  (`compositeSha` and `the_bucket_fills_through_the_kernel_on_tiles`), 0 survived.
+```
+
+### K13 (2026-11-09): relight's scalar f64 shadow march and hoisted tap constants (the Antigravity L chain)
+
+By a Gemini agent in Antigravity (`.claude/coord/chain-l/`) on `3fd8bda7` (`7dbc030f`, merged with `wasm-kernels` `92d29245` at `96d4a33f`), ABI 40 -> 41 (36 -> 37 on `3fd8bda7`);
+`docs/measurements/k13_2026-11-09/` (`k13_chain.sh`, `summarize.py`, `summary_rows.txt`, `summary.txt`, `px_bench.txt`,
+`electron_px_relight.txt`, `electron_px_mask.txt`, `electron_px_full.txt`, `chain.log`, `before/`, `after/`, `gates/`, `mutation/`).
+- **Wasm builds (`python tools/build_px.py`, verified with `--check`):**
+  - `before px.wasm` (`git cat-file blob 3fd8bda7:renderer/editor/px/px.wasm`): 259,180 bytes, sha256 `7e99b55f37ff69ff` (`7e99b55f37ff69ffdfb0b8e5f78e01b234fc3a96759eda4b1870832e934f65a5`) -> `after px.wasm` (`96d4a33f`, merged with `92d29245`, ABI 41): 279,003 bytes, sha256 `1641bd5c67921db4` (`1641bd5c67921db41de58597217f7a135a897673bc7142ee22012b4e276f3d7a`); pre-merge `7dbc030f` on `3fd8bda7` (ABI 37): 260,652 bytes, sha256 `3d9bec873cda8745` (`3d9bec873cda8745c955338217d4682099e7605054e68d96598042d5a90a40bd`); 15k measurement runs (`chain.log:1-2`, commit `f915c5ee`) measured `px.wasm` 260,770 bytes, sha256 `c633b80fbee79614` (`c633b80fbee79614a06d6c3d0c95fd62865882274b542a08c5439977f0fb28e3`).
+  - `before px_scalar.wasm` (`git cat-file blob 3fd8bda7:renderer/editor/px/px_scalar.wasm`): 210,462 bytes, sha256 `03ddfff981982e19` (`03ddfff981982e1953df1099a2c3a9a600a0aba581ac58192e38c28fdf0f781d`) -> `after px_scalar.wasm` (`96d4a33f`, merged with `92d29245`, ABI 41): 225,584 bytes, sha256 `4ab3e3e738c13b6e` (`4ab3e3e738c13b6eb7799fa8cd7c6c16bf154fe79c6ad9abf66f0ce064c8d671`); pre-merge `7dbc030f` on `3fd8bda7` (ABI 37): 211,934 bytes, sha256 `4c2310eab695466c` (`4c2310eab695466cbb75bae4e3568e87f9408f8256be4db146b30d8ea51bf23e`); 15k measurement runs (`f915c5ee`) measured `px_scalar.wasm` 212,018 bytes, sha256 `7b7f92f13ade53fe` (`7b7f92f13ade53fe141f2771eb7bbbc8bc17f01a11c3a5009168bf4335982db0`).
+- **Built (ABI 37):**
+  - `renderer/editor/px/kernels_js.js`: added `export` to `relightVogel(n)` (was module-private `function relightVogel(n)`). In `shadowMarch`, hoisted `invSteps = 1.0 / nSteps` and per-tap `Float64Array` constants `tapX`, `tapY`, `tapZ` outside the `0..bandRows` pixel loop (`(dirX / dLen) * sunDist` for `kind === 1`; `lx + disc[t][0] * r`, `ly + disc[t][1] * r`, `lz` for `kind !== 1`). Kept `tx = px + tapX[t]`, `rdx = tx - px`, `stepX = rdx * invSteps` per pixel inside the loop so the hoisted twin is byte-for-byte identical to the pre-hoist reference (folding `rdx` to `tapX[t]` on a sun changes bits on rounding ties).
+  - `crates/px/src/relight.rs` and `crates/px/src/lib.rs`: bumped `px_abi_version()` 36 -> 37; added `relight::march_lens(w, h, row0, rows) -> Option<(usize, usize, usize)>`, `relight::shadow_march_f64`, and `shadow_march_f64(depth: *const u16, w: usize, h: usize, scale: f64, is_sun: u32, taps_xyz: *const f64, taps: u32, steps: u32, z_bias: f64, row0: usize, rows: usize, out: *mut u8)`. Refuses `w == 0`, `h == 0`, `w >= 0x4000_0000`, `h >= 0x4000_0000`, `row0 >= h`, `rows == 0`, `w.checked_mul(h)` / `w.checked_mul(band_rows)` overflow (`relight::march_lens`), `taps == 0`, `taps > 16`, `steps == 0`, `steps > 64`, non-finite `scale` / `z_bias` / `taps_xyz`, or `z_bias < 0.0` without touching `out`. Marches in `f64` in the twin's operation order (`inv65535 = scale / 65535.0`, `inv_steps = 1.0 / (steps as f64)`, per-pixel `tx = px + cx_t`, `rdx = tx - px`, `step_x = rdx * inv_steps`, `sx = px + step_x`, float bounds check `cx < 0.0 || cy < 0.0 || cx >= wf || cy >= hf` before `cx.to_int_unchecked::<usize>()` and `get_unchecked`).
+  - `renderer/editor/px/px.js`: bumped `PX_ABI = 37`, imported `relightVogel`, added `Px.prototype.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0 = 0, rows = h - row0, out = null, key = null)` validating arguments (including `b < 0` and `< 0x40000000`), computing the `nTaps * 3` `f64` tap constants in V8 with the twin's exact formulas, and using `this._slot("relight_depth", String(key), depth, n * 2)` when `key` is given.
+  - `renderer/editor/px/kernels.js`: added `shadowMarch: "kernelSize"` to `ROUTE_KINDS`; added `MARCH_MAX = 0x40000000` and `marchGuardOk(w, h, scale, light, radius, bias)` sending invalid `w` / `h`, non-finite values, `bias < 0`, or coordinates/scale/radius/bias `>= 2^30` to the twin; routed `Number(light[3]) === 1` to `p.shadowMarch` (`f32`) and `Number(light[3]) !== 1` to `p.shadowMarchF64` (`f64`).
+  - `renderer/editor/inpaint_worker.js`: updated `relightShadowJob` so `timing.kernels` compares `c0 = pxCalls()` and `c1 = pxCalls()` for `shadow_march` or `shadow_march_f64` and reports `"rust"` or `"js"` accurately.
+- **Tests:** `node tools/px_test.js` PASS (`mutation/logs/orig.txt`), and `PX_ONLY=relightBench,relightStripe,relight` under `ELECTRON_RUN_AS_NODE=1` PASS (`electron_px_relight.txt`): 131 byte-exact `twinCheck` cases on both wasm builds (covering `96 x 64` and `512 x 341` at `[1, 1], [1, 16], [3, 16], [4, 32], [16, 64]` and `1024 x 682` at `[1, 16], [3, 1], [4, 32], [16, 64]` across all 8 lights; non-integer `ensureRelightMaps`-style coordinates and parameters; non-trivial `hasZero && hasLit` check on `512 x 341` and `1024 x 682`; boundary cases for `map_z == sz + z_bias`, `rdz < 0 && sz > scale`, `cx == 0.0`, `cy == 0.0`, `cx == wf`, `cy == hf`, `s == steps`, and sun `tx - px` rounding tie), pre-hoist reference vs hoisted `js.shadowMarch` (131 cases, 0 bytes differ), 770 stripe cases (including both `f32` and `f64` Rust builds at `512 x 341` and `1024 x 682`), resident `_slot` check across 4 stripes (`slotCopied === 1` and byte equality against a full-height call), refusal checks on both `px.shadowMarchF64` and raw `px.exports.shadow_march_f64` (including `w = h = 65536` `checked_mul` overflow), `marchGuardOk` check on both point and sun lights, and `shadowMarch` route check. Gates `k13-gates-tiles`, `k13-gates-canvas`, `k13-gates-tiles-serial`, `k13-gates-canvas-serial` (`lint types relight pixels nodecopy`) ALL PASS; `relight_test.py` case `nk` asserts `t.kernels === "rust"` and `shadow_march_f64` ran for `point` and `shadow_march` for `sun`. Mutation round (`mutation/mut_k13.py`, `results.txt`): 12 of 12 killed on focused `px` kill sets, 0 survived.
+- **Before -> after at 15,000 x 10,000** (`summary_rows.txt`, map `4096 x 2731`, three alternating rounds under the busy lock): scalar `shadow_march_f64` ties on `relight_one` (`980 [942-1,025] -> 1,004 [852-1,100]` ms) and `relight_first` (`3,719 [3,196-3,981] -> 4,201 [3,148-4,236]` ms), and loses on `relight_one_job` (`4,757 -> 5,980` ms, +25.7 %), `relight_one_s64` (`730 -> 1,084` ms, +48.5 %), `relight_three` (`1,656 [1,368-1,803] -> 2,234 [1,998-2,334]` ms, +34.9 %), `relight_three_job` (`4,914 -> 7,227` ms, +47.1 %), `relight_three_rep` (`1,346 -> 2,012` ms, +49.5 %), `relight_quick` (`9.5 [7.7-38.2] -> 51.6 [49.0-74.7]` ms landed; `relight_quick_first` is only `2.1 [1.6-2.5] -> 3.3 [3.3-3.5]` ms and slowest stripe `4.2 -> 4.3` ms, so the +42.1 ms landed step is **inferred** to be main-thread ~40 ms frame/redraw quantization when the stripes take ~1.2 ms longer), `relight_pan` shadows landed (`705 -> 1,144` ms; pan frame `5.2 -> 5.6` ms, worst `7.4 -> 8.1` ms; primarily scalar `shadow_march_f64`, with ~1–2 ms **inferred** from re-copying the 22.4 MB full depth map into `"relight_depth"` after `relight_quick` replaced it), `relight_nodraw` (`676 -> 934` ms), and the first sun march row `relight_sun` (`348 [312-372] -> 599 [545-669]` ms landed; `first stripe a worker ms` `54 [49-117] -> 337 [302-387]` ms across all 8 workers right after the 64 MB `relight_heavy_*` `crc` rows while `later` is `69.9 -> 79` ms, **inferred** from worker V8/OS working-set or tiering state after `shadow_march_f64` + 64 MB `crc`, while `relight_sun_job` `1,890 -> 1,681` ms, `relight_sun_rep` `323 -> 394` ms with `first stripe` back to `43.8` ms, `relight_sun_s64` `363 -> 356` ms, `relight_sun_nofeed` `315 -> 355` ms, and `relight_sun_feed2` `320 -> 388` ms all tie or win). Explaining (`px_bench.txt` at `4096 x 2731`): `routed` (`rust_f64`) is `3,808` / `4,157` ms (Node) and `3,734` / `5,355` ms (Electron) vs the hoisted twin's `2,963` / `3,207` ms (Node) and `3,146` / `4,743` ms (Electron) (`1.13x–1.30x` `routed / twin`, `1.18x–1.51x` `simd_f64 / twin` before K14's `f64x2` SIMD lanes). Point and spot stay routed to `shadow_march_f64` at K13 per `brief.md` line 41; K14 adds `f64x2` lanes and decides the final route.
+
+---
 
 ### K10a and K10b (2026-11-09): the C-chain design and PNG parts gathered and composited in wasm memory (the Antigravity C chain)
 

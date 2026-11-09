@@ -1,0 +1,57 @@
+[11:18:27] after: 044b84c3 + working tree, px.wasm 279003 B (aeb476777e971bbd), px_scalar.wasm 225584 B
+[11:18:29] before: <before_tree>, px.wasm 279003 B (aeb476777e971bbd), px_scalar.wasm 225584 B
+[11:18:29] == round 1: acquiring busy lock
+lock: held by 'K10c exportperf_clipped r1 (chain-c) 31640 2026-11-09T11:17:14', waiting
+lock: taken after 330 s
+[11:23:59] lock: taken (K38 measuring r1 (chain-f, port 9619) 59920 2026-11-09T11:18:29)
+[11:24:11] before r1: w0_bench match_fallback_16k,match_loop_4096 (4096x4096)
+[11:24:13] before r1 w0_4096 rc=0
+[11:24:13] before r1: w0_bench match_fallback_16k --size=15000x10000
+[11:24:23] before r1 w0_15k rc=0
+closed
+[11:24:36] after r1: w0_bench match_fallback_16k,match_loop_4096 (4096x4096)
+[11:24:38] after r1 w0_4096 rc=0
+[11:24:38] after r1: w0_bench match_fallback_16k --size=15000x10000
+[11:24:49] after r1 w0_15k rc=0
+[11:24:49] after r1: measure_k38.py (matchPixels=rust vs matchPixels=js + step breakdown)
+[11:25:15] after r1 measure_k38 rc=0
+closed
+lock: released
+[11:25:21] lock: released (K38 measuring r1 (chain-f, port 9619) 59920 2026-11-09T11:18:29)
+[11:25:21] == round 2: acquiring busy lock
+lock: taken after 0 s
+[11:25:22] lock: taken (K38 measuring r2 (chain-f, port 9619) 67068 2026-11-09T11:25:21)
+[11:25:30] after r2: w0_bench match_fallback_16k,match_loop_4096 (4096x4096)
+[11:25:33] after r2 w0_4096 rc=0
+[11:25:33] after r2: w0_bench match_fallback_16k --size=15000x10000
+[11:25:41] after r2 w0_15k rc=0
+[11:25:42] after r2: measure_k38.py (matchPixels=rust vs matchPixels=js + step breakdown)
+[11:26:09] after r2 measure_k38 rc=0
+closed
+[11:26:25] before r2: w0_bench match_fallback_16k,match_loop_4096 (4096x4096)
+[11:26:29] before r2 w0_4096 rc=0
+[11:26:30] before r2: w0_bench match_fallback_16k --size=15000x10000
+[11:26:43] before r2 w0_15k rc=0
+closed
+lock: released
+[11:26:47] lock: released (K38 measuring r2 (chain-f, port 9619) 67068 2026-11-09T11:25:21)
+[11:26:47] == round 3: acquiring busy lock
+lock: taken after 0 s
+[11:26:48] lock: taken (K38 measuring r3 (chain-f, port 9619) 53848 2026-11-09T11:26:47)
+[11:26:57] before r3: w0_bench match_fallback_16k,match_loop_4096 (4096x4096)
+[11:27:00] before r3 w0_4096 rc=0
+[11:27:00] before r3: w0_bench match_fallback_16k --size=15000x10000
+[11:27:14] before r3 w0_15k rc=0
+closed
+[11:27:29] after r3: w0_bench match_fallback_16k,match_loop_4096 (4096x4096)
+[11:27:34] after r3 w0_4096 rc=0
+[11:27:35] after r3: w0_bench match_fallback_16k --size=15000x10000
+[11:27:45] after r3 w0_15k rc=0
+[11:27:45] after r3: measure_k38.py (matchPixels=rust vs matchPixels=js + step breakdown)
+[11:28:11] after r3 measure_k38 rc=0
+closed
+lock: released
+[11:28:15] lock: released (K38 measuring r3 (chain-f, port 9619) 53848 2026-11-09T11:26:47)
+[11:28:15] px_bench: PX_ONLY=matchTwin,match node tools/px_test.js
+[11:28:17] done
+no instance on 9619 Cannot connect to host 127.0.0.1:9619 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
