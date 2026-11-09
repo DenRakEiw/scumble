@@ -39,3 +39,16 @@ PASS (only: tiff; PX_ONLY, not the full test)
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_mut_k15\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 15 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_k15_3\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 288126 bytes, sha256 7a9906e77da23a68
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_k15_3\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 230358 bytes, sha256 ea1fbd34b8b9b3c3
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_k15_3\crates\px)
+    Finished `release` profile [optimized] target(s) in 7.16s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\scumble_mut_k15_3\crates\px)
+    Finished `release` profile [optimized] target(s) in 7.21s

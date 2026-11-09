@@ -9767,7 +9767,7 @@ async function tiffCases(js, simd, scalar, K, T) {
             name: "tiff_unpredict",
             builds: [["rust simd", simd], ["rust scalar", scalar]],
             twin: js,
-            call: (k, [src, rows, rowBytes, pixels, per, bits, le]) => k.tiffUnpredict(src.slice(), rows, rowBytes, pixels, per, bits, le),
+            call: (k, [src, rows, rowBytes, pixels, per, bits, le]) => k.tiffUnpredict(src, rows, rowBytes, pixels, per, bits, le),
             cases: unpredictCases,
         });
 
@@ -9793,11 +9793,16 @@ async function tiffCases(js, simd, scalar, K, T) {
                 if (!threw) uBadProblems.push(`${bname} ${what}`);
             }
         }
-        if ((simd.exports.tiff_unpredict(0, 16, 1, 16, 4, 4, 8, 1) | 0) !== -1
-            || (simd.exports.tiff_unpredict(8, 16, 1, 16, 4, 4, 4, 1) | 0) !== -1
-            || (simd.exports.tiff_unpredict(8, 15, 1, 16, 4, 4, 8, 1) | 0) !== -1
-            || (simd.exports.tiff_unpredict(0, 0, 0, 16, 4, 4, 8, 1) | 0) !== 0) {
-            uBadProblems.push("raw tiff_unpredict export validation");
+        for (const [bname, mod] of [["simd", simd], ["scalar", scalar]]) {
+            const ex = mod.exports;
+            if ((ex.tiff_unpredict(0, 16, 1, 16, 4, 4, 8, 1) | 0) !== -1
+                || (ex.tiff_unpredict(8, 16, 1, 16, 4, 4, 4, 1) | 0) !== -1
+                || (ex.tiff_unpredict(8, 16, 1, 16, 4, 0, 8, 1) | 0) !== -1
+                || (ex.tiff_unpredict(8, 16, 1, 15, 4, 4, 8, 1) | 0) !== -1
+                || (ex.tiff_unpredict(8, 15, 1, 16, 4, 4, 8, 1) | 0) !== -1
+                || (ex.tiff_unpredict(0, 0, 0, 16, 4, 4, 8, 1) | 0) !== 0) {
+                uBadProblems.push(`${bname} raw tiff_unpredict export validation`);
+            }
         }
         check("tiff_unpredict refuses invalid bits, per, rowBytes, and truncated buffers across twin, simd and scalar",
             !uBadProblems.length, uBadProblems.join(", "));
@@ -9833,7 +9838,7 @@ async function tiffCases(js, simd, scalar, K, T) {
             name: "tiff_predict_rgba",
             builds: [["rust simd", simd], ["rust scalar", scalar]],
             twin: js,
-            call: (k, [src, w, rows]) => k.tiffPredictRgba(src.slice(), w, rows),
+            call: (k, [src, w, rows]) => k.tiffPredictRgba(src, w, rows),
             cases: predictCases,
         });
 
@@ -9874,11 +9879,15 @@ async function tiffCases(js, simd, scalar, K, T) {
                 if (!threw) pBadProblems.push(`${bname} ${what}`);
             }
         }
-        if ((simd.exports.tiff_predict_rgba(0, 2, 1) | 0) !== -1
-            || (simd.exports.tiff_predict_rgba(8, -1, 1) | 0) !== -1
-            || (simd.exports.tiff_predict_rgba(8, 0, 1) | 0) !== -1
-            || (simd.exports.tiff_predict_rgba(8, 1, 0) | 0) !== -1) {
-            pBadProblems.push("raw tiff_predict_rgba export validation");
+        for (const [bname, mod] of [["simd", simd], ["scalar", scalar]]) {
+            const ex = mod.exports;
+            if ((ex.tiff_predict_rgba(0, 2, 1) | 0) !== -1
+                || (ex.tiff_predict_rgba(8, -1, 1) | 0) !== -1
+                || (ex.tiff_predict_rgba(8, 0, 1) | 0) !== -1
+                || (ex.tiff_predict_rgba(8, 1, 0) | 0) !== -1
+                || (ex.tiff_predict_rgba(8, 0x40000000, 2) | 0) !== -1) {
+                pBadProblems.push(`${bname} raw tiff_predict_rgba export validation`);
+            }
         }
         check("tiff_predict_rgba refuses non-positive dimensions, short buffers, and null pointers", !pBadProblems.length, pBadProblems.join(", "));
     }
@@ -9923,10 +9932,10 @@ async function tiffCases(js, simd, scalar, K, T) {
                                 for (const pad of [0, 3]) {
                                     const rowBytes = minRb + pad;
                                     const bufs = makePlaneBufs(planes, n, rowBytes, ++seedCounter);
-                                    // For 8-bit and 16-bit palette, clamp index samples in plane 0 / channel 0 to valid range while also testing saturation
+                                    // Pass pal and every plane buffer at the top level of args so twinRun's argsFor shifts them to an odd byteOffset too.
                                     toRgbaCases.push({
                                         tag: `toRgba photo=${photometric} bits=${bits}${bits === 16 ? (le ? "LE" : "BE") : ""} spp=${spp} planes=${planes} alpha=${alpha} pad=${pad}`,
-                                        args: [bufs, n, { w, rowBytes, spp, bits, planes, le, photometric, alpha, pal }],
+                                        args: [n, { w, rowBytes, spp, bits, planes, le, photometric, alpha }, pal, ...bufs],
                                     });
                                 }
                             }
@@ -9969,11 +9978,11 @@ async function tiffCases(js, simd, scalar, K, T) {
             for (const alpha of ["straight", "premultiplied"]) {
                 toRgbaCases.push({
                     tag: `Q6.4exhaustive ${bits}b chunky ${alpha} (${totalPairs} pairs)`,
-                    args: [[chunkyBuf], n, { w, rowBytes: chunkyBuf.length, spp: 2, bits, planes: 1, le: true, photometric: 3, alpha, pal }],
+                    args: [n, { w, rowBytes: chunkyBuf.length, spp: 2, bits, planes: 1, le: true, photometric: 3, alpha }, pal, chunkyBuf],
                 });
                 toRgbaCases.push({
                     tag: `Q6.4exhaustive ${bits}b planar ${alpha} (${totalPairs} pairs)`,
-                    args: [[p0Buf, p1Buf], n, { w, rowBytes: p0Buf.length, spp: 2, bits, planes: 2, le: true, photometric: 3, alpha, pal }],
+                    args: [n, { w, rowBytes: p0Buf.length, spp: 2, bits, planes: 2, le: true, photometric: 3, alpha }, pal, p0Buf, p1Buf],
                 });
             }
         }
@@ -9982,7 +9991,7 @@ async function tiffCases(js, simd, scalar, K, T) {
             name: "tiff_to_rgba",
             builds: [["rust simd", simd], ["rust scalar", scalar]],
             twin: js,
-            call: (k, [bufs, n, spec]) => k.tiffToRgba(bufs, n, null, spec),
+            call: (k, [n, spec, pal, ...bufs]) => k.tiffToRgba(bufs, n, null, { ...spec, pal }),
             cases: toRgbaCases,
         });
 
@@ -10063,7 +10072,7 @@ async function tiffCases(js, simd, scalar, K, T) {
             check("tiff_to_rgba writes into caller-supplied out view without touching surrounding bytes", outOk);
         }
 
-        // Refusal checks on tiff_to_rgba
+        // Refusal checks on tiff_to_rgba (and paletteLut string / NaN colormap edges, K15-read-1 & T3)
         {
             const validBuf = new Uint8Array(16 * 4);
             const baseSpec = { w: 4, rowBytes: 16, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "straight", pal: null };
@@ -10074,6 +10083,7 @@ async function tiffCases(js, simd, scalar, K, T) {
                 ["rowBytes < minRowBytes", [validBuf], 1, { ...baseSpec, rowBytes: 15 }],
                 ["short plane buffer", [validBuf.subarray(0, 15)], 1, baseSpec],
                 ["palette without pal", [validBuf], 1, { ...baseSpec, spp: 1, rowBytes: 4, photometric: 3, alpha: "none", pal: null }],
+                ["palette with string colormap", [validBuf], 1, { ...baseSpec, spp: 1, bits: 1, rowBytes: 1, photometric: 3, alpha: "none", pal: null, colormap: "abcdef" }],
                 ["negative w", [validBuf], 1, { ...baseSpec, w: -1 }],
                 ["negative rows", [validBuf], -1, baseSpec],
             ];
@@ -10085,10 +10095,39 @@ async function tiffCases(js, simd, scalar, K, T) {
                     if (!threw) badProblems.push(`${bname} ${what}`);
                 }
             }
-            if ((simd.exports.tiff_to_rgba(0, 16, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, 8, 16) | 0) !== -1
-                || (simd.exports.tiff_to_rgba(8, 16, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, 0, 16) | 0) !== -1
-                || (simd.exports.tiff_to_rgba(0, 0, 1, 16, 4, 0, 4, 8, 1, 2, 2, 0, 0, 0, 0) | 0) !== -1) {
-                badProblems.push("raw tiff_to_rgba export validation");
+            // K15-read-1: paletteLut refuses a string and treats NaN as !(v < 256) so all8=false (200 >> 8 === 0)
+            let strThrew = false;
+            try { js.paletteLut("abcdef", 1); } catch (_) { strThrew = true; }
+            const nanLut = js.paletteLut([200, NaN, 200, 200, 200, 200], 1);
+            if (!strThrew || nanLut[0] !== 0) badProblems.push("paletteLut string / NaN handling");
+
+            // T3: direct simd.exports and scalar.exports refusal calls covering every Rust guard and verifying unchanged output
+            for (const [bname, mod] of [["simd", simd], ["scalar", scalar]]) {
+                const ex = mod.exports;
+                const outPtr = 1024;
+                mod.u8().fill(0xA5, outPtr, outPtr + 16);
+                const rawBad = [
+                    ["null src", [0, 16, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["null out", [16, 16, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, 0, 16]],
+                    ["w=0", [16, 16, 1, 16, 0, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["rows=0", [16, 16, 1, 16, 4, 0, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["src_len one short", [16, 15, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["out_len one short", [16, 16, 1, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 15]],
+                    ["null pal", [16, 4, 1, 4, 4, 1, 1, 8, 1, 3, 0, 0, 768, outPtr, 16]],
+                    ["pal_len one short", [16, 4, 1, 4, 4, 1, 1, 8, 1, 3, 0, 32, 767, outPtr, 16]],
+                    ["row_bytes < min", [16, 16, 1, 15, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["bits=3", [16, 16, 1, 16, 4, 1, 4, 3, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["photometric=4", [16, 16, 1, 16, 4, 1, 4, 8, 1, 4, 2, 0, 0, outPtr, 16]],
+                    ["photometric=2 bits=4", [16, 16, 1, 16, 4, 1, 4, 4, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["planes=3", [16, 48, 3, 16, 4, 1, 4, 8, 1, 2, 2, 0, 0, outPtr, 16]],
+                    ["alpha_mode=3", [16, 16, 1, 16, 4, 1, 4, 8, 1, 2, 3, 0, 0, outPtr, 16]],
+                ];
+                for (const [rname, rargs] of rawBad) {
+                    if ((ex.tiff_to_rgba(...rargs) | 0) !== -1) badProblems.push(`${bname} raw ${rname}`);
+                }
+                if (!mod.u8().subarray(outPtr, outPtr + 16).every((v) => v === 0xA5)) {
+                    badProblems.push(`${bname} raw refusal modified outPtr`);
+                }
             }
             check("tiff_to_rgba refuses invalid specs, short buffers, missing palette LUTs, and null pointers", !badProblems.length, badProblems.join(", "));
         }
@@ -10251,7 +10290,8 @@ async function tiffCases(js, simd, scalar, K, T) {
             const rTrap = await W.tiffPartJob(rgbaMsg);
             i1 = K.pxInstances();
             const trapRgbaOk = rTrap.timing.composeWasm === 0 && K.rustPx() !== p0 && i1.trap === i0.trap + 1
-                && rTrap.raw === wantTileStrip.raw;
+                && rTrap.raw === wantTileStrip.raw
+                && eqBytes(new Uint8Array(rTrap.chunk), new Uint8Array(wantTileStrip.chunk));
 
             check("inpaint_worker.js tiffPartJob recovers from OOM and wasm traps in tiffStripFromPtr and tiffStrip, renews the instance, and falls back cleanly",
                 oomPtrOk && trapPtrOk && trapRgbaOk,
@@ -10260,11 +10300,21 @@ async function tiffCases(js, simd, scalar, K, T) {
             console.warn = realWarn;
         }
 
-        // 4c. tiffKernels() per-call rustPx() lookup across instance replacement + route switching + in-place trap safety
+        // 4c. tiffKernels() per-call rustPx() lookup across instance replacement + route switching + in-place trap safety (T2)
         const tk = K.tiffKernels();
+        const tkMethodsMatch = tk.unpredict === K.tiffUnpredict && tk.predictRgba === K.tiffPredictRgba && tk.toRgba === K.tiffToRgba && tk.unpackStrip === K.tiffUnpack;
         const pBefore = K.rustPx();
+        let oldCalls = 0, newCalls = 0;
+        for (const m of ["tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
+            const orig = pBefore[m].bind(pBefore);
+            pBefore[m] = (...a) => { oldCalls++; return orig(...a); };
+        }
         K.dropPx("idle");
         const pAfter = K.rustPx();
+        for (const m of ["tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
+            const orig = pAfter[m].bind(pAfter);
+            pAfter[m] = (...a) => { newCalls++; return orig(...a); };
+        }
         const sampleRgba = new Uint8Array(16 * 4);
         for (let i = 0; i < sampleRgba.length; i++) sampleRgba[i] = (i * 19 + 5) & 255;
         const spec4c = { w: 16, rowBytes: 64, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "straight", pal: null };
@@ -10274,6 +10324,7 @@ async function tiffCases(js, simd, scalar, K, T) {
         const pRust = tk.predictRgba(sampleRgba.slice(), 16, 1);
         const cRust = tk.toRgba([sampleRgba], 1, null, spec4c);
         const callsRust = K.pxCalls(true);
+        const oldCallsAfterDrop = oldCalls, newCallsAfterDrop = newCalls;
 
         for (const r of ["tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, "js");
         const uJs = tk.unpredict(sampleRgba.slice(), 1, 64, 16, 4, 8, true);
@@ -10290,29 +10341,29 @@ async function tiffCases(js, simd, scalar, K, T) {
             let pCur = K.rustPx();
             pCur.exports = { ...pCur.exports, tiff_unpredict: () => trapIn(pCur) };
             const uBuf = sampleRgba.slice();
-            const uRec = K.tiffUnpredict(uBuf, 1, 64, 16, 4, 8, true);
+            const uRec = tk.unpredict(uBuf, 1, 64, 16, 4, 8, true);
             if (!eqBytes(uRec, uJs) || K.rustPx() === pCur) trapInPlaceOk = false;
 
             pCur = K.rustPx();
             pCur.exports = { ...pCur.exports, tiff_predict_rgba: () => trapIn(pCur) };
             const pBuf = sampleRgba.slice();
-            const pRec = K.tiffPredictRgba(pBuf, 16, 1);
+            const pRec = tk.predictRgba(pBuf, 16, 1);
             if (!eqBytes(pRec, pJs) || K.rustPx() === pCur) trapInPlaceOk = false;
 
             pCur = K.rustPx();
             pCur.exports = { ...pCur.exports, tiff_to_rgba: () => trapIn(pCur) };
-            const cRec = K.tiffToRgba([sampleRgba], 1, null, spec4c);
+            const cRec = tk.toRgba([sampleRgba], 1, null, spec4c);
             if (!eqBytes(cRec, cJs) || K.rustPx() === pCur) trapInPlaceOk = false;
         } finally {
             console.warn = realWarn;
         }
         K.setKernels("js");
         check("kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels",
-            pBefore !== pAfter
+            tkMethodsMatch && pBefore !== pAfter && oldCallsAfterDrop === 0 && newCallsAfterDrop === 3
             && callsRust.tiff_unpredict === 1 && callsRust.tiff_predict_rgba === 1 && callsRust.tiff_to_rgba === 1
             && !callsJs.tiff_unpredict && !callsJs.tiff_predict_rgba && !callsJs.tiff_to_rgba
             && eqBytes(uRust, uJs) && eqBytes(pRust, pJs) && eqBytes(cRust, cJs) && trapInPlaceOk,
-            `callsRust=${JSON.stringify(callsRust)} callsJs=${JSON.stringify(callsJs)} trapInPlaceOk=${trapInPlaceOk}`);
+            `tkMethodsMatch=${tkMethodsMatch} oldCalls=${oldCallsAfterDrop} newCalls=${newCallsAfterDrop} callsRust=${JSON.stringify(callsRust)} callsJs=${JSON.stringify(callsJs)} trapInPlaceOk=${trapInPlaceOk}`);
 
         // 4d. readTiff with kernels: null (converter + JS unpredict) vs kernels: K.tiffKernels() (Rust toRgba + unpredict)
         // on a 2-bit palette + premultiplied alpha + predictor 2 TIFF (Question 6.4)

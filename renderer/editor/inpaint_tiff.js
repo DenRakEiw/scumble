@@ -235,7 +235,7 @@ async function parse(blob) {
     layout.planes = planes;
     layout.perPixel = perPixel;
     layout.colormap = photometric === 3 ? await get(320, null) : null;
-    if (photometric === 3 && (!layout.colormap || layout.colormap.length < 3 * (1 << bits))) throw new Error("a palette TIFF without its colour map");
+    if (photometric === 3 && (!layout.colormap || typeof layout.colormap === "string" || layout.colormap.length < 3 * (1 << bits))) throw new Error("a palette TIFF without its colour map");
 
     if (pages > 1) notes.push(`page 1 of ${pages === MAX_IFDS ? pages + " or more" : pages} opened; the other pages are left out`);
     if (reducedFirst) notes.push("a reduced-resolution preview in front of the picture was skipped");
@@ -616,11 +616,11 @@ const to8 = (v) => ((v * 2 + 257) / 514) | 0;
  */
 export function paletteLut(cm, bits) {
     const levels = 1 << bits;
-    if (!cm || cm.length < 3 * levels) throw new Error(`tiff paletteLut: colormap too short for ${bits} bits`);
+    if (!cm || typeof cm === "string" || cm.length < 3 * levels) throw new Error(`tiff paletteLut: colormap too short for ${bits} bits`);
     const pal = new Uint8Array(levels * 3);
     let all8 = true;
     for (let i = 0; i < 3 * levels; i++) {
-        if (cm[i] >= 256) { all8 = false; break; }
+        if (!(cm[i] < 256)) { all8 = false; break; }
     }
     for (let i = 0; i < levels; i++) {
         pal[i * 3] = all8 ? cm[i] : cm[i] >> 8;

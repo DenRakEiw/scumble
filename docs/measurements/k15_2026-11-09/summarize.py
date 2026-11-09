@@ -53,7 +53,7 @@ def gather_tiffperf(arm):
                             if k in tr:
                                 put(f"{vname} tiff_read {k}", tr.get(k))
                         oj = ((j.get("openJobs") or {}).get("png_part")) or {}
-                        for k in ("jobs", "composeWasm", "kernel"):
+                        for k in ("jobs", "composeWasm", "kernel", "rows", "filter", "adler", "deflate"):
                             if k in oj:
                                 put(f"{vname} open png_part {k}", oj.get(k))
     return out
@@ -91,12 +91,32 @@ def print_table(title, b, a):
         print(k.ljust(w) + fmt(mb).ljust(32) + fmt(ma).ljust(32) + ratio)
 
 
+def print_paired_png_store(b, a):
+    print("\n=== Paired round-by-round PNG store comparison (18 pairs = 6 variants x 3 rounds) ===")
+    for metric in ("openSteps stored", "open png_part kernel", "open png_part deflate"):
+        total_slower = 0
+        per_var = []
+        for vname in VARIANTS:
+            bv = b.get(f"{vname} {metric}", [])
+            av = a.get(f"{vname} {metric}", [])
+            slower = sum(1 for x, y in zip(bv, av) if y > x)
+            total_slower += slower
+            mb = med(bv)[0]
+            ma = med(av)[0]
+            pct = ((ma - mb) / mb) * 100.0 if mb else 0.0
+            per_var.append(f"{vname} {slower}/3 ({pct:+.1f}%)")
+        print(f"{metric:22s}: after slower in {total_slower}/18 pairs | " + ", ".join(per_var))
+
+
 def main():
+    b_tp = gather_tiffperf("before")
+    a_tp = gather_tiffperf("after")
     print_table(
         "15000 x 10000 tiff_test.py --size (6 variants, 1 variant/instance, 3 alternating rounds, median [min-max] ms)",
-        gather_tiffperf("before"),
-        gather_tiffperf("after"),
+        b_tp,
+        a_tp,
     )
+    print_paired_png_store(b_tp, a_tp)
     print_table(
         "15000 x 10000 w0_bench.py tiff_rows_256 (3 alternating rounds, median [min-max] ms)",
         gather_w0bench("before"),

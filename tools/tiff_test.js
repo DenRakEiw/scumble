@@ -401,14 +401,17 @@ async function deflate(bytes) {
 
 // ---- the cases ------------------------------------------------------------------------------------------------
 
+let fixturesGenerated = false;
+
 async function fixtureCases(T) {
     const manPath = path.join(FIX, "manifest.json");
-    if (!fs.existsSync(manPath)) {
+    if (!fixturesGenerated) {
         fs.mkdirSync(FIX, { recursive: true });
         const t0 = Date.now();
         const table = python([path.join(ROOT, "tools", "tiff_fixtures.py"), FIX], 900000);
         const manifest0 = JSON.parse(fs.readFileSync(manPath, "utf-8"));
         check(`fixtures${kernelSuffix}`, manifest0.length > 40 && /fixtures \(/.test(table), `${manifest0.length} written by tools/tiff_fixtures.py in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+        fixturesGenerated = true;
     }
     const manifest = JSON.parse(fs.readFileSync(manPath, "utf-8"));
     for (const e of manifest) {
@@ -1070,6 +1073,14 @@ console.log(JSON.stringify(out));
                 }
             }
         }
+        // K15-read-1: a palette TIFF whose ColorMap (tag 320) has type 2 (ASCII) is refused
+        const asciiTags = [
+            [254, 4, [0]], [256, 4, [4]], [257, 4, [1]], [258, 3, [1]], [259, 3, [1]], [262, 3, [3]],
+            [277, 3, [1]], [278, 4, [1]], [282, 5, [[72, 1]]], [283, 5, [[72, 1]]], [284, 3, [1]],
+            [296, 3, [2]], [320, 2, "abcdef"],
+        ];
+        const { bytes: asciiCmBytes } = buildTiff([{ tags: asciiTags, data: [new Uint8Array([0xAA])] }]);
+        await expectRefusal(T, "palette TIFF with ASCII ColorMap (tag 320 type 2)", asciiCmBytes, /without its colour map/i);
     }
 }
 

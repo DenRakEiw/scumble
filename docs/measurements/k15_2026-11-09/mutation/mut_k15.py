@@ -202,6 +202,16 @@ MUTANTS = [
         "killed",
         {"px": ["tiff"]},
     ),
+    (
+        "tiff.rs: to_rgba drops src_len < need_src guard (T3)",
+        TF,
+        [(
+            "    if src.is_null() || src_len < need_src {\n        return -1;\n    }",
+            "    if src.is_null() {\n        return -1;\n    }",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
     # ---- crates/px/src/lib.rs ----
     (
         "lib.rs: tiff_unpredict passes le == 0 instead of le != 0",
@@ -235,6 +245,16 @@ MUTANTS = [
         {"px": ["tiff"]},
     ),
     (
+        "inpaint_tiff.js: paletteLut uses cm[i] >= 256 instead of !(cm[i] < 256) (K15-read-1)",
+        IT,
+        [(
+            "        if (!(cm[i] < 256)) { all8 = false; break; }",
+            "        if (cm[i] >= 256) { all8 = false; break; }",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
         "inpaint_tiff.js: predictRgba adds instead of subtracts ((bytes[i] + bytes[i - 4]) & 255)",
         IT,
         [(
@@ -255,6 +275,36 @@ MUTANTS = [
         {"px": ["tiff"]},
     ),
     # ---- renderer/editor/px/px.js ----
+    (
+        "px.js: tiffUnpredict ignores buf.byteOffset (uses 0) (T1)",
+        PJ,
+        [(
+            "        const u8 = new Uint8Array(buf.buffer, buf.byteOffset, need);",
+            "        const u8 = new Uint8Array(buf.buffer, 0, need);",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "px.js: tiffPredictRgba ignores rgba.byteOffset (uses 0) (T1)",
+        PJ,
+        [(
+            "        const u8 = new Uint8Array(rgba.buffer, rgba.byteOffset, n);",
+            "        const u8 = new Uint8Array(rgba.buffer, 0, n);",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "px.js: tiffToRgba ignores plane b.byteOffset (uses 0) (T1)",
+        PJ,
+        [(
+            "                this.put(ps + p * planeBytes, new Uint8Array(b.buffer, b.byteOffset, takeLen));",
+            "                this.put(ps + p * planeBytes, new Uint8Array(b.buffer, 0, takeLen));",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
     (
         "px.js: tiffStripFromPtr skips tiff_predict_rgba when pred === 2",
         PJ,
@@ -292,6 +342,16 @@ MUTANTS = [
         [(
             "export function tiffKernels() {\n    return TIFF_RUST;\n}",
             "export function tiffKernels() {\n    return J.TIFF_JS;\n}",
+        )],
+        "killed",
+        {"px": ["tiff"]},
+    ),
+    (
+        "kernels.js: tiffKernels pins rustPx() instance at tiffKernels() call time while consulting route (T2)",
+        KR,
+        [(
+            "export function tiffKernels() {\n    return TIFF_RUST;\n}",
+            "export function tiffKernels() {\n    const p0 = rustPx();\n    return { ...TIFF_RUST, unpredict: (b, r, rb, px, per, bits, le = true) => (rustPx(\"tiffUnpredict\") && p0 ? p0.tiffUnpredict(b, r, rb, px, per, bits, le) : J.tiffUnpredict(b, r, rb, px, per, bits, le)) };\n}",
         )],
         "killed",
         {"px": ["tiff"]},
