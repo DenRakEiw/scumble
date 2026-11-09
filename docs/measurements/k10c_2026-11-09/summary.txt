@@ -16,7 +16,7 @@ Scope (docs/PLAN_WASM_BUILD.md §4.4 K10c, §5 row 44; docs/PLAN_WASM_K10.md):
 - `renderer/editor/px/kernels.js`:
   - Added `clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel"` to `ROUTE_KINDS` (`:65`). All four win their 15,000 x 10,000 deciding rows, so none is added to `DEFAULT_ROUTES`.
 - `renderer/editor/inpaint_worker.js`:
-  - Updated `stackRowsToWasm` (`:394-521`) to call `p.exports.clip_coverage(pcov, px, pbm, c.alpha, pm)` (`:460`) when `p.exports.clip_coverage && route("clipCoverage") !== "js"` (falling back to JS `clipCoverage(covView, bmView, c.alpha, ownView)` over `p.view(Uint8Array, ...)` at `:462-465` when `"js"`), and `p.exports.dissolve_rows(psrc, W, n, X0, Y0, l.alpha, pm, l.dissolve >>> 0)` (`:471`) when `p.exports.dissolve_rows && route("dissolveRows") !== "js"` (falling back to the inline JS dissolve loop over `srcView = p.view(Uint8Array, psrc, byteLen)` using `mul255` and `hash32` at `:473-494` when `"js"`).
+  - K10b's `stackRowsToWasm` wiring (`:459-466` calling `p.exports.clip_coverage(pcov, px, pbm, c.alpha, pm)` when `p.exports.clip_coverage && route("clipCoverage") !== "js"` with `"js"` fallback `clipCoverage(covView, bmView, c.alpha, ownView)`, and `:470-495` calling `p.exports.dissolve_rows(psrc, W, n, X0, Y0, l.alpha, pm, l.dissolve >>> 0)` when `p.exports.dissolve_rows && route("dissolveRows") !== "js"` with `"js"` fallback inline loop over `srcView = p.view(Uint8Array, psrc, byteLen)` using `mul255` and `hash32`) goes live once `clip_coverage` and `dissolve_rows` are exported by `crates/px/src/lib.rs`.
   - Updated `stackInto(msg)` (`:528-563`) to take the wasm pointer path (`stackRowsToWasm(p, a, msg, false, into)` + `p.get(Uint8Array, pd, byteLen, into)`) when `p && msg.stack.layers.length > 0 && route("stackIntoWasm") !== "js"`, with `try / catch (err) { if (!recovered(p, err, "stack_into")) throw err; } finally { p._reset(a); }`, recording `composeWasm: 1` on the pointer path and `composeWasm: 0` on `"js"` / base-only (`layers: []`) / fallback.
   - Updated `psdPart(msg)` (`:769-815`) to take the wasm pointer path (`partPtrOf(p, a, msg, false)` + `p.psdPackRowsFromPtr(a, ptrs.pr, msg.w, msg.rows)`) when `p && !msg.rgba && route("psdPartWasm") !== "js"`, with `try / catch (err) { if (!recovered(p, err, "psd_part")) throw err; } finally { p._reset(a); releaseIfLarge(); }`, recording `composeWasm: 1` on the pointer path and `composeWasm: 0` on `"js"` / fallback.
 
@@ -55,8 +55,12 @@ Command:
 All 30 app runs across the 5 A/B batches (6 `native_test.py` Stack+Match, 6 `native_test.py` Filter band,
 6 `export_test.py --perf` default, 6 `export_test.py --perf --blend=dissolve`, 6 `export_test.py --perf --clipped`)
 and the retention probes (`px_probe.py --retention` and `retention_psd_wand.py`) executed on fresh offline Electron
-instances with `"focused": true` (`notcounted/` empty). GPU utilization was `0-5%` (`19,532-20,664 MiB`) throughout
-all rounds (`chain.log`).
+instances with `"focused": true` (`notcounted/` empty). GPU utilization and VRAM across the 34 `gpu:` lines in
+`chain.log` ranged over `0-18%` and `19,145-26,700 MiB` (`native_test` Stack+Match `0-5%` / `19,145-19,802 MiB`;
+`native_test` Filter band `1-4%` / `19,288-19,617 MiB`; `exportperf` default `0-3%` / `19,305-19,795 MiB`;
+`exportperf_dissolve` `1-18%` / `19,846-26,700 MiB`, with `r1 js` at `1% / 19,846 MiB` vs `r1 rust` at `13% / 26,436 MiB`,
+`r2 rust` at `18% / 26,700 MiB` vs `r2 js` at `10% / 25,132 MiB`, and `r3 js` at `13% / 22,479 MiB` vs `r3 rust` at
+`11% / 22,153 MiB`; `exportperf_clipped` `11-13%` / `22,145-22,195 MiB`; retention probes `11-12%` / `21,910-22,249 MiB`).
 
 a) `native_test.py 15000x10000` Stack + Match (`--skip=open_psd,open_ora,filter_export_png,filter_wand`, 3 alternating rounds, median [min-max] ms):
 row                                             before (3359cb0f)             after (K10c)                  before / after
@@ -173,15 +177,15 @@ Route Decisions (`docs/PLAN_WASM_BUILD.md` §1.1 & `docs/PLAN_WASM_K10.md` §9.3
 
 3. Unit & Parity Suites (`tools/px_test.js` & `tools/boxstack_test.js`)
 -----------------------------------------------------------------------
-- `node tools/px_test.js`: PASS (`composeWasmPartCases` on both `rust simd` and `rust scalar` covering sections 1-3 and K10c sections `4a-4d` (`:6076-6459`), plus worker `psdPart` / `stackInto` / `stackPoints` checks `5a-5c` (`:6479-6606`) on `rust simd`).
-- `node tools/boxstack_test.js`: PASS (including `compositeBox` clipped and dissolve layer cases against both `rowsOfStack` and frozen hand-computed 4x2 byte arrays).
+- `node tools/px_test.js`: PASS (`composeWasmPartCases` on both `rust simd` and `rust scalar` covering sections 1-3 including `2g` under `dissolveRows=js` (`:5912-5931`) and K10c sections `4a-4d` (`:6086-6496`, including a clipped + dissolved layer in `4c` and `4d`), plus worker `psdPart` / `stackInto` / `stackPoints` checks `5a-5c` (`:6517-6646`, including `5b` band offset verification against whole-box `rowsOfStack`) on `rust simd`).
+- `node tools/boxstack_test.js`: PASS (`:137-269`, `compositeBox` clipped and dissolve layer cases against both `rowsOfStack` and frozen hand-computed 4x2 byte arrays).
 
 4. Mutation Round (`docs/measurements/k10c_2026-11-09/mutation/summary.txt`)
 ----------------------------------------------------------------------------
 Command:
   python docs/measurements/k10c_2026-11-09/mutation/mut_k10c.py
-- 24 targeted mutants across `crates/px/src/composite.rs` (`R01`-`R05`), `renderer/editor/inpaint_raster.js` (`J01`), `renderer/editor/blend_modes.js` (`J02`), `renderer/editor/inpaint_boxstack.js` (`J03`-`J05`), `renderer/editor/inpaint_worker.js` (`J06`-`J18`), and `renderer/editor/px/px.js` (`J19`):
-  - **24 killed**, **0 survived**, **0 unexpected**.
+- 31 targeted mutants across `crates/px/src/composite.rs` (`R01`-`R06`), `renderer/editor/inpaint_raster.js` (`J01`-`J02`), `renderer/editor/blend_modes.js` (`J03`), `renderer/editor/inpaint_boxstack.js` (`J04`-`J06`), `renderer/editor/inpaint_worker.js` (`J07`-`J23`), and `renderer/editor/px/px.js` (`J24`-`J25`):
+  - **31 killed**, **0 survived**, **0 unexpected**.
 
 5. Gates (`dist/gates/gates/`)
 ------------------------------

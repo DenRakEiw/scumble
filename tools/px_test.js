@@ -5622,6 +5622,7 @@ async function noisePartCases(px, label, png, zlib) {
 async function composeWasmPartCases(px, label, png, zlib) {
     const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
     const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+    const J = await import(pathToFileURL(path.join(PX_DIR, "kernels_js.js")).href);
     const W = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_worker.js")).href);
     const bands = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_bands.js")).href);
     const { hash32 } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "blend_modes.js")).href);
@@ -5908,7 +5909,7 @@ async function composeWasmPartCases(px, label, png, zlib) {
                 u8[o + 3] = 1 + ((x * 5 + y * 9) % 254);
             }
         });
-        const r2gOpaque = checkStackCase("2g dissolve opaque + partial at y=16", {
+        const msg2g = {
             w: 256, rows: 48, y: 16, x0: 0, y0: 0, level: 2, last: true,
             stack: {
                 base: baseStore,
@@ -5917,8 +5918,17 @@ async function composeWasmPartCases(px, label, png, zlib) {
                     { x: 0, y: 0, w: 256, h: 256, alpha: 180, op: 0, dissolve: dissolveSeed ^ 0x55AA55AA, tiles: { 0: [makeTile(262)] }, mask: { 0: [ownMaskA] } },
                 ],
             },
-        });
-        check(`${label} stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack`, hitHash255 && r2gOpaque.ok, r2gOpaque.detail || `hitHash255=${hitHash255}`);
+        };
+        const r2gOpaque = checkStackCase("2g dissolve opaque + partial at y=16", msg2g);
+        let r2gJs;
+        K.setRoute("dissolveRows", "js");
+        try {
+            r2gJs = checkStackCase("2g dissolveRows=js opaque + partial at y=16", msg2g);
+        } finally {
+            K.setRoute("dissolveRows", null);
+        }
+        check(`${label} stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js`,
+            hitHash255 && r2gOpaque.ok && r2gJs.ok, r2gOpaque.detail || r2gJs.detail || `hitHash255=${hitHash255}`);
 
         // (2h) Fresh-instance memory.grow test at y = 12 > 0: > 2 MiB multi-layer band grows freshPx.memory.buffer and stays byte-identical on both band and above row
         const freshPx = new P.Px(new WebAssembly.Instance(px.module, {}), px.module);
@@ -6301,43 +6311,51 @@ async function composeWasmPartCases(px, label, png, zlib) {
                         tiles: { 0: [makeTile(409), makeTile(410)] },
                         mask: { 0: [ownMaskTile, ownMaskTile] },
                     },
+                    {
+                        x: 0, y: 0, w: 512, h: 256, alpha: 205, op: 0, dissolve: 0x13579BDF,
+                        tiles: { 0: [makeTile(413), makeTile(414)] },
+                        mask: { 0: [ownMaskTile, ownMaskTile] },
+                        clip: { x: 8, y: 4, w: 512, h: 256, alpha: 185, tiles: { 0: [clipBaseTile, makeTile(408)] }, mask: { 0: [clipMaskTile, null] } },
+                    },
                 ],
             },
         };
         let routeSubOk = true, routeSubDetail = "";
         try {
-            P.pxCalls(true);
             const a = px.job;
-            let rustBytes, jsBytes;
-            try {
-                const pdRust = W.stackRowsToWasm(px, a, k10cStackMsg, false, null);
-                rustBytes = px.u8().slice(pdRust, pdRust + k10cStackMsg.w * k10cStackMsg.rows * 4);
-            } finally {
-                px._reset(a);
-            }
-            const callsRust = P.pxCalls();
-            K.setRoute("clipCoverage", "js");
-            K.setRoute("dissolveRows", "js");
-            P.pxCalls(true);
-            try {
-                const pdJs = W.stackRowsToWasm(px, a, k10cStackMsg, false, null);
-                jsBytes = px.u8().slice(pdJs, pdJs + k10cStackMsg.w * k10cStackMsg.rows * 4);
-            } finally {
-                px._reset(a);
-            }
-            const callsJs = P.pxCalls();
+            const runStackCombo = (ccRoute, drRoute) => {
+                K.setRoute("clipCoverage", ccRoute);
+                K.setRoute("dissolveRows", drRoute);
+                P.pxCalls(true);
+                try {
+                    const pd = W.stackRowsToWasm(px, a, k10cStackMsg, false, null);
+                    return {
+                        bytes: px.u8().slice(pd, pd + k10cStackMsg.w * k10cStackMsg.rows * 4),
+                        calls: P.pxCalls(),
+                    };
+                } finally {
+                    px._reset(a);
+                }
+            };
+            const rRR = runStackCombo(null, null);
+            const rJJ = runStackCombo("js", "js");
+            const rRJ = runStackCombo(null, "js");
+            const rJR = runStackCombo("js", null);
             const wantBytes = W.rowsOfStack(k10cStackMsg, false, null);
-            routeSubOk = (callsRust.clip_coverage > 0) && (callsRust.dissolve_rows > 0)
-                && !callsJs.clip_coverage && !callsJs.dissolve_rows
-                && eqBytes(rustBytes, jsBytes) && eqBytes(rustBytes, wantBytes);
+            routeSubOk = (rRR.calls.clip_coverage === 2) && (rRR.calls.dissolve_rows === 2)
+                && !rJJ.calls.clip_coverage && !rJJ.calls.dissolve_rows
+                && (rRJ.calls.clip_coverage === 2) && !rRJ.calls.dissolve_rows
+                && !rJR.calls.clip_coverage && (rJR.calls.dissolve_rows === 2)
+                && eqBytes(rRR.bytes, rJJ.bytes) && eqBytes(rRR.bytes, rRJ.bytes)
+                && eqBytes(rRR.bytes, rJR.bytes) && eqBytes(rRR.bytes, wantBytes);
             if (!routeSubOk) {
-                routeSubDetail = `callsRust=${JSON.stringify(callsRust)} callsJs=${JSON.stringify(callsJs)} diffJs=${firstDiff(rustBytes, jsBytes)} diffWant=${firstDiff(rustBytes, wantBytes)}`;
+                routeSubDetail = `callsRR=${JSON.stringify(rRR.calls)} callsJJ=${JSON.stringify(rJJ.calls)} diffJJ=${firstDiff(rRR.bytes, rJJ.bytes)} diffRJ=${firstDiff(rRR.bytes, rRJ.bytes)} diffJR=${firstDiff(rRR.bytes, rJR.bytes)} diffWant=${firstDiff(rRR.bytes, wantBytes)}`;
             }
         } finally {
             K.setRoute("clipCoverage", null);
             K.setRoute("dissolveRows", null);
         }
-        check(`${label} stackRowsToWasm clipCoverage and dissolveRows routes: rust calls clip_coverage & dissolve_rows exports, js runs inline views, both match rowsOfStack`,
+        check(`${label} stackRowsToWasm clipCoverage and dissolveRows routes (including clipped + dissolved layer): rust calls clip_coverage & dissolve_rows exports, js runs inline views, all 4 route pairs match rowsOfStack`,
             routeSubOk, routeSubDetail);
 
         // psdPackRowsFromPtr parity on tile and stack messages
@@ -6357,20 +6375,22 @@ async function composeWasmPartCases(px, label, png, zlib) {
             }
             const rgba = msg.stack ? W.rowsOfStack(msg, false, null) : W.rowsOfTiles(msg, false);
             const want = px.psdPackRows(rgba, msg.w, msg.rows);
-            if (!samePsdChannels(got, want)) {
+            const wantJs = J.psdPackRows(rgba, msg.w, msg.rows);
+            if (!samePsdChannels(got, want) || !samePsdChannels(got, wantJs)) {
                 psdPtrOk = false;
                 psdPtrDetail = `${mName} psdPackRowsFromPtr mismatch`;
                 break;
             }
         }
-        check(`${label} psdPackRowsFromPtr + partPtrOf equals rowsOfTiles/rowsOfStack + psdPackRows on tile and stack messages`, psdPtrOk, psdPtrDetail);
+        check(`${label} psdPackRowsFromPtr + partPtrOf equals rowsOfTiles/rowsOfStack + psdPackRows and kernels_js.psdPackRows on tile and stack messages`, psdPtrOk, psdPtrDetail);
 
-        // (4d) stackRowsToWasm with into (multi-band y !== y0, x0 !== 0, filter band l.sab at y > y0 with l.dissolve,
+        // (4d) stackRowsToWasm with into (multi-band y !== y0, x0 !== 0, filter band l.sab at y > y0 with l.clip + l.dissolve,
         // and clear: true / false over pre-populated into)
         let stackIntoPtrOk = true, stackIntoPtrDetail = "";
         {
             const boxW = 240, bandH = 36, numBands = 3, totalH = bandH * numBands, boxX0 = 48, boxY0 = 20;
             const sabGot = new ArrayBuffer(boxW * totalH * 4);
+            const sabGotJs = new ArrayBuffer(boxW * totalH * 4);
             const sabWant = new ArrayBuffer(boxW * totalH * 4);
             // Pre-fill a filter band buffer (l.sab) for the whole box (boxW x totalH)
             const filterSab = new ArrayBuffer(boxW * totalH * 4);
@@ -6391,14 +6411,20 @@ async function composeWasmPartCases(px, label, png, zlib) {
                         base: { x: 0, y: 0, w: 512, h: 256, tiles: { 0: [makeTile(420), makeTile(421)] } },
                         layers: [
                             { x: 32, y: 16, w: 256, h: 256, alpha: 210, op: 5, tiles: { 0: [makeTile(422)] }, mask: { 0: [ownMaskTile] } },
-                            { sab: filterSab, x: 0, y: 0, w: 512, h: 256, alpha: 190, op: 0, dissolve: 0xCAFEBABE, mask: { 0: [ownMaskTile, clipMaskTile] } },
+                            {
+                                sab: filterSab, x: 0, y: 0, w: 512, h: 256, alpha: 190, op: 0, dissolve: 0xCAFEBABE,
+                                mask: { 0: [ownMaskTile, clipMaskTile] },
+                                clip: { x: 8, y: 4, w: 512, h: 256, alpha: 185, tiles: { 0: [clipBaseTile, makeTile(408)] }, mask: { 0: [clipMaskTile, null] } },
+                            },
                         ],
                     },
                 };
                 const at = (y - boxY0) * boxW * 4, byteLen = boxW * bandH * 4;
                 const intoGot = new Uint8Array(sabGot, at, byteLen);
+                const intoGotJs = new Uint8Array(sabGotJs, at, byteLen);
                 const intoWant = new Uint8Array(sabWant, at, byteLen);
                 intoGot.fill(0xEE);
+                intoGotJs.fill(0xEE);
                 intoWant.fill(0xEE);
                 const a = px.job;
                 try {
@@ -6407,13 +6433,25 @@ async function composeWasmPartCases(px, label, png, zlib) {
                 } finally {
                     px._reset(a);
                 }
+                K.setRoute("clipCoverage", "js");
+                K.setRoute("dissolveRows", "js");
+                try {
+                    const pdJs = W.stackRowsToWasm(px, a, msg, false, intoGotJs);
+                    px.get(Uint8Array, pdJs, byteLen, intoGotJs);
+                } finally {
+                    px._reset(a);
+                    K.setRoute("clipCoverage", null);
+                    K.setRoute("dissolveRows", null);
+                }
                 intoWant.fill(0);
                 W.rowsOfStack(msg, false, intoWant);
             }
-            // Verify l.sab was never mutated in place by dissolve and all 3 bands in sabGot match sabWant
-            if (!eqBytes(filterU8, filterSnapshot) || !eqBytes(new Uint8Array(sabGot), new Uint8Array(sabWant))) {
+            // Verify l.sab was never mutated in place by dissolve and all 3 bands in sabGot and sabGotJs match sabWant
+            if (!eqBytes(filterU8, filterSnapshot)
+                || !eqBytes(new Uint8Array(sabGot), new Uint8Array(sabWant))
+                || !eqBytes(new Uint8Array(sabGotJs), new Uint8Array(sabWant))) {
                 stackIntoPtrOk = false;
-                stackIntoPtrDetail = `multi-band stackInto mismatch: filterUnchanged=${eqBytes(filterU8, filterSnapshot)} diff=${firstDiff(new Uint8Array(sabGot), new Uint8Array(sabWant))}`;
+                stackIntoPtrDetail = `multi-band stackInto mismatch: filterUnchanged=${eqBytes(filterU8, filterSnapshot)} diffRust=${firstDiff(new Uint8Array(sabGot), new Uint8Array(sabWant))} diffJs=${firstDiff(new Uint8Array(sabGotJs), new Uint8Array(sabWant))}`;
             }
 
             // Test st.base = null with msg.clear = false (composites over pre-populated half-transparent into) vs msg.clear = true (zeroes into)
@@ -6553,13 +6591,15 @@ async function composeWasmPartCases(px, label, png, zlib) {
                 stack: { base: { x: 0, y: 0, w: 256, h: 256, tiles: { 0: [makeTile(502)] } }, layers: [] },
             }, false, null);
 
+            const wantWholeBox = W.rowsOfStack({ ...stackMsg, y: 16, y0: 16, rows: 64 }, false, null);
             const siRouteOk = siRust0.timing.composeWasm === 1 && siRust1.timing.composeWasm === 1
                 && siJs0.timing.composeWasm === 0 && siJs1.timing.composeWasm === 0
                 && siBaseOnly.timing.composeWasm === 0 && siJobBytes === 0
+                && eqBytes(new Uint8Array(sabRust), wantWholeBox)
                 && eqBytes(new Uint8Array(sabRust), new Uint8Array(sabJs))
                 && eqBytes(new Uint8Array(sabBaseOnly), wantBaseOnly);
-            check("inpaint_worker.js stackInto under stackIntoWasm route: composeWasm=1 on rust, composeWasm=0 on js and base-only (layers: []), jobBytes=0, and identical band bytes",
-                siRouteOk, `r0=${siRust0.timing.composeWasm} j0=${siJs0.timing.composeWasm} baseOnly=${siBaseOnly.timing.composeWasm} jobBytes=${siJobBytes}`);
+            check("inpaint_worker.js stackInto under stackIntoWasm route: composeWasm=1 on rust, composeWasm=0 on js and base-only (layers: []), jobBytes=0, and identical band bytes at (y - y0) * w * 4 against whole-box rowsOfStack",
+                siRouteOk, `r0=${siRust0.timing.composeWasm} j0=${siJs0.timing.composeWasm} baseOnly=${siBaseOnly.timing.composeWasm} jobBytes=${siJobBytes} diffBox=${firstDiff(new Uint8Array(sabRust), wantWholeBox)}`);
 
             console.warn = () => {};
             try {
@@ -6585,7 +6625,7 @@ async function composeWasmPartCases(px, label, png, zlib) {
                 console.warn = realWarn;
             }
 
-            // (5c) stackPoints dissolve and clipped layer parity against rowsOfStack at the sampled grid points
+            // (5c) stackPoints dissolve layer parity against rowsOfStack at the sampled grid points
             const xs = new Int32Array([0, 7, 16, 33, 64, 127, 199, 255]);
             const ys = new Int32Array([0, 5, 16, 20, 31, 47]);
             const spRes = await W.stackPoints({

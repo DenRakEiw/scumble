@@ -1169,6 +1169,19 @@ const lw0 = 524, lh0 = 420;
     l.maskPx = M.fromCanvas(m);
     l.maskDirty = false;
 }
+// (2b) Clipped AND dissolved layer with its own mask (clipped to OffsetBase, which has offset + c.mask)
+{
+    const w = 460, h = 360;
+    const m = mk(w, h), mx = m.getContext("2d");
+    mx.fillStyle = "rgba(255,255,255,0.75)";
+    mx.fillRect(16, 16, w - 32, h - 32);
+    const l = ed.addLayer({ name: "ClippedDissolve", kind: "paint", px: L.fromCanvas(paint(mk(w, h), 310)), x: 150, y: 100, w, h, dirty: false });
+    l.clip = true;
+    l.blend = "dissolve";
+    l.opacity = 0.78;
+    l.maskPx = M.fromCanvas(m);
+    l.maskDirty = false;
+}
 // (3) Unmasked clip base (pbm = 0) + clipped layer over it
 {
     const w = 360, h = 280;
