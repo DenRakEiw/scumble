@@ -58,11 +58,12 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * range selection over an RGBA8 band). `limitAlphaRows` (K25): `limitAlphaRows` (fill layer depth limit alpha on PSD/ORA
  * export). `guidedFar` (K24): `guidedFar` of `inpaint_depth.js` (the depth map's guided filter).
  * `compositeMaskedTile` (K36): `compositeMaskedTile` of inpaint_tiles.js `compositeStroke`.
+ * `matchPixels` (K38): `matchPixels` of inpaint_filters.js `matchCanvas`, inpaint_boxstack.js and inpaint_worker.js.
  * `composeTiles` and `composeStack` (K10b): pointer gather into wasm memory for tile-store and stack `png_part` jobs.
  * `clipCoverage`, `dissolveRows`, `psdPartWasm` and `stackIntoWasm` (K10c): clipping-group coverage and dissolve in
  * wasm memory, and pointer gather for `psd_part` and `stack_into` jobs.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -779,7 +780,7 @@ export function poissonBlend(dst, src, mask, w, h, out = null, info = null) {
 }
 
 export function matchPixels(rgba, params) {
-    const p = rustPx();
+    const p = rustPx("matchPixels");
     if (p) {
         try { return p.matchPixels(rgba, params); }
         catch (err) { if (!recovered(p, err, "match_pixels")) throw err; }
@@ -848,7 +849,10 @@ export function pngPartDecode(lines, w, prev = null, rt = null, out = null, laps
         catch (err) { if (!recovered(p, err, "png_part_decode")) throw err; }
         finally { releaseIfLarge(); }
     }
-    return J.pngPartDecode(lines, w, prev, rt, out);
+    const t0 = laps && typeof performance !== "undefined" ? performance.now() : 0;
+    const r = J.pngPartDecode(lines, w, prev, rt, out);
+    if (laps && typeof performance !== "undefined") laps.decode = performance.now() - t0;
+    return r;
 }
 
 /** Finish a part whose `pngPartDecode` answered `needsPrev: true` once `prev` arrives (K7, docs/PLAN_WASM_BUILD.md §4.2). */
@@ -859,7 +863,10 @@ export function pngPartFinish(lines, rows, w, prev, rt = null, out = null, laps 
         catch (err) { if (!recovered(p, err, "png_part_finish")) throw err; }
         finally { releaseIfLarge(); }
     }
-    return J.pngPartFinish(lines, rows, w, prev, rt, out);
+    const t0 = laps && typeof performance !== "undefined" ? performance.now() : 0;
+    const r = J.pngPartFinish(lines, rows, w, prev, rt, out);
+    if (laps && typeof performance !== "undefined") laps.finish = performance.now() - t0;
+    return r;
 }
 
 /** Computes max - min over each texel's 4x4 block of a w x h Uint16Array. */
@@ -884,19 +891,40 @@ export function heightNormals(depth, w, h, scale, sigma, out = null) {
     return J.heightNormals(depth, w, h, scale, sigma, out);
 }
 
+const MARCH_MAX = 0x40000000;
+
+function marchGuardOk(w, h, scale, light, radius, bias) {
+    if (!Number.isInteger(w) || !Number.isInteger(h) || !(w > 0 && h > 0 && w < MARCH_MAX && h < MARCH_MAX)) return false;
+    if (!light || light.length < 4) return false;
+    for (const v of [scale, light[0], light[1], light[2], light[3], radius ?? 0, bias ?? 0]) {
+        const n = Number(v);
+        if (!Number.isFinite(n) || !(Math.abs(n) < MARCH_MAX)) return false;
+    }
+    if (Number(bias ?? 0) < 0) return false;
+    return true;
+}
+
 /**
  * Marches shadow rays through u16 depth height field. A full-size `out` takes rows row0.. at row0 * w (both kernels), so
- * the stripes of one march write into one buffer (K12). `key` names the depth map's data for the Rust sun's resident copy
- * (px.js `_slot`): the stripes of one march on one worker copy it once; the twin reads `depth` where it lies.
+ * the stripes of one march write into one buffer (K12). `key` names the depth map's data for the Rust march's resident copy
+ * (px.js `_slot`): the stripes of one march on one worker copy it once; the twin reads `depth` where it lies. Non-finite
+ * lights or coordinates `>= 2^30` fall back to the twin (K13).
  */
 export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null, key = null) {
-    if (light && light[3] !== 1) {
+    if (!marchGuardOk(w, h, scale, light, radius, bias)) {
         return J.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out);
     }
-    const p = rustPx();
+    const p = rustPx("shadowMarch", w * h);
     if (p) {
-        try { return p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key); }
-        catch (err) { if (!recovered(p, err, "shadow_march")) throw err; }
+        const isSun = Number(light[3]) === 1;
+        const exp = isSun ? "shadow_march" : "shadow_march_f64";
+        try {
+            const res = isSun
+                ? p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key)
+                : p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key);
+            if (res) return res;
+        }
+        catch (err) { if (!recovered(p, err, exp)) throw err; }
         finally { releaseIfLarge(); }
     }
     return J.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out);

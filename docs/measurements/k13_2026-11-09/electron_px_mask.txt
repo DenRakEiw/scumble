@@ -1,0 +1,190 @@
+=== 0. Exact base commit 3fd8bda7 (before 1c974974 / d23d5cc4) ELECTRON_RUN_AS_NODE=1 PX_ONLY=mask ===
+exit_code=1
+PX_ONLY: only the groups mask run (a filtered run, not the full test)
+ok   rust simd module reports its SIMD flag
+ok   rust simd dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   js dilate_mask gives the same at an odd offset
+ok   rust simd box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   js box_blurs gives the same at an odd offset
+ok   rust simd alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   js alpha_to_mask gives the same at an odd offset
+FAIL rust simd mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)  edge pairs reversed b=true clamp=false inPlace=false: out[1] is NaN (0xffc00000), the twin has NaN (0xffffffff)
+FAIL js mask_max_clamp gives the same at an odd offset  edge pairs b=false clamp=true inPlace=true: out[9] is NaN (0xffffffff), the twin has NaN (0xffc00000)
+ok   rust simd mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   js mask_one_minus gives the same at an odd offset
+FAIL rust simd mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust simd erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   js erode_mask gives the same at an odd offset
+ok   rust simd mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   js mask_to_rgba gives the same at an odd offset
+ok   rust simd mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   js mask_bounds_f32 gives the same at an odd offset
+ok   rust simd color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   js color_match_rgba gives the same at an odd offset
+ok   rust simd blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   js blend_alpha gives the same at an odd offset
+ok   rust simd blend_alpha with separate dst pointer equals its twin
+ok   rust simd edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   js edgefit_shrink gives the same at an odd offset
+ok   rust simd warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   js warp_rgba gives the same at an odd offset
+FAIL rust simd warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)  64x64 finite overflow to NaN: out[130] is NaN (0xffc00000), the twin has NaN (0xffffffff)
+ok   js warp_coverage gives the same at an odd offset
+FAIL kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs  out.mc[1] is NaN (0xffc00000), the twin has NaN (0xffffffff)
+ok   stitch_test.js vs 29f6749 loops  rc=0
+ok   edgefit_test.js in js and rust modes  rc=0
+       1492 x 1492: dilate rust simd 20.6 ms, twin 49.7; three box blurs rust simd 11.0 ms, twin 53.2
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   rust scalar alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+FAIL rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)  zeros and NaNs (7) b=true clamp=false inPlace=false: out[4] is NaN (0xffc00000), the twin has NaN (0xffffffff)
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+FAIL rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+ok   rust scalar edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   rust scalar warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   rust scalar warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 23.8 ms, twin 53.2; three box blurs rust scalar 18.9 ms, twin 27.7
+FAIL (7) (only: mask; PX_ONLY, not the full test)
+(node:67428) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k13_3fd8bda7_mask/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k13_3fd8bda7_mask\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+
+=== 1. Merged tree (F:/canvas, e39b8d03, after 1c974974 / d23d5cc4) ELECTRON_RUN_AS_NODE=1 PX_ONLY=mask ===
+exit_code=0
+PX_ONLY: only the groups mask run (a filtered run, not the full test)
+ok   rust simd module reports its SIMD flag
+ok   rust simd dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   js dilate_mask gives the same at an odd offset
+ok   rust simd box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   js box_blurs gives the same at an odd offset
+ok   rust simd alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   js alpha_to_mask gives the same at an odd offset
+ok   rust simd mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+       rust simd mask_max_clamp allowed differences: a NaN's bits 304
+ok   js mask_max_clamp gives the same at an odd offset
+ok   rust simd mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   js mask_one_minus gives the same at an odd offset
+ok   rust simd mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust simd erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   js erode_mask gives the same at an odd offset
+ok   rust simd mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   js mask_to_rgba gives the same at an odd offset
+ok   rust simd mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   js mask_bounds_f32 gives the same at an odd offset
+ok   rust simd color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   js color_match_rgba gives the same at an odd offset
+ok   rust simd blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   js blend_alpha gives the same at an odd offset
+ok   rust simd blend_alpha with separate dst pointer equals its twin
+ok   rust simd edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   js edgefit_shrink gives the same at an odd offset
+ok   rust simd warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   js warp_rgba gives the same at an odd offset
+ok   rust simd warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)
+       rust simd warp_coverage allowed differences: a NaN's bits 42918
+ok   js warp_coverage gives the same at an odd offset
+ok   kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs  {"rustCalls":{"alpha_to_mask":1,"blend_alpha":2,"color_match_rgba":1,"edgefit_shrink":2,"erode_mask":1,"mask_bounds_f32":1,"mask_max_clamp":1,"mask_one_minus":1,"mask_to_rgba":3,"warp_coverage":1,"warp_rgba":1},"jsCalls":{},"subJsCalls":{}}
+ok   stitch_test.js vs 29f6749 loops  rc=0
+ok   edgefit_test.js in js and rust modes  rc=0
+       1492 x 1492: dilate rust simd 20.2 ms, twin 57.1; three box blurs rust simd 18.3 ms, twin 28.7
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   rust scalar alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+       rust scalar mask_max_clamp allowed differences: a NaN's bits 0
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+ok   rust scalar edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   rust scalar warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   rust scalar warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)
+       rust scalar warp_coverage allowed differences: a NaN's bits 0
+       1492 x 1492: dilate rust scalar 23.5 ms, twin 49.6; three box blurs rust scalar 19.9 ms, twin 24.3
+PASS (only: mask; PX_ONLY, not the full test)
+(node:39452) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+
+=== 2. K13 tree (ag-chain-l) ELECTRON_RUN_AS_NODE=1 PX_ONLY=mask ===
+exit_code=1
+PX_ONLY: only the groups mask run (a filtered run, not the full test)
+ok   rust simd module reports its SIMD flag
+ok   rust simd dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   js dilate_mask gives the same at an odd offset
+ok   rust simd box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   js box_blurs gives the same at an odd offset
+ok   rust simd alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   js alpha_to_mask gives the same at an odd offset
+FAIL rust simd mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)  edge pairs reversed b=true clamp=false inPlace=true: out[1] is NaN (0xffc00000), the twin has NaN (0xffffffff)
+FAIL js mask_max_clamp gives the same at an odd offset  edge pairs reversed b=true clamp=false inPlace=false: out[1] is NaN (0xffffffff), the twin has NaN (0xffc00000)
+ok   rust simd mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   js mask_one_minus gives the same at an odd offset
+FAIL rust simd mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust simd erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   js erode_mask gives the same at an odd offset
+ok   rust simd mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   js mask_to_rgba gives the same at an odd offset
+ok   rust simd mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   js mask_bounds_f32 gives the same at an odd offset
+ok   rust simd color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   js color_match_rgba gives the same at an odd offset
+ok   rust simd blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   js blend_alpha gives the same at an odd offset
+ok   rust simd blend_alpha with separate dst pointer equals its twin
+ok   rust simd edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   js edgefit_shrink gives the same at an odd offset
+ok   rust simd warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   js warp_rgba gives the same at an odd offset
+FAIL rust simd warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)  64x64 finite overflow to NaN: out[130] is NaN (0xffc00000), the twin has NaN (0xffffffff)
+ok   js warp_coverage gives the same at an odd offset
+FAIL kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs  out.mc[1] is NaN (0xffc00000), the twin has NaN (0xffffffff)
+ok   stitch_test.js vs 29f6749 loops  rc=0
+ok   edgefit_test.js in js and rust modes  rc=0
+       1492 x 1492: dilate rust simd 23.2 ms, twin 58.7; three box blurs rust simd 15.7 ms, twin 24.6
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   rust scalar alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+FAIL rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)  zeros and NaNs (7) b=true clamp=false inPlace=false: out[4] is NaN (0xffc00000), the twin has NaN (0xffffffff)
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+FAIL rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+ok   rust scalar edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   rust scalar warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   rust scalar warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)
+       1492 x 1492: dilate rust scalar 25.0 ms, twin 49.1; three box blurs rust scalar 18.1 ms, twin 24.8
+FAIL (7) (only: mask; PX_ONLY, not the full test)
+(node:21636) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-l/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-l\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+
+=== 3. K13 tree (ag-chain-l) unfiltered ELECTRON_RUN_AS_NODE=1 tools/px_test.js (FAIL/summary lines) ===
+exit_code=1 (total output lines=691)
+FAIL rust simd mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)  edge pairs b=false clamp=true inPlace=false: out[9] is NaN (0xffc00000), the twin has NaN (0xffffffff)
+ok   js mask_max_clamp gives the same at an odd offset
+FAIL rust simd mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs  {"rustCalls":{"alpha_to_mask":1,"blend_alpha":2,"color_match_rgba":1,"edgefit_shrink":2,"erode_mask":1,"mask_bounds_f32":1,"mask_max_clamp":1,"mask_one_minus":1,"mask_to_rgba":3,"warp_coverage":1,"warp_rgba":1},"jsCalls":{},"subJsCalls":{}}
+ok   rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+FAIL (2)

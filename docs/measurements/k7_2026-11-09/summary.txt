@@ -11,8 +11,9 @@ Scope (docs/PLAN_WASM_BUILD.md §4.2 K7, §5 row K7, §7 Stop 2 answer of 2026-1
 - `crates/px/src/png.rs`:
   - Refactored `unfilter_rows` to delegate to `unfilter_rows_opt(lines, rows, row_bytes, bpp, prev: Option<&mut [u8]>)`
     so K6's SIMD and scalar unfilter is shared whether `prev` is `Some` or `None` (`first_filter <= 1`).
-  - Added `PART_BYTES` (`8 * 1048576`), `PART_MAX_ROWS` (`2048`, matching `programRows` / `bandPlan.rows` -> `bandSource`
-    -> `bandRows` align -> `forParts` `partRows(width, align)`), `PART_NOT_LINES` (`-4`), `PART_BAD_FILTER` (`-5`),
+  - Added `PART_BYTES` (`8 * 1048576`), `PART_MAX_ROWS` (`2048`, matching `inpaint_canvas.js` `programRows` /
+    `bandPlan.rows` / `bandSource` -> `inpaint_bands.js` `bandRows` align / `forParts` -> `inpaint_png.js`
+    `partRows(width, align)`), `PART_NOT_LINES` (`-4`), `PART_BAD_FILTER` (`-5`),
     `pub fn part_lines_cap(w: usize) -> usize`, `pub fn lines_to_rgba_rt(lines, rows, w, rt, out) -> u32`,
     `pub fn part_decode(lines, w, prev, rt, out, info) -> isize`, and
     `pub fn part_finish(lines, rows, w, prev, rt, out, info) -> isize`.
@@ -42,7 +43,8 @@ Because `DecompressionStream("deflate-raw")` delivers the inflated `lines` as a 
 copies `lines` (`rows * (1 + 4 * w)` bytes) into wasm memory before `png_part_decode` runs:
 - On an `8.34 MB` part of a `15,000`-wide RGBA8 layer (`15,000 x 139`, `8,340,139` bytes of `lines`, `8,340,000` bytes
   of `out`; note that with tile-row alignment `align = 256`, `forParts(15000, 10000)` splits a `15,000 x 10,000` layer
-  into **79** parts of `127` rows = `7.62 MB` each, vs `72` parts of `139` rows before tile-row alignment):
+  into **79** parts, `139` and `117` rows alternating (`8.34` and `7.02 MB`), and a last part of `16` rows (`0.96 MB`),
+  vs `72` parts of `139` rows before tile-row alignment):
   - **Electron 44.2.0 (V8 15.2)**: **`0.43 - 0.47 ms`** per `8.34 MB` part (`0.052 - 0.056 ms/MB`, `17.7 - 19.4 GB/s`),
     which is **`3.2% - 4.2%`** of the `10.67 - 13.35 ms` single-pass `pngPartDecode` call (`0.43 / 13.31 = 3.23%`).
   - **Node 24.18.0 (V8 13.6)**: **`0.43 - 0.53 ms`** per `8.34 MB` part (`0.052 - 0.064 ms/MB`, `15.7 - 19.4 GB/s`),
@@ -120,9 +122,9 @@ Paeth all rows, needsPrev (null prev) + finish + rt   Electron        8.12    0.
     K8).
   - Resident `rt` table check (`65,536 B` copied on first call, `0 B` on second call) and `kernels.js` switching.
 - `tools/mutation_round.py` (`docs/measurements/k7_2026-11-09/mutation/mutants_k7.py`): `20` mutants across
-  `crates/px/src/png.rs`, `renderer/editor/px/kernels_js.js`, and `renderer/editor/px/px.js` (including
-  `cap_clamp_max_2047`, `js_filter_check_after_unfilter`, and `px_decode_ignore_byte_offset`) ->
-  `20 killed, 0 survived, 0 not as expected`.
+  `crates/px/src/png.rs`, `renderer/editor/px/kernels_js.js`, and `renderer/editor/px/px.js` (17 from the first round
+  plus 3 re-run at `a32f3d90`: `cap_clamp_max_2047`, `js_filter_check_after_unfilter`, and
+  `px_decode_ignore_byte_offset`) -> `20 killed, 0 survived, 0 not as expected`.
 - `tools/run_gates.sh` (`SCUMBLE_CDP_PORT=9621`, `--offline`):
   - Initial K7 run: `pixels` (`--tiles on`: `18 s PASS`, `--tiles off`: `20 s PASS`), `nodecopy` (`22 s PASS`).
   - Review follow-up run (`k7_review --tiles on --offline lint export pixels nodecopy`): `lint` `15 s` (`rc=0`),

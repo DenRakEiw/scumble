@@ -1,0 +1,153 @@
+lock: held by 'K24 measuring (before r3) 23884 2026-11-09T07:11:09', waiting
+lock: taken after 60 s
+[07:12:22] lock: taken (K8 measuring (chain-p) 67888 2026-11-09T07:11:22)
+[07:12:22] branch ag-chain-p-5 at 9fd93524; port 9621
+[07:12:23] px.wasm 96e660547f663a57; px_scalar.wasm 034ec2b6b5c74eee
+[07:12:24] gpu: 18398 MiB, 3 %; comfy 8188: 200
+[07:12:24] == round 1
+[07:12:24] native before r1 (try 1)
+[07:12:24] gpu: 18402 MiB, 4 %; comfy 8188: 200
+[07:12:46] rc=0
+closed
+[07:12:49] native after r1 (try 1)
+[07:12:50] gpu: 18382 MiB, 6 %; comfy 8188: 200
+[07:13:10] rc=0
+closed
+[07:13:15] w0_bench freqsep_15k before r1 (try 1)
+[07:13:15] gpu: 18615 MiB, 11 %; comfy 8188: 200
+[07:13:35] rc=0
+closed
+[07:13:39] w0_bench freqsep_15k after r1 (try 1)
+[07:13:39] gpu: 17987 MiB, 0 %; comfy 8188: 200
+[07:13:57] rc=0
+closed
+[07:14:01] docperf before r1
+[07:14:01] gpu: 18029 MiB, 0 %; comfy 8188: 200
+[07:14:40] rc=0
+closed
+[07:14:44] docperf after r1
+[07:14:44] gpu: 17865 MiB, 1 %; comfy 8188: 200
+[07:15:14] rc=0
+closed
+[07:15:18] == round 2
+[07:15:19] native after r2 (try 1)
+[07:15:19] gpu: 17825 MiB, 0 %; comfy 8188: 200
+[07:15:39] rc=0
+closed
+[07:15:43] native before r2 (try 1)
+[07:15:43] gpu: 17977 MiB, 1 %; comfy 8188: 200
+[07:16:05] rc=0
+closed
+[07:16:09] w0_bench freqsep_15k after r2 (try 1)
+[07:16:09] gpu: 17755 MiB, 0 %; comfy 8188: 200
+[07:16:27] rc=0
+closed
+[07:16:31] w0_bench freqsep_15k before r2 (try 1)
+[07:16:31] gpu: 17781 MiB, 0 %; comfy 8188: 200
+[07:16:50] rc=0
+closed
+[07:16:55] docperf after r2
+[07:16:55] gpu: 17966 MiB, 3 %; comfy 8188: 200
+[07:17:25] rc=0
+closed
+[07:17:30] docperf before r2
+[07:17:30] gpu: 18248 MiB, 0 %; comfy 8188: 200
+[07:18:02] rc=0
+closed
+[07:18:06] == round 3
+[07:18:06] native before r3 (try 1)
+[07:18:07] gpu: 17799 MiB, 0 %; comfy 8188: 200
+[07:18:28] rc=0
+closed
+[07:18:32] native after r3 (try 1)
+[07:18:32] gpu: 18118 MiB, 0 %; comfy 8188: 200
+[07:18:53] rc=0
+closed
+[07:18:57] w0_bench freqsep_15k before r3 (try 1)
+[07:18:57] gpu: 17738 MiB, 0 %; comfy 8188: 200
+[07:19:16] rc=0
+closed
+[07:19:20] w0_bench freqsep_15k after r3 (try 1)
+[07:19:21] gpu: 17925 MiB, 0 %; comfy 8188: 200
+[07:19:38] rc=0
+closed
+[07:19:42] docperf before r3
+[07:19:42] gpu: 17857 MiB, 1 %; comfy 8188: 200
+[07:20:15] rc=0
+closed
+[07:20:20] docperf after r3
+[07:20:21] gpu: 18488 MiB, 8 %; comfy 8188: 200
+[07:20:52] rc=0
+closed
+[07:20:57] stop4_probe (try 1)
+[07:20:57] gpu: 18306 MiB, 4 %; comfy 8188: 200
+[07:21:07] rc=1
+closed
+[07:21:12] huge 30000x20000 open + restore
+[07:21:12] gpu: 18341 MiB, 2 %; comfy 8188: 200
+[07:21:42] rc=1
+closed
+[07:21:46] gpu: 17750 MiB, 2 %; comfy 8188: 200
+[07:21:47] done
+no instance on 9621 Cannot connect to host 127.0.0.1:9621 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+lock: released
+lock: held by 'K10b exportperf r2 (chain-c) 65004 2026-11-09T06:56:04', waiting
+lock: taken after 1980 s
+[07:58:38] lock: taken (K8 measuring (chain-p) 52816 2026-11-09T07:25:38)
+[07:58:38] branch ag-chain-p-5 at 9fd93524; port 9621
+[07:58:39] px.wasm 96e660547f663a57; px_scalar.wasm 034ec2b6b5c74eee
+[07:58:40] gpu: 17959 MiB, 0 %; comfy 8188: 200
+[07:58:40] stop4_probe (try 1)
+[07:58:41] gpu: 17954 MiB, 0 %; comfy 8188: 200
+[07:58:52] rc=1
+closed
+[07:58:55] huge 30000x20000 open + restore
+[07:58:55] gpu: 18575 MiB, 1 %; comfy 8188: 200
+[07:59:31] rc=0
+closed
+[07:59:36] gpu: 18127 MiB, 2 %; comfy 8188: 200
+[07:59:36] done
+no instance on 9621 Cannot connect to host 127.0.0.1:9621 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+lock: released
+lock: held by 'K10b native_test r1 (chain-c) 64356 2026-11-09T07:55:22', waiting
+lock: taken after 690 s
+[08:12:11] lock: taken (K8 measuring (chain-p) 69552 2026-11-09T08:00:41)
+[08:12:11] branch ag-chain-p-5 at 9fd93524; port 9621
+[08:12:11] px.wasm 96e660547f663a57; px_scalar.wasm 034ec2b6b5c74eee
+[08:12:11] gpu: 18037 MiB, 0 %; comfy 8188: 200
+[08:12:11] stop4_probe (try 1)
+[08:12:11] gpu: 18037 MiB, 0 %; comfy 8188: 200
+[08:12:22] rc=1
+closed
+[08:12:26] gpu: 18023 MiB, 0 %; comfy 8188: 200
+[08:12:27] done
+no instance on 9621 Cannot connect to host 127.0.0.1:9621 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+lock: released
+lock: held by 'main loop gates mergekrea 13340 2026-11-09T08:00:15', waiting
+lock: taken after 270 s
+[08:21:17] lock: taken (K8 measuring (chain-p) 24428 2026-11-09T08:16:47)
+[08:21:18] branch ag-chain-p-5 at 9fd93524; port 9621
+[08:21:18] px.wasm 96e660547f663a57; px_scalar.wasm 034ec2b6b5c74eee
+[08:21:20] gpu: 20201 MiB, 3 %; comfy 8188: 200
+[08:21:20] stop4_probe (try 1)
+[08:21:23] gpu: 19495 MiB, 0 %; comfy 8188: 200
+[08:21:47] rc=1
+closed
+[08:21:51] gpu: 19821 MiB, 0 %; comfy 8188: 200
+[08:21:51] done
+no instance on 9621 Cannot connect to host 127.0.0.1:9621 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+lock: released
+lock: held by 'main loop mergekrea reruns 10100 2026-11-09T08:21:23', waiting
+lock: taken after 150 s
+[08:25:03] lock: taken (K8 measuring (chain-p) 59668 2026-11-09T08:22:33)
+[08:25:03] branch ag-chain-p-5 at 9fd93524; port 9621
+[08:25:04] px.wasm 96e660547f663a57; px_scalar.wasm 034ec2b6b5c74eee
+[08:25:04] gpu: 18484 MiB, 1 %; comfy 8188: 200
+[08:25:04] stop4_probe (try 1)
+[08:25:05] gpu: 18399 MiB, 1 %; comfy 8188: 200
+[08:26:42] rc=0
+closed
+[08:26:49] gpu: 18381 MiB, 0 %; comfy 8188: 200
+[08:26:49] done
+no instance on 9621 Cannot connect to host 127.0.0.1:9621 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+lock: released

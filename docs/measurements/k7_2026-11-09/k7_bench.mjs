@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOT = "F:/canvas/.claude/worktrees/ag-chain-p";
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, "../../..");
 const PX_DIR = path.join(ROOT, "renderer", "editor", "px");
 
 const js = await import(pathToFileURL(path.join(PX_DIR, "kernels_js.js")).href);
