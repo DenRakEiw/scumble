@@ -51,11 +51,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes; 41: pngPartFromPtr / compose in wasm memory; 42: shadow_march_f64; 43: clip_coverage, dissolve_rows);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes; 41: pngPartFromPtr / compose in wasm memory; 42: shadow_march_f64; 43: tiff_unpredict, tiff_predict_rgba, tiff_to_rgba; 44: clip_coverage, dissolve_rows);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    43
+    44
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -1381,6 +1381,71 @@ pub unsafe extern "C" fn tiff_unpack(compression: u32, src: *const u8, len: usiz
     let src_slice = if len == 0 { &[][..] } else { slice::from_raw_parts(src, len) };
     let out_slice = slice::from_raw_parts_mut(out, need);
     tiff::unpack(compression, src_slice, out_slice)
+}
+
+/// Undo horizontal differencing (Predictor 2) in place on `rows` rows of `row_bytes` stride, each `pixels` wide with
+/// `per` samples per pixel at `bits` (`8` or `16`) bits per sample (`le != 0` for little-endian 16-bit;
+/// `renderer/editor/inpaint_tiff.js` `unpredict`, K15). Returns `0` on success, `-1` on invalid arguments.
+#[no_mangle]
+pub unsafe extern "C" fn tiff_unpredict(
+    buf: *mut u8,
+    len: usize,
+    rows: usize,
+    row_bytes: usize,
+    pixels: usize,
+    per: usize,
+    bits: u32,
+    le: u32,
+) -> i32 {
+    tiff::unpredict(buf, len, rows, row_bytes, pixels, per, bits, le != 0)
+}
+
+/// Horizontal differencing (Predictor 2) in place on `rows` rows of `w`-wide RGBA8 (`w * rows * 4` bytes at `rgba`;
+/// `renderer/editor/inpaint_tiff.js` `predictRgba` / `tiffPart`, K15). Returns `0` on success, `-1` on invalid arguments.
+#[no_mangle]
+pub unsafe extern "C" fn tiff_predict_rgba(rgba: *mut u8, w: usize, rows: usize) -> i32 {
+    tiff::predict_rgba(rgba, w, rows)
+}
+
+/// Convert `rows` rows of `w` pixels from `planes` (`1` chunky or `spp` planar, packed consecutively at stride
+/// `rows * row_bytes` in `src`) into straight-alpha RGBA8 in `out` (`w * rows * 4` bytes;
+/// `renderer/editor/inpaint_tiff.js` `toRgba` / `converter`, K15). Returns `0` on success, `-1` on invalid arguments.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn tiff_to_rgba(
+    src: *const u8,
+    src_len: usize,
+    planes: usize,
+    row_bytes: usize,
+    w: usize,
+    rows: usize,
+    spp: usize,
+    bits: u32,
+    le: u32,
+    photometric: u32,
+    alpha_mode: u32,
+    pal: *const u8,
+    pal_len: usize,
+    out: *mut u8,
+    out_len: usize,
+) -> i32 {
+    tiff::to_rgba(
+        src,
+        src_len,
+        planes,
+        row_bytes,
+        w,
+        rows,
+        spp,
+        bits,
+        le != 0,
+        photometric,
+        alpha_mode,
+        pal,
+        pal_len,
+        out,
+        out_len,
+    )
 }
 
 

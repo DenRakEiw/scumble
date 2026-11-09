@@ -347,7 +347,7 @@ async function kreaAsset(ctx, pic, n, modelId) {
     const fd = new FormData();
     fd.append("file", new Blob([pic.bytes], { type: pic.mime }), `scumble-${Date.now()}-${n}.${pic.mime === "image/jpeg" ? "jpg" : "png"}`);
     const r = await ctx.fetch((test || BASE) + KREA_ASSETS, { method: "POST", headers: { "X-API-Key": ctx.key }, body: fd });
-    if (!r.ok) throw new Error(scrub(`Comfy Router ${modelId}: the upload of the ${pic.what} failed: ${await readError(r, ctx.key)}`, ctx.key));
+    if (!r.ok) throw new Error(scrub(`Comfy Router ${modelId}: the upload of the ${pic.what} failed, nothing was sent: ${await readError(r, ctx.key)}`, ctx.key));
     const j = (await r.json().catch(() => null)) || {};
     const url = String(j.image_url || "");
     if (!/^https:\/\//i.test(url) && !(test && url.startsWith(test + "/"))) throw new Error(scrub(`Comfy Router ${modelId}: the upload of the ${pic.what} answered no usable URL (${JSON.stringify(j).slice(0, 200)})`, ctx.key));

@@ -1,0 +1,3 @@
+== tiff_rows_256 ...
+   {"visibility": "visible", "focus": true, "warm": true, "wall": 1339.69, "walls": [1357.8, 1307.7, 1339.7], "bands": 40, "pieces": 9320, "codec": "deflate", "split": {"parse": 1.49, "wait": 851.58, "decode": 0, "copy": 91.84, "unpredict": 113.79, "convert": 128.4, "deliver": 2.34, "kernel": 1339.47}, "per_band": {"parse": 0.037, "wait": 21.29, "decode": 0, "copy": 2.296, "unpredict": 2.845, "convert": 3.21, "deliver": 0.058, "kernel": 33.487}, "missing": [], "info": {"width": 15000, "height": 10000, "bits": 8, "samples": 4, "compression": 8, "predictor": 2, "planar": 1, "tiled": false}}
+RESULT

@@ -252,6 +252,7 @@ async function main() {
         check("no mask goes", !("mask_url" in e.body), short(Object.keys(e.body)));
         check("the Planning row as fal's reasoning_level", e.body.reasoning_level === "ultra", e.body.reasoning_level);
         check("its default is fal's", v.settings[0].spec[1].default === "medium" && eq(v.settings[0].spec[0], ["medium", "high", "ultra"]), short(v.settings[0]));
+        check("an edit carries the negative prompt (edit_negative)", e.body.negative_prompt === "blurry", e.body.negative_prompt);
         const big = await runFal(editReq("fal", { width: 4000, height: 3000, image: pngOf(4000, 3000, "CROP") }));
         check("a size over the ceiling comes down to fal's rules", big.body.image_size.width * big.body.image_size.height <= 4220160 && Math.max(big.body.image_size.width, big.body.image_size.height) <= 3200 && big.body.image_size.width % 16 === 0 && big.body.image_size.height % 16 === 0, short(big.body.image_size));
         const nine = editReq("fal", { references: new Array(8).fill(r1) });
@@ -271,6 +272,7 @@ async function main() {
     await section("WaveSpeed", async () => {
         const v = V("wavespeed");
         const e = await runWs(editReq("wavespeed", { references: [r1], params: paramsOf(v, { reasoning_level: "medium", model: "jam" }) }));
+        check("an edit carries the negative prompt (edit_negative)", e.body.negative_prompt === "blurry", e.body.negative_prompt);
         check("the edit route", e.route === "krea/v3/edit", e.route);
         check("the uploaded pictures in `images`, the crop first", eq(e.tagged(e.body.images), ["CROP", "REF1"]), short(e.body.images));
         check("size as W*H, the crop's", e.body.size === "1216*832", e.body.size);
@@ -288,6 +290,7 @@ async function main() {
     await section("Replicate", async () => {
         const v = V("replicate");
         const e = await runReplicate(editReq("replicate", { references: [r1], width: 1216, height: 832, cropAspect: "3:2" }));
+        check("an edit carries the negative prompt (edit_negative)", e.body.input.negative_prompt === "blurry", e.body.input.negative_prompt);
         check("Krea's official model", e.url === "https://api.replicate.com/v1/models/krea/krea-3/predictions", e.url);
         check("the pictures in `images`", e.body.input.images.length === 2 && tagOf(fromDataUri(e.body.input.images[0])) === "CROP", short(e.body.input.images.length));
         check("every key is in Replicate's schema", !notIn(e.body.input, replInput).length, short(notIn(e.body.input, replInput)));

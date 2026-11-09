@@ -4,7 +4,7 @@
   "killed": 31,
   "survived": 0,
   "unexpected_survivors": 0,
-  "seconds": 150.9,
+  "seconds": 146.3,
   "mutants": [
     {
       "id": "R01_rust_clip_drop_own",
@@ -14,7 +14,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 13.97,
+      "seconds": 13.81,
       "detail": "FAIL rust simd stackRowsToWasm (2f): two clipped layers over a masked clip base (with c.mask hole) and a clipped layer over an unmasked clip base (pbm=0)  2f clipped layers (masked base with hole + unmasked base): band=at 28: 88 vs 8 above=at 26: 247 vs 245 part=at 40: 98 vs 99 | FAIL rust simd clip_coverage equals inpaint_raster.js clipCoverage and independent mul255 across lengths 0..1024, null/non-null masks, alphas, odd offsets, and all 65,536 byte pairs  len=7 bm=false own=true alpha=1 shift=0 guards=true diff=at 4: 1 vs 0",
       "note": "K10c mutant 1a: drop own-mask multiplication in Rust clip_coverage (SIMD and scalar)"
     },
@@ -26,7 +26,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 15.05,
+      "seconds": 12.51,
       "detail": "FAIL rust simd stackRowsToWasm (2f): two clipped layers over a masked clip base (with c.mask hole) and a clipped layer over an unmasked clip base (pbm=0)  2f clipped layers (masked base with hole + unmasked base): band=at 49: 90 vs 60 above=at 46: 8 vs 6 part=at 60: 71 vs 72 | FAIL rust simd stackRowsToWasm (2h): fresh instance grows memory.buffer mid-job and produces identical band and above-row bytes to rowsOfStack  grew=true band=at 40: 164 vs 146 above=at 40: 172 vs 228",
       "note": "K10c mutant 1b: drop base_mask multiplication in Rust clip_coverage (SIMD and scalar)"
     },
@@ -38,7 +38,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 12.77,
+      "seconds": 13.96,
       "detail": "FAIL rust simd stackRowsToWasm (2f): two clipped layers over a masked clip base (with c.mask hole) and a clipped layer over an unmasked clip base (pbm=0)  2f clipped layers (masked base with hole + unmasked base): band=at 29: 152 vs 153 above=at 24: 81 vs 82 part=at 39: 28 vs 27 | FAIL rust simd stackRowsToWasm (2h): fresh instance grows memory.buffer mid-job and produces identical band and above-row bytes to rowsOfStack  grew=true band=at 40: 150 vs 146 above=at 44: 59 vs 56",
       "note": "K10c mutant 1c: drop alpha < 255 multiplication in Rust clip_coverage (SIMD and scalar)"
     },
@@ -50,7 +50,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 12.18,
+      "seconds": 13.95,
       "detail": "FAIL rust simd stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js  2g dissolve opaque + partial at y=16: band=at 1048: 70 vs 147 above=ok part=at 3: 87 vs 111 | FAIL rust simd dissolve_rows equals reference & blend_modes.js hash32 across positive/zero/negative origins, SIMD+tail widths, srcA=0 non-zero RGB, and cVal=255 at hash32>>>24 === 255  w=7 rows=4 x0=0 y0=0 mask=false alpha=255 guards=true diff=at 32: 0 vs 40 sharedDiff=",
       "note": "K10c mutant 1d: remove c_val == 255 short-circuit in Rust dissolve_rows (SIMD and scalar)"
     },
@@ -62,7 +62,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 13.63,
+      "seconds": 11.84,
       "detail": "FAIL rust simd stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js  2g dissolve opaque + partial at y=16: band=at 0: 163 vs 33 above=at 0: 0 vs 33 part=at 2: 107 vs 151 | FAIL rust simd stackRowsToWasm (2h): fresh instance grows memory.buffer mid-job and produces identical band and above-row bytes to rowsOfStack  grew=true band=at 0: 179 vs 48 above=at 0: 95 vs 93",
       "note": "K10c mutant 1e: change >> 24 to >> 16 in Rust dissolve_rows (SIMD and scalar)"
     },
@@ -74,7 +74,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 13.19,
+      "seconds": 13.57,
       "detail": "FAIL rust simd dissolve_rows equals reference & blend_modes.js hash32 across positive/zero/negative origins, SIMD+tail widths, srcA=0 non-zero RGB, and cVal=255 at hash32>>>24 === 255  w=1 rows=1 x0=0 y0=0 mask=false alpha=0 guards=true diff=at 0: 0 vs 50 sharedDiff= | FAIL rust scalar dissolve_rows equals reference & blend_modes.js hash32 across positive/zero/negative origins, SIMD+tail widths, srcA=0 non-zero RGB, and cVal=255 at hash32>>>24 === 255  w=1 rows=1 x0=0 y0=0 mask=false alpha=0 guards=true diff=at 0: 0 vs 50 sharedDiff=",
       "note": "K10c mutant 1f: zero RGB instead of preserving pixel untouched when srcA == 0 in Rust dissolve_rows"
     },
@@ -86,7 +86,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.52,
+      "seconds": 3.95,
       "detail": "FAIL compositeBox clipped layer matches frozen hand-computed 4x2 bytes and rowsOfStack  got=[40,80,120,255,116,90,82,255,85,86,98,255,79,85,101,255,79,85,101,255,109,88,85,255,67,83,106,255,40,80,120,255] want=[40,80,120,255,116,90,82,255,75,85,102,255,59,83,110,255,70,83,105,255,80,85,100,255,67,83,106,255,40,80,120,255] | FAIL rust simd stackRowsToWasm (2f): two clipped layers over a masked clip base (with c.mask hole) and a clipped layer over an unmasked clip base (pbm=0)  2f clipped layers (masked base with hole + unmasked base): band=at 28: 8 vs 88 above=at 26: 245 vs 247 part=at 40: 99 vs 98",
       "note": "K10c mutant 2a: drop own-mask loop in shared clipCoverage (inpaint_raster.js) - killed by px_test and boxstack_test"
     },
@@ -98,7 +98,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.27,
+      "seconds": 3.72,
       "detail": "FAIL compositeBox clipped layer matches frozen hand-computed 4x2 bytes and rowsOfStack  got=[40,80,120,255,115,89,83,255,75,84,103,255,59,82,111,255,70,84,106,255,80,85,100,255,66,83,107,255,40,80,120,255] want=[40,80,120,255,116,90,82,255,75,85,102,255,59,83,110,255,70,83,105,255,80,85,100,255,67,83,106,255,40,80,120,255] | FAIL rust simd stackRowsToWasm (2f): two clipped layers over a masked clip base (with c.mask hole) and a clipped layer over an unmasked clip base (pbm=0)  2f clipped layers (masked base with hole + unmasked base): band=at 28: 8 vs 6 above=at 26: 245 vs 247 part=at 3: 58 vs 51",
       "note": "K10c mutant 2b: drop + 128 rounding term in shared mul255 (inpaint_raster.js) - killed by px_test and boxstack_test"
     },
@@ -110,7 +110,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.6,
+      "seconds": 3.77,
       "detail": "FAIL compositeBox dissolve layer matches frozen hand-computed 4x2 bytes, cVal=255 at hash32>>>24===255, and rowsOfStack  tieTop=67 xHash255=237 got4x2=[30,60,90,255,220,110,55,255,220,110,55,255,220,110,55,255,220,110,55,255,30,60,90,255,220,110,55,255,30,60,90,255] gotHash255=[210,140,70,255] | FAIL rust simd stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js  2g dissolve opaque + partial at y=16: band=at 4: 52 vs 62 above=at 12: 204 vs 90 part=at 2: 151 vs 152",
       "note": "K10c mutant 2c: mutate 0x9E3779B1 in shared hash32 (blend_modes.js) - killed by px_test and boxstack_test"
     },
@@ -122,7 +122,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 0.91,
+      "seconds": 0.56,
       "detail": "FAIL compositeBox dissolve layer matches frozen hand-computed 4x2 bytes, cVal=255 at hash32>>>24===255, and rowsOfStack  tieTop=221 xHash255=237 got4x2=[30,60,90,255,220,110,55,255,220,110,55,255,30,60,90,255,220,110,55,255,30,60,90,255,220,110,55,255,30,60,90,255] gotHash255=[210,140,70,255]",
       "note": "K10c mutant 3a: mutate < cVal to <= cVal in compositeBox dissolve loop (inpaint_boxstack.js)"
     },
@@ -134,7 +134,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 0.94,
+      "seconds": 0.42,
       "detail": "FAIL compositeBox dissolve layer matches frozen hand-computed 4x2 bytes, cVal=255 at hash32>>>24===255, and rowsOfStack  tieTop=221 xHash255=237 got4x2=[30,60,90,255,220,110,55,255,30,60,90,255,30,60,90,255,220,110,55,255,30,60,90,255,220,110,55,255,30,60,90,255] gotHash255=[30,60,90,255]",
       "note": "K10c mutant 3b: remove cVal === 255 short-circuit in compositeBox dissolve loop (inpaint_boxstack.js)"
     },
@@ -146,7 +146,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 0.42,
+      "seconds": 0.44,
       "detail": "FAIL compositeBox clipped layer matches frozen hand-computed 4x2 bytes and rowsOfStack  got=[40,80,120,255,178,97,51,255,149,93,66,255,94,87,93,255,178,97,51,255,138,92,71,255,89,86,96,255,67,83,106,255] want=[40,80,120,255,116,90,82,255,75,85,102,255,59,83,110,255,70,83,105,255,80,85,100,255,67,83,106,255,40,80,120,255]",
       "note": "K10c mutant 3c: skip clipCoverage in compositeBox (inpaint_boxstack.js)"
     },
@@ -158,7 +158,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.72,
+      "seconds": 3.29,
       "detail": "FAIL rust simd stackRowsToWasm clipCoverage and dissolveRows routes (including clipped + dissolved layer): rust calls clip_coverage & dissolve_rows exports, js runs inline views, all 4 route pairs match rowsOfStack  callsRR={\"clip_coverage\":2,\"composite_tile\":1,\"dissolve_rows\":2} callsJJ={\"composite_tile\":1} diffJJ=at 0: 201 vs 107 diffRJ=at 0: 201 vs 107 diffJR= diffWant=at 0: 201 vs 107 | FAIL rust simd psdPackRowsFromPtr + partPtrOf equals rowsOfTiles/rowsOfStack + psdPackRows and kernels_js.psdPackRows on tile and stack messages  stack psdPackRowsFromPtr mismatch",
       "note": "K10c mutant 4a: ignore clip_coverage output pm when passing mask pointer to dissolve_rows for a clipped dissolve layer"
     },
@@ -170,7 +170,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.65,
+      "seconds": 2.9,
       "detail": "FAIL rust simd stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js  2g dissolveRows=js opaque + partial at y=16: band=at 0: 163 vs 33 above=at 0: 0 vs 33 part=at 2: 107 vs 151 | FAIL rust simd stackRowsToWasm clipCoverage and dissolveRows routes (including clipped + dissolved layer): rust calls clip_coverage & dissolve_rows exports, js runs inline views, all 4 route pairs match rowsOfStack  callsRR={\"clip_coverage\":2,\"composite_tile\":1,\"dissolve_rows\":2} callsJJ={\"composite_tile\":1} diffJJ=at 16: 202 vs 7 diffRJ=at 16: 202 vs 7 diffJR= diffWant=",
       "note": "K10c mutant 4b: mutate >>> 24 to >>> 16 in stackRowsToWasm 'js' route dissolve fallback"
     },
@@ -182,7 +182,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.87,
+      "seconds": 2.84,
       "detail": "FAIL rust simd stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js  2g dissolveRows=js opaque + partial at y=16: band=at 1048: 70 vs 147 above=ok part=at 3: 87 vs 111 | FAIL rust scalar stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js  2g dissolveRows=js opaque + partial at y=16: band=at 1048: 70 vs 147 above=ok part=at 3: 87 vs 111",
       "note": "K10c mutant 4c: remove cVal === 255 short-circuit in stackRowsToWasm 'js' route dissolve fallback"
     },
@@ -194,7 +194,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.92,
+      "seconds": 2.79,
       "detail": "FAIL rust simd stackRowsToWasm clipCoverage and dissolveRows routes (including clipped + dissolved layer): rust calls clip_coverage & dissolve_rows exports, js runs inline views, all 4 route pairs match rowsOfStack  callsRR={\"clip_coverage\":2,\"composite_tile\":1,\"dissolve_rows\":2} callsJJ={\"composite_tile\":1} diffJJ=at 36: 182 vs 43 diffRJ= diffJR=at 36: 182 vs 43 diffWant= | FAIL rust simd stackRowsToWasm with into matches rowsOfStack across multi-band y !== y0, x0 !== 0, l.sab + dissolve (preserving l.sab), and st.base=null with clear true/false  multi-band stackInto mismatch: filterUnchanged=true diffRust= diffJs=at 8: 130 vs 165",
       "note": "K10c mutant 4d: skip clipCoverage in stackRowsToWasm 'js' route fallback"
     },
@@ -206,7 +206,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.69,
+      "seconds": 3.01,
       "detail": "FAIL rust simd stackRowsToWasm with into matches rowsOfStack across multi-band y !== y0, x0 !== 0, l.sab + dissolve (preserving l.sab), and st.base=null with clear true/false  st.base=null clear=false diff=at 4: 0 vs 40 | FAIL rust scalar stackRowsToWasm with into matches rowsOfStack across multi-band y !== y0, x0 !== 0, l.sab + dissolve (preserving l.sab), and st.base=null with clear true/false  st.base=null clear=false diff=at 4: 0 vs 40",
       "note": "K10c mutant 4e: drop into && !msg.clear backdrop copy into pd in stackRowsToWasm"
     },
@@ -218,7 +218,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.76,
+      "seconds": 2.86,
       "detail": "FAIL rust simd stackRowsToWasm with into matches rowsOfStack across multi-band y !== y0, x0 !== 0, l.sab + dissolve (preserving l.sab), and st.base=null with clear true/false  multi-band stackInto mismatch: filterUnchanged=true diffRust=at 34584: 243 vs 7 diffJs=at 34584: 243 vs 7 | FAIL rust scalar stackRowsToWasm with into matches rowsOfStack across multi-band y !== y0, x0 !== 0, l.sab + dissolve (preserving l.sab), and st.base=null with clear true/false  multi-band stackInto mismatch: filterUnchanged=true diffRust=at 34584: 243 vs 7 diffJs=at 34584: 243 vs 7",
       "note": "K10c mutant 4f: ignore (Y0 - msg.y0) * W * 4 offset when reading l.sab in stackRowsToWasm"
     },
@@ -230,7 +230,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 4.28,
+      "seconds": 3.25,
       "detail": "FAIL compositeBox dissolve layer matches frozen hand-computed 4x2 bytes, cVal=255 at hash32>>>24===255, and rowsOfStack  tieTop=221 xHash255=237 got4x2=[30,60,90,255,220,110,55,255,30,60,90,255,30,60,90,255,220,110,55,255,30,60,90,255,220,110,55,255,30,60,90,255] gotHash255=[210,140,70,255] | FAIL rust simd stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js  2g dissolve opaque + partial at y=16: band=at 0: 33 vs 163 above=at 0: 33 vs 0 part=at 2: 151 vs 107",
       "note": "K10c mutant 5: mutate >>> 24 to >>> 16 in rowsOfStack dissolve loop"
     },
@@ -242,7 +242,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.26,
+      "seconds": 2.89,
       "detail": "FAIL inpaint_worker.js stackPoints with dissolve layer matches rowsOfStack at sampled grid coordinates  at 0: 3 vs 7 | FAIL (1) (only: pngPart; PX_ONLY, not the full test)",
       "note": "K10c mutant 6: mutate >>> 24 to >>> 16 in stackPoints dissolve loop"
     },
@@ -254,7 +254,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.07,
+      "seconds": 2.86,
       "detail": "FAIL inpaint_worker.js psdPart under psdPartWasm route: composeWasm=1 on rust, composeWasm=0 on js, jobBytes=0, releaseIfLarge(), and identical PackBits channels  tRust=0 tJs=0 sRust=0 sJs=0 jobBytes=0/0 rel=1->2 | FAIL (1) (only: pngPart; PX_ONLY, not the full test)",
       "note": "Report composeWasm: 0 instead of 1 on the pointer path in psdPart"
     },
@@ -266,7 +266,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.65,
+      "seconds": 2.85,
       "detail": "FAIL inpaint_worker.js psdPart under psdPartWasm route: composeWasm=1 on rust, composeWasm=0 on js, jobBytes=0, releaseIfLarge(), and identical PackBits channels  tRust=1 tJs=0 sRust=1 sJs=0 jobBytes=61512/196792 rel=1->2 | FAIL (1) (only: pngPart; PX_ONLY, not the full test)",
       "note": "Drop p._reset(a) from psdPart finally block"
     },
@@ -278,7 +278,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 4.44,
+      "seconds": 2.95,
       "detail": "FAIL inpaint_worker.js psdPart under psdPartWasm route: composeWasm=1 on rust, composeWasm=0 on js, jobBytes=0, releaseIfLarge(), and identical PackBits channels  tRust=1 tJs=0 sRust=1 sJs=0 jobBytes=0/0 rel=1->1 | FAIL (1) (only: pngPart; PX_ONLY, not the full test)",
       "note": "Drop releaseIfLarge() from psdPart finally block"
     },
@@ -290,7 +290,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 1.38,
+      "seconds": 1.28,
       "detail": "PxOutOfMemory: px: out of memory allocating 1024 bytes",
       "note": "Move partPtrOf(p, a, msg, false) outside psdPart try block"
     },
@@ -302,7 +302,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.32,
+      "seconds": 2.92,
       "detail": "FAIL inpaint_worker.js stackInto under stackIntoWasm route: composeWasm=1 on rust, composeWasm=0 on js and base-only (layers: []), jobBytes=0, and identical band bytes at (y - y0) * w * 4 against whole-box rowsOfStack  r0=0 j0=0 baseOnly=0 jobBytes=0 diffBox= | FAIL (1) (only: pngPart; PX_ONLY, not the full test)",
       "note": "Report composeWasm: 0 instead of 1 on the pointer path in stackInto"
     },
@@ -314,7 +314,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.77,
+      "seconds": 3.04,
       "detail": "FAIL inpaint_worker.js stackInto under stackIntoWasm route: composeWasm=1 on rust, composeWasm=0 on js and base-only (layers: []), jobBytes=0, and identical band bytes at (y - y0) * w * 4 against whole-box rowsOfStack  r0=1 j0=0 baseOnly=1 jobBytes=0 diffBox= | FAIL (1) (only: pngPart; PX_ONLY, not the full test)",
       "note": "Drop msg.stack.layers.length > 0 guard in stackInto so base-only bands take wasm round-trip"
     },
@@ -326,7 +326,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.01,
+      "seconds": 3.1,
       "detail": "FAIL inpaint_worker.js stackInto under stackIntoWasm route: composeWasm=1 on rust, composeWasm=0 on js and base-only (layers: []), jobBytes=0, and identical band bytes at (y - y0) * w * 4 against whole-box rowsOfStack  r0=1 j0=0 baseOnly=0 jobBytes=0 diffBox=at 0: 29 vs 69 | FAIL (1) (only: pngPart; PX_ONLY, not the full test)",
       "note": "Compute wrong band offset (at = 0 instead of (msg.y - msg.y0) * msg.w * 4) in stackInto"
     },
@@ -338,7 +338,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 1.33,
+      "seconds": 1.29,
       "detail": "PxOutOfMemory: px: out of memory allocating 1024 bytes",
       "note": "Move stackRowsToWasm(p, a, msg, false, into) outside stackInto try block"
     },
@@ -350,7 +350,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.56,
+      "seconds": 3.43,
       "detail": "FAIL inpaint_worker.js stackInto under stackIntoWasm route: composeWasm=1 on rust, composeWasm=0 on js and base-only (layers: []), jobBytes=0, and identical band bytes at (y - y0) * w * 4 against whole-box rowsOfStack  r0=1 j0=0 baseOnly=0 jobBytes=221264 diffBox= | FAIL (1) (only: pngPart; PX_ONLY, not the full test)",
       "note": "Drop p._reset(a) from stackInto finally block"
     },
@@ -362,7 +362,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.98,
+      "seconds": 3.2,
       "detail": "FAIL rust simd psdPackRowsFromPtr + partPtrOf equals rowsOfTiles/rowsOfStack + psdPackRows and kernels_js.psdPackRows on tile and stack messages  tiles psdPackRowsFromPtr mismatch | FAIL inpaint_worker.js psdPart under psdPartWasm route: composeWasm=1 on rust, composeWasm=0 on js, jobBytes=0, releaseIfLarge(), and identical PackBits channels  tRust=1 tJs=0 sRust=1 sJs=0 jobBytes=0/0 rel=1->2",
       "note": "Pack 3 channels instead of 4 in psdPackRowsFromPtr"
     },
@@ -374,7 +374,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.77,
+      "seconds": 3.08,
       "detail": "FAIL rust simd psdPackRowsFromPtr + partPtrOf equals rowsOfTiles/rowsOfStack + psdPackRows and kernels_js.psdPackRows on tile and stack messages  tiles psdPackRowsFromPtr mismatch | FAIL rust scalar psdPackRowsFromPtr + partPtrOf equals rowsOfTiles/rowsOfStack + psdPackRows and kernels_js.psdPackRows on tile and stack messages  tiles psdPackRowsFromPtr mismatch",
       "note": "Pass ch & 1 instead of ch to psd_pack_rows in psdPackRowsFromPtr"
     }
