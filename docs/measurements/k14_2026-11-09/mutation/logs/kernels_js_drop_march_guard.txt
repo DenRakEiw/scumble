@@ -1,0 +1,15 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=relightBench)
+FAIL K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)  lx >= 2^30: calls={} f64Entered=1
+FAIL (1) (only: relightBench; PX_ONLY, not the full test)
+FAIL K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)  lx >= 2^30: calls={} f64Entered=1
+ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes (point)  js={} below={} at={"shadow_march_f64":1} rust={"shadow_march_f64":1}
+ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes (sun)  js={} below={} at={"shadow_march_f64":1} rust={"shadow_march_f64":1}
+ok   K.shadowMarch recovers from a trap on shadow_march_f64 for both point and sun, replacing the instance and returning the twin's exact bytes  Inpaint Canvas: the Rust pixel kernel shadow_march_f64 failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance
+ok   kernels.js back on the JS kernels for the later cases
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+FAIL (1) (only: relightBench; PX_ONLY, not the full test)
+(node:47008) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

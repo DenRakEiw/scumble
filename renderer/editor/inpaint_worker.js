@@ -1847,7 +1847,7 @@ function relightShadowJob(msg) {
     const c0 = pxCalls();
     const timing = () => {
         const c1 = pxCalls();
-        const ranRust = (c1.shadow_march || 0) > (c0.shadow_march || 0) || (c1.shadow_march_f64 || 0) > (c0.shadow_march_f64 || 0);
+        const ranRust = (c1.shadow_march_f64 || 0) > (c0.shadow_march_f64 || 0);
         return { op: "relight_shadow", kernels: ranRust ? "rust" : "js", w, h, row0, rows: n, kernel: now() - t0 };
     };
     if (out) {

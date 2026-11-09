@@ -1,0 +1,25 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 14 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 289975 bytes, sha256 4f1840260f8fef04
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 232343 bytes, sha256 597582352ebcf130
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px)
+    Finished `release` profile [optimized] target(s) in 5.54s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.43s
+$ node tools/px_test.js  (rc 1, 77 s, PX_ONLY=relight)
+FAIL rust simd shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)  16x4 map_z == sz + z_bias tie: out[0] is 0, the twin has 255
+FAIL rust scalar shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)  16x4 map_z == sz + z_bias tie: out[0] is 0, the twin has 255
+FAIL (2) (only: relight; PX_ONLY, not the full test)
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar height_normals equals its twin within 1 level
+ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (142 cases)
+FAIL rust scalar shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)  16x4 map_z == sz + z_bias tie: out[0] is 0, the twin has 255
+ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
+ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
+FAIL (2) (only: relight; PX_ONLY, not the full test)
+(node:68068) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

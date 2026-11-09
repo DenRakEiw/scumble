@@ -15,7 +15,7 @@ import { relightVogel } from "./kernels_js.js";
 import { disparityRange } from "../inpaint_depth.js";
 import { paletteLut } from "../inpaint_tiff.js";
 
-export const PX_ABI = 44;
+export const PX_ABI = 45;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -640,28 +640,16 @@ export class Px {
     }
 
     /**
-     * Marches shadow rays through u16 depth height field.
+     * Marches shadow rays through u16 depth height field in exact `f64` arithmetic (`shadowMarchF64`, K13-K14).
      * Visibility map into `out` (0=shadow, 255=lit): a full-size `out` takes the rows at row0 * w. With a `key` the depth
      * map stays resident in this instance (`_slot`, kind "relight_depth"): the stripes of one march copy it once (K12).
      */
-    shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null, key = null) {
-        const bandRows = Math.min(rows, h - row0);
-        const a = this.job, n = w * h, nOut = w * bandRows;
-        try {
-            const pd = key !== null && key !== undefined ? this._slot("relight_depth", String(key), depth, n * 2) : this._in(a, depth, n * 2);
-            const pl = this._in(a, new Float32Array(light), 16);
-            const po = a.take(nOut);
-            this.exports.shadow_march(pd, w, h, scale, pl, radius, taps, steps, bias, row0, bandRows, po);
-            if (out && out.length >= w * h && row0 > 0) {
-                const target = out.subarray(row0 * w, (row0 + bandRows) * w);
-                return this._out(Uint8Array, po, nOut, target);
-            }
-            return this._out(Uint8Array, po, nOut, out);
-        } finally { this._reset(a); }
+    shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0 = 0, rows = h - row0, out = null, key = null) {
+        return this.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key);
     }
 
     /**
-     * Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13, docs/PLAN_WASM_BUILD.md §4.4).
+     * Marches shadow rays through u16 depth height field in exact `f64` arithmetic (K13-K14, docs/PLAN_WASM_BUILD.md §4.4-4.5).
      * Precomputes the per-tap constants `[tapX, tapY, tapZ]` in `f64` from `relightVogel` and passes them to
      * `shadow_march_f64`. Returns `null` when the arguments lie outside the kernel's contract.
      */

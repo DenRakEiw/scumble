@@ -1,0 +1,46 @@
+(node:64836) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+PX_ONLY: only the groups relightBench, relightStripe, relight run (a filtered run, not the full test)
+ok   kernels.js loads px.wasm (SIMD) as in a worker
+ok   shadow_march as routed: point, spot, and sun all produce byte-identical f64 outputs across routed, twin, simd_f64, and scalar_f64
+ok   K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)
+ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes (point)  js={} below={} at={"shadow_march_f64":1} rust={"shadow_march_f64":1}
+ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes (sun)  js={} below={} at={"shadow_march_f64":1} rust={"shadow_march_f64":1}
+ok   K.shadowMarch recovers from a trap on shadow_march_f64 for both point and sun, replacing the instance and returning the twin's exact bytes  Inpaint Canvas: the Rust pixel kernel shadow_march_f64 failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance
+ok   kernels.js back on the JS kernels for the later cases
+ok   stripePlan covers every row once and in order, in stripes of 32 rows or more, never more than asked
+ok   shadow_march_f64 in stripes into one shared out equals one call byte for byte: the twin, both Rust builds (SIMD and scalar), and through kernels.js across point, spot, and sun (704 cases)
+ok   the Rust march's stripes (sun and point) with a key copy the depth map once (8 stripes), again none, without a key once a stripe  sun 0.33/0.00/2.66 MB, point 0.33/0.00/2.66 MB, map 0.33 MB
+ok   a new key copies the new map and never answers from the old one; a key on another size copies again
+ok   marchOnPool on a SharedArrayBuffer: the stripes of stripePlan, one shared out, no transfer, the bytes of one call  8 jobs for 8 stripes
+ok   marchOnPool without a SharedArrayBuffer (the node's page) and on the route 0: one job a light, rows 0..h, the reply's own buffer  1 / 1 jobs
+ok   a failed stripe rejects its march with the stripe's error and cancels the rest of its group  stripe failed on purpose; 4 of 8 sent, 6 cancelled
+ok   a stripe's reply with other rows than it was sent rejects the march  relight_shadow: stripe 1 answered rows 82+84, it was sent 82+83
+ok   a cancelled march rejects with a CancelledError, sends none of its queued stripes, and another group's march lands whole  CancelledError; A sent 2 (2 before the cancel), 4 cancelled, B 4
+ok   the feed: at most the budget of stripes of two marches posted at once, first come first served, the bytes of one call each  peak 3 (feed 3), 3 at once, A 8 B 8 of 8; order fA,fA,fA,noop,fA,fA,fA,fA,fA,fB,fB,fB,fB,fB,fB,fB,fB
+ok   the feed: a NORMAL job posted behind two fed marches goes as soon as the first stripe answers  noop sent 3th of 17
+ok   the feed: every stripe of a march carries the fields of the march's start (one gen a march, two marches two)  1 / 5
+ok   without a budget every stripe is posted at once: a NORMAL job posted after them goes after all of them  noop sent 16th of 17
+ok   with the pool's size + 1 an EXPORT job behind a fed march goes after all its stripes and a NORMAL job after two; with the size alone the EXPORT job goes first  export 9th, normal 4th; with the size 3th
+ok   cancelMarch: the march rejects with a CancelledError, sends no stripe after the cancel, every stripe counted once, another march lands whole  CancelledError; A sent 3 (3 before), 8 cancelled (feed 5, pool 3), B 8
+ok   cancelMarch on a march still waiting whole in the feed: none of its stripes sent, the march before lands whole  CancelledError; D sent 0, 8 cancelled
+ok   a failed stripe of a fed march rejects it with the stripe's error, its stripes in the feed never sent, the next march lands whole  stripe failed on purpose; F sent 3 of 8, G 8
+ok   a pool terminated with a march waiting whole in the feed: both reject, the waiting one sends nothing, no worker starts after it, a later march rejects at once  A rejected, B rejected (pool terminated); waiting 13; sent A 2 B 0 C 0; workers started after 0, now 0; later: pool terminated
+ok   rust simd module reports its SIMD flag
+ok   rust simd height_normals equals its twin within 1 level
+ok   rust simd smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
+ok   rust simd hoisted js.shadowMarch equals pre-hoist reference byte for byte (142 cases)
+ok   rust simd shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)
+ok   js shadow_march_f64 gives the same at an odd offset
+ok   rust simd shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
+ok   rust simd shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
+ok   rust scalar module reports its SIMD flag
+ok   rust scalar height_normals equals its twin within 1 level
+ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (142 cases)
+ok   rust scalar shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)
+ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
+ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
+PASS (only: relightBench, relightStripe, relight; PX_ONLY, not the full test)
