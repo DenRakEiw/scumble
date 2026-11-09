@@ -1,0 +1,116 @@
+K24 measurement summary (2026-11-09)
+====================================
+
+Scope (docs/PLAN_WASM_BUILD.md §4.8 K24):
+- `guided_far` and `guided_far_scratch_bytes` in `crates/px/src/guided.rs`, exported from `crates/px/src/lib.rs` (ABI 37),
+  built on `maskf::box_pass::<1>` with `Norm::Div((2 * r_work + 1) as f64)`:
+  - Normalises and inverts `raw` (`rw * rh` `f32`) by `[lo, hi]` with the flat-range guard `hi - lo > 1e-12`.
+  - When `(rw, rh) != (gw, gh)`, bilinearly resizes `far_f32` to `gw * gh` with pixel-centre coordinates `(x + 0.5) * ratio - 0.5`,
+    clamped edges, `wx` stored as `f32` and promoted back to `f64` while `fy` stays `f64` (matching `inpaint_depth.js`
+    `bilinearResize`).
+  - Forms `I = ((grey[i] as f64) * (1.0 / 255.0)) as f32` and `Ip`, `II` from the raw `I` and `p` before any in-place box
+    pass.
+  - Runs 6 single-channel box passes (`mean_i`, `mean_p`, `mean_ip`, `mean_ii`, `mean_a`, `mean_b`), computes `av = cov_ip / (var_i + eps)`
+    in `f64`, stores `a[i] = av as f32`, computes `b[i] = (mean_p - av * mean_i) as f32` from the unrounded `f64` `av`,
+    clamps `mean_a * I + mean_b` to `0.0..=1.0` as `f32`, and quantises `Math.round(q[i] * 65535.0)` into `out` (`gw * gh` `u16`).
+- Wrapped in `renderer/editor/px/px.js` (`Px.prototype.guidedFar`), JS twin in `renderer/editor/px/kernels_js.js` (`guidedFar`,
+  delegating to `inpaint_depth.js` `guidedFar` with `boxBlurs`), routed in `renderer/editor/px/kernels.js` (`guidedFar`,
+  route `"guidedFar"` in `ROUTE_KINDS`).
+- `depthGuide` in `renderer/editor/inpaint_worker.js` and its two callers `computeDepthMap` and `depthFromLayer` in
+  `renderer/editor/inpaint_canvas.js`:
+  - The grey conversion loop (`Math.round(bytes[i] * 0.299 + bytes[i + 1] * 0.587 + bytes[i + 2] * 0.114)`) moved from the
+    window thread (`computeDepthMap` and `depthFromLayer`) into `depthGuide` in the worker; `guide.image.buffer` (`gd`) is
+    transferred to the worker and transferred back (`poolRes.gd`) so `makeMap` keeps the exact same `map.guide` `Uint8ClampedArray`
+    bytes without cloning.
+  - `disparityRange(raw, 0.005, 0.995)` moved from `computeDepthMap` into `depthGuide` when `lo` or `hi` is omitted, returning
+    `{ lo, hi }` for `map.meta`; `depthFromLayer` continues to send `lo: 0, hi: 1`.
+  - `inpaint_depth.js` `guidedFar`, `guidedFilter`, and `bilinearResize` are kept unchanged for reference and other callers;
+    relight's `detailRatio` and haze's guided filter were not touched (no measured row shows them).
+- Route decisions by measurement (§1.1, 3 fresh-instance runs with `--rounds 3` per `tools/ab_median.py`):
+  - `--ab guidedFar=js:rust` (`after/ab_guided_r1..3.jsonl`):
+    - `depth_guide`: `verdict: rust` (`891.1 ms` vs `1404.9 ms` wall, lower by `513.8 ms` > spread `212.4 ms`; worker job
+      `273.1 ms` vs `763.2 ms`).
+    - `depth_guide_model`: `verdict: rust` (`960.3 ms` vs `1281.9 ms` wall, lower by `321.6 ms` > spread `88.3 ms`; worker job
+      `277.1 ms` vs `573.3 ms`).
+  `guidedFar` stays on Rust (`DEFAULT_ROUTES` carries no entry for `guidedFar`).
+
+Builds (`python tools/build_px.py --check`):
+- `renderer/editor/px/px.wasm`:        264,640 bytes  sha256 821c3ed44ddc7661
+- `renderer/editor/px/px_scalar.wasm`: 213,469 bytes  sha256 97d648ca01cadbf2
+
+Node & Electron unit & kernel benchmarks (`PX_BENCH=1 PX_ONLY=guided node tools/px_test.js`):
+- `guided_far model 784x518 -> 4096x2731`:   twin 1069.96 ms, simd 294.35 ms (3.63x), scalar 438.62 ms (median of 5)
+- `guided_far layer 4096x2731 -> 4096x2731`: twin  975.46 ms, simd 253.59 ms (3.85x), scalar 367.23 ms (median of 5)
+- 63 deterministic/boundary/scene cases (including `1x1`..`64x48` same-size at radii `0, 1, 2, 5, 12`, `lo == hi`, `lo > hi`,
+  `hi - lo == 1e-12` vs `1.0001e-12`, `q = 0.5` `32767.5 -> 32768` half-way `u16` tie, `r * (gw / rw) = 1.5` half-way radius tie,
+  `98x32 -> 150x48` `wx` `f32` vs `f64` tie, `128x96 -> 256x192` precision case flipping 4 `u16`s when `b` uses rounded `f32`
+  `a[i]` and 39 `u16`s when `I` uses `f32` `1/255`, real `924x518 -> 2000x1125` scene checkpoint, odd byte-offset views,
+  options-object & positional callers with optional `out` `Uint16Array`, dirty arena check, 17 invalid-argument refusals,
+  raw export refusals, `K.guidedFar` route check, and trap/OOM recovery in `retouchRoute`): PASS on twin, simd, scalar in both
+  Node and `ELECTRON_RUN_AS_NODE=1` (Electron 44 V8 15.2), plus `node tools/depth_test.js` (including "guidedFar against R1-S2
+  numpy reference within 64/65535") and `node tools/edges_test.js`.
+
+15000 x 10000 before (`3fd8bda7`) vs after (`K24`), 3 alternating rounds on port 9635 (`w1_lock.py` held per batch):
+row                                                         before (3fd8bda7)              after (K24)
+  depth_guide (js) wall                                1144.4 [1130.4-1155.0]   1108.8 [1093.9-1114.2]   n=3/3
+  depth_guide (js) worker job                             503.7 [501.0-531.4]      495.9 [491.9-510.2]   n=3/3
+  depth_guide (js) window px calls                                   ['none']                 ['none']
+  depth_guide (js) worker px calls                                   ['none']                 ['none']
+  depth_guide_model (js) wall                          1338.4 [1291.0-1346.9]   1274.6 [1228.8-1287.4]   n=3/3
+  depth_guide_model (js) worker job                       615.2 [610.8-635.9]      625.8 [602.3-636.8]   n=3/3
+  depth_guide_model (js) window px calls                             ['none']                 ['none']
+  depth_guide_model (js) worker px calls                             ['none']                 ['none']
+  depth_guide (rust) wall                              1241.0 [1236.6-1282.5]      994.9 [978.7-1082.3]  n=3/3  (1.25x)
+  depth_guide (rust) worker job                           554.0 [530.7-560.3]      334.3 [310.6-366.1]   n=3/3  (1.66x)
+  depth_guide (rust) window px calls                                 ['none']                 ['none']
+  depth_guide (rust) worker px calls                          ['box_blurs 6']         ['guided_far 1']
+  depth_guide_model (rust) wall                        1093.0 [1083.9-1096.5]      941.5 [905.6-943.3]   n=3/3  (1.16x)
+  depth_guide_model (rust) worker job                     392.7 [392.7-404.7]      264.8 [256.7-274.4]   n=3/3  (1.48x)
+  depth_guide_model (rust) window px calls                           ['none']                 ['none']
+  depth_guide_model (rust) worker px calls                    ['box_blurs 6']         ['guided_far 1']
+  depth_guide (rust) split.guided_far                                       -      254.8 [247.4-286.7]   n=0/3
+  depth_guide_model (rust) split.guided_far                                 -      217.6 [208.4-220.3]   n=0/3
+
+Note: Before K24 (`3fd8bda7`), `depth_guide (rust)` called `box_blurs` 6 times across the JS/WASM boundary (`554.0 ms` worker
+job, `1241.0 ms` wall, slower than `depth_guide (js)` at `1144.4 ms`). With K24 (`guided_far 1` + worker grey conversion),
+`depth_guide (rust)` drops to `334.3 ms` worker job and `994.9 ms` wall, beating both `before` (`1241.0 ms`) and `js`
+(`1108.8 ms`) beyond the spread. No measured row loses or ties.
+
+`tools/ab_median.py` verdicts at 15000 x 10000:
+1. `--ab guidedFar=js:rust` (`after/ab_guided_r1..3.jsonl`, 3 fresh-instance runs with `--rounds 3`):
+   - `depth_guide`: js `1519.3 1404.9 1306.9` (median `1404.9`, spread `212.4`) vs rust `903.7 891.1 824.8`
+     (median `891.1`, spread `78.9`); round 0 (cold) js `1345.3` / rust `903.7`; kernel row js `763.2` / rust `273.1` ms;
+     split: js jobs `0.0 + copyIn 0.0`, rust jobs `212.6 + copyIn 8.1` ->
+     `verdict: rust (its median lower by 513.8, beyond the spread 212.4)`.
+   - `depth_guide_model`: js `1281.9 1297.1 1208.8` (median `1281.9`, spread `88.3`) vs rust `996.2 960.3 943.0`
+     (median `960.3`, spread `53.2`); round 0 (cold) js `1281.9` / rust `952.3`; kernel row js `573.3` / rust `277.1` ms;
+     split: js jobs `0.0 + copyIn 0.0`, rust jobs `222.3 + copyIn 1.7` ->
+     `verdict: rust (its median lower by 321.6, beyond the spread 88.3)`.
+2. `kernels=js:rust` (`after/pxjobs_r1..3.jsonl`):
+   - `depth_guide`: js `1108.8 1114.2 1093.9` (median `1108.8`, spread `20.2`) vs rust `994.9 1082.3 978.7`
+     (median `994.9`, spread `103.6`); kernel row js `495.9` / rust `334.3` ms; split rust jobs `254.8 + copyIn 6.5` ->
+     `verdict: rust (its median lower by 113.9, beyond the spread 103.6)`.
+   - `depth_guide_model`: js `1287.4 1274.6 1228.8` (median `1274.6`, spread `58.6`) vs rust `941.5 943.3 905.6`
+     (median `941.5`, spread `37.7`); kernel row js `625.8` / rust `264.8` ms; split rust jobs `217.6 + copyIn 1.5` ->
+     `verdict: rust (its median lower by 333.1, beyond the spread 58.6)`.
+
+2048 x 1152 byte-equality & before/after digest checks (`before/pxjobs_check.jsonl` vs `after/pxjobs_check.jsonl`):
+- `depth_guide (js)` & `depth_guide (rust)`:
+  - `map.data` SHA-256 prefix:  `015bad08388b30d1` (identical on `js` and `rust`, identical before `3fd8bda7` and after `K24`)
+  - `map.guide` SHA-256 prefix: `0f0abb14e298ba62` (identical on `js` and `rust`, identical before `3fd8bda7` and after `K24`)
+  - 2048 x 1152 `depth_guide`: kernel `168.4 ms` vs `45.4 ms` (`3.70x`), wall `276.4 ms` vs `153.5 ms` (`1.80x`).
+- `depth_guide_model (js)` & `depth_guide_model (rust)`:
+  - `map.data` SHA-256 prefix:  `177c8b5d93ce9193` (identical on `js` and `rust`, identical before `3fd8bda7` and after `K24`)
+  - `map.guide` SHA-256 prefix: `0f0abb14e298ba62` (identical on `js` and `rust`, identical before `3fd8bda7` and after `K24`)
+  - 2048 x 1152 `depth_guide_model`: kernel `143.0 ms` vs `51.8 ms` (`2.76x`), wall `318.2 ms` vs `208.0 ms` (`1.53x`).
+- `window release: sync`, 0 traps / OOMs across all 4 threads.
+
+Mutation round (`docs/measurements/k24_2026-11-09/mutation/results.txt`):
+- 21 mutants across `crates/px/src/guided.rs`, `crates/px/src/lib.rs`, `renderer/editor/px/px.js`,
+  `renderer/editor/px/kernels_js.js`, `renderer/editor/px/kernels.js`, and `renderer/editor/inpaint_worker.js`:
+  21 killed (0 on re-check), 0 survived, 0 unexpected (445 s).
+
+Gates (`lint types maps edges limit selection pixels` on both backends + `pxjobs nodecopy` on tiles):
+- `k24-gates-tiles`:  lint 23s, types 20s, maps 8s, edges 20s, limit 16s, selection 20s, pixels 18s -> ALL PASS
+- `k24-gates-canvas`: lint 23s, types 13s, maps 7s, edges 32s, limit 17s, selection 11s, pixels 20s -> ALL PASS
+- `k24-serial` (tiles): pxjobs 144s, nodecopy 96s -> ALL PASS

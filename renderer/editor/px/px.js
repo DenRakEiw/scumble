@@ -11,7 +11,9 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 36;
+import { disparityRange } from "../inpaint_depth.js";
+
+export const PX_ABI = 37;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -1442,6 +1444,47 @@ export class Px {
             if (TIMED) lapOut(t, slot * tileBytes + cols + 40);
             const bounds = info[1] >= 0 ? [info[1], info[2], info[3], info[4]] : null;
             return { tiles, bounds, alphaSum: info[0] };
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * The depth map's guided filter (`inpaint_depth.js` `guidedFar`, K24): accepts either an options object
+     * `{ raw, rw, rh, grey, gw, gh, r, eps, lo, hi }` (with optional `out` as the second argument) or positional
+     * `(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null)`. Returns `out` (or a new `Uint16Array` of `gw * gh`),
+     * or `null` when the arguments lie outside the kernel's contract (the wrapper then runs the JS twin).
+     */
+    guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null) {
+        if (raw && typeof raw === "object" && !ArrayBuffer.isView(raw) && !(raw instanceof ArrayBuffer)) {
+            const msg = raw;
+            out = rw instanceof Uint16Array ? rw : null;
+            ({ raw, rw, rh, grey, gw, gh, r, eps, lo, hi } = msg);
+        }
+        if (!(raw instanceof Float32Array) || !isBytes(grey)) return null;
+        if (!(Number.isInteger(rw) && Number.isInteger(rh) && rw > 0 && rh > 0 && Number.isInteger(gw) && Number.isInteger(gh) && gw > 0 && gh > 0)) {
+            return null;
+        }
+        const nRaw = rw * rh, nWork = gw * gh;
+        if (raw.length < nRaw || grey.length < nWork) return null;
+        if (out !== null && (!(out instanceof Uint16Array) || out.length < nWork)) return null;
+        if (lo == null || hi == null) {
+            const bounds = disparityRange(raw.length === nRaw ? raw : raw.subarray(0, nRaw));
+            if (lo == null) lo = bounds.lo;
+            if (hi == null) hi = bounds.hi;
+        }
+        const rf = +r, epsf = +eps, lof = +lo, hif = +hi;
+        if (!Number.isFinite(rf) || !Number.isFinite(epsf) || !(epsf > 0) || !Number.isFinite(lof) || !Number.isFinite(hif)) {
+            return null;
+        }
+        const bytes = this.exports.guided_far_scratch_bytes(rw, rh, gw, gh) >>> 0;
+        if (!bytes) return null;
+        const a = this.job;
+        try {
+            const pRaw = this._in(a, raw, nRaw * 4);
+            const pGrey = this._in(a, grey, nWork);
+            const pOut = a.take(nWork * 2);
+            const pScratch = a.take(bytes);
+            const ok = this.exports.guided_far(pRaw, rw, rh, pGrey, gw, gh, rf, epsf, lof, hif, pOut, pScratch);
+            return ok === 1 ? this._out(Uint16Array, pOut, nWork, out) : null;
         } finally { this._reset(a); }
     }
 }

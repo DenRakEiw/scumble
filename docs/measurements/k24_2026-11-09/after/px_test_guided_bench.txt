@@ -1,0 +1,35 @@
+(node:53304) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-g/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-g\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PX_ONLY: only the groups guided run (a filtered run, not the full test)
+ok   guidedFar precision case flips u16s when b uses rounded a[i] or I uses f32 1/255 / unrounded f64  flipB=4 flipIf32=39 flipIf64=60
+ok   rust simd guided_far equals its twin byte for byte (63 cases, each also at an odd offset)
+ok   rust scalar guided_far equals its twin byte for byte (63 cases, each also at an odd offset)
+ok   js guided_far gives the same at an odd offset
+ok   guidedFar accepts both options object and positional arguments with optional out Uint16Array
+ok   guided_far writes every output u16 identically in a dirty wasm arena
+ok   Px.guidedFar refuses null raw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses short raw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses null grey on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses short grey on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses zero rw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses zero rh on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses zero gw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses zero gh on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses fractional gw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses eps <= 0 on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses negative eps on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses NaN eps on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses NaN r on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses huge r on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses Infinity lo on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses NaN hi on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses short out on both builds (returns null)  simd=null scalar=null
+ok   raw guided_far_scratch_bytes and guided_far refuse zero, overflowing, null, or eps <= 0 inputs  z=0 ov=0 null=0 zeroEps=0
+ok   kernels.js guidedFar routes between twin (0 calls) and rust (1 call) with identical output  jsCalls=0 rustCalls=1
+       guided_far model 784x518 -> 4096x2731: twin 1069.96, simd 294.35, scalar 438.62 ms (median of 5)
+       guided_far layer 4096x2731 -> 4096x2731: twin 975.46, simd 253.59, scalar 367.23 ms (median of 5)
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: guided; PX_ONLY, not the full test)

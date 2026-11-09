@@ -1,0 +1,19 @@
+-- 2048x1152 (2.4 MP), 3 rounds, checking bytes ...
+
+== 2048x1152  (window focused True, visible, 24 logical cores)
+  window release: sync (grown 302 MB, the new instance 1.1 MB, the twin's bytes)
+  depth_guide      same bytes
+  depth_guide      kernel js    168.4  rust     45.4  (3.70x) | worker job js    168.4  rust     45.4  (3.70x) | wall js    276.4  rust    153.5  (1.80x)  1 jobs
+                   parts js/rust: total 168.4/45.4
+                   px calls js: window none; jobs none | rust: window none; jobs guided_far 1
+                   split js/rust: job 168.4/45.5  copyIn 0.0/0.6 (0.0/11.2 MB, shared 0.0/0.0 MB)  copyOut 0.0/0.6 (0.0/4.5 MB)  alloc 0.0/0.0  grew MB 0.0/0.0  bytes0 MB 72/72 (window 1/1)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {} rust {guided_far 37.1}  first js {} rust {}  queue 0.1/0.1  trip 179.4/56.3  workers 1/1
+                   round 0 first js {} rust {guided_far 53.9}
+  depth_guide_model same bytes
+  depth_guide_model kernel js    143.0  rust     51.8  (2.76x) | worker job js    143.0  rust     51.8  (2.76x) | wall js    318.2  rust    208.0  (1.53x)  1 jobs
+                   parts js/rust: total 143.0/51.8
+                   px calls js: window none; jobs none | rust: window none; jobs guided_far 1
+                   split js/rust: job 143.0/51.8  copyIn 0.0/0.2 (0.0/4.1 MB, shared 0.0/0.0 MB)  copyOut 0.0/0.7 (0.0/4.5 MB)  alloc 0.0/0.0  grew MB 0.0/0.0  bytes0 MB 72/72 (window 1/1)  renewed js {release 0, idle 0, trap 0, oom 0} rust {release 0, idle 0, trap 0, oom 0}  kernel js {} rust {guided_far 37.1}  first js {} rust {}  queue 0.0/0.0  trip 145.6/54.3  workers 1/1
+  instances renewed over the rows: {release 0, idle 0, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 4 threads read: 0
+
+PASS

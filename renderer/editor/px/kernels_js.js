@@ -14,6 +14,7 @@
 
 import { BLEND_OPS } from "../blend_modes.js";
 import { gaussRadii } from "../inpaint_edges.js";
+import { guidedFar as guidedFarDepth } from "../inpaint_depth.js";
 
 export const OPS = Object.freeze({
     "source-over": 0,
@@ -2844,6 +2845,31 @@ export function rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, ti
     const bounds = Number.isFinite(bX0) ? [bX0, bY0, bX1, bY1] : null;
     return { tiles, bounds, alphaSum };
 }
+
+// ---- depth map guided filter (K24) --------------------------------------------------------------
+
+/**
+ * The depth map's guided filter (`inpaint_depth.js` `guidedFar`, K24): accepts either an options object
+ * `{ raw, rw, rh, grey, gw, gh, r, eps, lo, hi }` (with optional `out` as the second argument) or positional
+ * `(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null)`. Writes `gw * gh` `u16` values into `out` (or a new
+ * `Uint16Array`) and returns it.
+ */
+export function guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null) {
+    let msg;
+    if (raw && typeof raw === "object" && !ArrayBuffer.isView(raw) && !(raw instanceof ArrayBuffer)) {
+        msg = raw;
+        if (rw instanceof Uint16Array) out = rw;
+    } else {
+        msg = { raw, rw, rh, grey, gw, gh, r, eps, lo, hi };
+    }
+    const res = guidedFarDepth(msg, boxBlurs);
+    if (out) {
+        out.set(res);
+        return out;
+    }
+    return res;
+}
+
 
 
 
