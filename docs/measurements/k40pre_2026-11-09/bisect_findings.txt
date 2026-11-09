@@ -1,0 +1,24 @@
+K40 interim, the loss rows of summary.txt looked into (2026-11-09 evening). bisect_perf.sh: `perf:15000x10000` three times on each commit
+of wasm-kernels' first-parent line (bisect2 ten points 249d882..0d14b9eb, bisect3 and bisect4 narrower; each table.txt: pan, full composite,
+pan at fit over a masked filter layer, ms, one value per run). recheck/: the same perf and perf-relight gates three times on 0d14b9eb.
+
+1. "full composite" is not a regression. It is bimodal on every commit, the baseline's 249d882 included: 269.9, 263.9, 87.5 there, 92.4, 88.0,
+   220.6 on the tip. W0b's three runs (91.8-98.3) happened to land on the low mode. Why it is bimodal was not looked into.
+
+2. The pan rows moved with one commit, 8d82004b, "Merge the filter fix" (documents: filter-layer-over-its-own-input):
+   dceec4d2 (the commit before) pan 2.9 2.8 2.5, fit-masked 3.3 2.8 3.1
+   8d82004b (the filter fix)    pan 5.7 6.4 6.4, fit-masked 5.8 5.3 5.6
+   Every later point stays at 5.2 - 6.7; every earlier one at 2.5 - 3.9. Both sides are far below a 16.7 ms frame.
+   The likely mechanism (read, not measured apart): when the viewport reaches past the document, filteredCanvas now goes through
+   cropFilterInput, which makes a new document-size canvas and draws into it on every frame instead of using the pass's canvas. The fix is
+   a correctness fix the user asked for (the filter sampled its input's margin): do not route it back; a reused scratch canvas could give the
+   time back.
+
+3. "magic wand over it" and "a masked layer" in the `perf` gate: back inside the baseline's range on the recheck (237, 197, 171 ms over 190).
+
+4. Not looked into: the perf-relight rows of the wand (wall 330 -> 604, 323 -> 496, 221 -> 252 ms) and three lights' blk, liquify's blockedMax at
+   1:1 size 1000 (26 -> 75 ms, on both routes, so not the kernel), heal's cold blockedMax (55 -> 77), exportperf psd_masked blk (119 -> 169),
+   fill_limit_rows fill (103 -> 116), wheel zoom max (6.5 -> 23.6, its median is unchanged at 4-5 ms). Other agents' work ran on the machine
+   during the chain, with app starts held back by the busy lock only.
+
+5. Why this is not K40: K14, K10c, K17-K20 are not in this state, no exe gates and no node build ran, and no row was routed back.

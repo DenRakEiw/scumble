@@ -1,0 +1,6 @@
+d711f8f2 | pan 2.8 2.6 2.6 | composite 92.1 88.3 90.5 | fit-masked 3.6 2.9 3.2 | Merge K31 (liquify's dab in Rust for push, grow, shrink and 
+b3fe5cf5 | pan 2.7 2.6 2.6 | composite 244.4 97.7 225.6 | fit-masked 2.6 2.9 3.1 | Merge D1 (uploads named by their content, stem~hash.ext; a p
+8d82004b | pan 5.7 6.4 6.4 | composite 87.2 99.6 91.2 | fit-masked 5.8 5.3 5.6 | Merge the filter fix (a plain filter layer replaces its inpu
+55d437fe | pan 5.3 5.6 5.6 | composite 281.9 129.5 261.8 | fit-masked 6.4 6.3 5.5 | CLAUDE.md: the state of 2026-11-08's kernel work and what wa
+8a176c76 | pan 5.7 5.6 6.7 | composite 232.5 236.1 101.0 | fit-masked 7.1 5.8 6.1 | Merge K7 (the PNG part kernels over native-inflated lines, n
+c270b711 | pan 5.6 6.0 6.2 | composite 228.7 257.0 243.5 | fit-masked 5.6 7.1 6.4 | K16 as built, its CHANGELOG line, and the hand-over of 2026-
