@@ -1,0 +1,23 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 15 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 261098 bytes, sha256 624be21fffb303df
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 212115 bytes, sha256 5538c0b20e0eca7c
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.90s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px)
+    Finished `release` profile [optimized] target(s) in 5.15s
+$ node tools/px_test.js  (rc 0, 146 s)
+PASS
+ok   rust scalar a large alloc grows memory  225312768 -> 493813760
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2229567488
+PASS
+(node:38572) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/143f6c41-8099-490a-b650-5fbc22040c8e/scratch/mut_tree_k7/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

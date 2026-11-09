@@ -49,11 +49,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    36
+    37
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -720,6 +720,66 @@ pub unsafe extern "C" fn png_chunk_frame(buf: *mut u8, data_len: usize, kind: u3
         return 0;
     }
     png::chunk_frame(slice::from_raw_parts_mut(buf, data_len + 12), data_len, kind)
+}
+
+/// Byte capacity of `lines` for a standard `PART_BYTES` (`8 MB`) part of a `w`-wide 8-bit RGBA PNG
+/// (`partRows(w) * (1 + 4 * w)`), or 0 when `w == 0` or on overflow (K7, `docs/PLAN_WASM_BUILD.md` §4.2).
+#[no_mangle]
+pub extern "C" fn png_part_lines_cap(w: usize) -> usize {
+    png::part_lines_cap(w)
+}
+
+/// Decode one inflated part (`len` bytes at `lines`) of a `w`-wide 8-bit RGBA PNG (K7, `docs/PLAN_WASM_BUILD.md` §4.2).
+/// Writes `[rows, adler, first_filter, opaque, needs_prev]` to `info` (5 `u32`s) and returns `rows` (`> 0`),
+/// `-4` (`PART_NOT_LINES`), or `-5` (`PART_BAD_FILTER`).
+#[no_mangle]
+pub unsafe extern "C" fn png_part_decode(
+    lines: *mut u8,
+    len: usize,
+    w: usize,
+    prev: *mut u8,
+    rt: *const u8,
+    out: *mut u8,
+    info: *mut u32,
+) -> isize {
+    if lines.is_null() || info.is_null() {
+        return png::PART_NOT_LINES;
+    }
+    let row_bytes = w.saturating_mul(4);
+    let stride = row_bytes.saturating_add(1);
+    let rows = len / stride;
+    let lines_slice = slice::from_raw_parts_mut(lines, len);
+    let prev_slice = if prev.is_null() { None } else { Some(slice::from_raw_parts_mut(prev, row_bytes)) };
+    let rt_table = if rt.is_null() { None } else { Some(&*(rt as *const [u8; 65536])) };
+    let out_slice = if out.is_null() { None } else { Some(slice::from_raw_parts_mut(out, rows.saturating_mul(row_bytes))) };
+    let info_arr = &mut *(info as *mut [u32; 5]);
+    png::part_decode(lines_slice, w, prev_slice, rt_table, out_slice, info_arr)
+}
+
+/// Finish a part whose `png_part_decode` set `needs_prev = 1` once `prev` (`4 * w` bytes) is available
+/// (K7, `docs/PLAN_WASM_BUILD.md` §4.2). Writes `[rows, 0, first_filter, opaque, 0]` to `info` (5 `u32`s) and returns
+/// `rows` (`> 0`), `-4` (`PART_NOT_LINES`), or `-5` (`PART_BAD_FILTER`).
+#[no_mangle]
+pub unsafe extern "C" fn png_part_finish(
+    lines: *mut u8,
+    rows: usize,
+    w: usize,
+    prev: *mut u8,
+    rt: *const u8,
+    out: *mut u8,
+    info: *mut u32,
+) -> isize {
+    if lines.is_null() || prev.is_null() || out.is_null() || info.is_null() {
+        return png::PART_NOT_LINES;
+    }
+    let row_bytes = w.saturating_mul(4);
+    let stride = row_bytes.saturating_add(1);
+    let lines_slice = slice::from_raw_parts_mut(lines, rows.saturating_mul(stride));
+    let prev_slice = slice::from_raw_parts_mut(prev, row_bytes);
+    let rt_table = if rt.is_null() { None } else { Some(&*(rt as *const [u8; 65536])) };
+    let out_slice = slice::from_raw_parts_mut(out, rows.saturating_mul(row_bytes));
+    let info_arr = &mut *(info as *mut [u32; 5]);
+    png::part_finish(lines_slice, rows, w, prev_slice, rt_table, out_slice, info_arr)
 }
 
 // ---- PSD --------------------------------------------------------------------------------

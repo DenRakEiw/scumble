@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 36;
+export const PX_ABI = 37;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -1167,6 +1167,88 @@ export class Px {
                 }
                 cap *= 2;
             }
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Byte capacity of `lines` for a standard `PART_BYTES` (`8 MB`) part of a `w`-wide 8-bit RGBA PNG
+     * (`partRows(w) * (1 + 4 * w)`), or 0 when `w <= 0` (K7, docs/PLAN_WASM_BUILD.md §4.2).
+     */
+    pngPartLinesCap(w) {
+        if (!Number.isInteger(w) || w <= 0 || w > 0x3fffffff) return 0;
+        return this.exports.png_part_lines_cap(w) >>> 0;
+    }
+
+    /**
+     * Decode one inflated part (`lines`, a whole number of `1 + 4 * w`-byte scanlines) of a `w`-wide 8-bit RGBA PNG
+     * (K7, docs/PLAN_WASM_BUILD.md §4.2). When `rt` (the 65,536-byte CPU-canvas round-trip table) is given it stays
+     * resident in this instance (`_resident`). `laps` (optional) records `copyIn`, `decode`, `copyOut` in ms.
+     */
+    pngPartDecode(lines, w, prev = null, rt = null, out = null, laps = null) {
+        if (!lines || !Number.isInteger(w) || w <= 0 || w > 0x3fffffff) return { code: -4 };
+        const lLen = lines.byteLength;
+        const rowBytes = w * 4, stride = rowBytes + 1;
+        if (lLen === 0 || lLen % stride !== 0) return { code: -4 };
+        if (prev != null && prev.byteLength < rowBytes) return { code: -4 };
+        if (rt != null && rt.byteLength < 65536) return { code: -4 };
+        const rows = lLen / stride;
+        const outBytes = rows * rowBytes;
+        if (out != null && out.byteLength < outBytes) return { code: -4 };
+        const a = this.job, lap = laps ? lapper(laps) : null;
+        try {
+            const prt = rt ? this._resident(rt) : 0;
+            const pl = this._in(a, lines, lLen);
+            const pp = prev ? this._in(a, prev, rowBytes) : 0;
+            const po = a.take(outBytes), pi = a.take(20);
+            if (lap) lap("copyIn");
+            const code = this.exports.png_part_decode(pl, lLen, w, pp, prt, po, pi);
+            if (lap) lap("decode");
+            if (code < 0) return { code };
+            const info = this.view(Uint32Array, pi, 5);
+            const adler = info[1] >>> 0, firstFilter = info[2] >>> 0, opaque = info[3] === 1, needsPrev = info[4] === 1;
+            if (needsPrev) {
+                if (lap) lap("copyOut");
+                return { code, rows, adler, firstFilter, opaque: false, needsPrev: true, out: null, prev: null };
+            }
+            const dst = this._out(Uint8Array, po, outBytes, out);
+            const lastRow = prev
+                ? this._out(Uint8Array, pp, rowBytes, prev)
+                : this._out(Uint8Array, pl + (rows - 1) * stride + 1, rowBytes, null);
+            if (lap) lap("copyOut");
+            return { code, rows, adler, firstFilter, opaque, needsPrev: false, out: dst, prev: lastRow };
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Finish a part whose `pngPartDecode` answered `needsPrev: true` once `prev` (`4 * w` unfiltered bytes from the
+     * row above) is ready (K7, docs/PLAN_WASM_BUILD.md §4.2). `laps` (optional) records `copyIn`, `finish`, `copyOut`.
+     */
+    pngPartFinish(lines, rows, w, prev, rt = null, out = null, laps = null) {
+        if (!lines || !prev || !Number.isInteger(w) || w <= 0 || w > 0x3fffffff || !Number.isInteger(rows) || rows <= 0) {
+            return { code: -4 };
+        }
+        const lLen = lines.byteLength;
+        const rowBytes = w * 4, stride = rowBytes + 1;
+        if (lLen !== rows * stride || prev.byteLength < rowBytes) return { code: -4 };
+        if (rt != null && rt.byteLength < 65536) return { code: -4 };
+        const outBytes = rows * rowBytes;
+        if (out != null && out.byteLength < outBytes) return { code: -4 };
+        const a = this.job, lap = laps ? lapper(laps) : null;
+        try {
+            const prt = rt ? this._resident(rt) : 0;
+            const pl = this._in(a, lines, lLen);
+            const pp = this._in(a, prev, rowBytes);
+            const po = a.take(outBytes), pi = a.take(20);
+            if (lap) lap("copyIn");
+            const code = this.exports.png_part_finish(pl, rows, w, pp, prt, po, pi);
+            if (lap) lap("finish");
+            if (code < 0) return { code };
+            const info = this.view(Uint32Array, pi, 5);
+            const firstFilter = info[2] >>> 0, opaque = info[3] === 1;
+            const dst = this._out(Uint8Array, po, outBytes, out);
+            this._out(Uint8Array, pp, rowBytes, prev);
+            if (lap) lap("copyOut");
+            return { code, rows, firstFilter, opaque, needsPrev: false, out: dst, prev };
         } finally { this._reset(a); }
     }
 

@@ -4582,6 +4582,558 @@ async function pngPartCases(px, label, js) {
     check(`${label} pngPart of noise inflates back`, !!nout && nout.length === np.raw);
     await crcAndFrameCases(px, label, png, zlib, js);
     await noisePartCases(px, label, png, zlib);
+    await partDecodeCases(px, label, png, zlib, js);
+}
+
+// K7 (docs/PLAN_WASM_BUILD.md §4.2, §7 Stop 2): png_part_lines_cap, png_part_decode, and png_part_finish over the
+// filtered lines delivered by native DecompressionStream("deflate-raw").
+async function partDecodeCases(px, label, png, zlib, js) {
+    // 1. png_part_lines_cap / pngPartLinesCap across widths, clamp boundaries (8192/8193, 2097152/2097153), and overflow
+    const capWidths = [-5, 0, 1, 2, 16, 64, 255, 256, 257, 700, 4096, 8192, 8193, 15000, 1048576, 2097152, 2097153, 3_000_000, 0x3fffffff, 0x40000000];
+    let capOk = true, capDetail = "";
+    for (const w of capWidths) {
+        const want = w > 0 && w <= 0x3fffffff ? Math.max(1, Math.min(256, Math.floor((8 * 1048576) / (4 * w)))) * (4 * w + 1) : 0;
+        const gotJ = js.pngPartLinesCap(w);
+        const gotP = px.pngPartLinesCap(w);
+        const gotE = w >= 0 ? (px.exports.png_part_lines_cap(w) >>> 0) : 0;
+        if (gotJ !== want || gotP !== want || (w >= 0 && gotE !== want)) {
+            capOk = false;
+            capDetail = `w=${w}: js=${gotJ} px=${gotP} exp=${gotE} want=${want}`;
+            break;
+        }
+    }
+    check(`${label} png_part_lines_cap equals partRows(w) * (1 + 4 * w) across clamp boundaries and overflow`, capOk, capDetail);
+
+    // 2. Round-trip tables: CPU-canvas 8-bit premultiply-unpremultiply table + distinct custom table
+    const rtCanvas = new Uint8Array(65536);
+    const rtCustom = new Uint8Array(65536);
+    for (let a = 0; a < 256; a++) {
+        for (let c = 0; c < 256; c++) {
+            const idx = (a << 8) | c;
+            if (a === 0) {
+                rtCanvas[idx] = 0;
+            } else if (a === 255) {
+                rtCanvas[idx] = c;
+            } else {
+                const p = Math.floor((c * a + 127) / 255);
+                rtCanvas[idx] = Math.min(255, Math.floor((p * 255 + (a >> 1)) / a));
+            }
+            rtCustom[idx] = a === 255 ? c : ((a * 73 + c * 19 + 7) & 255);
+        }
+    }
+
+    const filterRowWithType = (row, prev, ft) => {
+        const n = row.length, out = new Uint8Array(n + 1);
+        out[0] = ft;
+        for (let i = 0; i < n; i++) {
+            const a = i >= 4 ? row[i - 4] : 0;
+            const b = prev ? prev[i] : 0;
+            const c = i >= 4 && prev ? prev[i - 4] : 0;
+            const pred = ft === 0 ? 0 : ft === 1 ? a : ft === 2 ? b : ft === 3 ? (a + b) >> 1 : paeth(a, b, c);
+            out[1 + i] = (row[i] - pred) & 255;
+        }
+        return out;
+    };
+    const buildLines = (rgba, w, rows, prev0, firstFt, nextFtFn) => {
+        const rowBytes = w * 4, stride = rowBytes + 1, out = new Uint8Array(rows * stride);
+        for (let y = 0; y < rows; y++) {
+            const cur = rgba.subarray(y * rowBytes, (y + 1) * rowBytes);
+            const up = y === 0 ? prev0 : rgba.subarray((y - 1) * rowBytes, y * rowBytes);
+            const ft = y === 0 ? firstFt : nextFtFn(y);
+            out.set(filterRowWithType(cur, up, ft), y * stride);
+        }
+        return out;
+    };
+    const refAdler32 = (bytes) => {
+        let a = 1, b = 0;
+        for (let i = 0; i < bytes.length; i++) {
+            a = (a + bytes[i]) % 65521;
+            b = (b + a) % 65521;
+        }
+        return ((b << 16) | a) >>> 0;
+    };
+    check(`${label} adler32 standard vector ("Wikipedia" -> 11E60398) and empty buffer`,
+        js.adler32(new Uint8Array(0), 1) === 1
+        && js.adler32(new Uint8Array(Buffer.from("Wikipedia")), 1) === 0x11E60398);
+    const refApplyRt = (rgba, rt) => {
+        const out = rgba.slice();
+        let opaque = true;
+        for (let i = 0; i < out.length; i += 4) {
+            const a = out[i + 3];
+            if (a < 255) {
+                opaque = false;
+                if (rt) {
+                    const row = a << 8;
+                    out[i] = rt[row | out[i]];
+                    out[i + 1] = rt[row | out[i + 1]];
+                    out[i + 2] = rt[row | out[i + 2]];
+                }
+            }
+        }
+        return { out, opaque };
+    };
+
+    const decodeCases = [];
+    const finishCases = [];
+    let refOk = true, refDetail = "";
+
+    const testShapes = [
+        [1, 1], [1, 3], [2, 2], [3, 2], [4, 2], [5, 3],
+        [15, 2], [16, 2], [17, 3], [63, 2], [64, 2], [65, 2],
+        [255, 2], [257, 2], [700, 4], [4097, 2],
+    ];
+    let seed = 7000;
+    for (const [w, rows] of testShapes) {
+        const rowBytes = w * 4;
+        for (let firstFt = 0; firstFt <= 4; firstFt++) {
+            const s = ++seed;
+            const alphaMode = (firstFt + w) % 4;
+            const rgba = randomRGBA(w, rows, s, { opaque: alphaMode !== 2 });
+            if (alphaMode === 1) {
+                // Single translucent pixel at the very last pixel of the last row
+                rgba[(rows * w - 1) * 4 + 3] = 254;
+            } else if (alphaMode === 3) {
+                // Translucent pixel in the first row only
+                rgba[3] = 128;
+            }
+            const prevRow = randomRGBA(w, 1, s + 500, { opaque: false });
+            const rt = (s % 3 === 0) ? null : (s % 3 === 1) ? rtCanvas : rtCustom;
+            const linesWithPrev = buildLines(rgba, w, rows, prevRow, firstFt, (y) => (firstFt + y) % 5);
+            const linesTop = buildLines(rgba, w, rows, new Uint8Array(rowBytes), firstFt, (y) => (firstFt + y * 2) % 5);
+
+            const wantAdlerWithPrev = refAdler32(linesWithPrev);
+            const wantAdlerTop = refAdler32(linesTop);
+            const { out: wantOut, opaque: wantOpaque } = refApplyRt(rgba, rt);
+            const wantLastRow = rgba.subarray((rows - 1) * rowBytes, rows * rowBytes);
+
+            // Case A: prev provided -> always decodes immediately (needsPrev = false)
+            decodeCases.push({
+                tag: `w=${w} r=${rows} ft=${firstFt} withPrev rt=${rt ? (rt === rtCanvas ? "canvas" : "custom") : "none"}`,
+                args: [linesWithPrev, w, prevRow, rt],
+            });
+            // Case B: prev is null -> decodes immediately when firstFt <= 1 (using zero row above), or needsPrev = true when firstFt >= 2
+            const linesForNullPrev = firstFt <= 1 ? linesTop : linesWithPrev;
+            decodeCases.push({
+                tag: `w=${w} r=${rows} ft=${firstFt} nullPrev rt=${rt ? (rt === rtCanvas ? "canvas" : "custom") : "none"}`,
+                args: [linesForNullPrev, w, null, rt],
+            });
+            if (firstFt >= 2) {
+                finishCases.push({
+                    tag: `finish w=${w} r=${rows} ft=${firstFt} rt=${rt ? (rt === rtCanvas ? "canvas" : "custom") : "none"}`,
+                    args: [linesWithPrev, rows, w, prevRow, rt],
+                });
+            }
+
+            // Verify JS twin against independent reference + zlib.adler32
+            if (refOk) {
+                const pCopy = prevRow.slice();
+                const lCopy = linesWithPrev.slice();
+                const rA = js.pngPartDecode(lCopy, w, pCopy, rt);
+                if (rA.code !== rows || rA.rows !== rows || rA.adler !== wantAdlerWithPrev || rA.firstFilter !== firstFt
+                    || rA.opaque !== wantOpaque || rA.needsPrev !== false || !eqBytes(rA.out, wantOut)
+                    || !eqBytes(pCopy, wantLastRow) || !eqBytes(lCopy, linesWithPrev)) {
+                    refOk = false;
+                    refDetail = `withPrev w=${w} r=${rows} ft=${firstFt}: code=${rA.code} adler=${rA.adler}/${wantAdlerWithPrev} opaque=${rA.opaque}/${wantOpaque}`;
+                }
+                const lNullCopy = linesForNullPrev.slice();
+                const rB = js.pngPartDecode(lNullCopy, w, null, rt);
+                if (firstFt <= 1) {
+                    if (rB.code !== rows || rB.rows !== rows || rB.adler !== wantAdlerTop || rB.firstFilter !== firstFt
+                        || rB.opaque !== wantOpaque || rB.needsPrev !== false || !eqBytes(rB.out, wantOut)
+                        || !eqBytes(rB.prev, wantLastRow) || !eqBytes(lNullCopy, linesForNullPrev)) {
+                        refOk = false;
+                        refDetail = `nullPrev ft=${firstFt} w=${w} r=${rows}: code=${rB.code} needsPrev=${rB.needsPrev}`;
+                    }
+                } else {
+                    if (rB.code !== rows || rB.rows !== rows || rB.adler !== wantAdlerWithPrev || rB.firstFilter !== firstFt
+                        || rB.opaque !== false || rB.needsPrev !== true || rB.out !== null || rB.prev !== null
+                        || !eqBytes(lNullCopy, linesForNullPrev)) {
+                        refOk = false;
+                        refDetail = `nullPrev ft=${firstFt} w=${w} r=${rows}: expected needsPrev=true, got ${JSON.stringify(rB)}`;
+                    }
+                    const pFin = prevRow.slice();
+                    const rF = js.pngPartFinish(lNullCopy, rows, w, pFin, rt);
+                    if (rF.code !== rows || rF.rows !== rows || rF.firstFilter !== firstFt || rF.opaque !== wantOpaque
+                        || rF.needsPrev !== false || !eqBytes(rF.out, wantOut) || !eqBytes(pFin, wantLastRow)
+                        || !eqBytes(lNullCopy, linesForNullPrev)) {
+                        refOk = false;
+                        refDetail = `finish ft=${firstFt} w=${w} r=${rows}: code=${rF.code} opaque=${rF.opaque}/${wantOpaque}`;
+                    }
+                }
+            }
+        }
+    }
+    check(`${label} js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and zlib.adler32 (${decodeCases.length} decode + ${finishCases.length} finish cases)`,
+        refOk, refDetail);
+
+    twinCheck({
+        name: "png_part_decode",
+        builds: [[label, px]],
+        twin: js,
+        call: (k, [lines, w, prev, rt]) => {
+            const p = prev ? prev.slice() : null;
+            const l = lines.slice();
+            const r = k.pngPartDecode(l, w, p, rt);
+            if (!eqBytes(l, lines)) throw new Error("caller lines mutated");
+            return {
+                code: r.code, rows: r.rows, adler: r.adler, firstFilter: r.firstFilter,
+                opaque: r.opaque, needsPrev: r.needsPrev, out: r.out, prev: r.prev,
+            };
+        },
+        cases: decodeCases,
+        shift: [0, 1],
+    });
+
+    twinCheck({
+        name: "png_part_finish",
+        builds: [[label, px]],
+        twin: js,
+        call: (k, [lines, rows, w, prev, rt]) => {
+            const p = prev.slice();
+            const l = lines.slice();
+            const r = k.pngPartFinish(l, rows, w, p, rt);
+            if (!eqBytes(l, lines)) throw new Error("caller lines mutated");
+            return {
+                code: r.code, rows: r.rows, firstFilter: r.firstFilter,
+                opaque: r.opaque, needsPrev: r.needsPrev, out: r.out, prev: p,
+            };
+        },
+        cases: finishCases,
+        shift: [0, 1],
+    });
+
+    // Caller-supplied out buffer (including Uint8ClampedArray view at an offset)
+    {
+        const w = 33, rows = 3, rowBytes = w * 4;
+        const rgba = randomRGBA(w, rows, 8888, { opaque: false });
+        const prev = randomRGBA(w, 1, 8889, { opaque: false });
+        const lines = buildLines(rgba, w, rows, prev, 4, (y) => y % 5);
+        const backingA = new Uint8ClampedArray(rows * rowBytes + 16).fill(0x5a);
+        const backingB = new Uint8ClampedArray(rows * rowBytes + 16).fill(0x5a);
+        const viewA = new Uint8ClampedArray(backingA.buffer, 8, rows * rowBytes);
+        const viewB = new Uint8ClampedArray(backingB.buffer, 8, rows * rowBytes);
+        const rJ = js.pngPartDecode(lines, w, prev.slice(), rtCanvas, viewA);
+        const rP = px.pngPartDecode(lines, w, prev.slice(), rtCanvas, viewB);
+        const rFJ = js.pngPartFinish(lines, rows, w, prev.slice(), rtCanvas, viewA);
+        const rFP = px.pngPartFinish(lines, rows, w, prev.slice(), rtCanvas, viewB);
+        check(`${label} pngPartDecode and pngPartFinish write into a given Uint8ClampedArray view without touching guard bytes`,
+            rJ.out === viewA && rP.out === viewB && rFJ.out === viewA && rFP.out === viewB
+            && eqBytes(backingA, backingB) && backingB[0] === 0x5a && backingB[rows * rowBytes + 15] === 0x5a);
+    }
+
+    // 3. Error codes: -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) on wrapper and raw exports
+    {
+        const w = 8, rows = 3, rowBytes = w * 4, stride = rowBytes + 1;
+        const goodLines = new Uint8Array(rows * stride);
+        const goodPrev = new Uint8Array(rowBytes);
+        const goodOut = new Uint8Array(rows * rowBytes);
+        let errOk = true, errDetail = "";
+        const expectCode = (what, gotJ, gotP, want) => {
+            if (!errOk) return;
+            if (gotJ !== want || gotP !== want) {
+                errOk = false;
+                errDetail = `${what}: js=${gotJ} px=${gotP} want=${want}`;
+            }
+        };
+        const notLinesDecode = [
+            ["null lines", [null, w, goodPrev, null, null]],
+            ["w = 0", [goodLines, 0, goodPrev, null, null]],
+            ["w < 0", [goodLines, -4, goodPrev, null, null]],
+            ["w = 0x40000000", [goodLines, 0x40000000, goodPrev, null, null]],
+            ["empty lines", [new Uint8Array(0), w, goodPrev, null, null]],
+            ["len = stride - 1", [new Uint8Array(stride - 1), w, goodPrev, null, null]],
+            ["len = stride + 1", [new Uint8Array(stride + 1), w, goodPrev, null, null]],
+            ["len = 2*stride - 1", [new Uint8Array(2 * stride - 1), w, goodPrev, null, null]],
+            ["short prev", [goodLines, w, new Uint8Array(rowBytes - 1), null, null]],
+            ["short rt", [goodLines, w, goodPrev, new Uint8Array(65535), null]],
+            ["short out", [goodLines, w, goodPrev, null, new Uint8Array(rows * rowBytes - 1)]],
+        ];
+        for (const [what, args] of notLinesDecode) {
+            expectCode(`decode ${what}`, js.pngPartDecode(...args).code, px.pngPartDecode(...args).code, -4);
+        }
+        const notLinesFinish = [
+            ["null lines", [null, rows, w, goodPrev, null, null]],
+            ["null prev", [goodLines, rows, w, null, null, null]],
+            ["w = 0", [goodLines, rows, 0, goodPrev, null, null]],
+            ["w < 0", [goodLines, rows, -1, goodPrev, null, null]],
+            ["w = 0x40000000", [goodLines, rows, 0x40000000, goodPrev, null, null]],
+            ["rows = 0", [goodLines, 0, w, goodPrev, null, null]],
+            ["rows < 0", [goodLines, -1, w, goodPrev, null, null]],
+            ["lines length != rows * stride", [new Uint8Array((rows - 1) * stride), rows, w, goodPrev, null, null]],
+            ["short prev", [goodLines, rows, w, new Uint8Array(rowBytes - 1), null, null]],
+            ["short rt", [goodLines, rows, w, goodPrev, new Uint8Array(65535), null]],
+            ["short out", [goodLines, rows, w, goodPrev, null, new Uint8Array(rows * rowBytes - 1)]],
+        ];
+        for (const [what, args] of notLinesFinish) {
+            expectCode(`finish ${what}`, js.pngPartFinish(...args).code, px.pngPartFinish(...args).code, -4);
+        }
+        // Filter byte checks: 4 is valid, 5 and 255 on row 0, middle row, or last row return -5 (PART_BAD_FILTER)
+        for (const badRow of [0, 1, rows - 1]) {
+            for (const badByte of [5, 6, 128, 255]) {
+                const bad = goodLines.slice();
+                bad[badRow * stride] = badByte;
+                const pJ = goodPrev.slice().fill(0x33), pP = goodPrev.slice().fill(0x33);
+                const oJ = goodOut.slice().fill(0x77), oP = goodOut.slice().fill(0x77);
+                expectCode(`decode bad filter ${badByte} row ${badRow}`,
+                    js.pngPartDecode(bad, w, pJ, null, oJ).code,
+                    px.pngPartDecode(bad, w, pP, null, oP).code, -5);
+                expectCode(`decode bad filter ${badByte} row ${badRow} (null prev)`,
+                    js.pngPartDecode(bad, w, null, null, null).code,
+                    px.pngPartDecode(bad, w, null, null, null).code, -5);
+                expectCode(`finish bad filter ${badByte} row ${badRow}`,
+                    js.pngPartFinish(bad, rows, w, pJ, null, oJ).code,
+                    px.pngPartFinish(bad, rows, w, pP, null, oP).code, -5);
+                if (errOk && (pP[0] !== 0x33 || oP[0] !== 0x77)) {
+                    errOk = false;
+                    errDetail = `bad filter mutated prev/out`;
+                }
+            }
+        }
+        // Raw wasm export pointer/dimension checks
+        const pl = px.alloc(rows * stride), pp = px.alloc(rowBytes), po = px.alloc(rows * rowBytes), pi = px.alloc(20);
+        try {
+            px.u8().fill(0, pl, pl + rows * stride);
+            px.u8()[pl] = 2; // firstFilter = 2 (Up)
+            const rawChecks = [
+                ["decode null lines", px.exports.png_part_decode(0, rows * stride, w, pp, 0, po, pi), -4],
+                ["decode null info", px.exports.png_part_decode(pl, rows * stride, w, pp, 0, po, 0), -4],
+                ["decode w = 0", px.exports.png_part_decode(pl, rows * stride, 0, pp, 0, po, pi), -4],
+                ["decode w overflow", px.exports.png_part_decode(pl, rows * stride, 0x40000000, pp, 0, po, pi), -4],
+                ["decode len = 0", px.exports.png_part_decode(pl, 0, w, pp, 0, po, pi), -4],
+                ["decode len % stride != 0", px.exports.png_part_decode(pl, rows * stride - 1, w, pp, 0, po, pi), -4],
+                ["decode null out when prev given", px.exports.png_part_decode(pl, rows * stride, w, pp, 0, 0, pi), -4],
+                ["decode null out when needs_prev=true succeeds", px.exports.png_part_decode(pl, rows * stride, w, 0, 0, 0, pi), rows],
+                ["finish null lines", px.exports.png_part_finish(0, rows, w, pp, 0, po, pi), -4],
+                ["finish null prev", px.exports.png_part_finish(pl, rows, w, 0, 0, po, pi), -4],
+                ["finish null out", px.exports.png_part_finish(pl, rows, w, pp, 0, 0, pi), -4],
+                ["finish null info", px.exports.png_part_finish(pl, rows, w, pp, 0, po, 0), -4],
+                ["finish rows = 0", px.exports.png_part_finish(pl, 0, w, pp, 0, po, pi), -4],
+                ["finish w = 0", px.exports.png_part_finish(pl, rows, 0, pp, 0, po, pi), -4],
+                ["finish w overflow", px.exports.png_part_finish(pl, rows, 0x40000000, pp, 0, po, pi), -4],
+            ];
+            px.u8()[pl] = 1; // firstFilter = 1 (Sub): does not need prev, so null out must return -4
+            rawChecks.push(["decode null out when prev=0 and firstFilter=1", px.exports.png_part_decode(pl, rows * stride, w, 0, 0, 0, pi), -4]);
+            for (const [what, got, want] of rawChecks) {
+                if (errOk && got !== want) {
+                    errOk = false;
+                    errDetail = `raw ${what}: got ${got}, want ${want}`;
+                }
+            }
+        } finally {
+            px.free(pl, rows * stride);
+            px.free(pp, rowBytes);
+            px.free(po, rows * rowBytes);
+            px.free(pi, 20);
+        }
+        check(`${label} png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) on invalid inputs`,
+            errOk, errDetail);
+    }
+
+    // 4. Multi-part end-to-end round-trip: pngPart -> native DecompressionStream("deflate-raw") (+ 03 00 on non-last) ->
+    // out-of-order pngPartDecode -> forward pngPartFinish -> adlerCombine + round-trip verification
+    const inflateRawPart = async (deflated, isLast) => {
+        const body = isLast ? [deflated] : [deflated, new Uint8Array([0x03, 0x00])];
+        const stream = new Blob(body).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+    };
+    {
+        const w = 257, partHeights = [7, 5, 8, 6], H = partHeights.reduce((a, b) => a + b, 0);
+        const src = randomRGBA(w, H, 9401, { opaque: false });
+        // Make rows 0..11 opaque and row 12+ translucent so per-part opaque flags mix true and false
+        for (let i = 3; i < 12 * w * 4; i += 4) src[i] = 255;
+        const encodedParts = [];
+        let y0 = 0;
+        for (let i = 0; i < partHeights.length; i++) {
+            const r = partHeights[i];
+            const prev = y0 > 0 ? src.subarray((y0 - 1) * w * 4, y0 * w * 4) : null;
+            const p = px.pngPart(src.subarray(y0 * w * 4, (y0 + r) * w * 4), w, r, prev, 2, i === partHeights.length - 1);
+            encodedParts.push({ y0, rows: r, bytes: p.bytes, adler: p.adler, raw: p.raw, last: i === partHeights.length - 1 });
+            y0 += r;
+        }
+        const inflatedLines = await Promise.all(encodedParts.map((p) => inflateRawPart(p.bytes, p.last)));
+        // Decode in reverse order (3, 2, 1, 0): part 0 gets zero prev, parts 1..3 get prev = null
+        const decoded = new Array(encodedParts.length);
+        for (let i = encodedParts.length - 1; i >= 0; i--) {
+            const p0 = i === 0 ? new Uint8Array(w * 4) : null;
+            decoded[i] = px.pngPartDecode(inflatedLines[i], w, p0, rtCanvas);
+        }
+        // Finish in forward order (0..3) any part that answered needsPrev: true
+        const assembled = new Uint8Array(H * w * 4);
+        let combinedAdler = 1, allOpaque = true, e2eOk = true, e2eDetail = "";
+        for (let i = 0; i < encodedParts.length; i++) {
+            const ep = encodedParts[i];
+            let d = decoded[i];
+            if (d.code !== ep.rows || d.adler !== ep.adler) {
+                e2eOk = false;
+                e2eDetail = `part ${i}: code=${d.code}/${ep.rows} adler=${d.adler}/${ep.adler}`;
+                break;
+            }
+            combinedAdler = png.adlerCombine(combinedAdler, d.adler, ep.raw);
+            if (d.needsPrev) {
+                const prevFromAbove = decoded[i - 1].prev.slice();
+                d = px.pngPartFinish(inflatedLines[i], ep.rows, w, prevFromAbove, rtCanvas);
+                decoded[i].prev = d.prev;
+            }
+            if (!d.opaque) allOpaque = false;
+            assembled.set(d.out, ep.y0 * w * 4);
+        }
+        const wantWholeAdler = encodedParts.reduce((acc, p) => png.adlerCombine(acc, p.adler, p.raw), 1);
+        const { out: wantAssembled, opaque: wantOpaque } = refApplyRt(src, rtCanvas);
+        check(`${label} multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and Adler-32`,
+            e2eOk && combinedAdler === wantWholeAdler && allOpaque === wantOpaque && eqBytes(assembled, wantAssembled)
+            && decoded[0].opaque === true && decoded[2].opaque === false,
+            e2eDetail || firstDiff(assembled, wantAssembled));
+    }
+
+    // 5. Stop 2 native DecompressionStream("deflate-raw") refusal checks (shared LZ77 window across sync flushes,
+    // corrupt deflate bytes, and truncated parts are refused)
+    if (label === "rust simd") {
+        const w = 64, rowBytes = w * 4, stride = rowBytes + 1;
+        // Craft a 2-part stream using Node's zlib with a SHARED LZ77 sliding window across Z_SYNC_FLUSH so part 1
+        // references distances back in part 0 (before part 1's start):
+        const pattern = new Uint8Array(4 * stride);
+        for (let y = 0; y < 4; y++) {
+            pattern[y * stride] = 0;
+            for (let i = 1; i < stride; i++) pattern[y * stride + i] = ((i * 37 + y * 13) & 255);
+        }
+        const def = zlib.createDeflateRaw({ level: 6 });
+        const chunks = [];
+        def.on("data", (c) => chunks.push(c));
+        await new Promise((resolve) => {
+            def.write(pattern);
+            def.flush(zlib.constants.Z_SYNC_FLUSH, resolve);
+        });
+        const part0Len = Buffer.concat(chunks).length;
+        await new Promise((resolve) => {
+            def.end(pattern, resolve); // identical bytes -> LZ77 back-reference into part 0!
+        });
+        const sharedPart1 = new Uint8Array(Buffer.concat(chunks).subarray(part0Len));
+        let sharedRejected = false;
+        try {
+            await inflateRawPart(sharedPart1, true);
+        } catch {
+            sharedRejected = true;
+        }
+        let corruptRejected = false;
+        try {
+            await inflateRawPart(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0x01]), false);
+        } catch {
+            corruptRejected = true;
+        }
+        // Truncated valid stream: either DecompressionStream throws or pngPartDecode refuses with PART_NOT_LINES (-4)
+        const validPart = px.pngPart(randomRGBA(w, 4, 9500), w, 4, null, 2, false);
+        let truncRefused = false;
+        try {
+            const lines = await inflateRawPart(validPart.bytes.subarray(0, Math.floor(validPart.bytes.length / 2)), false);
+            if (px.pngPartDecode(lines, w, new Uint8Array(rowBytes)).code < 0) truncRefused = true;
+        } catch {
+            truncRefused = true;
+        }
+        check(`DecompressionStream("deflate-raw") + pngPartDecode refuses a part referencing before its start, corrupt deflate bytes, and truncated parts`,
+            sharedRejected && corruptRejected && truncRefused,
+            `shared=${sharedRejected} corrupt=${corruptRejected} trunc=${truncRefused}`);
+
+        // 6. Resident rt table check (_resident copies 64 KB on the first call, 0 B on subsequent calls) + kernels.js switching
+        const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+        const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (u, ...rest) => {
+            const s = String(u && u.href ? u.href : u);
+            return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+        };
+        try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+
+        const freshRt = rtCanvas.slice();
+        const oneLine = new Uint8Array(stride);
+        const wasTimed = P.pxTimed(true);
+        let bytes1 = 0, bytes2 = 0;
+        try {
+            P.pxCalls(true);
+            px.pngPartDecode(oneLine, w, new Uint8Array(rowBytes), freshRt);
+            bytes1 = Math.round(P.pxLaps().copyInMB * 1048576);
+            P.pxCalls(true);
+            px.pngPartDecode(oneLine, w, new Uint8Array(rowBytes), freshRt);
+            bytes2 = Math.round(P.pxLaps().copyInMB * 1048576);
+        } finally {
+            P.pxTimed(wasTimed);
+        }
+        const expectedLineIn = stride + rowBytes;
+        check(`px.js keeps the 64 KB round-trip table resident in wasm memory (copied on first call, 0 B on subsequent calls)`,
+            bytes1 === expectedLineIn + 65536 && bytes2 === expectedLineIn,
+            `first bytesIn=${bytes1}, second bytesIn=${bytes2}`);
+
+        const prevMode = K.kernelsMode();
+        K.setKernels("rust");
+        try {
+            P.pxCalls(true);
+            const capRust = K.pngPartLinesCap(15000);
+            const testLines = new Uint8Array(2 * stride);
+            testLines[0] = 2;
+            const dRust = K.pngPartDecode(testLines, w, null, rtCanvas);
+            const fRust = K.pngPartFinish(testLines, 2, w, new Uint8Array(rowBytes), rtCanvas);
+            const callsRust = P.pxCalls();
+            K.setKernels("js");
+            P.pxCalls(true);
+            const capJs = K.pngPartLinesCap(15000);
+            const dJs = K.pngPartDecode(testLines, w, null, rtCanvas);
+            const fJs = K.pngPartFinish(testLines, 2, w, new Uint8Array(rowBytes), rtCanvas);
+            const callsJs = P.pxCalls();
+            check(`kernels.js switches pngPartLinesCap, pngPartDecode, and pngPartFinish between Rust and the JS twin`,
+                capRust === js.pngPartLinesCap(15000) && capJs === capRust
+                && callsRust.png_part_decode === 1 && callsRust.png_part_finish === 1
+                && !callsJs.png_part_decode && !callsJs.png_part_finish
+                && dRust.needsPrev === true && dJs.needsPrev === true && eqBytes(fRust.out, fJs.out));
+        } finally {
+            kernelsBack(K);
+            K.setKernels(prevMode);
+        }
+
+        // 7. PX_BENCH: 15,000 x 139 standard 8 MB part (copyIn vs decode vs copyOut)
+        if (process.env.PX_BENCH) {
+            const bw = 15000, brows = 139, browBytes = bw * 4;
+            const bsrc = randomRGBA(bw, brows, 9701, { opaque: false });
+            const bprev = randomRGBA(bw, 1, 9702, { opaque: false });
+            const blinesSub = buildLines(bsrc, bw, brows, bprev, 1, (y) => (y % 4) + 1);
+            const blinesPaeth = buildLines(bsrc, bw, brows, bprev, 4, () => 4);
+            const bout = new Uint8Array(brows * browBytes);
+            const pWork = bprev.slice();
+            // Warm up resident rtCanvas
+            px.pngPartDecode(blinesSub.subarray(0, browBytes + 1), bw, pWork, rtCanvas);
+            const laps = { copyIn: 0, decode: 0, copyOut: 0 };
+            const rounds = 15;
+            const simdTimes = [], twinTimes = [];
+            const copyInTimes = [], decodeTimes = [], copyOutTimes = [];
+            for (let i = 0; i < rounds; i++) {
+                const l = { copyIn: 0, decode: 0, copyOut: 0 };
+                const t0 = performance.now();
+                px.pngPartDecode(blinesSub, bw, pWork, rtCanvas, bout, l);
+                simdTimes.push(performance.now() - t0);
+                copyInTimes.push(l.copyIn);
+                decodeTimes.push(l.decode);
+                copyOutTimes.push(l.copyOut);
+                const t1 = performance.now();
+                js.pngPartDecode(blinesSub, bw, pWork, rtCanvas, bout);
+                twinTimes.push(performance.now() - t1);
+            }
+            const med = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[s.length >> 1]; };
+            console.log(`       png_part_decode 15000x139 (8.34 MB, with rt): rust simd ${med(simdTimes).toFixed(2)} ms (copyIn ${med(copyInTimes).toFixed(2)} ms, decode ${med(decodeTimes).toFixed(2)} ms, copyOut ${med(copyOutTimes).toFixed(2)} ms), twin ${med(twinTimes).toFixed(2)} ms`);
+            const defPartTimes = [], finPartTimes = [], twinDefFinTimes = [];
+            for (let i = 0; i < rounds; i++) {
+                const l1 = { copyIn: 0, decode: 0, copyOut: 0 }, l2 = { copyIn: 0, decode: 0, copyOut: 0 };
+                const t0 = performance.now();
+                px.pngPartDecode(blinesPaeth, bw, null, rtCanvas, bout, l1);
+                defPartTimes.push(performance.now() - t0);
+                const t1 = performance.now();
+                px.pngPartFinish(blinesPaeth, brows, bw, pWork, rtCanvas, bout, l2);
+                finPartTimes.push(performance.now() - t1);
+                const t2 = performance.now();
+                js.pngPartDecode(blinesPaeth, bw, null, rtCanvas, bout);
+                js.pngPartFinish(blinesPaeth, brows, bw, pWork, rtCanvas, bout);
+                twinDefFinTimes.push(performance.now() - t2);
+            }
+            console.log(`       png_part_decode(needsPrev)+finish 15000x139 (Paeth, with rt): decode ${med(defPartTimes).toFixed(2)} ms + finish ${med(finPartTimes).toFixed(2)} ms = ${(med(defPartTimes) + med(finPartTimes)).toFixed(2)} ms, twin ${med(twinDefFinTimes).toFixed(2)} ms`);
+        }
+    }
 }
 
 // K3 (docs/PLAN_WASM_BUILD.md §3.3, §4.2): slice-by-16 crc32, png_chunk_frame, crc32Combine, PngStreamWriter's
