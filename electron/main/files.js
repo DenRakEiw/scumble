@@ -8,7 +8,7 @@ const crypto = require("node:crypto");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { app } = require("electron");
-const { renameRetry, BUSY } = require("./docfile");
+const { renameRetry, BUSY, badPart } = require("./docfile");
 
 const SAFE_NAME = /^[^\\/:*?"<>|\x00-\x1f]+$/;
 const HASH_NAME = /~([0-9a-f]{8,64})(?:\.[a-z0-9]+)?$/i;
@@ -24,10 +24,32 @@ function root() {
 }
 
 function mirrorPath(type, subfolder, filename, base = root()) {
-    if (!SAFE_NAME.test(filename) || filename === "." || filename === "..") throw new Error("bad file name: " + filename);
+    if (typeof filename !== "string" || filename === "." || filename === ".." || badPart(filename)) throw new Error("bad file name: " + filename);
     const sub = String(subfolder || "").replace(/\\/g, "/").split("/").filter((s) => s && s !== "." && s !== "..");
+    for (const s of sub) if (badPart(s)) throw new Error("bad folder name: " + s);
     if (!["input", "output", "temp"].includes(type)) throw new Error("bad file type: " + type);
     return path.join(base, type, ...sub, filename);
+}
+
+/** Read path for existing mirror files and server views: keeps 0.1.52's SAFE_NAME check so older stored names still open. */
+function mirrorReadPath(type, subfolder, filename, base = root()) {
+    if (typeof filename !== "string" || !SAFE_NAME.test(filename) || filename === "." || filename === "..") throw new Error("bad file name: " + filename);
+    const sub = String(subfolder || "").replace(/\\/g, "/").split("/").filter((s) => s && s !== "." && s !== "..");
+    for (const s of sub) if (!SAFE_NAME.test(s)) throw new Error("bad folder name: " + s);
+    if (!["input", "output", "temp"].includes(type)) throw new Error("bad file type: " + type);
+    return path.join(base, type, ...sub, filename);
+}
+
+function safeMirrorName(rawName) {
+    if (typeof rawName !== "string" || rawName === "." || rawName === ".." || !SAFE_NAME.test(rawName)) return rawName;
+    if (!badPart(rawName)) return rawName;
+    let name = rawName.replace(/[. ]+$/, "");
+    if (!name) return rawName;
+    if (badPart(name)) {
+        const dot = name.indexOf(".");
+        name = dot < 0 ? `${name}_` : `${name.slice(0, dot)}_${name.slice(dot)}`;
+    }
+    return name;
 }
 
 function mimeOf(name) {
@@ -90,9 +112,19 @@ async function writeAtomic(dest, buf, { overwrite = false, tries = 20, delay = 1
 
 async function storeMirrorFile(rawName, type, subfolder, buf, base, overwrite) {
     if (overwrite) {
-        const target = mirrorPath(type, subfolder, rawName, base);
+        const filename = safeMirrorName(rawName);
+        const target = mirrorPath(type, subfolder, filename, base);
+        if (filename !== rawName) {
+            const existing = await fsp.readFile(target).catch(() => null);
+            if (existing && (existing.length !== buf.length || !existing.equals(buf))) {
+                const hashed = contentName(filename, buf, 8);
+                const hashedTarget = mirrorPath(type, subfolder, hashed, base);
+                await writeAtomic(hashedTarget, buf, { overwrite: true });
+                return { filename: hashed, target: hashedTarget };
+            }
+        }
         await writeAtomic(target, buf, { overwrite: true });
-        return { filename: rawName, target };
+        return { filename, target };
     }
     let filename = rawName, target = "";
     for (const len of [8, 16, 32, 64]) {
@@ -250,7 +282,7 @@ class FileMirror {
         const subfolder = q.get("subfolder") || "";
         const type = q.get("type") || "input";
         let local;
-        try { local = mirrorPath(type, subfolder, filename, this.root()); } catch (err) { return new Response(err.message, { status: 400 }); }
+        try { local = mirrorReadPath(type, subfolder, filename, this.root()); } catch (err) { return new Response(err.message, { status: 400 }); }
         if (head) {
             try {
                 const st = await fsp.stat(local);
@@ -266,7 +298,11 @@ class FileMirror {
         if (r.status !== 200) return new Response(await r.text().catch(() => ""), { status: r.status });
         const buf = Buffer.from(await r.arrayBuffer());
         if (type !== "temp") {
-            try { await writeAtomic(local, buf); } catch (err) { console.warn("mirror write failed", err.message); }
+            let writeLocal = null;
+            try { writeLocal = mirrorPath(type, subfolder, filename, this.root()); } catch (_) { writeLocal = null; }
+            if (writeLocal) {
+                try { await writeAtomic(writeLocal, buf); } catch (err) { console.warn("mirror write failed", err.message); }
+            }
         }
         this.knownSet().add(this.key(type, subfolder, filename));
         return new Response(buf, { status: 200, headers: { "content-type": r.headers.get("content-type") || mimeOf(filename), "cache-control": "no-cache" } });
@@ -289,9 +325,9 @@ class FileMirror {
             if (report.renamed[k]) { ref.filename = report.renamed[k]; continue; }
             if (known.has(k)) continue;
             report.checked++;
-            let local, st = null;
+            let local = null, st = null;
             try {
-                local = mirrorPath(type, subfolder, ref.filename, this.root());
+                local = mirrorReadPath(type, subfolder, ref.filename, this.root());
                 st = await fsp.stat(local);
                 if (!st.isFile()) st = null;
             } catch (_) { st = null; }
@@ -309,8 +345,9 @@ class FileMirror {
                 }
             } catch (_) { onServer = false; }
             if (onServer) { known.add(k); continue; }
+            if (!local) { report.missing.push(k); continue; }
             let buf;
-            try { buf = await fsp.readFile(local || mirrorPath(type, subfolder, ref.filename, this.root())); } catch (_) { report.missing.push(k); continue; }
+            try { buf = await fsp.readFile(local); } catch (_) { report.missing.push(k); continue; }
             const proven = hasContentHash(ref.filename, buf);
             const serverName = await this.pushToServer(type, subfolder, ref.filename, buf, undefined, { overwrite: proven });
             if (serverName && serverName !== ref.filename) {

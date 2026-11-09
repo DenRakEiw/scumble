@@ -31,11 +31,12 @@
 // FLUX 3 Image's options (docs/PLAN_FLUX3.md "OpenRouter", docs/PLAN_0_1_38.md B3), each off unless a variant sets it:
 //   prompt      "as_written": the prompt goes as the user wrote it, no instruction around it (the box rows stay at its end)
 //   edit_aspect "preset_or_auto": an edit sends the preset the crop was widened to (req.cropAspect) or the one within
-//               3 % of the emitted crop, and info.fit "stretch" for the stitch; else "auto" (image 1's shape)
+//               3 % of the emitted crop, and info.fit "stretch" for the stitch; else "auto" (image 1's shape).
+//               "preset_or_none" (Krea K3 Edit, whose list has no "auto"): else no aspect_ratio at all
 //   tier_unit   "area": the tier by the emitted area (a tier's base squared, 15 % slack) instead of the long side
 //   passthrough { <host slug>: [keys] }: settings rows that go as provider.options[<slug>][key]; only keys this file
 //               knows (PASSTHROUGH: safety_tolerance, a whole number 0 to 4; complexity, low / medium / high, which
-//               GPT Image 2.6's OpenAI endpoint takes this way)
+//               GPT Image 2.6's OpenAI endpoint takes this way; thinking_mode, fast / high, Krea K3 Edit's)
 //   min_side, max_pixels   each picture's size: a reference layer outside is scaled into them (ctx.resizePng), the
 //               crop is refused
 // The seed reported is the one sent: none (null) where `accepts` has no seed.
@@ -53,7 +54,7 @@
 // other key never to it (so a real key cannot reach a local listener that a setting points at).
 "use strict";
 
-const { sleep: realSleep, closestAspect } = require("./util");
+const { sleep: realSleep, closestAspect, editAspect } = require("./util");
 const { layoutOf, refRoles, instruction } = require("./refs");
 
 const DEFAULT_BASE = "https://openrouter.ai";
@@ -76,10 +77,10 @@ const PASSTHROUGH = {
     safety_tolerance: (v) => (v === "" || v == null || !Number.isFinite(Number(v)) ? undefined : Math.max(0, Math.min(4, Math.round(Number(v))))),
     // GPT Image 2.6's planning depth: OpenAI's endpoint lists it in allowed_passthrough_parameters (read 2026-11-06)
     complexity: (v) => { const s = String(v == null ? "" : v).toLowerCase(); return ["low", "medium", "high"].includes(s) ? s : undefined; },
+    // Krea 3's planning effort (K3 Edit's endpoint lists it in allowed_passthrough_parameters, read 2026-11-09; its price
+    // list names a high-thinking surcharge and no ultra)
+    thinking_mode: (v) => { const s = String(v == null ? "" : v).toLowerCase(); return ["fast", "high"].includes(s) ? s : undefined; },
 };
-/** edit_aspect: a preset within this of the emitted crop goes (|ln| of the ratios); the planned one within the second. */
-const FIT_SLACK = 0.03;
-const PLANNED_SLACK = 0.08;
 /** tier_unit "area": a size up to this much over a tier's area still takes it. */
 const AREA_SLACK = 1.15;
 
@@ -354,20 +355,8 @@ function tierByArea(w, h, tiers) {
     return rows[rows.length - 1][0];
 }
 
-/**
- * edit_aspect "preset_or_auto": { aspect, fit } of an edit. The preset the crop was widened to (req.cropAspect, one of
- * `ratios`, within PLANNED_SLACK of the emitted size), else the nearest within FIT_SLACK, both with fit "stretch" (the
- * answer comes back in that shape and the stitch stretches it onto the crop); else "auto" and no fit.
- */
-function editAspect(req, o) {
-    const ratios = Array.isArray(o.ratios) ? o.ratios.filter((r) => r && r !== "auto") : [];
-    const w = Math.max(1, +req.width || 1024), h = Math.max(1, +req.height || 1024);
-    const off = (r) => { const [a, b] = String(r).split(":").map(Number); return a > 0 && b > 0 ? Math.abs(Math.log(w / h) - Math.log(a / b)) : Infinity; };
-    const planned = String(req.cropAspect || "");
-    if (ratios.includes(planned) && off(planned) <= PLANNED_SLACK) return { aspect: planned, fit: "stretch" };
-    const near = ratios.length ? closestAspect(w, h, ratios) : null;
-    return near && off(near) <= FIT_SLACK ? { aspect: near, fit: "stretch" } : { aspect: "auto", fit: null };
-}
+/** Whether an edit sends the preset its crop was widened to (`options.edit_aspect`): "preset_or_auto" or "preset_or_none". */
+const presetEdit = (o) => o.edit_aspect === "preset_or_auto" || o.edit_aspect === "preset_or_none";
 
 /** The aspect_ratio of a text run: the asked one when it is a preset, else the closest preset. */
 function aspectFor(req, o) {
@@ -409,7 +398,11 @@ function bodyFor(req, pics, ignore) {
         const a = aspectFor(req, o);
         if (a) body.aspect_ratio = a;
     }
-    if (req.kind !== "text" && o.edit_aspect === "preset_or_auto" && accepts.has("aspect_ratio") && body.aspect_ratio == null) body.aspect_ratio = editAspect(req, o).aspect;
+    if (req.kind !== "text" && presetEdit(o) && accepts.has("aspect_ratio") && body.aspect_ratio == null) {
+        const a = editAspect(req, o).aspect;
+        // "preset_or_none": a model whose list has no "auto" (OpenRouter refuses an unlisted value) gets no aspect instead
+        if (a !== "auto" || o.edit_aspect === "preset_or_auto") body.aspect_ratio = a;
+    }
     if (accepts.has("seed") && req.seed != null && !p.random_seed) body.seed = Number(req.seed) >>> 0;
     if (accepts.has("n")) body.n = 1;
     if (pics.length) body.input_references = pics.map((x) => ({ type: "image_url", image_url: { url: `data:${x.mime};base64,${x.bytes.toString("base64")}` } }));
@@ -503,7 +496,7 @@ async function run(req, ctx) {
         info: {
             model, resolution: body.resolution || null, aspect_ratio: body.aspect_ratio || null,
             // edit_aspect: the stitch stretches an answer in the preset's shape onto the crop
-            ...(req.kind !== "text" && o.edit_aspect === "preset_or_auto" && body.aspect_ratio && body.aspect_ratio !== "auto" ? { fit: "stretch" } : {}),
+            ...(req.kind !== "text" && presetEdit(o) && body.aspect_ratio && body.aspect_ratio !== "auto" ? { fit: "stretch" } : {}),
             pictures: pics.map((x) => `${x.what} ${x.mime === "image/jpeg" ? "jpeg" : "png"}`),
             cost: usage.cost != null ? usage.cost : null,
         },

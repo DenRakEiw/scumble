@@ -1,0 +1,9 @@
+[ok] node: 13 checks
+  stroke on 1200 x 800 (tiles): layer dirty True, uploaded None
+[ok] a_close_right_after_a_stroke_keeps_it: closed in 0.4 s (exit 0); the same pixels
+[ok] a_windowed_start_keeps_the_last_session: second start [["1", 1, 1]], third ['1']
+[ok] no_autosave_while_documents_are_restored: {"held": true, "saved": true}
+[ok] a_crashed_window_comes_back_with_its_documents: the same pixels
+[ok] a_second_crash_starts_empty_and_keeps_the_documents: empty start, crash state reopened with the same pixels
+[ok] the_last_close_ends_the_process: in 0.1 s (exit 0)
+PASS

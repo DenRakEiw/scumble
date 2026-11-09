@@ -29,7 +29,9 @@
 //                 repaint (GPT Image 2.5). Without it a "fill" run sends the mask as a second picture and the prompt says
 //                 what it means (Nano Banana), as the OpenRouter adapter does
 //   edit_aspect   the aspect_ratio of an edit: "auto", "match_input_image", "closest" (the preset closest to the crop),
-//                 "auto-single" ("auto" with one picture, else the closest preset); absent: none is sent
+//                 "auto-single" ("auto" with one picture, else the closest preset), "preset_or_auto" (Krea 3: the preset
+//                 the crop was widened to or one within 3 %, info.fit "stretch" for the stitch, else "auto"); absent: none
+//                 is sent
 //   ratios        the aspect_ratio presets (a text run sends the asked one or the closest)
 //   presets       { "W:H": value } and `preset_key`: a model whose size is a named preset (Ideogram's image_size)
 //   tiers         { "1K": 1024, ... }, `tier_key` (default "resolution"), `tier_unit` "area" for FLUX's "1 MP" tiers: a
@@ -56,7 +58,7 @@
 // and then only a key that starts with "test-" goes there, while such a key never goes to hub.oxen.ai.
 "use strict";
 
-const { fetchImage, sleep: realSleep, closestAspect } = require("./util");
+const { fetchImage, sleep: realSleep, closestAspect, editAspect } = require("./util");
 const { layoutOf, refRoles, instruction } = require("./refs");
 const openrouter = require("./openrouter");
 const flux3 = require("./flux3");
@@ -340,6 +342,7 @@ function aspectFor(req, o, list, pictures) {
         case "match_input_image": return "match_input_image";
         case "closest": return closest();
         case "auto-single": return pictures === 1 ? "auto" : closest();
+        case "preset_or_auto": return editAspect(req, { ratios }).aspect;
         default: return null;
     }
 }
@@ -580,7 +583,7 @@ async function run(req, ctx) {
             factor: o.factor_key && body[o.factor_key] != null ? body[o.factor_key] : null,
             answer: got.answer,
             // sizing "flux3": an edit sent at a preset comes back in its shape, which the stitch stretches onto the crop
-            ...(!text && o.sizing === "flux3" && body.aspect_ratio && body.aspect_ratio !== "auto" ? { fit: "stretch" } : {}),
+            ...(!text && (o.sizing === "flux3" || o.edit_aspect === "preset_or_auto") && body.aspect_ratio && body.aspect_ratio !== "auto" ? { fit: "stretch" } : {}),
         },
     };
 }

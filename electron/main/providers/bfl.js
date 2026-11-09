@@ -15,7 +15,7 @@
 // layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { b64, fetchImage, readError, sleep, num } = require("./util");
+const { b64, fetchImage, readError, sleep, isAbort, num } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 const flux3 = require("./flux3");
 
@@ -125,17 +125,18 @@ module.exports = {
         let misses = 0;
         for (;;) {
             if (Date.now() - t0 > 15 * 60 * 1000) throw new Error("BFL: timed out after 15 minutes");
-            await sleep(1000);
+            await (ctx.sleep || sleep)(1000);
             // the job is submitted and paid for: a dropped connection, a busy or broken gateway (429, 5xx) or a page that
             // is no JSON is retried a few times before the run gives up
             const retry = async (why) => {
                 if (++misses > 5) throw new Error(`BFL poll: ${why}`);
-                await sleep(1000 * misses);
+                await (ctx.sleep || sleep)(1000 * misses);
             };
             let r;
             try {
                 r = await ctx.fetch(pollUrl, { headers: { "x-key": ctx.key, accept: "application/json" } });
             } catch (e) {
+                if (isAbort(e, ctx)) throw e;
                 await retry(String((e && e.message) || e));
                 continue;
             }
@@ -155,7 +156,7 @@ module.exports = {
                 if (!sample) throw new Error("BFL: result without sample");
                 let file = null;
                 for (let tries = 0; !file; tries++) {
-                    try { file = await fetchImage(sample, ctx.fetch); } catch (e) { if (tries >= 2) throw e; await sleep(1500); }
+                    try { file = await fetchImage(sample, ctx.fetch); } catch (e) { if (isAbort(e, ctx) || tries >= 2) throw e; await (ctx.sleep || sleep)(1500); }
                 }
                 // the submit's cost (credits) and megapixels, the settled cost where the poll carries one; FLUX 3 takes
                 // no seed, so it reports none unless the answer names one, and keeps the prompt as the model expanded it
