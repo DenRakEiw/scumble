@@ -1,0 +1,11 @@
+[FAIL] node: rst_bytes: yes for .scumble, no for ORA and PNG
+[ok] the_service_saves_opens_and_leaves_out_a_gone_history_file: 7 entries, note: 1 result of the history left out: the file is gone
+[ok] the_service_refuses_a_missing_required_file_and_a_second_job_on_one_path: missing mask refused; second job: SVC2.SCUMBLE is already being saved; wait until that is done
+[ok] the_service_cancel_leaves_the_target_and_cleans_the_selection_fields: target kept; 2 selection fields dropped; argv found 1 of 4
+[FAIL] content_addressed_names_and_ensure_on_server: Error: files.mirrorPath must refuse "aux.ttf" |     at assert (C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\tools\document_test.js:48:50) |     at C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\tools\document_test.js:703:21
+FAIL(node:70264) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/.gemini/antigravity/brain/9fc4d50e-bfa2-4c90-90c8-15334025ac5b/scratch/mut_tree_p1_r2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\.gemini\antigravity\brain\9fc4d50e-bfa2-4c90-90c8-15334025ac5b\scratch\mut_tree_p1_r2\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+FAIL

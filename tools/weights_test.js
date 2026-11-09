@@ -402,9 +402,15 @@ async function main() {
         for (let y = 0; y < H; y++) {
             for (let x = 0; x < W; x++) {
                 const idx = (y * W + x) * 4;
-                buf[idx] = (x * 7) & 255;
-                buf[idx + 1] = (y * 11) & 255;
-                buf[idx + 2] = (x + y * 3) & 255;
+                if (y >= 512 && (x < 80 || x >= 320)) {
+                    buf[idx] = 0;
+                    buf[idx + 1] = 0;
+                    buf[idx + 2] = 0;
+                } else {
+                    buf[idx] = (x * 7) & 255;
+                    buf[idx + 1] = (y * 11) & 255;
+                    buf[idx + 2] = (x + y * 3) & 255;
+                }
                 buf[idx + 3] = 255;
             }
         }
@@ -454,9 +460,15 @@ async function main() {
         for (let y = 0; y < H; y++) {
             for (let x = 0; x < W; x++) {
                 const idx = (y * W + x) * 4;
-                buf[idx] = (x * 13) & 255;
-                buf[idx + 1] = (y * 17) & 255;
-                buf[idx + 2] = ((x * 3) ^ y) & 255;
+                if (y >= 512 && (x < 80 || x >= 320)) {
+                    buf[idx] = 0;
+                    buf[idx + 1] = 0;
+                    buf[idx + 2] = 0;
+                } else {
+                    buf[idx] = (x * 13) & 255;
+                    buf[idx + 1] = (y * 17) & 255;
+                    buf[idx + 2] = ((x * 3) ^ y) & 255;
+                }
                 buf[idx + 3] = 255;
             }
         }

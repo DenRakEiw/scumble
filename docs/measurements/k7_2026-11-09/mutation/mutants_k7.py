@@ -1,0 +1,183 @@
+TITLE = "K7: png_part_lines_cap, png_part_decode, png_part_finish"
+
+WORKING = [
+    "crates/px/src/png.rs",
+    "crates/px/src/lib.rs",
+    "renderer/editor/px/kernels_js.js",
+    "renderer/editor/px/px.js",
+    "renderer/editor/px/kernels.js",
+    "tools/px_test.js",
+    "renderer/editor/px/px.wasm",
+    "renderer/editor/px/px_scalar.wasm",
+]
+
+GATES = []
+KILL = {"px": ["pngPart"]}
+
+PNG_RS = "crates/px/src/png.rs"
+LIB_RS = "crates/px/src/lib.rs"
+JS_TWIN = "renderer/editor/px/kernels_js.js"
+PX_JS = "renderer/editor/px/px.js"
+
+MUTANTS = [
+    (
+        "cap_part_bytes_minus_1",
+        PNG_RS,
+        [("let rows = (PART_BYTES / row_bytes).clamp(1, PART_MAX_ROWS);",
+          "let rows = ((PART_BYTES - 1) / row_bytes).clamp(1, PART_MAX_ROWS);")],
+        "killed",
+        KILL,
+    ),
+    (
+        "cap_clamp_min_2",
+        PNG_RS,
+        [("let rows = (PART_BYTES / row_bytes).clamp(1, PART_MAX_ROWS);",
+          "let rows = (PART_BYTES / row_bytes).clamp(2, PART_MAX_ROWS);")],
+        "killed",
+        KILL,
+    ),
+    (
+        "cap_clamp_max_2047",
+        PNG_RS,
+        [("let rows = (PART_BYTES / row_bytes).clamp(1, PART_MAX_ROWS);",
+          "let rows = (PART_BYTES / row_bytes).clamp(1, PART_MAX_ROWS - 1);")],
+        "killed",
+        KILL,
+    ),
+    (
+        "cap_zero_width",
+        PNG_RS,
+        [("if row_bytes == 0 {\n        return 0;\n    }",
+          "if row_bytes == 0 {\n        return 1;\n    }")],
+        "killed",
+        KILL,
+    ),
+    (
+        "rt_alpha_lt_254",
+        PNG_RS,
+        [("if a < 255 {\n                opaque = 0;",
+          "if a < 254 {\n                opaque = 0;")],
+        "killed",
+        KILL,
+    ),
+    (
+        "rt_opaque_stays_1",
+        PNG_RS,
+        [("if a < 255 {\n                opaque = 0;",
+          "if a < 255 {\n                opaque = 1;")],
+        "killed",
+        KILL,
+    ),
+    (
+        "rt_channel_swap_b",
+        PNG_RS,
+        [("px[2] = t[row | px[2] as usize];",
+          "px[2] = t[row | px[1] as usize];")],
+        "killed",
+        KILL,
+    ),
+    (
+        "no_rt_alpha_lt_254",
+        PNG_RS,
+        [("if px[3] < 255 {\n                opaque = 0;",
+          "if px[3] < 254 {\n                opaque = 0;")],
+        "killed",
+        KILL,
+    ),
+    (
+        "decode_row_bytes_zero",
+        PNG_RS,
+        [("if row_bytes == 0 || lines.is_empty() {",
+          "if lines.is_empty() {")],
+        "killed",
+        KILL,
+    ),
+    (
+        "decode_filter_gt_5",
+        PNG_RS,
+        [("if lines[y * stride] > 4 {\n            return PART_BAD_FILTER;\n        }\n    }\n    let first_filter = lines[0] as u32;\n    let adler = adler32(lines, 1);",
+          "if lines[y * stride] > 5 {\n            return PART_BAD_FILTER;\n        }\n    }\n    let first_filter = lines[0] as u32;\n    let adler = adler32(lines, 1);")],
+        "killed",
+        KILL,
+    ),
+    (
+        "decode_adler_start_0",
+        PNG_RS,
+        [("let adler = adler32(lines, 1);",
+          "let adler = adler32(lines, 0);")],
+        "killed",
+        KILL,
+    ),
+    (
+        "decode_needs_prev_gt_2",
+        PNG_RS,
+        [("if prev.is_none() && first_filter >= 2 {",
+          "if prev.is_none() && first_filter > 2 {")],
+        "killed",
+        KILL,
+    ),
+    (
+        "decode_needs_prev_ge_1",
+        PNG_RS,
+        [("if prev.is_none() && first_filter >= 2 {",
+          "if prev.is_none() && first_filter >= 1 {")],
+        "killed",
+        KILL,
+    ),
+    (
+        "decode_null_out_code",
+        PNG_RS,
+        [("let Some(dst) = out else { return PART_NOT_LINES };",
+          "let Some(dst) = out else { return PART_BAD_FILTER };")],
+        "killed",
+        KILL,
+    ),
+    (
+        "finish_row_bytes_zero",
+        PNG_RS,
+        [("if row_bytes == 0 || rows == 0 {",
+          "if rows == 0 {")],
+        "killed",
+        KILL,
+    ),
+    (
+        "finish_rows_zero",
+        PNG_RS,
+        [("if row_bytes == 0 || rows == 0 {",
+          "if row_bytes == 0 {")],
+        "killed",
+        KILL,
+    ),
+    (
+        "finish_filter_gt_5",
+        PNG_RS,
+        [("if lines[y * stride] > 4 {\n            return PART_BAD_FILTER;\n        }\n    }\n    let first_filter = lines[0] as u32;\n    unfilter_rows(lines, rows, row_bytes, 4, prev);",
+          "if lines[y * stride] > 5 {\n            return PART_BAD_FILTER;\n        }\n    }\n    let first_filter = lines[0] as u32;\n    unfilter_rows(lines, rows, row_bytes, 4, prev);")],
+        "killed",
+        KILL,
+    ),
+    (
+        "js_needs_prev_gt_2",
+        JS_TWIN,
+        [("if (prev == null && firstFilter >= 2) {",
+          "if (prev == null && firstFilter > 2) {")],
+        "killed",
+        KILL,
+    ),
+    (
+        "js_filter_check_after_unfilter",
+        JS_TWIN,
+        [("    for (let y = 0; y < rows; y++) {\n        if (l[y * stride] > 4) return { code: PART_BAD_FILTER };\n    }\n    const firstFilter = l[0];\n    const dst = out || new Uint8Array(rows * rowBytes);\n    const dstBytes = bytesOf(dst).subarray(0, rows * rowBytes);\n    const { opaque } = unfilterPartInto(l, rows, w, p.subarray(0, rowBytes), rt, dstBytes);",
+          "    const firstFilter = l[0];\n    const dst = out || new Uint8Array(rows * rowBytes);\n    const dstBytes = bytesOf(dst).subarray(0, rows * rowBytes);\n    const { opaque } = unfilterPartInto(l, rows, w, p.subarray(0, rowBytes), rt, dstBytes);\n    for (let y = 0; y < rows; y++) {\n        if (l[y * stride] > 4) return { code: PART_BAD_FILTER };\n    }")],
+        "killed",
+        KILL,
+    ),
+    (
+        "px_decode_ignore_byte_offset",
+        PX_JS,
+        [("            const prt = rt ? this._resident(rt) : 0;\n            const pl = this._in(a, lines, lLen);\n            const pp = prev ? this._in(a, prev, rowBytes) : 0;",
+          "            const prt = rt ? this._resident(rt) : 0;\n            const pl = this._in(a, new Uint8Array(lines.buffer, 0, lLen), lLen);\n            const pp = prev ? this._in(a, prev, rowBytes) : 0;")],
+        "killed",
+        KILL,
+    ),
+]

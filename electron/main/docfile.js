@@ -748,7 +748,7 @@ module.exports = {
     MIME, FORMAT_VERSION, READER_VERSION, HEADER_ENTRY, THUMB_ENTRY, TEMP_RE, LIMITS,
     setLimits, resetLimits, mirrorPath, keyOf, entryOf, refOfEntry, collectRefs, renameRefs,
     buildHeader, checkHeader, writeDocument, readDirectory, openDocument, sweepTemps, tempFor, registerTemp, unregisterTemp,
-    renameRetry, freeSpace, BUSY,
+    renameRetry, freeSpace, BUSY, badPart,
     isScumble, crcOfFile, fmtBytes, FEATURES, featuresOf, readerFor, versionFor,
     READER_OF_BLEND,
 };

@@ -1,0 +1,22 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 9 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 261093 bytes, sha256 84e288d89ad7ec98
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 212110 bytes, sha256 46798af70087037c
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.39s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.26s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=pngPart)
+(Use `node --trace-warnings ...` to show where the warning was created)
+RuntimeError: unreachable
+    at wasm://wasm/000fef96:wasm-function[116]:0x36435
+    at wasm://wasm/000fef96:wasm-function[115]:0x3642b
+    at wasm://wasm/000fef96:wasm-function[121]:0x364f5
+    at wasm://wasm/000fef96:wasm-function[120]:0x36467
+    at wasm://wasm/000fef96:wasm-function[105]:0x32d04
+    at wasm://wasm/000fef96:wasm-function[17]:0x3ee3
+    at wasm://wasm/000fef96:wasm-function[9]:0x290e
+    at wasm://wasm/000fef96:wasm-function[80]:0x2681b
+    at out.<computed> [as png_part_finish] (file:///C:/Users/schoeneberg/.gemini/antigravity/brain/143f6c41-8099-490a-b650-5fbc22040c8e/scratch/mut_tree_k7/renderer/editor/px/px.js:169:40)
+    at partDecodeCases (C:\Users\schoeneberg\.gemini\antigravity\brain\143f6c41-8099-490a-b650-5fbc22040c8e\scratch\mut_tree_k7\tools\px_test.js:4910:48)

@@ -172,6 +172,33 @@ async function main() {
         await toapis.edit(editReq(g, { width: 2048, height: 1536, params: { channel: "standard", quality: "max" } }), ctxFor(s6));
         const b6 = s6.submits[0];
         check("gpt 2.5 standard: a preset ratio, the 2K tier, no quality", b6.model === "gpt-image-2.5-flare" && b6.size === "4:3" && b6.resolution === "2K" && !("quality" in b6), JSON.stringify(b6));
+
+        // review PRV-2: prototype-polluting segments (__proto__, constructor, prototype) are refused before any upload and in _body
+        for (const badKey of ["__proto__.polluted", "metadata.__proto__.polluted", "constructor.prototype.polluted", "prototype.polluted"]) {
+            const sBad = fakeServer();
+            const reqBad = editReq(v, { params: { [badKey]: "PUT" } });
+            const eRun = await throws(() => toapis.edit(reqBad, ctxFor(sBad)));
+            const eBody = await throws(() => toapis._body(reqBad, toapis._channel(reqBad), { images: [], mask: null }, { size: "1:1", tier: "1K" }));
+            check(`PRV-2: ${badKey} in params is refused before any upload ("nothing was sent") and in _body, leaving Object.prototype untouched`,
+                !!eRun && /nothing was sent/.test(eRun) && sBad.calls.length === 0 && sBad.uploads.length === 0
+                && !!eBody && /nothing was sent/.test(eBody)
+                && ({}).polluted === undefined && !Object.prototype.hasOwnProperty.call(Object.prototype, "polluted"),
+                JSON.stringify({ eRun, eBody, calls: sBad.calls.length }));
+        }
+        for (const optField of ["tier_key", "seed", "negative"]) {
+            const sOpt = fakeServer();
+            const reqOpt = editReq(v, { negative: "ugly", seed: 9, options: { ...v.options, [optField]: "__proto__.polluted" } });
+            const eOpt = await throws(() => toapis.edit(reqOpt, ctxFor(sOpt)));
+            check(`PRV-2: __proto__.polluted in options.${optField} is refused before any upload, leaving Object.prototype untouched`,
+                !!eOpt && /nothing was sent/.test(eOpt) && sOpt.calls.length === 0 && ({}).polluted === undefined,
+                eOpt);
+        }
+        const sFalsy = fakeServer();
+        await toapis.edit(editReq(v, { negative: "ugly", seed: 9, options: { ...v.options, negative: false, seed: "" } }), ctxFor(sFalsy));
+        const bFalsy = sFalsy.submits[0];
+        check("PRV-2: falsy options.negative (false) and options.seed (\"\") skip checkPaths without throwing and omit both fields from the body",
+            !!bFalsy && !("negative_prompt" in bFalsy) && !("seed" in bFalsy),
+            JSON.stringify(bFalsy));
     });
 
     // ---- 2b. caps: layout(req) and the builder read one cap, the chosen channel's, as +x > 0 (docs/PLAN_REFS.md 26a2) ----
@@ -400,6 +427,9 @@ async function main() {
         const s2 = fakeServer({ submits: [() => new Response(JSON.stringify({ error: { code: 401, message: "Invalid token " + KEY, type: "authentication_error" } }), { status: 401 })] });
         const e2 = await throws(() => toapis.edit(editReq(v), ctxFor(s2)));
         check("a refused key reads key refused, and the key never appears in the message", !!e2 && /key refused/.test(e2) && !e2.includes(KEY), e2);
+        const s2b = fakeServer({ submits: [() => new Response("x".repeat(294) + KEY + " tail", { status: 401, headers: { "content-type": "text/plain" } })] });
+        const e2b = await throws(() => toapis.edit(editReq(v), ctxFor(s2b)));
+        check("a key straddling readError's cut is scrubbed inside readError before cutting", !!e2b && e2b.includes("[key]") && !e2b.includes(KEY.slice(0, 6)), e2b);
         const s3 = fakeServer();
         const bal = await toapis.balance(ctxFor(s3));
         check("balance: remain_credits / 200 in USD, the key on the call", bal.usd === 10.5 && bal.credits === 2100 && bal.unlimited === false && s3.calls[0].url === "https://toapis.com/v1/balance" && s3.calls[0].headers.Authorization === "Bearer " + KEY, JSON.stringify(bal));
@@ -518,6 +548,10 @@ async function main() {
         check("a plain answer keeps the image and has no note", e.calls.length === 1 && e.calls[0].image && e.res && e.res.note === "", JSON.stringify(e));
         const f = await scenario([[401, "Invalid token " + KEY]]);
         check("a 401 that echoes the key: one call, key refused, the key taken out", f.calls.length === 1 && !!f.err && /key refused/.test(f.err) && !f.err.includes(KEY), String(f.err));
+        const fBoundary = await scenario([[401, "x".repeat(492) + KEY + "y".repeat(200)]]);
+        check("a 401 that echoes the key across the 500-char jsonError cap: scrubbed before slicing so no prefix of the key leaks",
+            fBoundary.calls.length === 1 && !!fBoundary.err && !fBoundary.err.includes(KEY) && !fBoundary.err.includes(KEY.slice(0, 6)),
+            String(fBoundary.err));
         check("the key never appears in an upsampling error", ![a, b, c].some((x) => String(x.err).includes(KEY)), "");
     });
 

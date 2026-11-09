@@ -128,7 +128,7 @@ async function compatModels(url) {
     } catch (err) {
         throw new Error(compatUnreachable(err, base));
     }
-    if (!r.ok) throw new Error(`${base}/models: ${await readError(r)}`);
+    if (!r.ok) throw new Error(`${base}/models: ${await readError(r, key && key.length >= 12 ? key : undefined)}`);
     const out = await r.json();
     const rows = Array.isArray(out) ? out : (out.data || out.models || []);
     return rows.map((m) => (typeof m === "string" ? m : m.id || m.name)).filter(Boolean);
@@ -201,7 +201,7 @@ async function askOpenAI({ model, key, instruction, image, images, maxTokens }) 
     const r = await fetch("https://api.openai.com/v1/responses", {
         method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error(`OpenAI ${model}: ${await readError(r)}`);
+    if (!r.ok) throw new Error(`OpenAI ${model}: ${await readError(r, key)}`);
     const out = await r.json();
     const texts = [];
     for (const item of out.output || []) {
@@ -226,7 +226,7 @@ async function askGemini({ model, key, instruction, image, images, maxTokens }) 
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
         method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error(`Gemini ${model}: ${await readError(r)}`);
+    if (!r.ok) throw new Error(`Gemini ${model}: ${await readError(r, key)}`);
     const out = await r.json();
     const cand = out.candidates && out.candidates[0];
     const partsOut = (cand && cand.content && cand.content.parts) || [];
@@ -252,7 +252,7 @@ async function askAnthropic({ model, key, instruction, image, images, maxTokens 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error(`Anthropic ${model}: ${await readError(r)}`);
+    if (!r.ok) throw new Error(`Anthropic ${model}: ${await readError(r, key)}`);
     const out = await r.json();
     if (out.stop_reason === "refusal") {
         const d = out.stop_details || {};
@@ -302,7 +302,7 @@ async function askCompatible({ model, key, instruction, image, images = [], maxT
             throw new Error(compatUnreachable(err, base, label));
         }
         if (!r.ok) {
-            const f = readFailure ? await readFailure(r) : { message: await readError(r), meta: {} };
+            const f = readFailure ? await readFailure(r) : { message: await readError(r, key && key.length >= 12 ? key : undefined), meta: {} };
             const raw = scrubKey(f.message, key);
             const e = new Error(`${model} at ${compatHost(url)}: ${explain ? explain(r.status, raw, f.meta) : raw}`);
             e.status = r.status;

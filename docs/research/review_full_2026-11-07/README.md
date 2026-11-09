@@ -101,10 +101,12 @@ The merges: `canvas-a/F2` = `canvas-b/geometry-ops-no-recheck-after-upload`; `do
 - **`documents/D3+main/MAIN-7`** (data-loss), `electron/main/autosave.js:31`, `settings.js:78`, `keys.js:22`. No
   fsync before the rename, and any read or parse error counts as an empty store. A crash, or one failed read, can
   wipe the autosave, all settings or all API keys at the next write. Fix: fsync the temp; only ENOENT means empty;
-  rename a damaged file aside instead of writing over it.
+  rename a damaged file aside instead of writing over it. **Fixed 2026-11-09 (fix-main pack 1, with `documents/D8`;
+  `documents/D4` no longer held: `storeMirrorFile` writes through `writeAtomic` since D1).**
 - **`main/MAIN-3`** (data-loss), `electron/main/main.js:370`. The close handler writes the window bounds before it
   stops the close. If that rename fails (another program holds `settings.json`), the window closes without the
   save. Fix: try/catch, or move the write after the quit guard; a short busy retry in the three store writers.
+  **Fixed 2026-11-09 (fix-main pack 1).**
 - **`main/MAIN-1`** (data-loss), `electron/main/mcp/launch.js:81`. When the MCP client closes stdin, the launcher
   kills the headless app 5 s later, in the middle of its save. Fix: spawn the app detached and drop or lengthen the
   kill; the same in `mcpb/server/index.js`.
@@ -119,10 +121,10 @@ The merges: `canvas-a/F2` = `canvas-b/geometry-ops-no-recheck-after-upload`; `do
   `reopenClosed` waits for the entry's flush.
 - **`shell/F4`** (data-loss), `renderer/shell.js:2414`. Earlier states (the recovery path) opens documents without
   their plugin data (boxes, 3D objects). Fix: pass `plugins` and `extra` on.
-- **`recipes/rec-import-overwrite`** (data-loss), `electron/main/recipes.js:1879`. Importing a second
+- **`recipes/rec-import-overwrite`** (data-loss, **fixed 2026-11-09, fix-prov**), `electron/main/recipes.js:1879`. Importing a second
   `workflow.json` silently replaces the first user recipe with that name. Fix: pick a free id, as the other import
   paths do.
-- **`providers/PRV-2`** (security), `electron/main/providers/toapis.js:115`. `setPath` follows `__proto__.` keys from
+- **`providers/PRV-2`** (security, **fixed 2026-11-09, fix-prov**), `electron/main/providers/toapis.js:115`. `setPath` follows `__proto__.` keys from
   recipe data and writes onto `Object.prototype` in the main process. Fix: refuse such segments; check the keys in
   `recipes.normalize`.
 - **`shell/F1`** (security), `electron/main/assistant/policy.js:226`. `layerBelow` reads the layer list as top
@@ -243,8 +245,8 @@ The merges: `canvas-a/F2` = `canvas-b/geometry-ops-no-recheck-after-upload`; `do
 
 | id | sev | cat | file:line | claim | effort |
 |---|---|---|---|---|---|
-| providers/PRV-3 | should | money | replicate.js:203 | Cancel and timeout on fal and Replicate never ask the provider to stop | small |
-| providers/PRV-5 | nice | bug | util.js:31 | A JSON error body is not cut and can carry a whole base64 picture | small |
+| providers/PRV-3 | should | money | replicate.js:203 | Cancel and timeout on fal and Replicate never ask the provider to stop (**fixed 2026-11-09, fix-prov**) | small |
+| providers/PRV-5 | nice | bug | util.js:31 | A JSON error body is not cut and can carry a whole base64 picture (**fixed 2026-11-09, fix-prov**) | small |
 
 ### Commands, MCP, the assistant
 

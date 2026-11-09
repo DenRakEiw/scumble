@@ -1,0 +1,148 @@
+{
+  "can_run_inference": true,
+  "capabilities": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "image"
+    ],
+    "tools": false,
+    "recommended_for": []
+  },
+  "context_length": null,
+  "created": 1792083410,
+  "deployments": [],
+  "description": "Krea 3 is Krea's reference-driven image model. It generates from a text prompt alone, or composes and edits from several reference images, keeping products, garments, and characters faithful to their sources.\n\nReference images are numbered in upload order, and the prompt can point at any of them, such as \"the exact headpiece from @Image2\". A thinking mode trades speed for more careful planning of complex compositions, and output renders at up to 2K.\n",
+  "developer": {
+    "logo": null,
+    "name": "krea"
+  },
+  "display_name": "Krea 3",
+  "endpoint": "/images/generate",
+  "fine_tuning": null,
+  "id": "krea-3",
+  "image_url": null,
+  "max_output_tokens": null,
+  "model_type": "base",
+  "object": "model",
+  "owned_by": "oxen",
+  "pricing": {
+    "cost_per_image": 0.104,
+    "cost_per_image_grid": {
+      "fast": {
+        "1k": 0.039,
+        "2k": 0.078
+      },
+      "high": {
+        "1k": 0.065,
+        "2k": 0.104
+      },
+      "input_image": {
+        "2k": 0.07
+      }
+    },
+    "method": "per_image"
+  },
+  "released_at": "2026-10-15",
+  "request_schema": {
+    "basic": [
+      "input_image"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "auto",
+        "enum": [
+          "auto",
+          "1:1",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-enum-labels": {
+          "auto": "Auto (match references)"
+        },
+        "x-order": 2
+      },
+      "input_image": {
+        "description": "Optional reference images to edit or combine. Leave empty to generate from the prompt alone. Reference them in the prompt as @Image1, @Image2, etc.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "nullable": true,
+        "title": "Reference Images",
+        "type": "array",
+        "x-order": 1
+      },
+      "prompt": {
+        "description": "Text description of the image to generate, or how to combine and edit the reference images. Use @Image1, @Image2, etc. to reference the input images.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_image",
+              "pattern": "image {n}"
+            }
+          ]
+        },
+        "x-order": 0,
+        "x-workbench-default": "Place the product on a clean studio background with soft shadows"
+      },
+      "regional_edit": {
+        "default": false,
+        "description": "Change only the area the prompt names and keep the rest of the reference image exact. Needs a reference image. Experimental: slower, and can be lower quality than a regular edit.",
+        "title": "Regional Edit",
+        "type": "boolean",
+        "x-order": 5
+      },
+      "resolution": {
+        "default": "2k",
+        "enum": [
+          "1k",
+          "2k"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 3
+      },
+      "seed": {
+        "description": "Random seed for reproducible generation.",
+        "nullable": true,
+        "title": "Seed",
+        "type": "integer",
+        "x-hidden": true,
+        "x-order": 6
+      },
+      "thinking_level": {
+        "default": "fast",
+        "description": "High plans complex, multi-step edits more carefully but runs slower and costs more.",
+        "enum": [
+          "fast",
+          "high"
+        ],
+        "title": "Thinking Mode",
+        "type": "string",
+        "x-order": 4
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  },
+  "source_model": null,
+  "summary": "Reference-driven image generation and editing"
+}

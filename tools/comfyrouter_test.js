@@ -174,6 +174,7 @@ function nativeAnswer(prov, body, host) {
 function fakeServer(opts = {}) {
     const calls = [], submits = [], syncs = [], statuses = [], reads = [], cancels = [], assets = [];
     const storage = [], uploads = [], hy = [];   // the Partner API: storage requests, signed uploads, HY Image runs
+    const kreaAssets = [];
     const q = { submit: [...(opts.submit || [])], status: [...(opts.status || [])], result: [...(opts.result || [])], sync: [...(opts.sync || [])], storage: [...(opts.storage || [])], hy: [...(opts.hy || [])] };
     const bodies = new Map();
     async function fetch(url, init = {}) {
@@ -194,6 +195,11 @@ function fakeServer(opts = {}) {
             return json(200, { upload_url: `${host}/upload/${n}?sig=abc`, download_url: `${host}/stored/${n}.png?sig=def` });
         }
         if (method === "PUT" && u.pathname.startsWith("/upload/")) { uploads.push({ ...call, bytes: Buffer.from(init.body) }); return new Response(null, { status: 200 }); }
+        // Krea 3's pictures: the asset route the Router's schema names (multipart `file`), answered with a Krea URL
+        if (method === "POST" && u.pathname === "/proxy/krea/assets") {
+            kreaAssets.push(call);
+            return json(200, { id: `a${kreaAssets.length}`, image_url: `${host}/krea/${kreaAssets.length}.png`, uploaded_at: "2026-11-09T10:00:00Z" });
+        }
         if (method === "POST" && u.pathname === partner.HY_PATH) {
             const body = JSON.parse(init.body);
             hy.push({ ...call, body });
@@ -302,7 +308,7 @@ const VARIANTS = {
     flux2_pro: "bfl/flux-2-pro", flux2_max: "bfl/flux-2-max", flux1_fill: "bfl/flux-pro-1.0-fill",
     seedream_5_lite: "byteplus/seedream-5-0-260128", seedream_5_pro: "byteplus/seedream-5-0-pro-260628",
     qwen_image_edit: "qwen/qwen-image-3.0", magnific_precision: "freepik/ai-image-upscaler-precision-v2",
-    krea_2: "krea/krea-2-large", grok_imagine: "xai/grok-imagine-image-2.0", ideogram_4: "ideogram/ideogram-v4",
+    krea_2: "krea/krea-2-large", krea_3: "krea/krea-3", grok_imagine: "xai/grok-imagine-image-2.0", ideogram_4: "ideogram/ideogram-v4",
     ideogram_4_5: "ideogram/ideogram-4-5", flux3: "bfl/flux-3-image",
 };
 
@@ -672,7 +678,7 @@ async function main() {
     await section("6. recipes and schemas", async () => {
         const recipes = loadRecipes();
         const served = recipes.filter((r) => r.providers && r.providers.comfyrouter).map((r) => r.id).sort();
-        check("nineteen shipped recipes carry a comfyrouter variant", eq(served, Object.keys(VARIANTS).sort()), served.join(", "));
+        check("twenty shipped recipes carry a comfyrouter variant", eq(served, Object.keys(VARIANTS).sort()), served.join(", "));
         const bad = [];
         let bodies = 0;
         for (const r of recipes.filter((x) => x.providers && x.providers.comfyrouter)) {
@@ -1167,12 +1173,12 @@ async function main() {
             let l;
             try { l = refsLib.checkLayout(router.textLayout(req), req); } catch (e) { shapes.push(`${r.id}: ${e.message}`); continue; }
             const prov = v.model.split("/")[0];
-            if (["xai", "ideogram", "krea"].includes(prov)) { if (l.drops !== "this model takes no reference images for a new image" || l.pictures.length) shapes.push(`${r.id}: ${short(l)}`); continue; }
+            if (["xai", "ideogram", "krea"].includes(prov) && v.model !== "krea/krea-3") { if (l.drops !== "this model takes no reference images for a new image" || l.pictures.length) shapes.push(`${r.id}: ${short(l)}`); continue; }
             const want = +(v.options || {}).max_images > 0 ? +v.options.max_images : 1;
             if (l.drops || refsLib.countOf(l) !== 2 || l.max !== want || l.max !== router.layout(editReq(v)).max) shapes.push(`${r.id}: ${short(l)}`);
             if (!!v.text.refs === !!l.drops) shapes.push(`${r.id}: text.refs ${JSON.stringify(v.text.refs)} against the layout's ${l.drops ? "drop" : "pictures"}`);
         }
-        check("each shipped variant's text layout: 2 references numbered 1 and 2 without a crop, the edit's max_images as the cap, text.refs where it takes them; the drop on Grok, Ideogram and Krea", !shapes.length, shapes.join(" | "));
+        check("each shipped variant's text layout: 2 references numbered 1 and 2 without a crop, the edit's max_images as the cap, text.refs where it takes them; the drop on Grok, Ideogram and Krea 2", !shapes.length, shapes.join(" | "));
         const fill = router.textLayout({ ...textReq(variant("flux1_fill")), references: [T1] });
         check("FLUX.1 Fill's text layout (it has no text shape): the drop, no crop", fill.drops === "FLUX.1 Fill takes no reference images" && !fill.pictures.length, short(fill));
 
@@ -1251,6 +1257,8 @@ async function main() {
             const ok = c.headers.authorization === `Bearer ${key}` && /^comfy-sdk-typescript\//.test(c.headers["user-agent"] || "");
             return ok && eq(k, c.method === "POST" ? ["accept", "authorization", "content-type", "idempotency-key", "user-agent"] : ["accept", "authorization", "user-agent"]);
         }
+        // Krea 3's upload: the key as ComfyUI's node sends it, the multipart's own Content-Type left to fetch
+        if (/\/proxy\/krea\/assets$/.test(c.url)) return eq(k, ["x-api-key"]);
         // the Partner API (comfypartner.js, unchanged): X-API-Key, Content-Type and Idempotency-Key
         if (/\/customers\/storage$/.test(c.url)) return eq(k, ["content-type", "x-api-key"]);
         if (c.method === "PUT" && /\/upload\//.test(c.url)) return eq(k, ["content-type"]);

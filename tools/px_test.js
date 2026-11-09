@@ -42,7 +42,7 @@ function check(name, ok, detail = "") {
 // The case groups in main()'s order (a group in both the reference part and the per-build loop runs in both)
 const GROUPS = ["twinSelfTest", "mip", "edt", "flood", "composite", "matchTwin", "smudgeTwin", "poissonTwin", "png", "compositeSha",
     "blendFixture", "blendGlsl", "tierC", "relightBench", "relightStripe", "counter", "split", "route", "trap", "lifecycle", "sel", "range",
-    "pngFilter", "retouchRoute", "job", "mask", "dab", "tone", "freq", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "liquify", "memory"];
+    "pngFilter", "retouchRoute", "tiff", "job", "mask", "dab", "tone", "freq", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "liquify", "memory"];
 const ONLY = (() => {
     const names = (process.env.PX_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
     if (!names.length) return null;
@@ -224,6 +224,12 @@ function copyView(v, odd) {
  * The first difference between a build's output `got` and the twin's `want` that no rule allows ("" for none), the
  * allowed ones added to `counts` by rule name. Outputs: typed arrays, numbers, plain arrays and objects of them, null.
  */
+/**
+ * A NaN's sign and payload: `Math.max` and `Math.min` hand back either bit pattern depending on V8's tier (Electron 44,
+ * measured 2026-11-09: 0xffc00000 and 0xffffffff in one run), so a test of them can only ask that both sides are NaN.
+ */
+const NAN_BITS = { name: "a NaN's bits", allow: (got, want) => got !== got && want !== want };
+
 function twinDiff(got, want, rules, counts, at = "out") {
     if (want instanceof ArrayBuffer || got instanceof ArrayBuffer) {
         if (!(want instanceof ArrayBuffer) || !(got instanceof ArrayBuffer)) return `${at}: an ArrayBuffer against ${got instanceof ArrayBuffer ? String(want) : String(got)}`;
@@ -287,7 +293,7 @@ function twinRun({ builds, twin, call, cases, rules = [], shift = true }) {
         floats = floats || holdsFloats(want.out);
         if (anyShift && !twinOffset) {
             const w2 = tryCall(twin, argsFor(c.args, true));
-            const d = w2.threw ? `threw ${w2.threw}` : twinDiff(w2.out, want.out, [], {});
+            const d = w2.threw ? `threw ${w2.threw}` : twinDiff(w2.out, want.out, rules, {});
             if (d) twinOffset = `${c.tag}: ${d}`;
         }
         builds.forEach(([, px], b) => {
@@ -694,6 +700,7 @@ async function maskCases(px, label, js) {
         name: "mask_max_clamp", title: "mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place)", builds: [[label, px]], twin: js,
         call: (k, [a, b, clamp, inPlace]) => k.maskMaxClamp(a, b, clamp, inPlace ? a : null),
         cases: mcCases,
+        rules: [NAN_BITS],
     });
 
     const omCases = [
@@ -722,7 +729,7 @@ async function maskCases(px, label, js) {
         const wantOm = js.maskOneMinus(zeroNaNA);
         px.free(pa, bytes); px.free(pb, bytes); px.free(po, bytes);
         check(`${label} mask_max_clamp and mask_one_minus with separate dst pointer equal their twins`,
-            !twinDiff(gotMc, wantMc, [], {}) && !twinDiff(gotOm, wantOm, [], {}));
+            !twinDiff(gotMc, wantMc, [NAN_BITS], {}) && !twinDiff(gotOm, wantOm, [], {}));
     }
 
     twinCheck({
@@ -1033,6 +1040,7 @@ async function maskCases(px, label, js) {
         name: "warp_coverage", title: "warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf)", builds: [[label, px]], twin: js,
         call: (k, [w, h, m, useOut]) => k.warpCoverage(w, h, m, useOut ? new Float32Array(w * h) : null),
         cases: wcCases,
+        rules: [NAN_BITS],
     });
 
     if (label === "rust simd") {
@@ -1104,7 +1112,7 @@ async function maskCases(px, label, js) {
             const countsOk = exportsAll.every((e) => (rustCalls[e] || 0) > 0 && !jsCalls[e] && !subJsCalls[e])
                 && rustCalls.mask_to_rgba === 3 && rustCalls.color_match_rgba === 1 && rustCalls.blend_alpha === 2
                 && rustCalls.edgefit_shrink === 2 && rustCalls.warp_rgba === 1 && rustCalls.warp_coverage === 1;
-            const diff = twinDiff(rustOut, jsOut, [], {}) || twinDiff({ es0: rustOut.es0, es1: rustOut.es1, wr: rustOut.wr, wc: rustOut.wc }, subJsOut, [], {});
+            const diff = twinDiff(rustOut, jsOut, [NAN_BITS], {}) || twinDiff({ es0: rustOut.es0, es1: rustOut.es1, wr: rustOut.wr, wc: rustOut.wc }, subJsOut, [], {});
             check("kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs",
                 countsOk && !diff, diff || JSON.stringify({ rustCalls, jsCalls, subJsCalls }));
         } finally {
@@ -1530,6 +1538,13 @@ async function retouchRouteCases(js) {
         const rtrColorLim = { source: "color", color: "#5080a0", tol: 30, invert: false };
         want.rtrLuma = js.rangeTilesRgba(I, w, h, 0, 0, h, rtrLumaLim, false, 256);
         want.rtrColor = js.rangeTilesRgba(I, w, h, 0, 0, h, rtrColorLim, false, 256);
+        const larW = 16, larH = 300;
+        const larInit = new Uint8Array(larW * larH * 4);
+        for (let i = 0; i < larInit.length; i += 4) {
+            larInit[i] = 48; larInit[i + 1] = 128; larInit[i + 2] = 192; larInit[i + 3] = 200;
+        }
+        const larXf = [16 / larW, 0, 0, 16 / larH, 0, 0];
+        want.lar = js.limitAlphaRows(larInit.slice(), rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null);
         K.setRoute("edgefit", "rust");
         K.setRoute("edgefitShrink", "rust");
         K.setRoute("warpRgba", "rust");
@@ -1538,6 +1553,7 @@ async function retouchRouteCases(js) {
         K.setRoute("rangeDepthSnap", "rust");
         K.setRoute("rangeLuma", "rust");
         K.setRoute("rangeColor", "rust");
+        K.setRoute("limitAlphaRows", "rust");
         const trapIn2 = (p) => p.exports.mip_half(-16, 256, 256, 0);
         let ok = true, detail = "";
         for (const [name, method, callIt, check1] of [
@@ -1575,6 +1591,7 @@ async function retouchRouteCases(js) {
             }, (o) => !twinDiff(o, want.rtd)],
             ["rangeTilesRgbaLuma", "rangeTilesRgba", () => K.rangeTilesRgba(I, w, h, 0, 0, h, rtrLumaLim, false, 256), (o) => !twinDiff(o, want.rtrLuma)],
             ["rangeTilesRgbaColor", "rangeTilesRgba", () => K.rangeTilesRgba(I, w, h, 0, 0, h, rtrColorLim, false, 256), (o) => !twinDiff(o, want.rtrColor)],
+            ["limitAlphaRows", "limitAlphaRows", () => K.limitAlphaRows(larInit.slice(), rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null), (o) => eqBytes(o, want.lar)],
         ]) {
             const p = K.rustPx(), i0 = K.pxInstances();
             // the split traps after its kernel wrote L in wasm memory, before the copy out (the caller's L untouched)
@@ -1604,7 +1621,29 @@ async function retouchRouteCases(js) {
                 detail = `rangeTilesRgbaOom: ${JSON.stringify(i1)}`;
             }
         }
-        check("kernels.js K27 / K28 / K29 / K31 / K34 / K22 / K23 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
+        {
+            // Multi-chunk OOM recovery on limitAlphaRows: chunk 0 (rows 0..256) succeeds on Rust, chunk 1 (rows 256..300)
+            // throws PxOutOfMemory inside the real p.limitAlphaRows (which sets err.doneRows = 256); K.limitAlphaRows
+            // finishes only rows 256..300 on the twin without double-multiplying rows 0..256.
+            const p = K.rustPx(), i0 = K.pxInstances();
+            const larBuf = larInit.slice();
+            const origIn = p._in;
+            let rgbaChunkCopies = 0;
+            p._in = function (arena, src, bytes) {
+                if (src && src.buffer === larBuf.buffer) {
+                    rgbaChunkCopies++;
+                    if (rgbaChunkCopies === 2) return this.alloc(0xffff0000);
+                }
+                return origIn.call(this, arena, src, bytes);
+            };
+            const got = K.limitAlphaRows(larBuf, rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null);
+            const after = K.rustPx(), i1 = K.pxInstances();
+            if (!(eqBytes(got, want.lar) && rgbaChunkCopies === 2 && after !== p && i1.oom === i0.oom + 1)) {
+                ok = false;
+                detail = `limitAlphaRowsOom: copies=${rgbaChunkCopies} ${firstDiff(got, want.lar)} ${JSON.stringify(i1)}`;
+            }
+        }
+        check("kernels.js K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
         // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
         const i0 = K.pxInstances();
         K.setRoute("releaseMB", 0);
@@ -1615,7 +1654,7 @@ async function retouchRouteCases(js) {
         console.warn = realWarn;
         kernelsBack(K);
     }
-    check("the K27 / K28 / K29 / K31 / K34 / K22 / K23 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|liquify_dab|edgefit_shrink|warp_rgba|warp_coverage|range_tiles_depth|range_tiles_rgba/.test(w)).length === 14, warned.join(" | "));
+    check("the K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|liquify_dab|edgefit_shrink|warp_rgba|warp_coverage|range_tiles_depth|range_tiles_rgba|limit_alpha_rows/.test(w)).length === 16, warned.join(" | "));
     void js;
 }
 
@@ -4583,6 +4622,702 @@ async function pngPartCases(px, label, js) {
     await crcAndFrameCases(px, label, png, zlib, js);
     await noisePartCases(px, label, png, zlib);
     await composeWasmPartCases(px, label, png, zlib);
+    await partDecodeCases(px, label, png, zlib, js);
+}
+
+// K7 (docs/PLAN_WASM_BUILD.md §4.2, §7 Stop 2): png_part_lines_cap, png_part_decode, and png_part_finish over the
+// filtered lines delivered by native DecompressionStream("deflate-raw").
+async function partDecodeCases(px, label, png, zlib, js) {
+    // 1. png_part_lines_cap / pngPartLinesCap across widths, clamp boundaries (1024/1025, 2097152/2097153), and overflow
+    const capWidths = [-5, 0, 1, 2, 16, 64, 255, 256, 257, 700, 1024, 1025, 4096, 6000, 8192, 8193, 15000, 1048576, 2097152, 2097153, 3_000_000, 0x3fffffff, 0x40000000];
+    let capOk = true, capDetail = "";
+    for (const w of capWidths) {
+        const want = w > 0 && w <= 0x3fffffff ? Math.max(1, Math.min(2048, Math.floor((8 * 1048576) / (4 * w)))) * (4 * w + 1) : 0;
+        const gotJ = js.pngPartLinesCap(w);
+        const gotP = px.pngPartLinesCap(w);
+        const gotE = w >= 0 ? (px.exports.png_part_lines_cap(w) >>> 0) : 0;
+        if (gotJ !== want || gotP !== want || (w >= 0 && gotE !== want)) {
+            capOk = false;
+            capDetail = `w=${w}: js=${gotJ} px=${gotP} exp=${gotE} want=${want}`;
+            break;
+        }
+    }
+    check(`${label} png_part_lines_cap equals partRows(w) * (1 + 4 * w) across clamp boundaries and overflow`, capOk, capDetail);
+
+    // 2. Round-trip tables: CPU-canvas 8-bit premultiply-unpremultiply table + distinct custom table
+    const rtCanvas = new Uint8Array(65536);
+    const rtCustom = new Uint8Array(65536);
+    for (let a = 0; a < 256; a++) {
+        for (let c = 0; c < 256; c++) {
+            const idx = (a << 8) | c;
+            if (a === 0) {
+                rtCanvas[idx] = 0;
+            } else if (a === 255) {
+                rtCanvas[idx] = c;
+            } else {
+                const p = Math.floor((c * a + 127) / 255);
+                rtCanvas[idx] = Math.min(255, Math.floor((p * 255 + (a >> 1)) / a));
+            }
+            rtCustom[idx] = a === 255 ? c : ((a * 73 + c * 19 + 7) & 255);
+        }
+    }
+
+    const filterRowWithType = (row, prev, ft) => {
+        const n = row.length, out = new Uint8Array(n + 1);
+        out[0] = ft;
+        for (let i = 0; i < n; i++) {
+            const a = i >= 4 ? row[i - 4] : 0;
+            const b = prev ? prev[i] : 0;
+            const c = i >= 4 && prev ? prev[i - 4] : 0;
+            const pred = ft === 0 ? 0 : ft === 1 ? a : ft === 2 ? b : ft === 3 ? (a + b) >> 1 : paeth(a, b, c);
+            out[1 + i] = (row[i] - pred) & 255;
+        }
+        return out;
+    };
+    const buildLines = (rgba, w, rows, prev0, firstFt, nextFtFn) => {
+        const rowBytes = w * 4, stride = rowBytes + 1, out = new Uint8Array(rows * stride);
+        for (let y = 0; y < rows; y++) {
+            const cur = rgba.subarray(y * rowBytes, (y + 1) * rowBytes);
+            const up = y === 0 ? prev0 : rgba.subarray((y - 1) * rowBytes, y * rowBytes);
+            const ft = y === 0 ? firstFt : nextFtFn(y);
+            out.set(filterRowWithType(cur, up, ft), y * stride);
+        }
+        return out;
+    };
+    const refAdler32 = (bytes) => {
+        let a = 1, b = 0;
+        for (let i = 0; i < bytes.length; i++) {
+            a = (a + bytes[i]) % 65521;
+            b = (b + a) % 65521;
+        }
+        return ((b << 16) | a) >>> 0;
+    };
+    check(`${label} adler32 standard vector ("Wikipedia" -> 11E60398) and empty buffer`,
+        js.adler32(new Uint8Array(0), 1) === 1
+        && js.adler32(new Uint8Array(Buffer.from("Wikipedia")), 1) === 0x11E60398);
+    const refApplyRt = (rgba, rt) => {
+        const out = rgba.slice();
+        let opaque = true;
+        for (let i = 0; i < out.length; i += 4) {
+            const a = out[i + 3];
+            if (a < 255) {
+                opaque = false;
+                if (rt) {
+                    const row = a << 8;
+                    out[i] = rt[row | out[i]];
+                    out[i + 1] = rt[row | out[i + 1]];
+                    out[i + 2] = rt[row | out[i + 2]];
+                }
+            }
+        }
+        return { out, opaque };
+    };
+
+    const decodeCases = [];
+    const finishCases = [];
+    let refOk = true, refDetail = "";
+
+    const testShapes = [
+        [1, 1], [1, 3], [2, 2], [3, 2], [4, 2], [5, 3],
+        [15, 2], [16, 2], [17, 3], [63, 2], [64, 2], [65, 2],
+        [255, 2], [257, 2], [700, 4], [4097, 2],
+    ];
+    let seed = 7000;
+    for (const [w, rows] of testShapes) {
+        const rowBytes = w * 4;
+        for (let firstFt = 0; firstFt <= 4; firstFt++) {
+            const s = ++seed;
+            const alphaMode = (firstFt + w) % 4;
+            const rgba = randomRGBA(w, rows, s, { opaque: alphaMode !== 2 });
+            if (alphaMode === 1) {
+                // Single translucent pixel at the very last pixel of the last row
+                rgba[(rows * w - 1) * 4 + 3] = 254;
+            } else if (alphaMode === 3) {
+                // Translucent pixel in the first row only
+                rgba[3] = 128;
+            }
+            const prevRow = randomRGBA(w, 1, s + 500, { opaque: false });
+            const rt = (s % 3 === 0) ? null : (s % 3 === 1) ? rtCanvas : rtCustom;
+            const linesWithPrev = buildLines(rgba, w, rows, prevRow, firstFt, (y) => (firstFt + y) % 5);
+            const linesTop = buildLines(rgba, w, rows, new Uint8Array(rowBytes), firstFt, (y) => (firstFt + y * 2) % 5);
+
+            const wantAdlerWithPrev = refAdler32(linesWithPrev);
+            const wantAdlerTop = refAdler32(linesTop);
+            const { out: wantOut, opaque: wantOpaque } = refApplyRt(rgba, rt);
+            const wantLastRow = rgba.subarray((rows - 1) * rowBytes, rows * rowBytes);
+
+            // Case A: prev provided -> always decodes immediately (needsPrev = false)
+            decodeCases.push({
+                tag: `w=${w} r=${rows} ft=${firstFt} withPrev rt=${rt ? (rt === rtCanvas ? "canvas" : "custom") : "none"}`,
+                args: [linesWithPrev, w, prevRow, rt],
+            });
+            // Case B: prev is null -> decodes immediately when firstFt <= 1 (using zero row above), or needsPrev = true when firstFt >= 2
+            const linesForNullPrev = firstFt <= 1 ? linesTop : linesWithPrev;
+            decodeCases.push({
+                tag: `w=${w} r=${rows} ft=${firstFt} nullPrev rt=${rt ? (rt === rtCanvas ? "canvas" : "custom") : "none"}`,
+                args: [linesForNullPrev, w, null, rt],
+            });
+            if (firstFt >= 2) {
+                finishCases.push({
+                    tag: `finish w=${w} r=${rows} ft=${firstFt} rt=${rt ? (rt === rtCanvas ? "canvas" : "custom") : "none"}`,
+                    args: [linesWithPrev, rows, w, prevRow, rt],
+                });
+            }
+
+            // Verify JS twin against independent reference + refAdler32
+            if (refOk) {
+                const pCopy = prevRow.slice();
+                const lCopy = linesWithPrev.slice();
+                const rA = js.pngPartDecode(lCopy, w, pCopy, rt);
+                if (rA.code !== rows || rA.rows !== rows || rA.adler !== wantAdlerWithPrev || rA.firstFilter !== firstFt
+                    || rA.opaque !== wantOpaque || rA.needsPrev !== false || !eqBytes(rA.out, wantOut)
+                    || !eqBytes(pCopy, wantLastRow) || !eqBytes(lCopy, linesWithPrev)) {
+                    refOk = false;
+                    refDetail = `withPrev w=${w} r=${rows} ft=${firstFt}: code=${rA.code} adler=${rA.adler}/${wantAdlerWithPrev} opaque=${rA.opaque}/${wantOpaque}`;
+                }
+                const lNullCopy = linesForNullPrev.slice();
+                const rB = js.pngPartDecode(lNullCopy, w, null, rt);
+                if (firstFt <= 1) {
+                    if (rB.code !== rows || rB.rows !== rows || rB.adler !== wantAdlerTop || rB.firstFilter !== firstFt
+                        || rB.opaque !== wantOpaque || rB.needsPrev !== false || !eqBytes(rB.out, wantOut)
+                        || !eqBytes(rB.prev, wantLastRow) || !eqBytes(lNullCopy, linesForNullPrev)) {
+                        refOk = false;
+                        refDetail = `nullPrev ft=${firstFt} w=${w} r=${rows}: code=${rB.code} needsPrev=${rB.needsPrev}`;
+                    }
+                } else {
+                    if (rB.code !== rows || rB.rows !== rows || rB.adler !== wantAdlerWithPrev || rB.firstFilter !== firstFt
+                        || rB.opaque !== false || rB.needsPrev !== true || rB.out !== null || rB.prev !== null
+                        || !eqBytes(lNullCopy, linesForNullPrev)) {
+                        refOk = false;
+                        refDetail = `nullPrev ft=${firstFt} w=${w} r=${rows}: expected needsPrev=true, got ${JSON.stringify(rB)}`;
+                    }
+                    const pFin = prevRow.slice();
+                    const rF = js.pngPartFinish(lNullCopy, rows, w, pFin, rt);
+                    if (rF.code !== rows || rF.rows !== rows || rF.firstFilter !== firstFt || rF.opaque !== wantOpaque
+                        || rF.needsPrev !== false || !eqBytes(rF.out, wantOut) || !eqBytes(pFin, wantLastRow)
+                        || !eqBytes(lNullCopy, linesForNullPrev)) {
+                        refOk = false;
+                        refDetail = `finish ft=${firstFt} w=${w} r=${rows}: code=${rF.code} opaque=${rF.opaque}/${wantOpaque}`;
+                    }
+                }
+            }
+        }
+    }
+    check(`${label} js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and refAdler32 (${decodeCases.length} decode + ${finishCases.length} finish cases)`,
+        refOk, refDetail);
+
+    twinCheck({
+        name: "png_part_decode",
+        builds: [[label, px]],
+        twin: js,
+        call: (k, [lines, w, prev, rt]) => {
+            const lSnap = lines.slice();
+            const r = k.pngPartDecode(lines, w, prev, rt);
+            if (!eqBytes(lines, lSnap)) throw new Error("caller lines mutated");
+            return {
+                code: r.code, rows: r.rows, adler: r.adler, firstFilter: r.firstFilter,
+                opaque: r.opaque, needsPrev: r.needsPrev, out: r.out, prev: r.prev,
+            };
+        },
+        cases: decodeCases,
+        shift: [0, 2, 3],
+    });
+
+    twinCheck({
+        name: "png_part_finish",
+        builds: [[label, px]],
+        twin: js,
+        call: (k, [lines, rows, w, prev, rt]) => {
+            const lSnap = lines.slice();
+            const r = k.pngPartFinish(lines, rows, w, prev, rt);
+            if (!eqBytes(lines, lSnap)) throw new Error("caller lines mutated");
+            return {
+                code: r.code, rows: r.rows, firstFilter: r.firstFilter,
+                opaque: r.opaque, needsPrev: r.needsPrev, out: r.out, prev: r.prev,
+            };
+        },
+        cases: finishCases,
+        shift: [0, 3, 4],
+    });
+
+    // Caller-supplied out buffer (including Uint8ClampedArray view at an offset)
+    {
+        const w = 33, rows = 3, rowBytes = w * 4;
+        const rgba = randomRGBA(w, rows, 8888, { opaque: false });
+        const prev = randomRGBA(w, 1, 8889, { opaque: false });
+        const lines = buildLines(rgba, w, rows, prev, 4, (y) => y % 5);
+        const backingA = new Uint8ClampedArray(rows * rowBytes + 16).fill(0x5a);
+        const backingB = new Uint8ClampedArray(rows * rowBytes + 16).fill(0x5a);
+        const viewA = new Uint8ClampedArray(backingA.buffer, 8, rows * rowBytes);
+        const viewB = new Uint8ClampedArray(backingB.buffer, 8, rows * rowBytes);
+        const rJ = js.pngPartDecode(lines, w, prev.slice(), rtCanvas, viewA);
+        const rP = px.pngPartDecode(lines, w, prev.slice(), rtCanvas, viewB);
+        const rFJ = js.pngPartFinish(lines, rows, w, prev.slice(), rtCanvas, viewA);
+        const rFP = px.pngPartFinish(lines, rows, w, prev.slice(), rtCanvas, viewB);
+        check(`${label} pngPartDecode and pngPartFinish write into a given Uint8ClampedArray view without touching guard bytes`,
+            rJ.out === viewA && rP.out === viewB && rFJ.out === viewA && rFP.out === viewB
+            && eqBytes(backingA, backingB) && backingB[0] === 0x5a && backingB[rows * rowBytes + 15] === 0x5a);
+    }
+
+    // 3. Error codes: -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) on wrapper and raw exports,
+    // verifying no byte of lines, prev, or out is mutated on any refusal, plus seeded refusal/decode fuzz
+    {
+        const w = 8, rows = 3, rowBytes = w * 4, stride = rowBytes + 1;
+        const goodLines = new Uint8Array(rows * stride).fill(0x11);
+        for (let y = 0; y < rows; y++) goodLines[y * stride] = y % 5;
+        const goodPrev = new Uint8Array(rowBytes).fill(0x33);
+        const goodOut = new Uint8Array(rows * rowBytes).fill(0x77);
+        let errOk = true, errDetail = "";
+        const runRefusalDecode = (what, linesIn, wIn, prevIn, rtIn, outIn, want) => {
+            if (!errOk) return;
+            const lSnap = linesIn ? linesIn.slice() : null;
+            const pSnap = prevIn ? prevIn.slice() : null;
+            const oSnap = outIn ? outIn.slice() : null;
+            const lJ = linesIn ? linesIn.slice() : null, lP = linesIn ? linesIn.slice() : null;
+            const pJ = prevIn ? prevIn.slice() : null, pP = prevIn ? prevIn.slice() : null;
+            const oJ = outIn ? outIn.slice() : null, oP = outIn ? outIn.slice() : null;
+            const gotJ = js.pngPartDecode(lJ, wIn, pJ, rtIn, oJ).code;
+            const gotP = px.pngPartDecode(lP, wIn, pP, rtIn, oP).code;
+            if (gotJ !== want || gotP !== want) {
+                errOk = false;
+                errDetail = `decode ${what}: js=${gotJ} px=${gotP} want=${want}`;
+                return;
+            }
+            if ((lSnap && (!eqBytes(lJ, lSnap) || !eqBytes(lP, lSnap)))
+                || (pSnap && (!eqBytes(pJ, pSnap) || !eqBytes(pP, pSnap)))
+                || (oSnap && (!eqBytes(oJ, oSnap) || !eqBytes(oP, oSnap)))) {
+                errOk = false;
+                errDetail = `decode ${what}: mutated caller lines/prev/out on refusal (${want})`;
+            }
+        };
+        const runRefusalFinish = (what, linesIn, rowsIn, wIn, prevIn, rtIn, outIn, want) => {
+            if (!errOk) return;
+            const lSnap = linesIn ? linesIn.slice() : null;
+            const pSnap = prevIn ? prevIn.slice() : null;
+            const oSnap = outIn ? outIn.slice() : null;
+            const lJ = linesIn ? linesIn.slice() : null, lP = linesIn ? linesIn.slice() : null;
+            const pJ = prevIn ? prevIn.slice() : null, pP = prevIn ? prevIn.slice() : null;
+            const oJ = outIn ? outIn.slice() : null, oP = outIn ? outIn.slice() : null;
+            const gotJ = js.pngPartFinish(lJ, rowsIn, wIn, pJ, rtIn, oJ).code;
+            const gotP = px.pngPartFinish(lP, rowsIn, wIn, pP, rtIn, oP).code;
+            if (gotJ !== want || gotP !== want) {
+                errOk = false;
+                errDetail = `finish ${what}: js=${gotJ} px=${gotP} want=${want}`;
+                return;
+            }
+            if ((lSnap && (!eqBytes(lJ, lSnap) || !eqBytes(lP, lSnap)))
+                || (pSnap && (!eqBytes(pJ, pSnap) || !eqBytes(pP, pSnap)))
+                || (oSnap && (!eqBytes(oJ, oSnap) || !eqBytes(oP, oSnap)))) {
+                errOk = false;
+                errDetail = `finish ${what}: mutated caller lines/prev/out on refusal (${want})`;
+            }
+        };
+        const notLinesDecode = [
+            ["null lines", [null, w, goodPrev, null, goodOut]],
+            ["w = 0", [goodLines, 0, goodPrev, null, goodOut]],
+            ["w < 0", [goodLines, -4, goodPrev, null, goodOut]],
+            ["w = 0x40000000", [goodLines, 0x40000000, goodPrev, null, goodOut]],
+            ["empty lines", [new Uint8Array(0), w, goodPrev, null, goodOut]],
+            ["len = stride - 1", [new Uint8Array(stride - 1).fill(0x22), w, goodPrev, null, goodOut]],
+            ["len = stride + 1", [new Uint8Array(stride + 1).fill(0x22), w, goodPrev, null, goodOut]],
+            ["len = 2*stride - 1", [new Uint8Array(2 * stride - 1).fill(0x22), w, goodPrev, null, goodOut]],
+            ["short prev", [goodLines, w, new Uint8Array(rowBytes - 1).fill(0x33), null, goodOut]],
+            ["short rt", [goodLines, w, goodPrev, new Uint8Array(65535), goodOut]],
+            ["short out", [goodLines, w, goodPrev, null, new Uint8Array(rows * rowBytes - 1).fill(0x77)]],
+        ];
+        for (const [what, args] of notLinesDecode) {
+            runRefusalDecode(what, ...args, -4);
+        }
+        const notLinesFinish = [
+            ["null lines", [null, rows, w, goodPrev, null, goodOut]],
+            ["null prev", [goodLines, rows, w, null, null, goodOut]],
+            ["w = 0", [goodLines, rows, 0, goodPrev, null, goodOut]],
+            ["w < 0", [goodLines, rows, -1, goodPrev, null, goodOut]],
+            ["w = 0x40000000", [goodLines, rows, 0x40000000, goodPrev, null, goodOut]],
+            ["rows = 0", [goodLines, 0, w, goodPrev, null, goodOut]],
+            ["rows < 0", [goodLines, -1, w, goodPrev, null, goodOut]],
+            ["lines length != rows * stride", [new Uint8Array((rows - 1) * stride).fill(0x22), rows, w, goodPrev, null, goodOut]],
+            ["short prev", [goodLines, rows, w, new Uint8Array(rowBytes - 1).fill(0x33), null, goodOut]],
+            ["short rt", [goodLines, rows, w, goodPrev, new Uint8Array(65535), goodOut]],
+            ["short out", [goodLines, rows, w, goodPrev, null, new Uint8Array(rows * rowBytes - 1).fill(0x77)]],
+        ];
+        for (const [what, args] of notLinesFinish) {
+            runRefusalFinish(what, ...args, -4);
+        }
+        // Filter byte checks: 4 is valid, 5..255 on row 0, middle row, or last row return -5 (PART_BAD_FILTER)
+        // and leave every byte of lines, prev (both JS and Px), and out (both JS and Px) untouched.
+        for (const badRow of [0, 1, rows - 1]) {
+            for (const badByte of [5, 6, 128, 255]) {
+                const bad = goodLines.slice();
+                bad[badRow * stride] = badByte;
+                runRefusalDecode(`bad filter ${badByte} row ${badRow}`, bad, w, goodPrev, null, goodOut, -5);
+                runRefusalDecode(`bad filter ${badByte} row ${badRow} (null prev)`, bad, w, null, null, null, -5);
+                runRefusalFinish(`bad filter ${badByte} row ${badRow}`, bad, rows, w, goodPrev, null, goodOut, -5);
+            }
+        }
+        // Raw wasm export pointer/dimension checks
+        const pl = px.alloc(rows * stride), pp = px.alloc(rowBytes), po = px.alloc(rows * rowBytes), pi = px.alloc(20);
+        try {
+            px.u8().fill(0, pl, pl + rows * stride);
+            px.u8()[pl] = 2; // firstFilter = 2 (Up)
+            const rawChecks = [
+                ["decode null lines", px.exports.png_part_decode(0, rows * stride, w, pp, 0, po, pi), -4],
+                ["decode null info", px.exports.png_part_decode(pl, rows * stride, w, pp, 0, po, 0), -4],
+                ["decode w = 0", px.exports.png_part_decode(pl, rows * stride, 0, pp, 0, po, pi), -4],
+                ["decode w overflow", px.exports.png_part_decode(pl, rows * stride, 0x40000000, pp, 0, po, pi), -4],
+                ["decode len = 0", px.exports.png_part_decode(pl, 0, w, pp, 0, po, pi), -4],
+                ["decode len % stride != 0", px.exports.png_part_decode(pl, rows * stride - 1, w, pp, 0, po, pi), -4],
+                ["decode null out when prev given", px.exports.png_part_decode(pl, rows * stride, w, pp, 0, 0, pi), -4],
+                ["decode null out when needs_prev=true succeeds", px.exports.png_part_decode(pl, rows * stride, w, 0, 0, 0, pi), rows],
+                ["finish null lines", px.exports.png_part_finish(0, rows, w, pp, 0, po, pi), -4],
+                ["finish null prev", px.exports.png_part_finish(pl, rows, w, 0, 0, po, pi), -4],
+                ["finish null out", px.exports.png_part_finish(pl, rows, w, pp, 0, 0, pi), -4],
+                ["finish null info", px.exports.png_part_finish(pl, rows, w, pp, 0, po, 0), -4],
+                ["finish rows = 0", px.exports.png_part_finish(pl, 0, w, pp, 0, po, pi), -4],
+                ["finish w = 0", px.exports.png_part_finish(pl, rows, 0, pp, 0, po, pi), -4],
+                ["finish w overflow", px.exports.png_part_finish(pl, rows, 0x40000000, pp, 0, po, pi), -4],
+            ];
+            px.u8()[pl] = 1; // firstFilter = 1 (Sub): does not need prev, so null out must return -4
+            rawChecks.push(["decode null out when prev=0 and firstFilter=1", px.exports.png_part_decode(pl, rows * stride, w, 0, 0, 0, pi), -4]);
+            for (const [what, got, want] of rawChecks) {
+                if (errOk && got !== want) {
+                    errOk = false;
+                    errDetail = `raw ${what}: got ${got}, want ${want}`;
+                }
+            }
+        } finally {
+            px.free(pl, rows * stride);
+            px.free(pp, rowBytes);
+            px.free(po, rows * rowBytes);
+            px.free(pi, 20);
+        }
+        check(`${label} png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) without mutating caller buffers`,
+            errOk, errDetail);
+
+        // Seeded fuzz of length, w, rows, filter bytes, prev, and out (including inputs bad in both length/dims and filter bytes,
+        // pinning that -4 takes precedence over -5) across twin and wasm build
+        let fzSeed = 0x517cc1b7;
+        const fzNext = () => { fzSeed = (Math.imul(fzSeed, 1664525) + 1013904223) >>> 0; return fzSeed; };
+        const fzWidths = [-7, -1, 0, 1, 2, 3, 4, 5, 7, 8, 15, 16, 17, 33, 64, 0x40000000];
+        const fzRows = [-2, 0, 1, 2, 3, 4];
+        let fuzzOk = true, fuzzDetail = "";
+        for (let t = 0; t < 240 && fuzzOk; t++) {
+            const fw = fzWidths[fzNext() & 15];
+            const fr = fzRows[fzNext() % fzRows.length];
+            const validW = fw > 0 && fw <= 0x3fffffff;
+            const fRowBytes = validW ? fw * 4 : 16;
+            const fStride = validW ? fRowBytes + 1 : 17;
+            let fLen;
+            if (t % 4 === 2 && validW) {
+                // Force bad length/dims + bad filter simultaneously to pin -4 before -5
+                const badLens = [0, 1, fStride - 1, fStride + 1, 2 * fStride - 1];
+                fLen = badLens[fzNext() % badLens.length];
+            } else if (validW) {
+                const lenChoices = [0, 1, fStride - 1, fStride, fStride + 1, 2 * fStride - 1, 2 * fStride, 3 * fStride, fzNext() % (4 * fStride + 5)];
+                fLen = lenChoices[fzNext() % lenChoices.length];
+            } else {
+                fLen = [0, 1, 17, 34, 51][fzNext() % 5];
+            }
+            const fLines = new Uint8Array(fLen);
+            for (let i = 0; i < fLen; i++) fLines[i] = (fzNext() >>> 16) & 255;
+            if (fLen > 0 && validW) {
+                const nFullRows = Math.floor(fLen / fStride);
+                if (t % 4 === 0) {
+                    for (let y = 0; y < nFullRows; y++) fLines[y * fStride] = (fzNext() >>> 8) % 5;
+                } else if (t % 4 === 1 && nFullRows > 0) {
+                    for (let y = 0; y < nFullRows; y++) fLines[y * fStride] = (fzNext() >>> 8) % 5;
+                    const badY = fzNext() % nFullRows;
+                    fLines[badY * fStride] = 5 + ((fzNext() >>> 8) % 251);
+                } else if (t % 4 === 2) {
+                    fLines[0] = 5 + ((fzNext() >>> 8) % 251);
+                }
+            }
+            const prevMode = fzNext() % 3; // 0: null, 1: valid, 2: short
+            const fPrev = prevMode === 0 ? null : new Uint8Array(prevMode === 1 ? fRowBytes : Math.max(0, fRowBytes - 1));
+            if (fPrev) for (let i = 0; i < fPrev.length; i++) fPrev[i] = (fzNext() >>> 16) & 255;
+            const outMode = fzNext() % 3; // 0: null, 1: valid, 2: short
+            const estRows = validW && fLen > 0 && fLen % fStride === 0 ? fLen / fStride : Math.max(1, fr);
+            const fOut = outMode === 0 ? null : new Uint8Array(outMode === 1 ? estRows * fRowBytes : Math.max(0, estRows * fRowBytes - 1));
+            if (fOut) for (let i = 0; i < fOut.length; i++) fOut[i] = (fzNext() >>> 16) & 255;
+            const fRt = (fzNext() & 1) ? rtCanvas : null;
+
+            const lDJ = fLines.slice(), lDP = fLines.slice();
+            const pDJ = fPrev ? fPrev.slice() : null, pDP = fPrev ? fPrev.slice() : null;
+            const oDJ = fOut ? fOut.slice() : null, oDP = fOut ? fOut.slice() : null;
+            const dJ = js.pngPartDecode(lDJ, fw, pDJ, fRt, oDJ);
+            const dP = px.pngPartDecode(lDP, fw, pDP, fRt, oDP);
+            const shapeValidDecode = validW && fLen > 0 && fLen % fStride === 0
+                && (!fPrev || fPrev.length >= fRowBytes) && (!fOut || fOut.length >= (fLen / fStride) * fRowBytes);
+            if (dJ.code !== dP.code || (!shapeValidDecode && dJ.code !== -4)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz decode #${t} (w=${fw} len=${fLen}): js=${dJ.code} px=${dP.code} shapeValid=${shapeValidDecode}`;
+                break;
+            }
+            if (!eqBytes(lDJ, fLines) || !eqBytes(lDP, fLines)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz decode #${t}: lines mutated`;
+                break;
+            }
+            if (dJ.code < 0) {
+                if ((fPrev && (!eqBytes(pDJ, fPrev) || !eqBytes(pDP, fPrev)))
+                    || (fOut && (!eqBytes(oDJ, fOut) || !eqBytes(oDP, fOut)))) {
+                    fuzzOk = false;
+                    fuzzDetail = `fuzz decode #${t}: prev/out mutated on code ${dJ.code}`;
+                    break;
+                }
+            } else if (dJ.adler !== dP.adler || dJ.firstFilter !== dP.firstFilter || dJ.opaque !== dP.opaque
+                || dJ.needsPrev !== dP.needsPrev
+                || !eqBytes(dJ.out || new Uint8Array(0), dP.out || new Uint8Array(0))
+                || !eqBytes(dJ.prev || new Uint8Array(0), dP.prev || new Uint8Array(0))) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz decode #${t}: output mismatch on valid decode`;
+                break;
+            }
+
+            const lFJ = fLines.slice(), lFP = fLines.slice();
+            const pFJ = fPrev ? fPrev.slice() : null, pFP = fPrev ? fPrev.slice() : null;
+            const oFJ = fOut ? fOut.slice() : null, oFP = fOut ? fOut.slice() : null;
+            const fJ = js.pngPartFinish(lFJ, fr, fw, pFJ, fRt, oFJ);
+            const fP = px.pngPartFinish(lFP, fr, fw, pFP, fRt, oFP);
+            const shapeValidFinish = validW && fr > 0 && fLen === fr * fStride
+                && !!fPrev && fPrev.length >= fRowBytes && (!fOut || fOut.length >= fr * fRowBytes);
+            if (fJ.code !== fP.code || (!shapeValidFinish && fJ.code !== -4)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz finish #${t} (w=${fw} r=${fr} len=${fLen}): js=${fJ.code} px=${fP.code} shapeValid=${shapeValidFinish}`;
+                break;
+            }
+            if (!eqBytes(lFJ, fLines) || !eqBytes(lFP, fLines)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz finish #${t}: lines mutated`;
+                break;
+            }
+            if (fJ.code < 0) {
+                if ((fPrev && (!eqBytes(pFJ, fPrev) || !eqBytes(pFP, fPrev)))
+                    || (fOut && (!eqBytes(oFJ, fOut) || !eqBytes(oFP, fOut)))) {
+                    fuzzOk = false;
+                    fuzzDetail = `fuzz finish #${t}: prev/out mutated on code ${fJ.code}`;
+                    break;
+                }
+            } else if (fJ.firstFilter !== fP.firstFilter || fJ.opaque !== fP.opaque
+                || !eqBytes(fJ.out, fP.out) || !eqBytes(fJ.prev, fP.prev)) {
+                fuzzOk = false;
+                fuzzDetail = `fuzz finish #${t}: output mismatch on valid finish`;
+                break;
+            }
+        }
+        check(`${label} png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)`,
+            fuzzOk, fuzzDetail);
+    }
+
+    // 4. Multi-part end-to-end round-trip: pngPart -> native DecompressionStream("deflate-raw") (+ 03 00 on non-last) ->
+    // out-of-order pngPartDecode -> forward pngPartFinish -> adlerCombine + round-trip verification
+    const inflateRawPart = async (deflated, isLast) => {
+        const body = isLast ? [deflated] : [deflated, new Uint8Array([0x03, 0x00])];
+        const stream = new Blob(body).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+    };
+    {
+        const w = 257, partHeights = [7, 5, 8, 6], H = partHeights.reduce((a, b) => a + b, 0);
+        const src = randomRGBA(w, H, 9401, { opaque: false });
+        // Make rows 0..11 opaque and row 12+ translucent so per-part opaque flags mix true and false
+        for (let i = 3; i < 12 * w * 4; i += 4) src[i] = 255;
+        const encodedParts = [];
+        let y0 = 0;
+        for (let i = 0; i < partHeights.length; i++) {
+            const r = partHeights[i];
+            const prev = y0 > 0 ? src.subarray((y0 - 1) * w * 4, y0 * w * 4) : null;
+            const p = px.pngPart(src.subarray(y0 * w * 4, (y0 + r) * w * 4), w, r, prev, 2, i === partHeights.length - 1);
+            encodedParts.push({ y0, rows: r, bytes: p.bytes, adler: p.adler, raw: p.raw, last: i === partHeights.length - 1 });
+            y0 += r;
+        }
+        const inflatedLines = await Promise.all(encodedParts.map((p) => inflateRawPart(p.bytes, p.last)));
+        // Decode in reverse order (3, 2, 1, 0): part 0 gets zero prev, parts 1..3 get prev = null
+        const decoded = new Array(encodedParts.length);
+        for (let i = encodedParts.length - 1; i >= 0; i--) {
+            const p0 = i === 0 ? new Uint8Array(w * 4) : null;
+            decoded[i] = px.pngPartDecode(inflatedLines[i], w, p0, rtCanvas);
+        }
+        // Finish in forward order (0..3) any part that answered needsPrev: true
+        const assembled = new Uint8Array(H * w * 4);
+        let combinedAdler = 1, allOpaque = true, e2eOk = true, e2eDetail = "";
+        for (let i = 0; i < encodedParts.length; i++) {
+            const ep = encodedParts[i];
+            let d = decoded[i];
+            if (d.code !== ep.rows || d.adler !== ep.adler) {
+                e2eOk = false;
+                e2eDetail = `part ${i}: code=${d.code}/${ep.rows} adler=${d.adler}/${ep.adler}`;
+                break;
+            }
+            combinedAdler = png.adlerCombine(combinedAdler, d.adler, ep.raw);
+            if (d.needsPrev) {
+                const prevFromAbove = decoded[i - 1].prev.slice();
+                d = px.pngPartFinish(inflatedLines[i], ep.rows, w, prevFromAbove, rtCanvas);
+                decoded[i].prev = d.prev;
+            }
+            if (!d.opaque) allOpaque = false;
+            assembled.set(d.out, ep.y0 * w * 4);
+        }
+        const allInflated = new Uint8Array(inflatedLines.reduce((n, b) => n + b.length, 0));
+        let infOff = 0;
+        for (const b of inflatedLines) { allInflated.set(b, infOff); infOff += b.length; }
+        const wantWholeAdler = refAdler32(allInflated);
+        const { out: wantAssembled, opaque: wantOpaque } = refApplyRt(src, rtCanvas);
+        check(`${label} multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and refAdler32`,
+            e2eOk && combinedAdler === wantWholeAdler && allOpaque === wantOpaque && eqBytes(assembled, wantAssembled)
+            && decoded[0].opaque === true && decoded[2].opaque === false,
+            e2eDetail || firstDiff(assembled, wantAssembled));
+    }
+
+    // 5. Stop 2 Node/runtime native DecompressionStream("deflate-raw") refusal checks (exercises the runtime's native
+    // stream on shared LZ77 window across sync flushes, corrupt deflate bytes, and truncated streams; reaches no K7 code
+    // when DecompressionStream throws)
+    if (label === "rust simd") {
+        const w = 64, rowBytes = w * 4, stride = rowBytes + 1;
+        // Craft a 2-part stream using Node's zlib with a SHARED LZ77 sliding window across Z_SYNC_FLUSH so part 1
+        // references distances back in part 0 (before part 1's start):
+        const pattern = new Uint8Array(4 * stride);
+        for (let y = 0; y < 4; y++) {
+            pattern[y * stride] = 0;
+            for (let i = 1; i < stride; i++) pattern[y * stride + i] = ((i * 37 + y * 13) & 255);
+        }
+        const def = zlib.createDeflateRaw({ level: 6 });
+        const chunks = [];
+        def.on("data", (c) => chunks.push(c));
+        await new Promise((resolve) => {
+            def.write(pattern);
+            def.flush(zlib.constants.Z_SYNC_FLUSH, resolve);
+        });
+        const part0Len = Buffer.concat(chunks).length;
+        await new Promise((resolve) => {
+            def.end(pattern, resolve); // identical bytes -> LZ77 back-reference into part 0!
+        });
+        const sharedPart1 = new Uint8Array(Buffer.concat(chunks).subarray(part0Len));
+        let sharedRejected = false;
+        try {
+            await inflateRawPart(sharedPart1, true);
+        } catch {
+            sharedRejected = true;
+        }
+        let corruptRejected = false;
+        try {
+            await inflateRawPart(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0x01]), false);
+        } catch {
+            corruptRejected = true;
+        }
+        // Truncated valid stream: DecompressionStream throws before reaching K7
+        const validPart = px.pngPart(randomRGBA(w, 4, 9500), w, 4, null, 2, false);
+        let truncRefused = false;
+        try {
+            const lines = await inflateRawPart(validPart.bytes.subarray(0, Math.floor(validPart.bytes.length / 2)), false);
+            if (px.pngPartDecode(lines, w, new Uint8Array(rowBytes)).code < 0) truncRefused = true;
+        } catch {
+            truncRefused = true;
+        }
+        check(`Node/runtime native DecompressionStream("deflate-raw") refuses a part referencing before its start, corrupt deflate bytes, and truncated parts`,
+            sharedRejected && corruptRejected && truncRefused,
+            `shared=${sharedRejected} corrupt=${corruptRejected} trunc=${truncRefused}`);
+
+        // 6. Resident rt table check (_resident copies 64 KB on the first call, 0 B on subsequent calls) + kernels.js switching
+        const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+        const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (u, ...rest) => {
+            const s = String(u && u.href ? u.href : u);
+            return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+        };
+        try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+
+        const freshRt = rtCanvas.slice();
+        const oneLine = new Uint8Array(stride);
+        const wasTimed = P.pxTimed(true);
+        let bytes1 = 0, bytes2 = 0;
+        try {
+            P.pxCalls(true);
+            px.pngPartDecode(oneLine, w, new Uint8Array(rowBytes), freshRt);
+            bytes1 = Math.round(P.pxLaps().copyInMB * 1048576);
+            P.pxCalls(true);
+            px.pngPartDecode(oneLine, w, new Uint8Array(rowBytes), freshRt);
+            bytes2 = Math.round(P.pxLaps().copyInMB * 1048576);
+        } finally {
+            P.pxTimed(wasTimed);
+        }
+        const expectedLineIn = stride + rowBytes;
+        check(`px.js keeps the 64 KB round-trip table resident in wasm memory (copied on first call, 0 B on subsequent calls)`,
+            bytes1 === expectedLineIn + 65536 && bytes2 === expectedLineIn,
+            `first bytesIn=${bytes1}, second bytesIn=${bytes2}`);
+
+        const prevMode = K.kernelsMode();
+        K.setKernels("rust");
+        try {
+            P.pxCalls(true);
+            const capRust = K.pngPartLinesCap(15000);
+            const testLines = new Uint8Array(2 * stride);
+            testLines[0] = 2;
+            const dRust = K.pngPartDecode(testLines, w, null, rtCanvas);
+            const fRust = K.pngPartFinish(testLines, 2, w, new Uint8Array(rowBytes), rtCanvas);
+            const callsRust = P.pxCalls();
+            K.setKernels("js");
+            P.pxCalls(true);
+            const capJs = K.pngPartLinesCap(15000);
+            const dJs = K.pngPartDecode(testLines, w, null, rtCanvas);
+            const fJs = K.pngPartFinish(testLines, 2, w, new Uint8Array(rowBytes), rtCanvas);
+            const callsJs = P.pxCalls();
+            check(`kernels.js switches pngPartLinesCap, pngPartDecode, and pngPartFinish between Rust and the JS twin`,
+                capRust === js.pngPartLinesCap(15000) && capJs === capRust
+                && callsRust.png_part_decode === 1 && callsRust.png_part_finish === 1
+                && !callsJs.png_part_decode && !callsJs.png_part_finish
+                && dRust.needsPrev === true && dJs.needsPrev === true && eqBytes(fRust.out, fJs.out));
+        } finally {
+            kernelsBack(K);
+            K.setKernels(prevMode);
+        }
+
+        // 7. PX_BENCH: 15,000 x 139 standard 8 MB part (copyIn vs decode vs copyOut)
+        if (process.env.PX_BENCH) {
+            const bw = 15000, brows = 139, browBytes = bw * 4;
+            const bsrc = randomRGBA(bw, brows, 9701, { opaque: false });
+            const bprev = randomRGBA(bw, 1, 9702, { opaque: false });
+            const blinesSub = buildLines(bsrc, bw, brows, bprev, 1, (y) => (y % 4) + 1);
+            const blinesPaeth = buildLines(bsrc, bw, brows, bprev, 4, () => 4);
+            const bout = new Uint8Array(brows * browBytes);
+            const pWork = bprev.slice();
+            // Warm up resident rtCanvas
+            px.pngPartDecode(blinesSub.subarray(0, browBytes + 1), bw, pWork, rtCanvas);
+            const laps = { copyIn: 0, decode: 0, copyOut: 0 };
+            const rounds = 15;
+            const simdTimes = [], twinTimes = [];
+            const copyInTimes = [], decodeTimes = [], copyOutTimes = [];
+            for (let i = 0; i < rounds; i++) {
+                const l = { copyIn: 0, decode: 0, copyOut: 0 };
+                const t0 = performance.now();
+                px.pngPartDecode(blinesSub, bw, pWork, rtCanvas, bout, l);
+                simdTimes.push(performance.now() - t0);
+                copyInTimes.push(l.copyIn);
+                decodeTimes.push(l.decode);
+                copyOutTimes.push(l.copyOut);
+                const t1 = performance.now();
+                js.pngPartDecode(blinesSub, bw, pWork, rtCanvas, bout);
+                twinTimes.push(performance.now() - t1);
+            }
+            const med = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[s.length >> 1]; };
+            console.log(`       png_part_decode 15000x139 (8.34 MB, with rt): rust simd ${med(simdTimes).toFixed(2)} ms (copyIn ${med(copyInTimes).toFixed(2)} ms, decode ${med(decodeTimes).toFixed(2)} ms, copyOut ${med(copyOutTimes).toFixed(2)} ms), twin ${med(twinTimes).toFixed(2)} ms`);
+            const defPartTimes = [], finPartTimes = [], twinDefFinTimes = [];
+            for (let i = 0; i < rounds; i++) {
+                const l1 = { copyIn: 0, decode: 0, copyOut: 0 }, l2 = { copyIn: 0, decode: 0, copyOut: 0 };
+                const t0 = performance.now();
+                px.pngPartDecode(blinesPaeth, bw, null, rtCanvas, bout, l1);
+                defPartTimes.push(performance.now() - t0);
+                const t1 = performance.now();
+                px.pngPartFinish(blinesPaeth, brows, bw, pWork, rtCanvas, bout, l2);
+                finPartTimes.push(performance.now() - t1);
+                const t2 = performance.now();
+                js.pngPartDecode(blinesPaeth, bw, null, rtCanvas, bout);
+                js.pngPartFinish(blinesPaeth, brows, bw, pWork, rtCanvas, bout);
+                twinDefFinTimes.push(performance.now() - t2);
+            }
+            console.log(`       png_part_decode(needsPrev)+finish 15000x139 (Paeth, with rt): decode ${med(defPartTimes).toFixed(2)} ms + finish ${med(finPartTimes).toFixed(2)} ms = ${(med(defPartTimes) + med(finPartTimes)).toFixed(2)} ms, twin ${med(twinDefFinTimes).toFixed(2)} ms`);
+        }
+    }
 }
 
 // K3 (docs/PLAN_WASM_BUILD.md §3.3, §4.2): slice-by-16 crc32, png_chunk_frame, crc32Combine, PngStreamWriter's
@@ -7783,9 +8518,20 @@ async function rangeCases(js, simd, scalar, resample, K) {
                 JSON.stringify(outOpp));
         }
 
-        // Multi-tile-row rangeSelectJob alphaSum and bounds union check (3 tile rows: ty=0,1,2)
+        // Multi-tile-row rangeSelectJob alphaSum and bounds union check (3 tile rows: ty=0,1,2;
+        // clear left/right margins on the last tile row ty=2 so its [bX0..bX1] is strictly narrower than ty=0)
         const wJob = 300, hJob = 600;
         const jobBand = makeRgbaBand(wJob, hJob, "ramp");
+        for (let y = 512; y < hJob; y++) {
+            for (let x = 0; x < wJob; x++) {
+                if (x < 60 || x >= 240) {
+                    const idx = (y * wJob + x) * 4;
+                    jobBand[idx] = 0;
+                    jobBand[idx + 1] = 0;
+                    jobBand[idx + 2] = 0;
+                }
+            }
+        }
         for (const [srcKind, limJ] of [
             ["luma", { source: "luma", lo: 0.3, hi: 0.7, fLo: 0.1, fHi: 0.1, invert: false }],
             ["color", { source: "color", color: "#5080a0", tol: 30, lo: 0.25, hi: 0.9, fLo: 0.1, fHi: 0.05, invert: false }],
@@ -7975,6 +8721,448 @@ async function rangeCases(js, simd, scalar, resample, K) {
             `luma=${lumaJsCalls}/${lumaRustCalls} color=${colorJsCalls}/${colorRustCalls}`);
     }
 
+    // ---- K25: limit_alpha_rows (export / fill-layer depth alpha, docs/PLAN_WASM_BUILD.md §4.8) -------------------------
+
+    const refLimitAlphaRows = (rgbaIn, map, mw, mh, xf, x0, y0, w, h, limit, snap = null, guide = null, col = null) => {
+        const rgba = new Uint8Array(rgbaIn);
+        if (w === 0 || h === 0) return rgba;
+        const [a, b, c, d, e, f] = xf;
+        const sigmaR = Array.isArray(snap) && snap.length >= 2 ? +snap[0] || 0 : 0;
+        const tau = Array.isArray(snap) && snap.length >= 2 ? +snap[1] || 0 : 0;
+        const gRaw = guide && guide.data ? guide.data : guide;
+        const doSnap = gRaw != null && sigmaR > 0;
+        const mapObj = doSnap ? { data: map, w: mw, h: mh } : null;
+        const guideObj = doSnap ? { data: gRaw, w: mw, h: mh } : null;
+        const maxX = mw - 1, maxY = mh - 1;
+        for (let row = 0; row < h; row++) {
+            const py = y0 + row + 0.5;
+            const rowBase = row * w * 4;
+            for (let colIdx = 0; colIdx < w; colIdx++) {
+                const off = rowBase + colIdx * 4;
+                const aIn = rgba[off + 3];
+                if (aIn === 0) continue;
+                const px = x0 + colIdx + 0.5;
+                const mx = a * px + c * py + e;
+                const my = b * px + d * py + f;
+                let v;
+                if (doSnap) {
+                    let pr, pg, pb;
+                    if (col != null) {
+                        pr = col[off] / 255;
+                        pg = col[off + 1] / 255;
+                        pb = col[off + 2] / 255;
+                    } else {
+                        const gx = Math.max(0, Math.min(maxX, Math.floor(mx)));
+                        const gy = Math.max(0, Math.min(maxY, Math.floor(my)));
+                        const gi = (gy * mw + gx) * 4;
+                        pr = gRaw[gi] / 255;
+                        pg = gRaw[gi + 1] / 255;
+                        pb = gRaw[gi + 2] / 255;
+                    }
+                    v = refSnapField(mapObj, guideObj, mx, my, pr, pg, pb, sigmaR, tau);
+                } else {
+                    v = u16Bilinear(map, mw, mh, mx, my);
+                }
+                v = Math.max(0, Math.min(1, v));
+                const wt = rangeWeight(v, limit);
+                rgba[off + 3] = Math.min(255, Math.max(0, Math.round(aIn * wt)));
+            }
+        }
+        return rgba;
+    };
+
+    const callLimitAlpha = (k, [rgbaIn, map, guideData, colData, colSameAsRgba, mw, mh, xf, x0, y0, w, h, limit, snap]) => {
+        const guide = guideData ? { data: guideData, w: mw, h: mh } : null;
+        const col = colSameAsRgba ? rgbaIn : colData;
+        k.limitAlphaRows(rgbaIn, map, mw, mh, xf, x0, y0, w, h, limit, snap, guide, col);
+        return rgbaIn;
+    };
+
+    const limitAlphaCases = [];
+    for (const [mw, mh, W, H, x0, y0] of [
+        [1, 1, 1, 1, 0, 0],
+        [7, 5, 13, 9, 3, -2],
+        [8, 6, 64, 48, 0, 0],
+        [9, 7, 129, 65, 10, 20],
+        [15, 11, 257, 40, -5, 12],
+        [16, 12, 120, 300, 0, 0], // multi-chunk (> 256 rows)
+        [24, 18, 96, 550, 4, 8],  // 3 chunks (256 + 256 + 38 rows)
+    ]) {
+        const { map } = makeMapPair(mw, mh, (mw + mh) % 2 === 0 ? "ramp" : "random");
+        const guideData = new Uint8Array(mw * mh * 4);
+        for (let i = 0; i < guideData.length; i++) guideData[i] = (i & 3) === 3 ? 255 : Math.floor(rnd() * 256);
+        const xfs = makeXfs(mw, mh, W + Math.abs(x0) * 2, H + Math.abs(y0) * 2);
+        const rgbaIn = makeRgbaBand(W, H, (mw & 1) ? "random" : "ramp");
+        for (let ci = 0; ci < xfs.length; ci++) {
+            const [xName, xf] = xfs[ci];
+            const lim = limits[(ci + mw) % limits.length];
+            const mode = ci % 4; // 0: plain bilinear, 1: snap with guide (col=null), 2: snap with explicit col, 3: snap with col===rgba
+            const snap = mode === 0 ? null : snapParams(45 + (ci % 3) * 20);
+            const gData = mode === 0 ? null : guideData;
+            let colData = null, colSame = false;
+            if (mode === 2) {
+                colData = makeRgbaBand(W, H, "stripes");
+            } else if (mode === 3) {
+                colSame = true;
+            }
+            limitAlphaCases.push({
+                tag: `limit_alpha ${mw}x${mh}->${W}x${H} @(${x0},${y0}) ${xName} mode=${mode} inv=${lim.invert}`,
+                args: [rgbaIn, map, gData, colData, colSame, mw, mh, xf, x0, y0, W, H, lim, snap],
+            });
+        }
+    }
+
+    // Exact boundary cases for limit_alpha_rows:
+    // 1. Exact even-half: a_in = 255 with 255 * w === 40.5 -> 41, and a_in = 81 with w = 0.5 -> 81 * 0.5 = 40.5 -> 41
+    // 2. Hard-step 1e-12 boundary and sstep 1e-14 clamp boundary
+    // 3. Input alphas [0, 1, 128, 254, 255] and RGB byte preservation check
+    // 4. snapField tau .. 2*tau smoothstep blend, > 2*tau snap, wSum <= 1e-12 fallback
+    {
+        const mw = 8, mh = 8, W = 64, H = 16;
+        const mapHalf = new Uint16Array(mw * mh).fill(16384);
+        const limHalf = { lo: 0.9909749217157413, hi: 1.0, fLo: 0.9909749217157413, fHi: 0, invert: false };
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const rgba255 = new Uint8Array(W * H * 4);
+        for (let i = 0; i < rgba255.length; i += 4) {
+            rgba255[i] = (i * 7) & 255;
+            rgba255[i + 1] = (i * 13) & 255;
+            rgba255[i + 2] = (i * 29) & 255;
+            rgba255[i + 3] = 255;
+        }
+        limitAlphaCases.push({
+            tag: "limit_alpha exact even-half 255 * w === 40.5 (-> 41)",
+            args: [rgba255, mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limHalf, null],
+        });
+        const gotHalf255 = callLimitAlpha(simd, [new Uint8Array(rgba255), mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limHalf, null]);
+        let rgbUntouched = true;
+        for (let i = 0; i < rgba255.length; i += 4) {
+            if (gotHalf255[i] !== rgba255[i] || gotHalf255[i + 1] !== rgba255[i + 1] || gotHalf255[i + 2] !== rgba255[i + 2]) {
+                rgbUntouched = false;
+                break;
+            }
+        }
+        check("limit_alpha_rows rounds exact even-half 255 * w === 40.5 up to 41 and leaves RGB bytes untouched",
+            gotHalf255[3] === 41 && rgbUntouched, `got alpha=${gotHalf255[3]} rgbUntouched=${rgbUntouched}`);
+
+        // Odd input alpha a_in = 81 at exact midpoint w = 0.5 (v = 16384/65535, fLo = 0.2, lo = v + 0.1 -> t = 0.5 -> sstep(0.5) = 0.5 -> 81 * 0.5 = 40.5 -> 41)
+        const vExact = 16384 / 65535;
+        const limMid = { lo: vExact + 0.05, hi: 1.0, fLo: 0.1, fHi: 0, invert: false };
+        const rgba81 = new Uint8Array(rgba255);
+        for (let i = 3; i < rgba81.length; i += 4) rgba81[i] = 81;
+        limitAlphaCases.push({
+            tag: "limit_alpha odd a_in = 81 at w = 0.5 -> 40.5 (-> 41)",
+            args: [rgba81, mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limMid, null],
+        });
+        const gotHalf81 = callLimitAlpha(simd, [new Uint8Array(rgba81), mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limMid, null]);
+        check("limit_alpha_rows rounds 81 * 0.5 === 40.5 up to 41", gotHalf81[3] === 41, `got ${gotHalf81[3]}`);
+
+        // Hard-step 1e-12 and sstep 1e-14 boundaries
+        for (const [delta, wantByte] of [[0.5e-12, 255], [-0.5e-12, 255], [2e-12, 0]]) {
+            const limTol = { lo: vExact + delta, hi: vExact + 0.1, fLo: 0, fHi: 0, invert: false };
+            limitAlphaCases.push({
+                tag: `limit_alpha hard-step 1e-12 delta=${delta}`,
+                args: [rgba255, mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limTol, null],
+            });
+            const gotTol = callLimitAlpha(simd, [new Uint8Array(rgba255), mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limTol, null]);
+            check(`limit_alpha_rows hard-step tolerance at delta=${delta} gives byte ${wantByte}`,
+                gotTol[3] === wantByte, `got ${gotTol[3]}, want ${wantByte}`);
+        }
+        for (const frac of [0.5e-14, 2e-14, 0.5, 1 - 2e-14, 1 - 0.5e-14]) {
+            const fLo = 0.1;
+            const lo = vExact + fLo * (1 - frac);
+            limitAlphaCases.push({
+                tag: `limit_alpha sstep boundary frac=${frac}`,
+                args: [rgba255, mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, { lo, hi: 1.0, fLo, fHi: 0, invert: false }, null],
+            });
+        }
+
+        // wSum <= 1e-12 fallback to bilinear in snapField
+        const mapStep = new Uint16Array(mw * mh);
+        for (let i = 0; i < mapStep.length; i++) mapStep[i] = (i & 1) ? 55000 : 10000;
+        const guideBlack = new Uint8Array(mw * mh * 4);
+        const colWhite = new Uint8Array(W * H * 4).fill(255);
+        limitAlphaCases.push({
+            tag: "limit_alpha snapField wSum <= 1e-12 fallback to bilinear",
+            args: [rgba255, mapStep, guideBlack, colWhite, false, mw, mh, xf, 0, 0, W, H, { lo: 0.2, hi: 0.8, fLo: 0.1, fHi: 0.1, invert: false }, [0.015, 0.02]],
+        });
+    }
+
+    let refAlphaOk = true, refAlphaDetail = "";
+    for (const c of limitAlphaCases) {
+        const a = c.args;
+        const got = callLimitAlpha(js, [new Uint8Array(a[0]), ...a.slice(1)]);
+        const want = refLimitAlphaRows(a[0], a[1], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13], a[2] ? { data: a[2], w: a[5], h: a[6] } : null, a[4] ? a[0] : a[3]);
+        const d = twinDiff(got, want, [], {});
+        if (d) { refAlphaOk = false; refAlphaDetail = `${c.tag}: ${d}`; break; }
+    }
+    check(`js limitAlphaRows equals the plain reference (${limitAlphaCases.length} cases)`, refAlphaOk, refAlphaDetail);
+
+    twinCheck({
+        name: "limit_alpha_rows",
+        builds: [["rust simd", simd], ["rust scalar", scalar]],
+        twin: js,
+        call: callLimitAlpha,
+        cases: limitAlphaCases,
+    });
+
+    // libmExp vs Math.exp tie case (K22-exp-band column x = 127) and Math.exp spy on js.limitAlphaRows
+    {
+        const mwTie = 128, mhTie = 128, WTie = 256, HTie = 16;
+        const mapTie = new Uint16Array(mwTie * mhTie);
+        for (let y = 0; y < mhTie; y++) {
+            for (let x = 0; x < mwTie; x++) mapTie[y * mwTie + x] = x < 64 ? 16384 : 49151;
+        }
+        const guideTie = new Uint8Array(mwTie * mhTie * 4).fill(128);
+        const rgbaTie = new Uint8Array(WTie * HTie * 4).fill(255);
+        const mTie = [0.5, 0, 0, 0.5, 0.25, 0];
+        const snapTie = [0.145, 0.02];
+        const limTie = { lo: 0.55, hi: 1, fLo: 0.1, fHi: 0, invert: false };
+        const origExp = Math.exp;
+        let nativeExpCalls = 0;
+        Math.exp = (x) => { nativeExpCalls++; return origExp(x); };
+        let tieOk = true, tieDetail = "";
+        try {
+            for (const [bName, k] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+                const out = callLimitAlpha(k, [new Uint8Array(rgbaTie), mapTie, guideTie, null, false, mwTie, mhTie, mTie, 0, 0, WTie, HTie, limTie, snapTie]);
+                let n127 = 0, n128 = 0;
+                for (let y = 0; y < HTie; y++) {
+                    const v = out[(y * WTie + 127) * 4 + 3];
+                    if (v === 127) n127++;
+                    else if (v === 128) n128++;
+                }
+                if (n127 !== HTie / 2 || n128 !== HTie / 2) {
+                    tieOk = false;
+                    tieDetail = `${bName}: got n127=${n127}, n128=${n128} on column x=127`;
+                    break;
+                }
+            }
+        } finally {
+            Math.exp = origExp;
+        }
+        check("limit_alpha_rows twin uses libmExp (0 native Math.exp calls) and matches simd/scalar at K22-exp-band tie on column x=127",
+            nativeExpCalls === 0 && tieOk, `nativeExpCalls=${nativeExpCalls} ${tieDetail}`);
+    }
+
+    // Multi-chunk 256-row windowing check on simd.limitAlphaRows
+    {
+        const mw = 32, mh = 60, W = 64, H = 600; // 3 chunks: 256 + 256 + 88 rows
+        const { map } = makeMapPair(mw, mh, "ramp");
+        const guideData = new Uint8Array(mw * mh * 4).fill(120);
+        const guide = { data: guideData, w: mw, h: mh };
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const lim = { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const snap = snapParams(50);
+        const rgbaSimd = makeRgbaBand(W, H, "ramp");
+        const rgbaJs = new Uint8Array(rgbaSimd);
+        let maxRgbaBytes = 0, maxMapBytes = 0, chunkCalls = 0;
+        const origIn = simd._in;
+        simd._in = function (arena, src, bytes) {
+            if (src.buffer === rgbaSimd.buffer) {
+                chunkCalls++;
+                if (bytes > maxRgbaBytes) maxRgbaBytes = bytes;
+            } else if (src.buffer === map.buffer) {
+                if (bytes > maxMapBytes) maxMapBytes = bytes;
+            }
+            return origIn.call(this, arena, src, bytes);
+        };
+        try {
+            simd.limitAlphaRows(rgbaSimd, map, mw, mh, xf, 0, 0, W, H, lim, snap, guide, null);
+            js.limitAlphaRows(rgbaJs, map, mw, mh, xf, 0, 0, W, H, lim, snap, guide, null);
+            check("px.js limitAlphaRows chunks 600 rows into 3 bands (<= 256 rows per chunk) and bounds map window [wy0..wy1]",
+                !twinDiff(rgbaSimd, rgbaJs) && chunkCalls === 3 && maxRgbaBytes === 256 * W * 4 && maxMapBytes < map.byteLength,
+                `chunkCalls=${chunkCalls} maxRgbaBytes=${maxRgbaBytes} maxMapBytes=${maxMapBytes}/${map.byteLength}`);
+        } finally {
+            simd._in = origIn;
+        }
+    }
+
+    // inpaint_limit.js limitAlphaRows integration:
+    // 1. Snapped depth limit with map.guide present (col=null) snaps to map.guide sampled at floor(mx), floor(my),
+    //    whereas without map.guide it falls back to rgba.
+    // 2. Stored depth limits with non-finite fields never throw on export.
+    {
+        const { limitAlphaRows: limitAlphaRowsHigh } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_limit.js")).href);
+        const { makeMap } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_maps.js")).href);
+        const mw = 20, mh = 12, W = 80, H = 48;
+        // Blurred depth step at map x = 10 (canvas x = 40): x <= 7 is 0.2, x = 8 is 0.35, x = 9 is 0.5, x = 10 is 0.65, x >= 11 is 0.8
+        const mapData = new Uint16Array(mw * mh);
+        const guideData = new Uint8Array(mw * mh * 4);
+        for (let y = 0; y < mh; y++) {
+            for (let x = 0; x < mw; x++) {
+                const i = y * mw + x;
+                const d = x <= 7 ? 0.2 : x === 8 ? 0.35 : x === 9 ? 0.5 : x === 10 ? 0.65 : 0.8;
+                mapData[i] = Math.round(d * 65535);
+                const isRed = x < 10;
+                guideData[i * 4] = isRed ? 230 : 20;
+                guideData[i * 4 + 1] = 40;
+                guideData[i * 4 + 2] = isRed ? 30 : 230;
+                guideData[i * 4 + 3] = 255;
+            }
+        }
+        // Solid uniform fill layer (all grey [128, 128, 128, 255]):
+        // At x = 39 (mx = 9.875), plain bilinear depth is ~0.556 (> 0.48 -> alpha 0).
+        // With map.guide present (col=null), snapRgb reads pure red at floor(9.875)=9 and snaps toward ~0.423 (<= 0.46 -> alpha 255);
+        // with col=fillUniformCol (uniform grey) or without map.guide, it does not snap to the red/blue edge (alpha 0).
+        const fillWithGuide = new Uint8Array(W * H * 4);
+        for (let i = 0; i < fillWithGuide.length; i += 4) {
+            fillWithGuide[i] = 128; fillWithGuide[i + 1] = 128; fillWithGuide[i + 2] = 128; fillWithGuide[i + 3] = 255;
+        }
+        const fillUniformCol = new Uint8Array(fillWithGuide);
+        const fillNoGuide = new Uint8Array(fillWithGuide);
+        const limSnap = { source: "depth", lo: 0, hi: 0.46, fLo: 0, fHi: 0.02, invert: false };
+        const mapWithGuide = makeMap("depth", mw, mh, mapData, [W, 0, 0, H, 0, 0], { snap: { strength: 80 } }, guideData);
+        const mapWithoutGuide = makeMap("depth", mw, mh, mapData, [W, 0, 0, H, 0, 0], { snap: { strength: 80 } }, null);
+
+        K.setKernels("rust");
+        K.pxCalls(true);
+        limitAlphaRowsHigh(fillWithGuide, 0, 0, W, H, limSnap, mapWithGuide);
+        const guideCalls = K.pxCalls(true).limit_alpha_rows || 0;
+        limitAlphaRowsHigh(fillUniformCol, 0, 0, W, H, limSnap, mapWithGuide, fillUniformCol);
+        const colCalls = K.pxCalls(true).limit_alpha_rows || 0;
+        limitAlphaRowsHigh(fillNoGuide, 0, 0, W, H, limSnap, mapWithoutGuide);
+        const noGuideCalls = K.pxCalls(true).limit_alpha_rows || 0;
+
+        const aLeftGuide = fillWithGuide[(24 * W + 39) * 4 + 3];
+        const aRightGuide = fillWithGuide[(24 * W + 40) * 4 + 3];
+        const aLeftUniformCol = fillUniformCol[(24 * W + 39) * 4 + 3];
+        const aLeftNoGuide = fillNoGuide[(24 * W + 39) * 4 + 3];
+        check("inpaint_limit.js limitAlphaRows snaps solid fill layer against map.guide on rust (sharp edge vs uniform col / no-guide)",
+            guideCalls === 1 && colCalls === 1 && noGuideCalls === 1
+            && aLeftGuide === 255 && aRightGuide === 0
+            && aLeftUniformCol === 0 && aLeftNoGuide === 0,
+            `calls=${guideCalls}/${colCalls}/${noGuideCalls} guide=[${aLeftGuide},${aRightGuide}] uniformCol=${aLeftUniformCol} noGuide=${aLeftNoGuide}`);
+
+        // Stored depth limits with non-finite fields, bad map.meta.snap.strength, or overflowing corner-y map transforms never throw on export
+        let storedOk = true, storedDetail = "";
+        const mapBadSnap = makeMap("depth", mw, mh, mapData, [W, 0, 0, H, 0, 0], { snap: { strength: "bad" } }, guideData);
+        const mapOverflowXf = makeMap("depth", 4, 2048, new Uint16Array(4 * 2048).fill(32768), [1, 1, 0, 1e-302, 0, 0], { snap: { strength: 50 } }, new Uint8Array(4 * 2048 * 4).fill(128));
+        for (const [badLim, mObj, bx0, by0, bw, bh] of [
+            [{ source: "depth", lo: "bad", hi: 0.8 }, mapWithGuide, 0, 0, 16, 16],
+            [{ source: "depth", lo: 0.2, hi: "bad" }, mapWithGuide, 0, 0, 16, 16],
+            [{ source: "depth", lo: 0.2, hi: 0.8, fLo: "bad" }, mapWithGuide, 0, 0, 16, 16],
+            [{ source: "depth", lo: 0.2, hi: 0.8, fHi: Infinity }, mapWithGuide, 0, 0, 16, 16],
+            [limSnap, mapBadSnap, 0, 0, 16, 16],
+            [limSnap, mapOverflowXf, 0, 768, 1200, 256],
+        ]) {
+            try {
+                const buf = new Uint8Array(bw * bh * 4).fill(200);
+                limitAlphaRowsHigh(buf, bx0, by0, bw, bh, badLim, mObj);
+            } catch (err) {
+                storedOk = false;
+                storedDetail = `${JSON.stringify(badLim)} @(${bx0},${by0},${bw},${bh}) threw ${err}`;
+                break;
+            }
+        }
+        // Also verify px.js limitAlphaRows directly when corner ry00..ry11 overflows to -Inf + Inf = NaN
+        if (storedOk) {
+            try {
+                const buf = new Uint8Array(1200 * 4 * 4).fill(200);
+                simd.limitAlphaRows(buf, new Uint16Array(4 * 2048).fill(32768), 4, 2048, [1, -2.048e305, 0, 2.048e305, 0, 0], 0, 1022, 1200, 4, limSnap);
+            } catch (err) {
+                storedOk = false;
+                storedDetail = `px.limitAlphaRows corner-NaN threw ${err}`;
+            }
+        }
+        K.setKernels("js");
+        check("inpaint_limit.js limitAlphaRows never throws on stored depth limits with non-finite fields", storedOk, storedDetail);
+    }
+
+    // Refusals for limitAlphaRows across twin, simd, and scalar
+    {
+        const map = new Uint16Array(16 * 16);
+        const guide = { data: new Uint8Array(16 * 16 * 4), w: 16, h: 16 };
+        const rgba = new Uint8Array(32 * 32 * 4);
+        const xf = [0.5, 0, 0, 0.5, 0, 0];
+        const lim = { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const snap = [0.05, 0.02];
+        const badCalls = [
+            ["null rgba", () => (k) => k.limitAlphaRows(null, map, 16, 16, xf, 0, 0, 32, 32, lim)],
+            ["short rgba", () => (k) => k.limitAlphaRows(new Uint8Array(100), map, 16, 16, xf, 0, 0, 32, 32, lim)],
+            ["non-u16 map", () => (k) => k.limitAlphaRows(rgba, new Uint8Array(256), 16, 16, xf, 0, 0, 32, 32, lim)],
+            ["short map", () => (k) => k.limitAlphaRows(rgba, new Uint16Array(100), 16, 16, xf, 0, 0, 32, 32, lim)],
+            ["mw = 0", () => (k) => k.limitAlphaRows(rgba, map, 0, 16, xf, 0, 0, 32, 32, lim)],
+            ["w < 0", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, -1, 32, lim)],
+            ["non-int x0", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 1.5, 0, 32, 32, lim)],
+            ["short xf", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, [1, 0, 0], 0, 0, 32, 32, lim)],
+            ["NaN xf", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, [NaN, 0, 0, 1, 0, 0], 0, 0, 32, 32, lim)],
+            ["null limit", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, null)],
+            ["NaN limit.lo", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, { lo: NaN, hi: 0.8, fLo: 0, fHi: 0 })],
+            ["short snap", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, lim, [0.05], guide)],
+            ["NaN snap", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, lim, [NaN, 0.02], guide)],
+            ["short guide", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, lim, snap, { data: new Uint8Array(10), w: 16, h: 16 })],
+            ["short col", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, lim, snap, guide, new Uint8Array(10))],
+        ];
+        let allThrew = true, miss = "";
+        for (const [label, fn] of badCalls) {
+            for (const [kName, k] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+                let threw = false;
+                try { fn()(k); } catch { threw = true; }
+                if (!threw) { allThrew = false; miss = `${label} on ${kName}`; break; }
+            }
+            if (!allThrew) break;
+        }
+        check("limit_alpha_rows refuses invalid inputs across twin, simd, and scalar", allThrew, miss);
+
+        // Raw export returns 1 on valid [wy0..wy0+wh) and 0 when [iy0..iy1] falls outside [wy0..wy0+wh)
+        const a = simd.job;
+        try {
+            const pRgba = simd._in(a, rgba, rgba.byteLength);
+            const pMap = simd._in(a, map, map.byteLength);
+            const pParams = a.take(12 * 8);
+            const pv = simd.view(Float64Array, pParams, 12);
+            pv[0] = 0.5; pv[3] = 0.5; pv[6] = 0.2; pv[7] = 0.8; pv[8] = 0.05; pv[9] = 0.05;
+            const okValid = simd.exports.limit_alpha_rows(
+                pRgba, 0, pMap, 0,
+                16, 16, 0, 16,
+                0, 0, 32, 32,
+                pParams, 0
+            );
+            const okOutLo = simd.exports.limit_alpha_rows(
+                pRgba, 0, pMap, 0,
+                16, 16, 5, 4,
+                0, 0, 32, 32,
+                pParams, 0
+            );
+            const okOutHi = simd.exports.limit_alpha_rows(
+                pRgba, 0, pMap, 0,
+                16, 16, 0, 4,
+                0, 0, 32, 32,
+                pParams, 0
+            );
+            check("raw limit_alpha_rows returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)",
+                okValid === 1 && okOutLo === 0 && okOutHi === 0,
+                `okValid=${okValid} okOutLo=${okOutLo} okOutHi=${okOutHi}`);
+        } finally { simd._reset(a); }
+    }
+
+    // Route check on K.limitAlphaRows
+    {
+        K.setKernels("rust");
+        const mw = 24, mh = 16, W = 120, H = 80;
+        const { map } = makeMapPair(mw, mh, "ramp");
+        const guide = { data: new Uint8Array(mw * mh * 4).fill(100), w: mw, h: mh };
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const lim = { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const snap = snapParams(50);
+        const bandJs = makeRgbaBand(W, H, "ramp");
+        const bandRust = new Uint8Array(bandJs);
+
+        K.setRoute("limitAlphaRows", "js");
+        K.pxCalls(true);
+        K.limitAlphaRows(bandJs, map, mw, mh, xf, 0, 0, W, H, lim, snap, guide, null);
+        const jsCalls = K.pxCalls(true).limit_alpha_rows || 0;
+
+        K.setRoute("limitAlphaRows", "rust");
+        K.limitAlphaRows(bandRust, map, mw, mh, xf, 0, 0, W, H, lim, snap, guide, null);
+        const rustCalls = K.pxCalls(true).limit_alpha_rows || 0;
+        K.setRoute("limitAlphaRows", null);
+        K.setKernels("js");
+
+        check("kernels.js limitAlphaRows routes between twin (0 calls) and rust (1 call) with identical output",
+            !twinDiff(bandRust, bandJs) && jsCalls === 0 && rustCalls === 1,
+            `jsCalls=${jsCalls} rustCalls=${rustCalls}`);
+    }
+
     if (process.env.PX_BENCH) {
         const mw = 4096, mh = 2731, W = 15000, H = 10000;
         const { map, rmax } = makeMapPair(mw, mh, "ramp");
@@ -8030,6 +9218,465 @@ async function rangeCases(js, simd, scalar, resample, K) {
             const med = benchMedians(rows, { rounds: 9 });
             console.log(`       range_tiles_rgba 15000x256 row, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 9)`);
         }
+        const rgbaAlphaRow = new Uint8Array(rgbaRow);
+        for (const [what, s, g] of [
+            ["plain bilinear (15000x256)", null, null],
+            ["snapped (15000x256)", snap, guide],
+        ]) {
+            const rows = [
+                ["twin", () => js.limitAlphaRows(rgbaAlphaRow, map, mw, mh, xf, 0, y0, W, 256, lim, s, g, null)],
+                ["simd", () => simd.limitAlphaRows(rgbaAlphaRow, map, mw, mh, xf, 0, y0, W, 256, lim, s, g, null)],
+                ["scalar", () => scalar.limitAlphaRows(rgbaAlphaRow, map, mw, mh, xf, 0, y0, W, 256, lim, s, g, null)],
+            ];
+            const med = benchMedians(rows, { rounds: 9 });
+            console.log(`       limit_alpha_rows 15000x256 row, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 9)`);
+        }
+    }
+}
+
+/**
+ * TIFF strip and tile unpacking (K16, docs/PLAN_WASM_BUILD.md §4.6): `tiff_unpack` / `unpackStrip` (`TIFF_JS`) for
+ * uncompressed (`1`), LZW (`5`) and PackBits (`32773`) across both wasm builds and the JS twin, stopping at `need`,
+ * and every negative error code (`-1`..`-5`).
+ */
+async function tiffCases(js, simd, scalar, K, T) {
+    check("inpaint_tiff.js exports unpackStrip and TIFF_JS.unpackStrip, re-exported by kernels_js.js and kernels.js",
+        typeof T.unpackStrip === "function" && !!T.TIFF_JS && T.TIFF_JS.unpackStrip === T.unpackStrip
+        && js.unpackStrip === T.unpackStrip && js.tiffUnpack === T.unpackStrip && K.unpackStrip === T.unpackStrip && K.TIFF_JS === T.TIFF_JS);
+
+    // Helper: pack arbitrary (code, width) pairs MSB-first into a byte array.
+    const packCodesMsb = (pairs) => {
+        const out = [];
+        let acc = 0, nacc = 0;
+        for (const [code, width] of pairs) {
+            acc = (acc << width) | code;
+            nacc += width;
+            while (nacc >= 8) {
+                nacc -= 8;
+                out.push((acc >>> nacc) & 255);
+            }
+            acc &= (1 << nacc) - 1;
+        }
+        if (nacc > 0) out.push((acc << (8 - nacc)) & 255);
+        return Uint8Array.from(out);
+    };
+
+    // Standard TIFF 6.0 MSB-first LZW encoder (with optional Clear limit or no initial Clear).
+    const lzwEncodeTiff = (data, { clearAt = 4094, initialClear = true, withEoi = true } = {}) => {
+        const pairs = [];
+        let width = 9, next = 258;
+        const table = new Map();
+        if (initialClear) pairs.push([256, width]);
+        if (data.length > 0) {
+            let w = data[0];
+            for (let i = 1; i < data.length; i++) {
+                const b = data[i];
+                const c = table.get(w * 256 + b);
+                if (c !== undefined) { w = c; continue; }
+                pairs.push([w, width]);
+                if (next < 4096) {
+                    table.set(w * 256 + b, next++);
+                    if (clearAt && next === clearAt) {
+                        pairs.push([256, width]);
+                        table.clear();
+                        next = 258;
+                        width = 9;
+                    } else if (next > (1 << width) - 1 && width < 12) {
+                        width++;
+                    }
+                }
+                w = b;
+            }
+            pairs.push([w, width]);
+            if (next < 4096) {
+                next++;
+                if (clearAt && next === clearAt) { pairs.push([256, width]); width = 9; }
+                else if (next > (1 << width) - 1 && width < 12) width++;
+            }
+        }
+        if (withEoi) pairs.push([257, width]);
+        return packCodesMsb(pairs);
+    };
+
+    // PackBits encoder (literal runs, repeat runs, and optional 128 no-op bytes).
+    const packBitsEncode = (data, { injectNoop = false } = {}) => {
+        const out = [];
+        let i = 0;
+        while (i < data.length) {
+            if (injectNoop && (i % 97 === 0)) out.push(128);
+            let j = i;
+            while (j + 1 < data.length && data[j + 1] === data[i] && j - i < 126) j++;
+            const run = j - i + 1;
+            if (run >= 2) {
+                out.push(257 - run, data[i]);
+                i = j + 1;
+                continue;
+            }
+            let k = i;
+            while (k < data.length && k - i < 128) {
+                if (k + 1 < data.length && data[k + 1] === data[k]) break;
+                k++;
+            }
+            if (k === i) k = i + 1;
+            const n = k - i;
+            out.push(n - 1);
+            for (let m = 0; m < n; m++) out.push(data[i + m]);
+            i = k;
+        }
+        if (injectNoop) out.push(128);
+        return Uint8Array.from(out);
+    };
+
+    // Build varied test payloads for none (1), LZW (5) and PackBits (32773).
+    const rng = (seed) => {
+        let s = seed >>> 0;
+        return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s >>> 16; };
+    };
+    const r = rng(1601);
+    const randomPayload = (n) => { const b = new Uint8Array(n); for (let i = 0; i < n; i++) b[i] = r() & 255; return b; };
+    const runPayload = (n) => {
+        const b = new Uint8Array(n);
+        let i = 0;
+        while (i < n) {
+            const len = 1 + (r() % 300), v = r() & 255, mode = r() % 3;
+            for (let k = 0; k < len && i < n; k++, i++) {
+                b[i] = mode === 0 ? v : mode === 1 ? (v + (k % 3)) & 255 : (k & 1 ? v : 255 - v);
+            }
+        }
+        return b;
+    };
+
+    const pSmall = randomPayload(37);
+    const pWidths = randomPayload(12000);     // crosses 9 -> 10 -> 11 -> 12-bit LZW widths and resets at 4094
+    const pKwKwK = runPayload(16384);         // heavy KwKwK (c === next) runs and alternating pairs
+    const pFull4096 = randomPayload(14000);   // encoded with clearAt: 0 so the table fills to 4096 and stays at 4096
+
+    // Frozen hand-derived LZW stream with 2-, 3-, and 4-byte table entries of distinct bytes:
+    // 256 (Clear), 10, 20 (258=[10,20]), 30 (259=[20,30]), 258->[10,20] (260=[30,10]),
+    // 30 (261=[10,20,30]), 261->[10,20,30] (262=[30,10]), 40 (263=[10,20,30,40]), 263->[10,20,30,40], 257 (EOI)
+    const handLzwStream = Uint8Array.from([0x80, 0x02, 0x82, 0x81, 0xE8, 0x10, 0x7A, 0x0A, 0x28, 0x83, 0xC0, 0x40]);
+    const handLzwWant = Uint8Array.from([10, 20, 30, 10, 20, 30, 10, 20, 30, 40, 10, 20, 30, 40]);
+    // Frozen hand-derived PackBits stream: literal [11,22,33,44], 128 no-op, repeat 4x 77, literal [88,99]
+    const handPbStream = Uint8Array.from([3, 11, 22, 33, 44, 128, 253, 77, 1, 88, 99]);
+    const handPbWant = Uint8Array.from([11, 22, 33, 44, 77, 77, 77, 77, 88, 99]);
+
+    const cases = [
+        // Uncompressed (1)
+        { tag: "none small", args: [1, pSmall, pSmall.length], want: pSmall },
+        { tag: "none empty", args: [1, pSmall, 0], want: new Uint8Array(0) },
+        { tag: "none with trailing padding", args: [1, Uint8Array.from([...pSmall, 99, 100, 101]), pSmall.length], want: pSmall },
+        // PackBits (32773)
+        { tag: "packbits small", args: [32773, packBitsEncode(pSmall), pSmall.length], want: pSmall },
+        { tag: "packbits runs and 128 no-ops", args: [32773, packBitsEncode(pKwKwK, { injectNoop: true }), pKwKwK.length], want: pKwKwK },
+        { tag: "packbits stop at need=13", args: [32773, packBitsEncode(pSmall), 13], want: pSmall.subarray(0, 13) },
+        { tag: "packbits hand-derived full", args: [32773, handPbStream, 10], want: handPbWant },
+        { tag: "packbits hand-derived stop inside literal run (need=2)", args: [32773, handPbStream, 2], want: Uint8Array.from([11, 22]) },
+        { tag: "packbits hand-derived stop inside repeat run (need=6)", args: [32773, handPbStream, 6], want: Uint8Array.from([11, 22, 33, 44, 77, 77]) },
+        { tag: "packbits trailing lone repeat header after need", args: [32773, Uint8Array.from([...packBitsEncode(pSmall), 200]), pSmall.length], want: pSmall },
+        // LZW (5)
+        { tag: "lzw small", args: [5, lzwEncodeTiff(pSmall), pSmall.length], want: pSmall },
+        { tag: "lzw no initial clear", args: [5, lzwEncodeTiff(pSmall, { initialClear: false }), pSmall.length], want: pSmall },
+        { tag: "lzw 9..12-bit widths and resets", args: [5, lzwEncodeTiff(pWidths), pWidths.length], want: pWidths },
+        { tag: "lzw KwKwK runs", args: [5, lzwEncodeTiff(pKwKwK), pKwKwK.length], want: pKwKwK },
+        { tag: "lzw full 4096 table", args: [5, lzwEncodeTiff(pFull4096, { clearAt: 0 }), pFull4096.length], want: pFull4096 },
+        { tag: "lzw stop mid-code at need=511", args: [5, lzwEncodeTiff(pKwKwK), 511], want: pKwKwK.subarray(0, 511) },
+        { tag: "lzw hand-derived full", args: [5, handLzwStream, 14], want: handLzwWant },
+        { tag: "lzw hand-derived stop 1 byte into 3-byte code (need=7)", args: [5, handLzwStream, 7], want: Uint8Array.from([10, 20, 30, 10, 20, 30, 10]) },
+        { tag: "lzw hand-derived stop 2 bytes into 3-byte code (need=8)", args: [5, handLzwStream, 8], want: Uint8Array.from([10, 20, 30, 10, 20, 30, 10, 20]) },
+        { tag: "lzw hand-derived stop 2 bytes into 4-byte code (need=12)", args: [5, handLzwStream, 12], want: Uint8Array.from([10, 20, 30, 10, 20, 30, 10, 20, 30, 40, 10, 20]) },
+        // Damaged LZW codes (511 beyond table) appended after the needed bytes are ignored once `need` is reached:
+        { tag: "lzw damaged code after need", args: [5, packCodesMsb([[256, 9], [65, 9], [66, 9], [258, 9], [511, 9]]), 4], want: Uint8Array.from([65, 66, 65, 66]) },
+    ];
+    twinCheck({
+        name: "tiff_unpack",
+        builds: [["rust simd", simd], ["rust scalar", scalar]],
+        twin: js,
+        call: (k, [comp, src, need]) => k.tiffUnpack(comp, src, need),
+        cases,
+    });
+    const wantProblems = [];
+    for (const c of cases) {
+        const got = js.tiffUnpack(...c.args);
+        if (!eqBytes(got, c.want)) wantProblems.push(c.tag);
+    }
+    check(`tiff_unpack: all ${cases.length} cases match their reference payloads (including hand-derived mid-code and mid-run stops)`,
+        !wantProblems.length, wantProblems.join(", "));
+
+    // Verify caller-supplied output buffer (both 4-arg `out` with larger capacity and 3-arg `need instanceof Uint8Array` overload) on twin, simd and scalar
+    const outSources = [[1, pSmall], [5, lzwEncodeTiff(pSmall)], [32773, packBitsEncode(pSmall)]];
+    for (const [bname, mod] of [["twin", js], ["simd", simd], ["scalar", scalar]]) {
+        let outOk = true;
+        for (const [comp, enc] of outSources) {
+            const outBuf = new Uint8Array(pSmall.length + 16).fill(0xAA);
+            const sub = outBuf.subarray(5, 5 + pSmall.length + 4);
+            const ret = mod.tiffUnpack(comp, enc, pSmall.length, sub);
+            const sentinelOk = outBuf.subarray(0, 5).every((v) => v === 0xAA) && outBuf.subarray(5 + pSmall.length).every((v) => v === 0xAA);
+            if (ret !== sub || !eqBytes(sub.subarray(0, pSmall.length), pSmall) || !sentinelOk) outOk = false;
+
+            const outBuf3 = new Uint8Array(pSmall.length + 12).fill(0x55);
+            const subExact = outBuf3.subarray(3, 3 + pSmall.length);
+            const ret3 = mod.tiffUnpack(comp, enc, subExact);
+            const sentinelOk3 = outBuf3.subarray(0, 3).every((v) => v === 0x55) && outBuf3.subarray(3 + pSmall.length).every((v) => v === 0x55);
+            if (ret3 !== subExact || !eqBytes(subExact, pSmall) || !sentinelOk3) outOk = false;
+        }
+        check(`tiff_unpack (${bname}): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes`, outOk);
+    }
+
+    for (const [bname, px] of [["simd", simd], ["scalar", scalar]]) {
+
+        // Verify all negative error codes (-1..-5) match between Rust and JS twin
+        const errCases = [
+            ["unsupported compression 8 (deflate)", 8, pSmall, pSmall.length, -1, /unsupported/i],
+            ["unsupported compression 32946 (deflate)", 32946, pSmall, pSmall.length, -1, /unsupported/i],
+            ["unsupported compression 7 (JPEG)", 7, pSmall, pSmall.length, -1, /unsupported/i],
+            ["negative need", 1, pSmall, -1, -1, /unsupported/i],
+            ["bare ArrayBuffer as src (none)", 1, new ArrayBuffer(16), 4, -1, /unsupported/i],
+            ["bare ArrayBuffer as src (LZW)", 5, lzwEncodeTiff(pSmall).buffer, pSmall.length, -1, /unsupported/i],
+            ["fake byteLength object as src", 1, { byteLength: 16 }, 4, -1, /unsupported/i],
+            ["none truncated", 1, pSmall.subarray(0, 10), 11, -2, /ends early|fewer bytes/i],
+            ["PackBits empty truncated", 32773, new Uint8Array(0), 1, -2, /ends early|fewer bytes/i],
+            ["PackBits truncated mid-literal", 32773, Uint8Array.from([5, 1, 2, 3]), 5, -2, /ends early|fewer bytes/i],
+            ["PackBits truncated after repeat header", 32773, Uint8Array.from([255]), 2, -2, /ends early|fewer bytes/i],
+            ["LZW empty truncated", 5, new Uint8Array(0), 1, -2, /ends early|fewer bytes/i],
+            ["LZW 1-byte truncated", 5, Uint8Array.from([0x80]), 1, -2, /ends early|fewer bytes/i],
+            ["LZW EOI before need", 5, packCodesMsb([[256, 9], [42, 9], [257, 9]]), 2, -2, /ends early|fewer bytes/i],
+            ["LZW stream ends before need", 5, packCodesMsb([[256, 9], [42, 9]]), 2, -2, /ends early|fewer bytes/i],
+            ["old-style LZW (00 01)", 5, Uint8Array.from([0x00, 0x01, 0x02, 0x03]), 1, -3, /old-style LZW/i],
+            ["old-style LZW (00 83)", 5, Uint8Array.from([0x00, 0x83, 0x00]), 1, -3, /old-style LZW/i],
+            ["LZW code > 255 at start (before literal)", 5, packCodesMsb([[300, 9], [257, 9]]), 1, -4, /before any literal/i],
+            ["LZW code > 255 after Clear (before literal)", 5, packCodesMsb([[256, 9], [65, 9], [256, 9], [258, 9], [257, 9]]), 2, -4, /before any literal/i],
+            ["LZW code beyond table (c > next)", 5, packCodesMsb([[256, 9], [65, 9], [259, 9], [257, 9]]), 2, -5, /beyond the table/i],
+        ];
+        const errProblems = [];
+        for (const [what, comp, src, need, wantCode, re] of errCases) {
+            let eRust = null, eJs = null;
+            try { px.tiffUnpack(comp, src, need, null, "strip 3"); } catch (e) { eRust = e; }
+            try { js.tiffUnpack(comp, src, need, null, "strip 3"); } catch (e) { eJs = e; }
+            if (!eRust || !eJs) { errProblems.push(`${what}: rust=${!!eRust} js=${!!eJs}`); continue; }
+            if (eRust.code !== wantCode || eJs.code !== wantCode) errProblems.push(`${what}: code rust=${eRust.code} js=${eJs.code} want=${wantCode}`);
+            if (!re.test(eRust.message) || !re.test(eJs.message)) errProblems.push(`${what}: msg rust="${eRust.message}" js="${eJs.message}"`);
+            if (wantCode <= -2 && eRust.message !== eJs.message) errProblems.push(`${what}: messages differ ("${eRust.message}" vs "${eJs.message}")`);
+        }
+        // Raw export pointer / compression validation
+        const rawBadComp = px.exports.tiff_unpack(8, 0, 0, 0, 0) | 0;
+        const rawNullSrc = px.exports.tiff_unpack(1, 0, 4, 8, 4) | 0;
+        const rawNullOut = px.exports.tiff_unpack(1, 8, 4, 0, 4) | 0;
+        const rawZeroNeed = px.exports.tiff_unpack(5, 0, 0, 0, 0) | 0;
+        if (rawBadComp !== -1 || rawNullSrc !== -1 || rawNullOut !== -1 || rawZeroNeed !== 0) {
+            errProblems.push(`raw export checks: comp=${rawBadComp} nullSrc=${rawNullSrc} nullOut=${rawNullOut} zeroNeed=${rawZeroNeed}`);
+        }
+        check(`tiff_unpack (${bname}): negative error codes (-1..-5) and messages match the JS twin`, !errProblems.length, errProblems.join(" | "));
+    }
+
+    // Fuzz: random, bit-flipped (9..12-bit widths and full 4096 table) and prefix-cut LZW/PackBits streams -> 0 traps, identical across twin, simd and scalar
+    {
+        const rf = rng(1602);
+        const baseLzw9 = lzwEncodeTiff(pKwKwK.subarray(0, 256));
+        const baseLzwWidths = lzwEncodeTiff(pWidths);                     // 9 -> 10 -> 11 -> 12-bit widths + Clear resets
+        const baseLzwFull = lzwEncodeTiff(pFull4096, { clearAt: 0 });     // 9 -> 12-bit widths, fills table to 4096 and stays at 4096
+        const baseLzwSweep = lzwEncodeTiff(pWidths.subarray(0, 2600));    // crosses 9 -> 10 -> 11 -> 12-bit widths (~2100 bytes)
+        const basePb = packBitsEncode(pKwKwK.subarray(0, 256));
+        let fuzzFails = 0, fuzzDetail = "";
+        const runOne = (fn) => {
+            try { return { ok: true, out: fn() }; }
+            catch (e) { return { ok: false, code: e.code, msg: e.message }; }
+        };
+        const checkTrial = (label, comp, stream, need) => {
+            const rJs = runOne(() => js.tiffUnpack(comp, stream, need));
+            const rSimd = runOne(() => simd.tiffUnpack(comp, stream, need));
+            const rScalar = runOne(() => scalar.tiffUnpack(comp, stream, need));
+            const same = rJs.ok === rSimd.ok && rJs.ok === rScalar.ok && !simd.trapped && !scalar.trapped
+                && (rJs.ok ? (eqBytes(rJs.out, rSimd.out) && eqBytes(rJs.out, rScalar.out)) : (rJs.code === rSimd.code && rJs.code === rScalar.code && rJs.msg === rSimd.msg && rJs.msg === rScalar.msg));
+            if (!same) {
+                fuzzFails++;
+                if (!fuzzDetail) fuzzDetail = `${label} (comp=${comp}, need=${need}): js=${JSON.stringify(rJs)} simd=${JSON.stringify(rSimd)} scalar=${JSON.stringify(rScalar)}`;
+            }
+        };
+        for (let t = 0; t < 240; t++) {
+            if (t < 80) {
+                const comp = (t & 1) ? 5 : 32773;
+                const need = 1 + (rf() % 300);
+                const len = rf() % 120;
+                const stream = new Uint8Array(len);
+                for (let i = 0; i < len; i++) stream[i] = rf() & 255;
+                checkTrial(`random-${t}`, comp, stream, need);
+            } else if (t < 140) {
+                const comp = (t & 1) ? 5 : 32773;
+                const base = comp === 5 ? baseLzw9 : basePb;
+                const need = 1 + (rf() % 300);
+                const stream = base.slice(0, Math.max(1, base.length - (rf() % 20)));
+                const flips = 1 + (rf() % 4);
+                for (let f = 0; f < flips; f++) stream[(rf() * 65536 + rf()) % stream.length] ^= 1 << (rf() & 7);
+                checkTrial(`flip9-${t}`, comp, stream, need);
+            } else {
+                // Bit-flips and cuts across 10..12-bit code widths, Clear resets, and full 4096-entry LZW tables
+                const useFull = (t & 1) === 1;
+                const base = useFull ? baseLzwFull : baseLzwWidths;
+                const maxNeed = useFull ? pFull4096.length : pWidths.length;
+                const cutLen = 512 + ((rf() * 65536 + rf()) % (base.length - 511));
+                const stream = base.slice(0, cutLen);
+                const need = 512 + ((rf() * 65536 + rf()) % (maxNeed - 511));
+                const flips = 1 + (rf() % 6);
+                for (let f = 0; f < flips; f++) {
+                    const pos = 400 + ((rf() * 65536 + rf()) % Math.max(1, stream.length - 400));
+                    stream[pos] ^= 1 << (rf() & 7);
+                }
+                checkTrial(`flip12-${t}`, 5, stream, need);
+            }
+        }
+        // Sweep every prefix length of a multi-width LZW stream (9 -> 10 -> 11 -> 12 bits)
+        for (let k = 0; k <= baseLzwSweep.length; k++) {
+            checkTrial(`sweep-${k}`, 5, baseLzwSweep.subarray(0, k), 2600);
+        }
+        check("tiff_unpack fuzz (random, 9..12-bit & full-4096 bit-flipped, and every-prefix sweep): 0 traps, identical bytes or error codes across twin, simd and scalar",
+            fuzzFails === 0, fuzzDetail);
+    }
+
+    // kernels.js wrapper check
+    {
+        K.setKernels("rust");
+        if (!K.rustPx()) {
+            const realFetch = globalThis.fetch;
+            globalThis.fetch = async (u, ...rest) => {
+                const s = String(u && u.href ? u.href : u);
+                return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+            };
+            try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+        }
+        const enc = lzwEncodeTiff(pSmall);
+        K.setKernels("js");
+        K.pxCalls(true);
+        const outJs = K.tiffUnpack(5, enc, pSmall.length);
+        const jsCalls = K.pxCalls(true).tiff_unpack || 0;
+        K.setKernels("rust");
+        const outRust = K.tiffUnpack(5, enc, pSmall.length);
+        const rustCalls = K.pxCalls(true).tiff_unpack || 0;
+        // Trap recovery on K.tiffUnpack falls back to the JS twin
+        const p = K.rustPx(), realWarn = console.warn;
+        let outRec = null, recReplaced = false;
+        console.warn = () => {};
+        try {
+            p.tiffUnpack = function () { return trapIn(this); };
+            outRec = K.tiffUnpack(5, enc, pSmall.length);
+            recReplaced = K.rustPx() !== p;
+        } finally { console.warn = realWarn; }
+        K.setKernels("js");
+        check("kernels.js tiffUnpack dispatches between JS twin (0 calls) and Rust (1 call) with identical bytes, and recovers from a trap",
+            jsCalls === 0 && rustCalls === 1 && eqBytes(outJs, pSmall) && eqBytes(outRust, pSmall) && eqBytes(outRec, pSmall) && recReplaced,
+            `jsCalls=${jsCalls} rustCalls=${rustCalls} recReplaced=${recReplaced}`);
+    }
+
+    // Live readTiff checks: 1-byte first-piece LZW fix and StripRows/TileRows stopping at `need`
+    {
+        const mkLittleTiff = (tags, data, offTag = 273, cntTag = 279) => {
+            const parts = [];
+            let size = 0;
+            const push = (b) => { parts.push(b); size += b.length; };
+            push(Uint8Array.from([0x49, 0x49, 42, 0, 0, 0, 0, 0]));
+            const offsets = [];
+            for (const seg of data) { if (size & 1) push(new Uint8Array(1)); offsets.push(size); push(seg); }
+            if (size & 1) push(new Uint8Array(1));
+            const ifdAt = size;
+            const allTags = [...tags, [offTag, 4, offsets], [cntTag, 4, data.map((s) => s.length)]].sort((a, b) => a[0] - b[0]);
+            const ifd = new Uint8Array(2 + 12 * allTags.length + 4);
+            const dv = new DataView(ifd.buffer);
+            dv.setUint16(0, allTags.length, true);
+            let extraAt = ifdAt + ifd.length;
+            const extras = [];
+            allTags.forEach(([tag, type, vals], i) => {
+                const tsz = type === 3 ? 2 : 4;
+                const payload = new Uint8Array(tsz * vals.length);
+                const pdv = new DataView(payload.buffer);
+                vals.forEach((v, k) => { if (type === 3) pdv.setUint16(k * 2, v, true); else pdv.setUint32(k * 4, v >>> 0, true); });
+                const p = 2 + 12 * i;
+                dv.setUint16(p, tag, true); dv.setUint16(p + 2, type, true); dv.setUint32(p + 4, vals.length, true);
+                if (payload.length <= 4) ifd.set(payload, p + 8);
+                else {
+                    if (extraAt & 1) { extras.push(new Uint8Array(1)); extraAt++; }
+                    dv.setUint32(p + 8, extraAt, true);
+                    extras.push(payload);
+                    extraAt += payload.length;
+                }
+            });
+            push(ifd);
+            for (const e of extras) push(e);
+            const out = new Uint8Array(size);
+            let o = 0;
+            for (const p of parts) { out.set(p, o); o += p.length; }
+            new DataView(out.buffer).setUint32(4, ifdAt, true);
+            return out;
+        };
+        const oneByteFirstBlob = (u8) => ({
+            size: u8.byteLength,
+            slice(start, end) {
+                const sub = u8.subarray(start, end);
+                return {
+                    async arrayBuffer() { return sub.slice().buffer; },
+                    stream() {
+                        let step = 0;
+                        return new ReadableStream({
+                            pull(c) {
+                                if (step === 0 && sub.length > 1) { step = 1; c.enqueue(sub.subarray(0, 1)); }
+                                else if (step <= 1 && sub.length > 0) { step = 2; c.enqueue(sub.length > 1 ? sub.subarray(1) : sub); }
+                                else c.close();
+                            },
+                        });
+                    },
+                };
+            },
+        });
+        // 1) LZW 1-byte first piece with byte[0] === byte[1] === 0 and byte[2] odd
+        const s1 = Uint8Array.from([0, 0, 8, 10, 20, 30]);
+        const strip1 = packCodesMsb([...Array.from(s1, (b) => [b, 9]), [257, 9]]);
+        const tiff1 = mkLittleTiff([[256, 4, [2]], [257, 4, [1]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [strip1]);
+        let got1 = null;
+        await T.readTiff(oneByteFirstBlob(tiff1), { onRows: (rgba) => { got1 = rgba.slice(); } });
+        const want1 = Uint8Array.from([0, 0, 8, 255, 10, 20, 30, 255]);
+        // Also verify 1-byte first piece on actual old-style LZW [0x00, 0x01, 0x02] is still refused
+        const tiffOld = mkLittleTiff([[256, 4, [2]], [257, 4, [1]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [Uint8Array.from([0x00, 0x01, 0x02, 0x03])]);
+        let errOld = null;
+        try { await T.readTiff(oneByteFirstBlob(tiffOld), { onRows: () => {} }); } catch (e) { errOld = e; }
+        check("inpaint_tiff.js readTiff: 1-byte first LZW piece keeps byte[0] when byte[0] === byte[1] and still refuses old-style LZW",
+            !!got1 && eqBytes(got1, want1) && !!errOld && /old-style LZW/i.test(errOld.message));
+
+        // 2) StripRows.open and TileRows.tile pass `need` / `want` to unpacked() so damaged codes after `need` are ignored
+        const w2 = 16, h2 = 4, s2 = new Uint8Array(w2 * h2 * 3);
+        for (let i = 0; i < s2.length; i++) s2[i] = (i * 17 + 3) & 255;
+        const badStrip = packCodesMsb([[256, 9], ...Array.from(s2, (b) => [b, 9]), [511, 9]]);
+        const tiffStripNeed = mkLittleTiff([[256, 4, [w2]], [257, 4, [h2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [h2]]], [badStrip]);
+        let gotStrip = null;
+        await T.readTiff(new Blob([tiffStripNeed]), { onRows: (rgba) => { gotStrip = rgba.slice(); } });
+
+        const tileSamples = new Uint8Array(16 * 16 * 3);
+        tileSamples.set(s2);
+        const tilePairs = [[256, 9]];
+        for (let i = 0; i < tileSamples.length; i++) {
+            if (i > 0 && i % 200 === 0) tilePairs.push([256, 9]);
+            tilePairs.push([tileSamples[i], 9]);
+        }
+        tilePairs.push([511, 9]);
+        const badTile = packCodesMsb(tilePairs);
+        const tiffTileNeed = mkLittleTiff([[256, 4, [w2]], [257, 4, [h2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [322, 4, [16]], [323, 4, [16]]], [badTile], 324, 325);
+        let gotTile = null;
+        await T.readTiff(new Blob([tiffTileNeed]), { onRows: (rgba) => { gotTile = rgba.slice(); } });
+        check("inpaint_tiff.js readTiff: StripRows.open and TileRows.tile stop at `need` / `want` when damaged LZW bytes follow",
+            !!gotStrip && !!gotTile && eqBytes(gotStrip, gotTile) && gotStrip[0] === s2[0] && gotStrip[1] === s2[1] && gotStrip[2] === s2[2]);
+    }
+
+    if (process.env.PX_BENCH) {
+        const rawStrip = runPayload(1024 * 1024);
+        const lzwStrip = lzwEncodeTiff(rawStrip);
+        const pbStrip = packBitsEncode(rawStrip);
+        for (const [what, comp, encoded] of [["LZW 1 MB strip", 5, lzwStrip], ["PackBits 1 MB strip", 32773, pbStrip]]) {
+            const out = new Uint8Array(rawStrip.length);
+            const rows = [
+                ["twin", () => js.tiffUnpack(comp, encoded, rawStrip.length, out)],
+                ["simd", () => simd.tiffUnpack(comp, encoded, rawStrip.length, out)],
+                ["scalar", () => scalar.tiffUnpack(comp, encoded, rawStrip.length, out)],
+            ];
+            const med = benchMedians(rows, { rounds: 15 });
+            console.log(`       tiff_unpack (${what}): ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 15)`);
+        }
     }
 }
 
@@ -8080,6 +9727,7 @@ async function main() {
     await group("range", async () => rangeCases(js, simdPx, scalarPx, resample, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href)));
     await group("pngFilter", () => pngFilterCases(js, simdPx, scalarPx));
     await group("retouchRoute", () => retouchRouteCases(js));
+    await group("tiff", async () => tiffCases(js, simdPx, scalarPx, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href), await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_tiff.js")).href)));
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));

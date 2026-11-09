@@ -1019,7 +1019,7 @@ of the request, and each family has its own word for it (the vendors' prompting 
     Replicate's one-image edit (Qwen Image Edit, "This endpoint takes one picture"), Comfy Cloud's one-picture nodes
     (the two Gemini image nodes and the upscaler nodes, "this node takes one picture"), In-app LaMa ("LaMa fills from
     the picture alone") and Magnific Image Expand ("Image Expand takes the picture alone").
-  - Routes that make pictures from the prompt alone (Comfy Router's xai / ideogram-v4 / krea, Magnific's Z-Image and
+  - Routes that make pictures from the prompt alone (Comfy Router's xai / ideogram-v4 / krea-2, Magnific's Z-Image and
     Mystic) and routes that need a mask refuse an edit run in their layout with the builder's own words. The adapters
     that count their own pictures keep that check with their own wording (a direct call, from a test, is refused
     before any request); in the app the central check runs first.
@@ -1739,6 +1739,47 @@ variant became a fill with the mask beside the image list, and it carries an `ac
 strict and name no seed). `tools/refs_layout_test.js` compares these WaveSpeed text runs with the requests before 26f
 except for the seed.
 
+### Krea 3 Edit
+
+`recipes/krea_3.json` (2026-11-09), id `krea_3`, family Krea, home `fal`. **Every variant is written from the host's docs
+and schemas, read 2026-11-09 and saved under `docs/research/krea3_2026-11-09/` (and `tools/refs/comfyrouter/`,
+`tools/refs/oxen/`, `tools/refs/comfy_cloud/nodes/`), and none has run against the live API.** `tools/krea3_test.js`
+holds each host's request to them. No variant has a mask input: every run is an instruction edit of the whole crop, the
+stitch keeps the selection, and `regions` / `regional_edit` / the node's precise edit are not used. At most eight
+pictures in all (`options.max_images`, the crop and the Original counted).
+
+| host | model | size / shape | Planning row | new image (`text`) |
+| --- | --- | --- | --- | --- |
+| fal.ai | `krea/v3/edit` | `sizing: "pixels"`: `image_size` { width, height } in multiples of 16, 256 to 3200 px an edge, at most 4,220,160 pixels (fal's `x-fal` rules) | `reasoning_level` medium (default), high, ultra | `krea/v3/text-to-image` (medium, high: `options.text_values` turns ultra into high); with references `krea/v3/edit`, the references alone |
+| WaveSpeed | `krea/v3/edit` | `size` `W*H` (`options.size: "star"`, 256 to 4096, about 4 MP) | `reasoning_level` low (default), medium; `model` Berry / Jam (`options.model_row`) | `krea/v3/text-to-image`; with references `krea/v3/edit` |
+| Replicate | `krea/krea-3`, field `images` | ten presets or auto (`edit_aspect: "preset_or_auto"`), `resolution` 1k / 2k (default 2k) | `thinking_mode` fast (default), high | the same model, the asked aspect, references in `images` |
+| Comfy Cloud | Partner Node `Krea3ImageNode`, `model` "Krea 3" | `model.aspect_ratio` the same ten or auto, `model.resolution` 1K / 2K (default 2K); required: `model.precise_edit` false, `model.seed` under 2^31 | `model.thinking_mode` fast (default), high, ultra | the node without a picture (`TEXT_NODES`, `comfycloud.textLayout`); ultra with no picture goes as high |
+| OpenRouter | `krea/k3-edit`, `POST /api/v1/images` | seven presets (`edit_aspect: "preset_or_none"`: its list has no `auto`, so a crop no preset fits goes without one), `resolution` auto, 1K, 2K | `thinking_mode` fast (default), high, through `provider.options.krea` (the endpoint's `allowed_passthrough_parameters`) | none (`text: false`: `input_references` min 1) |
+| Comfy Router | `krea/krea-3` | the ten presets or none ("omit for automatic framing"), `resolution` required, auto, 1k, 2k | `thinking_mode` fast (default), high, ultra (ultra forces 2k); `model` Berry / Jam | the same model; ultra with no picture goes as high |
+| Oxen.ai | `krea-3`, field `input_image` | the ten presets or auto, `resolution` auto, 1k, 2k | `thinking_level` fast (default), high | the same model on `/images/generate` |
+
+**The Comfy Router's pictures.** Its schema takes `image_urls` and says a URL from `POST /proxy/krea/assets` "is always
+accepted", other public URLs only in some environments and a data URL never, so `comfyrouter.js` (`krea3Body`,
+`kreaAsset`) uploads each picture there first: multipart `file`, the key as `X-API-Key`, as ComfyUI's own
+`comfy_api_nodes/nodes_krea.py` does; the route is not part of the Router's own API reference.
+
+**The shape of an edit.** On a host of presets the variant's `limits.aspects` widens the crop to the nearest preset
+(`stitch.js` `planCrop`) and `util.editAspect` sends that preset with `info.fit` "stretch" (a crop that cannot be widened:
+auto, or none where the host has no auto; an answer of another shape is centre-cropped). Comfy Cloud sends the preset
+too but reports no fit, so its answer goes through the stitch's 1 % same-aspect test. fal and WaveSpeed take the crop's
+own size and need none of this.
+
+**The names.** fal's and WaveSpeed's pages call the pictures `<image-1>`, `<image-2>`, so their variants carry `refs.name`
+`<image-{n}>`; the others use the recipe's `image {n}` (Comfy's node writes `@Image1` as `image 1`, Oxen's schema gives
+the pattern `image {n}`; OpenRouter's page names none and Replicate's says to refer to pictures by what they show).
+
+**Comfy Cloud's slot names.** The catalog's `get_node` lists the slot as `model.images.item_1`, but the node's autogrow
+is a `TemplatePrefix` counted from 0 (`nodes_krea.py`, `comfy_api/latest/_io.py`) and Comfy's template
+`api_krea3_image_edit` wires `model.images.image_0`, so that is what goes out (`g.images(prefix, links, 0)`).
+
+Not on ToAPIs (its model catalog, read 2026-11-09), Magnific (its OpenAPI document) or BytePlus ModelArk (its model
+list). Krea's own API is early access through sales: no adapter.
+
 ### Upscale recipes (`task: "upscale"`)
 
 An upscale recipe is a provider recipe with `"task": "upscale"` (the default task is `edit`). It runs through the
@@ -2328,6 +2369,7 @@ crop, the mask, *Original* and the reference layers together):
 | `seedream_5_pro` | `bytedance-seed/seedream-5-0-pro` | edit, `seed` | Resolution | 1K, 2K | 10 (OpenRouter lists 14), none steeper than 16:1 | 1024, 2048 |
 | `grok_imagine` | `x-ai/grok-imagine-image-2.0` | edit | Resolution, Quality (low, medium) | 1K, 2K | 3 | 1024, 2048 |
 | `krea_2` | `krea/krea-2-large` | text only (`edit: false`), `seed` | none | 1K, always sent | none | 1024 |
+| `krea_3` | `krea/k3-edit` (its `/endpoints`, 2026-11-09) | edit, `seed`, the preset the crop was widened to or none ("Krea 3 Edit" above) | Resolution, Planning (a passthrough to Krea: `provider.options.krea.thinking_mode`) | 1K, 2K | 8 | none (it needs a picture) |
 | `recraft_v4` | `recraft/recraft-v4` | text only (`edit: false`) | none | none | none | 1024 |
 
 "Generate new" is the variant's `text.sizes` (the long sides the dialog offers). Every model's
@@ -2981,6 +3023,7 @@ reference lists it on the synchronous route only), so `info.credits` is null on 
 | `magnific_precision` | `freepik/ai-image-upscaler-precision-v2` | upscale | `image` (plain base64), `scale_factor` 2..16, the four Magnific settings |
 | `ideogram_4_5` | `ideogram/ideogram-4-5` | fill | Ideogram's Precise Edit, selected by `image`: the crop in `image`, the selection inverted to Ideogram's black = edit in `mask` (none for a selection over the whole crop), up to three references unnumbered in `reference_images`, all data URIs; `quality`, the seed modulo 2^31, `num_images: 1`; no `size` or `magic_prompt`. Generate new: the prompt alone, `size` the closest 1K / 2K preset, `magic_prompt: "off"` ("Ideogram 4.5" above). The ideogram dialect's `edit` is a function of the model part: 4.5 edits, 4.0 does not |
 | `grok_imagine`, `ideogram_4`, `krea_2` | `xai/grok-imagine-image-2.0`, `ideogram/ideogram-v4`, `krea/krea-2-large` | text only (`edit: false`) | The Router's schemas for these take **no input picture**, so the variants work in Generate new only: the closest preset aspect (Grok's 13, Krea's 8), Ideogram's closest of its 21 2K sizes, Grok's tier 1k / 2k |
+| `krea_3` | `krea/krea-3` | edit | Each picture uploaded first to `POST /proxy/krea/assets` (the key as `X-API-Key`), their URLs in `image_urls`, `resolution` (required, 1k or 2k), `thinking_mode`, `model`, the preset the crop was widened to or none, the seed modulo 2^31, the instruction ("Krea 3 Edit" above). Generate new goes on the same route. The krea dialect's `edit` is a function of the model part: Krea 3 edits, Krea 2 does not |
 
 The Seedream, Qwen and Gemini bodies carry `refs.instruction`, numbered by the dialect's layout, as the ModelArk
 and OpenRouter adapters do ("Reference pictures" above): Seedream and Qwen "Edit Image 1 and keep its size and
@@ -3396,6 +3439,7 @@ Oxen serves `qwen-image-2-1`. Whether it is the same 2.1 as the local recipe's o
 | `qwen_image_2_1` | `qwen-image-2-1` | edit, `input_images`, negative prompt | the closest of 7 presets | 1K / 2K | 10 | $0.109 |
 | `grok_imagine` | `xai-grok-imagine-image-edit`; Generate new `xai-grok-imagine-image` | edit, one picture only | none | Generate new 1k / 2k | 1 | $0.022 edit, $0.02 text |
 | `krea_2` | `krea-v2-large-text-to-image` | Generate new only | - | - | - | $0.06 |
+| `krea_3` | `krea-3` | edit, Planning (`thinking_level`) | the crop's preset (or one within 3 %), else `auto`; 10 presets | 1k / 2k | 8 | $0.039 to $0.104 by size and planning, $0.07 each input at 2k (2026-11-09) |
 | `ideogram_4` | `ideogram-v4` | Generate new only, `image_size` preset | - | - | - | $0.06 |
 | `z_image_turbo` | `z-image-turbo` | Generate new only, no size field | - | - | - | $0.01 |
 | `topaz_precision` | `topazlabs-image-upscale` | upscale 2x / 4x | - | - | 1 | $0.05 |

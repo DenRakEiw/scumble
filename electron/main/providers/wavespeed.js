@@ -19,7 +19,8 @@
 // A recipe variant may rename the inputs with `fields` ({ image, images, mask, references }); `options`:
 // `aspect_ratios` (the model's presets, the closest to the crop is sent unless the settings
 // pick one; never on a fill), `size: "star"` (send the crop size as "W*H", fitted to `max_side`), `max_images` (how
-// many pictures the image list takes, the crop included; a run with more is refused before any upload).
+// many pictures the image list takes, the crop included; a run with more is refused before any upload), `model_row`
+// (true: the Settings row keyed "model" goes out as the route's own `model` input, Krea 3's Berry or Jam).
 // `options` for a model with its own conventions (Ideogram 4.5): `mask: "black"` sends the mask inverted (black =
 // edit, util.js ideogramMask; none for a selection over the whole crop), `negative: false` sends no negative prompt,
 // `accepts` (a text run: `text_accepts`, else `accepts`) lists the optional keys the route takes, and with a list
@@ -191,7 +192,7 @@ async function inputFor(req, ctx, info = {}) {
     if (o.size === "star" && req.kind !== "text") input.size = starSize(req.width, req.height, num(o.max_side, 1536));
     // recipe settings are passed through by name; the recipe decides which exist for the model
     for (const [k, v] of Object.entries(p)) {
-        if (k === "random_seed" || k === "model" || v === "" || v == null || v === "auto") continue;
+        if (k === "random_seed" || (k === "model" && !o.model_row) || v === "" || v == null || v === "auto") continue;
         input[k] = v;
     }
     if (o.sizing === "flux3") {
