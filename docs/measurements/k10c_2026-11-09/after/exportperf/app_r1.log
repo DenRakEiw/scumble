@@ -1,0 +1,6 @@
+
+
+DevTools listening on ws://127.0.0.1:9629/devtools/browser/e72a08b6-67cc-4df8-a97b-003f73f73031
+[70396:1109/110622.645:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 2 rejected by interface blink.mojom.Widget
+[70396:1109/110622.646:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 6 rejected by interface blink.mojom.WidgetHost
+[70396:1109/110622.647:ERROR:mojo\public\cpp\bindings\lib\interface_endpoint_client.cc:748] Message 7 rejected by interface blink.mojom.WidgetHost

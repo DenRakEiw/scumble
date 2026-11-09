@@ -1,0 +1,83 @@
+probes in
+[ok] build_the_file: {"size": [15000, 10000], "MP": 150, "fillMs": 1023, "encodeMs": 1365, "MB": 275.8, "arena": {"slots": 2360, "chunks": 10, "allocated": 2360, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 671088640, "freeSlots": 200}}
+
+== open_the_file: wall 2565 ms, longest block 476 ms
+   {"loadFileMs": 2497, "tiles": 2360, "compositorBefore": "not made", "compositorAfter": "made"}
+   main thread ms: idle 1767 | browser natives 444 | px kernels 1 | other JS 276 | GC 22 | (program) 218
+     natives: getProgramParameter 425, getShaderParameter 5, getContext 4, beat 2, f 2, texSubImage2D 1, add 1, postMessage 1
+     px kernels by function (self time): _out [px.js:293] 1
+     JS by file: inpaint_tiles.js 248, inpaint_compositor.js 9, inpaint_arena.js 8, inpaint_canvas.js 4, inpaint_pool.js 2, inpaint_pixels.js 2, inpaint_resample.js 1, plugins.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): _putBlock [inpaint_tiles.js:1384] 154, normalizeBlock [inpaint_tiles.js:540] 82, allocTileBytes [inpaint_arena.js:110] 6
+   boundaries (calls, ms inside the call, MB):
+     gl getProgramParameter                   3     425.3 ms        0.0 MB
+     gl getShaderParameter                    6       4.6 ms        0.0 MB
+     gl texSubImage2D                      2360       2.3 ms        1.0 MB
+     worker postMessage (moved)             164       1.8 ms        0.0 MB
+     blob arrayBuffer (until settled)         8       1.4 ms        0.0 MB
+     blob arrayBuffer                         8       0.6 ms        0.0 MB
+     2d drawImage >= 1 MP                     5       0.2 ms       41.8 MB
+   worker png_read: 1 jobs, {"kernel": 1520.9, "parse": 0.8, "read": 47, "write": 1471.3, "wait": 1054.3, "copy": 50, "unfilter": 395.9, "deliver": 8.4, "gen": 0}  px: png_unfilter_rows 40
+   worker mips: 19 jobs, {"kernel": 452.3, "gen": 0}  px: mip_chain 2442, clamp_extend 98
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2442, clamp_extend 98, png_unfilter_rows 40
+
+== add_the_paint_layer: wall 669 ms, longest block 584 ms
+   {"tiles": 2301, "genMs": 49, "writeMs": 505, "addMs": 115}
+   boundaries (calls, ms inside the call, MB):
+     gl texSubImage2D                      5885       5.8 ms        8.5 MB
+     2d putImageData                       2286       1.9 ms        1.1 MB
+     worker postMessage (moved)              90       1.5 ms        0.0 MB
+     2d drawImage >= 1 MP                    14       0.4 ms      117.2 MB
+     2d drawImage < 1 MP                     20       0.2 ms       11.2 MB
+   worker mips: 18 jobs, {"kernel": 489.5, "gen": 0}  px: mip_chain 2340, clamp_extend 39
+   px calls, window: mip_chain 16
+   px calls, workers: mip_chain 2340, clamp_extend 39
+
+== filter_export_png: wall 1267 ms, longest block 88 ms
+   {"MB": 230}
+   main thread ms: idle 764 | browser natives 429 | px kernels 0 | other JS 154 | GC 20 | (program) 103
+     natives: readPixels 170, texSubImage2D 114, Blob 34, getProgramParameter 33, getError 20, getContext 17, drawImage 10, setTimeout 3
+     px kernels by function (self time): -
+     JS by file: inpaint_bands.js 104, inpaint_tiles.js 19, inpaint_canvas.js 14, inpaint_filters_gl.js 7, inpaint_pool.js 5, host.js 1, common.js 1, plugins.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): part [inpaint_bands.js:56] 103, regionCanvas [inpaint_tiles.js:2218] 18
+   boundaries (calls, ms inside the call, MB):
+     gl readPixels                            7     170.5 ms      572.2 MB
+     gl texSubImage2D                         7     112.4 ms      572.2 MB
+     gl getError                             35      18.6 ms        0.0 MB
+     gl getProgramParameter                   1       8.2 ms        0.0 MB
+     worker postMessage (moved)             118       3.1 ms        0.0 MB
+     gl getShaderParameter                    2       2.0 ms        0.0 MB
+     gl texImage2D                           33       1.2 ms        0.4 MB
+     2d drawImage < 1 MP                     29       1.1 ms        2.0 MB
+     2d putImageData                          2       0.3 ms        1.2 MB
+   worker stack_into: 40 jobs, {"kernel": 1910.5, "gen": 0}  px: composite_tile 39
+   worker png_part: 78 jobs, {"composeWasm": 0, "kernel": 6505.9, "compose": 0, "rows": 0.1, "prev": 0, "copyIn": 49.7, "filter": 283.9, "adler": 161.9, "deflate": 5862.1, "chunk": 94.8, "copyOut": 50.3, "gen": 0}  px: adler32 78, deflate_part 78, png_chunk_frame 78, png_filter_rows 78
+   px calls, window: crc32 4
+   px calls, workers: adler32 78, deflate_part 78, png_chunk_frame 78, png_filter_rows 78, composite_tile 39
+   marks export: ready 0.1, encoded 1266.1, saved 0.1 | total 1266.3 ms  {"fmt": "png", "MB": 230.0090093612671}
+
+== filter_wand: wall 1523 ms, longest block 156 ms
+   {"bounds": [0, 0, 15000, 10000], "status": "65.851.358 px selected (1522 ms)."}
+   main thread ms: idle 863 | browser natives 525 | px kernels 81 | other JS 85 | GC 7 | (program) 86
+     natives: readPixels 265, texSubImage2D 128, checkFramebufferStatus 39, putImageData 23, getError 23, drawImage 19, texImage2D 17, beat 3
+     px kernels by function (self time): _out [px.js:293] 47, range_tiles_rgba [wasm] 26, _in [px.js:283] 4, wasm-function[18] [wasm] 2, _reset [px.js:311] 2
+     JS by file: inpaint_tiles.js 65, inpaint_canvas.js 9, inpaint_filters_gl.js 3, inpaint_pool.js 2, inpaint_modal.js 1, eacharea.js 1, reftokens.js 1, inpaint_arena.js 1
+     JS by function (self time; a typed-array copy counts for the function that makes it): regionCanvas [inpaint_tiles.js:2218] 58
+   boundaries (calls, ms inside the call, MB):
+     gl readPixels                            7     266.7 ms      572.2 MB
+     gl texSubImage2D                         7     128.8 ms      572.2 MB
+     gl getError                             37      22.4 ms        0.0 MB
+     2d putImageData                          5      22.2 ms       84.1 MB
+     gl texImage2D                           35      16.4 ms       11.1 MB
+     2d drawImage >= 1 MP                    19      15.4 ms      223.8 MB
+     worker postMessage (moved)              82       2.3 ms        0.0 MB
+     2d drawImage < 1 MP                     29       1.6 ms        2.0 MB
+     createImageBitmap                        1       0.1 ms       10.7 MB
+   worker flood: 2 jobs, {"read": 27.9, "clip": 0, "flood": 643.8, "shape": 51, "total": 723.2, "gen": 0}  px: flood_shape 2
+   worker stack_into: 40 jobs, {"kernel": 1994.6, "gen": 0}  px: composite_tile 39
+   px calls, window: sel_combine 1221, mip_chain 16
+   px calls, workers: composite_tile 39, flood_shape 2
+   marks program: done 512.8 | total 512.8 ms  {"bands": 7, "pool": 89, "upload": 148, "filter": 5, "read": 268, "rows": 1536}
+[ok] close: {"closed": 2, "arena": {"slots": 5882, "chunks": 23, "allocated": 8242, "freed": 2360, "droppedChunks": 9, "refused": 0, "failed": 0, "enabled": true, "bytes": 1543503872, "freeSlots": 6}}
+
+RESULT measured

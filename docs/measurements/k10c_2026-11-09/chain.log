@@ -1,0 +1,239 @@
+[10:59:25] exporting clean before tree at 3359cb0f to /f/canvas/.claude/worktrees/.tmp_k10c_before_1940873
+[10:59:28] branch ag-chain-c at 3359cb0f; base 3359cb0f; port 9629
+[10:59:29] before px.wasm d3d4567365549b49; after px.wasm 193dd3adf6a169e5; after px_scalar.wasm 71e5311ccaec73ec
+[10:59:30] gpu: 19600 MiB, 0 %; comfy 8188: 200
+lock: taken after 0 s
+[10:59:30] lock: taken (K10c node_bench (chain-c) 65592 2026-11-09T10:59:30)
+[10:59:30] node kernel bench
+[10:59:40] rc=0
+[10:59:40] electron-as-node kernel bench
+[10:59:50] rc=0
+lock: released
+lock: taken after 0 s
+[10:59:52] lock: taken (K10c native_test r1 (chain-c) 50412 2026-11-09T10:59:52)
+[10:59:52] == native_test (Stack + Match) round 1
+[10:59:53] native before r1 (try 1, px.wasm d3d456736554)
+[10:59:55] gpu: 19475 MiB, 1 %; comfy 8188: 200
+[11:00:22] rc=0
+closed
+[11:00:26] native after r1 (try 1, px.wasm 193dd3adf6a1)
+[11:00:27] gpu: 19145 MiB, 0 %; comfy 8188: 200
+[11:00:51] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:01:00] lock: taken (K10c native_test r2 (chain-c) 71300 2026-11-09T11:00:59)
+[11:01:01] == native_test (Stack + Match) round 2
+[11:01:01] native after r2 (try 1, px.wasm 193dd3adf6a1)
+[11:01:02] gpu: 19223 MiB, 1 %; comfy 8188: 200
+[11:01:26] rc=0
+closed
+[11:01:31] native before r2 (try 1, px.wasm d3d456736554)
+[11:01:32] gpu: 19802 MiB, 4 %; comfy 8188: 200
+[11:01:56] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:02:03] lock: taken (K10c native_test r3 (chain-c) 31640 2026-11-09T11:02:03)
+[11:02:03] == native_test (Stack + Match) round 3
+[11:02:04] native before r3 (try 1, px.wasm d3d456736554)
+[11:02:05] gpu: 19710 MiB, 3 %; comfy 8188: 200
+[11:02:29] rc=0
+closed
+[11:02:33] native after r3 (try 1, px.wasm 193dd3adf6a1)
+[11:02:33] gpu: 19593 MiB, 5 %; comfy 8188: 200
+[11:02:56] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:03:04] lock: taken (K10c native_filter r1 (chain-c) 67344 2026-11-09T11:03:03)
+[11:03:04] == native_test (Filter band) round 1
+[11:03:05] native_filter before r1 (try 1, px.wasm d3d456736554)
+[11:03:06] gpu: 19553 MiB, 2 %; comfy 8188: 200
+[11:03:25] rc=0
+closed
+[11:03:29] native_filter after r1 (try 1, px.wasm 193dd3adf6a1)
+[11:03:30] gpu: 19548 MiB, 4 %; comfy 8188: 200
+[11:03:46] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:03:55] lock: taken (K10c native_filter r2 (chain-c) 23324 2026-11-09T11:03:55)
+[11:03:56] == native_test (Filter band) round 2
+[11:03:58] native_filter after r2 (try 1, px.wasm 193dd3adf6a1)
+[11:04:00] gpu: 19537 MiB, 1 %; comfy 8188: 200
+[11:04:20] rc=0
+closed
+[11:04:26] native_filter before r2 (try 1, px.wasm d3d456736554)
+[11:04:27] gpu: 19617 MiB, 4 %; comfy 8188: 200
+[11:04:46] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:04:52] lock: taken (K10c native_filter r3 (chain-c) 56012 2026-11-09T11:04:52)
+[11:04:52] == native_test (Filter band) round 3
+[11:04:53] native_filter before r3 (try 1, px.wasm d3d456736554)
+[11:04:53] gpu: 19376 MiB, 1 %; comfy 8188: 200
+[11:05:11] rc=0
+closed
+[11:05:17] native_filter after r3 (try 1, px.wasm 193dd3adf6a1)
+[11:05:18] gpu: 19288 MiB, 1 %; comfy 8188: 200
+[11:05:37] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:05:44] lock: taken (K10c exportperf r1 (chain-c) 64632 2026-11-09T11:05:44)
+[11:05:45] == exportperf round 1
+[11:05:46] exportperf before r1 (try 1)
+[11:05:46] gpu: 19305 MiB, 2 %; comfy 8188: 200
+[11:06:13] rc=0
+closed
+[11:06:19] exportperf after r1 (try 1)
+[11:06:20] gpu: 19449 MiB, 3 %; comfy 8188: 200
+[11:06:48] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:06:57] lock: taken (K10c exportperf r2 (chain-c) 61564 2026-11-09T11:06:56)
+[11:06:57] == exportperf round 2
+[11:06:57] exportperf after r2 (try 1)
+[11:06:59] gpu: 19466 MiB, 1 %; comfy 8188: 200
+[11:07:24] rc=0
+closed
+[11:07:31] exportperf before r2 (try 1)
+[11:07:31] gpu: 19699 MiB, 0 %; comfy 8188: 200
+[11:08:01] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:08:10] lock: taken (K10c exportperf r3 (chain-c) 70308 2026-11-09T11:08:10)
+[11:08:10] == exportperf round 3
+[11:08:11] exportperf before r3 (try 1)
+[11:08:12] gpu: 19731 MiB, 0 %; comfy 8188: 200
+[11:08:37] rc=0
+closed
+[11:08:43] exportperf after r3 (try 1)
+[11:08:45] gpu: 19795 MiB, 2 %; comfy 8188: 200
+[11:09:12] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:09:20] lock: taken (K10c exportperf_dissolve r1 (chain-c) 51280 2026-11-09T11:09:19)
+[11:09:20] == exportperf --blend=dissolve round 1
+[11:09:21] exportperf_dissolve before (dissolveRows=js) r1 (try 1)
+[11:09:23] gpu: 19846 MiB, 1 %; comfy 8188: 200
+[11:10:39] rc=0
+closed
+[11:10:45] exportperf_dissolve after (dissolveRows=rust) r1 (try 1)
+[11:10:45] gpu: 26436 MiB, 13 %; comfy 8188: 200
+[11:11:59] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:12:06] lock: taken (K10c exportperf_dissolve r2 (chain-c) 46836 2026-11-09T11:12:06)
+[11:12:06] == exportperf --blend=dissolve round 2
+[11:12:07] exportperf_dissolve after (dissolveRows=rust) r2 (try 1)
+[11:12:07] gpu: 26700 MiB, 18 %; comfy 8188: 200
+[11:13:18] rc=0
+closed
+[11:13:23] exportperf_dissolve before (dissolveRows=js) r2 (try 1)
+[11:13:23] gpu: 25132 MiB, 10 %; comfy 8188: 200
+[11:14:33] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:14:41] lock: taken (K10c exportperf_dissolve r3 (chain-c) 58644 2026-11-09T11:14:41)
+[11:14:41] == exportperf --blend=dissolve round 3
+[11:14:41] exportperf_dissolve before (dissolveRows=js) r3 (try 1)
+[11:14:42] gpu: 22479 MiB, 13 %; comfy 8188: 200
+[11:15:52] rc=0
+closed
+[11:15:56] exportperf_dissolve after (dissolveRows=rust) r3 (try 1)
+[11:15:57] gpu: 22153 MiB, 11 %; comfy 8188: 200
+[11:17:06] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:17:14] lock: taken (K10c exportperf_clipped r1 (chain-c) 31640 2026-11-09T11:17:14)
+[11:17:14] == exportperf --clipped round 1
+[11:17:14] exportperf_clipped before (clipCoverage=js) r1 (try 1)
+[11:17:14] gpu: 22159 MiB, 12 %; comfy 8188: 200
+[11:17:52] rc=0
+closed
+[11:17:57] exportperf_clipped after (clipCoverage=rust) r1 (try 1)
+[11:17:58] gpu: 22145 MiB, 11 %; comfy 8188: 200
+[11:18:36] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:18:45] lock: taken (K10c exportperf_clipped r2 (chain-c) 59332 2026-11-09T11:18:45)
+[11:18:45] == exportperf --clipped round 2
+[11:18:45] exportperf_clipped after (clipCoverage=rust) r2 (try 1)
+[11:18:47] gpu: 22195 MiB, 12 %; comfy 8188: 200
+[11:19:25] rc=0
+closed
+[11:19:30] exportperf_clipped before (clipCoverage=js) r2 (try 1)
+[11:19:30] gpu: 22147 MiB, 11 %; comfy 8188: 200
+[11:20:07] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:20:15] lock: taken (K10c exportperf_clipped r3 (chain-c) 31004 2026-11-09T11:20:15)
+[11:20:16] == exportperf --clipped round 3
+[11:20:16] exportperf_clipped before (clipCoverage=js) r3 (try 1)
+[11:20:17] gpu: 22146 MiB, 11 %; comfy 8188: 200
+[11:20:52] rc=0
+closed
+[11:20:56] exportperf_clipped after (clipCoverage=rust) r3 (try 1)
+[11:20:57] gpu: 22167 MiB, 13 %; comfy 8188: 200
+[11:21:33] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[11:21:42] lock: taken (K10c retention (chain-c) 30696 2026-11-09T11:21:42)
+[11:21:42] == px_probe retention & psd/wand retention 15000x10000
+[11:21:43] retention export_png (default routes)
+[11:22:01] rc=0
+closed
+[11:22:06] retention export_psd psdPartWasm=js
+[11:22:25] rc=0
+closed
+[11:22:29] retention export_psd psdPartWasm=rust
+[11:22:49] rc=0
+closed
+[11:22:57] retention wand_whole_picture stackIntoWasm=js
+[11:23:16] rc=1
+closed
+[11:23:19] retention wand_whole_picture stackIntoWasm=rust
+[11:23:39] rc=1
+closed
+lock: released
+[11:23:45] gpu: 22249 MiB, 12 %; comfy 8188: 200
+[11:23:45] done
+no instance on 9629 Cannot connect to host 127.0.0.1:9629 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+[11:31:56] exporting clean before tree at 3359cb0f to /f/canvas/.claude/worktrees/.tmp_k10c_before_1973173
+[11:32:01] branch ag-chain-c at 3359cb0f; base 3359cb0f; port 9629
+[11:32:03] before px.wasm d3d4567365549b49; after px.wasm 193dd3adf6a169e5; after px_scalar.wasm 71e5311ccaec73ec
+[11:32:04] gpu: 21910 MiB, 12 %; comfy 8188: 200
+lock: taken after 0 s
+[11:32:05] lock: taken (K10c retention (chain-c) 39620 2026-11-09T11:32:05)
+[11:32:06] == px_probe retention & psd/wand retention 15000x10000
+[11:32:08] retention export_png (default routes)
+[11:32:27] rc=0
+closed
+[11:32:34] retention export_psd psdPartWasm=js
+[11:32:52] rc=0
+closed
+[11:32:56] retention export_psd psdPartWasm=rust
+[11:33:13] rc=0
+closed
+[11:33:19] retention wand_whole_picture stackIntoWasm=js
+[11:33:41] rc=0
+closed
+[11:33:46] retention wand_whole_picture stackIntoWasm=rust
+[11:34:07] rc=0
+closed
+lock: released
+[11:34:12] gpu: 22049 MiB, 11 %; comfy 8188: 200
+[11:34:12] done
+no instance on 9629 Cannot connect to host 127.0.0.1:9629 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

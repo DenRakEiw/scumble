@@ -1,0 +1,2 @@
+op=wand_whole_picture routes={"stackIntoWasm": "rust"} opMs=1409.7 workersMaxAfterMB=31.50 workersMaxLaterMB=1.06 releases=1 focused=True
+PASS

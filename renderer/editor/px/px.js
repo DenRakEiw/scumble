@@ -15,7 +15,7 @@ import { relightVogel } from "./kernels_js.js";
 import { disparityRange } from "../inpaint_depth.js";
 import { paletteLut } from "../inpaint_tiff.js";
 
-export const PX_ABI = 43;
+export const PX_ABI = 44;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -1153,17 +1153,25 @@ export class Px {
         const a = this.job;
         try {
             const pr = this._in(a, rgba, rows * 4 * w);
-            const cap = this.exports.psd_pack_rows_cap(w, rows), po = a.take(cap), pl = a.take(rows * 2);
-            const out = [];
-            for (let ch = 0; ch < 4; ch++) {
-                const n = this.exports.psd_pack_rows(pr, w, rows, ch, po, cap, pl);
-                if (n < 0) throw new Error("px: psd_pack_rows ran out of room");
-                const t = TIMED ? clock() : 0;
-                out.push({ lens: this.u8().slice(pl, pl + rows * 2), data: this.u8().slice(po, po + n) });
-                if (TIMED) lapOut(t, rows * 2 + n);
-            }
-            return out;
+            return this.psdPackRowsFromPtr(a, pr, w, rows);
         } finally { this._reset(a); }
+    }
+
+    /**
+     * `psdPackRows` when `pr` (`rows * 4 * w` bytes of RGBA8) is already in `a` (`this.job`). The caller resets `a`
+     * in its `finally` block (K10c, docs/PLAN_WASM_K10.md §2.2).
+     */
+    psdPackRowsFromPtr(a, pr, w, rows) {
+        const cap = this.exports.psd_pack_rows_cap(w, rows), po = a.take(cap), pl = a.take(rows * 2);
+        const out = [];
+        for (let ch = 0; ch < 4; ch++) {
+            const n = this.exports.psd_pack_rows(pr, w, rows, ch, po, cap, pl);
+            if (n < 0) throw new Error("px: psd_pack_rows ran out of room");
+            const t = TIMED ? clock() : 0;
+            out.push({ lens: this.u8().slice(pl, pl + rows * 2), data: this.u8().slice(po, po + n) });
+            if (TIMED) lapOut(t, rows * 2 + n);
+        }
+        return out;
     }
 
     /**
