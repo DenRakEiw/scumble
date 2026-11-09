@@ -4267,11 +4267,17 @@ async function matchTwinCases(js) {
     let clamped = true;
     for (let i = 0; i < hi.length; i += 4) if (src[i + 3] && src[i] > 60 && hi[i] !== 255) clamped = false;
     check(`js matchPixels clamps at 255`, clamped);
-    // the same bytes from a Uint8ClampedArray
+    // the same bytes from a Uint8ClampedArray, including a subarray at a non-zero byteOffset
     const clamp = (u) => new Uint8ClampedArray(u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength));
     const p5 = matchParams(5);
     const viaBytes = js.matchPixels(src.slice(), p5), viaClamped = js.matchPixels(clamp(src), p5);
     check(`js matchPixels gives the same bytes for Uint8ClampedArray input`, eqBytes(viaBytes, new Uint8Array(viaClamped.buffer)));
+    const fullClamped = clamp(src), subClamped = fullClamped.subarray(64, 512);
+    const retSub = js.matchPixels(subClamped, p5);
+    check(`js matchPixels on a Uint8ClampedArray subarray updates only that slice in place`,
+        retSub === subClamped && eqBytes(new Uint8Array(fullClamped.buffer, 0, 64), src.subarray(0, 64))
+        && eqBytes(new Uint8Array(fullClamped.buffer, 64, 448), viaBytes.subarray(64, 512))
+        && eqBytes(new Uint8Array(fullClamped.buffer, 512), src.subarray(512)));
 }
 
 /** The twin against a Rust build, bit for bit: random pixels and parameters, sizes with tails, every k. */
@@ -4287,6 +4293,18 @@ async function matchCases(px, label, js) {
         }
     }
     check(`js matchPixels equals the ${label} (random pixels and statistics, tails, k 0 to 1)`, ok, detail);
+    // empty and non-zero byteOffset Uint8ClampedArray subarrays
+    const pSub = matchParams(7), srcSub = pixelRow(256, 707);
+    const emptyU8 = new Uint8Array(0), emptyClamped = new Uint8ClampedArray(0);
+    const fullClamped = new Uint8ClampedArray(srcSub.buffer.slice(srcSub.byteOffset, srcSub.byteOffset + srcSub.byteLength));
+    const subClamped = fullClamped.subarray(64, 512);
+    const wantSub = js.matchPixels(srcSub.slice(64, 512), pSub);
+    const retSub = px.matchPixels(subClamped, pSub);
+    check(`${label} matchPixels handles empty buffers and non-zero byteOffset Uint8ClampedArray subarrays in place`,
+        px.matchPixels(emptyU8, pSub) === emptyU8 && px.matchPixels(emptyClamped, pSub) === emptyClamped
+        && retSub === subClamped && eqBytes(new Uint8Array(fullClamped.buffer, 0, 64), srcSub.subarray(0, 64))
+        && eqBytes(new Uint8Array(fullClamped.buffer, 64, 448), wantSub)
+        && eqBytes(new Uint8Array(fullClamped.buffer, 512), srcSub.subarray(512)));
     // the extremes: scale 2 and 0.5, means at the ends, k 1
     let okX = true, detailX = "";
     for (const p of [[255, 255, 255, 0, 0, 0, 2, 2, 2, 1], [0, 0, 0, 255, 255, 255, 0.5, 0.5, 0.5, 1], [128, 64, 32, 32, 64, 128, 1.999, 0.501, 1, 0.999], [127.5, 127.5, 127.5, 127.5, 127.5, 127.5, 1, 1, 1, 0.5]]) {
@@ -4295,6 +4313,125 @@ async function matchCases(px, label, js) {
         if (!eqBytes(a, b)) { okX = false; detailX = `${p} ${firstDiff(a, b)}`; }
     }
     check(`js matchPixels equals the ${label} at the extremes of the statistics`, okX, detailX);
+    if (/simd/.test(label)) {
+        // K38: matchCanvas CPU fallback in 4 MP chunks (inpaint_filters.js)
+        let K = null, F = null;
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (u, ...rest) => {
+            const s = String(u && u.href ? u.href : u);
+            return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+        };
+        try {
+            K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+            await K.kernelsReady();
+            F = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_filters.js")).href);
+        } finally { globalThis.fetch = realFetch; }
+        const prevMode = K.kernelsMode();
+        K.setKernels("rust");
+        const hadDoc = "document" in globalThis, prevDoc = globalThis.document;
+        const makeMockCanvas = (w = 1, h = 1, data = null) => {
+            const c = {
+                width: w,
+                height: h,
+                _data: data,
+                _putCount: 0,
+                getContext(kind) {
+                    if (kind === "webgl2") return null;
+                    return {
+                        drawImage(src) { c._data = new Uint8ClampedArray(src._data); },
+                        getImageData(_x, _y, cw, ch) {
+                            if (!c._data || c._data.length !== cw * ch * 4) c._data = new Uint8ClampedArray(cw * ch * 4);
+                            return { data: c._data, width: cw, height: ch };
+                        },
+                        putImageData(img) { c._data = new Uint8ClampedArray(img.data); c._putCount++; },
+                    };
+                },
+            };
+            return c;
+        };
+        globalThis.document = { createElement: () => makeMockCanvas() };
+        try {
+            check(`inpaint_filters.js MATCH_CHUNK_BYTES is 4 MP (16,777,216 bytes) and kernels.js has the matchPixels route`,
+                F.MATCH_CHUNK_BYTES === 4 * 1024 * 1024 * 4 && Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, "matchPixels"));
+            // 2048 x 4100 = 8,396,800 px = 2 full 4 MP chunks + 8,192 px tail (3 chunks total)
+            const W = 2048, H = 4100, totalPx = W * H;
+            const raw = new Uint8ClampedArray(totalPx * 4);
+            const tile = pixelRow(16384, 3801);
+            for (let off = 0; off < raw.length; off += tile.length) raw.set(tile.subarray(0, Math.min(tile.length, raw.length - off)), off);
+            // distinct values in each chunk and transparent pixels at chunk boundaries
+            raw[0] = 20; raw[1] = 110; raw[2] = 210; raw[3] = 255;
+            raw[F.MATCH_CHUNK_BYTES] = 210; raw[F.MATCH_CHUNK_BYTES + 1] = 40; raw[F.MATCH_CHUNK_BYTES + 2] = 130; raw[F.MATCH_CHUNK_BYTES + 3] = 255;
+            raw[F.MATCH_CHUNK_BYTES * 2] = 90; raw[F.MATCH_CHUNK_BYTES * 2 + 1] = 220; raw[F.MATCH_CHUNK_BYTES * 2 + 2] = 30; raw[F.MATCH_CHUNK_BYTES * 2 + 3] = 255;
+            raw[F.MATCH_CHUNK_BYTES - 4] = 77; raw[F.MATCH_CHUNK_BYTES - 3] = 88; raw[F.MATCH_CHUNK_BYTES - 2] = 99; raw[F.MATCH_CHUNK_BYTES - 1] = 0;
+            raw[F.MATCH_CHUNK_BYTES * 2 + 4] = 55; raw[F.MATCH_CHUNK_BYTES * 2 + 5] = 66; raw[F.MATCH_CHUNK_BYTES * 2 + 6] = 77; raw[F.MATCH_CHUNK_BYTES * 2 + 7] = 0;
+            const stats = { meanS: [135.25, 92.5, 168.75], meanT: [88.5, 142.25, 64.5], scale: [1.35, 0.72, 1.18] };
+            const strength = 0.65;
+            const params = new Float32Array([...stats.meanS, ...stats.meanT, ...stats.scale, strength]);
+            const wantSingle = js.matchPixels(new Uint8Array(raw.buffer.slice(0)), params);
+            const srcCv = makeMockCanvas(W, H, raw);
+            K.dropPx();
+            await K.pxSettled();
+            const inst0 = K.pxInstances();
+            K.setRoute("matchPixels", null);
+            K.pxCalls(true);
+            const outRust = F.matchCanvas(srcCv, stats, strength);
+            const callsRust = K.pxCalls(true).match_pixels || 0;
+            const memBytes = K.rustPx() ? K.rustPx().byteLength : 0;
+            const inst1 = K.pxInstances();
+            const rustBytes = new Uint8Array(outRust._data.buffer, outRust._data.byteOffset, outRust._data.byteLength);
+            check(`K38 matchCanvas CPU fallback runs match_pixels in 4 MP chunks (3 calls for 8.4 MP), keeps wasm memory within one chunk arena, and equals a single matchPixels call byte for byte`,
+                callsRust === 3 && outRust._putCount === 1 && memBytes > 0 && memBytes <= 19 * 1048576
+                && inst1.release === inst0.release && eqBytes(rustBytes, wantSingle) && !eqBytes(rustBytes, new Uint8Array(raw.buffer)),
+                `calls=${callsRust}, memMB=${(memBytes / 1048576).toFixed(2)}, diff=${firstDiff(rustBytes, wantSingle)}`);
+            // matchPixels="js" route gives 0 Rust calls and the exact same bytes across all 3 chunks
+            K.setRoute("matchPixels", "js");
+            let outJs, callsJs;
+            try {
+                K.pxCalls(true);
+                outJs = F.matchCanvas(srcCv, stats, strength);
+                callsJs = K.pxCalls(true).match_pixels || 0;
+            } finally { K.setRoute("matchPixels", null); }
+            const jsBytes = new Uint8Array(outJs._data.buffer, outJs._data.byteOffset, outJs._data.byteLength);
+            check(`K38 matchCanvas on route matchPixels=js runs 0 Rust calls and equals the Rust path byte for byte across all 3 chunks`,
+                callsJs === 0 && eqBytes(jsBytes, rustBytes), `callsJs=${callsJs}, diff=${firstDiff(jsBytes, rustBytes)}`);
+            // trap recovery on a chunk inside matchCanvas: chunk 0 traps before _out, twin recovers it, chunks 1 and 2 run on a replaced Rust instance
+            const pTrap = K.rustPx();
+            const tInst0 = K.pxInstances();
+            pTrap.matchPixels = () => {
+                const err = new WebAssembly.RuntimeError("simulated match_pixels trap");
+                pTrap.trapped = err;
+                throw err;
+            };
+            K.pxCalls(true);
+            const outTrap = F.matchCanvas(srcCv, stats, strength);
+            const callsTrap = K.pxCalls(true).match_pixels || 0;
+            const tInst1 = K.pxInstances();
+            const trapBytes = new Uint8Array(outTrap._data.buffer, outTrap._data.byteOffset, outTrap._data.byteLength);
+            check(`K38 matchCanvas recovers from a trap on chunk 0 via the twin and runs chunks 1..2 on a fresh Rust instance with identical bytes`,
+                callsTrap === 2 && K.rustPx() !== pTrap && tInst1.trap === tInst0.trap + 1 && eqBytes(trapBytes, wantSingle),
+                `callsTrap=${callsTrap}, trap=${tInst1.trap - tInst0.trap}, diff=${firstDiff(trapBytes, wantSingle)}`);
+            // within 1 level of matchDoubles on a slice spanning the chunk boundaries, and strength clamped to [0, 1]
+            const smallRaw = new Uint8ClampedArray(pixelRow(2048, 3802).buffer);
+            const smallCv = makeMockCanvas(64, 32, smallRaw);
+            const smallOut = F.matchCanvas(smallCv, stats, strength);
+            const smallDoubles = matchDoubles(new Uint8Array(smallRaw.buffer), params);
+            let worstD = 0;
+            for (let i = 0; i < smallDoubles.length; i++) worstD = Math.max(worstD, Math.abs(smallOut._data[i] - smallDoubles[i]));
+            const outNeg = F.matchCanvas(smallCv, stats, -0.5);
+            const outOne = F.matchCanvas(smallCv, stats, 1);
+            const outOver = F.matchCanvas(smallCv, stats, 1.8);
+            check(`K38 matchCanvas stays within 1 level of doubles and clamps strength to [0, 1]`,
+                worstD <= 1 && eqBytes(new Uint8Array(outNeg._data.buffer), new Uint8Array(smallRaw.buffer))
+                && eqBytes(new Uint8Array(outOver._data.buffer), new Uint8Array(outOne._data.buffer))
+                && !eqBytes(new Uint8Array(outOne._data.buffer), new Uint8Array(smallOut._data.buffer)),
+                `worstD=${worstD}`);
+        } finally {
+            K.setRoute("matchPixels", null);
+            K.setKernels(prevMode);
+            if (hadDoc) globalThis.document = prevDoc;
+            else delete globalThis.document;
+        }
+    }
     if (/rust/.test(label)) {
         const N = 1 << 20, srcT = pixelRow(N, 5, { opaque: true }), p = matchParams(2);
         const best = (k) => { let b = Infinity; for (let i = 0; i < 5; i++) { const w = srcT.slice(), t0 = performance.now(); k.matchPixels(w, p); b = Math.min(b, performance.now() - t0); } return b; };

@@ -58,9 +58,10 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * range selection over an RGBA8 band). `limitAlphaRows` (K25): `limitAlphaRows` (fill layer depth limit alpha on PSD/ORA
  * export). `guidedFar` (K24): `guidedFar` of `inpaint_depth.js` (the depth map's guided filter).
  * `compositeMaskedTile` (K36): `compositeMaskedTile` of inpaint_tiles.js `compositeStroke`.
+ * `matchPixels` (K38): `matchPixels` of inpaint_filters.js `matchCanvas`, inpaint_boxstack.js and inpaint_worker.js.
  * `composeTiles` and `composeStack` (K10b): pointer gather into wasm memory for tile-store and stack `png_part` jobs.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -777,7 +778,7 @@ export function poissonBlend(dst, src, mask, w, h, out = null, info = null) {
 }
 
 export function matchPixels(rgba, params) {
-    const p = rustPx();
+    const p = rustPx("matchPixels");
     if (p) {
         try { return p.matchPixels(rgba, params); }
         catch (err) { if (!recovered(p, err, "match_pixels")) throw err; }

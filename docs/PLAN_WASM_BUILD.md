@@ -1887,6 +1887,26 @@ Every recommendation taken (the user: "alles so wie deine empfehlung").
 - **Question 6.2 (K25): the export follows the screen.** A fill layer's depth limit with edge snap takes its reference colour from the picture (`map.guide`, the layer's own pixels only without a guide) instead of the fill's own colour; the strength stays the screen's `snapParams(map.meta?.snap?.strength)`. A byte change of layered exports holding such a layer, toward the screen. It matches the screen up to 4096 px on the long side, above that within one map texel (about 3.66 px at 15k, K25's review), as long as the picture below is still the one the depth map was made from. `docs/BUGS.md` has the entry. Only the depth limit is concerned: a fill layer takes no other limit (`commands.js` refuses it, the panel does not offer it).
 - **Question 6.4:** **K37 yes**, kept only where the tile route measures faster on the felt 15k operation, with a size threshold if small fills lose; at most one level against Skia at opacity below 1. **K38 yes** (the `matchCanvas` fallback toward the GPU's formula, at most one level). **The TIFF quirk is fixed** in both twin and Rust at K15 (sub-byte palette files with alpha, whose alpha is left at 0..15 today).
 
+### K38 (2026-11-09): `matchCanvas` CPU fallback in 4 MP chunks (§4.11, question 6.4)
+
+- **Byte effect:** Only when `applyMatchGL` returns `null` (no WebGL2 context or a canvas side above `glContext().max`), `matchCanvas` (`renderer/editor/inpaint_filters.js:274-298`) computes the colour match in `f32` (`floor(clamp(v + (m - v) * k, 0, 255) + 0.5)` via `matchPixels`, matching the WebGL2 shader and the worker's `matchPixels`) instead of `f64` with `Uint8ClampedArray` ties-to-even rounding, changing non-transparent pixels by at most 1 byte level (`<= 1`). With WebGL2 active, bytes are unchanged.
+- **Call site & route (`renderer/editor/inpaint_filters.js`, `renderer/editor/px/kernels.js`, `renderer/editor/px/px.js`):**
+  - `inpaint_filters.js` exports `MATCH_CHUNK_BYTES = 4 * 1024 * 1024 * 4` (`16,777,216` B = `4,194,304` px) and in `matchCanvas` walks `img.data` in `MATCH_CHUNK_BYTES` subarrays (`matchPixels(d.subarray(off, off + MATCH_CHUNK_BYTES), params)`), in place on `ImageData.data`'s buffer.
+  - `kernels.js` adds `matchPixels: "kernel"` to `ROUTE_KINDS` and routes `matchPixels` through `rustPx("matchPixels")`.
+  - `Px.prototype.matchPixels` (`px.js:369-380`) guards `!(px > 0)` and passes a `Uint8Array(rgba.buffer, rgba.byteOffset, px * 4)` view to `this._out` when `rgba` is a `Uint8ClampedArray` subarray.
+  - No `.rs` changes; ABI remains 42 (`px.wasm` 279,003 B, `px_scalar.wasm` 225,584 B).
+- **Measurements (`docs/measurements/k38_2026-11-09/`):**
+  - 3 alternating before/after rounds under `w1_lock.py` (`w0_bench.py --rows=match_fallback_16k`):
+    - `4096 x 4096` (16.8 MP, 4 chunks): **263.00 ms** (244.5–275.1, worst 298.2, blk 263.00) -> **157.83 ms** (152.4–161.2, worst 195.5, blk 157.82, `match_pixels: 4`), **1.67×** faster (-105.2 ms).
+    - `15000 x 10000` (150 MP, 36 chunks): **2677.79 ms** (2422.7–2841.8, worst 3054.8, blk 2677.79) -> **1591.06 ms** (1578.8–1658.6, worst 1809.7, blk 1591.07, `match_pixels: 36`), **1.68×** faster (-1086.7 ms).
+  - Route A/B (`measure_k38.py`, `matchPixels=rust` vs `matchPixels=js`): at `4096 x 4096`, **130.7 ms** (123.0–146.7, chunks 82.2 ms) vs **408.8 ms** (396.4–430.9, chunks 262.7 ms), **3.13×** (**3.20×** on chunks); at `15000 x 10000`, **1352.8 ms** (1333.1–1462.3, chunks 722.3 ms) vs **2943.1 ms** (2781.1–2944.8, chunks 2367.4 ms), **2.18×** (**3.28×** on chunks). Across all 36 chunks at `15000 x 10000`, the window's wasm instance stays at **18.19 MiB** (`release === 0`). Rust kept as default.
+- **Tests & mutation round:**
+  - `tools/px_test.js` (`matchTwin`, `match`): `Uint8ClampedArray` non-zero `byteOffset` subarrays, empty buffers, 3-chunk 8.4 MP `matchCanvas` parity on `"rust"` and `"js"`, memory bound (`<= 19 MiB`), trap recovery on chunk 0, `<= 1` level vs doubles, strength `[0, 1]` clamping.
+  - `tools/editor_test.py` (`match_canvas_fallback_chunks_through_match_pixels`): `layerMatchedPixels` and 3-chunk `matchCanvas` with `glContext().max` lowered on both backends.
+  - Mutation round (`mutants_k38.py`): **9/9 killed, 0 survived**.
+  - Gates (`k38-fix-tiles`, `k38-fix-canvas`): `lint types pixels composite editor` **ALL PASS** on both backends.
+```
+
 ### K8 (2026-11-09)
 
 The parted PNG reader in the app on route N (`DecompressionStream("deflate-raw")` per part + `px` `png_part_decode` /
