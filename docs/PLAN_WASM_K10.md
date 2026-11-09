@@ -415,7 +415,7 @@ export function tilesRowsToWasm(p, msg, above, ptr) {
 ### 5.2 Store Gather (`storeRowsToWasm`) and Stack Gather (`stackRowsToWasm`)
 
 1. **`storeRowsToWasm(p, store, X0, W, Y0, n, ptr, alphaOnly = false)`**:
-   Mirrors `storeRows(store, X0, W, Y0, n, out, alphaOnly)` (`inpaint_worker.js:230-254`), plus a quick non-allocating overlap check `storeHasTiles(store, X0, W, Y0, n)` so `stackRowsToWasm` only takes `psrc` when the store actually has at least one tile in the band:
+   Mirrors `storeRows(store, X0, W, Y0, n, out, alphaOnly)` (`inpaint_worker.js:230-254`; `:289-319` after K10b), returning `false` when no tile of `store` lies in the band (in which case `stackRowsToWasm` saves `scratchSrc = psrc` and reuses it on the next layer without a second `a.take(byteLen)`):
    ```js
    export function storeRowsToWasm(p, store, X0, W, Y0, n, ptr, alphaOnly = false) {
        const sx = store.x | 0, sy = store.y | 0;
@@ -991,7 +991,7 @@ See `docs/measurements/k10b_2026-11-09/` (`k10b_chain.sh`, `summarize.py`, `summ
 - **Tests & Mutation**:
   - `node tools/px_test.js` (`composeWasmPartCases` on both `simdPx` and `scalarPx`, cases 1, 2a–2h, 3) and `node tools/boxstack_test.js`: PASS.
   - `tools/export_test.py` (`compose_in_wasm_memory_matches_js_gather`): PASS on tiles and canvas (`k10b-both`, `k10b-tiff-tiles`, `k10b-tiff-canvas`, `k10b-serial`).
-  - Mutation (`docs/measurements/k10b_2026-11-09/mutation/mut_k10b.py`): 15/15 mutants killed, 0 survived (47.9s).
+  - Mutation (`docs/measurements/k10b_2026-11-09/mutation/mut_k10b.py`): 15/15 mutants killed, 0 survived (36.0s).
 - **15,000 × 10,000 A/B Summary (3 alternating rounds, fresh offline instances, focused, busy lock held per batch)**:
   - `native_test.py`:
     - `export_png`: wall `1,010.0 [990.0-1,015.0]` -> `869.0 [868.0-899.0] ms` (`1.16x`, non-overlapping); `png_part kernel` `7,475.4 [7,359.9-7,511.8]` -> `6,514.7 [6,401.0-6,692.5] ms` (`1.15x`, non-overlapping); `png_part compose` `1,213.0 [1,183.6-1,217.4]` -> `609.6 [607.0-613.7] ms` (`1.99x`, non-overlapping).

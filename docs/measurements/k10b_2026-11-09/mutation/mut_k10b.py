@@ -125,8 +125,8 @@ MUTANTS = [
         "id": "M12_pngpartfromptr_ignore_pp",
         "file": "renderer/editor/px/px.js",
         "rust": False,
-        "find": "        this.exports.png_filter_rows(pr, w, rows, pp, pf);",
-        "replace": "        this.exports.png_filter_rows(pr, w, rows, 0, pf);",
+        "find": "        const pf = a.take(n);\n        this.exports.png_filter_rows(pr, w, rows, pp, pf);",
+        "replace": "        const pf = a.take(n);\n        this.exports.png_filter_rows(pr, w, rows, 0, pf);",
         "expect": "killed",
         "note": "Pass pp = 0 instead of pp to png_filter_rows in pngPartFromPtr",
     },
@@ -233,6 +233,8 @@ def main():
     for r in results:
         summary_lines.append(f"  {r['id']}: {r['status']} (expect {r['expect']}, {r['seconds']}s) - {r['note']} [{r['detail']}]")
     with open(os.path.join(OUT_DIR, "summary.txt"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(summary_lines) + "\n")
+    with open(os.path.join(OUT_DIR, "results.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(summary_lines) + "\n")
     print("\n".join(summary_lines), flush=True)
     if unexpected:

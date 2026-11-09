@@ -4,7 +4,7 @@
   "killed": 15,
   "survived": 0,
   "unexpected_survivors": 0,
-  "seconds": 47.9,
+  "seconds": 36.0,
   "mutants": [
     {
       "id": "M01_empty_layer_counted",
@@ -12,7 +12,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.92,
+      "seconds": 2.46,
       "detail": "FAIL rust simd stackRowsToWasm (2b): layers with no tiles in the band are skipped without running composite_tile on the base  2b non-overlapping layers: band=at 0: 0 vs 123 above=at 0: 204 vs 200 part=at 2: 88 vs 131",
       "note": "K10b mutant 1: drop if (!storeRowsToWasm(...)) continue so an empty layer is counted over a soft-alpha base"
     },
@@ -22,7 +22,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.08,
+      "seconds": 2.37,
       "detail": "FAIL rust simd stackRowsToWasm (2a): empty layers [] preserves soft-alpha and A=0 RGB base bytes verbatim  2a empty layers: band=at 0: 204 vs 200 above=at 4: 204 vs 200 part=at 2: 161 vs 203",
       "note": "K10b mutant 2: remove count > 0 guard before composite_tile so layers: [] calls composite_tile"
     },
@@ -32,8 +32,8 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 2.87,
-      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 2 (y=256, n=40): adler 471529818/2100783519 crc 1762984175/1777253057 laps={\"filter\":0.02250000000003638,\"adler\":0.014699999999947977,\"deflate\":0.6975999999999658,\"chunk\":0.019099999999980355,\"copyOut\":0.026299999999991996} at 3: 238 vs 234",
+      "seconds": 2.26,
+      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 2 (y=256, n=40): adler 471529818/2100783519 crc 1762984175/1777253057 laps={\"filter\":0.019800000000032014,\"adler\":0.013000000000033651,\"deflate\":0.7024999999999864,\"chunk\":0.015800000000012915,\"copyOut\":0.019000000000005457} at 3: 238 vs 234",
       "note": "K10b mutant 3: change r0 = TILE - 1 on msg.prevTiles branch to r0 = 0"
     },
     {
@@ -42,7 +42,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.07,
+      "seconds": 2.38,
       "detail": "FAIL rust simd stackRowsToWasm (2b): layers with no tiles in the band are skipped without running composite_tile on the base  2b non-overlapping layers: band=at 0: 157 vs 123 above=at 0: 202 vs 200 part=at 2: 110 vs 131",
       "note": "K10b mutant 4: ignore store.x in storeRowsToWasm"
     },
@@ -52,7 +52,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.47,
+      "seconds": 2.3,
       "detail": "FAIL rust simd stackRowsToWasm (2f): two clipped layers over a clip base with holes and c.mask keep independent coverage buffers  2f two clipped layers: band=at 49: 106 vs 85 above=at 40: 209 vs 204 part=at 3: 1 vs 160",
       "note": "K10b mutant 5: reuse a single pcov buffer across clipped layers instead of allocating per clipped layer"
     },
@@ -62,7 +62,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.75,
+      "seconds": 2.27,
       "detail": "FAIL rust simd stackRowsToWasm (2f): two clipped layers over a clip base with holes and c.mask keep independent coverage buffers  2f two clipped layers: band=at 40: 197 vs 223 above=at 40: 122 vs 204 part=at 2: 191 vs 189",
       "note": "K10b mutant 6a: skip clipCoverage call in stackRowsToWasm"
     },
@@ -72,7 +72,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.62,
+      "seconds": 2.36,
       "detail": "FAIL rust simd stackRowsToWasm (2g): dissolve layer (partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack  2g dissolve opaque + partial: band=at 12: 204 vs 90 above=ok part=at 2: 143 vs 202",
       "note": "K10b mutant 6b: mutate >>> 24 to >>> 16 in stackRowsToWasm inline JS dissolve loop"
     },
@@ -82,7 +82,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 1.77,
+      "seconds": 1.14,
       "detail": "TypeError: Cannot perform %TypedArray%.prototype.fill on a detached ArrayBuffer",
       "note": "K10b mutant 7: hold p.u8() before the layer loop and use it after a.take across memory.grow"
     },
@@ -92,7 +92,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.03,
+      "seconds": 2.41,
       "detail": "FAIL rust simd stackRowsToWasm (2g): dissolve layer (partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack  2g dissolve opaque + partial: band=at 668: 151 vs 134 above=ok part=at 2: 201 vs 202",
       "note": "Drop cVal === 255 short-circuit in stackRowsToWasm dissolve loop (drops pixels where hash32 >>> 24 === 255)"
     },
@@ -102,7 +102,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.04,
+      "seconds": 2.55,
       "detail": "FAIL rust simd stackRowsToWasm (2e): 10-float match_pixels layer between blend layers equals rowsOfStack  2e color-matched layer: band=at 64: 185 vs 181 above=at 64: 93 vs 89 part=at 3: 200 vs 212",
       "note": "Skip match_pixels call in stackRowsToWasm"
     },
@@ -112,7 +112,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 4.27,
+      "seconds": 2.72,
       "detail": "FAIL rust simd stackRowsToWasm (2a): empty layers [] preserves soft-alpha and A=0 RGB base bytes verbatim  2a empty layers: band=ok above=ok part=at 2: 204 vs 203",
       "note": "Skip above-row stackRowsToWasm pass in partPtrOf when msg.y > 0"
     },
@@ -122,7 +122,7 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.49,
+      "seconds": 2.64,
       "detail": "FAIL inpaint_worker.js pngPart under composeTiles and composeStack routes: composeWasm=1 on rust, composeWasm=0 on js, identical IDAT chunks  tRust=0 tJs=0 sRust=0 sJs=0",
       "note": "Report composeWasm: 0 instead of 1 on the pointer path in pngPart"
     },
@@ -132,8 +132,8 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.21,
-      "detail": "FAIL rust simd pngPart level 1: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189550",
+      "seconds": 2.87,
+      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 2 (y=256, n=40): adler 471529818/2100783519 crc 1762984175/1777253057 laps={\"filter\":0.0204999999998563,\"adler\":0.014300000000048385,\"deflate\":0.7474999999999454,\"chunk\":0.015700000000151704,\"copyOut\":0.00980000000004111} at 3: 238 vs 234",
       "note": "Pass pp = 0 instead of pp to png_filter_rows in pngPartFromPtr"
     },
     {
@@ -142,8 +142,8 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.09,
-      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 0 (y=0, n=60): adler 1489876665/1489876665 crc 1446107084/1446107084 laps={\"filter\":0.06379999999990105,\"adler\":0.024700000000166256,\"deflate\":1.0506000000000313,\"chunk\":0.02529999999978827,\"copyOut\":0.049100000000180444} ",
+      "seconds": 2.59,
+      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 0 (y=0, n=60): adler 1489876665/1489876665 crc 1446107084/1446107084 laps={\"filter\":0.0584999999999809,\"adler\":0.02430000000003929,\"deflate\":1.0627000000000635,\"chunk\":0.025299999999901956,\"copyOut\":0.03960000000006403} ",
       "note": "Slice bytes from offset 0 instead of 8 in pngPartFromPtr"
     },
     {
@@ -152,8 +152,8 @@
       "status": "killed",
       "expect": "killed",
       "unexpected": false,
-      "seconds": 3.23,
-      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 0 (y=0, n=60): adler 0/1489876665 crc 1446107084/1446107084 laps={\"filter\":0.06290000000012697,\"adler\":0.0029999999999290594,\"deflate\":1.373700000000099,\"chunk\":0.05929999999989377,\"copyOut\":0.11400000000003274} ",
+      "seconds": 2.64,
+      "detail": "FAIL rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles  part 0 (y=0, n=60): adler 0/1489876665 crc 1446107084/1446107084 laps={\"filter\":0.07139999999992597,\"adler\":0.0030000000000427463,\"deflate\":1.048400000000015,\"chunk\":0.033299999999940155,\"copyOut\":0.043099999999981264} ",
       "note": "Return adler = 0 in pngPartFromPtr"
     }
   ]

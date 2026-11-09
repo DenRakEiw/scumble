@@ -9,8 +9,8 @@ Scope (docs/PLAN_WASM_BUILD.md §4.4 K10b, §5 row 44; docs/PLAN_WASM_K10.md):
 - `renderer/editor/px/kernels.js`: added `composeTiles: "kernel"` and `composeStack: "kernel"` to `ROUTE_KINDS` (`:62`). Both win their 15,000 x 10,000 deciding rows, so neither is added to `DEFAULT_ROUTES`.
 - `renderer/editor/inpaint_worker.js`:
   - Imported `route` from `./px/kernels.js` (`:66`).
-  - Exported `rowsOfTiles`, `storeRows`, `rowsOfStack`, `stackInto`, `stackPoints`, `pngPart`, `psdPart` for direct parity testing in Node (`tools/px_test.js`).
-  - Added and exported `tilesRowsToWasm(p, msg, above = false, ptr)` (`:227-251`), `storeRowsToWasm(p, store, X0, W, Y0, n, ptr, alphaOnly = false)` (`:289-319`), `stackRowsToWasm(p, a, msg, above = false, into = null)` (`:394-521`), and `partPtrOf(p, a, msg, needPrev = false)` (`:646-674`).
+  - Exported `rowsOfTiles`, `storeRows`, `rowsOfStack`, `stackInto`, `stackPoints`, `pngPart`, `psdPart` (`:205, :259, :334, :528, :578, :680, :740`) for direct parity testing in Node (`tools/px_test.js`).
+  - Added and exported `tilesRowsToWasm(p, msg, above, ptr)` (`:228-252`), `storeRowsToWasm(p, store, X0, W, Y0, n, ptr, alphaOnly = false)` (`:289-319`), `stackRowsToWasm(p, a, msg, above = false, into = null)` (`:394-521`), and `partPtrOf(p, a, msg, needPrev = false)` (`:646-674`).
   - Updated `pngPart(msg)` (`:680-734`) to take the pointer path (`partPtrOf` + `p.pngPartFromPtr`) when `!msg.rgba && route(routeName) !== "js"` (`routeName = msg.stack ? "composeStack" : "composeTiles"`), resetting `p._reset(a)` and calling `releaseIfLarge()` in `finally` before recording `kernel: now() - t0` and `composeWasm: 1`, and falling back to the JS-gather + `p.pngPart` arm (`composeWasm: 0`) on `"js"` route or after `recovered(p, err, "png_part")`.
 
 1. Node & Electron-as-Node kernel micro-benchmarks (`docs/measurements/k10b_2026-11-09/node/`)
@@ -159,7 +159,7 @@ Route Decisions (`docs/PLAN_WASM_BUILD.md` §1.1 & `docs/PLAN_WASM_K10.md` §9.3
 Command:
   python docs/measurements/k10b_2026-11-09/mutation/mut_k10b.py
 - 15 targeted mutants across `renderer/editor/inpaint_worker.js` (12, including all 7 K10b plan mutants) and `renderer/editor/px/px.js` (3):
-  - **15 killed**, **0 survived**, **0 unexpected** (47.9s).
+  - **15 killed**, **0 survived**, **0 unexpected** (36.0s).
 
 5. Gates (`dist/gates/gates/`)
 ------------------------------
