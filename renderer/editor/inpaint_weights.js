@@ -239,11 +239,14 @@ export function weightTable(r) {
  * Normalises an input limit descriptor into a clean, validated Limit object.
  * Returns null for null/false. Clamps values to [0, 1], swaps lo > hi,
  * and validates source type. Always returns a fresh object.
+ * For new input (a command, the selection): a field that is not a finite number and a colour that is
+ * not #rgb / #rrggbb throw with a readable message. `opts.stored` is `normalizeStoredLimit`.
  *
  * @param {any} v
+ * @param {{ stored?: boolean }} [opts]
  * @returns {Limit | null}
  */
-export function normalizeLimit(v) {
+export function normalizeLimit(v, opts) {
     if (!v || v === false) return null;
     if (typeof v !== "object") throw new Error("limit must be an object");
 
@@ -252,7 +255,9 @@ export function normalizeLimit(v) {
         throw new Error("limit.source must be depth, luma or color");
     }
 
+    const stored = !!(opts && opts.stored);
     const numField = (name, val, def) => {
+        if (stored) return Number(val ?? def);
         if (val == null) return def;
         const n = typeof val === "number" ? val : (typeof val === "string" && val.trim() !== "" ? Number(val) : NaN);
         if (!Number.isFinite(n)) throw new Error(`limit.${name} must be a finite number (got ${JSON.stringify(val)})`);
@@ -275,7 +280,9 @@ export function normalizeLimit(v) {
     const res = { source, lo, hi, fLo, fHi, invert };
 
     if (source === "color") {
-        if (v.color != null) {
+        if (stored) {
+            res.color = typeof v.color === "string" ? v.color : "#ffffff";
+        } else if (v.color != null) {
             if (typeof v.color !== "string" || !/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.color)) {
                 throw new Error(`limit.color must be #rgb or #rrggbb (got ${JSON.stringify(v.color)})`);
             }
@@ -287,6 +294,18 @@ export function normalizeLimit(v) {
     }
 
     return res;
+}
+
+/**
+ * The limit a layer or a document already holds, on the draw and export paths and in the panel: no field or colour
+ * throws, so a document keeps drawing as it did. Commands wrote any colour string into documents up to 0.1.52 (`ff2d2d`
+ * without the #, which `hexToRgb` reads correctly); the refusal is for new input only.
+ *
+ * @param {any} v
+ * @returns {Limit | null}
+ */
+export function normalizeStoredLimit(v) {
+    return normalizeLimit(v, { stored: true });
 }
 
 /**

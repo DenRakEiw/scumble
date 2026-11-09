@@ -45,7 +45,7 @@ import { fitLayerRGBA, workScale } from "./edgefit.js";
 import { STALE_DIFF, GUIDE, RANGE_BAND_ROWS, WORK_MAX, modelSize, workSize, disparityRange } from "./inpaint_depth.js";
 import { packRG16, mapToJSON, mapFromJSON, fingerprint, fingerprintDiff, passToMap, makeMap, sampleMap, deriveMap, selectionOnMap, editMap } from "./inpaint_maps.js";
 import { SNAP_DEFAULT, SNAP_TAU, snapParams, snapField, rangeMax, mapTileStats } from "./inpaint_edges.js";
-import { normalizeLimit, u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping, opp, colourSimilarity, hexToRgb as hexToRgb01, WEIGHTS_GLSL } from "./inpaint_weights.js";
+import { normalizeLimit, normalizeStoredLimit, u16Bilinear, rangeWeight, rangeTileClass, rangeRowBookkeeping, opp, colourSimilarity, hexToRgb as hexToRgb01, WEIGHTS_GLSL } from "./inpaint_weights.js";
 import { limitAlphaRows } from "./inpaint_limit.js";
 import { buildRangeBar } from "./inpaint_rangebar.js";
 import { BLENDS, BLEND_GROUPS, BLEND_MODES, EMULATED_BLENDS, BLEND_OPS, canvasOp, normalBlend, seedOfLayer, hash32, mul255 } from "./blend_modes.js";
@@ -20281,7 +20281,7 @@ class InpaintEditor {
                 colorInput.addEventListener("keydown", stop);
                 colorInput.addEventListener("input", () => {
                     if (!layer._undoPending) layer._undoPending = this.snapshot({ kind: "filter", id: layer.id });
-                    layer.params = { ...layer.params, limit: normalizeLimit({ ...(layer.params.limit || {}), color: colorInput.value }) };
+                    layer.params = { ...layer.params, limit: normalizeStoredLimit({ ...(layer.params.limit || {}), color: colorInput.value }) };
                     this.filterPreview = layer.id;
                     this.markFilterChanged(layer, { soon: true });
                     if (block.rangeBar) block.rangeBar.refresh();
@@ -20292,7 +20292,7 @@ class InpaintEditor {
                         this.pushUndoSnapshot(layer._undoPending, { label: "Filter limit" });
                         layer._undoPending = null;
                     }
-                    layer.params = { ...layer.params, limit: normalizeLimit({ ...(layer.params.limit || {}), color: colorInput.value }) };
+                    layer.params = { ...layer.params, limit: normalizeStoredLimit({ ...(layer.params.limit || {}), color: colorInput.value }) };
                     this.markFilterChanged(layer);
                     if (block.rangeBar) block.rangeBar.refresh();
                 });
@@ -20315,7 +20315,7 @@ class InpaintEditor {
                 tolInput.addEventListener("input", () => {
                     if (!layer._undoPending) layer._undoPending = this.snapshot({ kind: "filter", id: layer.id });
                     const tolVal = Math.max(0, Math.min(100, parseFloat(tolInput.value) || 0));
-                    layer.params = { ...layer.params, limit: normalizeLimit({ ...(layer.params.limit || {}), tol: tolVal }) };
+                    layer.params = { ...layer.params, limit: normalizeStoredLimit({ ...(layer.params.limit || {}), tol: tolVal }) };
                     this.filterPreview = layer.id;
                     this.markFilterChanged(layer, { soon: true });
                     if (block.rangeBar) block.rangeBar.refresh();
@@ -20327,7 +20327,7 @@ class InpaintEditor {
                         layer._undoPending = null;
                     }
                     const tolVal = Math.max(0, Math.min(100, parseFloat(tolInput.value) || 0));
-                    layer.params = { ...layer.params, limit: normalizeLimit({ ...(layer.params.limit || {}), tol: tolVal }) };
+                    layer.params = { ...layer.params, limit: normalizeStoredLimit({ ...(layer.params.limit || {}), tol: tolVal }) };
                     this.markFilterChanged(layer);
                     if (block.rangeBar) block.rangeBar.refresh();
                 });
@@ -20369,7 +20369,7 @@ class InpaintEditor {
                 },
                 preview: (r) => {
                     const cur = layer.params.limit || curLim;
-                    layer.params = { ...layer.params, limit: normalizeLimit({ ...cur, ...r }) };
+                    layer.params = { ...layer.params, limit: normalizeStoredLimit({ ...cur, ...r }) };
                     this.filterPreview = layer.id;
                     this.markFilterChanged(layer, { soon: true });
                 },
@@ -20380,7 +20380,7 @@ class InpaintEditor {
                     }
                     const cur = layer.params.limit || curLim;
                     if (r) {
-                        layer.params = { ...layer.params, limit: normalizeLimit({ ...cur, ...r }) };
+                        layer.params = { ...layer.params, limit: normalizeStoredLimit({ ...cur, ...r }) };
                     }
                     if (layer._undoPending) {
                         this.pushUndoSnapshot(layer._undoPending, { label: "Filter limit" });
@@ -20424,7 +20424,7 @@ class InpaintEditor {
                 }
             } else {
                 const cur = layer.params.limit || {};
-                const nextLimit = normalizeLimit({
+                const nextLimit = normalizeStoredLimit({
                     source: val,
                     lo: cur.lo ?? 0.0,
                     hi: cur.hi ?? (val === "depth" ? 0.5 : 0.7),

@@ -5,7 +5,7 @@
 // the guide is the picture without filters.
 // No DOM at import.
 
-import { WEIGHTS_GLSL, normalizeLimit, limitWeight, u16Bilinear, opp, hexToRgb } from "./inpaint_weights.js";
+import { WEIGHTS_GLSL, normalizeStoredLimit, limitWeight, u16Bilinear, opp, hexToRgb } from "./inpaint_weights.js";
 import { SAMPLE_GLSL, runShader, glToCanvas } from "./inpaint_filters_gl.js";
 import { passToMap, rg8View, guideView } from "./inpaint_maps.js";
 import { setLimitStage } from "./inpaint_filters.js";
@@ -53,7 +53,7 @@ vec4 shade(vec4 c, vec2 uv) {
  */
 export function limitStage(src, out, limitIn, info = {}, def = null) {
     if (!limitIn) return out;
-    const limit = normalizeLimit(limitIn);
+    const limit = normalizeStoredLimit(limitIn);
     if (!limit) return out;
     if (out === src) return src;
     if (limit.lo <= 0 && limit.hi >= 1 && !limit.invert) return out;
@@ -204,7 +204,7 @@ export function limitStageCPU(srcCanvas, outCanvas, limit, info = {}, over = fal
  */
 export function limitAlphaRows(rgba, x0, y0, w, h, limit, map) {
     if (!rgba || !limit || w <= 0 || h <= 0) return;
-    const lim = normalizeLimit(limit);
+    const lim = normalizeStoredLimit(limit);
     if (!lim) return;
 
     // Shortcut: full range and not inverted leaves alpha untouched

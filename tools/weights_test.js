@@ -33,6 +33,7 @@ async function main() {
         limitWeight,
         weightTable,
         normalizeLimit,
+        normalizeStoredLimit,
         u16Bilinear,
         rangeTileClass,
         rangeRowBookkeeping,
@@ -183,6 +184,18 @@ async function main() {
         // 3-char #rgb hex accepted
         const col3 = normalizeLimit({ source: "color", lo: 0.1, hi: 0.9, color: "#48c", tol: 20 });
         assert.equal(col3.color, "#48c");
+
+        // A limit a document already holds never throws and keeps its colour string as it is
+        for (const stored of ["ff2d2d", "#ff2d2d80", "red", ""]) {
+            assert.equal(normalizeStoredLimit({ source: "color", lo: 0.1, hi: 0.9, color: stored }).color, stored);
+        }
+        assert.equal(normalizeStoredLimit({ source: "color", lo: 0.1, hi: 0.9, color: 123 }).color, "#ffffff");
+        assert.deepEqual(
+            normalizeStoredLimit({ source: "luma", lo: null, hi: "0.8", fLo: true }),
+            { source: "luma", lo: 0, hi: 0.8, fLo: 1, fHi: 0, invert: false },
+        );
+        assert.equal(normalizeStoredLimit(null), null);
+        assert.throws(() => normalizeStoredLimit({ source: "bogus" }), /limit\.source must be depth, luma or color/);
 
         // Invalid color and non-numeric lo, hi, fLo, fHi, tol refused with readable message
         for (const badColor of ["red", "#xyz", "#12345", 123, ""]) {

@@ -10,6 +10,7 @@ Tests limit on filter layers (the stage):
   * Case 8: Two filter layers, first limited, FILTER_CHAIN on against off (<= 2)
   * Case 9: Painted mask hiding left half + limit (effect only on right half where w > 0)
   * Case 12: .scumble with limit has minReader 3; empty document 1
+  * Case 13: a stored colour without the # still draws; a new one through set_filter is refused
   * Fill layer validation: add_filter/set_filter non-depth rejection, setFilterType drop note
 
 Runs Node test tools/limit_test.js first, then connects to running app via CDP if available.
@@ -246,6 +247,44 @@ JS = r"""
     shell.closeDocument && shell.closeDocument(ed, { force: true });
 
     // -------------------------------------------------------------------------
+    // Case 13: a colour limit as a document of 0.1.44 to 0.1.52 can hold it (an agent wrote it without the #): the layer
+    // still draws, and a new command with that colour is refused
+    {
+        const ed13 = shell.newDocument();
+        shell.activate(ed13);
+        await new Promise((r) => setTimeout(r, 200));
+        ed13.resizeCanvas();
+        const base13 = mk(256, 256);
+        {
+            const ctx = base13.getContext("2d");
+            ctx.fillStyle = "#ff2d2d"; ctx.fillRect(0, 0, 128, 256);
+            ctx.fillStyle = "#2040c0"; ctx.fillRect(128, 0, 128, 256);
+        }
+        Object.defineProperty(base13, "naturalWidth", { value: 256 });
+        Object.defineProperty(base13, "naturalHeight", { value: 256 });
+        await ed13.setBaseFromCanvas(base13, { keepLayers: false });
+        await settle(ed13);
+        const none = ed13.flattenToCanvas({ forRun: true });
+        const lim13 = { source: "color", color: "#ff2d2d", tol: 60, lo: 0.1, hi: 1, fLo: 0.05, fHi: 0 };
+        const f13 = await commands.run("add_filter", { doc: ed13.node.id, type: "invert", params: { limit: lim13 } });
+        await settle(ed13);
+        const hashed = ed13.flattenToCanvas({ forRun: true });
+        const layer13 = ed13.layers.find((l) => l.id === f13.id);
+        layer13.params = { ...layer13.params, limit: { ...layer13.params.limit, color: "ff2d2d" } };
+        ed13.markFilterChanged(layer13);
+        await settle(ed13);
+        const bare = ed13.flattenToCanvas({ forRun: true });
+        const drew = diffStat(hashed, none, 256, 256), same = diffStat(hashed, bare, 256, 256);
+        check("Case 13 the limited filter changes the picture", drew.max > 20, drew);
+        check("Case 13 a stored colour without # draws as the same colour with it", same.max === 0, same);
+        let err13 = "";
+        try {
+            await commands.run("set_filter", { doc: ed13.node.id, layer: f13.id, params: { limit: { ...lim13, color: "ff2d2d" } } });
+        } catch (e) { err13 = String(e && e.message || e); }
+        check("Case 13 set_filter refuses a new colour without the #", /limit\.color must be #rgb or #rrggbb/.test(err13), err13);
+        shell.closeDocument && shell.closeDocument(ed13, { force: true });
+    }
+
     // Case 3: Box [400,300,800,600] of 1600x1200 document
     // -------------------------------------------------------------------------
     const ed3 = shell.newDocument();
