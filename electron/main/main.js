@@ -374,7 +374,8 @@ function createWindow() {
     win.on("close", (e) => {
         const b = win.getNormalBounds();
         // a full-screen window is not maximized: the canvas-only view remembers whether it was before
-        settings.set({ window: { ...b, maximized: viewFullScreen && win.isFullScreen() ? maximizedBeforeView : win.isMaximized() } });
+        try { settings.set({ window: { ...b, maximized: viewFullScreen && win.isFullScreen() ? maximizedBeforeView : win.isMaximized() } }); }
+        catch (err) { console.warn("window bounds:", err.message); }
         // while an agent drives the app, closing the window only hides it; the app ends
         // with the MCP session (or stays when a script still talks to the socket)
         if (agentMode) { e.preventDefault(); win.hide(); headless = true; if (comfyView) comfyView.close(); return; }
@@ -897,18 +898,26 @@ function recentDocuments() {
 }
 
 function addRecent(file) {
-    const list = recentDocuments().filter((r) => pathKey(r.path) !== pathKey(file));
-    list.unshift({ path: file, name: path.basename(file), time: Date.now() });
-    settings.set({ recentDocuments: list.slice(0, RECENT_MAX) });
-    // a portable copy leaves no jump list entry on the PC it runs on (docs/PLAN_0_1_42.md Q22)
-    if (!PORTABLE) { try { app.addRecentDocument(file); } catch (_) { /* the jump list shows it once the file type is registered */ } }
-    buildMenu();
+    try {
+        const list = recentDocuments().filter((r) => pathKey(r.path) !== pathKey(file));
+        list.unshift({ path: file, name: path.basename(file), time: Date.now() });
+        settings.set({ recentDocuments: list.slice(0, RECENT_MAX) });
+        // a portable copy leaves no jump list entry on the PC it runs on (docs/PLAN_0_1_42.md Q22)
+        if (!PORTABLE) { try { app.addRecentDocument(file); } catch (_) { /* the jump list shows it once the file type is registered */ } }
+        buildMenu();
+    } catch (err) {
+        console.warn("recent documents:", err.message);
+    }
 }
 
 function dropRecent(file) {
-    const list = recentDocuments();
-    const kept = list.filter((r) => pathKey(r.path) !== pathKey(file));
-    if (kept.length !== list.length) { settings.set({ recentDocuments: kept }); buildMenu(); }
+    try {
+        const list = recentDocuments();
+        const kept = list.filter((r) => pathKey(r.path) !== pathKey(file));
+        if (kept.length !== list.length) { settings.set({ recentDocuments: kept }); buildMenu(); }
+    } catch (err) {
+        console.warn("recent documents:", err.message);
+    }
 }
 
 /** File › Open Recent: the documents, then Clear Recently Opened. */

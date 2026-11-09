@@ -130,6 +130,136 @@ function bundle(tag, pics, empty = 0) {
             assert(!keys.some((k) => /^input\/inpaint_canvas\/c_/.test(k)), "the current autosave's files are counted as a generation's");
             return `${keys.length} keys`;
         });
+        await check("stores_fsync_retry_busy_and_keep_damaged_files", () => {
+            const Module = require("node:module");
+            const storeDir = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-stores-"));
+            const origLoad = Module._load;
+            const origFsync = fs.fsyncSync;
+            const origRename = fs.renameSync;
+            const origReadFile = fs.readFileSync;
+            const origWarn = console.warn;
+            try {
+                console.warn = () => {};
+                Module._load = function (request, parent, isMain) {
+                    if (request === "electron") {
+                        return {
+                            app: { getPath: () => storeDir },
+                            safeStorage: {
+                                isEncryptionAvailable: () => true,
+                                encryptString: (s) => Buffer.from("enc:" + s, "utf8"),
+                                decryptString: (b) => {
+                                    const str = b.toString("utf8");
+                                    if (!str.startsWith("enc:")) throw new Error("bad cipher");
+                                    return str.slice(4);
+                                },
+                            },
+                        };
+                    }
+                    return origLoad.call(this, request, parent, isMain);
+                };
+                const freshStore = (rel) => {
+                    const p = path.join(ROOT, "electron", "main", rel);
+                    delete require.cache[require.resolve(p)];
+                    return require(p);
+                };
+
+                // 1. fsyncSync before renameSync + transient EBUSY retry on write in autosave, settings, and keys
+                let events = [];
+                let busyLeft = 0;
+                fs.fsyncSync = function (fd) { events.push("fsync"); return origFsync.call(this, fd); };
+                fs.renameSync = function (oldP, newP) {
+                    if (busyLeft > 0) { busyLeft--; throw Object.assign(new Error("EBUSY"), { code: "EBUSY" }); }
+                    events.push("rename");
+                    return origRename.call(this, oldP, newP);
+                };
+
+                busyLeft = 2;
+                autosave.save(storeDir, bundle("s1", 1));
+                assert(events.join(",") === "fsync,rename" && busyLeft === 0, "autosave write must fsync before rename and retry EBUSY: " + events);
+
+                events = [];
+                busyLeft = 2;
+                let settings = freshStore("settings.js");
+                settings.set({ recipe: "sdxl_inpaint" });
+                assert(events.join(",") === "fsync,rename" && busyLeft === 0, "settings write must fsync before rename and retry EBUSY: " + events);
+
+                events = [];
+                busyLeft = 2;
+                const keys = freshStore("keys.js");
+                keys.set("gemini", "gem-secret-1234");
+                assert(events.join(",") === "fsync,rename" && busyLeft === 0, "keys write must fsync before rename and retry EBUSY: " + events);
+                keys.set("fal", "fal-secret-5678");
+                assert(keys.get("gemini") === "gem-secret-1234" && keys.get("fal") === "fal-secret-5678", "both keys stored");
+
+                // 2. Transient EBUSY on readFileSync is retried; persistent EBUSY does not wipe settings.json or secrets.json
+                let readBusyLeft = 2;
+                const settingsFile = path.join(storeDir, "settings.json");
+                const secretsFile = path.join(storeDir, "secrets.json");
+                fs.readFileSync = function (p, ...rest) {
+                    if ((p === settingsFile || p === secretsFile) && readBusyLeft > 0) {
+                        readBusyLeft--;
+                        throw Object.assign(new Error("EBUSY"), { code: "EBUSY" });
+                    }
+                    return origReadFile.call(this, p, ...rest);
+                };
+                settings = freshStore("settings.js");
+                assert(settings.get().recipe === "sdxl_inpaint" && readBusyLeft === 0, "settings.get must retry transient EBUSY on read");
+                readBusyLeft = 2;
+                assert(keys.get("gemini") === "gem-secret-1234" && readBusyLeft === 0, "keys.get must retry transient EBUSY on read");
+
+                // Persistent EBUSY (more than 4 retries): settings keeps running on defaults without overwriting settings.json
+                readBusyLeft = 20;
+                settings = freshStore("settings.js");
+                settings.set({ apiSize: "x2" });
+                readBusyLeft = 0;
+                const diskSettingsAfterBusy = JSON.parse(origReadFile.call(fs, settingsFile, "utf8"));
+                assert(diskSettingsAfterBusy.recipe === "sdxl_inpaint" && diskSettingsAfterBusy.apiSize === undefined, "persistent read error must not overwrite settings.json with defaults");
+                // Once read succeeds again, a subsequent set merges the stored settings with the in-memory patch
+                settings.set({ embedRecipe: false, embedRecipeChosen: true });
+                const diskSettingsMerged = JSON.parse(origReadFile.call(fs, settingsFile, "utf8"));
+                assert(diskSettingsMerged.recipe === "sdxl_inpaint" && diskSettingsMerged.apiSize === "x2" && diskSettingsMerged.embedRecipe === false, "later write after transient read error clears must preserve stored keys and in-memory patches: " + JSON.stringify(diskSettingsMerged));
+
+                // Persistent EBUSY on secrets.json: keys.get returns "", keys.set refuses to overwrite existing keys
+                readBusyLeft = 20;
+                assert(keys.get("gemini") === "", "keys.get on unreadable secrets.json returns empty string");
+                let keyWriteThrew = false;
+                try { keys.set("bfl", "bfl-secret-9999"); } catch (_) { keyWriteThrew = true; }
+                readBusyLeft = 0;
+                assert(keyWriteThrew, "keys.set must refuse when secrets.json cannot be read");
+                assert(keys.get("gemini") === "gem-secret-1234" && keys.get("fal") === "fal-secret-5678" && keys.get("bfl") === "", "existing keys must remain intact after refused write");
+
+                // 3. Damaged (truncated/corrupt) files are renamed to .damaged and not silently overwritten
+                const autoFile = path.join(storeDir, "autosave.json");
+                autosave.rotate(storeDir); // generation 1 now has bundle("s1", 1)
+                fs.writeFileSync(autoFile, "{corrupt-autosave", "utf8");
+                const rotDamaged = autosave.rotate(storeDir);
+                assert(!rotDamaged.rotated && fs.existsSync(autoFile + ".damaged") && origReadFile.call(fs, autoFile + ".damaged", "utf8") === "{corrupt-autosave", "damaged autosave.json must be renamed to .damaged");
+                assert(autosave.load(storeDir, "1") === bundle("s1", 1), "generation 1 must stay intact when autosave.json is damaged");
+
+                fs.writeFileSync(settingsFile, "{corrupt-settings", "utf8");
+                settings = freshStore("settings.js");
+                assert(settings.get().recipe === settings.DEFAULTS.recipe, "damaged settings.json falls back to defaults in memory");
+                assert(fs.existsSync(settingsFile + ".damaged") && origReadFile.call(fs, settingsFile + ".damaged", "utf8") === "{corrupt-settings", "damaged settings.json must be renamed to settings.json.damaged");
+                settings.set({ apiSize: "x4" });
+                assert(!fs.existsSync(settingsFile) && settings.get().apiSize === "x4", "settings.set must keep running in memory without persisting while settings.json.damaged is unresolved");
+
+                fs.writeFileSync(secretsFile, "{corrupt-secrets", "utf8");
+                assert(Object.keys(keys.list().keys).length === 0, "keys.list on damaged secrets.json returns empty keys");
+                assert(fs.existsSync(secretsFile + ".damaged") && origReadFile.call(fs, secretsFile + ".damaged", "utf8") === "{corrupt-secrets", "damaged secrets.json must be renamed to secrets.json.damaged");
+                let damagedKeyWriteThrew = false;
+                try { keys.set("bfl", "bfl-secret-9999"); } catch (_) { damagedKeyWriteThrew = true; }
+                assert(damagedKeyWriteThrew && !fs.existsSync(secretsFile), "keys.set must refuse to write when secrets.json was damaged");
+
+                return "fsync before rename, EBUSY retry, ENOENT-only empty rule, .damaged preserved";
+            } finally {
+                console.warn = origWarn;
+                fs.fsyncSync = origFsync;
+                fs.renameSync = origRename;
+                fs.readFileSync = origReadFile;
+                Module._load = origLoad;
+                fs.rmSync(storeDir, { recursive: true, force: true });
+            }
+        });
 
         // 2 -------------------------------------------------------------------------------------------------------
         await check("a_close_waits_for_the_save", async () => {
@@ -174,6 +304,9 @@ function bundle(tag, pics, empty = 0) {
         await check("main_prevents_a_close_until_the_window_saved", () => {
             const b = bodyAfter(main, /win\.on\("close", \(e\) => /);
             assert(b, "the close handler is not there");
+            assert(/try \{\s*settings\.set\(\{\s*window:/.test(b), "the close handler does not guard the window-bounds settings.set with try/catch");
+            const ar = bodyAfter(main, /function addRecent\(file\) /);
+            assert(ar && /try \{[\s\S]*settings\.set\(\{\s*recentDocuments:[\s\S]*\} catch/.test(ar), "addRecent does not guard settings.set with try/catch");
             const agent = b.indexOf("if (agentMode)"), guard = b.indexOf("quitGuard.onClose()"), prevent = b.indexOf("e.preventDefault();", guard), flush = b.indexOf('quitGuard.run(() => flushAll("quit"))'), close = b.indexOf("win.close()", flush);
             assert(agent >= 0 && guard > agent, "the guard is not asked after the agent branch");
             assert(prevent > guard && flush > prevent && close > flush, "the close is not prevented, saved, then closed again");

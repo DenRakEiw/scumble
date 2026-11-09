@@ -67,22 +67,55 @@ function file(name) {
     return path.join(app.getPath("userData"), name);
 }
 
+function retrying(op) {
+    for (let i = 0; ; i++) {
+        try { return op(); } catch (err) {
+            if (i >= 4 || !/^(EPERM|EBUSY|EACCES)$/.test(String(err && err.code))) throw err;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * (i + 1));
+        }
+    }
+}
+
 function readJson(name, fallback) {
+    const p = file(name);
+    let raw;
     try {
-        return JSON.parse(fs.readFileSync(file(name), "utf8"));
-    } catch (_) {
-        return fallback;
+        raw = retrying(() => fs.readFileSync(p, "utf8"));
+    } catch (err) {
+        if (err && err.code === "ENOENT") {
+            if (fs.existsSync(p + ".damaged")) return { ok: false, data: fallback };
+            return { ok: true, data: fallback };
+        }
+        console.warn("settings read:", p, err.message);
+        return { ok: false, data: fallback };
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+        return { ok: true, data: parsed };
+    } catch (err) {
+        console.warn("settings damaged:", p, err.message);
+        try { retrying(() => fs.renameSync(p, p + ".damaged")); } catch (_) { /* keep as-is */ }
+        return { ok: false, data: fallback };
     }
 }
 
 function writeJson(name, value) {
     fs.mkdirSync(app.getPath("userData"), { recursive: true });
     const tmp = file(name + ".tmp");
-    fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", "utf8");
-    fs.renameSync(tmp, file(name));
+    const fd = fs.openSync(tmp, "w");
+    try {
+        fs.writeSync(fd, JSON.stringify(value, null, 2) + "\n", null, "utf8");
+        fs.fsyncSync(fd);
+    } finally {
+        fs.closeSync(fd);
+    }
+    retrying(() => fs.renameSync(tmp, file(name)));
 }
 
 let cache = null;
+let loaded = false;
+let pending = {};
 
 /** The relight defaults the store before F3 wrote with every pick (77da63f..4192a6a; lora_strength 1 is 77da63f's 1.0). */
 const PRE_F3_RELIGHT = {
@@ -91,8 +124,8 @@ const PRE_F3_RELIGHT = {
 };
 
 function get() {
-    if (!cache) {
-        const stored = readJson("settings.json", {});
+    if (!loaded) {
+        const { ok, data: stored } = readJson("settings.json", {});
         // 0.1.30 and 0.1.31 stored their default `embedRecipe: false` with every write (set() writes the whole object); it
         // counts as the user's only when the switch itself wrote it, which marks it (host.setEmbedRecipe, since 0.1.32)
         if (stored && stored.embedRecipe === false && !stored.embedRecipeChosen) delete stored.embedRecipe;
@@ -106,14 +139,17 @@ function get() {
             }
             stored.relight = flat;
         }
-        cache = { ...DEFAULTS, ...stored };
+        cache = { ...DEFAULTS, ...stored, ...pending };
+        if (ok) { loaded = true; pending = {}; }
     }
     return cache;
 }
 
 function set(patch) {
-    cache = { ...get(), ...(patch || {}) };
-    writeJson("settings.json", cache);
+    if (!loaded) pending = { ...pending, ...(patch || {}) };
+    const base = get();
+    cache = { ...base, ...(patch || {}) };
+    if (loaded) writeJson("settings.json", cache);
     return cache;
 }
 

@@ -23,16 +23,47 @@ const GENERATIONS = [
     { id: "crash.1", file: "autosave.crash.1.json", label: "set aside after an earlier crash" },
 ];
 
-function readJson(file) {
-    try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (_) { return null; }
+function retrying(op) {
+    for (let i = 0; ; i++) {
+        try { return op(); } catch (err) {
+            if (i >= 4 || !/^(EPERM|EBUSY|EACCES)$/.test(String(err && err.code))) throw err;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * (i + 1));
+        }
+    }
 }
 
-/** Write `value` as JSON to `file` whole: a temporary file first, renamed over the old one. */
+function readJson(file) {
+    let raw;
+    try {
+        raw = retrying(() => fs.readFileSync(file, "utf8"));
+    } catch (err) {
+        if (err && err.code === "ENOENT") return null;
+        console.warn("autosave read:", file, err.message);
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+        return parsed;
+    } catch (err) {
+        console.warn("autosave damaged:", file, err.message);
+        try { retrying(() => fs.renameSync(file, file + ".damaged")); } catch (_) { /* keep as-is */ }
+        return null;
+    }
+}
+
+/** Write `value` as JSON to `file` whole: a temporary file first, flushed to disk and renamed over the old one. */
 function writeJson(file, value) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = file + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(value) + "\n", "utf8");
-    fs.renameSync(tmp, file);
+    const fd = fs.openSync(tmp, "w");
+    try {
+        fs.writeSync(fd, JSON.stringify(value) + "\n", null, "utf8");
+        fs.fsyncSync(fd);
+    } finally {
+        fs.closeSync(fd);
+    }
+    retrying(() => fs.renameSync(tmp, file));
 }
 
 function fileOf(dir, gen) {
@@ -102,7 +133,7 @@ function rotate(dir) {
         // an empty session never pushes out one with pictures (a start whose restore failed and was closed again)
         return { rotated: false, why: "no picture in the last session; generation 1 keeps the one before" };
     }
-    if (fs.existsSync(one)) fs.renameSync(one, two);
+    if (fs.existsSync(one)) retrying(() => fs.renameSync(one, two));
     writeJson(one, now);
     return { rotated: true };
 }
@@ -119,7 +150,7 @@ function setAside(dir) {
     const crash = path.join(dir, GENERATIONS[2].file), older = path.join(dir, GENERATIONS[3].file);
     const prev = readJson(crash);
     if (prev && typeof prev.state === "string" && sameState(prev.state, now.state)) return false;
-    if (prev) fs.renameSync(crash, older);
+    if (prev) retrying(() => fs.renameSync(crash, older));
     writeJson(crash, { ...now, setAside: Date.now() });
     return true;
 }

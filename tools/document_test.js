@@ -29,7 +29,7 @@ const { spawnSync } = require("node:child_process");
 
 const ROOT = path.join(__dirname, "..");
 const doc = require(path.join(ROOT, "electron", "main", "docfile.js"));
-const { FileMirror, contentName, isHashName, hasContentHash, writeAtomic } = require(path.join(ROOT, "electron", "main", "files.js"));
+const { FileMirror, mirrorPath: fileMirrorPath, contentName, isHashName, hasContentHash, writeAtomic } = require(path.join(ROOT, "electron", "main", "files.js"));
 
 const BIG = process.argv.includes("--big");
 let failed = 0;
@@ -692,6 +692,28 @@ function listTree(dir) {
                 uploads.length = 0;
                 const uFont = await (await fm.handleUpload(mkUploadReq("MyFont.ttf", bytesB, true, "inpaint_canvas/fonts"))).json();
                 assert(uFont.name === "MyFont.ttf" && uploads[0].overwrite === "true" && uploads[0].finalName === "MyFont.ttf" && serverFiles.get("input/inpaint_canvas/fonts/MyFont.ttf").equals(bytesB), "overwrite:true font upload must replace server copy in place");
+
+                // 3b. D8: files.mirrorPath enforces the same reserved-device and trailing dot/space rules as doc.mirrorPath;
+                // overwrite:true uploads with a device name (e.g. aux.ttf) or trailing space/dot map to a safe name instead of 400
+                for (const badName of ["aux.ttf", "con.png", "lpt1.cube", "font.ttf ", "font.ttf."]) {
+                    let threwMirror = false;
+                    try { fileMirrorPath("input", "inpaint_canvas/fonts", badName, M); } catch (_) { threwMirror = true; }
+                    assert(threwMirror, `files.mirrorPath must refuse ${JSON.stringify(badName)}`);
+                }
+                for (const badSub of ["inpaint_canvas/aux", "con/fonts", "inpaint_canvas/sub "]) {
+                    let threwSub = false;
+                    try { fileMirrorPath("input", badSub, "MyFont.ttf", M); } catch (_) { threwSub = true; }
+                    assert(threwSub, `files.mirrorPath must refuse subfolder ${JSON.stringify(badSub)}`);
+                }
+                const resAuxFont = await fm.handleUpload(mkUploadReq("aux.ttf", bytesA, true, "inpaint_canvas/fonts"));
+                assert(resAuxFont.status === 200, `overwrite:true upload of aux.ttf must succeed (got ${resAuxFont.status})`);
+                const uAuxFont = await resAuxFont.json();
+                assert(uAuxFont.name === "aux_.ttf" && fs.readFileSync(doc.mirrorPath(M, uAuxFont.type, uAuxFont.subfolder, uAuxFont.name)).equals(bytesA), `aux.ttf must map to aux_.ttf accepted by doc.mirrorPath: ${JSON.stringify(uAuxFont)}`);
+                const [rawConReq, rawConSearch] = mkRawReq("con.png ", bytesB, true);
+                const resConRaw = await fm.handleRawUpload(rawConReq, rawConSearch);
+                assert(resConRaw.status === 200, `overwrite:true raw upload of 'con.png ' must succeed (got ${resConRaw.status})`);
+                const uConRaw = await resConRaw.json();
+                assert(uConRaw.name === "con_.png" && fs.readFileSync(doc.mirrorPath(M, uConRaw.type, uConRaw.subfolder, uConRaw.name)).equals(bytesB), `con.png  must map to con_.png accepted by doc.mirrorPath: ${JSON.stringify(uConRaw)}`);
 
                 // 4. No extension, odd characters, lookalike names, and long 250-char stems
                 const uNoExt = await (await fm.handleUpload(mkUploadReq("readme", bytesA, false))).json();
