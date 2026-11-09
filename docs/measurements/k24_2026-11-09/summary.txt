@@ -41,10 +41,10 @@ Builds (`python tools/build_px.py --check`):
 Node & Electron unit & kernel benchmarks (`PX_BENCH=1 PX_ONLY=guided node tools/px_test.js`):
 - `guided_far model 784x518 -> 4096x2731`:   twin 1069.96 ms, simd 294.35 ms (3.63x), scalar 438.62 ms (median of 5)
 - `guided_far layer 4096x2731 -> 4096x2731`: twin  975.46 ms, simd 253.59 ms (3.85x), scalar 367.23 ms (median of 5)
-- 63 deterministic/boundary/scene cases (including `1x1`..`64x48` same-size at radii `0, 1, 2, 5, 12`, `lo == hi`, `lo > hi`,
+- 62 deterministic/boundary cases (including `1x1`..`64x48` same-size at radii `0, 1, 2, 5, 12`, `lo == hi`, `lo > hi`,
   `hi - lo == 1e-12` vs `1.0001e-12`, `q = 0.5` `32767.5 -> 32768` half-way `u16` tie, `r * (gw / rw) = 1.5` half-way radius tie,
   `98x32 -> 150x48` `wx` `f32` vs `f64` tie, `128x96 -> 256x192` precision case flipping 4 `u16`s when `b` uses rounded `f32`
-  `a[i]` and 39 `u16`s when `I` uses `f32` `1/255`, real `924x518 -> 2000x1125` scene checkpoint, odd byte-offset views,
+  `a[i]` and 39 `u16`s when `I` uses `f32` `1/255`, odd byte-offset views,
   options-object & positional callers with optional `out` `Uint16Array`, dirty arena check, 17 invalid-argument refusals,
   raw export refusals, `K.guidedFar` route check, and trap/OOM recovery in `retouchRoute`): PASS on twin, simd, scalar in both
   Node and `ELECTRON_RUN_AS_NODE=1` (Electron 44 V8 15.2), plus `node tools/depth_test.js` (including "guidedFar against R1-S2

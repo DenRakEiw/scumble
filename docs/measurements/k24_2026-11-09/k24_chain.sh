@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # K24 of docs/PLAN_WASM_BUILD.md (§4.8): guided_far (crates/px/src/guided.rs) and depth_guide worker job measurement.
 # Before = a tree exported at 3fd8bda7 (wasm-kernels base before K24, with K24's tools/px_jobs.py copied in so
-# depth_guide_model runs identically on both trees), after = F:/canvas/.claude/worktrees/ag-chain-g working tree.
+# depth_guide_model runs identically on both trees), after = the repository root working tree.
 # The two alternate within each round (before/after in r1, after/before in r2, before/after in r3), each on a fresh
 # Electron instance (offline, tiles, its own profile, port 9635; w1_lock.py held per timed batch and released between).
 # Usage: bash k24_chain.sh <outdir> <before_tree> [rounds]   (rounds "1 2 3" by default)
 set -u
-REPO="/f/canvas/.claude/worktrees/ag-chain-g"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$HERE/../../.." && pwd)"
 cd "$REPO"
 OUTDIR="$1"; BEFORE="$2"; ROUNDS="${3:-1 2 3}"
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCK="$HERE/../w1_2026-11-06/w1_lock.py"
 ELECTRON="/f/canvas/node_modules/electron/dist/electron.exe"
 PORT=9635
@@ -44,7 +44,7 @@ log "before: $BEFORE, px.wasm $(sha256sum "$BEFORE/renderer/editor/px/px.wasm" |
 log "gpu: $(nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader); comfy 8188: $(curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:8188/system_stats)"
 
 acquire_batch "px_test guided bench"
-PX_BENCH=1 PX_ONLY=guided node tools/px_test.js > "$OUTDIR/after/px_test_guided_bench.txt" 2>&1
+PX_BENCH=1 PX_ONLY=guided node --no-warnings tools/px_test.js > "$OUTDIR/after/px_test_guided_bench.txt" 2>&1
 log "px_test guided bench rc=$?"
 release
 

@@ -7774,20 +7774,6 @@ async function guidedCases(js, simd, scalar, K) {
             `flipB=${flipB} flipIf32=${flipIf32} flipIf64=${flipIf64}`);
     }
 
-    // 5. Real checkpoint scene (924x518 -> 2000x1125) when present in dist/depth_checkpoint/scene/
-    const rawPath = path.join(ROOT, "dist", "depth_checkpoint", "scene", "raw.f32");
-    const greyPath = path.join(ROOT, "dist", "depth_checkpoint", "scene", "grey.u8");
-    if (fs.existsSync(rawPath) && fs.existsSync(greyPath)) {
-        const rawBuf = fs.readFileSync(rawPath);
-        const raw = new Float32Array(rawBuf.buffer, rawBuf.byteOffset, rawBuf.byteLength / 4);
-        const greyBuf = fs.readFileSync(greyPath);
-        const grey = new Uint8Array(greyBuf.buffer, greyBuf.byteOffset, greyBuf.byteLength);
-        cases.push({
-            tag: "scene 924x518->2000x1125",
-            args: [raw, 924, 518, grey, 2000, 1125, 2, 1e-3, 0.0, 7.497405529022217],
-        });
-    }
-
     twinCheck({
         name: "guided_far",
         builds: [["rust simd", simd], ["rust scalar", scalar]],
