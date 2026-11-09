@@ -1,0 +1,33 @@
+{
+ "match_loop_4096": {
+  "visibility": "visible",
+  "focus": true,
+  "loop": {
+   "median": 220.64,
+   "max": 234.98,
+   "n": 3
+  },
+  "note": "matchCanvas's CPU loop body, copied (the function itself takes the shader path first); 16.8 MP"
+ },
+ "match_fallback_16k": {
+  "visibility": "visible",
+  "focus": true,
+  "size": [
+   4096,
+   4096
+  ],
+  "webgl2": true,
+  "gl_refused": true,
+  "cpu": {
+   "median": 263,
+   "walls": [
+    277.9,
+    256.4,
+    263
+   ],
+   "blocked": 263,
+   "n": 3
+  },
+  "pxCalls": {}
+ }
+}

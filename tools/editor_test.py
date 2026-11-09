@@ -13011,6 +13011,165 @@ dlg.close();
 out.line = line.textContent.slice(0, 90);
 return out;
 """),
+    ("match_canvas_fallback_chunks_through_match_pixels", """
+// K38 (docs/PLAN_WASM_BUILD.md section 4.11): when applyMatchGL returns null (no WebGL2 or a canvas larger than the
+// context's max side), matchCanvas routes its pixel loop through matchPixels in 4 MP (16,777,216-byte) chunks in place on
+// ImageData.data's buffer, matching the GPU shader's f32 formula within at most 1 level of the pre-K38 f64 loop.
+await run("new_canvas", { width: 320, height: 240, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const F = await import("./editor/inpaint_filters.js");
+const GL = await import("./editor/inpaint_filters_gl.js");
+const K = await import("./editor/px/kernels.js");
+await K.kernelsReady();
+if (F.MATCH_CHUNK_BYTES !== 4 * 1024 * 1024 * 4) throw new Error("MATCH_CHUNK_BYTES is " + F.MATCH_CHUNK_BYTES);
+if (!Object.prototype.hasOwnProperty.call(K.ROUTE_KINDS, "matchPixels")) throw new Error("ROUTE_KINDS has no matchPixels route");
+const W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H);
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#244870"); g.addColorStop(1, "#d89c54");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "match_k38.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const lc = mk(200, 150);
+{
+    const x = lc.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 200, 150); g.addColorStop(0, "#30c850"); g.addColorStop(1, "#c83088");
+    x.fillStyle = g; x.fillRect(0, 0, 200, 120);
+    x.clearRect(0, 120, 200, 30);
+}
+const L = ed.addLayer({ name: "Matched K38", kind: "result", px: ed.pixels.Layer.fromCanvas(lc), x: 40, y: 30, w: 200, h: 150, dirty: true });
+L.match = { strength: 65, source: "surroundings" };
+ed.markMatchChanged(L);
+const below = base;
+const srcLayerCv = ed.layerPixels(L, true);
+const srcRaw = srcLayerCv.getContext("2d").getImageData(0, 0, srcLayerCv.width, srcLayerCv.height).data;
+const st = ed.matchStats(L, below, null, srcLayerCv);
+if (!st) throw new Error("matchStats returned null");
+const strength = 0.65;
+// Verbatim pre-K38 f64 Uint8ClampedArray reference loop
+const refDoubles = new Uint8ClampedArray(srcRaw);
+{
+    const { meanS, meanT, scale } = st;
+    const k = Math.max(0, Math.min(1, strength));
+    for (let i = 0; i < refDoubles.length; i += 4) {
+        if (!refDoubles[i + 3]) continue;
+        for (let ch = 0; ch < 3; ch++) {
+            const v = (refDoubles[i + ch] - meanT[ch]) * scale[ch] + meanS[ch];
+            refDoubles[i + ch] = Math.max(0, Math.min(255, refDoubles[i + ch] + (v - refDoubles[i + ch]) * k));
+        }
+    }
+}
+const g = GL.glContext();
+const glCv = g ? GL.applyMatchGL(srcLayerCv, st, strength) : null;
+const glBytes = glCv ? glCv.getContext("2d").getImageData(0, 0, glCv.width, glCv.height).data : null;
+const wasMax = g ? g.max : 0;
+let rustBytes, jsBytes, layerCallsRust, layerCallsJs;
+try {
+    if (g) g.max = 16;
+    if (GL.applyMatchGL(srcLayerCv, st, strength) !== null) throw new Error("applyMatchGL did not refuse when g.max was lowered");
+    K.setRoute("matchPixels", null);
+    L._mcache = null;
+    K.pxCalls(true);
+    const cvRust = ed.layerMatchedPixels(L, below, null);
+    layerCallsRust = K.pxCalls(true).match_pixels || 0;
+    rustBytes = cvRust.getContext("2d").getImageData(0, 0, cvRust.width, cvRust.height).data;
+    K.setRoute("matchPixels", "js");
+    L._mcache = null;
+    K.pxCalls(true);
+    const cvJs = ed.layerMatchedPixels(L, below, null);
+    layerCallsJs = K.pxCalls(true).match_pixels || 0;
+    jsBytes = cvJs.getContext("2d").getImageData(0, 0, cvJs.width, cvJs.height).data;
+} finally {
+    K.setRoute("matchPixels", null);
+    if (g) g.max = wasMax;
+}
+if (layerCallsRust !== 1 || layerCallsJs !== 0) throw new Error(`layerMatchedPixels calls: rust=${layerCallsRust}, js=${layerCallsJs}`);
+let diffLayer = 0, worstVsDoubles = 0, worstVsGL = 0, movedMax = 0, alphaMoved = 0, clearMoved = 0;
+for (let i = 0; i < rustBytes.length; i++) {
+    if (rustBytes[i] !== jsBytes[i]) diffLayer++;
+    const dD = Math.abs(rustBytes[i] - refDoubles[i]);
+    if (dD > worstVsDoubles) worstVsDoubles = dD;
+    if (glBytes) {
+        const dG = Math.abs(rustBytes[i] - glBytes[i]);
+        if (dG > worstVsGL) worstVsGL = dG;
+    }
+    if ((i & 3) === 3) {
+        if (rustBytes[i] !== srcRaw[i]) alphaMoved++;
+    } else if (!srcRaw[i | 3]) {
+        if (rustBytes[i] !== srcRaw[i]) clearMoved++;
+    } else {
+        const mv = Math.abs(rustBytes[i] - srcRaw[i]);
+        if (mv > movedMax) movedMax = mv;
+    }
+}
+if (diffLayer !== 0 || worstVsDoubles > 1 || worstVsGL > 1 || movedMax < 20 || alphaMoved !== 0 || clearMoved !== 0) {
+    throw new Error("layer matchCanvas fallback check failed: " + JSON.stringify({ diffLayer, worstVsDoubles, worstVsGL, movedMax, alphaMoved, clearMoved }));
+}
+// Multi-chunk canvas (2048 x 4100 = 8,396,800 px = 2 full 4 MP chunks + 8,192 px tail = 3 chunks)
+const BW = 2048, BH = 4100;
+const bigSrc = mk(BW, BH);
+const bigCtx = bigSrc.getContext("2d");
+const bigImg = bigCtx.createImageData(BW, BH);
+const bd = bigImg.data;
+for (let i = 0; i < bd.length; i += 4) {
+    const p = i >>> 2;
+    if (p % 257 === 0) {
+        bd[i] = 0; bd[i + 1] = 0; bd[i + 2] = 0; bd[i + 3] = 0;
+    } else {
+        bd[i] = (p * 37 + 19) & 255;
+        bd[i + 1] = (p * 73 + 53) & 255;
+        bd[i + 2] = (p * 131 + 97) & 255;
+        bd[i + 3] = 255;
+    }
+}
+bigCtx.putImageData(bigImg, 0, 0);
+let bigCallsRust = 0, bigCallsJs = 0, bigMemMB = 0, bigReleases = 0, bigDiff = 0, chunkMoved = [0, 0, 0], bigClearMoved = 0;
+try {
+    if (g) g.max = 100;
+    K.dropPx();
+    await K.pxSettled();
+    const inst0 = K.pxInstances();
+    K.setRoute("matchPixels", null);
+    K.pxCalls(true);
+    let bigRustCv = F.matchCanvas(bigSrc, st, strength);
+    bigCallsRust = K.pxCalls(true).match_pixels || 0;
+    bigMemMB = K.rustPx() ? +(K.rustPx().byteLength / 1048576).toFixed(2) : 0;
+    bigReleases = K.pxInstances().release - inst0.release;
+    const bigRustData = bigRustCv.getContext("2d").getImageData(0, 0, BW, BH).data;
+    bigRustCv.width = 1; bigRustCv.height = 1; bigRustCv = null;
+    K.setRoute("matchPixels", "js");
+    K.pxCalls(true);
+    let bigJsCv = F.matchCanvas(bigSrc, st, strength);
+    bigCallsJs = K.pxCalls(true).match_pixels || 0;
+    const bigJsData = bigJsCv.getContext("2d").getImageData(0, 0, BW, BH).data;
+    bigJsCv.width = 1; bigJsCv.height = 1; bigJsCv = null;
+    for (let i = 0; i < bigRustData.length; i++) if (bigRustData[i] !== bigJsData[i]) bigDiff++;
+    for (let c = 0; c < 3; c++) {
+        const start = c * F.MATCH_CHUNK_BYTES, end = Math.min(bigRustData.length, start + 4096);
+        for (let i = start; i < end; i += 4) {
+            if (!bd[i + 3]) {
+                if (bigRustData[i] !== bd[i] || bigRustData[i + 1] !== bd[i + 1] || bigRustData[i + 2] !== bd[i + 2]) bigClearMoved++;
+            } else if (bigRustData[i] !== bd[i] || bigRustData[i + 1] !== bd[i + 1] || bigRustData[i + 2] !== bd[i + 2]) {
+                chunkMoved[c]++;
+            }
+        }
+    }
+} finally {
+    K.setRoute("matchPixels", null);
+    if (g) g.max = wasMax;
+    bigSrc.width = 1; bigSrc.height = 1;
+}
+await run("remove_layer", { layer: L.id, doc: window.__t });
+if (bigCallsRust !== 3 || bigCallsJs !== 0 || bigMemMB <= 0 || bigMemMB > 19 || bigReleases !== 0 || bigDiff !== 0 || chunkMoved.some((m) => m < 500) || bigClearMoved !== 0) {
+    throw new Error("multi-chunk matchCanvas fallback check failed: " + JSON.stringify({ bigCallsRust, bigCallsJs, bigMemMB, bigReleases, bigDiff, chunkMoved, bigClearMoved }));
+}
+return { layerCallsRust, worstVsDoubles, worstVsGL, bigCallsRust, bigMemMB, chunkMoved };
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

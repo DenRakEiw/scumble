@@ -1,0 +1,15 @@
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=match)
+FAIL K38 matchCanvas stays within 1 level of doubles and clamps strength to [0, 1]  worstD=0
+FAIL (1) (only: match; PX_ONLY, not the full test)
+       a megapixel matched: rust simd 5.1 ms, twin 26.6
+ok   rust scalar module reports its SIMD flag
+ok   js matchPixels equals the rust scalar (random pixels and statistics, tails, k 0 to 1)
+ok   rust scalar matchPixels handles empty buffers and non-zero byteOffset Uint8ClampedArray subarrays in place
+ok   js matchPixels equals the rust scalar at the extremes of the statistics
+       a megapixel matched: rust scalar 21.5 ms, twin 26.9
+FAIL (1) (only: match; PX_ONLY, not the full test)
+(node:68668) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_mut_k38/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\<mut_tree>\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance

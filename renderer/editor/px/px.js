@@ -367,13 +367,15 @@ export class Px {
 
     /** The colour match of `params` (meanS[3], meanT[3], scale[3], k) over straight RGBA8, in place (B item 7 part 3). */
     matchPixels(rgba, params) {
-        const a = this.job, px = rgba.byteLength >> 2;
+        const a = this.job, px = rgba.byteLength >>> 2;
+        if (!(px > 0)) return rgba;
         try {
             const pd = this._in(a, rgba, px * 4), pp = a.take(40);
             const f = this.view(Float32Array, pp, 10);
             for (let i = 0; i < 10; i++) f[i] = params[i];
             this.exports.match_pixels(pd, px, pp);
-            return this._out(Uint8Array, pd, px * 4, rgba);
+            this._out(Uint8Array, pd, px * 4, rgba instanceof Uint8Array ? rgba : new Uint8Array(rgba.buffer, rgba.byteOffset, px * 4));
+            return rgba;
         } finally { this._reset(a); }
     }
 
