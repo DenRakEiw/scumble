@@ -5437,7 +5437,6 @@ async function partDecodeCases(px, label, png, zlib, js) {
                 onHeader: (h) => { headerSeen = h; },
                 onRows: (rgba, y0, rows) => {
                     landedOrder.push([y0, rows]);
-                    landedParts++;
                     assembled.set(rgba, y0 * pw * 4);
                 },
             });
