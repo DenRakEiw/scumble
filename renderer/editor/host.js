@@ -3018,7 +3018,7 @@ export const host = {
     async loadBrushTips() {
         if (!window.scumble || !window.scumble.brushes) return this.brushLibrary;
         let stored = [];
-        try { stored = await window.scumble.brushes.list(); } catch (err) { console.warn("brush tips not loaded", err); return this.brushLibrary; }
+        try { stored = await window.scumble.brushes.list(); } catch (err) { console.warn("brush tips not loaded", err); this.brushTipsUnread = true; return this.brushLibrary; }
         for (const t of stored) {
             try {
                 const img = await new Promise((resolve, reject) => {
@@ -3054,6 +3054,8 @@ export const host = {
     /** Persist the library (new tips as PNG, the index always) and refresh the other tabs' selects. */
     async saveBrushTips(from) {
         if (!window.scumble || !window.scumble.brushes) return null;
+        // the stored list was not read this session: saving this library would delete every stored tip (brushes.js save)
+        if (this.brushTipsUnread) { console.warn("brush tips: the stored list was not read, nothing is saved"); return null; }
         const tips = [];
         for (const t of this.brushLibrary) {
             let png = null;
