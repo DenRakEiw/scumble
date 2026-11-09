@@ -459,8 +459,8 @@ ok   rust simd range_max of a flat map is 0 everywhere
        2048 x 2048: range_max rust simd 18.0 ms, twin 140.5 ms
 ok   rust simd height_normals equals its twin within 1 level
 ok   rust simd smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
-ok   rust simd hoisted js.shadowMarch equals pre-hoist reference byte for byte (140 cases)
-ok   rust simd shadow_march_f64 equals its twin byte for byte (140 cases, each also at an odd offset)
+ok   rust simd hoisted js.shadowMarch equals pre-hoist reference byte for byte (141 cases)
+ok   rust simd shadow_march_f64 equals its twin byte for byte (141 cases, each also at an odd offset)
 ok   js shadow_march_f64 gives the same at an odd offset
 ok   rust simd shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
 ok   rust simd shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
@@ -661,8 +661,8 @@ ok   rust scalar range_max of a flat map is 0 everywhere
        2048 x 2048: range_max rust scalar 25.0 ms, twin 114.9 ms
 ok   rust scalar height_normals equals its twin within 1 level
 ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
-ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (140 cases)
-ok   rust scalar shadow_march_f64 equals its twin byte for byte (140 cases, each also at an odd offset)
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (141 cases)
+ok   rust scalar shadow_march_f64 equals its twin byte for byte (141 cases, each also at an odd offset)
 ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
 ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
 ok   rust scalar png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)

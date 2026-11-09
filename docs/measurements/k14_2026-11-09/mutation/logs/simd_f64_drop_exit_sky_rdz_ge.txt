@@ -1,4 +1,4 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 12 s)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 11 s)
 warning: unused variable: `v_inf`
    --> src\relight.rs:234:13
     |
@@ -8,21 +8,21 @@ warning: unused variable: `v_inf`
     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
 warning: `px` (lib) generated 1 warning (run `cargo fix --lib -p px` to apply 1 suggestion)
-    Finished `release` profile [optimized] target(s) in 5.18s
+    Finished `release` profile [optimized] target(s) in 5.69s
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px)
-    Finished `release` profile [optimized] target(s) in 4.80s
-$ node tools/px_test.js  (rc 1, 70 s, PX_ONLY=relight)
-FAIL rust simd shadow_march_f64 equals its twin byte for byte (140 cases, each also at an odd offset)  5x5 odd width w=5 spot stripe: out[0] is 255, the twin has 0
+    Finished `release` profile [optimized] target(s) in 3.85s
+$ node tools/px_test.js  (rc 1, 82 s, PX_ONLY=relight)
+FAIL rust simd shadow_march_f64 equals its twin byte for byte (141 cases, each also at an odd offset)  16x4 rdz < 0 with sz > scale: out[0] is 255, the twin has 0
 FAIL (1) (only: relight; PX_ONLY, not the full test)
 ok   rust scalar module reports its SIMD flag
 ok   rust scalar height_normals equals its twin within 1 level
 ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
-ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (140 cases)
-ok   rust scalar shadow_march_f64 equals its twin byte for byte (140 cases, each also at an odd offset)
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (141 cases)
+ok   rust scalar shadow_march_f64 equals its twin byte for byte (141 cases, each also at an odd offset)
 ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
 ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
 FAIL (1) (only: relight; PX_ONLY, not the full test)
-(node:16532) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:52484) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)

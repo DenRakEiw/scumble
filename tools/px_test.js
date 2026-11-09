@@ -1833,6 +1833,55 @@ async function relightCases(px, label, js) {
     };
 
     const f64Cases = [];
+    {
+        // Surgical boundary and f64x2 lane-divergence cases first (so twinCheck stops on the exact surgical case):
+        // 1. map_z == sz + z_bias tie (32767 > 32767 is false)
+        const dTie = new Uint16Array(16 * 4).fill(32768);
+        f64Cases.push({ tag: "16x4 map_z == sz + z_bias tie", args: [dTie, 16, 4, 65535, [8, 2, 32767, 0], 0, 1, 16, 0, 0, 4] });
+        // 2. rdz < 0 && sz > scale (pz = 60 > scale 50, tz = 0 -> rdz = -60 < 0, blocked at later steps)
+        const dRdzNeg = new Uint16Array(16 * 4).fill(0);
+        f64Cases.push({ tag: "16x4 rdz < 0 with sz > scale", args: [dRdzNeg, 16, 4, 50, [15, 2, 0, 0], 0, 1, 32, 10, 0, 4] });
+        // 3. f64x2 lane 0 blocked at s=0 (ix=2) while lane 1 continues active and is blocked at s=1 (ix=5)
+        const dLaneBothSteps = new Uint16Array(16 * 4).fill(65535);
+        dLaneBothSteps[2 * 16 + 2] = 0;
+        dLaneBothSteps[2 * 16 + 5] = 0;
+        f64Cases.push({ tag: "16x4 f64x2 lane 0 blocked at s=0 (ix=2), lane 1 blocked at s=1 (ix=5)", args: [dLaneBothSteps, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
+        // 4. cx == 0.0, cy == 0.0, cx == wf, cy == hf boundaries and s == steps final-step wall at x = 8
+        const dWall = new Uint16Array(16 * 4).fill(65535);
+        for (let y = 0; y < 4; y++) { dWall[y * 16 + 0] = 0; dWall[y * 16 + 8] = 0; }
+        f64Cases.push({ tag: "16x4 cx == 0.0 boundary wall", args: [dWall, 16, 4, 50, [-0.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 cx == wf boundary out-of-bounds", args: [dWall, 16, 4, 50, [15.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 final step s == steps wall", args: [dWall, 16, 4, 50, [8, 2, 10, 0], 0, 1, 8, 0.5, 0, 4] });
+        const dWallY = new Uint16Array(16 * 4).fill(65535);
+        for (let x = 0; x < 16; x++) dWallY[0 * 16 + x] = 0;
+        f64Cases.push({ tag: "16x4 cy == 0.0 boundary wall", args: [dWallY, 16, 4, 50, [8, -0.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 cy == hf boundary out-of-bounds", args: [dWallY, 16, 4, 50, [0, 3.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        // 5. sun (px + tapX[t]) - px vs tapX[t] rounding tie at (px=9, py=0): step 1 samples (9, 1) vs (8, 1)
+        const dSunTie = new Uint16Array(16 * 4).fill(65535);
+        dSunTie[1 * 16 + 9] = 0;
+        f64Cases.push({ tag: "16x4 sun tx - px rounding tie", args: [dSunTie, 16, 4, 50, [-1.000000000000002, 2, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 4] });
+        // 6. f64x2 lane 0 blocked at step 1 (ix=2) while lane 1 is unblocked (ix=3, 5, 6, 8)
+        const dLane0Hit = new Uint16Array(16 * 4).fill(65535);
+        dLane0Hit[2 * 16 + 2] = 0;
+        f64Cases.push({ tag: "16x4 f64x2 lane 0 blocked at ix=2, lane 1 unblocked", args: [dLane0Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
+        // 7. f64x2 lane 1 blocked at step 1 (ix=3) while lane 0 is unblocked (ix=2, 4, 6, 8)
+        const dLane1Hit = new Uint16Array(16 * 4).fill(65535);
+        dLane1Hit[2 * 16 + 3] = 0;
+        f64Cases.push({ tag: "16x4 f64x2 lane 1 blocked at ix=3, lane 0 unblocked", args: [dLane1Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
+        // 8. f64x2 lane 0 exits via cx < 0.0 at step 1 while lane 1 stays in bounds (cx=0.4 -> ix=0) and hits wall at (0, 2)
+        const dLane0ExitLeft = new Uint16Array(16 * 4).fill(65535);
+        dLane0ExitLeft[2 * 16 + 0] = 0;
+        f64Cases.push({ tag: "16x4 f64x2 lane 0 exits cx < 0, lane 1 blocked at ix=0", args: [dLane0ExitLeft, 16, 4, 50, [-1.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
+        // 9. f64x2 lane 1 (x=15) exits via cx >= wf at step 1 while lane 0 (x=14) stays in bounds (cx=15.6 -> ix=15) and hits wall at (15, 2)
+        const dLane1ExitRight = new Uint16Array(16 * 4).fill(65535);
+        dLane1ExitRight[2 * 16 + 15] = 0;
+        f64Cases.push({ tag: "16x4 f64x2 lane 1 exits cx >= wf, lane 0 blocked at ix=15", args: [dLane1ExitRight, 16, 4, 50, [16.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
+        // 10. f64x2 exit_sky (rdz >= 0 && sz > scale) with negative scale (-50): lane 0 has d=0 (z0=-50, rdz=40>=0, sz=-30>-50 -> exits unblocked)
+        //     while without exit_sky it would sample d=65535 (map_z=0 > sz+z_bias=-30) and be marked blocked!
+        const dExitSky = new Uint16Array(16 * 4).fill(65535);
+        dExitSky[2 * 16 + 0] = 0;
+        f64Cases.push({ tag: "16x4 f64x2 exit_sky rdz >= 0 && sz > scale (-50)", args: [dExitSky, 16, 4, -50, [8, 2, -10, 0], 0, 1, 2, 0, 0, 4] });
+    }
     for (const [w, h, scale, light, radius, taps, steps, bias, row0, rows, tag] of [
         [1, 1, 50, [0, 0, 100, 0], 0, 1, 1, 0, 0, 1, "1x1 point"],
         [1, 4, 50, [0, 2, 40, 0], 1, 4, 16, 0.5, 0, 4, "1x4 odd width w=1 point"],
@@ -1857,49 +1906,6 @@ async function relightCases(px, label, js) {
         const depth = new Uint16Array(W * H);
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) depth[y * W + x] = x < 50 ? 10000 : 50000;
         f64Cases.push({ tag: "100x20 step edge", args: [depth, W, H, 50, [60, 10, 100, 0], 0, 4, 32, 1.0, 0, H] });
-
-        // Surgical boundary and f64x2 lane-divergence cases for mutation kills:
-        // 1. map_z == sz + z_bias tie (32767 > 32767 is false)
-        const dTie = new Uint16Array(16 * 4).fill(32768);
-        f64Cases.push({ tag: "16x4 map_z == sz + z_bias tie", args: [dTie, 16, 4, 65535, [8, 2, 32767, 0], 0, 1, 16, 0, 0, 4] });
-        // 2. rdz < 0 && sz > scale (pz = 60 > scale 50, tz = 0 -> rdz = -60 < 0, blocked at later steps)
-        const dRdzNeg = new Uint16Array(16 * 4).fill(0);
-        f64Cases.push({ tag: "16x4 rdz < 0 with sz > scale", args: [dRdzNeg, 16, 4, 50, [15, 2, 0, 0], 0, 1, 32, 10, 0, 4] });
-        // 3. cx == 0.0, cy == 0.0, cx == wf, cy == hf boundaries and s == steps final-step wall at x = 8
-        const dWall = new Uint16Array(16 * 4).fill(65535);
-        for (let y = 0; y < 4; y++) { dWall[y * 16 + 0] = 0; dWall[y * 16 + 8] = 0; }
-        f64Cases.push({ tag: "16x4 cx == 0.0 boundary wall", args: [dWall, 16, 4, 50, [-0.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
-        f64Cases.push({ tag: "16x4 cx == wf boundary out-of-bounds", args: [dWall, 16, 4, 50, [15.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
-        f64Cases.push({ tag: "16x4 final step s == steps wall", args: [dWall, 16, 4, 50, [8, 2, 10, 0], 0, 1, 8, 0.5, 0, 4] });
-        const dWallY = new Uint16Array(16 * 4).fill(65535);
-        for (let x = 0; x < 16; x++) dWallY[0 * 16 + x] = 0;
-        f64Cases.push({ tag: "16x4 cy == 0.0 boundary wall", args: [dWallY, 16, 4, 50, [8, -0.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
-        f64Cases.push({ tag: "16x4 cy == hf boundary out-of-bounds", args: [dWallY, 16, 4, 50, [0, 3.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
-        // 4. sun (px + tapX[t]) - px vs tapX[t] rounding tie at (px=9, py=0): step 1 samples (9, 1) vs (8, 1)
-        const dSunTie = new Uint16Array(16 * 4).fill(65535);
-        dSunTie[1 * 16 + 9] = 0;
-        f64Cases.push({ tag: "16x4 sun tx - px rounding tie", args: [dSunTie, 16, 4, 50, [-1.000000000000002, 2, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 4] });
-        // 5. f64x2 lane 0 blocked at step 1 (ix=2) while lane 1 is unblocked (ix=3, 5, 6, 8)
-        const dLane0Hit = new Uint16Array(16 * 4).fill(65535);
-        dLane0Hit[2 * 16 + 2] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 lane 0 blocked at ix=2, lane 1 unblocked", args: [dLane0Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
-        // 6. f64x2 lane 1 blocked at step 1 (ix=3) while lane 0 is unblocked (ix=2, 4, 6, 8)
-        const dLane1Hit = new Uint16Array(16 * 4).fill(65535);
-        dLane1Hit[2 * 16 + 3] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 lane 1 blocked at ix=3, lane 0 unblocked", args: [dLane1Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
-        // 7. f64x2 lane 0 exits via cx < 0.0 at step 1 while lane 1 stays in bounds (cx=0.4 -> ix=0) and hits wall at (0, 2)
-        const dLane0ExitLeft = new Uint16Array(16 * 4).fill(65535);
-        dLane0ExitLeft[2 * 16 + 0] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 lane 0 exits cx < 0, lane 1 blocked at ix=0", args: [dLane0ExitLeft, 16, 4, 50, [-1.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
-        // 8. f64x2 lane 1 (x=15) exits via cx >= wf at step 1 while lane 0 (x=14) stays in bounds (cx=15.6 -> ix=15) and hits wall at (15, 2)
-        const dLane1ExitRight = new Uint16Array(16 * 4).fill(65535);
-        dLane1ExitRight[2 * 16 + 15] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 lane 1 exits cx >= wf, lane 0 blocked at ix=15", args: [dLane1ExitRight, 16, 4, 50, [16.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
-        // 9. f64x2 exit_sky (rdz >= 0 && sz > scale) with negative scale (-50): lane 0 has d=0 (z0=-50, rdz=40>=0, sz=-30>-50 -> exits unblocked)
-        //    while without exit_sky it would sample d=65535 (map_z=0 > sz+z_bias=-30) and be marked blocked!
-        const dExitSky = new Uint16Array(16 * 4).fill(65535);
-        dExitSky[2 * 16 + 0] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 exit_sky rdz >= 0 && sz > scale (-50)", args: [dExitSky, 16, 4, -50, [8, 2, -10, 0], 0, 1, 2, 0, 0, 4] });
     }
     const { lightToMap, defaultLight } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
     let nonTrivialOk = true, nonTrivialDetail = "";

@@ -30,12 +30,12 @@ The folders and logs in `docs/measurements/k14_2026-11-09/`:
 - `electron_px_relight.txt`: output of `ELECTRON_RUN_AS_NODE=1 PX_ONLY=relightBench,relightStripe,relight F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`.
 - `px_test_node.txt`: output of full `node tools/px_test.js`.
 - `electron_px_full.txt`: output of full `ELECTRON_RUN_AS_NODE=1 F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`.
-- `mutation/`: `mut_k14.py`, `results.txt`, and `logs/*.txt` from `tools/mutation_round.py` (14 mutants, 14/14 killed).
+- `mutation/`: `mut_k14.py`, `results.txt`, and `logs/*.txt` from `tools/mutation_round.py` (15 mutants, 15/15 killed).
 - `gates/gates/k14-gates-{tiles,canvas,tiles-serial,canvas-serial}/`: logs and summaries of
   `bash tools/run_gates_both.sh k14-gates --ports 9631,9632 --lock <busy_lock> --offline lint types relight pixels nodecopy`.
 
 Built (ABI 43):
-- `crates/px/src/relight.rs` (lines 93–410) and `crates/px/src/lib.rs` (lines 55–57, 819–839): bumped `px_abi_version()`
+- `crates/px/src/relight.rs` (`march_pixel_scalar` at lines 94–167, `shadow_march_f64` at lines 173–410, `#[cfg(target_feature = "simd128")]` at lines 225–370) and `crates/px/src/lib.rs` (ABI comment at line 54, `px_abi_version()` at lines 56–59, `shadow_march_f64` at lines 845–881, `shadow_march` removed at line 841): bumped `px_abi_version()`
   42 -> 43; removed `pub const VOGEL_16`, `relight::shadow_march` (`f32`), and the `#[no_mangle] pub unsafe extern "C" fn
   shadow_march(...)` export. Added `march_pixel_scalar` and `#[cfg(target_feature = "simd128")]` `f64x2` SIMD lanes in
   `relight::shadow_march_f64`:
@@ -58,23 +58,30 @@ Built (ABI 43):
        `f64x2_convert_low_i32x4`, and computes `hit = f64x2_gt(map_z, f64x2_add(sz, v_z_bias))`.
     5. Records `blocked = v128_or(blocked, v128_and(active, hit))` and retires blocked lanes via
        `active = v128_andnot(active, hit)`, breaking early if `!v128_any_true(active)`.
-- `renderer/editor/px/px.js` (lines 16, 650–653): bumped `export const PX_ABI = 43;`; updated `Px.prototype.shadowMarch`
-  to delegate directly to `this.shadowMarchF64(...)`.
-- `renderer/editor/px/kernels.js` (lines 84–94, 924–938): documented the K14 route decision above `DEFAULT_ROUTES` (no
-  `shadowMarch` entry needed); updated `shadowMarch` to call `p.shadowMarchF64(depth, w, h, scale, light, radius, taps,
-  steps, bias, row0, rows, out, key)` for all light kinds (`point`, `spot`, and `sun`), recovering on `"shadow_march_f64"`.
-- `renderer/editor/inpaint_worker.js` (lines 1309–1311): simplified `ranRust` in `relightShadowJob` to
-  `const ranRust = (c1.shadow_march_f64 || 0) > (c0.shadow_march_f64 || 0);`.
-- `tools/px_test.js` (lines 1765–2088, 2128–2270, 2289–2307) and `tools/relight_test.py` (line 2328): expanded
-  `relightCases` to 140 `f64` cases (adding odd widths `w = 1, 3, 5, 17` and surgical `f64x2` lane-divergence cases:
-  lane 0 blocked while lane 1 unblocked, lane 1 blocked while lane 0 unblocked, lane 0 exits `cx < 0` while lane 1 hits a
-  wall at `ix = 0`, lane 1 exits `cx >= wf` while lane 0 hits a wall at `ix = 15`, and `exit_sky` `rdz >= 0 && sz > scale`
-  with `scale = -50`); updated `relightBench` to verify byte-identical `f64` outputs across `routed`, `twin`, `simd_f64`,
-  and `scalar_f64` for `point`, `spot`, and `sun`, verify `marchGuardOk` returns before `routed.shadowMarchF64` is entered
-  (`f64Entered === 0`), verify `shadowMarch` route switching (`"js"`, pixel threshold, `"rust"`) for both `point` and
-  `sun`, and verify trap recovery on `shadow_march_f64` for both `point` and `sun`; updated `relightStripeCases` (704
-  cases across `twin`, `simd`, `scalar`, and `kernels.js` with 0-byte diff for `point`, `spot`, and `sun`); updated
-  `tools/relight_test.py` case `nk` to expect `shadow_march_f64` for both sun and point.
+- `renderer/editor/px/px.js` (`PX_ABI = 43` at line 17, `shadowMarch` at lines 644–646, `shadowMarchF64` at lines 653–718):
+  bumped `export const PX_ABI = 43;`; updated `Px.prototype.shadowMarch` to delegate directly to `this.shadowMarchF64(...)`.
+- `renderer/editor/px/kernels.js` (`DEFAULT_ROUTES` comment at lines 84–91, `DEFAULT_ROUTES` at line 95, `MARCH_MAX` and
+  `marchGuardOk` at lines 898–909, `shadowMarch` at lines 917–931): documented the K14 route decision above
+  `DEFAULT_ROUTES` (no `shadowMarch` entry needed); updated `shadowMarch` to call `p.shadowMarchF64(depth, w, h, scale,
+  light, radius, taps, steps, bias, row0, rows, out, key)` for all light kinds (`point`, `spot`, and `sun`), recovering on
+  `"shadow_march_f64"`.
+- `renderer/editor/inpaint_worker.js` (`relightShadowJob` at lines 1712–1729, `ranRust` at line 1719): simplified `ranRust`
+  in `relightShadowJob` to `const ranRust = (c1.shadow_march_f64 || 0) > (c0.shadow_march_f64 || 0);`.
+- `tools/px_test.js` (`relightCases` at lines 1715–2054, `f64Cases` at lines 1835–1949, `relightBench` at lines 2134–2288,
+  `relightStripeCases` at lines 2302–2502 with changed stripe/resident-slot block at lines 2340–2422) and
+  `tools/relight_test.py` (case `nk` `wantExport` check at lines 2328–2330): expanded `relightCases` to 141 `f64` cases
+  (placing the surgical `16x4` boundary and `f64x2` lane-divergence cases first so `twinCheck` stops on the exact surgical
+  case: `16x4 map_z == sz + z_bias tie`, `16x4 rdz < 0 with sz > scale`, `16x4 f64x2 lane 0 blocked at s=0 (ix=2), lane 1
+  blocked at s=1 (ix=5)`, `16x4 cx == 0.0 boundary wall`, `16x4 cx == wf boundary out-of-bounds`, `16x4 final step s == steps
+  wall`, `16x4 cy == 0.0 boundary wall`, `16x4 cy == hf boundary out-of-bounds`, `16x4 sun tx - px rounding tie`, `16x4 f64x2
+  lane 0 blocked at ix=2, lane 1 unblocked`, `16x4 f64x2 lane 1 blocked at ix=3, lane 0 unblocked`, `16x4 f64x2 lane 0 exits
+  cx < 0, lane 1 blocked at ix=0`, `16x4 f64x2 lane 1 exits cx >= wf, lane 0 blocked at ix=15`, and `16x4 f64x2 exit_sky rdz >= 0
+  && sz > scale (-50)`, plus odd widths `w = 1, 3, 5, 17`); updated `relightBench` to verify byte-identical `f64` outputs
+  across `routed`, `twin`, `simd_f64`, and `scalar_f64` for `point`, `spot`, and `sun`, verify `marchGuardOk` returns before
+  `routed.shadowMarchF64` is entered (`f64Entered === 0`), verify `shadowMarch` route switching (`"js"`, pixel threshold,
+  `"rust"`) for both `point` and `sun`, and verify trap recovery on `shadow_march_f64` for both `point` and `sun`; updated
+  `relightStripeCases` (704 cases across `twin`, `simd`, `scalar`, and `kernels.js` with 0-byte diff for `point`, `spot`,
+  and `sun`); updated `tools/relight_test.py` case `nk` to expect `shadow_march_f64` for both sun and point.
 
 Explaining microbenchmarks (`px_bench.txt`, `PX_ONLY=relightBench,relight PX_BENCH=large`):
 - Node V8:
@@ -239,15 +246,22 @@ Tests and gates:
 - `ELECTRON_RUN_AS_NODE=1 PX_ONLY=relightBench,relightStripe,relight F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`
   (`electron_px_relight.txt`): `PASS`.
 - `PX_ONLY=relightBench,relight PX_BENCH=large` on Node and Electron V8 (`px_bench.txt`): `PASS`.
-- Mutation round (`docs/measurements/k14_2026-11-09/mutation/mut_k14.py`, `results.txt`): 14 mutants across SIMD `f64x2`
-  lane masks/exit order (`simd_f64_drop_exit_sky_rdz_ge`, `simd_f64_cx_gt_zero`, `simd_f64_cx_le_wf`,
-  `simd_f64_hit_without_active_mask`, `simd_f64_mapz_ge_bias`, `simd_f64_break_both_lanes_when_one_inactive`,
-  `simd_f64_drop_odd_width_tail`, `simd_f64_fold_sun_rdx`), scalar fallback (`scalar_f64_flip_mapz_gt_ge`,
-  `scalar_f64_drop_rdz_nonneg`), and JS routing/guards/slots (`kernels_js_route_sun_to_twin`,
-  `kernels_js_ignore_route_name`, `kernels_js_drop_march_guard`, `px_js_ignore_slot_key`). On the first run, 13/14 were
-  killed on their focused sets and `kernels_js_drop_march_guard` survived because `px.js` (`shadowMarchF64`) also checks
-  `Math.abs(v) < 0x40000000` and `relightBench` only checked `K.pxCalls(true)` (wasm export calls) rather than asserting
-  that `marchGuardOk` in `kernels.js` returned before `routed.shadowMarchF64` was entered. Adding `f64Entered === 0` in
-  `relightBench` killed `kernels_js_drop_march_guard` in 1 s (`14/14` killed, 0 survivors).
+- Mutation round (`docs/measurements/k14_2026-11-09/mutation/mut_k14.py`, `results.txt`): 15 mutants across SIMD `f64x2`
+  lane masks/exit order, scalar fallback, and JS routing/guards/slots, all **15/15 killed** on their focused `px` sets (0 survivors):
+  1. `simd_f64_drop_exit_sky_rdz_ge` (`v_sky_limit = v_scale`): KILLED by `16x4 rdz < 0 with sz > scale` in `relightCases`.
+  2. `simd_f64_disable_exit_sky` (`v_sky_limit = v_inf`): KILLED by `16x4 f64x2 exit_sky rdz >= 0 && sz > scale (-50)` in `relightCases`.
+  3. `simd_f64_cx_gt_zero` (`f64x2_gt(cx, v_zero)`): KILLED by `16x4 cx == 0.0 boundary wall` in `relightCases`.
+  4. `simd_f64_cx_le_wf` (`f64x2_le(cx, v_wf)`): KILLED by `16x4 cx == wf boundary out-of-bounds` in `relightCases`.
+  5. `simd_f64_hit_without_active_mask` (`blocked = v128_or(blocked, hit)`): KILLED by `16x4 f64x2 lane 0 exits cx < 0, lane 1 blocked at ix=0` in `relightCases`.
+  6. `simd_f64_mapz_ge_bias` (`f64x2_ge(map_z, ...)`): KILLED by `16x4 map_z == sz + z_bias tie` in `relightCases`.
+  7. `simd_f64_break_both_lanes_when_one_inactive` (`if !i64x2_all_true(active)`): KILLED by `512x341 below-surface` (`smoothDepth` non-trivial check) and `16x4 f64x2 lane 0 blocked at s=0 (ix=2), lane 1 blocked at s=1 (ix=5)` (`twinCheck`) in `relightCases`.
+  8. `simd_f64_drop_odd_width_tail` (`if false && pairs < w`): KILLED by `3x4 odd width w=3 sun` in `relightCases`.
+  9. `simd_f64_fold_sun_rdx` (`if is_sun { v_cx_t }`): KILLED by `16x4 sun tx - px rounding tie` in `relightCases`.
+  10. `scalar_f64_flip_mapz_gt_ge` (`if map_z >= sz + z_bias`): KILLED by `16x4 map_z == sz + z_bias tie` on `px_scalar.wasm` in `relightCases`.
+  11. `scalar_f64_drop_rdz_nonneg` (`if sz > scale`): KILLED by `16x4 rdz < 0 with sz > scale` on `px_scalar.wasm` in `relightCases`.
+  12. `kernels_js_route_sun_to_twin`: KILLED by `shadow_march as routed: ... 512 x 341 sun` in `relightBench`.
+  13. `kernels_js_ignore_route_name`: KILLED by `shadowMarch route ('js', pixel threshold, 'rust') ... (point)` in `relightBench`.
+  14. `kernels_js_drop_march_guard`: KILLED by `K.shadowMarch guard ... lx >= 2^30: calls={} f64Entered=1` in `relightBench` (on the initial run before `f64Entered === 0` was added to `relightBench`, this mutant survived because `px.js` `shadowMarchF64` also checks `Math.abs(v) < 0x40000000` and `relightBench` only checked `K.pxCalls(true)`).
+  15. `px_js_ignore_slot_key`: KILLED by `rust simd shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes` in `relightCases`.
 - Gates (`bash tools/run_gates_both.sh k14-gates --ports 9631,9632 --lock <busy_lock> --offline lint types relight pixels nodecopy`):
   `k14-gates-tiles`, `k14-gates-canvas`, `k14-gates-tiles-serial`, `k14-gates-canvas-serial` (`BOTH PASS`).

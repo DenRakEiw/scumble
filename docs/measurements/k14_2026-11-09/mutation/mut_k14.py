@@ -27,6 +27,18 @@ MUTANTS = [
         {"px": ["relight"]},
     ),
     (
+        "simd_f64_disable_exit_sky",
+        "crates/px/src/relight.rs",
+        [
+            (
+                "                    let v_sky_limit = v128_bitselect(v_scale, v_inf, f64x2_ge(rdz, v_zero));",
+                "                    let v_sky_limit = v_inf;",
+            )
+        ],
+        "killed by 16x4 f64x2 exit_sky rdz >= 0 && sz > scale (-50) in relightCases",
+        {"px": ["relight"]},
+    ),
+    (
         "simd_f64_cx_gt_zero",
         "crates/px/src/relight.rs",
         [
@@ -35,7 +47,7 @@ MUTANTS = [
                 "                        let in_x = v128_and(f64x2_gt(cx, v_zero), f64x2_lt(cx, v_wf));",
             )
         ],
-        "killed by 16x4 cx == 0.0 boundary wall and lane0 exits cx < 0 while lane1 hits wall at ix = 0 in relightCases",
+        "killed by 16x4 cx == 0.0 boundary wall in relightCases",
         {"px": ["relight"]},
     ),
     (
@@ -47,7 +59,7 @@ MUTANTS = [
                 "                        let in_x = v128_and(f64x2_ge(cx, v_zero), f64x2_le(cx, v_wf));",
             )
         ],
-        "killed by 16x4 cx == wf boundary out-of-bounds and lane1 exits cx >= wf in relightCases",
+        "killed by 16x4 cx == wf boundary out-of-bounds in relightCases",
         {"px": ["relight"]},
     ),
     (
@@ -59,7 +71,7 @@ MUTANTS = [
                 "                        blocked = v128_or(blocked, hit);",
             )
         ],
-        "killed by 16x4 lane0 exits cx < 0 while lane1 hits wall at ix = 0 and exit_sky in relightCases",
+        "killed by 16x4 f64x2 lane 0 exits cx < 0, lane 1 blocked at ix=0 in relightCases",
         {"px": ["relight"]},
     ),
     (
@@ -83,7 +95,7 @@ MUTANTS = [
                 "                        blocked = v128_or(blocked, v128_and(active, hit));\n                        active = v128_andnot(active, hit);\n                        if !i64x2_all_true(active) {",
             )
         ],
-        "killed by 16x4 lane0 blocked while lane1 unblocked and lane1 blocked while lane0 unblocked in relightCases",
+        "killed by 16x4 f64x2 lane 0 blocked at s=0 (ix=2), lane 1 blocked at s=1 (ix=5) and smoothDepth in relightCases",
         {"px": ["relight"]},
     ),
     (
@@ -95,7 +107,7 @@ MUTANTS = [
                 "            if false && pairs < w {",
             )
         ],
-        "killed by odd-width w = 1, 3, 5, 17 cases in relightCases",
+        "killed by 3x4 odd width w=3 sun in relightCases",
         {"px": ["relight"]},
     ),
     (
@@ -107,7 +119,7 @@ MUTANTS = [
                 "                    let rdx = if is_sun { v_cx_t } else { f64x2_sub(tx, px) };",
             )
         ],
-        "killed by non-integer sun cases in relightCases",
+        "killed by 16x4 sun tx - px rounding tie in relightCases",
         {"px": ["relight"]},
     ),
     (

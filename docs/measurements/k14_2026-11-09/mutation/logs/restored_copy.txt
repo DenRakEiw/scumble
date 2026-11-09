@@ -1,13 +1,13 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 11 s)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 10 s)
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
 px.wasm: 278237 bytes, sha256 43bb945b8cdfe635
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
 px_scalar.wasm: 224542 bytes, sha256 8cd51935703d9d2f
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px)
-    Finished `release` profile [optimized] target(s) in 5.16s
+    Finished `release` profile [optimized] target(s) in 5.50s
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px)
-    Finished `release` profile [optimized] target(s) in 4.61s
-$ node tools/px_test.js  (rc 0, 236 s)
+    Finished `release` profile [optimized] target(s) in 3.66s
+$ node tools/px_test.js  (rc 0, 226 s)
 PASS
 ok   rust scalar a large alloc grows memory  228261888 -> 496762880
 ok   rust scalar the old view is detached after growth
@@ -17,21 +17,7 @@ ok   rust scalar arena blocks do not overlap
 ok   rust scalar after a reset the job fits one kept chunk  chunks 1
 ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
 PASS
-(node:38684) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
-Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
-To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
-(Use `node --trace-warnings ...` to show where the warning was created)
-$ node tools/px_test.js  (rc 0, 295 s)
-PASS
-ok   rust scalar a large alloc grows memory  228261888 -> 496762880
-ok   rust scalar the old view is detached after growth
-ok   rust scalar the fresh view sees the bytes written before growth
-ok   rust scalar put / get of a Float32Array
-ok   rust scalar arena blocks do not overlap
-ok   rust scalar after a reset the job fits one kept chunk  chunks 1
-ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
-PASS
-(node:30932) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:61856) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
