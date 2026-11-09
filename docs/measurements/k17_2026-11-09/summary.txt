@@ -6,13 +6,13 @@ Behaviour change (`rules.md` report checklist (a)):
 - When opening a multi-strip or multi-tile TIFF whose band fits within 64 MiB of RGBA, every strip or tile range in the band is now checked against the file size before decoding the band, so a later strip or tile in that band that lies past the end of the file is reported (`strip/tile M lies past the end of the file`) ahead of an earlier strip or tile that is short or damaged inside the file.
 
 Scope (`docs/PLAN_WASM_BUILD.md` §4.6 K17, §5 row 34; `brief.md` item 3 & lines 42-44):
-- No `.rs` changes (`PX_ABI = 43` unchanged from `0740aeab`; `tiff_unpack`, `tiff_unpredict`, and `tiff_to_rgba` were built in K16 and K15):
+- No `.rs` changes (`PX_ABI = 43` unchanged from `0740aeab` on `f5b629f6`; `PX_ABI = 44` unchanged from `f42396e3` after merging `wasm-kernels`; `tiff_unpack`, `tiff_unpredict`, and `tiff_to_rgba` were built in K16 and K15):
   - `renderer/editor/px/px.wasm`:
-    - before (`git cat-file -s 0740aeab:renderer/editor/px/px.wasm` / `git cat-file blob 0740aeab:renderer/editor/px/px.wasm`): `289,598 bytes`, sha256 `35174f9eb470bffd6ea98e4c09f9c74175748e1c20e90b7c893cb922e81f9e5a`
-    - after: `289,598 bytes`, sha256 `35174f9eb470bffd6ea98e4c09f9c74175748e1c20e90b7c893cb922e81f9e5a`
+    - before at `0740aeab` (`git cat-file -s 0740aeab:renderer/editor/px/px.wasm` / `git cat-file blob 0740aeab:renderer/editor/px/px.wasm`): `289,598 bytes`, sha256 `35174f9eb470bffd6ea98e4c09f9c74175748e1c20e90b7c893cb922e81f9e5a` (unchanged at `f5b629f6`)
+    - after merging `wasm-kernels` (`f42396e3`, `git cat-file -s f42396e3:renderer/editor/px/px.wasm` / `git cat-file blob f42396e3:renderer/editor/px/px.wasm`): `291,274 bytes`, sha256 `e35da0b473c7fdf9985b6012d8cb3f35ca4d215edb034ea0b7abb4f256f1d0e7` (identical)
   - `renderer/editor/px/px_scalar.wasm`:
-    - before (`git cat-file -s 0740aeab:renderer/editor/px/px_scalar.wasm` / `git cat-file blob 0740aeab:renderer/editor/px/px_scalar.wasm`): `231,830 bytes`, sha256 `c6e7dc74f7b2b9cbfa567c76f7bc1764cf70dd9ad5f70bcddb5ea17ed153c414`
-    - after: `231,830 bytes`, sha256 `c6e7dc74f7b2b9cbfa567c76f7bc1764cf70dd9ad5f70bcddb5ea17ed153c414`
+    - before at `0740aeab` (`git cat-file -s 0740aeab:renderer/editor/px/px_scalar.wasm` / `git cat-file blob 0740aeab:renderer/editor/px/px_scalar.wasm`): `231,830 bytes`, sha256 `c6e7dc74f7b2b9cbfa567c76f7bc1764cf70dd9ad5f70bcddb5ea17ed153c414` (unchanged at `f5b629f6`)
+    - after merging `wasm-kernels` (`f42396e3`, `git cat-file -s f42396e3:renderer/editor/px/px_scalar.wasm` / `git cat-file blob f42396e3:renderer/editor/px/px_scalar.wasm`): `233,384 bytes`, sha256 `bbd719d5ec34c80da3949fd3078e8e3ff3aa8f883f515d6f68425dbab96117c3` (identical)
 - `renderer/editor/inpaint_tiff.js` (kept free of imports):
   - Exported `TIFF_BAND_BYTES = 64 * 1048576` (`:758`) and `tiffPlan(blob, opts = {})` (`:766-835`): parses the header and directories once (`parse(blob)`), decides `streamed` and the band height from the band's RGBA bytes (`maxRows = Math.floor(TIFF_BAND_BYTES / (W * 4))`, `streamed = !!forceStreamed || unitRows > maxRows`, `:778-779`) rather than raw strip size, precomputes `pal` (`paletteLut`) when `photometric === 3` (`:780`), and slices `offsets` and `counts` per band (`plan.bands[i]`, `:805-829`) alongside the shared `plan.spec` (`:781-795`).
   - Added `inflateInto(rawSlice, dst, need, name, tiled, sp)` (`:839-886`, `INFLATE_FEED_SLICE = 1048576` at `:837`): keeps one native `DecompressionStream("deflate")` per strip or tile (`compression = 8` or `32946`), writes `rawSlice` directly in-process via `ds.writable.getWriter()` (avoiding worker-to-browser `new Blob([rawSlice])` Mojo IPC), cancels `reader` as soon as `got >= need` (`:867-871`), wraps corrupt-stream errors with `${name} of the TIFF is damaged or cut off (...)` (`:879`, `:883`), and refuses short streams (`got < need`) with `truncated(...)` (`:885`).
@@ -21,9 +21,9 @@ Scope (`docs/PLAN_WASM_BUILD.md` §4.6 K17, §5 row 34; `brief.md` item 3 & line
 - `renderer/editor/px/kernels_js.js`:
   - Re-exported `tiffPlan`, `readTiffBand`, and `TIFF_BAND_BYTES` from `../inpaint_tiff.js` (`:18-20`).
 - `renderer/editor/px/kernels.js`:
-  - Added `tiffUnpack: "kernel"` to `ROUTE_KINDS` (`:66`), documented the K17 route A/B verdict above `DEFAULT_ROUTES` (`:90-95`, no `tiffUnpack` override), and wired `export function tiffUnpack` (`:1124-1132`) through `rustPx("tiffUnpack")` with `recovered(p, err, "tiff_unpack")` fallback to `J.tiffUnpack` and `releaseIfLarge()` in `finally` (already included in `TIFF_RUST` / `tiffKernels()` at `:1199-1214`).
+  - Added `tiffUnpack: "kernel"` to `ROUTE_KINDS` (`:68`), documented the K17 route A/B verdict above `DEFAULT_ROUTES` (`:92-97`, no `tiffUnpack` override at `:98`), and wired `export function tiffUnpack` (`:1126-1134`) through `rustPx("tiffUnpack")` with `recovered(p, err, "tiff_unpack")` fallback to `J.tiffUnpack` and `releaseIfLarge()` in `finally` (already included in `TIFF_RUST` / `tiffKernels()` at `:1201-1216`).
 - `tools/px_test.js`, `tools/tiff_test.js`, `tools/tiff_test.py`:
-  - `tools/px_test.js`: added `tiffUnpack` route switching & trap recovery (`:10439-10472`), 1-byte LZW piece & `need` stops across `StripRows`, `TileRows`, and `readTiffBand` (`:10533-10576`), `tiffKernels()` `tiff_unpack` coverage (`:11198-11270`, `:11321`), and `4e` (`:11325-11576`: 8/16-bit tiled Predictor-2 per-tile unpredict, 1 `blob.slice().arrayBuffer()` per contiguous band, `4096x4096` vs `4096x4097` 1-bit 64 MiB RGBA-size boundary, `forceStreamed`, multi-strip `wantRows` cap, planar contiguous & out-of-order contiguous 1-slice coalescing, `>64KB` gap 2-slice splitting, `readPlanarStreams === 0`, sub-strip `rowsPerBand < rps` slicing, and truncated & damaged deflate refusals).
+  - `tools/px_test.js`: added `tiffUnpack` route switching & trap recovery (`:11075-11108`), 1-byte LZW piece & `need` stops across `StripRows`, `TileRows`, and `readTiffBand` (`:11169-11212`), `tiffKernels()` `tiff_unpack` coverage (`:11834-11905`, `:11957`), and `4e` (`:11961-12221`: 8/16-bit tiled Predictor-2 per-tile unpredict, 1 `blob.slice().arrayBuffer()` per contiguous band, `4096x4096` vs `4096x4097` 1-bit 64 MiB RGBA-size boundary, `forceStreamed`, multi-strip `wantRows` cap, planar contiguous & out-of-order contiguous 1-slice coalescing, `>64KB` gap 2-slice splitting, `readPlanarStreams === 0` + byte-exact `gotReadPlanar`, sub-strip `rowsPerBand < rps` slicing, and truncated/damaged deflate, short-tile, and upfront band-EOF refusals).
   - `tools/tiff_test.js`: re-verified streaming split-piece sweeps with `{ streamed: true }` (`:882`, `:955`) as well as default band decoding, added 7 tiled Predictor-2 configurations (`8/16`-bit, `LE/BE`, chunky/planar, codecs `1/5/8/32773/32946`, `37x29` with `16x16` tiles, `:1089-1198`) plus direct proof that whole-row unpredict corrupts tile column boundary `(16, 0)` (`:1200-1212`), tested the `4096x4096` vs `4096x4097` 1-bit RGBA-size rule on strips and tiles (`:1215-1285`), tested contiguous / `>64KB`-gap `blob.slice().arrayBuffer()` counting, deflate early cancel at `need`, and short/OOB/empty refusals (`:1286-1379`), and asserted `pxCalls.tiff_unpack > 0` in pass 2 (`:1703-1706`; `202 of 202` checks).
   - `tools/tiff_test.py`: asserted `pxCalls.tiff_unpack > 0` on codecs `1`, `5`, `32773` in `OPEN_ONE` (`:158-162`) and `opens_every_accepted_fixture` (`:839-842`), and replayed `rgb8_lzw_pred` under `"js"` routes (`tiffUnpack`, `tiffUnpredict`, `tiffToRgba`) asserting `0` Rust calls and byte-identical pixels (`:163-188`).
 
@@ -278,10 +278,10 @@ Result (`results.txt`):
 
 4. Unit, Build & Parity Suites (`tools/tiff_test.js` & `tools/px_test.js`)
 --------------------------------------------------------------------------
-- `node tools/tiff_test.js`: **202 / 202 checks PASS** (Pass 1 with `kernels: null` asserting `0` Rust calls; Pass 2 with `kernels: K.tiffKernels()` asserting `{"adler32":18,"deflate_part":18,"tiff_predict_rgba":11,"tiff_to_rgba":913,"tiff_unpack":501,"tiff_unpredict":673}`).
-- `node tools/px_test.js`: **ALL PASS** (full suite green on both `orig` and `restored` in `mutation/results.txt`, `253 s`).
-- `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe tools/px_test.js`: **ALL PASS** (full suite green under Electron's V8).
-- `python tools/build_px.py --check`: `px.wasm: 289598 bytes, identical`; `px_scalar.wasm: 231830 bytes, identical`.
+- `node tools/tiff_test.js`: **202 / 202 checks PASS** (Pass 1 with `kernels: null` asserting `0` Rust calls; Pass 2 with `kernels: K.tiffKernels()` asserting `{"adler32":18,"deflate_part":18,"tiff_predict_rgba":11,"tiff_to_rgba":913,"tiff_unpack":501,"tiff_unpredict":673}`; re-verified after merging `wasm-kernels` `f42396e3`).
+- `node tools/px_test.js`: **ALL PASS** (full suite green on `orig` and `restored` in `mutation/results.txt`, `253 s`, and post-merge after `f42396e3`).
+- `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe tools/px_test.js`: **ALL PASS** (full suite green under Electron's V8 before and after merging `f42396e3`).
+- `python tools/build_px.py --check`: `px.wasm: 289598 bytes, identical` and `px_scalar.wasm: 231830 bytes, identical` at `f5b629f6`; `px.wasm: 291274 bytes, identical` and `px_scalar.wasm: 233384 bytes, identical` after merging `wasm-kernels` (`f42396e3`).
 - `python tools/build_node.py --check`: only expected `PROBLEM node js/... differs` lines.
 
 5. Gates (`dist/gates/gates/`, 0 failures, 0 reruns)
@@ -291,3 +291,6 @@ Result (`results.txt`):
 - `k17-tiff-tiles` (`--offline --tiles on`, port 9633): `tiff rc=0 15s PASS` -> `ALL PASS`
 - `k17-tiff-canvas` (`--offline --tiles off`, port 9634): `tiff rc=0 25s PASS` -> `ALL PASS`
 - `k17-pxjobs` (`--offline --tiles on`, port 9633): `pxjobs rc=0 111s PASS`, `nodecopy rc=0 50s PASS` -> `ALL PASS`
+- Post-merge (`wasm-kernels` `f42396e3` merged, one backend at a time):
+  - `k17-m1-tiles` (`--offline --tiles on`, port 9633): `lint rc=0 16s`, `types rc=0 8s`, `tiff rc=0 13s PASS`, `pxjobs rc=0 104s PASS`, `nodecopy rc=0 61s PASS` -> `ALL PASS`
+  - `k17-m1-canvas` (`--offline --tiles off`, port 9634): `lint rc=0 12s`, `types rc=0 14s`, `tiff rc=0 25s PASS` -> `ALL PASS`
