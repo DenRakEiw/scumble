@@ -28,7 +28,7 @@
 // layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { dataUri, downloadImage, pollJob, scrub, readError, num, closestAspect, closestSize, seedOf, textShape, ideogramMask, checkRatio, withinBytes } = require("./util");
+const { dataUri, downloadImage, pollJob, askStop, isAbort, scrub, readError, num, closestAspect, closestSize, seedOf, textShape, ideogramMask, checkRatio, withinBytes } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://api.replicate.com/v1";
@@ -188,7 +188,7 @@ module.exports = {
     async edit(req, ctx) {
         const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
         if (!model) throw new Error("Replicate recipe has no model (owner/name or owner/name:version).");
-        const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json", Prefer: "wait=30" };
+        const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" };
         const sent = {};
         const input = await inputFor(req, ctx, sent);
         let url, body;
@@ -199,23 +199,55 @@ module.exports = {
         if (!submit.ok) throw new Error(scrub(`Replicate ${model}: ${await readError(submit, ctx.key)}`, ctx.key));
         let pred = await submit.json();
         const id = String((pred && pred.id) || "unknown");
-        pred = await pollJob(ctx, {
-            who: `Replicate ${model}`,
-            timeoutWho: "Replicate",
-            statusWho: "Replicate poll",
-            id,
-            waitMs: 15 * 60 * 1000,
-            initial: pred,
-            url: (p) => (p.urls && p.urls.get ? p.urls.get : `${BASE}/predictions/${p.id}`),
-            headers: { Authorization: headers.Authorization },
-            delay: (p) => (p.status === "starting" ? 2000 : 1000),
-            parse: (j, prev) => (j && typeof j === "object" && typeof j.status === "string" ? { ...prev, ...j } : null),
-            done: (p) => ["succeeded", "failed", "canceled"].includes(p.status),
-        });
-        if (pred.status !== "succeeded") throw new Error(scrub("Replicate: " + (pred.error || pred.status), ctx.key));
-        const imgUrl = firstUrl(pred.output);
-        if (!imgUrl) throw new Error("Replicate: no image URL in the output (" + scrub(JSON.stringify(pred.output), ctx.key).slice(0, 200) + ")");
-        const file = await downloadImage(imgUrl, ctx, { who: `Replicate ${model}`, id });
+        let cancelUrl = pred && pred.urls && pred.urls.cancel;
+        let ended = false, completed = false;
+        let file;
+        try {
+            pred = await pollJob(ctx, {
+                who: `Replicate ${model}`,
+                timeoutWho: "Replicate",
+                statusWho: "Replicate poll",
+                id,
+                waitMs: 15 * 60 * 1000,
+                initial: pred,
+                url: (p) => (p.urls && p.urls.get ? p.urls.get : `${BASE}/predictions/${p.id}`),
+                headers: { Authorization: headers.Authorization },
+                delay: (p) => (p.status === "starting" ? 2000 : 1000),
+                parse: (j, prev) => {
+                    if (!j || typeof j !== "object" || typeof j.status !== "string") return null;
+                    if (j.urls && j.urls.cancel) cancelUrl = j.urls.cancel;
+                    return { ...prev, ...j };
+                },
+                done: (p) => {
+                    if (p.status === "succeeded") {
+                        ended = true;
+                        completed = true;
+                        return true;
+                    }
+                    if (p.status === "failed" || p.status === "canceled") {
+                        ended = true;
+                        return true;
+                    }
+                    return false;
+                },
+            });
+            if (pred.status !== "succeeded") throw new Error(scrub("Replicate: " + (pred.error || pred.status), ctx.key));
+            const imgUrl = firstUrl(pred.output);
+            if (!imgUrl) throw new Error("Replicate: no image URL in the output (" + scrub(JSON.stringify(pred.output), ctx.key).slice(0, 200) + ")");
+            file = await downloadImage(imgUrl, ctx, { who: `Replicate ${model}`, id });
+        } catch (err) {
+            if (isAbort(err, ctx)) {
+                if (completed) {
+                    ctx.jobDone = true;
+                } else if (!ended && cancelUrl && await askStop(cancelUrl, { host: "api.replicate.com", method: "POST", auth: headers.Authorization })) {
+                    ctx.cancelAsked = true;
+                }
+            } else if (err && err.timedOut && !ended && cancelUrl && await askStop(cancelUrl, { host: "api.replicate.com", method: "POST", auth: headers.Authorization })) {
+                ctx.cancelAsked = true;
+                err.message = err.message.replace("the job may still finish and be charged.", "Scumble asked Replicate to stop the job.");
+            }
+            throw err;
+        }
         const metrics = pred.metrics || {};
         // a seed `options.omit` kept home means nothing to the model: none is reported
         const omitted = Array.isArray((req.options || {}).omit) && req.options.omit.includes("seed");

@@ -39,7 +39,7 @@
 // upscale waits up to 30 minutes in the queue, not 15.
 "use strict";
 
-const { dataUri, downloadImage, pollJob, scrub, readError, num, fitPixels, closestAspect, pngSize } = require("./util");
+const { dataUri, downloadImage, pollJob, askStop, isAbort, scrub, readError, num, fitPixels, closestAspect, pngSize } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 const flux3 = require("./flux3");
 
@@ -243,29 +243,62 @@ async function queued(model, input, ctx, waitMs) {
     const submit = await ctx.fetch(QUEUE + model, { method: "POST", headers, body: JSON.stringify(input) });
     if (!submit.ok) throw new Error(scrub(`fal.ai ${model}: ${await readError(submit, ctx.key)}`, ctx.key));
     const job = await submit.json();
-    const statusUrl = job.status_url, resultUrl = job.response_url;
+    const statusUrl = job.status_url, resultUrl = job.response_url, cancelUrl = job.cancel_url;
     if (!statusUrl || !resultUrl) throw new Error("fal.ai answered without status_url / response_url: " + scrub(JSON.stringify(job), ctx.key).slice(0, 200));
     const id = String(job.request_id || (/\/requests\/([^/?#]+)/.exec(String(statusUrl)) || [])[1] || statusUrl);
-    const out = await pollJob(ctx, {
-        who: `fal.ai ${model}`,
-        timeoutWho: "fal.ai",
-        statusWho: "fal.ai status",
-        resultWho: "fal.ai result",
-        id,
-        waitMs,
-        initial: { status: job.status || "IN_QUEUE" },
-        url: statusUrl,
-        resultUrl,
-        headers: { Authorization: headers.Authorization },
-        delay: (s) => (s.status === "IN_QUEUE" ? 1500 : 1000),
-        parse: (j, prev) => (j && typeof j === "object" && (typeof j.status === "string" || j.error) ? { ...j, status: j.status || prev.status } : null),
-        done: (s) => {
-            if (s.status === "FAILED" || s.error) throw new Error(scrub("fal.ai: " + (s.error || "request failed"), ctx.key));
-            return s.status === "COMPLETED";
-        },
-    });
+    let ended = false, completed = false;
+    let out;
+    try {
+        out = await pollJob(ctx, {
+            who: `fal.ai ${model}`,
+            timeoutWho: "fal.ai",
+            statusWho: "fal.ai status",
+            resultWho: "fal.ai result",
+            id,
+            waitMs,
+            initial: { status: job.status || "IN_QUEUE", error: job.error },
+            url: statusUrl,
+            resultUrl,
+            headers: { Authorization: headers.Authorization },
+            delay: (s) => (s.status === "IN_QUEUE" ? 1500 : 1000),
+            parse: (j, prev) => (j && typeof j === "object" && (typeof j.status === "string" || j.error) ? { ...j, status: j.status || prev.status } : null),
+            done: (s) => {
+                if (s.status === "FAILED" || s.error) {
+                    ended = true;
+                    throw new Error(scrub("fal.ai: " + (s.error || "request failed"), ctx.key));
+                }
+                if (s.status === "COMPLETED") {
+                    ended = true;
+                    completed = true;
+                    return true;
+                }
+                return false;
+            },
+        });
+    } catch (err) {
+        if (isAbort(err, ctx)) {
+            if (completed) {
+                ctx.jobDone = true;
+            } else if (!ended && cancelUrl && await askStop(cancelUrl, { host: "queue.fal.run", method: "PUT", auth: headers.Authorization })) {
+                ctx.cancelAsked = true;
+            }
+        } else if (err && err.timedOut && !ended && cancelUrl && await askStop(cancelUrl, { host: "queue.fal.run", method: "PUT", auth: headers.Authorization })) {
+            ctx.cancelAsked = true;
+            err.message = err.message.replace("the job may still finish and be charged.", "Scumble asked fal.ai to stop the job.");
+        }
+        throw err;
+    }
     if (out && typeof out === "object") Object.defineProperty(out, "_requestId", { value: id, enumerable: false, configurable: true });
     return out;
+}
+
+async function downloadResult(url, ctx, opts) {
+    try {
+        return await downloadImage(url, ctx, opts);
+    } catch (err) {
+        if (isAbort(err, ctx)) ctx.jobDone = true;
+        throw err;
+    }
 }
 
 function modelOf(req) {
@@ -324,7 +357,7 @@ module.exports = {
         const img = (out.images && out.images[0]) || out.image;
         if (!img || !img.url) throw new Error("fal.ai: no image in the result (" + scrub(JSON.stringify(out), ctx.key).slice(0, 200) + ")");
         if (Array.isArray(out.has_nsfw_concepts) && out.has_nsfw_concepts[0]) ctx.log("result flagged as nsfw by fal.ai, image may be blurred");
-        const file = await downloadImage(img.url, ctx, { who: `fal.ai ${model}`, id: out._requestId });
+        const file = await downloadResult(img.url, ctx, { who: `fal.ai ${model}`, id: out._requestId });
         const flux = req.options && req.options.sizing === "flux3";
         // FLUX 3: an edit sent at a preset comes back in its shape, which the stitch stretches onto the crop
         const shape = flux ? { resolution: input.resolution || null, aspect_ratio: input.aspect_ratio || null, ...(req.kind !== "text" && input.aspect_ratio ? { fit: "stretch" } : {}) } : {};
@@ -338,7 +371,7 @@ module.exports = {
         const out = await queued(model, input, ctx, UPSCALE_WAIT_MS);
         const img = out.image || (out.images && out.images[0]);
         if (!img || !img.url) throw new Error("fal.ai: no image in the result (" + scrub(JSON.stringify(out), ctx.key).slice(0, 200) + ")");
-        const file = await downloadImage(img.url, ctx, { who: `fal.ai ${model}`, id: out._requestId });
+        const file = await downloadResult(img.url, ctx, { who: `fal.ai ${model}`, id: out._requestId });
         return { bytes: file.bytes, mime: img.content_type || file.mime, seed: num(out.seed, req.seed), info: { model, factor: input[(req.fields && req.fields.factor) || "upscale_factor"] || null, width: img.width, height: img.height } };
     },
     async relight(req, ctx) {
@@ -349,7 +382,7 @@ module.exports = {
         const img = (out.images && out.images[0]) || out.image;
         if (!img || !img.url) throw new Error("fal.ai: no image in the result (" + scrub(JSON.stringify(out), ctx.key).slice(0, 200) + ")");
         if (Array.isArray(out.has_nsfw_concepts) && out.has_nsfw_concepts[0]) ctx.log("result flagged as nsfw by fal.ai, image may be blurred");
-        const file = await downloadImage(img.url, ctx, { who: `fal.ai ${model}`, id: out._requestId });
+        const file = await downloadResult(img.url, ctx, { who: `fal.ai ${model}`, id: out._requestId });
         return { bytes: file.bytes, mime: img.content_type || file.mime, seed: num(out.seed, "seed" in input ? req.seed : null), info: { model, width: img.width, height: img.height } };
     },
     // exported for tools/upscale_test.js and tools/relight_request_test.js

@@ -121,10 +121,10 @@ The merges: `canvas-a/F2` = `canvas-b/geometry-ops-no-recheck-after-upload`; `do
   `reopenClosed` waits for the entry's flush.
 - **`shell/F4`** (data-loss), `renderer/shell.js:2414`. Earlier states (the recovery path) opens documents without
   their plugin data (boxes, 3D objects). Fix: pass `plugins` and `extra` on.
-- **`recipes/rec-import-overwrite`** (data-loss), `electron/main/recipes.js:1879`. Importing a second
+- **`recipes/rec-import-overwrite`** (data-loss, **fixed 2026-11-09, fix-prov**), `electron/main/recipes.js:1879`. Importing a second
   `workflow.json` silently replaces the first user recipe with that name. Fix: pick a free id, as the other import
   paths do.
-- **`providers/PRV-2`** (security), `electron/main/providers/toapis.js:115`. `setPath` follows `__proto__.` keys from
+- **`providers/PRV-2`** (security, **fixed 2026-11-09, fix-prov**), `electron/main/providers/toapis.js:115`. `setPath` follows `__proto__.` keys from
   recipe data and writes onto `Object.prototype` in the main process. Fix: refuse such segments; check the keys in
   `recipes.normalize`.
 - **`shell/F1`** (security), `electron/main/assistant/policy.js:226`. `layerBelow` reads the layer list as top
@@ -245,8 +245,8 @@ The merges: `canvas-a/F2` = `canvas-b/geometry-ops-no-recheck-after-upload`; `do
 
 | id | sev | cat | file:line | claim | effort |
 |---|---|---|---|---|---|
-| providers/PRV-3 | should | money | replicate.js:203 | Cancel and timeout on fal and Replicate never ask the provider to stop | small |
-| providers/PRV-5 | nice | bug | util.js:31 | A JSON error body is not cut and can carry a whole base64 picture | small |
+| providers/PRV-3 | should | money | replicate.js:203 | Cancel and timeout on fal and Replicate never ask the provider to stop (**fixed 2026-11-09, fix-prov**) | small |
+| providers/PRV-5 | nice | bug | util.js:31 | A JSON error body is not cut and can carry a whole base64 picture (**fixed 2026-11-09, fix-prov**) | small |
 
 ### Commands, MCP, the assistant
 

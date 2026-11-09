@@ -28,16 +28,22 @@ function scrub(text, key) {
     return s;
 }
 
+function jsonError(j, key) {
+    if (!j || typeof j !== "object") return "";
+    const msg = (j.error && (j.error.message || j.error)) || j.detail || j.message || j.status;
+    if (!msg) return "";
+    const raw = typeof msg === "string" ? msg : JSON.stringify(msg, (k, v) => (k === "input" ? undefined : v));
+    return scrub(raw, key).slice(0, 500);
+}
+
 async function readError(r, key) {
     let text = "";
     try { text = await r.text(); } catch (_) { text = ""; }
-    text = scrub(text, key);
     try {
-        const j = JSON.parse(text);
-        const msg = (j.error && (j.error.message || j.error)) || j.detail || j.message || j.status;
-        if (msg) return scrub(typeof msg === "string" ? msg : JSON.stringify(msg), key);
+        const fromJson = jsonError(JSON.parse(text), key);
+        if (fromJson) return fromJson;
     } catch (_) { /* not JSON */ }
-    return text.slice(0, 300) || (r && r.statusText) || String((r && r.status) || "");
+    return scrub(text, key).slice(0, 300) || (r && r.statusText) || String((r && r.status) || "");
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,11 +73,51 @@ function isTransientStatus(status) {
 
 const POLL_FAILURES_MAX = 5;
 const RESULT_TRIES = 3;
+const STOP_WAIT_MS = 2000;
+const STOP_TIMEOUT_MS = 10000;
 
 const aborted = () => Object.assign(new Error("cancelled"), { name: "AbortError" });
 
 function isAbort(err, ctx) {
     return !!(ctx && ctx.signal && ctx.signal.aborted) || !!(err && (err.name === "AbortError" || err.code === "ABORT_ERR"));
+}
+
+function allowedStopUrl(raw, host) {
+    if (!raw || typeof raw !== "string") return null;
+    try {
+        const u = new URL(raw);
+        if (u.protocol !== "https:" || u.hostname !== host || u.username || u.password) return null;
+        return u.href;
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Asks a provider (fal.ai or Replicate) to stop an in-flight queued job via `globalThis.fetch` (read at call time,
+ * since `ctx.fetch` refuses requests after Cancel). Sends the key only to `https://<host>`, with `redirect: "error"`,
+ * `AbortSignal.timeout(10000)` and a `.catch` so a late or failed stop never becomes an unhandled rejection; waits at
+ * most `waitMs` (default 2 s) for a 2xx (`r.ok`) without reading the body.
+ */
+async function askStop(cancelUrl, { host, method, auth, waitMs = STOP_WAIT_MS } = {}) {
+    const url = allowedStopUrl(cancelUrl, host);
+    const fetchFn = globalThis.fetch;
+    if (!url || !auth || typeof fetchFn !== "function") return false;
+    const req = Promise.resolve().then(() => fetchFn(url, {
+        method,
+        headers: { Authorization: auth },
+        redirect: "error",
+        signal: AbortSignal.timeout(STOP_TIMEOUT_MS),
+    })).then((r) => !!(r && r.ok)).catch(() => false);
+    let timer = null;
+    try {
+        return await Promise.race([
+            req,
+            new Promise((resolve) => { timer = setTimeout(() => resolve(false), waitMs); }),
+        ]);
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
 }
 
 /** Wait `ms` through `ctx.sleep` (or `sleep`), ending at once on `ctx.signal` abort. */
@@ -132,12 +178,9 @@ async function readBody(r) {
 }
 
 function errorText(r, text, json, key) {
-    const clean = scrub(text, key);
-    if (json && typeof json === "object") {
-        const msg = (json.error && (json.error.message || json.error)) || json.detail || json.message || json.status;
-        if (msg) return scrub(typeof msg === "string" ? msg : JSON.stringify(msg), key);
-    }
-    return clean.slice(0, 300) || (r && r.statusText) || String((r && r.status) || "error");
+    const fromJson = jsonError(json, key);
+    if (fromJson) return fromJson;
+    return scrub(text, key).slice(0, 300) || (r && r.statusText) || String((r && r.status) || "error");
 }
 
 /**
@@ -199,7 +242,10 @@ async function pollJob(ctx, opts) {
     while (!done(state)) {
         const rem = waitMs - (Date.now() - t0);
         if (rem <= 0) {
-            throw new Error(scrub(`${timeoutWho}: timed out after ${Math.round(waitMs / 60000)} minutes${tag}; the job may still finish and be charged.`, key));
+            throw Object.assign(
+                new Error(scrub(`${timeoutWho}: timed out after ${Math.round(waitMs / 60000)} minutes${tag}; the job may still finish and be charged.`, key)),
+                { timedOut: true }
+            );
         }
         const wait = nextWait != null ? nextWait : (typeof delay === "function" ? delay(state) : delay);
         nextWait = null;
@@ -433,4 +479,4 @@ function noKeyText(label, stale) {
         : `No API key for ${label}. Add it under Settings › API providers.`;
 }
 
-module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, retryAfterMs, scrub, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };
+module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, askStop, isAbort, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };

@@ -178,6 +178,7 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {{ drop: string[] }} [newImage]  ComfyUI recipes: the inputs Generate new without pictures leaves out (localNewImage)
  * @property {boolean} [promptRequired]       true: a run with an empty prompt is refused before anything goes (P-H3-Image:
  *                                            without words the model redraws the crop, or its upsampler invents an edit)
+ * @property {string[]} [notes]               notes from importing or converting a workflow
  */
 
 /**
@@ -1856,6 +1857,14 @@ function looksLikePrompt(obj) {
     return vals.length > 0 && vals.every((v) => v && typeof v === "object" && typeof v.class_type === "string");
 }
 
+async function userFileStems() {
+    try {
+        return new Set((await fsp.readdir(userDir())).filter((n) => /\.json$/i.test(n)).map((n) => n.slice(0, -5).toLowerCase()));
+    } catch (_) {
+        return new Set();
+    }
+}
+
 /**
  * Import a workflow file. `objectInfo` comes from the connected server (null when
  * offline: API-format files still work, UI-format files need the widget order).
@@ -1865,6 +1874,7 @@ async function importFile(file, objectInfo, opts) {
     let data;
     try { data = JSON.parse(text); } catch (err) { throw new Error("Not a JSON file: " + err.message); }
     const meta = { file: path.basename(file), date: new Date().toISOString().slice(0, 10) };
+    const builtinDir = opts && opts.builtinDir ? opts.builtinDir : path.join(__dirname, "..", "..", "recipes");
     let recipe;
     // a graph made for Comfy Cloud (item 35 V5c): no Inpaint Canvas node, its nodes marked by title
     const graphLike = data && (Array.isArray(data.nodes) || looksLikePrompt(data) || (data.workflow && Array.isArray(data.workflow.nodes)));
@@ -1878,12 +1888,16 @@ async function importFile(file, objectInfo, opts) {
             if (!info) throw new Error("Reading a workflow saved from the ComfyUI UI needs the node definitions: store a Comfy Cloud key (or connect a ComfyUI), or export the workflow in API format.");
             output = fromWorkflow(wf, info, meta, { noCanvas: true }).prompt;
         }
-        const ids = (await list(opts && opts.builtinDir ? opts.builtinDir : path.join(__dirname, "..", "..", "recipes"))).map((r) => r.id);
+        const ids = [...(await list(builtinDir)).map((r) => r.id), ...(await userFileStems())];
         let made;
         try { made = fromCloudGraph({ output, workflow: wf, name: stem0, ids, date: meta.date, promoted: wf ? promotedOf(wf) : [] }); }
         catch (err) { throw new Error(`This graph has no Inpaint Canvas node, and Scumble could not read it as a Comfy Cloud graph: ${err.message}`); }
+        const bump = /^_(\d+)$/.exec(made.id.slice(slug(stem0).length));
+        if (bump) made.name = `${made.name} ${bump[1]}`;
         const savedCloud = await save(made);
-        return normalize({ ...made, file: path.basename(savedCloud), source: "user" });
+        const out = normalize({ ...made, file: path.basename(savedCloud), source: "user" });
+        out.notes = [...(Array.isArray(out.notes) ? out.notes : []), `id ${out.id}`];
+        return out;
     }
     if (data && data.kind && data.prompt && data.canvas) {
         recipe = { ...data };            // a Scumble recipe file
@@ -1901,14 +1915,33 @@ async function importFile(file, objectInfo, opts) {
         if (data && data.kind === "provider") throw new Error("This provider recipe names no provider: it needs a `providers` map (or, in the old shape, a `provider`).");
         throw new Error("This file is neither a ComfyUI workflow, an API-format prompt nor a Scumble recipe.");
     }
+    const existing = await list(builtinDir);
+    const byId = new Map(existing.map((r) => [r.id, r]));
+    const fileStems = await userFileStems();
     const stem = path.basename(file).replace(/\.json$/i, "");
-    recipe.id = recipe.id && data.kind ? slug(recipe.id) : slug(stem);
-    recipe.name = recipe.name || stem;
-    // never shadow a shipped recipe silently
-    recipe.id = recipe.id.replace(/^flux2_klein_local$/, "flux2_klein_local_imported");
+    const rawId = data && data.kind && typeof recipe.id === "string" ? recipe.id.trim() : "";
+    const prev = rawId && slug(rawId) === rawId ? byId.get(rawId) : undefined;
+    const keepOwnId = !!(rawId && slug(rawId) === rawId && (prev || !fileStems.has(rawId.toLowerCase())));
+    let idNote;
+    if (keepOwnId) {
+        recipe.id = rawId;
+        idNote = prev && prev.source === "user" ? `replaced your recipe ${recipe.id}`
+            : prev && prev.source === "builtin" ? `shadows the shipped ${recipe.id}`
+                : `id ${recipe.id}`;
+        recipe.name = recipe.name || stem;
+    } else {
+        const baseId = slug(rawId || stem);
+        let id = baseId, n = 2;
+        while (byId.has(id) || id === "flux2_klein_local" || fileStems.has(id.toLowerCase())) id = `${baseId}_${n++}`;
+        recipe.id = id;
+        idNote = `id ${recipe.id}`;
+        recipe.name = recipe.name || (id === baseId ? stem : `${stem} ${n - 1}`);
+    }
     const saved = await save(recipe);
     // the file keeps the shape it was written in; the caller gets the recipe as list() serves it
-    return normalize({ ...recipe, file: path.basename(saved), source: "user" });
+    const out = normalize({ ...recipe, file: path.basename(saved), source: "user" });
+    out.notes = [...(Array.isArray(out.notes) ? out.notes : []), idNote];
+    return out;
 }
 
 module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, fromCloudGraph, cloudMark, detectRoles, promotedOf, detach, userDir, _normalize: normalize };
