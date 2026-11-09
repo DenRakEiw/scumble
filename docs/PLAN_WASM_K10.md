@@ -1009,3 +1009,47 @@ See `docs/measurements/k10b_2026-11-09/` (`k10b_chain.sh`, `summarize.py`, `summ
     - `composeStack=js` (`695.4 ms`, `after` max `37.12 MiB`, `later` max `1.06 MiB`, `releases = 0`) vs `composeStack=rust` (`440.6 ms`, `1.58x`, `after` max `42.25 MiB`, `later` max `1.06 MiB`, `releases = 0`).
   - Both `composeTiles` and `composeStack` win their deciding rows (`layer_from_tiles`, `export_ora`, `open_psd`, and `open_ora` for `composeTiles`; `export_png` for `composeStack`); neither is added to `DEFAULT_ROUTES`.
 
+---
+
+## 11. As Built — K10c (2026-11-09)
+
+See `docs/measurements/k10c_2026-11-09/` (`k10c_chain.sh`, `summarize.py`, `summary.txt`, `summary_rows.txt`, `node_bench.mjs`, `retention_psd_wand.py`, `before/`, `after/`, `retention/`, `node/`, `mutation/`).
+
+- **Built (ABI 42 on branch `ag-chain-c` off `3359cb0f`)**:
+  - `crates/px/src/composite.rs`: added `clip_coverage(cov, base_mask, alpha, own)` (`:287-332`) with SIMD128 `simd::clip_coverage` (`:786-828`, 16 bytes at a time via `v128_load`, `simd::mul255`, `v128_store`), and `dissolve_rows(src, w, rows, x0, y0, alpha, mask, seed)` (`:345-391`) with SIMD128 `simd::dissolve_row` (`:833-926`, 4 pixels at a time in `u32x4` lanes with exact 32-bit `mul255_u32` and `lowbias32` / `hash32`, branchless `v128_bitselect` preserving `src_a == 0` RGB untouched and `c_val == 255` short-circuit).
+  - `crates/px/src/lib.rs`: bumped `px_abi_version()` (`:57-59`) from `41` to `42`; exported `clip_coverage` (`:575-597`) and `dissolve_rows` (`:607-626`).
+  - `renderer/editor/px/px.wasm` (`279,969 B`, `+2,438 B` over `277,531 B` at `3359cb0f`, sha256 `193dd3adf6a169e5`; before at `3359cb0f`: sha256 `d3d4567365549b49`) and `renderer/editor/px/px_scalar.wasm` (`225,508 B`, `+1,396 B` over `224,112 B` at `3359cb0f`, sha256 `71e5311ccaec73ec`; before at `3359cb0f`: sha256 `76f434e70b79d47d`) rebuilt and verified with `python tools/build_px.py --check`.
+  - `renderer/editor/px/px.js`: bumped `PX_ABI = 42` (`:16`); added `Px.prototype.psdPackRowsFromPtr(a, pr, w, rows)` (`:1088-1099`) and refactored `psdPackRows` (`:1081-1086`) to delegate to `psdPackRowsFromPtr`.
+  - `renderer/editor/px/kernels.js`: added `clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel"` to `ROUTE_KINDS` (`:65`).
+  - `renderer/editor/inpaint_worker.js`: routed `stackRowsToWasm` (`:394-521`) through `p._call("clip_coverage", ...)` (`route("clipCoverage") !== "js"`) and `p._call("dissolve_rows", ...)` (`route("dissolveRows") !== "js"`); routed `stackInto(msg)` (`:528-563`) through `stackRowsToWasm(p, a, msg, false, into)` + `p.get(Uint8Array, pd, byteLen, into)` when `p && msg.stack.layers.length > 0 && route("stackIntoWasm") !== "js"`, with `composeWasm: 1` on the pointer path and `composeWasm: 0` on `"js"` / base-only (`layers: []`) / trap recovery; routed `psdPart(msg)` (`:769-815`) through `partPtrOf(p, a, msg, false)` + `p.psdPackRowsFromPtr(a, ptrs.pr, msg.w, msg.rows)` when `p && !msg.rgba && route("psdPartWasm") !== "js"`, with `composeWasm: 1` on the pointer path and `composeWasm: 0` on `"js"` / trap recovery.
+- **Tests & Mutation**:
+  - `node tools/px_test.js` (`composeWasmPartCases` sections `1–3` and `4a–4d` on both `simdPx` and `scalarPx`, plus SIMD vs scalar twin checks `5a–5c`) and `node tools/boxstack_test.js` (clipped and dissolve layer cases against both `rowsOfStack` and frozen hand-computed 4×2 byte arrays): PASS.
+  - `tools/export_test.py` (`stack_points_gathers_the_samples_it_names` with a dissolve layer, and `compose_in_wasm_memory_matches_js_gather` covering `psd_part`, `stack_into`, `clipCoverage`, and `dissolveRows` on default and `"js"` routes): PASS on tiles (`k10c-both-tiles`).
+  - Mutation (`docs/measurements/k10c_2026-11-09/mutation/mut_k10c.py`): 24/24 mutants killed across Rust `composite.rs` (`R01`–`R05`), `inpaint_raster.js` (`J01`), `blend_modes.js` (`J02`), `inpaint_boxstack.js` (`J03`–`J05`), `inpaint_worker.js` (`J06`–`J18`), and `px.js` (`J19`), 0 survived.
+- **15,000 × 10,000 A/B Summary (3 alternating rounds, fresh offline instances, focused, busy lock held per batch)**:
+  - `native_test.py` Stack + Match (`--skip=open_psd,open_ora,filter_export_png,filter_wand`):
+    - `wand_whole_picture`: wall `1,417.0 [1,330.0-1,457.0]` -> `1,243.0 [1,095.0-1,278.0] ms` (`1.14x`, non-overlapping); `stack_into kernel` `2,440.5 [2,426.3-2,442.6]` -> `1,841.4 [1,532.4-1,918.9] ms` (`1.33x`, non-overlapping).
+    - `export_psd`: wall `1,296.0 [1,244.0-1,298.0]` -> `1,012.0 [854.0-1,057.0] ms` (`1.28x`, non-overlapping); `psd_part kernel` `8,287.7 [8,064.4-8,467.1]` -> `6,545.2 [5,410.3-6,637.4] ms` (`1.27x`, non-overlapping); `psd_part rows` `3,421.4 [3,407.3-3,569.6]` -> `1,844.7 [1,609.1-1,897.9] ms` (`1.85x`, non-overlapping).
+    - `match_wand`: wall `1,134.0 [1,130.0-1,303.0]` -> `1,090.0 [1,079.0-1,172.0] ms` (`1.04x`, spreads overlap); `stack_into kernel` `2,610.4 [2,550.8-3,366.2]` -> `2,004.5 [1,825.9-2,008.5] ms` (`1.30x`, non-overlapping, passes §1.1 rule 2).
+  - `native_test.py` Filter band:
+    - `filter_export_png`: wall `1,267.0 [1,214.0-1,347.0]` -> `1,164.0 [1,083.0-1,301.0] ms` (`1.09x`, spreads overlap); `stack_into kernel` `1,910.5 [1,652.5-2,023.7]` -> `1,134.2 [1,037.0-1,265.7] ms` (`1.68x`, non-overlapping, passes §1.1 rule 2).
+    - `filter_wand`: wall `1,506.0 [1,469.0-1,523.0]` vs `1,519.0 [1,492.0-1,618.0] ms` (`0.99x`, spreads overlap); `stack_into kernel` `1,994.6 [1,974.1-1,997.6]` -> `1,497.3 [1,400.3-1,622.0] ms` (`1.33x`, non-overlapping, passes §1.1 rule 2).
+  - `export_test.py --perf 15000x10000` default:
+    - `composite_bands`: wall `1,189.0 [1,023.0-1,217.0]` -> `1,014.0 [994.0-1,015.0] ms` (`1.17x`, non-overlapping); `stack_into kernel` `4,595.8 [4,004.9-4,759.8]` -> `3,120.1 [2,913.0-3,318.8] ms` (`1.47x`, non-overlapping).
+    - `psd`: wall `1,981.0 [1,782.0-2,012.0]` -> `1,506.0 [1,495.0-1,532.0] ms` (`1.32x`, non-overlapping); `psd_part kernel` `6,283.1 [5,667.5-6,304.0]` -> `3,807.7 [3,791.3-3,926.6] ms` (`1.65x`, non-overlapping); `psd_part rows` `2,941.4 [2,738.7-3,130.4]` -> `1,320.2 [1,309.0-1,388.0] ms` (`2.23x`, non-overlapping); `stack_into kernel` `4,526.0` -> `2,973.6 ms` (`1.52x`, non-overlapping).
+    - `psd_masked`: wall `2,283.0 [2,053.0-2,318.0]` -> `1,681.0 [1,656.0-1,709.0] ms` (`1.36x`, non-overlapping); `psd_part kernel` `7,438.8 [6,685.4-7,626.8]` -> `4,099.3 [3,940.0-4,420.1] ms` (`1.81x`, non-overlapping); `psd_part rows` `3,820.4 [3,403.8-3,895.0]` -> `1,551.0 [1,528.6-1,672.3] ms` (`2.46x`, non-overlapping); `stack_into kernel` `4,918.5` -> `3,279.7 ms` (`1.50x`, non-overlapping).
+  - `export_test.py --perf 15000x10000 --blend=dissolve` (`dissolveRows=js` vs `dissolveRows=rust`):
+    - `composite_bands`: wall `1,874.0 [1,851.0-2,009.0]` -> `1,403.0 [1,353.0-1,532.0] ms` (`1.34x`, non-overlapping); `stack_into kernel` `7,272.7 [7,150.9-7,355.7]` -> `3,200.5 [3,105.3-3,795.2] ms` (`2.27x`, non-overlapping).
+    - `psd`: wall `2,257.0 [1,977.0-2,344.0]` -> `1,829.0 [1,599.0-1,854.0] ms` (`1.23x`, non-overlapping); `stack_into kernel` `7,348.7 [7,043.5-8,004.2]` -> `3,859.8 [3,633.8-4,058.2] ms` (`1.90x`, non-overlapping).
+    - `psd_masked`: wall `2,711.0 [2,423.0-2,792.0]` -> `2,286.0 [1,949.0-2,392.0] ms` (`1.19x`, non-overlapping); `stack_into kernel` `7,774.3 [7,357.9-8,396.2]` -> `3,839.7 [3,508.5-3,968.0] ms` (`2.02x`, non-overlapping).
+  - `export_test.py --perf 15000x10000 --clipped` (`clipCoverage=js` vs `clipCoverage=rust`):
+    - `composite_bands`: wall `1,224.0 [1,182.0-1,401.0]` -> `1,096.0 [1,083.0-1,245.0] ms` (`1.12x`, spreads overlap); `stack_into kernel` `4,711.3 [4,666.8-5,273.5]` -> `4,159.7 [4,127.1-4,874.9] ms` (`1.13x`, passes §1.1 rule 2).
+    - `psd`: wall `2,403.0 [1,977.0-3,092.0]` -> `2,147.0 [2,118.0-2,832.0] ms` (`1.12x`, spreads overlap); `stack_into kernel` `4,709.4 [4,627.4-5,049.7]` -> `4,275.3 [4,076.4-5,026.2] ms` (`1.10x`, passes §1.1 rule 2).
+    - `psd_masked`: wall `2,353.0 [2,141.0-3,285.0]` vs `2,584.0 [2,356.0-2,811.0] ms` (`0.91x`, spreads overlap); `stack_into kernel` `5,082.8 [4,971.6-5,096.7]` -> `4,557.1 [4,404.8-4,559.3] ms` (`1.12x`, non-overlapping, passes §1.1 rule 2).
+  - Retention (`px_probe.py --retention 15000x10000` & `retention_psd_wand.py 15000x10000`):
+    - `export_png`: `395.7 ms`, `after` max `42.25 MiB`, `later` max `1.06 MiB`, `releases = 0`, `idles = 8`.
+    - `export_psd`: `psdPartWasm=js` (`882.0 ms`, `after` max `23.00 MiB`, `later` max `1.06 MiB`, `releases = 0`) vs `psdPartWasm=rust` (`673.9 ms`, `1.31x`, `after` max `23.00 MiB`, `later` max `1.06 MiB`, `releases = 0`, `idles = 8`).
+    - `wand_whole_picture`: `stackIntoWasm=js` (`1,876.9 ms`, `after` max `31.50 MiB`, `later` max `2.12 MiB`, `releases = 1`) vs `stackIntoWasm=rust` (`1,409.7 ms`, `1.33x`, `after` max `31.50 MiB`, `later` max `1.06 MiB`, `releases = 1`, `idles = 9`).
+  - All four routes (`psdPartWasm`, `stackIntoWasm`, `dissolveRows`, `clipCoverage`) win their deciding rows; none is added to `DEFAULT_ROUTES`.
+
+

@@ -1,0 +1,310 @@
+
+=== 15000 x 10000 native_test.py Stack + Match (3 alternating rounds, median [min-max] ms) ===
+row                                             before (3359cb0f)             after (K10c)                  before / after (medians)
+build_the_file encodeMs                         1,537.0 [1,443.0-1,565.0]     1,343.0 [1,334.0-1,511.0]     1.14x
+open_the_file wall                              2,853.0 [2,766.0-3,009.0]     2,718.0 [2,712.0-2,919.0]     1.05x
+open_the_file longest block                     526.0 [503.0-556.0]           501.0 [495.0-503.0]           1.05x
+add_the_paint_layer wall                        699.0 [695.0-770.0]           678.0 [667.0-724.0]           1.03x
+add_the_paint_layer longest block               611.0 [609.0-685.0]           602.0 [588.0-640.0]           1.01x
+wand_whole_picture wall                         1,417.0 [1,330.0-1,457.0]     1,243.0 [1,095.0-1,278.0]     1.14x
+wand_whole_picture longest block                112.0 [109.0-122.0]           95.0 [90.0-106.0]             1.18x
+wand_whole_picture stack_into jobs              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+wand_whole_picture stack_into kernel            2,440.5 [2,426.3-2,442.6]     1,841.4 [1,532.4-1,918.9]     1.33x
+wand_whole_picture worker composite_tile calls  39.0 [39.0-39.0]              39.0 [39.0-39.0]              1.00x
+export_png wall                                 1,023.0 [931.0-1,039.0]       922.0 [911.0-939.0]           1.11x
+export_png longest block                        36.0 [36.0-38.0]              34.0 [33.0-37.0]              1.06x
+export_png png_part jobs                        79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+export_png png_part composeWasm                 79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+export_png png_part kernel                      7,626.7 [6,915.0-7,694.6]     6,769.7 [6,708.6-6,921.5]     1.13x
+export_png png_part compose                     665.8 [640.7-713.3]           663.8 [576.7-664.4]           1.00x
+export_png png_part rows                        665.8 [640.7-713.3]           663.8 [576.7-664.4]           1.00x
+export_png png_part prev                        9.7 [9.3-10.5]                9.6 [8.6-10.2]                1.01x
+export_png png_part filter                      284.2 [271.2-300.7]           255.8 [248.3-258.1]           1.11x
+export_png png_part deflate                     6,309.3 [5,710.8-6,408.1]     5,605.9 [5,546.9-5,710.0]     1.13x
+export_png png_part adler                       167.4 [152.2-172.0]           151.1 [142.1-157.1]           1.11x
+export_png png_part chunk                       96.9 [93.0-97.3]              91.8 [88.7-92.0]              1.06x
+export_png png_part copyOut                     39.6 [36.7-42.3]              37.7 [35.6-38.1]              1.05x
+export_png worker composite_tile calls          156.0 [156.0-156.0]           156.0 [156.0-156.0]           1.00x
+export_png worker png_filter_rows calls         79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+export_png worker deflate_part calls            79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+export_psd wall                                 1,296.0 [1,244.0-1,298.0]     1,012.0 [854.0-1,057.0]       1.28x
+export_psd longest block                        75.0 [73.0-79.0]              74.0 [68.0-79.0]              1.01x
+export_psd psd_part jobs                        237.0 [237.0-237.0]           237.0 [237.0-237.0]           1.00x
+export_psd psd_part kernel                      8,287.7 [8,064.4-8,467.1]     6,545.2 [5,410.3-6,637.4]     1.27x
+export_psd psd_part rows                        3,421.4 [3,407.3-3,569.6]     1,844.7 [1,609.1-1,897.9]     1.85x
+export_psd psd_part pack                        4,872.2 [4,637.2-4,890.2]     4,640.2 [3,795.9-4,786.3]     1.05x
+export_psd worker composite_tile calls          78.0 [78.0-78.0]              78.0 [78.0-78.0]              1.00x
+export_ora wall                                 2,114.0 [2,047.0-2,289.0]     2,032.0 [1,989.0-2,055.0]     1.04x
+export_ora longest block                        43.0 [41.0-44.0]              42.0 [40.0-45.0]              1.02x
+export_ora png_part jobs                        237.0 [237.0-237.0]           237.0 [237.0-237.0]           1.00x
+export_ora png_part composeWasm                 237.0 [237.0-237.0]           237.0 [237.0-237.0]           1.00x
+export_ora png_part kernel                      15,424.6 [15,077.7-16,957.6]  15,015.0 [14,660.4-15,171.4]  1.03x
+export_ora png_part compose                     639.0 [602.0-743.6]           624.8 [596.0-632.2]           1.02x
+export_ora png_part rows                        1,115.3 [1,078.3-1,314.2]     1,060.2 [1,048.8-1,087.7]     1.05x
+export_ora png_part prev                        15.6 [13.4-17.9]              12.9 [11.4-14.2]              1.21x
+export_ora png_part filter                      812.1 [800.2-876.6]           794.7 [775.2-799.2]           1.02x
+export_ora png_part deflate                     12,728.7 [12,429.8-13,914.0]  12,410.2 [12,026.1-12,578.7]  1.03x
+export_ora png_part adler                       470.4 [460.4-523.6]           455.0 [453.7-456.6]           1.03x
+export_ora png_part chunk                       206.5 [195.5-214.9]           199.8 [192.1-204.8]           1.03x
+export_ora png_part copyOut                     81.1 [76.3-86.3]              77.3 [74.5-78.0]              1.05x
+export_ora worker composite_tile calls          156.0 [156.0-156.0]           156.0 [156.0-156.0]           1.00x
+export_ora worker png_filter_rows calls         237.0 [237.0-237.0]           237.0 [237.0-237.0]           1.00x
+export_ora worker deflate_part calls            237.0 [237.0-237.0]           237.0 [237.0-237.0]           1.00x
+match_export_png wall                           938.0 [914.0-946.0]           962.0 [942.0-970.0]           0.98x
+match_export_png longest block                  32.0 [31.0-32.0]              36.0 [32.0-36.0]              0.89x
+match_export_png png_part jobs                  79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+match_export_png png_part composeWasm           79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+match_export_png png_part kernel                6,854.1 [6,573.9-6,920.1]     6,999.1 [6,859.2-7,078.9]     0.98x
+match_export_png png_part compose               820.7 [738.5-834.9]           813.9 [812.0-815.1]           1.01x
+match_export_png png_part rows                  820.7 [738.5-834.9]           813.9 [812.0-815.1]           1.01x
+match_export_png png_part prev                  10.4 [10.3-11.2]              10.8 [10.6-10.8]              0.96x
+match_export_png png_part filter                268.4 [255.4-277.7]           274.5 [266.4-277.1]           0.98x
+match_export_png png_part deflate               5,474.5 [5,307.9-5,512.5]     5,618.8 [5,487.4-5,685.5]     0.97x
+match_export_png png_part adler                 148.3 [143.7-159.5]           155.3 [155.0-161.4]           0.95x
+match_export_png png_part chunk                 87.1 [83.0-91.0]              89.4 [87.0-92.1]              0.97x
+match_export_png png_part copyOut               35.2 [33.1-37.0]              36.3 [34.8-36.9]              0.97x
+match_export_png worker composite_tile calls    157.0 [157.0-157.0]           157.0 [157.0-157.0]           1.00x
+match_export_png worker match_pixels calls      55.0 [55.0-55.0]              55.0 [55.0-55.0]              1.00x
+match_export_png worker png_filter_rows calls   79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+match_export_png worker deflate_part calls      79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+match_wand wall                                 1,134.0 [1,130.0-1,303.0]     1,090.0 [1,079.0-1,172.0]     1.04x
+match_wand longest block                        84.0 [84.0-87.0]              99.0 [85.0-99.0]              0.85x
+match_wand stack_into jobs                      40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+match_wand stack_into kernel                    2,610.4 [2,550.8-3,366.2]     2,004.5 [1,825.9-2,008.5]     1.30x
+match_wand worker composite_tile calls          40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+match_wand worker match_pixels calls            15.0 [15.0-15.0]              15.0 [15.0-15.0]              1.00x
+wand_whole_picture stack_into composeWasm       -                             39.0 [39.0-39.0]              
+export_psd psd_part composeWasm                 -                             237.0 [237.0-237.0]           
+export_psd psd_part compose                     -                             1,033.7 [798.8-1,044.0]       
+match_wand stack_into composeWasm               -                             39.0 [39.0-39.0]              
+
+=== 15000 x 10000 native_test.py Filter band (3 alternating rounds, median [min-max] ms) ===
+row                                             before (3359cb0f)             after (K10c)                  before / after (medians)
+build_the_file encodeMs                         1,363.0 [1,342.0-1,365.0]     1,543.0 [1,396.0-1,631.0]     0.88x
+open_the_file wall                              2,754.0 [2,565.0-2,863.0]     2,702.0 [2,541.0-2,796.0]     1.02x
+open_the_file longest block                     525.0 [476.0-536.0]           513.0 [467.0-522.0]           1.02x
+add_the_paint_layer wall                        668.0 [665.0-669.0]           688.0 [631.0-706.0]           0.97x
+add_the_paint_layer longest block               584.0 [581.0-596.0]           603.0 [560.0-626.0]           0.97x
+filter_export_png wall                          1,267.0 [1,214.0-1,347.0]     1,164.0 [1,083.0-1,301.0]     1.09x
+filter_export_png longest block                 103.0 [88.0-136.0]            88.0 [85.0-128.0]             1.17x
+filter_export_png png_part jobs                 78.0 [78.0-78.0]              78.0 [78.0-78.0]              1.00x
+filter_export_png png_part composeWasm          0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+filter_export_png png_part kernel               6,505.9 [6,015.4-7,023.0]     6,118.3 [6,116.9-7,451.0]     1.06x
+filter_export_png png_part compose              0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+filter_export_png png_part rows                 0.1 [0.0-0.3]                 0.5 [0.4-0.8]                 0.20x
+filter_export_png png_part prev                 0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+filter_export_png png_part filter               283.9 [258.3-297.0]           287.6 [260.6-307.4]           0.99x
+filter_export_png png_part deflate              5,862.1 [5,415.1-6,338.1]     5,507.0 [5,465.0-6,745.8]     1.06x
+filter_export_png png_part adler                161.9 [149.0-165.0]           164.0 [152.8-179.8]           0.99x
+filter_export_png png_part chunk                94.8 [86.2-106.4]             90.4 [89.4-102.1]             1.05x
+filter_export_png png_part copyIn               53.6 [49.7-56.1]              57.4 [53.7-57.7]              0.93x
+filter_export_png png_part copyOut              50.3 [49.1-56.7]              51.8 [49.1-53.5]              0.97x
+filter_export_png stack_into jobs               40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+filter_export_png stack_into kernel             1,910.5 [1,652.5-2,023.7]     1,134.2 [1,037.0-1,265.7]     1.68x
+filter_export_png worker composite_tile calls   39.0 [39.0-39.0]              39.0 [39.0-39.0]              1.00x
+filter_export_png worker png_filter_rows calls  78.0 [78.0-78.0]              78.0 [78.0-78.0]              1.00x
+filter_export_png worker deflate_part calls     78.0 [78.0-78.0]              78.0 [78.0-78.0]              1.00x
+filter_wand wall                                1,506.0 [1,469.0-1,523.0]     1,519.0 [1,492.0-1,618.0]     0.99x
+filter_wand longest block                       147.0 [142.0-156.0]           149.0 [145.0-164.0]           0.99x
+filter_wand stack_into jobs                     40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+filter_wand stack_into kernel                   1,994.6 [1,974.1-1,997.6]     1,497.3 [1,400.3-1,622.0]     1.33x
+filter_wand program total                       500.3 [486.0-512.8]           484.8 [467.4-521.7]           1.03x
+filter_wand worker composite_tile calls         39.0 [39.0-39.0]              39.0 [39.0-39.0]              1.00x
+filter_export_png stack_into composeWasm        -                             39.0 [39.0-39.0]              
+filter_wand stack_into composeWasm              -                             39.0 [39.0-39.0]              
+
+=== 15000 x 10000 export_test.py --perf default (3 alternating rounds, median [min-max] ms) ===
+row                                                before (3359cb0f)             after (K10c)                  before / after (medians)
+exportperf composite_bands wall                    1,189.0 [1,023.0-1,217.0]     1,014.0 [994.0-1,015.0]       1.17x
+exportperf composite_bands longest block           97.0 [84.0-160.0]             100.0 [78.0-103.0]            0.97x
+exportperf composite_bands png_part jobs           78.0 [78.0-78.0]              78.0 [78.0-78.0]              1.00x
+exportperf composite_bands png_part composeWasm    0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf composite_bands png_part kernel         2,744.3 [1,778.3-2,873.0]     1,987.9 [1,907.3-2,197.4]     1.38x
+exportperf composite_bands png_part compose        0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf composite_bands png_part rows           0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf composite_bands png_part prev           0.0 [0.0-0.1]                 0.0 [0.0-0.0]                 
+exportperf composite_bands png_part filter         367.6 [298.1-388.9]           320.9 [314.7-359.9]           1.15x
+exportperf composite_bands png_part deflate        2,062.3 [1,207.7-2,204.3]     1,428.2 [1,374.5-1,557.8]     1.44x
+exportperf composite_bands png_part adler          158.2 [147.9-168.9]           171.8 [151.5-195.1]           0.92x
+exportperf composite_bands png_part chunk          7.5 [7.3-8.0]                 7.3 [7.3-7.7]                 1.03x
+exportperf composite_bands png_part copyIn         61.5 [61.0-70.6]              52.4 [44.3-62.3]              1.17x
+exportperf composite_bands png_part copyOut        53.1 [52.6-56.4]              8.7 [7.0-9.7]                 6.10x
+exportperf composite_bands stack_into jobs         40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf composite_bands stack_into kernel       4,595.8 [4,004.9-4,759.8]     3,120.1 [2,913.0-3,318.8]     1.47x
+exportperf layer_from_tiles wall                   230.0 [191.0-230.0]           220.0 [218.0-221.0]           1.05x
+exportperf layer_from_tiles longest block          6.0 [6.0-6.0]                 6.0 [6.0-6.0]                 1.00x
+exportperf layer_from_tiles png_part jobs          79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+exportperf layer_from_tiles png_part composeWasm   79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+exportperf layer_from_tiles png_part kernel        1,715.2 [1,426.3-1,744.8]     1,642.9 [1,640.8-1,659.2]     1.04x
+exportperf layer_from_tiles png_part compose       0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf layer_from_tiles png_part rows          285.6 [199.2-291.5]           231.2 [214.8-241.6]           1.24x
+exportperf layer_from_tiles png_part prev          4.6 [2.2-4.6]                 3.6 [3.2-4.2]                 1.28x
+exportperf layer_from_tiles png_part filter        280.1 [238.2-290.3]           276.9 [272.2-281.5]           1.01x
+exportperf layer_from_tiles png_part deflate       973.7 [840.2-987.3]           975.6 [951.9-984.9]           1.00x
+exportperf layer_from_tiles png_part adler         163.0 [140.0-165.6]           159.9 [159.1-160.8]           1.02x
+exportperf layer_from_tiles png_part chunk         0.2 [0.2-0.7]                 0.1 [0.0-0.2]                 2.00x
+exportperf layer_from_tiles png_part copyOut       0.2 [0.1-0.7]                 0.3 [0.2-0.6]                 0.67x
+exportperf psd wall                                1,981.0 [1,782.0-2,012.0]     1,506.0 [1,495.0-1,532.0]     1.32x
+exportperf psd longest block                       189.0 [106.0-199.0]           156.0 [149.0-164.0]           1.21x
+exportperf psd psd_part jobs                       394.0 [394.0-394.0]           394.0 [394.0-394.0]           1.00x
+exportperf psd psd_part kernel                     6,283.1 [5,667.5-6,304.0]     3,807.7 [3,791.3-3,926.6]     1.65x
+exportperf psd psd_part rows                       2,941.4 [2,738.7-3,130.4]     1,320.2 [1,309.0-1,388.0]     2.23x
+exportperf psd psd_part pack                       3,162.8 [2,919.3-3,330.8]     2,487.6 [2,392.4-2,598.3]     1.27x
+exportperf psd stack_into jobs                     40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf psd stack_into kernel                   4,526.0 [4,317.5-4,823.8]     2,973.6 [2,881.3-3,197.1]     1.52x
+exportperf psd_masked wall                         2,283.0 [2,053.0-2,318.0]     1,681.0 [1,656.0-1,709.0]     1.36x
+exportperf psd_masked longest block                118.0 [102.0-139.0]           109.0 [99.0-113.0]            1.08x
+exportperf psd_masked psd_part jobs                473.0 [473.0-473.0]           473.0 [473.0-473.0]           1.00x
+exportperf psd_masked psd_part kernel              7,438.8 [6,685.4-7,626.8]     4,099.3 [3,940.0-4,420.1]     1.81x
+exportperf psd_masked psd_part rows                3,820.4 [3,403.8-3,895.0]     1,551.0 [1,528.6-1,672.3]     2.46x
+exportperf psd_masked psd_part pack                3,530.2 [3,272.5-3,796.6]     2,560.0 [2,379.2-2,737.3]     1.38x
+exportperf psd_masked stack_into jobs              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf psd_masked stack_into kernel            4,918.5 [4,205.5-4,937.1]     3,279.7 [3,174.4-3,341.4]     1.50x
+exportperf composite_bands stack_into composeWasm  -                             40.0 [40.0-40.0]              
+exportperf psd psd_part composeWasm                -                             316.0 [316.0-316.0]           
+exportperf psd psd_part compose                    -                             0.0 [0.0-0.0]                 
+exportperf psd stack_into composeWasm              -                             40.0 [40.0-40.0]              
+exportperf psd_masked psd_part composeWasm         -                             395.0 [395.0-395.0]           
+exportperf psd_masked psd_part compose             -                             0.0 [0.0-0.0]                 
+exportperf psd_masked stack_into composeWasm       -                             40.0 [40.0-40.0]              
+
+=== 15000 x 10000 export_test.py --perf --blend=dissolve (3 alternating rounds, median [min-max] ms) ===
+row                                                         dissolveRows=js               dissolveRows=rust             before / after (medians)
+exportperf_dissolve composite_bands wall                    1,874.0 [1,851.0-2,009.0]     1,403.0 [1,353.0-1,532.0]     1.34x
+exportperf_dissolve composite_bands longest block           88.0 [84.0-96.0]              107.0 [101.0-272.0]           0.82x
+exportperf_dissolve composite_bands png_part jobs           78.0 [78.0-78.0]              78.0 [78.0-78.0]              1.00x
+exportperf_dissolve composite_bands png_part composeWasm    0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_dissolve composite_bands png_part kernel         6,254.2 [6,023.9-7,179.2]     6,181.4 [5,864.1-6,299.9]     1.01x
+exportperf_dissolve composite_bands png_part compose        0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_dissolve composite_bands png_part rows           0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_dissolve composite_bands png_part prev           0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_dissolve composite_bands png_part filter         352.8 [311.3-414.6]           331.1 [301.7-461.4]           1.07x
+exportperf_dissolve composite_bands png_part deflate        5,504.1 [5,317.1-6,507.9]     5,454.5 [5,214.1-5,487.5]     1.01x
+exportperf_dissolve composite_bands png_part adler          188.7 [178.5-189.8]           184.4 [174.7-203.6]           1.02x
+exportperf_dissolve composite_bands png_part chunk          65.8 [65.5-69.0]              67.1 [66.9-68.2]              0.98x
+exportperf_dissolve composite_bands png_part copyIn         50.4 [49.2-62.3]              67.4 [63.5-68.5]              0.75x
+exportperf_dissolve composite_bands png_part copyOut        37.7 [35.6-39.9]              39.0 [35.8-39.6]              0.97x
+exportperf_dissolve composite_bands stack_into jobs         40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_dissolve composite_bands stack_into composeWasm  40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_dissolve composite_bands stack_into kernel       7,272.7 [7,150.9-7,355.7]     3,200.5 [3,105.3-3,795.2]     2.27x
+exportperf_dissolve layer_from_tiles wall                   250.0 [234.0-255.0]           252.0 [233.0-254.0]           0.99x
+exportperf_dissolve layer_from_tiles longest block          6.0 [6.0-6.0]                 6.0 [6.0-6.0]                 1.00x
+exportperf_dissolve layer_from_tiles png_part jobs          79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+exportperf_dissolve layer_from_tiles png_part composeWasm   79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+exportperf_dissolve layer_from_tiles png_part kernel        1,892.2 [1,752.7-1,914.8]     1,899.3 [1,740.0-1,928.8]     1.00x
+exportperf_dissolve layer_from_tiles png_part compose       0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_dissolve layer_from_tiles png_part rows          304.6 [292.7-356.9]           309.7 [263.4-330.5]           0.98x
+exportperf_dissolve layer_from_tiles png_part prev          6.4 [4.9-7.0]                 5.8 [4.5-6.6]                 1.10x
+exportperf_dissolve layer_from_tiles png_part filter        310.1 [304.3-312.6]           325.9 [302.0-327.2]           0.95x
+exportperf_dissolve layer_from_tiles png_part deflate       1,034.7 [969.4-1,111.2]       1,067.5 [991.1-1,074.3]       0.97x
+exportperf_dissolve layer_from_tiles png_part adler         174.3 [162.3-184.2]           178.4 [172.0-182.5]           0.98x
+exportperf_dissolve layer_from_tiles png_part chunk         0.5 [0.4-0.5]                 0.7 [0.4-0.7]                 0.71x
+exportperf_dissolve layer_from_tiles png_part copyOut       0.9 [0.8-0.9]                 0.7 [0.4-0.8]                 1.29x
+exportperf_dissolve psd wall                                2,257.0 [1,977.0-2,344.0]     1,829.0 [1,599.0-1,854.0]     1.23x
+exportperf_dissolve psd longest block                       164.0 [125.0-219.0]           166.0 [159.0-230.0]           0.99x
+exportperf_dissolve psd psd_part jobs                       394.0 [394.0-394.0]           394.0 [394.0-394.0]           1.00x
+exportperf_dissolve psd psd_part composeWasm                316.0 [316.0-316.0]           316.0 [316.0-316.0]           1.00x
+exportperf_dissolve psd psd_part kernel                     6,281.6 [5,546.6-6,595.6]     6,376.4 [5,698.7-6,783.0]     0.99x
+exportperf_dissolve psd psd_part compose                    0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_dissolve psd psd_part rows                       1,712.1 [1,446.6-1,717.0]     1,597.0 [1,261.1-1,797.1]     1.07x
+exportperf_dissolve psd psd_part pack                       4,558.0 [4,089.4-4,867.9]     4,769.5 [4,428.2-4,974.1]     0.96x
+exportperf_dissolve psd stack_into jobs                     40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_dissolve psd stack_into composeWasm              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_dissolve psd stack_into kernel                   7,348.7 [7,043.5-8,004.2]     3,859.8 [3,633.8-4,058.2]     1.90x
+exportperf_dissolve psd_masked wall                         2,711.0 [2,423.0-2,792.0]     2,286.0 [1,949.0-2,392.0]     1.19x
+exportperf_dissolve psd_masked longest block                449.0 [211.0-465.0]           472.0 [210.0-501.0]           0.95x
+exportperf_dissolve psd_masked psd_part jobs                473.0 [473.0-473.0]           473.0 [473.0-473.0]           1.00x
+exportperf_dissolve psd_masked psd_part composeWasm         395.0 [395.0-395.0]           395.0 [395.0-395.0]           1.00x
+exportperf_dissolve psd_masked psd_part kernel              6,464.7 [6,046.3-6,557.9]     6,285.1 [5,900.2-6,385.6]     1.03x
+exportperf_dissolve psd_masked psd_part compose             0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_dissolve psd_masked psd_part rows                1,858.6 [1,721.6-2,043.4]     1,793.3 [1,616.4-1,847.2]     1.04x
+exportperf_dissolve psd_masked psd_part pack                4,503.5 [4,315.9-4,594.9]     4,481.9 [4,272.5-4,527.3]     1.00x
+exportperf_dissolve psd_masked stack_into jobs              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_dissolve psd_masked stack_into composeWasm       40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_dissolve psd_masked stack_into kernel            7,774.3 [7,357.9-8,396.2]     3,839.7 [3,508.5-3,968.0]     2.02x
+
+=== 15000 x 10000 export_test.py --perf --clipped (3 alternating rounds, median [min-max] ms) ===
+row                                                        clipCoverage=js               clipCoverage=rust             before / after (medians)
+exportperf_clipped composite_bands wall                    1,224.0 [1,182.0-1,401.0]     1,096.0 [1,083.0-1,245.0]     1.12x
+exportperf_clipped composite_bands longest block           110.0 [100.0-280.0]           99.0 [95.0-144.0]             1.11x
+exportperf_clipped composite_bands png_part jobs           78.0 [78.0-78.0]              78.0 [78.0-78.0]              1.00x
+exportperf_clipped composite_bands png_part composeWasm    0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_clipped composite_bands png_part kernel         2,665.7 [2,361.2-3,703.4]     2,775.4 [2,531.3-2,776.0]     0.96x
+exportperf_clipped composite_bands png_part compose        0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_clipped composite_bands png_part rows           0.0 [0.0-0.2]                 0.0 [0.0-0.0]                 
+exportperf_clipped composite_bands png_part prev           0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_clipped composite_bands png_part filter         356.2 [333.7-419.1]           358.9 [348.6-459.6]           0.99x
+exportperf_clipped composite_bands png_part deflate        2,085.5 [1,697.6-3,074.0]     2,146.7 [1,814.8-2,165.1]     0.97x
+exportperf_clipped composite_bands png_part adler          165.2 [162.8-192.7]           164.9 [162.7-170.5]           1.00x
+exportperf_clipped composite_bands png_part chunk          8.4 [8.4-8.9]                 8.8 [8.8-9.9]                 0.95x
+exportperf_clipped composite_bands png_part copyIn         56.7 [55.1-59.7]              73.1 [61.5-78.5]              0.78x
+exportperf_clipped composite_bands png_part copyOut        9.9 [9.1-10.2]                10.6 [10.2-11.9]              0.93x
+exportperf_clipped composite_bands stack_into jobs         40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_clipped composite_bands stack_into composeWasm  40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_clipped composite_bands stack_into kernel       4,711.3 [4,666.8-5,273.5]     4,159.7 [4,127.1-4,874.9]     1.13x
+exportperf_clipped layer_from_tiles wall                   212.0 [211.0-216.0]           213.0 [210.0-217.0]           1.00x
+exportperf_clipped layer_from_tiles longest block          6.0 [6.0-6.0]                 6.0 [6.0-6.0]                 1.00x
+exportperf_clipped layer_from_tiles png_part jobs          79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+exportperf_clipped layer_from_tiles png_part composeWasm   79.0 [79.0-79.0]              79.0 [79.0-79.0]              1.00x
+exportperf_clipped layer_from_tiles png_part kernel        1,562.4 [1,549.7-1,624.4]     1,612.1 [1,585.4-1,612.2]     0.97x
+exportperf_clipped layer_from_tiles png_part compose       0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_clipped layer_from_tiles png_part rows          241.9 [206.2-264.7]           276.2 [268.5-282.0]           0.88x
+exportperf_clipped layer_from_tiles png_part prev          4.4 [3.4-4.5]                 5.9 [4.2-6.1]                 0.75x
+exportperf_clipped layer_from_tiles png_part filter        277.0 [275.4-277.3]           269.3 [264.0-281.8]           1.03x
+exportperf_clipped layer_from_tiles png_part deflate       906.3 [879.5-908.2]           897.2 [870.6-897.7]           1.01x
+exportperf_clipped layer_from_tiles png_part adler         152.8 [150.6-161.4]           154.8 [152.1-155.2]           0.99x
+exportperf_clipped layer_from_tiles png_part chunk         0.1 [0.1-0.5]                 0.3 [0.2-0.6]                 0.33x
+exportperf_clipped layer_from_tiles png_part copyOut       0.4 [0.3-0.8]                 0.7 [0.4-0.9]                 0.57x
+exportperf_clipped psd wall                                2,403.0 [1,977.0-3,092.0]     2,147.0 [2,118.0-2,832.0]     1.12x
+exportperf_clipped psd longest block                       196.0 [120.0-206.0]           185.0 [167.0-188.0]           1.06x
+exportperf_clipped psd png_part jobs                       178.0 [79.0-277.0] (n=2)      157.0 [79.0-235.0] (n=2)      1.13x
+exportperf_clipped psd png_part composeWasm                178.0 [79.0-277.0] (n=2)      157.0 [79.0-235.0] (n=2)      1.13x
+exportperf_clipped psd png_part kernel                     4,534.6 [1,789.0-7,280.3] (n=2)3,824.9 [2,055.2-5,594.6] (n=2)1.19x
+exportperf_clipped psd png_part compose                    0.0 [0.0-0.0] (n=2)           0.0 [0.0-0.0] (n=2)           
+exportperf_clipped psd png_part rows                       834.8 [298.0-1,371.6] (n=2)   797.9 [476.3-1,119.5] (n=2)   1.05x
+exportperf_clipped psd png_part prev                       11.9 [2.7-21.1] (n=2)         11.8 [7.5-16.2] (n=2)         1.00x
+exportperf_clipped psd png_part filter                     722.3 [311.5-1,133.1] (n=2)   614.0 [336.3-891.6] (n=2)     1.18x
+exportperf_clipped psd png_part deflate                    2,528.4 [998.3-4,058.5] (n=2) 2,048.6 [1,047.6-3,049.6] (n=2)1.23x
+exportperf_clipped psd png_part adler                      418.0 [171.1-664.9] (n=2)     334.4 [178.8-490.0] (n=2)     1.25x
+exportperf_clipped psd png_part chunk                      5.6 [0.6-10.7] (n=2)          4.8 [1.0-8.7] (n=2)           1.16x
+exportperf_clipped psd png_part copyOut                    6.8 [1.6-12.0] (n=2)          7.6 [3.6-11.7] (n=2)          0.89x
+exportperf_clipped psd psd_part jobs                       552.0 [552.0-552.0]           552.0 [552.0-552.0]           1.00x
+exportperf_clipped psd psd_part composeWasm                474.0 [474.0-474.0]           474.0 [474.0-474.0]           1.00x
+exportperf_clipped psd psd_part kernel                     6,319.6 [5,945.4-6,429.9]     6,286.3 [5,847.3-6,348.5]     1.01x
+exportperf_clipped psd psd_part compose                    0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_clipped psd psd_part rows                       2,387.3 [2,362.7-2,399.7]     2,373.4 [2,218.1-2,439.2]     1.01x
+exportperf_clipped psd psd_part pack                       3,944.4 [3,530.6-4,028.1]     3,894.8 [3,616.8-3,896.1]     1.01x
+exportperf_clipped psd stack_into jobs                     40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_clipped psd stack_into composeWasm              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_clipped psd stack_into kernel                   4,709.4 [4,627.4-5,049.7]     4,275.3 [4,076.4-5,026.2]     1.10x
+exportperf_clipped psd_masked wall                         2,353.0 [2,141.0-3,285.0]     2,584.0 [2,356.0-2,811.0]     0.91x
+exportperf_clipped psd_masked longest block                139.0 [126.0-165.0]           134.0 [117.0-217.0]           1.04x
+exportperf_clipped psd_masked png_part jobs                256.5 [118.0-395.0] (n=2)     238.0 [160.0-316.0] (n=2)     1.08x
+exportperf_clipped psd_masked png_part composeWasm         256.5 [118.0-395.0] (n=2)     238.0 [160.0-316.0] (n=2)     1.08x
+exportperf_clipped psd_masked png_part kernel              6,248.1 [2,721.6-9,774.6] (n=2)5,446.4 [3,618.9-7,273.8] (n=2)1.15x
+exportperf_clipped psd_masked png_part compose             0.0 [0.0-0.0] (n=2)           0.0 [0.0-0.0] (n=2)           
+exportperf_clipped psd_masked png_part rows                965.9 [500.0-1,431.7] (n=2)   981.9 [638.8-1,325.0] (n=2)   0.98x
+exportperf_clipped psd_masked png_part prev                13.2 [6.9-19.5] (n=2)         12.1 [7.6-16.7] (n=2)         1.09x
+exportperf_clipped psd_masked png_part filter              929.6 [414.8-1,444.5] (n=2)   846.0 [576.0-1,116.1] (n=2)   1.10x
+exportperf_clipped psd_masked png_part deflate             3,748.4 [1,539.5-5,957.4] (n=2)3,089.2 [2,062.3-4,116.2] (n=2)1.21x
+exportperf_clipped psd_masked png_part adler               555.1 [244.6-865.7] (n=2)     493.6 [319.9-667.4] (n=2)     1.12x
+exportperf_clipped psd_masked png_part chunk               12.3 [2.7-22.0] (n=2)         7.4 [3.2-11.7] (n=2)          1.66x
+exportperf_clipped psd_masked png_part copyOut             16.8 [7.6-25.9] (n=2)         8.1 [3.3-12.8] (n=2)          2.08x
+exportperf_clipped psd_masked psd_part jobs                631.0 [631.0-631.0]           631.0 [631.0-631.0]           1.00x
+exportperf_clipped psd_masked psd_part composeWasm         553.0 [553.0-553.0]           553.0 [553.0-553.0]           1.00x
+exportperf_clipped psd_masked psd_part kernel              6,279.3 [6,241.8-6,433.8]     6,447.7 [6,277.5-6,525.6]     0.97x
+exportperf_clipped psd_masked psd_part compose             0.0 [0.0-0.0]                 0.0 [0.0-0.0]                 
+exportperf_clipped psd_masked psd_part rows                2,270.6 [2,203.4-2,437.2]     2,413.1 [2,371.2-2,456.7]     0.94x
+exportperf_clipped psd_masked psd_part pack                3,957.8 [3,829.4-4,216.3]     4,021.0 [3,894.5-4,056.0]     0.98x
+exportperf_clipped psd_masked stack_into jobs              40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_clipped psd_masked stack_into composeWasm       40.0 [40.0-40.0]              40.0 [40.0-40.0]              1.00x
+exportperf_clipped psd_masked stack_into kernel            5,082.8 [4,971.6-5,096.7]     4,557.1 [4,404.8-4,559.3]     1.12x
+
+=== px_probe.py --retention 15000x10000 ===
+op=export_png routes={"releaseMB": 256, "keepMB": 16, "crc32": 64} ms=395.7 MB=11.94 workersMaxAfterMB=42.25 workersMaxLaterMB=1.06 totalAfterMB=297.19 totalLaterMB=11.69 releases=0 idles=8 focused=True
+
+=== retention_psd_wand.py 15000x10000 (export_psd & wand_whole_picture) ===
+op=export_psd routes={"releaseMB": 256, "keepMB": 16, "crc32": 64, "psdPartWasm": "js"} ms=882.0 MB=207.55 workersMaxAfterMB=23.00 workersMaxLaterMB=1.06 totalAfterMB=183.69 totalLaterMB=11.69 releases=0 idles=8 focused=True
+op=export_psd routes={"releaseMB": 256, "keepMB": 16, "crc32": 64, "psdPartWasm": "rust"} ms=673.9 MB=207.55 workersMaxAfterMB=23.00 workersMaxLaterMB=1.06 totalAfterMB=183.69 totalLaterMB=11.69 releases=0 idles=8 focused=True
+op=wand_whole_picture routes={"releaseMB": 256, "keepMB": 16, "crc32": 64, "stackIntoWasm": "js"} ms=1876.9 MB=0.00 workersMaxAfterMB=31.50 workersMaxLaterMB=2.12 totalAfterMB=241.62 totalLaterMB=12.75 releases=1 idles=8 focused=True
+op=wand_whole_picture routes={"releaseMB": 256, "keepMB": 16, "crc32": 64, "stackIntoWasm": "rust"} ms=1409.7 MB=0.00 workersMaxAfterMB=31.50 workersMaxLaterMB=1.06 totalAfterMB=241.62 totalLaterMB=11.69 releases=1 idles=9 focused=True

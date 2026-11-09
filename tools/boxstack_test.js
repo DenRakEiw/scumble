@@ -133,6 +133,141 @@ function whole(s, sx, sy, W, H, alphaOnly) {
     const big = B.compositeBox(stacks["base only"], 0, 0, W, H);
     const bigRef = reference(stacks["base only"]);
     check("a box larger than the kept buffers is right", big.length === bigRef.length && big.every((v, i) => v === bigRef[i]));
+
+    // K10c (docs/PLAN_WASM_K10.md §9.1 item 4): clipped layers (l.clip with transparent holes, c.mask, c.alpha, l.mask)
+    // and dissolve layers (l.dissolve with partial alpha and cVal === 255 at hash32>>>24 === 255), compared against
+    // worker rowsOfStack and against frozen, hand-computed expected byte arrays.
+    const Wk = await import(pathToFileURL(path.join(ROOT, "renderer/editor/inpaint_worker.js")).href);
+    const { hash32 } = await import(pathToFileURL(path.join(ROOT, "renderer/editor/blend_modes.js")).href);
+    const toWorkerTiles = (px) => {
+        const tiles = {};
+        for (let ty = 0; ty * T < px.height; ty++) {
+            const row = [];
+            for (let tx = 0; tx * T < px.width; tx++) {
+                const t = px.tileAt(tx, ty);
+                row.push(t ? { data: t.data.buffer } : null);
+            }
+            tiles[ty] = row;
+        }
+        return tiles;
+    };
+    const toWorkerLayer = (l) => ({
+        x: l.x | 0, y: l.y | 0, w: l.px.width, h: l.px.height,
+        alpha: l.alpha, op: l.op | 0,
+        match: l.match || null,
+        dissolve: l.dissolve !== undefined ? l.dissolve : null,
+        tiles: toWorkerTiles(l.px),
+        mask: l.mask ? toWorkerTiles(l.mask) : null,
+        clip: l.clip ? {
+            x: l.clip.x | 0, y: l.clip.y | 0, w: l.clip.px.width, h: l.clip.px.height,
+            alpha: l.clip.alpha,
+            tiles: toWorkerTiles(l.clip.px),
+            mask: l.clip.mask ? toWorkerTiles(l.clip.mask) : null,
+        } : null,
+    });
+    const toWorkerStack = (stack) => {
+        const [b, ...ls] = stack;
+        return {
+            base: b ? { x: b.x | 0, y: b.y | 0, w: b.px.width, h: b.px.height, tiles: toWorkerTiles(b.px) } : null,
+            layers: ls.filter((l) => l && l.alpha > 0).map(toWorkerLayer),
+        };
+    };
+
+    // (a) Clipped layer over a 4x2 box at (10, 20) + multi-box parity against rowsOfStack
+    {
+        const covVals = [0, 255, 200, 100, 255, 180, 90, 50];
+        const bmVals = [255, 200, 150, 255, 100, 255, 200, 0];
+        const ownVals = [255, 255, 200, 128, 200, 150, 255, 255];
+        const flatBase = store(256, 256, () => true, () => [40, 80, 120, 255]);
+        const clipBasePx = store(256, 256, () => true, (x, y) => {
+            if (x >= 10 && x < 14 && y >= 20 && y < 22) return [10, 20, 30, covVals[(y - 20) * 4 + (x - 10)]];
+            return [10, 20, 30, ((x + y) % 4 === 0) ? 0 : ((x * 7 + y * 13) & 255)];
+        });
+        const clipBaseMask = store(256, 256, () => true, (x, y) => {
+            if (x >= 10 && x < 14 && y >= 20 && y < 22) return [0, 0, 0, bmVals[(y - 20) * 4 + (x - 10)]];
+            return [0, 0, 0, (x * 11 + y * 5) & 255];
+        });
+        const clippedLayerPx = store(256, 256, () => true, () => [200, 100, 40, 255]);
+        const clippedLayerMask = store(256, 256, () => true, (x, y) => {
+            if (x >= 10 && x < 14 && y >= 20 && y < 22) return [0, 0, 0, ownVals[(y - 20) * 4 + (x - 10)]];
+            return [0, 0, 0, (x * 3 + y * 17 + 40) & 255];
+        });
+        const clipEntry = { px: clipBasePx, mask: clipBaseMask, x: 0, y: 0, alpha: 180, op: 0 };
+        const clipStack = [
+            { px: flatBase, x: 0, y: 0, alpha: 255, op: 0 },
+            { px: clippedLayerPx, mask: clippedLayerMask, clip: clipEntry, x: 0, y: 0, alpha: 220, op: 0 },
+        ];
+        const got4x2 = Array.from(B.compositeBox(clipStack, 10, 20, 4, 2, 256, 256));
+        // Hand-computed frozen expected RGBA8 bytes for the 8 pixels of (10..14, 20..22):
+        // m[i] = mul255(mul255(mul255(cov[i], bm[i]), 180), own[i]) -> [0, 141, 66, 35, 56, 75, 50, 0]
+        // sa = 220; r_c = mul255(mul255(src_c, 220) + mul255(base_c, 35), m[i]) + mul255(base_c, 255 - m[i])
+        const frozenClip4x2 = [
+            40, 80, 120, 255,
+            116, 90, 82, 255,
+            75, 85, 102, 255,
+            59, 83, 110, 255,
+            70, 83, 105, 255,
+            80, 85, 100, 255,
+            67, 83, 106, 255,
+            40, 80, 120, 255,
+        ];
+        const wStack = toWorkerStack(clipStack);
+        const worker4x2 = Array.from(Wk.rowsOfStack({ x0: 10, y0: 20, y: 20, w: 4, rows: 2, stack: wStack }, false, null));
+        const multiBoxGot = B.compositeBox(clipStack, 0, 0, 180, 140, 256, 256);
+        const multiBoxWorker = Wk.rowsOfStack({ x0: 0, y0: 0, y: 0, w: 180, rows: 140, stack: wStack }, false, null);
+        check("compositeBox clipped layer matches frozen hand-computed 4x2 bytes and rowsOfStack",
+            JSON.stringify(got4x2) === JSON.stringify(frozenClip4x2)
+            && JSON.stringify(got4x2) === JSON.stringify(worker4x2)
+            && multiBoxGot.every((v, i) => v === multiBoxWorker[i]),
+            `got=${JSON.stringify(got4x2)} want=${JSON.stringify(frozenClip4x2)}`);
+    }
+
+    // (b) Dissolve layer over a 4x2 box at (10, 20) + cVal === 255 where (hash32 >>> 24) === 255 + parity against rowsOfStack
+    {
+        const seed = 0x13579BDF;
+        // At (x=12, y=20, seed=0x13579BDF), top byte is 221 (boundary tie: cVal=221 is dropped by `< cVal`, kept by `<= cVal`).
+        // At (x=237, y=20, seed=0x13579BDF), top byte is 255 (cVal=255 is kept by `cVal === 255` short-circuit).
+        const tieTop = hash32(12, 20, seed) >>> 24;
+        const xHash255 = 237;
+        const disAlphas4x2 = [0, 255, 221, 80, 180, 40, 250, 120];
+        const flatBase = store(512, 256, () => true, () => [30, 60, 90, 255]);
+        const disPx = store(512, 256, () => true, (x, y) => {
+            if (x === xHash255 && y === 20) return [210, 140, 70, 255];
+            if (x >= 10 && x < 14 && y >= 20 && y < 22) return [220, 110, 55, disAlphas4x2[(y - 20) * 4 + (x - 10)]];
+            return [(x * 17) & 255, (y * 23) & 255, ((x + y) * 11) & 255, (x + y) % 6 === 0 ? 0 : ((x * 9 + y * 7) & 255)];
+        });
+        const disStack = [
+            { px: flatBase, x: 0, y: 0, alpha: 255, op: 0 },
+            { px: disPx, x: 0, y: 0, alpha: 255, op: 0, dissolve: seed },
+        ];
+        const got4x2 = Array.from(B.compositeBox(disStack, 10, 20, 4, 2, 512, 256));
+        const gotHash255 = Array.from(B.compositeBox(disStack, xHash255, 20, 1, 1, 512, 256));
+        const frozenDis4x2 = [
+            30, 60, 90, 255,
+            220, 110, 55, 255,
+            30, 60, 90, 255,
+            30, 60, 90, 255,
+            220, 110, 55, 255,
+            30, 60, 90, 255,
+            220, 110, 55, 255,
+            30, 60, 90, 255,
+        ];
+        const frozenHash255 = [210, 140, 70, 255];
+        const wStack = toWorkerStack(disStack);
+        const worker4x2 = Array.from(Wk.rowsOfStack({ x0: 10, y0: 20, y: 20, w: 4, rows: 2, stack: wStack }, false, null));
+        const workerHash255 = Array.from(Wk.rowsOfStack({ x0: xHash255, y0: 20, y: 20, w: 1, rows: 1, stack: wStack }, false, null));
+        const multiBoxGot = B.compositeBox(disStack, 0, 0, 400, 120, 512, 256);
+        const multiBoxWorker = Wk.rowsOfStack({ x0: 0, y0: 0, y: 0, w: 400, rows: 120, stack: wStack }, false, null);
+        check("compositeBox dissolve layer matches frozen hand-computed 4x2 bytes, cVal=255 at hash32>>>24===255, and rowsOfStack",
+            tieTop === 221 && (hash32(xHash255, 20, seed) >>> 24) === 255
+            && JSON.stringify(got4x2) === JSON.stringify(frozenDis4x2)
+            && JSON.stringify(gotHash255) === JSON.stringify(frozenHash255)
+            && JSON.stringify(got4x2) === JSON.stringify(worker4x2)
+            && JSON.stringify(gotHash255) === JSON.stringify(workerHash255)
+            && multiBoxGot.every((v, i) => v === multiBoxWorker[i]),
+            `tieTop=${tieTop} xHash255=${xHash255} got4x2=${JSON.stringify(got4x2)} gotHash255=${JSON.stringify(gotHash255)}`);
+    }
+
     B.releaseBoxBuffers();
     console.log(failures ? `${failures} FAILED` : "PASS");
     process.exit(failures ? 1 : 0);

@@ -527,11 +527,40 @@ export function stackRowsToWasm(p, a, msg, above = false, into = null) {
  */
 export async function stackInto(msg) {
     const t0 = now();
+    const byteLen = msg.w * msg.rows * 4;
     const at = ((msg.y | 0) - (msg.y0 | 0)) * msg.w * 4;
-    const into = new Uint8Array(msg.sab, at, msg.w * msg.rows * 4);
+    const into = new Uint8Array(msg.sab, at, byteLen);
+    let p = rustPx();
+    if (p && msg.stack.layers.length > 0 && route("stackIntoWasm") !== "js") {
+        const a = p.job;
+        let ok = false;
+        try {
+            const pd = stackRowsToWasm(p, a, msg, false, into);
+            p.get(Uint8Array, pd, byteLen, into);
+            ok = true;
+        } catch (err) {
+            if (!recovered(p, err, "stack_into")) throw err;
+        } finally {
+            p._reset(a);
+        }
+        if (ok) {
+            return {
+                timing: {
+                    op: "stack_into", kernels: "rust", composeWasm: 1,
+                    pixels: msg.w * msg.rows, kernel: now() - t0,
+                },
+            };
+        }
+        await pxSettled();
+    }
     if (msg.clear) into.fill(0);   // a buffer that is used band after band (B item 7 part 2): cleared here, not on the main thread
     rowsOfStack(msg, false, into);
-    return { timing: { op: "stack_into", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0 } };
+    return {
+        timing: {
+            op: "stack_into", kernels: kernelsInUse(), composeWasm: 0,
+            pixels: msg.w * msg.rows, kernel: now() - t0,
+        },
+    };
 }
 
 /**
@@ -739,13 +768,50 @@ export async function pngPart(msg) {
  */
 export async function psdPart(msg) {
     const t0 = now();
+    let p = rustPx();
+    if (p && !msg.rgba && route("psdPartWasm") !== "js") {
+        const a = p.job;
+        let packed = null, t1 = 0, t2 = 0;
+        try {
+            const ptrs = partPtrOf(p, a, msg, false);
+            t1 = ptrs.tc;
+            packed = p.psdPackRowsFromPtr(a, ptrs.pr, msg.w, msg.rows);
+            t2 = now();
+        } catch (err) {
+            if (!recovered(p, err, "psd_part")) throw err;
+        } finally {
+            p._reset(a);
+            releaseIfLarge();
+        }
+        if (packed) {
+            const channels = packed.map((c) => ({ lens: c.lens.buffer, data: c.data.buffer }));
+            return {
+                channels,
+                transfer: channels.flatMap((c) => [c.lens, c.data]),
+                timing: {
+                    op: "psd_part", kernels: "rust", composeWasm: 1,
+                    pixels: msg.w * msg.rows, kernel: now() - t0,
+                    compose: msg.stack ? t1 - t0 : 0, rows: t1 - t0, pack: t2 - t1,
+                },
+            };
+        }
+        await pxSettled();
+    }
     const rgba = partRowsOf(msg);
     const t1 = now();
     const packed = psdPackRows(rgba, msg.w, msg.rows);
     const t2 = now();
     releaseIfLarge();
     const channels = packed.map((c) => ({ lens: c.lens.buffer, data: c.data.buffer }));
-    return { channels, transfer: channels.flatMap((c) => [c.lens, c.data]), timing: { op: "psd_part", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0, rows: t1 - t0, pack: t2 - t1 } };
+    return {
+        channels,
+        transfer: channels.flatMap((c) => [c.lens, c.data]),
+        timing: {
+            op: "psd_part", kernels: kernelsInUse(), composeWasm: 0,
+            pixels: msg.w * msg.rows, kernel: now() - t0,
+            compose: msg.stack ? t1 - t0 : 0, rows: t1 - t0, pack: t2 - t1,
+        },
+    };
 }
 
 /**
