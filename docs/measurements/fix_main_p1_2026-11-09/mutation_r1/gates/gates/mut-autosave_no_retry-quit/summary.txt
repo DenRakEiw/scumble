@@ -1,0 +1,2 @@
+quit rc=1 2s FAIL
+SOME FAILED

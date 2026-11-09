@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-files_store_no_safe_mirror_name-document --offline --tiles on document  (rc 1, 13 s)
+document rc=1 8s FAIL
+SOME FAILED

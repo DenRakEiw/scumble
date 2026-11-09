@@ -101,10 +101,12 @@ The merges: `canvas-a/F2` = `canvas-b/geometry-ops-no-recheck-after-upload`; `do
 - **`documents/D3+main/MAIN-7`** (data-loss), `electron/main/autosave.js:31`, `settings.js:78`, `keys.js:22`. No
   fsync before the rename, and any read or parse error counts as an empty store. A crash, or one failed read, can
   wipe the autosave, all settings or all API keys at the next write. Fix: fsync the temp; only ENOENT means empty;
-  rename a damaged file aside instead of writing over it.
+  rename a damaged file aside instead of writing over it. **Fixed 2026-11-09 (fix-main pack 1, with `documents/D8`;
+  `documents/D4` no longer held: `storeMirrorFile` writes through `writeAtomic` since D1).**
 - **`main/MAIN-3`** (data-loss), `electron/main/main.js:370`. The close handler writes the window bounds before it
   stops the close. If that rename fails (another program holds `settings.json`), the window closes without the
   save. Fix: try/catch, or move the write after the quit guard; a short busy retry in the three store writers.
+  **Fixed 2026-11-09 (fix-main pack 1).**
 - **`main/MAIN-1`** (data-loss), `electron/main/mcp/launch.js:81`. When the MCP client closes stdin, the launcher
   kills the headless app 5 s later, in the middle of its save. Fix: spawn the app detached and drop or lengthen the
   kill; the same in `mcpb/server/index.js`.

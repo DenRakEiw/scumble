@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-keys_no_read_cooldown-quit --offline --tiles on quit  (rc 1, 18 s)
+quit rc=1 9s FAIL
+SOME FAILED
