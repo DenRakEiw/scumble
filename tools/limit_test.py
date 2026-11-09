@@ -856,9 +856,145 @@ JS = r"""
         check("R2-S5 g. G.scratchUnit > 8", G.scratchUnit > 8, { scratchUnit: G.scratchUnit });
     }
 
+    // f. K25: Exported fill layer alpha vs screen limitStage on snapped fixture
+    const K = await import("./editor/px/kernels.js");
+    const { limitStage, limitStageCPU } = await import("./editor/inpaint_limit.js");
+    edSnap.setMapMeta("depth", { snap: { strength: 50 } }, { preview: false });
+    await settle(edSnap);
+
+    const limSnapFill = { source: "depth", lo: 0, hi: 0.5, fLo: 0, fHi: 0.05, invert: false };
+    const fillSnap = edSnap.addFilterLayer("fill");
+    fillSnap.params = { color: "#00ff00", limit: limSnapFill };
+    edSnap.markFilterChanged(fillSnap);
+    await settle(edSnap);
+
+    K.pxCalls(true);
+    const expCanvas50 = edSnap.fillLayerCanvas(fillSnap, false);
+    const expCalls50 = K.pxCalls(true).limit_alpha_rows || 0;
+    const wantCalls50 = K.kernelsInUse() === "rust" ? Math.ceil(Hs / 256) : 0;
+    check("R2-S5 f1. fillLayerCanvas calls limit_alpha_rows on rust (0 on js)", expCalls50 === wantCalls50, { expCalls50, wantCalls50, mode: K.kernelsInUse() });
+
+    // Route parity: rust vs js on fillLayerRows (reading 256-row bands from source.part)
+    const readFillLayerRows = async (layer) => {
+        const out = new Uint8Array(Ws * Hs * 4);
+        const h = edSnap.fillLayerRows(layer, false)();
+        try {
+            for (let y = 0; y < Hs; y += 256) {
+                const n = Math.min(256, Hs - y);
+                const { args } = await h.source.part(y, n, false);
+                out.set(new Uint8Array(args.rgba), y * Ws * 4);
+            }
+        } finally {
+            h.close();
+        }
+        return out;
+    };
+    let rowsRust, rowsJs, callsRustRoute = 0, callsJsRoute = 0;
+    try {
+        K.setRoute("limitAlphaRows", "rust");
+        K.pxCalls(true);
+        rowsRust = await readFillLayerRows(fillSnap);
+        callsRustRoute = K.pxCalls(true).limit_alpha_rows || 0;
+        K.setRoute("limitAlphaRows", "js");
+        K.pxCalls(true);
+        rowsJs = await readFillLayerRows(fillSnap);
+        callsJsRoute = K.pxCalls(true).limit_alpha_rows || 0;
+    } finally {
+        K.setRoute("limitAlphaRows", null);
+    }
+    let rustJsDiff = 0;
+    for (let i = 0; i < rowsRust.length; i++) {
+        const d = Math.abs(rowsRust[i] - rowsJs[i]);
+        if (d > rustJsDiff) rustJsDiff = d;
+    }
+    const wantRouteCalls = K.kernelsInUse() === "rust" ? Math.ceil(Hs / 256) : 0;
+    check("R2-S5 f2. fillLayerRows rust and js routes match byte-for-byte",
+        rustJsDiff === 0 && callsRustRoute === wantRouteCalls && callsJsRoute === 0,
+        { rustJsDiff, callsRustRoute, callsJsRoute });
+
+    // PSD layered export alpha matches fillLayerCanvas byte-for-byte
+    const rPsdSnap = await edSnap.exportLayeredBands("psd");
+    if (rPsdSnap && rPsdSnap.blob) {
+        const psdSnapDoc = await readPsd(new Uint8Array(await rPsdSnap.blob.arrayBuffer()));
+        const psdSnapFill = psdSnapDoc.layers.find((l) => l.name === fillSnap.name || l.name.startsWith("Fill"));
+        let psdDiff = 0;
+        if (psdSnapFill && psdSnapFill.rgba) {
+            for (let i = 3; i < rowsRust.length; i += 4) {
+                const d = Math.abs(psdSnapFill.rgba[i] - rowsRust[i]);
+                if (d > psdDiff) psdDiff = d;
+            }
+        } else {
+            psdDiff = 999;
+        }
+        check("R2-S5 f3. PSD exported fill layer alpha matches fillLayerRows byte-for-byte", psdDiff === 0, { psdDiff });
+    }
+
+    // Compare exported fill layer alpha against screen limitStage (both CPU and WebGL)
+    const expData50 = expCanvas50.getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const cleanBaseSnap = mk(Ws, Hs);
+    {
+        const ctx = cleanBaseSnap.getContext("2d");
+        ctx.fillStyle = "rgb(200, 40, 40)";
+        ctx.fillRect(0, 0, 600, Hs);
+        ctx.fillStyle = "rgb(40, 60, 200)";
+        ctx.fillRect(600, 0, 600, Hs);
+    }
+    const dummyOut = mk(Ws, Hs);
+    const passSnap50 = { maps: { depth: edSnap.maps.depth }, limitView: true, width: Ws, height: Hs };
+    const cleanScreenCpu = limitStageCPU(cleanBaseSnap, dummyOut, limSnapFill, passSnap50).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const cleanScreenGl = GL.glToCanvas(limitStage(cleanBaseSnap, dummyOut, limSnapFill, passSnap50)).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const noisyScreenCpu = limitStageCPU(baseSnap, dummyOut, limSnapFill, passSnap50).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    const noisyScreenGl = GL.glToCanvas(limitStage(baseSnap, dummyOut, limSnapFill, passSnap50)).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+
+    let maxDiffCleanCpu = 0, maxDiffCleanGl = 0;
+    let maxDiffNoisyCpu = 0, maxDiffNoisyGl = 0, over2NoisyCpu = 0, over2NoisyGl = 0;
+    const totalPx = Ws * Hs;
+    for (let i = 0; i < expData50.length; i += 4) {
+        const aExp = expData50[i + 3];
+        const dCleanCpu = Math.abs(aExp - cleanScreenCpu[i]);
+        const dCleanGl = Math.abs(aExp - cleanScreenGl[i]);
+        const dNoisyCpu = Math.abs(aExp - noisyScreenCpu[i]);
+        const dNoisyGl = Math.abs(aExp - noisyScreenGl[i]);
+        if (dCleanCpu > maxDiffCleanCpu) maxDiffCleanCpu = dCleanCpu;
+        if (dCleanGl > maxDiffCleanGl) maxDiffCleanGl = dCleanGl;
+        if (dNoisyCpu > maxDiffNoisyCpu) maxDiffNoisyCpu = dNoisyCpu;
+        if (dNoisyGl > maxDiffNoisyGl) maxDiffNoisyGl = dNoisyGl;
+        if (dNoisyCpu > 2) over2NoisyCpu++;
+        if (dNoisyGl > 2) over2NoisyGl++;
+    }
+    const over2PctNoisyCpu = +((over2NoisyCpu / totalPx) * 100).toFixed(4);
+    const over2PctNoisyGl = +((over2NoisyGl / totalPx) * 100).toFixed(4);
+
+    // Also measure exported fill layer edge errors at snap 50 vs snap 0
+    edSnap.setMapMeta("depth", { snap: { strength: 0 } }, { preview: false });
+    await settle(edSnap);
+    const expData0 = edSnap.fillLayerCanvas(fillSnap, false).getContext("2d").getImageData(0, 0, Ws, Hs).data;
+    let errsExp50 = 0, errsExp0 = 0;
+    for (let y = 100; y < 700; y++) {
+        for (let x = 592; x <= 608; x++) {
+            const idx = (y * Ws + x) * 4 + 3;
+            const gt = x < 600 ? 255 : 0;
+            if (Math.abs(expData50[idx] - gt) > 64) errsExp50++;
+            if (Math.abs(expData0[idx] - gt) > 64) errsExp0++;
+        }
+    }
+    const snapExport = {
+        maxDiffCleanCpu,
+        maxDiffCleanGl,
+        maxDiffNoisyCpu,
+        maxDiffNoisyGl,
+        over2PctNoisyCpu,
+        over2PctNoisyGl,
+        errsExp50,
+        errsExp0,
+    };
+    check("R2-S5 f4. Exported fill alpha matches clean screen limitStage (CPU===0, GL<=1) and snaps edge (errs50 <= 1/3 errs0)",
+        maxDiffCleanCpu === 0 && maxDiffCleanGl <= 1 && errsExp50 <= Math.ceil(errsExp0 / 3) && over2PctNoisyGl <= 0.05,
+        snapExport);
+
     shell.closeDocument && shell.closeDocument(edSnap, { force: true });
 
-    return { fails, tiles: !!ed.tileMode };
+    return { fails, tiles: !!ed.tileMode, snapExport };
 })()
 """
 
@@ -868,6 +1004,8 @@ async def run(c):
     fails = r.get("fails", [])
     for f in fails:
         print("[FAIL]", f)
+    if r.get("snapExport"):
+        print("[info] snapExport:", json.dumps(r["snapExport"]))
     if not fails:
         print(f"[ok] limit test on {'tiles' if r.get('tiles') else 'canvas'}")
     return not fails

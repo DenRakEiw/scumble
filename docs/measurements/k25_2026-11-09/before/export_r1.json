@@ -1,0 +1,70 @@
+{
+ "size": [
+  15000,
+  10000
+ ],
+ "filter": "levels",
+ "composite_bands": {
+  "ms": 1629,
+  "blocked": 370,
+  "bands": 0,
+  "readMs": 0,
+  "MB": 11.3
+ },
+ "layer_from_tiles": {
+  "ms": 287,
+  "blocked": 9,
+  "MB": 0.6
+ },
+ "composite_canvas": {
+  "ms": 7698,
+  "blocked": 5580,
+  "MB": 36.9
+ },
+ "layer_canvas": {
+  "ms": 2415,
+  "blocked": 275,
+  "MB": 2.7
+ },
+ "psd": {
+  "ms": 2931,
+  "blocked": 366,
+  "MB": 225.7
+ },
+ "psd_masked": {
+  "ms": 3595,
+  "blocked": 477,
+  "MB": 243.2
+ },
+ "fill_limit_rows": {
+  "ms": 11178,
+  "fill": 130,
+  "limit": 11048,
+  "bands": 40,
+  "map": [
+   4096,
+   2731
+  ],
+  "snap": true
+ },
+ "psd_fill_limit": {
+  "ms": 17661,
+  "blocked": 492,
+  "MB": 221.6,
+  "fillRowsMs": 12141
+ },
+ "pool": {
+  "run": 2185,
+  "done": 2185,
+  "failed": 0,
+  "cancelled": 0,
+  "started": 8,
+  "lost": 0,
+  "stopped": 0,
+  "workers": 8,
+  "size": 8,
+  "pending": 0,
+  "off": false,
+  "arena": true
+ }
+}

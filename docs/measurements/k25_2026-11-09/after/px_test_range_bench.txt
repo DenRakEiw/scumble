@@ -1,0 +1,109 @@
+PX_ONLY: only the groups range run (a filtered run, not the full test)
+ok   map_tile_stats 2-texel halo reaches ?2 texels and thresh uses strict >  st500=1234..64321 e=1, st501 e=0
+ok   js mapTileStats equals the plain reference (92 cases)
+ok   rust simd map_tile_stats equals its twin byte for byte (92 cases, each also at an odd offset)
+ok   rust scalar map_tile_stats equals its twin byte for byte (92 cases, each also at an odd offset)
+ok   js map_tile_stats gives the same at an odd offset
+ok   mapTileStats refuses null map on twin and both builds  3/3 threw
+ok   mapTileStats refuses short map on twin and both builds  3/3 threw
+ok   mapTileStats refuses short rmax on twin and both builds  3/3 threw
+ok   mapTileStats refuses zero mw on twin and both builds  3/3 threw
+ok   mapTileStats refuses zero W on twin and both builds  3/3 threw
+ok   mapTileStats refuses zero tile on twin and both builds  3/3 threw
+ok   mapTileStats refuses NaN xf on twin and both builds  3/3 threw
+ok   raw map_tile_stats returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  got 0
+ok   kernels.js mapTileStats route switches between twin (0 calls) and rust (rows calls) with identical output  jsCalls=0, rustCalls=2
+ok   rangeTileClass hard boundaries at lo and hi
+ok   rangeTileClass invert (r.invert xor jobInvert)
+ok   rangeTileClass soft feather boundaries
+ok   rangeTileClass full/empty tiles match per-pixel bilinear and snapField weights across all tiles
+ok   rangeRowBookkeeping matches exact in-image pixel alphaSum, bounds, and tiles on full and partial rows
+ok   js libmExp matches frozen wasm libm::exp bit for bit (47 cases + NaN)
+ok   range_tiles_depth rounds exact even-half 40.5 up to 41 (JS Math.round, not ties-to-even 40)  got 41
+ok   range_tiles_depth hard-step tolerance at delta=5e-13 gives byte 255  got alphaSum=19584000, want 19584000
+ok   range_tiles_depth hard-step tolerance at delta=-5e-13 gives byte 255  got alphaSum=19584000, want 19584000
+ok   range_tiles_depth hard-step tolerance at delta=2e-12 gives byte 0  got alphaSum=0, want 0
+ok   range_tiles_depth K22-exp-band tie case gives 127 on the 128 odd-row pixels of column x=127 across twin, simd, and scalar
+ok   js rangeTilesDepth snapped call uses libmExp for both wSpatial and wColor (0 Math.exp calls)  mathExpCalls=0
+ok   js rangeTilesDepth equals the plain reference (106 cases)
+ok   rust simd range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)
+ok   rust scalar range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)
+ok   js range_tiles_depth gives the same at an odd offset
+ok   range_tiles_depth zeroes out-of-bounds right and bottom columns/rows in dirty wasm arena
+ok   rangeTilesDepth refuses null map on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses short map on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses short classes on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses short guide on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses short pic on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses zero mw on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses zero W on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses y0 >= y1 on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses zero tile on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses NaN xf on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses null limit on twin and both builds  3/3 threw
+ok   raw range_tiles_depth returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  got 0
+ok   kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order  calls jj=0 rr=1 rj=1 jr=1 diffs=
+ok   px.js rangeTilesDepth bounds [wy0..wy1] over [minTx..maxTx] on a 90-degree turned map  copiedMapBytes=576 fullMapBytes=1536
+ok   range_tiles_rgba expands 3-char #48c identically to #4488cc with non-empty alpha  alphaSum=826995
+ok   range_tiles_rgba rounds w*255 = 40.5 away from zero to 41 (not ties-to-even 40)  got 41
+ok   range_tiles_rgba hard-step tolerance at delta=-2e-12 gives byte 255  got alphaSum=16711680, want 16711680
+ok   range_tiles_rgba hard-step tolerance at delta=-5e-13 gives byte 255  got alphaSum=16711680, want 16711680
+ok   range_tiles_rgba hard-step tolerance at delta=5e-13 gives byte 255  got alphaSum=16711680, want 16711680
+ok   range_tiles_rgba hard-step tolerance at delta=2e-12 gives byte 0  got alphaSum=0, want 0
+ok   range_tiles_rgba K23 colour libmExp tie case gives full tile (alphaSum=16711680) on js  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   range_tiles_rgba K23 colour libmExp tie case gives full tile (alphaSum=16711680) on simd  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   range_tiles_rgba K23 colour libmExp tie case gives full tile (alphaSum=16711680) on scalar  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   js rangeTilesRgba colour call uses libmExp (0 Math.exp calls)  mathExpCalls=0
+ok   range_tiles_rgba K23 opp(R/255) order tie case gives full tile (alphaSum=16711680) on js  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   range_tiles_rgba K23 opp(R/255) order tie case gives full tile (alphaSum=16711680) on simd  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   range_tiles_rgba K23 opp(R/255) order tie case gives full tile (alphaSum=16711680) on scalar  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   rangeSelectJob luma multi-row band (3 tile rows) matches per-pixel alphaSum and bounds union  alphaSum=43207200/43207200 bounds=[0,0,300,600]/[0,0,300,600]
+ok   rangeSelectJob color multi-row band (3 tile rows) matches per-pixel alphaSum and bounds union  alphaSum=6886397/6886397 bounds=[0,0,300,520]/[0,0,300,520]
+ok   normalizeLimit refuses invalid color and non-numeric lo/hi/fLo/fHi/tol with readable message  7/7 refused
+ok   js rangeTilesRgba equals the plain reference (38 cases)
+ok   rust simd range_tiles_rgba equals its twin byte for byte (38 cases, each also at an odd offset)
+ok   rust scalar range_tiles_rgba equals its twin byte for byte (38 cases, each also at an odd offset)
+ok   js range_tiles_rgba gives the same at an odd offset
+ok   range_tiles_rgba zeroes out-of-bounds top, bottom, and right rows/columns in dirty wasm arena
+ok   px.js rangeTilesRgba copies only one tile row (256 rows) from a 1024-row band into the wasm arena  copiedRgbaBytes=307200 want=307200 fullBand=1228800
+ok   rangeTilesRgba refuses null rgba on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses short rgba on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses zero W on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses zero H on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses zero tile on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses tile > 4096 on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses negative ty on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses y0 >= y1 on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses y1 > H on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses null limit on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses NaN lo on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses NaN tol on twin and both builds  3/3 threw
+ok   raw range_tiles_rgba returns 0 on invalid mode or out-of-row [ry0..ry1)  badMode=0 badRow=0
+ok   kernels.js rangeTilesRgba routes rangeLuma and rangeColor between twin (0 calls) and rust (1 call) with identical output  luma=0/1 color=0/1
+ok   limit_alpha_rows rounds exact even-half 255 * w === 40.5 up to 41 and leaves RGB bytes untouched  got alpha=41 rgbUntouched=true
+ok   limit_alpha_rows rounds 81 * 0.5 === 40.5 up to 41  got 41
+ok   limit_alpha_rows hard-step tolerance at delta=5e-13 gives byte 255  got 255, want 255
+ok   limit_alpha_rows hard-step tolerance at delta=-5e-13 gives byte 255  got 255, want 255
+ok   limit_alpha_rows hard-step tolerance at delta=2e-12 gives byte 0  got 0, want 0
+ok   js limitAlphaRows equals the plain reference (74 cases)
+ok   rust simd limit_alpha_rows equals its twin byte for byte (74 cases, each also at an odd offset)
+ok   rust scalar limit_alpha_rows equals its twin byte for byte (74 cases, each also at an odd offset)
+ok   js limit_alpha_rows gives the same at an odd offset
+ok   limit_alpha_rows twin uses libmExp (0 native Math.exp calls) and matches simd/scalar at K22-exp-band tie on column x=127  nativeExpCalls=0 
+ok   px.js limitAlphaRows chunks 600 rows into 3 bands (<= 256 rows per chunk) and bounds map window [wy0..wy1]  chunkCalls=3 maxRgbaBytes=65536 maxMapBytes=2048/3840
+ok   inpaint_limit.js limitAlphaRows snaps solid fill layer against map.guide on rust (sharp edge vs uniform col / no-guide)  calls=1/1/1 guide=[255,0] uniformCol=0 noGuide=0
+ok   inpaint_limit.js limitAlphaRows never throws on stored depth limits with non-finite fields
+ok   limit_alpha_rows refuses invalid inputs across twin, simd, and scalar
+ok   raw limit_alpha_rows returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  okValid=1 okOutLo=0 okOutHi=0
+ok   kernels.js limitAlphaRows routes between twin (0 calls) and rust (1 call) with identical output  jsCalls=0 rustCalls=1
+       map_tile_stats 4096x2731 -> 15000x10000 (depth only): twin 25.89, simd 4.97, scalar 15.72 ms (median of 15)
+       map_tile_stats 4096x2731 -> 15000x10000 (depth + rmax): twin 34.85, simd 7.00, scalar 24.47 ms (median of 15)
+       range_tiles_depth 15000x256 row, plain bilinear (59 tiles): twin 136.11, simd 77.89, scalar 81.42 ms (median of 9)
+       range_tiles_depth 15000x256 row, snapped (59 edge tiles): twin 323.13, simd 144.68, scalar 159.03 ms (median of 9)
+       range_tiles_rgba 15000x256 row, luma (59 tiles): twin 64.72, simd 32.96, scalar 35.74 ms (median of 9)
+       range_tiles_rgba 15000x256 row, colour (59 tiles): twin 161.32, simd 83.51, scalar 98.58 ms (median of 9)
+       limit_alpha_rows 15000x256 row, plain bilinear (15000x256): twin 100.16, simd 85.98, scalar 88.06 ms (median of 9)
+       limit_alpha_rows 15000x256 row, snapped (15000x256): twin 378.04, simd 190.24, scalar 198.02 ms (median of 9)
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: range; PX_ONLY, not the full test)

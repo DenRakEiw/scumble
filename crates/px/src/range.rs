@@ -1,4 +1,4 @@
-//! Depth map tile statistics and tile evaluation for range selection (`docs/PLAN_WASM_BUILD.md` §4.8, K21, K22 & K23).
+//! Depth map tile statistics, tile evaluation, and row alpha limiting (`docs/PLAN_WASM_BUILD.md` §4.8, K21, K22, K23 & K25).
 //!
 //! - `map_tile_stats` (K21): maps each tile's four corners into the depth map via the 6-element affine transform
 //!   `m0..m5`, expands the bounding box by the 2-texel snap halo, clamps to `[0, mw - 1] × [0, mh - 1]` for the tile's
@@ -10,6 +10,8 @@
 //! - `range_tiles_rgba` (K23): evaluates one document tile row `ty` (`[ry0, ry1)` within `[ty * tile, min((ty + 1) * tile, h))`)
 //!   over the `(ry1 - ry0)`-row RGBA8 slice of that tile row for `"luma"` (`mode == 0`, three 256-entry `f64` product
 //!   tables) or `"color"` (`mode == 1`, opponent colour similarity with one `exp` per pixel).
+//! - `limit_alpha_rows` (K25): multiplies the alpha byte of each pixel in a `w × h` RGBA8 band at `(x0, y0)` in place
+//!   by the depth limit weight over `[wy0, wy0 + wh)` of `map` (and optional `guide` + `col` for edge snapping).
 
 #[cfg(target_feature = "simd128")]
 use core::arch::wasm32::*;
@@ -450,15 +452,14 @@ fn sstep_f64x2(a: f64, b: f64, x_v: v128) -> v128 {
 
 #[cfg(target_feature = "simd128")]
 #[inline(always)]
-fn weight_to_alpha_f64x2(
+fn range_weight_f64x2(
     val_v: v128,
     lo: f64,
     hi: f64,
     f_lo: f64,
     f_hi: f64,
     limit_invert: bool,
-    job_invert: bool,
-) -> (u8, u8) {
+) -> v128 {
     let one_v = f64x2_splat(1.0);
     let w_lo_v = if f_lo > 0.0 {
         sstep_f64x2(lo - f_lo, lo, val_v)
@@ -470,10 +471,27 @@ fn weight_to_alpha_f64x2(
     } else {
         v128_and(f64x2_le(val_v, f64x2_splat(hi + 1e-12)), one_v)
     };
-    let mut w_v = f64x2_mul(w_lo_v, w_hi_v);
+    let w_v = f64x2_mul(w_lo_v, w_hi_v);
     if limit_invert {
-        w_v = f64x2_sub(one_v, w_v);
+        f64x2_sub(one_v, w_v)
+    } else {
+        w_v
     }
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+fn weight_to_alpha_f64x2(
+    val_v: v128,
+    lo: f64,
+    hi: f64,
+    f_lo: f64,
+    f_hi: f64,
+    limit_invert: bool,
+    job_invert: bool,
+) -> (u8, u8) {
+    let one_v = f64x2_splat(1.0);
+    let mut w_v = range_weight_f64x2(val_v, lo, hi, f_lo, f_hi, limit_invert);
     if job_invert {
         w_v = f64x2_sub(one_v, w_v);
     }
@@ -1116,6 +1134,196 @@ pub fn range_tiles_rgba(
         info_out[2] = -1.0;
         info_out[3] = -1.0;
         info_out[4] = -1.0;
+    }
+
+    1
+}
+
+/// Multiplies the alpha channel of `rgba` (`w * h * 4` RGBA8 bytes, in place) by the depth limit weight over a
+/// `wh`-row window of `map` (and optional `guide`) starting at map row `wy0` (`inpaint_limit.js` `limitAlphaRows`, K25).
+/// When `sigma_r > 0` and `guide` is `Some`, edge snap takes its reference colour from `col` (`w * h * 4` RGBA8 bytes)
+/// when `col` is `Some`, from `rgba` when `col_from_rgba` is true, or from `guide` sampled at `floor(mx), floor(my)`.
+/// `params`: `[m0, m1, m2, m3, m4, m5, lo, hi, f_lo, f_hi, sigma_r, tau]`.
+/// `flags`: bit 0 = `limit.invert`.
+/// Returns `1` on success, `0` when the vertical window `[iy0, iy1]` falls outside `[wy0, wy0 + wh)`.
+#[allow(clippy::too_many_arguments)]
+pub fn limit_alpha_rows(
+    rgba: &mut [u8],
+    col: Option<&[u8]>,
+    col_from_rgba: bool,
+    map: &[u16],
+    guide: Option<&[u8]>,
+    mw: usize,
+    mh: usize,
+    wy0: usize,
+    wh: usize,
+    x0: i32,
+    y0: i32,
+    w: usize,
+    h: usize,
+    params: &[f64; 12],
+    flags: u32,
+) -> u32 {
+    let m0 = params[0];
+    let m1 = params[1];
+    let m2 = params[2];
+    let m3 = params[3];
+    let m4 = params[4];
+    let m5 = params[5];
+    let lo = params[6];
+    let hi = params[7];
+    let f_lo = params[8];
+    let f_hi = params[9];
+    let sigma_r = params[10];
+    let tau = params[11];
+    let limit_invert = (flags & 1) != 0;
+
+    let max_x = (mw - 1) as f64;
+    let max_y = (mh - 1) as f64;
+    let wy1 = wy0 + wh;
+
+    let rx0 = x0 as f64;
+    let rx1 = (x0 as f64) + (w as f64);
+    let ry0 = y0 as f64;
+    let ry1 = (y0 as f64) + (h as f64);
+    let y00 = m1 * rx0 + m3 * ry0 + m5;
+    let y10 = m1 * rx1 + m3 * ry0 + m5;
+    let y01 = m1 * rx0 + m3 * ry1 + m5;
+    let y11 = m1 * rx1 + m3 * ry1 + m5;
+    let my0 = y00.min(y10).min(y01).min(y11);
+    let my1 = y00.max(y10).max(y01).max(y11);
+    let iy0 = (my0 - 2.0).floor().max(0.0).min(max_y) as usize;
+    let iy1 = (my1 + 2.0).ceil().max(0.0).min(max_y) as usize;
+    if iy0 < wy0 || iy1 >= wy1 {
+        return 0;
+    }
+
+    let snap_on = sigma_r > 0.0 && guide.is_some();
+    let row_bytes = w * 4;
+
+    for y in 0..h {
+        let row_byte_off = y * row_bytes;
+        let row_rgba = &mut rgba[row_byte_off..row_byte_off + row_bytes];
+        let py_centre = (y0 as f64) + (y as f64) + 0.5;
+        let mut px = 0usize;
+
+        #[cfg(target_feature = "simd128")]
+        if !snap_on {
+            let m0_v = f64x2_splat(m0);
+            let m1_v = f64x2_splat(m1);
+            let m2_py_v = f64x2_splat(m2 * py_centre);
+            let m3_py_v = f64x2_splat(m3 * py_centre);
+            let m4_v = f64x2_splat(m4);
+            let m5_v = f64x2_splat(m5);
+            let half_v = f64x2_splat(0.5);
+            let one_v = f64x2_splat(1.0);
+            let zero_v = f64x2_splat(0.0);
+            let max_x_v = f64x2_splat(max_x);
+            let max_y_v = f64x2_splat(max_y);
+            let scale_v = f64x2_splat(65535.0);
+            let x0_f = x0 as f64;
+
+            while px + 2 <= w {
+                let x0_doc = x0_f + (px as f64) + 0.5;
+                let x1_doc = x0_f + ((px + 1) as f64) + 0.5;
+                let px_v = f64x2(x0_doc, x1_doc);
+
+                let mx_v = f64x2_add(f64x2_add(f64x2_mul(m0_v, px_v), m2_py_v), m4_v);
+                let my_v = f64x2_add(f64x2_add(f64x2_mul(m1_v, px_v), m3_py_v), m5_v);
+
+                let u_v = f64x2_sub(mx_v, half_v);
+                let v_v = f64x2_sub(my_v, half_v);
+
+                let ix0_v = f64x2_floor(u_v);
+                let iy0_v = f64x2_floor(v_v);
+                let ix1_v = f64x2_add(ix0_v, one_v);
+                let iy1_v = f64x2_add(iy0_v, one_v);
+
+                let fx_v = f64x2_sub(u_v, ix0_v);
+                let fy_v = f64x2_sub(v_v, iy0_v);
+
+                let cx0_v = f64x2_max(zero_v, f64x2_min(max_x_v, ix0_v));
+                let cx1_v = f64x2_max(zero_v, f64x2_min(max_x_v, ix1_v));
+                let cy0_v = f64x2_max(zero_v, f64x2_min(max_y_v, iy0_v));
+                let cy1_v = f64x2_max(zero_v, f64x2_min(max_y_v, iy1_v));
+
+                let cx0_0 = f64x2_extract_lane::<0>(cx0_v) as usize;
+                let cx0_1 = f64x2_extract_lane::<1>(cx0_v) as usize;
+                let cx1_0 = f64x2_extract_lane::<0>(cx1_v) as usize;
+                let cx1_1 = f64x2_extract_lane::<1>(cx1_v) as usize;
+                let cy0_0 = (f64x2_extract_lane::<0>(cy0_v) as usize) - wy0;
+                let cy0_1 = (f64x2_extract_lane::<1>(cy0_v) as usize) - wy0;
+                let cy1_0 = (f64x2_extract_lane::<0>(cy1_v) as usize) - wy0;
+                let cy1_1 = (f64x2_extract_lane::<1>(cy1_v) as usize) - wy0;
+
+                let r00 = cy0_0 * mw;
+                let r01 = cy1_0 * mw;
+                let r10 = cy0_1 * mw;
+                let r11 = cy1_1 * mw;
+
+                let s00_v = f64x2_div(f64x2(map[r00 + cx0_0] as f64, map[r10 + cx0_1] as f64), scale_v);
+                let s10_v = f64x2_div(f64x2(map[r00 + cx1_0] as f64, map[r10 + cx1_1] as f64), scale_v);
+                let s01_v = f64x2_div(f64x2(map[r01 + cx0_0] as f64, map[r11 + cx0_1] as f64), scale_v);
+                let s11_v = f64x2_div(f64x2(map[r01 + cx1_0] as f64, map[r11 + cx1_1] as f64), scale_v);
+
+                let top_v = f64x2_add(s00_v, f64x2_mul(fx_v, f64x2_sub(s10_v, s00_v)));
+                let bot_v = f64x2_add(s01_v, f64x2_mul(fx_v, f64x2_sub(s11_v, s01_v)));
+                let val_v = f64x2_max(zero_v, f64x2_min(one_v, f64x2_add(top_v, f64x2_mul(fy_v, f64x2_sub(bot_v, top_v)))));
+
+                let w_v = range_weight_f64x2(val_v, lo, hi, f_lo, f_hi, limit_invert);
+                let off0 = px * 4;
+                let off1 = (px + 1) * 4;
+                let a_in_v = f64x2(row_rgba[off0 + 3] as f64, row_rgba[off1 + 3] as f64);
+                let scaled_v = f64x2_mul(a_in_v, w_v);
+                let fl_v = f64x2_floor(scaled_v);
+                let ge_half = f64x2_ge(f64x2_sub(scaled_v, fl_v), half_v);
+                let rounded_v = f64x2_add(fl_v, v128_and(ge_half, one_v));
+                row_rgba[off0 + 3] = f64x2_extract_lane::<0>(rounded_v) as u8;
+                row_rgba[off1 + 3] = f64x2_extract_lane::<1>(rounded_v) as u8;
+
+                px += 2;
+            }
+        }
+
+        while px < w {
+            let off = px * 4;
+            let px_centre = (x0 as f64) + (px as f64) + 0.5;
+            let mx = m0 * px_centre + m2 * py_centre + m4;
+            let my = m1 * px_centre + m3 * py_centre + m5;
+            let mv = if snap_on {
+                let g_slice = guide.unwrap();
+                let (pr, pg, pb) = if let Some(c_slice) = col {
+                    let c_off = row_byte_off + off;
+                    (
+                        c_slice[c_off] as f64 / 255.0,
+                        c_slice[c_off + 1] as f64 / 255.0,
+                        c_slice[c_off + 2] as f64 / 255.0,
+                    )
+                } else if col_from_rgba {
+                    (
+                        row_rgba[off] as f64 / 255.0,
+                        row_rgba[off + 1] as f64 / 255.0,
+                        row_rgba[off + 2] as f64 / 255.0,
+                    )
+                } else {
+                    let gx = mx.floor().max(0.0).min(max_x) as usize;
+                    let gy = (my.floor().max(0.0).min(max_y) as usize) - wy0;
+                    let g_off = (gy * mw + gx) * 4;
+                    (
+                        g_slice[g_off] as f64 / 255.0,
+                        g_slice[g_off + 1] as f64 / 255.0,
+                        g_slice[g_off + 2] as f64 / 255.0,
+                    )
+                };
+                snap_field(map, g_slice, mw, mh, wy0, mx, my, pr, pg, pb, sigma_r, tau)
+            } else {
+                u16_bilinear(map, mw, mh, wy0, mx, my)
+            };
+            let v = mv.max(0.0).min(1.0);
+            let w_val = range_weight(v, lo, hi, f_lo, f_hi, limit_invert);
+            row_rgba[off + 3] = js_round_byte((row_rgba[off + 3] as f64) * w_val);
+            px += 1;
+        }
     }
 
     1

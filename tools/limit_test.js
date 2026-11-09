@@ -553,7 +553,18 @@ async function main() {
     assert.strictEqual(buf4[3], 255, "band pixel 0 (image pixel 2) should have alpha 255");
     assert.strictEqual(buf4[7], 0, "band pixel 1 (image pixel 3) should have alpha 0");
 
-    console.log("     [ok] inpaint_limit.js limitAlphaRows math and band offsets verified");
+    // Test 5: Stored depth limits with non-finite fields never throw on export
+    for (const badLim of [
+        { source: "depth", lo: "bad", hi: 0.8 },
+        { source: "depth", lo: 0.2, hi: "bad" },
+        { source: "depth", lo: 0.2, hi: 0.8, fLo: "bad" },
+        { source: "depth", lo: 0.2, hi: 0.8, fHi: Infinity },
+    ]) {
+        const bufBad = new Uint8Array(4 * 4).fill(200);
+        assert.doesNotThrow(() => limitAlphaRows(bufBad, 0, 0, 4, 1, badLim, map4));
+    }
+
+    console.log("     [ok] inpaint_limit.js limitAlphaRows math, band offsets, and stored-limit safety verified");
 
     // -------------------------------------------------------------------------
     // 10. R2-S5: Edge snap in limit stage (LIMIT_SHADER uniforms & snapField CPU)
@@ -654,6 +665,32 @@ async function main() {
     }
     assert.ok(errs50 <= Math.ceil(errs0 / 3), `snap 50 edge errors (${errs50}) <= 1/3 of snap 0 errors (${errs0})`);
     console.log(`     [ok] snap 50 error reduction: ${errs50} vs ${errs0} (<= 1/3 threshold met)`);
+
+    // Verify limitAlphaRows on a solid fill layer with testMapSnap50 (col = null -> samples map.guide)
+    // matches limitStageCPU's snapped weights (out50) byte for byte across all Ws x Hs pixels
+    const fillRows50 = new Uint8Array(Ws * Hs * 4);
+    for (let i = 0; i < fillRows50.length; i += 4) {
+        fillRows50[i] = 128; fillRows50[i + 1] = 128; fillRows50[i + 2] = 128; fillRows50[i + 3] = 255;
+    }
+    const fillRowsUniformCol = new Uint8Array(fillRows50);
+    limitAlphaRows(fillRows50, 0, 0, Ws, Hs, limDepth, testMapSnap50);
+    limitAlphaRows(fillRowsUniformCol, 0, 0, Ws, Hs, limDepth, testMapSnap50, fillRowsUniformCol);
+    let maxScreenVsExportDiff = 0;
+    let errsUniformCol = 0;
+    for (let y = 0; y < Hs; y++) {
+        for (let x = 0; x < Ws; x++) {
+            const idx = (y * Ws + x) * 4;
+            const d = Math.abs(fillRows50[idx + 3] - out50[idx]);
+            if (d > maxScreenVsExportDiff) maxScreenVsExportDiff = d;
+            if (x >= 56 && x <= 64) {
+                const gt = x < 60 ? 255 : 0;
+                if (Math.abs(fillRowsUniformCol[idx + 3] - gt) > 64) errsUniformCol++;
+            }
+        }
+    }
+    assert.strictEqual(maxScreenVsExportDiff, 0, `limitAlphaRows snapped alpha matches limitStageCPU byte-for-byte (maxDiff=${maxScreenVsExportDiff})`);
+    assert.ok(errs50 < errsUniformCol, `snapped map.guide alpha errors (${errs50}) < uniform-fill col errors (${errsUniformCol})`);
+    console.log(`     [ok] limitAlphaRows snapped alpha matches limitStageCPU (maxDiff=${maxScreenVsExportDiff}, edge errors ${errs50} vs ${errsUniformCol} uniform-col / ${errs0} unsnapped)`);
 
     console.log("ALL LIMIT TESTS PASSED!");
 }

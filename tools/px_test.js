@@ -1530,6 +1530,13 @@ async function retouchRouteCases(js) {
         const rtrColorLim = { source: "color", color: "#5080a0", tol: 30, invert: false };
         want.rtrLuma = js.rangeTilesRgba(I, w, h, 0, 0, h, rtrLumaLim, false, 256);
         want.rtrColor = js.rangeTilesRgba(I, w, h, 0, 0, h, rtrColorLim, false, 256);
+        const larW = 16, larH = 300;
+        const larInit = new Uint8Array(larW * larH * 4);
+        for (let i = 0; i < larInit.length; i += 4) {
+            larInit[i] = 48; larInit[i + 1] = 128; larInit[i + 2] = 192; larInit[i + 3] = 200;
+        }
+        const larXf = [16 / larW, 0, 0, 16 / larH, 0, 0];
+        want.lar = js.limitAlphaRows(larInit.slice(), rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null);
         K.setRoute("edgefit", "rust");
         K.setRoute("edgefitShrink", "rust");
         K.setRoute("warpRgba", "rust");
@@ -1538,6 +1545,7 @@ async function retouchRouteCases(js) {
         K.setRoute("rangeDepthSnap", "rust");
         K.setRoute("rangeLuma", "rust");
         K.setRoute("rangeColor", "rust");
+        K.setRoute("limitAlphaRows", "rust");
         const trapIn2 = (p) => p.exports.mip_half(-16, 256, 256, 0);
         let ok = true, detail = "";
         for (const [name, method, callIt, check1] of [
@@ -1575,6 +1583,7 @@ async function retouchRouteCases(js) {
             }, (o) => !twinDiff(o, want.rtd)],
             ["rangeTilesRgbaLuma", "rangeTilesRgba", () => K.rangeTilesRgba(I, w, h, 0, 0, h, rtrLumaLim, false, 256), (o) => !twinDiff(o, want.rtrLuma)],
             ["rangeTilesRgbaColor", "rangeTilesRgba", () => K.rangeTilesRgba(I, w, h, 0, 0, h, rtrColorLim, false, 256), (o) => !twinDiff(o, want.rtrColor)],
+            ["limitAlphaRows", "limitAlphaRows", () => K.limitAlphaRows(larInit.slice(), rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null), (o) => eqBytes(o, want.lar)],
         ]) {
             const p = K.rustPx(), i0 = K.pxInstances();
             // the split traps after its kernel wrote L in wasm memory, before the copy out (the caller's L untouched)
@@ -1604,7 +1613,28 @@ async function retouchRouteCases(js) {
                 detail = `rangeTilesRgbaOom: ${JSON.stringify(i1)}`;
             }
         }
-        check("kernels.js K27 / K28 / K29 / K31 / K34 / K22 / K23 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
+        {
+            // Multi-chunk OOM recovery on limitAlphaRows: chunk 0 (rows 0..256) succeeds on Rust, chunk 1 (rows 256..300)
+            // throws PxOutOfMemory; K.limitAlphaRows finishes only rows 256..300 on the twin without double-multiplying rows 0..256
+            const p = K.rustPx(), i0 = K.pxInstances();
+            const origLimitAlpha = p.limitAlphaRows;
+            p.limitAlphaRows = function (rgba, map, mw, mh, xf, x0, y0, wArg, hArg, limit, snap, guide, col) {
+                origLimitAlpha.call(this, rgba.subarray(0, 256 * wArg * 4), map, mw, mh, xf, x0, y0, wArg, 256, limit, snap, guide, col);
+                try {
+                    this.alloc(0xffff0000);
+                } catch (err) {
+                    if (err && typeof err === "object") err.doneRows = 256;
+                    throw err;
+                }
+            };
+            const got = K.limitAlphaRows(larInit.slice(), rtdMap, 16, 16, larXf, 0, 0, larW, larH, rtdLim, rtdSnap, rtdGuide, null);
+            const after = K.rustPx(), i1 = K.pxInstances();
+            if (!(eqBytes(got, want.lar) && after !== p && i1.oom === i0.oom + 1)) {
+                ok = false;
+                detail = `limitAlphaRowsOom: ${firstDiff(got, want.lar)} ${JSON.stringify(i1)}`;
+            }
+        }
+        check("kernels.js K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)", ok, detail);
         // the separation releases the instance it grew past releaseMB (here 0, as a 16 MP one grows past 256)
         const i0 = K.pxInstances();
         K.setRoute("releaseMB", 0);
@@ -1615,7 +1645,7 @@ async function retouchRouteCases(js) {
         console.warn = realWarn;
         kernelsBack(K);
     }
-    check("the K27 / K28 / K29 / K31 / K34 / K22 / K23 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|liquify_dab|edgefit_shrink|warp_rgba|warp_coverage|range_tiles_depth|range_tiles_rgba/.test(w)).length === 14, warned.join(" | "));
+    check("the K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 wrappers' traps warned once per kernel", warned.filter((w) => /tone_rgba|sponge_rgba|freq_split|freq_separate|liquify_block|liquify_preview|liquify_dab|edgefit_shrink|warp_rgba|warp_coverage|range_tiles_depth|range_tiles_rgba|limit_alpha_rows/.test(w)).length === 16, warned.join(" | "));
     void js;
 }
 
@@ -7542,6 +7572,435 @@ async function rangeCases(js, simd, scalar, resample, K) {
             `luma=${lumaJsCalls}/${lumaRustCalls} color=${colorJsCalls}/${colorRustCalls}`);
     }
 
+    // ---- K25: limit_alpha_rows (export / fill-layer depth alpha, docs/PLAN_WASM_BUILD.md §4.8) -------------------------
+
+    const refLimitAlphaRows = (rgbaIn, map, mw, mh, xf, x0, y0, w, h, limit, snap = null, guide = null, col = null) => {
+        const rgba = new Uint8Array(rgbaIn);
+        if (w === 0 || h === 0) return rgba;
+        const [a, b, c, d, e, f] = xf;
+        const sigmaR = Array.isArray(snap) && snap.length >= 2 ? +snap[0] || 0 : 0;
+        const tau = Array.isArray(snap) && snap.length >= 2 ? +snap[1] || 0 : 0;
+        const gRaw = guide && guide.data ? guide.data : guide;
+        const doSnap = gRaw != null && sigmaR > 0;
+        const mapObj = doSnap ? { data: map, w: mw, h: mh } : null;
+        const guideObj = doSnap ? { data: gRaw, w: mw, h: mh } : null;
+        const maxX = mw - 1, maxY = mh - 1;
+        for (let row = 0; row < h; row++) {
+            const py = y0 + row + 0.5;
+            const rowBase = row * w * 4;
+            for (let colIdx = 0; colIdx < w; colIdx++) {
+                const off = rowBase + colIdx * 4;
+                const aIn = rgba[off + 3];
+                if (aIn === 0) continue;
+                const px = x0 + colIdx + 0.5;
+                const mx = a * px + c * py + e;
+                const my = b * px + d * py + f;
+                let v;
+                if (doSnap) {
+                    let pr, pg, pb;
+                    if (col != null) {
+                        pr = col[off] / 255;
+                        pg = col[off + 1] / 255;
+                        pb = col[off + 2] / 255;
+                    } else {
+                        const gx = Math.max(0, Math.min(maxX, Math.floor(mx)));
+                        const gy = Math.max(0, Math.min(maxY, Math.floor(my)));
+                        const gi = (gy * mw + gx) * 4;
+                        pr = gRaw[gi] / 255;
+                        pg = gRaw[gi + 1] / 255;
+                        pb = gRaw[gi + 2] / 255;
+                    }
+                    v = refSnapField(mapObj, guideObj, mx, my, pr, pg, pb, sigmaR, tau);
+                } else {
+                    v = u16Bilinear(map, mw, mh, mx, my);
+                }
+                v = Math.max(0, Math.min(1, v));
+                const wt = rangeWeight(v, limit);
+                rgba[off + 3] = Math.min(255, Math.max(0, Math.round(aIn * wt)));
+            }
+        }
+        return rgba;
+    };
+
+    const callLimitAlpha = (k, [rgbaIn, map, guideData, colData, colSameAsRgba, mw, mh, xf, x0, y0, w, h, limit, snap]) => {
+        const guide = guideData ? { data: guideData, w: mw, h: mh } : null;
+        const col = colSameAsRgba ? rgbaIn : colData;
+        k.limitAlphaRows(rgbaIn, map, mw, mh, xf, x0, y0, w, h, limit, snap, guide, col);
+        return rgbaIn;
+    };
+
+    const limitAlphaCases = [];
+    for (const [mw, mh, W, H, x0, y0] of [
+        [1, 1, 1, 1, 0, 0],
+        [7, 5, 13, 9, 3, -2],
+        [8, 6, 64, 48, 0, 0],
+        [9, 7, 129, 65, 10, 20],
+        [15, 11, 257, 40, -5, 12],
+        [16, 12, 120, 300, 0, 0], // multi-chunk (> 256 rows)
+        [24, 18, 96, 550, 4, 8],  // 3 chunks (256 + 256 + 38 rows)
+    ]) {
+        const { map } = makeMapPair(mw, mh, (mw + mh) % 2 === 0 ? "ramp" : "random");
+        const guideData = new Uint8Array(mw * mh * 4);
+        for (let i = 0; i < guideData.length; i++) guideData[i] = (i & 3) === 3 ? 255 : Math.floor(rnd() * 256);
+        const xfs = makeXfs(mw, mh, W + Math.abs(x0) * 2, H + Math.abs(y0) * 2);
+        const rgbaIn = makeRgbaBand(W, H, (mw & 1) ? "random" : "ramp");
+        for (let ci = 0; ci < xfs.length; ci++) {
+            const [xName, xf] = xfs[ci];
+            const lim = limits[(ci + mw) % limits.length];
+            const mode = ci % 4; // 0: plain bilinear, 1: snap with guide (col=null), 2: snap with explicit col, 3: snap with col===rgba
+            const snap = mode === 0 ? null : snapParams(45 + (ci % 3) * 20);
+            const gData = mode === 0 ? null : guideData;
+            let colData = null, colSame = false;
+            if (mode === 2) {
+                colData = makeRgbaBand(W, H, "stripes");
+            } else if (mode === 3) {
+                colSame = true;
+            }
+            limitAlphaCases.push({
+                tag: `limit_alpha ${mw}x${mh}->${W}x${H} @(${x0},${y0}) ${xName} mode=${mode} inv=${lim.invert}`,
+                args: [rgbaIn, map, gData, colData, colSame, mw, mh, xf, x0, y0, W, H, lim, snap],
+            });
+        }
+    }
+
+    // Exact boundary cases for limit_alpha_rows:
+    // 1. Exact even-half: a_in = 255 with 255 * w === 40.5 -> 41, and a_in = 81 with w = 0.5 -> 81 * 0.5 = 40.5 -> 41
+    // 2. Hard-step 1e-12 boundary and sstep 1e-14 clamp boundary
+    // 3. Input alphas [0, 1, 128, 254, 255] and RGB byte preservation check
+    // 4. snapField tau .. 2*tau smoothstep blend, > 2*tau snap, wSum <= 1e-12 fallback
+    {
+        const mw = 8, mh = 8, W = 64, H = 16;
+        const mapHalf = new Uint16Array(mw * mh).fill(16384);
+        const limHalf = { lo: 0.9909749217157413, hi: 1.0, fLo: 0.9909749217157413, fHi: 0, invert: false };
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const rgba255 = new Uint8Array(W * H * 4);
+        for (let i = 0; i < rgba255.length; i += 4) {
+            rgba255[i] = (i * 7) & 255;
+            rgba255[i + 1] = (i * 13) & 255;
+            rgba255[i + 2] = (i * 29) & 255;
+            rgba255[i + 3] = 255;
+        }
+        limitAlphaCases.push({
+            tag: "limit_alpha exact even-half 255 * w === 40.5 (-> 41)",
+            args: [rgba255, mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limHalf, null],
+        });
+        const gotHalf255 = callLimitAlpha(simd, [new Uint8Array(rgba255), mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limHalf, null]);
+        let rgbUntouched = true;
+        for (let i = 0; i < rgba255.length; i += 4) {
+            if (gotHalf255[i] !== rgba255[i] || gotHalf255[i + 1] !== rgba255[i + 1] || gotHalf255[i + 2] !== rgba255[i + 2]) {
+                rgbUntouched = false;
+                break;
+            }
+        }
+        check("limit_alpha_rows rounds exact even-half 255 * w === 40.5 up to 41 and leaves RGB bytes untouched",
+            gotHalf255[3] === 41 && rgbUntouched, `got alpha=${gotHalf255[3]} rgbUntouched=${rgbUntouched}`);
+
+        // Odd input alpha a_in = 81 at exact midpoint w = 0.5 (v = 16384/65535, fLo = 0.2, lo = v + 0.1 -> t = 0.5 -> sstep(0.5) = 0.5 -> 81 * 0.5 = 40.5 -> 41)
+        const vExact = 16384 / 65535;
+        const limMid = { lo: vExact + 0.05, hi: 1.0, fLo: 0.1, fHi: 0, invert: false };
+        const rgba81 = new Uint8Array(rgba255);
+        for (let i = 3; i < rgba81.length; i += 4) rgba81[i] = 81;
+        limitAlphaCases.push({
+            tag: "limit_alpha odd a_in = 81 at w = 0.5 -> 40.5 (-> 41)",
+            args: [rgba81, mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limMid, null],
+        });
+        const gotHalf81 = callLimitAlpha(simd, [new Uint8Array(rgba81), mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limMid, null]);
+        check("limit_alpha_rows rounds 81 * 0.5 === 40.5 up to 41", gotHalf81[3] === 41, `got ${gotHalf81[3]}`);
+
+        // Hard-step 1e-12 and sstep 1e-14 boundaries
+        for (const [delta, wantByte] of [[0.5e-12, 255], [-0.5e-12, 255], [2e-12, 0]]) {
+            const limTol = { lo: vExact + delta, hi: vExact + 0.1, fLo: 0, fHi: 0, invert: false };
+            limitAlphaCases.push({
+                tag: `limit_alpha hard-step 1e-12 delta=${delta}`,
+                args: [rgba255, mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limTol, null],
+            });
+            const gotTol = callLimitAlpha(simd, [new Uint8Array(rgba255), mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, limTol, null]);
+            check(`limit_alpha_rows hard-step tolerance at delta=${delta} gives byte ${wantByte}`,
+                gotTol[3] === wantByte, `got ${gotTol[3]}, want ${wantByte}`);
+        }
+        for (const frac of [0.5e-14, 2e-14, 0.5, 1 - 2e-14, 1 - 0.5e-14]) {
+            const fLo = 0.1;
+            const lo = vExact + fLo * (1 - frac);
+            limitAlphaCases.push({
+                tag: `limit_alpha sstep boundary frac=${frac}`,
+                args: [rgba255, mapHalf, null, null, false, mw, mh, xf, 0, 0, W, H, { lo, hi: 1.0, fLo, fHi: 0, invert: false }, null],
+            });
+        }
+
+        // wSum <= 1e-12 fallback to bilinear in snapField
+        const mapStep = new Uint16Array(mw * mh);
+        for (let i = 0; i < mapStep.length; i++) mapStep[i] = (i & 1) ? 55000 : 10000;
+        const guideBlack = new Uint8Array(mw * mh * 4);
+        const colWhite = new Uint8Array(W * H * 4).fill(255);
+        limitAlphaCases.push({
+            tag: "limit_alpha snapField wSum <= 1e-12 fallback to bilinear",
+            args: [rgba255, mapStep, guideBlack, colWhite, false, mw, mh, xf, 0, 0, W, H, { lo: 0.2, hi: 0.8, fLo: 0.1, fHi: 0.1, invert: false }, [0.015, 0.02]],
+        });
+    }
+
+    let refAlphaOk = true, refAlphaDetail = "";
+    for (const c of limitAlphaCases) {
+        const a = c.args;
+        const got = callLimitAlpha(js, [new Uint8Array(a[0]), ...a.slice(1)]);
+        const want = refLimitAlphaRows(a[0], a[1], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13], a[2] ? { data: a[2], w: a[5], h: a[6] } : null, a[4] ? a[0] : a[3]);
+        const d = twinDiff(got, want, [], {});
+        if (d) { refAlphaOk = false; refAlphaDetail = `${c.tag}: ${d}`; break; }
+    }
+    check(`js limitAlphaRows equals the plain reference (${limitAlphaCases.length} cases)`, refAlphaOk, refAlphaDetail);
+
+    twinCheck({
+        name: "limit_alpha_rows",
+        builds: [["rust simd", simd], ["rust scalar", scalar]],
+        twin: js,
+        call: callLimitAlpha,
+        cases: limitAlphaCases,
+    });
+
+    // libmExp vs Math.exp tie case (K22-exp-band column x = 127) and Math.exp spy on js.limitAlphaRows
+    {
+        const mwTie = 128, mhTie = 128, WTie = 256, HTie = 16;
+        const mapTie = new Uint16Array(mwTie * mhTie);
+        for (let y = 0; y < mhTie; y++) {
+            for (let x = 0; x < mwTie; x++) mapTie[y * mwTie + x] = x < 64 ? 16384 : 49151;
+        }
+        const guideTie = new Uint8Array(mwTie * mhTie * 4).fill(128);
+        const rgbaTie = new Uint8Array(WTie * HTie * 4).fill(255);
+        const mTie = [0.5, 0, 0, 0.5, 0.25, 0];
+        const snapTie = [0.145, 0.02];
+        const limTie = { lo: 0.55, hi: 1, fLo: 0.1, fHi: 0, invert: false };
+        const origExp = Math.exp;
+        let nativeExpCalls = 0;
+        Math.exp = (x) => { nativeExpCalls++; return origExp(x); };
+        let tieOk = true, tieDetail = "";
+        try {
+            for (const [bName, k] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+                const out = callLimitAlpha(k, [new Uint8Array(rgbaTie), mapTie, guideTie, null, false, mwTie, mhTie, mTie, 0, 0, WTie, HTie, limTie, snapTie]);
+                let n127 = 0, n128 = 0;
+                for (let y = 0; y < HTie; y++) {
+                    const v = out[(y * WTie + 127) * 4 + 3];
+                    if (v === 127) n127++;
+                    else if (v === 128) n128++;
+                }
+                if (n127 !== HTie / 2 || n128 !== HTie / 2) {
+                    tieOk = false;
+                    tieDetail = `${bName}: got n127=${n127}, n128=${n128} on column x=127`;
+                    break;
+                }
+            }
+        } finally {
+            Math.exp = origExp;
+        }
+        check("limit_alpha_rows twin uses libmExp (0 native Math.exp calls) and matches simd/scalar at K22-exp-band tie on column x=127",
+            nativeExpCalls === 0 && tieOk, `nativeExpCalls=${nativeExpCalls} ${tieDetail}`);
+    }
+
+    // Multi-chunk 256-row windowing check on simd.limitAlphaRows
+    {
+        const mw = 32, mh = 60, W = 64, H = 600; // 3 chunks: 256 + 256 + 88 rows
+        const { map } = makeMapPair(mw, mh, "ramp");
+        const guideData = new Uint8Array(mw * mh * 4).fill(120);
+        const guide = { data: guideData, w: mw, h: mh };
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const lim = { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const snap = snapParams(50);
+        const rgbaSimd = makeRgbaBand(W, H, "ramp");
+        const rgbaJs = new Uint8Array(rgbaSimd);
+        let maxRgbaBytes = 0, maxMapBytes = 0, chunkCalls = 0;
+        const origIn = simd._in;
+        simd._in = function (arena, src, bytes) {
+            if (src.buffer === rgbaSimd.buffer) {
+                chunkCalls++;
+                if (bytes > maxRgbaBytes) maxRgbaBytes = bytes;
+            } else if (src.buffer === map.buffer) {
+                if (bytes > maxMapBytes) maxMapBytes = bytes;
+            }
+            return origIn.call(this, arena, src, bytes);
+        };
+        try {
+            simd.limitAlphaRows(rgbaSimd, map, mw, mh, xf, 0, 0, W, H, lim, snap, guide, null);
+            js.limitAlphaRows(rgbaJs, map, mw, mh, xf, 0, 0, W, H, lim, snap, guide, null);
+            check("px.js limitAlphaRows chunks 600 rows into 3 bands (<= 256 rows per chunk) and bounds map window [wy0..wy1]",
+                !twinDiff(rgbaSimd, rgbaJs) && chunkCalls === 3 && maxRgbaBytes === 256 * W * 4 && maxMapBytes < map.byteLength,
+                `chunkCalls=${chunkCalls} maxRgbaBytes=${maxRgbaBytes} maxMapBytes=${maxMapBytes}/${map.byteLength}`);
+        } finally {
+            simd._in = origIn;
+        }
+    }
+
+    // inpaint_limit.js limitAlphaRows integration:
+    // 1. Snapped depth limit with map.guide present (col=null) snaps to map.guide sampled at floor(mx), floor(my),
+    //    whereas without map.guide it falls back to rgba.
+    // 2. Stored depth limits with non-finite fields never throw on export.
+    {
+        const { limitAlphaRows: limitAlphaRowsHigh } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_limit.js")).href);
+        const { makeMap } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_maps.js")).href);
+        const mw = 20, mh = 12, W = 80, H = 48;
+        // Blurred depth step at map x = 10 (canvas x = 40): x <= 7 is 0.2, x = 8 is 0.35, x = 9 is 0.5, x = 10 is 0.65, x >= 11 is 0.8
+        const mapData = new Uint16Array(mw * mh);
+        const guideData = new Uint8Array(mw * mh * 4);
+        for (let y = 0; y < mh; y++) {
+            for (let x = 0; x < mw; x++) {
+                const i = y * mw + x;
+                const d = x <= 7 ? 0.2 : x === 8 ? 0.35 : x === 9 ? 0.5 : x === 10 ? 0.65 : 0.8;
+                mapData[i] = Math.round(d * 65535);
+                const isRed = x < 10;
+                guideData[i * 4] = isRed ? 230 : 20;
+                guideData[i * 4 + 1] = 40;
+                guideData[i * 4 + 2] = isRed ? 30 : 230;
+                guideData[i * 4 + 3] = 255;
+            }
+        }
+        // Solid uniform fill layer (all grey [128, 128, 128, 255]):
+        // At x = 39 (mx = 9.875), plain bilinear depth is ~0.556 (> 0.48 -> alpha 0).
+        // With map.guide present (col=null), snapRgb reads pure red at floor(9.875)=9 and snaps toward ~0.423 (<= 0.46 -> alpha 255);
+        // with col=fillUniformCol (uniform grey) or without map.guide, it does not snap to the red/blue edge (alpha 0).
+        const fillWithGuide = new Uint8Array(W * H * 4);
+        for (let i = 0; i < fillWithGuide.length; i += 4) {
+            fillWithGuide[i] = 128; fillWithGuide[i + 1] = 128; fillWithGuide[i + 2] = 128; fillWithGuide[i + 3] = 255;
+        }
+        const fillUniformCol = new Uint8Array(fillWithGuide);
+        const fillNoGuide = new Uint8Array(fillWithGuide);
+        const limSnap = { source: "depth", lo: 0, hi: 0.46, fLo: 0, fHi: 0.02, invert: false };
+        const mapWithGuide = makeMap("depth", mw, mh, mapData, [W, 0, 0, H, 0, 0], { snap: { strength: 80 } }, guideData);
+        const mapWithoutGuide = makeMap("depth", mw, mh, mapData, [W, 0, 0, H, 0, 0], { snap: { strength: 80 } }, null);
+
+        K.setKernels("rust");
+        K.pxCalls(true);
+        limitAlphaRowsHigh(fillWithGuide, 0, 0, W, H, limSnap, mapWithGuide);
+        const guideCalls = K.pxCalls(true).limit_alpha_rows || 0;
+        limitAlphaRowsHigh(fillUniformCol, 0, 0, W, H, limSnap, mapWithGuide, fillUniformCol);
+        const colCalls = K.pxCalls(true).limit_alpha_rows || 0;
+        limitAlphaRowsHigh(fillNoGuide, 0, 0, W, H, limSnap, mapWithoutGuide);
+        const noGuideCalls = K.pxCalls(true).limit_alpha_rows || 0;
+
+        const aLeftGuide = fillWithGuide[(24 * W + 39) * 4 + 3];
+        const aRightGuide = fillWithGuide[(24 * W + 40) * 4 + 3];
+        const aLeftUniformCol = fillUniformCol[(24 * W + 39) * 4 + 3];
+        const aLeftNoGuide = fillNoGuide[(24 * W + 39) * 4 + 3];
+        check("inpaint_limit.js limitAlphaRows snaps solid fill layer against map.guide on rust (sharp edge vs uniform col / no-guide)",
+            guideCalls === 1 && colCalls === 1 && noGuideCalls === 1
+            && aLeftGuide === 255 && aRightGuide === 0
+            && aLeftUniformCol === 0 && aLeftNoGuide === 0,
+            `calls=${guideCalls}/${colCalls}/${noGuideCalls} guide=[${aLeftGuide},${aRightGuide}] uniformCol=${aLeftUniformCol} noGuide=${aLeftNoGuide}`);
+
+        // Stored depth limits with non-finite fields never throw on export
+        let storedOk = true, storedDetail = "";
+        for (const badLim of [
+            { source: "depth", lo: "bad", hi: 0.8 },
+            { source: "depth", lo: 0.2, hi: "bad" },
+            { source: "depth", lo: 0.2, hi: 0.8, fLo: "bad" },
+            { source: "depth", lo: 0.2, hi: 0.8, fHi: Infinity },
+            { source: "depth", lo: 0.2, hi: 0.8, snap: { enabled: true, strength: "bad" } },
+        ]) {
+            try {
+                const buf = new Uint8Array(16 * 16 * 4).fill(200);
+                limitAlphaRowsHigh(buf, 0, 0, 16, 16, badLim, mapWithGuide);
+            } catch (err) {
+                storedOk = false;
+                storedDetail = `${JSON.stringify(badLim)} threw ${err}`;
+                break;
+            }
+        }
+        K.setKernels("js");
+        check("inpaint_limit.js limitAlphaRows never throws on stored depth limits with non-finite fields", storedOk, storedDetail);
+    }
+
+    // Refusals for limitAlphaRows across twin, simd, and scalar
+    {
+        const map = new Uint16Array(16 * 16);
+        const guide = { data: new Uint8Array(16 * 16 * 4), w: 16, h: 16 };
+        const rgba = new Uint8Array(32 * 32 * 4);
+        const xf = [0.5, 0, 0, 0.5, 0, 0];
+        const lim = { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const snap = [0.05, 0.02];
+        const badCalls = [
+            ["null rgba", () => (k) => k.limitAlphaRows(null, map, 16, 16, xf, 0, 0, 32, 32, lim)],
+            ["short rgba", () => (k) => k.limitAlphaRows(new Uint8Array(100), map, 16, 16, xf, 0, 0, 32, 32, lim)],
+            ["non-u16 map", () => (k) => k.limitAlphaRows(rgba, new Uint8Array(256), 16, 16, xf, 0, 0, 32, 32, lim)],
+            ["short map", () => (k) => k.limitAlphaRows(rgba, new Uint16Array(100), 16, 16, xf, 0, 0, 32, 32, lim)],
+            ["mw = 0", () => (k) => k.limitAlphaRows(rgba, map, 0, 16, xf, 0, 0, 32, 32, lim)],
+            ["w < 0", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, -1, 32, lim)],
+            ["non-int x0", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 1.5, 0, 32, 32, lim)],
+            ["short xf", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, [1, 0, 0], 0, 0, 32, 32, lim)],
+            ["NaN xf", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, [NaN, 0, 0, 1, 0, 0], 0, 0, 32, 32, lim)],
+            ["null limit", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, null)],
+            ["NaN limit.lo", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, { lo: NaN, hi: 0.8, fLo: 0, fHi: 0 })],
+            ["short snap", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, lim, [0.05], guide)],
+            ["NaN snap", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, lim, [NaN, 0.02], guide)],
+            ["short guide", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, lim, snap, { data: new Uint8Array(10), w: 16, h: 16 })],
+            ["short col", () => (k) => k.limitAlphaRows(rgba, map, 16, 16, xf, 0, 0, 32, 32, lim, snap, guide, new Uint8Array(10))],
+        ];
+        let allThrew = true, miss = "";
+        for (const [label, fn] of badCalls) {
+            for (const [kName, k] of [["js", js], ["simd", simd], ["scalar", scalar]]) {
+                let threw = false;
+                try { fn()(k); } catch { threw = true; }
+                if (!threw) { allThrew = false; miss = `${label} on ${kName}`; break; }
+            }
+            if (!allThrew) break;
+        }
+        check("limit_alpha_rows refuses invalid inputs across twin, simd, and scalar", allThrew, miss);
+
+        // Raw export returns 1 on valid [wy0..wy0+wh) and 0 when [iy0..iy1] falls outside [wy0..wy0+wh)
+        const a = simd.job;
+        try {
+            const pRgba = simd._in(a, rgba, rgba.byteLength);
+            const pMap = simd._in(a, map, map.byteLength);
+            const pParams = a.take(12 * 8);
+            const pv = simd.view(Float64Array, pParams, 12);
+            pv[0] = 0.5; pv[3] = 0.5; pv[6] = 0.2; pv[7] = 0.8; pv[8] = 0.05; pv[9] = 0.05;
+            const okValid = simd.exports.limit_alpha_rows(
+                pRgba, 0, pMap, 0,
+                16, 16, 0, 16,
+                0, 0, 32, 32,
+                pParams, 0
+            );
+            const okOutLo = simd.exports.limit_alpha_rows(
+                pRgba, 0, pMap, 0,
+                16, 16, 5, 4,
+                0, 0, 32, 32,
+                pParams, 0
+            );
+            const okOutHi = simd.exports.limit_alpha_rows(
+                pRgba, 0, pMap, 0,
+                16, 16, 0, 4,
+                0, 0, 32, 32,
+                pParams, 0
+            );
+            check("raw limit_alpha_rows returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)",
+                okValid === 1 && okOutLo === 0 && okOutHi === 0,
+                `okValid=${okValid} okOutLo=${okOutLo} okOutHi=${okOutHi}`);
+        } finally { simd._reset(a); }
+    }
+
+    // Route check on K.limitAlphaRows
+    {
+        K.setKernels("rust");
+        const mw = 24, mh = 16, W = 120, H = 80;
+        const { map } = makeMapPair(mw, mh, "ramp");
+        const guide = { data: new Uint8Array(mw * mh * 4).fill(100), w: mw, h: mh };
+        const xf = [mw / W, 0, 0, mh / H, 0, 0];
+        const lim = { lo: 0.2, hi: 0.8, fLo: 0.05, fHi: 0.05, invert: false };
+        const snap = snapParams(50);
+        const bandJs = makeRgbaBand(W, H, "ramp");
+        const bandRust = new Uint8Array(bandJs);
+
+        K.setRoute("limitAlphaRows", "js");
+        K.pxCalls(true);
+        K.limitAlphaRows(bandJs, map, mw, mh, xf, 0, 0, W, H, lim, snap, guide, null);
+        const jsCalls = K.pxCalls(true).limit_alpha_rows || 0;
+
+        K.setRoute("limitAlphaRows", "rust");
+        K.limitAlphaRows(bandRust, map, mw, mh, xf, 0, 0, W, H, lim, snap, guide, null);
+        const rustCalls = K.pxCalls(true).limit_alpha_rows || 0;
+        K.setRoute("limitAlphaRows", null);
+        K.setKernels("js");
+
+        check("kernels.js limitAlphaRows routes between twin (0 calls) and rust (1 call) with identical output",
+            !twinDiff(bandRust, bandJs) && jsCalls === 0 && rustCalls === 1,
+            `jsCalls=${jsCalls} rustCalls=${rustCalls}`);
+    }
+
     if (process.env.PX_BENCH) {
         const mw = 4096, mh = 2731, W = 15000, H = 10000;
         const { map, rmax } = makeMapPair(mw, mh, "ramp");
@@ -7596,6 +8055,19 @@ async function rangeCases(js, simd, scalar, resample, K) {
             ];
             const med = benchMedians(rows, { rounds: 9 });
             console.log(`       range_tiles_rgba 15000x256 row, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 9)`);
+        }
+        const rgbaAlphaRow = new Uint8Array(rgbaRow);
+        for (const [what, s, g] of [
+            ["plain bilinear (15000x256)", null, null],
+            ["snapped (15000x256)", snap, guide],
+        ]) {
+            const rows = [
+                ["twin", () => js.limitAlphaRows(rgbaAlphaRow, map, mw, mh, xf, 0, y0, W, 256, lim, s, g, null)],
+                ["simd", () => simd.limitAlphaRows(rgbaAlphaRow, map, mw, mh, xf, 0, y0, W, 256, lim, s, g, null)],
+                ["scalar", () => scalar.limitAlphaRows(rgbaAlphaRow, map, mw, mh, xf, 0, y0, W, 256, lim, s, g, null)],
+            ];
+            const med = benchMedians(rows, { rounds: 9 });
+            console.log(`       limit_alpha_rows 15000x256 row, ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 9)`);
         }
     }
 }
