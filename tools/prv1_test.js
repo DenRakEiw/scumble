@@ -11,6 +11,7 @@ const util = require(path.join(PROV, "util.js"));
 const fal = require(path.join(PROV, "fal.js"));
 const replicate = require(path.join(PROV, "replicate.js"));
 const wavespeed = require(path.join(PROV, "wavespeed.js"));
+const bfl = require(path.join(PROV, "bfl.js"));
 const router = require(path.join(PROV, "comfyrouter.js"));
 const partner = require(path.join(PROV, "comfypartner.js"));
 
@@ -60,27 +61,43 @@ const json = (status, body, headers = {}) => new Response(JSON.stringify(body), 
 const html = (status, text, headers = {}) => new Response(text, { status, headers: { "content-type": "text/html", ...headers } });
 const pngRes = () => new Response(PNG, { status: 200, headers: { "content-type": "image/png" } });
 
+async function withGlobalFetch(fn, work) {
+    const saved = globalThis.fetch;
+    globalThis.fetch = fn;
+    try { return await work(); } finally { globalThis.fetch = saved; }
+}
+
 // ---- 1. fal.js (edit, upscale, relight) ----
 
-function makeFalRig({ id = "req-fal-77", submit, status = [], result = [], download = [], signal } = {}) {
+function makeFalRig({ id = "req-fal-77", cancelUrl, submit, status = [], result = [], download = [], cancel, signal } = {}) {
     const KEY = KEYS[0];
+    const cancelHref = cancelUrl !== undefined ? cancelUrl : "https://queue.fal.run/m/requests/" + id + "/cancel";
     const statusQ = [...status];
     const resultQ = [...result];
     const dlQ = [...download];
     const sleeps = [];
-    const calls = { submit: 0, status: 0, result: 0, download: 0, afterAbort: 0 };
+    const calls = { submit: 0, status: 0, result: 0, download: 0, cancel: 0, afterAbort: 0 };
+    const cancelCalls = [];
 
     async function fetch(url, init = {}) {
+        const u = String(url);
+        const method = String(init.method || "GET").toUpperCase();
+        if (method === "PUT" && u.endsWith("/cancel")) {
+            calls.cancel++;
+            cancelCalls.push({ url: u, method, headers: init.headers || {}, redirect: init.redirect, signal: init.signal });
+            if (cancel) return cancel(u, init);
+            return json(200, { status: "CANCELED" });
+        }
         if (signal && signal.aborted) {
             calls.afterAbort++;
             throw Object.assign(new Error("cancelled"), { name: "AbortError" });
         }
-        const u = String(url);
-        const method = String(init.method || "GET").toUpperCase();
         if (method === "POST") {
             calls.submit++;
             if (submit) return submit();
-            return json(200, { request_id: id, status: "IN_QUEUE", status_url: "https://queue.fal.run/m/requests/" + id + "/status", response_url: "https://queue.fal.run/m/requests/" + id });
+            const body = { request_id: id, status: "IN_QUEUE", status_url: "https://queue.fal.run/m/requests/" + id + "/status", response_url: "https://queue.fal.run/m/requests/" + id };
+            if (cancelHref) body.cancel_url = cancelHref;
+            return json(200, body);
         }
         if (u.endsWith("/status")) {
             calls.status++;
@@ -111,29 +128,39 @@ function makeFalRig({ id = "req-fal-77", submit, status = [], result = [], downl
         log: () => {},
     };
     const req = { model: "fal-ai/flux-2/edit", kind: "edit", prompt: "a cat", image: PNG, references: [], width: 64, height: 64, seed: 11, params: {} };
-    return { KEY, id, calls, sleeps, ctx, req };
+    return { KEY, id, calls, cancelCalls, sleeps, ctx, req, fetch };
 }
 
 // ---- 2. replicate.js (edit) ----
 
-function makeReplicateRig({ id = "pred-rep-88", submit, status = [], download = [], signal } = {}) {
+function makeReplicateRig({ id = "pred-rep-88", cancelUrl, submit, status = [], download = [], cancel, signal } = {}) {
     const KEY = KEYS[1];
+    const cancelHref = cancelUrl !== undefined ? cancelUrl : `https://api.replicate.com/v1/predictions/${id}/cancel`;
     const statusQ = [...status];
     const dlQ = [...download];
     const sleeps = [];
-    const calls = { submit: 0, status: 0, download: 0, afterAbort: 0 };
+    const calls = { submit: 0, status: 0, download: 0, cancel: 0, afterAbort: 0 };
+    const cancelCalls = [];
 
     async function fetch(url, init = {}) {
+        const u = String(url);
+        const method = String(init.method || "GET").toUpperCase();
+        if (method === "POST" && u.endsWith("/cancel")) {
+            calls.cancel++;
+            cancelCalls.push({ url: u, method, headers: init.headers || {}, redirect: init.redirect, signal: init.signal });
+            if (cancel) return cancel(u, init);
+            return json(200, { id, status: "canceled" });
+        }
         if (signal && signal.aborted) {
             calls.afterAbort++;
             throw Object.assign(new Error("cancelled"), { name: "AbortError" });
         }
-        const u = String(url);
-        const method = String(init.method || "GET").toUpperCase();
         if (method === "POST") {
             calls.submit++;
             if (submit) return submit();
-            return json(201, { id, status: "starting", urls: { get: `https://api.replicate.com/v1/predictions/${id}` } });
+            const urls = { get: `https://api.replicate.com/v1/predictions/${id}` };
+            if (cancelHref) urls.cancel = cancelHref;
+            return json(201, { id, status: "starting", urls });
         }
         if (u.startsWith("https://api.replicate.com/v1/predictions/")) {
             calls.status++;
@@ -158,7 +185,7 @@ function makeReplicateRig({ id = "pred-rep-88", submit, status = [], download = 
         log: () => {},
     };
     const req = { model: "black-forest-labs/flux-2-pro", kind: "edit", prompt: "a cat", image: PNG, references: [], width: 64, height: 64, seed: 11, params: {} };
-    return { KEY, id, calls, sleeps, ctx, req };
+    return { KEY, id, calls, cancelCalls, sleeps, ctx, req, fetch };
 }
 
 // ---- 3. wavespeed.js (edit) ----
@@ -333,11 +360,12 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
                     fakeNow += ms;
                 };
                 const err = await throws(() => runFn(g.req, g.ctx));
-                check(`${label}: poll timeout clamps sleep to remaining 5000 ms and throws naming ${g.id} and saying job may still finish and be charged`,
+                const stopOk = g.calls.cancel === undefined || (g.calls.cancel === 1 && g.ctx.cancelAsked === true);
+                check(`${label}: poll timeout clamps sleep to remaining 5000 ms, sends stop if supported, and throws naming ${g.id} and saying job may still finish and be charged`,
                     !!err && err.includes("timed out after 15 minutes") && err.includes(g.id)
                     && /may still finish and be charged/.test(err) && !err.includes(g.KEY)
-                    && g.sleeps.includes(5000) && !g.sleeps.includes(60000),
-                    `${err} | sleeps=${JSON.stringify(g.sleeps)}`);
+                    && g.sleeps.includes(5000) && !g.sleeps.includes(60000) && g.calls.submit === 1 && stopOk,
+                    `${err} | sleeps=${JSON.stringify(g.sleeps)} calls=${JSON.stringify(g.calls)}`);
             } finally {
                 Date.now = realNow;
             }
@@ -399,8 +427,9 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
             const t0 = Date.now();
             const err = await throws(() => runFn(g.req, g.ctx));
             const elapsed = Date.now() - t0;
-            check(`${label}: Cancel during status retry sleep ends at once (${elapsed} ms < 500 ms) and sends no further request`,
-                /cancelled|aborted/i.test(err || "") && elapsed < 500 && g.calls.submit === 1 && g.calls.status === 1 && g.calls.download === 0 && g.calls.afterAbort === 0,
+            const stopOk = g.calls.cancel === undefined || (g.calls.cancel === 1 && g.ctx.cancelAsked === true);
+            check(`${label}: Cancel during status retry sleep ends at once (${elapsed} ms < 500 ms), asks provider to stop once, and sends no further poll`,
+                /cancelled|aborted/i.test(err || "") && elapsed < 500 && g.calls.submit === 1 && g.calls.status === 1 && g.calls.download === 0 && g.calls.afterAbort === 0 && stopOk,
                 `err=${err} elapsed=${elapsed}ms calls=${JSON.stringify(g.calls)}`);
         }
         // 10. Cancel during the download retry's sleep ends at once and sends no further request
@@ -424,8 +453,9 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
             const t0 = Date.now();
             const err = await throws(() => runFn(g.req, g.ctx));
             const elapsed = Date.now() - t0;
-            check(`${label}: Cancel during download retry sleep ends at once (${elapsed} ms < 500 ms) and sends no further request`,
-                /cancelled|aborted/i.test(err || "") && elapsed < 500 && g.calls.submit === 1 && g.calls.download === 1 && g.calls.afterAbort === 0,
+            const doneOk = g.calls.cancel === undefined || (g.calls.cancel === 0 && g.ctx.jobDone === true && !g.ctx.cancelAsked);
+            check(`${label}: Cancel during download retry sleep ends at once (${elapsed} ms < 500 ms), sends no stop, and marks jobDone`,
+                /cancelled|aborted/i.test(err || "") && elapsed < 500 && g.calls.submit === 1 && g.calls.download === 1 && g.calls.afterAbort === 0 && doneOk,
                 `err=${err} elapsed=${elapsed}ms calls=${JSON.stringify(g.calls)}`);
         }
         // 11. An AbortError thrown directly by fetch (with or without ctx.signal) is never treated as a failed read to retry
@@ -477,7 +507,7 @@ async function main() {
     await testPolledAdapter(
         "fal.js",
         makeFalRig,
-        (req, ctx) => fal.edit(req, ctx),
+        (req, ctx) => withGlobalFetch(ctx.fetch, () => fal.edit(req, ctx)),
         () => json(200, { status: "IN_PROGRESS" }),
         (key) => json(200, { status: "FAILED", error: `content blocked (${key})` }),
     );
@@ -557,7 +587,7 @@ async function main() {
     await testPolledAdapter(
         "replicate.js",
         makeReplicateRig,
-        (req, ctx) => replicate.edit(req, ctx),
+        (req, ctx) => withGlobalFetch(ctx.fetch, () => replicate.edit(req, ctx)),
         () => json(200, { status: "processing" }),
         (key) => json(200, { status: "failed", error: `content blocked (${key})` }),
     );
@@ -723,12 +753,6 @@ async function main() {
             return { rid, hyId, calls, sleeps, ctx, fetch };
         }
 
-        const withGlobalFetch = async (fn, work) => {
-            const saved = globalThis.fetch;
-            globalThis.fetch = fn;
-            try { return await work(); } finally { globalThis.fetch = saved; }
-        };
-
         const crReq = { model: "bfl/flux-2-pro", kind: "edit", prompt: "a cat", image: PNG, references: [], width: 64, height: 64, seed: 7, params: {} };
         const hyReq = { model: "hy-image-v3.5-preview", kind: "edit", prompt: "a cat", image: PNG, references: [], width: 512, height: 512, seed: 7, params: {} };
 
@@ -829,6 +853,245 @@ async function main() {
         check("errorText cuts JSON error message to 500 chars after scrubbing key straddling the 500-char cut",
             outText === outRead,
             `len=${outText.length} tail=${outText.slice(485)}`);
+    });
+
+    await section("fal.js, replicate.js & bfl.js: provider stop on Cancel/timeout & BFL Cancel (PRV-3)", async () => {
+        // 1. Cancel while polling sends PUT (fal) / POST (Replicate) with auth, redirect: "error", timeout signal, sets cancelAsked on 2xx without reading body
+        for (const [label, makeRig, runFn, wantMethod, wantHost, wantAuthPrefix] of [
+            ["fal.js", makeFalRig, (r, c) => fal.edit(r, c), "PUT", "queue.fal.run", "Key "],
+            ["replicate.js", makeReplicateRig, (r, c) => replicate.edit(r, c), "POST", "api.replicate.com", "Bearer "],
+        ]) {
+            let bodyRead = false;
+            const ac = new AbortController();
+            const g = makeRig({
+                signal: ac.signal,
+                cancel: async () => ({
+                    ok: true,
+                    status: 200,
+                    text() { bodyRead = true; throw new Error("cancel body should not be read"); },
+                    json() { bodyRead = true; throw new Error("cancel body should not be read"); },
+                }),
+            });
+            g.ctx.sleep = async () => { ac.abort(); };
+            const err = await withGlobalFetch(g.fetch, () => throws(() => runFn(g.req, g.ctx)));
+            const c = g.cancelCalls[0];
+            check(`${label}: Cancel while queued sends ${wantMethod} to ${wantHost} with auth & redirect=error, sets cancelAsked=true without reading body, POST counted once`,
+                /cancelled|aborted/i.test(err || "") && g.calls.submit === 1 && g.calls.cancel === 1 && g.ctx.cancelAsked === true && !g.ctx.jobDone && !bodyRead
+                && c && c.method === wantMethod && new URL(c.url).hostname === wantHost && c.headers.Authorization === wantAuthPrefix + g.KEY && c.redirect === "error" && !!c.signal,
+                JSON.stringify({ err, calls: g.calls, cancelAsked: g.ctx.cancelAsked, c }));
+
+            // 2. Failed stop request (HTTP 500 or thrown network error) is silent and leaves cancelAsked unset
+            for (const failCancel of [
+                () => json(500, { error: "internal error" }),
+                () => Promise.reject(new Error("cancel socket hang up")),
+            ]) {
+                const acFail = new AbortController();
+                const gFail = makeRig({ signal: acFail.signal, cancel: failCancel });
+                gFail.ctx.sleep = async () => { acFail.abort(); };
+                const errFail = await withGlobalFetch(gFail.fetch, () => throws(() => runFn(gFail.req, gFail.ctx)));
+                check(`${label}: failed stop request is silent and leaves cancelAsked unset`,
+                    /cancelled|aborted/i.test(errFail || "") && gFail.calls.submit === 1 && gFail.calls.cancel === 1 && !gFail.ctx.cancelAsked && !gFail.ctx.jobDone,
+                    JSON.stringify({ errFail, calls: gFail.calls, cancelAsked: gFail.ctx.cancelAsked }));
+            }
+
+            // 3. Cancel during the submit POST sends no stop and sets neither cancelAsked nor jobDone
+            {
+                const acSub = new AbortController();
+                const gSub = makeRig({
+                    signal: acSub.signal,
+                    submit: () => {
+                        acSub.abort();
+                        throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+                    },
+                });
+                const errSub = await withGlobalFetch(gSub.fetch, () => throws(() => runFn(gSub.req, gSub.ctx)));
+                check(`${label}: Cancel during submit POST sends no stop and leaves cancelAsked/jobDone unset`,
+                    /cancelled|aborted/i.test(errSub || "") && gSub.calls.submit === 1 && gSub.calls.cancel === 0 && !gSub.ctx.cancelAsked && !gSub.ctx.jobDone,
+                    JSON.stringify({ errSub, calls: gSub.calls }));
+            }
+
+            // 4. Untrusted cancel_url / urls.cancel (http:, wrong host, or credentials) sends nothing
+            for (const badUrl of [
+                `http://${wantHost}/v1/cancel`,
+                "https://evil.example/v1/cancel",
+                `https://user:pw@${wantHost}/v1/cancel`,
+            ]) {
+                const acBad = new AbortController();
+                const gBad = makeRig({ signal: acBad.signal, cancelUrl: badUrl });
+                gBad.ctx.sleep = async () => { acBad.abort(); };
+                const errBad = await withGlobalFetch(gBad.fetch, () => throws(() => runFn(gBad.req, gBad.ctx)));
+                check(`${label}: untrusted cancel URL (${badUrl}) sends no stop request`,
+                    /cancelled|aborted/i.test(errBad || "") && gBad.calls.cancel === 0 && !gBad.ctx.cancelAsked,
+                    JSON.stringify({ badUrl, calls: gBad.calls }));
+            }
+        }
+
+        // 5. A stop fake that never answers ends the run within ~2 s without setting cancelAsked (tested in parallel for fal & Replicate)
+        {
+            const runHangingCancel = async (makeRig, runFn) => {
+                const ac = new AbortController();
+                let rejectLate;
+                const g = makeRig({
+                    signal: ac.signal,
+                    cancel: () => new Promise((_, rej) => { rejectLate = rej; }),
+                });
+                g.ctx.sleep = async () => { ac.abort(); };
+                const t0 = Date.now();
+                const err = await throws(() => runFn(g.req, g.ctx));
+                const elapsed = Date.now() - t0;
+                if (rejectLate) setTimeout(() => rejectLate(new Error("late cancel failure after 2s race")), 10);
+                return { err, elapsed, g };
+            };
+            const saved = globalThis.fetch;
+            let falCalls = 0, repCalls = 0;
+            globalThis.fetch = (url, init) => {
+                if (String(url).includes("queue.fal.run")) { falCalls++; return new Promise(() => {}); }
+                if (String(url).includes("api.replicate.com")) { repCalls++; return new Promise(() => {}); }
+                return Promise.reject(new Error("unexpected url " + url));
+            };
+            try {
+                const [fRes, rRes] = await Promise.all([
+                    runHangingCancel(makeFalRig, (r, c) => fal.edit(r, c)),
+                    runHangingCancel(makeReplicateRig, (r, c) => replicate.edit(r, c)),
+                ]);
+                check(`fal.js: hanging stop request ends within ~2 s (${fRes.elapsed} ms) without cancelAsked`,
+                    /cancelled|aborted/i.test(fRes.err || "") && fRes.elapsed >= 1800 && fRes.elapsed < 2800 && falCalls === 1 && !fRes.g.ctx.cancelAsked,
+                    `elapsed=${fRes.elapsed}ms falCalls=${falCalls}`);
+                check(`replicate.js: hanging stop request ends within ~2 s (${rRes.elapsed} ms) without cancelAsked`,
+                    /cancelled|aborted/i.test(rRes.err || "") && rRes.elapsed >= 1800 && rRes.elapsed < 2800 && repCalls === 1 && !rRes.g.ctx.cancelAsked,
+                    `elapsed=${rRes.elapsed}ms repCalls=${repCalls}`);
+            } finally {
+                globalThis.fetch = saved;
+            }
+        }
+
+        // 6. Cancel after COMPLETED (fal: during resultUrl fetch and during upscale/relight download) or succeeded (Replicate: immediate submit succeeded) sends no stop and sets jobDone = true
+        {
+            const acRes = new AbortController();
+            const gRes = makeFalRig({
+                signal: acRes.signal,
+                result: [() => {
+                    acRes.abort();
+                    throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+                }],
+            });
+            const errRes = await withGlobalFetch(gRes.fetch, () => throws(() => fal.edit(gRes.req, gRes.ctx)));
+            check("fal.js: Cancel during resultUrl read (after COMPLETED) sends no stop and sets ctx.jobDone = true",
+                /cancelled|aborted/i.test(errRes || "") && gRes.calls.cancel === 0 && gRes.ctx.jobDone === true && !gRes.ctx.cancelAsked,
+                JSON.stringify({ calls: gRes.calls, jobDone: gRes.ctx.jobDone }));
+
+            for (const [verb, extra] of [["upscale", { factor: 2 }], ["relight", {}]]) {
+                const acDl = new AbortController();
+                const gDl = makeFalRig({
+                    signal: acDl.signal,
+                    download: [() => {
+                        acDl.abort();
+                        throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+                    }],
+                });
+                const errDl = await withGlobalFetch(gDl.fetch, () => throws(() => fal[verb]({ ...gDl.req, kind: verb, ...extra }, gDl.ctx)));
+                check(`fal.${verb}: Cancel during picture download (after COMPLETED) sends no stop and sets ctx.jobDone = true`,
+                    /cancelled|aborted/i.test(errDl || "") && gDl.calls.cancel === 0 && gDl.ctx.jobDone === true && !gDl.ctx.cancelAsked,
+                    JSON.stringify({ calls: gDl.calls, jobDone: gDl.ctx.jobDone }));
+            }
+
+            const acRep = new AbortController();
+            const gRep = makeReplicateRig({
+                signal: acRep.signal,
+                submit: () => json(201, {
+                    id: "pred-sync-1",
+                    status: "succeeded",
+                    output: ["https://replicate.delivery/out.png"],
+                    urls: { get: "https://api.replicate.com/v1/predictions/pred-sync-1", cancel: "https://api.replicate.com/v1/predictions/pred-sync-1/cancel" },
+                }),
+                download: [() => {
+                    acRep.abort();
+                    throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+                }],
+            });
+            const errRep = await withGlobalFetch(gRep.fetch, () => throws(() => replicate.edit(gRep.req, gRep.ctx)));
+            check("replicate.js: Cancel during picture download after synchronous submit succeeded sends no stop and sets ctx.jobDone = true",
+                /cancelled|aborted/i.test(errRep || "") && gRep.calls.cancel === 0 && gRep.ctx.jobDone === true && !gRep.ctx.cancelAsked,
+                JSON.stringify({ calls: gRep.calls, jobDone: gRep.ctx.jobDone }));
+        }
+
+        // 7. bfl.js uses (ctx.sleep || sleep) at all 3 places and rethrows on ctx.signal.aborted during poll or download retry
+        {
+            const bflKey = "bfl_secret_key_9988776655";
+            KEYS.push(bflKey);
+            const makeBflRig = ({ signal, polls = [], downloads = [] } = {}) => {
+                const pollQ = [...polls];
+                const dlQ = [...downloads];
+                const sleeps = [];
+                const calls = { submit: 0, poll: 0, download: 0 };
+                const fetch = async (url) => {
+                    if (signal && signal.aborted) throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+                    const u = String(url);
+                    if (u.includes("/v1/flux-2-pro")) {
+                        calls.submit++;
+                        return json(200, { id: "bfl-job-1", polling_url: "https://api.bfl.ai/v1/get_result?id=bfl-job-1" });
+                    }
+                    if (u.includes("/v1/get_result")) {
+                        calls.poll++;
+                        const step = pollQ.shift();
+                        if (step) return step();
+                        return json(200, { status: "Ready", result: { sample: "https://delivery.bfl.ai/out.png", seed: 42 } });
+                    }
+                    if (u.includes("delivery.bfl.ai")) {
+                        calls.download++;
+                        const step = dlQ.shift();
+                        if (step) return step();
+                        return pngRes();
+                    }
+                    return json(404, { detail: "not found" });
+                };
+                const ctx = { key: bflKey, fetch, signal: signal || null, sleep: async (ms) => { sleeps.push(ms); }, log: () => {} };
+                const req = { model: "flux-2-pro", kind: "edit", prompt: "a cat", image: PNG, references: [], width: 64, height: 64, seed: 42, params: {} };
+                return { ctx, req, sleeps, calls };
+            };
+
+            // 7a. All 3 sleep sites (poll 1000, retry 1000*misses, download retry 1500) go through ctx.sleep
+            const gOk = makeBflRig({
+                polls: [() => html(502, "bad gateway")],
+                downloads: [() => html(502, "cdn busy")],
+            });
+            const t0Ok = Date.now();
+            const outOk = await bfl.edit(gOk.req, gOk.ctx);
+            const elapsedOk = Date.now() - t0Ok;
+            check(`bfl.js: poll wait, poll retry and download retry all use ctx.sleep ([1000,1000,1000,1500] in ${elapsedOk} ms)`,
+                Buffer.compare(outOk.bytes, PNG) === 0 && elapsedOk < 500 && JSON.stringify(gOk.sleeps) === JSON.stringify([1000, 1000, 1000, 1500]),
+                JSON.stringify({ sleeps: gOk.sleeps, calls: gOk.calls, elapsedOk }));
+
+            // 7b. Cancel during BFL status poll rethrows at once instead of retrying 5 times (~21 s)
+            const acPoll = new AbortController();
+            const gPoll = makeBflRig({
+                signal: acPoll.signal,
+                polls: [() => {
+                    acPoll.abort();
+                    throw new Error("socket closed on abort");
+                }],
+            });
+            const t0Poll = Date.now();
+            const errPoll = await throws(() => bfl.edit(gPoll.req, gPoll.ctx));
+            const elapsedPoll = Date.now() - t0Poll;
+            check(`bfl.js: Cancel during status poll rethrows at once without retrying (calls.poll=${gPoll.calls.poll}, sleeps=${JSON.stringify(gPoll.sleeps)})`,
+                !!errPoll && gPoll.calls.poll === 1 && gPoll.sleeps.length === 1 && elapsedPoll < 200,
+                JSON.stringify({ errPoll, calls: gPoll.calls, sleeps: gPoll.sleeps }));
+
+            // 7c. Cancel during BFL picture download rethrows at once without retrying
+            const acDl = new AbortController();
+            const gDl = makeBflRig({
+                signal: acDl.signal,
+                downloads: [() => {
+                    acDl.abort();
+                    throw new Error("download aborted");
+                }],
+            });
+            const errDl = await throws(() => bfl.edit(gDl.req, gDl.ctx));
+            check(`bfl.js: Cancel during picture download rethrows at once without retrying (calls.download=${gDl.calls.download})`,
+                !!errDl && gDl.calls.download === 1 && JSON.stringify(gDl.sleeps) === JSON.stringify([1000]),
+                JSON.stringify({ errDl, calls: gDl.calls, sleeps: gDl.sleeps }));
+        }
     });
 
     await section("no key leaked in any error", async () => {
