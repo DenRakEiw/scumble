@@ -289,6 +289,26 @@ function closestAspect(w, h, presets) {
     return best;
 }
 
+/** editAspect: a preset within this of the emitted crop goes (|ln| of the ratios); the planned one within the second. */
+const FIT_SLACK = 0.03;
+const PLANNED_SLACK = 0.08;
+
+/**
+ * { aspect, fit } of an edit on a model of aspect presets (`o.ratios`, without auto; FLUX 3 on OpenRouter, Krea 3). The
+ * preset the crop was widened to (req.cropAspect, one of `ratios`, within PLANNED_SLACK of the emitted size), else the
+ * nearest within FIT_SLACK, both with fit "stretch" (the answer comes back in that shape and the stitch stretches it
+ * onto the crop); else "auto" and no fit.
+ */
+function editAspect(req, o) {
+    const ratios = Array.isArray(o.ratios) ? o.ratios.filter((r) => r && r !== "auto") : [];
+    const w = Math.max(1, +req.width || 1024), h = Math.max(1, +req.height || 1024);
+    const off = (r) => { const [a, b] = String(r).split(":").map(Number); return a > 0 && b > 0 ? Math.abs(Math.log(w / h) - Math.log(a / b)) : Infinity; };
+    const planned = String(req.cropAspect || "");
+    if (ratios.includes(planned) && off(planned) <= PLANNED_SLACK) return { aspect: planned, fit: "stretch" };
+    const near = ratios.length ? closestAspect(w, h, ratios) : null;
+    return near && off(near) <= FIT_SLACK ? { aspect: near, fit: "stretch" } : { aspect: "auto", fit: null };
+}
+
 /**
  * A free pixel size for a crop of w x h under a model's rules: both edges multiples of `step`,
  * at most `max` an edge, `minPixels` to `maxPixels` in all (0 = no bound) and a ratio no steeper
@@ -433,4 +453,4 @@ function noKeyText(label, stale) {
         : `No API key for ${label}. Add it under Settings › API providers.`;
 }
 
-module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, retryAfterMs, scrub, readError, sleep, closestSize, closestAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };
+module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, retryAfterMs, scrub, readError, sleep, closestSize, closestAspect, editAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };

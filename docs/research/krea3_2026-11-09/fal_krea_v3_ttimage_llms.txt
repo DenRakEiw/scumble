@@ -1,0 +1,229 @@
+# Krea 3 Text to Image
+
+> Generates images from text prompts with optional prompt expansion, configurable output dimensions, and seed control.
+
+
+## Overview
+
+- **Endpoint**: `https://fal.run/krea/v3/text-to-image`
+- **Model ID**: `krea/v3/text-to-image`
+- **Category**: text-to-image
+- **Kind**: inference
+**Tags**: text-to-image, image generation, prompt expansion, krea, krea-3
+
+
+
+## Pricing
+
+Billed per megapixel at **$0.025**/MP, counting the output image plus each reference image as the model processes it (references larger than the output are counted at the output’s size). 1 MP = 1024×1024 pixels.
+
+For more details, see [fal.ai pricing](https://fal.ai/pricing).
+
+## API Information
+
+This model can be used via our HTTP API or more conveniently via our client libraries.
+See the input and output schema below, as well as the usage examples.
+
+
+### Input Schema
+
+The API accepts the following input parameters:
+
+
+- **`prompt`** (`string`, _required_):
+  Description of the image to generate.
+  - Examples: "A red fox curled up asleep in fresh snow at dawn, soft pink light on the pine trees behind it"
+
+- **`image_size`** (`ImageSize | Enum`, _optional_):
+  Output size, rounded up to multiples of 16, at most 4,220,160 total pixels (1680×2512). auto lets the prompt expander pick the aspect ratio at about 2048×2048. Default value: `auto`
+  - Default: `"auto"`
+  - One of: ImageSize | Enum
+
+- **`reasoning_level`** (`ReasoningLevelEnum`, _optional_):
+  How much effort the prompt expander spends reasoning about the given prompt. Higher reasoning effort means slower generation time. Default value: `"medium"`
+  - Default: `"medium"`
+  - Options: `"medium"`, `"high"`
+
+- **`negative_prompt`** (`string`, _optional_):
+  What to keep out of the image. Default value: `""`
+  - Default: `""`
+
+- **`seed`** (`integer`, _optional_):
+  Latent noise seed. Use a new seed when editing a previous output again.
+
+- **`output_format`** (`OutputFormatEnum`, _optional_):
+  Output image format. Default value: `"png"`
+  - Default: `"png"`
+  - Options: `"png"`, `"jpeg"`
+
+- **`sync_mode`** (`boolean`, _optional_):
+  Return images as data URIs instead of saving them in request history.
+  - Default: `false`
+
+- **`enable_safety_checker`** (`boolean`, _optional_):
+  Check output images for unsafe content. Disabling requires account authorization. Default value: `true`
+  - Default: `true`
+
+
+
+**Required Parameters Example**:
+
+```json
+{
+  "prompt": "A red fox curled up asleep in fresh snow at dawn, soft pink light on the pine trees behind it"
+}
+```
+
+**Full Example**:
+
+```json
+{
+  "prompt": "A red fox curled up asleep in fresh snow at dawn, soft pink light on the pine trees behind it",
+  "image_size": "auto",
+  "reasoning_level": "medium",
+  "output_format": "png",
+  "enable_safety_checker": true
+}
+```
+
+
+### Output Schema
+
+The API returns the following output format:
+
+- **`images`** (`list<ImageFile>`, _required_):
+  Generated images.
+  - Array of ImageFile
+
+- **`seed`** (`integer`, _required_):
+  Latent noise seed used for generation.
+
+- **`prompt`** (`string`, _required_):
+  Prompt used for generation, after expansion.
+
+- **`timings`** (`Timings`, _required_):
+  Seconds spent in each generation stage; `inference` is the total GPU sampling time.
+
+- **`has_nsfw_concepts`** (`list<boolean>`, _required_):
+  Safety result for each image.
+  - Array of boolean
+
+
+
+**Example Response**:
+
+```json
+{
+  "images": [
+    {
+      "url": "",
+      "content_type": "image/png",
+      "file_name": "z9RV14K95DvU.png",
+      "file_size": 4404019
+    }
+  ],
+  "prompt": ""
+}
+```
+
+
+## Usage Examples
+
+### cURL
+
+```bash
+curl --request POST \
+  --url https://fal.run/krea/v3/text-to-image \
+  --header "Authorization: Key $FAL_KEY" \
+  --header "Content-Type: application/json" \
+  --data '{
+     "prompt": "A red fox curled up asleep in fresh snow at dawn, soft pink light on the pine trees behind it"
+   }'
+```
+
+### Python
+
+Ensure you have the Python client installed:
+
+```bash
+pip install fal-client
+```
+
+Then use the API client to make requests:
+
+```python
+import fal_client
+
+def on_queue_update(update):
+    if isinstance(update, fal_client.InProgress):
+        for log in update.logs:
+           print(log["message"])
+
+result = fal_client.subscribe(
+    "krea/v3/text-to-image",
+    arguments={
+        "prompt": "A red fox curled up asleep in fresh snow at dawn, soft pink light on the pine trees behind it"
+    },
+    with_logs=True,
+    on_queue_update=on_queue_update,
+)
+print(result)
+```
+
+### JavaScript
+
+Ensure you have the JavaScript client installed:
+
+```bash
+npm install --save @fal-ai/client
+```
+
+Then use the API client to make requests:
+
+```javascript
+import { fal } from "@fal-ai/client";
+
+const result = await fal.subscribe("krea/v3/text-to-image", {
+  input: {
+    prompt: "A red fox curled up asleep in fresh snow at dawn, soft pink light on the pine trees behind it"
+  },
+  logs: true,
+  onQueueUpdate: (update) => {
+    if (update.status === "IN_PROGRESS") {
+      update.logs.map((log) => log.message).forEach(console.log);
+    }
+  },
+});
+console.log(result.data);
+console.log(result.requestId);
+```
+
+
+## Deploy your own model
+
+To run your own weights, a fine-tune or a custom pipeline on the GPUs that serve this API, deploy it on fal Serverless. GPUs from H100 (80GB) to B300 (288GB), billed per second; an H100 is $4.50/h list, as low as $2.49/h. Prices, GPU specs and deploy steps: [fal Serverless](https://fal.ai/serverless.md).
+
+## Additional Resources
+
+### Documentation
+
+- [Model Playground](https://fal.ai/models/krea/v3/text-to-image)
+- [API Documentation](https://fal.ai/models/krea/v3/text-to-image/api)
+- [OpenAPI Schema](https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=krea/v3/text-to-image)
+
+### fal.ai Platform
+
+- [Platform Documentation](https://fal.ai/docs/documentation)
+- [Python Client](https://fal.ai/docs/api-reference/client-libraries/python)
+- [JavaScript Client](https://fal.ai/docs/api-reference/client-libraries/javascript)
+
+### Other agent-readable surfaces
+
+This file covers one model. To find anything else:
+
+- [Platform overview](https://fal.ai/llms.txt): Entry points and representative endpoint IDs
+- [Documentation index](https://fal.ai/docs/llms.txt): Every documentation page
+- [Full documentation text](https://fal.ai/docs/llms-full.txt): The whole documentation inlined
+- [Pricing](https://fal.ai/pricing.md): Model API and Serverless GPU prices
+- [fal Serverless](https://fal.ai/serverless.md): Deploy your own models: GPU prices, specs and steps
+- Any other model: `https://fal.ai/models/<endpoint-id>/llms.txt`

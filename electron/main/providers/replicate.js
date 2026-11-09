@@ -20,7 +20,9 @@
 // value a text run's model does not take (Ideogram's "very_low" is an edit's only), and on a fill `max_ratio` refuses
 // a crop steeper than that and `max_bytes` holds each picture to that size (JPEG for an opaque one over it), both
 // before the first upload. `omit` lists input fields the model's schema does not have (GPT Image 2.5 and 2.6: "seed",
-// "negative_prompt"); they stay home, and a run whose seed stayed home reports none.
+// "negative_prompt"); they stay home, and a run whose seed stayed home reports none. `edit_aspect` "preset_or_auto"
+// with `ratios` (Krea 3): an edit sends the preset the crop was widened to (util.editAspect), info.fit "stretch" for
+// the stitch, else "auto".
 // A text run (Generate new) goes to the same model without the crop: reference layers, when there are any, fill the
 // image list in order (the crop's slot being a reference's), and the shape goes as `aspect_ratio`: the one asked for,
 // else the preset closest to the asked size. It never keeps the edit's "match_input_image", which would follow the
@@ -28,7 +30,7 @@
 // layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { dataUri, downloadImage, pollJob, scrub, readError, num, closestAspect, closestSize, seedOf, textShape, ideogramMask, checkRatio, withinBytes } = require("./util");
+const { dataUri, downloadImage, pollJob, scrub, readError, num, closestAspect, closestSize, editAspect, seedOf, textShape, ideogramMask, checkRatio, withinBytes } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://api.replicate.com/v1";
@@ -119,6 +121,12 @@ async function inputFor(req, ctx, info = {}) {
     for (const [k, v] of Object.entries(p)) {
         if (k === "random_seed" || v === "" || v == null) continue;
         input[k] = v;
+    }
+    // an edit on a model of aspect presets (Krea 3): the preset the crop was widened to, else the model's own "auto"
+    if (req.kind === "edit" && o.edit_aspect === "preset_or_auto" && Array.isArray(o.ratios)) {
+        const a = editAspect(req, o);
+        input.aspect_ratio = a.aspect;
+        if (a.fit) info.fit = a.fit;
     }
     if (req.kind === "text") {
         // a value the text route does not take becomes the one the variant names for it

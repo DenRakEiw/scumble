@@ -218,6 +218,8 @@ async function main() {
             // P-H3-Image (docs/PLAN_PH3.md): Pruna AI's and the node's <Picture 1>, <Picture 2> ...
             p_h3_image: "<Picture {n}>", cloud_p_h3_image: "<Picture {n}>",
         };
+        // a variant whose host names the pictures its own way: Krea 3 on fal and WaveSpeed (their pages: <image-1>, <image-2>)
+        const WANT_VARIANT = { "krea_3/fal": "<image-{n}>", "krea_3/wavespeed": "<image-{n}>" };
         const wrong = [];
         for (const name of fs.readdirSync(RECIPES).filter((n) => n.endsWith(".json"))) {
             const raw = rawFile(name);
@@ -227,7 +229,10 @@ async function main() {
                 continue;
             }
             const want = WANT[r.id] || "image {n}";
-            for (const [pid, v] of Object.entries(r.providers)) if (!v.refs || v.refs.name !== want) wrong.push(`${r.id}/${pid}: ${short(v.refs)}, not ${want}`);
+            for (const [pid, v] of Object.entries(r.providers)) {
+                const own = WANT_VARIANT[`${r.id}/${pid}`] || want;
+                if (!v.refs || v.refs.name !== own) wrong.push(`${r.id}/${pid}: ${short(v.refs)}, not ${own}`);
+            }
         }
         check("every provider variant of every shipped recipe carries its refs.name", !wrong.length, wrong.join("; "));
         const warn = console.warn;
@@ -282,6 +287,8 @@ async function main() {
             grok_imagine: { fal: { model: "xai/grok-imagine-image/v2.0/edit" }, openrouter: {}, oxen: { model: "xai-grok-imagine-image-edit" } },
             // P-H3-Image on WaveSpeed: the text-to-image route takes no picture, the edit route up to nine
             p_h3_image: { wavespeed: { model: "wavespeed-ai/p-h3-image/edit" } },
+            // Krea 3: fal's and WaveSpeed's text routes take no picture, their edit routes up to eight; the others' one route does
+            krea_3: { fal: { model: "krea/v3/edit" }, wavespeed: { model: "krea/v3/edit" }, replicate: {}, comfycloud: {}, comfyrouter: {}, oxen: {} },
         };
         // the text shapes that make a new image from the prompt alone (26f's "None" row): text-only or inpaint-only
         // models, a single-picture edit field, a Comfy Router dialect with no input picture, Reve (its edit cap unread)
@@ -315,7 +322,7 @@ async function main() {
             }
         }
         const stale = Object.entries(TEXT_REFS).flatMap(([id, rows]) => Object.keys(rows).map((pid) => `${id}/${pid}`)).filter((n) => !seen.has(n));
-        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 128, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
+        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 134, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
         check("every row of the table names a shipped provider variant", !stale.length, stale.join(", "));
         check("every text shape without text.refs is on the takes-none list", !none.length, none.join(", "));
         const noneStale = Object.entries(TAKES_NONE).flatMap(([id, pids]) => pids.map((pid) => `${id}/${pid}`)).filter((n) => { const [id, pid] = n.split("/"); const r = list.find((x) => x.id === id); return !r || !r.providers[pid] || !r.providers[pid].text || r.providers[pid].text.refs !== null; });
