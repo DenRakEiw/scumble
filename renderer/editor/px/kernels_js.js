@@ -1479,6 +1479,148 @@ export function pngChunkFrame(buf, dataLen = buf.byteLength - 12, kind = 0x49444
     return crc;
 }
 
+const ADLER_MOD = 65521;
+const PNG_PART_BYTES = 8 * 1048576;
+const PNG_PART_MAX_ROWS = 2048; // programRows / bandPlan.rows cap (inpaint_program.js / inpaint_bands.js)
+export const PART_NOT_LINES = -4, PART_BAD_FILTER = -5;
+
+/** Adler-32 of `bytes`, continued from `start` (1 for a new checksum). */
+export function adler32(bytes, start = 1) {
+    bytes = bytesOf(bytes);
+    let a = start & 0xFFFF, b = (start >>> 16) & 0xFFFF;
+    for (let i = 0; i < bytes.length; ) {
+        const end = Math.min(bytes.length, i + 5552);
+        for (; i < end; i++) {
+            a += bytes[i];
+            b += a;
+        }
+        a %= ADLER_MOD;
+        b %= ADLER_MOD;
+    }
+    return ((b << 16) | a) >>> 0;
+}
+
+/**
+ * Byte capacity of `lines` for a standard `PART_BYTES` (`8 MB`) part of a `w`-wide 8-bit RGBA PNG
+ * (`partRows(w) * (1 + 4 * w)`), or 0 when `w <= 0` (K7, docs/PLAN_WASM_BUILD.md §4.2).
+ */
+export function pngPartLinesCap(w) {
+    if (!Number.isInteger(w) || w <= 0 || w > 0x3fffffff) return 0;
+    const rowBytes = w * 4;
+    const rows = Math.max(1, Math.min(PNG_PART_MAX_ROWS, Math.floor(PNG_PART_BYTES / rowBytes)));
+    return rows * (rowBytes + 1);
+}
+
+function unfilterPartInto(lines, rows, w, up0, rt, out) {
+    const rowBytes = w * 4, stride = rowBytes + 1;
+    let up = up0;
+    for (let y = 0; y < rows; y++) {
+        const ft = lines[y * stride];
+        const src = lines.subarray(y * stride + 1, (y + 1) * stride);
+        const cur = out.subarray(y * rowBytes, (y + 1) * rowBytes);
+        if (ft === 0) {
+            cur.set(src);
+        } else if (ft === 1) {
+            cur[0] = src[0]; cur[1] = src[1]; cur[2] = src[2]; cur[3] = src[3];
+            for (let i = 4; i < rowBytes; i++) cur[i] = (src[i] + cur[i - 4]) & 255;
+        } else if (ft === 2) {
+            for (let i = 0; i < rowBytes; i++) cur[i] = (src[i] + up[i]) & 255;
+        } else if (ft === 3) {
+            for (let i = 0; i < 4; i++) cur[i] = (src[i] + (up[i] >> 1)) & 255;
+            for (let i = 4; i < rowBytes; i++) cur[i] = (src[i] + ((cur[i - 4] + up[i]) >> 1)) & 255;
+        } else {
+            for (let i = 0; i < 4; i++) cur[i] = (src[i] + up[i]) & 255;
+            for (let i = 4; i < rowBytes; i++) {
+                const a = cur[i - 4], b = up[i], c = up[i - 4];
+                let pa = b - c; if (pa < 0) pa = -pa;
+                let pb = a - c; if (pb < 0) pb = -pb;
+                let pc = a + b - 2 * c; if (pc < 0) pc = -pc;
+                cur[i] = (src[i] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 255;
+            }
+        }
+        up = cur;
+    }
+    const lastRow = out.subarray((rows - 1) * rowBytes, rows * rowBytes);
+    const savedLast = up0 ? (up0.set(lastRow), up0) : lastRow.slice();
+    const n = rows * rowBytes;
+    let opaque = true;
+    if (rt) {
+        const t = bytesOf(rt);
+        for (let i = 0; i < n; i += 4) {
+            const a = out[i + 3];
+            if (a < 255) {
+                opaque = false;
+                const row = a << 8;
+                out[i] = t[row | out[i]];
+                out[i + 1] = t[row | out[i + 1]];
+                out[i + 2] = t[row | out[i + 2]];
+            }
+        }
+    } else {
+        for (let i = 3; i < n; i += 4) {
+            if (out[i] < 255) { opaque = false; break; }
+        }
+    }
+    return { opaque, lastRow: savedLast };
+}
+
+/**
+ * Decode one inflated part (`lines`, a whole number of `1 + 4 * w`-byte scanlines) of a `w`-wide 8-bit RGBA PNG (K7,
+ * docs/PLAN_WASM_BUILD.md §4.2). Returns `{ code }` (`-4` not whole lines, `-5` bad filter byte), or
+ * `{ code: rows, rows, adler, firstFilter, opaque, needsPrev, out, prev }`. When `prev` is null and `firstFilter` is
+ * 2, 3, or 4, `lines` is left untouched and `needsPrev` is `true` (`out` and `prev` null); otherwise `out` receives
+ * the `rows * w * 4` RGBA8 bytes (round-tripped through `rt` when given), and `prev` (updated in place when given, or
+ * a new `4 * w`-byte `Uint8Array`) holds the last unfiltered row before `rt`.
+ */
+export function pngPartDecode(lines, w, prev = null, rt = null, out = null) {
+    if (!lines || !Number.isInteger(w) || w <= 0 || w > 0x3fffffff) return { code: PART_NOT_LINES };
+    const l = bytesOf(lines);
+    const rowBytes = w * 4, stride = rowBytes + 1;
+    if (l.length === 0 || l.length % stride !== 0) return { code: PART_NOT_LINES };
+    if (prev != null && bytesOf(prev).length < rowBytes) return { code: PART_NOT_LINES };
+    if (rt != null && bytesOf(rt).length < 65536) return { code: PART_NOT_LINES };
+    const rows = l.length / stride;
+    if (out != null && bytesOf(out).length < rows * rowBytes) return { code: PART_NOT_LINES };
+    for (let y = 0; y < rows; y++) {
+        if (l[y * stride] > 4) return { code: PART_BAD_FILTER };
+    }
+    const firstFilter = l[0];
+    const adler = adler32(l, 1);
+    if (prev == null && firstFilter >= 2) {
+        return { code: rows, rows, adler, firstFilter, opaque: false, needsPrev: true, out: null, prev: null };
+    }
+    const dst = out || new Uint8Array(rows * rowBytes);
+    const dstBytes = bytesOf(dst).subarray(0, rows * rowBytes);
+    const up0 = prev != null ? bytesOf(prev).subarray(0, rowBytes) : null;
+    const { opaque, lastRow } = unfilterPartInto(l, rows, w, up0, rt, dstBytes);
+    return { code: rows, rows, adler, firstFilter, opaque, needsPrev: false, out: dst, prev: prev != null ? prev : lastRow };
+}
+
+/**
+ * Finish a part whose `pngPartDecode` answered `needsPrev: true` once `prev` (`4 * w` unfiltered bytes from the row
+ * above) is ready (K7, docs/PLAN_WASM_BUILD.md §4.2). Updates `prev` to the last unfiltered row of this part (before
+ * `rt`), writes `rows * w * 4` RGBA8 bytes to `out` (applying `rt` when given), and returns
+ * `{ code: rows, rows, firstFilter, opaque, needsPrev: false, out, prev }`, or `{ code }` (`< 0`).
+ */
+export function pngPartFinish(lines, rows, w, prev, rt = null, out = null) {
+    if (!lines || !prev || !Number.isInteger(w) || w <= 0 || w > 0x3fffffff || !Number.isInteger(rows) || rows <= 0) {
+        return { code: PART_NOT_LINES };
+    }
+    const l = bytesOf(lines), p = bytesOf(prev);
+    const rowBytes = w * 4, stride = rowBytes + 1;
+    if (l.length !== rows * stride || p.length < rowBytes) return { code: PART_NOT_LINES };
+    if (rt != null && bytesOf(rt).length < 65536) return { code: PART_NOT_LINES };
+    if (out != null && bytesOf(out).length < rows * rowBytes) return { code: PART_NOT_LINES };
+    for (let y = 0; y < rows; y++) {
+        if (l[y * stride] > 4) return { code: PART_BAD_FILTER };
+    }
+    const firstFilter = l[0];
+    const dst = out || new Uint8Array(rows * rowBytes);
+    const dstBytes = bytesOf(dst).subarray(0, rows * rowBytes);
+    const { opaque } = unfilterPartInto(l, rows, w, p.subarray(0, rowBytes), rt, dstBytes);
+    return { code: rows, rows, firstFilter, opaque, needsPrev: false, out: dst, prev };
+}
+
 // ---- the smudge's dab (PLAN_0_1_31 §4 step 3) ---------------------------------------------------
 
 export const SMUDGE_ALPHA_LOCK = 1, SMUDGE_PICKUP = 2;

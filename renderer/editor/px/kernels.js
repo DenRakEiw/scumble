@@ -821,6 +821,38 @@ export function pngChunkFrame(buf, dataLen = buf.byteLength - 12, kind = 0x49444
     return J.pngChunkFrame(buf, dataLen, kind);
 }
 
+/** Byte capacity of `lines` for a standard `PART_BYTES` (`8 MB`) part of a `w`-wide 8-bit RGBA PNG (K7). */
+export function pngPartLinesCap(w) {
+    const p = rustPx();
+    if (p) {
+        try { return p.pngPartLinesCap(w); }
+        catch (err) { if (!recovered(p, err, "png_part_lines_cap")) throw err; }
+    }
+    return J.pngPartLinesCap(w);
+}
+
+/** Decode one inflated part (`lines`) of a `w`-wide 8-bit RGBA PNG (K7, docs/PLAN_WASM_BUILD.md §4.2). */
+export function pngPartDecode(lines, w, prev = null, rt = null, out = null, laps = null) {
+    const p = rustPx();
+    if (p) {
+        try { return p.pngPartDecode(lines, w, prev, rt, out, laps); }
+        catch (err) { if (!recovered(p, err, "png_part_decode")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.pngPartDecode(lines, w, prev, rt, out);
+}
+
+/** Finish a part whose `pngPartDecode` answered `needsPrev: true` once `prev` arrives (K7, docs/PLAN_WASM_BUILD.md §4.2). */
+export function pngPartFinish(lines, rows, w, prev, rt = null, out = null, laps = null) {
+    const p = rustPx();
+    if (p) {
+        try { return p.pngPartFinish(lines, rows, w, prev, rt, out, laps); }
+        catch (err) { if (!recovered(p, err, "png_part_finish")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.pngPartFinish(lines, rows, w, prev, rt, out);
+}
+
 /** Computes max - min over each texel's 4x4 block of a w x h Uint16Array. */
 export function rangeMax(src, w, h, out = null) {
     const p = rustPx();
