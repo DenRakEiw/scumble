@@ -42,7 +42,7 @@ function check(name, ok, detail = "") {
 // The case groups in main()'s order (a group in both the reference part and the per-build loop runs in both)
 const GROUPS = ["twinSelfTest", "mip", "edt", "flood", "composite", "matchTwin", "smudgeTwin", "poissonTwin", "png", "compositeSha",
     "blendFixture", "blendGlsl", "tierC", "relightBench", "relightStripe", "counter", "split", "route", "trap", "lifecycle", "sel", "range",
-    "pngFilter", "retouchRoute", "job", "mask", "dab", "tone", "freq", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "liquify", "memory"];
+    "pngFilter", "retouchRoute", "tiff", "job", "mask", "dab", "tone", "freq", "edge", "relight", "pngRead", "match", "smudge", "poisson", "pngPart", "psd", "resample", "liquify", "memory"];
 const ONLY = (() => {
     const names = (process.env.PX_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
     if (!names.length) return null;
@@ -8293,6 +8293,452 @@ async function rangeCases(js, simd, scalar, resample, K) {
     }
 }
 
+/**
+ * TIFF strip and tile unpacking (K16, docs/PLAN_WASM_BUILD.md §4.6): `tiff_unpack` / `unpackStrip` (`TIFF_JS`) for
+ * uncompressed (`1`), LZW (`5`) and PackBits (`32773`) across both wasm builds and the JS twin, stopping at `need`,
+ * and every negative error code (`-1`..`-5`).
+ */
+async function tiffCases(js, simd, scalar, K, T) {
+    check("inpaint_tiff.js exports unpackStrip and TIFF_JS.unpackStrip, re-exported by kernels_js.js and kernels.js",
+        typeof T.unpackStrip === "function" && !!T.TIFF_JS && T.TIFF_JS.unpackStrip === T.unpackStrip
+        && js.unpackStrip === T.unpackStrip && js.tiffUnpack === T.unpackStrip && K.unpackStrip === T.unpackStrip && K.TIFF_JS === T.TIFF_JS);
+
+    // Helper: pack arbitrary (code, width) pairs MSB-first into a byte array.
+    const packCodesMsb = (pairs) => {
+        const out = [];
+        let acc = 0, nacc = 0;
+        for (const [code, width] of pairs) {
+            acc = (acc << width) | code;
+            nacc += width;
+            while (nacc >= 8) {
+                nacc -= 8;
+                out.push((acc >>> nacc) & 255);
+            }
+            acc &= (1 << nacc) - 1;
+        }
+        if (nacc > 0) out.push((acc << (8 - nacc)) & 255);
+        return Uint8Array.from(out);
+    };
+
+    // Standard TIFF 6.0 MSB-first LZW encoder (with optional Clear limit or no initial Clear).
+    const lzwEncodeTiff = (data, { clearAt = 4094, initialClear = true, withEoi = true } = {}) => {
+        const pairs = [];
+        let width = 9, next = 258;
+        const table = new Map();
+        if (initialClear) pairs.push([256, width]);
+        if (data.length > 0) {
+            let w = data[0];
+            for (let i = 1; i < data.length; i++) {
+                const b = data[i];
+                const c = table.get(w * 256 + b);
+                if (c !== undefined) { w = c; continue; }
+                pairs.push([w, width]);
+                if (next < 4096) {
+                    table.set(w * 256 + b, next++);
+                    if (clearAt && next === clearAt) {
+                        pairs.push([256, width]);
+                        table.clear();
+                        next = 258;
+                        width = 9;
+                    } else if (next > (1 << width) - 1 && width < 12) {
+                        width++;
+                    }
+                }
+                w = b;
+            }
+            pairs.push([w, width]);
+            if (next < 4096) {
+                next++;
+                if (clearAt && next === clearAt) { pairs.push([256, width]); width = 9; }
+                else if (next > (1 << width) - 1 && width < 12) width++;
+            }
+        }
+        if (withEoi) pairs.push([257, width]);
+        return packCodesMsb(pairs);
+    };
+
+    // PackBits encoder (literal runs, repeat runs, and optional 128 no-op bytes).
+    const packBitsEncode = (data, { injectNoop = false } = {}) => {
+        const out = [];
+        let i = 0;
+        while (i < data.length) {
+            if (injectNoop && (i % 97 === 0)) out.push(128);
+            let j = i;
+            while (j + 1 < data.length && data[j + 1] === data[i] && j - i < 126) j++;
+            const run = j - i + 1;
+            if (run >= 2) {
+                out.push(257 - run, data[i]);
+                i = j + 1;
+                continue;
+            }
+            let k = i;
+            while (k < data.length && k - i < 128) {
+                if (k + 1 < data.length && data[k + 1] === data[k]) break;
+                k++;
+            }
+            if (k === i) k = i + 1;
+            const n = k - i;
+            out.push(n - 1);
+            for (let m = 0; m < n; m++) out.push(data[i + m]);
+            i = k;
+        }
+        if (injectNoop) out.push(128);
+        return Uint8Array.from(out);
+    };
+
+    // Build varied test payloads for none (1), LZW (5) and PackBits (32773).
+    const rng = (seed) => {
+        let s = seed >>> 0;
+        return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s >>> 16; };
+    };
+    const r = rng(1601);
+    const randomPayload = (n) => { const b = new Uint8Array(n); for (let i = 0; i < n; i++) b[i] = r() & 255; return b; };
+    const runPayload = (n) => {
+        const b = new Uint8Array(n);
+        let i = 0;
+        while (i < n) {
+            const len = 1 + (r() % 300), v = r() & 255, mode = r() % 3;
+            for (let k = 0; k < len && i < n; k++, i++) {
+                b[i] = mode === 0 ? v : mode === 1 ? (v + (k % 3)) & 255 : (k & 1 ? v : 255 - v);
+            }
+        }
+        return b;
+    };
+
+    const pSmall = randomPayload(37);
+    const pWidths = randomPayload(12000);     // crosses 9 -> 10 -> 11 -> 12-bit LZW widths and resets at 4094
+    const pKwKwK = runPayload(16384);         // heavy KwKwK (c === next) runs and alternating pairs
+    const pFull4096 = randomPayload(14000);   // encoded with clearAt: 0 so the table fills to 4096 and stays at 4096
+
+    // Frozen hand-derived LZW stream with 2-, 3-, and 4-byte table entries of distinct bytes:
+    // 256 (Clear), 10, 20 (258=[10,20]), 30 (259=[20,30]), 258->[10,20] (260=[30,10]),
+    // 30 (261=[10,20,30]), 261->[10,20,30] (262=[30,10]), 40 (263=[10,20,30,40]), 263->[10,20,30,40], 257 (EOI)
+    const handLzwStream = Uint8Array.from([0x80, 0x02, 0x82, 0x81, 0xE8, 0x10, 0x7A, 0x0A, 0x28, 0x83, 0xC0, 0x40]);
+    const handLzwWant = Uint8Array.from([10, 20, 30, 10, 20, 30, 10, 20, 30, 40, 10, 20, 30, 40]);
+    // Frozen hand-derived PackBits stream: literal [11,22,33,44], 128 no-op, repeat 4x 77, literal [88,99]
+    const handPbStream = Uint8Array.from([3, 11, 22, 33, 44, 128, 253, 77, 1, 88, 99]);
+    const handPbWant = Uint8Array.from([11, 22, 33, 44, 77, 77, 77, 77, 88, 99]);
+
+    const cases = [
+        // Uncompressed (1)
+        { tag: "none small", args: [1, pSmall, pSmall.length], want: pSmall },
+        { tag: "none empty", args: [1, pSmall, 0], want: new Uint8Array(0) },
+        { tag: "none with trailing padding", args: [1, Uint8Array.from([...pSmall, 99, 100, 101]), pSmall.length], want: pSmall },
+        // PackBits (32773)
+        { tag: "packbits small", args: [32773, packBitsEncode(pSmall), pSmall.length], want: pSmall },
+        { tag: "packbits runs and 128 no-ops", args: [32773, packBitsEncode(pKwKwK, { injectNoop: true }), pKwKwK.length], want: pKwKwK },
+        { tag: "packbits stop at need=13", args: [32773, packBitsEncode(pSmall), 13], want: pSmall.subarray(0, 13) },
+        { tag: "packbits hand-derived full", args: [32773, handPbStream, 10], want: handPbWant },
+        { tag: "packbits hand-derived stop inside literal run (need=2)", args: [32773, handPbStream, 2], want: Uint8Array.from([11, 22]) },
+        { tag: "packbits hand-derived stop inside repeat run (need=6)", args: [32773, handPbStream, 6], want: Uint8Array.from([11, 22, 33, 44, 77, 77]) },
+        { tag: "packbits trailing lone repeat header after need", args: [32773, Uint8Array.from([...packBitsEncode(pSmall), 200]), pSmall.length], want: pSmall },
+        // LZW (5)
+        { tag: "lzw small", args: [5, lzwEncodeTiff(pSmall), pSmall.length], want: pSmall },
+        { tag: "lzw no initial clear", args: [5, lzwEncodeTiff(pSmall, { initialClear: false }), pSmall.length], want: pSmall },
+        { tag: "lzw 9..12-bit widths and resets", args: [5, lzwEncodeTiff(pWidths), pWidths.length], want: pWidths },
+        { tag: "lzw KwKwK runs", args: [5, lzwEncodeTiff(pKwKwK), pKwKwK.length], want: pKwKwK },
+        { tag: "lzw full 4096 table", args: [5, lzwEncodeTiff(pFull4096, { clearAt: 0 }), pFull4096.length], want: pFull4096 },
+        { tag: "lzw stop mid-code at need=511", args: [5, lzwEncodeTiff(pKwKwK), 511], want: pKwKwK.subarray(0, 511) },
+        { tag: "lzw hand-derived full", args: [5, handLzwStream, 14], want: handLzwWant },
+        { tag: "lzw hand-derived stop 1 byte into 3-byte code (need=7)", args: [5, handLzwStream, 7], want: Uint8Array.from([10, 20, 30, 10, 20, 30, 10]) },
+        { tag: "lzw hand-derived stop 2 bytes into 3-byte code (need=8)", args: [5, handLzwStream, 8], want: Uint8Array.from([10, 20, 30, 10, 20, 30, 10, 20]) },
+        { tag: "lzw hand-derived stop 2 bytes into 4-byte code (need=12)", args: [5, handLzwStream, 12], want: Uint8Array.from([10, 20, 30, 10, 20, 30, 10, 20, 30, 40, 10, 20]) },
+        // Damaged LZW codes (511 beyond table) appended after the needed bytes are ignored once `need` is reached:
+        { tag: "lzw damaged code after need", args: [5, packCodesMsb([[256, 9], [65, 9], [66, 9], [258, 9], [511, 9]]), 4], want: Uint8Array.from([65, 66, 65, 66]) },
+    ];
+    twinCheck({
+        name: "tiff_unpack",
+        builds: [["rust simd", simd], ["rust scalar", scalar]],
+        twin: js,
+        call: (k, [comp, src, need]) => k.tiffUnpack(comp, src, need),
+        cases,
+    });
+    const wantProblems = [];
+    for (const c of cases) {
+        const got = js.tiffUnpack(...c.args);
+        if (!eqBytes(got, c.want)) wantProblems.push(c.tag);
+    }
+    check(`tiff_unpack: all ${cases.length} cases match their reference payloads (including hand-derived mid-code and mid-run stops)`,
+        !wantProblems.length, wantProblems.join(", "));
+
+    // Verify caller-supplied output buffer (both 4-arg `out` with larger capacity and 3-arg `need instanceof Uint8Array` overload) on twin, simd and scalar
+    const outSources = [[1, pSmall], [5, lzwEncodeTiff(pSmall)], [32773, packBitsEncode(pSmall)]];
+    for (const [bname, mod] of [["twin", js], ["simd", simd], ["scalar", scalar]]) {
+        let outOk = true;
+        for (const [comp, enc] of outSources) {
+            const outBuf = new Uint8Array(pSmall.length + 16).fill(0xAA);
+            const sub = outBuf.subarray(5, 5 + pSmall.length + 4);
+            const ret = mod.tiffUnpack(comp, enc, pSmall.length, sub);
+            const sentinelOk = outBuf.subarray(0, 5).every((v) => v === 0xAA) && outBuf.subarray(5 + pSmall.length).every((v) => v === 0xAA);
+            if (ret !== sub || !eqBytes(sub.subarray(0, pSmall.length), pSmall) || !sentinelOk) outOk = false;
+
+            const outBuf3 = new Uint8Array(pSmall.length + 12).fill(0x55);
+            const subExact = outBuf3.subarray(3, 3 + pSmall.length);
+            const ret3 = mod.tiffUnpack(comp, enc, subExact);
+            const sentinelOk3 = outBuf3.subarray(0, 3).every((v) => v === 0x55) && outBuf3.subarray(3 + pSmall.length).every((v) => v === 0x55);
+            if (ret3 !== subExact || !eqBytes(subExact, pSmall) || !sentinelOk3) outOk = false;
+        }
+        check(`tiff_unpack (${bname}): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes`, outOk);
+    }
+
+    for (const [bname, px] of [["simd", simd], ["scalar", scalar]]) {
+
+        // Verify all negative error codes (-1..-5) match between Rust and JS twin
+        const errCases = [
+            ["unsupported compression 8 (deflate)", 8, pSmall, pSmall.length, -1, /unsupported/i],
+            ["unsupported compression 32946 (deflate)", 32946, pSmall, pSmall.length, -1, /unsupported/i],
+            ["unsupported compression 7 (JPEG)", 7, pSmall, pSmall.length, -1, /unsupported/i],
+            ["negative need", 1, pSmall, -1, -1, /unsupported/i],
+            ["bare ArrayBuffer as src (none)", 1, new ArrayBuffer(16), 4, -1, /unsupported/i],
+            ["bare ArrayBuffer as src (LZW)", 5, lzwEncodeTiff(pSmall).buffer, pSmall.length, -1, /unsupported/i],
+            ["fake byteLength object as src", 1, { byteLength: 16 }, 4, -1, /unsupported/i],
+            ["none truncated", 1, pSmall.subarray(0, 10), 11, -2, /ends early|fewer bytes/i],
+            ["PackBits empty truncated", 32773, new Uint8Array(0), 1, -2, /ends early|fewer bytes/i],
+            ["PackBits truncated mid-literal", 32773, Uint8Array.from([5, 1, 2, 3]), 5, -2, /ends early|fewer bytes/i],
+            ["PackBits truncated after repeat header", 32773, Uint8Array.from([255]), 2, -2, /ends early|fewer bytes/i],
+            ["LZW empty truncated", 5, new Uint8Array(0), 1, -2, /ends early|fewer bytes/i],
+            ["LZW 1-byte truncated", 5, Uint8Array.from([0x80]), 1, -2, /ends early|fewer bytes/i],
+            ["LZW EOI before need", 5, packCodesMsb([[256, 9], [42, 9], [257, 9]]), 2, -2, /ends early|fewer bytes/i],
+            ["LZW stream ends before need", 5, packCodesMsb([[256, 9], [42, 9]]), 2, -2, /ends early|fewer bytes/i],
+            ["old-style LZW (00 01)", 5, Uint8Array.from([0x00, 0x01, 0x02, 0x03]), 1, -3, /old-style LZW/i],
+            ["old-style LZW (00 83)", 5, Uint8Array.from([0x00, 0x83, 0x00]), 1, -3, /old-style LZW/i],
+            ["LZW code > 255 at start (before literal)", 5, packCodesMsb([[300, 9], [257, 9]]), 1, -4, /before any literal/i],
+            ["LZW code > 255 after Clear (before literal)", 5, packCodesMsb([[256, 9], [65, 9], [256, 9], [258, 9], [257, 9]]), 2, -4, /before any literal/i],
+            ["LZW code beyond table (c > next)", 5, packCodesMsb([[256, 9], [65, 9], [259, 9], [257, 9]]), 2, -5, /beyond the table/i],
+        ];
+        const errProblems = [];
+        for (const [what, comp, src, need, wantCode, re] of errCases) {
+            let eRust = null, eJs = null;
+            try { px.tiffUnpack(comp, src, need, null, "strip 3"); } catch (e) { eRust = e; }
+            try { js.tiffUnpack(comp, src, need, null, "strip 3"); } catch (e) { eJs = e; }
+            if (!eRust || !eJs) { errProblems.push(`${what}: rust=${!!eRust} js=${!!eJs}`); continue; }
+            if (eRust.code !== wantCode || eJs.code !== wantCode) errProblems.push(`${what}: code rust=${eRust.code} js=${eJs.code} want=${wantCode}`);
+            if (!re.test(eRust.message) || !re.test(eJs.message)) errProblems.push(`${what}: msg rust="${eRust.message}" js="${eJs.message}"`);
+            if (wantCode <= -2 && eRust.message !== eJs.message) errProblems.push(`${what}: messages differ ("${eRust.message}" vs "${eJs.message}")`);
+        }
+        // Raw export pointer / compression validation
+        const rawBadComp = px.exports.tiff_unpack(8, 0, 0, 0, 0) | 0;
+        const rawNullSrc = px.exports.tiff_unpack(1, 0, 4, 8, 4) | 0;
+        const rawNullOut = px.exports.tiff_unpack(1, 8, 4, 0, 4) | 0;
+        const rawZeroNeed = px.exports.tiff_unpack(5, 0, 0, 0, 0) | 0;
+        if (rawBadComp !== -1 || rawNullSrc !== -1 || rawNullOut !== -1 || rawZeroNeed !== 0) {
+            errProblems.push(`raw export checks: comp=${rawBadComp} nullSrc=${rawNullSrc} nullOut=${rawNullOut} zeroNeed=${rawZeroNeed}`);
+        }
+        check(`tiff_unpack (${bname}): negative error codes (-1..-5) and messages match the JS twin`, !errProblems.length, errProblems.join(" | "));
+    }
+
+    // Fuzz: random, bit-flipped (9..12-bit widths and full 4096 table) and prefix-cut LZW/PackBits streams -> 0 traps, identical across twin, simd and scalar
+    {
+        const rf = rng(1602);
+        const baseLzw9 = lzwEncodeTiff(pKwKwK.subarray(0, 256));
+        const baseLzwWidths = lzwEncodeTiff(pWidths);                     // 9 -> 10 -> 11 -> 12-bit widths + Clear resets
+        const baseLzwFull = lzwEncodeTiff(pFull4096, { clearAt: 0 });     // 9 -> 12-bit widths, fills table to 4096 and stays at 4096
+        const baseLzwSweep = lzwEncodeTiff(pWidths.subarray(0, 2600));    // crosses 9 -> 10 -> 11 -> 12-bit widths (~2100 bytes)
+        const basePb = packBitsEncode(pKwKwK.subarray(0, 256));
+        let fuzzFails = 0, fuzzDetail = "";
+        const runOne = (fn) => {
+            try { return { ok: true, out: fn() }; }
+            catch (e) { return { ok: false, code: e.code, msg: e.message }; }
+        };
+        const checkTrial = (label, comp, stream, need) => {
+            const rJs = runOne(() => js.tiffUnpack(comp, stream, need));
+            const rSimd = runOne(() => simd.tiffUnpack(comp, stream, need));
+            const rScalar = runOne(() => scalar.tiffUnpack(comp, stream, need));
+            const same = rJs.ok === rSimd.ok && rJs.ok === rScalar.ok && !simd.trapped && !scalar.trapped
+                && (rJs.ok ? (eqBytes(rJs.out, rSimd.out) && eqBytes(rJs.out, rScalar.out)) : (rJs.code === rSimd.code && rJs.code === rScalar.code && rJs.msg === rSimd.msg && rJs.msg === rScalar.msg));
+            if (!same) {
+                fuzzFails++;
+                if (!fuzzDetail) fuzzDetail = `${label} (comp=${comp}, need=${need}): js=${JSON.stringify(rJs)} simd=${JSON.stringify(rSimd)} scalar=${JSON.stringify(rScalar)}`;
+            }
+        };
+        for (let t = 0; t < 240; t++) {
+            if (t < 80) {
+                const comp = (t & 1) ? 5 : 32773;
+                const need = 1 + (rf() % 300);
+                const len = rf() % 120;
+                const stream = new Uint8Array(len);
+                for (let i = 0; i < len; i++) stream[i] = rf() & 255;
+                checkTrial(`random-${t}`, comp, stream, need);
+            } else if (t < 140) {
+                const comp = (t & 1) ? 5 : 32773;
+                const base = comp === 5 ? baseLzw9 : basePb;
+                const need = 1 + (rf() % 300);
+                const stream = base.slice(0, Math.max(1, base.length - (rf() % 20)));
+                const flips = 1 + (rf() % 4);
+                for (let f = 0; f < flips; f++) stream[(rf() * 65536 + rf()) % stream.length] ^= 1 << (rf() & 7);
+                checkTrial(`flip9-${t}`, comp, stream, need);
+            } else {
+                // Bit-flips and cuts across 10..12-bit code widths, Clear resets, and full 4096-entry LZW tables
+                const useFull = (t & 1) === 1;
+                const base = useFull ? baseLzwFull : baseLzwWidths;
+                const maxNeed = useFull ? pFull4096.length : pWidths.length;
+                const cutLen = 512 + ((rf() * 65536 + rf()) % (base.length - 511));
+                const stream = base.slice(0, cutLen);
+                const need = 512 + ((rf() * 65536 + rf()) % (maxNeed - 511));
+                const flips = 1 + (rf() % 6);
+                for (let f = 0; f < flips; f++) {
+                    const pos = 400 + ((rf() * 65536 + rf()) % Math.max(1, stream.length - 400));
+                    stream[pos] ^= 1 << (rf() & 7);
+                }
+                checkTrial(`flip12-${t}`, 5, stream, need);
+            }
+        }
+        // Sweep every prefix length of a multi-width LZW stream (9 -> 10 -> 11 -> 12 bits)
+        for (let k = 0; k <= baseLzwSweep.length; k++) {
+            checkTrial(`sweep-${k}`, 5, baseLzwSweep.subarray(0, k), 2600);
+        }
+        check("tiff_unpack fuzz (random, 9..12-bit & full-4096 bit-flipped, and every-prefix sweep): 0 traps, identical bytes or error codes across twin, simd and scalar",
+            fuzzFails === 0, fuzzDetail);
+    }
+
+    // kernels.js wrapper check
+    {
+        K.setKernels("rust");
+        if (!K.rustPx()) {
+            const realFetch = globalThis.fetch;
+            globalThis.fetch = async (u, ...rest) => {
+                const s = String(u && u.href ? u.href : u);
+                return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+            };
+            try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+        }
+        const enc = lzwEncodeTiff(pSmall);
+        K.setKernels("js");
+        K.pxCalls(true);
+        const outJs = K.tiffUnpack(5, enc, pSmall.length);
+        const jsCalls = K.pxCalls(true).tiff_unpack || 0;
+        K.setKernels("rust");
+        const outRust = K.tiffUnpack(5, enc, pSmall.length);
+        const rustCalls = K.pxCalls(true).tiff_unpack || 0;
+        // Trap recovery on K.tiffUnpack falls back to the JS twin
+        const p = K.rustPx(), realWarn = console.warn;
+        let outRec = null, recReplaced = false;
+        console.warn = () => {};
+        try {
+            p.tiffUnpack = function () { return trapIn(this); };
+            outRec = K.tiffUnpack(5, enc, pSmall.length);
+            recReplaced = K.rustPx() !== p;
+        } finally { console.warn = realWarn; }
+        K.setKernels("js");
+        check("kernels.js tiffUnpack dispatches between JS twin (0 calls) and Rust (1 call) with identical bytes, and recovers from a trap",
+            jsCalls === 0 && rustCalls === 1 && eqBytes(outJs, pSmall) && eqBytes(outRust, pSmall) && eqBytes(outRec, pSmall) && recReplaced,
+            `jsCalls=${jsCalls} rustCalls=${rustCalls} recReplaced=${recReplaced}`);
+    }
+
+    // Live readTiff checks: 1-byte first-piece LZW fix and StripRows/TileRows stopping at `need`
+    {
+        const mkLittleTiff = (tags, data, offTag = 273, cntTag = 279) => {
+            const parts = [];
+            let size = 0;
+            const push = (b) => { parts.push(b); size += b.length; };
+            push(Uint8Array.from([0x49, 0x49, 42, 0, 0, 0, 0, 0]));
+            const offsets = [];
+            for (const seg of data) { if (size & 1) push(new Uint8Array(1)); offsets.push(size); push(seg); }
+            if (size & 1) push(new Uint8Array(1));
+            const ifdAt = size;
+            const allTags = [...tags, [offTag, 4, offsets], [cntTag, 4, data.map((s) => s.length)]].sort((a, b) => a[0] - b[0]);
+            const ifd = new Uint8Array(2 + 12 * allTags.length + 4);
+            const dv = new DataView(ifd.buffer);
+            dv.setUint16(0, allTags.length, true);
+            let extraAt = ifdAt + ifd.length;
+            const extras = [];
+            allTags.forEach(([tag, type, vals], i) => {
+                const tsz = type === 3 ? 2 : 4;
+                const payload = new Uint8Array(tsz * vals.length);
+                const pdv = new DataView(payload.buffer);
+                vals.forEach((v, k) => { if (type === 3) pdv.setUint16(k * 2, v, true); else pdv.setUint32(k * 4, v >>> 0, true); });
+                const p = 2 + 12 * i;
+                dv.setUint16(p, tag, true); dv.setUint16(p + 2, type, true); dv.setUint32(p + 4, vals.length, true);
+                if (payload.length <= 4) ifd.set(payload, p + 8);
+                else {
+                    if (extraAt & 1) { extras.push(new Uint8Array(1)); extraAt++; }
+                    dv.setUint32(p + 8, extraAt, true);
+                    extras.push(payload);
+                    extraAt += payload.length;
+                }
+            });
+            push(ifd);
+            for (const e of extras) push(e);
+            const out = new Uint8Array(size);
+            let o = 0;
+            for (const p of parts) { out.set(p, o); o += p.length; }
+            new DataView(out.buffer).setUint32(4, ifdAt, true);
+            return out;
+        };
+        const oneByteFirstBlob = (u8) => ({
+            size: u8.byteLength,
+            slice(start, end) {
+                const sub = u8.subarray(start, end);
+                return {
+                    async arrayBuffer() { return sub.slice().buffer; },
+                    stream() {
+                        let step = 0;
+                        return new ReadableStream({
+                            pull(c) {
+                                if (step === 0 && sub.length > 1) { step = 1; c.enqueue(sub.subarray(0, 1)); }
+                                else if (step <= 1 && sub.length > 0) { step = 2; c.enqueue(sub.length > 1 ? sub.subarray(1) : sub); }
+                                else c.close();
+                            },
+                        });
+                    },
+                };
+            },
+        });
+        // 1) LZW 1-byte first piece with byte[0] === byte[1] === 0 and byte[2] odd
+        const s1 = Uint8Array.from([0, 0, 8, 10, 20, 30]);
+        const strip1 = packCodesMsb([...Array.from(s1, (b) => [b, 9]), [257, 9]]);
+        const tiff1 = mkLittleTiff([[256, 4, [2]], [257, 4, [1]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [strip1]);
+        let got1 = null;
+        await T.readTiff(oneByteFirstBlob(tiff1), { onRows: (rgba) => { got1 = rgba.slice(); } });
+        const want1 = Uint8Array.from([0, 0, 8, 255, 10, 20, 30, 255]);
+        // Also verify 1-byte first piece on actual old-style LZW [0x00, 0x01, 0x02] is still refused
+        const tiffOld = mkLittleTiff([[256, 4, [2]], [257, 4, [1]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [Uint8Array.from([0x00, 0x01, 0x02, 0x03])]);
+        let errOld = null;
+        try { await T.readTiff(oneByteFirstBlob(tiffOld), { onRows: () => {} }); } catch (e) { errOld = e; }
+        check("inpaint_tiff.js readTiff: 1-byte first LZW piece keeps byte[0] when byte[0] === byte[1] and still refuses old-style LZW",
+            !!got1 && eqBytes(got1, want1) && !!errOld && /old-style LZW/i.test(errOld.message));
+
+        // 2) StripRows.open and TileRows.tile pass `need` / `want` to unpacked() so damaged codes after `need` are ignored
+        const w2 = 16, h2 = 4, s2 = new Uint8Array(w2 * h2 * 3);
+        for (let i = 0; i < s2.length; i++) s2[i] = (i * 17 + 3) & 255;
+        const badStrip = packCodesMsb([[256, 9], ...Array.from(s2, (b) => [b, 9]), [511, 9]]);
+        const tiffStripNeed = mkLittleTiff([[256, 4, [w2]], [257, 4, [h2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [h2]]], [badStrip]);
+        let gotStrip = null;
+        await T.readTiff(new Blob([tiffStripNeed]), { onRows: (rgba) => { gotStrip = rgba.slice(); } });
+
+        const tileSamples = new Uint8Array(16 * 16 * 3);
+        tileSamples.set(s2);
+        const tilePairs = [[256, 9]];
+        for (let i = 0; i < tileSamples.length; i++) {
+            if (i > 0 && i % 200 === 0) tilePairs.push([256, 9]);
+            tilePairs.push([tileSamples[i], 9]);
+        }
+        tilePairs.push([511, 9]);
+        const badTile = packCodesMsb(tilePairs);
+        const tiffTileNeed = mkLittleTiff([[256, 4, [w2]], [257, 4, [h2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [322, 4, [16]], [323, 4, [16]]], [badTile], 324, 325);
+        let gotTile = null;
+        await T.readTiff(new Blob([tiffTileNeed]), { onRows: (rgba) => { gotTile = rgba.slice(); } });
+        check("inpaint_tiff.js readTiff: StripRows.open and TileRows.tile stop at `need` / `want` when damaged LZW bytes follow",
+            !!gotStrip && !!gotTile && eqBytes(gotStrip, gotTile) && gotStrip[0] === s2[0] && gotStrip[1] === s2[1] && gotStrip[2] === s2[2]);
+    }
+
+    if (process.env.PX_BENCH) {
+        const rawStrip = runPayload(1024 * 1024);
+        const lzwStrip = lzwEncodeTiff(rawStrip);
+        const pbStrip = packBitsEncode(rawStrip);
+        for (const [what, comp, encoded] of [["LZW 1 MB strip", 5, lzwStrip], ["PackBits 1 MB strip", 32773, pbStrip]]) {
+            const out = new Uint8Array(rawStrip.length);
+            const rows = [
+                ["twin", () => js.tiffUnpack(comp, encoded, rawStrip.length, out)],
+                ["simd", () => simd.tiffUnpack(comp, encoded, rawStrip.length, out)],
+                ["scalar", () => scalar.tiffUnpack(comp, encoded, rawStrip.length, out)],
+            ];
+            const med = benchMedians(rows, { rounds: 15 });
+            console.log(`       tiff_unpack (${what}): ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 15)`);
+        }
+    }
+}
+
 async function main() {
     const { BLENDS } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "blend_modes.js")).href);
     for (const b of BLENDS) if (b.op >= 5) BLEND_NAMES[b.op - 5] = b.id;
@@ -8340,6 +8786,7 @@ async function main() {
     await group("range", async () => rangeCases(js, simdPx, scalarPx, resample, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href)));
     await group("pngFilter", () => pngFilterCases(js, simdPx, scalarPx));
     await group("retouchRoute", () => retouchRouteCases(js));
+    await group("tiff", async () => tiffCases(js, simdPx, scalarPx, await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href), await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_tiff.js")).href)));
     for (const [name, px] of [["simd", simdPx], ["scalar", scalarPx]]) {
         const label = `rust ${name}`;
         check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));

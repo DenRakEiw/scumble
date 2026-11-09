@@ -14,6 +14,9 @@
 
 import { BLEND_OPS } from "../blend_modes.js";
 import { gaussRadii } from "../inpaint_edges.js";
+import { unpackStrip, TIFF_JS } from "../inpaint_tiff.js";
+
+export { unpackStrip, unpackStrip as tiffUnpack, TIFF_JS };
 
 export const OPS = Object.freeze({
     "source-over": 0,
