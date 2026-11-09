@@ -293,7 +293,7 @@ function twinRun({ builds, twin, call, cases, rules = [], shift = true }) {
         floats = floats || holdsFloats(want.out);
         if (anyShift && !twinOffset) {
             const w2 = tryCall(twin, argsFor(c.args, true));
-            const d = w2.threw ? `threw ${w2.threw}` : twinDiff(w2.out, want.out, [], {});
+            const d = w2.threw ? `threw ${w2.threw}` : twinDiff(w2.out, want.out, rules, {});
             if (d) twinOffset = `${c.tag}: ${d}`;
         }
         builds.forEach(([, px], b) => {
@@ -1040,6 +1040,7 @@ async function maskCases(px, label, js) {
         name: "warp_coverage", title: "warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf)", builds: [[label, px]], twin: js,
         call: (k, [w, h, m, useOut]) => k.warpCoverage(w, h, m, useOut ? new Float32Array(w * h) : null),
         cases: wcCases,
+        rules: [NAN_BITS],
     });
 
     if (label === "rust simd") {
