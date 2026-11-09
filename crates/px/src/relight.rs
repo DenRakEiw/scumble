@@ -222,188 +222,43 @@ pub fn shadow_march_f64(
     let mut iy_rows = [[0usize; 64]; 16];
     let mut max_steps = [0usize; 16];
 
-    #[cfg(target_feature = "simd128")]
-    {
-        use core::arch::wasm32::*;
+    // K14 (docs/measurements/k14_2026-11-09/summary.txt): precomputing the row-and-tap invariant y march
+    // (iy_rows / max_steps) once per row y and marching each pixel via march_pixel_scalar beat 2-lane f64x2 SIMD
+    // across the 15000x10000 whole-operation rows (and in 23 of 24 px_bench rows): each pixel ray breaks out of the
+    // step loop as soon as that pixel hits or exits without marching alongside a still-active neighbour lane or
+    // extracting lane indices to GPRs for scalar u16 gathers.
+    for r_idx in 0..band_rows {
+        let y = row0 + r_idx;
+        let py = y as f64;
+        let row_offset = y * w;
+        let out_offset = r_idx * w;
 
-        let v_65535 = f64x2_splat(65535.0);
-        let v_inv65535 = f64x2_splat(inv65535);
-        let v_z_bias = f64x2_splat(z_bias);
-        let v_inv_steps = f64x2_splat(inv_steps);
-        let v_scale = f64x2_splat(scale);
-        let v_inf = f64x2_splat(f64::INFINITY);
-        let v_zero = f64x2_splat(0.0);
-        let v_half = f64x2_splat(0.5);
-        let v_one = f64x2_splat(1.0);
-        let v_two = f64x2_splat(2.0);
-        let v_wf = f64x2_splat(wf);
-        let v_taps = f64x2_splat(taps_f);
-        let v_255 = f64x2_splat(255.0);
-
-        let mut v_tap_x = [v_zero; 16];
-        let mut v_tap_z = [v_zero; 16];
         for t in 0..taps {
-            v_tap_x[t] = f64x2_splat(tap_x[t]);
-            v_tap_z[t] = f64x2_splat(tap_z[t]);
+            let cy_t = unsafe { *tap_y.get_unchecked(t) };
+            let ty = if is_sun { py + cy_t } else { cy_t };
+            let rdy = ty - py;
+            let step_y = rdy * inv_steps;
+            let mut sy = py + step_y;
+            let mut valid = 0usize;
+            for s in 0..steps {
+                let cy = sy + 0.5;
+                if cy < 0.0 || cy >= hf {
+                    break;
+                }
+                let iy = unsafe { cy.to_int_unchecked::<usize>() };
+                iy_rows[t][s] = iy * w;
+                valid += 1;
+                sy += step_y;
+            }
+            max_steps[t] = valid;
         }
 
-        let pairs = w & !1;
-        for r_idx in 0..band_rows {
-            let y = row0 + r_idx;
-            let py = y as f64;
-            let row_offset = y * w;
-            let out_offset = r_idx * w;
-
-            for t in 0..taps {
-                let cy_t = unsafe { *tap_y.get_unchecked(t) };
-                let ty = if is_sun { py + cy_t } else { cy_t };
-                let rdy = ty - py;
-                let step_y = rdy * inv_steps;
-                let mut sy = py + step_y;
-                let mut valid = 0usize;
-                for s in 0..steps {
-                    let cy = sy + 0.5;
-                    if cy < 0.0 || cy >= hf {
-                        break;
-                    }
-                    let iy = unsafe { cy.to_int_unchecked::<usize>() };
-                    iy_rows[t][s] = iy * w;
-                    valid += 1;
-                    sy += step_y;
-                }
-                max_steps[t] = valid;
-            }
-
-            let mut x = 0usize;
-            let mut px = f64x2(0.0, 1.0);
-            while x < pairs {
-                let d0_u16 = unsafe {
-                    v128_load32_zero(depth.as_ptr().add(row_offset + x) as *const u32)
-                };
-                let d0 = f64x2_convert_low_i32x4(u32x4_extend_low_u16x8(d0_u16));
-                let z0 = f64x2_mul(f64x2_sub(v_65535, d0), v_inv65535);
-                let pz = f64x2_add(z0, v_z_bias);
-                let mut lit_f = v_zero;
-
-                for t in 0..taps {
-                    let valid_steps = unsafe { *max_steps.get_unchecked(t) };
-                    if valid_steps == 0 {
-                        lit_f = f64x2_add(lit_f, v_one);
-                        continue;
-                    }
-                    let iy_row_t = unsafe { iy_rows.get_unchecked(t) };
-                    let v_cx_t = unsafe { *v_tap_x.get_unchecked(t) };
-                    let v_cz_t = unsafe { *v_tap_z.get_unchecked(t) };
-                    let (tx, tz) = if is_sun {
-                        (f64x2_add(px, v_cx_t), f64x2_add(pz, v_cz_t))
-                    } else {
-                        (v_cx_t, v_cz_t)
-                    };
-
-                    let rdx = f64x2_sub(tx, px);
-                    let rdz = f64x2_sub(tz, pz);
-                    let v_sky_limit = v128_bitselect(v_scale, v_inf, f64x2_ge(rdz, v_zero));
-
-                    let step_x = f64x2_mul(rdx, v_inv_steps);
-                    let step_z = f64x2_mul(rdz, v_inv_steps);
-                    let mut sx = f64x2_add(px, step_x);
-                    let mut sz = f64x2_add(pz, step_z);
-
-                    let mut active = i64x2_splat(-1);
-                    let mut blocked = v_zero;
-
-                    for s in 0..valid_steps {
-                        let exit_sky = f64x2_gt(sz, v_sky_limit);
-                        let cx = f64x2_add(sx, v_half);
-                        let in_x = v128_and(f64x2_ge(cx, v_zero), f64x2_lt(cx, v_wf));
-                        active = v128_and(v128_andnot(active, exit_sky), in_x);
-                        if !v128_any_true(active) {
-                            break;
-                        }
-
-                        let iy_row = unsafe { *iy_row_t.get_unchecked(s) };
-                        let ix_vec = i32x4_trunc_sat_f64x2_zero(v128_and(cx, in_x));
-                        let ix_pair = u64x2_extract_lane::<0>(ix_vec);
-                        let ix0 = ix_pair as usize;
-                        let ix1 = (ix_pair >> 32) as usize;
-                        let d_u16 = unsafe {
-                            let p = depth.as_ptr().add(iy_row);
-                            let v0 = v128_load16_lane::<0>(v_zero, p.add(ix0) as *const u16);
-                            v128_load16_lane::<2>(v0, p.add(ix1) as *const u16)
-                        };
-                        let d = f64x2_convert_low_i32x4(d_u16);
-
-                        let map_z = f64x2_mul(f64x2_sub(v_65535, d), v_inv65535);
-                        let hit = f64x2_gt(map_z, f64x2_add(sz, v_z_bias));
-                        blocked = v128_or(blocked, v128_and(active, hit));
-                        active = v128_andnot(active, hit);
-                        if !v128_any_true(active) {
-                            break;
-                        }
-
-                        sx = f64x2_add(sx, step_x);
-                        sz = f64x2_add(sz, step_z);
-                    }
-
-                    lit_f = f64x2_add(lit_f, v128_andnot(v_one, blocked));
-                }
-
-                let v = f64x2_floor(f64x2_add(f64x2_mul(f64x2_div(lit_f, v_taps), v_255), v_half));
-                let v_u32 = i32x4_trunc_sat_f64x2_zero(v);
-                unsafe {
-                    *out.get_unchecked_mut(out_offset + x) = u32x4_extract_lane::<0>(v_u32) as u8;
-                    *out.get_unchecked_mut(out_offset + x + 1) = u32x4_extract_lane::<1>(v_u32) as u8;
-                }
-                x += 2;
-                px = f64x2_add(px, v_two);
-            }
-
-            if pairs < w {
-                unsafe {
-                    *out.get_unchecked_mut(out_offset + pairs) = march_pixel_scalar(
-                        depth, wf, scale, inv65535, inv_steps, z_bias, is_sun, &tap_x, &tap_z, &iy_rows, &max_steps,
-                        taps, taps_f, row_offset, pairs,
-                    );
-                }
-            }
-        }
-    }
-
-    #[cfg(not(target_feature = "simd128"))]
-    {
-        for r_idx in 0..band_rows {
-            let y = row0 + r_idx;
-            let py = y as f64;
-            let row_offset = y * w;
-            let out_offset = r_idx * w;
-
-            for t in 0..taps {
-                let cy_t = unsafe { *tap_y.get_unchecked(t) };
-                let ty = if is_sun { py + cy_t } else { cy_t };
-                let rdy = ty - py;
-                let step_y = rdy * inv_steps;
-                let mut sy = py + step_y;
-                let mut valid = 0usize;
-                for s in 0..steps {
-                    let cy = sy + 0.5;
-                    if cy < 0.0 || cy >= hf {
-                        break;
-                    }
-                    let iy = unsafe { cy.to_int_unchecked::<usize>() };
-                    iy_rows[t][s] = iy * w;
-                    valid += 1;
-                    sy += step_y;
-                }
-                max_steps[t] = valid;
-            }
-
-            for x in 0..w {
-                unsafe {
-                    *out.get_unchecked_mut(out_offset + x) = march_pixel_scalar(
-                        depth, wf, scale, inv65535, inv_steps, z_bias, is_sun, &tap_x, &tap_z, &iy_rows, &max_steps,
-                        taps, taps_f, row_offset, x,
-                    );
-                }
+        for x in 0..w {
+            unsafe {
+                *out.get_unchecked_mut(out_offset + x) = march_pixel_scalar(
+                    depth, wf, scale, inv65535, inv_steps, z_bias, is_sun, &tap_x, &tap_z, &iy_rows, &max_steps,
+                    taps, taps_f, row_offset, x,
+                );
             }
         }
     }

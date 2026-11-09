@@ -1,267 +1,267 @@
 User-visible behaviour change: with the sun in `f64`, rare sun pixels change by 1 visibility step once against 0.1.50 so
 Rust and the `f64` twin give the same bytes.
 
-K14 (docs/PLAN_WASM_BUILD.md §4.5, §5): `shadow_march_f64` `f64x2` SIMD lanes with `active` and `blocked` masks in the
-twin's exit order, row-and-tap invariant `y` march precomputation, sun routed to `shadow_march_f64`, and the losing `f32`
-`shadow_march` export removed.
+K14 (docs/PLAN_WASM_BUILD.md §4.5, §5): row-and-tap invariant `y` march precomputation (`iy_rows` / `max_steps`) in
+lane-free `shadow_march_f64` (`march_pixel_scalar`), sun routed to `shadow_march_f64`, default `shadowMarch` route pinned in
+`relightBench`, and the losing `f32` `shadow_march` export and candidate 2-lane `f64x2` SIMD block removed after 4-arm
+15,000 x 10,000 measurement.
 
-Base: `9a5f1681` (`wasm-kernels`, ABI 42 -> 43).
+Base: `9a5f1681` (`wasm-kernels`, ABI 42), merged with `wasm-kernels` tip `f42396e3` (ABI 44 -> 45).
 - `before px.wasm` (`git cat-file blob 9a5f1681:renderer/editor/px/px.wasm`): 279,003 bytes, sha256 `aeb476777e971bbd` (`aeb476777e971bbd267ebe6b16be41a0e64110374a248d2bbb9b8feded7f2876`)
-- `after  px.wasm` (K14, ABI 43): 278,237 bytes (-766 bytes), sha256 `43bb945b8cdfe635` (`43bb945b8cdfe635cae5ee84a454da3d626a7b7b3f47bf7bf6a86b4056821fa0`)
+- `wasm-kernels tip px.wasm` (`git cat-file blob f42396e3:renderer/editor/px/px.wasm`, ABI 44): 291,274 bytes, sha256 `e35da0b473c7fdf9` (`e35da0b473c7fdf9985b6012d8cb3f35ca4d215edb034ea0b7abb4f256f1d0e7`)
+- `after  px.wasm` (K14 merged on `f42396e3`, ABI 45): 289,975 bytes (-1,299 bytes vs `f42396e3`), sha256 `f326653b273e3c87` (`f326653b273e3c871b64943c8bc17a66f32b518073ef3d2bd50b16cc592cb270`)
 - `before px_scalar.wasm` (`git cat-file blob 9a5f1681:renderer/editor/px/px_scalar.wasm`): 225,584 bytes, sha256 `920cb56151a5a0fc` (`920cb56151a5a0fc949f85adaeb027e19400d4466a579e56114ab26a6a9cb550`)
-- `after  px_scalar.wasm` (K14, ABI 43): 224,542 bytes (-1,042 bytes), sha256 `8cd51935703d9d2f` (`8cd51935703d9d2f5fbb8bdd58866df07da409c9dc292060a9c055ff8b5e2a6d`)
+- `wasm-kernels tip px_scalar.wasm` (`git cat-file blob f42396e3:renderer/editor/px/px_scalar.wasm`, ABI 44): 233,384 bytes, sha256 `bbd719d5ec34c80d` (`bbd719d5ec34c80da3949fd3078e8e3ff3aa8f883f515d6f68425dbab96117c3`)
+- `after  px_scalar.wasm` (K14 merged on `f42396e3`, ABI 45): 232,343 bytes (-1,041 bytes vs `f42396e3`), sha256 `0c067d6ca569c44e` (`0c067d6ca569c44e6322547e18e5dcf23b9b2b39e10fac0eac12599a6bb74fa5`)
+- Candidate `after_lanes px.wasm` (`391f03a3` on `9a5f1681`, ABI 43, 2-lane `f64x2` + `y` precompute, removed): 278,237 bytes, sha256 `43bb945b8cdfe635` (`43bb945b8cdfe635cae5ee84a454da3d626a7b7b3f47bf7bf6a86b4056821fa0`).
 
 The folders and logs in `docs/measurements/k14_2026-11-09/`:
-- `before/perf/r1..3.{json,log}`: a tree exported at `9a5f1681` via `git archive` (K13 scalar `shadow_march_f64` on
-  point/spot, `f32` `shadow_march` on sun), three fresh Electron instances on port 9631
+- `before/perf/r1..3.{json,log}`: a tree exported at `9a5f1681` via `git archive` (K13 scalar `shadow_march_f64` without `y`
+  precompute on point/spot, `f32` `shadow_march` on sun), three fresh Electron instances on port 9631
   (`SCUMBLE_CDP_PORT=9631 bash tools/run_gates.sh k14-before-r<R> --offline "perf:15000x10000,--filter=relight,--map=4096x2731"`).
-- `after_rust/perf/r1..3.{json,log}` (and `after/perf/r1..3.{json,log}`): the K14 working tree (`shadowMarch` routed to
-  Rust `shadow_march_f64` for point, spot, and sun).
-- `after_js/perf/r1..3.{json,log}`: a copy of the K14 tree with `shadowMarch: "js"` in `DEFAULT_ROUTES` (all lights
-  routed to the hoisted V8 `f64` twin).
-  The three trees alternated across three rounds under the busy lock (`../w1_2026-11-06/w1_lock.py`, 0 s wait on every
-  round): `before / after_rust / after_js` in r1 (`126 s / 107 s / 111 s`), `after_rust / after_js / before` in r2
-  (`99 s / 107 s / 122 s`), `after_js / before / after_rust` in r3 (`104 s / 124 s / 102 s`). All 9 runs exited `rc=0`
-  with `focus [[True, 'visible', True, 'visible']]`.
-- `k14_chain.sh` and `summarize.py`: the 3-round 15k measurement harness and row summarizer.
-- `summary_rows.txt`: output of `python docs/measurements/k14_2026-11-09/summarize.py before after_rust after_js`.
+- `after_scalar/perf/r1..3.{json,log}` (and `after/perf/r1..3.{json,log}`): the shipped K14 design (`px.wasm` compiled with
+  the `f64x2` lane block removed so every pixel goes through `march_pixel_scalar` + the row-and-tap `y` march precompute
+  `iy_rows` / `max_steps`, `shadowMarch` routed to Rust `shadow_march_f64` for point, spot, and sun), three fresh Electron
+  instances on port 9631 under the busy lock (`../w1_2026-11-06/w1_lock.py`).
+- `after_lanes/perf/r1..3.{json,log}`: the candidate 2-lane `f64x2` SIMD + `y` march precompute build (`391f03a3`).
+- `after_js/perf/r1..3.{json,log}`: a copy of the K14 tree with `shadowMarch: "js"` in `DEFAULT_ROUTES` (all lights routed
+  to the hoisted V8 `f64` twin).
+  All 12 runs across the four arms ran under `../w1_2026-11-06/w1_lock.py`, exited `rc=0`, and reported
+  `focus [[True, 'visible', True, 'visible']]`.
+- `k14_chain.sh` and `summarize.py`: the 15k measurement harness (acquiring the busy lock per round) and row summarizer.
+- `summary_rows.txt`: output of `python docs/measurements/k14_2026-11-09/summarize.py before after_scalar after_lanes after_js`.
 - `px_bench.txt`: output of `PX_ONLY=relightBench,relight PX_BENCH=large` under Node (`node tools/px_test.js`) and under
-  Electron's V8 (`ELECTRON_RUN_AS_NODE=1 F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`).
-- `electron_px_relight.txt`: output of `ELECTRON_RUN_AS_NODE=1 PX_ONLY=relightBench,relightStripe,relight F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`.
+  Electron's V8 (`ELECTRON_RUN_AS_NODE=1 .../electron.exe tools/px_test.js`) under the busy lock on the shipped ABI 45 build.
+- `electron_px_relight.txt`: output of `ELECTRON_RUN_AS_NODE=1 PX_ONLY=relightBench,relightStripe,relight .../electron.exe tools/px_test.js`.
 - `px_test_node.txt`: output of full `node tools/px_test.js`.
-- `electron_px_full.txt`: output of full `ELECTRON_RUN_AS_NODE=1 F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`.
+- `electron_px_full.txt`: output of full `ELECTRON_RUN_AS_NODE=1 .../electron.exe tools/px_test.js`.
 - `mutation/`: `mut_k14.py`, `results.txt`, and `logs/*.txt` from `tools/mutation_round.py` (15 mutants, 15/15 killed).
 - `gates/gates/k14-gates-{tiles,canvas,tiles-serial,canvas-serial}/`: logs and summaries of
   `bash tools/run_gates_both.sh k14-gates --ports 9631,9632 --lock <busy_lock> --offline lint types relight pixels nodecopy`.
 
-Built (ABI 43):
-- `crates/px/src/relight.rs` (`march_pixel_scalar` at lines 94–167, `shadow_march_f64` at lines 173–410, `#[cfg(target_feature = "simd128")]` at lines 225–370) and `crates/px/src/lib.rs` (ABI comment at line 54, `px_abi_version()` at lines 56–59, `shadow_march_f64` at lines 845–881, `shadow_march` removed at line 841): bumped `px_abi_version()`
-  42 -> 43; removed `pub const VOGEL_16`, `relight::shadow_march` (`f32`), and the `#[no_mangle] pub unsafe extern "C" fn
-  shadow_march(...)` export. Added `march_pixel_scalar` and `#[cfg(target_feature = "simd128")]` `f64x2` SIMD lanes in
-  `relight::shadow_march_f64`:
-  - Precomputes the row-and-tap invariant `y` march (`iy_rows: [[usize; 64]; 16]` and `max_steps: [usize; 16]`) once per
-    row `y` (`cy = sy + 0.5`, breaking at the first step where `cy < 0.0 || cy >= hf` and storing `iy * w`).
-  - Under `simd128`, marches two adjacent pixels `(x, x + 1)` in parallel across `0..pairs` (`w & !1`), with any odd
-    width tail pixel `x = pairs` handled by `march_pixel_scalar`.
-  - Preserves the twin's exact per-pixel formula (`tx = px + cx_t`, `rdx = tx - px`, `step_x = rdx * inv_steps`,
-    `sx = px + step_x`) in every lane and in `march_pixel_scalar` so `tx - px` rounding ties match the V8 `f64` twin
-    byte-for-byte.
-  - Evaluates the twin's exact exit order per step `s in 0..valid_steps` with `active` and `blocked` lane masks:
-    1. `exit_sky = f64x2_gt(sz, v_sky_limit)` where `v_sky_limit = v128_bitselect(v_scale, v_inf, f64x2_ge(rdz, v_zero))`
-       (`rdz >= 0.0 && sz > scale`).
-    2. `cx = f64x2_add(sx, v_half)` and `in_x = v128_and(f64x2_ge(cx, v_zero), f64x2_lt(cx, v_wf))` (`0.0 <= cx < wf`;
-       `0.0 <= cy < hf` is already enforced by `s < valid_steps`).
-    3. `active = v128_and(v128_andnot(active, exit_sky), in_x)`, breaking early if `!v128_any_true(active)`.
-    4. Clamps inactive-X lanes to index `0` via `i32x4_trunc_sat_f64x2_zero(v128_and(cx, in_x))` (breaking the
-       loop-carried dependency from `active`/`hit` of step `s - 1` to the load address of step `s`), gathers the two
-       `u16` depth samples into SIMD lanes with `v128_load16_lane::<0>` and `v128_load16_lane::<2>`, converts with
-       `f64x2_convert_low_i32x4`, and computes `hit = f64x2_gt(map_z, f64x2_add(sz, v_z_bias))`.
-    5. Records `blocked = v128_or(blocked, v128_and(active, hit))` and retires blocked lanes via
-       `active = v128_andnot(active, hit)`, breaking early if `!v128_any_true(active)`.
-- `renderer/editor/px/px.js` (`PX_ABI = 43` at line 17, `shadowMarch` at lines 644–646, `shadowMarchF64` at lines 653–718):
-  bumped `export const PX_ABI = 43;`; updated `Px.prototype.shadowMarch` to delegate directly to `this.shadowMarchF64(...)`.
-- `renderer/editor/px/kernels.js` (`DEFAULT_ROUTES` comment at lines 84–91, `DEFAULT_ROUTES` at line 95, `MARCH_MAX` and
-  `marchGuardOk` at lines 898–909, `shadowMarch` at lines 917–931): documented the K14 route decision above
-  `DEFAULT_ROUTES` (no `shadowMarch` entry needed); updated `shadowMarch` to call `p.shadowMarchF64(depth, w, h, scale,
-  light, radius, taps, steps, bias, row0, rows, out, key)` for all light kinds (`point`, `spot`, and `sun`), recovering on
-  `"shadow_march_f64"`.
-- `renderer/editor/inpaint_worker.js` (`relightShadowJob` at lines 1712–1729, `ranRust` at line 1719): simplified `ranRust`
-  in `relightShadowJob` to `const ranRust = (c1.shadow_march_f64 || 0) > (c0.shadow_march_f64 || 0);`.
-- `tools/px_test.js` (`relightCases` at lines 1715–2054, `f64Cases` at lines 1835–1949, `relightBench` at lines 2134–2288,
-  `relightStripeCases` at lines 2302–2502 with changed stripe/resident-slot block at lines 2340–2422) and
-  `tools/relight_test.py` (case `nk` `wantExport` check at lines 2328–2330): expanded `relightCases` to 141 `f64` cases
-  (placing the surgical `16x4` boundary and `f64x2` lane-divergence cases first so `twinCheck` stops on the exact surgical
-  case: `16x4 map_z == sz + z_bias tie`, `16x4 rdz < 0 with sz > scale`, `16x4 f64x2 lane 0 blocked at s=0 (ix=2), lane 1
-  blocked at s=1 (ix=5)`, `16x4 cx == 0.0 boundary wall`, `16x4 cx == wf boundary out-of-bounds`, `16x4 final step s == steps
-  wall`, `16x4 cy == 0.0 boundary wall`, `16x4 cy == hf boundary out-of-bounds`, `16x4 sun tx - px rounding tie`, `16x4 f64x2
-  lane 0 blocked at ix=2, lane 1 unblocked`, `16x4 f64x2 lane 1 blocked at ix=3, lane 0 unblocked`, `16x4 f64x2 lane 0 exits
-  cx < 0, lane 1 blocked at ix=0`, `16x4 f64x2 lane 1 exits cx >= wf, lane 0 blocked at ix=15`, and `16x4 f64x2 exit_sky rdz >= 0
-  && sz > scale (-50)`, plus odd widths `w = 1, 3, 5, 17`); updated `relightBench` to verify byte-identical `f64` outputs
-  across `routed`, `twin`, `simd_f64`, and `scalar_f64` for `point`, `spot`, and `sun`, verify `marchGuardOk` returns before
-  `routed.shadowMarchF64` is entered (`f64Entered === 0`), verify `shadowMarch` route switching (`"js"`, pixel threshold,
-  `"rust"`) for both `point` and `sun`, and verify trap recovery on `shadow_march_f64` for both `point` and `sun`; updated
-  `relightStripeCases` (704 cases across `twin`, `simd`, `scalar`, and `kernels.js` with 0-byte diff for `point`, `spot`,
-  and `sun`); updated `tools/relight_test.py` case `nk` to expect `shadow_march_f64` for both sun and point.
+Why the 2-lane `f64x2` block was removed (`K14-T1`):
+- In the 4-arm 15,000 x 10,000 comparison (`summary_rows.txt`), `after_scalar` (`march_pixel_scalar` + `iy_rows` / `max_steps`
+  `y` precompute) beat `after_lanes` (`f64x2` lanes + the same `y` precompute) outside spreads on `relight_one` (`493 [490-501]`
+  vs `599 [570-608]` ms, blocked `42.5 [40.9-46.4]` vs `62 [62-63]` ms, kernel `3,648 [3,626-3,670]` vs `4,497 [4,323-4,548]` ms),
+  `relight_one_job` (`3,245 [3,197-3,257]` vs `3,530 [3,511-3,733]` ms), `relight_one_rep` (`516 [507-531]` vs `576 [540-617]` ms),
+  `relight_one_nofeed` (`468 [460-487]` vs `548 [547-571]` ms), `relight_sun` kernel (`865 [844-874]` vs `912 [904-1,027]` ms;
+  landed `170 [166-172]` vs `182 [172-192]` ms touching at `172`), `relight_nodraw_job` (`3,146 [3,039-3,364]` vs `3,435
+  [3,404-3,537]` ms), and `relight_draw_job` (`3,194 [3,024-3,354]` vs `3,546 [3,424-3,549]` ms), and had lower medians on
+  `relight_three` (`1,009 [965-1,070]` vs `1,094 [1,052-1,101]` ms), `relight_nodraw` (`465 [463-564]` vs `535 [523-537]` ms),
+  and `relight_draw` (`518 [485-565]` vs `526 [522-564]` ms).
+- This confirmed what `391f03a3`'s `px_bench` showed (`scalar_f64` faster than `simd_f64` in 23 of 24 rows): K14's speed-up
+  comes from hoisting the row-and-tap invariant `y` march (`iy_rows` / `max_steps`) out of the pixel loop, whereas pairing
+  adjacent pixels in `f64x2` forces a terminated ray to keep stepping alongside an active neighbour lane and extracts 32-bit
+  lane indices back to GPRs every step for scalar `u16` depth gathers. Per `docs/PLAN_WASM_BUILD.md` §1.1, the ~145 lines of
+  `unsafe` `f64x2` code were removed and `march_pixel_scalar` + the `y` precompute kept.
 
-Explaining microbenchmarks (`px_bench.txt`, `PX_ONLY=relightBench,relight PX_BENCH=large`):
+Built (ABI 45, merged with `wasm-kernels` `f42396e3`):
+- `crates/px/src/relight.rs` (`march_pixel_scalar` at lines 94–167, `shadow_march_f64` at lines 173–265, `y` march precompute
+  at lines 222–254) and `crates/px/src/lib.rs` (ABI comment at line 54, `px_abi_version()` at lines 56–59, `shadow_march_f64`
+  at lines 887–924): bumped `px_abi_version()` to `45`; removed `pub const VOGEL_16`, `relight::shadow_march` (`f32`), and
+  `#[no_mangle] pub unsafe extern "C" fn shadow_march(...)`. In `relight::shadow_march_f64`:
+  - Precomputes the row-and-tap invariant `y` march (`iy_rows: [[usize; 64]; 16]` and `max_steps: [usize; 16]`) once per
+    row `y` (`ty = if is_sun { py + cy_t } else { cy_t }`, `rdy = ty - py`, `step_y = rdy * inv_steps`, `cy = sy + 0.5`,
+    breaking at the first step where `cy < 0.0 || cy >= hf` and storing `iy * w`).
+  - Marches each pixel `x in 0..w` via `march_pixel_scalar` across `0..valid_steps` in the twin's exact operation and exit
+    order (`rdz >= 0.0 && sz > scale` -> `0.0 <= cy < hf` via `valid_steps` and `0.0 <= cx < wf` -> `map_z > sz + z_bias`),
+    preserving per-pixel `tx = px + cx_t`, `rdx = tx - px`, `step_x = rdx * inv_steps` (and per-row `ty = py + cy_t`,
+    `rdy = ty - py`, `step_y = rdy * inv_steps`) so `tx - px` and `ty - py` rounding ties match the V8 `f64` twin byte-for-byte.
+- `renderer/editor/px/px.js` (`PX_ABI = 45` at line 18, `shadowMarch` at lines 647–649, `shadowMarchF64` at lines 656–721):
+  bumped `export const PX_ABI = 45;`; updated `Px.prototype.shadowMarch` to delegate directly to `this.shadowMarchF64(...)`.
+- `renderer/editor/px/kernels.js` (`ROUTE_KINDS` union at line 68, `No shadowMarch entry` comment at lines 89–106,
+  `DEFAULT_ROUTES` at line 110, `MARCH_MAX` and `marchGuardOk` at lines 914–925, `shadowMarch` at lines 933–947): documented
+  the 4-arm K14 route decision above `DEFAULT_ROUTES` (distinguishing wins outside spreads from ties within spread decided by
+  the kernel row, and naming the rows where `after_js` had lower medians); updated `shadowMarch` to call
+  `p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key)` for all light kinds
+  (`point`, `spot`, and `sun`), recovering on `"shadow_march_f64"`.
+- `renderer/editor/inpaint_worker.js` (`relightShadowJob` at lines 1843–1860, `ranRust` at line 1850): simplified `ranRust`
+  in `relightShadowJob` to `const ranRust = (c1.shadow_march_f64 || 0) > (c0.shadow_march_f64 || 0);`.
+- `tools/px_test.js` (`relightCases` at lines 1715–2057, `f64Cases` at lines 1835–1952, `relightBench` at lines 2137–2291,
+  `relightStripeCases` at lines 2305–2505 with changed stripe/resident-slot block at lines 2343–2425) and
+  `tools/relight_test.py` (case `nk` `wantExport` check at lines 2328–2330): expanded `relightCases` to 142 `f64` cases
+  (placing surgical boundary and rounding-tie cases first so `twinCheck` stops on the exact surgical case, including both
+  `16x4 sun tx - px rounding tie` and `4x16 sun ty - py rounding tie` for the `y` precompute); pinned `r === undefined` and
+  `want = "rust_f64"` in `relightBench` (`lines 2169–2170`, `2184–2185`) alongside byte-for-byte identity across `routed`,
+  `twin`, `simd_f64`, and `scalar_f64` for `point`, `spot`, and `sun`, `marchGuardOk` (`f64Entered === 0`), route switching,
+  and trap recovery; verified 704 stripe cases in `relightStripeCases`; updated `relight_test.py` case `nk` to expect
+  `shadow_march_f64` for both sun and point.
+
+Explaining microbenchmarks on the shipped lane-free ABI 45 build (`px_bench.txt`, `PX_ONLY=relightBench,relight PX_BENCH=large`,
+under the busy lock; both `px.wasm` `simd_f64` and `px_scalar.wasm` `scalar_f64` run `march_pixel_scalar` + `y` precompute, and
+both beat `twin` on all 24 of 24 rows):
 - Node V8:
   - `1024 x 1024` (4 taps, 32 steps):
-    - point: `routed` (`rust_f64`) 346.5 ms, `twin` 407.2 ms, `simd_f64` 358.2 ms, `scalar_f64` 347.2 ms (`twin / simd_f64 = 1.14`)
-    - spot:  `routed` (`rust_f64`) 270.8 ms, `twin` 303.0 ms, `simd_f64` 289.4 ms, `scalar_f64` 251.4 ms (`twin / simd_f64 = 1.05`)
-    - sun:   `routed` (`rust_f64`)  86.4 ms, `twin` 111.6 ms, `simd_f64` 103.3 ms, `scalar_f64`  88.1 ms (`twin / simd_f64 = 1.08`)
+    - point: `routed` (`rust_f64`) 221.3 ms, `twin` 266.5 ms, `simd_f64` 236.6 ms, `scalar_f64` 224.6 ms (`twin / simd_f64 = 1.13`; cold 387.4 ms, compile 2.8 ms)
+    - spot:  `routed` (`rust_f64`) 256.1 ms, `twin` 298.5 ms, `simd_f64` 275.4 ms, `scalar_f64` 255.1 ms (`twin / simd_f64 = 1.08`; cold 519.3 ms, compile 1.9 ms)
+    - sun:   `routed` (`rust_f64`)  84.4 ms, `twin` 110.6 ms, `simd_f64`  79.6 ms, `scalar_f64`  76.3 ms (`twin / simd_f64 = 1.39`; cold 163.0 ms, compile 1.2 ms)
   - `1024 x 682 quick` (1 tap, 16 steps):
-    - point: `routed` (`rust_f64`)  28.5 ms, `twin`  33.2 ms, `simd_f64`  28.4 ms, `scalar_f64`  22.6 ms (`twin / simd_f64 = 1.17`)
-    - spot:  `routed` (`rust_f64`)  27.6 ms, `twin`  31.6 ms, `simd_f64`  30.8 ms, `scalar_f64`  24.9 ms (`twin / simd_f64 = 1.03`)
-    - sun:   `routed` (`rust_f64`)   8.7 ms, `twin`  11.8 ms, `simd_f64`  11.7 ms, `scalar_f64`   7.7 ms (`twin / simd_f64 = 1.01`)
+    - point: `routed` (`rust_f64`)  22.1 ms, `twin`  23.8 ms, `simd_f64`  21.6 ms, `scalar_f64`  20.3 ms (`twin / simd_f64 = 1.10`; cold  37.9 ms, compile 1.2 ms)
+    - spot:  `routed` (`rust_f64`)  22.4 ms, `twin`  31.0 ms, `simd_f64`  21.7 ms, `scalar_f64`  21.4 ms (`twin / simd_f64 = 1.43`; cold  41.7 ms, compile 3.0 ms)
+    - sun:   `routed` (`rust_f64`)   7.5 ms, `twin`  10.5 ms, `simd_f64`   7.6 ms, `scalar_f64`   7.4 ms (`twin / simd_f64 = 1.38`; cold  15.6 ms, compile 1.9 ms)
   - `2048 x 1365` (4 taps, 32 steps):
-    - point: `routed` (`rust_f64`) 632.9 ms, `twin` 758.4 ms, `simd_f64` 702.3 ms, `scalar_f64` 598.3 ms (`twin / simd_f64 = 1.08`)
-    - spot:  `routed` (`rust_f64`) 855.5 ms, `twin` 873.0 ms, `simd_f64` 873.5 ms, `scalar_f64` 817.5 ms (`twin / simd_f64 = 1.00`)
-    - sun:   `routed` (`rust_f64`) 222.6 ms, `twin` 336.1 ms, `simd_f64` 255.3 ms, `scalar_f64` 194.7 ms (`twin / simd_f64 = 1.32`)
+    - point: `routed` (`rust_f64`) 617.3 ms, `twin` 692.9 ms, `simd_f64` 599.3 ms, `scalar_f64` 615.4 ms (`twin / simd_f64 = 1.16`; cold 1,186.7 ms, compile 4.1 ms)
+    - spot:  `routed` (`rust_f64`) 659.6 ms, `twin` 745.9 ms, `simd_f64` 643.8 ms, `scalar_f64` 673.5 ms (`twin / simd_f64 = 1.16`; cold 1,305.9 ms, compile 1.7 ms)
+    - sun:   `routed` (`rust_f64`) 191.0 ms, `twin` 239.8 ms, `simd_f64` 181.3 ms, `scalar_f64` 202.0 ms (`twin / simd_f64 = 1.32`; cold   355.5 ms, compile 2.1 ms)
   - `4096 x 2731` (4 taps, 32 steps):
-    - point: `routed` (`rust_f64`) 2,815.3 ms, `twin` 3,314.2 ms, `simd_f64` 3,059.4 ms, `scalar_f64` 2,653.9 ms (`twin / simd_f64 = 1.08`)
-    - spot:  `routed` (`rust_f64`) 3,377.2 ms, `twin` 3,684.6 ms, `simd_f64` 3,422.8 ms, `scalar_f64` 2,965.6 ms (`twin / simd_f64 = 1.08`)
-    - sun:   `routed` (`rust_f64`)   820.1 ms, `twin` 1,058.2 ms, `simd_f64` 1,013.0 ms, `scalar_f64`   836.9 ms (`twin / simd_f64 = 1.04`)
+    - point: `routed` (`rust_f64`) 2,411.2 ms, `twin` 2,775.2 ms, `simd_f64` 2,420.9 ms, `scalar_f64` 2,419.0 ms (`twin / simd_f64 = 1.15`; cold 4,719.9 ms, compile 4.1 ms)
+    - spot:  `routed` (`rust_f64`) 2,734.4 ms, `twin` 3,150.4 ms, `simd_f64` 2,736.9 ms, `scalar_f64` 2,681.9 ms (`twin / simd_f64 = 1.15`; cold 4,951.9 ms, compile 2.1 ms)
+    - sun:   `routed` (`rust_f64`)   764.4 ms, `twin`   987.8 ms, `simd_f64`   751.0 ms, `scalar_f64`   775.1 ms (`twin / simd_f64 = 1.32`; cold 1,516.8 ms, compile 1.2 ms)
 - Electron V8 (`ELECTRON_RUN_AS_NODE=1`):
   - `1024 x 1024` (4 taps, 32 steps):
-    - point: `routed` (`rust_f64`) 310.8 ms, `twin` 370.6 ms, `simd_f64` 301.4 ms, `scalar_f64` 317.7 ms (`twin / simd_f64 = 1.23`)
-    - spot:  `routed` (`rust_f64`) 343.4 ms, `twin` 457.1 ms, `simd_f64` 330.8 ms, `scalar_f64` 327.3 ms (`twin / simd_f64 = 1.38`)
-    - sun:   `routed` (`rust_f64`) 125.3 ms, `twin` 140.7 ms, `simd_f64` 134.2 ms, `scalar_f64` 123.0 ms (`twin / simd_f64 = 1.05`)
+    - point: `routed` (`rust_f64`) 232.2 ms, `twin` 262.1 ms, `simd_f64` 229.6 ms, `scalar_f64` 239.9 ms (`twin / simd_f64 = 1.14`; cold 389.5 ms, compile 0.9 ms)
+    - spot:  `routed` (`rust_f64`) 247.1 ms, `twin` 286.8 ms, `simd_f64` 246.0 ms, `scalar_f64` 242.2 ms (`twin / simd_f64 = 1.17`; cold 440.8 ms, compile 1.1 ms)
+    - sun:   `routed` (`rust_f64`)  78.3 ms, `twin` 107.8 ms, `simd_f64`  81.9 ms, `scalar_f64`  79.6 ms (`twin / simd_f64 = 1.32`; cold 203.6 ms, compile 1.1 ms)
   - `1024 x 682 quick` (1 tap, 16 steps):
-    - point: `routed` (`rust_f64`)  32.3 ms, `twin`  46.6 ms, `simd_f64`  31.8 ms, `scalar_f64`  21.0 ms (`twin / simd_f64 = 1.47`)
-    - spot:  `routed` (`rust_f64`)  34.7 ms, `twin`  50.1 ms, `simd_f64`  36.1 ms, `scalar_f64`  34.6 ms (`twin / simd_f64 = 1.39`)
-    - sun:   `routed` (`rust_f64`)   9.5 ms, `twin`  15.7 ms, `simd_f64`  10.1 ms, `scalar_f64`   7.7 ms (`twin / simd_f64 = 1.55`)
+    - point: `routed` (`rust_f64`)  19.9 ms, `twin`  23.2 ms, `simd_f64`  21.0 ms, `scalar_f64`  20.1 ms (`twin / simd_f64 = 1.10`; cold  35.6 ms, compile 1.2 ms)
+    - spot:  `routed` (`rust_f64`)  31.3 ms, `twin`  43.4 ms, `simd_f64`  35.2 ms, `scalar_f64`  31.4 ms (`twin / simd_f64 = 1.24`; cold  51.8 ms, compile 1.8 ms)
+    - sun:   `routed` (`rust_f64`)  12.5 ms, `twin`  21.1 ms, `simd_f64`  10.1 ms, `scalar_f64`  10.5 ms (`twin / simd_f64 = 2.09`; cold  15.9 ms, compile 2.2 ms)
   - `2048 x 1365` (4 taps, 32 steps):
-    - point: `routed` (`rust_f64`) 869.2 ms, `twin` 1,126.3 ms, `simd_f64` 860.6 ms, `scalar_f64` 777.0 ms (`twin / simd_f64 = 1.31`)
-    - spot:  `routed` (`rust_f64`) 1,052.9 ms, `twin` 1,113.6 ms, `simd_f64` 1,071.9 ms, `scalar_f64` 992.9 ms (`twin / simd_f64 = 1.04`)
-    - sun:   `routed` (`rust_f64`) 257.4 ms, `twin`   408.0 ms, `simd_f64` 294.8 ms, `scalar_f64` 250.6 ms (`twin / simd_f64 = 1.38`)
+    - point: `routed` (`rust_f64`)   995.7 ms, `twin` 1,042.8 ms, `simd_f64`   860.3 ms, `scalar_f64` 888.3 ms (`twin / simd_f64 = 1.21`; cold 1,821.3 ms, compile 2.3 ms)
+    - spot:  `routed` (`rust_f64`) 1,029.4 ms, `twin` 1,233.2 ms, `simd_f64` 1,086.1 ms, `scalar_f64` 944.1 ms (`twin / simd_f64 = 1.14`; cold 1,806.6 ms, compile 1.2 ms)
+    - sun:   `routed` (`rust_f64`)   177.9 ms, `twin`   262.7 ms, `simd_f64`   182.1 ms, `scalar_f64` 194.4 ms (`twin / simd_f64 = 1.44`; cold   421.6 ms, compile 1.8 ms)
   - `4096 x 2731` (4 taps, 32 steps):
-    - point: `routed` (`rust_f64`) 3,530.7 ms, `twin` 4,234.5 ms, `simd_f64` 3,502.4 ms, `scalar_f64` 3,342.1 ms (`twin / simd_f64 = 1.21`)
-    - spot:  `routed` (`rust_f64`) 2,965.8 ms, `twin` 3,093.8 ms, `simd_f64` 2,943.0 ms, `scalar_f64` 2,790.9 ms (`twin / simd_f64 = 1.05`)
-    - sun:   `routed` (`rust_f64`)   888.3 ms, `twin` 1,028.7 ms, `simd_f64`   822.8 ms, `scalar_f64`   746.7 ms (`twin / simd_f64 = 1.25`)
+    - point: `routed` (`rust_f64`) 3,802.7 ms, `twin` 4,201.8 ms, `simd_f64` 3,754.9 ms, `scalar_f64` 3,692.6 ms (`twin / simd_f64 = 1.12`; cold 6,329.4 ms, compile 2.3 ms)
+    - spot:  `routed` (`rust_f64`) 4,102.0 ms, `twin` 4,807.0 ms, `simd_f64` 4,055.6 ms, `scalar_f64` 4,107.1 ms (`twin / simd_f64 = 1.19`; cold 7,391.9 ms, compile 1.4 ms)
+    - sun:   `routed` (`rust_f64`)   717.4 ms, `twin`   940.3 ms, `simd_f64`   727.3 ms, `scalar_f64`   717.6 ms (`twin / simd_f64 = 1.29`; cold 1,390.5 ms, compile 1.4 ms)
 
-15,000 x 10,000 three-way comparison (`summary_rows.txt`, map `4096 x 2731`, medians `[min-max]` of 3 rounds, ms;
-`before` = K13 scalar `f64` on point/spot + `f32` `shadow_march` on sun; `after_rust` = K14 `f64x2` `shadow_march_f64`
-on point/spot/sun; `after_js` = hoisted V8 `f64` twin on point/spot/sun):
+15,000 x 10,000 four-way comparison (`summary_rows.txt`, map `4096 x 2731`, medians `[min-max]` of 3 rounds, ms;
+`before` = K13 scalar `f64` without `y` precompute on point/spot + `f32` `shadow_march` on sun;
+`after_scalar` = shipped K14 lane-free `shadow_march_f64` with `y` precompute on point/spot/sun;
+`after_lanes` = candidate `f64x2` + `y` precompute, removed;
+`after_js` = hoisted V8 `f64` twin on point/spot/sun):
 
 1. Chain rows (pinned in K12, before the relight march rows):
    - `whole_fit_gl` (`frame after a whole change, fit`):
-     - frame: `before` `20.2 [20.0-24.4]`, `after_rust` `21.2 [20.4-21.6]`, `after_js` `21.1 [18.6-23.7]` (tie, spreads overlap)
-     - mips settled: `before` `81.0 [78.8-82.5]`, `after_rust` `84.9 [77.2-93.9]`, `after_js` `87.1 [79.2-89.1]` (tie, spreads overlap)
-     - longest block: `before` `20.2 [16.9-23.9]`, `after_rust` `24.5 [20.7-37.5]`, `after_js` `21.4 [17.8-24.6]` (tie, spreads overlap)
+     - frame: `before` `20.2 [20.0-24.4]`, `after_scalar` `19.4 [19.2-20.4]`, `after_lanes` `21.2 [20.4-21.6]`, `after_js` `21.1 [18.6-23.7]` (tie, spreads overlap)
+     - mips settled: `before` `81.0 [78.8-82.5]`, `after_scalar` `77.1 [70.4-82.8]`, `after_lanes` `84.9 [77.2-93.9]`, `after_js` `87.1 [79.2-89.1]` (tie, spreads overlap)
    - `whole_1to1_gl` (`frame after a whole change, 1:1`):
-     - frame: `before` `22.9 [21.7-23.5]`, `after_rust` `23.2 [22.1-24.4]`, `after_js` `21.9 [21.8-24.2]` (tie, spreads overlap)
-     - mips settled: `before` `120 [93-120]`, `after_rust` `117 [110-131]`, `after_js` `105 [102-122]` (tie, spreads overlap)
-     - longest block: `before` `22.6 [10.1-23.5]`, `after_rust` `22.8 [10.6-27.1]`, `after_js` `16.5 [12.5-22.7]` (tie, spreads overlap)
-     - `whole_quiet` (`waited for the setup's marches`): `before` `1,389 [1,344-1,441]`, `after_rust` `1,050 [970-1,364]`,
-       `after_js` `1,026 [1,019-1,172]` (`after_rust` -339 ms faster than `before` on median).
+     - frame: `before` `22.9 [21.7-23.5]`, `after_scalar` `23.5 [23.0-23.9]`, `after_lanes` `23.2 [22.1-24.4]`, `after_js` `21.9 [21.8-24.2]` (tie, spreads overlap)
+     - mips settled: `before` `120 [93-120]`, `after_scalar` `105 [85-107]`, `after_lanes` `117 [110-131]`, `after_js` `105 [102-122]` (tie vs `before` and `after_js`, beats `after_lanes` outside spreads)
+     - `whole_quiet` (`waited for the setup's marches`): `before` `1,389 [1,344-1,441]`, `after_scalar` **`952 [932-995]`**, `after_lanes` `1,050 [970-1,364]`, `after_js` `1,026 [1,019-1,172]` (`after_scalar` wins outside spreads over both `before` -437 ms and `after_js` -74 ms).
    - `panel_flatten_sync` (`192 px picture, the old way [wall]`):
-     `before` `370 [358-402]`, `after_rust` `361 [354-368]`, `after_js` `371 [339-412]` (tie, spreads overlap).
+     `before` `370 [358-402]`, `after_scalar` `342 [340-373]`, `after_lanes` `361 [354-368]`, `after_js` `371 [339-412]` (tie, spreads overlap).
    - `panel_flatten_settled` (`192 px picture, settled [wall]`):
-     - frame: `before` `34.7 [22.2-42.7]`, `after_rust` `26.1 [21.0-34.6]`, `after_js` `37.2 [34.8-54.7]` (`after_rust` beats `after_js` outside spreads)
-     - settled: `before` `130 [121-133]`, `after_rust` `119 [116-124]`, `after_js` `123 [107-136]` (tie, spreads overlap).
+     - frame: `before` `34.7 [22.2-42.7]`, `after_scalar` `20.7 [6.3-80.7]`, `after_lanes` `26.1 [21.0-34.6]`, `after_js` `37.2 [34.8-54.7]` (tie, spreads overlap)
+     - settled: `before` `130 [121-133]`, `after_scalar` `120 [106-160]`, `after_lanes` `119 [116-124]`, `after_js` `123 [107-136]` (tie, spreads overlap).
    - `whole_1to1_lights` (`the frame with the lights overlay`):
-     `before` `393 [390-419]`, `after_rust` `383 [374-401]`, `after_js` `387 [360-392]` (tie, spreads overlap).
+     `before` `393 [390-419]`, `after_scalar` `382 [363-401]`, `after_lanes` `383 [374-401]`, `after_js` `387 [360-392]` (tie, spreads overlap).
 
 2. Point/spot march rows:
    - `relight_one` (`one light moved [blocked, landed]`):
-     - blocked: `before` `61 [54-68]`, `after_rust` `62 [62-63]`, `after_js` `63 [54-67]` (tie, spreads overlap)
-     - landed: `before` `748 [748-753]` -> `after_rust` **`599 [570-608]`** vs `after_js` `681 [650-709]` (**`after_rust` wins** over `before` by -149 ms / 1.25x outside spreads and over `after_js` by -82 ms / 1.14x outside spreads; kernel summed `5,616 [5,606-5,661] -> 4,497 [4,323-4,548]` vs `5,037 [4,641-5,293]`, slowest job `203 [194-209] -> 166 [162-176]` vs `212 [194-225]`).
+     - blocked: `before` `61 [54-68]`, `after_scalar` **`42.5 [40.9-46.4]`**, `after_lanes` `62 [62-63]`, `after_js` `63 [54-67]` (**`after_scalar` wins outside spreads** over all three)
+     - landed: `before` `748 [748-753]` -> `after_scalar` **`493 [490-501]`** vs `after_lanes` `599 [570-608]` vs `after_js` `681 [650-709]` (**`after_scalar` wins outside spreads** over `before` by -255 ms / 1.52x, over `after_js` by -188 ms / 1.38x, and over `after_lanes` by -106 ms / 1.22x; kernel summed `5,616 [5,606-5,661] -> 3,648 [3,626-3,670]` vs `4,497 [4,323-4,548]` vs `5,037 [4,641-5,293]`, slowest job `203 [194-209] -> 130 [129-135]` vs `166 [162-176]` vs `212 [194-225]`).
    - `relight_one_job` (`again, one job (stripes 0) [blocked, landed]`):
-     - blocked: `before` `75 [63-76]`, `after_rust` `64 [60-78]`, `after_js` `68 [63-94]` (tie, spreads overlap)
-     - landed: `before` `4,894 [4,785-4,982]` -> `after_rust` **`3,530 [3,511-3,733]`** vs `after_js` `3,595 [3,456-3,684]` (**`after_rust` wins** over `before` by -1,364 ms / 1.39x outside spreads, and beats `after_js` by -65 ms on median with overlapping spreads; kernel `4,871 [4,767-4,962] -> 3,512 [3,491-3,714]` vs `3,577 [3,438-3,665]`).
+     - blocked: `before` `75 [63-76]`, `after_scalar` `71.0 [67.6-91.8]`, `after_lanes` `64 [60-78]`, `after_js` `68 [63-94]` (tie, spreads overlap; `after_js` 3 ms lower median than `after_scalar`)
+     - landed: `before` `4,894 [4,785-4,982]` -> `after_scalar` **`3,245 [3,197-3,257]`** vs `after_lanes` `3,530 [3,511-3,733]` vs `after_js` `3,595 [3,456-3,684]` (**`after_scalar` wins outside spreads** over all three: -1,649 ms / 1.51x vs `before`, -350 ms / 1.11x vs `after_js`, -285 ms / 1.09x vs `after_lanes`; kernel `4,871 [4,767-4,962] -> 3,226 [3,178-3,238]` vs `3,512 [3,491-3,714]` vs `3,577 [3,438-3,665]`).
    - `relight_one_rep` (`again, stripes [blocked, landed]`):
-     - blocked: `before` `59 [57-61]`, `after_rust` `60 [60-74]`, `after_js` `47 [40-52]` (`after_rust` ties `before`; `after_js` is -13 ms lower on main-thread blocked)
-     - landed: `before` `727 [726-767]` -> `after_rust` `576 [540-617]` vs `after_js` `539 [490-547]` (**`after_rust` wins** over `before` by -151 ms / 1.26x outside spreads; `after_rust` vs `after_js` spreads overlap `540..547` on this single repeat row, while `after_rust` won the primary `relight_one` row outside spreads `570-608` vs `650-709`, `relight_nodraw` `535 [523-537]` vs `561 [500-602]`, and `relight_draw` `526 [522-564]` vs `546 [504-552]`).
+     - blocked: `before` `59 [57-61]`, `after_scalar` `59.8 [58.1-63.5]`, `after_lanes` `60 [60-74]`, `after_js` `47 [40-52]` (`after_js` has lower `blocked` outside spreads by -12.8 ms)
+     - landed: `before` `727 [726-767]` -> `after_scalar` **`516 [507-531]`** vs `after_lanes` `576 [540-617]` vs `after_js` `539 [490-547]` (**`after_scalar` wins outside spreads** over `before` -211 ms / 1.41x and `after_lanes` -60 ms; **ties `after_js` within spread**, decided by the kernel row `3,860 [3,753-3,944]` vs `4,054 [3,653-4,069]` ms with `after_scalar` ahead by -23 ms on landed median; on `after_lanes` vs `after_js`, `after_js` was ahead on landed median `539` vs `576` ms before removing the lanes).
    - `relight_one_s64` (`again, 64 stripes [blocked, landed]`):
-     - blocked: `before` `59 [58-64]`, `after_rust` `51 [42-55]`, `after_js` `42 [41-44]`
-     - landed: `before` `735 [729-820]` -> `after_rust` **`513 [506-607]`** vs `after_js` `520 [501-623]` (**`after_rust` wins** over `before` by -222 ms / 1.43x outside spreads, and ties/leads `after_js` on median).
+     - blocked: `before` `59 [58-64]`, `after_scalar` `59.5 [56.4-61.5]`, `after_lanes` `51 [42-55]`, `after_js` `42 [41-44]` (`after_js` has lower `blocked` outside spreads)
+     - landed: `before` `735 [729-820]` -> `after_scalar` **`510 [492-521]`** vs `after_lanes` `513 [506-607]` vs `after_js` `520 [501-623]` (**`after_scalar` wins outside spreads** over `before` -225 ms / 1.44x; ties `after_lanes` and `after_js` within spread).
    - `relight_one_nofeed` (`again, every stripe posted [blocked, landed]`):
-     - blocked: `before` `50 [47-58]`, `after_rust` `45 [41-62]`, `after_js` `53 [48-54]` (tie, spreads overlap)
-     - landed: `before` `701 [698-788]` -> `after_rust` `548 [547-571]` vs `after_js` `545 [510-579]` (**`after_rust` wins** over `before` by -153 ms outside spreads; ties `after_js` inside spreads).
+     - blocked: `before` `50 [47-58]`, `after_scalar` `45.3 [42.4-48.9]`, `after_lanes` `45 [41-62]`, `after_js` `53 [48-54]` (tie, spreads touch `48..48.9`)
+     - landed: `before` `701 [698-788]` -> `after_scalar` **`468 [460-487]`** vs `after_lanes` `548 [547-571]` vs `after_js` `545 [510-579]` (**`after_scalar` wins outside spreads** over all three: -233 ms / 1.50x vs `before`, -77 ms / 1.16x vs `after_js`, -80 ms / 1.17x vs `after_lanes`; on `after_lanes` vs `after_js`, `after_js` was 3 ms ahead on median `545` vs `548` ms before removing the lanes).
    - `relight_three` (`three lights moved [blocked, landed]`):
-     - blocked: `before` `225 [63-259]`, `after_rust` `61 [55-62]`, `after_js` `58 [53-59]` (`after_rust` beats `before` outside spreads; ties `after_js`)
-     - landed: `before` `1,625 [1,624-1,730]` -> `after_rust` **`1,094 [1,052-1,101]`** vs `after_js` `1,144 [1,015-1,212]` (**`after_rust` wins** over `before` by -531 ms / 1.49x outside spreads, and beats `after_js` by -50 ms on median with tighter worst-case `1,101` vs `1,212`; kernel summed `12,018 [11,371-12,483] -> 8,482 [8,232-8,496]` vs `8,990 [7,760-9,434]`, slowest job `227 [207-236] -> 156 [148-159]` vs `168 [127-169]`).
+     - blocked: `before` `225 [63-259]`, `after_scalar` `84.4 [75.3-89.3]`, `after_lanes` `61 [55-62]`, `after_js` `58 [53-59]` (`after_js` and `after_lanes` have lower `blocked` outside spreads than `after_scalar`; `after_scalar` is inside `before`'s spread)
+     - landed: `before` `1,625 [1,624-1,730]` -> `after_scalar` **`1,009 [965-1,070]`** vs `after_lanes` `1,094 [1,052-1,101]` vs `after_js` `1,144 [1,015-1,212]` (**`after_scalar` wins outside spreads** over `before` by -616 ms / 1.61x; **ties `after_js` and `after_lanes` within spread**, decided by the kernel row `7,883 [7,564-8,242]` vs `8,482 [8,232-8,496]` vs `8,990 [7,760-9,434]` ms and slowest job `145 [144-148]` vs `156 [148-159]` vs `168 [127-169]` ms, with `after_scalar` ahead on landed median by -135 ms vs `after_js` and -85 ms vs `after_lanes`).
    - `relight_three_job` (`again, one job a light [blocked, landed]`):
-     - blocked: `before` `52 [44-67]`, `after_rust` `62 [57-80]`, `after_js` `61 [60-104]` (tie, spreads overlap)
-     - landed: `before` `5,216 [4,808-5,402]` -> `after_rust` **`3,572 [3,549-3,843]`** vs `after_js` `3,863 [3,570-5,187]` (**`after_rust` wins** over `before` by -1,644 ms / 1.46x outside spreads, and beats `after_js` by -291 ms on median and -1,344 ms on worst; kernel summed `10,767 [9,906-11,133] -> 7,375 [7,334-7,891]` vs `8,040 [7,477-9,214]`).
+     - blocked: `before` `52 [44-67]`, `after_scalar` `104 [91-106]`, `after_lanes` `62 [57-80]`, `after_js` `61 [60-104]` (`after_scalar` higher `blocked` than `before` and `after_lanes`, touching `after_js` at `104`)
+     - landed: `before` `5,216 [4,808-5,402]` -> `after_scalar` **`3,284 [3,282-3,572]`** vs `after_lanes` `3,572 [3,549-3,843]` vs `after_js` `3,863 [3,570-5,187]` (**`after_scalar` wins outside spreads** over `before` by -1,932 ms / 1.59x; touches `after_js` at `3,570..3,572` with **kernel summed `6,773 [6,770-7,249]` vs `7,375 [7,334-7,891]` vs `8,040 [7,477-9,214]` ms outside spreads** over all three).
    - `relight_three_rep` (`again, stripes [blocked, landed]`):
-     - blocked: `before` `50 [48-52]`, `after_rust` `54 [51-67]`, `after_js` `60 [58-64]` (spreads overlap with `before` at `51..52`, beats `after_js` on median)
-     - landed: `before` `1,417 [1,411-1,598]` -> `after_rust` **`1,074 [1,059-1,140]`** vs `after_js` `1,123 [1,116-1,187]` (**`after_rust` wins** over `before` by -343 ms / 1.32x outside spreads, and beats `after_js` by -49 ms on median; kernel summed `11,154 [11,073-12,441] -> 8,419 [8,276-8,827]` vs `8,733 [8,552-9,282]`, slowest job `203 [197-217] -> 152 [141-161]` vs `191 [175-222]` outside spreads).
+     - blocked: `before` `50 [48-52]`, `after_scalar` `72 [49-120]`, `after_lanes` `54 [51-67]`, `after_js` `60 [58-64]` (spreads overlap)
+     - landed: `before` `1,417 [1,411-1,598]` -> `after_scalar` **`1,037 [1,006-1,167]`** vs `after_lanes` `1,074 [1,059-1,140]` vs `after_js` `1,123 [1,116-1,187]` (**`after_scalar` wins outside spreads** over `before` -380 ms / 1.37x; ties `after_js` within spread at `1,116..1,167` decided by kernel `8,119 [7,801-9,085]` vs `8,733 [8,552-9,282]` ms).
    - `relight_three_s64` (`again, 64 stripes a light [blocked, landed]`):
-     - blocked: `before` `54 [50-56]`, `after_rust` `59 [57-64]`, `after_js` `86 [49-94]` (`after_rust` is +5 ms over `before`, -27 ms below `after_js`)
-     - landed: `before` `1,532 [1,393-1,557]` -> `after_rust` **`1,136 [1,083-1,225]`** vs `after_js` `1,152 [1,059-1,182]` (**`after_rust` wins** over `before` by -396 ms / 1.35x outside spreads, and leads `after_js` on median).
+     - blocked: `before` `54 [50-56]`, `after_scalar` `75 [48-107]`, `after_lanes` `59 [57-64]`, `after_js` `86 [49-94]` (spreads overlap)
+     - landed: `before` `1,532 [1,393-1,557]` -> `after_scalar` **`1,015 [982-1,088]`** vs `after_lanes` `1,136 [1,083-1,225]` vs `after_js` `1,152 [1,059-1,182]` (**`after_scalar` wins outside spreads** over `before` -517 ms / 1.51x; overlaps `after_js` at `1,059..1,088`).
    - `relight_three_nofeed` / `relight_three_mv_nofeed` / `relight_three_mv_feed`:
-     - `again, every stripe posted`: blocked `before` `48 [46-54]`, `after_rust` `58 [58-85]`, `after_js` `70 [59-76]`; landed `before` `1,564 [1,378-1,599]` -> `after_rust` **`1,196 [1,181-1,259]`** vs `after_js` `1,239 [1,214-1,285]` (**`after_rust` wins** on landed).
-     - `moved, every stripe posted`: blocked `before` `50 [48-100]`, `after_rust` `70 [66-77]`, `after_js` `58 [52-94]`; landed `before` `1,535 [1,414-1,571]` -> `after_rust` **`1,162 [1,146-1,163]`** vs `after_js` `1,219 [1,149-1,247]` (**`after_rust` wins** on landed).
-     - `moved, fed again`: blocked `before` `57 [44-70]`, `after_rust` `54 [51-63]`, `after_js` `60 [48-68]`; landed `before` `1,500 [1,409-1,570]` -> `after_rust` **`1,114 [1,114-1,167]`** vs `after_js` `1,175 [1,097-1,311]` (**`after_rust` wins** on both blocked and landed).
+     - `again, every stripe posted`: blocked `before` `48 [46-54]`, `after_scalar` `70.7 [63.2-72.7]`, `after_lanes` `58 [58-85]`, `after_js` `70 [59-76]`; landed `before` `1,564 [1,378-1,599]` -> `after_scalar` **`1,070 [1,023-1,249]`** vs `after_lanes` `1,196 [1,181-1,259]` vs `after_js` `1,239 [1,214-1,285]` (wins outside spreads vs `before`, ties `after_js` within spread at `1,214..1,249`).
+     - `moved, every stripe posted`: blocked `before` `50 [48-100]`, `after_scalar` `66.8 [65.7-81.7]`, `after_lanes` `70 [66-77]`, `after_js` `58 [52-94]`; landed `before` `1,535 [1,414-1,571]` -> `after_scalar` **`1,067 [1,005-1,335]`** vs `after_lanes` `1,162 [1,146-1,163]` vs `after_js` `1,219 [1,149-1,247]` (wins outside spreads vs `before`, ties `after_js` within spread).
+     - `moved, fed again`: blocked `before` `57 [44-70]`, `after_scalar` `94 [92-110]`, `after_lanes` `54 [51-63]`, `after_js` `60 [48-68]`; landed `before` `1,500 [1,409-1,570]` -> `after_scalar` **`1,050 [1,027-1,220]`** vs `after_lanes` `1,114 [1,114-1,167]` vs `after_js` `1,175 [1,097-1,311]` (wins landed outside spreads vs `before`, ties `after_js` within spread; `after_js` has lower `blocked`).
 
-3. Sun march rows (`before` = `f32` `shadow_march`, `after_rust` = `f64x2` `shadow_march_f64`, `after_js` = hoisted V8 `f64` twin):
+3. Sun march rows (`before` = `f32` `shadow_march`, `after_scalar` = shipped K14 lane-free `shadow_march_f64` + `y` precompute, `after_lanes` = `f64x2` + `y` precompute, `after_js` = hoisted V8 `f64` twin):
    - `relight_sun` (`a light made a sun [blocked, landed]`):
-     - blocked: `before` `51 [47-54]`, `after_rust` **`44 [43-44]`**, `after_js` `46 [46-48]` (**`after_rust` wins** over both `before` and `after_js` outside spreads)
-     - landed: `before` `527 [506-575]` -> `after_rust` **`182 [172-192]`** vs `after_js` `286 [250-309]` (**`after_rust` wins** over `before` by -345 ms / 2.90x outside spreads and over `after_js` by -104 ms / 1.57x outside spreads; kernel summed `3,781 [3,679-4,126] -> 912 [904-1,027]` vs `1,885 [1,527-1,986]`, slowest job `330 [322-366] -> 45 [43-57]` vs `106 [81-109]`, first stripe `288 [277-318] -> 12 [12-13]` vs `29 [24-34]`).
+     - blocked: `before` `51 [47-54]`, `after_scalar` **`42.3 [38.7-43.9]`**, `after_lanes` `44 [43-44]`, `after_js` `46 [46-48]` (**`after_scalar` wins outside spreads** over `before` and `after_js`)
+     - landed: `before` `527 [506-575]` -> `after_scalar` **`170 [166-172]`** vs `after_lanes` `182 [172-192]` vs `after_js` `286 [250-309]` (**`after_scalar` wins outside spreads** over `before` by -357 ms / 3.10x and over `after_js` by -116 ms / 1.68x, touching `after_lanes` at `172`; **kernel summed `865 [844-874]` wins outside spreads over all three**: vs `after_lanes` `912 [904-1,027]`, `after_js` `1,885 [1,527-1,986]`, and `before` `3,781 [3,679-4,126]`; slowest job `44.5 [40.1-46.7]` vs `45 [43-57]` vs `106 [81-109]` vs `330 [322-366]`; first stripe `10.7 [10.7-12.4]` vs `12 [12-13]` vs `29 [24-34]` vs `288 [277-318]`).
    - `relight_sun_job` (`again, one job (stripes 0) [blocked, landed]`):
-     - blocked: `before` `67 [50-72]`, `after_rust` `76 [58-89]`, `after_js` `64 [62-76]` (tie, spreads overlap)
-     - landed: `before` `1,586 [1,581-1,647]` -> `after_rust` **`851 [834-935]`** vs `after_js` `1,075 [1,008-1,097]` (**`after_rust` wins** over `before` by -735 ms / 1.86x outside spreads and over `after_js` by -224 ms / 1.26x outside spreads; kernel `1,568 [1,563-1,629] -> 833 [816-917]` vs `1,055 [989-1,076]`).
+     - blocked: `before` `67 [50-72]`, `after_scalar` `63.6 [52.7-69.2]`, `after_lanes` `76 [58-89]`, `after_js` `64 [62-76]` (tie, spreads overlap)
+     - landed: `before` `1,586 [1,581-1,647]` -> `after_scalar` **`762 [748-850]`** vs `after_lanes` `851 [834-935]` vs `after_js` `1,075 [1,008-1,097]` (**`after_scalar` wins outside spreads** over `before` -824 ms / 2.08x and `after_js` -313 ms / 1.41x; kernel `744 [731-826]` vs `833 [816-917]` vs `1,055 [989-1,076]` vs `1,568 [1,563-1,629]`).
    - `relight_sun_rep` (`again, stripes [blocked, landed]`):
-     - blocked: `before` `55 [54-59]`, `after_rust` **`48 [44-54]`**, `after_js` `48 [43-56]` (**`after_rust` wins** over `before` and ties `after_js`)
-     - landed: `before` `296 [286-328]` -> `after_rust` **`175 [170-180]`** vs `after_js` `193 [182-209]` (**`after_rust` wins** over `before` by -121 ms / 1.69x outside spreads and over `after_js` by -18 ms / 1.10x outside spreads; kernel summed `1,932 [1,861-2,171] -> 943 [932-946]` vs `1,106 [1,056-1,108]`, slowest job `101 [89-104] -> 45 [44-46]` vs `54 [50-54]`).
+     - blocked: `before` `55 [54-59]`, `after_scalar` **`45.6 [45.5-49.2]`**, `after_lanes` `48 [44-54]`, `after_js` `48 [43-56]` (wins outside spreads vs `before`, ties `after_js`)
+     - landed: `before` `296 [286-328]` -> `after_scalar` **`180 [164-185]`** vs `after_lanes` `175 [170-180]` vs `after_js` `193 [182-209]` (**`after_scalar` wins outside spreads** over `before` -116 ms / 1.64x; overlaps `after_js` by 3 ms at `182..185`, decided by **kernel summed `903 [872-943]` vs `1,106 [1,056-1,108]` ms outside spreads**).
    - `relight_sun_s64` (`again, 64 stripes [blocked, landed]`):
-     - blocked: `before` `49 [49-52]`, `after_rust` **`42 [40-45]`**, `after_js` `47 [44-49]`
-     - landed: `before` `296 [278-340]` -> `after_rust` **`172 [167-181]`** vs `after_js` `212 [190-231]` (**`after_rust` wins** over both `before` and `after_js` outside spreads).
+     - blocked: `before` `49 [49-52]`, `after_scalar` `42.4 [41.0-52.6]`, `after_lanes` `42 [40-45]`, `after_js` `47 [44-49]` (tie)
+     - landed: `before` `296 [278-340]` -> `after_scalar` **`173 [162-207]`** vs `after_lanes` `172 [167-181]` vs `after_js` `212 [190-231]` (wins outside spreads vs `before`; overlaps `after_js` at `190..207`).
    - `relight_sun_nofeed` / `relight_sun_feed2`:
-     - `again, every stripe posted`: blocked `before` `49 [45-51]`, `after_rust` `44 [42-49]`, `after_js` `46 [44-51]`; landed `before` `263 [253-296]` -> `after_rust` **`174 [173-176]`** vs `after_js` `209 [187-213]` (**`after_rust` wins** outside spreads).
-     - `again, fed after the unfed one`: blocked `before` `48 [48-48]`, `after_rust` `46 [45-52]`, `after_js` `53 [49-55]`; landed `before` `269 [253-307]` -> `after_rust` **`176 [172-200]`** vs `after_js` `207 [206-272]` (**`after_rust` wins** outside spreads).
+     - `again, every stripe posted`: blocked `before` `49 [45-51]`, `after_scalar` `44.6 [42.9-46.1]`, `after_lanes` `44 [42-49]`, `after_js` `46 [44-51]`; landed `before` `263 [253-296]` -> `after_scalar` **`175 [174-176]`** vs `after_lanes` `174 [173-176]` vs `after_js` `209 [187-213]` (**`after_scalar` wins outside spreads** over `before` and `after_js`).
+     - `again, fed after the unfed one`: blocked `before` `48 [48-48]`, `after_scalar` **`46.5 [44.9-47.7]`**, `after_lanes` `46 [45-52]`, `after_js` `53 [49-55]`; landed `before` `269 [253-307]` -> `after_scalar` **`171 [169-186]`** vs `after_lanes` `176 [172-200]` vs `after_js` `207 [206-272]` (**`after_scalar` wins both blocked and landed outside spreads** over `before` and `after_js`).
 
 4. Quick map, pan, whole-change, NORMAL job latency, and no-redraw / redraw rows:
    - `relight_quick` (`a drag step's quick map [blocked, landed]`, map `1024 x 682`, 1 tap, 16 steps):
-     - blocked: `before` `37 [36-38]`, `after_rust` `35 [34-36]`, `after_js` `36 [32-38]` (tie, spreads overlap)
-     - landed: `before` `9 [7-44]`, `after_rust` `40 [6-42]`, `after_js` `6 [6-37]` (tie, spreads overlap `6..44`: bimodal
-       whether the last stripe reply arrives before or after the ~35 ms main-thread frame tick; on the repeat row
-       `relight_quick_rep` `after_rust` is **`6 [6-6] ms`** vs `before` `38 [8-39] ms` and `after_js` `35 [7-39] ms`).
-     - `relight_quick_job` (`again, one job`): blocked `35 [32-36]` vs `36 [32-43]` vs `35 [34-38]`, landed `40 [39-42]` vs `43 [32-50]` vs `39 [35-43]` (tie, spreads overlap).
+     - blocked: `before` `37 [36-38]`, `after_scalar` `36.6 [33.4-51.8]`, `after_lanes` `35 [34-36]`, `after_js` `36 [32-38]` (tie, spreads overlap)
+     - landed: `before` `9 [7-44]`, `after_scalar` `37.4 [10.7-41.5]`, `after_lanes` `40 [6-42]`, `after_js` `6 [6-37]` (tie, spreads overlap `6..44`: bimodal whether the last stripe reply arrives just before or after the ~35 ms main-thread frame tick, so `after_js` has lower bimodal median `6` vs `37.4` on `relight_quick` and `35 [7-39]` vs `40.7 [6.6-41.2]` on `relight_quick_rep`; `relight_quick_job` landed `40 [39-42]` vs `39.5 [32.9-46.2]` vs `43 [32-50]` vs `39 [35-43]`, tie within 0.5 ms).
    - `relight_pan` (`pan at 1:1 during a march [median, worst frame]`):
-     - median frame: `before` `3.9 [3.8-4.7]`, `after_rust` `3.7 [3.6-4.5]`, `after_js` `4.2 [3.3-4.4]` (tie)
-     - worst frame: `before` `6.2 [6.0-6.4]`, `after_rust` `6.7 [4.7-7.2]`, `after_js` `5.9 [4.6-8.8]` (tie, spreads overlap)
-     - shadows landed during pan: `before` `789 [763-879]` -> `after_rust` **`560 [498-598]`** vs `after_js` `590 [548-612]`.
+     - median frame: `before` `3.9 [3.8-4.7]`, `after_scalar` `4.0 [3.4-5.0]`, `after_lanes` `3.7 [3.6-4.5]`, `after_js` `4.2 [3.3-4.4]` (tie, spreads overlap)
+     - worst frame: `before` `6.2 [6.0-6.4]`, `after_scalar` `15.0 [6.5-15.6]`, `after_lanes` `6.7 [4.7-7.2]`, `after_js` `5.9 [4.6-8.8]` (overlaps `after_js` at `6.5..8.8`; `after_js` and `before` have lower worst-frame median while `after_scalar`'s main-thread block is lower `21.2 [14.0-78.9]` vs `67 [62-69]` and `67 [61-73]`)
+     - shadows landed during pan: `before` `789 [763-879]` -> `after_scalar` **`500 [491-630]`** vs `after_lanes` `560 [498-598]` vs `after_js` `590 [548-612]`.
    - `relight_first` (`the first march after start [-, landed]`):
-     `before` `2,980 [2,912-3,040]` -> `after_rust` **`2,562 [2,544-3,013]`** vs `after_js` `2,692 [2,530-2,763]`.
+     `before` `2,980 [2,912-3,040]` -> `after_scalar` **`2,495 [2,458-3,036]`** vs `after_lanes` `2,562 [2,544-3,013]` vs `after_js` `2,692 [2,530-2,763]` (tie within spread, `after_scalar` lowest median).
    - `relight_whole_*` (`whole change 1:1` during marches):
-     - `no march`: frame `21.6 [20.7-27.4]` vs `26.0 [23.2-31.4]` vs `25.4 [21.3-28.6]`, settled `73.5 [72.1-95.7]` vs `81.9 [70.8-96.7]` vs `84.3 [75.7-90.3]` (tie, spreads overlap)
-     - `during a three-light march`: frame `31.6 [26.1-36.1]` vs `30.5 [28.8-32.8]` vs `24.4 [22.0-30.6]`, settled `254 [211-311]` vs `249 [212-297]` vs `246 [229-275]` (tie, spreads overlap; block `18 [17-40]` vs `37 [33-42]` vs `32 [28-36]`, inside `before` spread)
-     - `every stripe posted`: settled `before` `219 [204-240]` -> `after_rust` **`160 [160-226]`** vs `after_js` `162 [159-203]`
-     - `fed again`: settled `before` `238 [232-262]` -> `after_rust` **`189 [155-197]`** vs `after_js` `206 [205-215]` (**`after_rust` wins** outside spreads).
+     - `no march`: frame `21.6 [20.7-27.4]` vs `28.7 [22.7-29.3]` vs `26.0 [23.2-31.4]` vs `25.4 [21.3-28.6]`, settled `73.5 [72.1-95.7]` vs `75.8 [71.0-90.0]` vs `81.9 [70.8-96.7]` vs `84.3 [75.7-90.3]` (tie, spreads overlap)
+     - `during a three-light march`: frame `31.6 [26.1-36.1]` vs `25.8 [22.6-30.4]` vs `30.5 [28.8-32.8]` vs `24.4 [22.0-30.6]`, settled `254 [211-311]` vs `257 [217-259]` vs `249 [212-297]` vs `246 [229-275]` (tie, spreads overlap)
+     - `every stripe posted`: settled `before` `219 [204-240]` -> `after_scalar` `177 [168-177]` vs `after_lanes` `160 [160-226]` vs `after_js` `162 [159-203]` (wins outside spreads vs `before`, ties `after_js` within spread)
+     - `fed again`: settled `before` `238 [232-262]` -> `after_scalar` **`167 [144-182]`** vs `after_lanes` `189 [155-197]` vs `after_js` `206 [205-215]` (**`after_scalar` wins outside spreads** over both `before` and `after_js`).
    - `relight_normal_*` (`8 NORMAL jobs` during a 3-light march):
-     - `during a three-light march [wait, answer]`: `before` `130 [123-150] / 132 [124-151]` -> `after_rust` **`77 [75-77] / 78 [76-78]`** vs `after_js` `87 [74-90] / 88 [75-91]` (**`after_rust` wins** over `before` by -54 ms outside spreads and leads `after_js`)
-     - `every stripe posted`: `before` `1,492 / 1,511` -> `after_rust` **`954 [915-1,025] / 986 [916-1,059]`** vs `after_js` `1,094 [1,048-1,113] / 1,095 [1,058-1,114]` (**`after_rust` wins** over both `before` and `after_js` outside spreads).
+     - `during a three-light march [wait, answer]`: `before` `130 [123-150] / 132 [124-151]` -> `after_scalar` **`75.8 [71.6-85.6] / 77.0 [72.7-86.8]`** vs `after_lanes` `77 [75-77] / 78 [76-78]` vs `after_js` `87 [74-90] / 88 [75-91]` (wins outside spreads vs `before`, ties `after_js` within spread with lower median)
+     - `every stripe posted`: `before` `1,492 [1,329-1,581] / 1,511 [1,345-1,618]` -> `after_scalar` **`930 [883-1,014] / 949 [931-1,015]`** vs `after_lanes` `954 [915-1,025] / 986 [916-1,059]` vs `after_js` `1,094 [1,048-1,113] / 1,095 [1,058-1,114]` (**`after_scalar` wins outside spreads** over both `before` and `after_js`).
    - `relight_heavy_*` (`8 NORMAL ~60 ms jobs` during a 3-light march):
-     - `during a three-light march`: first/last wait `before` `126 [121-142] / 257 [231-258]` -> `after_rust` `78 [77-83] / 216 [173-216]` vs `after_js` `74 [70-76] / 207 [172-210]`; first/last answer `before` `258 / 309` -> `after_rust` `216 / 260` vs `after_js` `210 / 252` (both `after_rust` and `after_js` beat `before` outside spreads and tie each other with overlapping spreads)
-     - `every stripe posted`: first/last answer `before` `1,695 / 1,711` -> `after_rust` **`1,102 [1,021-1,152] / 1,128 [1,091-1,176]`** vs `after_js` `1,306 [1,147-1,378] / 1,324 [1,168-1,411]`.
+     - `during a three-light march`: first/last answer `before` `258 [231-258] / 309 [297-310]` -> `after_scalar` **`140 [97-160] / 213 [209-242]`** vs `after_lanes` `216 [174-216] / 260 [216-270]` vs `after_js` `210 [172-211] / 252 [232-268]` (**first answer wins outside spreads** over all three; last answer wins outside spreads vs `before` and overlaps `after_js` at `232..242`)
+     - `every stripe posted`: first/last answer `before` `1,695 / 1,711` -> `after_scalar` **`1,032 [1,016-1,238] / 1,051 [1,041-1,257]`** vs `after_lanes` `1,102 / 1,128` vs `after_js` `1,306 [1,147-1,378] / 1,324 [1,168-1,411]`.
    - `relight_nodraw` (`a light moved, no redraw [blocked, landed]`):
-     - blocked: `before` `54 [48-57]`, `after_rust` `61 [57-68]`, `after_js` `62 [51-64]` (spreads touch at `57`)
-     - landed: `before` `778 [773-796]` -> `after_rust` **`535 [523-537]`** vs `after_js` `561 [500-602]` (**`after_rust` wins** over `before` by -243 ms / 1.45x outside spreads and beats `after_js` by -26 ms on median; 1-job `5,072 [4,937-5,130] -> 3,435 [3,404-3,537]` vs `3,639 [3,333-3,718]`).
+     - blocked: `before` `54 [48-57]`, `after_scalar` `61.6 [50.9-76.6]`, `after_lanes` `61 [57-68]`, `after_js` `62 [51-64]` (tie, spreads overlap)
+     - landed: `before` `778 [773-796]` -> `after_scalar` **`465 [463-564]`** vs `after_lanes` `535 [523-537]` vs `after_js` `561 [500-602]` (**`after_scalar` wins outside spreads** over `before` by -313 ms / 1.67x; **ties `after_js` within spread**, decided by the kernel row `3,456 [3,443-4,175]` vs `4,243 [3,781-4,439]` ms with `after_scalar` -96 ms lower on landed median; one-job `3,146 [3,039-3,364]` wins outside spreads over `before` `5,072 [4,937-5,130]` and `after_lanes` `3,435 [3,404-3,537]`, and overlaps `after_js` `3,639 [3,333-3,718]` at `3,333..3,364`).
    - `relight_draw` (`a light moved, released [blocked, landed]`):
-     - blocked: `before` `63 [59-64]`, `after_rust` `49 [48-71]`, `after_js` `45 [40-77]` (tie, spreads overlap)
-     - landed: `before` `812 [792-851]` -> `after_rust` **`526 [522-564]`** vs `after_js` `546 [504-552]` (**`after_rust` wins** over `before` by -286 ms / 1.54x outside spreads and beats `after_js` by -20 ms on median; 1-job `4,971 [4,938-5,316] -> 3,546 [3,424-3,549]` vs `3,608 [3,392-3,667]`).
+     - blocked: `before` `63 [59-64]`, `after_scalar` `56.2 [40.1-62.5]`, `after_lanes` `49 [48-71]`, `after_js` `45 [40-77]` (tie, spreads overlap)
+     - landed: `before` `812 [792-851]` -> `after_scalar` **`518 [485-565]`** vs `after_lanes` `526 [522-564]` vs `after_js` `546 [504-552]` (**`after_scalar` wins outside spreads** over `before` by -294 ms / 1.57x; **ties `after_js` within spread**, decided by the kernel row `3,658 [3,578-4,248]` vs `3,996 [3,729-4,053]` ms and **`relight_draw_job` `3,194 [3,024-3,354]` vs `3,608 [3,392-3,667]` ms outside spreads** over all three).
 
 5. Data for the user's threads spike decision (question 6.7) and K12b (c)'s 64-stripe check (`brief.md` line 45):
-   - Efficiency rows on K14 (`after_rust`, `parallel efficiency [busy share]`):
-     - `relight_one_eff`: `0.729 [0.722-0.815]` (busy share `0.948 [0.925-0.949]`, overhead `1.280 [1.164-1.303]`)
-     - `relight_one_rep_eff`: `0.806 [0.712-0.808]` (busy share `0.946 [0.944-0.962]`, overhead `1.191 [1.172-1.329]`)
-     - `relight_three_eff`: `0.843 [0.833-0.937]` (busy share `0.970 [0.964-0.978]`, overhead `1.150 [1.043-1.158]`)
-     - `relight_three_rep_eff`: `0.865 [0.854-0.870]` (busy share `0.977 [0.968-0.980]`, overhead `1.122 [1.119-1.148]`)
-     - `relight_sun_eff`: `0.594 [0.572-0.598]` (busy share `0.664 [0.621-0.670]`)
-     - `relight_sun_rep_eff`: `0.611 [0.567-0.654]` (busy share `0.673 [0.657-0.684]`, overhead `1.119 [1.029-1.158]`)
-   - 64 stripes (`STRIPES_PER_WORKER = 8`, `*_s64`) vs 32 stripes (`STRIPES_PER_WORKER = 4`, `*_rep`) on `after_rust`:
-     - One light: `relight_one_s64` blocked `51 [42-55]`, landed `513 [506-607]`, eff `0.855 [0.765-0.863]`, busy `0.958 [0.941-0.961]` vs `relight_one_rep` blocked `60 [60-74]`, landed `576 [540-617]`, eff `0.806 [0.712-0.808]`, busy `0.946 [0.944-0.962]` (spreads overlap `540..607`).
-     - Three lights: `relight_three_s64` blocked `59 [57-64]`, landed `1,136 [1,083-1,225]`, eff `0.812 [0.805-0.846]`, busy `0.969 [0.968-0.972]` vs `relight_three_rep` blocked `54 [51-67]`, landed `1,074 [1,059-1,140]`, eff `0.865 [0.854-0.870]`, busy `0.977 [0.968-0.980]` (64 stripes loses by +62 ms on median and lower parallel efficiency outside efficiency spreads).
-     - Sun: `relight_sun_s64` blocked `42 [40-45]`, landed `172 [167-181]`, eff `0.612 [0.607-0.634]`, busy `0.679 [0.675-0.687]` vs `relight_sun_rep` blocked `48 [44-54]`, landed `175 [170-180]`, eff `0.611 [0.567-0.654]`, busy `0.673 [0.657-0.684]` (tie, 3 ms difference inside a 14 ms spread).
-     - Decision: `STRIPES_PER_WORKER = 4` (32 stripes on 8 workers) is kept unchanged because 64 stripes does not win beyond spread on `relight_one` or `relight_sun` and loses on `relight_three`.
+   - Efficiency rows on shipped K14 (`after_scalar`, `parallel efficiency [busy share]`):
+     - `relight_one_eff`: `0.811 [0.808-0.819]` (busy share `0.926 [0.910-0.931]`, overhead `1.138 [1.127-1.141]`)
+     - `relight_one_rep_eff`: `0.784 [0.759-0.784]` (busy share `0.928 [0.909-0.952]`, overhead `1.215 [1.159-1.222]`)
+     - `relight_three_eff`: `0.839 [0.790-0.939]` (busy share `0.976 [0.962-0.980]`, overhead `1.164 [1.043-1.217]`)
+     - `relight_three_rep_eff`: `0.816 [0.776-0.841]` (busy share `0.973 [0.970-0.978]`, overhead `1.199 [1.152-1.253]`)
+     - `relight_sun_eff`: `0.560 [0.530-0.609]` (busy share `0.635 [0.628-0.645]`, overhead `1.135 [1.058-1.183]`)
+     - `relight_sun_rep_eff`: `0.569 [0.493-0.575]` (busy share `0.657 [0.610-0.667]`, overhead `1.172 [1.142-1.235]`)
+   - 64 stripes (`STRIPES_PER_WORKER = 8`, `*_s64`) vs 32 stripes (`STRIPES_PER_WORKER = 4`, `*_rep`) on `after_scalar`:
+     - One light: `relight_one_s64` blocked `59.5 [56.4-61.5]`, landed `510 [492-521]`, eff `0.791 [0.776-0.807]` vs `relight_one_rep` blocked `59.8 [58.1-63.5]`, landed `516 [507-531]`, eff `0.784 [0.759-0.784]` (tie within spread `507..521` ms).
+     - Three lights: `relight_three_s64` blocked `75 [48-107]`, landed `1,015 [982-1,088]`, eff `0.833 [0.833-0.863]` vs `relight_three_rep` blocked `72 [49-120]`, landed `1,037 [1,006-1,167]`, eff `0.816 [0.776-0.841]` (tie within spread `1,006..1,088` ms).
+     - Sun: `relight_sun_s64` blocked `42.4 [41.0-52.6]`, landed `173 [162-207]`, eff `0.528 [0.499-0.574]` vs `relight_sun_rep` blocked `45.6 [45.5-49.2]`, landed `180 [164-185]`, eff `0.569 [0.493-0.575]` (tie within spread `164..185` ms, wider worst case `207` vs `185` ms).
+     - Decision: `STRIPES_PER_WORKER = 4` (32 stripes on 8 workers) is kept unchanged because 64 stripes ties within spread on all three rows and does not win outside spreads.
 
-Tests and gates:
-- `python tools/build_px.py --check`: `px.wasm: 278237 bytes, identical`, `px_scalar.wasm: 224542 bytes, identical`.
-- `python tools/build_node.py --check`: only expected `PROBLEM node js/... differs` lines.
+Tests and gates (on ABI 45 after `git merge wasm-kernels` at `f42396e3`):
+- `python tools/build_px.py --check`: `px.wasm: 289975 bytes, identical`, `px_scalar.wasm: 232343 bytes, identical`.
 - `node tools/px_test.js` (`px_test_node.txt`): full suite `PASS` (0 failures).
-- `ELECTRON_RUN_AS_NODE=1 F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js` (`electron_px_full.txt`):
-  full suite `PASS` (0 failures).
-- `ELECTRON_RUN_AS_NODE=1 PX_ONLY=relightBench,relightStripe,relight F:/canvas/node_modules/electron/dist/electron.exe tools/px_test.js`
-  (`electron_px_relight.txt`): `PASS`.
+- `ELECTRON_RUN_AS_NODE=1 .../electron.exe tools/px_test.js` (`electron_px_full.txt`): full suite `PASS` (0 failures).
+- `ELECTRON_RUN_AS_NODE=1 PX_ONLY=relightBench,relightStripe,relight .../electron.exe tools/px_test.js` (`electron_px_relight.txt`): `PASS`.
 - `PX_ONLY=relightBench,relight PX_BENCH=large` on Node and Electron V8 (`px_bench.txt`): `PASS`.
-- Mutation round (`docs/measurements/k14_2026-11-09/mutation/mut_k14.py`, `results.txt`): 15 mutants across SIMD `f64x2`
-  lane masks/exit order, scalar fallback, and JS routing/guards/slots, all **15/15 killed** on their focused `px` sets (0 survivors):
-  1. `simd_f64_drop_exit_sky_rdz_ge` (`v_sky_limit = v_scale`): KILLED by `16x4 rdz < 0 with sz > scale` in `relightCases`.
-  2. `simd_f64_disable_exit_sky` (`v_sky_limit = v_inf`): KILLED by `16x4 f64x2 exit_sky rdz >= 0 && sz > scale (-50)` in `relightCases`.
-  3. `simd_f64_cx_gt_zero` (`f64x2_gt(cx, v_zero)`): KILLED by `16x4 cx == 0.0 boundary wall` in `relightCases`.
-  4. `simd_f64_cx_le_wf` (`f64x2_le(cx, v_wf)`): KILLED by `16x4 cx == wf boundary out-of-bounds` in `relightCases`.
-  5. `simd_f64_hit_without_active_mask` (`blocked = v128_or(blocked, hit)`): KILLED by `16x4 f64x2 lane 0 exits cx < 0, lane 1 blocked at ix=0` in `relightCases`.
-  6. `simd_f64_mapz_ge_bias` (`f64x2_ge(map_z, ...)`): KILLED by `16x4 map_z == sz + z_bias tie` in `relightCases`.
-  7. `simd_f64_break_both_lanes_when_one_inactive` (`if !i64x2_all_true(active)`): KILLED by `512x341 below-surface` (`smoothDepth` non-trivial check) and `16x4 f64x2 lane 0 blocked at s=0 (ix=2), lane 1 blocked at s=1 (ix=5)` (`twinCheck`) in `relightCases`.
-  8. `simd_f64_drop_odd_width_tail` (`if false && pairs < w`): KILLED by `3x4 odd width w=3 sun` in `relightCases`.
-  9. `simd_f64_fold_sun_rdx` (`if is_sun { v_cx_t }`): KILLED by `16x4 sun tx - px rounding tie` in `relightCases`.
-  10. `scalar_f64_flip_mapz_gt_ge` (`if map_z >= sz + z_bias`): KILLED by `16x4 map_z == sz + z_bias tie` on `px_scalar.wasm` in `relightCases`.
-  11. `scalar_f64_drop_rdz_nonneg` (`if sz > scale`): KILLED by `16x4 rdz < 0 with sz > scale` on `px_scalar.wasm` in `relightCases`.
+- Mutation round (`docs/measurements/k14_2026-11-09/mutation/mut_k14.py`, `results.txt`): 15 mutants across `y` march
+  precompute, `march_pixel_scalar`, and JS default-route/routing/guards/slots, all **15/15 killed** on their focused `px`
+  kill sets (`0 survived`, `0 not as expected`):
+  1. `y_precompute_cy_le_zero` (`cy <= 0.0`): KILLED by `16x4 cy == 0.0 boundary wall` in `relightCases`.
+  2. `y_precompute_cy_gt_hf` (`cy > hf`): KILLED by `16x4 cy == hf boundary out-of-bounds` in `relightCases`.
+  3. `y_precompute_short_step_count` (`0..steps.saturating_sub(1)`): KILLED by `16x4 cx == 0.0 boundary wall` (`steps = 1`) and `16x4 final step s == steps wall` in `relightCases`.
+  4. `y_precompute_fold_sun_rdy` (`if is_sun { cy_t } else { ty - py }`): KILLED by `4x16 sun ty - py rounding tie` in `relightCases`.
+  5. `scalar_f64_drop_rdz_nonneg` (`if sz > scale`): KILLED by `16x4 rdz < 0 with sz > scale` in `relightCases`.
+  6. `scalar_f64_disable_exit_sky` (`if false && rdz >= 0.0 && sz > scale`): KILLED by `16x4 exit_sky rdz >= 0 && sz > scale (-50)` in `relightCases`.
+  7. `scalar_f64_cx_le_zero` (`cx <= 0.0`): KILLED by `16x4 cx == 0.0 boundary wall` in `relightCases`.
+  8. `scalar_f64_cx_gt_wf` (`cx > wf`): KILLED by `16x4 cx == wf boundary out-of-bounds` in `relightCases`.
+  9. `scalar_f64_flip_mapz_gt_ge` (`if map_z >= sz + z_bias`): KILLED by `16x4 map_z == sz + z_bias tie` in `relightCases`.
+  10. `scalar_f64_fold_sun_rdx` (`if is_sun { cx_t } else { tx - px }`): KILLED by `16x4 sun tx - px rounding tie` in `relightCases`.
+  11. `kernels_js_default_route_js` (`DEFAULT_ROUTES` `shadowMarch: "js"`): KILLED by `shadow_march as routed` default route check (`route="js" ran twin (want rust_f64)`) in `relightBench`.
   12. `kernels_js_route_sun_to_twin`: KILLED by `shadow_march as routed: ... 512 x 341 sun` in `relightBench`.
   13. `kernels_js_ignore_route_name`: KILLED by `shadowMarch route ('js', pixel threshold, 'rust') ... (point)` in `relightBench`.
-  14. `kernels_js_drop_march_guard`: KILLED by `K.shadowMarch guard ... lx >= 2^30: calls={} f64Entered=1` in `relightBench` (on the initial run before `f64Entered === 0` was added to `relightBench`, this mutant survived because `px.js` `shadowMarchF64` also checks `Math.abs(v) < 0x40000000` and `relightBench` only checked `K.pxCalls(true)`).
+  14. `kernels_js_drop_march_guard`: KILLED by `K.shadowMarch guard ... lx >= 2^30: calls={} f64Entered=1` in `relightBench`.
   15. `px_js_ignore_slot_key`: KILLED by `rust simd shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes` in `relightCases`.
 - Gates (`bash tools/run_gates_both.sh k14-gates --ports 9631,9632 --lock <busy_lock> --offline lint types relight pixels nodecopy`):
-  `k14-gates-tiles`, `k14-gates-canvas`, `k14-gates-tiles-serial`, `k14-gates-canvas-serial` (`BOTH PASS`).
+  `k14-gates-tiles`, `k14-gates-canvas`, `k14-gates-tiles-serial`, `k14-gates-canvas-serial` (`BOTH PASS`, wall time 278 s).

@@ -1834,18 +1834,18 @@ async function relightCases(px, label, js) {
 
     const f64Cases = [];
     {
-        // Surgical boundary and f64x2 lane-divergence cases first (so twinCheck stops on the exact surgical case):
+        // Surgical boundary and rounding-tie cases first (so twinCheck stops on the exact surgical case):
         // 1. map_z == sz + z_bias tie (32767 > 32767 is false)
         const dTie = new Uint16Array(16 * 4).fill(32768);
         f64Cases.push({ tag: "16x4 map_z == sz + z_bias tie", args: [dTie, 16, 4, 65535, [8, 2, 32767, 0], 0, 1, 16, 0, 0, 4] });
         // 2. rdz < 0 && sz > scale (pz = 60 > scale 50, tz = 0 -> rdz = -60 < 0, blocked at later steps)
         const dRdzNeg = new Uint16Array(16 * 4).fill(0);
         f64Cases.push({ tag: "16x4 rdz < 0 with sz > scale", args: [dRdzNeg, 16, 4, 50, [15, 2, 0, 0], 0, 1, 32, 10, 0, 4] });
-        // 3. f64x2 lane 0 blocked at s=0 (ix=2) while lane 1 continues active and is blocked at s=1 (ix=5)
+        // 3. Neighboring pixels x=0 blocked at s=0 (ix=2) while x=1 continues and is blocked at s=1 (ix=5)
         const dLaneBothSteps = new Uint16Array(16 * 4).fill(65535);
         dLaneBothSteps[2 * 16 + 2] = 0;
         dLaneBothSteps[2 * 16 + 5] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 lane 0 blocked at s=0 (ix=2), lane 1 blocked at s=1 (ix=5)", args: [dLaneBothSteps, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 x=0 blocked at s=0 (ix=2), x=1 blocked at s=1 (ix=5)", args: [dLaneBothSteps, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
         // 4. cx == 0.0, cy == 0.0, cx == wf, cy == hf boundaries and s == steps final-step wall at x = 8
         const dWall = new Uint16Array(16 * 4).fill(65535);
         for (let y = 0; y < 4; y++) { dWall[y * 16 + 0] = 0; dWall[y * 16 + 8] = 0; }
@@ -1856,31 +1856,34 @@ async function relightCases(px, label, js) {
         for (let x = 0; x < 16; x++) dWallY[0 * 16 + x] = 0;
         f64Cases.push({ tag: "16x4 cy == 0.0 boundary wall", args: [dWallY, 16, 4, 50, [8, -0.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
         f64Cases.push({ tag: "16x4 cy == hf boundary out-of-bounds", args: [dWallY, 16, 4, 50, [0, 3.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
-        // 5. sun (px + tapX[t]) - px vs tapX[t] rounding tie at (px=9, py=0): step 1 samples (9, 1) vs (8, 1)
+        // 5. sun (px + tapX[t]) - px vs tapX[t] rounding tie at (px=9, py=0), and transpose (py + tapY[t]) - py in y-precompute
         const dSunTie = new Uint16Array(16 * 4).fill(65535);
         dSunTie[1 * 16 + 9] = 0;
         f64Cases.push({ tag: "16x4 sun tx - px rounding tie", args: [dSunTie, 16, 4, 50, [-1.000000000000002, 2, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 4] });
-        // 6. f64x2 lane 0 blocked at step 1 (ix=2) while lane 1 is unblocked (ix=3, 5, 6, 8)
+        const dSunTieY = new Uint16Array(4 * 16).fill(65535);
+        dSunTieY[9 * 4 + 1] = 0;
+        f64Cases.push({ tag: "4x16 sun ty - py rounding tie", args: [dSunTieY, 4, 16, 50, [2, -1.000000000000002, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 16] });
+        // 6. x=0 blocked at step 1 (ix=2) while x=1 is unblocked (ix=3, 5, 6, 8)
         const dLane0Hit = new Uint16Array(16 * 4).fill(65535);
         dLane0Hit[2 * 16 + 2] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 lane 0 blocked at ix=2, lane 1 unblocked", args: [dLane0Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
-        // 7. f64x2 lane 1 blocked at step 1 (ix=3) while lane 0 is unblocked (ix=2, 4, 6, 8)
+        f64Cases.push({ tag: "16x4 x=0 blocked at ix=2, x=1 unblocked", args: [dLane0Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
+        // 7. x=1 blocked at step 1 (ix=3) while x=0 is unblocked (ix=2, 4, 6, 8)
         const dLane1Hit = new Uint16Array(16 * 4).fill(65535);
         dLane1Hit[2 * 16 + 3] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 lane 1 blocked at ix=3, lane 0 unblocked", args: [dLane1Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
-        // 8. f64x2 lane 0 exits via cx < 0.0 at step 1 while lane 1 stays in bounds (cx=0.4 -> ix=0) and hits wall at (0, 2)
+        f64Cases.push({ tag: "16x4 x=1 blocked at ix=3, x=0 unblocked", args: [dLane1Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
+        // 8. x=0 exits via cx < 0.0 at step 1 while x=1 stays in bounds (cx=0.4 -> ix=0) and hits wall at (0, 2)
         const dLane0ExitLeft = new Uint16Array(16 * 4).fill(65535);
         dLane0ExitLeft[2 * 16 + 0] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 lane 0 exits cx < 0, lane 1 blocked at ix=0", args: [dLane0ExitLeft, 16, 4, 50, [-1.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
-        // 9. f64x2 lane 1 (x=15) exits via cx >= wf at step 1 while lane 0 (x=14) stays in bounds (cx=15.6 -> ix=15) and hits wall at (15, 2)
+        f64Cases.push({ tag: "16x4 x=0 exits cx < 0, x=1 blocked at ix=0", args: [dLane0ExitLeft, 16, 4, 50, [-1.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
+        // 9. x=15 exits via cx >= wf at step 1 while x=14 stays in bounds (cx=15.6 -> ix=15) and hits wall at (15, 2)
         const dLane1ExitRight = new Uint16Array(16 * 4).fill(65535);
         dLane1ExitRight[2 * 16 + 15] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 lane 1 exits cx >= wf, lane 0 blocked at ix=15", args: [dLane1ExitRight, 16, 4, 50, [16.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
-        // 10. f64x2 exit_sky (rdz >= 0 && sz > scale) with negative scale (-50): lane 0 has d=0 (z0=-50, rdz=40>=0, sz=-30>-50 -> exits unblocked)
-        //     while without exit_sky it would sample d=65535 (map_z=0 > sz+z_bias=-30) and be marked blocked!
+        f64Cases.push({ tag: "16x4 x=15 exits cx >= wf, x=14 blocked at ix=15", args: [dLane1ExitRight, 16, 4, 50, [16.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
+        // 10. exit_sky (rdz >= 0 && sz > scale) with negative scale (-50): x=0 has d=0 (z0=-50, rdz=40>=0, sz=-30>-50 -> exits unblocked)
+        //     while without exit_sky it would sample d=65535 (map_z=0 > sz+z_bias=-30) and be marked blocked
         const dExitSky = new Uint16Array(16 * 4).fill(65535);
         dExitSky[2 * 16 + 0] = 0;
-        f64Cases.push({ tag: "16x4 f64x2 exit_sky rdz >= 0 && sz > scale (-50)", args: [dExitSky, 16, 4, -50, [8, 2, -10, 0], 0, 1, 2, 0, 0, 4] });
+        f64Cases.push({ tag: "16x4 exit_sky rdz >= 0 && sz > scale (-50)", args: [dExitSky, 16, 4, -50, [8, 2, -10, 0], 0, 1, 2, 0, 0, 4] });
     }
     for (const [w, h, scale, light, radius, taps, steps, bias, row0, rows, tag] of [
         [1, 1, 50, [0, 0, 100, 0], 0, 1, 1, 0, 0, 1, "1x1 point"],
@@ -2164,7 +2167,7 @@ async function relightBench(js, simd, scalar) {
             console.log(`       ${tag}: height_normals routed (rust) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms; simd ${coldText(cold)}`);
         }
         const r = K.route("shadowMarch");
-        const want = r === "js" || (typeof r === "number" && !(w * h >= r)) ? "twin" : "rust_f64";
+        const want = "rust_f64";
         for (const [name, fx, fy, dist] of [["point", 0.30, 0.35, -30], ["spot", 0.65, 0.12, -60], ["sun", 0.15, 0.20, -30]]) {
             const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type: name, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
             const light = [lm.mx, lm.my, lm.mz, name === "sun" ? 1 : 0];   // ensureRelightMaps' lightVec
@@ -2178,8 +2181,8 @@ async function relightBench(js, simd, scalar) {
             const out = run.routed();
             const ran = f64Calls > c64 ? "rust_f64" : "twin";
             const wantBytes = run.twin();
-            if (ran !== want || !eqBytes(out, wantBytes) || !eqBytes(out, run.simd_f64()) || !eqBytes(out, run.scalar_f64())) {
-                ok = false; detail += `${detail ? "; " : ""}${tag} ${name}: ran ${ran} (want ${want})${ran === want ? ", other bytes" : ""}`;
+            if (r !== undefined || ran !== want || !eqBytes(out, wantBytes) || !eqBytes(out, run.simd_f64()) || !eqBytes(out, run.scalar_f64())) {
+                ok = false; detail += `${detail ? "; " : ""}${tag} ${name}: route=${JSON.stringify(r)} ran ${ran} (want ${want})${r === undefined && ran === want ? ", other bytes" : ""}`;
             }
             if (!bench) continue;
             const cold = await coldCall(loadPx, wasmBytes, (p) => p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, 0, h));

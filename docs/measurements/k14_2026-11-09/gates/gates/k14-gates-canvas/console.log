@@ -1,5 +1,5 @@
 ERROR Relight render failed: Error: Relight (magnific): relight gate route: stopped at the send
     at refusal (scumble://app/editor/inpaint_status.js:46:26)
-    at say (scumble://app/editor/host.js:5034:76)
-    at Object.relightWhole (scumble://app/editor/host.js:5368:19)
-    at async scumble://app/editor/inpaint_canvas.js:20947:21
+    at say (scumble://app/editor/host.js:5036:76)
+    at Object.relightWhole (scumble://app/editor/host.js:5370:19)
+    at async scumble://app/editor/inpaint_canvas.js:20968:21

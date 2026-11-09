@@ -86,13 +86,24 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // kernel row 6092.4 vs 10728.2 ms; before/after on Rust 11829.1 -> 6036.1 ms wall, 1.96x; export_test fill_limit_rows
 // 11178 -> 6209 ms, 1.80x, psd_fill_limit fillRowsMs 12141 -> 6496 ms, 1.87x; plain bilinear path measured at the
 // kernel row only, PX_BENCH 15000x256: twin 100.16 vs simd 85.98 / scalar 88.06 ms, 1.16x).
-// No shadowMarch entry (K14, docs/measurements/k14_2026-11-09/summary.txt): at 15000x10000 (map 4096x2731) f64x2
-// shadow_march_f64 won over the hoisted f64 twin (shadowMarch: "js") and before (K13 scalar f64 on point/spot, f32
-// shadow_march on sun) on relight_one landed (599 [570-608] vs 681 [650-709] vs 748 [748-753] ms; one-job 3530 vs
-// 3595 vs 4894 ms), relight_three landed (1094 [1052-1101] vs 1144 [1015-1212] vs 1625 [1624-1730] ms; one-job 3572 vs
-// 3863 vs 5216 ms; stripes 1074 vs 1123 vs 1417 ms), relight_sun landed (182 [172-192] vs 286 [250-309] vs 527
-// [506-575] ms; one-job 851 vs 1075 vs 1586 ms; stripes 175 vs 193 vs 296 ms), relight_nodraw (535 vs 561 vs 778 ms),
-// and relight_draw (526 vs 546 vs 812 ms).
+// No shadowMarch entry (K14, docs/measurements/k14_2026-11-09/summary.txt): at 15000x10000 (map 4096x2731) lane-free
+// shadow_march_f64 with row y-march precompute (after_scalar) beat 2-lane f64x2 SIMD (after_lanes, removed) across the
+// whole-operation rows (relight_one 493 [490-501] vs 599 [570-608] ms; one-job 3245 [3197-3257] vs 3530 [3511-3733] ms;
+// relight_one_rep 516 [507-531] vs 576 [540-617] ms; relight_one_nofeed 468 [460-487] vs 548 [547-571] ms), won outside
+// spreads over the hoisted f64 twin (after_js, shadowMarch: "js") and before (K13 scalar f64 on point/spot, f32
+// shadow_march on sun) on relight_one landed (493 [490-501] vs 681 [650-709] vs 748 [748-753] ms; kernel 3648 [3626-3670]
+// vs 5037 [4641-5293] vs 5616 [5606-5661] ms; one-job 3245 [3197-3257] vs 3595 [3456-3684] vs 4894 [4785-4982] ms;
+// relight_one_nofeed 468 [460-487] vs 545 [510-579] vs 701 [698-788] ms) and the sun rows (relight_sun landed 170
+// [166-172] vs 286 [250-309] vs 527 [506-575] ms; one-job 762 [748-850] vs 1075 [1008-1097] vs 1586 [1581-1647] ms;
+// unfed 175 [174-176] vs 209 [187-213] ms; fed2 171 [169-186] vs 207 [206-272] ms), and tied after_js within spread
+// (decided by the kernel row, with after_scalar ahead on every landed median) on relight_one_rep (516 [507-531] vs 539
+// [490-547] ms, kernel 3860 vs 4054 ms; after_js had lower blocked 47 [40-52] vs 59.8 [58.1-63.5] ms), relight_sun_rep
+// (180 [164-185] vs 193 [182-209] ms, kernel 903 [872-943] vs 1106 [1056-1108] ms outside spreads), relight_three (1009
+// [965-1070] vs 1144 [1015-1212] ms, kernel 7883 vs 8990 ms, one-job 3284 [3282-3572] vs 3863 [3570-5187] ms; after_js
+// had lower blocked 58 [53-59] vs 84.4 [75.3-89.3] ms), relight_nodraw (465 [463-564] vs 561 [500-602] ms, kernel 3456 vs
+// 4243 ms), and relight_draw (518 [485-565] vs 546 [504-552] ms, one-job 3194 [3024-3354] vs 3608 [3392-3667] ms outside
+// spreads). On after_lanes vs after_js, after_js had the lower median on relight_one_rep (539 vs 576 ms) and
+// relight_one_nofeed (545 vs 548 ms); removing the f64x2 lanes flipped both to after_scalar (516 and 468 ms).
 // crc32 64 (K3, docs/measurements/k3_2026-11-08/summary.txt): 64 B is about a tie decided by the kernel row (Electron V8
 // size sweep: 0.075-0.100 vs 0.028-0.074 us at 16-48 B, 0.093-0.138 vs 0.156-0.235 us at 64-128 B, 1.50-2.53x; 4.97x at
 // 64 KB; 4.26x on w0_bench crc32_64mb); smaller headers (PNG signature, IHDR, 4-byte chunk lengths) stay in JS.

@@ -1,5 +1,5 @@
 $ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=relightBench)
-FAIL shadow_march as routed: point, spot, and sun all produce byte-identical f64 outputs across routed, twin, simd_f64, and scalar_f64  512 x 341 sun: ran twin (want rust_f64)
+FAIL shadow_march as routed: point, spot, and sun all produce byte-identical f64 outputs across routed, twin, simd_f64, and scalar_f64  512 x 341 sun: route=undefined ran twin (want rust_f64)
 FAIL shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes (sun)  js={} below={} at={} rust={}
 FAIL K.shadowMarch recovers from a trap on shadow_march_f64 for both point and sun, replacing the instance and returning the twin's exact bytes  sun: i1={"serial":2,"bytes":1114112,"pending":false,"holds":0,"release":0,"idle":0,"trap":1,"oom":0,"sync":1,"async":0}
 FAIL (3) (only: relightBench; PX_ONLY, not the full test)
@@ -11,7 +11,7 @@ ok   kernels.js back on the JS kernels for the later cases
 ok   rust simd module reports its SIMD flag
 ok   rust scalar module reports its SIMD flag
 FAIL (3) (only: relightBench; PX_ONLY, not the full test)
-(node:39120) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:50016) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)

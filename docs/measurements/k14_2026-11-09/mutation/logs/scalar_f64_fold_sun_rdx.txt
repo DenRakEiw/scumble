@@ -1,25 +1,25 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 8 s)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 13 s)
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
-px.wasm: 278238 bytes, sha256 90faab4d3055039c
+px.wasm: 289972 bytes, sha256 0f069b05efceaba1
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
-px_scalar.wasm: 224542 bytes, sha256 8cd51935703d9d2f
+px_scalar.wasm: 232340 bytes, sha256 fb00b29a45033bbb
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px)
-    Finished `release` profile [optimized] target(s) in 4.42s
+    Finished `release` profile [optimized] target(s) in 6.50s
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px)
-    Finished `release` profile [optimized] target(s) in 3.40s
-$ node tools/px_test.js  (rc 1, 94 s, PX_ONLY=relight)
-FAIL rust simd smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)  512x341 below-surface t=4 s=32: hasZero=true hasLit=true
-FAIL rust simd shadow_march_f64 equals its twin byte for byte (141 cases, each also at an odd offset)  16x4 f64x2 lane 0 blocked at s=0 (ix=2), lane 1 blocked at s=1 (ix=5): out[33] is 255, the twin has 0
+    Finished `release` profile [optimized] target(s) in 4.79s
+$ node tools/px_test.js  (rc 1, 69 s, PX_ONLY=relight)
+FAIL rust simd shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)  16x4 sun tx - px rounding tie: out[9] is 255, the twin has 0
+FAIL rust scalar shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)  16x4 sun tx - px rounding tie: out[9] is 255, the twin has 0
 FAIL (2) (only: relight; PX_ONLY, not the full test)
 ok   rust scalar module reports its SIMD flag
 ok   rust scalar height_normals equals its twin within 1 level
 ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
-ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (141 cases)
-ok   rust scalar shadow_march_f64 equals its twin byte for byte (141 cases, each also at an odd offset)
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (142 cases)
+FAIL rust scalar shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)  16x4 sun tx - px rounding tie: out[9] is 255, the twin has 0
 ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
 ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
 FAIL (2) (only: relight; PX_ONLY, not the full test)
-(node:64836) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:46316) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)

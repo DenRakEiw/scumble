@@ -1,19 +1,18 @@
-$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 11 s)
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 16 s)
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
-px.wasm: 278237 bytes, sha256 43bb945b8cdfe635
+px.wasm: 289975 bytes, sha256 f326653b273e3c87
 > C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
-px_scalar.wasm: 224542 bytes, sha256 8cd51935703d9d2f
+px_scalar.wasm: 232343 bytes, sha256 0c067d6ca569c44e
    Compiling adler2 v2.0.1
    Compiling miniz_oxide v0.8.9
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px)
-    Finished `release` profile [optimized] target(s) in 5.44s
+    Finished `release` profile [optimized] target(s) in 7.06s
    Compiling adler2 v2.0.1
    Compiling miniz_oxide v0.8.9
    Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\crates\px)
-    Finished `release` profile [optimized] target(s) in 4.60s
-$ node tools/px_test.js  (rc 0, 231 s)
+    Finished `release` profile [optimized] target(s) in 7.82s
+$ node tools/px_test.js  (rc 0, 243 s)
 PASS
-ok   rust scalar a large alloc grows memory  228261888 -> 496762880
 ok   rust scalar the old view is detached after growth
 ok   rust scalar the fresh view sees the bytes written before growth
 ok   rust scalar put / get of a Float32Array
@@ -21,21 +20,22 @@ ok   rust scalar arena blocks do not overlap
 ok   rust scalar after a reset the job fits one kept chunk  chunks 1
 ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
 PASS
-(node:53544) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:48360) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
-$ node tools/px_test.js  (rc 0, 104 s, PX_ONLY=relight)
+Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance
+$ node tools/px_test.js  (rc 0, 98 s, PX_ONLY=relight)
 PASS (only: relight; PX_ONLY, not the full test)
 ok   rust scalar module reports its SIMD flag
 ok   rust scalar height_normals equals its twin within 1 level
 ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
-ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (141 cases)
-ok   rust scalar shadow_march_f64 equals its twin byte for byte (141 cases, each also at an odd offset)
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (142 cases)
+ok   rust scalar shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)
 ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
 ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
 PASS (only: relight; PX_ONLY, not the full test)
-(node:56372) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:65736) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
@@ -49,7 +49,7 @@ ok   kernels.js back on the JS kernels for the later cases
 ok   rust simd module reports its SIMD flag
 ok   rust scalar module reports its SIMD flag
 PASS (only: relightBench; PX_ONLY, not the full test)
-(node:13640) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+(node:63356) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k14_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k14_mut\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
