@@ -1083,6 +1083,13 @@ Known flakes; **re-run before believing any of these**:
   `rr52-tiles-b` as the first, 20 s in), then passed twice on a fresh instance on 9576 (once with the upload's URL and
   stack logged, `diag-editor`, once unchanged, `rr52-editor-c`), so its one upload was not caught; re-run it before
   believing it.
+- 2026-11-09 (the merge of K39, serial on tiles): `editor_test.py` `live_stroke_reaches_the_screen_before_the_release`
+  took 344 s instead of its usual seconds, so the gate hit its 420 s limit (rc 124, no failed assertion; the same
+  tree passed right after, that step 40 s). Other agents' instances were running; the cause was not looked into.
+- 2026-11-09 (the merge of K15, tiles and canvas side by side): `editor_test.py`
+  `selection_keeps_its_bounds_through_a_restore_above_1mp` ran into its 180 s step timeout on both backends with no
+  assertion, and passed right after in sequence in under a second. The step awaits `img.decode()`, which never
+  resolves in a hidden window (inferred as the cause: the windows were not observed).
 - 2026-10-07 (0.1.43): the editor gate on tiles failed `a_settled_read_builds_its_levels_in_the_worker_not_here`
   (`requested: 0`) in every run of the evening, dev tree and exe alike, and with it excluded
   `a_whole_change_builds_its_mips_in_the_worker_and_the_screen_ends_exact` (the settled screen 13 levels off on 859

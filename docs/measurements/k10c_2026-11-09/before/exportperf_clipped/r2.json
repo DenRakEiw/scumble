@@ -1,0 +1,172 @@
+{
+ "size": [
+  15000,
+  10000
+ ],
+ "filter": "levels",
+ "focused": true,
+ "composite_bands": {
+  "ms": 1224,
+  "blocked": 100,
+  "bands": 0,
+  "readMs": 0,
+  "MB": 17.1,
+  "jobs": {
+   "stack_into": {
+    "jobs": 40,
+    "composeWasm": 40,
+    "pixels": 150000000,
+    "kernel": 4711.3,
+    "gen": 0
+   },
+   "png_part": {
+    "jobs": 78,
+    "composeWasm": 0,
+    "pixels": 150000000,
+    "kernel": 2665.7,
+    "compose": 0,
+    "rows": 0,
+    "prev": 0,
+    "copyIn": 59.7,
+    "filter": 333.7,
+    "adler": 162.8,
+    "deflate": 2085.5,
+    "chunk": 8.4,
+    "copyOut": 10.2,
+    "gen": 0
+   }
+  }
+ },
+ "layer_from_tiles": {
+  "ms": 211,
+  "blocked": 6,
+  "MB": 0.6,
+  "jobs": {
+   "png_part": {
+    "jobs": 79,
+    "composeWasm": 79,
+    "pixels": 150000000,
+    "kernel": 1562.4,
+    "compose": 0,
+    "rows": 241.9,
+    "prev": 4.5,
+    "filter": 277.3,
+    "adler": 150.6,
+    "deflate": 879.5,
+    "chunk": 0.1,
+    "copyOut": 0.8,
+    "gen": 0
+   }
+  }
+ },
+ "composite_canvas": {
+  "ms": 10463,
+  "blocked": 8922,
+  "MB": 47.3,
+  "jobs": {}
+ },
+ "layer_canvas": {
+  "ms": 1768,
+  "blocked": 209,
+  "MB": 2.7,
+  "jobs": {}
+ },
+ "psd": {
+  "ms": 3092,
+  "blocked": 206,
+  "MB": 236.7,
+  "jobs": {
+   "psd_part": {
+    "jobs": 552,
+    "composeWasm": 474,
+    "pixels": 1050000000,
+    "kernel": 6429.9,
+    "compose": 0,
+    "rows": 2387.3,
+    "pack": 4028.1,
+    "gen": 0
+   },
+   "png_part": {
+    "jobs": 277,
+    "composeWasm": 277,
+    "pixels": 526800000,
+    "kernel": 7280.3,
+    "compose": 0,
+    "rows": 1371.6,
+    "prev": 21.1,
+    "filter": 1133.1,
+    "adler": 664.9,
+    "deflate": 4058.5,
+    "chunk": 10.7,
+    "copyOut": 12,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "composeWasm": 40,
+    "pixels": 150000000,
+    "kernel": 4709.4,
+    "gen": 0
+   }
+  }
+ },
+ "psd_masked": {
+  "ms": 2353,
+  "blocked": 126,
+  "MB": 253.3,
+  "jobs": {
+   "png_part": {
+    "jobs": 118,
+    "composeWasm": 118,
+    "pixels": 223200000,
+    "kernel": 2721.6,
+    "compose": 0,
+    "rows": 500,
+    "prev": 6.9,
+    "filter": 414.8,
+    "adler": 244.6,
+    "deflate": 1539.5,
+    "chunk": 2.7,
+    "copyOut": 7.6,
+    "gen": 0
+   },
+   "psd_part": {
+    "jobs": 631,
+    "composeWasm": 553,
+    "pixels": 1200000000,
+    "kernel": 6241.8,
+    "compose": 0,
+    "rows": 2270.6,
+    "pack": 3957.8,
+    "gen": 0
+   },
+   "mips": {
+    "jobs": 28,
+    "tiles": 3466,
+    "kernel": 834,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "composeWasm": 40,
+    "pixels": 150000000,
+    "kernel": 4971.6,
+    "gen": 0
+   }
+  }
+ },
+ "pool": {
+  "run": 1999,
+  "done": 1999,
+  "failed": 0,
+  "cancelled": 0,
+  "started": 8,
+  "lost": 0,
+  "stopped": 0,
+  "workers": 8,
+  "size": 8,
+  "pending": 0,
+  "off": false,
+  "arena": true
+ }
+}

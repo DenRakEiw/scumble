@@ -686,6 +686,94 @@ pub fn masked_tile(dst: &mut [u8], has_dst: bool, src: &[u8], op: u8, alpha: u8,
     }
 }
 
+/// Multiplies `cov` (`px` bytes, in place) by `base_mask`, `alpha` (when `< 255`), and `own` in that order
+/// (`clipCoverage` in `renderer/editor/inpaint_raster.js`, K10c).
+pub fn clip_coverage(cov: &mut [u8], base_mask: Option<&[u8]>, alpha: u8, own: Option<&[u8]>) {
+    let px = cov.len();
+    let base_mask = base_mask.map(|m| &m[..px]);
+    let own = own.map(|m| &m[..px]);
+    if base_mask.is_none() && alpha == 255 && own.is_none() {
+        return;
+    }
+    let start = simd::clip_coverage(cov, base_mask, alpha, own);
+    if let Some(bm) = base_mask {
+        for i in start..px {
+            cov[i] = mul255(cov[i] as u32, bm[i] as u32) as u8;
+        }
+    }
+    if alpha < 255 {
+        let a = alpha as u32;
+        for i in start..px {
+            cov[i] = mul255(cov[i] as u32, a) as u8;
+        }
+    }
+    if let Some(o) = own {
+        for i in start..px {
+            cov[i] = mul255(cov[i] as u32, o[i] as u32) as u8;
+        }
+    }
+}
+
+#[inline(always)]
+fn lowbias32(mut x: u32) -> u32 {
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7feb_352d);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846c_a68b);
+    x ^= x >> 16;
+    x
+}
+
+#[inline(always)]
+fn hash32(x: u32, y: u32, seed: u32) -> u32 {
+    lowbias32(x.wrapping_mul(0x9e37_79b1) ^ y.wrapping_mul(0x85eb_ca77) ^ seed)
+}
+
+/// Dissolves `rows` rows (`w` pixels wide, straight RGBA8 in `src`, in place) at image origin `(x0, y0)` with layer
+/// `alpha`, optional coverage `mask` (`w * rows` bytes), and `seed` (`inpaint_worker.js` `rowsOfStack` /
+/// `stackRowsToWasm`, K10c). Pixels with `srcA == 0` are left untouched; kept pixels get alpha 255; dropped pixels
+/// are zeroed in all four channels.
+pub fn dissolve_rows(
+    src: &mut [u8],
+    w: usize,
+    rows: usize,
+    x0: i32,
+    y0: i32,
+    alpha: u8,
+    mask: Option<&[u8]>,
+    seed: u32,
+) {
+    let px = w * rows;
+    let src = &mut src[..px * 4];
+    let mask = mask.map(|m| &m[..px]);
+    let a = alpha as u32;
+    for r in 0..rows {
+        let img_y = (y0 as u32).wrapping_add(r as u32);
+        let row_src = &mut src[r * w * 4..(r + 1) * w * 4];
+        let row_mask = mask.map(|m| &m[r * w..(r + 1) * w]);
+        let start = simd::dissolve_row(row_src, w, x0 as u32, img_y, alpha, row_mask, seed);
+        for c in start..w {
+            let idx = c * 4;
+            let src_a = row_src[idx + 3] as u32;
+            if src_a == 0 {
+                continue;
+            }
+            let m = row_mask.map_or(255, |rm| rm[c] as u32);
+            let c_val = mul255(mul255(src_a, a), m);
+            let img_x = (x0 as u32).wrapping_add(c as u32);
+            let keep = (c_val == 255) || ((hash32(img_x, img_y, seed) >> 24) < c_val);
+            if keep {
+                row_src[idx + 3] = 255;
+            } else {
+                row_src[idx] = 0;
+                row_src[idx + 1] = 0;
+                row_src[idx + 2] = 0;
+                row_src[idx + 3] = 0;
+            }
+        }
+    }
+}
+
 #[cfg(not(target_feature = "simd128"))]
 mod simd {
     use super::*;
@@ -719,6 +807,14 @@ mod simd {
     #[inline(always)]
     pub fn finish_masked(_: &mut [u8], _: &[u8], _: &[u8], _: Option<&[u8]>) -> (usize, bool, bool) {
         (0, false, false)
+    }
+    #[inline(always)]
+    pub fn clip_coverage(_: &mut [u8], _: Option<&[u8]>, _: u8, _: Option<&[u8]>) -> usize {
+        0
+    }
+    #[inline(always)]
+    pub fn dissolve_row(_: &mut [u8], _: usize, _: u32, _: u32, _: u8, _: Option<&[u8]>, _: u32) -> usize {
+        0
     }
 }
 
@@ -1106,5 +1202,93 @@ mod simd {
             }
             (n / 4, v128_any_true(changed_acc), v128_any_true(alpha_acc))
         }
+    }
+
+    pub fn clip_coverage(cov: &mut [u8], base_mask: Option<&[u8]>, alpha: u8, own: Option<&[u8]>) -> usize {
+        let n = (cov.len() / 16) * 16;
+        unsafe {
+            let pc = cov.as_mut_ptr();
+            let av = u8x16_splat(alpha);
+            let mut i = 0;
+            while i < n {
+                let mut v = v128_load(pc.add(i) as *const v128);
+                if let Some(bm) = base_mask {
+                    v = mul255(v, v128_load(bm.as_ptr().add(i) as *const v128));
+                }
+                if alpha < 255 {
+                    v = mul255(v, av);
+                }
+                if let Some(o) = own {
+                    v = mul255(v, v128_load(o.as_ptr().add(i) as *const v128));
+                }
+                v128_store(pc.add(i) as *mut v128, v);
+                i += 16;
+            }
+        }
+        n
+    }
+
+    #[inline(always)]
+    unsafe fn mul255_u32(x: v128, y: v128) -> v128 {
+        let t = u32x4_add(u32x4_mul(x, y), u32x4_splat(128));
+        u32x4_shr(u32x4_add(t, u32x4_shr(t, 8)), 8)
+    }
+
+    pub fn dissolve_row(
+        row_src: &mut [u8],
+        w: usize,
+        x0: u32,
+        img_y: u32,
+        alpha: u8,
+        row_mask: Option<&[u8]>,
+        seed: u32,
+    ) -> usize {
+        let n = (w / 4) * 4;
+        unsafe {
+            let ps = row_src.as_mut_ptr();
+            let zero = u32x4_splat(0);
+            let full = u32x4_splat(255);
+            let amask = u32x4_splat(0xFF00_0000);
+            let av = u32x4_splat(alpha as u32);
+            let y_term = u32x4_splat(img_y.wrapping_mul(0x85eb_ca77) ^ seed);
+            let kx = u32x4_splat(0x9e37_79b1);
+            let k1 = u32x4_splat(0x7feb_352d);
+            let k2 = u32x4_splat(0x846c_a68b);
+            let step = u32x4(0, 1, 2, 3);
+            let mut c = 0;
+            while c < n {
+                let p = v128_load(ps.add(c * 4) as *const v128);
+                let src_a = u32x4_shr(p, 24);
+                if !v128_any_true(src_a) {
+                    c += 4;
+                    continue;
+                }
+                let mut c_val = mul255_u32(src_a, av);
+                let m_vec = match row_mask {
+                    Some(rm) => {
+                        let mw = (rm.as_ptr().add(c) as *const u32).read_unaligned();
+                        let mv = u32x4_splat(mw);
+                        u8x16_shuffle::<0, 16, 16, 16, 1, 16, 16, 16, 2, 16, 16, 16, 3, 16, 16, 16>(mv, zero)
+                    }
+                    None => full,
+                };
+                c_val = mul255_u32(c_val, m_vec);
+                let xs = u32x4_add(u32x4_splat(x0.wrapping_add(c as u32)), step);
+                let mut h = v128_xor(u32x4_mul(xs, kx), y_term);
+                h = v128_xor(h, u32x4_shr(h, 16));
+                h = u32x4_mul(h, k1);
+                h = v128_xor(h, u32x4_shr(h, 15));
+                h = u32x4_mul(h, k2);
+                h = v128_xor(h, u32x4_shr(h, 16));
+                let h_hi = u32x4_shr(h, 24);
+                let keep = v128_or(u32x4_eq(c_val, full), u32x4_lt(h_hi, c_val));
+                let dissolved = v128_and(v128_or(p, amask), keep);
+                let is_zero = u32x4_eq(src_a, zero);
+                let out = v128_bitselect(p, dissolved, is_zero);
+                v128_store(ps.add(c * 4) as *mut v128, out);
+                c += 4;
+            }
+        }
+        n
     }
 }

@@ -31,7 +31,8 @@
           "reasoning_level": {
             "ultra": "high"
           }
-        }
+        },
+        "edit_negative": true
       },
       "settings": [
         {
@@ -79,7 +80,8 @@
         "size": "star",
         "max_side": 4096,
         "max_images": 8,
-        "model_row": true
+        "model_row": true,
+        "edit_negative": true
       },
       "settings": [
         {
@@ -150,7 +152,8 @@
           "3:2",
           "16:9",
           "21:9"
-        ]
+        ],
+        "edit_negative": true
       },
       "settings": [
         {

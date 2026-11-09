@@ -486,6 +486,10 @@ const lc = mk(700, 400), lx = lc.getContext("2d");
 for (let y = 0; y < 400; y++) { lx.fillStyle = `rgba(${(y * 7) % 256},${(y * 3) % 256},${200 - (y % 100)},${0.3 + (y % 5) * 0.14})`; lx.fillRect(0, y, 700, 1); }
 const lower = ed.addLayer({ name: "Lower", kind: "result", px: L.fromCanvas(lc), x: 300, y: 150, w: 700, h: 400, dirty: true });
 lower.blend = "multiply"; lower.opacity = 0.7; lower.match = { strength: 100, source: "surroundings" };
+const dc = mk(800, 260), dx = dc.getContext("2d");
+for (let y = 0; y < 260; y++) { dx.fillStyle = `rgba(${(y * 11 + 40) % 256},${(220 - (y * 5) % 180)},${(y * 17) % 256},${0.25 + (y % 4) * 0.2})`; dx.fillRect(0, y, 800, 1); }
+const diss = ed.addLayer({ name: "Dissolve", kind: "paint", px: L.fromCanvas(dc), x: 250, y: 440, w: 800, h: 260, dirty: true });
+diss.blend = "dissolve"; diss.opacity = 0.65;
 const uc = mk(1000, 300), ux = uc.getContext("2d");
 for (let x = 0; x < 1000; x++) { ux.fillStyle = `rgb(${(x * 13) % 256},${(x * 29) % 256},${(x * 7) % 256})`; ux.fillRect(x, 0, 1, 300); }
 ux.clearRect(0, 100, 1000, 20);
@@ -497,12 +501,13 @@ upper.match = { strength: 100, source: "underneath" };
 ed.renderLayers(); ed.draw();
 await ed.mipsSettled();
 const plan = ed.stackPlan({ forRun: true });
-if (!plan || plan.length !== 3 || plan[1].match !== lower || plan[2].match !== upper) throw new Error("the plan is " + JSON.stringify(plan && plan.map((s) => (s.match ? "m" : "l"))));
+if (!plan || plan.length !== 4 || plan[1].match !== lower || plan[2].match || plan[3].match !== upper) throw new Error("the plan is " + JSON.stringify(plan && plan.map((s) => (s.match ? "m" : "l"))));
 const held = await ed.holdStack(plan, { forRun: true });
 let out;
 try {
-    if (!held.stores[1].match || !held.stores[2].match) throw new Error("a matched layer got no parameters: " + JSON.stringify([!!held.stores[1].match, !!held.stores[2].match]));
-    const s = await ed.stackSamples(held.stores[2], held.stores.slice(0, 2), {});
+    const { hash32, mul255 } = await import("./editor/blend_modes.js");
+    if (!held.stores[1].match || held.stores[2].dissolve == null || !held.stores[3].match) throw new Error("a matched or dissolve layer got no parameters: " + JSON.stringify([!!held.stores[1].match, held.stores[2].dissolve, !!held.stores[3].match]));
+    const s = await ed.stackSamples(held.stores[3], held.stores.slice(0, 3), {});
     const { g: geo, xs, ys, ld, bd } = s;
     let gridOk = xs.length === geo.pw && ys.length === geo.ph;
     for (let i = 0; i < geo.pw && gridOk; i++) if (xs[i] !== upper.x + Math.floor(((2 * (i - geo.pad) + 1) * upper.w) / (2 * geo.sw))) gridOk = false;
@@ -510,8 +515,9 @@ try {
     if (!gridOk) throw new Error("the grid is not the integer grid: " + JSON.stringify({ pw: geo.pw, ph: geo.ph, pad: geo.pad, x0: xs[0], y0: ys[0] }));
     const n = geo.pw * geo.ph;
     const at = (x0, y0, w, h, X, Y) => { const i = X - x0, j = Y - y0; return i >= 0 && j >= 0 && i < w && j < h ? (j * w + i) * 4 : -1; };
-    const baseD = ed.basePx.readRect(0, 0, W, H).data, lowD = lower.px.readRect(0, 0, 700, 400).data, upD = upper.px.readRect(0, 0, 1000, 300).data, mD = upper.maskPx.readRect(0, 0, 1000, 300).data;
-    const bel = new Uint8Array(n * 4), low = new Uint8Array(n * 4), lay = new Uint8Array(n * 4);
+    const baseD = ed.basePx.readRect(0, 0, W, H).data, lowD = lower.px.readRect(0, 0, 700, 400).data, disD = diss.px.readRect(0, 0, 800, 260).data, upD = upper.px.readRect(0, 0, 1000, 300).data, mD = upper.maskPx.readRect(0, 0, 1000, 300).data;
+    const bel = new Uint8Array(n * 4), low = new Uint8Array(n * 4), dis = new Uint8Array(n * 4), lay = new Uint8Array(n * 4);
+    const disAlpha = held.stores[2].alpha, disSeed = held.stores[2].dissolve;
     let outside = 0, masked = 0;
     for (let j = 0; j < geo.ph; j++) for (let i = 0; i < geo.pw; i++) {
         const X = xs[i], Y = ys[j], o = (j * geo.pw + i) * 4;
@@ -520,25 +526,36 @@ try {
         if (k >= 0) { bel[o] = baseD[k]; bel[o + 1] = baseD[k + 1]; bel[o + 2] = baseD[k + 2]; bel[o + 3] = baseD[k + 3]; }
         k = inImage ? at(300, 150, 700, 400, X, Y) : -1;
         if (k >= 0) { low[o] = lowD[k]; low[o + 1] = lowD[k + 1]; low[o + 2] = lowD[k + 2]; low[o + 3] = lowD[k + 3]; }
+        k = inImage ? at(250, 440, 800, 260, X, Y) : -1;
+        if (k >= 0 && disD[k + 3] > 0) {
+            const cVal = mul255(mul255(disD[k + 3], disAlpha), 255);
+            const keep = (cVal === 255) || ((hash32(X, Y, disSeed) >>> 24) < cVal);
+            if (keep) { dis[o] = disD[k]; dis[o + 1] = disD[k + 1]; dis[o + 2] = disD[k + 2]; dis[o + 3] = 255; }
+        }
         k = at(200, 500, 1000, 300, X, Y);
         if (k >= 0) { lay[o] = upD[k]; lay[o + 1] = upD[k + 1]; lay[o + 2] = upD[k + 2]; const t = upD[k + 3] * mD[k + 3] + 128; lay[o + 3] = (t + (t >> 8)) >> 8; if (Y >= H && lay[o + 3]) outside++; if (mD[k + 3] && mD[k + 3] < 255) masked++; }
     }
     const lowPlain = low.slice();
     K.matchPixels(low, held.stores[1].match);
-    K.compositeTile(bel, [low], [K.OPS.multiply], [Math.round(0.7 * 255)], [null]);
+    const belNoDis = bel.slice();
+    K.compositeTile(belNoDis, [low], [K.OPS.multiply], [Math.round(0.7 * 255)], [null]);
+    K.compositeTile(bel, [low, dis], [K.OPS.multiply, 0], [Math.round(0.7 * 255), 255], [null, null]);
     const eq = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return i; return -1; };
     const dl = eq(lay, ld), db = eq(bel, bd);
     if (!(outside > 100) || !(masked > 100)) throw new Error("the layer's samples below the picture's edge or through the half mask were not seen: " + JSON.stringify({ outside, masked }));
     if (dl >= 0) throw new Error("the layer's samples differ from the tiles at byte " + dl + ": " + [lay[dl], ld[dl]]);
     if (db >= 0) throw new Error("the composite below differs from the tiles at byte " + db + ": " + [bel[db], bd[db]]);
-    // the lower layer's match is in the backdrop: composited unmatched, many bytes differ
+    // the lower layer's match and the dissolve layer are both in the backdrop
     const belPlain = new Uint8Array(n * 4);
     for (let j = 0; j < geo.ph; j++) for (let i = 0; i < geo.pw; i++) { const X = xs[i], Y = ys[j], o = (j * geo.pw + i) * 4; const k = X >= 0 && Y >= 0 && X < W && Y < H ? (Y * W + X) * 4 : -1; if (k >= 0) { belPlain[o] = baseD[k]; belPlain[o + 1] = baseD[k + 1]; belPlain[o + 2] = baseD[k + 2]; belPlain[o + 3] = baseD[k + 3]; } }
-    K.compositeTile(belPlain, [lowPlain], [K.OPS.multiply], [Math.round(0.7 * 255)], [null]);
-    let differ = 0;
-    for (let i = 0; i < n * 4; i++) if (Math.abs(belPlain[i] - bd[i]) > 2) differ++;
-    if (differ < n / 20) throw new Error("the lower layer's match is not in the backdrop samples (" + differ + " bytes differ from the unmatched composite)");
-    out = { grid: [geo.pw, geo.ph], pad: geo.pad, outside, masked, lowerMatchDiffers: differ };
+    K.compositeTile(belPlain, [lowPlain, dis], [K.OPS.multiply, 0], [Math.round(0.7 * 255), 255], [null, null]);
+    let differ = 0, disDiffer = 0;
+    for (let i = 0; i < n * 4; i++) {
+        if (Math.abs(belPlain[i] - bd[i]) > 2) differ++;
+        if (Math.abs(belNoDis[i] - bd[i]) > 2) disDiffer++;
+    }
+    if (differ < n / 20 || disDiffer < n / 20) throw new Error("the lower layer's match or dissolve is not in the backdrop samples (" + differ + " / " + disDiffer + " bytes differ)");
+    out = { grid: [geo.pw, geo.ph], pad: geo.pad, outside, masked, lowerMatchDiffers: differ, dissolveDiffers: disDiffer };
 } finally { held.release(); }
 await run("close_document", { doc: d.id, force: true });
 return out;
@@ -1152,6 +1169,19 @@ const lw0 = 524, lh0 = 420;
     l.maskPx = M.fromCanvas(m);
     l.maskDirty = false;
 }
+// (2b) Clipped AND dissolved layer with its own mask (clipped to OffsetBase, which has offset + c.mask)
+{
+    const w = 460, h = 360;
+    const m = mk(w, h), mx = m.getContext("2d");
+    mx.fillStyle = "rgba(255,255,255,0.75)";
+    mx.fillRect(16, 16, w - 32, h - 32);
+    const l = ed.addLayer({ name: "ClippedDissolve", kind: "paint", px: L.fromCanvas(paint(mk(w, h), 310)), x: 150, y: 100, w, h, dirty: false });
+    l.clip = true;
+    l.blend = "dissolve";
+    l.opacity = 0.78;
+    l.maskPx = M.fromCanvas(m);
+    l.maskDirty = false;
+}
 // (3) Unmasked clip base (pbm = 0) + clipped layer over it
 {
     const w = 360, h = 280;
@@ -1181,6 +1211,9 @@ await ed.mipsSettled();
 while (E.parts.pool().pending > 0) await wait(20);
 const isTileJob = (t) => t.op === "png_part" && (t.pixels === lw0 * 256 || t.pixels === lw0 * (lh0 - 256));
 const isStackJob = (t) => t.op === "png_part" && (t.pixels === W * 256 || t.pixels === W * (H - 512));
+const isPsdJob = (t) => t.op === "psd_part";
+const isStackIntoJob = (t) => t.op === "stack_into";
+const sumCalls = (jobs, fn) => jobs.reduce((acc, j) => acc + ((j.pxCalls && j.pxCalls[fn]) || 0), 0);
 try {
     E.jobTimings(true);
     const tileRust = await E.parts.encodeTilePixels(ed.layers[0].px, { hash: true });
@@ -1192,12 +1225,47 @@ try {
     E.jobTimings(true);
     const stackRust = await ed.encodeComposite({ forRun: true }, { hash: true });
     const stackRustJobs = E.jobTimings(true).filter(isStackJob);
-    if (!stackRustJobs.length || !stackRustJobs.every((t) => t.composeWasm === 1)) {
-        throw new Error("composeStack=rust did not set composeWasm=1 on all png_part jobs: " + JSON.stringify(stackRustJobs));
+    if (!stackRustJobs.length || !stackRustJobs.every((t) => t.composeWasm === 1)
+        || !(sumCalls(stackRustJobs, "clip_coverage") > 0) || !(sumCalls(stackRustJobs, "dissolve_rows") > 0)) {
+        throw new Error("composeStack=rust did not set composeWasm=1 or call clip_coverage/dissolve_rows on png_part jobs: " + JSON.stringify(stackRustJobs));
     }
 
+    E.jobTimings(true);
+    const psdRust = await ed.exportLayeredBands("psd");
+    const psdRustJobs = E.jobTimings(true).filter(isPsdJob);
+    if (!psdRust || !psdRustJobs.length || !psdRustJobs.every((t) => t.composeWasm === 1)
+        || !(sumCalls(psdRustJobs, "clip_coverage") > 0) || !(sumCalls(psdRustJobs, "dissolve_rows") > 0)) {
+        throw new Error("psdPartWasm=rust did not set composeWasm=1 or call clip_coverage/dissolve_rows on psd_part jobs: " + JSON.stringify(psdRustJobs));
+    }
+
+    E.jobTimings(true);
+    const boxRust = await ed.readBoxBytes([0, 0, W, H]);
+    const siRustJobs = E.jobTimings(true).filter(isStackIntoJob);
+    if (!boxRust || !boxRust.data || !siRustJobs.length || !siRustJobs.every((t) => t.composeWasm === 1)
+        || !(sumCalls(siRustJobs, "clip_coverage") > 0) || !(sumCalls(siRustJobs, "dissolve_rows") > 0)) {
+        throw new Error("stackIntoWasm=rust did not set composeWasm=1 or call clip_coverage/dissolve_rows on stack_into jobs: " + JSON.stringify(siRustJobs));
+    }
+
+    // Sub-route check: keep composeStack/psdPartWasm/stackIntoWasm on rust, set clipCoverage=js and dissolveRows=js
+    E.setRoute("clipCoverage", "js");
+    E.setRoute("dissolveRows", "js");
+    E.jobTimings(true);
+    const stackSubJs = await ed.encodeComposite({ forRun: true }, { hash: true });
+    const stackSubJsJobs = E.jobTimings(true).filter(isStackJob);
+    if (!stackSubJsJobs.length || !stackSubJsJobs.every((t) => t.composeWasm === 1)
+        || sumCalls(stackSubJsJobs, "clip_coverage") !== 0 || sumCalls(stackSubJsJobs, "dissolve_rows") !== 0) {
+        throw new Error("clipCoverage=js / dissolveRows=js still called Rust clip_coverage or dissolve_rows: " + JSON.stringify(stackSubJsJobs));
+    }
+    const boxSubJs = await ed.readBoxBytes([0, 0, W, H]);
+    if (stackSubJs.hash !== stackRust.hash || diff(boxRust.data, boxSubJs.data, W).bytes) {
+        throw new Error("clipCoverage=js / dissolveRows=js bytes differ from rust: " + JSON.stringify({ rustHash: stackRust.hash, subJsHash: stackSubJs.hash, boxDiff: diff(boxRust.data, boxSubJs.data, W) }));
+    }
+
+    // Full JS gather routes check
     E.setRoute("composeTiles", "js");
     E.setRoute("composeStack", "js");
+    E.setRoute("psdPartWasm", "js");
+    E.setRoute("stackIntoWasm", "js");
 
     E.jobTimings(true);
     const tileJs = await E.parts.encodeTilePixels(ed.layers[0].px, { hash: true });
@@ -1209,8 +1277,25 @@ try {
     E.jobTimings(true);
     const stackJs = await ed.encodeComposite({ forRun: true }, { hash: true });
     const stackJsJobs = E.jobTimings(true).filter(isStackJob);
-    if (!stackJsJobs.length || !stackJsJobs.every((t) => t.composeWasm === 0)) {
+    if (!stackJsJobs.length || !stackJsJobs.every((t) => t.composeWasm === 0)
+        || sumCalls(stackJsJobs, "clip_coverage") !== 0 || sumCalls(stackJsJobs, "dissolve_rows") !== 0) {
         throw new Error("composeStack=js did not set composeWasm=0 on all png_part jobs: " + JSON.stringify(stackJsJobs));
+    }
+
+    E.jobTimings(true);
+    const psdJs = await ed.exportLayeredBands("psd");
+    const psdJsJobs = E.jobTimings(true).filter(isPsdJob);
+    if (!psdJs || !psdJsJobs.length || !psdJsJobs.every((t) => t.composeWasm === 0)
+        || sumCalls(psdJsJobs, "clip_coverage") !== 0 || sumCalls(psdJsJobs, "dissolve_rows") !== 0) {
+        throw new Error("psdPartWasm=js did not set composeWasm=0 on all psd_part jobs: " + JSON.stringify(psdJsJobs));
+    }
+
+    E.jobTimings(true);
+    const boxJs = await ed.readBoxBytes([0, 0, W, H]);
+    const siJsJobs = E.jobTimings(true).filter(isStackIntoJob);
+    if (!boxJs || !boxJs.data || !siJsJobs.length || !siJsJobs.every((t) => t.composeWasm === 0)
+        || sumCalls(siJsJobs, "clip_coverage") !== 0 || sumCalls(siJsJobs, "dissolve_rows") !== 0) {
+        throw new Error("stackIntoWasm=js did not set composeWasm=0 on all stack_into jobs: " + JSON.stringify(siJsJobs));
     }
 
     const tileBytesRust = new Uint8Array(await tileRust.blob.arrayBuffer());
@@ -1226,8 +1311,21 @@ try {
     if (stackDiff.bytes || stackRust.hash !== stackJs.hash) {
         throw new Error("composeStack rust vs js PNG bytes differ: " + JSON.stringify({ stackDiff, rustHash: stackRust.hash, jsHash: stackJs.hash }));
     }
-    if (tileBytesRust.length < 50000 || stackBytesRust.length < 100000) {
-        throw new Error("unexpectedly small PNG exports: " + JSON.stringify({ tileBytes: tileBytesRust.length, stackBytes: stackBytesRust.length }));
+
+    const psdBytesRust = new Uint8Array(await psdRust.blob.arrayBuffer());
+    const psdBytesJs = new Uint8Array(await psdJs.blob.arrayBuffer());
+    const psdDiff = diff(psdBytesRust, psdBytesJs, W);
+    if (psdDiff.bytes) {
+        throw new Error("psdPartWasm rust vs js PSD bytes differ: " + JSON.stringify(psdDiff));
+    }
+
+    const boxDiff = diff(boxRust.data, boxJs.data, W);
+    if (boxDiff.bytes || boxRust.data.length !== W * H * 4) {
+        throw new Error("stackIntoWasm rust vs js box bytes differ: " + JSON.stringify({ boxDiff, len: boxRust.data.length }));
+    }
+
+    if (tileBytesRust.length < 50000 || stackBytesRust.length < 100000 || psdBytesRust.length < 200000) {
+        throw new Error("unexpectedly small exports: " + JSON.stringify({ tileBytes: tileBytesRust.length, stackBytes: stackBytesRust.length, psdBytes: psdBytesRust.length }));
     }
     const bmp = await createImageBitmap(stackRust.blob);
     const chk = mk(1, 1), chkx = chk.getContext("2d");
@@ -1241,8 +1339,11 @@ try {
     return {
         tileParts: tileRustJobs.length,
         stackParts: stackRustJobs.length,
+        psdParts: psdRustJobs.length,
+        stackIntoParts: siRustJobs.length,
         tileBytes: tileBytesRust.length,
         stackBytes: stackBytesRust.length,
+        psdBytes: psdBytesRust.length,
         tileHash: tileRust.hash,
         stackHash: stackRust.hash,
         midPx,
@@ -1250,6 +1351,10 @@ try {
 } finally {
     E.setRoute("composeTiles", null);
     E.setRoute("composeStack", null);
+    E.setRoute("psdPartWasm", null);
+    E.setRoute("stackIntoWasm", null);
+    E.setRoute("clipCoverage", null);
+    E.setRoute("dissolveRows", null);
     await run("close_document", { doc: d.id, force: true });
 }
 """),
@@ -1331,7 +1436,8 @@ try {
 # python tools/export_test.py --perf 15000x10000: the timings of a large document (printed, not gated). Options:
 # --filter=<type> the filter layer (levels unless given; fill, gradient, film.look, any type FILTERS holds),
 # --filter-params=k:v+k:v, --limit=source:lo:hi:fLo:fHi[:inv] on that layer (a depth limit makes a ramp map of
-# --map=WxH, 4096x2731 unless given), --blend=<mode> on the paint layers, --set NAME=V (or --set=NAME=V) to override
+# --map=WxH, 4096x2731 unless given), --blend=<mode> on the paint layers, --clipped (clips Paint 3 to Paint 2 with a
+# mask on Paint 2), --set NAME=V (or --set=NAME=V) to override
 # route entries via E.setRoute, and --fill-limit[=lo:hi:fLo:fHi[:inv]]: a
 # fill layer with a depth limit on top and the rows `fill_limit_rows` (fillPixels and limitAlphaRows apart) and
 # `psd_fill_limit` (the PSD with it; `fillRowsMs` its rows' reads in the writer)
@@ -1366,6 +1472,24 @@ for (let i = 0; i < 3; i++) {
     const l = ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: L.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
     if (__BLEND__) l.blend = __BLEND__;
     c.width = 1; c.height = 1;
+}
+if (__CLIPPED__) {
+    const mc = mk(W, H), mx = mc.getContext("2d");
+    const mg = mx.createLinearGradient(0, 0, W, H);
+    mg.addColorStop(0, "rgba(255,255,255,1)"); mg.addColorStop(1, "rgba(255,255,255,0.2)");
+    mx.fillStyle = mg; mx.fillRect(0, 0, W, H);
+    ed.layers[1].maskPx = ed.pixels.Mask.fromCanvas(mc);
+    ed.layers[1].opacity = 0.85;
+    ed.markMaskChanged(ed.layers[1]);
+    mc.width = 1; mc.height = 1;
+    const mc2 = mk(W, H), mx2 = mc2.getContext("2d");
+    const mg2 = mx2.createLinearGradient(0, H, W, 0);
+    mg2.addColorStop(0, "rgba(255,255,255,0.9)"); mg2.addColorStop(1, "rgba(255,255,255,0.3)");
+    mx2.fillStyle = mg2; mx2.fillRect(0, 0, W, H);
+    ed.layers[2].maskPx = ed.pixels.Mask.fromCanvas(mc2);
+    ed.layers[2].clip = true;
+    ed.markMaskChanged(ed.layers[2]);
+    mc2.width = 1; mc2.height = 1;
 }
 const mapW = __MAP_W__, mapH = __MAP_H__;
 if (mapW > 0 && mapH > 0) {
@@ -1724,6 +1848,7 @@ async def run_all(c):
             mw, mh = map_arg.lower().split("x")
             map_w, map_h = int(mw), int(mh)
         blend_id = next((x.split("=", 1)[1] for x in sys.argv if x.startswith("--blend=")), None)
+        clipped = "--clipped" in sys.argv
         # --fill-limit[=lo:hi:fLo:fHi[:inv]]: the fill layer with a depth limit (K0b), 0.3:0.6:0.05:0.05 unless given
         fill_arg = next((x for x in sys.argv if x == "--fill-limit" or x.startswith("--fill-limit=")), None)
         fill_obj = None
@@ -1761,6 +1886,7 @@ async def run_all(c):
                        .replace("__MAP_W__", str(map_w))
                        .replace("__MAP_H__", str(map_h))
                        .replace("__BLEND__", json.dumps(blend_id))
+                       .replace("__CLIPPED__", json.dumps(clipped))
                        .replace("__FILL_LIMIT__", json.dumps(fill_obj))
                        .replace("__ROUTES__", json.dumps(routes_obj)))
         await c.call("Page.bringToFront")

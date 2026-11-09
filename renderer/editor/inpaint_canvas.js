@@ -17,8 +17,8 @@ import { FILTERS, FILTER_IDS, filterDefaults, scaleFilterParams, applyFilter, ma
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces, runShader, glToCanvas } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA, toneRGBA, spongeRGBA, freqSeparate, allocLiquifyWindow, freeLiquifyWindow, liquifyPreview, liquifyDab } from "./px/kernels.js";
-import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds, selModeOf, selectionGco, tilesSource, bytesSource, rectSource } from "./inpaint_raster.js";
+import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel, distTransform, blurRGBA, sharpenRGBA, toneRGBA, spongeRGBA, freqSeparate, allocLiquifyWindow, freeLiquifyWindow, liquifyPreview, liquifyDab, tiffKernels } from "./px/kernels.js";
+import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMaskBounds, invertMask, maskBounds, selModeOf, selectionGco, tilesSource, bytesSource, rectSource } from "./inpaint_raster.js";
 import { GLCompositor, BLEND_FN_GLSL } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { INTERACTIVE, NORMAL, EXPORT, CancelledError } from "./inpaint_pool.js";
@@ -589,7 +589,7 @@ async function pixelsFromTiff(blob, Cls, progress = null) {
                 onProgress: (m) => { if (m.header) header(m.header); else rows(new Uint8Array(m.rgba), m.y0, m.rows); },
             });
             info = r.info;
-        } else info = await readTiff(blob, { onHeader: header, onRows: rows });
+        } else info = await readTiff(blob, { onHeader: header, onRows: rows, kernels: tiffKernels() });
     } catch (err) {
         if (px) px.release();
         throw err;
@@ -12746,12 +12746,13 @@ class InpaintEditor {
         const grow = n > 0, r = Math.abs(n);
         this.pushUndo({ kind: "selection", label: grow ? "Grow selection" : "Shrink selection" });
         const done = await this.selectionInWorker("grow", { n }, { halo: r + 2 });
+        let bounds = done ? done.bounds : undefined;
         if (!done) {
             const img = this.sel.readRect(0, 0, W, H);
-            growMask(img.data, W, H, n);
+            bounds = growMaskBounds(img.data, W, H, n);
             this.sel.writeRect(img, 0, 0);
         }
-        this.markSelectionChanged(done ? done.bounds : undefined, done && done.box);
+        this.markSelectionChanged(bounds, done && done.box);
         this.draw();
         this.setStatus(`Selection ${grow ? "grown" : "shrunk"} by ${r}px.`);
     }
@@ -17336,11 +17337,21 @@ class InpaintEditor {
                     ({ px } = await pixelsFromTiff(file, this.pixels.Layer));
                 } else {
                     const ext = await storedExt(file);
+                    const big = this.tileMode ? (await hugePngSize(file)) || (await imageFileSize(file)) : null;
+                    if (big) this.checkBaseSize(big.width, big.height);
                     this.setStatus(`Uploading ${file.name || "image"} ...`);
                     const stem = (file.name || "image").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
-                    ref = await uploadBlob(file, stem + ext, { overwrite: false });
-                    // a large file is decoded in a pool worker (`pixelsOffThread`), a small one through an <img>
-                    px = (this.tileMode ? await pixelsOffThread(file, this.pixels.Layer) : null) || this.pixels.Layer.fromImage(await loadImageEl(viewUrl(ref)));
+                    const up = uploadBlob(file, stem + ext, { overwrite: false });
+                    up.catch(() => {});
+                    try {
+                        // a large file is decoded in a pool worker (`pixelsOffThread`) while it uploads, a small one through an <img>
+                        if (big) px = await pixelsOffThread(file, this.pixels.Layer);
+                        ref = await up;
+                    } catch (err) {
+                        if (px) px.release();
+                        throw err;
+                    }
+                    if (!px) px = this.pixels.Layer.fromImage(await loadImageEl(viewUrl(ref)));
                 }
                 const nw = px.width, nh = px.height;
                 // Shown at a third of the canvas, cascaded from the top left; the file itself stays the reference.
@@ -18911,15 +18922,25 @@ class InpaintEditor {
                 file = await rasterizeSvg(file, target);
             }
             const ext = await storedExt(file);
-            this.setStatus("Uploading " + (file.name || "image") + " ...");
-            const stem = (file.name || "pasted").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
-            const ref = await uploadBlob(file, stem + ext, { overwrite: false });
             // E5: a PNG larger than any canvas is decoded as a stream into tiles (the browser's decoder has nowhere to put
             // it); any other large file is decoded in a pool worker, so the window never holds the whole picture
             const big = this.tileMode ? (await hugePngSize(file)) || (await imageFileSize(file)) : null;
             if (big) this.checkBaseSize(big.width, big.height);
             if (later()) return;
-            const px = big ? await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); }) : null;
+            this.setStatus("Uploading " + (file.name || "image") + " ...");
+            const stem = (file.name || "pasted").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
+            const up = uploadBlob(file, stem + ext, { overwrite: false });
+            up.catch(() => {});
+            let px = null, ref = null;
+            try {
+                if (big) px = await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); });
+                if (later()) { if (px) px.release(); return; }
+                if (px) this.setStatus("Uploading " + (file.name || "image") + " ...");
+                ref = await up;
+            } catch (err) {
+                if (px) px.release();
+                throw err;
+            }
             if (later()) { if (px) px.release(); return; }
             if (px) {
                 await this.setBasePixels(ref, px, { keepLayers: false });

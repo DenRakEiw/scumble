@@ -13,8 +13,9 @@
 
 import { relightVogel } from "./kernels_js.js";
 import { disparityRange } from "../inpaint_depth.js";
+import { paletteLut } from "../inpaint_tiff.js";
 
-export const PX_ABI = 43;
+export const PX_ABI = 45;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -367,13 +368,15 @@ export class Px {
 
     /** The colour match of `params` (meanS[3], meanT[3], scale[3], k) over straight RGBA8, in place (B item 7 part 3). */
     matchPixels(rgba, params) {
-        const a = this.job, px = rgba.byteLength >> 2;
+        const a = this.job, px = rgba.byteLength >>> 2;
+        if (!(px > 0)) return rgba;
         try {
             const pd = this._in(a, rgba, px * 4), pp = a.take(40);
             const f = this.view(Float32Array, pp, 10);
             for (let i = 0; i < 10; i++) f[i] = params[i];
             this.exports.match_pixels(pd, px, pp);
-            return this._out(Uint8Array, pd, px * 4, rgba);
+            this._out(Uint8Array, pd, px * 4, rgba instanceof Uint8Array ? rgba : new Uint8Array(rgba.buffer, rgba.byteOffset, px * 4));
+            return rgba;
         } finally { this._reset(a); }
     }
 
@@ -1138,17 +1141,25 @@ export class Px {
         const a = this.job;
         try {
             const pr = this._in(a, rgba, rows * 4 * w);
-            const cap = this.exports.psd_pack_rows_cap(w, rows), po = a.take(cap), pl = a.take(rows * 2);
-            const out = [];
-            for (let ch = 0; ch < 4; ch++) {
-                const n = this.exports.psd_pack_rows(pr, w, rows, ch, po, cap, pl);
-                if (n < 0) throw new Error("px: psd_pack_rows ran out of room");
-                const t = TIMED ? clock() : 0;
-                out.push({ lens: this.u8().slice(pl, pl + rows * 2), data: this.u8().slice(po, po + n) });
-                if (TIMED) lapOut(t, rows * 2 + n);
-            }
-            return out;
+            return this.psdPackRowsFromPtr(a, pr, w, rows);
         } finally { this._reset(a); }
+    }
+
+    /**
+     * `psdPackRows` when `pr` (`rows * 4 * w` bytes of RGBA8) is already in `a` (`this.job`). The caller resets `a`
+     * in its `finally` block (K10c, docs/PLAN_WASM_K10.md §2.2).
+     */
+    psdPackRowsFromPtr(a, pr, w, rows) {
+        const cap = this.exports.psd_pack_rows_cap(w, rows), po = a.take(cap), pl = a.take(rows * 2);
+        const out = [];
+        for (let ch = 0; ch < 4; ch++) {
+            const n = this.exports.psd_pack_rows(pr, w, rows, ch, po, cap, pl);
+            if (n < 0) throw new Error("px: psd_pack_rows ran out of room");
+            const t = TIMED ? clock() : 0;
+            out.push({ lens: this.u8().slice(pl, pl + rows * 2), data: this.u8().slice(po, po + n) });
+            if (TIMED) lapOut(t, rows * 2 + n);
+        }
+        return out;
     }
 
     /**
@@ -1642,6 +1653,190 @@ export class Px {
             if (need === 0) return out || new Uint8Array(0);
             this._out(Uint8Array, po, need, dst ? (dst.length === need ? dst : dst.subarray(0, need)) : (dst = new Uint8Array(need)));
             return out || dst;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Undo horizontal differencing (Predictor 2) in place on `rows` rows of `rowBytes` stride, each `pixels` wide with
+     * `per` samples per pixel at `bits` (`8` or `16`) bits per sample (`inpaint_tiff.js` `unpredict`, K15).
+     */
+    tiffUnpredict(buf, rows, rowBytes, pixels, per, bits, le = true) {
+        if (!ArrayBuffer.isView(buf)) throw new Error("tiff_unpredict: buf must be an ArrayBufferView");
+        if (!Number.isInteger(rows) || !Number.isInteger(rowBytes) || !Number.isInteger(pixels) || !Number.isInteger(per)
+            || rows < 0 || rowBytes < 0 || pixels < 0 || per < 1 || (bits !== 8 && bits !== 16)) {
+            throw new Error(`tiff_unpredict: invalid parameters (rows=${rows}, rowBytes=${rowBytes}, pixels=${pixels}, per=${per}, bits=${bits})`);
+        }
+        if (rows === 0 || pixels === 0) return buf;
+        const bps = bits >>> 3;
+        const active = pixels * per * bps;
+        const need = (rows - 1) * rowBytes + active;
+        if (rowBytes < active || buf.byteLength < need) {
+            throw new Error(`tiff_unpredict: buffer (${buf.byteLength}) too short for ${rows} x ${rowBytes} (active ${active})`);
+        }
+        const u8 = new Uint8Array(buf.buffer, buf.byteOffset, need);
+        const a = this.job;
+        try {
+            const pb = this._in(a, u8, need);
+            const rc = this.exports.tiff_unpredict(pb, need, rows, rowBytes, pixels, per, bits, le ? 1 : 0) | 0;
+            if (rc !== 0) throw new Error(`tiff_unpredict: refused (${rc})`);
+            this._out(Uint8Array, pb, need, u8);
+            return buf;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Horizontal differencing (Predictor 2) in place on `rows` rows of `w`-wide RGBA8 (`inpaint_tiff.js` `predictRgba`, K15).
+     */
+    tiffPredictRgba(rgba, w, rows) {
+        if (!ArrayBuffer.isView(rgba)) throw new Error("tiff_predict_rgba: rgba must be an ArrayBufferView");
+        if (!Number.isInteger(w) || !Number.isInteger(rows) || w <= 0 || rows <= 0 || rgba.byteLength < w * rows * 4) {
+            throw new Error(`tiff_predict_rgba: invalid size (${w} x ${rows}, byteLength ${rgba && rgba.byteLength})`);
+        }
+        const n = w * rows * 4;
+        const u8 = new Uint8Array(rgba.buffer, rgba.byteOffset, n);
+        const a = this.job;
+        try {
+            const pr = this._in(a, u8, n);
+            const rc = this.exports.tiff_predict_rgba(pr, w, rows) | 0;
+            if (rc !== 0) throw new Error(`tiff_predict_rgba: refused (${rc})`);
+            this._out(Uint8Array, pr, n, u8);
+            return rgba;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Convert `rows` rows (`bufs`: one buffer for chunky, or `samples` buffers for planar) to straight-alpha RGBA8 in `out`
+     * (or a fresh `Uint8Array(rows * width * 4)`; `inpaint_tiff.js` `toRgba`, K15).
+     */
+    tiffToRgba(bufs, rows, out = null, spec = {}) {
+        if (!spec || typeof spec !== "object") throw new Error("tiff_to_rgba: spec is required");
+        const W = (spec.width ?? spec.w) | 0, spp = (spec.samples ?? spec.spp) | 0, bits = spec.bits | 0, ph = spec.photometric | 0;
+        const nRows = rows | 0;
+        const le = spec.le !== false && spec.le !== 0;
+        const alphaMode = spec.alpha === "premultiplied" || spec.alpha === 1 ? 1
+            : spec.alpha === "straight" || spec.alpha === 2 ? 2
+            : spec.alpha === "none" || spec.alpha === 0 || spec.alpha === undefined ? 0 : -1;
+        if (W <= 0 || nRows <= 0 || (bits !== 1 && bits !== 2 && bits !== 4 && bits !== 8 && bits !== 16)
+            || (ph !== 0 && ph !== 1 && ph !== 2 && ph !== 3) || (ph === 2 && bits < 8) || alphaMode < 0) {
+            throw new Error(`tiff_to_rgba: invalid spec (W=${W}, rows=${nRows}, bits=${bits}, ph=${ph}, alpha=${spec.alpha})`);
+        }
+        const base = ph === 2 ? 3 : 1;
+        const ai = alphaMode === 0 ? -1 : base;
+        if (spp < base + (ai >= 0 ? 1 : 0)) throw new Error(`tiff_to_rgba: samples=${spp} too small for ph=${ph} alpha=${spec.alpha}`);
+        const planeList = Array.isArray(bufs) ? bufs : [bufs];
+        const planes = planeList.length;
+        if (planes !== 1 && planes !== spp) throw new Error(`tiff_to_rgba: planes=${planes} must be 1 or samples=${spp}`);
+        const perPlane = planes === 1 ? W * spp : W;
+        const minRowBytes = Math.ceil((perPlane * bits) / 8);
+        const rowBytes = spec.rowBytes ? (spec.rowBytes | 0) : minRowBytes;
+        if (rowBytes < minRowBytes) throw new Error(`tiff_to_rgba: rowBytes=${rowBytes} < ${minRowBytes}`);
+        const planeBytes = nRows * rowBytes;
+        const minPlaneBytes = (nRows - 1) * rowBytes + minRowBytes;
+        for (let p = 0; p < planes; p++) {
+            const b = planeList[p];
+            if (!ArrayBuffer.isView(b) || b.byteLength < minPlaneBytes) {
+                throw new Error(`tiff_to_rgba: plane ${p} too short (${b && b.byteLength} < ${minPlaneBytes})`);
+            }
+        }
+        let pal = null;
+        if (ph === 3) {
+            pal = spec.pal || (spec.colormap ? paletteLut(spec.colormap, bits) : null);
+            const needPal = (1 << bits) * 3;
+            if (!ArrayBuffer.isView(pal) || pal.byteLength < needPal) {
+                throw new Error(`tiff_to_rgba: pal too short for ${bits}-bit palette`);
+            }
+        }
+        const needOut = nRows * W * 4;
+        let dst = null;
+        if (out != null) {
+            if (!ArrayBuffer.isView(out) || out.byteLength < needOut) throw new Error(`tiff_to_rgba: out too short (${out && out.byteLength} < ${needOut})`);
+            dst = out instanceof Uint8Array ? out : new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+        }
+        const a = this.job;
+        try {
+            const totalSrc = planes === 1 ? minPlaneBytes : (planes - 1) * planeBytes + minPlaneBytes;
+            const ps = a.take(totalSrc);
+            const pp = pal ? this._in(a, pal, (1 << bits) * 3) : 0;
+            const po = a.take(needOut);
+            for (let p = 0; p < planes; p++) {
+                const b = planeList[p];
+                const takeLen = p === planes - 1 ? minPlaneBytes : Math.min(b.byteLength, planeBytes);
+                this.put(ps + p * planeBytes, new Uint8Array(b.buffer, b.byteOffset, takeLen));
+            }
+            const rc = this.exports.tiff_to_rgba(
+                ps, totalSrc, planes, rowBytes, W, nRows, spp, bits, le ? 1 : 0, ph, alphaMode,
+                pp, pal ? (1 << bits) * 3 : 0, po, needOut
+            ) | 0;
+            if (rc !== 0) throw new Error(`tiff_to_rgba: refused (${rc})`);
+            this._out(Uint8Array, po, needOut, dst ? (dst.length === needOut ? dst : dst.subarray(0, needOut)) : (dst = new Uint8Array(needOut)));
+            return out || dst;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * One strip of a TIFF from a pointer `pr` (`w * rows * 4` RGBA8 bytes) already in `a` (`docs/PLAN_WASM_K10.md` §6, K15):
+     * differences in place when `predictor === 2` (`tiff_predict_rgba`), computes `adler32`, deflates at `level`
+     * (`deflate_part` with `last = 1`), and frames with `78 9C` and the big-endian Adler-32. Byte-identical to
+     * `tiffPart(args, (b) => p.zlib(b, level))`.
+     */
+    tiffStripFromPtr(a, pr, w, rows, level = 2, predictor = 2, laps = null) {
+        const rawLen = w * rows * 4;
+        const pred = predictor === undefined ? 2 : predictor;
+        const lap = laps ? lapper(laps) : null;
+        if (pred === 2) {
+            const rc = this.exports.tiff_predict_rgba(pr, w, rows) | 0;
+            if (rc !== 0) throw new Error(`px: tiff_predict_rgba refused (${w}x${rows})`);
+        }
+        if (lap) lap("predict");
+        const adler = this.exports.adler32(pr, rawLen, 1) >>> 0;
+        let cap = storedCap(rawLen);
+        for (;;) {
+            const po = a.take(cap + 6);
+            const written = this.exports.deflate_part(pr, rawLen, level, 1, po + 2, cap);
+            if (lap) lap("deflate");
+            if (written >= 0) {
+                const t = TIMED ? clock() : 0;
+                const out = this.u8();
+                out[po] = 0x78;
+                out[po + 1] = 0x9C;
+                const end = po + 2 + written;
+                out[end] = adler >>> 24; out[end + 1] = (adler >>> 16) & 255;
+                out[end + 2] = (adler >>> 8) & 255; out[end + 3] = adler & 255;
+                const strip = out.slice(po, end + 4);
+                if (TIMED) lapOut(t, written + 6);
+                return { chunk: strip.buffer, raw: rawLen };
+            }
+            cap *= 2;
+        }
+    }
+
+    /**
+     * One strip of a TIFF from `{ rgba, w, rows, predictor = 2 }` (or positional `(rgba, w, rows, level, predictor, laps)`):
+     * copies `rgba` into `this.job` and delegates to `tiffStripFromPtr` (K15, `docs/PLAN_WASM_BUILD.md` §4.6).
+     */
+    tiffStrip(rgbaOrArgs, wOrLevel = 2, rowsOrLaps = null, level = 2, predictor = 2, laps = null) {
+        let rgba, w, rows, lvl, pred, lp;
+        if (rgbaOrArgs && typeof rgbaOrArgs === "object" && !ArrayBuffer.isView(rgbaOrArgs) && !(rgbaOrArgs instanceof ArrayBuffer)) {
+            rgba = rgbaOrArgs.rgba;
+            w = rgbaOrArgs.w;
+            rows = rgbaOrArgs.rows;
+            pred = rgbaOrArgs.predictor === undefined ? 2 : rgbaOrArgs.predictor;
+            lvl = typeof wOrLevel === "number" ? wOrLevel : 2;
+            lp = rowsOrLaps;
+        } else {
+            rgba = rgbaOrArgs;
+            w = wOrLevel;
+            rows = rowsOrLaps;
+            lvl = level;
+            pred = predictor === undefined ? 2 : predictor;
+            lp = laps;
+        }
+        const n = w * rows * 4;
+        const src = rgba instanceof Uint8Array ? rgba.subarray(0, n) : ArrayBuffer.isView(rgba) ? new Uint8Array(rgba.buffer, rgba.byteOffset, n) : new Uint8Array(rgba, 0, n);
+        const a = this.job;
+        try {
+            const pr = this._in(a, src, n);
+            return this.tiffStripFromPtr(a, pr, w, rows, lvl, pred, lp);
         } finally { this._reset(a); }
     }
 
