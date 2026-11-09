@@ -1,0 +1,250 @@
+== 15000x10000 (150.0 MP) ...
+
+                                       15000x10000
+--------------------------------------------------
+opacity slider tick                17.5 ms  [26.8]
+colour match tick                  18.7 ms  [34.5]
+filter slider tick                  8.8 ms  [15.8]
+pan (60 frames)                     5.5 ms  [13.0]
+wheel zoom (10)                      4.6 ms  [8.0]
+fit view                             0.0 ms  [0.1]
+redraw, nothing changed              0.0 ms  [0.0]
+pan at 1:1 (30 frames)               3.3 ms  [5.6]
+pan at 1:1, GPU stack                0.1 ms  [0.3]
+pan at fit, GPU stack                0.2 ms  [4.8]
+first frame fit -> 1:1, GPU          1.2 ms  [1.2]
+frame after a whole change, fit       19.8 ms  [19.8]
+  mips settled [longest block]       77.1 ms  [32.1]
+  chains built here [asked]      16.0 ms  [2360.0]
+  chains landed [handed]          2360.0 ms  [0.0]
+frame after a whole change, 1:1       22.0 ms  [22.0]
+  mips settled [longest block]       124.5 ms  [7.8]
+  chains built here [asked]      16.0 ms  [2344.0]
+  chains landed [handed]       2344.0 ms  [2344.0]
+  below stats redone [marches]                0  [0]
+  (relight: waited [in flight])      1240.4 ms  [0.0]
+192 px picture after a whole change, the old way     338.7 ms  [338.7]
+  chains built here [taken from the worker]      2360.0 ms  [0.0]
+  chains it left on the tiles, MB       221.0 ms  [0.0]
+192 px picture after a whole change, settled      11.7 ms  [110.2]
+  chains built here [taken from the worker]     98.0 ms  [2262.0]
+  chains it left on the tiles, MB        32.7 ms  [0.0]
+the same, lights overlay (relight)     372.6 ms  [372.6]
+  mips settled [longest block]       58.8 ms  [12.8]
+  chains built here [asked]    2376.0 ms  [2344.0]
+  below stats redone [marches]                1  [0]
+frame after a whole touch, fit         9.1 ms  [9.1]
+  (the level of fit, whole-change rows)         3.0 ms  [1.0]
+redraw with ants                    0.3 ms  [25.6]
+brush dab + frame                    0.7 ms  [5.6]
+stroke commit (undo copy)           5.3 ms  [65.9]
+undo step                           36.3 ms  [0.0]
+selection change                    21.2 ms  [0.0]
+getValue (autosave)                 0.1 ms  [49.9]
+selection bounds scan                2.5 ms  [2.5]
+full composite                  259.2 ms  [1797.9]
+
+operations, blocked [wall]  
+--------------------------------------------------
+grow +16                              75 ms  [495]
+shrink -16                            43 ms  [303]
+invert                               164 ms  [159]
+  its landings: re-runs [longest block until settled]            0  [17 ms]
+feather 8                             28 ms  [341]
+magic wand (whole-image band)        151 ms  [1997]
+magic wand (an object)               144 ms  [245]
+bucket fill                           75 ms  [171]
+fill selection (100 px)                35 ms  [34]
+undo of that fill                      34 ms  [34]
+clear selected pixels (100 px)           34 ms  [33]
+stroke across the picture (40 dabs)         138 ms  [136]
+its commit, band by band               32 ms  [32]
+PNG of the composite                 10 ms  [1312]
+the same without the worker         200 ms  [1198]
+film point add (look under it)         154 ms  [149]
+  the same, stack without filter/match           50 ms  [50]
+sample.mean_color, 1000 px sel.           90 ms  [89]
+  the same, stack without filter/match           14 ms  [14]
+bucket in a 1000 px selection         163 ms  [299]
+screenshot 1024 (MCP)                  21 ms  [21]
+  mirrors made MB                        0 MB  [0]
+prompt context, no selection           65 ms  [65]
+  mirrors made MB                        0 MB  [0]
+prompt context, 1000 px selection           94 ms  [93]
+  mirrors made MB                        0 MB  [0]
+object map input (1024 from levels)           72 ms  [72]
+  mirrors made MB                        0 MB  [0]
+  the same the old way (a flatten)       1758 ms  [1758]
+  mirrors made MB                     1733 MB  [0]
+cutout input (1024 from levels)           30 ms  [30]
+  the same the old way (toCanvas)         471 ms  [471]
+magic wand, a masked layer           181 ms  [481]
+  mirrors made MB [_masked]              0 MB  [0]
+eyedropper, Sample: the masked layer           13 ms  [12]
+  mirrors made MB [_masked]              0 MB  [0]
+magic wand, Sample: the masked layer           54 ms  [87]
+  mirrors made MB [_masked]              0 MB  [0]
+
+C6 (c2), tiles only         
+--------------------------------------------------
+pan at fit, masked filter layer        6.1 ms  [33.1]
+  mirrors made MB                             0 MB
+peek at fit, first frame           20.9 ms  [21.0]
+  mirrors made MB                             0 MB
+peek at 1:1, first frame           11.9 ms  [11.9]
+  mirrors made MB                             0 MB
+move drag at fit: first [worst of 5]         0.2 ms  [0.1]
+  mirrors made MB                             0 MB
+matched masked layer, fit: first [settled]        13.0 ms  [0.2]
+  mirrors made MB [_masked]                   0 MB
+the same at 1:1: first [settled]      107.2 ms  [34.7]
+  mirrors made MB [_masked]                   0 MB
+pan at 1:1 over it                  3.6 ms  [12.4]
+  mirrors made MB [_masked]                   0 MB
+eyedropper over it                 22.3 ms  [22.2]
+  mirrors made MB [_masked]                   0 MB
+magic wand over it               186.0 ms  [587.4]
+  mirrors made MB [_masked]                   0 MB
+
+relight, blocked [landed]   
+--------------------------------------------------
+one light moved: landed               58 ms  [746]
+  marches [slowest landed]             1  [732 ms]
+  stripes [workers]                        32  [8]
+  kernel ms [slowest job]           5529 ms  [195]
+  first stripe ms [later]            175 ms  [173]
+  others [built, asked]                  1  [0, 0]
+  efficiency [busy share]           0.785  [0.926]
+  stripes' kernel / one job's                 1.180
+  again, one job (stripes 0)         89 ms  [4705]
+    kernel ms [slowest job]        4687 ms  [4687]
+    others [built, asked]                0  [0, 0]
+  again, stripes                      54 ms  [692]
+    stripes [workers]                      32  [8]
+    kernel ms [slowest job]         5307 ms  [185]
+    first stripe ms [later]          177 ms  [161]
+    others [built, asked]                0  [0, 0]
+    efficiency [busy share]         0.847  [0.959]
+    stripes' kernel / one job's                 1.132
+  again, 64 stripes (K12b c)          72 ms  [704]
+    efficiency [busy share]         0.832  [0.916]
+  again, every stripe posted (feed 0)          87 ms  [718]
+    efficiency [busy share]         0.817  [0.928]
+three lights moved                  107 ms  [1425]
+  marches [slowest landed]            3  [1416 ms]
+  stripes [workers]                        96  [8]
+  kernel ms [slowest job]          11091 ms  [209]
+  first stripe ms [later]            172 ms  [160]
+  others [built, asked]                  0  [0, 0]
+  efficiency [busy share]           0.894  [0.973]
+  stripes' kernel / one job's                 1.088
+  again, one job a light             99 ms  [4960]
+    kernel ms [slowest job]       10199 ms  [4951]
+    others [built, asked]              249  [0, 0]
+  again, stripes                     52 ms  [1435]
+    stripes [workers]                      96  [8]
+    kernel ms [slowest job]        11289 ms  [210]
+    first stripe ms [later]          176 ms  [162]
+    others [built, asked]                0  [0, 0]
+    efficiency [busy share]         0.889  [0.984]
+    stripes' kernel / one job's                 1.107
+  again, 64 stripes (K12b c)         50 ms  [1388]
+    efficiency [busy share]         0.919  [0.984]
+  again, every stripe posted (feed 0)         82 ms  [1367]
+    efficiency [busy share]         0.933  [0.981]
+  moved, every stripe posted         80 ms  [1390]
+  moved, fed again                   41 ms  [1354]
+a drag step's quick map                 38 ms  [7]
+  marches [slowest landed]               1  [6 ms]
+  gaps [from the step, ms]          38@16 7@0 6@89
+  landings [from the step]                      13
+  again, one job (stripes 0)           33 ms  [38]
+    gaps [from the step, ms]       33@5 14@52 6@86
+  again, stripes                       50 ms  [10]
+    gaps [from the step, ms]       50@15 6@0 6@103
+pan at 1:1 during a march            3.6 ms  [7.0]
+  frames [shadows landed]             35  [732 ms]
+  block [chains built here]             75 ms  [0]
+the first march after start           - ms  [2632]
+  marches [slowest landed]            3  [2622 ms]
+whole change 1:1: frame [mips settled]       25.8 ms  [76.4]
+  block [built, asked, marching]    9 ms [16, 2344, 0]
+  during a 3-light march          26.3 ms  [295.9]
+  block [built, asked, marching]   42 ms [16, 2344, 3]
+  during a 3-light march, feed 0      31.5 ms  [237.1]
+  block [built, asked, marching]   22 ms [16, 2344, 3]
+  during a 3-light march, fed again      24.8 ms  [224.8]
+  block [built, asked, marching]    7 ms [16, 2344, 3]
+8 NORMAL jobs: wait [answer]             0 ms  [2]
+  during a 3-light march             127 ms  [128]
+  the same, one job a light              5 ms  [6]
+  the same, every stripe posted (feed 0)       1380 ms  [1381]
+8 NORMAL ~60 ms jobs: crc [job]      64 MB  [37.2 ms]
+  no march: wait first [last]             0 ms  [0]
+    answer first [last]              149 ms  [169]
+    one job's ms                          164.3 ms
+  during a 3-light march             137 ms  [222]
+    answer first [last]              222 ms  [310]
+    one job's ms                          131.3 ms
+  the same, one job a light            0 ms  [107]
+    answer first [last]              101 ms  [178]
+  the same, every stripe posted (feed 0)       1360 ms  [1381]
+    answer first [last]            1491 ms  [1523]
+a light made a sun: landed            39 ms  [485]
+  stripes [workers]                        32  [8]
+  kernel ms [slowest job]           3502 ms  [314]
+  first stripe ms [later]             295 ms  [61]
+  efficiency [busy share]           0.376  [0.902]
+  again, one job (stripes 0)         56 ms  [1478]
+    kernel ms [slowest job]        1460 ms  [1460]
+  again, stripes                      53 ms  [255]
+    kernel ms [slowest job]          1628 ms  [77]
+    first stripe ms [later]            30 ms  [61]
+    efficiency [busy share]         0.716  [0.798]
+    stripes' kernel / one job's                 1.114
+  again, 64 stripes (K12b c)          40 ms  [253]
+    efficiency [busy share]         0.721  [0.790]
+  again, every stripe posted (feed 0)          43 ms  [256]
+    efficiency [busy share]         0.712  [0.792]
+  again, fed after the unfed one          41 ms  [242]
+    efficiency [busy share]         0.754  [0.807]
+a light moved, no redraw              60 ms  [706]
+  kernel ms [slowest job]           5223 ms  [179]
+  first stripe ms [later]            164 ms  [164]
+  efficiency [busy share]           0.812  [0.925]
+  stripes' kernel / one job's                 1.139
+  one job (stripes 0)                55 ms  [4602]
+a light moved, released               49 ms  [710]
+  kernel ms [slowest job]           5299 ms  [194]
+  first stripe ms [later]            173 ms  [165]
+  efficiency [busy share]           0.828  [0.933]
+  stripes' kernel / one job's                 1.126
+  one job (stripes 0)                64 ms  [4712]
+15000x10000                 relight_one: its jobs ran rust
+15000x10000                 relight_one_job: its jobs ran rust
+15000x10000                 relight_one_rep: its jobs ran rust
+15000x10000                 relight_one_s64: its jobs ran rust
+15000x10000                 relight_one_nofeed: its jobs ran rust
+15000x10000                 relight_three: its jobs ran rust
+15000x10000                 relight_three_job: its jobs ran rust
+15000x10000                 relight_three_rep: its jobs ran rust
+15000x10000                 relight_three_s64: its jobs ran rust
+15000x10000                 relight_three_nofeed: its jobs ran rust
+15000x10000                 relight_three_mv_nofeed: its jobs ran rust
+15000x10000                 relight_three_mv_feed: its jobs ran rust
+15000x10000                 relight_quick: its jobs ran rust
+15000x10000                 relight_quick_job: its jobs ran rust
+15000x10000                 relight_quick_rep: its jobs ran rust
+15000x10000                 relight_sun: its jobs ran rust
+15000x10000                 relight_sun_job: its jobs ran rust
+15000x10000                 relight_sun_rep: its jobs ran rust
+15000x10000                 relight_sun_s64: its jobs ran rust
+15000x10000                 relight_sun_nofeed: its jobs ran rust
+15000x10000                 relight_sun_feed2: its jobs ran rust
+15000x10000                 relight_nodraw: its jobs ran rust
+15000x10000                 relight_nodraw_job: its jobs ran rust
+15000x10000                 relight_draw: its jobs ran rust
+15000x10000                 relight_draw_job: its jobs ran rust
+
+15000x10000                 view 1820x1198, filter relight, undo 4.5 MB, compositor 94.8 MB in 82 atlas pages (18874 slots) + 0 MB of source textures; tile display: 2 mirrors 1144.4 MB, 15 region canvases 196.2 MB, pyramids 0 MB
+15000x10000                 focus at start [True, 'visible'], at the end [True, 'visible']

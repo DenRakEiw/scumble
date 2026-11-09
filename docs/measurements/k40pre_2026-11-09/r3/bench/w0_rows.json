@@ -1,0 +1,157 @@
+{
+ "edgefit_2048": {
+  "visibility": "visible",
+  "focus": true,
+  "fit": {
+   "median": 57.54,
+   "max": 102.56,
+   "n": 3
+  },
+  "fit_laps": {
+   "shrink": 21.34,
+   "ring": 5.56,
+   "fit": 34.07
+  },
+  "aligned": {
+   "aligned": true,
+   "scale": [
+    1,
+    1
+   ],
+   "shift": [
+    -3,
+    -2
+   ]
+  },
+  "warp": {
+   "median": 61.96,
+   "max": 81.65,
+   "n": 3
+  },
+  "coverage": {
+   "median": 7.31,
+   "max": 10,
+   "n": 3
+  },
+  "pxCalls": {
+   "edgefit_shrink": 6,
+   "warp_coverage": 3,
+   "warp_rgba": 3
+  },
+  "split": {
+   "shrink": 21.34,
+   "ring": 5.56,
+   "fitEdges": 34.07,
+   "warp": 61.96,
+   "coverage": 7.31
+  }
+ },
+ "stitch_masks_2048": {
+  "visibility": "visible",
+  "focus": true,
+  "gauss": {
+   "median": 34.38,
+   "max": 46.98,
+   "n": 3
+  },
+  "dilate": {
+   "median": 36.26,
+   "max": 55.65,
+   "n": 3
+  },
+  "max_clamp": {
+   "median": 6.38,
+   "max": 6.59,
+   "n": 3
+  },
+  "mk": {
+   "median": 5,
+   "max": 5.02,
+   "n": 3
+  },
+  "pxCalls": {
+   "box_blurs": 3,
+   "dilate_mask": 3,
+   "mask_max_clamp": 3
+  },
+  "note": "gaussBlur, dilate and max_clamp run through kernels.js (box_blurs, dilate_mask, mask_max_clamp); gauss and dilate include mk (also timed)"
+ },
+ "crc32_64mb": {
+  "visibility": "visible",
+  "focus": true,
+  "crc": {
+   "median": 23.42,
+   "max": 28.01,
+   "n": 3
+  },
+  "msPerMB": 0.366,
+  "js": {
+   "median": 109.19,
+   "max": 110.5,
+   "n": 3
+  },
+  "jsMsPerMB": 1.706,
+  "speedup": 4.66
+ },
+ "dabs_256": {
+  "visibility": "visible",
+  "focus": true,
+  "blur": {
+   "median": 10.28,
+   "max": 15.62,
+   "n": 20
+  },
+  "sharpen": {
+   "median": 10.69,
+   "max": 11.98,
+   "n": 20
+  },
+  "tone": {
+   "median": 0.31,
+   "max": 1.19,
+   "n": 20
+  },
+  "sponge": {
+   "median": 1.31,
+   "max": 3.11,
+   "n": 20
+  }
+ },
+ "match_loop_4096": {
+  "visibility": "visible",
+  "focus": true,
+  "loop": {
+   "median": 198.99,
+   "max": 214.39,
+   "n": 3
+  },
+  "note": "matchCanvas's CPU loop body, copied (the function itself takes the shader path first); 16.8 MP"
+ },
+ "histogram_depth": {
+  "visibility": "visible",
+  "focus": true,
+  "hist": {
+   "median": 0,
+   "max": 12.91,
+   "n": 5
+  }
+ },
+ "freqsep_15k": {
+  "visibility": "visible",
+  "focus": true,
+  "load_jpg": 1582,
+  "size": [
+   15000,
+   10000
+  ],
+  "png_export": 1458,
+  "png_open": 1246,
+  "freqsep_16mp": 849,
+  "freqsep_result": [
+   "low",
+   "high",
+   "radius",
+   "box"
+  ]
+ }
+}

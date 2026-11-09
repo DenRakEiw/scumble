@@ -1,0 +1,17 @@
+[ok] write_the_png_from_tiles: {"size": [30000, 20000], "MP": 600, "fillMs": 6477, "encodeMs": 5577, "encodeBlocked": 263, "MB": 1101.3, "arena": {"slots": 9322, "chunks": 37, "allocated": 9322, "freed": 0, "droppedChunks": 0, "refused": 0, "failed": 0, "enabled": true, "bytes": 2483027968, "freeSlots": 150}}
+[ok] open_through_the_stream_reader: {"ms": 3641, "blocked": 496, "tiles": 9322, "status": "30000 \u00d7 20000"}
+[ok] the_screen_pan_zoom_and_a_stroke: {"pan_fit": [0.3, 6.8], "pan_1to1": [0.1, 1.3], "zoom": [0.1, 1.7], "stroke_frame": [2.9, 65.7], "stroke_release": 11.3, "layer_tiles": 6}
+[ok] undo_and_redo_of_the_stroke: {"undoMs": 2, "redoMs": 1, "blocked": [2, 1]}
+[ok] selection_grow_and_invert: {"grow": [73, 65], "invert": [696, 696], "invertBack": [318, 318], "selTiles": 25}
+[ok] a_provider_run_on_the_selection: {"ms": 466, "blocked": 466, "bbox": [14254, 9254, 1492, 1492], "emitted": [1024, 1024], "window": [14488, 9488, 1024, 1024]}
+[ok] export_png_and_read_it_back: {"ms": 3816, "blocked": 249, "MB": 1101.3, "status": "Saved memory:inpaint_canvas.png (30000 \u00d7 20000, 1101.3 MB, recipe embedded, 3815 ms)."}
+[ok] export_psd: {"ms": 4544, "blocked": 416, "MB": 3718.6, "status": "Saved memory:inpaint_canvas.psd (30000 \u00d7 20000, 3718.6 MB, 2 layers, 4543 ms)."}
+[ok] a_matched_layer_a_film_look_and_what_is_refused: {"plan": {"reach": 1085, "rows": 2048, "inexact": true}, "png": {"ms": 144440, "blocked": 16638, "MB": 1195.2}, "jpg": "Save failed: this 30000 \u00d7 20000 document is larger than any canvas (268 MP): it is written as PNG, PSD or ORA at its full size, and read in boxes", "extend": "The extended picture would be 30,064 \u00d7 20,000 px, more than one canvas holds (65,535 px a side, 268 megapixels)."}
+[ok] the_state_for_the_autosave: {"ms": 2, "blocked": 2, "layers": 1, "selection": "data:image/png;base64,iVBORw0KGgoAAAANSU", "bytes": 10139}
+[ok] a_restore_from_the_state: {"ms": 5315, "blocked": 192}
+[ok] close: {"closed": 2, "arena": {"slots": 28139, "chunks": 110, "allocated": 37461, "freed": 9322, "droppedChunks": 36, "refused": 0, "failed": 0, "enabled": true, "bytes": 7381975040, "freeSlots": 21}}
+  console error: Error: this 30000 × 20000 document is larger than any canvas (268 MP): it is written as PNG, PSD or ORA at its full size, and read in boxes
+    at InpaintEditor.flattenToCanvas (scumble://app/editor/inpaint_canvas.js:23115:30)
+    at Object.exportCanvas (scumble://app/editor/host.js:1016:29)
+    at 
+PASS
