@@ -1,0 +1,44 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 11 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir <mut_tree>\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 279003 bytes, sha256 aeb476777e971bbd
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir <mut_tree>\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 225584 bytes, sha256 920cb56151a5a0fc
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (<mut_tree>\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.33s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (<mut_tree>\crates\px)
+    Finished `release` profile [optimized] target(s) in 4.24s
+$ node tools/px_test.js  (rc 0, 247 s)
+PASS
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
+PASS
+(node:47656) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/k39_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\<mut_tree>\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance
+$ node tools/px_test.js  (rc 0, 2 s, PX_ONLY=route)
+PASS (only: route; PX_ONLY, not the full test)
+ok   js flood_shape (outKind = 1) gives the same at an odd offset
+ok   js floodScan (floodMask's loop) equals js flood (72 cases, also at tol 400 and -5: unclamped against clamped)
+ok   kernels.js floodShape under the flood route (outKind 4 and 1): "rust" and a size at or below the picture's run Rust, "js" and a size above it the twin; the same shape and cells, use called once (120 runs)
+ok   inpaint_raster.js floodMask under the flood route: the Rust flood at or above the route's size and for "rust", floodScan below it and for "js"; the same mask (60 runs)
+ok   K39 inpaint_raster.js growMaskBounds under the growMask route: "rust" and default run grow_mask, "js" runs growMask + maskBounds, setKernels("js") runs pure JS; identical pixels, bounds and cells on non-zero byteOffset subarrays (16 runs)
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: route; PX_ONLY, not the full test)
+(node:50408) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/k39_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\<mut_tree>\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-ed0-on --offline --tiles on editor  (rc 0, 29 s, SCUMBLE_EDITOR_ONLY=grow_selection_fallback_routes_through_grow_mask_bounds)
+editor rc=0 5s PASS (only: grow_selection_fallback_routes_through_grow_mask_bounds; SCUMBLE_EDITOR_ONLY, not the full gate)
+ALL PASS

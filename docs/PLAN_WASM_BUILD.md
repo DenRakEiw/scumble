@@ -1907,6 +1907,10 @@ Every recommendation taken (the user: "alles so wie deine empfehlung").
   - Gates (`k38-fix-tiles`, `k38-fix-canvas`): `lint types pixels composite editor` **ALL PASS** on both backends.
 ```
 
+### K39 (2026-11-09): the grow fallback routed (§4.3, the Antigravity F chain)
+
+`79ca38d2` on `8555262c`, ABI 42 unchanged (`grow_mask` is K9's export); `docs/measurements/k39_2026-11-09/`. When `selectionInWorker("grow", ...)` returns `null`, `growSelectionNow` (`renderer/editor/inpaint_canvas.js`) calls `growMaskBounds` instead of `growMask` and hands the bounds to `markSelectionChanged`, so `renderInfo` skips its full-canvas rescan (rescans 1 -> 0). `growMaskBounds` (`inpaint_raster.js`) asks `rustPx("growMask")`, new in `ROUTE_KINDS` (kernel, default Rust), and releases a large window instance in `finally`. Bytes identical. Window fallback `ed.growSelection(20)`, three alternating rounds: 76.7 -> 42.5 ms at 2,000 x 2,000 (JS route 66.5), 413.1 -> 319.8 ms at 7,500 x 5,000 (JS route 422.1), the window's wasm memory after it 101.69 -> 2.13 MiB there; at 2,000 x 2,000 no release applies and the memory rises 12.13 -> 27.44 MiB. `w0_bench.py --rows=grow_fallback_15k`: `growMask` / `growMaskBounds` 336 / 169 ms at 37.5 MP, 444 / 346 at 75 MP, 878 / 715 at 150 MP (the before run; the after run agrees within its spread). Mutation 6 of 6 killed. The merged state's gates: `lint types pixels selection` on both backends, `px_test` under Node and Electron; `editor` red once side by side on two known flakes (`helper_inputs_read_levels_and_upload_nothing` on tiles, `closed_tabs_are_collected` on canvas), then green in sequence on canvas (`merge-k39-rerun-canvas`), on tiles after one more timeout of the 420 s limit (`live_stroke_reaches_the_screen_before_the_release` took 344 s, `docs/TESTING.md`; `merge-k39-rerun2-tiles` PASS).
+
 ### K8 (2026-11-09)
 
 The parted PNG reader in the app on route N (`DecompressionStream("deflate-raw")` per part + `px` `png_part_decode` /
