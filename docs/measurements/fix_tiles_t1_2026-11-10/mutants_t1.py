@@ -62,8 +62,8 @@ MUTANTS = [
         "                    all.push({ entry, page });",
     )], "killed: deletes earlier layers' pages from the current frame and corrupts composite pixels", COMP_TILES),
     ("t1_evict_reverse_lru", IC, [(
-        "        all.sort((a, b) => a.page.used - b.page.used);",
-        "        all.sort((a, b) => b.page.used - a.page.used);",
+        "        if (this.atlasBytes < this.atlasBudget) return;\n        all.sort((a, b) => a.page.used - b.page.used);",
+        "        if (this.atlasBytes < this.atlasBudget) return;\n        all.sort((a, b) => b.page.used - a.page.used);",
     )], "killed: evicts newer level-2 pages ahead of older level-3 pages", COMP_TILES),
     ("t1_evict_le_boundary", IC, [(
         "        if (this.atlasBytes < this.atlasBudget) return;\n        all.sort((a, b) => a.page.used - b.page.used);\n        for (const it of all) {\n            if (this.atlasBytes < this.atlasBudget) break;",

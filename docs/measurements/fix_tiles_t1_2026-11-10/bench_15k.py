@@ -25,6 +25,7 @@ import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import cdp  # noqa: E402
 from cdp import session  # noqa: E402
 
 JS_BENCH = r"""
@@ -142,8 +143,8 @@ def electron_bin(repo):
 
 async def run_once(port):
     async def body(c):
-        await c.send("Page.bringToFront")
-        await c.send("Emulation.setFocusEmulationEnabled", {"enabled": True})
+        await c.call("Page.bringToFront")
+        await c.call("Emulation.setFocusEmulationEnabled", enabled=True)
         await asyncio.sleep(0.3)
         return await c.eval(JS_BENCH, timeout=300)
     return await session(body)
@@ -179,6 +180,7 @@ def one_instance_run(repo, port):
             raise RuntimeError(f"DevTools on port {port} did not come up within 60s")
         time.sleep(6.0)
         os.environ["SCUMBLE_CDP_PORT"] = str(port)
+        cdp.PORT = int(port)
         return asyncio.run(run_once(port))
     finally:
         subprocess.run([sys.executable, os.path.join(repo, "tools", "close_app.py")],
