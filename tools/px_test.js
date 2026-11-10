@@ -12334,6 +12334,260 @@ async function tiffCases(js, simd, scalar, K, T) {
             check("inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules",
                 tiledPredOk && rgbaRuleOk && extraBandChecksOk,
                 tiledPredDetail || `exact=${pExact.streamed}/${pExact.bandRows} over=${pOver.streamed}/${pOver.bandRows} hi=${pHiExact.streamed}/${pHiOver.streamed} zCancel=${zCancelOk} rawSlice=${maxRawSlice} lzwBig=${pLzwBig.streamed} extra=${extraBandChecksOk}`);
+
+            // 4f. K18: tiffBandJob worker handler, readTiffBands on WorkerPool, NORMAL ahead of EXPORT, and group cancellation
+            const Wk = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_worker.js")).href);
+            const { WorkerPool, NORMAL: POOL_NORMAL, EXPORT: POOL_EXPORT } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_pool.js")).href);
+            const kw = 13, kh = 18;
+            const kStrips = [];
+            const kWant = new Uint8Array(kw * kh * 4);
+            for (let y = 0; y < kh; y++) {
+                const rawRow = new Uint8Array(kw * 3);
+                for (let x = 0; x < kw; x++) {
+                    const r0 = (x * 17 + y * 31 + 5) & 255, g0 = (x * 41 + y * 13 + 9) & 255, b0 = (x * 7 + y * 53 + 21) & 255;
+                    rawRow[x * 3] = x === 0 ? r0 : (r0 - kWant[(y * kw + x - 1) * 4]) & 255;
+                    rawRow[x * 3 + 1] = x === 0 ? g0 : (g0 - kWant[(y * kw + x - 1) * 4 + 1]) & 255;
+                    rawRow[x * 3 + 2] = x === 0 ? b0 : (b0 - kWant[(y * kw + x - 1) * 4 + 2]) & 255;
+                    const o = (y * kw + x) * 4;
+                    kWant[o] = r0; kWant[o + 1] = g0; kWant[o + 2] = b0; kWant[o + 3] = 255;
+                }
+                kStrips.push(lzwEncodeTiff(rawRow));
+            }
+            const kBytes = mkTiff([
+                [256, 4, [kw]], [257, 4, [kh]], [258, 3, [8, 8, 8]], [259, 3, [5]],
+                [262, 3, [2]], [277, 3, [3]], [278, 4, [1]], [284, 3, [1]], [317, 3, [2]],
+            ], kStrips);
+            const kBlob = new Blob([kBytes]);
+            const kPlan = await js.tiffPlan(kBlob, { rowsPerBand: 3 }); // 6 bands of 3 rows
+            const kPalBytes = mkTiff([
+                [256, 4, [4]], [257, 4, [2]], [258, 3, [8]], [259, 3, [1]],
+                [262, 3, [3]], [277, 3, [1]], [278, 4, [1]], [320, 3, new Array(768).fill(0)],
+            ], [new Uint8Array(4), new Uint8Array(4)]);
+            const kPalPlan = await js.tiffPlan(new Blob([kPalBytes]), { rowsPerBand: 1 });
+
+            // Direct tiffBandJob on Rust vs JS routes + releaseIfLarge + bad args refusal
+            K.setKernels("rust");
+            const pBeforeRelease = K.rustPx();
+            K.setRoute("releaseMB", 1);
+            K.pxCalls(true);
+            let jbRust, pAfterRelease;
+            try {
+                jbRust = await Wk.tiffBandJob({ blob: kBlob, spec: kPlan.spec, band: kPlan.bands[1] });
+                pAfterRelease = K.rustPx();
+            } finally {
+                K.setRoute("releaseMB", null);
+            }
+            const callsRust = K.pxCalls(true);
+            let jbJs;
+            K.setRoute("tiffUnpack", "js");
+            K.setRoute("tiffUnpredict", "js");
+            K.setRoute("tiffToRgba", "js");
+            try {
+                K.pxCalls(true);
+                jbJs = await Wk.tiffBandJob({ blob: kBlob, spec: kPlan.spec, band: kPlan.bands[1] });
+            } finally {
+                K.setRoute("tiffUnpack", null);
+                K.setRoute("tiffUnpredict", null);
+                K.setRoute("tiffToRgba", null);
+            }
+            const callsJs = K.pxCalls(true);
+            let badJobErr = null;
+            try { await Wk.tiffBandJob({ blob: kBlob, spec: null, band: null }); } catch (e) { badJobErr = e; }
+
+            // Real WorkerPool test:
+            // (a) Busy 2-worker pool + 4 queued EXPORT jobs -> readTiffBands at NORMAL runs all 6 tiff_band jobs BEFORE queued EXPORT jobs
+            const execOrder = [];
+            const gateHolders = [];
+            const seenBandMsgs = [];
+            let pool1InFlight = 0, pool1PeakInFlight = 0;
+            const pool1 = new WorkerPool({
+                size: 2,
+                create: () => {
+                    const wk = { onmessage: null, onerror: null, terminate() {} };
+                    wk.postMessage = (msg) => {
+                        if (msg.op === "hold") {
+                            gateHolders.push(() => wk.onmessage({ data: { id: msg.id, ok: true } }));
+                            return;
+                        }
+                        execOrder.push(msg.op);
+                        if (msg.op === "tiff_band") {
+                            seenBandMsgs.push(msg);
+                            pool1InFlight++;
+                            if (pool1InFlight > pool1PeakInFlight) pool1PeakInFlight = pool1InFlight;
+                        }
+                        setTimeout(async () => {
+                            try {
+                                if (msg.op === "tiff_band") {
+                                    const res = await Wk.tiffBandJob(msg);
+                                    pool1InFlight--;
+                                    wk.onmessage({ data: { id: msg.id, ok: true, ...res } });
+                                } else {
+                                    wk.onmessage({ data: { id: msg.id, ok: true } });
+                                }
+                            } catch (err) {
+                                if (msg.op === "tiff_band") pool1InFlight--;
+                                wk.onmessage({ data: { id: msg.id, ok: false, error: String((err && err.message) || err) } });
+                            }
+                        }, 1);
+                    };
+                    return wk;
+                },
+            });
+            const origPool1Run = pool1.run.bind(pool1);
+            let maxPostedInFlight = 0, curPostedInFlight = 0;
+            pool1.run = (op, args, transfer, opts) => {
+                if (op === "tiff_band") {
+                    curPostedInFlight++;
+                    if (curPostedInFlight > maxPostedInFlight) maxPostedInFlight = curPostedInFlight;
+                    return origPool1Run(op, args, transfer, opts).finally(() => { curPostedInFlight--; });
+                }
+                return origPool1Run(op, args, transfer, opts);
+            };
+            const h0 = pool1.run("hold", {}, [], { priority: POOL_EXPORT });
+            const h1 = pool1.run("hold", {}, [], { priority: POOL_EXPORT });
+            const expPromises = [0, 1, 2, 3].map((i) => pool1.run("export_dummy", { i }, [], { priority: POOL_EXPORT }));
+            const poolGot = new Uint8Array(kw * kh * 4);
+            const bandOpenP = js.readTiffBands(kBlob, {
+                pool: pool1,
+                rowsPerBand: 3,
+                priority: POOL_NORMAL,
+                onRows: (rgba, y0) => { poolGot.set(rgba, y0 * kw * 4); },
+            });
+            // Let tiffPlan finish and queue the initial tiff_band window while workers are held
+            for (let spin = 0; spin < 20 && pool1.queues[POOL_NORMAL].length === 0; spin++) await new Promise((r) => setTimeout(r, 1));
+            for (const release of gateHolders) release();
+            await Promise.all([h0, h1, bandOpenP, ...expPromises]);
+            pool1.terminate();
+            const firstExportIdx = execOrder.indexOf("export_dummy");
+            const lastBandIdx = execOrder.lastIndexOf("tiff_band");
+            const priorityOrderOk = execOrder.filter((x) => x === "tiff_band").length === 6
+                && firstExportIdx === 6 && lastBandIdx === 5
+                && maxPostedInFlight === 4
+                && !("colormap" in kPalPlan.spec) && kPalPlan.spec.pal instanceof Uint8Array
+                && seenBandMsgs.length === 6
+                && seenBandMsgs.every((m) => m.spec && !("offsets" in m.spec) && !("bands" in m.spec) && !("colormap" in m.spec) && m.band.offsets.length === 3);
+
+            // (b) Band error on a 2-worker WorkerPool cancels queued & running group jobs immediately
+            let startedBands = 0;
+            const pool2 = new WorkerPool({
+                size: 2,
+                create: () => {
+                    const wk = { onmessage: null, onerror: null, terminate() {} };
+                    wk.postMessage = (msg) => {
+                        startedBands++;
+                        setTimeout(async () => {
+                            if (msg.band && msg.band.index === 1) {
+                                wk.onmessage({ data: { id: msg.id, ok: false, error: "band 1 decode error" } });
+                                return;
+                            }
+                            const res = await Wk.tiffBandJob(msg);
+                            wk.onmessage({ data: { id: msg.id, ok: true, ...res } });
+                        }, msg.band && msg.band.index === 1 ? 1 : 15);
+                    };
+                    return wk;
+                },
+            });
+            let pool2Err = null;
+            try {
+                await js.readTiffBands(kBlob, { pool: pool2, rowsPerBand: 3, priority: POOL_NORMAL, onRows: () => {} });
+            } catch (e) { pool2Err = e; }
+            const pool2Stats = pool2.stats();
+            pool2.terminate();
+
+            // (c) later() cancellation on WorkerPool:
+            //     c1: later() flips BEFORE band 0 reply arrives -> 0 onRows calls, reply buffer detached, group cancelled
+            //     c2: 2-band file (all bands within maxInFlight, next === n) where later() flips INSIDE band 0 onRows ->
+            //         finishBand's later() check cancels held band 1 immediately without waiting for band 1 to finish
+            let stalePre = false, preRows = 0, preBufRef = null;
+            const pool3a = new WorkerPool({
+                size: 2,
+                create: () => {
+                    const wk = { onmessage: null, onerror: null, terminate() {} };
+                    wk.postMessage = (msg) => {
+                        setTimeout(async () => {
+                            if (msg.band && msg.band.index === 0) stalePre = true;
+                            const res = await Wk.tiffBandJob(msg);
+                            if (msg.band && msg.band.index === 0) preBufRef = res.rgba;
+                            wk.onmessage({ data: { id: msg.id, ok: true, ...res } });
+                        }, msg.band && msg.band.index === 0 ? 2 : 25);
+                    };
+                    return wk;
+                },
+            });
+            let pool3aErr = null;
+            try {
+                await js.readTiffBands(kBlob, {
+                    pool: pool3a,
+                    rowsPerBand: 9, // 2 bands of 9 rows
+                    priority: POOL_NORMAL,
+                    later: () => stalePre,
+                    onRows: () => { preRows++; },
+                });
+            } catch (e) { pool3aErr = e; }
+            const pool3aStats = pool3a.stats();
+            pool3a.terminate();
+
+            let staleNow = false, rowsSeenBeforeStale = 0;
+            const pool3 = new WorkerPool({
+                size: 2,
+                create: () => {
+                    const wk = { onmessage: null, onerror: null, terminate() {} };
+                    wk.postMessage = (msg) => {
+                        if (msg.band && msg.band.index === 1) {
+                            // Band 1 never replies on its own; finishBand's later() check after band 0 onRows must cancel it!
+                            return;
+                        }
+                        setTimeout(async () => {
+                            const res = await Wk.tiffBandJob(msg);
+                            wk.onmessage({ data: { id: msg.id, ok: true, ...res } });
+                        }, 1);
+                    };
+                    return wk;
+                },
+            });
+            let pool3Err = null;
+            try {
+                const raceRes = await Promise.race([
+                    js.readTiffBands(kBlob, {
+                        pool: pool3,
+                        rowsPerBand: 9, // 2 bands (next === n === 2 after initial launch!)
+                        priority: POOL_NORMAL,
+                        later: () => staleNow,
+                        onRows: () => { rowsSeenBeforeStale++; staleNow = true; },
+                    }),
+                    new Promise((r) => setTimeout(() => r("HUNG"), 80)),
+                ]);
+                if (raceRes === "HUNG") pool3Err = new Error("HUNG");
+            } catch (e) { pool3Err = e; }
+            const pool3Stats = pool3.stats();
+            pool3.terminate();
+            let streamedPosts = 0;
+            const streamedNull = await js.readTiffBands(kBlob, {
+                pool: { size: 2, run() { streamedPosts++; return Promise.reject(new Error("unexpected")); } },
+                plan: await js.tiffPlan(kBlob, { streamed: true }),
+            });
+
+            const wantBand1 = kWant.subarray(3 * kw * 4, 6 * kw * 4);
+            const jbOk = jbRust.y0 === 3 && jbRust.rows === 3
+                && pBeforeRelease && pAfterRelease && pBeforeRelease !== pAfterRelease
+                && jbRust.rgba instanceof ArrayBuffer && jbRust.rgba.byteLength === wantBand1.byteLength
+                && Array.isArray(jbRust.transfer) && jbRust.transfer.length === 1 && jbRust.transfer[0] === jbRust.rgba
+                && jbRust.timing && jbRust.timing.op === "tiff_band" && jbRust.timing.kernels === "rust"
+                && callsRust.tiff_unpack === 3 && callsRust.tiff_unpredict === 1 && callsRust.tiff_to_rgba === 1
+                && Object.keys(callsJs).length === 0
+                && eqBytes(new Uint8Array(jbRust.rgba), wantBand1)
+                && eqBytes(new Uint8Array(jbJs.rgba), wantBand1)
+                && !!badJobErr && /invalid spec or band/i.test(badJobErr.message)
+                && eqBytes(poolGot, kWant) && priorityOrderOk
+                && !!pool2Err && /band 1 decode error/.test(pool2Err.message)
+                && pool2Stats.cancelled >= 3 && startedBands <= 3
+                && !!pool3aErr && pool3aErr.cancelled === true && preRows === 0 && preBufRef && preBufRef.byteLength === 0 && pool3aStats.cancelled >= 1
+                && !!pool3Err && pool3Err.cancelled === true && rowsSeenBeforeStale === 1 && pool3Stats.cancelled === 1
+                && streamedNull === null && streamedPosts === 0;
+
+            check("inpaint_worker.js tiffBandJob & readTiffBands (K18): rust vs js routes, NORMAL ahead of queued EXPORT jobs, and WorkerPool group cancel on band error",
+                jbOk,
+                `order=${execOrder.join(",")} cancelled=${pool2Stats.cancelled} started=${startedBands} rustCalls=${JSON.stringify(callsRust)}`);
         }
     }
 

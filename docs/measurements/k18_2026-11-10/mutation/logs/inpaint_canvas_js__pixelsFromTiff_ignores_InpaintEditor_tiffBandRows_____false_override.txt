@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__pixelsFromTiff_ignores_InpaintE-tiff --offline --tiles on tiff  (rc 1, 71 s)
+tiff rc=1 41s FAIL
+SOME FAILED
