@@ -77,7 +77,14 @@ const LAYER_COUNT_DEFAULT = 16;
 // an answer of many layers as base64 would pass what one string of JSON may hold in V8 (about 512 MB): above this many
 // layers the service is asked for URLs (they live 24 hours and need no key), and they come one after another
 const LAYER_URLS_ABOVE = 32;
-const LAYER_DOWNLOAD_TRIES = 2;
+// a finished job's pictures: the base carries the frame every box is in, so it gets more tries; a layer that stays
+// away is left out and named, the rest land (the job is charged whatever a download does)
+const LAYER_BASE_TRIES = 5;
+const LAYER_PIECE_TRIES = 3;
+// one synchronous request makes up to 101 pictures: undici's own 300 s for the answer's headers must not end it first
+const LAYER_POST_TIMEOUT_MS = 900000;
+const LAYER_POST_GRACE_MS = 30000;
+const MAX_TIMER_MS = 2147483647;
 const RETRY_WAIT_MS = 5000;
 const RETRY_WAIT_MAX_MS = 60000;
 // codes a second request can outlast (nothing was generated, and only generated images are billed)
@@ -340,9 +347,9 @@ function bodyFor(req, o, pics) {
     return body;
 }
 
-async function post(ctx, url, body) {
+async function post(ctx, url, body, extra = {}) {
     const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" };
-    const send = () => ctx.fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    const send = () => ctx.fetch(url, { method: "POST", headers, body: JSON.stringify(body), ...extra });
     let r = await send();
     // a per-minute rate limit or an overloaded service means nothing was generated, and only generated images are
     // billed, so one retry is safe, never before the time the server set; a network error is never retried (an
@@ -469,37 +476,53 @@ function layersBody(req, ask, pic, spec) {
     return body;
 }
 
-/** The entries of an answer in stacking order, the base first: the base is the one without a bounding box. */
+/**
+ * The entries of an answer in stacking order, the base first. The base is the row without a bounding box (the 5.0 pro
+ * schema), else the row of z_index 0, else data[0]: an answer of a job already charged is not thrown away over the shape
+ * of a model known only from preview docs.
+ */
 function orderLayers(data) {
-    const z = (d, i) => (Number.isFinite(+d.z_index) && d.z_index !== null && d.z_index !== "" ? +d.z_index : i);
-    const rows = data.map((d, i) => ({ d, i, z: z(d, i) })).sort((a, b) => a.z - b.z || a.i - b.i);
-    const at = rows.findIndex((x) => !x.d.bounding_box);
-    if (at < 0) return null;
+    const hasZ = (d) => d.z_index !== null && d.z_index !== undefined && d.z_index !== "" && Number.isFinite(+d.z_index);
+    const rows = data.map((d, i) => ({ d, i, z: hasZ(d) ? +d.z_index : i })).sort((a, b) => a.z - b.z || a.i - b.i);
+    let at = rows.findIndex((x) => !x.d.bounding_box);
+    if (at < 0) at = rows.findIndex((x) => hasZ(x.d) && +x.d.z_index === 0);
+    if (at < 0) at = rows.findIndex((x) => x.i === 0);
     return [rows[at], ...rows.slice(0, at), ...rows.slice(at + 1)];
 }
 
-/** One entry's picture: its bytes, as inlined or downloaded from its URL (which needs no key), tried twice. */
-async function layerBytes(item, ctx) {
+/** The POST's own limits for a split: the run's deadline in place of undici's 300 s (the Comfy SDK's way, a delegate of the global dispatcher). */
+function layerPostInit(timeoutMs) {
+    if (typeof globalThis.fetch !== "function") return {};   // reading `fetch` is what installs the symbol below
+    const inner = Reflect.get(globalThis, Symbol.for("undici.globalDispatcher.1"));
+    if (!inner || typeof inner.dispatch !== "function") return {};
+    const ms = Math.min(MAX_TIMER_MS, (+timeoutMs > 0 ? +timeoutMs : LAYER_POST_TIMEOUT_MS) + LAYER_POST_GRACE_MS);
+    return { dispatcher: { headersTimeout: ms, bodyTimeout: ms, dispatch: (options, handler) => inner.dispatch({ ...options, headersTimeout: ms, bodyTimeout: ms }, handler) } };
+}
+
+/** One entry's picture: its bytes, as inlined or downloaded from its URL (which needs no key), `tries` times with growing waits. */
+async function layerBytes(item, ctx, tries) {
     if (item.b64_json) {
         const bytes = Buffer.from(item.b64_json, "base64");
         return { bytes, mime: bytes[0] === 0xff && bytes[1] === 0xd8 ? "image/jpeg" : "image/png" };
     }
-    for (let tries = 1; ; tries++) {
+    for (let attempt = 1; ; attempt++) {
         try { return await fetchImage(item.url, ctx.fetch); }
         catch (err) {
-            if (tries >= LAYER_DOWNLOAD_TRIES || (ctx.signal && ctx.signal.aborted)) throw err;
+            if (attempt >= tries || (ctx.signal && ctx.signal.aborted)) throw err;
             ctx.log(`a layer's download failed (${err && err.message}), once more`);
-            await ctx.sleep(RETRY_WAIT_MS);
+            await ctx.sleep(RETRY_WAIT_MS * 2 ** (attempt - 1));
         }
     }
 }
 
 /**
  * Split one picture into layers (req.image; no references, no mask). -> { bytes (the base's), mime, layers: [{ bytes,
- * mime, z_index, base, bounding_box, name, description, size }] (the base first, then bottom to top), info }. An answer
- * is every layer or an error (the service's own rule).
+ * mime, z_index, base, bounding_box, name, description, size }] (the base first, then bottom to top), missing: the names
+ * of the layers whose download failed, info }. The service generates every layer or none; a link that stays away after
+ * the job is charged costs that layer, not the answer. `req.timeoutMs`: the run's deadline.
  */
 async function layers(req, ctx) {
+    const caller = ctx;   // the job's state is read on the object providers/index.js holds
     ctx = { ...ctx, sleep: ctx.sleep || realSleep, log: ctx.log || (() => {}) };
     const model = String(req.model || "");
     if (!model) throw new Error("ModelArk recipe has no model id.");
@@ -518,25 +541,34 @@ async function layers(req, ctx) {
     }
     const [pic] = await picturesFor({ ...req, references: [] }, { ...o, max_images: 1 }, ctx, model);
     const body = layersBody(req, ask, pic, spec);
-    const r = await post(ctx, where.host + PATH, body);
+    const r = await post(ctx, where.host + PATH, body, layerPostInit(req.timeoutMs));
     const at = { region: where.region, regions: o.regions, early: !!o.early_access };
     const j = await readAnswer(r, ctx, model, at);
+    caller.jobDone = true;   // answered: generated and charged, so a Cancel during the downloads says that
     const data = Array.isArray(j.data) ? j.data : [];
     const bad = data.find((d) => d && d.error);
     if (bad) throw new Error(scrub(`ModelArk ${model}: ${explain(200, bad.error.code, bad.error.message, at)}`, ctx.key));
     const usable = data.filter((d) => d && (d.b64_json || d.url));
     if (!usable.length || usable.length !== data.length) throw new Error(scrub(`ModelArk ${model}: an answer without its pictures (${usable.length} of ${data.length})`, ctx.key));
     const ordered = orderLayers(usable);
-    if (!ordered) throw new Error(`ModelArk ${model}: the answer has no base image.`);
-    const out = [];
+    const out = [], missing = [];
     for (let k = 0; k < ordered.length; k++) {
         const d = ordered[k].d;
-        const got = await layerBytes(d, ctx);
+        let got;
+        try { got = await layerBytes(d, ctx, k === 0 ? LAYER_BASE_TRIES : LAYER_PIECE_TRIES); }
+        catch (err) {
+            if (ctx.signal && ctx.signal.aborted) throw err;
+            const why = scrub(String((err && err.message) || err), ctx.key);
+            if (k === 0) throw new Error(`ModelArk ${model}: the job finished and is charged, but its base picture could not be downloaded (${why}); nothing landed.`);
+            ctx.log(`layer "${d.name || k}" left out, its download failed: ${why} (${d.url})`);
+            missing.push(d.name == null || d.name === "" ? `Layer ${k}` : String(d.name));
+            continue;
+        }
         out.push({ bytes: got.bytes, mime: got.mime, z_index: ordered[k].z, base: k === 0, bounding_box: d.bounding_box || null, name: d.name == null ? "" : String(d.name), description: d.description == null ? "" : String(d.description), size: d.size || null });
     }
     const usage = j.usage || {};
     return {
-        bytes: out[0].bytes, mime: out[0].mime, seed: undefined, layers: out,
+        bytes: out[0].bytes, mime: out[0].mime, seed: undefined, layers: out, missing,
         info: { model: j.model || model, region: where.region, size: body.size, answered: out[0].size, layers: out.length - 1, asked: ask.count, text_recognition: spec.options ? ask.textRecognition : null, picture: pic.mime === "image/jpeg" ? "jpeg" : "png", by: body.response_format, generated_images: usage.generated_images != null ? usage.generated_images : null },
     };
 }

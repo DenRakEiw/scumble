@@ -34,7 +34,8 @@ export async function openSplitDialog(editor) {
     const first = picture.job || (own && own.job);
     if (!first) { editor.setStatus(String(picture.err.message || picture.err), failKind(picture.err)); return; }
     const sources = [...(picture.job ? [{ value: "picture", label: `The visible picture (${editor.width} × ${editor.height})` }] : []), ...(own && own.job ? [{ value: "layer", label: `Layer: ${active.name}` }] : [])];
-    const count = (values, spec) => Math.min(spec.max, Math.max(1, Math.round(+values.count) || spec.max));
+    // an emptied box or a 0 is the model's starting count, never its dearest
+    const count = (values, spec) => { const n = Math.round(+values.count); return n >= 1 ? Math.min(spec.max, n) : startCount(spec); };
     const specOf = (id) => layerSpecOf(recipes.find((x) => x.id === id));
     const rOf = (id) => recipes.find((x) => x.id === id);
     const n0 = startCount(first.spec);

@@ -57,13 +57,14 @@ export function cleanLayerName(raw, fallback, taken) {
     return name;
 }
 
-/** An answer's box [left, top, right, bottom] in the base's pixels, inside it: `absolute`, else `normalized` (0..1000), else null. */
+/**
+ * An answer's box [left, top, right, bottom] in the base's pixels: `absolute`, else `normalized` (0..1000), else null. A box
+ * that only partly lies on the base stays whole (the layer overhangs: clamping it would squeeze the picture into the
+ * rest); one that misses the base is no box.
+ */
 export function boxOf(box, bw, bh) {
     const valid = (b) => Array.isArray(b) && b.length === 4 && b.every((n) => Number.isFinite(n));
-    const inside = (b) => {
-        const c = [Math.max(0, b[0]), Math.max(0, b[1]), Math.min(bw, b[2]), Math.min(bh, b[3])];
-        return c[2] > c[0] && c[3] > c[1] ? c : null;
-    };
+    const inside = (b) => (b[2] > b[0] && b[3] > b[1] && b[0] < bw && b[1] < bh && b[2] > 0 && b[3] > 0 ? b : null);
     let got = null;
     if (box && valid(box.absolute)) got = inside(box.absolute);
     if (!got && box && valid(box.normalized)) got = inside([box.normalized[0] * bw / 1000, box.normalized[1] * bh / 1000, box.normalized[2] * bw / 1000, box.normalized[3] * bh / 1000]);
@@ -81,7 +82,7 @@ export function planLanding(entries, rect, bw, bh, taken) {
     const rows = [], leftOut = [];
     entries.forEach((entry, i) => {
         const name = cleanLayerName(entry.name, entry.base ? "Base" : `Layer ${i}`, taken);
-        if (!entry.bounding_box) { rows.push({ entry, name, x: rect.x, y: rect.y, w: rect.w, h: rect.h }); return; }
+        if (entry.base) { rows.push({ entry, name, x: rect.x, y: rect.y, w: rect.w, h: rect.h }); return; }
         const b = boxOf(entry.bounding_box, bw, bh);
         if (!b) { leftOut.push(name); return; }
         const x = Math.round(b[0] * sx), y = Math.round(b[1] * sy);
@@ -147,7 +148,11 @@ export function splitJob(app, editor, opts = {}) {
 
 /** The source's pixels as PNG bytes: the visible picture, or the layer at its size in the document with its transparency and mask. */
 async function sourceBytes(editor, job, canvasBytes) {
-    if (!job.layer) return canvasBytes(editor.flattenToCanvas({ forRun: true }));
+    if (!job.layer) {
+        // a paid request of the picture as it is: relight's full shadow maps first, as every other reader of a run's picture
+        if (editor.relightSettled) await editor.relightSettled();
+        return canvasBytes(editor.flattenToCanvas({ forRun: true }));
+    }
     const c = document.createElement("canvas");
     c.width = job.rect.w;
     c.height = job.rect.h;
@@ -211,22 +216,26 @@ async function prepare(app, editor, res, job, gone, deps) {
     return { rows: made, leftOut, base: [bw, bh] };
 }
 
-/** The prepared layers into the document, above everything, in one new group, as one undo step. */
+/**
+ * The prepared layers into the document, above everything, in one new group, as one undo step. A transform the user has
+ * going on one of their own layers stays: the new layers do not become the selection while it does.
+ */
 function land(editor, ready, job, groupName) {
-    if (editor.pending) editor.cancelPending();
     editor.pushUndo({ kind: "layers", label: SPLIT_LABEL });
     editor.groupCounter = (editor.groupCounter || 0) + 1;
     const names = new Set(editor.groups.map((g) => String(g.name).toLowerCase()));
     const g = { id: "G" + Date.now().toString(36) + editor.groupCounter, name: cleanLayerName(groupName, "Split", names), visible: true, locked: false, collapsed: false, parent: null };
     editor.groups.push(g);
     const layers = ready.rows.map(({ row, px, ref }) => ({
-        layer: editor.addLayer({ name: row.name, kind: "image", ref, dirty: !ref, px, x: row.x, y: row.y, w: row.w, h: row.h, group: g.id, match: { strength: 0, source: "underneath" } }, { activate: false }),
+        layer: editor.addLayer({ name: row.name, kind: "image", ref, dirty: !ref, px, x: row.x, y: row.y, w: row.w, h: row.h, group: g.id, match: { strength: 0, source: "underneath" } }, { activate: false, quiet: true }),
         row,
     }));
-    const top = layers[layers.length - 1].layer;
-    editor.activeLayerId = top.id;
-    editor.activeGroupId = null;
-    if (editor.selectLayers) editor.selectLayers([top.id]);
+    if (!editor.pending) {
+        const top = layers[layers.length - 1].layer;
+        editor.activeLayerId = top.id;
+        editor.activeGroupId = null;
+        if (editor.selectLayers) editor.selectLayers([top.id]);
+    }
     editor.layersRestacked();
     return { group: g, layers };
 }
@@ -265,6 +274,7 @@ async function runJob(app, editor, opts, deps) {
             provider: "ark", model: r.model, kind: "layers", options: r.options, fields: null,
             prompt: job.prompt, negative: "", seed: 0, image, mask: null, maskAlpha: null, width: job.rect.w, height: job.rect.h, references: [],
             params: { size: job.tier, count: job.count, text_recognition: job.textRecognition },
+            timeoutMs: opts.timeoutMs || 0,
         };
         res = await deps.providerEdit(request, token);
     } catch (err) {
@@ -274,6 +284,7 @@ async function runJob(app, editor, opts, deps) {
         app.endRunRow(token);
     }
     // the answer is in: the Cancel is over (one row of the title row), the document stays held until the layers are in
+    if (opts.onAnswer) opts.onAnswer();
     try {
         const ready = await prepare(app, editor, res, job, gone, deps);
         if (!ready || gone()) return null;
@@ -286,11 +297,13 @@ async function runJob(app, editor, opts, deps) {
             ? `Split into ${n} layer${n === 1 ? "" : "s"} and a base, in the group "${landed.group.name}" (Ctrl+Z takes them all back) · ${deps.viaLine(r, label, res.seconds)}.`
             : `${model} found no separate elements: only its base came back, in the group "${landed.group.name}" · ${deps.viaLine(r, label, res.seconds)}.`];
         if (scaledUp) parts.push(`The model answered ${bw} × ${bh}: the layers are scaled up to the picture's size, so they are lower resolution than the picture.`);
+        const missing = Array.isArray(res.missing) ? res.missing.map((m) => cleanLayerName(m, "Layer", new Set())) : [];
         if (ready.leftOut.length) parts.push(`Left out, without a usable position: ${ready.leftOut.join(", ")}.`);
+        if (missing.length) parts.push(`Left out, its picture could not be downloaded: ${missing.join(", ")}.`);
         if (editor.geometrySeq !== geo) parts.push("The picture changed shape during the run: the layers sit where it was when it went out.");
-        editor.setStatus(parts.join(" "), scaledUp || ready.leftOut.length || n <= 0 ? "warn" : "info");
+        editor.setStatus(parts.join(" "), scaledUp || ready.leftOut.length || missing.length || n <= 0 ? "warn" : "info");
         return {
-            group: landed.group, recipe: r.id, model, seconds: res.seconds, tier: job.tier, asked: job.count, answered: [bw, bh], scaledUp, leftOut: ready.leftOut,
+            group: landed.group, recipe: r.id, model, seconds: res.seconds, tier: job.tier, asked: job.count, answered: [bw, bh], scaledUp, leftOut: [...ready.leftOut, ...missing],
             layers: landed.layers.map(({ layer, row }) => ({ layer, z: row.entry.z_index, base: !!row.entry.base, description: row.entry.description || "" })),
         };
     } catch (err) {

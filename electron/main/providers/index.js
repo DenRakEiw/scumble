@@ -336,7 +336,7 @@ async function edit(request, hooks = {}) {
     log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes, ...(split ? { layers: out.layers.map((l) => ({ z: l.z_index, name: l.name, description: l.description.slice(0, 400) })) } : {}) } });
     // a split's pictures stay here and the window takes them one at a time: dozens of 2K PNGs in one IPC message end the
     // renderer (docs/BUGS.md, the same limit as a large export's save)
-    if (split) return { bytes: new Uint8Array(0), mime: out.mime || "image/png", info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, notes, ...keepLayerParts(out.layers) };
+    if (split) return { bytes: new Uint8Array(0), mime: out.mime || "image/png", info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, notes, missing: out.missing || [], ...keepLayerParts(out.layers) };
     const bytes = toBuffer(out.bytes);
     // the LoRAs a Comfy Cloud graph's chain loaded (item 50): the via line and loras_sent name them
     const loras = Array.isArray(out.loras) ? out.loras.map((x) => ({ name: String(x.name), strength: +x.strength })) : [];

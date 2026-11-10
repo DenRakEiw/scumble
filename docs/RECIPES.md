@@ -2860,17 +2860,26 @@ From the 5.0 pro schema (`tools/refs/comfyrouter/byteplus_seedream-5-0-pro-26062
 to 100 layers, and `layer_decomposition_options: { max_images, text_recognition }`. Taken as read, and unverified: that
 `max_images` counts the layers and not the base, its default, what `text_recognition` does by default (Scumble always
 sends it, off unless asked), and that `auto` is a tier on 5.5 as it is on 5.0 pro. The 5.0 pro schema has no such options:
-the variant sends none, a count other than 16 and Text recognition are refused there.
+the variant sends none, a count other than 16 and Text recognition are refused there. **Everything else about 5.5's split is
+assumed from the 5.0 pro schema**: the input limits and the 512 x 512 refusal, the tiers, the output of at most about 2K,
+and the answer's whole shape (base first, no box on the base, boxes in the base's pixels, `z_index`, `name`).
 
 Up to a count of 32 the answer is asked for as `b64_json`; above it as `url`: 100 PNGs inlined would pass what one JSON
-string may hold in V8 (about 512 MB). Each link is fetched in turn, tried twice. Main keeps the pictures and the window
+string may hold in V8 (about 512 MB). Each link is fetched in turn. The job is charged by then, so a failed link does not
+lose the answer: the base gets five tries with growing waits (it is the frame every box is in; without it nothing lands),
+a layer three, and a layer that stays away is left out and named in the status line and `left_out`, its URL in the log. A
+Cancel during the downloads says the job finished and is charged. The POST carries its own limits for undici
+(`headersTimeout` and `bodyTimeout` at the run's deadline, 30 s more), or Node's default 300 s would end a request of up to
+101 pictures first. The base is the row without a box, else the row of `z_index` 0, else `data[0]`, so a 5.5 answer of
+another shape is not thrown away after it is paid for. Main keeps the pictures and the window
 takes them one at a time over `provider:layerPart`: one IPC message of dozens of 2K pictures ends the renderer.
 
 The landing: bottom to top by `z_index`, the base lowest, in one new group named after the source (the layer's name, or
 the document's), one `layers` undo step, each layer's name from `name` (one line, 60 characters, numbered when it
 repeats a name in the document), its `description` in the log entry and the command's answer. A box is scaled to the
 document; its edges are rounded so that two boxes that meet still meet; a box that is no box falls back to `normalized`,
-and a layer with neither is left out and named in the status line. Each layer is baked to its size in the document, so it
+and a layer with neither is left out and named in the status line. A box that passes the base's edge stays whole and the
+layer overhangs the picture (clamping would squeeze it); one that misses the base is left out. Each layer is baked to its size in the document, so it
 is unscaled on whole pixels as the retouch tools need, and is stored in the file mirror as a result is, so a saved
 document holds it. Where the answer is smaller than the source (the output is at most about 2K), the status line says the
 layers are lower resolution than the picture, in red. Everything that can fail comes before the undo step: a failed run or
@@ -2890,6 +2899,8 @@ a picture that does not decode leaves the document as it was.
   network error and is not sent again;
 - whether the "real person" refusal (`InputImageSensitiveContentDetected.PrivacyInformation`, "the input image may
   contain real person") hits ordinary photographs, which would rule out retouching portraits here;
+- for *Split into layers*, on either model: that the base comes without a box, that `absolute` is in the base PNG's
+  pixels, what the tiers mean as sizes, how large a layer's PNG is against its box, and how long a large split takes;
 - the free quota for images, which the docs do not give;
 - whether the 30 MB counts the decoded bytes or the base64 text, and the limit for the whole request body;
 - whether Seedream is a "Restricted Model" in the user's country;

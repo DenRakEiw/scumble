@@ -1000,7 +1000,36 @@ async function main() {
         const su2 = fakeServer({ answers: [(body) => json(200, { model: body.model, data: items, usage: {} })], download: () => (++downloads === 1 ? new Response("no", { status: 503 }) : new Response(DOWNLOAD, { status: 200, headers: { "content-type": "image/png" } })) });
         const cu2 = ctxFor(su2);
         await ark.layers(layerReq(v55, { params: { count: 40 } }), cu2);
-        check("a failed layer download is tried once more after a wait", downloads === 3 && cu2.sleeps.length === 1, `${downloads} downloads`);
+        check("a failed base download is tried again after a wait", downloads === 3 && cu2.sleeps.length === 1, `${downloads} downloads`);
+        // (one-failed-download) a layer whose link stays away costs that layer, not the paid answer; the bug: throwing here
+        const gone = (which) => (call) => (call.url.endsWith(which) ? new Response("gone", { status: 404 }) : new Response(DOWNLOAD, { status: 200, headers: { "content-type": "image/png" } }));
+        const threeItems = [...items, { url: `${BASE}/result/2`, z_index: 2, name: "b", bounding_box: { absolute: [1, 2, 3, 4] } }];
+        const sg = fakeServer({ answers: [(body) => json(200, { model: body.model, data: threeItems, usage: {} })], download: gone("/result/1") });
+        const cg = ctxFor(sg);
+        const og = await ark.layers(layerReq(v55, { params: { count: 40 } }), cg);
+        check("a layer whose link stays away after 3 tries is left out and named, the others land", og.layers.length === 2 && eq(og.missing, ["a"]) && eq(og.layers.map((l) => l.z_index), [0, 2]) && eq(cg.sleeps, [5000, 10000]), short({ missing: og.missing, sleeps: cg.sleeps }));
+        const sb2 = fakeServer({ answers: [(body) => json(200, { model: body.model, data: threeItems, usage: {} })], download: gone("/result/0") });
+        const cb2 = ctxFor(sb2);
+        const eb = await throws(() => ark.layers(layerReq(v55, { params: { count: 40 } }), cb2));
+        check("a base that stays away after 5 tries with growing waits fails, and says the job is charged", !!eb && /finished and is charged, but its base picture/.test(eb) && eq(cb2.sleeps, [5000, 10000, 20000, 40000]), eb);
+        const sa = fakeServer({ answers: [(body) => json(200, { model: body.model, data: threeItems, usage: {} })], download: gone("/result/1") });
+        const ea = await throws(() => ark.layers(layerReq(v55, { params: { count: 40 } }), ctxFor(sa, { signal: { aborted: true } })));
+        check("a download that fails during a Cancel ends the run, it is not a left-out layer", !!ea && /404/.test(ea), ea);
+        // (cancel-during-downloads) the job is charged once it is answered; the bug: leaving jobDone unset
+        const cjd = ctxFor(fakeServer({ answers: [layerAnswer] }));
+        await ark.layers(layerReq(v55), cjd);
+        const cjf = ctxFor(fakeServer({ answers: [() => failure(500, "InternalServiceError", "m", {}, "InternalServerError")] }));
+        await throws(() => ark.layers(layerReq(v55), cjf));
+        check("jobDone is set on the caller's ctx once the service has answered, and not when it refused", cjd.jobDone === true && cjf.jobDone === undefined, String(cjd.jobDone));
+        // (split-post-dies-at-undici-300s) the bug: a POST without its own dispatcher limits
+        let seen = null;
+        const sd = fakeServer({ answers: [layerAnswer] });
+        await ark.layers(layerReq(v55, { timeoutMs: 1800000 }), ctxFor(sd, { fetch: (u, init) => { seen = init; return sd.fetch(u, init); } }));
+        check("the POST's undici limits follow the run's deadline (1800 s + 30 s), not undici's 300 s", !!seen.dispatcher && seen.dispatcher.headersTimeout === 1830000 && seen.dispatcher.bodyTimeout === 1830000, short(seen.dispatcher && seen.dispatcher.headersTimeout));
+        let seenE = null;
+        const se2 = fakeServer();
+        await ark.edit(editReq(v55), ctxFor(se2, { fetch: (u, init) => { seenE = init; return se2.fetch(u, init); } }));
+        check("an edit's POST is as before: no dispatcher", !seenE.dispatcher, "");
         const failed = async (answers, re, what) => {
             const sx = fakeServer({ answers });
             const err = await throws(() => ark.layers(layerReq(v55), ctxFor(sx)));
@@ -1008,7 +1037,12 @@ async function main() {
         };
         await failed([() => failure(500, "InternalServiceError", "one layer failed", {}, "InternalServerError")], /the service failed - InternalServiceError: one layer failed/, "a failed request is not retried and keeps the server's words");
         await failed([(body) => json(200, { model: body.model, data: [layerItem("BASE", { z_index: 0 }), { error: { code: "OutputImageSensitiveContentDetected", message: "m" } }] })], /content filter/, "an error in one entry fails the whole answer");
-        await failed([(body) => json(200, { model: body.model, data: [layerItem("Z1", { z_index: 1, bounding_box: { absolute: [0, 0, 1, 1] } })] })], /no base image/, "an answer without a base is refused");
+        // (base-found-only-by-missing-box) the bug: only a row without a box counts as the base, so a boxed base is thrown away after it is paid for
+        const box = { absolute: [0, 0, 100, 100] };
+        const baseOf = async (rows) => { const sx = fakeServer({ answers: [(body) => json(200, { model: body.model, data: rows, usage: {} })] }); const o = await ark.layers(layerReq(v55), ctxFor(sx)); return o.layers.map((l) => [tagOf(l.bytes), !!l.base]); };
+        check("the base: a row without a box first, whatever its z_index", eq(await baseOf([layerItem("Z0", { z_index: 0, bounding_box: box }), layerItem("Z1", { z_index: 1 })]), [["Z1", true], ["Z0", false]]), "");
+        check("the base: with a box on every row, the row of z_index 0", eq(await baseOf([layerItem("Z1", { z_index: 1, bounding_box: box }), layerItem("Z0", { z_index: 0, bounding_box: box })]), [["Z0", true], ["Z1", false]]), "");
+        check("the base: with neither, data[0]", eq(await baseOf([layerItem("Z5", { z_index: 5, bounding_box: box }), layerItem("Z2", { z_index: 2, bounding_box: box })]), [["Z5", true], ["Z2", false]]), "");
         await failed([(body) => json(200, { model: body.model, data: [layerItem("BASE", { z_index: 0 }), { z_index: 1 }] })], /without its pictures \(1 of 2\)/, "an answer with a picture missing is refused");
         await failed([(body) => json(200, { model: body.model, data: [] })], /without its pictures \(0 of 0\)/, "an empty answer is refused");
         // a picture over 30 MB goes as JPEG when it is opaque (the same rule as an edit's)
@@ -1025,14 +1059,16 @@ async function main() {
         check("the limits by the documented rule: 512 x 512 goes, 511 x 512 not; 6000 x 6000 goes, 6001 x 6000 not; 3200 x 200 (16:1) goes, 3400 x 200 not", okSize(512, 512) && !okSize(511, 512) && okSize(6000, 6000) && !okSize(6001, 6000) && okSize(3200, 200) && !okSize(3400, 200), "");
         // where an answer lands (renderer/editor/splitlayers.js)
         const rect = { x: 100, y: 40, w: 2000, h: 1000 };
-        const entries = [{ base: true, z_index: 0, bounding_box: null, name: "" }, { z_index: 1, name: "  sky\n\tblue ", bounding_box: { absolute: [0, 0, 500, 200] } }, { z_index: 2, name: "SKY blue", bounding_box: { absolute: [500, 200, 1000, 500] } }, { z_index: 3, name: "x".repeat(200), bounding_box: { absolute: [10, 10, 10, 10], normalized: [100, 200, 300, 400] } }, { z_index: 4, name: "broken", bounding_box: { absolute: [5, 5, 5, 5] } }, { z_index: 5, name: "", bounding_box: { absolute: [900, 400, 2000, 900] } }];
+        const entries = [{ base: true, z_index: 0, bounding_box: { absolute: [10, 10, 20, 20] }, name: "" }, { z_index: 1, name: "  sky\n\tblue ", bounding_box: { absolute: [0, 0, 500, 200] } }, { z_index: 2, name: "SKY blue", bounding_box: { absolute: [500, 200, 1000, 500] } }, { z_index: 3, name: "x".repeat(200), bounding_box: { absolute: [10, 10, 10, 10], normalized: [100, 200, 300, 400] } }, { z_index: 4, name: "broken", bounding_box: { absolute: [5, 5, 5, 5] } }, { z_index: 5, name: "", bounding_box: { absolute: [900, 400, 2000, 900] } }, { z_index: 6, name: "boxless", bounding_box: null }, { z_index: 7, name: "offside", bounding_box: { absolute: [1100, 0, 1200, 100] } }];
         const plan = split.planLanding(entries, rect, 1000, 500, new Set(["base"]));
         const P = plan.rows;
-        check("the base covers the source's whole rectangle, its name not taken from an existing layer", P[0].name === "Base 2" && eq([P[0].x, P[0].y, P[0].w, P[0].h], [100, 40, 2000, 1000]), short(P[0]));
+        check("the base covers the source's whole rectangle even with a box of its own, its name not taken from an existing layer", P[0].name === "Base 2" && eq([P[0].x, P[0].y, P[0].w, P[0].h], [100, 40, 2000, 1000]), short(P[0]));
         check("a box scales to the document, and two boxes that meet still meet (x 100 + 1000 = 1100)", eq([P[1].x, P[1].y, P[1].w, P[1].h], [100, 40, 1000, 400]) && eq([P[2].x, P[2].y, P[2].w, P[2].h], [1100, 440, 1000, 600]) && P[1].x + P[1].w === P[2].x, short([P[1], P[2]]));
         check("names: one line, duplicates numbered whatever the case, cut to a sane length, an empty one named by its place", P[1].name === "sky blue" && P[2].name === "SKY blue 2" && P[3].name.length === 60 && P[4].name === "Layer 5", short(P.map((r) => r.name)));
-        check("a box that is no box falls back to normalized (0..1000), then the layer is left out and named", eq([P[3].x, P[3].y, P[3].w, P[3].h], [300, 240, 400, 200]) && eq(plan.leftOut, ["broken"]) && P.length === 5, short(plan.leftOut));
-        check("a box past the base is cut to it", eq([P[4].x, P[4].y, P[4].w, P[4].h], [1900, 840, 200, 200]), short(P[4]));
+        // (layer-without-box-stretched) the bug: a row without a box is taken for the base and stretched over the whole picture
+        check("a box that is no box falls back to normalized (0..1000), a layer without any box or off the base is left out and named", eq([P[3].x, P[3].y, P[3].w, P[3].h], [300, 240, 400, 200]) && eq(plan.leftOut, ["broken", "boxless", "offside"]) && P.length === 5, short(plan.leftOut));
+        // (box-past-base-squeezes-picture) the bug: clamping the box to the base squeezes the whole PNG into what is left
+        check("a box past the base stays whole and overhangs", eq([P[4].x, P[4].y, P[4].w, P[4].h], [1900, 840, 2200, 1000]), short(P[4]));
     });
 
     // ---- 7. the whole run: no header beyond the two, no key in any error ----

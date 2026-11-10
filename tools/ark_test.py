@@ -39,6 +39,7 @@ Start the app first (with --no-comfy: a result is uploaded into the mirror and w
 ComfyUI): bash tools/run_gates.sh <label> --offline --tiles on ark
 """
 import asyncio
+import io
 import json
 import os
 import re
@@ -49,6 +50,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
 from ark_mock import PATH, Mock  # noqa: E402
+from PIL import Image  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE_TEST = os.path.join(ROOT, "tools", "ark_test.js")
@@ -303,8 +305,9 @@ const added = ed.layers.filter((l) => !ids.has(l.id));
 const alphaAt = (l, fx, fy) => l.px.readRect(Math.floor(l.px.width * fx), Math.floor(l.px.height * fy), 1, 1).data[3];
 const stack = ed.layers.map((l) => l.id);
 const log = (await logSince(mark)).filter((e) => e.source === "ark");
+const flat = (() => { const c = ed.flattenToCanvas({ forRun: true }); const g = c.getContext("2d", { willReadFrequently: true }); return [[150, 150], [1000, 700]].map(([x, y]) => Array.from(g.getImageData(x, y, 1, 1).data)); })();
 return {
-    err, out, status: ed.status, kind: ed.statusKind, undoDelta: ed.undo.length - u0, groupDelta: ed.groups.length - g0, undoLabel: (ed.undo[ed.undo.length - 1] || {}).label || null,
+    flatBefore: window.__splitFlat || null, flatNow: flat, err, out, status: ed.status, kind: ed.statusKind, undoDelta: ed.undo.length - u0, groupDelta: ed.groups.length - g0, undoLabel: (ed.undo[ed.undo.length - 1] || {}).label || null,
     old: JSON.stringify(ed.layers.filter((l) => ids.has(l.id)).map(keep)) === JSON.stringify(before), oldCount: before.length, onTop: added.length ? stack.slice(-added.length).join() === added.map((l) => l.id).join() : null,
     added: added.map((l) => ({ id: l.id, name: l.name, x: l.x, y: l.y, w: l.w, h: l.h, pw: l.px.width, ph: l.px.height, kind: l.kind, group: l.group, ref: !!l.ref, middle: alphaAt(l, 0.5, 0.5), corner: alphaAt(l, 0.02, 0.02) })),
     groups: ed.groups.map((g) => ({ id: g.id, name: g.name })), active: ed.activeLayerId, picture: [ed.width, ed.height], docName: host.documentName(ed), log: log.map((e) => e.message), logDetail: log.map((e) => e.detail),
@@ -323,6 +326,8 @@ return { n0, g0, undone, redone: { layers: ed.layers.length, groups: ed.groups.l
 SPLIT_SAVE = """
 const ed = ednow(window.__arkDoc);
 const want = ed.layers.slice(-4).map((l) => [l.name, l.x, l.y, l.w, l.h]);
+const pixelsOf = (e) => e.layers.slice(-4).map((l) => [[0.5, 0.5], [0.02, 0.02], [0.3, 0.6]].map(([fx, fy]) => Array.from(l.px.readRect(Math.floor(l.px.width * fx), Math.floor(l.px.height * fy), 1, 1).data)));
+const wantPixels = pixelsOf(ed);
 const wantGroup = ed.groups[ed.groups.length - 1].name;
 await run("save_document", { doc: window.__arkDoc, path: __PATH__, copy: true });
 const o = await run("open_document", { path: __PATH__ });
@@ -333,7 +338,7 @@ try {
     const deadline = Date.now() + 20000;
     while ((ed2._loading || ed2.layers.length < ed.layers.length) && Date.now() < deadline) await wait(100);
     const got = ed2.layers.slice(-4).map((l) => [l.name, l.x, l.y, l.w, l.h]);
-    same = { got, want, group: ed2.groups.map((g) => g.name), wantGroup, count: [ed2.layers.length, ed.layers.length], pixels: ed2.layers.slice(-4).map((l) => !!l.px && l.px.width > 0), sameGroup: new Set(ed2.layers.slice(-4).map((l) => l.group)).size };
+    same = { got, want, group: ed2.groups.map((g) => g.name), wantGroup, count: [ed2.layers.length, ed.layers.length], baked: ed2.layers.slice(-4).map((l) => l.px.width === l.w && l.px.height === l.h), gotPixels: pixelsOf(ed2), wantPixels, sameGroup: new Set(ed2.layers.slice(-4).map((l) => l.group)).size };
 } finally {
     await run("close_document", { doc, force: true });
     host.shell.activate(ed);
@@ -363,7 +368,19 @@ const five = line();
 prompt.value = "the dog"; sw.checked = true;
 box.querySelector(".ipc-primary").click();
 await opening;
-return { pro, s55, five, added: ed.layers.length - n0, status: ed.status };
+const added = ed.layers.length - n0;
+// (dialog-empty-count) the bug: an emptied box asks for the model's most layers
+const again = openSplitDialog(ed);
+await wait(50);
+const box2 = ed.askOpen.querySelector(".ipc-askbox");
+const m2 = box2.querySelector('[data-key="model"]');
+m2.value = "seedream_5_5"; m2.dispatchEvent(new Event("change"));
+const c2 = box2.querySelector('[data-key="count"]');
+c2.value = ""; c2.dispatchEvent(new Event("input"));
+const emptied = box2.querySelector(".ipc-asknote").textContent;
+box2.querySelector(".ipc-primary").click();
+await again;
+return { pro, s55, five, added, emptied, status: ed.status };
 """
 
 SPLIT_DIALOG_CANCEL = """
@@ -384,6 +401,98 @@ await shell.openSettings(); document.getElementById("shell-settings").close();
 let msg = "";
 try { await run("split_layers", { doc: window.__arkDoc, recipe: "seedream_5_5" }); } catch (e) { msg = String(e.message || e); }
 return { msg, added: ed.layers.length - n0 };
+"""
+
+# a layer of known pixels: the left half red (the layer's own pixels), the right half empty, a mask over a strip of the left
+SPLIT_LAYER_SETUP = """
+const made = await run('add_paint_layer', { doc: window.__arkDoc });
+const paint = ed.layers.find((l) => l.id === made.id);
+const red = new Uint8ClampedArray(600 * 800 * 4);
+for (let i = 0; i < red.length; i += 4) { red[i] = 200; red[i + 1] = 30; red[i + 2] = 30; red[i + 3] = 255; }
+paint.px.writeRect(new ImageData(red, 600, 800), 0, 0);
+ed.markLayerChanged(paint);
+await run('set_layer', { doc: window.__arkDoc, layer: made.id, x: 50, y: 40, w: 700, h: 500, name: 'Portrait' });
+await run('select_rect', { doc: window.__arkDoc, x: 50, y: 390, width: 700, height: 150 });
+await run('set_mask', { doc: window.__arkDoc, layer: made.id, op: 'hide_selection' });
+await run('select_none', { doc: window.__arkDoc });
+await run('set_active_layer', { doc: window.__arkDoc, layer: made.id });
+"""
+
+# a green patch on a paint layer, the marker the visible picture has to carry
+SPLIT_PICTURE_SETUP = """
+await run('add_paint_layer', { doc: window.__arkDoc });
+const mark0 = ed.layers[ed.layers.length - 1];
+const green = new Uint8ClampedArray(100 * 100 * 4);
+for (let i = 0; i < green.length; i += 4) { green[i] = 20; green[i + 1] = 220; green[i + 2] = 60; green[i + 3] = 255; }
+mark0.px.writeRect(new ImageData(green, 100, 100), 100, 100);
+ed.markLayerChanged(mark0);
+ed.draw();
+window.__splitFlat = (() => { const c = ed.flattenToCanvas({ forRun: true }); const g = c.getContext("2d", { willReadFrequently: true }); return [[150, 150], [1000, 700]].map(([x, y]) => Array.from(g.getImageData(x, y, 1, 1).data)); })();
+"""
+
+# (land-1) the bug: flattening before relight's full maps are in. The stand-in for a march still going: relightSettled ends 150 ms later
+SPLIT_RELIGHT = """
+const ed = ednow(window.__arkDoc);
+host.shell.activate(ed);
+let settled = false, flatSawSettled = null;
+const realSettled = ed.relightSettled, realFlat = ed.flattenToCanvas;
+ed.relightSettled = async function (...a) { await wait(150); const r = await realSettled.apply(ed, a); settled = true; return r; };
+ed.flattenToCanvas = function (o) { if (o && o.forRun && flatSawSettled === null) flatSawSettled = settled; return realFlat.call(ed, o); };
+try { await run("split_layers", { doc: window.__arkDoc, recipe: "seedream_5_5", timeout: 60 }); }
+finally { delete ed.relightSettled; delete ed.flattenToCanvas; }
+return { flatSawSettled };
+"""
+
+# (land-4) the bug: the landing cancels a transform in progress on one of the user's layers
+SPLIT_PENDING = """
+const ed = ednow(window.__arkDoc);
+host.shell.activate(ed);
+const p0 = await run('add_paint_layer', { doc: window.__arkDoc });
+await run('set_active_layer', { doc: window.__arkDoc, layer: p0.id });
+ed.startPending('rotate');
+const had = ed.pending && ed.pending.layer && ed.pending.layer.id;
+const n0 = ed.layers.length;
+let err = "";
+try { await run("split_layers", { doc: window.__arkDoc, recipe: "seedream_5_5", timeout: 60 }); } catch (e) { err = String(e.message || e); }
+const still = ed.pending && ed.pending.layer && ed.pending.layer.id;
+const active = ed.activeLayerId;
+if (ed.pending) ed.cancelPending();
+return { had, still, active, id: p0.id, added: ed.layers.length - n0, err };
+"""
+
+# (mcp-timeout-during-landing) the bug: the command's timeout still fires after the answer is in; the landing is held 6 s, the timeout is 5 s
+SPLIT_SLOW_LANDING = """
+const ed = ednow(window.__arkDoc);
+host.shell.activate(ed);
+const n0 = ed.layers.length;
+const real = host.uploadResult;
+let first = true;
+host.uploadResult = async function (...a) { if (first) { first = false; await wait(6000); } return real.apply(host, a); };
+let err = "";
+try { await run("split_layers", { doc: window.__arkDoc, recipe: "seedream_5_5", timeout: 5 }); } catch (e) { err = String(e.message || e); }
+finally { host.uploadResult = real; }
+return { err, added: ed.layers.length - n0 };
+"""
+
+# (land-5) the bug: one rebuild of the layer list per new layer
+SPLIT_RENDERS = """
+const ed = ednow(window.__arkDoc);
+host.shell.activate(ed);
+const real = ed.renderLayers;
+let renders = 0;
+ed.renderLayers = function (...a) { renders++; return real.apply(ed, a); };
+const n0 = ed.layers.length;
+try { await run("split_layers", { doc: window.__arkDoc, recipe: "seedream_5_5", timeout: 60 }); }
+finally { delete ed.renderLayers; }
+return { renders, added: ed.layers.length - n0 };
+"""
+
+SPLIT_GONE = """
+const ed = ednow(window.__arkDoc);
+host.shell.activate(ed);
+const n0 = ed.layers.length;
+const out = await run("split_layers", { doc: window.__arkDoc, recipe: "seedream_5_5", count: 40, prompt: "MOCK_GONE", timeout: 90 });
+return { added: ed.layers.length - n0, leftOut: out.left_out, names: out.layers.map((l) => l.name), status: ed.status, kind: ed.statusKind };
 """
 
 SPLIT_CANCEL = """
@@ -801,8 +910,15 @@ async def run_all(c):
 
         async def split_first():
             mock.reset()
-            res = await ev(SPLIT, __W__="1200", __H__="800", __SETUP__="await run('add_paint_layer', { doc: window.__arkDoc });", __ARGS__=split_args({"recipe": "seedream_5_5", "timeout": 120}))
+            res = await ev(SPLIT, __W__="1200", __H__="800", __SETUP__=SPLIT_PICTURE_SETUP, __ARGS__=split_args({"recipe": "seedream_5_5", "timeout": 120}))
             pic = split_body(mock)
+            # (source-pixels-never-checked) the bug: a request that carries anything but the flattened picture
+            sent = Image.open(io.BytesIO(mock.ref_bytes(0, 0))).convert("RGBA")
+            for (x, y), want in zip([(150, 150), (1000, 700)], res["flatBefore"]):
+                if any(abs(a - b) > 2 for a, b in zip(sent.getpixel((x, y)), want)):
+                    raise Exception("the picture sent at %d, %d is %s, the visible picture %s" % (x, y, sent.getpixel((x, y)), want))
+            if not sent.getpixel((150, 150))[1] > 200:
+                raise Exception("the green marker is not in the picture sent: %s" % (sent.getpixel((150, 150)),))
             b = pic["body"]
             if b.get("model") != S55 or b.get("layer_decomposition") is not True or b.get("size") != "auto" or "prompt" in b or b.get("image_type") != "str":
                 raise Exception("the request: %s" % json.dumps(b)[:500])
@@ -837,8 +953,15 @@ async def run_all(c):
         async def split_save():
             path = os.path.join(tempfile.mkdtemp(prefix="ark_split_"), "split.scumble")
             res = await ev(SPLIT_SAVE, __PATH__=json.dumps(path))
-            if res["got"] != res["want"] or res["count"][0] != res["count"][1] or not all(res["pixels"]) or res["sameGroup"] != 1 or res["wantGroup"] not in res["group"]:
+            if res["got"] != res["want"] or res["count"][0] != res["count"][1] or not all(res["baked"]) or res["sameGroup"] != 1 or res["wantGroup"] not in res["group"]:
                 raise Exception("the reopened document: %s" % json.dumps(res)[:600])
+            # (reopened-layers-pixels-vacuous) the bug: a stored PNG that is not the baked layer (the raw answer, a blank one)
+            for g, w in zip(res["gotPixels"], res["wantPixels"]):
+                for a, b in zip(g, w):
+                    if any(abs(p - q) > 2 for p, q in zip(a, b)):
+                        raise Exception("a reopened layer's pixels: %s, before the save %s" % (g, w))
+            if not any(s[3] == 255 for layer in res["gotPixels"][2:] for s in layer) or not any(s[3] == 0 for layer in res["gotPixels"][2:] for s in layer):
+                raise Exception("the compared samples are all one alpha, they prove nothing: %s" % res["gotPixels"][2:])
             done("a_saved_and_reopened_document_keeps_them", {"layers": res["count"], "group": res["wantGroup"]})
         if ran_split:
             await step("a_saved_and_reopened_document_keeps_them", split_save)
@@ -857,11 +980,15 @@ async def run_all(c):
 
         async def split_layer():
             mock.reset()
-            setup = "const made = await run('add_paint_layer', { doc: window.__arkDoc }); await run('set_layer', { doc: window.__arkDoc, layer: made.id, x: 50, y: 40, w: 700, h: 500, name: 'Portrait' }); await run('set_active_layer', { doc: window.__arkDoc, layer: made.id });"
-            res = await ev(SPLIT, __W__="1200", __H__="800", __SETUP__=setup, __ARGS__=split_args({"recipe": "seedream_5_5", "source": "active", "size": "1K", "timeout": 120}))
+            res = await ev(SPLIT, __W__="1200", __H__="800", __SETUP__=SPLIT_LAYER_SETUP, __ARGS__=split_args({"recipe": "seedream_5_5", "source": "active", "size": "1K", "timeout": 120}))
             pic = split_body(mock)
             if pic["refs"][0]["dims"] != [700, 500]:
                 raise Exception("the layer's picture went out at %s" % pic["refs"][0]["dims"])
+            # (source-pixels-never-checked) the bugs: no draw at all (empty), the flattened picture drawn instead, the mask ignored
+            sent = Image.open(io.BytesIO(mock.ref_bytes(0, 0))).convert("RGBA")
+            red, empty, masked = sent.getpixel((100, 100)), sent.getpixel((600, 100)), sent.getpixel((100, 450))
+            if not (red[0] > 180 and red[1] < 60 and red[3] > 250) or empty[3] != 0 or masked[3] != 0:
+                raise Exception("the layer's own pixels did not go: red %s, the empty half %s, under the mask %s" % (red, empty, masked))
             check_stack(res, (50, 40, 700, 500), (1024, 731), ["Base 3", "Sky 3", "Dog 5", "Dog 6"])
             if res["out"]["group"]["name"] != "Portrait" or res["out"]["scaled_up"]:
                 raise Exception("the group of a layer's split: %s, scaled_up %s" % (res["out"]["group"], res["out"]["scaled_up"]))
@@ -917,7 +1044,9 @@ async def run_all(c):
         async def split_dialog():
             mock.reset()
             res = await ev(SPLIT_DIALOG)
-            b = split_body(mock)["body"]
+            if len(image_posts(mock.snapshot())) != 2:
+                raise Exception("the dialog's two runs: %d requests" % len(image_posts(mock.snapshot())))
+            b = mock.snapshot()["images"][0]["body"]
             if res["pro"]["count"] != "16" or not res["pro"]["off"] or not res["pro"]["hidden"] or "finds its own layers, up to 16" not in res["pro"]["line"]:
                 raise Exception("the dialog on 5.0 pro: %s" % res["pro"])
             if res["s55"]["count"] != "16" or res["s55"]["off"] or res["s55"]["hidden"] or "Seedream 5.5 on BytePlus ModelArk asks for up to 16 layers" not in res["s55"]["line"] or "not on BytePlus's public list" not in res["s55"]["line"]:
@@ -926,12 +1055,55 @@ async def run_all(c):
                 raise Exception("the line does not follow the count: %s" % res["five"])
             if b.get("prompt") != "the dog" or b.get("layer_decomposition_options") != {"max_images": 5, "text_recognition": True} or res["added"] != 4:
                 raise Exception("what the dialog sent: %s, %d layers" % (json.dumps(b)[:300], res["added"]))
+            b2 = mock.snapshot()["images"][1]["body"]
+            if b2.get("layer_decomposition_options", {}).get("max_images") != 16 or "up to 16 layers" not in res["emptied"]:
+                raise Exception("an emptied Layers box: %s, the line %s" % (b2.get("layer_decomposition_options"), res["emptied"][:100]))
             mock.reset()
             none = await ev(SPLIT_DIALOG_CANCEL)
             if none["added"] or mock.snapshot()["calls"] or "nothing was sent" not in none["status"]:
                 raise Exception("the dialog's Cancel: %s" % none)
             done("the_dialog_says_what_runs_and_sends_it", {"line": res["s55"]["line"][:120]})
         await step("the_dialog_says_what_runs_and_sends_it", split_dialog)
+
+        async def split_relight():
+            mock.reset()
+            res = await ev(SPLIT_RELIGHT)
+            if res["flatSawSettled"] is not True:
+                raise Exception("the picture was flattened before relight settled: %s" % res)
+            done("the_picture_waits_for_relights_shadow_maps", res)
+        await step("the_picture_waits_for_relights_shadow_maps", split_relight)
+
+        async def split_pending():
+            mock.reset()
+            res = await ev(SPLIT_PENDING)
+            if res["err"] or not res["had"] or res["still"] != res["had"] or res["active"] != res["id"] or res["added"] != 4:
+                raise Exception("a transform in progress: %s" % res)
+            done("a_transform_in_progress_survives_the_landing", res)
+        await step("a_transform_in_progress_survives_the_landing", split_pending)
+
+        async def split_slow():
+            mock.reset()
+            res = await ev(SPLIT_SLOW_LANDING)
+            if res["err"] or res["added"] != 4:
+                raise Exception("a timeout during the landing: %s" % res)
+            done("the_timeout_ends_once_the_answer_is_in", res)
+        await step("the_timeout_ends_once_the_answer_is_in", split_slow)
+
+        async def split_renders():
+            mock.reset()
+            res = await ev(SPLIT_RENDERS)
+            if res["added"] != 4 or res["renders"] > 2:
+                raise Exception("the landing rebuilt the layer list %d times for %d layers" % (res["renders"], res["added"]))
+            done("the_landing_rebuilds_the_layer_list_once", res)
+        await step("the_landing_rebuilds_the_layer_list_once", split_renders)
+
+        async def split_gone():
+            mock.reset()
+            res = await ev(SPLIT_GONE)
+            if res["added"] != 3 or res["leftOut"] != ["Sky"] or "Sky" in " ".join(n for n in res["names"] if n == "Sky") or "could not be downloaded: Sky" not in res["status"] or res["kind"] != "warn":
+                raise Exception("a link that stays away: %s" % json.dumps(res)[:500])
+            done("a_lost_link_leaves_that_layer_out_and_lands_the_rest", {"left_out": res["leftOut"], "names": res["names"]})
+        await step("a_lost_link_leaves_that_layer_out_and_lands_the_rest", split_gone)
 
         async def split_refused():
             for w, h, want in ((400, 400, "512 × 512 to 6000 × 6000"), (6400, 300, "no steeper than 16:1")):

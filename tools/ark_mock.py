@@ -36,7 +36,8 @@ half, its PNG exactly its box; two layers named "Dog" (z 2 and 3) are boxes smal
 box's size, a cut-out (an opaque disc on a transparent ground). The layers come in the order z 2, 1, 3, so a client has to
 sort. The base has no bounding_box, each layer `absolute` and `normalized`. `response_format: "url"` answers links to GET
 /result/<n>, b64_json inlines. The prompt can steer the mock: MOCK_FAIL answers a 500 InternalServiceError (one layer
-failed: the whole request fails), MOCK_BROKEN a layer whose bytes are not a picture, MOCK_SLOW waits 4 s.
+failed: the whole request fails), MOCK_BROKEN a layer whose bytes are not a picture, MOCK_SLOW waits 4 s, MOCK_GONE makes
+the link of "Sky" answer 404 (only with `response_format: "url"`).
 
     python tools/ark_mock.py [port]     runs it standalone for poking at by hand
 """
@@ -240,6 +241,8 @@ class Handler(BaseHTTPRequestHandler):
             if data is not None:
                 self._send(200, data, ctype="image/png")
                 return
+            self._send(404, error_body("NotFound", "the link is gone", "NotFound"))
+            return
         self._send(404, error_body("NotFound", "no route GET " + self.path.split("?")[0], "NotFound"))
 
     def do_POST(self):
@@ -388,7 +391,8 @@ def _layers(self, body, model, refs):
         item = {"size": f"{size[0]}x{size[1]}", "output_format": "png", **e["extra"]}
         if by_url:
             with self.server.lock:
-                self.server.files[str(n)] = e["png"]
+                if not ("MOCK_GONE" in prompt and e["extra"].get("name") == "Sky"):
+                    self.server.files[str(n)] = e["png"]
             item["url"] = f"{self.server.url}/result/{n}"
         else:
             item["b64_json"] = base64.b64encode(e["png"]).decode("ascii")
