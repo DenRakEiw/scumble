@@ -1,0 +1,13 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=psd)
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TypeError: Cannot perform %TypedArray%.prototype.fill on a detached ArrayBuffer
+    at Uint8Array.fill (<anonymous>)
+    at Px.psdBandRgba (file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k20b_mut/renderer/editor/px/px.js:1285:29)
+    at Object.bandRgba (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\tools\px_test.js:8196:55)
+    at streamChannelDescs (file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k20b_mut/renderer/editor/inpaint_layered.js:643:24)
+    at decodePsd (file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k20b_mut/renderer/editor/inpaint_layered.js:858:39)
+    at async collectStream (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\tools\px_test.js:8211:21)
+    at async psdCases (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\tools\px_test.js:8359:27)
+    at async group (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\tools\px_test.js:65:5)
+    at async main (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\tools\px_test.js:13755:9)

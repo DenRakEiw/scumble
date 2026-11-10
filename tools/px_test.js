@@ -7925,7 +7925,7 @@ async function psdCases(ref, label, js) {
                 const mw = w + 5;
                 const r = rng(++mSeed);
                 const src = new Uint8Array(mw * rows * bps);
-                for (let i = 0; i < src.length; i++) src[i] = r() & 255;
+                for (let i = 0; i < src.length; i++) src[i] = (r() * 256) | 0;
                 // Full cover
                 maskCases.push({
                     tag: `mask full ${bits}b w=${w}`,
@@ -8224,8 +8224,8 @@ async function psdCases(ref, label, js) {
 
     {
         const mkSamples = (n, depth, seed) => {
-            const r = rng(seed), mask = depth === 16 ? 0xFFFF : 0xFF;
-            return Array.from({ length: n }, () => r() & mask);
+            const r = rng(seed), lim = depth === 16 ? 0x10000 : 0x100;
+            return Array.from({ length: n }, () => (r() * lim) | 0);
         };
         const streamSuites = [
             // 8-bit RGB multi-layer across all 4 compressions, channel order [-2, -1, 0, 1, 2], missing green channel [0, 2], and offset/disjoint/empty/36-byte -3 masks
@@ -8369,6 +8369,10 @@ async function psdCases(ref, label, js) {
         const predDesc = { 0: { comp: 3, bytes: predBuf, at: 0, cw: 4, chh: 2, rowBytes: 4 }, 1: null, 2: null };
         const pBand1 = js.psdBandRgba(predDesc, 4, 0, 2, 8, false);
         const pBand2 = js.psdBandRgba(predDesc, 4, 0, 2, 8, false);
+        const pxBandDirect = ref.psdBandRgba(predDesc, 4, 0, 2, 8, false);
+        const jobBytesAfterBandRgba = ref.job.jobBytes;
+        const pxMaskDirect = ref.psdBandMask(predDesc[0], { left: 0, top: 0 }, { left: 0, top: 0, right: 4, bottom: 2, def: 0 }, 4, 2, 0, 2, 8);
+        const jobBytesAfterBandMask = ref.job.jobBytes;
         const overZipBlk = (() => {
             const z = zlibMod.deflateSync(Buffer.alloc(256, 7));
             const blk = new Uint8Array(2 + z.length);
@@ -8400,7 +8404,8 @@ async function psdCases(ref, label, js) {
             } catch (e) { msg = String(e.message || e); refused = Boolean(e && e.refused === true); }
             return bands === 0 && re.test(msg) && (!wantRefused || refused);
         };
-        const upfrontOk = eqBytes(predBuf, predSnap) && eqBytes(pBand1, pBand2)
+        const upfrontOk = eqBytes(predBuf, predSnap) && eqBytes(pBand1, pBand2) && eqBytes(pxBandDirect, pBand1)
+            && pxMaskDirect.length === 32 && jobBytesAfterBandRgba === 0 && jobBytesAfterBandMask === 0
             && await checkRefusal0Bands(extraZipBomb, /unpacks to more than/)
             && await checkRefusal0Bands(shortRleLayer, /holds less data/)
             && await checkRefusal0Bands(shortFlatMerged, /merged picture holds less data/, true);
@@ -8511,7 +8516,7 @@ async function psdCases(ref, label, js) {
             && directRustCalls.packbits_rows === 1 && directRustCalls.psd_mask_rgba === 1
             && Object.keys(directJsCalls).length === 0
             && eqBytes(kPbRust, kPbJs) && eqBytes(kMaskRust, kMaskJs)
-            && jobBytesAfterRust === 0 && relAfter > relBefore
+            && jobBytesAfterRust === 0 && (relAfter - relBefore) === 3
             && eqBytes(wRust.layerOut, wantRef.bands.get("0:rgba"))
             && eqBytes(wRust.maskOut, wantRef.bands.get("0:mask"))
             && eqBytes(wJs.layerOut, wantRef.bands.get("0:rgba"))
