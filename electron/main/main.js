@@ -737,6 +737,8 @@ function buildMenu() {
                 { label: "Realism Pass (Windows only, RTX only)...", click: () => send("menu", "realism-pass") },
                 // the Key dialog (item 49, renderer/keydialog.js); not greyed: main has no engine state, the dialog says why
                 { label: "Key Green / Blue Screen...", click: () => send("menu", "key-screen") },
+                // a paid run on BytePlus ModelArk (renderer/splitdialog.js); the dialog says why when it cannot
+                { label: "Split into Layers...", click: () => send("menu", "split-layers") },
             ],
         },
         {
@@ -1221,6 +1223,9 @@ function installIpc() {
         });
     });
     ipcMain.handle("provider:cancel", (_e, runId) => providers.cancel(runId));
+    // a split's pictures, one at a time (Split into layers; providers/index.js keepLayerParts)
+    ipcMain.handle("provider:layerPart", (_e, token, part) => providers.layerPart(token, part));
+    ipcMain.handle("provider:dropLayerParts", (_e, token) => providers.dropLayerParts(token));
     // the noted Comfy Cloud jobs (S6, askCloudJobs above); `{ recheck: true }` is taken and means the same as no options.
     // The window acks each picture it opened: its note goes, and it is no longer the page's.
     ipcMain.handle("provider:recoverCloudJobs", () => askCloudJobs());

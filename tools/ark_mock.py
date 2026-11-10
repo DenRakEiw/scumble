@@ -28,6 +28,16 @@ lowercased) and its JSON body; the pictures are kept apart (decoded bytes, media
 recorded body by a short summary, so a snapshot stays small. `calls` is cleared by reset(), `every_call` never is.
 Every answer closes its connection (`Connection: close`, see llm_mock.py): a pooled connection would outlive stop().
 
+A layer decomposition (`layer_decomposition: true`, the 5.0 pro schema and BytePlus's 5.5 preview docs) answers a base and
+three layers, whatever the picture shows: exactly one input picture (else 400), `size` a tier (1K, 1.5K, 2K or auto),
+`layer_decomposition_options` on 5.5 only, no prompt needed. The base has the input's aspect at the tier's long side (auto:
+the input's own size inside 1280x720..2048x2048 pixels, else 1024 or 2048 on the long side). Layer "Sky" (z 1) is the top
+half, its PNG exactly its box; two layers named "Dog" (z 2 and 3) are boxes smaller than the base with PNGs twice their
+box's size, a cut-out (an opaque disc on a transparent ground). The layers come in the order z 2, 1, 3, so a client has to
+sort. The base has no bounding_box, each layer `absolute` and `normalized`. `response_format: "url"` answers links to GET
+/result/<n>, b64_json inlines. The prompt can steer the mock: MOCK_FAIL answers a 500 InternalServiceError (one layer
+failed: the whole request fails), MOCK_BROKEN a layer whose bytes are not a picture, MOCK_SLOW waits 4 s.
+
     python tools/ark_mock.py [port]     runs it standalone for poking at by hand
 """
 import base64
@@ -36,6 +46,7 @@ import re
 import struct
 import sys
 import threading
+import time
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -46,6 +57,8 @@ PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
 MODELS = ["dola-seedream-5-0-pro-260628", "seedream-5-0-260128", "seedream-5-0-lite-260128", "seedream-4-5-251128", "seedream-4-0-250828",
           "dola-seedream-5-5-261028"]
 BACKGROUNDS = ("auto", "transparent", "opaque")
+LAYER_MODELS = ("dola-seedream-5-0-pro-260628", "dola-seedream-5-5-261028")
+LAYER_TIERS = {"1K": 1024, "1.5K": 1536, "2K": 2048}
 SYNTHETIC = ["mock-quota", "mock-ipm", "mock-notopen"]
 REQUEST_ID = "021789000000000mock0000000000000000000000000000000000"
 
@@ -135,6 +148,7 @@ class Mock(ThreadingHTTPServer):
         self.every_call = []   # every request since start, never cleared
         self.images = []       # authorised POSTs to PATH: { body (pictures summarised), refs: [{ mime, bytes, dims }] }
         self.retried = set()
+        self.files = {}        # the pictures of a layer answer by url: GET /result/<n>
         self._thread = None
 
     @property
@@ -163,6 +177,11 @@ class Mock(ThreadingHTTPServer):
         with self.lock:
             return json.loads(json.dumps(self.every_call))
 
+    def handle_error(self, request, client_address):
+        # a client that hangs up mid-answer (the split's Cancel test) is no failure of the mock
+        if not isinstance(sys.exc_info()[1], ConnectionError):
+            super().handle_error(request, client_address)
+
     def ref_bytes(self, i, j):
         """The decoded bytes of picture j of image request i (since reset())."""
         with self.lock:
@@ -173,6 +192,7 @@ class Mock(ThreadingHTTPServer):
             self.calls.clear()
             self.images.clear()
             self.retried.clear()
+            self.files.clear()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -214,6 +234,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self._record()
+        if self.path.startswith("/result/"):
+            with self.server.lock:
+                data = self.server.files.get(self.path[len("/result/"):])
+            if data is not None:
+                self._send(200, data, ctype="image/png")
+                return
         self._send(404, error_body("NotFound", "no route GET " + self.path.split("?")[0], "NotFound"))
 
     def do_POST(self):
@@ -253,6 +279,9 @@ class Handler(BaseHTTPRequestHandler):
         model = str(body.get("model") or "")
         if not model:
             self._send(400, error_body("MissingParameter", "The request failed because it is missing one or multiple required parameters: model. Request id: mock", "BadRequest"))
+            return
+        if body.get("layer_decomposition") is True:
+            self._layers(body, model, refs)
             return
         if not str(body.get("prompt") or "").strip():
             self._send(400, error_body("MissingParameter", "The request failed because it is missing one or multiple required parameters: prompt. Request id: mock", "BadRequest"))
@@ -305,6 +334,69 @@ class Handler(BaseHTTPRequestHandler):
             "data": [{"b64_json": b64, "size": f"{w}x{h}", "output_format": fmt}],
             "usage": {**({"input_images": len(refs)} if refs else {}), "generated_images": 1, "output_tokens": tokens, "total_tokens": tokens},
         })
+
+
+def layer_base_size(tier, w, h):
+    """The base picture of a split: the input's aspect at the tier's long side; auto as the 5.0 pro schema says."""
+    if tier == "auto":
+        pixels = w * h
+        if 1280 * 720 <= pixels <= 2048 * 2048:
+            return w, h
+        long_side = 1024 if pixels < 1280 * 720 else 2048
+    else:
+        long_side = LAYER_TIERS[tier]
+    k = long_side / float(max(w, h))
+    return max(1, round(w * k)), max(1, round(h * k))
+
+
+def _layers(self, body, model, refs):
+    bad = lambda text: self._send(400, error_body("InvalidParameter", text + " Request id: mock", "BadRequest"))
+    if model not in LAYER_MODELS:
+        return bad(f"the model {model} does not support layer_decomposition.")
+    if len(refs) != 1 or isinstance(body.get("image"), list) and len(body["image"]) != 1:
+        return bad("layer_decomposition takes exactly one input image.")
+    for key in ("sequential_image_generation", "sequential_image_generation_options", "tools", "stream"):
+        if key in body:
+            return bad(f"`{key}` is not allowed with layer_decomposition.")
+    tier = body.get("size")
+    if tier != "auto" and tier not in LAYER_TIERS:
+        return bad(f"the parameter `size` is not valid with layer_decomposition: {tier!r}.")
+    if "layer_decomposition_options" in body and model != "dola-seedream-5-5-261028":
+        return bad("the parameter `layer_decomposition_options` is not supported by this model.")
+    prompt = str(body.get("prompt") or "")
+    if "MOCK_SLOW" in prompt:
+        time.sleep(4)
+    if "MOCK_FAIL" in prompt:
+        return self._send(500, error_body("InternalServiceError", "one layer failed, so the whole request failed. Request id: mock", "InternalServerError"))
+    d = refs[0]["dims"] or [1024, 1024]
+    bw, bh = layer_base_size(tier, d[0], d[1])
+    boxes = [("Dog", 2, [bw // 4, bh // 3, bw // 2, bh * 3 // 4], 2), ("Sky", 1, [0, 0, bw, bh // 2], 1), ("Dog", 3, [bw // 2, bh // 4, bw * 3 // 4, bh // 2], 2)]
+    by_url = body.get("response_format") == "url"
+    entries = [{"png": png_bytes(bw, bh), "extra": {"z_index": 0}}]
+    for name, z, box, scale in boxes:
+        w, h = (box[2] - box[0]) * scale, (box[3] - box[1]) * scale
+        png = png_cutout(w, h) if scale > 1 else png_bytes(w, h, (120, 180, 230))
+        if name == "Dog" and z == 3 and "MOCK_BROKEN" in prompt:
+            png = b"this is not a picture"
+        entries.append({"png": png, "extra": {
+            "z_index": z, "name": name, "description": f"a {name.lower()} at z {z}",
+            "bounding_box": {"absolute": box, "normalized": [box[0] * 1000 // bw, box[1] * 1000 // bh, box[2] * 1000 // bw, box[3] * 1000 // bh]},
+        }})
+    data = []
+    for n, e in enumerate(entries):
+        size = png_size(e["png"]) or [0, 0]
+        item = {"size": f"{size[0]}x{size[1]}", "output_format": "png", **e["extra"]}
+        if by_url:
+            with self.server.lock:
+                self.server.files[str(n)] = e["png"]
+            item["url"] = f"{self.server.url}/result/{n}"
+        else:
+            item["b64_json"] = base64.b64encode(e["png"]).decode("ascii")
+        data.append(item)
+    self._send(200, {"model": model, "created": 1789000000, "data": data, "usage": {"input_images": 1, "generated_images": len(entries), "output_tokens": bw * bh // 256, "total_tokens": bw * bh // 256}})
+
+
+Handler._layers = _layers
 
 
 if __name__ == "__main__":

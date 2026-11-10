@@ -20,7 +20,7 @@ const READS = new Set([
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
-const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "select_by_text", "cutout_layer", "upsample_prompt", "relight", "key_screen"]);
+const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "select_by_text", "cutout_layer", "upsample_prompt", "relight", "key_screen", "split_layers"]);
 
 /** The Realism Pass's name, verbatim wherever the feature is named (renderer/editor/realism.js LABEL). */
 const REALISM_LABEL = "Realism Pass (Windows only, RTX only)";
@@ -162,6 +162,8 @@ const POLICY = {
     // item 49: CorridorKey 2.0 on the user's ComfyUI (Route B, the default of this build) or in Scumble; `status` says
     // whether its route can key on the document; `preview` changes the selection, so it asks too
     key_screen: (call, facts) => keyRow(call, facts),
+    // a paid run on BytePlus ModelArk that adds layers (one undo step, its own); the count is what is asked, never a price
+    split_layers: (call) => ASK(`splits ${call.args && call.args.source && call.args.source !== "picture" ? "a layer" : "the picture"} into layers on BytePlus ModelArk${call.args && call.args.count ? `, up to ${call.args.count} layers` : ""}: this costs money and adds them as a new group`),
     upsample_prompt: () => ASK("rewrites the prompt on a paid model or your ComfyUI"),
     generate: (call, facts) => (call.args && call.args.each_area ? eachAreaRow(call, facts) : ASK("renders: this costs money, or queues on your ComfyUI", renderCard(call, facts))),
     generate_new: (call, facts) => ASK("renders a new base image, replaces every layer but the reference layers and clears the undo history", renderCard(call, facts)),
@@ -473,7 +475,7 @@ function clampInt(value, min, max, fallback) {
 }
 
 /** The command's own default `timeout`, filled in so the Bridge's timer is long enough (§5). */
-const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, key_screen: 300, generate: 600, generate_new: 600, upscale: 1800, realism_pass: 1800, relight: 900 };
+const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, key_screen: 300, split_layers: 900, generate: 600, generate_new: 600, upscale: 1800, realism_pass: 1800, relight: 900 };
 
 /**
  * The arguments as they are sent: a screenshot small enough to be cheap, a log page bounded, and

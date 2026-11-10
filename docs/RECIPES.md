@@ -2541,7 +2541,8 @@ model on the Model activation page, and then find its Model ID". A model that is
    - `seed`: the reference does not name it. The SDK's generated request type has it, which proves nothing for
      Seedream.
    - `n`: there is no such field.
-   - `sequential_image_generation`, `stream`, `optimize_prompt_options` and `layer_decomposition`.
+   - `sequential_image_generation`, `stream` and `optimize_prompt_options`; `layer_decomposition` goes only on *Split into
+     layers* ("Split into layers" below).
      `optimize_prompt_options` is an object whose `mode` defaults to `standard` (the reference: "standard mode,
      which provides higher-quality output but takes longer"); `fast` is the other mode, which 5.0 lite, 5.0 flash and
      4.5 do not take and 5.5 does not either (its preview docs). No mode turns the optimisation off, so a row would
@@ -2815,8 +2816,8 @@ takes from them:
   `background` reach it (`list_recipes` says `background: true`);
 - `optimize_prompt_options` `{ mode: "standard" }` (`fast` is not taken by 5.5); not sent, since standard is the
   default and there is no off (see "Not sent" above);
-- `layer_decomposition` (new in 5.5, up to 100 layers, `layer_decomposition_options: { max_images,
-  text_recognition }`): **not part of this recipe**; a feature of its own.
+- `layer_decomposition` (up to 100 layers on 5.5, `layer_decomposition_options: { max_images, text_recognition }`): a
+  feature of its own, "Split into layers" below.
 
 **What a transparent answer does.** The run reads `background: "transparent"` from the row before the crop is made
 and sets `info.keepAlpha` (see "Transparent results" above). In `finishPixels` (`renderer/editor/stitch.js`) the
@@ -2833,6 +2834,47 @@ existing words stay and `options.early_access` adds one more sentence to every r
 a code. Such a message reads "the model is not activated: activate it under Model activation in the ModelArk
 console (this model is in early access: BytePlus has to let the account in first, then activate it under Model
 activation in the ModelArk console) - ModelNotOpen: ...". The 5.0 variants never get that sentence.
+
+**Split into layers.** `split_layers`, *Image › Split into Layers...*: the visible picture or one layer's pixels go as
+the single input of a `POST /api/v3/images/generations` with `layer_decomposition: true`, and the answer lands as new
+layers above every existing layer. `recipes/seedream_5_5.json` and `seedream_5_pro.json` declare it in the ark variant's
+`options.layers`: `{ max: 100, options: true }` and `{ max: 16 }`. Adapter `ark.js` `layers` (kind `"layers"`), landing
+`renderer/editor/splitlayers.js`. Never run against the live API.
+
+From the 5.0 pro schema (`tools/refs/comfyrouter/byteplus_seedream-5-0-pro-260628.json`):
+
+- `image` exactly one, png / jpeg / webp / bmp / tiff / gif, up to 30 MB, total pixels from 512x512 to 6000x6000, aspect
+  1/16 to 16; several pictures are an error. Scumble sends it as one PNG data URL, or a JPEG when an opaque picture is
+  over 30 MB (the edit's rule). A picture out of range is refused before anything is read.
+- `prompt` optional: with one the model separates what it asks for, without one it finds the major elements. Sent as
+  typed, no edit sentence.
+- `size` a tier only: `1K`, `1.5K`, `2K` or `auto`. Auto: an input inside 1280x720..2048x2048 comes back at its own size,
+  a smaller one at 1K, a larger one at 2K. The base has the input's aspect; each layer's picture is "close to the
+  specified resolution", keeping its own aspect, so its PNG is not its box's size.
+- The answer: `data[0]` the base (`z_index` 0, no `bounding_box`), then the layers by `z_index`, each with
+  `bounding_box.absolute` `[left, top, right, bottom]` in the base's pixels and `normalized` on 0..1000, `name`,
+  `description`. `output_format` is the base's; a layer is always PNG. If one layer fails, the whole request fails.
+- `sequential_image_generation`, its options, `tools` and `stream` are an error with it, and are not sent.
+
+**Only in BytePlus's preview docs for 5.5** (as the user passed them on 2026-11-08; not on a public page): the model id, up
+to 100 layers, and `layer_decomposition_options: { max_images, text_recognition }`. Taken as read, and unverified: that
+`max_images` counts the layers and not the base, its default, what `text_recognition` does by default (Scumble always
+sends it, off unless asked), and that `auto` is a tier on 5.5 as it is on 5.0 pro. The 5.0 pro schema has no such options:
+the variant sends none, a count other than 16 and Text recognition are refused there.
+
+Up to a count of 32 the answer is asked for as `b64_json`; above it as `url`: 100 PNGs inlined would pass what one JSON
+string may hold in V8 (about 512 MB). Each link is fetched in turn, tried twice. Main keeps the pictures and the window
+takes them one at a time over `provider:layerPart`: one IPC message of dozens of 2K pictures ends the renderer.
+
+The landing: bottom to top by `z_index`, the base lowest, in one new group named after the source (the layer's name, or
+the document's), one `layers` undo step, each layer's name from `name` (one line, 60 characters, numbered when it
+repeats a name in the document), its `description` in the log entry and the command's answer. A box is scaled to the
+document; its edges are rounded so that two boxes that meet still meet; a box that is no box falls back to `normalized`,
+and a layer with neither is left out and named in the status line. Each layer is baked to its size in the document, so it
+is unscaled on whole pixels as the retouch tools need, and is stored in the file mirror as a result is, so a saved
+document holds it. Where the answer is smaller than the source (the output is at most about 2K), the status line says the
+layers are lower resolution than the picture, in red. Everything that can fail comes before the undo step: a failed run or
+a picture that does not decode leaves the document as it was.
 
 **Only a real key can verify** (written defensively, and listed here until a live run):
 

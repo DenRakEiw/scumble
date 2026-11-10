@@ -29,6 +29,7 @@ import { canvasSizeRefusal } from "./editor/inpaint_sizelimit.js";
 import { MAX_LORAS, FAMILIES, normalizeName, clampStrength, missingLoras, filterNames, groupByFolder, folderFits, loraFolder, loraHint, recipeFamily } from "./editor/loras.js";
 import * as loraPanel from "./editor/lora_panel.js";
 import { AREA_CAP } from "./editor/eacharea.js";
+import { SPLIT_TIERS, SPLIT_COUNT_DEFAULT, layerSpecOf } from "./editor/splitlayers.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -983,7 +984,7 @@ const COMMANDS = {
     },
     list_recipes: {
         readOnly: true,
-        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the ${REALISM_LABEL} recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); aspects: the aspects the Generate new dialog and new_canvas's model preset offer for it (its chosen provider's own list, else the general one); classes: its size classes for those, [{ size, name, label }] (size: the long side in pixels, name: the provider's tier such as 1k, 2K or 2 MP, null where it names none); background: whether generate_new's background transparent goes to it. An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. loras: whether the recipe takes LoRA rows (a recipe on your ComfyUI or Comfy Cloud whose graph has one model loader; set_generation loras sets them, list_loras lists the files they may name), loras_reason when not. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).`,
+        scope: "app", description: `The recipes (ComfyUI workflows and API providers) and which one is selected. ready: whether the recipe can run now (an API recipe: a key stored for its chosen provider, or the in-app model downloaded; a recipe on the user's ComfyUI: connected and every node type it needs on the server; the ${REALISM_LABEL} recipe, task "pass": whether the connected ComfyUI can run it, with a note for RTX 30), reason when not. keys: per provider of the recipe whether it has a key (true / false). new_image: whether generate_new can make a picture with it (an API recipe: its chosen provider has a text-to-image route); edit: whether generate takes it (false: the model makes pictures from the prompt alone); sizes: the long sides its text route offers (null: any size); aspects: the aspects the Generate new dialog and new_canvas's model preset offer for it (its chosen provider's own list, else the general one); classes: its size classes for those, [{ size, name, label }] (size: the long side in pixels, name: the provider's tier such as 1k, 2K or 2 MP, null where it names none); background: whether generate_new's background transparent goes to it; layers: where split_layers can run on it, { max, options } (options: the count and the Text recognition switch). An upscaler: factor, limits (an upscaler on the user's ComfyUI), document_max (the longest side upscale's scope document takes; null: no cap). textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone. loras: whether the recipe takes LoRA rows (a recipe on your ComfyUI or Comfy Cloud whose graph has one model loader; set_generation loras sets them, list_loras lists the files they may name), loras_reason when not. provider_keys: every API provider and whether a key is stored for it (never the key). status has the pass's readiness for a document (its runs, its size).`,
         params: {},
         async run() {
             const cur = host.recipe;
@@ -1010,6 +1011,7 @@ const COMMANDS = {
                         aspects: makes ? (preset ? preset.aspects : null) : undefined,
                         classes: makes ? (preset ? preset.classes.map((x) => ({ size: x.px, name: x.name, label: x.label })) : null) : undefined,
                         background: makes ? rows.some((s) => s.key === "background") : undefined,
+                        layers: layerSpecOf(r) || undefined,
                         factor: up ? v.factor || null : undefined, limits: up && !api ? r.limits || null : undefined, document_max: up ? documentMax(r, v) : undefined,
                         usesPrompt: up ? !!v.usesPrompt : undefined,
                         textRefs: up || pass || relight ? undefined : api ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots),
@@ -1748,6 +1750,34 @@ const COMMANDS = {
                 route: out.route || "app", pack: out.pack || null, sent: out.sent || null, scaled: !!out.scaled,
                 kept_percent: Math.round((out.kept || 0) * 10) / 10, preview: opts.preview, selection: opts.preview ? bounds(ed) : undefined,
                 status: out.layer || opts.preview ? ed.status : "The document was closed while the key ran; nothing was added.",
+            };
+        },
+    },
+    split_layers: {
+        needsImage: true,
+        description: `Split the visible picture, or one layer's own pixels, into layers with Seedream's layer decomposition on BytePlus ModelArk (a paid API run on the user's ModelArk key; recipe seedream_5_5, up to 100 layers, or seedream_5_pro, up to 16; list_recipes layers says which recipes can). The answer lands as new layers above every existing layer, in one new group named after the source, bottom to top by the model's stacking order, its base lowest, each named by the model and placed from its box in document pixels. One undo step takes them all back; the layers already in the document are not touched. Output is at most about 2K, so on a larger picture the layers are scaled up to the document and are lower resolution than it (scaled_up, and the status line says so). The picture must be 512 × 512 to 6000 × 6000 in area and no steeper than 16:1, else it is refused before anything is sent. cancel_run stops it like any API run. What BytePlus charges for it is not known to Scumble: Seedream 5.5 is not on its public price list.`,
+        params: {
+            source: P.str("\"picture\" (the default: the visible picture) or a layer whose own pixels are split (id, name, a unique part, or \"active\")", { default: "picture" }),
+            recipe: P.str("the recipe that splits: seedream_5_5 or seedream_5_pro. Default: the selected recipe if it can, else seedream_5_5"),
+            prompt: P.str("what to separate; left out, the model finds the major elements itself"),
+            count: P.int(`seedream_5_5: how many layers at most, 1..100 (default ${SPLIT_COUNT_DEFAULT}). seedream_5_pro finds its own, up to 16, and takes no count`),
+            text_recognition: P.bool("seedream_5_5: text recognition on (default off); seedream_5_pro has no such switch"),
+            size: P.enum("the output's size, a tier: auto (about the input's own, within 1K to 2K), 1K, 1.5K or 2K", SPLIT_TIERS, "auto"),
+            timeout: P.timeout(900),
+        },
+        async run(ed, a) {
+            const layer = a.source != null && a.source !== "" && a.source !== "picture" ? findLayer(ed, a.source) : null;
+            const ms = clampInt(a.timeout, 5, 3600, 900) * 1000;
+            let timer = null;
+            const out = await Promise.race([
+                host.splitLayers(ed, { recipe: a.recipe || "", layer, prompt: a.prompt, count: a.count, textRecognition: !!a.text_recognition, size: a.size }),
+                new Promise((_, rej) => { timer = setTimeout(() => { host.cancelRuns(ed); rej(new Error(`Split into layers timed out after ${ms / 1000} s: ${ed.status}`)); }, ms); }),
+            ]).finally(() => clearTimeout(timer));
+            if (!out) return { layers: [], group: null, status: "The document was closed while the split ran; nothing was added." };
+            return {
+                group: groupSummary(ed, out.group), recipe: out.recipe, model: out.model, seconds: Math.round((out.seconds || 0) * 10) / 10, size: out.tier, asked: out.asked, answered: out.answered, scaled_up: out.scaledUp, left_out: out.leftOut,
+                layers: out.layers.map((l) => ({ ...layerSummary(ed, l.layer), z_index: l.z, base: l.base, description: l.description })),
+                status: ed.status,
             };
         },
     },

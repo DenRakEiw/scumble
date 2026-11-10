@@ -81,7 +81,7 @@ Other text in braces stays as written. Besides that, `--run`:
   *File › Reopen Closed Tab* (and its list in the autosave), so your own closed tabs keep their places there;
 - leaves a file alone that `open_document` finds open in a tab already: that tab is yours, so the step fails ("open in
   a tab already: left alone") and nothing else of that file runs, no `close_document` included;
-- sends a command that has a `timeout` parameter (`cutout_layer`, `key_screen`, `realism_pass`, `upscale`,
+- sends a command that has a `timeout` parameter (`cutout_layer`, `key_screen`, `split_layers`, `realism_pass`, `upscale`,
   `generate`, ...) its default when the step gives none, so the call waits as long as the command does (the socket
   gives every command 10 minutes on top of its `timeout`).
 
@@ -331,6 +331,12 @@ keeps the layer's route and renders nothing. `preset` takes one of the panel's e
 message lists the eight). It returns `layer`, `lights`, `fit` (the picture's own light direction as the fit read
 it), `route`, `seconds` and `notes`.
 
+**`split_layers`**. Splits the visible picture or one layer into layers with Seedream's layer decomposition on BytePlus
+ModelArk (`recipe` `seedream_5_5` or `seedream_5_pro`; `list_recipes` `layers` says which recipes can): a base and the
+model's layers land above every existing layer in one new group, one undo step. A paid API run on the user's key; `prompt`,
+`count` and `text_recognition` (5.5), `size` (a tier). [COMMANDS.md](COMMANDS.md#split_layers-image) has the parameters and the
+answer.
+
 **`key_screen`** (item 49, 0.1.52; docs/PLAN_CORRIDORKEY.md). Keys a green or blue screen with CorridorKey 2.0 by
 Corridor Digital and adds one layer "Key": the subject's own colour with the screen's spill taken out, the matte as
 its layer mask, trimmed to the matte's box. A source layer (`source`) is hidden in the same step; with the visible
@@ -475,7 +481,7 @@ agent sees the user's last documents.
 ## Testing
 
 `python tools/mcp_test.py [--exe dist/win-unpacked/Scumble.exe]` talks to the server with
-the Python `mcp` client: instructions, the tools with valid names and schemas (118 on
+the Python `mcp` client: instructions, the tools with valid names and schemas (119 on
 2026-11-06: 98 core commands and 20 from the built-in plugins), `ping`
 (reports the mode), `new_document`, `load_image` by path, `select_rect`, `add_filter`
 (`sample.posterize`, WebGL2 in the hidden window), `sample_mean_color`, `screenshot` as

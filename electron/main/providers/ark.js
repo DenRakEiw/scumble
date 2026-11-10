@@ -29,14 +29,29 @@
 //               is not let in says so
 //   regions     the Region row's values this model may use ("ap-southeast" Johor, "eu-west" Dublin); the first is
 //               the default
-// Not sent: optimize_prompt_options (its mode defaults to standard, the only one 5.5 takes; there is no "off"),
-// layer_decomposition (a feature of its own), sequential_image_generation, stream, seed.
+//   layers      { max, options } where the model splits a picture into layers (kind "layers", below): `max` layers at
+//               most (5.0 pro 16, 5.5 100), `options` true where it takes layer_decomposition_options (5.5, from
+//               BytePlus's preview docs; the 5.0 schema does not have the field)
+// Not sent on an edit or a text run: optimize_prompt_options (its mode defaults to standard, the only one 5.5 takes;
+// there is no "off"), layer_decomposition (kind "layers" below), sequential_image_generation, stream, seed.
 // Every picture must be no steeper than 16:1, more than 14 px a side, at most 30 MB and at most 36 MP; a picture over
 // 30 MB goes as JPEG when it has no transparent pixel, anything else out of range is refused before sending.
 //
 // The host is one of the two regional hosts, chosen by the Region row (a key belongs to the region it was made in),
 // never a URL from a recipe; settings.ark.base may name a loopback mock for the tests, and then only a key that
 // starts with "test-" goes there, while such a key never goes to BytePlus.
+//
+// Layer decomposition (kind "layers", "Split into layers"; the 5.0 pro schema in
+// tools/refs/comfyrouter/byteplus_seedream-5-0-pro-260628.json, the rest of 5.5 from the preview docs):
+//   POST /api/v3/images/generations   JSON { model, image (exactly one picture), prompt? (none: the model finds the
+//                                     major elements), size (a tier only: 1K, 1.5K, 2K, auto), layer_decomposition: true,
+//                                     watermark: false, response_format, output_format: "png",
+//                                     layer_decomposition_options?: { max_images, text_recognition } (5.5 only) }
+//                                     -> data: [base, ...layers], the base first and without a bounding_box, every layer
+//                                     { b64_json | url, z_index, bounding_box: { absolute: [l, t, r, b], normalized },
+//                                     name, description, size }
+// If any layer fails the whole request fails, so an answer is all of them or an error. A layer's PNG is near the tier's
+// size, not its box's: the box says where it goes.
 "use strict";
 
 const { fetchImage, sleep: realSleep, fitPixels } = require("./util");
@@ -53,6 +68,16 @@ const MAX_PICTURE_PIXELS = 36000000;
 const MIN_PICTURE_EDGE = 15;                  // "Width and height (px): > 14"
 const MAX_RATIO = 16;
 const JPEG_QUALITY = 92;
+// layer decomposition: the documented input ("total pixels in the range [512x512, 6000x6000]", aspect [1/16, 16]) and
+// sizes; renderer/editor/splitlayers.js refuses the same before anything is read, tools/ark_test.js holds the two together
+const LAYER_MIN_PIXELS = 512 * 512;
+const LAYER_MAX_PIXELS = 6000 * 6000;
+const LAYER_TIERS = ["1K", "1.5K", "2K", "auto"];
+const LAYER_COUNT_DEFAULT = 16;
+// an answer of many layers as base64 would pass what one string of JSON may hold in V8 (about 512 MB): above this many
+// layers the service is asked for URLs (they live 24 hours and need no key), and they come one after another
+const LAYER_URLS_ABOVE = 32;
+const LAYER_DOWNLOAD_TRIES = 2;
 const RETRY_WAIT_MS = 5000;
 const RETRY_WAIT_MAX_MS = 60000;
 // codes a second request can outlast (nothing was generated, and only generated images are billed)
@@ -184,7 +209,7 @@ function pngSize(b) {
  */
 async function picturesFor(req, o, ctx, model) {
     const text = req.kind === "text";
-    const pics = text ? [] : [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png" }];
+    const pics = text ? [] : [{ what: req.kind === "layers" ? "picture" : "crop", bytes: Buffer.from(req.image), mime: "image/png" }];
     req.references.forEach((r, i) => pics.push({ what: `reference ${i + 1}`, bytes: Buffer.from(r), mime: "image/png" }));
     const max = +o.max_images > 0 ? +o.max_images : 10;
     if (pics.length > max) {
@@ -205,7 +230,7 @@ async function picturesFor(req, o, ctx, model) {
             const opaque = typeof ctx.opaque === "function" && (await ctx.opaque(p.bytes));
             const jpeg = opaque && typeof ctx.toJpeg === "function" ? await ctx.toJpeg(p.bytes, JPEG_QUALITY) : null;
             if (!jpeg || !jpeg.length || jpeg.length > MAX_PICTURE_BYTES) {
-                throw new Error(`ModelArk ${model}: the ${p.what} is ${(p.bytes.length / 1e6).toFixed(1)} MB, more than the 30 MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. ${text ? "Use" : "Set Highres fix lower or use"} a smaller reference layer.`);
+                throw new Error(`ModelArk ${model}: the ${p.what} is ${(p.bytes.length / 1e6).toFixed(1)} MB, more than the 30 MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. ${req.kind === "layers" ? "Use a smaller picture or layer." : `${text ? "Use" : "Set Highres fix lower or use"} a smaller reference layer.`}`);
             }
             ctx.log(`${p.what} ${p.bytes.length} bytes as JPEG ${jpeg.length} bytes`);
             p.bytes = Buffer.from(jpeg);
@@ -343,6 +368,17 @@ async function post(ctx, url, body) {
     return r;
 }
 
+/** The JSON of an answer, or the error of a failed one in the adapter's words. */
+async function readAnswer(r, ctx, model, at) {
+    if (!r.ok) {
+        const f = await readFailure(r, ctx.key);
+        throw new Error(scrub(`ModelArk ${model}: ${explain(r.status, f.code, f.message, at)}${r.waitSeconds ? `; try again in ${r.waitSeconds} s` : ""}`, ctx.key));
+    }
+    const j = (await r.json()) || {};
+    if (j.error) throw new Error(scrub(`ModelArk ${model}: ${explain(200, j.error.code, j.error.message || "error", at)}`, ctx.key));
+    return j;
+}
+
 async function run(req, ctx) {
     // ctx.sleep is injectable so tools/ark_test.js waits in milliseconds
     ctx = { ...ctx, sleep: ctx.sleep || realSleep, log: ctx.log || (() => {}) };
@@ -361,12 +397,7 @@ async function run(req, ctx) {
     const body = bodyFor(req, o, pics);
     const r = await post(ctx, where.host + PATH, body);
     const at = { region: where.region, regions: o.regions, early: !!o.early_access };
-    if (!r.ok) {
-        const f = await readFailure(r, ctx.key);
-        throw new Error(scrub(`ModelArk ${model}: ${explain(r.status, f.code, f.message, at)}${r.waitSeconds ? `; try again in ${r.waitSeconds} s` : ""}`, ctx.key));
-    }
-    const j = (await r.json()) || {};
-    if (j.error) throw new Error(scrub(`ModelArk ${model}: ${explain(200, j.error.code, j.error.message || "error", at)}`, ctx.key));
+    const j = await readAnswer(r, ctx, model, at);
     const item = Array.isArray(j.data) ? j.data.find((d) => d && (d.b64_json || d.url)) : null;
     if (!item) {
         const e = Array.isArray(j.data) && j.data.find((d) => d && d.error);
@@ -390,12 +421,133 @@ async function run(req, ctx) {
     };
 }
 
+// ---- layer decomposition ("Split into layers", kind "layers") ------------------------------------------------------
+
+/** The variant's `options.layers` as { max, options }, or null: the model has no layer mode. */
+function layerSpec(o) {
+    const s = o && o.layers;
+    return s && typeof s === "object" && +s.max > 0 ? { max: Math.floor(+s.max), options: !!s.options } : null;
+}
+
+/** "" when a w x h picture may go, else the refusal (the documented pixels and aspect). */
+function layerSizeRefusal(w, h, model) {
+    const pixels = w * h;
+    if (Math.min(w, h) >= MIN_PICTURE_EDGE && pixels >= LAYER_MIN_PIXELS && pixels <= LAYER_MAX_PIXELS && Math.max(w, h) <= MAX_RATIO * Math.min(w, h)) return "";
+    return `The picture is ${w} × ${h} (${(pixels / 1e6).toFixed(2)} megapixels): ${model} splits pictures of 512 × 512 to 6000 × 6000 in area, no steeper than 16:1.`;
+}
+
+/** What a request asks for, refused before any call when the model cannot: { tier, count (null: the model's own), textRecognition }. */
+function layerAsk(req, model, spec) {
+    const p = req.params || {};
+    const tier = p.size == null || p.size === "" ? "auto" : String(p.size);
+    if (!LAYER_TIERS.includes(tier)) throw new Error(`ModelArk ${model}: the size of a split is a tier (${LAYER_TIERS.join(", ")}), not "${p.size}".`);
+    const textRecognition = !!p.text_recognition;
+    if (!spec.options) {
+        if (p.count != null && p.count !== "" && +p.count !== spec.max) throw new Error(`ModelArk ${model} finds its own number of layers, up to ${spec.max}: it takes no count.`);
+        if (textRecognition) throw new Error(`ModelArk ${model} has no Text recognition switch for a split.`);
+        return { tier, count: null, textRecognition: false };
+    }
+    const raw = p.count == null || p.count === "" ? Math.min(LAYER_COUNT_DEFAULT, spec.max) : +p.count;
+    if (!Number.isInteger(raw) || raw < 1 || raw > spec.max) throw new Error(`ModelArk ${model}: the number of layers is a whole number from 1 to ${spec.max}, not "${p.count}".`);
+    return { tier, count: raw, textRecognition };
+}
+
+/** The request body of a split: the one picture alone (a string, the documented single form), a tier, the switch. */
+function layersBody(req, ask, pic, spec) {
+    const body = {
+        model: String(req.model || ""),
+        image: `data:${pic.mime};base64,${pic.bytes.toString("base64")}`,
+        size: ask.tier,
+        layer_decomposition: true,
+        watermark: false,
+        response_format: (ask.count != null ? ask.count : spec.max) > LAYER_URLS_ABOVE ? "url" : "b64_json",
+        output_format: "png",   // the base's; every layer is PNG whatever this says
+    };
+    const prompt = String(req.prompt || "").trim();
+    if (prompt) body.prompt = prompt;
+    if (spec.options) body.layer_decomposition_options = { max_images: ask.count, text_recognition: ask.textRecognition };
+    return body;
+}
+
+/** The entries of an answer in stacking order, the base first: the base is the one without a bounding box. */
+function orderLayers(data) {
+    const z = (d, i) => (Number.isFinite(+d.z_index) && d.z_index !== null && d.z_index !== "" ? +d.z_index : i);
+    const rows = data.map((d, i) => ({ d, i, z: z(d, i) })).sort((a, b) => a.z - b.z || a.i - b.i);
+    const at = rows.findIndex((x) => !x.d.bounding_box);
+    if (at < 0) return null;
+    return [rows[at], ...rows.slice(0, at), ...rows.slice(at + 1)];
+}
+
+/** One entry's picture: its bytes, as inlined or downloaded from its URL (which needs no key), tried twice. */
+async function layerBytes(item, ctx) {
+    if (item.b64_json) {
+        const bytes = Buffer.from(item.b64_json, "base64");
+        return { bytes, mime: bytes[0] === 0xff && bytes[1] === 0xd8 ? "image/jpeg" : "image/png" };
+    }
+    for (let tries = 1; ; tries++) {
+        try { return await fetchImage(item.url, ctx.fetch); }
+        catch (err) {
+            if (tries >= LAYER_DOWNLOAD_TRIES || (ctx.signal && ctx.signal.aborted)) throw err;
+            ctx.log(`a layer's download failed (${err && err.message}), once more`);
+            await ctx.sleep(RETRY_WAIT_MS);
+        }
+    }
+}
+
+/**
+ * Split one picture into layers (req.image; no references, no mask). -> { bytes (the base's), mime, layers: [{ bytes,
+ * mime, z_index, base, bounding_box, name, description, size }] (the base first, then bottom to top), info }. An answer
+ * is every layer or an error (the service's own rule).
+ */
+async function layers(req, ctx) {
+    ctx = { ...ctx, sleep: ctx.sleep || realSleep, log: ctx.log || (() => {}) };
+    const model = String(req.model || "");
+    if (!model) throw new Error("ModelArk recipe has no model id.");
+    const o = req.options || {};
+    const spec = layerSpec(o);
+    if (!spec) throw new Error(`ModelArk ${model} has no layer mode.`);
+    const where = hostFor(ctx, (req.params || {}).region, o.regions);
+    checkKey(where.test, ctx.key);
+    if (!req.image) throw new Error(`ModelArk ${model}: no picture to split.`);
+    if ((req.references || []).length) throw new Error(`ModelArk ${model} splits exactly one picture; this run has ${req.references.length + 1}.`);
+    const ask = layerAsk(req, model, spec);
+    const dims = pngSize(Buffer.from(req.image));
+    if (dims) {
+        const no = layerSizeRefusal(dims[0], dims[1], model);
+        if (no) throw new Error(no);
+    }
+    const [pic] = await picturesFor({ ...req, references: [] }, { ...o, max_images: 1 }, ctx, model);
+    const body = layersBody(req, ask, pic, spec);
+    const r = await post(ctx, where.host + PATH, body);
+    const at = { region: where.region, regions: o.regions, early: !!o.early_access };
+    const j = await readAnswer(r, ctx, model, at);
+    const data = Array.isArray(j.data) ? j.data : [];
+    const bad = data.find((d) => d && d.error);
+    if (bad) throw new Error(scrub(`ModelArk ${model}: ${explain(200, bad.error.code, bad.error.message, at)}`, ctx.key));
+    const usable = data.filter((d) => d && (d.b64_json || d.url));
+    if (!usable.length || usable.length !== data.length) throw new Error(scrub(`ModelArk ${model}: an answer without its pictures (${usable.length} of ${data.length})`, ctx.key));
+    const ordered = orderLayers(usable);
+    if (!ordered) throw new Error(`ModelArk ${model}: the answer has no base image.`);
+    const out = [];
+    for (let k = 0; k < ordered.length; k++) {
+        const d = ordered[k].d;
+        const got = await layerBytes(d, ctx);
+        out.push({ bytes: got.bytes, mime: got.mime, z_index: ordered[k].z, base: k === 0, bounding_box: d.bounding_box || null, name: d.name == null ? "" : String(d.name), description: d.description == null ? "" : String(d.description), size: d.size || null });
+    }
+    const usage = j.usage || {};
+    return {
+        bytes: out[0].bytes, mime: out[0].mime, seed: undefined, layers: out,
+        info: { model: j.model || model, region: where.region, size: body.size, answered: out[0].size, layers: out.length - 1, asked: ask.count, text_recognition: spec.options ? ask.textRecognition : null, picture: pic.mime === "image/jpeg" ? "jpeg" : "png", by: body.response_format, generated_images: usage.generated_images != null ? usage.generated_images : null },
+    };
+}
+
 module.exports = {
     label: "BytePlus ModelArk (Seedream)",
     keyUrl: "https://ai.byteplus.com/ark/region:ap-southeast-1/apiKey",
     keyHint: "API key from the ModelArk console (it belongs to the region it was made in)",
     edit: run,
     generate: run,   // kind "text": the same endpoint, `image` the references alone (none without)
+    layers,          // kind "layers": Split into layers
     layout,
     textLayout,
     baseUrl,
@@ -407,6 +559,7 @@ module.exports = {
     _pictures: picturesFor,
     _background: backgroundFor,
     _explain: explain,
+    _layerSizeRefusal: layerSizeRefusal,
     REGIONS,
     MAX_PICTURE_BYTES,
 };
