@@ -35,7 +35,7 @@ MUTANTS = [
     ("budget_counts_nothing", LAYERED, [("const budget = ORA_INFLATE_BASE + ORA_INFLATE_RATIO * fileSize;", "const budget = Infinity;")], "killed: crafted_declared.ora", KILL),
     ("layer_cap_gone", LAYERED, [("checkRect(label, size.w, size.h, ORA_LAYER_MAX_PIXELS);", ";")], "killed: crafted_decode.ora", KILL),
     ("pixel_budget_gone", LAYERED, [("if (pixels > pixelBudget) throw", "if (false) throw")], "killed: crafted_many.ora", KILL),
-    ("onheader_after_the_layers", LAYERED, [("    if (onHeader) onHeader({ width, height });\n", ""), ('    if (blends.length) notes.push(`blend modes the editor lacks', '    if (onHeader) onHeader({ width, height });\n    if (blends.length) notes.push(`blend modes the editor lacks')], "killed: onHeader before the layers", KILL),
+    ("onheader_after_the_layers", LAYERED, [("    if (onHeader) onHeader({ width, height });\n", ""), ('    if (missing.length) notes.push(`${missing.length} layer', '    if (onHeader) onHeader({ width, height });\n    if (missing.length) notes.push(`${missing.length} layer')], "killed: onHeader before the layers", KILL),
 
     ("stream_on_the_canvas_backend", CANVAS, [("if (this.tileMode && InpaintEditor.oraParted !== false && pngReaderUsable()) {", "if (InpaintEditor.oraParted !== false && pngReaderUsable()) {")], "killed: the canvas backend's bitmaps", KILL_CANVAS),
     ("toggle_ignored", CANVAS, [("if (this.tileMode && InpaintEditor.oraParted !== false && pngReaderUsable()) {", "if (this.tileMode && pngReaderUsable()) {")], "killed: oraParted = false took the pool", KILL),
