@@ -1770,46 +1770,9 @@ async function relightCases(px, label, js) {
     }
     check(`${label} height_normals equals its twin within 1 level`, okNormals, detailNormals);
 
-    let okShadows = true, detailShadows = "";
-    for (const [w, h, light, radius, taps, steps, bias, row0, rows] of [
-        [32, 32, [16, 16, 100, 0], 0, 4, 16, 1.0, 0, 32],
-        [64, 64, [10, 10, 50, 0], 5, 4, 32, 0.5, 0, 64],
-        [64, 64, [-1, 0, 0.5, 1], 2, 4, 16, 1.0, 0, 64],
-        [77, 53, [40, 25, 80, 0], 10, 8, 32, 1.0, 10, 20],
-        [128, 128, [20, 20, 40, 0], 15, 16, 32, 1.0, 0, 128],
-    ]) {
-        const m = genMap(w, h, w * 97 + h);
-        const bandRows = Math.min(rows, h - row0);
-        const rustS = px.shadowMarch(m, w, h, 50, light, radius, taps, steps, bias, row0, bandRows);
-        const jsS = js.shadowMarch(m, w, h, 50, light, radius, taps, steps, bias, row0, bandRows);
-        const d = maxDiff(rustS, jsS);
-        if (d.max > 1) {
-            okShadows = false;
-            detailShadows = `${w}x${h} lightKind=${light[3]}: maxDiff ${d.max} (${d.firstDiff})`;
-            break;
-        }
-    }
-    if (okShadows) {
-        const W = 100, H = 20;
-        const depth = new Uint16Array(W * H);
-        for (let y = 0; y < H; y++) {
-            for (let x = 0; x < W; x++) {
-                depth[y * W + x] = x < 50 ? 10000 : 50000;
-            }
-        }
-        const light = [60, 10, 100, 0];
-        const rustVis = px.shadowMarch(depth, W, H, 50, light, 0, 4, 32, 1.0, 0, H);
-        const jsVis = js.shadowMarch(depth, W, H, 50, light, 0, 4, 32, 1.0, 0, H);
-        const d = maxDiff(rustVis, jsVis);
-        if (d.max > 1) {
-            okShadows = false;
-            detailShadows = `step edge: maxDiff ${d.max} (${d.firstDiff})`;
-        }
-    }
-    check(`${label} shadow_march equals its twin within 1 level`, okShadows, detailShadows);
-
-    // K13: verbatim pre-hoist reference to prove the twin's per-tap hoist changes 0 bytes, and twinCheck (0 levels)
-    // for shadow_march_f64 across all light kinds (0, 1, 2), taps, steps, stripes, and edge-case lights.
+    // K13-K14: verbatim pre-hoist reference to prove the twin's per-tap hoist changes 0 bytes, and twinCheck (0 levels)
+    // for shadow_march_f64 (and px.shadowMarch) across all light kinds (0, 1, 2), taps, steps, stripes, odd widths,
+    // and f64x2 lane-divergence edge cases.
     const refShadowMarchPreHoist = (depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out = null) => {
         const bandRows = Math.min(rows, h - row0);
         const dst = out || new Uint8Array(w * bandRows);
@@ -1870,9 +1833,65 @@ async function relightCases(px, label, js) {
     };
 
     const f64Cases = [];
+    {
+        // Surgical boundary and rounding-tie cases first (so twinCheck stops on the exact surgical case):
+        // 1. map_z == sz + z_bias tie (32767 > 32767 is false)
+        const dTie = new Uint16Array(16 * 4).fill(32768);
+        f64Cases.push({ tag: "16x4 map_z == sz + z_bias tie", args: [dTie, 16, 4, 65535, [8, 2, 32767, 0], 0, 1, 16, 0, 0, 4] });
+        // 2. rdz < 0 && sz > scale (pz = 60 > scale 50, tz = 0 -> rdz = -60 < 0, blocked at later steps)
+        const dRdzNeg = new Uint16Array(16 * 4).fill(0);
+        f64Cases.push({ tag: "16x4 rdz < 0 with sz > scale", args: [dRdzNeg, 16, 4, 50, [15, 2, 0, 0], 0, 1, 32, 10, 0, 4] });
+        // 3. Neighboring pixels x=0 blocked at s=0 (ix=2) while x=1 continues and is blocked at s=1 (ix=5)
+        const dLaneBothSteps = new Uint16Array(16 * 4).fill(65535);
+        dLaneBothSteps[2 * 16 + 2] = 0;
+        dLaneBothSteps[2 * 16 + 5] = 0;
+        f64Cases.push({ tag: "16x4 x=0 blocked at s=0 (ix=2), x=1 blocked at s=1 (ix=5)", args: [dLaneBothSteps, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
+        // 4. cx == 0.0, cy == 0.0, cx == wf, cy == hf boundaries and s == steps final-step wall at x = 8
+        const dWall = new Uint16Array(16 * 4).fill(65535);
+        for (let y = 0; y < 4; y++) { dWall[y * 16 + 0] = 0; dWall[y * 16 + 8] = 0; }
+        f64Cases.push({ tag: "16x4 cx == 0.0 boundary wall", args: [dWall, 16, 4, 50, [-0.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 cx == wf boundary out-of-bounds", args: [dWall, 16, 4, 50, [15.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 final step s == steps wall", args: [dWall, 16, 4, 50, [8, 2, 10, 0], 0, 1, 8, 0.5, 0, 4] });
+        const dWallY = new Uint16Array(16 * 4).fill(65535);
+        for (let x = 0; x < 16; x++) dWallY[0 * 16 + x] = 0;
+        f64Cases.push({ tag: "16x4 cy == 0.0 boundary wall", args: [dWallY, 16, 4, 50, [8, -0.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        f64Cases.push({ tag: "16x4 cy == hf boundary out-of-bounds", args: [dWallY, 16, 4, 50, [0, 3.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
+        // 5. sun (px + tapX[t]) - px vs tapX[t] rounding tie at (px=9, py=0), and transpose (py + tapY[t]) - py in y-precompute
+        const dSunTie = new Uint16Array(16 * 4).fill(65535);
+        dSunTie[1 * 16 + 9] = 0;
+        f64Cases.push({ tag: "16x4 sun tx - px rounding tie", args: [dSunTie, 16, 4, 50, [-1.000000000000002, 2, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 4] });
+        const dSunTieY = new Uint16Array(4 * 16).fill(65535);
+        dSunTieY[9 * 4 + 1] = 0;
+        f64Cases.push({ tag: "4x16 sun ty - py rounding tie", args: [dSunTieY, 4, 16, 50, [2, -1.000000000000002, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 16] });
+        // 6. x=0 blocked at step 1 (ix=2) while x=1 is unblocked (ix=3, 5, 6, 8)
+        const dLane0Hit = new Uint16Array(16 * 4).fill(65535);
+        dLane0Hit[2 * 16 + 2] = 0;
+        f64Cases.push({ tag: "16x4 x=0 blocked at ix=2, x=1 unblocked", args: [dLane0Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
+        // 7. x=1 blocked at step 1 (ix=3) while x=0 is unblocked (ix=2, 4, 6, 8)
+        const dLane1Hit = new Uint16Array(16 * 4).fill(65535);
+        dLane1Hit[2 * 16 + 3] = 0;
+        f64Cases.push({ tag: "16x4 x=1 blocked at ix=3, x=0 unblocked", args: [dLane1Hit, 16, 4, 50, [8, 2, 10, 0], 0, 1, 4, 0.5, 0, 4] });
+        // 8. x=0 exits via cx < 0.0 at step 1 while x=1 stays in bounds (cx=0.4 -> ix=0) and hits wall at (0, 2)
+        const dLane0ExitLeft = new Uint16Array(16 * 4).fill(65535);
+        dLane0ExitLeft[2 * 16 + 0] = 0;
+        f64Cases.push({ tag: "16x4 x=0 exits cx < 0, x=1 blocked at ix=0", args: [dLane0ExitLeft, 16, 4, 50, [-1.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
+        // 9. x=15 exits via cx >= wf at step 1 while x=14 stays in bounds (cx=15.6 -> ix=15) and hits wall at (15, 2)
+        const dLane1ExitRight = new Uint16Array(16 * 4).fill(65535);
+        dLane1ExitRight[2 * 16 + 15] = 0;
+        f64Cases.push({ tag: "16x4 x=15 exits cx >= wf, x=14 blocked at ix=15", args: [dLane1ExitRight, 16, 4, 50, [16.2, 2, 10, 0], 0, 1, 2, 0.5, 0, 4] });
+        // 10. exit_sky (rdz >= 0 && sz > scale) with negative scale (-50): x=0 has d=0 (z0=-50, rdz=40>=0, sz=-30>-50 -> exits unblocked)
+        //     while without exit_sky it would sample d=65535 (map_z=0 > sz+z_bias=-30) and be marked blocked
+        const dExitSky = new Uint16Array(16 * 4).fill(65535);
+        dExitSky[2 * 16 + 0] = 0;
+        f64Cases.push({ tag: "16x4 exit_sky rdz >= 0 && sz > scale (-50)", args: [dExitSky, 16, 4, -50, [8, 2, -10, 0], 0, 1, 2, 0, 0, 4] });
+    }
     for (const [w, h, scale, light, radius, taps, steps, bias, row0, rows, tag] of [
         [1, 1, 50, [0, 0, 100, 0], 0, 1, 1, 0, 0, 1, "1x1 point"],
+        [1, 4, 50, [0, 2, 40, 0], 1, 4, 16, 0.5, 0, 4, "1x4 odd width w=1 point"],
+        [3, 4, 50, [1, 2, 40, 1], 2, 4, 16, 0.5, 0, 4, "3x4 odd width w=3 sun"],
+        [5, 5, 50, [2, 2, 40, 2], 2, 4, 32, 0.5, 1, 3, "5x5 odd width w=5 spot stripe"],
         [7, 3, 40, [3.5, 1.5, 30, 0], 2.5, 3, 16, 0.2, 0, 3, "7x3 point"],
+        [17, 7, 50, [8, 3, 45, 1], 3, 8, 32, 0.5, 0, 7, "17x7 odd width w=17 sun"],
         [32, 32, 50, [16, 16, 100, 0], 0, 4, 16, 1.0, 0, 32, "32x32 point r=0"],
         [64, 64, 50, [10, 10, 50, 0], 5, 4, 32, 0.5, 0, 64, "64x64 point r=5"],
         [64, 64, 50, [-1, 0, 0.5, 1], 2, 4, 16, 1.0, 0, 64, "64x64 sun"],
@@ -1890,28 +1909,6 @@ async function relightCases(px, label, js) {
         const depth = new Uint16Array(W * H);
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) depth[y * W + x] = x < 50 ? 10000 : 50000;
         f64Cases.push({ tag: "100x20 step edge", args: [depth, W, H, 50, [60, 10, 100, 0], 0, 4, 32, 1.0, 0, H] });
-
-        // Surgical boundary cases for mutation kills:
-        // 1. map_z == sz + z_bias tie (32767 > 32767 is false)
-        const dTie = new Uint16Array(16 * 4).fill(32768);
-        f64Cases.push({ tag: "16x4 map_z == sz + z_bias tie", args: [dTie, 16, 4, 65535, [8, 2, 32767, 0], 0, 1, 16, 0, 0, 4] });
-        // 2. rdz < 0 && sz > scale (pz = 60 > scale 50, tz = 0 -> rdz = -60 < 0, blocked at later steps)
-        const dRdzNeg = new Uint16Array(16 * 4).fill(0);
-        f64Cases.push({ tag: "16x4 rdz < 0 with sz > scale", args: [dRdzNeg, 16, 4, 50, [15, 2, 0, 0], 0, 1, 32, 10, 0, 4] });
-        // 3. cx == 0.0, cy == 0.0, cx == wf, cy == hf boundaries and s == steps final-step wall at x = 8
-        const dWall = new Uint16Array(16 * 4).fill(65535);
-        for (let y = 0; y < 4; y++) { dWall[y * 16 + 0] = 0; dWall[y * 16 + 8] = 0; }
-        f64Cases.push({ tag: "16x4 cx == 0.0 boundary wall", args: [dWall, 16, 4, 50, [-0.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
-        f64Cases.push({ tag: "16x4 cx == wf boundary out-of-bounds", args: [dWall, 16, 4, 50, [15.5, 2, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
-        f64Cases.push({ tag: "16x4 final step s == steps wall", args: [dWall, 16, 4, 50, [8, 2, 10, 0], 0, 1, 8, 0.5, 0, 4] });
-        const dWallY = new Uint16Array(16 * 4).fill(65535);
-        for (let x = 0; x < 16; x++) dWallY[0 * 16 + x] = 0;
-        f64Cases.push({ tag: "16x4 cy == 0.0 boundary wall", args: [dWallY, 16, 4, 50, [8, -0.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
-        f64Cases.push({ tag: "16x4 cy == hf boundary out-of-bounds", args: [dWallY, 16, 4, 50, [0, 3.5, 0.5, 0], 0, 1, 1, 0.5, 0, 4] });
-        // 4. sun (px + tapX[t]) - px vs tapX[t] rounding tie at (px=9, py=0): step 1 samples (9, 1) vs (8, 1)
-        const dSunTie = new Uint16Array(16 * 4).fill(65535);
-        dSunTie[1 * 16 + 9] = 0;
-        f64Cases.push({ tag: "16x4 sun tx - px rounding tie", args: [dSunTie, 16, 4, 50, [-1.000000000000002, 2, 23.895606290697042, 1], 0, 1, 2, 0.5, 0, 4] });
     }
     const { lightToMap, defaultLight } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
     let nonTrivialOk = true, nonTrivialDetail = "";
@@ -2128,16 +2125,16 @@ async function coldCall(loadPx, bytes, use) {
 const coldText = (c) => `cold first call ${c.first.toFixed(1)} ms (compile ${c.compile.toFixed(1)} ms)`;
 
 /**
- * The relight kernels as the app runs them (docs/PERFORMANCE.md section 15.2): kernels.js, which loads px.wasm as a
- * pool worker does, against the JS twin and the SIMD build called directly, on a smooth depth map with
- * ensureRelightMaps' parameters (depth_scale 50, diffusion 30; the drag's quarter map with 1 tap and 16 steps). Each
- * call warmed up twice, then five rounds in a rotating order, medians (`benchMedians`), and the SIMD build's cold first
- * call (`coldCall`). Always checks the routing: point and spot (a spot goes as kind 0) run the twin, sun (kind 1) the
- * Rust build, byte for byte. The times only with `PX_BENCH=1` (1024 x 1024 and the quick 1024 x 682) or
- * `PX_BENCH=large` (also 2048 x 1365 and 4096 x 2731, the map of a 3:2 picture with a long side of 4096 or more,
- * WORK_MAX); without it the check runs once on a 512 x 341 map.
+ * The relight kernels as the app runs them (docs/PERFORMANCE.md section 15.2, docs/PLAN_WASM_BUILD.md §4.4-4.5):
+ * kernels.js, which loads px.wasm as a pool worker does, against the JS twin and the SIMD / scalar builds called
+ * directly, on a smooth depth map with ensureRelightMaps' parameters (depth_scale 50, diffusion 30; the drag's quarter
+ * map with 1 tap and 16 steps). Each call warmed up twice, then five rounds in a rotating order, medians
+ * (`benchMedians`), and the SIMD build's cold first call (`coldCall`). Always checks the routing and byte-for-byte
+ * identity across `routed`, `twin`, `simd_f64`, and `scalar_f64` for point, spot, and sun. The times only with
+ * `PX_BENCH=1` (1024 x 1024 and the quick 1024 x 682) or `PX_BENCH=large` (also 2048 x 1365 and 4096 x 2731, the map of
+ * a 3:2 picture with a long side of 4096 or more, WORK_MAX); without it the check runs once on a 512 x 341 map.
  */
-async function relightBench(js, simd) {
+async function relightBench(js, simd, scalar) {
     const realFetch = globalThis.fetch;
     globalThis.fetch = async (u, ...rest) => {   // kernels.js fetches ./px.wasm; Node's fetch reads no file: URL
         const s = String(u && u.href ? u.href : u);
@@ -2151,9 +2148,8 @@ async function relightBench(js, simd) {
     check("kernels.js loads px.wasm (SIMD) as in a worker", !!routed && K.kernelsInUse() === "rust" && routed.simd === true);
     if (!routed) return;
     const { lightToMap, defaultLight } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_relight.js")).href);
-    let f32Calls = 0, f64Calls = 0;
-    const marchF32 = routed.shadowMarch, marchF64 = routed.shadowMarchF64;
-    routed.shadowMarch = function (...a) { f32Calls++; return marchF32.apply(this, a); };
+    let f64Calls = 0;
+    const marchF64 = routed.shadowMarchF64;
     routed.shadowMarchF64 = function (...a) { f64Calls++; return marchF64.apply(this, a); };
     const { loadPx } = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
     const wasmBytes = fs.readFileSync(path.join(PX_DIR, "px.wasm"));
@@ -2170,6 +2166,8 @@ async function relightBench(js, simd) {
             const m = benchMedians([["routed", () => K.heightNormals(depth, w, h, scale, 2.0)], ["twin", () => js.heightNormals(depth, w, h, scale, 2.0)]]);
             console.log(`       ${tag}: height_normals routed (rust) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms; simd ${coldText(cold)}`);
         }
+        const r = K.route("shadowMarch");
+        const want = "rust_f64";
         for (const [name, fx, fy, dist] of [["point", 0.30, 0.35, -30], ["spot", 0.65, 0.12, -60], ["sun", 0.15, 0.20, -30]]) {
             const lm = lightToMap({ ...defaultLight(0, { width: w, height: h }), type: name, x: fx * w, y: fy * h, dist }, map, { depth_scale: 50 });
             const light = [lm.mx, lm.my, lm.mz, name === "sun" ? 1 : 0];   // ensureRelightMaps' lightVec
@@ -2177,84 +2175,115 @@ async function relightBench(js, simd) {
                 routed: () => K.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
                 twin: () => js.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
                 simd_f64: () => simd.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
-                simd_f32: () => simd.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
+                scalar_f64: () => scalar.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, 0, h),
             };
-            const c32 = f32Calls, c64 = f64Calls;
+            const c64 = f64Calls;
             const out = run.routed();
-            const ran = f64Calls > c64 ? "rust_f64" : f32Calls > c32 ? "rust_f32" : "twin";
-            const want = name === "sun" ? "rust_f32" : "rust_f64";
-            const wantBytes = want === "rust_f64" ? run.twin() : run.simd_f32();
-            if (ran !== want || !eqBytes(out, wantBytes) || (want === "rust_f64" && !eqBytes(out, run.simd_f64()))) {
-                ok = false; detail += `${detail ? "; " : ""}${tag} ${name}: ran ${ran}${ran === want ? ", other bytes" : ""}`;
+            const ran = f64Calls > c64 ? "rust_f64" : "twin";
+            const wantBytes = run.twin();
+            if (r !== undefined || ran !== want || !eqBytes(out, wantBytes) || !eqBytes(out, run.simd_f64()) || !eqBytes(out, run.scalar_f64())) {
+                ok = false; detail += `${detail ? "; " : ""}${tag} ${name}: route=${JSON.stringify(r)} ran ${ran} (want ${want})${r === undefined && ran === want ? ", other bytes" : ""}`;
             }
             if (!bench) continue;
-            const cold = await coldCall(loadPx, wasmBytes, (p) => (name === "sun"
-                ? p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, 0, h)
-                : p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, 0, h)));
+            const cold = await coldCall(loadPx, wasmBytes, (p) => p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, 0, h));
             const m = benchMedians(Object.entries(run));
-            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd_f64 ${m.simd_f64.toFixed(1)} ms, simd_f32 ${m.simd_f32.toFixed(1)} ms (twin / simd_f64 ${(m.twin / m.simd_f64).toFixed(2)}); ${coldText(cold)}`);
+            console.log(`       ${tag} (${taps} taps, ${steps} steps): shadow_march ${name} routed (${ran}) ${m.routed.toFixed(1)} ms, twin ${m.twin.toFixed(1)} ms, simd_f64 ${m.simd_f64.toFixed(1)} ms, scalar_f64 ${m.scalar_f64.toFixed(1)} ms (twin / simd_f64 ${(m.twin / m.simd_f64).toFixed(2)}); ${coldText(cold)}`);
         }
     }
-    routed.shadowMarch = marchF32;
     routed.shadowMarchF64 = marchF64;
-    check("shadow_march as routed: kind 0 (point, spot) runs shadow_march_f64 (byte-identical to the twin), kind 1 (sun) runs shadow_march (byte for byte)", ok, detail);
+    check("shadow_march as routed: point, spot, and sun all produce byte-identical f64 outputs across routed, twin, simd_f64, and scalar_f64", ok, detail);
 
-    // K13 guard and route checks on K.shadowMarch
+    // K13-K14 guard, route, and trap recovery checks on K.shadowMarch
     {
         const w = 64, h = 48, d = smoothDepth(w, h);
         const goodLight = [20, 15, 30, 0], sunLight = [0, 0, 1, 1];
         K.pxCalls(true);
-        let guardOk = true, guardDetail = "";
-        for (const [what, gw, gh, scale, light, radius, bias, rows] of [
-            ["w=0 (sun)", 0, h, 30, sunLight, 2, 0.2, h],
-            ["h=0 (sun)", w, 0, 30, sunLight, 2, 0.2, 0],
-            ["w>=2^30 (sun)", 0x40000000, 1, 30, sunLight, 2, 0.2, 0],
-            ["h>=2^30 (sun)", 1, 0x40000000, 30, sunLight, 2, 0.2, 0],
-            ["NaN lx", w, h, 30, [NaN, 15, 30, 0], 2, 0.2, h],
-            ["Inf ly", w, h, 30, [20, Infinity, 30, 0], 2, 0.2, h],
-            ["-Inf lz (sun)", w, h, 30, [20, 15, -Infinity, 1], 2, 0.2, h],
-            ["lx >= 2^30", w, h, 30, [0x40000000, 15, 30, 0], 2, 0.2, h],
-            ["ly <= -2^30", w, h, 30, [20, -0x40000000, 30, 0], 2, 0.2, h],
-            ["lz >= 2^30 (sun)", w, h, 30, [0, 0, 0x40000000, 1], 2, 0.2, h],
-            ["scale >= 2^30 (point)", w, h, 0x40000000, goodLight, 2, 0.2, h],
-            ["scale >= 2^30 (sun)", w, h, 0x40000000, sunLight, 2, 0.2, h],
-            ["radius >= 2^30 (point)", w, h, 30, goodLight, 0x40000000, 0.2, h],
-            ["radius >= 2^30 (sun)", w, h, 30, sunLight, 0x40000000, 0.2, h],
-            ["bias >= 2^30 (point)", w, h, 30, goodLight, 2, 0x40000000, h],
-            ["bias >= 2^30 (sun)", w, h, 30, sunLight, 2, 0x40000000, h],
-            ["bias < 0 (point)", w, h, 30, goodLight, 2, -0.001, h],
-            ["bias < 0 (sun)", w, h, 30, sunLight, 2, -0.001, h],
-            ["NaN radius (point)", w, h, 30, goodLight, NaN, 0.2, h],
-            ["NaN radius (sun)", w, h, 30, sunLight, NaN, 0.2, h],
-            ["Inf bias (point)", w, h, 30, goodLight, 2, Infinity, h],
-            ["Inf bias (sun)", w, h, 30, sunLight, 2, Infinity, h],
-        ]) {
-            const got = K.shadowMarch(d, gw, gh, scale, light, radius, 4, 16, bias, 0, rows);
-            const want = js.shadowMarch(d, gw, gh, scale, light, radius, 4, 16, bias, 0, rows);
-            const calls = K.pxCalls(true);
-            if (!eqBytes(got, want) || Object.keys(calls).length !== 0) {
-                guardOk = false;
-                guardDetail = `${what}: calls=${JSON.stringify(calls)}`;
-                break;
+        let guardOk = true, guardDetail = "", f64Entered = 0;
+        routed.shadowMarchF64 = function (...a) { f64Entered++; return marchF64.apply(this, a); };
+        try {
+            for (const [what, gw, gh, scale, light, radius, bias, rows] of [
+                ["w=0 (sun)", 0, h, 30, sunLight, 2, 0.2, h],
+                ["h=0 (sun)", w, 0, 30, sunLight, 2, 0.2, 0],
+                ["w>=2^30 (sun)", 0x40000000, 1, 30, sunLight, 2, 0.2, 0],
+                ["h>=2^30 (sun)", 1, 0x40000000, 30, sunLight, 2, 0.2, 0],
+                ["NaN lx", w, h, 30, [NaN, 15, 30, 0], 2, 0.2, h],
+                ["Inf ly", w, h, 30, [20, Infinity, 30, 0], 2, 0.2, h],
+                ["-Inf lz (sun)", w, h, 30, [20, 15, -Infinity, 1], 2, 0.2, h],
+                ["lx >= 2^30", w, h, 30, [0x40000000, 15, 30, 0], 2, 0.2, h],
+                ["ly <= -2^30", w, h, 30, [20, -0x40000000, 30, 0], 2, 0.2, h],
+                ["lz >= 2^30 (sun)", w, h, 30, [0, 0, 0x40000000, 1], 2, 0.2, h],
+                ["scale >= 2^30 (point)", w, h, 0x40000000, goodLight, 2, 0.2, h],
+                ["scale >= 2^30 (sun)", w, h, 0x40000000, sunLight, 2, 0.2, h],
+                ["radius >= 2^30 (point)", w, h, 30, goodLight, 0x40000000, 0.2, h],
+                ["radius >= 2^30 (sun)", w, h, 30, sunLight, 0x40000000, 0.2, h],
+                ["bias >= 2^30 (point)", w, h, 30, goodLight, 2, 0x40000000, h],
+                ["bias >= 2^30 (sun)", w, h, 30, sunLight, 2, 0x40000000, h],
+                ["bias < 0 (point)", w, h, 30, goodLight, 2, -0.001, h],
+                ["bias < 0 (sun)", w, h, 30, sunLight, 2, -0.001, h],
+                ["NaN radius (point)", w, h, 30, goodLight, NaN, 0.2, h],
+                ["NaN radius (sun)", w, h, 30, sunLight, NaN, 0.2, h],
+                ["Inf bias (point)", w, h, 30, goodLight, 2, Infinity, h],
+                ["Inf bias (sun)", w, h, 30, sunLight, 2, Infinity, h],
+            ]) {
+                const got = K.shadowMarch(d, gw, gh, scale, light, radius, 4, 16, bias, 0, rows);
+                const want = js.shadowMarch(d, gw, gh, scale, light, radius, 4, 16, bias, 0, rows);
+                const calls = K.pxCalls(true);
+                if (!eqBytes(got, want) || Object.keys(calls).length !== 0 || f64Entered !== 0) {
+                    guardOk = false;
+                    guardDetail = `${what}: calls=${JSON.stringify(calls)} f64Entered=${f64Entered}`;
+                    break;
+                }
             }
+        } finally {
+            routed.shadowMarchF64 = marchF64;
         }
         check("K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)", guardOk, guardDetail);
 
-        K.setRoute("shadowMarch", "js");
-        K.pxCalls(true);
-        const outJs = K.shadowMarch(d, w, h, 30, goodLight, 2, 4, 16, 0.2, 0, h);
-        const callsJs = K.pxCalls(true);
-        K.setRoute("shadowMarch", w * h + 1);
-        const outBelow = K.shadowMarch(d, w, h, 30, goodLight, 2, 4, 16, 0.2, 0, h);
-        const callsBelow = K.pxCalls(true);
-        K.setRoute("shadowMarch", w * h);
-        const outAt = K.shadowMarch(d, w, h, 30, goodLight, 2, 4, 16, 0.2, 0, h);
-        const callsAt = K.pxCalls(true);
-        K.setRoute("shadowMarch", null);
-        check("shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes",
-            eqBytes(outJs, outAt) && eqBytes(outBelow, outAt)
-            && !callsJs.shadow_march_f64 && !callsBelow.shadow_march_f64 && callsAt.shadow_march_f64 === 1,
-            `js=${JSON.stringify(callsJs)} below=${JSON.stringify(callsBelow)} at=${JSON.stringify(callsAt)}`);
+        for (const [lname, lvec] of [["point", goodLight], ["sun", sunLight]]) {
+            K.setRoute("shadowMarch", "js");
+            K.pxCalls(true);
+            const outJs = K.shadowMarch(d, w, h, 30, lvec, 2, 4, 16, 0.2, 0, h);
+            const callsJs = K.pxCalls(true);
+            K.setRoute("shadowMarch", w * h + 1);
+            const outBelow = K.shadowMarch(d, w, h, 30, lvec, 2, 4, 16, 0.2, 0, h);
+            const callsBelow = K.pxCalls(true);
+            K.setRoute("shadowMarch", w * h);
+            const outAt = K.shadowMarch(d, w, h, 30, lvec, 2, 4, 16, 0.2, 0, h);
+            const callsAt = K.pxCalls(true);
+            K.setRoute("shadowMarch", "rust");
+            const outRust = K.shadowMarch(d, w, h, 30, lvec, 2, 4, 16, 0.2, 0, h);
+            const callsRust = K.pxCalls(true);
+            K.setRoute("shadowMarch", null);
+            check(`shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes (${lname})`,
+                eqBytes(outJs, outAt) && eqBytes(outBelow, outAt) && eqBytes(outRust, outAt)
+                && !callsJs.shadow_march_f64 && !callsBelow.shadow_march_f64 && callsAt.shadow_march_f64 === 1 && callsRust.shadow_march_f64 === 1,
+                `js=${JSON.stringify(callsJs)} below=${JSON.stringify(callsBelow)} at=${JSON.stringify(callsAt)} rust=${JSON.stringify(callsRust)}`);
+        }
+
+        const realWarn = console.warn;
+        const warned = [];
+        console.warn = (...a) => { warned.push(a.map(String).join(" ")); };
+        K.setRoute("shadowMarch", "rust");
+        try {
+            let trapOk = true, trapDetail = "";
+            for (const [lname, lvec] of [["point", goodLight], ["sun", sunLight]]) {
+                const p0 = K.rustPx(), i0 = K.pxInstances();
+                p0.shadowMarchF64 = function () { return trapIn(this); };
+                const got = K.shadowMarch(d, w, h, 30, lvec, 2, 4, 16, 0.2, 0, h);
+                const want = js.shadowMarch(d, w, h, 30, lvec, 2, 4, 16, 0.2, 0, h);
+                const p1 = K.rustPx(), i1 = K.pxInstances();
+                if (!eqBytes(got, want) || !(p0.trapped instanceof WebAssembly.RuntimeError) || p1 === p0 || i1.trap !== i0.trap + 1) {
+                    trapOk = false;
+                    trapDetail = `${lname}: i1=${JSON.stringify(i1)}`;
+                    break;
+                }
+            }
+            check("K.shadowMarch recovers from a trap on shadow_march_f64 for both point and sun, replacing the instance and returning the twin's exact bytes",
+                trapOk && warned.some((s) => s.includes("shadow_march_f64")), trapDetail || warned.join("; "));
+        } finally {
+            console.warn = realWarn;
+            K.setRoute("shadowMarch", null);
+        }
     }
 
     K.setKernels("js");   // kernels.js stays loaded for the process: the later cases (jobCases) compare against the editor's JS
@@ -2262,13 +2291,13 @@ async function relightBench(js, simd) {
 }
 
 /**
- * K12 (docs/PLAN_WASM_BUILD.md §4.5): relight's march in stripes. S stripes into one shared `out` give the bytes of one
- * call, for the twin (point and spot go as kind 0) and the Rust sun on both builds and through kernels.js as a worker
- * routes it, at 512 x 341 and 1024 x 682 with taps 1 / 3 / 4 / 16 and steps 1 / 16 / 32 / 64, a light on a pixel, below
- * the surface and off the map, the sun straight up and grazing. The Rust sun's stripes copy the depth map once (the
- * one-slot resident copy, keyed), a new key or another size copies it again and never answers from the old copy.
- * `stripePlan`. And `marchOnPool` on a real WorkerPool whose workers answer as inpaint_worker.js does (from the twin): the
- * same bytes, no transfer and the rows back; a depth map that is not on a SharedArrayBuffer (the node's page) or the
+ * K12-K14 (docs/PLAN_WASM_BUILD.md §4.5): relight's march in stripes. S stripes into one shared `out` give the bytes of
+ * one call, for the twin, both Rust builds (SIMD and scalar `shadow_march_f64`), and through kernels.js as a worker
+ * routes it, across point, spot, and sun at 512 x 341 and 1024 x 682 with taps 1 / 3 / 4 / 16 and steps 1 / 16 / 32 / 64,
+ * a light on a pixel, below the surface and off the map, the sun straight up and grazing. The Rust march's stripes copy
+ * the depth map once (the one-slot resident copy, keyed), a new key or another size copies it again and never answers
+ * from the old copy. `stripePlan`. And `marchOnPool` on a real WorkerPool whose workers answer as inpaint_worker.js does:
+ * the same bytes, no transfer and the rows back; a depth map that is not on a SharedArrayBuffer (the node's page) or the
  * route 0 go as one job; a failed stripe or a reply with other rows rejects the march and cancels the rest of its group;
  * a group cancelled from outside (a superseded march) rejects with a CancelledError, sends none of its queued stripes
  * and leaves another march's group alone.
@@ -2320,7 +2349,8 @@ async function relightStripeCases(js, simd, scalar) {
     const one = (impl, depth, w, h, a, f64 = false) => (f64 ? impl.shadowMarchF64 : impl.shadowMarch).call(impl, depth, w, h, a.scale, a.light, a.radius, a.taps, a.steps, a.bias, 0, h);
     ok = true; detail = "";
     let cases = 0;
-    K.setKernels("rust");   // a worker's mode: point/spot on shadow_march_f64, sun on shadow_march (relightBench left the twins in force)
+    K.setKernels("rust");
+    K.setRoute("shadowMarch", "rust");
     for (const [w, h, combos, counts] of [
         [512, 341, [[1, 16], [3, 1], [4, 32], [16, 64], [4, 64], [1, 1]], [2, 7, 10]],
         [1024, 682, [[1, 16], [4, 32]], [5, 21]],
@@ -2342,26 +2372,26 @@ async function relightStripeCases(js, simd, scalar) {
             for (const [name, light] of lights) {
                 const a = { scale, light, radius: 0.3 * 0.05 * long, taps, steps, bias: 0.005 * scale };
                 const wantJs = one(js, sab, w, h, a, false);
-                const wantSimd32 = light[3] === 1 ? one(simd, sab, w, h, a, false) : null;
-                const wantScalar32 = light[3] === 1 ? one(scalar, sab, w, h, a, false) : null;
-                const impls = light[3] === 1
-                    ? [["rust simd (f32)", simd, "k:sun", false], ["rust scalar (f32)", scalar, "k:sun", false], ["rust simd (f64)", simd, "k:sun64", true], ["rust scalar (f64)", scalar, "k:sun64", true], ["kernels.js (a worker's route)", K, "k:sun", false]]
-                    : [["twin", js, null, false], ["rust simd (f64)", simd, "k:pt", true], ["rust scalar (f64)", scalar, "k:pt", true], ["kernels.js (a worker's route)", K, "k:pt", false]];
+                const kTag = light[3] === 1 ? "k:sun" : "k:pt";
+                const impls = [
+                    ["twin", js, null, false],
+                    ["rust simd (f64)", simd, kTag, true],
+                    ["rust scalar (f64)", scalar, kTag, true],
+                    ["kernels.js (a worker's route)", K, kTag, false],
+                ];
                 for (const [iname, impl, key, f64] of impls) {
-                    const want = iname.startsWith("kernels")
-                        ? (light[3] === 1 ? wantSimd32 : wantJs)
-                        : (f64 || impl === js ? wantJs : (impl === simd ? wantSimd32 : wantScalar32));
                     for (const S of counts) {
                         cases++;
                         const got = striped(impl, sab, w, h, a, S, key ? `${key}:${w}x${h}` : null, f64);
-                        if (!eqBytes(got, want)) { ok = false; detail += `${detail ? "; " : ""}${w} x ${h} ${name} ${iname} taps ${taps} steps ${steps} in ${S}`; }
+                        if (!eqBytes(got, wantJs)) { ok = false; detail += `${detail ? "; " : ""}${w} x ${h} ${name} ${iname} taps ${taps} steps ${steps} in ${S}`; }
                     }
                 }
             }
         }
     }
+    K.setRoute("shadowMarch", null);
     K.setKernels("js");
-    check(`shadow_march and shadow_march_f64 in stripes into one shared out equal one call: the twin, both Rust builds (f32 and f64), and through kernels.js (${cases} cases)`, ok, detail);
+    check(`shadow_march_f64 in stripes into one shared out equals one call byte for byte: the twin, both Rust builds (SIMD and scalar), and through kernels.js across point, spot, and sun (${cases} cases)`, ok, detail);
 
     // the one-slot resident depth copy, on an instance of its own: a key copies the map once over all stripes
     {
@@ -2385,10 +2415,10 @@ async function relightStripeCases(js, simd, scalar) {
         const plainF64 = mb(() => { rf3 = striped(fresh, d1, w, h, aPt, 8, null, true); });
         const nextF64 = mb(() => { rf4 = striped(fresh, d2, w, h, aPt, 8, "map:f64:2", true); });
         const wantF1 = one(js, d1, w, h, aPt), wantF2 = one(js, d2, w, h, aPt);
-        check("the Rust march's stripes (f32 and f64) with a key copy the depth map once (8 stripes), again none, without a key once a stripe",
+        check("the Rust march's stripes (sun and point) with a key copy the depth map once (8 stripes), again none, without a key once a stripe",
             keyed < 1.5 * depthMB && again < 0.01 && plain > 7.5 * depthMB
             && keyedF64 < 1.5 * depthMB && againF64 < 0.01 && plainF64 > 7.5 * depthMB,
-            `f32 ${keyed.toFixed(2)}/${again.toFixed(2)}/${plain.toFixed(2)} MB, f64 ${keyedF64.toFixed(2)}/${againF64.toFixed(2)}/${plainF64.toFixed(2)} MB, map ${depthMB.toFixed(2)} MB`);
+            `sun ${keyed.toFixed(2)}/${again.toFixed(2)}/${plain.toFixed(2)} MB, point ${keyedF64.toFixed(2)}/${againF64.toFixed(2)}/${plainF64.toFixed(2)} MB, map ${depthMB.toFixed(2)} MB`);
         check("a new key copies the new map and never answers from the old one; a key on another size copies again",
             eqBytes(r1, want1) && eqBytes(r2, want1) && eqBytes(r3, want1) && eqBytes(r4, want2) && !eqBytes(want1, want2) && next > 0.9 * depthMB && eqBytes(r5, want5)
             && eqBytes(rf1, wantF1) && eqBytes(rf2, wantF1) && eqBytes(rf3, wantF1) && eqBytes(rf4, wantF2) && nextF64 > 0.9 * depthMB);
@@ -11084,13 +11114,18 @@ async function tiffCases(js, simd, scalar, K, T) {
             try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
         }
         const enc = lzwEncodeTiff(pSmall);
-        K.setKernels("js");
+        const pbEnc = packBitsEncode(pSmall);
+        K.setRoute("tiffUnpack", "js");
         K.pxCalls(true);
         const outJs = K.tiffUnpack(5, enc, pSmall.length);
         const jsCalls = K.pxCalls(true).tiff_unpack || 0;
-        K.setKernels("rust");
+        K.setRoute("tiffUnpack", "rust");
         const outRust = K.tiffUnpack(5, enc, pSmall.length);
+        const outPbRust = K.tiffUnpack(32773, pbEnc, pSmall.length);
         const rustCalls = K.pxCalls(true).tiff_unpack || 0;
+        const outRawKeepJs = K.tiffUnpack(1, pSmall, pSmall.length);
+        const rawRustCalls = K.pxCalls(true).tiff_unpack || 0;
+        K.setRoute("tiffUnpack", null);
         // Trap recovery on K.tiffUnpack falls back to the JS twin
         const p = K.rustPx(), realWarn = console.warn;
         let outRec = null, recReplaced = false;
@@ -11101,9 +11136,11 @@ async function tiffCases(js, simd, scalar, K, T) {
             recReplaced = K.rustPx() !== p;
         } finally { console.warn = realWarn; }
         K.setKernels("js");
-        check("kernels.js tiffUnpack dispatches between JS twin (0 calls) and Rust (1 call) with identical bytes, and recovers from a trap",
-            jsCalls === 0 && rustCalls === 1 && eqBytes(outJs, pSmall) && eqBytes(outRust, pSmall) && eqBytes(outRec, pSmall) && recReplaced,
-            `jsCalls=${jsCalls} rustCalls=${rustCalls} recReplaced=${recReplaced}`);
+        check("kernels.js tiffUnpack routes LZW/PackBits to Rust (2 calls), keeps uncompressed (1) on JS copy (0 calls), and recovers from a trap",
+            jsCalls === 0 && rustCalls === 2 && rawRustCalls === 0
+            && eqBytes(outJs, pSmall) && eqBytes(outRust, pSmall) && eqBytes(outPbRust, pSmall) && eqBytes(outRawKeepJs, pSmall)
+            && eqBytes(outRec, pSmall) && recReplaced,
+            `jsCalls=${jsCalls} rustCalls=${rustCalls} rawRustCalls=${rawRustCalls} recReplaced=${recReplaced}`);
     }
 
     // Live readTiff checks: 1-byte first-piece LZW fix and StripRows/TileRows stopping at `need`
@@ -11169,23 +11206,27 @@ async function tiffCases(js, simd, scalar, K, T) {
         const s1 = Uint8Array.from([0, 0, 8, 10, 20, 30]);
         const strip1 = packCodesMsb([...Array.from(s1, (b) => [b, 9]), [257, 9]]);
         const tiff1 = mkLittleTiff([[256, 4, [2]], [257, 4, [1]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [strip1]);
-        let got1 = null;
+        let got1 = null, got1Stream = null;
         await T.readTiff(oneByteFirstBlob(tiff1), { onRows: (rgba) => { got1 = rgba.slice(); } });
+        await T.readTiff(oneByteFirstBlob(tiff1), { streamed: true, onRows: (rgba) => { got1Stream = rgba.slice(); } });
         const want1 = Uint8Array.from([0, 0, 8, 255, 10, 20, 30, 255]);
         // Also verify 1-byte first piece on actual old-style LZW [0x00, 0x01, 0x02] is still refused
         const tiffOld = mkLittleTiff([[256, 4, [2]], [257, 4, [1]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [Uint8Array.from([0x00, 0x01, 0x02, 0x03])]);
-        let errOld = null;
+        let errOld = null, errOldStream = null;
         try { await T.readTiff(oneByteFirstBlob(tiffOld), { onRows: () => {} }); } catch (e) { errOld = e; }
+        try { await T.readTiff(oneByteFirstBlob(tiffOld), { streamed: true, onRows: () => {} }); } catch (e) { errOldStream = e; }
         check("inpaint_tiff.js readTiff: 1-byte first LZW piece keeps byte[0] when byte[0] === byte[1] and still refuses old-style LZW",
-            !!got1 && eqBytes(got1, want1) && !!errOld && /old-style LZW/i.test(errOld.message));
+            !!got1 && eqBytes(got1, want1) && !!got1Stream && eqBytes(got1Stream, want1)
+            && !!errOld && /old-style LZW/i.test(errOld.message) && !!errOldStream && /old-style LZW/i.test(errOldStream.message));
 
-        // 2) StripRows.open and TileRows.tile pass `need` / `want` to unpacked() so damaged codes after `need` are ignored
+        // 2) StripRows.open, TileRows.tile, and readTiffBand pass `need` / `want` so damaged codes after `need` are ignored
         const w2 = 16, h2 = 4, s2 = new Uint8Array(w2 * h2 * 3);
         for (let i = 0; i < s2.length; i++) s2[i] = (i * 17 + 3) & 255;
         const badStrip = packCodesMsb([[256, 9], ...Array.from(s2, (b) => [b, 9]), [511, 9]]);
         const tiffStripNeed = mkLittleTiff([[256, 4, [w2]], [257, 4, [h2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [h2]]], [badStrip]);
-        let gotStrip = null;
+        let gotStrip = null, gotStripStream = null;
         await T.readTiff(new Blob([tiffStripNeed]), { onRows: (rgba) => { gotStrip = rgba.slice(); } });
+        await T.readTiff(new Blob([tiffStripNeed]), { streamed: true, onRows: (rgba) => { gotStripStream = rgba.slice(); } });
 
         const tileSamples = new Uint8Array(16 * 16 * 3);
         tileSamples.set(s2);
@@ -11197,10 +11238,13 @@ async function tiffCases(js, simd, scalar, K, T) {
         tilePairs.push([511, 9]);
         const badTile = packCodesMsb(tilePairs);
         const tiffTileNeed = mkLittleTiff([[256, 4, [w2]], [257, 4, [h2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [322, 4, [16]], [323, 4, [16]]], [badTile], 324, 325);
-        let gotTile = null;
+        let gotTile = null, gotTileStream = null;
         await T.readTiff(new Blob([tiffTileNeed]), { onRows: (rgba) => { gotTile = rgba.slice(); } });
-        check("inpaint_tiff.js readTiff: StripRows.open and TileRows.tile stop at `need` / `want` when damaged LZW bytes follow",
-            !!gotStrip && !!gotTile && eqBytes(gotStrip, gotTile) && gotStrip[0] === s2[0] && gotStrip[1] === s2[1] && gotStrip[2] === s2[2]);
+        await T.readTiff(new Blob([tiffTileNeed]), { streamed: true, onRows: (rgba) => { gotTileStream = rgba.slice(); } });
+        check("inpaint_tiff.js readTiff: StripRows.open, TileRows.tile, and readTiffBand stop at `need` / `want` when damaged LZW bytes follow",
+            !!gotStrip && !!gotTile && eqBytes(gotStrip, gotTile)
+            && !!gotStripStream && !!gotTileStream && eqBytes(gotStripStream, gotStrip) && eqBytes(gotTileStream, gotStrip)
+            && gotStrip[0] === s2[0] && gotStrip[1] === s2[1] && gotStrip[2] === s2[2]);
     }
 
     // ---- K15: tiff_unpredict, tiff_predict_rgba, tiff_to_rgba, tiffStrip, tiffStripFromPtr, tiffPartJob, tiffKernels ----
@@ -11823,45 +11867,53 @@ async function tiffCases(js, simd, scalar, K, T) {
             console.warn = realWarn;
         }
 
-        // 4c. tiffKernels() per-call rustPx() lookup across instance replacement + route switching + in-place trap safety (T2)
+        // 4c. tiffKernels() per-call rustPx() lookup across instance replacement + route switching + in-place trap safety (T2 + K17 tiffUnpack)
         const tk = K.tiffKernels();
         const tkMethodsMatch = tk.unpredict === K.tiffUnpredict && tk.predictRgba === K.tiffPredictRgba && tk.toRgba === K.tiffToRgba && tk.unpackStrip === K.tiffUnpack;
         const pBefore = K.rustPx();
         let oldCalls = 0, newCalls = 0;
-        for (const m of ["tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
+        for (const m of ["tiffUnpack", "tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
             const orig = pBefore[m].bind(pBefore);
             pBefore[m] = (...a) => { oldCalls++; return orig(...a); };
         }
         K.dropPx("idle");
         const pAfter = K.rustPx();
-        for (const m of ["tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
+        for (const m of ["tiffUnpack", "tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
             const orig = pAfter[m].bind(pAfter);
             pAfter[m] = (...a) => { newCalls++; return orig(...a); };
         }
         const sampleRgba = new Uint8Array(16 * 4);
         for (let i = 0; i < sampleRgba.length; i++) sampleRgba[i] = (i * 19 + 5) & 255;
+        const sampleLzw = lzwEncodeTiff(sampleRgba);
         const spec4c = { w: 16, rowBytes: 64, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "straight", pal: null };
 
         K.pxCalls(true);
+        const unpRust = tk.unpackStrip(5, sampleLzw, sampleRgba.length);
         const uRust = tk.unpredict(sampleRgba.slice(), 1, 64, 16, 4, 8, true);
         const pRust = tk.predictRgba(sampleRgba.slice(), 16, 1);
         const cRust = tk.toRgba([sampleRgba], 1, null, spec4c);
         const callsRust = K.pxCalls(true);
         const oldCallsAfterDrop = oldCalls, newCallsAfterDrop = newCalls;
 
-        for (const r of ["tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, "js");
+        for (const r of ["tiffUnpack", "tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, "js");
+        const unpJs = tk.unpackStrip(5, sampleLzw, sampleRgba.length);
         const uJs = tk.unpredict(sampleRgba.slice(), 1, 64, 16, 4, 8, true);
         const pJs = tk.predictRgba(sampleRgba.slice(), 16, 1);
         const cJs = tk.toRgba([sampleRgba], 1, null, spec4c);
         const callsJs = K.pxCalls(true);
-        for (const r of ["tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, null);
+        for (const r of ["tiffUnpack", "tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, null);
 
-        // In-place trap safety: when tiff_unpredict or tiff_predict_rgba traps in wasm, the caller's JS buffer was not
+        // In-place trap safety: when tiff_unpack, tiff_unpredict or tiff_predict_rgba traps in wasm, the caller's JS buffer was not
         // mutated before the fallback twin runs, so the returned buffer matches the JS twin on the original input!
         let trapInPlaceOk = true;
         console.warn = () => {};
         try {
             let pCur = K.rustPx();
+            pCur.exports = { ...pCur.exports, tiff_unpack: () => trapIn(pCur) };
+            const unpRec = tk.unpackStrip(5, sampleLzw, sampleRgba.length);
+            if (!eqBytes(unpRec, unpJs) || K.rustPx() === pCur) trapInPlaceOk = false;
+
+            pCur = K.rustPx();
             pCur.exports = { ...pCur.exports, tiff_unpredict: () => trapIn(pCur) };
             const uBuf = sampleRgba.slice();
             const uRec = tk.unpredict(uBuf, 1, 64, 16, 4, 8, true);
@@ -11882,10 +11934,10 @@ async function tiffCases(js, simd, scalar, K, T) {
         }
         K.setKernels("js");
         check("kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels",
-            tkMethodsMatch && pBefore !== pAfter && oldCallsAfterDrop === 0 && newCallsAfterDrop === 3
-            && callsRust.tiff_unpredict === 1 && callsRust.tiff_predict_rgba === 1 && callsRust.tiff_to_rgba === 1
-            && !callsJs.tiff_unpredict && !callsJs.tiff_predict_rgba && !callsJs.tiff_to_rgba
-            && eqBytes(uRust, uJs) && eqBytes(pRust, pJs) && eqBytes(cRust, cJs) && trapInPlaceOk,
+            tkMethodsMatch && pBefore !== pAfter && oldCallsAfterDrop === 0 && newCallsAfterDrop === 4
+            && callsRust.tiff_unpack === 1 && callsRust.tiff_unpredict === 1 && callsRust.tiff_predict_rgba === 1 && callsRust.tiff_to_rgba === 1
+            && !callsJs.tiff_unpack && !callsJs.tiff_unpredict && !callsJs.tiff_predict_rgba && !callsJs.tiff_to_rgba
+            && eqBytes(unpRust, unpJs) && eqBytes(uRust, uJs) && eqBytes(pRust, pJs) && eqBytes(cRust, cJs) && trapInPlaceOk,
             `tkMethodsMatch=${tkMethodsMatch} oldCalls=${oldCallsAfterDrop} newCalls=${newCallsAfterDrop} callsRust=${JSON.stringify(callsRust)} callsJs=${JSON.stringify(callsJs)} trapInPlaceOk=${trapInPlaceOk}`);
 
         // 4d. readTiff with kernels: null (converter + JS unpredict) vs kernels: K.tiffKernels() (Rust toRgba + unpredict)
@@ -11938,8 +11990,350 @@ async function tiffCases(js, simd, scalar, K, T) {
             // px 3: idx=2 -> (120,80,170), a=0 -> (0,0,0,0)
             const wantPal = new Uint8Array([90, 180, 255, 85, 180, 120, 255, 170, 200, 100, 50, 255, 0, 0, 0, 0]);
             check("inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA",
-                eqBytes(outNull, wantPal) && eqBytes(outRust, wantPal) && cPal.tiff_to_rgba === 1,
+                eqBytes(outNull, wantPal) && eqBytes(outRust, wantPal) && cPal.tiff_to_rgba === 1 && !cPal.tiff_unpack,
                 `null=${Array.from(outNull || [])} rust=${Array.from(outRust || [])} calls=${JSON.stringify(cPal)}`);
+        }
+
+        // 4e. K17: tiffPlan, readTiffBand, TIFF_BAND_BYTES RGBA-size rule, per-tile unpredict (8-bit and 16-bit), and 1 blob.slice().arrayBuffer() per contiguous band
+        {
+            const mkTiff = (tags, data, offTag = 273, cntTag = 279) => {
+                const parts = [];
+                let size = 0;
+                const push = (b) => { parts.push(b); size += b.length; };
+                push(Uint8Array.from([0x49, 0x49, 42, 0, 0, 0, 0, 0]));
+                const offsets = [];
+                for (const seg of data) { if (size & 1) push(new Uint8Array(1)); offsets.push(size); push(seg); }
+                if (size & 1) push(new Uint8Array(1));
+                const ifdAt = size;
+                const allTags = [...tags, [offTag, 4, offsets], [cntTag, 4, data.map((s) => s.length)]].sort((a, b) => a[0] - b[0]);
+                const ifd = new Uint8Array(2 + 12 * allTags.length + 4);
+                const dv = new DataView(ifd.buffer);
+                dv.setUint16(0, allTags.length, true);
+                let extraAt = ifdAt + ifd.length;
+                const extras = [];
+                allTags.forEach(([tag, type, vals], i) => {
+                    const tsz = type === 3 ? 2 : 4;
+                    const payload = new Uint8Array(tsz * vals.length);
+                    const pdv = new DataView(payload.buffer);
+                    vals.forEach((v, k) => { if (type === 3) pdv.setUint16(k * 2, v, true); else pdv.setUint32(k * 4, v >>> 0, true); });
+                    const p = 2 + 12 * i;
+                    dv.setUint16(p, tag, true); dv.setUint16(p + 2, type, true); dv.setUint32(p + 4, vals.length, true);
+                    if (payload.length <= 4) ifd.set(payload, p + 8);
+                    else {
+                        if (extraAt & 1) { extras.push(new Uint8Array(1)); extraAt++; }
+                        dv.setUint32(p + 8, extraAt, true);
+                        extras.push(payload);
+                        extraAt += payload.length;
+                    }
+                });
+                push(ifd);
+                for (const e of extras) push(e);
+                const out = new Uint8Array(size);
+                let o = 0;
+                for (const p of parts) { out.set(p, o); o += p.length; }
+                new DataView(out.buffer).setUint32(4, ifdAt, true);
+                return out;
+            };
+
+            // Tiled Predictor-2 at 8-bit and 16-bit with w=21, h=19, tw=16, tl=16 (2x2 tiles, right/bottom overhang)
+            const tw = 16, tl = 16, w = 21, h = 19, across = 2, down = 2;
+            const buildTiledPred = (bits) => {
+                const r = rng(bits === 16 ? 9416 : 9408);
+                const spp = 4;
+                const mask = bits === 16 ? 0xFFFF : 0xFF;
+                const srcSamples = bits === 16 ? new Uint16Array(w * h * spp) : new Uint8Array(w * h * spp);
+                for (let i = 0; i < srcSamples.length; i++) srcSamples[i] = r() & mask;
+                const tiles = [];
+                for (let ty = 0; ty < down; ty++) {
+                    for (let tx = 0; tx < across; tx++) {
+                        const t = bits === 16 ? new Uint16Array(tw * tl * spp) : new Uint8Array(tw * tl * spp);
+                        for (let ry = 0; ry < tl; ry++) {
+                            const y = ty * tl + ry;
+                            for (let rx = 0; rx < tw; rx++) {
+                                const x = tx * tw + rx;
+                                const dst = (ry * tw + rx) * spp;
+                                if (x < w && y < h) {
+                                    const s = (y * w + x) * spp;
+                                    for (let c = 0; c < spp; c++) t[dst + c] = srcSamples[s + c];
+                                } else {
+                                    for (let c = 0; c < spp; c++) t[dst + c] = ((rx * 19 + ry * 23 + c * 7 + tx * 11) & mask);
+                                }
+                            }
+                        }
+                        // Predictor 2 horizontal differencing inside the tile
+                        for (let ry = 0; ry < tl; ry++) {
+                            const row0 = ry * tw * spp;
+                            for (let rx = tw - 1; rx >= 1; rx--) {
+                                for (let c = 0; c < spp; c++) {
+                                    t[row0 + rx * spp + c] = (t[row0 + rx * spp + c] - t[row0 + (rx - 1) * spp + c]) & mask;
+                                }
+                            }
+                        }
+                        let rawBytes;
+                        if (bits === 16) {
+                            rawBytes = new Uint8Array(t.length * 2);
+                            const dv = new DataView(rawBytes.buffer);
+                            for (let i = 0; i < t.length; i++) dv.setUint16(i * 2, t[i], true);
+                        } else {
+                            rawBytes = new Uint8Array(t.buffer);
+                        }
+                        tiles.push(lzwEncodeTiff(rawBytes));
+                    }
+                }
+                const want = new Uint8Array(w * h * 4);
+                for (let i = 0; i < srcSamples.length; i++) {
+                    want[i] = bits === 16 ? Math.floor((srcSamples[i] * 2 + 257) / 514) : srcSamples[i];
+                }
+                const tiff = mkTiff(
+                    [[256, 4, [w]], [257, 4, [h]], [258, 3, [bits, bits, bits, bits]], [259, 3, [5]], [262, 3, [2]], [277, 3, [4]], [317, 3, [2]], [322, 4, [tw]], [323, 4, [tl]], [338, 3, [2]]],
+                    tiles, 324, 325,
+                );
+                return { tiff, want };
+            };
+
+            let tiledPredOk = true, tiledPredDetail = "";
+            for (const bits of [8, 16]) {
+                const { tiff, want } = buildTiledPred(bits);
+                let slices = 0;
+                const cBlob = {
+                    size: tiff.byteLength,
+                    slice(s = 0, e = tiff.byteLength) {
+                        const sub = tiff.subarray(s, e);
+                        return {
+                            async arrayBuffer() { slices++; return sub.slice().buffer; },
+                            stream() { return new Blob([sub]).stream(); },
+                        };
+                    },
+                };
+                const plan = await js.tiffPlan(cBlob, { rowsPerBand: 16 });
+                slices = 0;
+                const gotJs = new Uint8Array(w * h * 4);
+                for (const b of plan.bands) {
+                    const part = await js.readTiffBand(cBlob, plan, b, { kernels: null });
+                    gotJs.set(part, b.y0 * w * 4);
+                }
+                const slicesPerRead = slices;
+
+                K.setKernels("rust");
+                K.pxCalls(true);
+                const gotRust = new Uint8Array(w * h * 4);
+                await T.readTiff(new Blob([tiff]), {
+                    rowsPerBand: 16,
+                    kernels: K.tiffKernels(),
+                    onRows: (rgba, y0) => gotRust.set(rgba, y0 * w * 4),
+                });
+                const cCalls = K.pxCalls(true);
+                K.setKernels("js");
+
+                if (plan.bands.length !== 2 || slicesPerRead !== 2
+                    || !eqBytes(gotJs, want) || !eqBytes(gotRust, want)
+                    || cCalls.tiff_unpack !== 4 || cCalls.tiff_unpredict !== 4 || cCalls.tiff_to_rgba !== 2) {
+                    tiledPredOk = false;
+                    tiledPredDetail = `bits=${bits} bands=${plan.bands.length} slices=${slicesPerRead} jsEq=${eqBytes(gotJs, want)} rustEq=${eqBytes(gotRust, want)} calls=${JSON.stringify(cCalls)}`;
+                    break;
+                }
+            }
+
+            // RGBA-size rule boundary: 1-strip 1-bit 4096x4096 (64 MiB exact -> streamed=false) vs 4096x4097 (64.016 MiB -> streamed=true),
+            // forceStreamed, and multi-strip wantRows cap
+            const tiff64Exact = mkTiff([[256, 4, [4096]], [257, 4, [4096]], [258, 3, [1]], [259, 3, [1]], [262, 3, [1]], [277, 3, [1]], [278, 4, [4096]]], [new Uint8Array(512 * 4096)]);
+            const tiff64Over = mkTiff([[256, 4, [4096]], [257, 4, [4097]], [258, 3, [1]], [259, 3, [1]], [262, 3, [1]], [277, 3, [1]], [278, 4, [4097]]], [new Uint8Array(512 * 4097)]);
+            const tiffMulti = mkTiff([[256, 4, [4096]], [257, 4, [6000]], [258, 3, [1]], [259, 3, [1]], [262, 3, [1]], [277, 3, [1]], [278, 4, [1024]]], Array.from({ length: 6 }, () => new Uint8Array(512 * 1024)));
+            const pExact = await js.tiffPlan(new Blob([tiff64Exact]));
+            const pOver = await js.tiffPlan(new Blob([tiff64Over]));
+            const pForced = await js.tiffPlan(new Blob([tiff64Exact]), { streamed: true });
+            const pMulti = await js.tiffPlan(new Blob([tiffMulti]), { rowsPerBand: 8192 });
+            const rgbaRuleOk = js.TIFF_BAND_BYTES === 64 * 1048576
+                && pExact.streamed === false && pExact.bandRows === 4096 && pExact.bands.length === 1
+                && pOver.streamed === true && pOver.bandRows === 0 && pOver.bands.length === 0
+                && pForced.streamed === true && pForced.bandRows === 0 && pForced.bands.length === 0
+                && pMulti.streamed === false && pMulti.bandRows === 4096 && pMulti.bands.length === 2;
+
+            // Planar strips, striped Predictor-2, 1-byte padded strip contiguous slice, >64KB gap slice, deflate truncation, and rowsPerBand < rps slicing
+            const p0s0 = Uint8Array.from([10, 20, 30]), p0s1 = Uint8Array.from([40, 50, 60]);
+            const p1s0 = Uint8Array.from([11, 21, 31]), p1s1 = Uint8Array.from([41, 51, 61]);
+            const p2s0 = Uint8Array.from([12, 22, 32]), p2s1 = Uint8Array.from([42, 52, 62]);
+            const tiffPlanar = mkTiff([[256, 4, [3]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]], [284, 3, [2]]], [p0s0, p0s1, p1s0, p1s1, p2s0, p2s1]);
+            let planarSlices = 0, planarStreams = 0;
+            const cPlanar = {
+                size: tiffPlanar.byteLength,
+                slice(s = 0, e = tiffPlanar.byteLength) {
+                    const sub = tiffPlanar.subarray(s, e);
+                    return { async arrayBuffer() { planarSlices++; return sub.slice().buffer; }, stream() { planarStreams++; return new Blob([sub]).stream(); } };
+                },
+            };
+            const planPlanar = await js.tiffPlan(cPlanar, { rowsPerBand: 2 });
+            planarSlices = 0;
+            const gotPlanar = await js.readTiffBand(cPlanar, planPlanar, 0);
+            const singleBandSlices = planarSlices;
+            const wantPlanar = Uint8Array.from([10, 11, 12, 255, 20, 21, 22, 255, 30, 31, 32, 255, 40, 41, 42, 255, 50, 51, 52, 255, 60, 61, 62, 255]);
+
+            // readTiff on cPlanar uses !plan.streamed (arrayBuffer per band, 0 stream() calls)
+            planarSlices = 0; planarStreams = 0;
+            const gotReadPlanar = [];
+            await T.readTiff(cPlanar, { rowsPerBand: 2, onRows: (rgba) => gotReadPlanar.push(...rgba) });
+            const readPlanarAb = planarSlices, readPlanarStreams = planarStreams;
+
+            // Out-of-order contiguous segments within 64 KB span -> still 1 slice via maxEnd - minOff <= sumCounts + 65536
+            const tiffReordered = mkTiff([
+                [256, 4, [3]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [1]],
+                [262, 3, [2]], [277, 3, [3]], [278, 4, [1]], [284, 3, [2]],
+            ], [p2s0, p2s1, p1s0, p1s1, p0s0, p0s1]);
+            const planReordTmp = await js.tiffPlan(new Blob([tiffReordered]), { rowsPerBand: 2 });
+            const rOffs = planReordTmp.bands[0].offsets;
+            let reorderedSlices = 0;
+            const cReordered = {
+                size: tiffReordered.byteLength,
+                slice(s = 0, e = tiffReordered.byteLength) {
+                    const sub = tiffReordered.subarray(s, e);
+                    return { async arrayBuffer() { reorderedSlices++; return sub.slice().buffer; }, stream() { return new Blob([sub]).stream(); } };
+                },
+            };
+            const gotReordered = await js.readTiffBand(cReordered, planReordTmp, {
+                ...planReordTmp.bands[0],
+                offsets: [rOffs[4], rOffs[5], rOffs[2], rOffs[3], rOffs[0], rOffs[1]],
+            });
+
+            // >64KB gap between segments in the same band -> 2 slices
+            const gapBytes = new Uint8Array(tiffPlanar.length + 70000);
+            gapBytes.set(tiffPlanar, 0);
+            const movedOff = planPlanar.bands[0].offsets[5] + 70000;
+            gapBytes.set(p2s1, movedOff);
+            let gapSlices = 0;
+            const cGap = {
+                size: gapBytes.byteLength,
+                slice(s = 0, e = gapBytes.byteLength) {
+                    const sub = gapBytes.subarray(s, e);
+                    return { async arrayBuffer() { gapSlices++; return sub.slice().buffer; }, stream() { return new Blob([sub]).stream(); } };
+                },
+            };
+            const gotGap = await js.readTiffBand(cGap, planPlanar, {
+                ...planPlanar.bands[0],
+                offsets: [...planPlanar.bands[0].offsets.slice(0, 5), movedOff],
+            });
+
+            // Striped Predictor-2 + rowsPerBand < rps (rps=2, rowsPerBand=1 -> 2 callbacks of 1 row each)
+            const spRow0 = Uint8Array.from([100, 50, 25, 200,  10, 20, 30, 40]); // unpredicted px1 = [110, 70, 55, 240]
+            const spRow1 = Uint8Array.from([5, 15, 25, 250,  1, 2, 3, 4]);        // unpredicted px1 = [6, 17, 28, 254]
+            const spStrip = new Uint8Array(16);
+            spStrip.set(spRow0, 0); spStrip.set(spRow1, 8);
+            const tiffStripPred = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [4]], [278, 4, [2]], [317, 3, [2]], [338, 3, [2]]], [spStrip]);
+            const subRows = [];
+            await T.readTiff(new Blob([tiffStripPred]), { rowsPerBand: 1, onRows: (rgba, y0, r) => subRows.push({ rgba: rgba.slice(), y0, r }) });
+            const wantSpRow0 = Uint8Array.from([100, 50, 25, 200, 110, 70, 55, 240]);
+            const wantSpRow1 = Uint8Array.from([5, 15, 25, 250, 6, 17, 28, 254]);
+
+            // Truncated and damaged deflate streams, short tile, and upfront band EOF check in BOTH readTiffBand and streamed StripRows/TileRows refuse
+            const zlibMod = require("node:zlib");
+            const shortZ = new Uint8Array(zlibMod.deflateSync(Buffer.from([1, 2, 3])));
+            const tiffShortZ = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [8]], [262, 3, [2]], [277, 3, [3]], [278, 4, [2]]], [shortZ]);
+            const planShortZ = await js.tiffPlan(new Blob([tiffShortZ]));
+            let shortZErr = null, badZErr = null, shortTileErr = null, bandEofErr = null;
+            let streamShortStripErr = null, streamBadZErr = null, streamShortTileErr = null, streamEofErr = null;
+            try { await js.readTiffBand(new Blob([tiffShortZ]), planShortZ, 0); } catch (e) { shortZErr = e; }
+            try { await T.readTiff(new Blob([tiffShortZ]), { streamed: true }); } catch (e) { streamShortStripErr = e; }
+            const tiffBadZ = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [8]], [262, 3, [2]], [277, 3, [3]], [278, 4, [2]]], [Uint8Array.from([0x78, 0x9C, 0xFF, 0xFF, 0xFF])]);
+            const planBadZ = await js.tiffPlan(new Blob([tiffBadZ]));
+            try { await js.readTiffBand(new Blob([tiffBadZ]), planBadZ, 0); } catch (e) { badZErr = e; }
+            try { await T.readTiff(new Blob([tiffBadZ]), { streamed: true }); } catch (e) { streamBadZErr = e; }
+            const tiffShortTile = mkTiff([[256, 4, [16]], [257, 4, [16]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [322, 4, [16]], [323, 4, [16]]], [new Uint8Array(10)], 324, 325);
+            K.setKernels("rust");
+            try { await T.readTiff(new Blob([tiffShortTile]), { kernels: K.tiffKernels() }); } catch (e) { shortTileErr = e; }
+            try { await T.readTiff(new Blob([tiffShortTile]), { streamed: true, kernels: K.tiffKernels() }); } catch (e) { streamShortTileErr = e; }
+            const tiffTwoStrip = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [new Uint8Array(6), new Uint8Array(6)]);
+            new DataView(tiffTwoStrip.buffer).setUint32(tiffTwoStrip.length - 12, tiffTwoStrip.length + 10, true);
+            try { await T.readTiff(new Blob([tiffTwoStrip]), { rowsPerBand: 2, kernels: K.tiffKernels() }); } catch (e) { bandEofErr = e; }
+            try { await T.readTiff(new Blob([tiffTwoStrip]), { rowsPerBand: 2, streamed: true, kernels: K.tiffKernels() }); } catch (e) { streamEofErr = e; }
+            K.setKernels("js");
+
+            // Deflate early cancel before damaged post-need tail (codes 8 & 32946, strip & tile)
+            const validPix = Uint8Array.from([11, 22, 33, 44, 55, 66, 77, 88, 99, 111, 122, 133]);
+            const wantValidRgba = Uint8Array.from([11, 22, 33, 255, 44, 55, 66, 255, 77, 88, 99, 255, 111, 122, 133, 255]);
+            const mkBadTailZ = (bytes) => {
+                const fl = zlibMod.deflateSync(Buffer.concat([Buffer.from(bytes), Buffer.alloc(262144, 0x5A)]), { finishFlush: zlibMod.constants.Z_SYNC_FLUSH });
+                return new Uint8Array(Buffer.concat([fl, Buffer.from([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])]));
+            };
+            const zTailStrip = mkBadTailZ(validPix);
+            const tilePix = new Uint8Array(16 * 16 * 3);
+            tilePix.set(validPix.subarray(0, 6), 0);
+            tilePix.set(validPix.subarray(6, 12), 16 * 3);
+            const zTailTile = mkBadTailZ(tilePix);
+            let zCancelOk = true;
+            for (const comp of [8, 32946]) {
+                const ts = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [comp]], [262, 3, [2]], [277, 3, [3]], [278, 4, [2]]], [zTailStrip]);
+                const ps = await js.tiffPlan(new Blob([ts]));
+                const gs = await js.readTiffBand(new Blob([ts]), ps, 0);
+                if (!eqBytes(gs, wantValidRgba)) zCancelOk = false;
+                const tt = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [comp]], [262, 3, [2]], [277, 3, [3]], [322, 4, [16]], [323, 4, [16]]], [zTailTile], 324, 325);
+                const pt = await js.tiffPlan(new Blob([tt]));
+                const gt = await js.readTiffBand(new Blob([tt]), pt, 0);
+                if (!eqBytes(gt, wantValidRgba)) zCancelOk = false;
+            }
+
+            // High-SamplesPerPixel raw-plane allocation bound (2 * TIFF_BAND_BYTES = 128 MiB): w=256, bits=16, spp=128 -> maxPlaneRows=2048
+            const tinyZ = Uint8Array.from([0x78, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]);
+            const mkHiSpp = (hh) => mkTiff([
+                [256, 4, [256]], [257, 4, [hh]], [258, 3, new Array(128).fill(16)], [259, 3, [8]],
+                [262, 3, [1]], [277, 3, [128]], [278, 4, [hh]], [338, 3, new Array(127).fill(0)],
+            ], [tinyZ]);
+            const pHiExact = await js.tiffPlan(new Blob([mkHiSpp(2048)]), { rowsPerBand: 2048 });
+            const pHiOver = await js.tiffPlan(new Blob([mkHiSpp(2049)]));
+
+            // Oversized in-file StripByteCounts: clamped on compression 1 (bounded slice), streamed on compression 5
+            const rawTwo = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [validPix.subarray(0, 6), validPix.subarray(6, 12)]);
+            const rawBig = new Uint8Array(rawTwo.length + 2 * 1048576);
+            rawBig.set(rawTwo, 0);
+            const rawBigDv = new DataView(rawBig.buffer);
+            rawBigDv.setUint32(rawTwo.length - 8, rawBig.length - 8, true);
+            rawBigDv.setUint32(rawTwo.length - 4, rawBig.length - 14, true);
+            let maxRawSlice = 0;
+            const cRawBig = {
+                size: rawBig.byteLength,
+                slice(s = 0, e = rawBig.byteLength) {
+                    const sub = rawBig.subarray(s, e);
+                    return {
+                        async arrayBuffer() { if (e - s > maxRawSlice) maxRawSlice = e - s; return sub.slice().buffer; },
+                        stream() { return new Blob([sub]).stream(); },
+                    };
+                },
+            };
+            const pRawBig = await js.tiffPlan(new Blob([rawBig]));
+            const gRawBig = await js.readTiffBand(cRawBig, pRawBig, 0);
+
+            const lzwTwo = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]],
+                [lzwEncodeTiff(validPix.subarray(0, 6)), lzwEncodeTiff(validPix.subarray(6, 12))]);
+            const lzwBig = new Uint8Array(lzwTwo.length + 2 * 1048576);
+            lzwBig.set(lzwTwo, 0);
+            const lzwBigDv = new DataView(lzwBig.buffer);
+            const lzwS0Off = lzwBigDv.getUint32(lzwTwo.length - 16, true);
+            const lzwS1Off = lzwBigDv.getUint32(lzwTwo.length - 12, true);
+            lzwBigDv.setUint32(lzwTwo.length - 8, lzwBig.length - lzwS0Off, true);
+            lzwBigDv.setUint32(lzwTwo.length - 4, lzwBig.length - lzwS1Off, true);
+            const pLzwBig = await js.tiffPlan(new Blob([lzwBig]));
+
+            const extraBandChecksOk = singleBandSlices === 1 && eqBytes(gotPlanar, wantPlanar)
+                && readPlanarStreams === 0 && readPlanarAb >= 2 && eqBytes(Uint8Array.from(gotReadPlanar), wantPlanar)
+                && reorderedSlices === 1 && eqBytes(gotReordered, wantPlanar)
+                && gapSlices === 2 && eqBytes(gotGap, wantPlanar)
+                && subRows.length === 2 && subRows[0].r === 1 && subRows[1].r === 1
+                && eqBytes(subRows[0].rgba, wantSpRow0) && eqBytes(subRows[1].rgba, wantSpRow1)
+                && !!shortZErr && /fewer bytes than its rows/i.test(shortZErr.message)
+                && !!streamShortStripErr && /fewer bytes than its rows/i.test(streamShortStripErr.message)
+                && !!badZErr && /damaged or cut off/i.test(badZErr.message)
+                && !!streamBadZErr && /damaged or cut off/i.test(streamBadZErr.message)
+                && !!shortTileErr && /tile 1 holds fewer bytes than its rows/i.test(shortTileErr.message)
+                && !!streamShortTileErr && /tile 1 holds 10 of 768 bytes/i.test(streamShortTileErr.message)
+                && !!bandEofErr && /strip 2 lies past the end of the file/i.test(bandEofErr.message)
+                && !!streamEofErr && /strip 2 lies past the end of the file/i.test(streamEofErr.message)
+                && zCancelOk
+                && pHiExact.streamed === false && pHiExact.bandRows === 2048
+                && pHiOver.streamed === true && pHiOver.bandRows === 0
+                && pRawBig.streamed === false && maxRawSlice <= 64 && eqBytes(gRawBig, wantValidRgba)
+                && pLzwBig.streamed === true;
+
+            check("inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules",
+                tiledPredOk && rgbaRuleOk && extraBandChecksOk,
+                tiledPredDetail || `exact=${pExact.streamed}/${pExact.bandRows} over=${pOver.streamed}/${pOver.bandRows} hi=${pHiExact.streamed}/${pHiOver.streamed} zCancel=${zCancelOk} rawSlice=${maxRawSlice} lzwBig=${pLzwBig.streamed} extra=${extraBandChecksOk}`);
         }
     }
 
@@ -11947,7 +12341,7 @@ async function tiffCases(js, simd, scalar, K, T) {
         const rawStrip = runPayload(1024 * 1024);
         const lzwStrip = lzwEncodeTiff(rawStrip);
         const pbStrip = packBitsEncode(rawStrip);
-        for (const [what, comp, encoded] of [["LZW 1 MB strip", 5, lzwStrip], ["PackBits 1 MB strip", 32773, pbStrip]]) {
+        for (const [what, comp, encoded] of [["Uncompressed 1 MB strip", 1, rawStrip], ["LZW 1 MB strip", 5, lzwStrip], ["PackBits 1 MB strip", 32773, pbStrip]]) {
             const out = new Uint8Array(rawStrip.length);
             const rows = [
                 ["twin", () => js.tiffUnpack(comp, encoded, rawStrip.length, out)],
@@ -12340,7 +12734,7 @@ async function main() {
     await group("blendFixture", () => blendFixtureCases(js, simdPx, scalarPx));
     await group("blendGlsl", () => blendGlslCases());
     await group("tierC", () => tierCCases(js, simdPx, scalarPx, ref));
-    await group("relightBench", () => relightBench(js, simdPx));   // before memoryCases grows simdPx past 2 GB
+    await group("relightBench", () => relightBench(js, simdPx, scalarPx));   // before memoryCases grows simdPx past 2 GB
     await group("relightStripe", () => relightStripeCases(js, simdPx, scalarPx));
     await group("counter", () => counterCases(simdPx));
     await group("split", () => splitCases(simdPx, js));

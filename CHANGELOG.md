@@ -4,6 +4,8 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **TIFF files made of many strips open faster.** A 15,000 x 10,000 LZW TIFF opens in about 5.7 s instead of 11.8, a PackBits one in 3.6 s instead of 6.0.
+- **Relight's shadows land about 1.5 times as fast after a light moves** (0.5 s instead of 0.75 at 15,000 x 10,000). A sun's shadows now come from the same exact calculation as the other lights, so a few pixels on a shadow's edge can differ by one visibility step from earlier versions.
 - Saving over a read-only `.scumble` file stops at once with a clear message. Opening two documents at the same time no longer trips over shared files, or removes a file that still exists from *Open Recent*. Temporary save files on a locked or unplugged drive are cleaned up on a later start. A headless MCP session now finishes saving even when that takes longer than five seconds.
 - **Layered PSD exports, dissolve layers and the magic wand over the whole picture are faster on large pictures, with the same pixels.** A 15,000 x 10,000 PSD exports in about 1.5 s instead of 2.0, a dissolve layer's export in 1.4 s instead of 1.9, and a whole-picture wand takes about 1.2 s instead of 1.4.
 - Scumble's own PNGs open faster, and an image starts decoding while it is still uploading instead of after it.

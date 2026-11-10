@@ -30,7 +30,7 @@ import { liquifyBlock as liquifyBlockJS, previewBlock as previewBlockJS, liquify
 // the retouch brushes' twins live with the brushes (K26, K27; inpaint_stroke.js imports nothing, so no cycle)
 import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin, toneRGBA as toneRGBATwin, spongeRGBA as spongeRGBATwin, freqSplit as freqSplitTwin } from "../inpaint_stroke.js";
 
-export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, TIFF_JS } from "./kernels_js.js";
+export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, tiffPlan, readTiffBand, TIFF_BAND_BYTES, TIFF_JS } from "./kernels_js.js";
 // this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4), their clocks and the copies
 // around them (docs/PLAN_WASM_K1.md §1.1); they survive a new instance
 export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
@@ -61,11 +61,11 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * `matchPixels` (K38): `matchPixels` of inpaint_filters.js `matchCanvas`, inpaint_boxstack.js and inpaint_worker.js.
  * `growMask` (K39): `growMaskBounds` of inpaint_raster.js (the selection grow / shrink job and window fallback).
  * `composeTiles` and `composeStack` (K10b): pointer gather into wasm memory for tile-store and stack `png_part` / `tiff_part` jobs.
- * `tiffUnpredict`, `tiffPredict`, `tiffToRgba`, and `tiffStripWasm` (K15): `tiffUnpredict`, `tiffPredictRgba`, `tiffToRgba`, and `tiffPartJob` / `tiffStrip` of `inpaint_tiff.js`.
+ * `tiffUnpack`, `tiffUnpredict`, `tiffPredict`, `tiffToRgba`, and `tiffStripWasm` (K15, K17): `tiffUnpack`, `tiffUnpredict`, `tiffPredictRgba`, `tiffToRgba`, and `tiffPartJob` / `tiffStrip` of `inpaint_tiff.js`.
  * `clipCoverage`, `dissolveRows`, `psdPartWasm` and `stackIntoWasm` (K10c): clipping-group coverage and dissolve in
  * wasm memory, and pointer gather for `psd_part` and `stack_into` jobs.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", tiffUnpredict: "kernel", tiffPredict: "kernel", tiffToRgba: "kernel", tiffStripWasm: "kernel", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", tiffUnpack: "kernel", tiffUnpredict: "kernel", tiffPredict: "kernel", tiffToRgba: "kernel", tiffStripWasm: "kernel", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -86,9 +86,36 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // kernel row 6092.4 vs 10728.2 ms; before/after on Rust 11829.1 -> 6036.1 ms wall, 1.96x; export_test fill_limit_rows
 // 11178 -> 6209 ms, 1.80x, psd_fill_limit fillRowsMs 12141 -> 6496 ms, 1.87x; plain bilinear path measured at the
 // kernel row only, PX_BENCH 15000x256: twin 100.16 vs simd 85.98 / scalar 88.06 ms, 1.16x).
+// No shadowMarch entry (K14, docs/measurements/k14_2026-11-09/summary.txt): at 15000x10000 (map 4096x2731) lane-free
+// shadow_march_f64 with row y-march precompute (after_scalar) beat 2-lane f64x2 SIMD (after_lanes, removed) across the
+// whole-operation rows (relight_one 493 [490-501] vs 599 [570-608] ms; one-job 3245 [3197-3257] vs 3530 [3511-3733] ms;
+// relight_one_rep 516 [507-531] vs 576 [540-617] ms; relight_one_nofeed 468 [460-487] vs 548 [547-571] ms), won outside
+// spreads over the hoisted f64 twin (after_js, shadowMarch: "js") and before (K13 scalar f64 on point/spot, f32
+// shadow_march on sun) on relight_one landed (493 [490-501] vs 681 [650-709] vs 748 [748-753] ms; kernel 3648 [3626-3670]
+// vs 5037 [4641-5293] vs 5616 [5606-5661] ms; one-job 3245 [3197-3257] vs 3595 [3456-3684] vs 4894 [4785-4982] ms;
+// relight_one_nofeed 468 [460-487] vs 545 [510-579] vs 701 [698-788] ms) and the sun rows (relight_sun landed 170
+// [166-172] vs 286 [250-309] vs 527 [506-575] ms; one-job 762 [748-850] vs 1075 [1008-1097] vs 1586 [1581-1647] ms;
+// unfed 175 [174-176] vs 209 [187-213] ms; fed2 171 [169-186] vs 207 [206-272] ms), and tied after_js within spread
+// (decided by the kernel row, with after_scalar ahead on every landed median) on relight_one_rep (516 [507-531] vs 539
+// [490-547] ms, kernel 3860 vs 4054 ms; after_js had lower blocked 47 [40-52] vs 59.8 [58.1-63.5] ms), relight_sun_rep
+// (180 [164-185] vs 193 [182-209] ms, kernel 903 [872-943] vs 1106 [1056-1108] ms outside spreads), relight_three (1009
+// [965-1070] vs 1144 [1015-1212] ms, kernel 7883 vs 8990 ms, one-job 3284 [3282-3572] vs 3863 [3570-5187] ms; after_js
+// had lower blocked 58 [53-59] vs 84.4 [75.3-89.3] ms), relight_nodraw (465 [463-564] vs 561 [500-602] ms, kernel 3456 vs
+// 4243 ms), and relight_draw (518 [485-565] vs 546 [504-552] ms, one-job 3194 [3024-3354] vs 3608 [3392-3667] ms outside
+// spreads). On after_lanes vs after_js, after_js had the lower median on relight_one_rep (539 vs 576 ms) and
+// relight_one_nofeed (545 vs 548 ms); removing the f64x2 lanes flipped both to after_scalar (516 and 468 ms).
 // crc32 64 (K3, docs/measurements/k3_2026-11-08/summary.txt): 64 B is about a tie decided by the kernel row (Electron V8
 // size sweep: 0.075-0.100 vs 0.028-0.074 us at 16-48 B, 0.093-0.138 vs 0.156-0.235 us at 64-128 B, 1.50-2.53x; 4.97x at
 // 64 KB; 4.26x on w0_bench crc32_64mb); smaller headers (PNG signature, IHDR, 4-byte chunk lengths) stay in JS.
+// No tiffUnpack entry (K17, docs/measurements/k17_2026-11-09/summary.txt): at 15000x10000 Rust won tiffUnpack=js:rust
+// non-overlapping on readTiffBand for LZW (openMs 5684.0 [5619.0-5775.0] vs 10541.0 [10493.0-10595.0] ms, 1.85x;
+// tiff_read kernel 3028.8 vs 7857.4 ms, 2.59x; decode 2514.2 vs 7396.3 ms, 2.94x; before/after 0740aeab -> K17 openMs
+// 11826.0 -> 5696.0 ms, 2.08x) and PackBits (openMs 3416.0 [3327.0-3635.0] vs 3684.0 [3638.0-3686.0] ms, 1.08x;
+// tiff_read kernel 608.4 vs 796.8 ms, 1.31x; decode 110.3 vs 297.0 ms, 2.69x; before/after openMs 5967.0 -> 3622.0 ms,
+// 1.65x). Uncompressed (compression === 1) is guarded in tiffUnpack to stay on J.tiffUnpack (one dst.set vs 3 copies
+// across wasm: raw_strips 625-strip decode 66.6 [66.4-72.3] vs 91.9 [89.2-98.5] ms non-overlapping, 1.38x; PX_BENCH 1 MB
+// strip 0.02 vs 0.05 ms; before/after raw_strips openMs 3622.0 -> 3523.0 ms, 1.03x, openSteps pixels 858.0 -> 613.0 ms,
+// 1.40x).
 const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16, crc32: 64 });
 
 const TAKES = { kernel: '"js" or "rust"', kernelSize: '"js", "rust" or a number of pixels >= 0', mb: "a number of MB >= 0 or Infinity", count: "a whole number >= 0" };
@@ -918,15 +945,11 @@ export function shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias
     }
     const p = rustPx("shadowMarch", w * h);
     if (p) {
-        const isSun = Number(light[3]) === 1;
-        const exp = isSun ? "shadow_march" : "shadow_march_f64";
         try {
-            const res = isSun
-                ? p.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key)
-                : p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key);
+            const res = p.shadowMarchF64(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out, key);
             if (res) return res;
         }
-        catch (err) { if (!recovered(p, err, exp)) throw err; }
+        catch (err) { if (!recovered(p, err, "shadow_march_f64")) throw err; }
         finally { releaseIfLarge(); }
     }
     return J.shadowMarch(depth, w, h, scale, light, radius, taps, steps, bias, row0, rows, out);
@@ -1115,14 +1138,17 @@ export function rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, ti
 /**
  * Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes `src` into `out`
  * (`need` bytes, allocated when absent), stopping as soon as `need` bytes are written (`inpaint_tiff.js`
- * `unpackStrip`, K16, docs/PLAN_WASM_BUILD.md §4.6).
+ * `unpackStrip`, K16, K17, `docs/PLAN_WASM_BUILD.md` §4.6). LZW and PackBits are routed by `tiffUnpack`;
+ * uncompressed (`1`) stays on the JS copy (`dst.set`) to avoid copying `src` in and `out` back across wasm.
  */
 export function tiffUnpack(compression, src, need, out = null, name = "strip") {
-    const p = rustPx();
-    if (p) {
-        try { return p.tiffUnpack(compression, src, need, out, name); }
-        catch (err) { if (!recovered(p, err, "tiff_unpack")) throw err; }
-        finally { releaseIfLarge(); }
+    if (compression !== 1) {
+        const p = rustPx("tiffUnpack");
+        if (p) {
+            try { return p.tiffUnpack(compression, src, need, out, name); }
+            catch (err) { if (!recovered(p, err, "tiff_unpack")) throw err; }
+            finally { releaseIfLarge(); }
+        }
     }
     return J.tiffUnpack(compression, src, need, out, name);
 }
