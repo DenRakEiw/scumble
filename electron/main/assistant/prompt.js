@@ -43,7 +43,7 @@ function docLine(doc, pinned) {
     return `${pinned ? "> " : "  "}${bits.join(", ")}`;
 }
 
-/** One line per layer, top first, as `list_layers` answers them. */
+/** One line per layer in the state note. */
 function layerLine(layer) {
     const bits = [`${layer.id} "${layer.name}"`];
     if (layer.kind && layer.kind !== "paint") bits.push(layer.kind);
@@ -69,8 +69,9 @@ function stateNote(docs, layers, opts = {}) {
     for (const d of list) lines.push(docLine(d, d.id === pin));
     const ls = Array.isArray(layers) ? layers : [];
     if (ls.length) {
+        // list_layers answers bottom to top (commands.js); reverse so the note is top first and the cut keeps the newest
         lines.push(`Layers of #${pin}, top first (${ls.length}):`);
-        for (const l of ls) lines.push(layerLine(l));
+        for (let i = ls.length - 1; i >= 0; i--) lines.push(layerLine(ls[i]));
     }
     if (opts.undone) lines.push("The user undid your last turn.");
     if (opts.stopped) lines.push("(your previous answer was stopped before it finished)");

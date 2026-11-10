@@ -1018,6 +1018,96 @@ return {
             raise RuntimeError("Allow did not let the call run: " + json.dumps(out))
         return f"the panel opened itself, {out['name']} asked ({out['state']}), Allow ran it"
 
+    async def panel_stopped_ask_card(self):
+        """A stopped ask card disables its buttons, says 'not answered', and cannot answer a newer ask with the same call id."""
+        self.mock.reset()
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"id": "call_0", "name": "close_document", "args": {}}]}),
+            Turn(answer={"tool_calls": [{"id": "call_0", "name": "new_canvas", "args": {"width": 320, "height": 240, "color": "#334455"}}]}),
+            Turn(answer={"text": "declined"}),
+        )
+        out = await self.ev("""
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(150);
+const d = document.getElementById("assistant");
+const parts = (card) => card.shadowRoot || card;
+const before = [ednow(DOC).width, ednow(DOC).height];
+
+await A.send("schliesse den tab");
+let cardA = null;
+for (let i = 0; i < 80; i++) {
+    await wait(150);
+    const cards = Array.from(d.querySelectorAll(".as-card.as-ask"));
+    cardA = cards.length ? cards[cards.length - 1] : null;
+    if (cardA && (parts(cardA).querySelector(".as-card-state") || {}).textContent === "waiting for you") break;
+    cardA = null;
+}
+const stopBtn = d.querySelector(".as-foot button");
+if (stopBtn) stopBtn.click();
+for (let i = 0; i < 80; i++) {
+    await wait(150);
+    const s = await A.state();
+    if (!s.busy) break;
+}
+await wait(150);
+const aButtons = cardA ? Array.from(parts(cardA).querySelectorAll("button")) : [];
+const aAfterStop = {
+    state: cardA ? (parts(cardA).querySelector(".as-card-state") || {}).textContent : null,
+    disabled: aButtons.length === 2 && aButtons.every((b) => b.disabled),
+    released: !!(cardA && !cardA.hasAttribute("popover") && !d.querySelector(".as-ask-spacer")),
+    token: cardA ? cardA.dataset.ask : null,
+};
+
+await A.send("mach die leinwand kleiner");
+let cardB = null;
+for (let i = 0; i < 80; i++) {
+    await wait(150);
+    const cards = Array.from(d.querySelectorAll(".as-card.as-ask"));
+    const last = cards.length ? cards[cards.length - 1] : null;
+    if (last && last !== cardA && (parts(last).querySelector(".as-card-state") || {}).textContent === "waiting for you") {
+        cardB = last;
+        break;
+    }
+}
+if (aButtons[0]) aButtons[0].click();
+const staleIpc = aAfterStop.token ? await A.answer(aAfterStop.token, true) : null;
+const rawIpc = await A.answer("call_0", true);
+await wait(150);
+const mid = {
+    pending: !!(await A.state()).pending,
+    bState: cardB ? (parts(cardB).querySelector(".as-card-state") || {}).textContent : null,
+    size: [ednow(DOC).width, ednow(DOC).height],
+};
+
+const denyB = cardB ? Array.from(parts(cardB).querySelectorAll("button")).find((b) => b.textContent === "Don't") : null;
+if (denyB) denyB.click();
+for (let i = 0; i < 80; i++) {
+    await wait(150);
+    const s = await A.state();
+    if (!s.busy) break;
+}
+await wait(150);
+return {
+    aAfterStop,
+    staleIpc,
+    rawIpc,
+    mid,
+    bState: cardB ? (parts(cardB).querySelector(".as-card-state") || {}).textContent : null,
+    before,
+    after: [ednow(DOC).width, ednow(DOC).height],
+};""", timeout=120)
+        a_stop = out["aAfterStop"]
+        if a_stop["state"] != "not answered" or not a_stop["disabled"] or not a_stop["released"]:
+            raise RuntimeError("Stop left the ask card open or clickable: " + json.dumps(out))
+        if out["staleIpc"] is not False or out["rawIpc"] is not False:
+            raise RuntimeError("main accepted a stale ask token or a raw call_0: " + json.dumps(out))
+        if not out["mid"]["pending"] or out["mid"]["bState"] != "waiting for you" or out["mid"]["size"] != out["before"]:
+            raise RuntimeError("the stale card or raw call_0 answered the newer ask: " + json.dumps(out))
+        if out["bState"] != "declined" or out["after"] != out["before"]:
+            raise RuntimeError("declining the newer card did not settle cleanly: " + json.dumps(out))
+        return f"card A {a_stop['state']!r} (disabled), stale token and call_0 rejected, card B {out['bState']!r}"
+
 
     async def identity(self):
         """The assistant's list is the MCP list minus exactly the exclusion set."""
@@ -1592,6 +1682,7 @@ async def main():
             await g.run_step("the_panel_shows_a_turn_and_writes_no_markup", g.panel_shows_a_turn)
             await g.run_step("the_privacy_notice_clears_after_the_first_send", g.panel_notice_clears)
             await g.run_step("an_ask_opens_the_panel_and_its_buttons_answer", g.panel_ask_card)
+            await g.run_step("a_stopped_ask_card_is_disabled_and_cannot_answer_a_later_ask", g.panel_stopped_ask_card)
             await g.run_step("a_saved_chat_reopens_after_the_memory_is_cleared", g.chat_survives)
             await g.run_step("the_picture_is_a_file_beside_the_chat", g.chat_history_is_byte_equal)
             await g.run_step("a_chat_reopened_with_another_model_is_read_only", g.chat_read_only)
