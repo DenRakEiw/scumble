@@ -51,11 +51,11 @@ fn align_for(bytes: usize) -> usize {
 /// 24: liquify_block; 25: alpha_to_mask, mask_max_clamp, mask_one_minus, erode_mask, mask_to_rgba, mask_bounds_f32;
 /// 26: color_match_rgba, blend_alpha; 27: liquify_preview; 28: map_tile_stats; 29: mask_invert;
 /// 30: edgefit_shrink, warp_rgba, warp_coverage; 31: flood_shape out_kind/cells, grow_mask cells; 32: liquify_dab; 33: composite_masked_tile;
-/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes; 41: pngPartFromPtr / compose in wasm memory; 42: shadow_march_f64; 43: tiff_unpredict, tiff_predict_rgba, tiff_to_rgba; 44: clip_coverage, dissolve_rows; 45: remove f32 shadow_march);
+/// 34: crc32, png_chunk_frame; 35: range_tiles_depth; 36: range_tiles_rgba; 37: png_part_lines_cap, png_part_decode, png_part_finish; 38: tiff_unpack; 39: limit_alpha_rows; 40: guided_far, guided_far_scratch_bytes; 41: pngPartFromPtr / compose in wasm memory; 42: shadow_march_f64; 43: tiff_unpredict, tiff_predict_rgba, tiff_to_rgba; 44: clip_coverage, dissolve_rows; 45: remove f32 shadow_march; 46: packbits_rows, psd_mask_rgba);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    45
+    46
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -840,6 +840,64 @@ pub extern "C" fn psd_pack_rows_cap(w: usize, rows: usize) -> usize {
 #[no_mangle]
 pub unsafe extern "C" fn psd_pack_rows(rgba: *const u8, w: usize, rows: usize, channel: usize, out: *mut u8, cap: usize, lens: *mut u8) -> isize {
     psd::pack_rows(slice::from_raw_parts(rgba, w * 4 * rows), w, rows, channel & 3, slice::from_raw_parts_mut(out, cap), slice::from_raw_parts_mut(lens, rows * 2))
+}
+
+/// Unpack `rows` PSD PackBits rows (`row_bytes` unpacked bytes per row) from `src` (`src_len` bytes), advancing by
+/// each row's big-endian `u16` byte count in `lens` (`2 * rows` bytes), into `out` (`out_len` bytes; `inpaint_layered.js`
+/// `unpackRows`, K20b). Returns `(rows * row_bytes) as isize`, `0` when `rows == 0 || row_bytes == 0`, or `-1` on invalid bounds.
+#[no_mangle]
+pub unsafe extern "C" fn packbits_rows(
+    lens: *const u8,
+    src: *const u8,
+    src_len: usize,
+    rows: usize,
+    row_bytes: usize,
+    out: *mut u8,
+    out_len: usize,
+) -> isize {
+    if rows == 0 || row_bytes == 0 {
+        return 0;
+    }
+    let Some(lens_len) = rows.checked_mul(2) else { return -1 };
+    let Some(need_out) = rows.checked_mul(row_bytes) else { return -1 };
+    if lens_len > isize::MAX as usize
+        || need_out > isize::MAX as usize
+        || src_len > isize::MAX as usize
+        || lens.is_null()
+        || out.is_null()
+        || out_len < need_out
+        || (src_len > 0 && src.is_null())
+    {
+        return -1;
+    }
+    let lens_slice = slice::from_raw_parts(lens, lens_len);
+    let src_slice = if src_len == 0 { &[][..] } else { slice::from_raw_parts(src, src_len) };
+    let out_slice = slice::from_raw_parts_mut(out, need_out);
+    psd::packbits_rows(lens_slice, src_slice, rows, row_bytes, out_slice)
+}
+
+/// Place a band's mask overlap (`ry1 - ry0` rows of width `mw` starting at mask column `sx0`, `8`-bit or big-endian
+/// `16`-bit) into `out` (`rows * w * 4` bytes) as `[255, 255, 255, alpha]` over `[ry0, ry1) × [x0, x1)` and
+/// `[255, 255, 255, def]` elsewhere (`inpaint_layered.js` `layerMask` / `streamPixels`, K20b). Returns `0` or `-1`.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn psd_mask_rgba(
+    src: *const u8,
+    src_len: usize,
+    mw: usize,
+    sx0: usize,
+    w: usize,
+    rows: usize,
+    x0: usize,
+    x1: usize,
+    ry0: usize,
+    ry1: usize,
+    bits: u32,
+    def: u8,
+    out: *mut u8,
+    out_len: usize,
+) -> i32 {
+    psd::mask_rgba(src, src_len, mw, sx0, w, rows, x0, x1, ry0, ry1, bits, def, out, out_len)
 }
 
 // ---- edge & map kernels (PLAN_WASM #1) ----------------------------------------------------

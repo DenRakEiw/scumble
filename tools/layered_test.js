@@ -721,21 +721,42 @@ function twinDiffs(win, s, per, hash = false) {
 
 const TWIN = { files: 0, refusals: 0, fails: [] };
 
-/** readPsd, with readPsdStream run beside it on the same bytes (bands of 3 rows and of 256) and the answers compared. */
-function twinned(mod) {
+const pxKernelsOf = (px) => ({
+    packbitsRows: (lb, s, r, rb, o) => px.packbitsRows(lb, s, r, rb, o),
+    maskRgba: (s, mw, sx0, w, r, x0, x1, ry0, ry1, b, def, o) => px.psdMaskRgba(s, mw, sx0, w, r, x0, x1, ry0, ry1, b, def, o),
+    bandRgba: (d, w, y0, r, dep, g, sp) => px.psdBandRgba(d, w, y0, r, dep, g, sp),
+    bandMask: (d, L, m, w, h, y0, r, dep, sp) => px.psdBandMask(d, L, m, w, h, y0, r, dep, sp),
+});
+
+async function loadPxBuilds() {
+    const { loadPx } = await editorModule("px/px.js");
+    const pxDir = path.join(EDITOR, "px");
+    const simdPx = await loadPx(fs.readFileSync(path.join(pxDir, "px.wasm")));
+    const scalarPx = await loadPx(fs.readFileSync(path.join(pxDir, "px_scalar.wasm")));
+    return [
+        ["PSD_JS", null],
+        ["px.wasm", pxKernelsOf(simdPx)],
+        ["px_scalar.wasm", pxKernelsOf(scalarPx)],
+    ];
+}
+
+/** readPsd, with readPsdStream run beside it on the same bytes (bands of 3 rows and of 256, on PSD_JS, px.wasm and px_scalar.wasm) and the answers compared. */
+function twinned(mod, pxBuilds = [["PSD_JS", null]]) {
     return async (input, opts) => {
         let win = null, werr = null;
         try { win = await mod.readPsd(input, opts); } catch (err) { werr = err; }
         for (const per of [3, 256]) {
-            let s = null, serr = null;
-            try { s = await streamed(mod.readPsdStream, input, opts || {}, per); } catch (err) { serr = err; }
-            if (werr || serr) {
-                const a = werr && String(werr.message || werr), b = serr && String(serr.message || serr);
-                if (a !== b) TWIN.fails.push(`case ${TWIN.files + 1} (bands of ${per}): readPsd ${a ? "throws " + a : "reads it"}, the stream ${b ? "throws " + b : "reads it"}`);
-                continue;
+            for (const [kLabel, kernels] of pxBuilds) {
+                let s = null, serr = null;
+                try { s = await streamed(mod.readPsdStream, input, { ...(opts || {}), kernels }, per); } catch (err) { serr = err; }
+                if (werr || serr) {
+                    const a = werr && String(werr.message || werr), b = serr && String(serr.message || serr);
+                    if (a !== b) TWIN.fails.push(`case ${TWIN.files + 1} (${kLabel}, bands of ${per}): readPsd ${a ? "throws " + a : "reads it"}, the stream ${b ? "throws " + b : "reads it"}`);
+                    continue;
+                }
+                const d = twinDiffs(win, s, per);
+                if (d.length) TWIN.fails.push(`case ${TWIN.files + 1} (${kLabel}, bands of ${per}, ${win.layers.length} layers): ${d.slice(0, 4).join("; ")}`);
             }
-            const d = twinDiffs(win, s, per);
-            if (d.length) TWIN.fails.push(`case ${TWIN.files + 1} (bands of ${per}, ${win.layers.length} layers): ${d.slice(0, 4).join("; ")}`);
         }
         TWIN.files++;
         if (werr) { TWIN.refusals++; throw werr; }
@@ -743,21 +764,27 @@ function twinned(mod) {
     };
 }
 
-/** `--twin-file PATH`: one PSD (the G2 15k file) through both readers, compared by SHA-256; the timings beside. */
+/** `--twin-file PATH`: one PSD (the G2 15k file) through readPsd and readPsdStream (PSD_JS, px.wasm SIMD, px_scalar.wasm), compared by SHA-256; the timings beside. */
 async function twinFile(file) {
     const mod = await editorModule("inpaint_layered.js");
+    const pxBuilds = await loadPxBuilds();
     const bytes = new Uint8Array(fs.readFileSync(file));
     console.log(`${file}: ${(bytes.length / 1048576).toFixed(1)} MB`);
     let t = performance.now();
     const win = await mod.readPsd(bytes, { inflate });
     const winMs = performance.now() - t;
-    t = performance.now();
-    const spent = {};
-    const s = await streamed(mod.readPsdStream, bytes, { inflate, spent }, 256, true);
-    const streamMs = performance.now() - t;
-    const d = twinDiffs(win, s, 256, true);
-    console.log(`readPsd ${winMs.toFixed(0)} ms (${win.layers.length} layers ${win.layers.map((l) => `${l.name} ${l.w}x${l.h}${l.mask ? " masked" : ""}`).join(", ")}, merged picture ${win.composite ? "read" : "none"}); readPsdStream ${streamMs.toFixed(0)} ms ${short(spent)}`);
-    check(`the worker's reader equals readPsd on ${path.basename(file)}: every layer's bytes and mask by SHA-256, the fields, groups, notes`, d.length === 0, d.slice(0, 6).join("; "));
+    console.log(`readPsd ${winMs.toFixed(0)} ms (${win.layers.length} layers ${win.layers.map((l) => `${l.name} ${l.w}x${l.h}${l.mask ? " masked" : ""}`).join(", ")}, merged picture ${win.composite ? "read" : "none"})`);
+    const allDiffs = [];
+    for (const [kLabel, kernels] of pxBuilds) {
+        const spent = {};
+        t = performance.now();
+        const s = await streamed(mod.readPsdStream, bytes, { inflate, spent, kernels }, 256, true);
+        const streamMs = performance.now() - t;
+        const d = twinDiffs(win, s, 256, true);
+        console.log(`readPsdStream (${kLabel}) ${streamMs.toFixed(0)} ms ${short(spent)}`);
+        for (const msg of d) allDiffs.push(`${kLabel}: ${msg}`);
+    }
+    check(`the worker's reader (PSD_JS, px.wasm, px_scalar.wasm) equals readPsd on ${path.basename(file)}: every layer's bytes and mask by SHA-256, the fields, groups, notes`, allDiffs.length === 0, allDiffs.slice(0, 6).join("; "));
 }
 
 (async () => {
@@ -771,8 +798,9 @@ async function twinFile(file) {
         process.exit(bad ? 1 : 0);
     }
     const mod = await editorModule("inpaint_layered.js");
+    const pxBuilds = await loadPxBuilds();
     const { readOra, isPsd, isOra, LAYERED_EXT } = mod;
-    const readPsd = twinned(mod);   // every PSD read below goes through readPsdStream too (D0)
+    const readPsd = twinned(mod, pxBuilds);   // every PSD read below goes through readPsdStream on PSD_JS, px.wasm and px_scalar.wasm (D0, K20b)
     const { BLENDS } = await editorModule("blend_modes.js");
 
     console.log("\n--- PSD: channels, compression, depth ---");
@@ -1059,6 +1087,49 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
         check("an empty layer over a merged picture: the picture, no loss", !emptyOver.layers.length && !!emptyOver.composite && !emptyOver.lossy && !emptyOver.notes.length, short(emptyOver.notes));
         const grayFlat = await readPsd(psd({ width: W, height: H, mode: 1, merged: [plane(7)] }));
         check("a grayscale flat file: gray replicated, opaque", !!grayFlat.composite && grayFlat.composite[4] === plane(7)[1] && grayFlat.composite[5] === plane(7)[1] && grayFlat.composite[6] === plane(7)[1] && grayFlat.composite[7] === 255, short(Array.from(grayFlat.composite || []).slice(0, 8)));
+
+        // K20b: [-2, -1, 0, 1, 2] channel order (mask & alpha before colour), missing green channel [0, 2],
+        // dangling PackBits repeat byte > 128 at end - 1, and truncated raw (comp 0) merged picture beside layers vs flat
+        const maskBefore = { top: 0, left: 0, w: W, h: H, def: 0, data: plane(11) };
+        const reordered = await readPsd(psd({
+            width: W, height: H,
+            layers: [{
+                name: "mask-first", top: 0, left: 0, w: W, h: H, mask: maskBefore,
+                blocks: [
+                    [-2, channelData(maskBefore.data, W, H, 8, 1)],
+                    [-1, channelData(plane(99), W, H, 8, 1)],
+                    [0, channelData(plane(1), W, H, 8, 1)],
+                    [1, channelData(plane(2), W, H, 8, 1)],
+                    [2, channelData(plane(3), W, H, 8, 1)],
+                ],
+            }],
+        }));
+        check("K20b: channel order [-2, -1, 0, 1, 2] keeps mask, alpha and RGB alike", reordered.layers.length === 1 && reordered.layers[0].rgba[0] === plane(1)[0] && reordered.layers[0].rgba[3] === plane(99)[0] && equalBytes(reordered.layers[0].mask.data, maskBefore.data));
+
+        const missingGreen = await readPsd(psd({
+            width: W, height: H,
+            layers: [{ name: "no-green", top: 0, left: 0, w: W, h: H, ch: { 0: plane(21), 2: plane(23) } }],
+        }));
+        check("K20b: missing green channel fills 0 and missing alpha fills 255", missingGreen.layers[0].rgba[0] === plane(21)[0] && missingGreen.layers[0].rgba[1] === 0 && missingGreen.layers[0].rgba[2] === plane(23)[0] && missingGreen.layers[0].rgba[3] === 255);
+
+        // Dangling PackBits repeat byte (254) at end - 1 of row 0 must zero-fill row 0 without consuming row 1's literal header (0, 0xAB)
+        const badPbBlock = new B().u16(1).u16(3).u16(2).bytes([0, 0x55, 254, 0, 0xAB]).out();
+        const danglingPb = await readPsd(psd({
+            width: 4, height: 2,
+            layers: [{
+                name: "dangling-rle", top: 0, left: 0, w: 4, h: 2,
+                blocks: [[0, badPbBlock], [1, channelData(fill(8, () => 9), 4, 2, 8, 0)], [2, channelData(fill(8, () => 7), 4, 2, 8, 0)]],
+            }],
+        }));
+        check("K20b: dangling PackBits repeat byte > 128 at end - 1 zero-fills without reading into row 1",
+            danglingPb.layers[0].rgba[0] === 0x55 && danglingPb.layers[0].rgba[4] === 0 && danglingPb.layers[0].rgba[16] === 0xAB && danglingPb.layers[0].rgba[20] === 0);
+
+        const rawMergedLayers = psd({ width: 8, height: 8, mergedComp: 0, layers: [{ name: "kept", top: 0, left: 0, w: 4, h: 4, ch: { 0: fill(16, (i) => i), 1: fill(16, () => 2), 2: fill(16, () => 3) } }] });
+        const rawMergedLayersCut = await readPsd(rawMergedLayers.subarray(0, rawMergedLayers.length - 10));
+        check("K20b: truncated raw merged picture beside layers keeps the layers (composite null)", rawMergedLayersCut.layers.length === 1 && rawMergedLayersCut.composite === null);
+        const rawMergedFlat = psd({ width: 8, height: 8, mergedComp: 0, layers: [] });
+        const rawMergedFlatCut = await throwsWith(() => readPsd(rawMergedFlat.subarray(0, rawMergedFlat.length - 10)), /ends early/);
+        check("K20b: truncated raw merged picture on a flat PSD is neglected (no composite, composite null)", !rawMergedFlatCut.ok);
     }
     console.log("\n--- H1 S5: crafted files are refused before they grow; valid files read as before ---");
     {
@@ -1139,7 +1210,7 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
             && oraSeen.length === 1 && oraSeen[0].width === 4 && oraSeen[0].height === 4 && oraStop.ok, `${short(seen)} ${stop.msg} ${short(oraSeen)} ${oraStop.msg}`);
     }
 
-    check(`readPsdStream answers as readPsd on all ${TWIN.files} PSDs read above (${TWIN.refusals} of them refused), in bands of 3 rows and of 256`, TWIN.files >= 40 && TWIN.refusals >= 5 && TWIN.fails.length === 0, TWIN.fails.length ? TWIN.fails.slice(0, 4).join(" | ") : `${TWIN.files} files`);
+    check(`readPsdStream (PSD_JS, px.wasm, px_scalar.wasm) answers as readPsd on all ${TWIN.files} PSDs read above (${TWIN.refusals} of them refused), in bands of 3 rows and of 256`, TWIN.files >= 40 && TWIN.refusals >= 5 && TWIN.fails.length === 0, TWIN.fails.length ? TWIN.fails.slice(0, 4).join(" | ") : `${TWIN.files} files x 3 kernel builds x 2 band sizes`);
 
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

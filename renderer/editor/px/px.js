@@ -15,7 +15,7 @@ import { relightVogel } from "./kernels_js.js";
 import { disparityRange } from "../inpaint_depth.js";
 import { paletteLut } from "../inpaint_tiff.js";
 
-export const PX_ABI = 45;
+export const PX_ABI = 46;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -1160,6 +1160,212 @@ export class Px {
             if (TIMED) lapOut(t, rows * 2 + n);
         }
         return out;
+    }
+
+    /**
+     * Unpack `rows` PSD PackBits rows (`rowBytes` unpacked bytes per row) from `src`, advancing by each row's
+     * big-endian `u16` byte count in `lensBytes` (`2 * rows` bytes), into `out` (or a fresh `Uint8Array(rows * rowBytes)`;
+     * `inpaint_layered.js` `packbitsRows`, K20b).
+     */
+    packbitsRows(lensBytes, src, rows, rowBytes, out = null) {
+        if (!Number.isInteger(rows) || !Number.isInteger(rowBytes) || rows < 0 || rowBytes < 0) {
+            throw new Error(`packbits_rows: invalid dimensions (rows=${rows}, rowBytes=${rowBytes})`);
+        }
+        if (rows === 0 || rowBytes === 0) {
+            if (out != null && !ArrayBuffer.isView(out)) throw new Error("packbits_rows: out must be an ArrayBufferView");
+            return out || new Uint8Array(0);
+        }
+        if (!ArrayBuffer.isView(lensBytes) || lensBytes.byteLength < rows * 2 || !ArrayBuffer.isView(src)) {
+            throw new Error("packbits_rows: invalid lensBytes or src");
+        }
+        const need = rows * rowBytes, sLen = src.byteLength;
+        if (need > 0x7fffffff || sLen > 0x7fffffff || rows * 2 > 0x7fffffff) {
+            throw new Error("packbits_rows: buffer exceeds 2 GB");
+        }
+        let dst = null;
+        if (out != null) {
+            if (!ArrayBuffer.isView(out) || out.byteLength < need) {
+                throw new Error(`packbits_rows: out too short (${out && out.byteLength} < ${need})`);
+            }
+            dst = out instanceof Uint8Array ? out : new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+        }
+        const a = this.job;
+        try {
+            const pl = a.take(rows * 2), ps = sLen > 0 ? a.take(sLen) : 0, po = a.take(need);
+            this.put(pl, new Uint8Array(lensBytes.buffer, lensBytes.byteOffset, rows * 2));
+            if (sLen > 0) this.put(ps, src);
+            const rc = this.exports.packbits_rows(pl, ps, sLen, rows, rowBytes, po, need) | 0;
+            if (rc < 0) throw new Error(`packbits_rows: refused (${rc})`);
+            this._out(Uint8Array, po, need, dst ? (dst.length === need ? dst : dst.subarray(0, need)) : (dst = new Uint8Array(need)));
+            return out || dst;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Place a band's mask overlap (`ry1 - ry0` rows of width `mw` starting at mask column `sx0`, `8`-bit or big-endian
+     * `16`-bit) into `out` (or a fresh `Uint8ClampedArray(rows * w * 4)`) as `[255, 255, 255, alpha]` over
+     * `[ry0, ry1) × [x0, x1)` and `[255, 255, 255, def]` elsewhere (`inpaint_layered.js` `psdMaskRgba`, K20b).
+     */
+    psdMaskRgba(src, mw, sx0, w, rows, x0, x1, ry0, ry1, bits, def, out = null) {
+        if (!Number.isInteger(w) || !Number.isInteger(rows) || w <= 0 || rows <= 0 || (bits !== 8 && bits !== 16)) {
+            throw new Error(`psd_mask_rgba: invalid size or bits (w=${w}, rows=${rows}, bits=${bits})`);
+        }
+        if (!Number.isInteger(x0) || !Number.isInteger(x1) || !Number.isInteger(ry0) || !Number.isInteger(ry1)
+            || x0 < 0 || x0 > x1 || x1 > w || ry0 < 0 || ry0 > ry1 || ry1 > rows) {
+            throw new Error(`psd_mask_rgba: invalid overlap (${x0}..${x1} in ${w}, ${ry0}..${ry1} in ${rows})`);
+        }
+        const needOut = w * rows * 4;
+        if (needOut > 0x7fffffff) throw new Error("psd_mask_rgba: out exceeds 2 GB");
+        let dst = null;
+        if (out != null) {
+            if (!ArrayBuffer.isView(out) || out.byteLength < needOut) {
+                throw new Error(`psd_mask_rgba: out too short (${out && out.byteLength} < ${needOut})`);
+            }
+            dst = out instanceof Uint8Array || out instanceof Uint8ClampedArray
+                ? out
+                : new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+        }
+        const mRows = ry1 - ry0, span = x1 - x0;
+        let needSrc = 0;
+        if (mRows > 0 && span > 0) {
+            if (!Number.isInteger(mw) || !Number.isInteger(sx0) || mw <= 0 || sx0 < 0 || sx0 + span > mw) {
+                throw new Error(`psd_mask_rgba: invalid mask columns (sx0=${sx0}, span=${span}, mw=${mw})`);
+            }
+            const bps = bits >>> 3;
+            needSrc = (mRows - 1) * mw * bps + (sx0 + span) * bps;
+            if (needSrc > 0x7fffffff || !ArrayBuffer.isView(src) || src.byteLength < needSrc) {
+                throw new Error(`psd_mask_rgba: src too short (${src && src.byteLength} < ${needSrc})`);
+            }
+        }
+        const a = this.job;
+        try {
+            const ps = needSrc > 0 ? a.take(needSrc) : 0, po = a.take(needOut);
+            if (needSrc > 0) this.put(ps, new Uint8Array(src.buffer, src.byteOffset, needSrc));
+            const rc = this.exports.psd_mask_rgba(ps, needSrc, mw | 0, sx0 | 0, w, rows, x0, x1, ry0, ry1, bits, def & 255, po, needOut) | 0;
+            if (rc !== 0) throw new Error(`psd_mask_rgba: refused (${rc})`);
+            if (dst) {
+                this._out(Uint8Array, po, needOut, dst.length === needOut ? dst : dst.subarray(0, needOut));
+                return out;
+            }
+            return this._out(Uint8ClampedArray, po, needOut, null);
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Unpack, optionally unpredict (`comp === 3`), and interleave one `rows`-row PSD colour/alpha band `[y0, y0 + rows)`
+     * inside one `PxArena` scope without copying unpacked planes out to JS (`docs/PLAN_WASM_K20.md` §2.1–2.3, K20b).
+     */
+    psdBandRgba(descs, w, y0, rows, depth, gray, spent = null) {
+        const bpc = depth >>> 3, rowBytes = w * bpc, planeBytes = rows * rowBytes;
+        const hasA = !!descs["-1"];
+        const list = gray
+            ? (hasA ? [descs[0], descs["-1"]] : [descs[0]])
+            : (hasA ? [descs[0], descs[1], descs[2], descs["-1"]] : [descs[0], descs[1], descs[2]]);
+        const spp = list.length, totalPlanes = spp * planeBytes, needOut = rows * w * 4;
+        let anyRle = false, maxPacked = 0;
+        for (let i = 0; i < spp; i++) {
+            const d = list[i];
+            if (d && d.comp === 1) {
+                anyRle = true;
+                const s0 = d.dataAt + d.rowOff[y0], s1 = Math.min(d.bytes.length, d.dataAt + d.rowOff[y0 + rows]);
+                const pLen = s0 < s1 ? s1 - s0 : 0;
+                if (pLen > maxPacked) maxPacked = pLen;
+            }
+        }
+        const a = this.job;
+        try {
+            const t0 = spent ? clock() : 0;
+            const pPlanes = a.take(totalPlanes), pOut = a.take(needOut);
+            const pLens = anyRle ? a.take(rows * 2) : 0;
+            const pPacked = maxPacked > 0 ? a.take(maxPacked) : 0;
+            for (let i = 0; i < spp; i++) {
+                const d = list[i], dstPtr = pPlanes + i * planeBytes;
+                if (!d) {
+                    this.u8().fill(0, dstPtr, dstPtr + planeBytes);
+                } else if (d.comp === 1) {
+                    this.put(pLens, d.lensBytes.subarray(2 * y0, 2 * (y0 + rows)));
+                    const s0 = d.dataAt + d.rowOff[y0], s1 = Math.min(d.bytes.length, d.dataAt + d.rowOff[y0 + rows]);
+                    const pLen = s0 < s1 ? s1 - s0 : 0;
+                    if (pLen > 0) this.put(pPacked, d.bytes.subarray(s0, s1));
+                    const rc = this.exports.packbits_rows(pLens, pLen > 0 ? pPacked : 0, pLen, rows, rowBytes, dstPtr, planeBytes) | 0;
+                    if (rc < 0) throw new Error(`packbits_rows: refused (${rc})`);
+                } else {
+                    const off = d.at + y0 * rowBytes;
+                    this.put(dstPtr, d.bytes.subarray(off, off + planeBytes));
+                    if (d.comp === 3) {
+                        const rc = this.exports.tiff_unpredict(dstPtr, planeBytes, rows, rowBytes, w, 1, depth, 0) | 0;
+                        if (rc !== 0) throw new Error(`tiff_unpredict: refused (${rc})`);
+                    }
+                }
+            }
+            const t1 = spent ? clock() : 0;
+            if (spent) spent.channels += t1 - t0;
+            const rc = this.exports.tiff_to_rgba(
+                pPlanes, totalPlanes, spp, rowBytes, w, rows, spp, depth, 0,
+                gray ? 1 : 2, hasA ? 2 : 0, 0, 0, pOut, needOut
+            ) | 0;
+            if (rc !== 0) throw new Error(`tiff_to_rgba: refused (${rc})`);
+            const out = this._out(Uint8ClampedArray, pOut, needOut, null);
+            if (spent) spent.interleave += clock() - t1;
+            return out;
+        } finally { this._reset(a); }
+    }
+
+    /**
+     * Unpack, optionally unpredict (`comp === 3`), and place one `rows`-row PSD mask band `[y0, y0 + rows)` inside one
+     * `PxArena` scope (`docs/PLAN_WASM_K20.md` §2.2–2.3, K20b).
+     */
+    psdBandMask(desc, L, m, w, h, y0, rows, depth, spent = null) {
+        const t0 = spent ? clock() : 0;
+        const x0 = Math.min(w, Math.max(0, m.left - L.left));
+        const x1 = Math.max(x0, Math.min(w, m.right - L.left));
+        const gy0 = Math.min(h, Math.max(0, m.top - L.top));
+        const gy1 = Math.max(gy0, Math.min(h, m.bottom - L.top));
+        const ry0 = Math.min(rows, Math.max(0, gy0 - y0));
+        const ry1 = Math.max(ry0, Math.min(rows, gy1 - y0));
+        const needOut = rows * w * 4;
+        const a = this.job;
+        try {
+            if (!desc || desc.kind === "empty" || !(x1 > x0 && ry1 > ry0)) {
+                const pOut = a.take(needOut);
+                const rc = this.exports.psd_mask_rgba(0, 0, 0, 0, w, rows, 0, 0, 0, 0, 8, m.def & 255, pOut, needOut) | 0;
+                if (rc !== 0) throw new Error(`psd_mask_rgba: refused (${rc})`);
+                const out = this._out(Uint8ClampedArray, pOut, needOut, null);
+                if (spent) spent.mask += clock() - t0;
+                return out;
+            }
+            const mRows = ry1 - ry0;
+            const my0 = L.top + y0 + ry0 - m.top;
+            const sx0 = L.left + x0 - m.left;
+            const planeBytes = mRows * desc.rowBytes;
+            let s0 = 0, s1 = 0, pLen = 0;
+            if (desc.comp === 1) {
+                s0 = desc.dataAt + desc.rowOff[my0];
+                s1 = Math.min(desc.bytes.length, desc.dataAt + desc.rowOff[my0 + mRows]);
+                pLen = s0 < s1 ? s1 - s0 : 0;
+            }
+            const pPlane = a.take(planeBytes), pOut = a.take(needOut);
+            const pLens = desc.comp === 1 ? a.take(mRows * 2) : 0;
+            const pPacked = pLen > 0 ? a.take(pLen) : 0;
+            if (desc.comp === 1) {
+                this.put(pLens, desc.lensBytes.subarray(2 * my0, 2 * (my0 + mRows)));
+                if (pLen > 0) this.put(pPacked, desc.bytes.subarray(s0, s1));
+                const rcU = this.exports.packbits_rows(pLens, pLen > 0 ? pPacked : 0, pLen, mRows, desc.rowBytes, pPlane, planeBytes) | 0;
+                if (rcU < 0) throw new Error(`packbits_rows: refused (${rcU})`);
+            } else {
+                const off = desc.at + my0 * desc.rowBytes;
+                this.put(pPlane, desc.bytes.subarray(off, off + planeBytes));
+                if (desc.comp === 3) {
+                    const rcP = this.exports.tiff_unpredict(pPlane, planeBytes, mRows, desc.rowBytes, desc.cw, 1, depth, 0) | 0;
+                    if (rcP !== 0) throw new Error(`tiff_unpredict: refused (${rcP})`);
+                }
+            }
+            const rc = this.exports.psd_mask_rgba(pPlane, planeBytes, desc.cw, sx0, w, rows, x0, x1, ry0, ry1, depth, m.def & 255, pOut, needOut) | 0;
+            if (rc !== 0) throw new Error(`psd_mask_rgba: refused (${rc})`);
+            const out = this._out(Uint8ClampedArray, pOut, needOut, null);
+            if (spent) spent.mask += clock() - t0;
+            return out;
+        } finally { this._reset(a); }
     }
 
     /**

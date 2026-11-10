@@ -63,7 +63,7 @@ import { liquifyStore } from "./inpaint_liquify.js";
 import { disparityRange } from "./inpaint_depth.js";
 import { rangeRowBookkeeping } from "./inpaint_weights.js";
 import { fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, guidedFar, route, pngPartLinesCap, pngPartDecode, pngPartFinish, tiffKernels } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, guidedFar, route, pngPartLinesCap, pngPartDecode, pngPartFinish, tiffKernels, psdKernels } from "./px/kernels.js";
 import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
@@ -920,13 +920,13 @@ async function tiffRead(msg) {
  * which the window shows as its own reader would, without reading the file again. Plain JS: K20b puts the Rust reader
  * into this job. Its timing: read (the blob), channels, inflate, interleave, mask, deliver (the posts), bands.
  */
-async function psdRead(msg) {
+export async function psdRead(msg) {
     const t0 = now();
     const bytes = new Uint8Array(await msg.blob.arrayBuffer());
     const read = now() - t0;
     const spent = {};
     let inflate = 0, inflates = 0, pixels = 0;
-    const timing = () => ({ op: "psd_read", kernels: "js", pixels, kernel: now() - t0, read, inflate, inflates, ...spent });
+    const timing = () => ({ op: "psd_read", kernels: rustPx("psdRead") ? "rust" : "js", pixels, kernel: now() - t0, read, inflate, inflates, ...spent });
     try {
         const doc = await readPsdStream(bytes, {
             // the window's inflater (inpaint_layered.js inflateAtMost): the same bytes, stopped at the bytes kept
@@ -935,11 +935,13 @@ async function psdRead(msg) {
             onHeader: (h) => { pixels = h.width * h.height; },   // the window checked the size from the header before the job
             onRows: (index, kind, rgba, w, h, y0, rows) => { self.postMessage({ id: msg.id, progress: true, index, mask: kind === "mask", rgba: rgba.buffer, w, h, y0, rows }, [rgba.buffer]); },
             spent,
+            kernels: psdKernels(),
         });
         return { doc, timing: timing() };
     } catch (err) {
         return { failed: String((err && err.message) || err), timing: timing() };
     } finally {
+        releaseIfLarge();
         // the file's array goes now, not at this idle worker's next collection (the answer holds no view of it)
         try { if (typeof bytes.buffer.transfer === "function") bytes.buffer.transfer(0); } catch (_) { /* detached already */ }
     }
