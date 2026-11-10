@@ -1,0 +1,40 @@
+== 249d882 CLAUDE.md: item 48, Canva Craft as an image model (text to image only,
+TIE   liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    25.0  runs [25.0, 24.4, 27.4]
+TIE   liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now    64.0  runs [64.0, 56.9, 70.8]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/249d882\\_view\\r1\\liquify\\j
+== 7f9c0b1e LoRAs LR6 (item 50, issue #11): the MOSS Image Edit recipe on your Com
+TIE   liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    22.8  runs [22.8, 22.0, 29.7]
+TIE   liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now    59.4  runs [56.1, 59.4, 81.3]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/7f9c0b1e\\_view\\r1\\liquify\\
+== e0fbfddf Merge ck-refine (I6: keymatte.js, the matte refined against the full-r
+TIE   liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    24.8  runs [24.8, 26.5, 24.8]
+WIN   liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now    64.2  runs [64.2, 62.9, 67.3]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/e0fbfddf\\_view\\r1\\liquify\\
+== 0fcef6f2 server.json: 0.1.52 for the MCP Registry
+TIE   liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    26.1  runs [30.8, 26.1, 23.5]
+TIE   liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now    65.7  runs [74.6, 65.7, 58.2]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/0fcef6f2\\_view\\r1\\liquify\\
+== 8689d490 CLAUDE.md: the six running agents and what the next session does with 
+TIE   liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    28.1  runs [24.9, 28.1, 29.0]
+TIE   liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now    72.0  runs [59.6, 72.0, 75.1]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/8689d490\\_view\\r1\\liquify\\
+== e9ab0d33 R1 in the CHANGELOG and the review's README
+TIE   liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    24.1  runs [23.9, 27.8, 24.1]
+TIE   liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now    61.2  runs [61.2, 71.3, 58.8]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/e9ab0d33\\_view\\r1\\liquify\\
+== c10d6d3d Merge K33 (stitch's colour match and alpha writes in Rust: color_match
+TIE   liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    18.8  runs [27.5, 18.8, 18.4]
+WIN   liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now    43.3  runs [53.5, 43.3, 41.8]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/c10d6d3d\\_view\\r1\\liquify\\
+== d711f8f2 Merge K31 (liquify's dab in Rust for push, grow, shrink and restore; t
+LOSS  liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    86.9  runs [78.1, 109.2, 86.9]
+LOSS  liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now   124.8  runs [119.5, 124.8, 132.3]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/d711f8f2\\_view\\r1\\liquify\\
+== c270b711 K16 as built, its CHANGELOG line, and the hand-over of 2026-11-09 in C
+LOSS  liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    98.5  runs [98.5, 103.7, 71.9]
+LOSS  liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now   115.1  runs [115.1, 120.1, 110.9]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/c270b711\\_view\\r1\\liquify\\
+== 0d14b9eb Merge P5: PNG parts start independent, upload overlaps the decode
+LOSS  liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    92.7  runs [69.7, 105.8, 92.7]
+LOSS  liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now   104.0  runs [104.0, 123.5, 104.0]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b1_liqrust/0d14b9eb\\_view\\r1\\liquify\\

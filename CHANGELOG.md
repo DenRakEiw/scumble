@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **The assistant's render questions show the settings.** Before a render or upscale its question lists the document's settings and marks what the chat changed, and it can set crop options, use the magic wand and add boxes without failing on the active layer.
 - **The assistant asks before merging into your own layer.** Merging down from the assistant now asks when the target is a layer you made or the base image, and unanswered question cards are switched off when a turn stops, so an old card cannot answer a later question.
 - **Split into layers** (*Image > Split into Layers...*, MCP `split_layers`): Seedream's layer decomposition on BytePlus ModelArk (5.5 and 5.0 Pro) lands a picture's elements as named layers in one new group above your layers, as one undo step. Not run against the live API yet.
 - **A paid run is not lost when the window reloads or crashes.** Its picture is kept and opens in a tab of its own, and *View > Reload* asks first while a run is going. *Save to recipe* in the ComfyUI window refuses when the page shows another graph. A failed export over an existing file keeps the finished temporary file and names it. Long commands over MCP get their full time, and parallel connections no longer fail.
