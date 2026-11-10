@@ -14,6 +14,7 @@
 # logs beside them, chain.log. Re-running skips the rows that have a result.
 #
 #   bash docs/measurements/k19_2026-11-11/k19_chain.sh            # the 15k rounds
+#   K19_ARM_A=rust6 K19_RES=results_l6 bash docs/measurements/k19_2026-11-11/k19_chain.sh   # level 6 against native
 #   K19_SMOKE=1 bash docs/measurements/k19_2026-11-11/k19_chain.sh  # one 2000x1500 noise pair (checks the route)
 set -u
 
@@ -26,8 +27,12 @@ export SCUMBLE_CDP_PORT="$PORT"
 SMOKE="${K19_SMOKE:-}"
 ROUNDS="${K19_ROUNDS:-1 2 3}"
 VARIANTS="${K19_VARIANTS:-own noise}"
+# two arms, alternated per round: "rust native" (results/) or "rust6 native" (results_l6/: Rust at the native level 6)
+ARM_A="${K19_ARM_A:-rust}"
+ARM_B="${K19_ARM_B:-native}"
+RES_NAME="${K19_RES:-results}"
 
-RES="$HERE/results"
+RES="$HERE/$RES_NAME"
 [ -n "$SMOKE" ] && RES="$HERE/smoke"
 mkdir -p "$RES"
 
@@ -143,16 +148,16 @@ fi
 
 for R in $ROUNDS; do
     for V in $VARIANTS; do
-        if [ -s "$RES/rust_${V}_r${R}.json" ] && [ -s "$RES/native_${V}_r${R}.json" ]; then continue; fi
+        if [ -s "$RES/${ARM_A}_${V}_r${R}.json" ] && [ -s "$RES/${ARM_B}_${V}_r${R}.json" ]; then continue; fi
         acquire_lock "K19 $V r$R (chain-t)"
         log "== $V round $R"
         gpu
         if [ $((R % 2)) -eq 1 ]; then
-            [ -s "$RES/rust_${V}_r${R}.json" ] || one rust "$V" "$R"
-            [ -s "$RES/native_${V}_r${R}.json" ] || one native "$V" "$R"
+            [ -s "$RES/${ARM_A}_${V}_r${R}.json" ] || one "$ARM_A" "$V" "$R"
+            [ -s "$RES/${ARM_B}_${V}_r${R}.json" ] || one "$ARM_B" "$V" "$R"
         else
-            [ -s "$RES/native_${V}_r${R}.json" ] || one native "$V" "$R"
-            [ -s "$RES/rust_${V}_r${R}.json" ] || one rust "$V" "$R"
+            [ -s "$RES/${ARM_B}_${V}_r${R}.json" ] || one "$ARM_B" "$V" "$R"
+            [ -s "$RES/${ARM_A}_${V}_r${R}.json" ] || one "$ARM_A" "$V" "$R"
         fi
         release_lock
         sleep 2
