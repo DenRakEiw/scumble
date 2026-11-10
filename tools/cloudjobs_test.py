@@ -19,6 +19,7 @@ import io
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -182,6 +183,56 @@ class App:
         self.log.close()
 
 
+def free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+async def main_eval(port, js):
+    async with aiohttp.ClientSession() as s:
+        targets = None
+        for _ in range(30):
+            try:
+                async with s.get(f"http://127.0.0.1:{port}/json/list", timeout=aiohttp.ClientTimeout(total=2)) as r:
+                    targets = await r.json(content_type=None)
+                if targets:
+                    break
+            except Exception:  # noqa: BLE001
+                pass
+            await asyncio.sleep(0.2)
+        if not targets:
+            raise RuntimeError(f"no Node inspector on port {port}")
+        async with s.ws_connect(targets[0]["webSocketDebuggerUrl"], max_msg_size=16 * 1024 * 1024) as ws:
+            c = Cdp(ws)
+            r = await asyncio.wait_for(c.call("Runtime.evaluate", expression=js, includeCommandLineAPI=True, returnByValue=True), 15)
+            if "exceptionDetails" in r:
+                raise RuntimeError(str(r["exceptionDetails"]))
+            return r.get("result", {}).get("value")
+
+
+CLICK_VIEW_RELOAD = r"""(() => {
+    const req = typeof require === "function" ? require : (process.mainModule ? process.mainModule.require.bind(process.mainModule) : null);
+    const { Menu } = req("electron");
+    const find = (m, label) => { for (const it of (m ? m.items : [])) { if (it.label === label) return it; const x = it.submenu ? find(it.submenu, label) : null; if (x) return x; } return null; };
+    const it = find(Menu.getApplicationMenu(), "Reload");
+    if (!it) return "missing";
+    it.click();
+    return "clicked";
+})()"""
+
+READ_DIALOG_JS = """(() => {
+    const d = document.querySelector('dialog.sc-dialog[open]');
+    if (!d) return null;
+    const r = d.querySelector('div') && d.querySelector('div').shadowRoot;
+    if (!r) return null;
+    return JSON.stringify({
+        message: (r.querySelector('.message') && r.querySelector('.message').textContent) || '',
+        buttons: Array.from(r.querySelectorAll('button')).map((b) => b.textContent || ''),
+    });
+})()"""
+
+
 def notes_file(profile):
     return os.path.join(profile, "cloudjobs.json")
 
@@ -298,6 +349,97 @@ async def main():
         docs = await d.ev("(async () => { const { host } = await import('./editor/host.js'); return host.editors().filter((e) => /A Comfy Cloud result/.test(e.status || '')).length; })()")
         await d.close()
         check("no key: nothing asked, no document opened, the notes kept", len(mock.calls) == n1 and docs == 0 and read_notes(bare) == ["done", "running"] and kk.get("skipped") == "no key", {"calls": len(mock.calls) - n1, "answer": kk, "docs": docs})
+
+        # 5. MAIN-2: View > Reload asks while a provider run is in flight; Cancel keeps the page; Reload keeps the
+        # paid picture under <userData>/results/ with no Comfy Cloud key, opens it under the provider's name, and ack unlinks it
+        paid = os.path.join(work, "paid")
+        os.makedirs(paid)
+        insp = free_port()
+        n2 = len(mock.calls)
+        e = await App(paid, "paid-reload", [f"--inspect={insp}"]).start().connect()
+        try:
+            await e.ev(f"(async () => {{ await window.scumble.settings.set({{ comfycloud: {{ base: {json.dumps(mock.base)} }} }}); window.__beforeReload = 1; return 1; }})()")
+            await e.ev("""(() => {
+                window.__paidRun = window.scumble.providers.edit({
+                    provider: 'loopback', model: 'loopback-paid', recipe: 'loopback', kind: 'text',
+                    prompt: 'snowy cabin', width: 128, height: 96, params: { delay_ms: 4000 },
+                    runId: '../../untrusted-id',
+                });
+                return 1;
+            })()""")
+            await asyncio.sleep(0.25)
+            await main_eval(insp, CLICK_VIEW_RELOAD)
+            dlg1 = None
+            for _ in range(15):
+                try:
+                    raw = await e.ev(READ_DIALOG_JS, timeout=5)
+                    if raw:
+                        dlg1 = json.loads(raw)
+                        break
+                except Exception:  # noqa: BLE001
+                    break
+                await asyncio.sleep(0.1)
+            stayed = False
+            if dlg1:
+                await e.ev("(() => { const d = document.querySelector('dialog.sc-dialog[open]'); d.querySelector('div').shadowRoot.querySelectorAll('button')[0].click(); return 1; })()")
+                await asyncio.sleep(0.3)
+                stayed = (await e.ev("window.__beforeReload === 1")) is True
+            check("View > Reload while a provider run is in flight asks first, and Cancel keeps the page without reloading",
+                  bool(dlg1) and dlg1.get("message") == "1 paid run is still going; its picture is kept if you reload."
+                  and dlg1.get("buttons") == ["Cancel", "Reload"] and stayed,
+                  {"dialog": dlg1, "stayed": stayed})
+            if stayed:
+                await main_eval(insp, CLICK_VIEW_RELOAD)
+                for _ in range(15):
+                    raw = await e.ev(READ_DIALOG_JS, timeout=5)
+                    if raw:
+                        await e.ev("(() => { const d = document.querySelector('dialog.sc-dialog[open]'); d.querySelector('div').shadowRoot.querySelectorAll('button')[1].click(); return 1; })()")
+                        break
+                    await asyncio.sleep(0.1)
+                await asyncio.sleep(0.8)
+            try:
+                if e.ws is not None and not e.ws.closed:
+                    await e.ws.close()
+            except Exception:  # noqa: BLE001
+                pass
+            await e.connect()
+            kept_doc = None
+            for _ in range(50):
+                try:
+                    got = await e.ev("""(async () => {
+                        const { host } = await import('./editor/host.js');
+                        const ed = host.editors().find((x) => x.width === 128 && x.height === 96);
+                        const frontStatus = (host.editor && host.editor.status) || '';
+                        if (!ed || !ed.status || !frontStatus.includes('opened in a tab of its own')) return null;
+                        return JSON.stringify({
+                            name: host.documentName(ed),
+                            filename: (ed.base && ed.base.ref && ed.base.ref.filename) || '',
+                            status: ed.status || '',
+                            frontStatus,
+                            docs: host.editors().length,
+                        });
+                    })()""")
+                    if got:
+                        kept_doc = json.loads(got)
+                        break
+                except Exception:  # noqa: BLE001
+                    pass
+                await asyncio.sleep(0.25)
+            await notes_become(paid, [], tries=20)
+            res_dir = os.path.join(paid, "results")
+            left_files = os.listdir(res_dir) if os.path.isdir(res_dir) else []
+            untrusted = os.path.exists(os.path.join(paid, "untrusted-id.png"))
+            check("Reload keeps the finished non-Comfy picture with no Comfy key, opens it under the provider's name and words, and ack unlinks its file",
+                  bool(kept_doc) and len(mock.calls) == n2
+                  and str(kept_doc.get("name", "")).startswith("loopback-") and len(str(kept_doc.get("name", ""))) == len("loopback-12345678")
+                  and str(kept_doc.get("filename", "")).startswith("loopback-") and str(kept_doc.get("filename", "")).endswith(".png")
+                  and "untrusted" not in str(kept_doc.get("name", "")) and "untrusted" not in str(kept_doc.get("filename", ""))
+                  and str(kept_doc.get("status", "")).startswith("A Loopback (test) result its run could not bring at the time (loopback-paid,")
+                  and "A Loopback (test) result opened in a tab of its own: loopback-" in str(kept_doc.get("frontStatus", ""))
+                  and read_notes(paid) == [] and left_files == [] and not untrusted,
+                  {"doc": kept_doc, "calls": len(mock.calls) - n2, "notes": read_notes(paid), "left_files": left_files, "untrusted": untrusted})
+        finally:
+            await e.close()
     finally:
         mock.stop()
         shutil.rmtree(work, ignore_errors=True)

@@ -57,8 +57,11 @@ class FileSaves {
         if (st && st.isDirectory()) throw failure(`${file} is a folder`, "EISDIR");
         // a read-only file would refuse only the rename at the end, after every byte was written
         if (st && !(st.mode & 0o200)) throw failure(`${path.basename(file)} is read-only`, "EPERM");
+        // a file with other names (a hard link) is written in place at the end, so both the temp and the grown target fit
+        const inPlace = !!(st && st.nlink > 1);
+        const need = inPlace ? Math.max(size, 2 * size - st.size) : size;
         const free = await docfile.freeSpace(path.dirname(real));
-        if (free < size + 1048576) throw failure(`the file needs ${docfile.fmtBytes(size)} and its drive has ${docfile.fmtBytes(free)} free`, "ENOSPC");
+        if (free < need + 1048576) throw failure(`the file needs ${docfile.fmtBytes(need)} and its drive has ${docfile.fmtBytes(free)} free`, "ENOSPC");
         const temp = docfile.tempFor(real);
         docfile.registerTemp(this.registry, temp);
         let fh;
@@ -71,7 +74,7 @@ class FileSaves {
         }
         const id = ++this.seq;
         // a file with other names (a hard link) is written in place at the end, so every name holds the new bytes
-        const s = { id, owner, target: real, shown: file, temp, fh, size, pos: 0, chain: Promise.resolve(), dead: false, inPlace: !!(st && st.nlink > 1) };
+        const s = { id, owner, target: real, shown: file, temp, fh, size, pos: 0, chain: Promise.resolve(), dead: false, keepTemp: false, inPlace };
         this.saves.set(id, s);
         // dropped while this waited (the dialog, the checks, the open): abortAll found nothing to drop then
         if (this.genOf(owner) !== gen) { await this.drop(s); throw failure("the window reloaded during the save"); }
@@ -120,7 +123,14 @@ class FileSaves {
                 try {
                     await (this.ops.copyFile || fsp.copyFile)(s.temp, s.target);
                 } catch (err) {
-                    throw docfile.BUSY.has(err.code) ? failure(`${path.basename(s.shown)} is in use by another program, or its folder does not allow replacing it`, err.code) : err;
+                    if (docfile.BUSY.has(err && err.code)) {
+                        throw failure(`${path.basename(s.shown)} is in use by another program, or its folder does not allow replacing it`, err.code);
+                    }
+                    // the copy in place may have truncated or unlinked the target: keep the fsynced temp (registered) and name it
+                    s.keepTemp = true;
+                    s.dead = true;
+                    this.saves.delete(s.id);
+                    throw failure(`${(err && err.message) || String(err)}; the new file is kept at ${s.temp}`, err && err.code);
                 }
             }
             s.dead = true;
@@ -172,6 +182,7 @@ class FileSaves {
         this.saves.delete(s.id);
         await s.chain;   // a write under way ends first
         if (s.fh) { const fh = s.fh; s.fh = null; try { await fh.close(); } catch (_) { /* closed */ } }
+        if (s.keepTemp) return;
         // a temporary file something still holds stays listed: the next start's sweep deletes it
         if (await removeTemp(s.temp)) { try { docfile.unregisterTemp(this.registry, s.temp); } catch (_) { /* the sweep deletes it */ } }
     }

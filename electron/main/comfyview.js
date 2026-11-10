@@ -33,9 +33,13 @@ const ASK_SHOWN_MS = 1000;
 const READY_JS = `(() => { const a = window.app; return { app: !!a, graph: !!(a && a.graph), api: !!(a && typeof a.loadApiJson === "function"),
     graphData: !!(a && typeof a.loadGraphData === "function"), read: !!(a && typeof a.graphToPrompt === "function"), version: String(window.__COMFYUI_FRONTEND_VERSION__ || "").slice(0, 40) }; })()`;
 
+const ACTIVE_TAB_JS = `(() => { const a = window.app; const wm = (a && a.extensionManager && a.extensionManager.workflow) || (a && a.workflowManager) || null;
+    const wf = wm && wm.activeWorkflow; const k = wf && (wf.key || wf.path || wf.fullFilename || wf.filename || wf.name);
+    return typeof k === "string" && k ? k.slice(0, 300) : null; })()`;
+
 // The page's graph (§2.2 read): the UI graph and the API prompt, as JSON text so main can cap its size before parsing
 const READ_JS = `(async () => { try { const p = await window.app.graphToPrompt();
-    return { ok: true, workflow: JSON.stringify((p && p.workflow) || null), output: JSON.stringify((p && p.output) || null) }; }
+    return { ok: true, tab: ${ACTIVE_TAB_JS}, workflow: JSON.stringify((p && p.workflow) || null), output: JSON.stringify((p && p.output) || null) }; }
     catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
 
 /**
@@ -128,7 +132,7 @@ function loadScript(recipe) {
     const call = recipe.workflow
         ? `await window.app.loadGraphData(${JSON.stringify(recipe.workflow)}, true, true, ${name}); const laidOut = false;`
         : `await window.app.loadApiJson(${JSON.stringify(recipe.prompt)}, ${name}); let laidOut = false; try { laidOut = ${LAYOUT_JS}; } catch (_) { /* left as the page laid it out */ }`;
-    return `(async () => { try { ${call} return { ok: true, laidOut }; } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
+    return `(async () => { try { ${call} return { ok: true, laidOut, tab: ${ACTIVE_TAB_JS} }; } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
 }
 
 /** The origin of an http(s) URL, or "" for anything else. */
@@ -194,6 +198,7 @@ class ComfyView {
         this.can = null;        // what the page's window.app offers: { api, graphData, read }
         this.waiting = false;   // waitReady is polling
         this.loaded = null;     // the id of the recipe the page was given last
+        this.loadedTab = null;  // the active workflow tab when that recipe loaded or saved (MAIN-4)
         this.kind = "comfy";    // what the window shows: "comfy" (My ComfyUI) or "cloud" (Comfy Cloud, V4)
         this.children = new Set();   // Comfy Cloud's sign-in windows, closed with this one
         // camera / microphone (mediaRequest): the user's answers for this run of Scumble (comfyhosts.js mediaKey ->
@@ -493,6 +498,10 @@ class ComfyView {
             this.testUrl = "";      // a test's stub belongs to the window it opened
             this.testLeave = "";
             this.recipe = null;     // and so does the recipe it held
+            this.loaded = null;
+            this.loadedTab = null;
+            this.loadedBefore = null;
+            this.loadedTabBefore = null;
             this.recipeNote = "";
             this.saveNote = "";
             this.pageReady = false;
@@ -533,7 +542,9 @@ class ComfyView {
         this.logins = 0;
         this.pageReady = false;
         this.loadedBefore = this.loaded;    // the page may stay (beforeunload): then it still holds this
+        this.loadedTabBefore = this.loadedTab;
         this.loaded = null;
+        this.loadedTab = null;
         this.saveNote = "";
         this.readyGen++;
         this.setPhase("loading", "");
@@ -595,9 +606,11 @@ class ComfyView {
         const recipe = this.recipe;
         if (!recipe || !this.pageReady || !this.isOpen) return;
         const refusal = this.cloudRefusal(recipe);
-        if (refusal) { this.recipeNote = refusal; this.sendState(); return; }
+        if (refusal) { this.loaded = null; this.loadedTab = null; this.recipeNote = refusal; this.sendState(); return; }
         const can = this.can || {};
         if (recipe.workflow ? !can.graphData : !can.api) {
+            this.loaded = null;
+            this.loadedTab = null;
             this.recipeNote = `This ComfyUI page offers no way to load ${recipe.workflow ? "a saved graph" : "an API prompt"} (frontend ${this.frontend || "unknown"}).`;
             this.sendState();
             return;
@@ -608,6 +621,7 @@ class ComfyView {
         if (gen !== this.readyGen || recipe !== this.recipe) return;
         this.recipeNote = r && r.ok === true ? "" : `The graph did not load: ${String((r && r.error) || "no answer").slice(0, 300)}`;
         this.loaded = r && r.ok === true ? recipe.id : null;
+        this.loadedTab = r && r.ok === true && typeof r.tab === "string" ? r.tab : null;
         this.sendState();
     }
 
@@ -621,9 +635,13 @@ class ComfyView {
         if (!this.pageReady && !(await this.checkReady())) return done(false, "ComfyUI is still setting this page up: try again in a moment.");
         if (!this.can || !this.can.read) return done(false, `This ComfyUI page offers no way to read its graph (frontend ${this.frontend || "unknown"}).`);
         if (!asNew && !this.recipe) return done(false, "This window holds no recipe: use Save as new recipe.");
+        const wrongTab = () => done(false, `The page shows another graph than "${String(this.recipe.name || this.recipe.id)}": save it as a new recipe, or switch back to its tab.`);
+        if (!asNew && this.loaded !== this.recipe.id) return wrongTab();
         let r = null;
         try { r = await this.page.webContents.executeJavaScript(READ_JS, true); } catch (err) { r = { ok: false, error: (err && err.message) || String(err) }; }
         if (!r || r.ok !== true || typeof r.output !== "string" || typeof r.workflow !== "string") return done(false, `The page did not hand over its graph: ${String((r && r.error) || "no answer").slice(0, 300)}`);
+        const curTab = typeof r.tab === "string" ? r.tab : null;
+        if (!asNew && curTab !== this.loadedTab) return wrongTab();
         if (r.output.length > MAX_GRAPH || r.workflow.length > MAX_GRAPH) return done(false, "The page's graph is larger than 20 MB.");
         let output, workflow;
         try { output = JSON.parse(r.output); workflow = JSON.parse(r.workflow); } catch (_) { return done(false, "The page's graph is not JSON."); }
@@ -632,6 +650,7 @@ class ComfyView {
             const saved = await this.saveRecipe({ output, workflow, objectInfo, heldId: this.recipe ? this.recipe.id : null, name: asNew ? name : "" });
             this.recipe = saved.recipe;
             this.loaded = saved.recipe.id;
+            this.loadedTab = curTab;
             this.recipeNote = "";
             return done(true, saved.message);
         } catch (err) {
@@ -661,6 +680,7 @@ class ComfyView {
     stayed() {
         if (!this.isOpen || this.phase !== "loading") return;
         this.loaded = this.loadedBefore;
+        this.loadedTab = this.loadedTabBefore;
         this.setPhase("page", "");
         this.waitReady({ give: false });    // the page kept its graph: the held recipe is not loaded over it
     }
@@ -691,13 +711,14 @@ class ComfyView {
         let host = "";
         try { host = this.shown.url ? new URL(this.shown.url).host : ""; } catch (_) { /* none */ }
         const r = this.recipe;
+        const recipeLoaded = !!(r && this.loaded === r.id && this.pageReady);
         return {
             phase: this.phase, message: this.message, url: this.shown.url, host, target: this.kind, offline: this.offline,
             recipe: r ? String(r.name || r.id) : null, recipeId: r ? r.id : null, recipeNote: this.recipeNote,
-            recipeLoaded: !!(r && this.loaded === r.id && this.pageReady), frontend: this.frontend,
+            recipeLoaded, frontend: this.frontend,
             // a graph without the Inpaint Canvas node becomes a Comfy Cloud recipe (main.js saveComfyGraph, V5c)
-            // on as soon as the page is there: a click asks the page again whether it is ready (save, checkReady)
-            canSaveNew: this.phase === "page", canSave: this.phase === "page" && !!r,
+            // Save as new is on as soon as the page is there; Save to recipe only once the held recipe is in the page (MAIN-4)
+            canSaveNew: this.phase === "page", canSave: this.phase === "page" && recipeLoaded,
             saveNote: this.saveNote,
         };
     }

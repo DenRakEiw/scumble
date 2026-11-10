@@ -3430,29 +3430,43 @@ function cloudCountWords(r) {
  */
 async function openCloudResults(pictures) {
     const opened = [];
+    const labels = new Set();
     let allEarlier = true;
     for (const p of pictures) {
         const ed = newDocument();
-        const name = `comfy-cloud-${String(p.jobId).slice(0, 8)}.${/jpe?g/i.test(p.mime || "") ? "jpg" : /webp/i.test(p.mime || "") ? "webp" : "png"}`;
+        const isComfy = !p.provider || p.provider === "comfycloud";
+        const provLabel = isComfy ? "Comfy Cloud" : String(p.providerLabel || p.provider);
+        const article = /^[aeiou]/i.test(provLabel) ? "An" : "A";
+        const slug = isComfy ? "comfy-cloud" : (String(p.provider || provLabel).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "provider");
+        const ext = /jpe?g/i.test(p.mime || "") ? "jpg" : /webp/i.test(p.mime || "") ? "webp" : "png";
+        const name = `${slug}-${String(p.jobId).slice(0, 8)}.${ext}`;
         await ed.loadFile(new File([p.bytes], name, { type: p.mime || "image/png" }), { ask: false });
         const earlier = p.earlier !== false;
         if (!ed.base) {
-            ed.setStatus(`${ed.status} This Comfy Cloud result${earlier ? " of an earlier run" : ""} could not be opened; Scumble asks Comfy for it again at the next start.`, "error");
+            ed.setStatus(!p.provider
+                ? `${ed.status} This Comfy Cloud result${earlier ? " of an earlier run" : ""} could not be opened; Scumble asks Comfy for it again at the next start.`
+                : `${ed.status} This ${provLabel} result${earlier ? " of an earlier run" : ""} could not be opened; Scumble tries its kept file again at the next start.`, "error");
             continue;
         }
         const when = p.started ? new Date(p.started).toLocaleString() : "earlier";
-        const model = p.model || "Comfy Cloud";
+        const model = p.model || provLabel;
         ed.setStatus(earlier
-            ? `A Comfy Cloud result that came in after Scumble closed (${model}, started ${when}): opened as a document of its own.`
-            : `A Comfy Cloud result its run could not bring at the time (${model}, started ${when}): opened as a document of its own.`);
+            ? `${article} ${provLabel} result ${isComfy ? "that came in after Scumble closed" : "kept from an earlier session"} (${model}, started ${when}): opened as a document of its own.`
+            : `${article} ${provLabel} result its run could not bring at the time (${model}, started ${when}): opened as a document of its own.`);
         try { await cloudJobs.api.ack(p.jobId); } catch (_) { /* the next start brings it again */ }
         opened.push(ed);
+        labels.add(provLabel);
         if (!earlier) allEarlier = false;
     }
     if (!opened.length || !host.editor || opened.includes(host.editor)) return "";
     // "of an earlier run" only when each came in after Scumble closed, not for a picture a run of this session missed
     const ofEarlier = allEarlier ? " of an earlier run" : "";
-    return `${opened.length === 1 ? "A Comfy Cloud result" : `${opened.length} Comfy Cloud results`}${ofEarlier} opened in ${opened.length === 1 ? "a tab" : "tabs"} of ${opened.length === 1 ? "its" : "their"} own: ${opened.map((e) => docName(e)).join(", ")}.`;
+    const singleProv = labels.size === 1 ? [...labels][0] : null;
+    const singleArt = singleProv && /^[aeiou]/i.test(singleProv) ? "An" : "A";
+    const lead = singleProv
+        ? (opened.length === 1 ? `${singleArt} ${singleProv} result` : `${opened.length} ${singleProv} results`)
+        : `${opened.length} provider results`;
+    return `${lead}${ofEarlier} opened in ${opened.length === 1 ? "a tab" : "tabs"} of ${opened.length === 1 ? "its" : "their"} own: ${opened.map((e) => docName(e)).join(", ")}.`;
 }
 
 /** Whether a provider recipe is a Comfy Cloud recipe with a graph of its own (item 35 V5). */

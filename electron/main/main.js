@@ -465,10 +465,21 @@ function openDocumentArgs(argv, cwd) {
     send("documents:pending");
 }
 
-/** A second start of Scumble: the window comes up, and the documents it names open (a double click on a .scumble). */
+let secondInstanceBound = false;
+function bindSecondInstance() {
+    if (secondInstanceBound) return;
+    secondInstanceBound = true;
+    app.on("second-instance", onSecondInstance);
+}
+
+/** A second start of Scumble: the window comes up, and the documents it names open (a double click on a .scumble).
+ *  An agent start probing the lock (--mcp, --cmd, --run) never brings the hidden window up (MAIN-5). */
 function onSecondInstance(_e, argv, workingDirectory) {
+    const rest = Array.isArray(argv) ? argv.slice(1) : [];
+    const a = parseArgs(rest);
+    if (a.mcp || a.cmd || a.run !== null) return;
     showWindow();
-    try { openDocumentArgs(Array.isArray(argv) ? argv.slice(1) : [], workingDirectory); } catch (err) { console.warn("documents from the second start:", err.message); }
+    try { openDocumentArgs(rest, workingDirectory); } catch (err) { console.warn("documents from the second start:", err.message); }
 }
 
 /** Show the (headless or hidden) window: a second start of Scumble, or macOS activate. */
@@ -495,9 +506,30 @@ async function flushAll(reason) {
     return r;
 }
 
-/** View › Reload: the window saves first (a reload drops what is not uploaded, like a close), then reloads. */
+let askingToReload = false;
+
+/** View › Reload: asks first while provider runs are going, saves what a close would lose, then reloads. */
 async function reloadWindow(ignoreCache) {
-    if (!win || win.isDestroyed()) return;
+    if (!win || win.isDestroyed() || askingToReload) return;
+    const n = providers.runningCount();
+    if (n > 0 && windowVisible()) {
+        askingToReload = true;
+        let choice = 0;
+        try {
+            choice = await askWindow({
+                title: "Reload window?",
+                message: n === 1
+                    ? "1 paid run is still going; its picture is kept if you reload."
+                    : `${n} paid runs are still going; their pictures are kept if you reload.`,
+                buttons: ["Cancel", "Reload"],
+                defaultId: 0,
+                cancelId: 0,
+            });
+        } finally {
+            askingToReload = false;
+        }
+        if (choice !== 1 || !win || win.isDestroyed()) return;
+    }
     if (!quitGuard.flushing) {
         mirror.localOnly = true;        // like a close: not waiting on a slow ComfyUI (files.js)
         try { await flushAll("reload"); } finally { mirror.localOnly = false; }
@@ -1486,26 +1518,38 @@ function maybeQuit() {
  * never answers describe() with the --attach-only stub.
  */
 class AgentBackend extends require("node:events").EventEmitter {
-    constructor({ sticky = false } = {}) { super(); this.client = null; this.own = false; this.stub = false; this.sticky = sticky; this.attached = false; }
+    constructor({ sticky = false } = {}) { super(); this.client = null; this.own = false; this.stub = false; this.sticky = sticky; this.attached = false; this.starting = null; }
 
-    async ensure() {
+    ensure() {
+        if (this.own) return Promise.resolve(bridge);
+        if (this.client && !this.client.closed) return Promise.resolve(this.client);
+        this.starting ??= this._ensure().finally(() => { this.starting = null; });
+        return this.starting;
+    }
+
+    async _ensure() {
         if (this.own) return bridge;
         if (this.client && !this.client.closed) return this.client;
         if (this.sticky && this.attached) throw Object.assign(new Error("the Scumble this run drives went away: nothing more runs (no reconnect, no other Scumble)"), { fatal: true });
         const userData = app.getPath("userData");
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
-                this.client = await LocalClient.connect(userData);
+                const c = await LocalClient.connect(userData);
+                if (this.own) { c.close(); return bridge; }
+                this.client = c;
                 this.attached = true;
-                this.client.on("commands", () => this.emit("changed"));
-                this.client.on("close", () => { this.client = null; });
+                c.on("commands", () => this.emit("changed"));
+                c.on("close", () => { if (this.client === c) this.client = null; });
                 if (this.stub) { this.stub = false; this.emit("changed"); }   // the client lists the real tools now
-                return this.client;
+                return c;
             } catch (_) { /* nobody listens */ }
+            if (this.own) return bridge;
+            if (this.client && !this.client.closed) return this.client;
             if (ARGS.attachOnly) throw new Error("Scumble is not running: start it, then try again (this registration only attaches to a running Scumble, --attach-only)");
             if (app.requestSingleInstanceLock()) {
-                app.on("second-instance", onSecondInstance);
+                bindSecondInstance();
                 await app.whenReady();
+                if (this.own) return bridge;
                 headless = true;
                 startApp();
                 bridge.on("changed", () => this.emit("changed"));
@@ -1513,6 +1557,8 @@ class AgentBackend extends require("node:events").EventEmitter {
                 return bridge;
             }
             await new Promise((r) => setTimeout(r, 1500));   // another instance is starting: its socket comes up in a moment
+            if (this.own) return bridge;
+            if (this.client && !this.client.closed) return this.client;
         }
         throw new Error("Scumble is running in another process but does not answer on the local socket");
     }
@@ -1590,7 +1636,7 @@ if (ARGS.mcp || ARGS.cmd || ARGS.run !== null) {
 } else if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
-    app.on("second-instance", onSecondInstance);
+    bindSecondInstance();
     documents.queue(documentArgs(process.argv.slice(1), process.cwd()));   // a double click that started Scumble
     app.whenReady().then(startApp);
 }

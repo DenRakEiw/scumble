@@ -117,15 +117,18 @@ BAR_EARLY_JS = """(() => { const d = document.querySelector('dialog.sc-dialog[op
     const r = d.querySelector('div').shadowRoot; Array.from(r.querySelectorAll('button')).find((x) => x.textContent === 'Allow').click();
     d.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return 'pressed'; })()"""
 
-# a fake ComfyUI frontend for V2: window.app records the graph it is given ("throw": its load fails)
+# a fake ComfyUI frontend for V2: window.app records the graph it is given ("throw": its load fails) and its active workflow tab
 FAKE_APP = """<script>
 window.app = { graph: {},
+  workflowManager: { activeWorkflow: { path: 'workflows/Unsaved Workflow.json' } },
   loadApiJson: async (prompt, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'api', prompt, name };
+    window.app.workflowManager.activeWorkflow = { path: 'workflows/' + (name || 'Unsaved Workflow') + '.json' };
     // a LiteGraph-shaped graph of the prompt, every node at 0,0 (one column), for the window's layout by depth
     const links = {}; let n = 0;
     window.app.graph = { links, _nodes: Object.keys(prompt).map((id) => ({ id, type: prompt[id].class_type, pos: [0, 0], size: [200, 100],
       inputs: Object.entries(prompt[id].inputs || {}).filter(([, v]) => Array.isArray(v) && prompt[v[0]]).map(([name, v]) => { n++; links[n] = { origin_id: v[0] }; return { name, link: n }; }) })) }; },
-  loadGraphData: async (workflow, clean, restore, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'graph', workflow, name }; },
+  loadGraphData: async (workflow, clean, restore, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'graph', workflow, name };
+    window.app.workflowManager.activeWorkflow = { path: 'workflows/' + (name || 'Unsaved Workflow') + '.json' }; },
   graphToPrompt: async () => ({ workflow: window.__wf || { nodes: [], links: [] }, output: window.__out || (window.__loaded && window.__loaded.prompt) || {} }) };
 window.__throw = %s;
 </script>"""
@@ -969,6 +972,52 @@ class Gate:
         pong = await self.js("const cmds = await import('./commands.js'); return (await cmds.commands.run('ping', {})) ? 'answered' : 'no answer';")
         return {"stayed": before, "tried": tries, "ping": pong}
 
+    async def save_tab_guard(self):
+        await self.close()
+        await self.cleanup_recipes()
+        self.stub.mode = "none"
+        self.stub.app = "throw"
+        await self.set_auth({"type": "none"}, "")
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "flux2_klein_local"}))
+        i0 = await self.wait_info("i.recipeNote", 15000)
+        btn_off = await on_target("comfybar.html", lambda c: c.eval("(async () => { for (let k = 0; k < 40 && !document.getElementById('cb-save'); k++) await new Promise((r) => setTimeout(r, 50)); return document.getElementById('cb-save').disabled; })()"))
+        direct = await on_target("comfybar.html", lambda c: c.eval("window.comfybar.save({ asNew: false })"))
+        if i0.get("recipeLoaded") or i0.get("canSave") or not i0.get("canSaveNew") or not btn_off or direct.get("ok") is not False or "shows another graph" not in str(direct.get("message", "")):
+            raise Exception("failed load left Save to recipe open: " + json.dumps({"info": i0, "disabled": btn_off, "direct": direct})[:600])
+        await self.close()
+
+        self.stub.app = "ok"
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "flux2_klein_local"}))
+        i1 = await self.wait_info("i.recipeLoaded", 15000)
+        if not i1.get("canSave"):
+            raise Exception("loaded recipe did not offer Save to recipe: " + json.dumps(i1))
+        await on_target(self.stub.url, lambda c: c.eval("""(() => {
+            window.app.workflowManager.activeWorkflow = { path: 'workflows/Other Tab.json' };
+            window.__out = JSON.parse(JSON.stringify(window.__loaded.prompt));
+            window.__out.sigmas.inputs.gate_mark = 999;
+            window.__wf = { nodes: [{ id: 'canvas', type: 'InpaintCanvas' }], links: [] };
+            return 1;
+        })()"""))
+        await self.bar_click("document.getElementById('cb-save').click()")
+        i2 = await self.wait_info("i.saveNote", 10000)
+        untouched = next((r for r in await self.recipe_list() if r["id"] == "flux2_klein_local"), None)
+        if "shows another graph" not in i2.get("saveNote", "") or not untouched or untouched["source"] == "user" or untouched.get("mark") == 999:
+            raise Exception("other workflow tab overwrote or did not refuse: " + json.dumps({"saveNote": i2.get("saveNote"), "recipe": untouched})[:600])
+
+        await on_target(self.stub.url, lambda c: c.eval("""(() => {
+            window.app.workflowManager.activeWorkflow = { path: 'workflows/' + window.__loaded.name + '.json' };
+            window.__out.sigmas.inputs.gate_mark = 42;
+            return 1;
+        })()"""))
+        await self.bar_click("document.getElementById('cb-save').click()")
+        i3 = await self.wait_info("i.saveNote && i.saveNote.indexOf('Saved the graph') >= 0", 10000)
+        saved = next((r for r in await self.recipe_list() if r["id"] == "flux2_klein_local"), None)
+        if not saved or saved["source"] != "user" or saved.get("mark") != 42:
+            raise Exception("switching back to the recipe's tab did not save: " + json.dumps({"saveNote": i3.get("saveNote"), "recipe": saved})[:600])
+        await self.close()
+        await self.cleanup_recipes()
+        return {"refusedLoad": direct["message"][:70], "refusedTab": i2["saveNote"][:70], "savedBack": saved["mark"]}
+
     async def unreachable(self):
         await self.close()
         s = socket.socket()
@@ -1029,6 +1078,7 @@ async def main():
             await g.step("V6: the cloud mode lists the Comfy Cloud recipes alone, api none of them, each mode its last recipe", g.cloud_mode)
             await g.step("a page with unsaved changes: Reload asks, Stay keeps it ready to save, Leave loads it again", g.unsaved)
             await g.step("a page whose ComfyUI sets up late: saving asks the page again, no reload needed", g.late_app)
+            await g.step("MAIN-4: Save to recipe stays off until loaded and refuses another workflow tab's graph", g.save_tab_guard)
             await g.step("H1: the main window stays on the app's page (no navigation to scumble://app/comfy/*)", g.main_stays)
         finally:
             await g.close()

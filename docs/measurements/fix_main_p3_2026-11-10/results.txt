@@ -1,0 +1,28 @@
+# fix-main-p3 focused reversal round (base HEAD f67613473c, 17 mutants)
+[orig] filesaves        PASS (772.0s)
+[orig] local            PASS (1.3s)
+[orig] cloudjobs_node   PASS (10.5s)
+[orig] cloudjobs_app    PASS (47.0s)
+[orig] comfyview_step   PASS (7.3s)
+[orig] takeover_step    PASS (10.5s)
+[orig] all 6 checks green in 848.7s
+
+[killed] filesaves_drop_temp_on_copy_error        filesaves       rc=1   7.0s  matched 'mid-copy ENOSPC'
+[killed] filesaves_abort_deletes_kept_temp        filesaves       rc=1   7.1s  matched 'the fsynced temporary file was deleted or damaged'
+[killed] filesaves_no_hardlink_extra_space        filesaves       rc=1   7.4s  matched 'hard-linked extra space'
+[killed] bridge_ignore_default_timeout            local           rc=1   1.1s  matched '[FAIL] Bridge extends BASE_TIMEOUT by params.timeout.default when args.timeout is omitted'
+[killed] bridge_default_overrides_zero            local           rc=1   1.0s  matched '[FAIL] an explicit args.timeout = 0 is honoured without falling back to the default'
+[killed] bridge_no_changed_invalidation           local           rc=1   1.3s  matched "[FAIL] commands:changed refreshes Bridge's timeout defaults for new commands"
+[killed] cloudjobs_drop_provider_and_file         cloudjobs_node  rc=1  10.3s  matched '[FAIL] a non-Comfy paid run whose page went away writes <userData>/results/<generatedId>.png'
+[killed] providers_discard_noncomfy_pagegone      cloudjobs_node  rc=1  10.0s  matched '[FAIL] a non-Comfy paid run whose page went away writes <userData>/results/<generatedId>.png'
+[killed] providers_use_untrusted_runid_filename   cloudjobs_node  rc=1  10.1s  matched '[FAIL] a non-Comfy paid run whose page went away writes <userData>/results/<generatedId>.png'
+[killed] providers_send_local_to_comfy_recover    cloudjobs_node  rc=1   9.6s  matched '[FAIL] recoverCloudJobs with no Comfy Cloud key brings the kept OpenAI picture'
+[killed] providers_ack_keeps_result_file          cloudjobs_node  rc=1   9.5s  matched "[FAIL] ackCloudJob removes the local picture's note and deletes its file from <userData>/results/"
+[killed] main_reload_no_running_ask               cloudjobs_app   rc=1  35.0s  matched '[FAIL] View > Reload while a provider run is in flight asks first'
+[killed] shell_hardcode_comfy_cloud_words         cloudjobs_app   rc=1  34.0s  matched "[FAIL] Reload keeps the finished non-Comfy picture with no Comfy key, opens it under the provider's name"
+[killed] comfyview_cansave_without_loaded         comfyview_step  rc=1   5.2s  matched 'failed load left Save to recipe open'
+[killed] comfyview_save_ignores_active_tab        comfyview_step  rc=1   6.7s  matched 'other workflow tab overwrote or did not refuse'
+[killed] main_ensure_not_singleflight             takeover_step   rc=1   7.7s  matched 'Failed to register protocol: scumble'
+[killed] main_second_instance_shows_agent_window  takeover_step   rc=1   8.6s  matched 'second-instance agent probe showed hidden window'
+
+SUMMARY: 17 / 17 reversal mutants killed on expected assertions in 171.5s (0 survived, 0 wrong-reason)

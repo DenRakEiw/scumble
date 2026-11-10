@@ -220,6 +220,62 @@ function pattern(n, seed = 0) {
             return `the rename refused ${busy} times, then written in place`;
         });
 
+        await check("6b. an in-place copy that fails partway keeps the fsynced temporary file and names it; a hard-linked start checks the extra space", async () => {
+            const target = path.join(scratch, "partial.png");
+            fs.writeFileSync(target, pattern(80, 1));
+            const ebusy = () => { const e = new Error("busy"); e.code = "EBUSY"; return e; };
+            const fresh = pattern(200, 9);
+            const mid = saves({
+                ops: {
+                    rename: async () => { throw ebusy(); },
+                    copyFile: async (a, b) => {
+                        // simulates CopyFileW / copyfile failing mid-stream after truncating/overwriting the destination
+                        fs.writeFileSync(b, fresh.subarray(0, 40));
+                        const e = new Error("no space left on device");
+                        e.code = "ENOSPC";
+                        throw e;
+                    },
+                },
+            });
+            const o = await mid.start(A, { path: target, size: fresh.length });
+            const temp = listed()[0];
+            await mid.write(A, { id: o.id, offset: 0, data: new Uint8Array(fresh) });
+            const err = await rejects(mid.finish(A, { id: o.id }), /the new file is kept at /, "mid-copy ENOSPC");
+            assert(err.code === "ENOSPC" && err.message.includes(temp), "error did not carry ENOSPC and temp path: " + err.message);
+            assert(!mid.busy, "the failed save stayed in the map");
+            assert(fs.existsSync(temp) && fs.readFileSync(temp).equals(fresh), "the fsynced temporary file was deleted or damaged");
+            assert(listed().length === 1 && listed()[0] === temp, "the kept temporary file left the registry");
+            await mid.abortAll(A);   // a later reload or close must not delete the kept file either
+            assert(fs.existsSync(temp) && fs.readFileSync(temp).equals(fresh), "abortAll deleted the kept temporary file");
+            assert(doc.sweepTemps(registry).length === 1 && !fs.existsSync(temp), "the next start's sweep did not clean it");
+            fs.unlinkSync(target);
+            clean("after partial copy");
+
+            // hard-linked target (inPlace = true): start() requires 2 * size - oldSize + 1 MB
+            const ha = path.join(scratch, "hl_a.png"), hb = path.join(scratch, "hl_b.png");
+            fs.writeFileSync(ha, Buffer.alloc(200));
+            fs.linkSync(ha, hb);
+            const fsp = require("node:fs/promises");
+            const wasStatfs = fsp.statfs;
+            // free = 1048576 + 1500: enough for size (1000) + 1 MB, NOT enough for 2*1000 - 200 (1800) + 1 MB
+            fsp.statfs = async () => ({ bavail: 1048576 + 1500, bsize: 1 });
+            try {
+                await rejects(saves().start(A, { path: hb, size: 1000 }), /the file needs .* and its drive has .* free/, "hard-linked extra space");
+                // a non-hard-linked target of the same old size and new size succeeds with the same free space
+                const single = path.join(scratch, "single.png");
+                fs.writeFileSync(single, Buffer.alloc(200));
+                const s = saves();
+                const ok = await s.start(A, { path: single, size: 1000 });
+                await s.abort(A, { id: ok.id });
+                fs.unlinkSync(single);
+            } finally {
+                fsp.statfs = wasStatfs;
+                fs.unlinkSync(ha); fs.unlinkSync(hb);
+            }
+            clean("after hard-link space check");
+            return "temp kept and named on mid-copy ENOSPC, extra space required on hard link";
+        });
+
         await check("7. two pieces sent without waiting land in order; an empty file", async () => {
             const fsv = saves();
             const target = path.join(scratch, "seven.tif");
