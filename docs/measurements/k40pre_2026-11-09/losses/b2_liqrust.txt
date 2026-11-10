@@ -1,0 +1,8 @@
+== d486e9da Merge K29 (liquify's preview liquify_preview with the window in wasm m
+TIE   liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    15.8  runs [28.2, 15.8, 14.1]
+WIN   liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now    35.0  runs [45.5, 34.7, 35.0]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b2_liqrust/d486e9da\\_view\\r1\\liquify\\
+== e2aa0ec2 Merge K30 (liquify's dab on dense arrays: liquifyDabNodes, thaw planes
+LOSS  liquify/rust | push 1:1 size 1000 | blockedMax             base    26.1 (25.6-28.3)  now    77.8  runs [100.2, 77.0, 77.8]
+LOSS  liquify/rust | push 1:1 size 1000 | land                   base    75.1 (70-75.6)  now    92.0  runs [114.4, 87.8, 92.0]
+problems: ['missing C:/Users/SCHOEN~1/AppData/Local/Temp/claude/9a199ca2a3624e76/d10d24d3-78c2-400a-a9c6-3018301bd82e/scratchpad/b2_liqrust/e2aa0ec2\\_view\\r1\\liquify\\
