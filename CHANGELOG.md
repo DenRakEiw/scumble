@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Fibo 2.0 Edit Turbo on your own ComfyUI**: edits by instruction with up to three more pictures, with Comfy's Prompt Enhancer in front (a Settings row). Not run live yet. Bria's weights are CC BY-NC 4.0, non-commercial; commercial use needs an agreement with Bria.
 - **GPT Image 2.6 Flare and Sunburst are also on Oxen.ai**, with the Complexity row. Oxen renamed some fields, so GPT Image 2 and 2.5 on Oxen.ai send the selection under its new name and Qwen its pictures. Written from Oxen's model list, not run against the live API yet.
 - **TIFF files made of many strips open faster.** A 15,000 x 10,000 LZW TIFF opens in about 5.7 s instead of 11.8, a PackBits one in 3.6 s instead of 6.0.
 - **Relight's shadows land about 1.5 times as fast after a light moves** (0.5 s instead of 0.75 at 15,000 x 10,000). A sun's shadows now come from the same exact calculation as the other lights, so a few pixels on a shadow's edge can differ by one visibility step from earlier versions.
