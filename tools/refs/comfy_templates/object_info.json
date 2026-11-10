@@ -10819,5 +10819,148 @@ null
 "search_aliases": null,
 "essentials_category": null,
 "has_intermediate_output": false
+},
+"TextEncodeFibo2": {
+"input": {
+"required": {
+"clip": [
+"CLIP",
+{}
+],
+"prompt": [
+"STRING",
+{
+"multiline": true
+}
+],
+"negative_prompt": [
+"STRING",
+{
+"tooltip": "Empty is the null caption Fibo 2.0 was trained with for CFG with edit workflows.",
+"advanced": true,
+"multiline": true
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"tooltip": "Images to edit, referred to as <image_1>, <image_2> and so on in the instruction. A single image is scaled and center cropped to the result's size, since the edit lines up with it pixel for pixel; several images each to their own trained size.",
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14",
+"image_15",
+"image_16"
+],
+"min": 0
+}
+}
+],
+"width": [
+"INT",
+{
+"tooltip": "Width of the result. 0 = the size Fibo 2.0 was trained at for the first image's aspect ratio, about 1 megapixel, or 1024 without images.",
+"default": 0,
+"min": 0,
+"max": 16384,
+"step": 16
+}
+],
+"height": [
+"INT",
+{
+"tooltip": "Height of the result. 0 = the size Fibo 2.0 was trained at for the first image's aspect ratio, about 1 megapixel, or 1024 without images.",
+"default": 0,
+"min": 0,
+"max": 16384,
+"step": 16
+}
+],
+"batch_size": [
+"INT",
+{
+"default": 1,
+"min": 1,
+"max": 4096
+}
+]
+},
+"optional": {
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"input_order": {
+"required": [
+"clip",
+"prompt",
+"negative_prompt",
+"images",
+"width",
+"height",
+"batch_size"
+],
+"optional": [
+"vae"
+]
+},
+"is_input_list": false,
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+],
+"output_is_list": [
+false,
+false,
+false
+],
+"output_name": [
+"positive",
+"negative",
+"latent"
+],
+"output_tooltips": [
+null,
+null,
+null
+],
+"output_matchtypes": null,
+"name": "TextEncodeFibo2",
+"display_name": null,
+"description": "Encode a Fibo 2.0 prompt, a structured JSON caption or plain text. With images, the prompt is the edit instruction, or a JSON caption of the result with an edit_instruction key, and the images become reference latents of both outputs when a vae is connected. Sample the latent output, the result's size the images are cropped for.",
+"python_module": "comfy_extras.nodes_fibo2",
+"category": "model/conditioning/fibo",
+"output_node": false,
+"deprecated": false,
+"experimental": false,
+"dev_only": false,
+"api_node": false,
+"price_badge": null,
+"search_aliases": null,
+"essentials_category": null,
+"has_intermediate_output": false
 }
 }

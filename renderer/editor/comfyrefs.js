@@ -46,6 +46,8 @@ const byRank = (node) => {
  * `<Picture 2>` ...; ComfyUI 0.44 comfy_extras/nodes_minimax_h3.py), and so does TextEncodeMOSSImageEdit (MOSS-Image's
  * edit LoRA: its 0-based `images.image_0` ... sorted by name, the first the picture it edits; in the Moss-Image-Edit
  * format no marker enters the text, so the name is a plain "image {n}"; ComfyUI 0.43 comfy_extras/nodes_moss_image.py),
+ * and so does TextEncodeFibo2 (Fibo 2.0: its 1-based `images.image_1` ... sorted by number, named <image_1>, <image_2> ...
+ * in the instruction; ComfyUI 0.44 comfy_extras/nodes_fibo2.py),
  * TextEncodeQwenImageEditPlus by input ("Picture 1" .. "Picture 3", whether or not the ones before are present), a
  * ReferenceLatent chain by its place in the chain (FLUX.2's "image 1").
  * @type {Record<string, { name: string, inputs: (node: any, prompt: any) => [string, number][] }>}
@@ -54,6 +56,7 @@ const ENCODERS = {
     TextEncodeQwenImage21: { name: "<image{n}>", inputs: byRank },
     PH3ImageConditioning: { name: "<Picture {n}>", inputs: byRank },
     TextEncodeMOSSImageEdit: { name: "image {n}", inputs: byRank },
+    TextEncodeFibo2: { name: "<image_{n}>", inputs: byRank },
     TextEncodeQwenImageEditPlus: {
         name: "Picture {n}",
         inputs: (node) => ["image1", "image2", "image3"].filter((k) => isLink((node.inputs || {})[k])).map((k) => [k, +k.slice(5)]),

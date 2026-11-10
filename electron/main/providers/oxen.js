@@ -4,7 +4,7 @@
 // answers without a key; each model's `request_schema` is copied into tools/refs/oxen/) on 2026-09-26. Nothing here has
 // run against the live API (no key; docs/RECIPES.md "Oxen.ai" lists what only a real key can verify).
 //
-//   POST /api/ai/images/edit      JSON { model, prompt, input_image | input_images, mask_url?, <model params>, response_format: "b64_json" }
+//   POST /api/ai/images/edit      JSON { model, prompt, input_image | input_images, mask?, <model params>, response_format: "b64_json" }
 //   POST /api/ai/images/generate  JSON { model, prompt, <model params>, response_format: "b64_json" }
 //     -> { model, created, images: [{ b64_json } | { url }] }
 //   errors: { error: { type, title, detail }, status: "error", status_message } | { error: { message } }
@@ -23,9 +23,9 @@
 //
 // A recipe variant describes the model with `options` (each key checked against tools/refs/oxen/ by tools/oxen_test.js):
 //   accepts       the parameters the model's request_schema names; nothing else is sent
-//   image_field   "input_image" (default) or "input_images" (Qwen)
+//   image_field   "input_image" (default) or "input_images" (none of the current models; Qwen moved to input_image, 2026-11-10)
 //   single        the picture field is one string, not an array (Grok's edit, the Topaz upscalers): one picture only
-//   mask          "white": the selection goes as mask_url, white = repaint (GPT Image 2); "alpha": an RGBA mask, alpha 0 =
+//   mask          "white": the selection goes as `mask` (mask_url until Oxen renamed it, read 2026-11-10), white = repaint (GPT Image 2); "alpha": an RGBA mask, alpha 0 =
 //                 repaint (GPT Image 2.5). Without it a "fill" run sends the mask as a second picture and the prompt says
 //                 what it means (Nano Banana), as the OpenRouter adapter does
 //   edit_aspect   the aspect_ratio of an edit: "auto", "match_input_image", "closest" (the preset closest to the crop),
@@ -213,7 +213,7 @@ const capOf = (o) => (o.single ? 1 : (+o.max_images > 0 ? +o.max_images : 16));
 
 /**
  * The pictures of an edit, fill or upscale run, in order: the crop, the mask (a fill without `o.mask` only), the
- * references; and the mask that goes as mask_url (a fill with `o.mask`). A new image's pictures are its references
+ * references; and the mask that goes as `mask` (a fill with `o.mask`). A new image's pictures are its references
  * alone. Checks the count and the steepest ratio, and holds the inline size under MAX_INLINE by sending opaque
  * pictures as JPEG, largest first; a mask is never re-encoded. Throws before any request. Returns { pics: [{ what,
  * bytes, mime, jpeg, url }], mask: data URL | null }.
@@ -284,7 +284,7 @@ function fieldAt(o) {
 
 /**
  * Where picturesFor above and bodyFor put each picture of a fill or an edit: the picture field holds the crop, the mask
- * (a fill without `o.mask`), the references; a fill with `o.mask` sends the mask as mask_url.
+ * (a fill without `o.mask`), the references; a fill with `o.mask` sends the mask as `mask`.
  */
 function layout(req) {
     const o = req.options || {};
@@ -293,7 +293,7 @@ function layout(req) {
     const first = req.kind === "fill" && !maskUrl ? [["crop", at(0)], ["mask", at(1)]] : [["crop", at(0)]];
     return layoutOf({
         seq: [...first, ...refRoles(req).map(([role, i]) => [role, at(first.length + i), i])],
-        own: maskUrl ? [["mask", "mask_url"]] : [],
+        own: maskUrl ? [["mask", "mask"]] : [],
         max: capOf(o),
     });
 }
@@ -349,7 +349,7 @@ function aspectFor(req, o, list, pictures) {
 
 /**
  * The prompt of an edit or fill: the OpenRouter adapter's instruction (its mask clause ran live there), numbered by
- * this adapter's own layout, so a mask that goes as mask_url is no picture of the sentence. A new image takes the
+ * this adapter's own layout, so a mask that goes as `mask` is no picture of the sentence. A new image takes the
  * prompt as it is, followed by what its references are when it carries any. `options.prompt` "as_written" (FLUX 3)
  * sends the prompt alone either way.
  */
@@ -381,7 +381,7 @@ function bodyFor(req, pics = [], mask = null) {
         const field = o.image_field || "input_image";
         body[field] = o.single || upscale ? pics[0].url : pics.map((x) => x.url);
     }
-    if (mask && o.mask) body.mask_url = mask;
+    if (mask && o.mask) body.mask = mask;
     for (const [k, v] of Object.entries(p)) {
         if (!accepts.has(k) || k === "random_seed" || v === "" || v == null) continue;
         if (String(v).toLowerCase() === "auto" && !keepAuto.has(k)) continue;
@@ -577,7 +577,7 @@ async function run(req, ctx) {
         info: {
             model, route,
             pictures: pics.map((x) => `${x.what} ${x.mime === "image/jpeg" ? "jpeg" : "png"}`),
-            mask: mask ? "mask_url" : pics.some((x) => x.what === "mask") ? "picture" : null,
+            mask: mask ? "mask" : pics.some((x) => x.what === "mask") ? "picture" : null,
             aspect_ratio: body.aspect_ratio || (o.preset_key && body[o.preset_key]) || null,
             tier: body[tierKey] != null ? body[tierKey] : null,
             factor: o.factor_key && body[o.factor_key] != null ? body[o.factor_key] : null,

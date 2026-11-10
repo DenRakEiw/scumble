@@ -517,6 +517,11 @@ also: `comfyrefs_test.js` (its `<Picture {n}>` slots), `comfyprompt_test.js` (it
 `generate` gate's step `p_h3_generate_new_is_text_to_image` (the queued graphs of an edit and of Generate new against
 stubs). Light / Normal tier: written from the docs and the node specs; a live run is the user's.
 
+Fibo 2.0 Edit Turbo (`recipes/fibo2_edit_turbo_local.json`): `node tools/recipes_test.js` §18 checks its graph against
+the node specs (`TextEncodeFibo2` from ComfyUI 0.44.0's `/object_info`), with the Prompt Enhancer on and off and with one,
+two and four pictures, and pins the template's values; `comfyrefs_test.js` its `<image_{n}>` slots, `comfyprompt_test.js`
+its request and the row's own word in the missing-file note. Light tier, written from the template; a live run is the user's.
+
 MOSS-Image Edit (`recipes/moss_image_edit_local.json`, `docs/PLAN_LORAS.md` LR6): `node tools/recipes_test.js` §15
 checks its graph against the node specs of `tools/refs/comfy_templates/object_info.json` (`TextEncodeMOSSImageEdit`
 and `SkipLayerGuidanceDiTSimple` there since LR6, written from ComfyUI 0.44.0's V3 schemas, and CLIPLoader's types of
@@ -968,6 +973,11 @@ sequential gate (`run_gates_both.sh` without `--shards`, or `run_gates.sh`) befo
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-11-10 (`seedream-layers`, `sl-final-tiles`): `ark_test.py` `a_model_not_activated_says_so` failed once with
+  `TypeError: fetch failed`, 0 requests at the mock; `app.log` gives the cause, `connect ETIMEDOUT 127.0.0.1:<the mock's
+  port>`. The connect to the loopback mock timed out before any request went out, while other agents' gates started on the
+  same machine. Ruled out: the adapter and the mock (the step never reached either); the same code passed 3 of 3 reruns
+  (`sl-ark3-1`..`3`).
 - 2026-11-09 (`ag-fix-prov`, `run_gates_both.sh fix-prov` and `fix-prov-openrouter-rerun`..`rerun3`): `openrouter_test.py`
   `an_edit_variant_sends_no_mask` failed 3 of 6 runs (`no result arrived: OpenRouter answered after 0 s.`, tiles in
   `fix-prov`, canvas in `rerun`, tiles in `rerun2`, both green in `rerun3`). Ruled out: `fix-prov`'s provider changes
@@ -1086,6 +1096,7 @@ Known flakes; **re-run before believing any of these**:
 - 2026-11-09 (the merge of K39, serial on tiles): `editor_test.py` `live_stroke_reaches_the_screen_before_the_release`
   took 344 s instead of its usual seconds, so the gate hit its 420 s limit (rc 124, no failed assertion; the same
   tree passed right after, that step 40 s). Other agents' instances were running; the cause was not looked into.
+- 2026-11-10 (the merge of `fix-main` pack 3): `comfyview_test.py` "no target: the start page, nothing loaded, one window, bounds kept" failed once on tiles with CDP's "Cannot find default execution context" and passed 4 of 4 on a re-run on both backends (the known control-step flake failed once beside it on canvas).
 - 2026-11-09 (the merge of K15, tiles and canvas side by side): `editor_test.py`
   `selection_keeps_its_bounds_through_a_restore_above_1mp` ran into its 180 s step timeout on both backends with no
   assertion, and passed right after in sequence in under a second. The step awaits `img.decode()`, which never

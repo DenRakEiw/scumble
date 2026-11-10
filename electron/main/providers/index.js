@@ -29,7 +29,11 @@
 // adapters only speak HTTP. Keys come from keys.js by the provider's name.
 "use strict";
 
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const electron = require("electron");
+const { randomUUID } = require("node:crypto");
 const { nativeImage } = electron;
 
 const log = require("../log");
@@ -172,15 +176,23 @@ function resolveNames(p, req, lay, given) {
 
 // The runs waiting on a provider, by the renderer's run id: the title row's Cancel aborts one (cancel below). An
 // aborted run's fetch and its waits between polls end at once; the provider may still finish the job and charge it.
-const running = new Map();   // runId -> AbortController
+const running = new Map();   // (runId | Symbol) -> { ac: AbortController, counted: boolean }
 const cancelledEarly = new Set();   // a Cancel that came before its run reached edit(): that run stops at its start
+const sweptDirs = new Set();        // userData folders whose results/ folder has been swept of stray files this start
+
+/** How many provider runs (excluding local in-app helper fills) are in flight right now (main.js reloadWindow). */
+function runningCount() {
+    let n = 0;
+    for (const r of running.values()) if (r.counted) n++;
+    return n;
+}
 
 /** Stop waiting for a run (the renderer's Cancel); one that has not started yet stops when it does. */
 function cancel(runId) {
     const id = String(runId || "");
     if (!id) return false;
-    const ac = running.get(id);
-    if (ac) { ac.abort(); return true; }
+    const r = running.get(id);
+    if (r) { r.ac.abort(); return true; }
     if (cancelledEarly.size > 200) cancelledEarly.clear();
     cancelledEarly.add(id);
     return false;
@@ -235,10 +247,12 @@ async function edit(request, hooks = {}) {
     const text = request.kind === "text";
     const upscale = request.kind === "upscale";
     const relight = request.kind === "relight";
+    const split = request.kind === "layers";
+    if (split && typeof p.layers !== "function") throw new Error(`${p.label} has no layer mode in Scumble.`);
     if (text && typeof p.generate !== "function") throw new Error(`${p.label} has no text-to-image endpoint in Scumble; pick another provider for this model.`);
     if (upscale && typeof p.upscale !== "function") throw new Error(`${p.label} has no upscaler in Scumble; pick another provider for this model.`);
     if (relight && typeof p.relight !== "function") throw new Error(`${p.label} has no relight endpoint in Scumble; pick another provider for this model.`);
-    const verb = text ? "generate" : upscale ? "upscale" : relight ? "relight" : "edit";
+    const verb = text ? "generate" : upscale ? "upscale" : relight ? "relight" : split ? "layers" : "edit";
     const key = p.needsKey === false ? "" : keys.get(keyNameOf(id, p));
     if (p.needsKey !== false && !key) throw new Error(noKeyText(p.label, keys.describe(keyNameOf(id, p)).stale));
     const given = (request.references || []).length;
@@ -260,13 +274,14 @@ async function edit(request, hooks = {}) {
     };
     const t0 = Date.now();
     const runId = request.runId ? String(request.runId).slice(0, 80) : "";
+    const runSlot = runId || Symbol("run");
     const ac = new AbortController();
-    if (runId) running.set(runId, ac);
+    running.set(runSlot, { ac, counted: id !== "inapp" });
     if (runId && cancelledEarly.delete(runId)) ac.abort();
     const ctx = contextFor(id, p, key, ac.signal);
     if (runId && hooks && typeof hooks.progress === "function") ctx.progress = progressSender(runId, hooks.progress);
     // the request's shape for the log: never the key, never the pixels
-    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : relight ? "relight" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, boxes: req.boxes.length, loras: req.loras ? req.loras.rows.length : 0, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
+    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : relight ? "relight" : split ? "layers" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, boxes: req.boxes.length, loras: req.loras ? req.loras.rows.length : 0, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
     let out, named, lay, notes = [], sentBoxes = 0;
     try {
         if (req.original && !req.references.length) throw new Error("The request marks an Original picture but carries no reference picture: nothing was sent.");
@@ -295,7 +310,7 @@ async function edit(request, hooks = {}) {
                 for (const n of a.notes) notes.push(n);
             }
         }
-        out = text ? await p.generate(req, ctx) : upscale ? await p.upscale(req, ctx) : relight ? await p.relight(req, ctx) : await p.edit(req, ctx);
+        out = text ? await p.generate(req, ctx) : upscale ? await p.upscale(req, ctx) : relight ? await p.relight(req, ctx) : split ? await p.layers(req, ctx) : await p.edit(req, ctx);
         if (ac.signal.aborted) throw aborted();   // an adapter that finished its last call as Cancel came: dropped too
     } catch (err) {
         const secs = ((Date.now() - t0) / 1000).toFixed(1);
@@ -317,24 +332,100 @@ async function edit(request, hooks = {}) {
         log.record({ level: "error", source: id, message: `${p.label} ${verb} failed after ${secs} s: ${err && err.message || err}`, detail: { request: shape(), stack: err && err.stack } });
         throw err;
     } finally {
-        if (runId) running.delete(runId);
+        running.delete(runSlot);
         if (ctx.progress && ctx.progress.stop) ctx.progress.stop();
     }
-    // the picture came, but the page that asked for it is gone (a reload or a crash during the run): the job's note goes
-    // back, so the new page's ask brings the picture as a document of its own (S6)
-    if (out && out.bytes && ctx.jobNote && ctx.jobs && hooks && typeof hooks.pageGone === "function" && hooks.pageGone()) {
-        ctx.jobs.add(ctx.jobNote);
-        log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for job ${ctx.jobNote.jobId} went away before its picture came; the job stays noted, so the window opens it` });
-        jobsChanged(hooks);
+    // the picture came, but the page that asked for it is gone (a reload or a crash during the run): a Comfy Cloud v2
+    // job puts its note back (S6); any other provider run (except a local in-app helper crop) keeps the bytes locally
+    // under a main-generated name (MAIN-2), so the new page's ask opens the picture as a document of its own
+    if (out && out.bytes && hooks && typeof hooks.pageGone === "function" && hooks.pageGone()) {
+        if (ctx.jobNote && ctx.jobs) {
+            ctx.jobs.add(ctx.jobNote);
+            log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for job ${ctx.jobNote.jobId} went away before its picture came; the job stays noted, so the window opens it` });
+            jobsChanged(hooks);
+        } else if (id !== "inapp") {
+            const dir = userData();
+            if (dir) {
+                let tmp = null;
+                try {
+                    const savedId = crypto.randomUUID();
+                    const mime = out.mime || "image/png";
+                    const ext = /jpe?g/i.test(mime) ? "jpg" : /webp/i.test(mime) ? "webp" : "png";
+                    const file = `${savedId}.${ext}`;
+                    const resDir = path.join(dir, "results");
+                    fs.mkdirSync(resDir, { recursive: true });
+                    const target = path.join(resDir, file);
+                    tmp = target + ".tmp";
+                    const buf = toBuffer(out.bytes);
+                    const fd = fs.openSync(tmp, "w");
+                    try { fs.writeFileSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+                    cloudjobs.retrying(() => fs.renameSync(tmp, target));
+                    tmp = null;
+                    const noted = cloudjobs.store(dir, { pushedOut: notesPushedOut }).add({
+                        jobId: savedId,
+                        provider: id,
+                        model: req.model ? String(req.model).slice(0, 200) : null,
+                        recipe: request.recipe ? String(request.recipe).slice(0, 200) : null,
+                        started: t0,
+                        file,
+                        mime,
+                    });
+                    if (noted) {
+                        log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for the run went away before its picture came; the picture is kept (${file}), so the window opens it` });
+                        jobsChanged(hooks);
+                    } else {
+                        cloudjobs.unlinkResult(dir, file);
+                        log.record({ level: "error", source: id, message: `${p.label}: could not note the picture after the window went away (cloudjobs.json could not be updated)` });
+                    }
+                } catch (err) {
+                    if (tmp) { try { cloudjobs.retrying(() => fs.unlinkSync(tmp)); } catch (_) { /* swept at next start */ } }
+                    log.record({ level: "error", source: id, message: `${p.label}: could not keep the picture after the window went away: ${(err && err.message) || err}` });
+                }
+            }
+        }
     }
     if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
     // an adapter's own notes on the run (Comfy Router: who served it, what it left out) join the request's
     if (Array.isArray(out.notes)) for (const n of out.notes) if (n) notes.push(String(n));
-    log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes } });
+    log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes, ...(split ? { layers: out.layers.map((l) => ({ z: l.z_index, name: l.name, description: l.description.slice(0, 400) })) } : {}) } });
+    // a split's pictures stay here and the window takes them one at a time: dozens of 2K PNGs in one IPC message end the
+    // renderer (docs/BUGS.md, the same limit as a large export's save)
+    if (split) return { bytes: new Uint8Array(0), mime: out.mime || "image/png", info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, notes, missing: out.missing || [], ...keepLayerParts(out.layers) };
     const bytes = toBuffer(out.bytes);
     // the LoRAs a Comfy Cloud graph's chain loaded (item 50): the via line and loras_sent name them
     const loras = Array.isArray(out.loras) ? out.loras.map((x) => ({ name: String(x.name), strength: +x.strength })) : [];
     return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, negative: req.negative == null ? null : req.negative, refs: named.refs, notes, boxes: sentBoxes, loras };
+}
+
+// ---- a split's pictures, handed over one at a time (kind "layers") ---------------------------------------------------
+
+const LAYER_PARTS_KEEP_MS = 10 * 60 * 1000;
+const layerParts = new Map();
+
+/** Keeps the pictures of a split under a token: -> { layersToken, layers: the entries without their bytes, each with `part` }. */
+function keepLayerParts(list) {
+    const token = randomUUID();
+    const timer = setTimeout(() => layerParts.delete(token), LAYER_PARTS_KEEP_MS);
+    if (timer.unref) timer.unref();
+    layerParts.set(token, { parts: list.map((l) => l.bytes), timer });
+    return { layersToken: token, layers: list.map(({ bytes, ...rest }, part) => ({ ...rest, part })) };
+}
+
+/** One picture of a split (each only once): the window asks for it when it is ready to decode it. */
+function layerPart(token, part) {
+    const e = layerParts.get(String(token));
+    const b = e && e.parts[part];
+    if (!b) throw new Error("That layer's picture is no longer held: nothing more can land from this run.");
+    e.parts[part] = null;
+    if (!e.parts.some(Boolean)) dropLayerParts(token);
+    const bytes = toBuffer(b);
+    return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+
+/** The rest of a split's pictures let go (its landing ended, whatever way). */
+function dropLayerParts(token) {
+    const e = layerParts.get(String(token));
+    if (e) { clearTimeout(e.timer); layerParts.delete(String(token)); }
 }
 
 /**
@@ -511,45 +602,126 @@ async function balance(id) {
 }
 
 function notesPushedOut(entries) {
-    for (const e of entries) log.record({ level: "warn", source: "comfycloud", message: `Comfy Cloud: the note of job ${e.jobId} (${e.model || "Comfy Cloud"}) was pushed out by newer ones; its picture is not brought back by itself` });
+    for (const e of entries) {
+        const p = e.provider && Object.prototype.hasOwnProperty.call(PROVIDERS, e.provider) ? PROVIDERS[e.provider] : null;
+        const src = (p && e.provider) || "comfycloud";
+        const label = (p && p.label) || e.provider || "Comfy Cloud";
+        log.record({ level: "warn", source: src, message: `${label}: the note of job ${e.jobId} (${e.model || label}) was pushed out by newer ones; its picture is not brought back by itself` });
+    }
 }
 
 // when this process started: a note written before it is of an earlier run (`earlier` in recoverCloudJobs' pictures)
 const BOOT = Date.now();
 
 /**
- * The noted Comfy Cloud jobs (docs/PLAN_COMFY_SDK.md S6), read whenever the window asks (main.js: after its documents
- * are back, when the notes changed, every 90 s while some are kept; never while no window is shown): the pictures of
- * the jobs that finished meanwhile, for the window to open as documents of their own (`earlier`: noted before this
- * process started), and how many stay noted (running, unanswered, unread). The jobs of `skip` (pictures the window
- * was given and has not acked) and those whose run is in flight here are left alone. Nothing is sent again; without a
- * key nothing is asked.
+ * The noted Comfy Cloud jobs (docs/PLAN_COMFY_SDK.md S6) and locally kept provider pictures (MAIN-2), read whenever the
+ * window asks (main.js: after its documents are back, when the notes changed, every 90 s while some are kept; never
+ * while no window is shown): the pictures that are ready, for the window to open as documents of their own (`earlier`:
+ * noted before this process started), and how many stay noted (running, unanswered, unread). Local pictures are read
+ * straight from `<userData>/results/` without a Comfy Cloud key and never reach `comfycloud.recoverJobs`. The jobs of
+ * `skip` (pictures the window was given and has not acked) and those whose run is in flight here are left alone.
  */
 async function recoverCloudJobs({ skip = null, only = null } = {}) {
-    const none = { pictures: [], kept: 0, keptIds: [], running: 0, unanswered: 0, unread: 0, dropped: 0, skipped: null };
+    const none = { pictures: [], kept: 0, keptIds: [], running: 0, unanswered: 0, unread: 0, localUnread: 0, dropped: 0, skipped: null };
     const dir = userData();
     if (!dir) return { ...none, skipped: "no data folder" };
+    if (!sweptDirs.has(dir) && cloudjobs.sweepResults(dir) !== null) sweptDirs.add(dir);
     const jobs = cloudjobs.store(dir);
-    if (!jobs.list().length) return none;
+    let entries = jobs.list();
+    if (!entries.length) return none;
+    const now = Date.now();
+    const onlySet = Array.isArray(only) ? new Set(only.map(String)) : null;
+    const leave = new Set([...(Array.isArray(skip) ? skip : []), ...cloudjobs.flying].map(String));
+    const stale = entries.filter((e) => cloudjobs.settled.has(e.jobId));
+    if (stale.length) {
+        jobs.drop(stale.map((e) => e.jobId));
+        for (const e of stale) if (e.file) cloudjobs.unlinkResult(dir, e.file);
+        entries = entries.filter((e) => !cloudjobs.settled.has(e.jobId));
+    }
+    if (!entries.length) return none;
+
+    const localEntries = entries.filter((e) => Boolean(e.file));
+    const remoteEntries = entries.filter((e) => !e.file);
+    const localPictures = [], localDropped = [], localKeptIds = [];
+    let localUnread = 0;
+    for (const e of localEntries) {
+        if ((onlySet && !onlySet.has(e.jobId)) || leave.has(e.jobId)) continue;
+        // local files under <userData>/results/ do not expire after 24 h (unlike Comfy Cloud's server-side outputs)
+        const clean = cloudjobs.cleanFile(e.file);
+        if (!clean) { localDropped.push(e.jobId); continue; }
+        let b;
+        try {
+            b = cloudjobs.retrying(() => fs.readFileSync(path.join(dir, "results", clean)));
+        } catch (err) {
+            if (err && err.code === "ENOENT") localDropped.push(e.jobId);
+            else { localKeptIds.push(e.jobId); localUnread++; }
+            continue;
+        }
+        const provId = e.provider ? String(e.provider) : null;
+        const prov = provId && Object.prototype.hasOwnProperty.call(PROVIDERS, provId) ? PROVIDERS[provId] : null;
+        localPictures.push({
+            jobId: e.jobId,
+            provider: provId,
+            providerLabel: (prov && prov.label) || provId || null,
+            model: e.model || null,
+            recipe: e.recipe || null,
+            started: e.started,
+            earlier: !(+e.started >= BOOT),
+            bytes: new Uint8Array(b.buffer, b.byteOffset, b.byteLength),
+            mime: e.mime || "image/png",
+        });
+    }
+    if (localDropped.length) jobs.drop(localDropped);
+    if (localPictures.length || localDropped.length) {
+        log.record({ source: "providers", message: `${localPictures.length} kept provider result${localPictures.length === 1 ? "" : "s"} brought back${localDropped.length ? `, ${localDropped.length} dropped` : ""}` });
+    }
+    if (!remoteEntries.length) {
+        return { ...none, pictures: localPictures, kept: localKeptIds.length, keptIds: localKeptIds, localUnread, dropped: localDropped.length };
+    }
+
     const p = PROVIDERS.comfycloud;
     const key = keys.get(keyNameOf("comfycloud", p));
-    const leave = new Set([...(Array.isArray(skip) ? skip : []), ...cloudjobs.flying].map(String));
+    const remoteJobs = { ...jobs, list: () => jobs.list().filter((e) => !e.file) };
     try {
-        const r = await p.recoverJobs(jobs, contextFor("comfycloud", p, key, null), Date.now(), { skip: [...leave], only: Array.isArray(only) ? only.map(String) : null });
+        const r = await p.recoverJobs(remoteJobs, contextFor("comfycloud", p, key, null), now, { skip: [...leave], only: onlySet ? [...onlySet] : null });
         if (r.pictures.length || r.dropped || r.kept) log.record({ source: "comfycloud", message: `Comfy Cloud: ${r.pictures.length} noted result${r.pictures.length === 1 ? "" : "s"} brought back, ${r.kept} still noted (${r.running} running, ${r.unanswered} unanswered, ${r.unread} not downloaded yet), ${r.dropped} dropped${r.skipped ? ` (${r.skipped})` : ""}` });
-        return { ...r, pictures: r.pictures.map((x) => ({ ...x, earlier: !(+x.started >= BOOT), bytes: new Uint8Array(x.bytes.buffer, x.bytes.byteOffset, x.bytes.byteLength) })) };
+        const remotePictures = r.pictures.map((x) => ({ ...x, earlier: !(+x.started >= BOOT), bytes: new Uint8Array(x.bytes.buffer, x.bytes.byteOffset, x.bytes.byteLength) }));
+        return {
+            ...r,
+            pictures: [...localPictures, ...remotePictures],
+            kept: localKeptIds.length + r.kept,
+            keptIds: [...localKeptIds, ...r.keptIds],
+            unread: r.unread,
+            localUnread,
+            dropped: localDropped.length + r.dropped,
+        };
     } catch (err) {
         log.record({ level: "error", source: "comfycloud", message: `Comfy Cloud: the noted jobs could not be read: ${(err && err.message) || err}` });
-        const left = jobs.list().map((e) => e.jobId).filter((id) => !leave.has(id) && !cloudjobs.settled.has(id) && (!Array.isArray(only) || only.includes(id)));
-        return { ...none, kept: left.length, keptIds: left, unanswered: left.length, skipped: "error" };
+        const left = remoteJobs.list().map((e) => e.jobId).filter((id) => !leave.has(id) && !cloudjobs.settled.has(id) && (!onlySet || onlySet.has(id)));
+        return {
+            ...none,
+            pictures: localPictures,
+            kept: localKeptIds.length + left.length,
+            keptIds: [...localKeptIds, ...left],
+            unanswered: left.length,
+            localUnread,
+            dropped: localDropped.length,
+            skipped: "error",
+        };
     }
 }
 
-/** The window has opened a brought-back picture: its job's note goes (until then a start brings it again). */
+/** The window has opened a brought-back picture: its job's note (and any kept local file) goes. */
 function ackCloudJob(jobId) {
     const dir = userData();
-    if (dir && jobId) cloudjobs.store(dir).remove(String(jobId));
+    if (dir && jobId) {
+        const id = String(jobId);
+        const st = cloudjobs.store(dir);
+        const entry = st.list().find((e) => e.jobId === id);
+        st.remove(id);
+        if (entry && entry.file) cloudjobs.unlinkResult(dir, entry.file);
+    }
     return true;
 }
 
-module.exports = { edit, cancel, layout, balance, describeAll, textProviders, upscaleProviders, relightProviders, recoverCloudJobs, ackCloudJob, cloudLoras, PROVIDERS, _progressSender: progressSender, _lorasOfRequest: lorasOfRequest };
+module.exports = { edit, cancel, runningCount, layout, layerPart, dropLayerParts, balance, describeAll, textProviders, upscaleProviders, relightProviders, recoverCloudJobs, ackCloudJob, cloudLoras, PROVIDERS, _progressSender: progressSender, _lorasOfRequest: lorasOfRequest };

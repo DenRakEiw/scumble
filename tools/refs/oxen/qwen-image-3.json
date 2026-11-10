@@ -7,7 +7,7 @@
   },
   "request_schema": {
     "basic": [
-      "input_images"
+      "input_image"
     ],
     "properties": {
       "aspect_ratio": {
@@ -38,7 +38,7 @@
         "type": "boolean",
         "x-order": 6
       },
-      "input_images": {
+      "input_image": {
         "description": "Optional input images to edit or combine. The output keeps the aspect ratio of the last image unless an aspect ratio is chosen. Reference them in the prompt as @Image1, @Image2, etc. Up to 3 images.",
         "items": {
           "format": "uri",
@@ -48,6 +48,9 @@
         "nullable": true,
         "title": "Input Images",
         "type": "array",
+        "x-aliases": [
+          "input_images"
+        ],
         "x-order": 1
       },
       "negative_prompt": {
@@ -73,7 +76,7 @@
         "x-media-references": {
           "groups": [
             {
-              "field": "input_images",
+              "field": "input_image",
               "pattern": "Image {n}"
             }
           ]

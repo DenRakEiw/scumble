@@ -19310,7 +19310,7 @@ class InpaintEditor {
         return this.tileMode ? B.fromCanvas(p.toCanvas()) : B.fromImage(p.toCanvas());
     }
 
-    addLayer(layer, { activate = true } = {}) {
+    addLayer(layer, { activate = true, quiet = false } = {}) {
         // `px` / `maskPx` hold the pixels; a caller that still passes `canvas` / `mask` gets them converted
         installLayerAliases(layer, this.pixels);
         if (layer.px) layer.px = this.ownPixels(layer.px);
@@ -19332,6 +19332,7 @@ class InpaintEditor {
         if (lowest >= 0) this.layers.splice(lowest, 0, layer);
         else this.layers.push(layer);
         if (activate) this.activeLayerId = layer.id;
+        if (quiet) return layer;   // a batch of layers: the caller's layersRestacked does this once
         this.uploaded.baseHash = null;
         this.uploaded.controlHash = null;
         this.refsMutated();

@@ -34,7 +34,9 @@
   },
   "request_schema": {
     "basic": [
-      "input_image"
+      "input_image",
+      "mask",
+      "lock_unmasked"
     ],
     "properties": {
       "aspect_ratio": {
@@ -78,12 +80,30 @@
         "type": "array",
         "x-order": 1
       },
-      "mask_url": {
-        "description": "Optional mask image URL for inpainting. Transparent pixels mark regions to edit; opaque pixels are preserved. Must match the first reference image's size. Leave empty to edit the whole image.",
+      "lock_unmasked": {
+        "default": true,
+        "description": "Only modify the pixels within the masked region.",
+        "title": "Keep the rest unchanged",
+        "type": "boolean",
+        "x-depends-on": {
+          "mask": {
+            "set": true
+          }
+        },
+        "x-hub-only": true,
+        "x-order": 2.5
+      },
+      "mask": {
+        "description": "Paint the part of Image 1 to change.",
         "format": "uri",
         "nullable": true,
         "title": "Mask",
         "type": "string",
+        "x-mask": {
+          "aspectRatioField": "aspect_ratio",
+          "editArea": "transparent",
+          "imageField": "input_image"
+        },
         "x-order": 2
       },
       "moderation": {

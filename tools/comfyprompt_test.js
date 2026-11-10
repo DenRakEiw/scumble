@@ -311,6 +311,27 @@ async function main() {
             C.upsamplerRequest(k.upsampler) === null && eq(pk, p), short(pk.up_run.inputs.prompt));
     });
 
+    // Fibo 2.0 Edit Turbo: Comfy's template sends the prompt as written, its picture names kept; the row has its own word
+    await section("the Prompt Enhancer in fibo2_edit_turbo_local", async () => {
+        const f = norm("fibo2_edit_turbo_local");
+        const UP = "qwen3vl_8b_int8_convrot.safetensors";
+        const classes = { TextGenerate: {}, PreviewAny: {} };
+        const files = ["qwen3vl_4b_bf16.safetensors", UP];
+        const ids = ["pe_clip", "pe_batch", "pe_run", "pe_show", "pe_switch"];
+        const p = clone(f.prompt);
+        const on = C.wireUpsampler(p, f, { text: "put <image_2> on the table", pictures: 2, files, classes });
+        check("on: the prompt as written (no ordinals, no wrapper), the system prompt and the pictures as the graph holds them, the caption into the encoder, the switch gone, the caption shown",
+            on.on && on.note === null && on.show === "pe_show" && p.pe_run.inputs.prompt === "put <image_2> on the table" && p.pe_run.inputs.system_prompt === f.prompt.pe_run.inputs.system_prompt && eq(p.pe_run.inputs.image, ["pe_batch", 0]) && eq(p.encode.inputs.prompt, ["pe_run", 0]) && !p.pe_switch, short(on));
+        const off = clone(f);
+        off.prompt.pe_switch.inputs.switch = false;
+        const q = clone(off.prompt);
+        const r0 = C.wireUpsampler(q, off, { text: "x", files, classes });
+        check("the row off: the canvas's prompt straight into the encoder, no enhancer node, no note", !r0.on && r0.note === null && eq(q.encode.inputs.prompt, ["canvas", 7]) && ids.every((id) => !q[id]), short(r0));
+        const q2 = clone(f.prompt);
+        const r1 = C.wireUpsampler(q2, f, { text: "x", files: ["qwen3vl_4b_bf16.safetensors"], classes });
+        check("its file not on the server: as typed, the note names the file and the row by its own word", !r1.on && eq(q2.encode.inputs.prompt, ["canvas", 7]) && r1.note.includes(UP) && /Prompt Enhancer row off/.test(r1.note), short(r1));
+    });
+
     // P-H3-Image (docs/PLAN_PH3.md): a TextGenerateV2 run with Pruna AI's own requests, the picture names kept
     await section("the prompt upsampler in p_h3_image_local", async () => {
         const h = norm("p_h3_image_local");

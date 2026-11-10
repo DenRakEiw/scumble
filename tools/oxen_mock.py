@@ -7,7 +7,7 @@ https://hub.oxen.ai that the adapter accepts, through settings.oxen.base, and th
         401 Oxen's envelope { error: { type: "unauthenticated", title, detail }, status: "error", status_message } without
         a Bearer key. A known model (tools/refs/oxen/<id>.json): the body without `model` and `response_format` checked
         against its request_schema (no unknown field, the required ones, enums, types, bounds, maxItems), 400
-        invalid_params naming the field on a violation; a picture field (input_image, input_images, mask_url) that is not
+        invalid_params naming the field on a violation; a picture field (input_image, input_images, mask) that is not
         data:image/(png|jpeg);base64,... answers 400 "403 Client Error: Forbidden for url: ..." (what Oxen says when it
         cannot fetch a URL). An unknown model that is not a mock-* name: 404 { error: { message: "Model not found: ..." } }.
         An edit gets its first picture back; a text run a PNG at its tier and aspect (or preset); an upscaler a PNG of the
@@ -41,7 +41,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
 REFS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "refs", "oxen")
-PICTURE_FIELDS = ("input_image", "input_images", "mask_url")
+PICTURE_FIELDS = ("input_image", "input_images", "mask")
 TIERS = {"512": 512, "1K": 1024, "2K": 2048, "3K": 3072, "4K": 4096, "1k": 1024, "2k": 2048}
 AREA_TIERS = {"0.5 MP": 500000, "1 MP": 1000000, "2 MP": 2000000}
 PRESETS = {"square_hd": (1024, 1024), "square": (512, 512), "portrait_4_3": (768, 1024), "portrait_16_9": (576, 1024),
@@ -173,7 +173,7 @@ def pictures_of(body):
 
 def summary(field, data):
     s = {"field": field, "format": fmt_of(data), "size": len(data), "dims": png_size(data)}
-    if field == "mask_url" and s["dims"]:
+    if field == "mask" and s["dims"]:
         w, h = s["dims"]
         colour = png_colour(data)
         s["alpha"] = colour in (4, 6)
@@ -378,7 +378,7 @@ class Handler(BaseHTTPRequestHandler):
         if refused or model == "mock-no-dataurl":
             self._send(400, envelope("invalid_params", "403 Client Error: Forbidden for url: " + (refused[0] if refused else "data:image/png;base64,iVBORw0KGgo")))
             return
-        data = self._answer(model, body, [d for _f, (d, _) in decoded if d and _f != "mask_url"])
+        data = self._answer(model, body, [d for _f, (d, _) in decoded if d and _f != "mask"])
         as_url = body.get("response_format") in (None, "url") or model in ("mock-url", "mock-url-auth")
         if model == "mock-empty":
             self._send(200, {"model": model, "created": 1789000000, "images": []})
