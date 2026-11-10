@@ -720,6 +720,93 @@ async function main() {
                 return leaf.type === "number" && leaf.depth === depth ? null : `${name}.${key}: ${leaf.depth} deep, leaf ${JSON.stringify(leaf.type)}`;
             }).filter(Boolean);
             check("box_rect_src_and_polygon_vertices_are_numbers", !wrongLeaf.length, wrongLeaf.join("; ") || WANT.map(([n, k]) => `${n}.${k}`).join(", "));
+
+            // shell/F2: resolveLayer fills layer only when the tool's schema has a target layer property (skips set_crop and
+            // other tools without one, select_color unless sample is "layer", and boxes_add / boxes_set unless kind is "from"),
+            // and its output runs cleanly through the real command handlers
+            {
+                const { _resolveLayer } = require(path.join(ROOT, "electron", "main", "assistant", "index.js"));
+                const { host } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "host.js")).href);
+                const propsOf = (tName) => (tools.find((x) => x.name === tName) || { inputSchema: {} }).inputSchema.properties || {};
+                const ed = {
+                    node: { id: 1 },
+                    base: {},
+                    width: 200,
+                    height: 150,
+                    layers: [
+                        { id: "Lpaint", name: "Paint", kind: "paint", role: "none", visible: true, x: 0, y: 0, w: 200, h: 150 },
+                        { id: "Lref", name: "Ref", kind: "image", role: "reference", visible: true, x: 0, y: 0, w: 200, h: 150 },
+                    ],
+                    activeLayerId: "Lpaint",
+                    activeLayer() { return ed.layers.find((l) => l.id === ed.activeLayerId) || null; },
+                    isReference(l) { return !!(l && l.role === "reference"); },
+                    refLabels() { return new Map([["Lref", 1]]); },
+                    cropSettings: {},
+                    genSettings: { boxes: false },
+                    pluginData: {},
+                    status: "",
+                    renderLayers() {},
+                    renderInfo() {},
+                    draw() {},
+                    drawThumb() {},
+                    notifyChanged() {},
+                    setStatus(s) { ed.status = String(s || ""); },
+                    pushUndo() {},
+                    wandSelect: async () => {},
+                    getBounds: () => [0, 0, 10, 10],
+                };
+                const prevEditor = host.editor, prevEditors = host.editors, prevById = host.editorById, prevChanged = host.changed;
+                host.editor = ed;
+                host.editors = () => [ed];
+                host.editorById = (id) => (Number(id) === 1 ? ed : null);
+                host.changed = () => {};
+                try {
+                    const listNow = () => ed.layers.map((l) => ({ ...l, active: l.id === ed.activeLayerId }));
+                    const resolveFor = (tName, raw) => _resolveLayer({ doc: 1, ...raw }, listNow(), tName, propsOf(tName));
+                    // a command that refuses the canonical call fails this check, not the whole run
+                    const runOrError = async (cmd, args) => { try { return await cmdMod.commands.run(cmd, args); } catch (err) { return { error: String((err && err.message) || err) }; } };
+
+                    const cropRes = resolveFor("set_crop", { fill: "green", colorMatch: false });
+                    const cropOut = await runOrError("set_crop", cropRes.args);
+
+                    const wandImg = resolveFor("select_color", { x: 5, y: 5 });
+                    const wandImgOut = await runOrError("select_color", wandImg.args);
+                    const wandActive = resolveFor("select_color", { x: 5, y: 5, layer: "active" });
+                    const wandActiveOut = await runOrError("select_color", wandActive.args);
+                    const wandLayer = resolveFor("select_color", { x: 5, y: 5, sample: "layer" });
+                    const wandLayerOut = await runOrError("select_color", wandLayer.args);
+
+                    const boxNewPaint = resolveFor("boxes_add", { kind: "new", rect: [10, 10, 60, 60], desc: "a red scarf" });
+                    const boxNewPaintOut = await runOrError("boxes.add", boxNewPaint.args);
+                    const boxSetPaint = resolveFor("boxes_set", { id: boxNewPaintOut.id, desc: "a blue scarf" });
+                    const boxSetPaintOut = await runOrError("boxes.set", boxSetPaint.args);
+
+                    ed.activeLayerId = "Lref";
+                    const boxNewRef = resolveFor("boxes_add", { kind: "new", rect: [20, 20, 80, 80], desc: "a black cat" });
+                    const boxNewRefOut = await runOrError("boxes.add", boxNewRef.args);
+                    const boxFromRef = resolveFor("boxes_add", { kind: "from", rect: [30, 30, 90, 90], desc: "the lamp" });
+                    const boxFromRefOut = await runOrError("boxes.add", boxFromRef.args);
+                    const boxSetFromRef = resolveFor("boxes_set", { id: boxNewRefOut.id, kind: "from" });
+                    const boxSetFromRefOut = await runOrError("boxes.set", boxSetFromRef.args);
+
+                    check("resolve_layer_fills_only_target_layer_and_runs_through_command_handlers",
+                        !cropRes.error && cropRes.args.layer === undefined && cropOut.fill === "green" && cropOut.colorMatch === false
+                        && !wandImg.error && wandImg.args.layer === undefined && wandImgOut.layer === undefined
+                        && !wandActive.error && wandActive.args.layer === undefined && wandActiveOut.layer === undefined
+                        && !wandLayer.error && wandLayer.args.layer === "Lpaint" && wandLayerOut.layer === "Lpaint"
+                        && !boxNewPaint.error && boxNewPaint.args.layer === undefined && boxNewPaintOut.id === "red_scarf_1" && boxNewPaintOut.layer === null
+                        && !boxSetPaint.error && boxSetPaint.args.layer === undefined && boxSetPaintOut.id === "red_scarf_1" && boxSetPaintOut.desc === "a blue scarf" && boxSetPaintOut.layer === null
+                        && !boxNewRef.error && boxNewRef.args.layer === undefined && boxNewRefOut.id === "black_cat_1" && boxNewRefOut.layer === null
+                        && !boxFromRef.error && boxFromRef.args.layer === "Lref" && boxFromRefOut.kind === "from" && boxFromRefOut.layer === "Lref"
+                        && !boxSetFromRef.error && boxSetFromRef.args.layer === "Lref" && boxSetFromRefOut.kind === "from" && boxSetFromRefOut.layer === "Lref",
+                        JSON.stringify({ crop: cropRes.args, wandImg: wandImg.args, wandActive: wandActive.args, wandLayer: wandLayer.args, boxNewPaint: boxNewPaintOut, boxSetPaint: boxSetPaintOut, boxNewRef: boxNewRefOut, boxFromRef: boxFromRefOut, boxSetFromRef: boxSetFromRefOut }));
+                } finally {
+                    host.editor = prevEditor;
+                    host.editors = prevEditors;
+                    host.editorById = prevById;
+                    host.changed = prevChanged;
+                }
+            }
         }
 
         // the golden body: a history with text, a call, an image result, an error result and thinking
@@ -1785,6 +1872,165 @@ async function main() {
                 && layer.name === LABEL && a.setOf(a.chat.owned, 1).has(layer.id) && softened && softened.args.layer === layer.id,
                 JSON.stringify({ reason: out.reason, asks: asks.map((e) => [e.name, e.card]), args: call && call.args, meta: meta && { undo: meta.undo, refuseBusy: meta.refuseBusy }, owned: [...a.setOf(a.chat.owned, 1)] }));
             await a.close();
+
+            // shell/F9: set_settings, apply_preset and set_generation are recorded per document, and generate, generate_new
+            // and upscale read list_settings into facts.settings and mark the rows this chat set
+            {
+                class SettingsCardEditor extends FakeEditor {
+                    constructor() {
+                        super();
+                        this.docs.push({ id: 2, name: "Second", width: 1000, height: 1000, active: false, busy: false });
+                        this.layers.set(2, [{ id: "L2", name: "Base 2", active: true }]);
+                        this.docRows = new Map([
+                            [1, [
+                                { index: 0, label: "Quality", input: "quality", kind: "combo", value: "medium" },
+                                { index: 1, label: "CFG", input: "cfg", kind: "number", value: 3.5 },
+                                { index: 2, label: "Sampler", input: "sampler_name", kind: "combo", value: "dpmpp_2m" },
+                            ]],
+                            [2, [
+                                { index: 0, label: "Quality", input: "quality", kind: "combo", value: "low" },
+                                { index: 1, label: "CFG", input: "cfg", kind: "number", value: 4.0 },
+                            ]],
+                        ]);
+                    }
+                    async describe() {
+                        return ALL_COMMANDS.concat([
+                            { name: "list_settings", description: "Read settings.", readOnly: true, params: { doc: { type: "integer" }, max_options: { type: "integer" } } },
+                            { name: "set_settings", description: "Set settings.", params: { doc: { type: "integer" }, values: { type: "object" } } },
+                            { name: "apply_preset", description: "Apply preset.", params: { doc: { type: "integer" }, name: { type: "string" } } },
+                            { name: "set_generation", description: "Set gen.", params: { doc: { type: "integer" }, mode: { type: "string" }, denoise: { type: "number" }, refine: { type: "boolean" } } },
+                            { name: "upscale", description: "Upscale.", params: { doc: { type: "integer" }, scope: { type: "string" } } },
+                        ]);
+                    }
+                    async run(name, args, meta) {
+                        const doc = args && args.doc !== undefined ? Number(args.doc) : 1;
+                        const rows = this.docRows.get(doc) || [];
+                        if (name === "list_settings") {
+                            this.calls.push({ name, args });
+                            this.metas.push(meta || null);
+                            return {
+                                recipe: "flux_inpaint",
+                                provider: null,
+                                settings: rows.map((r) => ({ ...r })),
+                                presets: [{ name: "M", shipped: true, current: false, values: [{ index: 2, label: "Sampler", value: "euler" }], missing: [] }],
+                                preset: null,
+                            };
+                        }
+                        if (name === "set_settings") {
+                            this.calls.push({ name, args });
+                            this.metas.push(meta || null);
+                            const out = {};
+                            for (const [k, v] of Object.entries((args && args.values) || {})) {
+                                const r = rows.find((x) => String(x.index) === String(k) || x.label.toLowerCase() === String(k).toLowerCase() || x.input === k);
+                                if (r) { r.value = v; out[r.index] = v; }
+                            }
+                            return { set: out, settings: rows.map((r) => ({ index: r.index, label: r.label, input: r.input, value: r.value })) };
+                        }
+                        if (name === "apply_preset") {
+                            this.calls.push({ name, args });
+                            this.metas.push(meta || null);
+                            const r = rows.find((x) => x.index === 2);
+                            if (r) r.value = "euler";
+                            return { applied: "M", shipped: true, rows: 1, settings: rows.map((x) => ({ index: x.index, label: x.label, input: x.input, value: x.value })) };
+                        }
+                        if (name === "set_generation") {
+                            this.calls.push({ name, args });
+                            this.metas.push(meta || null);
+                            return { mode: args.mode || "local", seed: 1, seed_random: false, denoise: args.denoise ?? 1, refine: !!args.refine, boxes: false, loras: [] };
+                        }
+                        if (name === "upscale") {
+                            this.calls.push({ name, args });
+                            this.metas.push(meta || null);
+                            const id = this.newId();
+                            this.layersOf(doc).push({ id, name: "Upscaled", kind: "result", active: true });
+                            return { layer: { id, name: "Upscaled" }, seconds: 1 };
+                        }
+                        return super.run(name, args, meta);
+                    }
+                }
+                const ed9 = new SettingsCardEditor();
+                const { a: a9, events: ev9 } = assistantOn(ed9, [
+                    anthropicStream([
+                        { type: "tool_use", id: "s1", name: "set_settings", input: { doc: 1, values: { quality: "high" } } },
+                        { type: "tool_use", id: "s2", name: "apply_preset", input: { doc: 1, name: "M" } },
+                        { type: "tool_use", id: "s3", name: "set_generation", input: { doc: 1, mode: "cloud", denoise: 0.45 } },
+                        { type: "tool_use", id: "g1", name: "generate", input: { doc: 1 } },
+                        { type: "tool_use", id: "g2", name: "generate_new", input: { doc: 1 } },
+                        { type: "tool_use", id: "g3", name: "upscale", input: { doc: 1, scope: "selection" } },
+                        { type: "tool_use", id: "g4", name: "generate", input: { doc: 2 } },
+                    ]),
+                    anthropicStream([{ type: "text", text: "all rendered" }]),
+                ]);
+                const stop9 = answerAsks(a9, ev9, true);
+                const out9 = await a9.send("adjust settings and render");
+                stop9();
+                const asks9 = ev9.filter((e) => e.type === "ask");
+                const wantDoc1 = {
+                    recipe: null,   // the panel names the live recipe (host.recipe), not a recipe the chat remembers
+                    mode: "cloud",
+                    settings: { Quality: "high", CFG: 3.5, Sampler: "euler", mode: "cloud", denoise: 0.45 },
+                    changedByChat: ["Quality", "Sampler", "mode", "denoise"],
+                    queue: null,
+                };
+                const wantDoc2 = {
+                    recipe: null,
+                    mode: null,
+                    settings: { Quality: "low", CFG: 4 },
+                    changedByChat: [],
+                    queue: null,
+                };
+                a9.turnUndone({ turn: "t1", docs: [1] });
+                const afterUndo = await a9.factsFor(a9.chat, {}, { name: "generate", args: { doc: 1 } }, [], 1);
+                // close_document forgets the closed document's record (a new document can take its id)
+                a9.recordSettingsChange(a9.chat, 2, "set_settings", { doc: 2, values: { cfg: 5 } }, { set: { 1: 5 }, settings: [{ index: 1, label: "CFG", input: "cfg", value: 5 }] });
+                const beforeClose = a9.changesOf(a9.chat, 2).rows.size;
+                a9.recordSettingsChange(a9.chat, 2, "close_document", { doc: 2 }, {});
+                const afterClose = a9.changesOf(a9.chat, 2).rows.size;
+                check("a_changed_setting_is_shown_on_the_render_card",
+                    out9.reason === "end"
+                    && asks9.length === 4
+                    && eq(asks9.map((e) => e.name), ["generate", "generate_new", "upscale", "generate"])
+                    && eq(asks9[0].card, wantDoc1)
+                    && eq(asks9[1].card, wantDoc1)
+                    && eq(asks9[2].card, wantDoc1)
+                    && eq(asks9[3].card, wantDoc2)
+                    && eq(afterUndo.changedByChat, [])
+                    && beforeClose === 1 && afterClose === 0,
+                    JSON.stringify({ asks: asks9.map((e) => [e.name, e.card]), afterUndo: afterUndo.changedByChat, beforeClose, afterClose }));
+                await a9.close();
+
+                // rows of one node share their label: only the row this chat set is marked; a row the list did not
+                // show, a preset the list does not name and a generation field named like a row each keep their own line
+                const { _buildRenderSettings } = require(path.join(ROOT, "electron", "main", "assistant", "index.js"));
+                const sharedList = {
+                    settings: [
+                        { index: 4, label: "KSampler", input: "steps", value: 30 },
+                        { index: 5, label: "KSampler", input: "cfg", value: 4 },
+                        { index: 6, label: "denoise", input: "denoise", value: 0.8 },
+                    ],
+                    presets: [],
+                };
+                const sharedCh = () => ({
+                    rows: new Map([["5", { label: "KSampler", value: 4 }], ["9", { label: "Size", value: "2K" }]]),
+                    presets: new Map([["l", "L"]]),
+                    gen: new Map([["denoise", 0.45]]),
+                    mode: null,
+                });
+                const withList = _buildRenderSettings(sharedList, sharedCh());
+                const withoutList = _buildRenderSettings(null, sharedCh());
+                check("render_card_marks_changed_rows_by_index_not_by_shared_label",
+                    eq(withList, {
+                        mode: null,
+                        settings: { KSampler: 30, "KSampler (cfg)": 4, denoise: 0.8, Size: "2K", preset: "L", "denoise (generation)": 0.45 },
+                        changedByChat: ["KSampler (cfg)", "Size", "preset", "denoise (generation)"],
+                    })
+                    && eq(withoutList, {
+                        mode: null,
+                        settings: { KSampler: 4, Size: "2K", preset: "L", denoise: 0.45 },
+                        changedByChat: ["KSampler", "Size", "preset", "denoise"],
+                    }),
+                    JSON.stringify({ withList, withoutList }));
+            }
         }
 
         {
@@ -3944,14 +4190,34 @@ async function main() {
                     && stateOf(card3) === "allowed" && disabledAll(card4) && stateOf(card4) === "not answered" && resets === 1;
 
                 onPanelEvent({ type: "turn:start" });
-                onPanelEvent({ type: "ask", token: "t4:1", call: "t4:1", name: "close_document", args: {}, reason: "closes the tab" });
+                onPanelEvent({
+                    type: "ask",
+                    token: "t4:1",
+                    call: "t4:1",
+                    name: "generate",
+                    args: {},
+                    reason: "renders on your ComfyUI",
+                    card: {
+                        recipe: null,   // as renderCard sends it: the panel names the live recipe (host.recipe) itself
+                        mode: "cloud",
+                        settings: { Quality: "high", CFG: 3.5, Sampler: "euler" },
+                        changedByChat: ["Quality", "Sampler"],
+                        queue: null,
+                    },
+                });
                 const card5 = dialog.querySelectorAll(".as-card.as-ask")[0];
+                const card5Lines = partsOf(card5).querySelectorAll(".as-note").map((n) => n.textContent);
+                const showsChangedOnCard = eq(card5Lines.filter((t) => !t.startsWith("recipe: ")), [
+                    "Quality: high (this chat set it)",
+                    "CFG: 3.5",
+                    "Sampler: euler (this chat set it)",
+                ]);
                 panel.resetAssistant();
                 const closedOnReset = disabledAll(card5) && stateOf(card5) === "not answered" && !card5.hasAttribute("popover") && panel.assistantActivity().asking === false;
 
                 check("panel_disables_unanswered_ask_cards_on_done_stop_and_reset",
-                    openBeforeDone && closedOnDone && closedOnStop && staleSentNothing && keptAllowedAndClosedNew && closedOnReset,
-                    JSON.stringify({ openBeforeDone, closedOnDone, closedOnStop, staleSentNothing, keptAllowedAndClosedNew, closedOnReset }));
+                    openBeforeDone && closedOnDone && closedOnStop && staleSentNothing && keptAllowedAndClosedNew && closedOnReset && showsChangedOnCard,
+                    JSON.stringify({ openBeforeDone, closedOnDone, closedOnStop, staleSentNothing, keptAllowedAndClosedNew, closedOnReset, card5Lines }));
             } finally {
                 global.document = prevDoc;
                 global.CSSStyleSheet = prevCSS;

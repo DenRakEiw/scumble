@@ -1108,6 +1108,94 @@ return {
             raise RuntimeError("declining the newer card did not settle cleanly: " + json.dumps(out))
         return f"card A {a_stop['state']!r} (disabled), stale token and call_0 rejected, card B {out['bState']!r}"
 
+    async def changed_setting_and_layer_free_calls(self):
+        """A turn runs set_crop, select_color, boxes_add, boxes_set, set_settings and set_generation, and the generate card marks the changed settings."""
+        self.mock.reset()
+
+        def expect_second(r):
+            results = last_results(r)
+            if len(results) != 7:
+                return f"expected 7 tool results, got {len(results)}"
+            for i in range(6):
+                if results[i]["is_error"]:
+                    return f"call {i} failed: {results[i]['text'][:200]}"
+            if not results[6]["is_error"] or "the user declined" not in results[6]["text"]:
+                return f"generate decline missing: {results[6]['text'][:200]}"
+            return True
+
+        self.mock.push(
+            Turn(answer={"tool_calls": [
+                {"id": "c1", "name": "set_crop", "args": {"fill": "green", "colorMatch": False}},
+                {"id": "c2", "name": "select_color", "args": {"x": 10, "y": 10}},
+                {"id": "c3", "name": "boxes_add", "args": {"kind": "new", "rect": [10, 10, 80, 80], "desc": "a red scarf"}},
+                {"id": "c4", "name": "boxes_set", "args": {"id": "red_scarf_1", "desc": "a blue scarf"}},
+                {"id": "c5", "name": "set_settings", "args": {"values": {"Quality": "high"}}},
+                {"id": "c6", "name": "set_generation", "args": {"denoise": 0.45}},
+                {"id": "c7", "name": "generate", "args": {}},
+            ]}),
+            Turn(expect=expect_second, answer={"text": "ready"}),
+        )
+        out = await self.ev("""
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(150);
+const d = document.getElementById("assistant");
+const parts = (card) => card.shadowRoot || card;
+const prevRecipe = host.recipe ? JSON.parse(JSON.stringify(host.recipe)) : null;
+host.setRecipe({
+    id: "loopback_fill", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "fill", name: "Loopback",
+    settings: [
+        { index: 0, key: "quality", label: "Quality", spec: [["low", "high"], {}], default: "low" },
+        { index: 1, key: "size", label: "Size", spec: [["1K", "2K"], {}], default: "1K" },
+    ],
+});
+const paint = await run("add_paint_layer", { doc: DOC, name: "ActivePaint" });
+try {
+    await A.send("set crop, wand, boxes, settings and generate");
+    let card = null;
+    for (let i = 0; i < 80; i++) {
+        await wait(150);
+        const s = await A.state();
+        if (s.pending && s.pending.name === "generate") {
+            const cards = Array.from(d.querySelectorAll(".as-card.as-ask"));
+            card = cards.length ? cards[cards.length - 1] : null;
+            if (card && (parts(card).querySelector(".as-card-state") || {}).textContent === "waiting for you") break;
+        }
+    }
+    const pending = (await A.state()).pending;
+    const notes = card ? Array.from(parts(card).querySelectorAll(".as-note")).map((n) => n.textContent) : [];
+    const deny = card ? Array.from(parts(card).querySelectorAll("button")).find((b) => b.textContent === "Don't") : null;
+    if (deny) deny.click();
+    for (let i = 0; i < 80; i++) {
+        await wait(150);
+        const s = await A.state();
+        if (!s.busy) break;
+    }
+    const boxes = await run("boxes.list", { doc: DOC });
+    return { pendingCard: pending ? pending.card : null, notes, boxes: boxes.boxes };
+} finally {
+    try { await run("boxes.clear", { doc: DOC }); } catch (_) {}
+    try { await run("remove_layer", { doc: DOC, layer: paint.id }); } catch (_) {}
+    try { await run("set_crop", { doc: DOC, fill: "none", colorMatch: false }); } catch (_) {}
+    try { await run("set_generation", { doc: DOC, denoise: 1, boxes: false }); } catch (_) {}
+    try { await run("select_rect", { doc: DOC, x: 100, y: 80, w: 200, h: 120 }); } catch (_) {}
+    if (prevRecipe) host.setRecipe(prevRecipe);
+}""", timeout=120)
+        pc = out.get("pendingCard") or {}
+        settings = pc.get("settings") or {}
+        changed = pc.get("changedByChat") or []
+        notes = out.get("notes") or []
+        boxes = out.get("boxes") or []
+        if settings.get("Quality") != "high" or settings.get("Size") != "1K" or settings.get("denoise") != 0.45:
+            raise RuntimeError("render card settings wrong: " + json.dumps(out))
+        if sorted(changed) != ["Quality", "denoise"]:
+            raise RuntimeError("changedByChat wrong: " + json.dumps(out))
+        if "Quality: high (this chat set it)" not in notes or "Size: 1K" not in notes or "denoise: 0.45 (this chat set it)" not in notes:
+            raise RuntimeError("ask card notes wrong: " + json.dumps(out))
+        if len(boxes) != 1 or boxes[0].get("desc") != "a blue scarf" or boxes[0].get("layer") is not None:
+            raise RuntimeError("boxes after turn wrong: " + json.dumps(out))
+        return f"notes {notes!r}; boxes {boxes[0]['id']}"
+
 
     async def identity(self):
         """The assistant's list is the MCP list minus exactly the exclusion set."""
@@ -1683,6 +1771,7 @@ async def main():
             await g.run_step("the_privacy_notice_clears_after_the_first_send", g.panel_notice_clears)
             await g.run_step("an_ask_opens_the_panel_and_its_buttons_answer", g.panel_ask_card)
             await g.run_step("a_stopped_ask_card_is_disabled_and_cannot_answer_a_later_ask", g.panel_stopped_ask_card)
+            await g.run_step("a_changed_setting_is_shown_on_the_render_card", g.changed_setting_and_layer_free_calls)
             await g.run_step("a_saved_chat_reopens_after_the_memory_is_cleared", g.chat_survives)
             await g.run_step("the_picture_is_a_file_beside_the_chat", g.chat_history_is_byte_equal)
             await g.run_step("a_chat_reopened_with_another_model_is_read_only", g.chat_read_only)
