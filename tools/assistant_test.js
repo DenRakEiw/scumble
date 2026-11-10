@@ -112,7 +112,7 @@ class FakeBackend extends EventEmitter {
 }
 
 // ---- a fake editor: the commands the loop really drives, with a little state --------------
-// It answers like renderer/commands.js does: list_layers top first, generate with a `layer`,
+// It answers like renderer/commands.js does: list_layers bottom to top, generate with a `layer`,
 // an id that is new every time. The loop's ownership, pin and policy checks run against it.
 const EDITOR_COMMANDS = [
     { name: "list_documents", description: "The open tabs.", params: {} },
@@ -174,8 +174,8 @@ class FakeEditor extends EventEmitter {
             case "new_document": { const id = this.docs.length + 1; for (const d of this.docs) d.active = false; this.docs.push({ id, name: "Untitled", width: 1200, height: 800, active: true }); this.layers.set(id, [{ id: this.newId(), name: "Base", active: true }]); return { id }; }
             case "activate_document": { for (const d of this.docs) d.active = d.id === doc; return { id: doc }; }
             case "close_document": { this.docs = this.docs.filter((d) => d.id !== doc); this.layers.delete(doc); return { closed: doc }; }
-            case "add_paint_layer": { const id = this.newId(); for (const l of this.layersOf(doc)) l.active = false; this.layersOf(doc).unshift({ id, name: args.name || "Paint", active: true }); return { id, name: args.name || "Paint" }; }
-            case "generate": { const id = this.newId(); for (const l of this.layersOf(doc)) l.active = false; this.layersOf(doc).unshift({ id, name: "Result 1", kind: "result", active: true }); return { layer: { id, name: "Result 1" }, seconds: 2 }; }
+            case "add_paint_layer": { const id = this.newId(); for (const l of this.layersOf(doc)) l.active = false; this.layersOf(doc).push({ id, name: args.name || "Paint", active: true }); return { id, name: args.name || "Paint" }; }
+            case "generate": { const id = this.newId(); for (const l of this.layersOf(doc)) l.active = false; this.layersOf(doc).push({ id, name: "Result 1", kind: "result", active: true }); return { layer: { id, name: "Result 1" }, seconds: 2 }; }
             case "generate_new": return { ok: true };
             case "remove_layer": {
                 if (this.removeFails) return { removed: args.layer };
@@ -912,7 +912,7 @@ async function main() {
         }
         {
             const editor = new FakeEditor({ removeFails: true });
-            editor.layers.get(1).unshift({ id: "Lmine", name: "Result 1", active: true, locked: true });
+            editor.layers.get(1).push({ id: "Lmine", name: "Result 1", active: true, locked: true });
             const { a, events } = assistantOn(editor, [
                 anthropicStream([{ type: "tool_use", id: "c1", name: "remove_layer", input: { doc: 1, layer: "Lmine" } }]),
                 anthropicStream([{ type: "text", text: "it stayed" }]),
@@ -935,13 +935,33 @@ async function main() {
         }
         {
             // docs/PLAN_REFS.md 26b2: a reference's line in the state note names its token, or says it is hidden
-            const { _layerLine } = require(path.join(ROOT, "electron", "main", "assistant", "prompt.js"));
+            const { _layerLine, stateNote } = require(path.join(ROOT, "electron", "main", "assistant", "prompt.js"));
             const shown = _layerLine({ id: "L1", name: "coat", kind: "image", role: "reference", label: "img1", visible: true });
             const hidden = _layerLine({ id: "L2", name: "hat", kind: "image", role: "reference", label: null, visible: false });
             const plain = _layerLine({ id: "L3", name: "photo", kind: "image", role: "none", visible: true });
             check("a_shown_reference_line_names_its_token", shown.includes("ref @img1") && !shown.includes("hidden"), shown);
             check("a_hidden_reference_line_says_reference_hidden", hidden.includes("reference, hidden") && !hidden.includes("@img"), hidden);
             check("a_layer_that_is_no_reference_names_no_token", !/ref|@img/.test(plain), plain);
+
+            // shell/F1: list_layers is bottom to top; stateNote reverses it so "top first" is true and cutting keeps the newest layers
+            const docs = [{ id: 1, name: "Doc", width: 800, height: 600, active: true }];
+            const note3 = stateNote(docs, [
+                { id: "U", name: "Bottom", visible: true },
+                { id: "R1", name: "Middle", visible: true },
+                { id: "R2", name: "Top", visible: true, active: true },
+            ], { pin: 1 });
+            const many = Array.from({ length: 60 }, (_, i) => ({ id: `L${i}`, name: `Layer number ${i} with a long descriptive label`, visible: true, active: i === 59 }));
+            const cutNote = stateNote(docs, many, { pin: 1 });
+            check("state_note_lists_layers_top_first_and_keeps_the_newest_when_cut",
+                /Layers of #1, top first \(3\):/.test(note3)
+                && note3.indexOf('R2 "Top"') > 0
+                && note3.indexOf('R2 "Top"') < note3.indexOf('R1 "Middle"')
+                && note3.indexOf('R1 "Middle"') < note3.indexOf('U "Bottom"')
+                && cutNote.length <= 1500
+                && cutNote.includes('L59 "Layer number 59')
+                && !cutNote.includes('L0 "Layer number 0')
+                && /\.\.\. \(60 layers; call list_layers for the rest\)/.test(cutNote),
+                short(note3));
         }
         {
             const editor = new FakeEditor();
@@ -1222,10 +1242,10 @@ async function main() {
             tools: new Set(ALL_COMMANDS.map((c) => c.name.replace(/[^A-Za-z0-9_-]/g, "_")).filter((n) => !policy.EXCLUDED.has(n))),
             owned: new Set(["Lmine"]),
             layers: [
-                { id: "Lmine", name: "Result 1", active: true },
-                { id: "Lyours", name: "Sketch", active: false },
-                { id: "Llocked", name: "Locked", active: false, locked: true },
                 { id: "Lbase", name: "Base", active: false },
+                { id: "Llocked", name: "Locked", active: false, locked: true },
+                { id: "Lyours", name: "Sketch", active: false },
+                { id: "Lmine", name: "Result 1", active: true },
             ],
             ...extra,
         });
@@ -1310,7 +1330,8 @@ async function main() {
             // pushes the step itself, so the shell pushes none
             const f = facts();
             f.tools.add("set_mask");
-            f.layers[1] = { ...f.layers[1], mask: true, mask_off: true };
+            const yi = f.layers.findIndex((l) => l.id === "Lyours");
+            f.layers[yi] = { ...f.layers[yi], mask: true, mask_off: true };
             const d = policy.decide({ name: "set_mask", args: { layer: "Lyours", op: "enable" } }, f);
             const ch = d.card && d.card.changes && d.card.changes[0];
             check("set_mask_card_names_the_mask_and_the_operation",
@@ -1322,6 +1343,38 @@ async function main() {
             check("set_mask_from_layer_card_names_source",
                 dFrom.action === "ask" && chSrc && chSrc.to === "Result 1",
                 JSON.stringify(dFrom));
+        }
+        {
+            // shell/F1: list_layers is bottom to top ([U, R1, R2]); merge_down merges into layers[i - 1], or into the base at i === 0
+            const f1 = {
+                tools: new Set(["merge_down"]),
+                owned: new Set(["R1", "R2"]),
+                layers: [
+                    { id: "U", name: "User layer", active: false },
+                    { id: "R1", name: "Result 1", active: false },
+                    { id: "R2", name: "Result 2", active: true },
+                ],
+            };
+            const topIntoOwned = policy.decide({ name: "merge_down", args: { layer: "R2" } }, f1);
+            const ownedIntoUser = policy.decide({ name: "merge_down", args: { layer: "R1" } }, f1);
+            const bottomIntoBase = policy.decide({ name: "merge_down", args: { layer: "U" } }, f1);
+            const f2 = {
+                tools: new Set(["merge_down"]),
+                owned: new Set(["R1", "R2"]),
+                layers: [
+                    { id: "R1", name: "Result 1", active: false },
+                    { id: "R2", name: "Result 2", active: true },
+                ],
+            };
+            const ownedBottomIntoBase = policy.decide({ name: "merge_down", args: { layer: "R1" } }, f2);
+            const ownedTopIntoOwned = policy.decide({ name: "merge_down", args: { layer: "R2" } }, f2);
+            check("merge_down_judges_the_layer_below_in_bottom_first_order",
+                topIntoOwned.action === "auto"
+                && ownedIntoUser.action === "ask" && /layer you made/.test(ownedIntoUser.reason) && ownedIntoUser.card && ownedIntoUser.card.layer && ownedIntoUser.card.layer.id === "R1"
+                && bottomIntoBase.action === "ask" && /into the base image/.test(bottomIntoBase.reason)
+                && ownedBottomIntoBase.action === "ask" && /into the base image/.test(ownedBottomIntoBase.reason)
+                && ownedTopIntoOwned.action === "auto",
+                JSON.stringify({ topIntoOwned, ownedIntoUser, bottomIntoBase, ownedBottomIntoBase, ownedTopIntoOwned }));
         }
         {
             // generate each_area (item 54): the question names the runs and whether each is charged; a count outside 2 to
@@ -1462,6 +1515,11 @@ async function main() {
             const kAppReady = policy.decide({ name: "key_screen", args: { route: "app", rekey: true } }, fk({ key: { ...kReady, route: "app", provider: "dml" } }));
             const kMask = policy.decide({ name: "key_screen", args: { source: "Subject", hint: "mask" } }, fk({ key: kReady }));
             const kMaskT = policy.decide({ name: "key_screen", args: { hint: "mask", trust: 0.6 } }, fk({ key: kReady }));
+            const fSplit = fk({}); fSplit.tools.add("split_layers");
+            const sAsk = policy.decide({ name: "split_layers", args: { count: 8 } }, fSplit);
+            check("split_layers_is_a_paid_run_that_asks_and_names_the_count",
+                policy.RUNS.has("split_layers") && sAsk.action === "ask" && /on BytePlus ModelArk, up to 8 layers: this costs money/.test(sAsk.reason)
+                && policy.clamp({ name: "split_layers", args: {} }).args.timeout === 900 && policy.undoStep({ name: "split_layers", args: {} }) === null, JSON.stringify(sAsk));
             check("key_screen_asks_with_its_route_and_is_refused_when_its_route_cannot_key",
                 policy.RUNS.has("key_screen") && kAsk.action === "ask" && kAsk.reason === "keys the green / blue screen with CorridorKey 2.0 on your ComfyUI: it queues there and adds a layer"
                 && eq(kAsk.card, { settings: { route: "your ComfyUI (ComfyUI-CorridorKey2.0)", screen: "green", hint: "none", trust: 0.75 } })
@@ -1659,7 +1717,7 @@ async function main() {
                             }
                             const id = this.newId();
                             for (const l of this.layersOf(1)) l.active = false;
-                            this.layersOf(1).unshift({ id, name: "Relight", kind: "relight", active: true });
+                            this.layersOf(1).push({ id, name: "Relight", kind: "relight", active: true });
                             return { layer: { id, name: "Relight" }, changed: true };
                         }
                         return super.run(name, args, meta);
@@ -1699,7 +1757,7 @@ async function main() {
                         this.metas.push(meta || null);
                         const id = this.newId();
                         for (const l of this.layersOf(1)) l.active = false;
-                        this.layersOf(1).unshift({ id, name: LABEL, kind: "image", active: true });
+                        this.layersOf(1).push({ id, name: LABEL, kind: "image", active: true });
                         return { layer: { id, name: LABEL }, seconds: 3, notes: [], changed: false, status: "ran" };
                     }
                     return super.run(name, args, meta);
@@ -1718,7 +1776,7 @@ async function main() {
             const at = editor.calls.findIndex((c) => c.name === "realism_pass");
             const call = editor.calls[at];
             const meta = editor.metas[at];
-            const layer = editor.layersOf(1)[0];
+            const layer = editor.layersOf(1).at(-1);
             const softened = editor.calls.find((c) => c.name === "set_layer");
             check("a_turn_runs_the_pass_with_its_card_and_owns_its_layer",
                 out.reason === "end" && asks.length === 1 && asks[0].name === "realism_pass"
@@ -1807,7 +1865,7 @@ async function main() {
             // chat's, even when the tool names it and it is new against this call's own read. That
             // is the layer the user deleted and brought back with Ctrl+Z while the turn ran.
             const editor = new FakeEditor();
-            editor.layersOf(1).unshift({ id: "Lghost", name: "Sketch", active: false });
+            editor.layersOf(1).push({ id: "Lghost", name: "Sketch", active: false });
             const ghost = { id: "Lghost", name: "Sketch", active: false };
             editor.onRun = async (name, args, ed) => {
                 if (name === "add_paint_layer") ed.layersOf(1).push(ghost);       // the user pressed Ctrl+Z
@@ -1862,7 +1920,7 @@ async function main() {
             // a layer the user brought back with undo is not the chat's
             const editor = new FakeEditor();
             editor.onRun = async (name, args, ed) => {
-                if (name === "undo") ed.layersOf(1).unshift({ id: "Lrestored", name: "Back again", active: true });
+                if (name === "undo") ed.layersOf(1).push({ id: "Lrestored", name: "Back again", active: true });
             };
             const { a, events } = assistantOn(editor, [
                 anthropicStream([{ type: "tool_use", id: "c1", name: "undo", input: { doc: 1 } }]),
@@ -3447,6 +3505,42 @@ async function main() {
             check("a_declined_call_is_answered_on_both_families", !rows.length, rows.join("; ") || "flatten asked, declined, answered as an error result");
         }
         {
+            // shell/F3: Gemini functionCall without id repeats call_0 across turns; each ask gets a unique token, and neither
+            // a stale token nor a bare call_0 can answer a newer ask
+            const editor = new FakeEditor();
+            const { a, events } = familyOn(editor, [
+                geminiStream([{ type: "function_call", id: undefined, name: "close_document", args: { doc: 1 } }]),
+                geminiStream([{ type: "function_call", id: undefined, name: "generate", args: { doc: 1 } }]),
+                geminiStream([{ type: "text", text: "understood" }]),
+            ], ...GEMINI);
+            const t1 = a.send("close the tab");
+            await waitFor(() => events.some((e) => e.type === "ask"));
+            const ask1 = events.find((e) => e.type === "ask");
+            const rawOnFirst = a.answer("call_0", true);
+            a.stop();
+            const out1 = await t1;
+
+            const t2 = a.send("render the areas");
+            await waitFor(() => events.filter((e) => e.type === "ask").length === 2);
+            const ask2 = events.filter((e) => e.type === "ask")[1];
+            const staleOnSecond = a.answer(ask1.token, true);
+            const rawOnSecond = a.answer("call_0", true);
+            const stillPending = !!a.pending && !editor.calls.some((c) => c.name === "generate");
+            const validDecline = a.answer(ask2.token, false);
+            const out2 = await t2;
+            check("ask_tokens_are_unique_and_stale_or_raw_call_ids_cannot_answer_later_asks",
+                out1.reason === "stopped"
+                && ask1.callId === "call_0" && ask2.callId === "call_0"
+                && typeof ask1.token === "string" && typeof ask2.token === "string"
+                && ask1.token !== "call_0" && ask2.token !== "call_0" && ask1.token !== ask2.token
+                && ask1.call === ask1.token && ask2.call === ask2.token
+                && rawOnFirst === false && staleOnSecond === false && rawOnSecond === false
+                && stillPending && validDecline === true && out2.reason === "end"
+                && !editor.calls.some((c) => c.name === "generate"),
+                JSON.stringify({ ask1: [ask1.token, ask1.callId], ask2: [ask2.token, ask2.callId], rawOnFirst, staleOnSecond, rawOnSecond, stillPending, validDecline, out2: out2.reason }));
+            await a.close();
+        }
+        {
             // the provider's own request cap: Gemini's 18 MB, not the adapter's 24
             const editor = new FakeEditor();
             const { a } = familyOn(editor, [geminiStream([{ type: "text", text: "never sent" }])], ...GEMINI);
@@ -3602,6 +3696,269 @@ async function main() {
             const text = fs.readFileSync(path.join(ROOT, "renderer", file), "utf8");
             const found = banned.filter((re) => re.test(text)).map((re) => String(re));
             check("no_markup_writes_in_" + file.replace(/\W/g, "_"), !found.length, found.join(", ") || `${text.length} bytes, none of them markup`);
+        }
+
+        // shell/F3: renderer/assistant.js disables unanswered ask cards and sets "not answered" on turn:done, Stop and reset
+        {
+            const { pathToFileURL } = require("node:url");
+            const makeStyle = () => {
+                const map = new Map();
+                return {
+                    setProperty: (k, v, p) => map.set(k, { v: String(v), p: p || "" }),
+                    getPropertyValue: (k) => (map.get(k) || {}).v || "",
+                    getPropertyPriority: (k) => (map.get(k) || {}).p || "",
+                    removeProperty: (k) => map.delete(k),
+                };
+            };
+            const matchSimple = (node, sel) => {
+                if (!node || !node.tagName) return false;
+                const parts = sel.trim().split(/\s+/);
+                if (parts.length > 1) {
+                    if (!matchSimple(node, parts[parts.length - 1])) return false;
+                    let cur = node.parentElement;
+                    for (let i = parts.length - 2; i >= 0; i--) {
+                        while (cur && !matchSimple(cur, parts[i])) cur = cur.parentElement;
+                        if (!cur) return false;
+                        cur = cur.parentElement;
+                    }
+                    return true;
+                }
+                const s = parts[0];
+                if (s.startsWith("#")) return node.id === s.slice(1);
+                const classes = s.match(/\.[A-Za-z0-9_-]+/g) || [];
+                const tag = s.replace(/\.[A-Za-z0-9_-]+/g, "").replace(/^#[^.]+/, "");
+                if (tag && node.tagName !== tag.toUpperCase()) return false;
+                return classes.every((c) => node._classes.has(c.slice(1)));
+            };
+            const queryAll = (root, sel) => {
+                const out = [];
+                const walk = (n) => {
+                    for (const c of n.childNodes || []) {
+                        if (matchSimple(c, sel)) out.push(c);
+                        walk(c);
+                    }
+                };
+                walk(root);
+                return out;
+            };
+            const makeNode = (tag, connected = false) => {
+                const classes = new Set();
+                const attrs = new Map();
+                const listeners = new Map();
+                const node = {
+                    nodeType: 1,
+                    tagName: String(tag || "div").toUpperCase(),
+                    id: "",
+                    style: makeStyle(),
+                    dataset: {},
+                    childNodes: [],
+                    parentElement: null,
+                    shadowRoot: null,
+                    isConnected: connected,
+                    disabled: false,
+                    hidden: false,
+                    open: false,
+                    value: "",
+                    scrollTop: 0,
+                    scrollHeight: 0,
+                    clientHeight: 200,
+                    clientWidth: 320,
+                    clientLeft: 0,
+                    clientTop: 0,
+                    _classes: classes,
+                    _text: "",
+                    get className() { return [...classes].join(" "); },
+                    set className(v) { classes.clear(); for (const c of String(v || "").split(/\s+/).filter(Boolean)) classes.add(c); },
+                    get textContent() {
+                        if (node.childNodes.length) return node.childNodes.map((c) => c.textContent || "").join("");
+                        return node._text;
+                    },
+                    set textContent(v) {
+                        for (const c of node.childNodes) { c.parentElement = null; setConn(c, false); }
+                        node.childNodes = [];
+                        node._text = String(v == null ? "" : v);
+                    },
+                    classList: {
+                        add: (...cs) => cs.forEach((c) => classes.add(c)),
+                        remove: (...cs) => cs.forEach((c) => classes.delete(c)),
+                        toggle: (c, on) => { const next = on === undefined ? !classes.has(c) : !!on; if (next) classes.add(c); else classes.delete(c); return next; },
+                        contains: (c) => classes.has(c),
+                    },
+                    setAttribute: (k, v) => attrs.set(k, String(v)),
+                    removeAttribute: (k) => { attrs.delete(k); if (k === "popover") delete node.popover; },
+                    hasAttribute: (k) => attrs.has(k) || (k === "popover" && node.popover !== undefined),
+                    appendChild(child) {
+                        if (child.isFragment) {
+                            for (const c of child.childNodes.slice()) node.appendChild(c);
+                            child.childNodes = [];
+                            return child;
+                        }
+                        if (child.parentElement) child.parentElement.childNodes = child.parentElement.childNodes.filter((x) => x !== child);
+                        child.parentElement = node;
+                        node.childNodes.push(child);
+                        setConn(child, node.isConnected);
+                        return child;
+                    },
+                    append(...kids) { for (const k of kids) node.appendChild(k); },
+                    after(sib) {
+                        if (!node.parentElement) return;
+                        const list = node.parentElement.childNodes;
+                        const i = list.indexOf(node);
+                        sib.parentElement = node.parentElement;
+                        list.splice(i + 1, 0, sib);
+                        setConn(sib, node.parentElement.isConnected);
+                    },
+                    remove() {
+                        if (!node.parentElement) return;
+                        node.parentElement.childNodes = node.parentElement.childNodes.filter((x) => x !== node);
+                        node.parentElement = null;
+                        setConn(node, false);
+                    },
+                    attachShadow() {
+                        const sr = makeNode("#shadow-root", node.isConnected);
+                        sr.adoptedStyleSheets = [];
+                        node.shadowRoot = sr;
+                        return sr;
+                    },
+                    querySelector: (sel) => queryAll(node, sel)[0] || null,
+                    querySelectorAll: (sel) => queryAll(node, sel),
+                    closest(sel) {
+                        let cur = node;
+                        while (cur) { if (matchSimple(cur, sel)) return cur; cur = cur.parentElement; }
+                        return null;
+                    },
+                    matches: (sel) => sel === ":popover-open" ? !!node._popOpen : matchSimple(node, sel),
+                    showPopover() { node._popOpen = true; },
+                    hidePopover() { node._popOpen = false; },
+                    show() { node.open = true; },
+                    close() { node.open = false; },
+                    focus() {},
+                    scrollIntoView() {},
+                    getBoundingClientRect: () => ({ left: 0, top: 0, width: 320, height: 80, right: 320, bottom: 80 }),
+                    addEventListener(type, fn) {
+                        if (!listeners.has(type)) listeners.set(type, []);
+                        listeners.get(type).push(fn);
+                    },
+                    removeEventListener(type, fn) {
+                        if (listeners.has(type)) listeners.set(type, listeners.get(type).filter((x) => x !== fn));
+                    },
+                    click() {
+                        if (node.tagName === "BUTTON" && node.disabled) return;
+                        for (const fn of (listeners.get("click") || []).slice()) fn({ target: node, stopPropagation() {}, preventDefault() {} });
+                    },
+                    forceClick() {
+                        for (const fn of (listeners.get("click") || []).slice()) fn({ target: node, stopPropagation() {}, preventDefault() {} });
+                    },
+                };
+                return node;
+            };
+            const setConn = (n, on) => {
+                n.isConnected = on;
+                if (n.shadowRoot) setConn(n.shadowRoot, on);
+                for (const c of n.childNodes || []) setConn(c, on);
+            };
+            const prevDoc = global.document;
+            const prevCSS = global.CSSStyleSheet;
+            const prevRO = global.ResizeObserver;
+            const prevMO = global.MutationObserver;
+            const prevGCS = global.getComputedStyle;
+            const dialog = makeNode("dialog", true);
+            dialog.id = "assistant";
+            const barBtn = makeNode("button", true);
+            barBtn.id = "shell-assistant";
+            let onPanelEvent = null;
+            const answered = [];
+            let stops = 0;
+            let resets = 0;
+            global.CSSStyleSheet = class { replaceSync() {} };
+            global.ResizeObserver = class { observe() {} disconnect() {} };
+            global.MutationObserver = class { observe() {} disconnect() {} };
+            global.getComputedStyle = () => ({ opacity: "1" });
+            global.document = {
+                visibilityState: "hidden",
+                activeElement: null,
+                body: makeNode("body", true),
+                head: makeNode("head", true),
+                addEventListener: () => {},
+                removeEventListener: () => {},
+                contains: () => true,
+                createElement: (tag) => makeNode(tag, false),
+                createTextNode: (t) => ({ nodeType: 3, _text: String(t || ""), get textContent() { return this._text; }, appendData(s) { this._text += s; } }),
+                createDocumentFragment: () => {
+                    const frag = { isFragment: true, childNodes: [], appendChild(c) { frag.childNodes.push(c); return c; } };
+                    return frag;
+                },
+                getElementById: (id) => (id === "assistant" ? dialog : id === "shell-assistant" ? barBtn : null),
+            };
+            global.window.scumble = {
+                ...(global.window.scumble || {}),
+                assistant: {
+                    onEvent: (cb) => { onPanelEvent = cb; return () => {}; },
+                    state: async () => ({ provider: "gemini", model: "gemini-3.8-flash", built: true, vision: true, busy: false, events: [], pending: null }),
+                    models: async () => ({ current: "gemini:gemini-3.8-flash", groups: [] }),
+                    answer: async (token, allow) => { answered.push([token, allow]); return true; },
+                    stop: async () => { stops++; return true; },
+                    reset: async () => { resets++; return {}; },
+                },
+            };
+            try {
+                const panel = await import(pathToFileURL(path.join(ROOT, "renderer", "assistant.js")).href);
+                panel.initAssistant();
+                const partsOf = (c) => c.shadowRoot || c;
+                const stateOf = (c) => (partsOf(c).querySelector(".as-card-state") || {}).textContent;
+                const buttonsOf = (c) => partsOf(c).querySelectorAll("button");
+                const disabledAll = (c) => { const bs = buttonsOf(c); return bs.length === 2 && bs.every((b) => b.disabled); };
+
+                // 1. turn:done disables an unanswered card, sets "not answered", and unpins its popover
+                onPanelEvent({ type: "turn:start" });
+                onPanelEvent({ type: "ask", token: "t1:1", call: "t1:1", name: "close_document", args: {}, reason: "closes the tab" });
+                const card1 = dialog.querySelectorAll(".as-card.as-ask")[0];
+                const openBeforeDone = stateOf(card1) === "waiting for you" && buttonsOf(card1).every((b) => !b.disabled) && panel.assistantActivity().asking === true;
+                onPanelEvent({ type: "turn:done", reason: "error", detail: "network" });
+                const closedOnDone = disabledAll(card1) && stateOf(card1) === "not answered" && !card1.hasAttribute("popover") && panel.assistantActivity().asking === false;
+
+                // 2. Stop immediately disables an unanswered card before turn:done arrives, and a forced stale click cannot answer a newer ask
+                onPanelEvent({ type: "turn:start" });
+                onPanelEvent({ type: "ask", token: "t2:1", call: "t2:1", name: "close_document", args: {}, reason: "closes the tab" });
+                const card2 = dialog.querySelectorAll(".as-card.as-ask")[1];
+                const sendBtn = dialog.querySelector(".as-foot button");
+                sendBtn.click(); // Stop
+                const closedOnStop = stops === 1 && disabledAll(card2) && stateOf(card2) === "not answered" && !card2.hasAttribute("popover") && panel.assistantActivity().asking === false;
+                onPanelEvent({ type: "turn:done", reason: "stopped" });
+
+                onPanelEvent({ type: "turn:start" });
+                onPanelEvent({ type: "ask", token: "t3:1", call: "t3:1", name: "generate", args: { each_area: true }, reason: "paid runs" });
+                const card3 = dialog.querySelectorAll(".as-card.as-ask")[2];
+                buttonsOf(card2)[0].click();      // ignored: button is disabled
+                buttonsOf(card2)[0].forceClick(); // ignored by answer(): openAsk is t3:1, not t2:1
+                const staleSentNothing = answered.length === 0 && stateOf(card3) === "waiting for you" && panel.assistantActivity().asking === true;
+
+                // 3. An answered card keeps "allowed" while a later unanswered card becomes "not answered" on New chat and resetAssistant
+                buttonsOf(card3)[0].click();      // Allow t3:1
+                onPanelEvent({ type: "ask", token: "t3:2", call: "t3:2", name: "close_document", args: {}, reason: "closes the tab" });
+                const card4 = dialog.querySelectorAll(".as-card.as-ask")[3];
+                const newChatBtn = dialog.querySelectorAll(".as-head button").find((b) => b.textContent === "New chat");
+                newChatBtn.click();
+                await new Promise((r) => setTimeout(r, 10));
+                const keptAllowedAndClosedNew = answered.length === 1 && eq(answered[0], ["t3:1", true])
+                    && stateOf(card3) === "allowed" && disabledAll(card4) && stateOf(card4) === "not answered" && resets === 1;
+
+                onPanelEvent({ type: "turn:start" });
+                onPanelEvent({ type: "ask", token: "t4:1", call: "t4:1", name: "close_document", args: {}, reason: "closes the tab" });
+                const card5 = dialog.querySelectorAll(".as-card.as-ask")[0];
+                panel.resetAssistant();
+                const closedOnReset = disabledAll(card5) && stateOf(card5) === "not answered" && !card5.hasAttribute("popover") && panel.assistantActivity().asking === false;
+
+                check("panel_disables_unanswered_ask_cards_on_done_stop_and_reset",
+                    openBeforeDone && closedOnDone && closedOnStop && staleSentNothing && keptAllowedAndClosedNew && closedOnReset,
+                    JSON.stringify({ openBeforeDone, closedOnDone, closedOnStop, staleSentNothing, keptAllowedAndClosedNew, closedOnReset }));
+            } finally {
+                global.document = prevDoc;
+                global.CSSStyleSheet = prevCSS;
+                global.ResizeObserver = prevRO;
+                global.MutationObserver = prevMO;
+                global.getComputedStyle = prevGCS;
+            }
         }
     });
 

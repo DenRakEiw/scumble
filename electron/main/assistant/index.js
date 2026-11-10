@@ -52,6 +52,7 @@ class Assistant {
         this.turn = null;
         this.turnDone = null;       // the running turn's promise (reset waits for it)
         this.turnSeq = 0;
+        this.askSeq = 0;
         this.pending = null;        // the ask a turn is waiting on
         this.client = null;
         this.server = null;
@@ -274,8 +275,8 @@ class Assistant {
     }
 
     /** The user's answer to an ask card. */
-    answer(callId, allow) {
-        if (!this.pending || this.pending.callId !== callId) return false;
+    answer(token, allow) {
+        if (!this.pending || typeof token !== "string" || !token || this.pending.token !== token) return false;
         const p = this.pending;
         this.pending = null;
         p.resolve(!!allow);
@@ -337,6 +338,7 @@ class Assistant {
 
         const turn = {
             id: `t${Date.now().toString(36)}${(++this.turnSeq).toString(36)}`,
+            askSeq: 0,
             abort: new AbortController(),
             stopped: false,
             steps: 0,
@@ -747,7 +749,7 @@ class Assistant {
             return errorResult(`refused by Scumble: ${decision.reason}`);
         }
         if (decision.action === "ask") {
-            const allowed = await this.ask(call, canonical, decision);
+            const allowed = await this.ask(call, canonical, decision, turn);
             if (!allowed) {
                 this.lastWasDecline = true;
                 return errorResult("the user declined; do not reach the same effect another way");
@@ -895,10 +897,12 @@ class Assistant {
     }
 
     /** Show the ask card and wait for the user (Stop counts as a decline). */
-    ask(call, canonical, decision) {
+    ask(call, canonical, decision, turn = this.turn) {
         return new Promise((resolve) => {
-            const card = { call: call.id, name: canonical.name, args: canonical.args, reason: decision.reason, card: decision.card };
-            this.pending = { callId: call.id, resolve, card };   // `card` is what a reloaded panel shows again
+            const seq = turn ? ++turn.askSeq : ++this.askSeq;
+            const token = `${(turn && turn.id) || "t0"}:${seq}`;
+            const card = { call: token, token, callId: call.id, name: canonical.name, args: canonical.args, reason: decision.reason, card: decision.card };
+            this.pending = { token, callId: call.id, resolve, card };   // `card` is what a reloaded panel shows again
             this.emit("ask", card);
         });
     }
@@ -982,8 +986,8 @@ function idsNamedBy(name, result) {
     const add = (v) => { if (typeof v === "string" && v) out.push(v); };
     if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "duplicate_layer", "film_apply_look", "copy_to_layer"].includes(name)) add(result.id);
     if (name === "generate" || name === "upscale" || name === "realism_pass" || name === "glb_place" || name === "relight") { add(result.layer && result.layer.id); add(result.depthLayer && result.depthLayer.id); }
-    // generate each_area (item 54): every area's result layer
-    if (name === "generate" && Array.isArray(result.layers)) for (const l of result.layers) add(l && l.id);
+    // generate each_area (item 54): every area's result layer; split_layers: every new layer
+    if ((name === "generate" || name === "split_layers") && Array.isArray(result.layers)) for (const l of result.layers) add(l && l.id);
     if (name === "film_add_point" || name === "film_paste_points") add(result.layer);
     // key_screen: the Key layer (a layer summary) and the grey Fill layer under it (its id), when they landed
     if (name === "key_screen") { add(result.layer && result.layer.id); add(result.grey); }

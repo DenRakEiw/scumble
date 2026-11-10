@@ -295,6 +295,22 @@ the Cloud copy writes it into the copy's variant (`detach`), and `tools/cloud_re
   Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no
   licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0. The same template on Comfy Cloud
   is `cloud_moss_image_edit` (one picture; "Comfy Cloud recipes" below).
+- `fibo2_edit_turbo_local`, **Fibo 2.0 Edit Turbo** (edit only; **not run**: built from Comfy's template
+  `image_fibo2_edit_turbo_pe` and ComfyUI 0.44.0's `/object_info`, checked against the node specs by
+  `tools/recipes_test.js` §18). Core nodes: `UNETLoader` (`fibo2_edit_turbo_int8_convrot`), `CLIPLoader`
+  (`qwen3vl_4b_bf16`, type `fibo2`), `VAELoader` (`flux2-vae`), `TextEncodeFibo2` (`images.image_1..4` = the crop batch's
+  pictures 0..3 straight from `ImageFromBatch`, named `<image_1>` .. `<image_4>`; its three outputs positive, negative
+  and latent into `KSampler`, 4 steps, CFG 1, euler / simple, the canvas's seed), `VAEDecode`. **Size:** `width` and
+  `height` stay 0 as in the template, so the node takes Fibo 2.0's trained size for the crop's aspect (multiples of 16
+  within 10 % of 1 MP); there is no Megapixels row. A single picture is centre-cropped to that size, at most 0.2 % of
+  the frame for crops on the default 64 grid at 1024 (computed from the node's `trained_size`); several pictures each go
+  to their own trained size. `negative_prompt` is empty, the null caption the model was trained with, and there is no
+  negative row: it has no effect at CFG 1. **Prompt Enhancer** (`upsampler`, the rows *Prompt Enhancer* and *Enhancer
+  model*, on by default): the template's `TextGenerate` on `qwen3vl_8b_int8_convrot` with its system prompt word for word
+  and its sampling values, the whole crop batch through `BatchImagesNode`, `request: { "edit": "{text}" }` (the prompt
+  as written, as the template sends it). Off, or without its file, the prompt goes straight to the encoder and the
+  enhancer's nodes are not queued. No Generate new route: this checkpoint only edits, text to image is Fibo 2.0 Dev.
+  **Licence:** Bria's weights are CC BY-NC 4.0, non-commercial; commercial use needs an agreement with Bria.
 - `p_h3_image_local`, **P-H3-Image** (0.1.52, `docs/PLAN_PH3.md`): Pruna AI's 8-step image fine-tune of MiniMax H3
   (published 2026-11-03), on ComfyUI 0.44 or newer, which runs it on its own nodes (PR Comfy-Org/ComfyUI#17506). The
   graph is Comfy's templates' LoRA route: `UNETLoader` (`minimax_h3_fl2va_pruned_int8_convrot`, MiniMax H3's FL2VA
@@ -1315,7 +1331,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   | FLUX 3 Image | BFL, OpenRouter, Comfy Router, Oxen.ai; fal (`edit-image`), WaveSpeed (`image-edit`) | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
-  | GPT Image 2.6 Flare, Sunburst | OpenAI, ToAPIs (Sunburst), Replicate, OpenRouter; fal and WaveSpeed (`/edit`) | - |
+  | GPT Image 2.6 Flare, Sunburst | OpenAI, ToAPIs (Sunburst), Replicate, OpenRouter, Oxen.ai; fal and WaveSpeed (`/edit`) | - |
   | Nano Banana 2.1 | Gemini, ToAPIs, OpenRouter, Comfy Router, Replicate; fal and WaveSpeed (`/edit`) | - |
   | P-H3-Image | WaveSpeed (`/edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
@@ -2541,7 +2557,8 @@ model on the Model activation page, and then find its Model ID". A model that is
    - `seed`: the reference does not name it. The SDK's generated request type has it, which proves nothing for
      Seedream.
    - `n`: there is no such field.
-   - `sequential_image_generation`, `stream`, `optimize_prompt_options` and `layer_decomposition`.
+   - `sequential_image_generation`, `stream` and `optimize_prompt_options`; `layer_decomposition` goes only on *Split into
+     layers* ("Split into layers" below).
      `optimize_prompt_options` is an object whose `mode` defaults to `standard` (the reference: "standard mode,
      which provides higher-quality output but takes longer"); `fast` is the other mode, which 5.0 lite, 5.0 flash and
      4.5 do not take and 5.5 does not either (its preview docs). No mode turns the optimisation off, so a row would
@@ -2815,8 +2832,8 @@ takes from them:
   `background` reach it (`list_recipes` says `background: true`);
 - `optimize_prompt_options` `{ mode: "standard" }` (`fast` is not taken by 5.5); not sent, since standard is the
   default and there is no off (see "Not sent" above);
-- `layer_decomposition` (new in 5.5, up to 100 layers, `layer_decomposition_options: { max_images,
-  text_recognition }`): **not part of this recipe**; a feature of its own.
+- `layer_decomposition` (up to 100 layers on 5.5, `layer_decomposition_options: { max_images, text_recognition }`): a
+  feature of its own, "Split into layers" below.
 
 **What a transparent answer does.** The run reads `background: "transparent"` from the row before the crop is made
 and sets `info.keepAlpha` (see "Transparent results" above). In `finishPixels` (`renderer/editor/stitch.js`) the
@@ -2834,6 +2851,56 @@ a code. Such a message reads "the model is not activated: activate it under Mode
 console (this model is in early access: BytePlus has to let the account in first, then activate it under Model
 activation in the ModelArk console) - ModelNotOpen: ...". The 5.0 variants never get that sentence.
 
+**Split into layers.** `split_layers`, *Image › Split into Layers...*: the visible picture or one layer's pixels go as
+the single input of a `POST /api/v3/images/generations` with `layer_decomposition: true`, and the answer lands as new
+layers above every existing layer. `recipes/seedream_5_5.json` and `seedream_5_pro.json` declare it in the ark variant's
+`options.layers`: `{ max: 100, options: true }` and `{ max: 16 }`. Adapter `ark.js` `layers` (kind `"layers"`), landing
+`renderer/editor/splitlayers.js`. Never run against the live API.
+
+From the 5.0 pro schema (`tools/refs/comfyrouter/byteplus_seedream-5-0-pro-260628.json`):
+
+- `image` exactly one, png / jpeg / webp / bmp / tiff / gif, up to 30 MB, total pixels from 512x512 to 6000x6000, aspect
+  1/16 to 16; several pictures are an error. Scumble sends it as one PNG data URL, or a JPEG when an opaque picture is
+  over 30 MB (the edit's rule). A picture out of range is refused before anything is read.
+- `prompt` optional: with one the model separates what it asks for, without one it finds the major elements. Sent as
+  typed, no edit sentence.
+- `size` a tier only: `1K`, `1.5K`, `2K` or `auto`. Auto: an input inside 1280x720..2048x2048 comes back at its own size,
+  a smaller one at 1K, a larger one at 2K. The base has the input's aspect; each layer's picture is "close to the
+  specified resolution", keeping its own aspect, so its PNG is not its box's size.
+- The answer: `data[0]` the base (`z_index` 0, no `bounding_box`), then the layers by `z_index`, each with
+  `bounding_box.absolute` `[left, top, right, bottom]` in the base's pixels and `normalized` on 0..1000, `name`,
+  `description`. `output_format` is the base's; a layer is always PNG. If one layer fails, the whole request fails.
+- `sequential_image_generation`, its options, `tools` and `stream` are an error with it, and are not sent.
+
+**Only in BytePlus's preview docs for 5.5** (as the user passed them on 2026-11-08; not on a public page): the model id, up
+to 100 layers, and `layer_decomposition_options: { max_images, text_recognition }`. Taken as read, and unverified: that
+`max_images` counts the layers and not the base, its default, what `text_recognition` does by default (Scumble always
+sends it, off unless asked), and that `auto` is a tier on 5.5 as it is on 5.0 pro. The 5.0 pro schema has no such options:
+the variant sends none, a count other than 16 and Text recognition are refused there. **Everything else about 5.5's split is
+assumed from the 5.0 pro schema**: the input limits and the 512 x 512 refusal, the tiers, the output of at most about 2K,
+and the answer's whole shape (base first, no box on the base, boxes in the base's pixels, `z_index`, `name`).
+
+Up to a count of 32 the answer is asked for as `b64_json`; above it as `url`: 100 PNGs inlined would pass what one JSON
+string may hold in V8 (about 512 MB). Each link is fetched in turn. The job is charged by then, so a failed link does not
+lose the answer: the base gets five tries with growing waits (it is the frame every box is in; without it nothing lands),
+a layer three, and a layer that stays away is left out and named in the status line and `left_out`, its URL in the log. A
+Cancel during the downloads says the job finished and is charged. The POST carries its own limits for undici
+(`headersTimeout` and `bodyTimeout` at the run's deadline, 30 s more), or Node's default 300 s would end a request of up to
+101 pictures first. The base is the row without a box, else the row of `z_index` 0, else `data[0]`, so a 5.5 answer of
+another shape is not thrown away after it is paid for. Main keeps the pictures and the window
+takes them one at a time over `provider:layerPart`: one IPC message of dozens of 2K pictures ends the renderer.
+
+The landing: bottom to top by `z_index`, the base lowest, in one new group named after the source (the layer's name, or
+the document's), one `layers` undo step, each layer's name from `name` (one line, 60 characters, numbered when it
+repeats a name in the document), its `description` in the log entry and the command's answer. A box is scaled to the
+document; its edges are rounded so that two boxes that meet still meet; a box that is no box falls back to `normalized`,
+and a layer with neither is left out and named in the status line. A box that passes the base's edge stays whole and the
+layer overhangs the picture (clamping would squeeze it); one that misses the base is left out. Each layer is baked to its size in the document, so it
+is unscaled on whole pixels as the retouch tools need, and is stored in the file mirror as a result is, so a saved
+document holds it. Where the answer is smaller than the source (the output is at most about 2K), the status line says the
+layers are lower resolution than the picture, in red. Everything that can fail comes before the undo step: a failed run or
+a picture that does not decode leaves the document as it was.
+
 **Only a real key can verify** (written defensively, and listed here until a live run):
 
 - that a new account can activate the two models and call them by model id. Some accounts must use an endpoint id
@@ -2848,6 +2915,8 @@ activation in the ModelArk console) - ModelNotOpen: ...". The 5.0 variants never
   network error and is not sent again;
 - whether the "real person" refusal (`InputImageSensitiveContentDetected.PrivacyInformation`, "the input image may
   contain real person") hits ordinary photographs, which would rule out retouching portraits here;
+- for *Split into layers*, on either model: that the base comes without a box, that `absolute` is in the base PNG's
+  pixels, what the tiers mean as sizes, how large a layer's PNG is against its box, and how long a large split takes;
 - the free quota for images, which the docs do not give;
 - whether the 30 MB counts the decoded bytes or the base64 text, and the limit for the whole request body;
 - whether Seedream is a "Restricted Model" in the user's country;

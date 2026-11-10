@@ -214,23 +214,23 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
 
     // ---- 2. golden bodies ----------------------------------------------------------------------------------------
     {
-        // refs.instruction numbered by Oxen's layout: a mask that goes as mask_url is no picture (gpt_image_2 is EDIT)
+        // refs.instruction numbered by Oxen's layout: a mask that goes as mask is no picture (gpt_image_2 is EDIT)
         const FILL = "Edit image 1. Image 2 is a mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and framing. a red door";
         const EDIT = "Edit image 1 and keep its size and framing. a red door";
         const g = [];
         const want = (name, body, exp) => { if (!eq(norm(body), exp)) g.push(`${name}: ${short(norm(body))}`); };
         want("gpt_image_2 fill", await bodyOf(editReq(V("gpt_image_2"))),
-            { model: "gpt-image-2", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], mask_url: "<png MASK>", quality: "high", output_format: "png", resolution: "1K", aspect_ratio: "auto" });
+            { model: "gpt-image-2", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], mask: "<png MASK>", quality: "high", output_format: "png", resolution: "1K", aspect_ratio: "auto" });
         want("flare fill transparent", await bodyOf(editReq(V("gpt_image_2_5_flare"), { params: { ...paramsOf(V("gpt_image_2_5_flare").settings, V("gpt_image_2_5_flare").fixed), background: "transparent", moderation: "auto" }, width: 1536, height: 1024 })),
-            { model: "gpt-image-2-5-flare", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], mask_url: "<png ALPHA>", quality: "high", background: "transparent", moderation: "auto", output_format: "png", resolution: "2K", aspect_ratio: "auto" });
+            { model: "gpt-image-2-5-flare", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], mask: "<png ALPHA>", quality: "high", background: "transparent", moderation: "auto", output_format: "png", resolution: "2K", aspect_ratio: "auto" });
         want("nano_banana_2 fill", await bodyOf(editReq(V("nano_banana_2"))),
             { model: "nano-banana-2", prompt: FILL, response_format: "b64_json", input_image: ["<png CROP>", "<png MASK>"], thinking_level: "minimal", resolution: "1K", aspect_ratio: "auto" });
         want("seedream_5_pro edit", await bodyOf(editReq(V("seedream_5_pro"), { width: 1600, height: 900 })),
             { model: "bytedance-seedream-5-pro", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], watermark: false, output_format: "png", size: "2K", aspect_ratio: "16:9" });
         want("qwen_image_edit alone", await bodyOf(editReq(V("qwen_image_edit"), { negative: "blur" })),
-            { model: "qwen-image-3", prompt: EDIT, response_format: "b64_json", input_images: ["<png CROP>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "auto", seed: 1234, negative_prompt: "blur" });
+            { model: "qwen-image-3", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "auto", seed: 1234, negative_prompt: "blur" });
         want("qwen_image_edit with a reference", await bodyOf(editReq(V("qwen_image_edit"), { references: [pngOf(512, 512, 70, "REF")] })),
-            { model: "qwen-image-3", prompt: EDIT + " Image 2 is a reference image.", response_format: "b64_json", input_images: ["<png CROP>", "<png REF>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "4:3", seed: 1234 });
+            { model: "qwen-image-3", prompt: EDIT + " Image 2 is a reference image.", response_format: "b64_json", input_image: ["<png CROP>", "<png REF>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "4:3", seed: 1234 });
         want("grok edit", await bodyOf(editReq(V("grok_imagine"))),
             { model: "xai-grok-imagine-image-edit", prompt: EDIT, response_format: "b64_json", input_image: "<png CROP>", output_format: "png" });
         want("grok text", await bodyOf(textReq(V("grok_imagine"), { aspect: "16:9", width: 1920, height: 1080 })),
@@ -254,10 +254,10 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
         const bloom = await bodyOf({ ...upReq(V("topaz_creative"), { prompt: long, params: { creativity: "7", autoprompt: false } }), log: (m) => bloomLogs.push(m) });
         want("bloom", bloom, { model: "topazlabs-bloom-2-image", response_format: "b64_json", input_image: "<png UP>", creativity: 7, autoprompt: false, prompt: "x".repeat(1024) });
         want("qwen_image_2_1 edit", await bodyOf(editReq(V("qwen_image_2_1"))),
-            { model: "qwen-image-2-1", prompt: EDIT, response_format: "b64_json", input_images: ["<png CROP>"], output_format: "png", resolution: "1K", aspect_ratio: "4:3" });
+            { model: "qwen-image-2-1", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], output_format: "png", resolution: "1K", aspect_ratio: "4:3" });
         check("golden_bodies_of_every_dialect", !g.length, g.join(" | ") || "17 bodies");
         const orig = await bodyOf(editReq(V("gpt_image_2"), { references: [pngOf(1024, 768, 80, "ORIG")], original: 1 }));
-        check("an_Original_on_a_mask_url_fill_is_image_2_the_mask_no_picture", orig.prompt === EDIT + " Image 2 is image 1 before the selected area was filled.", orig.prompt);
+        check("an_Original_on_a_mask_fill_is_image_2_the_mask_no_picture", orig.prompt === EDIT + " Image 2 is image 1 before the selected area was filled.", orig.prompt);
         check("a_cut_prompt_is_logged", bloomLogs.some((m) => /cut to the model's 1024/.test(m)), short(bloomLogs));
     }
 
@@ -336,7 +336,7 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
         const none = await throws(() => oxen.edit(editReq(V("gpt_image_2_5_flare"), { maskAlpha: null }), ctxFor(s)));
         check("a_missing_alpha_mask_is_an_error_before_sending", /the run has no mask/.test(none) && s.calls.length === 0, none);
         const ed = await bodyOf(editReq(V("seedream_5_pro")));
-        check("an_edit_sends_no_mask_field_and_no_mask_picture", !("mask_url" in ed) && ed.input_image.length === 1, short(norm(ed)));
+        check("an_edit_sends_no_mask_field_and_no_mask_picture", !("mask" in ed) && ed.input_image.length === 1, short(norm(ed)));
     }
 
     // ---- 5. tiers and aspects --------------------------------------------------------------------------------------
@@ -467,7 +467,7 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
         const two = (v) => oxen.textLayout(refsReq(v, 2));
         check("textLayout_the_references_alone_from_the_first_place_under_the_edit_cap",
             pic(two(V("flux2_pro"))) === "reference 0 input_image[0] 1, reference 1 input_image[1] 2" && two(V("flux2_pro")).max === 8 && !two(V("flux2_pro")).drops
-            && pic(two(V("qwen_image_edit"))) === "reference 0 input_images[0] 1, reference 1 input_images[1] 2" && two(V("qwen_image_edit")).max === 3
+            && pic(two(V("qwen_image_edit"))) === "reference 0 input_image[0] 1, reference 1 input_image[1] 2" && two(V("qwen_image_edit")).max === 3
             && two(V("flux2_klein")).max === 16 && two(V("nano_banana_2")).max === 14 && two(V("gpt_image_2")).max === 16
             && pic(oxen.textLayout(refsReq(V("grok_imagine"), 1))) === "reference 0 input_image 1" && oxen.textLayout(refsReq(V("grok_imagine"), 1)).max === 1,
             [pic(two(V("flux2_pro"))), pic(two(V("qwen_image_edit"))), pic(oxen.textLayout(refsReq(V("grok_imagine"), 1)))].join(" | "));
@@ -482,7 +482,7 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
             && eq(out.info.pictures, ["reference 1 png", "reference 2 png"]) && out.info.mask === null,
             short({ url: s.posts[0] && s.posts[0].url, body: norm(b), info: out.info }));
 
-        // GPT Image 2 (a fill variant, mask as mask_url, edit aspect "auto") and Nano Banana 2 (the mask as a picture on a fill)
+        // GPT Image 2 (a fill variant, mask as mask, edit aspect "auto") and Nano Banana 2 (the mask as a picture on a fill)
         const g = await bodyOf(refsReq(V("gpt_image_2"), 2, { aspect: "3:2", width: 1536, height: 1024 }));
         const nb = await bodyOf(refsReq(V("nano_banana_2"), 2, { aspect: "9:16", width: 1152, height: 2048 }));
         check("no_mask_no_crop_no_edit_sentence_and_never_auto_on_a_fill_variant",
@@ -500,7 +500,7 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
 
         // the recipe's own name pattern (Qwen Image 2.1: "<image{n}>") in the sentence
         const q = await bodyOf(refsReq(V("qwen_image_2_1"), 3, { refName: "<image{n}>" }));
-        check("the_sentence_uses_the_recipes_name_pattern", q.prompt === "a lighthouse <image1>, <image2> and <image3> are reference images." && q.input_images.length === 3, q.prompt);
+        check("the_sentence_uses_the_recipes_name_pattern", q.prompt === "a lighthouse <image1>, <image2> and <image3> are reference images." && q.input_image.length === 3, q.prompt);
 
         // the count and size refusals name the references alone, before any call
         const r = fakeServer();
@@ -559,12 +559,12 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
 
     // ---- 10. the recipes ---------------------------------------------------------------------------------------------
     {
-        const WANT = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4", "krea_2", "krea_3", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_2_1", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro", "topaz_creative", "topaz_generative", "topaz_precision", "z_image_turbo"];
+        const WANT = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "gpt_image_2_6_flare", "gpt_image_2_6_sunburst", "grok_imagine", "ideogram_4", "krea_2", "krea_3", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_2_1", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro", "topaz_creative", "topaz_generative", "topaz_precision", "z_image_turbo"];
         const served = list.filter((r) => r.providers && r.providers.oxen);
-        check("twenty_two_recipes_carry_an_oxen_variant", eq(served.map((r) => r.id).sort(), WANT), served.map((r) => r.id).join(","));
+        check("the_recipes_that_carry_an_oxen_variant", eq(served.map((r) => r.id).sort(), WANT), served.map((r) => r.id).join(","));
         const bad = [];
         // FLUX 3 Image came later (B5, 2026-10-03), Krea 3 on 2026-11-09
-        const OPEN = /^Runs on Oxen\.ai \(one key for many models\); not run against the live API yet \(written from Oxen's docs and model list, (2026-09-26|2026-10-03|2026-11-09)\)\./;
+        const OPEN = /^Runs on Oxen\.ai \(one key for many models\); not run against the live API yet \(written from Oxen's docs and model list, (2026-09-26|2026-10-03|2026-11-09|2026-11-10)\)\./;
         const PRIV = /The pictures go inline \(data URLs, which Oxen's docs allow but do not recommend for production\) in the request to Oxen\.ai/;
         for (const r of served) {
             const v = r.providers.oxen;

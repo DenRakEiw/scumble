@@ -88,6 +88,7 @@ const EXPECT = {
     "flux2_klein_local/prompt": ["unet", ["guider.model"]],
     "flux3_klein_local/prompt": ["unet", ["guider.model", "sched.model"]],
     "moss_image_local/prompt": ["unet", ["slg.model"]],
+    "fibo2_edit_turbo_local/prompt": ["unet", ["ks.model"]],
     // P-H3-Image (docs/PLAN_PH3.md): the declared source is the recipe's own P-H3-Image LoRA, so the rows stack after it
     "p_h3_image_local/prompt": ["lora", ["shift.model"]],
     // MOSS-Image Edit (LR6): the declared source is the recipe's edit LoRA, so the rows stack after it, before the SLG
@@ -507,6 +508,7 @@ async function main() {
             "cloud_qwen_image_2_1_edit/comfycloud": "qwen_image_2_1", "cloud_qwen_image_2_1_edit/comfycloud.text": "qwen_image_2_1",
             "cloud_qwen_image_edit_2509/comfycloud": "qwen_image", "cloud_z_image_turbo/comfycloud": "z_image", "relight/comfycloud": "qwen_image",
             "p_h3_image_local/prompt": "p_h3_image", "cloud_p_h3_image/comfycloud": "p_h3_image", "cloud_p_h3_image/comfycloud.text": "p_h3_image",
+            "fibo2_edit_turbo_local/prompt": null,
             "cloud_moss_image_edit/comfycloud": "moss_image", "cloud_moss_image_edit/comfycloud.text": "moss_image",
         };
         const rf = {};

@@ -2,9 +2,10 @@
 // more ends the window's renderer (oom; a save of 500 MB went through and one of 600 MB ended it, measured 2026-10-24,
 // docs/BUGS.md), so the window sends an export in pieces (host.js saveExport) and this module appends them to a
 // temporary file beside the target and renames it over the target at the end, as a .scumble save does (docfile.js):
-// a failure, a cancel or a page that goes away deletes the temporary file and leaves the target as it was; one a
-// killed app left behind is in the temp list (<userData>/document-temps.json), which the next start sweeps. Plain
-// Node, no electron import: main.js passes in the dialog that picks a target.
+// a failure, a cancel or a page that goes away deletes the temporary file and leaves the target as it was, except when
+// an in-place copy fails after starting (then the fsynced temporary file is unregistered, kept for the user and named
+// in the error); one a killed app left behind stays in the temp list (<userData>/document-temps.json), which the next
+// start sweeps. Plain Node, no electron import: main.js passes in the dialog that picks a target.
 "use strict";
 
 const fsp = require("node:fs/promises");
@@ -57,8 +58,11 @@ class FileSaves {
         if (st && st.isDirectory()) throw failure(`${file} is a folder`, "EISDIR");
         // a read-only file would refuse only the rename at the end, after every byte was written
         if (st && !(st.mode & 0o200)) throw failure(`${path.basename(file)} is read-only`, "EPERM");
+        // a file with other names (a hard link) is written in place at the end, so both the temp and the grown target fit
+        const inPlace = !!(st && st.nlink > 1);
+        const need = inPlace ? Math.max(size, 2 * size - st.size) : size;
         const free = await docfile.freeSpace(path.dirname(real));
-        if (free < size + 1048576) throw failure(`the file needs ${docfile.fmtBytes(size)} and its drive has ${docfile.fmtBytes(free)} free`, "ENOSPC");
+        if (free < need + 1048576) throw failure(`the file needs ${docfile.fmtBytes(need)} and its drive has ${docfile.fmtBytes(free)} free`, "ENOSPC");
         const temp = docfile.tempFor(real);
         docfile.registerTemp(this.registry, temp);
         let fh;
@@ -71,7 +75,7 @@ class FileSaves {
         }
         const id = ++this.seq;
         // a file with other names (a hard link) is written in place at the end, so every name holds the new bytes
-        const s = { id, owner, target: real, shown: file, temp, fh, size, pos: 0, chain: Promise.resolve(), dead: false, inPlace: !!(st && st.nlink > 1) };
+        const s = { id, owner, target: real, shown: file, temp, fh, size, pos: 0, chain: Promise.resolve(), dead: false, keepTemp: false, inPlace };
         this.saves.set(id, s);
         // dropped while this waited (the dialog, the checks, the open): abortAll found nothing to drop then
         if (this.genOf(owner) !== gen) { await this.drop(s); throw failure("the window reloaded during the save"); }
@@ -117,10 +121,36 @@ class FileSaves {
                 }
             }
             if (!renamed) {
+                const statTarget = async () => {
+                    try { return await fsp.stat(s.target, { bigint: true }); } catch (e) { return e && e.code === "ENOENT" ? null : undefined; }
+                };
+                const keepAndFail = (msg, code) => {
+                    s.keepTemp = true;
+                    s.dead = true;
+                    this.saves.delete(s.id);
+                    // once named to the user, the temp belongs to the user and must survive the next start's sweep
+                    try { docfile.unregisterTemp(this.registry, s.temp); } catch (_) { /* kept for the user */ }
+                    throw failure(`${msg}; the new file is kept at ${s.temp}`, code);
+                };
+                const before = await statTarget();
+                const oldSize = before ? Number(before.size) : 0;
+                const free = await docfile.freeSpace(path.dirname(s.target));
+                if (free < s.size - oldSize + 1048576) {
+                    keepAndFail(`the file needs ${docfile.fmtBytes(Math.max(1, s.size - oldSize))} and its drive has ${docfile.fmtBytes(free)} free`, "ENOSPC");
+                }
                 try {
                     await (this.ops.copyFile || fsp.copyFile)(s.temp, s.target);
                 } catch (err) {
-                    throw docfile.BUSY.has(err.code) ? failure(`${path.basename(s.shown)} is in use by another program, or its folder does not allow replacing it`, err.code) : err;
+                    const after = await statTarget();
+                    const untouched = before !== undefined && after !== undefined && (
+                        (!before && !after) ||
+                        (!!before && !!after && before.size === after.size && before.mtimeNs === after.mtimeNs && before.ctimeNs === after.ctimeNs)
+                    );
+                    if (untouched && docfile.BUSY.has(err && err.code)) {
+                        throw failure(`${path.basename(s.shown)} is in use by another program, or its folder does not allow replacing it`, err.code);
+                    }
+                    // the copy in place may have truncated, zeroed or unlinked the target: keep the fsynced temp and name it
+                    keepAndFail((err && err.message) || String(err), err && err.code);
                 }
             }
             s.dead = true;
@@ -172,6 +202,7 @@ class FileSaves {
         this.saves.delete(s.id);
         await s.chain;   // a write under way ends first
         if (s.fh) { const fh = s.fh; s.fh = null; try { await fh.close(); } catch (_) { /* closed */ } }
+        if (s.keepTemp) return;
         // a temporary file something still holds stays listed: the next start's sweep deletes it
         if (await removeTemp(s.temp)) { try { docfile.unregisterTemp(this.registry, s.temp); } catch (_) { /* the sweep deletes it */ } }
     }

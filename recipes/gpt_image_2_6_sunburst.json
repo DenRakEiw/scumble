@@ -4,7 +4,7 @@
   "name": "GPT Image 2.6 Sunburst",
   "family": "OpenAI",
   "refs": { "name": "Image {n}" },
-  "description": "OpenAI's high-fidelity image model (November 2026) for detail-rich edits that stay consistent over many rounds; slower than Flare. Custom sizes in multiples of 16 up to 3840 px an edge, quality up to max, and a Complexity setting (how much the model plans before it draws). Also on fal.ai. Also on Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Adapters written from the providers' docs (Comfy Cloud's from its partner node's spec), not run against the live API yet.",
+  "description": "OpenAI's high-fidelity image model (November 2026) for detail-rich edits that stay consistent over many rounds; slower than Flare. Custom sizes in multiples of 16 up to 3840 px an edge, quality up to max, and a Complexity setting (how much the model plans before it draws). Also on fal.ai. Also on Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Oxen.ai. Adapters written from the providers' docs (Comfy Cloud's from its partner node's spec), not run against the live API yet.",
   "default": "openai",
   "providers": {
     "toapis": {
@@ -640,6 +640,140 @@
         "refs": {}
       },
       "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to OpenAI. No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. There is no size parameter: the host picks the output size. The answer is asked for as PNG. Complexity goes to OpenAI as a passthrough parameter (provider.options.openai, which OpenRouter's endpoint list allows). Complexity is how much the model plans before it draws: low is faster and cheaper for simple edits, high (the model's default) suits dense scenes and lettering."
+    },
+    "oxen": {
+      "model": "gpt-image-2-6-sunburst",
+      "input": "fill",
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "resolution",
+          "quality",
+          "complexity",
+          "background",
+          "moderation",
+          "output_format"
+        ],
+        "mask": "alpha",
+        "keep_auto": [
+          "moderation"
+        ],
+        "edit_aspect": "auto",
+        "ratios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "21:9",
+          "9:21"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048,
+          "4K": 3840
+        },
+        "max_images": 16
+      },
+      "fixed": {
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "complexity",
+          "label": "Complexity",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "key": "moderation",
+          "label": "Moderation",
+          "spec": [
+            [
+              "low",
+              "auto"
+            ],
+            {
+              "default": "low"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 2048,
+        "step": 16,
+        "pixels": 8294400,
+        "minPixels": 655360
+      },
+      "text": {
+        "sizes": [
+          1024,
+          2048,
+          3840
+        ],
+        "refs": {}
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-11-10). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Inpainting with the selection as mask (mask_url, an RGBA mask whose transparent pixels are repainted; it must match the crop's size). The edit asks for aspect \"auto\" (not verified to keep the crop's shape). An answer of another shape is centre-cropped. Background \"transparent\" gives a cut-out (PNG). Resolution is the answer's tier; on auto the smallest that covers the crop. At most sixteen pictures; at least 655,360 pixels (OpenAI's floor). List price $0.0517 at 2K and high quality ($0.0041 to $0.5203 by quality and resolution, 2026-09-26)."
     }
   },
   "limits": {

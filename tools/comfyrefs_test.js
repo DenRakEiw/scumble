@@ -204,6 +204,30 @@ async function main() {
             C.resolveMarkers("the hat of {@ref:0}", mOne.pictures, mSpec.name).text === "the hat of image 2" && C.resolveMarkers("put {@ref:1} here, keep {@ref:0}", mOrig.pictures, mSpec.name).text === "put image 3 here, keep image 2"
             && mOrig.kept === 2 && mOrig.drops === 1 && mOrig.pictures[1].field === "pos.images.image_1", short({ one: mOne.pictures, orig: mOrig.pictures, kept: mOrig.kept }));
         check("MOSS-Image Edit: the recipe's own graph was not touched", eq(ME.prompt, rawFile("moss_image_edit_local.json").prompt));
+        // Fibo 2.0 Edit Turbo: one TextEncodeFibo2 reading the crop batch directly, 1-based images.image_1..4 numbered by
+        // rank; the enhancer's BatchImagesNode reads the whole batch and does not count (upsampler.nodes)
+        const [FBE, fbWarn] = shipped("fibo2_edit_turbo_local.json");
+        const fbSpec = C.comfyRefSpec(FBE);
+        const fbTrim = range(1, 4).map((k) => ({ node: "encode", input: `images.image_${k}`, batch: k - 1 }));
+        check("Fibo 2.0 Edit Turbo: <image_{n}>, 4 slots, not a guess, the trim images.image_1..4 reading batches 0..3, read without a warning",
+            eq(FBE.refs, { name: "<image_{n}>", slots: 4 }) && fbSpec.name === "<image_{n}>" && fbSpec.slots === 4 && fbSpec.guess === false && eq(fbSpec.trim, fbTrim) && !fbWarn.length, short({ ...fbSpec, trim: fbSpec.trim && fbSpec.trim.length, warned: fbWarn }));
+        const fbSlots = C.comfySlots(FBE.prompt, FBE.canvas);
+        check("Fibo 2.0 Edit Turbo: comfySlots numbers the four inputs by rank (the batch + 1), class TextEncodeFibo2",
+            fbSlots.length === 4 && fbSlots.every((s) => s.cls === "TextEncodeFibo2" && s.node === "encode" && s.num === s.batch + 1 && s.input === `images.image_${s.num}`), short(fbSlots));
+        const fbBare = clone(FBE);
+        delete fbBare.refs;
+        const fbDerived = C.comfyRefSpec(fbBare);
+        check("Fibo 2.0 Edit Turbo without refs: the identity trace derives the same spec from the class", eq(fbDerived, fbSpec), short({ ...fbDerived, trim: fbDerived.trim && fbDerived.trim.length }));
+        const fb1 = clone(FBE.prompt), fb1Removed = C.trimSlots(fb1, fbSpec, 1);
+        const fb2 = clone(FBE.prompt), fb2Removed = C.trimSlots(fb2, fbSpec, 2);
+        check("Fibo 2.0 Edit Turbo: trimSlots leaves out the slots past the batch, never image_1",
+            eq(fb1Removed, [2, 3, 4].map((k) => `encode.images.image_${k}`)) && eq(fb2Removed, [3, 4].map((k) => `encode.images.image_${k}`)) && eq(fb1.encode.inputs["images.image_1"], ["img0", 0]) && eq(fb2.encode.inputs["images.image_2"], ["img1", 0]), short({ fb1Removed, fb2Removed }));
+        const fbOne = C.comfyLayout(fbSpec, { hasSelection: true, fill: "none", withOriginal: false, refine: false, count: 1 });
+        const fbOrig = C.comfyLayout(fbSpec, { hasSelection: true, fill: "green", withOriginal: true, refine: false, count: 3 });
+        check("Fibo 2.0 Edit Turbo: {@ref:0} beside the crop is <image_2>; after the Original (<image_2>) the first reference is <image_3>; three references with the Original keep two (4 slots)",
+            C.resolveMarkers("the hat of {@ref:0}", fbOne.pictures, fbSpec.name).text === "the hat of <image_2>" && C.resolveMarkers("put {@ref:1} here, keep {@ref:0}", fbOrig.pictures, fbSpec.name).text === "put <image_3> here, keep <image_2>"
+            && fbOrig.kept === 2 && fbOrig.drops === 1 && fbOrig.pictures[1].field === "encode.images.image_2", short({ one: fbOne.pictures, orig: fbOrig.pictures, kept: fbOrig.kept }));
+        check("Fibo 2.0 Edit Turbo: the recipe's own graph was not touched", eq(FBE.prompt, rawFile("fibo2_edit_turbo_local.json").prompt));
 
         const before = JSON.stringify(QWEN) + JSON.stringify(KLEIN);
         C.comfyRefSpec(QWEN); C.comfyRefSpec(KLEIN);

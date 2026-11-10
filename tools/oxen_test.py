@@ -11,7 +11,7 @@ base, and any other key never to one.
   selects until the key is stored; the three upsampling rows listed without a key and offered by none;
 - an instruction edit (Seedream 5.0 Pro) sends the crop as a data URL to /api/ai/images/edit, the preset closest to the
   crop, no watermark and no mask, and a result layer lands;
-- a mask run on GPT Image 2.5 Flare sends mask_url, an RGBA PNG of the crop's size, transparent at the selection's
+- a mask run on GPT Image 2.5 Flare sends mask, an RGBA PNG of the crop's size, transparent at the selection's
   centre and opaque in the corner, aspect "auto", PNG and b64_json;
 - Generate new on Nano Banana 2 (16:9 at 1024): /api/ai/images/generate, no picture field, 16:9 and 1K, the base the
   answer's 1024 x 576;
@@ -42,7 +42,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE_TEST = os.path.join(ROOT, "tools", "oxen_test.js")
 KEY = "test-oxen-gate-0123456789"
 REAL_KEY = "oxn_0123456789abcdefghijklmnopqrstuvwxyz"   # 40 characters; the real format is not documented
-RECIPES = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4", "krea_2", "krea_3",
+RECIPES = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "gpt_image_2_6_flare", "gpt_image_2_6_sunburst", "grok_imagine", "ideogram_4", "krea_2", "krea_3",
            "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_2_1", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro",
            "topaz_creative", "topaz_generative", "topaz_precision", "z_image_turbo"]
 CHAT = ["gemini-3-8-flash", "gpt-5-6-luna", "gemma-4-31b-it"]
@@ -322,7 +322,7 @@ async def run_all(c):
             ew, eh = res["emitted"]
             if not pics or any(p["field"] != "input_image" for p in pics) or pics[0]["format"] != "png" or pics[0]["dims"] != [ew, eh]:
                 raise Exception("the pictures %s, the emitted crop %dx%d" % (pics, ew, eh))
-            if not str(b["input_image"][0]).startswith("data:image/png;base64,") or "mask_url" in b:
+            if not str(b["input_image"][0]).startswith("data:image/png;base64,") or "mask" in b:
                 raise Exception("the body: %s" % b)
             # "closest": the preset nearest the crop's own shape (the auto context makes that crop squarer than the
             # selection), read from the variant's own list
@@ -346,13 +346,13 @@ async def run_all(c):
             b = cl["json"]
             pics = {p["field"]: p for p in cl["pictures"]}
             ew, eh = res["emitted"]
-            m = pics.get("mask_url")
+            m = pics.get("mask")
             if not m or m["format"] != "png" or m["dims"] != [ew, eh] or not m.get("alpha") or m.get("centre") != 0 or m.get("corner") != 255:
                 raise Exception("the mask %s, the emitted crop %dx%d (transparent at the centre, opaque in the corner)" % (m, ew, eh))
             if pics.get("input_image", {}).get("dims") != [ew, eh]:
                 raise Exception("the picture %s" % pics.get("input_image"))
             if b.get("aspect_ratio") != "auto" or b.get("output_format") != "png" or b.get("response_format") != "b64_json" or b.get("moderation") != "low" or b.get("quality") != "high":
-                raise Exception("the body: %s" % {k: v for k, v in b.items() if k not in ("input_image", "mask_url")})
+                raise Exception("the body: %s" % {k: v for k, v in b.items() if k not in ("input_image", "mask")})
             done("a_mask_run_on_a_gpt_model_sends_an_alpha_mask", {"crop": [ew, eh], "mask": m, "resolution": b.get("resolution")})
         await step("a_mask_run_on_a_gpt_model_sends_an_alpha_mask", mask)
 

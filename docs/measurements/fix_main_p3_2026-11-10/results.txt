@@ -1,0 +1,38 @@
+# fix-main-p3 focused reversal round (base HEAD ef601106e3, 27 mutants)
+[orig] filesaves        PASS (11.2s)
+[orig] local            PASS (1.0s)
+[orig] cloudjobs_node   PASS (10.4s)
+[orig] cloudjobs_app    PASS (39.0s)
+[orig] comfyview_step   PASS (8.6s)
+[orig] takeover_step    PASS (9.5s)
+[orig] all 6 checks green in 79.8s
+
+[killed] filesaves_drop_temp_on_copy_error        filesaves       rc=1   7.2s  matched 'mid-copy ENOSPC'
+[killed] filesaves_busy_partial_deletes_temp      filesaves       rc=1   9.6s  matched 'mid-copy EBUSY after target changed'
+[killed] filesaves_kept_temp_stays_registered     filesaves       rc=1   6.8s  matched 'the kept temporary file stayed in the registry'
+[killed] filesaves_fallback_no_space_check        filesaves       rc=1  10.9s  matched 'busy fallback low space'
+[killed] filesaves_abort_deletes_kept_temp        filesaves       rc=1   7.8s  matched 'the fsynced temporary file was deleted or damaged'
+[killed] filesaves_no_hardlink_extra_space        filesaves       rc=1  11.6s  matched 'hard-linked extra space'
+[killed] bridge_ignore_default_timeout            local           rc=1   2.4s  matched '[FAIL] Bridge extends BASE_TIMEOUT by params.timeout.default when args.timeout is omitted'
+[killed] bridge_default_overrides_zero            local           rc=1   1.6s  matched '[FAIL] an explicit args.timeout = 0 is honoured without falling back to the default'
+[killed] bridge_no_changed_invalidation           local           rc=1   1.6s  matched "[FAIL] commands:changed refreshes Bridge's timeout defaults for new commands"
+[killed] cloudjobs_drop_provider_and_file         cloudjobs_node  rc=1  10.3s  matched '[FAIL] a non-Comfy provider run whose page went away writes <userData>/results/<generatedId>.png'
+[killed] providers_discard_noncomfy_pagegone      cloudjobs_node  rc=1  11.4s  matched '[FAIL] a non-Comfy provider run whose page went away writes <userData>/results/<generatedId>.png'
+[killed] providers_use_untrusted_runid_filename   cloudjobs_node  rc=1  10.7s  matched '[FAIL] a non-Comfy provider run whose page went away writes <userData>/results/<generatedId>.png'
+[killed] providers_send_local_to_comfy_recover    cloudjobs_node  rc=1  10.3s  matched '[FAIL] recoverCloudJobs with no Comfy Cloud key brings the kept OpenAI picture'
+[killed] providers_send_local_to_comfy_with_key   cloudjobs_node  rc=1  10.3s  matched '[FAIL] with a Comfy Cloud key set, recoverCloudJobs queries Comfy only for the remote job id'
+[killed] providers_drop_aged_local_file           cloudjobs_node  rc=1  10.2s  matched '[FAIL] a local picture older than 24 h is brought back as an earlier result'
+[killed] cloudjobs_sweep_disabled                 cloudjobs_node  rc=1  11.2s  matched '[FAIL] recoverCloudJobs with no Comfy Cloud key brings the kept OpenAI picture, respects skip, and sweeps unnoted files'
+[killed] providers_count_inapp_as_paid            cloudjobs_node  rc=1  11.4s  matched '[FAIL] a free in-app fill is not counted in runningCount'
+[killed] providers_ack_keeps_result_file          cloudjobs_node  rc=1  11.0s  matched "[FAIL] ackCloudJob removes the local picture's note and deletes its file from <userData>/results/"
+[killed] main_reload_no_running_ask               cloudjobs_app   rc=1  48.6s  matched '[FAIL] View > Reload while a provider run is in flight asks first'
+[killed] shell_hardcode_comfy_cloud_words         cloudjobs_app   rc=1 298.2s  matched "[FAIL] Reload keeps the finished non-Comfy picture with no Comfy key, opens it under the provider's name"
+[killed] comfyview_cansave_without_loaded         comfyview_step  rc=1 414.8s  matched 'failed load left Save to recipe open'
+[killed] comfyview_save_ignores_active_tab        comfyview_step  rc=1 178.7s  matched 'other workflow tab overwrote or did not refuse'
+[killed] comfyview_broken_extension_manager_arm   comfyview_step  rc=1 231.7s  matched 'other workflow tab overwrote or did not refuse'
+[killed] comfyview_tab_by_key_instead_of_object   comfyview_step  rc=1  11.6s  matched 'same-named replacement tab passed the guard'
+[killed] comfyview_late_held_id_after_await       comfyview_step  rc=1 146.5s  matched 'recipe switch during objectInfo overwrote or passed'
+[killed] main_ensure_not_singleflight             takeover_step   rc=1   6.5s  matched 'Failed to register protocol: scumble'
+[killed] main_second_instance_shows_agent_window  takeover_step   rc=1 153.4s  matched 'second-instance agent probe showed hidden window'
+
+SUMMARY: 27 / 27 reversal mutants killed on expected assertions in 1646.2s (0 survived, 0 wrong-reason)

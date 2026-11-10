@@ -347,8 +347,8 @@ async function main() {
             gpt_image_2_5_flare: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2.5/flare/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.5-flare/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
             gpt_image_2_5_sunburst: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2.5/sunburst/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.5-sunburst/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
             // GPT Image 2.6 (2026-11-06): ToAPIs serves Sunburst only (Flare is listed as disabled)
-            gpt_image_2_6_flare: { openai: {}, fal: { model: "openai/gpt-image-2.6/flare/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.6-flare/edit" }, openrouter: {} },
-            gpt_image_2_6_sunburst: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2.6/sunburst/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.6-sunburst/edit" }, openrouter: {} },
+            gpt_image_2_6_flare: { openai: {}, fal: { model: "openai/gpt-image-2.6/flare/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.6-flare/edit" }, openrouter: {}, oxen: {} },
+            gpt_image_2_6_sunburst: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2.6/sunburst/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.6-sunburst/edit" }, openrouter: {}, oxen: {} },
             nano_banana_2: { toapis: {}, gemini: {}, fal: { model: "fal-ai/nano-banana-2/edit", options: { aspect_ratios: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] } }, replicate: {}, wavespeed: { model: "google/nano-banana-2/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
             nano_banana_2_1: { toapis: {}, gemini: {}, fal: { model: "fal-ai/nano-banana-2.1/edit", options: { aspect_ratios: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "4:1", "1:4", "8:1", "1:8"] } }, replicate: {}, wavespeed: { model: "google/nano-banana-2.1/edit" }, openrouter: {}, comfyrouter: {} },
             nano_banana_2_lite: { toapis: {}, gemini: {}, wavespeed: { model: "google/nano-banana-2-lite/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
@@ -399,7 +399,7 @@ async function main() {
             }
         }
         const stale = Object.entries(TEXT_REFS).flatMap(([id, rows]) => Object.keys(rows).map((pid) => `${id}/${pid}`)).filter((n) => !seen.has(n));
-        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 134, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
+        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 136, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
         check("every row of the table names a shipped provider variant", !stale.length, stale.join(", "));
         check("every text shape without text.refs is on the takes-none list", !none.length, none.join(", "));
         const noneStale = Object.entries(TAKES_NONE).flatMap(([id, pids]) => pids.map((pid) => `${id}/${pid}`)).filter((n) => { const [id, pid] = n.split("/"); const r = list.find((x) => x.id === id); return !r || !r.providers[pid] || !r.providers[pid].text || r.providers[pid].text.refs !== null; });
@@ -684,6 +684,7 @@ async function main() {
         const want = { flux2_klein_local: { pictures: 4, values: ["prompt", "seed"] }, flux3_klein_local: { pictures: 4, values: ["prompt", "seed"] }, qwen_image_edit_2_1_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, qwen_image_edit_2_1_turbo_local: { pictures: 10, values: ["negative", "prompt", "seed"] }, relight_qwen_local: { pictures: 1, values: ["negative", "prompt", "seed"] }, upscale_model_local: { pictures: 1, values: [] },
             moss_image_local: { pictures: 1, values: ["negative", "prompt", "seed"] },
             moss_image_edit_local: { pictures: 4, values: ["negative", "prompt", "seed"] },
+            fibo2_edit_turbo_local: { pictures: 4, values: ["prompt", "seed"] },
             p_h3_image_local: { pictures: 8, values: ["prompt", "seed"] },
             rtx_vsr_local: { pictures: 1, values: [], notes: [/^the Comfy Cloud copy runs at the factor its graph holds \(2×\); change it in its graph$/] }, realism_pass: { refused: /Cloud copy/ } };
         const unlisted = comfy.map((r) => r.id).filter((id) => !want[id]);
@@ -1162,10 +1163,10 @@ async function main() {
             // FLUX 3 Image Klein's prompt upsampler (0.1.50 Q9): kept by normalize, a bad one dropped, kept by Save to recipe,
             // left out of the Cloud copy
             const kk = all.find((r) => r.id === "flux3_klein_local");
-            check("flux3_klein_local keeps its upsampler through list() (switch, run, show, nodes, t2i, source), no request of its own, and no shipped recipe but it and P-H3-Image declares one",
+            check("flux3_klein_local keeps its upsampler through list() (switch, run, show, nodes, t2i, source), no request of its own, and no shipped recipe but it, P-H3-Image and Fibo 2.0 Edit Turbo declares one",
                 !!kk && kk.upsampler && kk.upsampler.switch === "up_switch" && kk.upsampler.run === "up_run" && kk.upsampler.show === "up_show" && typeof kk.upsampler.t2i === "string" && /Apache-2\.0/.test(kk.upsampler.source)
                 && kk.upsampler.request === undefined
-                && all.filter((r) => r.upsampler !== undefined).map((r) => r.id).sort().join(",") === "flux3_klein_local,p_h3_image_local", short(kk && kk.upsampler && { ...kk.upsampler, t2i: "..." }));
+                && all.filter((r) => r.upsampler !== undefined).map((r) => r.id).sort().join(",") === "fibo2_edit_turbo_local,flux3_klein_local,p_h3_image_local", short(kk && kk.upsampler && { ...kk.upsampler, t2i: "..." }));
             // P-H3-Image (docs/PLAN_PH3.md): a TextGenerateV2 run and a request of its own, kept by normalize; Generate new's
             // drop kept; a bad request or newImage dropped with a warning; both kept by Save to recipe
             const ph = all.find((r) => r.id === "p_h3_image_local");
@@ -1510,6 +1511,88 @@ async function main() {
             await recipes.remove(".._settings");
             check("the made-safe recipe can be removed by its new id (its own file goes)", !fs.existsSync(path.join(dir, "hand.json")));
         } finally { console.warn = warn; }
+    });
+
+    // ---- 18. Fibo 2.0 Edit Turbo on the user's ComfyUI -----------------------------------------------------------------
+    // The graph has not run: every node against the spec its class has in the fixtures' node list (TextEncodeFibo2 from
+    // ComfyUI 0.44.0's /object_info), as normalize serves it and in the shapes a run queues; Comfy's template values pinned
+    // (image_fibo2_edit_turbo_pe), so a value reset to the node's default shows too.
+    await section("18. the Fibo 2.0 Edit Turbo recipe against its node specs", async () => {
+        const { specProblems } = require(path.join(ROOT, "tools", "node_specs.js"));
+        const R = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "comfyrefs.js")).href);
+        const P = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "comfyprompt.js")).href);
+        const info = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfy_templates", "object_info.json"), "utf8"));
+        const warn = console.warn, warned = [];
+        console.warn = (...a) => warned.push(a.join(" "));
+        let r;
+        try { r = recipes._normalize(rawFile("fibo2_edit_turbo_local.json")); } finally { console.warn = warn; }
+        const g = r.prompt;
+        const peOnly = new Set(["TextGenerate", "PreviewAny", "ComfySwitchNode"]);
+        const classes = [...new Set(Object.values(g).map((n) => n.class_type))].filter((c) => !peOnly.has(c)).sort();
+        check("fibo2_edit_turbo_local: a local edit recipe read without a warning; refs <image_{n}> over 4 slots; its upsampler kept with the prompt as its request; needs the graph's classes but the three wireUpsampler answers for; no boxes, no Generate new route",
+            !warned.length && r.kind !== "provider" && r.mode === "local" && r.edit === true && eq(r.refs, { name: "<image_{n}>", slots: 4 }) && eq([...r.needs].sort(), classes) && r.needs.includes("TextEncodeFibo2")
+            && r.upsampler && r.upsampler.switch === "pe_switch" && r.upsampler.run === "pe_run" && r.upsampler.show === "pe_show" && eq(r.upsampler.nodes, ["pe_clip", "pe_batch", "pe_run", "pe_show"]) && eq(r.upsampler.request, { edit: "{text}" })
+            && r.boxes === undefined && r.newImage === undefined && r.loras === undefined, short({ warned, refs: r.refs, needs: r.needs, up: r.upsampler && r.upsampler.nodes }));
+        const lacking = Object.entries(g).filter(([, n]) => !info[n.class_type]).map(([id, n]) => `${id} ${n.class_type}`);
+        check("every class of the graph but the canvas node's has its spec in the node list (TextEncodeFibo2 included)", eq(lacking, ["canvas InpaintCanvas"]), short(lacking));
+        const probs = specProblems(g, info);
+        check("every node: its required inputs there, every input one its class declares (images.image_1 .. of the growing input, CLIP type fibo2, the sampling mode's own inputs), numbers in range, links to nodes", !probs.length, short(probs));
+        const spec = R.comfyRefSpec(r);
+        const files = ["qwen3vl_4b_bf16.safetensors", "qwen3vl_8b_int8_convrot.safetensors"];
+        const shapes = {};
+        for (const n of [1, 2, 4]) {
+            const on = JSON.parse(JSON.stringify(g));   // as host.queueGenerate has it: the rows' values written, no links to setting outputs
+            R.trimSlots(on, spec, n);
+            const res = P.wireUpsampler(on, r, { text: "a red coat", pictures: n, files, classes: info });
+            if (!res.on) throw new Error("the enhancer did not run");
+            shapes[`enhancer on, ${n} picture${n > 1 ? "s" : ""}`] = on;
+        }
+        const off = JSON.parse(JSON.stringify(g));
+        off.pe_switch.inputs.switch = false;
+        R.trimSlots(off, spec, 1);
+        const offRes = P.wireUpsampler(off, r, { text: "a red coat", pictures: 1, files, classes: info });
+        shapes["enhancer off"] = off;
+        const shapeProbs = Object.entries(shapes).flatMap(([what, q]) => specProblems(q, info).map((p) => `${what}: ${p}`));
+        const peIds = ["pe_clip", "pe_batch", "pe_run", "pe_show", "pe_switch"];
+        const on1 = shapes["enhancer on, 1 picture"];
+        check("the queued shapes hold: the enhancer on with one, two and four pictures (the crop always, the slots past the batch left out), its caption into the encoder; off, the canvas's prompt straight into the encoder and no enhancer node left",
+            !shapeProbs.length && !offRes.on && offRes.note === null && eq(off.encode.inputs.prompt, ["canvas", 7]) && peIds.every((id) => !off[id]) && eq(on1.encode.inputs.prompt, ["pe_run", 0]) && on1.pe_run.inputs.prompt === "a red coat" && !on1.pe_switch
+            && eq(on1.encode.inputs["images.image_1"], ["img0", 0]) && !("images.image_2" in on1.encode.inputs) && "images.image_4" in shapes["enhancer on, 4 pictures"].encode.inputs, short(shapeProbs));
+        const sys = g.pe_run.inputs.system_prompt;
+        const pins = [
+            ["unet.unet_name", g.unet.inputs.unet_name, "fibo2_edit_turbo_int8_convrot.safetensors"], ["unet.weight_dtype", g.unet.inputs.weight_dtype, "default"],
+            ["clip.clip_name", g.clip.inputs.clip_name, "qwen3vl_4b_bf16.safetensors"], ["clip.type", g.clip.inputs.type, "fibo2"], ["vae.vae_name", g.vae.inputs.vae_name, "flux2-vae.safetensors"],
+            ["encode.clip", g.encode.inputs.clip, ["clip", 0]], ["encode.vae", g.encode.inputs.vae, ["vae", 0]], ["encode.negative_prompt", g.encode.inputs.negative_prompt, ""], ["encode.width", g.encode.inputs.width, 0], ["encode.height", g.encode.inputs.height, 0], ["encode.batch_size", g.encode.inputs.batch_size, 1],
+            ["ks.model", g.ks.inputs.model, ["unet", 0]], ["ks.seed", g.ks.inputs.seed, ["canvas", 10]], ["ks.steps", g.ks.inputs.steps, 4], ["ks.cfg", g.ks.inputs.cfg, 1], ["ks.sampler_name", g.ks.inputs.sampler_name, "euler"], ["ks.scheduler", g.ks.inputs.scheduler, "simple"],
+            ["ks.positive", g.ks.inputs.positive, ["encode", 0]], ["ks.negative", g.ks.inputs.negative, ["encode", 1]], ["ks.latent_image", g.ks.inputs.latent_image, ["encode", 2]], ["ks.denoise", g.ks.inputs.denoise, 1],
+            ["decode.samples", g.decode.inputs.samples, ["ks", 0]], ["decode.vae", g.decode.inputs.vae, ["vae", 0]],
+            ["pe_clip.clip_name", g.pe_clip.inputs.clip_name, "qwen3vl_8b_int8_convrot.safetensors"], ["pe_clip.type", g.pe_clip.inputs.type, "fibo2"],
+            ["pe_run.max_length", g.pe_run.inputs.max_length, 3000], ["pe_run.sampling_mode", g.pe_run.inputs.sampling_mode, "on"], ["pe_run.temperature", g.pe_run.inputs["sampling_mode.temperature"], 0.3], ["pe_run.top_k", g.pe_run.inputs["sampling_mode.top_k"], 20],
+            ["pe_run.top_p", g.pe_run.inputs["sampling_mode.top_p"], 0.95], ["pe_run.min_p", g.pe_run.inputs["sampling_mode.min_p"], 0.05], ["pe_run.repetition_penalty", g.pe_run.inputs["sampling_mode.repetition_penalty"], 1.05], ["pe_run.seed", g.pe_run.inputs["sampling_mode.seed"], 1234],
+            ["pe_run.thinking", g.pe_run.inputs.thinking, false], ["pe_run.use_default_template", g.pe_run.inputs.use_default_template, true], ["pe_run.mtp", g.pe_run.inputs.mtp, "off"], ["pe_switch.switch", g.pe_switch.inputs.switch, true],
+        ];
+        for (let k = 0; k < 4; k++) pins.push([`encode.images.image_${k + 1}`, g.encode.inputs[`images.image_${k + 1}`], [`img${k}`, 0]], [`img${k}`, g[`img${k}`].inputs, { image: ["canvas", 0], batch_index: k, length: 1 }]);
+        const offPins = pins.filter(([, got, want]) => !eq(got, want)).map(([k, got]) => `${k}=${JSON.stringify(got)}`);
+        check("Comfy's template values: 4 steps, CFG 1, euler / simple, width and height 0 (the node's own trained size), the encoder's three outputs into the sampler, an empty negative, the enhancer's sampling values, the system prompt whole",
+            !offPins.length && /^You are a highly skilled Creative Director for Visual Adaptation/.test(sys) && /Follow all of the rules above\.$/.test(sys) && sys.length > 11000, short({ offPins, sys: sys.length }));
+        const rows = r.settings.map((s) => [s.index, `${s.node}:${s.input}`, s.label]);
+        const link = (file) => { for (const list of Object.values(r.models || {})) for (const row of list) { const m = /^(.*?)\s*\((https?:\/\/[^)]+)\)\s*$/.exec(String(row)); if (m && m[1] === file) return m[2]; } return null; };
+        const defaults = [g.unet.inputs.unet_name, g.clip.inputs.clip_name, g.vae.inputs.vae_name, g.pe_clip.inputs.clip_name];
+        check("seven Settings rows on slots 1..7 (no negative, no megapixels); every default file has its Comfy-Org link",
+            eq(rows, [[1, "unet:unet_name", "Model"], [2, "clip:clip_name", "Text encoder"], [3, "vae:vae_name", "VAE"], [4, "ks:steps", "Steps"], [5, "ks:cfg", "CFG"], [6, "pe_switch:switch", "Prompt Enhancer"], [7, "pe_clip:clip_name", "Enhancer model"]])
+            && defaults.every((f) => /^https:\/\/huggingface\.co\/Comfy-Org\//.test(link(f) || "")), short({ rows, links: defaults.map(link) }));
+        check("the description: not run yet, and the licence in one plain sentence",
+            r.description.includes("not run yet") && r.description.includes("Licence: Bria's weights are CC BY-NC 4.0, non-commercial; commercial use needs an agreement with Bria."), short(r.description.slice(-140)));
+        const bad = JSON.parse(JSON.stringify(g));
+        bad.encode.inputs["images.image_17"] = ["img0", 0];
+        bad.encode.inputs.width = -16;
+        delete bad.encode.inputs.negative_prompt;
+        bad.clip.inputs.type = "fibo";
+        bad.ks.inputs.latent_image = ["nope", 0];
+        bad.pe_run.inputs.sampling_mode = "maybe";
+        const caught = specProblems(bad, info).join(" | ");
+        check("the spec check itself: a seventeenth picture input, a negative width, a missing negative prompt, an unknown CLIP type, a link to no node and a sampling mode outside the two",
+            ["encode.images.image_17 unknown", "encode.width=-16", "encode.negative_prompt missing", "clip.type=", "ks.latent_image links", "pe_run.sampling_mode="].every((s) => caught.includes(s)), caught);
     });
 
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
