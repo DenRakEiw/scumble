@@ -26,7 +26,7 @@ const ui = {};
 let deps = {};
 let started = false;
 let busy = false;
-let openAsk = null;          // the call id of the ask card that is waiting
+let openAsk = null;          // the token of the ask card that is waiting
 let streamBubble = null;     // the bubble the model's text streams into
 let streamText = null;       // its text node
 let cards = new Map();       // call id -> its card, for this turn only: ids repeat across turns
@@ -429,9 +429,11 @@ function endCard(e) {
 }
 
 function askCard(e) {
-    openAsk = e.call;
+    closeAsks();
+    const token = String((e && (e.token || e.call)) || "");
+    openAsk = token;
     const card = el("div", "as-card as-ask");
-    card.dataset.ask = e.call;
+    card.dataset.ask = token;
     const head = el("div", "as-card-head");
     head.appendChild(el("span", "as-card-name", e.name));
     head.appendChild(el("span", "as-card-state", "waiting for you"));
@@ -445,8 +447,8 @@ function askCard(e) {
     allow.type = "button";
     const deny = el("button", null, "Don't");
     deny.type = "button";
-    allow.addEventListener("click", () => answer(e.call, true, card, "allowed"));
-    deny.addEventListener("click", () => answer(e.call, false, card, "declined"));
+    allow.addEventListener("click", () => answer(token, true, card, "allowed"));
+    deny.addEventListener("click", () => answer(token, false, card, "declined"));
     buttons.appendChild(allow);
     buttons.appendChild(deny);
     card.appendChild(buttons);
@@ -478,14 +480,39 @@ function cardLines(e) {
     return lines;
 }
 
-function answer(call, allow, card, word) {
-    openAsk = null;
+function closeAsk(card, word = "not answered") {
+    if (!card) return;
     const parts = card.shadowRoot || card;                 // skins.js protectAsk moved them into the card's shadow root
-    const state = parts.querySelector(".as-card-state");
-    if (state) state.textContent = word;
-    for (const b of parts.querySelectorAll("button")) b.disabled = true;
+    const buttons = Array.from(parts.querySelectorAll("button"));
+    if (buttons.some((b) => !b.disabled)) {
+        for (const b of buttons) b.disabled = true;
+        const state = parts.querySelector(".as-card-state");
+        if (state) state.textContent = word;
+    }
     releaseAsk(card);
-    api().answer(call, allow).catch(() => {});
+}
+
+function closeAsks(word = "not answered") {
+    openAsk = null;
+    if (!ui.list) return;
+    for (const c of ui.list.querySelectorAll(".as-card.as-ask")) closeAsk(c, word);
+}
+
+function answer(token, allow, card, word) {
+    if (!token || openAsk !== token) {
+        closeAsk(card);
+        syncButton();
+        return;
+    }
+    openAsk = null;
+    closeAsk(card, word);
+    api().answer(token, allow).then((ok) => {
+        if (ok === false) {
+            const parts = card.shadowRoot || card;
+            const state = parts.querySelector(".as-card-state");
+            if (state) state.textContent = "not answered";
+        }
+    }).catch(() => {});
     syncButton();
 }
 
@@ -522,6 +549,7 @@ function onEvent(e) {
             } else bubble("as-model", e.text);
             break;
         case "call":
+            if (e.action === "allowed") closeAsks("allowed");
             toolCard(e);
             break;
         case "tool_end":
@@ -539,8 +567,7 @@ function onEvent(e) {
             break;
         case "turn:done":
             busy = false;
-            openAsk = null;
-            for (const c of ui.list.querySelectorAll(".as-card.as-ask")) releaseAsk(c);   // no question is open after a turn
+            closeAsks();                                   // no question stays clickable after a turn
             ui.send.textContent = "Send";
             endStream(e.reason === "stopped");
             if (e.reason && e.reason !== "end") note(doneWords(e), e.reason === "error" ? "as-bad" : "");
@@ -693,6 +720,7 @@ async function openChat(id) {
         return;
     }
     ui.chatList.hidden = true;
+    closeAsks();
     ui.list.textContent = "";
     cards = new Map();
     usage = null;
@@ -715,6 +743,7 @@ async function openChat(id) {
 /** Settings deleted everything the assistant stored: the panel goes back to how it started. */
 export function resetAssistant() {
     if (!started) return;
+    closeAsks();
     forgetTurns();
     ui.list.textContent = "";
     ui.chatList.textContent = "";
@@ -764,10 +793,14 @@ async function send() {
 }
 
 function stop() {
+    closeAsks();
+    syncButton();
     api().stop().catch(() => {});
 }
 
 async function newChat() {
+    closeAsks();
+    syncButton();
     await api().reset().catch(() => {});
     forgetTurns();
     ui.chatList.hidden = true;

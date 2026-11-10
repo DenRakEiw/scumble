@@ -221,9 +221,8 @@ function layerOf(call, facts) {
 function layerBelow(target, facts) {
     const list = (facts && facts.layers) || [];
     const at = target ? list.findIndex((l) => l.id === target.id) : -1;
-    if (at < 0) return null;
-    // list_layers answers top first (commands.js), so the layer below is the next entry
-    return list[at + 1] || null;
+    // list_layers answers bottom to top (commands.js), so the layer below is the previous entry
+    return at > 0 ? list[at - 1] : null;
 }
 
 /** Did this chat make the layer the call names? */
@@ -576,5 +575,5 @@ function addsLayer(facts) {
 module.exports = {
     EXCLUDED, READS, RUNS, POLICY, decide, clamp, clampInt, timeoutOf, undoStep,
     SET_LAYER_SOFT, SET_LAYER_GEOMETRY, TIMEOUT_DEFAULTS, REALISM_LABEL, REALISM_FACTORS, REALISM_MAX_AREA,
-    _layerOf: layerOf, _owns: owns, _extMatches: extMatches,
+    _layerOf: layerOf, _layerBelow: layerBelow, _owns: owns, _extMatches: extMatches,
 };
