@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-head_short-layered --offline --tiles on layered  (rc 1, 78 s)
+layered rc=1 20s FAIL
+SOME FAILED

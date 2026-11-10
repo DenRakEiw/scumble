@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-no_release_on_failure-layered --offline --tiles on layered  (rc 1, 75 s)
+layered rc=1 26s FAIL
+SOME FAILED

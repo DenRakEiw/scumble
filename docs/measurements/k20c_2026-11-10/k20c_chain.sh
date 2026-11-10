@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # K20c (docs/PLAN_WASM_K20.md §4.3): three alternating rounds of `native_test.py 15000x10000`
-# (build_the_file open_the_file add_the_paint_layer export_ora open_ora close), the base tree `db2c39da` against this
+# (build_the_file open_the_file add_the_paint_layer export_ora open_ora close), the base tree `8fde9fb0` (wasm-kernels at the merge) against this
 # tree, on fresh offline instances (tiles on, port 9621), under the busy lock per round. Unfocused runs are not counted.
 # Written while the machine was busy: not run yet. Only while F:\canvas\.claude\coord\MACHINE_FREE exists.
 set -u
@@ -9,7 +9,7 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 MAIN_REPO="$(git -C "$ROOT" worktree list --porcelain | head -n 1 | sed 's/^worktree //')"
 LOCK="$ROOT/docs/measurements/w1_2026-11-06/w1_lock.py"
 PORT="${SCUMBLE_CDP_PORT:-9621}"
-BASE_SHA="db2c39da"
+BASE_SHA="8fde9fb0"
 export SCUMBLE_CDP_PORT="$PORT"
 mkdir -p "$HERE/before/native" "$HERE/after/native" "$HERE/notcounted"
 BEFORE_TREE="$(dirname "$ROOT")/.tmp_k20c_before_$$"
