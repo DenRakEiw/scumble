@@ -62,6 +62,7 @@ import { modelSize, DEPTH_LARGE, roundHalfEven } from "./inpaint_depth.js";
 import { INTERACTIVE } from "./inpaint_pool.js";
 import { editorPool, markStep } from "./inpaint_jobs.js";
 import { areasSoon, areaHint, areaState, buildAreaButton, runEachArea, syncAreaButton, sameRecipe } from "./eacharea.js";
+import { runSplitLayers } from "./splitlayers.js";
 
 const PROXY = "/comfy";
 
@@ -3180,6 +3181,14 @@ export const host = {
      */
     generateEachArea(editor, opts = {}) {
         return runEachArea(this, editor, { ...opts, api });
+    },
+
+    /**
+     * Split the visible picture or a layer into layers on BytePlus ModelArk (splitlayers.js): `opts` { recipe, layer (null:
+     * the picture), prompt, count, textRecognition, size }. The new layers land above everything, in one group, one undo step.
+     */
+    splitLayers(editor, opts = {}) {
+        return runSplitLayers(this, editor, opts, { providerEdit, canvasBytes, bytesToImage, viaLine, runIdOf });
     },
 
     /** Why a run of recipe `r` with this prompt is refused before anything is made (promptRequired), or "" (Each area asks it before its question). */

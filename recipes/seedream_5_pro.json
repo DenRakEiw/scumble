@@ -70,6 +70,9 @@
         ],
         "max_images": 10,
         "png": true,
+        "layers": {
+          "max": 16
+        },
         "regions": [
           "ap-southeast"
         ]

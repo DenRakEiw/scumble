@@ -341,6 +341,250 @@ async function main() {
         fs.rmSync(empty, { recursive: true, force: true });
     }
 
+    // 5. MAIN-2: a non-Comfy provider run whose page went away keeps its picture locally under a main-generated name,
+    // never sends the note to comfycloud.recoverJobs (even with a Comfy key), brings it back without a 24 h cutoff,
+    // sweeps stray results/ files, reports localUnread separately, skips free in-app crops, and ack deletes the file
+    {
+        const dir = tmp();
+        const idxPath = path.join(ROOT, "electron", "main", "providers", "index.js");
+        const inappPath = path.join(ROOT, "electron", "main", "providers", "inapp.js");
+        const logged = [];
+        let comfyKey = "";
+        let inappInFlight = -1;
+        const fakeBmp = Buffer.alloc(512 * 512 * 4, 255);
+        const origLoad = Module._load;
+        Module._load = function (request, parent, ...rest) {
+            if (request === "electron") {
+                return {
+                    app: { getPath: () => dir },
+                    nativeImage: {
+                        createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 512, height: 512 }), toBitmap: () => fakeBmp }),
+                        createFromBitmap: () => ({ toPNG: () => Buffer.from("LAMA_OUT") }),
+                    },
+                };
+            }
+            if (parent && parent.filename === idxPath) {
+                if (request === "../log") return { record: (x) => logged.push(x) };
+                if (request === "../keys") {
+                    return {
+                        get: (id) => (id === "openai" ? TEST_KEY : id === "comfycloud" ? comfyKey : ""),
+                        describe: (id) => ({ name: id, set: id === "openai" || (id === "comfycloud" && !!comfyKey), hint: "6789" }),
+                    };
+                }
+                if (request === "../settings") return { get: () => ({ comfycloud: { base: MOCK } }) };
+            }
+            if (parent && parent.filename === inappPath && request === "../onnx") {
+                return {
+                    inpaint: async ({ image }) => {
+                        inappInFlight = typeof index3.runningCount === "function" ? index3.runningCount() : -1;
+                        return { image, model: "lama", provider: "cpu", seconds: 0.01 };
+                    },
+                };
+            }
+            return origLoad.call(this, request, parent, ...rest);
+        };
+        let index3;
+        try { delete require.cache[idxPath]; delete require.cache[inappPath]; index3 = require(idxPath); } finally { Module._load = origLoad; }
+        const saved = globalThis.fetch;
+        const paidBytes = Buffer.from("OPENAI KEPT PICTURE");
+        let inFlightCount = -1;
+        const changed = [];
+        globalThis.fetch = async (url) => {
+            inFlightCount = typeof index3.runningCount === "function" ? index3.runningCount() : -1;
+            if (!String(url).startsWith("https://api.openai.com/")) throw new Error("unexpected fetch: " + url);
+            return {
+                ok: true, status: 200,
+                headers: { get: () => "application/json" },
+                json: async () => ({ data: [{ b64_json: paidBytes.toString("base64") }] }),
+            };
+        };
+        let editErr = null;
+        try {
+            await index3.edit({
+                provider: "openai", model: "gpt-image-2", recipe: "gpt_image", kind: "text",
+                prompt: "a cabin in snow", width: 1024, height: 1024,
+                runId: "../../evil-path",   // untrusted IPC string: must never become the file name
+            }, { cloudJobsChanged: () => changed.push("paid"), pageGone: () => true });
+        } catch (e) {
+            editErr = String((e && e.message) || e);
+        } finally {
+            globalThis.fetch = saved;
+        }
+        const afterCount = typeof index3.runningCount === "function" ? index3.runningCount() : -1;
+        check("runningCount counts an in-flight provider run and returns to 0 afterwards", !editErr && inFlightCount === 1 && afterCount === 0, short({ editErr, inFlightCount, afterCount }));
+
+        // free local in-app LaMa fill: neither counted in runningCount nor kept as a standalone document when pageGone is true
+        Module._load = function (request, parent, ...rest) {
+            if (parent && parent.filename === inappPath && request === "../onnx") {
+                return {
+                    inpaint: async ({ image }) => {
+                        inappInFlight = index3.runningCount();
+                        return { image, model: "lama", provider: "cpu", seconds: 0.01 };
+                    },
+                };
+            }
+            if (request === "electron") {
+                return {
+                    app: { getPath: () => dir },
+                    nativeImage: {
+                        createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 512, height: 512 }), toBitmap: () => fakeBmp }),
+                        createFromBitmap: () => ({ toPNG: () => Buffer.from("LAMA_OUT") }),
+                    },
+                };
+            }
+            return origLoad.call(this, request, parent, ...rest);
+        };
+        try {
+            await index3.edit({
+                provider: "inapp", model: "lama", kind: "fill",
+                image: Buffer.from("IMG"), mask: Buffer.from("MASK"), width: 512, height: 512,
+            }, { cloudJobsChanged: () => changed.push("inapp"), pageGone: () => true });
+        } finally {
+            Module._load = origLoad;
+        }
+        const notes = cloudjobs.store(dir).list();
+        const n0 = notes[0] || {};
+        const resDir = path.join(dir, "results");
+        const diskFiles = fs.existsSync(resDir) ? fs.readdirSync(resDir) : [];
+        check("a free in-app fill is not counted in runningCount and does not keep its 512x512 crop as a standalone result",
+            inappInFlight === 0 && notes.length === 1 && diskFiles.length === 1 && changed.join(",") === "paid",
+            short({ inappInFlight, notes: notes.length, diskFiles, changed }));
+        check("a non-Comfy provider run whose page went away writes <userData>/results/<generatedId>.png (never request.runId), notes provider/model/recipe/file and tells the window",
+            notes.length === 1 && n0.provider === "openai" && n0.model === "gpt-image-2" && n0.recipe === "gpt_image"
+            && typeof n0.file === "string" && !n0.file.includes("..") && !n0.file.includes("evil") && n0.file.endsWith(".png")
+            && diskFiles.length === 1 && diskFiles[0] === n0.file && !fs.existsSync(path.join(dir, "evil-path.png"))
+            && changed.join(",") === "paid",
+            short({ notes, diskFiles, changed }));
+
+        // plant stray files (a crash orphan with no note and a leftover *.tmp) before the first recoverCloudJobs ask on dir
+        fs.writeFileSync(path.join(resDir, "crash-orphan.png"), "ORPHAN");
+        fs.writeFileSync(path.join(resDir, "partial.png.tmp"), "PART");
+        const rec = await index3.recoverCloudJobs();
+        const recSkip = await index3.recoverCloudJobs({ skip: n0.jobId ? [n0.jobId] : [] });
+        const pic = (rec && rec.pictures && rec.pictures[0]) || {};
+        const sweptLeft = fs.readdirSync(resDir);
+        check("recoverCloudJobs with no Comfy Cloud key brings the kept OpenAI picture, respects skip, and sweeps unnoted files and *.tmp on the first ask",
+            rec && rec.skipped === null && rec.pictures.length === 1
+            && pic.jobId === n0.jobId && pic.provider === "openai" && pic.providerLabel === "OpenAI" && pic.model === "gpt-image-2"
+            && pic.earlier === false && Buffer.from(pic.bytes || []).equals(paidBytes)
+            && recSkip && recSkip.pictures.length === 0
+            && sweptLeft.length === 1 && sweptLeft[0] === n0.file,
+            short({ skipped: rec && rec.skipped, n: rec && rec.pictures.length, skipN: recSkip && recSkip.pictures.length, sweptLeft }));
+
+        // mixed notes (one kept local picture + one Comfy Cloud job) with no Comfy key: local picture comes, Comfy job stays unanswered
+        cloudjobs.store(dir).add({ jobId: "comfy-wait", model: "Klein", recipe: "cloud_flux", saveId: "9", started: Date.now() - 1000 });
+        const mixed = await index3.recoverCloudJobs();
+        check("when both a local picture and a Comfy Cloud job are noted with no Comfy key, the local picture comes and the Comfy job stays unanswered",
+            mixed && mixed.pictures.length === 1 && mixed.pictures[0].jobId === n0.jobId && mixed.unanswered === 1 && mixed.keptIds.join(",") === "comfy-wait",
+            short({ mixed: mixed && { ...mixed, pictures: mixed.pictures.length } }));
+
+        // a held local file reports localUnread (never Comfy Cloud's unread)
+        const realReadFile = fs.readFileSync;
+        fs.readFileSync = (f, ...a) => {
+            if (n0.file && String(f).endsWith(path.join("results", n0.file))) throw Object.assign(new Error("busy"), { code: "EBUSY" });
+            return realReadFile(f, ...a);
+        };
+        let heldLocal;
+        try { heldLocal = await index3.recoverCloudJobs({ only: [n0.jobId] }); } finally { fs.readFileSync = realReadFile; }
+        check("a kept local file held by another process reports localUnread (not Comfy Cloud's unread) and stays kept",
+            heldLocal && heldLocal.localUnread === 1 && heldLocal.unread === 0 && heldLocal.kept === 1 && heldLocal.keptIds.join(",") === n0.jobId,
+            short(heldLocal));
+
+        if (n0.jobId) index3.ackCloudJob(n0.jobId);
+        const afterAckFiles = fs.existsSync(resDir) ? fs.readdirSync(resDir) : [];
+        check("ackCloudJob removes the local picture's note and deletes its file from <userData>/results/",
+            Boolean(n0.jobId) && cloudjobs.store(dir).list().map((e) => e.jobId).join(",") === "comfy-wait" && afterAckFiles.length === 0,
+            short({ jobId: n0.jobId, left: cloudjobs.store(dir).list(), afterAckFiles }));
+
+        // with a Comfy Cloud key set, a local note is NEVER sent to comfycloud.recoverJobs (which would drop it on 404)
+        comfyKey = TEST_KEY;
+        fs.mkdirSync(resDir, { recursive: true });
+        fs.writeFileSync(path.join(resDir, "local-with-key.png"), paidBytes);
+        cloudjobs.store(dir).keep([
+            { jobId: "local-with-key", provider: "openai", model: "gpt-image-2", recipe: "gpt_image", started: Date.now() - 2000, file: "local-with-key.png", mime: "image/png" },
+            { jobId: "remote-with-key", model: "Klein", recipe: "cloud_flux", saveId: "9", started: Date.now() - 1000 },
+        ]);
+        const comfySpy = fakeComfyV2({
+            origin: MOCK,
+            jobsById: { "remote-with-key": { status: "succeeded", outputs: [{ node_id: "9", name: "remote.png" }] } },
+        });
+        globalThis.fetch = comfySpy.fetch;
+        let bothWithKey;
+        try { bothWithKey = await index3.recoverCloudJobs(); } finally { globalThis.fetch = saved; comfyKey = ""; }
+        const askedPaths = comfySpy.calls.map((c) => c.path);
+        const survivingIds = cloudjobs.store(dir).list().map((e) => e.jobId).sort().join(",");
+        check("with a Comfy Cloud key set, recoverCloudJobs queries Comfy only for the remote job id and keeps the local note and its file intact",
+            askedPaths.includes("/api/v2/jobs/remote-with-key")
+            && !askedPaths.some((p) => p.includes("local-with-key"))
+            && bothWithKey.pictures.length === 2
+            && survivingIds === "local-with-key,remote-with-key"
+            && fs.existsSync(path.join(resDir, "local-with-key.png")),
+            short({ askedPaths, pictures: bothWithKey.pictures.map((p) => p.jobId), survivingIds }));
+        index3.ackCloudJob("local-with-key");
+        index3.ackCloudJob("remote-with-key");
+
+        // MAIN2-age: a local picture older than 24 h stays safe on disk, is brought back by recoverCloudJobs, and survives store.add's aged filter
+        fs.writeFileSync(path.join(resDir, "aged-local.png"), paidBytes);
+        const stAged = cloudjobs.store(dir);
+        stAged.keep([
+            { jobId: "aged-local", provider: "openai", model: "gpt-image-2", started: Date.now() - 50 * HOUR, file: "aged-local.png", mime: "image/png" },
+            { jobId: "aged-remote", started: Date.now() - 50 * HOUR },
+            ...Array.from({ length: 48 }, (_, i) => ({ jobId: "young-" + i, started: Date.now() - HOUR })),
+        ]);
+        const wroteAdd = stAged.add({ jobId: "young-48", started: Date.now() });
+        check("store.add returns true when it writes, drops an aged remote note first, and keeps a local file note older than 24 h",
+            wroteAdd === true && stAged.list().some((e) => e.jobId === "aged-local") && !stAged.list().some((e) => e.jobId === "aged-remote") && fs.existsSync(path.join(resDir, "aged-local.png")),
+            short({ wroteAdd, hasLocal: stAged.list().some((e) => e.jobId === "aged-local") }));
+        stAged.keep([{ jobId: "aged-local", provider: "openai", model: "gpt-image-2", started: Date.now() - 50 * HOUR, file: "aged-local.png", mime: "image/png" }]);
+        const agedRec = await index3.recoverCloudJobs();
+        check("a local picture older than 24 h is brought back as an earlier result (never deleted by Comfy's 24 h rule)",
+            agedRec.pictures.length === 1 && agedRec.pictures[0].jobId === "aged-local" && agedRec.pictures[0].earlier === true
+            && agedRec.dropped === 0 && fs.existsSync(path.join(resDir, "aged-local.png")),
+            short({ agedRec: { ...agedRec, pictures: agedRec.pictures.length }, exists: fs.existsSync(path.join(resDir, "aged-local.png")) }));
+        index3.ackCloudJob("aged-local");
+
+        // MAIN2-orphans: a failed write during keep unlinks *.tmp, and a locked cloudjobs.json logs an error (not 'kept') and leaves no orphan
+        logged.length = 0;
+        const realWriteSync = fs.writeFileSync;
+        globalThis.fetch = async () => ({ ok: true, status: 200, headers: { get: () => "application/json" }, json: async () => ({ data: [{ b64_json: paidBytes.toString("base64") }] }) });
+        fs.writeFileSync = (f, ...a) => {
+            if (typeof f === "number") throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+            return realWriteSync(f, ...a);
+        };
+        try {
+            await index3.edit({ provider: "openai", model: "gpt-image-2", kind: "text", prompt: "x", width: 1024, height: 1024 }, { pageGone: () => true });
+        } finally {
+            fs.writeFileSync = realWriteSync;
+            globalThis.fetch = saved;
+        }
+        const afterTmpFail = fs.readdirSync(resDir);
+        check("when writing a kept picture fails, the partial *.tmp file is unlinked in the catch",
+            afterTmpFail.length === 0 && logged.some((x) => x.level === "error" && /could not keep the picture/.test(x.message)),
+            short({ afterTmpFail, logged }));
+
+        logged.length = 0;
+        cloudjobs.store(dir).keep([{ jobId: "existing-note", started: Date.now() - 1000 }]);
+        globalThis.fetch = async () => ({ ok: true, status: 200, headers: { get: () => "application/json" }, json: async () => ({ data: [{ b64_json: paidBytes.toString("base64") }] }) });
+        fs.readFileSync = (f, ...a) => {
+            if (String(f).endsWith(cloudjobs.FILE)) throw Object.assign(new Error("busy"), { code: "EBUSY" });
+            return realReadFile(f, ...a);
+        };
+        try {
+            await index3.edit({ provider: "openai", model: "gpt-image-2", kind: "text", prompt: "x", width: 1024, height: 1024 }, { pageGone: () => true });
+        } finally {
+            fs.readFileSync = realReadFile;
+            globalThis.fetch = saved;
+        }
+        const afterNoteFail = fs.readdirSync(resDir);
+        check("when cloudjobs.json cannot be updated, store.add returns false, edit logs an error instead of 'the picture is kept', and no orphan stays in results/",
+            afterNoteFail.length === 0
+            && logged.some((x) => x.level === "error" && /could not note the picture/.test(x.message))
+            && !logged.some((x) => /the picture is kept/.test(x.message)),
+            short({ afterNoteFail, logged }));
+
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);
     console.log(failed ? "FAIL" : "PASS");
