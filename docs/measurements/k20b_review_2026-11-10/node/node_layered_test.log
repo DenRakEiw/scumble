@@ -1,0 +1,172 @@
+(node:62340) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-p/renderer/editor/inpaint_layered.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-p\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+--- PSD: channels, compression, depth ---
+[ok] raw channels read exactly: [165,90,7,255]
+[ok] RLE channels read exactly: [165,90,7,255]
+[ok] ZIP channels read exactly: [165,90,7,255]
+[ok] ZIP with prediction channels read exactly: [165,90,7,255]
+[ok] a ZIP channel without an inflater is an error, not garbage: a ZIP-compressed PSD channel needs an inflater
+[ok] 16 bit (ZIP with prediction on words) rounds to 8: [242,242,242,255]
+[ok] 16 bit is named in the notes: ["16 bits per channel rounded to 8"]
+[ok] 16 bit rounded is a loss (the status line goes red): ["16 bits per channel rounded to 8"]
+[ok] 16 bit RLE, and no alpha channel is opaque
+[ok] grayscale replicates its channel, alpha kept
+
+--- PSD: layer records ---
+[ok] layers bottom first, adjustments and empty layers left out: ["Background","Ebene äöü ✓","hidden","odd blend","clipped","clipped to curves"]
+[ok] layers without a mask have no mask field, and no note speaks of layer masks: ["2 adjustment or fill layers left out (\"Levels 1\", \"Curves over pixels\"): the picture can look different","1 clipped layer kept clipped","clipping to a group or a left-out layer is not kept (\"clipped to curves\" now covers more)","blend modes the editor lacks became normal: \"odd blend (xxxx)\ ...
+[ok] the Unicode name wins over the Pascal one
+[ok] position, size, blend and opacity: {"x":3,"y":2,"w":4,"h":3,"blend":"multiply","opacity":0.5019607843137255}
+[ok] a hidden layer (flag 2) is hidden, a negative offset kept
+[ok] an unknown blend mode becomes normal and is named: ["2 adjustment or fill layers left out (\"Levels 1\", \"Curves over pixels\"): the picture can look different","1 clipped layer kept clipped","clipping to a group or a left-out layer is not kept (\"clipped to curves\" now covers more)","blend modes the editor lacks became normal: \"odd blend (xxxx)\ ...
+[ok] a clipped layer stays clipped: ["2 adjustment or fill layers left out (\"Levels 1\", \"Curves over pixels\"): the picture can look different","1 clipped layer kept clipped","clipping to a group or a left-out layer is not kept (\"clipped to curves\" now covers more)","blend modes the editor lacks became normal: \"odd blend (xxxx)\ ...
+[ok] a clip onto a left-out layer is dropped and named: ["2 adjustment or fill layers left out (\"Levels 1\", \"Curves over pixels\"): the picture can look different","1 clipped layer kept clipped","clipping to a group or a left-out layer is not kept (\"clipped to curves\" now covers more)","blend modes the editor lacks became normal: \"odd blend (xxxx)\ ...
+[ok] adjustment layers are named, with and without pixels: ["2 adjustment or fill layers left out (\"Levels 1\", \"Curves over pixels\"): the picture can look different","1 clipped layer kept clipped","clipping to a group or a left-out layer is not kept (\"clipped to curves\" now covers more)","blend modes the editor lacks became normal: \"odd blend (xxxx)\ ...
+[ok] left-out layers are a loss: ["2 adjustment or fill layers left out (\"Levels 1\", \"Curves over pixels\"): the picture can look different","1 clipped layer kept clipped","clipping to a group or a left-out layer is not kept (\"clipped to curves\" now covers more)","blend modes the editor lacks became normal: \"odd blend (xxxx)\ ...
+[ok] the merged picture is read
+[ok] every blend mode the editor writes comes back: ["normal","dissolve","darken","multiply","color-burn","linear-burn","darker-color","lighten","screen","color-dodge","linear-dodge","lighter-color","overlay","soft-light","hard-light","vivid-light","linear-light","pin-light","hard-mix","difference","exclusion","subtract","divide","hue","saturation"," ...
+
+--- PSD: masks and groups ---
+[ok] a masked layer's pixels come back as they are (the mask is not multiplied in)
+[ok] the mask comes back at the layer's size: its rectangle placed, its default (0) outside: 0,11,48,0,0,0,0,85,122,0,0,0
+[ok] the mask's default colour and switch: {"def":0,"off":false}
+[ok] a kept mask is named, nothing says applied: ["1 layer mask kept as a mask"]
+[ok] a kept mask is no loss: ["1 layer mask kept as a mask"]
+[ok] a mask with default white is white outside its rectangle: 255,11,48,255,255,255,255,85,122,255,255,255
+[ok] a switched-off mask comes back switched off, placed the same, the pixels untouched: true
+[ok] the note says it is switched off: ["1 layer mask kept as a mask (switched off)"]
+[ok] only flag bit 1 switches a mask off
+[ok] a -3 alone is the mask: 0,11,48,0,0,0,0,85,122,0,0,0
+[ok] with -2 and -3, -2 at the first rectangle is the mask, with its own flags: 0,11,48,0,0,0,0,85,122,0,0,0
+[ok] the layer after a -3 at the second rectangle reads right: [1,2,3,4]
+[ok] a -3 alone with a 36-byte record: at the second rectangle, its default and its switch: 255,255,255,255,255,255,250,241,232,255,255,255
+[ok] mask parameters (flag bit 4) are skipped before the second rectangle: 255,255,255,255,255,255,250,241,232,255,255,255
+[ok] a mask larger than the layer, offset, at negative coordinates: the part over the layer: 11,24,37,50,128,141,154,167,245,2,15,28
+[ok] a mask partly over the layer: placed where it covers it, the default elsewhere: 255,255,255,255,255,255,255,255,255,255,22,33,255,255,255,66,77,255,255,255
+[ok] a mask rectangle away from the layer is its default everywhere
+[ok] an empty mask rectangle with default 0 is 0 everywhere, the next layer reads right: 0,0,0,0,0,0
+[ok] an empty mask rectangle with default 255 is 255 everywhere, the next layer reads right: 255,255,255,255,255,255
+[ok] a 16-bit mask with prediction is read at its own width and rounded to 8: 0,0,0,0,0,0,0,0,22,43,0,0,64,85,106,0,0,127,148,169,0,0,191,212,233
+[ok] an 8-bit mask with prediction at its own width: 255,0,29,58,87,255,255,116,145,174,203,255,255,232,5,34,63,255,255,255,255,255,255,255
+[ok] a -2 without a mask record is no mask, the next layer reads right: []
+[ok] a layer without a mask has no mask field
+[ok] two masks, one switched off, in one note: ["2 layer masks kept as masks (1 switched off)"]
+[ok] all switched off: ["2 layer masks kept as masks (all switched off)"]
+[ok] none switched off: ["2 layer masks kept as masks"]
+[ok] group records are not layers: ["below","in outer","in inner","above"]
+[ok] a group's opacity goes into its layers, nested ones too: [1,0.5019607843137255,0.5019607843137255,1]
+[ok] the groups come back as folders: [{"id":"g2","name":"inner","visible":false,"collapsed":false,"parent":"g1"},{"id":"g1","name":"outer","visible":true,"collapsed":true,"parent":null}]
+[ok] a layer names its innermost group: [null,"g1","g2",null]
+[ok] a hidden group is hidden, its layer keeps its own eye: [{"id":"g2","name":"inner","visible":false,"collapsed":false,"parent":"g1"},{"id":"g1","name":"outer","visible":true,"collapsed":true,"parent":null}]
+[ok] a folded group comes back folded
+[ok] the groups are named: ["2 groups kept as folders","the opacity of 1 group went into its layers"]
+
+--- PSD: flat files and refusals ---
+[ok] a flat PSD has no layers and its merged picture: [0,1,2,255,10,1,2,255]
+[ok] a raw merged picture too
+[ok] a merged picture with transparency keeps it
+[ok] PSB is refused by name: this is a PSB (Photoshop's large document format), which is not read; save it as PSD (at most 30,000 px a side)
+[ok] CMYK is refused by name: this PSD is in CMYK colour; only RGB and grayscale are read (convert it in Photoshop: Image > Mode > RGB)
+[ok] 32 bit is refused by name: this PSD has 32 bits per channel; only 8 and 16 are read
+[ok] not a PSD is refused by name: not a PSD file
+[ok] a truncated file says so: the file ends early (truncated or not a PSD)
+[ok] isPsd reads the signature
+[ok] LAYERED_EXT names .psd and .ora
+
+--- ORA ---
+[ok] isOra reads the stored mimetype
+[ok] the size and the layers bottom first: {"w":640,"names":["Background","Odd","In group","Top & \"quoted\""]}
+[ok] position, opacity and blend of a layer: {"name":"Top & \"quoted\"","x":10,"y":20,"opacity":0.5,"visible":true,"blend":"multiply","png":{"0":137,"1":80,"2":78,"3":71,"4":13,"5":10,"6":26,"7":10,"8":116,"9":111,"10":112}}
+[ok] a nested stack adds its offset, opacity and visibility: {"name":"In group","x":6,"y":9,"opacity":0.5,"visible":false,"blend":"normal","png":{"0":137,"1":80,"2":78,"3":71,"4":13,"5":10,"6":26,"7":10,"8":105,"9":110}}
+[ok] stored and deflated pictures come back as written
+[ok] an unknown composite-op, a missing picture and the group are named: ["blend modes the editor lacks became normal: \"Odd (svg:odd-blend)\"","1 layer without a picture left out (\"Lost\")","1 group flattened into their layers"]
+[ok] an ORA with a part left out is a loss: ["blend modes the editor lacks became normal: \"Odd (svg:odd-blend)\"","1 layer without a picture left out (\"Lost\")","1 group flattened into their layers"]
+[ok] an ORA without stack.xml is refused: the ORA file has no stack.xml
+[ok] a deflated entry without an inflater is an error: a deflated ORA entry needs an inflater
+[ok] every blend mode in ORA comes back: ["normal","dissolve","darken","multiply","color-burn","linear-burn","darker-color","lighten","screen","color-dodge","linear-dodge","lighter-color","overlay","soft-light","hard-light","vivid-light","linear-light","pin-light","hard-mix","difference","exclusion","subtract","divide","hue","saturation"," ...
+
+--- PSD writers: layer masks (PsdWriter, PsdBandWriter) ---
+[ok] PsdBandWriter (JS twin, parts of 3 rows) writes PsdWriter's bytes, masks and all: equal
+[ok] PsdBandWriter (JS twin, parts of a whole layer) writes PsdWriter's bytes, masks and all: equal
+[ok] PsdBandWriter (px.wasm, parts of 3 rows) writes PsdWriter's bytes, masks and all: equal
+[ok] PsdBandWriter (px.wasm, parts of a whole layer) writes PsdWriter's bytes, masks and all: equal
+[ok] the band writer sent parts of 3 rows without their previous rows: [{"rows":3,"prev":false,"transfer":1},{"rows":3,"prev":false,"transfer":1},{"rows":3,"prev":false,"transfer":1},{"rows":3,"prev":false,"transfer":1}]
+[ok] progress of a masked layer: the pixels to one half, the mask to the whole, rising: [0.21428571428571427,0.42857142857142855,0.5,0.7142857142857143,0.9285714285714286,1]
+[ok] progress of a plain layer: to the whole: [0.6,1]
+[ok] the written PSD parses strictly: every length, every row, nothing left over
+[ok] four records, each at its layer's rectangle: [[0,0,160,12],[3,2,153,9],[-2,5,4,9],[10,9,15,14]]
+[ok] a layer without a mask: four channels (-1, 0, 1, 2) and a mask record of 0 bytes: -1,0,1,2 / -1,0,1,2; 0 / 0
+[ok] a masked layer: five channels, the user mask (-2) last: -1,0,1,2,-2 / -1,0,1,2,-2
+[ok] the mask record: 20 bytes, the layer's rectangle, default colour 255, flags 0, two bytes of padding: [0,0,0,2,0,0,0,3,0,0,0,9,0,0,0,153,255,0,0,0]
+[ok] a switched-off mask: flags 2, its rectangle at negative coordinates: [0,0,0,5,255,255,255,254,0,0,0,9,0,0,0,4,255,2,0,0]
+[ok] no blending ranges, the Unicode name, nothing else in the extra data: [[0,["luni"]],[0,["luni"]],[0,["luni"]],[0,["luni"]]]
+[ok] the layer flags, blend and opacity: [0,2,"mul ",128]
+[ok] the pixels are written raw, colour under alpha 0 included
+[ok] the mask channel is the mask's alpha, not its colour
+[ok] the merged picture
+[ok] read back: four layers at their boxes: [["Background",0,0,160,12],["Masked äö",3,2,150,7],["Mask off",-2,5,6,4],["Plain",10,9,5,5]]
+[ok] read back: the pixels raw, byte for byte (the masks not multiplied in)
+[ok] read back: each mask byte for byte at its layer's size
+[ok] read back: the switch and the default colour
+[ok] read back: no mask on the plain layers
+[ok] read back: hidden, blend and opacity
+[ok] read back: the note: ["2 layer masks kept as masks (1 switched off)"]
+[ok] read back: masks kept are no loss (the status line stays plain): ["2 layer masks kept as masks (1 switched off)"]
+[ok] read back: the merged picture
+[ok] without masks both writers give the same bytes: equal
+[ok] without masks the bytes are the ones of before (SHA-256): 5b2532a0ef7d8a1601aca23607256fd2da1af2a7958aacbc2c40b09d7ac020fe
+[ok] groups: both writers give the same bytes: equal
+[ok] groups: read back as folders, nested, hidden, folded, the Unicode name: [{"id":"g2","name":"Inner","visible":false,"collapsed":false,"parent":"g1"},{"id":"g1","name":"Outer äö","visible":true,"collapsed":true,"parent":null}]
+[ok] groups: the layers in them, their own eyes kept: [[null,true],["g1",true],["g2",false],[null,true]]
+[ok] groups: no note of a group's opacity or blend: ["2 groups kept as folders"]
+[ok] groups: four records with lsct, pass through on the folders: [["norm","luni"],["norm","luni,lsct"],["mul ","luni"],["norm","luni,lsct"],["norm","luni"],["pass","luni,lsct"],["pass","luni,lsct"],["norm","luni"]]
+[ok] a mask adds its channel and its record, nothing else: 428 bytes more, 428 expected
+[ok] PsdWriter refuses a mask of another size: the mask of layer "Masked äö" is 5 x 5, its pixels 150 x 7
+[ok] PsdWriter refuses a mask without pixels: the mask of layer "Masked äö" has no pixels
+[ok] PsdBandWriter refuses a mask of another size: the mask of layer "Masked äö" is 5 x 5, its pixels 150 x 7
+[ok] PsdBandWriter refuses a mask flag without its rows: layer "Masked äö": a mask flag without its pixels
+[ok] PsdBandWriter refuses mask rows without the flag: layer "Masked äö": a mask source without L.mask
+[ok] ORA ignores a stray mask: the same file with and without: equal
+
+--- D0: the worker's reader (readPsdStream) beside readPsd ---
+[ok] flat.psd reads (0 layers, 300 x 600), through both readers
+[ok] deep.psd reads (3 layers, 280 x 500), through both readers
+[ok] a record with a rectangle and no colour channel is left out as empty: ["real"]
+[ok] an empty layer over a merged picture: the picture, no loss: []
+[ok] a grayscale flat file: gray replicated, opaque: [7,7,7,255,24,24,24,255]
+[ok] K20b: channel order [-2, -1, 0, 1, 2] keeps mask, alpha and RGB alike
+[ok] K20b: missing green channel fills 0 and missing alpha fills 255
+[ok] K20b: dangling PackBits repeat byte > 128 at end - 1 zero-fills without reading into row 1: red 85,0,0,0,171,205,0,0
+[ok] K20b: truncated raw merged picture beside layers keeps the layers (composite null)
+[ok] K20b: truncated raw merged picture on a flat PSD is neglected (no layers, composite null): layers 0, composite null
+
+--- H1 S5: crafted files are refused before they grow; valid files read as before ---
+[ok] inflateAtMost: zlib's bytes, zlib and raw, with no cap and with the cap at the size: 800077 / 800077 of 800077
+[ok] a cap one byte short is refused (.tooLarge): the compressed data unpacks to more than 800,076 bytes
+[ok] a cut stream and a wrong checksum still fail as a whole inflate does (the end is read within the cap): TypeError / TypeError
+[ok] a bomb of 256 MB (255 KB) with a cap of 1 MB stops there: 3 ms, 2 MB of buffers more: the compressed data unpacks to more than 1,048,576 bytes
+[ok] 5 valid ZIP-channel PSDs read the same through the capped inflater as through zlib
+[ok] a valid ORA with deflated entries reads the same through it
+[ok] crafted_huge_rle.psd (177 KB) is refused in 3 ms with 1 MB of buffers more: the PSD layer "Huge" holds less data than its 30,000 × 30,000 px need: the file is damaged
+[ok] crafted_wide.psd (1 KB) is refused in 0 ms with 0 MB of buffers more: the PSD layer "Wide" is 70,000 × 4 px, more than a layer can be (65,535 px a side, 1,074 MP): the file is damaged or not one this reader takes
+[ok] crafted_mask.psd (40 KB) is refused in 1 ms with 0 MB of buffers more: the PSD layer "Masked"'s mask holds less data than its 20,000 × 20,000 px need: the file is damaged
+[ok] crafted_zip_bomb.psd (65 KB) is refused in 6 ms with 4 MB of buffers more: a ZIP channel of the PSD layer "Bomb" unpacks to more than its 512 × 512 px: the file is damaged
+[ok] crafted_raw_short.psd (1 KB) is refused in 0 ms with 0 MB of buffers more: the PSD layer "Short" holds less data than its 4,096 × 4,096 px need: the file is damaged
+[ok] crafted_overlap.psd (302 KB) is refused in 1 ms with 0 MB of buffers more: the PSD layer "Overlap" holds less data than its 4,096 × 4,096 px need: the file is damaged
+[ok] crafted_flat.psd (94 KB) is refused in 2 ms with 0 MB of buffers more: the PSD's merged picture holds less data than its 16,000 × 16,000 px need: the file is damaged
+[ok] crafted_bomb.ora (64 KB) is refused in 0 ms with 0 MB of buffers more: the ORA entry data/l.png unpacks to more than the 1,024 bytes its zip directory gives: the file is damaged
+[ok] crafted_declared.ora (1 KB) is refused in 0 ms with 0 MB of buffers more: the ORA file's entries unpack to more than 256 MB (at data/l.png), far more than its 1 KB can hold: the file is damaged or not an image
+[ok] crafted_xml.ora (1 KB) is refused in 0 ms with 0 MB of buffers more: the ORA file's stack.xml unpacks to 20 MB, more than a stack.xml can be (16 MB): the file is damaged
+[ok] crafted_png.ora (1 KB) is refused in 0 ms with 0 MB of buffers more: the ORA layer "L" is 70,000 × 4 px, more than a layer can be (65,535 px a side, 537 MP): the file is damaged or not one this reader takes
+[ok] crafted_many.ora (1 KB) is refused in 0 ms with 0 MB of buffers more: the ORA file's layers add up to more than 268 MP at the ORA layer "L2", more than the layers of a 64 × 64 px picture can be: the file is damaged
+[ok] crafted_decode.ora (1 KB) is refused in 0 ms with 0 MB of buffers more: the ORA layer "L" is 30,000 × 20,000 px, more than a layer can be (65,535 px a side, 537 MP): the file is damaged or not one this reader takes
+[ok] an inflater that ignores the cap is held to it: the same refusals: a ZIP channel of the PSD layer "Bomb" unpacks to more than its 512 × 512 px: the file is damaged / the ORA entry data/l.png unpacks to more than the 1,024 bytes its zip directory gives: the file is damaged
+[ok] a merged picture too short beside layers: the layers open, no merged picture: {"layers":1,"composite":false}
+[ok] readPsd and readOra call onHeader once with the size, before the layers (a throw there stops the read before the file ends early): [{"width":37,"height":19,"depth":8,"mode":3,"channels":3}] 40000 x 40000 too large [{"width":4,"height":4}] size refused
+[ok] readPsdStream (PSD_JS, px.wasm, px_scalar.wasm) answers as readPsd on all 69 PSDs read above (14 of them refused), in bands of 3 rows and of 256: 69 files x 3 kernel builds x 2 band sizes
+
+149 of 149 checks passed
+PASS
