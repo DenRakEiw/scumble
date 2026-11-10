@@ -30,7 +30,7 @@ import { liquifyBlock as liquifyBlockJS, previewBlock as previewBlockJS, liquify
 // the retouch brushes' twins live with the brushes (K26, K27; inpaint_stroke.js imports nothing, so no cycle)
 import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin, toneRGBA as toneRGBATwin, spongeRGBA as spongeRGBATwin, freqSplit as freqSplitTwin } from "../inpaint_stroke.js";
 
-export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, tiffPlan, readTiffBand, TIFF_BAND_BYTES, TIFF_JS } from "./kernels_js.js";
+export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, tiffPlan, readTiffBand, TIFF_BAND_BYTES, TIFF_JS, PSD_JS } from "./kernels_js.js";
 // this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4), their clocks and the copies
 // around them (docs/PLAN_WASM_K1.md §1.1); they survive a new instance
 export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
@@ -64,8 +64,12 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * `tiffUnpack`, `tiffUnpredict`, `tiffPredict`, `tiffToRgba`, and `tiffStripWasm` (K15, K17): `tiffUnpack`, `tiffUnpredict`, `tiffPredictRgba`, `tiffToRgba`, and `tiffPartJob` / `tiffStrip` of `inpaint_tiff.js`.
  * `clipCoverage`, `dissolveRows`, `psdPartWasm` and `stackIntoWasm` (K10c): clipping-group coverage and dissolve in
  * wasm memory, and pointer gather for `psd_part` and `stack_into` jobs.
+ * `psdRead` (K20b): the PSD reader's band kernels (`packbitsRows`, `psdMaskRgba`, `psdBandRgba`, `psdBandMask`) in `psd_read`.
+ * `psdWindow` (K20b review), read on the window: how many bands a `psd_read` job may have posted and not yet had
+ * acknowledged after the window's `writeRect` (inpaint_canvas.js `readPsdOnPool`); absent, `PSD_WINDOW` (8); 0 posts every
+ * band at once (K20b as first built).
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", tiffUnpack: "kernel", tiffUnpredict: "kernel", tiffPredict: "kernel", tiffToRgba: "kernel", tiffStripWasm: "kernel", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", tiffUnpack: "kernel", tiffUnpredict: "kernel", tiffPredict: "kernel", tiffToRgba: "kernel", tiffStripWasm: "kernel", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel", psdRead: "kernel", psdWindow: "count" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -1280,4 +1284,65 @@ export function guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out = null)
     }
     return J.guidedFar(raw, rw, rh, grey, gw, gh, r, eps, lo, hi, out);
 }
+
+/**
+ * Unpack `rows` PSD PackBits rows (`rowBytes` unpacked bytes per row) from `src`, advancing by each row's big-endian
+ * `u16` byte count in `lensBytes` (`inpaint_layered.js` `packbitsRows`, K20b), routed by `psdRead`.
+ */
+export function packbitsRows(lensBytes, src, rows, rowBytes, out = null) {
+    const p = rustPx("psdRead");
+    if (p) {
+        try { return p.packbitsRows(lensBytes, src, rows, rowBytes, out); }
+        catch (err) { if (!recovered(p, err, "packbits_rows")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.packbitsRows(lensBytes, src, rows, rowBytes, out);
+}
+
+/**
+ * Place a band's mask overlap into `out` as `[255, 255, 255, alpha]` over `[ry0, ry1) × [x0, x1)` and
+ * `[255, 255, 255, def]` elsewhere (`inpaint_layered.js` `psdMaskRgba`, K20b), routed by `psdRead`.
+ */
+export function psdMaskRgba(src, mw, sx0, w, rows, x0, x1, ry0, ry1, bits, def, out = null) {
+    const p = rustPx("psdRead");
+    if (p) {
+        try { return p.psdMaskRgba(src, mw, sx0, w, rows, x0, x1, ry0, ry1, bits, def, out); }
+        catch (err) { if (!recovered(p, err, "psd_mask_rgba")) throw err; }
+        finally { releaseIfLarge(); }
+    }
+    return J.psdMaskRgba(src, mw, sx0, w, rows, x0, x1, ry0, ry1, bits, def, out);
+}
+
+const PSD_RUST = Object.freeze({
+    packbitsRows,
+    maskRgba: psdMaskRgba,
+    bandRgba(descs, w, y0, rows, depth, gray, spent = null) {
+        const p = rustPx("psdRead") && rustPx("tiffUnpredict") && rustPx("tiffToRgba");
+        if (p) {
+            try { return p.psdBandRgba(descs, w, y0, rows, depth, gray, spent); }
+            catch (err) { if (!recovered(p, err, "packbits_rows")) throw err; }
+            finally { releaseIfLarge(); }
+        }
+        return J.psdBandRgba(descs, w, y0, rows, depth, gray, spent);
+    },
+    bandMask(desc, L, m, w, h, y0, rows, depth, spent = null) {
+        const p = rustPx("psdRead") && rustPx("tiffUnpredict");
+        if (p) {
+            try { return p.psdBandMask(desc, L, m, w, h, y0, rows, depth, spent); }
+            catch (err) { if (!recovered(p, err, "psd_mask_rgba")) throw err; }
+            finally { releaseIfLarge(); }
+        }
+        return J.psdBandMask(desc, L, m, w, h, y0, rows, depth, spent);
+    },
+});
+
+/**
+ * The PSD band kernel set for `readPsdStream(..., { kernels: psdKernels() })` (K20b, `docs/PLAN_WASM_K20.md` §2.3).
+ * Each band looks up `rustPx("psdRead")` dynamically so an instance replacement or trap recovery mid-file falls back
+ * seamlessly without dropping or duplicating bands.
+ */
+export function psdKernels() {
+    return PSD_RUST;
+}
+
 

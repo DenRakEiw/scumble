@@ -63,7 +63,7 @@ import { liquifyStore } from "./inpaint_liquify.js";
 import { disparityRange } from "./inpaint_depth.js";
 import { rangeRowBookkeeping } from "./inpaint_weights.js";
 import { fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, guidedFar, route, pngPartLinesCap, pngPartDecode, pngPartFinish, tiffKernels } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, guidedFar, route, pngPartLinesCap, pngPartDecode, pngPartFinish, tiffKernels, psdKernels } from "./px/kernels.js";
 import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
@@ -918,31 +918,60 @@ async function tiffRead(msg) {
  * before it queued the job); `progress` messages `{ index, mask, rgba, w, h, y0, rows }` (the band's buffer
  * transferred), a layer at a time, its pixels before its mask; the reply `{ doc }` (readPsdStream's answer), or `{ failed }` with the reader's message for a file it refuses,
  * which the window shows as its own reader would, without reading the file again. Plain JS: K20b puts the Rust reader
- * into this job. Its timing: read (the blob), channels, inflate, interleave, mask, deliver (the posts), bands.
+ * into this job. Its timing: read (the blob), channels, inflate, interleave, mask, deliver (the posts), wait (paced, below), bands.
+ *
+ * `msg.window` > 0 (the window's route `psdWindow`, inpaint_canvas.js `readPsdOnPool`; K20b review K20b-T1): at most that
+ * many bands are posted and not yet acknowledged; the window acknowledges each band after its `writeRect` with
+ * `{ op: "ack", id, n }` (`psdAck`, `n` the bands it has written), and the reader waits for that before it makes the next
+ * band, so a reader faster than the window's writes cannot queue a layer's bands ahead of the window's other tasks.
+ * 0 or absent: every band posted at once, as before.
  */
-async function psdRead(msg) {
+export async function psdRead(msg) {
     const t0 = now();
     const bytes = new Uint8Array(await msg.blob.arrayBuffer());
     const read = now() - t0;
     const spent = {};
-    let inflate = 0, inflates = 0, pixels = 0;
-    const timing = () => ({ op: "psd_read", kernels: "js", pixels, kernel: now() - t0, read, inflate, inflates, ...spent });
+    let inflate = 0, inflates = 0, pixels = 0, sent = 0;
+    const win = Math.max(0, msg.window | 0), pace = win > 0 ? { done: 0, wake: null } : null;
+    if (pace) PSD_ACKS.set(msg.id, pace);
+    const caughtUp = async () => { while (sent - pace.done >= win) await new Promise((res) => { pace.wake = res; }); };
+    const timing = () => ({ op: "psd_read", kernels: rustPx("psdRead") ? "rust" : "js", pixels, kernel: now() - t0, read, inflate, inflates, window: win, ...spent });
     try {
         const doc = await readPsdStream(bytes, {
             // the window's inflater (inpaint_layered.js inflateAtMost): the same bytes, stopped at the bytes kept
             inflate: async (b, cap) => { const t = now(); try { return await inflateAtMost(b, "deflate", cap); } finally { inflate += now() - t; inflates++; } },
             rowsPerBand: msg.rowsPerBand || TILE,
             onHeader: (h) => { pixels = h.width * h.height; },   // the window checked the size from the header before the job
-            onRows: (index, kind, rgba, w, h, y0, rows) => { self.postMessage({ id: msg.id, progress: true, index, mask: kind === "mask", rgba: rgba.buffer, w, h, y0, rows }, [rgba.buffer]); },
+            onRows: (index, kind, rgba, w, h, y0, rows) => {
+                self.postMessage({ id: msg.id, progress: true, index, mask: kind === "mask", rgba: rgba.buffer, w, h, y0, rows }, [rgba.buffer]);
+                sent++;
+                return pace && sent - pace.done >= win ? caughtUp() : undefined;
+            },
             spent,
+            kernels: psdKernels(),
         });
         return { doc, timing: timing() };
     } catch (err) {
         return { failed: String((err && err.message) || err), timing: timing() };
     } finally {
+        if (pace) PSD_ACKS.delete(msg.id);
+        releaseIfLarge();
         // the file's array goes now, not at this idle worker's next collection (the answer holds no view of it)
         try { if (typeof bytes.buffer.transfer === "function") bytes.buffer.transfer(0); } catch (_) { /* detached already */ }
     }
+}
+
+/** The paced `psd_read` jobs of this thread: job id -> { done (bands the window acknowledged), wake (the waiting reader's resolve) }. */
+const PSD_ACKS = new Map();
+
+/** The window's acknowledgement of a paced `psd_read` (`{ op: "ack", id, n }`, not a job): wakes the reader when it waits. */
+export function psdAck(msg) {
+    const pace = PSD_ACKS.get(msg && msg.id);
+    if (!pace) return;
+    pace.done = Math.max(pace.done, msg.n | 0);
+    const wake = pace.wake;
+    pace.wake = null;
+    if (wake) wake();
 }
 
 /** CRC-32 and size of a blob (a zip entry of an ORA file). */
@@ -1977,6 +2006,8 @@ let jobsInFlight = 0;
 if (inWorker) self.onmessage = async (e) => {
     const msg = e.data || {};
     if (msg.op === "arena") { arenaMessage(msg); return; }
+    // not a job: the window's acknowledgement of a paced psd_read's bands (psdRead), handled while that job waits
+    if (msg.op === "ack") { psdAck(msg); return; }
     // not a job: the memory this thread keeps between jobs (tools/px_probe.py --retention), before the counters
     if (msg.op === "px_stats") { self.postMessage({ id: msg.id, ok: true, op: "px_stats", ...pxInstances() }); return; }
     if (!jobsInFlight++) pxCalls(true);

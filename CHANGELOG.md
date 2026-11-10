@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Large PSD files open about twice as fast**, and the window stays responsive while their layers land.
 - **The assistant's render questions show the settings.** Before a render or upscale its question lists the document's settings and marks what the chat changed, and it can set crop options, use the magic wand and add boxes without failing on the active layer.
 - **The assistant asks before merging into your own layer.** Merging down from the assistant now asks when the target is a layer you made or the base image, and unanswered question cards are switched off when a turn stops, so an old card cannot answer a later question.
 - **Split into layers** (*Image > Split into Layers...*, MCP `split_layers`): Seedream's layer decomposition on BytePlus ModelArk (5.5 and 5.0 Pro) lands a picture's elements as named layers in one new group above your layers, as one undo step. Not run against the live API yet.

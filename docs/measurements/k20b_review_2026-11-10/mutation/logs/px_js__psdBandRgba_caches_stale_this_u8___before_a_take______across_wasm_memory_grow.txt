@@ -1,0 +1,13 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=psd)
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TypeError: Cannot perform %TypedArray%.prototype.fill on a detached ArrayBuffer
+    at Uint8Array.fill (<anonymous>)
+    at Px.psdBandRgba (file:///C:/Users/schoeneberg/AppData/Local/Temp/k20b_mut_tree/renderer/editor/px/px.js:1285:29)
+    at Object.bandRgba (C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\tools\px_test.js:8196:55)
+    at streamChannelDescs (file:///C:/Users/schoeneberg/AppData/Local/Temp/k20b_mut_tree/renderer/editor/inpaint_layered.js:650:30)
+    at decodePsd (file:///C:/Users/schoeneberg/AppData/Local/Temp/k20b_mut_tree/renderer/editor/inpaint_layered.js:865:45)
+    at async collectStream (C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\tools\px_test.js:8211:21)
+    at async psdCases (C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\tools\px_test.js:8359:27)
+    at async group (C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\tools\px_test.js:65:5)
+    at async main (C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\tools\px_test.js:13792:9)

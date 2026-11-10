@@ -1,0 +1,87 @@
+(node:16552) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-p/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-p\package.json.
+(Use `electron --trace-warnings ...` to show where the warning was created)
+PX_ONLY: only the groups tiff, psd run (a filtered run, not the full test)
+ok   inpaint_tiff.js exports unpackStrip and TIFF_JS.unpackStrip, re-exported by kernels_js.js and kernels.js
+ok   rust simd tiff_unpack equals its twin byte for byte (21 cases, each also at an odd offset)
+ok   rust scalar tiff_unpack equals its twin byte for byte (21 cases, each also at an odd offset)
+ok   js tiff_unpack gives the same at an odd offset
+ok   tiff_unpack: all 21 cases match their reference payloads (including hand-derived mid-code and mid-run stops)
+ok   tiff_unpack (twin): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (simd): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (scalar): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (simd): negative error codes (-1..-5) and messages match the JS twin
+ok   tiff_unpack (scalar): negative error codes (-1..-5) and messages match the JS twin
+ok   tiff_unpack fuzz (random, 9..12-bit & full-4096 bit-flipped, and every-prefix sweep): 0 traps, identical bytes or error codes across twin, simd and scalar  sweepLen=3475 (3476 prefixes)
+ok   kernels.js tiffUnpack routes LZW/PackBits to Rust (2 calls), keeps uncompressed (1) on JS copy (0 calls), and recovers from a trap  jsCalls=0 rustCalls=2 rawRustCalls=0 recReplaced=true
+ok   inpaint_tiff.js readTiff: 1-byte first LZW piece keeps byte[0] when byte[0] === byte[1] and still refuses old-style LZW
+ok   inpaint_tiff.js readTiff: StripRows.open, TileRows.tile, and readTiffBand stop at `need` / `want` when damaged LZW bytes follow
+ok   rust simd tiff_unpredict equals its twin byte for byte (332 cases, each also at an odd offset)
+ok   rust scalar tiff_unpredict equals its twin byte for byte (332 cases, each also at an odd offset)
+ok   js tiff_unpredict gives the same at an odd offset
+ok   tiff_unpredict refuses invalid bits, per, rowBytes, and truncated buffers across twin, simd and scalar
+ok   rust simd tiff_predict_rgba equals its twin byte for byte (37 cases, each also at an odd offset)
+ok   rust scalar tiff_predict_rgba equals its twin byte for byte (37 cases, each also at an odd offset)
+ok   js tiff_predict_rgba gives the same at an odd offset
+ok   tiff_predict_rgba + tiff_unpredict round-trips back to the original RGBA bytes across all widths
+ok   tiff_predict_rgba refuses non-positive dimensions, short buffers, and null pointers
+ok   rust simd tiff_to_rgba equals its twin byte for byte (406 cases, each also at an odd offset)
+ok   rust scalar tiff_to_rgba equals its twin byte for byte (406 cases, each also at an odd offset)
+ok   js tiff_to_rgba gives the same at an odd offset
+ok   tiff_to_rgba exhaustive 65,536 (alpha, colour) premultiplied pairs (A=0 -> 0, A=255 -> pass, 0<A<255 rounded): 0 bytes differ across twin, simd and scalar
+ok   tiff_to_rgba exhaustive 65,536 16-bit values (LE and BE): 0 bytes differ across twin, simd and scalar
+ok   tiff_to_rgba planar 16-bit (K20b): exact (255*v+32895)>>16 identity and 0 bytes differ on 65,786-pixel 4/5-plane LE/BE w=259 (SIMD + tail)
+ok   tiff_to_rgba writes into caller-supplied out view without touching surrounding bytes
+ok   tiff_to_rgba refuses invalid specs, short buffers, missing palette LUTs, and null pointers
+ok   tiffStrip and tiffStripFromPtr (simd): byte-identical to tiffPart(args, p.zlib) across predictors 2/1/default, levels 1/2/6, tiles and stack
+ok   tiffStrip and tiffStripFromPtr (scalar): byte-identical to tiffPart(args, p.zlib) across predictors 2/1/default, levels 1/2/6, tiles and stack
+ok   inpaint_worker.js tiffPartJob: composeWasm=1 on tiles/stack, composeWasm=0 on rgba or js routes, resets p.job, calls releaseIfLarge(), and gives byte-identical strips to tiffPart(args, p.zlib)  tile=1 stack=1 rgba=0 jobBytes=0 rel=0->1
+ok   inpaint_worker.js tiffPartJob recovers from OOM and wasm traps in tiffStripFromPtr and tiffStrip, renews the instance, and falls back cleanly  oomPtr=true trapPtr=true trapRgba=true
+ok   kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels  tkMethodsMatch=true oldCalls=0 newCalls=4 callsRust={"tiff_predict_rgba":1,"tiff_to_rgba":1,"tiff_unpack":1,"tiff_unpredict":1} callsJs={} trapInPlaceOk=true
+ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1}
+ok   inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules  exact=false/4096 over=true/0 hi=false/true zCancel=true rawSlice=12 lzwBig=true extra=true
+       tiff_unpack (Uncompressed 1 MB strip): twin 0.02, simd 0.05, scalar 0.05 ms (median of 15)
+       tiff_unpack (LZW 1 MB strip): twin 5.11, simd 1.59, scalar 1.54 ms (median of 15)
+       tiff_unpack (PackBits 1 MB strip): twin 0.92, simd 0.11, scalar 0.11 ms (median of 15)
+       tiff_unpredict RGBA8 15000x16: twin 1.29, simd 0.10, scalar 0.39 ms (median of 15)
+       tiff_unpredict RGB8 15000x16: twin 0.98, simd 0.22, scalar 0.39 ms (median of 15)
+       tiff_predict_rgba 15000x16: twin 0.58, simd 0.05, scalar 0.35 ms (median of 15)
+       tiff_to_rgba RGB8->RGBA8 15000x16: twin 0.91, simd 0.22, scalar 0.21 ms (median of 15)
+       tiff_to_rgba RGBA8 premul->straight 15000x16: twin 2.85, simd 1.39, scalar 1.36 ms (median of 15)
+       tiff_unpredict 16b BE per=1 15000x16: twin 0.70, simd 0.16, scalar 0.62 ms (median of 15)
+       tiff_to_rgba planar RGBA8 15000x16: twin 2.01, simd 0.06, scalar 0.29 ms (median of 15)
+       tiff_to_rgba planar RGBA16 BE->RGBA8 15000x16: twin 2.23, simd 0.21, scalar 1.12 ms (median of 15)
+ok   rust simd module reports its SIMD flag
+ok   js psdPackRows gives the bytes of the PSD writer's packBits
+ok   js psdPackRows equals the rust simd
+ok   rust simd packbitsRows matches independent reference, round-trips psdPackRows, zero-fills short rows on dirty out, and preserves sentinel bytes
+ok   rust simd packbits_rows equals its twin byte for byte (19 cases, each also at an odd offset)
+ok   js packbits_rows gives the same at an odd offset
+ok   rust simd packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output  rawPbOk=true
+ok   rust simd psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views
+ok   rust simd psd_mask_rgba equals its twin byte for byte (52 cases, each also at an odd offset)
+ok   js psd_mask_rgba gives the same at an odd offset
+ok   rust simd psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output  rawMaskOk=true
+ok   rust simd psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs
+ok   rust simd psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+ok   rust simd readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated
+ok   inpaint_worker.js psdRead & kernels.js psdKernels(): routes psdRead/tiffToRgba/tiffUnpredict between Rust and JS twin, resets p.job, calls releaseIfLarge(), and matches PSD_JS  rustK=rust jsK=js calls={"packbits_rows":4,"psd_mask_rgba":4,"tiff_to_rgba":4,"tiff_unpredict":8} jsCalls={} rel=1->4 jobBytes=0
+ok   psdKernels() recovers mid-layer on band 2 of 4 from wasm RuntimeError and PxOutOfMemory without mutating d.bytes, leaking arena bytes, or dropping/duplicating bands  trapBandOk=true oomMaskOk=true
+       packbits_rows 15000x256 (1 plane): twin 1.60, simd 0.70 ms (median of 9)
+       psd_mask_rgba 8-bit 15000x256: twin 17.73, simd 2.00 ms (median of 9)
+       psd_mask_rgba 16-bit BE 15000x256: twin 18.37, simd 1.99 ms (median of 9)
+       psdBandRgba RLE RGBA8 15000x256 (4 planes -> RGBA8): twin 23.66, simd 5.16 ms (median of 9)
+ok   rust scalar module reports its SIMD flag
+ok   js psdPackRows gives the bytes of the PSD writer's packBits
+ok   js psdPackRows equals the rust scalar
+ok   rust scalar packbitsRows matches independent reference, round-trips psdPackRows, zero-fills short rows on dirty out, and preserves sentinel bytes
+ok   rust scalar packbits_rows equals its twin byte for byte (19 cases, each also at an odd offset)
+ok   rust scalar packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output  rawPbOk=true
+ok   rust scalar psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views
+ok   rust scalar psd_mask_rgba equals its twin byte for byte (52 cases, each also at an odd offset)
+ok   rust scalar psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output  rawMaskOk=true
+ok   rust scalar psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs
+ok   rust scalar psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+ok   rust scalar readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated
+PASS (only: tiff, psd; PX_ONLY, not the full test)

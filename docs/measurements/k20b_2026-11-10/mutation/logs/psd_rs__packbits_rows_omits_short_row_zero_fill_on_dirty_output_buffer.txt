@@ -1,0 +1,27 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 17 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 298706 bytes, sha256 3e1f0dd7cb23159f
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 237685 bytes, sha256 c4af223c307ef12f
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\crates\px)
+    Finished `release` profile [optimized] target(s) in 7.03s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.01s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=psd)
+FAIL rust simd packbitsRows matches independent reference, round-trips psdPackRows, zero-fills short rows on dirty out, and preserves sentinel bytes  dirty out / sentinel guard failed
+FAIL rust simd packbits_rows equals its twin byte for byte (19 cases, each also at an odd offset)  short row zero-padded before valid second row: out[1] is 254, the twin has 0
+FAIL rust scalar packbitsRows matches independent reference, round-trips psdPackRows, zero-fills short rows on dirty out, and preserves sentinel bytes  dirty out / sentinel guard failed
+FAIL rust scalar packbits_rows equals its twin byte for byte (19 cases, each also at an odd offset)  short row zero-padded before valid second row: out[1] is 254, the twin has 0
+FAIL (4) (only: psd; PX_ONLY, not the full test)
+ok   rust scalar packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output  rawPbOk=true
+ok   rust scalar psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views
+ok   rust scalar psd_mask_rgba equals its twin byte for byte (52 cases, each also at an odd offset)
+ok   rust scalar psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output  rawMaskOk=true
+ok   rust scalar psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs
+ok   rust scalar psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+ok   rust scalar readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated
+FAIL (4) (only: psd; PX_ONLY, not the full test)
+(node:58444) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k20b_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

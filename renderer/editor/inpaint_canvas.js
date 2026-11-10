@@ -366,6 +366,9 @@ const FLOOD_COARSE_PX = 2048;               // the wand's and the bucket's first
 const FLOOD_WHOLE_SHARE = 0.4;              // a region box above this share of the image is flooded in one pass over the whole image
 const SNAP_CANVAS_PX = 16 * 1024 * 1024;   // a selection undo step up to this many pixels is a pixels copy, above it a PNG
 const SEL_BOX_MAX_PX = 64 * 1024 * 1024;    // the selection's PNG holds its box up to this size, above it the whole mask (written in parts)
+// a PSD read on the pool (readPsdOnPool): bands its worker may have posted before this window acknowledged them (the route
+// psdWindow overrides it, 0 = unpaced; K20b review K20b-T1)
+const PSD_WINDOW = 8;
 const SYNC_ENCODE_PX = 16 * 1024 * 1024;    // above this the selection PNG for getValue is encoded off the main thread
 const HANDLE_PX = 9;
 const SIDE_DEFAULT_PX = 320;               // the side panel's width (item 17: the user drags it between the two below)
@@ -19064,7 +19067,8 @@ class InpaintEditor {
      * caller reads the file on this thread. The size is checked here from the header's 26 bytes before the job is
      * queued, so a file too large costs no worker and no read; a file the reader refuses throws its message as the
      * window's reader would; `later()` true stops the job at its next band (a CancelledError, the worker counted as
-     * stopped, not lost).
+     * stopped, not lost). Paced (K20b review): the worker has at most `PSD_WINDOW` bands (the route `psdWindow`; 0 =
+     * unpaced) posted and not yet acknowledged here after their `writeRect`.
      */
     async readPsdOnPool(file, later = () => false) {
         const head = new Uint8Array(await file.slice(0, 26).arrayBuffer());
@@ -19082,9 +19086,14 @@ class InpaintEditor {
         let refused = null, stopped = false, bands = 0, rgbaMs = 0, maskMs = 0;
         const drop = () => { for (const e of made.values()) for (const p of [e.px, e.maskPx]) if (p) p.release(); made.clear(); };
         let r;
+        // the acknowledgement window (inpaint_worker.js psdRead): each band acknowledged after its writeRect, so the
+        // worker never has more than `win` bands queued ahead of this window's other tasks (timers, input, paint)
+        const routedWin = kernelRoute("psdWindow"), win = routedWin === undefined ? PSD_WINDOW : routedWin;
+        let pool = null;
         try {
+            pool = editorPool();
             // "fail": a harness's way to see the fallback (an op no worker knows)
-            r = await editorPool().run(InpaintEditor.psdOnPool === "fail" ? "psd_read_refused" : "psd_read", { blob: file }, [], {
+            r = await pool.run(InpaintEditor.psdOnPool === "fail" ? "psd_read_refused" : "psd_read", { blob: file, window: win }, [], {
                 timeout: 600000,
                 onProgress: (m) => {
                     if (later()) { stopped = true; throw new CancelledError("psd_read"); }
@@ -19097,6 +19106,7 @@ class InpaintEditor {
                         e[key].writeRect({ data: new Uint8ClampedArray(m.rgba), width: m.w, height: m.rows }, 0, m.y0);
                         if (m.mask) maskMs += performance.now() - t0; else rgbaMs += performance.now() - t0;
                         bands++;
+                        if (win) pool.ack(m.id, bands);
                         if (!m.mask) this.setStatus(`Reading the layers of ${name} ... layer ${made.size}, ${Math.round(((m.y0 + m.rows) / m.h) * 100)} %`);
                     } catch (err) { refused = err; throw err; }
                 },
