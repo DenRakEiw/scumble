@@ -1,0 +1,8 @@
+
+
+DevTools listening on ws://127.0.0.1:9555/devtools/browser/7fbcf21a-85a2-427a-b842-d7860d30f14d
+Error occurred in handler for 'BROWSER_GET_PROCESS_MEMORY_INFO': [Error: Failed to create memory dump]
+Error occurred in handler for 'BROWSER_GET_PROCESS_MEMORY_INFO': [Error: Failed to create memory dump]
+Error occurred in handler for 'BROWSER_GET_PROCESS_MEMORY_INFO': [Error: Failed to create memory dump]
+Error occurred in handler for 'BROWSER_GET_PROCESS_MEMORY_INFO': [Error: Failed to create memory dump]
+Error occurred in handler for 'BROWSER_GET_PROCESS_MEMORY_INFO': [Error: Failed to create memory dump]

@@ -1,0 +1,694 @@
+{
+ "size": "15000x10000",
+ "tiles": true,
+ "kernels": "rust",
+ "kernelsInUse": "rust",
+ "dpr": 1.5,
+ "canvas": [
+  1820,
+  1198
+ ],
+ "visible": "visible",
+ "focused": true,
+ "params": {
+  "W": 15000,
+  "H": 10000,
+  "TOOLS": [
+   "blur"
+  ],
+  "SIZES": [
+   50,
+   200,
+   400,
+   1000
+  ],
+  "SAMPLES": [
+   "image",
+   "layer"
+  ],
+  "FX_SAMPLES": [
+   "layer"
+  ],
+  "KERNELS": "rust",
+  "VIEWS": [
+   "fit",
+   "1:1"
+  ],
+  "MOVES": 30,
+  "MOVE_CSS": 12,
+  "MODE": "sync",
+  "GAP": 4,
+  "PEN": 0,
+  "COALESCED": 1,
+  "HARDNESS": 0.5,
+  "SELECT": false,
+  "BASE_ROW": true,
+  "KEEP": false
+ },
+ "built": {
+  "reused": false,
+  "ms": 6927
+ },
+ "rows": [
+  {
+   "tool": "blur",
+   "sample": "layer",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": true,
+   "press": 47.8,
+   "kind": "smudge",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1181,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 77.1,
+    "sum": 245,
+    "over50": 1
+   },
+   "firstMove": 26.8,
+   "move": {
+    "med": 19.9,
+    "worst": 21.5,
+    "n": 5
+   },
+   "dab": {
+    "med": 18.5,
+    "worst": 20.1,
+    "n": 5
+   },
+   "frame": {
+    "med": 1.5,
+    "worst": 2,
+    "n": 5
+   },
+   "otherFrames": 0,
+   "up": 6.8,
+   "release": {
+    "max": 15.5,
+    "sum": 34,
+    "over50": 0
+   },
+   "step": "Blur",
+   "pxCalls": {
+    "blur_rgba": 43,
+    "mip_chain": 32,
+    "smudge_dab": 86
+   },
+   "jobs": {},
+   "changed": 12203,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1180,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1183,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "blur",
+   "sample": "layer",
+   "size": 50,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 4.4,
+   "kind": "smudge",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1184,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 18.7,
+    "sum": 466,
+    "over50": 0
+   },
+   "firstMove": 5.6,
+   "move": {
+    "med": 5.7,
+    "worst": 9.5,
+    "n": 29
+   },
+   "dab": {
+    "med": 4.7,
+    "worst": 8.3,
+    "n": 29
+   },
+   "frame": {
+    "med": 1,
+    "worst": 1.3,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 5.8,
+   "release": {
+    "max": 15.1,
+    "sum": 35,
+    "over50": 0
+   },
+   "step": "Blur",
+   "pxCalls": {
+    "blur_rgba": 781,
+    "mip_chain": 56,
+    "smudge_dab": 1562
+   },
+   "jobs": {},
+   "changed": 9283,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1183,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1188,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "blur",
+   "sample": "layer",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 6.2,
+   "kind": "smudge",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1189,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 36.1,
+    "sum": 901,
+    "over50": 0
+   },
+   "firstMove": 15.6,
+   "move": {
+    "med": 19.5,
+    "worst": 24.1,
+    "n": 29
+   },
+   "dab": {
+    "med": 17.9,
+    "worst": 22,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.3,
+    "worst": 2.1,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 6.3,
+   "release": {
+    "max": 15.5,
+    "sum": 40,
+    "over50": 0
+   },
+   "step": "Blur",
+   "pxCalls": {
+    "blur_rgba": 211,
+    "mip_chain": 144,
+    "smudge_dab": 422
+   },
+   "jobs": {},
+   "changed": 12203,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1188,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1198,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "blur",
+   "sample": "layer",
+   "size": 400,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 19.2,
+   "kind": "smudge",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1199,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 69.8,
+    "sum": 1531,
+    "over50": 15
+   },
+   "firstMove": 47.8,
+   "move": {
+    "med": 39,
+    "worst": 49.6,
+    "n": 29
+   },
+   "dab": {
+    "med": 37.6,
+    "worst": 48,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.6,
+    "worst": 2.1,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 5.1,
+   "release": {
+    "max": 17,
+    "sum": 41,
+    "over50": 0
+   },
+   "step": "Blur",
+   "pxCalls": {
+    "blur_rgba": 121,
+    "mip_chain": 186,
+    "smudge_dab": 242
+   },
+   "jobs": {},
+   "changed": 12177,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1198,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1209,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "blur",
+   "sample": "layer",
+   "size": 1000,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 83.3,
+   "kind": "smudge",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1214,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 212.6,
+    "sum": 3613,
+    "over50": 30
+   },
+   "firstMove": 125.9,
+   "move": {
+    "med": 108.6,
+    "worst": 141.9,
+    "n": 29
+   },
+   "dab": {
+    "med": 105.5,
+    "worst": 138.8,
+    "n": 29
+   },
+   "frame": {
+    "med": 2.8,
+    "worst": 3.3,
+    "n": 29
+   },
+   "otherFrames": 30,
+   "up": 8.2,
+   "release": {
+    "max": 17.1,
+    "sum": 41,
+    "over50": 0
+   },
+   "step": "Blur",
+   "pxCalls": {
+    "blur_rgba": 61,
+    "mip_chain": 480,
+    "smudge_dab": 122
+   },
+   "jobs": {
+    "mips": {
+     "n": 30,
+     "kernels": "rust",
+     "tiles": 321,
+     "kernel": 54.2,
+     "pxCalls": {
+      "mip_chain": 321
+     },
+     "gen": 0
+    }
+   },
+   "changed": 12166,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1209,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1237,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "blur",
+   "sample": "layer",
+   "size": 50,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 33.4,
+   "kind": "smudge",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1238,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 42.8,
+    "sum": 346,
+    "over50": 0
+   },
+   "firstMove": 5.7,
+   "move": {
+    "med": 2,
+    "worst": 2.8,
+    "n": 29
+   },
+   "dab": {
+    "med": 0.7,
+    "worst": 1,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.2,
+    "worst": 1.9,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 8.2,
+   "release": {
+    "max": 20,
+    "sum": 50,
+    "over50": 0
+   },
+   "step": "Blur",
+   "pxCalls": {
+    "blur_rgba": 91,
+    "smudge_dab": 182
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 3,
+     "kernel": 0.4,
+     "pxCalls": {
+      "mip_chain": 3
+     },
+     "gen": 0
+    }
+   },
+   "changed": 9301,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1237,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1238,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "blur",
+   "sample": "layer",
+   "size": 200,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 39.4,
+   "kind": "smudge",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1239,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 47.6,
+    "sum": 483,
+    "over50": 0
+   },
+   "firstMove": 5,
+   "move": {
+    "med": 4.3,
+    "worst": 5.7,
+    "n": 29
+   },
+   "dab": {
+    "med": 2.8,
+    "worst": 3.7,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.4,
+    "worst": 2,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 9.9,
+   "release": {
+    "max": 18.8,
+    "sum": 43,
+    "over50": 0
+   },
+   "step": "Blur",
+   "pxCalls": {
+    "blur_rgba": 31,
+    "smudge_dab": 62
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 10,
+     "kernel": 1.1,
+     "pxCalls": {
+      "mip_chain": 10
+     },
+     "gen": 0
+    }
+   },
+   "changed": 12193,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1238,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1240,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "blur",
+   "sample": "layer",
+   "size": 400,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 47.5,
+   "kind": "smudge",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1241,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 62,
+    "sum": 659,
+    "over50": 1
+   },
+   "firstMove": 10.8,
+   "move": {
+    "med": 11.9,
+    "worst": 14.7,
+    "n": 29
+   },
+   "dab": {
+    "med": 9.9,
+    "worst": 12.6,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.8,
+    "worst": 5.1,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 9.1,
+   "release": {
+    "max": 15.3,
+    "sum": 37,
+    "over50": 0
+   },
+   "step": "Blur",
+   "pxCalls": {
+    "blur_rgba": 31,
+    "smudge_dab": 62
+   },
+   "jobs": {
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 18,
+     "kernel": 2.2,
+     "pxCalls": {
+      "mip_chain": 18
+     },
+     "gen": 0
+    }
+   },
+   "changed": 12185,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1240,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1242,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "blur",
+   "sample": "layer",
+   "size": 1000,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 100.1,
+   "kind": "smudge",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1247,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 172.4,
+    "sum": 2302,
+    "over50": 30
+   },
+   "firstMove": 66.9,
+   "move": {
+    "med": 62,
+    "worst": 81.7,
+    "n": 29
+   },
+   "dab": {
+    "med": 52.5,
+    "worst": 66.8,
+    "n": 29
+   },
+   "frame": {
+    "med": 9.2,
+    "worst": 16.4,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 23.4,
+   "release": {
+    "max": 23.7,
+    "sum": 55,
+    "over50": 0
+   },
+   "step": "Blur",
+   "pxCalls": {
+    "blur_rgba": 31,
+    "mip_chain": 41,
+    "smudge_dab": 62
+   },
+   "jobs": {
+    "mips": {
+     "n": 2,
+     "kernels": "rust",
+     "tiles": 50,
+     "kernel": 8.1,
+     "pxCalls": {
+      "mip_chain": 50
+     },
+     "gen": 0
+    }
+   },
+   "changed": 12172,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1242,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1251,
+     "flatMB": 0
+    }
+   ]
+  }
+ ],
+ "table": [
+  "tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)",
+  "blur (cold) | Blur | layer | 200 | fit | 156.5 | 47.8 | 26.8 | 19.9 | 21.5 | 1.5 | 77.1 | 245 | 6.8 | 15.5 | 0 | 0 | 12203 | blur_rgba 43, mip_chain 32, smudge_dab 86",
+  "blur | Blur | layer | 50 | fit | 156.5 | 4.4 | 5.6 | 5.7 | 9.5 | 1 | 18.7 | 466 | 5.8 | 15.1 | 0 | 0 | 9283 | blur_rgba 781, mip_chain 56, smudge_dab 1562",
+  "blur | Blur | layer | 200 | fit | 156.5 | 6.2 | 15.6 | 19.5 | 24.1 | 1.3 | 36.1 | 901 | 6.3 | 15.5 | 0 | 0 | 12203 | blur_rgba 211, mip_chain 144, smudge_dab 422",
+  "blur | Blur | layer | 400 | fit | 156.5 | 19.2 | 47.8 | 39 | 49.6 | 1.6 | 69.8 | 1531 | 5.1 | 17 | 0 | 0 | 12177 | blur_rgba 121, mip_chain 186, smudge_dab 242",
+  "blur | Blur | layer | 1000 | fit | 156.5 | 83.3 | 125.9 | 108.6 | 141.9 | 2.8 | 212.6 | 3613 | 8.2 | 17.1 | 0 | 0 | 12166 | blur_rgba 61, mip_chain 480, smudge_dab 122",
+  "blur | Blur | layer | 50 | 1:1 | 18 | 33.4 | 5.7 | 2 | 2.8 | 1.2 | 42.8 | 346 | 8.2 | 20 | 0 | 0 | 9301 | blur_rgba 91, smudge_dab 182",
+  "blur | Blur | layer | 200 | 1:1 | 18 | 39.4 | 5 | 4.3 | 5.7 | 1.4 | 47.6 | 483 | 9.9 | 18.8 | 0 | 0 | 12193 | blur_rgba 31, smudge_dab 62",
+  "blur | Blur | layer | 400 | 1:1 | 18 | 47.5 | 10.8 | 11.9 | 14.7 | 1.8 | 62 | 659 | 9.1 | 15.3 | 0 | 0 | 12185 | blur_rgba 31, smudge_dab 62",
+  "blur | Blur | layer | 1000 | 1:1 | 18 | 100.1 | 66.9 | 62 | 81.7 | 9.2 | 172.4 | 2302 | 23.4 | 23.7 | 0 | 0 | 12172 | blur_rgba 31, mip_chain 41, smudge_dab 62"
+ ]
+}

@@ -1,0 +1,86 @@
+-- 15000x10000 (150.0 MP), 3 rounds ...
+
+== 15000x10000  (window focused True, visible, 24 logical cores)
+  mips_direct      kernel js    395.6  rust    231.5  (1.71x) | worker job js    395.6  rust    231.5  (1.71x) | wall js    585.1  rust    378.1  (1.55x)  tiles 2360 in 19 jobs
+                   parts js/rust: kernel 395.6/231.5
+                   px calls js: window none; jobs none | rust: window none; jobs clamp_extend 98, mip_chain 2458
+  mips_whole       kernel js    724.2  rust    480.9  (1.51x) | worker job js    724.2  rust    480.9  (1.51x) | wall js    580.0  rust    507.6  (1.14x)  tiles 2301 in 18 jobs, built on the main thread js 0 / rust 0
+                   parts js/rust: kernel 724.2/480.9
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs clamp_extend 39, mip_chain 2340
+  band             kernel js    156.9  rust     31.3  (5.02x) | worker job js    156.9  rust     31.3  (5.02x) | wall js    158.4  rust     34.5  (4.60x)  tiles 59 in 1 jobs
+                   parts js/rust: kernel 156.9/31.3
+                   px calls js: window none; jobs none | rust: window none; jobs composite_tile 59
+  grow             kernel js    633.9  rust    303.7  (2.09x) | worker job js    733.6  rust    359.5  (2.04x) | wall js    764.3  rust    396.1  (1.93x)  27.9 MP in 1 jobs
+                   parts js/rust: kernel 0.0/303.7  edt 369.1/0.0  bounds 75.1/0.0  feature 61.7/0.0  write 70.2/0.0  read 47.5/42.1  resultBounds 57.8/0.0
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs grow_mask 1
+  shrink           kernel js    637.9  rust    252.8  (2.52x) | worker job js    932.1  rust    310.4  (3.00x) | wall js    977.8  rust    359.2  (2.72x)  27.9 MP in 1 jobs
+                   parts js/rust: kernel 0.0/252.8  edt 378.9/0.0  bounds 55.2/0.0  feature 55.2/0.0  write 70.2/0.0  read 51.7/50.7  resultBounds 78.4/0.0
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs grow_mask 1
+  wand_band        kernel js   1877.3  rust    810.1  (2.32x) | worker job js   2738.1  rust   1516.1  (1.81x) | wall js   4241.5  rust   3097.4  (1.37x)  152.8 MP in 2 jobs
+                   parts js/rust: flood 758.5/777.9  read 576.7/565.4  clip 0.0/0.0  bounds 298.1/0.0  shape 820.8/32.2
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 53.9/35.5  read 24.5/21.3  flood 14.7/13.7  clip 0.0/0.0  bounds 5.6/-  shape 13.1/0.5 | box job js/rust: 150.00/150.00 MP, ran js/rust: total 2631.2/1480.7  read 552.2/544.2  flood 745.2/756.0  clip 0.0/0.0  bounds 289.8/-  shape 807.7/31.9
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs flood_shape 2
+  wand_object      kernel js     16.0  rust      7.7  (2.08x) | worker job js     49.1  rust     35.9  (1.37x) | wall js    130.3  rust    125.2  (1.04x)  3.1 MP in 2 jobs
+                   parts js/rust: flood 3.1/6.8  read 32.3/28.0  clip 0.0/0.0  bounds 5.2/0.0  shape 7.7/0.9
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 36.3/25.6  read 24.6/20.4  flood 0.1/4.8  clip 0.0/0.0  bounds 4.1/-  shape 5.6/0.7 | box job js/rust: 0.30/0.30 MP, ran js/rust: total 14.1/10.4  read 7.6/7.7  flood 3.0/2.0  clip 0.0/0.0  bounds 1.0/-  shape 2.1/0.2
+                   px calls js: window none; jobs none | rust: window mip_chain 9; jobs flood_shape 2
+  wand_add         kernel js   2061.4  rust    752.7  (2.74x) | worker job js   2499.3  rust   1052.4  (2.37x) | wall js   3783.7  rust   2085.1  (1.81x)  152.8 MP in 2 jobs
+                   parts js/rust: flood 937.7/720.2  read 287.0/298.5  clip 0.0/0.0  bounds 274.5/0.0  shape 849.1/32.5
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 62.0/37.1  read 15.6/21.9  flood 18.3/14.3  clip 0.0/0.0  bounds 8.5/-  shape 14.0/1.4 | box job js/rust: 150.00/150.00 MP, ran js/rust: total 2441.2/1015.3  read 272.7/276.7  flood 919.4/706.4  clip 0.0/0.0  bounds 265.8/-  shape 835.1/31.9
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs flood_shape 2
+  invert           kernel js    148.8  rust    111.1  (1.34x) | wall js    172.3  rust    130.9  (1.32x)
+                   parts js/rust: invert 148.8/111.1
+                   px calls js: window none; jobs - | rust: window mask_invert 425, mip_chain 16; jobs -
+  range_depth      kernel js   2325.3  rust   1135.3  (2.05x) | worker job js   2325.3  rust   1135.3  (2.05x) | wall js    458.3  rust    218.7  (2.10x)  1719 partial tiles in 40 jobs, selectRange's ms js 458.2 / rust 218.6
+                   parts js/rust: ms 2325.3/1135.3
+                   marks js/rust: edges 0.7/0.6  posted 1.6/1.7  combined 441.2/211.6  done 7.1/13.2  total 458.3/218.7; read 0.0/0.0  combine 325.3/138.3  (rust: source "depth", mode "replace", snap false, pictureTiles 0, jobs 40, tiles 1719, pct 57)
+                   px calls js: window none; jobs none | rust: window mip_chain 48, sel_combine 699; jobs range_tiles_depth 40
+  range_depth_snap kernel js   4822.0  rust   2295.4  (2.10x) | worker job js   4822.0  rust   2295.4  (2.10x) | wall js   1758.2  rust   1315.7  (1.34x)  1718 partial tiles in 40 jobs, selectRange's ms js 1758.0 / rust 1315.5, 513 edge tiles
+                   parts js/rust: ms 4822.0/2295.4  rmax 197.8/69.1  edges 48.8/7.0
+                   marks js/rust: edges 0.5/0.4  posted 1086.6/998.6  combined 682.9/280.6  done 5.4/10.6  total 1758.1/1315.5; read 1084.7/997.1  combine 324.2/111.1  (rust: source "depth", mode "replace", snap true, pictureTiles 652, jobs 40, tiles 1718, pct 57)
+                   px calls js: window none; jobs none | rust: window mip_chain 80, sel_combine 698; jobs range_tiles_depth 40
+  range_luma       kernel js   2542.4  rust   1304.1  (1.95x) | worker job js   2542.4  rust   1304.1  (1.95x) | wall js   4165.8  rust   3292.1  (1.27x)  2333 partial tiles in 10 jobs, selectRange's ms js 4165.6 / rust 3291.9
+                   parts js/rust: ms 2542.4/1304.1
+                   marks js/rust: held 0.8/0.5  combined 4159.5/3286.9  done 6.0/6.4  total 4165.7/3291.9; read 3643.1/3276.3  combine 279.0/170.3  (rust: source "luma", mode "replace", snap false, program false, bands 10, tiles 2333, pct 94)
+                   px calls js: window none; jobs none | rust: window mip_chain 112, sel_combine 530; jobs range_tiles_rgba 40
+  range_color      kernel js   7843.8  rust   3316.2  (2.37x) | worker job js   7843.8  rust   3316.2  (2.37x) | wall js   5623.9  rust   3477.9  (1.62x)  15 partial tiles in 10 jobs, selectRange's ms js 5623.7 / rust 3477.8
+                   parts js/rust: ms 7843.8/3316.2
+                   marks js/rust: held 0.7/0.7  combined 5621.6/3475.8  done 1.2/1.1  total 5623.7/3477.8; read 3281.0/3116.1  combine 6.2/2.3  (rust: source "color", mode "replace", snap false, program false, bands 10, tiles 15, pct 0)
+                   px calls js: window none; jobs none | rust: window mip_chain 15, sel_combine 14; jobs range_tiles_rgba 40
+  depth_guide      kernel js   1036.3  rust    304.6  (3.40x) | worker job js   1036.3  rust    304.6  (3.40x) | wall js   1795.2  rust   1060.2  (1.69x)  1 jobs
+                   parts js/rust: total 1036.3/304.6
+                   px calls js: window none; jobs none | rust: window none; jobs guided_far 1
+  depth_guide_model kernel js    750.4  rust    303.9  (2.47x) | worker job js    750.4  rust    303.9  (2.47x) | wall js   1468.6  rust   1048.8  (1.40x)  1 jobs
+                   parts js/rust: total 750.4/303.9
+                   px calls js: window none; jobs none | rust: window none; jobs guided_far 1
+  fill_limit       kernel js  12452.5  rust   5940.8  (2.10x) | wall js  12597.7  rust   6054.4  (2.08x)  40 bands of 256 rows
+                   parts js/rust: fill 145.2/115.3  limit 12452.5/5940.8
+                   px calls js: window none; jobs - | rust: window limit_alpha_rows 40; jobs -
+  flood_ladder_256 kernel js     17.8  rust      6.0  (2.95x) | worker job js     61.7  rust     44.1  (1.40x) | wall js    187.5  rust    151.3  (1.24x)  the square 256: box js 0.09 / rust 0.09 MP, the coarse pass's js 2.80 / rust 2.80 MP apart in 2 jobs
+                   parts js/rust: flood 1.0/4.5  read 38.7/37.4  clip 0.0/0.0  bounds 7.5/0.0  shape 9.4/1.5
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 52.0/36.9  read 30.5/31.4  flood 0.1/4.0  clip 0.0/0.0  bounds 7.2/-  shape 8.5/1.3 | box job js/rust: 0.09/0.09 MP, ran js/rust: total 9.7/6.2  read 7.7/5.5  flood 0.9/0.5  clip 0.0/0.0  bounds 0.2/-  shape 0.8/0.1
+                   px calls js: window none; jobs none | rust: window mip_chain 4; jobs flood_shape 2
+  flood_ladder_512 kernel js     32.4  rust      6.2  (5.25x) | worker job js     58.7  rust     32.0  (1.83x) | wall js    175.3  rust    146.3  (1.20x)  the square 512: box js 0.31 / rust 0.31 MP, the coarse pass's js 2.80 / rust 2.80 MP apart in 2 jobs
+                   parts js/rust: flood 2.4/5.2  read 31.9/25.9  bounds 11.9/0.0  shape 18.1/1.0
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 43.5/23.5  read 22.8/19.4  flood 0.2/3.3  clip 0.0/0.0  bounds 9.3/-  shape 14.9/0.8 | box job js/rust: 0.31/0.31 MP, ran js/rust: total 15.2/9.0  read 9.1/6.7  flood 2.1/1.8  clip 0.0/0.0  bounds 0.9/-  shape 2.7/0.2
+                   px calls js: window none; jobs none | rust: window mip_chain 9; jobs flood_shape 2
+  flood_ladder_1024 kernel js     39.1  rust     12.3  (3.19x) | worker job js     72.5  rust     47.5  (1.52x) | wall js    216.1  rust    189.2  (1.14x)  the square 1024: box js 1.13 / rust 1.13 MP, the coarse pass's js 2.80 / rust 2.80 MP apart in 2 jobs
+                   parts js/rust: flood 12.7/11.0  read 35.0/35.1  clip 0.0/0.0  bounds 9.1/0.0  shape 17.2/1.2
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 35.0/19.9  read 20.8/15.8  flood 2.8/3.2  clip 0.0/0.0  bounds 4.5/-  shape 8.4/0.9 | box job js/rust: 1.13/1.13 MP, ran js/rust: total 37.5/20.7  read 14.1/13.8  flood 9.5/7.4  clip 0.0/0.0  bounds 4.5/-  shape 8.8/0.4
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs flood_shape 2
+  flood_ladder_2048 kernel js     89.6  rust     53.3  (1.68x) | worker job js    146.5  rust    102.6  (1.43x) | wall js    349.4  rust    297.8  (1.17x)  the square 2048: box js 4.37 / rust 4.37 MP, the coarse pass's js 2.80 / rust 2.80 MP apart in 2 jobs
+                   parts js/rust: flood 37.4/51.1  read 58.6/49.5  clip 0.0/0.0  bounds 17.2/0.0  shape 35.0/2.2
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 36.9/26.3  read 25.7/22.4  flood 0.8/3.3  clip 0.0/0.0  bounds 4.6/-  shape 7.5/0.7 | box job js/rust: 4.37/4.37 MP, ran js/rust: total 112.5/76.4  read 32.8/27.7  flood 36.7/47.7  clip 0.0/0.0  bounds 12.5/-  shape 26.9/1.5
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs flood_shape 2
+  flood_ladder_4096 kernel js    297.4  rust    132.8  (2.24x) | worker job js    420.3  rust    244.4  (1.72x) | wall js    862.7  rust    671.1  (1.29x)  the square 4096: box js 17.11 / rust 17.11 MP, the coarse pass's js 2.80 / rust 2.80 MP apart in 2 jobs
+                   parts js/rust: flood 150.1/127.8  read 121.7/113.9  clip 0.0/0.0  bounds 40.6/0.0  shape 106.6/5.0
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 40.0/32.8  read 24.6/28.2  flood 3.9/4.2  clip 0.0/0.0  bounds 4.6/-  shape 7.6/0.5 | box job js/rust: 17.11/17.11 MP, ran js/rust: total 380.2/212.3  read 93.3/85.7  flood 146.1/123.6  clip 0.0/0.0  bounds 37.0/-  shape 99.4/4.5
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs flood_shape 2
+  flood_ladder_8192 kernel js   1461.1  rust    661.1  (2.21x) | worker job js   2225.9  rust   1415.5  (1.57x) | wall js   3780.8  rust   2766.1  (1.37x)  the square 8192: box js 150.00 / rust 150.00 MP, the coarse pass's js 2.80 / rust 2.80 MP apart in 2 jobs
+                   parts js/rust: flood 611.6/628.0  read 793.9/783.1  clip 0.0/0.0  bounds 262.1/0.0  shape 587.4/33.1
+                   coarse job js/rust: 2.80/2.80 MP, ran js/rust: total 55.7/42.1  read 30.9/26.0  flood 11.6/12.4  clip 0.0/0.0  bounds 4.5/-  shape 8.9/0.4 | box job js/rust: 150.00/150.00 MP, ran js/rust: total 2170.2/1377.9  read 765.3/757.7  flood 600.0/615.6  clip 0.0/0.0  bounds 257.9/-  shape 578.5/32.7
+                   px calls js: window none; jobs none | rust: window mip_chain 16; jobs flood_shape 2
+  instances renewed over the rows: {release 0, idle 4, trap 0, oom 0}
+  instances renewed after a trap or out of memory on the 10 threads read: 0
+
+PASS

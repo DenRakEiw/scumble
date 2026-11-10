@@ -1,0 +1,25 @@
+{
+ "match_fallback_16k": {
+  "visibility": "visible",
+  "focus": true,
+  "size": [
+   4096,
+   4096
+  ],
+  "webgl2": true,
+  "gl_refused": true,
+  "cpu": {
+   "median": 138.97,
+   "walls": [
+    139,
+    127.8,
+    141.9
+   ],
+   "blocked": 138.98,
+   "n": 3
+  },
+  "pxCalls": {
+   "match_pixels": 4
+  }
+ }
+}
