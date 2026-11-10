@@ -1,0 +1,31 @@
+$ node tools/px_test.js  (rc 0, 2 s, PX_ONLY=psd)
+PASS (only: psd; PX_ONLY, not the full test)
+ok   rust scalar packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output  rawPbOk=true
+ok   rust scalar psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views
+ok   rust scalar psd_mask_rgba equals its twin byte for byte (52 cases, each also at an odd offset)
+ok   rust scalar psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output  rawMaskOk=true
+ok   rust scalar psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs
+ok   rust scalar psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+ok   rust scalar readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated
+PASS (only: psd; PX_ONLY, not the full test)
+(node:45288) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k20b_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-inpaint_layered_js__prepareChannel_drops_the_DEFLA-layered --offline --tiles on layered  (rc 0, 68 s)
+layered rc=0 23s PASS
+ALL PASS
+$ node tools/px_test.js  (rc 0, 235 s)
+PASS
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
+PASS
+(node:6544) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k20b_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance

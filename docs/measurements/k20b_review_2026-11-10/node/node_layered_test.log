@@ -1,4 +1,4 @@
-(node:62340) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-p/renderer/editor/inpaint_layered.js is not specified and it doesn't parse as CommonJS.
+(node:7784) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/.claude/worktrees/ag-chain-p/renderer/editor/inpaint_layered.js is not specified and it doesn't parse as CommonJS.
 Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
 To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktrees\ag-chain-p\package.json.
 (Use `node --trace-warnings ...` to show where the warning was created)
@@ -142,6 +142,8 @@ To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktre
 [ok] K20b: dangling PackBits repeat byte > 128 at end - 1 zero-fills without reading into row 1: red 85,0,0,0,171,205,0,0
 [ok] K20b: truncated raw merged picture beside layers keeps the layers (composite null)
 [ok] K20b: truncated raw merged picture on a flat PSD is neglected (no layers, composite null): layers 0, composite null
+[ok] K20b: RLE rows that claim more than their channel holds are refused, not read from the next channel: the PSD layer "rows-past" holds less data than its 4 × 2 px need: the file is damaged
+[ok] K20b: a ZIP channel of 11 bytes for 40,000 is refused by the deflate ratio, not zero-filled: the PSD layer "zip-ratio" holds less data than its 200 × 200 px need: the file is damaged
 
 --- H1 S5: crafted files are refused before they grow; valid files read as before ---
 [ok] inflateAtMost: zlib's bytes, zlib and raw, with no cap and with the cap at the size: 800077 / 800077 of 800077
@@ -150,10 +152,10 @@ To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktre
 [ok] a bomb of 256 MB (255 KB) with a cap of 1 MB stops there: 3 ms, 2 MB of buffers more: the compressed data unpacks to more than 1,048,576 bytes
 [ok] 5 valid ZIP-channel PSDs read the same through the capped inflater as through zlib
 [ok] a valid ORA with deflated entries reads the same through it
-[ok] crafted_huge_rle.psd (177 KB) is refused in 3 ms with 1 MB of buffers more: the PSD layer "Huge" holds less data than its 30,000 × 30,000 px need: the file is damaged
+[ok] crafted_huge_rle.psd (177 KB) is refused in 2 ms with 1 MB of buffers more: the PSD layer "Huge" holds less data than its 30,000 × 30,000 px need: the file is damaged
 [ok] crafted_wide.psd (1 KB) is refused in 0 ms with 0 MB of buffers more: the PSD layer "Wide" is 70,000 × 4 px, more than a layer can be (65,535 px a side, 1,074 MP): the file is damaged or not one this reader takes
 [ok] crafted_mask.psd (40 KB) is refused in 1 ms with 0 MB of buffers more: the PSD layer "Masked"'s mask holds less data than its 20,000 × 20,000 px need: the file is damaged
-[ok] crafted_zip_bomb.psd (65 KB) is refused in 6 ms with 4 MB of buffers more: a ZIP channel of the PSD layer "Bomb" unpacks to more than its 512 × 512 px: the file is damaged
+[ok] crafted_zip_bomb.psd (65 KB) is refused in 8 ms with 4 MB of buffers more: a ZIP channel of the PSD layer "Bomb" unpacks to more than its 512 × 512 px: the file is damaged
 [ok] crafted_raw_short.psd (1 KB) is refused in 0 ms with 0 MB of buffers more: the PSD layer "Short" holds less data than its 4,096 × 4,096 px need: the file is damaged
 [ok] crafted_overlap.psd (302 KB) is refused in 1 ms with 0 MB of buffers more: the PSD layer "Overlap" holds less data than its 4,096 × 4,096 px need: the file is damaged
 [ok] crafted_flat.psd (94 KB) is refused in 2 ms with 0 MB of buffers more: the PSD's merged picture holds less data than its 16,000 × 16,000 px need: the file is damaged
@@ -166,7 +168,7 @@ To eliminate this warning, add "type": "module" to \\?\F:\canvas\.claude\worktre
 [ok] an inflater that ignores the cap is held to it: the same refusals: a ZIP channel of the PSD layer "Bomb" unpacks to more than its 512 × 512 px: the file is damaged / the ORA entry data/l.png unpacks to more than the 1,024 bytes its zip directory gives: the file is damaged
 [ok] a merged picture too short beside layers: the layers open, no merged picture: {"layers":1,"composite":false}
 [ok] readPsd and readOra call onHeader once with the size, before the layers (a throw there stops the read before the file ends early): [{"width":37,"height":19,"depth":8,"mode":3,"channels":3}] 40000 x 40000 too large [{"width":4,"height":4}] size refused
-[ok] readPsdStream (PSD_JS, px.wasm, px_scalar.wasm) answers as readPsd on all 69 PSDs read above (14 of them refused), in bands of 3 rows and of 256: 69 files x 3 kernel builds x 2 band sizes
+[ok] readPsdStream (PSD_JS, px.wasm, px_scalar.wasm) answers as readPsd on all 71 PSDs read above (16 of them refused), in bands of 3 rows and of 256: 71 files x 3 kernel builds x 2 band sizes
 
-149 of 149 checks passed
+151 of 151 checks passed
 PASS

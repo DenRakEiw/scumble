@@ -1136,6 +1136,28 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
         const rawMergedFlatCut = await readPsd(rawMergedFlat.subarray(0, rawMergedFlat.length - 10));
         check("K20b: truncated raw merged picture on a flat PSD is neglected (no layers, composite null)",
             rawMergedFlatCut.layers.length === 0 && rawMergedFlatCut.composite === null, `layers ${rawMergedFlatCut.layers.length}, composite ${rawMergedFlatCut.composite === null ? "null" : "set"}`);
+
+        // K20b review (K20b-D1, two mutants that survived): the upfront refusals of the channel checks, each on a file only
+        // that check refuses. Rows that claim more bytes than their channel holds, inside the file (a reader without
+        // `2 * h + total > dataLen` takes the next channels' bytes for them); a ZIP channel too small for its size even at
+        // deflate's best ratio (a reader without `DEFLATE_MAX_RATIO` zero-fills what the stream did not give). A stream
+        // reader that opens either file differs from readPsd, which twinned() reports.
+        const rowsPastBlock = new B().u16(1).u16(6).u16(6).bytes([0, 1, 0, 2]).out();
+        const rowsPast = await throwsWith(() => readPsd(psd({
+            width: 4, height: 2,
+            layers: [{
+                name: "rows-past", top: 0, left: 0, w: 4, h: 2,
+                blocks: [[0, rowsPastBlock], [1, channelData(fill(8, () => 9), 4, 2, 8, 0)], [2, channelData(fill(8, () => 7), 4, 2, 8, 0)]],
+            }],
+        })), /holds less data than its/);
+        check("K20b: RLE rows that claim more than their channel holds are refused, not read from the next channel", rowsPast.ok, rowsPast.msg);
+        const tinyZip = new B().u16(2).bytes(zlib.deflateSync(Buffer.alloc(8))).out();
+        const zipRatio = await throwsWith(() => readPsd(psd({
+            width: 200, height: 200,
+            layers: [{ name: "zip-ratio", top: 0, left: 0, w: 200, h: 200, blocks: [[0, tinyZip], [1, tinyZip], [2, tinyZip]] }],
+        }), { inflate }), /holds less data than its/);
+        check(`K20b: a ZIP channel of ${tinyZip.length - 2} bytes for 40,000 is refused by the deflate ratio, not zero-filled`,
+            zipRatio.ok && (200 * 200) > (tinyZip.length - 2) * 1032, zipRatio.msg);
     }
     console.log("\n--- H1 S5: crafted files are refused before they grow; valid files read as before ---");
     {

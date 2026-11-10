@@ -1,0 +1,28 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 19 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 298741 bytes, sha256 4ff19544f22d84ce
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 237720 bytes, sha256 908fc1943daa06ab
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.84s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 5.18s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=tiff,psd)
+FAIL rust simd tiff_unpredict equals its twin byte for byte (332 cases, each also at an odd offset)  unpredict 16b LE per=1 w=16 tight: out[16] is 237, the twin has 172
+FAIL rust simd psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs  suite 1 key 0:rgba: at 32: 148 vs 142
+FAIL inpaint_worker.js psdRead & kernels.js psdKernels(): routes psdRead/tiffToRgba/tiffUnpredict between Rust and JS twin, resets p.job, calls releaseIfLarge(), and matches PSD_JS  rustK=rust jsK=js calls={"packbits_rows":4,"psd_mask_rgba":4,"tiff_to_rgba":4,"tiff_unpredict":8} jsCalls={} rel=1->4 jobBytes=0
+FAIL inpaint_worker.js psdRead window 2: posts 2 bands, then one more per acknowledged band (psdAck by job id and count), same bytes as unpaced  counts=2,2,3,3,5 posted=8 reply=true err=null window=2 wait=251.73249999999973
+FAIL psdKernels() recovers mid-layer on band 2 of 4 from wasm RuntimeError and PxOutOfMemory without mutating d.bytes, leaking arena bytes, or dropping/duplicating bands  trapBandOk=false oomMaskOk=false
+FAIL (5) (only: tiff, psd; PX_ONLY, not the full test)
+ok   rust scalar packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output  rawPbOk=true
+ok   rust scalar psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views
+ok   rust scalar psd_mask_rgba equals its twin byte for byte (52 cases, each also at an odd offset)
+ok   rust scalar psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output  rawMaskOk=true
+ok   rust scalar psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs
+ok   rust scalar psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+ok   rust scalar readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated
+FAIL (5) (only: tiff, psd; PX_ONLY, not the full test)
+(node:64576) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k20b_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
