@@ -1922,6 +1922,12 @@ By the same chain as K2, K6, K7 and K8 on `9a5f1681` (`a92ea102`, review fixes `
 ---
 - **The merged state's gates (`3dba61a9` on `0740aeab`, serial):** `lint types editor document export pixels tiff` PASS on both backends, `layered` PASS on canvas; on tiles `layered` failed once on the known flake of `crafted_files_are_refused_on_both_routes` (the renderer grew by 200 MB, `docs/TESTING.md`) and passed twice alone (`merge-p5-layered1-tiles`, `merge-p5-layered2-tiles`); `px_test` PASS under Node and Electron.
 
+### The user's answers of 2026-11-10
+
+- **Question 6.3 (K19, the TIFF writer's deflate):** Rust at level 2 stays. The browser's `CompressionStream` replaces it only if K19 shows it faster at the same level. `CompressionStream` has no level setting (it runs 6), so K19 measures and reports, and changes nothing unless a same-level comparison exists. The pool above 8 workers stays an A/B in K40, nothing changed without the user's word.
+- **K20a (`docs/PLAN_WASM_K20.md` §5):** one `psdRead` route for the whole reader; `readOraBlob` in K20c (ORA layers sliced from the file, `mergedimage.png` not read); the promoted bottom ORA layer's PNG uploaded directly with the fallback to `uploadPixels`; ORA colour chunks ignored as today (raw samples, every value the same).
+- **Before K40 (the interim run's loss rows, `docs/measurements/k40pre_2026-11-09/bisect_findings.txt`):** the pan cost since the filter fix is repaired, the remaining loss rows are looked into; then the user's hand test (open TIFF, PSD and ORA, relight), then the user decides on the release.
+
 ### K17 (2026-11-09)
 
 §4.6's band planner, contiguous band reader, per-tile unpredict and one-worker `tiffUnpack` A/B (`ag-chain-t` `f5b629f6`..`937b50b5` off `0740aeab`, merged with `wasm-kernels` `9eb7de60`). Full tier (`docs/measurements/k17_2026-11-09/`: `k17_chain.sh`, `summarize.py`, `summary.txt`, `before/`, `after/`, `unpack_js/`, `unpack_rust/`, `node/`, `mutation/`).
