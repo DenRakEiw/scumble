@@ -86,6 +86,8 @@ card that says why:
   shows the factor first. Where the pass cannot run on the document (the server, the picture's size) the assistant
   gets the reason instead and no card is shown, at every factor: a picture past 7680 × 4320 or 27.9 megapixels cannot
   get larger either.
+- **`split_layers`** (Split into Layers) - a paid run on BytePlus ModelArk that adds a group of new layers, one undo
+  step. The question names the source and the number of layers asked for.
 - **`key_screen`** (Key Green / Blue Screen, CorridorKey 2.0) - it queues on your ComfyUI and adds a layer **Key**,
   with a mid-grey layer **Grey** under a key of the picture and the source layer hidden on a key of a layer, all in
   one undo step (`preview` adds nothing and makes the matte the selection). The card names the route (your ComfyUI

@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Split into layers** (*Image > Split into Layers...*, MCP `split_layers`): Seedream's layer decomposition on BytePlus ModelArk (5.5 and 5.0 Pro) lands a picture's elements as named layers in one new group above your layers, as one undo step. Not run against the live API yet.
 - **A paid run is not lost when the window reloads or crashes.** Its picture is kept and opens in a tab of its own, and *View > Reload* asks first while a run is going. *Save to recipe* in the ComfyUI window refuses when the page shows another graph. A failed export over an existing file keeps the finished temporary file and names it. Long commands over MCP get their full time, and parallel connections no longer fail.
 - **Fibo 2.0 Edit Turbo on your own ComfyUI**: edits by instruction with up to three more pictures, with Comfy's Prompt Enhancer in front (a Settings row). Not run live yet. Bria's weights are CC BY-NC 4.0, non-commercial; commercial use needs an agreement with Bria.
 - **GPT Image 2.6 Flare and Sunburst are also on Oxen.ai**, with the Complexity row. Oxen renamed some fields, so GPT Image 2 and 2.5 on Oxen.ai send the selection under its new name and Qwen its pictures. Written from Oxen's model list, not run against the live API yet.

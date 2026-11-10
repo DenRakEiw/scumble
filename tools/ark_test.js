@@ -169,6 +169,15 @@ const BODY_KEYS = ["image", "model", "output_format", "prompt", "response_format
 const TEXT_KEYS = ["model", "output_format", "prompt", "response_format", "size", "watermark"];
 const NEVER = ["mask", "mask_url", "mask_image", "seed", "n", "sequential_image_generation", "sequential_image_generation_options", "stream", "negative_prompt", "guidance_scale", "background", "tools", "optimize_prompt_options", "layer_decomposition"];
 
+// A layer answer as far as the adapter reads one: the base first (no box), the layers with z_index out of order.
+const layerItem = (tag, extra) => ({ b64_json: pngOf(1024, 768, 80, tag).toString("base64"), size: "1024x768", ...extra });
+const layerAnswer = (body) => json(200, {
+    model: body.model, created: 1789000000,
+    data: [layerItem("BASE", { z_index: 0 }), layerItem("Z2", { z_index: 2, name: "dog", description: "a dog", bounding_box: { absolute: [10, 20, 110, 220], normalized: [10, 26, 107, 286] } }), layerItem("Z1", { z_index: 1, name: "sky", description: "the sky", bounding_box: { absolute: [0, 0, 1024, 300], normalized: [0, 0, 1000, 390] } })],
+    usage: { generated_images: 3 },
+});
+const layerReq = (v, extra = {}) => ({ provider: "ark", model: v.model, kind: "layers", options: v.options, prompt: "", negative: "", seed: 0, image: pngOf(1200, 800, 96, "PICTURE"), width: 1200, height: 800, references: [], params: {}, ...extra });
+
 async function main() {
     // ---- 1. an edit: one request, its headers, the body, the answer ----
     await section("1. edit", async () => {
@@ -935,6 +944,131 @@ async function main() {
         const NOT_55 = ["optimize_prompt_options", "layer_decomposition", "layer_decomposition_options", "sequential_image_generation", "sequential_image_generation_options", "stream", "seed", "n", "mask", "negative_prompt"];
         const leaked = sent.filter((b) => NOT_55.some((k) => k in b));
         check("no 5.5 body of this section carried optimize_prompt_options, layer_decomposition, sequential generation, stream, seed, n, a mask or a negative prompt", sent.length >= 12 && !leaked.length, leaked.length ? short(leaked.map((b) => Object.keys(b))) : `${sent.length} bodies`);
+    });
+
+    // ---- 8. layer decomposition (kind "layers"): the 5.0 pro schema, 5.5 from the preview docs ----
+    await section("8. layer decomposition", async () => {
+        const v55 = variant("seedream_5_5"), pro = variant("seedream_5_pro"), lite = variant("seedream_5_lite");
+        const split = await import(require("node:url").pathToFileURL(path.join(ROOT, "renderer", "editor", "splitlayers.js")));
+        check("the variants declare their layer mode: 5.5 up to 100 with options, 5.0 pro up to 16 without, 5.0 lite none", eq(v55.options.layers, { max: 100, options: true }) && eq(pro.options.layers, { max: 16 }) && !lite.options.layers, short([v55.options.layers, pro.options.layers, lite.options.layers]));
+        const raws = ["seedream_5_5", "seedream_5_pro", "seedream_5_lite"].map(rawRecipe);
+        check("the renderer's list: Seedream 5.5 first, then 5.0 pro; 5.0 lite is not in it", eq(split.layerRecipes(raws).map((r) => r.id), ["seedream_5_5", "seedream_5_pro"]) && eq(split.layerSpecOf(raws[1]), { max: 16, options: false }) && split.layerSpecOf(raws[2]) === null, split.layerRecipes(raws).map((r) => r.id).join(","));
+        const s = fakeServer({ answers: [layerAnswer] });
+        const out = await ark.layers(layerReq(v55), ctxFor(s));
+        const b = s.posts[0].body;
+        check("5.5 without a prompt: one POST, the body has exactly the documented fields and no prompt", s.posts.length === 1 && eq(Object.keys(b).sort(), ["image", "layer_decomposition", "layer_decomposition_options", "model", "output_format", "response_format", "size", "watermark"]), Object.keys(b).sort().join(","));
+        check("the field is true, the picture a single data URL string (not an array), watermark false, output_format png", b.layer_decomposition === true && typeof b.image === "string" && b.image.startsWith("data:image/png;base64,") && fromDataUrl(b.image).bytes.equals(layerReq(v55).image) && b.watermark === false && b.output_format === "png", short({ ...b, image: String(b.image).slice(0, 30) }));
+        check("the size is the tier auto by default, not WxH", b.size === "auto", b.size);
+        check("5.5's options: the default count 16, Text recognition off, answers inlined up to 32 layers", eq(b.layer_decomposition_options, { max_images: 16, text_recognition: false }) && b.response_format === "b64_json", short(b.layer_decomposition_options));
+        check("the answer in stacking order, the base first: z 0, 1, 2 from an answer of z 0, 2, 1", eq(out.layers.map((l) => l.z_index), [0, 1, 2]) && eq(out.layers.map((l) => tagOf(l.bytes)), ["BASE", "Z1", "Z2"]) && out.layers[0].base === true && !out.layers[1].base, short(out.layers.map((l) => [l.z_index, tagOf(l.bytes)])));
+        check("each layer keeps its box, name and description; the base has no box", out.layers[0].bounding_box === null && eq(out.layers[2].bounding_box.absolute, [10, 20, 110, 220]) && out.layers[1].name === "sky" && out.layers[2].description === "a dog", short(out.layers[1]));
+        check("out.bytes is the base's, and info counts the layers", out.bytes.equals(out.layers[0].bytes) && out.info.layers === 2 && out.info.asked === 16 && out.info.size === "auto" && out.info.region === "ap-southeast", short(out.info));
+        for (const tier of ["1K", "1.5K", "2K", "auto"]) {
+            const st = fakeServer({ answers: [layerAnswer] });
+            await ark.layers(layerReq(v55, { params: { size: tier } }), ctxFor(st));
+            check(`the tier ${tier} goes as it is`, st.posts[0].body.size === tier, st.posts[0].body.size);
+        }
+        const refused = async (v, extra, re, what) => {
+            const sx = fakeServer();
+            const err = await throws(() => ark.layers(layerReq(v, extra), ctxFor(sx)));
+            check(what + " is refused before any call", !!err && re.test(err) && sx.calls.length === 0, err);
+        };
+        await refused(v55, { params: { size: "4K" } }, /a tier/, "a size of 4K");
+        await refused(v55, { params: { size: "1024x1024" } }, /a tier/, "a size in pixels");
+        await refused(v55, { params: { count: 0 } }, /1 to 100/, "a count of 0");
+        await refused(v55, { params: { count: 101 } }, /1 to 100/, "a count of 101");
+        await refused(v55, { params: { count: 2.5 } }, /whole number/, "a count of 2.5");
+        await refused(pro, { params: { count: 5 } }, /finds its own number/, "a count on 5.0 pro");
+        await refused(pro, { params: { text_recognition: true } }, /no Text recognition/, "Text recognition on 5.0 pro");
+        await refused(lite, {}, /no layer mode/, "5.0 lite");
+        await refused(v55, { references: [pngOf(100, 100, 40, "R")] }, /exactly one picture/, "a second picture");
+        await refused(v55, { image: null }, /no picture to split/, "a run without a picture");
+        await refused(v55, { image: pngOf(400, 400, 64, "SMALL") }, /512 × 512 to 6000 × 6000/, "a picture under 512 x 512 in area");
+        await refused(v55, { image: pngOf(6400, 300, 64, "STEEP") }, /no steeper than 16:1/, "a picture steeper than 16:1");
+        const sq = fakeServer({ answers: [layerAnswer] });
+        await ark.layers(layerReq(v55, { prompt: "  the cat and the text  ", params: { count: 3, text_recognition: true } }), ctxFor(sq));
+        check("a prompt goes trimmed and as it is (no edit sentence), the count and the switch in the options", sq.posts[0].body.prompt === "the cat and the text" && eq(sq.posts[0].body.layer_decomposition_options, { max_images: 3, text_recognition: true }), short(sq.posts[0].body.prompt));
+        const sp = fakeServer({ answers: [layerAnswer] });
+        const op = await ark.layers(layerReq(pro), ctxFor(sp));
+        check("5.0 pro: no layer_decomposition_options at all, no count asked", !("layer_decomposition_options" in sp.posts[0].body) && sp.posts[0].body.model === PRO_ID && op.info.asked === null && op.info.text_recognition === null, Object.keys(sp.posts[0].body).join(","));
+        // above 32 layers the answer comes by URL, one download per picture
+        const items = ["BASE", "Z1"].map((t, i) => ({ url: `${BASE}/result/${i}`, z_index: i, ...(i ? { name: "a", bounding_box: { absolute: [1, 2, 3, 4] } } : {}) }));
+        const su = fakeServer({ answers: [(body) => json(200, { model: body.model, data: items, usage: {} })] });
+        const ou = await ark.layers(layerReq(v55, { params: { count: 40 } }), ctxFor(su));
+        check("40 layers: response_format url, each picture downloaded once and in order", su.posts[0].body.response_format === "url" && su.gets.length === 2 && ou.layers.length === 2 && ou.info.by === "url", short({ gets: su.gets.map((g) => g.url), by: ou.info.by }));
+        let downloads = 0;
+        const su2 = fakeServer({ answers: [(body) => json(200, { model: body.model, data: items, usage: {} })], download: () => (++downloads === 1 ? new Response("no", { status: 503 }) : new Response(DOWNLOAD, { status: 200, headers: { "content-type": "image/png" } })) });
+        const cu2 = ctxFor(su2);
+        await ark.layers(layerReq(v55, { params: { count: 40 } }), cu2);
+        check("a failed base download is tried again after a wait", downloads === 3 && cu2.sleeps.length === 1, `${downloads} downloads`);
+        // (one-failed-download) a layer whose link stays away costs that layer, not the paid answer; the bug: throwing here
+        const gone = (which) => (call) => (call.url.endsWith(which) ? new Response("gone", { status: 404 }) : new Response(DOWNLOAD, { status: 200, headers: { "content-type": "image/png" } }));
+        const threeItems = [...items, { url: `${BASE}/result/2`, z_index: 2, name: "b", bounding_box: { absolute: [1, 2, 3, 4] } }];
+        const sg = fakeServer({ answers: [(body) => json(200, { model: body.model, data: threeItems, usage: {} })], download: gone("/result/1") });
+        const cg = ctxFor(sg);
+        const og = await ark.layers(layerReq(v55, { params: { count: 40 } }), cg);
+        check("a layer whose link stays away after 3 tries is left out and named, the others land", og.layers.length === 2 && eq(og.missing, ["a"]) && eq(og.layers.map((l) => l.z_index), [0, 2]) && eq(cg.sleeps, [5000, 10000]), short({ missing: og.missing, sleeps: cg.sleeps }));
+        const sb2 = fakeServer({ answers: [(body) => json(200, { model: body.model, data: threeItems, usage: {} })], download: gone("/result/0") });
+        const cb2 = ctxFor(sb2);
+        const eb = await throws(() => ark.layers(layerReq(v55, { params: { count: 40 } }), cb2));
+        check("a base that stays away after 5 tries with growing waits fails, and says the job is charged", !!eb && /finished and is charged, but its base picture/.test(eb) && eq(cb2.sleeps, [5000, 10000, 20000, 40000]), eb);
+        const sa = fakeServer({ answers: [(body) => json(200, { model: body.model, data: threeItems, usage: {} })], download: gone("/result/1") });
+        const ea = await throws(() => ark.layers(layerReq(v55, { params: { count: 40 } }), ctxFor(sa, { signal: { aborted: true } })));
+        check("a download that fails during a Cancel ends the run, it is not a left-out layer", !!ea && /404/.test(ea), ea);
+        // (cancel-during-downloads) the job is charged once it is answered; the bug: leaving jobDone unset
+        const cjd = ctxFor(fakeServer({ answers: [layerAnswer] }));
+        await ark.layers(layerReq(v55), cjd);
+        const cjf = ctxFor(fakeServer({ answers: [() => failure(500, "InternalServiceError", "m", {}, "InternalServerError")] }));
+        await throws(() => ark.layers(layerReq(v55), cjf));
+        check("jobDone is set on the caller's ctx once the service has answered, and not when it refused", cjd.jobDone === true && cjf.jobDone === undefined, String(cjd.jobDone));
+        // (split-post-dies-at-undici-300s) the bug: a POST without its own dispatcher limits
+        let seen = null;
+        const sd = fakeServer({ answers: [layerAnswer] });
+        await ark.layers(layerReq(v55, { timeoutMs: 1800000 }), ctxFor(sd, { fetch: (u, init) => { seen = init; return sd.fetch(u, init); } }));
+        check("the POST's undici limits follow the run's deadline (1800 s + 30 s), not undici's 300 s", !!seen.dispatcher && seen.dispatcher.headersTimeout === 1830000 && seen.dispatcher.bodyTimeout === 1830000, short(seen.dispatcher && seen.dispatcher.headersTimeout));
+        let seenE = null;
+        const se2 = fakeServer();
+        await ark.edit(editReq(v55), ctxFor(se2, { fetch: (u, init) => { seenE = init; return se2.fetch(u, init); } }));
+        check("an edit's POST is as before: no dispatcher", !seenE.dispatcher, "");
+        const failed = async (answers, re, what) => {
+            const sx = fakeServer({ answers });
+            const err = await throws(() => ark.layers(layerReq(v55), ctxFor(sx)));
+            check(what, !!err && re.test(err) && sx.posts.length === 1, err);
+        };
+        await failed([() => failure(500, "InternalServiceError", "one layer failed", {}, "InternalServerError")], /the service failed - InternalServiceError: one layer failed/, "a failed request is not retried and keeps the server's words");
+        await failed([(body) => json(200, { model: body.model, data: [layerItem("BASE", { z_index: 0 }), { error: { code: "OutputImageSensitiveContentDetected", message: "m" } }] })], /content filter/, "an error in one entry fails the whole answer");
+        // (base-found-only-by-missing-box) the bug: only a row without a box counts as the base, so a boxed base is thrown away after it is paid for
+        const box = { absolute: [0, 0, 100, 100] };
+        const baseOf = async (rows) => { const sx = fakeServer({ answers: [(body) => json(200, { model: body.model, data: rows, usage: {} })] }); const o = await ark.layers(layerReq(v55), ctxFor(sx)); return o.layers.map((l) => [tagOf(l.bytes), !!l.base]); };
+        check("the base: a row without a box first, whatever its z_index", eq(await baseOf([layerItem("Z0", { z_index: 0, bounding_box: box }), layerItem("Z1", { z_index: 1 })]), [["Z1", true], ["Z0", false]]), "");
+        check("the base: with a box on every row, the row of z_index 0", eq(await baseOf([layerItem("Z1", { z_index: 1, bounding_box: box }), layerItem("Z0", { z_index: 0, bounding_box: box })]), [["Z0", true], ["Z1", false]]), "");
+        check("the base: with neither, data[0]", eq(await baseOf([layerItem("Z5", { z_index: 5, bounding_box: box }), layerItem("Z2", { z_index: 2, bounding_box: box })]), [["Z5", true], ["Z2", false]]), "");
+        await failed([(body) => json(200, { model: body.model, data: [layerItem("BASE", { z_index: 0 }), { z_index: 1 }] })], /without its pictures \(1 of 2\)/, "an answer with a picture missing is refused");
+        await failed([(body) => json(200, { model: body.model, data: [] })], /without its pictures \(0 of 0\)/, "an empty answer is refused");
+        // a picture over 30 MB goes as JPEG when it is opaque (the same rule as an edit's)
+        const big = pngOf(1200, 800, 31 * 1000 * 1000, "BIG");
+        const sb = fakeServer({ answers: [layerAnswer] });
+        await ark.layers(layerReq(v55, { image: big }), ctxFor(sb, { opaque: async () => true, toJpeg: async () => jpegOf(2000, "SMALLJPEG") }));
+        check("an opaque picture over 30 MB goes as a JPEG data URL", String(sb.posts[0].body.image).startsWith("data:image/jpeg;base64,"), String(sb.posts[0].body.image).slice(0, 30));
+        // the two refusals are one rule: the adapter's and the renderer's say the same on every size
+        const SIDES = [14, 15, 100, 511, 512, 513, 700, 1200, 2048, 5999, 6000, 6001, 8000, 9000];
+        const apart = [];
+        for (const w of SIDES) for (const h of SIDES) if (ark._layerSizeRefusal(w, h, "M") !== split.splitSizeRefusal(w, h, "M")) apart.push(`${w}x${h}`);
+        check("the adapter's size refusal and the renderer's say the same on every size of a sweep", !apart.length, apart.slice(0, 8).join(" "));
+        const okSize = (w, h) => ark._layerSizeRefusal(w, h, "M") === "";
+        check("the limits by the documented rule: 512 x 512 goes, 511 x 512 not; 6000 x 6000 goes, 6001 x 6000 not; 3200 x 200 (16:1) goes, 3400 x 200 not", okSize(512, 512) && !okSize(511, 512) && okSize(6000, 6000) && !okSize(6001, 6000) && okSize(3200, 200) && !okSize(3400, 200), "");
+        // where an answer lands (renderer/editor/splitlayers.js)
+        const rect = { x: 100, y: 40, w: 2000, h: 1000 };
+        const entries = [{ base: true, z_index: 0, bounding_box: { absolute: [10, 10, 20, 20] }, name: "" }, { z_index: 1, name: "  sky\n\tblue ", bounding_box: { absolute: [0, 0, 500, 200] } }, { z_index: 2, name: "SKY blue", bounding_box: { absolute: [500, 200, 1000, 500] } }, { z_index: 3, name: "x".repeat(200), bounding_box: { absolute: [10, 10, 10, 10], normalized: [100, 200, 300, 400] } }, { z_index: 4, name: "broken", bounding_box: { absolute: [5, 5, 5, 5] } }, { z_index: 5, name: "", bounding_box: { absolute: [900, 400, 2000, 900] } }, { z_index: 6, name: "boxless", bounding_box: null }, { z_index: 7, name: "offside", bounding_box: { absolute: [1100, 0, 1200, 100] } }];
+        const plan = split.planLanding(entries, rect, 1000, 500, new Set(["base"]));
+        const P = plan.rows;
+        check("the base covers the source's whole rectangle even with a box of its own, its name not taken from an existing layer", P[0].name === "Base 2" && eq([P[0].x, P[0].y, P[0].w, P[0].h], [100, 40, 2000, 1000]), short(P[0]));
+        check("a box scales to the document, and two boxes that meet still meet (x 100 + 1000 = 1100)", eq([P[1].x, P[1].y, P[1].w, P[1].h], [100, 40, 1000, 400]) && eq([P[2].x, P[2].y, P[2].w, P[2].h], [1100, 440, 1000, 600]) && P[1].x + P[1].w === P[2].x, short([P[1], P[2]]));
+        check("names: one line, duplicates numbered whatever the case, cut to a sane length, an empty one named by its place", P[1].name === "sky blue" && P[2].name === "SKY blue 2" && P[3].name.length === 60 && P[4].name === "Layer 5", short(P.map((r) => r.name)));
+        // (layer-without-box-stretched) the bug: a row without a box is taken for the base and stretched over the whole picture
+        check("a box that is no box falls back to normalized (0..1000), a layer without any box or off the base is left out and named", eq([P[3].x, P[3].y, P[3].w, P[3].h], [300, 240, 400, 200]) && eq(plan.leftOut, ["broken", "boxless", "offside"]) && P.length === 5, short(plan.leftOut));
+        // (box-past-base-squeezes-picture) the bug: clamping the box to the base squeezes the whole PNG into what is left
+        check("a box past the base stays whole and overhangs", eq([P[4].x, P[4].y, P[4].w, P[4].h], [1900, 840, 2200, 1000]), short(P[4]));
     });
 
     // ---- 7. the whole run: no header beyond the two, no key in any error ----

@@ -973,6 +973,11 @@ sequential gate (`run_gates_both.sh` without `--shards`, or `run_gates.sh`) befo
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-11-10 (`seedream-layers`, `sl-final-tiles`): `ark_test.py` `a_model_not_activated_says_so` failed once with
+  `TypeError: fetch failed`, 0 requests at the mock; `app.log` gives the cause, `connect ETIMEDOUT 127.0.0.1:<the mock's
+  port>`. The connect to the loopback mock timed out before any request went out, while other agents' gates started on the
+  same machine. Ruled out: the adapter and the mock (the step never reached either); the same code passed 3 of 3 reruns
+  (`sl-ark3-1`..`3`).
 - 2026-11-09 (`ag-fix-prov`, `run_gates_both.sh fix-prov` and `fix-prov-openrouter-rerun`..`rerun3`): `openrouter_test.py`
   `an_edit_variant_sends_no_mask` failed 3 of 6 runs (`no result arrived: OpenRouter answered after 0 s.`, tiles in
   `fix-prov`, canvas in `rerun`, tiles in `rerun2`, both green in `rerun3`). Ruled out: `fix-prov`'s provider changes

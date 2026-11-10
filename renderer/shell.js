@@ -3213,6 +3213,7 @@ export function menuCommand(cmd) {
     else if (cmd === "dodge-burn-layer" || cmd === "dodge-burn-layer:grey") { if (host.editor) host.editor.dodgeBurnLayer({ grey: cmd.endsWith(":grey") }); }
     else if (cmd === "new-relight-layer" || cmd === "relight") { if (host.editor) host.editor.addFilterLayer("relight"); }
     else if (cmd === "realism-pass") { if (host.editor) openUpscale(host.editor, { recipe: realism.RECIPE_ID }); }
+    else if (cmd === "split-layers") { if (host.editor) import("./splitdialog.js").then((m) => m.openSplitDialog(host.editor)).catch((err) => console.warn("the Split dialog", err)); }
     else if (cmd === "key-screen") { if (host.editor) import("./keydialog.js").then((m) => m.openKeyDialog(host.editor)).catch((err) => console.warn("the Key dialog", err)); }
     else if (cmd === "new-tab") activate(newDocument());
     else if (cmd === "close-tab") closeDocument(host.editor);

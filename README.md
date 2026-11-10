@@ -81,7 +81,7 @@ OpenRouter and more. Keys go into the system's credential store, never into a se
 
 Every feature is a command, and the commands are an MCP server: *Help › Copy MCP registration* (or, for Claude
 Desktop, the `.mcpb` file of every release, installed with one click), and Claude Code, Claude Desktop or any other
-MCP client gets 118 tools to open, select, generate, match and export, in the same window and with the same undo. (A built-in chat assistant on your own key is there too; see [The assistant](#the-assistant).)
+MCP client gets 119 tools to open, select, generate, match and export, in the same window and with the same undo. (A built-in chat assistant on your own key is there too; see [The assistant](#the-assistant).)
 
 ### Made for real files
 
@@ -278,6 +278,9 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   the picture larger in the same step. It needs a ComfyUI on Windows with an RTX 30, 40 or 50 card and a community node
   pack with its runtime, which you install there; Scumble ships none of it, and there is no Comfy Cloud version. The
   [manual](docs/MANUAL.md)'s chapter of the same name has the steps.
+- *Image › Split into Layers...* takes one picture apart into a base and separate layers with Seedream's layer
+  decomposition on BytePlus ModelArk (up to 100 layers on Seedream 5.5): they land above your layers in one group, one
+  undo step.
 - *Image › Key Green / Blue Screen...* keys a subject shot on a green or blue screen (or generated on a flat green)
   with CorridorKey 2.0 by Corridor Digital, on your own ComfyUI through the community node pack ComfyUI-CorridorKey2.0.
   It needs an NVIDIA card of the RTX 30 generation or newer on that machine; the pack and its models, about 5.1 GB,
@@ -327,7 +330,7 @@ and what it costs: [docs/ASSISTANT.md](docs/ASSISTANT.md).
   in workers. PNGs beyond the browser's canvas limit (up to 65,535 px a side, about a gigapixel) open and save in
   strips.
 - JavaScript plugins (filters with GPU and processor paths, panels, menu actions, tools, commands) and a command core
-  with 118 documented commands, 98 core and 20 from the built-in plugins ([docs/COMMANDS.md](docs/COMMANDS.md),
+  with 119 documented commands, 99 core and 20 from the built-in plugins ([docs/COMMANDS.md](docs/COMMANDS.md),
   [docs/PLUGINS.md](docs/PLUGINS.md)).
 - MCP server for any MCP client (an `.mcpb` bundle for Claude Desktop with every release), plus `--headless`,
   `--cmd` for scripts and `--run` for batches: a list of commands in one call, once per file of a folder
