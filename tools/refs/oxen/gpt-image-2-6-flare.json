@@ -1,0 +1,278 @@
+{
+  "id": "gpt-image-2-6-flare",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.0517,
+    "cost_per_image_grid": {
+      "high": {
+        "1K": 0.037,
+        "2K": 0.0517,
+        "4K": 0.1301
+      },
+      "low": {
+        "1K": 0.0174,
+        "2K": 0.0243,
+        "4K": 0.0608
+      },
+      "max": {
+        "1K": 0.1477,
+        "2K": 0.2067,
+        "4K": 0.5203
+      },
+      "medium": {
+        "1K": 0.0317,
+        "2K": 0.0443,
+        "4K": 0.1113
+      },
+      "xhigh": {
+        "1K": 0.0656,
+        "2K": 0.0919,
+        "4K": 0.2313
+      }
+    },
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image",
+      "markup",
+      "mask",
+      "lock_unmasked"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "16:9",
+        "enum": [
+          "auto",
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "21:9",
+          "9:21"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-enum-labels": {
+          "auto": "Auto (match Image 1)"
+        },
+        "x-order": 4
+      },
+      "background": {
+        "default": "auto",
+        "description": "Transparent needs PNG or WebP output.",
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ],
+        "title": "Background",
+        "type": "string",
+        "x-order": 12
+      },
+      "complexity": {
+        "default": "high",
+        "description": "How much the model plans before rendering. Lower is faster, same price.",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "Complexity",
+        "type": "string",
+        "x-order": 11
+      },
+      "frame_count": {
+        "default": 9,
+        "description": "More frames move more smoothly, each at a smaller size.",
+        "maximum": 16,
+        "minimum": 2,
+        "title": "Frames",
+        "type": "integer",
+        "x-depends-on": {
+          "output_format": "gif"
+        },
+        "x-order": 8
+      },
+      "frame_duration_ms": {
+        "default": 200,
+        "description": "How long each frame shows.",
+        "maximum": 2000,
+        "minimum": 20,
+        "title": "Frame Duration",
+        "type": "integer",
+        "x-depends-on": {
+          "output_format": "gif"
+        },
+        "x-order": 9,
+        "x-unit": "ms"
+      },
+      "input_image": {
+        "description": "Up to 16 images to edit or draw from.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "nullable": true,
+        "title": "Reference Images",
+        "type": "array",
+        "x-depends-on": {
+          "output_format": [
+            "png",
+            "jpeg",
+            "webp"
+          ]
+        },
+        "x-order": 1
+      },
+      "lock_unmasked": {
+        "default": true,
+        "description": "Only modify the pixels within the masked region.",
+        "title": "Keep the rest unchanged",
+        "type": "boolean",
+        "x-depends-on": {
+          "mask": {
+            "set": true
+          }
+        },
+        "x-hub-only": true,
+        "x-order": 3.5
+      },
+      "markup": {
+        "description": "Draw on Image 1 to show what to change. Text and arrows are read as instructions.",
+        "format": "uri",
+        "nullable": true,
+        "title": "Markup",
+        "type": "string",
+        "x-depends-on": {
+          "output_format": [
+            "png",
+            "jpeg",
+            "webp"
+          ]
+        },
+        "x-markup": {
+          "aspectRatioField": "aspect_ratio",
+          "imageField": "input_image"
+        },
+        "x-order": 2
+      },
+      "mask": {
+        "description": "Paint the part of Image 1 to change.",
+        "format": "uri",
+        "nullable": true,
+        "title": "Mask",
+        "type": "string",
+        "x-depends-on": {
+          "output_format": [
+            "png",
+            "jpeg",
+            "webp"
+          ]
+        },
+        "x-mask": {
+          "aspectRatioField": "aspect_ratio",
+          "editArea": "transparent",
+          "imageField": "input_image"
+        },
+        "x-order": 3
+      },
+      "moderation": {
+        "default": "low",
+        "description": "Low filters less than auto. OpenAI's usage policies still apply.",
+        "enum": [
+          "low",
+          "auto"
+        ],
+        "title": "Moderation",
+        "type": "string",
+        "x-order": 13
+      },
+      "output_format": {
+        "default": "png",
+        "description": "GIF and SVG generate from the prompt alone.",
+        "enum": [
+          "png",
+          "jpeg",
+          "webp",
+          "gif",
+          "svg"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-enum-labels": {
+          "gif": "GIF (animated)",
+          "jpeg": "JPEG",
+          "png": "PNG",
+          "svg": "SVG (vector)",
+          "webp": "WebP"
+        },
+        "x-order": 7
+      },
+      "prompt": {
+        "description": "What to generate, or how to edit the reference images (@Image1, @Image2, ...). Optional with a reference image.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_image",
+              "pattern": "Image {n}"
+            }
+          ]
+        },
+        "x-order": 0
+      },
+      "quality": {
+        "default": "high",
+        "description": "Higher tiers add detail, take longer and cost more.",
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "title": "Quality",
+        "type": "string",
+        "x-order": 6
+      },
+      "resolution": {
+        "default": "2K",
+        "enum": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 5
+      },
+      "svg_model": {
+        "default": "gpt-6-sol",
+        "description": "Draws the SVG. Sol adds detail; Luna is faster and cheaper.",
+        "enum": [
+          "gpt-6-sol",
+          "gpt-6-luna"
+        ],
+        "title": "SVG Author",
+        "type": "string",
+        "x-depends-on": {
+          "output_format": "svg"
+        },
+        "x-enum-labels": {
+          "gpt-6-luna": "GPT-6 Luna",
+          "gpt-6-sol": "GPT-6 Sol"
+        },
+        "x-order": 10
+      }
+    },
+    "required": [],
+    "title": "Input",
+    "type": "object"
+  }
+}

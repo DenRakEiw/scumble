@@ -347,8 +347,8 @@ async function main() {
             gpt_image_2_5_flare: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2.5/flare/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.5-flare/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
             gpt_image_2_5_sunburst: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2.5/sunburst/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.5-sunburst/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
             // GPT Image 2.6 (2026-11-06): ToAPIs serves Sunburst only (Flare is listed as disabled)
-            gpt_image_2_6_flare: { openai: {}, fal: { model: "openai/gpt-image-2.6/flare/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.6-flare/edit" }, openrouter: {} },
-            gpt_image_2_6_sunburst: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2.6/sunburst/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.6-sunburst/edit" }, openrouter: {} },
+            gpt_image_2_6_flare: { openai: {}, fal: { model: "openai/gpt-image-2.6/flare/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.6-flare/edit" }, openrouter: {}, oxen: {} },
+            gpt_image_2_6_sunburst: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2.6/sunburst/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2.6-sunburst/edit" }, openrouter: {}, oxen: {} },
             nano_banana_2: { toapis: {}, gemini: {}, fal: { model: "fal-ai/nano-banana-2/edit", options: { aspect_ratios: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] } }, replicate: {}, wavespeed: { model: "google/nano-banana-2/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
             nano_banana_2_1: { toapis: {}, gemini: {}, fal: { model: "fal-ai/nano-banana-2.1/edit", options: { aspect_ratios: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "4:1", "1:4", "8:1", "1:8"] } }, replicate: {}, wavespeed: { model: "google/nano-banana-2.1/edit" }, openrouter: {}, comfyrouter: {} },
             nano_banana_2_lite: { toapis: {}, gemini: {}, wavespeed: { model: "google/nano-banana-2-lite/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
@@ -399,7 +399,7 @@ async function main() {
             }
         }
         const stale = Object.entries(TEXT_REFS).flatMap(([id, rows]) => Object.keys(rows).map((pid) => `${id}/${pid}`)).filter((n) => !seen.has(n));
-        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 134, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
+        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 136, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
         check("every row of the table names a shipped provider variant", !stale.length, stale.join(", "));
         check("every text shape without text.refs is on the takes-none list", !none.length, none.join(", "));
         const noneStale = Object.entries(TAKES_NONE).flatMap(([id, pids]) => pids.map((pid) => `${id}/${pid}`)).filter((n) => { const [id, pid] = n.split("/"); const r = list.find((x) => x.id === id); return !r || !r.providers[pid] || !r.providers[pid].text || r.providers[pid].text.refs !== null; });

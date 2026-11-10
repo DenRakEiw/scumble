@@ -7,7 +7,7 @@
   },
   "request_schema": {
     "basic": [
-      "input_images"
+      "input_image"
     ],
     "properties": {
       "aspect_ratio": {
@@ -42,7 +42,7 @@
         "x-hidden": true,
         "x-order": 6
       },
-      "input_images": {
+      "input_image": {
         "description": "Optional reference images to edit or combine, in order. Reference them in the prompt as @Image1, @Image2, etc. Up to 10 images.",
         "items": {
           "format": "uri",
@@ -52,6 +52,9 @@
         "nullable": true,
         "title": "Input Images",
         "type": "array",
+        "x-aliases": [
+          "input_images"
+        ],
         "x-order": 1
       },
       "negative_prompt": {
@@ -79,7 +82,7 @@
         "x-media-references": {
           "groups": [
             {
-              "field": "input_images",
+              "field": "input_image",
               "pattern": "Image {n}"
             }
           ]

@@ -26,6 +26,35 @@
         "type": "string",
         "x-order": 2
       },
+      "image_size": {
+        "description": "Pixel dimensions sent to Seedream, looked up from aspect_ratio and size in the size table below.",
+        "title": "Image Size",
+        "type": "object",
+        "x-hidden": true,
+        "x-order": 3,
+        "x-size-table": {
+          "1K": {
+            "16:9": "1280x720",
+            "1:1": "1024x1024",
+            "21:9": "1568x672",
+            "2:3": "832x1248",
+            "3:2": "1248x832",
+            "3:4": "864x1152",
+            "4:3": "1152x864",
+            "9:16": "720x1280"
+          },
+          "2K": {
+            "16:9": "2560x1440",
+            "1:1": "2048x2048",
+            "21:9": "3024x1296",
+            "2:3": "1664x2496",
+            "3:2": "2496x1664",
+            "3:4": "1728x2304",
+            "4:3": "2304x1728",
+            "9:16": "1440x2560"
+          }
+        }
+      },
       "input_image": {
         "description": "Optional reference image URLs for image-to-image editing. Provide one image for single-image editing or multiple for multi-reference fusion; reference them in the prompt as @Image1, @Image2, etc. Up to 10 images.",
         "items": {
