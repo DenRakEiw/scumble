@@ -295,6 +295,22 @@ the Cloud copy writes it into the copy's variant (`detach`), and `tools/cloud_re
   Moss-Image-Edit, rehosted by Comfy-Org, whose repository card says Apache-2.0; chinoll's own repository names no
   licence for the weights (its code is GPL-3.0). MOSS-Image's weights are Apache-2.0. The same template on Comfy Cloud
   is `cloud_moss_image_edit` (one picture; "Comfy Cloud recipes" below).
+- `fibo2_edit_turbo_local`, **Fibo 2.0 Edit Turbo** (edit only; **not run**: built from Comfy's template
+  `image_fibo2_edit_turbo_pe` and ComfyUI 0.44.0's `/object_info`, checked against the node specs by
+  `tools/recipes_test.js` §18). Core nodes: `UNETLoader` (`fibo2_edit_turbo_int8_convrot`), `CLIPLoader`
+  (`qwen3vl_4b_bf16`, type `fibo2`), `VAELoader` (`flux2-vae`), `TextEncodeFibo2` (`images.image_1..4` = the crop batch's
+  pictures 0..3 straight from `ImageFromBatch`, named `<image_1>` .. `<image_4>`; its three outputs positive, negative
+  and latent into `KSampler`, 4 steps, CFG 1, euler / simple, the canvas's seed), `VAEDecode`. **Size:** `width` and
+  `height` stay 0 as in the template, so the node takes Fibo 2.0's trained size for the crop's aspect (multiples of 16
+  within 10 % of 1 MP); there is no Megapixels row. A single picture is centre-cropped to that size, at most 0.2 % of
+  the frame for crops on the default 64 grid at 1024 (computed from the node's `trained_size`); several pictures each go
+  to their own trained size. `negative_prompt` is empty, the null caption the model was trained with, and there is no
+  negative row: it has no effect at CFG 1. **Prompt Enhancer** (`upsampler`, the rows *Prompt Enhancer* and *Enhancer
+  model*, on by default): the template's `TextGenerate` on `qwen3vl_8b_int8_convrot` with its system prompt word for word
+  and its sampling values, the whole crop batch through `BatchImagesNode`, `request: { "edit": "{text}" }` (the prompt
+  as written, as the template sends it). Off, or without its file, the prompt goes straight to the encoder and the
+  enhancer's nodes are not queued. No Generate new route: this checkpoint only edits, text to image is Fibo 2.0 Dev.
+  **Licence:** Bria's weights are CC BY-NC 4.0, non-commercial; commercial use needs an agreement with Bria.
 - `p_h3_image_local`, **P-H3-Image** (0.1.52, `docs/PLAN_PH3.md`): Pruna AI's 8-step image fine-tune of MiniMax H3
   (published 2026-11-03), on ComfyUI 0.44 or newer, which runs it on its own nodes (PR Comfy-Org/ComfyUI#17506). The
   graph is Comfy's templates' LoRA route: `UNETLoader` (`minimax_h3_fl2va_pruned_int8_convrot`, MiniMax H3's FL2VA

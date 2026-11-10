@@ -227,7 +227,9 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   or newer, also on Comfy Cloud; it edits by instruction with up to three more pictures, through the edit LoRA of
   Comfy's own template), and P-H3-Image (ComfyUI 0.44 or newer, also on Comfy Cloud and WaveSpeedAI; edits with up
   to seven more pictures and new pictures, Pruna AI's prompt upsampler in front; powered by MiniMax H3, whose licence
-  does not cover the EU, the UK, South Korea or the US without a separate licence from MiniMax); the upscale, Realism
+  does not cover the EU, the UK, South Korea or the US without a separate licence from MiniMax), Fibo 2.0 Edit Turbo
+  (edits by instruction with up to three more pictures, Comfy's Prompt Enhancer in front; not run yet; Bria's weights
+  are CC BY-NC 4.0, non-commercial, commercial use needs an agreement with Bria); the upscale, Realism
   Pass and relight recipes are below.
 - LoRAs for every recipe on your own ComfyUI with one model loader: up to five per recipe in the *LoRAs* section of
   the Generate tab, each picked from your ComfyUI's list with a strength and an on / off tick, kept per recipe and
