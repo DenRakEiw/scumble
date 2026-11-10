@@ -655,6 +655,51 @@ JS = r"""
     }
     await ed.setMap("depth", null);
 
+    // =========================================================================
+    // Case q: the depth map's static sampler uploads once, not on every pass
+    //         (filters/depth-map-texture-reuploaded-every-pass: rg8View made a new view per call, and the
+    //         sampler cache is keyed by that object)
+    // Case r: haze GL against CPU at a preview scale (0.1) over a depth step (filters/haze-cpu-twin-half-pixel:
+    //         the CPU twin read the map at pixel corners, the shader at pixel centres)
+    // =========================================================================
+    {
+        // near left of map column 60, far from it on; the white haze shows on the far side only
+        const step = new Uint16Array(Mw * Mh);
+        for (let y = 0; y < Mh; y++) for (let x = 0; x < Mw; x++) step[y * Mw + x] = x < 60 ? 0 : 65535;
+        await ed.setMap("depth", makeMap("depth", Mw, Mh, step, [W, 0, 0, H, 0, 0]));
+        const hfx = ed.addFilterLayer("haze");
+        check("q: haze layer created", !!hfx && hfx.filter === "haze");
+        if (hfx) {
+            Object.assign(hfx.params, { amount: 100, start: 0, curve: 1, desaturate: 0, color_mode: "custom", color: "#ffffff" });
+            ed.markFilterChanged(hfx);
+            const G = GLM.G || GLM.glContext();
+            check("q: a WebGL2 context", !!G);
+            if (G) {
+                const infoQ = { ...ed.filterInfo(hfx, { scale: 1, origin: [0, 0], full: [W, H], forRun: true }), maps: ed.maps, cpu: false };
+                const u0 = G.uploads;
+                const q1 = GLM.applyFilterGL("haze", base, hfx.params, infoQ);
+                const u1 = G.uploads;
+                const q2 = GLM.applyFilterGL("haze", base, hfx.params, { ...infoQ });
+                const q3 = GLM.applyFilterGL("haze", base, hfx.params, { ...infoQ });
+                const u2 = G.uploads;
+                check("q: three haze passes ran on the GL path", !!q1 && !!q2 && !!q3);
+                const pq = q3 ? GLM.glToCanvas(q3).getContext("2d").getImageData(0, 0, W, H).data : null;
+                const farQ = pq ? pq[(200 * W + 550) * 4] : -1, nearQ = pq ? pq[(200 * W + 50) * 4] : -1;
+                check("q: the passes read the depth map (white far, the base near)", farQ > 200 && nearQ === pxBase[(200 * W + 50) * 4], { farQ, nearQ });
+                // the first pass uploads the map unless the layer's own render did already; the next two add nothing
+                check("q: the depth map uploads at most once over three haze passes", u1 - u0 <= 1 && u2 === u1, { u0, u1, u2 });
+            }
+            // a 600 x 400 picture seen at 10 %: one pass pixel is 2.5 map pixels, so a half-pixel offset moves the
+            // step's column by more than a map pixel
+            const tenth = mk(W / 10, H / 10);
+            tenth.getContext("2d").drawImage(base, 0, 0, W / 10, H / 10);
+            const infoR = { ...ed.filterInfo(hfx, { scale: 0.1, origin: [0, 0], full: [W / 10, H / 10], forRun: false }), maps: ed.maps };
+            glVsCpu("r: haze at scale 0.1 over a depth step", "haze", tenth, hfx.params, infoR, { max: 2, over2Pct: 0, mean: 0.5 });
+            ed.removeLayer(hfx.id);
+        }
+        await ed.setMap("depth", null);
+    }
+
     return { fails, tiles: !!ed.tiles };
 })();
 """
