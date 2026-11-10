@@ -322,7 +322,7 @@ async function readDir(dir, source) {
 // `text: { model, sizes }`, or switches it off with `text: false`. Magnific's edit routes end in "-edit" and differ in
 // more than the name, so every magnific variant names its text route (or `text: false`); tools/magnific_test.js holds them to it.
 // Oxen.ai uses the same id on /images/generate (Grok Imagine's text model is another id: its variant names it).
-const TEXT_PROVIDERS = new Set(["toapis", "openai", "gemini", "bfl", "fal", "replicate", "wavespeed", "openrouter", "ark", "comfyrouter", "comfypartner", "oxen", "magnific", "loopback"]);
+const TEXT_PROVIDERS = new Set(["toapis", "openai", "gemini", "bfl", "fal", "replicate", "wavespeed", "openrouter", "ark", "minimax", "comfyrouter", "comfypartner", "oxen", "magnific", "loopback"]);
 // Providers whose text route a variant must name itself (`text: { model }`): Comfy Cloud makes new images only through a
 // recipe's own text-to-image graph (item 35 V6), so its partner-node variants get none by default.
 const TEXT_NAMED = new Set(["comfycloud"]);

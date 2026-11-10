@@ -1259,7 +1259,7 @@ the editing one with a trailing `/edit`, `/inpaint` or `/fill` removed (fal and 
 put the editing model under such a path, the others use the same id without the image
 field). A variant overrides it with `"text": { "model": "...", "sizes": [...], "fixed": {} }`
 or switches it off with `"text": false`. Providers that can do it at all: ToAPIs, OpenAI, Gemini,
-BFL, fal, Replicate, WaveSpeed, OpenRouter, ModelArk, Comfy Router, the Comfy Partner API, Oxen.ai, Magnific (`TEXT_PROVIDERS`; Magnific's variants name their
+BFL, fal, Replicate, WaveSpeed, OpenRouter, ModelArk, MiniMax, Comfy Router, the Comfy Partner API, Oxen.ai, Magnific (`TEXT_PROVIDERS`; Magnific's variants name their
 text route, see "Magnific" below; Oxen.ai posts the same id to `/images/generate`, Grok Imagine's variant names its
 text model; without reference layers OpenRouter uses the same model id and
 leaves out `input_references`, ModelArk the same id without `image`, Comfy Router the same model without a picture). Comfy Cloud builds a graph around a
@@ -3045,6 +3045,53 @@ as JPEG, the mask sent, a region that is no region or a host from a recipe, the 
 retry for `QuotaExceeded`, before `Retry-After` or a third time, the key left in a message or its head left at the
 300-character cut, the error words of every code, lite's `limits.max` back at 4096, and a variant's default,
 model id or place in the list.
+
+### MiniMax (`minimax`)
+
+MiniMax's own API, for its image model MiniMax-H3-Image: the recipe `minimax_h3_image`, `electron/main/providers/minimax.js`.
+Written from MiniMax's API reference (`platform.minimax.io` and `platform.minimax.cn`, read 2026-11-10). The adapter **has
+not run against the live API**, and the recipe's description and note say so.
+
+- **The key row.** "MiniMax" comes after BytePlus ModelArk in Settings › API providers. A key belongs to the console it was
+  made in. There is no *check balance*.
+- **The rows.** *Size* (`size`: 1K, 2K, 4K, default 2K; target areas 1024², 2048², 4096²), *Speed* (`speed`: Standard, or
+  Highspeed, which sends `MiniMax-H3-Image-Highspeed`: the same parameters, faster, about twice the output price) and *Region*
+  (`region`: International `https://api.minimax.io`, China `https://api.minimax.cn`).
+- **The protocol.** One synchronous request per image: `POST /v1/images/edits` for an edit, `POST /v1/images/generations` for
+  Generate new, JSON, `Authorization: Bearer <key>`. The body is `{ model, prompt, n: 1, size: "WxH", output_format: "png",
+  response_format: "b64_json" }`, and on an edit `images: [{ image_url: "data:image/png;base64,..." }]`, the crop first, then
+  *Original* and the reference layers. The prompt names them `image 1`, `image 2`, in that order (`refs.name`). The server
+  waits up to 600 s, so the POST's own limits are 630 s. **There is no automatic retry of any kind**: a request is not
+  idempotent and a second one is billed again.
+- **Not sent:** a mask (there is none: the model renders the whole crop again and the stitch keeps the selection), a seed, a
+  negative prompt, a transparent background, `aspect_ratio` and `area` (`size` excludes them), `stream`,
+  `disable_prompt_enhanced` (text to image only; an edit always enhances its prompt, so there is no row for it).
+- **Sizes.** The crop's own shape, or for Generate new the asked aspect exactly where a 16 px grid has it near the area, fitted
+  to the Size row's area in 16 px steps, inside 655,360 to 20,000,000 pixels and 1:3 to 3:1. A shape steeper than 3:1 is
+  refused before sending and never bent to fit; `limits.ratio` 3 widens a thin selection's crop first. **As with Gemini's Size
+  row at a value other than auto, the row decides on Generate new, not the size named in its dialog.** Generate new sends the
+  prompt alone: the text endpoint takes no pictures (no `textLayout`, no `text.refs`).
+- **Pictures.** At most 16 (the crop, *Original*, the reference layers), each 128 to 8192 px a side and no steeper than 4:1,
+  the whole request body at most 64 MiB, which is why the documented 64 MiB per picture never bites (base64 adds a third). A
+  body over it sends its largest pictures without a transparent pixel as JPEG (quality 92) until it fits; anything still over
+  is refused before sending. `limits`: `max` 8192, `min` 384 (a long side of 384 keeps a 3:1 crop's short side at 128), `step`
+  16, `pixels` 16,777,216 (the 4K row's area).
+- **The answer.** `{ created, data: [{ b64_json, size, revised_prompt }], output_format, usage, request_id }`. A picture that
+  failed inside a 200 is `{ error: { code, message } }`: 1000 failed, 1001 timed out, 1008 balance, 1026 the prompt and 1027 a
+  picture failed the safety check. A failed request is `{ type: "error", error: { type, message: "<text> (<code>)", http_code },
+  request_id }`: 400 `bad_request_error`, 401 `authorized_error`, 402 `insufficient_balance_error` (1008 the balance; 2053, 2067,
+  2068 the plan does not include this model), 422 `unprocessable_entity_error` (1026, 1027), 429 `rate_limit_error` (1002, 2056),
+  500 `server_error`. The user reads one plain line per kind and then MiniMax's own message.
+- **The host** is one of the two above, by the Region row, never a URL from a recipe. `settings.minimax.base` may name a
+  loopback mock (`http://127.0.0.1:<port>`) for the tests; then only a key that starts with `test-` goes there, and such a key
+  never goes to MiniMax.
+- **Prices**, in the recipe's note and approximate only (MiniMax calls them reference values): about $0.02 at 1K and 2K and
+  $0.07 at 4K for a new image; about $0.03 at 1K and 2K and $0.07 at 4K for an edit with one picture; Highspeed costs more.
+
+Only a real key can verify: that the bodies are accepted as sent; that the answer has the documented shape, a failed picture
+inside a 200 included; the real size of the answer against `size`; the text of each error and where its code sits; whether an
+edit keeps the crop's framing well enough for the stitch; how a key of the other console is refused. `tools/minimax_test.js`
+is the gate `minimax` (plain Node).
 
 ### Comfy Router (`comfyrouter`)
 

@@ -377,6 +377,8 @@ async function main() {
             cloud_anima_base: ["comfycloud"], cloud_anima_preview: ["comfycloud"], cloud_flux2_klein_9b: ["comfycloud"], cloud_ideogram_4: ["comfycloud"],
             cloud_krea_2_turbo: ["comfycloud"], cloud_mage_flow: ["comfycloud"], cloud_qwen_image_2_1_edit: ["comfycloud"], cloud_z_image_turbo: ["comfycloud"],
             cloud_p_h3_image: ["comfycloud"], cloud_moss_image_edit: ["comfycloud"],
+            // MiniMax's text endpoint takes no pictures (its edit endpoint up to 16)
+            minimax_h3_image: ["minimax"],
         };
         const NULLS = { max: null, field: null, model: null, options: null, name: null };
         const list = await recipes.list(RECIPES);
