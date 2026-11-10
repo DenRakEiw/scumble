@@ -42,3 +42,47 @@ To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData
 $ bash tools/run_gates.sh mut-orig-tiff-on --offline --tiles on tiff  (rc 0, 69 s)
 tiff rc=0 35s PASS
 ALL PASS
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 34 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\k18_mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 289975 bytes, sha256 f326653b273e3c87
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\k18_mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 232343 bytes, sha256 0c067d6ca569c44e
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\k18_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 17.38s
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\k18_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 12.05s
+$ node tools/px_test.js  (rc 0, 241 s)
+PASS
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+ok   rust scalar a pointer above 2 GB is usable  ptr 2228170752
+PASS
+(node:66424) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/k18_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\k18_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance
+$ node tools/px_test.js  (rc 0, 3 s, PX_ONLY=tiff)
+PASS (only: tiff; PX_ONLY, not the full test)
+ok   inpaint_worker.js tiffPartJob recovers from OOM and wasm traps in tiffStripFromPtr and tiffStrip, renews the instance, and falls back cleanly  oomPtr=true trapPtr=true trapRgba=true
+ok   kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels  tkMethodsMatch=true oldCalls=0 newCalls=4 callsRust={"tiff_predict_rgba":1,"tiff_to_rgba":1,"tiff_unpack":1,"tiff_unpredict":1} callsJs={} trapInPlaceOk=true
+ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1}
+ok   inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules  exact=false/4096 over=true/0 hi=false/true zCancel=true rawSlice=12 lzwBig=true extra=true
+ok   inpaint_worker.js tiffBandJob & readTiffBands (K18): rust vs js routes, NORMAL ahead of queued EXPORT jobs, and WorkerPool group cancel on band error  order=tiff_band,tiff_band,tiff_band,tiff_band,tiff_band,tiff_band,export_dummy,export_dummy,export_dummy,export_dummy cancelled=3 started=3 rustCalls={"tiff_to_rgba":1,"tiff_unpack":3,"tiff_unpredict":1}
+ok   rust simd module reports its SIMD flag
+ok   rust scalar module reports its SIMD flag
+PASS (only: tiff; PX_ONLY, not the full test)
+(node:14704) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/k18_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\k18_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ bash tools/run_gates.sh mut-orig-tiff-on --offline --tiles on tiff  (rc 0, 91 s)
+tiff rc=0 47s PASS
+ALL PASS
