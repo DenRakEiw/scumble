@@ -695,6 +695,8 @@ if (tiles) {
         created.length = 0;
     } finally { if (ownEmpty) LayerCls.empty = empty0; else delete LayerCls.empty; }
 }
+// the arena check around this step counts what is left: the document it made goes too
+await run("close_document", { doc: d.id, remember: false });
 return { tiles, ...out };
 """),
     ("cleanup", """
