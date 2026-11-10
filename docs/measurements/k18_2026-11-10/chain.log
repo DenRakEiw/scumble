@@ -272,3 +272,24 @@ lock: released
 [05:39:17] gpu: 6786 MiB, 9 %; comfy 8188: 000down
 [05:39:19] done
 no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+[08:33:31] exporting clean before tree at c36840d8 to /f/canvas/.claude/worktrees/.tmp_k18_before_3208394
+[08:33:55] preparing 15k third-party fixtures and band/picture SHA-256 sidecar in /f/canvas/.claude/worktrees/.tmp_k18_tiff_3208394 before timed runs
+[08:34:11] branch ag-chain-t at 3839282a; base c36840d8; port 9633
+[08:34:30] before px.wasm f326653b273e3c87; after px.wasm f326653b273e3c87; after px_scalar.wasm 0c067d6ca569c44e
+[08:34:41] gpu: 9066 MiB, 2 %; comfy 8188: 000down
+lock: held by 'pan-cost agent fill c10d6d3d 23388 2026-11-10T08:31:21', waiting
+lock: taken after 150 s
+[08:37:17] lock: taken (K18 tiffperf raw r2 (chain-t) 57032 2026-11-10T08:34:43)
+[08:37:20] == tiffperf raw round 2
+[08:37:29] tiffperf after raw r2 (try 1, px.wasm f326653b273e)
+[08:37:41] gpu: 6384 MiB, 1 %; comfy 8188: 000down
+[08:38:12] rc=0
+closed
+[08:38:32] tiffperf before raw r2 (try 1, px.wasm f326653b273e)
+[08:38:43] gpu: 5272 MiB, 8 %; comfy 8188: 000down
+[08:39:13] rc=0
+closed
+lock: released
+[08:39:38] gpu: 5241 MiB, 0 %; comfy 8188: 000down
+[08:39:40] done
+no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

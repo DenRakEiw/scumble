@@ -224,4 +224,44 @@ MUTANTS = [
         "killed",
         {"gates": ["tiff"]},
     ),
+    (
+        "inpaint_canvas.js: tiffPoolUsable requires partsUsable() (kernelsMode === rust)",
+        CV,
+        [(
+            "function tiffPoolUsable(blob) {\n    return typeof Worker === \"function\" && typeof Blob === \"function\" && blob instanceof Blob && !editorPool().off;\n}",
+            "function tiffPoolUsable(blob) {\n    return partsUsable() && typeof Worker === \"function\" && typeof Blob === \"function\" && blob instanceof Blob && !editorPool().off;\n}",
+        )],
+        "killed",
+        {"gates": ["tiff"]},
+    ),
+    (
+        "inpaint_canvas.js: pixelsFromTiff reports (y0 + n) / H instead of rowsDone / H to progress",
+        CV,
+        [(
+            "        rowsDone += n;\n        if (progress) progress(rowsDone / H);",
+            "        rowsDone += n;\n        if (progress) progress((y0 + n) / H);",
+        )],
+        "killed",
+        {"gates": ["tiff"]},
+    ),
+    (
+        "inpaint_canvas.js: resetTarget omits resetting rowsDone = 0 before fallback",
+        CV,
+        [(
+            "        W = 0; H = 0; writeMs = 0; rowsDone = 0;",
+            "        W = 0; H = 0; writeMs = 0;",
+        )],
+        "killed",
+        {"gates": ["tiff"]},
+    ),
+    (
+        "inpaint_canvas.js: pixelsFromTiff skips needWindowFallback when pool turns off on tiff_read",
+        CV,
+        [(
+            "                if (editorPool().off && !px) needWindowFallback = true;\n                else throw err;",
+            "                throw err;",
+        )],
+        "killed",
+        {"gates": ["tiff"]},
+    ),
 ]

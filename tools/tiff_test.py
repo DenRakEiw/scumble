@@ -485,9 +485,9 @@ try {
     const blobLzw = new File([lzwBytes], "lzw.tif", { type: "image/tiff" });
     const blobTrunc = new File([truncBytes], "trunc.tif", { type: "image/tiff" });
 
-    // 1) Payload & out-of-order writeRect across planar_strips (18 total strip entries, 3 per 8-row band) and palette4 (ColorMap)
+    // 1) Payload, monotonic progress(rowsDone / H), & out-of-order writeRect across planar_strips (18 total strip entries, 3 per 8-row band) and palette4 (ColorMap)
     E.tiffBandRows = 8;
-    const seenPayloads = [], resolveOrder = [], groupsSeen = new Set();
+    const seenPayloads = [], resolveOrder = [], groupsSeen = new Set(), planarProgs = [];
     pool.run = function (op, args, transfer, opts) {
         if (op === "tiff_band") {
             seenPayloads.push({
@@ -507,14 +507,17 @@ try {
         }
         return origRun(op, args, transfer, opts);
     };
-    const rPlanar = await E.parts.pixelsFromTiff(blobPlanar, ed.pixels.Layer, null, null);
+    const rPlanar = await E.parts.pixelsFromTiff(blobPlanar, ed.pixels.Layer, (f) => planarProgs.push(f), null);
     const cPlanar = compare(rPlanar.px.readRect(0, 0, F_PLANAR.width, F_PLANAR.height).data, planarWant, F_PLANAR.width);
     rPlanar.px.release();
     if (!cPlanar.ok) throw new Error("planar out-of-order bands: " + says(cPlanar));
     if (seenPayloads.length !== 6 || groupsSeen.size !== 1
         || seenPayloads.some((s) => s.argKeys !== "band,blob,spec" || s.hasSpecOffsets || s.hasSpecColormap || s.bandOffLen !== 3 || s.priority !== NORMAL)
-        || resolveOrder[0] === 0 || resolveOrder[resolveOrder.length - 1] !== 0) {
-        throw new Error("planar payload/order check failed: " + JSON.stringify({ seenPayloads, resolveOrder }));
+        || resolveOrder[0] === 0 || resolveOrder[resolveOrder.length - 1] !== 0
+        || planarProgs.length !== 6 || Math.abs(planarProgs[0] - 8 / F_PLANAR.height) > 1e-6
+        || planarProgs[planarProgs.length - 1] !== 1
+        || !planarProgs.every((f, i) => f > 0 && f <= 1 && (i === 0 || f > planarProgs[i - 1]))) {
+        throw new Error("planar payload/order/progress check failed: " + JSON.stringify({ seenPayloads, resolveOrder, planarProgs }));
     }
     seenPayloads.length = 0; resolveOrder.length = 0;
     const rPal = await E.parts.pixelsFromTiff(blobPal, ed.pixels.Layer, null, null);
@@ -567,77 +570,134 @@ try {
         throw new Error("NORMAL did not precede queued EXPORT jobs: " + JSON.stringify(sentOrder));
     }
 
-    // 3) later() cancellation on pixelsFromTiff (after band 0 wrote rows) and via superseded loadFile: cancels group, releases px, no tiff_read fallback
+    // 3) later() cancellation on pixelsFromTiff (after band 0 wrote rows) and via superseded loadFile:
+    //    bands > 0 are held inside the real pool via _send, pool.stats().cancelled grows by 5, and no tiff_band starts after cancel
     let releaseCalls = 0;
     Proto.release = function (...a) { releaseCalls++; return origRelease.apply(this, a); };
-    let cancelCalls = 0, fallbackReads = 0, stale = false;
-    pool.cancel = function (g) { if (typeof g === "symbol") cancelCalls++; return origCancel(g); };
+    let cancelCalls = 0, fallbackReads = 0, stale = false, cancelDone = false, sentAfterCancel = 0;
+    const heldSlots = [];
+    const flushHeldSlots = (rejectHold = false) => {
+        for (const hs of heldSlots.splice(0)) {
+            if (hs.job && (hs.job.cancelled || rejectHold)) {
+                clearTimeout(hs.job.timer);
+                if (rejectHold && !hs.job.cancelled) hs.job.reject(new Error("cleanup held slot"));
+                hs.job = null;
+            }
+        }
+        pool._pump();
+    };
+    pool.cancel = function (g) {
+        if (typeof g === "symbol") cancelCalls++;
+        const n = origCancel(g);
+        cancelDone = true;
+        flushHeldSlots(false);
+        return n;
+    };
     pool.run = function (op, args, transfer, opts) {
         if (op === "tiff_read") fallbackReads++;
-        if (op === "tiff_band" && args.band && args.band.index > 0) {
-            return wait(40).then(() => origRun(op, args, transfer, opts));
-        }
         return origRun(op, args, transfer, opts);
     };
+    pool._send = function (s, job) {
+        if (cancelDone && job.op === "tiff_band") sentAfterCancel++;
+        if (job.op === "tiff_band" && job.args.band && job.args.band.index > 0) {
+            s.job = job;
+            heldSlots.push(s);
+            return;
+        }
+        return origSend(s, job);
+    };
+    const cancelledBefore1 = pool.stats().cancelled;
     let cancelErr = null, progCalls = 0;
     try {
         await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, () => { progCalls++; stale = true; }, () => stale);
     } catch (e) {
         cancelErr = e;
     }
-    if (!cancelErr || !cancelErr.cancelled || progCalls !== 1 || cancelCalls < 1 || releaseCalls !== 1 || fallbackReads !== 0) {
-        throw new Error("direct later() cancel check failed: " + JSON.stringify({ err: cancelErr && cancelErr.name, cancelled: !!(cancelErr && cancelErr.cancelled), progCalls, cancelCalls, releaseCalls, fallbackReads }));
+    const cancelledDelta1 = pool.stats().cancelled - cancelledBefore1;
+    flushHeldSlots(true);
+    if (!cancelErr || !cancelErr.cancelled || progCalls !== 1 || cancelCalls < 1 || cancelledDelta1 !== 5 || sentAfterCancel !== 0 || releaseCalls !== 1 || fallbackReads !== 0) {
+        throw new Error("direct later() cancel check failed: " + JSON.stringify({ err: cancelErr && cancelErr.name, cancelled: !!(cancelErr && cancelErr.cancelled), progCalls, cancelCalls, cancelledDelta1, sentAfterCancel, releaseCalls, fallbackReads }));
     }
 
-    // Superseded ed.loadFile: first open held in tiff_band, second loadFile supersedes it cleanly without tiff_read fallback
-    cancelCalls = 0; fallbackReads = 0;
+    // Superseded ed.loadFile: first open's 6 bands held inside real pool, second loadFile supersedes it cleanly without tiff_read fallback
+    cancelCalls = 0; fallbackReads = 0; cancelDone = false; sentAfterCancel = 0;
     let releaseFirstLoad = null;
     const firstLoadGate = new Promise((r) => { releaseFirstLoad = r; });
     let heldBands = 0;
-    pool.run = function (op, args, transfer, opts) {
-        if (op === "tiff_read") fallbackReads++;
-        if (op === "tiff_band" && args.blob === blobPlanar) {
+    const cancelledBefore2 = pool.stats().cancelled;
+    pool._send = function (s, job) {
+        if (cancelDone && job.op === "tiff_band" && job.args.blob === blobPlanar) sentAfterCancel++;
+        if (job.op === "tiff_band" && job.args.blob === blobPlanar) {
             heldBands++;
-            if (args.band && args.band.index > 0) return firstLoadGate.then(() => wait(30)).then(() => origRun(op, args, transfer, opts));
-            return firstLoadGate.then(() => origRun(op, args, transfer, opts));
+            s.job = job;
+            if (job.args.band && job.args.band.index === 0) {
+                firstLoadGate.then(() => { if (s.job === job && !job.cancelled) origSend(s, job); });
+            } else {
+                heldSlots.push(s);
+            }
+            return;
         }
-        return origRun(op, args, transfer, opts);
+        return origSend(s, job);
     };
     const pLoad1 = ed.loadFile(blobPlanar, { ask: false });
-    for (let i = 0; i < 100 && heldBands < 2; i++) await wait(5);
+    for (let i = 0; i < 100 && heldBands < 6; i++) await wait(5);
     const pLoad2 = ed.loadFile(blobPal, { ask: false });
     releaseFirstLoad();
     await Promise.all([pLoad1, pLoad2]);
+    const cancelledDelta2 = pool.stats().cancelled - cancelledBefore2;
+    flushHeldSlots(true);
     const cLoad2 = compare(ed.basePx.readRect(0, 0, F_PAL.width, F_PAL.height).data, palWant, F_PAL.width);
-    if (!cLoad2.ok || cancelCalls < 1 || fallbackReads !== 0 || /error|fail|cancel/i.test(ed.status || "")) {
-        throw new Error("superseded loadFile check failed: " + JSON.stringify({ ok: cLoad2.ok, cancelCalls, fallbackReads, status: ed.status }));
+    if (!cLoad2.ok || cancelCalls < 1 || cancelledDelta2 !== 5 || sentAfterCancel !== 0 || fallbackReads !== 0 || /error|fail|cancel/i.test(ed.status || "")) {
+        throw new Error("superseded loadFile check failed: " + JSON.stringify({ ok: cLoad2.ok, cancelCalls, cancelledDelta2, sentAfterCancel, fallbackReads, status: ed.status }));
     }
 
-    // 4) Band error fallback to tiff_read: band 0 writes rows, band 1 fails -> cancels group, releases partial px, falls back to tiff_read with exact pixels
-    cancelCalls = 0; fallbackReads = 0; releaseCalls = 0;
-    let band0Prog = 0, band1Ready = null;
+    // 4) Band error fallback to tiff_read: band 0 writes rows, band 1 fails in worker -> cancels bands 2..5 in real pool,
+    //    resets rowsDone = 0 and releases partial px, falls back to tiff_read with exact pixels and progress <= 1 ending at 1
+    cancelCalls = 0; fallbackReads = 0; releaseCalls = 0; cancelDone = false; sentAfterCancel = 0;
+    let band1Ready = null;
     const afterBand0 = new Promise((r) => { band1Ready = r; });
+    const fbProgs = [];
+    const cancelledBefore3 = pool.stats().cancelled;
     pool.run = function (op, args, transfer, opts) {
         if (op === "tiff_read") {
             fallbackReads++;
             if (!opts || opts.priority !== NORMAL) throw new Error("tiff_read fallback priority not NORMAL: " + JSON.stringify(opts));
             return origRun(op, args, transfer, opts);
         }
-        if (op === "tiff_band") {
-            const idx = args.band.index;
-            if (idx === 0) return origRun(op, args, transfer, opts);
-            if (idx === 1) return afterBand0.then(() => { throw new Error("synthetic band 1 failure"); });
-            return afterBand0.then(() => wait(30)).then(() => origRun(op, args, transfer, opts));
-        }
         return origRun(op, args, transfer, opts);
     };
-    const fbRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, () => { if (++band0Prog === 1 && band1Ready) band1Ready(); }, null);
+    pool._send = function (s, job) {
+        if (cancelDone && job.op === "tiff_band") sentAfterCancel++;
+        if (job.op === "tiff_band") {
+            const idx = job.args.band.index;
+            if (idx === 0) return origSend(s, job);
+            s.job = job;
+            if (idx === 1) {
+                afterBand0.then(() => {
+                    if (s.job === job && !job.cancelled) {
+                        const badBand = { ...job.args.band, counts: new Uint32Array(job.args.band.counts.length).fill(999999) };
+                        origSend(s, { ...job, args: { ...job.args, band: badBand } });
+                    }
+                });
+            } else {
+                heldSlots.push(s);
+            }
+            return;
+        }
+        return origSend(s, job);
+    };
+    const fbRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, (f) => { fbProgs.push(f); if (fbProgs.length === 1 && band1Ready) band1Ready(); }, null);
+    const cancelledDelta3 = pool.stats().cancelled - cancelledBefore3;
+    flushHeldSlots(true);
     const releasesBeforeCleanup = releaseCalls;
     const cFb = compare(fbRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
     fbRes.px.release();
-    if (!cFb.ok || band0Prog < 2 || cancelCalls < 1 || fallbackReads !== 1 || releasesBeforeCleanup !== 1 || releaseCalls !== 2) {
-        throw new Error("band error fallback check failed: " + JSON.stringify({ ok: cFb.ok, band0Prog, cancelCalls, fallbackReads, releasesBeforeCleanup, releaseCalls }));
+    if (!cFb.ok || cancelCalls < 1 || cancelledDelta3 !== 4 || sentAfterCancel !== 0 || fallbackReads !== 1 || releasesBeforeCleanup !== 1 || releaseCalls !== 2
+        || fbProgs.length !== 7 || Math.abs(fbProgs[0] - 8 / F_LZW.height) > 1e-6 || Math.abs(fbProgs[1] - 8 / F_LZW.height) > 1e-6
+        || fbProgs[fbProgs.length - 1] !== 1 || !fbProgs.every((f) => f > 0 && f <= 1)) {
+        throw new Error("band error fallback check failed: " + JSON.stringify({ ok: cFb.ok, cancelCalls, cancelledDelta3, sentAfterCancel, fallbackReads, releasesBeforeCleanup, releaseCalls, fbProgs }));
     }
+    pool._send = origSend;
 
     // Corrupt multi-band TIFF (truncated: 19 bands at tiffBandRows=8): early bands write, later band fails -> cancels group, releases partial px, falls back to tiff_read, throws refusal
     pool.run = function (op, args, transfer, opts) {
@@ -668,14 +728,69 @@ try {
     if (!cNoBands.ok || noBandsJt.some((t) => t.op === "tiff_band") || noBandsJt.filter((t) => t.op === "tiff_read").length !== 1) {
         throw new Error("tiffBandRows=false check failed: " + JSON.stringify(noBandsJt));
     }
+
+    // 6) tiffPoolUsable with E.kernels = "js" (!E.parts.usable()) still dispatches tiff_band;
+    //    and window fallbacks run when pool.off = true or when tiff_read sets pool.off and rejects with "no worker pool"
+    E.tiffBandRows = 8;
+    const prevKernels = E.kernels;
+    try {
+        E.kernels = "js";
+        if (E.parts.usable()) throw new Error("expected E.parts.usable() === false when E.kernels === 'js'");
+        E.jobTimings(true);
+        const jsModeRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, null, null);
+        const jsModeJt = E.jobTimings(true);
+        const cJsMode = compare(jsModeRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
+        jsModeRes.px.release();
+        if (!cJsMode.ok || jsModeJt.filter((t) => t.op === "tiff_band").length !== 6) {
+            throw new Error("tiffPoolUsable with E.kernels='js' check failed: " + JSON.stringify(jsModeJt));
+        }
+    } finally {
+        E.kernels = prevKernels;
+    }
+
+    const offProgs = [], winFbProgs = [];
+    try {
+        pool.off = true;
+        E.jobTimings(true);
+        const offRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, (f) => offProgs.push(f), null);
+        const offJt = E.jobTimings(true);
+        const cOff = compare(offRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
+        offRes.px.release();
+        if (!cOff.ok || offJt.length !== 0 || offProgs.length !== 6 || offProgs[offProgs.length - 1] !== 1) {
+            throw new Error("pool.off window branch check failed: " + JSON.stringify({ ok: cOff.ok, offJt, offProgs }));
+        }
+
+        pool.off = false;
+        E.tiffBandRows = 8;
+        pool.run = function (op, args, transfer, opts) {
+            if (op === "tiff_band") return Promise.reject(new Error("no worker pool"));
+            if (op === "tiff_read") {
+                pool.off = true;
+                return Promise.reject(new Error("no worker pool"));
+            }
+            return origRun(op, args, transfer, opts);
+        };
+        const winFbRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, (f) => winFbProgs.push(f), null);
+        const cWinFb = compare(winFbRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
+        winFbRes.px.release();
+        if (!cWinFb.ok || winFbProgs.length !== 6 || winFbProgs[winFbProgs.length - 1] !== 1) {
+            throw new Error("needWindowFallback check failed: " + JSON.stringify({ ok: cWinFb.ok, winFbProgs }));
+        }
+    } finally {
+        pool.off = false;
+        pool.run = origRun;
+    }
+
     return {
         tiles: !!ed.tileMode,
         planarBands: 6,
         sentOrder: sentOrder.join(","),
         supersededStatus: ed.status,
         truncRefused: truncErr.slice(0, 80),
+        cancelledDeltas: [cancelledDelta1, cancelledDelta2, cancelledDelta3],
     };
 } finally {
+    pool.off = false;
     pool.run = origRun;
     pool.cancel = origCancel;
     pool._send = origSend;

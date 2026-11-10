@@ -124,15 +124,17 @@ tree_for_arm() {
 }
 
 # 1. Node & Electron-as-Node kernel tests & micro-benchmarks
-acquire_lock "K18 node_bench (chain-t)"
-log "node px_test tiff bench"
-PX_ONLY=tiff PX_BENCH=1 node "$ROOT/tools/px_test.js" > "$HERE/node/node_px_test.log" 2>&1
-log "rc=$?"
-log "electron-as-node px_test tiff bench"
-ELECTRON_RUN_AS_NODE=1 PX_ONLY=tiff PX_BENCH=1 "$ROOT/node_modules/electron/dist/electron.exe" "$ROOT/tools/px_test.js" > "$HERE/node/electron_px_test.log" 2>&1
-log "rc=$?"
-release_lock
-sleep 2
+if [ ! -s "$HERE/node/node_px_test.log" ] || [ ! -s "$HERE/node/electron_px_test.log" ]; then
+    acquire_lock "K18 node_bench (chain-t)"
+    log "node px_test tiff bench"
+    PX_ONLY=tiff PX_BENCH=1 node "$ROOT/tools/px_test.js" > "$HERE/node/node_px_test.log" 2>&1
+    log "rc=$?"
+    log "electron-as-node px_test tiff bench"
+    ELECTRON_RUN_AS_NODE=1 PX_ONLY=tiff PX_BENCH=1 "$ROOT/node_modules/electron/dist/electron.exe" "$ROOT/tools/px_test.js" > "$HERE/node/electron_px_test.log" 2>&1
+    log "rc=$?"
+    release_lock
+    sleep 2
+fi
 
 # 2. 15,000 x 10,000 tiffperf variants (one variant per fresh instance, 3 alternating rounds: before c36840d8 vs after K18)
 run_tiffperf_variant() {
@@ -161,6 +163,9 @@ run_tiffperf_variant() {
 
 for R in 1 2 3; do
     for V in own lzw packbits raw_strips zlib1 raw noise; do
+        if [ -s "$HERE/before/tiffperf/${V}_r${R}.log" ] && [ -s "$HERE/after/tiffperf/${V}_r${R}.log" ]; then
+            continue
+        fi
         acquire_lock "K18 tiffperf $V r$R (chain-t)"
         log "== tiffperf $V round $R"
         if [ $((R % 2)) -eq 1 ]; then
