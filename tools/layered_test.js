@@ -1112,8 +1112,11 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
         }));
         check("K20b: missing green channel fills 0 and missing alpha fills 255", missingGreen.layers[0].rgba[0] === plane(21)[0] && missingGreen.layers[0].rgba[1] === 0 && missingGreen.layers[0].rgba[2] === plane(23)[0] && missingGreen.layers[0].rgba[3] === 255);
 
-        // Dangling PackBits repeat byte (254) at end - 1 of row 0 must zero-fill row 0 without consuming row 1's literal header (0, 0xAB)
-        const badPbBlock = new B().u16(1).u16(3).u16(2).bytes([0, 0x55, 254, 0, 0xAB]).out();
+        // Dangling PackBits repeat byte (254) at end - 1 of row 0 must zero-fill row 0 without consuming row 1's first byte.
+        // Row 1 starts with the literal header 1 (two bytes 0xAB 0xCD follow), not 0: a reader that takes the repeat's
+        // value from the next row fills row 0's tail with 1, which this check sees (K20b review K20b-T2; the window's
+        // unpackRows `p < lim`, the stream's packbitsRows twin and the Rust packbits_rows).
+        const badPbBlock = new B().u16(1).u16(3).u16(3).bytes([0, 0x55, 254, 1, 0xAB, 0xCD]).out();
         const danglingPb = await readPsd(psd({
             width: 4, height: 2,
             layers: [{
@@ -1121,15 +1124,18 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
                 blocks: [[0, badPbBlock], [1, channelData(fill(8, () => 9), 4, 2, 8, 0)], [2, channelData(fill(8, () => 7), 4, 2, 8, 0)]],
             }],
         }));
+        const dRed = danglingPb.layers.length === 1 ? Array.from({ length: 8 }, (_, i) => danglingPb.layers[0].rgba[i * 4]) : [];
         check("K20b: dangling PackBits repeat byte > 128 at end - 1 zero-fills without reading into row 1",
-            danglingPb.layers[0].rgba[0] === 0x55 && danglingPb.layers[0].rgba[4] === 0 && danglingPb.layers[0].rgba[16] === 0xAB && danglingPb.layers[0].rgba[20] === 0);
+            dRed.join(",") === [0x55, 0, 0, 0, 0xAB, 0xCD, 0, 0].join(","), `red ${dRed.join(",")}`);
 
         const rawMergedLayers = psd({ width: 8, height: 8, mergedComp: 0, layers: [{ name: "kept", top: 0, left: 0, w: 4, h: 4, ch: { 0: fill(16, (i) => i), 1: fill(16, () => 2), 2: fill(16, () => 3) } }] });
         const rawMergedLayersCut = await readPsd(rawMergedLayers.subarray(0, rawMergedLayers.length - 10));
         check("K20b: truncated raw merged picture beside layers keeps the layers (composite null)", rawMergedLayersCut.layers.length === 1 && rawMergedLayersCut.composite === null);
+        // read directly (an unexpected throw fails the test) and the document asserted (K20b review: it asserted nothing)
         const rawMergedFlat = psd({ width: 8, height: 8, mergedComp: 0, layers: [] });
-        const rawMergedFlatCut = await throwsWith(() => readPsd(rawMergedFlat.subarray(0, rawMergedFlat.length - 10)), /ends early/);
-        check("K20b: truncated raw merged picture on a flat PSD is neglected (no composite, composite null)", !rawMergedFlatCut.ok);
+        const rawMergedFlatCut = await readPsd(rawMergedFlat.subarray(0, rawMergedFlat.length - 10));
+        check("K20b: truncated raw merged picture on a flat PSD is neglected (no layers, composite null)",
+            rawMergedFlatCut.layers.length === 0 && rawMergedFlatCut.composite === null, `layers ${rawMergedFlatCut.layers.length}, composite ${rawMergedFlatCut.composite === null ? "null" : "set"}`);
     }
     console.log("\n--- H1 S5: crafted files are refused before they grow; valid files read as before ---");
     {

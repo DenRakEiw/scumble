@@ -480,11 +480,12 @@ export async function readPsd(input, { inflate = null, onHeader = null } = {}) {
  * the stream. The answer is readPsd's with `index` in place of a layer's `rgba` and its `mask` without `data`; the
  * merged picture is read only when no layer has pixels (the one case the editor shows it), `composite` then its index,
  * else null. `spent` (optional) gets the milliseconds of channels (the reads and unpacks), interleave, mask, deliver
- * (inside `onRows`) and the count of bands.
+ * (inside `onRows`), wait (awaiting the promises `onRows` returned) and the count of bands. An `onRows` that returns a
+ * promise holds the next band back until it settles (the pool job's acknowledgement window, K20b review).
  */
 export async function readPsdStream(input, { inflate = null, rowsPerBand = 256, onHeader = null, onRows = null, spent = null, kernels = null } = {}) {
     if (typeof onRows !== "function") throw new Error("readPsdStream needs onRows");
-    const sp = Object.assign(spent || {}, { channels: 0, interleave: 0, mask: 0, deliver: 0, bands: 0 });
+    const sp = Object.assign(spent || {}, { channels: 0, interleave: 0, mask: 0, deliver: 0, wait: 0, bands: 0 });
     return decodePsd(input, inflate, { rows: Math.max(1, rowsPerBand | 0), onHeader, onRows, sp, next: 0, kernels: kernels || PSD_JS });
 }
 
@@ -629,23 +630,29 @@ export const PSD_JS = Object.freeze({
     bandMask: psdBandMask,
 });
 
-/** Stream one layer's (or merged picture's) validated channel descriptors band-by-band through `stream.kernels`. */
-function streamChannelDescs(stream, descs, w, h, depth, gray, maskDesc = null, L = null, m = null) {
+/**
+ * Stream one layer's (or merged picture's) validated channel descriptors band-by-band through `stream.kernels`. An
+ * `onRows` that returns a promise (the worker's acknowledgement window, inpaint_worker.js `psdRead`) is awaited before
+ * the next band is made; its wait goes into `spent.wait`, not `deliver`.
+ */
+async function streamChannelDescs(stream, descs, w, h, depth, gray, maskDesc = null, L = null, m = null) {
     const index = stream.next++, per = stream.rows, sp = stream.sp, K = stream.kernels;
-    const send = (kind, out, y0, n) => {
+    const send = async (kind, out, y0, n) => {
         const t = clock();
-        stream.onRows(index, kind, out, w, h, y0, n);
-        sp.deliver += clock() - t;
+        const paced = stream.onRows(index, kind, out, w, h, y0, n);
+        const t1 = clock();
+        sp.deliver += t1 - t;
         sp.bands++;
+        if (paced && typeof paced.then === "function") { await paced; sp.wait += clock() - t1; }
     };
     for (let y0 = 0; y0 < h; y0 += per) {
         const n = Math.min(per, h - y0);
-        send("rgba", K.bandRgba(descs, w, y0, n, depth, gray, sp), y0, n);
+        await send("rgba", K.bandRgba(descs, w, y0, n, depth, gray, sp), y0, n);
     }
     if (m) {
         for (let y0 = 0; y0 < h; y0 += per) {
             const n = Math.min(per, h - y0);
-            send("mask", K.bandMask(maskDesc, L, m, w, h, y0, n, depth, sp), y0, n);
+            await send("mask", K.bandMask(maskDesc, L, m, w, h, y0, n, depth, sp), y0, n);
         }
     }
     return index;
@@ -855,7 +862,7 @@ async function decodePsd(input, inflate, stream, onHeader = null) {
                     stream.sp.channels += clock() - t0;
                     if (wantPixels && descs[0]) {
                         const m = activeMaskId ? maskFor(L, activeMaskId) : null;
-                        const index = streamChannelDescs(stream, descs, w, h, depth, gray, activeMaskId ? descs[activeMaskId] : null, L, m);
+                        const index = await streamChannelDescs(stream, descs, w, h, depth, gray, activeMaskId ? descs[activeMaskId] : null, L, m);
                         L.streamed = { index, mask: m ? { defaultColor: m.def, disabled: !!(m.flags & 2) } : null };
                         L.ch = { 0: EMPTY };
                     } else {
@@ -928,7 +935,7 @@ async function decodePsd(input, inflate, stream, onHeader = null) {
         const t0 = clock();
         try { descs = mergedChannelDescs(r, bytes, width, height, channels, depth, gray); } catch (err) { descs = null; if (err && err.refused) mergedRefused = err; }
         stream.sp.channels += clock() - t0;
-        if (descs) composite = streamChannelDescs(stream, descs, width, height, depth, gray);
+        if (descs) composite = await streamChannelDescs(stream, descs, width, height, depth, gray);
     }
     // a file whose only picture is a merged picture too short for its size is refused (both readers alike)
     if (!layers.length && mergedRefused) throw mergedRefused;

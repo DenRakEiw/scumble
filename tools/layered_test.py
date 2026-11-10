@@ -385,6 +385,50 @@ try {
     const w2 = await docOf(await ed.readLayered(f, "psd"));
     if (JSON.stringify(fb) !== JSON.stringify(w2)) throw new Error("the fallback's answer differs");
     delete E.psdOnPool;
+    // K20b review (K20b-T1): the acknowledgement window on the real pool. psdWindow 1: the worker waits for this window's
+    // ack after every band, so the read ends only when each band is acknowledged after its writeRect (acks === bands, in
+    // order); psdWindow 0: no ack at all; no route: the default window (8) in the job's timing; each time the window
+    // reader's bytes. A read that waits for an ack that never comes fails here after 60 s instead of the job's 600 s.
+    {
+        const P = E.parts.pool(), ackOwn = Object.prototype.hasOwnProperty.call(P, "ack"), ack0 = P.ack;
+        let acks = 0, lastN = 0, ackOrder = true;
+        P.ack = function (id, n) { acks++; if (n !== lastN + 1) ackOrder = false; lastN = n; return ack0.call(this, id, n); };
+        const paced = {};
+        let multi = false;
+        try {
+            for (const label of ["deep", "masks_bands"]) {
+                const f = await fileOf(names[label]);
+                E.psdOnPool = false;
+                const want = JSON.stringify(await docOf(await ed.readLayered(f, "psd")));
+                delete E.psdOnPool;
+                for (const wv of [1, 0, null]) {
+                    E.setRoute("psdWindow", wv);
+                    acks = 0; lastN = 0; ackOrder = true; pooled = [];
+                    E.jobTimings(true);
+                    let got;
+                    try {
+                        const read = (async () => JSON.stringify(await docOf(await ed.readLayered(f, "psd"))))();
+                        got = await Promise.race([read, new Promise((_, rej) => setTimeout(() => rej(new Error(label + " psdWindow " + wv + ": the paced read hung (no ack reached the worker?)")), 60000))]);
+                    } finally {
+                        E.setRoute("psdWindow", null);
+                    }
+                    const jt = E.jobTimings(true).filter((t) => t.op === "psd_read"), t = jt[0] || {};
+                    const wantWin = wv === null ? 8 : wv;
+                    if (pooled.join() !== "pool" || jt.length !== 1 || t.window !== wantWin) throw new Error(label + " psdWindow " + wv + ": " + pooled.join() + " " + JSON.stringify(jt));
+                    if (got !== want) throw new Error(label + " psdWindow " + wv + ": the layers differ from the window reader's: " + got.slice(0, 300) + " / " + want.slice(0, 300));
+                    if (wantWin ? acks !== t.bands || !ackOrder : acks !== 0) throw new Error(label + " psdWindow " + wv + ": " + acks + " acks (in order " + ackOrder + ") for " + t.bands + " bands");
+                    if (wv === 1 && t.bands >= 2 && !(t.wait > 0)) throw new Error(label + " psdWindow 1: the worker never waited (" + t.wait + " ms)");
+                    if (t.bands >= 2) multi = true;
+                    paced[label + ":" + wv] = t.bands + " bands, " + acks + " acks, wait " + Math.round(t.wait || 0) + " ms";
+                }
+            }
+        } finally {
+            if (ackOwn) P.ack = ack0; else delete P.ack;
+            try { E.setRoute("psdWindow", null); } catch (_) { /* ignore */ }
+        }
+        if (!multi) throw new Error("no file of the paced check has 2 bands or more: " + JSON.stringify(paced));
+        res.paced = paced;
+    }
     // refusals through the pool, no fallback: a truncated file; one of 20000 x 20000 at its header (nothing decoded)
     const whole = new Uint8Array((await window.scumble.file.read(names.roundtrip)).data);
     // the reader's refusal comes back as the job's answer (its worker stays); the size one is made on this thread from

@@ -8528,6 +8528,38 @@ async function psdCases(ref, label, js) {
             routeOk,
             `rustK=${wRust.reply.timing.kernels} jsK=${wJs.reply.timing.kernels} calls=${JSON.stringify(wRust.calls)} jsCalls=${JSON.stringify(wJs.calls)} rel=${relBefore}->${relAfter} jobBytes=${jobBytesAfterRust}`);
 
+        // K20b review (K20b-T1): psdRead's acknowledgement window. routePsd in 4-row bands is 8 bands (4 rgba, 4 mask).
+        // With window 2 and no acknowledgement the reader stops after 2 posts; an ack of n lets it post up to n + 2; an
+        // ack for another job id moves nothing; the bytes are the unpaced reader's; without `window` (runWorkerPsd
+        // above) every band goes with no ack at all.
+        {
+            const posted = [], counts = [];
+            const prevSelf = globalThis.self;
+            globalThis.self = { postMessage: (m) => posted.push(m) };
+            const settle = () => new Promise((res) => setTimeout(res, 30));
+            let reply = null, perr = null;
+            try {
+                const job = W.psdRead({ id: 9, blob: new Blob([routePsd]), rowsPerBand: 4, window: 2 }).then((r) => { reply = r; }, (e) => { perr = e; });
+                await settle(); counts.push(posted.length);                                // 2
+                await settle(); counts.push(posted.length);                                // 2: nothing acknowledged
+                W.psdAck({ id: 9, n: 1 }); await settle(); counts.push(posted.length);     // 3
+                W.psdAck({ id: 8, n: 8 }); await settle(); counts.push(posted.length);     // 3: another job's ack
+                W.psdAck({ id: 9, n: 3 }); await settle(); counts.push(posted.length);     // 5
+                for (let n = 4; n <= 8 && !reply; n++) { W.psdAck({ id: 9, n }); await settle(); }
+                await Promise.race([job, new Promise((res) => setTimeout(res, 5000))]);
+            } finally {
+                globalThis.self = prevSelf;
+            }
+            const pacedLayer = new Uint8Array(32 * 16 * 4), pacedMask = new Uint8Array(32 * 16 * 4);
+            for (const m of posted) if (m.progress) (m.mask ? pacedMask : pacedLayer).set(new Uint8Array(m.rgba), m.y0 * m.w * 4);
+            const paceOk = !perr && !!reply && !!reply.doc && counts.join(",") === "2,2,3,3,5" && posted.length === 8
+                && reply.timing.window === 2 && reply.timing.wait > 0 && wRust.reply.timing.window === 0
+                && eqBytes(pacedLayer, wantRef.bands.get("0:rgba")) && eqBytes(pacedMask, wantRef.bands.get("0:mask"))
+                && pacedLayer.some((v) => v !== 0) && pacedMask.some((v) => v !== 0);
+            check("inpaint_worker.js psdRead window 2: posts 2 bands, then one more per acknowledged band (psdAck by job id and count), same bytes as unpaced",
+                paceOk, `counts=${counts.join(",")} posted=${posted.length} reply=${!!reply} err=${perr && perr.message} window=${reply && reply.timing.window} wait=${reply && reply.timing.wait}`);
+        }
+
         // Mid-layer wasm trap and PxOutOfMemory recovery on band 2 (y0 = 4) of 4-band comp === 3 masked layer
         const realWarn = console.warn;
         console.warn = () => {};
