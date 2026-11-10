@@ -5446,7 +5446,7 @@ export const host = {
         }
         if (!this.connected) throw refusal("Not connected to ComfyUI.");
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
-        if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
+        if (missing.length) throw new Error(comfyprompt.lacksNodesText(r, missing));
         if (upscale && !pass && !(editor.getBounds && editor.getBounds())) throw refusal("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
         // the recipe's LoRA rows (item 50): more than five, or a file the server's list lacks, refuse here, before
         // anything is uploaded; spliced into the queued copy below

@@ -688,6 +688,7 @@ async function main() {
             moss_image_edit_local: { pictures: 4, values: ["negative", "prompt", "seed"] },
             fibo2_edit_turbo_local: { pictures: 4, values: ["prompt", "seed"] },
             p_h3_image_local: { pictures: 8, values: ["prompt", "seed"] },
+            minimax_h3_image_local: { pictures: 16, values: ["prompt", "seed"] },
             rtx_vsr_local: { pictures: 1, values: [], notes: [/^the Comfy Cloud copy runs at the factor its graph holds \(2×\); change it in its graph$/] }, realism_pass: { refused: /Cloud copy/ } };
         const unlisted = comfy.map((r) => r.id).filter((id) => !want[id]);
         check("every shipped ComfyUI recipe has its row in the table", !unlisted.length, unlisted.join(", "));
@@ -1165,10 +1166,10 @@ async function main() {
             // FLUX 3 Image Klein's prompt upsampler (0.1.50 Q9): kept by normalize, a bad one dropped, kept by Save to recipe,
             // left out of the Cloud copy
             const kk = all.find((r) => r.id === "flux3_klein_local");
-            check("flux3_klein_local keeps its upsampler through list() (switch, run, show, nodes, t2i, source), no request of its own, and no shipped recipe but it, P-H3-Image and Fibo 2.0 Edit Turbo declares one",
+            check("flux3_klein_local keeps its upsampler through list() (switch, run, show, nodes, t2i, source), no request of its own, and no shipped recipe but it, P-H3-Image, MiniMax-H3-Image and Fibo 2.0 Edit Turbo declares one",
                 !!kk && kk.upsampler && kk.upsampler.switch === "up_switch" && kk.upsampler.run === "up_run" && kk.upsampler.show === "up_show" && typeof kk.upsampler.t2i === "string" && /Apache-2\.0/.test(kk.upsampler.source)
                 && kk.upsampler.request === undefined
-                && all.filter((r) => r.upsampler !== undefined).map((r) => r.id).sort().join(",") === "fibo2_edit_turbo_local,flux3_klein_local,p_h3_image_local", short(kk && kk.upsampler && { ...kk.upsampler, t2i: "..." }));
+                && all.filter((r) => r.upsampler !== undefined).map((r) => r.id).sort().join(",") === "fibo2_edit_turbo_local,flux3_klein_local,minimax_h3_image_local,p_h3_image_local", short(kk && kk.upsampler && { ...kk.upsampler, t2i: "..." }));
             // P-H3-Image (docs/PLAN_PH3.md): a TextGenerateV2 run and a request of its own, kept by normalize; Generate new's
             // drop kept; a bad request or newImage dropped with a warning; both kept by Save to recipe
             const ph = all.find((r) => r.id === "p_h3_image_local");
@@ -1176,7 +1177,7 @@ async function main() {
             check("p_h3_image_local keeps its upsampler (a TextGenerateV2 run, the request's edit, picture, t2i, aspects and verbatim) and its newImage drop",
                 !!ph && ph.upsampler && ph.upsampler.run === "up_run" && ph.upsampler.t2i === undefined && ph.upsampler.request
                 && ["edit", "picture", "t2i", "aspects", "verbatim"].every((k) => eq(ph.upsampler.request[k], rawP.upsampler.request[k])) && Object.keys(ph.upsampler.request).length === 5
-                && eq(ph.newImage, { drop: ["cond|images.image_1"] }) && all.filter((r) => r.newImage !== undefined).map((r) => r.id).join(",") === "p_h3_image_local",
+                && eq(ph.newImage, { drop: ["cond|images.image_1"] }) && all.filter((r) => r.newImage !== undefined).map((r) => r.id).sort().join(",") === "minimax_h3_image_local,p_h3_image_local",
                 short(ph && { upsampler: ph.upsampler && { ...ph.upsampler, request: Object.keys(ph.upsampler.request || {}) }, newImage: ph.newImage }));
             const withP = (more) => ({ ...JSON.parse(JSON.stringify(rawP)), kind: "comfy", ...more });
             const UPP = rawP.upsampler;
@@ -1449,8 +1450,8 @@ async function main() {
             freshUserData();
             const all = await recipes.list(RECIPES);
             const carry = all.filter((r) => r.promptRequired !== undefined).map((r) => `${r.id}=${r.promptRequired}`).sort();
-            check("the three P-H3-Image recipes carry promptRequired true and no other shipped recipe carries it",
-                eq(carry, ["cloud_p_h3_image=true", "p_h3_image=true", "p_h3_image_local=true"]) && !warned.some((w) => /promptRequired/.test(w)), short({ carry, warned }));
+            check("the three P-H3-Image recipes and MiniMax-H3-Image on ComfyUI carry promptRequired true and no other shipped recipe carries it",
+                eq(carry, ["cloud_p_h3_image=true", "minimax_h3_image_local=true", "p_h3_image=true", "p_h3_image_local=true"]) && !warned.some((w) => /promptRequired/.test(w)), short({ carry, warned }));
             const n0 = warned.length;
             const yes = recipes._normalize({ id: "t_yes", kind: "comfy", prompt: {}, promptRequired: "yes" });
             const no = recipes._normalize({ id: "t_no", kind: "comfy", prompt: {}, promptRequired: false });

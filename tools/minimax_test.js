@@ -464,7 +464,114 @@ async function main() {
         check("index.js logged no key", !JSON.stringify(logged).includes(KEY) && !JSON.stringify(logged).includes(REAL_KEY), `${logged.length} records`);
     });
 
-    // ---- 10. the whole run ----
+    // ---- 10. the local recipe (recipes/minimax_h3_image_local.json): never run; the graph as a run queues it ----
+    // The node's inputs are those of MiniMaxH3ImageConditioning in Comfy-Org/ComfyUI#17655 (open when this was written), the
+    // values Comfy's templates image_minimax_h3_image_edit / _t2i of 2026-11-10; the three long texts are pinned by hash.
+    await section("10. local recipe", async () => {
+        const { pathToFileURL } = require("node:url");
+        const crypto = require("node:crypto");
+        const { specProblems } = require(path.join(ROOT, "tools", "node_specs.js"));
+        const info = JSON.parse(fs.readFileSync(path.join(ROOT, "tools", "refs", "comfy_templates", "object_info.json"), "utf8"));
+        const C = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "comfyprompt.js")).href);
+        const F = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "comfyrefs.js")).href);
+        const L0 = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "loras.js")).href);
+        const orig = Module._load;
+        Module._load = function (request, ...rest) { return request === "electron" ? { app: { getPath: () => ROOT } } : orig.call(this, request, ...rest); };
+        let normalize;
+        try { normalize = require(path.join(ROOT, "electron", "main", "recipes.js"))._normalize; } finally { Module._load = orig; }
+        const warned = [];
+        const warn = console.warn;
+        console.warn = (...a) => warned.push(a.join(" "));
+        let R;
+        try { R = normalize(JSON.parse(fs.readFileSync(path.join(RECIPES, "minimax_h3_image_local.json"), "utf8"))); } finally { console.warn = warn; }
+        const g = R.prompt;
+        const clone = (v) => JSON.parse(JSON.stringify(v));
+        const SLOTS = 16;
+        const names = (n) => Array.from({ length: n }, (_, i) => `images.image_${i + 1}`);
+        const CORE = ["clip", "height", "prompt", "vae", "width"];
+        const sha = (s) => crypto.createHash("sha256").update(s, "utf8").digest("hex");
+
+        check("read without a warning: its upsampler (with extract), newImage, loras and refs kept", !warned.length && !!R.upsampler && R.upsampler.extract === "up_json" && !!R.newImage && !!R.loras && R.refs.slots === SLOTS, short(warned));
+        check("the same name as the provider recipe, on ComfyUI; local mode, a prompt required", R.name === "MiniMax-H3-Image (ComfyUI)" && R.mode === "local" && R.promptRequired === true && R.result === "decode:0");
+        check("needs: the node of the open PR, and exactly the classes the graph needs without the upsampler", eq([...R.needs].sort(), [...new Set(Object.entries(g).filter(([id]) => !R.upsampler.nodes.includes(id) && id !== R.upsampler.switch).map(([, n]) => n.class_type))].sort()) && R.needs.includes("MiniMaxH3ImageConditioning"), short(R.needs));
+        check("without the node: one plain line that names ComfyUI 0.45 (bug: only the class name, which says nothing to a user)", C.lacksNodesText(R, ["MiniMaxH3ImageConditioning"]) === "The server lacks these node types: MiniMaxH3ImageConditioning. This recipe needs ComfyUI 0.45 or newer.", C.lacksNodesText(R, ["MiniMaxH3ImageConditioning"]));
+        check("another missing class alone does not name the version, a recipe without the field reads as before", C.lacksNodesText(R, ["InpaintCanvas"]) === "The server lacks these node types: InpaintCanvas." && C.lacksNodesText({ needsVersion: { constructor: "9" } }, ["toString"]) === "The server lacks these node types: toString.", C.lacksNodesText(R, ["InpaintCanvas"]));
+        check("the description: not run yet, the open pull request, 0.45, no mask, the licence line with the repo's link", /Not run yet/.test(R.description) && /open ComfyUI pull request \(Comfy-Org\/ComfyUI#17655\)/.test(R.description) && /\(0\.45 or newer\)/.test(R.description) && /no mask input/.test(R.description) && R.description.includes("is under the MiniMax H3 Community License, which does not cover use in the EU, the UK, South Korea or the US without a separate licence from MiniMax (huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE)."), short(R.description));
+        check("the LoRA rows: MiniMax-H3-Image's own family, after the UNETLoader by the rule (bug: the clip type's p_h3_image)", L0.recipeFamily(R) === "minimax_h3_image" && L0.FAMILIES.minimax_h3_image.label === "MiniMax-H3-Image" && R.loras.model === undefined, short(R.loras));
+
+        const lacking = Object.entries(g).filter(([, n]) => !info[n.class_type]).map(([id, n]) => `${id} ${n.class_type}`);
+        check("every class but the canvas node's has a spec", eq(lacking, ["canvas InpaintCanvas"]), short(lacking));
+        check("the graph against the node specs: the required inputs, every name one the class declares, ranges, links", !specProblems(g, info).length, short(specProblems(g, info)));
+        check("the node's input names exactly as in the PR: clip, vae, prompt, width, height, images.image_1..16", eq(Object.keys(g.cond.inputs).sort(), [...CORE, ...names(SLOTS)].sort()) && g.cond.class_type === "MiniMaxH3ImageConditioning", short(Object.keys(g.cond.inputs)));
+        check("the spec itself: positive and LATENT out, width and height in steps of 32, images from image_ up to 100 (the PR's Autogrow)", (() => { const s = info.MiniMaxH3ImageConditioning; const t = s.input.optional.images[1].template; return eq(s.output, ["CONDITIONING", "LATENT"]) && s.input.required.width[1].step === 32 && t.prefix === "image_" && t.max === 100 && /17655/.test(s._source); })());
+        const pins = [
+            ["unet", g.unet.inputs.unet_name, "minimax_h3_image_pruned_int8_convrot.safetensors"], ["clip", g.clip.inputs.clip_name, "qwen3vl_32b_minimax_h3_int8_convrot.safetensors"], ["clip type", g.clip.inputs.type, "minimax"],
+            ["vae", g.vae.inputs.vae_name, "minimax_h3_image_vae_fp16.safetensors"], ["up_clip", g.up_clip.inputs.clip_name, "qwen3.5_9b_w4a8_gptq.safetensors"], ["up_clip type", g.up_clip.inputs.type, "minimax"],
+            ["steps", g.ks.inputs.steps, 6], ["cfg", g.ks.inputs.cfg, 1], ["sampler", g.ks.inputs.sampler_name, "euler"], ["scheduler", g.ks.inputs.scheduler, "simple"], ["denoise", g.ks.inputs.denoise, 1],
+            ["seed", g.ks.inputs.seed, ["canvas", 10]], ["model", g.ks.inputs.model, ["unet", 0]], ["positive", g.ks.inputs.positive, ["cond", 0]], ["negative", g.ks.inputs.negative, ["zero", 0]], ["latent", g.ks.inputs.latent_image, ["cond", 1]],
+            ["zero", g.zero.inputs.conditioning, ["cond", 0]], ["decode", g.decode.inputs.samples, ["ks", 0]], ["mp", g.scale0.inputs.megapixels, 4], ["multiple", g.scale0.inputs.resolution_steps, 32], ["method", g.scale0.inputs.upscale_method, "area"],
+            ["width", g.cond.inputs.width, ["size", 0]], ["height", g.cond.inputs.height, ["size", 1]], ["image_1", g.cond.inputs["images.image_1"], ["scale0", 0]], ["image_2", g.cond.inputs["images.image_2"], ["img1", 0]], ["image_16", g.cond.inputs["images.image_16"], ["img15", 0]],
+            ["json key", g.up_json.inputs.key, "expanded_caption"], ["json source", g.up_json.inputs.json_string, ["up_run", 0]], ["show", g.up_show.inputs.source, ["up_json", 0]], ["on_true", g.up_switch.inputs.on_true, ["up_json", 0]], ["on_false", g.up_switch.inputs.on_false, ["canvas", 7]],
+            ["system", g.up_run.inputs.system_prompt, ["up_sys", 0]], ["temperature", g.up_run.inputs["sampling_mode.temperature"], 1], ["top_k", g.up_run.inputs["sampling_mode.top_k"], 20], ["top_p", g.up_run.inputs["sampling_mode.top_p"], 0.95], ["thinking", g.up_run.inputs.thinking, true], ["template", g.up_run.inputs.use_default_template, true],
+        ];
+        const off2 = pins.filter(([, got, want]) => !eq(got, want)).map(([k, got]) => `${k}=${JSON.stringify(got)}`);
+        check("Comfy's template values: the files, 6 steps, cfg 1, euler, simple, denoise 1, the scale in steps of 32 by area at 4 MP, the expander's sampling and its JSON key (bug: a value reset to a node default)", !off2.length, short(off2));
+        const req = R.upsampler.request;
+        check("the expander's texts are the templates', byte for byte, {input text} written as {text} (bug: a text retyped or shortened)",
+            sha(req.edit.replace("{text}", "{input text}")) === "2338a3ae305ce9bedb92117a813e29faae6688f59679c1b7220df4793364be2b" && sha(req.t2i.replace("{text}", "{input text}")) === "1255e4a6cb02cc4e2e77665065fb8eebe191e19bba8de737c2eae118b94b5ead" && sha(g.up_sys.inputs.value) === "93e41b4aa53a6e3dc1364b55525b27d58f7c7134bbb4968fbdc7d227e10dc525", String(req.edit.length));
+
+        // the steps of host.queueGenerate on a copy: the slots a batch of `n` does not fill, Generate new's drop, the upsampler
+        const spec = F.comfyRefSpec(R);
+        const TEXT = "swap the coat for the one of <Picture 2>";
+        const queued = (o) => {
+            const q = clone(g);
+            if (o.off) q.up_switch.inputs.switch = false;
+            const removed = F.trimSlots(q, spec, o.n);
+            if (o.fresh) C.dropForNewImage(q, R);
+            const u = C.wireUpsampler(q, { ...R, prompt: q }, { text: TEXT, fresh: !!o.fresh, refsGo: !!o.refsGo, pictures: o.n, aspect: "16:9", files: o.files === undefined ? null : o.files, classes: o.classes === undefined ? null : o.classes });
+            return { q, u, removed };
+        };
+        check("the name and the slots: <Picture {n}>, 16, the crop's batch 0 never trimmed, not a guess", spec.name === "<Picture {n}>" && spec.slots === SLOTS && spec.guess === false && spec.trim.length === SLOTS && spec.trim[0].input === "images.image_1" && spec.trim[0].batch === 0, short({ ...spec, trim: spec.trim && spec.trim.length }));
+        check("an @img token after the crop is <Picture 2>", F.resolveMarkers("{@ref:0}", F.comfyLayout(spec, { hasSelection: true, fill: "none", withOriginal: false, refine: false, count: 1 }).pictures, spec.name).text === "<Picture 2>");
+        for (const [what, n] of [["no reference", 1], ["one reference", 2], ["several references", 5], ["the most (16 pictures)", 16]]) {
+            const { q, u } = queued({ n });
+            const bad = specProblems(q, info);
+            check(`an edit with ${what}: images.image_1..${n} and no more, the caption into the node, the edit request, the run's pictures, no switch; every node valid`,
+                eq(Object.keys(q.cond.inputs).sort(), [...CORE, ...names(n)].sort()) && eq(q.cond.inputs.prompt, ["up_json", 0]) && !q.up_switch && u.on === true && u.show === "up_show" && q.up_run.inputs.prompt.startsWith("You are an expert at enhancing") && q.up_run.inputs.prompt.includes(TEXT) && !q.up_run.inputs.prompt.includes("{text}") && eq(q.up_run.inputs["images.image1"], ["up_pics", 0]) && !bad.length,
+                short({ keys: Object.keys(q.cond.inputs), bad }));
+        }
+        const fresh = queued({ n: 1, fresh: true });
+        check("Generate new without references: no image_1 (text to image), the size inputs kept, the text-to-image request, no picture on the run", eq(Object.keys(fresh.q.cond.inputs).sort(), CORE) && fresh.q.up_run.inputs.prompt.startsWith("You are a caption-expansion") && fresh.q.up_run.inputs.prompt.includes(`input_text: ${TEXT}\n`) && !("images.image1" in fresh.q.up_run.inputs) && eq(fresh.q.up_run.inputs.system_prompt, ["up_sys", 0]) && !specProblems(fresh.q, info).length, short(Object.keys(fresh.q.cond.inputs)));
+        const off = queued({ n: 2, off: true });
+        check("the row off: the prompt as typed into the node, none of the upsampler's nodes, no note", eq(off.q.cond.inputs.prompt, ["canvas", 7]) && R.upsampler.nodes.every((id) => !off.q[id]) && !off.q.up_switch && off.u.on === false && off.u.note === null && !specProblems(off.q, info).length, short(off.u));
+        const gone = queued({ n: 2, files: ["other.safetensors"] });
+        check("the upsampler's file missing: the prompt as typed, none of its nodes, a note naming the file", eq(gone.q.cond.inputs.prompt, ["canvas", 7]) && R.upsampler.nodes.every((id) => !gone.q[id]) && gone.u.on === false && /qwen3\.5_9b_w4a8_gptq\.safetensors is not on your ComfyUI/.test(gone.u.note), short(gone.u));
+        const here = queued({ n: 2, files: ["qwen3.5_9b_w4a8_gptq.safetensors"], classes: { TextGenerateV2: {}, PreviewAny: {}, JsonExtractString: {} } });
+        check("the file there and the node types there: it runs", here.u.on === true && eq(here.q.cond.inputs.prompt, ["up_json", 0]), short(here.u));
+        const noJson = queued({ n: 2, classes: { TextGenerateV2: {}, PreviewAny: {} } });
+        check("a ComfyUI without JsonExtractString: the prompt as typed with a note (bug: the raw JSON answer goes to the model, or a dead node is queued)", noJson.u.on === false && /JsonExtractString/.test(noJson.u.note) && eq(noJson.q.cond.inputs.prompt, ["canvas", 7]) && !noJson.q.up_json, short(noJson.u));
+        const P = C.wireUpsampler(clone(g), { ...R, upsampler: { ...R.upsampler, extract: undefined }, prompt: g }, { text: "x" });
+        check("without extract the old side stays the run (P-H3's shape)", P.on === true);
+        const dropped = [];
+        console.warn = (...a) => dropped.push(a.join(" "));
+        try {
+            const raw = () => JSON.parse(fs.readFileSync(path.join(RECIPES, "minimax_h3_image_local.json"), "utf8"));
+            const a = raw(); a.prompt.up_json.class_type = "StringReplace";
+            const b = raw(); b.upsampler.nodes = b.upsampler.nodes.filter((x) => x !== "up_json");
+            const c = raw(); c.prompt.up_switch.inputs.on_true = ["up_run", 0];
+            check("normalize() drops a declaration whose extract does not hold (no JsonExtractString, not listed, the switch not on it)", !normalize(a).upsampler && !normalize(b).upsampler && !normalize(c).upsampler && dropped.length === 3, short(dropped));
+        } finally { console.warn = warn; }
+        // the check itself
+        const bad = clone(g);
+        bad.cond.inputs.images_image_1 = ["scale0", 0];
+        bad.cond.inputs["images.image_100"] = ["img1", 0];
+        delete bad.cond.inputs.clip;
+        bad.scale0.inputs.megapixels = 20;
+        const caught = specProblems(bad, info).join(" | ");
+        check("the spec check itself: a renamed picture input, image_100 (the Autogrow ends at image_99), a missing clip, 20 MP on a 16 MP row", ["cond.images_image_1 unknown", "cond.images.image_100 unknown", "cond.clip missing", "scale0.megapixels"].every((s) => caught.includes(s)), caught);
+    });
+
+    // ---- 11. the whole run ----
     const extra = ALL_CALLS.filter((c) => !eq(Object.keys(c.headers).sort(), ["authorization", "content-type"]));
     check("no call of the whole run carried a header beyond Authorization and Content-Type", ALL_CALLS.length > 40 && !extra.length, short(extra.map((c) => c.headers)));
     const keyed = ALL_CALLS.filter((c) => !(c.headers.authorization === "Bearer " + KEY && c.url.startsWith(BASE + "/")) && !(c.headers.authorization === "Bearer " + REAL_KEY && (c.url.startsWith(INTL + "/") || c.url.startsWith(CN + "/"))));

@@ -225,7 +225,7 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   own licence), Flux.2 Klein 4B / 9B, Qwen Image Edit 2.1 and its Turbo, MOSS-Image (ComfyUI 0.42 or
   newer; new pictures with *Generate new*, its JSON layout from your boxes; Apache-2.0), MOSS-Image Edit (ComfyUI 0.43
   or newer, also on Comfy Cloud; it edits by instruction with up to three more pictures, through the edit LoRA of
-  Comfy's own template), and P-H3-Image (ComfyUI 0.44 or newer, also on Comfy Cloud and WaveSpeedAI; edits with up
+  Comfy's own template), MiniMax-H3-Image (ComfyUI 0.45 or newer, not run yet), and P-H3-Image (ComfyUI 0.44 or newer, also on Comfy Cloud and WaveSpeedAI; edits with up
   to seven more pictures and new pictures, Pruna AI's prompt upsampler in front; powered by MiniMax H3, whose licence
   does not cover the EU, the UK, South Korea or the US without a separate licence from MiniMax), Fibo 2.0 Edit Turbo
   (edits by instruction with up to three more pictures, Comfy's Prompt Enhancer in front; not run yet; Bria's weights

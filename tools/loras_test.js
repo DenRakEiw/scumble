@@ -91,6 +91,7 @@ const EXPECT = {
     "fibo2_edit_turbo_local/prompt": ["unet", ["ks.model"]],
     // P-H3-Image (docs/PLAN_PH3.md): the declared source is the recipe's own P-H3-Image LoRA, so the rows stack after it
     "p_h3_image_local/prompt": ["lora", ["shift.model"]],
+    "minimax_h3_image_local/prompt": ["unet", ["ks.model"]],
     // MOSS-Image Edit (LR6): the declared source is the recipe's edit LoRA, so the rows stack after it, before the SLG
     "moss_image_edit_local/prompt": ["lora", ["slg.model"]],
     "qwen_image_edit_2_1_local/prompt": ["unet", ["cache.model"]],
@@ -266,9 +267,9 @@ async function main() {
         const raw = rawFile("moss_image_local");
         const local = (loras, more = {}) => ({ ...clone(raw), kind: "comfy", loras, ...more });
         const kept = [];
-        for (const id of ["flux2_klein_local", "flux3_klein_local", "moss_image_local", "moss_image_edit_local", "p_h3_image_local", "qwen_image_edit_2_1_local", "qwen_image_edit_2_1_turbo_local"]) kept.push(`${id}=${JSON.stringify(byId(id).loras)}`);
+        for (const id of ["flux2_klein_local", "flux3_klein_local", "moss_image_local", "moss_image_edit_local", "p_h3_image_local", "minimax_h3_image_local", "qwen_image_edit_2_1_local", "qwen_image_edit_2_1_turbo_local"]) kept.push(`${id}=${JSON.stringify(byId(id).loras)}`);
         check("the seven local edit / generate recipes declare their family through list() (P-H3-Image and MOSS-Image Edit their own LoRA node as the source too)",
-            eq(kept, ['flux2_klein_local={"family":"flux2_klein"}', 'flux3_klein_local={"family":"flux3"}', 'moss_image_local={"family":"moss_image"}', 'moss_image_edit_local={"model":"lora","family":"moss_image"}', 'p_h3_image_local={"model":"lora","family":"p_h3_image"}', 'qwen_image_edit_2_1_local={"family":"qwen_image_2_1"}', 'qwen_image_edit_2_1_turbo_local={"family":"qwen_image_2_1"}']), short(kept));
+            eq(kept, ['flux2_klein_local={"family":"flux2_klein"}', 'flux3_klein_local={"family":"flux3"}', 'moss_image_local={"family":"moss_image"}', 'moss_image_edit_local={"model":"lora","family":"moss_image"}', 'p_h3_image_local={"model":"lora","family":"p_h3_image"}', 'minimax_h3_image_local={"family":"minimax_h3_image"}', 'qwen_image_edit_2_1_local={"family":"qwen_image_2_1"}', 'qwen_image_edit_2_1_turbo_local={"family":"qwen_image_2_1"}']), short(kept));
         const others = listed.filter((r) => r.loras !== undefined && !/^(flux2_klein|flux3_klein|moss_image|moss_image_edit|p_h3_image|qwen_image_edit_2_1(_turbo)?)_local$/.test(r.id)).map((r) => r.id);
         const variants = listed.flatMap((r) => Object.entries(r.providers || {}).filter(([, v]) => v.loras !== undefined).map(([p]) => `${r.id}/${p}`));
         check("no other recipe declares loras at the top; of the variants only cloud_ideogram_4's", !others.length && eq(variants, ["cloud_ideogram_4/comfycloud"]), short({ others, variants }));
@@ -507,7 +508,7 @@ async function main() {
             "cloud_mage_flow/comfycloud": null, "cloud_mage_flow_edit_turbo/comfycloud": null,
             "cloud_qwen_image_2_1_edit/comfycloud": "qwen_image_2_1", "cloud_qwen_image_2_1_edit/comfycloud.text": "qwen_image_2_1",
             "cloud_qwen_image_edit_2509/comfycloud": "qwen_image", "cloud_z_image_turbo/comfycloud": "z_image", "relight/comfycloud": "qwen_image",
-            "p_h3_image_local/prompt": "p_h3_image", "cloud_p_h3_image/comfycloud": "p_h3_image", "cloud_p_h3_image/comfycloud.text": "p_h3_image",
+            "minimax_h3_image_local/prompt": "minimax_h3_image", "p_h3_image_local/prompt": "p_h3_image", "cloud_p_h3_image/comfycloud": "p_h3_image", "cloud_p_h3_image/comfycloud.text": "p_h3_image",
             "fibo2_edit_turbo_local/prompt": null,
             "cloud_moss_image_edit/comfycloud": "moss_image", "cloud_moss_image_edit/comfycloud.text": "moss_image",
         };

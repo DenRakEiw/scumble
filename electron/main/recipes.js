@@ -176,6 +176,7 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * @property {LocalUpsampler} [upsampler]     ComfyUI recipes: a prompt upsampler in the graph (localUpsampler)
  * @property {LoraDecl} [loras]               ComfyUI recipes: where the LoRAs go (lorasOf); a provider recipe's is its variant's
  * @property {{ drop: string[] }} [newImage]  ComfyUI recipes: the inputs Generate new without pictures leaves out (localNewImage)
+ * @property {Record<string, string>} [needsVersion]  ComfyUI recipes: node type -> the ComfyUI release that brings it (comfyprompt.lacksNodesText)
  * @property {boolean} [promptRequired]       true: a run with an empty prompt is refused before anything goes (P-H3-Image:
  *                                            without words the model redraws the crop, or its upsampler invents an edit)
  * @property {string[]} [notes]               notes from importing or converting a workflow
@@ -187,13 +188,15 @@ const PASS_LABEL = "Realism Pass (Windows only, RTX only)";
  * is the prompt as typed, `nodes` the nodes only the upsampler needs (they go only when it runs,
  * comfyprompt.wireUpsampler), `show` a PreviewAny among them on its caption, `t2i` BFL's guide for Generate new without
  * pictures, `request` a recipe's own request text instead of BFL's (recipes/p_h3_image_local.json:
- * comfyprompt.upsamplerRequest), `source` where the guides come from.
+ * comfyprompt.upsamplerRequest), `extract` a JsonExtractString on the run when the run answers JSON (the switch's on_true is
+ * then that node; recipes/minimax_h3_image_local.json), `source` where the guides come from.
  *
  * @typedef {Object} LocalUpsampler
  * @property {string} switch
  * @property {string} run
  * @property {string[]} nodes
  * @property {string} [show]
+ * @property {string} [extract]
  * @property {string} [t2i]
  * @property {UpsamplerRequest} [request]
  * @property {string} [source]
@@ -596,16 +599,21 @@ function localUpsampler(r) {
     if (!sw || sw.class_type !== "ComfySwitchNode" || !sw.inputs) return { why: `names the switch ${JSON.stringify(u.switch)}, which is no ComfySwitchNode of the graph` };
     if (!run || (run.class_type !== "TextGenerate" && run.class_type !== "TextGenerateV2")) return { why: `names the run ${JSON.stringify(u.run)}, which is no TextGenerate or TextGenerateV2 node of the graph` };
     const on = sw.inputs.on_true, off = sw.inputs.on_false;
-    if (!Array.isArray(on) || String(on[0]) !== String(u.run)) return { why: `names the switch ${u.switch}, whose on_true does not take ${u.run}` };
+    const ex = u.extract !== undefined ? g[u.extract] : null;
+    if (u.extract !== undefined && (!ex || ex.class_type !== "JsonExtractString" || !ex.inputs || !Array.isArray(ex.inputs.json_string) || String(ex.inputs.json_string[0]) !== String(u.run))) return { why: `names the extract ${JSON.stringify(u.extract)}, which is no JsonExtractString of the graph reading ${u.run}` };
+    const answer = u.extract !== undefined ? u.extract : u.run;
+    if (!Array.isArray(on) || String(on[0]) !== String(answer)) return { why: `names the switch ${u.switch}, whose on_true does not take ${answer}` };
     if (!Array.isArray(off)) return { why: `names the switch ${u.switch}, whose on_false is no link (the prompt as typed)` };
     const nodes = Array.isArray(u.nodes) ? u.nodes.map(String) : [];
     if (!nodes.includes(String(u.run))) return { why: "lists nodes without its run" };
     const bad = nodes.find((id) => !g[id] || id === String(r.canvas) || id === String(u.switch) || id === String(off[0]));
     if (bad !== undefined) return { why: `lists the node ${JSON.stringify(bad)}, which is not in the graph or is the canvas, the switch or the prompt as typed` };
     if (u.show !== undefined && !nodes.includes(String(u.show))) return { why: `names the show node ${JSON.stringify(u.show)}, which its nodes do not list` };
+    if (u.extract !== undefined && !nodes.includes(String(u.extract))) return { why: `names the extract ${JSON.stringify(u.extract)}, which its nodes do not list` };
     /** @type {LocalUpsampler} */
     const out = { switch: String(u.switch), run: String(u.run), nodes };
     if (u.show !== undefined) out.show = String(u.show);
+    if (u.extract !== undefined) out.extract = String(u.extract);
     if (typeof u.t2i === "string" && u.t2i) out.t2i = u.t2i;
     if (u.request !== undefined) {
         const q = u.request;
@@ -1245,7 +1253,7 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
 }
 
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
-const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler", "loras", "newImage", "promptRequired"];
+const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler", "loras", "newImage", "promptRequired", "needsVersion"];
 
 /**
  * The graph of ComfyUI's page -> a recipe to save (docs/PLAN_COMFY_VIEW.md §2.3, item 35 V3). `output` is the API
