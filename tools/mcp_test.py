@@ -186,6 +186,130 @@ def headless_flush_check():
     finally:
         shutil.rmtree(flush_profile, ignore_errors=True)
 
+
+def proxy_takeover_check():
+    """MAIN-5: parallel tool calls on a proxy whose target exited single-flight takeover without double startApp(),
+    and second-instance probes carrying --mcp, --cmd or --run keep the headless window hidden."""
+    if STORE:
+        return "skipped (--store)"
+    prof = os.path.join(OUT, "takeover_profile")
+    shutil.rmtree(prof, ignore_errors=True)
+    os.makedirs(prof, exist_ok=True)
+    app_env = {k: v for k, v in os.environ.items() if k != "ELECTRON_RUN_AS_NODE"}
+    headless_cmd = ([EXE, ROOT] if IS_ELECTRON else [EXE]) + [f"--user-data-dir={prof}", "--no-comfy", "--headless"]
+    mcp_cmd = [EXE, LAUNCHER, f"--user-data-dir={prof}", "--no-comfy", "--mcp"]
+    mcp_env = {**os.environ, "ELECTRON_RUN_AS_NODE": "1"}
+    p_a = subprocess.Popen(headless_cmd, cwd=ROOT, env=app_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    p_b = None
+    b_pid = None
+    try:
+        # Wait for A's socket by polling --cmd ping --attach-only
+        for _ in range(60):
+            r = subprocess.run([EXE, LAUNCHER, f"--user-data-dir={prof}", "--attach-only", "--cmd", "ping"],
+                               cwd=ROOT, env=mcp_env, capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+            if r.returncode == 0:
+                break
+            time.sleep(0.3)
+        else:
+            raise RuntimeError("headless target A did not come up for takeover check")
+
+        p_b = subprocess.Popen(mcp_cmd, cwd=ROOT, env=mcp_env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        def read_until(want_ids):
+            got = {}
+            while len(got) < len(want_ids):
+                line = p_b.stdout.readline()
+                if not line:
+                    err = (p_b.stderr.read() if p_b.stderr else b"").decode("utf-8", errors="replace")[-500:]
+                    raise RuntimeError(f"EOF waiting for {want_ids} (got {list(got)}): {err}")
+                msg = json.loads(line.decode("utf-8"))
+                if msg.get("id") in want_ids:
+                    got[msg["id"]] = msg
+            return got
+
+        def send_batch(msgs):
+            payload = "".join(json.dumps(m) + "\n" for m in msgs).encode("utf-8")
+            p_b.stdin.write(payload)
+            p_b.stdin.flush()
+
+        send_batch([{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                     "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "takeover_test", "version": "1.0"}}}])
+        read_until({1})
+        send_batch([{"jsonrpc": "2.0", "method": "notifications/initialized"},
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "ping", "arguments": {}}}])
+        m2 = read_until({2})[2]["result"]
+        p2 = json.loads(m2["content"][0]["text"])
+        b_pid = p2.get("mcp", {}).get("pid")
+        if p2.get("mcp", {}).get("mode") != "proxy":
+            raise RuntimeError(f"expected proxy mode before target exit, got {p2}")
+
+        # Kill A so B's socket closes, then fire two concurrent tool calls in one write
+        p_a.terminate()
+        p_a.wait(timeout=20)
+        time.sleep(0.3)
+        send_batch([
+            {"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "ping", "arguments": {}}},
+            {"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "list_documents", "arguments": {}}},
+        ])
+        both = read_until({10, 11})
+        for mid in (10, 11):
+            res = both[mid].get("result") or {}
+            if "error" in both[mid] or res.get("isError"):
+                raise RuntimeError(f"parallel takeover call {mid} failed: {both[mid]}")
+        p10 = json.loads(both[10]["result"]["content"][0]["text"])
+        if p10.get("mcp", {}).get("mode") != "headless":
+            raise RuntimeError(f"expected headless mode after takeover, got {p10}")
+
+        # Probing second-instance lock requests with --mcp, --cmd and --run must not show the headless window
+        if not os.path.isfile(DEV_EXE):
+            raise RuntimeError(f"electron binary missing for second-instance probe: {DEV_EXE}")
+        probe_dir = os.path.join(OUT, "takeover_probe")
+        os.makedirs(probe_dir, exist_ok=True)
+        probe_js = os.path.join(probe_dir, "index.js")
+        with open(probe_js, "w", encoding="utf-8") as fh:
+            fh.write('const { app } = require("electron"); app.setName("Scumble"); const got = app.requestSingleInstanceLock(); app.exit(got ? 2 : 0);\n')
+        try:
+            for flags in (["--mcp"], ["--cmd", "ping"], ["--run", "-"]):
+                pr = subprocess.run([DEV_EXE, probe_dir, f"--user-data-dir={prof}", "--no-comfy", *flags],
+                                    cwd=ROOT, env=app_env, capture_output=True, timeout=30)
+                if pr.returncode != 0:
+                    raise RuntimeError(f"second-instance probe {flags} returned {pr.returncode}")
+            time.sleep(0.3)
+            send_batch([{"jsonrpc": "2.0", "id": 12, "method": "tools/call", "params": {"name": "ping", "arguments": {}}}])
+            m12 = read_until({12})[12]["result"]
+            p12 = json.loads(m12["content"][0]["text"])
+            if p12.get("mcp", {}).get("mode") != "headless":
+                raise RuntimeError(f"second-instance agent probe showed hidden window: {p12}")
+        finally:
+            shutil.rmtree(probe_dir, ignore_errors=True)
+
+        p_b.stdin.close()
+        p_b.wait(timeout=30)
+        b_pid = None
+        return "parallel takeover + 3 agent second-instance probes kept headless"
+    finally:
+        if p_a.poll() is None:
+            p_a.kill()
+        if p_b is not None and p_b.poll() is None:
+            try:
+                p_b.stdin.close()
+            except Exception:  # noqa: BLE001
+                pass
+            p_b.kill()
+        if isinstance(b_pid, int) and b_pid > 0:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(b_pid)], capture_output=True)
+            else:
+                try:
+                    os.kill(b_pid, 9)
+                except OSError:
+                    pass
+        for _ in range(15):
+            shutil.rmtree(prof, ignore_errors=True)
+            if not os.path.exists(prof):
+                break
+            time.sleep(0.2)
+
 # the profile the app runs on holds the image: the one --user-data-dir names, else the default profile
 TEST_IMAGE = os.path.join(USER_DATA or os.path.join(os.environ.get("APPDATA", os.path.expanduser("~/.config")), "Scumble"), "files", "input", "inpaint_canvas", "test_base.png")
 if STORE and not USER_DATA:
@@ -273,6 +397,7 @@ async def main():
     report["local"] = f"{lt.stdout.count('[ok]')} checks"
     report["raw"] = raw_check()
     report["flush"] = headless_flush_check()
+    report["takeover"] = proxy_takeover_check()
     async with stdio_client(SERVER) as (read, write):
         async with ClientSession(read, write) as session:
             init = await session.initialize()

@@ -146,6 +146,9 @@ contextBridge.exposeInMainWorld("scumble", {
         edit: (request) => ipcRenderer.invoke("provider:edit", request),
         // stop waiting for a run (request.runId): the title row's Cancel
         cancel: (runId) => ipcRenderer.invoke("provider:cancel", runId),
+        // a split's pictures, one at a time, and the rest let go (Split into layers)
+        layerPart: (token, part) => ipcRenderer.invoke("provider:layerPart", token, part),
+        dropLayerParts: (token) => ipcRenderer.invoke("provider:dropLayerParts", token),
         // a run's live progress ({ runId, status, queuePosition, value, step, steps, nodesDone, nodesTotal, node,
         // nodeClass }); returns the unsubscribe
         onProgress: (cb) => on("provider:progress", cb),

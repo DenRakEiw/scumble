@@ -119,6 +119,67 @@ async function main() {
         fs.rmSync(userData, { recursive: true, force: true });
     }
 
+    // ---- 3. Bridge timeout extension from command's params.timeout.default (shell/F7) -------------------------
+    {
+        const Module = require("node:module");
+        const origLoad = Module._load;
+        const ipc = new EventEmitter();
+        const bridgePath = path.join(__dirname, "..", "electron", "main", "bridge.js");
+        let Bridge;
+        Module._load = function (request, parent, ...rest) {
+            if (request === "electron") return { ipcMain: ipc };
+            return origLoad.call(this, request, parent, ...rest);
+        };
+        try {
+            delete require.cache[bridgePath];
+            ({ Bridge } = require(bridgePath));
+        } finally {
+            Module._load = origLoad;
+        }
+        const contents = new EventEmitter();
+        contents.isDestroyed = () => false;
+        let commandTable = [
+            { name: "ping", scope: "app", params: {} },
+            { name: "upscale", scope: "doc", params: { timeout: { type: "integer", default: 1 } } },
+        ];
+        let describeCount = 0;
+        contents.send = (ch, payload) => {
+            if (ch !== "commands:request") return;
+            if (payload.name === "list_commands") {
+                describeCount++;
+                setImmediate(() => ipc.emit("commands:reply", { sender: contents }, { id: payload.id, ok: true, result: { commands: commandTable } }));
+                return;
+            }
+            if (payload.name === "upscale" || payload.name === "plugin.slow") {
+                setTimeout(() => ipc.emit("commands:reply", { sender: contents }, { id: payload.id, ok: true, result: { done: payload.name } }), 150);
+                return;
+            }
+            setImmediate(() => ipc.emit("commands:reply", { sender: contents }, { id: payload.id, ok: true, result: { ok: 1 } }));
+        };
+        const br = new Bridge({ baseTimeout: 60 });
+        br.attach(contents);
+        ipc.emit("commands:ready", { sender: contents });
+        // without args.timeout, Bridge uses params.timeout.default (1 s = 1000 ms > 150 ms > baseTimeout 60 ms)
+        let r1 = null, e1 = "";
+        try { r1 = await br.run("upscale", { scope: "document" }); } catch (err) { e1 = err.message; }
+        check("Bridge extends BASE_TIMEOUT by params.timeout.default when args.timeout is omitted",
+            r1 && r1.done === "upscale" && describeCount === 1, e1 || JSON.stringify({ r1, describeCount }));
+        // cached: a second call without args.timeout does not call list_commands again
+        let r2 = null;
+        try { r2 = await br.run("upscale", {}); } catch (_) {}
+        check("Bridge reuses the cached timeout defaults across calls", r2 && r2.done === "upscale" && describeCount === 1, `describeCount=${describeCount}`);
+        // an explicit args.timeout = 0 still gets extra = 0 and times out at baseTimeout (60 ms < 150 ms)
+        let e0 = "";
+        try { await br.run("upscale", { timeout: 0 }); } catch (err) { e0 = err.message; }
+        check("an explicit args.timeout = 0 is honoured without falling back to the default", /command "upscale" did not answer in time/.test(e0), e0);
+        // commands:changed invalidates the cache so a newly registered plugin command gets its declared default
+        commandTable = [...commandTable, { name: "plugin.slow", scope: "doc", params: { timeout: { type: "integer", default: 1 } } }];
+        ipc.emit("commands:changed");
+        let r3 = null, e3 = "";
+        try { r3 = await br.run("plugin.slow", {}); } catch (err) { e3 = err.message; }
+        check("commands:changed refreshes Bridge's timeout defaults for new commands", r3 && r3.done === "plugin.slow" && describeCount === 2, e3 || `describeCount=${describeCount}`);
+    }
+
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);
     console.log(failed ? "FAIL" : "PASS");

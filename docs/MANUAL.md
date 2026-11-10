@@ -544,6 +544,17 @@ The steps below follow the pack's README as it was at its commit `c7662de` (2026
 - **Without any of this**, background removal in the app, with RMBG or BiRefNet from Settings › Helpers (in-app models), gives a cut-out layer of a subject on any background, with a harder edge and the screen's spill left on it.
 - Agents and scripts key with `key_screen` (the same rows: `screen`, `hint`, `trust`, `despill`, `source`, `grey`, `rekey`, and `preview`, which makes the matte the selection and adds nothing); `status` `key` says whether your ComfyUI can key now and why not. The assistant asks before it keys, showing the screen, the hint and its trust.
 
+## Split into layers
+
+<!-- slug: split-layers -->
+_One flat picture taken apart into separate layers by Seedream, with a base and each element on its own._
+
+*Image › Split into Layers...* sends the visible picture, or the active layer, to Seedream's layer decomposition on BytePlus ModelArk and puts the answer into the document as new layers: a base picture at the bottom and one layer for each element the model finds, each with its own transparency and named by the model. They land above all the layers you have, in one new group named after the source, and your own layers are not touched. One Ctrl+Z takes them all back.
+
+Pick the model (Seedream 5.5, up to 100 layers, or Seedream 5.0 Pro, which finds up to 16 by itself). Type in the prompt field what to separate, or leave it empty and the model finds the major elements itself. On Seedream 5.5 you set the most layers it should make and can turn on Text recognition. *Size* is Auto (about the size of your picture) or 1K, 1.5K or 2K. The dialog says what will run before you press *Split*; it runs on your BytePlus key and costs what BytePlus charges (Seedream 5.5 is not on its public price list yet). *Cancel* in the title row stops it as any API run.
+
+The picture must be 512 × 512 to 6000 × 6000 in area and no steeper than 16:1; Scumble refuses anything else before it sends. The model answers at most about 2K, so on a larger picture the layers are scaled up to your picture and the status line says they are lower resolution than it. The feature needs a ModelArk key (*Settings › API providers*), and Seedream 5.5 is in early access: BytePlus has to let your account in first. Agents use the `split_layers` command.
+
 ## Documents: your work as a .scumble file
 
 <!-- slug: documents -->
