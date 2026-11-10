@@ -28,6 +28,9 @@
  *                   (`progress` messages), the window never runs the reader's loops (docs/PLAN_WASM_BUILD.md §7 D0).
  *   inflate_bench   byte ranges of a blob through the browser's inflater, counted and dropped: a benchmark only.
  *   png_read        a PNG file decoded as a stream, its rows back band by band (`progress` messages).
+ *   tiff_band       one planned band of a TIFF (`readTiffBand`, K18): per-file `spec` and that band's slices only,
+ *                   its RGBA8 transferred back.
+ *   tiff_read       a TIFF file decoded as a stream (`readTiff`), for single-strip / huge bands and the fallback.
  *   image_read      any image file the browser decodes (JPEG, WebP, a PNG with a colour profile), decoded here and
  *                   read back band by band like png_read: the window never decodes or reads it.
  *   resample        one row of destination tiles of an affine resample (inpaint_resample.js): the straighten of 23b.
@@ -56,7 +59,7 @@
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, clipCoverage, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
 import { crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
-import { readTiff, tiffPart } from "./inpaint_tiff.js";
+import { readTiff, readTiffBand, tiffPart } from "./inpaint_tiff.js";
 import { readPsdStream, inflateAtMost } from "./inpaint_layered.js";
 import { resampleStore } from "./inpaint_resample.js";
 import { liquifyStore } from "./inpaint_liquify.js";
@@ -889,6 +892,35 @@ export async function tiffPartJob(msg) {
             op: "tiff_part", kernels: kernelsInUse(), composeWasm: 0,
             pixels: msg.w * msg.rows, kernel: now() - t0,
             compose: msg.stack ? t1 - t0 : 0, rows: t1 - t0, ...laps,
+        },
+    };
+}
+
+/**
+ * Decode one planned band of a TIFF (inpaint_tiff.js `readTiffBand`, docs/PLAN_WASM_BUILD.md §4.6, K18): carries only
+ * `msg.spec` (per-file constants) and `msg.band` (that band's strip or tile slices), returning straight-alpha RGBA8
+ * transferred back to the window.
+ */
+export async function tiffBandJob(msg) {
+    const t0 = now();
+    const spec = msg.spec, band = msg.band;
+    if (!spec || !spec.info || !band) throw new Error("tiff_band: invalid spec or band");
+    const spent = {};
+    const rgba = await readTiffBand(msg.blob, spec, band, { spent, kernels: tiffKernels() });
+    const rows = band.rows | 0, y0 = band.y0 | 0;
+    const buf = rgba.byteOffset === 0 && rgba.byteLength === rgba.buffer.byteLength ? rgba.buffer : rgba.slice().buffer;
+    return {
+        rgba: buf,
+        y0,
+        rows,
+        transfer: [buf],
+        timing: {
+            op: "tiff_band",
+            kernels: kernelsInUse(),
+            pixels: spec.info.width * rows,
+            rows,
+            kernel: now() - t0,
+            ...spent,
         },
     };
 }
@@ -1958,6 +1990,7 @@ async function run(msg) {
     if (msg.op === "psd_part") return psdPart(msg);
     if (msg.op === "png_read") return pngRead(msg);
     if (msg.op === "image_read") return imageRead(msg);
+    if (msg.op === "tiff_band") return tiffBandJob(msg);
     if (msg.op === "tiff_read") return tiffRead(msg);
     if (msg.op === "psd_read") return psdRead(msg);
     if (msg.op === "tiff_part") return tiffPartJob(msg);

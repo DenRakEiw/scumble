@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Large TIFF files open faster.** Multi-strip and tiled TIFFs now decode across worker threads, and opening another file stops the one still being read at once.
 - **Large PSD files open about twice as fast**, and the window stays responsive while their layers land.
 - **The assistant's render questions show the settings.** Before a render or upscale its question lists the document's settings and marks what the chat changed, and it can set crop options, use the magic wand and add boxes without failing on the active layer.
 - **The assistant asks before merging into your own layer.** Merging down from the assistant now asks when the target is a layer you made or the base image, and unanswered question cards are switched off when a turn stops, so an old card cannot answer a later question.
