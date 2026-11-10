@@ -562,6 +562,141 @@ try { await run("load_image", { doc: d.id, path: dir + "/crafted_zip_bomb.psd" }
 if (!new RegExp(want["crafted_zip_bomb.psd"]).test(said) || tabShape() !== s0) throw new Error("load_image: " + (said || "no error") + ", " + tabShape() + " after " + s0);
 return { grewMB: Math.round(most / 1024), tiles: !!ed.tileMode, ms };
 """),
+    ("an_ora_opens_through_the_parted_reader", """
+// K20c (docs/PLAN_WASM_K20.md §3): on tiles an ORA's 8-bit layers are decoded by the pool (png_part_read for Scumble's own
+// parted PNGs, png_read for one IDAT), so the read makes no bitmap and reads no canvas back; a 16-bit layer and every
+// layer on the canvas backend stay on the browser's decoder. The reference is that decoder (InpaintEditor.oraParted = false):
+// the same fields and every layer's bytes. A covering plain bottom layer is stored as its own PNG, others are encoded as
+// before. A cancelled read and a damaged second layer leave no tiles held.
+const src = ednow(window.__l.src);
+const E = src.constructor, tiles = !!src.tileMode;
+const d = await run("new_document");
+window.__l.more.push(d.id);
+const ed = ednow(d.id);
+const dir = %(TMPDIR)s;
+const fileOf = async (path) => new File([(await window.scumble.file.read(path)).data], path.split("/").pop());
+const c = document.createElement("canvas");
+c.width = 900; c.height = 640;
+const g = c.getContext("2d");
+for (let x = 0; x < 900; x += 3) { g.fillStyle = `rgb(${x & 255}, ${(900 - x) & 255}, ${(x >> 2) & 255})`; g.fillRect(x, 0, 3, 640); }
+await ed.setBaseFromCanvas(c);
+const mk = (w, h, draw) => { const k = document.createElement("canvas"); k.width = w; k.height = h; draw(k.getContext("2d")); return ed.pixels.Layer.fromCanvas(k); };
+ed.addLayer({ name: "Over", kind: "image", ref: null, px: mk(900, 640, (x) => { for (let i = 0; i < 640; i += 2) { x.fillStyle = `rgba(200, 100, 50, ${(1 + (i & 127)) / 255})`; x.fillRect(0, i, 900, 2); } }), x: 0, y: 0, w: 900, h: 640, dirty: true });
+ed.addLayer({ name: "Small", kind: "image", ref: null, px: mk(40, 30, (x) => { x.fillStyle = "#40ff80"; x.fillRect(0, 0, 40, 30); }), x: 31, y: 17, w: 40, h: 30, dirty: true });
+const parted = dir + "/parted.ora";
+await run("export", { doc: d.id, format: "ora", path: parted });
+await ed.mipsSettled();
+
+const watch = () => {
+    const cib = window.createImageBitmap, gid = CanvasRenderingContext2D.prototype.getImageData, ogid = OffscreenCanvasRenderingContext2D.prototype.getImageData;
+    const n = { bitmaps: 0, readbacks: 0 };
+    window.createImageBitmap = function (...a) { n.bitmaps++; return cib.apply(this, a); };
+    CanvasRenderingContext2D.prototype.getImageData = function (...a) { n.readbacks++; return gid.apply(this, a); };
+    OffscreenCanvasRenderingContext2D.prototype.getImageData = function (...a) { n.readbacks++; return ogid.apply(this, a); };
+    n.stop = () => { window.createImageBitmap = cib; CanvasRenderingContext2D.prototype.getImageData = gid; OffscreenCanvasRenderingContext2D.prototype.getImageData = ogid; };
+    return n;
+};
+const open = async (path, parted) => {
+    if (!parted) E.oraParted = false;
+    E.jobTimings(true);
+    const n = watch();
+    let doc;
+    try { doc = await ed.readLayered(await fileOf(path), "ora"); } finally { n.stop(); delete E.oraParted; }
+    const jobs = E.jobTimings(true).map((t) => t.op), count = (op) => jobs.filter((o) => o === op).length;
+    if (doc.baseUpload) await doc.baseUpload;
+    return { doc, bitmaps: n.bitmaps, readbacks: n.readbacks, parts: count("png_part_read"), finishes: count("png_part_finish"), reads: count("png_read") };
+};
+const drop = (doc) => { for (const L of doc.layers) { L.px.release(); L.px = null; } };
+const out = {};
+for (const [name, path] of [["parted", parted], ["single", dir + "/single.ora"], ["deep", dir + "/deep.ora"]]) {
+    const a = await open(path, true), b = await open(path, false);
+    const fields = (x) => JSON.stringify({ w: x.doc.width, h: x.doc.height, notes: x.doc.notes, lossy: x.doc.lossy, layers: x.doc.layers.map((L) => [L.name, L.x, L.y, L.w, L.h, L.opacity, L.visible, L.blend, L.px.width, L.px.height]) });
+    if (fields(a) !== fields(b)) throw new Error(name + ": " + fields(a) + " instead of " + fields(b));
+    if (!a.doc.layers.length) throw new Error(name + ": no layers");
+    let spread = 0;
+    for (let i = 0; i < a.doc.layers.length; i++) {
+        const La = a.doc.layers[i], Lb = b.doc.layers[i];
+        const pa = bytesOf(La.px, La.w, La.h), pb = bytesOf(Lb.px, Lb.w, Lb.h);
+        if (!pa.length || pa.length !== 4 * La.w * La.h) throw new Error(name + " " + La.name + ": no bytes");
+        const f = far(pa, pb);
+        if (f > 0) throw new Error(`${name}: ${La.name} is ${f} levels off the browser's decoder`);
+        spread = Math.max(spread, new Set(alphaOf(pa)).size);
+        if (La.pngBlob || Lb.pngBlob) throw new Error(name + ": a layer kept its PNG");
+    }
+    if (name !== "deep" && spread < (name === "single" ? 100 : 50)) throw new Error(name + ": the alphas tested little: " + spread);
+    if (b.bitmaps !== b.doc.layers.length || b.parts || b.reads) throw new Error(name + ": oraParted = false took the pool: " + JSON.stringify({ ...b, doc: undefined }));
+    if (tiles) {
+        const wantBitmaps = name === "deep" ? 1 : 0;
+        if (a.bitmaps !== wantBitmaps || (name !== "deep" && a.readbacks)) throw new Error(name + ": " + JSON.stringify({ ...a, doc: undefined }) + " on tiles");
+        if (name === "parted" && (a.parts === 0 || a.finishes !== 0)) throw new Error("the parted ORA did not go through png_part_read alone: " + JSON.stringify({ ...a, doc: undefined }));
+        if (name === "single" && (a.reads !== a.doc.layers.length || a.parts)) throw new Error("single.ora: " + JSON.stringify({ ...a, doc: undefined }));
+    } else if (a.bitmaps !== a.doc.layers.length || a.parts || a.reads) throw new Error(name + " on canvas: " + JSON.stringify({ ...a, doc: undefined }));
+    out[name] = { bitmaps: a.bitmaps, readbacks: a.readbacks, parts: a.parts, finishes: a.finishes, reads: a.reads, layers: a.doc.layers.length };
+    drop(a.doc); drop(b.doc);
+}
+
+// the base as its own PNG (the design's question 3): what the store holds is the layer's file
+const { viewUrl } = await import("./editor/inpaint_canvas.js");
+const { readOraBlob } = await import("./editor/inpaint_layered.js");
+const opened = async (path, parted) => {
+    if (!parted) E.oraParted = false;
+    try { await ed.loadFile(await fileOf(path)); } finally { delete E.oraParted; }
+    return ed.base.ref.filename;
+};
+const hashed = /^[a-z]+_[0-9a-f]+[.]png$/;
+const asOwn = await opened(parted, true);
+if (hashed.test(asOwn) || !/^parted.*[.]png$/.test(asOwn)) throw new Error("the covering bottom layer was not stored as its PNG: " + asOwn);
+const inFile = await readOraBlob(await fileOf(parted), { inflateRaw: () => { throw new Error("nothing is deflated here"); } });
+const stored = new Uint8Array(await (await fetch(viewUrl(ed.base.ref))).arrayBuffer()), own = new Uint8Array(await inFile.layers[0].pngBlob.arrayBuffer());
+if (stored.length !== own.length || stored.some((v, i) => v !== own[i])) throw new Error("the stored file is not the bottom layer's PNG: " + stored.length + " bytes against " + own.length);
+out.asOwn = asOwn;
+for (const [what, path, parted2] of [["oraParted = false", parted, false], ["a gAMA chunk", dir + "/gamma.ora", true]]) {
+    const name = await opened(path, parted2);
+    if (!hashed.test(name)) throw new Error(what + ": the base was not encoded: " + name);
+}
+
+if (tiles) {
+    const LayerCls = ed.pixels.Layer, ownEmpty = Object.prototype.hasOwnProperty.call(LayerCls, "empty"), empty0 = LayerCls.empty;
+    const created = [];
+    const held = () => created.reduce((n, p) => n + (p._tiles ? p._tiles.size : 0), 0);
+    LayerCls.empty = function (w, h) { const p = empty0.call(this, w, h); created.push(p); return p; };
+    try {
+        // a read that is over by the second layer's turn: the first layer's tiles go with it, before any collection
+        let calls = 0, heldEarly = -1;
+        const later = () => { if (++calls < 3) return false; heldEarly = held(); return true; };
+        let err = null;
+        try { await ed.readLayered(await fileOf(parted), "ora", later); } catch (e) { err = e; }
+        if (!err || !err.cancelled) throw new Error("the read was not cancelled: " + err);
+        if (!(heldEarly > 0)) throw new Error("the first layer had no tiles when the read ended: " + heldEarly);
+        if (held() !== 0) throw new Error("a cancelled read held on to " + held() + " tiles");
+        out.cancelled = heldEarly;
+        created.length = 0;
+
+        // a parted PNG damaged in the second layer: refused after both readers, nothing kept
+        const whole = new Uint8Array((await window.scumble.file.read(parted)).data);
+        const second = inFile.layers[1].pngBlob, head = new Uint8Array(await second.slice(0, 4096).arrayBuffer());
+        const find = () => { for (let i = 0; i + head.length <= whole.length; i++) { let j = 0; while (j < head.length && whole[i + j] === head[j]) j++; if (j === head.length) return i; } return -1; };
+        const at = find();
+        if (at < 0) throw new Error("the second layer was not found in the file");
+        const bad = whole.slice();
+        for (let i = at + (second.size >> 1), n = i + 64; i < n; i++) bad[i] ^= 0xa5;
+        const damaged = new File([bad], "damaged.ora");
+        calls = 0; heldEarly = -1;
+        const seen = () => { if (++calls === 3) heldEarly = held(); return false; };
+        err = null;
+        try { await ed.readLayered(damaged, "ora", seen); } catch (e) { err = e; }
+        if (!err || !err.partedRefused) throw new Error("the damaged layer was not refused by both readers: " + err);
+        if (!(heldEarly > 0)) throw new Error("the first layer had no tiles when the second failed: " + heldEarly);
+        if (held() !== 0) throw new Error("a refused read held on to " + held() + " tiles");
+        out.refused = String(err.message || err).slice(0, 80);
+        const baseBefore = ed.base;
+        await ed.loadFile(damaged);
+        if (ed.base !== baseBefore) throw new Error("a damaged ORA replaced the document");
+        created.length = 0;
+    } finally { if (ownEmpty) LayerCls.empty = empty0; else delete LayerCls.empty; }
+}
+return { tiles, ...out };
+"""),
     ("cleanup", """
 for (const k of ["psd", "ora", "src"]) { try { if (window.__l && window.__l[k]) await run("close_document", { doc: window.__l[k] }); } catch (_) { /* gone */ } }
 for (const id of (window.__l && window.__l.more) || []) { try { await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
@@ -577,6 +712,11 @@ PRE = """(async () => {
     %s
     %s
 })()"""
+
+
+# K20c: the step whose failed and cancelled reads must leave the tile arena as it found it (after a collection)
+SLOTS_STEP = "an_ora_opens_through_the_parted_reader"
+SLOTS = "(async () => (await import('./editor/inpaint_arena.js')).arenaStats().slots)()"
 
 
 def node_step():
@@ -609,8 +749,24 @@ async def run_all(c):
                 data = f.read()
             with open(os.path.join(TMP, "broken.psd"), "wb") as f:
                 f.write(data[: len(data) // 3])
+        slots0 = None
+        if name == SLOTS_STEP:
+            for _ in range(6):
+                await c.call("HeapProfiler.collectGarbage")
+                await asyncio.sleep(0.1)
+                slots0 = await c.eval(SLOTS)
         try:
             res = await c.eval(PRE % (HELP, body % subs), timeout=240)
+            if slots0 is not None:
+                for _ in range(12):
+                    await c.call("HeapProfiler.collectGarbage")
+                    await asyncio.sleep(0.15)
+                    slots1 = await c.eval(SLOTS)
+                    if slots1 <= slots0:
+                        break
+                if slots1 > slots0:
+                    raise Exception("arena slots after %s (%d) > before (%d)" % (name, slots1, slots0))
+                res["arenaSlots"] = [slots0, slots1]
             print("[ok] %s: %s" % (name, json.dumps(res, ensure_ascii=False)[:300]))
         except Exception as err:  # noqa: BLE001
             ok = False

@@ -34,7 +34,7 @@ import { JOB_TIMINGS, STEP_MARKS, markStep, editorWorker, workerCall, editorPool
 import { buildEditorModal } from "./inpaint_modal.js";
 import { encodeCanvas, canvasToBlob, partsUsable, partsRun, partsFlights, bandPause, partsFailed, nextPartsSeq, encodeTilePixels, encodeBands, encodeRows } from "./inpaint_encode.js";
 import { SUBFOLDER, uploadBlob, uploadCanvas, uploadPixels } from "./inpaint_upload.js";
-import { LAYERED_EXT, isPsd, isOra, readPsd, readOra, inflateAtMost } from "./inpaint_layered.js";
+import { LAYERED_EXT, isPsd, isOra, readPsd, readOraBlob, inflateAtMost } from "./inpaint_layered.js";
 import { THEME } from "./inpaint_theme.js";
 import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap, canvasRoundTrip } from "./inpaint_resample.js";
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
@@ -749,6 +749,11 @@ function canvasRows(canvas) {
 /** E5: the most a document on tiles may be: a band of it is a canvas, and its base is 4 bytes a pixel of memory. */
 const HUGE_MAX_SIDE = 65535;
 const HUGE_MAX_PIXELS = 1024 * 1024 * 1024;
+
+/** The name a layered file's picture is stored under, without an extension. */
+function layeredStem(file) {
+    return (file.name || "layered").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "layered";
+}
 
 function pngReaderUsable() {
     return InpaintEditor.pngParts !== false && typeof Worker === "function" && !editorPool().off;
@@ -19080,10 +19085,12 @@ class InpaintEditor {
                 return got.doc;
             }
         }
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        markStep("layered_open", "read", { MB: bytes.length / 1048576 });
+        // an ORA stays the file (K20c, readOraBlob): its directory, stack.xml and each layer's header are read as slices
+        const bytes = kind === "psd" ? new Uint8Array(await file.arrayBuffer()) : null;
+        markStep("layered_open", "read", { MB: bytes ? bytes.length / 1048576 : 0 });
         // the K0a harness: the inflates' time (they run one after another), and the layer loop's parts below
-        let inflateMs = 0, inflates = 0, maskMs = 0, rgbaMs = 0, bitmapMs = 0, fromImageMs = 0, t0 = 0;
+        let inflateMs = 0, inflates = 0, maskMs = 0, rgbaMs = 0, t0 = 0;
+        const spent = { streamMs: 0, bitmapMs: 0, fromImageMs: 0 };
         // each inflate stops at the bytes the reader keeps (inpaint_layered.js inflateAtMost, the pool's inflater too)
         const timed = async (b, format, cap) => {
             const t = performance.now();
@@ -19092,38 +19099,95 @@ class InpaintEditor {
         // the size is checked from the header before anything else is read or made (H1 S5), as the pool route does
         const onHeader = (h) => this.checkLayeredSize(h.width, h.height);
         const doc = kind === "psd" ? await readPsd(bytes, { inflate: (b, cap) => timed(b, "deflate", cap), onHeader })
-            : await readOra(bytes, { inflateRaw: (b, cap) => timed(b, "deflate-raw", cap), onHeader });
+            : await readOraBlob(file, { inflateRaw: (b, cap) => timed(b, "deflate-raw", cap), onHeader });
         markStep("layered_open", "parsed", { inflateMs, inflates });
         this.checkLayeredSize(doc.width, doc.height);
-        for (const L of doc.layers) {
-            // a PSD mask (docs/PLAN_0_1_31.md 3e): one value per pixel of the layer, as the mask's alpha
-            if (L.mask && L.mask.data) {
-                t0 = performance.now();
-                const m = new ImageData(L.w, L.h), d = m.data, v = L.mask.data;
-                for (let i = 0, o = 0; i < v.length; i++, o += 4) { d[o] = 255; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = v[i]; }
-                L.maskPx = this.pixels.Mask.fromImageData(m);
-                L.maskOff = !!L.mask.disabled;
-                maskMs += performance.now() - t0;
+        if (kind === "ora") doc.baseUpload = await this.oraBaseUpload(doc, file);
+        try {
+            for (let i = 0; i < doc.layers.length; i++) {
+                const L = doc.layers[i];
+                if (later()) throw new CancelledError("layered_open");
+                // a PSD mask (docs/PLAN_0_1_31.md 3e): one value per pixel of the layer, as the mask's alpha
+                if (L.mask && L.mask.data) {
+                    t0 = performance.now();
+                    const m = new ImageData(L.w, L.h), d = m.data, v = L.mask.data;
+                    for (let j = 0, o = 0; j < v.length; j++, o += 4) { d[o] = 255; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = v[j]; }
+                    L.maskPx = this.pixels.Mask.fromImageData(m);
+                    L.maskOff = !!L.mask.disabled;
+                    maskMs += performance.now() - t0;
+                }
+                L.mask = null;
+                if (L.rgba) {
+                    t0 = performance.now();
+                    L.px = this.pixels.Layer.fromImageData(new ImageData(L.rgba, L.w, L.h)); L.rgba = null;
+                    rgbaMs += performance.now() - t0;
+                    continue;
+                }
+                this.setStatus(`Reading the layers of ${file.name || "the file"} ... layer ${i + 1} of ${doc.layers.length}`);
+                await this.decodeOraLayer(L, spent);
+                if (later()) throw new CancelledError("layered_open");
             }
-            L.mask = null;
-            if (L.rgba) {
-                t0 = performance.now();
-                L.px = this.pixels.Layer.fromImageData(new ImageData(L.rgba, L.w, L.h)); L.rgba = null;
-                rgbaMs += performance.now() - t0;
-                continue;
+        } catch (err) {
+            // nothing of a read that ends here is kept: the layers decoded so far hold tiles
+            for (const x of doc.layers) {
+                if (x.px) { x.px.release(); x.px = null; }
+                if (x.maskPx) { x.maskPx.release(); x.maskPx = null; }
             }
-            t0 = performance.now();
-            const bmp = await createImageBitmap(new Blob([L.png], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
-            bitmapMs += performance.now() - t0;
-            L.w = bmp.width; L.h = bmp.height;
-            t0 = performance.now();
-            L.px = this.pixels.Layer.fromImage(bmp, bmp.width, bmp.height);
-            fromImageMs += performance.now() - t0;
-            bmp.close();
-            L.png = null;
+            throw err;
         }
-        markStep("layered_open", "layers", { maskMs, rgbaMs, bitmapMs, fromImageMs });
+        markStep("layered_open", "layers", { maskMs, rgbaMs, ...spent });
         return doc;
+    }
+
+    /**
+     * K20c: one ORA layer's PNG (`L.pngBlob`) into `L.px`, `L.w`, `L.h`. On tiles a PNG of 8 bits, not interlaced, is
+     * decoded by the pool (`pixelsFromPngStream`), so the window neither decodes it nor reads a canvas back. Everything
+     * else goes through the browser's decoder, and so does a stream that fails: that decoder says last whether a file
+     * is damaged, except for a parted PNG the pool refused twice and for one larger than any canvas.
+     * `InpaintEditor.oraParted = false` keeps every layer on the browser's decoder.
+     */
+    async decodeOraLayer(L, spent) {
+        const blob = L.pngBlob;
+        if (this.tileMode && InpaintEditor.oraParted !== false && pngReaderUsable()) {
+            const h = pngHeader(new Uint8Array(await blob.slice(0, 33).arrayBuffer()));
+            if (h && h.bitDepth === 8 && !h.interlace) {
+                const t0 = performance.now();
+                try {
+                    const px = await pixelsFromPngStream(blob, this.pixels.Layer);
+                    L.px = px; L.w = px.width; L.h = px.height; L.pngBlob = null;
+                    return;
+                } catch (err) {
+                    if ((err && err.partedRefused) || h.width * h.height > CANVAS_MAX_PIXELS) throw err;
+                    console.warn("Inpaint Canvas: an ORA layer could not be read as a stream, using the image decoder:", (err && err.message) || err);
+                } finally { spent.streamMs += performance.now() - t0; }
+            }
+        }
+        let t0 = performance.now();
+        const bmp = await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+        spent.bitmapMs += performance.now() - t0;
+        L.w = bmp.width; L.h = bmp.height;
+        t0 = performance.now();
+        try { L.px = this.pixels.Layer.fromImage(bmp, bmp.width, bmp.height); } finally { bmp.close(); }
+        spent.fromImageMs += performance.now() - t0;
+        L.pngBlob = null;
+    }
+
+    /**
+     * K20c, the design's question 3: an ORA's bottom layer that will become the base goes up as its own PNG, started
+     * here beside the layers' decode, in place of a new PNG encoded from `basePx` afterwards. Only a PNG the decoders read
+     * alike and a plain sRGB one (8 bits, not interlaced, no colour chunk, the picture's size): the upload's promise, or
+     * null and `loadLayered` encodes as before. `InpaintEditor.oraParted = false` encodes too.
+     */
+    async oraBaseUpload(doc, file) {
+        const b = doc.layers[0];
+        if (!b || !b.pngBlob || InpaintEditor.oraParted === false) return null;
+        if (!(b.x === 0 && b.y === 0 && b.visible && b.opacity >= 0.999 && b.blend === "normal")) return null;
+        const h = pngHeader(new Uint8Array(await b.pngBlob.slice(0, 33).arrayBuffer()));
+        if (!h || h.bitDepth !== 8 || h.interlace || h.width !== doc.width || h.height !== doc.height) return null;
+        if (!(await pngIsPlainSrgb(b.pngBlob))) return null;
+        const up = uploadBlob(b.pngBlob, layeredStem(file) + ".png", { overwrite: false });
+        up.catch(() => {});   // read in loadLayered, or left when the open ends earlier
+        return up;
     }
 
     /** A layered file's size against what this document can open: the document's bounds, then the canvas limit. */
@@ -19253,9 +19317,8 @@ class InpaintEditor {
         else if (!layers.length && doc.composite) basePx = this.pixels.Layer.fromImageData(new ImageData(doc.composite, W, H));
         else basePx = this.pixels.Layer.empty(W, H);
         if (doc.compositePx && basePx !== doc.compositePx) { doc.compositePx.release(); doc.compositePx = null; }
-        const stem = (file.name || "layered").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "layered";
         this.setStatus(`Storing ${file.name || "the file"} ...`);
-        const { ref } = await uploadPixels(basePx, stem);
+        const ref = doc.baseUpload && basePx === b?.px ? await doc.baseUpload : (await uploadPixels(basePx, layeredStem(file))).ref;
         markStep("layered_open", "stored");
         if (later()) { dropDoc(basePx); return; }
         await this.setBasePixels(ref, basePx, { keepLayers: false });
