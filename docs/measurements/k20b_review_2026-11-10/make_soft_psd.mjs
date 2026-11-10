@@ -1,7 +1,7 @@
 // K20b review (K20b-T1): a deterministic 15,000 x 10,000 PSD with an opaque Background and SOFT soft-alpha layers
 // (default 3), each full size with alpha varying between 40 and 230, so every band of every soft layer takes the
 // window's soft-alpha writeRect path. Written with PsdBandWriter + px.wasm psdPackRows (PackBits, as Scumble writes).
-//   node make_soft_psd.mjs <out.psd> [soft layers]
+//   node make_soft_psd.mjs <out.psd> [soft layers] [width height]
 import fs from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -21,7 +21,7 @@ const { loadPx } = await import(pathToFileURL(path.join(ROOT, "renderer", "edito
 const { PsdBandWriter, bandRows } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_bands.js")).href);
 const px = await loadPx(fs.readFileSync(path.join(ROOT, "renderer", "editor", "px", "px.wasm")));
 
-const W = 15000, H = 10000;
+const W = parseInt(process.argv[4] || "15000", 10), H = parseInt(process.argv[5] || "10000", 10);   // a smaller size for a smoke run
 const fillBg = (y0, y1) => {
     const rows = y1 - y0, out = new Uint8Array(rows * W * 4);
     for (let r = 0; r < rows; r++) {
