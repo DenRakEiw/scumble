@@ -345,3 +345,60 @@ Under `python docs/measurements/w1_2026-11-06/w1_lock.py`, **three alternating `
 4. **External ORA layer PNGs with colour chunks (`iCCP`, `gAMA`, `cHRM`, `cICP`) (`K20c`)**
    - *Context*: Today `readLayered` (`inpaint_canvas.js:19039`) passes `colorSpaceConversion: "none"` to `createImageBitmap`, so colour profiles and gamma chunks in ORA layer PNGs are ignored and raw PNG sample values are kept. `readPng` (`inpaint_png.js:251-252`, used by `png_read`) also ignores colour profiles and keeps raw sample values, whereas `pngPartsOf` returns `null` when `iCCP` / `gAMA` / `cHRM` / `cICP` is present (falling through in `pixelsFromPngStream` to `png_read`). Thus routing all 8-bit non-interlaced ORA layers through `pixelsFromPngStream` preserves **100% byte-for-byte parity** with today's `colorSpaceConversion: "none"` behaviour.
    - *Suggested answer*: **Keep today's raw-sample (`colorSpaceConversion: "none"`) behaviour** by routing all 8-bit non-interlaced ORA layers through `pixelsFromPngStream` (`readPngParts` for parted PNGs, `png_read` for single-stream PNGs) without gating on `pngIsPlainSrgb`.
+
+---
+
+## 7. As Built
+
+### K20b (2026-11-10)
+
+- **Rust crate (`crates/px/`) & Wasm Builds**:
+  - `crates/px/src/psd.rs:68-109` (`packbits_rows`), `:111-237` (`fill_mask_rgba`, `write_mask_span_8`, `write_mask_span_16be`), `:239-325` (`mask_rgba`).
+  - `crates/px/src/tiff.rs:68-123` (`unpredict_row_16` 8-wide SIMD128 prefix sum for `per == 1` LE/BE), `:425-446` (`to_rgba` Fast path 4), `:519-775` (`planar_to_rgba`, `planar_row_8`, `load_round_u16x8`, `planar_row_16`).
+  - `crates/px/src/lib.rs:54-59` (`PX_ABI = 46`), `:845-901` (`packbits_rows` and `psd_mask_rgba` `extern "C"` exports).
+  - Base (`764fdffe` via `git cat-file -p`): `px.wasm` `289,975` B (`f326653b273e3c87`), `px_scalar.wasm` `232,343` B (`0c067d6ca569c44e`), `PX_ABI = 45`.
+  - Built (`K20b`): `px.wasm` `298,741` B (`+8,766` B, `7d3188f8931137dc`), `px_scalar.wasm` `237,720` B (`+5,377` B, `908fc1943daa06ab`), `PX_ABI = 46`.
+- **JS Wrappers, Twins, Route & Worker**:
+  - `renderer/editor/inpaint_layered.js:176-284` (`packbitsRows`, `psdMaskRgba`), `:485-706` (`readPsdStream`, `prepareChannel`, `unpackBandDesc`, `psdBandRgba`, `psdBandMask`, `PSD_JS`, `streamChannelDescs`, `mergedChannelDescs`), `:820-864`, `:925-935` (upfront H1 S5 channel/merged validation and 1-pass `256`-row band streaming).
+  - `renderer/editor/px/kernels_js.js:19-22` (re-exports `packbitsRows`, `psdMaskRgba`, `psdBandRgba`, `psdBandMask`, `PSD_JS`).
+  - `renderer/editor/px/px.js:35` (`PX_ABI = 46`), `:1165-1369` (`Px.prototype.packbitsRows`, `psdMaskRgba`, `psdBandRgba`, `psdBandMask` in one `PxArena` scope with zero-filled missing colour planes and `a.take` before `u8()` views).
+  - `renderer/editor/px/kernels.js:33` (re-exports `PSD_JS`), `:67-69` (`psdRead: "kernel"` in `ROUTE_KINDS`, default Rust in `DEFAULT_ROUTES`), `:1285-1343` (`packbitsRows`, `psdMaskRgba`, `PSD_RUST`, `psdKernels()`).
+  - `renderer/editor/inpaint_worker.js:65-67`, `:923-948` (`psdRead` passes `kernels: psdKernels()`, reports `kernels: rustPx("psdRead") ? "rust" : "js"`, and calls `releaseIfLarge()` in `finally`).
+- **Tests, Gates & Mutation Round**:
+  - `tools/px_test.js:6708-6806` (exhaustive 65,536-value planar 16-bit LE/BE `tiff_to_rgba` and 16-bit `per == 1` `tiff_unpredict` checks + `PX_BENCH`), `:7739-8616` (`packbitsRows` & `psdMaskRgba` reference/twin/guard suites, `psdBandRgba` & `psdBandMask` multi-layer/flat/16-bit/mask/arena-growth suites, upfront 0-band refusal checks, `psdRead` route/sub-route/worker checks, mid-layer band-2 wasm trap & `PxOutOfMemory` recovery, and `PX_BENCH`).
+  - `tools/layered_test.js:35-151` (`twinned(mod)` runs all 69 PSD checks across `PSD_JS`, `px.wasm`, and `px_scalar.wasm` at `rowsPerBand = 3` and `256`, plus `--twin-file`), `:1091-1133` (`[-2, -1, 0, 1, 2]` channel order, missing green channel, dangling PackBits repeat byte at `end - 1`, truncated raw merged picture).
+  - `tools/layered_test.py:310-378` (`the_pool_and_the_window_read_a_psd_alike` asserts `jobs.psd_read.kernels === "rust"` and non-zero `pxCalls` on default route and `kernels === "js"`, `pxCalls === {}`, and byte-identical pixels/masks/flat-base under `setRoute("psdRead", "js")` across all 7 PSD fixtures on both backends).
+  - Electron-as-Node suites: `px_test.js` (`872` checks, `0` failed, `PASS`) and `layered_test.js` (`149 of 149 checks passed`, `PASS`).
+  - Gates (`dist/gates/gates/`):
+    - `k20b-both-tiles`: `lint rc=0 31s`, `types rc=0 41s`, `layered rc=0 24s PASS`, `tiff rc=0 56s PASS`, `export rc=0 169s PASS`, `blendmodes rc=0 23s PASS`, `groups rc=0 18s PASS`, `pixels rc=0 32s PASS`, `editor rc=0 259s PASS`, `ALL PASS`.
+    - `k20b-both-canvas` + `k20b-canvas-editor`: `lint rc=0 43s`, `types rc=0 41s`, `layered rc=0 30s PASS`, `tiff rc=0 57s PASS`, `export rc=0 23s PASS`, `blendmodes rc=0 34s PASS`, `groups rc=0 17s PASS`, `pixels rc=0 18s PASS`, `editor rc=0 180s PASS` (`k20b-canvas-editor`; in side-by-side `k20b-both-canvas`, `prompt_field_undo_redo_paste_and_copy` had a transient clipboard/focus race with the parallel `tiles` `editor` run).
+    - `k20b-both-tiles-serial` & `k20b-both-canvas-serial`: `document rc=0 99s PASS` on both (`ALL PASS`).
+    - `k20b-serial` (`--tiles on`): `pxjobs rc=0 137s PASS`, `nodecopy rc=0 173s PASS`, `ALL PASS`.
+  - Mutation round (`docs/measurements/k20b_2026-11-10/mutation/`): **24/24 mutants killed** (`0` survivors; 3 initial JS test-gap survivors fixed in `tools/px_test.js` and killed on re-run).
+- **15,000 × 10,000 Measurements (`docs/measurements/k20b_2026-11-10/summary.txt`)**:
+  - **Micro-benchmarks (`node/electron_px_test.log`, `PX_BENCH=1`, median of 9)**:
+    - `packbits_rows 15000x256 (1 plane)`: twin `1.60 ms`, simd `0.70 ms` (`2.29×`)
+    - `psd_mask_rgba 8-bit 15000x256`: twin `17.73 ms`, simd `2.00 ms` (`8.87×`)
+    - `psd_mask_rgba 16-bit BE 15000x256`: twin `18.37 ms`, simd `1.99 ms` (`9.23×`)
+    - `psdBandRgba RLE RGBA8 15000x256 (4 planes -> RGBA8)`: twin `23.66 ms`, simd `5.16 ms` (`4.59×`)
+    - `tiff_unpredict 16b BE per=1 15000x16`: twin `0.70 ms`, simd `0.16 ms`, scalar `0.62 ms` (`4.38×`)
+    - `tiff_to_rgba planar RGBA8 15000x16`: twin `2.01 ms`, simd `0.06 ms`, scalar `0.29 ms` (`33.5×`)
+    - `tiff_to_rgba planar RGBA16 BE->RGBA8 15000x16`: twin `2.23 ms`, simd `0.21 ms`, scalar `1.12 ms` (`10.6×`)
+  - **Standalone 15k `--twin-file` (`node/twin_15k.log`, 129.2 MB 2-layer PSD)**:
+    - `readPsd`: `4,118 ms`; `readPsdStream (PSD_JS)`: `3,152 ms` (`channels` `1,109.3 ms`, `interleave` `1,530.5 ms`, `deliver` `510.6 ms`); `readPsdStream (px.wasm)`: **`964 ms`** (`channels` `245.1 ms`, `interleave` `206.1 ms`, `deliver` `510.9 ms`, `3.27×` vs `PSD_JS`, `4.27×` vs `readPsd`); `readPsdStream (px_scalar.wasm)`: `1,318 ms`. SHA-256 byte-exact across all 4 readers.
+  - **3 alternating rounds of `native_test.py 15000x10000` (`before` `764fdffe` vs `after` `K20b`)**:
+    - `open_psd wall`: `6,903.0 [6,624.0..7,023.0]` -> **`3,618.0 [3,568.0..3,834.0] ms`** (**`1.91×` win**, `d=-3,285.0 ms`, spread `399.0 ms`).
+    - `open_psd jobs.psd_read.kernel`: `4,768.8 [4,707.0..5,009.6]` -> **`1,158.3 [1,140.4..1,228.0] ms`** (**`4.12×` win**, `d=-3,610.5 ms`, spread `302.6 ms`; `channels` `2,882.0` -> `742.9 ms` `3.88×`, `interleave` `1,711.3` -> `255.5 ms` `6.70×`, `pxCalls`: `packbits_rows: 320`, `tiff_to_rgba: 80`).
+    - `open_psd layered_open.parsed`: `4,785.6 [4,726.0..5,030.2]` -> **`1,764.5 [1,668.8..1,813.7] ms`** (**`2.71×` win**).
+    - `open_psd layered_open.total`: `6,760.1 [6,472.9..6,866.8]` -> **`3,488.9 [3,438.3..3,693.1] ms`** (**`1.94×` win**).
+    - `open_psd profile.gc`: `68.4 [67.2..70.5]` -> **`48.8 [43.1..60.5] ms`** (**`1.40×` win**).
+    - `open_psd blocked`: `64.0 [60.0..68.0]` -> `485.0 [459.0..600.0] ms` (**loss**, `d=+421.0 ms`). Unchanged main-thread `writeRect` work (`layered_open.rgbaMs` `907.4` vs `959.1 ms`, of which `~720 ms` is `normalizeBlock` + `_putBlock` on soft-alpha `Paint`): in `before`, the worker took `~59.6 ms/band` (`4,768.8 ms / 80`), leaving `~40 ms` idle gaps between bands so `native_test.py`'s `setTimeout(beat, 0)` (clamped by HTML5 §8.6 to `>= 4 ms` after 5 nested calls) ran after every band; in `after`, the worker unpacks + interleaves `Paint`'s RLE bands in `~10 ms/band`, faster than `writeRect` (`~18 ms/band`), so `Paint`'s `40` `MessageEvent`s queue in Blink's `PostedMessage` task queue and drain back-to-back (`~485 ms`) ahead of the `4 ms`-delayed timer (`open_the_file` exhibits the same `488 ms` `blocked` under `readPngParts`).
+  - **3 alternating rounds of same-build route A/B (`--set psdRead=js` vs `--set psdRead=rust`)**:
+    - `open_psd wall`: `6,615.0 [6,513.0..7,386.0]` -> **`3,602.0 [3,401.0..3,626.0] ms`** (**`1.84×` win**, `d=-3,013.0 ms`).
+    - `open_psd jobs.psd_read.kernel`: `4,724.9 [4,639.9..4,940.4]` -> **`1,149.0 [1,124.7..1,217.6] ms`** (**`4.11×` win**; `channels` `2,976.8` -> `715.1 ms` `4.16×`, `interleave` `1,545.5` -> `242.3 ms` `6.38×`).
+    - `open_psd blocked`: `73.0 [63.0..107.0]` -> `505.0 [425.0..505.0] ms`.
+  - **3 alternating rounds of `tiff_test.py --size 15000x10000 --variant noise,own` (`before` vs `after`)**:
+    - `noise openMs`: `7,140.0 [7,084.0..7,289.0]` -> `7,192.0 [7,145.0..7,470.0] ms` (tie; `tiff_read.kernel` `1,954.7` -> `1,957.8 ms`).
+    - `own openMs`: `3,603.0 [3,034.0..3,732.0]` -> `3,398.0 [3,099.0..3,904.0] ms` (tie; `tiff_read.kernel` `1,409.1` -> `1,336.5 ms`).
+  - **Route default (`renderer/editor/px/kernels.js:120`)**: `psdRead` stays on `"rust"` (absent from `DEFAULT_ROUTES`).
+
