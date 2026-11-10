@@ -4,3 +4,6 @@ SOME FAILED
 $ bash tools/run_gates.sh mut-inpaint_worker_js__run_msg__omits_tiff_band_dispat-tiff --offline --tiles on tiff  (rc 1, 79 s)
 tiff rc=1 42s FAIL
 SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_worker_js__run_msg__omits_tiff_band_dispat-tiff --offline --tiles on tiff  (rc 1, 90 s)
+tiff rc=1 45s FAIL
+SOME FAILED

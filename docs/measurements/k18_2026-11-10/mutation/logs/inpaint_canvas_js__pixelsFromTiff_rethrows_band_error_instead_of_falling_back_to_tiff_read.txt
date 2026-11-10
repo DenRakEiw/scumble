@@ -1,3 +1,6 @@
 $ bash tools/run_gates.sh mut-inpaint_canvas_js__pixelsFromTiff_rethrows_band_er-tiff --offline --tiles on tiff  (rc 1, 70 s)
 tiff rc=1 37s FAIL
 SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__pixelsFromTiff_rethrows_band_er-tiff --offline --tiles on tiff  (rc 1, 83 s)
+tiff rc=1 43s FAIL
+SOME FAILED

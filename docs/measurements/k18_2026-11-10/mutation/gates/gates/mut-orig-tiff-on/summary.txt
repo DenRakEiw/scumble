@@ -1,2 +1,2 @@
-tiff rc=0 47s PASS
+tiff rc=0 33s PASS
 ALL PASS

@@ -4,3 +4,6 @@ SOME FAILED
 $ bash tools/run_gates.sh mut-inpaint_canvas_js__pixelsFromTiff_ignores_InpaintE-tiff --offline --tiles on tiff  (rc 1, 95 s)
 tiff rc=1 46s FAIL
 SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__pixelsFromTiff_ignores_InpaintE-tiff --offline --tiles on tiff  (rc 1, 79 s)
+tiff rc=1 41s FAIL
+SOME FAILED

@@ -1,3 +1,6 @@
 $ bash tools/run_gates.sh mut-inpaint_canvas_js__loadTiff_fails_to_forward_later-tiff --offline --tiles on tiff  (rc 1, 63 s)
 tiff rc=1 28s FAIL
 SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__loadTiff_fails_to_forward_later-tiff --offline --tiles on tiff  (rc 1, 478 s)
+tiff rc=124 432s 
+SOME FAILED
