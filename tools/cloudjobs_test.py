@@ -385,7 +385,7 @@ async def main():
                 await asyncio.sleep(0.3)
                 stayed = (await e.ev("window.__beforeReload === 1")) is True
             check("View > Reload while a provider run is in flight asks first, and Cancel keeps the page without reloading",
-                  bool(dlg1) and dlg1.get("message") == "1 paid run is still going; its picture is kept if you reload."
+                  bool(dlg1) and dlg1.get("message") == "1 provider run is still going; its picture is kept if you reload."
                   and dlg1.get("buttons") == ["Cancel", "Reload"] and stayed,
                   {"dialog": dlg1, "stayed": stayed})
             if stayed:

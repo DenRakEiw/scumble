@@ -2,9 +2,10 @@
 // more ends the window's renderer (oom; a save of 500 MB went through and one of 600 MB ended it, measured 2026-10-24,
 // docs/BUGS.md), so the window sends an export in pieces (host.js saveExport) and this module appends them to a
 // temporary file beside the target and renames it over the target at the end, as a .scumble save does (docfile.js):
-// a failure, a cancel or a page that goes away deletes the temporary file and leaves the target as it was; one a
-// killed app left behind is in the temp list (<userData>/document-temps.json), which the next start sweeps. Plain
-// Node, no electron import: main.js passes in the dialog that picks a target.
+// a failure, a cancel or a page that goes away deletes the temporary file and leaves the target as it was, except when
+// an in-place copy fails after starting (then the fsynced temporary file is unregistered, kept for the user and named
+// in the error); one a killed app left behind stays in the temp list (<userData>/document-temps.json), which the next
+// start sweeps. Plain Node, no electron import: main.js passes in the dialog that picks a target.
 "use strict";
 
 const fsp = require("node:fs/promises");
@@ -120,17 +121,36 @@ class FileSaves {
                 }
             }
             if (!renamed) {
-                try {
-                    await (this.ops.copyFile || fsp.copyFile)(s.temp, s.target);
-                } catch (err) {
-                    if (docfile.BUSY.has(err && err.code)) {
-                        throw failure(`${path.basename(s.shown)} is in use by another program, or its folder does not allow replacing it`, err.code);
-                    }
-                    // the copy in place may have truncated or unlinked the target: keep the fsynced temp (registered) and name it
+                const statTarget = async () => {
+                    try { return await fsp.stat(s.target, { bigint: true }); } catch (e) { return e && e.code === "ENOENT" ? null : undefined; }
+                };
+                const keepAndFail = (msg, code) => {
                     s.keepTemp = true;
                     s.dead = true;
                     this.saves.delete(s.id);
-                    throw failure(`${(err && err.message) || String(err)}; the new file is kept at ${s.temp}`, err && err.code);
+                    // once named to the user, the temp belongs to the user and must survive the next start's sweep
+                    try { docfile.unregisterTemp(this.registry, s.temp); } catch (_) { /* kept for the user */ }
+                    throw failure(`${msg}; the new file is kept at ${s.temp}`, code);
+                };
+                const before = await statTarget();
+                const oldSize = before ? Number(before.size) : 0;
+                const free = await docfile.freeSpace(path.dirname(s.target));
+                if (free < s.size - oldSize + 1048576) {
+                    keepAndFail(`the file needs ${docfile.fmtBytes(Math.max(1, s.size - oldSize))} and its drive has ${docfile.fmtBytes(free)} free`, "ENOSPC");
+                }
+                try {
+                    await (this.ops.copyFile || fsp.copyFile)(s.temp, s.target);
+                } catch (err) {
+                    const after = await statTarget();
+                    const untouched = before !== undefined && after !== undefined && (
+                        (!before && !after) ||
+                        (!!before && !!after && before.size === after.size && before.mtimeNs === after.mtimeNs && before.ctimeNs === after.ctimeNs)
+                    );
+                    if (untouched && docfile.BUSY.has(err && err.code)) {
+                        throw failure(`${path.basename(s.shown)} is in use by another program, or its folder does not allow replacing it`, err.code);
+                    }
+                    // the copy in place may have truncated, zeroed or unlinked the target: keep the fsynced temp and name it
+                    keepAndFail((err && err.message) || String(err), err && err.code);
                 }
             }
             s.dead = true;

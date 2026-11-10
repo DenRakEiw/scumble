@@ -8,10 +8,11 @@
 // in flight in this process (`flying`) is left to its run.
 //
 // <userData>/cloudjobs.json: { version: 1, jobs: [{ jobId, model, recipe, node, saveId, started }] }, written whole (a
-// temp file, then a rename). A note older than MAX_AGE_MS is dropped unread (Comfy keeps a job's outputs for a limited
-// time). Every change is one synchronous read-modify-write, so the notes of runs that end at the same time never
-// overwrite each other (one main process holds the data folder); a change whose read fails for any reason but a missing
-// or broken file writes nothing, so it cannot replace the notes it could not read.
+// temp file, then a rename). A Comfy Cloud note older than MAX_AGE_MS is dropped unread (Comfy keeps a job's outputs
+// for a limited time; locally kept files under results/ stay until opened and acked). Every change is one synchronous
+// read-modify-write, so the notes of runs that end at the same time never overwrite each other (one main process holds
+// the data folder); a change whose read fails for any reason but a missing or broken file writes nothing, so it cannot
+// replace the notes it could not read.
 "use strict";
 
 const fs = require("node:fs");
@@ -59,6 +60,36 @@ function unlinkResult(dir, f) {
     const name = cleanFile(f);
     if (!dir || !name) return;
     try { retrying(() => fs.unlinkSync(path.join(dir, "results", name))); } catch (_) { /* gone or held */ }
+}
+
+/**
+ * Removes stray files (`*.tmp` or pictures no note names) under `<dir>/results/`. Returns the names removed, or `null`
+ * when `cloudjobs.json` is held past retries (so the caller tries again on a later ask without deleting valid files).
+ */
+function sweepResults(dir) {
+    if (!dir) return [];
+    const resDir = path.join(dir, "results");
+    let names;
+    try { names = fs.readdirSync(resDir); } catch (err) {
+        return err && err.code === "ENOENT" ? [] : null;
+    }
+    if (!names.length) return [];
+    let jobs;
+    try { jobs = read(dir, true); } catch (_) { return null; }
+    const referenced = new Set();
+    for (const e of jobs) {
+        const clean = cleanFile(e && e.file);
+        if (clean) referenced.add(clean);
+    }
+    const removed = [];
+    for (const name of names) {
+        if (!name.endsWith(".tmp") && referenced.has(name)) continue;
+        try {
+            retrying(() => fs.unlinkSync(path.join(resDir, name)));
+            removed.push(name);
+        } catch (_) { /* held or already gone */ }
+    }
+    return removed;
 }
 
 /**
@@ -118,15 +149,16 @@ function store(dir, { pushedOut = null } = {}) {
                 rest.push(item);
                 if (rest.length <= MAX_ENTRIES) return rest;
                 const now = Date.now();
-                aged = rest.filter((e) => now - (+e.started || 0) >= MAX_AGE_MS);
-                const young = rest.filter((e) => now - (+e.started || 0) < MAX_AGE_MS);
+                aged = rest.filter((e) => !e.file && now - (+e.started || 0) >= MAX_AGE_MS);
+                const young = rest.filter((e) => e.file || now - (+e.started || 0) < MAX_AGE_MS);
                 out = young.length > MAX_ENTRIES ? young.slice(0, young.length - MAX_ENTRIES) : [];
                 return young.slice(-MAX_ENTRIES);
             });
             if (wrote) {
-                for (const e of [...aged, ...out]) if (e.file) unlinkResult(dir, e.file);
+                for (const e of out) if (e.file) unlinkResult(dir, e.file);
                 if (out.length && typeof pushedOut === "function") { try { pushedOut(out); } catch (_) { /* a log line only */ } }
             }
+            return wrote;
         },
         remove(jobId) { this.drop([jobId]); },
         /** Takes out the notes of these jobs alone; a note added meanwhile (a run that started) stays. */
@@ -142,4 +174,4 @@ function store(dir, { pushedOut = null } = {}) {
     };
 }
 
-module.exports = { store, flying, settled, retrying, cleanFile, unlinkResult, MAX_AGE_MS, FILE, KEPT };
+module.exports = { store, flying, settled, retrying, cleanFile, unlinkResult, sweepResults, MAX_AGE_MS, FILE, KEPT };

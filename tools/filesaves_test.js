@@ -220,7 +220,7 @@ function pattern(n, seed = 0) {
             return `the rename refused ${busy} times, then written in place`;
         });
 
-        await check("6b. an in-place copy that fails partway keeps the fsynced temporary file and names it; a hard-linked start checks the extra space", async () => {
+        await check("6b. an in-place copy that fails (ENOSPC, partial EBUSY, or low fallback space) keeps and unregisters the temporary file; a hard-linked start checks the extra space", async () => {
             const target = path.join(scratch, "partial.png");
             fs.writeFileSync(target, pattern(80, 1));
             const ebusy = () => { const e = new Error("busy"); e.code = "EBUSY"; return e; };
@@ -244,19 +244,68 @@ function pattern(n, seed = 0) {
             assert(err.code === "ENOSPC" && err.message.includes(temp), "error did not carry ENOSPC and temp path: " + err.message);
             assert(!mid.busy, "the failed save stayed in the map");
             assert(fs.existsSync(temp) && fs.readFileSync(temp).equals(fresh), "the fsynced temporary file was deleted or damaged");
-            assert(listed().length === 1 && listed()[0] === temp, "the kept temporary file left the registry");
-            await mid.abortAll(A);   // a later reload or close must not delete the kept file either
-            assert(fs.existsSync(temp) && fs.readFileSync(temp).equals(fresh), "abortAll deleted the kept temporary file");
-            assert(doc.sweepTemps(registry).length === 1 && !fs.existsSync(temp), "the next start's sweep did not clean it");
+            assert(listed().length === 0, "the kept temporary file stayed in the registry: " + listed());
+            await mid.abortAll(A);   // a later reload or close must not delete the kept file
+            assert(doc.sweepTemps(registry).length === 0 && fs.existsSync(temp) && fs.readFileSync(temp).equals(fresh), "the next start's sweep deleted the user's kept file");
+            fs.unlinkSync(temp);
             fs.unlinkSync(target);
-            clean("after partial copy");
+            clean("after partial copy ENOSPC");
+
+            // CopyFileW failing with EBUSY after already extending/zeroing a write-shared byte-range-locked target
+            fs.writeFileSync(target, pattern(80, 2));
+            const busyPartial = saves({
+                ops: {
+                    rename: async () => { throw ebusy(); },
+                    copyFile: async (a, b) => {
+                        fs.writeFileSync(b, Buffer.alloc(fresh.length, 0));
+                        throw ebusy();
+                    },
+                },
+            });
+            const ob = await busyPartial.start(A, { path: target, size: fresh.length });
+            const tempB = listed()[0];
+            await busyPartial.write(A, { id: ob.id, offset: 0, data: new Uint8Array(fresh) });
+            const errB = await rejects(busyPartial.finish(A, { id: ob.id }), /the new file is kept at /, "mid-copy EBUSY after target changed");
+            assert(errB.code === "EBUSY" && errB.message.includes(tempB), "partial EBUSY error did not name temp: " + errB.message);
+            assert(listed().length === 0 && doc.sweepTemps(registry).length === 0 && fs.existsSync(tempB) && fs.readFileSync(tempB).equals(fresh), "partial EBUSY did not preserve kept temp across sweep");
+            fs.unlinkSync(tempB);
+            fs.unlinkSync(target);
+            clean("after partial copy EBUSY");
+
+            // busy rename falling back to copyFile when remaining free space < size - oldSize + 1 MB: refuses before touching target
+            const oldBytes = pattern(200, 3), bigBytes = pattern(1000, 4);
+            fs.writeFileSync(target, oldBytes);
+            const fsp = require("node:fs/promises");
+            const wasStatfs = fsp.statfs;
+            let freeNow = 1048576 + 1500;   // enough at start() for 1000 + 1 MB
+            let copyCalls = 0;
+            fsp.statfs = async () => ({ bavail: freeNow, bsize: 1 });
+            try {
+                const fb = saves({
+                    ops: {
+                        rename: async () => { throw ebusy(); },
+                        copyFile: async (a, b) => { copyCalls++; return fs.promises.copyFile(a, b); },
+                    },
+                });
+                const ofb = await fb.start(A, { path: target, size: bigBytes.length });
+                const tempFb = listed()[0];
+                await fb.write(A, { id: ofb.id, offset: 0, data: new Uint8Array(bigBytes) });
+                freeNow = 1048576 + 500;    // after temp was written: < (1000 - 200) + 1 MB
+                const errFb = await rejects(fb.finish(A, { id: ofb.id }), /the new file is kept at /, "busy fallback low space");
+                assert(errFb.code === "ENOSPC" && errFb.message.includes(tempFb), "fallback ENOSPC error did not name temp: " + errFb.message);
+                assert(copyCalls === 0 && fs.readFileSync(target).equals(oldBytes), "fallback copy started despite low free space");
+                assert(listed().length === 0 && doc.sweepTemps(registry).length === 0 && fs.existsSync(tempFb) && fs.readFileSync(tempFb).equals(bigBytes), "fallback low-space temp was not kept");
+                fs.unlinkSync(tempFb);
+            } finally {
+                fsp.statfs = wasStatfs;
+                fs.unlinkSync(target);
+            }
+            clean("after busy fallback space check");
 
             // hard-linked target (inPlace = true): start() requires 2 * size - oldSize + 1 MB
             const ha = path.join(scratch, "hl_a.png"), hb = path.join(scratch, "hl_b.png");
             fs.writeFileSync(ha, Buffer.alloc(200));
             fs.linkSync(ha, hb);
-            const fsp = require("node:fs/promises");
-            const wasStatfs = fsp.statfs;
             // free = 1048576 + 1500: enough for size (1000) + 1 MB, NOT enough for 2*1000 - 200 (1800) + 1 MB
             fsp.statfs = async () => ({ bavail: 1048576 + 1500, bsize: 1 });
             try {
@@ -273,7 +322,7 @@ function pattern(n, seed = 0) {
                 fs.unlinkSync(ha); fs.unlinkSync(hb);
             }
             clean("after hard-link space check");
-            return "temp kept and named on mid-copy ENOSPC, extra space required on hard link";
+            return "temp kept & unregistered on mid-copy ENOSPC/EBUSY and low-space fallback; hard link checked at start";
         });
 
         await check("7. two pieces sent without waiting land in order; an empty file", async () => {

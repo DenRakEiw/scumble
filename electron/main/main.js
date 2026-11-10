@@ -519,8 +519,8 @@ async function reloadWindow(ignoreCache) {
             choice = await askWindow({
                 title: "Reload window?",
                 message: n === 1
-                    ? "1 paid run is still going; its picture is kept if you reload."
-                    : `${n} paid runs are still going; their pictures are kept if you reload.`,
+                    ? "1 provider run is still going; its picture is kept if you reload."
+                    : `${n} provider runs are still going; their pictures are kept if you reload.`,
                 buttons: ["Cancel", "Reload"],
                 defaultId: 0,
                 cancelId: 0,
@@ -1470,8 +1470,8 @@ function startApp() {
     // the last session's state becomes an earlier generation (autosave.js), also when an agent starts the app: what it
     // changes then never replaces the user's last state (the rotation moves only when the files differ)
     try { autosave.rotate(app.getPath("userData")); } catch (err) { console.warn("autosave: rotate", err.message); }
-    // the temporary files of a document save or an export the last session did not finish (killed): the targets were
-    // never touched
+    // the temporary files of a document save or an export the last session did not finish (killed before finish; an
+    // export kept after a failed in-place copy was already unregistered and belongs to the user)
     try { const gone = documents.sweep(); if (gone.length) log.record({ source: "main", message: `removed ${gone.length} unfinished save${gone.length === 1 ? "" : "s"} of the last session` }); } catch (err) { console.warn("documents: sweep", err.message); }
     app.on("will-quit", () => {
         if (!documents.busy && !fileSaves.busy) return;

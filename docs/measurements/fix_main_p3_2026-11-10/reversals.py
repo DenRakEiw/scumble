@@ -6,6 +6,7 @@ Usage:
 """
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import socket
@@ -70,16 +71,45 @@ REVERSALS = [
         "filesaves_drop_temp_on_copy_error",
         "electron/main/filesaves.js",
         [(
-            '                    // the copy in place may have truncated or unlinked the target: keep the fsynced temp (registered) and name it\n'
-            '                    s.keepTemp = true;\n'
-            '                    s.dead = true;\n'
-            '                    this.saves.delete(s.id);\n'
-            '                    throw failure(`${(err && err.message) || String(err)}; the new file is kept at ${s.temp}`, err && err.code);',
+            "                    keepAndFail((err && err.message) || String(err), err && err.code);",
             "                    throw err;",
         )],
         "filesaves",
         "mid-copy ENOSPC",
         "MAIN-6: non-BUSY copyFile error drops fsynced temp instead of keeping and naming it",
+    ),
+    (
+        "filesaves_busy_partial_deletes_temp",
+        "electron/main/filesaves.js",
+        [(
+            "                    if (untouched && docfile.BUSY.has(err && err.code)) {",
+            "                    if (docfile.BUSY.has(err && err.code)) {",
+        )],
+        "filesaves",
+        "mid-copy EBUSY after target changed",
+        "MAIN-6: EBUSY copyFile failure after target already changed drops fsynced temp instead of keeping it",
+    ),
+    (
+        "filesaves_kept_temp_stays_registered",
+        "electron/main/filesaves.js",
+        [(
+            "                    try { docfile.unregisterTemp(this.registry, s.temp); } catch (_) { /* kept for the user */ }",
+            "                    /* kept temp left in registry */",
+        )],
+        "filesaves",
+        "the kept temporary file stayed in the registry",
+        "MAIN-6: kept export temp stays registered and gets deleted by next start's sweep",
+    ),
+    (
+        "filesaves_fallback_no_space_check",
+        "electron/main/filesaves.js",
+        [(
+            "                if (free < s.size - oldSize + 1048576) {",
+            "                if (false && free < s.size - oldSize + 1048576) {",
+        )],
+        "filesaves",
+        "busy fallback low space",
+        "MAIN-6: busy rename fallback starts copyFile without checking remaining free space",
     ),
     (
         "filesaves_abort_deletes_kept_temp",
@@ -151,20 +181,20 @@ REVERSALS = [
             "                /* provider and file omitted */",
         )],
         "cloudjobs_node",
-        "[FAIL] a non-Comfy paid run whose page went away writes <userData>/results/<generatedId>.png",
+        "[FAIL] a non-Comfy provider run whose page went away writes <userData>/results/<generatedId>.png",
         "MAIN-2: cloudjobs.add strips provider and file fields",
     ),
     (
         "providers_discard_noncomfy_pagegone",
         "electron/main/providers/index.js",
         [(
-            "    if (out && out.bytes && hooks && typeof hooks.pageGone === \"function\" && hooks.pageGone()) {\n"
+            '    if (out && out.bytes && hooks && typeof hooks.pageGone === "function" && hooks.pageGone()) {\n'
             "        if (ctx.jobNote && ctx.jobs) {",
-            "    if (out && out.bytes && ctx.jobNote && ctx.jobs && hooks && typeof hooks.pageGone === \"function\" && hooks.pageGone()) {\n"
+            '    if (out && out.bytes && ctx.jobNote && ctx.jobs && hooks && typeof hooks.pageGone === "function" && hooks.pageGone()) {\n'
             "        if (true) {",
         )],
         "cloudjobs_node",
-        "[FAIL] a non-Comfy paid run whose page went away writes <userData>/results/<generatedId>.png",
+        "[FAIL] a non-Comfy provider run whose page went away writes <userData>/results/<generatedId>.png",
         "MAIN-2: providers.edit discards non-Comfy result when pageGone() is true",
     ),
     (
@@ -175,7 +205,7 @@ REVERSALS = [
             "                    const savedId = runId || crypto.randomUUID();",
         )],
         "cloudjobs_node",
-        "[FAIL] a non-Comfy paid run whose page went away writes <userData>/results/<generatedId>.png",
+        "[FAIL] a non-Comfy provider run whose page went away writes <userData>/results/<generatedId>.png",
         "MAIN-2: providers.edit uses untrusted request.runId as kept file stem",
     ),
     (
@@ -189,7 +219,53 @@ REVERSALS = [
         )],
         "cloudjobs_node",
         "[FAIL] recoverCloudJobs with no Comfy Cloud key brings the kept OpenAI picture",
-        "MAIN-2: recoverCloudJobs forwards local picture notes to comfycloud.recoverJobs",
+        "MAIN-2: recoverCloudJobs skips local results/ reading and treats local entries as remote",
+    ),
+    (
+        "providers_send_local_to_comfy_with_key",
+        "electron/main/providers/index.js",
+        [(
+            "    const remoteJobs = { ...jobs, list: () => jobs.list().filter((e) => !e.file) };",
+            "    const remoteJobs = jobs;",
+        )],
+        "cloudjobs_node",
+        "[FAIL] with a Comfy Cloud key set, recoverCloudJobs queries Comfy only for the remote job id",
+        "MAIN-2: recoverCloudJobs passes unfiltered store to comfycloud.recoverJobs when a Comfy key is set",
+    ),
+    (
+        "providers_drop_aged_local_file",
+        "electron/main/providers/index.js",
+        [(
+            "        // local files under <userData>/results/ do not expire after 24 h (unlike Comfy Cloud's server-side outputs)\n"
+            "        const clean = cloudjobs.cleanFile(e.file);",
+            "        if (now - (+e.started || 0) >= cloudjobs.MAX_AGE_MS) { localDropped.push(e.jobId); cloudjobs.unlinkResult(dir, e.file); continue; }\n"
+            "        const clean = cloudjobs.cleanFile(e.file);",
+        )],
+        "cloudjobs_node",
+        "[FAIL] a local picture older than 24 h is brought back as an earlier result",
+        "MAIN-2: recoverCloudJobs deletes unopened local pictures after 24 h",
+    ),
+    (
+        "cloudjobs_sweep_disabled",
+        "electron/main/providers/index.js",
+        [(
+            "    if (!sweptDirs.has(dir) && cloudjobs.sweepResults(dir) !== null) sweptDirs.add(dir);",
+            "    /* sweepResults disabled */",
+        )],
+        "cloudjobs_node",
+        "[FAIL] recoverCloudJobs with no Comfy Cloud key brings the kept OpenAI picture, respects skip, and sweeps unnoted files",
+        "MAIN-2: first recoverCloudJobs ask leaves unnoted crash files and *.tmp in results/",
+    ),
+    (
+        "providers_count_inapp_as_paid",
+        "electron/main/providers/index.js",
+        [(
+            '    running.set(runSlot, { ac, counted: id !== "inapp" });',
+            "    running.set(runSlot, { ac, counted: true });",
+        )],
+        "cloudjobs_node",
+        "[FAIL] a free in-app fill is not counted in runningCount",
+        "MAIN-2: free local in-app helper run is counted in runningCount",
     ),
     (
         "providers_ack_keeps_result_file",
@@ -230,7 +306,7 @@ REVERSALS = [
         "electron/main/comfyview.js",
         [
             (
-                '        if (!asNew && this.loaded !== this.recipe.id) return wrongTab();',
+                "        if (!asNew && (heldLoaded !== held.id || lostHeld())) return wrongTab();",
                 "        /* loaded check omitted */",
             ),
             (
@@ -246,12 +322,65 @@ REVERSALS = [
         "comfyview_save_ignores_active_tab",
         "electron/main/comfyview.js",
         [(
-            "        if (!asNew && curTab !== this.loadedTab) return wrongTab();",
-            "        /* active workflow tab check omitted */",
+            "        if (!asNew && (lostHeld() || r.tabChanged || curTab !== heldTab)) return wrongTab();",
+            "        if (!asNew && lostHeld()) return wrongTab();",
         )],
         "comfyview_step",
         "other workflow tab overwrote or did not refuse",
         "MAIN-4: Save to recipe overwrites held recipe with another ComfyUI workflow tab's graph",
+    ),
+    (
+        "comfyview_broken_extension_manager_arm",
+        "electron/main/comfyview.js",
+        [(
+            "const ACTIVE_WF_JS = `(() => { const a = window.app; const wm = (a && a.extensionManager && a.extensionManager.workflow) || (a && a.workflowManager) || null;",
+            "const ACTIVE_WF_JS = `(() => { const a = window.app; const wm = (a && a.workflowManager) || null;",
+        )],
+        "comfyview_step",
+        "other workflow tab overwrote or did not refuse",
+        "MAIN-4: broken extensionManager.workflow arm disables tab guard on current ComfyUI frontends",
+    ),
+    (
+        "comfyview_tab_by_key_instead_of_object",
+        "electron/main/comfyview.js",
+        [
+            (
+                '    return `(() => { const wf = ${ACTIVE_WF_JS}; if (!wf) return null;\n'
+                '        try { Object.defineProperty(wf, "__scumbleTab", { value: ${tok}, configurable: true, writable: true }); }\n'
+                "        catch (_) { try { wf.__scumbleTab = ${tok}; } catch (_) {} }\n"
+                '        return typeof wf.__scumbleTab === "string" ? wf.__scumbleTab.slice(0, 80) : null; })()`;',
+                '    return `(() => { const wf = ${ACTIVE_WF_JS}; const k = wf && (wf.key || wf.path); return typeof k === "string" ? k.slice(0, 80) : null; })()`;',
+            ),
+            (
+                '    const tab0 = wf0 && typeof wf0.__scumbleTab === "string" ? wf0.__scumbleTab.slice(0, 80) : null;\n'
+                "    const p = await window.app.graphToPrompt();\n"
+                "    const wf1 = ${ACTIVE_WF_JS};\n"
+                '    const tab1 = wf1 && typeof wf1.__scumbleTab === "string" ? wf1.__scumbleTab.slice(0, 80) : null;',
+                '    const tab0 = wf0 && typeof (wf0.key || wf0.path) === "string" ? (wf0.key || wf0.path).slice(0, 80) : null;\n'
+                "    const p = await window.app.graphToPrompt();\n"
+                "    const wf1 = ${ACTIVE_WF_JS};\n"
+                '    const tab1 = wf1 && typeof (wf1.key || wf1.path) === "string" ? (wf1.key || wf1.path).slice(0, 80) : null;',
+            ),
+        ],
+        "comfyview_step",
+        "same-named replacement tab passed the guard",
+        "MAIN-4: comparing workflow key/path instead of workflow object lets a same-named tab overwrite and refuses a renamed tab",
+    ),
+    (
+        "comfyview_late_held_id_after_await",
+        "electron/main/comfyview.js",
+        [(
+            "        const objectInfo = await this.objectInfo();\n"
+            "        if (!asNew && lostHeld()) return wrongTab();\n"
+            "        try {\n"
+            '            const saved = await this.saveRecipe({ output, workflow, objectInfo, heldId: held ? held.id : null, name: asNew ? name : "" });',
+            "        const objectInfo = await this.objectInfo();\n"
+            "        try {\n"
+            '            const saved = await this.saveRecipe({ output, workflow, objectInfo, heldId: this.recipe ? this.recipe.id : null, name: asNew ? name : "" });',
+        )],
+        "comfyview_step",
+        "recipe switch during objectInfo overwrote or passed",
+        "MAIN-4: reading this.recipe after objectInfo() writes the previous recipe's graph into a newly opened recipe",
     ),
     # ---- main/MAIN-5 (electron/main/main.js) ----------------------------------------------------------------
     (
@@ -339,8 +468,8 @@ def run_comfyview_step(tree, port):
         for _ in range(80):
             try:
                 with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=1) as r:
-                    data = r.read().decode("utf-8", "replace")
-                if "index.html" in data:
+                    targets = json.loads(r.read().decode("utf-8", "replace"))
+                if any(t.get("type") == "page" and "scumble://" in t.get("url", "") and "comfybar.html" not in t.get("url", "") for t in targets):
                     break
             except Exception:  # noqa: BLE001
                 pass

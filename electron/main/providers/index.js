@@ -175,20 +175,23 @@ function resolveNames(p, req, lay, given) {
 
 // The runs waiting on a provider, by the renderer's run id: the title row's Cancel aborts one (cancel below). An
 // aborted run's fetch and its waits between polls end at once; the provider may still finish the job and charge it.
-const running = new Map();   // (runId | Symbol) -> AbortController
+const running = new Map();   // (runId | Symbol) -> { ac: AbortController, counted: boolean }
 const cancelledEarly = new Set();   // a Cancel that came before its run reached edit(): that run stops at its start
+const sweptDirs = new Set();        // userData folders whose results/ folder has been swept of stray files this start
 
-/** How many provider runs are in flight right now (main.js reloadWindow). */
+/** How many provider runs (excluding local in-app helper fills) are in flight right now (main.js reloadWindow). */
 function runningCount() {
-    return running.size;
+    let n = 0;
+    for (const r of running.values()) if (r.counted) n++;
+    return n;
 }
 
 /** Stop waiting for a run (the renderer's Cancel); one that has not started yet stops when it does. */
 function cancel(runId) {
     const id = String(runId || "");
     if (!id) return false;
-    const ac = running.get(id);
-    if (ac) { ac.abort(); return true; }
+    const r = running.get(id);
+    if (r) { r.ac.abort(); return true; }
     if (cancelledEarly.size > 200) cancelledEarly.clear();
     cancelledEarly.add(id);
     return false;
@@ -270,7 +273,7 @@ async function edit(request, hooks = {}) {
     const runId = request.runId ? String(request.runId).slice(0, 80) : "";
     const runSlot = runId || Symbol("run");
     const ac = new AbortController();
-    running.set(runSlot, ac);
+    running.set(runSlot, { ac, counted: id !== "inapp" });
     if (runId && cancelledEarly.delete(runId)) ac.abort();
     const ctx = contextFor(id, p, key, ac.signal);
     if (runId && hooks && typeof hooks.progress === "function") ctx.progress = progressSender(runId, hooks.progress);
@@ -330,16 +333,17 @@ async function edit(request, hooks = {}) {
         if (ctx.progress && ctx.progress.stop) ctx.progress.stop();
     }
     // the picture came, but the page that asked for it is gone (a reload or a crash during the run): a Comfy Cloud v2
-    // job puts its note back (S6); any other run keeps the bytes locally under a main-generated name (MAIN-2), so the
-    // new page's ask opens the paid picture as a document of its own
+    // job puts its note back (S6); any other provider run (except a local in-app helper crop) keeps the bytes locally
+    // under a main-generated name (MAIN-2), so the new page's ask opens the picture as a document of its own
     if (out && out.bytes && hooks && typeof hooks.pageGone === "function" && hooks.pageGone()) {
         if (ctx.jobNote && ctx.jobs) {
             ctx.jobs.add(ctx.jobNote);
             log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for job ${ctx.jobNote.jobId} went away before its picture came; the job stays noted, so the window opens it` });
             jobsChanged(hooks);
-        } else {
+        } else if (id !== "inapp") {
             const dir = userData();
             if (dir) {
+                let tmp = null;
                 try {
                     const savedId = crypto.randomUUID();
                     const mime = out.mime || "image/png";
@@ -348,12 +352,13 @@ async function edit(request, hooks = {}) {
                     const resDir = path.join(dir, "results");
                     fs.mkdirSync(resDir, { recursive: true });
                     const target = path.join(resDir, file);
-                    const tmp = target + ".tmp";
+                    tmp = target + ".tmp";
                     const buf = toBuffer(out.bytes);
                     const fd = fs.openSync(tmp, "w");
                     try { fs.writeFileSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
                     cloudjobs.retrying(() => fs.renameSync(tmp, target));
-                    cloudjobs.store(dir, { pushedOut: notesPushedOut }).add({
+                    tmp = null;
+                    const noted = cloudjobs.store(dir, { pushedOut: notesPushedOut }).add({
                         jobId: savedId,
                         provider: id,
                         model: req.model ? String(req.model).slice(0, 200) : null,
@@ -362,9 +367,15 @@ async function edit(request, hooks = {}) {
                         file,
                         mime,
                     });
-                    log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for the run went away before its picture came; the picture is kept (${file}), so the window opens it` });
-                    jobsChanged(hooks);
+                    if (noted) {
+                        log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for the run went away before its picture came; the picture is kept (${file}), so the window opens it` });
+                        jobsChanged(hooks);
+                    } else {
+                        cloudjobs.unlinkResult(dir, file);
+                        log.record({ level: "error", source: id, message: `${p.label}: could not note the picture after the window went away (cloudjobs.json could not be updated)` });
+                    }
                 } catch (err) {
+                    if (tmp) { try { cloudjobs.retrying(() => fs.unlinkSync(tmp)); } catch (_) { /* swept at next start */ } }
                     log.record({ level: "error", source: id, message: `${p.label}: could not keep the picture after the window went away: ${(err && err.message) || err}` });
                 }
             }
@@ -574,9 +585,10 @@ const BOOT = Date.now();
  * `skip` (pictures the window was given and has not acked) and those whose run is in flight here are left alone.
  */
 async function recoverCloudJobs({ skip = null, only = null } = {}) {
-    const none = { pictures: [], kept: 0, keptIds: [], running: 0, unanswered: 0, unread: 0, dropped: 0, skipped: null };
+    const none = { pictures: [], kept: 0, keptIds: [], running: 0, unanswered: 0, unread: 0, localUnread: 0, dropped: 0, skipped: null };
     const dir = userData();
     if (!dir) return { ...none, skipped: "no data folder" };
+    if (!sweptDirs.has(dir) && cloudjobs.sweepResults(dir) !== null) sweptDirs.add(dir);
     const jobs = cloudjobs.store(dir);
     let entries = jobs.list();
     if (!entries.length) return none;
@@ -593,15 +605,11 @@ async function recoverCloudJobs({ skip = null, only = null } = {}) {
 
     const localEntries = entries.filter((e) => Boolean(e.file));
     const remoteEntries = entries.filter((e) => !e.file);
-    const localPictures = [], localDropped = [], localUnlink = [], localKeptIds = [];
+    const localPictures = [], localDropped = [], localKeptIds = [];
     let localUnread = 0;
     for (const e of localEntries) {
         if ((onlySet && !onlySet.has(e.jobId)) || leave.has(e.jobId)) continue;
-        if (now - (+e.started || 0) >= cloudjobs.MAX_AGE_MS) {
-            localDropped.push(e.jobId);
-            localUnlink.push(e.file);
-            continue;
-        }
+        // local files under <userData>/results/ do not expire after 24 h (unlike Comfy Cloud's server-side outputs)
         const clean = cloudjobs.cleanFile(e.file);
         if (!clean) { localDropped.push(e.jobId); continue; }
         let b;
@@ -626,15 +634,12 @@ async function recoverCloudJobs({ skip = null, only = null } = {}) {
             mime: e.mime || "image/png",
         });
     }
-    if (localDropped.length) {
-        jobs.drop(localDropped);
-        for (const f of localUnlink) cloudjobs.unlinkResult(dir, f);
-    }
+    if (localDropped.length) jobs.drop(localDropped);
     if (localPictures.length || localDropped.length) {
         log.record({ source: "providers", message: `${localPictures.length} kept provider result${localPictures.length === 1 ? "" : "s"} brought back${localDropped.length ? `, ${localDropped.length} dropped` : ""}` });
     }
     if (!remoteEntries.length) {
-        return { ...none, pictures: localPictures, kept: localKeptIds.length, keptIds: localKeptIds, unread: localUnread, dropped: localDropped.length };
+        return { ...none, pictures: localPictures, kept: localKeptIds.length, keptIds: localKeptIds, localUnread, dropped: localDropped.length };
     }
 
     const p = PROVIDERS.comfycloud;
@@ -649,7 +654,8 @@ async function recoverCloudJobs({ skip = null, only = null } = {}) {
             pictures: [...localPictures, ...remotePictures],
             kept: localKeptIds.length + r.kept,
             keptIds: [...localKeptIds, ...r.keptIds],
-            unread: localUnread + r.unread,
+            unread: r.unread,
+            localUnread,
             dropped: localDropped.length + r.dropped,
         };
     } catch (err) {
@@ -661,7 +667,7 @@ async function recoverCloudJobs({ skip = null, only = null } = {}) {
             kept: localKeptIds.length + left.length,
             keptIds: [...localKeptIds, ...left],
             unanswered: left.length,
-            unread: localUnread,
+            localUnread,
             dropped: localDropped.length,
             skipped: "error",
         };
