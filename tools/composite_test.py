@@ -1144,6 +1144,66 @@ SEE_THROUGH_FILTERS = """
         }
     }
 
+    // 3c2. A margin view's crop canvas: what a filter that did nothing returned (the crop canvas itself) stays the cached
+    // picture across frames, and nothing of an earlier pass shows in a later one. Guards any scratch reused for the crop
+    // (docs/BUGS.md: reuse measured no gain, 2026-11-10, but the idea is open): the canvas a filter returned is the result.
+    {
+        const texBase = mk(W, H);
+        {
+            const ctx = texBase.getContext("2d");
+            const img = ctx.createImageData(W, H), d = img.data;
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    const i = (y * W + x) * 4;
+                    d[i] = (x * 3 + y * 5) & 255; d[i + 1] = (x * 7) & 255; d[i + 2] = (y * 9) & 255; d[i + 3] = 96 + ((x + y) & 127);
+                }
+            }
+            ctx.putImageData(img, 0, 0);
+        }
+        Object.defineProperty(texBase, "naturalWidth", { value: W });
+        Object.defineProperty(texBase, "naturalHeight", { value: H });
+        await ed.setBase({ filename: "tex_base.png", subfolder: "inpaint_canvas", type: "input" }, texBase, { keepLayers: false });
+        await ed.mipsSettled();
+        const prevScale = ed.view.scale, prevX = ed.view.x, prevY = ed.view.y;
+        const screen = () => { ed.sceneSig = null; ed.hover = null; ed.draw(); return ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data.slice(); };
+        const fresh = () => { clearCaches(); return screen(); };
+        const tint = mk(W, H);
+        { const c = tint.getContext("2d"); c.fillStyle = "rgba(255, 32, 64, 0.5)"; c.fillRect(0, 0, W, H); }
+        const fxDone = ed.addFilterLayer("bw");
+        fxDone.filter = "no_such_filter";   // what a layer of a plugin that is off does: applyFilter hands the input back
+        fxDone.opacity = 0.9;               // not plain, so no surface for the next filter: its result is cached and drawn from the cache
+        const paint = ed.addLayer({ name: "tint", kind: "paint", px: LayerPixels.fromCanvas(tint), x: 0, y: 0, w: W, h: H, dirty: true });
+        const fxBw = ed.addFilterLayer("bw");
+        fxBw.opacity = 0.5;                 // not plain either: a plain top layer's cached picture would replace whatever lies below it
+        try {
+            ed.view.scale = 0.5; ed.view.x = 40; ed.view.y = 30;
+            // the no-op layer's cached picture is drawn again after the bw layer's crop ran
+            const first = fresh();
+            const cached = fxDone._fcacheView && fxDone._fcacheView.canvas;
+            const again = screen();
+            check("a filter that returned its crop canvas stays cached: the second frame equals the first",
+                !!cached && diffMax(first, again) === 0, { cached: !!cached, max: diffMax(first, again) });
+
+            // what a pass left behind does not show in a later pass over a see-through picture
+            fxDone.visible = false;
+            ed.markFilterChanged(fxDone);
+            screen();
+            paint.visible = false;
+            ed.markLayerChanged(paint);
+            const emptied = screen();
+            check("nothing of the last pass shows where the picture is see-through now", diffMax(emptied, fresh()) === 0, { max: diffMax(emptied, fresh()) });
+            paint.visible = true;
+            ed.markLayerChanged(paint);
+            fxDone.visible = true;
+            ed.markFilterChanged(fxDone);
+        } finally {
+            ed.view.scale = prevScale; ed.view.x = prevX; ed.view.y = prevY;
+            ed.removeLayer(fxBw.id);
+            ed.removeLayer(paint.id);
+            ed.removeLayer(fxDone.id);
+        }
+    }
+
     // 3d. Live mask stroke preview with an active selection at a zoomed-out margin view matches the committed mask
     {
         await ed.setBase({ filename: "opaque_base.png", subfolder: "inpaint_canvas", type: "input" }, opaqueBase, { keepLayers: false });
