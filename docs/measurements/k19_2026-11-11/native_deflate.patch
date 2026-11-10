@@ -1,0 +1,61 @@
+diff --git a/renderer/editor/inpaint_worker.js b/renderer/editor/inpaint_worker.js
+index 2467ff13..b6e6d80f 100644
+--- a/renderer/editor/inpaint_worker.js
++++ b/renderer/editor/inpaint_worker.js
+@@ -823,10 +823,42 @@ export async function psdPart(msg) {
+  */
+ export async function tiffPartJob(msg) {
+     const t0 = now();
+-    const level = msg.level === undefined ? PNG_LEVEL : msg.level;
++    // K19 harness: route tiffDeflateLevel (a count) sets the Rust deflate level of TIFF strips when the job names none
++    const level = msg.level === undefined ? (route("tiffDeflateLevel") === undefined ? PNG_LEVEL : route("tiffDeflateLevel")) : msg.level;
+     const laps = {};   // predict, deflate (px.js tiffStrip / tiffStripFromPtr, inpaint_tiff.js tiffPart)
+     let p = rustPx("tiffStripWasm") && rustPx("tiffPredict");
+     const composeRoute = msg.stack ? "composeStack" : "composeTiles";
++    if (p && !msg.rgba && route(composeRoute) !== "js" && route("tiffDeflate") === "js") {
++        // K19 harness (docs/measurements/k19_2026-11-11/native_deflate.patch, never committed into the app): the same
++        // wasm gather and tiff_predict_rgba as below, then the predicted bytes out of wasm and through the browser's
++        // CompressionStream("deflate") (level 6, no setting) instead of deflate_part at `level`.
++        const a = p.job;
++        let bytes = null, tc = 0, tp = 0;
++        try {
++            const ptrs = partPtrOf(p, a, msg, false);
++            tc = ptrs.tc;
++            if (msg.predictor === undefined || msg.predictor === 2) {
++                const rc = p.exports.tiff_predict_rgba(ptrs.pr, msg.w, msg.rows) | 0;
++                if (rc !== 0) throw new Error(`px: tiff_predict_rgba refused (${msg.w}x${msg.rows})`);
++            }
++            bytes = p.u8().slice(ptrs.pr, ptrs.pr + msg.w * msg.rows * 4);
++            tp = now();
++        } finally {
++            p._reset(a);
++            releaseIfLarge();
++        }
++        const z = await deflate(bytes);
++        const td = now();
++        const chunk = z.byteOffset === 0 && z.byteLength === z.buffer.byteLength ? z.buffer : z.slice().buffer;
++        return {
++            chunk, raw: bytes.length, transfer: [chunk],
++            timing: {
++                op: "tiff_part", kernels: kernelsInUse(), composeWasm: 1, nativeDeflate: 1,
++                pixels: msg.w * msg.rows, kernel: td - t0,
++                compose: msg.stack ? tc - t0 : 0, rows: tc - t0, predict: tp - tc, deflate: td - tp,
++            },
++        };
++    }
+     if (p && !msg.rgba && route(composeRoute) !== "js") {
+         const a = p.job;
+         let r = null, tc = 0;
+diff --git a/renderer/editor/px/kernels.js b/renderer/editor/px/kernels.js
+index 0c87d66c..8e87bc23 100644
+--- a/renderer/editor/px/kernels.js
++++ b/renderer/editor/px/kernels.js
+@@ -69,7 +69,7 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
+  * acknowledged after the window's `writeRect` (inpaint_canvas.js `readPsdOnPool`); absent, `PSD_WINDOW` (8); 0 posts every
+  * band at once (K20b as first built).
+  */
+-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", tiffUnpack: "kernel", tiffUnpredict: "kernel", tiffPredict: "kernel", tiffToRgba: "kernel", tiffStripWasm: "kernel", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel", psdRead: "kernel", psdWindow: "count" });
++export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", tiffUnpack: "kernel", tiffUnpredict: "kernel", tiffPredict: "kernel", tiffToRgba: "kernel", tiffStripWasm: "kernel", tiffDeflate: "kernel", tiffDeflateLevel: "count", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel", psdRead: "kernel", psdWindow: "count" });
+ 
+ // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
+ // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
