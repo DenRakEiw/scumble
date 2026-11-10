@@ -17,16 +17,19 @@ const READY_TIMEOUT = 120000;   // ms to wait for the renderer's ready signal
 const BASE_TIMEOUT = 600000;    // ms a command may take on top of its own `timeout` argument
 
 class Bridge extends EventEmitter {
-    constructor() {
+    constructor({ baseTimeout = BASE_TIMEOUT } = {}) {
         super();
         this.contents = null;
         this.ready = false;
         this.pending = new Map();   // id -> {resolve, reject, timer}
         this.seq = 0;
         this._waiters = [];
+        this._timeouts = null;
+        this._describing = null;
+        this.baseTimeout = baseTimeout;
         ipcMain.on("commands:ready", (e) => { if (!this.contents || e.sender === this.contents) this._setReady(true); });
         ipcMain.on("commands:reply", (e, payload) => { if (!this.contents || e.sender === this.contents) this._reply(payload); });
-        ipcMain.on("commands:changed", () => this.emit("changed"));
+        ipcMain.on("commands:changed", () => { this._timeouts = null; this.emit("changed"); });
     }
 
     /**
@@ -53,7 +56,19 @@ class Bridge extends EventEmitter {
 
     _setReady(on) {
         this.ready = on;
+        if (!on) this._timeouts = null;
         if (on) { const w = this._waiters; this._waiters = []; for (const r of w) r(); this.emit("ready"); }
+    }
+
+    _cacheTimeouts(commands) {
+        const map = new Map();
+        for (const c of Array.isArray(commands) ? commands : []) {
+            const d = c && c.params && c.params.timeout && c.params.timeout.default;
+            if (c && typeof c.name === "string" && d != null && d !== "" && typeof d !== "boolean" && Number.isFinite(+d) && +d > 0) {
+                map.set(c.name, +d);
+            }
+        }
+        this._timeouts = map;
     }
 
     _waitReady(ms = READY_TIMEOUT) {
@@ -80,24 +95,39 @@ class Bridge extends EventEmitter {
 
     /**
      * Run one command; resolves with its result or rejects with the command core's message.
-     * The command's own `timeout` argument (seconds) extends the bridge timeout, so a long
-     * `generate` always ends in the editor first.
+     * The command's own `timeout` argument (seconds), or its declared `params.timeout.default`
+     * when `args.timeout` is omitted, extends the bridge timeout, so a long `generate` or
+     * `upscale` always ends in the editor first.
      */
     async run(name, args = {}, meta) {
         if (!this.contents || this.contents.isDestroyed()) throw new Error("no editor window");
-        await this._waitReady();
-        const id = ++this.seq;
-        const extra = args && Number.isFinite(+args.timeout) ? Math.max(0, +args.timeout) * 1000 : 0;
+        const cmd = String(name);
+        const rawTimeout = args && args.timeout;
+        const explicitTimeout = rawTimeout != null && rawTimeout !== "" && typeof rawTimeout !== "boolean" && Number.isFinite(+rawTimeout) ? +rawTimeout : null;
         // the in-app assistant's requests carry `meta` (origin, the user-activity wait, the busy check,
         // the turn and its undo step; docs/PLAN_ASSISTANT.md §3); its abort signal stays here: when it
         // fires before the reply, the renderer is told to drop the request and the call rejects at once
         const { signal, ...wire } = meta && typeof meta === "object" ? meta : {};
         const withMeta = meta && typeof meta === "object";
+        await this._waitReady();
+        if (signal && signal.aborted) { const err = new Error("stopped"); err.name = "AbortError"; throw err; }
+        if (explicitTimeout === null && cmd !== "list_commands" && this._timeouts === null) {
+            await (this._describing ??= this.describe().finally(() => { this._describing = null; }));
+            if (!this.contents || this.contents.isDestroyed()) throw new Error("no editor window");
+            await this._waitReady();
+        }
+        const id = ++this.seq;
+        const timeoutSec = explicitTimeout !== null ? explicitTimeout : (this._timeouts && this._timeouts.get(cmd)) || 0;
+        const extra = Math.max(0, timeoutSec) * 1000;
         return new Promise((resolve, reject) => {
             let onAbort = null;
             const settle = () => { if (onAbort && signal) signal.removeEventListener("abort", onAbort); };
-            const timer = setTimeout(() => { this.pending.delete(id); settle(); reject(new Error(`command "${name}" did not answer in time`)); }, BASE_TIMEOUT + extra);
-            this.pending.set(id, { resolve: (v) => { settle(); resolve(v); }, reject: (e) => { settle(); reject(e); }, timer });
+            const timer = setTimeout(() => { this.pending.delete(id); settle(); reject(new Error(`command "${name}" did not answer in time`)); }, this.baseTimeout + extra);
+            this.pending.set(id, {
+                resolve: (v) => { settle(); if (cmd === "list_commands" && v && Array.isArray(v.commands)) this._cacheTimeouts(v.commands); resolve(v); },
+                reject: (e) => { settle(); reject(e); },
+                timer,
+            });
             if (signal && typeof signal.addEventListener === "function") {
                 onAbort = () => {
                     if (!this.pending.has(id)) return;
@@ -110,7 +140,7 @@ class Bridge extends EventEmitter {
                 if (signal.aborted) { clearTimeout(timer); this.pending.delete(id); const err = new Error("stopped"); err.name = "AbortError"; reject(err); return; }
                 signal.addEventListener("abort", onAbort, { once: true });
             }
-            const payload = { id, name: String(name), args: args || {} };
+            const payload = { id, name: cmd, args: args || {} };
             if (withMeta) payload.meta = wire;
             try { this.contents.send("commands:request", payload); }
             catch (err) { clearTimeout(timer); this.pending.delete(id); settle(); reject(err); }

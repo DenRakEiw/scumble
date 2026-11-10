@@ -1091,6 +1091,7 @@ Known flakes; **re-run before believing any of these**:
 - 2026-11-09 (the merge of K39, serial on tiles): `editor_test.py` `live_stroke_reaches_the_screen_before_the_release`
   took 344 s instead of its usual seconds, so the gate hit its 420 s limit (rc 124, no failed assertion; the same
   tree passed right after, that step 40 s). Other agents' instances were running; the cause was not looked into.
+- 2026-11-10 (the merge of `fix-main` pack 3): `comfyview_test.py` "no target: the start page, nothing loaded, one window, bounds kept" failed once on tiles with CDP's "Cannot find default execution context" and passed 4 of 4 on a re-run on both backends (the known control-step flake failed once beside it on canvas).
 - 2026-11-09 (the merge of K15, tiles and canvas side by side): `editor_test.py`
   `selection_keeps_its_bounds_through_a_restore_above_1mp` ran into its 180 s step timeout on both backends with no
   assertion, and passed right after in sequence in under a second. The step awaits `img.decode()`, which never

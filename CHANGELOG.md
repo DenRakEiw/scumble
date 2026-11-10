@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **A paid run is not lost when the window reloads or crashes.** Its picture is kept and opens in a tab of its own, and *View > Reload* asks first while a run is going. *Save to recipe* in the ComfyUI window refuses when the page shows another graph. A failed export over an existing file keeps the finished temporary file and names it. Long commands over MCP get their full time, and parallel connections no longer fail.
 - **Fibo 2.0 Edit Turbo on your own ComfyUI**: edits by instruction with up to three more pictures, with Comfy's Prompt Enhancer in front (a Settings row). Not run live yet. Bria's weights are CC BY-NC 4.0, non-commercial; commercial use needs an agreement with Bria.
 - **GPT Image 2.6 Flare and Sunburst are also on Oxen.ai**, with the Complexity row. Oxen renamed some fields, so GPT Image 2 and 2.5 on Oxen.ai send the selection under its new name and Qwen its pictures. Written from Oxen's model list, not run against the live API yet.
 - **TIFF files made of many strips open faster.** A 15,000 x 10,000 LZW TIFF opens in about 5.7 s instead of 11.8, a PackBits one in 3.6 s instead of 6.0.

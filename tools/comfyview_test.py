@@ -117,17 +117,39 @@ BAR_EARLY_JS = """(() => { const d = document.querySelector('dialog.sc-dialog[op
     const r = d.querySelector('div').shadowRoot; Array.from(r.querySelectorAll('button')).find((x) => x.textContent === 'Allow').click();
     d.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return 'pressed'; })()"""
 
-# a fake ComfyUI frontend for V2: window.app records the graph it is given ("throw": its load fails)
+# a fake ComfyUI frontend for V2: window.app records the graph it is given ("throw": its load fails) and exposes
+# extensionManager.workflow.activeWorkflow (as ComfyUI 1.57+ does, with key derived from path and activeState.id)
 FAKE_APP = """<script>
-window.app = { graph: {},
-  loadApiJson: async (prompt, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'api', prompt, name };
-    // a LiteGraph-shaped graph of the prompt, every node at 0,0 (one column), for the window's layout by depth
-    const links = {}; let n = 0;
-    window.app.graph = { links, _nodes: Object.keys(prompt).map((id) => ({ id, type: prompt[id].class_type, pos: [0, 0], size: [200, 100],
-      inputs: Object.entries(prompt[id].inputs || {}).filter(([, v]) => Array.isArray(v) && prompt[v[0]]).map(([name, v]) => { n++; links[n] = { origin_id: v[0] }; return { name, link: n }; }) })) }; },
-  loadGraphData: async (workflow, clean, restore, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'graph', workflow, name }; },
-  graphToPrompt: async () => ({ workflow: window.__wf || { nodes: [], links: [] }, output: window.__out || (window.__loaded && window.__loaded.prompt) || {} }) };
-window.__throw = %s;
+(() => {
+  let seq = 0;
+  const makeWf = (name, wfId) => {
+    const id = wfId || ('wf-' + (++seq));
+    return {
+      path: 'workflows/' + (name || 'Unsaved Workflow') + '.json',
+      get key() { return this.path.replace(/^workflows\\//, ''); },
+      activeState: { id },
+    };
+  };
+  window.__makeWf = makeWf;
+  window.app = { graph: {},
+    extensionManager: { workflow: { activeWorkflow: makeWf('Unsaved Workflow') } },
+    loadApiJson: async (prompt, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'api', prompt, name };
+      window.app.extensionManager.workflow.activeWorkflow = makeWf(name);
+      // a LiteGraph-shaped graph of the prompt, every node at 0,0 (one column), for the window's layout by depth
+      const links = {}; let n = 0;
+      window.app.graph = { links, _nodes: Object.keys(prompt).map((id) => ({ id, type: prompt[id].class_type, pos: [0, 0], size: [200, 100],
+        inputs: Object.entries(prompt[id].inputs || {}).filter(([, v]) => Array.isArray(v) && prompt[v[0]]).map(([name, v]) => { n++; links[n] = { origin_id: v[0] }; return { name, link: n }; }) })) }; },
+    loadGraphData: async (workflow, clean, restore, name) => { if (window.__throw) throw new Error('boom'); window.__loaded = { kind: 'graph', workflow, name };
+      const wfId = workflow && typeof workflow.id === 'string' && workflow.id ? workflow.id : undefined;
+      window.app.extensionManager.workflow.activeWorkflow = makeWf(name, wfId); },
+    graphToPrompt: async () => {
+      if (typeof window.__onGraphToPrompt === 'function') await window.__onGraphToPrompt();
+      const aw = window.app.extensionManager && window.app.extensionManager.workflow && window.app.extensionManager.workflow.activeWorkflow;
+      const defWf = { id: aw && aw.activeState ? aw.activeState.id : undefined, nodes: [], links: [] };
+      return { workflow: window.__wf || defWf, output: window.__out || (window.__loaded && window.__loaded.prompt) || {} };
+    } };
+  window.__throw = %s;
+})();
 </script>"""
 
 
@@ -139,6 +161,8 @@ class Stub:
         self.seen = []
         self.app = None     # None: no window.app; "ok": a fake one; "throw": one whose load fails
         self.unload = False     # a beforeunload handler that keeps the page, as ComfyUI's with an unsaved workflow
+        self.info_entered = None
+        self.info_gate = None
 
     def ok(self, h):
         if self.mode == "basic":
@@ -171,13 +195,20 @@ class Stub:
             pass
         return sock
 
+    async def object_info(self, req):
+        if self.info_entered is not None:
+            self.info_entered.set()
+        if self.info_gate is not None:
+            await self.info_gate.wait()
+        return web.json_response({})
+
     async def start(self):
         app = web.Application()
         app.router.add_get("/ws", self.ws)
         app.router.add_get("/", self.page)
         app.router.add_get("/frame", lambda r: web.Response(text=FRAME_PAGE, content_type="text/html"))
         app.router.add_get("/favicon.ico", lambda r: web.Response(status=404))
-        app.router.add_get("/object_info", lambda r: web.json_response({}))
+        app.router.add_get("/object_info", self.object_info)
         self.runner = web.AppRunner(app)
         await self.runner.setup()
         s = socket.socket()
@@ -678,7 +709,7 @@ class Gate:
         return out
 
     async def cleanup_recipes(self):
-        await self.js("""for (const r of await window.scumble.recipes.list()) if (r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || /^gate_(graph|bad|cloud|late)/.test(r.id))) await window.scumble.recipes.remove(r.id);
+        await self.js("""for (const r of await window.scumble.recipes.list()) if (r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || r.id === 'realism_pass' || /^gate_(graph|bad|cloud|late)/.test(r.id))) await window.scumble.recipes.remove(r.id);
             const S = await import('./shell.js'); await S.loadRecipes(); S.selectRecipe('flux2_klein_local'); return 1""")
 
     async def hosts(self):
@@ -969,6 +1000,101 @@ class Gate:
         pong = await self.js("const cmds = await import('./commands.js'); return (await cmds.commands.run('ping', {})) ? 'answered' : 'no answer';")
         return {"stayed": before, "tried": tries, "ping": pong}
 
+    async def save_tab_guard(self):
+        await self.close()
+        await self.cleanup_recipes()
+        self.stub.mode = "none"
+        self.stub.app = "throw"
+        await self.set_auth({"type": "none"}, "")
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "flux2_klein_local"}))
+        i0 = await self.wait_info("i.recipeNote", 15000)
+        btn_off = await on_target("comfybar.html", lambda c: c.eval("(async () => { for (let k = 0; k < 40 && !document.getElementById('cb-save'); k++) await new Promise((r) => setTimeout(r, 50)); return document.getElementById('cb-save').disabled; })()"))
+        direct = await on_target("comfybar.html", lambda c: c.eval("window.comfybar.save({ asNew: false })"))
+        if i0.get("recipeLoaded") or i0.get("canSave") or not i0.get("canSaveNew") or not btn_off or direct.get("ok") is not False or "shows another graph" not in str(direct.get("message", "")):
+            raise Exception("failed load left Save to recipe open: " + json.dumps({"info": i0, "disabled": btn_off, "direct": direct})[:600])
+        await self.close()
+
+        self.stub.app = "ok"
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": "flux2_klein_local"}))
+        i1 = await self.wait_info("i.recipeLoaded", 15000)
+        if not i1.get("canSave"):
+            raise Exception("loaded recipe did not offer Save to recipe: " + json.dumps(i1))
+        await on_target(self.stub.url, lambda c: c.eval("""(() => {
+            window.__heldWf = window.app.extensionManager.workflow.activeWorkflow;
+            window.app.extensionManager.workflow.activeWorkflow = window.__makeWf('Other Tab');
+            window.__out = JSON.parse(JSON.stringify(window.__loaded.prompt));
+            window.__out.sigmas.inputs.gate_mark = 999;
+            window.__wf = { nodes: [{ id: 'canvas', type: 'InpaintCanvas' }], links: [] };
+            return 1;
+        })()"""))
+        await self.bar_click("document.getElementById('cb-save').click()")
+        i2 = await self.wait_info("i.saveNote", 10000)
+        untouched = next((r for r in await self.recipe_list() if r["id"] == "flux2_klein_local"), None)
+        if "shows another graph" not in i2.get("saveNote", "") or not untouched or untouched["source"] == "user" or untouched.get("mark") == 999:
+            raise Exception("other workflow tab overwrote or did not refuse: " + json.dumps({"saveNote": i2.get("saveNote"), "recipe": untouched})[:600])
+
+        # a fresh workflow object opened under the exact same file name/key is still another graph and must be refused
+        await on_target(self.stub.url, lambda c: c.eval("""(() => {
+            window.app.extensionManager.workflow.activeWorkflow = window.__makeWf(window.__loaded.name);
+            return 1;
+        })()"""))
+        same_name = await on_target("comfybar.html", lambda c: c.eval("window.comfybar.save({ asNew: false })"))
+        untouched2 = next((r for r in await self.recipe_list() if r["id"] == "flux2_klein_local"), None)
+        if same_name.get("ok") is not False or "shows another graph" not in str(same_name.get("message", "")) or not untouched2 or untouched2["source"] == "user":
+            raise Exception("same-named replacement tab passed the guard: " + json.dumps({"ans": same_name, "recipe": untouched2})[:600])
+
+        # switching back to the held workflow object AND renaming it (Ctrl+S -> renameWorkflow) still saves
+        await on_target(self.stub.url, lambda c: c.eval("""(() => {
+            window.__heldWf.path = 'workflows/Ctrl-S Renamed.json';
+            window.app.extensionManager.workflow.activeWorkflow = window.__heldWf;
+            window.__out.sigmas.inputs.gate_mark = 42;
+            return 1;
+        })()"""))
+        await self.bar_click("document.getElementById('cb-save').click()")
+        i3 = await self.wait_info("i.saveNote && i.saveNote.indexOf('Saved the graph') >= 0", 10000)
+        saved = next((r for r in await self.recipe_list() if r["id"] == "flux2_klein_local"), None)
+        if not saved or saved["source"] != "user" or saved.get("mark") != 42:
+            raise Exception("renamed held tab did not save: " + json.dumps({"saveNote": i3.get("saveNote"), "recipe": saved})[:600])
+
+        # a switch in progress (rootGraph workflow.id already changed while activeWorkflow.activeState.id has not) is refused
+        await on_target(self.stub.url, lambda c: c.eval("""(() => {
+            window.__out.sigmas.inputs.gate_mark = 777;
+            window.__wf = { id: 'wf-mid-switch', nodes: [{ id: 'canvas', type: 'InpaintCanvas' }], links: [] };
+            return 1;
+        })()"""))
+        mid_sw = await on_target("comfybar.html", lambda c: c.eval("window.comfybar.save({ asNew: false })"))
+        after_mid = next((r for r in await self.recipe_list() if r["id"] == "flux2_klein_local"), None)
+        if mid_sw.get("ok") is not False or "shows another graph" not in str(mid_sw.get("message", "")) or not after_mid or after_mid.get("mark") != 42:
+            raise Exception("mid-switch workflow.id mismatch was not refused: " + json.dumps({"ans": mid_sw, "recipe": after_mid})[:600])
+
+        # Edit in ComfyUI on another recipe during objectInfo() must not write the first recipe's graph into the second
+        await on_target(self.stub.url, lambda c: c.eval("""(() => {
+            window.__wf = null;
+            window.__out.sigmas.inputs.gate_mark = 888;
+            return 1;
+        })()"""))
+        self.stub.info_entered = asyncio.Event()
+        self.stub.info_gate = asyncio.Event()
+        try:
+            save_task = asyncio.create_task(on_target("comfybar.html", lambda c: c.eval("window.comfybar.save({ asNew: false })")))
+            await asyncio.wait_for(self.stub.info_entered.wait(), timeout=8.0)
+            await self.js("await window.scumble.comfyView.open({ recipe: 'realism_pass' }); return 1")
+            self.stub.info_gate.set()
+            raced = await asyncio.wait_for(save_task, timeout=10.0)
+        finally:
+            if self.stub.info_gate is not None:
+                self.stub.info_gate.set()
+            self.stub.info_entered = None
+            self.stub.info_gate = None
+        rp = next((r for r in await self.recipe_list() if r["id"] == "realism_pass"), None)
+        fk = next((r for r in await self.recipe_list() if r["id"] == "flux2_klein_local"), None)
+        if raced.get("ok") is not False or "shows another graph" not in str(raced.get("message", "")) or not rp or rp["source"] == "user" or not fk or fk.get("mark") != 42:
+            raise Exception("recipe switch during objectInfo overwrote or passed: " + json.dumps({"ans": raced, "realism_pass": rp, "flux2": fk})[:600])
+
+        await self.close()
+        await self.cleanup_recipes()
+        return {"refusedLoad": direct["message"][:60], "refusedTab": i2["saveNote"][:60], "savedRenamed": saved["mark"], "refusedRace": raced["message"][:60]}
+
     async def unreachable(self):
         await self.close()
         s = socket.socket()
@@ -1029,6 +1155,7 @@ async def main():
             await g.step("V6: the cloud mode lists the Comfy Cloud recipes alone, api none of them, each mode its last recipe", g.cloud_mode)
             await g.step("a page with unsaved changes: Reload asks, Stay keeps it ready to save, Leave loads it again", g.unsaved)
             await g.step("a page whose ComfyUI sets up late: saving asks the page again, no reload needed", g.late_app)
+            await g.step("MAIN-4: Save to recipe stays off until loaded and refuses another workflow tab's graph", g.save_tab_guard)
             await g.step("H1: the main window stays on the app's page (no navigation to scumble://app/comfy/*)", g.main_stays)
         finally:
             await g.close()
