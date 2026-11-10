@@ -541,7 +541,7 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
         const all = index.describeAll();
         const ids = all.map((p) => p.id);
         const row = all.find((p) => p.id === "oxen");
-        check("index_registration_after_ark_before_magnific", ids.indexOf("oxen") === ids.indexOf("ark") + 1 && ids.indexOf("magnific") === ids.indexOf("oxen") + 1 && row.label === "Oxen.ai" && row.keyUrl === "https://oxen.ai/settings/profile" && row.balance === false && row.sharesKey === null, short(ids));
+        check("index_registration_after_ark_before_magnific", ids.indexOf("oxen") === ids.indexOf("ark") + 2 && ids.indexOf("minimax") === ids.indexOf("ark") + 1 && ids.indexOf("magnific") === ids.indexOf("oxen") + 1 && row.label === "Oxen.ai" && row.keyUrl === "https://oxen.ai/settings/profile" && row.balance === false && row.sharesKey === null, short(ids));
         check("oxen_makes_new_images_and_upscales", index.textProviders().includes("oxen") && index.upscaleProviders().includes("oxen"));
         const e = await throws(() => index.edit({ provider: "oxen", kind: "fill", model: "gpt-image-2", image: CROP() }));
         check("no_key_names_the_row", /No API key for Oxen\.ai/.test(e), e);

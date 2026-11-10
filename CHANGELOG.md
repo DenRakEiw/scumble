@@ -4,6 +4,9 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## 0.1.54 - 2026-11-10
 
+- **Generate new asks before it replaces your work.** When the tab holds layers, a picture or edits, it names what goes, since the answer replaces them and the undo history, and you can cancel and save first.
+- **MiniMax-H3-Image on MiniMax's own API**, a new provider (Size 1K / 2K / 4K, a Highspeed choice, International or China region). Written from MiniMax's docs, not run against the live API yet.
+- **MiniMax-H3-Image on your own ComfyUI** (0.45 or newer): edits with up to 15 more pictures, Generate new and Comfy's prompt expander. Written from Comfy's templates and an open pull request, not run yet.
 - **Large TIFF files open faster, and small palette TIFFs with transparency open correctly.** Multi-strip and tiled TIFFs decode across worker threads: a 15,000 x 10,000 LZW TIFF opens in about 3.5 s instead of 13.7, a PackBits one in 3.3 s instead of 7.4. Opening another file stops the one still being read at once. Palette TIFFs of 1, 2 or 4 bits with an alpha channel no longer open nearly transparent.
 - **Large PSD files open about twice as fast**, and the window stays responsive while their layers land.
 - **The assistant's render questions show the settings.** Before a render or upscale its question lists the document's settings and marks what the chat changed, and it can set crop options, use the magic wand and add boxes without failing on the active layer.

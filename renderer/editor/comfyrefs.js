@@ -43,7 +43,8 @@ const byRank = (node) => {
  * among the pictures the class numbers (1-based). TextEncodeQwenImage21 numbers its present `images.image_k` by rank
  * (its tokenizer writes `<image1>`, `<image2>` ...), and so does PH3ImageConditioning (P-H3-Image: the node sorts the
  * present slots by their suffix, image_1 is the picture it edits, and the prompt names them `<Picture 1>`,
- * `<Picture 2>` ...; ComfyUI 0.44 comfy_extras/nodes_minimax_h3.py), and so does TextEncodeMOSSImageEdit (MOSS-Image's
+ * `<Picture 2>` ...; ComfyUI 0.44 comfy_extras/nodes_minimax_h3.py), and so does MiniMaxH3ImageConditioning (the same file
+ * in Comfy-Org/ComfyUI#17655, still open: the same sort and names), and so does TextEncodeMOSSImageEdit (MOSS-Image's
  * edit LoRA: its 0-based `images.image_0` ... sorted by name, the first the picture it edits; in the Moss-Image-Edit
  * format no marker enters the text, so the name is a plain "image {n}"; ComfyUI 0.43 comfy_extras/nodes_moss_image.py),
  * and so does TextEncodeFibo2 (Fibo 2.0: its 1-based `images.image_1` ... sorted by number, named <image_1>, <image_2> ...
@@ -55,6 +56,7 @@ const byRank = (node) => {
 const ENCODERS = {
     TextEncodeQwenImage21: { name: "<image{n}>", inputs: byRank },
     PH3ImageConditioning: { name: "<Picture {n}>", inputs: byRank },
+    MiniMaxH3ImageConditioning: { name: "<Picture {n}>", inputs: byRank },
     TextEncodeMOSSImageEdit: { name: "image {n}", inputs: byRank },
     TextEncodeFibo2: { name: "<image_{n}>", inputs: byRank },
     TextEncodeQwenImageEditPlus: {
