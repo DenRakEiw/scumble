@@ -1315,7 +1315,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   | FLUX 3 Image | BFL, OpenRouter, Comfy Router, Oxen.ai; fal (`edit-image`), WaveSpeed (`image-edit`) | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
-  | GPT Image 2.6 Flare, Sunburst | OpenAI, ToAPIs (Sunburst), Replicate, OpenRouter; fal and WaveSpeed (`/edit`) | - |
+  | GPT Image 2.6 Flare, Sunburst | OpenAI, ToAPIs (Sunburst), Replicate, OpenRouter, Oxen.ai; fal and WaveSpeed (`/edit`) | - |
   | Nano Banana 2.1 | Gemini, ToAPIs, OpenRouter, Comfy Router, Replicate; fal and WaveSpeed (`/edit`) | - |
   | P-H3-Image | WaveSpeed (`/edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |

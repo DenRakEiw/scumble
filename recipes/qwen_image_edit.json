@@ -203,7 +203,6 @@
       "model": "qwen-image-3",
       "input": "edit",
       "options": {
-        "image_field": "input_images",
         "accepts": [
           "aspect_ratio",
           "resolution",
