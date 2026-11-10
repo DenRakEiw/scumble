@@ -1,0 +1,38 @@
+K40 interim: the loss rows of summary.txt that bisect_findings.txt point 4 left open, and the pan cost. Measured 2026-11-10, tip 764fdffe (wasm-kernels),
+15000 x 10000, offline, tiles, three runs per row on fresh instances under the busy lock. ms. Baseline = W0b (249d882) of summary.txt, median (min-max).
+Raw tables: losses/ (b1_* ten points of bisect2, b2_* and b3_* narrowed; tip_rows.txt and after_*.txt the tip and the Task 1 variants). "inferred" = no run shows it.
+
+REAL
+row                                        baseline             tip (three runs)            commit that moved it
+wand over it, relight stack, wall          330 (323-333)        514 653 586                 bc3c37e7 K12 (0ca7d5ba before it 316 343 293; K12 642 667 643)
+wand, a masked layer, relight stack, wall  323 (287-326)        488 508 489                 bc3c37e7 K12 (before 380 328 288; K12 472 498 528)
+wand (an object), relight stack, wall      221 (195-227)        243 246 259                 small; between c10d6d3d (215-225) and d711f8f2 (248-269), not narrowed
+liquify rust push 1:1 1000, blockedMax     26.1 (25.6-28.3)     80.6 61.1 100.1             e2aa0ec2 K30 (d486e9da before it 28.2 15.8 14.1; K30 100.2 77.0 77.8)
+liquify rust push 1:1 1000, land           75.1 (70-75.6)       92.1 91.2 114.9             e2aa0ec2 K30 (before 45.5 34.7 35.0; K30 114.4 87.8 92.0)
+wheel zoom max                             6.5 (4.3-7.2)        22.7 22.9 21.4              8d82004b the filter fix (bisect3 logs: before it 3.6-7.2, it 23.7 23.7 26.4)
+pan (60 frames), median                    3.9 (3.8-4.4)        6.3 6.1 5.6                 8d82004b (bisect_findings.txt)
+pan at fit, masked filter layer, median    3.4 (3.2-4.3)        8.5 7.0 7.7                 8d82004b
+
+Why, wand: K12 cuts relight's march into stripes on the pool (32 stripes of about 100-150 ms at 4096 x 2731; marchOnPool, inpaint_relight.js). That the wand waits behind
+those stripes on the pool is inferred from the code and the bisect; no run separated it. K5 (e68d1043) did not move these rows (351 289 341). The wand's "an object" row is about
++25 ms and was not narrowed beyond the ten-point pass.
+Why, liquify: only K30 in d486e9da..e2aa0ec2 touches liquify (the commits between K29 and K30 were not run singly: inferred). K30's own notes: a deferred V8 major GC after the 15k
+setup, which the Map path's allocations used to trigger one row earlier, lands in this row; in swapped order both arms hit it equally (75.8 / 72.8 ms). Read from those notes,
+not re-measured here. liquify JS: blockedMax 77.0 24.7 86.0, land 90.5 63.1 96.7: overlaps the baseline in its spread, but the same intermittent spike (inferred the same GC).
+
+NOISE (the tip's three runs overlap the baseline; no commit moves them)
+three lights moved, blk      66 (48-66)        tip 81 92 55     ten points 46-105, a spike of 269 once at e0fbfddf, 54 at d711f8f2
+psd_masked, blk              119 (109-120)     tip 99 98 124
+heal image 200 px fit cold, blockedMax  55.5 (51.6-70)  tip 52.1 82.7 57.4
+full composite               92 (92-98)        tip 101.5 94.5 235.8   bimodal on every commit (bisect_findings.txt), no result
+
+NOT A COMMIT
+fill_limit_rows, fill        103 (102-107)     tip 131 116 115     the baseline commit 249d882 measured the same day: 132 118 119, so the machine's state moved this, not code
+
+THE PAN COST (Task 1), perf:15000x10000, three runs each: pan / fit-masked / wheel max
+tip                                                  6.3 6.1 5.6   /  8.5 7.0 7.7  /  22.7 22.9 21.4
+filteredCanvas skipping cropFilterInput (timing, wrong pixels)  3.3 2.9 3.1  /  3.9 3.0 3.8  /  5.8 3.8 3.8     <- the crop is the whole loss
+a reused scratch, ownership kept                     6.3 7.4 7.5 and 7.7 6.4 6.6  /  6.8 6.8 8.1 and 7.0 6.3 7.3  /  23.9 34.0 27.9 and 25.3 22.5 23.9     <- no gain
+the 1-px rim drawn from the source, no self-draws    6.2 6.6 5.3   /  7.3 6.8 6.1  /  27.6 27.9 23.8     <- no gain
+In one instance (panprobe, tools measured per frame): cropFilterInput 0.1-0.2 ms of JS, the upload 0.07 ms; the rest of the 1.1-1.8 ms the crop adds is outside those calls
+(inferred: the GPU process's work for the extra canvas, waited for later in the frame). No code change was kept. The route left is a crop on the GPU (not built: CPU filters and filters that return their input keep the canvas path).

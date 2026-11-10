@@ -1,0 +1,19 @@
+== 249d882 CLAUDE.md: item 48, Canva Craft as an image model (text to image only,
+LOSS  exportperf/fill | fill_limit_rows | fill                   base   103.0 (102-107)  now   119.0  runs [132.0, 118.0, 119.0]
+== 7f9c0b1e LoRAs LR6 (item 50, issue #11): the MOSS Image Edit recipe on your Com
+== e0fbfddf Merge ck-refine (I6: keymatte.js, the matte refined against the full-r
+LOSS  exportperf/fill | fill_limit_rows | fill                   base   103.0 (102-107)  now   131.0  runs [133.0, 111.0, 131.0]
+== 0fcef6f2 server.json: 0.1.52 for the MCP Registry
+LOSS  exportperf/fill | fill_limit_rows | fill                   base   103.0 (102-107)  now   135.0  runs [135.0, 119.0, 163.0]
+== 8689d490 CLAUDE.md: the six running agents and what the next session does with 
+LOSS  exportperf/fill | fill_limit_rows | fill                   base   103.0 (102-107)  now   115.0  runs [115.0, 117.0, 115.0]
+== e9ab0d33 R1 in the CHANGELOG and the review's README
+TIE   exportperf/fill | fill_limit_rows | fill                   base   103.0 (102-107)  now   108.0  runs [108.0, 105.0, 125.0]
+== c10d6d3d Merge K33 (stitch's colour match and alpha writes in Rust: color_match
+LOSS  exportperf/fill | fill_limit_rows | fill                   base   103.0 (102-107)  now   111.0  runs [108.0, 111.0, 117.0]
+== d711f8f2 Merge K31 (liquify's dab in Rust for push, grow, shrink and restore; t
+TIE   exportperf/fill | fill_limit_rows | fill                   base   103.0 (102-107)  now   113.0  runs [106.0, 113.0, 121.0]
+== c270b711 K16 as built, its CHANGELOG line, and the hand-over of 2026-11-09 in C
+LOSS  exportperf/fill | fill_limit_rows | fill                   base   103.0 (102-107)  now   110.0  runs [111.0, 108.0, 110.0]
+== 0d14b9eb Merge P5: PNG parts start independent, upload overlaps the decode
+LOSS  exportperf/fill | fill_limit_rows | fill                   base   103.0 (102-107)  now   118.0  runs [118.0, 118.0, 114.0]
