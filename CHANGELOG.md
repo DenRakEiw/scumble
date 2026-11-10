@@ -2,9 +2,12 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
-## Unreleased
+## 0.1.54 - 2026-11-10
 
-- **Large TIFF files open faster.** Multi-strip and tiled TIFFs now decode across worker threads, and opening another file stops the one still being read at once.
+- **Generate new asks before it replaces your work.** When the tab holds layers, a picture or edits, it names what goes, since the answer replaces them and the undo history, and you can cancel and save first.
+- **MiniMax-H3-Image on MiniMax's own API**, a new provider (Size 1K / 2K / 4K, a Highspeed choice, International or China region). Written from MiniMax's docs, not run against the live API yet.
+- **MiniMax-H3-Image on your own ComfyUI** (0.45 or newer): edits with up to 15 more pictures, Generate new and Comfy's prompt expander. Written from Comfy's templates and an open pull request, not run yet.
+- **Large TIFF files open faster, and small palette TIFFs with transparency open correctly.** Multi-strip and tiled TIFFs decode across worker threads: a 15,000 x 10,000 LZW TIFF opens in about 3.5 s instead of 13.7, a PackBits one in 3.3 s instead of 7.4. Opening another file stops the one still being read at once. Palette TIFFs of 1, 2 or 4 bits with an alpha channel no longer open nearly transparent.
 - **Large PSD files open about twice as fast**, and the window stays responsive while their layers land.
 - **The assistant's render questions show the settings.** Before a render or upscale its question lists the document's settings and marks what the chat changed, and it can set crop options, use the magic wand and add boxes without failing on the active layer.
 - **The assistant asks before merging into your own layer.** Merging down from the assistant now asks when the target is a layer you made or the base image, and unanswered question cards are switched off when a turn stops, so an old card cannot answer a later question.
@@ -12,15 +15,12 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **A paid run is not lost when the window reloads or crashes.** Its picture is kept and opens in a tab of its own, and *View > Reload* asks first while a run is going. *Save to recipe* in the ComfyUI window refuses when the page shows another graph. A failed export over an existing file keeps the finished temporary file and names it. Long commands over MCP get their full time, and parallel connections no longer fail.
 - **Fibo 2.0 Edit Turbo on your own ComfyUI**: edits by instruction with up to three more pictures, with Comfy's Prompt Enhancer in front (a Settings row). Not run live yet. Bria's weights are CC BY-NC 4.0, non-commercial; commercial use needs an agreement with Bria.
 - **GPT Image 2.6 Flare and Sunburst are also on Oxen.ai**, with the Complexity row. Oxen renamed some fields, so GPT Image 2 and 2.5 on Oxen.ai send the selection under its new name and Qwen its pictures. Written from Oxen's model list, not run against the live API yet.
-- **TIFF files made of many strips open faster.** A 15,000 x 10,000 LZW TIFF opens in about 5.7 s instead of 11.8, a PackBits one in 3.6 s instead of 6.0.
 - **Relight's shadows land about 1.5 times as fast after a light moves** (0.5 s instead of 0.75 at 15,000 x 10,000). A sun's shadows now come from the same exact calculation as the other lights, so a few pixels on a shadow's edge can differ by one visibility step from earlier versions.
 - Saving over a read-only `.scumble` file stops at once with a clear message. Opening two documents at the same time no longer trips over shared files, or removes a file that still exists from *Open Recent*. Temporary save files on a locked or unplugged drive are cleaned up on a later start. A headless MCP session now finishes saving even when that takes longer than five seconds.
 - **Layered PSD exports, dissolve layers and the magic wand over the whole picture are faster on large pictures, with the same pixels.** A 15,000 x 10,000 PSD exports in about 1.5 s instead of 2.0, a dissolve layer's export in 1.4 s instead of 1.9, and a whole-picture wand takes about 1.2 s instead of 1.4.
-- Scumble's own PNGs open faster, and an image starts decoding while it is still uploading instead of after it.
-- **TIFF files open and save faster, and small palette TIFFs with transparency open correctly.** The predictor and the conversion to RGBA run in the Rust module. Palette TIFFs of 1, 2 or 4 bits with an alpha channel no longer open nearly transparent.
+- Scumble's own PNGs, also the layers inside `.scumble` documents, open faster: their parts decode in parallel across the worker pool, and an image starts decoding while it is still uploading instead of after it.
 - Grow and Shrink Selection are faster when they have to run on the window instead of the background workers (about 1.3 to 1.8 times), and large temporary memory is given back right after.
 - **Colour match without WebGL2 is faster.** The fallback that runs on the CPU, without WebGL2 or above the GPU's largest texture, goes through the Rust module in 4 MP pieces, about 1.7 times as fast at 15,000 x 10,000, and now rounds as the GPU path does.
-- Faster opening of large PNGs written by Scumble (and Scumble-written layers inside `.scumble` documents) by decoding their parts in parallel across the worker pool.
 - **The bucket fill on large pictures no longer stalls the window for its readbacks.** On tile layers the flooded area is composited straight into the tiles; at full opacity the pixels are the same as before, at lower opacity within one level.
 - **Faster PNG and ORA exports on large pictures, with the same files.** A 15,000 x 10,000 PNG takes about 0.87 s instead of 1.01, an ORA 2.0 s instead of 2.26: the pieces are now gathered, composited and packed directly in the Rust module's memory.
 - **A depth map is ready faster, with the same bytes.** The guided filter behind it and its preparation run off the window in Rust, for a depth map from Depth Anything V2 Small and from a layer.

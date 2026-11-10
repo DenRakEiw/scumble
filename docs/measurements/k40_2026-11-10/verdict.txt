@@ -1,0 +1,26 @@
+K40's verdict on the 31 LOSS rows (2026-11-10, commit db2c39da, summary.txt; the commits and bisects are in
+../k40pre_2026-11-09/losses_explained.txt). No route went back: the only rows where a route could matter lose on both
+kernels (liquify's blockedMax on Rust and on JS), and no row loses to a Rust path that its JS twin wins.
+
+Not a path a user runs, or the known bimodal row:
+- perf and perf-relight "object map input ... > the same the old way (a flatten)" (2.18x, 1.16x): the harness's reference
+  row for the flatten that 0.1.x stopped doing. The row itself, "object map input (1024 from levels)", is a TIE (82 ms -> 82).
+- perf "full composite" max and median: bimodal on every commit (../k40pre_2026-11-09/bisect_findings.txt).
+- px_jobs depth_guide "worker job JS" and "wall JS": the JS twin, not the route users get.
+
+Real, accepted for this release (explained in losses_explained.txt):
+- magic wand over a relight stack 330 -> 540 ms, masked 323 -> 473, an object 221 -> 252: K12, whose gain is relight's
+  shadows landing 3,545 -> 649 ms after a move. Why the wand pays (waiting behind the pool's stripes) is inferred.
+- liquify push 1:1 size 1000: blockedMax 26 -> 85 (Rust), 26 -> 76 (JS), land 75 -> 98: K30; a deferred major GC by its notes.
+- pan 3.9 -> 6.1, at fit masked 3.4 -> 7.8, wheel zoom max 6.5 -> 23.6, pan at 1:1 3.2 -> 4.5: the filter fix 8d82004b,
+  which is right; two repairs measured no gain. relight-stack pan rows the same.
+
+Real and small, not bisected:
+- exportperf limit psd blk 137 -> 234 ms, psd_masked 119 -> 146.
+- on a relight stack: colour match tick 22 -> 25.6 ms (max 24 -> 38.5), opacity tick 24.7 -> 28.6, clear selected pixels blk 37 -> 46.
+- native/filter add_the_paint_layer blk 607 -> 667; heal 200 px cold blockedMax 55.5 -> 70.9; wand on the masked sample blk 58 -> 61.
+
+Not compared: px_test PX_BENCH=large ended rc=1 on the two checks "a pointer above 2 GB is usable" (ptr 26 MB on this run, as in
+the interim): the bench's allocation no longer lands above 2 GB, so that check did not exercise a high pointer here.
+Not done of K40's list: "exports nobody routes removed" (moved after the release: harmless, and any removal changes what was
+measured). K19 and K20c moved after the release (docs/PLAN_WASM_BUILD.md section 7).

@@ -353,7 +353,7 @@ export function wireUpsampler(prompt, r, o) {
     const clip = run.inputs.clip && prompt[run.inputs.clip[0]];
     const file = clip && clip.inputs ? String(clip.inputs.clip_name || "") : "";
     const runClass = run.class_type === "TextGenerateV2" ? "TextGenerateV2" : "TextGenerate";
-    const lacks = [runClass, "PreviewAny"].filter((c) => o.classes && !o.classes[c]);
+    const lacks = [runClass, "PreviewAny", ...(u.extract ? ["JsonExtractString"] : [])].filter((c) => o.classes && !o.classes[c]);
     // the row's own word (a recipe may call it something else: Fibo 2.0's Prompt Enhancer)
     const row = Array.isArray(r.settings) ? r.settings.find((x) => x && String(x.node) === String(u.switch) && x.input === "switch") : null;
     const rowName = row && row.label ? String(row.label) : "Prompt upsampler";
@@ -363,7 +363,8 @@ export function wireUpsampler(prompt, r, o) {
     else if (lacks.length) why = `The prompt went as typed: the prompt upsampler needs ComfyUI's ${lacks.join(" and ")} node${lacks.length === 1 ? "" : "s"} (ComfyUI ${runClass === "TextGenerate" ? "0.42" : "0.44"} or newer).`;
     else if (o.files && file && !o.files.includes(file)) why = `The prompt went as typed: the prompt upsampler's file ${file} is not on your ComfyUI (models/text_encoders; the recipe's description says where to get it), or switch the ${rowName} row off.`;
     const on = why === null;
-    const side = on ? [String(u.run), 0] : sw.inputs.on_false;
+    // `extract` (MiniMax-H3-Image): the run answers JSON, and the node that reads the caption out of it is the switch's true side
+    const side = on ? [String(u.extract || u.run), 0] : sw.inputs.on_false;
     // the switch's consumers take the chosen side; the switch itself never goes
     for (const node of Object.values(prompt)) {
         if (!node || !node.inputs) continue;
@@ -408,6 +409,20 @@ export function wireUpsampler(prompt, r, o) {
         run.inputs.prompt = UPSAMPLE_EDIT_REQUEST(text);
     }
     return show;
+}
+
+/**
+ * The refusal of a recipe whose node types the server lacks, one line; `needsVersion` (the recipe's, node type -> the ComfyUI
+ * release that brings it) adds what to install.
+ * @param {any} r
+ * @param {string[]} missing
+ */
+export function lacksNodesText(r, missing) {
+    const base = `The server lacks these node types: ${missing.join(", ")}.`;
+    const map = r && r.needsVersion && typeof r.needsVersion === "object" ? r.needsVersion : null;
+    if (!map) return base;
+    const want = [...new Set(missing.filter((n) => Object.prototype.hasOwnProperty.call(map, n) && typeof map[n] === "string").map((n) => map[n]))];
+    return want.length ? `${base} This recipe needs ComfyUI ${want.join(" / ")} or newer.` : base;
 }
 
 // ---- Generate new as text to image on an edit graph (P-H3-Image) ----------------------------------------------------

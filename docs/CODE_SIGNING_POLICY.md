@@ -85,7 +85,7 @@ In detail, Scumble talks to these systems, and to nothing else:
 - **Your ComfyUI server**, at the address you enter in Settings › ComfyUI, when you run a
   local recipe, a helper node, or test the connection.
 - **An API provider** (ToAPIs, Google, OpenAI, Black Forest Labs, fal.ai, Replicate, WaveSpeedAI,
-  Comfy Cloud, OpenRouter, BytePlus ModelArk, Anthropic), only when you run a recipe or a prompt upsampling that names it,
+  Comfy Cloud, OpenRouter, BytePlus ModelArk, MiniMax, Anthropic), only when you run a recipe or a prompt upsampling that names it,
   or click *check balance* next to its key, with the key you stored. Comfy Cloud is also asked for
   its LoRA lists while a key for it is stored and a Comfy Cloud recipe that takes LoRAs is selected
   (at start too, when it is the selected recipe): the *LoRAs* section reads the account's own LoRA
@@ -105,7 +105,9 @@ In detail, Scumble talks to these systems, and to nothing else:
   `ark.eu-west.bytepluses.com` (Dublin, Ireland). Seedream 5.0 pro always goes to Johor, and 5.0 lite
   goes to the host its *Region* row names. BytePlus may route a request to its other region. Only if
   an answer carries a download link instead of the image, Scumble fetches that link, without the key
-  ([RECIPES.md, "BytePlus ModelArk"](RECIPES.md#byteplus-modelark-ark)).
+  ([RECIPES.md, "BytePlus ModelArk"](RECIPES.md#byteplus-modelark-ark)). MiniMax is reached at
+  `api.minimax.io` or `api.minimax.cn`, the one the recipe's *Region* row names
+  ([RECIPES.md, "MiniMax"](RECIPES.md#minimax-minimax)).
 - **Hugging Face**, when you click *Download* for a helper model in Settings › Helpers.
 - **GitHub Releases**, for the update check: the packaged app checks for a new version once,
   8 seconds after start, and downloads it in the background when one exists. This check can

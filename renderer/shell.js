@@ -1621,6 +1621,12 @@ ui.genGo.addEventListener("click", async () => {
     if (!id) { ui.genState.textContent = "No model to run this on."; return; }
     const prompt = (genField.el.value || "").trim();
     if (!prompt) { ui.genState.textContent = "Write a prompt first."; genField.focus(); return; }
+    // the answer replaces the picture, its layers and the undo history: say so before anything is sent or paid (issue #12)
+    const loss = host.replaceLoss(ed);
+    if (loss && (await host.askDocument({ kind: "replace", name: docName(ed), layers: loss.layers })) !== "replace") {
+        ui.genState.textContent = "Nothing was replaced.";
+        return;
+    }
     // which layer each token means at the click (a change after it refuses rather than re-points)
     const refs = Object.fromEntries([...ed.refLabels()].map(([lid, n]) => ["img" + n, lid]));
     const [w, h] = genSize();

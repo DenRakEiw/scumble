@@ -1,0 +1,16 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+heal (cold) | Heal | image | 200 | fit | 156.5 | 35.3 | 9.8 | 6.7 | 7.4 | 1.1 | 70.1 | 162 | 6.1 | 19.4 | 0 | 0 | 16314 | composite_masked_tile 11, composite_tile 16, mip_chain 41
+heal | Heal | image | 50 | fit | 156.5 | 8.2 | 3.5 | 3.1 | 3.9 | 0.8 | 18.5 | 141 | 8.7 | 15.6 | 0 | 0 | 12705 | composite_masked_tile 20, composite_tile 64, mip_chain 71
+heal | Heal | image | 200 | fit | 156.5 | 9.5 | 6.2 | 6.9 | 7.9 | 1.1 | 16.7 | 368 | 22.8 | 54 | 0 | 0 | 16314 | composite_masked_tile 40, composite_tile 64, mip_chain 157
+heal | Heal | image | 400 | fit | 156.5 | 12.9 | 14.8 | 13.3 | 15.5 | 1.2 | 29 | 560 | 40.1 | 41.7 | 0 | 0 | 16321 | composite_masked_tile 42, composite_tile 64, mip_chain 200
+heal | Heal | image | 50 | 1:1 | 18 | 37.6 | 5.1 | 1.6 | 2.4 | 1.1 | 45 | 103 | 19.4 | 19.7 | 0 | 0 | 12720 | composite_masked_tile 4, composite_tile 64, poisson_blend 1
+heal | Heal | image | 200 | 1:1 | 18 | 37.5 | 2.8 | 2.3 | 3.3 | 1.1 | 42.7 | 83 | 2.1 | 11.1 | 0 | 0 | 16315 | composite_masked_tile 8, composite_tile 64
+heal | Heal | image | 400 | 1:1 | 18 | 49.2 | 5.8 | 5.3 | 6.2 | 1.5 | 57.3 | 357 | 4.4 | 13.7 | 0 | 0 | 16312 | composite_masked_tile 8, composite_tile 64, mip_chain 20
+heal (cold) | Heal | layer | 200 | fit | 156.5 | 37.5 | 6.6 | 6.5 | 6.8 | 1 | 45.8 | 102 | 3.1 | 11.9 | 0 | 0 | 16319 | composite_masked_tile 11, composite_tile 16, mip_chain 42
+heal | Heal | layer | 50 | fit | 156.5 | 6.4 | 2.7 | 2.9 | 4 | 0.8 | 11.6 | 90 | 4.9 | 15.1 | 0 | 0 | 12688 | composite_masked_tile 20, composite_tile 64, mip_chain 71
+heal | Heal | layer | 200 | fit | 156.5 | 8 | 6.2 | 6.3 | 7.5 | 0.9 | 15.8 | 337 | 13.3 | 22.1 | 0 | 0 | 16333 | composite_masked_tile 40, composite_tile 64, mip_chain 150
+heal | Heal | layer | 400 | fit | 156.5 | 13.2 | 13.9 | 12.7 | 14.2 | 1.2 | 28.6 | 545 | 34.8 | 37 | 0 | 0 | 16324 | composite_masked_tile 42, composite_tile 64, mip_chain 200
+heal | Heal | layer | 50 | 1:1 | 18 | 41.3 | 2.1 | 1.7 | 2.6 | 1.2 | 47.9 | 103 | 13.8 | 14 | 0 | 0 | 12511 | composite_masked_tile 8, composite_tile 64, poisson_blend 1
+heal | Heal | layer | 200 | 1:1 | 18 | 39.2 | 2.6 | 2.5 | 3.6 | 1.3 | 43.7 | 73 | 3.2 | 9.4 | 0 | 0 | 16320 | composite_masked_tile 8, composite_tile 64
+heal | Heal | layer | 400 | 1:1 | 18 | 37.9 | 4.6 | 4.8 | 5.4 | 1.3 | 44.1 | 321 | 4.9 | 16.8 | 0 | 0 | 16284 | composite_masked_tile 12, composite_tile 64, mip_chain 28
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["heal"], "SIZES": null, "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 6222}}

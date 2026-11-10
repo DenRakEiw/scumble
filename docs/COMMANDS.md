@@ -92,7 +92,7 @@ The recipes (ComfyUI workflows and API providers) and which one is selected. rea
 
 ### `select_recipe` *(app)* *(destructive)*
 
-Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark, oxen, magnific; list_recipes has each recipe's own), else the remembered or default one.
+Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark, minimax, oxen, magnific; list_recipes has each recipe's own), else the remembered or default one.
 
 | param | type | description |
 |---|---|---|

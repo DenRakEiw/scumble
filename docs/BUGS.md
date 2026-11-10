@@ -9,6 +9,10 @@ the ones that were performance work.
 
 ---
 
+
+### A cancelled save still reads as a failure in the status line (found 2026-11-10, read)
+`renderer/shell.js` line 25 holds a literal backspace character where `\\b` was meant (twice, in the regex for "was cancelled / is already being saved / is already being opened"), so it never matches and those lines take `failKind`'s colour instead of plain. A one-character fix, left for the update after 0.1.54 because the installer was already built and gated.
+
 ## Fixed, waiting for its release
 
 0.1.50's and 0.1.51's fixes went out with them (`CHANGELOG.md` has them).

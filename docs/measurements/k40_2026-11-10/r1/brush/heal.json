@@ -1,0 +1,1304 @@
+{
+ "size": "15000x10000",
+ "tiles": true,
+ "kernels": "rust",
+ "kernelsInUse": "rust",
+ "dpr": 1.5,
+ "canvas": [
+  1820,
+  1198
+ ],
+ "visible": "visible",
+ "focused": true,
+ "params": {
+  "W": 15000,
+  "H": 10000,
+  "TOOLS": [
+   "heal"
+  ],
+  "SIZES": null,
+  "SAMPLES": [
+   "image",
+   "layer"
+  ],
+  "FX_SAMPLES": [
+   "layer"
+  ],
+  "KERNELS": "rust",
+  "VIEWS": [
+   "fit",
+   "1:1"
+  ],
+  "MOVES": 30,
+  "MOVE_CSS": 12,
+  "MODE": "sync",
+  "GAP": 4,
+  "PEN": 0,
+  "COALESCED": 1,
+  "HARDNESS": 0.5,
+  "SELECT": false,
+  "BASE_ROW": true,
+  "KEEP": false
+ },
+ "built": {
+  "reused": false,
+  "ms": 5775
+ },
+ "rows": [
+  {
+   "tool": "heal",
+   "sample": "image",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": true,
+   "press": 34.4,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1180,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 70.9,
+    "sum": 160,
+    "over50": 1
+   },
+   "firstMove": 8.6,
+   "move": {
+    "med": 7.3,
+    "worst": 8,
+    "n": 5
+   },
+   "dab": {
+    "med": 6.1,
+    "worst": 6.6,
+    "n": 5
+   },
+   "frame": {
+    "med": 1.2,
+    "worst": 1.4,
+    "n": 5
+   },
+   "otherFrames": 0,
+   "up": 6.3,
+   "healWait": 104.8,
+   "heal": {
+    "where": "worker",
+    "ms": 87,
+    "px": 218710,
+    "box": [
+     1148,
+     209
+    ],
+    "cycles": 6
+   },
+   "release": {
+    "max": 21.3,
+    "sum": 21,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 11,
+    "composite_tile": 16,
+    "mip_chain": 41
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 218710,
+     "kernel": 86.9,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16314,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1180,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1183,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "image",
+   "size": 50,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 10.1,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1183,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 15.8,
+    "sum": 107,
+    "over50": 0
+   },
+   "firstMove": 3.8,
+   "move": {
+    "med": 3.1,
+    "worst": 4.8,
+    "n": 29
+   },
+   "dab": {
+    "med": 2.3,
+    "worst": 3.6,
+    "n": 29
+   },
+   "frame": {
+    "med": 0.8,
+    "worst": 1.2,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 7.2,
+   "healWait": 96.5,
+   "heal": {
+    "where": "worker",
+    "ms": 85,
+    "px": 236768,
+    "box": [
+     4754,
+     59
+    ],
+    "cycles": 6
+   },
+   "release": {
+    "max": 21.8,
+    "sum": 22,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 20,
+    "composite_tile": 64,
+    "mip_chain": 71
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 236768,
+     "kernel": 75.7,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 4,
+     "kernel": 0.7,
+     "pxCalls": {
+      "mip_chain": 4
+     },
+     "gen": 0
+    }
+   },
+   "changed": 12705,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1183,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1188,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "image",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 9.3,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1188,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 18.4,
+    "sum": 353,
+    "over50": 0
+   },
+   "firstMove": 8.1,
+   "move": {
+    "med": 6.7,
+    "worst": 7.9,
+    "n": 29
+   },
+   "dab": {
+    "med": 5.7,
+    "worst": 6.6,
+    "n": 29
+   },
+   "frame": {
+    "med": 1,
+    "worst": 1.3,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 24.5,
+   "healWait": 368.8,
+   "heal": {
+    "where": "worker",
+    "ms": 324,
+    "px": 968280,
+    "box": [
+     4904,
+     208
+    ],
+    "cycles": 6
+   },
+   "release": {
+    "max": 53.1,
+    "sum": 79,
+    "over50": 1
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 40,
+    "composite_tile": 64,
+    "mip_chain": 157
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 968280,
+     "kernel": 322.8,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 24,
+     "kernel": 3.8,
+     "pxCalls": {
+      "mip_chain": 24
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16314,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1188,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1198,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "image",
+   "size": 400,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 13.6,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1198,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 28.8,
+    "sum": 575,
+    "over50": 0
+   },
+   "firstMove": 13.9,
+   "move": {
+    "med": 13.5,
+    "worst": 15.8,
+    "n": 29
+   },
+   "dab": {
+    "med": 12.3,
+    "worst": 13.8,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.3,
+    "worst": 2,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 40.3,
+   "healWait": 832.2,
+   "heal": {
+    "where": "worker",
+    "ms": 804,
+    "px": 1999306,
+    "box": [
+     5104,
+     408
+    ],
+    "cycles": 7
+   },
+   "release": {
+    "max": 42.2,
+    "sum": 77,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 42,
+    "composite_tile": 64,
+    "mip_chain": 200
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 1999306,
+     "kernel": 802,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 26,
+     "kernel": 3.1,
+     "pxCalls": {
+      "mip_chain": 26
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16321,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1198,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1208,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "image",
+   "size": 50,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 37.4,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1208,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 43.9,
+    "sum": 86,
+    "over50": 0
+   },
+   "firstMove": 4.7,
+   "move": {
+    "med": 1.4,
+    "worst": 2.8,
+    "n": 29
+   },
+   "dab": {
+    "med": 0.4,
+    "worst": 0.8,
+    "n": 29
+   },
+   "frame": {
+    "med": 1,
+    "worst": 2,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 17.1,
+   "heal": {
+    "where": "here",
+    "ms": 9,
+    "px": 28968,
+    "box": [
+     598,
+     58
+    ],
+    "cycles": 6
+   },
+   "release": {
+    "max": 17.4,
+    "sum": 17,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 4,
+    "composite_tile": 64,
+    "poisson_blend": 1
+   },
+   "jobs": {},
+   "changed": 12720,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1208,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1209,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "image",
+   "size": 200,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 35.8,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1209,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 40.5,
+    "sum": 103,
+    "over50": 0
+   },
+   "firstMove": 2.5,
+   "move": {
+    "med": 2.3,
+    "worst": 3.3,
+    "n": 29
+   },
+   "dab": {
+    "med": 1.1,
+    "worst": 2,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.1,
+    "worst": 1.6,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 2.3,
+   "healWait": 53.7,
+   "heal": {
+    "where": "worker",
+    "ms": 45,
+    "px": 139356,
+    "box": [
+     748,
+     208
+    ],
+    "cycles": 6
+   },
+   "release": {
+    "max": 13.7,
+    "sum": 14,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 8,
+    "composite_tile": 64
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 139356,
+     "kernel": 44.6,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16315,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1209,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1211,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "image",
+   "size": 400,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 47.1,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1211,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 55.2,
+    "sum": 365,
+    "over50": 1
+   },
+   "firstMove": 5.9,
+   "move": {
+    "med": 5.5,
+    "worst": 6.7,
+    "n": 29
+   },
+   "dab": {
+    "med": 3.9,
+    "worst": 5.1,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.6,
+    "worst": 2,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 4.6,
+   "healWait": 157.3,
+   "heal": {
+    "where": "worker",
+    "ms": 147,
+    "px": 341444,
+    "box": [
+     948,
+     408
+    ],
+    "cycles": 8
+   },
+   "release": {
+    "max": 13.5,
+    "sum": 14,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 8,
+    "composite_tile": 64,
+    "mip_chain": 20
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 341444,
+     "kernel": 146.5,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16312,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1211,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1213,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "layer",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": true,
+   "press": 34.2,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1213,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 42.5,
+    "sum": 99,
+    "over50": 0
+   },
+   "firstMove": 6.6,
+   "move": {
+    "med": 6.2,
+    "worst": 7,
+    "n": 5
+   },
+   "dab": {
+    "med": 5.3,
+    "worst": 5.9,
+    "n": 5
+   },
+   "frame": {
+    "med": 0.9,
+    "worst": 1.1,
+    "n": 5
+   },
+   "otherFrames": 0,
+   "up": 2.8,
+   "healWait": 92.3,
+   "heal": {
+    "where": "worker",
+    "ms": 85,
+    "px": 218710,
+    "box": [
+     1148,
+     209
+    ],
+    "cycles": 7
+   },
+   "release": {
+    "max": 9.2,
+    "sum": 9,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 11,
+    "composite_tile": 16,
+    "mip_chain": 42
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 218710,
+     "kernel": 84.8,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16319,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1213,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1216,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "layer",
+   "size": 50,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 7.5,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1216,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 11.8,
+    "sum": 52,
+    "over50": 0
+   },
+   "firstMove": 3.2,
+   "move": {
+    "med": 2.6,
+    "worst": 3.6,
+    "n": 29
+   },
+   "dab": {
+    "med": 1.9,
+    "worst": 2.6,
+    "n": 29
+   },
+   "frame": {
+    "med": 0.7,
+    "worst": 0.9,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 4.8,
+   "healWait": 81.3,
+   "heal": {
+    "where": "worker",
+    "ms": 72,
+    "px": 236768,
+    "box": [
+     4754,
+     59
+    ],
+    "cycles": 6
+   },
+   "release": {
+    "max": 13.3,
+    "sum": 13,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 20,
+    "composite_tile": 64,
+    "mip_chain": 71
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 236768,
+     "kernel": 72.1,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 4,
+     "kernel": 0.5,
+     "pxCalls": {
+      "mip_chain": 4
+     },
+     "gen": 0
+    }
+   },
+   "changed": 12688,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1216,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1221,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "layer",
+   "size": 200,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 10.5,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1221,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 20.4,
+    "sum": 344,
+    "over50": 0
+   },
+   "firstMove": 7.7,
+   "move": {
+    "med": 6.4,
+    "worst": 8.3,
+    "n": 29
+   },
+   "dab": {
+    "med": 5.4,
+    "worst": 7.2,
+    "n": 29
+   },
+   "frame": {
+    "med": 0.9,
+    "worst": 1.6,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 13.4,
+   "healWait": 381.2,
+   "heal": {
+    "where": "worker",
+    "ms": 364,
+    "px": 968280,
+    "box": [
+     4904,
+     208
+    ],
+    "cycles": 7
+   },
+   "release": {
+    "max": 21.8,
+    "sum": 35,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 40,
+    "composite_tile": 64,
+    "mip_chain": 150
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 968280,
+     "kernel": 363.2,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 24,
+     "kernel": 2.9,
+     "pxCalls": {
+      "mip_chain": 24
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16333,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1221,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1231,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "layer",
+   "size": 400,
+   "view": "fit",
+   "scale": 0.115,
+   "pxPerMove": 156.5,
+   "cold": false,
+   "press": 12.3,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1231,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 26.6,
+    "sum": 546,
+    "over50": 0
+   },
+   "firstMove": 12.8,
+   "move": {
+    "med": 12.6,
+    "worst": 15.9,
+    "n": 29
+   },
+   "dab": {
+    "med": 11.3,
+    "worst": 14.6,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.2,
+    "worst": 2.3,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 32,
+   "healWait": 799.6,
+   "heal": {
+    "where": "worker",
+    "ms": 774,
+    "px": 1999306,
+    "box": [
+     5104,
+     409
+    ],
+    "cycles": 7
+   },
+   "release": {
+    "max": 34,
+    "sum": 64,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 42,
+    "composite_tile": 64,
+    "mip_chain": 200
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 1999306,
+     "kernel": 772.7,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    },
+    "mips": {
+     "n": 1,
+     "kernels": "rust",
+     "tiles": 26,
+     "kernel": 2.9,
+     "pxCalls": {
+      "mip_chain": 26
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16324,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1231,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1242,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "layer",
+   "size": 50,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 40.7,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1242,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 44.6,
+    "sum": 118,
+    "over50": 0
+   },
+   "firstMove": 2.2,
+   "move": {
+    "med": 1.9,
+    "worst": 3.4,
+    "n": 29
+   },
+   "dab": {
+    "med": 0.5,
+    "worst": 1,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.4,
+    "worst": 2.5,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 17.9,
+   "heal": {
+    "where": "here",
+    "ms": 10,
+    "px": 28968,
+    "box": [
+     598,
+     58
+    ],
+    "cycles": 6
+   },
+   "release": {
+    "max": 18.1,
+    "sum": 18,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 8,
+    "composite_tile": 64,
+    "poisson_blend": 1
+   },
+   "jobs": {},
+   "changed": 12511,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1242,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1244,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "layer",
+   "size": 200,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 38.5,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1244,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 44.2,
+    "sum": 82,
+    "over50": 0
+   },
+   "firstMove": 3,
+   "move": {
+    "med": 2.3,
+    "worst": 3.4,
+    "n": 29
+   },
+   "dab": {
+    "med": 1.2,
+    "worst": 2.2,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.2,
+    "worst": 1.8,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 2.4,
+   "healWait": 54.5,
+   "heal": {
+    "where": "worker",
+    "ms": 46,
+    "px": 139356,
+    "box": [
+     748,
+     208
+    ],
+    "cycles": 6
+   },
+   "release": {
+    "max": 13.6,
+    "sum": 14,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 8,
+    "composite_tile": 64
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 139356,
+     "kernel": 45.4,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16320,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1244,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1246,
+     "flatMB": 0
+    }
+   ]
+  },
+  {
+   "tool": "heal",
+   "sample": "layer",
+   "size": 400,
+   "view": "1:1",
+   "scale": 1,
+   "pxPerMove": 18,
+   "cold": false,
+   "press": 42.7,
+   "kind": "layerpaint",
+   "memPress": {
+    "mirrorMB": 0,
+    "tilesMB": 1246,
+    "flatMB": 0
+   },
+   "blocked": {
+    "max": 50,
+    "sum": 337,
+    "over50": 1
+   },
+   "firstMove": 5.3,
+   "move": {
+    "med": 5.1,
+    "worst": 6.6,
+    "n": 29
+   },
+   "dab": {
+    "med": 3.7,
+    "worst": 4.6,
+    "n": 29
+   },
+   "frame": {
+    "med": 1.4,
+    "worst": 2.5,
+    "n": 29
+   },
+   "otherFrames": 0,
+   "up": 4.8,
+   "healWait": 166.5,
+   "heal": {
+    "where": "worker",
+    "ms": 155,
+    "px": 341444,
+    "box": [
+     948,
+     408
+    ],
+    "cycles": 9
+   },
+   "release": {
+    "max": 13.3,
+    "sum": 13,
+    "over50": 0
+   },
+   "step": "Heal",
+   "pxCalls": {
+    "composite_masked_tile": 12,
+    "composite_tile": 64,
+    "mip_chain": 28
+   },
+   "jobs": {
+    "poisson": {
+     "n": 1,
+     "kernels": "rust",
+     "pixels": 341444,
+     "kernel": 154.8,
+     "pxCalls": {
+      "poisson_blend": 1
+     },
+     "gen": 0
+    }
+   },
+   "changed": 16284,
+   "mem": [
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1246,
+     "flatMB": 0
+    },
+    {
+     "mirrorMB": 0,
+     "tilesMB": 1249,
+     "flatMB": 0
+    }
+   ]
+  }
+ ],
+ "table": [
+  "tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)",
+  "heal (cold) | Heal | image | 200 | fit | 156.5 | 34.4 | 8.6 | 7.3 | 8 | 1.2 | 70.9 | 160 | 6.3 | 21.3 | 0 | 0 | 16314 | composite_masked_tile 11, composite_tile 16, mip_chain 41",
+  "heal | Heal | image | 50 | fit | 156.5 | 10.1 | 3.8 | 3.1 | 4.8 | 0.8 | 15.8 | 107 | 7.2 | 21.8 | 0 | 0 | 12705 | composite_masked_tile 20, composite_tile 64, mip_chain 71",
+  "heal | Heal | image | 200 | fit | 156.5 | 9.3 | 8.1 | 6.7 | 7.9 | 1 | 18.4 | 353 | 24.5 | 53.1 | 0 | 0 | 16314 | composite_masked_tile 40, composite_tile 64, mip_chain 157",
+  "heal | Heal | image | 400 | fit | 156.5 | 13.6 | 13.9 | 13.5 | 15.8 | 1.3 | 28.8 | 575 | 40.3 | 42.2 | 0 | 0 | 16321 | composite_masked_tile 42, composite_tile 64, mip_chain 200",
+  "heal | Heal | image | 50 | 1:1 | 18 | 37.4 | 4.7 | 1.4 | 2.8 | 1 | 43.9 | 86 | 17.1 | 17.4 | 0 | 0 | 12720 | composite_masked_tile 4, composite_tile 64, poisson_blend 1",
+  "heal | Heal | image | 200 | 1:1 | 18 | 35.8 | 2.5 | 2.3 | 3.3 | 1.1 | 40.5 | 103 | 2.3 | 13.7 | 0 | 0 | 16315 | composite_masked_tile 8, composite_tile 64",
+  "heal | Heal | image | 400 | 1:1 | 18 | 47.1 | 5.9 | 5.5 | 6.7 | 1.6 | 55.2 | 365 | 4.6 | 13.5 | 0 | 0 | 16312 | composite_masked_tile 8, composite_tile 64, mip_chain 20",
+  "heal (cold) | Heal | layer | 200 | fit | 156.5 | 34.2 | 6.6 | 6.2 | 7 | 0.9 | 42.5 | 99 | 2.8 | 9.2 | 0 | 0 | 16319 | composite_masked_tile 11, composite_tile 16, mip_chain 42",
+  "heal | Heal | layer | 50 | fit | 156.5 | 7.5 | 3.2 | 2.6 | 3.6 | 0.7 | 11.8 | 52 | 4.8 | 13.3 | 0 | 0 | 12688 | composite_masked_tile 20, composite_tile 64, mip_chain 71",
+  "heal | Heal | layer | 200 | fit | 156.5 | 10.5 | 7.7 | 6.4 | 8.3 | 0.9 | 20.4 | 344 | 13.4 | 21.8 | 0 | 0 | 16333 | composite_masked_tile 40, composite_tile 64, mip_chain 150",
+  "heal | Heal | layer | 400 | fit | 156.5 | 12.3 | 12.8 | 12.6 | 15.9 | 1.2 | 26.6 | 546 | 32 | 34 | 0 | 0 | 16324 | composite_masked_tile 42, composite_tile 64, mip_chain 200",
+  "heal | Heal | layer | 50 | 1:1 | 18 | 40.7 | 2.2 | 1.9 | 3.4 | 1.4 | 44.6 | 118 | 17.9 | 18.1 | 0 | 0 | 12511 | composite_masked_tile 8, composite_tile 64, poisson_blend 1",
+  "heal | Heal | layer | 200 | 1:1 | 18 | 38.5 | 3 | 2.3 | 3.4 | 1.2 | 44.2 | 82 | 2.4 | 13.6 | 0 | 0 | 16320 | composite_masked_tile 8, composite_tile 64",
+  "heal | Heal | layer | 400 | 1:1 | 18 | 42.7 | 5.3 | 5.1 | 6.6 | 1.4 | 50 | 337 | 4.8 | 13.3 | 0 | 0 | 16284 | composite_masked_tile 12, composite_tile 64, mip_chain 28"
+ ]
+}

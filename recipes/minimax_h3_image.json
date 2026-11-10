@@ -1,0 +1,75 @@
+{
+  "id": "minimax_h3_image",
+  "kind": "provider",
+  "name": "MiniMax-H3-Image",
+  "family": "MiniMax",
+  "refs": { "name": "image {n}" },
+  "description": "MiniMax's H3 image model on MiniMax's own API, 1K to 4K, with a Highspeed choice. It has no mask: it renders the whole crop again and your selection limits what lands. Adapter written from the provider's docs, not run against the live API yet.",
+  "default": "minimax",
+  "providers": {
+    "minimax": {
+      "model": "MiniMax-H3-Image",
+      "input": "edit",
+      "settings": [
+        {
+          "index": 1,
+          "key": "size",
+          "label": "Size",
+          "spec": [
+            [
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "2K"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "speed",
+          "label": "Speed",
+          "spec": [
+            [
+              "Standard",
+              "Highspeed"
+            ],
+            {
+              "default": "Standard"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "region",
+          "label": "Region",
+          "spec": [
+            [
+              "International",
+              "China"
+            ],
+            {
+              "default": "International"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 8192,
+        "min": 384,
+        "step": 16,
+        "pixels": 16777216,
+        "ratio": 3
+      },
+      "text": {
+        "sizes": [
+          1024,
+          2048,
+          4096
+        ]
+      },
+      "note": "Runs on MiniMax's own API; not run against the live API yet (written from MiniMax's docs of 2026-11-10). The pictures go inline in the request to MiniMax, at api.minimax.io (Region International) or api.minimax.cn (Region China); a key works only with the console it was made in. Instruction edit of the crop plus the reference layers. The model has no mask: it renders the whole crop again, and the stitch keeps your selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The answer is the crop's own shape at the area of the Size row (1K, 2K or 4K: about 1, 4 or 16 megapixels), as PNG; a crop steeper than 3:1 is refused. Generate new makes the asked aspect at the Size row's area, whatever size its dialog names, from the prompt alone. Highspeed is the same model, faster, at about twice the output price. At most 16 pictures go in (the crop, Original and the reference layers), each 128 to 8192 px a side and no steeper than 4:1, all of it at most 64 MiB in one request. No seed, no negative prompt and no transparent background; MiniMax always enhances an edit's prompt. A request that fails is never sent again by itself, because a second request is billed again. Approximate prices, which MiniMax calls reference values: about $0.02 at 1K and 2K and $0.07 at 4K for a new image; about $0.03 at 1K and 2K and $0.07 at 4K for an edit with one picture; Highspeed costs more."
+    }
+  }
+}

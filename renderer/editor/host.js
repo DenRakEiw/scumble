@@ -174,6 +174,18 @@ function documentQuestion(q) {
             detail: "Don't Save closes the tab; File › Reopen Closed Tab (Ctrl+Shift+T) brings it back in this session.",
         },
     };
+    if (q.kind === "replace") {
+        const n = q.layers || 0;
+        const what = n ? `its ${n} layer${n === 1 ? "" : "s"}` : "the picture";
+        return {
+            answers: ["replace", "cancel"],
+            spec: {
+                buttons: ["Replace", "Cancel"], defaultId: 1, cancelId: 1, danger: 0,
+                title: `Replace ${name} with the new picture?`,
+                detail: `Generate new replaces ${what} and the picture under them when the answer lands, and the undo history goes with them; reference layers stay. This cannot be undone: cancel and save first if you may want it back.`,
+            },
+        };
+    }
     if (q.kind === "changed") return {
         answers: ["overwrite", "saveas", "cancel"],
         spec: {
@@ -5446,7 +5458,7 @@ export const host = {
         }
         if (!this.connected) throw refusal("Not connected to ComfyUI.");
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
-        if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
+        if (missing.length) throw new Error(comfyprompt.lacksNodesText(r, missing));
         if (upscale && !pass && !(editor.getBounds && editor.getBounds())) throw refusal("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
         // the recipe's LoRA rows (item 50): more than five, or a file the server's list lacks, refuse here, before
         // anything is uploaded; spliced into the queued copy below
@@ -6034,8 +6046,20 @@ export const host = {
     },
 
     /**
+     * What Generate new would take from this tab when its answer lands (setBaseFromCanvas keeps only the reference
+     * layers and clears the undo history): { layers } (those that go), or null when nothing would be lost: no picture
+     * yet, or a blank canvas nobody has worked on (issue #12).
+     */
+    replaceLoss(ed) {
+        if (!ed || !ed.base) return null;
+        const layers = ed.layers.filter((l) => !ed.isReference(l)).length;
+        if (!layers && ed._blankBase && !ed.undo.length) return null;
+        return { layers };
+    },
+
+    /**
      * A question about a document, in the app's own dialog (renderer/dialogs.js): `close` -> "save" | "discard" |
-     * "cancel", `changed` and `newer` -> "overwrite" | "saveas" | "cancel", `history` -> "with" | "without" | "cancel".
+     * "cancel", `replace` -> "replace" | "cancel", `changed` and `newer` -> "overwrite" | "saveas" | "cancel", `history` -> "with" | "without" | "cancel".
      * A test replaces this method in the page.
      */
     async askDocument(q) {

@@ -14,7 +14,7 @@
 #
 # A gate is a tools/ script name without .py (editor, composite, pixels, shape, brush, commands,
 # film, relight, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, oxen, magnific, recipes, loras, assistant, mcp, smoke,
-# node, blendmodes, perf:<args>, pxjobs:<args>, pxprobe:<args>; mcpb is tools/mcpb_test.js in plain Node).
+# node, blendmodes, perf:<args>, pxjobs:<args>, pxprobe:<args>; mcpb is tools/mcpb_test.js and minimax is tools/minimax_test.js in plain Node).
 # Gate "toapis" (tools/toapis_test.py) runs tools/toapis_test.js in plain Node first, then the app against
 # tools/toapis_mock.py; it needs no ToAPIs key and refuses a profile that holds one. Gate "openrouter"
 # (tools/openrouter_test.py) does the same with tools/openrouter_test.js and tools/openrouter_mock.py, and gate
@@ -75,7 +75,7 @@ if curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null; then
 fi
 
 needs_app=0
-for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document|document:*|portable|mcpb|cli) ;; *) needs_app=1 ;; esac; done
+for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document|document:*|portable|mcpb|minimax|cli) ;; *) needs_app=1 ;; esac; done
 TILEARG=""
 case "$TILES" in
   on) export SCUMBLE_TILES=1; TILEARG="--tiles" ;;
@@ -144,6 +144,8 @@ for g in "$@"; do
     # the .mcpb bundle (docs/PLAN_MCPB.md): plain Node (the manifest, the starter's search and start forms, the fallback
     # over stdio); with --exe also a real headless start through the starter on a profile of its own (--no-comfy)
     mcpb) timeout 900 node tools/mcpb_test.js ${EXE:+--exe "$EXE"} > "$OUT/mcpb.log" 2>&1; rc=$? ;;
+    # the MiniMax adapter, its recipe and its wiring (docs/RECIPES.md "MiniMax"): plain Node, no app, no key
+    minimax) timeout 180 node tools/minimax_test.js > "$OUT/minimax.log" 2>&1; rc=$? ;;
     # Scumble --run (electron/main/cli_run.js): tools/cli_run_test.js in plain Node, then seven batches, each starting
     # and quitting its own headless instance (--no-comfy, a profile under $OUT/cli, no DevTools port), so no app of the
     # runner's

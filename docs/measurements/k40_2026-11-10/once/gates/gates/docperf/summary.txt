@@ -1,0 +1,2 @@
+docperf:15000x10000 rc=0 53s PASS
+ALL PASS

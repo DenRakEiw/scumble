@@ -173,6 +173,19 @@ async function main() {
         delete pNoUp.upsampler;
         check("P-H3-Image: the upsampler's whole-batch read does not count (undeclared, it ends the identity)", C.comfyRefSpec(pNoUp).trim === null, short(C.comfyRefSpec(pNoUp)));
 
+        // MiniMax-H3-Image (recipes/minimax_h3_image_local.json, the node from the open Comfy-Org/ComfyUI#17655): the same
+        // ranking as P-H3-Image over its 16 slots
+        const [MH3, mhWarn] = shipped("minimax_h3_image_local.json");
+        const mhSpec = C.comfyRefSpec(MH3);
+        const mhTrim = range(1, 16).map((k) => ({ node: "cond", input: `images.image_${k}`, batch: k - 1 }));
+        check("MiniMax-H3-Image: <Picture {n}>, 16 slots, not a guess, the trim cond.images.image_1..16 reading batches 0..15, read without a warning",
+            mhSpec.name === "<Picture {n}>" && mhSpec.slots === 16 && mhSpec.guess === false && eq(mhSpec.trim, mhTrim) && !mhWarn.length, short({ ...mhSpec, trim: mhSpec.trim && mhSpec.trim.length, warned: mhWarn }));
+        const mhSlots = C.comfySlots(MH3.prompt, MH3.canvas);
+        check("MiniMax-H3-Image: comfySlots numbers each input by its rank (image_10 after image_9), class MiniMaxH3ImageConditioning", mhSlots.length === 16 && mhSlots.every((s, i) => s.cls === "MiniMaxH3ImageConditioning" && s.batch === i && s.num === i + 1), short(mhSlots));
+        const mhBare = clone(MH3);
+        delete mhBare.refs;
+        const mhDerived = C.comfyRefSpec(mhBare);
+        check("MiniMax-H3-Image without refs: the identity trace derives the name and the 16 slots from the class", mhDerived.name === "<Picture {n}>" && mhDerived.slots === 16 && mhDerived.guess === false && eq(mhDerived.trim, mhTrim), short({ ...mhDerived, trim: mhDerived.trim && mhDerived.trim.length }));
         // MOSS-Image Edit (docs/PLAN_LORAS.md LR6): two TextEncodeMOSSImageEdit nodes (pos and neg) reading the same four
         // pictures, each scaled (scale0..3), as images.image_0..3 numbered by rank; one class, four batches: an identity
         const [ME, mWarn] = shipped("moss_image_edit_local.json");
