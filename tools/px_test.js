@@ -11114,13 +11114,18 @@ async function tiffCases(js, simd, scalar, K, T) {
             try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
         }
         const enc = lzwEncodeTiff(pSmall);
-        K.setKernels("js");
+        const pbEnc = packBitsEncode(pSmall);
+        K.setRoute("tiffUnpack", "js");
         K.pxCalls(true);
         const outJs = K.tiffUnpack(5, enc, pSmall.length);
         const jsCalls = K.pxCalls(true).tiff_unpack || 0;
-        K.setKernels("rust");
+        K.setRoute("tiffUnpack", "rust");
         const outRust = K.tiffUnpack(5, enc, pSmall.length);
+        const outPbRust = K.tiffUnpack(32773, pbEnc, pSmall.length);
         const rustCalls = K.pxCalls(true).tiff_unpack || 0;
+        const outRawKeepJs = K.tiffUnpack(1, pSmall, pSmall.length);
+        const rawRustCalls = K.pxCalls(true).tiff_unpack || 0;
+        K.setRoute("tiffUnpack", null);
         // Trap recovery on K.tiffUnpack falls back to the JS twin
         const p = K.rustPx(), realWarn = console.warn;
         let outRec = null, recReplaced = false;
@@ -11131,9 +11136,11 @@ async function tiffCases(js, simd, scalar, K, T) {
             recReplaced = K.rustPx() !== p;
         } finally { console.warn = realWarn; }
         K.setKernels("js");
-        check("kernels.js tiffUnpack dispatches between JS twin (0 calls) and Rust (1 call) with identical bytes, and recovers from a trap",
-            jsCalls === 0 && rustCalls === 1 && eqBytes(outJs, pSmall) && eqBytes(outRust, pSmall) && eqBytes(outRec, pSmall) && recReplaced,
-            `jsCalls=${jsCalls} rustCalls=${rustCalls} recReplaced=${recReplaced}`);
+        check("kernels.js tiffUnpack routes LZW/PackBits to Rust (2 calls), keeps uncompressed (1) on JS copy (0 calls), and recovers from a trap",
+            jsCalls === 0 && rustCalls === 2 && rawRustCalls === 0
+            && eqBytes(outJs, pSmall) && eqBytes(outRust, pSmall) && eqBytes(outPbRust, pSmall) && eqBytes(outRawKeepJs, pSmall)
+            && eqBytes(outRec, pSmall) && recReplaced,
+            `jsCalls=${jsCalls} rustCalls=${rustCalls} rawRustCalls=${rawRustCalls} recReplaced=${recReplaced}`);
     }
 
     // Live readTiff checks: 1-byte first-piece LZW fix and StripRows/TileRows stopping at `need`
@@ -11199,23 +11206,27 @@ async function tiffCases(js, simd, scalar, K, T) {
         const s1 = Uint8Array.from([0, 0, 8, 10, 20, 30]);
         const strip1 = packCodesMsb([...Array.from(s1, (b) => [b, 9]), [257, 9]]);
         const tiff1 = mkLittleTiff([[256, 4, [2]], [257, 4, [1]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [strip1]);
-        let got1 = null;
+        let got1 = null, got1Stream = null;
         await T.readTiff(oneByteFirstBlob(tiff1), { onRows: (rgba) => { got1 = rgba.slice(); } });
+        await T.readTiff(oneByteFirstBlob(tiff1), { streamed: true, onRows: (rgba) => { got1Stream = rgba.slice(); } });
         const want1 = Uint8Array.from([0, 0, 8, 255, 10, 20, 30, 255]);
         // Also verify 1-byte first piece on actual old-style LZW [0x00, 0x01, 0x02] is still refused
         const tiffOld = mkLittleTiff([[256, 4, [2]], [257, 4, [1]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [Uint8Array.from([0x00, 0x01, 0x02, 0x03])]);
-        let errOld = null;
+        let errOld = null, errOldStream = null;
         try { await T.readTiff(oneByteFirstBlob(tiffOld), { onRows: () => {} }); } catch (e) { errOld = e; }
+        try { await T.readTiff(oneByteFirstBlob(tiffOld), { streamed: true, onRows: () => {} }); } catch (e) { errOldStream = e; }
         check("inpaint_tiff.js readTiff: 1-byte first LZW piece keeps byte[0] when byte[0] === byte[1] and still refuses old-style LZW",
-            !!got1 && eqBytes(got1, want1) && !!errOld && /old-style LZW/i.test(errOld.message));
+            !!got1 && eqBytes(got1, want1) && !!got1Stream && eqBytes(got1Stream, want1)
+            && !!errOld && /old-style LZW/i.test(errOld.message) && !!errOldStream && /old-style LZW/i.test(errOldStream.message));
 
-        // 2) StripRows.open and TileRows.tile pass `need` / `want` to unpacked() so damaged codes after `need` are ignored
+        // 2) StripRows.open, TileRows.tile, and readTiffBand pass `need` / `want` so damaged codes after `need` are ignored
         const w2 = 16, h2 = 4, s2 = new Uint8Array(w2 * h2 * 3);
         for (let i = 0; i < s2.length; i++) s2[i] = (i * 17 + 3) & 255;
         const badStrip = packCodesMsb([[256, 9], ...Array.from(s2, (b) => [b, 9]), [511, 9]]);
         const tiffStripNeed = mkLittleTiff([[256, 4, [w2]], [257, 4, [h2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [h2]]], [badStrip]);
-        let gotStrip = null;
+        let gotStrip = null, gotStripStream = null;
         await T.readTiff(new Blob([tiffStripNeed]), { onRows: (rgba) => { gotStrip = rgba.slice(); } });
+        await T.readTiff(new Blob([tiffStripNeed]), { streamed: true, onRows: (rgba) => { gotStripStream = rgba.slice(); } });
 
         const tileSamples = new Uint8Array(16 * 16 * 3);
         tileSamples.set(s2);
@@ -11227,10 +11238,13 @@ async function tiffCases(js, simd, scalar, K, T) {
         tilePairs.push([511, 9]);
         const badTile = packCodesMsb(tilePairs);
         const tiffTileNeed = mkLittleTiff([[256, 4, [w2]], [257, 4, [h2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [322, 4, [16]], [323, 4, [16]]], [badTile], 324, 325);
-        let gotTile = null;
+        let gotTile = null, gotTileStream = null;
         await T.readTiff(new Blob([tiffTileNeed]), { onRows: (rgba) => { gotTile = rgba.slice(); } });
-        check("inpaint_tiff.js readTiff: StripRows.open and TileRows.tile stop at `need` / `want` when damaged LZW bytes follow",
-            !!gotStrip && !!gotTile && eqBytes(gotStrip, gotTile) && gotStrip[0] === s2[0] && gotStrip[1] === s2[1] && gotStrip[2] === s2[2]);
+        await T.readTiff(new Blob([tiffTileNeed]), { streamed: true, onRows: (rgba) => { gotTileStream = rgba.slice(); } });
+        check("inpaint_tiff.js readTiff: StripRows.open, TileRows.tile, and readTiffBand stop at `need` / `want` when damaged LZW bytes follow",
+            !!gotStrip && !!gotTile && eqBytes(gotStrip, gotTile)
+            && !!gotStripStream && !!gotTileStream && eqBytes(gotStripStream, gotStrip) && eqBytes(gotTileStream, gotStrip)
+            && gotStrip[0] === s2[0] && gotStrip[1] === s2[1] && gotStrip[2] === s2[2]);
     }
 
     // ---- K15: tiff_unpredict, tiff_predict_rgba, tiff_to_rgba, tiffStrip, tiffStripFromPtr, tiffPartJob, tiffKernels ----
@@ -11853,45 +11867,53 @@ async function tiffCases(js, simd, scalar, K, T) {
             console.warn = realWarn;
         }
 
-        // 4c. tiffKernels() per-call rustPx() lookup across instance replacement + route switching + in-place trap safety (T2)
+        // 4c. tiffKernels() per-call rustPx() lookup across instance replacement + route switching + in-place trap safety (T2 + K17 tiffUnpack)
         const tk = K.tiffKernels();
         const tkMethodsMatch = tk.unpredict === K.tiffUnpredict && tk.predictRgba === K.tiffPredictRgba && tk.toRgba === K.tiffToRgba && tk.unpackStrip === K.tiffUnpack;
         const pBefore = K.rustPx();
         let oldCalls = 0, newCalls = 0;
-        for (const m of ["tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
+        for (const m of ["tiffUnpack", "tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
             const orig = pBefore[m].bind(pBefore);
             pBefore[m] = (...a) => { oldCalls++; return orig(...a); };
         }
         K.dropPx("idle");
         const pAfter = K.rustPx();
-        for (const m of ["tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
+        for (const m of ["tiffUnpack", "tiffUnpredict", "tiffPredictRgba", "tiffToRgba"]) {
             const orig = pAfter[m].bind(pAfter);
             pAfter[m] = (...a) => { newCalls++; return orig(...a); };
         }
         const sampleRgba = new Uint8Array(16 * 4);
         for (let i = 0; i < sampleRgba.length; i++) sampleRgba[i] = (i * 19 + 5) & 255;
+        const sampleLzw = lzwEncodeTiff(sampleRgba);
         const spec4c = { w: 16, rowBytes: 64, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "straight", pal: null };
 
         K.pxCalls(true);
+        const unpRust = tk.unpackStrip(5, sampleLzw, sampleRgba.length);
         const uRust = tk.unpredict(sampleRgba.slice(), 1, 64, 16, 4, 8, true);
         const pRust = tk.predictRgba(sampleRgba.slice(), 16, 1);
         const cRust = tk.toRgba([sampleRgba], 1, null, spec4c);
         const callsRust = K.pxCalls(true);
         const oldCallsAfterDrop = oldCalls, newCallsAfterDrop = newCalls;
 
-        for (const r of ["tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, "js");
+        for (const r of ["tiffUnpack", "tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, "js");
+        const unpJs = tk.unpackStrip(5, sampleLzw, sampleRgba.length);
         const uJs = tk.unpredict(sampleRgba.slice(), 1, 64, 16, 4, 8, true);
         const pJs = tk.predictRgba(sampleRgba.slice(), 16, 1);
         const cJs = tk.toRgba([sampleRgba], 1, null, spec4c);
         const callsJs = K.pxCalls(true);
-        for (const r of ["tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, null);
+        for (const r of ["tiffUnpack", "tiffUnpredict", "tiffPredict", "tiffToRgba"]) K.setRoute(r, null);
 
-        // In-place trap safety: when tiff_unpredict or tiff_predict_rgba traps in wasm, the caller's JS buffer was not
+        // In-place trap safety: when tiff_unpack, tiff_unpredict or tiff_predict_rgba traps in wasm, the caller's JS buffer was not
         // mutated before the fallback twin runs, so the returned buffer matches the JS twin on the original input!
         let trapInPlaceOk = true;
         console.warn = () => {};
         try {
             let pCur = K.rustPx();
+            pCur.exports = { ...pCur.exports, tiff_unpack: () => trapIn(pCur) };
+            const unpRec = tk.unpackStrip(5, sampleLzw, sampleRgba.length);
+            if (!eqBytes(unpRec, unpJs) || K.rustPx() === pCur) trapInPlaceOk = false;
+
+            pCur = K.rustPx();
             pCur.exports = { ...pCur.exports, tiff_unpredict: () => trapIn(pCur) };
             const uBuf = sampleRgba.slice();
             const uRec = tk.unpredict(uBuf, 1, 64, 16, 4, 8, true);
@@ -11912,10 +11934,10 @@ async function tiffCases(js, simd, scalar, K, T) {
         }
         K.setKernels("js");
         check("kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels",
-            tkMethodsMatch && pBefore !== pAfter && oldCallsAfterDrop === 0 && newCallsAfterDrop === 3
-            && callsRust.tiff_unpredict === 1 && callsRust.tiff_predict_rgba === 1 && callsRust.tiff_to_rgba === 1
-            && !callsJs.tiff_unpredict && !callsJs.tiff_predict_rgba && !callsJs.tiff_to_rgba
-            && eqBytes(uRust, uJs) && eqBytes(pRust, pJs) && eqBytes(cRust, cJs) && trapInPlaceOk,
+            tkMethodsMatch && pBefore !== pAfter && oldCallsAfterDrop === 0 && newCallsAfterDrop === 4
+            && callsRust.tiff_unpack === 1 && callsRust.tiff_unpredict === 1 && callsRust.tiff_predict_rgba === 1 && callsRust.tiff_to_rgba === 1
+            && !callsJs.tiff_unpack && !callsJs.tiff_unpredict && !callsJs.tiff_predict_rgba && !callsJs.tiff_to_rgba
+            && eqBytes(unpRust, unpJs) && eqBytes(uRust, uJs) && eqBytes(pRust, pJs) && eqBytes(cRust, cJs) && trapInPlaceOk,
             `tkMethodsMatch=${tkMethodsMatch} oldCalls=${oldCallsAfterDrop} newCalls=${newCallsAfterDrop} callsRust=${JSON.stringify(callsRust)} callsJs=${JSON.stringify(callsJs)} trapInPlaceOk=${trapInPlaceOk}`);
 
         // 4d. readTiff with kernels: null (converter + JS unpredict) vs kernels: K.tiffKernels() (Rust toRgba + unpredict)
@@ -11968,8 +11990,350 @@ async function tiffCases(js, simd, scalar, K, T) {
             // px 3: idx=2 -> (120,80,170), a=0 -> (0,0,0,0)
             const wantPal = new Uint8Array([90, 180, 255, 85, 180, 120, 255, 170, 200, 100, 50, 255, 0, 0, 0, 0]);
             check("inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA",
-                eqBytes(outNull, wantPal) && eqBytes(outRust, wantPal) && cPal.tiff_to_rgba === 1,
+                eqBytes(outNull, wantPal) && eqBytes(outRust, wantPal) && cPal.tiff_to_rgba === 1 && !cPal.tiff_unpack,
                 `null=${Array.from(outNull || [])} rust=${Array.from(outRust || [])} calls=${JSON.stringify(cPal)}`);
+        }
+
+        // 4e. K17: tiffPlan, readTiffBand, TIFF_BAND_BYTES RGBA-size rule, per-tile unpredict (8-bit and 16-bit), and 1 blob.slice().arrayBuffer() per contiguous band
+        {
+            const mkTiff = (tags, data, offTag = 273, cntTag = 279) => {
+                const parts = [];
+                let size = 0;
+                const push = (b) => { parts.push(b); size += b.length; };
+                push(Uint8Array.from([0x49, 0x49, 42, 0, 0, 0, 0, 0]));
+                const offsets = [];
+                for (const seg of data) { if (size & 1) push(new Uint8Array(1)); offsets.push(size); push(seg); }
+                if (size & 1) push(new Uint8Array(1));
+                const ifdAt = size;
+                const allTags = [...tags, [offTag, 4, offsets], [cntTag, 4, data.map((s) => s.length)]].sort((a, b) => a[0] - b[0]);
+                const ifd = new Uint8Array(2 + 12 * allTags.length + 4);
+                const dv = new DataView(ifd.buffer);
+                dv.setUint16(0, allTags.length, true);
+                let extraAt = ifdAt + ifd.length;
+                const extras = [];
+                allTags.forEach(([tag, type, vals], i) => {
+                    const tsz = type === 3 ? 2 : 4;
+                    const payload = new Uint8Array(tsz * vals.length);
+                    const pdv = new DataView(payload.buffer);
+                    vals.forEach((v, k) => { if (type === 3) pdv.setUint16(k * 2, v, true); else pdv.setUint32(k * 4, v >>> 0, true); });
+                    const p = 2 + 12 * i;
+                    dv.setUint16(p, tag, true); dv.setUint16(p + 2, type, true); dv.setUint32(p + 4, vals.length, true);
+                    if (payload.length <= 4) ifd.set(payload, p + 8);
+                    else {
+                        if (extraAt & 1) { extras.push(new Uint8Array(1)); extraAt++; }
+                        dv.setUint32(p + 8, extraAt, true);
+                        extras.push(payload);
+                        extraAt += payload.length;
+                    }
+                });
+                push(ifd);
+                for (const e of extras) push(e);
+                const out = new Uint8Array(size);
+                let o = 0;
+                for (const p of parts) { out.set(p, o); o += p.length; }
+                new DataView(out.buffer).setUint32(4, ifdAt, true);
+                return out;
+            };
+
+            // Tiled Predictor-2 at 8-bit and 16-bit with w=21, h=19, tw=16, tl=16 (2x2 tiles, right/bottom overhang)
+            const tw = 16, tl = 16, w = 21, h = 19, across = 2, down = 2;
+            const buildTiledPred = (bits) => {
+                const r = rng(bits === 16 ? 9416 : 9408);
+                const spp = 4;
+                const mask = bits === 16 ? 0xFFFF : 0xFF;
+                const srcSamples = bits === 16 ? new Uint16Array(w * h * spp) : new Uint8Array(w * h * spp);
+                for (let i = 0; i < srcSamples.length; i++) srcSamples[i] = r() & mask;
+                const tiles = [];
+                for (let ty = 0; ty < down; ty++) {
+                    for (let tx = 0; tx < across; tx++) {
+                        const t = bits === 16 ? new Uint16Array(tw * tl * spp) : new Uint8Array(tw * tl * spp);
+                        for (let ry = 0; ry < tl; ry++) {
+                            const y = ty * tl + ry;
+                            for (let rx = 0; rx < tw; rx++) {
+                                const x = tx * tw + rx;
+                                const dst = (ry * tw + rx) * spp;
+                                if (x < w && y < h) {
+                                    const s = (y * w + x) * spp;
+                                    for (let c = 0; c < spp; c++) t[dst + c] = srcSamples[s + c];
+                                } else {
+                                    for (let c = 0; c < spp; c++) t[dst + c] = ((rx * 19 + ry * 23 + c * 7 + tx * 11) & mask);
+                                }
+                            }
+                        }
+                        // Predictor 2 horizontal differencing inside the tile
+                        for (let ry = 0; ry < tl; ry++) {
+                            const row0 = ry * tw * spp;
+                            for (let rx = tw - 1; rx >= 1; rx--) {
+                                for (let c = 0; c < spp; c++) {
+                                    t[row0 + rx * spp + c] = (t[row0 + rx * spp + c] - t[row0 + (rx - 1) * spp + c]) & mask;
+                                }
+                            }
+                        }
+                        let rawBytes;
+                        if (bits === 16) {
+                            rawBytes = new Uint8Array(t.length * 2);
+                            const dv = new DataView(rawBytes.buffer);
+                            for (let i = 0; i < t.length; i++) dv.setUint16(i * 2, t[i], true);
+                        } else {
+                            rawBytes = new Uint8Array(t.buffer);
+                        }
+                        tiles.push(lzwEncodeTiff(rawBytes));
+                    }
+                }
+                const want = new Uint8Array(w * h * 4);
+                for (let i = 0; i < srcSamples.length; i++) {
+                    want[i] = bits === 16 ? Math.floor((srcSamples[i] * 2 + 257) / 514) : srcSamples[i];
+                }
+                const tiff = mkTiff(
+                    [[256, 4, [w]], [257, 4, [h]], [258, 3, [bits, bits, bits, bits]], [259, 3, [5]], [262, 3, [2]], [277, 3, [4]], [317, 3, [2]], [322, 4, [tw]], [323, 4, [tl]], [338, 3, [2]]],
+                    tiles, 324, 325,
+                );
+                return { tiff, want };
+            };
+
+            let tiledPredOk = true, tiledPredDetail = "";
+            for (const bits of [8, 16]) {
+                const { tiff, want } = buildTiledPred(bits);
+                let slices = 0;
+                const cBlob = {
+                    size: tiff.byteLength,
+                    slice(s = 0, e = tiff.byteLength) {
+                        const sub = tiff.subarray(s, e);
+                        return {
+                            async arrayBuffer() { slices++; return sub.slice().buffer; },
+                            stream() { return new Blob([sub]).stream(); },
+                        };
+                    },
+                };
+                const plan = await js.tiffPlan(cBlob, { rowsPerBand: 16 });
+                slices = 0;
+                const gotJs = new Uint8Array(w * h * 4);
+                for (const b of plan.bands) {
+                    const part = await js.readTiffBand(cBlob, plan, b, { kernels: null });
+                    gotJs.set(part, b.y0 * w * 4);
+                }
+                const slicesPerRead = slices;
+
+                K.setKernels("rust");
+                K.pxCalls(true);
+                const gotRust = new Uint8Array(w * h * 4);
+                await T.readTiff(new Blob([tiff]), {
+                    rowsPerBand: 16,
+                    kernels: K.tiffKernels(),
+                    onRows: (rgba, y0) => gotRust.set(rgba, y0 * w * 4),
+                });
+                const cCalls = K.pxCalls(true);
+                K.setKernels("js");
+
+                if (plan.bands.length !== 2 || slicesPerRead !== 2
+                    || !eqBytes(gotJs, want) || !eqBytes(gotRust, want)
+                    || cCalls.tiff_unpack !== 4 || cCalls.tiff_unpredict !== 4 || cCalls.tiff_to_rgba !== 2) {
+                    tiledPredOk = false;
+                    tiledPredDetail = `bits=${bits} bands=${plan.bands.length} slices=${slicesPerRead} jsEq=${eqBytes(gotJs, want)} rustEq=${eqBytes(gotRust, want)} calls=${JSON.stringify(cCalls)}`;
+                    break;
+                }
+            }
+
+            // RGBA-size rule boundary: 1-strip 1-bit 4096x4096 (64 MiB exact -> streamed=false) vs 4096x4097 (64.016 MiB -> streamed=true),
+            // forceStreamed, and multi-strip wantRows cap
+            const tiff64Exact = mkTiff([[256, 4, [4096]], [257, 4, [4096]], [258, 3, [1]], [259, 3, [1]], [262, 3, [1]], [277, 3, [1]], [278, 4, [4096]]], [new Uint8Array(512 * 4096)]);
+            const tiff64Over = mkTiff([[256, 4, [4096]], [257, 4, [4097]], [258, 3, [1]], [259, 3, [1]], [262, 3, [1]], [277, 3, [1]], [278, 4, [4097]]], [new Uint8Array(512 * 4097)]);
+            const tiffMulti = mkTiff([[256, 4, [4096]], [257, 4, [6000]], [258, 3, [1]], [259, 3, [1]], [262, 3, [1]], [277, 3, [1]], [278, 4, [1024]]], Array.from({ length: 6 }, () => new Uint8Array(512 * 1024)));
+            const pExact = await js.tiffPlan(new Blob([tiff64Exact]));
+            const pOver = await js.tiffPlan(new Blob([tiff64Over]));
+            const pForced = await js.tiffPlan(new Blob([tiff64Exact]), { streamed: true });
+            const pMulti = await js.tiffPlan(new Blob([tiffMulti]), { rowsPerBand: 8192 });
+            const rgbaRuleOk = js.TIFF_BAND_BYTES === 64 * 1048576
+                && pExact.streamed === false && pExact.bandRows === 4096 && pExact.bands.length === 1
+                && pOver.streamed === true && pOver.bandRows === 0 && pOver.bands.length === 0
+                && pForced.streamed === true && pForced.bandRows === 0 && pForced.bands.length === 0
+                && pMulti.streamed === false && pMulti.bandRows === 4096 && pMulti.bands.length === 2;
+
+            // Planar strips, striped Predictor-2, 1-byte padded strip contiguous slice, >64KB gap slice, deflate truncation, and rowsPerBand < rps slicing
+            const p0s0 = Uint8Array.from([10, 20, 30]), p0s1 = Uint8Array.from([40, 50, 60]);
+            const p1s0 = Uint8Array.from([11, 21, 31]), p1s1 = Uint8Array.from([41, 51, 61]);
+            const p2s0 = Uint8Array.from([12, 22, 32]), p2s1 = Uint8Array.from([42, 52, 62]);
+            const tiffPlanar = mkTiff([[256, 4, [3]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]], [284, 3, [2]]], [p0s0, p0s1, p1s0, p1s1, p2s0, p2s1]);
+            let planarSlices = 0, planarStreams = 0;
+            const cPlanar = {
+                size: tiffPlanar.byteLength,
+                slice(s = 0, e = tiffPlanar.byteLength) {
+                    const sub = tiffPlanar.subarray(s, e);
+                    return { async arrayBuffer() { planarSlices++; return sub.slice().buffer; }, stream() { planarStreams++; return new Blob([sub]).stream(); } };
+                },
+            };
+            const planPlanar = await js.tiffPlan(cPlanar, { rowsPerBand: 2 });
+            planarSlices = 0;
+            const gotPlanar = await js.readTiffBand(cPlanar, planPlanar, 0);
+            const singleBandSlices = planarSlices;
+            const wantPlanar = Uint8Array.from([10, 11, 12, 255, 20, 21, 22, 255, 30, 31, 32, 255, 40, 41, 42, 255, 50, 51, 52, 255, 60, 61, 62, 255]);
+
+            // readTiff on cPlanar uses !plan.streamed (arrayBuffer per band, 0 stream() calls)
+            planarSlices = 0; planarStreams = 0;
+            const gotReadPlanar = [];
+            await T.readTiff(cPlanar, { rowsPerBand: 2, onRows: (rgba) => gotReadPlanar.push(...rgba) });
+            const readPlanarAb = planarSlices, readPlanarStreams = planarStreams;
+
+            // Out-of-order contiguous segments within 64 KB span -> still 1 slice via maxEnd - minOff <= sumCounts + 65536
+            const tiffReordered = mkTiff([
+                [256, 4, [3]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [1]],
+                [262, 3, [2]], [277, 3, [3]], [278, 4, [1]], [284, 3, [2]],
+            ], [p2s0, p2s1, p1s0, p1s1, p0s0, p0s1]);
+            const planReordTmp = await js.tiffPlan(new Blob([tiffReordered]), { rowsPerBand: 2 });
+            const rOffs = planReordTmp.bands[0].offsets;
+            let reorderedSlices = 0;
+            const cReordered = {
+                size: tiffReordered.byteLength,
+                slice(s = 0, e = tiffReordered.byteLength) {
+                    const sub = tiffReordered.subarray(s, e);
+                    return { async arrayBuffer() { reorderedSlices++; return sub.slice().buffer; }, stream() { return new Blob([sub]).stream(); } };
+                },
+            };
+            const gotReordered = await js.readTiffBand(cReordered, planReordTmp, {
+                ...planReordTmp.bands[0],
+                offsets: [rOffs[4], rOffs[5], rOffs[2], rOffs[3], rOffs[0], rOffs[1]],
+            });
+
+            // >64KB gap between segments in the same band -> 2 slices
+            const gapBytes = new Uint8Array(tiffPlanar.length + 70000);
+            gapBytes.set(tiffPlanar, 0);
+            const movedOff = planPlanar.bands[0].offsets[5] + 70000;
+            gapBytes.set(p2s1, movedOff);
+            let gapSlices = 0;
+            const cGap = {
+                size: gapBytes.byteLength,
+                slice(s = 0, e = gapBytes.byteLength) {
+                    const sub = gapBytes.subarray(s, e);
+                    return { async arrayBuffer() { gapSlices++; return sub.slice().buffer; }, stream() { return new Blob([sub]).stream(); } };
+                },
+            };
+            const gotGap = await js.readTiffBand(cGap, planPlanar, {
+                ...planPlanar.bands[0],
+                offsets: [...planPlanar.bands[0].offsets.slice(0, 5), movedOff],
+            });
+
+            // Striped Predictor-2 + rowsPerBand < rps (rps=2, rowsPerBand=1 -> 2 callbacks of 1 row each)
+            const spRow0 = Uint8Array.from([100, 50, 25, 200,  10, 20, 30, 40]); // unpredicted px1 = [110, 70, 55, 240]
+            const spRow1 = Uint8Array.from([5, 15, 25, 250,  1, 2, 3, 4]);        // unpredicted px1 = [6, 17, 28, 254]
+            const spStrip = new Uint8Array(16);
+            spStrip.set(spRow0, 0); spStrip.set(spRow1, 8);
+            const tiffStripPred = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [4]], [278, 4, [2]], [317, 3, [2]], [338, 3, [2]]], [spStrip]);
+            const subRows = [];
+            await T.readTiff(new Blob([tiffStripPred]), { rowsPerBand: 1, onRows: (rgba, y0, r) => subRows.push({ rgba: rgba.slice(), y0, r }) });
+            const wantSpRow0 = Uint8Array.from([100, 50, 25, 200, 110, 70, 55, 240]);
+            const wantSpRow1 = Uint8Array.from([5, 15, 25, 250, 6, 17, 28, 254]);
+
+            // Truncated and damaged deflate streams, short tile, and upfront band EOF check in BOTH readTiffBand and streamed StripRows/TileRows refuse
+            const zlibMod = require("node:zlib");
+            const shortZ = new Uint8Array(zlibMod.deflateSync(Buffer.from([1, 2, 3])));
+            const tiffShortZ = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [8]], [262, 3, [2]], [277, 3, [3]], [278, 4, [2]]], [shortZ]);
+            const planShortZ = await js.tiffPlan(new Blob([tiffShortZ]));
+            let shortZErr = null, badZErr = null, shortTileErr = null, bandEofErr = null;
+            let streamShortStripErr = null, streamBadZErr = null, streamShortTileErr = null, streamEofErr = null;
+            try { await js.readTiffBand(new Blob([tiffShortZ]), planShortZ, 0); } catch (e) { shortZErr = e; }
+            try { await T.readTiff(new Blob([tiffShortZ]), { streamed: true }); } catch (e) { streamShortStripErr = e; }
+            const tiffBadZ = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [8]], [262, 3, [2]], [277, 3, [3]], [278, 4, [2]]], [Uint8Array.from([0x78, 0x9C, 0xFF, 0xFF, 0xFF])]);
+            const planBadZ = await js.tiffPlan(new Blob([tiffBadZ]));
+            try { await js.readTiffBand(new Blob([tiffBadZ]), planBadZ, 0); } catch (e) { badZErr = e; }
+            try { await T.readTiff(new Blob([tiffBadZ]), { streamed: true }); } catch (e) { streamBadZErr = e; }
+            const tiffShortTile = mkTiff([[256, 4, [16]], [257, 4, [16]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [322, 4, [16]], [323, 4, [16]]], [new Uint8Array(10)], 324, 325);
+            K.setKernels("rust");
+            try { await T.readTiff(new Blob([tiffShortTile]), { kernels: K.tiffKernels() }); } catch (e) { shortTileErr = e; }
+            try { await T.readTiff(new Blob([tiffShortTile]), { streamed: true, kernels: K.tiffKernels() }); } catch (e) { streamShortTileErr = e; }
+            const tiffTwoStrip = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [new Uint8Array(6), new Uint8Array(6)]);
+            new DataView(tiffTwoStrip.buffer).setUint32(tiffTwoStrip.length - 12, tiffTwoStrip.length + 10, true);
+            try { await T.readTiff(new Blob([tiffTwoStrip]), { rowsPerBand: 2, kernels: K.tiffKernels() }); } catch (e) { bandEofErr = e; }
+            try { await T.readTiff(new Blob([tiffTwoStrip]), { rowsPerBand: 2, streamed: true, kernels: K.tiffKernels() }); } catch (e) { streamEofErr = e; }
+            K.setKernels("js");
+
+            // Deflate early cancel before damaged post-need tail (codes 8 & 32946, strip & tile)
+            const validPix = Uint8Array.from([11, 22, 33, 44, 55, 66, 77, 88, 99, 111, 122, 133]);
+            const wantValidRgba = Uint8Array.from([11, 22, 33, 255, 44, 55, 66, 255, 77, 88, 99, 255, 111, 122, 133, 255]);
+            const mkBadTailZ = (bytes) => {
+                const fl = zlibMod.deflateSync(Buffer.concat([Buffer.from(bytes), Buffer.alloc(262144, 0x5A)]), { finishFlush: zlibMod.constants.Z_SYNC_FLUSH });
+                return new Uint8Array(Buffer.concat([fl, Buffer.from([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])]));
+            };
+            const zTailStrip = mkBadTailZ(validPix);
+            const tilePix = new Uint8Array(16 * 16 * 3);
+            tilePix.set(validPix.subarray(0, 6), 0);
+            tilePix.set(validPix.subarray(6, 12), 16 * 3);
+            const zTailTile = mkBadTailZ(tilePix);
+            let zCancelOk = true;
+            for (const comp of [8, 32946]) {
+                const ts = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [comp]], [262, 3, [2]], [277, 3, [3]], [278, 4, [2]]], [zTailStrip]);
+                const ps = await js.tiffPlan(new Blob([ts]));
+                const gs = await js.readTiffBand(new Blob([ts]), ps, 0);
+                if (!eqBytes(gs, wantValidRgba)) zCancelOk = false;
+                const tt = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [comp]], [262, 3, [2]], [277, 3, [3]], [322, 4, [16]], [323, 4, [16]]], [zTailTile], 324, 325);
+                const pt = await js.tiffPlan(new Blob([tt]));
+                const gt = await js.readTiffBand(new Blob([tt]), pt, 0);
+                if (!eqBytes(gt, wantValidRgba)) zCancelOk = false;
+            }
+
+            // High-SamplesPerPixel raw-plane allocation bound (2 * TIFF_BAND_BYTES = 128 MiB): w=256, bits=16, spp=128 -> maxPlaneRows=2048
+            const tinyZ = Uint8Array.from([0x78, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]);
+            const mkHiSpp = (hh) => mkTiff([
+                [256, 4, [256]], [257, 4, [hh]], [258, 3, new Array(128).fill(16)], [259, 3, [8]],
+                [262, 3, [1]], [277, 3, [128]], [278, 4, [hh]], [338, 3, new Array(127).fill(0)],
+            ], [tinyZ]);
+            const pHiExact = await js.tiffPlan(new Blob([mkHiSpp(2048)]), { rowsPerBand: 2048 });
+            const pHiOver = await js.tiffPlan(new Blob([mkHiSpp(2049)]));
+
+            // Oversized in-file StripByteCounts: clamped on compression 1 (bounded slice), streamed on compression 5
+            const rawTwo = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [1]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]], [validPix.subarray(0, 6), validPix.subarray(6, 12)]);
+            const rawBig = new Uint8Array(rawTwo.length + 2 * 1048576);
+            rawBig.set(rawTwo, 0);
+            const rawBigDv = new DataView(rawBig.buffer);
+            rawBigDv.setUint32(rawTwo.length - 8, rawBig.length - 8, true);
+            rawBigDv.setUint32(rawTwo.length - 4, rawBig.length - 14, true);
+            let maxRawSlice = 0;
+            const cRawBig = {
+                size: rawBig.byteLength,
+                slice(s = 0, e = rawBig.byteLength) {
+                    const sub = rawBig.subarray(s, e);
+                    return {
+                        async arrayBuffer() { if (e - s > maxRawSlice) maxRawSlice = e - s; return sub.slice().buffer; },
+                        stream() { return new Blob([sub]).stream(); },
+                    };
+                },
+            };
+            const pRawBig = await js.tiffPlan(new Blob([rawBig]));
+            const gRawBig = await js.readTiffBand(cRawBig, pRawBig, 0);
+
+            const lzwTwo = mkTiff([[256, 4, [2]], [257, 4, [2]], [258, 3, [8, 8, 8]], [259, 3, [5]], [262, 3, [2]], [277, 3, [3]], [278, 4, [1]]],
+                [lzwEncodeTiff(validPix.subarray(0, 6)), lzwEncodeTiff(validPix.subarray(6, 12))]);
+            const lzwBig = new Uint8Array(lzwTwo.length + 2 * 1048576);
+            lzwBig.set(lzwTwo, 0);
+            const lzwBigDv = new DataView(lzwBig.buffer);
+            const lzwS0Off = lzwBigDv.getUint32(lzwTwo.length - 16, true);
+            const lzwS1Off = lzwBigDv.getUint32(lzwTwo.length - 12, true);
+            lzwBigDv.setUint32(lzwTwo.length - 8, lzwBig.length - lzwS0Off, true);
+            lzwBigDv.setUint32(lzwTwo.length - 4, lzwBig.length - lzwS1Off, true);
+            const pLzwBig = await js.tiffPlan(new Blob([lzwBig]));
+
+            const extraBandChecksOk = singleBandSlices === 1 && eqBytes(gotPlanar, wantPlanar)
+                && readPlanarStreams === 0 && readPlanarAb >= 2 && eqBytes(Uint8Array.from(gotReadPlanar), wantPlanar)
+                && reorderedSlices === 1 && eqBytes(gotReordered, wantPlanar)
+                && gapSlices === 2 && eqBytes(gotGap, wantPlanar)
+                && subRows.length === 2 && subRows[0].r === 1 && subRows[1].r === 1
+                && eqBytes(subRows[0].rgba, wantSpRow0) && eqBytes(subRows[1].rgba, wantSpRow1)
+                && !!shortZErr && /fewer bytes than its rows/i.test(shortZErr.message)
+                && !!streamShortStripErr && /fewer bytes than its rows/i.test(streamShortStripErr.message)
+                && !!badZErr && /damaged or cut off/i.test(badZErr.message)
+                && !!streamBadZErr && /damaged or cut off/i.test(streamBadZErr.message)
+                && !!shortTileErr && /tile 1 holds fewer bytes than its rows/i.test(shortTileErr.message)
+                && !!streamShortTileErr && /tile 1 holds 10 of 768 bytes/i.test(streamShortTileErr.message)
+                && !!bandEofErr && /strip 2 lies past the end of the file/i.test(bandEofErr.message)
+                && !!streamEofErr && /strip 2 lies past the end of the file/i.test(streamEofErr.message)
+                && zCancelOk
+                && pHiExact.streamed === false && pHiExact.bandRows === 2048
+                && pHiOver.streamed === true && pHiOver.bandRows === 0
+                && pRawBig.streamed === false && maxRawSlice <= 64 && eqBytes(gRawBig, wantValidRgba)
+                && pLzwBig.streamed === true;
+
+            check("inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules",
+                tiledPredOk && rgbaRuleOk && extraBandChecksOk,
+                tiledPredDetail || `exact=${pExact.streamed}/${pExact.bandRows} over=${pOver.streamed}/${pOver.bandRows} hi=${pHiExact.streamed}/${pHiOver.streamed} zCancel=${zCancelOk} rawSlice=${maxRawSlice} lzwBig=${pLzwBig.streamed} extra=${extraBandChecksOk}`);
         }
     }
 
@@ -11977,7 +12341,7 @@ async function tiffCases(js, simd, scalar, K, T) {
         const rawStrip = runPayload(1024 * 1024);
         const lzwStrip = lzwEncodeTiff(rawStrip);
         const pbStrip = packBitsEncode(rawStrip);
-        for (const [what, comp, encoded] of [["LZW 1 MB strip", 5, lzwStrip], ["PackBits 1 MB strip", 32773, pbStrip]]) {
+        for (const [what, comp, encoded] of [["Uncompressed 1 MB strip", 1, rawStrip], ["LZW 1 MB strip", 5, lzwStrip], ["PackBits 1 MB strip", 32773, pbStrip]]) {
             const out = new Uint8Array(rawStrip.length);
             const rows = [
                 ["twin", () => js.tiffUnpack(comp, encoded, rawStrip.length, out)],

@@ -30,7 +30,7 @@ import { liquifyBlock as liquifyBlockJS, previewBlock as previewBlockJS, liquify
 // the retouch brushes' twins live with the brushes (K26, K27; inpaint_stroke.js imports nothing, so no cycle)
 import { blurRGBA as blurRGBATwin, sharpenRGBA as sharpenRGBATwin, toneRGBA as toneRGBATwin, spongeRGBA as spongeRGBATwin, freqSplit as freqSplitTwin } from "../inpaint_stroke.js";
 
-export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, TIFF_JS } from "./kernels_js.js";
+export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES, floodScan, SEL_NONE, SEL_ALPHA, SEL_FULL, SEL_RGBA, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, tiffPlan, readTiffBand, TIFF_BAND_BYTES, TIFF_JS } from "./kernels_js.js";
 // this thread's Rust kernel calls by export name (px.js, docs/PLAN_WASM_BUILD.md §3.4), their clocks and the copies
 // around them (docs/PLAN_WASM_K1.md §1.1); they survive a new instance
 export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
@@ -61,11 +61,11 @@ export { pxCalls, pxTimed, pxLaps, pxLapAdd, PxOutOfMemory } from "./px.js";
  * `matchPixels` (K38): `matchPixels` of inpaint_filters.js `matchCanvas`, inpaint_boxstack.js and inpaint_worker.js.
  * `growMask` (K39): `growMaskBounds` of inpaint_raster.js (the selection grow / shrink job and window fallback).
  * `composeTiles` and `composeStack` (K10b): pointer gather into wasm memory for tile-store and stack `png_part` / `tiff_part` jobs.
- * `tiffUnpredict`, `tiffPredict`, `tiffToRgba`, and `tiffStripWasm` (K15): `tiffUnpredict`, `tiffPredictRgba`, `tiffToRgba`, and `tiffPartJob` / `tiffStrip` of `inpaint_tiff.js`.
+ * `tiffUnpack`, `tiffUnpredict`, `tiffPredict`, `tiffToRgba`, and `tiffStripWasm` (K15, K17): `tiffUnpack`, `tiffUnpredict`, `tiffPredictRgba`, `tiffToRgba`, and `tiffPartJob` / `tiffStrip` of `inpaint_tiff.js`.
  * `clipCoverage`, `dissolveRows`, `psdPartWasm` and `stackIntoWasm` (K10c): clipping-group coverage and dissolve in
  * wasm memory, and pointer gather for `psd_part` and `stack_into` jobs.
  */
-export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", tiffUnpredict: "kernel", tiffPredict: "kernel", tiffToRgba: "kernel", tiffStripWasm: "kernel", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel" });
+export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", selCombine: "kernel", maskInvert: "kernel", crc32: "kernelSize", compositeMaskedTile: "kernel", matchPixels: "kernel", growMask: "kernel", releaseMB: "mb", keepMB: "mb", relightStripes: "count", relightFeed: "count", dabBlur: "kernel", dabTone: "kernel", dabSponge: "kernel", freqSplit: "kernel", liquifyBlock: "kernel", liquifyPreview: "kernel", liquifyDab: "kernel", stitchMask: "kernel", colorMatch: "kernel", blendAlpha: "kernel", mapTileStats: "kernel", rangeDepth: "kernel", rangeDepthSnap: "kernel", rangeLuma: "kernel", rangeColor: "kernel", limitAlphaRows: "kernel", guidedFar: "kernel", edgefit: "kernel", edgefitShrink: "kernel", warpRgba: "kernel", warpCoverage: "kernel", composeTiles: "kernel", composeStack: "kernel", shadowMarch: "kernelSize", tiffUnpack: "kernel", tiffUnpredict: "kernel", tiffPredict: "kernel", tiffToRgba: "kernel", tiffStripWasm: "kernel", clipCoverage: "kernel", dissolveRows: "kernel", psdPartWasm: "kernel", stackIntoWasm: "kernel" });
 
 // Today's behaviour. An absent kernel route means Rust; a measured default goes here with a comment that cites its row
 // (docs/PLAN_WASM_BUILD.md §1.1 rule 4). keepMB equal to releaseMB makes the idle trim almost a no-op.
@@ -107,6 +107,15 @@ export const ROUTE_KINDS = Object.freeze({ flood: "kernelSize", mips: "kernel", 
 // crc32 64 (K3, docs/measurements/k3_2026-11-08/summary.txt): 64 B is about a tie decided by the kernel row (Electron V8
 // size sweep: 0.075-0.100 vs 0.028-0.074 us at 16-48 B, 0.093-0.138 vs 0.156-0.235 us at 64-128 B, 1.50-2.53x; 4.97x at
 // 64 KB; 4.26x on w0_bench crc32_64mb); smaller headers (PNG signature, IHDR, 4-byte chunk lengths) stay in JS.
+// No tiffUnpack entry (K17, docs/measurements/k17_2026-11-09/summary.txt): at 15000x10000 Rust won tiffUnpack=js:rust
+// non-overlapping on readTiffBand for LZW (openMs 5684.0 [5619.0-5775.0] vs 10541.0 [10493.0-10595.0] ms, 1.85x;
+// tiff_read kernel 3028.8 vs 7857.4 ms, 2.59x; decode 2514.2 vs 7396.3 ms, 2.94x; before/after 0740aeab -> K17 openMs
+// 11826.0 -> 5696.0 ms, 2.08x) and PackBits (openMs 3416.0 [3327.0-3635.0] vs 3684.0 [3638.0-3686.0] ms, 1.08x;
+// tiff_read kernel 608.4 vs 796.8 ms, 1.31x; decode 110.3 vs 297.0 ms, 2.69x; before/after openMs 5967.0 -> 3622.0 ms,
+// 1.65x). Uncompressed (compression === 1) is guarded in tiffUnpack to stay on J.tiffUnpack (one dst.set vs 3 copies
+// across wasm: raw_strips 625-strip decode 66.6 [66.4-72.3] vs 91.9 [89.2-98.5] ms non-overlapping, 1.38x; PX_BENCH 1 MB
+// strip 0.02 vs 0.05 ms; before/after raw_strips openMs 3622.0 -> 3523.0 ms, 1.03x, openSteps pixels 858.0 -> 613.0 ms,
+// 1.40x).
 const DEFAULT_ROUTES = Object.freeze({ releaseMB: 256, keepMB: 16, crc32: 64 });
 
 const TAKES = { kernel: '"js" or "rust"', kernelSize: '"js", "rust" or a number of pixels >= 0', mb: "a number of MB >= 0 or Infinity", count: "a whole number >= 0" };
@@ -1129,14 +1138,17 @@ export function rangeTilesRgba(rgba, W, H, ty, y0, y1, limit, invert = false, ti
 /**
  * Unpacks one TIFF strip or tile of uncompressed (`1`), LZW (`5`) or PackBits (`32773`) bytes `src` into `out`
  * (`need` bytes, allocated when absent), stopping as soon as `need` bytes are written (`inpaint_tiff.js`
- * `unpackStrip`, K16, docs/PLAN_WASM_BUILD.md §4.6).
+ * `unpackStrip`, K16, K17, `docs/PLAN_WASM_BUILD.md` §4.6). LZW and PackBits are routed by `tiffUnpack`;
+ * uncompressed (`1`) stays on the JS copy (`dst.set`) to avoid copying `src` in and `out` back across wasm.
  */
 export function tiffUnpack(compression, src, need, out = null, name = "strip") {
-    const p = rustPx();
-    if (p) {
-        try { return p.tiffUnpack(compression, src, need, out, name); }
-        catch (err) { if (!recovered(p, err, "tiff_unpack")) throw err; }
-        finally { releaseIfLarge(); }
+    if (compression !== 1) {
+        const p = rustPx("tiffUnpack");
+        if (p) {
+            try { return p.tiffUnpack(compression, src, need, out, name); }
+            catch (err) { if (!recovered(p, err, "tiff_unpack")) throw err; }
+            finally { releaseIfLarge(); }
+        }
     }
     return J.tiffUnpack(compression, src, need, out, name);
 }

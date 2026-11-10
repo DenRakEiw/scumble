@@ -1,0 +1,13 @@
+$ node tools/px_test.js  (rc 1, 1 s, PX_ONLY=tiff)
+ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1}
+(node:13920) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k17_mut2/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Error: strip 1 of the TIFF is damaged or cut off (TypeError)
+    at inflateInto (file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k17_mut2/renderer/editor/inpaint_tiff.js:931:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Module.readTiffBand (file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k17_mut2/renderer/editor/inpaint_tiff.js:1131:25)
+    at async tiffCases (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\tools\px_test.js:12235:28)
+    at async group (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\tools\px_test.js:65:5)
+    at async main (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k17_mut2\tools\px_test.js:12719:5)
