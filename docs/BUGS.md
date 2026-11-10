@@ -31,6 +31,10 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 
 ## Open
 
+### A *Split into layers* run is lost if its window reloads or crashes during the run (found 2026-11-10, read)
+
+`providers/index.js` keeps a paid picture for a page that went away only when the answer has `out.bytes` (`main/MAIN-2`); a split answers with several layers and no `bytes`, so the charged answer is dropped and the new page never asks for it. *View > Reload* still asks first, since the run counts in `runningCount`. Not worth holding up the feature, but a split can cost many pictures: keep the layers the same way when this is reworked.
+
 ### Panning over a filter layer costs about 3 ms more per frame since the filter fix (found 2026-11-09, measured)
 
 At 15,000 x 10,000 `pan (60 frames)` went from about 2.8 ms to about 5.8 ms, and the same for a masked filter layer at fit, with `8d82004b` (the commit before it 2.9 / 2.8 / 2.5, it 5.7 / 6.4 / 6.4; `docs/measurements/k40pre_2026-11-09/bisect_findings.txt`). The likely mechanism (read, not measured apart): when the viewport reaches past the document, `filteredCanvas` goes through `cropFilterInput`, which makes a document-size canvas and draws into it on every frame. It stays far below a frame, and the fix itself is right; a reused scratch canvas could give the time back.
