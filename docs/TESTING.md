@@ -517,6 +517,11 @@ also: `comfyrefs_test.js` (its `<Picture {n}>` slots), `comfyprompt_test.js` (it
 `generate` gate's step `p_h3_generate_new_is_text_to_image` (the queued graphs of an edit and of Generate new against
 stubs). Light / Normal tier: written from the docs and the node specs; a live run is the user's.
 
+Fibo 2.0 Edit Turbo (`recipes/fibo2_edit_turbo_local.json`): `node tools/recipes_test.js` §18 checks its graph against
+the node specs (`TextEncodeFibo2` from ComfyUI 0.44.0's `/object_info`), with the Prompt Enhancer on and off and with one,
+two and four pictures, and pins the template's values; `comfyrefs_test.js` its `<image_{n}>` slots, `comfyprompt_test.js`
+its request and the row's own word in the missing-file note. Light tier, written from the template; a live run is the user's.
+
 MOSS-Image Edit (`recipes/moss_image_edit_local.json`, `docs/PLAN_LORAS.md` LR6): `node tools/recipes_test.js` §15
 checks its graph against the node specs of `tools/refs/comfy_templates/object_info.json` (`TextEncodeMOSSImageEdit`
 and `SkipLayerGuidanceDiTSimple` there since LR6, written from ComfyUI 0.44.0's V3 schemas, and CLIPLoader's types of
