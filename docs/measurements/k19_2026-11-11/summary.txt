@@ -1,0 +1,75 @@
+K19 (docs/PLAN_WASM_BUILD.md 4.6, question 6.3): the TIFF writer's deflate, Rust deflate_part at level 2 (the app's
+default) against the browser's CompressionStream("deflate") per strip in the workers, 15,000 x 10,000, 2026-11-10 evening.
+
+Verdict: Rust level 2 stays; no default changed, no app code changed. On the photo (Scumble's own TIFF of a real picture)
+the whole export is 2.5x faster on Rust level 2 (1,730 against 4,320 ms, non-overlapping, 3/3 pairs) for a file 16 %
+larger (177.9 against 153.7 MB). On the noise picture (incompressible) CompressionStream wins by 13 % (3,495 against
+4,007 ms, non-overlapping, 3/3 pairs) at the same size (489.4 against 491.3 MB). At the same level (6) CompressionStream
+is about 2x faster than Rust's deflate_part (photo 4,625 against 9,638 ms, noise 3,293 against 6,174 ms) and its files
+are 0.4-1 % smaller: the native route is the faster way to level-6 files, and level 2 in Rust is the faster export.
+
+How it was run
+- The app has no route that picks the TIFF deflater in the workers: tiffPartJob (renderer/editor/inpaint_worker.js)
+  deflates through rustPx().zlib / tiffStrip / tiffStripFromPtr at PNG_LEVEL (2) whenever the Rust kernels are loaded,
+  CompressionStream (kernels_js.js `deflate`) only without them. The A/B used a harness switch, never committed into
+  the app: native_deflate.patch adds the routes `tiffDeflate` ("js": the same wasm gather and tiff_predict_rgba, the
+  predicted strip copied out of wasm, then CompressionStream) and `tiffDeflateLevel` (a count: the Rust level when the
+  job names none). k19_chain.sh applies it to a scratch tree (`git archive HEAD` = e3ecd60d, px.wasm 7d3188f8931137dc
+  298,741 B, px_scalar.wasm 908fc1943daa06ab 237,720 B, unchanged); both arms of a set run that one tree, only the
+  routes differ, set in the window before the export and removed after it (k19_bench.py on tools/tiff_test.py's 15k
+  MEASURE). (The `tiffDeflateLevel` route was added to the patch after results/ ran; with it unset the code is the
+  first version's, so results/ stands for the committed patch too.)
+- Each row a fresh offline instance (--tiles on, port 9633, own profile), the window in front (no run unfocused, none
+  retried), three rounds with the arm order alternated per round, each variant's pair under the busy lock (w1_lock.py),
+  RTX 5090 at 4-7 % use and about 3.8 GB used during the runs (chain.log), 24 logical cores, the default pool.
+- results/: rust (level 2) against native, 2026-11-10 19:57-20:13. results_l6/: rust6 (level 6) against native,
+  20:14-20:30. smoke/: one 2000 x 1500 noise pair that checked the route (19:54).
+- Commands: `bash docs/measurements/k19_2026-11-11/k19_chain.sh`, then
+  `K19_ARM_A=rust6 K19_RES=results_l6 bash docs/measurements/k19_2026-11-11/k19_chain.sh`, then
+  `python docs/measurements/k19_2026-11-11/summarize.py results results_l6 > summary_rows.txt`.
+
+The rows (median [min-max] of 3; summary_rows.txt has every row and every run)
+                                 rust L2                    native (L6)                rust / native
+own   export wall (exportMs)     1,730 [1,351-2,057]        4,320 [4,308-4,615]        0.40x  Rust lower, non-overlapping, 3/3 pairs
+own   encoded step               1,192 [840-1,487]          3,883 [3,821-4,160]        0.31x  Rust lower
+own   saved step                 537 [510-568]              454 [436-486]              1.18x  native lower (a smaller file to write)
+own   tiff_part deflate (sum)    8,634 [5,558-10,945]       29,296 [29,066-31,560]     0.29x  Rust lower
+own   file                       186,570,212 B (177.9 MB)   161,149,006 B (153.7 MB)   1.16x  native 13.6 % smaller
+own   reopen wall (openMs)       2,398 [2,358-2,605]        2,118 [2,113-2,442]        1.13x  tie (spreads overlap)
+noise export wall (exportMs)     4,007 [3,903-5,373]        3,495 [3,323-3,542]        1.15x  native lower, non-overlapping, 3/3 pairs  <- the losing row
+noise encoded step               2,548 [2,532-4,002]        2,000 [1,978-2,097]        1.27x  native lower
+noise saved step                 1,371 [1,370-1,458]        1,444 [1,344-1,494]        0.95x  tie
+noise tiff_part deflate (sum)    18,757 [18,630-30,399]     14,323 [13,788-14,929]     1.31x  native lower
+noise file                       515,167,906 B (491.3 MB)   513,184,414 B (489.4 MB)   1.00x  native 0.4 % smaller
+noise reopen wall                5,878 [5,636-5,934]        6,034 [4,998-6,106]        0.97x  tie
+                                 rust L6                    native (L6)
+own   export wall                9,638 [9,461-11,920]       4,625 [4,356-4,652]        2.08x  native lower, non-overlapping
+own   file                       162,704,682 B (155.2 MB)   161,149,006 B (153.7 MB)   1.01x
+noise export wall                6,174 [5,257-6,200]        3,293 [3,182-3,373]        1.87x  native lower, non-overlapping
+noise file                       515,191,125 B (491.3 MB)   513,184,414 B (489.4 MB)   1.00x
+
+Rows where Rust level 2 loses or ties: noise export wall (+512 ms, 1.15x, non-overlapping; Rust r1 5,373 ms was the
+session's first noise run, without it Rust is 3,903-4,007 against native's 3,323-3,542, still non-overlapping), noise
+encoded and deflate sums, both saved steps (own native lower by 83 ms: 24 MB less to write; noise a tie), both
+reopen walls (ties). The predict lap is higher on native (172 / 223 against 111 / 115 ms summed) because it includes
+the copy of the predicted strip out of wasm. The window's work should be the same on both arms (the deflate runs in the
+workers either way; inferred from the code, the window's longest block was not measured).
+
+Why noise loses: miniz_oxide's level 2 spends about 19 s of worker time (summed over 79 strips) searching matches in
+incompressible bytes, Chromium's zlib about 14 s; on the photo the order flips by 3.4x because level 2 does far less
+work than level 6 on data that compresses. A route by case (rule 4 of 1.1) would need the strip's compressibility
+before it is deflated; not built, and the noise picture is a synthetic worst case rather than a picture users export.
+
+Decodable-equal checks (every run): the app reopened each written TIFF and its one-row-per-band compare and
+whole-picture SHA-256 matched the source tab (picMatch true, rowsOff 0, 40 bands); Python zlib-decompressed every strip
+of every file (each strip's zlib header and Adler-32 checked by zlib) and one SHA-256 of the joined predicted bytes held
+over all runs and arms of a variant (own e3f71e8099fc41ef, noise 15dd2f39ca0d17ed; smoke c14935e588d97cc1); every
+strip's header is 78 9C on all arms; tifffile read compression 8, predictor 2, 79 strips. The route reached every
+strip of every native run (tiff_part nativeDeflate 79 of 79 jobs) and none of the other runs (0). Byte-exact output
+across the arms is not expected (other deflaters, other levels) and was not checked; each arm's file size was the same
+in all three of its runs.
+
+Not done: optional T6 (streaming push kernels for single-strip files, 1 day in the plan, for the reader, "only if K0 /
+K17 show them slow"): left out, it is not small and K19's question does not need it. No canvas-backend run (the export
+path's deflate is the same job on both backends). No mutation round (no app code changed; the harness checks above can
+fail: a native run that missed the route shows nativeDeflate 0, a wrong strip changes the decoded SHA-256 and picMatch).

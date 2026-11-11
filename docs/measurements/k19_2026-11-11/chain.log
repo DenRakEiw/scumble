@@ -1,0 +1,175 @@
+[19:47:26] scratch tree /f/canvas/.claude/worktrees/.tmp_k19_tree_3856794 from e3ecd60d + native_deflate.patch
+[19:47:44] ERROR: patch not in the scratch tree
+no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+[19:49:09] scratch tree /f/canvas/.claude/worktrees/.tmp_k19_tree_3858248 from e3ecd60d + native_deflate.patch
+[19:49:40] px.wasm 7d3188f8931137dc, px_scalar.wasm 908fc1943daa06ab
+[19:49:46] gpu: 3829 MiB, 6 %
+lock: taken after 0 s
+[19:49:56] lock: taken (K19 smoke (chain-t) 46172 2026-11-10T19:49:51)
+[19:49:58] run rust noise r0 (try 1)
+[19:50:24] rc=1 K19 rust noise: ok=False fileBytes=None decodedSha256=
+closed
+[19:50:32] run native noise r0 (try 1)
+[19:50:46] rc=1 K19 native noise: ok=False fileBytes=None decodedSha256=
+closed
+lock: released
+[19:51:12] smoke done
+no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+[19:53:02] scratch tree /f/canvas/.claude/worktrees/.tmp_k19_tree_3861588 from e3ecd60d + native_deflate.patch
+[19:53:34] px.wasm 7d3188f8931137dc, px_scalar.wasm 908fc1943daa06ab
+[19:53:39] gpu: 3853 MiB, 6 %
+lock: taken after 0 s
+[19:53:50] lock: taken (K19 smoke (chain-t) 54220 2026-11-10T19:53:44)
+[19:53:55] run rust noise r0 (try 1)
+[19:54:29] rc=0 K19 rust noise: ok=True fileBytes=10304953 decodedSha256=c14935e588d97cc1
+closed
+[19:54:47] run native noise r0 (try 1)
+[19:55:19] rc=0 K19 native noise: ok=True fileBytes=10265175 decodedSha256=c14935e588d97cc1
+closed
+lock: released
+[19:55:39] smoke done
+no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+[19:56:37] scratch tree /f/canvas/.claude/worktrees/.tmp_k19_tree_3865148 from e3ecd60d + native_deflate.patch
+[19:57:05] px.wasm 7d3188f8931137dc, px_scalar.wasm 908fc1943daa06ab
+[19:57:11] gpu: 3872 MiB, 7 %
+lock: taken after 0 s
+[19:57:19] lock: taken (K19 own r1 (chain-t) 65272 2026-11-10T19:57:13)
+[19:57:25] == own round 1
+[19:57:30] gpu: 3912 MiB, 6 %
+[19:57:33] run rust own r1 (try 1)
+[19:58:18] rc=0 K19 rust own: ok=True fileBytes=186570212 decodedSha256=e3f71e8099fc41ef
+closed
+[19:58:39] run native own r1 (try 1)
+[19:59:21] rc=0 K19 native own: ok=True fileBytes=161149006 decodedSha256=e3f71e8099fc41ef
+closed
+lock: released
+lock: taken after 0 s
+[19:59:47] lock: taken (K19 noise r1 (chain-t) 69096 2026-11-10T19:59:42)
+[19:59:50] == noise round 1
+[19:59:57] gpu: 3829 MiB, 4 %
+[20:00:00] run rust noise r1 (try 1)
+[20:00:53] rc=0 K19 rust noise: ok=True fileBytes=515167906 decodedSha256=15dd2f39ca0d17ed
+closed
+[20:01:13] run native noise r1 (try 1)
+[20:02:08] rc=0 K19 native noise: ok=True fileBytes=513184414 decodedSha256=15dd2f39ca0d17ed
+closed
+lock: released
+lock: taken after 0 s
+[20:02:39] lock: taken (K19 own r2 (chain-t) 73564 2026-11-10T20:02:35)
+[20:02:39] == own round 2
+[20:02:41] gpu: 3876 MiB, 6 %
+[20:02:41] run native own r2 (try 1)
+[20:03:05] rc=0 K19 native own: ok=True fileBytes=161149006 decodedSha256=e3f71e8099fc41ef
+closed
+[20:03:27] run rust own r2 (try 1)
+[20:04:16] rc=0 K19 rust own: ok=True fileBytes=186570212 decodedSha256=e3f71e8099fc41ef
+closed
+lock: released
+lock: taken after 0 s
+[20:04:50] lock: taken (K19 noise r2 (chain-t) 39140 2026-11-10T20:04:44)
+[20:04:55] == noise round 2
+[20:05:00] gpu: 3924 MiB, 6 %
+[20:05:05] run native noise r2 (try 1)
+[20:06:02] rc=0 K19 native noise: ok=True fileBytes=513184414 decodedSha256=15dd2f39ca0d17ed
+closed
+[20:06:21] run rust noise r2 (try 1)
+[20:07:19] rc=0 K19 rust noise: ok=True fileBytes=515167906 decodedSha256=15dd2f39ca0d17ed
+closed
+lock: released
+lock: taken after 0 s
+[20:07:51] lock: taken (K19 own r3 (chain-t) 63836 2026-11-10T20:07:45)
+[20:07:57] == own round 3
+[20:08:05] gpu: 3868 MiB, 5 %
+[20:08:10] run rust own r3 (try 1)
+[20:08:53] rc=0 K19 rust own: ok=True fileBytes=186570212 decodedSha256=e3f71e8099fc41ef
+closed
+[20:09:09] run native own r3 (try 1)
+[20:09:44] rc=0 K19 native own: ok=True fileBytes=161149006 decodedSha256=e3f71e8099fc41ef
+closed
+lock: released
+lock: taken after 0 s
+[20:10:18] lock: taken (K19 noise r3 (chain-t) 5728 2026-11-10T20:10:15)
+[20:10:20] == noise round 3
+[20:10:35] gpu: 3834 MiB, 6 %
+[20:10:39] run rust noise r3 (try 1)
+[20:11:28] rc=0 K19 rust noise: ok=True fileBytes=515167906 decodedSha256=15dd2f39ca0d17ed
+closed
+[20:11:51] run native noise r3 (try 1)
+[20:12:38] rc=0 K19 native noise: ok=True fileBytes=513184414 decodedSha256=15dd2f39ca0d17ed
+closed
+lock: released
+[20:13:14] gpu: 3801 MiB, 6 %
+[20:13:18] done
+no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]
+[20:15:02] scratch tree /f/canvas/.claude/worktrees/.tmp_k19_tree_3879954 from 9c1c7e6f + native_deflate.patch
+[20:15:44] px.wasm 7d3188f8931137dc, px_scalar.wasm 908fc1943daa06ab
+[20:15:52] gpu: 3971 MiB, 4 %
+lock: taken after 0 s
+[20:15:57] lock: taken (K19 own r1 (chain-t) 32224 2026-11-10T20:15:55)
+[20:15:59] == own round 1
+[20:16:02] gpu: 3890 MiB, 3 %
+[20:16:04] run rust6 own r1 (try 1)
+[20:16:39] rc=0 K19 rust6 own: ok=True fileBytes=162704682 decodedSha256=e3f71e8099fc41ef
+closed
+[20:17:02] run native own r1 (try 1)
+[20:17:44] rc=0 K19 native own: ok=True fileBytes=161149006 decodedSha256=e3f71e8099fc41ef
+closed
+lock: released
+lock: taken after 0 s
+[20:18:13] lock: taken (K19 noise r1 (chain-t) 74064 2026-11-10T20:18:09)
+[20:18:15] == noise round 1
+[20:18:21] gpu: 3801 MiB, 3 %
+[20:18:26] run rust6 noise r1 (try 1)
+[20:19:14] rc=0 K19 rust6 noise: ok=True fileBytes=515191125 decodedSha256=15dd2f39ca0d17ed
+closed
+[20:19:32] run native noise r1 (try 1)
+[20:20:21] rc=0 K19 native noise: ok=True fileBytes=513184414 decodedSha256=15dd2f39ca0d17ed
+closed
+lock: released
+lock: taken after 0 s
+[20:20:51] lock: taken (K19 own r2 (chain-t) 10568 2026-11-10T20:20:47)
+[20:20:54] == own round 2
+[20:21:00] gpu: 3749 MiB, 3 %
+[20:21:04] run native own r2 (try 1)
+[20:21:50] rc=0 K19 native own: ok=True fileBytes=161149006 decodedSha256=e3f71e8099fc41ef
+closed
+[20:21:58] run rust6 own r2 (try 1)
+[20:22:24] rc=0 K19 rust6 own: ok=True fileBytes=162704682 decodedSha256=e3f71e8099fc41ef
+closed
+lock: released
+lock: taken after 0 s
+[20:23:02] lock: taken (K19 noise r2 (chain-t) 44016 2026-11-10T20:22:57)
+[20:23:04] == noise round 2
+[20:23:12] gpu: 3792 MiB, 6 %
+[20:23:16] run native noise r2 (try 1)
+[20:24:08] rc=0 K19 native noise: ok=True fileBytes=513184414 decodedSha256=15dd2f39ca0d17ed
+closed
+[20:24:29] run rust6 noise r2 (try 1)
+[20:25:25] rc=0 K19 rust6 noise: ok=True fileBytes=515191125 decodedSha256=15dd2f39ca0d17ed
+closed
+lock: released
+lock: taken after 0 s
+[20:25:57] lock: taken (K19 own r3 (chain-t) 54952 2026-11-10T20:25:52)
+[20:26:01] == own round 3
+[20:26:06] gpu: 3849 MiB, 4 %
+[20:26:12] run rust6 own r3 (try 1)
+[20:27:06] rc=0 K19 rust6 own: ok=True fileBytes=162704682 decodedSha256=e3f71e8099fc41ef
+closed
+[20:27:26] run native own r3 (try 1)
+[20:28:11] rc=0 K19 native own: ok=True fileBytes=161149006 decodedSha256=e3f71e8099fc41ef
+closed
+lock: released
+lock: taken after 0 s
+[20:28:25] lock: taken (K19 noise r3 (chain-t) 30240 2026-11-10T20:28:24)
+[20:28:25] == noise round 3
+[20:28:25] gpu: 3873 MiB, 4 %
+[20:28:26] run rust6 noise r3 (try 1)
+[20:29:02] rc=0 K19 rust6 noise: ok=True fileBytes=515191125 decodedSha256=15dd2f39ca0d17ed
+closed
+[20:29:20] run native noise r3 (try 1)
+[20:29:57] rc=0 K19 native noise: ok=True fileBytes=513184414 decodedSha256=15dd2f39ca0d17ed
+closed
+lock: released
+[20:30:28] gpu: 3863 MiB, 5 %
+[20:30:30] done
+no instance on 9633 Cannot connect to host 127.0.0.1:9633 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

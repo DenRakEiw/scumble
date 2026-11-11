@@ -1,0 +1,165 @@
+{
+ "arm": "rust6",
+ "variant": "noise",
+ "ok": true,
+ "row": {
+  "tiles": true,
+  "pngOpenMs": 3098,
+  "exportMs": 6200,
+  "openMs": 5571,
+  "baseSize": [
+   15000,
+   10000
+  ],
+  "size": [
+   15000,
+   10000
+  ],
+  "bandsChecked": 40,
+  "rowsOff": 0,
+  "picMatch": true,
+  "picHash": "546f027aef92b074a57c2aa1e96bdb51dc8e8e73692fee4ff86214a473129a19",
+  "exportStatus": "Saved F:\\canvas\\.claude\\worktrees\\.tmp_k19_tiff_3879954\\noise_15000x10000.tif (15000 \u00d7 10000, 491.3 MB, 4899 ms).",
+  "openStatus": "Opened noise_15000x10000.tif: 15000 \u00d7 10000.",
+  "openSteps": {
+   "w": 15000,
+   "h": 10000,
+   "info": 3,
+   "pixels": 618,
+   "writeMs": 362,
+   "stored": 3789,
+   "base": 24,
+   "total": 4433
+  },
+  "tiff_band": {
+   "jobs": 40,
+   "kernels": "rust",
+   "pixels": 150000000,
+   "rows": 10000,
+   "kernel": 3622.9,
+   "wait": 2687.7,
+   "decode": 0,
+   "copy": 155.4,
+   "unpredict": 390.2,
+   "convert": 301,
+   "pieces": 9415,
+   "codec": "deflate",
+   "pxCalls": {
+    "tiff_to_rgba": 40,
+    "tiff_unpredict": 40
+   },
+   "workers": 8
+  },
+  "tiff_read": null,
+  "openJobs": {
+   "png_part": {
+    "jobs": 79,
+    "kernels": "rust",
+    "composeWasm": 79,
+    "pixels": 150000000,
+    "kernel": 16810.3,
+    "compose": 0,
+    "rows": 187,
+    "prev": 0,
+    "filter": 780.3,
+    "adler": 141.6,
+    "deflate": 15417.5,
+    "chunk": 183.5,
+    "copyOut": 95.4,
+    "pxCalls": {
+     "adler32": 79,
+     "deflate_part": 79,
+     "png_chunk_frame": 79,
+     "png_filter_rows": 79
+    },
+    "workers": 8
+   },
+   "mips": {
+    "jobs": 19,
+    "kernels": "rust",
+    "tiles": 2344,
+    "kernel": 452.7,
+    "pxCalls": {
+     "clamp_extend": 98,
+     "mip_chain": 2442
+    },
+    "workers": 8
+   }
+  },
+  "exportSteps": {
+   "export": {
+    "fmt": "tiff",
+    "ready": 0,
+    "encoded": 4900,
+    "MB": 491.3,
+    "saved": 1299,
+    "total": 6199
+   },
+   "save": {
+    "pieces": 8,
+    "MB": 491.3,
+    "written": 22,
+    "total": 1299
+   }
+  },
+  "exportJobs": {
+   "tiff_part": {
+    "jobs": 79,
+    "kernels": "rust",
+    "composeWasm": 79,
+    "pixels": 150000000,
+    "kernel": 37851.2,
+    "compose": 191.1,
+    "rows": 191.1,
+    "predict": 45.5,
+    "deflate": 37537.3,
+    "pxCalls": {
+     "adler32": 79,
+     "deflate_part": 79,
+     "tiff_predict_rgba": 79
+    },
+    "workers": 8
+   }
+  },
+  "file": "noise_15000x10000.tif",
+  "fileMB": 491,
+  "rawMB": 572,
+  "exportMBps_raw": 92,
+  "exportMBps_file": 79,
+  "openMBps_raw": 103,
+  "tifffile": {
+   "compression": 8,
+   "predictor": 2,
+   "strips": 79,
+   "rowsperstrip": 128,
+   "shape": [
+    10000,
+    15000,
+    4
+   ]
+  },
+  "focusedStart": true,
+  "focusedEnd": true,
+  "focused": true,
+  "visibility": "visible",
+  "ok": true
+ },
+ "file": {
+  "tif": "noise_15000x10000.tif",
+  "compression": 8,
+  "predictor": 2,
+  "strips": 79,
+  "shape": [
+   10000,
+   15000,
+   4
+  ],
+  "fileBytes": 515191125,
+  "stripBytes": 515190211,
+  "decodedBytes": 600000000,
+  "decodedSha256": "15dd2f39ca0d17ed3612741bb63e888e2a2c08365207f1295ff3f15102023189",
+  "zlibHeaders": [
+   "789c"
+  ]
+ }
+}
