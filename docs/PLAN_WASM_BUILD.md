@@ -1946,6 +1946,10 @@ The design is `docs/PLAN_WASM_K20.md`; its §7 "K20b review (2026-11-10)" has th
 
 **K19 and K20c are moved after this release** (the user's "ja" of 2026-11-10 to the plan for finishing the update that day): K19 is a measurement with no change for users, K20c leaves ORA files opening as in 0.1.53.
 
+### K19 (2026-11-10)
+
+A measurement, no code (`ag-chain-t-2` `9c1c7e6f`, `a82470c8` off `e3ecd60d`, merged after 0.1.54): the app has no route that picks the TIFF deflater in the workers, so a harness patch on a scratch tree (`docs/measurements/k19_2026-11-11/native_deflate.patch`: routes `tiffDeflate` and `tiffDeflateLevel`, never in the app) ran the A/B at 15,000 x 10,000, three alternated rounds on fresh instances under the busy lock. Rust's `deflate_part` at level 2 against `CompressionStream("deflate")` per strip: the photo's export 1,730 [1,351-2,057] against 4,320 [4,308-4,615] ms (Rust 2.5x faster, file 177.9 against 153.7 MB), the noise picture's 4,007 [3,903-5,373] against 3,495 [3,323-3,542] ms (native 13 % faster, the losing row, 491.3 against 489.4 MB). At the same level 6 native is about 2x faster than Rust (photo 4,625 against 9,638 ms, noise 3,293 against 6,174 ms), files within 1 %. Every file reopened equal to its source (picMatch, 40 bands) and every strip decoded to one hash across the arms; the route reached 79 of 79 strips on native runs and none elsewhere. Question 6.3 stays as answered (the user, 2026-11-11: Rust at level 2, no smaller TIFFs through native level 6). T6 (streaming push kernels) left out. Reviewed inline by the main loop (docs only). `docs/measurements/k19_2026-11-11/summary.txt`.
+
 ### K17 (2026-11-09)
 
 §4.6's band planner, contiguous band reader, per-tile unpredict and one-worker `tiffUnpack` A/B (`ag-chain-t` `f5b629f6`..`937b50b5` off `0740aeab`, merged with `wasm-kernels` `9eb7de60`). Full tier (`docs/measurements/k17_2026-11-09/`: `k17_chain.sh`, `summarize.py`, `summary.txt`, `before/`, `after/`, `unpack_js/`, `unpack_rust/`, `node/`, `mutation/`).

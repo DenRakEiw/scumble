@@ -18928,7 +18928,7 @@ class InpaintEditor {
      * change placed again the way a new reference is (referenceBox), their masks, opacity and visibility unchanged.
      */
     async setBasePixels(ref, px, { keepLayers = true, keep = null } = {}) {
-        this._blankBase = false;   // the new-canvas path sets it again after this call (host.replaceLoss, issue #12)
+        this._blankBase = false;   // the new-canvas path sets it again after this call (the Generate new question, issue #12)
         // the app's Each area (eacharea.js): its areas were cut from the picture there is now
         if (this._eachArea) throw refusal("Each area is running on this document: a new picture waits until it is done, or stop it.");
         this.checkBaseSize(px.width, px.height);
