@@ -328,6 +328,14 @@ item 56 splits the file, or redo the line map after the split.
   stays on the GPU (before: Canvas 2D every frame); **the first frame there is slower**, 353 -> 438 ms median, as
   the GPU path now evicts and finishes the frame (inferred, not A/B'd); a 2048 MB budget takes effect (was 16 MB).
 - T-2: `tiles/T4`, with a pixels test on both routes. Full.
+  **Done 2026-11-11 (`fix-tiles` T-2, `43db70ab`, merged `8a33d12b`):** `TileMaskPixels.combine` leaves an existing
+  tile alone under add / subtract of nothing and intersect with everything when `selUnchanged` finds it already as
+  selCombine would write it (the combine's colour where alpha > 0, 0 elsewhere, one pixel with alpha at least). Bytes
+  exact on both routes and backends (`combine_test.js` 12b, pixels `mask_combine_keeps_unchanged_tiles`); mutation
+  round 13 of 13. 15k (`docs/measurements/fix_tiles_t2_2026-11-11/`): 1200 tiles no longer rewritten, add 171 -> 67 ms
+  whole, subtract 283 -> 186, intersect 309 -> 183; **the worst case loses**: tiles canonical up to their last pixel
+  are scanned whole and combined anyway, 148 -> 192 ms whole (about 39 us a tile). Not done: the twins' route skip for
+  SEL_FULL under subtract (the finding's optional part).
 
 **Lane H: renderer host and shell** (`renderer/editor/host.js`, `renderer/shell.js`, `renderer/commands.js`).
 - H-a: `host/H-1`, `host/H-2`, `host/H-5`, `shell/F4`, `shell/F5` (`host.js`, `shell.js`). Normal, with a document
@@ -353,6 +361,11 @@ item 56 splits the file, or redo the line map after the split.
   r; gates `f1m` on both backends; reversal round 5 of 5 (`docs/measurements/fix_small_f1_2026-11-11/`). The
   assistant's `split_layers` `source: "picture"` rode along (`resolveLayer`).
 - F-2: `host/H-6`. Normal.
+  **Done 2026-11-11 (`fix-small` F-2, `c4c92ee0`, merged `bab6ef01`):** a failed `finish` in `stitch_worker.js` sends
+  the run's window mask back (its buffer transferred), `stitch.js` puts it on the error and `finishResultAsync`
+  stitches with it on the window; when it did not come back (the worker died) an area run reads its area again and a
+  plain run refuses ("the stitch failed ..."), never the document's selection. `tools/stitch_test.js` 6 checks,
+  reversal round 6 of 6 (`docs/measurements/fix_small_f2_2026-11-11/`).
 
 **A start that keeps files apart:** first round R1, P1, D-1, E1 and M1 (five of the six musts, plus the stores;
 the sixth must is E2). These share no file. Second round: E2 while lane H has not started, beside M2, A1, T-1 and P3. After that each lane

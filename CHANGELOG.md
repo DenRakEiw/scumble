@@ -11,6 +11,8 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Large ORA files open about three times as fast**, and the window stays responsive while their layers are read (a 15,000 x 10,000 ORA in about 1.8 s instead of 5.4). Their layers decode in the background workers straight from the file.
 - **Zoomed into a large picture over the tile memory budget, the view stays on the GPU** instead of falling back to the slower drawing path on every frame. A tile memory setting of 2048 MB or more now takes effect (it used to drop to 16 MB).
 - The assistant's *Split into layers* takes `source: "picture"` as the visible picture again, even when a layer's name contains the word "picture".
+- **A failed stitch no longer uses a newer selection.** If placing a provider's answer had to fall back after a stitch worker error, the answer was cut with whatever was selected at that moment; it now uses the selection the run was sent with, or says the stitch failed.
+- **Adding to, subtracting from or intersecting a large selection is faster** where the change leaves a part of it as it was, and that part is no longer copied into the undo history a second time (a 15,000 x 10,000 picture: adding nothing to half of it 171 -> 67 ms).
 
 ## 0.1.54 - 2026-11-10
 
