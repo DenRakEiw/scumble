@@ -291,3 +291,13 @@ Gates `s9-export` (`lint types nodecopy export layered tiff pixels brush editor`
 `DrawPart` (E72-E73), `inpaint_ed_relight.js` `RelightPart` (E74-E75); 2,679 lines. Display and composite take the
 bind form. 31 imports dropped; the file is 3,238 lines. `split_check.js --base d17dfdc4` PASS. Gates `s10-display`
 (`lint types nodecopy composite blendmodes groups clip relight pixels skins editor`) PASS on both backends.
+
+**S10b (2026-11-11, not in the plan's table).** The regions the table left in the class: `inpaint_ed_chrome.js`
+`ChromePart` (E03-E04: the node widget, thumbs, tile / selection / mask draw helpers, the modal chrome),
+`inpaint_ed_view.js` `ViewPart` (E08-E09, E11-E13: the view, layer selection, layer pixels with the stroke, handles,
+cursors, side panes, rulers, guides, compare), `inpaint_ed_refs.js` `RefsPart` (E10, reference layers and the @img
+tokens); 1,639 lines. `inpaint_canvas.js` is 1,596 lines: imports, the clipboard, the class with its accessors, the
+constructor, the lifecycle (E06), the statics (E56), `syncLayers` (E71), the settings targets (E76), `releaseCaches`
+(E77), generate (E78), `memoryReport` / `destroy` (E80), the install list of 37 parts and the bind calls, the export
+list. `split_check.js --base d17dfdc4`: 932 units, 23,437 lines moved into 38 files, 728 prototype members, PASS.
+Gates `s10b-chrome` (`lint types nodecopy editor skins canvasonly groups selection generate`) PASS on both backends.
