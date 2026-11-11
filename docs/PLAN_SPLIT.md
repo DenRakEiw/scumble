@@ -284,3 +284,10 @@ PASS. Gates `s8-history` (`lint types nodecopy document docux quit editor metada
 the stroke core the plan's table left out, and E40, the stroke buffers); 1,991 lines. All three read `InpaintEditor`'s
 statics and take the bind form. 52 imports dropped; the file is 6,008 lines. `split_check.js --base d17dfdc4` PASS.
 Gates `s9-export` (`lint types nodecopy export layered tiff pixels brush editor`) PASS on both backends.
+
+**S10 (2026-11-11).** Display, compositor, colour match, draw and relight as parts, base `a11a3073`:
+`inpaint_ed_display.js` `DisplayPart` (E67 without the `base` / `basePx` / `_basePx` accessors, which stay),
+`inpaint_ed_composite.js` `CompositePart` (E68, E70), `inpaint_ed_match.js` `MatchPart` (E69), `inpaint_ed_draw.js`
+`DrawPart` (E72-E73), `inpaint_ed_relight.js` `RelightPart` (E74-E75); 2,679 lines. Display and composite take the
+bind form. 31 imports dropped; the file is 3,238 lines. `split_check.js --base d17dfdc4` PASS. Gates `s10-display`
+(`lint types nodecopy composite blendmodes groups clip relight pixels skins editor`) PASS on both backends.

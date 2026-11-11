@@ -49,6 +49,7 @@ FILES = [
     "inpaint_ed_depth.js", "inpaint_ed_filters.js",
     "inpaint_ed_history.js", "inpaint_ed_persist.js",
     "inpaint_ed_export.js", "inpaint_ed_open.js", "inpaint_ed_strokes.js",
+    "inpaint_ed_display.js", "inpaint_ed_composite.js", "inpaint_ed_match.js", "inpaint_ed_draw.js", "inpaint_ed_relight.js",
     "inpaint_ed_panels.js", "inpaint_ed_layers.js", "inpaint_ed_histpanel.js", "inpaint_ed_text.js",
     "boxes.js", "boxes_format.js", "boxes_tool.js", "boxes_model.js", "inpaint_boxes.js",
     "px/kernels_js.js", "px/kernels.js", "px/px.js",
