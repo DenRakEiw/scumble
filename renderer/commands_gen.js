@@ -1,3 +1,4 @@
+// @ts-check
 // the generation settings commands: moved out of commands.js (item 56 S12, docs/PLAN_SPLIT.md), text unchanged.
 
 import * as loraPanel from "./editor/lora_panel.js";

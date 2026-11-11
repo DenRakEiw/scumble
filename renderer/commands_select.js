@@ -1,3 +1,4 @@
+// @ts-check
 // the selection commands: moved out of commands.js (item 56 S12, docs/PLAN_SPLIT.md), text unchanged.
 
 import { host } from "./editor/host.js";

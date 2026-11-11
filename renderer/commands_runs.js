@@ -1,3 +1,4 @@
+// @ts-check
 // the run commands (generate_new, upscale, realism_pass, key_screen, split_layers, relight, generate, cancel_run): moved out of commands.js (item 56 S12, docs/PLAN_SPLIT.md), text unchanged.
 
 import * as keying from "./editor/keying.js";

@@ -1,3 +1,4 @@
+// @ts-check
 // the depth, state, log and brush commands: moved out of commands.js (item 56 S12, docs/PLAN_SPLIT.md), text unchanged.
 
 import { BRUSH_MAX } from "./editor/inpaint_canvas.js";

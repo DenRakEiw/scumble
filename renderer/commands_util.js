@@ -1,3 +1,4 @@
+// @ts-check
 // the helpers of the commands: summaries, lookups, shots, status, the parameter tables, checkParams and describe: moved out of commands.js (item 56 S12, docs/PLAN_SPLIT.md), text unchanged.
 
 import * as genpresets from "./editor/genpresets.js";
@@ -13,6 +14,8 @@ import { refusal } from "./editor/inpaint_status.js";
 import { MAX_LORAS, clampStrength, loraHint, missingLoras, normalizeName, recipeFamily } from "./editor/loras.js";
 
 /** @typedef {import("./commands.js").CommandDescriptor} CommandDescriptor */
+
+/** @typedef {import("./commands.js").CommandParam} CommandParam */
 
 let COMMANDS = null;
 
