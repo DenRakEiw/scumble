@@ -23,7 +23,7 @@ function recipesModule() {
     try { return require(path.join(ROOT, "electron", "main", "recipes.js")); } finally { Module._load = orig; }
 }
 const P = (id) => require(path.join(ROOT, "electron", "main", "providers", id + ".js"));
-const wavespeed = P("wavespeed"), cloud = P("comfycloud");
+const wavespeed = P("wavespeed"), cloud = P("comfycloud"), oxen = P("oxen");
 const REFS = path.join(ROOT, "tools", "refs");
 
 const results = [];
@@ -181,6 +181,138 @@ async function main() {
         const pro = await graphOf({ ...editReq("comfycloud"), model: "seedream 5.0 pro" });
         check("5.0 pro on the same node is as before: thinking, prompt optimisation, no background", pro.inputs["model.thinking"] === true && pro.inputs["model.prompt_optimization"] === "standard" && !("model.background" in pro.inputs), short(pro.inputs));
         check("ten pictures in all", cloud.layout(editReq("comfycloud")).max === 10, String(cloud.layout(editReq("comfycloud")).max));
+    });
+
+    // ---- Split into layers on WaveSpeedAI and Oxen.ai (kind "layers") ----
+    const split = await import(require("node:url").pathToFileURL(path.join(ROOT, "renderer", "editor", "splitlayers.js")).href);
+    const layerReq = (pid, extra = {}) => ({ provider: pid, model: V(pid).model, kind: "layers", options: V(pid).options, prompt: "", negative: "", seed: 0, image: pngOf(1200, 800, "PICTURE"), width: 1200, height: 800, references: [], params: {}, ...extra });
+
+    await section("Split into layers on WaveSpeedAI", async () => {
+        const v = V("wavespeed");
+        check("the variant's layer mode: up to 99, a count, no Text recognition, its own route", v.options.layers.max === 99 && v.options.layers.count === true && v.options.layers.text === false && v.options.layers.model === "bytedance/seedream-v5.5/layer-decomposition", short(v.options.layers));
+        // a canned answer: the base, a layer as a bare URL (no box: the docs name none), a layer object with a box and a name
+        const run = async (req, opts = {}) => {
+            const stored = new Map();
+            let body = null, route = null, k = 0;
+            const files = { "https://cdn.wavespeed.test/base.png": pngOf(1024, 683, "BASE"), "https://cdn.wavespeed.test/l1.png": pngOf(1024, 683, "L1"), "https://cdn.wavespeed.test/l2.png": pngOf(512, 512, "L2") };
+            const outputs = opts.outputs || ["https://cdn.wavespeed.test/base.png", "https://cdn.wavespeed.test/l1.png", { url: "https://cdn.wavespeed.test/l2.png", name: "dog", bounding_box: { absolute: [10, 20, 310, 420] } }];
+            const fetch = async (url, init = {}) => {
+                const u = new URL(String(url)), method = String(init.method || "GET").toUpperCase();
+                if (method === "POST" && u.pathname === "/api/v3/media/uploads") { const n = ++k; return json(200, { code: 200, data: { download_url: `https://cdn.wavespeed.test/u${n}`, upload: { url: `https://put.wavespeed.test/u${n}`, method: "PUT" } } }); }
+                if (method === "PUT" && u.hostname === "put.wavespeed.test") { stored.set(`https://cdn.wavespeed.test${u.pathname}`, tagOf(Buffer.from(init.body))); return new Response(null, { status: 200 }); }
+                if (method === "POST" && u.hostname === "api.wavespeed.ai") {
+                    body = JSON.parse(init.body);
+                    route = u.pathname.replace(/^\/api\/v3\//, "");
+                    return json(200, { code: 200, data: { id: "p9", status: "completed", urls: { get: "https://api.wavespeed.ai/api/v3/predictions/p9/result" }, outputs } });
+                }
+                if (u.hostname === "cdn.wavespeed.test" && files[String(url)]) return opts.gone && String(url).endsWith(opts.gone) ? new Response("gone", { status: 404 }) : png(files[String(url)]);
+                return json(404, { code: 404, message: "no route " + u.pathname });
+            };
+            const ctx = { key: "test-ws", fetch, log() {}, sleep: async () => {} };
+            const out = await wavespeed.layers(req, ctx);
+            return { out, body, route, stored, ctx };
+        };
+        const a = await run(layerReq("wavespeed", { prompt: "  the dog  ", params: { count: 5, size: "auto" } }));
+        check("one upload and one submit to the layer route, the picture as the uploaded URL", a.route === "bytedance/seedream-v5.5/layer-decomposition" && a.stored.get(a.body.image) === "PICTURE" && a.stored.size === 1, short([a.route, a.body.image]));
+        check("the body: the picture, the prompt trimmed, Auto as 1k for a 0.96 MP picture, max_images the count and the base (6), png, nothing else", eq(a.body, { image: a.body.image, prompt: "the dog", resolution: "1k", max_images: 6, output_format: "png" }), short(a.body));
+        check("the answer: the base first, then the two layers in order", eq(a.out.layers.map((l) => tagOf(l.bytes)), ["BASE", "L1", "L2"]) && a.out.layers[0].base === true && !a.out.layers[1].base && a.out.bytes.equals(a.out.layers[0].bytes), short(a.out.layers.map((l) => [tagOf(l.bytes), l.base])));
+        check("a bare URL is a layer without a box: full, no name; the object's box and name are kept", a.out.layers[1].full === true && a.out.layers[1].bounding_box === null && a.out.layers[1].name === "" && a.out.layers[2].full === false && eq(a.out.layers[2].bounding_box.absolute, [10, 20, 310, 420]) && a.out.layers[2].name === "dog", short(a.out.layers.slice(1).map((l) => ({ full: l.full, box: l.bounding_box, name: l.name }))));
+        check("info says what was asked, and how many came without a position; the job is marked done", a.out.info.max_images === 6 && a.out.info.asked === 5 && a.out.info.unplaced === 1 && a.out.info.layers === 2 && a.ctx.jobDone === true && eq(a.out.missing, []), short(a.out.info));
+        const t = await run(layerReq("wavespeed", { params: { size: "2K" } }));
+        check("a 2K tier goes as 2k; no count: the default 16 layers, max_images 17; no prompt sent", t.body.resolution === "2k" && t.body.max_images === 17 && !("prompt" in t.body), short(t.body));
+        const big = await run(layerReq("wavespeed", { image: pngOf(3000, 2000, "BIG"), width: 3000, height: 2000 }));
+        check("Auto on a 6 MP picture asks 2k", big.body.resolution === "2k", big.body.resolution);
+        const g = await run(layerReq("wavespeed"), { gone: "/l1.png" });
+        check("a layer whose download fails is left out and named, the rest land", g.out.layers.length === 2 && eq(g.out.missing, ["Layer 1"]), short(g.out.missing));
+        const eb = await thrown(() => run(layerReq("wavespeed"), { gone: "/base.png" }));
+        check("a base that does not come fails the run and says the job is charged", !!eb && /finished and is charged, but its base picture/.test(eb), eb);
+        const no = async (extra, re, what) => {
+            let calls = 0;
+            const err = await thrown(() => wavespeed.layers(layerReq("wavespeed", extra), { key: "test-ws", fetch: async () => { calls++; return json(500, {}); }, log() {}, sleep: async () => {} }));
+            check(`${what} is refused before any call`, !!err && re.test(err) && calls === 0, err);
+        };
+        await no({ params: { text_recognition: true } }, /no Text recognition switch/, "Text recognition on WaveSpeed");
+        await no({ params: { count: 100 } }, /1 to 99/, "a count of 100");
+        await no({ params: { size: "4K" } }, /a tier/, "a size of 4K");
+        await no({ references: [r1] }, /exactly one picture/, "a second picture");
+        await no({ image: pngOf(400, 400, "SMALL") }, /512 × 512 to 6000 × 6000/, "a picture under 512 x 512");
+        await no({ options: { ...V("wavespeed").options, layers: undefined } }, /has no layer mode/, "a variant without a layer mode");
+    });
+
+    await section("Split into layers on Oxen.ai", async () => {
+        const v = V("oxen");
+        const schema = JSON.parse(fs.readFileSync(path.join(REFS, "oxen", "bytedance-seedream-5-5-layers.json"), "utf8")).request_schema;
+        check("the variant's layer mode: up to 99, the count and Text recognition, no size, its own model", v.options.layers.max === 99 && v.options.layers.options === true && v.options.layers.tiers === false && v.options.layers.model === "bytedance-seedream-5-5-layers" && schema.properties.max_layers.maximum === 99, short(v.options.layers));
+        const b64 = (b) => b.toString("base64");
+        const run = async (req, answer) => {
+            const posts = [];
+            const fetch = async (url, init = {}) => { posts.push({ url: String(url), body: JSON.parse(init.body), init }); return answer ? answer() : json(200, { model: "m", created: 1, images: [{ b64_json: b64(pngOf(1024, 683, "BASE")) }, { b64_json: b64(pngOf(1024, 683, "SKY")), name: "sky" }, { b64_json: b64(pngOf(300, 400, "DOG")), name: "dog", bounding_box: { x: 10, y: 20, width: 300, height: 400 }, z_index: 2 }] }); };
+            const ctx = { key: "test-ox-0123456789", base: "http://127.0.0.1:5556", fetch, log() {}, sleep: async () => {} };
+            const out = await oxen.layers(req, ctx);
+            return { out, post: posts[0], posts, ctx };
+        };
+        const a = await run(layerReq("oxen", { prompt: " the dog ", params: { count: 8, text_recognition: true } }));
+        const { model, response_format, ...rest } = a.post.body;
+        const unknown = Object.keys(rest).filter((k) => !(k in schema.properties));
+        check("one POST to /api/ai/images/generate (the route the model list names), the layer model", a.posts.length === 1 && a.post.url === "http://127.0.0.1:5556/api/ai/images/generate" && model === "bytedance-seedream-5-5-layers" && response_format === "b64_json", short([a.post.url, model]));
+        check("the body: the picture as one data URL, the prompt, max_layers the count (the base not counted), Text recognition, png, no watermark, the hidden switch; every field in the schema", typeof rest.input_image === "string" && rest.input_image.startsWith("data:image/png;base64,") && rest.prompt === "the dog" && rest.max_layers === 8 && rest.text_recognition === true && rest.output_format === "png" && rest.watermark === false && rest.layer_decomposition === true && !unknown.length && !("size" in rest), short({ ...rest, input_image: String(rest.input_image).slice(0, 30), unknown }));
+        check("a split's POST carries the run's undici limits (a long job outlasts 300 s)", !!a.post.init.dispatcher, "");
+        check("the answer: the base, then the layers by z_index", eq(a.out.layers.map((l) => tagOf(l.bytes)), ["BASE", "SKY", "DOG"]) && a.out.layers[0].base === true, short(a.out.layers.map((l) => tagOf(l.bytes))));
+        check("a box as x / y / width / height becomes [left, top, right, bottom]; a layer without one lands over the whole picture", eq(a.out.layers[2].bounding_box, { absolute: [10, 20, 310, 420] }) && a.out.layers[2].full === false && a.out.layers[1].full === true && a.out.layers[1].bounding_box === null && a.out.layers[1].name === "sky", short(a.out.layers.slice(1).map((l) => [l.bounding_box, l.full, l.name])));
+        check("info and the job's state", a.out.info.asked === 8 && a.out.info.text_recognition === true && a.out.info.unplaced === 1 && a.ctx.jobDone === true, short(a.out.info));
+        const d = await run(layerReq("oxen"));
+        check("no count: 16 layers; Text recognition off is sent as off", d.post.body.max_layers === 16 && d.post.body.text_recognition === false, short(d.post.body.max_layers));
+        const many = await run(layerReq("oxen", { params: { count: 40 } }), () => json(200, { images: [{ url: "data:image/png;base64," + b64(pngOf(1024, 683, "BASE")) }, { url: "data:image/png;base64," + b64(pngOf(1024, 683, "L1")) }] }));
+        check("above 32 layers the answer is asked for as URLs, and URL entries are read", many.post.body.response_format === "url" && eq(many.out.layers.map((l) => tagOf(l.bytes)), ["BASE", "L1"]), short(many.post.body.response_format));
+        const bad = await thrown(() => run(layerReq("oxen"), () => json(200, { images: [] })));
+        check("an answer without pictures fails", !!bad && /without its pictures/.test(bad), bad);
+        const refuse = async (extra, re, what) => {
+            let calls = 0;
+            const err = await thrown(() => oxen.layers(layerReq("oxen", extra), { key: "test-ox-0123456789", base: "http://127.0.0.1:5556", fetch: async () => { calls++; return json(500, {}); }, log() {}, sleep: async () => {} }));
+            check(`${what} is refused before any call`, !!err && re.test(err) && calls === 0, err);
+        };
+        await refuse({ params: { size: "1K" } }, /takes no size for a split/, "a size tier on Oxen");
+        await refuse({ params: { count: 0 } }, /1 to 99/, "a count of 0");
+        await refuse({ image: pngOf(6400, 300, "STEEP") }, /no steeper than 16:1/, "a picture steeper than 16:1");
+    });
+
+    await section("which host a split runs on (renderer/editor/splitlayers.js)", async () => {
+        const pro = JSON.parse(fs.readFileSync(path.join(ROOT, "recipes", "seedream_5_pro.json"), "utf8"));
+        // (split-on-chosen-provider) the bug: a split that reads providers.ark alone, whatever the user picked
+        check("5.5 chosen on WaveSpeed: WaveSpeed; on Oxen: Oxen; on ModelArk: ModelArk", split.splitProviderOf(raw, "wavespeed") === "wavespeed" && split.splitProviderOf(raw, "oxen") === "oxen" && split.splitProviderOf(raw, "ark") === "ark", short(["wavespeed", "oxen", "ark"].map((p) => split.splitProviderOf(raw, p))));
+        check("5.5 chosen on a host without a layer mode (Comfy Cloud, ToAPIs, Comfy Router): ModelArk", ["comfycloud", "toapis", "comfyrouter"].every((p) => split.splitProviderOf(raw, p) === "ark"), "");
+        check("no choice: the recipe's default (ModelArk for 5.5; 5.0 pro's fal has none, so ModelArk)", split.splitProviderOf(raw) === "ark" && split.splitProviderOf(pro) === "ark" && split.splitProviderOf(pro, "wavespeed") === "ark", "");
+        const noArk = { ...raw, providers: { wavespeed: raw.providers.wavespeed, comfycloud: raw.providers.comfycloud } };
+        check("never a host without a layer mode: a recipe with neither the chosen one's nor ModelArk's has none", split.splitProviderOf(noArk, "comfycloud") === null && split.layerSpecOf(noArk, "comfycloud") === null && split.splitProviderOf(noArk, "wavespeed") === "wavespeed", "");
+        const ws = split.layerSpecOf(raw, "wavespeed"), ox = split.layerSpecOf(raw, "oxen"), ak = split.layerSpecOf(raw, "ark");
+        check("each host's spec: WaveSpeed a count without Text recognition, Oxen both without tiers, ModelArk both with tiers", ws.provider === "wavespeed" && ws.count && !ws.text && ws.tiers && ox.provider === "oxen" && ox.count && ox.text && !ox.tiers && ak.provider === "ark" && ak.count && ak.text && ak.tiers, short([ws, ox, ak]));
+        check("the list follows each recipe's chosen host", eq(split.layerRecipes([pro, raw], (r) => (r.id === "seedream_5_5" ? "comfycloud" : undefined)).map((r) => r.id), ["seedream_5_5", "seedream_5_pro"]), "");
+        // the job and its request, on a shell that resolves the recipe as shell.js does
+        const shellFor = (pick) => ({
+            recipes: () => [raw, pro],
+            resolveRecipe: (r, pid = (pick[r.id] && r.providers[pick[r.id]] ? pick[r.id] : r.default)) => {
+                const vv = r.providers[pid];
+                return { ...r, provider: pid, providerLabel: { ark: "BytePlus ModelArk (Seedream)", wavespeed: "WaveSpeedAI", oxen: "Oxen.ai", comfycloud: "Comfy Cloud", fal: "fal.ai" }[pid] || pid, model: vv.model, options: vv.options || null, settings: vv.settings || [] };
+            },
+            keyState: () => ({ ok: true }),
+        });
+        const editor = { base: true, width: 1200, height: 800, providerPending: null, node: { id: "d1" }, setStatus(t) { this.status = t; (this.said = this.said || []).push(t); }, flattenToCanvas: () => ({}), geometrySeq: 0 };
+        const appFor = (pick) => ({ shell: shellFor(pick), recipe: null, editors: () => [editor], _providerRuns: new Set(), notifyProviderRuns() {}, endRun() {}, endRunRow() {} });
+        const jw = split.splitJob(appFor({ seedream_5_5: "wavespeed" }), editor, { recipe: "seedream_5_5", count: 5 });
+        const jc = split.splitJob(appFor({ seedream_5_5: "comfycloud" }), editor, { recipe: "seedream_5_5", count: 5 });
+        check("the job on 5.5 chosen on WaveSpeed runs on WaveSpeed; chosen on Comfy Cloud, on ModelArk", jw.r.provider === "wavespeed" && jw.spec.provider === "wavespeed" && jc.r.provider === "ark", short([jw.r.provider, jc.r.provider]));
+        const tr = (() => { try { split.splitJob(appFor({ seedream_5_5: "wavespeed" }), editor, { recipe: "seedream_5_5", textRecognition: true }); return null; } catch (e) { return String(e.message); } })();
+        const sz = (() => { try { split.splitJob(appFor({ seedream_5_5: "oxen" }), editor, { recipe: "seedream_5_5", size: "2K" }); return null; } catch (e) { return String(e.message); } })();
+        check("the job refuses Text recognition on WaveSpeed and a tier on Oxen, naming the host", !!tr && /on WaveSpeedAI has no Text recognition switch/.test(tr) && !!sz && /on Oxen\.ai takes no size/.test(sz), short([tr, sz]));
+        let sent = null;
+        const deps = { providerEdit: async (request, token) => { sent = { request, token }; throw new Error("stop here"); }, canvasBytes: async () => pngOf(1200, 800, "PICTURE"), bytesToImage: async () => null, viaLine: () => "", runIdOf: () => "r1" };
+        await thrown(() => split.runSplitLayers(appFor({ seedream_5_5: "wavespeed" }), editor, { recipe: "seedream_5_5", count: 5 }, deps));
+        check("the request and the run's row go to WaveSpeed with its variant's options, kind layers", !!sent && sent.request.provider === "wavespeed" && sent.token.provider === "wavespeed" && sent.request.kind === "layers" && sent.request.options.layers.model === "bytedance/seedream-v5.5/layer-decomposition" && sent.request.params.count === 5, short(sent && { provider: sent.request.provider, token: sent.token.provider }));
+        check("the status line names the host it is sent to", (editor.said || []).some((t) => /^Split into layers: sending the picture \(1200 × 800\) to Seedream 5\.5 on WaveSpeedAI, up to 5 layers/.test(t)), short(editor.said));
+        // where boxless layers land
+        const rect = { x: 50, y: 40, w: 2000, h: 1000 };
+        const plan = split.planLanding([{ base: true, name: "" }, { full: true, name: "" }, { name: "dog", bounding_box: { absolute: [100, 50, 300, 250] } }], rect, 1000, 500, new Set());
+        check("a layer without a position covers the source like the base, is named by its place and listed in `whole`; a boxed one lands from its box", eq([plan.rows[1].x, plan.rows[1].y, plan.rows[1].w, plan.rows[1].h], [50, 40, 2000, 1000]) && plan.rows[1].name === "Layer 1" && eq(plan.whole, ["Layer 1"]) && eq([plan.rows[2].x, plan.rows[2].y, plan.rows[2].w, plan.rows[2].h], [250, 140, 400, 400]) && !plan.leftOut.length, short(plan));
     });
 
     const failed = results.filter((x) => !x).length;

@@ -80,7 +80,7 @@ def node_step():
     ktail = k.stdout.strip()
     if k.returncode != 0 or not ktail.endswith("PASS"):
         raise Exception("tools/krea3_test.js: " + (ktail + k.stderr)[-1500:])
-    # tools/seedream55_test.js: Seedream 5.5's requests on WaveSpeedAI and Comfy Cloud
+    # tools/seedream55_test.js: Seedream 5.5's requests on WaveSpeedAI and Comfy Cloud, its split on WaveSpeed and Oxen.ai, the split's host choice
     s = subprocess.run(["node", os.path.join(ROOT, "tools", "seedream55_test.js")], cwd=ROOT,
                        capture_output=True, text=True, encoding="utf-8", timeout=120)
     stail = s.stdout.strip()

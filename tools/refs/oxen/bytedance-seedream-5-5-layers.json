@@ -1,0 +1,86 @@
+{
+  "id": "bytedance-seedream-5-5-layers",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.036,
+    "cost_per_image_grid": {
+      "high": {
+        "1K": 0.026,
+        "2K": 0.036,
+        "4K": 0.071
+      },
+      "input_image": {
+        "2K": 0.011
+      }
+    },
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image",
+      "prompt",
+      "max_layers"
+    ],
+    "properties": {
+      "input_image": {
+        "description": "The image to split into layers.",
+        "format": "uri",
+        "title": "Image",
+        "type": "string",
+        "x-order": 0
+      },
+      "layer_decomposition": {
+        "default": true,
+        "title": "Split Into Layers",
+        "type": "boolean",
+        "x-hidden": true,
+        "x-order": 6
+      },
+      "max_layers": {
+        "default": 10,
+        "description": "The most layers to return, not counting the base image. Higher values split the image more finely, and each layer is billed as an image.",
+        "maximum": 99,
+        "minimum": 1,
+        "title": "Max Layers",
+        "type": "integer",
+        "x-order": 2
+      },
+      "output_format": {
+        "default": "png",
+        "description": "Format of the base image.",
+        "enum": [
+          "png",
+          "jpeg"
+        ],
+        "title": "Base Format",
+        "type": "string",
+        "x-order": 4
+      },
+      "prompt": {
+        "description": "Optional. Name the elements to split out, such as \"the cyclist, the scooter and the bakery sign\". Leave blank to split out every main element.",
+        "title": "Prompt",
+        "type": "string",
+        "x-order": 1
+      },
+      "text_recognition": {
+        "default": true,
+        "description": "Read each text layer's wording, a similar font family and its color.",
+        "title": "Text Recognition",
+        "type": "boolean",
+        "x-order": 3
+      },
+      "watermark": {
+        "default": false,
+        "description": "Whether to add an 'AI generated' watermark.",
+        "title": "Watermark",
+        "type": "boolean",
+        "x-order": 5
+      }
+    },
+    "required": [
+      "input_image"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

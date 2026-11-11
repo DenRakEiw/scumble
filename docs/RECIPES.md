@@ -2865,7 +2865,7 @@ takes from them:
   `background` reach it (`list_recipes` says `background: true`);
 - `optimize_prompt_options` `{ mode: "standard" }` (`fast` is not taken by 5.5); not sent, since standard is the
   default and there is no off (see "Not sent" above);
-- `layer_decomposition` (up to 100 layers on 5.5, `layer_decomposition_options: { max_images, text_recognition }`): a
+- `layer_decomposition` (up to 99 layers and a base on 5.5, `layer_decomposition_options: { max_images, text_recognition }`): a
   feature of its own, "Split into layers" below.
 
 **What a transparent answer does.** The run reads `background: "transparent"` from the row before the crop is made
@@ -2887,8 +2887,17 @@ activation in the ModelArk console) - ModelNotOpen: ...". The 5.0 variants never
 **Split into layers.** `split_layers`, *Image › Split into Layers...*: the visible picture or one layer's pixels go as
 the single input of a `POST /api/v3/images/generations` with `layer_decomposition: true`, and the answer lands as new
 layers above every existing layer. `recipes/seedream_5_5.json` and `seedream_5_pro.json` declare it in the ark variant's
-`options.layers`: `{ max: 100, options: true }` and `{ max: 16 }`. Adapter `ark.js` `layers` (kind `"layers"`), landing
-`renderer/editor/splitlayers.js`. Never run against the live API.
+`options.layers`: `{ max: 99, options: true, price }` and `{ max: 16, price }` (`max` the layers besides the base,
+`price` the dialog's words). Adapter `ark.js` `layers` (kind `"layers"`), landing `renderer/editor/splitlayers.js`. Never
+run against the live API. Seedream 5.5 splits on WaveSpeedAI and Oxen.ai too ("Split into layers on WaveSpeedAI and
+Oxen.ai" below).
+
+**Which host splits.** `splitlayers.js` `splitProviderOf`: the recipe's chosen provider (the user's pick, the one
+`resolveRecipe` takes without a forced host) when its variant declares `options.layers`, else `ark` when its variant
+does, never a host without one. So 5.5 chosen on WaveSpeedAI or Oxen.ai splits there, chosen on Comfy Cloud, ToAPIs or
+Comfy Router it splits on ModelArk, and 5.0 pro (default fal) always on ModelArk. The dialog's line, the status line,
+the run's row and `list_recipes` `layers` (`{ provider, max, count, text_recognition, tiers }`) name that host;
+`split_layers` answers its `provider`.
 
 From the 5.0 pro schema (`tools/refs/comfyrouter/byteplus_seedream-5-0-pro-260628.json`):
 
@@ -2905,10 +2914,14 @@ From the 5.0 pro schema (`tools/refs/comfyrouter/byteplus_seedream-5-0-pro-26062
   `description`. `output_format` is the base's; a layer is always PNG. If one layer fails, the whole request fails.
 - `sequential_image_generation`, its options, `tools` and `stream` are an error with it, and are not sent.
 
-**Only in BytePlus's preview docs for 5.5** (as the user passed them on 2026-11-08; not on a public page): the model id, up
-to 100 layers, and `layer_decomposition_options: { max_images, text_recognition }`. Taken as read, and unverified: that
-`max_images` counts the layers and not the base, its default, what `text_recognition` does by default (Scumble always
-sends it, off unless asked), and that `auto` is a tier on 5.5 as it is on 5.0 pro. The 5.0 pro schema has no such options:
+**From BytePlus's preview docs for 5.5** (as the user passed them on 2026-11-08) and, since 2026-11-11, the public pages
+of the hosts that serve it (Comfy Router's 5.5 schema `tools/refs/comfyrouter/byteplus_seedream-5-5-261028.json`,
+Comfy-Org/ComfyUI#17631, ToAPIs' and WaveSpeed's 5.5 pages): the model id and
+`layer_decomposition_options: { max_images, text_recognition }`. **`max_images` counts the base and the layers together,
+2 to 100, default 30** (all four say so; the first build read it as the layers alone): Scumble's count is the layers, so a
+count of n sends `max_images` n + 1, and 5.5's `max` is 99. Still unverified: what `text_recognition` does by default
+(Scumble always sends it, off unless asked), and that `auto` is a tier on 5.5 as it is on 5.0 pro (the Router's schema
+says so for 5.5 with `layer_decomposition`). The 5.0 pro schema has no such options:
 the variant sends none, a count other than 16 and Text recognition are refused there. **Everything else about 5.5's split is
 assumed from the 5.0 pro schema**: the input limits and the 512 x 512 refusal, the tiers, the output of at most about 2K,
 and the answer's whole shape (base first, no box on the base, boxes in the base's pixels, `z_index`, `name`).
@@ -2919,7 +2932,7 @@ lose the answer: the base gets five tries with growing waits (it is the frame ev
 a layer three, and a layer that stays away is left out and named in the status line and `left_out`, its URL in the log. A
 Cancel during the downloads says the job finished and is charged. The POST carries its own limits for undici
 (`headersTimeout` and `bodyTimeout` at the run's deadline, 30 s more), or Node's default 300 s would end a request of up to
-101 pictures first. The base is the row without a box, else the row of `z_index` 0, else `data[0]`, so a 5.5 answer of
+100 pictures first. The base is the row without a box, else the row of `z_index` 0, else `data[0]`, so a 5.5 answer of
 another shape is not thrown away after it is paid for. Main keeps the pictures and the window
 takes them one at a time over `provider:layerPart`: one IPC message of dozens of 2K pictures ends the renderer.
 
@@ -2927,7 +2940,9 @@ The landing: bottom to top by `z_index`, the base lowest, in one new group named
 the document's), one `layers` undo step, each layer's name from `name` (one line, 60 characters, numbered when it
 repeats a name in the document), its `description` in the log entry and the command's answer. A box is scaled to the
 document; its edges are rounded so that two boxes that meet still meet; a box that is no box falls back to `normalized`,
-and a layer with neither is left out and named in the status line. A box that passes the base's edge stays whole and the
+and a layer with neither is left out and named in the status line. A layer an adapter marks `full` (a host whose docs
+name no position: WaveSpeedAI, and Oxen.ai where an entry carries no box) covers the whole source as the base does,
+and the status line says so in amber; `split_layers` lists such layers in `unplaced`. A box that passes the base's edge stays whole and the
 layer overhangs the picture (clamping would squeeze it); one that misses the base is left out. Each layer is baked to its size in the document, so it
 is unscaled on whole pixels as the retouch tools need, and is stored in the file mirror as a result is, so a saved
 document holds it. Where the answer is smaller than the source (the output is at most about 2K), the status line says the
@@ -3109,6 +3124,35 @@ OpenRouter or Magnific on that day.
 
 `tools/seedream55_test.js` holds the WaveSpeedAI and Comfy Cloud requests; `tools/comfyrouter_test.js`,
 `tools/oxen_test.js` and `tools/toapis_test.js` hold theirs to the saved schemas and pages.
+
+**Split into layers on WaveSpeedAI and Oxen.ai.** Both 5.5 variants declare `options.layers` with the host's own route
+in `model` (`electron/main/providers/layersplit.js` reads it, as `splitlayers.js` does; "Which host splits" above). The
+input rule is ModelArk's (512 x 512 to 6000 x 6000 in area, 16:1), since neither host states one. Never run live.
+
+- **WaveSpeedAI** (`wavespeed.js` `layers`, `bytedance/seedream-v5.5/layer-decomposition`, its llms.txt and model page
+  of 2026-11-11): `{ image (one uploaded URL), prompt?, resolution, max_images, output_format: "png" }`. `max_images` is
+  the base and the layers (2 to 100, default 30) and **WaveSpeed bills every image asked for**, so Scumble sends the
+  count + 1 (the dialog's line says it). `resolution` is 1k / 1.5k / 2k (the page's default 1k, no auto): a tier goes as
+  it is, Auto picks by the picture's area (up to 1 MP 1k, up to 2.36 MP 1.5k, else 2k). No Text recognition (the page
+  has none), so `options.layers` says `{ max: 99, count: true, text: false }`. The answer's `outputs` are "the base image
+  first, then the layers", "usually URL strings": a URL string is a layer without a name or a box, laid over the whole
+  picture (`full`) as "Layer n"; an object entry's `url` / `b64_json`, `z_index`, `bounding_box`, `name` and
+  `description` are read where they come. **Not stated by WaveSpeed and the first thing a live run must settle:**
+  whether a layer's PNG is the whole frame (then `full` is right) or its element alone near the tier's size, as
+  ModelArk answers with a box (then each such layer would land stretched over the picture).
+- **Oxen.ai** (`oxen.js` `layers`, `bytedance-seedream-5-5-layers`, its request schema saved in `tools/refs/oxen/`):
+  `POST /api/ai/images/generate` (the route the model list names for it; `/images/edit` wants a prompt) with
+  `{ input_image (one data URL), prompt?, max_layers (1 to 99, "not counting the base image"), text_recognition,
+  output_format: "png", watermark: false, layer_decomposition: true }`; no size field (`tiers: false`: the command and
+  the dialog take Auto only). Above 32 layers the answer is asked as URLs. The answer's shape is not documented: the
+  model's description says it returns the layers "with a ZIP of the base, every layer and a manifest of their names,
+  order and positions" and that "each layer keeps its position on the base". Read: `images` (else `layers`), the base
+  first, `z_index`, a box as ModelArk's shape, `[l, t, r, b]`, `{ x, y, width, height }` or `{ left, top, right,
+  bottom }`, `name`, `description`; a layer without a box lands over the whole picture. The ZIP and its manifest are not
+  read (no field name is documented).
+
+`tools/seedream55_test.js` holds both splits against canned answers (two layers, one without a box), their refusals,
+and the host choice (`splitProviderOf`, `splitJob`, the request `runSplitLayers` sends).
 
 ### MiniMax (`minimax`)
 
