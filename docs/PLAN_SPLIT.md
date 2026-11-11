@@ -262,3 +262,8 @@ E46), `inpaint_ed_stack.js` `StackPart` (E26-E27, the band programs), `inpaint_e
 and `inpaint_ed_masks.js` `MasksPart` (E53, layer masks, cutout and the menus: not in the plan's table, taken here with
 the selection); 3,351 lines. 46 imports dropped; the file is 14,417 lines. `split_check.js --base d17dfdc4` PASS.
 Gates `s5-select` (`lint types nodecopy selection editor shape pixels limit masks`) PASS on both backends.
+
+**S6 (2026-11-11).** Geometry and the pointer as parts, base `7a912ecf`: `inpaint_ed_geometry.js` `GeometryPart` (E05,
+E15-E20, and E44 extend canvas, which the plan's table left out), `inpaint_ed_pointer.js` `PointerPart` (E07, E21);
+2,727 lines. 40 imports dropped; the file is 11,686 lines. `split_check.js --base d17dfdc4` PASS. Gates `s6-geometry`
+(`lint types nodecopy editor size canvasonly transparent edges`) PASS on both backends.
