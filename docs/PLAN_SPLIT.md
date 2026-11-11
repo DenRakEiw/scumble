@@ -239,3 +239,14 @@ at call time (`psdOnPool`, `pngStreamFrom`, `imageWorkerFrom`, `tiffBandRows`). 
 script on the AST (`split_move.js` in the session's scratchpad: top-level statements by name, class members by region
 from its first to its last member, each with the lines from the end of the one before). Gates `s2-load` (`lint types
 nodecopy layered tiff document export`, serial, offline) PASS on both backends.
+
+**S3 (2026-11-11).** The first part classes, base `f6f4f65f`: `inpaint_ed_panels.js` `PanelsPart` (E62-E64, the filter,
+limit and relight blocks), `inpaint_ed_layers.js` `LayersPart` (E54, E60, E61), `inpaint_ed_histpanel.js`
+`HistoryPanelPart` (E65-E66), `inpaint_ed_text.js` `TextPart` (E14, E55); 3,346 lines. `inpaint_canvas.js` installs
+them right after the class with one `installParts(InpaintEditor, [...])`, which each later session extends. From here
+on `split_check.js` runs against S1's base (`--base d17dfdc4`), so it proves every move since S1 at once (932 units,
+728 prototype members, PASS); against the session's own base the earlier sessions' leaves and bind calls would read
+as new. 22 imports nothing reads any more were dropped; the file is 20,337 lines. Gates `s3-panels` (`lint types
+nodecopy editor relight limit groups clip`) PASS on canvas; on tiles `editor`'s
+`live_stroke_reaches_the_screen_before_the_release` (a listed flake, `docs/TESTING.md`) went red once and PASS on the
+rerun `s3-rerun-tiles`.

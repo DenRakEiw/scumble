@@ -43,6 +43,7 @@ FILES = [
     "inpaint_jobs.js", "inpaint_encode.js", "inpaint_upload.js", "inpaint_modal.js", "inpaint_layered.js", "inpaint_tiff.js", "inpaint_theme.js", "inpaint_depth.js", "inpaint_edges.js", "inpaint_depthfx.js", "inpaint_haze.js", "inpaint_grade.js", "inpaint_wheels.js", "inpaint_adjustments.js", "inpaint_lensblur.js", "inpaint_relight.js", "edgefit.js",
     "reftokens.js", "prompt_field.js", "blend_modes.js", "inpaint_status.js", "inpaint_progress.js", "inpaint_sizelimit.js", "inpaint_areas.js", "inpaint_parts.js",
     "inpaint_consts.js", "inpaint_orient.js", "inpaint_shaders.js", "inpaint_dom.js", "inpaint_mesh.js", "inpaint_backends.js", "inpaint_style.js", "inpaint_strokebuf.js", "inpaint_load.js",
+    "inpaint_ed_panels.js", "inpaint_ed_layers.js", "inpaint_ed_histpanel.js", "inpaint_ed_text.js",
     "boxes.js", "boxes_format.js", "boxes_tool.js", "boxes_model.js", "inpaint_boxes.js",
     "px/kernels_js.js", "px/kernels.js", "px/px.js",
 ]
