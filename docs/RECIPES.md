@@ -2941,8 +2941,11 @@ the document's), one `layers` undo step, each layer's name from `name` (one line
 repeats a name in the document), its `description` in the log entry and the command's answer. A box is scaled to the
 document; its edges are rounded so that two boxes that meet still meet; a box that is no box falls back to `normalized`,
 and a layer with neither is left out and named in the status line. A layer an adapter marks `full` (a host whose docs
-name no position: WaveSpeedAI, and Oxen.ai where an entry carries no box) covers the whole source as the base does,
-and the status line says so in amber; `split_layers` lists such layers in `unplaced`. A box that passes the base's edge stays whole and the
+name no position: WaveSpeedAI, and Oxen.ai where an entry carries no box) covers the whole source as the base does when
+its picture has the base's shape (within a pixel); one of another shape keeps its own, fitted inside the source and
+centred (`fitFull`), never stretched. The status line names both kinds in amber; `split_layers` lists them in `unplaced`.
+An unnamed layer is named "Layer n" by its place in the whole answer (`layersplit.js`), so a left-out one never shares a
+name with one that landed. An answer with an empty slot is refused on WaveSpeedAI as on ModelArk and Oxen.ai. A box that passes the base's edge stays whole and the
 layer overhangs the picture (clamping would squeeze it); one that misses the base is left out. Each layer is baked to its size in the document, so it
 is unscaled on whole pixels as the retouch tools need, and is stored in the file mirror as a result is, so a saved
 document holds it. Where the answer is smaller than the source (the output is at most about 2K), the status line says the
@@ -3139,7 +3142,8 @@ input rule is ModelArk's (512 x 512 to 6000 x 6000 in area, 16:1), since neither
   picture (`full`) as "Layer n"; an object entry's `url` / `b64_json`, `z_index`, `bounding_box`, `name` and
   `description` are read where they come. **Not stated by WaveSpeed and the first thing a live run must settle:**
   whether a layer's PNG is the whole frame (then `full` is right) or its element alone near the tier's size, as
-  ModelArk answers with a box (then each such layer would land stretched over the picture).
+  ModelArk answers with a box (then each such layer lands at its own shape in the middle of the picture, not where the
+  element is). The source picture is held to ModelArk's 30 MB (an opaque one goes as JPEG, else refused).
 - **Oxen.ai** (`oxen.js` `layers`, `bytedance-seedream-5-5-layers`, its request schema saved in `tools/refs/oxen/`):
   `POST /api/ai/images/generate` (the route the model list names for it; `/images/edit` wants a prompt) with
   `{ input_image (one data URL), prompt?, max_layers (1 to 99, "not counting the base image"), text_recognition,

@@ -109,7 +109,9 @@ async function collect(items, get, ctx, who) {
     for (let k = 0; k < rows.length; k++) {
         const d = rows[k].d;
         const obj = d && typeof d === "object" ? d : {};
-        const name = obj.name == null ? "" : String(obj.name);
+        // an unnamed layer is named by its place in the whole answer here, so a left-out one and the ones that land
+        // never share a name (planLanding keeps a name it is given)
+        const name = obj.name != null && String(obj.name).trim() ? String(obj.name) : k === 0 ? "" : `Layer ${k}`;
         let got;
         try { got = await get(d); }
         catch (err) {
@@ -117,7 +119,7 @@ async function collect(items, get, ctx, who) {
             const why = String((err && err.message) || err);
             if (k === 0) throw new Error(`${who}: the job finished and is charged, but its base picture could not be downloaded (${why}); nothing landed.`);
             if (typeof ctx.log === "function") ctx.log(`layer "${name || k}" left out, its download failed: ${why}`);
-            missing.push(name || `Layer ${k}`);
+            missing.push(name);
             continue;
         }
         const box = k === 0 ? null : boxOf(obj);

@@ -245,14 +245,20 @@ async function prepare(app, editor, res, job, gone, deps) {
     const bw = firstImg.naturalWidth || firstImg.width, bh = firstImg.naturalHeight || firstImg.height;
     if (!(bw > 0 && bh > 0)) throw new Error("the answer's base picture is empty");
     const taken = new Set(editor.layers.map((l) => String(l.name).toLowerCase()));
-    const { rows, leftOut, whole } = planLanding(entries, job.rect, bw, bh, taken);
+    const { rows, leftOut } = planLanding(entries, job.rect, bw, bh, taken);
     const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 17);
-    const made = [];
+    const made = [], whole = [], fitted = [];
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         const bytes = row.entry === entries[0] ? firstBytes : await take(row.entry);
         if (gone()) return null;
         const img = row.entry === entries[0] ? firstImg : await deps.bytesToImage(bytes, row.entry.mime);
+        if (row.entry.full && !row.entry.base) {
+            // a layer without a position: over the source only when it has the base's shape, else at its own, never stretched
+            const f = fitFull(img.naturalWidth || img.width, img.naturalHeight || img.height, bw, bh, job.rect);
+            Object.assign(row, f.box);
+            (f.fitted ? fitted : whole).push(row.name);
+        }
         const { px, png } = await readyRow(editor, row, bytes, img, deps);
         // stored as a result is, so a save holds the layer; when the mirror fails, an unsaved layer, which a save uploads
         let ref = null;
@@ -261,7 +267,21 @@ async function prepare(app, editor, res, job, gone, deps) {
         if (gone()) return null;
         made.push({ row, px, ref });
     }
-    return { rows: made, leftOut, whole, base: [bw, bh] };
+    return { rows: made, leftOut, whole, fitted, base: [bw, bh] };
+}
+
+/**
+ * Where a layer the host gave no position (`full`) lands, from its picture's iw x ih against the base's bw x bh: over
+ * the whole source `rect` when it has the base's shape (scaled to the base's width, its height within a pixel of the
+ * base's, or the other way round), else at its own shape, as large as fits inside the source and centred (`fitted`).
+ * -> { box: { x, y, w, h }, fitted }.
+ */
+export function fitFull(iw, ih, bw, bh, rect) {
+    const same = iw > 0 && ih > 0 && (Math.abs((ih * bw) / iw - bh) <= 1 || Math.abs((iw * bh) / ih - bw) <= 1);
+    if (same || !(iw > 0 && ih > 0)) return { box: { x: rect.x, y: rect.y, w: rect.w, h: rect.h }, fitted: false };
+    const s = Math.min(rect.w / iw, rect.h / ih);
+    const w = Math.max(1, Math.round(iw * s)), h = Math.max(1, Math.round(ih * s));
+    return { box: { x: rect.x + Math.round((rect.w - w) / 2), y: rect.y + Math.round((rect.h - h) / 2), w, h }, fitted: true };
 }
 
 /**
@@ -348,12 +368,14 @@ async function runJob(app, editor, opts, deps) {
         if (scaledUp) parts.push(`The model answered ${bw} × ${bh}: the layers are scaled up to the picture's size, so they are lower resolution than the picture.`);
         const missing = Array.isArray(res.missing) ? res.missing.map((m) => cleanLayerName(m, "Layer", new Set())) : [];
         if (ready.leftOut.length) parts.push(`Left out, without a usable position: ${ready.leftOut.join(", ")}.`);
-        if (ready.whole.length) parts.push(`${label} gave ${ready.whole.length === 1 ? "one layer" : `${ready.whole.length} layers`} no position, so ${ready.whole.length === 1 ? "it covers" : "each covers"} the whole picture: move or scale ${ready.whole.length === 1 ? "it" : "them"} where needed.`);
+        const many = (n, one, more) => (n === 1 ? one : more);
+        if (ready.whole.length) parts.push(`${label} gave ${many(ready.whole.length, "one layer", `${ready.whole.length} layers`)} of the picture's shape no position, so ${many(ready.whole.length, "it covers", "each covers")} the whole picture: ${ready.whole.join(", ")}.`);
+        if (ready.fitted.length) parts.push(`${label} gave ${many(ready.fitted.length, "one layer", `${ready.fitted.length} layers`)} of another shape no position, so ${many(ready.fitted.length, "it sits", "each sits")} at ${many(ready.fitted.length, "its", "its own")} shape in the middle of the picture, not stretched: move and scale ${many(ready.fitted.length, "it", "them")} where ${many(ready.fitted.length, "it belongs", "they belong")} (${ready.fitted.join(", ")}).`);
         if (missing.length) parts.push(`Left out, its picture could not be downloaded: ${missing.join(", ")}.`);
         if (editor.geometrySeq !== geo) parts.push("The picture changed shape during the run: the layers sit where it was when it went out.");
-        editor.setStatus(parts.join(" "), scaledUp || ready.leftOut.length || ready.whole.length || missing.length || n <= 0 ? "warn" : "info");
+        editor.setStatus(parts.join(" "), scaledUp || ready.leftOut.length || ready.whole.length || ready.fitted.length || missing.length || n <= 0 ? "warn" : "info");
         return {
-            group: landed.group, recipe: r.id, provider: r.provider, model, seconds: res.seconds, unplaced: ready.whole, tier: job.tier, asked: job.count, answered: [bw, bh], scaledUp, leftOut: [...ready.leftOut, ...missing],
+            group: landed.group, recipe: r.id, provider: r.provider, model, seconds: res.seconds, unplaced: [...ready.whole, ...ready.fitted], tier: job.tier, asked: job.count, answered: [bw, bh], scaledUp, leftOut: [...ready.leftOut, ...missing],
             layers: landed.layers.map(({ layer, row }) => ({ layer, z: row.entry.z_index, base: !!row.entry.base, description: row.entry.description || "" })),
         };
     } catch (err) {

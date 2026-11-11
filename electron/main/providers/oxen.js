@@ -446,7 +446,11 @@ async function post(ctx, path, body, model, init = {}) {
             return await ctx.fetch(root(ctx) + API + path, { ...init, method: "POST", headers, body: payload });
         } catch (err) {
             const cause = err && err.cause;
-            if (cause && cause.code === "UND_ERR_HEADERS_TIMEOUT") throw new Error(`Oxen.ai ${model}: no answer within 5 minutes; the run may still be billed and saved in your Oxen account.`);
+            if (cause && cause.code === "UND_ERR_HEADERS_TIMEOUT") {
+                // undici's 300 s, or the limit a split's dispatcher set (its run's deadline and a grace)
+                const ms = init.dispatcher && +init.dispatcher.headersTimeout > 0 ? +init.dispatcher.headersTimeout : 300000;
+                throw new Error(`Oxen.ai ${model}: no answer within ${Math.round(ms / 60000)} minutes; the run may still be billed and saved in your Oxen account.`);
+            }
             throw new Error(`Oxen.ai ${model}: hub.oxen.ai could not be reached - ${scrub(err && err.message || err, ctx.key)}`);
         }
     };

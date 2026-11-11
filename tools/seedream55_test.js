@@ -180,6 +180,10 @@ async function main() {
         check("a large crop comes down under 4.62 MP", bw * bh <= 4624220 && Math.abs(bw / bh - 1.5) < 0.02, short([bw, bh]));
         const pro = await graphOf({ ...editReq("comfycloud"), model: "seedream 5.0 pro" });
         check("5.0 pro on the same node is as before: thinking, prompt optimisation, no background", pro.inputs["model.thinking"] === true && pro.inputs["model.prompt_optimization"] === "standard" && !("model.background" in pro.inputs), short(pro.inputs));
+        // (cc55-seed-range) the bug: a random seed above the node's 2147483647 sent as it is, which ComfyUI refuses
+        const hi = await graphOf(editReq("comfycloud", { seed: 3e9 }));
+        const hiPro = await graphOf({ ...editReq("comfycloud", { seed: 3e9 }), model: "seedream 5.0 pro" });
+        check("a seed of 3e9 goes inside the node's range on 5.5 and on 5.0 (modulo 2^31)", hi.inputs["model.seed"] === 3e9 % 2147483648 && hi.inputs["model.seed"] <= spec.inputs["model.seed"].max && hiPro.inputs["model.seed"] === 3e9 % 2147483648, short([hi.inputs["model.seed"], hiPro.inputs["model.seed"]]));
         check("ten pictures in all", cloud.layout(editReq("comfycloud")).max === 10, String(cloud.layout(editReq("comfycloud")).max));
     });
 
@@ -216,7 +220,7 @@ async function main() {
         check("one upload and one submit to the layer route, the picture as the uploaded URL", a.route === "bytedance/seedream-v5.5/layer-decomposition" && a.stored.get(a.body.image) === "PICTURE" && a.stored.size === 1, short([a.route, a.body.image]));
         check("the body: the picture, the prompt trimmed, Auto as 1k for a 0.96 MP picture, max_images the count and the base (6), png, nothing else", eq(a.body, { image: a.body.image, prompt: "the dog", resolution: "1k", max_images: 6, output_format: "png" }), short(a.body));
         check("the answer: the base first, then the two layers in order", eq(a.out.layers.map((l) => tagOf(l.bytes)), ["BASE", "L1", "L2"]) && a.out.layers[0].base === true && !a.out.layers[1].base && a.out.bytes.equals(a.out.layers[0].bytes), short(a.out.layers.map((l) => [tagOf(l.bytes), l.base])));
-        check("a bare URL is a layer without a box: full, no name; the object's box and name are kept", a.out.layers[1].full === true && a.out.layers[1].bounding_box === null && a.out.layers[1].name === "" && a.out.layers[2].full === false && eq(a.out.layers[2].bounding_box.absolute, [10, 20, 310, 420]) && a.out.layers[2].name === "dog", short(a.out.layers.slice(1).map((l) => ({ full: l.full, box: l.bounding_box, name: l.name }))));
+        check("a bare URL is a layer without a box: full, named by its place (Layer 1); the object's box and name are kept", a.out.layers[1].full === true && a.out.layers[1].bounding_box === null && a.out.layers[1].name === "Layer 1" && a.out.layers[2].full === false && eq(a.out.layers[2].bounding_box.absolute, [10, 20, 310, 420]) && a.out.layers[2].name === "dog", short(a.out.layers.slice(1).map((l) => ({ full: l.full, box: l.bounding_box, name: l.name }))));
         check("info says what was asked, and how many came without a position; the job is marked done", a.out.info.max_images === 6 && a.out.info.asked === 5 && a.out.info.unplaced === 1 && a.out.info.layers === 2 && a.ctx.jobDone === true && eq(a.out.missing, []), short(a.out.info));
         const t = await run(layerReq("wavespeed", { params: { size: "2K" } }));
         check("a 2K tier goes as 2k; no count: the default 16 layers, max_images 17; no prompt sent", t.body.resolution === "2k" && t.body.max_images === 17 && !("prompt" in t.body), short(t.body));
@@ -224,6 +228,31 @@ async function main() {
         check("Auto on a 6 MP picture asks 2k", big.body.resolution === "2k", big.body.resolution);
         const g = await run(layerReq("wavespeed"), { gone: "/l1.png" });
         check("a layer whose download fails is left out and named, the rest land", g.out.layers.length === 2 && eq(g.out.missing, ["Layer 1"]), short(g.out.missing));
+        // (split-missing-name-collision) the bug: the left-out one and a landed one both called "Layer 1"
+        const g3 = await run(layerReq("wavespeed"), { gone: "/l1.png", outputs: ["https://cdn.wavespeed.test/base.png", "https://cdn.wavespeed.test/l1.png", "https://cdn.wavespeed.test/l2.png"] });
+        const plan3 = split.planLanding(g3.out.layers, { x: 0, y: 0, w: 1200, h: 800 }, 1024, 683, new Set());
+        check("a left-out unnamed layer and the ones that land never share a name: Layer 1 missing, Layer 2 landed", eq(g3.out.missing, ["Layer 1"]) && eq(plan3.rows.map((r) => r.name), ["Base", "Layer 2"]), short([g3.out.missing, plan3.rows.map((r) => r.name)]));
+        // (split-wavespeed-base-shift) the bug: an empty first slot dropped, so a layer becomes the base
+        const e0 = await thrown(() => run(layerReq("wavespeed"), { outputs: ["", "https://cdn.wavespeed.test/l1.png", "https://cdn.wavespeed.test/l2.png"] }));
+        check("an answer with an empty slot is refused, not shifted onto the base", !!e0 && /an answer without its pictures \(2 of 3\)/.test(e0), e0);
+        // the source picture: ModelArk's 30 MB, an opaque one as JPEG
+        const huge = pngOf(1200, 800, "HUGE", 30 * 1000 * 1000 + 1);
+        const hj = await (async () => {
+            const stored = [];
+            const fetch = async (url, init = {}) => {
+                const u = new URL(String(url)), method = String(init.method || "GET").toUpperCase();
+                if (method === "POST" && u.pathname === "/api/v3/media/uploads") { stored.push(JSON.parse(init.body)); return json(200, { code: 200, data: { download_url: "https://cdn.wavespeed.test/u1", upload: { url: "https://put.wavespeed.test/u1", method: "PUT" } } }); }
+                if (method === "PUT") return new Response(null, { status: 200 });
+                if (method === "POST") return json(200, { code: 200, data: { id: "p1", status: "completed", urls: { get: "https://api.wavespeed.ai/api/v3/predictions/p1/result" }, outputs: ["https://cdn.wavespeed.test/base.png"] } });
+                return png(pngOf(1024, 683, "BASE"));
+            };
+            await wavespeed.layers(layerReq("wavespeed", { image: huge }), { key: "test-ws", fetch, log() {}, sleep: async () => {}, opaque: async () => true, toJpeg: async () => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(1000)]) });
+            return stored[0];
+        })();
+        check("a source over 30 MB goes as JPEG when it is opaque", hj && hj.content_type === "image/jpeg" && /\.jpg$/.test(hj.filename), short(hj));
+        let hugeCalls = 0;
+        const eh = await thrown(() => wavespeed.layers(layerReq("wavespeed", { image: huge }), { key: "test-ws", fetch: async () => { hugeCalls++; return json(500, {}); }, log() {}, sleep: async () => {}, opaque: async () => false, toJpeg: async () => null }));
+        check("... and is refused before any call when it has transparency", !!eh && /more than the 30 MB/.test(eh) && hugeCalls === 0, eh);
         const eb = await thrown(() => run(layerReq("wavespeed"), { gone: "/base.png" }));
         check("a base that does not come fails the run and says the job is charged", !!eb && /finished and is charged, but its base picture/.test(eb), eb);
         const no = async (extra, re, what) => {
@@ -274,6 +303,16 @@ async function main() {
         await refuse({ params: { size: "1K" } }, /takes no size for a split/, "a size tier on Oxen");
         await refuse({ params: { count: 0 } }, /1 to 99/, "a count of 0");
         await refuse({ image: pngOf(6400, 300, "STEEP") }, /no steeper than 16:1/, "a picture steeper than 16:1");
+        // (split-test-z-vacuous) the order: layers out of z order, a base that is not first
+        const zAnswer = (rows) => () => json(200, { images: rows.map(([tag, extra]) => ({ b64_json: b64(pngOf(1024, 683, tag)), ...extra })) });
+        const z1 = await run(layerReq("oxen"), zAnswer([["SKY", { z_index: 3 }], ["BASE", { z_index: 0 }], ["DOG", { z_index: 1 }], ["CAT", { z_index: 2 }]]));
+        check("every entry with a z_index: the only z 0 is the base wherever it stands, the rest bottom to top by z", eq(z1.out.layers.map((l) => tagOf(l.bytes)), ["BASE", "DOG", "CAT", "SKY"]) && z1.out.layers[0].base === true && eq(z1.out.layers.map((l) => l.z_index), [0, 1, 2, 3]), short(z1.out.layers.map((l) => [tagOf(l.bytes), l.z_index])));
+        const z2 = await run(layerReq("oxen"), zAnswer([["TOP", { z_index: 5 }], ["BASE", { base: true }], ["MID", { z_index: 2 }]]));
+        check("an entry marked base is the base, the others by z", eq(z2.out.layers.map((l) => tagOf(l.bytes)), ["BASE", "MID", "TOP"]) && z2.out.layers[0].base === true, short(z2.out.layers.map((l) => tagOf(l.bytes))));
+        // (split-oxen-timeout-text) the words follow the split's own limit, not undici's 5 minutes
+        const slow = async () => { throw Object.assign(new TypeError("fetch failed"), { cause: { code: "UND_ERR_HEADERS_TIMEOUT" } }); };
+        const et = await thrown(() => oxen.layers(layerReq("oxen", { timeoutMs: 1800000 }), { key: "test-ox-0123456789", base: "http://127.0.0.1:5556", fetch: slow, log() {}, sleep: async () => {} }));
+        check("a split that hears nothing says the split's own wait (1800 s + 30 s: 31 minutes)", !!et && /no answer within 31 minutes/.test(et), et);
     });
 
     await section("which host a split runs on (renderer/editor/splitlayers.js)", async () => {
@@ -312,6 +351,14 @@ async function main() {
         // where boxless layers land
         const rect = { x: 50, y: 40, w: 2000, h: 1000 };
         const plan = split.planLanding([{ base: true, name: "" }, { full: true, name: "" }, { name: "dog", bounding_box: { absolute: [100, 50, 300, 250] } }], rect, 1000, 500, new Set());
+        // (split-full-stretch) the bug: a boxless layer of another shape stretched over the whole picture
+        const R0 = { x: 100, y: 50, w: 3000, h: 2000 };
+        const same = split.fitFull(2048, 1365, 2048, 1365, R0), near = split.fitFull(1024, 683, 2048, 1365, R0);
+        const tall = split.fitFull(1400, 2048, 2048, 1365, R0), wide = split.fitFull(2048, 700, 2048, 1365, R0);
+        check("a boxless layer of the base's shape (to the pixel) covers the source", !same.fitted && !near.fitted && eq(same.box, { x: 100, y: 50, w: 3000, h: 2000 }) && eq(near.box, same.box), short([same, near]));
+        check("one of another shape keeps it: fitted inside the source, centred, never stretched (1400 x 2048 -> 1367 x 2000; 2048 x 700 -> 3000 x 1025)",
+            tall.fitted && eq(tall.box, { x: 100 + Math.round((3000 - 1367) / 2), y: 50, w: 1367, h: 2000 }) && wide.fitted && eq(wide.box, { x: 100, y: 50 + Math.round((2000 - 1025) / 2), w: 3000, h: 1025 })
+            && Math.abs(tall.box.w / tall.box.h - 1400 / 2048) < 0.002 && Math.abs(wide.box.w / wide.box.h - 2048 / 700) < 0.003, short([tall, wide]));
         check("a layer without a position covers the source like the base, is named by its place and listed in `whole`; a boxed one lands from its box", eq([plan.rows[1].x, plan.rows[1].y, plan.rows[1].w, plan.rows[1].h], [50, 40, 2000, 1000]) && plan.rows[1].name === "Layer 1" && eq(plan.whole, ["Layer 1"]) && eq([plan.rows[2].x, plan.rows[2].y, plan.rows[2].w, plan.rows[2].h], [250, 140, 400, 400]) && !plan.leftOut.length, short(plan));
     });
 

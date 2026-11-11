@@ -51,7 +51,8 @@
 // and no order for a layer, so a URL string lands as "Layer n" over the whole picture (layersplit.js `full`); an
 // object entry's url / b64_json, z_index, bounding_box, name and description are read where they come. Not stated
 // either: whether a layer's PNG is the whole frame or its element (ModelArk's are near the tier's size, placed by a
-// box), a Text recognition switch (none sent), the input limits (ModelArk's are held).
+// box), a Text recognition switch (none sent), the input limits (ModelArk's are held: its pixels and aspect, and its
+// 30 MB a picture with the JPEG fallback for an opaque one).
 //
 // Referral: the key link (keyUrl) carries DenRakEiw's WaveSpeed referral code.
 "use strict";
@@ -64,6 +65,7 @@ const split = require("./layersplit");
 
 /** A split's tier as WaveSpeed's `resolution`; Auto by the picture's area (ModelArk's auto: about the input's own size within 1K to 2K). */
 const SPLIT_RESOLUTION = { "1K": "1k", "1.5K": "1.5k", "2K": "2k" };
+const SPLIT_MAX_BYTES = 30 * 1000 * 1000;   // ark.js MAX_PICTURE_BYTES
 function splitResolution(tier, image) {
     if (SPLIT_RESOLUTION[tier]) return SPLIT_RESOLUTION[tier];
     const d = pngSize(Buffer.from(image || [])) || [1024, 1024];
@@ -329,7 +331,14 @@ module.exports = {
         if (!spec || !model) throw new Error(`${who} has no layer mode.`);
         const ask = split.askOf(req, who, spec);
         const stamp = Date.now().toString(36);
-        const input = { image: await upload(ctx, Buffer.from(req.image), `scumble-${stamp}-split.png`) };
+        // ModelArk's 30 MB a picture (the same model; WaveSpeed states none): an opaque picture over it goes as JPEG, else refused
+        let pic = { bytes: Buffer.from(req.image), mime: "image/png" };
+        if (pic.bytes.length > SPLIT_MAX_BYTES && typeof ctx.opaque === "function" && typeof ctx.toJpeg === "function" && await ctx.opaque(pic.bytes)) {
+            const jpeg = await ctx.toJpeg(pic.bytes, 92);
+            if (jpeg && jpeg.length && jpeg.length < pic.bytes.length) pic = { bytes: Buffer.from(jpeg), mime: "image/jpeg" };
+        }
+        if (pic.bytes.length > SPLIT_MAX_BYTES) throw new Error(`${who}: the picture is ${(pic.bytes.length / 1e6).toFixed(1)} MB, more than the 30 MB a picture may have${pic.mime === "image/png" ? " (it has transparency or could not go as JPEG, so it stays PNG)" : " even as JPEG"}. Use a smaller picture or layer.`);
+        const input = { image: await upload(ctx, pic.bytes, `scumble-${stamp}-split.${pic.mime === "image/jpeg" ? "jpg" : "png"}`, pic.mime) };
         if (ask.prompt) input.prompt = ask.prompt;
         input.resolution = splitResolution(ask.tier, req.image);
         // the base and the layers together; the count is the layers alone
@@ -337,8 +346,10 @@ module.exports = {
         input.output_format = "png";
         const { data, id } = await submitAndWait(ctx, model, input);
         caller.jobDone = true;   // answered: generated and charged, so a Cancel during the downloads says that
-        const items = (Array.isArray(data.outputs) ? data.outputs : []).filter((x) => (typeof x === "string" && x) || (x && typeof x === "object" && (x.url || x.b64_json)));
-        if (!items.length) throw new Error(scrub(`WaveSpeed ${model}: an answer without its pictures (${JSON.stringify(data).slice(0, 200)})`, ctx.key));
+        const list = Array.isArray(data.outputs) ? data.outputs : [];
+        const items = list.filter((x) => (typeof x === "string" && x) || (x && typeof x === "object" && (x.url || x.b64_json)));
+        // an empty slot is refused as ModelArk's and Oxen's are: dropping it would make a layer the base (the frame of every box)
+        if (!items.length || items.length !== list.length) throw new Error(scrub(`WaveSpeed ${model}: an answer without its pictures (${items.length} of ${list.length})`, ctx.key));
         const get = async (d) => {
             const url = typeof d === "string" ? d : d.url;
             if (d && typeof d === "object" && d.b64_json) { const bytes = Buffer.from(String(d.b64_json), "base64"); return { bytes, mime: bytes[0] === 0xff && bytes[1] === 0xd8 ? "image/jpeg" : "image/png" }; }
