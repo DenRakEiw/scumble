@@ -252,9 +252,9 @@ async function runToapis(req, verb = "edit") {
         for (const [r, tier] of [[R.f26, "flare"], [R.s26, "sunburst"]]) {
             const T = tier[0].toUpperCase() + tier.slice(1);
             check(`${r.id}: GPT Image 2.6 ${T}, family OpenAI, refs Image {n}, home openai`, r.id === `gpt_image_2_6_${tier}` && r.kind === "provider" && r.name === `GPT Image 2.6 ${T}` && r.family === "OpenAI" && eq(r.refs, { name: "Image {n}" }) && r.default === "openai");
-            const want = tier === "flare" ? ["openai", "fal", "replicate", "wavespeed", "comfycloud", "openrouter"] : ["toapis", "openai", "fal", "replicate", "wavespeed", "comfycloud", "openrouter"];
-            check(`${r.id}: the hosts that list it, in the 2.5 order (ToAPIs first where it serves the model; Comfy Cloud since 2026-11-07; no Comfy Router, Oxen or Magnific yet)`, eq(Object.keys(r.providers), want), Object.keys(r.providers).join(", "));
-            const ids = { openai: `gpt-image-2.6-${tier}`, fal: `openai/gpt-image-2.6/${tier}/edit`, replicate: `openai/gpt-image-2.6-${tier}`, wavespeed: `openai/gpt-image-2.6-${tier}/edit`, comfycloud: `gpt-image-2.6-${tier}`, openrouter: `openai/gpt-image-2.6-${tier}`, toapis: `gpt-image-2.6-${tier}-official` };
+            const want = tier === "flare" ? ["openai", "fal", "replicate", "wavespeed", "comfycloud", "openrouter", "oxen"] : ["toapis", "openai", "fal", "replicate", "wavespeed", "comfycloud", "openrouter", "oxen"];
+            check(`${r.id}: the hosts that list it, in the 2.5 order (ToAPIs first where it serves the model; Comfy Cloud since 2026-11-07; Oxen.ai since 2026-11-10; no Comfy Router or Magnific yet)`, eq(Object.keys(r.providers), want), Object.keys(r.providers).join(", "));
+            const ids = { openai: `gpt-image-2.6-${tier}`, fal: `openai/gpt-image-2.6/${tier}/edit`, replicate: `openai/gpt-image-2.6-${tier}`, wavespeed: `openai/gpt-image-2.6-${tier}/edit`, comfycloud: `gpt-image-2.6-${tier}`, openrouter: `openai/gpt-image-2.6-${tier}`, toapis: `gpt-image-2.6-${tier}-official`, oxen: `gpt-image-2-6-${tier}` };
             const wrong = Object.entries(r.providers).filter(([pid, v]) => v.model !== ids[pid]).map(([pid, v]) => `${pid} ${v.model}`);
             check(`${r.id}: each host's own model id`, !wrong.length, wrong.join(", "));
             check(`${r.id}: the description names Comfy Cloud between WaveSpeedAI and the next host`, /Also on WaveSpeedAI\. Also on Comfy Cloud\. Also on (ToAPIs|OpenRouter)\./.test(r.description), r.description);
