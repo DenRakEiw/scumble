@@ -1,0 +1,10 @@
+fix-small F-2 reversal round (base d8d6cd81), 2026-11-11T09:49:55.406Z
+
+KILLED   M1_base_code_of_both_files rc=1 1.8 s by H-6: a failed finish gives the run's mask back | H-6: a failed finish does not read the document's selection | H-6: a mask the worker kept refuses a plain run | H-6: a mask the worker kept does not read the document's selection
+KILLED   M2_worker_error_reply_without_the_mask rc=1 1.8 s by H-6: a failed finish gives the run's mask back | H-6: a failed finish stitches on the window
+KILLED   M3_main_side_drops_the_reply_mask rc=1 1.7 s by H-6: a failed finish gives the run's mask back | H-6: a failed finish stitches on the window
+KILLED   M4_fallback_does_not_restore_the_mask rc=1 1.8 s by H-6: a failed finish gives the run's mask back | H-6: a failed finish stitches on the window
+KILLED   M5_plain_run_reads_the_current_selection_again rc=1 1.7 s by H-6: a mask the worker kept refuses a plain run | H-6: a mask the worker kept does not read the document's selection
+KILLED   M6_area_run_refuses_too rc=1 1.8 s by H-6: a mask the worker kept reads the run's area again
+
+6 of 6 killed
