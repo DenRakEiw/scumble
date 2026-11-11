@@ -267,3 +267,9 @@ Gates `s5-select` (`lint types nodecopy selection editor shape pixels limit mask
 E15-E20, and E44 extend canvas, which the plan's table left out), `inpaint_ed_pointer.js` `PointerPart` (E07, E21);
 2,727 lines. 40 imports dropped; the file is 11,686 lines. `split_check.js --base d17dfdc4` PASS. Gates `s6-geometry`
 (`lint types nodecopy editor size canvasonly transparent edges`) PASS on both backends.
+
+**S7 (2026-11-11).** Depth and the filters as parts, base `3b190138`: `inpaint_ed_depth.js` `DepthPart` (E43 with the
+`depth` accessors, installed as accessors), `inpaint_ed_filters.js` `FiltersPart` (E47-E52); 2,127 lines. 47 imports
+dropped; the file is 9,486 lines. `split_check.js --base d17dfdc4` PASS. Gates `s7-filters` (`lint types nodecopy
+maps depthfx grading effects limit film composite`) PASS on both backends; `depth` has no gate script
+(`docs/TESTING.md`), so `node tools/depth_test.js` and `depth_doc_test.js` ran in its place, PASS.

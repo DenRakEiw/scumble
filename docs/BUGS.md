@@ -35,6 +35,16 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 
 ## Open
 
+### The PNG metadata of a MiniMax H3 Image local run drops the upsampler's `key` input (found 2026-11-11, read and run by `tools/secret_names_test.js`)
+
+`renderer/editor/redact.js` `withoutSecrets` takes every input named like a secret out of the recipe's prompt before
+`host.workflowForPng` writes it into an exported PNG. `recipes/minimax_h3_image_local.json` node `up_json`
+(`JsonExtractString`) has an input `key` (`"expanded_caption"`, the JSON field it reads), which the filter takes for a
+secret: the workflow in such a PNG is missing it and fails when loaded back into ComfyUI. `secret_names_test.js`'s
+check "the shipped ComfyUI recipes come through unchanged" is red for this file since the recipe came in (2026-11-10;
+seen during item 56, which does not touch either file). A fix would tell a plain `key` holding a field name from a
+key: the filter's list, or an exception by class type. Not fixed; the user decides.
+
 ### An ORA saved over by another program while Scumble still opens it fails with a decoder error (found 2026-11-11, read; K20c's review)
 
 Since K20c an ORA stays the file while it opens: `readOraBlob` reads the directory, each layer and the base upload as slices of the `File` (as D0's PSD route does), where it used to read the whole file into memory first. A file dropped from Explorer is a snapshot on disk: if another program saves over it during the seconds a 15k ORA takes to open, Chromium refuses the later reads (`NotReadableError`) and the open ends with a decode or upload error instead of a plain message. Opening again works. Suggested when it is next touched: map a `NotReadableError` from the slices to "<name> changed on disk while it was opened; open it again".
