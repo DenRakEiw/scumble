@@ -44,7 +44,7 @@ MUTANTS = [
     ("parted_refusal_falls_through", CANVAS, [("if ((err && err.partedRefused) || h.width * h.height > CANVAS_MAX_PIXELS) throw err;", "if (h.width * h.height > CANVAS_MAX_PIXELS) throw err;")], "killed: the damaged layer's partedRefused", KILL),
     ("no_release_on_failure", CANVAS, [("if (x.px) { x.px.release(); x.px = null; }", "if (x.px) { x.px = null; }")], "killed: tiles held after the failure", KILL),
     ("no_cancel_before_a_layer", CANVAS, [('                const L = doc.layers[i];\n                if (later()) throw new CancelledError("layered_open");\n', "                const L = doc.layers[i];\n")], "killed: the cancelled read", KILL),
-    ("base_always_encoded", CANVAS, [("const ref = doc.baseUpload && basePx === b?.px ? await doc.baseUpload : (await uploadPixels(basePx, layeredStem(file))).ref;", "const ref = (await uploadPixels(basePx, layeredStem(file))).ref;")], "killed: the stored file's name", KILL),
+    ("base_always_encoded", CANVAS, [("const raw = kind === \"ora\" && basePx === b?.px ? await this.oraBaseUpload(doc, file) : null;", "const raw = null;")], "killed: the stored file's name", KILL),
     ("base_with_gamma_uploaded", CANVAS, [("        if (!(await pngIsPlainSrgb(b.pngBlob))) return null;\n", "")], "killed: gamma.ora", KILL),
     ("base_upload_ignores_the_toggle", CANVAS, [("if (!b || !b.pngBlob || InpaintEditor.oraParted === false) return null;", "if (!b || !b.pngBlob) return null;")], "killed: oraParted = false encodes", KILL),
 ]

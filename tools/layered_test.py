@@ -596,19 +596,25 @@ const watch = () => {
     n.stop = () => { window.createImageBitmap = cib; CanvasRenderingContext2D.prototype.getImageData = gid; OffscreenCanvasRenderingContext2D.prototype.getImageData = ogid; };
     return n;
 };
+// the review of 2026-11-11 (K20c-Z1): reading an ORA's layers uploads nothing (an ORA dropped into a document is read
+// this way; only loadLayered stores the base, after the read)
+const { api: hostApi } = await import("./editor/host.js");
 const open = async (path, parted) => {
     if (!parted) E.oraParted = false;
     E.jobTimings(true);
     const n = watch();
+    const fetchApi0 = hostApi.fetchApi;
+    let uploads = 0;
+    hostApi.fetchApi = function (route, ...rest) { if (/upload/.test(String(route))) uploads++; return fetchApi0.call(this, route, ...rest); };
     let doc;
-    try { doc = await ed.readLayered(await fileOf(path), "ora"); } finally { n.stop(); delete E.oraParted; }
+    try { doc = await ed.readLayered(await fileOf(path), "ora"); } finally { n.stop(); delete E.oraParted; hostApi.fetchApi = fetchApi0; }
+    if (uploads) throw new Error(path + ": reading the layers uploaded " + uploads + " file(s)");
     const jobs = E.jobTimings(true).map((t) => t.op), count = (op) => jobs.filter((o) => o === op).length;
-    if (doc.baseUpload) await doc.baseUpload;
     return { doc, bitmaps: n.bitmaps, readbacks: n.readbacks, parts: count("png_part_read"), finishes: count("png_part_finish"), reads: count("png_read") };
 };
 const drop = (doc) => { for (const L of doc.layers) { L.px.release(); L.px = null; } };
 const out = {};
-for (const [name, path] of [["parted", parted], ["single", dir + "/single.ora"], ["deep", dir + "/deep.ora"]]) {
+for (const [name, path] of [["parted", parted], ["single", dir + "/single.ora"], ["deep", dir + "/deep.ora"], ["gamma", dir + "/gamma.ora"]]) {
     const a = await open(path, true), b = await open(path, false);
     const fields = (x) => JSON.stringify({ w: x.doc.width, h: x.doc.height, notes: x.doc.notes, lossy: x.doc.lossy, layers: x.doc.layers.map((L) => [L.name, L.x, L.y, L.w, L.h, L.opacity, L.visible, L.blend, L.px.width, L.px.height]) });
     if (fields(a) !== fields(b)) throw new Error(name + ": " + fields(a) + " instead of " + fields(b));

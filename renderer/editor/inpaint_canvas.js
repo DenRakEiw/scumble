@@ -19103,7 +19103,6 @@ class InpaintEditor {
             : await readOraBlob(file, { inflateRaw: (b, cap) => timed(b, "deflate-raw", cap), onHeader });
         markStep("layered_open", "parsed", { inflateMs, inflates });
         this.checkLayeredSize(doc.width, doc.height);
-        if (kind === "ora") doc.baseUpload = await this.oraBaseUpload(doc, file);
         try {
             for (let i = 0; i < doc.layers.length; i++) {
                 const L = doc.layers[i];
@@ -19174,10 +19173,12 @@ class InpaintEditor {
     }
 
     /**
-     * K20c, the design's question 3: an ORA's bottom layer that will become the base goes up as its own PNG, started
-     * here beside the layers' decode, in place of a new PNG encoded from `basePx` afterwards. Only a PNG the decoders read
-     * alike and a plain sRGB one (8 bits, not interlaced, no colour chunk, the picture's size): the upload's promise, or
-     * null and `loadLayered` encodes as before. `InpaintEditor.oraParted = false` encodes too.
+     * K20c, the design's question 3: an ORA's bottom layer that became the base goes up as its own PNG, in place of a
+     * new PNG encoded from `basePx`. Only a PNG the decoders read alike and a plain sRGB one (8 bits, not interlaced, no
+     * colour chunk, the picture's size). `loadLayered` asks for it after the layers were read and the open is still
+     * wanted (the review of 2026-11-11: never on an ORA dropped into a document, never for an open that ended early), so
+     * nothing lands in the local store for an open that is over. The ref, or null and `loadLayered` encodes as before
+     * (also when this upload fails). `InpaintEditor.oraParted = false` encodes too.
      */
     async oraBaseUpload(doc, file) {
         const b = doc.layers[0];
@@ -19186,9 +19187,10 @@ class InpaintEditor {
         const h = pngHeader(new Uint8Array(await b.pngBlob.slice(0, 33).arrayBuffer()));
         if (!h || h.bitDepth !== 8 || h.interlace || h.width !== doc.width || h.height !== doc.height) return null;
         if (!(await pngIsPlainSrgb(b.pngBlob))) return null;
-        const up = uploadBlob(b.pngBlob, layeredStem(file) + ".png", { overwrite: false });
-        up.catch(() => {});   // read in loadLayered, or left when the open ends earlier
-        return up;
+        try { return await uploadBlob(b.pngBlob, layeredStem(file) + ".png", { overwrite: false }); } catch (err) {
+            console.warn("[Inpaint Canvas] the ORA's base PNG did not upload as it is; encoding it instead:", err);
+            return null;
+        }
     }
 
     /** A layered file's size against what this document can open: the document's bounds, then the canvas limit. */
@@ -19319,7 +19321,8 @@ class InpaintEditor {
         else basePx = this.pixels.Layer.empty(W, H);
         if (doc.compositePx && basePx !== doc.compositePx) { doc.compositePx.release(); doc.compositePx = null; }
         this.setStatus(`Storing ${file.name || "the file"} ...`);
-        const ref = doc.baseUpload && basePx === b?.px ? await doc.baseUpload : (await uploadPixels(basePx, layeredStem(file))).ref;
+        const raw = kind === "ora" && basePx === b?.px ? await this.oraBaseUpload(doc, file) : null;
+        const ref = raw || (await uploadPixels(basePx, layeredStem(file))).ref;
         markStep("layered_open", "stored");
         if (later()) { dropDoc(basePx); return; }
         await this.setBasePixels(ref, basePx, { keepLayers: false });
