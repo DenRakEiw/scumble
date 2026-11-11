@@ -31,7 +31,7 @@
   },
   "include": [
     "types/**/*",
-    "electron/main/recipes.js",
+    "electron/main/recipes.js", "electron/main/recipes_store.js", "electron/main/recipes_workflow.js", "electron/main/recipes_graph.js",
     "renderer/commands.js",
     "renderer/editor/host.js"
   ]
