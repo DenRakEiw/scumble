@@ -231,3 +231,11 @@ the leaves back and re-exports what it exported before (the inline exports `RELI
 more were dropped. `inpaint_canvas.js` is 24,208 lines (from 25,931). The leaves are in `build_node.py` FILES; only
 `inpaint_consts.js` and `inpaint_backends.js` import `host`. Gates `s1-leaves` (`lint types nodecopy skins editor brush
 pixels`, serial, offline) PASS on both backends; `limit_test`, `maps_test`, `skins_test` PASS in plain Node.
+
+**S2 (2026-11-11).** T-load into `inpaint_load.js`, base `d4f9ee03`, 433 lines (`split_check.js`: 31 units, PASS). The
+leaf takes the bind form (`let InpaintEditor = null;`, `bindLoad(C)`, called after the class) for the statics it reads
+at call time (`psdOnPool`, `pngStreamFrom`, `imageWorkerFrom`, `tiffBandRows`). Six imports nothing in
+`inpaint_canvas.js` reads any more were dropped; the file is 23,744 lines. The moves from here on are made by one
+script on the AST (`split_move.js` in the session's scratchpad: top-level statements by name, class members by region
+from its first to its last member, each with the lines from the end of the one before). Gates `s2-load` (`lint types
+nodecopy layered tiff document export`, serial, offline) PASS on both backends.
