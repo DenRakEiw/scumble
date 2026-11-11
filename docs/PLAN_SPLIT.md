@@ -117,7 +117,7 @@ stale, and their lines are on `wasm-kernels` already.
 | S11 | `recipes.js`: leaves first (typedefs, the shape readers 232-700, `normalize`); R02 and R03 stay together (they call each other) | about 1,000 | `recipes`, `comfyprompt`, `ark`, `loras`, `platform` |
 | S12 | `commands.js`: the 99 command groups into files of objects, merged back into `COMMANDS` in the same key order (`describe()`, the MCP list and `docs/COMMANDS.md` follow it). C09 and C14 read `COMMANDS` only when called, through a getter handed in | about 2,000 | `commands`, `mcp`, `mcpb`, `assistant`, `help` |
 | S13 | `host.js`: parts as objects installed by descriptors onto `host`, with `build_node.py` reading them (S0). Each part keeps `// @ts-check` and goes into `tsconfig.check.json` | about 5,000 | `document`, `generate`, `quit`, `nodecopy`, `cloudjobs`, `loras`, `key`, `areas`, `types` |
-| S14 | `shell.js` (see question 3) | open | `platform`, `recipes`, `help`, `skins`, `quit` |
+| S14a, S14b | `shell.js`: the state rename with its AST proof, then the moves (§5.1; only on the user's yes) | about 2,900 | §5.1's list |
 
 `inpaint_canvas.js` ends at about 3,500 lines: the class shell with the constructor, the lifecycle (E06), statics,
 `syncLayers`, the generate entry points, `releaseCaches` and `destroy`, plus the install list. The biggest new files
@@ -144,6 +144,41 @@ gates. S11-S13 one each. About 14-15 sessions in all, most of the time going to 
   one stretch before new features (CLAUDE.md item 56), with no agent branch on these files meanwhile.
 
 ## 5. Questions for the user (each with a suggestion)
+
+**The user's answers (2026-11-11):** 1 the part classes; 2 flat; 5 as one block before the next feature. Question 3
+asked back ("was wäre wenn wir aufteilen?"), answered in §5.1; question 4 not answered yet.
+
+### 5.1 What a split of `shell.js` would take (the answer to the user's question)
+
+- **Step 1, the rename:** the eight shared module variables go into one object in a new `renderer/shell_state.js`:
+  `settings`, `providers`, `recipes`, `lastStatus`, `lastProbe`, `canvasOnlyState`, `windowFullScreen` and
+  `takesPending`. Every read and write of them in `shell.js` becomes `state.settings` and so on, about 230 places
+  (counted with a grep on 2026-11-11; it includes some property keys of the same name, so the real number is a little
+  lower). This is the one step that is a text change, not a move. A script on acorn makes it, renaming only the
+  identifiers that resolve to the module-level binding (not a local or parameter of the same name). `split_check.js`
+  gets a rename mode that proves the new tree differs from the old only in those `x` -> `state.x` nodes. Nothing else
+  changes in that commit.
+- **Step 2, the moves**, which are then pure moves:
+  - the Settings dialog's panels (about 1,700 lines, eleven sections) into `shell_settings.js`;
+  - Generate new and Upscale (about 890 lines) into `shell_generate.js`;
+  - updates and star / share (about 320 lines) into `shell_updates.js`;
+  - the GPU watch and log console into `shell_watch.js`.
+
+  `shell.js` keeps the imports, the tabs, the 164 top-level wiring statements, the startup and the menu: about 700
+  lines. The new modules hold only declarations, so their calls back into `shell.js` happen only after it has
+  evaluated. `shell.js` is app-only, so `build_node.py` is not involved.
+- **Tests to repoint in the same commits:**
+  - `ark_test.js` and `genpresets_test.js` read `GEN_ASPECTS`;
+  - `quit_test.js` reads `onFlush`, `startMode` and `saveBeforeRestart` (quit safety: Full tier, both backends);
+  - `skins_test.js`'s census expects a `var(--sc-*)` in `shell.js`, and its only one is the `recipeNote` line 556,
+    which moves with the recipes section.
+- **Gates:** `platform recipes help skins commands assistant toapis openrouter ark comfyview loras cloudjobs document
+  quit`, on tiles (the shell has no pixel path) and `quit` and `document` on both backends.
+- **Size (inferred):** two sessions, S14a (the rename) and S14b (the moves).
+- **Gain:** `shell.js` goes from 3,582 to about 700 lines, and the Settings dialog sits in one file.
+- **Risk:** the rename is the only real risk, and the AST check holds it.
+- **Suggestion now:** do it, as the last two sessions of the block. Inside the block no feature branch is open, so the
+  wide rename conflicts with nothing.
 
 1. **The part classes** (§2) for the 23,600 lines of the class, or only the module scope (S1, S2: about 2,500 lines
    out, the class stays 23,600)? *Suggested: the part classes; without them the file stays at 23,000 lines.*
