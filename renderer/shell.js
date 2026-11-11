@@ -25,6 +25,7 @@ function ipcKind(err) {
     return /(?:was cancell?ed|is already being saved|is already being opened)/i.test(String((err && err.message) || err)) ? "info" : failKind(err);
 }
 import { getSecretGreeting, getScumbleWord, getScumbleLogo, runBrainfuck } from "./easteregg.js";
+import { shellState } from "./shell_state.js";
 
 // the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
 // editor's own injectStyle() finds it and adds nothing; a skin's rules then beat it as they beat shell.css
@@ -120,21 +121,21 @@ const ui = {
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
 };
 
-let settings = await window.scumble.settings.get();
-let lastStatus = { state: "disconnected", message: "not connected" };
-let lastProbe = null;
+shellState.settings = await window.scumble.settings.get();
+shellState.lastStatus = { state: "disconnected", message: "not connected" };
+shellState.lastProbe = null;
 // the canvas-only view (canvasOnly below): { ed, wasFullScreen, view, fitted, rulers, w, h } while it is on, and
 // whether the window is full screen (main tells, F11 and the OS included)
-let canvasOnlyState = null;
-let windowFullScreen = false;
-ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188";
+shellState.canvasOnlyState = null;
+shellState.windowFullScreen = false;
+ui.url.value = (shellState.settings.comfy && shellState.settings.comfy.url) || "http://127.0.0.1:8188";
 
 // ---- documents (tabs) --------------------------------------------------------------------
 
-host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe, llmRefPictures: refPicturesOn(settings), realism: settings.realism, depthDetail: (settings.depth && settings.depth.detail) || "standard", relight: settings.relight });
+host.configure({ mount: $("editor-host"), nodeParams: shellState.settings.nodeParams, apiSize: shellState.settings.apiSize, embedRecipe: shellState.settings.embedRecipe, llmRefPictures: refPicturesOn(shellState.settings), realism: shellState.settings.realism, depthDetail: (shellState.settings.depth && shellState.settings.depth.detail) || "standard", relight: shellState.settings.relight });
 // settings.key as stored, as host.loadKeyValues() would read it: status.key (and the assistant's ask card, which shows
 // what a key_screen without `trust` sends) report the stored values before a key or the Key dialog has run once
-host.keyStored = (settings && settings.key) || null;
+host.keyStored = (shellState.settings && shellState.settings.key) || null;
 host._keyLoaded = true;
 
 /** settings.llm.refPictures: the reference pictures go to the upsampling model unless it is false (absent = on, 26d2). */
@@ -153,11 +154,11 @@ function applyAtlasBudget(mb) {
         try { if (ed._compositor && ed._compositor.setAtlasBudget) ed._compositor.setAtlasBudget(atlasMB * 1048576); } catch (_) { /* no compositor */ }
     }
 }
-let atlasMB = (settings.memory && settings.memory.atlasMB) != null ? Math.max(16, settings.memory.atlasMB) : 512;
+let atlasMB = (shellState.settings.memory && shellState.settings.memory.atlasMB) != null ? Math.max(16, shellState.settings.memory.atlasMB) : 512;
 
 /** The undo history's depth (settings.history, Settings › Memory): every open editor now, and every new one. */
 function historyDepth() {
-    const h = settings.history || {};
+    const h = shellState.settings.history || {};
     return { steps: Math.min(500, Math.max(5, Math.round(+h.steps) || 30)), mb: Math.min(8192, Math.max(64, Math.round(+h.mb) || 384)) };
 }
 function applyHistoryDepth(ed) {
@@ -325,20 +326,20 @@ function openInto(file) {
 host.createDocument = (id) => newDocument(id);
 host.onDocsChanged = () => renderTabs();
 // the command core (renderer/commands.js) reaches the shell through this
-host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, modeOf: (r) => modeOf(r), openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed), genField: () => genField, genSyncRefs: () => genSyncRefs(),
+host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => shellState.recipes, resolveRecipe, modeOf: (r) => modeOf(r), openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed), genField: () => genField, genSyncRefs: () => genSyncRefs(),
     // New with a model (item 34, docs/PLAN_NEW_PRESETS.md section 8): the models with their aspects and size classes, the
     // preset New made (remembered, its recipe selected), and what Generate new offers for a recipe on a provider
     newCanvasChoices: (ed) => newCanvasChoices(ed), newCanvasChosen: (ed, target) => newCanvasChosen(ed, target), genPresetOf: (r, pid) => genPresetOf(r, pid),
     // list_recipes' readiness (docs/PLAN_0_1_42.md F2a): a resolved recipe's key or in-app model ({ ok, text } or null for
     // a ComfyUI recipe), and the API providers with whether a key is stored, as booleans only (never the key's hint)
     keyState: (r) => providerKeyState(r),
-    providerKeys: () => providers.map((p) => ({ id: p.id, label: p.label, key: !!(p.key && p.key.set), shares_key: p.sharesKey || null })) };
+    providerKeys: () => shellState.providers.map((p) => ({ id: p.id, label: p.label, key: !!(p.key && p.key.set), shares_key: p.sharesKey || null })) };
 ui.tabAdd.addEventListener("click", () => activate(newDocument()));
 
 // ---- connection --------------------------------------------------------------------------
 
 function showStatus(st) {
-    lastStatus = st;
+    shellState.lastStatus = st;
     // no ComfyUI at the URL (main's `absent`): a calm grey dot, not the red one of a real error
     ui.dot.className = "dot " + (st.state || "") + (st.absent ? " absent" : "");
     ui.statusText.textContent = st.message || st.state || "";
@@ -376,7 +377,7 @@ async function connect(conn) {
     const url = typeof conn === "string" ? conn : conn.url;
     ui.url.value = url; ui.setUrl.value = url;
     const st = await window.scumble.comfy.connect(conn);
-    settings = await window.scumble.settings.get();
+    shellState.settings = await window.scumble.settings.get();
     if (typeof conn === "object") ui.authSecret.value = "";
     showStatus(st);
 }
@@ -394,14 +395,14 @@ async function testConnection() {
     ui.setProbe.textContent = "probing " + ui.setUrl.value.trim() + " ...";
     try {
         const p = await window.scumble.comfy.probe(authFromDialog());
-        lastProbe = p;
+        shellState.lastProbe = p;
         const lines = [];
         const line = (cls, text) => { const s = document.createElement("span"); s.className = cls; s.textContent = text; return s; };
         lines.push(line("ok", `ComfyUI ${p.version} reached in ${p.latency} ms` + (p.os ? ` (${p.os}, Python ${p.python})` : "")));
         for (const d of p.devices) lines.push(line("", `  ${d.name}` + (d.vramTotal ? `, VRAM ${fmtGb(d.vramFree)} free of ${fmtGb(d.vramTotal)}` : "")));
         if (p.queue) lines.push(line("", `  queue: ${p.queue.running} running, ${p.queue.pending} pending`));
         lines.push(line(p.node ? "ok" : "bad", p.node ? `Inpaint Canvas node pack ${p.nodeVersion || "present"}` : "Inpaint Canvas node pack missing: install it there with git clone https://github.com/DenRakEiw/ComfyUI-InpaintCanvas in custom_nodes, then restart ComfyUI"));
-        for (const r of recipes.filter((x) => x.kind !== "provider")) {
+        for (const r of shellState.recipes.filter((x) => x.kind !== "provider")) {
             const report = recipeModelReport(r, p);
             if (report) lines.push(line(report.missing.length ? "bad" : "ok", `${r.name || r.id}: ${report.text}`));
         }
@@ -440,8 +441,8 @@ ui.setUrl.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key ==
 
 // ---- recipes ---------------------------------------------------------------------------
 
-let recipes = [];
-let providers = [];
+shellState.recipes = [];
+shellState.providers = [];
 
 const FAMILY_ORDER = ["ComfyUI", "Comfy Cloud", "In-app", "Google", "OpenAI", "Black Forest Labs", "ByteDance", "Qwen"];
 /** A Comfy Cloud recipe running on Comfy Cloud: its graph variant is the chosen one (as the host's recipeMode reads it). */
@@ -466,11 +467,11 @@ function addCloudMode(editor) {
 }
 
 async function loadRecipes() {
-    recipes = await window.scumble.recipes.list();
+    shellState.recipes = await window.scumble.recipes.list();
     // ComfyUI first, then the model families in a fixed order, unknown families after, names within
     const rank = (r) => { const i = FAMILY_ORDER.indexOf(familyOf(r)); return i < 0 ? FAMILY_ORDER.length : i; };
-    recipes.sort((a, b) => rank(a) - rank(b) || familyOf(a).localeCompare(familyOf(b)) || String(a.name || a.id).localeCompare(String(b.name || b.id)));
-    const cur = recipes.find((r) => r.id === (ui.recipe.value || settings.recipe) && r.task !== "relight");
+    shellState.recipes.sort((a, b) => rank(a) - rank(b) || familyOf(a).localeCompare(familyOf(b)) || String(a.name || a.id).localeCompare(String(b.name || b.id)));
+    const cur = shellState.recipes.find((r) => r.id === (ui.recipe.value || shellState.settings.recipe) && r.task !== "relight");
     renderRecipeOptions(cur ? modeOf(cur) : (ui.recipe.dataset.mode || "local"));
 }
 
@@ -478,7 +479,7 @@ async function loadRecipes() {
 function renderRecipeOptions(mode) {
     ui.recipe.innerHTML = "";
     ui.recipe.dataset.mode = mode;
-    const shown = recipes.filter((r) => modeOf(r) === mode && r.task !== "relight");
+    const shown = shellState.recipes.filter((r) => modeOf(r) === mode && r.task !== "relight");
     // ComfyUI recipes first, then the model recipes grouped by family (Google, OpenAI, ...)
     const families = ["ComfyUI"];
     for (const r of shown) { const f = familyOf(r); if (!families.includes(f)) families.push(f); }
@@ -497,7 +498,7 @@ function renderRecipeOptions(mode) {
 }
 
 function providerLabel(id) {
-    const p = providers.find((x) => x.id === id);
+    const p = shellState.providers.find((x) => x.id === id);
     return (p && p.label) || (id === "loopback" ? "Loopback" : id === "inapp" ? "In-app" : id);
 }
 
@@ -505,7 +506,7 @@ function providerLabel(id) {
 function chosenProvider(r) {
     if (r.kind !== "provider" || !r.providers) return null;
     // Relight's provider is each relight layer's route (its panel): a choice an older build stored is not read
-    const want = r.task === "relight" ? null : (settings.recipeProviders || {})[r.id];
+    const want = r.task === "relight" ? null : (shellState.settings.recipeProviders || {})[r.id];
     return want && r.providers[want] ? want : (r.default || Object.keys(r.providers)[0]);
 }
 
@@ -518,7 +519,7 @@ function resolveRecipe(r, pid = chosenProvider(r)) {
 
 function providerKeyState(r) {
     if (r.kind !== "provider") return null;
-    const p = providers.find((x) => x.id === r.provider);
+    const p = shellState.providers.find((x) => x.id === r.provider);
     if (r.provider === "inapp") {
         // no key: the model in the app's model folder (Settings › Helpers)
         return host.presentHelpers("inpaint").some((m) => m.id === r.model) ? { ok: true } : { ok: false, text: "the LaMa model is not downloaded yet: Settings (Ctrl+,) › Helpers (in-app models)" };
@@ -529,22 +530,22 @@ function providerKeyState(r) {
 }
 
 async function rememberProvider(recipeId, providerId) {
-    const map = { ...(settings.recipeProviders || {}), [recipeId]: providerId };
-    settings = await window.scumble.settings.set({ recipeProviders: map });
+    const map = { ...(shellState.settings.recipeProviders || {}), [recipeId]: providerId };
+    shellState.settings = await window.scumble.settings.set({ recipeProviders: map });
 }
 
 function selectRecipe(id, providerId) {
     // a relight recipe is never the window's recipe (the Relight panel and the relight command pick it by the layer's
     // route): its id (a graph saved from the ComfyUI window, an import) keeps the recipe in use and stores nothing. That
     // recipe goes through the rest again, which puts the select back after loadRecipes() rebuilt its options.
-    if (recipes.some((x) => x.id === id && x.task === "relight")) {
-        const keep = [host.recipe && host.recipe.id, settings.recipe].find((k) => k && recipes.some((x) => x.id === k && x.task !== "relight"));
+    if (shellState.recipes.some((x) => x.id === id && x.task === "relight")) {
+        const keep = [host.recipe && host.recipe.id, shellState.settings.recipe].find((k) => k && shellState.recipes.some((x) => x.id === k && x.task !== "relight"));
         if (keep) { id = keep; providerId = undefined; }
     }
-    const raw = recipes.find((x) => x.id === id && x.task !== "relight") || recipes.find((x) => x.task !== "relight") || recipes[0];
+    const raw = shellState.recipes.find((x) => x.id === id && x.task !== "relight") || shellState.recipes.find((x) => x.task !== "relight") || shellState.recipes[0];
     if (!raw) { ui.recipeNote.textContent = "no recipes found"; return; }
     if (providerId && raw.providers && raw.providers[providerId]) {
-        settings.recipeProviders = { ...(settings.recipeProviders || {}), [raw.id]: providerId };
+        shellState.settings.recipeProviders = { ...(shellState.settings.recipeProviders || {}), [raw.id]: providerId };
         rememberProvider(raw.id, providerId);
     }
     const r = resolveRecipe(raw);
@@ -558,18 +559,18 @@ function selectRecipe(id, providerId) {
     host.setRecipe(r);
     const comfyEdit = $("shell-comfy-edit");
     if (comfyEdit) comfyEdit.hidden = raw.kind === "provider" && !cloudGraphOf(raw);
-    const byMode = { ...(settings.recipeByMode || {}), [modeOf(raw)]: raw.id };
-    if (settings.recipe !== r.id || (settings.recipeByMode || {})[modeOf(raw)] !== raw.id) window.scumble.settings.set({ recipe: r.id, recipeByMode: byMode }).then((s) => { settings = s; });
+    const byMode = { ...(shellState.settings.recipeByMode || {}), [modeOf(raw)]: raw.id };
+    if (shellState.settings.recipe !== r.id || (shellState.settings.recipeByMode || {})[modeOf(raw)] !== raw.id) window.scumble.settings.set({ recipe: r.id, recipeByMode: byMode }).then((s) => { shellState.settings = s; });
     if (ui.settings.open) syncRecipeRows();
 }
 ui.recipe.addEventListener("change", () => selectRecipe(ui.recipe.value));
 
 // The editor's local / api / cloud select: switch to the recipe last used in that mode (else the first one).
 host.onModeChanged = (mode, editor) => {
-    const cur = recipes.find((x) => x.id === ui.recipe.value);
+    const cur = shellState.recipes.find((x) => x.id === ui.recipe.value);
     if (cur && modeOf(cur) === mode) return;
-    const want = (settings.recipeByMode || {})[mode];
-    const r = recipes.find((x) => x.id === want && modeOf(x) === mode && x.task !== "relight") || recipes.find((x) => modeOf(x) === mode && x.task !== "relight");
+    const want = (shellState.settings.recipeByMode || {})[mode];
+    const r = shellState.recipes.find((x) => x.id === want && modeOf(x) === mode && x.task !== "relight") || shellState.recipes.find((x) => modeOf(x) === mode && x.task !== "relight");
     if (r) { selectRecipe(r.id); return; }
     if (cur) { editor.genSettings.mode = modeOf(cur); editor.syncGenControls(); }
     editor.setStatus(mode === "api" ? "No API recipe: add a provider key in Settings (Ctrl+,) › API providers."
@@ -580,7 +581,7 @@ host.onModeChanged = (mode, editor) => {
 /** Update the meta text and the provider selects of the recipe rows without rebuilding them. */
 function syncRecipeRows() {
     for (const row of ui.recipes.querySelectorAll(".shell-recipe")) {
-        const r = recipes.find((x) => x.id === row.dataset.id);
+        const r = shellState.recipes.find((x) => x.id === row.dataset.id);
         if (!r) continue;
         row.classList.toggle("active", host.recipe && host.recipe.id === r.id);
         const sel = row.querySelector("select");
@@ -597,7 +598,7 @@ function syncRecipeRows() {
 
 /** Provider name for the recipe select; "(no key)" marks a provider with no API key stored yet. */
 function providerOptionLabel(pid) {
-    const p = providers.find((x) => x.id === pid);
+    const p = shellState.providers.find((x) => x.id === pid);
     return providerLabel(pid) + (p && !(p.key && p.key.set) ? " (no key)" : "");
 }
 
@@ -640,7 +641,7 @@ const RECIPE_GROUPS = [["local", "ComfyUI"], ["cloud", "Comfy Cloud"], ["api", "
 
 /** A group's line: its name, how many, how many are ready to run (keys, models) and the recipe in use when inside. */
 function recipeGroupHead(mode, label) {
-    const items = recipes.filter((r) => modeOf(r) === mode);
+    const items = shellState.recipes.filter((r) => modeOf(r) === mode);
     const keyed = items.filter((r) => (r.kind === "provider" && r.task !== "relight") || cloudModeOf(r));
     const ready = keyed.filter((r) => { const ks = providerKeyState(resolveRecipe(r)); return !ks || ks.ok; }).length;
     const using = host.recipe && items.find((r) => r.id === host.recipe.id);
@@ -656,14 +657,14 @@ function syncGroupHeads() {
 
 function renderRecipeList() {
     ui.recipes.innerHTML = "";
-    const activeMode = host.recipe ? modeOf(recipes.find((x) => x.id === host.recipe.id) || host.recipe) : null;
+    const activeMode = host.recipe ? modeOf(shellState.recipes.find((x) => x.id === host.recipe.id) || host.recipe) : null;
     const bodies = new Map();
     for (const [mode] of RECIPE_GROUPS) {
-        if (!recipes.some((r) => modeOf(r) === mode)) continue;
+        if (!shellState.recipes.some((r) => modeOf(r) === mode)) continue;
         bodies.set(mode, settingsGroup(ui.recipes, "recipes." + mode, mode === activeMode));
     }
     let lastFamily = null, lastMode = null;
-    for (const r of recipes) {
+    for (const r of shellState.recipes) {
         const mode = modeOf(r);
         const body = bodies.get(mode);
         // the API models get the picker's family headings (Google, OpenAI, ...)
@@ -733,7 +734,7 @@ function renderRecipeList() {
             del.type = "button"; del.textContent = "Remove"; del.title = "Delete this recipe of yours";
             del.addEventListener("click", async () => {
                 if (!(await dialogs.confirm(`Remove the recipe "${r.name || r.id}"?`, { ok: "Remove", danger: true }))) return;
-                try { await window.scumble.recipes.remove(r.id); await loadRecipes(); renderRecipeList(); selectRecipe(settings.recipe); } catch (err) { ui.recipeNoteSet.textContent = String(err.message || err); }
+                try { await window.scumble.recipes.remove(r.id); await loadRecipes(); renderRecipeList(); selectRecipe(shellState.settings.recipe); } catch (err) { ui.recipeNoteSet.textContent = String(err.message || err); }
             });
             row.appendChild(del);
         } else {
@@ -787,18 +788,18 @@ ui.recipeFolder.addEventListener("click", () => window.scumble.recipes.openFolde
 // ---- providers (keys) ----------------------------------------------------------------
 
 async function loadProviders() {
-    providers = await window.scumble.providers.list();
+    shellState.providers = await window.scumble.providers.list();
 }
 
 async function renderProviders() {
     const info = await window.scumble.keys.list();
     ui.providers.innerHTML = "";
     // one collapsible group, the rows and their order as they were (the user, 2026-10-07); open while no key is stored
-    const shown = providers.filter((p) => !p.sharesKey);
+    const shown = shellState.providers.filter((p) => !p.sharesKey);
     const keyed = shown.filter((p) => p.key && p.key.set).length;
     const list = settingsGroup(ui.providers, "providers", keyed === 0);
     list.parentNode.querySelector("summary").textContent = `Keys (${shown.length} providers) · ${keyed} stored`;
-    for (const p of providers) {
+    for (const p of shellState.providers) {
         if (p.sharesKey) continue;   // Comfy Router runs on the Comfy Cloud row's key
         const row = document.createElement("div");
         row.className = "shell-provider";
@@ -909,7 +910,7 @@ async function saveCompat() {
 // The template list at start. It used to sit inside saveCompat(), where only saving the
 // compatible endpoint ever ran it, so the "Generate a new image" dialog offered no template
 // until the Settings dialog had been opened once.
-host.promptTemplateIds = { upsample: "", generate: "", ...(settings.promptTemplates || {}) };
+host.promptTemplateIds = { upsample: "", generate: "", ...(shellState.settings.promptTemplates || {}) };
 await host.refreshPromptTemplates();
 
 for (const el of [ui.compatUrl, ui.compatModel]) {
@@ -968,7 +969,7 @@ async function lmRows() {
 
 async function lmSave(rows) {
     const set = await window.scumble.settings.get();
-    settings = await window.scumble.settings.set({ llm: { ...(set.llm || {}), models: rows } });
+    shellState.settings = await window.scumble.settings.set({ llm: { ...(set.llm || {}), models: rows } });
     await renderModels();
     await host.refreshLLMs();
     refreshAssistantModels();
@@ -1115,7 +1116,7 @@ function genPresetOf(r, pid, aspect = null) {
  * resolved recipe a run would use.
  */
 function genChoice() {
-    const r = recipes.find((x) => x.id === ui.genRecipe.value) || null;
+    const r = shellState.recipes.find((x) => x.id === ui.genRecipe.value) || null;
     const pid = r && r.kind === "provider" ? ui.genProvider.value : "";
     const aspect = genpresets.parseAspect(ui.genAspect.value) ? ui.genAspect.value : null;
     const preset = genPresetOf(r, pid, aspect) || { aspects: GEN_GENERAL.slice(), classes: genpresets.classesOf(null, GEN_RESOLUTIONS) };
@@ -1129,7 +1130,7 @@ function genChoice() {
 function genTargetOf(ed) {
     const t = ed && ed.genSettings ? ed.genSettings.target : null;
     if (!genpresets.targetValid(t, ed)) return null;
-    const raw = recipes.find((x) => x.id === t.recipe);
+    const raw = shellState.recipes.find((x) => x.id === t.recipe);
     if (!raw) return null;
     const mode = raw.kind === "comfy" ? "local" : modeOf(raw);
     if (!genRecipesFor(mode).some((x) => x.id === raw.id)) return null;
@@ -1228,7 +1229,7 @@ function newCanvasPick(editor, models) {
  */
 async function newCanvasChosen(editor, target) {
     if (!target) { newPresetLast = null; return; }
-    const raw = target.recipe ? recipes.find((x) => x.id === target.recipe) : null;
+    const raw = target.recipe ? shellState.recipes.find((x) => x.id === target.recipe) : null;
     if (!raw) return;
     newPresetLast = { model: raw.id, provider: target.provider || "", aspect: target.aspect || null, size: +target.size || null };
     selectRecipe(raw.id, target.provider || undefined);
@@ -1239,8 +1240,8 @@ let genEditor = null;
 let genField = null;
 let genInfo = null;          // host.refLayout's answer for the dialog's model (not the tab's recipe)
 let genInfoSeq = 0;
-let genRemapOff = null;      // the field as a remap target of genEditor while the dialog is open
-let genPrevious = null;      // the text before an upsample (Revert)
+shellState.genRemapOff = null;      // the field as a remap target of genEditor while the dialog is open
+shellState.genPrevious = null;      // the text before an upsample (Revert)
 let genOpenSeq = 0;          // counts the dialog's openings: an upsample answer belongs to the one it was asked in
 
 /** The prompt field, made once (after genEditor exists, since its bar asks for the references at once). */
@@ -1274,7 +1275,7 @@ function genMountField() {
 async function genSyncRefs() {
     if (!genEditor || !genField) return;
     const seq = ++genInfoSeq;
-    const r = recipes.find((x) => x.id === ui.genRecipe.value);
+    const r = shellState.recipes.find((x) => x.id === ui.genRecipe.value);
     let info = null;
     try {
         if (r && r.kind === "provider" && ui.genProvider.value) {
@@ -1292,7 +1293,7 @@ async function genSyncRefs() {
 /** The recipes that can start from nothing, for the mode the dialog is on (cloud: the Comfy Cloud recipes, V6). */
 function genRecipesFor(mode) {
     // an upscaler or the Realism Pass makes nothing from a prompt: both work on a picture
-    return recipes.filter((r) => (mode === "local" ? r.kind === "comfy" && r.task !== "upscale" && r.task !== "pass" && r.task !== "relight" : r.kind === "provider" && (mode === "cloud") === cloudModeOf(r) && r.task !== "relight" && genProviderIds(r).length));
+    return shellState.recipes.filter((r) => (mode === "local" ? r.kind === "comfy" && r.task !== "upscale" && r.task !== "pass" && r.task !== "relight" : r.kind === "provider" && (mode === "cloud") === cloudModeOf(r) && r.task !== "relight" && genProviderIds(r).length));
 }
 
 /** The providers of a model recipe that have a text-to-image shape. */
@@ -1322,7 +1323,7 @@ function genFillRecipes(opening = null) {
         ui.genRecipe.appendChild(o);
     }
     if (list.some((r) => r.id === keep)) ui.genRecipe.value = keep;
-    else if (list.some((r) => r.id === settings.recipe)) ui.genRecipe.value = settings.recipe;
+    else if (list.some((r) => r.id === shellState.settings.recipe)) ui.genRecipe.value = shellState.settings.recipe;
     genFillProviders(opening);
 }
 
@@ -1368,7 +1369,7 @@ function genFillAspects(want = null, opening = false) {
 }
 
 function genFillProviders(opening = null) {
-    const r = recipes.find((x) => x.id === ui.genRecipe.value);
+    const r = shellState.recipes.find((x) => x.id === ui.genRecipe.value);
     const ids = r && r.kind === "provider" ? genProviderIds(r) : [];
     ui.genProviderRow.hidden = !ids.length;
     const keep = opening && opening.provider && r && opening.recipe === r.id && ids.includes(opening.provider) ? opening.provider : ui.genProvider.value;
@@ -1380,7 +1381,7 @@ function genFillProviders(opening = null) {
         ui.genProvider.appendChild(o);
     }
     if (ids.includes(keep)) ui.genProvider.value = keep;
-    else if (ids.includes((settings.recipeProviders || {})[r && r.id])) ui.genProvider.value = settings.recipeProviders[r.id];
+    else if (ids.includes((shellState.settings.recipeProviders || {})[r && r.id])) ui.genProvider.value = shellState.settings.recipeProviders[r.id];
     else if (r && ids.includes(r.default)) ui.genProvider.value = r.default;
     // the preset's aspect and class count only on the model it was made for
     const own = !!(opening && r && opening.recipe === r.id);
@@ -1393,7 +1394,7 @@ function genFillProviders(opening = null) {
 
 /** Does the chosen provider variant take a `background` parameter (docs/RECIPES.md)? */
 function genTransparencyRow() {
-    const r = recipes.find((x) => x.id === ui.genRecipe.value);
+    const r = shellState.recipes.find((x) => x.id === ui.genRecipe.value);
     const v = (r && r.providers && r.providers[ui.genProvider.value]) || {};
     const rows = (v.text && v.text.settings) || v.settings || [];
     const ok = !!r && r.kind === "provider" && rows.some((s) => s.key === "background");
@@ -1402,7 +1403,7 @@ function genTransparencyRow() {
 }
 
 function genSyncNote() {
-    const r = recipes.find((x) => x.id === ui.genRecipe.value);
+    const r = shellState.recipes.find((x) => x.id === ui.genRecipe.value);
     if (!r) { ui.genNote.textContent = ""; return; }
     if (r.kind === "comfy") {
         ui.genNote.textContent = "Runs on your ComfyUI: a flat canvas of the size below goes through the recipe and the answer becomes the image. Any size, the model settings are the ones in the Settings panel.";
@@ -1410,7 +1411,7 @@ function genSyncNote() {
     }
     const v = (r.providers || {})[ui.genProvider.value] || {};
     const t = v.text || {};
-    const key = (providers.find((p) => p.id === ui.genProvider.value) || {}).key;
+    const key = (shellState.providers.find((p) => p.id === ui.genProvider.value) || {}).key;
     const missing = key && key.set ? "" : " No key stored for this provider yet.";
     const sizes = genSizes();
     const range = sizes.length > 1 ? `long side ${sizes[0]} to ${sizes[sizes.length - 1]} px` : `long side ${sizes[0]} px`;
@@ -1440,7 +1441,7 @@ function genSize() {
 
 function genFillTemplates() {
     const list = host.promptTemplatesFor("generate");
-    const keep = ui.genTemplate.value || (settings.promptTemplates || {}).generate || "";
+    const keep = ui.genTemplate.value || (shellState.settings.promptTemplates || {}).generate || "";
     ui.genTemplate.innerHTML = "";
     const none = document.createElement("option");
     none.value = "";
@@ -1508,7 +1509,7 @@ export async function openGenerateNew(editor) {
     // size: the dialog opens on its mode, model, provider, aspect and size class
     const target = genTargetOf(genEditor);
     // else on the editor's mode (local, api or cloud) when that has a recipe for a new image
-    const curRaw = host.recipe && recipes.find((x) => x.id === host.recipe.id);
+    const curRaw = host.recipe && shellState.recipes.find((x) => x.id === host.recipe.id);
     const curMode = curRaw ? (curRaw.kind === "comfy" ? "local" : modeOf(curRaw)) : "api";
     ui.genMode.value = target ? target.mode : genRecipesFor(curMode).length ? curMode : (genRecipesFor("local").length ? "local" : "api");
     genMountField();
@@ -1520,10 +1521,10 @@ export async function openGenerateNew(editor) {
     // the tab's prompt with its @img tokens as chips (26f): they name the reference layers, which go along where the
     // model takes them; the field follows the references like the tab's own prompt while the dialog is open
     genField.setText(genEditor.promptText || "", { history: "reset" });
-    genPrevious = null;
-    if (genRemapOff) genRemapOff();
+    shellState.genPrevious = null;
+    if (shellState.genRemapOff) shellState.genRemapOff();
     const field = genField;
-    genRemapOff = genEditor.addRemapTarget({ get value() { return field.el.value; }, setText: (t, o) => { field.setText(t, o); genSyncRefs(); } });
+    shellState.genRemapOff = genEditor.addRemapTarget({ get value() { return field.el.value; }, setText: (t, o) => { field.setText(t, o); genSyncRefs(); } });
     // the boxes take 64 to 8192 (genSize clamps to that too): a larger document shows what will be asked for
     ui.genWidth.value = Math.max(64, Math.min(8192, genEditor.width || 1024));
     ui.genHeight.value = Math.max(64, Math.min(8192, genEditor.height || 1024));
@@ -1541,7 +1542,7 @@ ui.genRecipe.addEventListener("change", () => genFillProviders());
 ui.genProvider.addEventListener("change", () => { genFillAspects(); genFillSizes(); genTransparencyRow(); genSyncNote(); genSyncRefs(); });
 ui.genTemplate.addEventListener("change", () => {
     genSyncTemplateNote();
-    window.scumble.settings.set({ promptTemplates: { ...(settings.promptTemplates || {}), generate: ui.genTemplate.value } }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
+    window.scumble.settings.set({ promptTemplates: { ...(shellState.settings.promptTemplates || {}), generate: ui.genTemplate.value } }).then((s) => { shellState.settings = s; }).catch(() => { /* not fatal */ });
 });
 // a tier counted by area names a class per aspect (Oxen's 1024 px: 2 MP at 1:1, 1 MP at 16:9): the labels follow it
 ui.genAspect.addEventListener("change", () => genFillSizes());
@@ -1555,7 +1556,7 @@ ui.gen.addEventListener("cancel", (e) => {
     genField.closePopups();
 });
 ui.gen.addEventListener("close", () => {
-    if (genRemapOff) { genRemapOff(); genRemapOff = null; }
+    if (shellState.genRemapOff) { shellState.genRemapOff(); shellState.genRemapOff = null; }
     if (genField) genField.closePopups();
 });
 
@@ -1590,7 +1591,7 @@ ui.genUpsampleGo.addEventListener("click", async () => {
         const carry = (t) => remap(t, labels, now);
         if (cmp) { cmp.dropped = cmp.dropped.map(carry); cmp.invented = cmp.invented.map(carry); }
         text = carry(text);
-        genPrevious = carry(before);
+        shellState.genPrevious = carry(before);
         genField.setText(text);
         const note = cmp ? checkNote(cmp) : "";
         ui.genUpsampleNote.textContent = `${text.split(/\s+/).length} words in ${res.seconds.toFixed(1)} s${res.note ? ", " + res.note : ""}.${note ? " " + note : ""}`;
@@ -1600,10 +1601,10 @@ ui.genUpsampleGo.addEventListener("click", async () => {
         revert.textContent = "Revert";
         revert.title = "Put the prompt from before the upsample back";
         revert.addEventListener("click", () => {
-            if (stale() || genPrevious == null) return;
+            if (stale() || shellState.genPrevious == null) return;
             // the old text follows the references too
-            genField.setText(remap(genPrevious, now, ed ? ed.refLabels() : now));
-            genPrevious = null;
+            genField.setText(remap(shellState.genPrevious, now, ed ? ed.refLabels() : now));
+            shellState.genPrevious = null;
             revert.remove();
         });
         ui.genUpsampleNote.append(" ", revert);
@@ -1673,7 +1674,7 @@ let upPassFactor = 1;
  * models on ComfyUI) and the Realism Pass (`task: "pass"`: the whole picture at 1x, docs/PLAN_0_1_42.md R3b).
  */
 function upRecipes() {
-    return recipes.filter((r) => r.task === "upscale" || r.task === "pass");
+    return shellState.recipes.filter((r) => r.task === "upscale" || r.task === "pass");
 }
 
 const isPassRecipe = (r) => !!r && r.task === "pass";
@@ -1689,7 +1690,7 @@ export function upFactors(v) {
 }
 
 function upVariant() {
-    const r = recipes.find((x) => x.id === ui.upRecipe.value);
+    const r = shellState.recipes.find((x) => x.id === ui.upRecipe.value);
     return { r, v: (r && r.providers && r.providers[ui.upProvider.value]) || null };
 }
 
@@ -1709,14 +1710,14 @@ function upFillRecipes() {
         o.textContent = "no upscale recipe installed";
         ui.upRecipe.appendChild(o);
     }
-    const cur = host.recipe && (host.recipe.task === "upscale" || isPassRecipe(host.recipe)) ? host.recipe.id : settings.upscaleRecipe;
+    const cur = host.recipe && (host.recipe.task === "upscale" || isPassRecipe(host.recipe)) ? host.recipe.id : shellState.settings.upscaleRecipe;
     if (list.some((r) => r.id === cur)) ui.upRecipe.value = cur;
     else if (list.some((r) => r.id === keep)) ui.upRecipe.value = keep;
     upFillProviders();
 }
 
 function upFillProviders() {
-    const r = recipes.find((x) => x.id === ui.upRecipe.value);
+    const r = shellState.recipes.find((x) => x.id === ui.upRecipe.value);
     const ids = (r && r.providerIds) || [];
     ui.upProviderRow.hidden = ids.length < 2;
     const keep = ui.upProvider.value;
@@ -1833,7 +1834,7 @@ function upSyncNote() {
     }
     if (!r || !v) { ui.upNote.textContent = ""; ui.upSizeNote.textContent = ""; ui.upGo.disabled = true; return; }
     const pid = ui.upProvider.value;
-    const key = (providers.find((p) => p.id === pid) || {}).key;
+    const key = (shellState.providers.find((p) => p.id === pid) || {}).key;
     const missing = pid === "loopback" || (key && key.set) ? "" : ` No ${providerLabel(pid)} key stored yet: Settings › API providers.`;
     ui.upNote.textContent = (r.description || "") + missing;
     const doc = ui.upScopeDoc.checked;
@@ -1950,13 +1951,13 @@ ui.upGo.addEventListener("click", async () => {
     if (!ed) return;
     const id = ui.upRecipe.value;
     if (!id) { ui.upState.textContent = "No upscale recipe to run."; return; }
-    const pass = isPassRecipe(recipes.find((r) => r.id === id));
+    const pass = isPassRecipe(shellState.recipes.find((r) => r.id === id));
     ui.upGo.disabled = true;
     try {
         // the pass selects no recipe: it would become the window's, and the next Generate would run its box route
         // nor is it remembered as the upscaler last used (the Image menu opens it directly)
         if (!pass) selectRecipe(id, ui.upProvider.value || undefined);
-        if (!pass && settings.upscaleRecipe !== id) window.scumble.settings.set({ upscaleRecipe: id }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
+        if (!pass && shellState.settings.upscaleRecipe !== id) window.scumble.settings.set({ upscaleRecipe: id }).then((s) => { shellState.settings = s; }).catch(() => { /* not fatal */ });
         const args = { doc: ed.node.id, timeout: 1800 };
         if (!pass) args.scope = ui.upScopeDoc.checked ? "document" : "selection";
         if (!ui.upFactorRow.hidden) args.factor = +ui.upFactor.value;
@@ -2000,7 +2001,7 @@ function renderPrompts() {
     sel.value = host.promptTemplateIds.upsample || "";
     sel.addEventListener("change", async () => {
         host.promptTemplateIds.upsample = sel.value;
-        settings = await window.scumble.settings.set({ promptTemplates: { ...(settings.promptTemplates || {}), upsample: sel.value } });
+        shellState.settings = await window.scumble.settings.set({ promptTemplates: { ...(shellState.settings.promptTemplates || {}), upsample: sel.value } });
     });
     row.appendChild(sel);
     ui.promptList.appendChild(row);
@@ -2034,7 +2035,7 @@ ui.promptRefPics.addEventListener("change", async () => {
     const on = ui.promptRefPics.checked;
     host.llmRefPictures = on;
     const set = await window.scumble.settings.get();
-    settings = await window.scumble.settings.set({ llm: { ...(set.llm || {}), refPictures: on } });
+    shellState.settings = await window.scumble.settings.set({ llm: { ...(set.llm || {}), refPictures: on } });
 });
 
 ui.promptImport.addEventListener("click", async () => {
@@ -2194,12 +2195,12 @@ ui.hfSave.addEventListener("click", async () => {
 });
 ui.hfClear.addEventListener("click", async () => { await window.scumble.keys.clear("hf-token"); renderHelpers(await window.scumble.helpers.status()); });
 
-let helpersRenderTimer = null;
+shellState.helpersRenderTimer = null;
 window.scumble.helpers.onProgress((ev) => {
     if (ev.error) downloadErrors[ev.id] = ev.error;
     if (!ui.settings.open) return;
-    clearTimeout(helpersRenderTimer);
-    helpersRenderTimer = setTimeout(async () => { try { renderHelpers(await window.scumble.helpers.status()); } catch (_) { /* closing */ } }, ev.done || ev.error ? 0 : 250);
+    clearTimeout(shellState.helpersRenderTimer);
+    shellState.helpersRenderTimer = setTimeout(async () => { try { renderHelpers(await window.scumble.helpers.status()); } catch (_) { /* closing */ } }, ev.done || ev.error ? 0 : 250);
 });
 host.onHelpersChanged = (st) => { if (ui.settings.open) renderHelpers(st); };
 // SAM2, matting and depth fell back to main's thread for the session (electron/main/onnx/helpers.js _fallBack, once):
@@ -2288,12 +2289,12 @@ api.addEventListener("execution_error", () => { if (!host._providerRuns.size) ui
 api.addEventListener("execution_interrupted", () => { if (!host._providerRuns.size) ui.progress.hidden = true; });
 api.addEventListener("executed", () => setTimeout(renderTabs, 50));
 
-let providerTimer = null;
+shellState.providerTimer = null;
 const cancelButton = $("shell-cancel");
 // the title row's Cancel (an API run that does not come back): main stops waiting, the tab's status line says so
 if (cancelButton) cancelButton.addEventListener("click", () => { cancelButton.disabled = true; host.cancelProviderRuns(); });
 host.onProviderRuns = (runs) => {
-    clearInterval(providerTimer); providerTimer = null;
+    clearInterval(shellState.providerTimer); shellState.providerTimer = null;
     if (cancelButton) { cancelButton.hidden = !runs.length; cancelButton.disabled = false; }
     if (!runs.length) { ui.progress.hidden = true; ui.progress.classList.remove("indeterminate"); ui.progressBar.style.left = ""; renderTabs(); return; }
     ui.progress.hidden = false;
@@ -2303,7 +2304,7 @@ host.onProviderRuns = (runs) => {
         ui.progressText.textContent = `${r.label || r.provider} · ${Math.round((Date.now() - r.started) / 1000)} s${runs.length > 1 ? ` (+${runs.length - 1})` : ""}`;
     };
     tick();
-    providerTimer = setInterval(tick, 1000);
+    shellState.providerTimer = setInterval(tick, 1000);
     renderTabs();
 };
 
@@ -2470,15 +2471,15 @@ ui.setGensOpen.addEventListener("click", async () => {
 });
 
 async function openSettings() {
-    settings = await window.scumble.settings.get();
-    ui.setUrl.value = (settings.comfy && settings.comfy.url) || ui.url.value;
-    const auth = (settings.comfy && settings.comfy.auth) || { type: "none" };
+    shellState.settings = await window.scumble.settings.get();
+    ui.setUrl.value = (shellState.settings.comfy && shellState.settings.comfy.url) || ui.url.value;
+    const auth = (shellState.settings.comfy && shellState.settings.comfy.auth) || { type: "none" };
     ui.authType.value = auth.type || "none";
     ui.authUser.value = auth.user || "";
     ui.authHeader.value = auth.header || "";
     ui.authSecret.value = "";
     syncAuthRows();
-    ui.setConn.textContent = lastStatus.message || lastStatus.state || "";
+    ui.setConn.textContent = shellState.lastStatus.message || shellState.lastStatus.state || "";
     ui.setProbe.hidden = true;
     ui.setPruneNote.textContent = "";
     ui.recipeNoteSet.textContent = "";
@@ -2486,14 +2487,14 @@ async function openSettings() {
     // the same whole numbers the change handlers below write, so a stored value (typed by hand, or one the
     // browser suggested while a field still had coarser steps) always passes the form's own validation:
     // an invalid number input keeps the dialog's Close from submitting
-    const mem = settings.memory || {};
+    const mem = shellState.settings.memory || {};
     ui.setGpuLimit.value = wholeMB(mem.gpuLimitMB, 0, 3072);
     ui.setCardMin.value = wholeMB(mem.cardMinFreeMB, 0, 2048);
     ui.setAtlas.value = wholeMB(mem.atlasMB, 16, 512);
     const depth = historyDepth();
     ui.setUndoSteps.value = depth.steps;
     ui.setUndoMB.value = depth.mb;
-    const as = settings.assistant || {};
+    const as = shellState.settings.assistant || {};
     ui.setAsKeep.value = Math.max(1, Math.round(Number(as.keepChats) || 20));
     ui.setAsSteps.value = Math.max(1, Math.round(Number(as.maxSteps) || 25));
     ui.setAsNote.textContent = "";
@@ -2503,10 +2504,10 @@ async function openSettings() {
         const info = await window.scumble.info();
         ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}${info.portable ? " (portable copy)" : ""}.${info.comfySdk ? ` Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK (@comfyorg/sdk ${info.comfySdk}, MIT).` : ""} Green and blue screen keying by CorridorKey 2.0 from Corridor Digital (Corridor Key Licence, a CC BY-NC-SA 4.0 variant), used with permission in this free app; it builds on C-RADIOv4 (NVIDIA), MoGe-2 (Microsoft) and RVM (Google DeepMind), which its node pack downloads from their publishers onto your ComfyUI. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products. NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation; Scumble is not affiliated with or endorsed by NVIDIA, and the Realism Pass (Windows only, RTX only) runs only what you installed on your own ComfyUI.`;
     } catch (_) { /* ignore */ }
-    ui.updateAuto.checked = !(settings.updates && settings.updates.check === false);
-    ui.netCurl.checked = !(settings.network && settings.network.curl === false);
+    ui.updateAuto.checked = !(shellState.settings.updates && shellState.settings.updates.check === false);
+    ui.netCurl.checked = !(shellState.settings.network && shellState.settings.network.curl === false);
     renderNetwork();
-    ui.promptRefPics.checked = refPicturesOn(settings);
+    ui.promptRefPics.checked = refPicturesOn(shellState.settings);
     try { renderUpdate(await window.scumble.updates.status()); } catch (_) { /* ignore */ }
     refreshFileStats();
     renderGenerations();
@@ -2623,8 +2624,8 @@ function updateAction() {
 let lastUpdate = null;            // the newest status (from main, or a test's)
 const updateAsked = new Set();    // the versions this window asked about (main keeps the same for the start: `announced`)
 let updateAsking = false;
-let lastUserInput = 0;            // a key, a click or a wheel turn anywhere: the question does not cut into typing
-for (const type of ["keydown", "pointerdown", "wheel"]) window.addEventListener(type, () => { lastUserInput = Date.now(); }, { capture: true, passive: true });
+shellState.lastUserInput = 0;            // a key, a click or a wheel turn anywhere: the question does not cut into typing
+for (const type of ["keydown", "pointerdown", "wheel"]) window.addEventListener(type, () => { shellState.lastUserInput = Date.now(); }, { capture: true, passive: true });
 
 /** What the question waits for now, or null: another question (the assistant's too), a modal panel, the restore, an edit. */
 function updateQuestionWaits() {
@@ -2633,7 +2634,7 @@ function updateQuestionWaits() {
     if (assistantActivity().asking) return "the assistant's question";
     if (host._restoring) return "the restore";
     if (host.editors().some((ed) => userBusy(ed))) return "an edit";
-    if (Date.now() - lastUserInput < 3000) return "typing";
+    if (Date.now() - shellState.lastUserInput < 3000) return "typing";
     return null;
 }
 
@@ -2679,7 +2680,7 @@ export async function announceUpdate(s) {
     const notify = notifyMode(s);
     const offered = (u) => !!(u && u.state === (notifyMode(u) ? "available" : "downloaded"));
     const v = offered(s) && !s.manual && s.version ? String(s.version) : null;
-    if (!v || updateAsking || updateAsked.has(v) || s.announced === v || s.skip === v || (settings.updates || {}).skip === v) return false;
+    if (!v || updateAsking || updateAsked.has(v) || s.announced === v || s.skip === v || (shellState.settings.updates || {}).skip === v) return false;
     const current = (u) => !!(offered(u) && notifyMode(u) === notify && !u.manual && String(u.version) === v);
     updateAsking = true;
     try {
@@ -2730,10 +2731,10 @@ export async function announceUpdate(s) {
  * settings.updates.skip, electron/main/updater.js setSkip). Install and the title row's button still install it.
  */
 export async function skipUpdate(version) {
-    const updates = { ...(settings.updates || {}) };
+    const updates = { ...(shellState.settings.updates || {}) };
     if (version) updates.skip = String(version); else delete updates.skip;
-    settings = await window.scumble.settings.set({ updates });
-    return settings.updates;
+    shellState.settings = await window.scumble.settings.set({ updates });
+    return shellState.settings.updates;
 }
 
 /**
@@ -2804,8 +2805,8 @@ async function renderNetwork() {
         ui.netNote.style.color = s.enabled && !s.curl ? "var(--sc-warn, #e0a05a)" : "";
     } catch (_) { ui.netNote.textContent = ""; }
 }
-ui.netCurl.addEventListener("change", async () => { settings = await window.scumble.settings.set({ network: { ...(settings.network || {}), curl: ui.netCurl.checked } }); renderNetwork(); });
-ui.updateAuto.addEventListener("change", async () => { settings = await window.scumble.settings.set({ updates: { ...(settings.updates || {}), check: ui.updateAuto.checked } }); });
+ui.netCurl.addEventListener("change", async () => { shellState.settings = await window.scumble.settings.set({ network: { ...(shellState.settings.network || {}), curl: ui.netCurl.checked } }); renderNetwork(); });
+ui.updateAuto.addEventListener("change", async () => { shellState.settings = await window.scumble.settings.set({ updates: { ...(shellState.settings.updates || {}), check: ui.updateAuto.checked } }); });
 /** A memory row's value as the row shows and stores it: a whole number of MB, at least `min`. */
 function wholeMB(v, min, fallback) {
     return v == null || v === "" || !Number.isFinite(Number(v)) ? fallback : Math.max(min, Math.round(Number(v)));
@@ -2815,12 +2816,12 @@ function wholeMB(v, min, fallback) {
 ui.setAsKeep.addEventListener("change", async () => {
     const v = Math.min(200, Math.max(1, Math.round(Number(ui.setAsKeep.value) || 20)));
     ui.setAsKeep.value = v;
-    settings = await window.scumble.settings.set({ assistant: { ...(settings.assistant || {}), keepChats: v } });
+    shellState.settings = await window.scumble.settings.set({ assistant: { ...(shellState.settings.assistant || {}), keepChats: v } });
 });
 ui.setAsSteps.addEventListener("change", async () => {
     const v = Math.min(100, Math.max(1, Math.round(Number(ui.setAsSteps.value) || 25)));
     ui.setAsSteps.value = v;
-    settings = await window.scumble.settings.set({ assistant: { ...(settings.assistant || {}), maxSteps: v } });
+    shellState.settings = await window.scumble.settings.set({ assistant: { ...(shellState.settings.assistant || {}), maxSteps: v } });
 });
 ui.setAsReset.addEventListener("click", async () => {
     // the editor's own question, not a native confirm: it says exactly what goes and what stays
@@ -2837,9 +2838,9 @@ ui.setAsReset.addEventListener("click", async () => {
     try {
         await window.scumble.assistant.resetAll();
         resetAssistant();
-        settings = await window.scumble.settings.get();
-        ui.setAsKeep.value = Math.max(1, Math.round(Number((settings.assistant || {}).keepChats) || 20));
-        ui.setAsSteps.value = Math.max(1, Math.round(Number((settings.assistant || {}).maxSteps) || 25));
+        shellState.settings = await window.scumble.settings.get();
+        ui.setAsKeep.value = Math.max(1, Math.round(Number((shellState.settings.assistant || {}).keepChats) || 20));
+        ui.setAsSteps.value = Math.max(1, Math.round(Number((shellState.settings.assistant || {}).maxSteps) || 25));
         ui.setAsNote.textContent = "every chat, screenshot and log line of the assistant is gone; the keys are untouched";
     } catch (err) {
         ui.setAsNote.textContent = "could not delete: " + ((err && err.message) || err);
@@ -2849,24 +2850,24 @@ ui.setAsReset.addEventListener("click", async () => {
 ui.setGpuLimit.addEventListener("change", async () => {
     const v = Math.max(0, Math.round(Number(ui.setGpuLimit.value) || 0));
     ui.setGpuLimit.value = v;
-    settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), gpuLimitMB: v } });
+    shellState.settings = await window.scumble.settings.set({ memory: { ...(shellState.settings.memory || {}), gpuLimitMB: v } });
 });
 ui.setCardMin.addEventListener("change", async () => {
     const v = Math.max(0, Math.round(Number(ui.setCardMin.value) || 0));
     ui.setCardMin.value = v;
-    settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), cardMinFreeMB: v } });
+    shellState.settings = await window.scumble.settings.set({ memory: { ...(shellState.settings.memory || {}), cardMinFreeMB: v } });
 });
 ui.setAtlas.addEventListener("change", async () => {
     const v = Math.max(16, Math.round(Number(ui.setAtlas.value) || 0));
     ui.setAtlas.value = v;
-    settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), atlasMB: v } });
+    shellState.settings = await window.scumble.settings.set({ memory: { ...(shellState.settings.memory || {}), atlasMB: v } });
     applyAtlasBudget(v);
 });
 for (const [input, key, min, max] of [[ui.setUndoSteps, "steps", 5, 500], [ui.setUndoMB, "mb", 64, 8192]]) {
     input.addEventListener("change", async () => {
         const v = Math.min(max, Math.max(min, Math.round(Number(input.value) || 0)));
         input.value = v;
-        settings = await window.scumble.settings.set({ history: { ...historyDepth(), [key]: v } });
+        shellState.settings = await window.scumble.settings.set({ history: { ...historyDepth(), [key]: v } });
         applyHistoryDepth();
     });
 }
@@ -2903,7 +2904,7 @@ async function renderTileMode() {
     return t;
 }
 ui.setTiles.addEventListener("change", async () => {
-    settings = await window.scumble.settings.set({ tiles: ui.setTiles.checked });
+    shellState.settings = await window.scumble.settings.set({ tiles: ui.setTiles.checked });
     await renderTileMode();
 });
 ui.setTilesRestart.addEventListener("click", async () => {
@@ -3057,8 +3058,8 @@ window.addEventListener("drop", (e) => {
 window.scumble.documents.onOpenRequest(async (paths) => { for (const p of paths || []) await openDocumentFromUi(p); });
 // documents named by a second start (a double click on a .scumble); the start takes the first ones itself, after the
 // session's tabs are back
-let takesPending = false;
-window.scumble.documents.onPending(async () => { if (takesPending) await openPendingDocuments(); });
+shellState.takesPending = false;
+window.scumble.documents.onPending(async () => { if (shellState.takesPending) await openPendingDocuments(); });
 async function openPendingDocuments() {
     try { for (const p of await window.scumble.documents.takePending()) await openDocumentFromUi(p); } catch (err) { console.warn("documents to open", err); }
 }
@@ -3091,16 +3092,16 @@ window.addEventListener("keydown", (e) => {
 // the assistant stay open under the picture (shell.css); asking for one of them ends the view.
 
 try {
-    window.scumble.window.isFullScreen().then((on) => { windowFullScreen = !!on; }, () => { /* no window */ });
+    window.scumble.window.isFullScreen().then((on) => { shellState.windowFullScreen = !!on; }, () => { /* no window */ });
     window.scumble.window.onFullScreenChange((on) => {
-        windowFullScreen = !!on;
-        if (!on && canvasOnlyState) leaveCanvasOnly({ fullScreenGone: true });
+        shellState.windowFullScreen = !!on;
+        if (!on && shellState.canvasOnlyState) leaveCanvasOnly({ fullScreenGone: true });
     });
 } catch (_) { /* an older preload */ }
 // a tab switch ends the view, from wherever it comes (the tab bar, a command, a document opened), and so does closing
 // its tab: removeEditor() makes the next tab the active one before it activates it, so no "activate" is heard for that
-host.on("activate", ({ editor }) => { if (canvasOnlyState && canvasOnlyState.ed !== editor) leaveCanvasOnly(); });
-host.on("removed", ({ editor }) => { if (canvasOnlyState && canvasOnlyState.ed === editor) leaveCanvasOnly(); });
+host.on("activate", ({ editor }) => { if (shellState.canvasOnlyState && shellState.canvasOnlyState.ed !== editor) leaveCanvasOnly(); });
+host.on("removed", ({ editor }) => { if (shellState.canvasOnlyState && shellState.canvasOnlyState.ed === editor) leaveCanvasOnly(); });
 
 /** What the editor's Escape cancels first (its _docKey chain): while one is set, Escape is the editor's, not the view's. */
 function editorHasEscape(ed) {
@@ -3119,8 +3120,8 @@ function settleView(ed, fit) {
 
 function enterCanvasOnly() {
     const ed = host.editor;
-    if (canvasOnlyState || !ed || !ed.canvas) return Promise.resolve();
-    const st = canvasOnlyState = { ed, wasFullScreen: windowFullScreen, view: { ...ed.view }, fitted: ed._fitted, rulers: ed.showRulers, w: ed.width, h: ed.height };
+    if (shellState.canvasOnlyState || !ed || !ed.canvas) return Promise.resolve();
+    const st = shellState.canvasOnlyState = { ed, wasFullScreen: shellState.windowFullScreen, view: { ...ed.view }, fitted: ed._fitted, rulers: ed.showRulers, w: ed.width, h: ed.height };
     document.body.classList.add("shell-canvas-only");
     if (ed.closeTipPicker) ed.closeTipPicker();   // it hangs from the options bar, which the view hides
     // the keys go to the picture: the view may come from the menu with the focus in a panel it now covers
@@ -3141,9 +3142,9 @@ function enterCanvasOnly() {
 
 /** `fullScreenGone`: the window left full screen by itself (F11, the OS), so there is nothing to undo there. */
 function leaveCanvasOnly({ fullScreenGone = false } = {}) {
-    const st = canvasOnlyState;
+    const st = shellState.canvasOnlyState;
     if (!st) return Promise.resolve();
-    canvasOnlyState = null;
+    shellState.canvasOnlyState = null;
     document.body.classList.remove("shell-canvas-only");
     const hint = $("shell-canvas-hint");
     if (hint) hint.remove();
@@ -3174,18 +3175,18 @@ async function frequencySeparation() {
 
 /** The canvas-only view on (`true`), off (`false`) or toggled (left out); resolves with the state after. */
 async function canvasOnly(on) {
-    const want = on === undefined ? !canvasOnlyState : !!on;
+    const want = on === undefined ? !shellState.canvasOnlyState : !!on;
     await (want ? enterCanvasOnly() : leaveCanvasOnly());
-    return !!canvasOnlyState;
+    return !!shellState.canvasOnlyState;
 }
 
 function isCanvasOnly() {
-    return !!canvasOnlyState;
+    return !!shellState.canvasOnlyState;
 }
 
 /** Help and the assistant are columns beside the picture: asked for in the canvas-only view, the view ends, and one that is open already just shows. */
 function showColumn(isOpen, toggle) {
-    if (canvasOnlyState) {
+    if (shellState.canvasOnlyState) {
         leaveCanvasOnly();
         if (isOpen()) return;
     }
@@ -3196,13 +3197,13 @@ function showColumn(isOpen, toggle) {
 // capture listener: Tab is free there, and Escape stays the editor's while it has something to cancel. Not in a text
 // field, a dialog (Help, the assistant, Settings) or the editor's question; Shift+Tab and Ctrl+Tab are not the view's.
 window.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab" && !(e.key === "Escape" && canvasOnlyState)) return;
+    if (e.key !== "Tab" && !(e.key === "Escape" && shellState.canvasOnlyState)) return;
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
     if (document.querySelector("dialog:modal")) return;   // Settings and the like, also when their focused field was re-rendered away
     const t = e.target;
     // under the view the Help and assistant columns are covered: a key that lands there is the view's (the assistant's
     // question is drawn over the picture and keeps its own keys)
-    const covered = canvasOnlyState && t && t.closest && t.closest("#help, #assistant") && !t.closest(".as-ask");
+    const covered = shellState.canvasOnlyState && t && t.closest && t.closest("#help, #assistant") && !t.closest(".as-ask");
     if (!covered && t && t.closest && t.closest("dialog[open], [data-own-keys]")) return;   // a panel of its own (the Key dialog) keeps Tab
     if (!covered && t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     const ed = host.editor;
@@ -3325,14 +3326,14 @@ activate(host.editor);
 if (startMode === "safe") host.editor.setStatus("The window crashed twice while it restored your documents: they are kept, Settings › Local files › Earlier states opens them.", "warn");
 await loadProviders();
 await loadRecipes();
-host.presets = settings.recipePresets || {};
-host.loras = settings.recipeLoras || {};   // the LoRA rows per recipe (item 50, docs/PLAN_LORAS.md §3.3)
+host.presets = shellState.settings.recipePresets || {};
+host.loras = shellState.settings.recipeLoras || {};   // the LoRA rows per recipe (item 50, docs/PLAN_LORAS.md §3.3)
 await host.refreshHelpers();
 await host.refreshLLMs();
-selectRecipe(settings.recipe);
+selectRecipe(shellState.settings.recipe);
 // documents named at the start (a double click, a second start): after the session's tabs are back and the recipe is
 // chosen (an open compares the document's recipe with it)
-takesPending = true;
+shellState.takesPending = true;
 await openPendingDocuments();
 
 /**
@@ -3503,7 +3504,7 @@ function cloudGraphOf(r) {
  * Cloud (V5c); any other provider recipe has none, which the status line says.
  */
 function openRecipeInComfy(id) {
-    const r = recipes.find((x) => x.id === id);
+    const r = shellState.recipes.find((x) => x.id === id);
     const say = (text, kind) => { if (host.editor) host.editor.setStatus(text, kind); };
     if (!r) return say("No recipe is selected.");
     const cloud = r.kind === "provider" && cloudGraphOf(r);
