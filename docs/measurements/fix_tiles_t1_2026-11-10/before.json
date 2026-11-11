@@ -1,0 +1,262 @@
+{
+  "label": "before",
+  "runs": [
+    {
+      "tiles": true,
+      "focusStart": [
+        true,
+        "visible"
+      ],
+      "focusEnd": [
+        true,
+        "visible"
+      ],
+      "under_budget_512mb": {
+        "firstMs": 246.84,
+        "medianMs": 0.32,
+        "worstMs": 0.63,
+        "samplesMs": [
+          0.63,
+          0.4,
+          0.32,
+          0.25,
+          0.3
+        ],
+        "gpuFirst": true,
+        "gpuSteady": true,
+        "atlasMB": 141.51,
+        "budgetMB": 512,
+        "pages": 36
+      },
+      "over_budget_zoom_512mb": {
+        "firstMs": 352.95,
+        "medianMs": 0.28,
+        "worstMs": 0.37,
+        "samplesMs": [
+          0.37,
+          0.29,
+          0.28,
+          0.28,
+          0.27
+        ],
+        "gpuFirst": false,
+        "gpuSteady": false,
+        "atlasMB": 525,
+        "budgetMB": 512,
+        "pages": 57
+      },
+      "budget_2048mb_fit": {
+        "firstMs": 163.86,
+        "medianMs": 0.66,
+        "worstMs": 0.92,
+        "samplesMs": [
+          0.92,
+          0.66,
+          0.69,
+          0.65,
+          0.6
+        ],
+        "gpuFirst": false,
+        "gpuSteady": false,
+        "atlasMB": 17.02,
+        "budgetMB": 16,
+        "pages": 4
+      }
+    },
+    {
+      "tiles": true,
+      "focusStart": [
+        true,
+        "visible"
+      ],
+      "focusEnd": [
+        true,
+        "visible"
+      ],
+      "under_budget_512mb": {
+        "firstMs": 258.94,
+        "medianMs": 0.32,
+        "worstMs": 0.4,
+        "samplesMs": [
+          0.4,
+          0.34,
+          0.32,
+          0.3,
+          0.25
+        ],
+        "gpuFirst": true,
+        "gpuSteady": true,
+        "atlasMB": 141.51,
+        "budgetMB": 512,
+        "pages": 36
+      },
+      "over_budget_zoom_512mb": {
+        "firstMs": 359.31,
+        "medianMs": 0.43,
+        "worstMs": 0.48,
+        "samplesMs": [
+          0.39,
+          0.48,
+          0.44,
+          0.42,
+          0.43
+        ],
+        "gpuFirst": false,
+        "gpuSteady": false,
+        "atlasMB": 525,
+        "budgetMB": 512,
+        "pages": 57
+      },
+      "budget_2048mb_fit": {
+        "firstMs": 222.22,
+        "medianMs": 0.76,
+        "worstMs": 0.87,
+        "samplesMs": [
+          0.75,
+          0.76,
+          0.6,
+          0.87,
+          0.86
+        ],
+        "gpuFirst": false,
+        "gpuSteady": false,
+        "atlasMB": 17.02,
+        "budgetMB": 16,
+        "pages": 4
+      }
+    },
+    {
+      "tiles": true,
+      "focusStart": [
+        true,
+        "visible"
+      ],
+      "focusEnd": [
+        true,
+        "visible"
+      ],
+      "under_budget_512mb": {
+        "firstMs": 282.25,
+        "medianMs": 0.2,
+        "worstMs": 0.28,
+        "samplesMs": [
+          0.28,
+          0.23,
+          0.2,
+          0.16,
+          0.16
+        ],
+        "gpuFirst": true,
+        "gpuSteady": true,
+        "atlasMB": 141.51,
+        "budgetMB": 512,
+        "pages": 36
+      },
+      "over_budget_zoom_512mb": {
+        "firstMs": 325.04,
+        "medianMs": 0.25,
+        "worstMs": 0.33,
+        "samplesMs": [
+          0.33,
+          0.25,
+          0.23,
+          0.26,
+          0.21
+        ],
+        "gpuFirst": false,
+        "gpuSteady": false,
+        "atlasMB": 525,
+        "budgetMB": 512,
+        "pages": 57
+      },
+      "budget_2048mb_fit": {
+        "firstMs": 191.17,
+        "medianMs": 0.85,
+        "worstMs": 1.02,
+        "samplesMs": [
+          1.02,
+          0.81,
+          0.85,
+          0.98,
+          0.79
+        ],
+        "gpuFirst": false,
+        "gpuSteady": false,
+        "atlasMB": 17.02,
+        "budgetMB": 16,
+        "pages": 4
+      }
+    }
+  ],
+  "summary": {
+    "under_budget_512mb": {
+      "firstMs_median": 258.94,
+      "firstMs_runs": [
+        246.84,
+        258.94,
+        282.25
+      ],
+      "steady_medianMs": 0.32,
+      "steady_median_runs": [
+        0.32,
+        0.32,
+        0.2
+      ],
+      "worstMs": 0.63,
+      "gpuSteady_all": true,
+      "gpuSteady_runs": [
+        true,
+        true,
+        true
+      ],
+      "atlasMB_median": 141.51,
+      "budgetMB": 512
+    },
+    "over_budget_zoom_512mb": {
+      "firstMs_median": 352.95,
+      "firstMs_runs": [
+        352.95,
+        359.31,
+        325.04
+      ],
+      "steady_medianMs": 0.28,
+      "steady_median_runs": [
+        0.28,
+        0.43,
+        0.25
+      ],
+      "worstMs": 0.48,
+      "gpuSteady_all": false,
+      "gpuSteady_runs": [
+        false,
+        false,
+        false
+      ],
+      "atlasMB_median": 525,
+      "budgetMB": 512
+    },
+    "budget_2048mb_fit": {
+      "firstMs_median": 191.17,
+      "firstMs_runs": [
+        163.86,
+        222.22,
+        191.17
+      ],
+      "steady_medianMs": 0.76,
+      "steady_median_runs": [
+        0.66,
+        0.76,
+        0.85
+      ],
+      "worstMs": 1.02,
+      "gpuSteady_all": false,
+      "gpuSteady_runs": [
+        false,
+        false,
+        false
+      ],
+      "atlasMB_median": 17.02,
+      "budgetMB": 16
+    }
+  }
+}

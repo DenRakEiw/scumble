@@ -1265,6 +1265,276 @@ SEE_THROUGH_FILTERS = """
 })()
 """
 
+# Tile atlas budget clamping (`tiles/T2`: no 32-bit `| 0` wrap above 2047 MB, clamped to [16 MB, 16384 MB]) and
+# mid-frame / post-failure atlas eviction (`tiles/T1`: `setAtlasBudget` small, a plain stack of whole-picture tile
+# layers at fit then zoomed into the next level evicts older levels' pages, returns the GPU canvas, and brings
+# `stats().atlas.bytes` back under the budget).
+ATLAS_BUDGET = r"""
+(async () => {
+    const shell = await import("./shell.js");
+    const { GLCompositor } = await import("./editor/inpaint_compositor.js");
+    const { TileLayerPixels } = await import("./editor/inpaint_tiles.js");
+    const W = 4352, H = 4352;   // 17 x 17 = 289 tiles per store (two atlas pages per store at levels 1..3)
+    const MB = 1048576;
+    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const fillTiles = (c, seed, alpha) => {
+        const x = c.getContext("2d");
+        x.clearRect(0, 0, c.width, c.height);
+        for (let ty = 0; ty < 17; ty++) {
+            for (let tx = 0; tx < 17; tx++) {
+                const r = (tx * 37 + ty * 13 + seed * 71 + 40) & 255;
+                const g = (tx * 19 + ty * 43 + seed * 113 + 70) & 255;
+                const b = (tx * 53 + ty * 29 + seed * 59 + 90) & 255;
+                x.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+                x.fillRect(tx * 256, ty * 256, 256, 256);
+            }
+        }
+        return c;
+    };
+    const problems = [];
+    const check = (name, ok, detail) => { if (!ok) problems.push(name + (detail !== undefined ? " (" + JSON.stringify(detail) + ")" : "")); };
+
+    const before = window.editor;
+    const ed = shell.newDocument();
+    shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 200));
+    ed.resizeCanvas();
+    const tilesMode = !!ed.tileMode;
+    let ownComp = null;
+    let savedBudget = null;
+
+    try {
+        const cBase = fillTiles(mk(W, H), 0, 1);
+        const cL1 = fillTiles(mk(W, H), 1, 1);
+        const cL2 = fillTiles(mk(W, H), 2, 1);
+        Object.defineProperty(cBase, "naturalWidth", { value: W });
+        Object.defineProperty(cBase, "naturalHeight", { value: H });
+
+        // Reference composite at 2176 x 2176 (level 1, exact 2:1 on 256x256 solid tiles) via Canvas 2D alone
+        const refC = mk(2176, 2176), refX = refC.getContext("2d");
+        refX.imageSmoothingEnabled = false;
+        refX.drawImage(cBase, 0, 0, 2176, 2176);
+        refX.globalCompositeOperation = "multiply";
+        refX.globalAlpha = 0.8;
+        refX.drawImage(cL1, 0, 0, 2176, 2176);
+        refX.globalCompositeOperation = "screen";
+        refX.globalAlpha = 0.75;
+        refX.drawImage(cL2, 0, 0, 2176, 2176);
+        refX.globalCompositeOperation = "source-over";
+        refX.globalAlpha = 1;
+        const refBytes = refX.getImageData(0, 0, 2176, 2176).data;
+
+        let comp = null;
+        let px0 = null, px1 = null, px2 = null;
+        if (tilesMode) {
+            await ed.setBase({ filename: "atlas_base.png", subfolder: "inpaint_canvas", type: "input" }, cBase, { keepLayers: false });
+            ed.addLayer({ name: "paint-1", kind: "paint", px: TileLayerPixels.fromCanvas(cL1), x: 0, y: 0, w: W, h: H, dirty: true, blend: "multiply", opacity: 0.8 });
+            ed.addLayer({ name: "paint-2", kind: "paint", px: TileLayerPixels.fromCanvas(cL2), x: 0, y: 0, w: W, h: H, dirty: true, blend: "screen", opacity: 0.75 });
+            ed.renderLayers();
+            ed.fitView();
+            ed.draw();
+            await ed.mipsSettled();
+            comp = ed.compositor();
+            savedBudget = comp ? comp.stats().atlas.budget : null;
+            px0 = ed.basePx;
+            px1 = ed.layers[0].px;
+            px2 = ed.layers[1].px;
+        } else {
+            // Also exercise GLCompositor + TileLayerPixels directly when the app runs with --tiles off
+            const edComp = ed.compositor();
+            const prevEd = edComp ? edComp.stats().atlas.budget : null;
+            if (edComp) edComp.setAtlasBudget(2048 * MB);
+            check("editor compositor setAtlasBudget(2048 MB) on canvas backend", !!edComp && edComp.stats().atlas.budget === 2048 * MB, edComp ? edComp.stats().atlas.budget : null);
+            if (edComp) edComp.setAtlasBudget(prevEd);
+            ownComp = GLCompositor.available() ? new GLCompositor() : null;
+            comp = ownComp;
+            px0 = TileLayerPixels.fromCanvas(cBase);
+            px1 = TileLayerPixels.fromCanvas(cL1);
+            px2 = TileLayerPixels.fromCanvas(cL2);
+            for (const px of [px0, px1, px2]) {
+                for (let ty = 0; ty < 17; ty++) for (let tx = 0; tx < 17; tx++) px._stampAt(tx, ty, 1, false);
+            }
+        }
+        if (!comp) { problems.push("no WebGL2 compositor"); return { tiles: tilesMode, problems }; }
+        comp.clear();
+
+        const runLevel = (level, rw = W, rh = H) => {
+            const vw = rw >> level, vh = rh >> level;
+            const region = { x: 0, y: 0, w: rw, h: rh };
+            if (tilesMode && rw === W && rh === H) {
+                return ed.glViewComposite(region, vw, vh, {});
+            }
+            return comp.composite({
+                width: vw,
+                height: vh,
+                region,
+                layers: [
+                    { pixels: px0, mask: null, level, x: 0, y: 0, w: W, h: H, opacity: 1, blend: "normal" },
+                    { pixels: px1, mask: null, level, x: 0, y: 0, w: W, h: H, opacity: 0.8, blend: "multiply" },
+                    { pixels: px2, mask: null, level, x: 0, y: 0, w: W, h: H, opacity: 0.75, blend: "screen" },
+                ],
+            });
+        };
+
+        // 1. tiles/T2: setAtlasBudget handles >= 2048 MB without 32-bit `| 0` overflow, floors fractions, and clamps [16 MB, 16384 MB]
+        const budgetCases = [
+            [2048 * MB, 2048 * MB],
+            [3072 * MB, 3072 * MB],
+            [4096 * MB, 4096 * MB],
+            [5000 * MB, 5000 * MB],
+            [16384 * MB, 16384 * MB],
+            [32768 * MB, 16384 * MB],
+            [Infinity, 16384 * MB],
+            [64 * MB + 0.75, 64 * MB],
+            [0, 16 * MB],
+            [-500, 16 * MB],
+            [-Infinity, 16 * MB],
+            [NaN, 16 * MB],
+            [undefined, 16 * MB],
+        ];
+        for (const [inp, want] of budgetCases) {
+            comp.setAtlasBudget(inp);
+            const got = comp.stats().atlas.budget;
+            check("setAtlasBudget(" + String(inp) + ")", got === want, { got, want });
+        }
+
+        // Live composite with 2048 MB budget holds all 3 stores at level 1 (~56.5 MB > 16 MB) with zero evictions
+        comp.setAtlasBudget(2048 * MB);
+        comp.clear();
+        const c2048 = runLevel(1);
+        const st2048 = comp.stats().atlas;
+        check("2048 MB budget composites 3 whole-picture layers (> 16 MB) without evicting",
+            c2048 === comp.canvas && st2048.bytes === 59217600 && st2048.pages === 6,
+            { ok: c2048 === comp.canvas, bytes: st2048.bytes, pages: st2048.pages });
+
+        // 2. tiles/T1: small budget (64 MB), plain stack of 3 whole-picture tile layers, level 3 -> fit (level 2) -> zoom (level 1)
+        const budget64 = 64 * MB;
+        comp.clear();
+        comp.setAtlasBudget(budget64);
+
+        const cLv3 = runLevel(3);   // frame A: level 3 (6 pages, 4,050,624 bytes)
+        const stLv3 = comp.stats().atlas;
+        const cFit = runLevel(2);   // frame B: fit at level 2 (6 pages, 15,263,424 bytes; total 19,314,048 bytes)
+        const stFit = comp.stats().atlas;
+        check("fit (level 2) composites under 64 MB budget",
+            cLv3 === comp.canvas && cFit === comp.canvas && stFit.bytes === 19314048 && stFit.pages === 12,
+            { lv3Bytes: stLv3.bytes, fitBytes: stFit.bytes, pages: stFit.pages });
+
+        // Exact-boundary check (`atlasBytes === atlasBudget`): a new 1-tile layer still evicts an unused page and succeeds
+        const oneTileC = mk(256, 256);
+        oneTileC.getContext("2d").fillStyle = "#ff8040";
+        oneTileC.getContext("2d").fillRect(0, 0, 256, 256);
+        const extraPx = TileLayerPixels.fromCanvas(oneTileC);
+        extraPx._stampAt(0, 0, 2, false);
+        comp.setAtlasBudget(stFit.bytes);   // exact equality: atlasBytes === atlasBudget (19,314,048 >= 16 MB)
+        const cExact = comp.composite({
+            width: 64, height: 64, region: { x: 0, y: 0, w: 256, h: 256 },
+            layers: [{ pixels: extraPx, mask: null, level: 2, x: 0, y: 0, w: 256, h: 256, opacity: 1, blend: "normal" }],
+        });
+        check("exact atlasBytes === atlasBudget boundary evicts an old page for a new entry",
+            cExact === comp.canvas && comp.stats().atlas.bytes <= stFit.bytes,
+            { ok: cExact === comp.canvas, bytes: comp.stats().atlas.bytes, budget: stFit.bytes });
+        comp.forgetPixels(extraPx);
+
+        // Re-establish clean level 3 (older) -> fit level 2 (newer), then zoom into level 1 (crosses 64 MB mid-frame on store 2)
+        comp.clear();
+        comp.setAtlasBudget(budget64);
+        runLevel(3);
+        runLevel(2);
+        const cZoom = runLevel(1);
+        const stZoom = comp.stats().atlas;
+        let lv3Pages = 0, lv2Pages = 0, lv1Pages = 0;
+        for (const rec of comp.atlas.values()) {
+            if (rec.levels.get(3)) lv3Pages += rec.levels.get(3).pages.length;
+            if (rec.levels.get(2)) lv2Pages += rec.levels.get(2).pages.length;
+            if (rec.levels.get(1)) lv1Pages += rec.levels.get(1).pages.length;
+        }
+        check("zoom into level 1 over 64 MB budget evicts older pages, returns GPU canvas, and ends <= budget",
+            cZoom === comp.canvas && stZoom.bytes <= budget64 && lv1Pages === 6 && lv3Pages === 0 && lv2Pages > 0,
+            { ok: cZoom === comp.canvas, bytes: stZoom.bytes, budget64, lv1Pages, lv2Pages, lv3Pages });
+
+        // Compare the whole 2176 x 2176 GPU output against the Canvas 2D reference (both Page 1 tiles and Page 2 tile (16, 16))
+        if (cZoom) {
+            const rd = mk(2176, 2176), rx = rd.getContext("2d");
+            rx.drawImage(cZoom, 0, 0);
+            const gotBytes = rx.getImageData(0, 0, 2176, 2176).data;
+            let maxDiff = 0, minCh = 255, maxCh = 0;
+            for (let i = 0; i < gotBytes.length; i += 4) {
+                for (let k = 0; k < 4; k++) {
+                    const v = gotBytes[i + k];
+                    if (k < 3) { if (v < minCh) minCh = v; if (v > maxCh) maxCh = v; }
+                    const d = Math.abs(v - refBytes[i + k]);
+                    if (d > maxDiff) maxDiff = d;
+                }
+            }
+            const p2Idx = (2100 * 2176 + 2100) * 4;   // inside tile (16, 16), which lives on the 2nd page of every store
+            const p2Diff = Math.max(
+                Math.abs(gotBytes[p2Idx] - refBytes[p2Idx]),
+                Math.abs(gotBytes[p2Idx + 1] - refBytes[p2Idx + 1]),
+                Math.abs(gotBytes[p2Idx + 2] - refBytes[p2Idx + 2]),
+                Math.abs(gotBytes[p2Idx + 3] - refBytes[p2Idx + 3]),
+            );
+            check("zoom level 1 GPU composite matches Canvas 2D across whole 2176x2176 buffer (including 2nd-page tiles)",
+                maxCh - minCh > 100 && maxDiff <= 2 && p2Diff <= 2,
+                { span: maxCh - minCh, maxDiff, p2Diff });
+        } else {
+            check("zoom level 1 GPU composite produced pixels", false, "cZoom was null");
+        }
+
+        // 2b. Panning left by 1 tile column at level 1 when over budget keeps the entry's own full 256-slot page
+        // even when another entry's unused page is newer, uploading only the 16 new column-0 tiles
+        comp.clear();
+        comp.setAtlasBudget(64 * MB);
+        comp.composite({
+            width: 2048, height: 2048, region: { x: 256, y: 0, w: 4096, h: 4096 },
+            layers: [{ pixels: px0, mask: null, level: 1, x: 0, y: 0, w: W, h: H, opacity: 1, blend: "normal" }],
+        });   // frame 1: px0 level 1 fills one 16x16 page (17,305,600 bytes, 0 free slots)
+        comp.composite({
+            width: 1088, height: 1088, region: { x: 0, y: 0, w: W, h: H },
+            layers: [{ pixels: px1, mask: null, level: 2, x: 0, y: 0, w: W, h: H, opacity: 1, blend: "normal" }],
+        });   // frame 2 (newer): px1 level 2 adds 5,087,808 bytes (total 22,393,408 bytes > 20 MB)
+        comp.setAtlasBudget(20 * MB);
+        const upBeforePan = comp.stats().atlas.uploads;
+        const cPan = comp.composite({
+            width: 2176, height: 2048, region: { x: 0, y: 0, w: W, h: 4096 },
+            layers: [{ pixels: px0, mask: null, level: 1, x: 0, y: 0, w: W, h: H, opacity: 1, blend: "normal" }],
+        });
+        const panUploads = comp.stats().atlas.uploads - upBeforePan;
+        check("panning left by 1 tile column preserves entry's own page and uploads only 16 new tiles",
+            cPan === comp.canvas && panUploads === 16 && comp.stats().atlas.bytes <= 20 * MB,
+            { ok: cPan === comp.canvas, panUploads, bytes: comp.stats().atlas.bytes });
+
+        // 3. Genuinely unachievable single-frame stack under 16 MB budget returns null cleanly, drops empty records, and recovers at fit
+        const budget16 = 16 * MB;
+        comp.clear();
+        comp.setAtlasBudget(budget16);
+        comp.composite({
+            width: 64, height: 64, region: { x: 0, y: 0, w: 256, h: 256 },
+            layers: [{ pixels: extraPx, mask: null, level: 2, x: 0, y: 0, w: 256, h: 256, opacity: 1, blend: "normal" }],
+        });
+        const cOver = comp.composite({
+            width: 3840, height: 3840, region: { x: 0, y: 0, w: 3840, h: 3840 },
+            layers: [
+                { pixels: px0, mask: null, level: 0, x: 0, y: 0, w: W, h: H, opacity: 1, blend: "normal" },
+                { pixels: px1, mask: null, level: 0, x: 0, y: 0, w: W, h: H, opacity: 0.8, blend: "multiply" },
+            ],
+        });
+        const stOver = comp.stats().atlas;
+        const cRecover = runLevel(2);
+        const stRecover = comp.stats().atlas;
+        check("over-budget null return cleans up emptied records and next fit frame recovers under 16 MB",
+            cOver === null && stOver.sources === 1 && cRecover === comp.canvas && stRecover.bytes === 15263424 && stRecover.bytes <= budget16,
+            { overNull: cOver === null, overSources: stOver.sources, recovered: cRecover === comp.canvas, recoverBytes: stRecover.bytes });
+    } finally {
+        if (savedBudget != null && ed._compositor) ed._compositor.setAtlasBudget(savedBudget);
+        if (ownComp) ownComp.dispose();
+        shell.closeDocument(ed, { force: true });
+        if (before) shell.activate(before);
+    }
+    return { tiles: tilesMode, problems };
+})()
+"""
+
 
 def compare(a_png, b_png):
     """Max and mean absolute difference per channel between two PNGs of the same size."""
@@ -1451,6 +1721,13 @@ async def run(c, args):
             print(f"[FAIL] see_through_filters ({'tiles' if stf.get('tiles') else 'canvas'}): " + "; ".join(stf["problems"]))
         else:
             print(f"[ok] see_through_filters ({'tiles' if stf.get('tiles') else 'canvas'}): plain filters replace input on all paths (alpha 128); opaque and non-plain match frozen 2068af87")
+        # tile atlas budget clamping (tiles/T2) and over-budget eviction across zoom levels (tiles/T1)
+        ab = await c.eval(ATLAS_BUDGET, timeout=300)
+        if ab.get("problems"):
+            ok = False
+            print(f"[FAIL] atlas_budget ({'tiles' if ab.get('tiles') else 'canvas'}): " + "; ".join(ab["problems"]))
+        else:
+            print(f"[ok] atlas_budget ({'tiles' if ab.get('tiles') else 'canvas'}): >= 2048 MB budgets clamped without 32-bit wrap; over-budget zoom evicts older levels and stays under 64 MB")
     finally:
         await c.eval(CLOSE)
     print("PASS" if ok else "FAIL")
