@@ -33,6 +33,6 @@
     "types/**/*",
     "electron/main/recipes.js", "electron/main/recipes_store.js", "electron/main/recipes_workflow.js", "electron/main/recipes_graph.js",
     "renderer/commands.js", "renderer/commands_util.js", "renderer/commands_docs.js", "renderer/commands_select.js", "renderer/commands_gen.js", "renderer/commands_runs.js", "renderer/commands_layers.js", "renderer/commands_edit.js", "renderer/commands_depth.js",
-    "renderer/editor/host.js"
+    "renderer/editor/host.js", "renderer/editor/host_documents.js", "renderer/editor/host_export.js", "renderer/editor/host_generate.js", "renderer/editor/host_helpers.js", "renderer/editor/host_key.js", "renderer/editor/host_pictures.js", "renderer/editor/host_presets.js", "renderer/editor/host_provider.js", "renderer/editor/host_queue.js", "renderer/editor/host_relight.js", "renderer/editor/host_setup.js", "renderer/editor/host_state.js", "renderer/editor/host_upscale.js", "renderer/editor/host_util.js"
   ]
 }
