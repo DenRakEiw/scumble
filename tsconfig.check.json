@@ -32,7 +32,7 @@
   "include": [
     "types/**/*",
     "electron/main/recipes.js", "electron/main/recipes_store.js", "electron/main/recipes_workflow.js", "electron/main/recipes_graph.js",
-    "renderer/commands.js",
+    "renderer/commands.js", "renderer/commands_util.js", "renderer/commands_docs.js", "renderer/commands_select.js", "renderer/commands_gen.js", "renderer/commands_runs.js", "renderer/commands_layers.js", "renderer/commands_edit.js", "renderer/commands_depth.js",
     "renderer/editor/host.js"
   ]
 }
