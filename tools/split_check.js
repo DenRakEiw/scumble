@@ -19,6 +19,8 @@
 //     import or a declaration) in the new file, a browser or Node global before is still one (a forgotten import of a
 //     name that is also a global, `status`, `name`, `event`, would pass eslint's no-undef);
 //   - the target class's prototype ends with the same member names (it follows from the first two; printed).
+// A CommonJS file (recipes.js) is read the same way: `const x = require("...")` and `const { a } = require("...")`
+// count as imports, `module.exports = { ... }` as the export list, a "use strict" directive as no unit.
 // Comments that stand alone (a blank line from the code below them) are not part of a unit: one that is gone is
 // listed as a note, never a failure. Exit 1 on any problem. Prints the moved line count for the commit message.
 "use strict";
@@ -127,6 +129,12 @@ const isBindFn = (d) => d.type === "FunctionDeclaration" && /^bind[A-Z$_]/.test(
     && d.body.body[0].expression.right.type === "Identifier" && d.body.body[0].expression.right.name === d.params[0].name;
 const isBindLet = (d) => d.type === "VariableDeclaration" && d.kind === "let" && d.declarations.length === 1 && d.declarations[0].id.type === "Identifier"
     && d.declarations[0].init && d.declarations[0].init.type === "Literal" && d.declarations[0].init.value === null;
+const isRequireCall = (e) => e && e.type === "CallExpression" && e.callee.type === "Identifier" && e.callee.name === "require" && e.arguments.length === 1 && e.arguments[0].type === "Literal" && typeof e.arguments[0].value === "string";
+const isRequireDecl = (s) => s.type === "VariableDeclaration" && s.declarations.every((v) => v.init && (isRequireCall(v.init) || (v.init.type === "MemberExpression" && !v.init.computed && isRequireCall(v.init.object)))
+    && (v.id.type === "Identifier" || (v.id.type === "ObjectPattern" && v.id.properties.every((q) => q.type === "Property" && !q.computed && q.value.type === "Identifier"))));
+const isModuleExports = (s) => s.type === "ExpressionStatement" && s.expression.type === "AssignmentExpression" && s.expression.operator === "="
+    && s.expression.left.type === "MemberExpression" && !s.expression.left.computed && s.expression.left.object.name === "module" && s.expression.left.property.name === "exports"
+    && s.expression.right.type === "ObjectExpression" && s.expression.right.properties.every((q) => q.type === "Property" && !q.computed);
 const callName = (s) => s.type === "ExpressionStatement" && s.expression.type === "CallExpression" && s.expression.callee.type === "Identifier" ? s.expression.callee.name : null;
 
 /**
@@ -156,6 +164,21 @@ function unitsOf(p, ctx, isMain) {
             continue;
         }
         if (s.type === "ExportAllDeclaration") { out.exports.add("*" + s.source.value); continue; }
+        if (s.type === "ExpressionStatement" && s.directive) continue;   // "use strict" heads every file
+        // CommonJS: `const x = require("...")`, `const { a, b: c } = require("...")` are imports, `module.exports = {...}` an export list
+        if (!p.module && isRequireDecl(s)) {
+            for (const v of s.declarations) {
+                const call = v.init.type === "MemberExpression" ? v.init.object : v.init;
+                const member = v.init.type === "MemberExpression" ? (v.init.property.name ?? v.init.property.value) : null;
+                if (v.id.type === "ObjectPattern") out.imports.push({ source: call.arguments[0].value, names: v.id.properties.map((q) => q.key.name ?? q.key.value), locals: v.id.properties.map((q) => q.value.name) });
+                else out.imports.push({ source: call.arguments[0].value, names: [member || "*"], locals: [v.id.name] });
+            }
+            continue;
+        }
+        if (!p.module && isModuleExports(s)) {
+            s.expression.right.properties.forEach((q) => out.exports.add(q.key.name ?? q.key.value));
+            continue;
+        }
         const d = s.type === "ExportNamedDeclaration" ? s.declaration : s.type === "ExportDefaultDeclaration" ? s.declaration : s;
         const strip = s !== d && s.type === "ExportNamedDeclaration" ? s.start : 0;
         if (s.type === "ExportDefaultDeclaration") { out.exports.add("default"); add("default", s, floor, 0); continue; }
@@ -274,7 +297,8 @@ function family(root, rel) {
 
 function resolveImport(fromRel, spec) {
     if (!spec.startsWith(".")) return null;
-    return path.posix.normalize(path.posix.join(path.posix.dirname(fromRel), spec));
+    const f = path.posix.normalize(path.posix.join(path.posix.dirname(fromRel), spec));
+    return /\.[cm]?js$/.test(f) ? f : f + ".js";   // a CommonJS require may leave out the extension
 }
 
 function run(o) {

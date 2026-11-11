@@ -140,6 +140,27 @@ try {
     // a stand-alone comment that is gone is a note, not a failure
     const loose = trial({ "a/big_util.js": [["// helper doc\n", "\n// helper doc\n\n"]] });
     check("a comment that no longer sits on its code fails (it is part of the unit)", fails(loose, /^K: the text differs/), loose.problems.join(" | "));
+
+    // CommonJS (recipes.js): require lines are imports, module.exports an export list
+    const cjsOld = `"use strict";\nconst path = require("node:path");\nconst { app } = require("electron");\n\nconst N = 2;\nfunction dir() { return path.join(app.getPath("x"), String(N)); }\nfunction list() { return [dir()]; }\n\nmodule.exports = { list, dir, _n: N };\n`;
+    const cjsPath = path.join(dir, "cjs_old.js");
+    fs.writeFileSync(cjsPath, cjsOld);
+    const cjs = (main, leaf) => {
+        fs.mkdirSync(path.join(dir, "m"), { recursive: true });
+        fs.writeFileSync(path.join(dir, "m/rec.js"), main);
+        fs.writeFileSync(path.join(dir, "m/rec_dir.js"), leaf);
+        return run({ old: cjsPath, root: dir, cls: null, object: null, files: ["m/rec.js", "m/rec_dir.js"] });
+    };
+    const cjsMain = `"use strict";\nconst { N, dir } = require("./rec_dir");\n\nfunction list() { return [dir()]; }\n\nmodule.exports = { list, dir, _n: N };\n`;
+    const cjsLeaf = `"use strict";\nconst path = require("node:path");\nconst { app } = require("electron");\n\nconst N = 2;\nfunction dir() { return path.join(app.getPath("x"), String(N)); }\n\nmodule.exports = { N, dir };\n`;
+    const c1 = cjs(cjsMain, cjsLeaf);
+    check("a CommonJS split passes (require lines and module.exports)", !c1.problems.length && c1.moved === 2, c1.problems.join("; ") + ` moved ${c1.moved}`);
+    const c2 = cjs(cjsMain, cjsLeaf.replace('const { app } = require("electron");\n', ""));
+    check("... and fails on a forgotten require", fails(c2, /app was the old file's own binding/), c2.problems.join(" | "));
+    const c3 = cjs(cjsMain.replace("module.exports = { list, dir, _n: N };", "module.exports = { list, dir };"), cjsLeaf);
+    check("... and on an export gone from module.exports", fails(c3, /no longer exports _n/), c3.problems.join(" | "));
+    const c4 = cjs(cjsMain, cjsLeaf.replace('"use strict";\n', '"use strict";\nconst rec = require("./rec");\n'));
+    check("... and on a leaf that requires the long file", fails(c4, /m\/rec_dir\.js: imports m\/rec\.js/), c4.problems.join(" | "));
 } finally {
     fs.rmSync(dir, { recursive: true, force: true });
 }
