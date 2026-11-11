@@ -38,6 +38,13 @@ log.install(require("node:path").join(app.getPath("userData"), "logs"));   // fi
     const gone = require("./providers/comfysdk").clearEnv();
     if (gone.length) console.warn(`Comfy SDK: ignoring ${gone.join(", ")} from the environment`);
 }
+// every request of this process that leaves the machine goes through the system's curl while Settings › Network says
+// so (curlfetch.js); before anything else reads globalThis.fetch
+const curlfetch = require("./curlfetch");
+curlfetch.install({
+    enabled: () => ((settings.get().network || {}).curl !== false),
+    onFallback: (why) => console.warn(`Network: requests through curl are on, but ${why}; they go through Node's fetch`),
+});
 const { ComfyClient, authHeaders } = require("./comfy");
 const { FileMirror } = require("./files");
 const keys = require("./keys");
@@ -1444,6 +1451,7 @@ function installIpc() {
         return { relaunching: true };
     });
     // updates (electron/main/updater.js): GitHub Releases feed, checked at start unless switched off
+    ipcMain.handle("network:status", () => curlfetch.status());
     ipcMain.handle("update:status", () => updater.status);
     ipcMain.handle("update:check", () => updater.check({ manual: true }));
     ipcMain.handle("update:announced", (_e, version) => updater.announce(version));

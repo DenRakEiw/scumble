@@ -34,6 +34,9 @@ const DEFAULTS = {
     // relightSettings holds the defaults (a new layer always starts on route "app")
     relight: {},
     updates: { check: true },   // check GitHub Releases at start (electron/main/updater.js)
+    // the main process's requests that leave this machine go through the system's curl (electron/main/curlfetch.js;
+    // company networks that let curl through and block other clients); false: Node's fetch, as before 2026-11-11
+    network: { curl: true },
     // exported PNGs carry the prompt, seed and recipe as text chunks (the Export section's switch; docs/PLAN_0_1_29.md 3f);
     // on unless the user turns it off (the user, 2026-09-27; off from 0.1.30 to 0.1.31)
     embedRecipe: true,

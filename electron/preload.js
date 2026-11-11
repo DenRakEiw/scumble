@@ -271,6 +271,9 @@ contextBridge.exposeInMainWorld("scumble", {
         setModel: (value) => ipcRenderer.invoke("help:setModel", value),
         onEvent: (cb) => on("help:event", cb),
     },
+    network: {
+        status: () => ipcRenderer.invoke("network:status"),
+    },
     updates: {
         status: () => ipcRenderer.invoke("update:status"),
         check: () => ipcRenderer.invoke("update:check"),

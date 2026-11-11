@@ -1426,6 +1426,14 @@ there; add a new flake there, with the date and what was ruled out.
   edited layers first, `documentDirty` / `settleKey` keep the "*", `rememberClosed` / `reopenClosed` the closed tabs)
   -> IPC `documents:*` -> `electron/main/documents.js` (a job per request, a lock per path, `idle()` for the quit) ->
   `electron/main/docfile.js` (the stored zip, temp file and rename, the mirror import). `docs/DOCUMENTS.md`.
+- Network: `electron/main/curlfetch.js` `install()` (in `main.js` right after the SDK's `clearEnv`) puts a switch in
+  place of `globalThis.fetch`: every main-process request that leaves the machine goes through the system's curl
+  (`-K -` config on stdin, a body as a 0600 temp file, redirects followed in JS with key headers dropped on a change
+  of origin) while `settings.network.curl` is not false and curl is found; loopback, and everything with the setting
+  off, stays on Node's fetch. Not through it: the ComfyUI websocket (`ws`), electron-updater (Chromium's stack), the
+  renderer. Why (the user, 2026-11-11): Omnicom's company MacBooks block Python requests and let curl through; a
+  macOS build does not exist yet (B3), so the Mac side is unverified. Gates hit mocks on loopback: `SCUMBLE_CURL_ALL=1`
+  sends those through curl too (`docs/TESTING.md`).
 - Provider runs: `host.runProvider` (the recipe resolved to the chosen provider's variant by
   `shell.js`) → `renderer/editor/stitch.js` (crop) → IPC `provider:edit` →
   `electron/main/providers/index.js` picks the adapter and the key (`keys.js`), lays the pictures out with the

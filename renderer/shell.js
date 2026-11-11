@@ -114,6 +114,7 @@ const ui = {
     setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"), aboutStar: $("set-about-star"), aboutShare: $("set-about-share"),
     shareRow: $("set-about-share-row"), shareCopy: $("set-share-copy"), shareTargets: $("set-share-targets"), shareNote: $("set-share-note"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
+    netCurl: $("set-net-curl"), netNote: $("set-net-note"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateHelp: $("set-update-help"), updateHelpNotify: $("set-update-help-notify"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
@@ -2503,6 +2504,8 @@ async function openSettings() {
         ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}${info.portable ? " (portable copy)" : ""}.${info.comfySdk ? ` Comfy Cloud and Comfy Router run through Comfy's official TypeScript SDK (@comfyorg/sdk ${info.comfySdk}, MIT).` : ""} Green and blue screen keying by CorridorKey 2.0 from Corridor Digital (Corridor Key Licence, a CC BY-NC-SA 4.0 variant), used with permission in this free app; it builds on C-RADIOv4 (NVIDIA), MoGe-2 (Microsoft) and RVM (Google DeepMind), which its node pack downloads from their publishers onto your ComfyUI. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products. NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation; Scumble is not affiliated with or endorsed by NVIDIA, and the Realism Pass (Windows only, RTX only) runs only what you installed on your own ComfyUI.`;
     } catch (_) { /* ignore */ }
     ui.updateAuto.checked = !(settings.updates && settings.updates.check === false);
+    ui.netCurl.checked = !(settings.network && settings.network.curl === false);
+    renderNetwork();
     ui.promptRefPics.checked = refPicturesOn(settings);
     try { renderUpdate(await window.scumble.updates.status()); } catch (_) { /* ignore */ }
     refreshFileStats();
@@ -2793,6 +2796,15 @@ if (window.scumble.starNote) window.scumble.starNote().then(showStarNote, () => 
 ui.updateCheck.addEventListener("click", async () => { renderUpdate(await window.scumble.updates.check()); });
 ui.updateInstall.addEventListener("click", () => updateAction());
 ui.updateBar.addEventListener("click", () => updateAction());
+/** Settings › Network's note: which way requests go now and which curl (electron/main/curlfetch.js status). */
+async function renderNetwork() {
+    try {
+        const s = await window.scumble.network.status();
+        ui.netNote.textContent = s.via === "curl" ? `curl ${s.curl.version} (${s.curl.path})` : s.enabled ? `on, but ${s.error}: requests go through Scumble's own fetch` : "off: Scumble's own requests";
+        ui.netNote.style.color = s.enabled && !s.curl ? "var(--sc-warn, #e0a05a)" : "";
+    } catch (_) { ui.netNote.textContent = ""; }
+}
+ui.netCurl.addEventListener("change", async () => { settings = await window.scumble.settings.set({ network: { ...(settings.network || {}), curl: ui.netCurl.checked } }); renderNetwork(); });
 ui.updateAuto.addEventListener("change", async () => { settings = await window.scumble.settings.set({ updates: { ...(settings.updates || {}), check: ui.updateAuto.checked } }); });
 /** A memory row's value as the row shows and stores it: a whole number of MB, at least `min`. */
 function wholeMB(v, min, fallback) {

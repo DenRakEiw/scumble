@@ -175,6 +175,11 @@
       <p id="set-gpu-mem" class="shell-help"></p>
     </section>
     <section>
+      <h3>Network</h3>
+      <div class="shell-row"><label class="shell-check"><input id="set-net-curl" type="checkbox"> Send requests through curl</label><span id="set-net-note" class="shell-note"></span></div>
+      <p class="shell-help">API providers, Comfy Cloud and Comfy Router, prompt upsampling, model downloads and a remote ComfyUI go through the system's curl, which company networks often let through when they block other programs. Keys go to curl on its input, never on its command line. Off: Scumble's own requests, as before. A ComfyUI on this computer is always reached directly.</p>
+    </section>
+    <section>
       <h3>Updates</h3>
       <div class="shell-row"><label class="shell-check"><input id="set-update-auto" type="checkbox"> Check for updates at start</label><button id="set-update-check" type="button">Check now</button><button id="set-update-install" type="button" hidden>Restart and install</button><span id="set-update-note" class="shell-note"></span></div>
       <pre id="set-update-notes" class="shell-notes" hidden></pre>

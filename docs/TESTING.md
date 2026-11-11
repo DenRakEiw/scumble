@@ -805,6 +805,17 @@ a reference row and a layer row dropped on the prompt field writing nothing. The
 `tools/assistant_test.js` cover QW4's `preset`. Run: `bash tools/run_gates.sh <label> --offline --tiles on cloudjobs
 generate editor log lint types`.
 
+**Requests through curl (`electron/main/curlfetch.js`, Settings › Network).** `node tools/curlfetch_test.js` (32 checks,
+local servers plus one real HTTPS request to huggingface.co unless `SKIP_NET=1`): methods, headers, 64 MB bodies both
+ways, FormData, 204 / 404 / HEAD, redirects under fetch's rules (key headers dropped on a change of origin, 303 to GET,
+`error`, `manual`, too many), streaming, abort before the answer and during the body, a refused connection as
+`TypeError: fetch failed`, keys never on curl's command line (`-K -` only), no temp body file left, and the switch
+`install()` puts in place of `globalThis.fetch` (loopback stays on Node's fetch). The provider gates talk to mocks on
+loopback, so they do not touch curl by themselves: run them once with `SCUMBLE_CURL_ALL=1` in the environment, which
+sends loopback through curl too (the app log's `Network: requests go through curl ...` line shows it was used). On
+2026-11-11 `toapis openrouter ark magnific oxen comfyrouter cloudjobs generate upscale llm assistant loras key` passed
+that way.
+
 **Splitting the long files (item 56, `docs/PLAN_SPLIT.md`).** `node tools/split_check.js --base <commit> <file> [new
 files...]` proves a split is a move: every top-level declaration, class member (and with `--object NAME` every
 property of that object literal) of the old file is found once, by name, with the same text (its attached comments and
