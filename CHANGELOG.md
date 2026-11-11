@@ -6,6 +6,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 - **Haze by depth without the GPU now matches the screen and the export.** Its depth edge used to sit more than a map pixel off at a zoomed-out view. A depth map is no longer uploaded to the GPU again on every pass of a haze, lens blur, limit or relight filter.
 - **A `.cube` LUT whose DOMAIN is not 0..1 now reads that range as its input range.** Before, it scaled the table's colours instead, so such a LUT came out too dark or too bright. A LUT with the usual 0..1 range gives the same colours as before.
+- **Large ORA files open about three times as fast**, and the window stays responsive while their layers are read (a 15,000 x 10,000 ORA in about 1.8 s instead of 5.4). Their layers decode in the background workers straight from the file.
 - **Zoomed into a large picture over the tile memory budget, the view stays on the GPU** instead of falling back to the slower drawing path on every frame. A tile memory setting of 2048 MB or more now takes effect (it used to drop to 16 MB).
 - The assistant's *Split into layers* takes `source: "picture"` as the visible picture again, even when a layer's name contains the word "picture".
 

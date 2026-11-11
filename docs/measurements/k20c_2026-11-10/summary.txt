@@ -1,0 +1,35 @@
+K20c 15000x10000, 6 before runs (8fde9fb0), 6 after runs (K20c), tiles on, offline, port 9621
+row / field: median [min..max] ms, before | after
+build_the_file         wall     n/a | n/a
+build_the_file         blocked  n/a | n/a
+open_the_file          wall       1503.5 [1233.0..1647.0] |   1454.0 [1262.0..1627.0]
+open_the_file          blocked     520.5 [491.0..631.0] |    528.0 [519.0..562.0]
+add_the_paint_layer    wall        814.0 [785.0..874.0] |    812.0 [747.0..887.0]
+add_the_paint_layer    blocked     718.5 [700.0..767.0] |    717.0 [659.0..749.0]
+export_ora             wall       2583.5 [2042.0..2603.0] |   2543.5 [2027.0..2597.0]
+export_ora             blocked      76.0 [61.0..82.0] |     73.5 [62.0..81.0]
+open_ora               wall       5389.0 [4753.0..5724.0] |   1802.0 [1652.0..1995.0]
+open_ora               blocked     749.5 [712.0..800.0] |     84.5 [65.0..113.0]
+close                  wall     n/a | n/a
+close                  blocked  n/a | n/a
+open_ora marks (layered_open)
+read                      106.2 [91.7..129.6] |      0.1 [0.1..0.1]
+parsed                      1.2 [1.0..1.4] |      4.5 [3.9..5.0]
+layers                   3279.2 [3054.0..3391.9] |   1518.0 [1366.6..1739.8]
+stored                   1788.8 [1431.0..2049.0] |      0.1 [0.1..0.1]
+base                       28.6 [26.0..32.4] |     28.9 [26.5..33.6]
+added                      32.0 [26.5..32.7] |     32.8 [26.2..36.5]
+total                    5228.1 [4631.3..5547.6] |   1589.0 [1432.7..1803.7]
+streamMs               n/a |    919.6 [899.2..941.7]
+bitmapMs                 2005.6 [1827.0..2047.6] |      0.0 [0.0..0.0]
+fromImageMs              1218.1 [1187.4..1296.6] |      0.0 [0.0..0.0]
+open_ora window calls
+2d getImageData                n       26.0 [26.0..26.0] |      0.0 [0.0..0.0]
+2d getImageData                ms     878.3 [843.8..937.9] |      0.0 [0.0..0.0]
+2d getImageData                MB    1144.4 [1144.4..1144.4] |      0.0 [0.0..0.0]
+createImageBitmap              n        2.0 [2.0..2.0] |      0.0 [0.0..0.0]
+createImageBitmap              ms       0.9 [0.9..1.3] |      0.0 [0.0..0.0]
+createImageBitmap              MB     276.5 [276.5..276.5] |      0.0 [0.0..0.0]
+blob arrayBuffer               n        2.0 [2.0..2.0] |    184.0 [184.0..184.0]
+blob arrayBuffer               ms       0.2 [0.2..0.5] |     10.2 [8.7..10.8]
+blob arrayBuffer               MB     511.7 [511.7..511.7] |      0.1 [0.1..0.1]

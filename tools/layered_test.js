@@ -184,21 +184,82 @@ function crc32(buf) {
     }
     return (crc ^ 0xffffffff) >>> 0;
 }
-function zip(entries) {   // [{ name, data, deflate, body, size }]: `body` deflated bytes as they are, `size` the size the directory gives
+function zip(entries, { comment = "", after = "" } = {}) {   // [{ name, data, deflate, body, size, localExtra, dirExtra, dirComment }]: `body` deflated bytes as they are, `size` the size the directory gives
     const parts = [], central = [];
     let off = 0;
     const le = (n, v) => { const b = Buffer.alloc(n); if (n === 2) b.writeUInt16LE(v); else b.writeUInt32LE(v >>> 0); return b; };
     for (const e of entries) {
         const data = Buffer.from(e.data || ""), body = e.body ? Buffer.from(e.body) : e.deflate ? zlib.deflateRawSync(data) : data, name = Buffer.from(e.name);
         const crc = crc32(data), method = e.deflate || e.body ? 8 : 0, size = e.size ?? data.length;
-        const local = Buffer.concat([le(4, 0x04034b50), le(2, 20), le(2, 0), le(2, method), le(2, 0), le(2, 0), le(4, crc), le(4, body.length), le(4, size), le(2, name.length), le(2, 0), name]);
-        central.push(Buffer.concat([le(4, 0x02014b50), le(2, 20), le(2, 20), le(2, 0), le(2, method), le(2, 0), le(2, 0), le(4, crc), le(4, body.length), le(4, size), le(2, name.length), le(2, 0), le(2, 0), le(2, 0), le(2, 0), le(4, 0), le(4, off), name]));
+        const lx = Buffer.from(e.localExtra || ""), dx = Buffer.from(e.dirExtra || ""), dc = Buffer.from(e.dirComment || "");
+        const local = Buffer.concat([le(4, 0x04034b50), le(2, 20), le(2, 0), le(2, method), le(2, 0), le(2, 0), le(4, crc), le(4, body.length), le(4, size), le(2, name.length), le(2, lx.length), name, lx]);
+        central.push(Buffer.concat([le(4, 0x02014b50), le(2, 20), le(2, 20), le(2, 0), le(2, method), le(2, 0), le(2, 0), le(4, crc), le(4, body.length), le(4, size), le(2, name.length), le(2, dx.length), le(2, dc.length), le(2, 0), le(2, 0), le(4, 0), le(4, off), name, dx, dc]));
         parts.push(local, body);
         off += local.length + body.length;
     }
     const cd = Buffer.concat(central);
-    const end = Buffer.concat([le(4, 0x06054b50), le(2, 0), le(2, 0), le(2, entries.length), le(2, entries.length), le(4, cd.length), le(4, off), le(2, 0)]);
-    return new Uint8Array(Buffer.concat([...parts, cd, end]));
+    const end = Buffer.concat([le(4, 0x06054b50), le(2, 0), le(2, 0), le(2, entries.length), le(2, entries.length), le(4, cd.length), le(4, off), le(2, Buffer.from(comment).length)]);
+    return new Uint8Array(Buffer.concat([...parts, cd, end, Buffer.from(comment), Buffer.from(after)]));
+}
+
+/** A copy of a zip with one field of its end record (`at` from the record's start) or of the i-th directory record changed. */
+function zipEndAt(bytes) { for (let i = bytes.length - 22; i >= 0; i--) if (Buffer.from(bytes.buffer, bytes.byteOffset + i, 4).readUInt32LE(0) === 0x06054b50) return i; throw new Error("no end record"); }
+function withField(bytes, at, width, value) { const out = Buffer.from(bytes); if (width === 2) out.writeUInt16LE(value, at); else out.writeUInt32LE(value >>> 0, at); return new Uint8Array(out); }
+const endField = (bytes, at, width, value) => withField(bytes, zipEndAt(bytes) + at, width, value);
+function dirAt(bytes, i) {
+    const b = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length);
+    let p = b.readUInt32LE(zipEndAt(bytes) + 16);
+    while (i-- > 0) p += 46 + b.readUInt16LE(p + 28) + b.readUInt16LE(p + 30) + b.readUInt16LE(p + 32);
+    return p;
+}
+const dirField = (bytes, i, at, width, value) => withField(bytes, dirAt(bytes, i) + at, width, value);
+
+/** A PNG of one IDAT, `f(x, y)` -> [r, g, b, a], of 8 or 16 bits, with a gAMA chunk when asked. */
+function rgbaPng(w, h, f, { depth = 8, gamma = false } = {}) {
+    const n = depth === 16 ? 8 : 4, raw = Buffer.alloc((w * n + 1) * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const v = f(x, y), o = y * (w * n + 1) + 1 + x * n;
+        for (let c = 0; c < 4; c++) { if (depth === 16) raw.writeUInt16BE(v[c] * 257, o + c * 2); else raw[o + c] = v[c]; }
+    }
+    const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc32(td)); return Buffer.concat([len, td, c]); };
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = depth; ihdr[9] = 6;
+    const gama = Buffer.alloc(4); gama.writeUInt32BE(45455);
+    return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), ...(gamma ? [chunk("gAMA", gama)] : []), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+}
+
+/**
+ * K20c's ORAs for tools/layered_test.py: 8-bit PNGs of one IDAT with half-transparent pixels whose colour does not
+ * survive a premultiply by itself, a fully transparent layer with colour under it, an entry deflated by the zip, a
+ * nested stack, and a merged picture nothing may read; `deep.ora` has a 16-bit layer, `gamma.ora` a bottom layer with gAMA.
+ */
+function k20cOras() {
+    const W = 300, H = 200;
+    const under = (x, y) => [(x * 251) >> 8, (y * 251) >> 8, (x + y) & 255, 255];
+    const soft = (x, y) => [200 - (x & 7), 100 + (y & 7), 50, 1 + ((x * 3 + y * 7) % 254)];
+    const stack = (body) => `<?xml version='1.0' encoding='UTF-8'?>\n<image version="0.0.3" w="${W}" h="${H}">\n<stack>\n${body}\n<layer name="Background" src="data/bg.png" />\n</stack>\n</image>\n`;
+    const bg = rgbaPng(W, H, under);
+    const single = zip([
+        { name: "mimetype", data: "image/openraster" },
+        { name: "mergedimage.png", data: Buffer.alloc(70000, 0x5a) },
+        { name: "stack.xml", data: stack(`<stack x="5" y="7"><layer name="Nested" src="data/n.png" x="1" y="2" /></stack>\n<layer name="Zero" src="data/z.png" x="100" y="100" />\n<layer name="Soft" src="data/s.png" x="20" y="30" />`), deflate: true },
+        { name: "data/bg.png", data: bg },
+        { name: "data/s.png", data: rgbaPng(64, 48, soft), deflate: true },
+        { name: "data/z.png", data: rgbaPng(32, 32, (x, y) => [x * 7, y * 7, 99, 0]) },
+        { name: "data/n.png", data: rgbaPng(16, 16, (x) => [x * 15, 40, 40, 255]) },
+    ]);
+    const deep = zip([
+        { name: "mimetype", data: "image/openraster" },
+        { name: "stack.xml", data: stack(`<layer name="Deep" src="data/d.png" x="4" y="4" />`) },
+        { name: "data/bg.png", data: bg },
+        { name: "data/d.png", data: rgbaPng(24, 24, (x, y) => [x * 9, y * 9, 200, 255], { depth: 16 }) },
+    ]);
+    const gamma = zip([
+        { name: "mimetype", data: "image/openraster" },
+        { name: "stack.xml", data: stack(`<layer name="Top" src="data/t.png" x="4" y="4" />`) },
+        { name: "data/bg.png", data: rgbaPng(W, H, under, { gamma: true }) },
+        { name: "data/t.png", data: rgbaPng(8, 8, () => [9, 9, 9, 255]) },
+    ]);
+    return { "single.ora": single, "deep.ora": deep, "gamma.ora": gamma };
 }
 
 /**
@@ -296,6 +357,7 @@ function writeFixtures(dir) {
     ] });
     fs.writeFileSync(path.join(dir, "loose.psd"), file);
     for (const [name, bytes] of Object.entries(bandFixtures())) fs.writeFileSync(path.join(dir, name), bytes);
+    for (const [name, bytes] of Object.entries(k20cOras())) fs.writeFileSync(path.join(dir, name), bytes);
     const png = (w, h, rgb) => {   // a tiny truecolour + alpha PNG
         const raw = Buffer.alloc((w * 4 + 1) * h);
         for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = y * (w * 4 + 1) + 1 + x * 4; raw[o] = rgb[0]; raw[o + 1] = rgb[1]; raw[o + 2] = rgb[2]; raw[o + 3] = 255; }
@@ -741,6 +803,44 @@ async function loadPxBuilds() {
 }
 
 /** readPsd, with readPsdStream run beside it on the same bytes (bands of 3 rows and of 256, on PSD_JS, px.wasm and px_scalar.wasm) and the answers compared. */
+/**
+ * K20c: `readOra`, and beside it every read through `readOraBlob` on a Blob of the same bytes: the same size, notes, loss
+ * flag and layer fields, each layer's PNG the same bytes (and typed as a PNG), `onHeader` the same calls with a throw
+ * thrown there too, and the same refusal word for word. A difference lands in ORA_TWIN.fails, which the last check reads.
+ */
+const ORA_TWIN = { files: 0, refusals: 0, fails: [] };
+function oraTwinned(mod) {
+    const fields = (d) => JSON.stringify({ w: d.width, h: d.height, notes: d.notes, lossy: d.lossy, layers: d.layers.map(({ png, pngBlob, ...rest }) => rest) });
+    return async (input, opts = {}) => {
+        const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+        const said = [];
+        const byHeader = opts.onHeader ? { ...opts, onHeader: (h) => { const one = { h: { ...h }, err: null }; said.push(one); try { return opts.onHeader(h); } catch (err) { one.err = err; throw err; } } } : opts;
+        let doc = null, err = null;
+        try { doc = await mod.readOra(bytes, byHeader); } catch (e) { err = e; }
+        const heard = [];
+        const blobHeader = opts.onHeader ? { ...opts, onHeader: (h) => { heard.push({ ...h }); const one = said[heard.length - 1]; if (one && one.err) throw one.err; } } : opts;
+        let bdoc = null, berr = null;
+        try { bdoc = await mod.readOraBlob(new Blob([bytes]), blobHeader); } catch (e) { berr = e; }
+        ORA_TWIN.files++;
+        const fail = (t) => ORA_TWIN.fails.push(`case ${ORA_TWIN.files}: ${t}`);
+        if (JSON.stringify(said.map((x) => x.h)) !== JSON.stringify(heard)) fail(`onHeader ${short(said.map((x) => x.h))} against ${short(heard)}`);
+        if (err || berr) {
+            const a = err ? String(err.message || err) : null, b = berr ? String(berr.message || berr) : null;
+            if (a !== b) fail(`readOra ${a ? "throws " + a : "reads it"}, readOraBlob ${b ? "throws " + b : "reads it"}`);
+            if (err) { ORA_TWIN.refusals++; throw err; }
+            return doc;
+        }
+        if (fields(doc) !== fields(bdoc)) fail(`${short(fields(bdoc))} against ${short(fields(doc))}`);
+        for (let i = 0; i < Math.min(doc.layers.length, bdoc.layers.length); i++) {
+            const got = bdoc.layers[i].pngBlob;
+            if (!(got instanceof Blob) || got.type !== "image/png") { fail(`layer ${i}: pngBlob is not a PNG Blob`); continue; }
+            if (bdoc.layers[i].png !== undefined) fail(`layer ${i}: readOraBlob keeps png bytes`);
+            if (!equalBytes(doc.layers[i].png, new Uint8Array(await got.arrayBuffer()))) fail(`layer ${i}: other PNG bytes`);
+        }
+        return doc;
+    };
+}
+
 function twinned(mod, pxBuilds = [["PSD_JS", null]]) {
     return async (input, opts) => {
         let win = null, werr = null;
@@ -799,7 +899,8 @@ async function twinFile(file) {
     }
     const mod = await editorModule("inpaint_layered.js");
     const pxBuilds = await loadPxBuilds();
-    const { readOra, isPsd, isOra, LAYERED_EXT } = mod;
+    const { isPsd, isOra, LAYERED_EXT } = mod;
+    const readOra = oraTwinned(mod);   // every ORA read below goes through readOraBlob too (K20c)
     const readPsd = twinned(mod, pxBuilds);   // every PSD read below goes through readPsdStream on PSD_JS, px.wasm and px_scalar.wasm (D0, K20b)
     const { BLENDS } = await editorModule("blend_modes.js");
 
@@ -1066,6 +1167,93 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
         ]);
         const oraDoc = await readOra(oraFile, { inflateRaw });
         check("every blend mode in ORA comes back", JSON.stringify(oraDoc.layers.map((l) => l.blend)) === JSON.stringify(BLENDS.map((b) => b.id)), short(oraDoc.layers.map((l) => l.blend)));
+
+        console.log("\n--- K20c: readOraBlob (the same answers as readOra, from slices of the file) ---");
+        const text = (u) => Buffer.from(u).toString("latin1");
+        const xml2 = `<image w="8" h="8"><stack><layer name="a" src="a.png" /><layer name="b" src="b.png" /></stack></image>`;
+        const two = () => [{ name: "mimetype", data: "image/openraster" }, { name: "stack.xml", data: xml2 }, { name: "a.png", data: png("aa") }, { name: "b.png", data: png("bb"), deflate: true }, { name: "z.txt", data: "unused" }];
+        const plain = zip(two());
+        // the local header's own extra field and the directory's extra and comment move every offset after them
+        const fieldy = await readOra(zip(two().map((e, i) => ({ ...e, localExtra: Buffer.alloc(3 + i, 0x41), dirExtra: Buffer.alloc(i, 0x42), dirComment: Buffer.alloc(2 * i, 0x43) }))), { inflateRaw });
+        check("extra fields in the local headers and the directory: both pictures found", fieldy.layers.length === 2 && text(fieldy.layers[0].png).endsWith("bb") && text(fieldy.layers[1].png).endsWith("aa"), short(fieldy.layers.map((l) => text(l.png))));
+        // the end record: the same 65,557 bytes searched
+        const commented = await readOra(zip(two(), { comment: Buffer.alloc(65535, 0x20) }), { inflateRaw });
+        check("the longest comment a zip can have: the end record is found, 65,557 bytes from the end", commented.layers.length === 2);
+        const tooFar = await throwsWith(() => readOra(zip(two(), { after: Buffer.alloc(65536, 0x20) }), { inflateRaw }), /not a complete zip/);
+        check("an end record one byte further from the end than that is not looked for", tooFar.ok, tooFar.msg);
+        const noEnd = await throwsWith(() => readOra(new Uint8Array(10), { inflateRaw }), /not a complete zip/);
+        check("a file too short for an end record is no zip", noEnd.ok, noEnd.msg);
+        // the record count decides, the end record's byte count is not read (a wrong one opens today)
+        const lied = await readOra(endField(plain, 12, 4, 7), { inflateRaw });
+        check("a wrong directory byte count in the end record changes nothing", lied.layers.length === 2);
+        const farDir = await throwsWith(() => readOra(endField(plain, 16, 4, plain.length + 1000), { inflateRaw }), /./);
+        check("a directory said to lie past the file is refused", farDir.ok, farDir.msg);
+        const noDir = await throwsWith(() => readOra(endField(plain, 16, 4, 0), { inflateRaw }), /zip directory is damaged/);
+        check("a directory said to lie where none is is refused", noDir.ok, noDir.msg);
+        // a local header has to lie inside the file, the header of an entry nothing asks for too
+        const past = await throwsWith(() => readOra(dirField(plain, 4, 42, 4, plain.length - 29), { inflateRaw }), /zip directory is damaged/);
+        check("a local header one byte past the file's end is refused, for an unused entry too", past.ok, past.msg);
+        const edge = await readOra(dirField(plain, 4, 42, 4, plain.length - 30), { inflateRaw });
+        check("a local header that just fits is read", edge.layers.length === 2);
+        // Blob.slice clamps as subarray does: an entry said to be longer ends at the file
+        const lastPng = zip([two()[0], two()[1], { name: "a.png", data: png("aa") }, { name: "b.png", data: png("bb") }]);
+        const over = await readOra(dirField(lastPng, 3, 20, 4, 0x7fffffff), { inflateRaw });
+        check("a stored entry said to run past the file ends at the file", text(over.layers[0].png).includes("bb") && over.layers[0].png.length > 10, short(over.layers[0].png.length));
+        const localNames = withField(lastPng, Buffer.from(lastPng.buffer, lastPng.byteOffset, lastPng.length).readUInt32LE(dirAt(lastPng, 3) + 42) + 26, 2, 0xffff);
+        const nothing = await readOra(localNames, { inflateRaw });
+        check("a local header whose name runs past the file gives no bytes for that entry", nothing.layers[0].png.length === 0 && nothing.layers[1].png.length > 0, short(nothing.layers.map((l) => l.png.length)));
+        const odd2 = await throwsWith(() => readOra(dirField(plain, 2, 10, 2, 12), { inflateRaw }), /unknown zip method 12 for a\.png/);
+        check("an unknown zip method is refused by name", odd2.ok, odd2.msg);
+        const empty = await readOra(zip([two()[0], two()[1], { name: "a.png", data: "" }, { name: "b.png", data: png("bb") }]), { inflateRaw });
+        check("an empty stored picture stays a layer of no bytes (the decoder refuses it later)", empty.layers.length === 2 && empty.layers[1].png.length === 0);
+
+        // what is read: a Blob that counts the bytes read, in file offsets
+        const spy = (blob, base, reads) => ({
+            size: blob.size,
+            type: blob.type,
+            slice(a = 0, b = blob.size, t = "") { const s = Math.min(blob.size, a), e = Math.max(s, Math.min(blob.size, b)); return spy(blob.slice(a, b, t), base + s, reads); },
+            async arrayBuffer() { reads.push([base, base + blob.size]); return blob.arrayBuffer(); },
+        });
+        const wide = (seed) => crypto.createHash("sha256").update(seed).digest().toString("latin1").repeat(7000);
+        const stored = [
+            { name: "mimetype", data: "image/openraster" },
+            { name: "mergedimage.png", data: Buffer.from(wide("m"), "latin1") },
+            { name: "data/a.png", data: Buffer.concat([png("aa"), Buffer.from(wide("a"), "latin1")]) },
+            { name: "data/b.png", data: Buffer.concat([png("bb"), Buffer.from(wide("b"), "latin1")]) },
+            { name: "stack.xml", data: `<image w="8" h="8"><stack><layer name="a" src="data/a.png" /><layer name="b" src="data/b.png" /></stack></image>` },
+            { name: "Thumbnails/thumbnail.png", data: Buffer.from(wide("t"), "latin1") },
+            { name: "stuffing", data: Buffer.alloc(70000, 0x20) },
+        ];
+        const big = zip(stored);
+        const rangeOf = (name) => {   // [first byte of the entry's data, end], from the same field arithmetic the test's zip() wrote
+            let at = 0;
+            for (const e of stored) {
+                const head = 30 + Buffer.byteLength(e.name), len = Buffer.byteLength(e.data);
+                if (e.name === name) return [at + head, at + head + len];
+                at += head + len;
+            }
+            throw new Error(name);
+        };
+        const overlaps = (reads, [a, b]) => reads.filter(([x, y]) => y > a && x < b);
+        const reads = [];
+        let readsAtHeader = -1;
+        const blobDoc = await mod.readOraBlob(spy(new Blob([big]), 0, reads), { inflateRaw, onHeader: () => { readsAtHeader = reads.length; } });
+        const merged = overlaps(reads, rangeOf("mergedimage.png")), thumb = overlaps(reads, rangeOf("Thumbnails/thumbnail.png"));
+        check("mergedimage.png and the thumbnail are not read", merged.length === 0 && thumb.length === 0, short({ merged, thumb }));
+        const layerA = overlaps(reads, rangeOf("data/a.png")), layerB = overlaps(reads, rangeOf("data/b.png"));
+        check("of each stored layer 24 bytes are read, the rest of the file is left alone", layerA.length === 1 && layerB.length === 1 && layerA[0][1] - layerA[0][0] === 24 && layerB[0][1] - layerB[0][0] === 24 && layerA[0][0] === rangeOf("data/a.png")[0], short({ layerA, layerB }));
+        const total = reads.reduce((n, [x, y]) => n + y - x, 0);
+        check("in all the tail, the directory, stack.xml and the layers' headers: far less than the file", total < 200 * 1024 && big.length > 600 * 1024, `${total} of ${big.length} bytes`);
+        check("onHeader comes after stack.xml and before any layer is read", readsAtHeader > 0 && overlaps(reads.slice(0, readsAtHeader), rangeOf("data/a.png")).length === 0 && overlaps(reads.slice(0, readsAtHeader), rangeOf("data/b.png")).length === 0, short({ readsAtHeader }));
+        const stopped = [];
+        const stopDoc = await throwsWith(() => mod.readOraBlob(spy(new Blob([big]), 0, stopped), { inflateRaw, onHeader: () => { throw new Error("size refused"); } }), /size refused/);
+        check("a throw in onHeader reads no layer", stopDoc.ok && overlaps(stopped, rangeOf("data/a.png")).length === 0, stopDoc.msg);
+        check("a stored layer comes back as a slice of the file, its bytes untouched", blobDoc.layers.length === 2 && blobDoc.layers[0].png === undefined && blobDoc.layers[0].pngBlob.size === rangeOf("data/b.png")[1] - rangeOf("data/b.png")[0], short(blobDoc.layers[0].pngBlob.size));
+        // one entry named by many layers is one header read
+        const again = [];
+        const dup = zip([{ name: "mimetype", data: "image/openraster" }, { name: "stack.xml", data: `<image w="8" h="8"><stack>${`<layer name="x" src="a.png" />`.repeat(50)}</stack></image>` }, { name: "a.png", data: png("aa") }]);
+        await mod.readOraBlob(spy(new Blob([dup]), 0, again), { inflateRaw });
+        check("a picture that many layers name is read once (the tail, the directory, stack.xml and its header, the picture's header and its 24 bytes)", again.length === 6, short(again.length));
     }
 
     console.log("\n--- PSD writers: layer masks (PsdWriter, PsdBandWriter) ---");
@@ -1238,6 +1426,7 @@ ${BLENDS.slice().reverse().map((b) => `    <layer name="${b.id}" src="data/${b.i
             && oraSeen.length === 1 && oraSeen[0].width === 4 && oraSeen[0].height === 4 && oraStop.ok, `${short(seen)} ${stop.msg} ${short(oraSeen)} ${oraStop.msg}`);
     }
 
+    check(`readOraBlob answers as readOra on all ${ORA_TWIN.files} ORAs read above (${ORA_TWIN.refusals} of them refused)`, ORA_TWIN.files >= 25 && ORA_TWIN.refusals >= 12 && ORA_TWIN.fails.length === 0, ORA_TWIN.fails.length ? ORA_TWIN.fails.slice(0, 4).join(" | ") : `${ORA_TWIN.files} files`);
     check(`readPsdStream (PSD_JS, px.wasm, px_scalar.wasm) answers as readPsd on all ${TWIN.files} PSDs read above (${TWIN.refusals} of them refused), in bands of 3 rows and of 256`, TWIN.files >= 40 && TWIN.refusals >= 5 && TWIN.fails.length === 0, TWIN.fails.length ? TWIN.fails.slice(0, 4).join(" | ") : `${TWIN.files} files x 3 kernel builds x 2 band sizes`);
 
     const failed = results.filter((x) => !x).length;
