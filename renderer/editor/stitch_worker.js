@@ -30,7 +30,15 @@ self.onmessage = async (e) => {
         delete result.transfer;
         self.postMessage({ id: msg.id, ok: true, ...result, pxCalls: pxCalls() }, transfer);
     } catch (err) {
-        self.postMessage({ id: msg.id, ok: false, error: String((err && err.message) || err), pxCalls: pxCalls() });
+        const error = String((err && err.message) || err);
+        // a failed finish sends the window mask back, transferred as it came: the window's stitch needs the run's own
+        // mask, not the selection as it is by then (stitch.js finishResultAsync, host/H-6)
+        const sel = msg.op === "finish" && msg.sel && msg.sel.data && msg.sel.data.buffer instanceof ArrayBuffer && msg.sel.data.buffer.byteLength ? msg.sel : null;
+        try {
+            self.postMessage({ id: msg.id, ok: false, error, sel, pxCalls: pxCalls() }, sel ? [sel.data.buffer] : []);
+        } catch (_) {
+            self.postMessage({ id: msg.id, ok: false, error, pxCalls: pxCalls() });
+        }
     } finally {
         inFlight--;
         pxJobEnd();

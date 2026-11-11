@@ -582,6 +582,65 @@ function sameBbox(a, b) {
             }
         }
     }
+    // host/H-6: a stitch worker whose "finish" fails sends the run's window mask back in its error reply, and the window's
+    // stitch uses that mask, never the document's selection as it is by then (the user may have selected another area
+    // while the provider ran). A worker that dies with the mask refuses a plain run; a run of one area reads its area
+    // again. The worker here is stitch_worker.js itself on this thread, its messages cloned with their transfers (the
+    // buffers sent are detached as in the app); its "finish" fails because the answer cannot be decoded.
+    {
+        const saved = { self: globalThis.self, Worker: globalThis.Worker, createImageBitmap: globalThis.createImageBitmap, Image: globalThis.Image };
+        let current = null, dies = false;
+        globalThis.self = { postMessage: (m, transfer = []) => { const data = structuredClone(m, { transfer }); setTimeout(() => current.onmessage({ data }), 0); } };
+        globalThis.Worker = class FakeStitchWorker {
+            constructor() { current = this; }
+            postMessage(m, transfer = []) {
+                const data = structuredClone(m, { transfer });
+                // a worker that dies takes the transferred buffers with it
+                setTimeout(() => (dies ? this.onerror({ message: "the worker died (test)" }) : globalThis.self.onmessage({ data })), 0);
+            }
+            terminate() {}
+        };
+        globalThis.createImageBitmap = async () => { throw new Error("the answer could not be decoded in the worker (test)"); };
+        // the window's decode fails too, after the fallback chose its mask: the steps after it need a DOM
+        globalThis.Image = class { set src(_) { setTimeout(() => this.onerror(), 0); } };
+        await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "stitch_worker.js")).href);
+        const W = 64, H = 48;
+        let reads = 0;
+        // the document's selection as it is now: another area than the run's
+        const editor = { width: W, height: H, sel: { readRect: (x, y, w, h) => { reads++; const d = new Uint8ClampedArray(w * h * 4); for (let i = 3; i < d.length; i += 8) d[i] = 255; return { width: w, height: h, data: d }; } } };
+        const runSel = () => {
+            const s = { data: new Float32Array(W * H), w: W, h: H, ox: 0, oy: 0, fullW: W, fullH: H };
+            for (let i = 0; i < s.data.length; i++) s.data[i] = ((i * 7) % 13) / 12;
+            return s;
+        };
+        const info = { bbox: [8, 6, 32, 24], emitted: [32, 24], color_match: false, align: false };
+        const answer = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
+        const tryFinish = async (sel, area) => { try { await S.finishResultAsync(editor, info, sel, answer, "image/png", area); return "landed"; } catch (e) { return String((e && e.message) || e); } };
+        const was = console.warn;
+        console.warn = () => {};
+        try {
+            // the finish job throws: the mask comes back whole, the window's stitch goes on with it
+            const selA = runSel(), want = selA.data.slice();
+            const gotA = await tryFinish(selA, null);
+            check("H-6: a failed finish gives the run's mask back", selA.data.length === W * H && selA.data.some((v) => v > 0) && selA.data.every((v, i) => Object.is(v, want[i])) ? null : `the mask has ${selA.data.length} of ${W * H} floats`);
+            check("H-6: a failed finish does not read the document's selection", reads === 0 ? null : `read it ${reads} times`);
+            check("H-6: a failed finish stitches on the window", /could not be decoded/.test(gotA) && !/worker \(test\)/.test(gotA) ? null : gotA);
+            // the worker dies with the mask: a plain run refuses
+            dies = true; reads = 0;
+            const gotB = await tryFinish(runSel(), null);
+            check("H-6: a mask the worker kept refuses a plain run", /^the stitch failed/.test(gotB) ? null : gotB);
+            check("H-6: a mask the worker kept does not read the document's selection", reads === 0 ? null : `read it ${reads} times`);
+            // ... and a run of one area reads its own area again
+            reads = 0;
+            let areaReads = 0;
+            const area = { window: () => { areaReads++; const d = new Uint8ClampedArray(W * H * 4).fill(255); return { img: { width: W, height: H, data: d }, ox: 0, oy: 0, fullW: W, fullH: H }; } };
+            const gotC = await tryFinish(runSel(), area);
+            check("H-6: a mask the worker kept reads the run's area again", areaReads === 1 && reads === 0 && /could not be decoded/.test(gotC) ? null : `area ${areaReads}, selection ${reads}: ${gotC}`);
+        } finally {
+            console.warn = was;
+            for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; }
+        }
+    }
     // the size of a real crop's mask, and what it costs now
     K.setKernels("rust");
     const big = mask(1492, 1492, 5);

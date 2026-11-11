@@ -790,7 +790,11 @@ function stitchWorker() {
         const c = CALLS.get(m.id);
         if (!c) return;
         CALLS.delete(m.id);
-        if (m.ok) c.resolve(m); else c.reject(new Error(m.error || "the stitch worker failed"));
+        if (m.ok) { c.resolve(m); return; }
+        const err = new Error(m.error || "the stitch worker failed");
+        // a failed finish sends the window mask back (stitch_worker.js): finishResultAsync stitches with it on the window
+        if (m.sel) err.sel = m.sel;
+        c.reject(err);
     };
     WORKER.onerror = (e) => {
         const err = new Error("the stitch worker failed: " + ((e && e.message) || "an error"));
@@ -891,8 +895,9 @@ export async function prepareCropAsync(editor, params, limits, opts = {}) {
  * stitch worker; the region's composite, read only for a colour match, comes from the tile workers.
  * `{ blob, cutout, x, y, w, h, align, how, laps }`: the patch as a PNG, whether it carries real transparency
  * (`transparentPixels`), the steps' milliseconds by name (K0b; from the worker also `pxCalls`, its kernel calls).
- * Falls back to `finishResult` on the window. `area`: the run's area (prepareCropAsync's `opts.area`), whose window the
- * fallback reads again instead of the document's selection.
+ * Falls back to `finishResult` on the window, with the mask the worker's error reply sends back. `area`: the run's area
+ * (prepareCropAsync's `opts.area`), whose window the fallback reads again when the mask did not come back; without one
+ * the fallback refuses then, and never reads the document's selection.
  */
 export async function finishResultAsync(editor, info, selIn, bytes, mime = "image/png", area = null) {
     let sel = selIn;
@@ -911,9 +916,15 @@ export async function finishResultAsync(editor, info, selIn, bytes, mime = "imag
             return { blob: new Blob([r.png], { type: "image/png" }), cutout: r.cutout, x, y, w, h, align: r.align, how: region ? region.how : "none", laps, pxCalls: { ...(r.pxCalls || {}) } };
         } catch (err) {
             console.warn("Scumble: the stitch in the stitch worker failed, stitching on the window:", (err && err.message) || err);
+            // the worker's error reply brings the window mask back (its buffer went there as a transfer)
+            if (err && err.sel && err.sel.data) sel.data = err.sel.data;
         }
-        // the mask went to the worker that failed: the selection's window as it is now
-        if (!sel.data || sel.data.length !== sel.w * sel.h) sel = area ? windowMask(area.window()) : selectionWindow(editor);
+        // the mask went to a worker that died with it: the run's area is read again (its own mask, not the
+        // selection's); a plain run refuses, since the document's selection may have changed since the click (host/H-6)
+        if (!sel.data || sel.data.length !== sel.w * sel.h) {
+            if (!area) throw new Error("the stitch failed: the selection the run was sent with did not come back from the stitch worker, so the answer is not placed");
+            sel = windowMask(area.window());
+        }
     }
     const laps = {};
     let t0 = performance.now();
