@@ -16,6 +16,7 @@ TILES = "on"
 
 IT = "renderer/editor/inpaint_tiles.js"
 PIX = {"px": ["sel"], "gates": ["pixels"], "tiles": "on"}
+PIX_ONLY = {"gates": ["pixels"], "tiles": "on"}
 
 SKIP_NEW = ("                if (had && LITTLE && ((v.kind === SEL_NONE && (m === 1 || m === 2)) || (v.kind === SEL_FULL && m === 3))\n"
             "                    && selUnchanged(had, bw, bh, SEL & 0xFFFFFF)) continue;\n")
@@ -44,4 +45,8 @@ MUTANTS = [
      "killed: the last row of each tile is not checked", PIX),
     ("t4_wrong_colour", IT, [("selUnchanged(had, bw, bh, SEL & 0xFFFFFF)", "selUnchanged(had, bw, bh, 0x0000FF)")],
      "killed: a white combine (a layer mask) keeps red tiles", PIX),
+    # the in-app pixels test alone (both backends in one instance), so it is shown to fail without combine_test.js
+    ("t4_revert_pixels_only", IT, [(SKIP_NEW, "")], "killed: pixels mask_combine_keeps_unchanged_tiles sees canonical tiles rewritten", PIX_ONLY),
+    ("t4_no_canonical_check_pixels_only", IT, [(" && selUnchanged(had, bw, bh, SEL & 0xFFFFFF)) continue;", ") continue;")],
+     "killed: pixels mask_combine_keeps_unchanged_tiles sees the green patch kept (against the canvas backend and the rule)", PIX_ONLY),
 ]
