@@ -2,6 +2,9 @@
 // tools/refs/comfy_templates/object_info.json), for the plain-Node tests of graphs that have not run yet
 // (tools/ph3_test.js §3, tools/recipes_test.js §15):
 //   const { specKind, specProblems } = require("./node_specs.js");
+// The specs are the saved node list's, with two written by hand: MiniMaxH3ImageConditioning from the open pull request
+// Comfy-Org/ComfyUI#17655 (comfy_extras/nodes_minimax_h3.py there; not in a released ComfyUI when written, 2026-11-10) and
+// JsonExtractString from ComfyUI 0.44's comfy_extras/nodes_string.py.
 // A combo of model files is not checked (the saved list is one machine's folder); every other combo, number, text and
 // switch is, and a link must name a node of the graph. Both spec shapes: the old ([options], {...}) and V3's
 // ("COMBO", { options }), a growing input (COMFY_AUTOGROW_V3: "images.image_1" ... by its template's names, or by its

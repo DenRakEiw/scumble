@@ -9888,6 +9888,142 @@ true
 "essentials_category": null,
 "has_intermediate_output": false
 },
+"MiniMaxH3ImageConditioning": {
+"input": {
+"required": {
+"clip": [
+"CLIP",
+{}
+],
+"prompt": [
+"STRING",
+{
+"multiline": true,
+"dynamicPrompts": true
+}
+],
+"width": [
+"INT",
+{
+"tooltip": "0 uses the width of image_1 after its reference scaling, or 2048 without images. The model is tuned for 2048x2048 pixels of area",
+"default": 0,
+"min": 0,
+"max": 16384,
+"step": 32
+}
+],
+"height": [
+"INT",
+{
+"tooltip": "0 uses the height of image_1 after its reference scaling, or 2048 without images.",
+"default": 0,
+"min": 0,
+"max": 16384,
+"step": 32
+}
+]
+},
+"optional": {
+"vae": [
+"VAE",
+{
+"tooltip": "The MiniMax-H3-Image VAE. With it the pictures are also anchored as reference latents, without it they only condition the text encoder."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{
+"tooltip": "Reference picture, <Picture n> in the prompt; image_1 is the picture to edit."
+}
+]
+}
+},
+"prefix": "image_",
+"min": 0,
+"max": 100
+}
+}
+]
+}
+},
+"input_order": {
+"required": [
+"clip",
+"prompt",
+"width",
+"height"
+],
+"optional": [
+"vae",
+"images"
+]
+},
+"is_input_list": false,
+"output": [
+"CONDITIONING",
+"LATENT"
+],
+"output_is_list": [
+false,
+false
+],
+"output_name": [
+"positive",
+"LATENT"
+],
+"name": "MiniMaxH3ImageConditioning",
+"display_name": "MiniMax H3 Image Conditioning",
+"description": "Text-to-image, or with images an edit guided by them. The prompt refers to them as <Picture 1>, <Picture 2>, ...",
+"python_module": "comfy_extras.nodes_minimax_h3",
+"category": "model/conditioning/minimax",
+"_source": "Written by hand from the open pull request Comfy-Org/ComfyUI#17655 (comfy_extras/nodes_minimax_h3.py), not from a server's list; 2026-11-10"
+},
+"JsonExtractString": {
+"input": {
+"required": {
+"json_string": [
+"STRING",
+{
+"multiline": true
+}
+],
+"key": [
+"STRING",
+{
+"multiline": false
+}
+]
+}
+},
+"input_order": {
+"required": [
+"json_string",
+"key"
+]
+},
+"is_input_list": false,
+"output": [
+"STRING"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"STRING"
+],
+"name": "JsonExtractString",
+"display_name": "Extract Text from JSON",
+"description": "Extract a key's value from the first valid JSON object in the text, including Markdown code blocks.",
+"python_module": "comfy_extras.nodes_string",
+"category": "text",
+"_source": "Written by hand from ComfyUI 0.44's comfy_extras/nodes_string.py; 2026-11-10"
+},
 "PH3ImageConditioning": {
 "input": {
 "required": {

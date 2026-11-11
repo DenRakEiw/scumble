@@ -1,0 +1,924 @@
+(node:38048) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ok   twin harness: identical builds pass, the run sees floats
+ok   twin harness: -0 against 0 is a difference (bits, not ===)  37 floats: out[0] is 0 (0x80000000), the twin has 0 (0x0)
+ok   twin harness: two NaNs with other payloads differ  37 floats: out[3] is NaN (0x7fc00001), the twin has NaN (0x7fc00000)
+ok   twin harness: one byte off is a failure without a rule  41 bytes: out[7] is 88, the twin has 89
+ok   twin harness: an allowed difference passes and is counted per run (2 values x 2 offsets)  {"one level":4}
+ok   twin harness: a kernel blind to byteOffset fails at the odd offset only  41 bytes at an odd offset: out[1] is 90, the twin has 127
+ok   twin harness: shift false runs the inputs as given only
+ok   twin harness: a twin blind to byteOffset is reported as the twin's  41 bytes: out[1] is 90, the twin has 127
+ok   twin harness: inputs are copied for every run (a kernel that writes its input in place)
+ok   twin harness: numbers and arrays inside an object are compared too  41 bytes: out.first[1] is 74, the twin has 37
+ok   twin harness: a build that throws fails with its message  37 floats: threw no room
+ok   js mip keeps the colour of the one opaque sample  255,0,0,64
+ok   js mipHalf equals the reference (distanceTransform / floodMask for the EDT and the flood)
+ok   js mip byte path equals the word path; Uint8ClampedArray input gives the same chain
+ok   js mipChain equals the reference (distanceTransform / floodMask for the EDT and the flood) and repeated halving
+ok   js distTransform equals the reference (distanceTransform / floodMask for the EDT and the flood) bit for bit
+ok   js twin is the exact squared distance (brute force 41x29)
+ok   js flood equals the reference (distanceTransform / floodMask for the EDT and the flood), with the count
+ok   js compositeTile equals the reference (distanceTransform / floodMask for the EDT and the flood) (5 ops and 25 blend modes, partial alpha, opacity, masks, tails)
+ok   js blend modes equal the reference (distanceTransform / floodMask for the EDT and the flood), each alone (opaque and translucent backdrops, opacity, mask)
+ok   js composite gives the same bytes for Uint8ClampedArray inputs
+ok   js source-over over an opaque tile within 1.5 levels of float maths  worst 1.32
+ok   js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)  worst 0.95 (color-burn), at full opacity 0.501; linear light 0.881, at full opacity 0.498
+ok   js blend modes over translucent pixels within 2.5*255/alpha + 2.5*255/backdrop alpha + 0.6 levels  worst at 29 % of the bound over 95380 pixels; linear light 27 %; tier B raw dev 2.56, ratio 32 %
+ok   js linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   js linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   js linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   js subtract over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) subtract over every opaque (b, s) pair matches closed form exactly
+ok   js pin-light over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) pin-light over every opaque (b, s) pair matches closed form exactly
+ok   js hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   js exclusion over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) exclusion over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) color-dodge over every opaque (b, s) pair matches reference exactly
+ok   js color-burn over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) color-burn over every opaque (b, s) pair matches reference exactly
+ok   js vivid-light over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) vivid-light over every opaque (b, s) pair matches reference exactly
+ok   js divide over every opaque (b, s) pair matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) divide over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge edge set matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) color-dodge edge set matches reference exactly
+ok   js color-burn edge set matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) color-burn edge set matches reference exactly
+ok   js vivid-light edge set matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) vivid-light edge set matches reference exactly
+ok   js divide edge set matches reference exactly
+ok   reference (distanceTransform / floodMask for the EDT and the flood) divide edge set matches reference exactly
+ok   js source-over over translucent pixels within 2.5*255/alpha + 0.6 levels, alpha within 1  worst at 61 % of the bound over 7221 translucent pixels, alpha off by 0.91
+ok   js matchPixels within a level of matchCanvas' doubles  worst 1, over 0 of 225789
+ok   js matchPixels leaves alpha and fully transparent pixels alone  alpha moved 0, transparent moved 0
+ok   js matchPixels at k = 0 is the identity
+ok   js matchPixels with meanS = meanT and scale 1 is the identity
+ok   js matchPixels clamps at 255
+ok   js matchPixels gives the same bytes for Uint8ClampedArray input
+ok   js matchPixels on a Uint8ClampedArray subarray updates only that slice in place
+ok   js smudgeDab within a level of its doubles (what is laid down; alpha at least 4)  worst 1.000 of 38100 pixels
+ok   js smudgeDab's carry within two 16-bit units of its doubles  worst 1.115
+ok   js smudgeDab leaves what the dab does not cover, and the alpha under alpha lock  uncovered moved 0, alpha moved 0
+ok   js smudgeDab with keep 1 leaves the carry as it was
+ok   js smudgeDab at strength 0 lays nothing down, and at keep 0 the carry is what lies there
+ok   js smudgeDab's pickup fills the carry and lays nothing down; the carry stays premultiplied
+ok   js smudgeDab at full strength lays the carry down byte for byte (the 16-bit round trip is exact)
+ok   poisson reference: u is the plane in a hole enclosed by fixed pixels  worst 9.32e-11, 343 CG steps
+ok   poisson reference: a band across the box keeps a plane in x at the box edge (Neumann)  worst 6.17e-12
+ok   poisson reference: a strip is the straight line between fixed ends and constant to an open end (1 x N and N x 1)  worst 1.14e-13
+ok   poisson reference: a region cut off by transparency keeps the start (the mean of 52 fixed pixels next to an unknown)  worst 0, solved values off the start 723
+ok   poisson reference: residual from the definition on 20 scenes, u within the boundary's range  residual 9.91e-11, outside the range 0
+ok   js poissonBlend within a level of the doubles (20 scenes: discs, blobs, strokes, a ring, the box edge, transparency, soft masks, strips, clipping)  worst 1; 0.06 % of 101748 bytes differ; the twin's u off by at least 0.003
+ok   js poissonBlend differs from the doubles' rounding on at most 1 % of the bytes, its u within 0.1  0.06 %, u off by at least 0.003
+ok   js poissonBlend keeps the source's alpha in the mask ([0,0,0,0] where the source is clear) and the destination outside it  alpha wrong 0, outside moved 0
+ok   js poissonBlend's info: the unknowns, the cycles (4 to 8), the levels
+ok   js poissonBlend converges before the cap of 30 cycles on every scene  most 8
+ok   js poissonBlend takes at most 10 cycles on every scene  most 8 (a 1 x 150 strip, fixed at both ends)
+ok   js poissonBlend with dst == src gives dst
+ok   js poissonBlend with dst = src + k gives dst (k 12,-30,45; a region cut off by transparency takes the start, k too)
+ok   js poissonBlend with an empty mask gives dst, info[0] 0  info [0,0,0,0]
+ok   js poissonBlend with no fixed pixel gives the source (a full mask, and a partial one over a clear destination)  full true, partial true
+ok   js poissonBlend fills a hole enclosed by a plane with the plane  worst 0, 0 bytes off
+ok   js poissonBlend on strands the source splits: within a level where it settled, info[3] where it did not  strands 4 / 3: 30 cycles, settled false, worst 12; strands 6 / 5: 30 cycles, settled false, worst 18; strands 10 / 6: 30 cycles, settled false, worst 1
+ok   js poissonBlend leaves out boundary pixels below alpha 8
+ok   js poissonBlend: mask values 1 to 255 act alike (the bytes of a binary mask)
+ok   js poissonBlend gives the same bytes for Uint8ClampedArray input
+ok   js poissonBlend with w or h 0 does nothing
+ok   js pngFilterRows equals the reference (distanceTransform / floodMask for the EDT and the flood)
+ok   js filtered rows unfilter back to the input
+ok   CompressionStream("deflate") inflates back to the input  131072 -> 85395
+ok   compositeTile SHA-256 identical across twin, px.wasm, and px_scalar.wasm for ops 0-29  sha 5264ad13756d016c
+ok   compositeTile op 30 equals op 0 on twin, px.wasm, and px_scalar.wasm
+ok   composite_masked_tile test cases cover outcomes 0 (UNCHANGED), 1 (WRITTEN), and 2 (EMPTY)  saw 1,0,2
+ok   js compositeMaskedTile's twin equals compositeTile + inactive-pixel restore + empty check (200 cases)
+ok   rust simd composite_masked_tile equals its twin byte for byte (200 cases, each also at an odd offset)
+ok   rust scalar composite_masked_tile equals its twin byte for byte (200 cases, each also at an odd offset)
+ok   js composite_masked_tile gives the same at an odd offset
+ok   compositeMaskedTile refuses px = 0 on twin and both builds  3/3 threw
+ok   compositeMaskedTile refuses px < 0 on twin and both builds  3/3 threw
+ok   compositeMaskedTile refuses px > 4096*4096 on twin and both builds  3/3 threw
+ok   compositeMaskedTile refuses null src on twin and both builds  3/3 threw
+ok   compositeMaskedTile refuses short src view over longer buffer on twin and both builds  3/3 threw
+ok   compositeMaskedTile refuses short dst view over longer buffer on twin and both builds  3/3 threw
+ok   compositeMaskedTile refuses short mask view over longer buffer on twin and both builds  3/3 threw
+ok   compositeMaskedTile refuses missing write callback on twin and both builds  3/3 threw
+ok   raw composite_masked_tile returns 3 (REFUSED) on invalid pointers or pixel counts  [3,3,3,3,3]
+ok   kernels.js compositeMaskedTile gives the same on routes js (0 calls) and rust (200 calls), write(true) only when r === 1  js=0, rust=200
+ok   kernels.js compositeMaskedTile recovers from a trap via the twin, calls write once, and replaces the instance  r=1, writes=1, trap=1
+ok   TileLayerPixels.compositeStroke on js and rust routes matches byte-for-byte, drops emptied tiles, and keeps unchanged tiles shared with frozen clones  js w=2,1 c=0,0; rust w=2,1 c=3,1
+ok   TileLayerPixels.compositeFill on js and rust routes matches byte-for-byte, clamps partial edge tiles, and keeps unchanged frozen tiles shared  js w=2,2 c=0,0; rust w=2,2 c=3,3 edge=true
+       composite_masked_tile full 256² tile: twin 1.188, simd 0.236, scalar 0.920 ms (median of 200)
+       composite_masked_tile 48² dab in 256² tile: twin 0.190, simd 0.032, scalar 0.064 ms (median of 200)
+ok   the fixture's normal cell (twin) is within a level of Photoshop's merged picture (the patch's origin)  max 1
+ok   twin hard mix equals Photoshop 27.11's merged fixture cell exactly (the tie b + s = 255 included)  max 0
+ok   px.wasm hard mix equals Photoshop 27.11's merged fixture cell exactly (the tie b + s = 255 included)  max 0
+ok   px_scalar.wasm hard mix equals Photoshop 27.11's merged fixture cell exactly (the tie b + s = 255 included)  max 0
+ok   GLSL blend1 hard mix gives the kernel's rule on every byte pair (Photoshop's tie)  65,536 pairs
+ok   GLSL bm_clip keeps an exactly grey colour grey, no 0 / 0, in every float32 order of the luminosity sum  13824 cases
+ok   Tier C hue over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C saturation over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C color over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C luminosity over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C darker-color over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C lighter-color over all 65,536 grey pairs equals BigInt reference (twin, simd, scalar)
+ok   Tier C hue edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C saturation edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C color edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C luminosity edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C darker-color edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C lighter-color edge sets match BigInt reference across opacity/mask/backdrop combos
+ok   Tier C 2^18 random triplet pairs: twin == px.wasm == px_scalar.wasm == BigInt reference (0 differ)
+ok   kernels.js loads px.wasm (SIMD) as in a worker
+       1024 x 1024: height_normals routed (rust) 32.8 ms, twin 57.2 ms; simd cold first call 52.9 ms (compile 1.2 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march point routed (rust_f64) 251.7 ms, twin 293.9 ms, simd_f64 245.2 ms, scalar_f64 252.3 ms (twin / simd_f64 1.20); cold first call 501.6 ms (compile 1.3 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 256.9 ms, twin 336.9 ms, simd_f64 252.6 ms, scalar_f64 238.5 ms (twin / simd_f64 1.33); cold first call 459.9 ms (compile 1.2 ms)
+       1024 x 1024 (4 taps, 32 steps): shadow_march sun routed (rust_f64) 82.2 ms, twin 96.7 ms, simd_f64 84.7 ms, scalar_f64 84.6 ms (twin / simd_f64 1.14); cold first call 180.8 ms (compile 1.2 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march point routed (rust_f64) 23.2 ms, twin 30.3 ms, simd_f64 24.0 ms, scalar_f64 21.7 ms (twin / simd_f64 1.26); cold first call 46.0 ms (compile 1.2 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march spot routed (rust_f64) 24.4 ms, twin 28.7 ms, simd_f64 25.0 ms, scalar_f64 25.3 ms (twin / simd_f64 1.15); cold first call 54.5 ms (compile 2.7 ms)
+       1024 x 682 quick (1 taps, 16 steps): shadow_march sun routed (rust_f64) 7.9 ms, twin 13.2 ms, simd_f64 7.7 ms, scalar_f64 8.8 ms (twin / simd_f64 1.72); cold first call 17.7 ms (compile 1.2 ms)
+       2048 x 1365: height_normals routed (rust) 82.7 ms, twin 175.7 ms; simd cold first call 127.4 ms (compile 1.8 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march point routed (rust_f64) 630.5 ms, twin 738.4 ms, simd_f64 627.7 ms, scalar_f64 666.1 ms (twin / simd_f64 1.18); cold first call 1247.9 ms (compile 2.3 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 677.5 ms, twin 806.5 ms, simd_f64 758.3 ms, scalar_f64 720.2 ms (twin / simd_f64 1.06); cold first call 1360.6 ms (compile 2.2 ms)
+       2048 x 1365 (4 taps, 32 steps): shadow_march sun routed (rust_f64) 165.4 ms, twin 230.0 ms, simd_f64 168.5 ms, scalar_f64 167.3 ms (twin / simd_f64 1.36); cold first call 306.3 ms (compile 1.8 ms)
+       4096 x 2731: height_normals routed (rust) 300.6 ms, twin 558.7 ms; simd cold first call 428.7 ms (compile 4.1 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march point routed (rust_f64) 2354.0 ms, twin 2649.6 ms, simd_f64 2355.4 ms, scalar_f64 2334.8 ms (twin / simd_f64 1.12); cold first call 4086.5 ms (compile 4.5 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march spot routed (rust_f64) 3068.9 ms, twin 3555.4 ms, simd_f64 3011.2 ms, scalar_f64 3006.8 ms (twin / simd_f64 1.18); cold first call 4875.4 ms (compile 3.6 ms)
+       4096 x 2731 (4 taps, 32 steps): shadow_march sun routed (rust_f64) 784.1 ms, twin 1161.8 ms, simd_f64 793.5 ms, scalar_f64 823.7 ms (twin / simd_f64 1.46); cold first call 1569.4 ms (compile 4.7 ms)
+ok   shadow_march as routed: point, spot, and sun all produce byte-identical f64 outputs across routed, twin, simd_f64, and scalar_f64
+ok   K.shadowMarch guard sends non-finite lights/params and coordinates >= 2^30 to the twin (0 wasm calls, identical bytes)
+ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes (point)  js={} below={} at={"shadow_march_f64":1} rust={"shadow_march_f64":1}
+ok   shadowMarch route ('js', pixel threshold, 'rust') switches cleanly between twin and shadow_march_f64 with identical bytes (sun)  js={} below={} at={"shadow_march_f64":1} rust={"shadow_march_f64":1}
+ok   K.shadowMarch recovers from a trap on shadow_march_f64 for both point and sun, replacing the instance and returning the twin's exact bytes  Inpaint Canvas: the Rust pixel kernel shadow_march_f64 failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance
+ok   kernels.js back on the JS kernels for the later cases
+ok   stripePlan covers every row once and in order, in stripes of 32 rows or more, never more than asked
+ok   shadow_march_f64 in stripes into one shared out equals one call byte for byte: the twin, both Rust builds (SIMD and scalar), and through kernels.js across point, spot, and sun (704 cases)
+ok   the Rust march's stripes (sun and point) with a key copy the depth map once (8 stripes), again none, without a key once a stripe  sun 0.33/0.00/2.66 MB, point 0.33/0.00/2.66 MB, map 0.33 MB
+ok   a new key copies the new map and never answers from the old one; a key on another size copies again
+ok   marchOnPool on a SharedArrayBuffer: the stripes of stripePlan, one shared out, no transfer, the bytes of one call  8 jobs for 8 stripes
+ok   marchOnPool without a SharedArrayBuffer (the node's page) and on the route 0: one job a light, rows 0..h, the reply's own buffer  1 / 1 jobs
+ok   a failed stripe rejects its march with the stripe's error and cancels the rest of its group  stripe failed on purpose; 4 of 8 sent, 6 cancelled
+ok   a stripe's reply with other rows than it was sent rejects the march  relight_shadow: stripe 1 answered rows 82+84, it was sent 82+83
+ok   a cancelled march rejects with a CancelledError, sends none of its queued stripes, and another group's march lands whole  CancelledError; A sent 2 (2 before the cancel), 4 cancelled, B 4
+ok   the feed: at most the budget of stripes of two marches posted at once, first come first served, the bytes of one call each  peak 3 (feed 3), 3 at once, A 8 B 8 of 8; order fA,fA,fA,noop,fA,fA,fA,fA,fA,fB,fB,fB,fB,fB,fB,fB,fB
+ok   the feed: a NORMAL job posted behind two fed marches goes as soon as the first stripe answers  noop sent 3th of 17
+ok   the feed: every stripe of a march carries the fields of the march's start (one gen a march, two marches two)  1 / 5
+ok   without a budget every stripe is posted at once: a NORMAL job posted after them goes after all of them  noop sent 16th of 17
+ok   with the pool's size + 1 an EXPORT job behind a fed march goes after all its stripes and a NORMAL job after two; with the size alone the EXPORT job goes first  export 9th, normal 4th; with the size 3th
+ok   cancelMarch: the march rejects with a CancelledError, sends no stripe after the cancel, every stripe counted once, another march lands whole  CancelledError; A sent 3 (3 before), 8 cancelled (feed 5, pool 3), B 8
+ok   cancelMarch on a march still waiting whole in the feed: none of its stripes sent, the march before lands whole  CancelledError; D sent 0, 8 cancelled
+ok   a failed stripe of a fed march rejects it with the stripe's error, its stripes in the feed never sent, the next march lands whole  stripe failed on purpose; F sent 3 of 8, G 8
+ok   a pool terminated with a march waiting whole in the feed: both reject, the waiting one sends nothing, no worker starts after it, a later march rejects at once  A rejected, B rejected (pool terminated); waiting 13; sent A 2 B 0 C 0; workers started after 0, now 0; later: pool terminated
+ok   kernels.js re-exports px.js' pxCalls (one set of counters per thread)
+ok   pxCalls counts each kernel call by its export name, and not the allocator, version or size helpers  {"dilate_mask":2,"range_max":1}
+ok   the counts go on across a new instance of the same module; px.raw calls are not counted  {"dilate_mask":3,"range_max":1}
+ok   pxCalls(true) returns the counts and clears them  {"dilate_mask":3,"range_max":1} then {}
+ok   kernels.js releaseIfLarge replaces a grown instance and the count goes on (3 calls over two instances)  {"dilate_mask":3}, a new instance of 2228224 bytes
+ok   kernels.js re-exports px.js' pxTimed, pxLaps, pxLapAdd and PxOutOfMemory and kernels_js.js' floodScan (one split per thread)
+ok   a px.js of its own starts with the clocks off and an empty split  {"ms":{},"first":{},"copyIn":0,"copyInMB":0,"copyInSharedMB":0,"copyOut":0,"copyOutMB":0,"alloc":0,"grewMB":0}
+ok   untimed, the thread's first call of an export is listed in first with null, and books no ms and no laps  {"ms":{},"first":{"dilate_mask":null},"copyIn":0,"copyInMB":0,"copyInSharedMB":0,"copyOut":0,"copyOutMB":0,"alloc":0,"grewMB":0}
+ok   after the next reset that export is no longer first (ever goes on) and its count starts again  {"ms":{},"first":{},"copyIn":0,"copyInMB":0,"copyInSharedMB":0,"copyOut":0,"copyOutMB":0,"alloc":0,"grewMB":0}
+ok   timed, the first call's milliseconds are first's and stay so across a later call and a new instance (firstMs, ever); ms sums the calls; after a reset the export is no longer first  first 0.1590000000433065, ms 0.1590000000433065 / 0.25020000006770715 / 0.40420000010635704, then first {}
+ok   timed, a 64 x 64 dilateMask books 16 KB copied in and 16 KB out with their milliseconds and the kernel's; from a SharedArrayBuffer the copy in counts as shared too  {"ms":{"dilate_mask":0.02139999996870756},"first":{},"copyIn":0.002799999958369881,"copyInMB":0.015625,"copyInSharedMB":0,"copyOut":0.002199999988079071,"copyOutMB":0.015625,"alloc":0,"grewMB":0}; shared {"ms":{"dilate_mask":0.020200000028125942},"first":{},"copyIn":0.0008999999845400453,"copyInMB":0.015625,"copyInSharedMB":0.015625,"copyOut":0.001999999978579581,"copyOutMB":0.015625,"alloc":0,"grewMB":0}
+ok   timed, an alloc that grows memory books its milliseconds and the MB memory grew in it  {"ms":{},"first":{},"copyIn":0,"copyInMB":0,"copyInSharedMB":0,"copyOut":0,"copyOutMB":0,"alloc":0.02410000003874302,"grewMB":16.0625}, 2555904 -> 19398656 bytes
+ok   pxLapAdd books a direct user's copies (one read from shared memory as shared too) and refuses any other key  {"ms":{},"first":{},"copyIn":1.5,"copyInMB":2,"copyInSharedMB":2,"copyOut":0.25,"copyOutMB":1,"alloc":0,"grewMB":0}
+ok   pxCalls(true) clears the milliseconds and every lap  {"ms":{},"first":{},"copyIn":0,"copyInMB":0,"copyInSharedMB":0,"copyOut":0,"copyOutMB":0,"alloc":0,"grewMB":0}
+ok   with the clocks off again a call books its count and nothing else  {"ms":{},"first":{},"copyIn":0,"copyInMB":0,"copyInSharedMB":0,"copyOut":0,"copyOutMB":0,"alloc":0,"grewMB":0}
+ok   an alloc memory cannot grow for throws PxOutOfMemory (an Error, its size on it, the old message) and marks nothing  PxOutOfMemory: px: out of memory allocating 4194304000 bytes
+       the counted wrapper per kernel call (adler32 of 0 bytes, 200000 calls a round): clocks off +7.0 ns, on +116.4 ns over the raw export's 15.6 ns (K0b: 6-16 ns, clocks off)
+ok   setRoute refuses an unknown name (a prototype member too) and a value of the wrong kind  {}
+ok   rustPx("flood", n): null below a number of pixels, Rust at it and above, null for "js" and Infinity, Rust for "rust" and when there is no flood route; null removes the override; a call without a name ignores the routes
+ok   setKernels("js") beats a "rust" route (the global mode stays the override)
+ok   adoptRoutes replaces the overrides wholesale with the valid entries (unknown names and bad values dropped) and never throws  flood keepMB
+ok   kernelRoutes() is the defaults with the overrides over them (releaseMB and keepMB always among them), routeOverrides() the overrides alone  {"releaseMB":256,"keepMB":64,"crc32":64,"flood":77}
+ok   rust simd flood_shape equals its twin floodShape byte for byte, with the count, the bounds and the cells (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds) (72 cases, each also at an odd offset)
+ok   rust scalar flood_shape equals its twin floodShape byte for byte, with the count, the bounds and the cells (no selection, partial alpha, all transparent; tol 0 / 32 / 255; contiguous or not; corner seeds) (72 cases, each also at an odd offset)
+ok   js flood_shape gives the same at an odd offset
+ok   rust simd flood_shape at outKind = 1 equals its twin floodShape byte for byte (w * h alpha bytes), with the count, the bounds and the cells (72 cases, each also at an odd offset)
+ok   rust scalar flood_shape at outKind = 1 equals its twin floodShape byte for byte (w * h alpha bytes), with the count, the bounds and the cells (72 cases, each also at an odd offset)
+ok   js flood_shape (outKind = 1) gives the same at an odd offset
+ok   js floodScan (floodMask's loop) equals js flood (72 cases, also at tol 400 and -5: unclamped against clamped)
+ok   kernels.js floodShape under the flood route (outKind 4 and 1): "rust" and a size at or below the picture's run Rust, "js" and a size above it the twin; the same shape and cells, use called once (120 runs)
+ok   inpaint_raster.js floodMask under the flood route: the Rust flood at or above the route's size and for "rust", floodScan below it and for "js"; the same mask (60 runs)
+ok   K39 inpaint_raster.js growMaskBounds under the growMask route: "rust" and default run grow_mask, "js" runs growMask + maskBounds, setKernels("js") runs pure JS; identical pixels, bounds and cells on non-zero byteOffset subarrays (16 runs)
+ok   a trap in an export (mip_half below address 0) throws a RuntimeError and marks its instance; the next rustPx() is a new one (trap +1, made sync)  RuntimeError: memory access out of bounds; {"serial":6,"bytes":1114112,"pending":false,"holds":0,"release":1,"idle":0,"trap":4,"oom":0,"sync":5,"async":0}
+ok   a RangeError from an export (a wasm stack overflow) marks its instance as a trap does; another error marks nothing
+ok   a wrapper whose Rust call traps answers with the twin's bytes, the instance is replaced (trap +1) and the next call runs Rust
+ok   inpaint_raster.js after a trap: floodMask gives floodScan's mask, growMaskBounds the JS growMask's selection, bounds and cells (the selection grown once); each replaces the instance  flood true, bounds 0,0,97,61 vs 0,0,97,61 
+ok   a plain Error from the Rust method is rethrown and the instance kept  Error: plain
+ok   out of memory in the Rust method: the twin's bytes, the instance replaced (oom +1), nothing marked trapped  {"serial":11,"bytes":1114112,"pending":false,"holds":0,"release":1,"idle":0,"trap":8,"oom":1,"sync":10,"async":0}
+ok   _reset: once the instance is trapped a failing reset is swallowed and the result returned; on a sound instance a plain error from it is rethrown  null; Error: the reset
+ok   a trap in the reset after an in-place kernel wrote its result: the result stands, applied once (no twin over it), and the next rustPx() replaces the instance  ; {"serial":12,"bytes":1114112,"pending":false,"holds":0,"release":1,"idle":0,"trap":9,"oom":1,"sync":11,"async":0}
+ok   out of memory in the reset of a sound instance: the result stands (Rust ran), the instance is marked with it and the next rustPx() replaces it, counted oom  {"serial":13,"bytes":1114112,"pending":false,"holds":0,"release":1,"idle":0,"trap":9,"oom":2,"sync":12,"async":0}
+ok   where a synchronous instance throws, the successor loads in the background: the twin runs meanwhile (rustPx() null), and after pxSettled() a new instance (async +1) runs Rust  {"serial":14,"bytes":1114112,"pending":false,"holds":0,"release":2,"idle":0,"trap":9,"oom":2,"sync":12,"async":1}
+ok   floodShape runs use once: a trap before it gives the twin's shape; a trap after it, and a RuntimeError thrown by use (Rust and twin side), are rethrown  trap before true, trap after true, use throws true,true
+ok   a recovery warns once per cause and kernel  dilate_mask oom, dilate_mask trap, flood trap, flood_shape trap, grow_mask trap
+ok   pxInstances() says the instance's serial, bytes, pending load and holds, its replacements by cause and how they were made  async bytes holds idle oom pending release serial sync trap
+ok   the releaseMB route: a releasing call on an instance grown past it replaces the instance (release +1, made sync), its result kept  {"serial":18,"bytes":1114112,"pending":false,"holds":0,"release":3,"idle":0,"trap":12,"oom":2,"sync":16,"async":1}
+ok   dropPx renews now; pxSplit(snapshot) reports bytes0 and the renewals since by cause, from a snapshot that went through JSON too  {"release":0,"idle":1,"trap":0,"oom":0}
+ok   the idle trim: an instance above keepMB is replaced 2 s after a releasing call (idle +1), not at once  {"serial":20,"bytes":1114112,"pending":false,"holds":0,"release":3,"idle":2,"trap":12,"oom":2,"sync":18,"async":1}
+ok   a job holds the instance: no trim while it runs (holds 1), the trim 2 s after it ends  held {"serial":20,"bytes":10682368,"pending":false,"holds":1,"release":3,"idle":2,"trap":12,"oom":2,"sync":18,"async":1}, then {"serial":21,"bytes":1114112,"pending":false,"holds":0,"release":3,"idle":3,"trap":12,"oom":2,"sync":19,"async":1}
+ok   js selCombine's twin equals combineRows and a plain extent scan (448 cases)
+ok   js on an unaligned tile (its bytes path) selCombine's twin equals combineRows and a plain extent scan (448 cases)
+ok   rust simd sel_combine equals its twin byte for byte (448 cases, each also at an odd offset)
+ok   rust scalar sel_combine equals its twin byte for byte (448 cases, each also at an odd offset)
+ok   js sel_combine gives the same at an odd offset
+ok   sel_combine on a new tile gives what it gives on a transparent one (both builds)
+ok   selCombine refuses mode 4 on the twin and both builds  3 of 3 threw
+ok   selCombine refuses kind 3 on the twin and both builds  3 of 3 threw
+ok   selCombine refuses a stride below bw on the twin and both builds  3 of 3 threw
+ok   selCombine refuses a source too short on the twin and both builds  3 of 3 threw
+ok   selCombine refuses bw above the tile on the twin and both builds  3 of 3 threw
+ok   selCombine refuses a source view shorter than its region (a longer buffer) on the twin and both builds  3 of 3 threw
+ok   selCombine refuses a tile view shorter than the tile (a longer buffer) on the twin and both builds  3 of 3 threw
+ok   selCombine with no pixel to combine and no source buffer answers the kept tile's extent on all three  [0,0,256,256] | [0,0,256,256] | [0,0,256,256] | [0,0,256,256] | [0,0,256,256] | [0,0,256,256]
+ok   alphaAny says whether a source region covers anything (448 cases)
+ok   kernels.js selCombine gives the same on the routes js and rust, write at most once (392 tiles)
+ok   the selCombine route js makes no missing tile from a source that covers nothing (23 such tiles)  0 written
+ok   the selCombine route rust calls sel_combine for every tile, js never  js 0, rust 392 of 392
+ok   js maskInvert's twin equals a per-pixel 255 - a invert and a plain extent scan (35 cases)
+ok   js on an unaligned tile (its bytes path) maskInvert's twin equals a per-pixel 255 - a invert and a plain extent scan (35 cases)
+ok   rust simd mask_invert equals its twin byte for byte (35 cases, each also at an odd offset)
+ok   rust scalar mask_invert equals its twin byte for byte (35 cases, each also at an odd offset)
+ok   js mask_invert gives the same at an odd offset
+ok   maskInvert refuses bw above the tile on the twin and both builds  3 of 3 threw
+ok   maskInvert refuses bh above the tile on the twin and both builds  3 of 3 threw
+ok   maskInvert refuses a tile view shorter than the tile (a longer buffer) on the twin and both builds  3 of 3 threw
+ok   maskInvert refuses a null tile on the twin and both builds  3 of 3 threw
+ok   kernels.js maskInvert gives the same on the routes js and rust, write(true) only when non-empty on rust (35 tiles)
+ok   the maskInvert route rust skips write() when the inverted tile is empty (11 such tiles)  0 written
+ok   the maskInvert route rust calls mask_invert for every tile, js never  js 0, rust 35 of 35
+ok   TileMaskPixels.writable(tx, ty, true, whole) skips the frozen tile copy when whole is true and copies when false  whole=0, partial=200
+ok   TileMaskPixels.invert on js and rust routes matches, drops newly-empty tiles, keeps fresh extents, and preserves frozen clones
+ok   combine_test.js in js and rust modes  rc=0
+       sel_combine one 256² tile, replace from RGBA: twin 0.373, simd 0.042, scalar 0.366 ms (median of 200)
+       sel_combine one 256² tile, add from alpha: twin 0.265, simd 0.046, scalar 0.332 ms (median of 200)
+       mask_invert one 256² tile: twin 0.138, simd 0.034, scalar 0.096 ms (median of 200)
+ok   map_tile_stats 2-texel halo reaches ±2 texels and thresh uses strict >  st500=1234..64321 e=1, st501 e=0
+ok   js mapTileStats equals the plain reference (92 cases)
+ok   rust simd map_tile_stats equals its twin byte for byte (92 cases, each also at an odd offset)
+ok   rust scalar map_tile_stats equals its twin byte for byte (92 cases, each also at an odd offset)
+ok   js map_tile_stats gives the same at an odd offset
+ok   mapTileStats refuses null map on twin and both builds  3/3 threw
+ok   mapTileStats refuses short map on twin and both builds  3/3 threw
+ok   mapTileStats refuses short rmax on twin and both builds  3/3 threw
+ok   mapTileStats refuses zero mw on twin and both builds  3/3 threw
+ok   mapTileStats refuses zero W on twin and both builds  3/3 threw
+ok   mapTileStats refuses zero tile on twin and both builds  3/3 threw
+ok   mapTileStats refuses NaN xf on twin and both builds  3/3 threw
+ok   raw map_tile_stats returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  got 0
+ok   kernels.js mapTileStats route switches between twin (0 calls) and rust (rows calls) with identical output  jsCalls=0, rustCalls=2
+ok   rangeTileClass hard boundaries at lo and hi
+ok   rangeTileClass invert (r.invert xor jobInvert)
+ok   rangeTileClass soft feather boundaries
+ok   rangeTileClass full/empty tiles match per-pixel bilinear and snapField weights across all tiles
+ok   rangeRowBookkeeping matches exact in-image pixel alphaSum, bounds, and tiles on full and partial rows
+ok   js libmExp matches frozen wasm libm::exp bit for bit (47 cases + NaN)
+ok   range_tiles_depth rounds exact even-half 40.5 up to 41 (JS Math.round, not ties-to-even 40)  got 41
+ok   range_tiles_depth hard-step tolerance at delta=5e-13 gives byte 255  got alphaSum=19584000, want 19584000
+ok   range_tiles_depth hard-step tolerance at delta=-5e-13 gives byte 255  got alphaSum=19584000, want 19584000
+ok   range_tiles_depth hard-step tolerance at delta=2e-12 gives byte 0  got alphaSum=0, want 0
+ok   range_tiles_depth K22-exp-band tie case gives 127 on the 128 odd-row pixels of column x=127 across twin, simd, and scalar
+ok   js rangeTilesDepth snapped call uses libmExp for both wSpatial and wColor (0 Math.exp calls)  mathExpCalls=0
+ok   js rangeTilesDepth equals the plain reference (106 cases)
+ok   rust simd range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)
+ok   rust scalar range_tiles_depth equals its twin byte for byte (106 cases, each also at an odd offset)
+ok   js range_tiles_depth gives the same at an odd offset
+ok   range_tiles_depth zeroes out-of-bounds right and bottom columns/rows in dirty wasm arena
+ok   rangeTilesDepth refuses null map on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses short map on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses short classes on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses short guide on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses short pic on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses zero mw on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses zero W on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses y0 >= y1 on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses zero tile on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses NaN xf on twin and both builds  3/3 threw
+ok   rangeTilesDepth refuses null limit on twin and both builds  3/3 threw
+ok   raw range_tiles_depth returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  got 0
+ok   kernels.js rangeTilesDepth routes (js/js, rust/rust, rust/js, js/rust) match byte-for-byte in ascending tx order  calls jj=0 rr=1 rj=1 jr=1 diffs=
+ok   px.js rangeTilesDepth bounds [wy0..wy1] over [minTx..maxTx] on a 90-degree turned map  copiedMapBytes=576 fullMapBytes=1536
+ok   range_tiles_rgba expands 3-char #48c identically to #4488cc with non-empty alpha  alphaSum=826995
+ok   range_tiles_rgba rounds w*255 = 40.5 away from zero to 41 (not ties-to-even 40)  got 41
+ok   range_tiles_rgba hard-step tolerance at delta=-2e-12 gives byte 255  got alphaSum=16711680, want 16711680
+ok   range_tiles_rgba hard-step tolerance at delta=-5e-13 gives byte 255  got alphaSum=16711680, want 16711680
+ok   range_tiles_rgba hard-step tolerance at delta=5e-13 gives byte 255  got alphaSum=16711680, want 16711680
+ok   range_tiles_rgba hard-step tolerance at delta=2e-12 gives byte 0  got alphaSum=0, want 0
+ok   range_tiles_rgba K23 colour libmExp tie case gives full tile (alphaSum=16711680) on js  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   range_tiles_rgba K23 colour libmExp tie case gives full tile (alphaSum=16711680) on simd  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   range_tiles_rgba K23 colour libmExp tie case gives full tile (alphaSum=16711680) on scalar  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   js rangeTilesRgba colour call uses libmExp (0 Math.exp calls)  mathExpCalls=0
+ok   range_tiles_rgba K23 opp(R/255) order tie case gives full tile (alphaSum=16711680) on js  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   range_tiles_rgba K23 opp(R/255) order tie case gives full tile (alphaSum=16711680) on simd  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   range_tiles_rgba K23 opp(R/255) order tie case gives full tile (alphaSum=16711680) on scalar  {"tiles":[{"tx":0,"ty":0,"full":true}],"bounds":[0,0,256,256],"alphaSum":16711680}
+ok   rangeSelectJob luma multi-row band (3 tile rows) matches per-pixel alphaSum and bounds union  alphaSum=43207200/43207200 bounds=[0,0,300,600]/[0,0,300,600]
+ok   rangeSelectJob color multi-row band (3 tile rows) matches per-pixel alphaSum and bounds union  alphaSum=6886397/6886397 bounds=[0,0,300,520]/[0,0,300,520]
+ok   normalizeLimit refuses invalid color and non-numeric lo/hi/fLo/fHi/tol with readable message  7/7 refused
+ok   js rangeTilesRgba equals the plain reference (38 cases)
+ok   rust simd range_tiles_rgba equals its twin byte for byte (38 cases, each also at an odd offset)
+ok   rust scalar range_tiles_rgba equals its twin byte for byte (38 cases, each also at an odd offset)
+ok   js range_tiles_rgba gives the same at an odd offset
+ok   range_tiles_rgba zeroes out-of-bounds top, bottom, and right rows/columns in dirty wasm arena
+ok   px.js rangeTilesRgba copies only one tile row (256 rows) from a 1024-row band into the wasm arena  copiedRgbaBytes=307200 want=307200 fullBand=1228800
+ok   rangeTilesRgba refuses null rgba on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses short rgba on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses zero W on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses zero H on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses zero tile on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses tile > 4096 on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses negative ty on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses y0 >= y1 on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses y1 > H on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses null limit on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses NaN lo on twin and both builds  3/3 threw
+ok   rangeTilesRgba refuses NaN tol on twin and both builds  3/3 threw
+ok   raw range_tiles_rgba returns 0 on invalid mode or out-of-row [ry0..ry1)  badMode=0 badRow=0
+ok   kernels.js rangeTilesRgba routes rangeLuma and rangeColor between twin (0 calls) and rust (1 call) with identical output  luma=0/1 color=0/1
+ok   limit_alpha_rows rounds exact even-half 255 * w === 40.5 up to 41 and leaves RGB bytes untouched  got alpha=41 rgbUntouched=true
+ok   limit_alpha_rows rounds 81 * 0.5 === 40.5 up to 41  got 41
+ok   limit_alpha_rows hard-step tolerance at delta=5e-13 gives byte 255  got 255, want 255
+ok   limit_alpha_rows hard-step tolerance at delta=-5e-13 gives byte 255  got 255, want 255
+ok   limit_alpha_rows hard-step tolerance at delta=2e-12 gives byte 0  got 0, want 0
+ok   js limitAlphaRows equals the plain reference (74 cases)
+ok   rust simd limit_alpha_rows equals its twin byte for byte (74 cases, each also at an odd offset)
+ok   rust scalar limit_alpha_rows equals its twin byte for byte (74 cases, each also at an odd offset)
+ok   js limit_alpha_rows gives the same at an odd offset
+ok   limit_alpha_rows twin uses libmExp (0 native Math.exp calls) and matches simd/scalar at K22-exp-band tie on column x=127  nativeExpCalls=0 
+ok   px.js limitAlphaRows chunks 600 rows into 3 bands (<= 256 rows per chunk) and bounds map window [wy0..wy1]  chunkCalls=3 maxRgbaBytes=65536 maxMapBytes=2048/3840
+ok   inpaint_limit.js limitAlphaRows snaps solid fill layer against map.guide on rust (sharp edge vs uniform col / no-guide)  calls=1/1/1 guide=[255,0] uniformCol=0 noGuide=0
+ok   inpaint_limit.js limitAlphaRows never throws on stored depth limits with non-finite fields
+ok   limit_alpha_rows refuses invalid inputs across twin, simd, and scalar
+ok   raw limit_alpha_rows returns 0 when [iy0..iy1] falls outside [wy0..wy0+wh)  okValid=1 okOutLo=0 okOutHi=0
+ok   kernels.js limitAlphaRows routes between twin (0 calls) and rust (1 call) with identical output  jsCalls=0 rustCalls=1
+       map_tile_stats 4096x2731 -> 15000x10000 (depth only): twin 24.94, simd 4.72, scalar 14.74 ms (median of 15)
+       map_tile_stats 4096x2731 -> 15000x10000 (depth + rmax): twin 33.62, simd 6.70, scalar 21.10 ms (median of 15)
+       range_tiles_depth 15000x256 row, plain bilinear (59 tiles): twin 138.78, simd 68.25, scalar 73.99 ms (median of 9)
+       range_tiles_depth 15000x256 row, snapped (59 edge tiles): twin 294.63, simd 146.03, scalar 121.56 ms (median of 9)
+       range_tiles_rgba 15000x256 row, luma (59 tiles): twin 44.18, simd 23.36, scalar 22.40 ms (median of 9)
+       range_tiles_rgba 15000x256 row, colour (59 tiles): twin 141.05, simd 67.50, scalar 81.16 ms (median of 9)
+       limit_alpha_rows 15000x256 row, plain bilinear (15000x256): twin 71.15, simd 74.45, scalar 64.18 ms (median of 9)
+       limit_alpha_rows 15000x256 row, snapped (15000x256): twin 301.03, simd 157.36, scalar 160.34 ms (median of 9)
+ok   guidedFar precision case flips u16s when b uses rounded a[i] or I uses f32 1/255 / unrounded f64  flipB=4 flipIf32=39 flipIf64=60
+ok   rust simd guided_far equals its twin byte for byte (63 cases, each also at an odd offset)
+ok   rust scalar guided_far equals its twin byte for byte (63 cases, each also at an odd offset)
+ok   js guided_far gives the same at an odd offset
+ok   guidedFar accepts both options object and positional arguments with optional out Uint16Array
+ok   guided_far writes every output u16 identically in a dirty wasm arena
+ok   Px.guidedFar refuses null raw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses short raw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses null grey on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses short grey on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses zero rw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses zero rh on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses zero gw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses zero gh on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses fractional gw on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses eps <= 0 on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses negative eps on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses NaN eps on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses NaN r on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses huge r on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses Infinity lo on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses NaN hi on both builds (returns null)  simd=null scalar=null
+ok   Px.guidedFar refuses short out on both builds (returns null)  simd=null scalar=null
+ok   raw guided_far_scratch_bytes and guided_far refuse zero, overflowing, null, or eps <= 0 inputs  z=0 ov=0 null=0 zeroEps=0
+ok   kernels.js guidedFar routes between twin (0 calls) and rust (1 call) with identical output  jsCalls=0 rustCalls=1
+       guided_far model 784x518 -> 4096x2731: twin 806.86, simd 250.45, scalar 310.46 ms (median of 5)
+       guided_far layer 4096x2731 -> 4096x2731: twin 749.12, simd 226.96, scalar 294.78 ms (median of 5)
+ok   js pngFilterRows equals the reference (1032 cases)
+ok   rust simd png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)
+ok   rust scalar png_filter_rows equals its twin byte for byte (1032 cases, each also at an odd offset)
+ok   js png_filter_rows gives the same at an odd offset
+ok   rust simd png_filter_rows unfilters back to the input (1032 cases)
+       png_filter_rows cases, rows of 5 px or more: won by None 698, Sub 708, Up 543, Average 464, Paeth 353; won on a tied sum 325 / 17 / 42 / 4 / 0; Paeth ties a=b 737063 (a = b), a=c 13337, b=c 7408
+ok   png_filter_rows cases, rows of 5 px or more: every filter wins rows, ties of the sums are won by None, Sub, Up and Average, the Paeth predictor ties a over c and b over c  wins 698,708,543,464,353, tied 325,17,42,4,0, paeth {"ab":737063,"ac":13337,"bc":7408}
+ok   kernels.js toneRGBA / spongeRGBA / freqSplit / freqSeparate / liquifyBlock / liquifyPreview / liquifyDab: the routes rust and js give the twins' bytes; Rust's calls counted, the twins' never  rust {"blur_rgba":1,"freq_split":2,"liquify_block":1,"liquify_dab":1,"liquify_preview":1,"sponge_rgba":1,"tone_rgba":1}, js {}
+ok   kernels.js K31: swirlcw and swirlccw route to liquifyDabNodes (0 liquify_dab calls) and match the V8 sin/cos tie at node (1500, 1000)  calls={} swCwSame=true swTieDy=2424 want=2424
+ok   kernels.js K29: liquifyPreview runs on win.px after dropPx, freeLiquifyWindow returns the block to the allocator, and the twin refreshes a detached win.data on a mid-stroke mode switch  cDrop={"liquify_preview":1} detached=true,true,true cycSame=true
+ok   kernels.js freqSeparate with one route on the twin: the blur or the split alone in Rust, the same bytes  {"blur_rgba":1,"liquify_preview":1} {"freq_split":1}
+ok   kernels.js after a refusal (a short table, a part pixel, a size that is not the picture's, a plain array of nodes, an unheld window): the twin's bytes
+ok   kernels.js K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 / K24 wrappers after a trap: the twin's bytes (a split's L as it was before the trap), the instance replaced (trap +1 / oom +1)
+ok   kernels.js freqSeparate releases an instance grown past releaseMB (release +1)  {"serial":43,"bytes":1114112,"pending":false,"holds":0,"release":4,"idle":4,"trap":28,"oom":6,"sync":41,"async":1}
+ok   the K27 / K28 / K29 / K31 / K34 / K22 / K23 / K25 / K24 wrappers' traps warned once per kernel  Inpaint Canvas: the Rust pixel kernel tone_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel sponge_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_split failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel freq_separate failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel liquify_block failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel liquify_preview failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel liquify_dab failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel edgefit_shrink failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel warp_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel warp_coverage failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel range_tiles_depth failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel range_tiles_rgba failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel limit_alpha_rows failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel guided_far failed (trap: memory access out of bounds); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel range_tiles_depth failed (oom: px: out of memory allocating 4294901760 bytes); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel range_tiles_rgba failed (oom: px: out of memory allocating 4294901760 bytes); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel limit_alpha_rows failed (oom: px: out of memory allocating 4294901760 bytes); the JS one ran, the next call gets a fresh instance | Inpaint Canvas: the Rust pixel kernel guided_far failed (oom: px: out of memory allocating 4294901760 bytes); the JS one ran, the next call gets a fresh instance
+ok   inpaint_tiff.js exports unpackStrip and TIFF_JS.unpackStrip, re-exported by kernels_js.js and kernels.js
+ok   rust simd tiff_unpack equals its twin byte for byte (21 cases, each also at an odd offset)
+ok   rust scalar tiff_unpack equals its twin byte for byte (21 cases, each also at an odd offset)
+ok   js tiff_unpack gives the same at an odd offset
+ok   tiff_unpack: all 21 cases match their reference payloads (including hand-derived mid-code and mid-run stops)
+ok   tiff_unpack (twin): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (simd): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (scalar): writes into caller-supplied out view (4-arg and 3-arg Uint8Array overload) without touching surrounding bytes
+ok   tiff_unpack (simd): negative error codes (-1..-5) and messages match the JS twin
+ok   tiff_unpack (scalar): negative error codes (-1..-5) and messages match the JS twin
+ok   tiff_unpack fuzz (random, 9..12-bit & full-4096 bit-flipped, and every-prefix sweep): 0 traps, identical bytes or error codes across twin, simd and scalar  sweepLen=3475 (3476 prefixes)
+ok   kernels.js tiffUnpack routes LZW/PackBits to Rust (2 calls), keeps uncompressed (1) on JS copy (0 calls), and recovers from a trap  jsCalls=0 rustCalls=2 rawRustCalls=0 recReplaced=true
+ok   inpaint_tiff.js readTiff: 1-byte first LZW piece keeps byte[0] when byte[0] === byte[1] and still refuses old-style LZW
+ok   inpaint_tiff.js readTiff: StripRows.open, TileRows.tile, and readTiffBand stop at `need` / `want` when damaged LZW bytes follow
+ok   rust simd tiff_unpredict equals its twin byte for byte (332 cases, each also at an odd offset)
+ok   rust scalar tiff_unpredict equals its twin byte for byte (332 cases, each also at an odd offset)
+ok   js tiff_unpredict gives the same at an odd offset
+ok   tiff_unpredict refuses invalid bits, per, rowBytes, and truncated buffers across twin, simd and scalar
+ok   rust simd tiff_predict_rgba equals its twin byte for byte (37 cases, each also at an odd offset)
+ok   rust scalar tiff_predict_rgba equals its twin byte for byte (37 cases, each also at an odd offset)
+ok   js tiff_predict_rgba gives the same at an odd offset
+ok   tiff_predict_rgba + tiff_unpredict round-trips back to the original RGBA bytes across all widths
+ok   tiff_predict_rgba refuses non-positive dimensions, short buffers, and null pointers
+ok   rust simd tiff_to_rgba equals its twin byte for byte (406 cases, each also at an odd offset)
+ok   rust scalar tiff_to_rgba equals its twin byte for byte (406 cases, each also at an odd offset)
+ok   js tiff_to_rgba gives the same at an odd offset
+ok   tiff_to_rgba exhaustive 65,536 (alpha, colour) premultiplied pairs (A=0 -> 0, A=255 -> pass, 0<A<255 rounded): 0 bytes differ across twin, simd and scalar
+ok   tiff_to_rgba exhaustive 65,536 16-bit values (LE and BE): 0 bytes differ across twin, simd and scalar
+ok   tiff_to_rgba planar 16-bit (K20b): exact (255*v+32895)>>16 identity and 0 bytes differ on 65,786-pixel 4/5-plane LE/BE w=259 (SIMD + tail)
+ok   tiff_to_rgba writes into caller-supplied out view without touching surrounding bytes
+ok   tiff_to_rgba refuses invalid specs, short buffers, missing palette LUTs, and null pointers
+ok   tiffStrip and tiffStripFromPtr (simd): byte-identical to tiffPart(args, p.zlib) across predictors 2/1/default, levels 1/2/6, tiles and stack
+ok   tiffStrip and tiffStripFromPtr (scalar): byte-identical to tiffPart(args, p.zlib) across predictors 2/1/default, levels 1/2/6, tiles and stack
+ok   inpaint_worker.js tiffPartJob: composeWasm=1 on tiles/stack, composeWasm=0 on rgba or js routes, resets p.job, calls releaseIfLarge(), and gives byte-identical strips to tiffPart(args, p.zlib)  tile=1 stack=1 rgba=0 jobBytes=0 rel=4->5
+ok   inpaint_worker.js tiffPartJob recovers from OOM and wasm traps in tiffStripFromPtr and tiffStrip, renews the instance, and falls back cleanly  oomPtr=true trapPtr=true trapRgba=true
+ok   kernels.js tiffKernels() looks up rustPx() per call across instance drops, switches routes between Rust and JS twin, and recovers from traps without double-applying in-place kernels  tkMethodsMatch=true oldCalls=0 newCalls=4 callsRust={"tiff_predict_rgba":1,"tiff_to_rgba":1,"tiff_unpack":1,"tiff_unpredict":1} callsJs={} trapInPlaceOk=true
+ok   inpaint_tiff.js readTiff 2-bit palette + premultiplied alpha (Question 6.4): kernels: null and kernels: tiffKernels() match expected RGBA  null=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 rust=90,180,255,85,180,120,255,170,200,100,50,255,0,0,0,0 calls={"tiff_to_rgba":1}
+ok   inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules  exact=false/4096 over=true/0 hi=false/true zCancel=true rawSlice=12 lzwBig=true extra=true
+ok   inpaint_worker.js tiffBandJob & readTiffBands (K18): rust vs js routes, NORMAL ahead of queued EXPORT jobs, and WorkerPool group cancel on band error  order=tiff_band,tiff_band,tiff_band,tiff_band,tiff_band,tiff_band,export_dummy,export_dummy,export_dummy,export_dummy cancelled=3 started=3 rustCalls={"tiff_to_rgba":1,"tiff_unpack":3,"tiff_unpredict":1}
+       tiff_unpack (Uncompressed 1 MB strip): twin 0.02, simd 0.06, scalar 0.06 ms (median of 15)
+       tiff_unpack (LZW 1 MB strip): twin 4.61, simd 1.56, scalar 1.56 ms (median of 15)
+       tiff_unpack (PackBits 1 MB strip): twin 0.92, simd 0.16, scalar 0.16 ms (median of 15)
+       tiff_unpredict RGBA8 15000x16: twin 0.77, simd 0.11, scalar 0.42 ms (median of 15)
+       tiff_unpredict RGB8 15000x16: twin 0.57, simd 0.24, scalar 0.43 ms (median of 15)
+       tiff_predict_rgba 15000x16: twin 0.58, simd 0.05, scalar 0.36 ms (median of 15)
+       tiff_to_rgba RGB8->RGBA8 15000x16: twin 0.91, simd 0.24, scalar 0.27 ms (median of 15)
+       tiff_to_rgba RGBA8 premul->straight 15000x16: twin 2.70, simd 1.50, scalar 1.51 ms (median of 15)
+       tiff_unpredict 16b BE per=1 15000x16: twin 0.57, simd 0.13, scalar 0.58 ms (median of 15)
+       tiff_to_rgba planar RGBA8 15000x16: twin 1.79, simd 0.06, scalar 0.28 ms (median of 15)
+       tiff_to_rgba planar RGBA16 BE->RGBA8 15000x16: twin 2.33, simd 0.25, scalar 1.13 ms (median of 15)
+ok   rust simd module reports its SIMD flag
+ok   js mip keeps the colour of the one opaque sample  255,0,0,64
+ok   js mipHalf equals the rust simd
+ok   js mip byte path equals the word path; Uint8ClampedArray input gives the same chain
+ok   js mipChain equals the rust simd and repeated halving
+ok   js clampExtend equals the rust simd and repeats the valid edge
+ok   js distTransform equals the rust simd bit for bit
+ok   js twin is the exact squared distance (brute force 41x29)
+ok   js flood equals the rust simd, with the count
+ok   rust simd grow_mask equals growMask + maskBounds + cells (0 empty, 1 changed, 2 unchanged; grow, shrink, empty, partial alpha)
+ok   rust simd flood_shape (out_kind 4 and 1) equals floodMask, the selection clip, the count, the bounds, the cells and the shape
+ok   rust simd dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   js dilate_mask gives the same at an odd offset
+ok   rust simd box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   js box_blurs gives the same at an odd offset
+ok   rust simd alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   js alpha_to_mask gives the same at an odd offset
+ok   rust simd mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+       rust simd mask_max_clamp allowed differences: a NaN's bits 0
+ok   js mask_max_clamp gives the same at an odd offset
+ok   rust simd mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   js mask_one_minus gives the same at an odd offset
+ok   rust simd mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust simd erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   js erode_mask gives the same at an odd offset
+ok   rust simd mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   js mask_to_rgba gives the same at an odd offset
+ok   rust simd mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   js mask_bounds_f32 gives the same at an odd offset
+ok   rust simd color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   js color_match_rgba gives the same at an odd offset
+ok   rust simd blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   js blend_alpha gives the same at an odd offset
+ok   rust simd blend_alpha with separate dst pointer equals its twin
+ok   rust simd edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   js edgefit_shrink gives the same at an odd offset
+ok   rust simd warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   js warp_rgba gives the same at an odd offset
+ok   rust simd warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)
+       rust simd warp_coverage allowed differences: a NaN's bits 0
+ok   js warp_coverage gives the same at an odd offset
+ok   kernels.js stitchMask, colorMatch, blendAlpha and edgefit routes switch K32+K33+K34 kernels between Rust and the twins with identical outputs  {"rustCalls":{"alpha_to_mask":1,"blend_alpha":2,"color_match_rgba":1,"edgefit_shrink":2,"erode_mask":1,"mask_bounds_f32":1,"mask_max_clamp":1,"mask_one_minus":1,"mask_to_rgba":3,"warp_coverage":1,"warp_rgba":1},"jsCalls":{},"subJsCalls":{}}
+ok   stitch_test.js vs 29f6749 loops  rc=0
+ok   edgefit_test.js in js and rust modes  rc=0
+       1492 x 1492: dilate rust simd 18.6 ms, twin 48.7; three box blurs rust simd 16.0 ms, twin 56.2
+       1492 x 1492 K32+K33+K34 masks: alpha_to_mask rust simd 2.41 ms, twin 4.07; mask_max_clamp rust simd 3.17 ms, twin 5.18; mask_one_minus rust simd 1.87 ms, twin 2.83; erode_mask rust simd 19.21 ms, twin 56.86; mask_to_rgba rust simd 4.64 ms, twin 8.32; mask_bounds_f32 rust simd 0.54 ms, twin 4.39; color_match_rgba rust simd 21.97 ms, twin 44.94; blend_alpha rust simd 5.57 ms, twin 7.70; edgefit_shrink rust simd 5.49 ms, twin 24.28; warp_rgba rust simd 37.72 ms, twin 67.59; warp_coverage rust simd 4.49 ms, twin 7.02
+ok   rust simd blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)
+ok   js blur_rgba gives the same at an odd offset
+ok   rust simd sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)
+ok   js sharpen_rgba gives the same at an odd offset
+ok   rust simd blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust simd 4.3 ms, twin 17.0; sharpen rust simd 7.8 ms, twin 19.9
+ok   rust simd tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)
+ok   js tone_rgba gives the same at an odd offset
+ok   rust simd sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte (1881 cases, each also at an odd offset)
+ok   js sponge_rgba gives the same at an odd offset
+ok   rust simd tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)  null, null, null, null, null, null, null, null, null, null, null
+       a 1002 x 1002 dab: tone (protect) rust simd 5.8 ms, twin 10.8; sponge (saturate, vibrance) rust simd 7.7 ms, twin 31.7
+ok   rust simd freq_split equals inpaint_stroke.js freqSplit byte for byte (L in place and H) (129 cases, each also at an odd offset)
+ok   js freq_split gives the same at an odd offset
+ok   js freqSplit gives the picture back: L + 2H - 255 = I for every (I, L) pair
+ok   rust simd freqSeparate (blur_rgba and freq_split in one arena) equals blurRGBA then freqSplit byte for byte (275 cases, each also at an odd offset)
+ok   js freq_separate gives the same at an odd offset
+ok   rust simd freq_split / freqSeparate refuse what is not whole pixels of bytes, a blur of another length, a size that is not the picture's and a radius past 2^30 (null: the twin runs), and leave L as it was  null, null, null, null, null, null, null, null, null
+       1024 x 1024: the split rust simd 2.9 ms (with its copies), twin 27.6; the separation r 8 in one arena 33.3 ms, K26's way (Rust blur, the twin's split) 61.6
+ok   rust simd range_max equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   js range_max gives the same at an odd offset
+ok   rust simd range_max of a flat map is 0 everywhere
+       2048 x 2048: range_max rust simd 24.9 ms, twin 119.7 ms
+ok   rust simd height_normals equals its twin within 1 level
+ok   rust simd smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
+ok   rust simd hoisted js.shadowMarch equals pre-hoist reference byte for byte (142 cases)
+ok   rust simd shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)
+ok   js shadow_march_f64 gives the same at an odd offset
+ok   rust simd shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
+ok   rust simd shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
+ok   rust simd png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)
+ok   rust simd png_unfilter_rows on rows of 1..67 px (and 128..257 px) with forced Paeth ties (ac=15513, bc=15064) equals its twin and reconstructs raw at even and odd offsets  ac=15513, bc=15064
+       256 rows of 15,000 RGB pixels, Paeth: rust simd 26.1 ms, twin 56.9 ms
+ok   js compositeTile equals the rust simd (5 ops and 25 blend modes, partial alpha, opacity, masks, tails)
+ok   js blend modes equal the rust simd, each alone (opaque and translucent backdrops, opacity, mask)
+ok   js composite gives the same bytes for Uint8ClampedArray inputs
+ok   js source-over over an opaque tile within 1.5 levels of float maths  worst 1.32
+ok   js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)  worst 0.95 (color-burn), at full opacity 0.501; linear light 0.881, at full opacity 0.498
+ok   js blend modes over translucent pixels within 2.5*255/alpha + 2.5*255/backdrop alpha + 0.6 levels  worst at 29 % of the bound over 95380 pixels; linear light 27 %; tier B raw dev 2.56, ratio 32 %
+ok   js linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   rust simd linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   js linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   rust simd linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   js linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   rust simd linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   js subtract over every opaque (b, s) pair matches closed form exactly
+ok   rust simd subtract over every opaque (b, s) pair matches closed form exactly
+ok   js pin-light over every opaque (b, s) pair matches closed form exactly
+ok   rust simd pin-light over every opaque (b, s) pair matches closed form exactly
+ok   js hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   rust simd hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   js exclusion over every opaque (b, s) pair matches reference exactly
+ok   rust simd exclusion over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge over every opaque (b, s) pair matches reference exactly
+ok   rust simd color-dodge over every opaque (b, s) pair matches reference exactly
+ok   js color-burn over every opaque (b, s) pair matches reference exactly
+ok   rust simd color-burn over every opaque (b, s) pair matches reference exactly
+ok   js vivid-light over every opaque (b, s) pair matches reference exactly
+ok   rust simd vivid-light over every opaque (b, s) pair matches reference exactly
+ok   js divide over every opaque (b, s) pair matches reference exactly
+ok   rust simd divide over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge edge set matches reference exactly
+ok   rust simd color-dodge edge set matches reference exactly
+ok   js color-burn edge set matches reference exactly
+ok   rust simd color-burn edge set matches reference exactly
+ok   js vivid-light edge set matches reference exactly
+ok   rust simd vivid-light edge set matches reference exactly
+ok   js divide edge set matches reference exactly
+ok   rust simd divide edge set matches reference exactly
+       a megapixel over an opaque tile at 78 %: multiply rust simd 6.3 ms, twin 29.5; overlay rust simd 6.9 ms, twin 42.5; soft-light rust simd 13.3 ms, twin 41.0; linear-light rust simd 7.2 ms, twin 33.7; exclusion rust simd 6.0 ms, twin 29.0; pin-light rust simd 6.4 ms, twin 42.3; color-dodge rust simd 7.6 ms, twin 46.3; hue rust simd 15.6 ms, twin 43.0; darker-color rust simd 6.4 ms, twin 19.8
+ok   js source-over over translucent pixels within 2.5*255/alpha + 0.6 levels, alpha within 1  worst at 61 % of the bound over 7221 translucent pixels, alpha off by 0.91
+ok   js matchPixels equals the rust simd (random pixels and statistics, tails, k 0 to 1)
+ok   rust simd matchPixels handles empty buffers and non-zero byteOffset Uint8ClampedArray subarrays in place
+ok   js matchPixels equals the rust simd at the extremes of the statistics
+ok   inpaint_filters.js MATCH_CHUNK_BYTES is 4 MP (16,777,216 bytes) and kernels.js has the matchPixels route
+ok   K38 matchCanvas CPU fallback runs match_pixels in 4 MP chunks (3 calls for 8.4 MP), keeps wasm memory within one chunk arena, and equals a single matchPixels call byte for byte  calls=3, memMB=18.19, diff=
+ok   K38 matchCanvas on route matchPixels=js runs 0 Rust calls and equals the Rust path byte for byte across all 3 chunks  callsJs=0, diff=
+Inpaint Canvas: the Rust pixel kernel match_pixels failed (trap: simulated match_pixels trap); the JS one ran, the next call gets a fresh instance
+ok   K38 matchCanvas recovers from a trap on chunk 0 via the twin and runs chunks 1..2 on a fresh Rust instance with identical bytes  callsTrap=2, trap=1, diff=
+ok   K38 matchCanvas stays within 1 level of doubles and clamps strength to [0, 1]  worstD=0
+       a megapixel matched: rust simd 5.2 ms, twin 26.8
+ok   js smudgeDab equals the rust simd (random pixels, carries, masks; strength, keep, alpha lock, pickup)
+ok   js smudgeDab equals the rust simd over a stroke of 40 dabs whose carry goes on
+ok   rust simd smudgeDab takes a Uint8ClampedArray view and gives the twin's bytes
+       a 400 px dab smudged: rust simd 2.09 ms, twin 18.69
+ok   js poissonBlend equals the rust simd on strands, the not-settled flag included
+ok   js poissonBlend equals the rust simd on the 20 scenes (out and info)
+ok   js poissonBlend equals the rust simd on random boxes (1 x 1 to 257 x 129; sparse, dense, full and empty masks)
+ok   rust simd poissonBlend takes Uint8ClampedArray views at an offset, gives the twin's bytes and leaves its inputs
+ok   rust simd poissonBlend writes a given out and returns it; without one it returns a new array of the same bytes
+ok   rust simd poissonBlend with w or h 0 does nothing
+ok   js poissonBlend equals the rust simd on a disc in a 512 x 512 box   info [183461,7,8,0] vs [183461,7,8,0]
+       a disc healed in a 512 x 512 box (183461 px): rust simd 73.8 ms, 7 cycles, 8 levels; twin 160.0 ms, 7 cycles
+ok   js poissonBlend equals the rust simd on a diagonal 60 px stroke in a 512 x 512 box   info [40549,5,6,0] vs [40549,5,6,0]
+       a diagonal 60 px stroke healed in a 512 x 512 box (40549 px): rust simd 18.9 ms, 5 cycles, 6 levels; twin 33.2 ms, 5 cycles
+ok   js poissonBlend equals the rust simd on a disc in a 2048 x 2048 box   info [2916809,7,10,0] vs [2916809,7,10,0]
+       a disc healed in a 2048 x 2048 box (2916809 px): rust simd 1414.0 ms, 7 cycles, 10 levels; twin 3074.7 ms, 7 cycles
+ok   js poissonBlend equals the rust simd on a diagonal 60 px stroke in a 2048 x 2048 box   info [174181,5,6,0] vs [174181,5,6,0]
+       a diagonal 60 px stroke healed in a 2048 x 2048 box (174181 px): rust simd 125.8 ms, 5 cycles, 6 levels; twin 253.2 ms, 5 cycles
+ok   js pngFilterRows equals the rust simd
+ok   js filtered rows unfilter back to the input
+ok   CompressionStream("deflate") inflates back to the input  131072 -> 85395
+ok   rust simd pngPart level 1: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189656
+ok   rust simd pngPart level 1: the joined rows unfilter back to the input
+ok   rust simd pngPart level 2: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189375
+ok   rust simd pngPart level 2: the joined rows unfilter back to the input
+ok   rust simd pngPart level 6: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189370
+ok   rust simd pngPart level 6: the joined rows unfilter back to the input
+ok   rust simd pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)
+ok   rust simd pngPart of an empty band is small  1033 bytes
+ok   rust simd pngPart of noise inflates back
+ok   rust simd crc32 standard vectors ("" -> 00000000, "123456789" -> CBF43926) and null/zero continuation
+ok   rust simd js crc32 equals Node's zlib.crc32 (303 cases)
+ok   rust simd crc32 equals its twin byte for byte (303 cases, each also at an odd offset)
+ok   js crc32 gives the same at an odd offset
+ok   rust simd crc32 continuation across splits equals one call
+ok   rust simd crc32Combine (zero lengths, powers of 2 up to 16 MB, ~7.7 MB, 0..260 B) equals zlib.crc32 of the concatenation
+ok   rust simd png_chunk_frame equals inpaint_png.pngChunk byte for byte (84 cases)
+ok   rust simd png_chunk_frame equals its twin byte for byte (84 cases, each also at an odd offset)
+ok   js png_chunk_frame gives the same at an odd offset
+ok   inpaint_png.crc32 routes inputs from the cut-off (64 B) to Rust and smaller ones to the JS twin  small=0 large=1 jsRoute=0 rustRoute=1
+ok   OraBandWriter combines layer and merged PNG CRCs from their parts (1 crc job for thumbnail only, all 5 zip entry CRCs exact)  crcJobs=1, partJobs=6
+       crc32 64 MB: rust 0.395 ms/MB (25.3 ms), twin 1.680 ms/MB (107.5 ms), 4.25x
+ok   rust simd pngPart of 720 x 256 noise rows (level 2, not the last part) and a last part join into one zlib stream  746179 -> 746315 (the first part 737536 -> 737661)
+ok   rust simd pngPart of 720 x 256 noise rows: the first buffer is enough (one deflate_part call a part)  2 calls
+ok   rust simd pngPart of 4096 x 256 noise rows (level 2, not the last part) and a last part join into one zlib stream  4325640 -> 4326341 (the first part 4194560 -> 4195230)
+ok   rust simd pngPart of 4096 x 256 noise rows: the first buffer is enough (one deflate_part call a part)  2 calls
+ok   rust simd deflate_part of a non-last noise part: each buffer gives -1 or the whole part (4195230 bytes, as pngPart's), never a shorter one  the first buffer of before was 4194949
+ok   rust simd pngPart of 15000 x 139 noise rows (level 2, not the last part) and a last part join into one zlib stream  8460141 -> 8461487 (the first part 8340139 -> 8341459)
+ok   rust simd pngPart of 15000 x 139 noise rows: the first buffer is enough (one deflate_part call a part)  2 calls
+ok   rust simd zlib of a 2 MB noise strip inflates back, in one deflate_part call  1 calls
+ok   rust simd tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles
+ok   rust simd stackRowsToWasm (2a): empty layers [] preserves soft-alpha and A=0 RGB base bytes verbatim
+ok   rust simd stackRowsToWasm (2b): layers with no tiles in the band are skipped without running composite_tile on the base
+ok   rust simd stackRowsToWasm (2c): separate above pass at part boundary y=256 with layers starting and ending at 256
+ok   rust simd stackRowsToWasm (2d): positive/negative layer offsets, unmasked partial layer, and mask holes clip identically to storeRows
+ok   rust simd stackRowsToWasm (2e): 10-float match_pixels layer between blend layers equals rowsOfStack
+ok   rust simd stackRowsToWasm (2f): two clipped layers over a masked clip base (with c.mask hole) and a clipped layer over an unmasked clip base (pbm=0)
+ok   rust simd stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js  hitHash255=true
+ok   rust simd stackRowsToWasm (2h): fresh instance grows memory.buffer mid-job and produces identical band and above-row bytes to rowsOfStack  grew=true band= above=
+ok   inpaint_worker.js pngPart resets p.job after every part (jobBytes=0, 1 chunk, stable memory across repeated parts) and calls releaseIfLarge()  jobBytes=0/0/0 chunks=1/1/1 mem=19070976->19070976 rel=10->11
+ok   inpaint_worker.js pngPart under composeTiles and composeStack routes: composeWasm=1 on rust, composeWasm=0 on js, row 0 filter in {0, 1}, identical IDAT chunks  tRust=1 tJs=0 sRust=1 sJs=0 row0=0/1
+ok   inpaint_worker.js pngPart recovers from OOM and wasm trap in both partPtrOf (job.take) and pngPartFromPtr, renews the instance, and produces identical bytes via fallback  gatherOomOk=true gatherTrapOk=true oomOk=true trapOk=true
+ok   rust simd clip_coverage equals inpaint_raster.js clipCoverage and independent mul255 across lengths 0..1024, null/non-null masks, alphas, odd offsets, and all 65,536 byte pairs
+ok   rust simd dissolve_rows equals reference & blend_modes.js hash32 across positive/zero/negative origins, SIMD+tail widths, srcA=0 non-zero RGB, and cVal=255 at hash32>>>24 === 255  simdHash255=true tailHash255=true
+ok   rust simd stackRowsToWasm clipCoverage and dissolveRows routes (including clipped + dissolved layer): rust calls clip_coverage & dissolve_rows exports, js runs inline views, all 4 route pairs match rowsOfStack
+ok   rust simd psdPackRowsFromPtr + partPtrOf equals rowsOfTiles/rowsOfStack + psdPackRows and kernels_js.psdPackRows on tile and stack messages
+ok   rust simd stackRowsToWasm with into matches rowsOfStack across multi-band y !== y0, x0 !== 0, l.sab + dissolve (preserving l.sab), and st.base=null with clear true/false
+ok   inpaint_worker.js psdPart under psdPartWasm route: composeWasm=1 on rust, composeWasm=0 on js, jobBytes=0, releaseIfLarge(), and identical PackBits channels  tRust=1 tJs=0 sRust=1 sJs=0 jobBytes=0/0 rel=11->12
+ok   inpaint_worker.js psdPart recovers from OOM in partPtrOf and wasm trap in psdPackRowsFromPtr, renews the instance, and produces identical channels via fallback  gatherOomOk=true packTrapOk=true
+ok   inpaint_worker.js stackInto under stackIntoWasm route: composeWasm=1 on rust, composeWasm=0 on js and base-only (layers: []), jobBytes=0, and identical band bytes at (y - y0) * w * 4 against whole-box rowsOfStack  r0=1 j0=0 baseOnly=0 jobBytes=0 diffBox=
+ok   inpaint_worker.js stackInto recovers from OOM and wasm trap, renews the instance, and produces identical band bytes via fallback  oomOk=true trapOk=true
+ok   inpaint_worker.js stackPoints with dissolve layer matches rowsOfStack at sampled grid coordinates
+ok   rust simd png_part_lines_cap equals partRows(w, 2048) * (1 + 4 * w) across clamp boundaries and overflow
+ok   rust simd adler32 standard vector ("Wikipedia" -> 11E60398) and empty buffer
+ok   rust simd js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and refAdler32 (160 decode + 48 finish cases)
+ok   rust simd png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)
+ok   js png_part_decode gives the same at an odd offset
+ok   rust simd png_part_finish equals its twin byte for byte (48 cases, each also at an odd offset)
+ok   js png_part_finish gives the same at an odd offset
+ok   rust simd pngPartDecode and pngPartFinish write into a given Uint8ClampedArray view without touching guard bytes
+ok   rust simd png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) without mutating caller buffers
+ok   rust simd png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)
+ok   rust simd multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and refAdler32
+ok   Node/runtime native DecompressionStream("deflate-raw") refuses a part referencing before its start, corrupt deflate bytes, and truncated parts  shared=true corrupt=true trunc=true
+ok   px.js keeps the 64 KB round-trip table resident in wasm memory (copied on first call, 0 B on subsequent calls)  first bytesIn=66049, second bytesIn=513
+ok   kernels.js switches pngPartLinesCap, pngPartDecode, and pngPartFinish between Rust and the JS twin
+ok   pngPartsOf parses a Scumble parted PNG with sRGB and tEXt (6 parts, 64x24)  {"width":64,"height":24,"bitDepth":8,"colorType":6,"parts":[{"off":96,"len":806},{"off":914,"len":537},{"off":1463,"len":1020},{"off":2495,"len":307},{"off":2814,"len":1275},{"off":4101,"len":795}],"adler":2211090356,"texts":{"Software":"Scumble"}}
+ok   pngPartsOf rejects non-parted and non-RGBA PNGs after 33-49 bytes (33 B for RGB IHDR, 41 B for single IDAT, 49 B with sRGB)  rgb=33 noSrgb=41 withSrgb=49
+ok   pngPartsOf refuses 20 invalid or colour-managed layouts
+ok   readPngParts decodes 6 parts in parallel (2 needing finish at INTERACTIVE priority 0, 1 receiving prev at launch, window <= pool.size + 2) and lands exact rows in scanline order  maxWindow=4 finishPriorities=[0,0] landed=[[0,4],[4,3],[7,5],[12,2],[14,6],[20,4]] diff=
+ok   P5 writePng + bandRows writes independent parts (prev=null, firstFilter in {0, 1}, needsPrev=false, 0 png_part_finish jobs)  prevs=[null,null,null] filters=[{"firstFilter":0,"needsPrev":false},{"firstFilter":0,"needsPrev":false},{"firstFilter":1,"needsPrev":false}] finishes=0
+ok   readPngParts rejects on combined Adler-32 mismatch, under/over row-count mismatch, or part error, and cancels the pool group  adlerThrew=true heightThrew=true overHeightThrew=true rowsDelivered=20/23 cancelled=3 partErrThrew=true partErrCancels=2 partErrLaunched=3/6
+       png_part_decode 15000x139 (8.34 MB, with rt): rust simd 13.39 ms (copyIn 0.45 ms, decode 12.44 ms, copyOut 0.40 ms), twin 39.38 ms
+       png_part_decode(needsPrev)+finish 15000x139 (Paeth, with rt): decode 2.41 ms + finish 11.20 ms = 13.61 ms, twin 86.24 ms
+ok   js psdPackRows gives the bytes of the PSD writer's packBits
+ok   js psdPackRows equals the rust simd
+ok   rust simd packbitsRows matches independent reference, round-trips psdPackRows, zero-fills short rows on dirty out, and preserves sentinel bytes
+ok   rust simd packbits_rows equals its twin byte for byte (19 cases, each also at an odd offset)
+ok   js packbits_rows gives the same at an odd offset
+ok   rust simd packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output  rawPbOk=true
+ok   rust simd psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views
+ok   rust simd psd_mask_rgba equals its twin byte for byte (52 cases, each also at an odd offset)
+ok   js psd_mask_rgba gives the same at an odd offset
+ok   rust simd psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output  rawMaskOk=true
+ok   rust simd psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs
+ok   rust simd psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+ok   rust simd readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated
+ok   inpaint_worker.js psdRead & kernels.js psdKernels(): routes psdRead/tiffToRgba/tiffUnpredict between Rust and JS twin, resets p.job, calls releaseIfLarge(), and matches PSD_JS  rustK=rust jsK=js calls={"packbits_rows":4,"psd_mask_rgba":4,"tiff_to_rgba":4,"tiff_unpredict":8} jsCalls={} rel=12->15 jobBytes=0
+ok   inpaint_worker.js psdRead window 2: posts 2 bands, then one more per acknowledged band (psdAck by job id and count), same bytes as unpaced  counts=2,2,3,3,5 posted=8 reply=true err=null window=2 wait=258.9535000001779
+ok   psdKernels() recovers mid-layer on band 2 of 4 from wasm RuntimeError and PxOutOfMemory without mutating d.bytes, leaking arena bytes, or dropping/duplicating bands  trapBandOk=true oomMaskOk=true
+       packbits_rows 15000x256 (1 plane): twin 2.00, simd 0.83 ms (median of 9)
+       psd_mask_rgba 8-bit 15000x256: twin 20.03, simd 1.97 ms (median of 9)
+       psd_mask_rgba 16-bit BE 15000x256: twin 21.21, simd 2.15 ms (median of 9)
+       psdBandRgba RLE RGBA8 15000x256 (4 planes -> RGBA8): twin 28.56, simd 5.34 ms (median of 9)
+ok   rust simd resample_block equals its twin (96 maps: turns, scales, a mirror, bicubic / bilinear, masks, clamped edges, round trip)
+       2048 x 2048 turned 3 degrees, bicubic: rust simd 125 ms (29.9 ns/px), twin 271 ms (64.6 ns/px)
+ok   rust simd liquify_block (rust simd) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust simd) gives the same at an odd offset
+ok   rust simd liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust simd liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust simd liquify_preview (rust simd) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust simd) gives the same at an odd offset
+ok   rust simd liquifyPreview refuses invalid arguments and out-of-range node offsets
+ok   rust simd liquify_dab (rust simd) equals its twin byte for byte (124 cases, each also at an odd offset)
+ok   js liquify_dab (rust simd) gives the same at an odd offset
+ok   rust simd liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8
+ok   rust simd liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 3342336, sameBox=true, sameNodes=true
+ok   rust simd liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+ok   thawPlane (K30): extracts byte planes across present and missing cells at s = 1, 2, 4, 8
+ok   liquifyDabNodes (K30): refuses invalid modes, zero radius/amount/delta/dims and short buffers without writing  [0,0,0,0,0,0,0,0,0]
+ok   rust simd alloc returns an 8-aligned pointer  ptr 26193920
+ok   rust simd a large alloc grows memory  639500288 -> 908001280
+ok   rust simd the old view is detached after growth
+ok   rust simd the fresh view sees the bytes written before growth
+ok   rust simd put / get of a Float32Array
+ok   rust simd arena blocks do not overlap
+ok   rust simd after a reset the job fits one kept chunk  chunks 1
+FAIL rust simd a pointer above 2 GB is usable  ptr 26193920
+ok   rust scalar module reports its SIMD flag
+ok   js mip keeps the colour of the one opaque sample  255,0,0,64
+ok   js mipHalf equals the rust scalar
+ok   js mip byte path equals the word path; Uint8ClampedArray input gives the same chain
+ok   js mipChain equals the rust scalar and repeated halving
+ok   js clampExtend equals the rust scalar and repeats the valid edge
+ok   js distTransform equals the rust scalar bit for bit
+ok   js twin is the exact squared distance (brute force 41x29)
+ok   js flood equals the rust scalar, with the count
+ok   rust scalar grow_mask equals growMask + maskBounds + cells (0 empty, 1 changed, 2 unchanged; grow, shrink, empty, partial alpha)
+ok   rust scalar flood_shape (out_kind 4 and 1) equals floodMask, the selection clip, the count, the bounds, the cells and the shape
+ok   rust scalar dilate_mask equals its twin bit for bit (30 cases, each also at an odd offset)
+ok   rust scalar box_blurs equals its twin bit for bit (75 cases, each also at an odd offset)
+ok   rust scalar alpha_to_mask equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp equals its twin bit for bit (NaN, +-0, clamp, in-place) (64 cases, each also at an odd offset)
+       rust scalar mask_max_clamp allowed differences: a NaN's bits 0
+ok   rust scalar mask_one_minus equals its twin bit for bit (12 cases, each also at an odd offset)
+ok   rust scalar mask_max_clamp and mask_one_minus with separate dst pointer equal their twins
+ok   rust scalar erode_mask equals its twin bit for bit (66 cases, each also at an odd offset)
+ok   rust scalar mask_to_rgba equals its twin byte for byte (white, luminance, alpha) (42 cases, each also at an odd offset)
+ok   rust scalar mask_bounds_f32 equals its twin (177 cases, each also at an odd offset)
+ok   rust scalar color_match_rgba equals its twin byte for byte (f64 sequential stats, <64 guard, ties-even) (17 cases, each also at an odd offset)
+ok   rust scalar blend_alpha equals its twin byte for byte (keepAlpha false/true, in-place, NaN/+-0) (30 cases, each also at an odd offset)
+ok   rust scalar blend_alpha with separate dst pointer equals its twin
+ok   rust scalar edgefit_shrink equals its twin float for float (1:1 and box-shrunk, f32/f64 alpha, 1e-4 floor) (14 cases, each also at an odd offset)
+ok   rust scalar warp_rgba equals its twin byte for byte (bilinear clamp, 1xN/Nx1, ties-to-even, NaN/+-Inf) (82 cases, each also at an odd offset)
+ok   rust scalar warp_coverage equals its twin float for float (4-edge ramp, +0.0 clamp, NaN/+-Inf) (90 cases, each also at an odd offset)
+       rust scalar warp_coverage allowed differences: a NaN's bits 0
+       1492 x 1492: dilate rust scalar 19.5 ms, twin 46.8; three box blurs rust scalar 18.1 ms, twin 46.1
+       1492 x 1492 K32+K33+K34 masks: alpha_to_mask rust scalar 3.34 ms, twin 4.43; mask_max_clamp rust scalar 7.22 ms, twin 7.07; mask_one_minus rust scalar 1.87 ms, twin 2.11; erode_mask rust scalar 23.28 ms, twin 65.24; mask_to_rgba rust scalar 5.78 ms, twin 8.79; mask_bounds_f32 rust scalar 0.63 ms, twin 3.24; color_match_rgba rust scalar 22.65 ms, twin 50.42; blend_alpha rust scalar 6.10 ms, twin 5.21; edgefit_shrink rust scalar 9.05 ms, twin 22.28; warp_rgba rust scalar 46.52 ms, twin 57.75; warp_coverage rust scalar 15.39 ms, twin 6.54
+ok   rust scalar blur_rgba equals inpaint_stroke.js blurRGBA byte for byte (274 cases, each also at an odd offset)
+ok   rust scalar sharpen_rgba equals inpaint_stroke.js sharpenRGBA byte for byte (338 cases, each also at an odd offset)
+ok   rust scalar blur_rgba / sharpen_rgba refuse a short source, an empty or fractional size and a radius past 2^30 (null: the twin runs)  null, null, null, null
+       a 448 x 448 dab, r 8: blur rust scalar 6.4 ms, twin 13.5; sharpen rust scalar 10.4 ms, twin 21.5
+ok   rust scalar tone_rgba equals inpaint_stroke.js toneRGBA byte for byte (7848 cases, each also at an odd offset)
+ok   rust scalar sponge_rgba equals inpaint_stroke.js spongeRGBA byte for byte (1881 cases, each also at an odd offset)
+ok   rust scalar tone_rgba / sponge_rgba refuse what is not whole pixels of bytes and a table not of 256 bytes (null: the twin runs)  null, null, null, null, null, null, null, null, null, null, null
+       a 1002 x 1002 dab: tone (protect) rust scalar 7.2 ms, twin 11.6; sponge (saturate, vibrance) rust scalar 16.3 ms, twin 31.0
+ok   rust scalar freq_split equals inpaint_stroke.js freqSplit byte for byte (L in place and H) (129 cases, each also at an odd offset)
+ok   js freqSplit gives the picture back: L + 2H - 255 = I for every (I, L) pair
+ok   rust scalar freqSeparate (blur_rgba and freq_split in one arena) equals blurRGBA then freqSplit byte for byte (275 cases, each also at an odd offset)
+ok   rust scalar freq_split / freqSeparate refuse what is not whole pixels of bytes, a blur of another length, a size that is not the picture's and a radius past 2^30 (null: the twin runs), and leave L as it was  null, null, null, null, null, null, null, null, null
+       1024 x 1024: the split rust scalar 5.9 ms (with its copies), twin 26.1; the separation r 8 in one arena 70.4 ms, K26's way (Rust blur, the twin's split) 80.3
+ok   rust scalar range_max equals its twin bit for bit (11 cases, each also at an odd offset)
+ok   rust scalar range_max of a flat map is 0 everywhere
+       2048 x 2048: range_max rust scalar 28.9 ms, twin 116.1 ms
+ok   rust scalar height_normals equals its twin within 1 level
+ok   rust scalar smoothDepth 512x341 and 1024x682 outputs are non-trivial (both shadowed and lit pixels on shadow-casting cases)
+ok   rust scalar hoisted js.shadowMarch equals pre-hoist reference byte for byte (142 cases)
+ok   rust scalar shadow_march_f64 equals its twin byte for byte (142 cases, each also at an odd offset)
+ok   rust scalar shadowMarchF64 and raw shadow_march_f64 refuse invalid arguments without touching out
+ok   rust scalar shadowMarchF64 with a key copies the depth map into its resident slot once across 4 stripes and equals a single full-height call  slotCopied=1
+ok   rust scalar png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)
+ok   rust scalar png_unfilter_rows on rows of 1..67 px (and 128..257 px) with forced Paeth ties (ac=15513, bc=15064) equals its twin and reconstructs raw at even and odd offsets  ac=15513, bc=15064
+       256 rows of 15,000 RGB pixels, Paeth: rust scalar 29.3 ms, twin 45.6 ms
+ok   js compositeTile equals the rust scalar (5 ops and 25 blend modes, partial alpha, opacity, masks, tails)
+ok   js blend modes equal the rust scalar, each alone (opaque and translucent backdrops, opacity, mask)
+ok   js composite gives the same bytes for Uint8ClampedArray inputs
+ok   js source-over over an opaque tile within 1.5 levels of float maths  worst 1.32
+ok   js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)  worst 0.95 (color-burn), at full opacity 0.501; linear light 0.881, at full opacity 0.498
+ok   js blend modes over translucent pixels within 2.5*255/alpha + 2.5*255/backdrop alpha + 0.6 levels  worst at 29 % of the bound over 95380 pixels; linear light 27 %; tier B raw dev 2.56, ratio 32 %
+ok   js linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   rust scalar linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly
+ok   js linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar linear-dodge over every opaque (b, s) pair matches closed form exactly
+ok   js linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar linear-burn over every opaque (b, s) pair matches closed form exactly
+ok   js subtract over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar subtract over every opaque (b, s) pair matches closed form exactly
+ok   js pin-light over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar pin-light over every opaque (b, s) pair matches closed form exactly
+ok   js hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   rust scalar hard-mix over every opaque (b, s) pair matches closed form exactly
+ok   js exclusion over every opaque (b, s) pair matches reference exactly
+ok   rust scalar exclusion over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge over every opaque (b, s) pair matches reference exactly
+ok   rust scalar color-dodge over every opaque (b, s) pair matches reference exactly
+ok   js color-burn over every opaque (b, s) pair matches reference exactly
+ok   rust scalar color-burn over every opaque (b, s) pair matches reference exactly
+ok   js vivid-light over every opaque (b, s) pair matches reference exactly
+ok   rust scalar vivid-light over every opaque (b, s) pair matches reference exactly
+ok   js divide over every opaque (b, s) pair matches reference exactly
+ok   rust scalar divide over every opaque (b, s) pair matches reference exactly
+ok   js color-dodge edge set matches reference exactly
+ok   rust scalar color-dodge edge set matches reference exactly
+ok   js color-burn edge set matches reference exactly
+ok   rust scalar color-burn edge set matches reference exactly
+ok   js vivid-light edge set matches reference exactly
+ok   rust scalar vivid-light edge set matches reference exactly
+ok   js divide edge set matches reference exactly
+ok   rust scalar divide edge set matches reference exactly
+       a megapixel over an opaque tile at 78 %: multiply rust scalar 6.2 ms, twin 26.2; overlay rust scalar 11.2 ms, twin 35.1; soft-light rust scalar 13.4 ms, twin 34.9; linear-light rust scalar 7.8 ms, twin 33.7; exclusion rust scalar 8.0 ms, twin 28.5; pin-light rust scalar 12.0 ms, twin 40.5; color-dodge rust scalar 7.4 ms, twin 44.8; hue rust scalar 12.8 ms, twin 44.0; darker-color rust scalar 7.3 ms, twin 20.8
+ok   js source-over over translucent pixels within 2.5*255/alpha + 0.6 levels, alpha within 1  worst at 61 % of the bound over 7221 translucent pixels, alpha off by 0.91
+ok   js matchPixels equals the rust scalar (random pixels and statistics, tails, k 0 to 1)
+ok   rust scalar matchPixels handles empty buffers and non-zero byteOffset Uint8ClampedArray subarrays in place
+ok   js matchPixels equals the rust scalar at the extremes of the statistics
+       a megapixel matched: rust scalar 18.5 ms, twin 26.8
+ok   js smudgeDab equals the rust scalar (random pixels, carries, masks; strength, keep, alpha lock, pickup)
+ok   js smudgeDab equals the rust scalar over a stroke of 40 dabs whose carry goes on
+ok   rust scalar smudgeDab takes a Uint8ClampedArray view and gives the twin's bytes
+       a 400 px dab smudged: rust scalar 2.17 ms, twin 19.58
+ok   js poissonBlend equals the rust scalar on strands, the not-settled flag included
+ok   js poissonBlend equals the rust scalar on the 20 scenes (out and info)
+ok   js poissonBlend equals the rust scalar on random boxes (1 x 1 to 257 x 129; sparse, dense, full and empty masks)
+ok   rust scalar poissonBlend takes Uint8ClampedArray views at an offset, gives the twin's bytes and leaves its inputs
+ok   rust scalar poissonBlend writes a given out and returns it; without one it returns a new array of the same bytes
+ok   rust scalar poissonBlend with w or h 0 does nothing
+ok   js poissonBlend equals the rust scalar on a disc in a 512 x 512 box   info [183461,7,8,0] vs [183461,7,8,0]
+       a disc healed in a 512 x 512 box (183461 px): rust scalar 90.1 ms, 7 cycles, 8 levels; twin 160.0 ms, 7 cycles
+ok   js poissonBlend equals the rust scalar on a diagonal 60 px stroke in a 512 x 512 box   info [40549,5,6,0] vs [40549,5,6,0]
+       a diagonal 60 px stroke healed in a 512 x 512 box (40549 px): rust scalar 15.8 ms, 5 cycles, 6 levels; twin 33.2 ms, 5 cycles
+ok   js poissonBlend equals the rust scalar on a disc in a 2048 x 2048 box   info [2916809,7,10,0] vs [2916809,7,10,0]
+       a disc healed in a 2048 x 2048 box (2916809 px): rust scalar 1468.3 ms, 7 cycles, 10 levels; twin 3074.7 ms, 7 cycles
+ok   js poissonBlend equals the rust scalar on a diagonal 60 px stroke in a 2048 x 2048 box   info [174181,5,6,0] vs [174181,5,6,0]
+       a diagonal 60 px stroke healed in a 2048 x 2048 box (174181 px): rust scalar 168.5 ms, 5 cycles, 6 levels; twin 253.2 ms, 5 cycles
+ok   js pngFilterRows equals the rust scalar
+ok   js filtered rows unfilter back to the input
+ok   CompressionStream("deflate") inflates back to the input  131072 -> 85395
+ok   rust scalar pngPart level 1: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189656
+ok   rust scalar pngPart level 1: the joined rows unfilter back to the input
+ok   rust scalar pngPart level 2: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189375
+ok   rust scalar pngPart level 2: the joined rows unfilter back to the input
+ok   rust scalar pngPart level 6: 4 parts join into one zlib stream with a valid Adler-32  280100 -> 189370
+ok   rust scalar pngPart level 6: the joined rows unfilter back to the input
+ok   rust scalar pngPart frames each part in wasm as an IDAT chunk (bytes a subarray of chunk, crc matching pngChunk)
+ok   rust scalar pngPart of an empty band is small  1033 bytes
+ok   rust scalar pngPart of noise inflates back
+ok   rust scalar crc32 standard vectors ("" -> 00000000, "123456789" -> CBF43926) and null/zero continuation
+ok   rust scalar js crc32 equals Node's zlib.crc32 (303 cases)
+ok   rust scalar crc32 equals its twin byte for byte (303 cases, each also at an odd offset)
+ok   rust scalar crc32 continuation across splits equals one call
+ok   rust scalar crc32Combine (zero lengths, powers of 2 up to 16 MB, ~7.7 MB, 0..260 B) equals zlib.crc32 of the concatenation
+ok   rust scalar png_chunk_frame equals inpaint_png.pngChunk byte for byte (84 cases)
+ok   rust scalar png_chunk_frame equals its twin byte for byte (84 cases, each also at an odd offset)
+ok   rust scalar pngPart of 720 x 256 noise rows (level 2, not the last part) and a last part join into one zlib stream  746179 -> 746315 (the first part 737536 -> 737661)
+ok   rust scalar pngPart of 720 x 256 noise rows: the first buffer is enough (one deflate_part call a part)  2 calls
+ok   rust scalar pngPart of 4096 x 256 noise rows (level 2, not the last part) and a last part join into one zlib stream  4325640 -> 4326341 (the first part 4194560 -> 4195230)
+ok   rust scalar pngPart of 4096 x 256 noise rows: the first buffer is enough (one deflate_part call a part)  2 calls
+ok   rust scalar deflate_part of a non-last noise part: each buffer gives -1 or the whole part (4195230 bytes, as pngPart's), never a shorter one  the first buffer of before was 4194949
+ok   rust scalar pngPart of 15000 x 139 noise rows (level 2, not the last part) and a last part join into one zlib stream  8460141 -> 8461487 (the first part 8340139 -> 8341459)
+ok   rust scalar pngPart of 15000 x 139 noise rows: the first buffer is enough (one deflate_part call a part)  2 calls
+ok   rust scalar zlib of a 2 MB noise strip inflates back, in one deflate_part call  1 calls
+ok   rust scalar tilesRowsToWasm + pngPartFromPtr equals rowsOfTiles + pngPart across top row, mid-tile-row, tile-row boundary (prevTiles row 255) and sparse null tiles
+ok   rust scalar stackRowsToWasm (2a): empty layers [] preserves soft-alpha and A=0 RGB base bytes verbatim
+ok   rust scalar stackRowsToWasm (2b): layers with no tiles in the band are skipped without running composite_tile on the base
+ok   rust scalar stackRowsToWasm (2c): separate above pass at part boundary y=256 with layers starting and ending at 256
+ok   rust scalar stackRowsToWasm (2d): positive/negative layer offsets, unmasked partial layer, and mask holes clip identically to storeRows
+ok   rust scalar stackRowsToWasm (2e): 10-float match_pixels layer between blend layers equals rowsOfStack
+ok   rust scalar stackRowsToWasm (2f): two clipped layers over a masked clip base (with c.mask hole) and a clipped layer over an unmasked clip base (pbm=0)
+ok   rust scalar stackRowsToWasm (2g): dissolve layer at y=16 (above row 15, partial and cVal=255 at hash32>>>24 === 255) equals rowsOfStack on rust and dissolveRows=js  hitHash255=true
+ok   rust scalar stackRowsToWasm (2h): fresh instance grows memory.buffer mid-job and produces identical band and above-row bytes to rowsOfStack  grew=true band= above=
+ok   rust scalar clip_coverage equals inpaint_raster.js clipCoverage and independent mul255 across lengths 0..1024, null/non-null masks, alphas, odd offsets, and all 65,536 byte pairs
+ok   rust scalar dissolve_rows equals reference & blend_modes.js hash32 across positive/zero/negative origins, SIMD+tail widths, srcA=0 non-zero RGB, and cVal=255 at hash32>>>24 === 255  simdHash255=true tailHash255=true
+ok   rust scalar stackRowsToWasm clipCoverage and dissolveRows routes (including clipped + dissolved layer): rust calls clip_coverage & dissolve_rows exports, js runs inline views, all 4 route pairs match rowsOfStack
+ok   rust scalar psdPackRowsFromPtr + partPtrOf equals rowsOfTiles/rowsOfStack + psdPackRows and kernels_js.psdPackRows on tile and stack messages
+ok   rust scalar stackRowsToWasm with into matches rowsOfStack across multi-band y !== y0, x0 !== 0, l.sab + dissolve (preserving l.sab), and st.base=null with clear true/false
+ok   rust scalar png_part_lines_cap equals partRows(w, 2048) * (1 + 4 * w) across clamp boundaries and overflow
+ok   rust scalar adler32 standard vector ("Wikipedia" -> 11E60398) and empty buffer
+ok   rust scalar js pngPartDecode and pngPartFinish match reference unfilter, round-trip table, pre-rt prev row, and refAdler32 (160 decode + 48 finish cases)
+ok   rust scalar png_part_decode equals its twin byte for byte (160 cases, each also at an odd offset)
+ok   rust scalar png_part_finish equals its twin byte for byte (48 cases, each also at an odd offset)
+ok   rust scalar pngPartDecode and pngPartFinish write into a given Uint8ClampedArray view without touching guard bytes
+ok   rust scalar png_part_decode and png_part_finish return -4 (PART_NOT_LINES) and -5 (PART_BAD_FILTER) without mutating caller buffers
+ok   rust scalar png_part_decode and png_part_finish seeded fuzz (240 decode + 240 finish cases across length, w, filter bytes, and -4 before -5 precedence)
+ok   rust scalar multi-part PNG round-trip through DecompressionStream("deflate-raw") + out-of-order pngPartDecode + pngPartFinish matches byte for byte and refAdler32
+ok   js psdPackRows gives the bytes of the PSD writer's packBits
+ok   js psdPackRows equals the rust scalar
+ok   rust scalar packbitsRows matches independent reference, round-trips psdPackRows, zero-fills short rows on dirty out, and preserves sentinel bytes
+ok   rust scalar packbits_rows equals its twin byte for byte (19 cases, each also at an odd offset)
+ok   rust scalar packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output  rawPbOk=true
+ok   rust scalar psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views
+ok   rust scalar psd_mask_rgba equals its twin byte for byte (52 cases, each also at an odd offset)
+ok   rust scalar psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output  rawMaskOk=true
+ok   rust scalar psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs
+ok   rust scalar psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+ok   rust scalar readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated
+ok   rust scalar resample_block equals its twin (96 maps: turns, scales, a mirror, bicubic / bilinear, masks, clamped edges, round trip)
+       2048 x 2048 turned 3 degrees, bicubic: rust scalar 146 ms (34.7 ns/px), twin 258 ms (61.5 ns/px)
+ok   rust scalar liquify_block (rust scalar) equals its twin byte for byte (96 cases, each also at an odd offset)
+ok   js liquify_block (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_block equals its twin across 16 liquifyStore walks (push, grow, shrink, swirlcw, swirlccw, restore, s=1..8, clamp, splits, round trip)
+ok   rust scalar liquifyBlock refuses invalid s, small blocks, short nodes and out-of-range node offsets
+ok   rust scalar liquify_preview (rust scalar) equals its twin byte for byte (80 cases, each also at an odd offset)
+ok   js liquify_preview (rust scalar) gives the same at an odd offset
+ok   rust scalar liquifyPreview refuses invalid arguments and out-of-range node offsets
+ok   rust scalar liquify_dab (rust scalar) equals its twin byte for byte (124 cases, each also at an odd offset)
+ok   js liquify_dab (rust scalar) gives the same at an odd offset
+ok   rust scalar liquify_dab (K30/K31): Map-based dab, liquifyDabNodes and px.liquifyDab are three-way equal across 120 random dabs at s=1..8
+ok   rust scalar liquifyDab on a fresh Px instance grows the job arena past 1 MB without detaching the field.nodes view  bytes 1114112 -> 3342336, sameBox=true, sameNodes=true
+ok   rust scalar liquifyDab refuses invalid modes, s, dims, NaN, short buffers and out-of-window advected samples without writing  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+ok   rust scalar alloc returns an 8-aligned pointer  ptr 26124288
+ok   rust scalar a large alloc grows memory  639500288 -> 908001280
+ok   rust scalar the old view is detached after growth
+ok   rust scalar the fresh view sees the bytes written before growth
+ok   rust scalar put / get of a Float32Array
+ok   rust scalar arena blocks do not overlap
+ok   rust scalar after a reset the job fits one kept chunk  chunks 1
+FAIL rust scalar a pointer above 2 GB is usable  ptr 26124288
+FAIL (2)

@@ -1,0 +1,310 @@
+K18 measurement summary (2026-11-10)
+====================================
+
+Behaviour change (`rules.md` report checklist (a)):
+- Opening another file while a TIFF is still being read now cancels the superseded TIFF's remaining worker jobs immediately instead of finishing the decode in the background.
+- While a multi-band TIFF opens, the "Reading W × H px ... N %" status percentage advances by total rows decoded so far as worker bands finish rather than strictly top-to-bottom.
+- Opening a TIFF no longer depends on `partsUsable()`, so when PNG part workers are disabled (`pngParts = false` or after a `NO_PARTS` fallback) or the kernel mode is set to `"js"`, TIFFs still decode in the worker pool instead of on the window.
+  (Decoded pixels on valid files and refusal messages on damaged or unsupported files are unchanged, because any band error cancels the band group, releases partial pixels, and falls back to sequential `tiff_read`.)
+
+Scope (`docs/PLAN_WASM_BUILD.md` §4.6 K18, §5 row 35; `brief.md` item 4):
+- No `.rs` or wasm changes in K18 (`PX_ABI = 45` unchanged):
+  - `renderer/editor/px/px.wasm`:
+    - before at `c36840d8` (`git cat-file -s c36840d8:renderer/editor/px/px.wasm` / `git cat-file blob c36840d8:renderer/editor/px/px.wasm`): `289,975 bytes`, sha256 `f326653b273e3c871b64943c8bc17a66f32b518073ef3d2bd50b16cc592cb270`
+    - after (`K18`): `289,975 bytes`, sha256 `f326653b273e3c871b64943c8bc17a66f32b518073ef3d2bd50b16cc592cb270` (byte-identical)
+  - `renderer/editor/px/px_scalar.wasm`:
+    - before at `c36840d8` (`git cat-file -s c36840d8:renderer/editor/px/px_scalar.wasm` / `git cat-file blob c36840d8:renderer/editor/px/px_scalar.wasm`): `232,343 bytes`, sha256 `0c067d6ca569c44e6322547e18e5dcf23b9b2b39e10fac0eac12599a6bb74fa5`
+    - after (`K18`): `232,343 bytes`, sha256 `0c067d6ca569c44e6322547e18e5dcf23b9b2b39e10fac0eac12599a6bb74fa5` (byte-identical)
+- `renderer/editor/inpaint_tiff.js` (kept free of imports):
+  - Removed `colormap` from `plan.spec` (`:785-798`; `spec.pal` already carries the precomputed `Uint8Array` LUT from `paletteLut`, while `plan.colormap` stays on `plan` at `:872`), so worker `tiff_band` messages carry neither the full strip/tile tables nor a raw `ColorMap` array.
+  - Added and exported `readTiffBands(blob, { pool, plan, rowsPerBand = 256, priority = 1, later = null, onHeader = null, onRows = null, spent = null })` (`:1188-1306`): returns `null` when `plan.streamed` is true (`:1203`) so single-strip or oversized-band files fall through to `tiff_read`; posts `tiff_band` jobs carrying `{ blob, spec, band }` at `priority` in a `Symbol("tiff_bands")` pool group (`:1210`, `:1239-1244`) bounded to `maxInFlight = Math.max(1, (pool.size | 0) || 8) * 2` (`:1209`); delivers each decoded band to `onRows(view, y0, rows)` as soon as its worker answers (`:1277`); checks `later()` before planning, after `onHeader`, on band reply arrival (detaching `r.rgba` via `ab.transfer(0)` before calling `pool.cancel(group)`), and in `finishBand` after `onRows` (`:1200-1206`, `:1250-1255`, `:1272`, `:1297-1300`), throwing `CancelledError` (`err.cancelled = true`); and on any band error calls `pool.cancel(group)` and rejects (`:1227-1233`, `:1301-1304`).
+- `renderer/editor/px/kernels_js.js` (`:18`, `:20`) & `renderer/editor/px/kernels.js` (`:33`):
+  - Re-exported `readTiffBands`.
+- `renderer/editor/inpaint_worker.js`:
+  - Imported `readTiffBand` (`:62`), exported `tiffBandJob(msg)` (`:904-926`, calling `readTiffBand(msg.blob, spec, band, { spent, kernels: tiffKernels() })`, transferring `[buf]`, and returning `{ op: "tiff_band", kernels: kernelsInUse(), pixels: spec.info.width * rows, rows, kernel: now() - t0, ...spent }`), and dispatched `if (msg.op === "tiff_band") return tiffBandJob(msg);` in `run(msg)` (`:1964`).
+- `renderer/editor/inpaint_canvas.js`:
+  - Added `tiffPoolUsable(blob)` (`:570-572`, so `"js"` route overrides still exercise `tiff_band` on `editorPool()`).
+  - Updated `pixelsFromTiff(blob, Cls, progress = null, later = null)` (`:581-664`): reads `InpaintEditor.tiffBandRows` (`0` -> `TILE_SIZE` = `256`, `> 0` -> `bandSetting | 0`, `false` -> skip `readTiffBands`, `:584-585`, `:611`); runs `readTiffBands` at `NORMAL` priority (`priority: NORMAL` = `1`, ahead of `EXPORT` = `2`, `:613-620`); writes each band into `px` via `px.writeRect` as it arrives, detaches its `ArrayBuffer`, and reports monotonic `rowsDone / H` progress (`:595-610`); rethrows `CancelledError` without falling back when `later()` is true (`:627-628`); and on any band error calls `resetTarget()` (`px.release()`), logs a warning, and falls back to `tiff_read` at `NORMAL` priority (`:626-643`).
+  - Forwarded `later` from `loadTiff(file, later = () => false)` (`:19035-19051`, ignoring superseded `if (later()) return;` in `catch`) and `() => !!this._destroyed` in `addImageLayers` (`:17402`).
+  - Added `static tiffBandRows = 0;` (`:18128`) and exposed `pixelsFromTiff, tiffPlan, readTiffBand, readTiffBands` on `InpaintEditor.parts` (`:18124`).
+- `tools/tiff_test.js`, `tools/px_test.js`, `tools/tiff_test.py`:
+  - `tools/tiff_test.js` (`:1487-1627`): added K18 mock-pool suite testing 7-band out-of-order landing (`"9,3,0,6,18,12,15"`), `maxInFlight = 4` (`pool.size = 2`), `spec` payload without `offsets`/`counts`/`bands`/`colormap`, palette `Uint8Array` `pal`, `later()` mid-flight cancel + buffer detach, band error group cancel, and `streamed: true` returning `null` (`210 of 210` checks across Pass 1 `kernels: null` and Pass 2 `kernels: K.tiffKernels()`).
+  - `tools/px_test.js` (`:12338-12591`): added `4f` testing `tiffBandJob` on Rust vs `"js"` routes, `releaseMB = 1` wasm renewal via the `tiffKernels()` wrappers, `[buf]` transfer list, bad-arg refusal, `WorkerPool` `NORMAL` execution ahead of 4 queued `EXPORT` jobs (`maxPostedInFlight === 4`), `WorkerPool` group cancel on band 1 error, `later()` flipping both before band 0 reply arrival and inside band 0 `onRows` on a 2-band file (`next === n === 2`), and `streamed: true` returning `null`.
+  - `tools/tiff_test.py`: set `E.tiffBandRows = 8` in `opens_every_accepted_fixture` (`:1269-1298`, running `33` of `40` accepted fixtures across multiple parallel `tiff_band` jobs, including `rgb8_lzw_pred >= 6`, `tiled16 >= 3`, `planar_strips >= 6`, `many_strips >= 100`), updated `OPEN_ONE` (`:160-219`), `LAYER` (`:281-314`, 6 bands), and `EXPORT_REOPEN` (`:383-421`, 2 bands + `"js"` route replay) to assert `tiff_band` and summed `pxCalls`, added gate step `parallel_bands_priority_cancel_and_fallback` (`PARALLEL_BANDS`, `:463-686`, `:1385-1398`), and updated the 15k compare (`checkBandsAndPicture`, `:739-757`, `measured_band_rows` / `photo_files`, `:1063-1127`, `measure`, `:1214-1240`) to check one row per 256-row band (`40` bands at `15,000 x 10,000`) plus a 2-level SHA-256 of the whole picture (`picHash` / `picSha256`) after `openMs` and `openParts(E)` are recorded.
+
+1. Node & Electron-as-Node kernel micro-benchmarks (`docs/measurements/k18_2026-11-10/node/`)
+---------------------------------------------------------------------------------------------
+Commands:
+  PX_ONLY=tiff PX_BENCH=1 node tools/px_test.js > docs/measurements/k18_2026-11-10/node/node_px_test.log 2>&1
+  ELECTRON_RUN_AS_NODE=1 PX_ONLY=tiff PX_BENCH=1 ./node_modules/electron/dist/electron.exe tools/px_test.js > docs/measurements/k18_2026-11-10/node/electron_px_test.log 2>&1
+
+Medians of 15 warm iterations (`15000 x 16` band = `960 KB` RGBA8 / `720 KB` RGB8; `1 MB` strip for `tiff_unpack`):
+kernel                                        Node twin   Node simd   Node scalar   Electron twin   Electron simd   Electron scalar
+tiff_unpack (Uncompressed 1 MB strip)         0.02 ms     0.05 ms     0.05 ms       0.02 ms         0.05 ms         0.05 ms
+tiff_unpack (LZW 1 MB strip)                  4.82 ms     1.56 ms     1.58 ms       5.37 ms         1.54 ms         1.52 ms
+tiff_unpack (PackBits 1 MB strip)             0.87 ms     0.13 ms     0.13 ms       0.92 ms         0.11 ms         0.11 ms
+tiff_unpredict RGBA8 15000x16                 0.80 ms     0.12 ms     0.42 ms       1.33 ms         0.11 ms         0.40 ms
+tiff_unpredict RGB8 15000x16                  0.60 ms     0.29 ms     0.43 ms       1.00 ms         0.22 ms         0.40 ms
+tiff_predict_rgba 15000x16                    0.61 ms     0.08 ms     0.40 ms       0.59 ms         0.05 ms         0.35 ms
+tiff_to_rgba RGB8->RGBA8 15000x16             1.16 ms     0.37 ms     0.34 ms       0.92 ms         0.22 ms         0.22 ms
+tiff_to_rgba RGBA8 premul->straight 15000x16  2.78 ms     1.70 ms     1.65 ms       2.81 ms         1.34 ms         1.36 ms
+
+2. 15,000 x 10,000 before (`c36840d8`) vs after (`K18`), 3 alternating rounds on port 9633 (`w1_lock.py` held per batch)
+------------------------------------------------------------------------------------------------------------------------
+Commands:
+  SCUMBLE_CDP_PORT=9633 bash docs/measurements/k18_2026-11-10/k18_chain.sh
+  python docs/measurements/k18_2026-11-10/summarize.py > docs/measurements/k18_2026-11-10/summary_rows.txt
+
+All 42 Electron app runs (7 variants x 2 arms x 3 alternating rounds: r1 `before -> after`, r2 `after -> before`,
+r3 `before -> after`, each on a fresh offline `--tiles on --no-comfy` Electron instance, with a clean `before` tree
+exported via `git archive c36840d8`) completed on `try 1` with `rc=0`, `"focusedStart": true`, `"focusedEnd": true`,
+`"focused": true` (0 unfocused retries), `bandsChecked: 40`, `rowsOff: 0` / `picMatch: true` on `own` and `noise`, and
+identical 40-band row SHA-256 (`bandRowsSha256`) and 2-level whole-picture SHA-256 (`picSha256`) across all 5 photo
+variants (`lzw`, `packbits`, `raw_strips`, `zlib1`, `raw`).
+Lock & overlap disclosure (`chain.log`, `answers.md`, `K18-T2`):
+- During round 2, another agent's `sl-full-canvas-serial` gate overlapped `w1_lock.py` at `04:27:47-04:31:23` (`chain.log:163-185`) because of a race in `run_gates_both --lock`, affecting `raw r2` (`04:27:37-04:28:56`) and `noise r2` (`04:29:27-04:30:49`).
+- `raw r2` (`after` then `before`) was re-run cleanly under `w1_lock.py` at `08:37:17-08:39:13` (`chain.log:282-292`; the overlapped logs were moved to `notcounted/tiffperf_{before,after}_raw_r2_overlap_0427.log`, where `openMs` was `3,538.0 -> 3,550.0 ms`, and the table below uses the clean re-run `3,855.0 -> 3,369.0 ms`).
+- Before `noise r2` could be re-run, `WRAP_UP` was signalled at `08:38:15`; `noise r2` (`04:29:27-04:30:49`: `before openMs = 7,384.0 ms`, `after openMs = 5,706.0 ms`) is therefore explicitly marked as overlapped in the table below alongside the clean `r1`/`r3`-only numbers (`before` `6,858.0 / 7,725.0 ms` [mean `7,291.5 ms`] -> `after` `6,113.0 / 5,781.0 ms` [mean `5,947.0 ms`], `1.23x`, faster in both clean pairs; `openSteps pixels` `1,929.0 / 2,060.0 ms` -> `638.0 / 680.0 ms`, `3.02x`).
+GPU load (`chain.log`): rounds 1 and 2 ran at `1-8%` GPU utilization (`4,720-12,058 MiB` VRAM); during round 3 (`own r3`
+and `lzw r3`) background model training on the RTX 5090 drove GPU utilization to `15-100%` (`23,198-25,098 MiB` VRAM),
+then settled to `11-16%` (`6,766-7,668 MiB` VRAM) for `packbits r3` through `noise r3`.
+
+Note on `reader kernel/wait/decode/copy/unpredict/convert`:
+- `before` (`c36840d8`) runs 1 `tiff_read` job on 1 worker (`reader jobs = 1`, `reader workers = 1`), so `reader kernel`
+  is that single worker's wall time.
+- `after` (`K18`) dispatches `40` parallel `tiff_band` jobs across `8` pool workers (`reader jobs = 40`, `reader workers = 8`)
+  on every non-streamed variant (`own`, `lzw`, `packbits`, `raw_strips`, `noise`), and `sums()` in `tools/tiff_test.py`
+  sums worker milliseconds across all 40 jobs (just as `png_part` and `tiff_part` sum across 79 jobs). Dividing summed
+  `reader kernel` by 8 workers (`2,574.7 / 8 = 321.8 ms` on `own`; `4,568.1 / 8 = 571.0 ms` on `lzw`; `3,559.8 / 8 =
+  445.0 ms` on `noise`) matches the wall-clock `openSteps pixels` (`482.0 ms`, `821.0 ms`, `638.0 ms`, which include
+  `writeMs` `356-387 ms` on the window).
+
+`tiff_test.py --size 15000x10000` (7 variants, 1 variant/instance, 3 alternating rounds, median [min-max] ms):
+row                                   before (c36840d8)               after (K18)                     before / after (medians) & notes
+own exportMs                          1,428.0 [1,302.0-1,704.0]       1,498.0 [1,427.0-1,551.0]       0.95x (tie; spreads overlap; export untouched)
+own fileMB                            178.0 [178.0-178.0]             178.0 [178.0-178.0]             1.00x
+own exportSteps encoded               803.0 [737.0-1,186.0]           920.0 [804.0-1,009.0]           0.87x (tie; spreads overlap)
+own exportSteps saved                 564.0 [517.0-625.0]             577.0 [541.0-622.0]             0.98x (tie; spreads overlap)
+own exportSteps total                 1,428.0 [1,301.0-1,703.0]       1,497.0 [1,426.0-1,551.0]       0.95x (tie; spreads overlap)
+own export tiff_part jobs             79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own export tiff_part composeWasm      79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own export tiff_part kernel           5,756.2 [5,202.0-8,921.6]       6,913.3 [5,667.6-7,440.3]       0.83x (tie; spreads overlap; untouched)
+own export tiff_part rows             252.5 [232.6-292.1]             251.6 [195.2-268.6]             1.00x
+own export tiff_part predict          103.9 [58.6-117.3]              97.1 [91.1-107.5]               1.07x
+own export tiff_part deflate          5,348.0 [4,771.1-8,590.4]       6,594.1 [5,263.1-7,044.2]       0.81x (tie; spreads overlap)
+own openMs                            3,485.0 [3,170.0-3,499.0]       2,572.0 [2,368.0-2,857.0]       1.35x (non-overlapping; faster in 3/3 pairs; -913.0 ms)
+own openSteps info                    3.0 [3.0-3.0]                   3.0 [3.0-7.0]                   1.00x
+own openSteps pixels                  1,370.0 [1,317.0-1,431.0]       482.0 [475.0-590.0]             2.84x (non-overlapping; faster in 3/3 pairs; -888.0 ms; beats §4.6's inferred 0.6-0.8 s)
+own openSteps writeMs                 267.9 [248.2-289.3]             361.0 [348.4-436.7]             0.74x (+93.1 ms: 40 x 15 MB bands arrive concurrently in 482 ms instead of over 1,370 ms)
+own openSteps stored                  1,437.0 [1,295.0-1,515.0]       1,477.0 [1,352.0-1,565.0]       0.97x (tie; spreads overlap; untouched png_part)
+own openSteps base                    27.0 [24.0-28.0]                25.0 [25.0-27.0]                1.08x
+own openSteps total                   2,838.0 [2,639.0-2,977.0]       1,990.0 [1,857.0-2,182.0]       1.43x (non-overlapping; faster in 3/3 pairs; -848.0 ms)
+own reader jobs                       1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x (1 tiff_read -> 40 tiff_band jobs)
+own reader workers                    1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x (1 -> 8 pool workers)
+own reader kernel                     1,364.6 [1,311.2-1,425.9]       2,574.7 [2,056.3-2,727.3]       0.53x (summed CPU/wall ms across 40 jobs on 8 workers = ~322 ms/worker)
+own reader wait                       976.2 [933.9-1,010.7]           1,628.1 [1,402.5-1,664.8]       0.60x (summed across 8 workers)
+own reader decode                     0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+own reader copy                       96.0 [90.2-105.6]               163.5 [159.2-183.7]             0.59x (summed across 8 workers)
+own reader unpredict                  115.7 [111.5-119.5]             504.8 [200.4-547.4]             0.23x (summed across 8 workers)
+own reader convert                    130.4 [124.7-136.0]             248.5 [213.7-270.9]             0.52x (summed across 8 workers)
+own reader pieces                     9,301.0 [9,301.0-9,301.0]       9,301.0 [9,301.0-9,301.0]       1.00x
+own open png_part jobs                79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own open png_part composeWasm         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own open png_part kernel              5,935.9 [5,663.9-7,872.7]       6,284.6 [5,775.3-6,362.4]       0.94x (tie; spreads overlap)
+own open png_part rows                197.7 [191.4-199.3]             218.0 [194.2-235.7]             0.91x
+own open png_part filter              705.9 [685.3-848.6]             716.3 [703.3-782.8]             0.99x
+own open png_part adler               152.5 [146.9-207.5]             160.5 [151.6-162.0]             0.95x
+own open png_part deflate             4,782.7 [4,536.8-6,489.4]       5,057.3 [4,498.4-5,191.8]       0.95x
+lzw openMs                            5,864.0 [5,597.0-5,926.0]       3,667.0 [3,663.0-3,958.0]       1.60x (non-overlapping; faster in 3/3 pairs; -2,197.0 ms; 3.22x vs pre-K17 11,826 ms)
+lzw openSteps info                    3.0 [3.0-3.0]                   4.0 [2.0-17.0]                  0.75x
+lzw openSteps pixels                  3,131.0 [3,101.0-3,165.0]       821.0 [670.0-877.0]             3.81x (non-overlapping; faster in 3/3 pairs; -2,310.0 ms)
+lzw openSteps writeMs                 280.2 [262.6-285.5]             356.0 [292.5-373.2]             0.79x (+75.8 ms: concurrent band arrivals)
+lzw openSteps stored                  1,148.0 [1,117.0-1,308.0]       1,447.0 [1,389.0-1,492.0]       0.79x (+299.0 ms, spreads apart; see attribution note below)
+lzw openSteps base                    466.0 [465.0-486.0]             523.0 [501.0-589.0]             0.89x (+57.0 ms, spreads apart)
+lzw openSteps total                   4,781.0 [4,717.0-4,898.0]       2,737.0 [2,621.0-2,976.0]       1.75x (non-overlapping; faster in 3/3 pairs; -2,044.0 ms)
+lzw reader jobs                       1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x
+lzw reader workers                    1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x
+lzw reader kernel                     3,101.6 [3,065.5-3,134.0]       4,568.1 [3,657.0-4,625.9]       0.68x (summed across 40 jobs on 8 workers = ~571 ms/worker)
+lzw reader wait                       227.9 [215.1-241.5]             407.1 [385.0-421.5]             0.56x (summed across 8 workers)
+lzw reader decode                     2,567.8 [2,537.0-2,579.6]       3,719.5 [2,908.3-3,749.6]       0.69x (summed across 8 workers)
+lzw reader copy                       0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+lzw reader unpredict                  0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+lzw reader convert                    234.9 [227.0-240.7]             414.4 [341.0-419.9]             0.57x (summed across 8 workers)
+lzw reader pieces                     40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+lzw open png_part jobs                79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part composeWasm         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part kernel              4,999.3 [4,851.5-5,652.5]       7,156.1 [5,311.7-7,809.5]       0.70x (spreads overlap: 5,311.7 <= 5,652.5; see attribution note)
+lzw open png_part rows                195.8 [166.6-198.5]             200.8 [178.9-234.7]             0.98x
+lzw open png_part filter              250.9 [230.5-265.3]             695.9 [659.9-889.4]             0.36x (+445.0 ms summed across 8 workers; see attribution note)
+lzw open png_part adler               151.7 [145.3-163.9]             200.1 [143.2-201.3]             0.76x
+lzw open png_part deflate             4,306.2 [4,220.2-4,929.5]       5,891.9 [4,240.1-6,311.3]       0.73x (spreads overlap: 4,240.1 <= 4,929.5)
+packbits openMs                       4,039.0 [3,769.0-4,546.0]       3,476.0 [3,376.0-3,627.0]       1.16x (non-overlapping; faster in 3/3 pairs; -563.0 ms)
+packbits openSteps info               3.0 [2.0-4.0]                   3.0 [3.0-18.0]                  1.00x
+packbits openSteps pixels             876.0 [751.0-889.0]             518.0 [486.0-627.0]             1.69x (non-overlapping; faster in 3/3 pairs; -358.0 ms)
+packbits openSteps writeMs            298.0 [278.9-364.2]             326.1 [320.2-372.5]             0.91x
+packbits openSteps stored             1,437.0 [1,268.0-1,720.0]       1,191.0 [1,060.0-1,383.0]       1.21x (-246.0 ms in untouched png_part; spreads overlap)
+packbits openSteps base               535.0 [474.0-551.0]             485.0 [480.0-496.0]             1.10x
+packbits openSteps total              2,852.0 [2,495.0-3,163.0]       2,316.0 [2,066.0-2,366.0]       1.23x (non-overlapping; faster in 3/3 pairs; -536.0 ms)
+packbits reader jobs                  1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x
+packbits reader workers               1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x
+packbits reader kernel                833.9 [710.5-847.8]             1,470.1 [1,012.5-1,864.7]       0.57x (summed across 40 jobs on 8 workers = ~184 ms/worker)
+packbits reader wait                  281.0 [260.7-331.1]             473.6 [472.2-562.4]             0.59x (summed across 8 workers)
+packbits reader decode                130.5 [118.9-136.8]             173.1 [167.6-197.9]             0.75x (summed across 8 workers)
+packbits reader copy                  0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+packbits reader unpredict             0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+packbits reader convert               275.3 [245.6-411.3]             794.0 [348.8-1,071.8]           0.35x (summed across 8 workers)
+packbits reader pieces                40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+packbits open png_part jobs           79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part composeWasm    79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part kernel         5,141.3 [4,793.4-7,203.4]       5,719.5 [5,289.1-5,756.0]       0.90x (tie; spreads overlap)
+packbits open png_part rows           219.4 [193.5-262.6]             192.6 [181.7-199.0]             1.14x
+packbits open png_part filter         251.6 [226.0-332.4]             723.8 [642.4-762.3]             0.35x (+472.2 ms summed across 8 workers; see attribution note)
+packbits open png_part adler          152.3 [141.7-210.9]             154.1 [140.6-158.7]             0.99x
+packbits open png_part deflate        4,427.5 [4,141.3-6,274.5]       4,516.8 [4,115.5-4,571.2]       0.98x
+raw_strips openMs                     3,708.0 [3,423.0-3,956.0]       3,731.0 [3,391.0-3,854.0]       0.99x (tie; spreads overlap; after faster in 2/3 pairs; memory/writeRect-bound)
+raw_strips openSteps info             2.0 [2.0-2.0]                   2.0 [2.0-14.0]                  1.00x
+raw_strips openSteps pixels           662.0 [633.0-731.0]             624.0 [564.0-660.0]             1.06x (after faster in 3/3 pairs by -38.0 ms median; spreads overlap: 633 <= 660)
+raw_strips openSteps writeMs          288.8 [278.5-300.6]             388.2 [361.1-397.2]             0.74x (+99.4 ms: 62% of the 624 ms pixels step is main-thread writeRect of 572 MiB)
+raw_strips openSteps stored           1,309.0 [1,103.0-1,339.0]       1,299.0 [1,244.0-1,372.0]       1.01x (tie; spreads overlap)
+raw_strips openSteps base             471.0 [451.0-512.0]             532.0 [523.0-562.0]             0.89x (+61.0 ms in untouched base mip/upload)
+raw_strips openSteps total            2,474.0 [2,190.0-2,555.0]       2,493.0 [2,393.0-2,513.0]       0.99x (tie; spreads overlap)
+raw_strips reader jobs                1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x
+raw_strips reader workers             1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x
+raw_strips reader kernel              629.1 [600.1-679.8]             1,178.4 [1,079.9-1,776.6]       0.53x (summed across 40 jobs on 8 workers = ~147 ms/worker)
+raw_strips reader wait                261.3 [244.7-298.2]             541.9 [490.6-586.6]             0.48x (summed across 8 workers)
+raw_strips reader decode              73.9 [73.0-75.6]                114.0 [97.1-120.8]              0.65x (summed across 8 workers)
+raw_strips reader copy                0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+raw_strips reader unpredict           0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+raw_strips reader convert             243.7 [233.4-267.2]             565.0 [391.0-1,040.7]           0.43x (summed across 8 workers)
+raw_strips reader pieces              40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+raw_strips open png_part jobs         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw_strips open png_part composeWasm  79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw_strips open png_part kernel       5,075.0 [4,728.8-5,557.0]       6,233.5 [5,754.8-7,190.6]       0.81x (spreads apart; see attribution note)
+raw_strips open png_part rows         170.3 [163.9-232.7]             223.8 [202.5-237.4]             0.76x
+raw_strips open png_part filter       253.2 [228.6-268.9]             729.5 [713.4-740.6]             0.35x (+476.3 ms summed across 8 workers; see attribution note)
+raw_strips open png_part adler        148.9 [138.1-166.9]             171.2 [153.5-205.5]             0.87x
+raw_strips open png_part deflate      4,410.2 [4,109.8-4,790.4]       4,991.3 [4,532.4-5,884.9]       0.88x (spreads overlap)
+zlib1 openMs                          4,519.0 [3,939.0-4,941.0]       4,116.0 [4,034.0-4,604.0]       1.10x (tie; spreads overlap; 1-strip 600 MB RGBA -> plan.streamed=true -> tiff_read)
+zlib1 openSteps info                  2.0 [2.0-2.0]                   2.0 [2.0-8.0]                   1.00x
+zlib1 openSteps pixels                1,771.0 [1,590.0-1,955.0]       1,608.0 [1,557.0-1,721.0]       1.10x (tie; spreads overlap; same 1-worker tiff_read path)
+zlib1 openSteps writeMs               286.2 [225.5-311.1]             240.0 [224.9-269.7]             1.19x
+zlib1 openSteps stored                1,371.0 [1,086.0-1,435.0]       1,247.0 [1,227.0-1,439.0]       1.10x
+zlib1 openSteps base                  566.0 [459.0-647.0]             477.0 [475.0-575.0]             1.19x
+zlib1 openSteps total                 3,710.0 [3,138.0-4,039.0]       3,341.0 [3,261.0-3,737.0]       1.11x
+zlib1 reader jobs                     1.0 [1.0-1.0]                   1.0 [1.0-1.0]                   1.00x
+zlib1 reader workers                  1.0 [1.0-1.0]                   1.0 [1.0-1.0]                   1.00x
+zlib1 reader kernel                   1,729.1 [1,553.2-1,908.2]       1,571.2 [1,514.7-1,663.1]       1.10x
+zlib1 reader wait                     1,193.6 [1,128.7-1,319.6]       1,123.0 [1,100.3-1,203.4]       1.06x
+zlib1 reader decode                   0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+zlib1 reader copy                     87.6 [75.2-91.2]                77.9 [73.5-80.4]                1.12x
+zlib1 reader unpredict                0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+zlib1 reader convert                  315.9 [246.0-366.5]             254.6 [233.5-266.5]             1.24x
+zlib1 reader pieces                   6,932.0 [6,932.0-6,933.0]       6,932.0 [6,932.0-6,932.0]       1.00x
+zlib1 open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+zlib1 open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+zlib1 open png_part kernel            6,503.0 [4,735.0-6,862.1]       5,339.6 [5,023.3-5,795.1]       1.22x
+zlib1 open png_part rows              192.1 [168.4-198.7]             178.3 [175.2-239.9]             1.08x
+zlib1 open png_part filter            305.8 [226.1-327.7]             248.5 [245.6-282.5]             1.23x
+zlib1 open png_part adler             198.7 [143.1-202.1]             157.1 [146.2-169.7]             1.26x
+zlib1 open png_part deflate           5,697.5 [4,110.8-6,023.8]       4,659.7 [4,362.6-4,992.0]       1.22x
+raw openMs                            3,855.0 [3,589.0-3,965.0]       3,552.0 [3,369.0-3,732.0]       1.09x (tie; spreads overlap; 1-strip 600 MB RGBA -> plan.streamed=true -> tiff_read; r2 re-run cleanly)
+raw openSteps info                    2.0 [2.0-3.0]                   1.0 [1.0-2.0]                   2.00x
+raw openSteps pixels                  617.0 [567.0-661.0]             552.0 [478.0-560.0]             1.12x
+raw openSteps writeMs                 295.2 [295.0-359.0]             268.3 [263.1-297.5]             1.10x
+raw openSteps stored                  1,381.0 [1,297.0-1,462.0]       1,215.0 [1,204.0-1,450.0]       1.14x
+raw openSteps base                    541.0 [506.0-548.0]             488.0 [456.0-540.0]             1.11x
+raw openSteps total                   2,593.0 [2,373.0-2,623.0]       2,254.0 [2,150.0-2,543.0]       1.15x
+raw reader jobs                       1.0 [1.0-1.0]                   1.0 [1.0-1.0]                   1.00x
+raw reader workers                    1.0 [1.0-1.0]                   1.0 [1.0-1.0]                   1.00x
+raw reader kernel                     555.3 [517.6-596.8]             492.0 [442.2-511.8]             1.13x
+raw reader wait                       116.1 [111.9-156.4]             105.0 [103.3-117.0]             1.11x
+raw reader decode                     0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+raw reader copy                       72.0 [69.3-77.9]                66.2 [63.8-71.6]                1.09x
+raw reader unpredict                  0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+raw reader convert                    293.1 [255.6-304.8]             261.9 [235.4-302.8]             1.12x
+raw reader pieces                     405.0 [313.0-474.0]             369.0 [351.0-375.0]             1.10x
+raw open png_part jobs                79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw open png_part composeWasm         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw open png_part kernel              5,889.4 [4,752.0-6,827.8]       5,308.0 [5,182.0-5,315.7]       1.11x
+raw open png_part rows                194.8 [190.1-342.3]             201.9 [187.2-207.0]             0.96x
+raw open png_part filter              294.3 [225.9-333.8]             248.9 [238.6-252.3]             1.18x
+raw open png_part adler               178.1 [138.7-201.3]             154.9 [152.1-155.0]             1.15x
+raw open png_part deflate             4,967.1 [4,107.8-5,986.7]       4,557.1 [4,470.2-4,561.9]       1.09x
+noise exportMs                        4,223.0 [3,828.0-5,753.0]       5,101.0 [4,217.0-5,785.0]       0.83x (tie; spreads overlap; r2 overlapped sl-full-canvas-serial; r1/r3: 3,828/5,753 vs 5,785/4,217)
+noise fileMB                          491.0 [491.0-491.0]             491.0 [491.0-491.0]             1.00x
+noise exportSteps encoded             2,631.0 [2,342.0-4,031.0]       3,525.0 [2,695.0-4,105.0]       0.75x (tie; spreads overlap)
+noise exportSteps saved               1,591.0 [1,485.0-1,721.0]       1,576.0 [1,521.0-1,679.0]       1.01x
+noise exportSteps total               4,222.0 [3,827.0-5,753.0]       5,100.0 [4,217.0-5,784.0]       0.83x (tie; spreads overlap)
+noise export tiff_part jobs           79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise export tiff_part composeWasm    79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise export tiff_part kernel         19,992.9 [17,678.5-31,106.5]    27,008.9 [20,515.6-31,885.7]    0.74x (tie; spreads overlap; untouched)
+noise export tiff_part rows           224.7 [210.8-245.3]             211.8 [201.1-214.3]             1.06x
+noise export tiff_part predict        80.6 [60.9-99.0]                78.3 [50.8-88.2]                1.03x
+noise export tiff_part deflate        19,604.6 [17,288.7-30,706.9]    26,633.0 [20,139.6-31,541.6]    0.74x (tie; spreads overlap)
+noise openMs                          7,384.0 [6,858.0-7,725.0]       5,781.0 [5,706.0-6,113.0]       1.28x (non-overlapping; r2 overlapped sl-full-canvas-serial; clean r1/r3: 6,858/7,725 -> 6,113/5,781, 1.23x)
+noise openSteps info                  3.0 [2.0-4.0]                   3.0 [3.0-3.0]                   1.00x
+noise openSteps pixels                1,929.0 [1,863.0-2,060.0]       638.0 [558.0-680.0]             3.02x (non-overlapping; clean r1/r3: 1,929/2,060 -> 638/680)
+noise openSteps writeMs               267.1 [246.7-318.9]             386.6 [337.9-415.5]             0.69x (+119.5 ms: concurrent band arrivals)
+noise openSteps stored                4,032.0 [3,537.0-4,090.0]       3,652.0 [3,504.0-4,010.0]       1.10x (tie; spreads overlap)
+noise openSteps base                  30.0 [26.0-32.0]                27.0 [26.0-27.0]                1.11x
+noise openSteps total                 5,928.0 [5,495.0-6,186.0]       4,238.0 [4,213.0-4,677.0]       1.40x (non-overlapping; faster in 3/3 pairs; -1,690.0 ms)
+noise reader jobs                     1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x
+noise reader workers                  1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x
+noise reader kernel                   1,924.9 [1,846.6-2,055.1]       3,559.8 [3,255.5-4,206.7]       0.54x (summed across 40 jobs on 8 workers = ~445 ms/worker)
+noise reader wait                     1,512.5 [1,465.8-1,616.2]       2,681.9 [2,458.2-3,064.1]       0.56x (summed across 8 workers)
+noise reader decode                   0.0 [0.0-0.0]                   0.0 [0.0-0.0]
+noise reader copy                     91.0 [88.6-105.2]               159.0 [146.2-172.3]             0.57x (summed across 8 workers)
+noise reader unpredict                113.5 [112.3-120.4]             311.7 [239.3-513.2]             0.36x (summed across 8 workers)
+noise reader convert                  129.5 [127.5-138.1]             301.8 [297.9-343.5]             0.43x (summed across 8 workers)
+noise reader pieces                   9,415.0 [9,415.0-9,415.0]       9,415.0 [9,415.0-9,415.0]       1.00x
+noise open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise open png_part kernel            19,183.4 [17,730.6-22,571.8]    18,342.1 [17,035.1-21,803.9]    1.05x
+noise open png_part rows              198.9 [192.2-206.2]             183.2 [166.4-201.0]             1.09x
+noise open png_part filter            793.9 [767.6-803.6]             709.7 [709.1-811.3]             1.12x
+noise open png_part adler             167.5 [154.7-203.3]             162.6 [147.2-200.2]             1.03x
+noise open png_part deflate           17,732.7 [16,343.2-21,027.6]    16,862.4 [15,744.9-20,365.8]    1.05x
+
+Attribution, ties, and root-cause notes (`rules.md` "Report the rows where the new path loses or ties"):
+- Every compressed multi-strip variant wins non-overlapping (faster in `3/3` pairs) on both `openMs` and `openSteps pixels`:
+  - `own` (Scumble's 79-strip RGBA8 Deflate+Predictor-2 photo TIFF, §4.6's deciding row): `openMs` `3,485.0 [3,170.0-3,499.0] -> 2,572.0 [2,368.0-2,857.0] ms` (`1.35x`, `-913.0 ms`), `openSteps pixels` `1,370.0 [1,317.0-1,431.0] -> 482.0 [475.0-590.0] ms` (`2.84x`, `-888.0 ms`, faster than §4.6's inferred `0.6-0.8 s` decode estimate even including `361.0 ms` of main-thread `writeRect`), `openSteps total` `2,838.0 [2,639.0-2,977.0] -> 1,990.0 [1,857.0-2,182.0] ms` (`1.43x`).
+  - `lzw` (10,000 one-row RGB8 LZW strips): `openMs` `5,864.0 [5,597.0-5,926.0] -> 3,667.0 [3,663.0-3,958.0] ms` (`1.60x`, `-2,197.0 ms`; combined K17+K18 speedup is `11,826.0 -> 3,667.0 ms`, `3.22x`), `openSteps pixels` `3,131.0 [3,101.0-3,165.0] -> 821.0 [670.0-877.0] ms` (`3.81x`, `-2,310.0 ms`).
+  - `packbits` (10,000 one-row RGB8 PackBits strips): `openMs` `4,039.0 [3,769.0-4,546.0] -> 3,476.0 [3,376.0-3,627.0] ms` (`1.16x`, `-563.0 ms`), `openSteps pixels` `876.0 [751.0-889.0] -> 518.0 [486.0-627.0] ms` (`1.69x`, `-358.0 ms`).
+  - `noise` (79-strip RGBA8 Deflate+Predictor-2 incompressible noise): `openMs` `7,384.0 [6,858.0-7,725.0] -> 5,781.0 [5,706.0-6,113.0] ms` (`1.28x`, `-1,603.0 ms`; excluding `r2` which overlapped `sl-full-canvas-serial`, `r1`/`r3` are `6,858.0 / 7,725.0 ms` -> `6,113.0 / 5,781.0 ms`, `1.23x`), `openSteps pixels` `1,929.0 [1,863.0-2,060.0] -> 638.0 [558.0-680.0] ms` (`3.02x`, `-1,291.0 ms`; `r1`/`r3`: `1,929.0 / 2,060.0 -> 638.0 / 680.0 ms`).
+- Why `raw_strips` (`625` uncompressed 16-row RGB8 strips, `429 MB` on disk, `572 MiB` RGBA) ties at `openMs` (`3,708.0 [3,423.0-3,956.0] -> 3,731.0 [3,391.0-3,854.0] ms`, `0.99x`, `after` faster in `2/3` pairs):
+  - `raw_strips` has zero decompression or unpredict work (`reader decode` is just `dst.set`), so `openSteps pixels` was already `662.0 [633.0-731.0] ms` on 1 worker and improves to `624.0 [564.0-660.0] ms` (`1.06x`, `-38.0 ms` median, `after` faster in `3/3` pairs: `564 < 633`, `624 < 662`, `660 < 731`, with overall ranges touching at `633 <= 660`). At `624 ms`, `388.2 ms` (`62%`) is main-thread `px.writeRect` copying `572 MiB` into the tile arena (`writeMs` `288.8 -> 388.2 ms`), while untouched `openSteps base` moved `471.0 -> 532.0 ms` (`+61.0 ms`), leaving `openMs` a `0.99x` tie well within `[3,423-3,956] ms`.
+- Why `reader unpredict` (`115.7 -> 504.8 ms` on `own`, `113.5 -> 311.7 ms` on `noise`), `open png_part filter` (`~251 ms -> 696-730 ms` summed across 8 workers on `lzw`, `packbits`, `raw_strips`), and `lzw openSteps stored` (`1,148.0 [1,117.0-1,308.0] -> 1,447.0 [1,389.0-1,492.0] ms`, `+299.0 ms` across all 3 rounds) grew when summed across 8 workers:
+  - No separate A/A run on warmed workers was performed, so the exact cause is unmeasured; our guess (inferred) is memory-bandwidth / cache contention when 8 workers run `unpredict`, `to_rgba`, and immediately `png_part` concurrently on 15 MB band buffers vs 1 worker on `before` (where 7 of 8 workers sat idle until `png_part` on `lzw`/`packbits`/`raw_strips`, whereas on `own`/`noise` all 8 workers had already run `export` and `own` `png_part filter` was `705.9 ms` before vs `716.3 ms` after). Even on `lzw`, `openMs` wins by `-2,197.0 ms` (`1.60x` non-overlapping), and `packbits openSteps stored` dropped `-246.0 ms` (`1,437.0 -> 1,191.0 ms`).
+- Single-strip 600 MB RGBA variants (`zlib1` and `raw`): `tiffPlan` marks both `streamed: true` (`10,000` rows in 1 strip = `600 MB` RGBA > `TIFF_BAND_BYTES` = `64 MiB`), so `readTiffBands` returns `null` without posting any `tiff_band` jobs (`reader jobs: 1 -> 1`, `reader workers: 1 -> 1`) and `pixelsFromTiff` takes the unchanged `tiff_read` path (`zlib1 openMs` `4,519.0 [3,939.0-4,941.0] -> 4,116.0 [4,034.0-4,604.0] ms`, `1.10x` overlapping tie; `raw openMs` `3,855.0 [3,589.0-3,965.0] -> 3,552.0 [3,369.0-3,732.0] ms`, `1.09x` overlapping tie after the clean `r2` re-run).
+- Untouched `exportMs` rows (`own exportMs` `1,428.0 [1,302.0-1,704.0] -> 1,498.0 [1,427.0-1,551.0] ms`, `0.95x`, `after` faster in `2/3` pairs; `noise exportMs` `4,223.0 [3,828.0-5,753.0] -> 5,101.0 [4,217.0-5,785.0] ms`, `0.83x`): K18 does not touch `encodeTiff` or `tiffPartJob`, and the `[min-max]` spreads overlap completely (`[1,302-1,704]` vs `[1,427-1,551]` on `own`, `[3,828-5,753]` vs `[4,217-5,785]` on `noise`).
+
+3. Mutation round (`docs/measurements/k18_2026-11-10/mutation/`)
+----------------------------------------------------------------
+Commands:
+  python tools/mutation_round.py make "$TEMP/k18_mut_tree" docs/measurements/k18_2026-11-10/mutation/mut_k18.py
+  python tools/mutation_round.py run "$TEMP/k18_mut_tree" docs/measurements/k18_2026-11-10/mutation docs/measurements/k18_2026-11-10/mutation/mut_k18.py --port 9633
+
+History and final result (`mutation/results.txt`):
+- First run (`17 killed, 3 survived` of 20): exposed one genuinely redundant wrapper in `tiffBandJob` (`releaseIfLarge()` in `inpaint_worker.js` was already called in `finally` by `tiffUnpack`, `tiffUnpredict`, and `tiffToRgba` in `kernels.js:1150,1166,1194`, so removing it from `tiffBandJob` could never change behaviour; removed the redundant `try/finally` in `tiffBandJob` and replaced that mutant with `tiffBandJob returns y0 = 0 instead of band.y0`) and two `later()` test gaps in `px_test.js` (`pool3` had 6 bands > `maxInFlight = 4` and only flipped `later()` inside `onRows`, so `launch()` caught what `finishBand` or pre-`onRows` reply arrival should catch; added `pool3a` flipping `later()` before band 0's reply arrives and narrowed `pool3` to a 2-band file where band 1 is held, so both `later()` sites are independently tested).
+- Final run (`mutation/results.txt`):
+  - `orig`: `build 21 s, both builds identical to the checkout's: True; green: the full px_test 248 s; green: px_test (only: tiff) 2 s; green: the tiff gate 69 s; 749 s`
+  - **20 killed (0 of them only on the re-check), 0 survived of 20; 0 not as expected; 1709 s for the mutants** (12 killed in `1-3 s` by `px_test (only: tiff)` and 8 killed in `51-75 s` by `the tiff gate`).
+  - `restored copy: every mutated file back: True; green: the full px_test`
+
+4. Unit, Build & Parity Suites (`tools/tiff_test.js` & `tools/px_test.js`)
+--------------------------------------------------------------------------
+- `node tools/tiff_test.js`: **210 / 210 checks PASS** (Pass 1 with `kernels: null` asserting `0` Rust calls; Pass 2 with `kernels: K.tiffKernels()` asserting `{"adler32":18,"deflate_part":18,"tiff_predict_rgba":11,"tiff_to_rgba":927,"tiff_unpack":276,"tiff_unpredict":673}`).
+- `node tools/px_test.js`: **ALL PASS** (full suite green on `orig` and `restored` in `mutation/results.txt`, `248 s`).
+- `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe tools/px_test.js`: **ALL PASS** (full suite green under Electron's V8).
+- `python tools/build_px.py --check`: identical (`px.wasm` `289,975 B` `f326653b273e3c87`, `px_scalar.wasm` `232,343 B` `0c067d6ca569c44e`).
+- `python tools/build_node.py --check`: only expected `PROBLEM node js/... differs` lines.
+
+5. Gates (`dist/gates/gates/`, `--offline`, ports 9633 and 9634)
+----------------------------------------------------------------
+- Initial `tiff` gate run (`k18-tiff-tiles` `rc=1 24s FAIL`, `k18-tiff-canvas` `rc=1 34s FAIL`): caught two bugs in our newly written K18 tests (`lzwEncode(st)` instead of `lzwEncode(st).bytes` in `tools/tiff_test.js:1493`, and `{ bytes: new Uint8Array(4) }` instead of `{ blob: tinyCrcBlob }` passed to the `crc` worker op in `tools/tiff_test.py:547,551`). Fixed both.
+- Re-run `k18-tiff-tiles` (`--tiles on --offline tiff`, port 9633): `tiff rc=0 29s PASS` (`ALL PASS`).
+- Re-run `k18-tiff-canvas` (`--tiles off --offline tiff`, port 9634): `tiff rc=0 22s PASS` (`ALL PASS`).
+- `k18-tiles` (`--tiles on --offline lint types export pixels`, port 9633): `lint rc=0 27s`, `types rc=0 21s`, `export rc=0 147s PASS`, `pixels rc=0 16s PASS` (`ALL PASS`).
+- `k18-canvas` (`--tiles off --offline lint types export pixels`, port 9634): `lint rc=0 25s`, `types rc=0 19s`, `export rc=0 15s PASS`, `pixels rc=0 11s PASS` (`ALL PASS`).
+- `k18-extra` (`--tiles on --offline pxjobs nodecopy`, port 9633): `pxjobs rc=0 111s PASS`, `nodecopy rc=0 74s PASS` (`ALL PASS`).
+- Final post-mutation re-check on exact committed bytes: `k18-final-tiles` (`lint rc=0 39s`, `types rc=0 37s`, `ALL PASS`), `k18-final-canvas` (`lint rc=0 39s`, `types rc=0 38s`, `ALL PASS`), `k18-final-tiff-tiles` (`--tiles on --offline tiff`: `tiff rc=0 39s PASS`, `ALL PASS`), and `k18-final-tiff-canvas` (`--tiles off --offline tiff`: `tiff rc=0 54s PASS`, `ALL PASS`).

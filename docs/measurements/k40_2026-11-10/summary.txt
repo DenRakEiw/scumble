@@ -1,0 +1,1311 @@
+K40: the W0b chain, baseline against wasm-kernels on 2026-11-10, K18 and K20b merged; K19 and K20c moved after the release.
+New run:  k40_2026-11-10: 2026-11-10 12:47-15:13, commit db2c39da (wasm-kernels), offline, tiles, 15000 x 10000, the same
+          chain script (w0b_chain.sh): three rounds r1-r3 and once/.
+Baseline: w0b_2026-10-23: 2026-10-23 13:00-14:21, commit 249d882, same chain.
+The verdict on the loss rows is verdict.txt in this folder.
+Written by compare.py in this folder (python compare.py); it reads only the raw JSON and log files of both folders.
+
+How to read a row: median of three runs (min-max), all ms. ratio = new median / old median. Row names: group | row | metric.
+WIN = new max below old min; LOSS = new min above old max; TIE = the spreads overlap; N/C = not comparable (reason given).
+Flags: [f] the baseline's run(s) of this row had the window unfocused and the new ones focused (V8 slows JS, not wasm, in an
+unfocused window, so part of such a gain may be the focus; native_test, px_jobs and some bench / brush runs). The gates'
+baseline logs carry no focus flag, so no such row can be flagged.
+
+Rows: 839 matched and classified (347 WIN, 31 LOSS, 461 TIE, 0 with fewer than three runs);
+      34 present on both sides but not comparable (N/C); 0 baseline rows with no new counterpart;
+      211 new rows, no baseline.
+      373 matched rows carry the focus flag [f] (202 of them WIN).
+Self-check: 45 of 45 baseline medians as summary.txt of the baseline states them reproduced by the extraction.
+
+Control (a JS loop copied into the harness, no app code in it; it should not move):
+  w0_bench | match_loop_4096 | loop: 222 (199-247) -> 195 (191-208), 0.88x
+  crc32 JS on the new side (the twin): 104 (102-112); the baseline's only crc row was JS: 104 (103-118)
+
+px_test PX_BENCH=large (once/px_bench_large.log) is not compared: Node kernel rows, the baseline's summary says it explains and
+never decides. The new run of it ended rc=1 on two checks, both 'a pointer above 2 GB is usable' (rust simd ptr 26193920,
+rust scalar ptr 1983623168; the baseline passed them with ptr 2203238400): a check of px_test, not a timing row.
+
+== LOSS rows (31; largest ms lost first)
+         ratio          old median (min-max)          new median (min-max)  row
+LOSS     2.18x           1,890 (1,761-2,168)           4,123 (3,431-4,367)  perf | object map input (1024 from levels) > the same the old way (a flatten) | wall
+LOSS     2.18x           1,891 (1,761-2,169)           4,123 (3,431-4,367)  perf | object map input (1024 from levels) > the same the old way (a flatten) | blk
+LOSS     2.01x           2,168 (2,032-2,246)           4,363 (3,825-4,656)  perf | full composite | max
+LOSS     1.43x                 655 (574-711)               937 (714-1,036)  px_jobs | depth_guide | worker job JS  [f]
+LOSS     1.16x           1,730 (1,490-1,783)           2,012 (1,911-2,246)  perf-relight | object map input (1024 from levels) > the same the old way (a flatten) | blk
+LOSS     1.16x           1,730 (1,488-1,782)           2,012 (1,911-2,246)  perf-relight | object map input (1024 from levels) > the same the old way (a flatten) | wall
+LOSS     1.20x           1,379 (1,350-1,395)           1,649 (1,401-1,795)  px_jobs | depth_guide | wall JS  [f]
+LOSS     1.64x                 330 (323-333)                 540 (515-591)  perf-relight | magic wand over it | wall
+LOSS     1.46x                 323 (287-326)                 473 (432-525)  perf-relight | magic wand, a masked layer | wall
+LOSS     1.71x                 137 (110-187)                 234 (226-243)  exportperf/limit | psd | blk
+LOSS     1.10x                 607 (580-652)                 667 (666-762)  native/filter | add_the_paint_layer | blk  [f]
+LOSS     3.25x              26.1 (25.6-28.3)              84.7 (60.8-86.7)  liquify/rust | push 1:1 size 1000 | blockedMax
+LOSS     2.89x              26.3 (22.1-30.9)              76.1 (32.2-77.3)  liquify/js | push 1:1 size 1000 | blockedMax
+LOSS     1.14x                 221 (195-227)                 252 (234-276)  perf-relight | magic wand (an object) | wall
+LOSS     1.23x                 119 (109-120)                 146 (146-153)  exportperf/limit | psd_masked | blk
+LOSS     1.31x              75.1 (70.0-75.6)              98.2 (93.1-98.8)  liquify/rust | push 1:1 size 1000 | land
+LOSS     3.63x              6.50 (4.30-7.20)              23.6 (20.9-26.6)  perf | wheel zoom (10) | max
+LOSS     1.28x              55.5 (51.6-70.0)              70.9 (70.1-73.8)  brush | heal image 200 px fit cold | blockedMax
+LOSS     1.60x              24.0 (17.5-27.9)              38.5 (35.4-41.4)  perf-relight | colour match tick | max
+LOSS     1.14x              92.0 (91.8-98.3)                 104 (104-343)  perf | full composite | median
+LOSS     2.96x              5.10 (4.90-8.30)              15.1 (12.4-57.1)  perf | pan at fit, masked filter layer | max
+LOSS     1.24x              37.0 (34.0-40.0)              46.0 (41.0-50.0)  perf-relight | clear selected pixels (100 px) | blk
+LOSS     2.29x              3.40 (3.20-4.30)              7.80 (7.50-8.10)  perf | pan at fit, masked filter layer | median
+LOSS     1.16x              24.7 (18.9-25.4)              28.6 (28.0-28.7)  perf-relight | opacity slider tick | median
+LOSS     1.16x              22.0 (16.3-23.9)              25.6 (24.5-29.6)  perf-relight | colour match tick | median
+LOSS     1.05x              58.0 (54.0-59.0)              61.0 (61.0-69.0)  perf | magic wand, Sample: the masked layer | blk
+LOSS     1.49x              5.30 (4.50-6.60)              7.90 (7.70-46.6)  perf-relight | pan at fit, masked filter layer | max
+LOSS     1.56x              3.90 (3.80-4.40)              6.10 (5.90-6.50)  perf | pan (60 frames) | median
+LOSS     1.41x              3.90 (3.80-4.70)              5.50 (5.30-6.10)  perf-relight | pan at fit, masked filter layer | median
+LOSS     1.40x              4.00 (3.60-4.70)              5.60 (5.30-6.10)  perf-relight | pan (60 frames) | median
+LOSS     1.41x              3.20 (3.10-3.40)              4.50 (4.00-4.60)  perf | pan at 1:1 over it | median
+
+== Largest wins by ms saved (felt rows only: wall, landing or blk; no worker sums, JS twins, laps; one line per row)
+WIN      0.25x        13,690 (13,000-15,250)           3,470 (3,266-5,503)  tiffperf | lzw | open   saves 10,220
+WIN      0.02x          9,796 (9,532-12,591)                 166 (149-172)  native/k0a | open_psd | blk  [f]   saves 9,630
+WIN      0.36x        12,987 (12,849-16,193)           4,711 (4,037-4,840)  native/k0a | open_psd | wall  [f]   saves 8,276
+WIN      0.60x        14,287 (13,728-18,494)          8,596 (8,221-10,417)  exportperf/fill | psd_fill_limit | wall   saves 5,691
+WIN      0.57x        10,579 (10,436-12,992)           6,054 (5,601-6,128)  px_jobs | fill_limit | wall Rust  [f]   saves 4,524
+WIN      0.56x          9,782 (9,724-12,809)           5,498 (5,428-7,774)  exportperf/fill | fill_limit_rows | wall   saves 4,284
+WIN      0.44x           7,428 (7,228-8,705)           3,262 (3,234-3,444)  tiffperf | packbits | open   saves 4,166
+WIN      0.29x           4,525 (4,261-4,804)           1,298 (1,014-1,359)  perf-relight | three lights moved | landed   saves 3,227
+WIN      0.19x           3,813 (3,803-4,968)                 731 (524-751)  perf-relight | one light moved: landed | landed   saves 3,082
+WIN      0.39x           4,841 (3,496-5,681)           1,874 (1,426-3,478)  px_jobs | range_color | wall Rust  [f]   saves 2,967
+WIN      0.50x           5,906 (5,790-6,362)           2,962 (2,849-3,174)  native/k0a | open_tiff | wall  [f]   saves 2,944
+WIN      0.47x           5,369 (5,050-5,376)           2,516 (1,931-2,584)  native/k0a | export_ora | wall  [f]   saves 2,853
+WIN      0.67x           8,713 (8,513-9,566)           5,881 (5,301-6,071)  tiffperf | noise | open   saves 2,832
+WIN      0.65x           6,879 (6,492-7,239)           4,483 (4,154-5,695)  native/k0a | save_ora | wall  [f]   saves 2,396
+WIN      0.51x           4,907 (4,690-5,693)           2,517 (2,167-2,648)  tiffperf | own | open   saves 2,390
+
+== Largest wins by ratio (felt rows with an old median of at least 100 ms)
+WIN      0.02x          9,796 (9,532-12,591)                 166 (149-172)  native/k0a | open_psd | blk  [f]
+WIN      0.15x                 842 (836-844)                 126 (123-130)  native/k0a | save_ora | blk  [f]
+WIN      0.17x           1,466 (1,436-1,839)                 249 (215-251)  native/default | bucket_fill | blk  [f]
+WIN      0.18x           1,170 (1,110-1,259)                 209 (174-219)  px_jobs | range_depth | wall Rust  [f]
+WIN      0.19x           3,813 (3,803-4,968)                 731 (524-751)  perf-relight | one light moved: landed | landed
+WIN      0.19x                 566 (547-649)                110 (92.0-110)  native/default | wand_whole_add | blk  [f]
+WIN      0.20x                 492 (457-519)               98.0 (95.0-122)  native/default | wand_whole_picture | blk  [f]
+WIN      0.22x                 104 (103-118)              22.5 (22.4-22.6)  w0_bench | crc32_64mb | crc
+WIN      0.22x                 454 (447-523)               99.0 (97.0-104)  native/filter | wand_whole_picture | blk  [f]
+WIN      0.24x                 799 (730-891)                 189 (185-255)  exportperf/fill | layer_from_tiles | wall
+WIN      0.25x                 830 (685-928)                 207 (182-258)  exportperf/limit | layer_from_tiles | wall
+WIN      0.25x        13,690 (13,000-15,250)           3,470 (3,266-5,503)  tiffperf | lzw | open
+WIN      0.27x                 428 (415-461)                 114 (103-115)  native/k0a | save_tiff | blk  [f]
+WIN      0.28x           2,446 (2,096-2,751)                 685 (680-728)  selection | range luma | wall
+WIN      0.29x                 396 (379-414)                 113 (109-119)  native/k0a | save_png | blk  [f]
+
+== N/C: present on both sides, not comparable (34), not classified
+  -- harness changed (tools/edges_test.py): the test's 15k depth map got a third band at x = 3500
+N/C      0.16x           1,327 (1,234-1,390)                 213 (204-248)  edges | 15k select by depth, snap 50 | wall
+  -- harness changed (K12, tools/perf_test.py `replaced`): the 30 ms wait now comes before the change, so the timed frame pays the chains it used to skip
+N/C      0.71x              29.8 (29.6-35.5)              21.3 (20.8-27.1)  perf | frame after a whole change, 1:1 | max
+N/C      0.71x              29.8 (29.6-35.5)              21.3 (20.8-27.1)  perf | frame after a whole change, 1:1 | median
+N/C      1.02x              16.0 (10.1-16.8)              16.4 (10.6-24.5)  perf | frame after a whole change, 1:1 > mips settled [longest block] | longest block
+N/C      1.18x               91.8 (90.3-112)                108 (91.9-115)  perf | frame after a whole change, 1:1 > mips settled [longest block] | settled
+N/C      0.53x              34.2 (33.4-36.8)              18.1 (17.9-18.5)  perf | frame after a whole change, fit | max
+N/C      0.53x              34.2 (33.4-36.8)              18.1 (17.9-18.5)  perf | frame after a whole change, fit | median
+N/C      0.64x              36.0 (28.0-49.0)              23.1 (22.4-25.9)  perf | frame after a whole change, fit > mips settled [longest block] | longest block
+N/C      1.21x              77.3 (74.1-78.8)              93.2 (88.7-94.4)  perf | frame after a whole change, fit > mips settled [longest block] | settled
+  -- baseline did different work per run (422 / 0.4 / 425); K12 pinned the active layer and tool in a relight run
+N/C     57.09x               2.30 (1.70-144)                 131 (103-147)  perf-relight | 192 px picture after a whole change, settled | max
+N/C          -              0.00 (0.00-22.3)              31.0 (23.3-43.2)  perf-relight | 192 px picture after a whole change, settled | median
+N/C      0.86x                422 (0.40-425)                 362 (356-406)  perf-relight | 192 px picture after a whole change, the old way | max
+N/C      0.86x                422 (0.40-425)                 362 (356-406)  perf-relight | 192 px picture after a whole change, the old way | median
+  -- harness changed (K12, tools/perf_test.py `replaced`): the 30 ms wait now comes before the change, so the timed frame pays the chains it used to skip
+N/C      0.37x               61.7 (59.7-483)              22.9 (20.9-25.4)  perf-relight | frame after a whole change, 1:1 | max
+N/C      0.37x               61.7 (59.7-483)              22.9 (20.9-25.4)  perf-relight | frame after a whole change, 1:1 | median
+N/C      3.28x              9.50 (5.50-16.0)              31.2 (19.0-38.4)  perf-relight | frame after a whole change, 1:1 > mips settled [longest block] | longest block
+N/C      8.19x              16.4 (13.3-97.0)                 134 (118-142)  perf-relight | frame after a whole change, 1:1 > mips settled [longest block] | settled
+N/C      1.14x              19.8 (14.7-68.0)              22.5 (21.1-24.6)  perf-relight | frame after a whole change, fit | max
+N/C      1.14x              19.8 (14.7-68.0)              22.5 (21.1-24.6)  perf-relight | frame after a whole change, fit | median
+N/C      3.63x              8.20 (5.50-15.5)              29.8 (27.0-32.2)  perf-relight | frame after a whole change, fit > mips settled [longest block] | longest block
+N/C      5.30x              15.9 (14.6-18.5)               84.2 (82.9-108)  perf-relight | frame after a whole change, fit > mips settled [longest block] | settled
+  -- baseline contaminated (its own summary: jobs queued before a kernel flip, JS rows counted Rust calls); K1a rebuilt the row
+N/C      0.96x                 348 (346-352)                 335 (307-396)  px_jobs | mips_direct | kernel JS
+N/C      0.97x                 213 (193-239)                 207 (192-232)  px_jobs | mips_direct | kernel Rust
+N/C      0.98x                 532 (531-572)                 522 (470-585)  px_jobs | mips_direct | wall JS
+N/C      0.87x                 409 (385-433)                 354 (352-378)  px_jobs | mips_direct | wall Rust
+N/C      0.96x                 348 (346-352)                 335 (307-396)  px_jobs | mips_direct | worker job JS
+N/C      0.97x                 213 (193-239)                 207 (192-232)  px_jobs | mips_direct | worker job Rust
+N/C      0.97x               857 (762-1,561)                 835 (724-935)  px_jobs | mips_whole | kernel JS
+N/C      0.89x                 519 (483-523)                 463 (422-481)  px_jobs | mips_whole | kernel Rust
+N/C      0.96x                 557 (484-687)                 536 (519-580)  px_jobs | mips_whole | wall JS
+N/C      0.99x                 505 (495-509)                 502 (483-508)  px_jobs | mips_whole | wall Rust
+N/C      0.97x               857 (762-1,561)                 835 (724-935)  px_jobs | mips_whole | worker job JS
+N/C      0.89x                 519 (483-523)                 463 (422-481)  px_jobs | mips_whole | worker job Rust
+  -- harness changed (tools/w0_bench.py): old = a copy of the JS loop, new = kernels.js maskMaxClamp
+N/C      0.50x              12.1 (10.9-12.2)              6.03 (5.58-7.01)  w0_bench | stitch_masks_2048 | max_clamp
+
+== Baseline rows that could not be matched (0)
+  Beyond these, the baseline summary's indented laps and worker sums (png_read, encoded / saved, tiff_read's parts, the
+  jobs' CPU sums, the K0b counts) are explanations, not rows, and are not extracted; save_psd ran on neither side.
+
+== All matched rows, by group
+         ratio          old median (min-max)          new median (min-max)  row
+
+-- brush
+WIN      0.50x                 292 (277-299)                 146 (138-172)  brush | blur layer 1000 px 1:1 | blockedMax  [f]
+WIN      0.39x                 119 (119-120)              47.1 (46.9-52.5)  brush | blur layer 1000 px 1:1 | dab median  [f]
+WIN      0.43x                 131 (128-131)              56.4 (55.6-62.0)  brush | blur layer 1000 px 1:1 | move median  [f]
+WIN      0.26x                 242 (182-260)              61.8 (61.4-81.7)  brush | blur layer 1000 px 1:1 | move worst  [f]
+WIN      0.40x              518 (420-18,167)                 208 (201-213)  brush | blur layer 1000 px fit | blockedMax  [f]
+WIN      0.40x                 239 (239-308)               95.7 (92.5-106)  brush | blur layer 1000 px fit | dab median  [f]
+WIN      0.40x                 244 (242-312)               98.5 (96.0-109)  brush | blur layer 1000 px fit | move median  [f]
+WIN      0.34x               345 (272-6,140)                 118 (112-142)  brush | blur layer 1000 px fit | move worst  [f]
+WIN      0.81x              59.0 (52.7-62.3)              47.6 (40.1-49.5)  brush | blur layer 200 px 1:1 | blockedMax  [f]
+WIN      0.40x              5.80 (5.60-6.40)              2.30 (2.20-2.80)  brush | blur layer 200 px 1:1 | dab median  [f]
+WIN      0.49x              7.40 (7.20-8.00)              3.60 (3.50-4.30)  brush | blur layer 200 px 1:1 | move median  [f]
+WIN      0.56x              10.1 (9.50-11.3)              5.70 (4.60-6.80)  brush | blur layer 200 px 1:1 | move worst  [f]
+WIN      0.44x              63.9 (52.4-81.3)              28.4 (25.2-36.1)  brush | blur layer 200 px fit | blockedMax  [f]
+WIN      0.40x              39.7 (37.6-49.2)              16.0 (14.8-17.9)  brush | blur layer 200 px fit | dab median  [f]
+WIN      0.42x              41.4 (39.1-50.5)              17.4 (16.2-19.5)  brush | blur layer 200 px fit | move median  [f]
+WIN      0.39x              47.7 (42.4-59.4)              18.7 (18.3-24.1)  brush | blur layer 200 px fit | move worst  [f]
+WIN      0.78x               99.4 (93.7-164)              77.1 (72.4-79.7)  brush | blur layer 200 px fit cold | blockedMax  [f]
+WIN      0.41x              38.4 (37.4-39.5)              15.7 (14.8-18.5)  brush | blur layer 200 px fit cold | dab median  [f]
+WIN      0.43x              39.7 (38.8-41.0)              17.0 (16.2-19.9)  brush | blur layer 200 px fit cold | move median  [f]
+WIN      0.42x              42.4 (42.3-43.7)              17.6 (16.6-21.5)  brush | blur layer 200 px fit cold | move worst  [f]
+WIN      0.61x              85.5 (84.5-92.4)              51.9 (51.4-62.0)  brush | blur layer 400 px 1:1 | blockedMax  [f]
+WIN      0.42x              19.2 (18.8-20.4)              8.10 (7.60-9.90)  brush | blur layer 400 px 1:1 | dab median  [f]
+WIN      0.47x              20.9 (20.5-22.1)              9.90 (9.00-11.9)  brush | blur layer 400 px 1:1 | move median  [f]
+WIN      0.45x              28.0 (24.4-31.9)              12.6 (10.4-14.7)  brush | blur layer 400 px 1:1 | move worst  [f]
+WIN      0.40x                 135 (125-181)              54.2 (52.5-69.8)  brush | blur layer 400 px fit | blockedMax  [f]
+WIN      0.39x               77.8 (74.1-103)              30.0 (29.7-37.6)  brush | blur layer 400 px fit | dab median  [f]
+WIN      0.40x               79.3 (75.6-105)              31.5 (31.3-39.0)  brush | blur layer 400 px fit | move median  [f]
+WIN      0.38x                102 (89.5-131)              38.5 (34.7-49.6)  brush | blur layer 400 px fit | move worst  [f]
+TIE      0.83x              45.8 (42.0-45.8)              38.1 (34.2-42.8)  brush | blur layer 50 px 1:1 | blockedMax  [f]
+WIN      0.33x              1.50 (1.30-1.70)              0.50 (0.50-0.70)  brush | blur layer 50 px 1:1 | dab median  [f]
+WIN      0.63x              2.70 (2.40-3.10)              1.70 (1.60-2.00)  brush | blur layer 50 px 1:1 | move median  [f]
+WIN      0.63x              4.60 (4.00-7.10)              2.90 (2.80-3.20)  brush | blur layer 50 px 1:1 | move worst  [f]
+WIN      0.59x              21.3 (20.2-51.0)              12.5 (11.4-18.7)  brush | blur layer 50 px fit | blockedMax  [f]
+WIN      0.43x              10.1 (10.0-10.2)              4.30 (4.10-4.70)  brush | blur layer 50 px fit | dab median  [f]
+WIN      0.47x              11.2 (11.0-11.2)              5.30 (5.00-5.70)  brush | blur layer 50 px fit | move median  [f]
+WIN      0.58x              13.2 (12.4-13.9)              7.60 (6.50-9.50)  brush | blur layer 50 px fit | move worst  [f]
+WIN      0.88x              44.9 (43.6-45.4)              39.3 (37.2-40.3)  brush | clone image 200 px 1:1 | blockedMax  [f]
+WIN      0.60x              1.00 (0.80-1.00)              0.60 (0.60-0.70)  brush | clone image 200 px 1:1 | dab median  [f]
+WIN      0.71x              2.40 (2.10-2.60)              1.70 (1.70-1.80)  brush | clone image 200 px 1:1 | move median  [f]
+WIN      0.81x              3.70 (3.10-4.00)              3.00 (2.60-3.00)  brush | clone image 200 px 1:1 | move worst  [f]
+TIE      0.71x              17.7 (13.8-25.0)              12.6 (11.6-14.7)  brush | clone image 200 px fit | blockedMax  [f]
+TIE      0.69x              3.50 (2.30-3.90)              2.40 (2.30-2.40)  brush | clone image 200 px fit | dab median  [f]
+TIE      0.74x              4.60 (3.20-5.20)              3.40 (3.30-3.50)  brush | clone image 200 px fit | move median  [f]
+WIN      0.77x              5.60 (4.70-8.00)              4.30 (4.20-4.40)  brush | clone image 200 px fit | move worst  [f]
+TIE      0.80x               92.6 (44.0-129)              73.7 (70.2-74.3)  brush | clone image 200 px fit cold | blockedMax  [f]
+TIE      0.83x              3.50 (2.80-3.80)              2.90 (2.30-3.30)  brush | clone image 200 px fit cold | dab median  [f]
+TIE      0.85x              4.80 (3.90-5.50)              4.10 (3.20-4.60)  brush | clone image 200 px fit cold | move median  [f]
+TIE      0.87x              5.30 (4.80-7.60)              4.60 (4.30-5.80)  brush | clone image 200 px fit cold | move worst  [f]
+TIE      0.87x              60.5 (52.2-63.6)              52.5 (49.3-60.9)  brush | clone image 400 px 1:1 | blockedMax  [f]
+TIE      0.71x              2.40 (2.40-2.50)              1.70 (1.60-2.40)  brush | clone image 400 px 1:1 | dab median  [f]
+TIE      0.72x              4.30 (4.30-4.30)              3.10 (3.00-4.40)  brush | clone image 400 px 1:1 | move median  [f]
+TIE      0.98x              5.40 (5.20-6.00)              5.30 (4.30-5.60)  brush | clone image 400 px 1:1 | move worst  [f]
+TIE      0.98x              20.0 (19.9-28.2)              19.7 (19.2-20.8)  brush | clone image 400 px fit | blockedMax  [f]
+TIE      0.83x              5.90 (4.60-6.20)              4.90 (4.90-5.20)  brush | clone image 400 px fit | dab median  [f]
+TIE      0.81x              7.50 (5.70-7.50)              6.10 (6.00-6.60)  brush | clone image 400 px fit | move median  [f]
+TIE      0.80x              9.50 (7.10-12.3)              7.60 (6.70-11.0)  brush | clone image 400 px fit | move worst  [f]
+TIE      0.99x              46.7 (46.6-50.8)              46.3 (43.2-49.5)  brush | clone image 50 px 1:1 | blockedMax  [f]
+TIE      0.60x              0.50 (0.40-0.50)              0.30 (0.30-0.40)  brush | clone image 50 px 1:1 | dab median  [f]
+WIN      0.74x              1.90 (1.70-2.00)              1.40 (1.30-1.60)  brush | clone image 50 px 1:1 | move median  [f]
+WIN      0.82x              2.80 (2.80-5.60)              2.30 (2.20-2.60)  brush | clone image 50 px 1:1 | move worst  [f]
+TIE      0.63x              22.7 (13.2-25.3)              14.4 (12.4-16.0)  brush | clone image 50 px fit | blockedMax  [f]
+TIE      0.69x              1.60 (1.00-1.80)              1.10 (1.00-1.20)  brush | clone image 50 px fit | dab median  [f]
+TIE      0.72x              2.50 (1.80-2.70)              1.80 (1.70-2.00)  brush | clone image 50 px fit | move median  [f]
+WIN      0.77x              3.50 (3.40-4.20)              2.70 (2.20-3.10)  brush | clone image 50 px fit | move worst  [f]
+TIE      1.02x              45.6 (44.4-57.3)              46.5 (43.0-51.6)  brush | clone layer 200 px 1:1 | blockedMax  [f]
+TIE      0.67x              0.90 (0.60-1.00)              0.60 (0.60-0.80)  brush | clone layer 200 px 1:1 | dab median  [f]
+TIE      0.71x              2.40 (1.90-2.80)              1.70 (1.70-2.40)  brush | clone layer 200 px 1:1 | move median  [f]
+TIE      0.76x              3.70 (3.40-4.00)              2.80 (2.80-3.90)  brush | clone layer 200 px 1:1 | move worst  [f]
+TIE      0.69x              19.4 (12.0-24.9)              13.3 (12.0-13.4)  brush | clone layer 200 px fit | blockedMax  [f]
+TIE      0.69x              3.20 (2.20-3.20)              2.20 (2.10-2.20)  brush | clone layer 200 px fit | dab median  [f]
+WIN      0.72x              4.30 (3.20-4.40)              3.10 (2.90-3.10)  brush | clone layer 200 px fit | move median  [f]
+TIE      0.79x              5.20 (4.10-5.80)              4.10 (4.00-5.70)  brush | clone layer 200 px fit | move worst  [f]
+WIN      0.80x              51.8 (44.4-56.2)              41.5 (40.3-43.5)  brush | clone layer 200 px fit cold | blockedMax  [f]
+WIN      0.77x              3.00 (2.60-3.30)              2.30 (2.00-2.50)  brush | clone layer 200 px fit cold | dab median  [f]
+WIN      0.80x              4.00 (3.80-4.40)              3.20 (2.90-3.40)  brush | clone layer 200 px fit cold | move median  [f]
+WIN      0.79x              4.80 (4.60-5.70)              3.80 (3.60-4.10)  brush | clone layer 200 px fit cold | move worst  [f]
+TIE      0.97x              47.0 (44.1-47.5)              45.8 (44.3-48.8)  brush | clone layer 400 px 1:1 | blockedMax  [f]
+TIE      0.74x              2.30 (1.70-2.40)              1.70 (1.70-2.00)  brush | clone layer 400 px 1:1 | dab median  [f]
+TIE      0.77x              3.90 (3.00-4.20)              3.00 (2.90-3.70)  brush | clone layer 400 px 1:1 | move median  [f]
+WIN      0.87x              5.40 (5.40-6.00)              4.70 (4.50-4.90)  brush | clone layer 400 px 1:1 | move worst  [f]
+TIE      0.83x              21.9 (17.8-23.5)              18.1 (16.1-22.0)  brush | clone layer 400 px fit | blockedMax  [f]
+TIE      0.76x              6.30 (4.50-7.10)              4.80 (4.60-6.00)  brush | clone layer 400 px fit | dab median  [f]
+TIE      0.78x              7.70 (5.70-8.30)              6.00 (5.60-7.40)  brush | clone layer 400 px fit | move median  [f]
+TIE      0.75x              10.0 (8.10-10.0)              7.50 (7.20-9.10)  brush | clone layer 400 px fit | move worst  [f]
+TIE      0.97x              45.8 (45.2-49.2)              44.3 (44.2-46.9)  brush | clone layer 50 px 1:1 | blockedMax  [f]
+TIE      0.80x              0.50 (0.30-0.60)              0.40 (0.30-0.40)  brush | clone layer 50 px 1:1 | dab median  [f]
+TIE      0.86x              2.20 (1.60-2.20)              1.90 (1.40-2.00)  brush | clone layer 50 px 1:1 | move median  [f]
+TIE      0.85x              3.30 (2.80-4.30)              2.80 (2.60-2.90)  brush | clone layer 50 px 1:1 | move worst  [f]
+WIN      0.67x              18.6 (17.6-19.6)              12.5 (10.3-13.1)  brush | clone layer 50 px fit | blockedMax  [f]
+TIE      0.71x              1.40 (1.00-1.40)              1.00 (0.90-1.10)  brush | clone layer 50 px fit | dab median  [f]
+TIE      0.71x              2.40 (1.90-2.50)              1.70 (1.60-1.90)  brush | clone layer 50 px fit | move median  [f]
+TIE      0.73x              3.00 (2.70-3.00)              2.20 (1.90-3.80)  brush | clone layer 50 px fit | move worst  [f]
+TIE      0.83x              51.3 (49.3-57.8)              42.7 (40.5-89.0)  brush | heal image 200 px 1:1 | blockedMax
+TIE      0.63x              1.90 (1.30-2.10)              1.20 (1.10-1.90)  brush | heal image 200 px 1:1 | dab median
+TIE      0.66x              3.50 (2.80-3.70)              2.30 (2.30-3.50)  brush | heal image 200 px 1:1 | move median
+WIN      0.66x              5.00 (4.60-22.7)              3.30 (3.30-4.10)  brush | heal image 200 px 1:1 | move worst
+WIN      0.79x              22.7 (18.5-30.9)              17.9 (16.7-18.4)  brush | heal image 200 px fit | blockedMax
+WIN      0.73x              7.90 (6.70-8.60)              5.80 (5.70-5.90)  brush | heal image 200 px fit | dab median
+WIN      0.75x              9.10 (7.80-9.80)              6.80 (6.70-6.90)  brush | heal image 200 px fit | move median
+WIN      0.65x              12.1 (11.6-16.0)              7.90 (7.90-8.30)  brush | heal image 200 px fit | move worst
+LOSS     1.28x              55.5 (51.6-70.0)              70.9 (70.1-73.8)  brush | heal image 200 px fit cold | blockedMax
+WIN      0.81x              7.30 (6.20-8.80)              5.90 (5.80-6.10)  brush | heal image 200 px fit cold | dab median
+TIE      0.83x              8.40 (7.30-10.1)              7.00 (6.70-7.30)  brush | heal image 200 px fit cold | move median
+WIN      0.78x              10.0 (8.70-10.7)              7.80 (7.40-8.00)  brush | heal image 200 px fit cold | move worst
+WIN      0.82x              70.1 (64.2-73.1)              57.3 (55.2-57.9)  brush | heal image 400 px 1:1 | blockedMax
+WIN      0.75x              5.20 (5.00-7.00)              3.90 (3.80-4.50)  brush | heal image 400 px 1:1 | dab median
+WIN      0.83x              6.60 (6.50-9.80)              5.50 (5.30-6.10)  brush | heal image 400 px 1:1 | move median
+WIN      0.75x              8.90 (8.80-11.6)              6.70 (6.20-7.60)  brush | heal image 400 px 1:1 | move worst
+TIE      0.78x              37.0 (33.3-37.4)             29.0 (28.8-2,671)  brush | heal image 400 px fit | blockedMax
+TIE      0.83x              14.9 (12.2-15.2)              12.3 (11.9-12.6)  brush | heal image 400 px fit | dab median
+TIE      0.85x              15.9 (13.5-16.9)              13.5 (13.3-13.9)  brush | heal image 400 px fit | move median
+TIE      0.79x              19.9 (16.0-21.7)             15.8 (15.5-1,264)  brush | heal image 400 px fit | move worst
+TIE      0.89x              50.3 (41.9-54.7)              45.0 (43.9-52.3)  brush | heal image 50 px 1:1 | blockedMax
+TIE      0.50x              0.80 (0.50-0.80)              0.40 (0.40-0.60)  brush | heal image 50 px 1:1 | dab median
+TIE      0.67x              2.40 (1.60-2.50)              1.60 (1.40-2.00)  brush | heal image 50 px 1:1 | move median
+TIE      0.90x              3.10 (2.90-3.60)              2.80 (2.40-3.60)  brush | heal image 50 px 1:1 | move worst
+TIE      0.94x              18.1 (16.5-19.0)              17.0 (15.8-18.5)  brush | heal image 50 px fit | blockedMax
+WIN      0.68x              3.40 (2.40-3.80)              2.30 (2.30-2.30)  brush | heal image 50 px fit | dab median
+WIN      0.70x              4.40 (3.20-5.00)              3.10 (3.00-3.10)  brush | heal image 50 px fit | move median
+TIE      0.70x              5.60 (4.20-6.90)              3.90 (3.80-4.80)  brush | heal image 50 px fit | move worst
+TIE      0.92x              48.1 (46.2-57.1)              44.2 (43.7-55.4)  brush | heal layer 200 px 1:1 | blockedMax
+TIE      0.67x              1.80 (1.30-1.80)              1.20 (1.20-1.80)  brush | heal layer 200 px 1:1 | dab median
+TIE      0.78x              3.20 (2.60-3.60)              2.50 (2.30-3.40)  brush | heal layer 200 px 1:1 | move median
+TIE      0.68x              5.30 (4.10-5.90)              3.60 (3.40-4.60)  brush | heal layer 200 px 1:1 | move worst
+TIE      0.89x             23.0 (18.5-1,268)              20.4 (15.8-22.1)  brush | heal layer 200 px fit | blockedMax
+TIE      0.82x              6.60 (5.80-8.00)              5.40 (5.40-8.00)  brush | heal layer 200 px fit | dab median
+TIE      0.84x              7.60 (6.90-9.10)              6.40 (6.30-9.10)  brush | heal layer 200 px fit | move median
+TIE      0.73x               11.3 (9.40-145)              8.30 (7.50-12.4)  brush | heal layer 200 px fit | move worst
+TIE      0.90x              50.9 (49.7-56.0)              45.8 (42.5-53.1)  brush | heal layer 200 px fit cold | blockedMax
+TIE      0.76x              7.20 (6.90-7.30)              5.50 (5.30-7.10)  brush | heal layer 200 px fit cold | dab median
+TIE      0.77x              8.40 (7.90-8.60)              6.50 (6.20-8.30)  brush | heal layer 200 px fit cold | move median
+TIE      0.75x              9.30 (8.30-9.70)              7.00 (6.80-10.6)  brush | heal layer 200 px fit cold | move worst
+TIE      0.94x              53.2 (47.7-61.9)              50.0 (44.1-60.4)  brush | heal layer 400 px 1:1 | blockedMax
+TIE      0.76x              4.90 (3.60-5.20)              3.70 (3.60-4.80)  brush | heal layer 400 px 1:1 | dab median
+TIE      0.76x              6.70 (5.20-6.80)              5.10 (4.80-6.50)  brush | heal layer 400 px 1:1 | move median
+WIN      0.74x              8.90 (7.70-9.40)              6.60 (5.40-7.30)  brush | heal layer 400 px 1:1 | move worst
+TIE      0.76x              37.5 (28.2-39.2)              28.6 (26.6-34.5)  brush | heal layer 400 px fit | blockedMax
+TIE      0.78x              14.8 (12.0-15.4)              11.5 (11.3-16.0)  brush | heal layer 400 px fit | dab median
+TIE      0.78x              16.2 (13.3-17.0)              12.7 (12.6-17.4)  brush | heal layer 400 px fit | move median
+TIE      0.75x              21.1 (16.5-23.8)              15.9 (14.2-20.3)  brush | heal layer 400 px fit | move worst
+TIE      0.92x              51.4 (42.7-51.7)              47.5 (44.6-47.9)  brush | heal layer 50 px 1:1 | blockedMax
+TIE      0.62x              0.80 (0.50-0.90)              0.50 (0.40-0.80)  brush | heal layer 50 px 1:1 | dab median
+TIE      0.79x              2.40 (1.90-2.90)              1.90 (1.70-2.50)  brush | heal layer 50 px 1:1 | move median
+TIE      0.92x              3.70 (3.40-5.50)              3.40 (2.60-3.70)  brush | heal layer 50 px 1:1 | move worst
+TIE      0.67x              17.7 (12.7-21.3)              11.8 (11.6-18.8)  brush | heal layer 50 px fit | blockedMax
+TIE      0.68x              3.10 (2.20-3.40)              2.10 (1.90-2.90)  brush | heal layer 50 px fit | dab median
+TIE      0.72x              4.00 (3.10-4.50)              2.90 (2.60-3.70)  brush | heal layer 50 px fit | move median
+TIE      0.82x              4.90 (4.30-6.10)              4.00 (3.60-4.40)  brush | heal layer 50 px fit | move worst
+WIN      0.49x                 320 (299-330)                 157 (151-160)  brush | sharpen layer 1000 px 1:1 | blockedMax  [f]
+WIN      0.43x                 128 (127-146)              55.5 (55.4-56.1)  brush | sharpen layer 1000 px 1:1 | dab median  [f]
+WIN      0.47x                 139 (138-157)              64.8 (64.4-66.2)  brush | sharpen layer 1000 px 1:1 | move median  [f]
+WIN      0.43x                 178 (169-195)              75.9 (73.9-77.5)  brush | sharpen layer 1000 px 1:1 | move worst  [f]
+WIN      0.49x                 439 (418-489)                 216 (216-227)  brush | sharpen layer 1000 px fit | blockedMax  [f]
+WIN      0.45x                 250 (247-299)                 113 (111-114)  brush | sharpen layer 1000 px fit | dab median  [f]
+WIN      0.45x                 256 (250-303)                 116 (114-117)  brush | sharpen layer 1000 px fit | move median  [f]
+WIN      0.45x                 284 (270-340)                 127 (127-132)  brush | sharpen layer 1000 px fit | move worst  [f]
+WIN      0.76x              58.5 (56.3-61.6)              44.4 (44.4-45.3)  brush | sharpen layer 200 px 1:1 | blockedMax  [f]
+WIN      0.47x              6.60 (6.20-7.30)              3.10 (3.00-3.30)  brush | sharpen layer 200 px 1:1 | dab median  [f]
+WIN      0.56x              8.00 (7.70-8.90)              4.50 (4.40-4.90)  brush | sharpen layer 200 px 1:1 | move median  [f]
+WIN      0.54x              10.5 (10.2-11.5)              5.70 (5.20-5.90)  brush | sharpen layer 200 px 1:1 | move worst  [f]
+WIN      0.46x              76.5 (64.5-79.3)              35.1 (31.8-35.8)  brush | sharpen layer 200 px fit | blockedMax  [f]
+WIN      0.50x              40.6 (40.6-45.7)              20.2 (20.1-20.9)  brush | sharpen layer 200 px fit | dab median  [f]
+WIN      0.51x              42.2 (42.0-47.6)              21.6 (21.5-22.3)  brush | sharpen layer 200 px fit | move median  [f]
+WIN      0.44x              56.8 (50.0-71.7)              24.9 (23.4-26.4)  brush | sharpen layer 200 px fit | move worst  [f]
+WIN      0.61x                110 (95.8-154)              67.2 (64.6-74.3)  brush | sharpen layer 200 px fit cold | blockedMax  [f]
+WIN      0.54x              41.2 (40.6-47.2)              22.1 (21.1-23.5)  brush | sharpen layer 200 px fit cold | dab median  [f]
+WIN      0.56x              42.4 (42.0-48.5)              23.6 (22.5-25.2)  brush | sharpen layer 200 px fit cold | move median  [f]
+WIN      0.55x              47.3 (46.3-53.0)              26.1 (23.6-26.5)  brush | sharpen layer 200 px fit cold | move worst  [f]
+WIN      0.66x              89.2 (79.8-89.5)              58.7 (54.1-59.1)  brush | sharpen layer 400 px 1:1 | blockedMax  [f]
+WIN      0.44x              22.2 (21.0-23.9)              9.70 (9.60-9.90)  brush | sharpen layer 400 px 1:1 | dab median  [f]
+WIN      0.47x              24.3 (22.6-25.5)              11.4 (11.0-11.5)  brush | sharpen layer 400 px 1:1 | move median  [f]
+WIN      0.41x              33.7 (25.9-34.1)              13.7 (12.1-14.6)  brush | sharpen layer 400 px 1:1 | move worst  [f]
+WIN      0.44x                 160 (136-163)              69.8 (63.3-70.6)  brush | sharpen layer 400 px fit | blockedMax  [f]
+WIN      0.48x              80.4 (78.8-92.9)              38.2 (37.0-38.6)  brush | sharpen layer 400 px fit | dab median  [f]
+WIN      0.49x              82.0 (80.7-94.7)              39.8 (38.6-40.4)  brush | sharpen layer 400 px fit | move median  [f]
+WIN      0.46x                104 (86.5-152)              48.3 (47.6-48.9)  brush | sharpen layer 400 px fit | move worst  [f]
+TIE      0.99x              40.2 (39.5-44.8)              39.7 (37.3-41.0)  brush | sharpen layer 50 px 1:1 | blockedMax  [f]
+WIN      0.39x              1.80 (1.70-2.00)              0.70 (0.70-0.70)  brush | sharpen layer 50 px 1:1 | dab median  [f]
+WIN      0.60x              3.00 (2.90-3.60)              1.80 (1.70-1.80)  brush | sharpen layer 50 px 1:1 | move median  [f]
+WIN      0.39x              6.10 (4.30-6.30)              2.40 (2.30-2.80)  brush | sharpen layer 50 px 1:1 | move worst  [f]
+WIN      0.31x              40.8 (26.7-42.7)              12.7 (11.8-14.7)  brush | sharpen layer 50 px fit | blockedMax  [f]
+WIN      0.42x              12.1 (10.8-13.1)              5.10 (4.90-5.10)  brush | sharpen layer 50 px fit | dab median  [f]
+WIN      0.45x              13.2 (11.9-14.8)              5.90 (5.80-6.00)  brush | sharpen layer 50 px fit | move median  [f]
+WIN      0.42x              17.3 (13.7-24.0)              7.20 (6.60-7.50)  brush | sharpen layer 50 px fit | move worst  [f]
+TIE      0.96x              58.1 (48.1-59.5)              55.6 (46.5-79.0)  brush | smudge (base) - 200 px fit | blockedMax  [f]
+TIE      0.95x              7.70 (6.70-9.30)              7.30 (6.60-11.2)  brush | smudge (base) - 200 px fit | dab median  [f]
+TIE      1.01x              8.50 (7.80-10.5)              8.60 (7.60-12.3)  brush | smudge (base) - 200 px fit | move median  [f]
+TIE      1.01x              10.3 (9.50-15.8)              10.4 (10.3-12.9)  brush | smudge (base) - 200 px fit | move worst  [f]
+TIE      0.98x              35.5 (31.8-38.4)              34.7 (32.1-37.6)  brush | smudge - 200 px 1:1 | blockedMax  [f]
+TIE      1.00x              1.00 (0.90-1.20)              1.00 (0.90-1.20)  brush | smudge - 200 px 1:1 | dab median  [f]
+TIE      1.10x              2.10 (2.10-3.90)              2.30 (2.00-2.50)  brush | smudge - 200 px 1:1 | move median  [f]
+TIE      1.09x              3.40 (3.20-5.30)              3.70 (2.60-6.70)  brush | smudge - 200 px 1:1 | move worst  [f]
+TIE      0.82x              18.5 (12.9-29.1)              15.1 (12.9-23.0)  brush | smudge - 200 px fit | blockedMax  [f]
+TIE      0.85x              6.20 (5.20-6.90)              5.30 (5.20-6.60)  brush | smudge - 200 px fit | dab median  [f]
+TIE      0.87x              7.70 (6.50-8.60)              6.70 (6.50-8.00)  brush | smudge - 200 px fit | move median  [f]
+TIE      0.90x              9.40 (8.10-10.4)              8.50 (8.00-10.2)  brush | smudge - 200 px fit | move worst  [f]
+TIE      1.04x               63.7 (54.7-161)              66.3 (49.0-72.9)  brush | smudge - 200 px fit cold | blockedMax  [f]
+TIE      0.93x              6.10 (5.50-6.50)              5.70 (5.30-6.00)  brush | smudge - 200 px fit cold | dab median  [f]
+TIE      0.91x              7.80 (7.10-7.90)              7.10 (6.70-7.30)  brush | smudge - 200 px fit cold | move median  [f]
+TIE      0.77x              9.90 (7.40-10.1)              7.60 (6.80-8.80)  brush | smudge - 200 px fit cold | move worst  [f]
+TIE      0.87x              45.4 (45.3-46.8)              39.4 (38.8-46.9)  brush | smudge - 400 px 1:1 | blockedMax  [f]
+TIE      0.84x              3.80 (3.10-3.90)              3.20 (3.20-4.00)  brush | smudge - 400 px 1:1 | dab median  [f]
+TIE      0.90x              5.10 (4.80-6.60)              4.60 (4.50-5.40)  brush | smudge - 400 px 1:1 | move median  [f]
+TIE      0.83x              7.70 (6.50-8.00)              6.40 (5.70-7.00)  brush | smudge - 400 px 1:1 | move worst  [f]
+TIE      0.81x              35.0 (29.8-38.3)              28.4 (27.7-35.6)  brush | smudge - 400 px fit | blockedMax  [f]
+TIE      0.89x              14.6 (11.9-15.2)              13.0 (11.5-14.2)  brush | smudge - 400 px fit | dab median  [f]
+TIE      0.90x              16.3 (13.4-17.2)              14.6 (13.0-15.6)  brush | smudge - 400 px fit | move median  [f]
+TIE      0.89x              19.4 (19.1-20.8)              17.2 (15.6-23.9)  brush | smudge - 400 px fit | move worst  [f]
+TIE      0.91x              40.8 (38.1-43.5)              37.3 (35.0-40.8)  brush | smudge - 50 px 1:1 | blockedMax  [f]
+TIE      1.00x              0.30 (0.20-0.40)              0.30 (0.30-0.30)  brush | smudge - 50 px 1:1 | dab median  [f]
+TIE      1.00x              1.40 (1.30-2.70)              1.40 (1.40-1.60)  brush | smudge - 50 px 1:1 | move median  [f]
+TIE      0.51x              3.70 (2.80-4.70)              1.90 (1.90-4.90)  brush | smudge - 50 px 1:1 | move worst  [f]
+TIE      1.02x              17.1 (10.9-20.3)              17.4 (9.80-17.6)  brush | smudge - 50 px fit | blockedMax  [f]
+TIE      0.79x              1.90 (1.60-2.10)              1.50 (1.50-2.00)  brush | smudge - 50 px fit | dab median  [f]
+TIE      0.80x              3.00 (2.60-3.10)              2.40 (2.40-3.00)  brush | smudge - 50 px fit | move median  [f]
+WIN      0.72x              4.00 (3.80-4.60)              2.90 (2.80-3.60)  brush | smudge - 50 px fit | move worst  [f]
+WIN      0.73x                 146 (137-149)                 107 (104-124)  brush | sponge layer 1000 px 1:1 | blockedMax  [f]
+WIN      0.74x              44.6 (44.1-47.4)              32.9 (32.6-36.2)  brush | sponge layer 1000 px 1:1 | dab median  [f]
+WIN      0.77x              55.5 (54.2-57.1)              42.7 (42.2-46.3)  brush | sponge layer 1000 px 1:1 | move median  [f]
+WIN      0.68x               75.4 (68.2-113)              51.1 (48.4-61.9)  brush | sponge layer 1000 px 1:1 | move worst  [f]
+WIN      0.81x                 196 (196-218)                 159 (150-180)  brush | sponge layer 1000 px fit | blockedMax  [f]
+WIN      0.76x              85.0 (84.4-97.2)              64.4 (63.7-72.2)  brush | sponge layer 1000 px fit | dab median  [f]
+WIN      0.76x               88.1 (87.7-100)              67.1 (66.8-74.9)  brush | sponge layer 1000 px fit | move median  [f]
+WIN      0.83x                 103 (103-118)              85.9 (79.3-95.8)  brush | sponge layer 1000 px fit | move worst  [f]
+WIN      0.83x              47.4 (46.7-51.0)              39.2 (36.7-45.5)  brush | sponge layer 200 px 1:1 | blockedMax  [f]
+WIN      0.67x              2.40 (2.20-2.40)              1.60 (1.40-1.80)  brush | sponge layer 200 px 1:1 | dab median  [f]
+WIN      0.74x              3.80 (3.80-4.10)              2.80 (2.80-3.40)  brush | sponge layer 200 px 1:1 | move median  [f]
+TIE      0.84x              5.00 (4.70-5.40)              4.20 (3.70-4.70)  brush | sponge layer 200 px 1:1 | move worst  [f]
+TIE      0.74x              24.6 (23.6-37.7)              18.2 (17.7-30.4)  brush | sponge layer 200 px fit | blockedMax  [f]
+WIN      0.68x              12.8 (12.6-16.7)              8.70 (8.40-9.60)  brush | sponge layer 200 px fit | dab median  [f]
+WIN      0.70x              14.2 (14.1-18.2)              10.0 (9.70-11.0)  brush | sponge layer 200 px fit | move median  [f]
+WIN      0.63x              17.7 (17.1-24.6)              11.1 (10.6-14.6)  brush | sponge layer 200 px fit | move worst  [f]
+TIE      1.14x              57.4 (56.7-78.7)               65.3 (63.3-119)  brush | sponge layer 200 px fit cold | blockedMax  [f]
+WIN      0.69x              13.1 (13.0-19.0)              9.00 (8.60-11.1)  brush | sponge layer 200 px fit cold | dab median  [f]
+WIN      0.69x              14.7 (14.4-20.2)              10.2 (10.1-13.0)  brush | sponge layer 200 px fit cold | move median  [f]
+TIE      0.73x              15.0 (14.8-22.7)              10.9 (10.5-14.8)  brush | sponge layer 200 px fit cold | move worst  [f]
+WIN      0.78x              58.0 (56.0-61.4)              45.1 (44.8-47.5)  brush | sponge layer 400 px 1:1 | blockedMax  [f]
+TIE      0.69x              7.50 (7.10-7.90)              5.20 (5.20-7.10)  brush | sponge layer 400 px 1:1 | dab median  [f]
+TIE      0.74x              9.10 (8.60-9.50)              6.70 (6.70-8.60)  brush | sponge layer 400 px 1:1 | move median  [f]
+WIN      0.73x              11.8 (11.6-13.2)              8.60 (8.00-10.9)  brush | sponge layer 400 px 1:1 | move worst  [f]
+WIN      0.59x             80.1 (73.0-1,420)              47.5 (46.3-52.4)  brush | sponge layer 400 px fit | blockedMax  [f]
+WIN      0.66x              28.6 (27.6-35.0)              18.9 (18.9-23.1)  brush | sponge layer 400 px fit | dab median  [f]
+WIN      0.68x              30.3 (29.3-36.9)              20.5 (20.4-24.4)  brush | sponge layer 400 px fit | move median  [f]
+WIN      0.53x               44.5 (32.0-263)              23.7 (23.3-29.9)  brush | sponge layer 400 px fit | move worst  [f]
+TIE      0.85x              46.0 (44.4-47.4)              39.3 (37.1-44.4)  brush | sponge layer 50 px 1:1 | blockedMax  [f]
+TIE      0.57x              0.70 (0.50-0.80)              0.40 (0.40-0.50)  brush | sponge layer 50 px 1:1 | dab median  [f]
+TIE      0.74x              1.90 (1.70-2.40)              1.40 (1.40-2.00)  brush | sponge layer 50 px 1:1 | move median  [f]
+TIE      1.06x              3.50 (2.80-3.70)              3.70 (2.30-4.10)  brush | sponge layer 50 px 1:1 | move worst  [f]
+TIE      1.00x              10.6 (10.5-26.1)              10.6 (10.6-17.4)  brush | sponge layer 50 px fit | blockedMax  [f]
+TIE      0.81x              3.20 (3.20-4.80)              2.60 (2.60-3.20)  brush | sponge layer 50 px fit | dab median  [f]
+WIN      0.81x              4.30 (4.20-5.90)              3.50 (3.50-4.10)  brush | sponge layer 50 px fit | move median  [f]
+WIN      0.82x              5.50 (5.30-10.7)              4.50 (4.30-5.00)  brush | sponge layer 50 px fit | move worst  [f]
+TIE      0.88x                 113 (106-120)               99.8 (98.3-108)  brush | tone layer 1000 px 1:1 | blockedMax  [f]
+WIN      0.94x              33.4 (33.2-36.4)              31.5 (30.8-31.9)  brush | tone layer 1000 px 1:1 | dab median  [f]
+WIN      0.94x              43.3 (41.9-45.9)              40.9 (40.8-41.7)  brush | tone layer 1000 px 1:1 | move median  [f]
+TIE      1.02x              48.8 (48.1-56.0)              49.8 (47.8-50.1)  brush | tone layer 1000 px 1:1 | move worst  [f]
+WIN      0.88x                 172 (156-180)                 151 (147-154)  brush | tone layer 1000 px fit | blockedMax  [f]
+WIN      0.90x              67.1 (64.9-71.5)              60.2 (60.0-61.4)  brush | tone layer 1000 px fit | dab median  [f]
+WIN      0.89x              70.4 (67.6-75.2)              62.9 (62.8-64.2)  brush | tone layer 1000 px fit | move median  [f]
+WIN      0.89x              88.3 (81.2-92.0)              78.2 (73.7-81.1)  brush | tone layer 1000 px fit | move worst  [f]
+TIE      0.97x              44.5 (43.9-51.9)              43.1 (39.6-44.7)  brush | tone layer 200 px 1:1 | blockedMax  [f]
+WIN      0.68x              1.90 (1.80-1.90)              1.30 (1.30-1.40)  brush | tone layer 200 px 1:1 | dab median  [f]
+WIN      0.76x              3.40 (3.20-3.60)              2.60 (2.50-2.70)  brush | tone layer 200 px 1:1 | move median  [f]
+TIE      0.94x              4.90 (4.70-5.40)              4.60 (4.10-6.40)  brush | tone layer 200 px 1:1 | move worst  [f]
+WIN      0.62x              30.7 (25.8-33.4)              18.9 (17.5-20.0)  brush | tone layer 200 px fit | blockedMax  [f]
+WIN      0.81x              9.70 (9.50-10.0)              7.90 (7.80-8.00)  brush | tone layer 200 px fit | dab median  [f]
+WIN      0.82x              11.1 (11.0-11.1)              9.10 (9.00-9.30)  brush | tone layer 200 px fit | move median  [f]
+WIN      0.70x              14.2 (13.5-14.6)              10.0 (9.50-11.0)  brush | tone layer 200 px fit | move worst  [f]
+TIE      1.23x               63.5 (56.6-115)               78.2 (65.2-130)  brush | tone layer 200 px fit cold | blockedMax  [f]
+WIN      0.81x              10.6 (10.2-10.7)              8.60 (8.30-9.40)  brush | tone layer 200 px fit cold | dab median  [f]
+WIN      0.83x              11.8 (11.7-12.2)              9.80 (9.60-11.0)  brush | tone layer 200 px fit cold | move median  [f]
+TIE      1.02x              13.2 (12.2-23.6)              13.4 (9.80-13.8)  brush | tone layer 200 px fit cold | move worst  [f]
+TIE      1.08x              48.6 (46.1-52.8)              52.7 (44.6-53.0)  brush | tone layer 400 px 1:1 | blockedMax  [f]
+WIN      0.85x              5.90 (5.80-6.40)              5.00 (4.70-5.20)  brush | tone layer 400 px 1:1 | dab median  [f]
+WIN      0.88x              7.60 (7.50-7.80)              6.70 (6.00-6.70)  brush | tone layer 400 px 1:1 | move median  [f]
+TIE      0.95x              8.80 (8.40-10.1)              8.40 (8.30-9.30)  brush | tone layer 400 px 1:1 | move worst  [f]
+WIN      0.80x              55.3 (52.5-57.4)              44.0 (42.0-45.9)  brush | tone layer 400 px fit | blockedMax  [f]
+WIN      0.90x              20.7 (20.5-22.1)              18.6 (18.2-18.9)  brush | tone layer 400 px fit | dab median  [f]
+WIN      0.91x              22.3 (22.2-23.5)              20.2 (19.8-21.0)  brush | tone layer 400 px fit | move median  [f]
+WIN      0.84x              27.8 (26.9-34.0)              23.3 (23.2-23.6)  brush | tone layer 400 px fit | move worst  [f]
+WIN      0.92x              40.9 (39.2-41.4)              37.5 (37.4-38.1)  brush | tone layer 50 px 1:1 | blockedMax  [f]
+WIN      0.80x              0.50 (0.50-0.50)              0.40 (0.30-0.40)  brush | tone layer 50 px 1:1 | dab median  [f]
+TIE      0.70x              2.00 (1.50-2.20)              1.40 (1.40-1.50)  brush | tone layer 50 px 1:1 | move median  [f]
+WIN      0.44x              5.00 (3.00-5.70)              2.20 (2.10-2.20)  brush | tone layer 50 px 1:1 | move worst  [f]
+WIN      0.49x              22.5 (21.8-27.2)              11.1 (9.10-11.8)  brush | tone layer 50 px fit | blockedMax  [f]
+WIN      0.78x              3.20 (3.10-3.20)              2.50 (2.50-2.60)  brush | tone layer 50 px fit | dab median  [f]
+WIN      0.79x              4.30 (4.10-4.30)              3.40 (3.30-3.60)  brush | tone layer 50 px fit | move median  [f]
+WIN      0.84x              5.50 (5.10-6.70)              4.60 (4.20-4.80)  brush | tone layer 50 px fit | move worst  [f]
+
+-- exportperf/fill
+TIE      1.07x               87.0 (78.0-141)               93.0 (85.0-140)  exportperf/fill | composite_bands | blk
+WIN      0.61x           1,658 (1,630-1,704)             1,013 (985-1,392)  exportperf/fill | composite_bands | wall
+TIE      0.96x           2,167 (2,113-2,293)           2,072 (2,025-2,259)  exportperf/fill | composite_canvas | blk
+TIE      1.00x           3,367 (3,344-3,723)           3,355 (3,220-3,790)  exportperf/fill | composite_canvas | wall
+TIE      1.03x                 103 (102-107)                 106 (104-128)  exportperf/fill | fill_limit_rows | fill
+WIN      0.56x          9,680 (9,621-12,702)           5,394 (5,321-7,647)  exportperf/fill | fill_limit_rows | limit
+WIN      0.56x          9,782 (9,724-12,809)           5,498 (5,428-7,774)  exportperf/fill | fill_limit_rows | wall
+TIE      1.08x                 165 (162-265)                 178 (156-215)  exportperf/fill | layer_canvas | blk
+TIE      1.02x           1,314 (1,030-1,502)           1,338 (1,291-1,347)  exportperf/fill | layer_canvas | wall
+TIE      0.32x              19.0 (6.00-19.0)              6.00 (6.00-16.0)  exportperf/fill | layer_from_tiles | blk
+WIN      0.24x                 799 (730-891)                 189 (185-255)  exportperf/fill | layer_from_tiles | wall
+TIE      0.83x                 159 (101-182)                 132 (115-142)  exportperf/fill | psd | blk
+WIN      0.78x           2,086 (1,944-2,167)           1,618 (1,464-1,701)  exportperf/fill | psd | wall
+WIN      0.66x                 378 (295-393)                 250 (239-265)  exportperf/fill | psd_fill_limit | blk
+WIN      0.53x        10,883 (10,496-12,976)           5,716 (5,349-7,634)  exportperf/fill | psd_fill_limit | fillRowsMs
+WIN      0.60x        14,287 (13,728-18,494)          8,596 (8,221-10,417)  exportperf/fill | psd_fill_limit | wall
+TIE      0.75x                121 (92.0-140)               91.0 (90.0-101)  exportperf/fill | psd_masked | blk
+WIN      0.65x           2,460 (2,194-2,555)           1,592 (1,588-1,913)  exportperf/fill | psd_masked | wall
+
+-- exportperf/limit
+TIE      1.03x                 134 (116-145)                 138 (110-150)  exportperf/limit | composite_bands | blk
+TIE      0.64x           1,586 (1,458-1,699)             1,022 (977-1,648)  exportperf/limit | composite_bands | wall
+TIE      1.15x           2,255 (1,947-2,510)           2,591 (2,185-2,687)  exportperf/limit | composite_canvas | blk
+TIE      1.19x           3,391 (3,078-3,756)           4,042 (3,639-4,161)  exportperf/limit | composite_canvas | wall
+TIE      0.97x                 169 (166-182)                 164 (158-186)  exportperf/limit | layer_canvas | blk
+TIE      1.17x           1,323 (1,057-1,542)           1,549 (1,437-1,607)  exportperf/limit | layer_canvas | wall
+TIE      0.38x              16.0 (6.00-18.0)              6.00 (6.00-12.0)  exportperf/limit | layer_from_tiles | blk
+WIN      0.25x                 830 (685-928)                 207 (182-258)  exportperf/limit | layer_from_tiles | wall
+LOSS     1.71x                 137 (110-187)                 234 (226-243)  exportperf/limit | psd | blk
+WIN      0.79x           2,161 (1,954-2,166)           1,699 (1,572-1,879)  exportperf/limit | psd | wall
+LOSS     1.23x                 119 (109-120)                 146 (146-153)  exportperf/limit | psd_masked | blk
+WIN      0.80x           2,422 (2,136-2,526)           1,941 (1,895-2,038)  exportperf/limit | psd_masked | wall
+
+-- liquify/js
+LOSS     2.89x              26.3 (22.1-30.9)              76.1 (32.2-77.3)  liquify/js | push 1:1 size 1000 | blockedMax
+WIN      0.45x              4.00 (3.50-4.40)              1.80 (1.80-2.20)  liquify/js | push 1:1 size 1000 | dab p50
+WIN      0.48x              6.10 (5.40-6.50)              2.90 (2.60-3.00)  liquify/js | push 1:1 size 1000 | dab worst
+TIE      0.96x              16.7 (16.5-19.9)              16.0 (14.0-17.4)  liquify/js | push 1:1 size 1000 | frame p50
+TIE      0.86x              75.0 (70.4-86.1)              64.5 (62.1-77.9)  liquify/js | push 1:1 size 1000 | frame worst
+TIE      1.26x              70.8 (67.6-90.0)              89.0 (71.8-89.6)  liquify/js | push 1:1 size 1000 | land
+TIE      0.96x              16.4 (16.1-19.6)              15.8 (13.8-17.3)  liquify/js | push 1:1 size 1000 | preview p50
+TIE      0.86x              74.5 (70.0-85.7)              64.2 (61.7-77.6)  liquify/js | push 1:1 size 1000 | preview worst
+WIN      0.67x              15.1 (14.7-22.2)              10.1 (6.40-11.9)  liquify/js | push 1:1 size 200 | blockedMax
+WIN      0.67x              0.30 (0.30-0.30)              0.20 (0.20-0.20)  liquify/js | push 1:1 size 200 | dab p50
+TIE      0.30x              1.00 (0.90-9.60)              0.30 (0.30-2.30)  liquify/js | push 1:1 size 200 | dab worst
+WIN      0.91x              3.30 (3.30-3.30)              3.00 (2.80-3.10)  liquify/js | push 1:1 size 200 | frame p50
+TIE      0.98x              30.1 (26.9-34.7)              29.4 (28.1-33.8)  liquify/js | push 1:1 size 200 | frame worst
+WIN      0.63x              33.9 (30.5-37.0)              21.4 (20.3-25.2)  liquify/js | push 1:1 size 200 | land
+WIN      0.87x              3.20 (3.10-3.20)              2.80 (2.70-3.00)  liquify/js | push 1:1 size 200 | preview p50
+TIE      0.97x              29.8 (26.6-34.4)              29.0 (27.7-33.4)  liquify/js | push 1:1 size 200 | preview worst
+TIE      0.16x               83.2 (81.9-124)              13.7 (11.6-82.2)  liquify/js | push fit size 1000 | blockedMax
+WIN      0.45x              15.7 (14.8-16.1)              7.10 (6.90-9.30)  liquify/js | push fit size 1000 | dab p50
+WIN      0.48x              18.6 (17.1-21.4)              8.90 (8.30-11.2)  liquify/js | push fit size 1000 | dab worst
+TIE      0.87x              1.50 (1.50-1.70)              1.30 (1.30-1.60)  liquify/js | push fit size 1000 | frame p50
+TIE      1.00x              11.6 (10.3-17.8)              11.6 (11.4-13.3)  liquify/js | push fit size 1000 | frame worst
+TIE      0.66x                 122 (117-155)               80.9 (69.5-152)  liquify/js | push fit size 1000 | land
+TIE      0.92x              1.30 (1.20-1.40)              1.20 (1.10-1.50)  liquify/js | push fit size 1000 | preview p50
+TIE      1.00x              11.3 (10.0-17.3)              11.3 (11.1-13.0)  liquify/js | push fit size 1000 | preview worst
+TIE      0.87x              16.8 (13.4-17.8)              14.6 (14.2-14.6)  liquify/js | push fit size 200 | blockedMax
+WIN      0.46x              2.80 (2.50-3.70)              1.30 (1.30-1.60)  liquify/js | push fit size 200 | dab p50
+WIN      0.63x              9.80 (8.10-11.0)              6.20 (6.20-6.90)  liquify/js | push fit size 200 | dab worst
+TIE      0.50x              0.40 (0.30-0.50)              0.20 (0.20-0.30)  liquify/js | push fit size 200 | frame p50
+TIE      0.89x              15.3 (13.5-17.7)              13.6 (13.3-15.8)  liquify/js | push fit size 200 | frame worst
+WIN      0.81x              57.5 (49.4-58.3)              46.7 (44.6-48.4)  liquify/js | push fit size 200 | land
+TIE      1.00x              0.20 (0.10-0.20)              0.20 (0.10-0.20)  liquify/js | push fit size 200 | preview p50
+TIE      0.91x              14.2 (12.7-16.7)              12.9 (12.5-15.2)  liquify/js | push fit size 200 | preview worst
+TIE      1.36x              6.10 (5.60-9.50)              8.30 (7.70-10.0)  liquify/js | restore all | blockedMax
+TIE      1.36x              6.10 (5.60-9.50)              8.30 (7.60-10.0)  liquify/js | restore all | ms
+TIE      1.00x              14.1 (13.2-17.6)              14.1 (10.4-14.4)  liquify/js | shrink held 150 ticks size 1000 | blockedMax
+TIE      0.73x              40.1 (36.2-40.2)              29.3 (28.2-38.0)  liquify/js | shrink held 150 ticks size 1000 | land
+WIN      0.46x              3.70 (3.10-4.70)              1.70 (1.70-1.90)  liquify/js | shrink held 150 ticks size 1000 | tick p50
+WIN      0.44x              5.70 (4.80-9.90)              2.50 (2.20-3.20)  liquify/js | shrink held 150 ticks size 1000 | tick worst
+
+-- liquify/rust
+LOSS     3.25x              26.1 (25.6-28.3)              84.7 (60.8-86.7)  liquify/rust | push 1:1 size 1000 | blockedMax
+WIN      0.35x              4.00 (3.60-5.00)              1.40 (1.30-1.80)  liquify/rust | push 1:1 size 1000 | dab p50
+WIN      0.39x              5.90 (4.30-6.10)              2.30 (1.70-2.40)  liquify/rust | push 1:1 size 1000 | dab worst
+WIN      0.49x              19.0 (17.8-20.0)              9.30 (8.90-9.90)  liquify/rust | push 1:1 size 1000 | frame p50
+WIN      0.67x              78.2 (73.6-79.0)              52.3 (43.7-54.5)  liquify/rust | push 1:1 size 1000 | frame worst
+LOSS     1.31x              75.1 (70.0-75.6)              98.2 (93.1-98.8)  liquify/rust | push 1:1 size 1000 | land
+WIN      0.48x              18.7 (17.5-19.7)              9.00 (8.70-9.60)  liquify/rust | push 1:1 size 1000 | preview p50
+WIN      0.67x              77.7 (73.3-78.7)              51.9 (43.3-54.0)  liquify/rust | push 1:1 size 1000 | preview worst
+TIE      0.80x              16.1 (12.2-17.0)              12.9 (10.7-13.9)  liquify/rust | push 1:1 size 200 | blockedMax
+WIN      0.67x              0.30 (0.30-0.50)              0.20 (0.10-0.20)  liquify/rust | push 1:1 size 200 | dab p50
+TIE      0.91x              2.20 (0.60-3.30)              2.00 (0.30-2.90)  liquify/rust | push 1:1 size 200 | dab worst
+WIN      0.47x              3.40 (3.30-3.90)              1.60 (1.50-1.70)  liquify/rust | push 1:1 size 200 | frame p50
+WIN      0.69x              32.0 (30.1-41.9)              22.1 (18.3-24.9)  liquify/rust | push 1:1 size 200 | frame worst
+WIN      0.58x              34.3 (27.2-35.5)              19.9 (19.4-21.7)  liquify/rust | push 1:1 size 200 | land
+WIN      0.45x              3.30 (3.20-3.70)              1.50 (1.40-1.60)  liquify/rust | push 1:1 size 200 | preview p50
+WIN      0.69x              31.4 (29.7-41.3)              21.6 (18.0-24.4)  liquify/rust | push 1:1 size 200 | preview worst
+WIN      0.17x               85.9 (67.8-101)              14.7 (13.4-15.6)  liquify/rust | push fit size 1000 | blockedMax
+WIN      0.27x              18.3 (15.0-21.0)              5.00 (4.60-6.60)  liquify/rust | push fit size 1000 | dab p50
+WIN      0.26x              24.4 (23.2-28.4)              6.30 (5.00-7.50)  liquify/rust | push fit size 1000 | dab worst
+WIN      0.39x              2.30 (1.80-2.40)              0.90 (0.80-1.10)  liquify/rust | push fit size 1000 | frame p50
+TIE      0.92x              15.5 (12.6-22.0)              14.3 (12.9-15.5)  liquify/rust | push fit size 1000 | frame worst
+WIN      0.44x                142 (97.3-151)              63.1 (47.1-63.8)  liquify/rust | push fit size 1000 | land
+WIN      0.35x              2.00 (1.50-2.00)              0.70 (0.70-0.90)  liquify/rust | push fit size 1000 | preview p50
+TIE      0.93x              15.1 (12.4-21.4)              14.1 (12.6-15.2)  liquify/rust | push fit size 1000 | preview worst
+TIE      0.93x              15.0 (12.9-27.4)              14.0 (12.7-14.8)  liquify/rust | push fit size 200 | blockedMax
+WIN      0.28x              3.60 (3.00-4.90)              1.00 (1.00-1.20)  liquify/rust | push fit size 200 | dab p50
+WIN      0.50x              10.7 (8.90-11.3)              5.30 (4.70-6.30)  liquify/rust | push fit size 200 | dab worst
+WIN      0.60x              0.50 (0.40-0.60)              0.30 (0.20-0.30)  liquify/rust | push fit size 200 | frame p50
+WIN      0.70x              17.9 (14.4-20.3)              12.5 (11.7-13.4)  liquify/rust | push fit size 200 | frame worst
+WIN      0.61x              58.0 (54.0-80.2)              35.1 (34.4-37.4)  liquify/rust | push fit size 200 | land
+WIN      0.50x              0.20 (0.20-0.30)              0.10 (0.10-0.10)  liquify/rust | push fit size 200 | preview p50
+WIN      0.70x              16.9 (13.3-19.5)              11.8 (10.9-12.1)  liquify/rust | push fit size 200 | preview worst
+TIE      1.18x              7.30 (7.10-8.50)              8.60 (8.10-8.80)  liquify/rust | restore all | blockedMax
+TIE      1.18x              7.30 (7.10-8.50)              8.60 (8.10-8.80)  liquify/rust | restore all | ms
+TIE      0.81x              15.0 (12.5-18.1)              12.2 (11.3-14.0)  liquify/rust | shrink held 150 ticks size 1000 | blockedMax
+WIN      0.78x              38.9 (34.3-41.2)              30.5 (24.9-31.1)  liquify/rust | shrink held 150 ticks size 1000 | land
+WIN      0.38x              3.70 (3.20-4.20)              1.40 (1.20-1.70)  liquify/rust | shrink held 150 ticks size 1000 | tick p50
+WIN      0.37x              5.70 (5.50-10.6)              2.10 (1.70-2.80)  liquify/rust | shrink held 150 ticks size 1000 | tick worst
+
+-- native/default
+TIE      1.31x                 588 (582-690)                 769 (637-921)  native/default | add_the_paint_layer | blk  [f]
+TIE      1.25x                 687 (687-823)               861 (725-1,033)  native/default | add_the_paint_layer | wall  [f]
+WIN      0.17x           1,466 (1,436-1,839)                 249 (215-251)  native/default | bucket_fill | blk  [f]
+WIN      0.46x           2,885 (2,795-3,202)           1,313 (1,161-1,456)  native/default | bucket_fill | wall  [f]
+WIN      0.69x           2,392 (2,194-2,599)           1,648 (1,510-1,816)  native/default | build_the_file | encodeMs
+TIE      1.03x             1,082 (991-1,195)             1,110 (985-1,440)  native/default | build_the_file | fillMs
+TIE      1.02x              44.0 (39.0-46.0)              45.0 (42.0-48.0)  native/default | export_ora | blk  [f]
+WIN      0.49x           5,028 (4,858-6,565)           2,482 (1,966-2,512)  native/default | export_ora | wall  [f]
+TIE      0.95x              39.0 (37.0-40.0)              37.0 (36.0-39.0)  native/default | export_png | blk  [f]
+WIN      0.57x           1,960 (1,862-1,964)             1,124 (879-1,133)  native/default | export_png | wall  [f]
+TIE      1.04x              70.0 (68.0-75.0)              73.0 (71.0-74.0)  native/default | export_psd | blk  [f]
+WIN      0.75x           1,314 (1,203-1,379)               982 (861-1,019)  native/default | export_psd | wall  [f]
+TIE      1.14x              35.0 (35.0-36.0)              40.0 (35.0-41.0)  native/default | grow_16 | blk  [f]
+TIE      1.11x                 491 (486-495)                 544 (426-605)  native/default | grow_16 | wall  [f]
+WIN      0.67x                 212 (208-255)                 141 (134-167)  native/default | invert | blk  [f]
+WIN      0.67x                 212 (208-255)                 141 (134-167)  native/default | invert | wall  [f]
+TIE      1.07x                 497 (491-571)                 530 (482-660)  native/default | open_the_file | blk  [f]
+WIN      0.51x           3,076 (2,947-3,408)           1,561 (1,262-1,835)  native/default | open_the_file | wall  [f]
+WIN      0.73x                 340 (326-378)                 247 (224-253)  native/default | pan_and_zoom | blk  [f]
+WIN      0.73x                 340 (326-378)                 247 (224-253)  native/default | pan_and_zoom | wall  [f]
+TIE      1.17x              18.0 (6.00-24.0)              21.0 (15.0-34.0)  native/default | provider_crop | blk  [f]
+WIN      0.82x                 712 (674-827)                 586 (542-627)  native/default | provider_crop | wall  [f]
+TIE      0.96x              23.0 (20.0-24.0)              22.0 (22.0-25.0)  native/default | shrink_16 | blk  [f]
+TIE      0.87x                 335 (334-382)                 293 (259-380)  native/default | shrink_16 | wall  [f]
+TIE      1.04x                 259 (257-272)                 270 (242-272)  native/default | stroke_and_release | blk  [f]
+TIE      1.04x                 259 (257-272)                 270 (242-272)  native/default | stroke_and_release | wall  [f]
+WIN      0.80x              79.0 (78.0-82.0)              63.0 (62.0-66.0)  native/default | wand_one_disc | blk  [f]
+WIN      0.78x                 139 (134-151)                108 (99.0-119)  native/default | wand_one_disc | wall  [f]
+WIN      0.19x                 566 (547-649)                110 (92.0-110)  native/default | wand_whole_add | blk  [f]
+WIN      0.62x           1,760 (1,677-1,881)           1,092 (1,019-1,249)  native/default | wand_whole_add | wall  [f]
+WIN      0.20x                 492 (457-519)               98.0 (95.0-122)  native/default | wand_whole_picture | blk  [f]
+WIN      0.69x           1,733 (1,686-1,861)           1,195 (1,096-1,384)  native/default | wand_whole_picture | wall  [f]
+
+-- native/filter
+LOSS     1.10x                 607 (580-652)                 667 (666-762)  native/filter | add_the_paint_layer | blk  [f]
+TIE      1.05x                 727 (672-744)                 760 (744-859)  native/filter | add_the_paint_layer | wall  [f]
+WIN      0.65x           2,426 (2,365-2,516)           1,588 (1,341-1,622)  native/filter | build_the_file | encodeMs
+TIE      0.92x           1,089 (1,045-1,089)             1,000 (998-1,094)  native/filter | build_the_file | fillMs
+WIN      0.32x                 567 (537-600)                 180 (146-292)  native/filter | filter_wand | blk  [f]
+WIN      0.72x           2,054 (1,960-2,140)           1,469 (1,338-1,492)  native/filter | filter_wand | wall  [f]
+TIE      0.98x                 483 (482-579)                 475 (474-600)  native/filter | open_the_file | blk  [f]
+WIN      0.51x           3,060 (2,921-3,459)           1,553 (1,506-1,946)  native/filter | open_the_file | wall  [f]
+WIN      0.22x                 454 (447-523)               99.0 (97.0-104)  native/filter | wand_whole_picture | blk  [f]
+WIN      0.66x           1,965 (1,684-2,040)           1,300 (1,087-1,303)  native/filter | wand_whole_picture | wall  [f]
+
+-- native/k0a
+TIE      1.43x                 604 (573-693)                 864 (648-906)  native/k0a | add_the_paint_layer | blk  [f]
+TIE      1.37x                 700 (682-789)               957 (729-1,008)  native/k0a | add_the_paint_layer | wall  [f]
+WIN      0.76x           2,180 (2,142-2,584)           1,666 (1,370-1,676)  native/k0a | build_the_file | encodeMs
+TIE      1.20x           1,092 (1,007-1,182)             1,315 (977-1,390)  native/k0a | build_the_file | fillMs
+TIE      1.02x              42.0 (39.0-43.0)              43.0 (42.0-47.0)  native/k0a | export_ora | blk  [f]
+WIN      0.47x           5,369 (5,050-5,376)           2,516 (1,931-2,584)  native/k0a | export_ora | wall  [f]
+TIE      0.92x              86.0 (74.0-91.0)              79.0 (61.0-80.0)  native/k0a | export_png | blk  [f]
+WIN      0.59x           1,877 (1,779-1,962)             1,109 (916-1,266)  native/k0a | export_png | wall  [f]
+TIE      0.90x               81.0 (68.0-118)              73.0 (72.0-79.0)  native/k0a | export_psd | blk  [f]
+WIN      0.78x           1,327 (1,173-1,345)             1,029 (865-1,054)  native/k0a | export_psd | wall  [f]
+WIN      0.88x           1,047 (1,031-1,107)                 922 (895-958)  native/k0a | open_ora | blk  [f]
+TIE      0.96x           7,491 (7,376-8,381)           7,210 (6,238-7,546)  native/k0a | open_ora | wall  [f]
+WIN      0.02x          9,796 (9,532-12,591)                 166 (149-172)  native/k0a | open_psd | blk  [f]
+WIN      0.36x        12,987 (12,849-16,193)           4,711 (4,037-4,840)  native/k0a | open_psd | wall  [f]
+TIE      1.26x                 501 (483-581)                 629 (455-629)  native/k0a | open_the_file | blk  [f]
+WIN      0.51x           2,973 (2,950-3,387)           1,512 (1,246-1,723)  native/k0a | open_the_file | wall  [f]
+WIN      0.88x                 496 (495-547)                 437 (435-442)  native/k0a | open_tiff | blk  [f]
+WIN      0.50x           5,906 (5,790-6,362)           2,962 (2,849-3,174)  native/k0a | open_tiff | wall  [f]
+WIN      0.15x                 842 (836-844)                 126 (123-130)  native/k0a | save_ora | blk  [f]
+WIN      0.65x           6,879 (6,492-7,239)           4,483 (4,154-5,695)  native/k0a | save_ora | wall  [f]
+WIN      0.29x                 396 (379-414)                 113 (109-119)  native/k0a | save_png | blk  [f]
+WIN      0.75x           2,560 (2,459-2,839)           1,915 (1,687-1,919)  native/k0a | save_png | wall  [f]
+WIN      0.27x                 428 (415-461)                 114 (103-115)  native/k0a | save_tiff | blk  [f]
+TIE      0.77x           2,438 (2,272-2,526)           1,884 (1,613-2,828)  native/k0a | save_tiff | wall  [f]
+
+-- perf
+TIE      1.26x                103 (88.3-124)                130 (83.5-135)  perf | 192 px picture after a whole change, settled | max
+TIE      4.35x              11.4 (9.60-17.2)              49.6 (11.0-68.4)  perf | 192 px picture after a whole change, settled | median
+TIE      0.95x                 360 (342-412)                 342 (339-352)  perf | 192 px picture after a whole change, the old way | max
+TIE      0.95x                 360 (342-412)                 342 (339-352)  perf | 192 px picture after a whole change, the old way | median
+TIE      0.84x              19.0 (11.0-20.0)              16.0 (12.0-50.0)  perf | PNG of the composite | blk
+TIE      1.00x           3,989 (3,971-4,377)           3,984 (3,701-4,054)  perf | PNG of the composite | wall
+TIE      1.06x              6.20 (6.00-6.80)              6.60 (5.10-13.3)  perf | brush dab + frame | max
+TIE      1.00x              1.10 (1.00-1.30)              1.10 (0.80-1.20)  perf | brush dab + frame | median
+WIN      0.79x               80.0 (79.0-103)              63.0 (59.0-70.0)  perf | bucket fill | blk
+TIE      1.04x                 243 (230-279)                 252 (183-273)  perf | bucket fill | wall
+TIE      0.89x                 172 (163-188)                 153 (148-170)  perf | bucket in a 1000 px selection | blk
+TIE      0.98x                 288 (245-302)                 282 (269-283)  perf | bucket in a 1000 px selection | wall
+TIE      1.22x              27.0 (25.0-31.0)              33.0 (24.0-44.0)  perf | clear selected pixels (100 px) | blk
+TIE      1.15x              26.0 (24.0-29.0)              30.0 (23.0-42.0)  perf | clear selected pixels (100 px) | wall
+TIE      0.88x              11.5 (9.50-17.4)              10.1 (9.80-11.3)  perf | colour match tick | max
+TIE      0.90x              8.90 (8.80-14.0)              8.00 (7.40-10.4)  perf | colour match tick | median
+TIE      1.10x              29.0 (26.0-29.0)               32.0 (28.0-142)  perf | cutout input (1024 from levels) | blk
+TIE      1.10x              29.0 (26.0-29.0)               32.0 (28.0-141)  perf | cutout input (1024 from levels) | wall
+WIN      0.89x                 613 (591-665)                 544 (542-559)  perf | cutout input (1024 from levels) > the same the old way (toCanvas) | blk
+WIN      0.89x                 612 (591-665)                 544 (542-559)  perf | cutout input (1024 from levels) > the same the old way (toCanvas) | wall
+TIE      1.06x              21.5 (18.8-21.7)              22.7 (19.1-23.8)  perf | eyedropper over it | blk
+TIE      1.06x              21.4 (18.7-21.6)              22.6 (19.0-23.7)  perf | eyedropper over it | wall
+TIE      0.88x              16.0 (16.0-17.0)              14.0 (13.0-16.0)  perf | eyedropper, Sample: the masked layer | blk
+TIE      1.00x              12.0 (12.0-16.0)              12.0 (11.0-14.0)  perf | eyedropper, Sample: the masked layer | wall
+TIE      0.94x              50.0 (40.0-52.0)              47.0 (33.0-47.0)  perf | feather 8 | blk
+TIE      1.09x                 403 (390-441)                 439 (363-449)  perf | feather 8 | wall
+TIE      1.16x              25.0 (16.0-28.0)              29.0 (14.0-40.0)  perf | fill selection (100 px) | blk
+TIE      1.17x              24.0 (8.00-28.0)              28.0 (14.0-39.0)  perf | fill selection (100 px) | wall
+TIE      1.19x                 180 (180-265)                 214 (211-223)  perf | film point add (look under it) | blk
+TIE      1.19x                 175 (173-257)                 209 (206-218)  perf | film point add (look under it) | wall
+WIN      0.68x              63.0 (58.0-67.0)              43.0 (41.0-52.0)  perf | film point add (look under it) > the same, stack without filter/match | blk
+WIN      0.69x              62.0 (58.0-67.0)              43.0 (40.0-51.0)  perf | film point add (look under it) > the same, stack without filter/match | wall
+TIE      0.76x              13.0 (8.80-17.4)              9.90 (9.90-10.5)  perf | filter slider tick | max
+TIE      0.93x              8.50 (8.30-12.7)              7.90 (7.90-8.50)  perf | filter slider tick | median
+TIE      1.07x              1.50 (1.30-2.50)              1.60 (1.40-1.60)  perf | first frame fit -> 1:1, GPU | max
+TIE      1.07x              1.50 (1.30-2.50)              1.60 (1.40-1.60)  perf | first frame fit -> 1:1, GPU | median
+TIE      1.00x              0.10 (0.10-0.20)              0.10 (0.10-0.10)  perf | fit view | max
+TIE          -              0.00 (0.00-0.00)              0.00 (0.00-0.00)  perf | fit view | median
+WIN      0.81x              13.3 (12.8-14.6)              10.8 (9.60-11.2)  perf | frame after a whole touch, fit | max
+WIN      0.81x              13.3 (12.7-14.6)              10.8 (9.50-11.2)  perf | frame after a whole touch, fit | median
+LOSS     2.01x           2,168 (2,032-2,246)           4,363 (3,825-4,656)  perf | full composite | max
+LOSS     1.14x              92.0 (91.8-98.3)                 104 (104-343)  perf | full composite | median
+TIE      0.91x              54.0 (49.9-59.1)              49.3 (46.4-57.1)  perf | getValue (autosave) | max
+TIE          -              0.00 (0.00-0.00)              0.00 (0.00-0.10)  perf | getValue (autosave) | median
+TIE      1.00x              76.0 (69.0-93.0)              76.0 (75.0-84.0)  perf | grow +16 | blk
+TIE      0.97x                 550 (543-680)                 536 (523-565)  perf | grow +16 | wall
+WIN      0.74x                 240 (236-295)                 178 (149-187)  perf | invert | blk
+WIN      0.74x                 236 (231-291)                 174 (146-183)  perf | invert | wall
+TIE      0.86x              21.0 (19.0-22.0)              18.0 (18.0-25.0)  perf | invert > its landings: re-runs [longest block until settled] | longest block until settled
+WIN      0.61x              66.0 (62.0-71.0)              40.0 (38.0-52.0)  perf | its commit, band by band | blk
+WIN      0.58x              66.0 (62.0-71.0)              38.0 (30.0-43.0)  perf | its commit, band by band | wall
+TIE      1.12x                 150 (148-165)                 168 (142-176)  perf | magic wand (an object) | blk
+TIE      1.12x                 222 (203-286)                 248 (224-256)  perf | magic wand (an object) | wall
+WIN      0.41x                 643 (603-824)                 262 (212-282)  perf | magic wand (whole-image band) | blk
+WIN      0.73x           6,628 (6,473-7,046)           4,817 (4,728-5,328)  perf | magic wand (whole-image band) | wall
+TIE      0.92x                 217 (190-245)                 200 (181-217)  perf | magic wand over it | blk
+TIE      1.00x                 328 (319-391)                 329 (300-336)  perf | magic wand over it | wall
+LOSS     1.05x              58.0 (54.0-59.0)              61.0 (61.0-69.0)  perf | magic wand, Sample: the masked layer | blk
+TIE      0.88x                 118 (117-131)                104 (99.0-138)  perf | magic wand, Sample: the masked layer | wall
+TIE      0.98x                 201 (200-220)                 196 (190-204)  perf | magic wand, a masked layer | blk
+TIE      0.99x                 298 (295-333)                 296 (286-356)  perf | magic wand, a masked layer | wall
+TIE      0.45x              34.8 (10.6-40.2)              15.7 (13.1-17.9)  perf | matched masked layer, fit: first [settled] | first
+TIE      1.00x              0.20 (0.20-0.30)              0.20 (0.20-0.20)  perf | matched masked layer, fit: first [settled] | settled
+TIE      0.67x              0.30 (0.20-0.30)              0.20 (0.20-0.20)  perf | move drag at fit: first [worst of 5] | first
+WIN      0.67x              0.30 (0.30-6.10)              0.20 (0.20-0.20)  perf | move drag at fit: first [worst of 5] | worst of 5
+TIE      1.00x              82.0 (73.0-84.0)              82.0 (78.0-86.0)  perf | object map input (1024 from levels) | blk
+TIE      1.00x              82.0 (72.0-82.0)              82.0 (78.0-86.0)  perf | object map input (1024 from levels) | wall
+LOSS     2.18x           1,891 (1,761-2,169)           4,123 (3,431-4,367)  perf | object map input (1024 from levels) > the same the old way (a flatten) | blk
+LOSS     2.18x           1,890 (1,761-2,168)           4,123 (3,431-4,367)  perf | object map input (1024 from levels) > the same the old way (a flatten) | wall
+TIE      0.76x              12.6 (9.90-18.5)              9.60 (8.70-11.6)  perf | opacity slider tick | max
+TIE      0.88x              9.40 (8.80-16.7)              8.30 (7.90-11.2)  perf | opacity slider tick | median
+TIE      1.06x              20.6 (6.80-26.0)              21.8 (21.3-22.2)  perf | pan (60 frames) | max
+LOSS     1.56x              3.90 (3.80-4.40)              6.10 (5.90-6.50)  perf | pan (60 frames) | median
+TIE      0.92x              12.5 (8.30-14.0)              11.5 (11.5-18.2)  perf | pan at 1:1 (30 frames) | max
+TIE      1.00x              3.70 (3.30-4.30)              3.70 (3.50-4.80)  perf | pan at 1:1 (30 frames) | median
+WIN      0.83x              30.6 (29.1-31.7)              25.3 (15.3-27.8)  perf | pan at 1:1 over it | max
+LOSS     1.41x              3.20 (3.10-3.40)              4.50 (4.00-4.60)  perf | pan at 1:1 over it | median
+TIE      1.00x              0.30 (0.20-0.40)              0.30 (0.30-0.30)  perf | pan at 1:1, GPU stack | max
+TIE      1.00x              0.10 (0.10-0.20)              0.10 (0.10-0.10)  perf | pan at 1:1, GPU stack | median
+WIN      0.71x              7.20 (6.20-7.70)              5.10 (4.60-5.40)  perf | pan at fit, GPU stack | max
+TIE      0.67x              0.30 (0.30-0.30)              0.20 (0.20-0.30)  perf | pan at fit, GPU stack | median
+LOSS     2.96x              5.10 (4.90-8.30)              15.1 (12.4-57.1)  perf | pan at fit, masked filter layer | max
+LOSS     2.29x              3.40 (3.20-4.30)              7.80 (7.50-8.10)  perf | pan at fit, masked filter layer | median
+TIE      1.13x              19.4 (18.9-21.5)              21.9 (17.1-24.7)  perf | peek at 1:1, first frame | first frame
+TIE      1.13x              19.4 (18.9-21.5)              21.9 (17.1-24.7)  perf | peek at 1:1, first frame | first frame (again)
+WIN      0.59x              34.0 (33.4-34.9)              19.9 (19.4-20.0)  perf | peek at fit, first frame | first frame
+WIN      0.59x              34.0 (33.4-34.9)              19.9 (19.4-20.0)  perf | peek at fit, first frame | first frame (again)
+TIE      0.98x                 106 (105-117)                 104 (102-131)  perf | prompt context, 1000 px selection | blk
+TIE      0.99x                 105 (105-117)                 104 (102-131)  perf | prompt context, 1000 px selection | wall
+TIE      0.27x              60.0 (59.0-88.0)              16.0 (16.0-61.0)  perf | prompt context, no selection | blk
+TIE      0.27x              59.0 (59.0-88.0)              16.0 (16.0-61.0)  perf | prompt context, no selection | wall
+TIE      1.09x              27.5 (26.4-36.8)              29.9 (24.7-30.2)  perf | redraw with ants | max
+TIE      0.80x              0.50 (0.40-0.60)              0.40 (0.30-0.40)  perf | redraw with ants | median
+TIE          -              0.00 (0.00-0.00)              0.00 (0.00-0.10)  perf | redraw, nothing changed | max
+TIE          -              0.00 (0.00-0.00)              0.00 (0.00-0.00)  perf | redraw, nothing changed | median
+TIE      1.21x                 142 (141-170)                 172 (136-179)  perf | sample.mean_color, 1000 px sel. | blk
+TIE      1.21x                 142 (141-168)                 172 (136-178)  perf | sample.mean_color, 1000 px sel. | wall
+TIE      1.03x              36.0 (18.0-75.0)              37.0 (11.0-38.0)  perf | sample.mean_color, 1000 px sel. > the same, stack without filter/match | blk
+TIE      0.92x              13.0 (12.0-75.0)              12.0 (11.0-13.0)  perf | sample.mean_color, 1000 px sel. > the same, stack without filter/match | wall
+TIE      1.00x              27.0 (26.0-32.0)              27.0 (25.0-30.0)  perf | screenshot 1024 (MCP) | blk
+TIE      1.00x              27.0 (26.0-32.0)              27.0 (24.0-29.0)  perf | screenshot 1024 (MCP) | wall
+TIE      0.93x              2.70 (2.60-2.80)              2.50 (2.50-2.80)  perf | selection bounds scan | max
+TIE      1.05x              2.00 (1.60-2.40)              2.10 (2.00-2.50)  perf | selection bounds scan | median
+TIE          -              0.00 (0.00-0.00)              0.00 (0.00-0.00)  perf | selection change | max
+TIE      1.02x              20.6 (17.4-23.0)              21.1 (20.9-23.3)  perf | selection change | median
+TIE      0.94x              48.0 (46.0-61.0)              45.0 (40.0-47.0)  perf | shrink -16 | blk
+TIE      0.96x                 340 (331-424)                 328 (320-346)  perf | shrink -16 | wall
+TIE      0.94x                 180 (178-218)                 170 (154-261)  perf | stroke across the picture (40 dabs) | blk
+TIE      0.95x                 177 (176-215)                 168 (151-259)  perf | stroke across the picture (40 dabs) | wall
+TIE      0.87x                103 (95.1-111)               89.9 (73.2-119)  perf | stroke commit (undo copy) | max
+WIN      0.25x              18.2 (14.8-18.5)              4.60 (4.40-4.60)  perf | stroke commit (undo copy) | median
+TIE      0.84x                 148 (124-156)                 124 (113-147)  perf | the same at 1:1: first [settled] | first
+TIE      1.08x              38.3 (36.9-65.6)              41.2 (39.1-53.8)  perf | the same at 1:1: first [settled] | settled
+TIE      1.58x                 219 (212-288)                 345 (206-364)  perf | the same without the worker | blk
+WIN      0.91x           4,692 (4,496-4,978)           4,258 (4,220-4,282)  perf | the same without the worker | wall
+TIE      1.14x              28.0 (26.0-29.0)              32.0 (27.0-32.0)  perf | undo of that fill | blk
+TIE      1.07x              28.0 (25.0-28.0)              30.0 (26.0-31.0)  perf | undo of that fill | wall
+TIE          -              0.00 (0.00-0.00)              0.00 (0.00-0.00)  perf | undo step | max
+TIE      1.03x              28.0 (27.3-34.3)              28.8 (28.0-30.0)  perf | undo step | median
+LOSS     3.63x              6.50 (4.30-7.20)              23.6 (20.9-26.6)  perf | wheel zoom (10) | max
+TIE      1.14x              3.70 (3.60-4.40)              4.20 (4.00-4.80)  perf | wheel zoom (10) | median
+
+-- perf-relight
+TIE      0.95x               19.0 (11.0-391)              18.0 (10.0-19.0)  perf-relight | PNG of the composite | blk
+WIN      0.88x           1,621 (1,578-1,649)           1,434 (1,307-1,550)  perf-relight | PNG of the composite | wall
+TIE      0.88x              43.0 (16.0-46.0)              38.0 (35.0-39.0)  perf-relight | a drag step's quick map | blk
+TIE      0.76x              55.0 (43.0-56.0)              42.0 (40.0-44.0)  perf-relight | a drag step's quick map | landed
+TIE      0.76x              54.0 (43.0-55.0)              41.0 (40.0-44.0)  perf-relight | a drag step's quick map > marches [slowest landed] | slowest landed
+TIE      0.98x              6.30 (5.20-7.80)              6.20 (5.40-7.20)  perf-relight | brush dab + frame | max
+WIN      0.70x              1.00 (1.00-1.30)              0.70 (0.70-0.90)  perf-relight | brush dab + frame | median
+WIN      0.76x                 105 (101-106)              80.0 (67.0-87.0)  perf-relight | bucket fill | blk
+WIN      0.82x                 182 (178-185)                 149 (122-158)  perf-relight | bucket fill | wall
+TIE      1.00x                 165 (160-171)                 165 (143-170)  perf-relight | bucket in a 1000 px selection | blk
+TIE      1.07x                 250 (244-276)                 268 (266-310)  perf-relight | bucket in a 1000 px selection | wall
+LOSS     1.24x              37.0 (34.0-40.0)              46.0 (41.0-50.0)  perf-relight | clear selected pixels (100 px) | blk
+TIE      1.29x              34.0 (32.0-39.0)              44.0 (39.0-49.0)  perf-relight | clear selected pixels (100 px) | wall
+LOSS     1.60x              24.0 (17.5-27.9)              38.5 (35.4-41.4)  perf-relight | colour match tick | max
+LOSS     1.16x              22.0 (16.3-23.9)              25.6 (24.5-29.6)  perf-relight | colour match tick | median
+TIE      1.00x              29.0 (24.0-33.0)              29.0 (25.0-35.0)  perf-relight | cutout input (1024 from levels) | blk
+TIE      1.00x              29.0 (24.0-32.0)              29.0 (24.0-34.0)  perf-relight | cutout input (1024 from levels) | wall
+TIE      0.86x                 576 (517-598)                 494 (453-544)  perf-relight | cutout input (1024 from levels) > the same the old way (toCanvas) | blk
+TIE      0.86x                 575 (517-598)                 494 (453-544)  perf-relight | cutout input (1024 from levels) > the same the old way (toCanvas) | wall
+TIE      0.86x              27.3 (23.3-35.0)              23.4 (20.2-24.4)  perf-relight | eyedropper over it | blk
+TIE      0.86x              27.2 (23.2-34.9)              23.3 (20.2-24.4)  perf-relight | eyedropper over it | wall
+TIE      1.00x              16.0 (14.0-17.0)              16.0 (14.0-32.0)  perf-relight | eyedropper, Sample: the masked layer | blk
+TIE      0.64x              11.0 (7.00-14.0)              7.00 (6.00-10.0)  perf-relight | eyedropper, Sample: the masked layer | wall
+TIE      0.83x              54.0 (42.0-62.0)              45.0 (43.0-64.0)  perf-relight | feather 8 | blk
+TIE      1.06x                 418 (402-478)                 443 (419-484)  perf-relight | feather 8 | wall
+TIE      1.40x              20.0 (18.0-36.0)              28.0 (18.0-37.0)  perf-relight | fill selection (100 px) | blk
+TIE      1.40x              20.0 (18.0-36.0)              28.0 (18.0-36.0)  perf-relight | fill selection (100 px) | wall
+TIE      1.18x                 147 (146-174)                 173 (152-192)  perf-relight | film point add (look under it) | blk
+TIE      1.15x                 145 (141-166)                 167 (147-184)  perf-relight | film point add (look under it) | wall
+WIN      0.88x              59.0 (59.0-83.0)              52.0 (44.0-56.0)  perf-relight | film point add (look under it) > the same, stack without filter/match | blk
+WIN      0.88x              59.0 (58.0-78.0)              52.0 (44.0-56.0)  perf-relight | film point add (look under it) > the same, stack without filter/match | wall
+TIE      0.75x              31.8 (22.9-33.7)              23.8 (23.6-30.0)  perf-relight | filter slider tick | max
+TIE      1.08x              12.8 (12.1-14.1)              13.8 (11.3-18.9)  perf-relight | filter slider tick | median
+TIE      0.95x              1.90 (1.10-2.40)              1.80 (1.50-2.40)  perf-relight | first frame fit -> 1:1, GPU | max
+TIE      0.95x              1.90 (1.10-2.40)              1.80 (1.50-2.40)  perf-relight | first frame fit -> 1:1, GPU | median
+TIE      1.00x              0.10 (0.10-0.10)              0.10 (0.10-0.20)  perf-relight | fit view | max
+TIE          -              0.00 (0.00-0.10)              0.10 (0.10-0.10)  perf-relight | fit view | median
+WIN      0.31x              37.9 (37.7-38.2)              11.9 (11.1-13.1)  perf-relight | frame after a whole touch, fit | max
+WIN      0.31x              37.9 (37.7-38.2)              11.9 (11.0-13.1)  perf-relight | frame after a whole touch, fit | median
+TIE      1.01x           1,923 (1,792-2,023)           1,951 (1,945-2,199)  perf-relight | full composite | max
+TIE      0.81x                 326 (270-372)                 265 (257-286)  perf-relight | full composite | median
+TIE      0.95x              54.4 (52.3-55.4)              51.5 (47.4-60.1)  perf-relight | getValue (autosave) | max
+TIE          -              0.00 (0.00-0.10)              0.00 (0.00-0.10)  perf-relight | getValue (autosave) | median
+TIE      0.94x              82.0 (73.0-88.0)              77.0 (72.0-83.0)  perf-relight | grow +16 | blk
+TIE      1.05x                 562 (543-677)                 592 (517-687)  perf-relight | grow +16 | wall
+WIN      0.64x                 278 (274-309)                 178 (178-216)  perf-relight | invert | blk
+WIN      0.64x                 277 (268-302)                 176 (174-213)  perf-relight | invert | wall
+TIE      1.14x              21.0 (16.0-26.0)              24.0 (17.0-25.0)  perf-relight | invert > its landings: re-runs [longest block until settled] | longest block until settled
+TIE      1.01x              77.0 (72.0-90.0)              78.0 (38.0-80.0)  perf-relight | its commit, band by band | blk
+WIN      0.69x              72.0 (69.0-90.0)              50.0 (38.0-51.0)  perf-relight | its commit, band by band | wall
+TIE      0.94x                 156 (133-166)                 146 (146-163)  perf-relight | magic wand (an object) | blk
+LOSS     1.14x                 221 (195-227)                 252 (234-276)  perf-relight | magic wand (an object) | wall
+WIN      0.33x                 730 (680-876)                 241 (183-248)  perf-relight | magic wand (whole-image band) | blk
+WIN      0.72x           2,899 (2,851-3,031)           2,086 (1,939-2,152)  perf-relight | magic wand (whole-image band) | wall
+WIN      0.84x                 219 (219-223)                 184 (174-206)  perf-relight | magic wand over it | blk
+LOSS     1.64x                 330 (323-333)                 540 (515-591)  perf-relight | magic wand over it | wall
+TIE      0.95x              56.0 (53.0-57.0)              53.0 (53.0-84.0)  perf-relight | magic wand, Sample: the masked layer | blk
+TIE      1.00x                 105 (101-111)                105 (93.0-157)  perf-relight | magic wand, Sample: the masked layer | wall
+TIE      0.91x                 194 (180-218)                 176 (176-209)  perf-relight | magic wand, a masked layer | blk
+LOSS     1.46x                 323 (287-326)                 473 (432-525)  perf-relight | magic wand, a masked layer | wall
+TIE      1.09x              14.8 (14.5-17.5)              16.1 (15.1-20.1)  perf-relight | matched masked layer, fit: first [settled] | first
+TIE      1.00x              0.30 (0.20-0.30)              0.30 (0.30-6.10)  perf-relight | matched masked layer, fit: first [settled] | settled
+TIE      1.50x              0.20 (0.20-0.40)              0.30 (0.20-0.40)  perf-relight | move drag at fit: first [worst of 5] | first
+TIE      1.00x              0.20 (0.10-0.30)              0.20 (0.20-0.30)  perf-relight | move drag at fit: first [worst of 5] | worst of 5
+TIE      1.38x              71.0 (68.0-80.0)               98.0 (78.0-106)  perf-relight | object map input (1024 from levels) | blk
+TIE      1.38x              71.0 (68.0-80.0)               98.0 (78.0-106)  perf-relight | object map input (1024 from levels) | wall
+LOSS     1.16x           1,730 (1,490-1,783)           2,012 (1,911-2,246)  perf-relight | object map input (1024 from levels) > the same the old way (a flatten) | blk
+LOSS     1.16x           1,730 (1,488-1,782)           2,012 (1,911-2,246)  perf-relight | object map input (1024 from levels) > the same the old way (a flatten) | wall
+WIN      0.78x              82.0 (72.0-86.0)              64.0 (40.0-64.0)  perf-relight | one light moved: landed | blk
+WIN      0.19x           3,813 (3,803-4,968)                 731 (524-751)  perf-relight | one light moved: landed | landed
+WIN      0.19x           3,792 (3,783-4,942)                 713 (509-732)  perf-relight | one light moved: landed > marches [slowest landed] | slowest landed
+TIE      1.63x              32.1 (31.4-34.8)               52.2 (33.9-104)  perf-relight | opacity slider tick | max
+LOSS     1.16x              24.7 (18.9-25.4)              28.6 (28.0-28.7)  perf-relight | opacity slider tick | median
+TIE      0.98x              10.0 (7.00-11.3)              9.80 (9.00-18.4)  perf-relight | pan (60 frames) | max
+LOSS     1.40x              4.00 (3.60-4.70)              5.60 (5.30-6.10)  perf-relight | pan (60 frames) | median
+TIE      0.77x              11.7 (11.1-13.0)              9.00 (7.00-11.2)  perf-relight | pan at 1:1 (30 frames) | max
+TIE      0.92x              3.90 (3.60-4.30)              3.60 (3.50-4.10)  perf-relight | pan at 1:1 (30 frames) | median
+WIN      0.08x              89.6 (82.5-90.8)              7.10 (6.90-15.1)  perf-relight | pan at 1:1 during a march | frame max
+TIE      1.00x              4.50 (4.40-5.10)              4.50 (3.60-4.60)  perf-relight | pan at 1:1 during a march | frame median
+WIN      0.70x              91.0 (91.0-93.0)              64.0 (24.0-87.0)  perf-relight | pan at 1:1 during a march > block [chains built here] | block
+WIN      0.14x           4,842 (4,723-4,977)                 683 (523-750)  perf-relight | pan at 1:1 during a march > frames [shadows landed] | shadows landed
+TIE      1.08x              11.9 (10.4-16.2)              12.9 (12.8-33.6)  perf-relight | pan at 1:1 over it | max
+TIE      0.97x              3.90 (3.70-4.60)              3.80 (3.60-5.10)  perf-relight | pan at 1:1 over it | median
+TIE      1.00x              0.40 (0.30-0.50)              0.40 (0.30-0.40)  perf-relight | pan at 1:1, GPU stack | max
+TIE      1.00x              0.20 (0.20-0.20)              0.20 (0.10-0.20)  perf-relight | pan at 1:1, GPU stack | median
+TIE      0.92x              6.60 (4.90-7.90)              6.10 (5.40-6.90)  perf-relight | pan at fit, GPU stack | max
+TIE      1.00x              0.30 (0.30-0.40)              0.30 (0.30-0.40)  perf-relight | pan at fit, GPU stack | median
+LOSS     1.49x              5.30 (4.50-6.60)              7.90 (7.70-46.6)  perf-relight | pan at fit, masked filter layer | max
+LOSS     1.41x              3.90 (3.80-4.70)              5.50 (5.30-6.10)  perf-relight | pan at fit, masked filter layer | median
+WIN      0.51x              25.5 (22.3-29.0)              13.0 (12.7-14.5)  perf-relight | peek at 1:1, first frame | first frame
+WIN      0.51x              25.5 (22.3-29.1)              13.0 (12.7-14.5)  perf-relight | peek at 1:1, first frame | first frame (again)
+WIN      0.66x              34.9 (33.3-43.2)              23.2 (23.1-26.4)  perf-relight | peek at fit, first frame | first frame
+WIN      0.66x              34.9 (33.3-43.3)              23.2 (23.1-26.5)  perf-relight | peek at fit, first frame | first frame (again)
+TIE      0.99x                107 (94.0-110)                106 (89.0-107)  perf-relight | prompt context, 1000 px selection | blk
+TIE      0.99x                107 (94.0-110)                106 (89.0-107)  perf-relight | prompt context, 1000 px selection | wall
+TIE      0.70x               97.0 (71.0-111)               68.0 (66.0-114)  perf-relight | prompt context, no selection | blk
+TIE      0.97x              70.0 (53.0-97.0)               68.0 (66.0-114)  perf-relight | prompt context, no selection | wall
+TIE      1.03x              27.1 (26.9-27.3)              27.8 (24.4-40.3)  perf-relight | redraw with ants | max
+TIE      0.80x              0.50 (0.30-0.50)              0.40 (0.30-0.50)  perf-relight | redraw with ants | median
+TIE      1.00x              0.10 (0.10-2.90)              0.10 (0.10-0.10)  perf-relight | redraw, nothing changed | max
+TIE      0.00x              0.10 (0.00-0.10)              0.00 (0.00-0.00)  perf-relight | redraw, nothing changed | median
+TIE      1.12x              74.0 (70.0-81.0)               83.0 (74.0-107)  perf-relight | sample.mean_color, 1000 px sel. | blk
+TIE      1.11x              74.0 (69.0-80.0)               82.0 (74.0-107)  perf-relight | sample.mean_color, 1000 px sel. | wall
+TIE      1.00x              17.0 (16.0-18.0)              17.0 (14.0-17.0)  perf-relight | sample.mean_color, 1000 px sel. > the same, stack without filter/match | blk
+TIE      1.13x              15.0 (14.0-18.0)              17.0 (13.0-17.0)  perf-relight | sample.mean_color, 1000 px sel. > the same, stack without filter/match | wall
+TIE      0.77x              35.0 (23.0-58.0)              27.0 (22.0-61.0)  perf-relight | screenshot 1024 (MCP) | blk
+TIE      0.77x              35.0 (23.0-44.0)              27.0 (22.0-43.0)  perf-relight | screenshot 1024 (MCP) | wall
+TIE      0.96x              2.50 (2.40-3.30)              2.40 (2.30-2.60)  perf-relight | selection bounds scan | max
+TIE      0.96x              2.30 (2.30-2.50)              2.20 (2.00-2.40)  perf-relight | selection bounds scan | median
+TIE          -              0.00 (0.00-0.00)              0.00 (0.00-0.00)  perf-relight | selection change | max
+TIE      0.96x              25.0 (23.1-27.8)              24.1 (20.1-32.2)  perf-relight | selection change | median
+TIE      1.02x              53.0 (48.0-59.0)              54.0 (50.0-72.0)  perf-relight | shrink -16 | blk
+TIE      0.90x                 376 (344-405)                 339 (338-410)  perf-relight | shrink -16 | wall
+TIE      0.99x                 164 (158-197)                 163 (158-169)  perf-relight | stroke across the picture (40 dabs) | blk
+TIE      0.99x                 162 (158-191)                 161 (156-167)  perf-relight | stroke across the picture (40 dabs) | wall
+WIN      0.85x               95.2 (93.6-115)              81.2 (78.0-86.0)  perf-relight | stroke commit (undo copy) | max
+WIN      0.27x              22.5 (21.7-25.0)              6.00 (5.00-6.20)  perf-relight | stroke commit (undo copy) | median
+WIN      0.60x           5,106 (4,368-5,916)           3,064 (2,522-3,072)  perf-relight | the first march after start | landed
+WIN      0.60x           5,092 (4,358-5,904)           3,048 (2,512-3,056)  perf-relight | the first march after start > marches [slowest landed] | slowest landed
+TIE      0.83x                 149 (115-150)                 124 (108-129)  perf-relight | the same at 1:1: first [settled] | first
+TIE      0.80x               42.5 (38.7-117)              34.0 (32.9-45.2)  perf-relight | the same at 1:1: first [settled] | settled
+TIE      0.91x                 255 (222-718)                 232 (197-254)  perf-relight | the same without the worker | blk
+TIE      1.01x           1,416 (1,308-7,646)           1,429 (1,142-1,633)  perf-relight | the same without the worker | wall
+TIE      1.35x              66.0 (48.0-66.0)              89.0 (61.0-91.0)  perf-relight | three lights moved | blk
+WIN      0.29x           4,525 (4,261-4,804)           1,298 (1,014-1,359)  perf-relight | three lights moved | landed
+WIN      0.29x           4,515 (4,252-4,791)           1,288 (1,004-1,348)  perf-relight | three lights moved > marches [slowest landed] | slowest landed
+TIE      1.26x              35.0 (34.0-40.0)              44.0 (36.0-44.0)  perf-relight | undo of that fill | blk
+TIE      1.26x              34.0 (34.0-38.0)              43.0 (35.0-43.0)  perf-relight | undo of that fill | wall
+TIE          -              0.00 (0.00-0.00)              0.00 (0.00-0.00)  perf-relight | undo step | max
+TIE      0.97x              39.5 (36.7-39.8)              38.5 (38.4-48.4)  perf-relight | undo step | median
+TIE      1.12x              7.30 (5.30-8.40)              8.20 (7.60-12.3)  perf-relight | wheel zoom (10) | max
+TIE      1.26x              3.90 (3.70-4.70)              4.90 (4.30-5.90)  perf-relight | wheel zoom (10) | median
+
+-- px_jobs
+TIE      1.00x                 151 (146-163)                 151 (146-157)  px_jobs | band | kernel JS  [f]
+TIE      1.06x              29.5 (29.4-33.2)              31.3 (26.8-35.7)  px_jobs | band | kernel Rust  [f]
+TIE      1.00x                 152 (148-164)                 153 (147-158)  px_jobs | band | wall JS  [f]
+TIE      1.11x              31.2 (30.5-42.6)              34.5 (28.1-37.0)  px_jobs | band | wall Rust  [f]
+TIE      1.00x                 151 (146-163)                 151 (146-157)  px_jobs | band | worker job JS  [f]
+TIE      1.06x              29.5 (29.4-33.2)              31.3 (26.8-35.7)  px_jobs | band | worker job Rust  [f]
+LOSS     1.20x           1,379 (1,350-1,395)           1,649 (1,401-1,795)  px_jobs | depth_guide | wall JS  [f]
+WIN      0.78x           1,357 (1,234-1,396)           1,060 (1,036-1,064)  px_jobs | depth_guide | wall Rust  [f]
+LOSS     1.43x                 655 (574-711)               937 (714-1,036)  px_jobs | depth_guide | worker job JS  [f]
+WIN      0.55x                 552 (392-645)                 305 (295-328)  px_jobs | depth_guide | worker job Rust  [f]
+TIE      0.98x        11,108 (10,132-12,749)         10,876 (9,180-12,598)  px_jobs | fill_limit | wall JS  [f]
+WIN      0.57x        10,579 (10,436-12,992)           6,054 (5,601-6,128)  px_jobs | fill_limit | wall Rust  [f]
+TIE      1.31x                 478 (472-583)                 624 (462-634)  px_jobs | grow | kernel JS  [f]
+TIE      1.42x                 192 (188-224)                 272 (219-304)  px_jobs | grow | kernel Rust  [f]
+TIE      1.05x                 731 (693-782)                 764 (595-818)  px_jobs | grow | wall JS  [f]
+TIE      0.96x                 386 (348-462)                 370 (298-396)  px_jobs | grow | wall Rust  [f]
+TIE      1.04x                 705 (668-754)                 734 (564-790)  px_jobs | grow | worker job JS  [f]
+TIE      0.95x                 354 (317-438)                 336 (272-360)  px_jobs | grow | worker job Rust  [f]
+WIN      0.79x                 218 (205-246)                 172 (155-177)  px_jobs | invert | wall JS  [f]
+WIN      0.62x                 211 (202-233)                 131 (116-136)  px_jobs | invert | wall Rust  [f]
+TIE      1.03x           4,943 (4,930-5,913)           5,108 (4,187-5,624)  px_jobs | range_color | wall JS  [f]
+WIN      0.39x           4,841 (3,496-5,681)           1,874 (1,426-3,478)  px_jobs | range_color | wall Rust  [f]
+TIE      1.10x           6,193 (6,170-7,041)           6,833 (4,815-7,844)  px_jobs | range_color | worker job JS  [f]
+WIN      0.53x           6,233 (6,219-6,822)           3,312 (2,454-3,316)  px_jobs | range_color | worker job Rust  [f]
+WIN      0.39x           1,123 (1,072-1,360)                 443 (304-458)  px_jobs | range_depth | wall JS  [f]
+WIN      0.18x           1,170 (1,110-1,259)                 209 (174-219)  px_jobs | range_depth | wall Rust  [f]
+WIN      0.40x           5,706 (5,228-7,402)           2,305 (1,623-2,325)  px_jobs | range_depth | worker job JS  [f]
+WIN      0.18x           6,427 (5,347-7,738)             1,135 (952-1,157)  px_jobs | range_depth | worker job Rust  [f]
+WIN      0.57x           2,856 (2,774-2,983)           1,634 (1,628-1,758)  px_jobs | range_depth_snap | wall JS  [f]
+WIN      0.43x           2,826 (2,742-2,958)           1,215 (1,214-1,316)  px_jobs | range_depth_snap | wall Rust  [f]
+WIN      0.41x        11,249 (10,388-12,887)           4,642 (4,063-4,822)  px_jobs | range_depth_snap | worker job JS  [f]
+WIN      0.20x        11,532 (10,708-12,190)           2,284 (1,663-2,295)  px_jobs | range_depth_snap | worker job Rust  [f]
+WIN      0.86x           4,556 (4,538-4,812)           3,898 (3,512-4,166)  px_jobs | range_luma | wall JS  [f]
+TIE      0.22x           4,120 (2,498-4,169)               890 (676-3,292)  px_jobs | range_luma | wall Rust  [f]
+TIE      1.12x           2,266 (2,161-2,571)           2,542 (1,685-2,713)  px_jobs | range_luma | worker job JS  [f]
+WIN      0.43x           2,769 (2,143-2,770)             1,179 (839-1,304)  px_jobs | range_luma | worker job Rust  [f]
+TIE      1.22x                 514 (488-568)                 630 (486-638)  px_jobs | shrink | kernel JS  [f]
+TIE      1.33x                 186 (172-208)                 247 (192-253)  px_jobs | shrink | kernel Rust  [f]
+TIE      1.33x                 710 (688-836)                 944 (661-978)  px_jobs | shrink | wall JS  [f]
+TIE      1.05x                 338 (329-399)                 355 (306-359)  px_jobs | shrink | wall Rust  [f]
+TIE      1.35x                 666 (642-761)                 898 (618-932)  px_jobs | shrink | worker job JS  [f]
+TIE      1.01x                 296 (284-343)                 298 (257-310)  px_jobs | shrink | worker job Rust  [f]
+TIE      1.03x           1,807 (1,704-2,085)           1,853 (1,667-2,061)  px_jobs | wand_add | kernel JS  [f]
+TIE      1.00x                 749 (650-886)                 753 (737-862)  px_jobs | wand_add | kernel Rust  [f]
+TIE      1.02x           3,525 (3,361-3,644)           3,579 (3,540-3,784)  px_jobs | wand_add | wall JS  [f]
+TIE      0.62x           2,105 (2,069-2,130)           1,304 (1,177-2,085)  px_jobs | wand_add | wall Rust  [f]
+TIE      0.96x           2,380 (2,143-2,385)           2,283 (2,085-2,499)  px_jobs | wand_add | worker job JS  [f]
+TIE      0.92x               960 (939-1,072)               884 (797-1,052)  px_jobs | wand_add | worker job Rust  [f]
+TIE      1.03x           1,732 (1,571-1,834)           1,785 (1,627-1,877)  px_jobs | wand_band | kernel JS  [f]
+TIE      0.98x                 831 (679-896)                 810 (757-842)  px_jobs | wand_band | kernel Rust  [f]
+TIE      1.00x           3,770 (3,742-4,094)           3,761 (3,640-4,242)  px_jobs | wand_band | wall JS  [f]
+TIE      0.54x           2,382 (1,919-2,684)           1,289 (1,178-3,097)  px_jobs | wand_band | wall Rust  [f]
+TIE      1.03x           2,355 (2,224-2,548)           2,437 (2,315-2,738)  px_jobs | wand_band | worker job JS  [f]
+TIE      0.82x             1,079 (845-1,170)               884 (779-1,516)  px_jobs | wand_band | worker job Rust  [f]
+WIN      0.80x              21.9 (19.1-22.1)              17.5 (16.0-18.1)  px_jobs | wand_object | kernel JS  [f]
+TIE      0.85x              6.70 (6.30-7.00)              5.70 (5.60-7.70)  px_jobs | wand_object | kernel Rust  [f]
+WIN      0.87x                 152 (136-153)                 132 (130-134)  px_jobs | wand_object | wall JS  [f]
+TIE      0.83x                 127 (124-128)                106 (87.3-125)  px_jobs | wand_object | wall Rust  [f]
+TIE      0.79x              62.2 (53.1-67.2)              49.2 (49.1-57.5)  px_jobs | wand_object | worker job JS  [f]
+TIE      0.74x              36.6 (23.7-37.8)              27.1 (22.0-35.9)  px_jobs | wand_object | worker job Rust  [f]
+
+-- selection
+WIN      0.33x           1,701 (1,410-1,741)                 558 (528-594)  selection | range depth | selectRange
+WIN      0.33x           1,702 (1,410-1,742)                 559 (529-595)  selection | range depth | wall
+WIN      0.28x           2,445 (2,096-2,751)                 684 (678-727)  selection | range luma | selectRange
+WIN      0.28x           2,446 (2,096-2,751)                 685 (680-728)  selection | range luma | wall
+
+-- tiffperf
+WIN      0.25x        13,690 (13,000-15,250)           3,470 (3,266-5,503)  tiffperf | lzw | open
+TIE      0.78x           5,187 (4,598-6,411)           4,062 (3,941-5,594)  tiffperf | noise | export
+WIN      0.67x           8,713 (8,513-9,566)           5,881 (5,301-6,071)  tiffperf | noise | open
+TIE      0.86x           4,227 (3,838-4,264)           3,637 (3,441-4,341)  tiffperf | noise | same picture as PNG, open
+TIE      0.73x           2,141 (1,726-2,577)           1,553 (1,430-2,187)  tiffperf | own | export
+WIN      0.51x           4,907 (4,690-5,693)           2,517 (2,167-2,648)  tiffperf | own | open
+TIE      0.95x           1,845 (1,754-2,147)           1,744 (1,706-1,953)  tiffperf | own | same picture as JPEG, open
+WIN      0.44x           7,428 (7,228-8,705)           3,262 (3,234-3,444)  tiffperf | packbits | open
+WIN      0.92x           4,453 (4,385-4,876)           4,092 (3,832-4,094)  tiffperf | raw | open
+WIN      0.87x           5,122 (4,981-5,572)           4,440 (3,989-4,535)  tiffperf | zlib1 | open
+
+-- w0_bench
+WIN      0.22x                 104 (103-118)              22.5 (22.4-22.6)  w0_bench | crc32_64mb | crc
+TIE      1.02x              10.1 (9.94-11.1)              10.3 (9.96-10.5)  w0_bench | dabs_256 | blur
+TIE      0.99x              10.7 (10.5-11.8)              10.6 (10.2-10.6)  w0_bench | dabs_256 | sharpen
+TIE      0.97x              1.30 (1.25-1.39)              1.26 (1.25-1.29)  w0_bench | dabs_256 | sponge
+TIE      0.97x              0.31 (0.30-0.52)              0.30 (0.28-0.31)  w0_bench | dabs_256 | tone
+WIN      0.76x              9.44 (9.08-10.5)              7.21 (7.09-7.72)  w0_bench | edgefit_2048 | coverage
+WIN      0.48x                 134 (130-157)              64.0 (62.0-73.8)  w0_bench | edgefit_2048 | fit
+TIE      0.72x              52.7 (45.5-61.8)              37.9 (34.0-47.3)  w0_bench | edgefit_2048 | fit lap fit
+TIE      0.60x              10.2 (4.70-12.9)              6.12 (4.95-7.72)  w0_bench | edgefit_2048 | fit lap ring
+WIN      0.30x              78.4 (73.5-85.9)              23.9 (23.7-27.0)  w0_bench | edgefit_2048 | fit lap shrink
+WIN      0.75x              80.5 (75.4-90.7)              60.5 (58.7-62.8)  w0_bench | edgefit_2048 | warp
+TIE      0.99x           1,608 (1,606-2,027)           1,599 (1,520-1,739)  w0_bench | files_15k | load_jpg
+WIN      0.50x           2,720 (2,330-2,998)           1,368 (1,270-1,477)  w0_bench | files_15k | png wall
+WIN      0.78x           1,650 (1,604-1,743)           1,281 (1,159-1,449)  w0_bench | files_15k | tiff wall
+WIN      0.34x           2,183 (2,125-2,447)                 746 (734-771)  w0_bench | freqsep_15k | freqsep_16mp
+WIN      0.97x           1,585 (1,574-1,913)           1,537 (1,474-1,547)  w0_bench | freqsep_15k | load_jpg
+WIN      0.59x           2,237 (2,232-2,567)           1,316 (1,264-1,323)  w0_bench | freqsep_15k | png_export
+WIN      0.46x           2,534 (2,444-2,790)           1,156 (1,096-1,225)  w0_bench | freqsep_15k | png_open
+WIN      0.34x           2,179 (2,179-2,790)                 738 (705-822)  w0_bench | freqsep_4000 | blk
+WIN      0.34x           2,213 (2,196-2,803)                 751 (720-838)  w0_bench | freqsep_4000 | wall
+TIE      1.08x                 423 (417-564)                 458 (434-544)  w0_bench | grow_fallback 10607x7071 | growMask
+TIE      1.00x                 329 (327-364)                 330 (328-390)  w0_bench | grow_fallback 10607x7071 | growMaskBounds
+TIE      1.00x                 852 (847-975)               849 (806-1,035)  w0_bench | grow_fallback 15000x10000 | growMask
+TIE      1.03x                 665 (650-735)                 687 (660-763)  w0_bench | grow_fallback 15000x10000 | growMaskBounds
+TIE      0.98x                 336 (336-419)                 328 (328-412)  w0_bench | grow_fallback 7500x5000 | growMask
+TIE      1.00x                 166 (165-205)                 166 (164-207)  w0_bench | grow_fallback 7500x5000 | growMaskBounds
+TIE          -              0.00 (0.00-0.01)              0.00 (0.00-0.00)  w0_bench | histogram_depth | hist
+TIE      0.94x           1,134 (1,115-1,156)           1,069 (1,047-1,191)  w0_bench | jpeg_open_15k | wall  [f]
+WIN      0.58x                 242 (225-282)                 140 (139-155)  w0_bench | match_fallback_16k | wall = blk  [f]
+TIE      0.88x                 222 (199-247)                 195 (191-208)  w0_bench | match_loop_4096 | loop
+TIE      1.00x               990 (955-1,137)               986 (974-1,057)  w0_bench | png_filter_types | wall  [f]
+TIE      1.02x               978 (972-1,166)               997 (978-1,015)  w0_bench | png_inflate_15k | parts_1_worker wall  [f]
+TIE      0.88x                 360 (323-407)                 317 (281-336)  w0_bench | png_inflate_15k | parts_pool wall  [f]
+TIE      0.96x           1,048 (1,031-1,204)             1,011 (992-1,122)  w0_bench | png_inflate_15k | whole wall  [f]
+TIE      0.37x              16.3 (12.8-19.3)              6.00 (5.80-18.0)  w0_bench | stitch_align_2048 prepare | blk  [f]
+TIE      0.86x                 499 (481-514)                 431 (390-655)  w0_bench | stitch_align_2048 prepare | wall  [f]
+WIN      0.66x               943 (837-1,016)                 623 (533-647)  w0_bench | stitch_align_2048 window | blk  [f]
+WIN      0.66x           1,117 (1,050-5,709)                 733 (613-734)  w0_bench | stitch_align_2048 window | wall  [f]
+TIE      0.31x              18.2 (6.06-18.9)              5.57 (5.52-19.4)  w0_bench | stitch_align_2048 worker | blk  [f]
+WIN      0.73x               938 (916-1,140)                 682 (608-715)  w0_bench | stitch_align_2048 worker | wall  [f]
+WIN      0.88x              23.5 (22.5-29.7)              20.6 (18.6-21.3)  w0_bench | stitch_align_4096 prepare | blk  [f]
+TIE      0.94x           1,418 (1,359-1,670)           1,330 (1,268-1,422)  w0_bench | stitch_align_4096 prepare | wall  [f]
+WIN      0.83x           2,705 (2,622-3,013)           2,253 (2,178-2,293)  w0_bench | stitch_align_4096 window | blk  [f]
+WIN      0.85x           3,103 (2,995-9,941)           2,641 (2,495-2,890)  w0_bench | stitch_align_4096 window | wall  [f]
+WIN      0.37x              19.3 (19.3-19.6)              7.18 (6.23-19.1)  w0_bench | stitch_align_4096 worker | blk  [f]
+WIN      0.83x           2,895 (2,742-3,246)           2,401 (2,382-2,686)  w0_bench | stitch_align_4096 worker | wall  [f]
+TIE      0.90x              40.6 (38.6-44.3)              36.4 (35.9-40.2)  w0_bench | stitch_masks_2048 | dilate
+WIN      0.83x              41.1 (39.1-47.4)              34.3 (33.3-37.0)  w0_bench | stitch_masks_2048 | gauss
+TIE      0.88x              5.96 (5.28-6.14)              5.27 (5.12-8.38)  w0_bench | stitch_masks_2048 | mk
+TIE      1.02x           1,043 (1,041-1,204)           1,065 (1,059-1,116)  w0_bench | tiff_inflate_15k | one_worker wall  [f]
+TIE      0.94x                 334 (333-380)                 313 (282-340)  w0_bench | tiff_inflate_15k | pool wall  [f]
+WIN      0.59x           2,204 (2,108-2,630)           1,305 (1,245-1,369)  w0_bench | tiff_rows_256 | wall  [f]
+
+== New rows, no baseline (211)
+-- liquify/js
+  liquify/js | pause 2s 1:1 size 1000 | land: 30.0 (29.7-45.5)
+  liquify/js | restore 1:1 size 1000 empty | blockedMax: 0.50 (0.50-0.60)
+  liquify/js | restore 1:1 size 1000 empty | dab p50: 0.00 (0.00-0.00)
+  liquify/js | restore 1:1 size 1000 empty | dab worst: 0.10 (0.10-0.10)
+  liquify/js | restore 1:1 size 1000 empty | frame p50: 0.00 (0.00-0.00)
+  liquify/js | restore 1:1 size 1000 empty | frame worst: 0.00 (0.00-0.00)
+  liquify/js | restore 1:1 size 1000 empty | land: 0.50 (0.50-0.60)
+  liquify/js | restore 1:1 size 1000 empty | preview p50: 0.00 (0.00-0.00)
+  liquify/js | restore 1:1 size 1000 empty | preview worst: 0.00 (0.00-0.00)
+  liquify/js | restore 1:1 size 1000 pushed | blockedMax: 18.4 (15.5-21.3)
+  liquify/js | restore 1:1 size 1000 pushed | dab p50: 1.00 (0.90-1.10)
+  liquify/js | restore 1:1 size 1000 pushed | dab worst: 2.40 (1.60-5.20)
+  liquify/js | restore 1:1 size 1000 pushed | frame p50: 15.8 (15.5-15.8)
+  liquify/js | restore 1:1 size 1000 pushed | frame worst: 19.3 (18.6-26.2)
+  liquify/js | restore 1:1 size 1000 pushed | land: 45.8 (41.8-58.9)
+  liquify/js | restore 1:1 size 1000 pushed | preview p50: 15.6 (15.4-15.7)
+  liquify/js | restore 1:1 size 1000 pushed | preview worst: 18.9 (18.4-26.1)
+-- liquify/rust
+  liquify/rust | pause 2s 1:1 size 1000 | land: 30.0 (25.4-30.2)
+  liquify/rust | restore 1:1 size 1000 empty | blockedMax: 0.90 (0.50-0.90)
+  liquify/rust | restore 1:1 size 1000 empty | dab p50: 0.00 (0.00-0.00)
+  liquify/rust | restore 1:1 size 1000 empty | dab worst: 0.10 (0.00-0.10)
+  liquify/rust | restore 1:1 size 1000 empty | frame p50: 0.00 (0.00-0.00)
+  liquify/rust | restore 1:1 size 1000 empty | frame worst: 0.00 (0.00-0.10)
+  liquify/rust | restore 1:1 size 1000 empty | land: 0.80 (0.50-0.90)
+  liquify/rust | restore 1:1 size 1000 empty | preview p50: 0.00 (0.00-0.00)
+  liquify/rust | restore 1:1 size 1000 empty | preview worst: 0.00 (0.00-0.00)
+  liquify/rust | restore 1:1 size 1000 pushed | blockedMax: 17.7 (12.5-22.5)
+  liquify/rust | restore 1:1 size 1000 pushed | dab p50: 0.70 (0.70-1.10)
+  liquify/rust | restore 1:1 size 1000 pushed | dab worst: 2.20 (1.00-3.10)
+  liquify/rust | restore 1:1 size 1000 pushed | frame p50: 7.70 (7.20-9.30)
+  liquify/rust | restore 1:1 size 1000 pushed | frame worst: 10.1 (9.50-10.9)
+  liquify/rust | restore 1:1 size 1000 pushed | land: 40.6 (30.0-44.0)
+  liquify/rust | restore 1:1 size 1000 pushed | preview p50: 7.60 (7.10-9.10)
+  liquify/rust | restore 1:1 size 1000 pushed | preview worst: 9.90 (9.30-10.6)
+-- perf-relight
+  perf-relight | 8 NORMAL jobs: wait [answer] | blk: 0.00 (0.00-0.00)
+  perf-relight | 8 NORMAL jobs: wait [answer] | landed: 2.00 (2.00-3.00)
+  perf-relight | 8 NORMAL jobs: wait [answer] > during a 3-light march | blk: 80.0 (79.0-103)
+  perf-relight | 8 NORMAL jobs: wait [answer] > during a 3-light march | landed: 81.0 (80.0-104)
+  perf-relight | 8 NORMAL jobs: wait [answer] > the same, every stripe posted (feed 0) | blk: 1,241 (995-1,291)
+  perf-relight | 8 NORMAL jobs: wait [answer] > the same, every stripe posted (feed 0) | landed: 1,242 (997-1,337)
+  perf-relight | 8 NORMAL jobs: wait [answer] > the same, one job a light | blk: 6.00 (5.00-7.00)
+  perf-relight | 8 NORMAL jobs: wait [answer] > the same, one job a light | landed: 8.00 (6.00-9.00)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] | landed: 37.1 (35.7-37.9)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > during a 3-light march | blk: 97.0 (78.0-106)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > during a 3-light march | landed: 181 (178-213)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > during a 3-light march > answer first [last] | blk: 181 (178-213)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > during a 3-light march > answer first [last] | landed: 248 (227-280)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > during a 3-light march > one job's ms | blk: 120 (116-141)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > no march: wait first [last] > answer first [last] | blk: 142 (130-154)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > no march: wait first [last] > answer first [last] | landed: 165 (164-174)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > no march: wait first [last] > one job's ms | blk: 160 (154-168)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > the same, every stripe posted (feed 0) | blk: 1,236 (930-1,281)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > the same, every stripe posted (feed 0) | landed: 1,302 (942-1,303)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > the same, every stripe posted (feed 0) > answer first [last] | blk: 1,382 (1,068-1,398)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > the same, every stripe posted (feed 0) > answer first [last] | landed: 1,399 (1,091-1,447)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > the same, one job a light | blk: 0.00 (0.00-0.00)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > the same, one job a light | landed: 105 (98.0-112)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > the same, one job a light > answer first [last] | blk: 100 (94.0-100)
+  perf-relight | 8 NORMAL ~60 ms jobs: crc [job] > the same, one job a light > answer first [last] | landed: 170 (163-174)
+  perf-relight | a drag step's quick map > again, one job (stripes 0) | blk: 36.0 (35.0-37.0)
+  perf-relight | a drag step's quick map > again, one job (stripes 0) | landed: 41.0 (37.0-45.0)
+  perf-relight | a drag step's quick map > again, stripes | blk: 38.0 (34.0-41.0)
+  perf-relight | a drag step's quick map > again, stripes | landed: 42.0 (8.00-51.0)
+  perf-relight | a light made a sun: landed | blk: 46.0 (45.0-49.0)
+  perf-relight | a light made a sun: landed | landed: 221 (181-234)
+  perf-relight | a light made a sun: landed > again, 64 stripes (K12b c) | blk: 44.0 (43.0-54.0)
+  perf-relight | a light made a sun: landed > again, 64 stripes (K12b c) | landed: 223 (174-247)
+  perf-relight | a light made a sun: landed > again, every stripe posted (feed 0) | blk: 44.0 (40.0-52.0)
+  perf-relight | a light made a sun: landed > again, every stripe posted (feed 0) | landed: 223 (163-229)
+  perf-relight | a light made a sun: landed > again, fed after the unfed one | blk: 45.0 (43.0-47.0)
+  perf-relight | a light made a sun: landed > again, fed after the unfed one | landed: 216 (170-231)
+  perf-relight | a light made a sun: landed > again, one job (stripes 0) | blk: 100 (90.0-102)
+  perf-relight | a light made a sun: landed > again, one job (stripes 0) | landed: 869 (810-919)
+  perf-relight | a light made a sun: landed > again, one job (stripes 0) > kernel ms [slowest job] | kernel sum: 849 (790-897)
+  perf-relight | a light made a sun: landed > again, one job (stripes 0) > kernel ms [slowest job] | slowest job: 849 (790-897)
+  perf-relight | a light made a sun: landed > again, stripes | blk: 46.0 (44.0-49.0)
+  perf-relight | a light made a sun: landed > again, stripes | landed: 228 (164-247)
+  perf-relight | a light made a sun: landed > again, stripes > first stripe ms [later] | first stripe: 13.0 (11.0-20.0)
+  perf-relight | a light made a sun: landed > again, stripes > first stripe ms [later] | later: 44.0 (35.0-54.0)
+  perf-relight | a light made a sun: landed > again, stripes > kernel ms [slowest job] | kernel sum: 1,236 (862-1,350)
+  perf-relight | a light made a sun: landed > again, stripes > kernel ms [slowest job] | slowest job: 74.0 (46.0-76.0)
+  perf-relight | a light made a sun: landed > first stripe ms [later] | first stripe: 14.0 (12.0-19.0)
+  perf-relight | a light made a sun: landed > first stripe ms [later] | later: 50.0 (35.0-52.0)
+  perf-relight | a light made a sun: landed > kernel ms [slowest job] | kernel sum: 1,280 (894-1,283)
+  perf-relight | a light made a sun: landed > kernel ms [slowest job] | slowest job: 71.0 (50.0-73.0)
+  perf-relight | a light moved, no redraw | blk: 85.0 (82.0-100)
+  perf-relight | a light moved, no redraw | landed: 643 (519-687)
+  perf-relight | a light moved, no redraw > first stripe ms [later] | first stripe: 147 (147-158)
+  perf-relight | a light moved, no redraw > first stripe ms [later] | later: 149 (112-164)
+  perf-relight | a light moved, no redraw > kernel ms [slowest job] | kernel sum: 4,684 (3,916-5,084)
+  perf-relight | a light moved, no redraw > kernel ms [slowest job] | slowest job: 187 (150-195)
+  perf-relight | a light moved, no redraw > one job (stripes 0) | blk: 85.0 (67.0-122)
+  perf-relight | a light moved, no redraw > one job (stripes 0) | landed: 3,292 (3,141-3,448)
+  perf-relight | a light moved, released | blk: 86.0 (70.0-106)
+  perf-relight | a light moved, released | landed: 698 (544-704)
+  perf-relight | a light moved, released > first stripe ms [later] | first stripe: 159 (121-172)
+  perf-relight | a light moved, released > first stripe ms [later] | later: 153 (127-157)
+  perf-relight | a light moved, released > kernel ms [slowest job] | kernel sum: 5,016 (4,058-5,047)
+  perf-relight | a light moved, released > kernel ms [slowest job] | slowest job: 192 (149-200)
+  perf-relight | a light moved, released > one job (stripes 0) | blk: 84.0 (50.0-95.0)
+  perf-relight | a light moved, released > one job (stripes 0) | landed: 3,283 (3,191-3,406)
+  perf-relight | frame after a whole change, 1:1 > (relight: waited [in flight]) | waited: 1,240 (925-1,277)
+  perf-relight | one light moved: landed > again, 64 stripes (K12b c) | blk: 60.0 (44.0-89.0)
+  perf-relight | one light moved: landed > again, 64 stripes (K12b c) | landed: 674 (482-698)
+  perf-relight | one light moved: landed > again, every stripe posted (feed 0) | blk: 49.0 (48.0-90.0)
+  perf-relight | one light moved: landed > again, every stripe posted (feed 0) | landed: 660 (489-730)
+  perf-relight | one light moved: landed > again, one job (stripes 0) | blk: 96.0 (53.0-101)
+  perf-relight | one light moved: landed > again, one job (stripes 0) | landed: 3,414 (3,184-3,962)
+  perf-relight | one light moved: landed > again, one job (stripes 0) > kernel ms [slowest job] | kernel sum: 3,394 (3,166-3,940)
+  perf-relight | one light moved: landed > again, one job (stripes 0) > kernel ms [slowest job] | slowest job: 3,394 (3,166-3,940)
+  perf-relight | one light moved: landed > again, stripes | blk: 55.0 (51.0-79.0)
+  perf-relight | one light moved: landed > again, stripes | landed: 669 (487-686)
+  perf-relight | one light moved: landed > again, stripes > first stripe ms [later] | first stripe: 161 (121-164)
+  perf-relight | one light moved: landed > again, stripes > first stripe ms [later] | later: 145 (114-150)
+  perf-relight | one light moved: landed > again, stripes > kernel ms [slowest job] | kernel sum: 4,803 (3,694-4,848)
+  perf-relight | one light moved: landed > again, stripes > kernel ms [slowest job] | slowest job: 197 (130-199)
+  perf-relight | one light moved: landed > first stripe ms [later] | first stripe: 164 (136-173)
+  perf-relight | one light moved: landed > first stripe ms [later] | later: 168 (116-169)
+  perf-relight | one light moved: landed > kernel ms [slowest job] | kernel sum: 5,283 (3,900-5,371)
+  perf-relight | one light moved: landed > kernel ms [slowest job] | slowest job: 191 (154-194)
+  perf-relight | the same, lights overlay (relight) | max: 410 (377-439)
+  perf-relight | the same, lights overlay (relight) | median: 409 (377-439)
+  perf-relight | the same, lights overlay (relight) > mips settled [longest block] | longest block: 17.4 (13.2-17.9)
+  perf-relight | the same, lights overlay (relight) > mips settled [longest block] | settled: 75.0 (64.7-78.8)
+  perf-relight | three lights moved > again, 64 stripes (K12b c) | blk: 78.0 (52.0-83.0)
+  perf-relight | three lights moved > again, 64 stripes (K12b c) | landed: 1,358 (1,003-1,376)
+  perf-relight | three lights moved > again, every stripe posted (feed 0) | blk: 68.0 (66.0-95.0)
+  perf-relight | three lights moved > again, every stripe posted (feed 0) | landed: 1,394 (1,050-1,406)
+  perf-relight | three lights moved > again, one job a light | blk: 90.0 (55.0-90.0)
+  perf-relight | three lights moved > again, one job a light | landed: 4,990 (3,210-5,134)
+  perf-relight | three lights moved > again, one job a light > kernel ms [slowest job] | kernel sum: 10,219 (6,613-10,562)
+  perf-relight | three lights moved > again, one job a light > kernel ms [slowest job] | slowest job: 4,979 (3,191-5,110)
+  perf-relight | three lights moved > again, stripes | blk: 89.0 (84.0-100)
+  perf-relight | three lights moved > again, stripes | landed: 1,348 (1,030-1,374)
+  perf-relight | three lights moved > again, stripes > first stripe ms [later] | first stripe: 144 (123-165)
+  perf-relight | three lights moved > again, stripes > first stripe ms [later] | later: 135 (108-143)
+  perf-relight | three lights moved > again, stripes > kernel ms [slowest job] | kernel sum: 10,367 (7,920-10,518)
+  perf-relight | three lights moved > again, stripes > kernel ms [slowest job] | slowest job: 198 (154-200)
+  perf-relight | three lights moved > first stripe ms [later] | first stripe: 146 (120-165)
+  perf-relight | three lights moved > first stripe ms [later] | later: 132 (108-144)
+  perf-relight | three lights moved > kernel ms [slowest job] | kernel sum: 9,903 (7,918-10,508)
+  perf-relight | three lights moved > kernel ms [slowest job] | slowest job: 191 (163-200)
+  perf-relight | three lights moved > moved, every stripe posted | blk: 94.0 (61.0-249)
+  perf-relight | three lights moved > moved, every stripe posted | landed: 1,330 (1,308-1,364)
+  perf-relight | three lights moved > moved, fed again | blk: 63.0 (49.0-100)
+  perf-relight | three lights moved > moved, fed again | landed: 1,328 (1,116-1,404)
+  perf-relight | whole change 1:1: frame [mips settled] | blk: 24.6 (22.4-28.9)
+  perf-relight | whole change 1:1: frame [mips settled] | landed: 92.1 (78.1-94.9)
+  perf-relight | whole change 1:1: frame [mips settled] > during a 3-light march | blk: 28.9 (26.6-30.4)
+  perf-relight | whole change 1:1: frame [mips settled] > during a 3-light march | landed: 278 (272-283)
+  perf-relight | whole change 1:1: frame [mips settled] > during a 3-light march, fed again | blk: 33.7 (31.3-41.8)
+  perf-relight | whole change 1:1: frame [mips settled] > during a 3-light march, fed again | landed: 190 (164-194)
+  perf-relight | whole change 1:1: frame [mips settled] > during a 3-light march, feed 0 | blk: 39.0 (32.5-46.8)
+  perf-relight | whole change 1:1: frame [mips settled] > during a 3-light march, feed 0 | landed: 194 (174-216)
+-- px_jobs
+  px_jobs | depth_guide | kernel JS: 937 (714-1,036)
+  px_jobs | depth_guide | kernel Rust: 305 (295-328)
+  px_jobs | depth_guide_model | kernel JS: 626 (553-750)
+  px_jobs | depth_guide_model | kernel Rust: 304 (278-322)
+  px_jobs | depth_guide_model | wall JS: 1,338 (1,230-1,469)
+  px_jobs | depth_guide_model | wall Rust: 988 (964-1,049)
+  px_jobs | depth_guide_model | worker job JS: 626 (553-750)
+  px_jobs | depth_guide_model | worker job Rust: 304 (278-322)
+  px_jobs | fill_limit | kernel JS: 10,756 (9,054-12,452)
+  px_jobs | fill_limit | kernel Rust: 5,941 (5,480-6,011)
+  px_jobs | flood_ladder_1024 | kernel JS: 34.9 (32.3-39.1)
+  px_jobs | flood_ladder_1024 | kernel Rust: 12.3 (12.2-13.6)
+  px_jobs | flood_ladder_1024 | wall JS: 203 (197-216)
+  px_jobs | flood_ladder_1024 | wall Rust: 68.9 (58.3-189)
+  px_jobs | flood_ladder_1024 | worker job JS: 64.6 (63.1-72.5)
+  px_jobs | flood_ladder_1024 | worker job Rust: 23.6 (22.3-47.5)
+  px_jobs | flood_ladder_2048 | kernel JS: 86.6 (72.1-89.6)
+  px_jobs | flood_ladder_2048 | kernel Rust: 42.7 (34.8-53.3)
+  px_jobs | flood_ladder_2048 | wall JS: 341 (316-349)
+  px_jobs | flood_ladder_2048 | wall Rust: 115 (93.5-298)
+  px_jobs | flood_ladder_2048 | worker job JS: 142 (128-146)
+  px_jobs | flood_ladder_2048 | worker job Rust: 54.1 (43.7-103)
+  px_jobs | flood_ladder_256 | kernel JS: 17.8 (13.7-18.5)
+  px_jobs | flood_ladder_256 | kernel Rust: 6.00 (5.90-7.20)
+  px_jobs | flood_ladder_256 | wall JS: 188 (152-191)
+  px_jobs | flood_ladder_256 | wall Rust: 143 (141-151)
+  px_jobs | flood_ladder_256 | worker job JS: 57.9 (57.7-61.7)
+  px_jobs | flood_ladder_256 | worker job Rust: 39.8 (36.2-44.1)
+  px_jobs | flood_ladder_4096 | kernel JS: 297 (271-324)
+  px_jobs | flood_ladder_4096 | kernel Rust: 133 (133-171)
+  px_jobs | flood_ladder_4096 | wall JS: 863 (808-886)
+  px_jobs | flood_ladder_4096 | wall Rust: 297 (255-671)
+  px_jobs | flood_ladder_4096 | worker job JS: 420 (402-440)
+  px_jobs | flood_ladder_4096 | worker job Rust: 180 (146-244)
+  px_jobs | flood_ladder_512 | kernel JS: 30.3 (25.2-32.4)
+  px_jobs | flood_ladder_512 | kernel Rust: 6.20 (5.30-6.20)
+  px_jobs | flood_ladder_512 | wall JS: 174 (169-175)
+  px_jobs | flood_ladder_512 | wall Rust: 59.3 (55.4-146)
+  px_jobs | flood_ladder_512 | worker job JS: 58.6 (58.0-58.7)
+  px_jobs | flood_ladder_512 | worker job Rust: 21.9 (18.4-32.0)
+  px_jobs | flood_ladder_8192 | kernel JS: 1,461 (1,385-1,522)
+  px_jobs | flood_ladder_8192 | kernel Rust: 661 (618-727)
+  px_jobs | flood_ladder_8192 | wall JS: 3,781 (3,739-3,807)
+  px_jobs | flood_ladder_8192 | wall Rust: 1,166 (1,002-2,766)
+  px_jobs | flood_ladder_8192 | worker job JS: 2,334 (2,226-2,335)
+  px_jobs | flood_ladder_8192 | worker job Rust: 743 (636-1,416)
+  px_jobs | invert | kernel JS: 149 (134-155)
+  px_jobs | invert | kernel Rust: 111 (97.3-112)
+  px_jobs | range_color | kernel JS: 6,833 (4,815-7,844)
+  px_jobs | range_color | kernel Rust: 3,312 (2,454-3,316)
+  px_jobs | range_depth | kernel JS: 2,305 (1,623-2,325)
+  px_jobs | range_depth | kernel Rust: 1,135 (952-1,157)
+  px_jobs | range_depth_snap | kernel JS: 4,642 (4,063-4,822)
+  px_jobs | range_depth_snap | kernel Rust: 2,284 (1,663-2,295)
+  px_jobs | range_luma | kernel JS: 2,542 (1,685-2,713)
+  px_jobs | range_luma | kernel Rust: 1,179 (839-1,304)
+-- w0_bench
+  w0_bench | crc32_64mb | js: 104 (102-112)
+
+== Once: one run on each side, no classification (ms unless named)
+         old          new  row
+       4,297        3,212  docperf | built | loadMs
+       5,762        4,458  docperf | open | openMs
+       5,643        4,755  docperf | open | restoreMs
+         421          415  docperf | save | cleanSaveMs
+         395          395  docperf | save | cleanWriteMs
+       2,883          767  docperf | save | flushMs
+         397          319  docperf | save | saveMs
+         828          349  docperf | save | selSaveMs
+         352          288  docperf | save | writeMs
+      18,538       18,684  huge | a_matched_layer_a_film_look_and_what_is_refused | png/blocked
+     165,639      167,704  huge | a_matched_layer_a_film_look_and_what_is_refused | png/ms
+         694          495  huge | a_provider_run_on_the_selection | blocked
+         694          495  huge | a_provider_run_on_the_selection | ms
+        76.0          153  huge | a_restore_from_the_state | blocked
+      13,024        5,904  huge | a_restore_from_the_state | ms
+       1,101        1,101  huge | export_png_and_read_it_back | MB
+         160          171  huge | export_png_and_read_it_back | blocked
+       7,538        4,674  huge | export_png_and_read_it_back | ms
+       3,719        3,719  huge | export_psd | MB
+         267          441  huge | export_psd | blocked
+       6,610        4,192  huge | export_psd | ms
+         610          699  huge | open_through_the_stream_reader | blocked
+      11,537        4,100  huge | open_through_the_stream_reader | ms
+        82.0          102  huge | selection_grow_and_invert | grow[0]
+        72.0         93.0  huge | selection_grow_and_invert | grow[1]
+       1,413          373  huge | selection_grow_and_invert | invertBack[0]
+       1,413          373  huge | selection_grow_and_invert | invertBack[1]
+         559          565  huge | selection_grow_and_invert | invert[0]
+         559          565  huge | selection_grow_and_invert | invert[1]
+        0.10         0.10  huge | the_screen_pan_zoom_and_a_stroke | pan_1to1[0]
+        2.70         2.00  huge | the_screen_pan_zoom_and_a_stroke | pan_1to1[1]
+        0.50         0.30  huge | the_screen_pan_zoom_and_a_stroke | pan_fit[0]
+        10.7         8.50  huge | the_screen_pan_zoom_and_a_stroke | pan_fit[1]
+        2.10         6.70  huge | the_screen_pan_zoom_and_a_stroke | stroke_frame[0]
+        52.8         61.3  huge | the_screen_pan_zoom_and_a_stroke | stroke_frame[1]
+        20.1         7.20  huge | the_screen_pan_zoom_and_a_stroke | stroke_release
+        0.20         0.20  huge | the_screen_pan_zoom_and_a_stroke | zoom[0]
+        4.30         2.50  huge | the_screen_pan_zoom_and_a_stroke | zoom[1]
+        1.00         3.00  huge | the_state_for_the_autosave | blocked
+        1.00         3.00  huge | the_state_for_the_autosave | ms
+        2.00         2.00  huge | undo_and_redo_of_the_stroke | blocked[0]
+        1.00         1.00  huge | undo_and_redo_of_the_stroke | blocked[1]
+        1.00         1.00  huge | undo_and_redo_of_the_stroke | redoMs
+        2.00         2.00  huge | undo_and_redo_of_the_stroke | undoMs
+       1,101        1,101  huge | write_the_png_from_tiles | MB
+         152          149  huge | write_the_png_from_tiles | encodeBlocked
+       8,683        5,725  huge | write_the_png_from_tiles | encodeMs
+       7,876        8,902  huge | write_the_png_from_tiles | fillMs
+         193          177  mem | round 0 start | GPU MB
+        78.7         87.0  mem | round 0 start | renderer MB
+         921        1,150  mem | round 1 built | GPU MB
+       3,619        3,649  mem | round 1 built | renderer MB
+         959        1,101  mem | round 1 closed | GPU MB
+       3,945        3,856  mem | round 1 closed | renderer MB
+         445          947  mem | round 1 gc | GPU MB
+       3,030        2,987  mem | round 1 gc | renderer MB
+       1,083        1,312  mem | round 2 built | GPU MB
+       6,205        6,185  mem | round 2 built | renderer MB
+       1,121        1,309  mem | round 2 closed | GPU MB
+       4,054        6,263  mem | round 2 closed | renderer MB
+         576        1,051  mem | round 2 gc | GPU MB
+       3,090        5,384  mem | round 2 gc | renderer MB
+       1,000        1,141  mem | round 3 built | GPU MB
+       3,839        3,657  mem | round 3 built | renderer MB
+       1,038        1,163  mem | round 3 closed | GPU MB
+       3,934        3,826  mem | round 3 closed | renderer MB
+         548          462  mem | round 3 free | GPU MB
+       2,944          288  mem | round 3 free | renderer MB
+         793        1,063  mem | round 3 gc | GPU MB
+       3,082        2,849  mem | round 3 gc | renderer MB
+mem's targets, old:
+  GPU process back within 300 MB of the baseline: +354 MB  FAIL
+  pan in the last round against the first: 6.79 -> 6.39 ms (-6 %)  PASS
+  levels tick in the last round against the first: 18.24 -> 12.59 ms (-31 %)  PASS
+  canvas upload in the last round against the first: 0.06 -> 0.07 ms (+17 %)  PASS
+mem's targets, new:
+  GPU process back within 300 MB of the baseline: +285 MB  PASS
+  pan in the last round against the first: 9.88 -> 10.56 ms (+7 %)  PASS
+  levels tick in the last round against the first: 14.50 -> 13.75 ms (-5 %)  PASS
+  canvas upload in the last round against the first: 0.15 -> 0.08 ms (-47 %)  PASS

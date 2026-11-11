@@ -57,29 +57,96 @@ pub fn unpredict(
             unpredict_row_8(row, per);
         }
     } else {
-        let total_samples = pixels * per;
         for r in 0..rows {
             let row = &mut slice[r * row_bytes..r * row_bytes + active];
-            if le {
-                for s in per..total_samples {
-                    let prev = u16::from_le_bytes([row[(s - per) * 2], row[(s - per) * 2 + 1]]);
-                    let cur = u16::from_le_bytes([row[s * 2], row[s * 2 + 1]]);
-                    let sum = cur.wrapping_add(prev).to_le_bytes();
-                    row[s * 2] = sum[0];
-                    row[s * 2 + 1] = sum[1];
-                }
-            } else {
-                for s in per..total_samples {
-                    let prev = u16::from_be_bytes([row[(s - per) * 2], row[(s - per) * 2 + 1]]);
-                    let cur = u16::from_be_bytes([row[s * 2], row[s * 2 + 1]]);
-                    let sum = cur.wrapping_add(prev).to_be_bytes();
-                    row[s * 2] = sum[0];
-                    row[s * 2 + 1] = sum[1];
-                }
-            }
+            unpredict_row_16(row, pixels, per, le);
         }
     }
     0
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+fn unpredict_row_16(row: &mut [u8], pixels: usize, per: usize, le: bool) {
+    use core::arch::wasm32::*;
+    if per == 1 && pixels >= 8 {
+        let zero = i16x8_splat(0);
+        let mut acc = zero;
+        let simd_samples = (pixels / 8) * 8;
+        let ptr = row.as_mut_ptr();
+        let mut s = 0usize;
+        while s < simd_samples {
+            unsafe {
+                let raw = v128_load(ptr.add(s * 2) as *const v128);
+                let v0 = if le {
+                    raw
+                } else {
+                    u8x16_shuffle::<1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14>(raw, raw)
+                };
+                let s1 = u8x16_shuffle::<16, 17, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13>(v0, zero);
+                let v1 = i16x8_add(v0, s1);
+                let s2 = u8x16_shuffle::<16, 17, 16, 17, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11>(v1, zero);
+                let v2 = i16x8_add(v1, s2);
+                let s4 = u8x16_shuffle::<16, 17, 16, 17, 16, 17, 16, 17, 0, 1, 2, 3, 4, 5, 6, 7>(v2, zero);
+                let v4 = i16x8_add(v2, s4);
+                let sum = i16x8_add(v4, acc);
+                acc = u8x16_shuffle::<14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15>(sum, sum);
+                let out = if le {
+                    sum
+                } else {
+                    u8x16_shuffle::<1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14>(sum, sum)
+                };
+                v128_store(ptr.add(s * 2) as *mut v128, out);
+            }
+            s += 8;
+        }
+        if le {
+            for k in simd_samples..pixels {
+                let prev = u16::from_le_bytes([row[(k - 1) * 2], row[(k - 1) * 2 + 1]]);
+                let cur = u16::from_le_bytes([row[k * 2], row[k * 2 + 1]]);
+                let sum = cur.wrapping_add(prev).to_le_bytes();
+                row[k * 2] = sum[0];
+                row[k * 2 + 1] = sum[1];
+            }
+        } else {
+            for k in simd_samples..pixels {
+                let prev = u16::from_be_bytes([row[(k - 1) * 2], row[(k - 1) * 2 + 1]]);
+                let cur = u16::from_be_bytes([row[k * 2], row[k * 2 + 1]]);
+                let sum = cur.wrapping_add(prev).to_be_bytes();
+                row[k * 2] = sum[0];
+                row[k * 2 + 1] = sum[1];
+            }
+        }
+        return;
+    }
+    unpredict_row_16_scalar(row, pixels * per, per, le);
+}
+
+#[cfg(not(target_feature = "simd128"))]
+#[inline(always)]
+fn unpredict_row_16(row: &mut [u8], pixels: usize, per: usize, le: bool) {
+    unpredict_row_16_scalar(row, pixels * per, per, le);
+}
+
+#[inline(always)]
+fn unpredict_row_16_scalar(row: &mut [u8], total_samples: usize, per: usize, le: bool) {
+    if le {
+        for s in per..total_samples {
+            let prev = u16::from_le_bytes([row[(s - per) * 2], row[(s - per) * 2 + 1]]);
+            let cur = u16::from_le_bytes([row[s * 2], row[s * 2 + 1]]);
+            let sum = cur.wrapping_add(prev).to_le_bytes();
+            row[s * 2] = sum[0];
+            row[s * 2 + 1] = sum[1];
+        }
+    } else {
+        for s in per..total_samples {
+            let prev = u16::from_be_bytes([row[(s - per) * 2], row[(s - per) * 2 + 1]]);
+            let cur = u16::from_be_bytes([row[s * 2], row[s * 2 + 1]]);
+            let sum = cur.wrapping_add(prev).to_be_bytes();
+            row[s * 2] = sum[0];
+            row[s * 2 + 1] = sum[1];
+        }
+    }
 }
 
 #[cfg(target_feature = "simd128")]
@@ -355,6 +422,29 @@ pub fn to_rgba(
         return 0;
     }
 
+    // Fast path 4: planar (or 1-channel) 8-bit and 16-bit RGB / MinIsBlack with straight or opaque alpha
+    // (planar TIFF strips/tiles and PSD colour/alpha bands, K20b).
+    if planes == spp
+        && (bits == 8 || bits == 16)
+        && (photometric == 1 || photometric == 2)
+        && (alpha_mode == 0 || alpha_mode == 2)
+    {
+        planar_to_rgba(
+            src_slice,
+            plane_bytes,
+            row_bytes,
+            w,
+            rows,
+            bits,
+            le,
+            photometric,
+            alpha_mode,
+            base,
+            out_slice,
+        );
+        return 0;
+    }
+
     let mask = if bits < 8 { ((1u32 << bits) - 1) as u8 } else { 0 };
     let scale = if bits < 8 { 255 / mask } else { 1 };
     let per_byte = if bits < 8 { (8 / bits) as usize } else { 1 };
@@ -424,6 +514,264 @@ pub fn to_rgba(
         }
     }
     0
+}
+
+#[inline(always)]
+fn round16_sample(s: &[u8], x: usize, le: bool) -> u8 {
+    let b0 = s[x * 2] as u32;
+    let b1 = s[x * 2 + 1] as u32;
+    let v = if le { b0 | (b1 << 8) } else { (b0 << 8) | b1 };
+    ((v * 2 + 257) / 514) as u8
+}
+
+#[allow(clippy::too_many_arguments)]
+fn planar_to_rgba(
+    src: &[u8],
+    plane_bytes: usize,
+    row_bytes: usize,
+    w: usize,
+    rows: usize,
+    bits: u32,
+    le: bool,
+    photometric: u32,
+    alpha_mode: u32,
+    base: usize,
+    out: &mut [u8],
+) {
+    let is_rgb = photometric == 2;
+    let has_a = alpha_mode == 2;
+    if bits == 8 {
+        for r in 0..rows {
+            let r_off = r * row_bytes;
+            let p0 = &src[r_off..r_off + w];
+            let (p1, p2) = if is_rgb {
+                (
+                    &src[plane_bytes + r_off..plane_bytes + r_off + w],
+                    &src[2 * plane_bytes + r_off..2 * plane_bytes + r_off + w],
+                )
+            } else {
+                (p0, p0)
+            };
+            let pa = if has_a {
+                Some(&src[base * plane_bytes + r_off..base * plane_bytes + r_off + w])
+            } else {
+                None
+            };
+            let d = &mut out[r * w * 4..(r + 1) * w * 4];
+            planar_row_8(p0, p1, p2, pa, is_rgb, d);
+        }
+    } else {
+        let rb = w * 2;
+        for r in 0..rows {
+            let r_off = r * row_bytes;
+            let p0 = &src[r_off..r_off + rb];
+            let (p1, p2) = if is_rgb {
+                (
+                    &src[plane_bytes + r_off..plane_bytes + r_off + rb],
+                    &src[2 * plane_bytes + r_off..2 * plane_bytes + r_off + rb],
+                )
+            } else {
+                (p0, p0)
+            };
+            let pa = if has_a {
+                Some(&src[base * plane_bytes + r_off..base * plane_bytes + r_off + rb])
+            } else {
+                None
+            };
+            let d = &mut out[r * w * 4..(r + 1) * w * 4];
+            planar_row_16(p0, p1, p2, pa, is_rgb, le, w, d);
+        }
+    }
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+fn planar_row_8(p0: &[u8], p1: &[u8], p2: &[u8], pa: Option<&[u8]>, is_rgb: bool, d: &mut [u8]) {
+    use core::arch::wasm32::*;
+    let w = p0.len();
+    let simd_end = (w / 16) * 16;
+    let ff = u8x16_splat(255);
+    let p0_ptr = p0.as_ptr();
+    let p1_ptr = p1.as_ptr();
+    let p2_ptr = p2.as_ptr();
+    let pa_ptr = pa.map(|s| s.as_ptr());
+    let d_ptr = d.as_mut_ptr();
+    let mut x = 0usize;
+    while x < simd_end {
+        unsafe {
+            let vr = v128_load(p0_ptr.add(x) as *const v128);
+            let (vg, vb) = if is_rgb {
+                (
+                    v128_load(p1_ptr.add(x) as *const v128),
+                    v128_load(p2_ptr.add(x) as *const v128),
+                )
+            } else {
+                (vr, vr)
+            };
+            let va = match pa_ptr {
+                Some(ptr) => v128_load(ptr.add(x) as *const v128),
+                None => ff,
+            };
+            let rg_lo = u8x16_shuffle::<0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23>(vr, vg);
+            let rg_hi = u8x16_shuffle::<8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31>(vr, vg);
+            let ba_lo = u8x16_shuffle::<0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23>(vb, va);
+            let ba_hi = u8x16_shuffle::<8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31>(vb, va);
+            let out0 = u8x16_shuffle::<0, 1, 16, 17, 2, 3, 18, 19, 4, 5, 20, 21, 6, 7, 22, 23>(rg_lo, ba_lo);
+            let out1 = u8x16_shuffle::<8, 9, 24, 25, 10, 11, 26, 27, 12, 13, 28, 29, 14, 15, 30, 31>(rg_lo, ba_lo);
+            let out2 = u8x16_shuffle::<0, 1, 16, 17, 2, 3, 18, 19, 4, 5, 20, 21, 6, 7, 22, 23>(rg_hi, ba_hi);
+            let out3 = u8x16_shuffle::<8, 9, 24, 25, 10, 11, 26, 27, 12, 13, 28, 29, 14, 15, 30, 31>(rg_hi, ba_hi);
+            let o = d_ptr.add(x * 4);
+            v128_store(o as *mut v128, out0);
+            v128_store(o.add(16) as *mut v128, out1);
+            v128_store(o.add(32) as *mut v128, out2);
+            v128_store(o.add(48) as *mut v128, out3);
+        }
+        x += 16;
+    }
+    for i in simd_end..w {
+        let di = i * 4;
+        d[di] = p0[i];
+        d[di + 1] = p1[i];
+        d[di + 2] = p2[i];
+        d[di + 3] = match pa {
+            Some(a) => a[i],
+            None => 255,
+        };
+    }
+}
+
+#[cfg(not(target_feature = "simd128"))]
+#[inline(always)]
+fn planar_row_8(p0: &[u8], p1: &[u8], p2: &[u8], pa: Option<&[u8]>, _is_rgb: bool, d: &mut [u8]) {
+    for i in 0..p0.len() {
+        let di = i * 4;
+        d[di] = p0[i];
+        d[di + 1] = p1[i];
+        d[di + 2] = p2[i];
+        d[di + 3] = match pa {
+            Some(a) => a[i],
+            None => 255,
+        };
+    }
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+unsafe fn load_round_u16x8(
+    ptr: *const u8,
+    le: bool,
+    c255: core::arch::wasm32::v128,
+    c32895: core::arch::wasm32::v128,
+) -> core::arch::wasm32::v128 {
+    use core::arch::wasm32::*;
+    let raw = v128_load(ptr as *const v128);
+    let v = if le {
+        raw
+    } else {
+        u8x16_shuffle::<1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14>(raw, raw)
+    };
+    let lo = u32x4_shr(u32x4_add(u32x4_extmul_low_u16x8(v, c255), c32895), 16);
+    let hi = u32x4_shr(u32x4_add(u32x4_extmul_high_u16x8(v, c255), c32895), 16);
+    let s16 = i16x8_narrow_i32x4(lo, hi);
+    u8x16_narrow_i16x8(s16, s16)
+}
+
+#[cfg(target_feature = "simd128")]
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn planar_row_16(
+    p0: &[u8],
+    p1: &[u8],
+    p2: &[u8],
+    pa: Option<&[u8]>,
+    is_rgb: bool,
+    le: bool,
+    w: usize,
+    d: &mut [u8],
+) {
+    use core::arch::wasm32::*;
+    let simd_end = (w / 8) * 8;
+    let c255 = u16x8_splat(255);
+    let c32895 = u32x4_splat(32895);
+    let ff = u8x16_splat(255);
+    let p0_ptr = p0.as_ptr();
+    let p1_ptr = p1.as_ptr();
+    let p2_ptr = p2.as_ptr();
+    let pa_ptr = pa.map(|s| s.as_ptr());
+    let d_ptr = d.as_mut_ptr();
+    let mut x = 0usize;
+    while x < simd_end {
+        unsafe {
+            let vr = load_round_u16x8(p0_ptr.add(x * 2), le, c255, c32895);
+            let (vg, vb) = if is_rgb {
+                (
+                    load_round_u16x8(p1_ptr.add(x * 2), le, c255, c32895),
+                    load_round_u16x8(p2_ptr.add(x * 2), le, c255, c32895),
+                )
+            } else {
+                (vr, vr)
+            };
+            let va = match pa_ptr {
+                Some(ptr) => load_round_u16x8(ptr.add(x * 2), le, c255, c32895),
+                None => ff,
+            };
+            let rg = u8x16_shuffle::<0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23>(vr, vg);
+            let ba = u8x16_shuffle::<0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23>(vb, va);
+            let out0 = u8x16_shuffle::<0, 1, 16, 17, 2, 3, 18, 19, 4, 5, 20, 21, 6, 7, 22, 23>(rg, ba);
+            let out1 = u8x16_shuffle::<8, 9, 24, 25, 10, 11, 26, 27, 12, 13, 28, 29, 14, 15, 30, 31>(rg, ba);
+            let o = d_ptr.add(x * 4);
+            v128_store(o as *mut v128, out0);
+            v128_store(o.add(16) as *mut v128, out1);
+        }
+        x += 8;
+    }
+    for i in simd_end..w {
+        let di = i * 4;
+        let r8 = round16_sample(p0, i, le);
+        let (g8, b8) = if is_rgb {
+            (round16_sample(p1, i, le), round16_sample(p2, i, le))
+        } else {
+            (r8, r8)
+        };
+        d[di] = r8;
+        d[di + 1] = g8;
+        d[di + 2] = b8;
+        d[di + 3] = match pa {
+            Some(a) => round16_sample(a, i, le),
+            None => 255,
+        };
+    }
+}
+
+#[cfg(not(target_feature = "simd128"))]
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn planar_row_16(
+    p0: &[u8],
+    p1: &[u8],
+    p2: &[u8],
+    pa: Option<&[u8]>,
+    is_rgb: bool,
+    le: bool,
+    w: usize,
+    d: &mut [u8],
+) {
+    for i in 0..w {
+        let di = i * 4;
+        let r8 = round16_sample(p0, i, le);
+        let (g8, b8) = if is_rgb {
+            (round16_sample(p1, i, le), round16_sample(p2, i, le))
+        } else {
+            (r8, r8)
+        };
+        d[di] = r8;
+        d[di + 1] = g8;
+        d[di + 2] = b8;
+        d[di + 3] = match pa {
+            Some(a) => round16_sample(a, i, le),
+            None => 255,
+        };
+    }
 }
 
 pub fn unpack(compression: u32, src: &[u8], out: &mut [u8]) -> isize {

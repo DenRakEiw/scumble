@@ -416,7 +416,9 @@ async function main() {
         if (r >= 0 && g > r) throw new Error("protectAsk(card) comes after return card");
         if (a < 0 || a > g) throw new Error("protectAsk(card) comes before the card is in the chat");
         const ans = bodyOf(js, /\nfunction answer\(/);
-        if (!ans || !/releaseAsk\(card\)/.test(ans)) throw new Error("answer() does not release the card");
+        if (!ans || !/closeAsk\(card/.test(ans)) throw new Error("answer() does not close the card");
+        const closes = bodyOf(js, /\nfunction closeAsk\(/);
+        if (!closes || !/releaseAsk\(card\)/.test(closes)) throw new Error("closeAsk() does not release the card");
         // the question's own look: no token, no named font (a skin's @font-face could take that name), :host !important
         const m = read("renderer/skins.js").match(/const ASK_CSS = `([^`]*)`/);
         if (!m) throw new Error("renderer/skins.js has no ASK_CSS");

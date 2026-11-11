@@ -794,7 +794,6 @@ export async function tiffPlan(blob, opts = {}) {
         tl: layout.tiled ? layout.tl : 0,
         across: layout.tiled ? layout.across : 0,
         down: layout.tiled ? layout.down : 0,
-        colormap: layout.colormap,
         pal,
     };
     const bands = [];
@@ -870,7 +869,7 @@ export async function tiffPlan(blob, opts = {}) {
             bands.push(b);
         }
     }
-    const plan = { ...spec, spec, streamed, rowsPerBand: bandRows, bandRows, bands };
+    const plan = { ...spec, colormap: layout.colormap, spec, streamed, rowsPerBand: bandRows, bandRows, bands };
     Object.defineProperty(plan, "_src", { value: src, enumerable: false });
     Object.defineProperty(plan, "_layout", { value: layout, enumerable: false });
     return plan;
@@ -1164,6 +1163,146 @@ export async function readTiffBand(blob, planOrBand, bandOrOpts = null, maybeOpt
     });
     sp.convert += clock() - tc;
     return out || rgba;
+}
+
+function tiffCancelError() {
+    const err = new Error("tiff open cancelled");
+    err.name = "CancelledError";
+    err.cancelled = true;
+    return err;
+}
+
+function detachBuffer(buf) {
+    if (!buf) return;
+    const ab = ArrayBuffer.isView(buf) ? buf.buffer : buf;
+    try { if (ab && typeof ab.transfer === "function") ab.transfer(0); } catch (_) { /* ignore */ }
+}
+
+/**
+ * Decode a non-streamed TIFF (`!plan.streamed`) in parallel across `pool` (`tiff_band` jobs at `NORMAL` priority,
+ * `docs/PLAN_WASM_BUILD.md` §4.6, K18). Each job carries only `plan.spec` and its own `plan.bands[i]` (never the full
+ * strip / tile offset table); bands go to `onRows(rgba, y0, rows)` as each job answers. Returns `null` when
+ * `plan.streamed` is true so the caller can fall back to `tiff_read`. On any band failure or `later()`, cancels the
+ * pool group before rejecting.
+ */
+export async function readTiffBands(blob, {
+    pool,
+    plan: givenPlan = null,
+    rowsPerBand = 256,
+    priority = 1,
+    later = null,
+    onHeader = null,
+    onRows = null,
+    spent = null,
+} = {}) {
+    if (!pool || typeof pool.run !== "function") throw new Error("no worker pool");
+    const isLater = typeof later === "function" ? later : null;
+    if (isLater && isLater()) throw tiffCancelError();
+    const plan = givenPlan || await tiffPlan(blob, { rowsPerBand, spent });
+    if (isLater && isLater()) throw tiffCancelError();
+    if (plan.streamed || !plan.bands || !plan.bands.length) return null;
+    const { info, spec, bands } = plan;
+    if (onHeader) await onHeader(info);
+    if (isLater && isLater()) throw tiffCancelError();
+
+    const n = bands.length;
+    const maxInFlight = Math.max(1, (pool.size | 0) || 8) * 2;
+    const group = Symbol("tiff_bands");
+    let next = 0, inFlight = 0, done = 0;
+    let failed = null, cancelled = false;
+    let wake = null;
+
+    const notify = () => {
+        if (wake) { const fn = wake; wake = null; fn(); }
+    };
+    const cancelGroup = () => {
+        if (typeof pool.cancel === "function") pool.cancel(group);
+    };
+    const stopCancel = () => {
+        if (cancelled || failed) return;
+        cancelled = true;
+        cancelGroup();
+        notify();
+    };
+    const onFail = (err) => {
+        if (cancelled || failed) return;
+        if (isLater && isLater()) { stopCancel(); return; }
+        failed = err instanceof Error ? err : new Error(String(err || "tiff_band failed"));
+        cancelGroup();
+        notify();
+    };
+    const launch = () => {
+        while (!failed && !cancelled && next < n && inFlight < maxInFlight) {
+            if (isLater && isLater()) { stopCancel(); return; }
+            const band = bands[next++];
+            inFlight++;
+            pool.run(
+                "tiff_band",
+                { blob, spec, band },
+                [],
+                { priority, group, timeout: 600000 },
+            ).then((r) => {
+                if (failed || cancelled) {
+                    inFlight--;
+                    if (r && r.rgba) detachBuffer(r.rgba);
+                    return;
+                }
+                if (isLater && isLater()) {
+                    inFlight--;
+                    if (r && r.rgba) detachBuffer(r.rgba);
+                    stopCancel();
+                    return;
+                }
+                try {
+                    const y0 = band.y0, rows = band.rows;
+                    const needBytes = rows * info.width * 4;
+                    const buf = r && r.rgba;
+                    const rgba = buf instanceof Uint8Array
+                        ? buf
+                        : (buf instanceof ArrayBuffer ? new Uint8Array(buf) : null);
+                    if (!rgba || rgba.byteLength < needBytes) {
+                        inFlight--;
+                        if (buf) detachBuffer(buf);
+                        throw new Error(`tiff_band ${band.index}: expected ${needBytes} RGBA bytes, got ${rgba ? rgba.byteLength : 0}`);
+                    }
+                    const view = rgba.byteLength === needBytes ? rgba : rgba.subarray(0, needBytes);
+                    const finishBand = () => {
+                        inFlight--;
+                        if (failed || cancelled) return;
+                        if (isLater && isLater()) { stopCancel(); return; }
+                        done++;
+                        launch();
+                        if (done === n) notify();
+                    };
+                    const p = onRows ? onRows(view, y0, rows) : null;
+                    if (p && typeof p.then === "function") {
+                        p.then(finishBand, (err) => { inFlight--; onFail(err); });
+                    } else {
+                        finishBand();
+                    }
+                } catch (err) {
+                    onFail(err);
+                }
+            }, (err) => {
+                inFlight--;
+                onFail(err);
+            });
+        }
+    };
+
+    launch();
+    while (!failed && !cancelled && done < n) {
+        await new Promise((r) => { wake = r; });
+    }
+    if (cancelled || (isLater && isLater())) {
+        cancelGroup();
+        throw tiffCancelError();
+    }
+    if (failed) {
+        cancelGroup();
+        throw failed;
+    }
+    return info;
 }
 
 /**

@@ -241,6 +241,7 @@ class Assistant {
             history: [],
             owned: new Map(),      // doc -> Set of layer ids this chat made
             seen: new Map(),       // doc -> Set of layer ids any read of this chat saw
+            changedSettings: new Map(), // doc -> what this chat changed in its render settings (changesOf)
             failures: new Map(),   // "name(args)" -> how often it came back an error
             usage: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, cost: 0 },
             stopped: false,
@@ -251,6 +252,53 @@ class Assistant {
         const key = String(doc);
         if (!map.has(key)) map.set(key, new Set());
         return map.get(key);
+    }
+
+    /**
+     * What this chat changed in one document's render settings (shell/F9): `rows` by Settings row index (the label and
+     * value set_settings answered), `presets` the applied presets (lower-case name -> name), `gen` the set_generation
+     * fields, `mode` the generation mode it set.
+     */
+    changesOf(chat, doc) {
+        const empty = () => ({ rows: new Map(), presets: new Map(), gen: new Map(), mode: null });
+        if (!chat || doc == null) return empty();
+        if (!(chat.changedSettings instanceof Map)) chat.changedSettings = new Map();
+        const key = String(doc);
+        if (!chat.changedSettings.has(key)) chat.changedSettings.set(key, empty());
+        return chat.changedSettings.get(key);
+    }
+
+    /** Records a successful set_settings / apply_preset / set_generation for the render card; close_document forgets. */
+    recordSettingsChange(chat, doc, name, args, result) {
+        if (!chat || doc == null) return;
+        if (name === "close_document") {
+            if (chat.changedSettings instanceof Map) chat.changedSettings.delete(String(doc));
+            return;
+        }
+        if (name !== "set_settings" && name !== "apply_preset" && name !== "set_generation") return;
+        const ch = this.changesOf(chat, doc);
+        if (name === "set_settings") {
+            // the command answers { set: { index: value }, settings: [{ index, label, input, value }] }
+            const rows = (result && Array.isArray(result.settings)) ? result.settings : [];
+            const set = (result && result.set && typeof result.set === "object") ? result.set : {};
+            for (const [idx, val] of Object.entries(set)) {
+                const row = rows.find((r) => r && String(r.index) === String(idx));
+                ch.rows.set(String(idx), { label: settingKeyOf(row || { index: idx }), value: row && row.value !== undefined ? row.value : val });
+            }
+        } else if (name === "apply_preset") {
+            const pName = String((result && result.applied) || (args && args.name) || "").trim();
+            if (pName) ch.presets.set(pName.toLowerCase(), pName);
+        } else if (name === "set_generation") {
+            for (const k of ["mode", "seed", "seed_random", "denoise", "refine", "boxes", "loras"]) {
+                if (!args || args[k] === undefined) continue;
+                const raw = (result && result[k] !== undefined) ? result[k] : args[k];
+                const val = k === "loras" && Array.isArray(raw)
+                    ? (raw.filter((r) => r && r.on !== false).map((r) => `${r.name}${r.strength !== undefined && r.strength !== 1 ? " (" + r.strength + ")" : ""}`).join(", ") || "none")
+                    : raw;
+                ch.gen.set(k, val);
+                if (k === "mode" && raw != null) ch.mode = String(raw);
+            }
+        }
     }
 
     // ---- events --------------------------------------------------------------------------
@@ -475,6 +523,7 @@ class Assistant {
                 names: new Set(),
                 owned: new Map(),
                 seen: new Map(),
+                changedSettings: new Map(),
                 failures: new Map(),
             };
         }
@@ -487,7 +536,12 @@ class Assistant {
 
     /** The window took a whole turn back: the next state note says so (§4 A7). */
     turnUndone({ turn, docs } = {}) {
-        if (this.chat) this.chat.undone = true;
+        if (this.chat) {
+            this.chat.undone = true;
+            if (this.chat.changedSettings instanceof Map) {
+                for (const d of docs || []) this.chat.changedSettings.delete(String(d));
+            }
+        }
         this.lastTurn = null;
         this.emit("note", { text: `the turn was taken back${(docs || []).length ? ` (document${docs.length > 1 ? "s" : ""} ${docs.join(", ")})` : ""}` });
         this.record(`the user undid turn ${turn || ""}`);
@@ -806,13 +860,15 @@ class Assistant {
         turn.steps++;
         turn.tools.push(name);
         this.countFailure(chat, canonical, res.isError);
+        const parsed = parse(textOf(res));
+        if (!res.isError) this.recordSettingsChange(chat, doc, name, canonical.args, parsed);
 
         // ---- ownership and the pin
         if (!policy.READS.has(name) && takesDoc && name !== "close_document") {
             try {
                 const answer = await this.read("list_layers", { doc });
                 const after = (answer && answer.layers) || [];
-                const named = idsNamedBy(name, parse(textOf(res)));
+                const named = idsNamedBy(name, parsed);
                 const fresh = after.map((l) => l.id).filter((id) => !before.includes(id) && !this.setOf(chat.seen, doc).has(id));
                 for (const id of named) if (fresh.includes(id)) this.setOf(chat.owned, doc).add(id);
                 for (const l of after) this.setOf(chat.seen, doc).add(l.id);
@@ -822,8 +878,7 @@ class Assistant {
             } catch (_) { /* a failed after-read leaves owned alone; the result stands */ }
         }
         if (name === "new_document" || name === "activate_document") {
-            const made = parse(textOf(res));
-            if (made && made.id !== undefined) turn.pin = made.id;
+            if (parsed && parsed.id !== undefined) turn.pin = parsed.id;
         }
         if (name === "close_document" && doc === turn.pin) turn.pin = null;
         return res;
@@ -846,8 +901,18 @@ class Assistant {
             } catch (_) { /* the renderer checks again just before the command */ }
         }
         if (call.name === "generate" || call.name === "generate_new" || call.name === "upscale") {
-            facts.recipe = chat.recipe || null;
-            facts.changedByChat = [...(chat.changedSettings || [])];
+            // the render card (shell/F9): the document's Settings rows from list_settings, marked where this chat set
+            // them, and the generation fields it set. No recipe here: the panel names the live one (host.recipe).
+            let listed = null;
+            if (chat.names.has("list_settings")) {
+                try {
+                    listed = await this.read("list_settings", { doc, max_options: 0 });
+                } catch (_) { listed = null; }
+            }
+            const built = buildRenderSettings(listed, this.changesOf(chat, doc));
+            facts.mode = built.mode;
+            facts.settings = built.settings;
+            facts.changedByChat = built.changedByChat;
         }
         if (call.name === "generate" && call.args && call.args.each_area) {
             // the question names the runs (item 54): the selection's areas and the recipe that runs them, from status
@@ -995,6 +1060,80 @@ function idsNamedBy(name, result) {
 }
 
 /**
+ * The name a Settings row goes by on the render card: its label (list_settings: the node's title or the input), and
+ * when `taken` (a Set of the names given so far) holds it already, the label with the input or index after it.
+ */
+function settingKeyOf(row, taken = null) {
+    const base = String((row && (row.label || row.input || row.index)) ?? "");
+    if (!taken || !taken.has(base)) return base;
+    const alt = `${base} (${row.input || row.index})`;
+    return taken.has(alt) ? `${base} (#${row.index})` : alt;
+}
+
+/**
+ * The render card's settings (shell/F9): every row list_settings answered with its value, then the rows this chat set
+ * that the list did not show, an applied preset the list does not name, and the set_generation fields. changedByChat
+ * names the ones this chat set: a row by its index (set_settings, or a value of an applied preset), never by its label,
+ * since rows of one node share their label.
+ */
+function buildRenderSettings(listed, ch) {
+    const rows = new Map(ch ? ch.rows : []);   // index -> { label, value }
+    const extra = [];
+    if (ch && ch.presets.size) {
+        const presets = (listed && Array.isArray(listed.presets)) ? listed.presets : [];
+        for (const [lower, pName] of ch.presets) {
+            const p = presets.find((x) => x && x.name != null && String(x.name).toLowerCase() === lower);
+            const named = (p && Array.isArray(p.values)) ? p.values.filter((v) => v && v.index != null) : [];
+            for (const v of named) {
+                if (!rows.has(String(v.index))) rows.set(String(v.index), { label: settingKeyOf(v), value: v.value });
+            }
+            if (!named.length) extra.push(["preset", pName]);
+        }
+    }
+    const settings = {};
+    const taken = new Set();
+    const changed = [];
+    const put = (key, value, set) => {
+        taken.add(key);
+        if (value !== undefined) settings[key] = value;
+        if (set && !changed.includes(key)) changed.push(key);
+    };
+    const shown = new Set();
+    const listRows = (listed && Array.isArray(listed.settings)) ? listed.settings : [];
+    for (const row of listRows) {
+        if (!row || typeof row !== "object") continue;
+        const idx = row.index != null ? String(row.index) : null;
+        const hit = idx != null && rows.has(idx);
+        if (hit) shown.add(idx);
+        const val = row.value !== undefined ? row.value : row.default;
+        put(settingKeyOf(row, taken), val !== undefined ? val : (hit ? rows.get(idx).value : undefined), hit);
+    }
+    for (const [idx, r] of rows) {
+        if (shown.has(idx)) continue;
+        put(settingKeyOf({ label: r.label, index: idx }, taken), r.value !== undefined ? r.value : "(changed)", true);
+    }
+    for (const [k, v] of extra) put(settingKeyOf({ label: k, input: "chat" }, taken), v, true);
+    if (ch) for (const [k, v] of ch.gen) put(settingKeyOf({ label: k, input: "generation" }, taken), v, true);
+    return {
+        mode: (ch && ch.mode) || null,
+        settings: Object.keys(settings).length ? settings : null,
+        changedByChat: changed,
+    };
+}
+
+/**
+ * Whether `name` takes the active layer as its default `layer` when none was passed (shell/F2): only a tool whose schema
+ * has a `layer` that is its target. set_crop has none; select_color's layer goes only with sample "layer"; a box's layer
+ * is a reference layer, only for kind "from"; relight without a layer adds a new one.
+ */
+function defaultLayerFor(name, args, props) {
+    if (!props || !props.layer || name === "relight") return false;
+    if (name === "select_color") return !!(args && args.sample === "layer");
+    if (name === "boxes_add" || name === "boxes_set") return !!(args && args.kind === "from");
+    return true;
+}
+
+/**
  * Every layer reference to an id, the way the command core resolves it (`findLayer`): an id, a
  * name, a unique part of a name, "active" or nothing for the active layer. `props` is the tool's
  * schema properties: a field whose schema has an enum is never a layer reference (select_range's
@@ -1003,6 +1142,7 @@ function idsNamedBy(name, result) {
  */
 function resolveLayer(args, layers, name, props = {}) {
     const out = { ...args };
+    if (name === "select_color" && out.sample !== "layer" && out.layer === "active") delete out.layer;
     for (const field of ["layer", "source", "target"]) {
         const raw = out[field];
         if (raw === undefined || raw === null || raw === "") continue;
@@ -1013,7 +1153,7 @@ function resolveLayer(args, layers, name, props = {}) {
         if (found.error) return { error: found.error };
         out[field] = found.id;
     }
-    if (out.layer === undefined && layers.length && name !== "relight") {
+    if (out.layer === undefined && layers.length && defaultLayerFor(name, out, props)) {
         const active = layers.find((l) => l.active);
         if (active) out.layer = active.id;
     }
@@ -1055,4 +1195,8 @@ function stopError() {
     return err;
 }
 
-module.exports = { Assistant, ADAPTERS, DEFAULTS, callTimeout, _findLayer: findLayer, _idsNamedBy: idsNamedBy, _resolveLayer: resolveLayer, _appendUserText: appendUserText };
+module.exports = {
+    Assistant, ADAPTERS, DEFAULTS, callTimeout,
+    _findLayer: findLayer, _idsNamedBy: idsNamedBy, _resolveLayer: resolveLayer, _defaultLayerFor: defaultLayerFor,
+    _buildRenderSettings: buildRenderSettings, _appendUserText: appendUserText,
+};

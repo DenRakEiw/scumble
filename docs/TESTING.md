@@ -348,6 +348,12 @@ asar, a `data` folder), and reads `dist:portable` in `package.json` and the wind
 (installer, its artifact, the zip, the zip's artifact, the upload to the draft on a tag only). The real zip is checked
 by hand once per build (`docs/RELEASING.md`).
 
+The `minimax` gate (`tools/minimax_test.js`, plain Node, no app and no key; Light tier) covers the MiniMax adapter against
+a scripted fetch and one loopback server of its own: the bodies of both endpoints, the order of the pictures, `size` never
+beside `aspect_ratio` or `area`, the Region's host, where each key may go, one request and never a second whatever failed,
+a failed picture inside a 200, every error type's line, the refusals before sending, the 64 MiB body and the JPEG fallback,
+the POST's 630 s, the recipe and the wiring in `providers/index.js`.
+
 The `mcpb` gate (`tools/mcpb_test.js`, plain Node; `docs/PLAN_MCPB.md`) covers the `.mcpb` bundle of the MCP server:
 the staged manifest validates with `@anthropic-ai/mcpb` and carries `package.json`'s version and one tool per `###`
 heading of `docs/COMMANDS.md`; the starter's `STORE_LAUNCH` equals `registration.js`'s and its uninstall GUID is the

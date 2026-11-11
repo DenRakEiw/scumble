@@ -28,6 +28,9 @@
  *                   (`progress` messages), the window never runs the reader's loops (docs/PLAN_WASM_BUILD.md §7 D0).
  *   inflate_bench   byte ranges of a blob through the browser's inflater, counted and dropped: a benchmark only.
  *   png_read        a PNG file decoded as a stream, its rows back band by band (`progress` messages).
+ *   tiff_band       one planned band of a TIFF (`readTiffBand`, K18): per-file `spec` and that band's slices only,
+ *                   its RGBA8 transferred back.
+ *   tiff_read       a TIFF file decoded as a stream (`readTiff`), for single-strip / huge bands and the fallback.
  *   image_read      any image file the browser decodes (JPEG, WebP, a PNG with a colour profile), decoded here and
  *                   read back band by band like png_read: the window never decodes or reads it.
  *   resample        one row of destination tiles of an affine resample (inpaint_resample.js): the straighten of 23b.
@@ -56,14 +59,14 @@
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, clipCoverage, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
 import { crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
-import { readTiff, tiffPart } from "./inpaint_tiff.js";
+import { readTiff, readTiffBand, tiffPart } from "./inpaint_tiff.js";
 import { readPsdStream, inflateAtMost } from "./inpaint_layered.js";
 import { resampleStore } from "./inpaint_resample.js";
 import { liquifyStore } from "./inpaint_liquify.js";
 import { disparityRange } from "./inpaint_depth.js";
 import { rangeRowBookkeeping } from "./inpaint_weights.js";
 import { fuseTiles } from "./inpaint_edges.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, guidedFar, route, pngPartLinesCap, pngPartDecode, pngPartFinish, tiffKernels } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, liquifyBlock, poissonBlend, boxBlurs, heightNormals, shadowMarch, pxCalls, floodShape, recovered, pxSplit, pxJobStart, pxJobEnd, adoptRoutes, pxTimed, pxInstances, dropPx, pxSettled, pxLapAdd, PxOutOfMemory, rangeTilesDepth, rangeTilesRgba, guidedFar, route, pngPartLinesCap, pngPartDecode, pngPartFinish, tiffKernels, psdKernels } from "./px/kernels.js";
 import { Px } from "./px/px.js";
 import { hash32, mul255 } from "./blend_modes.js";
 import { detailRatio } from "./inpaint_relight.js";
@@ -894,6 +897,35 @@ export async function tiffPartJob(msg) {
 }
 
 /**
+ * Decode one planned band of a TIFF (inpaint_tiff.js `readTiffBand`, docs/PLAN_WASM_BUILD.md §4.6, K18): carries only
+ * `msg.spec` (per-file constants) and `msg.band` (that band's strip or tile slices), returning straight-alpha RGBA8
+ * transferred back to the window.
+ */
+export async function tiffBandJob(msg) {
+    const t0 = now();
+    const spec = msg.spec, band = msg.band;
+    if (!spec || !spec.info || !band) throw new Error("tiff_band: invalid spec or band");
+    const spent = {};
+    const rgba = await readTiffBand(msg.blob, spec, band, { spent, kernels: tiffKernels() });
+    const rows = band.rows | 0, y0 = band.y0 | 0;
+    const buf = rgba.byteOffset === 0 && rgba.byteLength === rgba.buffer.byteLength ? rgba.buffer : rgba.slice().buffer;
+    return {
+        rgba: buf,
+        y0,
+        rows,
+        transfer: [buf],
+        timing: {
+            op: "tiff_band",
+            kernels: kernelsInUse(),
+            pixels: spec.info.width * rows,
+            rows,
+            kernel: now() - t0,
+            ...spent,
+        },
+    };
+}
+
+/**
  * A TIFF read as a stream (inpaint_tiff.js `readTiff`), like `png_read`: `progress` messages `{ header }`, then
  * `{ rgba, y0, rows }` transferred; the reply carries what the reader found (`info`, with its notes), its timing the
  * reader's split (`readTiff`'s `spent`).
@@ -918,31 +950,60 @@ async function tiffRead(msg) {
  * before it queued the job); `progress` messages `{ index, mask, rgba, w, h, y0, rows }` (the band's buffer
  * transferred), a layer at a time, its pixels before its mask; the reply `{ doc }` (readPsdStream's answer), or `{ failed }` with the reader's message for a file it refuses,
  * which the window shows as its own reader would, without reading the file again. Plain JS: K20b puts the Rust reader
- * into this job. Its timing: read (the blob), channels, inflate, interleave, mask, deliver (the posts), bands.
+ * into this job. Its timing: read (the blob), channels, inflate, interleave, mask, deliver (the posts), wait (paced, below), bands.
+ *
+ * `msg.window` > 0 (the window's route `psdWindow`, inpaint_canvas.js `readPsdOnPool`; K20b review K20b-T1): at most that
+ * many bands are posted and not yet acknowledged; the window acknowledges each band after its `writeRect` with
+ * `{ op: "ack", id, n }` (`psdAck`, `n` the bands it has written), and the reader waits for that before it makes the next
+ * band, so a reader faster than the window's writes cannot queue a layer's bands ahead of the window's other tasks.
+ * 0 or absent: every band posted at once, as before.
  */
-async function psdRead(msg) {
+export async function psdRead(msg) {
     const t0 = now();
     const bytes = new Uint8Array(await msg.blob.arrayBuffer());
     const read = now() - t0;
     const spent = {};
-    let inflate = 0, inflates = 0, pixels = 0;
-    const timing = () => ({ op: "psd_read", kernels: "js", pixels, kernel: now() - t0, read, inflate, inflates, ...spent });
+    let inflate = 0, inflates = 0, pixels = 0, sent = 0;
+    const win = Math.max(0, msg.window | 0), pace = win > 0 ? { done: 0, wake: null } : null;
+    if (pace) PSD_ACKS.set(msg.id, pace);
+    const caughtUp = async () => { while (sent - pace.done >= win) await new Promise((res) => { pace.wake = res; }); };
+    const timing = () => ({ op: "psd_read", kernels: rustPx("psdRead") ? "rust" : "js", pixels, kernel: now() - t0, read, inflate, inflates, window: win, ...spent });
     try {
         const doc = await readPsdStream(bytes, {
             // the window's inflater (inpaint_layered.js inflateAtMost): the same bytes, stopped at the bytes kept
             inflate: async (b, cap) => { const t = now(); try { return await inflateAtMost(b, "deflate", cap); } finally { inflate += now() - t; inflates++; } },
             rowsPerBand: msg.rowsPerBand || TILE,
             onHeader: (h) => { pixels = h.width * h.height; },   // the window checked the size from the header before the job
-            onRows: (index, kind, rgba, w, h, y0, rows) => { self.postMessage({ id: msg.id, progress: true, index, mask: kind === "mask", rgba: rgba.buffer, w, h, y0, rows }, [rgba.buffer]); },
+            onRows: (index, kind, rgba, w, h, y0, rows) => {
+                self.postMessage({ id: msg.id, progress: true, index, mask: kind === "mask", rgba: rgba.buffer, w, h, y0, rows }, [rgba.buffer]);
+                sent++;
+                return pace && sent - pace.done >= win ? caughtUp() : undefined;
+            },
             spent,
+            kernels: psdKernels(),
         });
         return { doc, timing: timing() };
     } catch (err) {
         return { failed: String((err && err.message) || err), timing: timing() };
     } finally {
+        if (pace) PSD_ACKS.delete(msg.id);
+        releaseIfLarge();
         // the file's array goes now, not at this idle worker's next collection (the answer holds no view of it)
         try { if (typeof bytes.buffer.transfer === "function") bytes.buffer.transfer(0); } catch (_) { /* detached already */ }
     }
+}
+
+/** The paced `psd_read` jobs of this thread: job id -> { done (bands the window acknowledged), wake (the waiting reader's resolve) }. */
+const PSD_ACKS = new Map();
+
+/** The window's acknowledgement of a paced `psd_read` (`{ op: "ack", id, n }`, not a job): wakes the reader when it waits. */
+export function psdAck(msg) {
+    const pace = PSD_ACKS.get(msg && msg.id);
+    if (!pace) return;
+    pace.done = Math.max(pace.done, msg.n | 0);
+    const wake = pace.wake;
+    pace.wake = null;
+    if (wake) wake();
 }
 
 /** CRC-32 and size of a blob (a zip entry of an ORA file). */
@@ -1929,6 +1990,7 @@ async function run(msg) {
     if (msg.op === "psd_part") return psdPart(msg);
     if (msg.op === "png_read") return pngRead(msg);
     if (msg.op === "image_read") return imageRead(msg);
+    if (msg.op === "tiff_band") return tiffBandJob(msg);
     if (msg.op === "tiff_read") return tiffRead(msg);
     if (msg.op === "psd_read") return psdRead(msg);
     if (msg.op === "tiff_part") return tiffPartJob(msg);
@@ -1977,6 +2039,8 @@ let jobsInFlight = 0;
 if (inWorker) self.onmessage = async (e) => {
     const msg = e.data || {};
     if (msg.op === "arena") { arenaMessage(msg); return; }
+    // not a job: the window's acknowledgement of a paced psd_read's bands (psdRead), handled while that job waits
+    if (msg.op === "ack") { psdAck(msg); return; }
     // not a job: the memory this thread keeps between jobs (tools/px_probe.py --retention), before the counters
     if (msg.op === "px_stats") { self.postMessage({ id: msg.id, ok: true, op: "px_stats", ...pxInstances() }); return; }
     if (!jobsInFlight++) pxCalls(true);

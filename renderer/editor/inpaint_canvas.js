@@ -27,7 +27,7 @@ import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdB
 import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
 import { pressureCurve, Stabiliser, toneLUT } from "./inpaint_stroke.js";
 import { TipPicker, noteRecentTip } from "./inpaint_tippicker.js";
-import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
+import { isTiff, TIFF_EXT, tiffInfo, tiffPlan, readTiffBand, readTiffBands, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
 import { JOB_TIMINGS, STEP_MARKS, markStep, editorWorker, workerCall, editorPool, buildLayered, measureGen, pendingJobs, resetPool } from "./inpaint_jobs.js";
@@ -366,6 +366,9 @@ const FLOOD_COARSE_PX = 2048;               // the wand's and the bucket's first
 const FLOOD_WHOLE_SHARE = 0.4;              // a region box above this share of the image is flooded in one pass over the whole image
 const SNAP_CANVAS_PX = 16 * 1024 * 1024;   // a selection undo step up to this many pixels is a pixels copy, above it a PNG
 const SEL_BOX_MAX_PX = 64 * 1024 * 1024;    // the selection's PNG holds its box up to this size, above it the whole mask (written in parts)
+// a PSD read on the pool (readPsdOnPool): bands its worker may have posted before this window acknowledged them (the route
+// psdWindow overrides it, 0 = unpaced; K20b review K20b-T1)
+const PSD_WINDOW = 8;
 const SYNC_ENCODE_PX = 16 * 1024 * 1024;    // above this the selection PNG for getValue is encoded off the main thread
 const HANDLE_PX = 9;
 const SIDE_DEFAULT_PX = 320;               // the side panel's width (item 17: the user drags it between the two below)
@@ -567,33 +570,98 @@ async function isTiffFile(file) {
     return isTiff(new Uint8Array(await file.slice(0, 8).arrayBuffer()));
 }
 
+function tiffPoolUsable(blob) {
+    return typeof Worker === "function" && typeof Blob === "function" && blob instanceof Blob && !editorPool().off;
+}
+
 /**
- * The pixels of a TIFF (inpaint_tiff.js `readTiff`, docs/PLAN_0_1_29.md 3d), decoded as a stream in a pool worker (in
- * the window without one) and written into this backend's pixels band by band: `{ px, info }`. The caller has read the
- * header (`tiffInfo`) and checked the size, so a file that is refused allocates nothing. `writeMs` beside them: the
- * milliseconds of the bands' `writeRect` calls (the K0a harness).
+ * The pixels of a TIFF (inpaint_tiff.js `readTiffBands` / `readTiff`, docs/PLAN_0_1_29.md 3d, docs/PLAN_WASM_BUILD.md
+ * §4.6 K18), decoded in parallel bands (`tiff_band` at `NORMAL` priority) across the worker pool and written into this
+ * backend's pixels with `writeRect` as each band lands, falling back to `tiff_read` on streamed files or any band error
+ * (and to the window without a pool): `{ px, info, writeMs }`. `later()` true stops the open, cancels the group and
+ * releases partial pixels without falling back.
  */
-async function pixelsFromTiff(blob, Cls, progress = null) {
-    let px = null, W = 0, H = 0, info = null, writeMs = 0;
-    const header = (h) => { W = h.width; H = h.height; px = Cls.empty(W, H); };
+async function pixelsFromTiff(blob, Cls, progress = null, later = null) {
+    const isLater = typeof later === "function" ? later : null;
+    if (isLater && isLater()) throw new CancelledError("tiff_open");
+    const bandSetting = InpaintEditor.tiffBandRows;
+    const rowsPerBand = bandSetting > 0 ? (bandSetting | 0) : TILE_SIZE;
+    let px = null, W = 0, H = 0, info = null, writeMs = 0, rowsDone = 0;
+    const resetTarget = () => {
+        if (px) { px.release(); px = null; }
+        W = 0; H = 0; writeMs = 0; rowsDone = 0;
+    };
+    const header = (h) => {
+        if (isLater && isLater()) throw new CancelledError("tiff_open");
+        W = h.width; H = h.height; px = Cls.empty(W, H);
+    };
     const rows = (rgba, y0, n) => {
+        if (isLater && isLater()) {
+            try { if (rgba && rgba.buffer && typeof rgba.buffer.transfer === "function") rgba.buffer.transfer(0); } catch (_) { /* ignore */ }
+            throw new CancelledError("tiff_open");
+        }
         const t0 = performance.now();
         px.writeRect({ data: new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, n * W * 4), width: W, height: n }, 0, y0);
         writeMs += performance.now() - t0;
-        if (progress) progress((y0 + n) / H);
+        try {
+            if (rgba.byteOffset === 0 && rgba.byteLength === rgba.buffer.byteLength && typeof rgba.buffer.transfer === "function") {
+                rgba.buffer.transfer(0);
+            }
+        } catch (_) { /* ignore */ }
+        rowsDone += n;
+        if (progress) progress(rowsDone / H);
     };
-    try {
-        if (partsUsable()) {
-            const r = await editorPool().run("tiff_read", { blob }, [], {
-                timeout: 600000,
-                onProgress: (m) => { if (m.header) header(m.header); else rows(new Uint8Array(m.rgba), m.y0, m.rows); },
+    if (bandSetting !== false && tiffPoolUsable(blob)) {
+        try {
+            info = await readTiffBands(blob, {
+                pool: editorPool(),
+                rowsPerBand,
+                priority: NORMAL,
+                later: isLater,
+                onHeader: header,
+                onRows: rows,
             });
-            info = r.info;
-        } else info = await readTiff(blob, { onHeader: header, onRows: rows, kernels: tiffKernels() });
+            if (info) {
+                if (isLater && isLater()) { resetTarget(); throw new CancelledError("tiff_open"); }
+                if (!px) throw new Error("the TIFF gave no pixels");
+                return { px, info, writeMs };
+            }
+        } catch (err) {
+            resetTarget();
+            if ((err && err.cancelled) || (isLater && isLater())) throw new CancelledError("tiff_open");
+            console.warn("Inpaint Canvas: reading the TIFF in bands failed, using tiff_read:", (err && err.message) || err);
+        }
+    }
+    try {
+        if (tiffPoolUsable(blob)) {
+            let needWindowFallback = false;
+            try {
+                const r = await editorPool().run("tiff_read", { blob, rowsPerBand }, [], {
+                    priority: NORMAL,
+                    timeout: 600000,
+                    onProgress: (m) => {
+                        if (m.header) header(m.header);
+                        else rows(new Uint8Array(m.rgba), m.y0, m.rows);
+                    },
+                });
+                info = r.info;
+            } catch (err) {
+                if ((err && err.cancelled) || (isLater && isLater())) throw new CancelledError("tiff_open");
+                if (editorPool().off && !px) needWindowFallback = true;
+                else throw err;
+            }
+            if (needWindowFallback) {
+                info = await readTiff(blob, { rowsPerBand, onHeader: header, onRows: rows, kernels: tiffKernels() });
+            }
+        } else {
+            info = await readTiff(blob, { rowsPerBand, onHeader: header, onRows: rows, kernels: tiffKernels() });
+        }
     } catch (err) {
-        if (px) px.release();
+        resetTarget();
+        if ((err && err.cancelled) || (isLater && isLater())) throw new CancelledError("tiff_open");
         throw err;
     }
+    if (isLater && isLater()) { resetTarget(); throw new CancelledError("tiff_open"); }
     if (!px) throw new Error("the TIFF gave no pixels");
     return { px, info, writeMs };
 }
@@ -17334,7 +17402,7 @@ class InpaintEditor {
                     // 3d: a TIFF is decoded here; its layer is stored with the others as a PNG (dirty), never as the TIFF
                     const info = await tiffInfo(file);
                     this.setStatus(`Reading ${file.name || "the TIFF"} (${info.width} × ${info.height}) ...`);
-                    ({ px } = await pixelsFromTiff(file, this.pixels.Layer));
+                    ({ px } = await pixelsFromTiff(file, this.pixels.Layer, null, () => !!this._destroyed));
                 } else {
                     const ext = await storedExt(file);
                     const big = this.tileMode ? (await hugePngSize(file)) || (await imageFileSize(file)) : null;
@@ -18054,10 +18122,13 @@ class InpaintEditor {
         return workerCall(op, args, transfer);
     }
 
-    /** The PNG writers of E2, the parted reader of K8 and the pool, for tests and benchmarks (tools/export_test.py, tools/editor_test.py). */
+    /** The PNG writers of E2, the parted reader of K8, the banded TIFF reader of K18 and the pool, for tests and benchmarks. */
     static get parts() {
-        return { usable: partsUsable, encodeTilePixels, encodeBands, encodeCanvas, uploadPixels, buildLayered, pool: editorPool, pngRoute: hugePngSize, imageRoute: imageFileSize, offThread: pixelsOffThread, pngPartsOf, readPngParts };
+        return { usable: partsUsable, encodeTilePixels, encodeBands, encodeCanvas, uploadPixels, buildLayered, pool: editorPool, pngRoute: hugePngSize, imageRoute: imageFileSize, offThread: pixelsOffThread, pngPartsOf, readPngParts, pixelsFromTiff, tiffPlan, readTiffBand, readTiffBands };
     }
+
+    /** Rows per band for `tiff_band` opens (K18; `0`: `TILE_SIZE`; `false`: `tiff_read` instead of `tiff_band`). */
+    static tiffBandRows = 0;
 
     /** PNG files of at least this many pixels are opened through the stream reader when they need no colour management (0: only above the canvas limit). */
     static pngStreamFrom = 32 * 1024 * 1024;
@@ -18852,6 +18923,7 @@ class InpaintEditor {
      * change placed again the way a new reference is (referenceBox), their masks, opacity and visibility unchanged.
      */
     async setBasePixels(ref, px, { keepLayers = true, keep = null } = {}) {
+        this._blankBase = false;   // the new-canvas path sets it again after this call (the Generate new question, issue #12)
         // the app's Each area (eacharea.js): its areas were cut from the picture there is now
         if (this._eachArea) throw refusal("Each area is running on this document: a new picture waits until it is done, or stop it.");
         this.checkBaseSize(px.width, px.height);
@@ -18972,7 +19044,13 @@ class InpaintEditor {
         this.checkBaseSize(info.width, info.height);
         markStep("tiff_open", "info");
         if (later()) return;
-        const { px, info: got, writeMs } = await pixelsFromTiff(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${info.width} × ${info.height} px ... ${Math.round(f * 100)} %`); });
+        let px = null, got = null, writeMs = 0;
+        try {
+            ({ px, info: got, writeMs } = await pixelsFromTiff(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${info.width} × ${info.height} px ... ${Math.round(f * 100)} %`); }, later));
+        } catch (err) {
+            if (later()) return;
+            throw err;
+        }
         markStep("tiff_open", "pixels", { writeMs });
         if (later()) { px.release(); return; }
         const stem = (file.name || "image").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
@@ -19064,7 +19142,8 @@ class InpaintEditor {
      * caller reads the file on this thread. The size is checked here from the header's 26 bytes before the job is
      * queued, so a file too large costs no worker and no read; a file the reader refuses throws its message as the
      * window's reader would; `later()` true stops the job at its next band (a CancelledError, the worker counted as
-     * stopped, not lost).
+     * stopped, not lost). Paced (K20b review): the worker has at most `PSD_WINDOW` bands (the route `psdWindow`; 0 =
+     * unpaced) posted and not yet acknowledged here after their `writeRect`.
      */
     async readPsdOnPool(file, later = () => false) {
         const head = new Uint8Array(await file.slice(0, 26).arrayBuffer());
@@ -19082,9 +19161,14 @@ class InpaintEditor {
         let refused = null, stopped = false, bands = 0, rgbaMs = 0, maskMs = 0;
         const drop = () => { for (const e of made.values()) for (const p of [e.px, e.maskPx]) if (p) p.release(); made.clear(); };
         let r;
+        // the acknowledgement window (inpaint_worker.js psdRead): each band acknowledged after its writeRect, so the
+        // worker never has more than `win` bands queued ahead of this window's other tasks (timers, input, paint)
+        const routedWin = kernelRoute("psdWindow"), win = routedWin === undefined ? PSD_WINDOW : routedWin;
+        let pool = null;
         try {
+            pool = editorPool();
             // "fail": a harness's way to see the fallback (an op no worker knows)
-            r = await editorPool().run(InpaintEditor.psdOnPool === "fail" ? "psd_read_refused" : "psd_read", { blob: file }, [], {
+            r = await pool.run(InpaintEditor.psdOnPool === "fail" ? "psd_read_refused" : "psd_read", { blob: file, window: win }, [], {
                 timeout: 600000,
                 onProgress: (m) => {
                     if (later()) { stopped = true; throw new CancelledError("psd_read"); }
@@ -19097,6 +19181,7 @@ class InpaintEditor {
                         e[key].writeRect({ data: new Uint8ClampedArray(m.rgba), width: m.w, height: m.rows }, 0, m.y0);
                         if (m.mask) maskMs += performance.now() - t0; else rgbaMs += performance.now() - t0;
                         bands++;
+                        if (win) pool.ack(m.id, bands);
                         if (!m.mask) this.setStatus(`Reading the layers of ${name} ... layer ${made.size}, ${Math.round(((m.y0 + m.rows) / m.h) * 100)} %`);
                     } catch (err) { refused = err; throw err; }
                 },
@@ -21749,6 +21834,7 @@ class InpaintEditor {
             this.compare = null;
             this.sel = null;
             await this.setBasePixels(ref, px, { keepLayers: false, keep });
+            this._blankBase = true;
             this.clearUndo();
             this.renderHistory();
             this.renderSelectionList();

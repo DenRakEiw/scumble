@@ -24,6 +24,7 @@ import { parse, remap } from "./editor/reftokens.js";
 import { LABEL as REALISM_LABEL } from "./editor/realism.js";
 import * as keying from "./editor/keying.js";
 import * as genpresets from "./editor/genpresets.js";
+import { lacksNodesText } from "./editor/comfyprompt.js";
 import { refusal } from "./editor/inpaint_status.js";
 import { canvasSizeRefusal } from "./editor/inpaint_sizelimit.js";
 import { MAX_LORAS, FAMILIES, normalizeName, clampStrength, missingLoras, filterNames, groupByFolder, folderFits, loraFolder, loraHint, recipeFamily } from "./editor/loras.js";
@@ -472,7 +473,7 @@ function recipeReadiness(r, v) {
     const st = host.server && host.server.state;
     if (!host.connected || (st && st !== "connected" && st !== "missing-node")) return { ready: false, reason: "Not connected to ComfyUI: Settings › ComfyUI.", note: null };
     const missing = (r.needs || []).filter((n) => host.objectInfo && !host.objectInfo[n]);
-    return { ready: !missing.length, reason: missing.length ? `The server lacks these node types: ${missing.join(", ")}.` : null, note: null };
+    return { ready: !missing.length, reason: missing.length ? lacksNodesText(r, missing) : null, note: null };
 }
 
 // ---- LoRAs per recipe (item 50, docs/PLAN_LORAS.md §3.8): what the agents read and write -----------------------------
@@ -1025,7 +1026,7 @@ const COMMANDS = {
     },
     select_recipe: {
         destructive: true,
-        scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark, oxen, magnific; list_recipes has each recipe's own), else the remembered or default one.",
+        scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark, minimax, oxen, magnific; list_recipes has each recipe's own), else the remembered or default one.",
         params: { id: P.str("recipe id (from list_recipes)", { required: true }), provider: P.str("provider id for a model recipe (one of its providers from list_recipes)") },
         async run(_, a) {
             const r = host.shell.recipes().find((x) => x.id === a.id);
@@ -1603,7 +1604,7 @@ const COMMANDS = {
             // `boxes`) sends the document's New, Text and From boxes, measured here on the picture and the reference
             // layers they were drawn on (host.newBoxPlan); a node without box_prompt refuses them here, not after the wipe
             const missing = (r.needs || []).filter((n) => host.objectInfo && !host.objectInfo[n]);
-            if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
+            if (missing.length) throw new Error(lacksNodesText(r, missing));
             // the recipe's LoRA rows (item 50): more than five, or a file the server's list lacks, refuse here, not after
             // the wipe (host.loraPlan only reads, the server's list again at most; queueGenerate asks it again for the run)
             if (r.task !== "upscale") await host.loraPlan(ed, r);

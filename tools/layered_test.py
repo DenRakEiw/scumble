@@ -308,7 +308,7 @@ const docOf = async (doc) => {
     return out;
 };
 const names = { roundtrip: %(PSD)s, loose: %(LOOSE_PSD)s, masks_bands: %(MASK_BANDS)s, masks_canvas: %(MASK_CANVAS)s, flat: %(FLAT_PSD)s, deep: %(DEEP_PSD)s, photoshop: %(PS_PSD)s };
-const was = E.psdOnPool, res = {};
+const was = E.psdOnPool, res = {}, rustCalls = {};
 try {
     for (const [label, path] of Object.entries(names)) {
         const f = await fileOf(path);
@@ -316,12 +316,41 @@ try {
         const win = await docOf(await ed.readLayered(f, "psd"));
         if (pooled.length) throw new Error(label + ": psdOnPool = false still went to the pool");
         delete E.psdOnPool;
+        E.jobTimings(true);
         const pool = await docOf(await ed.readLayered(f, "psd"));
+        const jt = E.jobTimings(true).filter((t) => t.op === "psd_read");
         if (pooled.join() !== "pool") throw new Error(label + ": the pool route did not run (" + pooled.join() + ")");
+        if (jt.length !== 1 || jt[0].kernels !== "rust" || !jt[0].pxCalls || !jt[0].pxCalls.tiff_to_rgba) {
+            throw new Error(label + ": default psd_read timing: " + JSON.stringify(jt));
+        }
+        if (label === "deep" && (!jt[0].pxCalls.packbits_rows || !jt[0].pxCalls.tiff_unpredict || !jt[0].pxCalls.psd_mask_rgba)) {
+            throw new Error("deep: missing rust pxCalls: " + JSON.stringify(jt[0].pxCalls));
+        }
+        for (const [k, n] of Object.entries(jt[0].pxCalls)) rustCalls[k] = (rustCalls[k] || 0) + n;
         const a = JSON.stringify(win), b = JSON.stringify(pool);
         if (a !== b) throw new Error(label + ": the pool's layers differ from the window's: " + b.slice(0, 400) + " / " + a.slice(0, 400));
+        // K20b: replay with psdRead = "js" on the pool and verify kernels === "js", pxCalls === {}, and byte parity
+        E.setRoute("psdRead", "js");
+        let poolJs, jtJs;
+        try {
+            pooled = [];
+            E.jobTimings(true);
+            poolJs = await docOf(await ed.readLayered(f, "psd"));
+            jtJs = E.jobTimings(true).filter((t) => t.op === "psd_read");
+        } finally {
+            E.setRoute("psdRead", null);
+        }
+        if (pooled.join() !== "pool" || jtJs.length !== 1 || jtJs[0].kernels !== "js" || Object.keys(jtJs[0].pxCalls || {}).length !== 0) {
+            throw new Error(label + ": psdRead=js timing: " + pooled.join() + " " + JSON.stringify(jtJs));
+        }
+        const c = JSON.stringify(poolJs);
+        if (a !== c) throw new Error(label + ": psdRead=js layers differ from the window's: " + c.slice(0, 400) + " / " + a.slice(0, 400));
         res[label] = win.layers.length + (win.composite ? " + merged" : "") + (win.layers.some((l) => l.mask) ? " masked" : "");
     }
+    if (!rustCalls.packbits_rows || !rustCalls.tiff_to_rgba || !rustCalls.psd_mask_rgba || !rustCalls.tiff_unpredict) {
+        throw new Error("missing expected rust pxCalls across fixtures: " + JSON.stringify(rustCalls));
+    }
+    res.pxCalls = rustCalls;
     if (!/merged/.test(res.flat) || !/masked/.test(res.deep) || !/masked/.test(res.loose)) throw new Error("the files do not hold what the step needs: " + JSON.stringify(res));
     // a flat file opened (loadLayered): its base is the merged picture the pool sent, as the window's reader makes it
     E.psdOnPool = false;
@@ -330,13 +359,23 @@ try {
     const wantFlat = ed.pixels.Layer.fromImageData(new ImageData(flatWin.composite, flatWin.width, flatWin.height));
     const wantBytes = pixelsOf(wantFlat);
     wantFlat.release();
-    pooled = [];
-    await run("load_image", { doc: d.id, path: names.flat });
-    const opened = ednow(d.id);
-    if (pooled.join() !== "pool" || opened.layers.length || opened.width !== 300 || opened.height !== 600) throw new Error("the flat file: " + pooled.join() + ", " + opened.layers.length + " layers, " + opened.width + " x " + opened.height);
-    const got = pixelsOf(opened.basePx);
-    if (got.length !== wantBytes.length || got.some((x, i) => x !== wantBytes[i])) throw new Error("the flat file's base is not its merged picture as the window reads it");
-    if (opened !== ed) throw new Error("load_image made a new editor for the tab");
+    for (const rMode of [null, "js"]) {
+        E.setRoute("psdRead", rMode);
+        try {
+            pooled = [];
+            E.jobTimings(true);
+            await run("load_image", { doc: d.id, path: names.flat });
+            const jtFlat = E.jobTimings(true).filter((t) => t.op === "psd_read");
+            const opened = ednow(d.id);
+            if (pooled.join() !== "pool" || opened.layers.length || opened.width !== 300 || opened.height !== 600) throw new Error("the flat file (" + rMode + "): " + pooled.join() + ", " + opened.layers.length + " layers, " + opened.width + " x " + opened.height);
+            if (jtFlat.length !== 1 || jtFlat[0].kernels !== (rMode || "rust")) throw new Error("the flat file timing (" + rMode + "): " + JSON.stringify(jtFlat));
+            const got = pixelsOf(opened.basePx);
+            if (got.length !== wantBytes.length || got.some((x, i) => x !== wantBytes[i])) throw new Error("the flat file's base (" + rMode + ") is not its merged picture as the window reads it");
+            if (opened !== ed) throw new Error("load_image made a new editor for the tab");
+        } finally {
+            E.setRoute("psdRead", null);
+        }
+    }
     // the fallback: a job no worker knows, then the window's reader, the same answer
     const f = await fileOf(names.deep);
     E.psdOnPool = "fail"; pooled = [];
@@ -346,6 +385,50 @@ try {
     const w2 = await docOf(await ed.readLayered(f, "psd"));
     if (JSON.stringify(fb) !== JSON.stringify(w2)) throw new Error("the fallback's answer differs");
     delete E.psdOnPool;
+    // K20b review (K20b-T1): the acknowledgement window on the real pool. psdWindow 1: the worker waits for this window's
+    // ack after every band, so the read ends only when each band is acknowledged after its writeRect (acks === bands, in
+    // order); psdWindow 0: no ack at all; no route: the default window (8) in the job's timing; each time the window
+    // reader's bytes. A read that waits for an ack that never comes fails here after 60 s instead of the job's 600 s.
+    {
+        const P = E.parts.pool(), ackOwn = Object.prototype.hasOwnProperty.call(P, "ack"), ack0 = P.ack;
+        let acks = 0, lastN = 0, ackOrder = true;
+        P.ack = function (id, n) { acks++; if (n !== lastN + 1) ackOrder = false; lastN = n; return ack0.call(this, id, n); };
+        const paced = {};
+        let multi = false;
+        try {
+            for (const label of ["deep", "masks_bands"]) {
+                const f = await fileOf(names[label]);
+                E.psdOnPool = false;
+                const want = JSON.stringify(await docOf(await ed.readLayered(f, "psd")));
+                delete E.psdOnPool;
+                for (const wv of [1, 0, null]) {
+                    E.setRoute("psdWindow", wv);
+                    acks = 0; lastN = 0; ackOrder = true; pooled = [];
+                    E.jobTimings(true);
+                    let got;
+                    try {
+                        const read = (async () => JSON.stringify(await docOf(await ed.readLayered(f, "psd"))))();
+                        got = await Promise.race([read, new Promise((_, rej) => setTimeout(() => rej(new Error(label + " psdWindow " + wv + ": the paced read hung (no ack reached the worker?)")), 60000))]);
+                    } finally {
+                        E.setRoute("psdWindow", null);
+                    }
+                    const jt = E.jobTimings(true).filter((t) => t.op === "psd_read"), t = jt[0] || {};
+                    const wantWin = wv === null ? 8 : wv;
+                    if (pooled.join() !== "pool" || jt.length !== 1 || t.window !== wantWin) throw new Error(label + " psdWindow " + wv + ": " + pooled.join() + " " + JSON.stringify(jt));
+                    if (got !== want) throw new Error(label + " psdWindow " + wv + ": the layers differ from the window reader's: " + got.slice(0, 300) + " / " + want.slice(0, 300));
+                    if (wantWin ? acks !== t.bands || !ackOrder : acks !== 0) throw new Error(label + " psdWindow " + wv + ": " + acks + " acks (in order " + ackOrder + ") for " + t.bands + " bands");
+                    if (wv === 1 && t.bands >= 2 && !(t.wait > 0)) throw new Error(label + " psdWindow 1: the worker never waited (" + t.wait + " ms)");
+                    if (t.bands >= 2) multi = true;
+                    paced[label + ":" + wv] = t.bands + " bands, " + acks + " acks, wait " + Math.round(t.wait || 0) + " ms";
+                }
+            }
+        } finally {
+            if (ackOwn) P.ack = ack0; else delete P.ack;
+            try { E.setRoute("psdWindow", null); } catch (_) { /* ignore */ }
+        }
+        if (!multi) throw new Error("no file of the paced check has 2 bands or more: " + JSON.stringify(paced));
+        res.paced = paced;
+    }
     // refusals through the pool, no fallback: a truncated file; one of 20000 x 20000 at its header (nothing decoded)
     const whole = new Uint8Array((await window.scumble.file.read(names.roundtrip)).data);
     // the reader's refusal comes back as the job's answer (its worker stays); the size one is made on this thread from
@@ -408,6 +491,7 @@ try {
     if (!/failed in its worker: pool worker gone: the gate stopped it/.test(msg) || pooled.join() !== "threw") throw new Error("a worker lost mid-read: " + (msg || "no error") + " (" + pooled.join() + ")");
     res.stopped = "first band, later open, closed tab, lost worker";
 } finally {
+    try { E.setRoute("psdRead", null); } catch (_) { /* ignore */ }
     if (was === undefined) delete E.psdOnPool; else E.psdOnPool = was;
     delete ed.readPsdOnPool;
 }

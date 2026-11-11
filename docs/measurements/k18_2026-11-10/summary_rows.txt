@@ -1,0 +1,186 @@
+
+=== 15000 x 10000 tiff_test.py --size (7 variants, 1 variant/instance, 3 alternating rounds, median [min-max] ms) ===
+row                                   before (c36840d8)               after (K18)                     before / after (medians)
+own exportMs                          1,428.0 [1,302.0-1,704.0]       1,498.0 [1,427.0-1,551.0]       0.95x
+own fileMB                            178.0 [178.0-178.0]             178.0 [178.0-178.0]             1.00x
+own exportSteps encoded               803.0 [737.0-1,186.0]           920.0 [804.0-1,009.0]           0.87x
+own exportSteps saved                 564.0 [517.0-625.0]             577.0 [541.0-622.0]             0.98x
+own exportSteps total                 1,428.0 [1,301.0-1,703.0]       1,497.0 [1,426.0-1,551.0]       0.95x
+own export tiff_part jobs             79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own export tiff_part composeWasm      79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own export tiff_part kernel           5,756.2 [5,202.0-8,921.6]       6,913.3 [5,667.6-7,440.3]       0.83x
+own export tiff_part rows             252.5 [232.6-292.1]             251.6 [195.2-268.6]             1.00x
+own export tiff_part predict          103.9 [58.6-117.3]              97.1 [91.1-107.5]               1.07x
+own export tiff_part deflate          5,348.0 [4,771.1-8,590.4]       6,594.1 [5,263.1-7,044.2]       0.81x
+own openMs                            3,485.0 [3,170.0-3,499.0]       2,572.0 [2,368.0-2,857.0]       1.35x
+own openSteps info                    3.0 [3.0-3.0]                   3.0 [3.0-7.0]                   1.00x
+own openSteps pixels                  1,370.0 [1,317.0-1,431.0]       482.0 [475.0-590.0]             2.84x
+own openSteps writeMs                 267.9 [248.2-289.3]             361.0 [348.4-436.7]             0.74x
+own openSteps stored                  1,437.0 [1,295.0-1,515.0]       1,477.0 [1,352.0-1,565.0]       0.97x
+own openSteps base                    27.0 [24.0-28.0]                25.0 [25.0-27.0]                1.08x
+own openSteps total                   2,838.0 [2,639.0-2,977.0]       1,990.0 [1,857.0-2,182.0]       1.43x
+own reader jobs                       1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x
+own reader workers                    1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x
+own reader kernel                     1,364.6 [1,311.2-1,425.9]       2,574.7 [2,056.3-2,727.3]       0.53x
+own reader wait                       976.2 [933.9-1,010.7]           1,628.1 [1,402.5-1,664.8]       0.60x
+own reader decode                     0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+own reader copy                       96.0 [90.2-105.6]               163.5 [159.2-183.7]             0.59x
+own reader unpredict                  115.7 [111.5-119.5]             504.8 [200.4-547.4]             0.23x
+own reader convert                    130.4 [124.7-136.0]             248.5 [213.7-270.9]             0.52x
+own reader pieces                     9,301.0 [9,301.0-9,301.0]       9,301.0 [9,301.0-9,301.0]       1.00x
+own open png_part jobs                79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own open png_part composeWasm         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+own open png_part kernel              5,935.9 [5,663.9-7,872.7]       6,284.6 [5,775.3-6,362.4]       0.94x
+own open png_part rows                197.7 [191.4-199.3]             218.0 [194.2-235.7]             0.91x
+own open png_part filter              705.9 [685.3-848.6]             716.3 [703.3-782.8]             0.99x
+own open png_part adler               152.5 [146.9-207.5]             160.5 [151.6-162.0]             0.95x
+own open png_part deflate             4,782.7 [4,536.8-6,489.4]       5,057.3 [4,498.4-5,191.8]       0.95x
+lzw openMs                            5,864.0 [5,597.0-5,926.0]       3,667.0 [3,663.0-3,958.0]       1.60x
+lzw openSteps info                    3.0 [3.0-3.0]                   4.0 [2.0-17.0]                  0.75x
+lzw openSteps pixels                  3,131.0 [3,101.0-3,165.0]       821.0 [670.0-877.0]             3.81x
+lzw openSteps writeMs                 280.2 [262.6-285.5]             356.0 [292.5-373.2]             0.79x
+lzw openSteps stored                  1,148.0 [1,117.0-1,308.0]       1,447.0 [1,389.0-1,492.0]       0.79x
+lzw openSteps base                    466.0 [465.0-486.0]             523.0 [501.0-589.0]             0.89x
+lzw openSteps total                   4,781.0 [4,717.0-4,898.0]       2,737.0 [2,621.0-2,976.0]       1.75x
+lzw reader jobs                       1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x
+lzw reader workers                    1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x
+lzw reader kernel                     3,101.6 [3,065.5-3,134.0]       4,568.1 [3,657.0-4,625.9]       0.68x
+lzw reader wait                       227.9 [215.1-241.5]             407.1 [385.0-421.5]             0.56x
+lzw reader decode                     2,567.8 [2,537.0-2,579.6]       3,719.5 [2,908.3-3,749.6]       0.69x
+lzw reader copy                       0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+lzw reader unpredict                  0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+lzw reader convert                    234.9 [227.0-240.7]             414.4 [341.0-419.9]             0.57x
+lzw reader pieces                     40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+lzw open png_part jobs                79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part composeWasm         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+lzw open png_part kernel              4,999.3 [4,851.5-5,652.5]       7,156.1 [5,311.7-7,809.5]       0.70x
+lzw open png_part rows                195.8 [166.6-198.5]             200.8 [178.9-234.7]             0.98x
+lzw open png_part filter              250.9 [230.5-265.3]             695.9 [659.9-889.4]             0.36x
+lzw open png_part adler               151.7 [145.3-163.9]             200.1 [143.2-201.3]             0.76x
+lzw open png_part deflate             4,306.2 [4,220.2-4,929.5]       5,891.9 [4,240.1-6,311.3]       0.73x
+packbits openMs                       4,039.0 [3,769.0-4,546.0]       3,476.0 [3,376.0-3,627.0]       1.16x
+packbits openSteps info               3.0 [2.0-4.0]                   3.0 [3.0-18.0]                  1.00x
+packbits openSteps pixels             876.0 [751.0-889.0]             518.0 [486.0-627.0]             1.69x
+packbits openSteps writeMs            298.0 [278.9-364.2]             326.1 [320.2-372.5]             0.91x
+packbits openSteps stored             1,437.0 [1,268.0-1,720.0]       1,191.0 [1,060.0-1,383.0]       1.21x
+packbits openSteps base               535.0 [474.0-551.0]             485.0 [480.0-496.0]             1.10x
+packbits openSteps total              2,852.0 [2,495.0-3,163.0]       2,316.0 [2,066.0-2,366.0]       1.23x
+packbits reader jobs                  1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x
+packbits reader workers               1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x
+packbits reader kernel                833.9 [710.5-847.8]             1,470.1 [1,012.5-1,864.7]       0.57x
+packbits reader wait                  281.0 [260.7-331.1]             473.6 [472.2-562.4]             0.59x
+packbits reader decode                130.5 [118.9-136.8]             173.1 [167.6-197.9]             0.75x
+packbits reader copy                  0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+packbits reader unpredict             0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+packbits reader convert               275.3 [245.6-411.3]             794.0 [348.8-1,071.8]           0.35x
+packbits reader pieces                40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+packbits open png_part jobs           79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part composeWasm    79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+packbits open png_part kernel         5,141.3 [4,793.4-7,203.4]       5,719.5 [5,289.1-5,756.0]       0.90x
+packbits open png_part rows           219.4 [193.5-262.6]             192.6 [181.7-199.0]             1.14x
+packbits open png_part filter         251.6 [226.0-332.4]             723.8 [642.4-762.3]             0.35x
+packbits open png_part adler          152.3 [141.7-210.9]             154.1 [140.6-158.7]             0.99x
+packbits open png_part deflate        4,427.5 [4,141.3-6,274.5]       4,516.8 [4,115.5-4,571.2]       0.98x
+raw_strips openMs                     3,708.0 [3,423.0-3,956.0]       3,731.0 [3,391.0-3,854.0]       0.99x
+raw_strips openSteps info             2.0 [2.0-2.0]                   2.0 [2.0-14.0]                  1.00x
+raw_strips openSteps pixels           662.0 [633.0-731.0]             624.0 [564.0-660.0]             1.06x
+raw_strips openSteps writeMs          288.8 [278.5-300.6]             388.2 [361.1-397.2]             0.74x
+raw_strips openSteps stored           1,309.0 [1,103.0-1,339.0]       1,299.0 [1,244.0-1,372.0]       1.01x
+raw_strips openSteps base             471.0 [451.0-512.0]             532.0 [523.0-562.0]             0.89x
+raw_strips openSteps total            2,474.0 [2,190.0-2,555.0]       2,493.0 [2,393.0-2,513.0]       0.99x
+raw_strips reader jobs                1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x
+raw_strips reader workers             1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x
+raw_strips reader kernel              629.1 [600.1-679.8]             1,178.4 [1,079.9-1,776.6]       0.53x
+raw_strips reader wait                261.3 [244.7-298.2]             541.9 [490.6-586.6]             0.48x
+raw_strips reader decode              73.9 [73.0-75.6]                114.0 [97.1-120.8]              0.65x
+raw_strips reader copy                0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+raw_strips reader unpredict           0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+raw_strips reader convert             243.7 [233.4-267.2]             565.0 [391.0-1,040.7]           0.43x
+raw_strips reader pieces              40.0 [40.0-40.0]                40.0 [40.0-40.0]                1.00x
+raw_strips open png_part jobs         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw_strips open png_part composeWasm  79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw_strips open png_part kernel       5,075.0 [4,728.8-5,557.0]       6,233.5 [5,754.8-7,190.6]       0.81x
+raw_strips open png_part rows         170.3 [163.9-232.7]             223.8 [202.5-237.4]             0.76x
+raw_strips open png_part filter       253.2 [228.6-268.9]             729.5 [713.4-740.6]             0.35x
+raw_strips open png_part adler        148.9 [138.1-166.9]             171.2 [153.5-205.5]             0.87x
+raw_strips open png_part deflate      4,410.2 [4,109.8-4,790.4]       4,991.3 [4,532.4-5,884.9]       0.88x
+zlib1 openMs                          4,519.0 [3,939.0-4,941.0]       4,116.0 [4,034.0-4,604.0]       1.10x
+zlib1 openSteps info                  2.0 [2.0-2.0]                   2.0 [2.0-8.0]                   1.00x
+zlib1 openSteps pixels                1,771.0 [1,590.0-1,955.0]       1,608.0 [1,557.0-1,721.0]       1.10x
+zlib1 openSteps writeMs               286.2 [225.5-311.1]             240.0 [224.9-269.7]             1.19x
+zlib1 openSteps stored                1,371.0 [1,086.0-1,435.0]       1,247.0 [1,227.0-1,439.0]       1.10x
+zlib1 openSteps base                  566.0 [459.0-647.0]             477.0 [475.0-575.0]             1.19x
+zlib1 openSteps total                 3,710.0 [3,138.0-4,039.0]       3,341.0 [3,261.0-3,737.0]       1.11x
+zlib1 reader jobs                     1.0 [1.0-1.0]                   1.0 [1.0-1.0]                   1.00x
+zlib1 reader workers                  1.0 [1.0-1.0]                   1.0 [1.0-1.0]                   1.00x
+zlib1 reader kernel                   1,729.1 [1,553.2-1,908.2]       1,571.2 [1,514.7-1,663.1]       1.10x
+zlib1 reader wait                     1,193.6 [1,128.7-1,319.6]       1,123.0 [1,100.3-1,203.4]       1.06x
+zlib1 reader decode                   0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+zlib1 reader copy                     87.6 [75.2-91.2]                77.9 [73.5-80.4]                1.12x
+zlib1 reader unpredict                0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+zlib1 reader convert                  315.9 [246.0-366.5]             254.6 [233.5-266.5]             1.24x
+zlib1 reader pieces                   6,932.0 [6,932.0-6,933.0]       6,932.0 [6,932.0-6,932.0]       1.00x
+zlib1 open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+zlib1 open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+zlib1 open png_part kernel            6,503.0 [4,735.0-6,862.1]       5,339.6 [5,023.3-5,795.1]       1.22x
+zlib1 open png_part rows              192.1 [168.4-198.7]             178.3 [175.2-239.9]             1.08x
+zlib1 open png_part filter            305.8 [226.1-327.7]             248.5 [245.6-282.5]             1.23x
+zlib1 open png_part adler             198.7 [143.1-202.1]             157.1 [146.2-169.7]             1.26x
+zlib1 open png_part deflate           5,697.5 [4,110.8-6,023.8]       4,659.7 [4,362.6-4,992.0]       1.22x
+raw openMs                            3,855.0 [3,589.0-3,965.0]       3,552.0 [3,369.0-3,732.0]       1.09x
+raw openSteps info                    2.0 [2.0-3.0]                   1.0 [1.0-2.0]                   2.00x
+raw openSteps pixels                  617.0 [567.0-661.0]             552.0 [478.0-560.0]             1.12x
+raw openSteps writeMs                 295.2 [295.0-359.0]             268.3 [263.1-297.5]             1.10x
+raw openSteps stored                  1,381.0 [1,297.0-1,462.0]       1,215.0 [1,204.0-1,450.0]       1.14x
+raw openSteps base                    541.0 [506.0-548.0]             488.0 [456.0-540.0]             1.11x
+raw openSteps total                   2,593.0 [2,373.0-2,623.0]       2,254.0 [2,150.0-2,543.0]       1.15x
+raw reader jobs                       1.0 [1.0-1.0]                   1.0 [1.0-1.0]                   1.00x
+raw reader workers                    1.0 [1.0-1.0]                   1.0 [1.0-1.0]                   1.00x
+raw reader kernel                     555.3 [517.6-596.8]             492.0 [442.2-511.8]             1.13x
+raw reader wait                       116.1 [111.9-156.4]             105.0 [103.3-117.0]             1.11x
+raw reader decode                     0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+raw reader copy                       72.0 [69.3-77.9]                66.2 [63.8-71.6]                1.09x
+raw reader unpredict                  0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+raw reader convert                    293.1 [255.6-304.8]             261.9 [235.4-302.8]             1.12x
+raw reader pieces                     405.0 [313.0-474.0]             369.0 [351.0-375.0]             1.10x
+raw open png_part jobs                79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw open png_part composeWasm         79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+raw open png_part kernel              5,889.4 [4,752.0-6,827.8]       5,308.0 [5,182.0-5,315.7]       1.11x
+raw open png_part rows                194.8 [190.1-342.3]             201.9 [187.2-207.0]             0.96x
+raw open png_part filter              294.3 [225.9-333.8]             248.9 [238.6-252.3]             1.18x
+raw open png_part adler               178.1 [138.7-201.3]             154.9 [152.1-155.0]             1.15x
+raw open png_part deflate             4,967.1 [4,107.8-5,986.7]       4,557.1 [4,470.2-4,561.9]       1.09x
+noise exportMs                        4,223.0 [3,828.0-5,753.0]       5,101.0 [4,217.0-5,785.0]       0.83x
+noise fileMB                          491.0 [491.0-491.0]             491.0 [491.0-491.0]             1.00x
+noise exportSteps encoded             2,631.0 [2,342.0-4,031.0]       3,525.0 [2,695.0-4,105.0]       0.75x
+noise exportSteps saved               1,591.0 [1,485.0-1,721.0]       1,576.0 [1,521.0-1,679.0]       1.01x
+noise exportSteps total               4,222.0 [3,827.0-5,753.0]       5,100.0 [4,217.0-5,784.0]       0.83x
+noise export tiff_part jobs           79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise export tiff_part composeWasm    79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise export tiff_part kernel         19,992.9 [17,678.5-31,106.5]    27,008.9 [20,515.6-31,885.7]    0.74x
+noise export tiff_part rows           224.7 [210.8-245.3]             211.8 [201.1-214.3]             1.06x
+noise export tiff_part predict        80.6 [60.9-99.0]                78.3 [50.8-88.2]                1.03x
+noise export tiff_part deflate        19,604.6 [17,288.7-30,706.9]    26,633.0 [20,139.6-31,541.6]    0.74x
+noise openMs                          7,384.0 [6,858.0-7,725.0]       5,781.0 [5,706.0-6,113.0]       1.28x
+noise openSteps info                  3.0 [2.0-4.0]                   3.0 [3.0-3.0]                   1.00x
+noise openSteps pixels                1,929.0 [1,863.0-2,060.0]       638.0 [558.0-680.0]             3.02x
+noise openSteps writeMs               267.1 [246.7-318.9]             386.6 [337.9-415.5]             0.69x
+noise openSteps stored                4,032.0 [3,537.0-4,090.0]       3,652.0 [3,504.0-4,010.0]       1.10x
+noise openSteps base                  30.0 [26.0-32.0]                27.0 [26.0-27.0]                1.11x
+noise openSteps total                 5,928.0 [5,495.0-6,186.0]       4,238.0 [4,213.0-4,677.0]       1.40x
+noise reader jobs                     1.0 [1.0-1.0]                   40.0 [40.0-40.0]                0.03x
+noise reader workers                  1.0 [1.0-1.0]                   8.0 [8.0-8.0]                   0.12x
+noise reader kernel                   1,924.9 [1,846.6-2,055.1]       3,559.8 [3,255.5-4,206.7]       0.54x
+noise reader wait                     1,512.5 [1,465.8-1,616.2]       2,681.9 [2,458.2-3,064.1]       0.56x
+noise reader decode                   0.0 [0.0-0.0]                   0.0 [0.0-0.0]                   
+noise reader copy                     91.0 [88.6-105.2]               159.0 [146.2-172.3]             0.57x
+noise reader unpredict                113.5 [112.3-120.4]             311.7 [239.3-513.2]             0.36x
+noise reader convert                  129.5 [127.5-138.1]             301.8 [297.9-343.5]             0.43x
+noise reader pieces                   9,415.0 [9,415.0-9,415.0]       9,415.0 [9,415.0-9,415.0]       1.00x
+noise open png_part jobs              79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise open png_part composeWasm       79.0 [79.0-79.0]                79.0 [79.0-79.0]                1.00x
+noise open png_part kernel            19,183.4 [17,730.6-22,571.8]    18,342.1 [17,035.1-21,803.9]    1.05x
+noise open png_part rows              198.9 [192.2-206.2]             183.2 [166.4-201.0]             1.09x
+noise open png_part filter            793.9 [767.6-803.6]             709.7 [709.1-811.3]             1.12x
+noise open png_part adler             167.5 [154.7-203.3]             162.6 [147.2-200.2]             1.03x
+noise open png_part deflate           17,732.7 [16,343.2-21,027.6]    16,862.4 [15,744.9-20,365.8]    1.05x

@@ -1,0 +1,150 @@
+{
+ "size": [
+  15000,
+  10000
+ ],
+ "filter": "levels",
+ "limit": {
+  "source": "depth",
+  "lo": 0.2,
+  "hi": 0.6,
+  "fLo": 0.05,
+  "fHi": 0.05,
+  "invert": false
+ },
+ "focused": true,
+ "composite_bands": {
+  "ms": 1022,
+  "blocked": 110,
+  "bands": 0,
+  "readMs": 0,
+  "MB": 11.3,
+  "jobs": {
+   "stack_into": {
+    "jobs": 40,
+    "composeWasm": 40,
+    "pixels": 150000000,
+    "kernel": 2863.7,
+    "gen": 0
+   },
+   "png_part": {
+    "jobs": 78,
+    "composeWasm": 0,
+    "pixels": 150000000,
+    "kernel": 1903.3,
+    "compose": 0,
+    "rows": 0,
+    "prev": 0,
+    "copyIn": 41.5,
+    "filter": 331.6,
+    "adler": 140.5,
+    "deflate": 1375.8,
+    "chunk": 7.2,
+    "copyOut": 6.4,
+    "gen": 0
+   }
+  }
+ },
+ "layer_from_tiles": {
+  "ms": 207,
+  "blocked": 6,
+  "MB": 0.6,
+  "jobs": {
+   "png_part": {
+    "jobs": 79,
+    "composeWasm": 79,
+    "pixels": 150000000,
+    "kernel": 1555.1,
+    "compose": 0,
+    "rows": 254.6,
+    "prev": 0,
+    "filter": 263.5,
+    "adler": 148,
+    "deflate": 880.3,
+    "chunk": 0.4,
+    "copyOut": 0.3,
+    "gen": 0
+   }
+  }
+ },
+ "composite_canvas": {
+  "ms": 4161,
+  "blocked": 2591,
+  "MB": 36.9,
+  "jobs": {}
+ },
+ "layer_canvas": {
+  "ms": 1437,
+  "blocked": 158,
+  "MB": 2.7,
+  "jobs": {}
+ },
+ "psd": {
+  "ms": 1699,
+  "blocked": 226,
+  "MB": 225.7,
+  "jobs": {
+   "psd_part": {
+    "jobs": 394,
+    "composeWasm": 316,
+    "pixels": 750000000,
+    "kernel": 3875.5,
+    "compose": 0,
+    "rows": 1302.6,
+    "pack": 2562.7,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "composeWasm": 40,
+    "pixels": 150000000,
+    "kernel": 2962,
+    "gen": 0
+   }
+  }
+ },
+ "psd_masked": {
+  "ms": 1941,
+  "blocked": 146,
+  "MB": 243.2,
+  "jobs": {
+   "psd_part": {
+    "jobs": 473,
+    "composeWasm": 395,
+    "pixels": 900000000,
+    "kernel": 4052.1,
+    "compose": 0,
+    "rows": 1629.7,
+    "pack": 2416,
+    "gen": 0
+   },
+   "mips": {
+    "jobs": 14,
+    "tiles": 1733,
+    "kernel": 330,
+    "gen": 0
+   },
+   "stack_into": {
+    "jobs": 40,
+    "composeWasm": 40,
+    "pixels": 150000000,
+    "kernel": 2577.1,
+    "gen": 0
+   }
+  }
+ },
+ "pool": {
+  "run": 1232,
+  "done": 1232,
+  "failed": 0,
+  "cancelled": 0,
+  "started": 8,
+  "lost": 0,
+  "stopped": 0,
+  "workers": 8,
+  "size": 8,
+  "pending": 0,
+  "off": false,
+  "arena": true
+ }
+}

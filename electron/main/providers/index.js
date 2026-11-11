@@ -19,7 +19,7 @@
 //                            references out of a new image. `request.refsMax` (the variant's `text.refs.max`) lowers
 //                            the route's cap.
 //   ctx:     { key, fetch, log, base, toJpeg, opaque, bitmap, fromBitmap, cropPng }   base: the adapter's own allowlisted host from
-//            settings (ToAPIs, OpenRouter; ModelArk's and Oxen.ai's loopback mock; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
+//            settings (ToAPIs, OpenRouter; ModelArk's, MiniMax's and Oxen.ai's loopback mock; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
 //            nativeImage, opaque(png): whether it has no transparent pixel; bitmap(png): { width, height, data } (BGRA),
 //            fromBitmap({ width, height, data }): a PNG of it, cropPng(png, { x, y, width, height }): a part of a PNG as PNG
 //            (Magnific's Ideogram mask and Image Expand; only Scumble's own PNGs go through them, never an answer),
@@ -65,6 +65,7 @@ const PROVIDERS = {
     comfycloud: require("./comfycloud"),
     openrouter: require("./openrouter"),
     ark: require("./ark"),
+    minimax: require("./minimax"),
     oxen: require("./oxen"),
     magnific: require("./magnific"),
     comfyrouter: require("./comfyrouter"),   // no key row: the Comfy Cloud key (keyName)

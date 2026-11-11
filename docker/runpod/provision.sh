@@ -32,7 +32,7 @@ HELPERS="${SCUMBLE_HELPERS:-0}"
 log() { printf '[scumble provision] %s\n' "$*"; }
 
 # the commits the packs are checked out at (read with git ls-remote on 2026-11-07)
-INPAINT_CANVAS_REF="${SCUMBLE_NODE_REF:-1b993724da1b6f383676446d6c21fa60e7376863}"
+INPAINT_CANVAS_REF="${SCUMBLE_NODE_REF:-494ff3264903b8aecd039165017b71136e239e54}"
 RMBG_REF="a66a5e641a54988d80ed6aad18946081c85f309e"
 QWENVL_REF="1b67b443918801f571714bab636edc1845b7002a"
 

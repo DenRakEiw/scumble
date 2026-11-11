@@ -1,0 +1,11 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+sponge (cold) | Saturate | layer | 200 | fit | 156.5 | 35.1 | 18 | 13 | 14.8 | 1.5 | 119.1 | 244 | 7.1 | 15.2 | 0 | 0 | 11571 | mip_chain 32, smudge_dab 86, sponge_rgba 43
+sponge | Saturate | layer | 50 | fit | 156.5 | 4.4 | 3.6 | 4.1 | 5 | 1 | 17.4 | 465 | 6.4 | 15.3 | 0 | 0 | 8404 | mip_chain 56, smudge_dab 1562, sponge_rgba 781
+sponge | Saturate | layer | 200 | fit | 156.5 | 5.6 | 9.6 | 11 | 14.6 | 1.4 | 30.4 | 582 | 6.4 | 19.6 | 0 | 0 | 11655 | mip_chain 144, smudge_dab 422, sponge_rgba 211
+sponge | Saturate | layer | 400 | fit | 156.5 | 16.1 | 34 | 24.4 | 29.9 | 1.4 | 52.4 | 1083 | 4 | 15.6 | 0 | 0 | 11679 | mip_chain 186, smudge_dab 242, sponge_rgba 121
+sponge | Saturate | layer | 1000 | fit | 156.5 | 72 | 105 | 74.9 | 95.8 | 2.9 | 180.4 | 2636 | 8.9 | 15.4 | 0 | 0 | 11549 | mip_chain 480, smudge_dab 122, sponge_rgba 61
+sponge | Saturate | layer | 50 | 1:1 | 18 | 33.5 | 1.5 | 2 | 3.7 | 1.4 | 39.3 | 339 | 7.2 | 15.3 | 0 | 0 | 8431 | smudge_dab 182, sponge_rgba 91
+sponge | Saturate | layer | 200 | 1:1 | 18 | 37 | 4.4 | 3.4 | 4.2 | 1.7 | 45.5 | 453 | 9.3 | 15.6 | 0 | 0 | 11701 | smudge_dab 62, sponge_rgba 31
+sponge | Saturate | layer | 400 | 1:1 | 18 | 37.2 | 7.3 | 8.6 | 10.9 | 1.6 | 47.5 | 520 | 10 | 15.9 | 0 | 0 | 11649 | smudge_dab 62, sponge_rgba 31
+sponge | Saturate | layer | 1000 | 1:1 | 18 | 70.9 | 49.2 | 46.3 | 61.9 | 9.4 | 123.8 | 1812 | 18.1 | 18.4 | 0 | 0 | 11530 | smudge_dab 62, sponge_rgba 31
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["sponge"], "SIZES": [50, 200, 400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 6236}}

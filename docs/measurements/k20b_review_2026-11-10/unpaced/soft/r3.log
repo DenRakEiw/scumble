@@ -1,0 +1,4 @@
+routes: {"psdWindow":0}
+open 0: wall 3968 ms, blocked 990 ms, layers 3, psd_read kernel 855 ms (window 0, wait 0 ms, bands 160), longest band run with no beat: 65 bands / 989.9 ms, focused True
+open 1: wall 3391 ms, blocked 1052 ms, layers 3, psd_read kernel 887 ms (window 0, wait 0 ms, bands 160), longest band run with no beat: 73 bands / 1052.2 ms, focused True
+RESULT measured

@@ -1,0 +1,6 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__pixelsFromTiff_falls_back_to_ti-tiff --offline --tiles on tiff  (rc 1, 68 s)
+tiff rc=1 31s FAIL
+SOME FAILED
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__pixelsFromTiff_falls_back_to_ti-tiff --offline --tiles on tiff  (rc 1, 108 s)
+tiff rc=1 57s FAIL
+SOME FAILED

@@ -6079,40 +6079,44 @@ async function partDecodeCases(px, label, png, zlib, js) {
             // readPngParts: mock pool with size = 2, verifying window cap (pool.size + 2 = 4), INTERACTIVE priority on finish,
             // out-of-order decode completion, scanline-order onRows landing, and Adler-32 / row-count / cancellation guards
             let cancelledGroups = [], finishPriorities = [], inFlightReads = 0, maxWindowSeen = 0;
+            const pendingRuns = [];
+            const trackRun = (p) => { pendingRuns.push(p); return p; };
             const mockPool = {
                 size: 2,
                 cancel: (g) => { cancelledGroups.push(g); },
-                async run(op, args, _transfer, opts = {}) {
-                    if (op === "png_part_read") {
-                        inFlightReads++;
-                        maxWindowSeen = Math.max(maxWindowSeen, inFlightReads);
-                        // Stagger resolution so odd parts finish before even parts (out-of-order completion)
-                        await new Promise((r) => setTimeout(r, args.first ? 8 : 2));
-                        inFlightReads--;
-                        const raw = new Uint8Array(await args.blob.arrayBuffer());
-                        const zbuf = args.last ? raw : Buffer.concat([raw, Buffer.from([0x03, 0x00])]);
-                        const lines = new Uint8Array(zlib.inflateRawSync(zbuf));
-                        const p0 = args.first ? new Uint8Array(args.w * 4) : (args.prev ? new Uint8Array(args.prev) : null);
-                        const d = px.pngPartDecode(lines, args.w, p0, args.rt);
-                        if (d.code < 0) throw new Error(`png_part_decode code ${d.code}`);
-                        return {
-                            rows: d.code, adler: d.adler, raw: lines.byteLength,
-                            needsPrev: d.needsPrev, firstFilter: d.firstFilter, opaque: d.opaque,
-                            rgba: d.out ? d.out.buffer : null,
-                            lines: d.needsPrev ? lines.buffer : null,
-                            prev: d.prev ? d.prev.buffer : null,
-                        };
-                    }
-                    if (op === "png_part_finish") {
-                        finishPriorities.push(opts.priority);
-                        const f = px.pngPartFinish(new Uint8Array(args.lines), args.rows, args.w, new Uint8Array(args.prev), args.rt);
-                        if (f.code < 0) throw new Error(`png_part_finish code ${f.code}`);
-                        return {
-                            rows: f.code, firstFilter: f.firstFilter, opaque: f.opaque,
-                            rgba: f.out.buffer, prev: f.prev.buffer,
-                        };
-                    }
-                    throw new Error("unexpected op " + op);
+                run(op, args, _transfer, opts = {}) {
+                    return trackRun((async () => {
+                        if (op === "png_part_read") {
+                            inFlightReads++;
+                            maxWindowSeen = Math.max(maxWindowSeen, inFlightReads);
+                            // Stagger resolution so odd parts finish before even parts (out-of-order completion)
+                            await new Promise((r) => setTimeout(r, args.first ? 8 : 2));
+                            inFlightReads--;
+                            const raw = new Uint8Array(await args.blob.arrayBuffer());
+                            const zbuf = args.last ? raw : Buffer.concat([raw, Buffer.from([0x03, 0x00])]);
+                            const lines = new Uint8Array(zlib.inflateRawSync(zbuf));
+                            const p0 = args.first ? new Uint8Array(args.w * 4) : (args.prev ? new Uint8Array(args.prev) : null);
+                            const d = px.pngPartDecode(lines, args.w, p0, args.rt);
+                            if (d.code < 0) throw new Error(`png_part_decode code ${d.code}`);
+                            return {
+                                rows: d.code, adler: d.adler, raw: lines.byteLength,
+                                needsPrev: d.needsPrev, firstFilter: d.firstFilter, opaque: d.opaque,
+                                rgba: d.out ? d.out.buffer : null,
+                                lines: d.needsPrev ? lines.buffer : null,
+                                prev: d.prev ? d.prev.buffer : null,
+                            };
+                        }
+                        if (op === "png_part_finish") {
+                            finishPriorities.push(opts.priority);
+                            const f = px.pngPartFinish(new Uint8Array(args.lines), args.rows, args.w, new Uint8Array(args.prev), args.rt);
+                            if (f.code < 0) throw new Error(`png_part_finish code ${f.code}`);
+                            return {
+                                rows: f.code, firstFilter: f.firstFilter, opaque: f.opaque,
+                                rgba: f.out.buffer, prev: f.prev.buffer,
+                            };
+                        }
+                        throw new Error("unexpected op " + op);
+                    })());
                 },
             };
             const assembled = new Uint8Array(pH * pw * 4);
@@ -6216,17 +6220,19 @@ async function partDecodeCases(px, label, png, zlib, js) {
             const errPool = {
                 size: 1,
                 cancel: (g) => { partErrCancels.push(g); },
-                async run(op, args, tr, opts) {
-                    if (opts && opts.group) partErrGroup = opts.group;
-                    if (op === "png_part_read") {
-                        const idx = partErrLaunched++;
-                        if (idx === 1) {
-                            await new Promise((r) => setTimeout(r, 1));
-                            throw new Error("part 1 decode failed");
+                run(op, args, tr, opts) {
+                    return trackRun((async () => {
+                        if (opts && opts.group) partErrGroup = opts.group;
+                        if (op === "png_part_read") {
+                            const idx = partErrLaunched++;
+                            if (idx === 1) {
+                                await new Promise((r) => setTimeout(r, 1));
+                                throw new Error("part 1 decode failed");
+                            }
+                            await new Promise((r) => setTimeout(r, 15));
                         }
-                        await new Promise((r) => setTimeout(r, 15));
-                    }
-                    return mockPool.run(op, args, tr, opts);
+                        return mockPool.run(op, args, tr, opts);
+                    })());
                 },
             };
             try {
@@ -6238,6 +6244,7 @@ async function partDecodeCases(px, label, png, zlib, js) {
             } catch (e) {
                 partErrThrew = /part 1 decode failed/.test(String(e.message || e));
             }
+            await Promise.allSettled(pendingRuns);
             check(`readPngParts rejects on combined Adler-32 mismatch, under/over row-count mismatch, or part error, and cancels the pool group`,
                 adlerThrew && heightThrew && overHeightThrew && rowsDelivered <= pH - 1
                 && cancelledGroups.length === 3
@@ -7722,6 +7729,923 @@ async function psdCases(ref, label, js) {
     }
     check(`js psdPackRows gives the bytes of the PSD writer's packBits`, okTwin, detail);
     check(`js psdPackRows equals the ${label}`, ok, detail);
+
+    // ---- K20b: PSD reader kernels (packbits_rows, psd_mask_rgba, psdBandRgba, psdBandMask, psdKernels, psdRead) ----
+    const layered = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_layered.js")).href);
+    const zlibMod = require("node:zlib");
+
+    // 1. packbitsRows: independent row-bounded reference + round-trip from psdPackRows + twinCheck + sentinel/refusal guards
+    {
+        const refPackbitsRows = (lensBytes, src, rows, rowBytes) => {
+            if (rows === 0 || rowBytes === 0) return new Uint8Array(0);
+            const out = new Uint8Array(rows * rowBytes);
+            let p = 0;
+            for (let y = 0; y < rows; y++) {
+                const rowLen = (lensBytes[2 * y] << 8) | lensBytes[2 * y + 1];
+                const end = p + rowLen;
+                const lim = Math.min(end, src.length);
+                let o = y * rowBytes;
+                const stop = o + rowBytes;
+                while (p < lim && o < stop) {
+                    const n = src[p++];
+                    if (n < 128) {
+                        const c = Math.min(n + 1, stop - o, lim - p);
+                        for (let i = 0; i < c; i++) out[o + i] = src[p + i];
+                        p += n + 1;
+                        o += c;
+                    } else if (n > 128) {
+                        const c = Math.min(257 - n, stop - o);
+                        const val = p < lim ? src[p++] : 0;
+                        for (let i = 0; i < c; i++) out[o + i] = val;
+                        o += c;
+                    }
+                    // n === 128: no-op
+                }
+                p = end;
+            }
+            return out;
+        };
+
+        const pbCases = [
+            { tag: "zero rows", args: [new Uint8Array(0), new Uint8Array(0), 0, 16] },
+            { tag: "zero rowBytes", args: [new Uint8Array(6), new Uint8Array(0), 3, 0] },
+        ];
+        // Round-trip cases from psdPackRows across literal, repeat, >128 runs, and odd widths
+        let rtOk = true, rtDetail = "";
+        for (const [w, rows, seed] of [[1, 1, 11], [7, 3, 12], [128, 3, 13], [129, 4, 14], [513, 5, 15]]) {
+            const srcRgba = randomRGBA(w, rows, seed);
+            for (let x = 0, run = 1; x + run < w; x += run + 1, run = (run % 140) + 1) {
+                srcRgba.fill((seed * 13 + run) & 255, x * 4, (x + run) * 4);
+            }
+            const packed = js.psdPackRows(srcRgba, w, rows);
+            for (let ch = 0; ch < 4; ch++) {
+                const wantPlane = new Uint8Array(w * rows);
+                for (let i = 0; i < w * rows; i++) wantPlane[i] = srcRgba[i * 4 + ch];
+                const gotJs = js.packbitsRows(packed[ch].lens, packed[ch].data, rows, w);
+                const gotRef = refPackbitsRows(packed[ch].lens, packed[ch].data, rows, w);
+                if (!eqBytes(gotJs, wantPlane) || !eqBytes(gotRef, wantPlane)) {
+                    rtOk = false;
+                    rtDetail = `${w}x${rows} ch=${ch}`;
+                }
+                if (ch === 0 || ch === 3) {
+                    pbCases.push({ tag: `roundtrip ${w}x${rows} ch=${ch}`, args: [packed[ch].lens, packed[ch].data, rows, w] });
+                }
+            }
+        }
+        // Crafted PackBits edge cases: 0x80 no-ops, short row zero-fill, overlong row clamped while p advances by lens[y],
+        // dangling literal at end-1 & src.length-1, dangling repeat >128 at end-1 (must NOT read next row!) & src.length-1
+        const u16be = (...vals) => {
+            const b = new Uint8Array(vals.length * 2);
+            vals.forEach((v, i) => { b[2 * i] = (v >>> 8) & 255; b[2 * i + 1] = v & 255; });
+            return b;
+        };
+        pbCases.push(
+            {
+                tag: "0x80 no-ops at start/mid/end",
+                args: [u16be(8, 5), Uint8Array.from([0x80, 1, 10, 20, 0x80, 255, 30, 0x80, 0x80, 254, 99, 0, 77]), 2, 4],
+            },
+            {
+                tag: "short row zero-padded before valid second row",
+                args: [u16be(2, 4), Uint8Array.from([0, 42, 3, 1, 2, 3]), 2, 5],
+            },
+            {
+                tag: "overlong row truncated at rowBytes while p advances by full lens[y]",
+                args: [u16be(6, 3), Uint8Array.from([250, 0x11, 0, 0x99, 0, 0x88, 253, 0x22, 0x80]), 2, 4],
+            },
+            {
+                tag: "dangling repeat >128 at end-1 does NOT consume row 1's first byte",
+                args: [u16be(3, 3), Uint8Array.from([0, 0x55, 254, 1, 0xAA, 0xBB]), 2, 4],
+            },
+            {
+                tag: "dangling repeat >128 at src.length-1 (end > src.length)",
+                args: [u16be(10), Uint8Array.from([0, 0x77, 253]), 1, 5],
+            },
+            {
+                tag: "dangling literal header at end-1 and at src.length-1",
+                args: [u16be(3, 9), Uint8Array.from([0, 0x33, 4, 2, 0x44, 0x55]), 2, 5],
+            },
+            {
+                tag: "literal n=127 (128 bytes) + repeat n=129 (128 bytes) + tail",
+                args: [
+                    u16be(132),
+                    Uint8Array.from([127, ...Array.from({ length: 128 }, (_, i) => (i * 7 + 3) & 255), 129, 0xE5, 0, 0x19]),
+                    1, 260,
+                ],
+            },
+        );
+        let pbRefOk = rtOk, pbRefDetail = rtDetail;
+        for (const c of pbCases) {
+            const got = js.packbitsRows(...c.args), want = refPackbitsRows(...c.args);
+            if (!eqBytes(got, want)) { pbRefOk = false; pbRefDetail = `${c.tag}: ${firstDiff(got, want)}`; break; }
+        }
+        // Dirty caller-supplied `out` with short row + sentinel bytes around subarray
+        const backing = new Uint8Array(4 + 2 * 5 + 4).fill(0xA5);
+        const subOut = backing.subarray(4, 4 + 10);
+        const shortLens = u16be(2, 3), shortSrc = Uint8Array.from([0, 0x42, 254, 0x7E, 0x80]);
+        const retJs = js.packbitsRows(shortLens, shortSrc, 2, 5, subOut);
+        const backingPx = new Uint8Array(4 + 2 * 5 + 4).fill(0xA5);
+        const subOutPx = backingPx.subarray(4, 4 + 10);
+        const retPx = ref.packbitsRows(shortLens, shortSrc, 2, 5, subOutPx);
+        const wantShort = Uint8Array.from([0x42, 0, 0, 0, 0, 0x7E, 0x7E, 0x7E, 0, 0]);
+        const dirtyGuardOk = retJs === subOut && retPx === subOutPx
+            && eqBytes(subOut, wantShort) && eqBytes(subOutPx, wantShort)
+            && backing.subarray(0, 4).every((v) => v === 0xA5) && backing.subarray(14).every((v) => v === 0xA5)
+            && backingPx.subarray(0, 4).every((v) => v === 0xA5) && backingPx.subarray(14).every((v) => v === 0xA5);
+        if (!dirtyGuardOk) { pbRefOk = false; pbRefDetail = pbRefDetail || "dirty out / sentinel guard failed"; }
+
+        check(`${label} packbitsRows matches independent reference, round-trips psdPackRows, zero-fills short rows on dirty out, and preserves sentinel bytes`, pbRefOk, pbRefDetail);
+        twinCheck({
+            name: "packbits_rows",
+            builds: [[label, ref]],
+            twin: js,
+            call: (k, [lens, src, rows, rb]) => k.packbitsRows(lens, src, rows, rb),
+            cases: pbCases,
+        });
+
+        // Refusals on packbitsRows and raw packbits_rows export
+        const pbBad = [
+            ["negative rows", [u16be(2), Uint8Array.from([0, 1]), -1, 1]],
+            ["negative rowBytes", [u16be(2), Uint8Array.from([0, 1]), 1, -1]],
+            ["short lensBytes", [new Uint8Array(3), Uint8Array.from([0, 1, 0, 2]), 2, 1]],
+            ["null src", [u16be(2), null, 1, 1]],
+            ["short out", [u16be(2), Uint8Array.from([0, 1]), 1, 4, new Uint8Array(3)]],
+        ];
+        let pbBadOk = true, pbBadDetail = "";
+        for (const [what, args] of pbBad) {
+            for (const [bn, mod] of [["js", js], [label, ref]]) {
+                let threw = false;
+                try { mod.packbitsRows(...args); } catch (_) { threw = true; }
+                if (!threw) { pbBadOk = false; pbBadDetail = `${bn} accepted ${what}`; break; }
+            }
+            if (!pbBadOk) break;
+        }
+        const exRaw = ref.exports;
+        const guardPtr = 1024;
+        ref.u8().fill(0x5C, guardPtr, guardPtr + 16);
+        const rawPbOk = (exRaw.packbits_rows(0, 16, 4, 1, 4, guardPtr, 4) | 0) === -1
+            && (exRaw.packbits_rows(16, 0, 1, 1, 4, guardPtr, 4) | 0) === -1
+            && (exRaw.packbits_rows(16, 16, 0, 1, 4, 0, 4) | 0) === -1
+            && (exRaw.packbits_rows(16, 16, 0, 1, 4, guardPtr, 3) | 0) === -1
+            && (exRaw.packbits_rows(16, 16, 0, 0x10000, 0x10000, guardPtr, 16) | 0) === -1
+            && (exRaw.packbits_rows(0, 0, 0, 0, 4, 0, 0) | 0) === 0
+            && (exRaw.packbits_rows(0, 0, 0, 3, 0, 0, 0) | 0) === 0
+            && ref.u8().subarray(guardPtr, guardPtr + 16).every((v) => v === 0x5C);
+        check(`${label} packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output`,
+            pbBadOk && rawPbOk, pbBadDetail || `rawPbOk=${rawPbOk}`);
+    }
+
+    // 2. psdMaskRgba: independent reference + twinCheck across SIMD/tail widths, 8/16-bit BE (all 65,536 values), overlaps, def, and guards
+    {
+        const refMaskRgba = (src, mw, sx0, w, rows, x0, x1, ry0, ry1, bits, def) => {
+            const out = new Uint8ClampedArray(w * rows * 4);
+            const d8 = def & 255;
+            for (let i = 0; i < out.length; i += 4) {
+                out[i] = 255; out[i + 1] = 255; out[i + 2] = 255; out[i + 3] = d8;
+            }
+            const mRows = ry1 - ry0, span = x1 - x0, bps = bits === 16 ? 2 : 1;
+            if (mRows > 0 && span > 0) {
+                for (let mr = 0; mr < mRows; mr++) {
+                    for (let c = 0; c < span; c++) {
+                        const sIdx = (mr * mw + sx0 + c) * bps;
+                        const a = bits === 8 ? src[sIdx] : Math.round(((src[sIdx] << 8) | src[sIdx + 1]) / 257);
+                        const dIdx = ((ry0 + mr) * w + (x0 + c)) * 4;
+                        out[dIdx + 3] = a;
+                    }
+                }
+            }
+            return out;
+        };
+
+        const maskCases = [];
+        let mSeed = 8100;
+        for (const bits of [8, 16]) {
+            const bps = bits >>> 3;
+            for (const w of [1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 65]) {
+                const rows = w <= 9 ? 4 : 3;
+                const mw = w + 5;
+                const r = rng(++mSeed);
+                const src = new Uint8Array(mw * rows * bps);
+                for (let i = 0; i < src.length; i++) src[i] = (r() * 256) | 0;
+                // Full cover
+                maskCases.push({
+                    tag: `mask full ${bits}b w=${w}`,
+                    args: [src, mw, 0, w, rows, 0, w, 0, rows, bits, 0],
+                });
+                // Partial interior overlap with non-zero sx0, x0, ry0 and non-trivial def
+                const x0 = Math.min(w, 2), x1 = Math.max(x0, w - 1);
+                const ry0 = 1, ry1 = Math.max(ry0, rows - 1);
+                const def = (w * 37 + bits) & 255;
+                maskCases.push({
+                    tag: `mask sub ${bits}b w=${w} [${x0}..${x1}]x[${ry0}..${ry1}] def=${def}`,
+                    args: [src, mw, 3, w, rows, x0, x1, ry0, ry1, bits, def],
+                });
+            }
+        }
+        // Empty overlaps (x0 === x1 or ry0 === ry1, mw = 0, empty src) across def 0, 128, 255
+        for (const [def, x0, x1, ry0, ry1] of [[0, 0, 0, 0, 3], [128, 4, 4, 1, 2], [255, 1, 18, 2, 2]]) {
+            maskCases.push({
+                tag: `mask empty overlap def=${def} [${x0}..${x1}]x[${ry0}..${ry1}]`,
+                args: [new Uint8Array(0), 0, 0, 19, 3, x0, x1, ry0, ry1, 8, def],
+            });
+        }
+        // Exhaustive 65,536 big-endian 16-bit values through psdMaskRgba (w=259, rows=254 -> 65,786 >= 65,536, exercising 8-wide SIMD + 3-pixel tail)
+        {
+            const mw16 = 259, mr16 = 254;
+            const srcAll16 = new Uint8Array(mw16 * mr16 * 2);
+            for (let i = 0; i < mw16 * mr16; i++) {
+                const v = i & 0xFFFF;
+                srcAll16[2 * i] = v >>> 8;
+                srcAll16[2 * i + 1] = v & 255;
+            }
+            maskCases.push({
+                tag: "mask 16b BE exhaustive 65,536 values (w=259 SIMD+tail)",
+                args: [srcAll16, mw16, 0, mw16, mr16, 0, mw16, 0, mr16, 16, 77],
+            });
+        }
+
+        let maskRefOk = true, maskRefDetail = "";
+        for (const c of maskCases) {
+            const got = js.psdMaskRgba(...c.args), want = refMaskRgba(...c.args);
+            if (!eqBytes(got, want)) { maskRefOk = false; maskRefDetail = `${c.tag}: ${firstDiff(got, want)}`; break; }
+        }
+        // Caller-supplied dirty `out` subarray with sentinel guards
+        {
+            const w = 19, rows = 3, need = w * rows * 4;
+            const src = Uint8Array.from({ length: 10 * 2 }, (_, i) => (i * 23 + 7) & 255);
+            const bJs = new Uint8Array(8 + need + 8).fill(0xCC);
+            const bPx = new Uint8Array(8 + need + 8).fill(0xCC);
+            const sJs = bJs.subarray(8, 8 + need), sPx = bPx.subarray(8, 8 + need);
+            sJs.fill(0x33); sPx.fill(0x33);
+            const rJs = js.psdMaskRgba(src, 10, 2, w, rows, 3, 10, 1, 3, 8, 128, sJs);
+            const rPx = ref.psdMaskRgba(src, 10, 2, w, rows, 3, 10, 1, 3, 8, 128, sPx);
+            const want = refMaskRgba(src, 10, 2, w, rows, 3, 10, 1, 3, 8, 128);
+            if (rJs !== sJs || rPx !== sPx || !eqBytes(sJs, want) || !eqBytes(sPx, want)
+                || !bJs.subarray(0, 8).every((v) => v === 0xCC) || !bJs.subarray(8 + need).every((v) => v === 0xCC)
+                || !bPx.subarray(0, 8).every((v) => v === 0xCC) || !bPx.subarray(8 + need).every((v) => v === 0xCC)) {
+                maskRefOk = false;
+                maskRefDetail = maskRefDetail || "psdMaskRgba caller out / sentinel guard failed";
+            }
+        }
+        check(`${label} psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views`,
+            maskRefOk, maskRefDetail);
+        twinCheck({
+            name: "psd_mask_rgba",
+            builds: [[label, ref]],
+            twin: js,
+            call: (k, args) => k.psdMaskRgba(...args),
+            cases: maskCases,
+        });
+
+        // Refusals on psdMaskRgba and raw psd_mask_rgba export
+        const mSrc = new Uint8Array(64);
+        const maskBad = [
+            ["w=0", [mSrc, 4, 0, 0, 2, 0, 0, 0, 2, 8, 0]],
+            ["rows=0", [mSrc, 4, 0, 4, 0, 0, 4, 0, 0, 8, 0]],
+            ["bits=4", [mSrc, 4, 0, 4, 2, 0, 4, 0, 2, 4, 0]],
+            ["x0 > x1", [mSrc, 4, 0, 4, 2, 3, 2, 0, 2, 8, 0]],
+            ["x1 > w", [mSrc, 5, 0, 4, 2, 0, 5, 0, 2, 8, 0]],
+            ["ry0 > ry1", [mSrc, 4, 0, 4, 2, 0, 4, 2, 1, 8, 0]],
+            ["ry1 > rows", [mSrc, 4, 0, 4, 2, 0, 4, 0, 3, 8, 0]],
+            ["sx0 + span > mw", [mSrc, 4, 2, 4, 2, 0, 3, 0, 2, 8, 0]],
+            ["short src", [new Uint8Array(5), 4, 0, 4, 2, 0, 4, 0, 2, 8, 0]],
+            ["short out", [mSrc, 4, 0, 4, 2, 0, 4, 0, 2, 8, 0, new Uint8Array(31)]],
+        ];
+        let mBadOk = true, mBadDetail = "";
+        for (const [what, args] of maskBad) {
+            for (const [bn, mod] of [["js", js], [label, ref]]) {
+                let threw = false;
+                try { mod.psdMaskRgba(...args); } catch (_) { threw = true; }
+                if (!threw) { mBadOk = false; mBadDetail = `${bn} accepted ${what}`; break; }
+            }
+            if (!mBadOk) break;
+        }
+        const exRaw = ref.exports, gPtr = 1024, emptyOutPtr = 2048;
+        ref.u8().fill(0x6D, gPtr, gPtr + 32);
+        const rawMaskOk = (exRaw.psd_mask_rgba(16, 8, 4, 0, 4, 2, 0, 4, 0, 2, 4, 0, gPtr, 32) | 0) === -1
+            && (exRaw.psd_mask_rgba(16, 8, 4, 0, 0, 2, 0, 0, 0, 2, 8, 0, gPtr, 32) | 0) === -1
+            && (exRaw.psd_mask_rgba(16, 8, 4, 0, 4, 0, 0, 4, 0, 0, 8, 0, gPtr, 32) | 0) === -1
+            && (exRaw.psd_mask_rgba(0, 8, 4, 0, 4, 2, 0, 4, 0, 2, 8, 0, gPtr, 32) | 0) === -1
+            && (exRaw.psd_mask_rgba(16, 8, 4, 0, 4, 2, 0, 4, 0, 2, 8, 0, 0, 32) | 0) === -1
+            && (exRaw.psd_mask_rgba(16, 7, 4, 0, 4, 2, 0, 4, 0, 2, 8, 0, gPtr, 32) | 0) === -1
+            && (exRaw.psd_mask_rgba(16, 8, 4, 0, 4, 2, 0, 4, 0, 2, 8, 0, gPtr, 31) | 0) === -1
+            && (exRaw.psd_mask_rgba(16, 8, 4, 2, 4, 2, 0, 3, 0, 2, 8, 0, gPtr, 32) | 0) === -1
+            && (exRaw.psd_mask_rgba(0, 0, 0, 0, 4, 2, 0, 0, 0, 2, 8, 77, emptyOutPtr, 32) | 0) === 0
+            && ref.u8()[emptyOutPtr + 3] === 77
+            && ref.u8().subarray(gPtr, gPtr + 32).every((v) => v === 0x6D);
+        check(`${label} psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output`,
+            mBadOk && rawMaskOk, mBadDetail || `rawMaskOk=${rawMaskOk}`);
+    }
+
+    // 3. Minimal PSD builder for psdBandRgba / psdBandMask / readPsdStream / W.psdRead parity + arena growth + mid-layer trap recovery
+    const buildTestPsd = ({ width, height, depth = 8, mode = 3, layers = [], merged = null, mergedComp = 1, mergedZeroLens = false }) => {
+        const out = [];
+        const u8 = (v) => out.push(v & 255);
+        const u16 = (v) => out.push((v >>> 8) & 255, v & 255);
+        const u32 = (v) => out.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255);
+        const bytes = (b) => { for (let i = 0; i < b.length; i++) out.push(b[i]); };
+        const encPlane = (samples, w, h, comp) => {
+            if (!(w * h > 0)) return Uint8Array.from([(comp >>> 8) & 255, comp & 255]);
+            const bpc = depth >>> 3;
+            const raw = new Uint8Array(w * h * bpc);
+            for (let i = 0; i < w * h; i++) {
+                if (bpc === 1) raw[i] = samples[i] & 255;
+                else { raw[2 * i] = (samples[i] >>> 8) & 255; raw[2 * i + 1] = samples[i] & 255; }
+            }
+            if (comp === 0) {
+                const r = new Uint8Array(2 + raw.length);
+                r[0] = 0; r[1] = 0; r.set(raw, 2);
+                return r;
+            }
+            if (comp === 1) {
+                const rows = [];
+                let total = 2 + h * 2;
+                for (let y = 0; y < h; y++) {
+                    const p = ex.packBits(raw.subarray(y * w * bpc, (y + 1) * w * bpc));
+                    rows.push(p);
+                    total += p.length;
+                }
+                const r = new Uint8Array(total);
+                r[0] = 0; r[1] = 1;
+                let o = 2 + h * 2;
+                for (let y = 0; y < h; y++) {
+                    r[2 + 2 * y] = (rows[y].length >>> 8) & 255;
+                    r[2 + 2 * y + 1] = rows[y].length & 255;
+                    r.set(rows[y], o);
+                    o += rows[y].length;
+                }
+                return r;
+            }
+            const d = raw.slice();
+            if (comp === 3) {
+                if (bpc === 1) {
+                    for (let y = 0; y < h; y++) for (let x = w - 1; x >= 1; x--) d[y * w + x] = (d[y * w + x] - d[y * w + x - 1]) & 255;
+                } else {
+                    const dv = new DataView(d.buffer);
+                    for (let y = 0; y < h; y++) for (let x = w - 1; x >= 1; x--) {
+                        const o = (y * w + x) * 2;
+                        dv.setUint16(o, (dv.getUint16(o, false) - dv.getUint16(o - 2, false)) & 0xFFFF, false);
+                    }
+                }
+            }
+            const z = new Uint8Array(zlibMod.deflateSync(d));
+            const r = new Uint8Array(2 + z.length);
+            r[0] = (comp >>> 8) & 255; r[1] = comp & 255; r.set(z, 2);
+            return r;
+        };
+
+        bytes([0x38, 0x42, 0x50, 0x53]); u16(1); bytes([0, 0, 0, 0, 0, 0]);
+        const nch = mode === 1 ? 1 : 3;
+        u16(nch); u32(height); u32(width); u16(depth); u16(mode);
+        u32(0); u32(0); // color mode + image resources
+        if (!layers.length) {
+            u32(0); // layer and mask info length = 0
+        } else {
+            const rec = [], chPayloads = [];
+            const rPush = {
+                u8: (v) => rec.push(v & 255),
+                u16: (v) => rec.push((v >>> 8) & 255, v & 255),
+                u32: (v) => rec.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255),
+                i16: (v) => rec.push((v >>> 8) & 255, v & 255),
+                i32: (v) => rec.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255),
+                bytes: (b) => { for (let i = 0; i < b.length; i++) rec.push(b[i]); },
+            };
+            rPush.u16(layers.length);
+            for (const L of layers) {
+                rPush.i32(L.top || 0); rPush.i32(L.left || 0);
+                rPush.i32((L.top || 0) + L.h); rPush.i32((L.left || 0) + L.w);
+                rPush.u16(L.chList.length);
+                for (const [id, samples, compOverride] of L.chList) {
+                    const cw = id === -2 ? L.mask.w : id === -3 ? L.mask.real.w : L.w;
+                    const ch = id === -2 ? L.mask.h : id === -3 ? L.mask.real.h : L.h;
+                    const enc = compOverride === "raw" ? samples : encPlane(samples, cw, ch, compOverride ?? L.comp ?? 1);
+                    rPush.i16(id); rPush.u32(enc.length);
+                    chPayloads.push(enc);
+                }
+                rPush.bytes([0x38, 0x42, 0x49, 0x4D, 0x6E, 0x6F, 0x72, 0x6D]); // 8BIM norm
+                rPush.u8(255); rPush.u8(0); rPush.u8(0); rPush.u8(0);
+                const extra = [];
+                const ePush = {
+                    u8: (v) => extra.push(v & 255),
+                    u32: (v) => extra.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255),
+                    i32: (v) => extra.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255),
+                };
+                if (!L.mask) {
+                    ePush.u32(0);
+                } else if (L.mask.real) {
+                    ePush.u32(36);
+                    ePush.i32(L.mask.top); ePush.i32(L.mask.left); ePush.i32(L.mask.top + L.mask.h); ePush.i32(L.mask.left + L.mask.w);
+                    ePush.u8(L.mask.def || 0); ePush.u8(L.mask.flags || 0); ePush.u8(L.mask.real.flags || 0); ePush.u8(L.mask.real.def || 0);
+                    ePush.i32(L.mask.real.top); ePush.i32(L.mask.real.left);
+                    ePush.i32(L.mask.real.top + L.mask.real.h); ePush.i32(L.mask.real.left + L.mask.real.w);
+                } else {
+                    ePush.u32(20);
+                    ePush.i32(L.mask.top); ePush.i32(L.mask.left); ePush.i32(L.mask.top + L.mask.h); ePush.i32(L.mask.left + L.mask.w);
+                    ePush.u8(L.mask.def || 0); ePush.u8(L.mask.flags || 0); ePush.u8(0); ePush.u8(0);
+                }
+                ePush.u32(0); // blending ranges
+                ePush.u8(1); ePush.u8(0x4C); ePush.u8(0); ePush.u8(0); // Pascal name "L" padded to 4
+                rPush.u32(extra.length);
+                rPush.bytes(extra);
+            }
+            for (const p of chPayloads) rPush.bytes(p);
+            if (rec.length & 1) rPush.u8(0);
+            u32(4 + rec.length + 4);
+            u32(rec.length);
+            bytes(rec);
+            u32(0); // global mask
+        }
+        // Merged image section
+        u16(mergedComp);
+        if (merged) {
+            const bpc = depth >>> 3;
+            if (mergedComp === 0) {
+                for (const pl of merged) {
+                    for (let i = 0; i < width * height; i++) {
+                        if (bpc === 1) u8(pl[i]);
+                        else u16(pl[i]);
+                    }
+                }
+            } else {
+                const packedRows = [];
+                for (const pl of merged) {
+                    for (let y = 0; y < height; y++) {
+                        const row = new Uint8Array(width * bpc);
+                        for (let x = 0; x < width; x++) {
+                            const v = pl[y * width + x];
+                            if (bpc === 1) row[x] = v & 255;
+                            else { row[2 * x] = (v >>> 8) & 255; row[2 * x + 1] = v & 255; }
+                        }
+                        packedRows.push(ex.packBits(row));
+                    }
+                }
+                for (const pr of packedRows) u16(pr.length);
+                for (const pr of packedRows) bytes(pr);
+            }
+        } else if (mergedZeroLens) {
+            for (let i = 0; i < nch * height; i++) u16(0);
+        } else {
+            for (let i = 0; i < nch * height; i++) u16(2);
+            for (let i = 0; i < nch * height; i++) { u8(129); u8(0); }
+        }
+        return Uint8Array.from(out);
+    };
+
+    const pxKernelsFor = (pxInst) => ({
+        packbitsRows: (lb, s, r, rb, o) => pxInst.packbitsRows(lb, s, r, rb, o),
+        maskRgba: (s, mw, sx0, w, r, x0, x1, ry0, ry1, b, def, o) => pxInst.psdMaskRgba(s, mw, sx0, w, r, x0, x1, ry0, ry1, b, def, o),
+        bandRgba: (d, w, y0, r, dep, g, sp) => pxInst.psdBandRgba(d, w, y0, r, dep, g, sp),
+        bandMask: (d, L, m, w, h, y0, r, dep, sp) => pxInst.psdBandMask(d, L, m, w, h, y0, r, dep, sp),
+    });
+
+    const inflateSyncCap = (bytes, cap) => {
+        try {
+            return new Uint8Array(zlibMod.inflateSync(bytes, { maxOutputLength: cap }));
+        } catch (err) {
+            if (err && err.code === "ERR_BUFFER_TOO_LARGE") err.tooLarge = true;
+            throw err;
+        }
+    };
+
+    const collectStream = async (psdBytes, kernels, rowsPerBand = 5) => {
+        const bands = new Map();
+        const doc = await layered.readPsdStream(psdBytes, {
+            inflate: inflateSyncCap,
+            rowsPerBand,
+            kernels,
+            onRows: (index, kind, rgba, w, h, y0, rows) => {
+                const key = `${index}:${kind}`;
+                let buf = bands.get(key);
+                if (!buf) { buf = new Uint8Array(w * h * 4); bands.set(key, buf); }
+                buf.set(rgba, y0 * w * 4);
+            },
+        });
+        return { doc, bands };
+    };
+
+    {
+        const mkSamples = (n, depth, seed) => {
+            const r = rng(seed), lim = depth === 16 ? 0x10000 : 0x100;
+            return Array.from({ length: n }, () => (r() * lim) | 0);
+        };
+        const streamSuites = [
+            // 8-bit RGB multi-layer across all 4 compressions, channel order [-2, -1, 0, 1, 2], missing green channel [0, 2], and offset/disjoint/empty/36-byte -3 masks
+            buildTestPsd({
+                width: 35, height: 14, depth: 8, mode: 3,
+                layers: [
+                    {
+                        left: 2, top: 1, w: 33, h: 13, comp: 1,
+                        chList: [[-2, mkSamples(38 * 15, 8, 901), 3], [-1, mkSamples(33 * 13, 8, 902), 1], [0, mkSamples(33 * 13, 8, 903), 0], [1, mkSamples(33 * 13, 8, 904), 2], [2, mkSamples(33 * 13, 8, 905), 3]],
+                        mask: { left: 0, top: 0, w: 38, h: 15, def: 255, flags: 0 },
+                    },
+                    {
+                        left: 0, top: 0, w: 19, h: 11, comp: 1,
+                        chList: [[0, mkSamples(19 * 11, 8, 906)], [2, mkSamples(19 * 11, 8, 907)]], // missing green (1) -> 0, missing alpha (-1) -> 255
+                        mask: { left: 50, top: 50, w: 6, h: 6, def: 128, flags: 0 }, // disjoint mask
+                    },
+                    {
+                        left: 0, top: 0, w: 17, h: 9, comp: 2,
+                        chList: [[0, mkSamples(17 * 9, 8, 908)], [1, mkSamples(17 * 9, 8, 909)], [2, mkSamples(17 * 9, 8, 910)], [-2, mkSamples(10 * 5, 8, 911)], [-3, mkSamples(12 * 7, 8, 912), 1]],
+                        mask: { left: 0, top: 0, w: 10, h: 5, def: 0, flags: 0, real: { left: 3, top: 2, w: 12, h: 7, def: 255, flags: 0 } },
+                    },
+                    {
+                        left: 0, top: 0, w: 9, h: 7, comp: 0,
+                        chList: [[0, mkSamples(9 * 7, 8, 913)], [1, mkSamples(9 * 7, 8, 914)], [2, mkSamples(9 * 7, 8, 915)], [-2, [], 1]],
+                        mask: { left: 0, top: 0, w: 0, h: 0, def: 0, flags: 0 }, // 0x0 empty mask
+                    },
+                ],
+            }),
+            // 16-bit RGB + predicted 16-bit wider mask (comp === 3 on both planes and mask, testing full-mw unpredict before sx0 slice!)
+            buildTestPsd({
+                width: 37, height: 13, depth: 16, mode: 3,
+                layers: [
+                    {
+                        left: 5, top: 2, w: 27, h: 11, comp: 3,
+                        chList: [
+                            [0, mkSamples(27 * 11, 16, 920), 3],
+                            [1, mkSamples(27 * 11, 16, 921), 1],
+                            [2, mkSamples(27 * 11, 16, 922), 0],
+                            [-1, mkSamples(27 * 11, 16, 923), 2],
+                            [-2, mkSamples(35 * 9, 16, 924), 3],
+                        ],
+                        mask: { left: 1, top: 4, w: 35, h: 9, def: 255, flags: 0 },
+                    },
+                ],
+            }),
+            // 16-bit Grayscale + alpha
+            buildTestPsd({
+                width: 33, height: 10, depth: 16, mode: 1,
+                layers: [
+                    {
+                        left: 0, top: 0, w: 33, h: 10, comp: 3,
+                        chList: [[0, mkSamples(33 * 10, 16, 930), 3], [-1, mkSamples(33 * 10, 16, 931), 1]],
+                    },
+                ],
+            }),
+            // Flat 0-layer PSDs (comp 0 and comp 1, 8-bit RGB and 16-bit Grayscale)
+            buildTestPsd({
+                width: 29, height: 11, depth: 8, mode: 3, layers: [], mergedComp: 1,
+                merged: [mkSamples(29 * 11, 8, 940), mkSamples(29 * 11, 8, 941), mkSamples(29 * 11, 8, 942)],
+            }),
+            buildTestPsd({
+                width: 23, height: 9, depth: 16, mode: 1, layers: [], mergedComp: 0,
+                merged: [mkSamples(23 * 9, 16, 943)],
+            }),
+        ];
+
+        let streamOk = true, streamDetail = "";
+        for (let si = 0; si < streamSuites.length; si++) {
+            const buf = streamSuites[si];
+            const win = await layered.readPsd(buf, { inflate: inflateSyncCap });
+            const gotJs = await collectStream(buf, null, 4);
+            const gotPx = await collectStream(buf, pxKernelsFor(ref), 4);
+            if (gotJs.bands.size !== gotPx.bands.size) {
+                streamOk = false; streamDetail = `suite ${si}: band keys mismatch`; break;
+            }
+            for (const [k, bJs] of gotJs.bands) {
+                const bPx = gotPx.bands.get(k);
+                if (!bPx || !eqBytes(bPx, bJs)) {
+                    streamOk = false; streamDetail = `suite ${si} key ${k}: ${firstDiff(bPx || new Uint8Array(0), bJs)}`; break;
+                }
+            }
+            if (!streamOk) break;
+            // Also compare against window readPsd
+            for (let li = 0; li < win.layers.length; li++) {
+                const idx = gotPx.doc.layers[li].index;
+                const bPx = gotPx.bands.get(`${idx}:rgba`);
+                if (!eqBytes(bPx, win.layers[li].rgba)) {
+                    streamOk = false; streamDetail = `suite ${si} layer ${li} vs readPsd: ${firstDiff(bPx, win.layers[li].rgba)}`; break;
+                }
+                if (win.layers[li].mask) {
+                    const mPx = gotPx.bands.get(`${idx}:mask`);
+                    const mData = win.layers[li].mask.data;
+                    const wantMaskRgba = new Uint8Array(mData.length * 4);
+                    for (let p = 0; p < mData.length; p++) {
+                        wantMaskRgba[p * 4] = 255; wantMaskRgba[p * 4 + 1] = 255; wantMaskRgba[p * 4 + 2] = 255; wantMaskRgba[p * 4 + 3] = mData[p];
+                    }
+                    if (!eqBytes(mPx, wantMaskRgba)) {
+                        streamOk = false; streamDetail = `suite ${si} mask ${li} vs readPsd: ${firstDiff(mPx, wantMaskRgba)}`; break;
+                    }
+                }
+            }
+            if (!win.layers.length && win.composite) {
+                const cPx = gotPx.bands.get(`${gotPx.doc.composite}:rgba`);
+                if (!eqBytes(cPx, win.composite)) {
+                    streamOk = false; streamDetail = `suite ${si} composite vs readPsd: ${firstDiff(cPx, win.composite)}`; break;
+                }
+            }
+            if (!streamOk) break;
+        }
+        check(`${label} psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs`,
+            streamOk, streamDetail);
+
+        // Fresh Px instance memory.grow test (> 2 MiB band in psdBandRgba and psdBandMask)
+        const fresh = new ref.constructor(new WebAssembly.Instance(ref.module, {}), ref.module);
+        const bytes0 = fresh.byteLength;
+        const gw = 1200, gh = 300;
+        const growPsd = buildTestPsd({
+            width: gw, height: gh, depth: 16, mode: 3,
+            layers: [{
+                left: 0, top: 0, w: gw, h: gh, comp: 1,
+                chList: [
+                    [0, Array.from({ length: gw * gh }, (_, i) => (i * 257) & 0xFFFF), 1],
+                    // Omit channel 1 (G) so !d zero-fills after a.take(...) grows WebAssembly.Memory
+                    [2, Array.from({ length: gw * gh }, (_, i) => (i * 771) & 0xFFFF), 1],
+                    [-2, Array.from({ length: gw * gh }, (_, i) => (i * 193) & 0xFFFF), 1],
+                ],
+                mask: { left: 0, top: 0, w: gw, h: gh, def: 0, flags: 0 },
+            }],
+        });
+        const growJs = await collectStream(growPsd, null, gh);
+        const growFresh = await collectStream(growPsd, pxKernelsFor(fresh), gh);
+        const grewOk = fresh.byteLength > bytes0
+            && eqBytes(growFresh.bands.get("0:rgba"), growJs.bands.get("0:rgba"))
+            && eqBytes(growFresh.bands.get("0:mask"), growJs.bands.get("0:mask"));
+        check(`${label} psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views`,
+            grewOk, `bytes ${bytes0} -> ${fresh.byteLength}`);
+
+        // Upfront channel/merged validation & non-mutating comp === 3 descriptor check in PSD_JS
+        const predBuf = Uint8Array.from([10, 20, 30, 40, 5, 15, 25, 35]);
+        const predSnap = predBuf.slice();
+        const predDesc = { 0: { comp: 3, bytes: predBuf, at: 0, cw: 4, chh: 2, rowBytes: 4 }, 1: null, 2: null };
+        const pBand1 = js.psdBandRgba(predDesc, 4, 0, 2, 8, false);
+        const pBand2 = js.psdBandRgba(predDesc, 4, 0, 2, 8, false);
+        const pxBandDirect = ref.psdBandRgba(predDesc, 4, 0, 2, 8, false);
+        const jobBytesAfterBandRgba = ref.job.jobBytes;
+        const pxMaskDirect = ref.psdBandMask(predDesc[0], { left: 0, top: 0 }, { left: 0, top: 0, right: 4, bottom: 2, def: 0 }, 4, 2, 0, 2, 8);
+        const jobBytesAfterBandMask = ref.job.jobBytes;
+        const overZipBlk = (() => {
+            const z = zlibMod.deflateSync(Buffer.alloc(256, 7));
+            const blk = new Uint8Array(2 + z.length);
+            blk[0] = 0; blk[1] = 2; blk.set(z, 2);
+            return blk;
+        })();
+        const extraZipBomb = buildTestPsd({
+            width: 8, height: 8, depth: 8, mode: 3,
+            layers: [{
+                left: 0, top: 0, w: 8, h: 8,
+                chList: [[0, Array.from({ length: 64 }, (_, i) => i), 0], [5, overZipBlk, "raw"]],
+            }],
+        });
+        const zeroRleBlk = new Uint8Array(2 + 8 * 2);
+        zeroRleBlk[1] = 1;
+        const shortRleLayer = buildTestPsd({
+            width: 8, height: 8, depth: 8, mode: 3,
+            layers: [{ left: 0, top: 0, w: 8, h: 8, chList: [[0, zeroRleBlk, "raw"]] }],
+        });
+        const shortFlatMerged = buildTestPsd({ width: 8, height: 8, depth: 8, mode: 3, layers: [], mergedComp: 1, mergedZeroLens: true });
+        const checkRefusal0Bands = async (psdBuf, re, wantRefused = false) => {
+            let bands = 0, msg = "", refused = false;
+            try {
+                await layered.readPsdStream(psdBuf, {
+                    inflate: (b, cap) => layered.inflateAtMost(b, "deflate", cap),
+                    rowsPerBand: 4, kernels: pxKernelsFor(ref),
+                    onRows: () => { bands++; },
+                });
+            } catch (e) { msg = String(e.message || e); refused = Boolean(e && e.refused === true); }
+            return bands === 0 && re.test(msg) && (!wantRefused || refused);
+        };
+        const upfrontOk = eqBytes(predBuf, predSnap) && eqBytes(pBand1, pBand2) && eqBytes(pxBandDirect, pBand1)
+            && pxMaskDirect.length === 32 && jobBytesAfterBandRgba === 0 && jobBytesAfterBandMask === 0
+            && await checkRefusal0Bands(extraZipBomb, /unpacks to more than/)
+            && await checkRefusal0Bands(shortRleLayer, /holds less data/)
+            && await checkRefusal0Bands(shortFlatMerged, /merged picture holds less data/, true);
+        check(`${label} readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated`,
+            upfrontOk);
+    }
+
+    // 4. On rust simd: kernels.js psdRead route, sub-route overrides, W.psdRead worker job, releaseMB=0, mid-layer trap/OOM recovery, and PX_BENCH
+    if (label === "rust simd") {
+        const K = await import(pathToFileURL(path.join(PX_DIR, "kernels.js")).href);
+        const P = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
+        const W = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_worker.js")).href);
+
+        K.setKernels("rust");
+        if (!K.rustPx()) {
+            const realFetch = globalThis.fetch;
+            globalThis.fetch = async (u, ...rest) => {
+                const s = String(u && u.href ? u.href : u);
+                return s.startsWith("file:") ? new Response(fs.readFileSync(fileURLToPath(s))) : realFetch(u, ...rest);
+            };
+            try { await K.kernelsReady(); } finally { globalThis.fetch = realFetch; }
+        }
+
+        const routePsd = buildTestPsd({
+            width: 32, height: 16, depth: 16, mode: 3,
+            layers: [{
+                left: 0, top: 0, w: 32, h: 16, comp: 3,
+                chList: [
+                    [0, Array.from({ length: 32 * 16 }, (_, i) => (i * 311 + 17) & 0xFFFF), 3],
+                    [1, Array.from({ length: 32 * 16 }, (_, i) => (i * 197 + 99) & 0xFFFF), 1],
+                    [2, Array.from({ length: 32 * 16 }, (_, i) => (i * 521 + 3) & 0xFFFF), 0],
+                    [-1, Array.from({ length: 32 * 16 }, (_, i) => (i * 131 + 40000) & 0xFFFF), 2],
+                    [-2, Array.from({ length: 32 * 16 }, (_, i) => (i * 257) & 0xFFFF), 3],
+                ],
+                mask: { left: 0, top: 0, w: 32, h: 16, def: 255, flags: 0 },
+            }],
+        });
+
+        const runWorkerPsd = async (psdBuf, rowsPerBand = 4) => {
+            const posted = [];
+            const prevSelf = globalThis.self;
+            globalThis.self = { postMessage: (m) => posted.push(m) };
+            try {
+                K.pxCalls(true);
+                const reply = await W.psdRead({ id: 7, blob: new Blob([psdBuf]), rowsPerBand });
+                const calls = K.pxCalls(true);
+                const layerOut = new Uint8Array(32 * 16 * 4), maskOut = new Uint8Array(32 * 16 * 4);
+                for (const m of posted) {
+                    if (m.progress) (m.mask ? maskOut : layerOut).set(new Uint8Array(m.rgba), m.y0 * m.w * 4);
+                }
+                return { reply, calls, posted, layerOut, maskOut };
+            } finally {
+                globalThis.self = prevSelf;
+            }
+        };
+
+        const wantRef = await collectStream(routePsd, null, 4);
+        const wRust = await runWorkerPsd(routePsd, 4);
+        const jobBytesAfterRust = K.rustPx().job.jobBytes;
+
+        K.setRoute("psdRead", "js");
+        const wJs = await runWorkerPsd(routePsd, 4);
+        K.setRoute("psdRead", null);
+
+        // Sub-route overrides on psdKernels(): tiffUnpredict="js" and tiffToRgba="js"
+        K.setRoute("tiffToRgba", "js");
+        K.pxCalls(true);
+        const subToRgba = await collectStream(routePsd, K.psdKernels(), 4);
+        const callsNoToRgba = K.pxCalls(true);
+        K.setRoute("tiffToRgba", null);
+
+        K.setRoute("tiffUnpredict", "js");
+        K.pxCalls(true);
+        const subUnpred = await collectStream(routePsd, K.psdKernels(), 4);
+        const callsNoUnpred = K.pxCalls(true);
+        K.setRoute("tiffUnpredict", null);
+
+        // Direct K.packbitsRows and K.psdMaskRgba route checks
+        const sampleLens = Uint8Array.from([0, 2]), samplePb = Uint8Array.from([253, 0x42]);
+        K.pxCalls(true);
+        const kPbRust = K.packbitsRows(sampleLens, samplePb, 1, 4);
+        const kMaskRust = K.psdMaskRgba(Uint8Array.from([10, 20, 30, 40]), 4, 0, 4, 1, 0, 4, 0, 1, 8, 0);
+        const directRustCalls = K.pxCalls(true);
+        K.setRoute("psdRead", "js");
+        const kPbJs = K.packbitsRows(sampleLens, samplePb, 1, 4);
+        const kMaskJs = K.psdMaskRgba(Uint8Array.from([10, 20, 30, 40]), 4, 0, 4, 1, 0, 4, 0, 1, 8, 0);
+        const directJsCalls = K.pxCalls(true);
+        K.setRoute("psdRead", null);
+
+        // releaseMB = 0 check on W.psdRead
+        let relBefore = 0, relAfter = 0;
+        K.setRoute("releaseMB", 0);
+        try {
+            relBefore = K.pxInstances().release;
+            await runWorkerPsd(routePsd, 16);
+            relAfter = K.pxInstances().release;
+        } finally {
+            K.setRoute("releaseMB", null);
+        }
+
+        const routeOk = wRust.reply.timing.kernels === "rust"
+            && wJs.reply.timing.kernels === "js"
+            && wRust.calls.packbits_rows === 4 && wRust.calls.tiff_unpredict === 8
+            && wRust.calls.tiff_to_rgba === 4 && wRust.calls.psd_mask_rgba === 4
+            && Object.keys(wJs.calls).length === 0
+            && !callsNoToRgba.tiff_to_rgba && callsNoToRgba.psd_mask_rgba === 4
+            && !callsNoUnpred.tiff_unpredict
+            && directRustCalls.packbits_rows === 1 && directRustCalls.psd_mask_rgba === 1
+            && Object.keys(directJsCalls).length === 0
+            && eqBytes(kPbRust, kPbJs) && eqBytes(kMaskRust, kMaskJs)
+            && jobBytesAfterRust === 0 && (relAfter - relBefore) === 3
+            && eqBytes(wRust.layerOut, wantRef.bands.get("0:rgba"))
+            && eqBytes(wRust.maskOut, wantRef.bands.get("0:mask"))
+            && eqBytes(wJs.layerOut, wantRef.bands.get("0:rgba"))
+            && eqBytes(wJs.maskOut, wantRef.bands.get("0:mask"))
+            && eqBytes(subToRgba.bands.get("0:rgba"), wantRef.bands.get("0:rgba"))
+            && eqBytes(subUnpred.bands.get("0:rgba"), wantRef.bands.get("0:rgba"))
+            && eqBytes(subUnpred.bands.get("0:mask"), wantRef.bands.get("0:mask"));
+        check("inpaint_worker.js psdRead & kernels.js psdKernels(): routes psdRead/tiffToRgba/tiffUnpredict between Rust and JS twin, resets p.job, calls releaseIfLarge(), and matches PSD_JS",
+            routeOk,
+            `rustK=${wRust.reply.timing.kernels} jsK=${wJs.reply.timing.kernels} calls=${JSON.stringify(wRust.calls)} jsCalls=${JSON.stringify(wJs.calls)} rel=${relBefore}->${relAfter} jobBytes=${jobBytesAfterRust}`);
+
+        // K20b review (K20b-T1): psdRead's acknowledgement window. routePsd in 4-row bands is 8 bands (4 rgba, 4 mask).
+        // With window 2 and no acknowledgement the reader stops after 2 posts; an ack of n lets it post up to n + 2; an
+        // ack for another job id moves nothing; the bytes are the unpaced reader's; without `window` (runWorkerPsd
+        // above) every band goes with no ack at all.
+        {
+            const posted = [], counts = [];
+            const prevSelf = globalThis.self;
+            globalThis.self = { postMessage: (m) => posted.push(m) };
+            const settle = () => new Promise((res) => setTimeout(res, 30));
+            let reply = null, perr = null;
+            try {
+                const job = W.psdRead({ id: 9, blob: new Blob([routePsd]), rowsPerBand: 4, window: 2 }).then((r) => { reply = r; }, (e) => { perr = e; });
+                await settle(); counts.push(posted.length);                                // 2
+                await settle(); counts.push(posted.length);                                // 2: nothing acknowledged
+                W.psdAck({ id: 9, n: 1 }); await settle(); counts.push(posted.length);     // 3
+                W.psdAck({ id: 8, n: 8 }); await settle(); counts.push(posted.length);     // 3: another job's ack
+                W.psdAck({ id: 9, n: 3 }); await settle(); counts.push(posted.length);     // 5
+                for (let n = 4; n <= 8 && !reply; n++) { W.psdAck({ id: 9, n }); await settle(); }
+                await Promise.race([job, new Promise((res) => setTimeout(res, 5000))]);
+            } finally {
+                globalThis.self = prevSelf;
+            }
+            const pacedLayer = new Uint8Array(32 * 16 * 4), pacedMask = new Uint8Array(32 * 16 * 4);
+            for (const m of posted) if (m.progress) (m.mask ? pacedMask : pacedLayer).set(new Uint8Array(m.rgba), m.y0 * m.w * 4);
+            const paceOk = !perr && !!reply && !!reply.doc && counts.join(",") === "2,2,3,3,5" && posted.length === 8
+                && reply.timing.window === 2 && reply.timing.wait > 0 && wRust.reply.timing.window === 0
+                && eqBytes(pacedLayer, wantRef.bands.get("0:rgba")) && eqBytes(pacedMask, wantRef.bands.get("0:mask"))
+                && pacedLayer.some((v) => v !== 0) && pacedMask.some((v) => v !== 0);
+            check("inpaint_worker.js psdRead window 2: posts 2 bands, then one more per acknowledged band (psdAck by job id and count), same bytes as unpaced",
+                paceOk, `counts=${counts.join(",")} posted=${posted.length} reply=${!!reply} err=${perr && perr.message} window=${reply && reply.timing.window} wait=${reply && reply.timing.wait}`);
+        }
+
+        // Mid-layer wasm trap and PxOutOfMemory recovery on band 2 (y0 = 4) of 4-band comp === 3 masked layer
+        const realWarn = console.warn;
+        console.warn = () => {};
+        try {
+            // (a) Trap on band 2 (2nd band, y0 = 4) inside tiff_to_rgba (after tiff_unpredict ran on wasm arena copy — proving d.bytes is unmutated!)
+            let p0 = K.rustPx(), i0 = K.pxInstances(), seenRgba = 0;
+            const origToRgba = p0.exports.tiff_to_rgba;
+            p0.exports = {
+                ...p0.exports,
+                tiff_to_rgba: (...a) => {
+                    if (++seenRgba === 2) return trapIn(p0);
+                    return origToRgba(...a);
+                },
+            };
+            const rTrapBand = await runWorkerPsd(routePsd, 4);
+            let i1 = K.pxInstances();
+            const trapBandOk = K.rustPx() !== p0 && i1.trap === i0.trap + 1
+                && K.rustPx().job.jobBytes === 0
+                && rTrapBand.posted.filter((m) => m.progress && !m.mask).length === 4
+                && rTrapBand.posted.filter((m) => m.progress && m.mask).length === 4
+                && eqBytes(rTrapBand.layerOut, wantRef.bands.get("0:rgba"))
+                && eqBytes(rTrapBand.maskOut, wantRef.bands.get("0:mask"));
+
+            // (b) PxOutOfMemory on band 2 of psdBandMask
+            p0 = K.rustPx(); i0 = K.pxInstances();
+            let seenMask = 0;
+            const origBandMask = p0.psdBandMask.bind(p0);
+            p0.psdBandMask = (...a) => {
+                if (++seenMask === 2) throw new P.PxOutOfMemory(65536);
+                return origBandMask(...a);
+            };
+            const rOomMask = await runWorkerPsd(routePsd, 4);
+            i1 = K.pxInstances();
+            const oomMaskOk = K.rustPx() !== p0 && i1.oom === i0.oom + 1
+                && K.rustPx().job.jobBytes === 0
+                && eqBytes(rOomMask.layerOut, wantRef.bands.get("0:rgba"))
+                && eqBytes(rOomMask.maskOut, wantRef.bands.get("0:mask"));
+
+            check("psdKernels() recovers mid-layer on band 2 of 4 from wasm RuntimeError and PxOutOfMemory without mutating d.bytes, leaking arena bytes, or dropping/duplicating bands",
+                trapBandOk && oomMaskOk,
+                `trapBandOk=${trapBandOk} oomMaskOk=${oomMaskOk}`);
+        } finally {
+            console.warn = realWarn;
+            K.setKernels("js");
+        }
+
+        if (process.env.PX_BENCH) {
+            const bw = 15000, brows = 256;
+            const bSrc = randomRGBA(bw, brows, 9901);
+            for (let x = 0, run = 1; x + run < bw; x += run + 1, run = (run % 64) + 1) bSrc.fill(run & 255, x * 4, (x + run) * 4);
+            const packed = ref.psdPackRows(bSrc, bw, brows);
+            const pbOut = new Uint8Array(bw * brows);
+            const maskSrc8 = pbOut.slice();
+            const maskSrc16 = new Uint8Array(bw * brows * 2);
+            for (let i = 0; i < maskSrc16.length; i++) maskSrc16[i] = bSrc[i % bSrc.length];
+            const rgbaOut = new Uint8ClampedArray(bw * brows * 4);
+            const descsRle8 = [0, 1, 2, 3].map((ch) => ({
+                comp: 1, cw: bw, chh: brows, rowBytes: bw, lensBytes: packed[ch].lens,
+                rowOff: (() => {
+                    const offs = new Uint32Array(brows + 1);
+                    for (let y = 0; y < brows; y++) offs[y + 1] = offs[y] + ((packed[ch].lens[2 * y] << 8) | packed[ch].lens[2 * y + 1]);
+                    return offs;
+                })(),
+                bytes: packed[ch].data,
+                dataAt: 0,
+            }));
+            for (const [what, fnTwin, fnSimd] of [
+                ["packbits_rows 15000x256 (1 plane)",
+                    () => js.packbitsRows(packed[0].lens, packed[0].data, brows, bw, pbOut),
+                    () => ref.packbitsRows(packed[0].lens, packed[0].data, brows, bw, pbOut)],
+                ["psd_mask_rgba 8-bit 15000x256",
+                    () => js.psdMaskRgba(maskSrc8, bw, 0, bw, brows, 0, bw, 0, brows, 8, 0, rgbaOut),
+                    () => ref.psdMaskRgba(maskSrc8, bw, 0, bw, brows, 0, bw, 0, brows, 8, 0, rgbaOut)],
+                ["psd_mask_rgba 16-bit BE 15000x256",
+                    () => js.psdMaskRgba(maskSrc16, bw, 0, bw, brows, 0, bw, 0, brows, 16, 0, rgbaOut),
+                    () => ref.psdMaskRgba(maskSrc16, bw, 0, bw, brows, 0, bw, 0, brows, 16, 0, rgbaOut)],
+                ["psdBandRgba RLE RGBA8 15000x256 (4 planes -> RGBA8)",
+                    () => js.psdBandRgba(descsRle8, bw, 0, brows, 8, false),
+                    () => ref.psdBandRgba(descsRle8, bw, 0, brows, 8, false)],
+            ]) {
+                const rows = [["twin", fnTwin], ["simd", fnSimd]];
+                const med = benchMedians(rows, { rounds: 9 });
+                console.log(`       ${what}: ${rows.map(([n]) => `${n} ${med[n].toFixed(2)}`).join(", ")} ms (median of 9)`);
+            }
+        }
+    }
 }
 
 function unfilter(f, w, rows, prev) {
@@ -11303,7 +12227,8 @@ async function tiffCases(js, simd, scalar, K, T) {
         // 16-bit LE and BE across per=1..5, tight and padded, plus explicit 16-bit carry/wraparound edges
         for (const le of [true, false]) {
             for (const per of [1, 2, 3, 4, 5]) {
-                for (const w of [1, 2, 3, 4, 7, 16, 17, 33]) {
+                const widths = per === 1 ? [1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 24, 25, 33, 65] : [1, 2, 3, 4, 7, 16, 17, 33];
+                for (const w of widths) {
                     const rows = 2, rbTight = w * per * 2, rbPad = rbTight + 6;
                     unpredictCases.push({
                         tag: `unpredict 16b ${le ? "LE" : "BE"} per=${per} w=${w} tight`,
@@ -11315,13 +12240,23 @@ async function tiffCases(js, simd, scalar, K, T) {
                     });
                 }
             }
-            // Explicit 16-bit wraparound: 0xFFFF + 1 -> 0x0000, 0x00FF + 1 -> 0x0100, 0x8000 + 0x8000 -> 0x0000
+            // Explicit 16-bit wraparound across 4px (scalar) and 19px (2 SIMD u16x8 blocks + 3 scalar tail samples, K20b)
             const edge16 = new Uint8Array(4 * 2);
             const dv = new DataView(edge16.buffer);
             [0xFFFF, 0x0001, 0x00FF, 0x8001].forEach((v, i) => dv.setUint16(i * 2, v, le));
             unpredictCases.push({
-                tag: `unpredict 16b ${le ? "LE" : "BE"} wraparound`,
+                tag: `unpredict 16b ${le ? "LE" : "BE"} wraparound 4px`,
                 args: [edge16, 1, 8, 4, 1, 16, le],
+            });
+            const edge19 = new Uint8Array(19 * 2 + 6).fill(0xCC);
+            const dv19 = new DataView(edge19.buffer);
+            const vals19 = [0xFFFF, 0x0002, 0x00FF, 0x0001, 0x7FFF, 0x0003, 0x8000, 0x9abc,
+                0x6545, 0x0001, 0xFFFE, 0x0005, 0x0102, 0x0304, 0xFEDC, 0x1111,
+                0xFFFF, 0x0003, 0x8001];
+            vals19.forEach((v, i) => dv19.setUint16(i * 2, v, le));
+            unpredictCases.push({
+                tag: `unpredict 16b ${le ? "LE" : "BE"} wraparound 19px+pad`,
+                args: [edge19, 1, 19 * 2 + 6, 19, 1, 16, le],
             });
         }
         // Edge cases: rows=0, pixels=0, pixels=1
@@ -11512,6 +12447,32 @@ async function tiffCases(js, simd, scalar, K, T) {
             }
         }
 
+        // K20b planar SIMD width sweep (planes == spp, photometric 1 & 2, alpha none & straight, bits 8 & 16 LE/BE, widths 1..257, aligned + odd offsets via twinCheck)
+        for (const photometric of [1, 2]) {
+            const base = photometric === 2 ? 3 : 1;
+            for (const bits of [8, 16]) {
+                const leList = bits === 16 ? [true, false] : [true];
+                for (const le of leList) {
+                    for (const alpha of ["none", "straight"]) {
+                        const extraList = alpha === "straight" ? [0, 1] : [0];
+                        for (const extra of extraList) {
+                            const spp = base + (alpha === "none" ? 0 : 1) + extra;
+                            for (const w of [1, 7, 15, 16, 17, 31, 32, 63, 257]) {
+                                const n = w > 64 ? 2 : 3;
+                                const pad = w === 17 || w === 63 ? 3 : 0;
+                                const rowBytes = w * (bits / 8) + pad;
+                                const bufs = makePlaneBufs(spp, n, rowBytes, ++seedCounter);
+                                toRgbaCases.push({
+                                    tag: `planarSimd photo=${photometric} bits=${bits}${bits === 16 ? (le ? "LE" : "BE") : ""} spp=${spp} alpha=${alpha} w=${w} pad=${pad}`,
+                                    args: [n, { w, rowBytes, spp, bits, planes: spp, le, photometric, alpha }, null, ...bufs],
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Question 6.4 explicit cases: 1, 2, and 4-bit palette + alpha, chunky and planar, straight and premultiplied, covering every (idx, alpha) pair
         for (const bits of [1, 2, 4]) {
             const nEntries = 1 << bits, max = nEntries - 1;
@@ -11618,6 +12579,47 @@ async function tiffCases(js, simd, scalar, K, T) {
             check("tiff_to_rgba exhaustive 65,536 16-bit values (LE and BE): 0 bytes differ across twin, simd and scalar",
                 eqBytes(wantLe, wantBe) && eqBytes(gotSimdLe, wantLe) && eqBytes(gotScalLe, wantLe) && eqBytes(gotSimdBe, wantBe) && eqBytes(gotScalBe, wantBe),
                 firstDiff(gotSimdLe, wantLe) || firstDiff(gotSimdBe, wantBe));
+
+            // K20b: exhaustive 65,536 u16 rounding identity + 4-plane & 5-plane (extra sample) planar RGBA16 LE/BE across SIMD + tail width (w=259 -> 256 SIMD + 3 tail)
+            let mathOk = true;
+            for (let v = 0; v < 65536; v++) {
+                const a = Math.round(v / 257);
+                const b = ((v * 2 + 257) / 514) | 0;
+                const c = (v * 255 + 32895) >>> 16;
+                if (a !== b || a !== c) { mathOk = false; break; }
+            }
+            const pw16 = 259, pn16 = 254;   // 259 * 254 = 65,786 >= 65,536 pixels, and w=259 % 8 === 3 exercises SIMD + scalar tail on every row!
+            const mkPlanes16 = (le) => {
+                const planes = [0, 1, 2, 3, 4].map(() => new Uint8Array(pw16 * pn16 * 2));
+                const dvs = planes.map((b) => new DataView(b.buffer));
+                for (let i = 0; i < pw16 * pn16; i++) {
+                    dvs[0].setUint16(i * 2, i & 0xFFFF, le);
+                    dvs[1].setUint16(i * 2, (65535 - (i & 0xFFFF)) & 0xFFFF, le);
+                    dvs[2].setUint16(i * 2, ((i * 257 + 128) & 0xFFFF), le);
+                    dvs[3].setUint16(i * 2, ((i * 19 + 32895) & 0xFFFF), le);
+                    dvs[4].setUint16(i * 2, 0xBEEF, le);   // extra unspecified sample plane: must be ignored when alpha=none or straight (spp=5)
+                }
+                return planes;
+            };
+            let p16Ok = mathOk, p16Detail = mathOk ? "" : "rounding identity mismatch";
+            for (const le of [true, false]) {
+                if (!p16Ok) break;
+                const pl = mkPlanes16(le);
+                for (const [spp, alpha] of [[4, "straight"], [5, "straight"], [4, "none"]]) {
+                    const bufs = pl.slice(0, spp);
+                    const spec = { w: pw16, rowBytes: pw16 * 2, spp, bits: 16, planes: spp, le, photometric: 2, alpha, pal: null };
+                    const want = js.tiffToRgba(bufs, pn16, null, spec);
+                    const gotSimd = simd.tiffToRgba(bufs, pn16, null, spec);
+                    const gotScal = scalar.tiffToRgba(bufs, pn16, null, spec);
+                    if (!eqBytes(gotSimd, want) || !eqBytes(gotScal, want)) {
+                        p16Ok = false;
+                        p16Detail = `le=${le} spp=${spp} alpha=${alpha}: ${firstDiff(gotSimd, want) || firstDiff(gotScal, want)}`;
+                        break;
+                    }
+                }
+            }
+            check("tiff_to_rgba planar 16-bit (K20b): exact (255*v+32895)>>16 identity and 0 bytes differ on 65,786-pixel 4/5-plane LE/BE w=259 (SIMD + tail)",
+                p16Ok, p16Detail);
         }
 
         // Caller-supplied `out` view with surrounding sentinel bytes
@@ -12334,6 +13336,260 @@ async function tiffCases(js, simd, scalar, K, T) {
             check("inpaint_tiff.js tiffPlan & readTiffBand (K17): per-tile unpredict on 8/16-bit tiled Predictor-2, bounded band slices, deflate cancel, streamed refusals, and 64/128 MiB rules",
                 tiledPredOk && rgbaRuleOk && extraBandChecksOk,
                 tiledPredDetail || `exact=${pExact.streamed}/${pExact.bandRows} over=${pOver.streamed}/${pOver.bandRows} hi=${pHiExact.streamed}/${pHiOver.streamed} zCancel=${zCancelOk} rawSlice=${maxRawSlice} lzwBig=${pLzwBig.streamed} extra=${extraBandChecksOk}`);
+
+            // 4f. K18: tiffBandJob worker handler, readTiffBands on WorkerPool, NORMAL ahead of EXPORT, and group cancellation
+            const Wk = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_worker.js")).href);
+            const { WorkerPool, NORMAL: POOL_NORMAL, EXPORT: POOL_EXPORT } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_pool.js")).href);
+            const kw = 13, kh = 18;
+            const kStrips = [];
+            const kWant = new Uint8Array(kw * kh * 4);
+            for (let y = 0; y < kh; y++) {
+                const rawRow = new Uint8Array(kw * 3);
+                for (let x = 0; x < kw; x++) {
+                    const r0 = (x * 17 + y * 31 + 5) & 255, g0 = (x * 41 + y * 13 + 9) & 255, b0 = (x * 7 + y * 53 + 21) & 255;
+                    rawRow[x * 3] = x === 0 ? r0 : (r0 - kWant[(y * kw + x - 1) * 4]) & 255;
+                    rawRow[x * 3 + 1] = x === 0 ? g0 : (g0 - kWant[(y * kw + x - 1) * 4 + 1]) & 255;
+                    rawRow[x * 3 + 2] = x === 0 ? b0 : (b0 - kWant[(y * kw + x - 1) * 4 + 2]) & 255;
+                    const o = (y * kw + x) * 4;
+                    kWant[o] = r0; kWant[o + 1] = g0; kWant[o + 2] = b0; kWant[o + 3] = 255;
+                }
+                kStrips.push(lzwEncodeTiff(rawRow));
+            }
+            const kBytes = mkTiff([
+                [256, 4, [kw]], [257, 4, [kh]], [258, 3, [8, 8, 8]], [259, 3, [5]],
+                [262, 3, [2]], [277, 3, [3]], [278, 4, [1]], [284, 3, [1]], [317, 3, [2]],
+            ], kStrips);
+            const kBlob = new Blob([kBytes]);
+            const kPlan = await js.tiffPlan(kBlob, { rowsPerBand: 3 }); // 6 bands of 3 rows
+            const kPalBytes = mkTiff([
+                [256, 4, [4]], [257, 4, [2]], [258, 3, [8]], [259, 3, [1]],
+                [262, 3, [3]], [277, 3, [1]], [278, 4, [1]], [320, 3, new Array(768).fill(0)],
+            ], [new Uint8Array(4), new Uint8Array(4)]);
+            const kPalPlan = await js.tiffPlan(new Blob([kPalBytes]), { rowsPerBand: 1 });
+
+            // Direct tiffBandJob on Rust vs JS routes + releaseIfLarge + bad args refusal
+            K.setKernels("rust");
+            const pBeforeRelease = K.rustPx();
+            K.setRoute("releaseMB", 1);
+            K.pxCalls(true);
+            let jbRust, pAfterRelease;
+            try {
+                jbRust = await Wk.tiffBandJob({ blob: kBlob, spec: kPlan.spec, band: kPlan.bands[1] });
+                pAfterRelease = K.rustPx();
+            } finally {
+                K.setRoute("releaseMB", null);
+            }
+            const callsRust = K.pxCalls(true);
+            let jbJs;
+            K.setRoute("tiffUnpack", "js");
+            K.setRoute("tiffUnpredict", "js");
+            K.setRoute("tiffToRgba", "js");
+            try {
+                K.pxCalls(true);
+                jbJs = await Wk.tiffBandJob({ blob: kBlob, spec: kPlan.spec, band: kPlan.bands[1] });
+            } finally {
+                K.setRoute("tiffUnpack", null);
+                K.setRoute("tiffUnpredict", null);
+                K.setRoute("tiffToRgba", null);
+            }
+            const callsJs = K.pxCalls(true);
+            let badJobErr = null;
+            try { await Wk.tiffBandJob({ blob: kBlob, spec: null, band: null }); } catch (e) { badJobErr = e; }
+
+            // Real WorkerPool test:
+            // (a) Busy 2-worker pool + 4 queued EXPORT jobs -> readTiffBands at NORMAL runs all 6 tiff_band jobs BEFORE queued EXPORT jobs
+            const execOrder = [];
+            const gateHolders = [];
+            const seenBandMsgs = [];
+            let pool1InFlight = 0, pool1PeakInFlight = 0;
+            const pool1 = new WorkerPool({
+                size: 2,
+                create: () => {
+                    const wk = { onmessage: null, onerror: null, terminate() {} };
+                    wk.postMessage = (msg) => {
+                        if (msg.op === "hold") {
+                            gateHolders.push(() => wk.onmessage({ data: { id: msg.id, ok: true } }));
+                            return;
+                        }
+                        execOrder.push(msg.op);
+                        if (msg.op === "tiff_band") {
+                            seenBandMsgs.push(msg);
+                            pool1InFlight++;
+                            if (pool1InFlight > pool1PeakInFlight) pool1PeakInFlight = pool1InFlight;
+                        }
+                        setTimeout(async () => {
+                            try {
+                                if (msg.op === "tiff_band") {
+                                    const res = await Wk.tiffBandJob(msg);
+                                    pool1InFlight--;
+                                    wk.onmessage({ data: { id: msg.id, ok: true, ...res } });
+                                } else {
+                                    wk.onmessage({ data: { id: msg.id, ok: true } });
+                                }
+                            } catch (err) {
+                                if (msg.op === "tiff_band") pool1InFlight--;
+                                wk.onmessage({ data: { id: msg.id, ok: false, error: String((err && err.message) || err) } });
+                            }
+                        }, 1);
+                    };
+                    return wk;
+                },
+            });
+            const origPool1Run = pool1.run.bind(pool1);
+            let maxPostedInFlight = 0, curPostedInFlight = 0;
+            pool1.run = (op, args, transfer, opts) => {
+                if (op === "tiff_band") {
+                    curPostedInFlight++;
+                    if (curPostedInFlight > maxPostedInFlight) maxPostedInFlight = curPostedInFlight;
+                    return origPool1Run(op, args, transfer, opts).finally(() => { curPostedInFlight--; });
+                }
+                return origPool1Run(op, args, transfer, opts);
+            };
+            const h0 = pool1.run("hold", {}, [], { priority: POOL_EXPORT });
+            const h1 = pool1.run("hold", {}, [], { priority: POOL_EXPORT });
+            const expPromises = [0, 1, 2, 3].map((i) => pool1.run("export_dummy", { i }, [], { priority: POOL_EXPORT }));
+            const poolGot = new Uint8Array(kw * kh * 4);
+            const bandOpenP = js.readTiffBands(kBlob, {
+                pool: pool1,
+                rowsPerBand: 3,
+                priority: POOL_NORMAL,
+                onRows: (rgba, y0) => { poolGot.set(rgba, y0 * kw * 4); },
+            });
+            // Let tiffPlan finish and queue the initial tiff_band window while workers are held
+            for (let spin = 0; spin < 20 && pool1.queues[POOL_NORMAL].length === 0; spin++) await new Promise((r) => setTimeout(r, 1));
+            for (const release of gateHolders) release();
+            await Promise.all([h0, h1, bandOpenP, ...expPromises]);
+            pool1.terminate();
+            const firstExportIdx = execOrder.indexOf("export_dummy");
+            const lastBandIdx = execOrder.lastIndexOf("tiff_band");
+            const priorityOrderOk = execOrder.filter((x) => x === "tiff_band").length === 6
+                && firstExportIdx === 6 && lastBandIdx === 5
+                && maxPostedInFlight === 4
+                && !("colormap" in kPalPlan.spec) && kPalPlan.spec.pal instanceof Uint8Array
+                && seenBandMsgs.length === 6
+                && seenBandMsgs.every((m) => m.spec && !("offsets" in m.spec) && !("bands" in m.spec) && !("colormap" in m.spec) && m.band.offsets.length === 3);
+
+            // (b) Band error on a 2-worker WorkerPool cancels queued & running group jobs immediately
+            let startedBands = 0;
+            const pool2 = new WorkerPool({
+                size: 2,
+                create: () => {
+                    const wk = { onmessage: null, onerror: null, terminate() {} };
+                    wk.postMessage = (msg) => {
+                        startedBands++;
+                        setTimeout(async () => {
+                            if (msg.band && msg.band.index === 1) {
+                                wk.onmessage({ data: { id: msg.id, ok: false, error: "band 1 decode error" } });
+                                return;
+                            }
+                            const res = await Wk.tiffBandJob(msg);
+                            wk.onmessage({ data: { id: msg.id, ok: true, ...res } });
+                        }, msg.band && msg.band.index === 1 ? 1 : 15);
+                    };
+                    return wk;
+                },
+            });
+            let pool2Err = null;
+            try {
+                await js.readTiffBands(kBlob, { pool: pool2, rowsPerBand: 3, priority: POOL_NORMAL, onRows: () => {} });
+            } catch (e) { pool2Err = e; }
+            const pool2Stats = pool2.stats();
+            pool2.terminate();
+
+            // (c) later() cancellation on WorkerPool:
+            //     c1: later() flips BEFORE band 0 reply arrives -> 0 onRows calls, reply buffer detached, group cancelled
+            //     c2: 2-band file (all bands within maxInFlight, next === n) where later() flips INSIDE band 0 onRows ->
+            //         finishBand's later() check cancels held band 1 immediately without waiting for band 1 to finish
+            let stalePre = false, preRows = 0, preBufRef = null;
+            const pool3a = new WorkerPool({
+                size: 2,
+                create: () => {
+                    const wk = { onmessage: null, onerror: null, terminate() {} };
+                    wk.postMessage = (msg) => {
+                        setTimeout(async () => {
+                            if (msg.band && msg.band.index === 0) stalePre = true;
+                            const res = await Wk.tiffBandJob(msg);
+                            if (msg.band && msg.band.index === 0) preBufRef = res.rgba;
+                            wk.onmessage({ data: { id: msg.id, ok: true, ...res } });
+                        }, msg.band && msg.band.index === 0 ? 2 : 25);
+                    };
+                    return wk;
+                },
+            });
+            let pool3aErr = null;
+            try {
+                await js.readTiffBands(kBlob, {
+                    pool: pool3a,
+                    rowsPerBand: 9, // 2 bands of 9 rows
+                    priority: POOL_NORMAL,
+                    later: () => stalePre,
+                    onRows: () => { preRows++; },
+                });
+            } catch (e) { pool3aErr = e; }
+            const pool3aStats = pool3a.stats();
+            pool3a.terminate();
+
+            let staleNow = false, rowsSeenBeforeStale = 0;
+            const pool3 = new WorkerPool({
+                size: 2,
+                create: () => {
+                    const wk = { onmessage: null, onerror: null, terminate() {} };
+                    wk.postMessage = (msg) => {
+                        if (msg.band && msg.band.index === 1) {
+                            // Band 1 never replies on its own; finishBand's later() check after band 0 onRows must cancel it!
+                            return;
+                        }
+                        setTimeout(async () => {
+                            const res = await Wk.tiffBandJob(msg);
+                            wk.onmessage({ data: { id: msg.id, ok: true, ...res } });
+                        }, 1);
+                    };
+                    return wk;
+                },
+            });
+            let pool3Err = null;
+            try {
+                const raceRes = await Promise.race([
+                    js.readTiffBands(kBlob, {
+                        pool: pool3,
+                        rowsPerBand: 9, // 2 bands (next === n === 2 after initial launch!)
+                        priority: POOL_NORMAL,
+                        later: () => staleNow,
+                        onRows: () => { rowsSeenBeforeStale++; staleNow = true; },
+                    }),
+                    new Promise((r) => setTimeout(() => r("HUNG"), 80)),
+                ]);
+                if (raceRes === "HUNG") pool3Err = new Error("HUNG");
+            } catch (e) { pool3Err = e; }
+            const pool3Stats = pool3.stats();
+            pool3.terminate();
+            let streamedPosts = 0;
+            const streamedNull = await js.readTiffBands(kBlob, {
+                pool: { size: 2, run() { streamedPosts++; return Promise.reject(new Error("unexpected")); } },
+                plan: await js.tiffPlan(kBlob, { streamed: true }),
+            });
+
+            const wantBand1 = kWant.subarray(3 * kw * 4, 6 * kw * 4);
+            const jbOk = jbRust.y0 === 3 && jbRust.rows === 3
+                && pBeforeRelease && pAfterRelease && pBeforeRelease !== pAfterRelease
+                && jbRust.rgba instanceof ArrayBuffer && jbRust.rgba.byteLength === wantBand1.byteLength
+                && Array.isArray(jbRust.transfer) && jbRust.transfer.length === 1 && jbRust.transfer[0] === jbRust.rgba
+                && jbRust.timing && jbRust.timing.op === "tiff_band" && jbRust.timing.kernels === "rust"
+                && callsRust.tiff_unpack === 3 && callsRust.tiff_unpredict === 1 && callsRust.tiff_to_rgba === 1
+                && Object.keys(callsJs).length === 0
+                && eqBytes(new Uint8Array(jbRust.rgba), wantBand1)
+                && eqBytes(new Uint8Array(jbJs.rgba), wantBand1)
+                && !!badJobErr && /invalid spec or band/i.test(badJobErr.message)
+                && eqBytes(poolGot, kWant) && priorityOrderOk
+                && !!pool2Err && /band 1 decode error/.test(pool2Err.message)
+                && pool2Stats.cancelled >= 3 && startedBands <= 3
+                && !!pool3aErr && pool3aErr.cancelled === true && preRows === 0 && preBufRef && preBufRef.byteLength === 0 && pool3aStats.cancelled >= 1
+                && !!pool3Err && pool3Err.cancelled === true && rowsSeenBeforeStale === 1 && pool3Stats.cancelled === 1
+                && streamedNull === null && streamedPosts === 0;
+
+            check("inpaint_worker.js tiffBandJob & readTiffBands (K18): rust vs js routes, NORMAL ahead of queued EXPORT jobs, and WorkerPool group cancel on band error",
+                jbOk,
+                `order=${execOrder.join(",")} cancelled=${pool2Stats.cancelled} started=${startedBands} rustCalls=${JSON.stringify(callsRust)}`);
         }
     }
 
@@ -12377,6 +13633,26 @@ async function tiffCases(js, simd, scalar, K, T) {
                 () => js.tiffToRgba([bRgba], brows, bOut, { w: bw, rowBytes: bw * 4, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "premultiplied", pal: null }),
                 () => simd.tiffToRgba([bRgba], brows, bOut, { w: bw, rowBytes: bw * 4, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "premultiplied", pal: null }),
                 () => scalar.tiffToRgba([bRgba], brows, bOut, { w: bw, rowBytes: bw * 4, spp: 4, bits: 8, planes: 1, le: true, photometric: 2, alpha: "premultiplied", pal: null })],
+            ...(() => {
+                const pl8 = [0, 1, 2, 3].map((c) => bRgba.subarray(c * bw * brows, (c + 1) * bw * brows));
+                const pl16 = [0, 1, 2, 3].map(() => new Uint8Array(bw * brows * 2));
+                for (let p = 0; p < 4; p++) for (let i = 0; i < pl16[p].length; i++) pl16[p][i] = bRgba[(p * 37 + i) % bRgba.length];
+                const u16Plane = pl16[0].slice();
+                return [
+                    ["tiff_unpredict 16b BE per=1 15000x16",
+                        () => js.tiffUnpredict(u16Plane, brows, bw * 2, bw, 1, 16, false),
+                        () => simd.tiffUnpredict(u16Plane, brows, bw * 2, bw, 1, 16, false),
+                        () => scalar.tiffUnpredict(u16Plane, brows, bw * 2, bw, 1, 16, false)],
+                    ["tiff_to_rgba planar RGBA8 15000x16",
+                        () => js.tiffToRgba(pl8, brows, bOut, { w: bw, rowBytes: bw, spp: 4, bits: 8, planes: 4, le: false, photometric: 2, alpha: "straight", pal: null }),
+                        () => simd.tiffToRgba(pl8, brows, bOut, { w: bw, rowBytes: bw, spp: 4, bits: 8, planes: 4, le: false, photometric: 2, alpha: "straight", pal: null }),
+                        () => scalar.tiffToRgba(pl8, brows, bOut, { w: bw, rowBytes: bw, spp: 4, bits: 8, planes: 4, le: false, photometric: 2, alpha: "straight", pal: null })],
+                    ["tiff_to_rgba planar RGBA16 BE->RGBA8 15000x16",
+                        () => js.tiffToRgba(pl16, brows, bOut, { w: bw, rowBytes: bw * 2, spp: 4, bits: 16, planes: 4, le: false, photometric: 2, alpha: "straight", pal: null }),
+                        () => simd.tiffToRgba(pl16, brows, bOut, { w: bw, rowBytes: bw * 2, spp: 4, bits: 16, planes: 4, le: false, photometric: 2, alpha: "straight", pal: null }),
+                        () => scalar.tiffToRgba(pl16, brows, bOut, { w: bw, rowBytes: bw * 2, spp: 4, bits: 16, planes: 4, le: false, photometric: 2, alpha: "straight", pal: null })],
+                ];
+            })(),
         ]) {
             const rows = [["twin", fnTwin], ["simd", fnSimd], ["scalar", fnScalar]];
             const med = benchMedians(rows, { rounds: 15 });

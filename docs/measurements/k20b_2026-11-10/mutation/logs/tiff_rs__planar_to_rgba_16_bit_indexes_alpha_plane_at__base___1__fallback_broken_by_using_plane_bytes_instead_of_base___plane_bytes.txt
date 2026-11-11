@@ -1,0 +1,28 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 19 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 298731 bytes, sha256 2dcc10f0a99eaf30
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 237715 bytes, sha256 2fae857ba2e9a888
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\crates\px)
+    Finished `release` profile [optimized] target(s) in 8.65s
+   Compiling px v0.1.0 (C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.59s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=tiff,psd)
+FAIL rust simd tiff_to_rgba equals its twin byte for byte (406 cases, each also at an odd offset)  toRgba photo=2 bits=16LE spp=4 planes=4 alpha=straight pad=0: out[3] is 27, the twin has 126
+FAIL rust scalar tiff_to_rgba equals its twin byte for byte (406 cases, each also at an odd offset)  toRgba photo=2 bits=16LE spp=4 planes=4 alpha=straight pad=0: out[3] is 27, the twin has 126
+FAIL tiff_to_rgba planar 16-bit (K20b): exact (255*v+32895)>>16 identity and 0 bytes differ on 65,786-pixel 4/5-plane LE/BE w=259 (SIMD + tail)  le=true spp=4 alpha=straight: at 3: 255 vs 128
+FAIL inpaint_worker.js psdRead & kernels.js psdKernels(): routes psdRead/tiffToRgba/tiffUnpredict between Rust and JS twin, resets p.job, calls releaseIfLarge(), and matches PSD_JS  rustK=rust jsK=js calls={"packbits_rows":4,"psd_mask_rgba":4,"tiff_to_rgba":4,"tiff_unpredict":8} jsCalls={} rel=1->4 jobBytes=0
+FAIL psdKernels() recovers mid-layer on band 2 of 4 from wasm RuntimeError and PxOutOfMemory without mutating d.bytes, leaking arena bytes, or dropping/duplicating bands  trapBandOk=false oomMaskOk=false
+FAIL (5) (only: tiff, psd; PX_ONLY, not the full test)
+ok   rust scalar packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output  rawPbOk=true
+ok   rust scalar psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views
+ok   rust scalar psd_mask_rgba equals its twin byte for byte (52 cases, each also at an odd offset)
+ok   rust scalar psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output  rawMaskOk=true
+ok   rust scalar psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs
+ok   rust scalar psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+ok   rust scalar readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated
+FAIL (5) (only: tiff, psd; PX_ONLY, not the full test)
+(node:60292) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/SCHOEN%7E1/AppData/Local/Temp/scumble_k20b_mut/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\SCHOEN~1\AppData\Local\Temp\scumble_k20b_mut\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

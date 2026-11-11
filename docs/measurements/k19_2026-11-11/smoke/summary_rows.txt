@@ -1,0 +1,19 @@
+#### smoke
+== noise: rust (deflate_part level 2, n=1), native (CompressionStream, n=1)
+row                                  rust median [min-max]                native median [min-max]              rust / native
+exportMs (whole export, wall)        608 [608-608]                        389 [389-389]                        1.56x (native lower, non-overlapping)
+exportSteps encoded                  500 [500-500]                        336 [336-336]                        1.49x (native lower, non-overlapping)
+exportSteps saved                    108 [108-108]                        52 [52-52]                           2.08x (native lower, non-overlapping)
+tiff_part jobs                       6 [6-6]                              6 [6-6]                              1.00x
+tiff_part nativeDeflate              0 [0-0]                              6 [6-6]                              0.00x
+tiff_part kernel (sum)               2,147.6 [2,147.6-2,147.6]            310.2 [310.2-310.2]                  6.92x (native lower, non-overlapping)
+tiff_part predict (sum)              3 [3-3]                              5.1 [5.1-5.1]                        0.59x (lower than native, non-overlapping)
+tiff_part deflate (sum)              2,131 [2,131-2,131]                  292.8 [292.8-292.8]                  7.28x (native lower, non-overlapping)
+file bytes                           10,304,953 [10,304,953-10,304,953]   10,265,175 [10,265,175-10,265,175]   1.00x (native lower, non-overlapping)
+file MB                              9.8 [9.8-9.8]                        9.8 [9.8-9.8]                        1.00x (spreads overlap: tie)
+strips                               6 [6-6]                              6 [6-6]                              1.00x
+openMs (reopen of that file, wall)   243 [243-243]                        592 [592-592]                        0.41x (lower than native, non-overlapping)
+runs: native_noise_r0.json native exportMs=389 fileBytes=10265175; rust_noise_r0.json rust exportMs=608 fileBytes=10304953
+
+checks:
+  smoke / noise: every run ok, picMatch true, rowsOff 0: True; one decoded-strip SHA-256 over all runs and arms: True (c14935e588d97cc1); one reopened picture hash: True; nativeDeflate on every strip of native runs and on none of the others: True

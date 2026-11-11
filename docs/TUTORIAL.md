@@ -1324,3 +1324,525 @@ the cold open (Variante 1). The big-cat version stays as a "cursed" cut for a fo
 - Also rebuilt from the new cold open and pushed (the user, 2026-10-06): the README's `hero.gif` and
   `before-after-cafe.jpg` (e7866f8; the GIF crop for the 1440p cold open is 2304:1296:128:96); the Product Hunt
   gallery and its `src_*.jpg` locally (the old ones in `dist/producthunt/_bigcat/`).
+
+## 7. Video 4: "Scumble, part four: the show is on Friday" (plan and script, 2026-10-11, nothing recorded)
+
+The new features of 0.1.44 to 0.1.46 in the style of parts one to three: HER and HIM, ElevenLabs (Annika and Mark,
+`eleven_v4`, one line per call), the mascot bookends, the motion engine of video 3. He has a new client, a gallery: a
+photographer's series opens on Friday, six pictures, each with one note from the gallery, and a poster that is a man
+holding an empty canvas. Every note is one new feature on a different picture; the finished pictures hang one by one on
+a gallery wall along the bottom (the "coat strip" of video 3 becomes "the show"), and the close puts the show into
+the poster. Scripted about 4:40, expect 5:00-5:20; 16:9, 30 fps, 1440p master, about -14 LUFS.
+
+The pictures are the user's own FLUX 3 renders (`F:\Comfyui\...\output\sft\`, 2026-10-11), copied to
+`dist/video/v4/src/`:
+
+| Take | Picture | Source | Size |
+|---|---|---|---|
+| cold, close | the poster: a man in a mint tracksuit holding an empty canvas at an opening | `ComfyUI_02756_.png` → `poster.png` | 5456 x 3072 |
+| n1 | the fair: a man in a sequin jacket with candy floss, the rides behind him | `ComfyUI_02761_.png` → `fair.png` | 5456 x 3072 |
+| n2 | the mayor: a chain of keys in an orange storage corridor | `ComfyUI_02749_.png` → `mayor.png` | 5456 x 3072 |
+| n3 | the laundromat: a DJ in a bathrobe between steaming machines, pink and cyan neon | `ComfyUI_02750_.png` → `laundromat.png` | 5456 x 3072 |
+| n4 | the pool: a man in a yellow raincoat in a paddling pool of rubber ducks, a ring light on a tripod | `ComfyUI_02754_.png` → `pool.png` | 5456 x 3072 |
+| n5 | the camel: a camel in a marked bay of a supermarket car park, a warden on his knees | `ComfyUI_02752_.png` → `camel.png` | 5456 x 3072 |
+| n6 | the knight: a knight in armour eating a kebab at the counter of a kebab shop | `ComfyUI_02759_.png` → `knight.png` | 5456 x 3072 |
+
+### What each note shows (the feature list)
+
+| Time | Beat | Picture | Feature (release) | Motion |
+|---|---|---|---|---|
+| 0:00-0:30 | Cold open "The poster" | poster | the depth map (0.1.44): *Selection › Depth*, Compute, *Show map* | eyebrow "THE POSTER · 09:40", the depth map reveal as a scan, "FLAT" crossed out |
+| 0:30-0:34 | Title | intro.mp4 | | "Friday" in orange |
+| 0:34-1:14 | Note 01 "The fair" | fair | lens blur by depth (0.1.46): Focus on his face, Highlights up, the rides' lights open into discs | ring on Compute, loupe on the discs, stamp "OUT OF FOCUS. ON PURPOSE." |
+| 1:14-1:50 | Note 02 "The mayor" | mayor | haze by depth (0.1.45) and the *Edges* slider (edge snap, 0.1.45): the corridor fades, the haze stops at his chain | before / after divider down the corridor, loupe on the chain's edge |
+| 1:50-2:34 | Note 03 "The laundromat" | laundromat | dehaze (0.1.45), then HSL in 8 channels (0.1.45): the magenta channel's saturation down | counter "8 CHANNELS · 24 DIALS", ring on the one slider she moves |
+| 2:34-3:14 | Note 04 "The pool" | pool | control points with shapes (0.1.45): an ellipse point over the pool (saturation down, soft edge), a graduated line from the top | the ellipse drawn as an overlay, stamp "IT'S A CONTROL POINT." |
+| 3:14-3:46 | Note 05 "The camel" | camel | the effects pack (0.1.45): Glass displacement, reeded, a touch of frost | a wipe of the glass across the card, quote card "BEHIND GLASS" |
+| 3:46-4:20 | Note 06 "The knight" | knight | Qwen Image Edit 2.1 Turbo on her own ComfyUI (0.1.46): a selection on the helmet, "a small golden crown", 5 seconds | a stopwatch counter that stops at the real seconds, stamp "MY ELECTRICITY. MY CROWN." |
+| 4:20-4:58 | Close "Friday" | poster | FLUX 3 Image with the selection as a box (0.1.37): the camel picture lands on the canvas he holds; a text layer "FRIDAY" in one of the 27 blend modes (0.1.46); Export | the show's wall completes, counter "27 BLEND MODES", the cost tally, stamp "FRIDAY." |
+| 4:58-5:08 | Outro | outro.mp4 from 3.0 s, end card | | |
+
+Not in this video (shown elsewhere or too small for a beat): Select by range (the bar is in Note 01's margin when
+the depth map is on), the mask views, the object box, New with a model, the Realism Pass (part three), vibrance,
+gradient map, threshold, posterize, chromatic shift, dissolve (named in the close's line, not shown).
+
+### The script
+
+The same rules as parts one to three (section 5 "The style stays"): she shows while she answers, he is wrong in a
+friendly way, the running gags come back (the client has notes; "It's a layer"; her confession, this time
+"Twenty-seven."; "I didn't hear that."), she has the last line. Every result is a layer in the Layers panel, and the
+camera finds the layer row once per note, so "It's a layer" is always true on screen.
+
+---
+
+**COLD OPEN: "The poster" (0:00-0:30)**
+
+*Scumble, the poster open in a tab named "poster": the opening, the man with the empty canvas. The Selection panel's
+Depth row is in view.*
+
+**HIM:** The show's on Friday.
+
+**HER:** Whose show?
+
+**HIM:** A photographer. Six pictures. The gallery has notes.
+
+**HER:** Of course they have notes.
+
+**HIM:** This is the poster.
+
+**HER:** It's empty.
+
+**HIM:** They said it's conceptual.
+
+**HER:** It's a layer. *(She clicks Compute in the Depth row. The status says it is estimating; about a second. She
+clicks Show map: the picture becomes its depth map, the man and his canvas near and bright, the crowd falling away
+behind him.)*
+
+**HIM:** ...What did you do to him?
+
+**HER:** Nothing. I asked how far away everyone is. *(Show map off; the picture is back.)*
+
+**HIM:** It's a photo. It's flat.
+
+**HER:** Not anymore.
+
+*Motion: the card scales in. Eyebrow "THE POSTER · 09:40". The gallery's note as a bubble ("GALLERY · 09:31: Poster
+for the show? He's holding it. Make it look like something."). The depth map reveal as a scan from near to far; the
+word "FLAT" stamped and crossed out on "Not anymore.". The show's wall appears along the bottom, six empty frames.*
+
+---
+
+**TITLE (0:30-0:34)**
+
+*The last 4 s of intro.mp4, the title sting on the cut. "Scumble · Part four: the show is on Friday." rises, "Friday"
+in orange.*
+
+---
+
+**NOTE 01: "The fair" (0:34-1:14)**
+
+*The fair picture open. She computes the depth map first, off the main line (the ring finds the Compute button, one
+second), then Add filter › Lens blur.*
+
+**HIM:** Note one. "The fair is too loud."
+
+**HER:** The fair is the point.
+
+**HIM:** They want him. Not the fair.
+
+**HER:** Then the fair goes out of focus. *(Lens blur: she drags Focus until his face is the sharp depth; the rides
+behind him blur. Then Highlights up: the fair's lights open into round discs.)*
+
+**HIM:** You can't refocus a photo.
+
+**HER:** The map knows where the fair is. The blur just believes it.
+
+**HIM:** ...The lights went round.
+
+**HER:** Bright things do that out of focus. I let them.
+
+**HIM:** Is that a layer?
+
+**HER:** It's a layer. *(The camera finds the Lens blur row in the Layers panel; the eye off and on.)*
+
+*Motion: eyebrow "NOTE 01 · THE FAIR · 10:02". Ring on Compute; a loupe on the discs when "The lights went round."
+lands; stamp "OUT OF FOCUS. ON PURPOSE." on her tag. The first picture hangs on the wall.*
+
+---
+
+**NOTE 02: "The mayor" (1:14-1:50)**
+
+*The mayor. Depth computed. Add filter › Haze by depth.*
+
+**HIM:** Note two. "More depth."
+
+**HER:** It's a corridor. It has nothing but depth.
+
+**HIM:** They wrote it in capitals.
+
+**HER:** Then I'll put air in it. *(Haze by depth: the far doors fade into a pale haze; she moves Start so he stays
+clear; the Edges slider in the Depth row: the haze stops at his chain of keys instead of bleeding into it.)*
+
+**HIM:** It's foggy now.
+
+**HER:** It's far now. He stays sharp. The hundred doors behind him don't.
+
+**HIM:** Why does it stop at his chain?
+
+**HER:** Because I told it where his edges are.
+
+**HIM:** You told the fog.
+
+**HER:** I told the fog.
+
+*Motion: eyebrow "NOTE 02 · THE MAYOR · 10:31". A before / after divider sweeps down the corridor on "It's far now.";
+a loupe on the chain's edge for "Why does it stop at his chain?". The second picture hangs.*
+
+---
+
+**NOTE 03: "The laundromat" (1:50-2:34)**
+
+*The laundromat. Add filter › Dehaze, then Add filter › HSL.*
+
+**HIM:** Note three. "Too much steam. Also too pink."
+
+**HER:** One at a time. *(Dehaze: the steam thins, the machines come back, the neon stays.)*
+
+**HIM:** Where did the steam go?
+
+**HER:** It's still there. It's just honest about how much.
+
+**HIM:** And the pink?
+
+**HER:** Pink has its own channel. *(HSL: the eight channels in the row; she takes the magenta channel's saturation
+down. The pink wash goes, the cyan neon stays.)*
+
+**HIM:** You turned down one colour.
+
+**HER:** Eight colours, three dials each. I touched one.
+
+**HIM:** He still has a face mask on.
+
+**HER:** That's not a note. That's a choice.
+
+*Motion: eyebrow "NOTE 03 · THE LAUNDROMAT · 11:05". Before / after divider on the dehaze; counter "8 CHANNELS · 24
+DIALS" on "Eight colours", ring on the one slider. The third picture hangs.*
+
+---
+
+**NOTE 04: "The pool" (2:34-3:14)**
+
+*The pool. Tool U (control points): an ellipse point drawn over the pool; a graduated line from the top edge.*
+
+**HIM:** Note four. "The ducks steal the picture."
+
+**HER:** There are two hundred of them.
+
+**HIM:** Who's the man?
+
+**HER:** That's the photographer.
+
+**HIM:** ...In the pool.
+
+**HER:** He's filming himself. The ring light's on. *(She drags an ellipse over the pool, saturation down inside it,
+softness up: the ducks go pale, the yellow coat stays. Then a graduated line from the top: the sky a touch darker.)*
+
+**HIM:** You drew an egg on the pool.
+
+**HER:** It's a control point. It touches what looks like what's under it, not what's beside it.
+
+**HIM:** The man's still yellow.
+
+**HER:** The man's the only thing that should be.
+
+*Motion: eyebrow "NOTE 04 · THE POOL · 11:38". The ellipse is drawn as an overlay a beat before hers; stamp "IT'S A
+CONTROL POINT." on her line; the man's coat ringed on "still yellow". The fourth picture hangs.*
+
+---
+
+**NOTE 05: "The camel" (3:14-3:46)**
+
+*The camel. The effects pack: Glass displacement, reeded.*
+
+**HIM:** Note five. "Behind glass."
+
+**HER:** The whole picture?
+
+**HIM:** They said it's a gallery thing.
+
+**HER:** Everything's a gallery thing. *(Glass displacement: reeded ridges; the camel and the car park ripple behind
+fluted glass; a touch of frost.)*
+
+**HIM:** ...That's actual glass.
+
+**HER:** It's a filter that remembers what glass does to a camel.
+
+**HIM:** Why is there a camel?
+
+**HER:** I didn't hear that.
+
+*Motion: eyebrow "NOTE 05 · THE CAMEL · 12:10". Quote card "BEHIND GLASS" on the note; the glass wipes across the
+card on "Everything's a gallery thing."; a beat of silence after "Why is there a camel?". The fifth picture hangs.*
+
+---
+
+**NOTE 06: "The knight" (3:46-4:20)**
+
+*The knight. A rectangle selection on the top of his helmet, the recipe Qwen Image Edit 2.1 Turbo (ComfyUI) selected
+before the take, the prompt typed on camera. The run on her own ComfyUI.*
+
+**HIM:** Note six. "He needs a crown."
+
+**HER:** He's eating.
+
+**HIM:** A king can eat.
+
+**HER:** Fine. Locally. *(The selection on the helmet; she types "a small golden crown on the helmet"; Generate. The
+status counts the seconds; the crown lands as a result layer.)*
+
+**HIM:** Wait, it's done?
+
+**HER:** Five seconds. The card's downstairs.
+
+**HIM:** No credits?
+
+**HER:** My electricity. My crown.
+
+**HIM:** It's a layer.
+
+**HER:** It's always a layer.
+
+*Motion: eyebrow "NOTE 06 · THE KNIGHT · 12:44". A stopwatch counter starts on Generate and stops at the real seconds
+(the line says "Five seconds"; if the run takes longer, the voice line is retaken with the real number). Stamp "MY
+ELECTRICITY. MY CROWN." The sixth picture hangs: the wall is full.*
+
+---
+
+**CLOSE: "Friday" (4:20-4:58)**
+
+*Back to the poster tab. The recipe FLUX 3 Image on Black Forest Labs selected before the take, Grounding off.*
+
+**HIM:** And the poster?
+
+**HER:** He's holding it. I just have to put the show in.
+
+**HIM:** Which one?
+
+**HER:** The camel. Obviously the camel. *(A rectangle selection exactly on the canvas he holds; the prompt "the
+framed photograph of a camel standing in a supermarket car park, hanging on the canvas"; Generate. The wait is ramped.
+The camel picture lands on the canvas in his hands.)*
+
+**HIM:** ...It's on the canvas.
+
+**HER:** It reads rectangles. You remember.
+
+**HIM:** It needs the date.
+
+**HER:** *(A text layer "FRIDAY" across the bottom; the blend mode list in the layer row, grouped; she picks one.)*
+Twenty-seven blend modes.
+
+**HIM:** Twenty-seven.
+
+**HER:** I have a problem. *(Export PNG.)* Done.
+
+**HIM:** Will they have notes?
+
+**HER:** It's Friday. They'll have a bar.
+
+*Motion: eyebrow "THE POSTER · 13:20". The wall's six pictures slide into the poster's frame as the camel lands; counter
+"27 BLEND MODES" on "Twenty-seven blend modes."; the cost tally (the real charge of the one FLUX 3 run, the Qwen run
+"0 credits · her electricity"); stamp "FRIDAY." on "Done."; a beat of silence before "They'll have a bar.".*
+
+---
+
+**OUTRO (4:58-5:08)**
+
+*outro.mp4 from 3.0 s, the end card from about 1 s after the drop has fallen (part three's lesson): "Download for
+Windows and Linux", the hub's address, the repo.*
+
+### Production plan (the pipeline of part three, section 6, reused)
+
+1. **Voices first** (`docs/images/video/voice/v4_eleven/lines.json`, the same shape as `v3_eleven/lines.json`; the
+   voices and model fixed there): one `creative_generate_speech` per line in an ElevenLabs flow "Scumble video 4 -
+   voices", `eleven.py fetch | check | join` with `BASE` pointed at `v4_eleven` (a `--video v4` switch or a copy
+   `eleven4.py`). "layer" as "LAY-er" in the prompts (part three's lesson). Listen file
+   `dist/video/v4/voices_elevenlabs.mp3`.
+2. **The recording profile** `dist/video/profile` (the user's keys, Local State): copy
+   `depth_anything_v2_small.onnx` into its models folder (the depth row needs it; a download on camera is not the
+   shot), enable the film and effects packs, select the Qwen Turbo recipe once and check it is ready
+   (`list_recipes`: the model file on the user's ComfyUI; `/queue` empty), select FLUX 3 Image and switch Grounding
+   off in the poster tab. Window content 1600 x 900 at 150 %, port 9555, the occlusion switches of section 6.
+3. **Takes** `docs/images/video/rec/scene4_*.py` on `rec3.py`: `cold` (depth and Show map), `n1`-`n6` (each from its
+   picture, one `.scumble` saved after the take: `dist/video/v4/takes/`), `close` (the FLUX 3 run, the text layer,
+   the export to `dist/video/v4/final/`). `--dry` before every paid or local run; marks at every click the scene
+   specs name (`compute`, `map_on`, `map_off`, `filter_in`, `slider_end`, `run_start`, `run_end`, `layer_row` ...).
+   The selection on the knight's helmet and on the held canvas are measured in a dry run and fixed in the script
+   (the proportions lesson of part three: a crown about 15 cm on a 25 cm helmet; the canvas's rectangle exactly
+   inside its edges).
+4. **Scenes** `docs/images/video/motion/scenes/v4_*.json` with `build_scene.py` (its `OUT` and `VOICE` paths take the
+   video from an argument or an environment variable; the "coat strip" gets a `wall` variant: six frames, a picture
+   per note, `coats_before` as before), then `build_final.py` for the mix (the same levels as part three), the SRT,
+   the chapters, `poster.jpg`.
+5. **Resolve**: project "Scumble Tutorials", timeline "04 Scumble part four" (1440p), V1 the scenes, V2 the end card,
+   A3 `stem_mix.wav`, chapter markers, the subtitle track; the master `dist/video/v4/final/04_scumble_part_four.mp4`,
+   the web `04_web.mp4` (1080p, CRF 25, faststart). An independent check of the master as in part three (frames,
+   OCR for names and paths, the SRT against `lines.json`).
+6. **Website and YouTube** (on the user's word): `public/scumble/videos/`, the entry in `videos` in `lib/scumble.ts`,
+   the poster, the chapters as key moments; the YouTube text in `dist/video/youtube_descriptions.md`.
+
+### Production notes for video 4
+
+- **Costs:** one FLUX 3 Image run in the close (the selection as a box on a 16.8 MP picture at 4k; the half price
+  ended on October 8: expect about 60 credits, about $0.60), the Qwen Turbo run on the user's ComfyUI (free; the
+  queue checked before and after, never while the user needs the card), ElevenLabs about 70 lines, everything else
+  in-app.
+- **The depth map** on a 5456 x 3072 picture is computed at 4096 x 2306 (`WORK_MAX`); about a second on the RTX 5090.
+  Each take computes it on camera once (the cold open at length, the notes under a ring, off the main line).
+- **Native popups are not in the screencast** (section 6): the Add filter list, the blend-mode select, the HSL
+  channel select, the control point's shape select. Either set them off camera before the take, or use the rows'
+  mini list buttons (0.1.45) and the keyboard; the dry run decides per note and the script says which.
+- **Tooltips:** never rest the pointer on the depth row's Compute button (its tooltip names the model), the top-bar
+  Upscale, or a film thumbnail. Click and move on. The status line "Estimating depth with ..." names the model: keep
+  it out of focus in the cold open (the camera is on the canvas).
+- **Nothing names another product.** The notes are the gallery's words; no overlay names a filter after anything but
+  Scumble's own label.
+- **Proportions:** the crown is drawn from the helmet's size, the camel picture fills the canvas he holds exactly
+  (the selection inside the canvas's edges, his fingers outside it); look at both results at 100 % before cutting a
+  line to them.
+- **The Qwen line "Five seconds"** is scripted; the take's real time decides. The user's live run of 2026-10-11 was
+  5.3 s warm and 11.4 s cold: warm the model with a dry run before the take, and keep the retake "Eleven seconds."
+  ready.
+- **Grounding** is on by default per document: off before the close's FLUX 3 run.
+- **The wall:** six frames along the bottom, a picture per note (`build_stack_assets.py`'s planes are not needed:
+  each frame is the note's exported composite at 320 px).
+
+### Voices as made (2026-10-11)
+
+ElevenLabs through the creative MCP, one `creative_generate_speech` per line (`eleven_v4`, one take each; the
+estimate said 28 credits for a short line, the runs reported 0), all 83 lines in the flow `0PuhXrheodo6BdDGwLrE`
+("Claude in Scumble" workspace; `v4_eleven/sessions.json` holds every session id in the order of `lines.json`).
+Fetched with `SCUMBLE_VIDEO=v4 python eleven.py fetch <scene> <status.json ...>` (the saved answers of
+`creative_get_flow_run_status`, 20 sessions each; `eleven.py` now takes the video from `SCUMBLE_VIDEO` and merges
+several status files), checked with `eleven.py check` (every line within the 0.85 threshold except two that the
+transcriber wrote as digits, "There are 200 of them." and "27 blend modes": the voice says the words, no retake),
+joined with `eleven.py join`: `dist/video/v4/voices_elevenlabs.mp3`, 3:27 of speech with the script's pauses.
+"layer" is "LAY-er" in every prompt (part three's lesson). Not listened to by the user yet.
+
+### Takes as made (2026-10-11 evening)
+
+Note 6 changed before the takes (the user: "nimm lieber flux3, sieht besser aus"): the crown comes from FLUX 3 Image
+on Black Forest Labs, not from the Qwen Turbo recipe; four lines of Note 6 re-voiced ("Fine. A small one." / "It
+knows what a crown is. I just said where." / "What did that cost?" / "Less than a crown."; `lines.json` and the
+`v4_eleven/v4_n6` takes updated, the listening file not yet rejoined).
+
+The recording instance: `./node_modules/.bin/electron . --remote-debugging-port=9571 --user-data-dir=F:/canvas/dist/video/profile
+--no-comfy --disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows` (port 9571, not
+9555: the other agent's gates use 9555), the window fitted to 1600 x 900 with `winfit.ps1 -Profile "dist/video/profile"`
+(the physical deltas needed three tries: -3/-2, +2/+2, -1/-1). The profile got the depth model
+(`dist/video/profile/models/depth_anything_v2_small.onnx`, `helpers.dir` pointed there), the recipe `flux3` on `bfl`
+(Grounding off per document in `setup`), the Help panel and the star banner closed in `setup`.
+
+`docs/images/video/rec/scene4.py` (`setup <take>` / `take <take> [--dry]`): every take a fresh tab with its picture
+(`dist/video/v4/src/`), every other tab closed; `probe4.py` reads the DOM (`docs`, `load`, `ui`, `js`, `cmd`),
+`probe_slider.py` was the slider-drag check. Learned: the Layers panel's *Add a filter layer* button always adds grain,
+so the take hooks its click (capture, once) to `addFilterLayer(kind)` and the right row appears on one click; the
+filter rows' type select is native (its popup is not in the screencast), the film-stock select has a custom list
+button; a range input is dragged by pressing on its thumb (`drag_slider`: label and input on one grid row, the
+readback 0.2 s after the release is stale, so the value is set again programmatically, a no-op when the drag worked);
+`set_select` rests the pointer on a native select and sets the value; the control points tool is `film.point` (the
+tool column's "Control points (film pack)" button, the row's New: circle / ellipse / polygon / line, a drag on the
+canvas sizes the new point, the point's sliders Softness / Saturation / Exposure ...).
+
+| Take | Frames | Marks | Notes |
+|---|---|---|---|
+| cold | 450 (19.7 s), retaken | start, compute, depth_done, map_on, map_off, end | the depth map in 1.5 s, Show map on and off; retaken after `setup` learned to close the Untitled tab, the Help panel and the star banner (the first take had all three on screen) |
+| n1 | 749 (34 s) | compute, depth_done, filter_in, focus, focus_end, aperture, highlights, highlights_end, eye_off, eye_on, end | Focus 45 (his face's depth 0.453), Aperture 1.2, Highlights 75 |
+| n2 | 714 (36.8 s) | compute, depth_done, filter_in, density, start_slider, haze_end, edges, edges_end, eye_off, eye_on, end | Density 72, Start 32, Edges 92 |
+| n3 | 799 (34 s) | dehaze_in, amount, dehaze_end, hsl_in, saturation_btn, magenta, magenta_end, eye_off, eye_on, end | Amount 78; HSL Saturation, the magenta channel -75 |
+| n4 | 888 (37.4 s) | points_in, shape_ellipse, tool, ellipse_drawn, softness, saturation, ellipse_end, shape_line, line_drawn, exposure, line_end, eye_off, eye_on, end | ellipse 1900,2550 -> 3050,2600 (Softness 92, Saturation -75), line 2728,80 -> 2728,760 (Exposure -0.7) |
+| n5 | 572 (29.9 s) | filter_in, style, size, displacement, frost, glass_end, eye_off, eye_on, end | reeded, Size 70, Displacement 26, Frost 3 |
+| n6 | 3913 (76.7 s) | selection, gen_tab, prompt, crown_run_start, crown_timer_up, crown_run_end, img_tab, eye_off, eye_on, end | the helmet selection 2499,330,2951,621; FLUX 3 answered in 52.4 s, Result 1 at 2405,219 640 x 512 |
+| close | 4529 (92.1 s) | selection, gen_tab, prompt, camel_run_start, camel_timer_up, camel_run_end, img_tab, text_in, blend, export, end | the canvas selection 2149,410,3311,1441; FLUX 3 answered in 54.8 s, Result 1 at 1898,94 1664 x 1664; FRIDAY (Bebas Neue 520 px, white) in Difference; `dist/video/v4/final/show_poster.png` (35 MB) |
+| n6b | 326 (19.4 s) | start, crown_still, img_tab, eye_off, eye_on, end | from `takes/n6.scumble` with the selection cleared: the clean crown, the pointer resting on it, then the IMAGE tab and the eye; no run, no cost |
+| close2 | 436 (26.3 s) | start, img_tab, text_in, blend, export, end | from `takes/close.scumble` with the selection cleared and the Blend select found by its options (the first take hit the Role select, FRIDAY stayed Normal): the text tool, Difference, the export |
+
+States after each take in `dist/video/v4/takes/<take>.scumble`; frames, `marks.txt`, `events.json` in
+`dist/video/v4/rec/<take>/`. The first n6 and close takes keep the red selection tint over the FLUX results (the
+selection stays until it is cleared), so each of the two is cut as two scenes: the run from the first take, the
+clean result from the retake, joined by a plain cut on the same picture.
+
+### The cut as made (2026-10-11 night)
+
+**Scenes.** Ten specs in `docs/images/video/motion/scenes/v4_*.json`, written by two agents from the takes' `events.json`
+(rects, marks) and validated with `SCUMBLE_VIDEO=v4 python build_scene.py <name> --plan` plus check frames: `v4_cold`
+(32.6 s, two camera pushes, the depth map as a scan, "FLAT" struck through, "NOT ANYMORE."), `v4_n1` (33.4 s, the lens
+blur, the loupe `n1_lights.jpg` on the discs), `v4_n2` (34.2 s, the haze, a divider and the loupe `n2_chain.jpg`), `v4_n3`
+(38.3 s, dehaze and HSL, the counter "8 CHANNELS · 24 DIALS"), `v4_n4` (36.3 s, the ellipse and the line as overlays),
+`v4_n5` (34.6 s, the glass, the loupe `n5_camel.jpg`), `v4_n6` (24.9 s, lines 1-4: the selection, the prompt, the ramp
+"FLUX 3 IMAGE" over the run, the scan on the result) and `v4_n6b` (17.6 s, lines 5-10 on the n6b take: the loupe
+`n6_crown.jpg`, "LESS THAN A CROWN.", the IMAGE tab and the eye), `v4_close` (26.1 s, lines 1-4, the ramp and the scan)
+and `v4_close2` (28.9 s, lines 5-13 on the close2 take: the text tool, the Blend select, the counter "27 BLEND MODES",
+the stamp "FRIDAY.", the tally "ABOUT $1.20 · FLUX 3 RUNS · 2", the status cam on "Saved ..."). The second halves have
+`"voice": "<first half>"` and `"cut": true`.
+
+**Engine.** `build_scene.py` writes a `scene_<name>.js` and a copy `scene_engine_<name>.html` per scene (before, one
+`scene.js` for all: two builds at once rendered each other's scene), so the ten scenes rendered four at a time (0.85 s
+per frame per lane, 9,200 frames in 45 minutes; `xargs -P 4`). `scene_engine.html`: `cut: true` keeps the eyebrow on
+screen from the first frame (no slide-in at a plain cut; `wipeIn: false` alone keeps the cold open's slide-in), the
+`wall` variant of the coat strip (12 px gaps, 92 x 52 frames with a cream border). `order4.py` writes
+`plans/order.json`, the progress line's share per scene from the plans and the title and outro clips (video 3 had no
+order file: its line started at zero in every scene). `title4.html` is the title card (138 frames: the orange wipe at
+0.35 s, "Scumble", "Part four: the show is on Friday." with Friday in orange), rendered by `render.js` to
+`scenes/v4_title.mp4`.
+
+**The mix.** `build_final4.py` (from `build_final.py`): the cold open is an engine scene with the bed from 11 s into
+`bed.wav` under it, the title card its own clip after it with the sting on the cut (32.63 s), the second halves in
+`CUTS` (no wipe, no whoosh) and `VOICE_OF` (their subtitle texts), chapters by scene name, `BED_SEQ` bars (17,79),
+(49,62), (17,42), (84,97) so the three splices land inside drops (Note 05 at 205.37 s, Note 06's second half at
+240.62 s, the close at 308.42 s), a 720p preview with the mix for the check before Resolve. Levels: master gain
+12.18 dB, the mix -14.04 LUFS, -1.79 dBTP, LRA 11.8 LU; the limiter over 1 dB on 7.7 % of its 100 ms blocks, 9.3 dB at
+most (the stings and the wipes). Total 318.47 s (5:18.5) after the second pass: cold 0.00, title 32.63, n1 37.23, n2 70.63, n3 104.83,
+n4 143.13, n5 179.43, n6 214.00 (n6b 238.87), close 256.37 (close2 282.47), outro 311.43, end card 315.13.
+Chapters `chapters.txt` (eight, each over 10 s); `04_scumble_part_four.en.srt` 83 cues, one per voiced line; `poster.jpg`
+the title card at 4.4 s (1280 x 720).
+
+**Resolve.** `rec/resolve4.py` run inside Resolve 21.1.1 through the DaVinci MCP (`run_script_unsafe`,
+`exec(open(...).read())`): project "Scumble Tutorials", folder "04 part four", timeline "04 Scumble part four"
+(2560 x 1440, 30 fps, start frame 108000), V1 the twelve clips, V2 the end card from 315.17 s, A1 / A2 the stems
+switched off, A3 `stem_mix.wav`, eight chapter markers. The end card's 130 frames overhang the outro's end by 30: the
+render range ends at frame 9554 (`MarkOut`), so the master is 9,555 frames like the timeline plan. The SRT append
+answered true but made no subtitle track (the API has none to count); the SRT goes up as a file, never burned in.
+Renders (measured here, first pass): the "H.264 Master" preset writes a QuickTime `.mov`, H.264 NVIDIA at about 106 Mbps
+(4.25 GB for 5:18); `SetCurrentRenderFormatAndCodec("mp4", "H264_NVIDIA")` the same in an `.mp4`; `SetRenderSettings`
+refuses `VideoQuality` with every value in 21.1.1; the "YouTube - 1440p" preset gives 10 Mbps (418 MB). The first
+pass's Resolve `.mp4` is kept as `04_scumble_part_four_resolve.mp4` (106 Mbps; it still shows the half wipes and the
+old retakes). The master `04_scumble_part_four.mp4` and the web `04_web.mp4` (1920 x 1080, CRF 25, faststart) are the
+second pass's ffmpeg assembly (below). The YouTube text: `dist/video/youtube_descriptions.md`, "Video 4".
+
+**The independent check (an agent, `dist/video/v4/check/report.md`)** found the master technically sound (318.5 s,
+9,555 frames, -14.0 LUFS / -1.6 dBTP, no frozen or broken frame, the SRT complete and in sync, no forbidden word, no
+key, no user path) and three things to fix: four of the six note wipes were half wipes (the bar came in, then a hard
+cut), the title join had five black frames, and the dev path "Saved F:/canvas/dist/video/v4/final/show_poster.png"
+stood on screen for 10 s; plus, at the two plain cuts, the tab label, the status line, the strip and the tool column
+changed with the take (the retakes had run on the working tree with the other agent's new lights tool).
+
+**The second pass (the same night).**
+- *The wipes:* `scene_engine.html` animated the bar's `left` and the cover's opacity twice (wipe-in, wipe-out), both
+  with `fill: both`; the later animation filled backwards over the earlier one, so every scene that wiped out lost its
+  wipe-in. Now one track per element with a jump key between the two sweeps. Video 3 had the same flaw (every scene
+  wiped both ways), which nobody saw.
+- *The title card* (`title4.html`) starts under the panel (the cold open's wipe-out ends on the cover) and ends under
+  it again, the bar sweeping in over its last 0.36 s; no black frames.
+- *The retakes n6b and close2 again*, on a worktree of HEAD (the same build as the first takes, no lights tool in the
+  column), each starting where the first take's scene stops: `scene4.py` `CUT_STATE` sets the status line the run
+  left ("Result 1 added (640 × 512 at 2405, 219)" / "... (1664 × 1664 at 1898, 94)") and parks the pointer where it
+  rested at the cut (from the first take's `events.json` cursor list at the scene's last take time), waits 1.2 s
+  after the recording starts, then glides. The close exports into `F:/Gallery/` (the status reads
+  "Saved F:/Gallery/show_poster.png ...") and the file is moved to `final/` after the take. Learned: the screencast's
+  first frames carry negative times (captured before `start()`), so a scene's "first" frame predates the cut state;
+  the second halves begin at `start+0.4`. The drawn cursor followed the physical mouse too (the recorder's overlay
+  listened to every mousemove; a hand on the mouse pulled it away in one retake): `recorder.py` now moves it only
+  for events at the position the recorder dispatched (`window.__recPos`, set by `rec3.py` before each move). The tab
+  bar's "*" after the rename shows only when the tab bar happens to re-render after the dirty flag: the setup prints
+  the tabs, and a take without the star is taken again.
+- *The strip at the cut:* `v4_n6` declares the sixth slot (`"coat": {"src": "v4_n6b", "at": "end+5"}`, laid out,
+  never shown; `build_scene.py` takes a coat with `src` from another scene's thumbnail), and close / close2 hang
+  `v4_n6b`'s thumbnail (the clean crown) instead of `v4_n6`'s (the tinted one).
+- The 720p preview from `build_final4.py` is the place to look at the joins before Resolve (six frames around every
+  join, a contact sheet: `dist/video/v4/check/joins2/sheet.jpg`, all eight wipes complete, both cuts seamless).
+- **Resolve hung on the second pass.** `rec/resolve4_refresh.py` (the timeline and the scene clips dropped from the
+  media pool before a rebuild) left Resolve 21.1.1 not responding, the DaVinci MCP then answered nothing for 30
+  minutes per call, and `DaVinciResolveScript.scriptapp()` from an outside Python blocked too, even after Resolve
+  was killed and started again (`rec/resolve4_run.py`, the scripts with `SCUMBLE_RESOLVE_IN` / `SCUMBLE_TL_NAME` for
+  fresh copies in `dist/video/v4/resolve_r2/` and a timeline of its own, never got past the connection). **The
+  second pass's master is therefore an ffmpeg assembly of the same materials**: the twelve clips concatenated, the
+  end card overlaid from 315.13 s, `stem_mix.wav` as the audio, x264 CRF 16, AAC 320 kb/s (the exact chain of the
+  720p preview at full quality). The Resolve project still holds the first pass's timeline "04 Scumble part four"
+  (the clip files on disk are the new renders; n6b and close2 differ by a few frames from the pool's counts); to
+  rebuild it when scripting answers again: `SCUMBLE_RESOLVE_IN=... SCUMBLE_TL_NAME="04 Scumble part four r2"
+  SCUMBLE_TL_FOLDER="04 part four r2" python rec/resolve4_run.py timeline render`. Never delete pool clips by
+  script again; import fresh copies under new names instead.
+
+**Left for the user.** Watch it once by eye and ear. The tally "ABOUT $1.20" is the figure noted after the takes; check
+it against the Black Forest Labs dashboard. Upload, the website entry and the commit of the material only on the
+user's word.
