@@ -256,3 +256,9 @@ rerun `s3-rerun-tiles`.
 `ShapePart` (E38-E39); 2,394 lines. Heal, liquify and shape read `InpaintEditor`'s statics and take the bind form. 29
 imports dropped; the file is 17,884 lines. `split_check.js --base d17dfdc4` PASS. Gates `s4-tools` (`lint types
 nodecopy brush editor pixels`) PASS on both backends.
+
+**S5 (2026-11-11).** The selection as parts, base `95f97ed5`: `inpaint_ed_select.js` `SelectPart` (E23-E25, E28, E41,
+E46), `inpaint_ed_stack.js` `StackPart` (E26-E27, the band programs), `inpaint_ed_segment.js` `SegmentPart` (E42),
+and `inpaint_ed_masks.js` `MasksPart` (E53, layer masks, cutout and the menus: not in the plan's table, taken here with
+the selection); 3,351 lines. 46 imports dropped; the file is 14,417 lines. `split_check.js --base d17dfdc4` PASS.
+Gates `s5-select` (`lint types nodecopy selection editor shape pixels limit masks`) PASS on both backends.

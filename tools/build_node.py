@@ -44,6 +44,7 @@ FILES = [
     "reftokens.js", "prompt_field.js", "blend_modes.js", "inpaint_status.js", "inpaint_progress.js", "inpaint_sizelimit.js", "inpaint_areas.js", "inpaint_parts.js",
     "inpaint_consts.js", "inpaint_orient.js", "inpaint_shaders.js", "inpaint_dom.js", "inpaint_mesh.js", "inpaint_backends.js", "inpaint_style.js", "inpaint_strokebuf.js", "inpaint_load.js",
     "inpaint_ed_tips.js", "inpaint_ed_heal.js", "inpaint_ed_liquify.js", "inpaint_ed_shape.js",
+    "inpaint_ed_select.js", "inpaint_ed_stack.js", "inpaint_ed_segment.js", "inpaint_ed_masks.js",
     "inpaint_ed_panels.js", "inpaint_ed_layers.js", "inpaint_ed_histpanel.js", "inpaint_ed_text.js",
     "boxes.js", "boxes_format.js", "boxes_tool.js", "boxes_model.js", "inpaint_boxes.js",
     "px/kernels_js.js", "px/kernels.js", "px/px.js",
