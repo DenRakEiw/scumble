@@ -305,6 +305,48 @@ async function main() {
     assert.ok(!/\b(sample|half|filter)\b/.test(HSL_GLSL), "HSL_GLSL does not contain reserved words");
     console.log("  [ok] hslIdentity, hslUniforms, and HSL_GLSL contract verified");
 
+    // 19. lutFromCube: DOMAIN_MIN / DOMAIN_MAX are the input range the lattice spans, never a scale of its outputs
+    // (filters/cube-domain-applied-to-outputs). The parsed table is indexed over input 0..1 (applyLut, the 3D texture).
+    {
+        const { lutFromCube } = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_filters.js")).href);
+        // a .cube text of size N whose output at lattice input (r, g, b) is fn(r, g, b), red fastest
+        const cube = (N, fn, domain) => {
+            const lines = [`LUT_3D_SIZE ${N}`];
+            if (domain) lines.push(`DOMAIN_MIN ${domain[0].join(" ")}`, `DOMAIN_MAX ${domain[1].join(" ")}`);
+            const lo = domain ? domain[0] : [0, 0, 0], hi = domain ? domain[1] : [1, 1, 1];
+            const at = (c, i) => lo[c] + (hi[c] - lo[c]) * i / (N - 1);
+            for (let b = 0; b < N; b++) for (let g = 0; g < N; g++) for (let r = 0; r < N; r++) lines.push(fn(at(0, r), at(1, g), at(2, b)).join(" "));
+            return lines.join("\n") + "\n";
+        };
+        const near = (a, b) => Math.abs(a - b) < 1e-6;
+        const redRow = (lut) => Array.from({ length: lut.size }, (_, r) => lut.data[r * 3]);   // g = b = 0, red output
+
+        // a constant table keeps its value on a 0..2 domain (scaling the outputs by the domain halved it)
+        const flat = lutFromCube(cube(3, () => [0.6, 0.6, 0.6], [[0, 0, 0], [2, 2, 2]]));
+        assert.ok(flat.data.length === 81 && flat.data.every((v) => near(v, 0.6)), `constant 0.6 on DOMAIN 0..2 stays 0.6: ${Array.from(flat.data.slice(0, 6))}`);
+
+        // out = in^2 on a 0..2 lattice of 5: input 0.5 reads 0.25 (the lattice point at 0.5), 0.25 lies between
+        // lattice points 0 and 0.5 (0.125), outputs above 1 clamp; reading the lattice over 0..1 gave 0.5 at input 0.5
+        const sq = lutFromCube(cube(5, (r, g, b) => [r * r, g * g, b * b], [[0, 0, 0], [2, 2, 2]]));
+        const sqRow = redRow(sq);
+        assert.ok([0, 0.125, 0.25, 0.625, 1].every((v, i) => near(sqRow[i], v)), `in^2 on DOMAIN 0..2: ${sqRow}`);
+
+        // a negative DOMAIN_MIN on red alone: input 0 reads the identity at 0, not the lattice's first point (-0.1)
+        const neg = lutFromCube(cube(2, (r, g, b) => [r, g, b], [[-0.1, 0, 0], [1, 1, 1]]));
+        const negRow = redRow(neg);
+        assert.ok(near(negRow[0], 0) && near(negRow[1], 1), `identity on red DOMAIN -0.1..1: ${negRow}`);
+
+        // the default domain, left out or written, keeps the table as written (clamped to 0..1)
+        const rnd = (r, g, b) => [Math.sin(r * 7 + g) * 0.6 + 0.5, Math.cos(g * 5 + b) * 0.6 + 0.5, (r + g + b) / 3];
+        const plain = lutFromCube(cube(4, rnd));
+        const written = lutFromCube(cube(4, rnd, [[0, 0, 0], [1, 1, 1]]));
+        const want = new Float32Array(cube(4, rnd).trim().split("\n").slice(1).flatMap((l) => l.split(" ").map(Number)).map((v) => (v < 0 ? 0 : v > 1 ? 1 : v)));
+        assert.deepEqual(Array.from(plain.data), Array.from(want), "the default domain keeps the outputs as written");
+        assert.deepEqual(Array.from(written.data), Array.from(want), "DOMAIN 0..1 written out is the default");
+        assert.ok(want.some((v) => v === 0) && want.some((v) => v === 1) && want.some((v) => v > 0 && v < 1), "the default case holds clamped and inner values");
+    }
+    console.log("  [ok] lutFromCube: DOMAIN is the lattice's input range (constant, in^2, negative minimum, default)");
+
     console.log("\nALL COLOUR GRADING MATHS TESTS PASSED!");
 }
 

@@ -2,6 +2,12 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
+## Unreleased
+
+- **Haze by depth without the GPU now matches the screen and the export.** Its depth edge used to sit more than a map pixel off at a zoomed-out view. A depth map is no longer uploaded to the GPU again on every pass of a haze, lens blur, limit or relight filter.
+- **A `.cube` LUT whose DOMAIN is not 0..1 now reads that range as its input range.** Before, it scaled the table's colours instead, so such a LUT came out too dark or too bright. A LUT with the usual 0..1 range gives the same colours as before.
+- The assistant's *Split into layers* takes `source: "picture"` as the visible picture again, even when a layer's name contains the word "picture".
+
 ## 0.1.54 - 2026-11-10
 
 - **Generate new asks before it replaces your work.** When the tab holds layers, a picture or edits, it names what goes, since the answer replaces them and the undo history, and you can cancel and save first.
