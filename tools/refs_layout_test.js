@@ -1657,7 +1657,7 @@ async function main() {
 
         // a marker in a text prompt through index.js on shipped variants: the route's name for that picture, res.refs
         const answer = { "/api/v1/images": () => json(200, { data: [{ b64_json: RESULT.toString("base64"), media_type: "image/png" }] }), "/api/ai/images/edit": () => json(200, { images: [{ b64_json: RESULT.toString("base64") }] }) };
-        for (const [recipe, provider, names, field] of [["gpt_image_2", "openrouter", ["Image 1", "Image 2"], "input_references"], ["qwen_image_2_1", "oxen", ["<image1>", "<image2>"], "input_images"]]) {
+        for (const [recipe, provider, names, field] of [["gpt_image_2", "openrouter", ["Image 1", "Image 2"], "input_references"], ["qwen_image_2_1", "oxen", ["<image1>", "<image2>"], "input_image"]]) {   // Oxen renamed Qwen's field to input_image (de61e222, 2026-11-10)
             const s = TEXT.find((x) => x.recipe === recipe && x.provider === provider);
             if (!s) { check(`${recipe}/${provider}: a shipped text variant`, false); continue; }
             const bodies = [];
