@@ -117,7 +117,7 @@ stale, and their lines are on `wasm-kernels` already.
 | S11 | `recipes.js`: leaves first (typedefs, the shape readers 232-700, `normalize`); R02 and R03 stay together (they call each other) | about 1,000 | `recipes`, `comfyprompt`, `ark`, `loras`, `platform` |
 | S12 | `commands.js`: the 99 command groups into files of objects, merged back into `COMMANDS` in the same key order (`describe()`, the MCP list and `docs/COMMANDS.md` follow it). C09 and C14 read `COMMANDS` only when called, through a getter handed in | about 2,000 | `commands`, `mcp`, `mcpb`, `assistant`, `help` |
 | S13 | `host.js`: parts as objects installed by descriptors onto `host`, with `build_node.py` reading them (S0). Each part keeps `// @ts-check` and goes into `tsconfig.check.json` | about 5,000 | `document`, `generate`, `quit`, `nodecopy`, `cloudjobs`, `loras`, `key`, `areas`, `types` |
-| S14a, S14b | `shell.js`: the state rename with its AST proof, then the moves (§5.1; only on the user's yes) | about 2,900 | §5.1's list |
+| S14a, S14b | `shell.js`: the state rename with its AST proof, then the moves (§5.1; the user's yes of 2026-11-11) | about 2,900 | §5.1's list |
 
 `inpaint_canvas.js` ends at about 3,500 lines: the class shell with the constructor, the lifecycle (E06), statics,
 `syncLayers`, the generate entry points, `releaseCaches` and `destroy`, plus the install list. The biggest new files
@@ -145,8 +145,10 @@ gates. S11-S13 one each. About 14-15 sessions in all, most of the time going to 
 
 ## 5. Questions for the user (each with a suggestion)
 
-**The user's answers (2026-11-11):** 1 the part classes; 2 flat; 5 as one block before the next feature. Question 3
-asked back ("was wäre wenn wir aufteilen?"), answered in §5.1; question 4 not answered yet.
+**The user's answers (2026-11-11):** 1 the part classes; 2 flat; 5 as one block before the next feature; 3 asked back
+("was wäre wenn wir aufteilen?"), answered in §5.1, then "ok, mach es so": `shell.js` is split as S14a / S14b;
+4 the same word: the gates and `split_check.js` instead of a mutation round. **Every question is answered; the block
+starts with S0.**
 
 ### 5.1 What a split of `shell.js` would take (the answer to the user's question)
 
