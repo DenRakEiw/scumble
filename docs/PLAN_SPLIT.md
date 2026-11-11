@@ -301,3 +301,70 @@ constructor, the lifecycle (E06), the statics (E56), `syncLayers` (E71), the set
 (E77), generate (E78), `memoryReport` / `destroy` (E80), the install list of 37 parts and the bind calls, the export
 list. `split_check.js --base d17dfdc4`: 932 units, 23,437 lines moved into 38 files, 728 prototype members, PASS.
 Gates `s10b-chrome` (`lint types nodecopy editor skins canvasonly groups selection generate`) PASS on both backends.
+
+**S11 (2026-11-11).** `recipes.js` into three CommonJS leaves, base `24dcdaca`, 1,563 lines (`split_check.js`, which
+reads CommonJS since `24dcdaca`: require lines are imports, `module.exports` the export list, 71 units, PASS):
+`recipes_store.js` (the node output constants, the user's folder, `normalize()` with its variant helpers, the shipped
+presets, `list` / `remove` / `save` / `slug`: they call each other, so they stay together), `recipes_workflow.js`
+(`readWidgets`, `storedSpec`, `specDefault`, `fromWorkflow`), `recipes_graph.js` (`PASS_LABEL`, `looksLikePrompt`,
+the prompt / graph / Comfy Cloud conversions, roles, `detach`). Each requires only the ones before it, so no require
+returns a partial `exports`. `recipes.js` keeps the typedefs, `hasVariants`, `userFileStems`, `importFile` and its
+`module.exports` unchanged (325 lines). The leaves say `// @ts-check`, import the typedefs they use from `recipes.js`
+by JSDoc and are in `tsconfig.check.json`. The 26 plain-Node tests that load `recipes.js` PASS but
+`secret_names_test.js`, red on the base too (`docs/BUGS.md`, the MiniMax `key` input).
+
+**S12 (2026-11-11).** `commands.js` into a helper leaf and seven command groups, base `9e914016`, 2,953 lines
+(`split_check.js --object COMMANDS`: 180 units, key order kept, PASS). `commands_util.js` holds the helpers C01-C04 and
+C15 (summaries, lookups, shots, `status`, the parameter tables, `checkParams`, `describe`); the 99 commands sit in
+`commands_docs.js`, `_select`, `_gen`, `_runs`, `_layers`, `_edit`, `_depth`, each an object `...CommandsPart` spread
+back into `COMMANDS` in the old order (`describe()`, the MCP list and `docs/COMMANDS.md` follow it). The helper leaf
+and the run and depth groups read `COMMANDS` through the bind form. `commands.js` keeps the typedefs, `COMMANDS` of
+spreads, the `commands` object and `host.commands = commands` (145 lines); it re-exports the helpers' old exports.
+Each new file says `// @ts-check` (checkJs is off) and is in `tsconfig.check.json`; the parts carry
+`/** @satisfies {Record<string, Command>} */`.
+
+**S13 (2026-11-11).** `host.js` into a helper leaf and thirteen part objects, base `65624052`, 6,429 lines
+(`split_check.js --object host`: 395 units, key order kept, PASS). `host_util.js` holds the module helpers H00 and
+`api` (bound to `host` for the helpers that read it); the 330 members sit in `host_state.js`, `_export`, `_setup`,
+`_presets`, `_provider`, `_upscale`, `_generate`, `_pictures`, `_key`, `_relight`, `_queue`, `_documents`,
+`_helpers`, each an object `Host...Part` spread back into `host` in the old order (spread, not installed: the type
+checker then sees every member on `host`). `host.js` keeps the contract typedefs `EditorApi` / `EditorHost` (moved
+back by hand after the script took them with `objectId`: they stand alone, so `split_check` saw them as a note),
+`host` of spreads and the server event wiring (202 lines). `build_node.py --check` reads the members from the parts
+(S0) and reports only "differs" lines. The parts are in `tsconfig.check.json`; `types` PASS.
+
+**S14a (2026-11-11).** The one text change of item 56, base `92d34a39`: thirteen module lets of `shell.js` become
+properties of one object `shellState` (`renderer/shell_state.js`): the plan's eight (`settings`, `providers`,
+`recipes`, `lastStatus`, `lastProbe`, `canvasOnlyState`, `windowFullScreen`, `takesPending`) and five that a section
+and the wiring that stays in `shell.js` both write (`genRemapOff`, `genPrevious`, `helpersRenderTimer`,
+`providerTimer`, `lastUserInput`; found by the move script of S14b). Each `let x = init` is `shellState.x = init`
+where it stood, 167 uses read `shellState.x`. The name is `shellState`, not the plan's `state`: the file has locals
+named `state`. The proof is the new `tools/rename_check.js` (with `rename_check_test.js`, 6 checks): both trees,
+normalized (the lets as assignments, `shellState.x` as `x`), are equal node for node, the comments are the same, no
+listed name is used bare, the state module has exactly these keys; PASS, 393 statements, 180 uses.
+
+**S14b (2026-11-11).** `shell.js`'s sections into four modules, base `3b5d54ec`, 1,903 lines (`split_check.js
+--back-imports`: 373 units, PASS): `shell_settings.js` (recipes and their groups, API providers, the local endpoint,
+language models, prompt templates, helpers, plugins, `openSettings`, earlier states, the tile mode),
+`shell_generate.js` (Generate new, New with a model, Upscale), `shell_updates.js` (updates, the question, the star
+line), `shell_watch.js` (progress, the GPU memory watch, the console dialog). Only declarations move: the wiring
+statements and three consts that read the file when they evaluate (`GEN_GENERAL`, `cancelButton`, `UPDATE_LABELS`)
+stay, so `shell.js` is 1,552 lines (the plan guessed 700; its wiring is about half of it). The sections call back into
+`shell.js` (`ui`, `$`, `busy`, `syncAuthRows` ...) and import it: `--back-imports` (new) allows that when a new file
+reads what it imports from the file or its family only inside functions and writes no import; a `let = null` is the
+bind form only where a bind function sets it. `split_check_test.js`: 29 checks.
+
+**The merged gates of S11-S14b (2026-11-12, `wasm-kernels` after the merge `15611b25`).** On tiles `lint types nodecopy
+platform recipes help skins commands assistant toapis openrouter ark magnific oxen comfyview loras cloudjobs document
+quit mcp mcpb generate key areas upscale llm log cli` PASS but `comfyview`'s "no target" step once with CDP's "Cannot
+find default execution context" (a listed flake, `docs/TESTING.md`), PASS 28 of 28 on the rerun `s1114-rerun`; on
+canvas `document quit generate key areas commands` PASS. Every plain-Node test under `tools/` PASS but
+`secret_names_test.js` (`docs/BUGS.md`). The proofs on the merged state: `split_check.js` for all five files PASS
+(`inpaint_canvas.js --base d17dfdc4`, `recipes.js --base 24dcdaca`, `commands.js --base 9e914016 --object COMMANDS`,
+`host.js --base 65624052 --object host`, `shell.js --base 3b5d54ec --back-imports`); `rename_check.js` ran at S14a's
+commit.
+
+**Where item 56 ends.** The five files went from 41,312 lines to 3,911: `inpaint_canvas.js` 1,596, `shell.js` 1,551,
+`host.js` 296, `recipes.js` 324, `commands.js` 144. The biggest new files are `inpaint_ed_filters.js` (1,352 lines),
+`inpaint_ed_panels.js` (1,323), `inpaint_ed_layers.js` (1,290), `inpaint_ed_geometry.js` (1,567) and `host_key.js`
+(1,041). `buildRelightBlock` (843 lines) and `selectRange` (577) stay whole: splitting a method is a rewrite.
