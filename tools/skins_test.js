@@ -27,6 +27,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
+const srcfind = require("./srcfind.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const arg = (k) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
@@ -187,6 +188,7 @@ function bodyOf(js, head) {
     }
     return null;
 }
+const STYLE_AT = /\n(?:export )?const STYLE = `\n/;
 const styleOf = (js) => { const m = js.match(/\n(?:export )?const STYLE = `\n([\s\S]*?)\n`;\n/); return m ? m[1] : null; };
 const glbCss = (js) => { const m = js.match(/\nconst CSS = `\n([\s\S]*?)\n`;\n/); return m ? m[1] : null; };
 const curvesBits = (js) => js.split("\n").filter((l) => /cssText =|style\.background = on|style\.color = on/.test(l)).join("\n");
@@ -296,10 +298,10 @@ async function main() {
             }
         }
         // the eight sources of the design, each with tokens (skins.js: its swatch chip border)
-        const style = styleOf(read("renderer/editor/inpaint_canvas.js"));
-        if (!style) throw new Error("no STYLE block in inpaint_canvas.js");
+        const style = styleOf(srcfind.textWith("renderer/editor/inpaint_canvas.js", STYLE_AT));
+        if (!style) throw new Error("no STYLE block in inpaint_canvas.js or a module split out of it");
         const sources = { "STYLE": varsOf(style).length };
-        for (const f of ["renderer/shell.css", "renderer/assistant.css", "renderer/help.css", "plugins/glb/dialog.js", "renderer/editor/inpaint_curves.js", "renderer/shell.js", "renderer/skins.js"]) sources[f] = per[f] || 0;
+        for (const f of ["renderer/shell.css", "renderer/assistant.css", "renderer/help.css", "plugins/glb/dialog.js", "renderer/editor/inpaint_curves.js", "renderer/shell.js", "renderer/skins.js"]) sources[f] = (f === "renderer/shell.js" ? srcfind.family(f) : [f]).reduce((n, x) => n + (per[x] || 0), 0);
         const none = Object.entries(sources).filter(([, n]) => !n).map(([f]) => f);
         if (none.length) bad.push("no var(--sc-*) at all in " + none.join(", "));
         if (bad.length) throw new Error(bad.slice(0, 12).join("; "));
@@ -393,10 +395,10 @@ async function main() {
 
     // 6 ----------------------------------------------------------------------------------------------------------
     check("the_outlines_on_the_picture_follow_no_skin", () => {
-        const js = read("renderer/editor/inpaint_canvas.js");
         const out = [];
         for (const name of ["drawBrushRing", "antsStroke", "drawMarchingAnts"]) {
-            const b = bodyOf(js, new RegExp(`\\n    ${name}\\(`));
+            const at = new RegExp(`\\n    ${name}\\(`);
+            const b = bodyOf(srcfind.textWith("renderer/editor/inpaint_canvas.js", at), at);
             if (!b) throw new Error(`${name} not found`);
             if (/\bTHEME\b/.test(b)) throw new Error(`${name} reads THEME`);
             if (name === "drawMarchingAnts" && !/antsPattern/.test(b)) throw new Error("the ants pattern is no longer built in drawMarchingAnts");
@@ -613,15 +615,15 @@ async function main() {
             shell: { file: "renderer/shell.css", css: true },
             assistant: { file: "renderer/assistant.css", css: true },
             help: { file: "renderer/help.css", css: true },
-            style: { file: "renderer/editor/inpaint_canvas.js", pick: styleOf },
+            style: { file: "renderer/editor/inpaint_canvas.js", pick: styleOf, family: true },
             glb: { file: "plugins/glb/dialog.js", pick: glbCss },
             curves: { file: "renderer/editor/inpaint_curves.js", pick: curvesBits },
-            shelljs: { file: "renderer/shell.js", pick: shellJsBits },
+            shelljs: { file: "renderer/shell.js", pick: shellJsBits, family: true },
         };
         for (const [key, s] of Object.entries(SOURCES)) {
             check(`byte_proof_${key}`, () => {
                 const before = s.pick ? s.pick(git(s.file)) : git(s.file);
-                let now = s.pick ? s.pick(read(s.file)) : read(s.file);
+                let now = s.pick ? s.pick(s.family ? srcfind.familyText(s.file) : read(s.file)) : read(s.file);
                 if (before === null || now === null) throw new Error("the source block was not found");
                 if (s.css) {
                     const lines = now.split("\n");

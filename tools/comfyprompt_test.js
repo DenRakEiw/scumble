@@ -64,7 +64,7 @@ async function main() {
 
     await section("the names", async () => {
         check("the answer's node is scumble_out, the loader InpaintCanvasLoadRef", C.WHOLE_OUTPUT === "scumble_out" && C.LOAD_CLASS === "InpaintCanvasLoadRef");
-        const src = fs.readFileSync(path.join(ROOT, "electron", "main", "recipes.js"), "utf8");
+        const src = require("./srcfind.js").textWith("electron/main/recipes.js", /const CANVAS_OUTPUTS = /);
         const m = /const CANVAS_OUTPUTS = (\[[^\]]*\]);/.exec(src);
         const theirs = m ? JSON.parse(m[1]) : null;
         check("CANVAS_OUTPUTS is recipes.js's list, slot for slot", !!theirs && eq(C.CANVAS_OUTPUTS, theirs), short({ ours: C.CANVAS_OUTPUTS, theirs }));

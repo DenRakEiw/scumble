@@ -41,7 +41,7 @@ FILES = [
     "inpaint_text.js", "inpaint_raster.js", "inpaint_export.js", "inpaint_worker.js",
     "inpaint_compositor.js", "inpaint_brushes.js", "inpaint_pixels.js", "inpaint_resample.js", "inpaint_tiles.js", "inpaint_arena.js", "inpaint_pool.js", "inpaint_png.js", "inpaint_bands.js", "inpaint_boxstack.js", "inpaint_stroke.js", "inpaint_tippicker.js", "inpaint_remove.js", "inpaint_liquify.js",
     "inpaint_jobs.js", "inpaint_encode.js", "inpaint_upload.js", "inpaint_modal.js", "inpaint_layered.js", "inpaint_tiff.js", "inpaint_theme.js", "inpaint_depth.js", "inpaint_edges.js", "inpaint_depthfx.js", "inpaint_haze.js", "inpaint_grade.js", "inpaint_wheels.js", "inpaint_adjustments.js", "inpaint_lensblur.js", "inpaint_relight.js", "edgefit.js",
-    "reftokens.js", "prompt_field.js", "blend_modes.js", "inpaint_status.js", "inpaint_progress.js", "inpaint_sizelimit.js", "inpaint_areas.js",
+    "reftokens.js", "prompt_field.js", "blend_modes.js", "inpaint_status.js", "inpaint_progress.js", "inpaint_sizelimit.js", "inpaint_areas.js", "inpaint_parts.js",
     "boxes.js", "boxes_format.js", "boxes_tool.js", "boxes_model.js", "inpaint_boxes.js",
     "px/kernels_js.js", "px/kernels.js", "px/px.js",
 ]
@@ -105,6 +105,7 @@ IMPORT_NAMED = re.compile(r"^import\s*\{([^}]*)\}\s*from\s*[\"'](\./[^\"']+)[\"'
 IMPORT_DYNAMIC = re.compile(r"\{([^{}]*)\}\s*=\s*await\s+import\(\s*[\"'](\./[^\"']+)[\"']\s*\)")
 HOST_USE = re.compile(r"\bhost\.([A-Za-z_$][\w$]*)")
 HOST_KEY = re.compile(r"^    (?:async\s+)?([A-Za-z_$][\w$]*)\s*(?:\(|:)", re.M)
+HOST_PART = re.compile(r"^export\s+const\s+[A-Za-z_$][\w$]*Part\s*=\s*\{", re.M)
 
 
 def exports_of(text):
@@ -117,11 +118,22 @@ def exports_of(text):
     return names
 
 
-def host_members(host_text):
+def host_members(host_text, part_texts=()):
     start = host_text.find("export const host = {")
     if start < 0:
         return set()
-    return set(HOST_KEY.findall(host_text[start:]))
+    members = set(HOST_KEY.findall(host_text[start:]))
+    # host.js split into parts (item 56, docs/PLAN_SPLIT.md S13): every `export const <Name>Part = {` object in a
+    # host_*.js beside it, its members at the same 4-space indentation up to the line `};`
+    for text in part_texts:
+        for m in HOST_PART.finditer(text):
+            end = text.find("\n};", m.end())
+            members |= set(HOST_KEY.findall(text[m.end() - 1:end if end >= 0 else len(text)]))
+    return members
+
+
+def host_part_texts(host_path):
+    return [read(p) for p in sorted(glob.glob(os.path.join(os.path.dirname(host_path), "host_*.js")))]
 
 
 def parses_as_module(text):
@@ -161,7 +173,7 @@ def check_dir(js_dir, label, problems):
 
 
 def check_host(editor_texts, host_path, label, problems):
-    members = host_members(read(host_path))
+    members = host_members(read(host_path), host_part_texts(host_path))
     used = set()
     for name in FILES:
         used |= set(HOST_USE.findall(editor_texts.get(name, "")))

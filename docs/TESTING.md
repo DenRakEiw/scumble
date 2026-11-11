@@ -805,6 +805,24 @@ a reference row and a layer row dropped on the prompt field writing nothing. The
 `tools/assistant_test.js` cover QW4's `preset`. Run: `bash tools/run_gates.sh <label> --offline --tiles on cloudjobs
 generate editor log lint types`.
 
+**Splitting the long files (item 56, `docs/PLAN_SPLIT.md`).** `node tools/split_check.js --base <commit> <file> [new
+files...]` proves a split is a move: every top-level declaration, class member (and with `--object NAME` every
+property of that object literal) of the old file is found once, by name, with the same text (its attached comments and
+indentation included), nothing is added but imports, export lists, `...Part` classes and objects, the bind form and the
+install calls, every part is imported and installed (or spread, in key order), no new file imports the long file, the
+old exports stay, and every free name means what it meant (a module binding stays one, a global stays one: a forgotten
+import of `name` or `status` would pass eslint). With `--base` and no files it takes the family's files that are new
+since the commit. It prints the moved line count for the commit message; a session's commit check runs it.
+`node tools/split_check_test.js` holds it to a small split: the right one passes, 16 slips each fail with their own
+words (a renamed name, a re-indented member, a changed comment, a member lost or doubled, an addition, a forgotten
+import of a global's name, a global shadowed, a part not installed or not imported or importing the long file, a bind
+never called, a static in a part, a lost export, a spread out of order, a property changed). `node tools/parts_test.js`
+holds `renderer/editor/inpaint_parts.js` `installParts` (accessors stay accessors, methods non-enumerable with their
+text, a clash or a static throws and installs nothing, plain objects onto a plain object). The tests that read code as
+text (`skins`, `quit`, `comfyrouter`, `ark`, `genpresets`, `comfyprompt`) find it by name in the file's family
+(`tools/srcfind.js`: `inpaint_canvas.js` -> `inpaint_*.js`, `shell.js` -> `shell_*.js`, `host.js` -> `host_*.js`,
+`recipes.js` -> `recipes_*.js`), so a move does not break them; a name found in two files of a family throws.
+
 ## Faster runs without less coverage
 
 Added 2026-11-07 (the user: "Tests auslassen: nein. Schneller machen: ja, deutlich"). Nothing here leaves a check out

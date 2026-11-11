@@ -22,6 +22,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const ROOT = path.join(__dirname, "..");
+const srcfind = require("./srcfind.js");
 const autosave = require(path.join(ROOT, "electron", "main", "autosave.js"));
 const { QuitGuard, CrashGuard, isCrash } = require(path.join(ROOT, "electron", "main", "quit.js"));
 
@@ -471,7 +472,7 @@ function bundle(tag, pics, empty = 0) {
             assert(p && /autosave\.referencedKeys\(/.test(p) && /keep: \[/.test(p) && !/try \{[^}]*autosave\.referencedKeys/.test(p), "pruning does not keep what the generations name or swallows an unreadable generation");
             return "reload, rotate, prune";
         });
-        const shell = read("renderer/shell.js");
+        const shell = srcfind.familyText("renderer/shell.js");
         await check("the_window_answers_the_save_and_a_safe_start_restores_nothing", () => {
             const f = bodyAfter(shell, /window\.scumble\.state\.onFlush\(async \(reason\) => /);
             assert(f && /await saveBeforeRestart\(/.test(f), "the window does not save when main asks");
@@ -482,14 +483,14 @@ function bundle(tag, pics, empty = 0) {
             const sb = bodyAfter(shell, /async function saveBeforeRestart\(say = \(\) => \{\}, when = "the restart"\) /);
             assert(sb && sb.indexOf("host._restoring") >= 0 && sb.indexOf("host._restoring") < sb.indexOf("syncLayers"), "saveBeforeRestart does not wait for a restore");
             assert(/for \(let round = 0; round < 3/.test(sb), "saveBeforeRestart does not go again for changes made while it saved");
-            const host = read("renderer/editor/host.js");
+            const host = srcfind.familyText("renderer/editor/host.js");
             const sa = bodyAfter(host, /\n    saveAll\(\) /);
             assert(sa && /if \(this\._restoring\) \{ this\._saveTimer = setTimeout\(\(\) => this\.saveAll\(\), 1500\); return; \}/.test(sa), "the autosave does not wait while documents are restored");
             const rs = bodyAfter(host, /\n    async restore\(saved\) /);
             assert(rs && /this\._restoring\+\+;/.test(rs) && /finally \{\s*this\._restoring--;/.test(rs), "restore does not hold the autosave");
             const bu = bodyAfter(host, /\n    bundle\(\) /);
             assert(bu && /this\._rawStates\.get\(ed\)/.test(bu), "the bundle drops a document that waits for ComfyUI");
-            const ed = read("renderer/editor/inpaint_canvas.js");
+            const ed = srcfind.familyText("renderer/editor/inpaint_canvas.js");
             const once = bodyAfter(ed, /\n    async syncLayersOnce\(\) /);
             assert(once && /layer\.dirty = false;\s*try \{\s*const \{ ref \} = await uploadPixels\(layer\.px/.test(once) && /catch \(err\) \{\s*layer\.dirty = true;/.test(once), "a layer is not marked clean before its upload, or not again when it fails");
             assert(/syncLayers\(\) \{\s*const pass = \(this\._syncing \|\| Promise\.resolve\(\)\)/.test(ed), "syncLayers does not run one pass at a time");

@@ -14,6 +14,7 @@ const os = require("node:os");
 const path = require("node:path");
 const Module = require("node:module");
 const { pathToFileURL } = require("node:url");
+const srcfind = require("./srcfind.js");
 
 const ROOT = path.join(__dirname, "..");
 const RECIPES = path.join(ROOT, "recipes");
@@ -40,7 +41,7 @@ function loadRecipes() {
 }
 
 // the dialog's general lists, as renderer/shell.js holds them
-const SHELL = fs.readFileSync(path.join(ROOT, "renderer", "shell.js"), "utf8");
+const SHELL = srcfind.familyText("renderer/shell.js");
 const listOf = (name) => { const m = new RegExp(`const ${name} = (\\[[^\\]]*\\]);`).exec(SHELL); return m ? JSON.parse(m[1]) : null; };
 const GEN_ASPECTS = listOf("GEN_ASPECTS") || [];
 const GEN_RESOLUTIONS = listOf("GEN_RESOLUTIONS") || [];

@@ -21,6 +21,7 @@ const path = require("node:path");
 const Module = require("node:module");
 
 const ROOT = path.join(__dirname, "..");
+const srcfind = require("./srcfind.js");
 const router = require(path.join(ROOT, "electron", "main", "providers", "comfyrouter.js"));
 const partner = require(path.join(ROOT, "electron", "main", "providers", "comfypartner.js"));
 const cloud = require(path.join(ROOT, "electron", "main", "providers", "comfycloud.js"));
@@ -982,7 +983,7 @@ async function main() {
         const SERVED = "Served by fal (Comfy Router's fallback provider).", LEFT = "Comfy Router left out: seed (not supported).";
         check("QW6: a synchronous answer served by a fallback provider with a parameter left out: both notes in the run's notes through index.edit, the picture as bytes, served_by, dropped, the request id and credits in info", !fb.err && eq(fb.out.notes, [SERVED, LEFT]) && tagOf(Buffer.from(fb.out.bytes)) === "RESULT" && fb.out.mime === "image/png" && fb.out.info.served_by === "fal" && fb.out.info.dropped === "seed (not supported)" && fb.out.info.request_id === "sync-7" && fb.out.info.credits === 4 && fb.s.syncs.length === 1, fb.err || short({ notes: fb.out.notes, info: fb.out.info }));
         // host.js is an ES module for the browser: its HINT_NOTE is read from the text and tested here
-        const hostText = fs.readFileSync(path.join(ROOT, "renderer", "editor", "host.js"), "utf8");
+        const hostText = srcfind.textWith("renderer/editor/host.js", /^const HINT_NOTE = /m);
         const hm = /^const HINT_NOTE = \/(.+)\/([a-z]*);\s*$/m.exec(hostText);
         let HINT = null;
         try { HINT = hm ? new RegExp(hm[1], hm[2]) : null; } catch (_) { HINT = null; }

@@ -195,3 +195,26 @@ starts with S0.**
 5. **Order with other work:** the whole block S0-S13 before the next feature (items 57-71 and issue #12's rest), as
    CLAUDE.md says, or S0-S2 now and the class parts between features? *Suggested: as one block. Parts between
    features would put every feature branch on a file that is moving.*
+
+## 6. As built
+
+**S0 (2026-11-11).** The tools, no line of the five files moved:
+- `tools/split_check.js` on acorn and eslint-scope (both in `node_modules`). Besides §2's three checks it checks the
+  bind form and the install calls, that no new file imports the long file, that the old exports stay, and that every
+  free name keeps its kind (module binding or global). `--object NAME` splits a top-level object literal into its
+  properties for S12 (`COMMANDS`) and S13 (`host`); parts may be spread into it (the key order is checked) or
+  installed. A stand-alone comment that is gone is a note, never a failure. It runs on the five files unchanged in
+  0.2-4.5 s (932 units in `inpaint_canvas.js`, 728 prototype members). `tools/split_check_test.js` (21 checks) shows
+  it fails on each slip. A trial move of STYLE and `injectStyle` (417 lines) into a leaf passed it, and `skins` found
+  STYLE there; the trial was reverted.
+- `renderer/editor/inpaint_parts.js` `installParts(target, parts)`: a class takes part classes, a plain object takes
+  plain objects; a clash, a name in two parts or a static throws before anything is installed. In `build_node.py`
+  FILES already (nothing imports it yet). `tools/parts_test.js` (17 checks).
+- **Naming rule (new):** every module split out of a long file starts with that file's prefix: `inpaint_*.js`,
+  `shell_*.js`, `host_*.js`, `recipes_*.js`, `commands_*.js`. `tools/srcfind.js` reads a file's family by it, and
+  `split_check.js --base` takes the family's new files by it.
+- The six text-reading tests find their code through `srcfind.js` (the skins census counts `shell.js`'s family).
+- `build_node.py host_members` also reads `export const <Name>Part = {` objects in `renderer/editor/host_*.js` (and
+  the node's `js/host_*.js`), so S13's parts keep their members visible.
+- Gates `s0-tools` (`lint types nodecopy skins quit`, offline, tiles) PASS; `ark`, `comfyrouter`, `genpresets`,
+  `comfyprompt` tests PASS in plain Node; `build_node.py --check` only "differs" lines.

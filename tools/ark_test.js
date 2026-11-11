@@ -18,6 +18,7 @@ const path = require("node:path");
 const Module = require("node:module");
 
 const ROOT = path.join(__dirname, "..");
+const srcfind = require("./srcfind.js");
 const ark = require(path.join(ROOT, "electron", "main", "providers", "ark.js"));
 
 // a test key goes to the loopback mock only, a real one never does (ark.js checkKey)
@@ -329,7 +330,7 @@ async function main() {
         check("a text ask steeper than 16:1 (20:1) is sent at 16:1", text(pro, "20:1", 4000, 200) === "3840x240" && text(lite, "1:20", 200, 4000) === "480x7680", `${text(pro, "20:1", 4000, 200)} / ${text(lite, "1:20", 200, 4000)}`);
 
         // the dialog's own asks: shell.js GEN_ASPECTS at the variants' text sizes, rounded as genSize() rounds them
-        const shell = fs.readFileSync(path.join(ROOT, "renderer", "shell.js"), "utf8");
+        const shell = srcfind.textWith("renderer/shell.js", /const GEN_ASPECTS = /);
         const m = /const GEN_ASPECTS = (\[[^\]]*\]);/.exec(shell);
         const aspects = m ? JSON.parse(m[1]).filter((a) => a !== "free") : [];
         const round16 = (x) => Math.max(64, Math.min(8192, Math.round(x / 16) * 16));
