@@ -1,0 +1,252 @@
+{
+  "label": "after",
+  "runs": [
+    {
+      "tiles": true,
+      "add_none": {
+        "combineMs": 60.01,
+        "wholeMs": 67.09,
+        "rewritten": 0,
+        "tilesBefore": 1200,
+        "tiles": 1201,
+        "stepPx": true
+      },
+      "subtract_none": {
+        "combineMs": 63.57,
+        "wholeMs": 186.02,
+        "rewritten": 0,
+        "tilesBefore": 1200,
+        "tiles": 1200,
+        "stepPx": true
+      },
+      "intersect_full": {
+        "combineMs": 63.27,
+        "wholeMs": 182.7,
+        "rewritten": 0,
+        "tilesBefore": 1200,
+        "tiles": 1200,
+        "stepPx": true
+      },
+      "add_none_last_px_off": {
+        "combineMs": 125.41,
+        "wholeMs": 176.19,
+        "rewritten": 1200,
+        "tilesBefore": 1200,
+        "tiles": 1201,
+        "stepPx": true
+      }
+    },
+    {
+      "tiles": true,
+      "add_none": {
+        "combineMs": 60.77,
+        "wholeMs": 67.63,
+        "rewritten": 0,
+        "tilesBefore": 1200,
+        "tiles": 1201,
+        "stepPx": true
+      },
+      "subtract_none": {
+        "combineMs": 64.9,
+        "wholeMs": 188.21,
+        "rewritten": 0,
+        "tilesBefore": 1200,
+        "tiles": 1200,
+        "stepPx": true
+      },
+      "intersect_full": {
+        "combineMs": 62.87,
+        "wholeMs": 181.16,
+        "rewritten": 0,
+        "tilesBefore": 1200,
+        "tiles": 1200,
+        "stepPx": true
+      },
+      "add_none_last_px_off": {
+        "combineMs": 126.38,
+        "wholeMs": 191.97,
+        "rewritten": 1200,
+        "tilesBefore": 1200,
+        "tiles": 1201,
+        "stepPx": true
+      }
+    },
+    {
+      "tiles": true,
+      "add_none": {
+        "combineMs": 58.4,
+        "wholeMs": 65.48,
+        "rewritten": 0,
+        "tilesBefore": 1200,
+        "tiles": 1201,
+        "stepPx": true
+      },
+      "subtract_none": {
+        "combineMs": 62.5,
+        "wholeMs": 183.09,
+        "rewritten": 0,
+        "tilesBefore": 1200,
+        "tiles": 1200,
+        "stepPx": true
+      },
+      "intersect_full": {
+        "combineMs": 68.37,
+        "wholeMs": 184.41,
+        "rewritten": 0,
+        "tilesBefore": 1200,
+        "tiles": 1200,
+        "stepPx": true
+      },
+      "add_none_last_px_off": {
+        "combineMs": 127.34,
+        "wholeMs": 193.41,
+        "rewritten": 1200,
+        "tilesBefore": 1200,
+        "tiles": 1201,
+        "stepPx": true
+      }
+    }
+  ],
+  "summary": {
+    "add_none": {
+      "combineMs_median": 60.01,
+      "combineMs_runs": [
+        60.01,
+        60.77,
+        58.4
+      ],
+      "combineMs_spread": 2.37,
+      "wholeMs_median": 67.09,
+      "wholeMs_runs": [
+        67.09,
+        67.63,
+        65.48
+      ],
+      "wholeMs_spread": 2.15,
+      "rewritten_runs": [
+        0,
+        0,
+        0
+      ],
+      "tiles_runs": [
+        [
+          1200,
+          1201
+        ],
+        [
+          1200,
+          1201
+        ],
+        [
+          1200,
+          1201
+        ]
+      ]
+    },
+    "subtract_none": {
+      "combineMs_median": 63.57,
+      "combineMs_runs": [
+        63.57,
+        64.9,
+        62.5
+      ],
+      "combineMs_spread": 2.4,
+      "wholeMs_median": 186.02,
+      "wholeMs_runs": [
+        186.02,
+        188.21,
+        183.09
+      ],
+      "wholeMs_spread": 5.12,
+      "rewritten_runs": [
+        0,
+        0,
+        0
+      ],
+      "tiles_runs": [
+        [
+          1200,
+          1200
+        ],
+        [
+          1200,
+          1200
+        ],
+        [
+          1200,
+          1200
+        ]
+      ]
+    },
+    "intersect_full": {
+      "combineMs_median": 63.27,
+      "combineMs_runs": [
+        63.27,
+        62.87,
+        68.37
+      ],
+      "combineMs_spread": 5.5,
+      "wholeMs_median": 182.7,
+      "wholeMs_runs": [
+        182.7,
+        181.16,
+        184.41
+      ],
+      "wholeMs_spread": 3.25,
+      "rewritten_runs": [
+        0,
+        0,
+        0
+      ],
+      "tiles_runs": [
+        [
+          1200,
+          1200
+        ],
+        [
+          1200,
+          1200
+        ],
+        [
+          1200,
+          1200
+        ]
+      ]
+    },
+    "add_none_last_px_off": {
+      "combineMs_median": 126.38,
+      "combineMs_runs": [
+        125.41,
+        126.38,
+        127.34
+      ],
+      "combineMs_spread": 1.93,
+      "wholeMs_median": 191.97,
+      "wholeMs_runs": [
+        176.19,
+        191.97,
+        193.41
+      ],
+      "wholeMs_spread": 17.22,
+      "rewritten_runs": [
+        1200,
+        1200,
+        1200
+      ],
+      "tiles_runs": [
+        [
+          1200,
+          1201
+        ],
+        [
+          1200,
+          1201
+        ],
+        [
+          1200,
+          1201
+        ]
+      ]
+    }
+  }
+}
