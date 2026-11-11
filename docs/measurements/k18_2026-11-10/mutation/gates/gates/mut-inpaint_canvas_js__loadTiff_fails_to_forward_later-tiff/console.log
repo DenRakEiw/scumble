@@ -1,0 +1,66 @@
+ERROR Error: this TIFF is in CMYK colour; only RGB, grayscale and palette TIFF files are read (convert it to RGB)
+    at parse (scumble://app/editor/inpaint_tiff.js:175:34)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.js:257:13)
+    at async InpaintEditor.loadTiff (scumble://app/editor/inpaint_canvas.js:19038:22)
+    at async InpaintEditor.loadFile (scumble://app/editor/inpaint_canvas.js:18985:43)
+    at async Object.run (scumble://app/commands.js:1158:17)
+    at async Object.run (scumble://app/commands.js:3152:24)
+    at async <anonymous>:57:11
+ERROR Error: JPEG-compressed TIFF files are not read; save it with LZW or ZIP compression, or as a JPEG file
+    at parse (scumble://app/editor/inpaint_tiff.js:164:80)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.js:257:13)
+    at async InpaintEditor.loadTiff (scumble://app/editor/inpaint_canvas.js:19038:22)
+    at async InpaintEditor.loadFile (scumble://app/editor/inpaint_canvas.js:18985:43)
+    at async Object.run (scumble://app/commands.js:1158:17)
+    at async Object.run (scumble://app/commands.js:3152:24)
+    at async <anonymous>:57:11
+ERROR Error: this TIFF holds floating-point samples; only 8 and 16-bit integer TIFF files are read (convert it to 16 bits)
+    at parse (scumble://app/editor/inpaint_tiff.js:168:36)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.js:257:13)
+    at async InpaintEditor.loadTiff (scumble://app/editor/inpaint_canvas.js:19038:22)
+    at async InpaintEditor.loadFile (scumble://app/editor/inpaint_canvas.js:18985:43)
+    at async Object.run (scumble://app/commands.js:1158:17)
+    at async Object.run (scumble://app/commands.js:3152:24)
+    at async <anonymous>:57:11
+ERROR Error: this TIFF holds signed samples; only unsigned 8 and 16-bit TIFF files are read
+    at parse (scumble://app/editor/inpaint_tiff.js:169:36)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.js:257:13)
+    at async InpaintEditor.loadTiff (scumble://app/editor/inpaint_canvas.js:19038:22)
+    at async InpaintEditor.loadFile (scumble://app/editor/inpaint_canvas.js:18985:43)
+    at async Object.run (scumble://app/commands.js:1158:17)
+    at async Object.run (scumble://app/commands.js:3152:24)
+    at async <anonymous>:57:11
+ERROR Error: this TIFF has 32 bits per channel; only 8 and 16 are read (convert it to 16 bits)
+    at parse (scumble://app/editor/inpaint_tiff.js:179:43)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.js:257:13)
+    at async InpaintEditor.loadTiff (scumble://app/editor/inpaint_canvas.js:19038:22)
+    at async InpaintEditor.loadFile (scumble://app/editor/inpaint_canvas.js:18985:43)
+    at async Object.run (scumble://app/commands.js:1158:17)
+    at async Object.run (scumble://app/commands.js:3152:24)
+    at async <anonymous>:57:11
+ERROR Error: TIFF compression 50000 (Zstandard) is not read; save it with LZW or ZIP compression, or without
+    at parse (scumble://app/editor/inpaint_tiff.js:165:39)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.js:257:13)
+    at async InpaintEditor.loadTiff (scumble://app/editor/inpaint_canvas.js:19038:22)
+    at async InpaintEditor.loadFile (scumble://app/editor/inpaint_canvas.js:18985:43)
+    at async Object.run (scumble://app/commands.js:1158:17)
+    at async Object.run (scumble://app/commands.js:3152:24)
+    at async <anonymous>:57:11
+WARN Inpaint Canvas: reading the TIFF in bands failed, using tiff_read: the file ends early (it is truncated, or not a TIFF): strip 10 lies past the end of the file
+ERROR Error: the file ends early (it is truncated, or not a TIFF): strip 10 lies past the end of the file
+    at WorkerPool._reply (scumble://app/editor/inpaint_pool.js:187:107)
+    at w.onmessage (scumble://app/editor/inpaint_pool.js:138:35)
+ERROR Error: this TIFF is in CMYK colour; only RGB, grayscale and palette TIFF files are read (convert it to RGB)
+    at parse (scumble://app/editor/inpaint_tiff.js:175:34)
+    at async tiffInfo (scumble://app/editor/inpaint_tiff.js:257:13)
+    at async InpaintEditor.loadTiff (scumble://app/editor/inpaint_canvas.js:19038:22)
+    at async InpaintEditor.loadFile (scumble://app/editor/inpaint_canvas.js:18985:43)
+    at async Object.run (scumble://app/commands.js:1158:17)
+    at async Object.run (scumble://app/commands.js:3152:24)
+    at async <anonymous>:60:11
+ERROR Error: junk_named.tif is not a TIFF file, nor another picture Scumble reads
+    at storedExt (scumble://app/editor/inpaint_canvas.js:560:22)
+    at async InpaintEditor.loadFile (scumble://app/editor/inpaint_canvas.js:18992:25)
+    at async Object.run (scumble://app/commands.js:1158:17)
+    at async Object.run (scumble://app/commands.js:3152:24)
+    at async <anonymous>:63:11

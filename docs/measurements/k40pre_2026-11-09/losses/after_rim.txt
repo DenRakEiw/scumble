@@ -1,0 +1,6 @@
+LOSS  perf | pan (60 frames) | median                            base     3.9 (3.8-4.4)  now     6.2  runs [6.2, 6.6, 5.3]
+LOSS  perf | pan at fit, masked filter layer | median            base     3.4 (3.2-4.3)  now     6.8  runs [7.3, 6.8, 6.1]
+TIE   perf | full composite | median                             base    92.0 (91.8-98.3)  now   112.7  runs [246.4, 93.5, 112.7]
+LOSS  perf | wheel zoom (10) | max                               base     6.5 (4.3-7.2)  now    27.6  runs [27.6, 27.9, 23.8]
+TIE   perf | magic wand, Sample: the masked layer | blk          base    58.0 (54-59)  now    53.0  runs [52.0, 61.0, 53.0]
+LOSS  perf | pan at 1:1 over it | median                         base     3.2 (3.1-3.4)  now     4.1  runs [4.3, 4.1, 3.7]

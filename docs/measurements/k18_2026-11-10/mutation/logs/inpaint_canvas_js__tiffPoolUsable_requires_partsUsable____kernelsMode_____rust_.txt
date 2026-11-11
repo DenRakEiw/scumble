@@ -1,0 +1,3 @@
+$ bash tools/run_gates.sh mut-inpaint_canvas_js__tiffPoolUsable_requires_partsUs-tiff --offline --tiles on tiff  (rc 1, 74 s)
+tiff rc=1 40s FAIL
+SOME FAILED

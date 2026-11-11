@@ -99,7 +99,7 @@ const list = await window.scumble.providers.list();
 const ids = list.map((p) => p.id);
 const row = list.find((p) => p.id === "oxen");
 if (!row || row.label !== "Oxen.ai" || row.balance !== false || row.sharesKey !== null || (row.key && row.key.set)) throw new Error("the Oxen.ai provider entry: " + JSON.stringify(row));
-if (ids.indexOf("oxen") !== ids.indexOf("ark") + 1 || ids.indexOf("magnific") !== ids.indexOf("oxen") + 1) throw new Error("the order of the key rows: " + ids.join(", "));
+if (ids.indexOf("oxen") !== ids.indexOf("ark") + 2 || ids.indexOf("minimax") !== ids.indexOf("ark") + 1 || ids.indexOf("magnific") !== ids.indexOf("oxen") + 1) throw new Error("the order of the key rows: " + ids.join(", "));
 const remembered = (await window.scumble.settings.get()).recipeProviders || {};
 const rl = await run("list_recipes");
 const on = rl.recipes.filter((r) => (r.providers || []).includes("oxen"));

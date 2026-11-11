@@ -1,0 +1,13 @@
+== 6e9c0cf1 CLAUDE.md: the user's yes of 2026-11-06, D0, K5, W1 and K12 ship in 0.
+TIE   perf-relight | magic wand over it | wall                   base   330.3 (323.3-333)  now   325.2  runs [375.1, 311.8, 325.2]
+TIE   perf-relight | magic wand, a masked layer | wall           base   323.0 (287-326)  now   319.0  runs [325.0, 319.0, 239.0]
+TIE   perf-relight | magic wand (an object) | wall               base   221.0 (195-227)  now   232.0  runs [232.0, 226.0, 235.0]
+WIN   perf-relight | pan (60 frames) | median                    base     4.0 (3.6-4.7)  now     0.3  runs [0.3, 0.3, 0.2]
+WIN   perf-relight | pan at fit, masked filter layer | median    base     3.9 (3.8-4.7)  now     0.3  runs [0.4, 0.3, 0.2]
+== 9857f201 Merge ck-merge (wasm-kernels' D0, K5, W1, K12 and Stop 5, gate-checked
+LOSS  perf-relight | magic wand over it | wall                   base   330.3 (323.3-333)  now   680.2  runs [661.2, 680.2, 716.1]
+LOSS  perf-relight | magic wand, a masked layer | wall           base   323.0 (287-326)  now   543.0  runs [566.0, 536.0, 543.0]
+TIE   perf-relight | magic wand (an object) | wall               base   221.0 (195-227)  now   221.0  runs [232.0, 198.0, 221.0]
+TIE   perf-relight | three lights moved | blk                    base    66.0 (48-66)  now    61.0  runs [95.0, 61.0, 59.0]
+TIE   perf-relight | pan (60 frames) | median                    base     4.0 (3.6-4.7)  now     3.8  runs [3.8, 3.5, 3.9]
+TIE   perf-relight | pan at fit, masked filter layer | median    base     3.9 (3.8-4.7)  now     4.1  runs [4.1, 4.1, 4.2]

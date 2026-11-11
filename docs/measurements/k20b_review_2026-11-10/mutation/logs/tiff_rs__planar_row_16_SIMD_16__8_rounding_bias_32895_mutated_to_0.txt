@@ -1,0 +1,31 @@
+$ C:\Users\schoeneberg\AppData\Local\Programs\Python\Python312\python.exe tools/build_px.py  (rc 0, 20 s)
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\crates\px\target\simd (RUSTFLAGS='-C target-feature=+simd128,+bulk-memory')
+px.wasm: 298931 bytes, sha256 91cdffa21860c79d
+> C:\Users\schoeneberg\.cargo\bin\cargo.EXE build --release --locked --target wasm32-unknown-unknown --target-dir C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\crates\px\target\scalar (RUSTFLAGS='-C target-feature=+bulk-memory')
+px_scalar.wasm: 237720 bytes, sha256 908fc1943daa06ab
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 8.63s
+   Compiling px v0.1.0 (C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\crates\px)
+    Finished `release` profile [optimized] target(s) in 6.26s
+$ node tools/px_test.js  (rc 1, 2 s, PX_ONLY=tiff,psd)
+FAIL rust simd tiff_to_rgba equals its twin byte for byte (406 cases, each also at an odd offset)  toRgba photo=1 bits=16LE spp=1 planes=1 alpha=none pad=0: out[4] is 4, the twin has 5
+FAIL tiff_to_rgba exhaustive 65,536 16-bit values (LE and BE): 0 bytes differ across twin, simd and scalar  at 516: 0 vs 1
+FAIL tiff_to_rgba planar 16-bit (K20b): exact (255*v+32895)>>16 identity and 0 bytes differ on 65,786-pixel 4/5-plane LE/BE w=259 (SIMD + tail)  le=true spp=4 alpha=straight: at 1: 254 vs 255
+FAIL rust simd psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs  suite 1 key 0:rgba: at 10: 79 vs 80
+FAIL rust simd psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+FAIL inpaint_worker.js psdRead & kernels.js psdKernels(): routes psdRead/tiffToRgba/tiffUnpredict between Rust and JS twin, resets p.job, calls releaseIfLarge(), and matches PSD_JS  rustK=rust jsK=js calls={"packbits_rows":4,"psd_mask_rgba":4,"tiff_to_rgba":4,"tiff_unpredict":8} jsCalls={} rel=1->4 jobBytes=0
+FAIL inpaint_worker.js psdRead window 2: posts 2 bands, then one more per acknowledged band (psdAck by job id and count), same bytes as unpaced  counts=2,2,3,3,5 posted=8 reply=true err=null window=2 wait=251.08219999999994
+FAIL psdKernels() recovers mid-layer on band 2 of 4 from wasm RuntimeError and PxOutOfMemory without mutating d.bytes, leaking arena bytes, or dropping/duplicating bands  trapBandOk=false oomMaskOk=false
+FAIL (8) (only: tiff, psd; PX_ONLY, not the full test)
+ok   rust scalar packbits_rows refuses invalid dimensions, short buffers, and null pointers without touching output  rawPbOk=true
+ok   rust scalar psdMaskRgba matches independent reference across SIMD/tail widths, all 65,536 BE u16 values, empty overlaps, and sentinel out views
+ok   rust scalar psd_mask_rgba equals its twin byte for byte (52 cases, each also at an odd offset)
+ok   rust scalar psd_mask_rgba refuses invalid bounds, bits, short buffers, and null pointers without touching output  rawMaskOk=true
+ok   rust scalar psdBandRgba & psdBandMask match PSD_JS and window readPsd across 8/16-bit RGB/Gray, missing channels, comp 0..3, -2/-3/predicted/disjoint/empty masks, and flat merged PSDs
+ok   rust scalar psdBandRgba & psdBandMask on a fresh Px instance grow wasm memory (> 2 MiB band) without detaching views  bytes 1114112 -> 5963776
+ok   rust scalar readPsdStream validates RLE/ZIP/merged bounds upfront (0 bands sent on refusal) and PSD_JS keeps comp 3 bytes unmutated
+FAIL (8) (only: tiff, psd; PX_ONLY, not the full test)
+(node:47624) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/schoeneberg/AppData/Local/Temp/k20b_mut_tree/renderer/editor/blend_modes.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\schoeneberg\AppData\Local\Temp\k20b_mut_tree\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

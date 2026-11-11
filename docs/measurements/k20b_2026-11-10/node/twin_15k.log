@@ -1,0 +1,7 @@
+F:\canvas\.claude\worktrees\.tmp_k20b_15k.psd: 129.2 MB
+readPsd 4118 ms (2 layers Background 15000x10000, Paint 15000x10000, merged picture read)
+readPsdStream (PSD_JS) 3152 ms {"channels":1109.2916999999998,"interleave":1530.547800000003,"mask":0,"deliver":510.64050000000043,"bands":80}
+readPsdStream (px.wasm) 964 ms {"channels":245.14749999999367,"interleave":206.05729999999858,"mask":0,"deliver":510.91509999998925,"bands":80}
+readPsdStream (px_scalar.wasm) 1318 ms {"channels":269.16859999999906,"interleave":537.9939999999915,"mask":0,"deliver":508.9318000000021,"bands":80}
+[ok] the worker's reader (PSD_JS, px.wasm, px_scalar.wasm) equals readPsd on .tmp_k20b_15k.psd: every layer's bytes and mask by SHA-256, the fields, groups, notes
+PASS

@@ -1483,6 +1483,148 @@ console.log(JSON.stringify(out));
             sliceAndBandOk,
             `oddSlices=${JSON.stringify(cbOdd.slices)} rawOverSlice=${JSON.stringify(cbRawOver.slices)} defCancelOk=${defCancelOk} lzwOverStreamed=${planLzwOver.streamed}`);
     }
+
+    // ---- K18: readTiffBands parallel worker dispatch, per-band payload, out-of-order landing, window cap, later() & cancel ----
+    {
+        const wB = 11, hB = 20, sppB = 3;
+        const sB = new Uint8Array(wB * hB * sppB);
+        for (let i = 0; i < sB.length; i++) sB[i] = (i * 37 + 19) & 255;
+        const wantB = expectRgba(wB * hB, (i) => [sB[i * 3], sB[i * 3 + 1], sB[i * 3 + 2], 255]);
+        const stripsB = strips(sB, wB, hB, sppB, 8, true, 1, { encode: (st) => lzwEncode(st).bytes });
+        const { bytes: bytesB } = buildTiff([{ tags: imageTags({ w: wB, h: hB, bits: 8, spp: sppB, photometric: 2, compression: 5, rps: 1 }), data: stripsB }]);
+        const blobB = new Blob([bytesB]);
+
+        // 1) Out-of-order resolution + payload & priority inspection + maxInFlight = pool.size * 2 (= 4 for size 2)
+        const pending = [];
+        const seenArgs = [];
+        let active = 0, peakActive = 0;
+        const oooPool = {
+            size: 2,
+            cancelledGroups: [],
+            cancel(g) { this.cancelledGroups.push(g); return 0; },
+            run(op, args, transfer, opts) {
+                seenArgs.push({ op, args, transfer, opts });
+                active++;
+                if (active > peakActive) peakActive = active;
+                return new Promise((resolve, reject) => {
+                    pending.push({ args, resolve, reject });
+                });
+            },
+        };
+        const landedOrder = [];
+        const assembled = new Uint8Array(wB * hB * 4);
+        let headerSeen = null;
+        const doneP = T.readTiffBands(blobB, {
+            pool: oooPool,
+            rowsPerBand: 3, // 20 strips -> 7 bands (3, 3, 3, 3, 3, 3, 2 rows)
+            priority: 1,
+            onHeader: (h) => { headerSeen = h; },
+            onRows: (rgba, y0, rows) => {
+                landedOrder.push(y0);
+                assembled.set(rgba, y0 * wB * 4);
+            },
+        });
+        // Wait until initial window (maxInFlight = 4) launches
+        for (let spin = 0; spin < 20 && pending.length < 4; spin++) await new Promise((r) => setTimeout(r, 0));
+        const initialWindow = pending.length;
+        // Resolve out of order: band 3, band 1, band 0, band 2 -> launches bands 4, 5, 6 -> resolve 6, 4, 5
+        const resolveBand = async (item) => {
+            const out = await T.readTiffBand(item.args.blob, item.args.spec, item.args.band, { kernels: activeKernels });
+            active--;
+            item.resolve({ rgba: out.buffer, y0: item.args.band.y0, rows: item.args.band.rows });
+            await new Promise((r) => setTimeout(r, 0));
+        };
+        const firstBatch = pending.splice(0, 4);
+        for (const idx of [3, 1, 0, 2]) await resolveBand(firstBatch[idx]);
+        for (let spin = 0; spin < 20 && pending.length < 3; spin++) await new Promise((r) => setTimeout(r, 0));
+        const secondBatch = pending.splice(0, 3);
+        for (const idx of [2, 0, 1]) await resolveBand(secondBatch[idx]);
+        const infoGot = await doneP;
+
+        const payloadOk = seenArgs.length === 7
+            && seenArgs.every((s) => s.op === "tiff_band"
+                && s.opts && s.opts.priority === 1 && typeof s.opts.group === "symbol"
+                && s.opts.group === seenArgs[0].opts.group
+                && s.args.spec && !("offsets" in s.args.spec) && !("counts" in s.args.spec)
+                && !("bands" in s.args.spec) && !("colormap" in s.args.spec)
+                && Array.isArray(s.args.band.offsets) && s.args.band.offsets.length <= 3);
+
+        // 2) Palette spec check: 4-bit palette has precomputed Uint8Array `pal` and no `colormap` array on `spec`
+        const cm4 = new Array(48).fill(0).map((_, i) => ((i * 257 * 13) & 0xffff));
+        const palBytes = new Uint8Array(4 * 4);
+        const { bytes: bytesPal } = buildTiff([{ tags: [...imageTags({ w: 8, h: 4, bits: 4, spp: 1, photometric: 3, compression: 1, rps: 2 }), [320, 3, cm4]], data: [palBytes.subarray(0, 8), palBytes.subarray(8, 16)] }]);
+        const planPal = await T.tiffPlan(new Blob([bytesPal]), { rowsPerBand: 2 });
+        const palSpecOk = planPal.spec.pal instanceof Uint8Array && planPal.spec.pal.byteLength === 48 && !("colormap" in planPal.spec) && Array.isArray(planPal.colormap);
+
+        // 3) `later()` mid-flight cancels group, prevents further `onRows`, and throws CancelledError
+        let isStale = false;
+        const cancelQueue = [];
+        let cancelCalledWith = null;
+        const cancelPool = {
+            size: 4,
+            cancel(g) { cancelCalledWith = g; return cancelQueue.length; },
+            run(op, args, transfer, opts) {
+                return new Promise((resolve, reject) => { cancelQueue.push({ args, opts, resolve, reject }); });
+            },
+        };
+        let rowsAfterStale = 0, rowsBeforeStale = 0;
+        const staleP = T.readTiffBands(blobB, {
+            pool: cancelPool,
+            rowsPerBand: 4, // 5 bands
+            later: () => isStale,
+            onRows: () => {
+                if (isStale) rowsAfterStale++;
+                else rowsBeforeStale++;
+            },
+        });
+        for (let spin = 0; spin < 20 && cancelQueue.length < 5; spin++) await new Promise((r) => setTimeout(r, 0));
+        const c0Out = await T.readTiffBand(blobB, cancelQueue[0].args.spec, cancelQueue[0].args.band, { kernels: activeKernels });
+        cancelQueue[0].resolve({ rgba: c0Out.buffer, y0: 0, rows: 4 });
+        await new Promise((r) => setTimeout(r, 0));
+        isStale = true;
+        const c1Out = await T.readTiffBand(blobB, cancelQueue[1].args.spec, cancelQueue[1].args.band, { kernels: activeKernels });
+        cancelQueue[1].resolve({ rgba: c1Out.buffer, y0: 4, rows: 4 });
+        let staleErr = null;
+        try { await staleP; } catch (e) { staleErr = e; }
+
+        // 4) Band error cancels group and rejects with band error
+        const errQueue = [];
+        let errCancelledGroup = null;
+        const errPool = {
+            size: 4,
+            cancel(g) { errCancelledGroup = g; return errQueue.length; },
+            run(op, args, transfer, opts) {
+                return new Promise((resolve, reject) => { errQueue.push({ args, opts, resolve, reject }); });
+            },
+        };
+        const failP = T.readTiffBands(blobB, { pool: errPool, rowsPerBand: 4, onRows: () => {} });
+        for (let spin = 0; spin < 20 && errQueue.length < 5; spin++) await new Promise((r) => setTimeout(r, 0));
+        errQueue[2].reject(new Error("synthetic band 2 failure"));
+        let bandFailErr = null;
+        try { await failP; } catch (e) { bandFailErr = e; }
+
+        // 5) Streamed file returns null without posting any tiff_band jobs
+        let streamedJobs = 0;
+        const streamedRes = await T.readTiffBands(blobB, {
+            pool: { size: 2, run() { streamedJobs++; return Promise.reject(new Error("unexpected")); } },
+            plan: { ...(await T.tiffPlan(blobB, { streamed: true })) },
+        });
+
+        const k18Ok = initialWindow === 4 && peakActive <= 4
+            && landedOrder.join(",") === "9,3,0,6,18,12,15"
+            && headerSeen && headerSeen.width === wB && headerSeen.height === hB
+            && infoGot && infoGot.width === wB && infoGot.height === hB
+            && !pixelDiff(assembled, wantB, wB)
+            && payloadOk && palSpecOk
+            && rowsBeforeStale === 1 && rowsAfterStale === 0
+            && !!staleErr && staleErr.cancelled === true && cancelCalledWith === cancelQueue[0].opts.group
+            && c1Out.buffer.byteLength === 0
+            && !!bandFailErr && /synthetic band 2 failure/.test(errText(bandFailErr)) && errCancelledGroup === errQueue[0].opts.group
+            && streamedRes === null && streamedJobs === 0;
+        check(`readTiffBands dispatches bounded NORMAL-priority per-band payloads, lands out-of-order bands immediately, and cancels on later() or band error${kernelSuffix}`,
+            k18Ok,
+            `window=${initialWindow}/${peakActive} order=${landedOrder.join(",")} payloadOk=${payloadOk} palSpecOk=${palSpecOk} stale=${rowsBeforeStale}/${rowsAfterStale}/${staleErr && staleErr.cancelled} fail=${errText(bandFailErr)} streamed=${streamedRes}/${streamedJobs}`);
+    }
 }
 
 /** A picture of W x H with gradients, noise and a soft alpha from 0 to 255. */
@@ -1763,7 +1905,7 @@ async function writerCases(T, K = null) {
         console.log("FAIL");
         process.exit(1);
     }
-    const missing = ["isTiff", "tiffInfo", "tiffPlan", "readTiffBand", "readTiff", "unpackStrip", "unpredict", "predictRgba", "toRgba", "paletteLut", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
+    const missing = ["isTiff", "tiffInfo", "tiffPlan", "readTiffBand", "readTiffBands", "readTiff", "unpackStrip", "unpredict", "predictRgba", "toRgba", "paletteLut", "tiffStripRows", "tiffPart", "TiffStreamWriter"].filter((k) => typeof T[k] !== "function");
     if (T.TIFF_BAND_BYTES !== 64 * 1048576) missing.push("TIFF_BAND_BYTES");
     const tiffJsOk = T.TIFF_JS && Object.isFrozen(T.TIFF_JS)
         && T.TIFF_JS.unpackStrip === T.unpackStrip
@@ -1772,7 +1914,7 @@ async function writerCases(T, K = null) {
         && T.TIFF_JS.toRgba === T.toRgba
         && T.TIFF_JS.paletteLut === T.paletteLut;
     if (!tiffJsOk) missing.push("TIFF_JS");
-    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, tiffPlan, readTiffBand, TIFF_BAND_BYTES, readTiff, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, TIFF_JS, tiffStripRows, tiffPart, TiffStreamWriter")) {
+    if (!check("exports", !missing.length, missing.length ? "missing: " + missing.join(", ") : "isTiff, tiffInfo, tiffPlan, readTiffBand, readTiffBands, TIFF_BAND_BYTES, readTiff, unpackStrip, unpredict, predictRgba, toRgba, paletteLut, TIFF_JS, tiffStripRows, tiffPart, TiffStreamWriter")) {
         console.log("FAIL");
         process.exit(1);
     }

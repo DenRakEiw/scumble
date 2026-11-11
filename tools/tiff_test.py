@@ -21,6 +21,10 @@ writes the fixtures of tools/tiff_fixtures.py to <dir>/fixtures), then the app:
 - deflate_cut_adler_and_damaged_tail_open: >= 1 MiB decoded Deflate strips and tiles (codes 8 and 32946) whose Adler-32
   is cut by 1 or 4 bytes, plus a Deflate strip with damaged bytes past a 256 KiB flushed tail, open cleanly via
   readTiffBand / inflateInto in real Chromium with exact pixels.
+- parallel_bands_priority_cancel_and_fallback: K18 parallel `tiff_band` jobs carry only `{ blob, spec, band }` (neither
+  full strip tables nor `colormap`), write out-of-order bands via `writeRect`, run at `NORMAL` ahead of queued `EXPORT`
+  jobs, cancel their group and release partial pixels without falling back on `later()`, and cancel + release + fall
+  back to `tiff_read` on any band error.
 - no_tiff_in_the_local_store: no .tif or .tiff file came into the local store during the gate.
 
     python tools/tiff_test.py [--out DIR] [--no-node]
@@ -28,23 +32,25 @@ writes the fixtures of tools/tiff_fixtures.py to <dir>/fixtures), then the app:
                               [--image PATH] [--out DIR]
         the 15k measurement alone (not in the default run; docs/PLAN_WASM_BUILD.md 4.6 and K0a), one variant or several:
         noise           (the default: W0's tiffperf row, unchanged) a noise picture of --size (a PNG written here, like
-                        document_perf.py's) opened, exported as TIFF and that TIFF opened in a new tab; 16 rows compared
+                        document_perf.py's) opened, exported as TIFF and that TIFF opened in a new tab; one row per
+                        band plus whole-picture SHA-256 compared
         own             the photo (--image, default dist/daily/adobe_15000x10000.jpg as tools/w0_bench.py) opened, exported
-                        as TIFF by the app (deflate + predictor 2: Scumble's own TIFF) and that opened in a new tab; 16
-                        rows compared
+                        as TIFF by the app (deflate + predictor 2: Scumble's own TIFF) and that opened in a new tab;
+                        one row per band plus whole-picture SHA-256 compared
         lzw, packbits   Pillow writes the photo (decoded by Pillow, RGB) as LZW / PackBits (its default strips: one row
                         per strip at 15000 px)
         raw_strips      tifffile writes it uncompressed in 16-row strips (625 strips at 10000 px, on readTiffBand)
         zlib1           tifffile writes it with zlib in one strip, no predictor
         raw             tifffile writes it uncompressed (one strip)
         The five third-party files are written once into DIR and reused (the time and size printed when written), with
-        <stem>_rows16.json beside them: the SHA-256 of the 16 measured rows of the decoded photo as RGBA. Each open
-        reports its wall (settled with mipsSettled), the window's tiff_open marks as durations (InpaintEditor.stepMarks),
-        the tiff_read worker timing (every field, InpaintEditor.jobTimings) and the other jobs of the open; noise and own
-        also the export's marks and jobs; the file's strips, compression and predictor read by tifffile. One
-        "[ok] variant <name>: {json}" line per variant (or [FAIL]); PASS when every variant opened at its size, noise's
-        and own's 16 rows equal the tab they were exported from, and the third-party variants give one hash of their 16
-        rows with alpha 255 (they come from one array; whether that hash is the decoded photo's is printed as asSource).
+        <stem>_rows16.json beside them: the SHA-256 of one row per band and of the whole picture of the decoded photo as
+        RGBA. Each open reports its wall (settled with mipsSettled), the window's tiff_open marks as durations
+        (InpaintEditor.stepMarks), the tiff_band / tiff_read worker timings (InpaintEditor.jobTimings) and the other
+        jobs of the open; noise and own also the export's marks and jobs; the file's strips, compression and predictor
+        read by tifffile. One "[ok] variant <name>: {json}" line per variant (or [FAIL]); PASS when every variant opened
+        at its size, noise's and own's per-band rows and whole-picture hash equal the tab they were exported from, and
+        the third-party variants give one hash of their per-band rows and one whole-picture hash with alpha 255 (whether
+        both match the decoded photo's is printed as asSource).
         Variants run one after the other in one instance: for numbers to compare run each on a fresh instance
         (tools/run_gates.sh <label> --offline tiffperf:15000x10000,--variant,own; commas for spaces).
 
@@ -151,22 +157,30 @@ try {
     try { await run("load_image", { doc: d.id, path: F.path }); } catch (e) { err = String(e.message || e); }
     const ms = Math.round(performance.now() - t0);
     if (err) throw new Error("load_image: " + err);
-    const jt = E.jobTimings(true).filter((t) => t.op === "tiff_read");
+    const allJt = E.jobTimings(true);
+    const jt = allJt.filter((t) => t.op === "tiff_band");
+    const readJt = allJt.filter((t) => t.op === "tiff_read");
+    const pxCalls = {};
+    for (const t of jt) {
+        for (const [k, v] of Object.entries(t.pxCalls || {})) pxCalls[k] = (pxCalls[k] || 0) + v;
+    }
     if (ed.width !== F.width || ed.height !== F.height) throw new Error(`opened as ${ed.width} x ${ed.height}`);
     const got = ed.basePx.readRect(0, 0, F.width, F.height).data;
     const c = compare(got, await readBytes(F.expect), F.width);
     const status = ed.status || "";
     const problems = [];
     if (!c.ok) problems.push(says(c));
-    if (jt.length !== 1 || jt[0].kernels !== "rust") problems.push("tiff_read timing: " + JSON.stringify(jt));
+    if (!jt.length || readJt.length || jt.some((t) => t.kernels !== "rust")) {
+        problems.push("tiff_band timing: " + JSON.stringify({ jt, readJt }));
+    }
     if (F.info && (F.info.compression === 5 || F.info.compression === 32773)) {
-        if (!jt[0] || !jt[0].pxCalls || !jt[0].pxCalls.tiff_unpack) {
-            problems.push("missing tiff_unpack in pxCalls: " + JSON.stringify(jt[0] && jt[0].pxCalls));
+        if (!pxCalls.tiff_unpack) {
+            problems.push("missing tiff_unpack in pxCalls: " + JSON.stringify(pxCalls));
         }
     }
     if (F.info && F.info.compression === 1) {
-        if (jt[0] && jt[0].pxCalls && jt[0].pxCalls.tiff_unpack) {
-            problems.push("unexpected wasm tiff_unpack on uncompressed TIFF: " + JSON.stringify(jt[0].pxCalls));
+        if (pxCalls.tiff_unpack) {
+            problems.push("unexpected wasm tiff_unpack on uncompressed TIFF: " + JSON.stringify(pxCalls));
         }
     }
     if (F.name === "rgb8_lzw_pred") {
@@ -179,9 +193,11 @@ try {
         E.jobTimings(true);
         try {
             await run("load_image", { doc: d2.id, path: F.path });
-            const jtJs = E.jobTimings(true).filter((t) => t.op === "tiff_read");
-            if (jtJs.length !== 1 || (jtJs[0].pxCalls && (jtJs[0].pxCalls.tiff_unpack || jtJs[0].pxCalls.tiff_unpredict || jtJs[0].pxCalls.tiff_to_rgba))) {
-                problems.push("rgb8_lzw_pred js route timing: " + JSON.stringify(jtJs));
+            const allJtJs = E.jobTimings(true);
+            const jtJs = allJtJs.filter((t) => t.op === "tiff_band");
+            const readJtJs = allJtJs.filter((t) => t.op === "tiff_read");
+            if (jtJs.length !== jt.length || readJtJs.length || jtJs.some((t) => t.pxCalls && (t.pxCalls.tiff_unpack || t.pxCalls.tiff_unpredict || t.pxCalls.tiff_to_rgba))) {
+                problems.push("rgb8_lzw_pred js route timing: " + JSON.stringify({ jtJs, readJtJs }));
             }
             const jsData = ed2.basePx.readRect(0, 0, F.width, F.height).data;
             if (jsData.length !== got.length || jsData.some((v, i) => v !== got[i])) {
@@ -200,7 +216,7 @@ try {
     if (isTifRef(ed.base && ed.base.ref)) problems.push("the base is stored as the TIFF itself: " + ed.base.ref.filename);
     if (ed.undo && ed.undo.length) problems.push("opening left " + ed.undo.length + " undo steps");
     if (problems.length) throw new Error(problems.join(" | "));
-    return { name: F.name, ms, soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, rawOff: c.rawOff, ref: ed.base.ref.filename, status, pxCalls: (jt[0] && jt[0].pxCalls) || {} };
+    return { name: F.name, ms, bands: jt.length, soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, rawOff: c.rawOff, ref: ed.base.ref.filename, status, pxCalls };
 } finally { await run("close_document", { doc: d.id }); }
 """
 
@@ -262,18 +278,26 @@ const F = __F__;
 const d = await run("new_document");
 const ed = ednow(d.id);
 const E = ed.constructor;
+const prevBandRows = E.tiffBandRows;
 host.shell.activate(ed);
 try {
     await run("new_canvas", { doc: d.id, width: 200, height: 150 });
     const n = ed.layers.length;
+    E.tiffBandRows = 8;
     E.jobTimings(true);
     const r = await run("add_image_layer", { doc: d.id, path: F.path });
-    const jt = E.jobTimings(true).filter((t) => t.op === "tiff_read");
+    const allJt = E.jobTimings(true);
+    const jt = allJt.filter((t) => t.op === "tiff_band");
+    const readJt = allJt.filter((t) => t.op === "tiff_read");
+    const pxCalls = {};
+    for (const t of jt) {
+        for (const [k, v] of Object.entries(t.pxCalls || {})) pxCalls[k] = (pxCalls[k] || 0) + v;
+    }
     if (ed.layers.length !== n + 1) throw new Error(`${ed.layers.length - n} layers added: ${ed.status}`);
     const l = ed.layers[ed.layers.length - 1];
     const problems = [];
-    if (jt.length !== 1 || jt[0].kernels !== "rust" || !jt[0].pxCalls || !jt[0].pxCalls.tiff_unpredict || !jt[0].pxCalls.tiff_to_rgba) {
-        problems.push("layer tiff_read timing: " + JSON.stringify(jt));
+    if (jt.length < 2 || readJt.length || jt.some((t) => t.kernels !== "rust") || !pxCalls.tiff_unpredict || !pxCalls.tiff_to_rgba) {
+        problems.push("layer tiff_band timing: " + JSON.stringify({ jt, readJt }));
     }
     if (l.kind !== "image") problems.push("the layer is a " + l.kind);
     if (l.w !== F.width || l.h !== F.height || l.px.width !== F.width || l.px.height !== F.height) problems.push(`the layer is ${l.w} x ${l.h} (pixels ${l.px.width} x ${l.px.height}), not ${F.width} x ${F.height}`);
@@ -283,8 +307,11 @@ try {
     await ed.syncLayers();
     if (!l.ref || isTifRef(l.ref)) problems.push("after syncLayers the layer's file is " + JSON.stringify(l.ref));
     if (problems.length) throw new Error(problems.join(" | "));
-    return { layer: r.name || l.name, size: `${l.w} x ${l.h}`, soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, ref: l.ref.filename, status: ed.status, pxCalls: jt[0].pxCalls };
-} finally { await run("close_document", { doc: d.id }); }
+    return { layer: r.name || l.name, size: `${l.w} x ${l.h}`, bands: jt.length, soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, ref: l.ref.filename, status: ed.status, pxCalls };
+} finally {
+    E.tiffBandRows = prevBandRows;
+    await run("close_document", { doc: d.id });
+}
 """
 
 EXPORT_BUILD = r"""
@@ -353,9 +380,15 @@ host.shell.activate(ed);
 try {
     E.jobTimings(true);
     await run("load_image", { doc: d.id, path: __TIF__ });
-    const jt = E.jobTimings(true).filter((t) => t.op === "tiff_read");
-    if (jt.length !== 1 || jt[0].kernels !== "rust" || !jt[0].pxCalls || !jt[0].pxCalls.tiff_unpredict || !jt[0].pxCalls.tiff_to_rgba) {
-        throw new Error("reopen tiff_read rust timing: " + JSON.stringify(jt));
+    const allJt = E.jobTimings(true);
+    const jt = allJt.filter((t) => t.op === "tiff_band");
+    const readJt = allJt.filter((t) => t.op === "tiff_read");
+    const pxCalls = {};
+    for (const t of jt) {
+        for (const [k, v] of Object.entries(t.pxCalls || {})) pxCalls[k] = (pxCalls[k] || 0) + v;
+    }
+    if (jt.length !== 2 || readJt.length || jt.some((t) => t.kernels !== "rust") || !pxCalls.tiff_unpredict || !pxCalls.tiff_to_rgba) {
+        throw new Error("reopen tiff_band rust timing: " + JSON.stringify({ jt, readJt }));
     }
     if (ed.width !== 640 || ed.height !== 400) throw new Error(`reopened as ${ed.width} x ${ed.height}`);
     const rustData = ed.basePx.readRect(0, 0, 640, 400).data;
@@ -370,9 +403,11 @@ try {
     E.jobTimings(true);
     try {
         await run("load_image", { doc: d2.id, path: __TIF__ });
-        const jtJs = E.jobTimings(true).filter((t) => t.op === "tiff_read");
-        if (jtJs.length !== 1 || (jtJs[0].pxCalls && (jtJs[0].pxCalls.tiff_unpredict || jtJs[0].pxCalls.tiff_to_rgba))) {
-            throw new Error("reopen tiff_read js route timing: " + JSON.stringify(jtJs));
+        const allJtJs = E.jobTimings(true);
+        const jtJs = allJtJs.filter((t) => t.op === "tiff_band");
+        const readJtJs = allJtJs.filter((t) => t.op === "tiff_read");
+        if (jtJs.length !== 2 || readJtJs.length || jtJs.some((t) => t.pxCalls && (t.pxCalls.tiff_unpredict || t.pxCalls.tiff_to_rgba))) {
+            throw new Error("reopen tiff_band js route timing: " + JSON.stringify({ jtJs, readJtJs }));
         }
         const jsData = ed2.basePx.readRect(0, 0, 640, 400).data;
         if (jsData.length !== rustData.length || jsData.some((v, i) => v !== rustData[i])) {
@@ -383,7 +418,7 @@ try {
         E.setRoute("tiffToRgba", null);
         await run("close_document", { doc: d2.id });
     }
-    return { soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, rawOff: c.rawOff, status: ed.status, pxCalls: jt[0].pxCalls, jsRouteEqual: true };
+    return { bands: jt.length, soft: c.soft, worstSoft: c.worstSoft, worstRaw: c.worstRaw, rawOff: c.rawOff, status: ed.status, pxCalls, jsRouteEqual: true };
 } finally { await run("close_document", { doc: d.id }); }
 """
 
@@ -425,6 +460,346 @@ try {
 } finally { await run("close_document", { doc: d.id }); }
 """
 
+PARALLEL_BANDS = r"""
+const F_PLANAR = __PLANAR__, F_PAL = __PAL__, F_LZW = __LZW__, F_TRUNC = __TRUNC__;
+const { editorPool } = await import("./editor/inpaint_jobs.js");
+const { NORMAL, EXPORT } = await import("./editor/inpaint_pool.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+const E = ed.constructor;
+host.shell.activate(ed);
+const pool = editorPool();
+const origRun = pool.run.bind(pool);
+const origCancel = pool.cancel.bind(pool);
+const origSend = pool._send.bind(pool);
+const Proto = ed.pixels.Layer.prototype;
+const origRelease = Proto.release;
+const prevBandRows = E.tiffBandRows;
+try {
+    const planarBytes = await readBytes(F_PLANAR.path), planarWant = await readBytes(F_PLANAR.expect);
+    const palBytes = await readBytes(F_PAL.path), palWant = await readBytes(F_PAL.expect);
+    const lzwBytes = await readBytes(F_LZW.path), lzwWant = await readBytes(F_LZW.expect);
+    const truncBytes = await readBytes(F_TRUNC.path);
+    const blobPlanar = new File([planarBytes], "planar.tif", { type: "image/tiff" });
+    const blobPal = new File([palBytes], "pal.tif", { type: "image/tiff" });
+    const blobLzw = new File([lzwBytes], "lzw.tif", { type: "image/tiff" });
+    const blobTrunc = new File([truncBytes], "trunc.tif", { type: "image/tiff" });
+
+    // 1) Payload, monotonic progress(rowsDone / H), & out-of-order writeRect across planar_strips (18 total strip entries, 3 per 8-row band) and palette4 (ColorMap)
+    E.tiffBandRows = 8;
+    const seenPayloads = [], resolveOrder = [], groupsSeen = new Set(), planarProgs = [];
+    pool.run = function (op, args, transfer, opts) {
+        if (op === "tiff_band") {
+            seenPayloads.push({
+                argKeys: Object.keys(args || {}).sort().join(","),
+                hasSpecOffsets: !!(args.spec && (args.spec.offsets || args.spec.counts)),
+                hasSpecColormap: !!(args.spec && args.spec.colormap),
+                hasPalLut: !!(args.spec && args.spec.pal),
+                bandOffLen: args.band && args.band.offsets ? args.band.offsets.length : -1,
+                priority: opts && opts.priority,
+            });
+            if (opts && opts.group) groupsSeen.add(opts.group);
+            const p = origRun(op, args, transfer, opts);
+            if (args.band && args.band.index === 0) {
+                return p.then(async (r) => { await wait(35); resolveOrder.push(args.band.y0); return r; });
+            }
+            return p.then((r) => { resolveOrder.push(args.band.y0); return r; });
+        }
+        return origRun(op, args, transfer, opts);
+    };
+    const rPlanar = await E.parts.pixelsFromTiff(blobPlanar, ed.pixels.Layer, (f) => planarProgs.push(f), null);
+    const cPlanar = compare(rPlanar.px.readRect(0, 0, F_PLANAR.width, F_PLANAR.height).data, planarWant, F_PLANAR.width);
+    rPlanar.px.release();
+    if (!cPlanar.ok) throw new Error("planar out-of-order bands: " + says(cPlanar));
+    if (seenPayloads.length !== 6 || groupsSeen.size !== 1
+        || seenPayloads.some((s) => s.argKeys !== "band,blob,spec" || s.hasSpecOffsets || s.hasSpecColormap || s.bandOffLen !== 3 || s.priority !== NORMAL)
+        || resolveOrder[0] === 0 || resolveOrder[resolveOrder.length - 1] !== 0
+        || planarProgs.length !== 6 || Math.abs(planarProgs[0] - Math.min(8, F_PLANAR.height - resolveOrder[0]) / F_PLANAR.height) > 1e-6
+        || planarProgs[planarProgs.length - 1] !== 1
+        || !planarProgs.every((f, i) => f > 0 && f <= 1 && (i === 0 || f > planarProgs[i - 1]))) {
+        throw new Error("planar payload/order/progress check failed: " + JSON.stringify({ seenPayloads, resolveOrder, planarProgs }));
+    }
+    seenPayloads.length = 0; resolveOrder.length = 0;
+    const rPal = await E.parts.pixelsFromTiff(blobPal, ed.pixels.Layer, null, null);
+    const cPal = compare(rPal.px.readRect(0, 0, F_PAL.width, F_PAL.height).data, palWant, F_PAL.width);
+    rPal.px.release();
+    if (!cPal.ok) throw new Error("palette out-of-order bands: " + says(cPal));
+    if (seenPayloads.length !== 6 || seenPayloads.some((s) => s.hasSpecColormap || !s.hasPalLut || s.bandOffLen !== 1)) {
+        throw new Error("palette payload check failed: " + JSON.stringify(seenPayloads));
+    }
+    pool.run = origRun;
+
+    // 2) NORMAL priority (1) runs tiff_band ahead of queued EXPORT (2) jobs on editorPool()
+    let releaseHold = null;
+    const holdPromise = new Promise((r) => { releaseHold = r; });
+    const sentOrder = [];
+    pool._send = function (s, job) {
+        if (job.args && job.args._hold) {
+            s.job = job;
+            holdPromise.then(() => origSend(s, job));
+            return;
+        }
+        if (job.op === "tiff_band" || (job.args && job.args._tag === "exp")) {
+            sentOrder.push(job.op === "tiff_band" ? "tiff_band" : "export_crc");
+        }
+        return origSend(s, job);
+    };
+    const tinyCrcBlob = new Blob([new Uint8Array(4)]);
+    const holdJobs = [];
+    for (let i = 0; i < pool.size; i++) {
+        holdJobs.push(origRun("crc", { blob: tinyCrcBlob, _hold: true }, [], { priority: NORMAL }));
+    }
+    const expJobs = [];
+    for (let i = 0; i < 4; i++) {
+        expJobs.push(origRun("crc", { blob: tinyCrcBlob, _tag: "exp" }, [], { priority: EXPORT }));
+    }
+    const prioOpen = E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, null, null);
+    for (let i = 0; i < 100 && !pool.queues[NORMAL].length; i++) await wait(5);
+    if (!pool.queues[NORMAL].length || pool.queues[EXPORT].length !== 4) {
+        releaseHold();
+        throw new Error(`expected queued NORMAL and 4 EXPORT jobs before release, got q1=${pool.queues[NORMAL].length} q2=${pool.queues[EXPORT].length}`);
+    }
+    releaseHold();
+    const [prioRes] = await Promise.all([prioOpen, ...holdJobs, ...expJobs]);
+    pool._send = origSend;
+    const cPrio = compare(prioRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
+    prioRes.px.release();
+    if (!cPrio.ok) throw new Error("priority open pixels: " + says(cPrio));
+    const lastBandAt = sentOrder.lastIndexOf("tiff_band"), firstExpAt = sentOrder.indexOf("export_crc");
+    if (sentOrder.filter((x) => x === "tiff_band").length !== 6 || firstExpAt < 0 || lastBandAt > firstExpAt) {
+        throw new Error("NORMAL did not precede queued EXPORT jobs: " + JSON.stringify(sentOrder));
+    }
+
+    // 3) later() cancellation on pixelsFromTiff (after band 0 wrote rows) and via superseded loadFile:
+    //    bands > 0 are held inside the real pool via _send, pool.stats().cancelled grows by 5, and no tiff_band starts after cancel
+    let releaseCalls = 0;
+    Proto.release = function (...a) { releaseCalls++; return origRelease.apply(this, a); };
+    let cancelCalls = 0, fallbackReads = 0, stale = false, cancelDone = false, sentAfterCancel = 0;
+    const heldSlots = [];
+    const flushHeldSlots = (rejectHold = false) => {
+        for (const hs of heldSlots.splice(0)) {
+            if (hs.job && (hs.job.cancelled || rejectHold)) {
+                clearTimeout(hs.job.timer);
+                if (rejectHold && !hs.job.cancelled) hs.job.reject(new Error("cleanup held slot"));
+                hs.job = null;
+            }
+        }
+        pool._pump();
+    };
+    pool.cancel = function (g) {
+        if (typeof g === "symbol") cancelCalls++;
+        const n = origCancel(g);
+        cancelDone = true;
+        flushHeldSlots(false);
+        return n;
+    };
+    pool.run = function (op, args, transfer, opts) {
+        if (op === "tiff_read") fallbackReads++;
+        return origRun(op, args, transfer, opts);
+    };
+    pool._send = function (s, job) {
+        if (cancelDone && job.op === "tiff_band") sentAfterCancel++;
+        if (job.op === "tiff_band" && job.args.band && job.args.band.index > 0) {
+            s.job = job;
+            heldSlots.push(s);
+            return;
+        }
+        return origSend(s, job);
+    };
+    const cancelledBefore1 = pool.stats().cancelled;
+    let cancelErr = null, progCalls = 0;
+    try {
+        await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, () => { progCalls++; stale = true; }, () => stale);
+    } catch (e) {
+        cancelErr = e;
+    }
+    const cancelledDelta1 = pool.stats().cancelled - cancelledBefore1;
+    flushHeldSlots(true);
+    if (!cancelErr || !cancelErr.cancelled || progCalls !== 1 || cancelCalls < 1 || cancelledDelta1 !== 5 || sentAfterCancel !== 0 || releaseCalls !== 1 || fallbackReads !== 0) {
+        throw new Error("direct later() cancel check failed: " + JSON.stringify({ err: cancelErr && cancelErr.name, cancelled: !!(cancelErr && cancelErr.cancelled), progCalls, cancelCalls, cancelledDelta1, sentAfterCancel, releaseCalls, fallbackReads }));
+    }
+
+    // Superseded ed.loadFile: first open's 6 bands held inside real pool, second loadFile supersedes it cleanly without tiff_read fallback
+    cancelCalls = 0; fallbackReads = 0; cancelDone = false; sentAfterCancel = 0;
+    let releaseFirstLoad = null;
+    const firstLoadGate = new Promise((r) => { releaseFirstLoad = r; });
+    let heldBands = 0;
+    const cancelledBefore2 = pool.stats().cancelled;
+    pool._send = function (s, job) {
+        if (cancelDone && job.op === "tiff_band" && job.args.blob === blobPlanar) sentAfterCancel++;
+        if (job.op === "tiff_band" && job.args.blob === blobPlanar) {
+            heldBands++;
+            s.job = job;
+            if (job.args.band && job.args.band.index === 0) {
+                firstLoadGate.then(() => { if (s.job === job && !job.cancelled) origSend(s, job); });
+            } else {
+                heldSlots.push(s);
+            }
+            return;
+        }
+        return origSend(s, job);
+    };
+    const pLoad1 = ed.loadFile(blobPlanar, { ask: false });
+    for (let i = 0; i < 100 && heldBands < 6; i++) await wait(5);
+    const pLoad2 = ed.loadFile(blobPal, { ask: false });
+    releaseFirstLoad();
+    await Promise.all([pLoad1, pLoad2]);
+    const cancelledDelta2 = pool.stats().cancelled - cancelledBefore2;
+    flushHeldSlots(true);
+    const cLoad2 = compare(ed.basePx.readRect(0, 0, F_PAL.width, F_PAL.height).data, palWant, F_PAL.width);
+    if (!cLoad2.ok || cancelCalls < 1 || cancelledDelta2 !== 5 || sentAfterCancel !== 0 || fallbackReads !== 0 || /error|fail|cancel/i.test(ed.status || "")) {
+        throw new Error("superseded loadFile check failed: " + JSON.stringify({ ok: cLoad2.ok, cancelCalls, cancelledDelta2, sentAfterCancel, fallbackReads, status: ed.status }));
+    }
+
+    // 4) Band error fallback to tiff_read: band 0 writes rows, band 1 fails in worker -> cancels bands 2..5 in real pool,
+    //    resets rowsDone = 0 and releases partial px, falls back to tiff_read with exact pixels and progress <= 1 ending at 1
+    cancelCalls = 0; fallbackReads = 0; releaseCalls = 0; cancelDone = false; sentAfterCancel = 0;
+    let band1Ready = null;
+    const afterBand0 = new Promise((r) => { band1Ready = r; });
+    const fbProgs = [];
+    const cancelledBefore3 = pool.stats().cancelled;
+    pool.run = function (op, args, transfer, opts) {
+        if (op === "tiff_read") {
+            fallbackReads++;
+            if (!opts || opts.priority !== NORMAL) throw new Error("tiff_read fallback priority not NORMAL: " + JSON.stringify(opts));
+            return origRun(op, args, transfer, opts);
+        }
+        return origRun(op, args, transfer, opts);
+    };
+    pool._send = function (s, job) {
+        if (cancelDone && job.op === "tiff_band") sentAfterCancel++;
+        if (job.op === "tiff_band") {
+            const idx = job.args.band.index;
+            if (idx === 0) return origSend(s, job);
+            s.job = job;
+            if (idx === 1) {
+                afterBand0.then(() => {
+                    if (s.job === job && !job.cancelled) {
+                        const badBand = { ...job.args.band, counts: new Uint32Array(job.args.band.counts.length).fill(999999) };
+                        origSend(s, { ...job, args: { ...job.args, band: badBand } });
+                    }
+                });
+            } else {
+                heldSlots.push(s);
+            }
+            return;
+        }
+        return origSend(s, job);
+    };
+    const fbRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, (f) => { fbProgs.push(f); if (fbProgs.length === 1 && band1Ready) band1Ready(); }, null);
+    const cancelledDelta3 = pool.stats().cancelled - cancelledBefore3;
+    flushHeldSlots(true);
+    const releasesBeforeCleanup = releaseCalls;
+    const cFb = compare(fbRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
+    fbRes.px.release();
+    if (!cFb.ok || cancelCalls < 1 || cancelledDelta3 !== 4 || sentAfterCancel !== 0 || fallbackReads !== 1 || releasesBeforeCleanup !== 1 || releaseCalls !== 2
+        || fbProgs.length !== 7 || Math.abs(fbProgs[0] - 8 / F_LZW.height) > 1e-6 || Math.abs(fbProgs[1] - 8 / F_LZW.height) > 1e-6
+        || fbProgs[fbProgs.length - 1] !== 1 || !fbProgs.every((f) => f > 0 && f <= 1)) {
+        throw new Error("band error fallback check failed: " + JSON.stringify({ ok: cFb.ok, cancelCalls, cancelledDelta3, sentAfterCancel, fallbackReads, releasesBeforeCleanup, releaseCalls, fbProgs }));
+    }
+    pool._send = origSend;
+
+    // Corrupt multi-band TIFF (truncated: 19 bands at tiffBandRows=8): early bands write, later band fails -> cancels group, releases partial px, falls back to tiff_read, throws refusal
+    pool.run = function (op, args, transfer, opts) {
+        if (op === "tiff_read") fallbackReads++;
+        return origRun(op, args, transfer, opts);
+    };
+    cancelCalls = 0; fallbackReads = 0; releaseCalls = 0;
+    let truncErr = null;
+    try {
+        await E.parts.pixelsFromTiff(blobTrunc, ed.pixels.Layer, null, null);
+    } catch (e) {
+        truncErr = String((e && e.message) || e);
+    }
+    if (!truncErr || !/ends early|truncated/i.test(truncErr) || cancelCalls < 1 || fallbackReads !== 1 || releaseCalls < 1) {
+        throw new Error("corrupt multi-band fallback refusal check failed: " + JSON.stringify({ truncErr, cancelCalls, fallbackReads, releaseCalls }));
+    }
+
+    // 5) E.tiffBandRows = false skips tiff_band and uses tiff_read directly
+    pool.run = origRun;
+    pool.cancel = origCancel;
+    Proto.release = origRelease;
+    E.tiffBandRows = false;
+    E.jobTimings(true);
+    const noBandsRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, null, null);
+    const noBandsJt = E.jobTimings(true);
+    const cNoBands = compare(noBandsRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
+    noBandsRes.px.release();
+    if (!cNoBands.ok || noBandsJt.some((t) => t.op === "tiff_band") || noBandsJt.filter((t) => t.op === "tiff_read").length !== 1) {
+        throw new Error("tiffBandRows=false check failed: " + JSON.stringify(noBandsJt));
+    }
+
+    // 6) tiffPoolUsable with E.kernels = "js" (!E.parts.usable()) still dispatches tiff_band;
+    //    and window fallbacks run when pool.off = true or when tiff_read sets pool.off and rejects with "no worker pool"
+    E.tiffBandRows = 8;
+    const prevKernels = E.kernels;
+    try {
+        E.kernels = "js";
+        if (E.parts.usable()) throw new Error("expected E.parts.usable() === false when E.kernels === 'js'");
+        E.jobTimings(true);
+        const jsModeRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, null, null);
+        const jsModeJt = E.jobTimings(true);
+        const cJsMode = compare(jsModeRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
+        jsModeRes.px.release();
+        if (!cJsMode.ok || jsModeJt.filter((t) => t.op === "tiff_band").length !== 6) {
+            throw new Error("tiffPoolUsable with E.kernels='js' check failed: " + JSON.stringify(jsModeJt));
+        }
+    } finally {
+        E.kernels = prevKernels;
+    }
+
+    const offProgs = [], winFbProgs = [];
+    try {
+        pool.off = true;
+        E.jobTimings(true);
+        const offRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, (f) => offProgs.push(f), null);
+        const offJt = E.jobTimings(true);
+        const cOff = compare(offRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
+        offRes.px.release();
+        if (!cOff.ok || offJt.length !== 0 || offProgs.length !== 6 || offProgs[offProgs.length - 1] !== 1) {
+            throw new Error("pool.off window branch check failed: " + JSON.stringify({ ok: cOff.ok, offJt, offProgs }));
+        }
+
+        pool.off = false;
+        E.tiffBandRows = 8;
+        pool.run = function (op, args, transfer, opts) {
+            if (op === "tiff_band") return Promise.reject(new Error("no worker pool"));
+            if (op === "tiff_read") {
+                pool.off = true;
+                return Promise.reject(new Error("no worker pool"));
+            }
+            return origRun(op, args, transfer, opts);
+        };
+        const winFbRes = await E.parts.pixelsFromTiff(blobLzw, ed.pixels.Layer, (f) => winFbProgs.push(f), null);
+        const cWinFb = compare(winFbRes.px.readRect(0, 0, F_LZW.width, F_LZW.height).data, lzwWant, F_LZW.width);
+        winFbRes.px.release();
+        if (!cWinFb.ok || winFbProgs.length !== 6 || winFbProgs[winFbProgs.length - 1] !== 1) {
+            throw new Error("needWindowFallback check failed: " + JSON.stringify({ ok: cWinFb.ok, winFbProgs }));
+        }
+    } finally {
+        pool.off = false;
+        pool.run = origRun;
+    }
+
+    return {
+        tiles: !!ed.tileMode,
+        planarBands: 6,
+        sentOrder: sentOrder.join(","),
+        supersededStatus: ed.status,
+        truncRefused: truncErr.slice(0, 80),
+        cancelledDeltas: [cancelledDelta1, cancelledDelta2, cancelledDelta3],
+    };
+} finally {
+    pool.off = false;
+    pool.run = origRun;
+    pool.cancel = origCancel;
+    pool._send = origSend;
+    Proto.release = origRelease;
+    E.tiffBandRows = prevBandRows;
+    await run("close_document", { doc: d.id, force: true });
+}
+"""
+
 MEASURE_HELP = r"""
 const settle = async (e) => { for (let i = 0; i < 1200 && (e._loading || !e.base); i++) await wait(100); if (e.mipsSettled) await e.mipsSettled(); };
 // the window's step marks (InpaintEditor.stepMarks) of one op as runs (docs/PLAN_WASM_BUILD.md K0a): each step's ms since
@@ -445,25 +820,55 @@ const runsOf = (marks, op) => {
 // the workers' timings (InpaintEditor.jobTimings) summed per op as tools/native_test.py does: numbers added, labels kept
 const sums = (timings) => {
     const out = {};
+    const workerSets = {};
     for (const t of timings) {
         const key = t.op + (t.kind ? ":" + t.kind : "");
         const j = out[key] || (out[key] = { jobs: 0 });
         j.jobs++;
         for (const [k, v] of Object.entries(t)) {
-            if (k === "op" || k === "kind") continue;
+            if (k === "op" || k === "kind" || k === "gen") continue;
             if (typeof v === "number") j[k] = +((j[k] || 0) + v).toFixed(1);
             else if (typeof v === "string") { const s = new Set(j[k] ? String(j[k]).split("|") : []); s.add(v); j[k] = [...s].join("|"); }
+            else if (k === "pxCalls" && v && typeof v === "object") {
+                const pc = j.pxCalls || (j.pxCalls = {});
+                for (const [ck, cv] of Object.entries(v)) if (typeof cv === "number") pc[ck] = (pc[ck] || 0) + cv;
+            } else if (k === "pool" && v && typeof v === "object" && typeof v.worker === "number") {
+                (workerSets[key] || (workerSets[key] = new Set())).add(v.worker);
+            }
         }
     }
+    for (const [key, ws] of Object.entries(workerSets)) out[key].workers = ws.size;
     return out;
 };
 const marksNow = (E) => (E.stepMarks ? E.stepMarks(true) : []);
 const resetAll = (E) => { E.jobTimings(true); marksNow(E); };
-// an open's marks and jobs, read and cleared: tiff_read apart, the other ops (the store's png_part, mips ...) as jobs
+// an open's marks and jobs, read and cleared: tiff_band and tiff_read apart, the other ops (png_part, mips ...) as jobs
 const openParts = (E) => {
-    const marks = marksNow(E), jobs = sums(E.jobTimings(true)), tiffRead = jobs.tiff_read || null;
+    const marks = marksNow(E), jobs = sums(E.jobTimings(true));
+    const tiffBand = jobs.tiff_band || null, tiffRead = jobs.tiff_read || null;
+    delete jobs.tiff_band;
     delete jobs.tiff_read;
-    return { steps: runsOf(marks, "tiff_open"), tiff_read: tiffRead, jobs };
+    return { steps: runsOf(marks, "tiff_open"), tiff_band: tiffBand, tiff_read: tiffRead, jobs };
+};
+const hexOf = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
+// K18 15k compare (docs/PLAN_WASM_BUILD.md §4.6): one row per band plus a 2-level SHA-256 of the whole picture
+const checkBandsAndPicture = async (px, W, H, bandStep = 256) => {
+    const nBands = Math.ceil(H / bandStep);
+    const sampleRows = new Uint8Array(nBands * W * 4);
+    const bandDigests = new Uint8Array(nBands * 32);
+    let alphaOff = 0;
+    for (let b = 0; b < nBands; b++) {
+        const y0 = b * bandStep, rows = Math.min(bandStep, H - y0);
+        const block = px.readRect(0, y0, W, rows).data;
+        const ry = (b * 17) % rows;
+        const rowSlice = block.subarray(ry * W * 4, (ry + 1) * W * 4);
+        sampleRows.set(rowSlice, b * W * 4);
+        for (let i = 3; i < rowSlice.length; i += 4) if (rowSlice[i] !== 255) alphaOff++;
+        bandDigests.set(new Uint8Array(await crypto.subtle.digest("SHA-256", block)), b * 32);
+    }
+    const rowsHash = hexOf(await crypto.subtle.digest("SHA-256", sampleRows));
+    const picHash = hexOf(await crypto.subtle.digest("SHA-256", bandDigests));
+    return { bands: nBands, sampleRows, rowsHash, picHash, alphaOff };
 };
 """
 
@@ -491,22 +896,25 @@ await run("load_image", { doc: d2.id, path: __TIF__ });
 await settle(ed2);
 const openMs = performance.now() - t2;
 const open = openParts(E);
-// sixteen rows compared byte for byte (the noise and the photo are opaque)
+// one row per band compared byte for byte, plus a SHA-256 of the whole picture (after openMs / openParts are recorded)
+const baseCheck = await checkBandsAndPicture(ed.basePx, W, H);
+const openCheck = await checkBandsAndPicture(ed2.basePx, W, H);
 let rowsOff = 0;
-for (let k = 0; k < 16; k++) {
-    const y = Math.min(H - 1, Math.floor((k * (H - 1)) / 15));
-    const a = ed.basePx.readRect(0, y, W, 1).data, b = ed2.basePx.readRect(0, y, W, 1).data;
-    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) { rowsOff++; break; }
+for (let b = 0; b < baseCheck.bands; b++) {
+    const o0 = b * W * 4, o1 = o0 + W * 4;
+    for (let i = o0; i < o1; i++) if (baseCheck.sampleRows[i] !== openCheck.sampleRows[i]) { rowsOff++; break; }
 }
+const picMatch = baseCheck.picHash === openCheck.picHash;
 const tiles = !!ed.tileMode, baseSize = [ed.width, ed.height], size = [ed2.width, ed2.height], status = ed2.status;
 await run("close_document", { doc: d2.id });
 await run("close_document", { doc: d.id });
-return { tiles, pngOpenMs: Math.round(pngOpenMs), exportMs: Math.round(exportMs), openMs: Math.round(openMs), baseSize, size, rowsOff, exportStatus: ex.status, openStatus: status,
-         openSteps: open.steps, tiff_read: open.tiff_read, openJobs: open.jobs, exportSteps, exportJobs };
+return { tiles, pngOpenMs: Math.round(pngOpenMs), exportMs: Math.round(exportMs), openMs: Math.round(openMs), baseSize, size,
+         bandsChecked: baseCheck.bands, rowsOff, picMatch, picHash: openCheck.picHash, exportStatus: ex.status, openStatus: status,
+         openSteps: open.steps, tiff_band: open.tiff_band, tiff_read: open.tiff_read, openJobs: open.jobs, exportSteps, exportJobs };
 """
 
 OPEN_VARIANT = MEASURE_HELP + r"""
-// a TIFF written outside the app opened in a new tab; its 16 rows hashed (SHA-256 over a copy) and their alpha counted
+// a TIFF written outside the app opened in a new tab; one row per band plus the whole picture hashed (SHA-256)
 const W = __W__, H = __H__;
 const d = await run("new_document");
 const ed = ednow(d.id);
@@ -520,18 +928,16 @@ try {
     const openMs = performance.now() - t0;
     const open = openParts(E);
     const size = [ed.width, ed.height];
-    let hash = null, alphaOff = null;
+    let hash = null, picHash = null, bandsChecked = 0, alphaOff = null;
     if (ed.width === W && ed.height === H) {
-        const rows = new Uint8Array(16 * W * 4);
-        for (let k = 0; k < 16; k++) {
-            const y = Math.min(H - 1, Math.floor((k * (H - 1)) / 15));
-            rows.set(ed.basePx.readRect(0, y, W, 1).data, k * W * 4);
-        }
-        alphaOff = 0;
-        for (let i = 3; i < rows.length; i += 4) if (rows[i] !== 255) alphaOff++;
-        hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", rows)), (b) => b.toString(16).padStart(2, "0")).join("");
+        const ck = await checkBandsAndPicture(ed.basePx, W, H);
+        hash = ck.rowsHash;
+        picHash = ck.picHash;
+        bandsChecked = ck.bands;
+        alphaOff = ck.alphaOff;
     }
-    return { tiles: !!ed.tileMode, openMs: Math.round(openMs), size, hash, alphaOff, status: ed.status, openSteps: open.steps, tiff_read: open.tiff_read, openJobs: open.jobs };
+    return { tiles: !!ed.tileMode, openMs: Math.round(openMs), size, bandsChecked, hash, picHash, alphaOff, status: ed.status,
+             openSteps: open.steps, tiff_band: open.tiff_band, tiff_read: open.tiff_read, openJobs: open.jobs };
 } finally { await run("close_document", { doc: d.id }); }
 """
 
@@ -765,13 +1171,22 @@ def deflate_cut_adler_cases():
 
 
 def measured_rows(h):
-    """The 16 rows the measurement compares (the page's Math.min(H - 1, Math.floor(k * (H - 1) / 15)))."""
+    """The 16 rows of K17's sidecar (kept in <stem>_rows16.json so a before tree can share the cached sidecar)."""
     return [min(h - 1, (k * (h - 1)) // 15) for k in range(16)]
+
+
+def measured_band_rows(h, band_step=256):
+    """One deterministic row per 256-row band: y0 + ((b * 17) % rows) (docs/PLAN_WASM_BUILD.md §4.6, K18)."""
+    out = []
+    for b, y0 in enumerate(range(0, h, band_step)):
+        rows = min(band_step, h - y0)
+        out.append(y0 + ((b * 17) % rows))
+    return out
 
 
 def photo_files(names):
     """The third-party TIFFs of the photo in OUT, written once from one Pillow-decoded RGB array and reused, and the
-    SHA-256 of that array's 16 measured rows as RGBA (alpha 255), kept in <stem>_rows16.json. Returns (files, known)."""
+    SHA-256 of one row per band and of the whole picture as RGBA (alpha 255), kept in <stem>_rows16.json. Returns (files, known)."""
     stem = os.path.splitext(os.path.basename(IMAGE))[0]
     files = {n: os.path.join(OUT, "%s_%s.tif" % (stem, n)) for n in names}
     side = os.path.join(OUT, "%s_rows16.json" % stem)
@@ -780,7 +1195,7 @@ def photo_files(names):
         with open(side, encoding="utf-8") as f:
             known = json.load(f)
     missing = [n for n in names if not os.path.exists(files[n])]
-    if known and not missing:
+    if known and "bandRowsSha256" in known and "picSha256" in known and not missing:
         return files, known
     import gc
     import hashlib
@@ -798,7 +1213,31 @@ def photo_files(names):
     rgba = np.empty((16, w, 4), np.uint8)
     rgba[..., :3] = arr[rows]
     rgba[..., 3] = 255
-    known = {"image": IMAGE, "size": [w, h], "rows": rows, "sha256": hashlib.sha256(rgba.tobytes()).hexdigest()}
+    band_rows = measured_band_rows(h, 256)
+    band_rgba = np.empty((len(band_rows), w, 4), np.uint8)
+    band_rgba[..., :3] = arr[band_rows]
+    band_rgba[..., 3] = 255
+    band_rows_sha = hashlib.sha256(band_rgba.tobytes()).hexdigest()
+    band_digests = bytearray()
+    slice_rgba = np.empty((256, w, 4), np.uint8)
+    slice_rgba[..., 3] = 255
+    for y0 in range(0, h, 256):
+        n_rows = min(256, h - y0)
+        view = slice_rgba[:n_rows]
+        view[..., :3] = arr[y0:y0 + n_rows]
+        if n_rows < 256:
+            view[..., 3] = 255
+        band_digests.extend(hashlib.sha256(np.ascontiguousarray(view).tobytes()).digest())
+    pic_sha = hashlib.sha256(bytes(band_digests)).hexdigest()
+    known = {
+        "image": IMAGE,
+        "size": [w, h],
+        "rows": rows,
+        "sha256": hashlib.sha256(rgba.tobytes()).hexdigest(),
+        "bandRows": band_rows,
+        "bandRowsSha256": band_rows_sha,
+        "picSha256": pic_sha,
+    }
     with open(side, "w", encoding="utf-8", newline=chr(10)) as f:
         json.dump(known, f, indent=1)
     pim = None
@@ -817,7 +1256,7 @@ def photo_files(names):
             tifffile.imwrite(part, arr, photometric="rgb", metadata=None)
         os.replace(part, files[n])
         print("%s: %d MB in %.1f s (%s)" % (n, os.path.getsize(files[n]) // 1048576, time.time() - t, files[n]), flush=True)
-    del arr, rgba, pim
+    del arr, rgba, band_rgba, slice_rgba, pim
     gc.collect()
     return files, known
 
@@ -858,6 +1297,7 @@ async def measure(c):
         with Image.open(IMAGE) as im:
             pw, ph = im.size
     hashes = {}
+    pic_hashes = {}
     focus_js = "(() => JSON.stringify({ focused: document.hasFocus(), visibility: document.visibilityState }))()"
     for v in names:
         try:
@@ -886,28 +1326,33 @@ async def measure(c):
                 tags = tiff_tags(tif)
                 r.update(file=os.path.basename(tif), fileMB=round(mb), rawMB=round(vraw), exportMBps_raw=round(vraw / max(0.001, r["exportMs"] / 1000)),
                          exportMBps_file=round(mb / max(0.001, r["exportMs"] / 1000)), openMBps_raw=round(vraw / max(0.001, r["openMs"] / 1000)), tifffile=tags)
-                good = r["size"] == [vw, vh] and r["baseSize"] == [vw, vh] and r["rowsOff"] == 0 and tags["compression"] == 8
+                good = r["size"] == [vw, vh] and r["baseSize"] == [vw, vh] and r["rowsOff"] == 0 and r.get("picMatch") is True and tags["compression"] == 8
             else:
                 tif = files[v]
                 r = await js(c, OPEN_VARIANT, timeout=3600, W=str(pw), H=str(ph), TIF=json.dumps(tif.replace("\\", "/")))
                 mb = os.path.getsize(tif) / 1048576
                 vraw = pw * ph * 4 / 1048576
+                as_source = bool(known and r.get("hash") == known.get("bandRowsSha256") and r.get("picHash") == known.get("picSha256"))
                 r.update(file=os.path.basename(tif), fileMB=round(mb), rawMB=round(vraw), openMBps_raw=round(vraw / max(0.001, r["openMs"] / 1000)), tifffile=tiff_tags(tif),
-                         asSource=bool(known and r.get("hash") == known.get("sha256")))
-                good = r["size"] == [pw, ph] and bool(r.get("hash")) and r.get("alphaOff") == 0
+                         asSource=as_source)
+                good = r["size"] == [pw, ph] and bool(r.get("hash")) and bool(r.get("picHash")) and r.get("alphaOff") == 0 and (not known or as_source)
                 if r.get("hash"):
                     hashes[v] = r["hash"]
+                if r.get("picHash"):
+                    pic_hashes[v] = r["picHash"]
             focus_end = json.loads(await c.eval(focus_js))
             r.update(focusedStart=focus_start["focused"], focusedEnd=focus_end["focused"],
                      focused=bool(focus_start["focused"] and focus_end["focused"]), visibility=focus_end["visibility"])
             ok = variant_line(good, v, r) and ok
         except Exception as err:  # noqa: BLE001
             ok = variant_line(False, v, str(err)[:1500]) and ok
-    if len(set(hashes.values())) > 1:
-        ok = report(False, "third-party hashes", "the files of one array give different rows: %s" % json.dumps(hashes)) and ok
+    if len(set(hashes.values())) > 1 or len(set(pic_hashes.values())) > 1:
+        ok = report(False, "third-party hashes", "the files of one array give different pixels: rows=%s pic=%s" % (json.dumps(hashes), json.dumps(pic_hashes))) and ok
     elif hashes:
-        one = next(iter(hashes.values()))
-        report(True, "third-party hashes", "%d file(s) give one hash of 16 rows (%s); the decoded photo's: %s" % (len(hashes), one[:16], bool(known and one == known.get("sha256"))))
+        one_rows = next(iter(hashes.values()))
+        one_pic = next(iter(pic_hashes.values())) if pic_hashes else ""
+        matched = bool(known and one_rows == known.get("bandRowsSha256") and one_pic == known.get("picSha256"))
+        report(True, "third-party hashes", "%d file(s) give one per-band-row hash (%s) and one picture hash (%s); the decoded photo's: %s" % (len(hashes), one_rows[:16], one_pic[:16], matched))
     return ok
 
 
@@ -936,26 +1381,36 @@ async def run_all(c):
     print("backend: %s, local store: %s" % (json.dumps(backend), store), flush=True)
     by = {e["name"]: e for e in entries}
 
-    # -- opens_every_accepted_fixture --
+    # -- opens_every_accepted_fixture (with InpaintEditor.tiffBandRows = 8 so 67x45 fixtures split into 3..6 parallel bands) --
     good, bad = [], []
     worst = {"worstSoft": 0, "worstRaw": 0, "rawOff": 0}
     open_calls = {}
-    for e in (x for x in entries if x["accept"]):
-        try:
-            r = await js(c, OPEN_ONE, timeout=600, F=json.dumps(e))
-            good.append(r["name"])
-            for k, v in (r.get("pxCalls") or {}).items():
-                open_calls[k] = open_calls.get(k, 0) + v
-            for k in worst:
-                worst[k] = max(worst[k], r[k]) if k != "rawOff" else worst[k] + r[k]
-            if r["worstRaw"] or e["notes"]:
-                print("  %s: %s" % (e["name"], json.dumps({k: r[k] for k in ("worstSoft", "worstRaw", "rawOff", "soft", "status")}, ensure_ascii=False)), flush=True)
-        except Exception as err:  # noqa: BLE001
-            bad.append("%s: %s" % (e["name"], str(err)[:500]))
+    bands_by_name = {}
+    await c.eval("(() => { const e = window.__host.editors()[0]; if (e) e.constructor.tiffBandRows = 8; return 1; })()")
+    try:
+        for e in (x for x in entries if x["accept"]):
+            try:
+                r = await js(c, OPEN_ONE, timeout=600, F=json.dumps(e))
+                good.append(r["name"])
+                bands_by_name[r["name"]] = r.get("bands", 0)
+                for k, v in (r.get("pxCalls") or {}).items():
+                    open_calls[k] = open_calls.get(k, 0) + v
+                for k in worst:
+                    worst[k] = max(worst[k], r[k]) if k != "rawOff" else worst[k] + r[k]
+                if r["worstRaw"] or e["notes"]:
+                    print("  %s: %s" % (e["name"], json.dumps({k: r[k] for k in ("worstSoft", "worstRaw", "rawOff", "soft", "status")}, ensure_ascii=False)), flush=True)
+            except Exception as err:  # noqa: BLE001
+                bad.append("%s: %s" % (e["name"], str(err)[:500]))
+    finally:
+        await c.eval("(() => { const e = window.__host.editors()[0]; if (e) e.constructor.tiffBandRows = 0; return 1; })()")
     for req in ("tiff_unpack", "tiff_unpredict", "tiff_to_rgba"):
         if not open_calls.get(req):
-            bad.append("missing %s in tiff_read pxCalls: %s" % (req, json.dumps(open_calls)))
-    ok = report(not bad, "opens_every_accepted_fixture", " || ".join(bad) if bad else {"fixtures": len(good), **worst, "pxCalls": open_calls}) and ok
+            bad.append("missing %s in tiff_band pxCalls: %s" % (req, json.dumps(open_calls)))
+    for multi_name, min_bands in (("rgb8_lzw_pred", 6), ("tiled16", 3), ("planar_strips", 6), ("many_strips", 100)):
+        if bands_by_name.get(multi_name, 0) < min_bands:
+            bad.append("%s ran %d bands, expected >= %d" % (multi_name, bands_by_name.get(multi_name, 0), min_bands))
+    multi_count = sum(1 for n_b in bands_by_name.values() if n_b >= 2)
+    ok = report(not bad, "opens_every_accepted_fixture", " || ".join(bad) if bad else {"fixtures": len(good), "multiBand": multi_count, **worst, "pxCalls": open_calls}) and ok
 
     # -- refuses_with_a_message --
     before = tiffs_in(store) if store else set()
@@ -1041,6 +1496,21 @@ async def run_all(c):
     except Exception as err:  # noqa: BLE001
         cut_bad.append("building cases: %s" % str(err)[:400])
     ok = report(not cut_bad, "deflate_cut_adler_and_damaged_tail_open", " || ".join(cut_bad) if cut_bad else {"opened": cut_good}) and ok
+
+    # -- parallel_bands_priority_cancel_and_fallback (K18) --
+    try:
+        pb = await js(
+            c,
+            PARALLEL_BANDS,
+            timeout=600,
+            PLANAR=json.dumps(by["planar_strips"]),
+            PAL=json.dumps(by["palette4"]),
+            LZW=json.dumps(by["rgb8_lzw_pred"]),
+            TRUNC=json.dumps(by["truncated"]),
+        )
+        ok = report(True, "parallel_bands_priority_cancel_and_fallback", pb) and ok
+    except Exception as err:  # noqa: BLE001
+        ok = report(False, "parallel_bands_priority_cancel_and_fallback", str(err)[:900]) and ok
 
     # -- no_tiff_in_the_local_store --
     if store:

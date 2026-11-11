@@ -1,0 +1,11 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+tone (cold) | Dodge | layer | 200 | fit | 156.5 | 35.2 | 20.1 | 11 | 13.4 | 1.6 | 129.7 | 207 | 6.3 | 6.6 | 0 | 0 | 11953 | mip_chain 32, smudge_dab 86, tone_rgba 43
+tone | Dodge | layer | 50 | fit | 156.5 | 3.8 | 3.3 | 3.4 | 4.2 | 0.9 | 9.1 | 126 | 5.2 | 6 | 0 | 0 | 8957 | mip_chain 56, smudge_dab 1562, tone_rgba 781
+tone | Dodge | layer | 200 | fit | 156.5 | 4.8 | 8.6 | 9 | 9.5 | 1.2 | 18.9 | 418 | 5.1 | 5.5 | 0 | 0 | 11973 | mip_chain 144, smudge_dab 422, tone_rgba 211
+tone | Dodge | layer | 400 | fit | 156.5 | 12.3 | 30.7 | 20.2 | 23.3 | 1.6 | 45.9 | 785 | 3.4 | 5.5 | 0 | 0 | 11946 | mip_chain 186, smudge_dab 242, tone_rgba 121
+tone | Dodge | layer | 1000 | fit | 156.5 | 53.2 | 90.5 | 62.9 | 78.2 | 2.8 | 147.3 | 2183 | 7.5 | 7.8 | 0 | 0 | 11958 | mip_chain 480, smudge_dab 122, tone_rgba 61
+tone | Dodge | layer | 50 | 1:1 | 18 | 29.8 | 5 | 1.4 | 2.2 | 1.1 | 37.5 | 93 | 2.7 | 5.5 | 0 | 0 | 8931 | smudge_dab 182, tone_rgba 91
+tone | Dodge | layer | 200 | 1:1 | 18 | 32.6 | 4 | 2.5 | 4.1 | 1.2 | 39.6 | 92 | 4 | 5.5 | 0 | 0 | 11950 | smudge_dab 62, tone_rgba 31
+tone | Dodge | layer | 400 | 1:1 | 18 | 36.5 | 6 | 6 | 9.3 | 1.4 | 44.6 | 367 | 7.5 | 7.8 | 0 | 0 | 11923 | smudge_dab 62, tone_rgba 31
+tone | Dodge | layer | 1000 | 1:1 | 18 | 57.5 | 38.8 | 40.9 | 49.8 | 9.2 | 99.8 | 1465 | 14.7 | 15 | 0 | 0 | 11978 | mip_chain 41, smudge_dab 62, tone_rgba 31
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["tone"], "SIZES": [50, 200, 400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 6331}}

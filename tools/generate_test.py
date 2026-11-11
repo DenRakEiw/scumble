@@ -235,6 +235,53 @@ async def dialog_escape_closes_the_picker_first(c, pre):
 
 
 STEPS_26F_AFTER = [
+    # issue #12: Generate new takes the layers and the undo history with it, so the dialog asks first
+    ("asks_before_replacing", """
+const d = await run("new_document");
+await run("new_canvas", { doc: d.id, width: 256, height: 256 });
+const ed = ednow(d.id);
+host.shell.activate(ed);
+if (host.replaceLoss(ed)) throw new Error("a blank canvas would lose something: " + JSON.stringify(host.replaceLoss(ed)));
+const list = host.shell.recipes();
+const fake = __FAKE__;
+list.push(fake);
+const realAsk = host.askDocument, asked = [];
+let answer = "cancel";
+host.askDocument = async (q) => { asked.push(q); return answer; };
+const out = {};
+try {
+    await run("add_paint_layer", { doc: d.id, name: "work" });
+    const loss = host.replaceLoss(ed);
+    if (!loss || loss.layers !== 1) throw new Error("the loss with one layer: " + JSON.stringify(loss));
+    await run("set_prompt", { doc: d.id, text: "a quiet lake" });
+    await host.shell.openGenerateNew(ed);
+    const pick = (id, v) => { const s = document.getElementById(id); s.value = v; s.dispatchEvent(new Event("change")); };
+    pick("gen-mode", "api");
+    pick("gen-recipe", fake.id);
+    pick("gen-provider", "loopback");
+    await wait(150);
+    document.getElementById("gen-go").click();
+    for (let i = 0; i < 100 && !asked.length; i++) await wait(20);
+    await wait(400);
+    if (asked.length !== 1 || asked[0].kind !== "replace" || asked[0].layers !== 1) throw new Error("the question: " + JSON.stringify(asked));
+    if (ed.layers.length !== 1 || ed.width !== 256) throw new Error("a cancelled question changed the tab: " + ed.layers.length + " " + ed.width);
+    out.cancelled = document.getElementById("gen-state").textContent;
+    if (!/Nothing was replaced/.test(out.cancelled)) throw new Error("the cancelled line: " + out.cancelled);
+    answer = "replace";
+    document.getElementById("gen-go").click();
+    for (let i = 0; i < 500 && (ed.layers.length || ed.width === 256); i++) await wait(40);
+    if (asked.length !== 2) throw new Error("asked " + asked.length + " times");
+    if (ed.layers.length || ed.width === 256) throw new Error("Replace did not run: " + ed.layers.length + " " + ed.width);
+    out.landed = [ed.width, ed.height];
+} finally {
+    host.askDocument = realAsk;
+    list.splice(list.indexOf(fake), 1);
+    const g = document.getElementById("gen-dialog");
+    if (g.open) g.close();
+    await run("close_document", { doc: d.id, remember: false }).catch(() => {});
+}
+return out;
+""".replace("__FAKE__", FAKE)),
     ("dialog_upsample_refs", """
 const ed = ednow(window.__r);
 const fake = window.__genFake;

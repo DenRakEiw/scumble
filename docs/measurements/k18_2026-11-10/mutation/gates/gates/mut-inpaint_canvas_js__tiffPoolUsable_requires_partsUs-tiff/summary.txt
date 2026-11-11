@@ -1,0 +1,2 @@
+tiff rc=1 40s FAIL
+SOME FAILED

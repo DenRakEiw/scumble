@@ -1,0 +1,11 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+sharpen (cold) | Sharpen | layer | 200 | fit | 156.5 | 40.4 | 29.3 | 22.5 | 23.6 | 1.4 | 74.3 | 270 | 4.8 | 6 | 0 | 0 | 12164 | mip_chain 32, sharpen_rgba 43, smudge_dab 86
+sharpen | Sharpen | layer | 50 | fit | 156.5 | 3.9 | 7.5 | 5.9 | 7.2 | 0.9 | 14.7 | 315 | 3.1 | 5.5 | 0 | 0 | 9285 | mip_chain 56, sharpen_rgba 781, smudge_dab 1562
+sharpen | Sharpen | layer | 200 | fit | 156.5 | 6.8 | 20.5 | 21.5 | 23.4 | 1.3 | 35.1 | 802 | 3.8 | 5.5 | 0 | 0 | 12201 | mip_chain 144, sharpen_rgba 211, smudge_dab 422
+sharpen | Sharpen | layer | 400 | fit | 156.5 | 18.3 | 48.6 | 40.4 | 47.6 | 1.7 | 69.8 | 1393 | 3.2 | 5.5 | 0 | 0 | 12170 | mip_chain 186, sharpen_rgba 121, smudge_dab 242
+sharpen | Sharpen | layer | 1000 | fit | 156.5 | 81.6 | 131.6 | 116.9 | 132.3 | 2.9 | 215.9 | 3769 | 6.9 | 7.7 | 0 | 0 | 12182 | mip_chain 480, sharpen_rgba 61, smudge_dab 122
+sharpen | Sharpen | layer | 50 | 1:1 | 18 | 32.5 | 5.8 | 1.8 | 2.4 | 1.1 | 41 | 107 | 6 | 6.1 | 0 | 0 | 9291 | sharpen_rgba 91, smudge_dab 182
+sharpen | Sharpen | layer | 200 | 1:1 | 18 | 35.7 | 6.2 | 4.4 | 5.2 | 1.3 | 44.4 | 307 | 3.8 | 5.5 | 0 | 0 | 12192 | sharpen_rgba 31, smudge_dab 62
+sharpen | Sharpen | layer | 400 | 1:1 | 18 | 43.9 | 12.8 | 11 | 12.1 | 1.5 | 59.1 | 529 | 4.3 | 5.5 | 0 | 0 | 12195 | sharpen_rgba 31, smudge_dab 62
+sharpen | Sharpen | layer | 1000 | 1:1 | 18 | 80.9 | 64.5 | 64.4 | 77.5 | 9 | 150.7 | 2209 | 14.3 | 14.6 | 0 | 0 | 12189 | mip_chain 41, sharpen_rgba 31, smudge_dab 62
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["sharpen"], "SIZES": [50, 200, 400, 1000], "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 5733}}

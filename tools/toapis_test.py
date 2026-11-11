@@ -207,8 +207,11 @@ set("gen-aspect", "3:2");
 set("gen-resolution", "1024");
 $("gen-prompt").value = "a lighthouse at dusk";
 const note = $("gen-size-note").textContent;
+const realAsk = host.askDocument;
+host.askDocument = async () => "replace";   // this tab holds a picture: Generate new asks before it replaces it
 $("gen-go").click();
 const closed = await until(() => !$("gen-dialog").open, 120000);
+host.askDocument = realAsk;
 if (!closed) throw new Error("the dialog did not finish: " + $("gen-state").textContent);
 return { note, size: [ed.width, ed.height], recipe: host.recipe.id, provider: host.recipe.provider };
 """

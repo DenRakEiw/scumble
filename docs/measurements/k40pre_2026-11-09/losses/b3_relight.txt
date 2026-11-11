@@ -1,0 +1,28 @@
+== bbff117f #0 M9 and the second open: K1's defaults hold, keepMB 16 costs nothing
+WIN   perf-relight | magic wand over it | wall                   base   330.3 (323.3-333)  now   311.6  runs [322.0, 264.0, 311.6]
+TIE   perf-relight | magic wand, a masked layer | wall           base   323.0 (287-326)  now   331.0  runs [346.0, 331.0, 311.0]
+TIE   perf-relight | magic wand (an object) | wall               base   221.0 (195-227)  now   236.0  runs [306.0, 200.0, 236.0]
+TIE   perf-relight | three lights moved | blk                    base    66.0 (48-66)  now    65.0  runs [86.0, 65.0, 56.0]
+TIE   perf-relight | pan (60 frames) | median                    base     4.0 (3.6-4.7)  now     3.7  runs [3.7, 4.4, 3.7]
+TIE   perf-relight | pan at fit, masked filter layer | median    base     3.9 (3.8-4.7)  now     4.1  runs [4.1, 4.1, 3.8]
+== e68d1043 K5: the selection's combine in Rust (sel_combine, ABI 21), views witho
+TIE   perf-relight | magic wand over it | wall                   base   330.3 (323.3-333)  now   340.7  runs [351.2, 289.0, 340.7]
+TIE   perf-relight | magic wand, a masked layer | wall           base   323.0 (287-326)  now   284.0  runs [350.0, 251.0, 284.0]
+TIE   perf-relight | magic wand (an object) | wall               base   221.0 (195-227)  now   215.0  runs [264.0, 215.0, 213.0]
+TIE   perf-relight | three lights moved | blk                    base    66.0 (48-66)  now    49.0  runs [64.0, 48.0, 49.0]
+TIE   perf-relight | pan (60 frames) | median                    base     4.0 (3.6-4.7)  now     4.0  runs [4.0, 3.9, 4.6]
+TIE   perf-relight | pan at fit, masked filter layer | median    base     3.9 (3.8-4.7)  now     4.0  runs [3.8, 4.0, 4.2]
+== 0ca7d5ba W1: the PNG writer's filter choice in SIMD lanes, the same bytes; a 15
+TIE   perf-relight | magic wand over it | wall                   base   330.3 (323.3-333)  now   315.5  runs [315.5, 342.5, 292.5]
+TIE   perf-relight | magic wand, a masked layer | wall           base   323.0 (287-326)  now   328.0  runs [380.0, 328.0, 288.0]
+LOSS  perf-relight | magic wand (an object) | wall               base   221.0 (195-227)  now   239.0  runs [244.0, 236.0, 239.0]
+TIE   perf-relight | three lights moved | blk                    base    66.0 (48-66)  now    62.0  runs [62.0, 59.0, 68.0]
+TIE   perf-relight | pan (60 frames) | median                    base     4.0 (3.6-4.7)  now     4.0  runs [4.1, 3.8, 4.0]
+TIE   perf-relight | pan at fit, masked filter layer | median    base     3.9 (3.8-4.7)  now     4.3  runs [4.3, 5.0, 4.3]
+== bc3c37e7 K12: relight's march in stripes, the same bytes; one light's shadows l
+LOSS  perf-relight | magic wand over it | wall                   base   330.3 (323.3-333)  now   643.3  runs [621.4, 666.7, 643.3]
+LOSS  perf-relight | magic wand, a masked layer | wall           base   323.0 (287-326)  now   498.0  runs [472.0, 498.0, 528.0]
+TIE   perf-relight | magic wand (an object) | wall               base   221.0 (195-227)  now   214.0  runs [192.0, 254.0, 214.0]
+TIE   perf-relight | three lights moved | blk                    base    66.0 (48-66)  now    55.0  runs [55.0, 52.0, 88.0]
+TIE   perf-relight | pan (60 frames) | median                    base     4.0 (3.6-4.7)  now     3.7  runs [3.5, 3.7, 3.7]
+TIE   perf-relight | pan at fit, masked filter layer | median    base     3.9 (3.8-4.7)  now     3.8  runs [3.8, 4.1, 3.7]

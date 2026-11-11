@@ -1,0 +1,16 @@
+tool | step | sample | size | view | px/move | press | 1st move | move med | move worst | frame med | blocked max | blocked sum | up | release max | mirror MB | flat MB | changed | px calls (window)
+clone (cold) | Clone | image | 200 | fit | 156.5 | 31 | 6 | 3.2 | 4.3 | 1 | 74.3 | 113 | 9.5 | 9.8 | 0 | 0 | 16317 | composite_masked_tile 11, composite_tile 7, mip_chain 41
+clone | Clone | image | 50 | fit | 156.5 | 7.2 | 1.8 | 1.7 | 2.2 | 0.7 | 16 | 26 | 9.7 | 10.3 | 0 | 0 | 12700 | composite_masked_tile 20, composite_tile 31, mip_chain 71
+clone | Clone | image | 200 | fit | 156.5 | 9.3 | 3.5 | 3.3 | 4.4 | 1 | 14.7 | 127 | 11.6 | 12.1 | 0 | 0 | 16319 | composite_masked_tile 40, composite_tile 31, mip_chain 157
+clone | Clone | image | 400 | fit | 156.5 | 11.1 | 7.9 | 6.1 | 7.6 | 1.2 | 20.8 | 335 | 11.8 | 12.1 | 0 | 0 | 16330 | composite_masked_tile 42, composite_tile 31, mip_chain 200
+clone | Clone | image | 50 | 1:1 | 18 | 44.4 | 2.6 | 1.4 | 2.6 | 1 | 49.5 | 89 | 3.2 | 5.2 | 0 | 0 | 12709 | composite_masked_tile 4, composite_tile 31
+clone | Clone | image | 200 | 1:1 | 18 | 33.8 | 4.8 | 1.7 | 3 | 1.1 | 40.3 | 78 | 8.4 | 8.6 | 0 | 0 | 16318 | composite_masked_tile 8, composite_tile 31
+clone | Clone | image | 400 | 1:1 | 18 | 42.4 | 3 | 3 | 4.3 | 1.3 | 49.3 | 145 | 8 | 8.4 | 0 | 0 | 16321 | composite_masked_tile 8, composite_tile 31
+clone (cold) | Clone | layer | 200 | fit | 156.5 | 35.2 | 3.4 | 3.2 | 4.1 | 0.9 | 40.3 | 58 | 5.6 | 5.9 | 0 | 0 | 16332 | composite_masked_tile 11, composite_tile 7, mip_chain 42
+clone | Clone | layer | 50 | fit | 156.5 | 7.4 | 2.5 | 1.7 | 2.2 | 0.7 | 13.1 | 41 | 6.9 | 7.3 | 0 | 0 | 12696 | composite_masked_tile 20, composite_tile 31, mip_chain 71
+clone | Clone | layer | 200 | fit | 156.5 | 8 | 3.8 | 3.1 | 5.7 | 0.8 | 13.3 | 101 | 12 | 12.4 | 0 | 0 | 16326 | composite_masked_tile 40, composite_tile 31, mip_chain 150
+clone | Clone | layer | 400 | fit | 156.5 | 10.4 | 6.3 | 6 | 7.2 | 1.1 | 18.1 | 331 | 11.6 | 11.9 | 0 | 0 | 16326 | composite_masked_tile 42, composite_tile 31, mip_chain 200
+clone | Clone | layer | 50 | 1:1 | 18 | 39 | 2.2 | 1.9 | 2.6 | 1.5 | 44.2 | 137 | 7.5 | 8 | 0 | 0 | 12565 | composite_masked_tile 8, composite_tile 31
+clone | Clone | layer | 200 | 1:1 | 18 | 39 | 1.9 | 1.7 | 2.8 | 1.1 | 43 | 82 | 4.9 | 5.2 | 0 | 0 | 16327 | composite_masked_tile 8, composite_tile 31
+clone | Clone | layer | 400 | 1:1 | 18 | 42.3 | 3.1 | 3.7 | 4.9 | 1.5 | 48.8 | 198 | 10.3 | 10.8 | 0 | 0 | 16299 | composite_masked_tile 12, composite_tile 31
+{"size": "15000x10000", "tiles": true, "kernels": "rust", "kernelsInUse": "rust", "dpr": 1.5, "canvas": [1820, 1198], "visible": "visible", "focused": true, "params": {"W": 15000, "H": 10000, "TOOLS": ["clone"], "SIZES": null, "SAMPLES": ["image", "layer"], "FX_SAMPLES": ["layer"], "KERNELS": "rust", "VIEWS": ["fit", "1:1"], "MOVES": 30, "MOVE_CSS": 12, "MODE": "sync", "GAP": 4, "PEN": 0, "COALESCED": 1, "HARDNESS": 0.5, "SELECT": false, "BASE_ROW": true, "KEEP": false}, "built": {"reused": false, "ms": 6405}}

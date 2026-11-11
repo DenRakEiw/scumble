@@ -420,6 +420,7 @@ export const FAMILIES = {
     z_image: { label: "Z-Image" },
     ideogram4: { label: "Ideogram 4" },
     p_h3_image: { label: "P-H3-Image" },
+    minimax_h3_image: { label: "MiniMax-H3-Image" },
 };
 
 /** A family's label ("FLUX.2 Klein 9B"); an unknown id as it is. @param {any} f */
