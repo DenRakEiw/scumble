@@ -366,6 +366,10 @@ def _layers(self, body, model, refs):
         return bad(f"the parameter `size` is not valid with layer_decomposition: {tier!r}.")
     if "layer_decomposition_options" in body and model != "dola-seedream-5-5-261028":
         return bad("the parameter `layer_decomposition_options` is not supported by this model.")
+    # max_images counts the base and the layers together, 2 to 100 (the Router's 5.5 schema, read 2026-11-11)
+    mi = (body.get("layer_decomposition_options") or {}).get("max_images")
+    if mi is not None and not (isinstance(mi, int) and 2 <= mi <= 100):
+        return bad(f"layer_decomposition_options.max_images must be an integer from 2 to 100, not {mi!r}.")
     prompt = str(body.get("prompt") or "")
     if "MOCK_SLOW" in prompt:
         time.sleep(4)

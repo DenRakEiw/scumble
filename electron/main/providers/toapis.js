@@ -33,6 +33,8 @@
 //   urls       "objects": image_urls as [{ url }] (the Gemini standard and VIP pages), else strings
 //   images     the field the images go in (default image_urls); max_images: how many the model takes
 //   drop       parameters this channel does not take; transparent_only: `background` only when "transparent"
+//   metadata   Settings keys that go under `metadata` (Seedream 5.5's `background`: its page puts it there), so the row
+//              keeps its plain key, which the window reads for a cut-out
 //   seed, negative   where a model takes them (Qwen: metadata.seed, metadata.negative_prompt)
 // Recipe settings pass through by key, dotted keys nest ("metadata.resolution" -> { metadata: { resolution } }).
 //
@@ -332,6 +334,9 @@ async function upload(ctx, file) {
     return url;
 }
 
+/** The Settings keys a channel sends under `metadata` (options.metadata). */
+const metaKeys = (ch) => new Set(Array.isArray(ch.metadata) ? ch.metadata.map(String) : []);
+
 /** The generation request's JSON body (uploads done by `uploadAll`, which gives { images: [url], mask: url }). */
 function bodyFor(req, ch, urls, sz) {
     checkPaths(req, ch);
@@ -341,7 +346,7 @@ function bodyFor(req, ch, urls, sz) {
     for (const [k, v] of Object.entries(p)) {
         if (drop.has(k) || v === "" || v == null || v === "auto") continue;
         if (k === "background" && ch.transparent_only && String(v).toLowerCase() !== "transparent") continue;
-        setPath(body, k, v);
+        setPath(body, metaKeys(ch).has(k) ? `metadata.${k}` : k, v);
     }
     if (urls.images.length) {
         const field = ch.images || "image_urls";

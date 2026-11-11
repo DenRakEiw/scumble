@@ -703,7 +703,7 @@ async function main() {
         try { list = await recipes.list(RECIPES); } finally { fs.rmSync(empty, { recursive: true, force: true }); }
         const served = list.filter((r) => r.providers && r.providers.ark);
         check("exactly the two Seedream 5.0 recipes and Seedream 5.5 carry an ark variant, all builtin", eq(served.map((r) => r.id).sort(), ["seedream_5_5", "seedream_5_lite", "seedream_5_pro"]) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
-        // `only`: ModelArk is the recipe's one provider and its default (5.5, early access); else ark comes right after
+        // `only`: ModelArk is the recipe's default and its early-access host (5.5); else ark comes right after
         // toapis and fal stays the default
         const want = {
             seedream_5_pro: { model: PRO_ID, pixels: PRO_PIXELS, max_images: 10, regions: ["ap-southeast"], sizes: [1280, 1536, 2048], rows: [] },
@@ -719,7 +719,8 @@ async function main() {
             const o = v.options || {};
             const ids = r.providerIds;
             if (w.only) {
-                if (!eq(ids, ["ark"])) bad.push(`${r.id}: providers ${ids.join(",")}, not ark alone`);
+                // since 2026-11-11 also on five other hosts (tools/seedream55_test.js), ModelArk right after ToAPIs, still the default
+                if (!eq(ids, ["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen"])) bad.push(`${r.id}: providers ${ids.join(",")}, not ModelArk after ToAPIs and the four others`);
                 if (r.default !== "ark" || raw.default !== "ark") bad.push(`${r.id}: the default is ${r.default} (file ${raw.default}), not ark`);
                 if (o.background !== true || o.early_access !== true) bad.push(`${r.id}: options.background ${o.background}, early_access ${o.early_access}`);
                 const bg = (v.settings || []).find((st) => st.key === "background");
@@ -950,16 +951,18 @@ async function main() {
     await section("8. layer decomposition", async () => {
         const v55 = variant("seedream_5_5"), pro = variant("seedream_5_pro"), lite = variant("seedream_5_lite");
         const split = await import(require("node:url").pathToFileURL(path.join(ROOT, "renderer", "editor", "splitlayers.js")));
-        check("the variants declare their layer mode: 5.5 up to 100 with options, 5.0 pro up to 16 without, 5.0 lite none", eq(v55.options.layers, { max: 100, options: true }) && eq(pro.options.layers, { max: 16 }) && !lite.options.layers, short([v55.options.layers, pro.options.layers, lite.options.layers]));
+        // 5.5's max is the layers besides the base: its max_images counts the base too, 2 to 100 (the Router's 5.5 schema,
+        // Comfy-Org/ComfyUI#17631, ToAPIs' and WaveSpeed's pages, read 2026-11-11)
+        check("the variants declare their layer mode: 5.5 up to 99 with options, 5.0 pro up to 16 without, 5.0 lite none", v55.options.layers.max === 99 && v55.options.layers.options === true && pro.options.layers.max === 16 && !pro.options.layers.options && !lite.options.layers, short([v55.options.layers, pro.options.layers, lite.options.layers]));
         const raws = ["seedream_5_5", "seedream_5_pro", "seedream_5_lite"].map(rawRecipe);
-        check("the renderer's list: Seedream 5.5 first, then 5.0 pro; 5.0 lite is not in it", eq(split.layerRecipes(raws).map((r) => r.id), ["seedream_5_5", "seedream_5_pro"]) && eq(split.layerSpecOf(raws[1]), { max: 16, options: false }) && split.layerSpecOf(raws[2]) === null, split.layerRecipes(raws).map((r) => r.id).join(","));
+        check("the renderer's list: Seedream 5.5 first, then 5.0 pro (on ModelArk, its default fal has none); 5.0 lite is not in it", eq(split.layerRecipes(raws).map((r) => r.id), ["seedream_5_5", "seedream_5_pro"]) && eq(split.layerSpecOf(raws[1]), { provider: "ark", max: 16, options: false, count: false, text: false, tiers: true, price: "BytePlus charges your account." }) && split.layerSpecOf(raws[2]) === null, short([split.layerRecipes(raws).map((r) => r.id), split.layerSpecOf(raws[1])]));
         const s = fakeServer({ answers: [layerAnswer] });
         const out = await ark.layers(layerReq(v55), ctxFor(s));
         const b = s.posts[0].body;
         check("5.5 without a prompt: one POST, the body has exactly the documented fields and no prompt", s.posts.length === 1 && eq(Object.keys(b).sort(), ["image", "layer_decomposition", "layer_decomposition_options", "model", "output_format", "response_format", "size", "watermark"]), Object.keys(b).sort().join(","));
         check("the field is true, the picture a single data URL string (not an array), watermark false, output_format png", b.layer_decomposition === true && typeof b.image === "string" && b.image.startsWith("data:image/png;base64,") && fromDataUrl(b.image).bytes.equals(layerReq(v55).image) && b.watermark === false && b.output_format === "png", short({ ...b, image: String(b.image).slice(0, 30) }));
         check("the size is the tier auto by default, not WxH", b.size === "auto", b.size);
-        check("5.5's options: the default count 16, Text recognition off, answers inlined up to 32 layers", eq(b.layer_decomposition_options, { max_images: 16, text_recognition: false }) && b.response_format === "b64_json", short(b.layer_decomposition_options));
+        check("5.5's options: the default count 16 layers, so max_images 17 with the base, Text recognition off, answers inlined up to 32 layers", eq(b.layer_decomposition_options, { max_images: 17, text_recognition: false }) && b.response_format === "b64_json", short(b.layer_decomposition_options));
         check("the answer in stacking order, the base first: z 0, 1, 2 from an answer of z 0, 2, 1", eq(out.layers.map((l) => l.z_index), [0, 1, 2]) && eq(out.layers.map((l) => tagOf(l.bytes)), ["BASE", "Z1", "Z2"]) && out.layers[0].base === true && !out.layers[1].base, short(out.layers.map((l) => [l.z_index, tagOf(l.bytes)])));
         check("each layer keeps its box, name and description; the base has no box", out.layers[0].bounding_box === null && eq(out.layers[2].bounding_box.absolute, [10, 20, 110, 220]) && out.layers[1].name === "sky" && out.layers[2].description === "a dog", short(out.layers[1]));
         check("out.bytes is the base's, and info counts the layers", out.bytes.equals(out.layers[0].bytes) && out.info.layers === 2 && out.info.asked === 16 && out.info.size === "auto" && out.info.region === "ap-southeast", short(out.info));
@@ -975,8 +978,8 @@ async function main() {
         };
         await refused(v55, { params: { size: "4K" } }, /a tier/, "a size of 4K");
         await refused(v55, { params: { size: "1024x1024" } }, /a tier/, "a size in pixels");
-        await refused(v55, { params: { count: 0 } }, /1 to 100/, "a count of 0");
-        await refused(v55, { params: { count: 101 } }, /1 to 100/, "a count of 101");
+        await refused(v55, { params: { count: 0 } }, /1 to 99/, "a count of 0");
+        await refused(v55, { params: { count: 100 } }, /1 to 99/, "a count of 100 (101 pictures with the base)");
         await refused(v55, { params: { count: 2.5 } }, /whole number/, "a count of 2.5");
         await refused(pro, { params: { count: 5 } }, /finds its own number/, "a count on 5.0 pro");
         await refused(pro, { params: { text_recognition: true } }, /no Text recognition/, "Text recognition on 5.0 pro");
@@ -987,7 +990,7 @@ async function main() {
         await refused(v55, { image: pngOf(6400, 300, 64, "STEEP") }, /no steeper than 16:1/, "a picture steeper than 16:1");
         const sq = fakeServer({ answers: [layerAnswer] });
         await ark.layers(layerReq(v55, { prompt: "  the cat and the text  ", params: { count: 3, text_recognition: true } }), ctxFor(sq));
-        check("a prompt goes trimmed and as it is (no edit sentence), the count and the switch in the options", sq.posts[0].body.prompt === "the cat and the text" && eq(sq.posts[0].body.layer_decomposition_options, { max_images: 3, text_recognition: true }), short(sq.posts[0].body.prompt));
+        check("a prompt goes trimmed and as it is (no edit sentence), the count (3 layers: max_images 4) and the switch in the options", sq.posts[0].body.prompt === "the cat and the text" && eq(sq.posts[0].body.layer_decomposition_options, { max_images: 4, text_recognition: true }), short(sq.posts[0].body.layer_decomposition_options));
         const sp = fakeServer({ answers: [layerAnswer] });
         const op = await ark.layers(layerReq(pro), ctxFor(sp));
         check("5.0 pro: no layer_decomposition_options at all, no count asked", !("layer_decomposition_options" in sp.posts[0].body) && sp.posts[0].body.model === PRO_ID && op.info.asked === null && op.info.text_recognition === null, Object.keys(sp.posts[0].body).join(","));

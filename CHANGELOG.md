@@ -4,6 +4,8 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Seedream 5.5 now also runs on WaveSpeedAI, Comfy Cloud, ToAPIs, Comfy Router and Oxen.ai**, and *Split into layers* runs on the provider you picked for it, so WaveSpeedAI and Oxen.ai can split too. A layer that comes back without a position keeps its own shape in the middle of the picture instead of being stretched, and the status line says so. Written from the providers' docs: none of these routes has run against the live API yet.
+- *Split into layers* on BytePlus ModelArk now gets the number of layers you ask for: the request counted the base as one of them, so asking for one layer was refused.
 - **Haze by depth without the GPU now matches the screen and the export.** Its depth edge used to sit more than a map pixel off at a zoomed-out view. A depth map is no longer uploaded to the GPU again on every pass of a haze, lens blur, limit or relight filter.
 - **A `.cube` LUT whose DOMAIN is not 0..1 now reads that range as its input range.** Before, it scaled the table's colours instead, so such a LUT came out too dark or too bright. A LUT with the usual 0..1 range gives the same colours as before.
 - **Large ORA files open about three times as fast**, and the window stays responsive while their layers are read (a 15,000 x 10,000 ORA in about 1.8 s instead of 5.4). Their layers decode in the background workers straight from the file.

@@ -30,8 +30,8 @@
 //   regions     the Region row's values this model may use ("ap-southeast" Johor, "eu-west" Dublin); the first is
 //               the default
 //   layers      { max, options } where the model splits a picture into layers (kind "layers", below): `max` layers at
-//               most (5.0 pro 16, 5.5 100), `options` true where it takes layer_decomposition_options (5.5, from
-//               BytePlus's preview docs; the 5.0 schema does not have the field)
+//               most besides the base (5.0 pro 16, 5.5 99), `options` true where it takes layer_decomposition_options
+//               (5.5; the 5.0 schema does not have the field)
 // Not sent on an edit or a text run: optimize_prompt_options (its mode defaults to standard, the only one 5.5 takes;
 // there is no "off"), layer_decomposition (kind "layers" below), sequential_image_generation, stream, seed.
 // Every picture must be no steeper than 16:1, more than 14 px a side, at most 30 MB and at most 36 MP; a picture over
@@ -46,7 +46,10 @@
 //   POST /api/v3/images/generations   JSON { model, image (exactly one picture), prompt? (none: the model finds the
 //                                     major elements), size (a tier only: 1K, 1.5K, 2K, auto), layer_decomposition: true,
 //                                     watermark: false, response_format, output_format: "png",
-//                                     layer_decomposition_options?: { max_images, text_recognition } (5.5 only) }
+//                                     layer_decomposition_options?: { max_images, text_recognition } (5.5 only;
+//                                     max_images counts the base too, 2 to 100: the Router's schema of 5.5
+//                                     (tools/refs/comfyrouter/byteplus_seedream-5-5-261028.json), Comfy-Org/ComfyUI#17631
+//                                     and ToAPIs' and WaveSpeed's pages, read 2026-11-11, so a count of n layers sends n + 1) }
 //                                     -> data: [base, ...layers], the base first and without a bounding_box, every layer
 //                                     { b64_json | url, z_index, bounding_box: { absolute: [l, t, r, b], normalized },
 //                                     name, description, size }
@@ -472,7 +475,8 @@ function layersBody(req, ask, pic, spec) {
     };
     const prompt = String(req.prompt || "").trim();
     if (prompt) body.prompt = prompt;
-    if (spec.options) body.layer_decomposition_options = { max_images: ask.count, text_recognition: ask.textRecognition };
+    // max_images is the base and the layers together (2 to 100), the count the layers alone
+    if (spec.options) body.layer_decomposition_options = { max_images: ask.count + 1, text_recognition: ask.textRecognition };
     return body;
 }
 
@@ -592,6 +596,7 @@ module.exports = {
     _background: backgroundFor,
     _explain: explain,
     _layerSizeRefusal: layerSizeRefusal,
+    _layerPostInit: layerPostInit,   // oxen.js: a split's one synchronous request outlasts undici's 300 s the same way
     REGIONS,
     MAX_PICTURE_BYTES,
 };

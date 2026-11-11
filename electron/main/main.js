@@ -769,7 +769,7 @@ function buildMenu() {
                 { label: "Realism Pass (Windows only, RTX only)...", click: () => send("menu", "realism-pass") },
                 // the Key dialog (item 49, renderer/keydialog.js); not greyed: main has no engine state, the dialog says why
                 { label: "Key Green / Blue Screen...", click: () => send("menu", "key-screen") },
-                // a paid run on BytePlus ModelArk (renderer/splitdialog.js); the dialog says why when it cannot
+                // a paid run on the recipe's host with a layer mode (renderer/splitdialog.js); the dialog says why when it cannot
                 { label: "Split into Layers...", click: () => send("menu", "split-layers") },
             ],
         },

@@ -3196,7 +3196,7 @@ export const host = {
     },
 
     /**
-     * Split the visible picture or a layer into layers on BytePlus ModelArk (splitlayers.js): `opts` { recipe, layer (null:
+     * Split the visible picture or a layer into layers on the recipe's host with a layer mode (splitlayers.js): `opts` { recipe, layer (null:
      * the picture), prompt, count, textRecognition, size }. The new layers land above everything, in one group, one undo step.
      */
     splitLayers(editor, opts = {}) {

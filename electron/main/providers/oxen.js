@@ -62,6 +62,8 @@ const { fetchImage, sleep: realSleep, closestAspect, editAspect } = require("./u
 const { layoutOf, refRoles, instruction } = require("./refs");
 const openrouter = require("./openrouter");
 const flux3 = require("./flux3");
+const ark = require("./ark");
+const split = require("./layersplit");
 
 const DEFAULT_ORIGIN = "https://hub.oxen.ai";
 const API = "/api/ai";
@@ -435,16 +437,20 @@ function bodyFor(req, pics = [], mask = null) {
 
 // ---- HTTP ------------------------------------------------------------------------------------------------------
 
-/** One POST to the API, retried once on a 429 or 503 (never before Retry-After); a network error is not retried. */
-async function post(ctx, path, body, model) {
+/** One POST to the API, retried once on a 429 or 503 (never before Retry-After); a network error is not retried. `init`: more fetch options (a split's undici limits). */
+async function post(ctx, path, body, model, init = {}) {
     const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" };
     const payload = JSON.stringify(body);
     const send = async () => {
         try {
-            return await ctx.fetch(root(ctx) + API + path, { method: "POST", headers, body: payload });
+            return await ctx.fetch(root(ctx) + API + path, { ...init, method: "POST", headers, body: payload });
         } catch (err) {
             const cause = err && err.cause;
-            if (cause && cause.code === "UND_ERR_HEADERS_TIMEOUT") throw new Error(`Oxen.ai ${model}: no answer within 5 minutes; the run may still be billed and saved in your Oxen account.`);
+            if (cause && cause.code === "UND_ERR_HEADERS_TIMEOUT") {
+                // undici's 300 s, or the limit a split's dispatcher set (its run's deadline and a grace)
+                const ms = init.dispatcher && +init.dispatcher.headersTimeout > 0 ? +init.dispatcher.headersTimeout : 300000;
+                throw new Error(`Oxen.ai ${model}: no answer within ${Math.round(ms / 60000)} minutes; the run may still be billed and saved in your Oxen account.`);
+            }
             throw new Error(`Oxen.ai ${model}: hub.oxen.ai could not be reached - ${scrub(err && err.message || err, ctx.key)}`);
         }
     };
@@ -593,6 +599,61 @@ async function upscale(req, ctx) {
     return await run({ ...req, kind: "upscale", references: [] }, ctx);
 }
 
+// ---- Split into layers (kind "layers") ----------------------------------------------------------------------------
+// Seedream 5.5's `options.layers.model`, bytedance-seedream-5-5-layers (its request_schema in tools/refs/oxen/, from the
+// model list of 2026-11-11): { input_image (one URI, required), prompt?, max_layers (1 to 99, "not counting the base
+// image"), text_recognition (the schema's default on; Scumble sends its switch), output_format (the base's), watermark,
+// layer_decomposition (hidden, true) }, sent to /images/generate, the route the model list names for it (no picture
+// route of its own is documented for a split; /images/edit, which an edit uses, wants a prompt). Above 32 layers the
+// answer is asked for as URLs (ModelArk's reason: base64 of that many pictures passes what one JSON string may hold).
+// The answer's shape is not documented: the model's description says a split "returns up to 99 layers, with a ZIP of
+// the base, every layer and a manifest of their names, order and positions" and that "each layer keeps its position on
+// the base". Read here: `images` (else `layers`), the base first, each { b64_json | url } with z_index, bounding_box,
+// name and description where an entry carries them; a layer without a box lands over the whole picture (`full`), which
+// is right when Oxen's layers are the base's size. The ZIP and its manifest are not read (no field name is documented).
+const LAYER_URLS_ABOVE = 32;
+
+/** Split one picture into layers on the variant's layer model. -> layersplit.js's answer. */
+async function layers(req, ctx) {
+    const caller = ctx;   // the job's state is read on the object providers/index.js holds
+    ctx = { ...ctx, sleep: ctx.sleep || realSleep, log: ctx.log || (() => {}) };
+    const o = req.options || {};
+    const spec = split.specOf(o);
+    const model = spec && spec.model ? spec.model : "";
+    const who = `Oxen.ai ${model || String(req.model || "")}`;
+    if (!spec || !model) throw new Error(`${who} has no layer mode.`);
+    const base = root(ctx);
+    checkKey(base, ctx.key);
+    const ask = split.askOf(req, who, spec);
+    const { pics } = await picturesFor({ ...req, kind: "edit", references: [] }, { max_images: 1 }, ctx, model);
+    const body = { model, input_image: pics[0].url };
+    if (ask.prompt) body.prompt = ask.prompt;
+    body.max_layers = ask.count != null ? ask.count : spec.max;
+    if (spec.text) body.text_recognition = ask.textRecognition;
+    body.output_format = "png";
+    body.watermark = false;
+    body.layer_decomposition = true;
+    body.response_format = body.max_layers > LAYER_URLS_ABOVE ? "url" : "b64_json";
+    const r = await post(ctx, "/images/generate", body, model, ark._layerPostInit(req.timeoutMs));
+    if (!r.ok) throw new Error(`${who}: ${await failure(r, ctx.key)}${r.waitSeconds ? `; try again in ${r.waitSeconds} s` : ""}`);
+    let j;
+    try { j = (await r.json()) || {}; } catch (_) { throw new Error(`${who}: the answer is not JSON.`); }
+    if (j.error) await readAnswer(j, ctx, model);   // throws in the adapter's words
+    caller.jobDone = true;   // answered: generated and charged, so a Cancel during the downloads says that
+    const list = Array.isArray(j.images) && j.images.length ? j.images : Array.isArray(j.layers) ? j.layers : [];
+    const items = list.filter((x) => x && typeof x === "object" && ((typeof x.b64_json === "string" && x.b64_json) || (typeof x.url === "string" && x.url)));
+    if (!items.length || items.length !== list.length) throw new Error(scrub(`${who}: an answer without its pictures (${items.length} of ${list.length})`, ctx.key));
+    const get = async (d) => {
+        if (d.b64_json) { const bytes = Buffer.from(d.b64_json, "base64"); return { bytes, mime: sniff(bytes) }; }
+        return await download(d.url, ctx, model);
+    };
+    const { out, missing } = await split.collect(items, get, ctx, who);
+    return {
+        bytes: out[0].bytes, mime: out[0].mime, seed: undefined, layers: out, missing,
+        info: { model, asked: ask.count, text_recognition: spec.text ? ask.textRecognition : null, by: body.response_format, layers: out.length - 1, unplaced: out.filter((l) => l.full).length, picture: pics[0].mime === "image/jpeg" ? "jpeg" : "png" },
+    };
+}
+
 module.exports = {
     label: "Oxen.ai",
     keyUrl: "https://oxen.ai/settings/profile",   // docs.oxen.ai/inference-api/overview.md, "Authentication"
@@ -600,6 +661,7 @@ module.exports = {
     edit: run,
     generate: run,   // kind "text": /images/generate, no picture field; with references /images/edit (26f)
     upscale,
+    layers,   // kind "layers": Split into layers (Seedream 5.5 Layers)
     layout,
     textLayout,
 

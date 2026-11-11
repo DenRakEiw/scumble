@@ -71,7 +71,8 @@
         "max_images": 10,
         "png": true,
         "layers": {
-          "max": 16
+          "max": 16,
+          "price": "BytePlus charges your account."
         },
         "regions": [
           "ap-southeast"

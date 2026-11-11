@@ -201,6 +201,25 @@ async function main() {
             JSON.stringify(bFalsy));
     });
 
+    // ---- 2a. Seedream 5.5 (docs.toapis.com .../seedream-5.5/generation.md, read 2026-11-11) ----
+    await section("2a. Seedream 5.5: pixel sizes, the background under metadata, no seed", async () => {
+        const v = variant("seedream_5_5");
+        const s = fakeServer();
+        await toapis.edit(editReq(v, { width: 1600, height: 900, references: [png("REF1")], params: { ...(v.fixed || {}), background: "transparent" } }), ctxFor(s));
+        const b = s.submits[0];
+        const [w, h] = String(b.size).split("x").map(Number);
+        check("5.5 edit: doubao-seedream-5-5, the crop and the reference in image_urls, a WxH size in the crop's shape inside 0.92 to 4.62 MP, n 1",
+            b.model === "doubao-seedream-5-5" && b.image_urls.length === 2 && w * h >= 921600 && w * h <= 4624220 && Math.abs(w / h - 16 / 9) < 0.02 && b.n === 1, JSON.stringify(b));
+        check("5.5 edit: Background transparent goes as metadata.background with output_format png and no watermark, nothing at the top level, no seed",
+            eq(b.metadata, { output_format: "png", watermark: false, background: "transparent" }) && !("background" in b) && !("seed" in b) && !("resolution" in b), JSON.stringify(b));
+        const s2 = fakeServer();
+        await toapis.edit(editReq(v, { width: 1600, height: 900, params: { ...(v.fixed || {}), background: "auto" } }), ctxFor(s2));
+        check("5.5 edit: Background auto sends none", eq(s2.submits[0].metadata, { output_format: "png", watermark: false }), JSON.stringify(s2.submits[0].metadata));
+        const s3 = fakeServer();
+        const tall = await throws(() => toapis.edit(editReq(v, { width: 200, height: 3400, image: png("TALL"), params: { ...(v.fixed || {}) } }), ctxFor(s3)));
+        check("5.5: a crop steeper than 16:1 is refused before any upload", !!tall && /16:1/.test(tall) && s3.uploads.length === 0, tall);
+    });
+
     // ---- 2b. caps: layout(req) and the builder read one cap, the chosen channel's, as +x > 0 (docs/PLAN_REFS.md 26a2) ----
     await section("2b. caps: the layout and the builder read the chosen channel's max_images alike", async () => {
         const opts = { max_images: 4, channels: { a: {}, three: { max_images: "3" }, zero: { max_images: "0" }, neg: { max_images: -2 }, word: { max_images: "many" } } };
@@ -456,10 +475,10 @@ async function main() {
         Module._load = orig;
         const list = await recipes.list(path.join(ROOT, "recipes"));
         const served = list.filter((r) => r.providers && r.providers.toapis);
-        const want = ["flux2_flex", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "gpt_image_2_6_sunburst", "nano_banana_2", "nano_banana_2_1", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro"];
-        check("thirteen recipes carry a toapis variant (GPT Image 2.6 Flare not yet: ToAPIs lists it as disabled)", eq(served.map((r) => r.id).sort(), want), served.map((r) => r.id).join(", "));
+        const want = ["flux2_flex", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "gpt_image_2_6_sunburst", "nano_banana_2", "nano_banana_2_1", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_edit", "seedream_5_5", "seedream_5_lite", "seedream_5_pro"];
+        check("fourteen recipes carry a toapis variant (GPT Image 2.6 Flare not yet: ToAPIs lists it as disabled)", eq(served.map((r) => r.id).sort(), want), served.map((r) => r.id).join(", "));
         const bad = [];
-        const homes = { gpt_image_2: "openai", gpt_image_2_5_flare: "openai", gpt_image_2_5_sunburst: "openai", gpt_image_2_6_sunburst: "openai", nano_banana_2: "gemini", nano_banana_2_1: "gemini", nano_banana_2_lite: "gemini", nano_banana_pro: "gemini", flux2_pro: "bfl", flux2_flex: "bfl", seedream_5_lite: "fal", seedream_5_pro: "fal", qwen_image_edit: "fal" };
+        const homes = { gpt_image_2: "openai", gpt_image_2_5_flare: "openai", gpt_image_2_5_sunburst: "openai", gpt_image_2_6_sunburst: "openai", nano_banana_2: "gemini", nano_banana_2_1: "gemini", nano_banana_2_lite: "gemini", nano_banana_pro: "gemini", flux2_pro: "bfl", flux2_flex: "bfl", seedream_5_lite: "fal", seedream_5_pro: "fal", seedream_5_5: "ark", qwen_image_edit: "fal" };
         for (const r of served) {
             const v = r.providers.toapis;
             if (r.providerIds[0] !== "toapis") bad.push(r.id + ": toapis is not first");

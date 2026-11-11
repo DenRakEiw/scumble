@@ -540,6 +540,10 @@ const DIALECTS = {
     byteplus: {
         body(req, o, pics) {
             const body = { prompt: editPrompt(req, DIALECTS.byteplus.layout(req, o)), size: ark._size(req, o), watermark: false, response_format: "b64_json", output_format: "png" };
+            // `background` where the variant says the model takes it (Seedream 5.5's options.background): ModelArk's rule,
+            // auto sends nothing; the body is png already, which a transparent ground needs
+            const background = ark._background(req, o);
+            if (background) body.background = background;
             if (req.seed != null && !(req.params || {}).random_seed) body.seed = (req.seed >>> 0) % 2147483648;
             if (pics.length) body.image = pics.map(uri);
             return body;

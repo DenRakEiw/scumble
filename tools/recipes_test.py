@@ -80,8 +80,14 @@ def node_step():
     ktail = k.stdout.strip()
     if k.returncode != 0 or not ktail.endswith("PASS"):
         raise Exception("tools/krea3_test.js: " + (ktail + k.stderr)[-1500:])
+    # tools/seedream55_test.js: Seedream 5.5's requests on WaveSpeedAI and Comfy Cloud, its split on WaveSpeed and Oxen.ai, the split's host choice
+    s = subprocess.run(["node", os.path.join(ROOT, "tools", "seedream55_test.js")], cwd=ROOT,
+                       capture_output=True, text=True, encoding="utf-8", timeout=120)
+    stail = s.stdout.strip()
+    if s.returncode != 0 or not stail.endswith("PASS"):
+        raise Exception("tools/seedream55_test.js: " + (stail + s.stderr)[-1500:])
     last = lambda t: (t.splitlines()[-2:-1] or [""])[0]  # noqa: E731  the "N of M checks passed" line
-    return {"checks": tail.count("[ok]"), "comfyrefs_checks": ctail.count("[ok]"), "realism_checks": ptail.count("[ok]"), "genpresets_checks": gtail.count("[ok]"), "krea3_checks": ktail.count("[ok]"), "tails": [last(tail), last(ctail), last(ptail), last(gtail), last(ktail)]}
+    return {"checks": tail.count("[ok]"), "comfyrefs_checks": ctail.count("[ok]"), "realism_checks": ptail.count("[ok]"), "genpresets_checks": gtail.count("[ok]"), "krea3_checks": ktail.count("[ok]"), "seedream55_checks": stail.count("[ok]"), "tails": [last(tail), last(ctail), last(ptail), last(gtail), last(ktail), last(stail)]}
 
 
 def write_files(dirname):

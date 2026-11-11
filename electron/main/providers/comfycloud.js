@@ -41,7 +41,7 @@
 
 const { randomUUID } = require("node:crypto");
 const path = require("node:path");
-const { readError, sleep, num, closestAspect, editAspect } = require("./util");
+const { readError, sleep, num, closestAspect, editAspect, fitPixels } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://cloud.comfy.org";
@@ -76,7 +76,13 @@ const GPT_COMPLEXITY = ["low", "medium", "high"];
 // "ultra" needs a picture and the node takes a seed up to 2147483647.
 const KREA3_ASPECTS = ["1:1", "4:5", "3:4", "2:3", "9:16", "5:4", "4:3", "3:2", "16:9", "21:9"];
 const KREA3_IMAGE = "model.images.image_";
-const KREA3_SEEDS = 2147483648;
+// a partner node's INT seed tops out at 2147483647 (Krea 3, Seedream: their specs' max); a seed of up to 2^32 - 1 goes modulo
+const NODE_SEEDS = 2147483648;
+const KREA3_SEEDS = NODE_SEEDS;
+
+// Seedream 5.5 on ByteDanceSeedreamNodeV3 (its option "seedream 5.5"): the custom size the node checks
+const SEEDREAM55 = /^seedream 5\.5$/;
+const SEEDREAM55_SIZE = { step: 2, max: 8594, minPixels: 921600, maxPixels: 4624220, maxRatio: 16 };
 
 // How each partner node is wired. `g` is the graph builder: g.crop / g.refs are [node id, 0]
 // image links, g.mask() a MASK link (null without a mask), g.set(key, value) writes an input.
@@ -109,8 +115,19 @@ const SHAPES = {
         g.set("aspect_ratio", closestAspect(v.width, v.height, GEMINI_AR)); g.set("images", g.crop);
     },
     ByteDanceSeedreamNodeV3(g, v) {
+        if (SEEDREAM55.test(v.model)) {
+            // Seedream 5.5 (Comfy-Org/ComfyUI#17631, the node's spec on Comfy Cloud read on 2026-11-11): no thinking, no
+            // prompt optimisation, no batch; a custom size of 0.92 to 4.62 MP, no steeper than 16:1, sides 240 to 8594 in
+            // steps of 2. The node's one IMAGE output drops the alpha, so the background is asked opaque.
+            g.set("prompt", v.prompt); g.set("model", v.model); g.set("model.seed", v.seed % NODE_SEEDS); g.set("model.watermark", false);
+            const [w, h] = fitPixels(v.width, v.height, SEEDREAM55_SIZE);
+            g.set("model.size_preset", "Custom"); g.set("model.width", w); g.set("model.height", h);
+            g.set("model.background", "opaque");
+            g.images("model.images.image_", [g.crop, ...g.refs]);
+            return;
+        }
         const pro = /pro/.test(v.model);
-        g.set("prompt", v.prompt); g.set("model", v.model); g.set("model.seed", v.seed); g.set("model.watermark", false); g.set("model.thinking", true);
+        g.set("prompt", v.prompt); g.set("model", v.model); g.set("model.seed", v.seed % NODE_SEEDS); g.set("model.watermark", false); g.set("model.thinking", true);
         const [w, h] = fit(v.width, v.height, 1024, pro ? 2496 : 4992, 2);
         g.set("model.size_preset", "Custom"); g.set("model.width", w); g.set("model.height", h);
         if (pro) g.set("model.prompt_optimization", "standard"); else { g.set("model.max_images", 1); g.set("model.fail_on_partial", false); }

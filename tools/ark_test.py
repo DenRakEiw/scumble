@@ -122,13 +122,14 @@ const rl = await run("list_recipes");
 const withArk = rl.recipes.filter((r) => (r.providers || []).includes("ark"));
 const ids = withArk.map((r) => r.id).sort();
 if (JSON.stringify(ids) !== JSON.stringify(["seedream_5_5", "seedream_5_lite", "seedream_5_pro"])) throw new Error("recipes that list ark: " + ids.join(", "));
-// Seedream 5.5 (early access) runs on ModelArk alone; the 5.0 recipes keep fal as their default
+// Seedream 5.5 keeps ModelArk (early access) as its default, right after ToAPIs, with four more hosts after it
+// (since 2026-11-11); the 5.0 recipes keep fal as their default
 const ONLY = "seedream_5_5";
 const order = {};
 for (const r of withArk) {
     const raw = host.shell.recipes().find((x) => x.id === r.id);
     if (r.id === ONLY) {
-        if (JSON.stringify(r.providers) !== JSON.stringify(["ark"]) || r.provider !== "ark" || raw.default !== "ark") throw new Error(r.id + ": providers " + r.providers.join(", ") + ", provider " + r.provider + ", the file's default " + raw.default);
+        if (JSON.stringify(r.providers) !== JSON.stringify(["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen"]) || r.provider !== "ark" || raw.default !== "ark") throw new Error(r.id + ": providers " + r.providers.join(", ") + ", provider " + r.provider + ", the file's default " + raw.default);
         if (r.background !== true) throw new Error(r.id + ": list_recipes says background " + r.background);
     } else {
         const i = r.providers.indexOf("toapis");
@@ -150,7 +151,7 @@ try {
         if (!sel) throw new Error("no provider select for " + id);
         const values = Array.from(sel.options).map((o) => o.value);
         const i = values.indexOf("ark");
-        if (id === ONLY ? JSON.stringify(values) !== JSON.stringify(["ark"]) : (i < 0 || values[i - 1] !== "toapis")) throw new Error(id + ": the select's options are " + values.join(", "));
+        if (id === ONLY ? JSON.stringify(values) !== JSON.stringify(["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen"]) : (i < 0 || values[i - 1] !== "toapis")) throw new Error(id + ": the select's options are " + values.join(", "));
         options[id] = sel.options[i].textContent;
         if (options[id] !== __LABEL__ + " (no key)") throw new Error(id + ": the ark option reads " + options[id]);
     }
@@ -922,7 +923,7 @@ async def run_all(c):
             b = pic["body"]
             if b.get("model") != S55 or b.get("layer_decomposition") is not True or b.get("size") != "auto" or "prompt" in b or b.get("image_type") != "str":
                 raise Exception("the request: %s" % json.dumps(b)[:500])
-            if b.get("layer_decomposition_options") != {"max_images": 16, "text_recognition": False}:
+            if b.get("layer_decomposition_options") != {"max_images": 17, "text_recognition": False}:  # 16 layers and the base
                 raise Exception("the options: %s" % b.get("layer_decomposition_options"))
             if pic["refs"][0]["dims"] != [1200, 800] or pic["refs"][0]["mime"] != "image/png":
                 raise Exception("the one picture: %s" % pic["refs"])
@@ -970,7 +971,7 @@ async def run_all(c):
             mock.reset()
             res = await ev(SPLIT, __W__="1200", __H__="800", __SETUP__="", __ARGS__=split_args({"recipe": "seedream_5_5", "size": "1K", "count": 3, "text_recognition": True, "prompt": "the dogs", "timeout": 120}))
             b = split_body(mock)["body"]
-            if b.get("size") != "1K" or b.get("prompt") != "the dogs" or b.get("layer_decomposition_options") != {"max_images": 3, "text_recognition": True}:
+            if b.get("size") != "1K" or b.get("prompt") != "the dogs" or b.get("layer_decomposition_options") != {"max_images": 4, "text_recognition": True}:  # 3 layers and the base
                 raise Exception("the request: %s" % json.dumps(b)[:400])
             check_stack(res, (0, 0, 1200, 800), (1024, 683), ["Base 2", "Sky 2", "Dog 3", "Dog 4"])
             if not res["out"]["scaled_up"] or "lower resolution than the picture" not in res["status"] or res["kind"] != "warn":
@@ -1008,7 +1009,7 @@ async def run_all(c):
 
         async def split_list():
             res = await ev("const rl = await run('list_recipes'); return Object.fromEntries(rl.recipes.filter((r) => r.layers).map((r) => [r.id, r.layers]));")
-            if res != {"seedream_5_5": {"max": 100, "options": True}, "seedream_5_pro": {"max": 16, "options": False}}:
+            if res != {"seedream_5_5": {"provider": "ark", "max": 99, "count": True, "text_recognition": True, "tiers": True}, "seedream_5_pro": {"provider": "ark", "max": 16, "count": False, "text_recognition": False, "tiers": True}}:
                 raise Exception("list_recipes layers: %s" % res)
             done("list_recipes_says_which_can_split", res)
         await step("list_recipes_says_which_can_split", split_list)
@@ -1053,10 +1054,10 @@ async def run_all(c):
                 raise Exception("the dialog on 5.5: %s" % res["s55"])
             if "up to 5 layers" not in res["five"]:
                 raise Exception("the line does not follow the count: %s" % res["five"])
-            if b.get("prompt") != "the dog" or b.get("layer_decomposition_options") != {"max_images": 5, "text_recognition": True} or res["added"] != 4:
+            if b.get("prompt") != "the dog" or b.get("layer_decomposition_options") != {"max_images": 6, "text_recognition": True} or res["added"] != 4:
                 raise Exception("what the dialog sent: %s, %d layers" % (json.dumps(b)[:300], res["added"]))
             b2 = mock.snapshot()["images"][1]["body"]
-            if b2.get("layer_decomposition_options", {}).get("max_images") != 16 or "up to 16 layers" not in res["emptied"]:
+            if b2.get("layer_decomposition_options", {}).get("max_images") != 17 or "up to 16 layers" not in res["emptied"]:
                 raise Exception("an emptied Layers box: %s, the line %s" % (b2.get("layer_decomposition_options"), res["emptied"][:100]))
             mock.reset()
             none = await ev(SPLIT_DIALOG_CANCEL)
@@ -1112,7 +1113,7 @@ async def run_all(c):
                 if want not in res["err"] or mock.snapshot()["calls"]:
                     raise Exception("%dx%d: %s, the mock saw %d calls" % (w, h, res["err"][:300], len(mock.snapshot()["calls"])))
                 nothing_left(res, "a refusal")
-            for args, want in (({"recipe": "seedream_5_lite"}, "has no layer mode"), ({"recipe": "seedream_5_5", "count": 101}, "1 to 100 layers"), ({"recipe": "seedream_5_pro", "count": 5}, "finds its own number"), ({"recipe": "seedream_5_5", "size": "4K"}, "a tier")):
+            for args, want in (({"recipe": "seedream_5_lite"}, "has no layer mode"), ({"recipe": "seedream_5_5", "count": 100}, "1 to 99 layers"), ({"recipe": "seedream_5_pro", "count": 5}, "finds its own number"), ({"recipe": "seedream_5_5", "size": "4K"}, "a tier")):
                 mock.reset()
                 res = await ev(SPLIT, __W__="1200", __H__="800", __SETUP__="", __ARGS__=split_args(args))
                 if want not in res["err"] or mock.snapshot()["calls"]:

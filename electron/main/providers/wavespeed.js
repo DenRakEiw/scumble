@@ -43,13 +43,35 @@
 // `options.min_side` / `max_pixels` (256 px, 4 MP): a reference layer or the Original outside them is scaled into them
 // (ctx.resizePng), the crop is refused, before the first upload.
 //
+// Split into layers (kind "layers", Seedream 5.5's `options.layers.model`, bytedance/seedream-v5.5/layer-decomposition;
+// its llms.txt and model page, read 2026-11-11): { image (one URL, uploaded), prompt?, resolution 1k / 1.5k / 2k (the
+// page's default 1k; no auto: Scumble's Auto picks by the picture's area), max_images (the base and the layers, 2 to
+// 100; billed in full whatever comes back), output_format (the base's; every layer is a PNG with transparency) }; the
+// answer's outputs are "the base image first, then the layers", "usually URL strings". The pages name no box, no name
+// and no order for a layer, so a URL string lands as "Layer n" over the whole picture (layersplit.js `full`); an
+// object entry's url / b64_json, z_index, bounding_box, name and description are read where they come. Not stated
+// either: whether a layer's PNG is the whole frame or its element (ModelArk's are near the tier's size, placed by a
+// box), a Text recognition switch (none sent), the input limits (ModelArk's are held: its pixels and aspect, and its
+// 30 MB a picture with the JPEG fallback for an opaque one).
+//
 // Referral: the key link (keyUrl) carries DenRakEiw's WaveSpeed referral code.
 "use strict";
 
-const { downloadImage, pollJob, scrub, readError, num, closestAspect, tierFor, checkRatio, withinBytes, ideogramMask } = require("./util");
+const { downloadImage, pollJob, scrub, readError, num, closestAspect, tierFor, checkRatio, withinBytes, ideogramMask, pngSize } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 const flux3 = require("./flux3");
 const openrouter = require("./openrouter");
+const split = require("./layersplit");
+
+/** A split's tier as WaveSpeed's `resolution`; Auto by the picture's area (ModelArk's auto: about the input's own size within 1K to 2K). */
+const SPLIT_RESOLUTION = { "1K": "1k", "1.5K": "1.5k", "2K": "2k" };
+const SPLIT_MAX_BYTES = 30 * 1000 * 1000;   // ark.js MAX_PICTURE_BYTES
+function splitResolution(tier, image) {
+    if (SPLIT_RESOLUTION[tier]) return SPLIT_RESOLUTION[tier];
+    const d = pngSize(Buffer.from(image || [])) || [1024, 1024];
+    const area = d[0] * d[1];
+    return area <= 1024 * 1024 ? "1k" : area <= 1536 * 1536 ? "1.5k" : "2k";
+}
 
 const BASE = "https://api.wavespeed.ai/api/v3/";
 const POLL_MS = 2000;
@@ -282,31 +304,9 @@ module.exports = {
         // FLUX 3's schema takes no blank prompt (minLength 1): refused before the first upload
         if ((req.options || {}).sizing === "flux3" && !String(req.prompt || "").trim()) throw new Error(`WaveSpeed ${model} needs a prompt: say what to make or change.`);
         req = await fitPictures(req, ctx, model);
-        const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" };
         const sent = {};
         const input = await inputFor(req, ctx, sent);
-        const submit = await ctx.fetch(BASE + model, { method: "POST", headers, body: JSON.stringify(input) });
-        if (!submit.ok) throw new Error(scrub(`WaveSpeed ${model}: ${await readError(submit, ctx.key)}`, ctx.key));
-        const first = (await submit.json()) || {};
-        let data = first.data || {};
-        if (!data.id) throw new Error("WaveSpeed answered without a prediction id: " + scrub(JSON.stringify(first), ctx.key).slice(0, 200));
-        const id = String(data.id);
-        const resultUrl = (data.urls && data.urls.get) || `${BASE}predictions/${data.id}/result`;
-        const done = new Set(["completed", "failed", "cancelled", "timeout", "deleted"]);
-        data = await pollJob(ctx, {
-            who: `WaveSpeed ${model}`,
-            timeoutWho: "WaveSpeed",
-            statusWho: "WaveSpeed status",
-            id,
-            waitMs: 15 * 60 * 1000,
-            initial: data,
-            url: resultUrl,
-            headers: { Authorization: headers.Authorization },
-            delay: POLL_MS,
-            parse: (j, prev) => (j && typeof j === "object" && j.data && typeof j.data === "object" && typeof j.data.status === "string" ? { ...prev, ...j.data } : null),
-            done: (d) => done.has(String(d.status || "").toLowerCase()),
-        });
-        if (String(data.status || "").toLowerCase() !== "completed") throw new Error(scrub(`WaveSpeed ${model}: ${data.error || data.status}`, ctx.key));
+        const { data, id } = await submitAndWait(ctx, model, input);
         const out = Array.isArray(data.outputs) ? data.outputs[0] : null;
         if (!out) throw new Error("WaveSpeed: no output in the result (" + scrub(JSON.stringify(data), ctx.key).slice(0, 200) + ")");
         if (Array.isArray(data.has_nsfw_contents) && data.has_nsfw_contents[0]) ctx.log("result flagged as nsfw by WaveSpeed");
@@ -316,4 +316,80 @@ module.exports = {
         const seed = acceptsOf(req) && !("seed" in input) ? undefined : num(input.seed, req.seed);
         return { bytes: file.bytes, mime: file.mime, seed, info: { model, ms: data.timings && data.timings.inference, ...sent } };
     },
+
+    /**
+     * Split one picture into layers (req.image; no references, no mask) on the variant's layer route
+     * (`options.layers.model`). -> layersplit.js's answer: the base first, then the layers; each output that is a bare
+     * URL lands over the whole picture (`full`), as "Layer n".
+     */
+    async layers(req, ctx) {
+        const caller = ctx;   // the job's state is read on the object providers/index.js holds
+        const o = req.options || {};
+        const spec = split.specOf(o);
+        const model = spec && spec.model ? spec.model.replace(/^\/+|\/+$/g, "") : "";
+        const who = `WaveSpeed ${model || String(req.model || "")}`;
+        if (!spec || !model) throw new Error(`${who} has no layer mode.`);
+        const ask = split.askOf(req, who, spec);
+        const stamp = Date.now().toString(36);
+        // ModelArk's 30 MB a picture (the same model; WaveSpeed states none): an opaque picture over it goes as JPEG, else refused
+        let pic = { bytes: Buffer.from(req.image), mime: "image/png" };
+        if (pic.bytes.length > SPLIT_MAX_BYTES && typeof ctx.opaque === "function" && typeof ctx.toJpeg === "function" && await ctx.opaque(pic.bytes)) {
+            const jpeg = await ctx.toJpeg(pic.bytes, 92);
+            if (jpeg && jpeg.length && jpeg.length < pic.bytes.length) pic = { bytes: Buffer.from(jpeg), mime: "image/jpeg" };
+        }
+        if (pic.bytes.length > SPLIT_MAX_BYTES) throw new Error(`${who}: the picture is ${(pic.bytes.length / 1e6).toFixed(1)} MB, more than the 30 MB a picture may have${pic.mime === "image/png" ? " (it has transparency or could not go as JPEG, so it stays PNG)" : " even as JPEG"}. Use a smaller picture or layer.`);
+        const input = { image: await upload(ctx, pic.bytes, `scumble-${stamp}-split.${pic.mime === "image/jpeg" ? "jpg" : "png"}`, pic.mime) };
+        if (ask.prompt) input.prompt = ask.prompt;
+        input.resolution = splitResolution(ask.tier, req.image);
+        // the base and the layers together; the count is the layers alone
+        input.max_images = (ask.count != null ? ask.count : spec.max) + 1;
+        input.output_format = "png";
+        const { data, id } = await submitAndWait(ctx, model, input);
+        caller.jobDone = true;   // answered: generated and charged, so a Cancel during the downloads says that
+        const list = Array.isArray(data.outputs) ? data.outputs : [];
+        const items = list.filter((x) => (typeof x === "string" && x) || (x && typeof x === "object" && (x.url || x.b64_json)));
+        // an empty slot is refused as ModelArk's and Oxen's are: dropping it would make a layer the base (the frame of every box)
+        if (!items.length || items.length !== list.length) throw new Error(scrub(`WaveSpeed ${model}: an answer without its pictures (${items.length} of ${list.length})`, ctx.key));
+        const get = async (d) => {
+            const url = typeof d === "string" ? d : d.url;
+            if (d && typeof d === "object" && d.b64_json) { const bytes = Buffer.from(String(d.b64_json), "base64"); return { bytes, mime: bytes[0] === 0xff && bytes[1] === 0xd8 ? "image/jpeg" : "image/png" }; }
+            if (!/^https?:/.test(String(url))) { const bytes = Buffer.from(String(url).replace(/^data:[^,]*,/, ""), "base64"); return { bytes, mime: "image/png" }; }
+            return await downloadImage(url, ctx, { who: `WaveSpeed ${model}`, id });
+        };
+        const { out, missing } = await split.collect(items, get, ctx, `WaveSpeed ${model}`);
+        return {
+            bytes: out[0].bytes, mime: out[0].mime, seed: undefined, layers: out, missing,
+            info: { model, resolution: input.resolution, asked: ask.count, max_images: input.max_images, layers: out.length - 1, unplaced: out.filter((l) => l.full).length },
+        };
+    },
 };
+
+/** One prediction: the submit, then its status until it is done. Throws on a refusal or an end that is no success. -> { data, id }. */
+async function submitAndWait(ctx, model, input) {
+    const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" };
+    const submit = await ctx.fetch(BASE + model, { method: "POST", headers, body: JSON.stringify(input) });
+    if (!submit.ok) throw new Error(scrub(`WaveSpeed ${model}: ${await readError(submit, ctx.key)}`, ctx.key));
+    const first = (await submit.json()) || {};
+    let data = first.data || {};
+    if (!data.id) throw new Error("WaveSpeed answered without a prediction id: " + scrub(JSON.stringify(first), ctx.key).slice(0, 200));
+    const id = String(data.id);
+    const resultUrl = (data.urls && data.urls.get) || `${BASE}predictions/${data.id}/result`;
+    const done = new Set(["completed", "failed", "cancelled", "timeout", "deleted"]);
+    data = await pollJob(ctx, {
+        who: `WaveSpeed ${model}`,
+        timeoutWho: "WaveSpeed",
+        statusWho: "WaveSpeed status",
+        id,
+        waitMs: 15 * 60 * 1000,
+        initial: data,
+        url: resultUrl,
+        headers: { Authorization: headers.Authorization },
+        delay: POLL_MS,
+        parse: (j, prev) => (j && typeof j === "object" && j.data && typeof j.data === "object" && typeof j.data.status === "string" ? { ...prev, ...j.data } : null),
+        done: (d) => done.has(String(d.status || "").toLowerCase()),
+    });
+    if (String(data.status || "").toLowerCase() !== "completed") throw new Error(scrub(`WaveSpeed ${model}: ${data.error || data.status}`, ctx.key));
+    return { data, id };
+}
+
+module.exports._splitResolution = splitResolution;

@@ -1,0 +1,148 @@
+{
+  "id": "bytedance-seedream-5-5",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.036,
+    "cost_per_image_grid": {
+      "high": {
+        "1K": 0.026,
+        "2K": 0.036
+      },
+      "input_image": {
+        "2K": 0.011
+      }
+    },
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image",
+      "background"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "auto",
+        "enum": [
+          "auto",
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3",
+          "21:9"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 3
+      },
+      "background": {
+        "default": "auto",
+        "description": "Transparent renders a PNG with an alpha channel. Auto makes the background transparent when the prompt asks for it.",
+        "enum": [
+          "auto",
+          "transparent",
+          "opaque"
+        ],
+        "title": "Background",
+        "type": "string",
+        "x-order": 2
+      },
+      "image_size": {
+        "description": "Pixel dimensions sent to Seedream, looked up from aspect_ratio and size in the size table below.",
+        "title": "Image Size",
+        "type": "object",
+        "x-hidden": true,
+        "x-order": 4,
+        "x-size-table": {
+          "1K": {
+            "16:9": "1280x720",
+            "1:1": "1024x1024",
+            "21:9": "1568x672",
+            "2:3": "832x1248",
+            "3:2": "1248x832",
+            "3:4": "864x1152",
+            "4:3": "1152x864",
+            "9:16": "720x1280"
+          },
+          "2K": {
+            "16:9": "2560x1440",
+            "1:1": "2048x2048",
+            "21:9": "3024x1296",
+            "2:3": "1664x2496",
+            "3:2": "2496x1664",
+            "3:4": "1728x2304",
+            "4:3": "2304x1728",
+            "9:16": "1440x2560"
+          }
+        }
+      },
+      "input_image": {
+        "description": "Optional reference images for editing. Provide one image for single-image editing or several for multi-reference fusion; reference them in the prompt as @Image1, @Image2, etc.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "maxItems": 10,
+        "title": "Reference Images",
+        "type": "array",
+        "x-order": 1
+      },
+      "output_format": {
+        "default": "png",
+        "description": "Output image format.",
+        "enum": [
+          "png",
+          "jpeg"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-lock": {
+          "value": "png",
+          "when": {
+            "background": "transparent"
+          }
+        },
+        "x-order": 5
+      },
+      "prompt": {
+        "description": "Text prompt for image generation, or the instruction for editing the input images. Use @Image1, @Image2, etc. to reference the input images.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_image",
+              "pattern": "Image {n}"
+            }
+          ]
+        },
+        "x-order": 0
+      },
+      "size": {
+        "default": "2K",
+        "enum": [
+          "1K",
+          "2K"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 4
+      },
+      "watermark": {
+        "default": false,
+        "description": "Whether to add an 'AI generated' watermark.",
+        "title": "Watermark",
+        "type": "boolean",
+        "x-order": 6
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

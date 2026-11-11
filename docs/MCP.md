@@ -331,8 +331,10 @@ keeps the layer's route and renders nothing. `preset` takes one of the panel's e
 message lists the eight). It returns `layer`, `lights`, `fit` (the picture's own light direction as the fit read
 it), `route`, `seconds` and `notes`.
 
-**`split_layers`**. Splits the visible picture or one layer into layers with Seedream's layer decomposition on BytePlus
-ModelArk (`recipe` `seedream_5_5` or `seedream_5_pro`; `list_recipes` `layers` says which recipes can): a base and the
+**`split_layers`**. Splits the visible picture or one layer into layers with Seedream's layer decomposition, on the
+recipe's chosen provider when it has a layer mode (Seedream 5.5 on BytePlus ModelArk, WaveSpeedAI or Oxen.ai), else on
+BytePlus ModelArk (`recipe` `seedream_5_5` or `seedream_5_pro`; `list_recipes` `layers` says which recipes can and on
+which provider): a base and the
 model's layers land above every existing layer in one new group, one undo step. A paid API run on the user's key; `prompt`,
 `count` and `text_recognition` (5.5), `size` (a tier). [COMMANDS.md](COMMANDS.md#split_layers-image) has the parameters and the
 answer.

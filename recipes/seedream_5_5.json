@@ -3,10 +3,68 @@
   "kind": "provider",
   "name": "Seedream 5.5",
   "family": "ByteDance",
-  "refs": { "name": "Image {n}" },
-  "description": "ByteDance's Seedream 5.5, 1K to 2K, with a transparent background on request. Early access: BytePlus ModelArk (ByteDance's own API) only, and only for accounts BytePlus has let in; activate the model in the ModelArk console under Model activation first (BytePlus may have to allow-list the account). Adapter written from the provider's preview docs, not run against the live API yet.",
+  "refs": {
+    "name": "Image {n}"
+  },
+  "description": "ByteDance's Seedream 5.5, 1K to 2K, with a transparent background on request. On BytePlus ModelArk (ByteDance's own API) in early access only, for accounts BytePlus has let in; activate the model in the ModelArk console under Model activation first (BytePlus may have to allow-list the account). Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on Comfy Router. Also on Oxen.ai. Adapters written from the providers' docs, not run against the live API yet.",
   "default": "ark",
   "providers": {
+    "toapis": {
+      "model": "doubao-seedream-5-5",
+      "input": "edit",
+      "options": {
+        "size": "pixels",
+        "pixels": {
+          "step": 16,
+          "max": 4096,
+          "minPixels": 921600,
+          "maxPixels": 4624220,
+          "maxRatio": 16
+        },
+        "max_images": 10,
+        "max_ratio": 16,
+        "metadata": [
+          "background"
+        ]
+      },
+      "fixed": {
+        "metadata.output_format": "png",
+        "metadata.watermark": false
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "transparent",
+              "opaque"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 4096,
+        "step": 16,
+        "pixels": 4624220,
+        "minPixels": 921600,
+        "ratio": 16
+      },
+      "text": {
+        "sizes": [
+          1280,
+          1536,
+          2048
+        ],
+        "refs": {}
+      },
+      "note": "Runs on ToAPIs (a reseller); not run against the live API yet (written from ToAPIs' Seedream 5.5 page, 2026-11-11). Crop and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The answer is the crop's own shape at 0.92 to 4.6 megapixels, as PNG, without a watermark. Background Transparent asks for a cut-out on a transparent ground: the result layer keeps the answer's alpha inside the selection; say it in the prompt as well. At most ten pictures go in, none steeper than 16:1. ToAPIs takes no seed for this model."
+    },
     "ark": {
       "model": "dola-seedream-5-5-261028",
       "input": "edit",
@@ -20,8 +78,9 @@
         "background": true,
         "early_access": true,
         "layers": {
-          "max": 100,
-          "options": true
+          "max": 99,
+          "options": true,
+          "price": "Its price is not on BytePlus's public list yet."
         },
         "regions": [
           "ap-southeast"
@@ -59,7 +118,230 @@
         ],
         "refs": {}
       },
-      "note": "Runs on BytePlus ModelArk, ByteDance's own API for Seedream; not run against the live API yet (written from BytePlus's preview docs for early-access customers). Seedream 5.5 is in early access: the account must be let in by BytePlus, and the model activated in the ModelArk console under Model activation; a key works only in the region it was made in. The pictures go inline in the request to BytePlus in Johor, Malaysia, which may route a request to its other region; BytePlus names data centres in Malaysia, Indonesia and the EU/EEA for its processing, keeps what its content filter flags for 180 days in Malaysia (its filter page says Malaysia or Singapore), and uses nothing for training without consent. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The answer is the crop's own shape at a pixel size inside the model's range (0.92 to 4.6 megapixels), as PNG, without a watermark. Background Transparent asks for a cut-out on a transparent ground (an edit and Generate new): the result layer keeps the answer's alpha inside the selection, and its colour is not matched; say it in the prompt as well. At most ten pictures go in (the crop, Original and the reference layers), none steeper than 16:1. The Johor region only. The price is not on BytePlus's public price list yet. Image > Split into Layers... splits the picture into layers on this model (up to 100)."
+      "note": "Runs on BytePlus ModelArk, ByteDance's own API for Seedream; not run against the live API yet (written from BytePlus's preview docs for early-access customers). Seedream 5.5 is in early access: the account must be let in by BytePlus, and the model activated in the ModelArk console under Model activation; a key works only in the region it was made in. The pictures go inline in the request to BytePlus in Johor, Malaysia, which may route a request to its other region; BytePlus names data centres in Malaysia, Indonesia and the EU/EEA for its processing, keeps what its content filter flags for 180 days in Malaysia (its filter page says Malaysia or Singapore), and uses nothing for training without consent. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The answer is the crop's own shape at a pixel size inside the model's range (0.92 to 4.6 megapixels), as PNG, without a watermark. Background Transparent asks for a cut-out on a transparent ground (an edit and Generate new): the result layer keeps the answer's alpha inside the selection, and its colour is not matched; say it in the prompt as well. At most ten pictures go in (the crop, Original and the reference layers), none steeper than 16:1. The Johor region only. The price is not on BytePlus's public price list yet. Image > Split into Layers... splits the picture into layers on this model (up to 99 and a base)."
+    },
+    "wavespeed": {
+      "model": "bytedance/seedream-v5.5/edit",
+      "input": "edit",
+      "options": {
+        "max_images": 10,
+        "accepts": [
+          "aspect_ratio",
+          "resolution",
+          "output_format",
+          "background"
+        ],
+        "aspect_ratios": [
+          "1:1",
+          "1:2",
+          "2:1",
+          "1:3",
+          "3:1",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "9:21",
+          "21:9"
+        ],
+        "layers": {
+          "max": 99,
+          "count": true,
+          "text": false,
+          "model": "bytedance/seedream-v5.5/layer-decomposition",
+          "price": "WaveSpeed charges for every picture asked for (the count and the base), whether or not the model returns that many."
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1k",
+              "1.5k",
+              "2k"
+            ],
+            {
+              "default": "2k"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "transparent",
+              "opaque"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "Runs on WaveSpeedAI; not run against the live API yet (written from WaveSpeed's model pages, 2026-11-11). The crop and the reference layers are uploaded to WaveSpeed's media storage (kept 7 days) and passed to ByteDance's model there. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop. Resolution 1k, 1.5k or 2k (1k and 1.5k cost the same). Background Transparent asks for a cut-out on a transparent ground, as PNG: the result layer keeps the answer's alpha inside the selection; say it in the prompt as well. At most ten pictures go in (the crop, Original and the reference layers). Image > Split into Layers... splits the picture into layers on WaveSpeed's layer route (up to 99 and a base); WaveSpeed's docs name no position for a layer, so each lands over the whole picture.",
+      "text": {
+        "refs": {
+          "model": "bytedance/seedream-v5.5/edit"
+        }
+      }
+    },
+    "comfycloud": {
+      "model": "seedream 5.5",
+      "input": "edit",
+      "options": {
+        "node": "ByteDanceSeedreamNodeV3"
+      },
+      "settings": [],
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits); not run against the live API yet (the node's Seedream 5.5 option, read on Comfy Cloud on 2026-11-11). Custom size fitted to the crop inside the model's 0.92 to 4.6 megapixels. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". At most ten pictures go in. The node's one picture output carries no alpha, so the background is asked opaque here: for a cut-out use another provider.",
+      "limits": {
+        "max": 4096,
+        "step": 2,
+        "pixels": 4624220,
+        "minPixels": 921600,
+        "ratio": 16
+      }
+    },
+    "comfyrouter": {
+      "model": "byteplus/seedream-5-5-261028",
+      "input": "edit",
+      "options": {
+        "pixels": [
+          921600,
+          4624220
+        ],
+        "max_images": 10,
+        "max_bytes": 25000000,
+        "max_ratio": 16,
+        "background": true
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "transparent",
+              "opaque"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 4096,
+        "step": 16,
+        "pixels": 4624220,
+        "minPixels": 921600,
+        "ratio": 16
+      },
+      "text": {
+        "sizes": [
+          1280,
+          1536,
+          2048
+        ],
+        "refs": {}
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The pictures go inline in the request to Comfy, which passes them to ByteDance's BytePlus ModelArk. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The answer is the crop's own shape at 0.92 to 4.6 megapixels (the range the Router's schema gives this model), as PNG, without a watermark. Background Transparent asks for a cut-out on a transparent ground: the result layer keeps the answer's alpha inside the selection; say it in the prompt as well. At most ten pictures go in, none steeper than 16:1 and none over 25 MB, the Router's own cap per picture (an opaque one goes as JPEG)."
+    },
+    "oxen": {
+      "model": "bytedance-seedream-5-5",
+      "input": "edit",
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "size",
+          "background",
+          "watermark",
+          "output_format"
+        ],
+        "edit_aspect": "auto",
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3",
+          "21:9"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048
+        },
+        "tier_key": "size",
+        "max_images": 10,
+        "max_ratio": 16,
+        "layers": {
+          "max": 99,
+          "options": true,
+          "tiers": false,
+          "model": "bytedance-seedream-5-5-layers",
+          "price": "Oxen.ai charges every layer as a picture."
+        }
+      },
+      "fixed": {
+        "watermark": false,
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "transparent",
+              "opaque"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "ratio": 16
+      },
+      "text": {
+        "sizes": [
+          1024,
+          2048
+        ],
+        "refs": {}
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-11-11). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. An edit asks the aspect \"auto\" (the model follows the crop); an answer of another shape is centre-cropped. Size 1K or 2K, on auto the smallest that covers the crop; up to ten pictures, none steeper than 16:1; no watermark. Background Transparent asks for a cut-out on a transparent ground, as PNG: the result layer keeps the answer's alpha inside the selection; say it in the prompt as well. List price $0.026 at 1K, $0.036 at 2K (2026-11-11). Image > Split into Layers... splits the picture into layers on Oxen's Seedream 5.5 Layers (up to 99 and a base)."
     }
   }
 }

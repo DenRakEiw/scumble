@@ -1605,7 +1605,7 @@ async function main() {
             const fSplit = fk({}); fSplit.tools.add("split_layers");
             const sAsk = policy.decide({ name: "split_layers", args: { count: 8 } }, fSplit);
             check("split_layers_is_a_paid_run_that_asks_and_names_the_count",
-                policy.RUNS.has("split_layers") && sAsk.action === "ask" && /on BytePlus ModelArk, up to 8 layers: this costs money/.test(sAsk.reason)
+                policy.RUNS.has("split_layers") && sAsk.action === "ask" && /on a paid API \(Seedream's layer decomposition\), up to 8 layers: this costs money/.test(sAsk.reason)
                 && policy.clamp({ name: "split_layers", args: {} }).args.timeout === 900 && policy.undoStep({ name: "split_layers", args: {} }) === null, JSON.stringify(sAsk));
             check("key_screen_asks_with_its_route_and_is_refused_when_its_route_cannot_key",
                 policy.RUNS.has("key_screen") && kAsk.action === "ask" && kAsk.reason === "keys the green / blue screen with CorridorKey 2.0 on your ComfyUI: it queues there and adds a layer"

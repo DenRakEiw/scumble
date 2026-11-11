@@ -1,0 +1,21 @@
+{
+  "source": "Comfy Cloud's node catalog: get_node ByteDanceSeedreamNodeV3 on the user's account, catalog 2026-11-11T06:02Z (live), read and transcribed here for the option \"seedream 5.5\" only (the inputs an API-format prompt sets for it, not the raw answer). The catalog merges the bounds of every model's width and height (1024 to 4514); the 5.5 bounds are comfy_api_nodes/nodes_bytedance.py of Comfy-Org/ComfyUI#17631 (merged 2026-11-10): min_size 240, max 8594, step 2, and execute()'s checks 921,600 to 4,624,220 pixels, aspect 1:16 to 16:1. Comfy's template api_bytedance_seedream_5_5_image_edit (read 2026-11-11) sets model \"seedream 5.5\", size_preset Custom, background auto, model.images.image_1 and image_2.",
+  "class": "ByteDanceSeedreamNodeV3",
+  "display_name": "ByteDance Seedream 4.5, 5.0 & 5.5",
+  "option": "seedream 5.5",
+  "inputs": {
+    "prompt": { "type": "STRING", "required": true },
+    "model": { "type": "COMBO", "required": true, "options": ["seedream 5.0 pro", "seedream 5.0 flash", "seedream 5.0 lite", "seedream-4-5-251128", "seedream-4-0-250828", "seedream 5.5"] },
+    "model.size_preset": { "type": "COMBO", "required": true, "default": "(2K) 2048x2048 (1:1)", "has": "Custom" },
+    "model.width": { "type": "INT", "required": true, "min": 240, "max": 8594, "step": 2 },
+    "model.height": { "type": "INT", "required": true, "min": 240, "max": 8594, "step": 2 },
+    "model.background": { "type": "COMBO", "required": true, "options": ["auto", "opaque", "transparent"], "default": "auto" },
+    "model.seed": { "type": "INT", "required": true, "min": 0, "max": 2147483647 },
+    "model.watermark": { "type": "BOOLEAN", "required": true, "default": false }
+  },
+  "images": { "prefix": "model.images.image_", "from": 1, "max": 10 },
+  "not_for_this_option": ["model.thinking", "model.prompt_optimization", "model.max_images", "model.fail_on_partial"],
+  "pixels": [921600, 4624220],
+  "max_ratio": 16,
+  "outputs": ["IMAGE"]
+}
