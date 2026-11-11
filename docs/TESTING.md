@@ -814,7 +814,8 @@ ways, FormData, 204 / 404 / HEAD, redirects under fetch's rules (key headers dro
 loopback, so they do not touch curl by themselves: run them once with `SCUMBLE_CURL_ALL=1` in the environment, which
 sends loopback through curl too (the app log's `Network: requests go through curl ...` line shows it was used). On
 2026-11-11 `toapis openrouter ark magnific oxen comfyrouter cloudjobs generate upscale llm assistant loras key` passed
-that way.
+that way. A live run the same day: FLUX.2 [klein] 9B on fal.ai with the user's key in a test instance, 4 requests
+through curl 8.21.0, the result landed in 8 s.
 
 **Splitting the long files (item 56, `docs/PLAN_SPLIT.md`).** `node tools/split_check.js --base <commit> <file> [new
 files...]` proves a split is a move: every top-level declaration, class member (and with `--object NAME` every
