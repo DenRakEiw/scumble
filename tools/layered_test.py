@@ -629,7 +629,8 @@ for (const [name, path] of [["parted", parted], ["single", dir + "/single.ora"],
         spread = Math.max(spread, new Set(alphaOf(pa)).size);
         if (La.pngBlob || Lb.pngBlob) throw new Error(name + ": a layer kept its PNG");
     }
-    if (name !== "deep" && spread < (name === "single" ? 100 : 50)) throw new Error(name + ": the alphas tested little: " + spread);
+    // deep is 16 bit and gamma.ora is opaque (it is in the twin for its gAMA chunk): neither has alphas to spread
+    if (name !== "deep" && name !== "gamma" && spread < (name === "single" ? 100 : 50)) throw new Error(name + ": the alphas tested little: " + spread);
     if (b.bitmaps !== b.doc.layers.length || b.parts || b.reads) throw new Error(name + ": oraParted = false took the pool: " + JSON.stringify({ ...b, doc: undefined }));
     if (tiles) {
         const wantBitmaps = name === "deep" ? 1 : 0;

@@ -19103,6 +19103,8 @@ class InpaintEditor {
             : await readOraBlob(file, { inflateRaw: (b, cap) => timed(b, "deflate-raw", cap), onHeader });
         markStep("layered_open", "parsed", { inflateMs, inflates });
         this.checkLayeredSize(doc.width, doc.height);
+        // the bottom layer's PNG, kept for loadLayered's base upload (oraBaseUpload): the decode below lets go of L.pngBlob
+        if (kind === "ora") doc.basePng = (doc.layers[0] && doc.layers[0].pngBlob) || null;
         try {
             for (let i = 0; i < doc.layers.length; i++) {
                 const L = doc.layers[i];
@@ -19182,12 +19184,13 @@ class InpaintEditor {
      */
     async oraBaseUpload(doc, file) {
         const b = doc.layers[0];
-        if (!b || !b.pngBlob || InpaintEditor.oraParted === false) return null;
+        const png = doc.basePng;
+        if (!b || !png || InpaintEditor.oraParted === false) return null;
         if (!(b.x === 0 && b.y === 0 && b.visible && b.opacity >= 0.999 && b.blend === "normal")) return null;
-        const h = pngHeader(new Uint8Array(await b.pngBlob.slice(0, 33).arrayBuffer()));
+        const h = pngHeader(new Uint8Array(await png.slice(0, 33).arrayBuffer()));
         if (!h || h.bitDepth !== 8 || h.interlace || h.width !== doc.width || h.height !== doc.height) return null;
-        if (!(await pngIsPlainSrgb(b.pngBlob))) return null;
-        try { return await uploadBlob(b.pngBlob, layeredStem(file) + ".png", { overwrite: false }); } catch (err) {
+        if (!(await pngIsPlainSrgb(png))) return null;
+        try { return await uploadBlob(png, layeredStem(file) + ".png", { overwrite: false }); } catch (err) {
             console.warn("[Inpaint Canvas] the ORA's base PNG did not upload as it is; encoding it instead:", err);
             return null;
         }
