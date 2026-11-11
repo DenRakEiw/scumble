@@ -847,7 +847,7 @@ host.setRecipe(me);
 if (P(ed).section.hidden) throw new Error("the LoRAs section is hidden under the MOSS edit recipe: " + P(ed).summary.title);
 const ensured0 = S.ensured, posts0 = S.posts.length;
 let q = await queue(ed);
-if (q.err !== sentence || S.ensured !== ensured0 || S.posts.length !== posts0) throw new Error("the run on v0.42: " + JSON.stringify({ q, ensured: S.ensured - ensured0 }));
+if (q.err !== sentence + "." || S.ensured !== ensured0 || S.posts.length !== posts0) throw new Error("the run on v0.42: " + JSON.stringify({ q, ensured: S.ensured - ensured0 }));
 // ComfyUI 0.43 or newer: ready, and the run goes with the row after the edit LoRA
 host.objectInfo = nodeList(true);
 lr = await listed();
