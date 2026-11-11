@@ -218,3 +218,16 @@ starts with S0.**
   the node's `js/host_*.js`), so S13's parts keep their members visible.
 - Gates `s0-tools` (`lint types nodecopy skins quit`, offline, tiles) PASS; `ark`, `comfyrouter`, `genpresets`,
   `comfyprompt` tests PASS in plain Node; `build_node.py --check` only "differs" lines.
+
+**S1 (2026-11-11).** `inpaint_canvas.js`'s module scope into eight leaves, base `d17dfdc4`, 1,624 lines moved
+(`split_check.js --base d17dfdc4 renderer/editor/inpaint_canvas.js`: 932 units, 728 prototype members, PASS):
+`inpaint_consts.js` (T-head, T-consts, T-roles, T-brushsize up to `refBadge`; `clampRect` stays with T-load),
+`inpaint_orient.js`, `inpaint_shaders.js`, `inpaint_dom.js` (T-dom and T-icons), `inpaint_mesh.js`,
+`inpaint_backends.js`, `inpaint_style.js`, `inpaint_strokebuf.js` (T-tail without `let CLIPBOARD`, which stays beside
+its accessor). The move was made by a script on the AST (each statement with the lines from the end of the one before,
+so its comments go with it); each leaf imports what it reads and ends in one export list, `inpaint_canvas.js` imports
+the leaves back and re-exports what it exported before (the inline exports `RELIGHT_STYLES`, `RELIGHT_LIGHT_TYPES`,
+`BRUSH_MAX`, `brushSizeToSlider`, `sliderToBrushSize` joined its export list). Eight imports nothing in it reads any
+more were dropped. `inpaint_canvas.js` is 24,208 lines (from 25,931). The leaves are in `build_node.py` FILES; only
+`inpaint_consts.js` and `inpaint_backends.js` import `host`. Gates `s1-leaves` (`lint types nodecopy skins editor brush
+pixels`, serial, offline) PASS on both backends; `limit_test`, `maps_test`, `skins_test` PASS in plain Node.
