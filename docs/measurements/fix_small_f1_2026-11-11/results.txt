@@ -1,0 +1,7 @@
+F-1 reversal round, 2026-11-11T03:00:50.916Z
+KILLED   R1_rg8View_new_view_per_call (rc 1) AssertionError [ERR_ASSERTION]: rg8View hands out the same data view for the same map.data
+KILLED   R2_cube_domain_scales_the_outputs (rc 1) FAILED: AssertionError [ERR_ASSERTION]: constant 0.6 on DOMAIN 0..2 stays 0.6: 0.30000001192092896,0.30000001192092896,0.30000001192092896,0.30000001192092896,0.30000001192092896,0.30000001192092896
+KILLED   R3_cube_domain_ignored (rc 1) FAILED: AssertionError [ERR_ASSERTION]: in^2 on DOMAIN 0..2: 0,0.25,1,1,1
+KILLED   R4_live_rg8View_new_view_per_call (rc 1) FAIL
+KILLED   R5_live_haze_at_pixel_corners (rc 1) FAIL
+5 of 5 killed, 0 survived; every file restored byte for byte
