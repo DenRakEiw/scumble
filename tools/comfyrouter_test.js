@@ -98,11 +98,17 @@ function deref(doc, s) {
     return s;
 }
 /** Problems of `v` against `s` ([] when it holds). Unknown fields count as problems: the bodies stay inside the schema. */
-function validate(doc, s, v, at = "body") {
+function validate(doc, s, v, at = "body", siblings = null) {
     s = deref(doc, s);
     if (!s) return [];
     const out = [];
-    if (s.allOf) for (const x of s.allOf) out.push(...validate(doc, x, v, at));
+    if (s.allOf) {
+        // a field one member of an allOf names is known to the others (Seedream 5.5's schema: the shared field set and an
+        // object that narrows `image` alone)
+        const known = new Set();
+        for (const x of s.allOf) { const d = deref(doc, x); if (d && d.properties) for (const k of Object.keys(d.properties)) known.add(k); }
+        for (const x of s.allOf) out.push(...validate(doc, x, v, at, known));
+    }
     for (const k of ["anyOf", "oneOf"]) {
         if (!s[k]) continue;
         const alts = s[k].map((x) => validate(doc, x, v, at));
@@ -127,7 +133,7 @@ function validate(doc, s, v, at = "body") {
         for (const r of s.required || []) if (!(r in v)) out.push(`${at}: missing ${r}`);
         for (const [k, x] of Object.entries(v)) {
             if (props[k]) out.push(...validate(doc, props[k], x, `${at}.${k}`));
-            else if (s.properties && !s.allOf && !s.anyOf && !s.oneOf && s.additionalProperties !== true) out.push(`${at}: unknown field ${k}`);
+            else if (s.properties && !(siblings && siblings.has(k)) && !s.allOf && !s.anyOf && !s.oneOf && s.additionalProperties !== true) out.push(`${at}: unknown field ${k}`);
         }
     }
     return out;
@@ -306,7 +312,7 @@ const VARIANTS = {
     gpt_image_2: "openai/gpt-image-2", gpt_image_2_5_flare: "openai/gpt-image-2.5-flare", gpt_image_2_5_sunburst: "openai/gpt-image-2.5-sunburst",
     nano_banana_2: "vertexai/gemini-3.1-flash-image", nano_banana_2_1: "vertexai/gemini-nano-banana-2.1", nano_banana_2_lite: "vertexai/gemini-3.1-flash-lite-image", nano_banana_pro: "vertexai/gemini-3-pro-image",
     flux2_pro: "bfl/flux-2-pro", flux2_max: "bfl/flux-2-max", flux1_fill: "bfl/flux-pro-1.0-fill",
-    seedream_5_lite: "byteplus/seedream-5-0-260128", seedream_5_pro: "byteplus/seedream-5-0-pro-260628",
+    seedream_5_lite: "byteplus/seedream-5-0-260128", seedream_5_pro: "byteplus/seedream-5-0-pro-260628", seedream_5_5: "byteplus/seedream-5-5-261028",
     qwen_image_edit: "qwen/qwen-image-3.0", magnific_precision: "freepik/ai-image-upscaler-precision-v2",
     krea_2: "krea/krea-2-large", krea_3: "krea/krea-3", grok_imagine: "xai/grok-imagine-image-2.0", ideogram_4: "ideogram/ideogram-v4",
     ideogram_4_5: "ideogram/ideogram-4-5", flux3: "bfl/flux-3-image",
@@ -812,6 +818,20 @@ async function main() {
         x = await run("seedream_5_lite", "text", { width: 3072, height: 2048, aspect: "3:2" });
         const [lw, lh] = x.body.size.split("x").map(Number);
         check("Seedream Lite text: no image, 3:2 inside 3.7 to 9.4 MP", !("image" in x.body) && lw * lh >= 3686400 && lw * lh <= 9437184 && Math.abs(lw / lh - 1.5) < 0.01, x.body.size);
+        // Seedream 5.5 (the Router's schema byteplus_seedream-5-5-261028.json, read 2026-11-11): 0.92 to 4.62 MP, a background
+        x = await run("seedream_5_5", "edit", { width: 1600, height: 900, references: [pngOf(512, 512, 64, "REF1")], params: { background: "transparent" } });
+        const [fw, fh] = x.body.size.split("x").map(Number);
+        const p55 = schemaProblems("byteplus/seedream-5-5-261028", x.body);
+        check("Seedream 5.5 edit: its own route, the crop and a reference as data URLs, a size in the crop's shape inside 0.92 to 4.62 MP, background transparent with png, no watermark, inside its schema",
+            x.s.submits[0].url === `${BASE}/v2/models/byteplus/seedream-5-5-261028/requests` && x.body.image.length === 2 && tagOf(fromDataUrl(x.body.image[0]).bytes) === "CROP"
+            && fw * fh >= 921600 && fw * fh <= 4624220 && Math.abs(fw / fh - 16 / 9) < 0.02 && x.body.background === "transparent" && x.body.output_format === "png" && x.body.watermark === false && !p55.length,
+            short({ url: x.s.submits[0].url, size: x.body.size, background: x.body.background, problems: p55 }));
+        x = await run("seedream_5_5", "edit", { params: { background: "auto" } });
+        const x55t = await run("seedream_5_5", "text", { width: 2048, height: 1152, aspect: "16:9" });
+        const [tw, th] = x55t.body.size.split("x").map(Number);
+        check("Seedream 5.5: Background auto sends no background field; a new image goes to the same route without a picture, 16:9 inside the range", !("background" in x.body) && x55t.s.submits[0].url === `${BASE}/v2/models/byteplus/seedream-5-5-261028/requests` && !("image" in x55t.body) && tw * th <= 4624220 && tw * th >= 921600 && Math.abs(tw / th - 16 / 9) < 0.02, short([Object.keys(x.body), x55t.body.size]));
+        x = await run("seedream_5_pro", "edit", { params: { background: "transparent" } });
+        check("Seedream 5.0 pro (no options.background) never sends a background, whatever the row says", !("background" in x.body), short(Object.keys(x.body)));
         // Qwen
         x = await run("qwen_image_edit", "edit", { references: [pngOf(512, 512, 64, "REF1")] });
         const c = x.body.input.messages[0].content;

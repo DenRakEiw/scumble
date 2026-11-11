@@ -703,7 +703,7 @@ async function main() {
         try { list = await recipes.list(RECIPES); } finally { fs.rmSync(empty, { recursive: true, force: true }); }
         const served = list.filter((r) => r.providers && r.providers.ark);
         check("exactly the two Seedream 5.0 recipes and Seedream 5.5 carry an ark variant, all builtin", eq(served.map((r) => r.id).sort(), ["seedream_5_5", "seedream_5_lite", "seedream_5_pro"]) && served.every((r) => r.source === "builtin"), served.map((r) => r.id).join(", "));
-        // `only`: ModelArk is the recipe's one provider and its default (5.5, early access); else ark comes right after
+        // `only`: ModelArk is the recipe's default and its early-access host (5.5); else ark comes right after
         // toapis and fal stays the default
         const want = {
             seedream_5_pro: { model: PRO_ID, pixels: PRO_PIXELS, max_images: 10, regions: ["ap-southeast"], sizes: [1280, 1536, 2048], rows: [] },
@@ -719,7 +719,8 @@ async function main() {
             const o = v.options || {};
             const ids = r.providerIds;
             if (w.only) {
-                if (!eq(ids, ["ark"])) bad.push(`${r.id}: providers ${ids.join(",")}, not ark alone`);
+                // since 2026-11-11 also on five other hosts (tools/seedream55_test.js), ModelArk right after ToAPIs, still the default
+                if (!eq(ids, ["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen"])) bad.push(`${r.id}: providers ${ids.join(",")}, not ModelArk after ToAPIs and the four others`);
                 if (r.default !== "ark" || raw.default !== "ark") bad.push(`${r.id}: the default is ${r.default} (file ${raw.default}), not ark`);
                 if (o.background !== true || o.early_access !== true) bad.push(`${r.id}: options.background ${o.background}, early_access ${o.early_access}`);
                 const bg = (v.settings || []).find((st) => st.key === "background");

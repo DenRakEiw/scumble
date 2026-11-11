@@ -213,8 +213,8 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
 - A depth map of the picture, computed in the app (Depth Anything V2 Small, *Selection › Depth*) and saved with the
   document: it selects, limits filter layers, and drives lens blur, haze and Relight.
 - Models: FLUX 3 Image, FLUX.2 (max, pro, flex, klein) and FLUX.1 Fill from Black Forest Labs; GPT Image 2.6 and 2.5
-  Flare / Sunburst and GPT Image 2; Nano Banana 2.1, 2, 2 Lite and Pro; Seedream 5.5 (on BytePlus ModelArk, in early
-  access), 5 and 4.5; Qwen Image Edit and Qwen Image 2.1;
+  Flare / Sunburst and GPT Image 2; Nano Banana 2.1, 2, 2 Lite and Pro; Seedream 5.5 (on WaveSpeedAI, Comfy Cloud,
+  ToAPIs, Comfy Router and Oxen.ai, and on BytePlus ModelArk in early access; not run live yet), 5 and 4.5; Qwen Image Edit and Qwen Image 2.1;
   Ideogram 4 and 4.5; Grok Imagine, Krea 3 Edit and Krea 2, Recraft V4, Reve, Z-Image, HY Image 3.5, P-H3-Image and MiniMax-H3-Image (on MiniMax's own API, not run live yet); Magnific's Mystic, Ideogram
   inpainting and Image Expand outpainting. Each runs on the model's own API where Scumble
   has one, or through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, Comfy Router, OpenRouter, Oxen.ai and

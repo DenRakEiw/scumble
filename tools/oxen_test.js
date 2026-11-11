@@ -227,6 +227,12 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
             { model: "nano-banana-2", prompt: FILL, response_format: "b64_json", input_image: ["<png CROP>", "<png MASK>"], thinking_level: "minimal", resolution: "1K", aspect_ratio: "auto" });
         want("seedream_5_pro edit", await bodyOf(editReq(V("seedream_5_pro"), { width: 1600, height: 900 })),
             { model: "bytedance-seedream-5-pro", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], watermark: false, output_format: "png", size: "2K", aspect_ratio: "16:9" });
+        // Seedream 5.5 (its request_schema of 2026-11-11): the aspect "auto" on an edit, the Background row as it is
+        const s55 = V("seedream_5_5");
+        want("seedream_5_5 edit transparent", await bodyOf(editReq(s55, { width: 1600, height: 900, params: { ...paramsOf(s55.settings, s55.fixed), background: "transparent" } })),
+            { model: "bytedance-seedream-5-5", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], background: "transparent", watermark: false, output_format: "png", size: "2K", aspect_ratio: "auto" });
+        want("seedream_5_5 text", await bodyOf(textReq(s55, { aspect: "16:9", width: 2048, height: 1152 })),
+            { model: "bytedance-seedream-5-5", prompt: "a lighthouse", response_format: "b64_json", watermark: false, output_format: "png", size: "2K", aspect_ratio: "16:9" });
         want("qwen_image_edit alone", await bodyOf(editReq(V("qwen_image_edit"), { negative: "blur" })),
             { model: "qwen-image-3", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "auto", seed: 1234, negative_prompt: "blur" });
         want("qwen_image_edit with a reference", await bodyOf(editReq(V("qwen_image_edit"), { references: [pngOf(512, 512, 70, "REF")] })),
@@ -559,12 +565,12 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
 
     // ---- 10. the recipes ---------------------------------------------------------------------------------------------
     {
-        const WANT = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "gpt_image_2_6_flare", "gpt_image_2_6_sunburst", "grok_imagine", "ideogram_4", "krea_2", "krea_3", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_2_1", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro", "topaz_creative", "topaz_generative", "topaz_precision", "z_image_turbo"];
+        const WANT = ["flux2_flex", "flux2_klein", "flux2_pro", "flux3", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "gpt_image_2_6_flare", "gpt_image_2_6_sunburst", "grok_imagine", "ideogram_4", "krea_2", "krea_3", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_2_1", "qwen_image_edit", "seedream_5_5", "seedream_5_lite", "seedream_5_pro", "topaz_creative", "topaz_generative", "topaz_precision", "z_image_turbo"];
         const served = list.filter((r) => r.providers && r.providers.oxen);
         check("the_recipes_that_carry_an_oxen_variant", eq(served.map((r) => r.id).sort(), WANT), served.map((r) => r.id).join(","));
         const bad = [];
         // FLUX 3 Image came later (B5, 2026-10-03), Krea 3 on 2026-11-09
-        const OPEN = /^Runs on Oxen\.ai \(one key for many models\); not run against the live API yet \(written from Oxen's docs and model list, (2026-09-26|2026-10-03|2026-11-09|2026-11-10)\)\./;
+        const OPEN = /^Runs on Oxen\.ai \(one key for many models\); not run against the live API yet \(written from Oxen's docs and model list, (2026-09-26|2026-10-03|2026-11-09|2026-11-10|2026-11-11)\)\./;
         const PRIV = /The pictures go inline \(data URLs, which Oxen's docs allow but do not recommend for production\) in the request to Oxen\.ai/;
         for (const r of served) {
             const v = r.providers.oxen;

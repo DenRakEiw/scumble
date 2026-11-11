@@ -17,9 +17,10 @@ function check(what, ok, detail) {
     console.log(`${ok ? "PASS" : "FAIL"}  ${what}${ok || !detail ? "" : "  -> " + detail}`);
 }
 
-// Bare ids that answered 200 on wavespeed.ai/models/<id> on 2026-10-07 (the text route of these is the bare id).
+// Bare ids that answered 200 on wavespeed.ai/models/<id> on 2026-10-07 (the text route of these is the bare id);
+// Seedream 5.5's on 2026-11-11 (its llms.txt names the endpoint .../bytedance/seedream-v5.5, category text-to-image).
 const BARE_OK = new Set([
-    "bytedance/seedream-v5.0-lite", "bytedance/seedream-v5.0-pro", "ideogram-ai/ideogram-v4.5",
+    "bytedance/seedream-v5.0-lite", "bytedance/seedream-v5.0-pro", "ideogram-ai/ideogram-v4.5", "bytedance/seedream-v5.5",
 ]);
 
 const dir = path.join(ROOT, "recipes");
