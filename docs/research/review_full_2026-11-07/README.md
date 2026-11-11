@@ -320,6 +320,13 @@ item 56 splits the file, or redo the line map after the split.
 
 **Lane T: tiles and compositor** (`inpaint_compositor.js`, `inpaint_tiles.js`).
 - T-1: `tiles/T1`, `tiles/T2`, with a composite gate step over a small budget. Full.
+  **Done 2026-11-11 (`fix-tiles` T-1, merged into `wasm-kernels`):** `inpaint_compositor.js` `setAtlasBudget` clamps to
+  16 MB .. 16 GB without the 32-bit `| 0` (T2); `_slot` drops other entries' pages not used this frame, oldest first,
+  before it gives up (`_evictOther`), and `composite` evicts before it returns null (T1). Gate step `atlas_budget` on
+  both backends; mutation round 14 of 14; gates `t1m` on both backends (`editor` on canvas green serially after a
+  side-by-side timeout). 15k (`docs/measurements/fix_tiles_t1_2026-11-10/`): zoomed in over a 512 MB budget the view
+  stays on the GPU (before: Canvas 2D every frame); **the first frame there is slower**, 353 -> 438 ms median, as
+  the GPU path now evicts and finishes the frame (inferred, not A/B'd); a 2048 MB budget takes effect (was 16 MB).
 - T-2: `tiles/T4`, with a pixels test on both routes. Full.
 
 **Lane H: renderer host and shell** (`renderer/editor/host.js`, `renderer/shell.js`, `renderer/commands.js`).
@@ -339,6 +346,12 @@ item 56 splits the file, or redo the line map after the split.
 `stitch_worker.js`, `tools/film_test.py`).
 - F-1: `filters/depth-map-texture-reuploaded-every-pass`, `filters/cube-domain-applied-to-outputs`,
   `filters/haze-cpu-twin-half-pixel`. Normal (haze changes CPU pixels: both backends).
+  **Done 2026-11-11 (`fix-small` F-1, merged into `wasm-kernels`):** `inpaint_maps.js` `rg8View` hands out one view per
+  `map.data` (`RG8_VIEWS`, a WeakMap; the sampler cache key keeps `dataVersion`); `inpaint_filters.js` `lutFromCube` keeps
+  the outputs and resamples a lattice over another DOMAIN onto 0..1 (`lutOnUnitDomain`, trilinear); `inpaint_depthfx.js`
+  `applyHaze` samples at pixel centres. Tests `maps_test.js`, `grade_test.js` section 19, `depthfx_test.py` cases q and
+  r; gates `f1m` on both backends; reversal round 5 of 5 (`docs/measurements/fix_small_f1_2026-11-11/`). The
+  assistant's `split_layers` `source: "picture"` rode along (`resolveLayer`).
 - F-2: `host/H-6`. Normal.
 
 **A start that keeps files apart:** first round R1, P1, D-1, E1 and M1 (five of the six musts, plus the stores;

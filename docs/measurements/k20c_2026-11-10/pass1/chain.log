@@ -1,0 +1,30 @@
+[19:13:24] exporting the before tree at 8fde9fb0 to /f/canvas/.claude/worktrees/.tmp_k20c_before_3827720
+lock: taken after 0 s
+[19:13:34] lock: taken (K20c native_test r1 (chain-p) 39888 2026-11-10T19:13:33)
+[19:13:36] native before r1 (try 1)
+[19:14:21] rc=0
+closed
+[19:14:39] native after r1 (try 1)
+[19:15:17] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[19:15:37] lock: taken (K20c native_test r2 (chain-p) 2112 2026-11-10T19:15:35)
+[19:15:41] native after r2 (try 1)
+[19:16:22] rc=0
+closed
+[19:16:37] native before r2 (try 1)
+[19:17:20] rc=0
+closed
+lock: released
+lock: taken after 0 s
+[19:17:47] lock: taken (K20c native_test r3 (chain-p) 61728 2026-11-10T19:17:45)
+[19:17:52] native before r3 (try 1)
+[19:18:36] rc=0
+closed
+[19:18:57] native after r3 (try 1)
+[19:19:36] rc=0
+closed
+lock: released
+[19:19:47] done
+no instance on 9621 Cannot connect to host 127.0.0.1:9621 ssl:default [Der Remotecomputer hat die Netzwerkverbindung abgelehnt]

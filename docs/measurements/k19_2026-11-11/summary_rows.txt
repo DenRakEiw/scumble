@@ -1,0 +1,71 @@
+#### results
+== own: rust (deflate_part level 2, n=3), native (CompressionStream, n=3)
+row                                  rust median [min-max]                native median [min-max]              rust / native
+exportMs (whole export, wall)        1,730 [1,351-2,057]                  4,320 [4,308-4,615]                  0.40x (lower than native, non-overlapping)
+exportSteps encoded                  1,192 [840-1,487]                    3,883 [3,821-4,160]                  0.31x (lower than native, non-overlapping)
+exportSteps saved                    537 [510-568]                        454 [436-486]                        1.18x (native lower, non-overlapping)
+tiff_part jobs                       79 [79-79]                           79 [79-79]                           1.00x
+tiff_part nativeDeflate              0 [0-0]                              79 [79-79]                           0.00x
+tiff_part kernel (sum)               8,991.7 [5,962.2-11,313]             29,681 [29,464.4-32,038.5]           0.30x (lower than native, non-overlapping)
+tiff_part predict (sum)              111.2 [91.3-119.7]                   171.6 [147.3-233.3]                  0.65x (lower than native, non-overlapping)
+tiff_part deflate (sum)              8,634.4 [5,558.1-10,945.2]           29,296.3 [29,066.4-31,560.3]         0.29x (lower than native, non-overlapping)
+file bytes                           186,570,212 [186,570,212-186,570,212] 161,149,006 [161,149,006-161,149,006] 1.16x (native lower, non-overlapping)
+file MB                              177.9 [177.9-177.9]                  153.7 [153.7-153.7]                  1.16x (native lower, non-overlapping)
+strips                               79 [79-79]                           79 [79-79]                           1.00x
+openMs (reopen of that file, wall)   2,398 [2,358-2,605]                  2,118 [2,113-2,442]                  1.13x (spreads overlap: tie)
+runs: native_own_r1.json native exportMs=4615 fileBytes=161149006; native_own_r2.json native exportMs=4308 fileBytes=161149006; native_own_r3.json native exportMs=4320 fileBytes=161149006; rust_own_r1.json rust exportMs=1730 fileBytes=186570212; rust_own_r2.json rust exportMs=2057 fileBytes=186570212; rust_own_r3.json rust exportMs=1351 fileBytes=186570212
+
+== noise: rust (deflate_part level 2, n=3), native (CompressionStream, n=3)
+row                                  rust median [min-max]                native median [min-max]              rust / native
+exportMs (whole export, wall)        4,007 [3,903-5,373]                  3,495 [3,323-3,542]                  1.15x (native lower, non-overlapping)
+exportSteps encoded                  2,548 [2,532-4,002]                  2,000 [1,978-2,097]                  1.27x (native lower, non-overlapping)
+exportSteps saved                    1,371 [1,370-1,458]                  1,444 [1,344-1,494]                  0.95x (spreads overlap: tie)
+tiff_part jobs                       79 [79-79]                           79 [79-79]                           1.00x
+tiff_part nativeDeflate              0 [0-0]                              79 [79-79]                           0.00x
+tiff_part kernel (sum)               19,171.7 [19,046.4-30,765.6]         14,772.9 [14,249.3-15,431.1]         1.30x (native lower, non-overlapping)
+tiff_part predict (sum)              114.6 [90.5-131.7]                   223 [167.6-244.5]                    0.51x (lower than native, non-overlapping)
+tiff_part deflate (sum)              18,757.3 [18,629.7-30,398.5]         14,322.9 [13,788.2-14,928.9]         1.31x (native lower, non-overlapping)
+file bytes                           515,167,906 [515,167,906-515,167,906] 513,184,414 [513,184,414-513,184,414] 1.00x (native lower, non-overlapping)
+file MB                              491.3 [491.3-491.3]                  489.4 [489.4-489.4]                  1.00x (native lower, non-overlapping)
+strips                               79 [79-79]                           79 [79-79]                           1.00x
+openMs (reopen of that file, wall)   5,878 [5,636-5,934]                  6,034 [4,998-6,106]                  0.97x (spreads overlap: tie)
+runs: native_noise_r1.json native exportMs=3495 fileBytes=513184414; native_noise_r2.json native exportMs=3542 fileBytes=513184414; native_noise_r3.json native exportMs=3323 fileBytes=513184414; rust_noise_r1.json rust exportMs=5373 fileBytes=515167906; rust_noise_r2.json rust exportMs=4007 fileBytes=515167906; rust_noise_r3.json rust exportMs=3903 fileBytes=515167906
+
+#### results_l6
+== own: rust6 (deflate_part level 6, n=3), native (CompressionStream, n=3)
+row                                  rust6 median [min-max]               native median [min-max]              rust6 / native
+exportMs (whole export, wall)        9,638 [9,461-11,920]                 4,625 [4,356-4,652]                  2.08x (native lower, non-overlapping)
+exportSteps encoded                  9,230 [9,011-10,024]                 4,174 [3,898-4,193]                  2.21x (native lower, non-overlapping)
+exportSteps saved                    450 [407-1,895]                      457 [450-458]                        0.98x (spreads overlap: tie)
+tiff_part jobs                       79 [79-79]                           79 [79-79]                           1.00x
+tiff_part nativeDeflate              0 [0-0]                              79 [79-79]                           0.00x
+tiff_part kernel (sum)               71,685.7 [70,225.3-77,869.2]         32,014.9 [29,846.7-32,286.3]         2.24x (native lower, non-overlapping)
+tiff_part predict (sum)              89.1 [85.1-117.1]                    222.3 [201-226.4]                    0.40x (lower than native, non-overlapping)
+tiff_part deflate (sum)              71,378.7 [69,925.7-77,518.8]         31,578.1 [29,423.9-31,842.6]         2.26x (native lower, non-overlapping)
+file bytes                           162,704,682 [162,704,682-162,704,682] 161,149,006 [161,149,006-161,149,006] 1.01x (native lower, non-overlapping)
+file MB                              155.2 [155.2-155.2]                  153.7 [153.7-153.7]                  1.01x (native lower, non-overlapping)
+strips                               79 [79-79]                           79 [79-79]                           1.00x
+openMs (reopen of that file, wall)   2,095 [2,081-2,435]                  2,383 [2,336-2,515]                  0.88x (spreads overlap: tie)
+runs: native_own_r1.json native exportMs=4625 fileBytes=161149006; native_own_r2.json native exportMs=4652 fileBytes=161149006; native_own_r3.json native exportMs=4356 fileBytes=161149006; rust6_own_r1.json rust6 exportMs=9638 fileBytes=162704682; rust6_own_r2.json rust6 exportMs=9461 fileBytes=162704682; rust6_own_r3.json rust6 exportMs=11920 fileBytes=162704682
+
+== noise: rust6 (deflate_part level 6, n=3), native (CompressionStream, n=3)
+row                                  rust6 median [min-max]               native median [min-max]              rust6 / native
+exportMs (whole export, wall)        6,174 [5,257-6,200]                  3,293 [3,182-3,373]                  1.87x (native lower, non-overlapping)
+exportSteps encoded                  4,833 [3,837-4,900]                  1,955 [1,880-1,960]                  2.47x (native lower, non-overlapping)
+exportSteps saved                    1,341 [1,299-1,420]                  1,338 [1,302-1,413]                  1.00x (spreads overlap: tie)
+tiff_part jobs                       79 [79-79]                           79 [79-79]                           1.00x
+tiff_part nativeDeflate              0 [0-0]                              79 [79-79]                           0.00x
+tiff_part kernel (sum)               37,216 [29,600.8-37,851.2]           14,010.3 [13,397.4-14,044.7]         2.66x (native lower, non-overlapping)
+tiff_part predict (sum)              82.5 [45.5-103.6]                    217.8 [179.5-221.4]                  0.38x (lower than native, non-overlapping)
+tiff_part deflate (sum)              36,863.1 [29,200.7-37,537.3]         13,524.3 [12,889.8-13,539.6]         2.73x (native lower, non-overlapping)
+file bytes                           515,191,125 [515,191,125-515,191,125] 513,184,414 [513,184,414-513,184,414] 1.00x (native lower, non-overlapping)
+file MB                              491.3 [491.3-491.3]                  489.4 [489.4-489.4]                  1.00x (native lower, non-overlapping)
+strips                               79 [79-79]                           79 [79-79]                           1.00x
+openMs (reopen of that file, wall)   5,571 [4,928-7,719]                  5,644 [5,461-5,670]                  0.99x (spreads overlap: tie)
+runs: native_noise_r1.json native exportMs=3293 fileBytes=513184414; native_noise_r2.json native exportMs=3373 fileBytes=513184414; native_noise_r3.json native exportMs=3182 fileBytes=513184414; rust6_noise_r1.json rust6 exportMs=6200 fileBytes=515191125; rust6_noise_r2.json rust6 exportMs=5257 fileBytes=515191125; rust6_noise_r3.json rust6 exportMs=6174 fileBytes=515191125
+
+checks:
+  results / own: every run ok, picMatch true, rowsOff 0: True; one decoded-strip SHA-256 over all runs and arms: True (e3f71e8099fc41ef); one reopened picture hash: True; nativeDeflate on every strip of native runs and on none of the others: True
+  results / noise: every run ok, picMatch true, rowsOff 0: True; one decoded-strip SHA-256 over all runs and arms: True (15dd2f39ca0d17ed); one reopened picture hash: True; nativeDeflate on every strip of native runs and on none of the others: True
+  results_l6 / own: every run ok, picMatch true, rowsOff 0: True; one decoded-strip SHA-256 over all runs and arms: True (e3f71e8099fc41ef); one reopened picture hash: True; nativeDeflate on every strip of native runs and on none of the others: True
+  results_l6 / noise: every run ok, picMatch true, rowsOff 0: True; one decoded-strip SHA-256 over all runs and arms: True (15dd2f39ca0d17ed); one reopened picture hash: True; nativeDeflate on every strip of native runs and on none of the others: True

@@ -1137,8 +1137,8 @@ function defaultLayerFor(name, args, props) {
  * Every layer reference to an id, the way the command core resolves it (`findLayer`): an id, a
  * name, a unique part of a name, "active" or nothing for the active layer. `props` is the tool's
  * schema properties: a field whose schema has an enum is never a layer reference (select_range's
- * source "depth" / "luma" / "color"), nor is key_screen's source "picture" (its default, the
- * visible picture), so those stay as given.
+ * source "depth" / "luma" / "color"), nor is key_screen's or split_layers' source "picture" (their
+ * default, the visible picture), so those stay as given.
  */
 function resolveLayer(args, layers, name, props = {}) {
     const out = { ...args };
@@ -1148,7 +1148,7 @@ function resolveLayer(args, layers, name, props = {}) {
         if (raw === undefined || raw === null || raw === "") continue;
         const schema = (props && props[field]) || {};
         if (Array.isArray(schema.enum)) continue;
-        if (name === "key_screen" && field === "source" && raw === "picture") continue;
+        if ((name === "key_screen" || name === "split_layers") && field === "source" && raw === "picture") continue;
         const found = findLayer(layers, raw);
         if (found.error) return { error: found.error };
         out[field] = found.id;

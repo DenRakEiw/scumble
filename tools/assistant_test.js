@@ -1638,6 +1638,10 @@ async function main() {
                 const kGone = _resolveLayer({ source: "Nothing" }, withPic, "key_screen", kProps);
                 const sDepth = _resolveLayer({ source: "depth", lo: 0, hi: 0.5 }, [{ id: "Ld", name: "Depth", active: true }], "select_range", rProps);
                 const mPic = _resolveLayer({ op: "from_layer", source: "picture" }, withPic, "set_mask", mProps);
+                // split_layers' source "picture" (its default) is the visible picture, never the layer "Background picture"
+                const sProps = toTool({ name: "split_layers", params: { source: { type: "string", description: "\"picture\" (the default) or a layer", default: "picture" } } }).inputSchema.properties;
+                const sPic = _resolveLayer({ source: "picture" }, withPic, "split_layers", sProps);
+                const sLayer = _resolveLayer({ source: "Subject" }, withPic, "split_layers", sProps);
                 check("key_screen_source_picture_and_enum_fields_are_no_layer_references",
                     !kPic.error && kPic.args.source === "picture" && kPic.args.hint === "none"
                     && !kNone.error && kNone.args.source === "picture"
@@ -1645,8 +1649,10 @@ async function main() {
                     && !kPart.error && kPart.args.source === "Lbg"
                     && !!kGone.error && /no layer "Nothing"/.test(kGone.error)
                     && !sDepth.error && sDepth.args.source === "depth"
-                    && !mPic.error && mPic.args.source === "Lbg",
-                    JSON.stringify({ kPic, kNone, kLayer, kPart, kGone, sDepth, mPic }));
+                    && !mPic.error && mPic.args.source === "Lbg"
+                    && !sPic.error && sPic.args.source === "picture"
+                    && !sLayer.error && sLayer.args.source === "Lsub",
+                    JSON.stringify({ kPic, kNone, kLayer, kPart, kGone, sDepth, mPic, sPic, sLayer }));
                 // ownership: key_screen's answer names the Key layer (a layer summary) and the grey Fill layer (an id)
                 const own = _idsNamedBy("key_screen", { layer: { id: "Lkey", name: "Key" }, grey: "Lgrey", hidden: "Lsub", route: "comfyui" });
                 const ownNoGrey = _idsNamedBy("key_screen", { layer: { id: "Lkey", name: "Key" }, grey: null, hidden: "Lsub" });

@@ -366,6 +366,16 @@ async function main() {
     assert.strictEqual(view.static, true);
     assert.strictEqual(view.key, `depth:${map65k.dataVersion}`);
     assert.strictEqual(view.data.byteLength, 65536 * 2);
+    // one view per map.data, so uploadSampler's static cache (keyed by the data object) hits on the next pass
+    // (filters/depth-map-texture-reuploaded-every-pass); a map with new data gets a view of its own
+    const viewAgain = rg8View(map65k);
+    assert.strictEqual(viewAgain.data, view.data, "rg8View hands out the same data view for the same map.data");
+    assert.notStrictEqual(viewAgain, view, "each call still returns its own sampler value");
+    const map65kCopy = makeMap("depth", map65k.w, map65k.h, new Uint16Array(map65k.data), map65k.xf);
+    const viewCopy = rg8View(map65kCopy);
+    assert.notStrictEqual(viewCopy.data, view.data, "a map with other data gets another view");
+    assert.deepStrictEqual(Array.from(viewCopy.data.subarray(0, 64)), Array.from(view.data.subarray(0, 64)), "the views read the same bytes");
+    assert.ok(view.data.some((b) => b !== 0), "the compared bytes are not all zero");
 
     const json = mapToJSON(testMap);
     assert.strictEqual(json.w, mapW);

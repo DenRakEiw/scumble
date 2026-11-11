@@ -35,6 +35,10 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 
 ## Open
 
+### An ORA saved over by another program while Scumble still opens it fails with a decoder error (found 2026-11-11, read; K20c's review)
+
+Since K20c an ORA stays the file while it opens: `readOraBlob` reads the directory, each layer and the base upload as slices of the `File` (as D0's PSD route does), where it used to read the whole file into memory first. A file dropped from Explorer is a snapshot on disk: if another program saves over it during the seconds a 15k ORA takes to open, Chromium refuses the later reads (`NotReadableError`) and the open ends with a decode or upload error instead of a plain message. Opening again works. Suggested when it is next touched: map a `NotReadableError` from the slices to "<name> changed on disk while it was opened; open it again".
+
 ### A *Split into layers* run is lost if its window reloads or crashes during the run (found 2026-11-10, read)
 
 `providers/index.js` keeps a paid picture for a page that went away only when the answer has `out.bytes` (`main/MAIN-2`); a split answers with several layers and no `bytes`, so the charged answer is dropped and the new page never asks for it. *View > Reload* still asks first, since the run counts in `runningCount`. Not worth holding up the feature, but a split can cost many pictures: keep the layers the same way when this is reworked.
