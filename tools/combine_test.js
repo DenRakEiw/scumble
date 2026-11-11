@@ -558,6 +558,138 @@ console.log("  [ok] combineRows updates pixels and clears zero alpha");
 }
 
 // ---------------------------------------------------------------------------
+// 12b. tiles/T4 (docs/research/review_full_2026-11-07): a combine that keeps every alpha (add or subtract of SEL_NONE,
+// intersect with SEL_FULL) leaves a tile that is already as the combine writes it alone: the same object, version and
+// `frozen` count, still shared with a snapshot, no sel_combine call. Every tile's whole buffer (padding beyond the image
+// included), the tile set and bounds() equal the per-pixel model of the combine as it was (combineAlpha, the colour
+// where alpha is above 0, 0 elsewhere, padding kept, a tile with no alpha dropped) on both routes, for every mode under
+// SEL_NONE, SEL_FULL and a mixed source, in red and in white, over tiles that may be skipped and tiles one pixel off
+// (a wrong colour, colour at alpha 0, the last pixel of a partial tile, an existing empty tile).
+// ---------------------------------------------------------------------------
+{
+    const K = await import("../renderer/editor/px/kernels.js");
+    const W = 601, H = 757;   // 3 x 3 tiles: the last column 89 px wide, the last row 245 px high
+    const cols = 3, rows = 3;
+    const RED = 0xFF0000FF;   // a word (little-endian): R 255, alpha 255
+    let seed = 0x7a4;
+    const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    const soft = () => (rnd() < 0.3 ? 0 : (rnd() < 0.2 ? 255 : 1 + Math.floor(rnd() * 254)));
+    // the premise: under these modes and sources the combined alpha is the tile's own, every level
+    for (let d = 0; d < 256; d++) {
+        assert.equal(combineAlpha(d, 0, "add"), d, `add of 0 keeps ${d}`);
+        assert.equal(combineAlpha(d, 0, "subtract"), d, `subtract of 0 keeps ${d}`);
+        assert.equal(combineAlpha(d, 255, "intersect"), d, `intersect with 255 keeps ${d}`);
+    }
+    // tile contents, as words; bw x bh is the tile's part inside the image
+    const canon = (w32, bw, bh, alphaOf) => {
+        for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+            const a = alphaOf(x, y);
+            w32[y * 256 + x] = a ? (((a << 24) | 0x0000FF) >>> 0) : 0;
+        }
+    };
+    const LAYOUT = {   // key "tx,ty" -> [how it is made, skipped under a keeping combine in red]
+        "0,0": [(w, bw, bh) => canon(w, bw, bh, () => 255), true],                                  // all 255
+        "1,0": [(w, bw, bh) => canon(w, bw, bh, () => soft()), true],                               // soft, canonical
+        "2,0": [(w, bw, bh) => { canon(w, bw, bh, () => soft()); for (let y = 0; y < 256; y++) for (let x = bw; x < 256; x++) w[y * 256 + x] = 0x00345678; }, true],   // padding not canonical (colour at alpha 0, as bounds() reads alpha there)
+        "0,1": [(w, bw, bh) => { canon(w, bw, bh, () => 255); w[100 * 256 + 200] = 0xC800FF00; }, false],   // one green pixel at 200
+        "1,1": [(w, bw, bh) => { canon(w, bw, bh, () => soft()); w[7 * 256 + 30] = 0x000000FF; }, false],   // red at alpha 0
+        "2,1": [(w, bw, bh) => { canon(w, bw, bh, () => 255); w[(bh - 1) * 256 + bw - 1] = 0xFF00FF00; }, false],   // the last pixel off
+        "0,2": [() => {}, false],                                                                    // an existing empty tile
+        "1,2": [(w, bw, bh) => canon(w, bw, bh, (x, y) => (y === bh - 1 && x === bw - 1 ? 9 : 0)), true],   // only its last pixel
+        // (2, 2) missing
+    };
+    const make = () => {
+        const mk = new TileMaskPixels(W, H);
+        for (const [key, [fill]] of Object.entries(LAYOUT)) {
+            const [tx, ty] = key.split(",").map(Number);
+            const t = mk.writable(tx, ty, true, true);
+            t.data.fill(0);
+            fill(new Uint32Array(t.data.buffer, t.data.byteOffset, 65536), Math.min(256, W - tx * 256), Math.min(256, H - ty * 256));
+        }
+        return mk;
+    };
+    const allTiles = [];
+    for (let ty = 0; ty < rows; ty++) for (let tx = 0; tx < cols; tx++) allTiles.push({ tx, ty });
+    const SOURCES = [   // name, the source, its alpha in tile (tx, ty), its view kind there
+        ["SEL_NONE", () => tilesSource([], [0, 0], [0, 0, W, H]), () => 0],
+        ["SEL_FULL", () => tilesSource(allTiles.map((t) => ({ ...t, full: true })), [0, 0], [0, 0, W, H]), () => 255],
+        ["mixed", () => tilesSource(allTiles.map((t) => ((t.tx + t.ty) % 2 ? { ...t, full: true } : { ...t, empty: true })), [0, 0], [0, 0, W, H]), (tx, ty) => ((tx + ty) % 2 ? 255 : 0)],
+    ];
+    assert.equal(SOURCES[0][1]().view(0, 0, 256, 256).kind, K.SEL_NONE, "the SEL_NONE source answers SEL_NONE");
+    assert.equal(SOURCES[1][1]().view(256, 512, 256, 245).kind, K.SEL_FULL, "the SEL_FULL source answers SEL_FULL");
+    const keeps = (mode, s) => (s === 0 && (mode === "add" || mode === "subtract")) || (s === 255 && mode === "intersect");
+    let checks = 0, skipped = 0;
+    const kernelCalls = { js: 0, rust: 0 };
+    for (const route of ["js", "rust"]) {
+        K.setKernels("rust");
+        K.setRoute("selCombine", route);
+        for (const [srcName, src, alphaOf] of SOURCES) for (const mode of SEL_MODES) for (const color of [[255, 0, 0], [255, 255, 255]]) {
+            const what = `T4 ${route}: ${mode} of ${srcName} in ${color}`;
+            const mk = make();
+            const shot = mk.clone();   // the undo snapshot: every tile now shared (frozen)
+            const before = new Map(), beforeBytes = new Map();
+            for (const key of mk.tileKeys()) { const t = mk.tileAt(key & 0xFFFF, key >>> 16); before.set(key, { t, version: t.version, frozen: t.frozen }); beforeBytes.set(key, t.data.slice()); }
+            assert.equal(before.size, 8, `${what}: 8 tiles made`);
+            K.pxCalls(true);
+            mk.combine(src(), mode, color);
+            const calls = K.pxCalls(true).sel_combine || 0;
+            // the model, tile by tile over the whole buffer
+            const want = new Map();
+            for (const { tx, ty } of allTiles) {
+                const key = (ty << 16) | tx, bw = Math.min(256, W - tx * 256), bh = Math.min(256, H - ty * 256);
+                const s = alphaOf(tx, ty), had = beforeBytes.get(key);
+                if (!had && (mode === "subtract" || mode === "intersect" || s === 0)) continue;
+                const d = had ? had.slice() : new Uint8ClampedArray(262144);
+                for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+                    const o = (y * 256 + x) * 4, a = combineAlpha(d[o + 3], s, mode);
+                    if (a) { d[o] = color[0]; d[o + 1] = color[1]; d[o + 2] = color[2]; d[o + 3] = a; } else { d[o] = 0; d[o + 1] = 0; d[o + 2] = 0; d[o + 3] = 0; }
+                }
+                let any = false;
+                for (let i = 3; i < d.length && !any; i += 4) any = d[i] !== 0;
+                if (any) want.set(key, d);
+            }
+            assert.deepEqual(mk.tileKeys().sort((a, b) => a - b), Array.from(want.keys()).sort((a, b) => a - b), `${what}: the tiles kept`);
+            let wx0 = W, wy0 = H, wx1 = -1, wy1 = -1;
+            for (const [key, d] of want) {
+                const tx = key & 0xFFFF, ty = key >>> 16, t = mk.tileAt(tx, ty);
+                assert.ok(d.some((v, i) => (i & 3) === 3 && v), `${what}: tile ${tx},${ty} of the model holds pixels`);
+                for (let i = 0; i < 262144; i++) if (t.data[i] !== d[i]) assert.fail(`${what}: tile ${tx},${ty} byte ${i} (${(i >> 2) & 255}, ${i >> 10}) is ${t.data[i]}, the model has ${d[i]}`);
+                for (let y = 0; y < Math.min(256, H - ty * 256); y++) for (let x = 0; x < Math.min(256, W - tx * 256); x++) {
+                    if (!d[(y * 256 + x) * 4 + 3]) continue;
+                    const X = tx * 256 + x, Y = ty * 256 + y;
+                    if (X < wx0) wx0 = X; if (Y < wy0) wy0 = Y; if (X >= wx1) wx1 = X + 1; if (Y >= wy1) wy1 = Y + 1;
+                }
+            }
+            assert.deepEqual(mk.bounds(), wx1 < 0 ? null : [wx0, wy0, wx1, wy1], `${what}: bounds`);
+            // the snapshot holds the bytes it had
+            for (const [key, bytes] of beforeBytes) {
+                const st = shot.tileAt(key & 0xFFFF, key >>> 16);
+                for (let i = 0; i < 262144; i++) if (st.data[i] !== bytes[i]) assert.fail(`${what}: the snapshot's tile ${key} changed at byte ${i}`);
+            }
+            // which tiles were left alone: exactly the canonical ones under a keeping combine in red
+            let expectKernel = 0;
+            for (const [key, b] of before) {
+                const tx = key & 0xFFFF, ty = key >>> 16, t = mk.tileAt(tx, ty);
+                const s = alphaOf(tx, ty), skip = keeps(mode, s) && color[1] === 0 && LAYOUT[`${tx},${ty}`][1];
+                const alone = t === b.t && t.version === b.version && t.frozen === b.frozen && shot.tileAt(tx, ty) === t;
+                assert.equal(alone, skip, `${what}: tile ${tx},${ty} ${skip ? "rewritten, though the combine keeps it" : "left alone, though the combine changes it"}`);
+                if (skip) skipped++;
+                // the kernel runs for every other tile but the fill's (replace or add of SEL_FULL)
+                else if (!(s === 255 && (mode === "replace" || mode === "add"))) expectKernel++;
+            }
+            if (route === "rust") assert.equal(calls, expectKernel, `${what}: sel_combine calls`);
+            else assert.equal(calls, 0, `${what}: the js route called sel_combine`);
+            kernelCalls[route] += calls;
+            checks++;
+        }
+    }
+    K.setRoute("selCombine", null);
+    K.setKernels("js");
+    assert.ok(skipped > 0 && kernelCalls.rust > 0, `T4: ${skipped} tiles left alone, ${kernelCalls.rust} sel_combine calls`);
+    console.log(`  [ok] T4: a combine that keeps every alpha leaves canonical tiles alone (${skipped} times) and gives the model's bytes, tiles and bounds on both routes (${checks} combines, sel_combine ${kernelCalls.rust} calls on rust)`);
+}
+
+// ---------------------------------------------------------------------------
 // 13. K11: TileMaskPixels.invert on both routes of maskInvert and deferred writable copy
 // ---------------------------------------------------------------------------
 {

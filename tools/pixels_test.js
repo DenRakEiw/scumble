@@ -2452,6 +2452,77 @@ function pixelsCases(P, T) {
             return { tiles: B.tiles ? mLeft.tileCount : null };
         })],
 
+        // tiles/T4: a combine that keeps every alpha (add or subtract of a source with nothing in a tile, intersect with
+        // one that covers it all) leaves a tile already as the combine writes it alone on the tile backend (the same
+        // object, version and frozen count, still shared with the snapshot); the bytes stay those of the canvas backend,
+        // which combines every pixel of the box (compared byte for byte by `both`), and those of the rule itself:
+        // combineAlpha, red where alpha is above 0. Tiles that may be skipped: all 255, soft steps, a partial edge tile;
+        // tiles that may not: a green patch, a half-green one (a wrong colour on a selection), an existing empty tile
+        // (tile run only). Sources: no tile, every tile full, and a mix of full and empty tiles; all four modes.
+        ["mask_combine_keeps_unchanged_tiles", both(async ({ B, Mask, snap, rec }) => {
+            const { combineAlpha, tilesSource } = await import("./editor/inpaint_raster.js");
+            const W = 601, H = 501;   // 3 x 2 tiles, the last column 89 px wide, the last row 245 px high
+            const make = () => {
+                const m = Mask.empty(W, H);
+                m.fill([0, 0, 256, 256], "#ff0000");                     // (0, 0): all 255
+                m.drawInto([256, 0, 512, 256], (ctx) => {                // (1, 0): soft steps, red
+                    for (let k = 0; k < 6; k++) { ctx.fillStyle = `rgba(255,0,0,${(k + 1) / 7})`; ctx.fillRect(260 + k * 40, 10, 40, 200); }
+                });
+                m.fill([520, 20, 601, 200], "#ff0000");                  // (2, 0): the partial edge tile
+                m.fill([10, 300, 200, 450], "#ff0000");                  // (0, 1): red with a green patch
+                m.fill([50, 320, 60, 330], "#00ff00");
+                m.drawInto([256, 256, 512, 501], (ctx) => {              // (1, 1): half green at alpha 128
+                    ctx.fillStyle = "rgba(0,255,0,0.5)"; ctx.fillRect(300, 300, 100, 100);
+                });
+                if (B.tiles) m.writable(2, 1, true, true).data.fill(0); // (2, 1): an existing empty tile, tile run only
+                return m;
+            };
+            const all = [];
+            for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 3; tx++) all.push({ tx, ty });
+            const SOURCES = [
+                ["no tile", () => tilesSource([], [0, 0], [0, 0, W, H]), () => 0],
+                ["every tile full", () => tilesSource(all.map((t) => ({ ...t, full: true })), [0, 0], [0, 0, W, H]), () => 255],
+                ["full and empty tiles", () => tilesSource(all.map((t) => ((t.tx + t.ty) % 2 ? { ...t, empty: true } : { ...t, full: true })), [0, 0], [0, 0, W, H]), (tx, ty) => ((tx + ty) % 2 ? 0 : 255)],
+            ];
+            const SKIPPABLE = new Set([0, 1, 2]);   // keys (ty << 16) | tx of the canonical tiles
+            let alone = 0;
+            for (const [srcName, src, alphaOf] of SOURCES) for (const mode of ["replace", "add", "subtract", "intersect"]) {
+                const what = `${mode} of ${srcName}`;
+                const m = make();
+                const shot = m.clone();
+                const before = m.readRect(0, 0, W, H).data.slice();
+                const tilesBefore = new Map();
+                if (B.tiles) for (const key of m.tileKeys()) { const t = m.tileAt(key & 0xFFFF, key >>> 16); tilesBefore.set(key, { t, version: t.version, frozen: t.frozen }); }
+                if (B.tiles && tilesBefore.size !== 6) throw new Error(`${what}: ${tilesBefore.size} tiles made, expected 6`);
+                m.combine(src(), mode);
+                const after = m.readRect(0, 0, W, H).data;
+                snap(m, `keeps: ${what}`);
+                rec(`keeps: ${what}: bounds`, m.bounds());
+                let n = 0;
+                for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                    const o = (y * W + x) * 4, a = combineAlpha(before[o + 3], alphaOf(x >> 8, y >> 8), mode);
+                    const want = a ? [255, 0, 0, a] : [0, 0, 0, 0];
+                    for (let c = 0; c < 4; c++) if (after[o + c] !== want[c]) throw new Error(`${what}: (${x}, ${y}) is ${Array.from(after.slice(o, o + 4))}, the rule has ${want}`);
+                    if (a) n++;
+                }
+                rec(`keeps: ${what}: covered`, n);
+                const back = shot.readRect(0, 0, W, H).data;
+                for (let i = 0; i < back.length; i++) if (back[i] !== before[i]) throw new Error(`${what}: the snapshot changed at byte ${i}`);
+                if (!B.tiles) continue;
+                for (const [key, b] of tilesBefore) {
+                    const tx = key & 0xFFFF, ty = key >>> 16, t = m.tileAt(tx, ty), s = alphaOf(tx, ty);
+                    const keeps = (s === 0 && (mode === "add" || mode === "subtract")) || (s === 255 && mode === "intersect");
+                    const skip = keeps && SKIPPABLE.has(key);
+                    const left = t === b.t && t.version === b.version && t.frozen === b.frozen && shot.tileAt(tx, ty) === t;
+                    if (left !== skip) throw new Error(`${what}: tile ${tx},${ty} ${skip ? "rewritten, though the combine keeps it" : "left alone, though the combine changes it"}`);
+                    if (left) alone++;
+                }
+            }
+            // add and subtract of no tile: 3 + 3; intersect with every tile full: 3; the mix: intersect 2, add 1, subtract 1
+            if (B.tiles && alone !== 13) throw new Error(`${alone} tiles left alone, expected 13`);
+            return { alone: B.tiles ? alone : null };
+        })],
+
         ["tiles_blit_mixed_backends", both(async ({ B, Layer, mk, paint, pair, snap }) => {
             const Other = B.tiles ? P.LayerPixels : T.TileLayerPixels;   // the other backend
             const c = mk(400, 300); paint(c.getContext("2d"), 400, 300);
