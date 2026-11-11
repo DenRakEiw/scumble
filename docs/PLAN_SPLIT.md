@@ -278,3 +278,9 @@ maps depthfx grading effects limit film composite`) PASS on both backends; `dept
 snapshots, undo / redo, the history step), `inpaint_ed_persist.js` `PersistPart` (E79, `getValue`, `setValue`,
 `serializeForPrompt`); 1,477 lines. 26 imports dropped; the file is 8,000 lines. `split_check.js --base d17dfdc4`
 PASS. Gates `s8-history` (`lint types nodecopy document docux quit editor metadata`) PASS on both backends.
+
+**S9 (2026-11-11).** Export, loading and the strokes as parts, base `3a59e49d`: `inpaint_ed_export.js` `ExportPart`
+(E57-E58), `inpaint_ed_open.js` `OpenPart` (E59 with the `huge` accessor), `inpaint_ed_strokes.js` `StrokesPart` (E22,
+the stroke core the plan's table left out, and E40, the stroke buffers); 1,991 lines. All three read `InpaintEditor`'s
+statics and take the bind form. 52 imports dropped; the file is 6,008 lines. `split_check.js --base d17dfdc4` PASS.
+Gates `s9-export` (`lint types nodecopy export layered tiff pixels brush editor`) PASS on both backends.
