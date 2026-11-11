@@ -250,3 +250,9 @@ as new. 22 imports nothing reads any more were dropped; the file is 20,337 lines
 nodecopy editor relight limit groups clip`) PASS on canvas; on tiles `editor`'s
 `live_stroke_reaches_the_screen_before_the_release` (a listed flake, `docs/TESTING.md`) went red once and PASS on the
 rerun `s3-rerun-tiles`.
+
+**S4 (2026-11-11).** The tools as parts, base `4e543743`: `inpaint_ed_tips.js` `TipsPart` (E29-E30, E37),
+`inpaint_ed_heal.js` `HealPart` (E31-E35), `inpaint_ed_liquify.js` `LiquifyPart` (E36), `inpaint_ed_shape.js`
+`ShapePart` (E38-E39); 2,394 lines. Heal, liquify and shape read `InpaintEditor`'s statics and take the bind form. 29
+imports dropped; the file is 17,884 lines. `split_check.js --base d17dfdc4` PASS. Gates `s4-tools` (`lint types
+nodecopy brush editor pixels`) PASS on both backends.
