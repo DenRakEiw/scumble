@@ -273,3 +273,8 @@ E15-E20, and E44 extend canvas, which the plan's table left out), `inpaint_ed_po
 dropped; the file is 9,486 lines. `split_check.js --base d17dfdc4` PASS. Gates `s7-filters` (`lint types nodecopy
 maps depthfx grading effects limit film composite`) PASS on both backends; `depth` has no gate script
 (`docs/TESTING.md`), so `node tools/depth_test.js` and `depth_doc_test.js` ran in its place, PASS.
+
+**S8 (2026-11-11).** History and persistence as parts, base `cb4b3b9a`: `inpaint_ed_history.js` `HistoryPart` (E45,
+snapshots, undo / redo, the history step), `inpaint_ed_persist.js` `PersistPart` (E79, `getValue`, `setValue`,
+`serializeForPrompt`); 1,477 lines. 26 imports dropped; the file is 8,000 lines. `split_check.js --base d17dfdc4`
+PASS. Gates `s8-history` (`lint types nodecopy document docux quit editor metadata`) PASS on both backends.
