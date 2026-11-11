@@ -34,7 +34,7 @@ const escope = require("eslint-scope");
 const REPO = path.resolve(__dirname, "..");
 
 function args(argv) {
-    const o = { base: null, old: null, root: REPO, cls: null, object: null, files: [] };
+    const o = { base: null, old: null, root: REPO, cls: null, object: null, backImports: false, files: [] };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === "--base") o.base = argv[++i];
@@ -42,6 +42,7 @@ function args(argv) {
         else if (a === "--root") o.root = path.resolve(argv[++i]);
         else if (a === "--class") o.cls = argv[++i];
         else if (a === "--object") o.object = argv[++i];
+        else if (a === "--back-imports") o.backImports = true;
         else if (a.startsWith("--")) throw new Error(`unknown option ${a}`);
         else o.files.push(a.replace(/\\/g, "/"));
     }
@@ -146,6 +147,8 @@ function unitsOf(p, ctx, isMain) {
     const oldClasses = ctx.oldNames, target = ctx.target;
     const out = { units: [], extra: [], parts: [], bindFns: [], lets: [], installs: [], bindCalls: [], spreads: null, imports: [], exports: new Set(), used: new Set() };
     let partName = null;
+    // a `let X = null;` is the bind form only where a bind function of the file sets X (else it is a moved let)
+    const bound = new Set(p.ast.body.map((s) => (s.type === "ExportNamedDeclaration" ? s.declaration : s)).filter((d) => d && isBindFn(d)).map((d) => d.body.body[0].expression.left.name));
     const add = (key, node, floor, strip, cls, prop) => {
         const u = unitText(p, node, floor, strip, prop);
         u.used.forEach((c) => out.used.add(c));
@@ -185,7 +188,7 @@ function unitsOf(p, ctx, isMain) {
         if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") { if (strip) out.exports.add(d.id.name); }
         if (d.type === "VariableDeclaration" && strip) d.declarations.forEach((v) => idNames(v.id).forEach((n) => out.exports.add(n)));
 
-        if (oldClasses && isBindLet(d) && oldClasses.has(d.declarations[0].id.name) && !isMain) { out.lets.push(d.declarations[0].id.name); continue; }
+        if (oldClasses && isBindLet(d) && oldClasses.has(d.declarations[0].id.name) && bound.has(d.declarations[0].id.name) && !isMain) { out.lets.push(d.declarations[0].id.name); continue; }
         if (oldClasses && isBindFn(d) && !isMain) { out.bindFns.push({ name: d.id.name, sets: d.body.body[0].expression.left.name }); continue; }
         if (oldClasses && isMain && callName(s) === "installParts") {
             const [t, list] = s.expression.arguments;
@@ -400,9 +403,24 @@ function run(o) {
     });
     for (const c of mainU.bindCalls) if (!got.some((g) => g.bindFns.some((b) => b.name === c.fn))) problems.push(`${main}: calls ${c.fn}, which no new file declares as a bind function`);
 
-    // no new file imports the main file
+    // no new file imports the main file; with --back-imports (shell.js: its sections call each other) a new file may,
+    // when it reads what it imports from the file or the family only inside functions (it evaluates before the file
+    // does, in any order) and writes no import (an import is read-only)
+    const familyFiles = new Set([main, ...news, ...family(o.root, main)]);
     parsed.slice(1).forEach((p, i) => {
-        for (const im of got[i + 1].imports) if (resolveImport(p.file, im.source) === main) problems.push(`${p.file}: imports ${main} (a part or leaf never does)`);
+        const back = got[i + 1].imports.filter((im) => resolveImport(p.file, im.source) === main);
+        if (back.length && !o.backImports) { problems.push(`${p.file}: imports ${main} (a part or leaf never does)`); return; }
+        for (const im of back) im.names.forEach((n) => { if (!mainU.exports.has(n)) problems.push(`${p.file}: imports ${n} from ${main}, which does not export it`); });
+        if (!o.backImports) return;
+        const late = new Set(got[i + 1].imports.filter((im) => familyFiles.has(resolveImport(p.file, im.source))).flatMap((im) => im.locals));
+        for (const sc of p.sm.scopes) {
+            for (const r of sc.references) {
+                const v = r.resolved;
+                if (!v || !v.defs.length || v.defs[0].type !== "ImportBinding") continue;
+                if (r.isWrite()) problems.push(`${p.file}: writes the import ${v.name} (an import is read-only)`);
+                if (late.has(v.name) && r.from.variableScope === p.fileScope) problems.push(`${p.file}: reads ${v.name} (from the family) at its top level, before ${main} has run`);
+            }
+        }
     });
 
     // exports kept

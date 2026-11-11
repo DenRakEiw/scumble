@@ -161,6 +161,27 @@ try {
     check("... and on an export gone from module.exports", fails(c3, /no longer exports _n/), c3.problems.join(" | "));
     const c4 = cjs(cjsMain, cjsLeaf.replace('"use strict";\n', '"use strict";\nconst rec = require("./rec");\n'));
     check("... and on a leaf that requires the long file", fails(c4, /m\/rec_dir\.js: imports m\/rec\.js/), c4.problems.join(" | "));
+
+    // --back-imports (shell.js): a section may import the file, read it only inside functions, write no import
+    const shOld = `import { y } from "./dep.js";\nconst ui = { a: 1 };\nlet seq = null;\nfunction open() { return ui.a + y; }\nfunction show() { return open(); }\nshow();\nexport { open, show, ui };\n`;
+    const shPath = path.join(dir, "sh_old.js");
+    fs.writeFileSync(shPath, shOld);
+    const sh = (main, leaf, back = true) => {
+        fs.mkdirSync(path.join(dir, "s"), { recursive: true });
+        fs.writeFileSync(path.join(dir, "s/sh.js"), main);
+        fs.writeFileSync(path.join(dir, "s/sh_open.js"), leaf);
+        return run({ old: shPath, root: dir, cls: null, object: null, backImports: back, files: ["s/sh.js", "s/sh_open.js"] });
+    };
+    const shMain = `import { y } from "./dep.js";\nimport { open, seq } from "./sh_open.js";\nconst ui = { a: 1 };\nfunction show() { return open(); }\nshow();\nexport { open, show, ui };\n`;
+    const shLeaf = `import { y } from "./dep.js";\nimport { ui } from "./sh.js";\n\nlet seq = null;\nfunction open() { return ui.a + y; }\n\nexport { open, seq };\n`;
+    const b1 = sh(shMain, shLeaf);
+    check("--back-imports: a section that reads the file inside a function passes (and a moved let = null is no bind form)", !b1.problems.length, b1.problems.join("; "));
+    const b2 = sh(shMain, shLeaf, false);
+    check("... without the flag the import of the file fails", fails(b2, /imports s\/sh\.js \(a part or leaf never does\)/), b2.problems.join(" | "));
+    const b3 = sh(shMain, shLeaf.replace("let seq = null;", "let seq = ui.a;"));
+    check("... a read of the file at the section's top level fails", fails(b3, /reads ui \(from the family\) at its top level/), b3.problems.join(" | "));
+    const b4 = sh(shMain, shLeaf.replace("return ui.a + y;", "y = 2; return ui.a + y;"));
+    check("... a write to an import fails", fails(b4, /writes the import y/), b4.problems.join(" | "));
 } finally {
     fs.rmSync(dir, { recursive: true, force: true });
 }
