@@ -548,7 +548,8 @@ function undoStep(call, facts = {}) {
     const args = (call && call.args) || {};
     if (READS.has(name)) return null;
     // duplicate_layer, frequency_separation and dodge_burn_layer push their own "layers" step (a second was an empty one)
-    if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "generate", "glb_place"].includes(name)) return "layers";
+    // glb_place pushes its own "layers" step for the object and its depth layer (a second one would be an empty step)
+    if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "generate"].includes(name)) return "layers";
     if (name === "film_apply_look") return addsLayer(facts) ? "layers" : null;
     // the selection's upscale adds a result layer as generate does; the whole picture's pushes its own `canvas` step
     if (name === "upscale") return args.scope === "document" ? null : "layers";
