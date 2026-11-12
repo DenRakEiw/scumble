@@ -37,7 +37,10 @@ export function activate(scumble) {
     const boxesOf = (doc) => { const d = scumble.documents.data(doc).get(); return Array.isArray(d.boxes) ? d.boxes : []; };
     const write = (doc, boxes, label) => scumble.documents.data(doc).set({ version: 1, boxes }, { undo: label });
 
-    const shownReferences = (doc) => doc.layers().filter((l) => l.role === "reference" && l.visible);
+    // the references a run sends, in the order of their labels (@img1 first: the top of the list), not the stack's
+    // bottom-first order; a shown reference without pixels has no label and is not sent
+    const labelNo = (l) => Number(String(l.label).slice(3));
+    const shownReferences = (doc) => doc.layers().filter((l) => l.role === "reference" && l.visible && l.label).sort((a, b) => labelNo(a) - labelNo(b));
     /** A reference layer by id, name, a part of the name or "active"; refuses a layer that is not a reference. */
     function referenceOf(doc, key) {
         const l = doc.layer(key);
@@ -158,8 +161,10 @@ export function activate(scumble) {
      * with @img, a From box of that layer (the whole layer into the selection), the prompt still its description.
      */
     function fromSelection(doc, { id, desc } = {}) {
-        const sel = doc.selection({ box: true });   // the bounds' mask alone, not a mask of the whole picture
-        if (!sel) throw new Error("Nothing is selected.");
+        // the bounds alone: a read of the bounds' mask was the whole picture's for a select-all (600 MB at 15k)
+        const b = doc.editor.getBounds();
+        if (!b) throw new Error("Nothing is selected.");
+        const sel = { bounds: { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] } };
         const prompt = desc != null ? String(desc) : String(doc.editor.promptText || "");
         // the id from the prompt's words (red_door_1), edit_n when it has none
         return add(doc, selectionInput(sel.bounds, prompt, (label) => doc.layers().find((l) => l.label === label) || null, { id }), { idBase: "edit" });
@@ -172,7 +177,7 @@ export function activate(scumble) {
         // the prompt's @img tokens as the descriptions' (clipDesc), so a box described by the prompt reads as said by it
         const prompt = String(doc.editor.promptText || "").replace(TOKEN, (m, n) => `<ref_image_${n}>`);
         const got = clipboardText(prompt, boxes.map((b) => ({ ...b, layerFrame: b.layer && layerById.has(b.layer) ? { x: layerById.get(b.layer).x, y: layerById.get(b.layer).y, w: layerById.get(b.layer).w, h: layerById.get(b.layer).h } : null })),
-            { x: 0, y: 0, w: doc.width, h: doc.height }, { mode: "edit", nameOf: (id) => { const k = refs.findIndex((l) => l.id === id); return k < 0 ? null : `ref_image_${k + 1}`; }, descOf: (b) => fold(clipDesc(b)) });
+            { x: 0, y: 0, w: doc.width, h: doc.height }, { mode: "edit", nameOf: (id) => { const l = refs.find((x) => x.id === id); return l ? `ref_image_${labelNo(l)}` : null; }, descOf: (b) => fold(clipDesc(b)) });
         if (navigator.clipboard) navigator.clipboard.writeText(got.text).catch(() => {});
         doc.status(`${got.rows.length} row${got.rows.length === 1 ? "" : "s"} copied, measured against the whole picture (a run measures them in the crop it sends).${got.notes.length ? " " + got.notes.join(" ") : ""}`);
         return got;
