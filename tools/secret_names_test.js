@@ -82,6 +82,9 @@ async function main() {
     // a cycle of wires (not a valid prompt, but the walk must end)
     const loop = R.withoutSecrets({ a: { inputs: { token: ["b", 0] } }, b: { inputs: { x: ["a", 0], v: KEY } } });
     check("a cycle of wires ends", !JSON.stringify(loop).includes(KEY), JSON.stringify(loop));
+    // JsonExtractString's `key` names a JSON field (the MiniMax H3 Image recipe); a bare `key` elsewhere is still a key
+    const field = R.withoutSecrets({ j: { class_type: "JsonExtractString", inputs: { key: "expanded_caption", json: ["u", 0] } }, u: { class_type: "Up", inputs: { text: "x" } }, k: { class_type: "SomeApiNode", inputs: { key: KEY } } });
+    check("JsonExtractString keeps its key (a field name), another node's bare key goes", field.j.inputs.key === "expanded_caption" && !("key" in field.k.inputs), JSON.stringify(field));
 
     // ---- the shipped recipes: nothing in them is named like a secret, so the filter changes none of them
     const fs = require("node:fs");

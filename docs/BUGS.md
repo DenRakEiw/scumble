@@ -15,6 +15,16 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### The PNG metadata of a MiniMax H3 Image local run drops the upsampler's `key` input (found 2026-11-11, read and run by `tools/secret_names_test.js`; fixed 2026-11-12)
+
+`renderer/editor/redact.js` `withoutSecrets` takes every input named like a secret out of the recipe's prompt before
+`host.workflowForPng` writes it into an exported PNG. `recipes/minimax_h3_image_local.json` node `up_json`
+(`JsonExtractString`) has an input `key` (`"expanded_caption"`, the JSON field it reads), which the filter takes for a
+secret: the workflow in such a PNG is missing it and fails when loaded back into ComfyUI. `secret_names_test.js`'s
+check "the shipped ComfyUI recipes come through unchanged" is red for this file since the recipe came in (2026-11-10;
+seen during item 56, which does not touch either file). Fixed by an exception by class type (`NOT_SECRET_BY_CLASS` in `redact.js`: JsonExtractString keeps `key`); a bare
+`key` on any other node still goes. `secret_names_test.js` checks both.
+
 0.1.50's and 0.1.51's fixes went out with them (`CHANGELOG.md` has them).
 
 ### The helper downloader sent the Hugging Face token to every URL and checked only the size (found 2026-10-24, read, item 49's plan; fixed for 0.1.52, I2 of `docs/PLAN_CORRIDORKEY.md`, merged into `corridorkey` 2026-11-06)
@@ -34,16 +44,6 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 `## Unreleased` has the user's lines.
 
 ## Open
-
-### The PNG metadata of a MiniMax H3 Image local run drops the upsampler's `key` input (found 2026-11-11, read and run by `tools/secret_names_test.js`)
-
-`renderer/editor/redact.js` `withoutSecrets` takes every input named like a secret out of the recipe's prompt before
-`host.workflowForPng` writes it into an exported PNG. `recipes/minimax_h3_image_local.json` node `up_json`
-(`JsonExtractString`) has an input `key` (`"expanded_caption"`, the JSON field it reads), which the filter takes for a
-secret: the workflow in such a PNG is missing it and fails when loaded back into ComfyUI. `secret_names_test.js`'s
-check "the shipped ComfyUI recipes come through unchanged" is red for this file since the recipe came in (2026-11-10;
-seen during item 56, which does not touch either file). A fix would tell a plain `key` holding a field name from a
-key: the filter's list, or an exception by class type. Not fixed; the user decides.
 
 ### An ORA saved over by another program while Scumble still opens it fails with a decoder error (found 2026-11-11, read; K20c's review)
 

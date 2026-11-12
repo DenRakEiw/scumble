@@ -33,6 +33,13 @@ const AUTH_WORD = /^o?auth(?:entication|enticate|ori[sz]ation|header|token|key|c
 // "tokenizer"). A few runs-together spellings of a key count too ("accesskey", "privatekey", "passkey").
 const LAST_WORD = /^(?:api|access|private|secret|auth|pass|licen[cs]e)?keys?$|token$/;
 
+// Inputs that a name would flag but that hold a field name, by node class: core ComfyUI's JsonExtractString reads the
+// JSON field named in its `key` (the MiniMax H3 Image recipe's upsampler reads "expanded_caption" that way). Only the
+// node's own inputs, never deeper in an object widget.
+const NOT_SECRET_BY_CLASS = {
+    JsonExtractString: new Set(["key"]),
+};
+
 /**
  * Does an input or widget named `name` hold a secret: an API key, a token, a password, credentials? By its name alone,
  * case-insensitive; the value is never looked at. Paths are not secrets here (the user asked about keys only).
@@ -70,7 +77,8 @@ export function withoutSecrets(prompt) {
     for (const node of Object.values(nodes)) {
         const inputs = node && node.inputs;
         if (!inputs || typeof inputs !== "object") continue;
-        for (const [k, v] of Object.entries(inputs)) if (isSecretName(k) && wire(v)) todo.push(String(v[0]));
+        const keep = NOT_SECRET_BY_CLASS[node.class_type];
+        for (const [k, v] of Object.entries(inputs)) if (isSecretName(k) && !(keep && keep.has(k)) && wire(v)) todo.push(String(v[0]));
     }
     while (todo.length) {
         const id = todo.pop();
@@ -79,11 +87,11 @@ export function withoutSecrets(prompt) {
         const inputs = nodes[id] && nodes[id].inputs;
         if (inputs && typeof inputs === "object") for (const v of Object.values(inputs)) if (wire(v)) todo.push(String(v[0]));
     }
-    const scrub = (v) => {
-        if (Array.isArray(v)) return v.map(scrub);
+    const scrub = (v, keep = null) => {
+        if (Array.isArray(v)) return v.map((x) => scrub(x));
         if (v && typeof v === "object") {
             const out = {};
-            for (const [k, x] of Object.entries(v)) if (!isSecretName(k)) out[k] = scrub(x);
+            for (const [k, x] of Object.entries(v)) if (!isSecretName(k) || (keep && keep.has(k))) out[k] = scrub(x);
             return out;
         }
         return v;
@@ -91,7 +99,7 @@ export function withoutSecrets(prompt) {
     const out = {};
     for (const [id, node] of Object.entries(nodes)) {
         if (!node || typeof node !== "object" || !node.inputs || typeof node.inputs !== "object") { out[id] = node; continue; }
-        let inputs = scrub(node.inputs);
+        let inputs = scrub(node.inputs, NOT_SECRET_BY_CLASS[node.class_type] || null);
         if (feeders.has(id)) inputs = Object.fromEntries(Object.entries(inputs).filter(([, v]) => wire(v)));
         out[id] = { ...node, inputs };
     }
