@@ -148,6 +148,111 @@ await run("redo", { doc: window.__selDoc });
 if (at(px, py) !== alphaAfter) throw new Error("redo did not restore combined alpha");
 return { alphaBefore, alphaAfter };
 """),
+    ("logits_intersect_bounds_hold_the_selection", """
+// review_full_2026-11-12 canvas-select/logits-intersect-bounds-of-complement: an object filling the top rows of the
+// picture across its width, intersected with Select All, must leave getBounds() covering those rows (the bands write
+// the complement, whose box starts below them)
+const ed = ednow(window.__selDoc);
+await run("select_all", { doc: window.__selDoc });
+const n = 16, logits = new Float32Array(n * n).fill(-8);
+for (let gy = 0; gy < 4; gy++) for (let gx = 0; gx < n; gx++) logits[gy * n + gx] = 8;
+await ed.selectLogits({ logits, n, score: 1 }, { mode: "intersect" });
+const fast = ed.getBounds();
+ed.selectionDirty = true; ed.selectionLoose = false;
+const scanned = ed.getBounds();
+if (!scanned || scanned[1] !== 0) throw new Error("the scan finds no selection from row 0: " + JSON.stringify(scanned));
+if (JSON.stringify(fast) !== JSON.stringify(scanned)) throw new Error("cached bounds " + JSON.stringify(fast) + " differ from the scan " + JSON.stringify(scanned));
+if (ed.sel.readRect(400, 10, 1, 1).data[3] !== 255) throw new Error("row 10 not selected");
+await run("select_none", { doc: window.__selDoc });
+return { fast, scanned };
+"""),
+    ("feather_answer_after_a_deselect_is_dropped", """
+// review_full_2026-11-12 canvas-select/feather-grow-write-back-over-newer-selection: a deselect while the feather's
+// job runs must win; the late answer may not write the old feathered shape back, and its undo step goes
+const ed = ednow(window.__selDoc);
+await run("select_rect", { doc: window.__selDoc, x: 100, y: 100, w: 300, h: 200, mode: "replace" });
+const feathers = () => ed.undo.filter((s) => s.label === "Feather selection").length;
+const f0 = feathers();
+const p = ed.featherSelection(12);
+ed.clearSelection();
+await p;
+const left = ed.sel.readRect(250, 200, 1, 1).data[3];
+if (left !== 0) throw new Error("the feathered old selection came back after the deselect: alpha " + left);
+const top = ed.undo[ed.undo.length - 1];
+if (!top || top.label !== "Deselect") throw new Error("the top undo step is " + (top && top.label));
+if (feathers() !== f0) throw new Error("the dropped feather kept its undo step");
+// a grow the same way
+await run("select_rect", { doc: window.__selDoc, x: 100, y: 100, w: 300, h: 200, mode: "replace" });
+const g = ed.growSelection(8);
+ed.clearSelection();
+await g;
+if (ed.sel.readRect(250, 200, 1, 1).data[3] !== 0) throw new Error("the grown old selection came back after the deselect");
+if (ed.getBounds() !== null) throw new Error("bounds after the dropped grow: " + JSON.stringify(ed.getBounds()));
+return { status: ed.status || null };
+"""),
+    ("mask_image_bands_match_the_whole_picture_rule", """
+// review_full_2026-11-12 canvas-select/select-by-text-mask-full-size-on-window: applyMaskImage merges a helper's mask in
+// bands; the selection must equal the whole-picture rule it replaced (on = mask R > 127 and the layer's alpha > 0)
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { doc: d.id, width: 600, height: 2600, color: "#ffffff" });
+const W = 600, H = 2600;
+const maskCanvas = (w, h) => {
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const x = c.getContext("2d"); x.fillStyle = "#000"; x.fillRect(0, 0, w, h);
+    x.fillStyle = "#fff";
+    x.beginPath(); x.ellipse(w * 0.5, h * 0.45, w * 0.4, h * 0.35, 0.3, 0, Math.PI * 2); x.fill();
+    x.fillStyle = "#808080"; x.fillRect(0, h * 0.9, w, h * 0.05);   // 128: on
+    x.fillStyle = "#7f7f7f"; x.fillRect(0, h * 0.95, w, h * 0.05);  // 127: off
+    return c;
+};
+const pc = document.createElement("canvas"); pc.width = 300; pc.height = 900;
+const px = pc.getContext("2d"); px.fillStyle = "#f00"; px.beginPath(); px.arc(150, 450, 140, 0, Math.PI * 2); px.fill();
+const lay = ed.addLayer({ name: "ClipLayer", kind: "paint", ref: null, px: ed.pixels.Layer.fromCanvas(pc), x: 100, y: 700, w: 300, h: 900, dirty: true });
+const prevSel = async () => {
+    await run("select_rect", { doc: d.id, x: 50, y: 300, w: 400, h: 1700, mode: "replace" });
+    await ed.featherSelection(30);
+    return ed.sel.readRect(0, 0, W, H).data.slice();
+};
+const expect = (prev, img, layer, mode) => {
+    const t = document.createElement("canvas"); t.width = W; t.height = H;
+    const tx = t.getContext("2d"); tx.drawImage(img, 0, 0, W, H);
+    const src = tx.getImageData(0, 0, W, H).data;
+    let clip = null;
+    if (layer) {
+        const c = document.createElement("canvas"); c.width = W; c.height = H;
+        const cx = c.getContext("2d"); cx.drawImage(ed.layerPixels(layer), layer.x, layer.y, layer.w, layer.h);
+        clip = cx.getImageData(0, 0, W, H).data;
+    }
+    const out = new Uint8Array(W * H);
+    for (let j = 0; j < W * H; j++) {
+        const on = src[j * 4] > 127 && (!clip || clip[j * 4 + 3] > 0);
+        const p = prev[j * 4 + 3];
+        out[j] = mode === "replace" ? (on ? 255 : 0) : mode === "add" ? (on ? 255 : p) : mode === "subtract" ? (on ? 0 : p) : (on ? p : 0);
+    }
+    return out;
+};
+const res = [];
+for (const [mw, mh] of [[W, H], [300, 1300]]) {
+    const img = maskCanvas(mw, mh);
+    for (const layer of [null, lay]) {
+        for (const mode of ["replace", "add", "subtract", "intersect"]) {
+            const prev = await prevSel();
+            const want = expect(prev, img, layer, mode);
+            ed.applyMaskImage(img, { mode, text: "t", layer });
+            const got = ed.sel.readRect(0, 0, W, H).data;
+            let bad = 0, first = -1;
+            for (let j = 0; j < W * H; j++) if (got[j * 4 + 3] !== want[j]) { bad++; if (first < 0) first = j; }
+            if (bad) throw new Error(`${mw}x${mh} ${layer ? "clip" : "noclip"} ${mode}: ${bad} pixels differ, first at (${first % W}, ${Math.floor(first / W)}): ${got[first * 4 + 3]} vs ${want[first]}`);
+            res.push(`${mw}x${mh}/${layer ? "clip" : "-"}/${mode}`);
+        }
+    }
+}
+await run("close_document", { doc: d.id, force: true });
+host.shell.activate(ednow(window.__selDoc));
+return { cases: res.length };
+"""),
     ("load_selection_intersect", """
 const ed = ednow(window.__selDoc);
 await run("select_rect", { doc: window.__selDoc, x: 0, y: 0, w: 400, h: 400, mode: "replace" });
