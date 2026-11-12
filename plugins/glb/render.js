@@ -268,14 +268,29 @@ export class GlbRenderer {
         light.shadow.bias = -0.0005;
         light.shadow.radius = 4;
         scene.add(light); scene.add(light.target);
+        let ground = null;
         if (p.shadow) {
-            const ground = new THREE.Mesh(new THREE.PlaneGeometry(radius * 12, radius * 12), new THREE.ShadowMaterial({ opacity: 0.4 }));
+            ground = new THREE.Mesh(new THREE.PlaneGeometry(radius * 12, radius * 12), new THREE.ShadowMaterial({ opacity: 0.4 }));
             ground.rotation.x = -Math.PI / 2;
             ground.position.set(group.position.x, box.min.y - 0.001, group.position.z);
             ground.receiveShadow = true;
             scene.add(ground);
         }
-        return { scene, camera, group, box, light };
+        return { scene, camera, group, box, light, ground };
+    }
+
+    /**
+     * What one render made on the GPU goes again: the light's shadow map (a 2048 x 2048 target with its depth texture)
+     * and the ground's geometry and material; the dialog's preview renders once per frame while the user drags.
+     */
+    release({ light, ground }) {
+        if (light) {
+            // the target's dispose leaves its depth texture (three's own shadow pass disposes it on its own first)
+            const map = light.shadow.map;
+            if (map && map.depthTexture) { map.depthTexture.dispose(); map.depthTexture = null; }
+            light.shadow.dispose();
+        }
+        if (ground) { ground.geometry.dispose(); ground.material.dispose(); }
     }
 
     /** The size the passes run at: the wanted size, capped by the GPU's texture limit and a 12 MP budget. */
@@ -286,7 +301,8 @@ export class GlbRenderer {
 
     /** The colour pass with alpha, as a fresh canvas of w x h; `aspect` the camera's (the frame's) when it differs from w / h. */
     render(model, p, w, h, aspect = w / h) {
-        const { scene, camera, group } = this.scene(model, p, aspect);
+        const parts = this.scene(model, p, aspect);
+        const { scene, camera, group } = parts;
         this.renderer.setSize(w, h, false);
         this.renderer.setClearColor(0x000000, 0);
         this.renderer.render(scene, camera);
@@ -294,12 +310,14 @@ export class GlbRenderer {
         out.width = w; out.height = h;
         out.getContext("2d").drawImage(this.canvas, 0, 0);
         group.remove(model.inner);
+        this.release(parts);
         return out;
     }
 
     /** The depth pass: the object's pixels white near, black far (the near / far planes hug the object), transparent elsewhere. */
     depth(model, p, w, h, aspect = w / h) {
-        const { scene, camera, group, box } = this.scene(model, { ...p, shadow: false }, aspect);
+        const parts = this.scene(model, { ...p, shadow: false }, aspect);
+        const { scene, camera, group, box } = parts;
         const near = Math.max(0.05, -box.max.z), far = Math.max(near + 0.01, -box.min.z);
         camera.near = near; camera.far = far;
         camera.updateProjectionMatrix();
@@ -313,6 +331,7 @@ export class GlbRenderer {
         out.getContext("2d").drawImage(this.canvas, 0, 0);
         scene.overrideMaterial.dispose();
         group.remove(model.inner);
+        this.release(parts);
         return out;
     }
 
