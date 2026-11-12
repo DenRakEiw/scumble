@@ -26,6 +26,7 @@ const router = require(path.join(ROOT, "electron", "main", "providers", "comfyro
 const partner = require(path.join(ROOT, "electron", "main", "providers", "comfypartner.js"));
 const cloud = require(path.join(ROOT, "electron", "main", "providers", "comfycloud.js"));
 const refsLib = require(path.join(ROOT, "electron", "main", "providers", "refs.js"));
+const putil = require(path.join(ROOT, "electron", "main", "providers", "util.js"));
 
 const KEY = "test-comfyrouter-0123456789";
 const REAL_KEY = "comfyui-0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd";   // the shape of a Comfy key; never a real one
@@ -636,7 +637,10 @@ async function main() {
         const o4b = await R.generate(textReq(variant("flux2_pro")), ctxFor(s4b));
         check("an asset download that fails twice is retried a third time and lands the picture, with one submit", s4b.submits.length === 1 && s4b.assets.length === 3 && tagOf(o4b.bytes) === "ASSET", short({ submits: s4b.submits.length, assets: s4b.assets.length }));
         const s4c = fakeServer({ asset: () => new Response(`storage down ${KEY}`, { status: 503 }) });
+        const gap4c = putil._times.gapMs;
+        putil._times.gapMs = 4500;   // the gap window the old 3 tries gave (unanswered downloads go on for it)
         const e4c = await throws(() => R.generate(textReq(variant("flux2_pro")), ctxFor(s4c)));
+        putil._times.gapMs = gap4c;
         check("an asset download that fails all 3 times names the request id and says the job may still finish and be charged, without the key", s4c.submits.length === 1 && s4c.assets.length === 3 && (e4c || "").includes(RID) && /may still finish and be charged/.test(e4c || "") && !(e4c || "").includes(KEY), e4c);
         const e5 = await throws(() => R.edit(editReq(v, { model: "openai/../../x" }), ctxFor(fakeServer())));
         const e6 = await throws(() => R.edit(editReq(v, { model: "anthropic/claude-sonnet-5" }), ctxFor(fakeServer())));
@@ -1083,7 +1087,10 @@ async function main() {
         const o13b = await partner.edit(req(), ctxFor(s13b));
         check("Partner API: an asset download that fails twice is retried a third time and lands the picture, with one generation POST", s13b.hy.length === 1 && s13b.assets.length === 3 && tagOf(o13b.bytes) === "ASSET", short({ hy: s13b.hy.length, assets: s13b.assets.length }));
         const s13c = fakeServer({ asset: () => new Response(`partner cdn 503 ${KEY}`, { status: 503 }) });
+        const gap13c = putil._times.gapMs;
+        putil._times.gapMs = 4500;   // the gap window the old 3 tries gave (unanswered downloads go on for it)
         const e13c = await throws(() => partner.edit(req(), ctxFor(s13c)));
+        putil._times.gapMs = gap13c;
         check("Partner API: an asset download that fails all 3 times names the request id (hy-1) and says the job may still finish and be charged, without the key", s13c.hy.length === 1 && s13c.assets.length === 3 && (e13c || "").includes("hy-1") && /may still finish and be charged/.test(e13c || "") && !(e13c || "").includes(KEY), e13c);
 
         const s14 = fakeServer();

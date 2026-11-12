@@ -307,6 +307,7 @@ module.exports = {
         const sent = {};
         const input = await inputFor(req, ctx, sent);
         const { data, id } = await submitAndWait(ctx, model, input);
+        ctx.jobDone = true;   // completed: generated and charged, so a Cancel during the download says that
         const out = Array.isArray(data.outputs) ? data.outputs[0] : null;
         if (!out) throw new Error("WaveSpeed: no output in the result (" + scrub(JSON.stringify(data), ctx.key).slice(0, 200) + ")");
         if (Array.isArray(data.has_nsfw_contents) && data.has_nsfw_contents[0]) ctx.log("result flagged as nsfw by WaveSpeed");
