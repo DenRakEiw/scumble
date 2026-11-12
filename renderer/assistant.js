@@ -527,6 +527,7 @@ function onEvent(e) {
             break;
         case "turn:start":
             cards = new Map();
+            lastTurnCost = 0;                              // "last turn" is this turn's, not the session's
             busy = true;
             ui.send.textContent = "Stop";
             syncButton();
@@ -573,7 +574,7 @@ function onEvent(e) {
             if (e.reason && e.reason !== "end") note(doneWords(e), e.reason === "error" ? "as-bad" : "");
             if (e.usage) usage = e.usage;
             showCost();
-            undoCard();
+            undoCard(e.turn);
             syncButton();
             break;
         case "agents":
@@ -633,9 +634,11 @@ function showNotice() {
  * than Ctrl+Z, because it covers the calls that record no undo step at all (the prompt, the
  * generation settings, the crop, the recipe's settings) and a turn of more than thirty steps.
  */
-function undoCard() {
+function undoCard(turn) {
     const state = turnState();
-    if (!state) return;
+    // only the turn whose snapshot is kept: a turn that only read, a failed one, or a turn of a chat opened again has
+    // none of its own (the record may still hold an earlier turn's)
+    if (!state || !turn || state.turn !== turn) return;
     const card = el("div", "as-card as-undo");
     const head = el("div", "as-card-head");
     head.appendChild(el("span", "as-card-name", "this turn"));
@@ -646,13 +649,18 @@ function undoCard() {
     const row = el("div", "as-card-buttons");
     row.appendChild(button);
     card.appendChild(row);
-    button.addEventListener("click", () => askThenUndo(card, button));
+    button.addEventListener("click", () => askThenUndo(card, button, turn));
     add(card);
 }
 
-function askThenUndo(card, button) {
+function askThenUndo(card, button, turn) {
     const state = turnState();
-    if (!state) { button.disabled = true; return; }
+    // a later turn that changed something released this one's snapshot: the card must not undo that other turn
+    if (!state || state.turn !== turn) {
+        button.disabled = true;
+        if (!card.dataset.gone) { card.dataset.gone = "1"; card.appendChild(el("div", "as-reason", "a later turn changed the documents; this turn can no longer be taken back")); }
+        return;
+    }
     if (state.edited.length && !card.dataset.asked) {
         // work that is not the assistant's would go with it: the user says so first
         card.dataset.asked = "1";
@@ -661,7 +669,7 @@ function askThenUndo(card, button) {
         button.textContent = "Undo anyway";
         return;
     }
-    const out = restoreTurn();
+    const out = restoreTurn(turn);
     button.disabled = true;
     if (!out.ok) {
         card.appendChild(el("div", "as-reason", "nothing of this turn could be taken back" + (out.missing && out.missing.length ? ` (document${out.missing.length > 1 ? "s" : ""} ${out.missing.join(", ")} closed)` : "")));
@@ -721,6 +729,7 @@ async function openChat(id) {
     }
     ui.chatList.hidden = true;
     closeAsks();
+    forgetTurns();                                   // the kept turn is the chat's that was open
     ui.list.textContent = "";
     cards = new Map();
     usage = null;
