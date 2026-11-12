@@ -14,7 +14,17 @@ const cp = require("node:child_process");
 // every curl started, with its arguments (before curlfetch.js takes `spawn`)
 const spawned = [];
 const origSpawn = cp.spawn;
-cp.spawn = function (cmd, args, opts) { spawned.push({ cmd, args: [...(args || [])] }); return origSpawn.call(this, cmd, args, opts); };
+// and the config each one was given on stdin
+const configs = [];
+cp.spawn = function (cmd, args, opts) {
+    spawned.push({ cmd, args: [...(args || [])] });
+    const child = origSpawn.call(this, cmd, args, opts);
+    if (child && child.stdin && args && args.includes("-K")) {
+        const end = child.stdin.end.bind(child.stdin);
+        child.stdin.end = (chunk, ...rest) => { configs.push(String(chunk || "")); return end(chunk, ...rest); };
+    }
+    return child;
+};
 const CF = require("../electron/main/curlfetch.js");
 
 let failed = 0, passed = 0;
@@ -234,6 +244,41 @@ function readAll(req) {
             }
         } else console.log("[skip] the real HTTPS request (SKIP_NET=1)");
         globalThis.fetch = nativeFetch;
+
+        // review finding main-net/curl-schannel-revocation: the TLS backend is read from curl's own words, and a
+        // Schannel curl of 7.70 or newer gets ssl-revoke-best-effort (a browser's soft revocation check), others not
+        {
+            const vi = CF.versionInfo;
+            const win = vi("curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP");
+            const mingw = vi("curl 8.19.0 (x86_64-w64-mingw32) libcurl/8.19.0 Schannel zlib/1.3.2 brotli/1.2.0");
+            const multi = vi("curl 8.5.0 (x86_64-w64-mingw32) libcurl/8.5.0 OpenSSL/3.1.4 (Schannel) zlib/1.3");
+            const mac = vi("curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 (SecureTransport) LibreSSL/3.3.6 zlib/1.2.12");
+            const old = vi("curl 7.69.1 (Windows) libcurl/7.69.1 Schannel");
+            check("versionInfo: Schannel builds of 7.70+ take ssl-revoke-best-effort; a build that only offers Schannel in parentheses, macOS's LibreSSL and 7.69 do not",
+                win.tls === "Schannel" && win.revokeBestEffort && mingw.revokeBestEffort && multi.tls === "OpenSSL" && !multi.revokeBestEffort
+                && mac.tls === "LibreSSL" && !mac.revokeBestEffort && old.tls === "Schannel" && !old.revokeBestEffort && vi("not curl") === null,
+                JSON.stringify({ win, multi, mac, old }));
+            const c0 = configs.length;
+            await (await CF.curlFetch(A.base + "/json?q=r")).json();
+            const cfg = configs.slice(c0).join("\n");
+            const want = !!CF.probe().revokeBestEffort;
+            check(`a request's config ${want ? "holds" : "leaves out"} ssl-revoke-best-effort for this curl (${CF.probe().tls || "?"} ${CF.probe().version})`,
+                configs.length > c0 && /(^|\n)ssl-revoke-best-effort(\n|$)/.test(cfg) === want && CF.status().curl.tls === (CF.probe().tls || null), cfg.split("\n").slice(0, 12).join(" | "));
+        }
+
+        // review finding main-net/curl-body-temp-files-left: bodies a gone process left are removed, others stay
+        {
+            const dir = fs.mkdtempSync(require("node:path").join(os.tmpdir(), "cf-sweep-"));
+            const dead = await new Promise((resolve) => { const c = origSpawn(process.execPath, ["-e", ""]); c.on("exit", () => resolve(c.pid)); });
+            const hex = () => crypto.randomBytes(8).toString("hex");
+            const names = { dead: `scumble-curl-${dead}-${hex()}.bin`, mine: `scumble-curl-${process.pid}-${hex()}.bin`, other: `scumble-curl-${dead}-short.bin`, unrelated: "picture.bin" };
+            for (const n of Object.values(names)) fs.writeFileSync(require("node:path").join(dir, n), "PICTURE");
+            const gone = CF.sweepBodies(dir);
+            const left = fs.readdirSync(dir).sort();
+            check("sweepBodies removes a body file of a process that is gone and keeps this process's, and files of other names",
+                gone === 1 && !left.includes(names.dead) && left.includes(names.mine) && left.includes(names.other) && left.includes(names.unrelated), JSON.stringify({ gone, left }));
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
 
         // no temp file left
         await sleep(200);

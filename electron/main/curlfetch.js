@@ -49,16 +49,35 @@ function candidates() {
     return ["/usr/bin/curl", "/bin/curl", "/usr/local/bin/curl", "/opt/homebrew/bin/curl", "curl"];
 }
 
-let found = null;   // { ok, path, version, error }
-/** The curl Scumble uses, found once: { ok, path, version } or { ok: false, error }. */
+/**
+ * What `curl --version`'s first line says: { version, tls, revokeBestEffort }. `tls` is the TLS backend in use (the one
+ * not in parentheses; a build with several names the others in them). Schannel (Windows' own curl) checks a
+ * certificate's revocation strictly by default, so a machine whose revocation servers do not answer (a TLS-inspecting
+ * proxy, an antivirus's HTTPS scan, a firewall that blocks the CRL hosts) would fail every request; curl 7.70 and newer
+ * take `ssl-revoke-best-effort` for it, which is what a browser on that machine does.
+ */
+function versionInfo(line) {
+    const m = /^curl (\S+)/.exec(String(line || ""));
+    if (!m) return null;
+    const version = m[1];
+    const outside = String(line).replace(/\([^)]*\)/g, " ");
+    const tls = /(^|\s)Schannel(\/|\s|$)/i.test(outside) ? "Schannel"
+        : (/(^|\s)(OpenSSL|LibreSSL|BoringSSL|SecureTransport|GnuTLS|wolfSSL|mbedTLS|rustls|AWS-LC|quictls)(\/|\s|$)/i.exec(outside) || [])[2] || null;
+    const [maj, min] = version.split(".").map((x) => parseInt(x, 10));
+    const atLeast770 = maj > 7 || (maj === 7 && min >= 70);
+    return { version, tls, revokeBestEffort: tls === "Schannel" && atLeast770 };
+}
+
+let found = null;   // { ok, path, version, tls, revokeBestEffort, error }
+/** The curl Scumble uses, found once: { ok, path, version, tls, revokeBestEffort } or { ok: false, error }. */
 function probe(force = false) {
     if (found && !force) return found;
     for (const p of candidates()) {
         if (path.isAbsolute(p) && !fs.existsSync(p)) continue;
         try {
             const r = spawnSync(p, ["--version"], { encoding: "utf8", timeout: 10000, windowsHide: true });
-            const m = r.status === 0 && /^curl (\S+)/.exec(r.stdout || "");
-            if (m) return (found = { ok: true, path: p, version: m[1] });
+            const v = r.status === 0 ? versionInfo(String(r.stdout || "").split(/\r?\n/)[0]) : null;
+            if (v) return (found = { ok: true, path: p, ...v });
         } catch (_) { /* the next */ }
     }
     return (found = { ok: false, error: "no curl found (" + candidates().filter(path.isAbsolute).join(", ") + ")" });
@@ -100,6 +119,8 @@ async function hop(curlPath, url, method, headers, bodyBytes, signal, stallS = S
         "output = -",
         `url = ${quote(url)}`,
     ];
+    // Schannel's revocation check as a browser does it (versionInfo): an unreachable revocation server is no failure
+    if (found && found.ok && found.path === curlPath && found.revokeBestEffort) config.push("ssl-revoke-best-effort");
     // the head on stdout before the body; `head` writes it there itself (with dump-header too, every line came twice)
     if (method === "HEAD") config.push("head");
     else {
@@ -315,6 +336,7 @@ function route(url) {
 function install({ enabled, onFallback } = {}) {
     state = { enabled: typeof enabled === "function" ? enabled : () => true, onFallback: onFallback || null, warned: false };
     if (NATIVE) return;
+    sweepBodies();
     NATIVE = globalThis.fetch;
     const native = NATIVE;
     globalThis.fetch = function fetch(input, init) {
@@ -322,11 +344,33 @@ function install({ enabled, onFallback } = {}) {
     };
 }
 
-/** For Settings › Network: whether requests go through curl now, and which curl. */
+/**
+ * Removes the request bodies a process that is gone left in the temp folder (a quit, a crash or a kill during an
+ * upload: the file holds the user's picture). A file of a process that still runs (this one, another Scumble) stays.
+ */
+function sweepBodies(dir = os.tmpdir()) {
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch (_) { return 0; }
+    let gone = 0;
+    for (const n of names) {
+        const m = /^scumble-curl-(\d+)-[0-9a-f]{16}\.bin$/.exec(n);
+        if (!m) continue;
+        const pid = +m[1];
+        if (pid === process.pid || alive(pid)) continue;
+        try { fs.unlinkSync(path.join(dir, n)); gone++; } catch (_) { /* held, or gone already */ }
+    }
+    return gone;
+}
+
+function alive(pid) {
+    try { process.kill(pid, 0); return true; } catch (err) { return !!(err && err.code === "EPERM"); }
+}
+
+/** For Settings › Network: whether requests go through curl now, and which curl (its TLS backend too). */
 function status() {
     const p = probe();
     const on = state.enabled();
-    return { enabled: on, curl: p.ok ? { path: p.path, version: p.version } : null, error: p.ok ? null : p.error, via: on && p.ok ? "curl" : "node", requests };
+    return { enabled: on, curl: p.ok ? { path: p.path, version: p.version, tls: p.tls || null } : null, error: p.ok ? null : p.error, via: on && p.ok ? "curl" : "node", requests };
 }
 
-module.exports = { curlFetch, install, route, status, probe, isLoopback, KEY_HEADERS, stallSeconds };
+module.exports = { curlFetch, install, route, status, probe, isLoopback, KEY_HEADERS, stallSeconds, versionInfo, sweepBodies };
