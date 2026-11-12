@@ -1036,6 +1036,10 @@ Known flakes; **re-run before believing any of these**:
   folder) it exits at once, and the gate alone on the canvas backend (`k27-brush-canvas-alone`) passed in 15 s, as the
   tiles side of the rerun did. The reader reads Photoshop's own .abr files and `F:/boris.abr`; not ruled out: two
   readers of those files at the same moment. Run `brush` alone when it fails side by side.
+- 2026-11-12 (`wasm-kernels`, the review's musts, `musts-full-t`, the last gate of a run of eleven on one tiles
+  instance): `layered_test.py` `an_ora_opens_through_the_parted_reader` failed with "arena slots after ... (95) > before
+  (92)"; the console lines were the crafted files' own refusals. The gate alone on a fresh instance (`step-layered`)
+  passed. Tiles still held by the earlier gates' documents come back late; rerun it alone before suspecting the reader.
 - 2026-11-07 (`wasm-kernels`, the merge of H1, `run_gates_both.sh mergeh1`): `layered_test.py`
   `crafted_files_are_refused_on_both_routes` failed on tiles with "crafted_bomb.ora (window): the renderer grew by 203
   MB" (its limit is 200 MB above where the step began) while the canvas side ran beside it; every file was refused in

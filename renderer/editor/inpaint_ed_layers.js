@@ -356,6 +356,9 @@ export class LayersPart {
             try {
                 this.setStatus(`Merging ${layer.name} into the base ...`);
                 before = this.snapshot({ kind: "canvas" });
+                // what the step and the new base are of: an edit or a landing result during the upload is in neither, so
+                // the commit below would drop it (as in flattenNow)
+                const gen = this.historyGen, ver = this.compositeVersion, ids = this.layers.map((l) => l.id).join(",");
                 const c = makeCanvas(this.width, this.height);
                 const ctx = c.getContext("2d");
                 this.drawBaseInto(ctx, 0, 0, this.width, this.height);
@@ -368,6 +371,11 @@ export class LayersPart {
                 ctx.globalAlpha = 1;
                 ctx.globalCompositeOperation = "source-over";
                 const { ref } = await uploadCanvas(c, `n${this.node.id}_base`);
+                if (this.historyGen !== gen || this.compositeVersion !== ver || this.layers.map((l) => l.id).join(",") !== ids || this.gestureHeld()) {
+                    this.releaseSnapshot(before); before = null;
+                    this.setStatus(`The picture changed while ${layer.name} was being merged, so nothing was merged. Merge it again.`, "warn");
+                    return;
+                }
                 const px = this.pixels.Layer.fromCanvas(c);   // C6 (d): not the upload decoded again
                 pushed = true;
                 this.pushUndoSnapshot(before, { tracked: true, label: "Merge into base" });

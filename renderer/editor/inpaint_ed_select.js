@@ -1135,13 +1135,24 @@ export class SelectPart {
     }
 
     /** Magic wand: the area of similar colour under (ix, iy) becomes the selection. */
-    async wandSelect(ix, iy, mode = "replace") {
+    /** The magic wand. Undo waits for it (it writes after the flood's await), as for the bucket fill. */
+    wandSelect(ix, iy, mode = "replace") { return this.trackEdit(this.wandSelectNow(ix, iy, mode)); }
+
+    async wandSelectNow(ix, iy, mode = "replace") {
         if (!this.width) return;
         const x = Math.floor(ix), y = Math.floor(iy);
         if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
         const o = this.fillOpts || { tolerance: 32, contiguous: true, sample: "image" };
         const t0 = performance.now();
+        const seq0 = this.selectionSeq, sel0 = this.sel, gen0 = this.historyGen;
         const r = await this.floodRegion(x, y, { tolerance: o.tolerance, contiguous: o.contiguous, sample: o.sample, tiles: true });
+        // the selection or the picture changed during the flood (a marquee, a deselect, an edit): this answer is of another
+        // state, and applying it would bring that back over the newer one
+        if (this.selectionSeq !== seq0 || this.sel !== sel0 || this.historyGen !== gen0) {
+            if (r && r.close && r.shape) r.shape.close();
+            this.setStatus("Magic wand dropped: the selection or the picture changed while it ran.", "warn");
+            return;
+        }
         if (r.tiles) this.applyTilesToSelection(r.tiles, mode, r.bounds, [r.x, r.y]);
         else this.applyShapeToSelection(r.shape, mode, r.bounds, [r.x, r.y], "Magic wand");
         if (r.close) r.shape.close();
