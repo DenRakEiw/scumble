@@ -495,7 +495,7 @@ function bundle(tag, pics, empty = 0) {
             assert(bu && /this\._rawStates\.get\(ed\)/.test(bu), "the bundle drops a document that waits for ComfyUI");
             const ed = srcfind.familyText("renderer/editor/inpaint_canvas.js");
             const once = bodyAfter(ed, /\n    async syncLayersOnce\(\) /);
-            assert(once && /layer\.dirty = false;\s*try \{\s*const \{ ref \} = await uploadPixels\(layer\.px/.test(once) && /catch \(err\) \{\s*layer\.dirty = true;/.test(once), "a layer is not marked clean before its upload, or not again when it fails");
+            assert(once && /layer\.dirty = false;\s*layer\._uploading = true;\s*try \{\s*const \{ ref \} = await uploadPixels\(layer\.px/.test(once) && /finally \{\s*delete layer\._uploading;/.test(once) && /catch \(err\) \{\s*layer\.dirty = true;/.test(once), "a layer is not marked clean (and in flight) before its upload, or not again when it fails");
             assert(/syncLayers\(\) \{\s*const pass = \(this\._syncing \|\| Promise\.resolve\(\)\)/.test(ed), "syncLayers does not run one pass at a time");
             return "onFlush, startMode, restore holds the autosave, one upload pass at a time";
         });

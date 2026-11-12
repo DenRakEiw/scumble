@@ -4,6 +4,31 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+Fixes from a review of the whole code (54 defects, two of them able to lose or change your pixels):
+
+- **A layer copied, or an undo step taken, while the autosave stored a large layer keeps its pixels.** A Ctrl+J, or a reorder, delete or group followed by Ctrl+Z, during that upload left a layer that reopened with the picture from before your last stroke.
+- **Exports and runs now match the screen for a limited filter layer in a blend mode.** A filter layer with a Limit in Multiply, Screen, Overlay and the like darkened or lightened the picture where the Limit is 0 in a plain export, in the picture sent to a run and in frequency separation; a depth Limit without a depth map did so over the whole layer.
+- **Paid API runs on fal.ai, Replicate and WaveSpeedAI keep waiting through a network drop or a sleep of up to two minutes** instead of giving up on a finished, charged picture, and no longer ask the provider to stop it. Cancel during a WaveSpeedAI download says the job had already finished and is charged.
+- **Generate new keeps its new tab while the render still runs on your ComfyUI**, so the picture is not lost; a New that fails in a tab of its own says why in the tab you were on.
+- **Requests through curl on Windows check certificate revocation the way a browser does**, so they work behind company proxies and antivirus HTTPS scanning. Leftover upload files from a crash are cleaned from the temp folder at start.
+- **Split into layers works on large pictures**: a picture larger than 4096 x 4096 in area goes scaled down, and the layers land at your picture's size.
+- **Settings changed while settings.json was briefly unreadable no longer wipe your stored per-recipe values, LoRA rows, presets or plugin data**; a damaged settings file that cannot be moved aside no longer slows the app, and you are told about it. Imported brush tips survive a damaged brushes.json, and saving tips quickly one after another no longer loses one.
+- **Blur and the effects pack's Glass frost no longer make half-transparent pixels more opaque** (a 50 % area stays 50 %; opaque pictures are unchanged).
+- **Extend canvas keeps hidden layers**, moved with the picture, and its noise border is much faster on large pictures (only the new border gets noise).
+- Opening a picture into a tab that is still restoring its document now waits instead of mixing the two. A tab you edit right after opening or restoring it keeps its unsaved-changes marker.
+- Flatten, Merge into base, a bucket fill, the magic wand, grow, shrink, feather, invert and frequency separation no longer land an answer over a picture or selection that changed while they ran: they say so, and you run them again. Ctrl+Z pressed during a large bucket fill takes back the fill.
+- A click that moves nothing no longer adds an undo step and clears redo; undoing a text edit no longer also takes back the style changes and moves made before it. A second touch or pen contact no longer throws away the stroke in progress.
+- Apply mask on a text layer turns it into pixels, so a later text edit can no longer bring the hidden parts back.
+- A box description's `@img` reference keeps naming its picture when references are moved, hidden or deleted; Copy rows names From pictures by their `@img` number.
+- After an undo or redo while it ran, a relight through a provider hides the right relight layer, and a background removal or a pasted mask lands on its layer. Key screen on Auto asks for the screen colour when a layer's fill and its screen would disagree.
+- Picking another recipe while a ComfyUI run uploads no longer sends the other recipe's model files into the run. Save as new recipe never writes over a recipe file of yours with a similar name. The ComfyUI status no longer shows an error after an earlier, slower connect fails.
+- Krea 3 Edit on Comfy Cloud fits a slightly off-shape answer back onto the selection. A Split into layers run whose window reloaded no longer brings back only its base picture.
+- Importing a damaged or crafted .abr brush pack no longer freezes the window. A second question opened while a dialog is open no longer leaves the first one stuck over the editor. Closing a busy tab twice no longer puts it on Reopen Closed Tab twice. During a compare with only one result chosen, the middle of the view takes clicks again.
+- Selection by text, Selection → box and the sample colour probe use far less memory on large pictures; an Object intersect keeps the selection's true bounds.
+- 3D object: placing or editing an object is one undo step, and its preview no longer piles up GPU memory while you drag.
+- Assistant: the cost line counts cached tokens once and includes Gemini's thinking tokens, and "last turn" is that turn's cost; Undo this turn shows only under the turn it takes back; a chat deleted while its turn runs stays deleted; Stop during a question is no longer recorded as a decline; long chats keep less in memory and on disk.
+- A security update of a library the MCP server ships with (proxy-addr 2.0.8).
+
 ## 0.1.55 - 2026-11-12
 
 - **Generate new and New open a tab of their own** when the current one holds work (issue #12): the document stays as it is, and the new tab takes its reference layers, prompt, settings and boxes along. A tab with nothing in it yet still takes the picture in place, and a New you cancel closes its tab again. For agents, `generate_new` and `new_canvas` work on the tab they name, as before.
