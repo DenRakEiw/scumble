@@ -294,6 +294,14 @@ async def main():
         print(r.stderr.strip())
         print("RESULT FAIL (reader)")
         return False
+    # the stored tips and the window's saves of them (a damaged index, saves in a row), plain Node
+    print("== stored tips (node)")
+    r = subprocess.run(["node", os.path.join(HERE, "brushtips_test.js")], capture_output=True, text=True, encoding="utf-8")
+    print("\n".join(l for l in r.stdout.strip().splitlines() if l.startswith("[")))
+    if r.returncode != 0:
+        print(r.stderr.strip()[-2000:])
+        print("RESULT FAIL (stored tips)")
+        return False
     abr = os.path.join(OUT, "synthetic_v6.abr")
 
     async def run(cdp):

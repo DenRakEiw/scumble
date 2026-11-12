@@ -14,13 +14,35 @@ function dir() {
     return path.join(app.getPath("userData"), "brushes");
 }
 
+/**
+ * The index's entries. No index (none written yet, or a crash between a tip's PNG and the index) or one that does not
+ * parse (a write cut short) gives the tips the folder holds, by their file names, so a save after it keeps them; a
+ * damaged index is moved aside first (brushes.json.damaged-<time>). Any other read error (the file held by another
+ * program) throws: list() then rejects, and the window saves no library this session (it would delete every tip).
+ */
 async function readIndex() {
+    const d = dir();
+    const file = path.join(d, "brushes.json");
+    let text;
     try {
-        const list = JSON.parse(await fsp.readFile(path.join(dir(), "brushes.json"), "utf8"));
-        return Array.isArray(list) ? list : [];
-    } catch (_) {
-        return [];
+        text = await fsp.readFile(file, "utf8");
+    } catch (err) {
+        if (err && err.code === "ENOENT") return fromFiles(d);
+        throw err;
     }
+    let list;
+    try { list = JSON.parse(text); } catch (_) { list = null; }
+    if (Array.isArray(list)) return list;
+    try { await fsp.rename(file, `${file}.damaged-${Date.now()}`); } catch (_) { /* kept where it is: read again next time */ }
+    console.warn("brush tips: brushes.json could not be read; the tips are taken from the folder's files");
+    return fromFiles(d);
+}
+
+/** The tips of the folder by their PNG files' names (no index to name them). */
+async function fromFiles(d) {
+    let names = [];
+    try { names = await fsp.readdir(d); } catch (err) { if (err && err.code === "ENOENT") return []; throw err; }
+    return names.map((f) => /^([a-z0-9]+)\.png$/i.exec(f)).filter(Boolean).map((m) => ({ id: m[1], name: m[1], spacing: 0, source: "" }));
 }
 
 /** Every stored tip with its PNG bytes: { id, name, spacing, source, png }. A tip whose file is gone is skipped. */
@@ -55,7 +77,11 @@ async function save(tips) {
         const m = /^([a-z0-9]+)\.png$/i.exec(f);
         if (m && !keep.has(m[1])) await fsp.unlink(path.join(d, f)).catch(() => {});
     }
-    await fsp.writeFile(path.join(d, "brushes.json"), JSON.stringify(index, null, 2));
+    // through a temp file, flushed, then renamed: a crash or a power loss mid-write leaves the old index or the new one
+    const file = path.join(d, "brushes.json"), tmp = file + ".tmp";
+    const fh = await fsp.open(tmp, "w");
+    try { await fh.writeFile(JSON.stringify(index, null, 2)); await fh.sync(); } finally { await fh.close(); }
+    await fsp.rename(tmp, file);
     return { count: index.length, dir: d };
 }
 
