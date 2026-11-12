@@ -84,11 +84,17 @@ export const HostDocumentsPart = {
     async settleKey(ed) {
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         for (const until = Date.now() + 60000; this._restoring && Date.now() < until;) await sleep(100);
+        // the tab is live while the flush waits (seconds for a large selection's encode): an edit the user makes in that
+        // time is in the state hashed below but not in the file, so its key is taken as the saved one only when the
+        // history did not move
+        const mark = (e) => [e.historyGen, e.undo && e.undo.length, e.undo && e.undo[e.undo.length - 1], e.redo && e.redo.length];
+        const before = mark(ed);
         await this.flushEditor(ed, () => {}, "saving");
         if (!ed.base || !ed.docFile || !this._editors.includes(ed)) return;
         const key = hashString(ed.getValue());
         ed._stateKey = key;
-        if (!ed.docFile.key || ed.docFile.clean) ed.docFile.key = key;
+        const edited = mark(ed).some((v, i) => v !== before[i]);
+        if (!edited && (!ed.docFile.key || ed.docFile.clean)) ed.docFile.key = key;
         delete ed.docFile.clean;
         if (this.onDocsChanged) this.onDocsChanged();
     },

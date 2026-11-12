@@ -1516,10 +1516,23 @@ export class GeometryPart {
                 if (bottom && left) ctx.drawImage(flat, 0, H - 1, 1, 1, 0, top + H, left, bottom);
                 if (bottom && right) ctx.drawImage(flat, W - 1, H - 1, 1, 1, left + W, top + H, right, bottom);
             } else if (fill === "noise") {
-                const img = ctx.createImageData(nw, nh);
-                const d = img.data;
-                for (let i = 0; i < d.length; i += 4) { d[i] = Math.random() * 255; d[i + 1] = Math.random() * 255; d[i + 2] = Math.random() * 255; d[i + 3] = 255; }
-                ctx.putImageData(img, 0, 0);
+                // only the new border, in strips of about a megapixel: the picture covers the rest (the whole canvas of
+                // noise was 0.7 GB and seconds of the window at 15k)
+                const noise = (x, y, w, h) => {
+                    if (w <= 0 || h <= 0) return;
+                    const rows = Math.max(1, Math.min(h, Math.floor((1 << 20) / w)));
+                    const img = ctx.createImageData(w, rows);
+                    const d = img.data;
+                    for (let y0 = 0; y0 < h; y0 += rows) {
+                        const hh = Math.min(rows, h - y0);
+                        for (let i = 0, n = w * hh * 4; i < n; i += 4) { d[i] = Math.random() * 255; d[i + 1] = Math.random() * 255; d[i + 2] = Math.random() * 255; d[i + 3] = 255; }
+                        ctx.putImageData(img, x, y + y0, 0, 0, w, hh);
+                    }
+                };
+                noise(0, 0, nw, top);
+                noise(0, top + H, nw, bottom);
+                noise(0, top, left, H);
+                noise(left + W, top, right, H);
             } else {
                 let color = "#808080";
                 if (fill === "green") color = "#00ff00";
@@ -1538,10 +1551,20 @@ export class GeometryPart {
             const { ref } = await uploadCanvas(nb, `n${this.node.id}_base`);
             const px = this.pixels.Layer.fromCanvas(nb);   // C6 (d): not the upload decoded again
 
-            // Everything visible was baked into the new base; keep control and reference layers.
-            const kept = this.layers.filter((l) => this.isControl(l) || this.isReference(l));
+            // Everything visible was baked into the new base; keep control and reference layers, and the layers the
+            // flatten left out (hidden, in a hidden group, or clipped to one of those): they were not baked, and dropping
+            // them took their pixels out of the document without a word
+            const kept = [], keptSet = new Set();
+            this.layers.forEach((l, i) => {
+                const cb = l.clip ? this.clipBaseOf(l, i) : null;
+                if (this.isControl(l) || this.isReference(l) || !this.shown(l) || (cb && keptSet.has(cb))) { kept.push(l); keptSet.add(l); }
+            });
+            const hiddenKept = kept.filter((l) => !this.isControl(l) && !this.isReference(l)).length;
             for (const l of kept) {
-                if (l.kind === "paint" && l.px.width === W && l.px.height === H && l.w === W && l.h === H) {
+                if (l.kind === "filter") {
+                    l.x = 0; l.y = 0; l.w = nw; l.h = nh;   // a filter covers the whole canvas
+                    if (l.maskPx && l.maskPx.width === W && l.maskPx.height === H) { l.maskPx = l.maskPx.resized(nw, nh, { x: left, y: top }); l.maskDirty = true; l._maskedValid = false; }
+                } else if (l.kind === "paint" && l.px && l.px.width === W && l.px.height === H && l.w === W && l.h === H) {
                     // a new object (the canvas undo step holds the old one): the old pixels placed at left, top
                     l.px = l.px.resized(nw, nh, { x: left, y: top });
                     l.x = 0; l.y = 0; l.w = nw; l.h = nh;
@@ -1573,7 +1596,8 @@ export class GeometryPart {
             this.fitView();
             this.drawThumb();
             this.notifyChanged();
-            this.setStatus(`Canvas is ${nw} × ${nh}. The new border is selected; press Generate to outpaint it (Ctrl+Z takes the extension back).`);
+            const hiddenNote = hiddenKept ? ` ${hiddenKept} hidden layer${hiddenKept === 1 ? " stays a layer" : "s stay layers"}, moved with the picture.` : "";
+            this.setStatus(`Canvas is ${nw} × ${nh}. The new border is selected; press Generate to outpaint it (Ctrl+Z takes the extension back).${hiddenNote}`);
         } catch (err) {
             if (!pushed) this.releaseSnapshot(before);   // its selection PNG is revoked, not left behind
             console.error(err);
