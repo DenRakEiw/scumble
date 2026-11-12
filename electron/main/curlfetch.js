@@ -19,7 +19,10 @@
 //   - `signal` kills the process (before the answer: the promise rejects with the signal's reason; during the body: the
 //     body errors);
 //   - a curl failure (no route, TLS, a cut transfer) rejects as fetch does: TypeError "fetch failed" with curl's own
-//     words as the cause. Undici's `dispatcher` option is ignored (curl has no 300 s limit of its own).
+//     words as the cause. Undici's `dispatcher` is not used; its limits are: a transfer that moves nothing for 300 s
+//     (undici's headers and body timeouts), or for the dispatcher's own `headersTimeout` / `bodyTimeout` when a caller
+//     sets them, fails with the cause's `code` UND_ERR_HEADERS_TIMEOUT (before the answer) or UND_ERR_BODY_TIMEOUT;
+//   - curl is started with `-q` first, so a user's .curlrc / _curlrc changes nothing.
 "use strict";
 
 const { spawn, spawnSync } = require("child_process");
@@ -30,9 +33,10 @@ const crypto = require("crypto");
 
 const MAX_REDIRECTS = 20;
 const CONNECT_TIMEOUT_S = 30;
+const STALL_TIMEOUT_MS = 300000;   // undici's default headersTimeout and bodyTimeout
 // headers that may carry a key: dropped when a redirect leaves the origin (fetch drops Authorization alone; the
 // providers' own key headers would go along with it there, so they are dropped here too)
-const KEY_HEADERS = new Set(["authorization", "cookie", "proxy-authorization", "x-api-key", "x-key", "api-key", "x-goog-api-key", "x-comfy-api-key", "x-auth-token", "x-token"]);
+const KEY_HEADERS = new Set(["authorization", "cookie", "proxy-authorization", "x-api-key", "x-key", "api-key", "x-goog-api-key", "x-comfy-api-key", "x-auth-token", "x-token", "x-magnific-api-key"]);
 const NULL_BODY = new Set([101, 103, 204, 205, 304]);
 
 // ---- where curl is ----------------------------------------------------------------------------------------------
@@ -71,17 +75,28 @@ function abortError(signal) {
     return e;
 }
 
-function failed(why) {
-    return new TypeError("fetch failed", { cause: new Error(why) });
+function failed(why, code) {
+    const cause = new Error(why);
+    if (code) cause.code = code;
+    return new TypeError("fetch failed", { cause });
 }
 
+/** The stall limit in seconds: the dispatcher's own headersTimeout / bodyTimeout (the larger), else undici's 300 s. */
+function stallSeconds(dispatcher) {
+    const ms = Math.max(+(dispatcher && dispatcher.headersTimeout) || 0, +(dispatcher && dispatcher.bodyTimeout) || 0);
+    return Math.max(1, Math.ceil((ms > 0 ? ms : STALL_TIMEOUT_MS) / 1000));
+}
+// curl's exit code 28 with its speed-limit words: nothing moved for speed-time seconds
+const stalled = (code, stderr) => code === 28 && /too slow/i.test(stderr);
+
 /** One hop: { status, statusText, headers, body (ReadableStream or null) } once the answer's head is in. */
-async function hop(curlPath, url, method, headers, bodyBytes, signal) {
+async function hop(curlPath, url, method, headers, bodyBytes, signal, stallS = STALL_TIMEOUT_MS / 1000) {
     if (signal && signal.aborted) throw abortError(signal);
     let bodyFile = null;
     const config = [
         "silent", "show-error", "globoff", "no-buffer", "suppress-connect-headers",
         `connect-timeout = ${CONNECT_TIMEOUT_S}`,
+        "speed-limit = 1", `speed-time = ${stallS}`,
         "output = -",
         `url = ${quote(url)}`,
     ];
@@ -99,19 +114,27 @@ async function hop(curlPath, url, method, headers, bodyBytes, signal) {
         config.push(`header = ${quote(v === "" ? `${k};` : `${k}: ${v}`)}`);
     }
     config.push(`header = ${quote("Expect:")}`);   // no 100-continue round trip before a large body
+    const drop = () => { if (bodyFile) fs.promises.unlink(bodyFile).catch(() => {}); bodyFile = null; };
     if (bodyBytes) {
         if (!hasType) config.push(`header = ${quote("Content-Type:")}`);   // not curl's form type
         bodyFile = path.join(os.tmpdir(), `scumble-curl-${process.pid}-${crypto.randomBytes(8).toString("hex")}.bin`);
-        await fs.promises.writeFile(bodyFile, bodyBytes, { mode: 0o600, flag: "wx" });
+        try {
+            await fs.promises.writeFile(bodyFile, bodyBytes, { mode: 0o600, flag: "wx" });
+        } catch (err) {
+            drop();   // a partial file (a full disk)
+            throw failed(`fetch: the request body could not be written for curl: ${err.message}`);
+        }
         config.push(`data-binary = ${quote("@" + bodyFile)}`);
+        // a Cancel while the body was written: the listener below would never fire on a signal aborted already
+        if (signal && signal.aborted) { drop(); throw abortError(signal); }
     } else if (method !== "GET" && method !== "HEAD") {
+        if (!hasType) config.push(`header = ${quote("Content-Type:")}`);   // not curl's form type, as fetch sends none
         config.push(`data-binary = ""`);   // Content-Length: 0
     }
 
-    const drop = () => { if (bodyFile) fs.promises.unlink(bodyFile).catch(() => {}); bodyFile = null; };
     let child;
     try {
-        child = spawn(curlPath, ["-K", "-"], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+        child = spawn(curlPath, ["-q", "-K", "-"], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     } catch (err) {
         drop();
         throw failed(`curl did not start: ${err.message}`);
@@ -134,10 +157,14 @@ async function hop(curlPath, url, method, headers, bodyBytes, signal) {
         const finish = () => {
             if (!ended || code === null) return;
             cleanup();
-            if (!answered) { answered = true; reject(failed(stderr.trim() || `curl ended with code ${code} before an answer`)); return; }
+            if (!answered) { answered = true; reject(failed(stderr.trim() || `curl ended with code ${code} before an answer`, stalled(code, stderr) ? "UND_ERR_HEADERS_TIMEOUT" : undefined)); return; }
             if (aborted || !controller) return;
             if (code === 0) { try { controller.close(); } catch (_) { /* closed */ } }
-            else { try { controller.error(new TypeError("terminated", { cause: new Error(stderr.trim() || `curl ended with code ${code}`) })); } catch (_) { /* closed */ } }
+            else {
+                const cause = new Error(stderr.trim() || `curl ended with code ${code}`);
+                if (stalled(code, stderr)) cause.code = "UND_ERR_BODY_TIMEOUT";
+                try { controller.error(new TypeError("terminated", { cause })); } catch (_) { /* closed */ }
+            }
         };
 
         const answer = (status, statusText, hdrs, rest) => {
@@ -222,11 +249,12 @@ async function curlFetch(input, init = {}) {
     let body = req.body ? Buffer.from(await req.arrayBuffer()) : null;
     let url = req.url;
     let redirected = false;
+    const stallS = stallSeconds(init.dispatcher);
 
     for (let n = 0; ; n++) {
         const u = new URL(url);
         if (u.protocol !== "http:" && u.protocol !== "https:") throw failed(`fetch: ${u.protocol} is not supported`);
-        const r = await hop(probed.path, u.href, method, headers, body, signal);
+        const r = await hop(probed.path, u.href, method, headers, body, signal, stallS);
         const loc = r.headers.get("location");
         if (r.status >= 300 && r.status < 400 && loc && redirect !== "manual") {
             if (redirect === "error") { if (r.body) r.body.cancel().catch(() => {}); throw failed(`fetch: a redirect (${r.status}) where redirect: "error" was asked`); }
@@ -242,6 +270,10 @@ async function curlFetch(input, init = {}) {
             url = next.href;
             redirected = true;
             continue;
+        }
+        if (r.status < 200 || r.status > 599) {   // a Response cannot hold it (101 and the like): fetch fails too
+            if (r.body) r.body.cancel().catch(() => {});
+            throw failed(`fetch: an answer with status ${r.status}`);
         }
         const res = new Response(r.body, { status: r.status, statusText: r.statusText, headers: r.headers });
         Object.defineProperty(res, "url", { value: url, enumerable: true });
@@ -297,4 +329,4 @@ function status() {
     return { enabled: on, curl: p.ok ? { path: p.path, version: p.version } : null, error: p.ok ? null : p.error, via: on && p.ok ? "curl" : "node", requests };
 }
 
-module.exports = { curlFetch, install, route, status, probe, isLoopback, KEY_HEADERS };
+module.exports = { curlFetch, install, route, status, probe, isLoopback, KEY_HEADERS, stallSeconds };

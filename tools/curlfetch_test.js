@@ -56,6 +56,8 @@ function readAll(req) {
         else if (u.pathname === "/303") { res.writeHead(303, { location: "/seen" }); res.end(); }
         else if (u.pathname === "/loop") { res.writeHead(302, { location: "/loop" }); res.end(); }
         else if (u.pathname === "/seen") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ method: req.method, auth: req.headers.authorization || null, key: req.headers["x-key"] || null, other: req.headers["x-other"] || null, len: body.length })); }
+        else if (u.pathname === "/stall") { /* never answers */ }
+        else if (u.pathname === "/stallbody") { res.writeHead(200, { "content-type": "text/plain" }); res.write("x"); }
         else if (u.pathname === "/slow") {
             res.writeHead(200, { "content-type": "text/plain" });
             res.write("first;");
@@ -83,7 +85,7 @@ function readAll(req) {
         const j1 = await r1.json();
         check("a GET answers status, headers and JSON (brackets in the query untouched)", r1.ok && r1.status === 200 && j1.q === "a b[1]" && r1.headers.get("x-two") === "a" && r1.url === A.base + "/json?q=a%20b[1]", JSON.stringify({ s: r1.status, j1 }));
         check("... the request carried the headers", seen.headers.authorization === "Bearer " + KEY && seen.headers["x-custom"] === "v");
-        check("no key on any curl command line", spawned.every((c) => !c.args.join(" ").includes(KEY) && c.args.join(" ") === "-K -"), spawned.map((c) => c.args.join(" ")).slice(0, 3).join(" | "));
+        check("no key on any curl command line", spawned.every((c) => !c.args.join(" ").includes(KEY) && c.args.join(" ") === "-q -K -"), spawned.map((c) => c.args.join(" ")).slice(0, 3).join(" | "));
 
         // binary POST both ways
         const r2 = await CF.curlFetch(A.base + "/echo", { method: "POST", body: BIG, headers: { "content-type": "image/png" } });
@@ -176,6 +178,36 @@ function readAll(req) {
 
         // a Request object
         const r18 = await CF.curlFetch(new Request(A.base + "/echo", { method: "POST", body: "xyz" }));
+        // review of 2026-11-12: a user's .curlrc changes nothing (-q first)
+        {
+            const home = fs.mkdtempSync(require("node:path").join(os.tmpdir(), "cf-curlrc-"));
+            for (const n of [".curlrc", "_curlrc"]) fs.writeFileSync(require("node:path").join(home, n), '-w "TRAILER"' + String.fromCharCode(10) + '-v' + String.fromCharCode(10));
+            const old = process.env.CURL_HOME;
+            process.env.CURL_HOME = home;
+            let txt = "";
+            try { txt = await (await CF.curlFetch(A.base + "/json?q=rc")).text(); } finally { if (old === undefined) delete process.env.CURL_HOME; else process.env.CURL_HOME = old; fs.rmSync(home, { recursive: true, force: true }); }
+            check("a .curlrc in CURL_HOME is not read", !txt.includes("TRAILER") && JSON.parse(txt).q === "rc", txt.slice(0, 80));
+        }
+        await CF.curlFetch(A.base + "/json", { method: "POST" }).then((r) => r.text());
+        check("a POST without a body is not sent as a form", seen.method === "POST" && !seen.headers["content-type"] && seen.headers["content-length"] === "0", JSON.stringify(seen.headers));
+        {
+            seen = {};
+            const ac = new AbortController();
+            const p = CF.curlFetch(A.base + "/w", { method: "POST", body: BIG, signal: ac.signal });
+            setImmediate(() => ac.abort());
+            const e = await p.then(() => null, (err) => err);
+            await sleep(500);
+            check("an abort while the body file is written stops the request", !!e && e.name === "AbortError" && seen.url !== "/w", `${e && e.name} ${seen.url} ${seen.len}`);
+        }
+        {
+            const t = Date.now();
+            const e = await CF.curlFetch(A.base + "/stall", { dispatcher: { headersTimeout: 2000 } }).then(() => null, (err) => err);
+            check("no answer within the dispatcher's headersTimeout fails as undici's headers timeout", e instanceof TypeError && e.cause && e.cause.code === "UND_ERR_HEADERS_TIMEOUT" && Date.now() - t < 8000, `${e && e.cause && e.cause.code} after ${Date.now() - t} ms`);
+            const r = await CF.curlFetch(A.base + "/stallbody", { dispatcher: { bodyTimeout: 2000 } });
+            const e2 = await r.text().then(() => null, (err) => err);
+            check("a body that stops moving fails as undici's body timeout", !!e2 && e2.cause && e2.cause.code === "UND_ERR_BODY_TIMEOUT", String(e2 && e2.cause && (e2.cause.code || e2.cause.message)));
+            check("the stall limit is undici's 300 s without a dispatcher", CF.stallSeconds(undefined) === 300 && CF.stallSeconds({ headersTimeout: 630000 }) === 630);
+        }
         check("a Request object as input", r18.status === 201 && (await r18.text()) === sha(Buffer.from("xyz")));
 
         // the switch
