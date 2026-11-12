@@ -15,6 +15,8 @@ ComfyUI, no key. The dialogs are answered by replacing `host.askDocument` / `hos
 12. commands_and_argv - save_document and open_document through the command core (errors, Save As, copy, in place,
     an open that activates, an open with activate false), list_documents' file and dirty; a second start of the app
     with a .scumble path on its command line opens it in this instance.
+12b. settle_key_keeps_an_edit_made_meanwhile_changed - an edit made while the key settles after an open or a restore
+    leaves the tab changed (review 2026-11-12).
 """
 import asyncio
 import json
@@ -152,6 +154,34 @@ COMMANDS = r"""
     return out;
 """
 
+# review 2026-11-12 (files-io/settlekey-adopts-user-edit-as-saved): settleKey runs while the tab is live (after an open
+# or a restore, the selection's re-encode can take seconds); an edit made while its flush waits must leave the tab
+# changed, not be taken as the file's state. The edit is made right after the real flush, inside the same await.
+SETTLE = r"""
+    const ed = host.editors().find((x) => x.docFile && x.docFile.name === "ux_c_copy.scumble");
+    if (!ed) throw new Error("no ux_c_copy tab");
+    await must("add_paint_layer", { doc: ed.node.id });
+    await must("select_rect", { doc: ed.node.id, x: 10, y: 10, w: 40, h: 30 });
+    ed.fillSelection();
+    await host.saveDocument(ed, {}); await settle(ed);
+    const L = ed.layers.find((l) => l.kind === "paint");
+    const out = { savedClean: !host.documentDirty(ed) };
+    ed.docFile.clean = true;                     // as a restored tab that was clean when the session was saved
+    await host.settleKey(ed);
+    out.untouchedStaysClean = !host.documentDirty(ed);
+    const orig = host.flushEditor;
+    host.flushEditor = async function (...args) {
+        const r = await orig.apply(this, args);
+        await must("set_layer", { doc: ed.node.id, layer: L.id, x: L.x + 7 });   // the user's edit during the wait
+        return r;
+    };
+    ed.docFile.clean = true;
+    try { await host.settleKey(ed); } finally { host.flushEditor = orig; }
+    out.editMeanwhileShowsChanged = host.documentDirty(ed);
+    await sh.closeDocument(ed, { force: true });
+    return out;
+"""
+
 AFTER_ARGV = r"""
     const find = () => host.editors().find((x) => x.docFile && x.docFile.name === "ux_b.scumble");
     for (let i = 0; i < 150; i++) { const f = find(); if (f && f.base && !f._loading && host.editor === f) break; await wait(100); }
@@ -197,6 +227,9 @@ async def run(c):
           and "ux_c.scumble" in r["listed"] and "ux_c_copy.scumble" in r["listed"])
     user_data = r.pop("userData")
     step(results, "commands", ok, r)
+
+    r = await ev(SETTLE)
+    step(results, "settle_key_keeps_an_edit_made_meanwhile_changed", r["savedClean"] and r["untouchedStaysClean"] and r["editMeanwhileShowsChanged"], r)
 
     # a second start with a path: close ux_b first so the open is new, then start the app again on this profile
     await c.eval("(async () => { const sh = await import('./shell.js'); const { host } = await import('./editor/host.js'); for (const e of host.editors().filter((x) => x.docFile && x.docFile.name === 'ux_b.scumble')) await sh.closeDocument(e, { force: true }); return 1; })()")
