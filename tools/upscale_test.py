@@ -355,7 +355,9 @@ try {
     ref = await run("add_paint_layer", { doc: window.__u, name: "a reference" });
     await run("set_layer", { doc: window.__u, layer: ref.id, role: "reference" });
     await run("select_rect", { doc: window.__u, x: 64, y: 64, w: 120, h: 90 });
-    ed.settings["1"] = { value: "2xESRGAN.pth" };
+    // a row as the panel holds it, with its target (the run reads each row by its recipe's target: a recipe picked
+    // during the uploads re-keys the rows)
+    ed.settings["1"] = { value: "2xESRGAN.pth", target: t[0].key || `${t[0].node.id}:${t[0].inputName}` };
     await host.queueGenerate(ed);
     if (!sent) throw new Error("nothing was queued");
     const P_ = sent.output, cv = P_.canvas.inputs, st = JSON.parse(cv.canvas_state);
@@ -945,7 +947,7 @@ try {
     // the upscale model (a fixed factor: none written) through the command: Cancel takes its job off the server and
     // changes nothing; then it runs
     host.shell.selectRecipe("upscale_model_local");
-    ed.settings["1"] = { value: "2xESRGAN.pth" };
+    { const t1 = host.settingTargets(ed)[0]; ed.settings["1"] = { value: "2xESRGAN.pth", target: t1.key || `${t1.node.id}:${t1.inputName}` }; }
     T.queued.length = 0; T.cancels.length = 0;
     T.onQueued = () => { host.cancelProviderRuns(); };
     let cerr = null;
