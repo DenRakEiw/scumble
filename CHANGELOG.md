@@ -4,6 +4,8 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+## 0.1.56 - 2026-11-12
+
 Fixes from a review of the whole code (54 defects, two of them able to lose or change your pixels):
 
 - **A layer copied, or an undo step taken, while the autosave stored a large layer keeps its pixels.** A Ctrl+J, or a reorder, delete or group followed by Ctrl+Z, during that upload left a layer that reopened with the picture from before your last stroke.
