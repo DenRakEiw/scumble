@@ -1014,7 +1014,8 @@ class InpaintEditor {
             const lab = el("label", null, entry.label);
             lab.title = `setting_${t.index} → ${entry.label}`;
             let control;
-            const commit = (v) => { entry.value = v; if (t.widget) { try { t.widget.value = v; } catch (_) { /* read-only */ } } this.notifyChanged(); this.refreshRefLayout(); };
+            // onSettingSet: the app keeps a row you set as the recipe's value for every tab (issue #12); the node has none
+            const commit = (v) => { entry.value = v; if (t.widget) { try { t.widget.value = v; } catch (_) { /* read-only */ } } this.notifyChanged(); this.refreshRefLayout(); if (typeof this.onSettingSet === "function") this.onSettingSet(entry.target, v); };
             if (k.kind === "combo") {
                 // a file the server's list lacks stays the recipe's choice, marked in the select (issue #4: until 0.1.45
                 // the row silently became the folder's first file, a Flux file on most installs); the app's host refuses

@@ -169,6 +169,7 @@ function applyHistoryDepth(ed) {
 function newDocument(id) {
     const editor = new InpaintEditor({ id: id || host.nextId++, title: "Scumble" });
     editor.newCanvasTab = () => newCanvasInTab(editor);   // New keeps a document with work in it (issue #12)
+    editor.onSettingSet = (target, value) => host.rememberValues(editor, [[target, value]]);   // a row you set stays the recipe's (issue #12)
     editor.atlasMB = atlasMB;
     // a recipe brings its Settings rows here; the editor's own text speaks of wiring the node
     editor.noSettingsText = "This recipe has no settings of its own.";
@@ -1366,7 +1367,8 @@ if (startMode === "safe") host.editor.setStatus("The window crashed twice while 
 await loadProviders();
 await loadRecipes();
 host.presets = shellState.settings.recipePresets || {};
-host.loras = shellState.settings.recipeLoras || {};   // the LoRA rows per recipe (item 50, docs/PLAN_LORAS.md §3.3)
+host.loras = shellState.settings.recipeLoras || {};
+host.recipeValues = shellState.settings.recipeValues || {};   // the Settings rows you last set, per recipe (issue #12)   // the LoRA rows per recipe (item 50, docs/PLAN_LORAS.md §3.3)
 await host.refreshHelpers();
 await host.refreshLLMs();
 selectRecipe(shellState.settings.recipe);

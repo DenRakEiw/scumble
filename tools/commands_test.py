@@ -2177,7 +2177,7 @@ const { host } = await import("./editor/host.js");
 const d = await c("new_document");
 await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
 const ed = host.editorById(d.id);
-const prev = host.recipe, prevPresets = host.presets;
+const prev = host.recipe, prevPresets = host.presets, prevValues = host.recipeValues;
 const raw0 = host.shell.recipes().find((x) => x.id === "realism_pass");
 if (!raw0) throw new Error("no realism_pass recipe to try the shipped presets on");
 const out = {};
@@ -2221,8 +2221,77 @@ try {
     return out;
 } finally {
     host.presets = prevPresets;
+    host.recipeValues = prevValues;   // the presets applied above are remembered as the recipe's values (issue #12)
     host.setRecipe(prev);
     await c("close_document", { doc: d.id });
+    await c("activate_document", { doc: window.__testDoc });
+}
+"""),
+    # issue #12: a Settings row you set in the Settings section (or a preset you pick in its Preset row) is the recipe's
+    # value in every tab and after a switch of recipe; a command (apply_preset, set_settings) sets the document's rows
+    # only; "Recipe's own values" puts the file's back
+    ("rows_remember_their_last_value", """
+const { host } = await import("./editor/host.js");
+const prev = host.recipe, prevValues = host.recipeValues, prevPresets = host.presets;
+const raw0 = host.shell.recipes().find((x) => x.id === "realism_pass");
+if (!raw0) throw new Error("no realism_pass recipe");
+const a = await c("new_document");
+await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: a.id });
+const edA = host.editorById(a.id);
+let b = null;
+const out = {};
+const loopback = { id: "loopback_values", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", name: "Loopback values",
+    settings: [{ index: 1, key: "quality", label: "Quality", spec: [["low", "high"], { default: "low" }] }] };
+// the row's own select in the Settings section (the Preset row's has no "J" / "high")
+const rowSel = (ed, has) => [...ed.settingsList.querySelectorAll("select")].find((x) => [...x.options].some((o) => o.value === has) && ![...x.options].some((o) => o.textContent === "Recipe's own values"));
+const pick = (sel, v) => { sel.value = v; sel.dispatchEvent(new Event("change")); };
+try {
+    host.recipeValues = {};
+    host.presets = {};
+    host.setRecipe(host.shell.resolveRecipe(raw0));
+    const own = edA.settings["1"].value;
+    const picked = own === "K" ? "M" : "K";
+    // a command sets the document's row only
+    await c("apply_preset", { doc: a.id, name: "M" });
+    if (Object.keys(host.recipeValues).length) throw new Error("apply_preset was remembered: " + JSON.stringify(host.recipeValues));
+    // the row set in the Settings section is the recipe's
+    pick(rowSel(edA, "J"), picked);
+    if (edA.settings["1"].value !== picked) throw new Error("the row did not take the pick: " + edA.settings["1"].value);
+    const kept = Object.values(host.recipeValues.realism_pass || {});
+    if (kept.length !== 1 || kept[0] !== picked) throw new Error("not remembered: " + JSON.stringify(host.recipeValues));
+    // a new tab starts with it
+    b = await c("new_document");
+    await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: b.id });
+    const edB = host.editorById(b.id);
+    if (edB.settings["1"].value !== picked) throw new Error("the new tab's row: " + edB.settings["1"].value + ", not " + picked);
+    // another recipe and back: the row is the one you set, not the file's
+    host.setRecipe(loopback);
+    if (edB.settings["1"].value !== "low") throw new Error("the API row: " + edB.settings["1"].value);
+    pick(rowSel(edB, "high"), "high");
+    if ((host.recipeValues.loopback_values || {})["provider/loopback_values/loopback:quality"] !== "high") throw new Error("the API row is not remembered: " + JSON.stringify(host.recipeValues));
+    host.setRecipe(host.shell.resolveRecipe(raw0));
+    if (edB.settings["1"].value !== picked || edA.settings["1"].value !== picked) throw new Error("after the switch back: " + edA.settings["1"].value + " / " + edB.settings["1"].value);
+    host.setRecipe(loopback);
+    if (edA.settings["1"].value !== "high") throw new Error("the API row in the other tab: " + edA.settings["1"].value);
+    host.setRecipe(host.shell.resolveRecipe(raw0));
+    // a preset picked in the Preset row is remembered too
+    const presetSel = [...edB.settingsList.querySelectorAll("select")].find((x) => [...x.options].some((o) => o.textContent === "Recipe's own values"));
+    if (!presetSel) throw new Error("no Recipe's own values in the Preset row");
+    pick(presetSel, "L");
+    if (edB.settings["1"].value !== "L" || Object.values(host.recipeValues.realism_pass)[0] !== "L") throw new Error("the preset pick: " + edB.settings["1"].value + " " + JSON.stringify(host.recipeValues));
+    // the recipe's own values back, remembered then; with own = L nothing changes, so set another first
+    pick(rowSel(edB, "J"), "J");
+    const sel2 = [...edB.settingsList.querySelectorAll("select")].find((x) => [...x.options].some((o) => o.textContent === "Recipe's own values"));
+    pick(sel2, "\\u0000own");
+    if (edB.settings["1"].value !== own || Object.values(host.recipeValues.realism_pass)[0] !== own) throw new Error("the reset: " + edB.settings["1"].value + " " + JSON.stringify(host.recipeValues));
+    out.values = { own, picked };
+    return out;
+} finally {
+    host.recipeValues = prevValues;
+    host.presets = prevPresets;
+    host.setRecipe(prev);
+    await c("close_document", { doc: a.id });
+    if (b) await c("close_document", { doc: b.id });
     await c("activate_document", { doc: window.__testDoc });
 }
 """),

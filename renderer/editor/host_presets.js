@@ -19,6 +19,78 @@ export const HostPresetsPart = {
         });
     },
 
+    // ---- the rows' last values per recipe (issue #12): what you picked comes back in every tab and after a switch ----
+
+    recipeValues: {},   // settings.recipeValues: { [recipeId]: { [target]: value } }, the Settings rows you last set
+
+    /** The value you last set for a row of a recipe (its `target`, as the editor's settings entry holds it), or undefined. */
+    rememberedValue(recipeId, target) {
+        const mine = this.recipeValues && this.recipeValues[recipeId];
+        return mine && Object.prototype.hasOwnProperty.call(mine, target) ? mine[target] : undefined;
+    },
+
+    /**
+     * A Settings row you set in the Settings section (the editor's `onSettingSet`, which the app's shell wires here), a
+     * preset you picked in its Preset row, or the rows put back by "Recipe's own values": kept as the selected recipe's
+     * value for that row, so it comes back in every tab and after a switch of recipe (issue #12). A command
+     * (set_settings, apply_preset) sets the document's rows only: an agent's or a test's choice is not yours.
+     * @param {any} editor
+     * @param {Array<[string, any]>} rows  [target, value] pairs, the target as the editor's settings entry holds it
+     */
+    rememberValues(editor, rows) {
+        const r = this.recipe;
+        if (!r || !editor || !rows.length) return;
+        const mine = { ...((this.recipeValues || {})[r.id] || {}) };
+        let changed = false;
+        for (const [target, v] of rows) if (typeof target === "string" && mine[target] !== v) { mine[target] = v; changed = true; }
+        if (!changed) return;
+        this.recipeValues = { ...(this.recipeValues || {}), [r.id]: mine };
+        clearTimeout(this._valuesTimer);
+        this._valuesTimer = setTimeout(() => {
+            window.scumble.settings.set({ recipeValues: this.recipeValues }).catch((err) => console.warn("recipe values", err));
+        }, 800);
+    },
+
+    /**
+     * The [target, value] pairs of `editor`'s rows for `targets` (settingTargets' shape).
+     * @returns {Array<[string, any]>}
+     */
+    rowValues(editor, targets) {
+        /** @type {Array<[string, any]>} */
+        const out = [];
+        for (const t of targets) {
+            const target = /** @type {any} */ (t).key || `${t.node.id}:${t.inputName}`;
+            const e = editor.settings[String(t.index)];
+            if (e && e.target === target) out.push([target, e.value]);
+        }
+        return out;
+    },
+
+    /**
+     * Every Settings row of the selected recipe back to the recipe file's own value (the Preset row's "Recipe's own
+     * values"); the rows then count as set, so they are the recipe's values again.
+     * @param {any} editor
+     */
+    resetToRecipeValues(editor) {
+        const r = this.recipe;
+        if (!r || !editor) return 0;
+        this._ownValues = true;
+        let targets;
+        try { targets = this.settingTargets(editor); } finally { this._ownValues = false; }
+        let n = 0;
+        for (const t of targets) {
+            const e = editor.settings[String(t.index)];
+            if (!e || !t.widget) continue;
+            if (e.value !== t.widget.value) { e.value = t.widget.value; n++; }
+        }
+        this.rememberValues(editor, this.rowValues(editor, targets));
+        editor.renderSettings();
+        editor.notifyChanged();
+        const name = r.name || r.id;
+        editor.setStatus(n ? `${name}: ${n} setting${n === 1 ? "" : "s"} back to the recipe's own value${n === 1 ? "" : "s"}.` : `${name}: the settings already hold the recipe's own values.`);
+        return n;
+    },
+
     async savePresets(recipeId, list) {
         this.presets = { ...(this.presets || {}), [recipeId]: list };
         try { await window.scumble.settings.set({ recipePresets: this.presets }); } catch (err) { console.warn("presets", err); }
@@ -336,8 +408,19 @@ export const HostPresetsPart = {
         none.value = ""; none.textContent = presets.length ? (matching ? "" : "(custom)") : "(none saved)";
         if (!matching) sel.appendChild(none);
         for (const p of presets) { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; sel.appendChild(o); }
+        // every row back to the recipe file's values (the rows otherwise start with what you last set: issue #12)
+        const OWN = "\u0000own";
+        const ownOpt = document.createElement("option");
+        ownOpt.value = OWN; ownOpt.textContent = "Recipe's own values";
+        sel.appendChild(ownOpt);
         sel.value = matching ? matching.name : "";
-        sel.addEventListener("change", () => { const p = presets.find((x) => x.name === sel.value); if (p) this.applyPreset(editor, targets, p); });
+        sel.addEventListener("change", () => {
+            if (sel.value === OWN) { this.resetToRecipeValues(editor); return; }
+            const p = presets.find((x) => x.name === sel.value);
+            if (!p) return;
+            this.applyPreset(editor, targets, p);
+            this.rememberValues(editor, this.rowValues(editor, pts));
+        });
         const save = document.createElement("button");
         save.type = "button"; save.className = "ipc-ib"; save.textContent = "Save"; save.title = "Save the current combination under a name (Enter saves, Escape cancels).";
         const del = document.createElement("button");
@@ -519,7 +602,10 @@ export const HostPresetsPart = {
             const nodeId = `provider/${r.id}/${r.provider}`;
             for (const s of r.settings || []) {
                 const spec = s.spec || ["STRING", {}];
-                const value = s.default !== undefined ? s.default : (spec[1] && spec[1].default !== undefined ? spec[1].default : (Array.isArray(spec[0]) ? spec[0][0] : undefined));
+                const own = s.default !== undefined ? s.default : (spec[1] && spec[1].default !== undefined ? spec[1].default : (Array.isArray(spec[0]) ? spec[0][0] : undefined));
+                // a row starts with the value you last set for this recipe (issue #12), else the recipe's own
+                const kept = this._ownValues ? undefined : this.rememberedValue(r.id, `${nodeId}:${s.key}`);
+                const value = kept !== undefined ? kept : own;
                 out.push({
                     index: s.index, output: { name: `setting_${s.index}` },
                     node: { id: nodeId, title: s.label || s.key, type: r.provider },
@@ -536,7 +622,10 @@ export const HostPresetsPart = {
             const inp = info && info.input;
             const spec = inp && ((inp.required && inp.required[s.input]) || (inp.optional && inp.optional[s.input])) || s.spec || null;
             const current = node.inputs ? node.inputs[s.input] : undefined;
-            const value = s.default !== undefined ? s.default : (Array.isArray(current) ? undefined : current);
+            const own = s.default !== undefined ? s.default : (Array.isArray(current) ? undefined : current);
+            // a row starts with the value you last set for this recipe (issue #12), else the recipe's own
+            const kept = this._ownValues ? undefined : this.rememberedValue(r.id, `${r.id}/${s.node}:${s.input}`);
+            const value = kept !== undefined ? kept : own;
             // the key names the recipe too: the editor keeps a stored value while the key stays the same, and Qwen
             // and Klein both load from nodes "unet", "clip" and "vae", so Klein was queued with Qwen's files
             out.push({
