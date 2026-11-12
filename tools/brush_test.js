@@ -128,6 +128,24 @@ function makeV6(subversion) {
     return f.bytes();
 }
 
+// readAbr on `bytes` in a worker thread: { error } or { tips }, or { timedOut } after `ms` (the worker is killed).
+function readInWorker(bytes, ms) {
+    const { Worker } = require("node:worker_threads");
+    const url = pathToFileURL(path.join(__dirname, "..", "renderer", "editor", "inpaint_brushes.js")).href;
+    const code = `const { parentPort, workerData } = require("node:worker_threads");
+        import(workerData.url).then(({ readAbr }) => {
+            const b = workerData.bytes;
+            try { const r = readAbr(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); parentPort.postMessage({ tips: r.brushes.length }); }
+            catch (err) { parentPort.postMessage({ error: String(err.message || err) }); }
+        });`;
+    return new Promise((resolve) => {
+        const w = new Worker(code, { eval: true, workerData: { url, bytes: new Uint8Array(bytes) } });
+        const timer = setTimeout(() => { w.terminate(); resolve({ timedOut: true }); }, ms);
+        w.on("message", (m) => { clearTimeout(timer); w.terminate(); resolve(m); });
+        w.on("error", (err) => { clearTimeout(timer); resolve({ error: String(err.message || err) }); });
+    });
+}
+
 // ---- the checks -----------------------------------------------------------------------------------
 async function main() {
     const { readAbr } = await import(pathToFileURL(path.join(__dirname, "..", "renderer", "editor", "inpaint_brushes.js")).href);
@@ -168,6 +186,15 @@ async function main() {
     }
     check("unknown version", () => { try { readAbr(toAb(Buffer.from([0, 3, 0, 1, 0, 0]))); } catch (err) { return String(err.message); } throw new Error("no error"); });
     check("only computed", () => { const f = new W(); const c = v1Computed(); f.u16(1).u16(1).u16(c.length).raw(c); try { readAbr(toAb(f.bytes())); } catch (err) { if (!/computed/.test(err.message)) throw err; return String(err.message); } throw new Error("no error"); });
+
+    // crafted lengths that wrapped the block / brush offset back through int32 and looped forever (review 2026-11-12):
+    // read in a worker with a time limit, so a regression fails here instead of hanging the test
+    const wrapBlock = new W().u16(6).u16(2).tag("8BIM").tag("samp").u32(4294967281).raw(Buffer.alloc(16)).bytes();
+    const wrapBrush = new W().u16(6).u16(1).tag("8BIM").tag("samp").u32(80).u32(4294967289).raw(Buffer.alloc(76)).bytes();
+    for (const [name, bytes] of [["crafted block length ends", wrapBlock], ["crafted brush length ends", wrapBrush]]) {
+        const res = await readInWorker(bytes, 5000);
+        check(name, () => { if (res.timedOut) throw new Error("readAbr did not return within 5 s (the offset wrapped)"); return res; });
+    }
 
     // the real packs on this machine, when present: read, and the desc block fully consumed
     const real = [
