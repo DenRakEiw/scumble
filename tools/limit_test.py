@@ -137,12 +137,30 @@ JS = r"""
         const flat = ed.flattenToCanvas({ forRun: true });
         const p = Array.from(flat.getContext("2d").getImageData(200, 150, 1, 1).data);
         check("Case 0 multiply under a limit of 0 leaves the picture (#204060)", p[0] === 0x20 && p[1] === 0x40 && p[2] === 0x60, p);
+        // the same on the tiles program (a plain export, a run's crop): review 2026-11-12 filters/band-filter-limit-not-over
+        const rb0 = await ed.readBoxBytes([200, 150, 201, 151], { forRun: true });
+        const pb = Array.from(rb0.data.subarray(0, 4));
+        check("Case 0 multiply under a limit of 0 leaves the picture on the band path too (" + rb0.how + ")", pb[0] === 0x20 && pb[1] === 0x40 && pb[2] === 0x60, pb);
+        if (ed.tileMode) check("Case 0 the band read went through the program", rb0.how === "program", rb0.how);
         await commands.run("set_filter", { doc: ed.node.id, layer: mul.id, params: { inBlack: 0, inWhite: 128, limit: { source: "luma", lo: 0, hi: 1, fLo: 0, fHi: 0 } } });
         await settle(ed);
         const flat1 = ed.flattenToCanvas({ forRun: true });
         const q = Array.from(flat1.getContext("2d").getImageData(200, 150, 1, 1).data);
         // levels 0..128 doubles the picture (clamped), multiply with the picture: r 64 * 32 / 255 = 8, b 191 * 96 / 255 = 72
         check("Case 0 multiply under a limit of 1 multiplies the filtered picture in", q[0] >= 6 && q[0] <= 10 && q[2] >= 68 && q[2] <= 76, q);
+        const rb1 = await ed.readBoxBytes([200, 150, 201, 151], { forRun: true });
+        const qb = Array.from(rb1.data.subarray(0, 4));
+        check("Case 0 under a limit of 1 the band path multiplies the filtered picture in", qb[0] >= 6 && qb[0] <= 10 && qb[2] >= 68 && qb[2] <= 76, qb);
+        // a depth limit without a map over the picture: the layer shows nothing on both paths
+        if (!(ed.maps && ed.maps.depth)) {
+            await commands.run("set_filter", { doc: ed.node.id, layer: mul.id, params: { inBlack: 0, inWhite: 128, limit: { source: "depth", lo: 0, hi: 0.5, fLo: 0, fHi: 0 } } });
+            await settle(ed);
+            const fm = Array.from(ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(200, 150, 1, 1).data);
+            const rbm = await ed.readBoxBytes([200, 150, 201, 151], { forRun: true });
+            const bm = Array.from(rbm.data.subarray(0, 4));
+            check("Case 0 a depth limit without a map leaves the picture (flatten)", fm[0] === 0x20 && fm[1] === 0x40 && fm[2] === 0x60, fm);
+            check("Case 0 a depth limit without a map leaves the picture (band path, " + rbm.how + ")", bm[0] === 0x20 && bm[1] === 0x40 && bm[2] === 0x60, bm);
+        }
         await commands.run("remove_layer", { doc: ed.node.id, layer: mul.id });
         await settle(ed);
     }
